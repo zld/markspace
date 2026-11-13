@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "forensic-timeline"
+version = "0.1.0"
+description = "Offline forensic timeline reconstruction for self-generated local sample images"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+forensic-timeline = "forensic_timeline.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# Run the tool (from repo root, after `pip install -e .` or with PYTHONPATH=src):
+#   python -m forensic_timeline.cli --self-check --timezone Asia/Shanghai \
+#       --drift-limit-seconds 180 --gap-threshold-seconds 900 \
+#       --db /tmp/forensic-timeline.sqlite
+#
+# Run the tests (standard library unittest only, no third-party packages):
+#   PYTHONPATH=src python -m unittest discover -s tests -v
