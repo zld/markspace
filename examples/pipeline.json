@@ -1,0 +1,8 @@
+{
+  "on_pass_failure": "rollback_continue",
+  "passes": [
+    { "type": "brightness", "name": "lift", "offset": 12.0 },
+    { "type": "sharpen", "name": "crisp", "amount": 0.6 },
+    { "type": "gamma", "name": "display", "gamma": 2.2 }
+  ]
+}
