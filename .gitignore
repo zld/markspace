@@ -1,0 +1,13 @@
+# Build outputs
+/bin/
+*.exe
+*.test
+*.out
+coverage.txt
+
+# Local generated ELF fixtures and scratch data
+/.work/
+*.elf.tmp
+
+# Editor / OS noise
+.DS_Store
