@@ -19,6 +19,7 @@ add_library(subtitle_core STATIC
   src/line_breaker.cpp
   src/layout.cpp
   src/summary_exporter.cpp
+  src/fixture_generator.cpp
 )
 target_include_directories(subtitle_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(subtitle_core PUBLIC Freetype::Freetype nlohmann_json::nlohmann_json)
