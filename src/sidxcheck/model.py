@@ -107,7 +107,7 @@ def sort_diagnostics(diags: list[Diagnostic]) -> list[Diagnostic]:
 # ---------------------------------------------------------------------------
 # sidx results
 # ---------------------------------------------------------------------------
-@dataclass(frozen=True)
+@dataclass
 class SidxReference:
     """One reference entry (reference_type 0 = media fragment)."""
 
@@ -282,7 +282,11 @@ class AnalysisSummary:
                 "total": self.offset_check_total,
             },
             "rebuilt_segments": [s.to_dict() for s in self.rebuilt_segments],
-            "offset_checks": [c.to_dict() for c in self.offset_checks],
+            "offset_checks": {
+                "passed": self.offset_check_passed,
+                "total": self.offset_check_total,
+                "checks": [c.to_dict() for c in self.offset_checks],
+            },
             "diagnostics": [d.to_dict() for d in self.diagnostics],
             "fatal": self.fatal,
         }

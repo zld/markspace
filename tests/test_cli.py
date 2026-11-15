@@ -32,7 +32,8 @@ class CliTests(unittest.TestCase):
         Path(self.bad_path).unlink(missing_ok=True)
 
     def test_valid_file_returns_zero(self):
-        code = cli.run(["--input", self.sample_path])
+        with redirect_stdout(io.StringIO()):
+            code = cli.run(["--input", self.sample_path])
         self.assertEqual(code, cli.EXIT_OK)
 
     def test_json_output_has_required_fields(self):
@@ -43,7 +44,13 @@ class CliTests(unittest.TestCase):
         payload = json.loads(buf.getvalue())
         self.assertEqual(payload["sample_entries"], 120)
         self.assertEqual(payload["index_refs"], 4)
-        self.assertEqual(payload["offset_checks"], {"passed": 4, "total": 4})
+        self.assertEqual(
+            payload["offset_checks"]["passed"], 4
+        )
+        self.assertEqual(payload["offset_checks"]["total"], 4)
+        self.assertEqual(
+            payload["offset_checks"]["checks"][0]["passed"], True
+        )
         self.assertEqual(len(payload["rebuilt_segments"]), 4)
         segment = payload["rebuilt_segments"][0]
         self.assertIn("start", segment)
@@ -59,13 +66,15 @@ class CliTests(unittest.TestCase):
         self.assertNotIn("Traceback", err.getvalue())
 
     def test_corrupt_file_returns_corrupt_code_in_strict_mode(self):
-        code = cli.run(["--input", self.bad_path, "--strict", "--json"])
+        with redirect_stdout(io.StringIO()):
+            code = cli.run(["--input", self.bad_path, "--strict", "--json"])
         self.assertEqual(code, cli.EXIT_CORRUPT)
 
     def test_lenient_mode_reports_diagnostics_without_traceback(self):
         buf = io.StringIO()
         with redirect_stdout(buf):
             code = cli.run(["--input", self.bad_path, "--json"])
+        self.assertEqual(code, cli.EXIT_OK)
         payload = json.loads(buf.getvalue())
         self.assertTrue(payload["diagnostics"])
         self.assertTrue(

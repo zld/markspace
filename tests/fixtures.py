@@ -274,3 +274,67 @@ def corrupt_truncated_stbl() -> bytes:
     cut = bytearray(data[: moov + moov_size - 12])
     struct.pack_into(">I", cut, moov, len(cut) - moov)
     return bytes(cut)
+
+
+def _patch_sidx_entry_size(entry_index: int, new_size: int) -> bytes:
+    """Overwrite one sidx reference's reference_size word (v0 layout)."""
+    data = bytearray(build_container())
+    sidx_payload = data.index(b"sidx") + 4
+    # fullbox(4) + fixed fields(20) + reference_count(4) + 12 bytes per entry.
+    entry_base = sidx_payload + 4 + 20 + 4 + entry_index * 12
+    struct.pack_into(">I", data, entry_base, new_size)
+    return bytes(data)
+
+
+def corrupt_sidx_duplicate_reference() -> bytes:
+    # Reference 1 starts at the same offset as reference 0 by shrinking its
+    # predecessor to zero span.
+    return _patch_sidx_entry_size(0, 0)
+
+
+def _patch_sidx_first_offset(relative_shift: int) -> bytes:
+    """Patch the v0 sidx first_offset field by a relative shift."""
+    data = bytearray(build_container())
+    sidx_payload = data.index(b"sidx") + 4
+    # fullbox(4), ref_id(4), timescale(4), pts(4), then first_offset(4).
+    position = sidx_payload + 16
+    current = struct.unpack_from(">I", data, position)[0]
+    struct.pack_into(">I", data, position, current + relative_shift)
+    return bytes(data)
+
+
+def build_sidx_with_refs(
+    entries: list[tuple[int, int]],
+    *,
+    sidx_offset: int = 8,
+    first_offset: int = 0,
+    version: int = 0,
+) -> bytes:
+    """Construct a standalone sidx box with hand-specified reference entries.
+
+    Each entry is (referenced_size, subsegment_duration); target offsets are
+    resolved by the parser from ``sidx_offset + first_offset`` and the running
+    size sum, exactly as a real encoder would lay them out.
+    """
+    if version == 0:
+        fixed = struct.pack(">IIIII", 1, TIMESCALE, 0, first_offset, 0)
+    else:
+        fixed = struct.pack(">II", 1, TIMESCALE)
+        fixed += struct.pack(">QQI", 0, first_offset, 0)
+    body = fixed + struct.pack(">I", len(entries))
+    for i, (ref_size, duration) in enumerate(entries):
+        sap_word = 0x80000000 if i == 0 else 0
+        body += struct.pack(">III", ref_size, duration, sap_word)
+    return _fullbox("sidx", version, 0, body)
+
+
+def corrupt_sidx_overlapping_reference() -> bytes:
+    # Pull the whole anchor chain backwards so references no longer line up
+    # with the fragment layout covered by the sample table.
+    return _patch_sidx_first_offset(-64)
+
+
+def corrupt_sidx_non_monotonic_reference() -> bytes:
+    # Push the anchor chain into the media region, breaking alignment with
+    # the sample table and producing coverage/ordering diagnostics.
+    return _patch_sidx_first_offset(512)
