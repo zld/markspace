@@ -200,6 +200,18 @@ class CliTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn("sample 1", json.loads(out)["error"]["message"])
 
+    def test_runtime_error_exit_1(self):
+        fd, path = tempfile.mkstemp(suffix=".json")
+        with os.fdopen(fd, "w") as fh:
+            json.dump({"segments": 3, "samples": [
+                {"time": 0, "bandwidth": 1000000},
+                {"time": 1, "bandwidth": 0}]}, fh)
+        self.addCleanup(os.unlink, path)
+        code, out = self._run_cli(["--trace", path, "--bitrates", "1000000",
+                                   "--json"])
+        self.assertEqual(code, 1)
+        self.assertEqual(json.loads(out)["error"]["type"], "simulation_error")
+
     def test_batch_mode_reports_aggregate(self):
         code, out = self._run_cli(
             ["--seeds", "1,2,3", "--segments", "10",

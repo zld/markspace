@@ -162,6 +162,8 @@ def main(argv=None) -> int:
             payload = _run_single(args, config)
     except (ConfigError, TraceError) as exc:
         return _fail(2, "invalid_input", str(exc), args.json)
+    except SimulationError as exc:
+        return _fail(1, "simulation_error", str(exc), args.json)
     try:
         metrics.ensure_finite(payload)
     except ValueError as exc:
