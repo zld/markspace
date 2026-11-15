@@ -102,7 +102,7 @@ func arrivalTime(i int, frameNS time.Duration, rng *rand.Rand,
 		return base
 	}
 	// Zero-mean uniform jitter in [-jitter/2, +jitter/2].
-	return base + time.Duration(rng.Int63n(int64(jitter)))-jitter/2
+	return base + time.Duration(rng.Int63n(int64(jitter))) - jitter/2
 }
 
 func makePacket(no uint32, seqInt int) protocol.Packet {

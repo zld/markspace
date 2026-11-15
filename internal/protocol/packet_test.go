@@ -51,7 +51,9 @@ func TestDecodeErrors(t *testing.T) {
 	}{
 		{"truncated header", func(b []byte) []byte { return b[:4] }, ErrShort},
 		{"unknown version", func(b []byte) []byte {
-			c := clone(b); c[0] = 99; return c
+			c := clone(b)
+			c[0] = 99
+			return c
 		}, ErrUnknownVersion},
 		{"illegal length", func(b []byte) []byte {
 			c := clone(b)
@@ -60,7 +62,9 @@ func TestDecodeErrors(t *testing.T) {
 		}, ErrIllegalLength},
 		{"short datagram", func(b []byte) []byte { return clone(b)[:n-4] }, ErrIllegalLength},
 		{"corrupted checksum", func(b []byte) []byte {
-			c := clone(b); c[30] ^= 0xFF; return c
+			c := clone(b)
+			c[30] ^= 0xFF
+			return c
 		}, ErrChecksum},
 		{"corrupted payload", func(b []byte) []byte {
 			c := clone(b)
@@ -85,10 +89,10 @@ func TestSeqWraparoundCompare(t *testing.T) {
 	}{
 		{5, 4, 1, false},
 		{4, 5, -1, false},
-		{0, 65535, 1, false},  // wrap forward
+		{0, 65535, 1, false}, // wrap forward
 		{65535, 0, -1, false},
 		{32767, 65534, -32767, false},
-		{32768, 0, 0, true},  // exact half-interval: ambiguous
+		{32768, 0, 0, true},     // exact half-interval: ambiguous
 		{32767, 65535, 0, true}, // same, via negative numbers
 		{10, 10, 0, false},
 	}

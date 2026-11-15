@@ -74,7 +74,7 @@ func (c Config) Validate() error {
 	if c.JitterNS < 0 {
 		return errf("jitter must be >= 0")
 	}
-	if c.LossRate+ c.DuplicateRate + c.CorruptRate > 1.5 {
+	if c.LossRate+c.DuplicateRate+c.CorruptRate > 1.5 {
 		return errf("impairment rates conflict: combined probability %.3f > 1.5",
 			c.LossRate+c.DuplicateRate+c.CorruptRate)
 	}

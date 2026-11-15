@@ -50,16 +50,16 @@ func AssertReportFields(t *testing.T, r metrics.Report) {
 func AssertNonNegativeCounters(t *testing.T, r metrics.Report) {
 	t.Helper()
 	counters := map[string]uint64{
-		"received":          r.Received,
-		"invalid_packets":   r.InvalidPackets,
-		"corrupt_packets":   r.Corrupt,
-		"bad_version":       r.BadVersion,
-		"bad_length":        r.BadLength,
-		"ambiguous":         r.Ambiguous,
-		"duplicate_drops":   r.Duplicate,
-		"late_drops":        r.Late,
-		"overflow_drops":    r.Overflow,
-		"concealed_frames":  r.ConcealedFrames,
+		"received":         r.Received,
+		"invalid_packets":  r.InvalidPackets,
+		"corrupt_packets":  r.Corrupt,
+		"bad_version":      r.BadVersion,
+		"bad_length":       r.BadLength,
+		"ambiguous":        r.Ambiguous,
+		"duplicate_drops":  r.Duplicate,
+		"late_drops":       r.Late,
+		"overflow_drops":   r.Overflow,
+		"concealed_frames": r.ConcealedFrames,
 	}
 	for name, v := range counters {
 		if int64(v) < 0 {

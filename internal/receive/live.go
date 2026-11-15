@@ -12,9 +12,9 @@ import (
 
 // LiveConfig parameterizes the UDP receive path.
 type LiveConfig struct {
-	Player     jitter.PlayerConfig
+	Player      jitter.PlayerConfig
 	ReadTimeout time.Duration // idle deadline; on expiry missing frames drain
-	MaxIdle    time.Duration // stop after this much cumulative idle time
+	MaxIdle     time.Duration // stop after this much cumulative idle time
 }
 
 // DefaultLiveConfig returns sane loopback defaults.

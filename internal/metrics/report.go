@@ -10,14 +10,14 @@ import (
 
 // DropCounters holds one independent counter per discard reason.
 type DropCounters struct {
-	Corrupt     uint64 `json:"corrupt_packets"`
-	BadVersion  uint64 `json:"bad_version_packets"`
-	BadLength   uint64 `json:"bad_length_packets"`
-	Ambiguous   uint64 `json:"ambiguous_packets"`
-	Duplicate   uint64 `json:"duplicate_drops"`
-	Late        uint64 `json:"late_drops"`
-	Overflow    uint64 `json:"overflow_drops"`
-	Reordered   uint64 `json:"reordered_packets"`
+	Corrupt    uint64 `json:"corrupt_packets"`
+	BadVersion uint64 `json:"bad_version_packets"`
+	BadLength  uint64 `json:"bad_length_packets"`
+	Ambiguous  uint64 `json:"ambiguous_packets"`
+	Duplicate  uint64 `json:"duplicate_drops"`
+	Late       uint64 `json:"late_drops"`
+	Overflow   uint64 `json:"overflow_drops"`
+	Reordered  uint64 `json:"reordered_packets"`
 }
 
 // Invalid sums all packets rejected before entering the reorder window.
@@ -33,19 +33,19 @@ type LevelPoint struct {
 
 // Report is the full serialized result of one run.
 type Report struct {
-	Frames             uint64      `json:"frames"`
-	Received           uint64      `json:"received"`
-	Played             uint64      `json:"played"`
-	ConcealedFrames    uint64      `json:"concealed_frames"`
-	MaxConcealRun      int         `json:"max_conceal_run"`
-	MaxRecoveryJump    int         `json:"max_recovery_jump"`
-	RecoveryRatio      float64     `json:"recovery_ratio"`
-	LatencyP50US       int64       `json:"latency_p50_us"`
-	LatencyP95US       int64       `json:"latency_p95_us"`
-	LatencyP99US       int64       `json:"latency_p99_us"`
-	LatencyMaxUS       int64       `json:"latency_max_us"`
-	BufferLevelCurve   []LevelPoint `json:"buffer_level_curve"`
-	InvalidPackets     uint64      `json:"invalid_packets"`
+	Frames           uint64       `json:"frames"`
+	Received         uint64       `json:"received"`
+	Played           uint64       `json:"played"`
+	ConcealedFrames  uint64       `json:"concealed_frames"`
+	MaxConcealRun    int          `json:"max_conceal_run"`
+	MaxRecoveryJump  int          `json:"max_recovery_jump"`
+	RecoveryRatio    float64      `json:"recovery_ratio"`
+	LatencyP50US     int64        `json:"latency_p50_us"`
+	LatencyP95US     int64        `json:"latency_p95_us"`
+	LatencyP99US     int64        `json:"latency_p99_us"`
+	LatencyMaxUS     int64        `json:"latency_max_us"`
+	BufferLevelCurve []LevelPoint `json:"buffer_level_curve"`
+	InvalidPackets   uint64       `json:"invalid_packets"`
 	DropCounters
 }
 

@@ -37,13 +37,13 @@ func DefaultControllerConfig() ControllerConfig {
 // Controller estimates the target buffer watermark from arrival-interval
 // deviation. It is safe for sequential use by a single receive path.
 type Controller struct {
-	cfg      ControllerConfig
-	level    time.Duration
-	jitter   time.Duration // EWMA of |arrival gap - frame|
-	samples  int
+	cfg       ControllerConfig
+	level     time.Duration
+	jitter    time.Duration // EWMA of |arrival gap - frame|
+	samples   int
 	decisions int
-	last     time.Duration
-	hasLast  bool
+	last      time.Duration
+	hasLast   bool
 }
 
 // NewController validates and clamps the configuration.

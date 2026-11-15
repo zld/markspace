@@ -10,23 +10,23 @@ import (
 
 // Fixed stream parameters.
 const (
-	Version        = 1
-	SampleRate     = 16000 // samples per second
-	FrameDuration  = 20    // milliseconds per frame
+	Version         = 1
+	SampleRate      = 16000                             // samples per second
+	FrameDuration   = 20                                // milliseconds per frame
 	SamplesPerFrame = SampleRate * FrameDuration / 1000 // 320
-	PayloadBytes   = SamplesPerFrame * 2                // 640
-	HeaderSize     = 24
-	MaxPacketSize  = HeaderSize + PayloadBytes
-	MinPacketSize  = HeaderSize
+	PayloadBytes    = SamplesPerFrame * 2               // 640
+	HeaderSize      = 24
+	MaxPacketSize   = HeaderSize + PayloadBytes
+	MinPacketSize   = HeaderSize
 )
 
 // Sentinel decode errors. Each maps to an independent drop counter.
 var (
-	ErrShort         = errors.New("protocol: datagram shorter than header")
+	ErrShort          = errors.New("protocol: datagram shorter than header")
 	ErrUnknownVersion = errors.New("protocol: unknown protocol version")
-	ErrIllegalLength = errors.New("protocol: illegal frame payload length")
-	ErrChecksum      = errors.New("protocol: checksum mismatch")
-	ErrAmbiguousSeq  = errors.New("protocol: sequence number half-interval ambiguity")
+	ErrIllegalLength  = errors.New("protocol: illegal frame payload length")
+	ErrChecksum       = errors.New("protocol: checksum mismatch")
+	ErrAmbiguousSeq   = errors.New("protocol: sequence number half-interval ambiguity")
 )
 
 // Packet is one decoded audio datagram.

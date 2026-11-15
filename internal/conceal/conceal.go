@@ -13,11 +13,11 @@ import (
 type Kind string
 
 const (
-	KindReal     Kind = "real"
-	KindHold     Kind = "hold"
-	KindAtten    Kind = "attenuated"
-	KindSilence  Kind = "silence"
-	KindRecover  Kind = "recovered"
+	KindReal    Kind = "real"
+	KindHold    Kind = "hold"
+	KindAtten   Kind = "attenuated"
+	KindSilence Kind = "silence"
+	KindRecover Kind = "recovered"
 )
 
 // Frame is one output frame produced by the receive pipeline.
@@ -45,12 +45,12 @@ func DefaultConfig() Config {
 // Stats summarizes concealment activity. Concealed frames never count as
 // network-received packets; the receive layer owns that counter.
 type Stats struct {
-	ConcealedFrames   uint64
-	MaxConcealRun     int
-	RecoveryEpisodes  uint64
-	SmoothRecoveries  uint64
-	MaxRecoveryJump   int
-	SilenceFrames     uint64
+	ConcealedFrames  uint64
+	MaxConcealRun    int
+	RecoveryEpisodes uint64
+	SmoothRecoveries uint64
+	MaxRecoveryJump  int
+	SilenceFrames    uint64
 }
 
 // Concealer is stateful and driven once per played frame.
