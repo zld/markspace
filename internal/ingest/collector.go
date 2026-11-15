@@ -45,9 +45,14 @@ type TrackIngest struct {
 	PartMs    int64
 	FromSeq   int
 	ToSeq     int
+	// Dir is the inbox directory holding this track's fragments.
+	Dir string
 	// Slots maps sequence number to the received fragment; nil means missing.
 	Slots map[int]*Fragment
 }
+
+// TrackDir returns the inbox directory for this track.
+func (t *TrackIngest) TrackDir() string { return t.Dir }
 
 // Present returns the received fragments in sequence order.
 func (t *TrackIngest) Present() []*Fragment {
@@ -115,7 +120,7 @@ func collectTrack(dir string, bitrate, from, to int, partMs int64) (*TrackIngest
 	}
 	track := &TrackIngest{
 		Bitrate: bitrate, Timescale: init.Timescale, PartMs: partMs,
-		FromSeq: from, ToSeq: to, Slots: map[int]*Fragment{},
+		FromSeq: from, ToSeq: to, Dir: dir, Slots: map[int]*Fragment{},
 	}
 	var findings []report.Finding
 	order, err := readDeliveryOrder(dir)
