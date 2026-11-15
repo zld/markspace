@@ -244,3 +244,132 @@ def find_box(data: bytes, start: int, end: int,
     return next((b for b in iter_boxes(data, start, end)
                  if b.type == box_type), None)
 
+
+# --- moov / trak assembly ---------------------------------------------------
+
+def _language_code(language: str) -> int:
+    """ISO 639-2/T packed language; fall back to 'und' (0x55C4)."""
+    if len(language) >= 3 and language[:3].isalpha():
+        letters = [ord(c) - 0x60 for c in language[:3].lower()]
+        if all(1 <= n <= 26 for n in letters):
+            return (letters[0] << 10) | (letters[1] << 5) | letters[2]
+    return 0x55C4
+
+
+def build_mvhd(tracks: list[TrackOutput]) -> bytes:
+    timescale = 1000
+    duration = 0
+    for track in tracks:
+        if not track.samples:
+            continue
+        last = track.samples[-1]
+        end = ((last.dts + last.duration) * timescale) // track.timescale
+        duration = max(duration, end)
+    payload = (
+        (0).to_bytes(4, "big") + (0).to_bytes(4, "big")   # creation/mod time
+        + timescale.to_bytes(4, "big")
+        + duration.to_bytes(4, "big")
+        + (0x00010000).to_bytes(4, "big")                  # rate 1.0
+        + (0x0100).to_bytes(2, "big")                      # volume 1.0
+        + b"\x00" * 10                                     # reserved
+    )
+    matrix = (0x00010000, 0, 0, 0, 0x00010000, 0, 0, 0, 0x40000000)
+    payload += b"".join(v.to_bytes(4, "big", signed=True) for v in matrix)
+    payload += b"\x00" * 24                               # pre-defined
+    payload += (len(tracks)).to_bytes(4, "big")
+    payload += b"".join((i + 1).to_bytes(4, "big")
+                        for i in range(len(tracks)))
+    return fullbox(b"mvhd", 0, 0, payload)
+
+
+def build_tkhd(track: TrackOutput, duration_mvhd: int) -> bytes:
+    mapping = track.mapping
+    payload = (
+        (0).to_bytes(4, "big") + (0).to_bytes(4, "big")
+        + track.track_id.to_bytes(4, "big") + (0).to_bytes(4, "big")
+        + duration_mvhd.to_bytes(4, "big")
+        + b"\x00" * 8                                     # reserved
+        + (0).to_bytes(2, "big")                          # layer
+        + (0).to_bytes(2, "big")                          # alternate group
+        + ((0x0100 if mapping.handler_type == "soun" else 0)
+           ).to_bytes(2, "big")                           # volume
+        + (0).to_bytes(2, "big")                          # reserved
+    )
+    matrix = (0x00010000, 0, 0, 0, 0x00010000, 0, 0, 0, 0x40000000)
+    payload += b"".join(v.to_bytes(4, "big", signed=True) for v in matrix)
+    payload += (mapping.width << 16).to_bytes(4, "big")
+    payload += (mapping.height << 16).to_bytes(4, "big")
+    flags = 0x03 if mapping.handler_type == "soun" else 0x01
+    return fullbox(b"tkhd", 0, flags, payload)
+
+
+def build_mdhd(track: TrackOutput) -> bytes:
+    if not track.samples:
+        duration = 0
+    else:
+        last = track.samples[-1]
+        duration = last.dts + last.duration
+    payload = (
+        (0).to_bytes(4, "big") + (0).to_bytes(4, "big")
+        + track.timescale.to_bytes(4, "big")
+        + duration.to_bytes(4, "big")
+        + _language_code(track.language).to_bytes(2, "big")
+        + (0).to_bytes(2, "big")                          # pre-defined
+    )
+    return fullbox(b"mdhd", 0, 0, payload)
+
+
+def build_hdlr(track: TrackOutput) -> bytes:
+    handler = track.mapping.handler_type
+    name = (f"mkvmp4 {handler} handler").encode("utf-8") + b"\x00"
+    payload = (b"\x00" * 4 + handler.encode("ascii")
+               + b"\x00" * 12 + name)
+    return fullbox(b"hdlr", 0, 0, payload)
+
+
+def build_minf(track: TrackOutput, use_co64: bool) -> bytes:
+    if track.mapping.handler_type == "vide":
+        media_header = fullbox(b"vmhd", 0, 1,
+                               b"\x00" * 8)
+    else:
+        media_header = fullbox(b"smhd", 0, 0,
+                               (0).to_bytes(2, "big") + (0).to_bytes(2, "big"))
+    dref = fullbox(b"dref", 0, 0,
+                   (1).to_bytes(4, "big")
+                   + fullbox(b"url ", 0, 1, b""))
+    dinf = box(b"dinf", dref)
+    stbl = build_stbl(track, use_co64)
+    return box(b"minf", media_header + dinf + stbl)
+
+
+def build_trak(track: TrackOutput, duration_mvhd: int,
+               use_co64: bool) -> bytes:
+    return box(b"trak",
+               build_tkhd(track, duration_mvhd)
+               + box(b"mdia",
+                     build_mdhd(track) + build_hdlr(track)
+                     + build_minf(track, use_co64)))
+
+
+def _mvhd_duration(tracks: list[TrackOutput]) -> int:
+    duration = 0
+    for track in tracks:
+        if not track.samples:
+            continue
+        last = track.samples[-1]
+        end = ((last.dts + last.duration) * 1000) // track.timescale
+        duration = max(duration, end)
+    return duration
+
+
+def build_moov(tracks: list[TrackOutput], use_co64: bool,
+               manifest: bytes | None = None) -> bytes:
+    duration = _mvhd_duration(tracks)
+    payload = build_mvhd(tracks)
+    for track in tracks:
+        payload += build_trak(track, duration, use_co64)
+    moov = box(b"moov", payload)
+    if manifest is not None:
+        # Custom top-level companion box, kept adjacent to the index.
+        moov += box(b"mkvm", manifest)
+    return moov
