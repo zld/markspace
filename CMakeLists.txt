@@ -28,3 +28,18 @@ target_include_directories(h264_core PUBLIC include)
 
 add_executable(h264_inspect src/main.cpp)
 target_link_libraries(h264_inspect PRIVATE h264_core)
+
+# Vendored Catch2 3.5.4 amalgamated build; fully offline.
+add_library(catch2_amalg STATIC tests/third_party/catch2/catch_amalgamated.cpp)
+target_include_directories(catch2_amalg PUBLIC tests/third_party/catch2)
+if(NOT MSVC)
+  target_compile_options(catch2_amalg PRIVATE -Wno-unused-parameter)
+endif()
+
+enable_testing()
+add_executable(h264_tests
+  tests/generate_fixture.cpp
+  tests/parser_tests.cpp
+)
+target_link_libraries(h264_tests PRIVATE h264_core catch2_amalg)
+add_test(NAME h264_tests COMMAND h264_tests)
