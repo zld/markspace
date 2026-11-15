@@ -1,3 +1,0 @@
-/Users/zld/WorkSpace/pair-wise-workspace/11437/build/CMakeFiles/test.dir
-/Users/zld/WorkSpace/pair-wise-workspace/11437/build/CMakeFiles/edit_cache.dir
-/Users/zld/WorkSpace/pair-wise-workspace/11437/build/CMakeFiles/rebuild_cache.dir
