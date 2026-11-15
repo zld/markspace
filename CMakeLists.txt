@@ -9,9 +9,13 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
 
-# Core library: starts as INTERFACE (headers only); sources are appended
-# per module and it becomes a static library.
-add_library(subtitle_core INTERFACE)
-target_include_directories(subtitle_core INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+find_package(Freetype REQUIRED)
+
+# Core library: sources are appended per module.
+add_library(subtitle_core STATIC
+  src/font_metrics.cpp
+)
+target_include_directories(subtitle_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(subtitle_core PUBLIC Freetype::Freetype)
 
 enable_testing()
