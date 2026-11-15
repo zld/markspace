@@ -36,6 +36,7 @@ type VerifyConfig struct {
 	ToSeq     int
 	Segment   int64 // milliseconds
 	Part      int64 // milliseconds
+	Window    int64 // milliseconds
 	Duration  int64 // milliseconds
 	Tolerance int64 // milliseconds
 	JSON      bool
@@ -132,6 +133,7 @@ func ParseVerify(args []string) (*VerifyConfig, error) {
 	to := fs.Int("to-seq", 24, "last expected fragment sequence number")
 	seg := stringFlag(fs, "segment", "2s", "segment duration, e.g. 2s")
 	part := stringFlag(fs, "part", "500ms", "part duration, e.g. 500ms")
+	win := stringFlag(fs, "window", "12s", "rolling window length, e.g. 12s")
 	dur := stringFlag(fs, "duration", "12s", "expected timeline duration")
 	tol := stringFlag(fs, "tolerance", "50ms", "cross-bitrate drift tolerance")
 	js := fs.Bool("json", false, "emit JSON report")
@@ -146,6 +148,10 @@ func ParseVerify(args []string) (*VerifyConfig, error) {
 	if err != nil {
 		return nil, err
 	}
+	window, err := ParseDuration(*win)
+	if err != nil {
+		return nil, err
+	}
 	duration, err := ParseDuration(*dur)
 	if err != nil {
 		return nil, err
@@ -157,10 +163,10 @@ func ParseVerify(args []string) (*VerifyConfig, error) {
 	if *in == "" || *hls == "" {
 		return nil, fmt.Errorf("--in and --hls are required")
 	}
-	if *to < *from || partMs <= 0 || segment%partMs != 0 {
-		return nil, fmt.Errorf("invalid sequence range or segment/part combination")
+	if *to < *from || partMs <= 0 || segment%partMs != 0 || window < segment {
+		return nil, fmt.Errorf("invalid sequence range, segment/part or window")
 	}
 	return &VerifyConfig{In: *in, HLS: *hls, FromSeq: *from, ToSeq: *to,
-		Segment: segment, Part: partMs, Duration: duration,
+		Segment: segment, Part: partMs, Window: window, Duration: duration,
 		Tolerance: tolerance, JSON: *js}, nil
 }

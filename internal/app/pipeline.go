@@ -62,7 +62,7 @@ func RunBuild(cfg *cli.BuildConfig) (*report.Report, error) {
 		if err != nil {
 			return nil, err
 		}
-		layout, err := segment.Layout(tr, cfg.Segment, cfg.Part)
+		layout, err := segment.Layout(tr, cfg.Segment, cfg.Part, cfg.Window)
 		if err != nil {
 			return nil, err
 		}
@@ -96,7 +96,8 @@ func RunBuild(cfg *cli.BuildConfig) (*report.Report, error) {
 func RunVerify(cfg *cli.VerifyConfig) (*report.Report, error) {
 	summaries, findings, err := verify.Verify(verify.Input{
 		Inbox: cfg.In, HLS: cfg.HLS, FromSeq: cfg.FromSeq, ToSeq: cfg.ToSeq,
-		PartMs: cfg.Part, SegmentMs: cfg.Segment, ToleranceMs: cfg.Tolerance,
+		PartMs: cfg.Part, SegmentMs: cfg.Segment, WindowMs: cfg.Window,
+		ToleranceMs: cfg.Tolerance,
 	})
 	if err != nil {
 		return nil, err
