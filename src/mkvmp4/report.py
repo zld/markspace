@@ -151,3 +151,88 @@ def inspect_summary(mkv: MatroskaFile, tree_info: dict) -> dict:
         "element_tree": tree_info["tree"],
     }
 
+
+# --- rendering --------------------------------------------------------------
+
+def _fmt_ms(value) -> str:
+    return "n/a" if value is None else f"{value:.3f}"
+
+
+def render_text(summary: dict) -> str:
+    lines = [
+        f"file:            {summary['path']}",
+        f"element_count:   {summary['element_count']}",
+        f"unknown_length:  {summary['unknown_length_count']}",
+        f"cues_present:    {summary['cues_present']}",
+        f"timescale(ns):   {summary['timestamp_scale_ns']}",
+        f"duration_ms:     {_fmt_ms(summary.get('duration_ms'))}",
+        "tracks:",
+    ]
+    for track in summary["tracks"]:
+        lines.append(
+            f"  #{track['track_number']} uid={track['track_uid']} "
+            f"type={track['track_type']} codec={track['codec_id']} "
+            f"lang={track['language']} default={track['flag_default']} "
+            f"blocks={track['block_count']} "
+            f"pts_ms=[{_fmt_ms(track['first_pts_ms'])}.."
+            f"{_fmt_ms(track['last_pts_ms'])}]")
+    lines.append("element_tree:")
+    for node in summary["element_tree"]:
+        _render_node(node, 1, lines)
+    return "\n".join(lines)
+
+
+def _render_node(node: dict, depth: int, lines: list[str]) -> None:
+    indent = "  " * depth
+    size = "unknown" if node["unknown_length"] else str(node["size"])
+    lines.append(f"{indent}{node['name']} ({node['id']}) "
+                 f"@0x{node['offset']:X} size={size}")
+    for kid in node.get("children", []):
+        _render_node(kid, depth + 1, lines)
+
+
+def render_remux_text(result: dict) -> str:
+    lines = [
+        f"mode:            {result['mode']}",
+        f"output:          {result['output']}",
+        f"size_bytes:      {result['size']}",
+        f"segments:        {result['segments']}",
+        f"co64:            {result['co64']}",
+        f"element_count:   {result['element_count']}",
+        f"unknown_length:  {result['unknown_length_count']}",
+        "track_map:",
+    ]
+    for entry in result["track_map"]:
+        lines.append(
+            f"  mkv#{entry['source_track_number']} -> "
+            f"mp4#{entry['mp4_track_id']} {entry['sample_entry']} "
+            f"({entry['handler_type']}) timescale={entry['timescale']} "
+            f"samples={entry['sample_count']} "
+            f"rewritten_pts_ms=["
+            f"{entry['rewritten_first_pts_ms']:.3f}.."
+            f"{entry['rewritten_last_pts_ms']:.3f}]")
+    verification = result["verification"]
+    lines.append(
+        f"verify:          index_valid={verification['index_valid']} "
+        f"sample_count={verification['sample_count']}")
+    return "\n".join(lines)
+
+
+def render_verify_text(result: dict) -> str:
+    lines = [
+        f"index_valid:     {result['index_valid']}",
+        f"track_count:     {result['track_count']}",
+        f"sample_count:    {result['sample_count']}",
+        f"mdat_size:       {result['mdat_size']}",
+        "tracks:",
+    ]
+    for track in result["tracks"]:
+        lines.append(
+            f"  mp4#{track['mp4_track_id']} {track['handler_type']} "
+            f"timescale={track['timescale']} samples={track['sample_count']} "
+            f"span=0x{track['offset_start']:X}..0x{track['offset_end']:X} "
+            f"pts_ms=[{track['first_pts_ms']:.3f}.."
+            f"{track['last_pts_ms']:.3f}]")
+    if "manifest" in result:
+        lines.append("manifest:        present and consistent")
+    return "\n".join(lines)
