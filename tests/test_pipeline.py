@@ -78,16 +78,6 @@ class BoxParsingTests(unittest.TestCase):
         self.assertEqual(diag.box_offset, 0)
 
 
-def struct_box(fourcc: bytes, payload: bytes, *, use_largesize: bool) -> bytes:
-    if use_largesize:
-        import struct
-        return (
-            struct.pack(">I4sQ", 1, fourcc, 16 + len(payload)) + payload
-        )
-    import struct
-    return struct.pack(">I4s", 8 + len(payload), fourcc) + payload
-
-
 class SidxParsingTests(unittest.TestCase):
     def _parse(self, data):
         stream = io.BytesIO(data)

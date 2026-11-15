@@ -174,21 +174,6 @@ def build_container(
     return ftyp + moov + sidx + b"".join(fragments)
 
 
-def container_layout() -> dict[str, int]:
-    """Expose structural offsets of a valid container for targeted patching."""
-    data = build_container()
-    sizes = [sample_size(i) for i in range(SAMPLE_COUNT)]
-    chunk_sizes = [
-        sum(sizes[c * CHUNK_SAMPLES:(c + 1) * CHUNK_SAMPLES])
-        for c in range(FRAGMENT_COUNT)
-    ]
-    # Locate boxes by scanning their 4CC markers.
-    positions: dict[str, int] = {}
-    for marker in (b"ftyp", b"moov", b"sidx"):
-        positions[marker.decode()] = data.index(marker) - 4
-    return {"data": data, "positions": positions, "chunk_sizes": chunk_sizes}
-
-
 # ---------------------------------------------------------------------------
 # Corruption variants.  Each returns a fresh byte string.
 # ---------------------------------------------------------------------------
