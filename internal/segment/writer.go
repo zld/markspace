@@ -24,13 +24,28 @@ type WrittenFile struct {
 // build can never leave a half-written file visible to readers.
 func Persist(outDir string, t *timeline.Track, layout *TrackSegments) ([]WrittenFile, error) {
 	var written []WrittenFile
+	segDir := filepath.Join(outDir, layout.SegmentDir)
+	if err := os.MkdirAll(segDir, 0o755); err != nil {
+		return nil, err
+	}
+	// Remove artifacts from a previous build of this track so a GAP marker or
+	// media file that a recomputation invalidated cannot linger. The init
+	// segment is copied by the caller and must be preserved.
+	entries, err := os.ReadDir(segDir)
+	if err != nil {
+		return nil, err
+	}
+	for _, e := range entries {
+		if e.IsDir() || e.Name() == "init.mp4" {
+			continue
+		}
+		if err := os.Remove(filepath.Join(segDir, e.Name())); err != nil {
+			return nil, err
+		}
+	}
 	for si := range layout.Segments {
 		seg := &layout.Segments[si]
 		var segmentBytes []byte
-		segDir := filepath.Join(outDir, layout.SegmentDir)
-		if err := os.MkdirAll(segDir, 0o755); err != nil {
-			return nil, err
-		}
 		for pi := range seg.Parts {
 			p := &seg.Parts[pi]
 			partPath := filepath.Join(outDir, p.URI)
