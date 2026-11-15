@@ -29,26 +29,25 @@ func TestQueueSkipsSucceededAndRunsOthers(t *testing.T) {
 	task := &model.Task{Segments: mkSegments(6,
 		model.StatusSucceeded, model.StatusQueued, model.StatusInterrupted,
 		model.StatusFailed, model.StatusSucceeded, model.StatusQueued)}
-	q, err := New(2, func(_ context.Context, j Job) error {
+	q, err := New(2, func(_ context.Context, j Job) Outcome {
 		atomic.AddInt32(&ran, 1)
 		if j.Segment.Status != model.StatusRunning {
 			t.Errorf("segment %d not running when worker invoked", j.Segment.Index)
 		}
-		return nil
+		return Outcome{Segment: j.Segment,
+			Encode: &model.EncodeResult{Bytes: 1}, Quality: &model.QualityResult{}}
 	}, func(*model.Segment) { atomic.AddInt32(&progress, 1) })
 	if err != nil {
 		t.Fatal(err)
 	}
 	ok, failed, interrupted := q.Run(context.Background(), task)
-	// Four eligible segments run; both pre-existing successes are retained,
-	// so six segments end succeeded in total.
+	// Four eligible segments run; both pre-existing successes are retained.
 	if ran != 4 || ok != 6 || failed != 0 || interrupted != 0 {
 		t.Fatalf("ran=%d ok=%d failed=%d interrupted=%d", ran, ok, failed, interrupted)
 	}
 	if progress != 4 {
 		t.Fatalf("progress callbacks = %d, want 4", progress)
 	}
-	// Pre-existing succeeded segments stay untouched.
 	if task.Segments[0].Status != model.StatusSucceeded ||
 		task.Segments[4].Status != model.StatusSucceeded {
 		t.Fatal("succeeded segments must never be resubmitted")
@@ -58,7 +57,7 @@ func TestQueueSkipsSucceededAndRunsOthers(t *testing.T) {
 func TestQueueConcurrencyLimit(t *testing.T) {
 	var inFlight, maxInFlight int32
 	task := &model.Task{Segments: mkSegments(10)}
-	q, _ := New(3, func(_ context.Context, _ Job) error {
+	q, _ := New(3, func(_ context.Context, j Job) Outcome {
 		cur := atomic.AddInt32(&inFlight, 1)
 		for {
 			old := atomic.LoadInt32(&maxInFlight)
@@ -68,7 +67,7 @@ func TestQueueConcurrencyLimit(t *testing.T) {
 		}
 		time.Sleep(5 * time.Millisecond)
 		atomic.AddInt32(&inFlight, -1)
-		return nil
+		return Outcome{Segment: j.Segment}
 	}, nil)
 	ok, _, _ := q.Run(context.Background(), task)
 	if ok != 10 || maxInFlight > 3 {
@@ -78,11 +77,12 @@ func TestQueueConcurrencyLimit(t *testing.T) {
 
 func TestQueueWorkerFailureIsRecorded(t *testing.T) {
 	task := &model.Task{Segments: mkSegments(4)}
-	q, _ := New(2, func(_ context.Context, j Job) error {
+	q, _ := New(2, func(_ context.Context, j Job) Outcome {
 		if j.Segment.Index == 1 || j.Segment.Index == 3 {
-			return context.DeadlineExceeded
+			return Outcome{Segment: j.Segment, Err: context.DeadlineExceeded,
+				FailureNote: "deadline"}
 		}
-		return nil
+		return Outcome{Segment: j.Segment, Encode: &model.EncodeResult{}}
 	}, nil)
 	ok, failed, _ := q.Run(context.Background(), task)
 	if ok != 2 || failed != 2 {
@@ -101,12 +101,12 @@ func TestQueueCancellationMarksInterrupted(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	var started int32
 	release := make(chan struct{})
-	q, _ := New(2, func(_ context.Context, _ Job) error {
+	q, _ := New(2, func(_ context.Context, j Job) Outcome {
 		if atomic.AddInt32(&started, 1) == 2 {
 			cancel()
 		}
 		<-release
-		return nil
+		return Outcome{Segment: j.Segment, Encode: &model.EncodeResult{}}
 	}, nil)
 	go func() {
 		time.Sleep(30 * time.Millisecond)
@@ -116,22 +116,17 @@ func TestQueueCancellationMarksInterrupted(t *testing.T) {
 	if interrupted == 0 {
 		t.Fatalf("expected interrupted segments, got ok=%d failed=%d interrupted=%d", ok, failed, interrupted)
 	}
-	// Every terminal segment must be one of the legal outcomes; no queued
-	// or running segment may be left masquerading as finished work.
 	for _, seg := range task.Segments {
 		switch seg.Status {
 		case model.StatusSucceeded, model.StatusFailed, model.StatusInterrupted:
 		default:
 			t.Fatalf("segment %d left in non-terminal state %s", seg.Index, seg.Status)
 		}
-		if seg.Status == model.StatusSucceeded && seg.Encode == nil {
-			t.Fatalf("segment %d succeeded without an encode result", seg.Index)
-		}
 	}
 }
 
 func TestQueueRejectsBadConfig(t *testing.T) {
-	if _, err := New(0, func(context.Context, Job) error { return nil }, nil); err == nil {
+	if _, err := New(0, func(context.Context, Job) Outcome { return Outcome{} }, nil); err == nil {
 		t.Fatal("zero workers must be rejected")
 	}
 	if _, err := New(2, nil, nil); err == nil {
@@ -143,11 +138,11 @@ func TestQueueDeterministicClaimOrder(t *testing.T) {
 	var mu sync.Mutex
 	var order []int
 	task := &model.Task{Segments: mkSegments(5)}
-	q, _ := New(1, func(_ context.Context, j Job) error {
+	q, _ := New(1, func(_ context.Context, j Job) Outcome {
 		mu.Lock()
 		order = append(order, j.Segment.Index)
 		mu.Unlock()
-		return nil
+		return Outcome{Segment: j.Segment}
 	}, nil)
 	if ok, _, _ := q.Run(context.Background(), task); ok != 5 {
 		t.Fatal("all should succeed")

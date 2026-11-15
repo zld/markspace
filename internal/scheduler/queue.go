@@ -1,7 +1,7 @@
 // Package scheduler drives segment encoding with a bounded worker pool.
-// It owns the running-state transitions and guarantees that a segment is
-// submitted at most once per run: succeeded (and not invalidated) segments
-// are skipped entirely, while queued/interrupted/failed ones are eligible.
+// It owns every mutation of segment state: workers stay pure and return an
+// immutable Outcome, which the scheduler applies (and checkpoints) under its
+// mutex. Succeeded segments are never resubmitted.
 package scheduler
 
 import (
@@ -17,21 +17,29 @@ type Job struct {
 	Segment *model.Segment
 }
 
-// WorkerFunc executes one segment. It must apply the terminal transition
-// (succeeded or failed) on the segment itself; the scheduler only owns the
-// queued -> running entry and interruption handling.
-type WorkerFunc func(ctx context.Context, job Job) error
+// Outcome is the immutable result of one worker invocation. Workers must
+// not mutate the segment; they return its encode/quality payloads here.
+type Outcome struct {
+	Segment     *model.Segment
+	Encode      *model.EncodeResult
+	Quality     *model.QualityResult
+	FailureNote string
+	Err         error
+}
+
+// WorkerFunc executes one segment without touching shared state.
+type WorkerFunc func(ctx context.Context, job Job) Outcome
 
 // OnSegmentProgress is invoked after every terminal transition while the
-// checkpoint mutex is held, so the caller can persist safely.
+// scheduler mutex is held, so the whole segment set is stable on disk reads.
 type OnSegmentProgress func(seg *model.Segment)
 
 // Queue schedules the segments of one task.
 type Queue struct {
-	workers  int
-	work     WorkerFunc
+	workers    int
+	work       WorkerFunc
 	onProgress OnSegmentProgress
-	mu       sync.Mutex
+	mu         sync.Mutex
 }
 
 // New builds a queue. workers must be at least 1.
@@ -45,8 +53,8 @@ func New(workers int, work WorkerFunc, onProgress OnSegmentProgress) (*Queue, er
 	return &Queue{workers: workers, work: work, onProgress: onProgress}, nil
 }
 
-// Run processes every eligible segment and returns counts when the pool
-// drains. Cancellation marks in-flight segments interrupted; already
+// Run processes every eligible segment and returns terminal counts when the
+// pool drains. Cancellation marks in-flight segments interrupted; already
 // succeeded segments are never touched or resubmitted.
 func (q *Queue) Run(ctx context.Context, task *model.Task) (succeeded, failed, interrupted int) {
 	jobs := make(chan Job)
@@ -58,7 +66,7 @@ func (q *Queue) Run(ctx context.Context, task *model.Task) (succeeded, failed, i
 
 	for _, seg := range task.Segments {
 		if !q.claim(seg) {
-			continue // succeeded/infeasible/already claimed: do not resubmit
+			continue // succeeded/infeasible: do not resubmit
 		}
 		select {
 		case jobs <- Job{Segment: seg}:
@@ -88,19 +96,12 @@ func (q *Queue) claim(seg *model.Segment) bool {
 	defer q.mu.Unlock()
 	switch seg.Status {
 	case model.StatusQueued:
-		if err := seg.Status.Transition(model.StatusRunning); err != nil {
-			return false
-		}
-		return true
+		return seg.Status.Transition(model.StatusRunning) == nil
 	case model.StatusInterrupted, model.StatusFailed:
-		// Re-enter via the validated reset path, then start running.
 		if err := seg.ResetToQueued(); err != nil {
 			return false
 		}
-		if err := seg.Status.Transition(model.StatusRunning); err != nil {
-			return false
-		}
-		return true
+		return seg.Status.Transition(model.StatusRunning) == nil
 	default:
 		return false
 	}
@@ -115,28 +116,37 @@ func (q *Queue) releaseOnCancel(seg *model.Segment) {
 func (q *Queue) worker(ctx context.Context, jobs <-chan Job, wg *sync.WaitGroup) {
 	defer wg.Done()
 	for job := range jobs {
-		seg := job.Segment
-		err := q.work(ctx, job)
+		outcome := q.work(ctx, job)
 		q.mu.Lock()
+		seg := job.Segment
 		switch {
 		case ctx.Err() != nil:
 			seg.MarkInterrupted()
-		case err != nil:
+		case outcome.Err != nil:
+			seg.Encode = outcome.Encode // may carry partial verification data
+			seg.FailureNote = firstNonEmpty(outcome.FailureNote, outcome.Err.Error())
 			if seg.Status == model.StatusRunning {
 				_ = seg.Status.Transition(model.StatusFailed)
 			}
-			if seg.FailureNote == "" {
-				seg.FailureNote = err.Error()
-			}
 		default:
+			seg.Encode = outcome.Encode
+			seg.Quality = outcome.Quality
 			if seg.Status == model.StatusRunning {
 				_ = seg.Status.Transition(model.StatusSucceeded)
 			}
 		}
+		seg.Attempts++
 		if q.onProgress != nil && (seg.Status == model.StatusSucceeded ||
 			seg.Status == model.StatusFailed || seg.Status == model.StatusInterrupted) {
 			q.onProgress(seg)
 		}
 		q.mu.Unlock()
 	}
+}
+
+func firstNonEmpty(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
 }

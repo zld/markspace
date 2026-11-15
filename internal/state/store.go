@@ -62,6 +62,13 @@ func NewStore(root, path string) (*Store, string, error) {
 
 // Save serializes the checkpoint and atomically replaces the destination.
 func (s *Store) Save(path string, cp *Checkpoint) error {
+	return s.SaveLocked(path, cp)
+}
+
+// SaveLocked performs the write without any store-level serialization;
+// callers that already hold their own lock use this to avoid
+// lock-ordering surprises.
+func (s *Store) SaveLocked(path string, cp *Checkpoint) error {
 	cp.SchemaVersion = SchemaVersion
 	data, err := json.MarshalIndent(cp, "", "  ")
 	if err != nil {
