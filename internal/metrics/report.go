@@ -108,16 +108,11 @@ func (c *Collector) SetConcealment(maxRun, maxJump int,
 // SetFrames records the total simulated frame count.
 func (c *Collector) SetFrames(n uint64) { c.rep.Frames = n }
 
-// AddPendingGaps is used at end-of-input to account for unresolved gaps.
-func (c *Collector) AddPendingGaps(n int) {
-	c.rep.ConcealedFrames += uint64(n)
-	if n > c.rep.MaxConcealRun {
-		c.rep.MaxConcealRun = n
-	}
-}
-
 // Build finalizes quantiles, the curve and derived ratios.
 func (c *Collector) Build() Report {
+	if c.levels == nil {
+		c.levels = []LevelPoint{}
+	}
 	c.rep.BufferLevelCurve = c.levels
 	c.rep.InvalidPackets = c.rep.DropCounters.Invalid()
 	if c.episodes > 0 {

@@ -63,12 +63,9 @@ func Replay(events []sim.Event, totalFrames int,
 		}
 	}
 
-	flushed, gaps := player.FlushRemaining(now)
+	flushed, _ := player.FlushRemaining(now)
 	for _, o := range flushed {
 		recordOutcome(collector, player, o)
-	}
-	if gaps > 0 {
-		collector.AddPendingGaps(gaps)
 	}
 
 	st := player.Window().Stats()

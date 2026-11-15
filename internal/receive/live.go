@@ -42,18 +42,18 @@ func RunLive(l *transport.Listener, cfg LiveConfig) (metrics.Report, error) {
 
 	closeAndReport := func() (metrics.Report, error) {
 		_ = l.Close()
-		flushed, gaps := player.FlushRemaining(0)
+		flushed, _ := player.FlushRemaining(0)
 		for _, o := range flushed {
 			recordOutcome(collector, player, o)
-		}
-		if gaps > 0 {
-			collector.AddPendingGaps(gaps)
 		}
 		d := collector.Drops()
 		d.Reordered = player.Window().Stats().Reordered
 		cs := player.Concealer().Stats()
 		collector.SetConcealment(cs.MaxConcealRun, cs.MaxRecoveryJump,
 			cs.RecoveryEpisodes, cs.SmoothRecoveries)
+		// A live stream has no predeclared frame count; the observed played
+		// total (real plus concealed) is the authoritative frame universe.
+		collector.SetFrames(player.PlayedCount())
 		return collector.Build(), nil
 	}
 
