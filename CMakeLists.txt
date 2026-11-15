@@ -21,5 +21,6 @@ add_library(h264_core STATIC
   src/exp_golomb.cpp
   src/nal_scanner.cpp
   src/h264_parser.cpp
+  src/group_index.cpp
 )
 target_include_directories(h264_core PUBLIC include)
