@@ -38,7 +38,7 @@ func TestPersistWritesPartsSegmentsAndGapMarkers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	layout, err := Layout(tr, 2000, 500)
+	layout, err := Layout(tr, 2000, 500, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +101,7 @@ func TestPersistAllGapSegmentKeepsSlot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	layout, err := Layout(tr, 2000, 500)
+	layout, err := Layout(tr, 2000, 500, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

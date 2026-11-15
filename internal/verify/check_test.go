@@ -33,7 +33,7 @@ func buildPipeline(t *testing.T, inbox, hls string, seqs int, faults []string) [
 		if err != nil {
 			t.Fatal(err)
 		}
-		layout, err := segment.Layout(tr, 2000, 500)
+		layout, err := segment.Layout(tr, 2000, 500, 0)
 		if err != nil {
 			t.Fatal(err)
 		}

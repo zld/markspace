@@ -25,6 +25,7 @@ type Input struct {
 	ToSeq       int
 	PartMs      int64
 	SegmentMs   int64
+	WindowMs    int64
 	ToleranceMs int64
 }
 
@@ -47,7 +48,7 @@ func Verify(in Input) ([]report.TrackSummary, []report.Finding, error) {
 			return nil, nil, err
 		}
 		tracks = append(tracks, tr)
-		layout, err := segment.Layout(tr, in.SegmentMs, in.PartMs)
+		layout, err := segment.Layout(tr, in.SegmentMs, in.PartMs, in.WindowMs)
 		if err != nil {
 			return nil, nil, err
 		}
