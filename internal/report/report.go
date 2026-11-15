@@ -31,6 +31,10 @@ type Finding struct {
 	Part    int    `json:"part,omitempty"`
 	Field   string `json:"field,omitempty"`
 	Detail  string `json:"detail"`
+	// Consistency marks a finding produced by the verifier that must drive
+	// exit code 2. Build/demo-time findings are informational even when they
+	// reuse a consistency code, because the gaps were intentionally retained.
+	Consistency bool `json:"consistency,omitempty"`
 }
 
 // TrackSummary carries the per-bitrate counters shown in every report.
@@ -56,15 +60,21 @@ func (r *Report) AddFinding(f Finding) {
 	r.Findings = append(r.Findings, f)
 }
 
-// HasConsistencyFailure reports whether any finding represents a content
-// consistency problem (exit code 2) rather than a usage/IO error.
+// HasConsistencyFailure reports whether a finding represents a content
+// consistency problem (exit code 2) rather than a usage/IO error. Only
+// verifier findings carry the Consistency marker.
 func (r *Report) HasConsistencyFailure() bool {
 	for _, f := range r.Findings {
-		switch f.Code {
-		case CodeConflict, CodeMissingPart, CodeTimelineDrift,
-			CodeLateOutOfWindow, CodeHashMismatch, CodeManifestDiff:
+		if f.Consistency {
 			return true
 		}
 	}
 	return false
+}
+
+// MarkConsistency flags every finding as a verifier consistency failure.
+func (r *Report) MarkConsistency() {
+	for i := range r.Findings {
+		r.Findings[i].Consistency = true
+	}
 }
