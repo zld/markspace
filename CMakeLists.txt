@@ -10,6 +10,7 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 find_package(Freetype REQUIRED)
+find_package(nlohmann_json REQUIRED)
 
 # Core library: sources are appended per module.
 add_library(subtitle_core STATIC
@@ -17,8 +18,9 @@ add_library(subtitle_core STATIC
   src/parser.cpp
   src/line_breaker.cpp
   src/layout.cpp
+  src/summary_exporter.cpp
 )
 target_include_directories(subtitle_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(subtitle_core PUBLIC Freetype::Freetype)
+target_link_libraries(subtitle_core PUBLIC Freetype::Freetype nlohmann_json::nlohmann_json)
 
 enable_testing()
