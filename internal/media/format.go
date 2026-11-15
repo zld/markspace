@@ -42,6 +42,52 @@ type Video struct {
 
 func headerLine(k, v string) string { return k + "=" + v + "\n" }
 
+// offsetReader tracks how many header bytes were consumed so payload and
+// padding offsets stay exact regardless of buffering.
+type offsetReader struct {
+	data []byte
+	pos  int
+}
+
+func (o *offsetReader) readLine() (string, error) {
+	start := o.pos
+	for o.pos < len(o.data) && o.data[o.pos] != '\n' {
+		o.pos++
+	}
+	if o.pos >= len(o.data) {
+		return "", io.EOF
+	}
+	line := string(o.data[start:o.pos])
+	o.pos++ // consume newline
+	return line, nil
+}
+
+func parseHeaderAt(raw []byte, magic string) (map[string]int, int, error) {
+	o := &offsetReader{data: raw}
+	got, err := o.readLine()
+	if err != nil || got != magic {
+		return nil, 0, fmt.Errorf("%w: bad magic %q", ErrBadFormat, got)
+	}
+	fields := []string{"width", "height", "fps", "frames"}
+	hdr := make(map[string]int, len(fields))
+	for _, k := range fields {
+		line, err := o.readLine()
+		if err != nil {
+			return nil, 0, fmt.Errorf("%w: missing header %s: %v", ErrBadFormat, k, err)
+		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 || parts[0] != k {
+			return nil, 0, fmt.Errorf("%w: expected %s, got %q", ErrBadFormat, k, line)
+		}
+		n, err := strconv.Atoi(parts[1])
+		if err != nil || n <= 0 {
+			return nil, 0, fmt.Errorf("%w: invalid %s=%q", ErrBadFormat, k, parts[1])
+		}
+		hdr[k] = n
+	}
+	return hdr, o.pos, nil
+}
+
 func parseHeader(r *bufio.Reader, magic string) (map[string]int, error) {
 	got, err := r.ReadString('\n')
 	if err != nil || strings.TrimSpace(got) != magic {
@@ -200,7 +246,7 @@ func WriteEncoded(path string, e *Encoded, targetBytes int) error {
 		hdr.WriteString(headerLine("pad_bytes", strconv.Itoa(pad)))
 		next := targetBytes - hdr.Len() - payload.Len()
 		if next < 0 {
-			next = 0 // Payload exceeds budget; runner observes the deviation.
+			next = 0 // Payload exceeds target; emit no padding and stay honest.
 		}
 		if next == pad {
 			break
@@ -220,12 +266,12 @@ func ReadEncoded(path string) (*Encoded, error) {
 	if err != nil {
 		return nil, err
 	}
-	r := bufio.NewReader(bytes.NewReader(raw))
-	hdr, err := parseHeader(r, OutMagic)
+	hdr, headerSize, err := parseHeaderAt(raw, OutMagic)
 	if err != nil {
 		return nil, err
 	}
-	quantLine, err := r.ReadString('\n')
+	o := &offsetReader{data: raw, pos: headerSize}
+	quantLine, err := o.readLine()
 	if err != nil {
 		return nil, fmt.Errorf("%w: missing quant: %v", ErrBadFormat, err)
 	}
@@ -233,7 +279,7 @@ func ReadEncoded(path string) (*Encoded, error) {
 	if err != nil {
 		return nil, err
 	}
-	dataLine, err := r.ReadString('\n')
+	dataLine, err := o.readLine()
 	if err != nil {
 		return nil, fmt.Errorf("%w: missing data_bytes: %v", ErrBadFormat, err)
 	}
@@ -241,7 +287,7 @@ func ReadEncoded(path string) (*Encoded, error) {
 	if err != nil {
 		return nil, err
 	}
-	padLine, err := r.ReadString('\n')
+	padLine, err := o.readLine()
 	if err != nil {
 		return nil, fmt.Errorf("%w: missing pad_bytes: %v", ErrBadFormat, err)
 	}
@@ -249,7 +295,10 @@ func ReadEncoded(path string) (*Encoded, error) {
 	if err != nil {
 		return nil, err
 	}
-	headerSize := len(raw) - r.Buffered()
+	headerSize = o.pos
+	if headerSize+dataBytes > len(raw) {
+		return nil, fmt.Errorf("%w: payload extends past end of file", ErrTruncated)
+	}
 	payload := raw[headerSize : headerSize+dataBytes]
 	if len(raw) != headerSize+dataBytes+padBytes {
 		return nil, fmt.Errorf("%w: declared %d+%d bytes but file has %d",

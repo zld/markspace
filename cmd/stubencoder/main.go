@@ -63,16 +63,31 @@ func main() {
 
 	// Target file size follows directly from the bitrate and duration:
 	// kbps * 1000 / 8 bits-per-byte * seconds.
-	targetBytes := int(*targetKbps*1000.0/8.0**duration + 0.5)
-	if *truncate > 0 {
-		targetBytes -= *truncate
-		if targetBytes < 0 {
-			targetBytes = 0
-		}
+	if *targetKbps != *targetKbps || *targetKbps > 1e9 { // NaN or absurd target
+		fmt.Fprintf(os.Stderr, "stubencoder: refusing non-finite or excessive target %g\n", *targetKbps)
+		os.Exit(2)
 	}
+	targetBytes := int(*targetKbps*1000.0/8.0**duration + 0.5)
 	if err := media.WriteEncoded(*out, enc, targetBytes); err != nil {
 		fmt.Fprintf(os.Stderr, "stubencoder: write output: %v\n", err)
 		os.Exit(1)
+	}
+	// Truncation drill: a correct container is cut short after writing,
+	// leaving its header declaring bytes that no longer exist on disk.
+	if *truncate > 0 {
+		raw, err := os.ReadFile(*out)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "stubencoder: truncate read: %v\n", err)
+			os.Exit(1)
+		}
+		cut := len(raw) - *truncate
+		if cut < 0 {
+			cut = 0
+		}
+		if err := os.WriteFile(*out, raw[:cut], 0o644); err != nil {
+			fmt.Fprintf(os.Stderr, "stubencoder: truncate write: %v\n", err)
+			os.Exit(1)
+		}
 	}
 	fmt.Printf("stubencoder: wrote %s quant=%d target_bytes=%d\n", *out, quant, targetBytes)
 }
