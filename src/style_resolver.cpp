@@ -123,15 +123,16 @@ ResolveStats resolveStyles(AssDocument& doc) {
       const AssStyle& node = doc.styles[index[name]];
       for (const auto& [key, field] : node.own) {
         if (taken.count(key)) continue;
-        if (field.state == FieldState::Explicit) {
-          std::string reason;
-          if (!fieldValid(key, field.text, reason)) {
-            style.errors.push_back(
-                {field.source_line, "field_invalid",
-                 "style '" + name + "' field " + key + ": " + reason +
-                     " (skipped)"});
-            continue;
-          }
+        // Explicit empties are recorded in `own` but do not supply a
+        // value: the search continues down the chain and into defaults.
+        if (field.state == FieldState::ExplicitEmpty) continue;
+        std::string reason;
+        if (!fieldValid(key, field.text, reason)) {
+          style.errors.push_back(
+              {field.source_line, "field_invalid",
+               "style '" + name + "' field " + key + ": " + reason +
+                   " (skipped)"});
+          continue;
         }
         StyleField merged = field;
         merged.source = name;

@@ -44,22 +44,11 @@ bool validateParam(const std::string& name, const std::string& p) {
   if (name == "r" || name == "h") return true;
   if (name == "n" || name == "N") return p.empty();
   if (name == "1c" || name == "2c" || name == "3c" || name == "4c" ||
-      name == "c") {
-    std::string v = p;
-    if (!v.empty() && v.front() == '&') {
-      if (v.size() < 2 || v[1] != 'H') v = "&H" + v.substr(1);
-      v.push_back('&');
-    }
-    return parseAssColor(v).has_value();
-  }
+      name == "c")
+    return parseAssColor(p).has_value();
   if (name == "alpha" || name == "1a" || name == "2a" || name == "3a" ||
       name == "4a") {
-    std::string v = p;
-    if (!v.empty() && v.front() == '&') {
-      if (v.size() < 2 || v[1] != 'H') v = "&H" + v.substr(1);
-      v.push_back('&');
-    }
-    if (parseAssColor(v).has_value()) return true;
+    if (parseAssColor(p).has_value()) return true;
     double d;
     return parseDouble(p, d) && d >= 0 && d <= 255;
   }
@@ -141,12 +130,25 @@ TagCommand nextCommand(const std::string& text, size_t& i, bool inTransform,
       while (i < text.size() && std::isalnum(
                    static_cast<unsigned char>(text[i])))
         ++i;
+    } else if (text[i] == '&') {
+      // Colour/alpha token: &H...& ends at its closing ampersand.
+      ++i;
+      while (i < text.size() && text[i] != '&' && text[i] != '}' &&
+             text[i] != '{')
+        ++i;
+      if (i < text.size() && text[i] == '&') ++i;
     } else {
       while (i < text.size() && text[i] != '\\' && text[i] != '}' &&
              text[i] != '{')
         ++i;
     }
-    cmd.param = text.substr(p0, i - p0);
+    // Trailing whitespace belongs to surrounding dialogue, not the value;
+    // it occurs at the end of unclosed groups especially.
+    size_t end = i;
+    while (end > p0 && std::isspace(
+                           static_cast<unsigned char>(text[end - 1])))
+      --end;
+    cmd.param = text.substr(p0, end - p0);
   }
   if (knownTags().count(cmd.name) == 0) {
     cmd.unknown = true;
@@ -187,20 +189,19 @@ TagReport resolveTags(const std::string& text) {
     }
     size_t groupEnd = i;  // exclusive content end (or text.size())
     if (!closed && i < text.size() && text[i] == '{') {
-      // restart at the nested group; current group had no closing brace
+      // A new '{' opens before this group closed: report but keep the
+      // content scanned so far, then restart on the nested group.
       rep.unclosed_groups++;
       rep.warnings.push_back(
           {0, "tag_unclosed",
            "'{' group closed by another '{' instead of '}'"});
-      continue;
     }
-    if (!closed) {
+    if (!closed && i >= text.size()) {
       rep.unclosed_groups++;
       rep.warnings.push_back(
           {0, "tag_unclosed", "unclosed '{' group; consumed to end of line"});
-    } else {
-      ++i;  // consume '}'
     }
+    if (closed) ++i;  // consume '}'
     size_t j = groupStart;
     while (j < groupEnd) {
       char c = text[j];

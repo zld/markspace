@@ -185,6 +185,10 @@ int main(int argc, char** argv) {
     std::cout << "events=" << eventCount << " tags_total=" << tagTotal
               << " tags_unknown=" << tagUnknown << " rendered=0 (check mode)\n";
   if (outcome.render_failure) return RENDER_FAILURE;
-  if (opt.strict && outcome.structural_error) return STRICT_STRUCTURAL;
+  if (opt.strict) {
+    for (const auto& d : doc.diagnostics)
+      if (d.fatal) return STRICT_STRUCTURAL;
+    if (outcome.structural_error) return STRICT_STRUCTURAL;
+  }
   return OK;
 }

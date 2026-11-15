@@ -52,17 +52,22 @@ std::vector<std::string> splitFields(const std::string& s, int maxParts) {
 std::optional<long long> parseTimecode(const std::string& in) {
   std::string s = trimCopy(in);
   // H:MM:SS.cc (hours may exceed one digit); reject junk deterministically.
-  auto e = s.find_first_not_of("0123456789:.");
-  if (e != std::string::npos) return std::nullopt;
+  if (s.empty() ||
+      s.find_first_not_of("0123456789:.") != std::string::npos)
+    return std::nullopt;
+  auto digits = [](const std::string& t) {
+    if (t.empty()) return false;
+    for (char c : t)
+      if (!std::isdigit(static_cast<unsigned char>(c))) return false;
+    return true;
+  };
   std::vector<long long> parts;
   std::string token;
   for (char c : s) {
     if (c == ':') {
-      if (token.empty()) return std::nullopt;
+      if (!digits(token)) return std::nullopt;
       parts.push_back(std::stoll(token));
       token.clear();
-    } else if (c == '.') {
-      token.push_back('.');
     } else {
       token.push_back(c);
     }
@@ -71,11 +76,15 @@ std::optional<long long> parseTimecode(const std::string& in) {
   auto dot = token.find('.');
   long long sec = 0, cs = 0;
   if (dot == std::string::npos) {
+    if (!digits(token)) return std::nullopt;
     sec = std::stoll(token);
   } else {
-    sec = std::stoll(token.substr(0, dot));
+    std::string whole = token.substr(0, dot);
     auto frac = token.substr(dot + 1);
-    if (frac.empty() || frac.size() > 3) return std::nullopt;
+    if (!digits(whole) || frac.empty() || frac.size() > 2 ||
+        frac.find('.') != std::string::npos)
+      return std::nullopt;
+    sec = std::stoll(whole);
     while (frac.size() < 2) frac.push_back('0');
     cs = std::stoll(frac.substr(0, 2));
   }
@@ -111,6 +120,7 @@ std::optional<AssColor> parseAssColor(const std::string& in) {
   std::string s = trimCopy(in);
   if (s.size() < 2 || s.front() != '&') return std::nullopt;
   s = s.substr(1);
+  if (!s.empty() && (s.front() == 'H' || s.front() == 'h')) s.erase(0, 1);
   if (!s.empty() && s.back() == '&') s.pop_back();
   if (s.empty() || s.find_first_not_of("0123456789ABCDEFabcdef") !=
                        std::string::npos)
