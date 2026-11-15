@@ -264,3 +264,211 @@ def validate_video_block(mapping: CodecMapping, data: bytes) -> None:
     if not found:
         raise CodecRejectedError(
             f"track {mapping.track_number}: video block contains no NAL unit")
+
+
+# --- AAC --------------------------------------------------------------------
+
+# Sample rate index table from ISO/IEC 14496-3 Table 1.16.
+AAC_RATES = (96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000,
+             12000, 11025, 8000, 7350)
+AAC_OBJECT_TYPES = {1: "AAC Main", 2: "AAC LC", 3: "AAC SSR", 4: "AAC LTP",
+                    5: "SBR", 6: "AAC Scalable", 17: "ER LC", 23: "LD",
+                    29: "PS"}
+
+
+def _ber_length(length: int) -> bytes:
+    encoded = [length & 0x7F]
+    length >>= 7
+    while length:
+        encoded.append(0x80 | (length & 0x7F))
+        length >>= 7
+    return bytes(reversed(encoded))
+
+
+def _descriptor(tag: int, payload: bytes) -> bytes:
+    return bytes([tag]) + _ber_length(len(payload)) + payload
+
+
+def _parse_aac_config(track: Track) -> tuple[int, int, int, int]:
+    # AudioSpecificConfig uses fixed-width fields (ISO/IEC 14496-3 1.6.2.1),
+    # not exp-Golomb coding.
+    if not track.codec_private or len(track.codec_private) < 2:
+        raise CodecRejectedError(
+            f"track {track.number}: AAC track needs AudioSpecificConfig")
+    cfg = track.codec_private
+    br = _BitReader(cfg)
+    aot = br.bits(5)
+    if aot == 31:
+        aot = 32 + br.bits(6)
+    first_aot = aot
+    if aot not in (1, 2, 3, 4, 5, 6, 17, 23, 29):
+        raise CodecRejectedError(
+            f"track {track.number}: unsupported AAC object type {aot}")
+    freq_index = br.bits(4)
+    if freq_index == 0xF:
+        rate = br.bits(24)
+    elif freq_index < len(AAC_RATES):
+        rate = AAC_RATES[freq_index]
+    else:
+        raise CodecRejectedError(
+            f"track {track.number}: invalid AAC sampling index {freq_index}")
+    channels = br.bits(4)
+    if not 1 <= channels <= 8:
+        raise CodecRejectedError(
+            f"track {track.number}: invalid AAC channel configuration "
+            f"{channels}")
+    # HE-AAC signaling carries an explicit extension sampling rate.
+    if first_aot in (5, 29):
+        br.bits(5)  # extensionAudioObjectType
+        ext_index = br.bits(4)
+        if ext_index == 0xF:
+            rate = br.bits(24)
+        elif ext_index < len(AAC_RATES):
+            rate = AAC_RATES[ext_index]
+    if track.sample_rate and int(track.sample_rate) != rate:
+        raise CodecRejectedError(
+            f"track {track.number}: AudioSpecificConfig rate {rate} != "
+            f"TrackEntry rate {int(track.sample_rate)}")
+    if track.channels and track.channels != channels:
+        raise CodecRejectedError(
+            f"track {track.number}: AAC config channels {channels} != "
+            f"TrackEntry channels {track.channels}")
+    return aot, rate, channels, first_aot
+
+
+def _map_aac(track: Track) -> CodecMapping:
+    aot, rate, channels, _ = _parse_aac_config(track)
+    if aot not in (2, 5, 29):
+        raise CodecRejectedError(
+            f"track {track.number}: MP4 only accepts AAC-LC/HE profiles "
+            f"({AAC_OBJECT_TYPES.get(aot, aot)} is not expressible)")
+    # DecoderConfigDescriptor: objectTypeIndication 0x40 = ISO/IEC 14496-3.
+    dcd_payload = (
+        bytes([0x40, 0x15, 0x00, 0x00, 0x00])
+        + (0).to_bytes(4, "big") + (0).to_bytes(4, "big")
+        + _descriptor(0x05, track.codec_private or b"")
+    )
+    es_payload = (
+        (track.number & 0xFFFF).to_bytes(2, "big") + bytes([0x00])
+        + _descriptor(0x04, dcd_payload)
+        + _descriptor(0x06, bytes([0x02]))
+    )
+    esds = _descriptor(0x03, es_payload)
+    return CodecMapping(
+        track_number=track.number, handler_type="soun",
+        entry_type=b"mp4a", config_box_type=b"esds",
+        config_payload=esds, timescale=rate,
+        channels=channels, sample_rate=rate, sample_size=16)
+
+
+# --- Opus -------------------------------------------------------------------
+
+OPUS_SAMPLE_RATE = 48000
+OPUS_MAX_FRAME_SAMPLES = 5760
+OPUS_MAPPING_FAMILY_MONO_STEREO = 0
+
+
+def _map_opus(track: Track) -> CodecMapping:
+    head = track.codec_private
+    if not head or len(head) < 19:
+        raise CodecRejectedError(
+            f"track {track.number}: Opus track needs an OpusHead blob")
+    if head[:8] != b"OpusHead":
+        raise CodecRejectedError(
+            f"track {track.number}: OpusHead magic missing")
+    version = head[8]
+    if version != 1:
+        raise CodecRejectedError(
+            f"track {track.number}: unsupported OpusHead version {version}")
+    channels = head[9]
+    if channels not in (1, 2):
+        raise CodecRejectedError(
+            f"track {track.number}: only 1/2 channel Opus mappings are "
+            f"expressible (got {channels})")
+    pre_skip = int.from_bytes(head[10:12], "little")
+    input_rate = int.from_bytes(head[12:16], "little")
+    gain = int.from_bytes(head[16:18], "little", signed=True)
+    mapping_family = head[18]
+    if mapping_family != OPUS_MAPPING_FAMILY_MONO_STEREO:
+        raise CodecRejectedError(
+            f"track {track.number}: Opus channel mapping family "
+            f"{mapping_family} cannot be expressed in MP4")
+    if input_rate not in (8000, 12000, 16000, 24000, 48000):
+        raise CodecRejectedError(
+            f"track {track.number}: implausible Opus input rate {input_rate}")
+    if pre_skip > OPUS_SAMPLE_RATE:
+        raise CodecRejectedError(
+            f"track {track.number}: Opus pre-skip {pre_skip} out of range")
+    if track.channels and track.channels != channels:
+        raise CodecRejectedError(
+            f"track {track.number}: OpusHead channels {channels} != "
+            f"TrackEntry channels {track.channels}")
+    # dOps (v0) per RFC 8486 / MP4 Opus registration.
+    dops = (
+        bytes([version]) + channels.to_bytes(1, "little")
+        + pre_skip.to_bytes(2, "little")
+        + OPUS_SAMPLE_RATE.to_bytes(4, "little")
+        + gain.to_bytes(2, "little", signed=True)
+        + mapping_family.to_bytes(1, "little")
+    )
+    return CodecMapping(
+        track_number=track.number, handler_type="soun",
+        entry_type=b"Opus", config_box_type=b"dOps",
+        config_payload=dops, timescale=OPUS_SAMPLE_RATE,
+        channels=channels, sample_rate=OPUS_SAMPLE_RATE, sample_size=16)
+
+
+def opus_frame_duration(data: bytes) -> int:
+    """Return an Opus packet duration in 48kHz samples from its TOC byte.
+
+    Code 3 (arbitrary number of frames) would require CELT/SILK internal
+    framing to measure safely and is rejected instead of guessed.
+    """
+    if not data:
+        raise CodecRejectedError("empty Opus packet")
+    config = (data[0] >> 3) & 0x1F
+    code = data[0] & 0x03
+    # RFC 6716 Table 1: per-config frame duration in milliseconds.
+    if config < 4:
+        frame_ms = (10.0, 20.0, 40.0, 60.0)[config]
+    elif config < 8:
+        frame_ms = (2.5, 5.0, 10.0, 20.0)[config - 4]
+    elif config < 12:
+        frame_ms = (10.0, 20.0, 40.0, 60.0)[config - 8]
+    else:
+        frame_ms = (10.0, 20.0, 40.0, 60.0)[(config - 12) % 4]
+    counts = (1, 2, 2)
+    if code == 3:
+        raise CodecRejectedError(
+            "Opus code-3 packets need internal framing and are not accepted")
+    frames = counts[code]
+    duration = int(round(frame_ms * frames * OPUS_SAMPLE_RATE / 1000.0))
+    if duration <= 0 or duration > OPUS_MAX_FRAME_SAMPLES * 2:
+        raise CodecRejectedError(f"implausible Opus duration {duration}")
+    return duration
+
+
+# --- dispatch ---------------------------------------------------------------
+
+def map_codec(track: Track) -> CodecMapping:
+    if track.type == TRACK_TYPE_SUBTITLE:
+        raise CodecRejectedError(
+            f"track {track.number}: subtitle tracks ({track.codec_id}) "
+            "cannot be carried in MP4 by this remuxer")
+    if track.type == TRACK_TYPE_VIDEO:
+        if track.codec_id == CODEC_AVC:
+            return _map_avc(track)
+        if track.codec_id == CODEC_HEVC:
+            return _map_hevc(track)
+        raise CodecRejectedError(
+            f"track {track.number}: unsupported video codec {track.codec_id}")
+    if track.type == TRACK_TYPE_AUDIO:
+        if track.codec_id == CODEC_AAC:
+            return _map_aac(track)
+        if track.codec_id == CODEC_OPUS:
+            return _map_opus(track)
+        raise CodecRejectedError(
+            f"track {track.number}: unsupported audio codec {track.codec_id}")
+    raise CodecRejectedError(
+        f"track {track.number}: track type {track.type} "
+        f"({track.codec_id}) has no MP4 mapping")
