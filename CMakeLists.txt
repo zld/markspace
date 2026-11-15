@@ -14,6 +14,7 @@ add_library(assaudit_core STATIC
   src/style_resolver.cpp
   src/tag_resolver.cpp
   src/ass_renderer.cpp
+  src/layout_engine.cpp
 )
 target_include_directories(assaudit_core PUBLIC include)
 target_link_libraries(assaudit_core PUBLIC PkgConfig::LIBASS)
