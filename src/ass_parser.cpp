@@ -129,7 +129,8 @@ void handleEvent(AssDocument& d, bool comment,
   d.events.push_back(std::move(ev));
 }
 
-void handleScriptInfo(AssDocument& d, const std::string& line, int lineNo) {
+void handleScriptInfo(AssDocument& d, const std::string& line,
+                      int /*lineNo*/) {
   auto pos = line.find(':');
   if (pos == std::string::npos) return;
   std::string key = toLower(trimCopy(line.substr(0, pos)));

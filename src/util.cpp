@@ -153,7 +153,7 @@ std::string hex64(uint64_t v) {
   static const char* d = "0123456789abcdef";
   std::string out(16, '0');
   for (int i = 15; i >= 0; --i) {
-    out[i] = d[v & 0xF];
+    out[static_cast<size_t>(i)] = d[v & 0xF];
     v >>= 4;
   }
   return out;
@@ -161,7 +161,8 @@ std::string hex64(uint64_t v) {
 
 std::string jsonEscape(const std::string& s) {
   std::ostringstream o;
-  for (unsigned char c : s) {
+  for (char raw : s) {
+    unsigned char c = static_cast<unsigned char>(raw);
     switch (c) {
       case '"': o << "\\\""; break;
       case '\\': o << "\\\\"; break;

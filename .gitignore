@@ -1,4 +1,7 @@
 build/
+build*/
 *.o
 *.a
+*.jsonl
 compile_commands.json
+.DS_Store

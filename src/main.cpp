@@ -52,14 +52,6 @@ bool parseResolution(const std::string& s, int& w, int& h) {
          w <= 16384 && h <= 16384;
 }
 
-std::string readFile(const std::string& path) {
-  std::ifstream f(path, std::ios::binary);
-  if (!f) return "";
-  std::ostringstream ss;
-  ss << f.rdbuf();
-  return ss.str();
-}
-
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -107,11 +99,14 @@ int main(int argc, char** argv) {
     content = assaudit::generateDemoAss();
     label = "<generated-demo>";
   } else {
-    content = readFile(opt.input);
-    if (content.empty()) {
+    std::ifstream f(opt.input, std::ios::binary);
+    if (!f) {
       std::cerr << "error: cannot read input '" << opt.input << "'\n";
       return ARG_ERROR;
     }
+    std::ostringstream ss;
+    ss << f.rdbuf();
+    content = ss.str();
     label = opt.input;
   }
 
@@ -119,14 +114,12 @@ int main(int argc, char** argv) {
   assaudit::parseAss(content, label, doc);
   auto styleStats = assaudit::resolveStyles(doc);
 
-  int tagTotal = 0, tagUnknown = 0, tagValid = 0, tagOverride = 0;
+  int tagTotal = 0, tagUnknown = 0;
   for (const auto& ev : doc.events) {
     if (ev.is_comment) continue;
     auto r = assaudit::resolveTags(ev.text);
     tagTotal += r.total;
-    tagValid += r.valid;
     tagUnknown += r.unknown;
-    tagOverride += r.overrides;
   }
 
   std::cout << "styles=" << doc.styles.size()
@@ -152,10 +145,9 @@ int main(int argc, char** argv) {
       std::cerr << label << ":" << d.line << ": " << d.code << ": "
                 << d.message << "\n";
   }
-  int eventCount = std::count_if(doc.events.begin(), doc.events.end(),
-                                 [](const assaudit::AssEvent& e) {
-                                   return !e.is_comment;
-                                 });
+  int eventCount = static_cast<int>(std::count_if(
+      doc.events.begin(), doc.events.end(),
+      [](const assaudit::AssEvent& e) { return !e.is_comment; }));
 
   assaudit::LayoutOutcome outcome;
   if (opt.render) {
