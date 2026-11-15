@@ -25,3 +25,6 @@ add_library(h264_core STATIC
   src/fixture_writer.cpp
 )
 target_include_directories(h264_core PUBLIC include)
+
+add_executable(h264_inspect src/main.cpp)
+target_link_libraries(h264_inspect PRIVATE h264_core)
