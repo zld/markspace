@@ -29,8 +29,10 @@ std::string mergedValue(const AssStyle& st, const std::string& key,
   return d == defaults.end() ? "" : d->second;
 }
 
-std::string synthesizeAss(const AssDocument& doc, const AssStyle* style,
-                          const AssEvent& ev, int width, int height) {
+// Build the shared header once: every usable style is emitted with its
+// fully merged values so that \r OtherStyle inside an event can switch
+// to any style, not just the event's own inheritance chain.
+std::string synthesizeHeader(const AssDocument& doc, int width, int height) {
   auto defaults = styleDefaults();
   std::ostringstream o;
   o << "[Script Info]\nScriptType: v4.00+\nPlayResX: " << width
@@ -40,31 +42,33 @@ std::string synthesizeAss(const AssDocument& doc, const AssStyle* style,
        "SecondaryColour, OutlineColour, BackColour, Bold, Italic, "
        "Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, "
        "Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n";
-  std::set<std::string> emitted;
-  auto emitStyle = [&](const AssStyle& st) {
-    if (emitted.count(st.name)) return;
-    emitted.insert(st.name);
+  bool haveDefault = false;
+  for (const auto& st : doc.styles) {
+    if (st.blocked) continue;
+    if (st.name == "Default") haveDefault = true;
     o << "Style: " << st.name;
     for (const char* k : kStyleOrder)
       o << "," << mergedValue(st, k, defaults);
     o << "\n";
-  };
-  if (style) {
-    for (const auto& name : style->chain) {
-      for (const auto& st : doc.styles)
-        if (st.name == name && !st.blocked) emitStyle(st);
-    }
-    if (emitted.empty()) emitStyle(*style);
-  } else {
+  }
+  if (!haveDefault) {
     o << "Style: Default";
     for (const char* k : kStyleOrder) o << "," << defaults.at(k);
     o << "\n";
   }
   o << "\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, "
        "MarginV, Effect, Text\n";
+  return o.str();
+}
+
+std::string synthesizeEventAss(const std::string& header,
+                               const std::string& styleName,
+                               const AssEvent& ev) {
+  std::ostringstream o;
+  o << header;
   o << "Dialogue: 0,0:00:00.00,0:00:10.00,"
-    << (style ? style->name : "Default") << ",,0,0,0,,," << ev.text
-    << "\n";
+    << (styleName.empty() ? "Default" : styleName) << ",,0,0,0,,,"
+    << ev.text << "\n";
   return o.str();
 }
 
@@ -88,6 +92,7 @@ LayoutOutcome runLayout(const AssDocument& doc, AssRenderer& renderer,
   LayoutOutcome out;
   std::map<std::string, const AssStyle*> byName;
   for (const auto& st : doc.styles) byName[st.name] = &st;
+  const std::string header = synthesizeHeader(doc, cfg.width, cfg.height);
 
   for (const auto& ev : doc.events) {
     if (ev.is_comment) continue;
@@ -148,7 +153,7 @@ LayoutOutcome runLayout(const AssDocument& doc, AssRenderer& renderer,
       out.blocked_events++;
       if (cfg.strict) out.structural_error = true;
     } else {
-      std::string ass = synthesizeAss(doc, style, ev, cfg.width, cfg.height);
+      std::string ass = synthesizeEventAss(header, ev.style_name, ev);
       RenderResult rr;
       std::string err = renderer.renderTrack(ass, 0, rr);
       if (!err.empty()) {

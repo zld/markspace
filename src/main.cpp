@@ -133,6 +133,25 @@ int main(int argc, char** argv) {
             << " inheritance_edges=" << styleStats.inheritance_edges
             << " inheritance_errors=" << styleStats.inheritance_errors
             << "\n";
+  for (const auto& st : doc.styles) {
+    std::cout << "style " << st.name << " line=" << st.line
+              << (st.blocked ? " BLOCKED" : "") << " chain=";
+    for (size_t i = 0; i < st.chain.size(); ++i)
+      std::cout << (i ? "->" : "") << st.chain[i];
+    if (st.chain.empty()) std::cout << "(none)";
+    std::cout << "\n";
+    if (!st.blocked) {
+      for (const auto& [key, field] : st.merged)
+        std::cout << "  " << key << "=" << field.text << " <"
+                  << (field.state == assaudit::FieldState::Defaulted
+                          ? "default"
+                          : field.source)
+                  << ": " << field.source_line << ">\n";
+    }
+    for (const auto& d : st.errors)
+      std::cerr << label << ":" << d.line << ": " << d.code << ": "
+                << d.message << "\n";
+  }
   int eventCount = std::count_if(doc.events.begin(), doc.events.end(),
                                  [](const assaudit::AssEvent& e) {
                                    return !e.is_comment;
