@@ -16,8 +16,12 @@ endif()
 find_package(Freetype 2.13 REQUIRED)
 find_package(nlohmann_json 3.11 REQUIRED)
 
+add_library(submetrics_core STATIC src/utf8.cpp)
+target_include_directories(submetrics_core PUBLIC src)
+target_compile_options(submetrics_core PRIVATE -Wall -Wextra -Wpedantic)
+target_link_libraries(submetrics_core
+    PUBLIC Freetype::Freetype nlohmann_json::nlohmann_json)
+
 add_executable(subtitle-metrics src/main.cpp)
 target_compile_options(subtitle-metrics PRIVATE -Wall -Wextra -Wpedantic)
-target_include_directories(subtitle-metrics PRIVATE src)
-target_link_libraries(subtitle-metrics
-    PRIVATE Freetype::Freetype nlohmann_json::nlohmann_json)
+target_link_libraries(subtitle-metrics PRIVATE submetrics_core)
