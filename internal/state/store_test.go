@@ -143,6 +143,39 @@ func TestRecoverRejectsParameterDrift(t *testing.T) {
 	}
 }
 
+func TestRecoverKeepsInfeasibleTerminal(t *testing.T) {
+	dir := t.TempDir()
+	in := filepath.Join(dir, "in.vid")
+	v := &media.Video{Width: 2, Height: 2, FPS: 5, Frames: [][]byte{{1, 2, 3, 4}}}
+	if err := media.WriteVideo(in, v); err != nil {
+		t.Fatal(err)
+	}
+	fp, _ := media.Fingerprint(in)
+	task := mkTask(2, in, fp)
+	task.Segments[1].Feasible = false
+	task.Segments[1].Infeasible = "below minimum"
+	cp := &Checkpoint{JobID: "job-1", InputFingerprint: fp,
+		Params: Params{InputPath: in, DurationSec: 30, SegmentSec: 10, TargetKbps: 1000, MinKbps: 100},
+		Segments: []*model.Segment{
+			{Index: 0, Status: model.StatusFailed},
+			{Index: 1, Status: model.StatusFailed},
+		}}
+	outcome, err := Recover(cp, task, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Transient failure is retried; infeasible failure stays terminal.
+	if task.Segments[0].Status != model.StatusQueued {
+		t.Fatal("transient failure should re-queue")
+	}
+	if task.Segments[1].Status != model.StatusFailed || task.Segments[1].FailureNote == "" {
+		t.Fatalf("infeasible segment must stay failed: %+v", task.Segments[1])
+	}
+	if len(outcome.RequeuedFailed) != 1 || outcome.RequeuedFailed[0] != 1 {
+		t.Fatalf("only the transient failure should be requeued: %v", outcome.RequeuedFailed)
+	}
+}
+
 func TestPathTraversalRejected(t *testing.T) {
 	if _, _, err := NewStore(t.TempDir(), "../escape.json"); !errors.Is(err, safeio.ErrPathRejected) {
 		t.Fatalf("want path rejection, got %v", err)

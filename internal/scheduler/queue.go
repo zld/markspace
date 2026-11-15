@@ -65,8 +65,13 @@ func (q *Queue) Run(ctx context.Context, task *model.Task) (succeeded, failed, i
 	}
 
 	for _, seg := range task.Segments {
+		// Infeasible segments are a terminal planning decision: they must
+		// never be claimed or retried, regardless of their failed status.
+		if !seg.Feasible {
+			continue
+		}
 		if !q.claim(seg) {
-			continue // succeeded/infeasible: do not resubmit
+			continue // succeeded: do not resubmit
 		}
 		select {
 		case jobs <- Job{Segment: seg}:

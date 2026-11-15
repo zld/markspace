@@ -134,6 +134,27 @@ func TestQueueRejectsBadConfig(t *testing.T) {
 	}
 }
 
+func TestQueueInfeasibleSegmentsAreTerminal(t *testing.T) {
+	var ran int32
+	task := &model.Task{Segments: []*model.Segment{
+		{Index: 0, Status: model.StatusQueued, Feasible: true, DurationSec: 1, TargetKbps: 100},
+		{Index: 1, Status: model.StatusFailed, Feasible: false, DurationSec: 1, TargetKbps: 10,
+			Infeasible: "below minimum"},
+		{Index: 2, Status: model.StatusQueued, Feasible: true, DurationSec: 1, TargetKbps: 100},
+	}}
+	q, _ := New(2, func(_ context.Context, j Job) Outcome {
+		atomic.AddInt32(&ran, 1)
+		return Outcome{Segment: j.Segment, Encode: &model.EncodeResult{}}
+	}, nil)
+	ok, failed, _ := q.Run(context.Background(), task)
+	if ran != 2 || ok != 2 || failed != 1 {
+		t.Fatalf("ran=%d ok=%d failed=%d (infeasible must never run)", ran, ok, failed)
+	}
+	if task.Segments[1].Status != model.StatusFailed || task.Segments[1].Infeasible == "" {
+		t.Fatalf("infeasible segment lost terminal state: %+v", task.Segments[1])
+	}
+}
+
 func TestQueueDeterministicClaimOrder(t *testing.T) {
 	var mu sync.Mutex
 	var order []int

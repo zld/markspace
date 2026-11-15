@@ -69,6 +69,13 @@ func Recover(cp *Checkpoint, task *model.Task, inputPath string) (*RecoveryOutco
 				out.RequeuedRunning = append(out.RequeuedRunning, i+1)
 			}
 		case model.StatusFailed:
+			// Infeasibility is a terminal planning verdict, not a transient
+			// encoder failure: keep such segments failed instead of retrying.
+			if !seg.Feasible {
+				seg.Status = model.StatusFailed
+				seg.FailureNote = seg.Infeasible
+				continue
+			}
 			if err := seg.ResetToQueued(); err != nil {
 				return nil, err
 			}
