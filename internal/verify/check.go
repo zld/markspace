@@ -54,7 +54,7 @@ func Verify(in Input) ([]report.TrackSummary, []report.Finding, error) {
 		}
 		ti := manifest.TrackInput{
 			Bitrate: ct.Bitrate, Layout: layout,
-			InitURI:  filepath.Join(layout.SegmentDir, "init.mp4"),
+			InitURI:    filepath.Join(layout.SegmentDir, "init.mp4"),
 			HasPreload: true, CanSkipTo: true,
 		}
 		inputs = append(inputs, ti)
@@ -190,7 +190,7 @@ func diffPlaylist(bitrate int, got, want string) *report.Finding {
 		}
 		return &report.Finding{
 			Code: report.CodeManifestDiff, Bitrate: bitrate, Seq: i + 1,
-			Field: tagOf(w, g),
+			Field:  tagOf(w, g),
 			Detail: fmt.Sprintf("line %d: got %q want %q", i+1, g, w),
 		}
 	}

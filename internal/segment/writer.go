@@ -14,9 +14,9 @@ const GapMarker = "GAP\n"
 
 // WrittenFile records one artifact the build placed on disk.
 type WrittenFile struct {
-	URI    string // output-relative path
-	IsGap  bool
-	Bytes  int
+	URI   string // output-relative path
+	IsGap bool
+	Bytes int
 }
 
 // Persist writes part files (and concatenated segment files) for one track.

@@ -33,22 +33,22 @@ type Part struct {
 
 // Segment groups a fixed number of parts.
 type Segment struct {
-	MediaSeq    int // HLS EXT-X-MEDIA-SEQUENCE value
-	URI         string
-	DurationMs  int64
-	Parts       []Part
-	HasGap      bool
-	HasContent  bool
+	MediaSeq   int // HLS EXT-X-MEDIA-SEQUENCE value
+	URI        string
+	DurationMs int64
+	Parts      []Part
+	HasGap     bool
+	HasContent bool
 }
 
 // TrackSegments is the fully sliced view of one bitrate.
 type TrackSegments struct {
-	Bitrate      int
-	PartMs       int64
-	SegmentMs    int64
+	Bitrate       int
+	PartMs        int64
+	SegmentMs     int64
 	MediaPlaylist string
-	SegmentDir   string
-	Segments     []Segment
+	SegmentDir    string
+	Segments      []Segment
 }
 
 // Layout computes the segment/part structure for a normalized track. It does
@@ -174,7 +174,7 @@ func (s *TrackSegments) GapPartCount() int {
 		for _, p := range seg.Parts {
 			if p.Gap {
 				n++
-		}
+			}
 		}
 	}
 	return n

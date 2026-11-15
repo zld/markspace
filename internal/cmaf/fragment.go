@@ -22,7 +22,7 @@ const (
 	trunSampleDuration  = 0x000100
 	trunSampleSize      = 0x000200
 	trunSampleFlags     = 0x000400
-	trunSampleCTO      = 0x000800
+	trunSampleCTO       = 0x000800
 )
 
 // InitInfo describes an fMP4 initialization segment.

@@ -28,20 +28,20 @@ const (
 	sampleDuration     = 125
 	samplePayloadSize  = 96
 	// DriftMs is the fixed cross-bitrate offset injected by the "drift" fault.
-	DriftMs = 80
+	DriftMs  = 80
 	initName = "init.mp4"
 	idxName  = "delivery.idx"
 )
 
 // TrackMeta describes one generated bitrate directory.
 type TrackMeta struct {
-	Bitrate    int
-	Timescale  uint32
-	Present    []int // fragment sequence numbers actually written, sorted
-	Missing    []int // sequence numbers intentionally dropped
-	DriftMs    int64 // tfdt offset applied to every fragment
-	Dir        string
-	Delivered  []string // delivery.idx lines in ingest order
+	Bitrate   int
+	Timescale uint32
+	Present   []int // fragment sequence numbers actually written, sorted
+	Missing   []int // sequence numbers intentionally dropped
+	DriftMs   int64 // tfdt offset applied to every fragment
+	Dir       string
+	Delivered []string // delivery.idx lines in ingest order
 }
 
 // Options controls synthesis.

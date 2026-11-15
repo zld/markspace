@@ -30,7 +30,7 @@ func buildLayouts(t *testing.T, inbox string, seqs int) []TrackInput {
 		}
 		inputs = append(inputs, TrackInput{
 			Bitrate: in.Bitrate, Layout: layout,
-			InitURI: filepath.Join(layout.SegmentDir, fixture.InitName()),
+			InitURI:   filepath.Join(layout.SegmentDir, fixture.InitName()),
 			CanSkipTo: true, HasPreload: true,
 		})
 	}

@@ -52,7 +52,7 @@ func buildPipeline(t *testing.T, inbox, hls string, seqs int, faults []string) [
 		}
 		inputs = append(inputs, manifest.TrackInput{
 			Bitrate: ct.Bitrate, Layout: layout,
-			InitURI: filepath.Join(layout.SegmentDir, fixture.InitName()),
+			InitURI:    filepath.Join(layout.SegmentDir, fixture.InitName()),
 			HasPreload: true, CanSkipTo: true,
 		})
 	}

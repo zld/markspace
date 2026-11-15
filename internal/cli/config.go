@@ -7,25 +7,25 @@ import (
 
 // DemoConfig drives the `demo` subcommand (synthetic CMAF generation).
 type DemoConfig struct {
-	Out       string
-	Seed      int64
-	Bitrates  []int
-	Duration  int64 // milliseconds
-	Part      int64 // milliseconds
-	Faults    []string
-	JSON      bool
+	Out      string
+	Seed     int64
+	Bitrates []int
+	Duration int64 // milliseconds
+	Part     int64 // milliseconds
+	Faults   []string
+	JSON     bool
 }
 
 // BuildConfig drives the `build` subcommand (manifest/segment assembly).
 type BuildConfig struct {
-	In       string
-	Out      string
-	FromSeq  int
-	ToSeq    int
-	Segment  int64 // milliseconds
-	Part     int64 // milliseconds
-	Window   int64 // milliseconds
-	JSON     bool
+	In      string
+	Out     string
+	FromSeq int
+	ToSeq   int
+	Segment int64 // milliseconds
+	Part    int64 // milliseconds
+	Window  int64 // milliseconds
+	JSON    bool
 }
 
 // VerifyConfig drives the `verify` subcommand.

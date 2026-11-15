@@ -74,7 +74,7 @@ func RunBuild(cfg *cli.BuildConfig) (*report.Report, error) {
 		}
 		inputs = append(inputs, manifest.TrackInput{
 			Bitrate: ct.Bitrate, Layout: layout,
-			InitURI: filepath.Join(layout.SegmentDir, fixture.InitName()),
+			InitURI:    filepath.Join(layout.SegmentDir, fixture.InitName()),
 			HasPreload: true, CanSkipTo: true,
 		})
 		nominalMs := int64(ct.ToSeq-ct.FromSeq+1) * ct.PartMs

@@ -26,11 +26,11 @@ const msScale int64 = 1000
 // covers the slot; GAP slots keep their position instead of shifting later
 // content forward.
 type Part struct {
-	Seq      int // fragment/part sequence number (1-based, contiguous)
-	StartMs  int64
+	Seq        int // fragment/part sequence number (1-based, contiguous)
+	StartMs    int64
 	DurationMs int64
-	Fragment *ingest.Fragment // nil for a gap slot
-	Missing  bool
+	Fragment   *ingest.Fragment // nil for a gap slot
+	Missing    bool
 }
 
 // Track is the normalized view of one bitrate.
