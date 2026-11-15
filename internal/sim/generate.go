@@ -75,12 +75,15 @@ func Generate(cfg Config) ([]Event, error) {
 	}
 
 	// Half-interval ambiguity fixture: a packet whose seq is exactly 32768
-	// ahead of a valid one must be rejected by the modular comparison.
+	// ahead of a valid one must be rejected by the modular comparison. It
+	// carries a frame number above the configured range so it never enters the
+	// normal stream accounting.
 	if cfg.Frames > 10 {
-		pkt := makePacket(10, 10+32768)
+		fixtureFrame := uint32(cfg.Frames) + 1
+		pkt := makePacket(fixtureFrame, 10+32768)
 		n := protocol.Encode(buf, pkt)
 		events = append(events, Event{
-			FrameNo: 10, Seq: uint16(10 + 32768),
+			FrameNo: fixtureFrame, Seq: uint16(10 + 32768),
 			ArriveNS: arrivalTime(10, frameNS, rng, cfg.JitterNS),
 			Kind:     EventAmbiguous, Datagram: append([]byte(nil), buf[:n]...),
 		})

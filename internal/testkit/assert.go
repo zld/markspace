@@ -76,6 +76,11 @@ func AssertScenarioAccounting(t *testing.T, events []sim.Event, frames int) {
 	seen := make(map[uint32]int)
 	delivered := 0
 	for _, e := range events {
+		// Impairment fixtures may deliberately use frame numbers outside the
+		// configured sender range; they are not part of the stream identity.
+		if int(e.FrameNo) >= frames {
+			continue
+		}
 		if e.Kind == sim.EventLost {
 			seen[e.FrameNo]++
 			continue

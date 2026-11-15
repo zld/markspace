@@ -132,9 +132,10 @@ func (p *Player) PrerollReady() bool {
 
 // Drain emits every frame due at receive-clock time now. Concealed frames are
 // produced for missing cursor frames; the returned slice is in play order.
+// The cursor is never advanced past the highest frame number seen so far.
 func (p *Player) Drain(now time.Duration) []Outcome {
 	var out []Outcome
-	for {
+	for p.window.Cursor() <= p.window.High() {
 		cursor := p.window.Cursor()
 		due := p.playTime(cursor)
 		if !p.anchored || due > now {
@@ -166,15 +167,22 @@ func (p *Player) Drain(now time.Duration) []Outcome {
 		p.played++
 		out = append(out, o)
 	}
+	return out
 }
 
 // FlushRemaining plays out every buffered frame after input exhaustion,
 // advancing the logical clock frame by frame. Missing cursor frames are
-// concealed; the returned gap count is the number of skips performed.
+// concealed; the returned gap count is the number of skips performed. The
+// cursor never advances past the highest frame number ever seen.
 func (p *Player) FlushRemaining(now time.Duration) ([]Outcome, int) {
 	var out []Outcome
 	gaps := 0
-	for p.window.Len() > 0 {
+	// Nothing to flush if no frame ever entered the window.
+	if !p.window.started {
+		return out, gaps
+	}
+	end := p.window.High() + 1
+	for p.window.Cursor() < end {
 		now += p.frameNS
 		before := p.concealed
 		out = append(out, p.Drain(now)...)

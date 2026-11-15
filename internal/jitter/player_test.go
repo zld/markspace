@@ -151,3 +151,27 @@ func TestPlayerFlushRemainingReportsGaps(t *testing.T) {
 		t.Fatal("window not drained")
 	}
 }
+
+func TestPlayerDrainNeverRunsPastHighestFrame(t *testing.T) {
+	// A large receive-clock jump (e.g. a heavily delayed reorder packet) must
+	// not advance the play cursor beyond the highest frame ever observed.
+	p := newTestPlayer()
+	frame := protocol.FrameDurationNS()
+	for _, no := range []int{0, 2} {
+		pkt, _ := playerPkt(no, time.Duration(no)*frame)
+		p.Push(pkt, time.Duration(no)*frame)
+	}
+	p.SetClockAnchor(0, 0)
+	out := p.Drain(1000 * frame)
+	if len(out) != 3 { // frames 0, concealed 1, frame 2 — nothing beyond
+		t.Fatalf("drain produced %d frames, want 3", len(out))
+	}
+	if p.Window().Cursor() != 3 || p.PlayedCount() != 3 {
+		t.Fatalf("cursor=%d played=%d, want 3/3", p.Window().Cursor(), p.PlayedCount())
+	}
+	// Flush on an exhausted stream must be a no-op, not manufacture frames.
+	extra, gaps := p.FlushRemaining(1000 * frame)
+	if len(extra) != 0 || gaps != 0 || p.PlayedCount() != 3 {
+		t.Fatalf("flush overran: extra=%d gaps=%d played=%d", len(extra), gaps, p.PlayedCount())
+	}
+}
