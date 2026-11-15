@@ -215,3 +215,104 @@ TEST_CASE("mid-stream SPS update keeps history and emits event",
 }
 
 // ---------- Access units, frame types and groups ----------
+
+TEST_CASE("multi-slice access units aggregate into one frame",
+          "[grouping]") {
+    FixtureWriter fw;
+    auto a = analyze(fw.buildSample());
+    // 3 IDR slices + P + B + P + 2 field slices + trailing IDR = 9 slices,
+    // but 6 access units.
+    REQUIRE(a.parser.slices().size() == 9);
+    REQUIRE(a.index.accessUnits.size() == 6);
+    // Invariant: frame-type counts cover every access unit exactly once.
+    REQUIRE(a.index.totals.total() ==
+            static_cast<int>(a.index.accessUnits.size()));
+    // First AU has three slices.
+    REQUIRE(a.index.accessUnits.front().sliceCount == 3);
+    // Field pair is one AU flagged interlaced.
+    bool hasFieldAu = false;
+    for (const auto& au : a.index.accessUnits)
+        if (au.interlaced) hasFieldAu = true;
+    REQUIRE(hasFieldAu);
+}
+
+TEST_CASE("frame type counts and group boundaries", "[grouping]") {
+    FixtureWriter fw;
+    auto a = analyze(fw.buildSample());
+    REQUIRE(a.index.totals.i == 2);
+    REQUIRE(a.index.totals.p == 3);
+    REQUIRE(a.index.totals.b == 1);
+    REQUIRE(a.index.totals.unknown == 0);
+    REQUIRE(a.index.groups.size() == 2);
+    for (const auto& g : a.index.groups) {
+        REQUIRE(g.startOffset < a.bytes.size());
+        REQUIRE(g.frameCount >= 1);
+    }
+    REQUIRE(a.index.groups.front().hasLeadingNonVcl);
+    REQUIRE(a.index.groups.back().openedByIdr);
+    // Group offsets are strictly increasing.
+    REQUIRE(a.index.groups[1].startOffset >
+            a.index.groups[0].startOffset);
+}
+
+TEST_CASE("unknown slice syntax values map to unknown", "[parser]") {
+    REQUIRE(mapSliceType(0) == FT_P);
+    REQUIRE(mapSliceType(1) == FT_B);
+    REQUIRE(mapSliceType(2) == FT_I);
+    REQUIRE(mapSliceType(3) == FT_UNKNOWN);
+    REQUIRE(mapSliceType(4) == FT_UNKNOWN);
+    REQUIRE(mapSliceType(9) == FT_UNKNOWN);
+    // Values 5..9 encode the same types 0..4 per H.264 Table 7-6.
+    FixtureWriter fw;
+    auto a = analyze(fw.buildSample());
+    for (const auto& sh : a.parser.slices())
+        if (sh.parseOk) REQUIRE(sh.frameType != FT_UNKNOWN);
+}
+
+// ---------- Fault tolerance / strict mode ----------
+
+TEST_CASE("truncated NAL is located and reported", "[errors]") {
+    FixtureWriter fw;
+    auto bytes = fw.buildTruncatedNal();
+    auto tolerant = analyze(bytes, "auto", true);
+    REQUIRE_FALSE(tolerant.parser.errors().empty());
+    bool trunc = false;
+    for (const auto& e : tolerant.parser.errors())
+        if (e.reason.find("truncated") != std::string::npos) trunc = true;
+    REQUIRE(trunc);
+    // The broken slice still yields an access unit, typed unknown.
+    REQUIRE(tolerant.index.totals.unknown >= 1);
+}
+
+TEST_CASE("illegal Exp-Golomb stops strict, tolerated otherwise",
+          "[errors][strict]") {
+    FixtureWriter fw;
+    auto bytes = fw.buildBadExpGolomb();
+    auto tolerant = analyze(bytes, "auto", true);
+    REQUIRE_FALSE(tolerant.parser.errors().empty());
+
+    auto strict = analyze(bytes, "auto", false);
+    bool golombError = false;
+    for (const auto& e : strict.parser.errors())
+        if (e.stage == "slice") golombError = true;
+    REQUIRE(golombError);
+}
+
+TEST_CASE("skipped count and first error offset are exposed",
+          "[errors]") {
+    FixtureWriter fw;
+    auto bytes = fw.buildTruncatedNal();
+    auto a = analyze(bytes, "auto", true);
+    REQUIRE(a.index.skippedNals >= 1);
+    REQUIRE(a.index.firstErrorOffset !=
+            static_cast<std::size_t>(-1));
+    REQUIRE(a.index.firstErrorOffset < bytes.size());
+}
+
+TEST_CASE("clean sample reports zero errors", "[smoke]") {
+    FixtureWriter fw;
+    auto a = analyze(fw.buildSample());
+    REQUIRE(a.scan.errors.empty());
+    REQUIRE(a.parser.errors().empty());
+    REQUIRE(a.index.firstErrorOffset == static_cast<std::size_t>(-1));
+}
