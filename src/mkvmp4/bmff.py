@@ -541,3 +541,218 @@ class Mp4Writer:
             except FileNotFoundError:
                 pass
 
+
+# --- read-back: reconstruct the index for verify ---------------------------
+
+@dataclass
+class TrackIndex:
+    track_id: int
+    handler_type: str
+    timescale: int
+    sample_count: int
+    sample_sizes: list[int]
+    chunk_offsets: list[int]
+    chunk_samples: list[int]          # samples per chunk, expanded
+    stts_entries: list[tuple[int, int]]
+    ctts_entries: list[tuple[int, int]]
+    stss_entries: list[int]
+    duration: int
+
+    def sample_span(self) -> tuple[int, int]:
+        """Absolute (start, end) byte range covered by every sample."""
+        if not self.chunk_offsets or not self.sample_sizes:
+            raise VerificationError("track has no chunks or samples")
+        starts: list[int] = []
+        ends: list[int] = []
+        sample_i = 0
+        for chunk_index, offset in enumerate(self.chunk_offsets):
+            per_chunk = self.chunk_samples[chunk_index]
+            cursor = offset
+            for _ in range(per_chunk):
+                size = self.sample_sizes[sample_i]
+                starts.append(cursor)
+                cursor += size
+                ends.append(cursor)
+                sample_i += 1
+        if sample_i != self.sample_count:
+            raise VerificationError(
+                f"stsc/stsz cover {sample_i} samples but stsz declares "
+                f"{self.sample_count}")
+        return min(starts), max(ends)
+
+    def timing_line(self) -> list[tuple[int, int]]:
+        """Expand stts (+ctts) into per-sample (dts, pts) in track ticks."""
+        dts_list: list[int] = []
+        dts = 0
+        for count, delta in self.stts_entries:
+            for _ in range(count):
+                dts_list.append(dts)
+                dts += delta
+        if len(dts_list) != self.sample_count:
+            raise VerificationError(
+                "stts entry count does not match sample count")
+        ctts_flat: list[int] = []
+        for count, offset in self.ctts_entries:
+            ctts_flat.extend([offset] * count)
+        if ctts_flat and len(ctts_flat) != self.sample_count:
+            raise VerificationError(
+                "ctts entry count does not match sample count")
+        pts_list = [dts_list[i] + (ctts_flat[i] if ctts_flat else 0)
+                    for i in range(self.sample_count)]
+        return list(zip(dts_list, pts_list))
+
+
+def _read_fullbox_header(data: bytes, box_obj: RawBox
+                         ) -> tuple[int, int]:
+    version = data[box_obj.payload_start]
+    flags = int.from_bytes(
+        data[box_obj.payload_start + 1:box_obj.payload_start + 4], "big")
+    return version, flags
+
+
+def _read_stbl(data: bytes, stbl: RawBox) -> dict:
+    boxes = {b.type: b for b in iter_boxes(
+        data, stbl.payload_start, stbl.payload_end)}
+    required = (b"stsd", b"stts", b"stsc", b"stsz", b"stco")
+    missing = [t for t in required
+               if t not in boxes and not (t == b"stco" and b"co64" in boxes)]
+    if missing:
+        raise VerificationError(
+            f"stbl missing required boxes: {[t.decode() for t in missing]}")
+
+    stts_box = boxes[b"stts"]
+    pos = stts_box.payload_start + 4
+    entry_count = int.from_bytes(data[pos:pos + 4], "big")
+    pos += 4
+    stts_entries: list[tuple[int, int]] = []
+    for _ in range(entry_count):
+        count = int.from_bytes(data[pos:pos + 4], "big")
+        delta = int.from_bytes(data[pos + 4:pos + 8], "big")
+        stts_entries.append((count, delta))
+        pos += 8
+
+    ctts_entries: list[tuple[int, int]] = []
+    if b"ctts" in boxes:
+        ctts_box = boxes[b"ctts"]
+        version, _flags = _read_fullbox_header(data, ctts_box)
+        pos = ctts_box.payload_start + 4
+        entry_count = int.from_bytes(data[pos:pos + 4], "big")
+        pos += 4
+        signed = version == 1
+        for _ in range(entry_count):
+            count = int.from_bytes(data[pos:pos + 4], "big")
+            offset = int.from_bytes(
+                data[pos + 4:pos + 8], "big", signed=signed)
+            ctts_entries.append((count, offset))
+            pos += 8
+
+    stsc_box = boxes[b"stsc"]
+    pos = stsc_box.payload_start + 4
+    entry_count = int.from_bytes(data[pos:pos + 4], "big")
+    pos += 4
+    stsc_raw: list[tuple[int, int, int]] = []
+    for _ in range(entry_count):
+        first_chunk = int.from_bytes(data[pos:pos + 4], "big")
+        spc = int.from_bytes(data[pos + 4:pos + 8], "big")
+        pos += 12
+        stsc_raw.append((first_chunk, spc, 1))
+
+    stsz_box = boxes[b"stsz"]
+    pos = stsz_box.payload_start + 4
+    _uniform = int.from_bytes(data[pos:pos + 4], "big")
+    sample_count = int.from_bytes(data[pos + 4:pos + 8], "big")
+    pos += 8
+    sample_sizes = [
+        int.from_bytes(data[pos + 4 * i:pos + 4 * i + 4], "big")
+        for i in range(sample_count)]
+
+    offset_box = boxes.get(b"stco") or boxes[b"co64"]
+    width = 4 if offset_box.type == b"stco" else 8
+    pos = offset_box.payload_start + 4
+    chunk_count = int.from_bytes(data[pos:pos + 4], "big")
+    pos += 4
+    chunk_offsets = [
+        int.from_bytes(
+            data[pos + width * i:pos + width * i + width], "big")
+        for i in range(chunk_count)]
+
+    # Expand stsc first-chunk run lists into per-chunk sample counts.
+    chunk_samples = [0] * chunk_count
+    for run_i, (first_chunk, spc, _desc) in enumerate(stsc_raw):
+        end_chunk = (stsc_raw[run_i + 1][0] - 1
+                     if run_i + 1 < len(stsc_raw) else chunk_count)
+        for chunk_i in range(first_chunk - 1, end_chunk):
+            chunk_samples[chunk_i] = spc
+    if any(c == 0 for c in chunk_samples):
+        raise VerificationError("stsc does not describe every chunk")
+
+    stss_entries: list[int] = []
+    if b"stss" in boxes:
+        stss_box = boxes[b"stss"]
+        pos = stss_box.payload_start + 4
+        entry_count = int.from_bytes(data[pos:pos + 4], "big")
+        pos += 4
+        stss_entries = [
+            int.from_bytes(data[pos + 4 * i:pos + 4 * i + 4], "big")
+            for i in range(entry_count)]
+    return {
+        "sample_count": sample_count,
+        "sample_sizes": sample_sizes,
+        "chunk_offsets": chunk_offsets,
+        "chunk_samples": chunk_samples,
+        "stts_entries": stts_entries,
+        "ctts_entries": ctts_entries,
+        "stss_entries": stss_entries,
+        "offset_width": width,
+    }
+
+
+def read_mp4_index(data: bytes) -> tuple[list[TrackIndex], RawBox]:
+    """Parse the written MP4 far enough to reconstruct every track index."""
+    top = iter_boxes(data, 0, len(data))
+    top_types = [b.type for b in top]
+    if b"ftyp" not in top_types or b"moov" not in top_types \
+            or b"mdat" not in top_types:
+        raise VerificationError(
+            "top-level ftyp/moov/mdat boxes are not all present")
+    moov = next(b for b in top if b.type == b"moov")
+    mdat = next(b for b in top if b.type == b"mdat")
+    traks = [b for b in iter_boxes(
+        data, moov.payload_start, moov.payload_end) if b.type == b"trak"]
+    if not traks:
+        raise VerificationError("moov contains no trak boxes")
+    indexes: list[TrackIndex] = []
+    for trak in traks:
+        tkhd = find_box(data, trak.payload_start, trak.payload_end, b"tkhd")
+        if tkhd is None:
+            raise VerificationError("trak missing tkhd")
+        track_id = int.from_bytes(
+            data[tkhd.payload_start + 8:tkhd.payload_start + 12], "big")
+        mdia = find_box(data, trak.payload_start, trak.payload_end, b"mdia")
+        if mdia is None:
+            raise VerificationError("trak missing mdia")
+        mdhd = find_box(data, mdia.payload_start, mdia.payload_end, b"mdhd")
+        hdlr = find_box(data, mdia.payload_start, mdia.payload_end, b"hdlr")
+        minf = find_box(data, mdia.payload_start, mdia.payload_end, b"minf")
+        if mdhd is None or hdlr is None or minf is None:
+            raise VerificationError("mdia missing mdhd/hdlr/minf")
+        version = data[mdhd.payload_start]
+        if version != 0:
+            raise VerificationError(f"unsupported mdhd version {version}")
+        timescale = int.from_bytes(
+            data[mdhd.payload_start + 12:mdhd.payload_start + 16], "big")
+        duration = int.from_bytes(
+            data[mdhd.payload_start + 16:mdhd.payload_start + 20], "big")
+        handler_type = data[hdlr.payload_start + 8:
+                           hdlr.payload_start + 12]
+        stbl = find_box(data, minf.payload_start, minf.payload_end, b"stbl")
+        if stbl is None:
+            raise VerificationError("minf missing stbl")
+        parsed = _read_stbl(data, stbl)
+        indexes.append(TrackIndex(
+            track_id=track_id,
+            handler_type=handler_type.decode("latin-1"),
+            timescale=timescale,
+            duration=duration,
+            **parsed))
+    return indexes, mdat
