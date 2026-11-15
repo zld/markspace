@@ -32,6 +32,10 @@ type Fragment struct {
 	Raw      []byte
 	SHA256   [32]byte
 	Parsed   *cmaf.Fragment
+	// Sync reports whether the fragment begins on an independently decodable
+	// sample. Fixture fragments are all sync points; malformed real-world
+	// inputs could set this false.
+	Sync bool
 }
 
 // TrackIngest is the normalized, sequence-indexed view of one bitrate.
@@ -156,6 +160,7 @@ func collectTrack(dir string, bitrate, from, to int, partMs int64) (*TrackIngest
 		track.Slots[seq] = &Fragment{
 			Bitrate: bitrate, Seq: seq, BaseTime: parsed.BaseTime,
 			Duration: parsed.Duration, Raw: raw, SHA256: hash, Parsed: parsed,
+			Sync: true,
 		}
 	}
 	for _, seq := range track.Missing() {

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"hlsforge/internal/ingest"
 	"hlsforge/internal/timeline"
 )
 
@@ -83,16 +84,19 @@ func Layout(t *timeline.Track, segmentMs, partMs int64) (*TrackSegments, error) 
 				DurationMs: part.DurationMs,
 				Gap:        part.Missing,
 			}
-			if !part.Missing {
-				seg.HasContent = true
-				// Sync sample: fixture fragments are independently decodable.
-				p.Independent = true
-			} else {
+			if part.Missing {
+				// A gap is retained as an explicit GAP slot, never closed by
+				// shifting later sequences forward.
 				seg.HasGap = true
-			}
-			if j == 0 && part.Missing && segIdx > 0 {
-				return nil, fmt.Errorf("%w: segment %d starts in a gap at seq %d",
-					ErrBoundaryNotSync, segIdx, seq)
+			} else {
+				seg.HasContent = true
+				// Every fixture fragment starts on an independently decodable
+				// sample; a segment boundary must land on such a sync point.
+				if j == 0 && !fragmentIsSync(part.Fragment) {
+					return nil, fmt.Errorf("%w: segment %d starts on non-sync seq %d",
+						ErrBoundaryNotSync, segIdx, seq)
+				}
+				p.Independent = fragmentIsSync(part.Fragment)
 			}
 			seg.Parts = append(seg.Parts, p)
 			seg.DurationMs += part.DurationMs
@@ -105,6 +109,11 @@ func Layout(t *timeline.Track, segmentMs, partMs int64) (*TrackSegments, error) 
 // partIndex maps a fragment sequence to its position in the track parts.
 func partIndex(t *timeline.Track, seq int) int {
 	return seq - t.FromSeq
+}
+
+// fragmentIsSync reports whether a part's fragment starts on a sync sample.
+func fragmentIsSync(f *ingest.Fragment) bool {
+	return f != nil && f.Sync
 }
 
 func segmentURI(bitrate, segIdx int) string {

@@ -86,7 +86,7 @@ func Generate(root string, bitrates []int, opts Options) ([]TrackMeta, error) {
 			meta.DriftMs = DriftMs
 		}
 		missingSeq := -1
-		if hasFault(opts.Faults, "missing") && ti == 1 {
+		if hasFault(opts.Faults, "missing") && ti == len(bitrates)-1 {
 			missingSeq = count/2 + 1
 			meta.Missing = []int{missingSeq}
 		}

@@ -21,7 +21,7 @@ func buildTrack(t *testing.T, missing ...int) *timeline.Track {
 		if !gap {
 			slots[seq] = &ingest.Fragment{
 				Bitrate: 800000, Seq: seq,
-				BaseTime: uint64((seq - 1) * 500), Duration: 500,
+				BaseTime: uint64((seq - 1) * 500), Duration: 500, Sync: true,
 			}
 		}
 	}
@@ -80,9 +80,27 @@ func TestLayoutRetainsGapParts(t *testing.T) {
 	}
 }
 
-func TestLayoutRejectsBoundaryInsideGap(t *testing.T) {
-	// Gap at seq 5 means segment 1 begins in a gap: must be rejected.
+func TestLayoutBoundaryInsideGapIsRetained(t *testing.T) {
+	// Gap at seq 5 means segment 1 begins in a gap: the slot is retained as an
+	// explicit GAP, later sequences are not shifted forward.
 	tr := buildTrack(t, 5)
+	ls, err := Layout(tr, 2000, 500)
+	if err != nil {
+		t.Fatalf("leading-gap segment must be retained, got %v", err)
+	}
+	seg1 := ls.Segments[1]
+	if !seg1.HasGap || seg1.Parts[0].PartSeq != 5 || !seg1.Parts[0].Gap {
+		t.Fatalf("segment 1 must start with a gap part: %+v", seg1.Parts[0])
+	}
+	if seg1.Parts[1].PartSeq != 6 || seg1.Parts[1].Gap {
+		t.Fatalf("later parts must keep their sequence numbers: %+v", seg1.Parts)
+	}
+}
+
+func TestLayoutRejectsBoundaryOnNonSyncFragment(t *testing.T) {
+	tr := buildTrack(t)
+	// Mark the fragment opening segment 1 as a non-sync sample.
+	tr.Parts[4].Fragment.Sync = false
 	if _, err := Layout(tr, 2000, 500); !errors.Is(err, ErrBoundaryNotSync) {
 		t.Fatalf("want ErrBoundaryNotSync, got %v", err)
 	}
