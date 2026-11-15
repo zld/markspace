@@ -47,14 +47,14 @@ type Player struct {
 	anchorSend time.Time
 	anchored   bool
 
-	lastSeq     uint16
-	hasSeq      bool
-	reordered   uint64
-	received    uint64
-	played      uint64
-	concealed   uint64
-	started     bool
-	startFrame  uint32
+	lastSeq    uint16
+	hasSeq     bool
+	reordered  uint64
+	received   uint64
+	played     uint64
+	concealed  uint64
+	started    bool
+	startFrame uint32
 }
 
 // NewPlayer constructs a pipeline from the given configuration.
@@ -147,12 +147,12 @@ func (p *Player) Drain(now time.Duration) []Outcome {
 		o.At = due
 		if ok {
 			o.Frame = p.concealer.Real(f.Pkt.Samples)
-			// Playout latency on the receive clock: play time minus the
-			// sender's nominal send instant expressed on the same clock.
+			// Network latency on the receive clock: actual arrival instant
+			// minus the sender's nominal send instant mapped to that clock.
 			sendOnRecv := p.anchorRecv +
 				time.Duration(int64(f.Pkt.FrameNo)*int64(p.frameNS)) -
 				time.Duration(int64(p.anchorSend.UnixNano()))
-			o.Latency = clampNonNeg(due - sendOnRecv)
+			o.Latency = clampNonNeg(f.Arrival - sendOnRecv)
 			if !p.started {
 				p.started = true
 				p.startFrame = cursor
