@@ -65,11 +65,17 @@ func Layout(t *timeline.Track, segmentMs, partMs, windowMs int64) (*TrackSegment
 		return nil, fmt.Errorf("segment: window %dms outside [0,%d]", windowMs, MaxWindowMs)
 	}
 	partsPerSegment := int(segmentMs / partMs)
-	if len(t.Parts) > MaxSegments*partsPerSegment {
-		return nil, fmt.Errorf("segment: %d parts exceed cap of %d",
-			len(t.Parts), MaxSegments*partsPerSegment)
+	// Segment count derives from the inclusive sequence range, not the number
+	// of received parts, so missing fragments cannot shrink the timeline.
+	span := t.ToSeq - t.FromSeq + 1
+	if span <= 0 {
+		return nil, fmt.Errorf("segment: empty sequence range %d..%d", t.FromSeq, t.ToSeq)
 	}
-	totalSegments := (len(t.Parts) + partsPerSegment - 1) / partsPerSegment
+	totalSegments := (span + partsPerSegment - 1) / partsPerSegment
+	if totalSegments > MaxSegments {
+		return nil, fmt.Errorf("segment: %d segments exceed cap of %d",
+			totalSegments, MaxSegments)
+	}
 	firstSeg := 0
 	if windowMs > 0 {
 		keep := int(windowMs / segmentMs)
