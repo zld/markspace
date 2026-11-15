@@ -23,6 +23,7 @@ add_library(submetrics_core STATIC
     src/line_breaker.cpp
     src/analyzer.cpp
     src/subtitle_io.cpp
+    src/fixture.cpp
 )
 target_include_directories(submetrics_core PUBLIC src)
 target_compile_options(submetrics_core PRIVATE -Wall -Wextra -Wpedantic)
