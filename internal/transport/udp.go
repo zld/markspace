@@ -6,6 +6,7 @@ package transport
 import (
 	"errors"
 	"net"
+	"sync/atomic"
 	"time"
 
 	"jbbench/internal/protocol"
@@ -26,7 +27,7 @@ var (
 type Listener struct {
 	conn   *net.UDPConn
 	buf    []byte
-	closed bool
+	closed atomic.Bool
 }
 
 // NewListener binds a UDP socket on addr (e.g. "127.0.0.1:0"). The receive
@@ -54,7 +55,7 @@ func (l *Listener) LocalAddr() *net.UDPAddr {
 // ReadPacket waits up to timeout for the next datagram and returns its bytes
 // (copied, so the slice survives the next call) and sender address.
 func (l *Listener) ReadPacket(timeout time.Duration) ([]byte, *net.UDPAddr, error) {
-	if l.closed {
+	if l.closed.Load() {
 		return nil, nil, ErrClosed
 	}
 	if err := l.conn.SetReadDeadline(time.Now().Add(timeout)); err != nil {
@@ -62,7 +63,7 @@ func (l *Listener) ReadPacket(timeout time.Duration) ([]byte, *net.UDPAddr, erro
 	}
 	n, src, err := l.conn.ReadFromUDP(l.buf)
 	if err != nil {
-		if l.closed || isClosedErr(err) {
+		if l.closed.Load() || isClosedErr(err) {
 			return nil, nil, ErrClosed
 		}
 		if isTimeoutErr(err) {
@@ -78,12 +79,12 @@ func (l *Listener) ReadPacket(timeout time.Duration) ([]byte, *net.UDPAddr, erro
 	return out, src, nil
 }
 
-// Close releases the socket. It is safe to call multiple times.
+// Close releases the socket. It is safe to call concurrently or multiple
+// times; only the first call closes the underlying connection.
 func (l *Listener) Close() error {
-	if l.closed {
+	if !l.closed.CompareAndSwap(false, true) {
 		return nil
 	}
-	l.closed = true
 	return l.conn.Close()
 }
 
