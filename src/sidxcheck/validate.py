@@ -1,13 +1,23 @@
 """Validate resolved sidx references against the file and rebuilt segments.
 
 Every check here consumes the :class:`~sidxcheck.model.SidxIndex` produced by
-:mod:`sidxcheck.sidx` directly; no offset is recomputed, so parser and
-validator share one error classification.
+:mod:`sidxcheck.sidx` directly; no reference offset is recomputed, so parser
+and validator share one error classification.
 """
 
 from __future__ import annotations
 
 from . import model
+
+# Rebuild diagnostics that mean a given reference cannot be trusted.
+_REBUILD_CODES = frozenset(
+    {
+        model.CROSS_BOUNDARY_SAMPLE,
+        model.REF_SAMPLE_COVERAGE_INCOMPLETE,
+        model.REF_SIZE_MISMATCH,
+        model.REF_OUT_OF_RANGE,
+    }
+)
 
 
 def validate_references(
@@ -16,11 +26,18 @@ def validate_references(
     file_size: int,
     media_end: int,
     scan,
+    rebuild_diagnostics: list[model.Diagnostic] | None = None,
 ) -> list[model.OffsetCheck]:
     """Check ordering, offsets, sizes, ranges and trailing data."""
     checks: list[model.OffsetCheck] = []
     refs = sidx.references
     seg_by_ref = {seg.reference_index: seg for seg in segments}
+
+    rebuild_diagnostics = rebuild_diagnostics or []
+    rebuild_failures: dict[int, list[model.Diagnostic]] = {}
+    for diag in rebuild_diagnostics:
+        if diag.entry_index is not None and diag.code in _REBUILD_CODES:
+            rebuild_failures.setdefault(diag.entry_index, []).append(diag)
 
     previous_end: int | None = None
     previous_offset: int | None = None
@@ -83,38 +100,33 @@ def validate_references(
                 )
                 mismatches.append("no_coverage")
             else:
-                if segment.start != start:
-                    scan.fail(
-                        model.REF_OFFSET_MISMATCH,
-                        f"reference {ref.index} points at {start} but its "
-                        f"first sample starts at {segment.start}",
-                        box_offset=sidx.box_offset,
-                        box_type="sidx",
-                        entry_index=ref.index,
+                if rebuild_failures.get(ref.index):
+                    mismatches.extend(
+                        sorted({d.code for d in rebuild_failures[ref.index]})
                     )
-                    mismatches.append("offset")
-                rebuilt_size = segment.end - segment.start
-                if rebuilt_size != ref.referenced_size:
-                    scan.fail(
-                        model.REF_SIZE_MISMATCH,
-                        f"reference {ref.index} declares "
-                        f"{ref.referenced_size} bytes but its samples occupy "
-                        f"{rebuilt_size} bytes",
-                        box_offset=sidx.box_offset,
-                        box_type="sidx",
-                        entry_index=ref.index,
-                    )
-                    mismatches.append("size")
-                if segment.end != end:
-                    scan.fail(
-                        model.REF_SAMPLE_COVERAGE_INCOMPLETE,
-                        f"reference {ref.index} ends at {end} but sample "
-                        f"coverage ends at {segment.end}",
-                        box_offset=sidx.box_offset,
-                        box_type="sidx",
-                        entry_index=ref.index,
-                    )
-                    mismatches.append("coverage_end")
+                if not rebuild_failures.get(ref.index):
+                    # Healthy references must agree exactly on both bounds.
+                    if segment.start != start:
+                        scan.fail(
+                            model.REF_OFFSET_MISMATCH,
+                            f"reference {ref.index} points at {start} but its "
+                            f"fragment box starts at {segment.start}",
+                            box_offset=sidx.box_offset,
+                            box_type="sidx",
+                            entry_index=ref.index,
+                        )
+                        mismatches.append("offset")
+                    if (segment.end - segment.start) != ref.referenced_size:
+                        scan.fail(
+                            model.REF_SIZE_MISMATCH,
+                            f"reference {ref.index} declares "
+                            f"{ref.referenced_size} bytes but the fragment "
+                            f"occupies {segment.end - segment.start} bytes",
+                            box_offset=sidx.box_offset,
+                            box_type="sidx",
+                            entry_index=ref.index,
+                        )
+                        mismatches.append("size")
 
         checks.append(
             model.OffsetCheck(

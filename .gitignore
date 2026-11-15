@@ -1,0 +1,11 @@
+# Python bytecode and packaging artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# macOS / editor noise
+.DS_Store
+.idea/
+.vscode/

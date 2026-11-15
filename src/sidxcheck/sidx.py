@@ -122,6 +122,15 @@ def parse_sidx(located: LocatedBox, scan) -> model.SidxIndex | None:
     # Offset resolution: first reference is anchored at the sidx box itself
     # plus first_offset; later references follow the previous referenced item.
     anchor = header.box_offset + first_offset
+    if anchor < 0 or anchor > 1 << 62:
+        scan.fail(
+            model.REF_OUT_OF_RANGE,
+            f"sidx at offset {header.box_offset} resolves its first reference "
+            f"to untrusted offset {anchor}",
+            box_offset=header.box_offset,
+            box_type="sidx",
+        )
+        return None
     for i in range(entry_count):
         size_word, duration, sap_word = struct.unpack_from(
             ">III", payload, pos
@@ -135,6 +144,16 @@ def parse_sidx(located: LocatedBox, scan) -> model.SidxIndex | None:
         sap_delta = sap_word & 0x0FFFFFFF
 
         target = anchor
+        if referenced_size > (1 << 62) - anchor:
+            scan.fail(
+                model.BOX_SIZE_OVERFLOW,
+                f"sidx reference {i} at offset {header.box_offset} overflows "
+                "the 64-bit offset space",
+                box_offset=header.box_offset,
+                box_type="sidx",
+                entry_index=i,
+            )
+            return None
         index.references.append(
             model.SidxReference(
                 index=i,

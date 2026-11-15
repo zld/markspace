@@ -26,6 +26,8 @@ MAX_BOX_DEPTH = 24
 CONTAINER_TYPES = frozenset(
     {"moov", "trak", "mdia", "minf", "stbl", "mvex", "moof", "traf", "edts"}
 )
+# Types that hold leaf tables rather than nested boxes.
+LEAF_TYPES = frozenset({"sidx", "stsz", "stsc", "stco", "co64", "stts"})
 
 
 @dataclass(frozen=True)
@@ -112,17 +114,9 @@ def iter_box_headers(
         box_type = box_type_raw.decode("latin-1")
         header_size = HEADER_SIZE
 
-        if 0 < size32 < HEADER_SIZE:
-            scan.fail(
-                model.BOX_SIZE_BELOW_HEADER,
-                f"box {box_type!r} at offset {offset} declares size {size32} "
-                f"smaller than its {HEADER_SIZE}-byte header",
-                box_offset=offset,
-                box_type=box_type,
-            )
-            return
-
         if size32 == 1:
+            # 64-bit largesize follows the standard 8-byte header.  The value
+            # 1 in size32 is an escape marker, not an invalid small length.
             ext = stream.read(8)
             if len(ext) < 8:
                 scan.fail(
@@ -145,6 +139,15 @@ def iter_box_headers(
                 )
                 return
             box_size = size
+        elif 0 < size32 < HEADER_SIZE:
+            scan.fail(
+                model.BOX_SIZE_BELOW_HEADER,
+                f"box {box_type!r} at offset {offset} declares size {size32} "
+                f"smaller than its {HEADER_SIZE}-byte header",
+                box_offset=offset,
+                box_type=box_type,
+            )
+            return
         elif size32 == 0:
             # Box extends to the end of the enclosing range / file.
             box_size = end - offset

@@ -44,7 +44,8 @@ def _stsz(sizes: list[int]) -> bytes:
 
 def _stsc() -> bytes:
     # One run: every chunk (1-based) holds CHUNK_SAMPLES samples.
-    body = struct.pack(">III", 1, 1, CHUNK_SAMPLES, 1)
+    body = struct.pack(">I", 1)  # entry_count
+    body += struct.pack(">III", 1, CHUNK_SAMPLES, 1)
     return _fullbox("stsc", 0, 0, body)
 
 
@@ -59,7 +60,8 @@ def _stco(offsets: list[int], *, variant: str = "stco") -> bytes:
 
 
 def _stts() -> bytes:
-    body = struct.pack(">II", 1, SAMPLE_COUNT, SAMPLE_DELTA)
+    body = struct.pack(">I", 1)  # entry_count
+    body += struct.pack(">II", SAMPLE_COUNT, SAMPLE_DELTA)
     return _fullbox("stts", 0, 0, body)
 
 
@@ -78,24 +80,24 @@ def _minf(chunk_offsets: list[int], *, offset_variant: str) -> bytes:
 
 
 def _mdia(chunk_offsets: list[int], *, offset_variant: str) -> bytes:
-    return _box("mdia", _minf(chunk_offsets, offset_variant))
+    return _box("mdia", _minf(chunk_offsets, offset_variant=offset_variant))
 
 
 def _trak(chunk_offsets: list[int], *, offset_variant: str) -> bytes:
-    return _box("trak", _mdia(chunk_offsets, offset_variant))
+    return _box("trak", _mdia(chunk_offsets, offset_variant=offset_variant))
 
 
 def _moov(chunk_offsets: list[int], *, offset_variant: str) -> bytes:
-    return _box("moov", _trak(chunk_offsets, offset_variant))
+    return _box("moov", _trak(chunk_offsets, offset_variant=offset_variant))
 
 
-def _sidx(chunk_sizes: list[int], chunk_offsets: list[int],
+def _sidx(ref_targets: list[int], ref_sizes: list[int],
+          sidx_box_offset: int,
           *, version: int = 0, size_delta: int = 0,
-          first_offset_override: int | None = None) -> bytes:
-    first_offset = (
-        first_offset_override
-        if first_offset_override is not None else chunk_offsets[0]
-    )
+          first_offset_shift: int = 0) -> bytes:
+    # first_offset is relative to the start of the sidx box and points at the
+    # first referenced mdat box header.
+    first_offset = ref_targets[0] - sidx_box_offset + first_offset_shift
     if version == 0:
         fixed = struct.pack(
             ">IIIII", 1, TIMESCALE, 0, first_offset, 0
@@ -103,8 +105,8 @@ def _sidx(chunk_sizes: list[int], chunk_offsets: list[int],
     else:
         fixed = struct.pack(">II", 1, TIMESCALE)
         fixed += struct.pack(">QQI", 0, first_offset, 0)
-    body = fixed + struct.pack(">I", len(chunk_sizes))
-    for i, size in enumerate(chunk_sizes):
+    body = fixed + struct.pack(">I", len(ref_sizes))
+    for i, size in enumerate(ref_sizes):
         ref_size = size + (size_delta if i == 0 else 0)
         sap_word = 0x80000000 if i == 0 else 0  # starts_with_sap on first ref
         body += struct.pack(">III", ref_size, SAMPLE_DELTA * CHUNK_SAMPLES,
@@ -117,7 +119,7 @@ def build_container(
     offset_variant: str = "stco",
     sidx_version: int = 0,
     size_delta: int = 0,
-    first_offset_override: int | None = None,
+    first_offset_shift: int = 0,
 ) -> bytes:
     """Build the valid container (or a parameter-damaged variant) as bytes."""
     sizes = [sample_size(i) for i in range(SAMPLE_COUNT)]
@@ -127,37 +129,47 @@ def build_container(
     ]
 
     ftyp = _box("ftyp", b"iso5" + struct.pack(">I", 1) + b"iso5dash")
-    # First pass: measure offsets with a zero-filled stco of identical shape.
+    # First pass: build a provisional sidx with a zero-relative first offset;
+    # only its *size* is needed to locate the media region.
     placeholder = [0] * FRAGMENT_COUNT
     moov = _moov(placeholder, offset_variant=offset_variant)
-    sidx = _sidx(
+    sidx_placeholder_offset = len(ftyp) + len(moov)
+    provisional_sidx = _sidx(
+        [sidx_placeholder_offset] * FRAGMENT_COUNT,
         chunk_sizes,
-        placeholder,
+        sidx_placeholder_offset,
         version=sidx_version,
         size_delta=size_delta,
-        first_offset_override=first_offset_override,
+        first_offset_shift=0,
     )
-    media_cursor = len(ftyp) + len(moov) + len(sidx)
+    media_cursor = len(ftyp) + len(moov) + len(provisional_sidx)
 
     chunk_offsets: list[int] = []
+    mdat_starts: list[int] = []
+    ref_sizes: list[int] = []
     fragments: list[bytes] = []
     for c in range(FRAGMENT_COUNT):
-        chunk_offsets.append(media_cursor)
-        fragment = b"".join(
+        # Each fragment is an mdat box; stco/sidx describe its payload region.
+        payload = b"".join(
             sample_payload(i)
             for i in range(c * CHUNK_SAMPLES, (c + 1) * CHUNK_SAMPLES)
         )
-        fragments.append(fragment)
-        media_cursor += len(fragment)
+        mdat_starts.append(media_cursor)
+        media_cursor += 8  # mdat header precedes the sample bytes
+        chunk_offsets.append(media_cursor)
+        fragments.append(_box("mdat", payload))
+        media_cursor += len(payload)
+        ref_sizes.append(8 + len(payload))
 
     # Second pass: rebuild moov and sidx with the resolved absolute offsets.
     moov = _moov(chunk_offsets, offset_variant=offset_variant)
     sidx = _sidx(
-        chunk_sizes,
-        chunk_offsets,
+        mdat_starts,
+        ref_sizes,
+        sidx_placeholder_offset,
         version=sidx_version,
         size_delta=size_delta,
-        first_offset_override=first_offset_override,
+        first_offset_shift=first_offset_shift,
     )
     return ftyp + moov + sidx + b"".join(fragments)
 
@@ -218,8 +230,8 @@ def corrupt_sidx_zero_timescale() -> bytes:
 
 
 def corrupt_sidx_offset_mismatch() -> bytes:
-    # Point the first reference 256 bytes away from the real media start.
-    return build_container(first_offset_override=256)
+    # Shift the first reference target 128 bytes away from the real media.
+    return build_container(first_offset_shift=128)
 
 
 def corrupt_sidx_size_mismatch() -> bytes:
@@ -227,14 +239,22 @@ def corrupt_sidx_size_mismatch() -> bytes:
 
 
 def corrupt_trailing_data() -> bytes:
-    return build_container() + b"UNREFERENCED-TAIL-BYTES"
+    # A well-formed free box that no sidx reference points at.
+    tail_payload = b"unreferenced-tail"
+    tail = struct.pack(">I4s", 8 + len(tail_payload), b"free") + tail_payload
+    return build_container() + tail
 
 
 def corrupt_stsz_bad_count() -> bytes:
+    """Understate the stsz count while leaving all payload bytes in place.
+
+    The table stays parseable, but its total no longer agrees with stsc/stts,
+    exercising the cross-table consistency check rather than truncation.
+    """
     data = bytearray(build_container())
     stsz_payload = data.index(b"stsz") + 4
     # fullbox(4) + uniform_size(4), then sample_count.
-    struct.pack_into(">I", data, stsz_payload + 8, SAMPLE_COUNT + 5)
+    struct.pack_into(">I", data, stsz_payload + 8, SAMPLE_COUNT - 4)
     return bytes(data)
 
 
