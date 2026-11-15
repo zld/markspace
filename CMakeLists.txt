@@ -11,6 +11,7 @@ pkg_check_modules(LIBASS REQUIRED IMPORTED_TARGET libass>=0.17.3)
 add_library(assaudit_core STATIC
   src/util.cpp
   src/ass_parser.cpp
+  src/style_resolver.cpp
 )
 target_include_directories(assaudit_core PUBLIC include)
 target_link_libraries(assaudit_core PUBLIC PkgConfig::LIBASS)
