@@ -163,3 +163,92 @@ def _track_map(outputs: list[TrackOutput],
         })
     return result
 
+
+# --- verification -----------------------------------------------------------
+
+def verify_bytes(data: bytes, *, mkv_path: str | None = None,
+                 expected_tracks: int | None = None) -> dict:
+    """Read the MP4 index back and prove it against the bytes on disk."""
+    indexes, mdat = read_mp4_index(data)
+    if expected_tracks is not None and len(indexes) != expected_tracks:
+        raise VerificationError(
+            f"track count {len(indexes)} != expected {expected_tracks}")
+    track_reports = []
+    total_samples = 0
+    for index in indexes:
+        start, end = index.sample_span()
+        if start < mdat.payload_start or end > mdat.payload_end:
+            raise VerificationError(
+                f"track {index.track_id}: sample span 0x{start:X}..0x{end:X} "
+                f"escapes mdat 0x{mdat.payload_start:X}.."
+                f"0x{mdat.payload_end:X}")
+        if any(size <= 0 for size in index.sample_sizes):
+            raise VerificationError(
+                f"track {index.track_id}: non-positive sample size")
+        timing = index.timing_line()  # decode order
+        dts_values = [dts for dts, _pts in timing]
+        pts_values = [pts for _dts, pts in timing]
+        if any(b < a for a, b in zip(dts_values, dts_values[1:])):
+            raise VerificationError(
+                f"track {index.track_id}: DTS is not monotonic in decode "
+                "order")
+        presentation_order = sorted(pts_values)
+        if any(b < a for a, b in zip(presentation_order,
+                                     presentation_order[1:])):
+            raise VerificationError(
+                f"track {index.track_id}: PTS is not monotonic in "
+                "presentation order")
+        if index.stss_entries and (
+                index.stss_entries[0] != 1
+                or any(n < 1 or n > index.sample_count
+                       for n in index.stss_entries)):
+            raise VerificationError(
+                f"track {index.track_id}: stss entries out of range")
+        first_ms = presentation_order[0] / index.timescale * 1000.0
+        last_ms = presentation_order[-1] / index.timescale * 1000.0
+        track_reports.append({
+            "mp4_track_id": index.track_id,
+            "handler_type": index.handler_type,
+            "timescale": index.timescale,
+            "sample_count": index.sample_count,
+            "offset_start": start,
+            "offset_end": end,
+            "first_pts_ms": first_ms,
+            "last_pts_ms": last_ms,
+        })
+        total_samples += index.sample_count
+    return {
+        "index_valid": True,
+        "track_count": len(indexes),
+        "sample_count": total_samples,
+        "tracks": track_reports,
+        "mdat_size": mdat.payload_end - mdat.payload_start,
+    }
+
+
+def verify_file(path: str, limits: Limits | None = None) -> dict:
+    cap = (limits.max_bytes if limits is not None
+           else Limits().max_bytes)
+    if os.path.getsize(path) > cap:
+        raise VerificationError(
+            f"input size exceeds limit of {cap} bytes")
+    with open(path, "rb") as handle:
+        data = handle.read()
+    result = verify_bytes(data)
+    # The optional manifest companion box is the auditable track map; when
+    # present it must agree with the indexes read back from the sample tables.
+    from .bmff import iter_boxes, find_box
+    if b"mkvm" in [raw.type for raw in iter_boxes(data, 0, len(data))]:
+        manifest_box = find_box(data, 0, len(data), b"mkvm")
+        payload = data[manifest_box.payload_start:manifest_box.payload_end]
+        manifest = json.loads(payload.decode("utf-8"))
+        result["manifest"] = manifest
+        if len(manifest["tracks"]) != result["track_count"]:
+            raise VerificationError(
+                "manifest track count disagrees with moov index")
+        manifest_counts = [t["sample_count"] for t in manifest["tracks"]]
+        index_counts = [t["sample_count"] for t in result["tracks"]]
+        if manifest_counts != index_counts:
+            raise VerificationError(
+                "manifest sample counts disagree with stsz indexes")
+    return result
