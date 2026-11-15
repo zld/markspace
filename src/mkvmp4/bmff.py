@@ -373,3 +373,171 @@ def build_moov(tracks: list[TrackOutput], use_co64: bool,
         # Custom top-level companion box, kept adjacent to the index.
         moov += box(b"mkvm", manifest)
     return moov
+
+
+# --- writing: reserved index, back-filled offsets, segmented parts ---------
+
+SEGMENT_TARGET_BYTES = 1 * 1024 * 1024
+COPY_CHUNK_BYTES = 1 * 1024 * 1024
+
+
+@dataclass
+class _WritePlan:
+    # One entry per mdat write unit: (track index, first sample, count,
+    # segment index). Consecutive entries for the same track+segment merge
+    # into a single chunk.
+    units: list[tuple[int, int, int, int]]
+    part_paths: list[str]
+    mdat_data_size: int
+    mdat_header_size: int
+    use_co64: bool
+
+
+def _plan_writes(tracks: list[TrackOutput], temp_dir: str,
+                 segmented: bool) -> _WritePlan:
+    """Lay samples out into one mdat (single) or N part files (segmented)."""
+    target = SEGMENT_TARGET_BYTES if segmented else None
+    units: list[tuple[int, int, int, int]] = []
+    part_paths: list[str] = []
+    segment = 0
+    segment_bytes = 0
+    total = 0
+    part_path = f"{temp_dir}.part0"
+    part_paths.append(part_path)
+    for ti, track in enumerate(tracks):
+        first = 0
+        count = 0
+        for si, payload in enumerate(track.sample_bytes):
+            size = len(payload)
+            if target is not None and count > 0 \
+                    and segment_bytes + size > target:
+                # Close this track's run and the current segment.
+                units.append((ti, first, count, segment))
+                first = si
+                count = 0
+                segment += 1
+                segment_bytes = 0
+                part_paths.append(f"{temp_dir}.part{segment}")
+            if count == 0:
+                first = si
+            count += 1
+            segment_bytes += size
+            total += size
+        if count:
+            units.append((ti, first, count, segment))
+    mdat_header_size = 16 if total > UINT32_MAX - 8 else 8
+    # Estimate the highest offset to fix the stco/co64 choice before the
+    # index size is measured (the box widths must not change afterwards).
+    ftyp_size = len(build_ftyp())
+    estimated_moov = 4096 + sum(
+        400 + 20 * len(t.samples) + 12 * len(t.chunks) for t in tracks)
+    max_offset = (ftyp_size + estimated_moov + mdat_header_size
+                  + total)
+    use_co64 = max_offset > UINT32_MAX
+    return _WritePlan(units, part_paths, total, mdat_header_size,
+                      use_co64)
+
+
+def _build_chunks(tracks: list[TrackOutput], plan: _WritePlan,
+                  mdat_payload_start: int) -> None:
+    """Assign absolute offsets and populate each track's chunk list."""
+    for track in tracks:
+        track.chunks.clear()
+    cursor = mdat_payload_start
+    last_key: tuple[int, int] | None = None
+    for ti, first, count, _segment in plan.units:
+        track = tracks[ti]
+        key = (ti, _segment)
+        for si in range(first, first + count):
+            cursor += len(track.sample_bytes[si])
+        if last_key == key:
+            prev = track.chunks[-1]
+            prev.sample_count += count
+        else:
+            track.chunks.append(
+                Chunk(offset=cursor - sum(
+                    len(track.sample_bytes[si])
+                    for si in range(first, first + count)),
+                    first_sample=first, sample_count=count))
+        last_key = key
+
+
+class Mp4Writer:
+    """Writes ftyp + moov (reserved first) then mdat with back-filled offsets.
+
+    Segmented mode streams samples into ``.partN`` temp files, then merges
+    the parts and the per-track sample tables into one final file.
+    """
+
+    def __init__(self, tracks: list[TrackOutput], temp_path: str,
+                 segmented: bool, manifest: bytes | None = None) -> None:
+        if not tracks:
+            raise ConversionError("refusing to write an MP4 with no tracks")
+        if any(not t.samples for t in tracks):
+            raise ConversionError("refusing to write a track with no samples")
+        self.tracks = tracks
+        self.temp_path = temp_path
+        self.segmented = segmented
+        self.manifest = manifest
+        self.plan = _plan_writes(tracks, temp_path, segmented)
+
+    def _write_parts(self) -> None:
+        handles = {p: open(p, "wb") for p in self.plan.part_paths}
+        try:
+            for ti, first, count, segment in self.plan.units:
+                handle = handles[self.plan.part_paths[segment]]
+                track = self.tracks[ti]
+                for si in range(first, first + count):
+                    handle.write(track.sample_bytes[si])
+        finally:
+            for handle in handles.values():
+                handle.close()
+
+    def write(self) -> dict:
+        self._write_parts()
+        ftyp = build_ftyp()
+        mdat_header_placeholder = b"\x00" * self.plan.mdat_header_size
+        mdat_payload_start = (
+            len(ftyp)
+            + len(build_moov(self.tracks, self.plan.use_co64, self.manifest))
+            + self.plan.mdat_header_size)
+        _build_chunks(self.tracks, self.plan, mdat_payload_start)
+        moov = build_moov(self.tracks, self.plan.use_co64, self.manifest)
+        if len(moov) + len(ftyp) + self.plan.mdat_header_size \
+                != mdat_payload_start:
+            raise ConversionError(
+                "moov size changed between reservation and back-fill")
+        total_size = mdat_payload_start + self.plan.mdat_data_size
+        if self.plan.mdat_header_size == 16:
+            mdat_header = (1).to_bytes(4, "big") + b"mdat" \
+                + total_size.to_bytes(8, "big")
+        else:
+            mdat_header = (
+                8 + self.plan.mdat_data_size).to_bytes(4, "big") + b"mdat"
+        with open(self.temp_path, "wb") as out:
+            out.write(ftyp)
+            out.write(moov)
+            out.write(mdat_header)
+            for part in self.plan.part_paths:
+                with open(part, "rb") as src:
+                    while True:
+                        block = src.read(COPY_CHUNK_BYTES)
+                        if not block:
+                            break
+                        out.write(block)
+        return {
+            "path": self.temp_path,
+            "size": total_size,
+            "segments": len(self.plan.part_paths),
+            "co64": self.plan.use_co64,
+            "mdat_payload_start": mdat_payload_start,
+        }
+
+    def cleanup_parts(self) -> None:
+        import os
+        for part in self.plan.part_paths:
+            try:
+                os.remove(part)
+            except FileNotFoundError:
+                pass
+
