@@ -61,6 +61,8 @@ func main() {
 	switch os.Args[1] {
 	case "run":
 		os.Exit(cmdRun(os.Args[2:]))
+	case "self-check":
+		os.Exit(cmdSelfCheck())
 	default:
 		fmt.Fprintf(os.Stderr, "error: unknown subcommand %q (want run or self-check)\n", os.Args[1])
 		usage()
