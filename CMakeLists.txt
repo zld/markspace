@@ -16,6 +16,7 @@ add_library(subtitle_core STATIC
   src/font_metrics.cpp
   src/parser.cpp
   src/line_breaker.cpp
+  src/layout.cpp
 )
 target_include_directories(subtitle_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(subtitle_core PUBLIC Freetype::Freetype)
