@@ -21,6 +21,7 @@ add_library(submetrics_core STATIC
     src/config.cpp
     src/font_metrics.cpp
     src/line_breaker.cpp
+    src/analyzer.cpp
 )
 target_include_directories(submetrics_core PUBLIC src)
 target_compile_options(submetrics_core PRIVATE -Wall -Wextra -Wpedantic)
