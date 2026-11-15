@@ -260,6 +260,7 @@ class AnalysisSummary:
     offset_check_passed: int = 0
     offset_check_total: int = 0
     rebuilt_segments: list[RebuiltSegment] = field(default_factory=list)
+    offset_checks: list[OffsetCheck] = field(default_factory=list)
     diagnostics: list[Diagnostic] = field(default_factory=list)
     sidx: SidxIndex | None = None
     sample_table: SampleTable | None = None
@@ -281,6 +282,7 @@ class AnalysisSummary:
                 "total": self.offset_check_total,
             },
             "rebuilt_segments": [s.to_dict() for s in self.rebuilt_segments],
+            "offset_checks": [c.to_dict() for c in self.offset_checks],
             "diagnostics": [d.to_dict() for d in self.diagnostics],
             "fatal": self.fatal,
         }
