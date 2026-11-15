@@ -161,22 +161,26 @@ SubtitleResult Analyzer::analyze(const std::string& id,
             }
         }
 
-        // Horizontal safe-area classification.
+        // Horizontal safe-area classification. The content box spans
+        // [0, content_width_]; a negative left bearing crosses the left
+        // edge, an ink edge past content_width_ crosses the right edge.
+        // One entry per direction per line, preferring the breaker's
+        // reason when it already flagged the line.
         if (line_max_x > content_width_) {
             result.overflows.push_back(
                 {dst.line_index, "right",
                  src.overflow ? src.overflow_reason : "exceeds_safe_width",
                  line_max_x - content_width_});
+        } else if (src.overflow) {
+            // Breaker flagged the line even though measured ink fits
+            // (e.g. advance-only width); still surface its reason.
+            result.overflows.push_back(
+                {dst.line_index, "right", src.overflow_reason, 0.0});
         }
         if (line_min_x < 0.0) {
             result.overflows.push_back(
                 {dst.line_index, "left", "negative_bearing",
                  -line_min_x});
-        }
-        if (src.overflow && line_max_x <= content_width_) {
-            result.overflows.push_back(
-                {dst.line_index, "right", src.overflow_reason,
-                 content_width_ - line_max_x});
         }
         result.lines.push_back(dst);
     }
