@@ -88,7 +88,7 @@ class CliTests(unittest.TestCase):
             os.write(fd, b"not an iso bmff container at all")
             os.close(fd)
             err = io.StringIO()
-            with redirect_stderr(err):
+            with redirect_stdout(io.StringIO()), redirect_stderr(err):
                 code = cli.run(["--input", empty_path])
             self.assertEqual(code, cli.EXIT_CORRUPT)
             self.assertNotIn("Traceback", err.getvalue())
@@ -100,10 +100,12 @@ class CliTests(unittest.TestCase):
         os.close(fd)
         Path(target).unlink()
         try:
-            code = cli.run(["--make-sample", target])
+            with redirect_stdout(io.StringIO()):
+                code = cli.run(["--make-sample", target])
             self.assertEqual(code, cli.EXIT_OK)
             self.assertTrue(Path(target).is_file())
-            verify = cli.run(["--input", target, "--json"])
+            with redirect_stdout(io.StringIO()):
+                verify = cli.run(["--input", target, "--json"])
             self.assertEqual(verify, cli.EXIT_OK)
         finally:
             Path(target).unlink(missing_ok=True)
