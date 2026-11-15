@@ -1,0 +1,8 @@
+# Build artifacts
+/subsync
+*.test
+*.out
+
+# Local demo working directories
+demo-work/
+*.tmp
