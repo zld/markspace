@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "abr-engine"
+version = "0.1.0"
+description = "Local, reproducible ABR bitrate-decision engine for synthetic network traces"
+requires-python = ">=3.11"
+dependencies = ["numpy>=1.26,<2"]
+
+[project.optional-dependencies]
+test = []
+
+[project.scripts]
+abr-simulate = "abr_engine.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
