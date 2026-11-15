@@ -34,3 +34,10 @@ target_link_libraries(submetrics_core
 add_executable(subtitle-metrics src/main.cpp)
 target_compile_options(subtitle-metrics PRIVATE -Wall -Wextra -Wpedantic)
 target_link_libraries(subtitle-metrics PRIVATE submetrics_core)
+
+# Test-only adversarial sample generator; not part of the shipped tool.
+option(BUILD_TESTING "Build test helper executables" ON)
+if(BUILD_TESTING)
+    add_executable(fixture-samples tests/fixtures.cpp)
+    target_compile_options(fixture-samples PRIVATE -Wall -Wextra -Wpedantic)
+endif()
