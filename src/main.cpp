@@ -153,6 +153,7 @@ int main(int argc, char** argv) {
       [](const assaudit::AssEvent& e) { return !e.is_comment; }));
 
   assaudit::LayoutOutcome outcome;
+  bool outputFailed = false;
   if (opt.render) {
     assaudit::AssRenderer renderer;
     std::string err = renderer.init(opt.width, opt.height);
@@ -160,25 +161,41 @@ int main(int argc, char** argv) {
       std::cerr << "error: renderer init: " << err << "\n";
       return RENDER_FAILURE;
     }
+    // Probe output writability up front so every event can be marked
+    // instead of discarding results after the work is done.
+    bool outputOk = true;
+    if (!opt.output.empty()) {
+      std::ofstream probe(opt.output);
+      if (!probe) {
+        outputOk = false;
+        outputFailed = true;
+        std::cerr << "error: cannot open output '" << opt.output
+                  << "' for writing\n";
+      }
+    }
     assaudit::LayoutConfig cfg;
     cfg.width = opt.width;
     cfg.height = opt.height;
     cfg.strict = opt.strict;
     outcome = assaudit::runLayout(doc, renderer, cfg);
 
-    if (!opt.output.empty()) {
-      std::ofstream jf(opt.output);
-      if (!jf) {
-        std::cerr << "error: cannot open output '" << opt.output
-                  << "' for writing (event-level results discarded)\n";
-        return RENDER_FAILURE;
+    if (!outputOk) {
+      for (auto& r : outcome.reports) {
+        r.diagnostics.push_back(
+            {r.source_line, "output_unwritable",
+             "image summary not written: output path unavailable"});
       }
+    } else if (!opt.output.empty()) {
+      std::ofstream jf(opt.output);
       for (const auto& line : outcome.jsonl) jf << line << "\n";
       if (!jf) {
         std::cerr << "error: failed while writing '" << opt.output << "'\n";
         return RENDER_FAILURE;
       }
     }
+    if (!outputOk)
+      std::cerr << "warning: " << outcome.reports.size()
+                << " event summaries could not be persisted\n";
     std::cout << "events=" << eventCount << " tags_total=" << tagTotal
               << " tags_unknown=" << tagUnknown
               << " rendered=" << outcome.rendered << "\n";
@@ -198,7 +215,7 @@ int main(int argc, char** argv) {
   if (!opt.render)
     std::cout << "events=" << eventCount << " tags_total=" << tagTotal
               << " tags_unknown=" << tagUnknown << " rendered=0 (check mode)\n";
-  if (outcome.render_failure) return RENDER_FAILURE;
+  if (outcome.render_failure || outputFailed) return RENDER_FAILURE;
   if (opt.strict) {
     for (const auto& d : doc.diagnostics)
       if (d.fatal) return STRICT_STRUCTURAL;
