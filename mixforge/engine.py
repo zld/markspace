@@ -50,7 +50,8 @@ def render_to_file(graph: MixGraph, out_path: str | Path, block_frames: int) -> 
     tmp = out_path.with_name(f"{out_path.name}.tmp-{os.getpid()}")
     try:
         with sf.SoundFile(
-            str(tmp), "w", samplerate=graph.target_rate, channels=2, subtype="FLOAT"
+            str(tmp), "w", samplerate=graph.target_rate, channels=2,
+            subtype="FLOAT", format="WAV",
         ) as fh:
             stats = _drive(StreamExecutor(graph, block_frames), fh.write)
     except MediaError:

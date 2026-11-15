@@ -16,7 +16,7 @@ import numpy as np
 import soundfile as sf
 
 DURATION_S = 1.2
-STRESS_MASTER_DB = 2.6  # applied on the bus when --stress is passed
+STRESS_MASTER_DB = 2.3  # applied on the bus when --stress is passed
 
 
 def _tone(rng: np.random.Generator, rate: int, freq: float, amp: float,
@@ -41,7 +41,7 @@ def make_demo_project(directory: str | Path, seed: int = 0,
     rng = np.random.default_rng(seed)
 
     sfx = _tone(rng, 32000, 200.0, 0.38, extra=((600.0, 0.04),))
-    voice = _tone(rng, 44100, 330.0, 0.36, extra=((495.0, 0.05),))
+    voice = _tone(rng, 44100, 330.0, 0.33, extra=((495.0, 0.045),))
     amb_l = _tone(rng, 48000, 150.0, 0.37)
     amb_r = _tone(rng, 48000, 151.5, 0.37)
     amb = np.column_stack((amb_l, amb_r))
