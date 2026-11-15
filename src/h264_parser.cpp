@@ -200,6 +200,75 @@ void H264Parser::parseSps(const NalUnit& nal, const std::uint8_t* base,
     }
 }
 
+void H264Parser::parsePps(const NalUnit& nal, const std::uint8_t* base,
+                          bool tolerant) {
+    bool truncated = false;
+    std::vector<std::uint8_t> rbsp =
+        rbspUnescape(base + nal.offset, nal.size, &truncated);
+    if (rbsp.size() < 2 || truncated) {
+        errors_.push_back({nal.offset, "pps", "truncated RBSP"});
+        if (!tolerant) return;
+    }
+    BitReader br(rbsp.data(), rbsp.size());
+    br.readU(8);
+    PpsData p;
+    p.ppsId = static_cast<int>(decodeUe(br));
+    p.spsId = static_cast<int>(decodeUe(br));
+    br.readFlag(); // entropy_coding_mode_flag
+    br.readFlag(); // bottom_field_pic_order_in_frame_present
+    std::uint32_t groups = decodeUe(br);
+    if (groups > 0) {
+        br.readU(2);
+        if (groups > 1) br.readFlag();
+        std::uint32_t countMinus1 = groups > 1 ? decodeUe(br) : 0;
+        for (std::uint32_t i = 0; i <= countMinus1 && !br.error(); ++i)
+            decodeUe(br);
+    }
+    decodeUe(br); // num_ref_idx_l0_default_active_minus1
+    decodeUe(br); // num_ref_idx_l1_default_active_minus1
+    p.weightedPredFlag = br.readFlag();
+    p.weightedBipredIdc = static_cast<int>(br.readU(2));
+    (void)decodeSe(br); // pic_init_qp_minus26
+    (void)decodeSe(br); // pic_init_qs_minus26
+    (void)decodeSe(br); // chroma_qp_index_offset
+    p.deblockingFilterControlPresentFlag = br.readFlag();
+    br.readFlag(); // constrained_intra_pred
+    p.redundantPicCntPresentFlag = br.readFlag();
+    if (br.error()) {
+        errors_.push_back({nal.offset, "pps", "truncated or invalid syntax"});
+        if (!tolerant) return;
+    }
+    if (spsHistory_.find(p.spsId) == spsHistory_.end()) {
+        events_.push_back({EventKind::PpsMissingSps, p.ppsId, nal.offset,
+                           "PPS id " + std::to_string(p.ppsId) +
+                           " references unknown SPS id " +
+                           std::to_string(p.spsId)});
+        errors_.push_back({nal.offset, "pps",
+                           "missing referenced SPS id " +
+                           std::to_string(p.spsId)});
+        if (!tolerant) return;
+    }
+    auto& hist = ppsHistory_[p.ppsId];
+    bool identical = !hist.empty() &&
+                     hist.back().data.spsId == p.spsId;
+    if (hist.empty()) {
+        hist.push_back({p.ppsId, p, nal.offset, nal.offset, 0});
+        events_.push_back({EventKind::PpsNew, p.ppsId, nal.offset,
+                           "PPS id " + std::to_string(p.ppsId)});
+    } else {
+        EventKind kind = identical ? EventKind::PpsDuplicate
+                                   : EventKind::PpsUpdate;
+        ParamSetRecord<PpsData> rec{
+            p.ppsId, p, hist.front().firstOffset, nal.offset,
+            static_cast<int>(hist.size())};
+        events_.push_back({kind, p.ppsId, nal.offset,
+                           "PPS id " + std::to_string(p.ppsId) +
+                           (identical ? " duplicated (history retained)"
+                                      : " updated mid-stream (history retained)")});
+        hist.push_back(std::move(rec));
+    }
+}
+
 const SpsData* H264Parser::activeSpsForOffset(std::size_t offset) const {
     const SpsData* best = nullptr;
     std::size_t bestOffset = 0;
@@ -226,9 +295,84 @@ const PpsData* H264Parser::activePpsForOffset(std::size_t offset) const {
     return best;
 }
 
-// PPS and slice bodies are added in the next commit.
-void H264Parser::parsePps(const NalUnit&, const std::uint8_t*, bool) {}
-void H264Parser::parseSlice(const NalUnit&, const std::uint8_t*, bool) {}
+void H264Parser::parseSlice(const NalUnit& nal, const std::uint8_t* base,
+                            bool tolerant) {
+    SliceHeaderInfo sh;
+    sh.nalOffset = nal.offset;
+    sh.nalType = nal.nalType;
+    sh.nalRefIdc = nal.nalRefIdc;
+    sh.isIdr = nal.nalType == NAL_IDR_SLICE;
+    sh.referenced = nal.nalRefIdc != 0;
+
+    bool truncated = false;
+    std::vector<std::uint8_t> rbsp =
+        rbspUnescape(base + nal.offset, nal.size, &truncated);
+    if (rbsp.size() < 2 || truncated) {
+        sh.error = "truncated RBSP";
+        errors_.push_back({nal.offset, "slice", sh.error});
+        slices_.push_back(sh);
+        return;
+    }
+    BitReader br(rbsp.data(), rbsp.size());
+    br.readU(8); // NAL header
+    sh.firstMbInSlice = static_cast<int>(decodeUe(br));
+    sh.sliceTypeRaw = static_cast<int>(decodeUe(br));
+    sh.frameType = mapSliceType(sh.sliceTypeRaw > 4
+                                    ? sh.sliceTypeRaw - 5
+                                    : sh.sliceTypeRaw);
+    sh.picParameterSetId = static_cast<int>(decodeUe(br));
+
+    auto ppsIt = ppsHistory_.find(sh.picParameterSetId);
+    if (ppsIt == ppsHistory_.end()) {
+        sh.error = "slice references unknown PPS id " +
+                   std::to_string(sh.picParameterSetId);
+        errors_.push_back({nal.offset, "slice", sh.error});
+        sh.frameType = FT_UNKNOWN;
+        slices_.push_back(sh);
+        if (!tolerant) return;
+        // Still attempt the remaining fields for diagnostics.
+    }
+    const PpsData* pps = ppsIt == ppsHistory_.end()
+                             ? nullptr : &ppsIt->second.back().data;
+    const SpsData* sps = nullptr;
+    if (pps) {
+        auto it = spsHistory_.find(pps->spsId);
+        if (it != spsHistory_.end()) sps = &it->second.back().data;
+    }
+    if (!sps) {
+        sh.error = sh.error.empty()
+                       ? "no active SPS for slice header" : sh.error;
+        if (sh.error == "no active SPS for slice header")
+            errors_.push_back({nal.offset, "slice", sh.error});
+        sh.frameType = FT_UNKNOWN;
+        slices_.push_back(sh);
+        return;
+    }
+
+    sh.frameNum = static_cast<int>(br.readU(sps->log2MaxFrameNum));
+    if (!sps->frameMbsOnlyFlag)
+        sh.fieldPicFlag = br.readFlag();
+    if (sh.fieldPicFlag)
+        sh.bottomFieldFlag = br.readFlag();
+    if (sh.isIdr)
+        sh.idrPicId = static_cast<int>(decodeUe(br));
+    if (sps->picOrderCntType == 0)
+        sh.picOrderCntLsb =
+            static_cast<int>(br.readU(sps->log2MaxPicOrderCntLsb));
+    else if (sps->picOrderCntType == 1 && !sh.fieldPicFlag) {
+        if (br.readFlag())
+            sh.deltaPicOrderCntBottom = static_cast<int>(decodeSe(br));
+    }
+    if (br.error()) {
+        sh.error = "truncated slice header";
+        errors_.push_back({nal.offset, "slice", sh.error});
+        sh.frameType = FT_UNKNOWN;
+        slices_.push_back(sh);
+        return;
+    }
+    sh.parseOk = true;
+    slices_.push_back(sh);
+}
 
 void H264Parser::feed(const NalUnit& nal, const std::uint8_t* streamBase,
                       bool tolerant) {
@@ -240,7 +384,7 @@ void H264Parser::feed(const NalUnit& nal, const std::uint8_t* streamBase,
             parseSlice(nal, streamBase, tolerant);
             break;
         default:
-            break;
+            break; // AUD/SEI/filler/end-of-stream: nothing to parse
     }
 }
 
