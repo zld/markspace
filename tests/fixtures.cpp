@@ -43,22 +43,22 @@ const char* kHeader =
 std::string generateDemoAss() {
   std::string s = kHeader;
   // Tag counts per event: see fixture design; totals 47 with 2 unknown.
-  s += "Dialogue: 0,0:00:00.00,0:00:03.00,Title,,0,0,0,,Opening line {\\b1}"
+  s += "Dialogue: 0,0:00:00.00,0:00:03.00,Title,,0,0,0,,Opening line {\\b1\\u1}"
        "{\\i1}Hello, world!\n";
   s += "Dialogue: 0,0:00:03.00,0:00:06.00,Emphasis,,0,0,0,,{\\fs64\\c&H"
        "00FFFF&}Bright {\\fnCourier}warning{\\r} now\n";
   s += "Dialogue: 0,0:00:06.00,0:00:09.00,Narration,,0,0,0,,{\\an8\\pos(960,"
-       "120)}Top positioned {\\alpha&H80&}faded text\n";
+       "120)\\bord1}Top positioned {\\alpha&H80&}faded text\n";
   s += "Dialogue: 0,0:00:09.00,0:00:12.00,Caption,,0,0,0,,{\\move(100,900,"
-       "1800,900)}Sliding caption {\\fscx120}wide\n";
+       "1800,900)\\an2}Sliding caption {\\fscx120\\fsp3}wide\n";
   s += "Dialogue: 0,0:00:12.00,0:00:15.00,ScreenText,,0,0,0,,{\\t(0,500,\\fscy"
        "150\\bord4)}Growing {\\fsp6}spaced text\n";
   s += "Dialogue: 0,0:00:15.00,0:00:18.00,Small,,0,0,0,,Line one\\NLine two "
-       "{\\u1}underlined{\\u0} end\n";
+       "{\\u1\\s1}underlined{\\u0} end\n";
   s += "Dialogue: 0,0:00:18.00,0:00:21.00,Base,,0,0,0,,{\\b1\\b0}reset bold "
        "{\\zoo12}{\\fs40}sized again\n";
   s += "Dialogue: 0,0:00:21.00,0:00:24.00,Banner,,0,0,0,,{\\frz15\\blur3\\3c&"
-       "H0000FF&}Rotated banner {\\qq99}glow\n";
+       "H0000FF&\\shad2}Rotated banner {\\qq99}glow\n";
   s += "Dialogue: 0,0:00:24.00,0:00:27.00,Title,,0,0,0,,{\\fnGeorgia\\fs80"
        "\\bord2}Grand title, {\\i1}italic phrase{\\r}\n";
   s += "Dialogue: 0,0:00:27.00,0:00:30.00,Caption,,0,0,0,,{\\pos(200,500)}"

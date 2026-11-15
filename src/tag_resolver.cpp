@@ -8,8 +8,11 @@
 namespace assaudit {
 namespace {
 
-bool isNameChar(char c) {
-  return std::isalpha(static_cast<unsigned char>(c)) || c == '1';
+// ASS tag names are alphabetic, except the 1..4-prefixed colour/alpha
+// tags (e.g. \1c, \3a); digits inside a name would instead be parameters.
+bool isNameChar(char c, bool first) {
+  if (std::isalpha(static_cast<unsigned char>(c))) return true;
+  return first && std::isdigit(static_cast<unsigned char>(c));
 }
 
 const std::set<std::string>& overrideTags() {
@@ -41,10 +44,22 @@ bool validateParam(const std::string& name, const std::string& p) {
   if (name == "r" || name == "h") return true;
   if (name == "n" || name == "N") return p.empty();
   if (name == "1c" || name == "2c" || name == "3c" || name == "4c" ||
-      name == "c")
-    return parseAssColor(p).has_value();
+      name == "c") {
+    std::string v = p;
+    if (!v.empty() && v.front() == '&') {
+      if (v.size() < 2 || v[1] != 'H') v = "&H" + v.substr(1);
+      v.push_back('&');
+    }
+    return parseAssColor(v).has_value();
+  }
   if (name == "alpha" || name == "1a" || name == "2a" || name == "3a" ||
       name == "4a") {
+    std::string v = p;
+    if (!v.empty() && v.front() == '&') {
+      if (v.size() < 2 || v[1] != 'H') v = "&H" + v.substr(1);
+      v.push_back('&');
+    }
+    if (parseAssColor(v).has_value()) return true;
     double d;
     return parseDouble(p, d) && d >= 0 && d <= 255;
   }
@@ -72,13 +87,25 @@ bool validateParam(const std::string& name, const std::string& p) {
   return numeric();
 }
 // Parse one command starting at text[i] (i points just after the slash).
-// Returns the command; advances i past it. Parens are balanced greedily.
+// Returns the command; advances i past it. Parens are balanced greedily;
+// non-parenthesised parameters run until the next backslash or group end.
 TagCommand nextCommand(const std::string& text, size_t& i, bool inTransform,
                        std::vector<Diagnostic>& warnings, int lineHint) {
   TagCommand cmd;
   cmd.in_transform = inTransform;
   size_t start = i;
-  while (i < text.size() && isNameChar(text[i])) ++i;
+  if (i < text.size() && isNameChar(text[i], true)) {
+    ++i;
+    // \fn takes a bare alphabetic font name, so its name is exactly
+    // two letters; every other tag runs until the first non-letter.
+    if (text[start] == 'f' && i < text.size() && text[i] == 'n' &&
+        (i + 1 >= text.size() ||
+         std::isalpha(static_cast<unsigned char>(text[i + 1])))) {
+      ++i;
+    } else {
+      while (i < text.size() && isNameChar(text[i], false)) ++i;
+    }
+  }
   cmd.name = toLower(text.substr(start, i - start));
   if (cmd.name.empty()) {
     cmd.valid = false;
@@ -106,6 +133,20 @@ TagCommand nextCommand(const std::string& text, size_t& i, bool inTransform,
       cmd.param = text.substr(p0, i - p0);
       ++i;  // consume ')'
     }
+  } else if (i < text.size() && text[i] != '\\' && text[i] != '}' &&
+             text[i] != '{') {
+    size_t p0 = i;
+    if (cmd.name == "fn" || cmd.name == "r") {
+      // Font/style names are bare alphabetic tokens up to the next tag.
+      while (i < text.size() && std::isalnum(
+                   static_cast<unsigned char>(text[i])))
+        ++i;
+    } else {
+      while (i < text.size() && text[i] != '\\' && text[i] != '}' &&
+             text[i] != '{')
+        ++i;
+    }
+    cmd.param = text.substr(p0, i - p0);
   }
   if (knownTags().count(cmd.name) == 0) {
     cmd.unknown = true;

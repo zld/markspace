@@ -15,7 +15,9 @@ add_library(assaudit_core STATIC
   src/tag_resolver.cpp
   src/ass_renderer.cpp
   src/layout_engine.cpp
+  tests/fixtures.cpp
 )
+target_include_directories(assaudit_core PUBLIC include tests)
 target_include_directories(assaudit_core PUBLIC include)
 target_link_libraries(assaudit_core PUBLIC PkgConfig::LIBASS)
 
@@ -23,11 +25,12 @@ add_executable(subtitle_audit src/main.cpp)
 target_link_libraries(subtitle_audit PRIVATE assaudit_core)
 
 enable_testing()
-add_executable(fixtures_generator tests/fixtures_generator.cpp tests/fixtures.cpp)
+add_executable(fixtures_generator tests/fixtures_generator.cpp)
 target_include_directories(fixtures_generator PRIVATE tests include)
+target_link_libraries(fixtures_generator PRIVATE assaudit_core)
 add_test(NAME fixtures_generator COMMAND fixtures_generator)
 
-add_executable(integration_tests tests/integration.cpp tests/fixtures.cpp)
+add_executable(integration_tests tests/integration.cpp)
 target_include_directories(integration_tests PRIVATE tests include)
 target_link_libraries(integration_tests PRIVATE assaudit_core)
 add_test(NAME integration_tests COMMAND integration_tests)
