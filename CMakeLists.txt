@@ -41,3 +41,9 @@ if(BUILD_TESTING)
     add_executable(fixture-samples tests/fixtures.cpp)
     target_compile_options(fixture-samples PRIVATE -Wall -Wextra -Wpedantic)
 endif()
+
+enable_testing()
+add_test(NAME cli_smoke
+         COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/cli_smoke.sh
+                 ${CMAKE_BINARY_DIR}
+         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
