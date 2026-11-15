@@ -1,22 +1,23 @@
 package main
 
 import (
+	"hlsforge/internal/app"
 	"hlsforge/internal/cli"
 	"hlsforge/internal/report"
 )
 
-// The three subcommand handlers live in separate files of package main and
-// are wired in as the pipeline packages land. They always return a populated
-// report so the exit-code mapping in main.go stays uniform.
+// The subcommand handlers are thin adapters over internal/app so the
+// exit-code mapping in main.go stays uniform and the pipeline logic is shared
+// with the package-level tests.
 
 func runDemo(cfg *cli.DemoConfig) (*report.Report, error) {
-	return runDemoImpl(cfg)
+	return app.RunDemo(cfg)
 }
 
 func runBuild(cfg *cli.BuildConfig) (*report.Report, error) {
-	return runBuildImpl(cfg)
+	return app.RunBuild(cfg)
 }
 
 func runVerify(cfg *cli.VerifyConfig) (*report.Report, error) {
-	return runVerifyImpl(cfg)
+	return app.RunVerify(cfg)
 }
