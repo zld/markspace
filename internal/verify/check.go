@@ -59,12 +59,16 @@ func Verify(in Input) ([]report.TrackSummary, []report.Finding, error) {
 		}
 		inputs = append(inputs, ti)
 
+		// Reported duration is the declared timeline window, not the (possibly
+		// drifted) end of the last fragment, so every bitrate reports the same
+		// nominal duration.
+		nominalMs := int64(ct.ToSeq-ct.FromSeq+1) * ct.PartMs
 		sum := report.TrackSummary{
 			BitrateKbps: ct.Bitrate / 1000,
 			Fragments:   len(ct.Present()),
 			Segments:    len(layout.Segments),
 			Parts:       layout.PartCount(),
-			DurationS:   float64(tr.EndMs) / 1000.0,
+			DurationS:   float64(nominalMs) / 1000.0,
 		}
 		findings = append(findings, checkFiles(in.HLS, ct, tr, layout)...)
 		sum.Failures = countFor(findings, ct.Bitrate)

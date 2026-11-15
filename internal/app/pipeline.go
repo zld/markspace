@@ -77,12 +77,13 @@ func RunBuild(cfg *cli.BuildConfig) (*report.Report, error) {
 			InitURI: filepath.Join(layout.SegmentDir, fixture.InitName()),
 			HasPreload: true, CanSkipTo: true,
 		})
+		nominalMs := int64(ct.ToSeq-ct.FromSeq+1) * ct.PartMs
 		rep.Tracks = append(rep.Tracks, report.TrackSummary{
 			BitrateKbps: ct.Bitrate / 1000,
 			Fragments:   len(ct.Present()),
 			Segments:    len(layout.Segments),
 			Parts:       layout.PartCount(),
-			DurationS:   float64(tr.EndMs) / 1000.0,
+			DurationS:   float64(nominalMs) / 1000.0,
 			Failures:    len(ct.Missing()),
 		})
 	}
