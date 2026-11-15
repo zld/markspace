@@ -214,21 +214,3 @@ func parseTFHD(trafData []byte) (uint32, uint32, error) {
 	}
 	return defDur, defSize, nil
 }
-
-
-// parseTRUN is implemented in trun.go.
-func parseTRUN(trafData []byte, f *Fragment, defDur, defSize uint32) error {
-	_ = trafData
-	_ = f
-	_ = defDur
-	_ = defSize
-	return errors.New("cmaf: trun parsing not wired yet")
-}
-
-// validateMdat is implemented in trun.go.
-func validateMdat(moof, mdat *Box, f *Fragment) error {
-	_ = moof
-	_ = mdat
-	_ = f
-	return errors.New("cmaf: mdat validation not wired yet")
-}
