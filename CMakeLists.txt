@@ -20,5 +20,6 @@ add_library(h264_core STATIC
   src/bit_reader.cpp
   src/exp_golomb.cpp
   src/nal_scanner.cpp
+  src/h264_parser.cpp
 )
 target_include_directories(h264_core PUBLIC include)
