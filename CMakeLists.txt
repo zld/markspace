@@ -24,6 +24,7 @@ add_library(submetrics_core STATIC
     src/analyzer.cpp
     src/subtitle_io.cpp
     src/fixture.cpp
+    src/json_writer.cpp
 )
 target_include_directories(submetrics_core PUBLIC src)
 target_compile_options(submetrics_core PRIVATE -Wall -Wextra -Wpedantic)
