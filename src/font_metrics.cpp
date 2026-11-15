@@ -69,7 +69,7 @@ const FontChain::GlyphInfo& FontChain::glyph(std::uint32_t cp) {
     FT_Glyph g;
     if (FT_Get_Glyph(face->glyph, &g) == 0) {
       FT_BBox box;
-      FT_Glyph_Get_CBox(g, FT_GLYPH_BBOX_TRUNCATE, &box);
+      FT_Glyph_Get_CBox(g, FT_GLYPH_BBOX_SUBPIXELS, &box);  // 26.6 units
       info.ink = BBox{box.xMin, box.yMin, box.xMax, box.yMax};
       FT_Done_Glyph(g);
     }

@@ -25,3 +25,6 @@ target_include_directories(subtitle_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/incl
 target_link_libraries(subtitle_core PUBLIC Freetype::Freetype nlohmann_json::nlohmann_json)
 
 enable_testing()
+
+add_executable(subtitle-metrics src/main.cpp)
+target_link_libraries(subtitle-metrics PRIVATE subtitle_core)
