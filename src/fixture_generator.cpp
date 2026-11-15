@@ -27,8 +27,8 @@ const char* kMixed[] = {
     "玩家 HP 归零时触发结算动画。",
 };
 const char* kCombining[] = {
-    "Cafe\xCC\x81 au lait, nai\xCC\x88ve facade.",
-    "a\xCC\x81e\xCC\x81i\xCC\x81o\xCC\x81u\xCC\x81 组合符号测试。",
+    "Cafe\xCC\x81" " au lait, nai\xCC\x88" "ve facade.",
+    "a\xCC\x81" "e\xCC\x81" "i\xCC\x81" "o\xCC\x81" "u\xCC\x81" " 组合符号测试。",
 };
 const char* kPunct[] = {
     "「引号」、（括号）。《书名号》测试！",
