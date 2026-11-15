@@ -59,16 +59,14 @@ func Recover(cp *Checkpoint, task *model.Task, inputPath string) (*RecoveryOutco
 			seg.Quality = saved.Quality
 			seg.Attempts = saved.Attempts
 			out.Resumed = true
-		case model.StatusRunning, model.StatusQueued:
+		case model.StatusRunning, model.StatusQueued, model.StatusInterrupted:
 			if err := seg.ResetToQueued(); err != nil {
 				return nil, err
 			}
-			if saved.Status == model.StatusRunning {
+			// Both "running when the process died" and the explicitly
+			// interrupted state represent in-flight work being re-queued.
+			if saved.Status != model.StatusQueued {
 				out.RequeuedRunning = append(out.RequeuedRunning, i+1)
-			}
-		case model.StatusInterrupted:
-			if err := seg.ResetToQueued(); err != nil {
-				return nil, err
 			}
 		case model.StatusFailed:
 			if err := seg.ResetToQueued(); err != nil {
@@ -99,6 +97,10 @@ func outputMissing(seg *model.Segment) bool {
 	return false
 }
 
+// paramsCompatible compares only the parameters that determine encoded
+// output. Concurrency (Workers) and the per-segment size ceiling are
+// scheduling/resource settings: changing them must not invalidate verified
+// segments, so they are deliberately excluded from this comparison.
 func paramsCompatible(p Params, t *model.Task) bool {
 	return p.InputPath == t.InputPath &&
 		p.DurationSec == t.DurationSec &&

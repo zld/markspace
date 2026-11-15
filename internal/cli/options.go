@@ -89,12 +89,18 @@ func (o *Options) validate() error {
 		{o.SegmentSec <= o.DurationSec, "--segment-seconds cannot exceed --duration"},
 		{o.Workers >= 1, "--workers must be >= 1"},
 		{o.Checkpoint != "", "--checkpoint is required"},
-		{o.Encoder != "", "--encoder must explicitly name the encoder command (use {in} {out} {kbps} {duration})"},
 		{o.MaxOutputBytes > 0, "--max-output-bytes must be > 0"},
 	}
 	for _, c := range checks {
 		if !c.ok {
 			return fmt.Errorf("%w: %s", errInvalid, c.msg)
+		}
+	}
+	// An explicit --encoder is preferred but optional: when absent the demo
+	// resolves the bundled stub double in ResolveEncoder before any work.
+	if o.Encoder != "" {
+		if err := validateTemplate(o.Encoder); err != nil {
+			return err
 		}
 	}
 	return nil

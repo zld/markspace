@@ -18,7 +18,6 @@ cd "$ROOT"
 
 WORKDIR="$ROOT/.demo"
 BIN="$WORKDIR/bin"
-ENC="$BIN/stubencoder"
 CLI="$BIN/transcode"
 CP="$WORKDIR/job.json"
 DURATION="${DURATION:-120}"
@@ -26,22 +25,23 @@ SEGMENT="${SEGMENT:-10}"
 TARGET="${TARGET:-2400}"
 WORKERS="${WORKERS:-3}"
 
-ENCODER_CMD="$ENC --in {in} --out {out} --target-kbps {kbps} --duration-sec {duration}"
+# The encoder is optional for the demo: omitting --encoder makes the CLI
+# build and invoke the bundled synthetic stub double by explicit path. A
+# real deployment would instead pass, e.g.:
+#   --encoder "/usr/local/bin/x264 --in {in} --out {out} --target-kbps {kbps} --duration-sec {duration}"
 
-echo "==> building local binaries"
+echo "==> building local CLI"
+rm -rf "$WORKDIR"
 mkdir -p "$BIN"
-go build -o "$ENC" ./cmd/stubencoder
 go build -o "$CLI" ./cmd/transcode
 
-echo "==> fresh run (JSON)"
-rm -rf "$WORKDIR/job.json" "$WORKDIR/segments" "$WORKDIR/work"
+echo "==> fresh run (JSON, encoder resolved to bundled double)"
 "$CLI" demo \
   --duration "$DURATION" \
   --segment-seconds "$SEGMENT" \
   --target-kbps "$TARGET" \
   --workers "$WORKERS" \
   --checkpoint "$CP" \
-  --encoder "$ENCODER_CMD" \
   --json
 
 echo
@@ -51,8 +51,7 @@ echo "==> immediate resume (must reuse every completed segment)"
   --segment-seconds "$SEGMENT" \
   --target-kbps "$TARGET" \
   --workers "$WORKERS" \
-  --checkpoint "$CP" \
-  --encoder "$ENCODER_CMD"
+  --checkpoint "$CP"
 
 echo
 echo "==> demo complete (workspace: $WORKDIR)"

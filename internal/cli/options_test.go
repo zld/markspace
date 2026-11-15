@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -38,9 +39,8 @@ func TestParseValidationFailures(t *testing.T) {
 		"zero target":        baseArgs("--target-kbps", "0"),
 		"zero workers":       baseArgs("--workers", "0"),
 		"no checkpoint": {"demo", "--duration", "1", "--segment-seconds", "1",
-			"--target-kbps", "100", "--encoder", "e {in} {out}"},
-		"no encoder": {"demo", "--duration", "1", "--segment-seconds", "1",
-			"--target-kbps", "100", "--checkpoint", "/tmp/x/job.json"},
+			"--target-kbps", "100", "--encoder", "e {in} {out} {kbps} {duration}"},
+		"encoder missing placeholders": baseArgs("--encoder", "e {in} {out}"),
 	}
 	for name, args := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -62,6 +62,43 @@ func TestJobIDStable(t *testing.T) {
 	b, _ := Parse(baseArgs())
 	if jobID(a) != jobID(b) || jobID(a) == "" {
 		t.Fatal("job id must be deterministic")
+	}
+	// Worker count is a scheduling resource and must not change the job id.
+	moreWorkers := baseArgs("--workers", "9")
+	c, _ := Parse(moreWorkers)
+	if jobID(a) != jobID(c) {
+		t.Fatal("job id must be independent of worker count")
+	}
+}
+
+func TestValidateTemplate(t *testing.T) {
+	good := "enc --in {in} --out {out} --target-kbps {kbps} --duration-sec {duration}"
+	if err := validateTemplate(good); err != nil {
+		t.Fatalf("valid template rejected: %v", err)
+	}
+	for _, bad := range []string{"", "enc {in} {out}", "enc {in} {out} {kbps}"} {
+		if err := validateTemplate(bad); err == nil {
+			t.Fatalf("template %q should be rejected", bad)
+		}
+	}
+}
+
+func TestResolveEncoderDefaultsToBundledStub(t *testing.T) {
+	o, err := Parse(baseArgs())
+	if err != nil {
+		t.Fatal(err)
+	}
+	o.Encoder = "" // simulate omission of --encoder
+	var buf bytes.Buffer
+	if err := o.ResolveEncoder(&buf); err != nil {
+		t.Fatalf("bundled encoder resolution failed: %v", err)
+	}
+	if !strings.Contains(o.Encoder, "stubencoder") ||
+		!strings.Contains(o.Encoder, "{in}") || !filepath.IsAbs(o.EncoderBin) {
+		t.Fatalf("resolved encoder not an absolute explicit template: %q", o.Encoder)
+	}
+	if !strings.Contains(buf.String(), "not a real codec") {
+		t.Fatal("the synthetic-double disclaimer must be printed")
 	}
 }
 

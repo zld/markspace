@@ -31,6 +31,14 @@ func (a *App) Run(o Options) int {
 		syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	// Ensure the encoder command is explicit before touching any pipeline.
+	if err := o.ResolveEncoder(a.Stderr); err != nil {
+		if IsInvalid(err) {
+			return a.fail(ExitInvalidInput, err)
+		}
+		return a.fail(ExitGeneric, err)
+	}
+
 	samples, err := a.prepareInput(o)
 	if err != nil {
 		return a.fail(ExitInvalidInput, err)

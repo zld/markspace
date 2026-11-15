@@ -6,16 +6,18 @@
 // Usage:
 //
 //	stubencoder --in input.vid --out output.enc --target-kbps N \
-//	            --duration-sec D [--fail N] [--truncate N]
+//	            --duration-sec D [--fail N] [--truncate N] [--sleep-ms N]
 //
 // --fail N      exit with code N after writing nothing (encoder failure drill)
 // --truncate N  exit 0 but leave the output N bytes short (truncation drill)
+// --sleep-ms N  sleep N milliseconds before encoding (interruption drill)
 package main
 
 import (
 	"flag"
 	"fmt"
 	"os"
+	"time"
 
 	"transcode/internal/media"
 )
@@ -27,11 +29,15 @@ func main() {
 	duration := flag.Float64("duration-sec", 0, "segment duration in seconds")
 	failCode := flag.Int("fail", 0, "if >0, exit with this code without encoding")
 	truncate := flag.Int("truncate", 0, "if >0, trim this many bytes from the output")
+	sleepMS := flag.Int("sleep-ms", 0, "if >0, sleep this long before encoding")
 	flag.Parse()
 
 	if *in == "" || *out == "" || *targetKbps <= 0 || *duration <= 0 {
 		fmt.Fprintln(os.Stderr, "stubencoder: --in, --out, --target-kbps and --duration-sec are required")
 		os.Exit(2)
+	}
+	if *sleepMS > 0 {
+		time.Sleep(time.Duration(*sleepMS) * time.Millisecond)
 	}
 	if *failCode > 0 {
 		fmt.Fprintf(os.Stderr, "stubencoder: simulated encoder failure (exit %d)\n", *failCode)

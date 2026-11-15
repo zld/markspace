@@ -14,14 +14,13 @@ const (
 	fixtureHeight = 12
 )
 
-// jobID derives a stable identifier from the run parameters alone, so the
-// same inputs always map to the same resumable job regardless of where the
-// workspace happens to live on disk. Path-specific state stays in the
-// checkpoint Params and the input fingerprint check.
+// jobID derives a stable identifier from the output-determining parameters
+// alone, so the same material maps to the same resumable job regardless of
+// where the workspace lives or how many workers are used. Scheduling
+// resources (workers, size ceiling) and paths intentionally do not enter it.
 func jobID(o Options) string {
 	h := sha256.New()
-	fmt.Fprintf(h, "%g|%g|%g|%g|%d|%d",
-		o.DurationSec, o.SegmentSec, o.TargetKbps, o.MinKbps,
-		o.Workers, o.MaxOutputBytes)
+	fmt.Fprintf(h, "%g|%g|%g|%g",
+		o.DurationSec, o.SegmentSec, o.TargetKbps, o.MinKbps)
 	return "job-" + hex.EncodeToString(h.Sum(nil))[:12]
 }
