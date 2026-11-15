@@ -42,7 +42,9 @@ bool fieldValid(const std::string& key, const std::string& val,
   } else if (key == "bold" || key == "italic" || key == "underline" ||
              key == "strikeout") {
     int v;
-    if (!parseInt(val, v) || (v != 0 && v != -1)) reason = "expected 0 or -1";
+    // ASS booleans: 0 = off, -1 = on/default, 1 = on (seen in real files).
+    if (!parseInt(val, v) || !(v == 0 || v == 1 || v == -1))
+      reason = "expected 0, 1 or -1";
   } else if (key == "scalex" || key == "scaley") {
     if (!isIntRange(1, 10000)) reason = "scale percentage out of range";
   } else if (key == "spacing" || key == "angle" || key == "outline" ||

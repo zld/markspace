@@ -41,6 +41,7 @@ events=12 tags_total=47 tags_unknown=2 rendered=12
 | `--render` | full pipeline incl. offscreen libass rendering |
 | `--strict` | structural errors cause exit code 3 |
 | `--demo` | use the built-in generated document |
+| `--verbose`, `-v` | print every merged field with its provenance |
 | `--resolution WxH` | target video size (default 1920x1080) |
 | `--output FILE` | per-event JSONL image summaries |
 

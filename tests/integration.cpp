@@ -110,6 +110,37 @@ void testDefaultedFields() {
         "default margin value applied");
 }
 
+void testBooleanFields() {
+  // Real ASS files use 1 (not only -1) to enable bold/italic/underline.
+  std::string text =
+      "[Script Info]\n[V4+ Styles]\n"
+      "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, "
+      "OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, "
+      "ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
+      "Alignment, MarginL, MarginR, MarginV, Encoding, Parent\n"
+      "Style: B,Arial,20,&H00FFFFFF,&H000000FF,&H00000000,&H64000000,"
+      "1,1,1,0,100,100,0,0,1,2,1,2,10,10,10,1,\n"
+      "Style: Bad,Arial,20,&H00FFFFFF,&H000000FF,&H00000000,&H64000000,"
+      "7,0,0,0,100,100,0,0,1,2,1,2,10,10,10,1,\n\n[Events]\n"
+      "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, "
+      "Effect, Text\nDialogue: 0,0:00:00.00,0:00:01.00,B,,0,0,0,,x\n";
+  auto doc = parse(text);
+  resolveStyles(doc);
+  const AssStyle* b = nullptr;
+  const AssStyle* bad = nullptr;
+  for (const auto& s : doc.styles) {
+    if (s.name == "B") b = &s;
+    if (s.name == "Bad") bad = &s;
+  }
+  check(b && b->merged.at("italic").text == "1" &&
+            b->merged.at("bold").state == FieldState::Explicit,
+        "boolean value 1 accepted and kept explicit");
+  bool warned = false;
+  for (const auto& e : bad->errors)
+    if (e.code == "field_invalid") warned = true;
+  check(warned, "illegal boolean 7 skipped with a warning");
+}
+
 void testMissingParent() {
   auto doc = parse(generateMissingParentAss());
   auto stats = resolveStyles(doc);
@@ -285,6 +316,7 @@ int main() {
   testReorderedFormatAndCommas();
   testInheritance();
   testDefaultedFields();
+  testBooleanFields();
   testMissingParent();
   testCycle();
   testDuplicate();

@@ -25,6 +25,7 @@ struct Options {
   bool render = false;
   bool strict = false;
   bool demo = false;
+  bool verbose = false;
   int width = 1920;
   int height = 1080;
   std::string input;
@@ -39,6 +40,7 @@ void usage() {
       << "  --render       full pipeline incl. offscreen libass rendering\n"
       << "  --strict       structural errors cause exit code 3\n"
       << "  --demo         use the built-in generated demo document\n"
+      << "  --verbose      print every merged field and its provenance\n"
       << "  --resolution   target video size, e.g. 1920x1080 (default)\n"
       << "  --output FILE  write per-event JSONL image summaries\n";
 }
@@ -67,6 +69,7 @@ int main(int argc, char** argv) {
     else if (a == "--render") opt.render = true;
     else if (a == "--strict") opt.strict = true;
     else if (a == "--demo") opt.demo = true;
+    else if (a == "--verbose" || a == "-v") opt.verbose = true;
     else if (a == "--resolution") {
       std::string v;
       if (!next(v) || !parseResolution(v, opt.width, opt.height)) {
@@ -133,7 +136,7 @@ int main(int argc, char** argv) {
       std::cout << (i ? "->" : "") << st.chain[i];
     if (st.chain.empty()) std::cout << "(none)";
     std::cout << "\n";
-    if (!st.blocked) {
+    if (opt.verbose && !st.blocked) {
       for (const auto& [key, field] : st.merged)
         std::cout << "  " << key << "=" << field.text << " <"
                   << (field.state == assaudit::FieldState::Defaulted
