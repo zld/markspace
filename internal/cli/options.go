@@ -15,32 +15,32 @@ import (
 
 // Exit codes are part of the documented contract.
 const (
-	ExitOK              = 0
-	ExitGeneric         = 1
-	ExitInvalidInput    = 2
-	ExitPartialFailure  = 3
-	ExitCheckpointBad   = 4
+	ExitOK             = 0
+	ExitGeneric        = 1
+	ExitInvalidInput   = 2
+	ExitPartialFailure = 3
+	ExitCheckpointBad  = 4
 )
 
 // Options is the parsed command line.
 type Options struct {
-	Command         string // "demo"
-	DurationSec     float64
-	SegmentSec      float64
-	TargetKbps      float64
-	MinKbps         float64
-	Workers         int
-	Checkpoint      string
-	JSON            bool
-	Workspace       string
-	Encoder         string // explicit encoder command template
-	MaxOutputBytes  int64
-	SampleSidecar   string // optional precomputed complexity samples
+	Command        string // "demo"
+	DurationSec    float64
+	SegmentSec     float64
+	TargetKbps     float64
+	MinKbps        float64
+	Workers        int
+	Checkpoint     string
+	JSON           bool
+	Workspace      string
+	Encoder        string // explicit encoder command template
+	MaxOutputBytes int64
+	SampleSidecar  string // optional precomputed complexity samples
 	// Resolved at runtime:
-	InputPath     string
-	OutputDir     string
-	WorkDir       string
-	EncoderBin    string
+	InputPath  string
+	OutputDir  string
+	WorkDir    string
+	EncoderBin string
 }
 
 // Parse builds Options from argv. The first positional argument selects the
@@ -79,8 +79,8 @@ func Parse(argv []string) (Options, error) {
 
 func (o *Options) validate() error {
 	checks := []struct {
-		ok   bool
-		msg  string
+		ok  bool
+		msg string
 	}{
 		{finitePositive(o.DurationSec), "--duration must be a positive finite number"},
 		{finitePositive(o.SegmentSec), "--segment-seconds must be a positive finite number"},

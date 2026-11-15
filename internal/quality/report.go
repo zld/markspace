@@ -10,16 +10,16 @@ import (
 
 // Report is the stable, JSON-serializable quality summary for a full job.
 type Report struct {
-	MeanPSNRDB        float64   `json:"psnr_mean_db"`
-	MinPSNRDB         float64   `json:"psnr_min_db"`
-	MaxPSNRDB         float64   `json:"psnr_max_db"`
-	SegmentPSNRDB     []float64 `json:"segment_psnr_db"`
-	SegmentDeltaDB    []float64 `json:"segment_psnr_delta_db"`
-	WorstSegment      int       `json:"worst_segment"`
-	WorstSegmentDB    float64   `json:"worst_segment_psnr_db"`
-	BlackFrameTotal   int       `json:"black_frames"`
-	IdenticalFrameTotal int     `json:"identical_frame_pairs"`
-	MeasuredSegments  int       `json:"measured_segments"`
+	MeanPSNRDB          float64   `json:"psnr_mean_db"`
+	MinPSNRDB           float64   `json:"psnr_min_db"`
+	MaxPSNRDB           float64   `json:"psnr_max_db"`
+	SegmentPSNRDB       []float64 `json:"segment_psnr_db"`
+	SegmentDeltaDB      []float64 `json:"segment_psnr_delta_db"`
+	WorstSegment        int       `json:"worst_segment"`
+	WorstSegmentDB      float64   `json:"worst_segment_psnr_db"`
+	BlackFrameTotal     int       `json:"black_frames"`
+	IdenticalFrameTotal int       `json:"identical_frame_pairs"`
+	MeasuredSegments    int       `json:"measured_segments"`
 }
 
 // finiteOnly drops NaN/Inf values; indices are returned alongside so callers

@@ -23,24 +23,24 @@ var ErrCorruptCheckpoint = errors.New("checkpoint corrupt or incompatible")
 
 // Checkpoint is the full persisted state of one job.
 type Checkpoint struct {
-	SchemaVersion    int                  `json:"schema_version"`
-	JobID            string               `json:"job_id"`
-	Params           Params               `json:"params"`
-	InputFingerprint string               `json:"input_fingerprint"`
-	Segments         []*model.Segment     `json:"segments"`
+	SchemaVersion    int              `json:"schema_version"`
+	JobID            string           `json:"job_id"`
+	Params           Params           `json:"params"`
+	InputFingerprint string           `json:"input_fingerprint"`
+	Segments         []*model.Segment `json:"segments"`
 }
 
 // Params is the parameter summary embedded in every checkpoint. Two runs
 // with identical Params plus identical input fingerprint are resumable.
 type Params struct {
-	InputPath       string  `json:"input_path"`
-	DurationSec     float64 `json:"duration_sec"`
-	SegmentSec      float64 `json:"segment_seconds"`
-	TargetKbps      float64 `json:"target_kbps"`
-	MinKbps         float64 `json:"min_kbps"`
-	EncoderCommand  string  `json:"encoder_command"`
-	Workers         int     `json:"workers"`
-	MaxOutputBytes  int64   `json:"max_output_bytes"`
+	InputPath      string  `json:"input_path"`
+	DurationSec    float64 `json:"duration_sec"`
+	SegmentSec     float64 `json:"segment_seconds"`
+	TargetKbps     float64 `json:"target_kbps"`
+	MinKbps        float64 `json:"min_kbps"`
+	EncoderCommand string  `json:"encoder_command"`
+	Workers        int     `json:"workers"`
+	MaxOutputBytes int64   `json:"max_output_bytes"`
 }
 
 // Store reads and writes checkpoint files under a fixed directory root.

@@ -9,9 +9,9 @@ import (
 func TestValidateRejectsBadInputs(t *testing.T) {
 	good := []float64{1, 2, 3}
 	cases := []struct {
-		name                                  string
-		duration, seg, target, min            float64
-		samples                               []float64
+		name                       string
+		duration, seg, target, min float64
+		samples                    []float64
 	}{
 		{"zero duration", 0, 10, 2400, 100, good},
 		{"negative segment", 120, -10, 2400, 100, good},

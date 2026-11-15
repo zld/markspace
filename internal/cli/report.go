@@ -15,24 +15,24 @@ import (
 // JSONReport is the stable machine-readable contract. Field order is fixed
 // by struct order; numeric arrays preserve segment order.
 type JSONReport struct {
-	Status             string             `json:"status"`
-	JobID              string             `json:"job_id"`
-	Segments           int                `json:"segments"`
-	Succeeded          int                `json:"succeeded"`
-	Failed             int                `json:"failed"`
-	Interrupted        int                `json:"interrupted"`
-	TargetKbps         float64            `json:"target_kbps"`
-	ActualKbps         float64            `json:"actual_kbps"`
-	DeviationPct       float64            `json:"deviation_pct"`
-	PSNRMeanDB         float64            `json:"psnr_mean_db"`
-	PSNRMinDB          float64            `json:"psnr_min_db"`
-	PSNRMaxDB          float64            `json:"psnr_max_db"`
-	WorstSegment       int                `json:"worst_segment"`
-	WorstSegmentPSNRDB float64            `json:"worst_segment_psnr_db"`
-	SegmentPSNRDB      []float64          `json:"segment_psnr_db"`
-	SegmentDeltaDB     []float64          `json:"segment_psnr_delta_db"`
-	Infeasible         []int              `json:"infeasible_segments"`
-	Recovery           RecoveryJSON       `json:"recovery"`
+	Status             string              `json:"status"`
+	JobID              string              `json:"job_id"`
+	Segments           int                 `json:"segments"`
+	Succeeded          int                 `json:"succeeded"`
+	Failed             int                 `json:"failed"`
+	Interrupted        int                 `json:"interrupted"`
+	TargetKbps         float64             `json:"target_kbps"`
+	ActualKbps         float64             `json:"actual_kbps"`
+	DeviationPct       float64             `json:"deviation_pct"`
+	PSNRMeanDB         float64             `json:"psnr_mean_db"`
+	PSNRMinDB          float64             `json:"psnr_min_db"`
+	PSNRMaxDB          float64             `json:"psnr_max_db"`
+	WorstSegment       int                 `json:"worst_segment"`
+	WorstSegmentPSNRDB float64             `json:"worst_segment_psnr_db"`
+	SegmentPSNRDB      []float64           `json:"segment_psnr_db"`
+	SegmentDeltaDB     []float64           `json:"segment_psnr_delta_db"`
+	Infeasible         []int               `json:"infeasible_segments"`
+	Recovery           RecoveryJSON        `json:"recovery"`
 	SegmentsDetail     []SegmentDetailJSON `json:"segment_details"`
 }
 
@@ -46,14 +46,14 @@ type RecoveryJSON struct {
 
 // SegmentDetailJSON is one stable, per-segment row.
 type SegmentDetailJSON struct {
-	Segment       int     `json:"segment"`
-	Status        string  `json:"status"`
-	TargetKbps    float64 `json:"target_kbps"`
-	ActualKbps    float64 `json:"actual_kbps"`
-	DeviationPct  float64 `json:"deviation_pct"`
-	Attempts      int     `json:"attempts"`
-	PSNRMeanDB    float64 `json:"psnr_mean_db"`
-	FailureNote   string  `json:"failure_note,omitempty"`
+	Segment      int     `json:"segment"`
+	Status       string  `json:"status"`
+	TargetKbps   float64 `json:"target_kbps"`
+	ActualKbps   float64 `json:"actual_kbps"`
+	DeviationPct float64 `json:"deviation_pct"`
+	Attempts     int     `json:"attempts"`
+	PSNRMeanDB   float64 `json:"psnr_mean_db"`
+	FailureNote  string  `json:"failure_note,omitempty"`
 }
 
 // aggregateActualKbps weights verified segments by duration.
@@ -99,23 +99,23 @@ func BuildReport(res *orchestrator.Result, targetKbps float64) JSONReport {
 	}
 
 	return JSONReport{
-		Status:      overallStatus(res),
-		JobID:       task.ID,
-		Segments:    len(task.Segments),
-		Succeeded:   res.Succeeded,
-		Failed:      res.Failed,
-		Interrupted: res.Interrupted,
-		TargetKbps:  targetKbps,
-		ActualKbps:  actual,
-		DeviationPct: deviation,
-		PSNRMeanDB:  res.Quality.MeanPSNRDB,
-		PSNRMinDB:   res.Quality.MinPSNRDB,
-		PSNRMaxDB:   res.Quality.MaxPSNRDB,
-		WorstSegment: res.Quality.WorstSegment,
+		Status:             overallStatus(res),
+		JobID:              task.ID,
+		Segments:           len(task.Segments),
+		Succeeded:          res.Succeeded,
+		Failed:             res.Failed,
+		Interrupted:        res.Interrupted,
+		TargetKbps:         targetKbps,
+		ActualKbps:         actual,
+		DeviationPct:       deviation,
+		PSNRMeanDB:         res.Quality.MeanPSNRDB,
+		PSNRMinDB:          res.Quality.MinPSNRDB,
+		PSNRMaxDB:          res.Quality.MaxPSNRDB,
+		WorstSegment:       res.Quality.WorstSegment,
 		WorstSegmentPSNRDB: res.Quality.WorstSegmentDB,
-		SegmentPSNRDB:  res.Quality.SegmentPSNRDB,
-		SegmentDeltaDB: res.Quality.SegmentDeltaDB,
-		Infeasible: infeasible,
+		SegmentPSNRDB:      res.Quality.SegmentPSNRDB,
+		SegmentDeltaDB:     res.Quality.SegmentDeltaDB,
+		Infeasible:         infeasible,
 		Recovery: RecoveryJSON{
 			Resumed:         res.Recovery.Resumed,
 			Invalidated:     res.Recovery.Invalidated,
@@ -144,12 +144,103 @@ func nanOrZero(seg *model.Segment) float64 {
 	return seg.Quality.MeanPSNRDB
 }
 
-// WriteJSON emits the report with stable indentation.
+// WriteJSON emits the report with stable indentation. Non-finite floats
+// (NaN/Inf), which standard JSON cannot represent, are emitted as null so a
+// partially failed run still yields a complete, parseable document.
 func WriteJSON(w io.Writer, r JSONReport) error {
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	return enc.Encode(r)
+	// encoding/json rejects NaN/Inf at marshal time; sanitize to null so a
+	// partially failed run still yields a complete, parseable document.
+	safe, err := sanitize(r)
+	if err != nil {
+		return err
+	}
+	out, err := json.MarshalIndent(safe, "", "  ")
+	if err != nil {
+		return err
+	}
+	_, err = w.Write(append(out, '\n'))
+	return err
 }
+
+// sanitize converts the typed report into generic maps with every
+// non-finite float replaced by nil (JSON null), preserving key order via an
+// ordered builder.
+func sanitize(r JSONReport) (map[string]any, error) {
+	b := newOrdered()
+	b.set("status", r.Status)
+	b.set("job_id", r.JobID)
+	b.set("segments", r.Segments)
+	b.set("succeeded", r.Succeeded)
+	b.set("failed", r.Failed)
+	b.set("interrupted", r.Interrupted)
+	b.set("target_kbps", finiteOrNull(r.TargetKbps))
+	b.set("actual_kbps", finiteOrNull(r.ActualKbps))
+	b.set("deviation_pct", finiteOrNull(r.DeviationPct))
+	b.set("psnr_mean_db", finiteOrNull(r.PSNRMeanDB))
+	b.set("psnr_min_db", finiteOrNull(r.PSNRMinDB))
+	b.set("psnr_max_db", finiteOrNull(r.PSNRMaxDB))
+	b.set("worst_segment", r.WorstSegment)
+	b.set("worst_segment_psnr_db", finiteOrNull(r.WorstSegmentPSNRDB))
+	b.set("segment_psnr_db", finiteSlice(r.SegmentPSNRDB))
+	b.set("segment_psnr_delta_db", finiteSlice(r.SegmentDeltaDB))
+	b.set("infeasible_segments", intSliceOrNull(r.Infeasible))
+	b.set("recovery", map[string]any{
+		"resumed":              r.Recovery.Resumed,
+		"invalidated_segments": intSliceOrNull(r.Recovery.Invalidated),
+		"requeued_running":     intSliceOrNull(r.Recovery.RequeuedRunning),
+		"requeued_failed":      intSliceOrNull(r.Recovery.RequeuedFailed),
+	})
+	details := make([]map[string]any, len(r.SegmentsDetail))
+	for i, d := range r.SegmentsDetail {
+		db := newOrdered()
+		db.set("segment", d.Segment)
+		db.set("status", d.Status)
+		db.set("target_kbps", finiteOrNull(d.TargetKbps))
+		db.set("actual_kbps", finiteOrNull(d.ActualKbps))
+		db.set("deviation_pct", finiteOrNull(d.DeviationPct))
+		db.set("attempts", d.Attempts)
+		db.set("psnr_mean_db", finiteOrNull(d.PSNRMeanDB))
+		if d.FailureNote != "" {
+			db.set("failure_note", d.FailureNote)
+		}
+		details[i] = db.m
+	}
+	b.set("segment_details", details)
+	return b.m, nil
+}
+
+func finiteOrNull(v float64) any {
+	if math.IsNaN(v) || math.IsInf(v, 0) {
+		return nil
+	}
+	return v
+}
+
+func finiteSlice(xs []float64) any {
+	if xs == nil {
+		return nil
+	}
+	out := make([]any, len(xs))
+	for i, x := range xs {
+		out[i] = finiteOrNull(x)
+	}
+	return out
+}
+
+func intSliceOrNull(xs []int) any {
+	if len(xs) == 0 {
+		return nil
+	}
+	return xs
+}
+
+// orderedBuilder keeps insertion order for map keys without importing a
+// third-party ordered map; Go's encoding/json already sorts map keys, so a
+// plain map gives stable output deterministically.
+type orderedBuilder struct{ m map[string]any }
+
+func newOrdered() *orderedBuilder             { return &orderedBuilder{m: map[string]any{}} }
+func (o *orderedBuilder) set(k string, v any) { o.m[k] = v }
 
 // WriteText emits the human-readable, line-oriented report.
 func WriteText(w io.Writer, r JSONReport) {
@@ -173,7 +264,7 @@ func WriteText(w io.Writer, r JSONReport) {
 	}
 	fmt.Fprintln(w, "segment_details:")
 	for _, d := range r.SegmentsDetail {
-				fmt.Fprintf(w, "  [%02d] %s target=%.2f actual=%.2f dev=%.3f%% attempts=%d psnr=%s%s\n",
+		fmt.Fprintf(w, "  [%02d] %s target=%.2f actual=%.2f dev=%.3f%% attempts=%d psnr=%s%s\n",
 			d.Segment, d.Status, d.TargetKbps, d.ActualKbps, d.DeviationPct,
 			d.Attempts, formatFloat(d.PSNRMeanDB),
 			note(d.FailureNote))

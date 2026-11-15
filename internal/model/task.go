@@ -102,14 +102,14 @@ type Segment struct {
 
 // Task is the full transcoding job.
 type Task struct {
-	ID              string     `json:"id"`
-	InputPath       string     `json:"input_path"`
-	InputFingerprint string    `json:"input_fingerprint"`
-	DurationSec     float64    `json:"duration_sec"`
-	SegmentSec      float64    `json:"segment_seconds"`
-	TargetKbps      float64    `json:"target_kbps"`
-	MinKbps         float64    `json:"min_kbps"`
-	Segments        []*Segment `json:"segments"`
+	ID               string     `json:"id"`
+	InputPath        string     `json:"input_path"`
+	InputFingerprint string     `json:"input_fingerprint"`
+	DurationSec      float64    `json:"duration_sec"`
+	SegmentSec       float64    `json:"segment_seconds"`
+	TargetKbps       float64    `json:"target_kbps"`
+	MinKbps          float64    `json:"min_kbps"`
+	Segments         []*Segment `json:"segments"`
 }
 
 // ResetToQueued moves a terminal/interrupted segment back to the queue.

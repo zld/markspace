@@ -69,7 +69,7 @@ func TestRecoverResumesAndRequeues(t *testing.T) {
 		Params: Params{InputPath: in, DurationSec: 30, SegmentSec: 10, TargetKbps: 1000, MinKbps: 100},
 		Segments: []*model.Segment{
 			{Index: 0, Status: model.StatusSucceeded,
-				Encode: &model.EncodeResult{OutputPath: out, Bytes: 128},
+				Encode:  &model.EncodeResult{OutputPath: out, Bytes: 128},
 				Quality: &model.QualityResult{MeanPSNRDB: 40}},
 			{Index: 1, Status: model.StatusRunning},
 			{Index: 2, Status: model.StatusFailed, FailureNote: "boom"},
@@ -136,7 +136,7 @@ func TestRecoverRejectsParameterDrift(t *testing.T) {
 	fp, _ := media.Fingerprint(in)
 	task := mkTask(2, in, fp)
 	cp := &Checkpoint{JobID: "job-1", InputFingerprint: fp,
-		Params: Params{InputPath: in, DurationSec: 30, SegmentSec: 10, TargetKbps: 999, MinKbps: 100},
+		Params:   Params{InputPath: in, DurationSec: 30, SegmentSec: 10, TargetKbps: 999, MinKbps: 100},
 		Segments: []*model.Segment{{Index: 0, Status: model.StatusQueued}, {Index: 1, Status: model.StatusQueued}}}
 	if _, err := Recover(cp, task, in); !errors.Is(err, ErrUnrecoverable) {
 		t.Fatalf("want ErrUnrecoverable, got %v", err)

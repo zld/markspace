@@ -1,0 +1,6 @@
+# Local build artifacts and demo workspaces
+/tmp/
+/.demo/
+/tmp/
+*.test
+*.out

@@ -15,10 +15,10 @@ var ErrUnrecoverable = errors.New("checkpoint cannot be recovered")
 
 // RecoveryOutcome explains what recovery did, for terminal/JSON reporting.
 type RecoveryOutcome struct {
-	Resumed          bool
-	Invalidated      []int // 1-based segment numbers re-queued due to fingerprint drift
-	RequeuedRunning  []int // segments left mid-flight by a killed process
-	RequeuedFailed   []int // failed segments made retryable
+	Resumed         bool
+	Invalidated     []int // 1-based segment numbers re-queued due to fingerprint drift
+	RequeuedRunning []int // segments left mid-flight by a killed process
+	RequeuedFailed  []int // failed segments made retryable
 }
 
 // Recover reconciles a loaded checkpoint with the freshly planned task.

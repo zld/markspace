@@ -43,13 +43,13 @@ func setupJob(t *testing.T) (Config, string) {
 	bin := buildEncoder(t, root)
 	cfg := Config{
 		JobID: "job-test", WorkspaceRoot: root, InputPath: in,
-		OutputDir: filepath.Join(root, "out"),
-		WorkDir:   filepath.Join(root, "work"),
+		OutputDir:      filepath.Join(root, "out"),
+		WorkDir:        filepath.Join(root, "work"),
 		CheckpointPath: filepath.Join(root, "cp", "job.json"),
-		DurationSec: 12, SegmentSec: 3, TargetKbps: 800, MinKbps: 50,
+		DurationSec:    12, SegmentSec: 3, TargetKbps: 800, MinKbps: 50,
 		Workers: 2, MaxOutputBytes: 1 << 20,
 		EncoderTemplate: bin + " --in {in} --out {out} --target-kbps {kbps} --duration-sec {duration}",
-		Samples: sampleVals,
+		Samples:         sampleVals,
 		Params: state.Params{
 			InputPath: in, DurationSec: 12, SegmentSec: 3,
 			TargetKbps: 800, MinKbps: 50, Workers: 2,

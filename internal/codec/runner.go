@@ -122,8 +122,8 @@ func (r *Runner) runOnce(ctx context.Context, s Spec, effectiveKbps float64) (*m
 	}
 	if s.MaxOutputBytes > 0 && st.Size() > s.MaxOutputBytes {
 		return &model.EncodeResult{OutputPath: s.OutputPath, Bytes: st.Size(),
-			TargetKbps: s.TargetKbps, ExitCode: 0,
-			FailureNote: fmt.Sprintf("%s: %d > %d bytes", ErrOutputTooLarge, st.Size(), s.MaxOutputBytes)},
+				TargetKbps: s.TargetKbps, ExitCode: 0,
+				FailureNote: fmt.Sprintf("%s: %d > %d bytes", ErrOutputTooLarge, st.Size(), s.MaxOutputBytes)},
 			ErrOutputTooLarge
 	}
 	actualKbps := float64(st.Size()) * 8 / 1000 / s.DurationSec
