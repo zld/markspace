@@ -70,7 +70,12 @@ BreakResult break_lines(const std::vector<Cluster>& clusters,
     }
   }
 
-  const double kOverflow = 1e15;  // dominates any feasible slack^2
+  // Cost model: fitting lines pay slack^2 (raggedness balance); an
+  // over-wide line pays more than any fitting line (max_width^2) plus
+  // excess^2, so breaking still happens when nothing fits and unbreakable
+  // words simply form their own over-wide line.
+  const double mw = static_cast<double>(max_width);
+  const double kOverflow = mw * mw + 1.0;
   for (const auto& par : paragraphs) {
     const std::size_t lo = par.first, hi = par.second;
     if (lo == hi) {  // empty paragraph: blank line
@@ -94,10 +99,11 @@ BreakResult break_lines(const std::vector<Cluster>& clusters,
         const Fixed w = width(a, b);
         double cost;
         if (w <= max_width) {
-          const double slack = static_cast<double>(max_width - w);
+          const double slack = mw - static_cast<double>(w);
           cost = slack * slack;
         } else {
-          cost = kOverflow + static_cast<double>(w - max_width);
+          const double excess = static_cast<double>(w) - mw;
+          cost = kOverflow + excess * excess;
         }
         if (dp[i] + cost < dp[j]) {
           dp[j] = dp[i] + cost;

@@ -28,3 +28,7 @@ enable_testing()
 
 add_executable(subtitle-metrics src/main.cpp)
 target_link_libraries(subtitle-metrics PRIVATE subtitle_core)
+
+add_executable(self_test tests/self_test.cpp)
+target_link_libraries(self_test PRIVATE subtitle_core)
+add_test(NAME self_test COMMAND self_test)
