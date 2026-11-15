@@ -18,6 +18,7 @@ import soundfile as sf
 
 from . import AudioProcessError, ConfigError
 from .automation import GainCurve
+from .metrics import MetricsAccumulator
 from .model import Project, TrackConfig
 from .resample import SincResampler
 
@@ -27,11 +28,18 @@ CHANNELS = 2
 class TrackNode:
     """One decoded, resampled and automated track stream."""
 
-    def __init__(self, config: TrackConfig, target_rate: int, project_frames: int):
+    def __init__(
+        self,
+        config: TrackConfig,
+        target_rate: int,
+        project_frames: int,
+        accumulator: MetricsAccumulator | None = None,
+    ):
         self.config = config
         self.target_rate = target_rate
         self.project_frames = project_frames
         self.curve = GainCurve(config.gain, config.automation)
+        self.accumulator = accumulator if accumulator is not None else MetricsAccumulator()
         self._file = None
         self._info = None
         self._resampler: SincResampler | None = None
@@ -151,7 +159,9 @@ class TrackNode:
         src_hi = min(self._queue.shape[0], hi)
         if src_hi > src_lo:
             dst_lo = src_lo - lo
-            out[dst_lo:dst_lo + (src_hi - src_lo)] = self._queue[src_lo:src_hi]
+            contribution = self._queue[src_lo:src_hi]
+            out[dst_lo:dst_lo + (src_hi - src_lo)] = contribution
+            self.accumulator.add_block(contribution)
         # Drop queue prefix that can never be requested again.
         drop = max(0, min(hi, self._queue.shape[0]))
         if drop:
@@ -173,7 +183,12 @@ class MixGraph:
     def __init__(self, project: Project):
         self.project = project
         self.nodes = [
-            TrackNode(tc, project.sample_rate, project.frames)
+            TrackNode(
+                tc,
+                project.sample_rate,
+                project.frames,
+                accumulator=MetricsAccumulator(),
+            )
             for tc in sorted(project.tracks, key=lambda t: t.track_id)
         ]
         self._position = 0
