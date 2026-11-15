@@ -1,23 +1,22 @@
 package main
 
 import (
-	"errors"
-
+	"hlsforge/internal/app"
 	"hlsforge/internal/cli"
 	"hlsforge/internal/report"
 )
 
-// Temporary stubs. Each is replaced by the real pipeline when its package
-// lands, keeping every commit in a compilable state.
+// Thin adapters keep the exit-code mapping in main.go while all pipeline
+// logic lives under internal/app.
 
 func runDemoImpl(cfg *cli.DemoConfig) (*report.Report, error) {
-	return nil, errors.New("demo pipeline not yet implemented")
+	return app.RunDemo(cfg)
 }
 
 func runBuildImpl(cfg *cli.BuildConfig) (*report.Report, error) {
-	return nil, errors.New("build pipeline not yet implemented")
+	return app.RunBuild(cfg)
 }
 
 func runVerifyImpl(cfg *cli.VerifyConfig) (*report.Report, error) {
-	return nil, errors.New("verify pipeline not yet implemented")
+	return app.RunVerify(cfg)
 }
