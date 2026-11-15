@@ -18,6 +18,20 @@ type Parser interface {
 	Parse(text, track string, mode model.ParseMode) (*model.Document, error)
 }
 
+// ForFormat returns the parser for a supported format.
+func ForFormat(f model.Format) (Parser, error) {
+	switch f {
+	case model.FormatSRT:
+		return srtParser{}, nil
+	case model.FormatVTT:
+		return vttParser{}, nil
+	case model.FormatASS:
+		return assParser{}, nil
+	default:
+		return nil, fmt.Errorf("no parser registered for format %q", f)
+	}
+}
+
 // parseTimestamp accepts "HH:MM:SS.mmm" (SRT/VTT, 3 fractional digits) and
 // "H:MM:SS.cc" (ASS, 2 digits). Either separator '.' or ',' is accepted.
 func parseTimestamp(token string) (time.Duration, error) {
