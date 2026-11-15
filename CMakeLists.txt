@@ -23,11 +23,11 @@ add_executable(subtitle_audit src/main.cpp)
 target_link_libraries(subtitle_audit PRIVATE assaudit_core)
 
 enable_testing()
-add_executable(fixtures_generator tests/fixtures_generator.cpp)
+add_executable(fixtures_generator tests/fixtures_generator.cpp tests/fixtures.cpp)
 target_include_directories(fixtures_generator PRIVATE tests include)
 add_test(NAME fixtures_generator COMMAND fixtures_generator)
 
-add_executable(integration_tests tests/integration.cpp)
+add_executable(integration_tests tests/integration.cpp tests/fixtures.cpp)
 target_include_directories(integration_tests PRIVATE tests include)
 target_link_libraries(integration_tests PRIVATE assaudit_core)
 add_test(NAME integration_tests COMMAND integration_tests)
