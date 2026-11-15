@@ -38,7 +38,7 @@ func buildTrack(t *testing.T, missing ...int) *timeline.Track {
 
 func TestLayoutSegmentsAndParts(t *testing.T) {
 	tr := buildTrack(t)
-	ls, err := Layout(tr, 2000, 500)
+	ls, err := Layout(tr, 2000, 500, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestLayoutRetainsGapParts(t *testing.T) {
 	// Gap at seq 4 (last part of segment 0): next segment still starts on a
 	// filled sync sample, so this must remain valid.
 	tr := buildTrack(t, 4)
-	ls, err := Layout(tr, 2000, 500)
+	ls, err := Layout(tr, 2000, 500, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestLayoutBoundaryInsideGapIsRetained(t *testing.T) {
 	// Gap at seq 5 means segment 1 begins in a gap: the slot is retained as an
 	// explicit GAP, later sequences are not shifted forward.
 	tr := buildTrack(t, 5)
-	ls, err := Layout(tr, 2000, 500)
+	ls, err := Layout(tr, 2000, 500, 0)
 	if err != nil {
 		t.Fatalf("leading-gap segment must be retained, got %v", err)
 	}
@@ -101,24 +101,24 @@ func TestLayoutRejectsBoundaryOnNonSyncFragment(t *testing.T) {
 	tr := buildTrack(t)
 	// Mark the fragment opening segment 1 as a non-sync sample.
 	tr.Parts[4].Fragment.Sync = false
-	if _, err := Layout(tr, 2000, 500); !errors.Is(err, ErrBoundaryNotSync) {
+	if _, err := Layout(tr, 2000, 500, 0); !errors.Is(err, ErrBoundaryNotSync) {
 		t.Fatalf("want ErrBoundaryNotSync, got %v", err)
 	}
 }
 
 func TestLayoutValidation(t *testing.T) {
 	tr := buildTrack(t)
-	if _, err := Layout(tr, 700, 500); err == nil {
+	if _, err := Layout(tr, 700, 500, 0); err == nil {
 		t.Fatal("non-multiple segment must error")
 	}
-	if _, err := Layout(tr, 0, 500); err == nil {
+	if _, err := Layout(tr, 0, 500, 0); err == nil {
 		t.Fatal("zero segment must error")
 	}
 }
 
 func TestLayoutURIsStable(t *testing.T) {
 	tr := buildTrack(t)
-	ls, err := Layout(tr, 2000, 500)
+	ls, err := Layout(tr, 2000, 500, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,5 +132,49 @@ func TestLayoutURIsStable(t *testing.T) {
 	}
 	if ls.MediaPlaylist != "800000.m3u8" {
 		t.Fatalf("playlist name = %q", ls.MediaPlaylist)
+	}
+}
+
+func TestLayoutRollingWindowKeepsAbsoluteSequence(t *testing.T) {
+	// 8 parts over 2s segments = 2 full segments; a 2s window keeps only the
+	// last segment while preserving its absolute MediaSeq and URIs.
+	tr := buildTrack(t)
+	if len(tr.Parts) != 8 {
+		t.Fatalf("parts = %d", len(tr.Parts))
+	}
+	ls, err := Layout(tr, 2000, 500, 2000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ls.Segments) != 1 {
+		t.Fatalf("windowed segments = %d, want 1", len(ls.Segments))
+	}
+	seg := ls.Segments[0]
+	if seg.MediaSeq != 1 {
+		t.Fatalf("MediaSeq must stay absolute: got %d", seg.MediaSeq)
+	}
+	if seg.URI != "800000/seg-00001.mp4" {
+		t.Fatalf("URI must not be renumbered: %s", seg.URI)
+	}
+	if seg.Parts[0].PartSeq != 5 {
+		t.Fatalf("first retained part seq = %d, want 5", seg.Parts[0].PartSeq)
+	}
+}
+
+func TestLayoutWindowLargerThanTimelineKeepsAll(t *testing.T) {
+	tr := buildTrack(t)
+	ls, err := Layout(tr, 2000, 500, 12000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ls.Segments) != 2 || ls.Segments[0].MediaSeq != 0 {
+		t.Fatalf("oversized window must keep every segment: %+v", ls.Segments)
+	}
+}
+
+func TestLayoutRejectsWindowAboveCap(t *testing.T) {
+	tr := buildTrack(t)
+	if _, err := Layout(tr, 2000, 500, MaxWindowMs+1); err == nil {
+		t.Fatal("window above cap must be rejected")
 	}
 }

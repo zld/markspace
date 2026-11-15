@@ -17,6 +17,10 @@ import (
 // disk usage for hostile or misconfigured inputs.
 const MaxSegments = 4096
 
+// MaxWindowMs is the largest rolling window the tool will accept, a safety
+// bound against pathological configuration values.
+const MaxWindowMs int64 = 60_000
+
 // Part is one low-latency partial segment.
 type Part struct {
 	Index       int // part index inside its segment, 0-based
@@ -48,16 +52,30 @@ type TrackSegments struct {
 }
 
 // Layout computes the segment/part structure for a normalized track. It does
-// not touch the filesystem; callers persist bytes via the returned URIs.
-func Layout(t *timeline.Track, segmentMs, partMs int64) (*TrackSegments, error) {
+// not touch the filesystem; callers persist bytes via the returned URIs. A
+// non-zero windowMs applies a rolling window that keeps only the segments
+// intersecting the trailing windowMs of the timeline, while MediaSeq stays
+// absolute so dropped segments are never silently renumbered.
+func Layout(t *timeline.Track, segmentMs, partMs, windowMs int64) (*TrackSegments, error) {
 	if partMs <= 0 || segmentMs <= 0 || segmentMs%partMs != 0 {
 		return nil, fmt.Errorf("segment: segment %dms must be a multiple of part %dms",
 			segmentMs, partMs)
+	}
+	if windowMs < 0 || windowMs > MaxWindowMs {
+		return nil, fmt.Errorf("segment: window %dms outside [0,%d]", windowMs, MaxWindowMs)
 	}
 	partsPerSegment := int(segmentMs / partMs)
 	if len(t.Parts) > MaxSegments*partsPerSegment {
 		return nil, fmt.Errorf("segment: %d parts exceed cap of %d",
 			len(t.Parts), MaxSegments*partsPerSegment)
+	}
+	totalSegments := (len(t.Parts) + partsPerSegment - 1) / partsPerSegment
+	firstSeg := 0
+	if windowMs > 0 {
+		keep := int(windowMs / segmentMs)
+		if keep < totalSegments {
+			firstSeg = totalSegments - keep
+		}
 	}
 	out := &TrackSegments{
 		Bitrate: t.Bitrate, PartMs: partMs, SegmentMs: segmentMs,
@@ -67,9 +85,10 @@ func Layout(t *timeline.Track, segmentMs, partMs int64) (*TrackSegments, error) 
 	// Every first part of a segment must start on a sync sample. Fixture
 	// fragments are themselves sync boundaries, so a boundary is valid only
 	// when the slot is filled or the whole leading region is still gapped.
-	for segIdx, base := 0, t.FromSeq; base <= t.ToSeq; segIdx, base = segIdx+1, base+partsPerSegment {
+	for segIdx := firstSeg; segIdx < totalSegments; segIdx++ {
+		base := t.FromSeq + segIdx*partsPerSegment
 		seg := Segment{
-			MediaSeq: segIdx,
+			MediaSeq: segIdx, // absolute sequence even under a rolling window
 			URI:      segmentURI(t.Bitrate, segIdx),
 		}
 		for j := 0; j < partsPerSegment; j++ {
