@@ -10,6 +10,7 @@ struct Diagnostic {
   int line = 0;
   std::string code;
   std::string message;
+  bool fatal = false;  // structural error: strict mode fails the whole run
 };
 
 struct AssColor {
