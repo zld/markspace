@@ -95,7 +95,7 @@ func Generate(root string, bitrates []int, opts Options) ([]TrackMeta, error) {
 				continue
 			}
 			baseTime := uint64((seq-1)*int(opts.PartMs)) + uint64(meta.DriftMs)
-			data := buildFragment(uint32(seq), baseTime, br)
+			data := BuildFragment(uint32(seq), baseTime, br)
 			name := fragmentName(seq)
 			if err := os.WriteFile(filepath.Join(meta.Dir, name), data, 0o644); err != nil {
 				return nil, err
@@ -121,12 +121,24 @@ func fragmentName(seq int) string {
 }
 
 // ParseFragmentName returns the sequence number encoded in a fragment file.
+// Names follow frag-NNNNN with an optional trailing tag before the extension
+// (for example frag-00001b.mp4); the sequence is always authoritative from
+// the fragment's mfhd box, this helper only recognizes the on-disk family.
 func ParseFragmentName(name string) (int, bool) {
 	base := filepath.Base(name)
 	if !strings.HasPrefix(base, "frag-") || !strings.HasSuffix(base, ".mp4") {
 		return 0, false
 	}
-	v, err := strconv.Atoi(base[5 : len(base)-4])
+	digits := base[5:]
+	digits = digits[:len(digits)-4] // strip ".mp4"
+	numEnd := 0
+	for numEnd < len(digits) && digits[numEnd] >= '0' && digits[numEnd] <= '9' {
+		numEnd++
+	}
+	if numEnd == 0 {
+		return 0, false
+	}
+	v, err := strconv.Atoi(digits[:numEnd])
 	if err != nil || v <= 0 {
 		return 0, false
 	}
@@ -181,10 +193,11 @@ func buildInit() []byte {
 	return append(box("ftyp", []byte("dash")), moov...)
 }
 
-// buildFragment emits moof+mdat. Payload bytes are a deterministic function
-// of bitrate and sequence so re-delivery hashes identically while different
-// sequences never collide.
-func buildFragment(seq uint32, baseTime uint64, bitrate int) []byte {
+// BuildFragment emits a moof+mdat fragment. Payload bytes are a deterministic
+// function of bitrate and sequence so re-delivery hashes identically while
+// different sequences never collide. It is exported for tests in other
+// packages that need valid fragments with bespoke sequence numbers.
+func BuildFragment(seq uint32, baseTime uint64, bitrate int) []byte {
 	mfhd := fullBox("mfhd", 0, 0, u32(seq))
 	tfhd := fullBox("tfhd", 0, 0x020000, u32(1)) // default-base-is-moof
 	tfdt := fullBox("tfdt", 0, 0, u32(uint32(baseTime)))
