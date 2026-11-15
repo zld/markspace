@@ -32,6 +32,10 @@ type BuildConfig struct {
 type VerifyConfig struct {
 	In        string
 	HLS       string
+	FromSeq   int
+	ToSeq     int
+	Segment   int64 // milliseconds
+	Part      int64 // milliseconds
 	Duration  int64 // milliseconds
 	Tolerance int64 // milliseconds
 	JSON      bool
@@ -124,10 +128,22 @@ func ParseVerify(args []string) (*VerifyConfig, error) {
 	fs := flag.NewFlagSet("verify", flag.ContinueOnError)
 	in := stringFlag(fs, "in", "", "CMAF inbox directory")
 	hls := stringFlag(fs, "hls", "", "HLS output directory")
+	from := fs.Int("from-seq", 1, "first expected fragment sequence number")
+	to := fs.Int("to-seq", 24, "last expected fragment sequence number")
+	seg := stringFlag(fs, "segment", "2s", "segment duration, e.g. 2s")
+	part := stringFlag(fs, "part", "500ms", "part duration, e.g. 500ms")
 	dur := stringFlag(fs, "duration", "12s", "expected timeline duration")
 	tol := stringFlag(fs, "tolerance", "50ms", "cross-bitrate drift tolerance")
 	js := fs.Bool("json", false, "emit JSON report")
 	if err := fs.Parse(args); err != nil {
+		return nil, err
+	}
+	segment, err := ParseDuration(*seg)
+	if err != nil {
+		return nil, err
+	}
+	partMs, err := ParseDuration(*part)
+	if err != nil {
 		return nil, err
 	}
 	duration, err := ParseDuration(*dur)
@@ -141,6 +157,10 @@ func ParseVerify(args []string) (*VerifyConfig, error) {
 	if *in == "" || *hls == "" {
 		return nil, fmt.Errorf("--in and --hls are required")
 	}
-	return &VerifyConfig{In: *in, HLS: *hls, Duration: duration,
+	if *to < *from || partMs <= 0 || segment%partMs != 0 {
+		return nil, fmt.Errorf("invalid sequence range or segment/part combination")
+	}
+	return &VerifyConfig{In: *in, HLS: *hls, FromSeq: *from, ToSeq: *to,
+		Segment: segment, Part: partMs, Duration: duration,
 		Tolerance: tolerance, JSON: *js}, nil
 }
