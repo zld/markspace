@@ -68,30 +68,36 @@ func TestBuildIntegerScaleConversion(t *testing.T) {
 }
 
 func TestCompareDetectsDrift(t *testing.T) {
-	ref, err := Build(ingestTrack(800000, map[int]*ingest.Fragment{
+	// Reference is the highest-bitrate track; the 800k track carries drift.
+	low, err := Build(ingestTrack(800000, map[int]*ingest.Fragment{
 		1: frag(800000, 1, 80, 500),
 		2: frag(800000, 2, 580, 500),
 	}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	other, err := Build(ingestTrack(1600000, map[int]*ingest.Fragment{
+	high, err := Build(ingestTrack(1600000, map[int]*ingest.Fragment{
 		1: frag(1600000, 1, 0, 500),
 		2: frag(1600000, 2, 500, 500),
 	}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	findings, maxDev := Compare([]*Track{ref, other}, 50)
+	// Pass the low track first to prove ordering does not choose the reference.
+	findings, maxDev := Compare([]*Track{low, high}, 50)
 	if maxDev != 80 {
 		t.Fatalf("max deviation = %d, want 80", maxDev)
 	}
 	if len(findings) != 1 || findings[0].Code != report.CodeTimelineDrift ||
-		findings[0].Bitrate != 1600000 {
+		findings[0].Bitrate != 800000 {
 		t.Fatalf("findings = %+v", findings)
 	}
+	// The reference high track's own deviation against itself is zero.
+	if dev := Deviation(high, high); dev != 0 {
+		t.Fatalf("self deviation = %d", dev)
+	}
 	// Within tolerance: no findings.
-	if fs, _ := Compare([]*Track{ref, other}, 80); len(fs) != 0 {
+	if fs, _ := Compare([]*Track{low, high}, 80); len(fs) != 0 {
 		t.Fatalf("deviation at tolerance boundary must pass: %+v", fs)
 	}
 }

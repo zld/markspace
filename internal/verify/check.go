@@ -218,9 +218,11 @@ func countFor(findings []report.Finding, bitrate int) int {
 func deviationFor(tracks []*timeline.Track, bitrate int, fallback int64) int64 {
 	var ref *timeline.Track
 	for _, t := range tracks {
-		if t.HasContent {
+		if !t.HasContent {
+			continue
+		}
+		if ref == nil || t.Bitrate > ref.Bitrate {
 			ref = t
-			break
 		}
 	}
 	for _, t := range tracks {

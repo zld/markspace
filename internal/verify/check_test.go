@@ -114,11 +114,14 @@ func TestVerifyDetectsDriftAndMissing(t *testing.T) {
 		switch s.BitrateKbps {
 		case 800:
 			if s.DeviationMs != fixture.DriftMs {
-				t.Fatalf("800k deviation = %d", s.DeviationMs)
+				t.Fatalf("800k deviation = %d, want %d", s.DeviationMs, fixture.DriftMs)
 			}
 		case 1600:
 			if s.Fragments != 7 {
 				t.Fatalf("1600k fragments = %d, want 7", s.Fragments)
+			}
+			if s.DeviationMs != 0 {
+				t.Fatalf("reference 1600k deviation = %d, want 0", s.DeviationMs)
 			}
 		}
 	}

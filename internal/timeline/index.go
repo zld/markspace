@@ -119,22 +119,25 @@ func Deviation(ref, other *Track) int64 {
 	return d
 }
 
-// Compare runs cross-bitrate drift checks. The first content-bearing track is
-// the reference. Every track whose deviation exceeds toleranceMs yields a
+// Compare runs cross-bitrate drift checks. The highest-bitrate content-bearing
+// track is the reference (the drift fault is injected into lower renditions).
+// Every other track whose deviation exceeds toleranceMs yields a
 // TIMELINE_DRIFT finding pinned to that bitrate.
 func Compare(tracks []*Track, toleranceMs int64) ([]report.Finding, int64) {
 	var ref *Track
-	var maxDev int64
 	for _, t := range tracks {
-		if t.HasContent {
+		if !t.HasContent {
+			continue
+		}
+		if ref == nil || t.Bitrate > ref.Bitrate {
 			ref = t
-			break
 		}
 	}
 	if ref == nil {
 		return nil, 0
 	}
 	var findings []report.Finding
+	var maxDev int64
 	for _, t := range tracks {
 		if !t.HasContent {
 			continue
