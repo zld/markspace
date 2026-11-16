@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "media-audit"
+version = "0.1.0"
+description = "Offline MP4/MOV/MKV metadata extraction and track consistency audit"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "Media Build Engineering" }]
+dependencies = []
+
+[project.optional-dependencies]
+test = ["pytest==8.3.*"]
+
+[project.scripts]
+media-audit = "media_audit.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["media_audit*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
