@@ -11,9 +11,9 @@ known, and the assembled image is re-parsed before the atomic rename so a
 bad offset never reaches the target path.
 """
 
-from ..errors import CorruptMKVError, IndexValidationError
+from ..errors import IndexValidationError
 from ..timeline import MOVIE_TIMESCALE, TimedSample, Timeline, TrackTimeline
-from .atoms import (box, full_box, i32, u16, u32, u64, u8,
+from .atoms import (box, full_box, i32, u16, u32, u64,
                     validate_structure, write_file_atomic)
 from .flat import _avc_config_box, _esds_box
 

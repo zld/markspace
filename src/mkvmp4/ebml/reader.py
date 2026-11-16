@@ -217,21 +217,6 @@ class EbmlReader:
         self._file.seek(element.data_offset)
         return element
 
-    def iter_master(self, element: Element):
-        """Convenience: yield children of a master and pop the frame after."""
-        self.open_master(element)
-        try:
-            while True:
-                child = self.next_element()
-                if child is None:
-                    break
-                yield child
-                if not child.unknown_size:
-                    # Skip any bytes the caller did not consume.
-                    self._stack[-1].resume = child.end
-        finally:
-            self.close_master()
-
     # ------------------------------------------------------------------
     # Payload access
     # ------------------------------------------------------------------

@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from .ebml import schema
 from .ebml.reader import EbmlReader, Element
 from .mkv.segment import MatroskaFile
-from .timeline import Timeline, TrackTimeline
+from .timeline import Timeline
 
 
 @dataclass(slots=True)

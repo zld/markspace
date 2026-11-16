@@ -5,8 +5,6 @@ length; the remaining bits are the payload. An all-ones payload marks the
 "unknown length" sentinel used by streaming Matroska writers.
 """
 
-from collections.abc import Iterable
-
 from ..errors import CorruptMKVError
 
 #: Maximum legal VINT width (EBML allows 8 octets).
@@ -64,15 +62,6 @@ def decode_vint(data: bytes | bytearray | memoryview, offset: int = 0) -> tuple[
     if value == _UNKNOWN_SENTINEL[width - 1]:
         return -1, width, end
     return value, width, end
-
-
-def is_unknown_length(first_octet: int, data: bytes, offset: int) -> bool:
-    """Check whether the size VINT at ``offset`` is an unknown-length one."""
-    width = vint_width(first_octet, offset)
-    payload = first_octet & _PAYLOAD_MASK[width - 1]
-    for i in range(1, width):
-        payload = (payload << 8) | data[offset + i]
-    return payload == _UNKNOWN_SENTINEL[width - 1]
 
 
 def encode_vint(value: int, width: int | None = None) -> bytes:
@@ -134,12 +123,3 @@ def encode_unknown_size(width: int = 1) -> bytes:
     if not 1 <= width <= MAX_VINT_WIDTH:
         raise ValueError("VINT width must be between 1 and 8")
     return bytes([_LENGTH_MARKER[width - 1] | _PAYLOAD_MASK[width - 1]]) + b"\xff" * (width - 1)
-
-
-def iter_vints(data: bytes) -> Iterable[tuple[int, int]]:
-    """Yield ``(value, offset)`` for every VINT in ``data`` (test helper)."""
-    offset = 0
-    while offset < len(data):
-        value, width, next_offset = decode_vint(data, offset)
-        yield value, offset
-        offset = next_offset

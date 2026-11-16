@@ -217,7 +217,7 @@ def export_flat(timeline: Timeline, output_path: str) -> FlatBuildResult:
     # First pass: build moov with zero offsets to measure its size.
     placeholder = [
         (track, _build_stbl(track, off, counts, False)[0], "stco", len(off))
-        for track, off, counts in per_track]  # type: ignore[var-annotated]
+        for track, off, counts in per_track]
     moov_placeholder = _build_moov(timeline, placeholder)
     mdat_offset = len(ftyp) + len(moov_placeholder)
     if mdat_offset + 8 + len(mdat_payload) > STCO_LIMIT:

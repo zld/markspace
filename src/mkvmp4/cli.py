@@ -17,10 +17,8 @@ import sys
 
 from .errors import Mkvmp4Error, UsageError
 from .pipeline import run_pipeline
-from .report import (build_track_map, format_flat_lines,
-                     format_fragmented_lines, format_rebase_line,
-                     format_track_map_lines, format_track_timing_lines,
-                     format_tree_line, render_report)
+from .report import (format_flat_lines, format_fragmented_lines,
+                     render_report)
 
 MODES = ("flat", "fragmented", "both")
 

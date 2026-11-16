@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "tools"))
 from make_fixture import build_fixture_bytes, write_fixture  # noqa: E402
 
 from mkvmp4.ebml import schema  # noqa: E402
-from mkvmp4.ebml.reader import EbmlReader, decode_leaf  # noqa: E402
+from mkvmp4.ebml.reader import EbmlReader  # noqa: E402
 from mkvmp4.ebml.vint import (decode_vint, encode_element_id,  # noqa: E402
                               encode_unknown_size, encode_vint)
 from mkvmp4.errors import (CorruptMKVError, IndexValidationError,  # noqa: E402
@@ -103,7 +103,6 @@ class TestUnknownSizeBoundaries:
     def test_unknown_size_segment_accepted(self, tmp_path):
         # Rebuild the fixture with an unknown-size Segment.
         data = build_fixture_bytes()
-        from mkvmp4.ebml.vint import encode_vint as _enc
         # Locate the Segment header and rewrite its size VINT as unknown.
         seg_id = encode_element_id(schema.SEGMENT)
         pos = data.find(seg_id)
@@ -403,3 +402,21 @@ class TestFailuresAndExitCodes:
         produced = os.listdir(str(tmp_path / "demo"))
         assert "synthetic.flat.mp4" in produced
         assert "synthetic.frag.mp4" in produced
+
+    def test_write_failure_raises_io_failure_exit_four(self, tmp_path):
+        # A regular file used as a directory makes the temp-file creation
+        # fail deterministically with IOFailure (exit code 4), without
+        # depending on file permission bits or the running user.
+        from mkvmp4.errors import IOFailure
+        from mkvmp4.mp4.atoms import write_file_atomic
+        blocker = tmp_path / "not-a-dir"
+        blocker.write_bytes(b"x")
+        target = str(blocker / "out.mp4")
+        with pytest.raises(IOFailure) as exc:
+            write_file_atomic(target, b"payload")
+        assert exc.value.exit_code == 4
+
+    def test_cli_bad_mode_returns_two(self):
+        from mkvmp4.cli import main
+        with pytest.raises(SystemExit):
+            main(["remux", "in.mkv", "out.mp4", "--mode", "nonsense"])
