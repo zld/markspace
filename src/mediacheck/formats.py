@@ -215,3 +215,207 @@ def parse_mp4(f, file_size: int) -> dict:
             result["tracks"].append(track)
         break  # only the first moov is authoritative
     return result
+
+
+# ---------------------------------------------------------------------------
+# Matroska / EBML
+# ---------------------------------------------------------------------------
+
+# Element IDs actually needed for metadata extraction (full EBML spec has
+# hundreds; unknown elements are skipped structurally, never interpreted).
+EBML_HEADER = 0x1A45DFA3
+EBML_SEGMENT = 0x18538067
+EBML_INFO = 0x1549A966
+EBML_TRACKS = 0x1654AE6B
+EBML_TRACK_ENTRY = 0xAE
+EBML_TRACK_NUMBER = 0xD7
+EBML_TRACK_TYPE = 0x83
+EBML_CODEC_ID = 0x86
+EBML_VIDEO = 0xE0
+EBML_AUDIO = 0xE1
+EBML_PIXEL_WIDTH = 0xB0
+EBML_PIXEL_HEIGHT = 0xBA
+EBML_SAMPLING_FREQ = 0xB5
+EBML_CHANNELS = 0x9F
+EBML_TIMECODE_SCALE = 0x2AD7B1
+EBML_DURATION = 0x4489
+EBML_VOID = 0xEC
+EBML_CRC32 = 0xBF
+
+_MKV_TRACK_TYPES = {1: "video", 2: "audio", 17: "subtitle"}
+
+
+@dataclass(slots=True)
+class EBMLElement:
+    """One Matroska EBML element located inside an open binary file."""
+
+    f: object
+    eid: int
+    start: int
+    header: int
+    end: int
+
+    def payload(self) -> bytes:
+        length = self.end - self.header
+        if length < 0 or length > 64 * 1024 * 1024:
+            raise ContainerError("EBML payload out of bounds")
+        self.f.seek(self.header)
+        data = self.f.read(length)
+        if len(data) != length:
+            raise ContainerError("truncated EBML payload")
+        return data
+
+
+def read_vint(f, pos: int, end: int) -> tuple[int, int, bool]:
+    """Read an EBML variable-length *size* integer.
+
+    Returns (value_without_marker, position_after, unknown_marker).
+    Raises ContainerError on truncated input or an invalid leading byte.
+    """
+    if pos >= end:
+        raise ContainerError("truncated VINT")
+    f.seek(pos)
+    first = f.read(1)
+    if not first:
+        raise ContainerError("truncated VINT")
+    lead = first[0]
+    if lead == 0:
+        raise ContainerError("invalid VINT leading byte")
+    length = (lead ^ 0xFF).bit_length() + 1  # leading zero count + 1
+    if length > 8 or pos + length > end:
+        raise ContainerError("incomplete VINT")
+    rest = f.read(length - 1)
+    if len(rest) != length - 1:
+        raise ContainerError("incomplete VINT")
+    data_mask = 0xFF >> length
+    value = lead & data_mask
+    unknown = value == data_mask and all(b == 0xFF for b in rest)
+    for byte in rest:
+        value = (value << 8) | byte
+    return value, pos + length, unknown
+
+
+def read_ebml_id(f, pos: int, end: int) -> tuple[int, int]:
+    """Read an EBML element ID: unlike size VINTs the marker bits are part
+    of the identifier, so the raw byte sequence is reassembled."""
+    if pos >= end:
+        raise ContainerError("truncated EBML id")
+    f.seek(pos)
+    first = f.read(1)
+    if not first:
+        raise ContainerError("truncated EBML id")
+    lead = first[0]
+    if lead == 0:
+        raise ContainerError("invalid EBML id leading byte")
+    length = (lead ^ 0xFF).bit_length() + 1
+    if length > 4 or pos + length > end:
+        raise ContainerError("incomplete EBML id")
+    rest = f.read(length - 1)
+    if len(rest) != length - 1:
+        raise ContainerError("incomplete EBML id")
+    eid = lead
+    for byte in rest:
+        eid = (eid << 8) | byte
+    return eid, pos + length
+
+
+def iter_ebml(f, start: int, end: int, depth: int = 0):
+    """Yield direct-child EBMLElements inside [start, end)."""
+    if depth > MAX_BOX_DEPTH:
+        raise ContainerError("EBML nesting deeper than 16 levels")
+    pos = start
+    while pos < end:
+        eid, after_id = read_ebml_id(f, pos, end)
+        size, payload_start, unknown_size = read_vint(f, after_id, end)
+        if unknown_size:
+            elem_end = end  # element runs to end of parent range
+        else:
+            if size > MAX_FILE_SIZE:
+                raise ContainerError("EBML element size overflow")
+            elem_end = payload_start + size
+            if elem_end > end:
+                raise ContainerError("EBML element extends past parent")
+        yield EBMLElement(f, eid, pos, payload_start, elem_end)
+        pos = elem_end
+
+
+def _ebml_uint(payload: bytes) -> int:
+    return int.from_bytes(payload, "big") if payload else 0
+
+
+def _ebml_float(payload: bytes) -> float | None:
+    if len(payload) == 4:
+        return struct.unpack(">f", payload)[0]
+    if len(payload) == 8:
+        return struct.unpack(">d", payload)[0]
+    raise ContainerError("unsupported EBML float width")
+
+
+def _empty_mkv_track() -> dict:
+    return {"track_id": None, "type": None, "codec": None,
+            "duration_ms": None, "width": None, "height": None,
+            "sample_rate": None, "channels": None}
+
+
+def parse_matroska(f, file_size: int) -> dict:
+    """Parse an open Matroska/WebM file and return raw metadata in the
+    same shape as :func:`parse_mp4`."""
+    if file_size > MAX_FILE_SIZE:
+        raise ContainerError("file exceeds 2 GiB limit")
+    top = list(iter_ebml(f, 0, file_size))
+    if not top or top[0].eid != EBML_HEADER:
+        raise ContainerError("missing EBML header")
+    segments = [el for el in top if el.eid == EBML_SEGMENT]
+    if not segments:
+        raise ContainerError("missing EBML segment")
+    segment = segments[0]
+
+    timescale_ns = 1_000_000
+    duration_raw: float | None = None
+    tracks: list[dict] = []
+
+    for child in iter_ebml(f, segment.header, segment.end):
+        if child.eid == EBML_INFO:
+            for field in iter_ebml(f, child.header, child.end):
+                if field.eid == EBML_TIMECODE_SCALE:
+                    timescale_ns = _ebml_uint(field.payload())
+                elif field.eid == EBML_DURATION:
+                    duration_raw = _ebml_float(field.payload())
+        elif child.eid == EBML_TRACKS:
+            for entry in iter_ebml(f, child.header, child.end, 1):
+                if entry.eid != EBML_TRACK_ENTRY:
+                    continue
+                track = _empty_mkv_track()
+                for field in iter_ebml(f, entry.header, entry.end, 2):
+                    if field.eid == EBML_TRACK_NUMBER:
+                        track["track_id"] = _ebml_uint(field.payload())
+                    elif field.eid == EBML_TRACK_TYPE:
+                        track["type"] = _MKV_TRACK_TYPES.get(
+                            _ebml_uint(field.payload()))
+                    elif field.eid == EBML_CODEC_ID:
+                        track["codec"] = field.payload().decode(
+                            "latin-1").rstrip("\x00")
+                    elif field.eid == EBML_VIDEO:
+                        for vf in iter_ebml(f, field.header, field.end, 3):
+                            if vf.eid == EBML_PIXEL_WIDTH:
+                                track["width"] = _ebml_uint(vf.payload())
+                            elif vf.eid == EBML_PIXEL_HEIGHT:
+                                track["height"] = _ebml_uint(vf.payload())
+                    elif field.eid == EBML_AUDIO:
+                        for af in iter_ebml(f, field.header, field.end, 3):
+                            if af.eid == EBML_SAMPLING_FREQ:
+                                rate = _ebml_float(af.payload())
+                                track["sample_rate"] = (
+                                    int(rate) if rate is not None
+                                    and float(rate).is_integer() else rate)
+                            elif af.eid == EBML_CHANNELS:
+                                track["channels"] = _ebml_uint(af.payload())
+                tracks.append(track)
+
+    result: dict = {"container": "matroska", "duration_ms": None,
+                    "timescale_ns": timescale_ns, "tracks": tracks}
+    if duration_raw is not None and timescale_ns:
+        result["duration_ms"] = round(duration_raw * timescale_ns / 1_000_000)
+        for track in tracks:  # no per-track duration in minimal MKV schema
+            track["duration_ms"] = result["duration_ms"]
+    return result
