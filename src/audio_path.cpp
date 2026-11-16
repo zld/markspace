@@ -152,20 +152,6 @@ bool AudioPath::flush_resampler(std::string* error) {
   return true;
 }
 
-bool AudioPath::preroll(std::string* error) {
-  if (!open(error)) return false;
-  if (eof_) return true;  // Empty or very short audio stream.
-  // A single bounded wait for the first decoded frame is enough: workers keep
-  // running in the background, and any later starvation is handled during
-  // scheduling by the blocking underrun path without burning wall budget.
-  const int64_t deadline = now_ns() + seconds_to_ns(1.0);
-  while (!eof_ && pcm_buffered_per_channel() == 0) {
-    if (!pull_frame(/*block=*/true, error)) return false;
-    if (now_ns() > deadline) break;
-  }
-  return true;
-}
-
 bool AudioPath::update(double simulated_step_seconds, bool& fatal_error) {
   fatal_error = false;
   std::string error;

@@ -33,10 +33,6 @@ class AudioPath {
   // Lazily create the resampler from the first decoded frame.
   bool open(std::string* error);
 
-  // Build the bounded pre-roll PCM buffer before the master clock starts, so
-  // early scheduler jitter cannot starve the sample-driven timeline.
-  bool preroll(std::string* error);
-
   // One scheduler tick: make queued PCM available, then consume samples up to
   // the simulated time budget. Returns false on a resampling failure.
   bool update(double simulated_step_seconds, bool& fatal_error);

@@ -70,22 +70,20 @@ std::optional<double> Decoder::normalize_frame(const AVFrame& frame) {
 }
 
 namespace {
-enum class ReceiveResult { Done, Backpressure, Error };
-
-// Drain all frames currently available from the decoder into the bounded
-// queue. Backpressure (queue full but healthy) is distinct from a hard error
-// so the caller can wait and retry rather than flushing the decoder early.
-ReceiveResult receive_loop(Decoder& decoder, FrameQueue& frames,
-                           std::atomic<bool>& stop) {
+// Drain all frames currently available from the decoder into the water-marked
+// queue. Returns false on a hard decode error or when the queue is shut down
+// (closed/error/stop); EAGAIN/EOF simply end this drain round with success.
+bool receive_loop(Decoder& decoder, FrameQueue& frames,
+                  std::atomic<bool>& stop) {
   AVCodecContext* ctx = decoder.context();
   while (!stop.load()) {
     FramePtr frame = make_frame();
     int rc = avcodec_receive_frame(ctx, frame.get());
     if (rc == AVERROR(EAGAIN) || rc == AVERROR_EOF) {
-      return ReceiveResult::Done;
+      return true;
     }
     if (rc < 0) {
-      return ReceiveResult::Error;
+      return false;
     }
 
     std::optional<double> pts = decoder.normalize_frame(*frame);
@@ -102,13 +100,12 @@ ReceiveResult receive_loop(Decoder& decoder, FrameQueue& frames,
     DecodedFrame decoded{std::move(frame), *pts, duration};
     // The water-mark queue blocks while the decoder is too far ahead of the
     // playback clock, throttling the whole producer chain to real time. It
-    // only returns false on close/error/stop.
+    // only returns false on close/error/stop, which ends decoding cleanly.
     if (!frames.push(std::move(decoded), bytes, stop)) {
-      return frames.error() ? ReceiveResult::Error
-                            : ReceiveResult::Backpressure;
+      return false;
     }
   }
-  return ReceiveResult::Done;
+  return true;
 }
 }  // namespace
 
@@ -129,25 +126,23 @@ bool run_decode(Decoder& decoder, PacketQueue& packets, FrameQueue& frames,
       return false;
     }
 
-    ReceiveResult result = receive_loop(decoder, frames, stop);
-    if (result == ReceiveResult::Error) {
-      error = "avcodec_receive_frame failed";
+    if (!receive_loop(decoder, frames, stop)) {
+      error = "avcodec_receive_frame failed or output queue shut down";
       frames.set_error();
       return false;
     }
 
     if (rc == AVERROR(EAGAIN)) {
-      // Decoder input was full. After draining its output above, resend the
-      // same packet; it must not be lost.
+      // Decoder input was full. Its output was drained above, so resend the
+      // same packet now; it must not be lost.
       rc = avcodec_send_packet(ctx, maybe_packet->get());
       if (rc < 0 && rc != AVERROR(EAGAIN)) {
         error = "decoder rejected packet after drain";
         frames.set_error();
         return false;
       }
-      result = receive_loop(decoder, frames, stop);
-      if (result == ReceiveResult::Error) {
-        error = "avcodec_receive_frame failed";
+      if (!receive_loop(decoder, frames, stop)) {
+        error = "avcodec_receive_frame failed or output queue shut down";
         frames.set_error();
         return false;
       }
