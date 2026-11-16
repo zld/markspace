@@ -42,7 +42,7 @@ func (r *Recorder) Record(path string, now time.Duration, queued, target int) {
 	ms := now.Milliseconds()
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if ms-r.last[path] < r.everyMs {
+	if last, ok := r.last[path]; ok && ms-last < r.everyMs {
 		return
 	}
 	r.last[path] = ms
