@@ -189,10 +189,12 @@ def parse_mp4(f, file_size: int) -> dict:
     if file_size > MAX_FILE_SIZE:
         raise ContainerError("file exceeds 2 GiB limit")
     f.seek(0)
-    brand = f.read(8)
-    if len(brand) < 8 or brand[4:8] != b"ftyp":
+    head = f.read(16)
+    if len(head) < 12 or not (head[4:8] == b"ftyp"
+                              or head[8:12] == b"ftyp"):
         raise ContainerError("missing ftyp box")
     result: dict = {"container": "mp4", "duration_ms": None, "tracks": []}
+    f.seek(0)
     for box in iter_boxes(f, 0, file_size):
         if box.kind != b"moov":
             continue

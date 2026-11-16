@@ -194,7 +194,9 @@ def compare_results(results: list[ProbeResult],
             # the deterministic (path-sorted) order.
             reference = max(members, key=lambda r: (len(r.tracks),
                                                     -members.index(r)))
-            for member in members[1:]:
+            for member in members:
+                if member is reference:
+                    continue
                 pairs, missing, extra = match_tracks(
                     reference.tracks, member.tracks)
                 for track in missing:
