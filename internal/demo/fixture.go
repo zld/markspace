@@ -130,10 +130,10 @@ func writePacket(w io.Writer, cc map[uint16]int, pid uint16, pusi bool, payload 
 
 func patSection() []byte {
 	return []byte{
-		0x00,             // pointer field
-		0x00,             // table id: PAT
-		0xB0, 0x0D,       // section length 13
-		0x00, 0x01,       // transport stream id
+		0x00,       // pointer field
+		0x00,       // table id: PAT
+		0xB0, 0x0D, // section length 13
+		0x00, 0x01, // transport stream id
 		0xC1, 0x00, 0x00, // version, section numbers
 		0x00, 0x01, // program 1
 		0xE0 | byte(pidPMT>>8), byte(pidPMT),
@@ -143,10 +143,10 @@ func patSection() []byte {
 
 func pmtSection() []byte {
 	return []byte{
-		0x00,             // pointer field
-		0x02,             // table id: PMT
-		0xB0, 0x12,       // section length 18
-		0x00, 0x01,       // program number
+		0x00,       // pointer field
+		0x02,       // table id: PMT
+		0xB0, 0x12, // section length 18
+		0x00, 0x01, // program number
 		0xC1, 0x00, 0x00, // version, section numbers
 		0xE0 | byte(pidVideo>>8), byte(pidVideo), // PCR PID
 		0xF0, 0x00, // program info length 0
