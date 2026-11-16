@@ -2,4 +2,6 @@ module rtsp-audit
 
 go 1.22
 
-require github.com/bluenviron/gortsplib/v4 v4.13.0
+require github.com/pion/rtp v1.8.13
+
+require github.com/pion/randutil v0.1.0 // indirect
