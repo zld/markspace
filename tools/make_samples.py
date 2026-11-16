@@ -283,3 +283,157 @@ def build_mkv(duration_ms: int, timecode_scale: int,
     tracks = elem(E_TRACKS, b"".join(track_entries))
     return ebml_header() + elem(E_SEGMENT, info + tracks)
 
+
+# --------------------------------------------------------------------------
+# Deterministic scenario assembly
+# --------------------------------------------------------------------------
+
+
+def sample_cutscene_a() -> bytes:
+    tracks = [
+        trak(1, b"vide", "eng", video_entry(b"avc1", 1920, 1080),
+             width=1920, height=1080, duration=10000),
+        trak(2, b"soun", "eng", audio_entry(b"mp4a", 2, 48000),
+             duration=10000),
+        trak(3, b"subt", "eng", subtitle_entry(b"tx3g"), duration=10000),
+    ]
+    # 64-bit extended-size ftyp exercises the largesize header path.
+    return build_iso(b"isom", 10000, tracks, extended_size=True)
+
+
+def sample_cutscene_b() -> bytes:
+    # 120 ms longer than A; the subtitle track deliberately lacks a language.
+    tracks = [
+        trak(1, b"vide", "eng", video_entry(b"avc1", 1920, 1080),
+             width=1920, height=1080, duration=10120),
+        trak(2, b"soun", "eng", audio_entry(b"mp4a", 2, 48000),
+             duration=10120),
+        trak(3, b"subt", None, subtitle_entry(b"tx3g"), duration=10120),
+    ]
+    return build_iso(b"isom", 10120, tracks)
+
+
+def sample_cutscene_c() -> bytes:
+    # QuickTime container: both tracks reuse track id 1 (duplicate number).
+    tracks = [
+        trak(1, b"vide", "eng", video_entry(b"avc1", 1280, 720),
+             width=1280, height=720, duration=5000),
+        trak(1, b"soun", "eng", audio_entry(b"mp4a", 2, 44100),
+             duration=5000),
+    ]
+    return build_iso(b"qt  ", 5000, tracks)
+
+
+def sample_cutscene_d() -> bytes:
+    entries = [
+        mkv_track_entry(1, 1, "V_MPEG4/ISO/AVC", "eng",
+                        width=1920, height=1080),
+        mkv_track_entry(2, 2, "A_AAC", "eng",
+                        sample_rate=48000, channels=2),
+    ]
+    return build_mkv(10000, 1_000_000, entries)
+
+
+def sample_cutscene_e() -> bytes:
+    # Audio track omits its language tag entirely.
+    entries = [
+        mkv_track_entry(4, 1, "V_MPEG4/ISO/AVC", "eng",
+                        width=1280, height=720),
+        mkv_track_entry(5, 2, "A_AAC", None,
+                        sample_rate=44100, channels=2),
+    ]
+    return build_mkv(5000, 1_000_000, entries)
+
+
+def sample_truncated() -> bytes:
+    # A syntactically valid Matroska file cut inside its Tracks element so
+    # the declared element size runs past the end of the file.
+    entries = [
+        mkv_track_entry(1, 1, "V_MPEG4/ISO/AVC", "eng",
+                        width=1920, height=1080),
+        mkv_track_entry(2, 2, "A_AAC", "eng",
+                        sample_rate=48000, channels=2),
+    ]
+    valid = build_mkv(10000, 1_000_000, entries)
+    return valid[: len(valid) - 40]
+
+
+def sample_truncated_mp4() -> bytes:
+    # A valid MP4 whose moov box header declares more bytes than exist.
+    valid = sample_cutscene_b()
+    return valid[: len(valid) - 30]
+
+
+def sample_mov_zero_tail() -> bytes:
+    # QuickTime file ending in a zero-size (extends-to-EOF) tail box.
+    head = build_iso(
+        b"qt  ", 5000,
+        [trak(1, b"vide", "eng", video_entry(b"avc1", 640, 480),
+              width=640, height=480, duration=5000)],
+    )
+    return head + struct.pack(">I4s", 0, b"skip") + b"tail-payload"
+
+
+def build_manifest() -> dict:
+    return {
+        "version": 1,
+        "groups": [
+            {
+                "name": "cutscene_main",
+                "files": [
+                    "cutscene_a.mp4",
+                    "cutscene_b.mp4",
+                    "cutscene_d.mkv",
+                ],
+                "expect": [
+                    {"type": "video", "count": 1},
+                    {"type": "audio", "count": 1},
+                ],
+            },
+            {
+                "name": "cutscene_alt",
+                "files": ["cutscene_c.mov", "cutscene_e.mkv"],
+                "expect": [
+                    {"type": "video", "count": 1},
+                    {"type": "audio", "count": 1},
+                ],
+            },
+        ],
+    }
+
+
+SAMPLES = {
+    "cutscene_a.mp4": sample_cutscene_a,
+    "cutscene_b.mp4": sample_cutscene_b,
+    "cutscene_c.mov": sample_cutscene_c,
+    "cutscene_d.mkv": sample_cutscene_d,
+    "cutscene_e.mkv": sample_cutscene_e,
+    "cutscene_truncated.mkv": sample_truncated,
+}
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Generate deterministic samples")
+    parser.add_argument("--out", required=True, help="output directory")
+    args = parser.parse_args()
+
+    out_dir = os.path.abspath(args.out)
+    os.makedirs(out_dir, exist_ok=True)
+    for name, builder in SAMPLES.items():
+        target = os.path.join(out_dir, name)
+        with open(target, "wb") as handle:
+            handle.write(builder())
+    # A non-media file proves unknown extensions are skipped, not parsed.
+    with open(os.path.join(out_dir, "delivery_notes.txt"), "w",
+              encoding="utf-8") as handle:
+        handle.write("vendor delivery notes; not a media container\n")
+    with open(os.path.join(out_dir, "manifest.json"), "w",
+              encoding="utf-8") as handle:
+        json.dump(build_manifest(), handle, indent=2, sort_keys=True)
+        handle.write("\n")
+    print(f"wrote {len(SAMPLES)} media samples + manifest to {out_dir}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
