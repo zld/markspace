@@ -25,14 +25,17 @@ class AudioPath {
   static constexpr int kOutSampleRate = 48000;
   static constexpr int kOutChannels = 2;
 
-  AudioPath(FrameQueue& frames, MasterClock& clock, Metrics& metrics,
-            JitterSource& jitter);
+  AudioPath(FrameQueue& frames, MasterClock& clock, Metrics& metrics);
   ~AudioPath();
   AudioPath(const AudioPath&) = delete;
   AudioPath& operator=(const AudioPath&) = delete;
 
   // Lazily create the resampler from the first decoded frame.
   bool open(std::string* error);
+
+  // Build the bounded pre-roll PCM buffer before the master clock starts, so
+  // early scheduler jitter cannot starve the sample-driven timeline.
+  bool preroll(std::string* error);
 
   // One scheduler tick: make queued PCM available, then consume samples up to
   // the simulated time budget. Returns false on a resampling failure.
@@ -42,13 +45,15 @@ class AudioPath {
   uint64_t total_consumed_samples() const;
 
  private:
-  bool pull_frame(std::string* error);
+  bool pull_frame(bool block, std::string* error);
   bool resample_into_pcm(AVFrame& frame, std::string* error);
+  // Drain samples buffered inside the resampler at end-of-stream.
+  bool flush_resampler(std::string* error);
+  size_t pcm_buffered_per_channel() const;
 
   FrameQueue& frames_;
   MasterClock& clock_;
   Metrics& metrics_;
-  JitterSource& jitter_;
 
   SwrContext* swr_ = nullptr;
   bool opened_ = false;
@@ -61,6 +66,8 @@ class AudioPath {
 
   uint64_t consumed_ = 0;
   uint64_t underruns_ = 0;
+  bool flushed_ = false;
+  double target_media_seconds_ = 0.0;  // Cumulative time the clock should reach.
 };
 
 }  // namespace avsync
