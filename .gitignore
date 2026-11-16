@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Local virtual environment (created per project requirements)
+.venv/
+
+# Generated fixtures and manifests
+.tmp/
+*.mp4
+ranges.json
+
+# macOS metadata
+.DS_Store

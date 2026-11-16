@@ -1,0 +1,2 @@
+# sidxmap has no third-party runtime dependencies; the standard library only.
+# This file exists so the documented pip install step works unchanged.
