@@ -1,0 +1,20 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Local virtual environment (must live at repository root)
+.venv/
+
+# Local audit working data
+.tmp/
+*.sqlite
+*.sqlite-journal
+
+# Test / tooling caches
+.pytest_cache/
+.coverage
+htmlcov/
