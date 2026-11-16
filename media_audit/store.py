@@ -246,3 +246,65 @@ class AuditStore:
             raise StoreError(
                 f"failed to persist {rel_path}: {exc}"
             ) from exc
+
+    # -- read-back (used by re-runs and JSON re-export) ---------------------
+
+    def find_batch(self, root: str, manifest: str) -> int | None:
+        row = self.conn.execute(
+            "SELECT id FROM batches WHERE root = ? AND manifest = ?",
+            (root, manifest),
+        ).fetchone()
+        return int(row["id"]) if row else None
+
+    def load_infos(self, batch_id: int) -> dict[str, MediaInfo]:
+        """Reconstruct :class:`MediaInfo` records exactly as probed.
+
+        Values that were never parsed remain ``None``/empty; nothing is
+        fabricated to fill missing columns.
+        """
+        rows = self.conn.execute(
+            "SELECT * FROM files WHERE batch_id = ? ORDER BY rel_path",
+            (batch_id,),
+        ).fetchall()
+        infos: dict[str, MediaInfo] = {}
+        for row in rows:
+            info = MediaInfo(
+                path=row["rel_path"],
+                name=row["name"],
+                container=row["container"],
+                duration_ms=row["duration_ms"],
+                brands=tuple(json.loads(row["brands"])),
+                parse_error=row["parse_error"],
+                error_offset=row["error_offset"],
+                byte_size=row["byte_size"],
+            )
+            track_rows = self.conn.execute(
+                "SELECT * FROM tracks WHERE file_id = ? ORDER BY track_index",
+                (row["id"],),
+            ).fetchall()
+            for track_row in track_rows:
+                info.tracks.append(
+                    TrackInfo(
+                        track_id=track_row["track_id"],
+                        type=track_row["type"],
+                        codec=track_row["codec"],
+                        codec_family=track_row["codec_family"],
+                        language=track_row["language"],
+                        hidden=bool(track_row["hidden"]),
+                        params=json.loads(track_row["params"]),
+                        codec_summary=track_row["codec_summary"],
+                    )
+                )
+            infos[row["rel_path"]] = info
+        return infos
+
+    def load_events(self, batch_id: int) -> list[dict[str, str]]:
+        rows = self.conn.execute(
+            "SELECT rel_path, kind, reason FROM scan_events "
+            "WHERE batch_id = ? ORDER BY rel_path, kind",
+            (batch_id,),
+        ).fetchall()
+        return [
+            {"path": row["rel_path"], "kind": row["kind"], "reason": row["reason"]}
+            for row in rows
+        ]
