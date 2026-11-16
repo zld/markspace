@@ -219,3 +219,187 @@ class TestTracksAndLacing:
             mkv = parse_matroska(fixture_path, max_samples=MAX_SAMPLES,
                                  max_packet_size=4)
             deinterlace(mkv, max_samples=MAX_SAMPLES, max_packet_size=4)
+
+
+# ---------------------------------------------------------------------------
+# Requirement 5: DTS/PTS timeline, rebasing and drift
+# ---------------------------------------------------------------------------
+class TestTimeline:
+    def test_rebase_and_track_offsets(self, parsed):
+        _, _, timeline = parsed
+        assert abs(timeline.rebase_ms - 80.0) < 1e-9
+        video = next(t for t in timeline.tracks if t.track.track_type == 1)
+        audio = next(t for t in timeline.tracks if t.track.track_type == 2)
+        assert video.first_pts_ms == 20 and video.last_pts_ms == 140
+        assert audio.first_pts_ms == 0 and audio.last_pts_ms == 192
+        assert len(video.samples) == 6 and len(audio.samples) == 10
+
+    def test_b_frame_composition_offsets(self, parsed):
+        _, _, timeline = parsed
+        video = next(t for t in timeline.tracks if t.track.track_type == 1)
+        # Decode order contains a B-frame: at least one non-zero ctts and
+        # every DTS stays strictly monotonic with PTS >= DTS.
+        offsets = [s.composition_offset_ms for s in video.samples]
+        assert any(offset != 0 for offset in offsets)
+        dts = [s.dts_ms for s in video.samples]
+        assert all(b > a for a, b in zip(dts, dts[1:]))
+        assert all(s.pts_ms >= s.dts_ms for s in video.samples)
+
+    def test_audio_gap_preserved(self, parsed):
+        _, _, timeline = parsed
+        audio = next(t for t in timeline.tracks if t.track.track_type == 2)
+        pts = [s.pts_ms for s in audio.samples]
+        # 32 ms gap between the 48 ms and 80 ms presentation times.
+        gap_index = pts.index(48)
+        assert pts[gap_index + 1] == 80
+        assert audio.samples[gap_index].duration_ms == 32
+
+    def test_audio_dts_equals_pts(self, parsed):
+        _, _, timeline = parsed
+        audio = next(t for t in timeline.tracks if t.track.track_type == 2)
+        assert all(s.dts_ms == s.pts_ms for s in audio.samples)
+
+    def test_no_negative_timestamps(self, parsed):
+        _, _, timeline = parsed
+        for track in timeline.tracks:
+            assert all(s.dts_ms >= 0 and s.pts_ms >= 0 for s in track.samples)
+
+
+# ---------------------------------------------------------------------------
+# Requirement 6/7: both exporters share one parse and validate indexes
+# ---------------------------------------------------------------------------
+class TestExporters:
+    def test_flat_export_tables(self, parsed, tmp_path):
+        _, _, timeline = parsed
+        out = tmp_path / "flat.mp4"
+        result = export_flat(timeline, str(out))
+        assert result.total_samples == 16
+        assert result.offset_box == "stco"
+        assert result.offset_entries == 16
+        data = out.read_bytes()
+        index = validate_structure(data, expected=["ftyp", "moov", "mdat"])
+        for name in ("stts", "ctts", "stsc", "stsz", "stco", "avcC", "esds"):
+            assert name in index
+
+    def test_flat_stco_offsets_inside_mdat(self, parsed, tmp_path):
+        _, _, timeline = parsed
+        out = tmp_path / "flat.mp4"
+        export_flat(timeline, str(out))
+        data = out.read_bytes()
+        mdat_pos = data.find(b"mdat") - 4
+        mdat_size = struct.unpack(">I", data[mdat_pos:mdat_pos + 4])[0]
+        payload_start, payload_end = mdat_pos + 8, mdat_pos + mdat_size
+        position = 0
+        total = 0
+        while True:
+            at = data.find(b"stco", position)
+            if at < 0:
+                break
+            count, = struct.unpack(">I", data[at + 8:at + 12])
+            for i in range(count):
+                offset, = struct.unpack(
+                    ">I", data[at + 12 + 4 * i:at + 16 + 4 * i])
+                assert payload_start <= offset < payload_end
+            total += count
+            position = at + 4
+        assert total == 16
+
+    def test_fragmented_export(self, parsed, tmp_path):
+        _, _, timeline = parsed
+        out = tmp_path / "frag.mp4"
+        result = export_fragmented(timeline, str(out))
+        assert result.fragment_count == 2
+        assert result.sidx_refs == 2
+        assert result.total_samples == 16
+        data = out.read_bytes()
+        index = validate_structure(
+            data, expected=["ftyp", "moov", "sidx", "moof", "mdat"])
+        for name in ("mvex", "trex", "tfhd", "tfdt", "trun"):
+            assert name in index
+
+    def test_both_exporters_share_timeline(self, parsed, tmp_path):
+        _, _, timeline = parsed
+        flat = export_flat(timeline, str(tmp_path / "a.mp4"))
+        frag = export_fragmented(timeline, str(tmp_path / "b.mp4"))
+        assert flat.total_samples == frag.total_samples == 16
+
+    def test_atomic_write_leaves_no_tempfile(self, parsed, tmp_path):
+        _, _, timeline = parsed
+        export_flat(timeline, str(tmp_path / "ok.mp4"))
+        leftovers = [n for n in os.listdir(tmp_path)
+                     if n.startswith(".mkvmp4-")]
+        assert not leftovers
+
+    def test_index_validation_detects_corrupt_image(self, parsed, tmp_path):
+        # A truncated emitted image must fail structural validation rather
+        # than be mistaken for a valid MP4.
+        _, _, timeline = parsed
+        out = tmp_path / "ok.mp4"
+        export_flat(timeline, str(out))
+        data = bytearray(out.read_bytes())
+        with pytest.raises(IndexValidationError):
+            validate_structure(bytes(data[: len(data) // 2]),
+                               expected=["ftyp", "moov", "mdat"])
+
+
+# ---------------------------------------------------------------------------
+# Requirement 8: corruption, limits and CLI exit codes
+# ---------------------------------------------------------------------------
+class TestFailuresAndExitCodes:
+    def test_truncated_block_payload(self, fixture_path, tmp_path):
+        raw = open(fixture_path, "rb").read()
+        target = tmp_path / "truncated.mkv"
+        target.write_bytes(raw[: len(raw) - 9])
+        with pytest.raises(CorruptMKVError):
+            mkv = parse_matroska(str(target), max_samples=MAX_SAMPLES,
+                                 max_packet_size=MAX_PACKET)
+            deinterlace(mkv, max_samples=MAX_SAMPLES,
+                        max_packet_size=MAX_PACKET)
+
+    def test_sample_count_limit(self, fixture_path):
+        mkv = parse_matroska(fixture_path, max_samples=2,
+                             max_packet_size=MAX_PACKET)
+        with pytest.raises(LimitExceededError):
+            deinterlace(mkv, max_samples=2, max_packet_size=MAX_PACKET)
+
+    def test_packet_size_limit(self, fixture_path):
+        with pytest.raises((LimitExceededError, CorruptMKVError)):
+            mkv = parse_matroska(fixture_path, max_samples=MAX_SAMPLES,
+                                 max_packet_size=3)
+            deinterlace(mkv, max_samples=MAX_SAMPLES,
+                        max_packet_size=3)
+
+    def test_unsupported_codec_exit_code_three(self):
+        from mkvmp4.errors import UnsupportedCodecError
+        assert UnsupportedCodecError.exit_code == 3
+
+    def test_index_validation_exit_code_five(self):
+        assert IndexValidationError.exit_code == 5
+
+    def test_usage_error_exit_code_two(self):
+        from mkvmp4.errors import UsageError
+        assert UsageError.exit_code == 2
+
+    def test_io_failure_exit_code_four(self):
+        from mkvmp4.errors import IOFailure
+        assert IOFailure.exit_code == 4
+
+    def test_cli_missing_input_returns_two(self):
+        from mkvmp4.cli import main
+        assert main(["remux", "/no/such/file.mkv", "/tmp/out.mp4"]) == 2
+
+    def test_cli_corrupt_input_returns_three(self, tmp_path):
+        from mkvmp4.cli import main
+        bad = tmp_path / "bad.mkv"
+        bad.write_bytes(b"\x1a\x45\xdf\xa3not-a-real-matroska")
+        out = tmp_path / "out.mp4"
+        assert main(["remux", str(bad), str(out)]) == 3
+
+    def test_cli_demo_success_returns_zero(self, tmp_path):
+        from mkvmp4.cli import main
+        code = main(["demo", "--out-dir", str(tmp_path / "demo"),
+                     "--mode", "both"])
+        assert code == 0
+        produced = os.listdir(str(tmp_path / "demo"))
+        assert "synthetic.flat.mp4" in produced
+        assert "synthetic.frag.mp4" in produced
