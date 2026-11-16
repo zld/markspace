@@ -428,15 +428,12 @@ def opus_frame_duration(data: bytes) -> int:
         raise CodecRejectedError("empty Opus packet")
     config = (data[0] >> 3) & 0x1F
     code = data[0] & 0x03
-    # RFC 6716 Table 1: per-config frame duration in milliseconds.
-    if config < 4:
-        frame_ms = (10.0, 20.0, 40.0, 60.0)[config]
-    elif config < 8:
-        frame_ms = (2.5, 5.0, 10.0, 20.0)[config - 4]
-    elif config < 12:
-        frame_ms = (10.0, 20.0, 40.0, 60.0)[config - 8]
+    # RFC 6716 Table 1: configs 0..15 are 10/20/40/60 ms (SILK/hybrid),
+    # configs 16..31 (CELT-only) introduce 2.5/5/10/20 ms.
+    if config < 16:
+        frame_ms = (10.0, 20.0, 40.0, 60.0)[config % 4]
     else:
-        frame_ms = (10.0, 20.0, 40.0, 60.0)[(config - 12) % 4]
+        frame_ms = (2.5, 5.0, 10.0, 20.0)[config % 4]
     counts = (1, 2, 2)
     if code == 3:
         raise CodecRejectedError(
