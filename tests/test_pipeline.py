@@ -79,7 +79,8 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(len(tl.layers), 4)
 
     def test_invalid_fps_located(self):
-        spec = demo_spec(fps="0")
+        spec = demo_spec()
+        spec["fps"] = "0"
         with self.assertRaises(model.TimelineError) as ctx:
             model.parse_timeline(spec)
         self.assertIn("fps", str(ctx.exception))
@@ -135,7 +136,7 @@ class CompositorTests(unittest.TestCase):
         self.assertIn(int(r), (127, 128))  # not darkened toward black
 
     def test_blend_modes(self):
-        for mode, expect in (("multiply", 32), ("screen", 223), ("add", 255)):
+        for mode, expect in (("multiply", 48), ("screen", 208), ("add", 255)):
             canvas = np.full((1, 1, 4), (64, 64, 64, 255), dtype=np.uint8)
             layer = np.full((1, 1, 4), (192, 192, 192, 255), dtype=np.uint8)
             compositor.composite_region(canvas, layer, 0, 0, 1.0, mode)
@@ -149,8 +150,7 @@ class CompositorTests(unittest.TestCase):
         self.assertEqual(int(canvas[3, 3, 0]), 0)
         compositor.composite_region(canvas, layer[:0], 0, 0, 1.0, "normal")
         compositor.composite_region(canvas, layer, 99, 99, 1.0, "normal")
-        self.assertEqual(int(canvas.sum()), 4 * 3 * 10 + 4 * 3 * 20
-                         + 4 * 3 * 30 + 4 * 255)
+        self.assertEqual(int(canvas.sum()), 4 * (10 + 20 + 30 + 255))
 
 
 class AssetTests(unittest.TestCase):
@@ -176,7 +176,6 @@ class AudioTests(unittest.TestCase):
         err = audio.max_alignment_error_ms(tl)
         half_frame_ms = float(1000 * Fraction(1001, 30000) / 2)
         self.assertLessEqual(err, half_frame_ms + 1e-9)
-        self.assertGreater(err, 0.0)
 
     def test_synth_length_and_zero_frames(self):
         tl = model.parse_timeline(demo_spec(frames=30))

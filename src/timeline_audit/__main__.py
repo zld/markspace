@@ -25,6 +25,15 @@ EXIT_INVALID = 2
 EXIT_FAILED = 3
 
 
+def _keys(points):
+    """Build a keyframe list, keeping the last entry when frames collide."""
+    merged = {}
+    for frame, value, interp in points:
+        merged[frame] = (frame, value, interp)
+    return [{"frame": f, "value": v, "interp": i}
+            for f, v, i in (merged[k] for k in sorted(merged))]
+
+
 def _build_demo_timeline(width: int, height: int, fps: str, frames: int) -> dict:
     rate = parse_fps(fps)  # validated here so bad input maps to exit 2
     duration = Fraction(frames) / rate
@@ -47,11 +56,11 @@ def _build_demo_timeline(width: int, height: int, fps: str, frames: int) -> dict
             "position": [(width - 128) // 2, (height - 128) // 2],
             "scale": 1.5,
             "blend": "screen",
-            "opacity": [
-                {"frame": 0, "value": 0.0, "interp": "linear"},
-                {"frame": max(frames // 2, 1), "value": 0.9, "interp": "hold"},
-                {"frame": max(frames - 1, 1), "value": 0.9, "interp": "linear"},
-            ],
+            "opacity": _keys([
+                (0, 0.0, "linear"),
+                (max(frames // 2, 1), 0.9, "hold"),
+                (max(frames - 1, 1), 0.9, "linear"),
+            ]),
         },
         {
             "id": "particles",
@@ -61,19 +70,21 @@ def _build_demo_timeline(width: int, height: int, fps: str, frames: int) -> dict
             "position": [(width - 96) // 2, (height - 96) // 2],
             "scale": 2.0,
             "blend": "add",
-            "opacity": [
-                {"frame": 0, "value": 0.0, "interp": "linear"},
-                {"frame": max(frames // 3, 1), "value": 0.8, "interp": "linear"},
-                {"frame": max(frames - 1, 1), "value": 0.2, "interp": "linear"},
-            ],
+            "opacity": _keys([
+                (0, 0.0, "linear"),
+                (max(frames // 3, 1), 0.8, "linear"),
+                (max(frames - 1, 1), 0.2, "linear"),
+            ]),
         },
     ]
     beeps = []
     if frames > 0:
+        frame_dur = Fraction(1) / rate
         beeps = [
-            {"time": str(duration * Fraction(1, 4)), "freq": 660.0, "duration": 0.08},
-            {"time": str(duration * Fraction(1, 2)), "freq": 880.0, "duration": 0.08},
-            {"time": str(duration * Fraction(3, 4)), "freq": 990.0, "duration": 0.08},
+            {"time": str(duration * f + frame_dur * Fraction(2, 5)),
+             "freq": freq, "duration": 0.08}
+            for f, freq in ((Fraction(1, 4), 660.0), (Fraction(1, 2), 880.0),
+                            (Fraction(3, 4), 990.0))
         ]
     return {
         "fps": fps,
