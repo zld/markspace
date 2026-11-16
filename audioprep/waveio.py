@@ -114,12 +114,23 @@ def hash_file(path: Path) -> str:
 def read_blocks(path: Path, block_frames: int):
     """Yield ``(frames, channels)`` float64 blocks of constant channel count.
 
-    Mono files yield shape ``(n, 1)`` so downstream code has one shape.
+    Mono files yield shape ``(n, 1)`` so downstream code has one shape. The
+    final block is sliced to the file's true frame count rather than padded,
+    so callers never see fill-value samples beyond the end of the stream.
     """
     with sf.SoundFile(str(path), "r") as handle:
+        total = len(handle)
+        delivered = 0
         for block in handle.blocks(blocksize=block_frames, dtype="float64",
                                    always_2d=True, fill_value=0.0):
-            yield np.asarray(block, dtype=np.float64)
+            block = np.asarray(block, dtype=np.float64)
+            remaining = total - delivered
+            if block.shape[0] > remaining:
+                block = block[:remaining]
+            if block.shape[0] == 0:
+                break
+            delivered += block.shape[0]
+            yield block
 
 
 def probe_file(path: Path) -> sf.SoundFileInfo:

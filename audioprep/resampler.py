@@ -205,10 +205,11 @@ class StreamingResampler:
             rows.append(row)
             self._n_out = j + 1
 
-        # Drop prefix rows no future output kernel can reach.
+        # Drop only frames strictly before the next output's first tap.
         _, next_start, _ = self._next_geometry()
-        if next_start > self._offset:
-            drop = min(next_start - self._offset, self._buffer.shape[0])
+        keep_from = next_start
+        if keep_from > self._offset:
+            drop = min(keep_from - self._offset, self._buffer.shape[0])
             self._buffer = self._buffer[drop:]
             self._offset += drop
         return np.asarray(rows, dtype=np.float64).reshape(-1, channels)
