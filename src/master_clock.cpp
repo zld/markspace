@@ -45,10 +45,11 @@ void MasterClock::consume_audio(int samples) {
   consumed_samples_ += samples;
   const double media = media_seconds_locked();
 
-  // Compare against the unscaled wall clock: drift measures how far the
-  // sample-driven media position has drifted from real elapsed time.
-  const double wall = wall_elapsed_seconds_locked();
-  double drift_ms = (media - wall) * 1000.0;
+  // Compare against the speed-adjusted wall clock: at factor 2 the media
+  // timeline is expected to advance twice as fast as real elapsed time.
+  const double expected_media =
+      wall_elapsed_seconds_locked() * realtime_factor_;
+  double drift_ms = (media - expected_media) * 1000.0;
   drift_ms = std::clamp(drift_ms, -kMaxDriftStepMs, kMaxDriftStepMs);
   last_drift_ms_ = drift_ms;
   (void)before;
