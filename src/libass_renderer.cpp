@@ -93,13 +93,13 @@ class Worker {
             err_ = "ass_library_init failed";
             return false;
         }
+        ass_set_message_cb(lib, ass_log, nullptr);
         ASS_Renderer* ren = ass_renderer_init(lib);
         if (!ren) {
             err_ = "ass_renderer_init failed";
             ass_library_done(lib);
             return false;
         }
-        ass_set_message_cb(lib, ass_log, nullptr);
         ass_set_frame_size(ren, w, h);
         ass_set_fonts(ren, nullptr, "Arial", ASS_FONTPROVIDER_AUTODETECT, nullptr, 1);
         Frame frame;

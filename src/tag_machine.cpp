@@ -30,12 +30,29 @@ void scan_block(const std::string& s, std::size_t begin, std::size_t end,
         }
         std::size_t j = i + 1;
         std::string name;
-        while (j < end && std::isalnum(static_cast<unsigned char>(s[j])))
+        // Digit-prefixed tags exist only as 1c..4c and 1a..4a; every other
+        // tag name is alphabetic and trailing digits are its argument.
+        if (j + 1 < end && s[j] >= '1' && s[j] <= '4' &&
+            (s[j + 1] == 'c' || s[j + 1] == 'C' || s[j + 1] == 'a' || s[j + 1] == 'A')) {
+            name.push_back(s[j++]);
             name.push_back(
                 static_cast<char>(std::tolower(static_cast<unsigned char>(s[j++]))));
+        } else {
+            while (j < end && std::isalpha(static_cast<unsigned char>(s[j])))
+                name.push_back(static_cast<char>(
+                    std::tolower(static_cast<unsigned char>(s[j++]))));
+        }
         if (name.empty()) {
             ++i;
             continue;
+        }
+        // Only \r (style name) and \fn (font name) take bare alphabetic
+        // arguments; split them off so "\rLeaf" counts as "r".
+        if (!recognized_names().count(name)) {
+            if (name.size() > 2 && name.compare(0, 2, "fn") == 0)
+                name = "fn";
+            else if (name.size() > 1 && name[0] == 'r')
+                name = "r";
         }
         if (recognized_names().count(name))
             st.add_recognized(name);
