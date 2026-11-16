@@ -102,6 +102,9 @@ type ProgramMap struct {
 // NewProgramMap returns an empty program map.
 func NewProgramMap() *ProgramMap { return &ProgramMap{pmtPID: -1, Video: -1} }
 
+// PMTPID returns the PMT PID, or -1 before the PAT has been seen.
+func (m *ProgramMap) PMTPID() int { return m.pmtPID }
+
 // Feed inspects a packet and updates the map.
 func (m *ProgramMap) Feed(p *Packet) {
 	if !p.PUSI || len(p.Payload) == 0 {

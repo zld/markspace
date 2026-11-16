@@ -82,6 +82,7 @@ type slicer struct {
 	frameInt int64 // latest inter-frame PTS delta
 	prevPTS  int64
 	probed   int
+	pat, pmt []byte // cached PSI packets, prepended to each segment
 	res      Result
 }
 
@@ -98,6 +99,11 @@ func (s *slicer) run(ctx context.Context) error {
 			return err
 		}
 		s.pm.Feed(p)
+		if p.PID == 0 {
+			s.pat = append(s.pat[:0], p.Raw...)
+		} else if s.pm.PMTPID() >= 0 && p.PID == uint16(s.pm.PMTPID()) {
+			s.pmt = append(s.pmt[:0], p.Raw...)
+		}
 		if s.pm.Video < 0 {
 			// Fallback: adopt the first PID carrying PES with PTS.
 			if s.probed++; s.probed > 500 && p.PUSI {
@@ -164,6 +170,18 @@ func (s *slicer) openSeg(pts int64) error {
 		return err
 	}
 	s.cur, s.h, s.n, s.segStart = f, sha256.New(), 0, pts
+	// Every segment starts with the cached PAT/PMT so it stays
+	// self-contained and decodable.
+	for _, psi := range [][]byte{s.pat, s.pmt} {
+		if len(psi) == 0 {
+			continue
+		}
+		if _, err := s.cur.Write(psi); err != nil {
+			return err
+		}
+		s.h.Write(psi)
+		s.n += int64(len(psi))
+	}
 	s.res.Segments = append(s.res.Segments, SegmentInfo{
 		Seq: len(s.res.Segments), Name: name, StartPTS: pts,
 	})

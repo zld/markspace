@@ -28,6 +28,8 @@ func run(args []string) int {
 		code, err = cmdCut(args[1:])
 	case "check":
 		code, err = cmdCheck(args[1:])
+	case "demo":
+		code, err = cmdDemo(args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "hlscheck: unknown command %q\n", args[0])
 		usage()
