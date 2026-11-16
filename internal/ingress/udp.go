@@ -94,17 +94,17 @@ func DialLoopback(addr *net.UDPAddr) (*net.UDPConn, error) {
 
 // ExchangeUDP transmits every event's packet over a real loopback UDP
 // socket and returns the events in receive order with their original
-// schedule. It exercises the same encode/decode path as live reception
-// while staying deterministic for the demo.
-func ExchangeUDP(evs []Event) ([]Event, error) {
+// schedule, plus the count of malformed datagrams. It exercises the same
+// encode/decode path as live reception while staying deterministic.
+func ExchangeUDP(evs []Event) ([]Event, uint64, error) {
 	rx, err := ListenUDP(0)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rx.Close()
 	tx, err := DialLoopback(rx.Addr())
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer tx.Close()
 
@@ -112,14 +112,14 @@ func ExchangeUDP(evs []Event) ([]Event, error) {
 	for _, ev := range evs {
 		data, err := wire.Encode(ev.Pkt)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		if _, err := tx.Write(data); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		raw, err := rx.ReadDatagram(time.Second)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		pkt, err := wire.Decode(raw)
 		if err != nil {
@@ -128,5 +128,5 @@ func ExchangeUDP(evs []Event) ([]Event, error) {
 		}
 		out = append(out, Event{At: ev.At, Pkt: pkt})
 	}
-	return out, nil
+	return out, rx.Malformed(), nil
 }

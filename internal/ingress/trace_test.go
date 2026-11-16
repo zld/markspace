@@ -73,9 +73,12 @@ func TestGenerateTracePayloadDecodes(t *testing.T) {
 
 func TestExchangeUDPPreservesEvents(t *testing.T) {
 	in := GenerateTrace(TraceParams{Seed: 7, Frames: 50, Loss: 0.1, Reorder: 0.2, Duplicate: 0.1})
-	out, err := ExchangeUDP(in)
+	out, malformed, err := ExchangeUDP(in)
 	if err != nil {
 		t.Fatalf("ExchangeUDP: %v", err)
+	}
+	if malformed != 0 {
+		t.Fatalf("malformed = %d, want 0", malformed)
 	}
 	if len(out) != len(in) {
 		t.Fatalf("received %d events, sent %d", len(out), len(in))
