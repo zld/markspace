@@ -1,6 +1,8 @@
 #include "avsync/demuxer.hpp"
 
+#include <chrono>
 #include <cstring>
+#include <thread>
 
 extern "C" {
 #include <libavutil/avutil.h>
@@ -63,6 +65,11 @@ double Demuxer::duration_seconds() const {
 bool run_demux(Demuxer& demuxer, const DemuxSinks& sinks,
                std::atomic<bool>& stop, std::string& error) {
   AVFormatContext* fmt = demuxer.format_context();
+
+  // The water-marked frame queues throttle the decoders to a bounded lead over
+  // the playback clock, so the bounded packet queues below only ever buffer a
+  // short window: blocking here is bounded and cannot run to end-of-stream
+  // ahead of playback. A 1 ms yield keeps the stop flag responsive.
   while (!stop.load()) {
     PacketPtr packet = make_packet();
     int rc = av_read_frame(fmt, packet.get());
@@ -76,18 +83,25 @@ bool run_demux(Demuxer& demuxer, const DemuxSinks& sinks,
       return false;
     }
 
+    PacketQueue* target = nullptr;
     if (packet->stream_index == demuxer.video_index()) {
-      if (!sinks.video->push(std::move(packet),
-                             packet_byte_size(*packet))) {
-        break;  // Queue closed/errored or stop requested.
-      }
+      target = sinks.video;
     } else if (packet->stream_index == demuxer.audio_index()) {
-      if (!sinks.audio->push(std::move(packet),
-                             packet_byte_size(*packet))) {
-        break;
-      }
+      target = sinks.audio;
     }
-    // Packets from other (subtitle/data) streams are simply released.
+    if (!target) {
+      continue;  // Subtitle/data packets are released by the RAII wrapper.
+    }
+
+    const size_t bytes = packet_byte_size(*packet);
+    while (!target->try_push(packet, bytes)) {
+      if (stop.load() || target->closed() || target->error()) {
+        sinks.video->close();
+        sinks.audio->close();
+        return !stop.load();
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
   }
 
   sinks.video->close();

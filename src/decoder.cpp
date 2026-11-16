@@ -1,11 +1,17 @@
 #include "avsync/decoder.hpp"
 
+#include <chrono>
+#include <thread>
+
 extern "C" {
 #include <libavutil/avutil.h>
 #include <libavutil/mathematics.h>
 }
 
 #include "avsync/limits.hpp"
+
+#include <chrono>
+#include <thread>
 
 namespace avsync {
 
@@ -64,18 +70,22 @@ std::optional<double> Decoder::normalize_frame(const AVFrame& frame) {
 }
 
 namespace {
+enum class ReceiveResult { Done, Backpressure, Error };
+
 // Drain all frames currently available from the decoder into the bounded
-// queue. Returns false on a hard decode error or queue failure.
-bool receive_loop(Decoder& decoder, FrameQueue& frames,
-                  std::atomic<bool>& stop, bool& decode_failed) {
+// queue. Backpressure (queue full but healthy) is distinct from a hard error
+// so the caller can wait and retry rather than flushing the decoder early.
+ReceiveResult receive_loop(Decoder& decoder, FrameQueue& frames,
+                           std::atomic<bool>& stop) {
   AVCodecContext* ctx = decoder.context();
   while (!stop.load()) {
     FramePtr frame = make_frame();
     int rc = avcodec_receive_frame(ctx, frame.get());
-    if (rc == AVERROR(EAGAIN) || rc == AVERROR_EOF) return true;
+    if (rc == AVERROR(EAGAIN) || rc == AVERROR_EOF) {
+      return ReceiveResult::Done;
+    }
     if (rc < 0) {
-      decode_failed = true;
-      return false;
+      return ReceiveResult::Error;
     }
 
     std::optional<double> pts = decoder.normalize_frame(*frame);
@@ -88,59 +98,68 @@ bool receive_loop(Decoder& decoder, FrameQueue& frames,
       duration = decoder.frame_duration_seconds();
     }
 
-    const size_t bytes =
-        frame_byte_size(decoder.media_type(), *frame);
+    const size_t bytes = frame_byte_size(decoder.media_type(), *frame);
     DecodedFrame decoded{std::move(frame), *pts, duration};
-    if (!frames.push(std::move(decoded), bytes)) return false;
+    // The water-mark queue blocks while the decoder is too far ahead of the
+    // playback clock, throttling the whole producer chain to real time. It
+    // only returns false on close/error/stop.
+    if (!frames.push(std::move(decoded), bytes, stop)) {
+      return frames.error() ? ReceiveResult::Error
+                            : ReceiveResult::Backpressure;
+    }
   }
-  return true;
+  return ReceiveResult::Done;
 }
 }  // namespace
 
 bool run_decode(Decoder& decoder, PacketQueue& packets, FrameQueue& frames,
                 std::atomic<bool>& stop, std::string& error) {
   AVCodecContext* ctx = decoder.context();
-  bool decode_failed = false;
 
   while (!stop.load()) {
     std::optional<PacketPtr> maybe_packet = packets.pop();
-    if (!maybe_packet.has_value()) break;  // Drained + closed, or error.
+    if (!maybe_packet.has_value()) {
+      break;  // Drained + closed, or error.
+    }
 
     int rc = avcodec_send_packet(ctx, maybe_packet->get());
     if (rc < 0 && rc != AVERROR(EAGAIN)) {
       error = "avcodec_send_packet failed on corrupt packet";
-      decode_failed = true;
-      break;
+      frames.set_error();
+      return false;
     }
-    if (!receive_loop(decoder, frames, stop, decode_failed)) {
+
+    ReceiveResult result = receive_loop(decoder, frames, stop);
+    if (result == ReceiveResult::Error) {
       error = "avcodec_receive_frame failed";
-      break;
+      frames.set_error();
+      return false;
     }
+
     if (rc == AVERROR(EAGAIN)) {
-      // Decoder input full: retry the same packet after draining output.
+      // Decoder input was full. After draining its output above, resend the
+      // same packet; it must not be lost.
       rc = avcodec_send_packet(ctx, maybe_packet->get());
-      if (rc < 0) {
+      if (rc < 0 && rc != AVERROR(EAGAIN)) {
         error = "decoder rejected packet after drain";
-        decode_failed = true;
-        break;
+        frames.set_error();
+        return false;
       }
-      if (!receive_loop(decoder, frames, stop, decode_failed)) {
+      result = receive_loop(decoder, frames, stop);
+      if (result == ReceiveResult::Error) {
         error = "avcodec_receive_frame failed";
-        break;
+        frames.set_error();
+        return false;
       }
     }
   }
 
   // End-of-stream flush so buffered frames are emitted before shutdown.
-  if (!decode_failed && !stop.load()) {
+  if (!stop.load() && !frames.error()) {
     avcodec_send_packet(ctx, nullptr);
-    receive_loop(decoder, frames, stop, decode_failed);
+    receive_loop(decoder, frames, stop);
   }
 
-  if (decode_failed) {
-    frames.set_error();
-    return false;
-  }
   frames.close();
   return !stop.load();
 }
