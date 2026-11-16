@@ -96,6 +96,9 @@ func TicksToMs(ticks, timescale int64) (Rational, error) {
 // FormatMillis prints r (already expressed in milliseconds) with exactly three
 // decimal places, using integer rounding instead of floating point.
 func FormatMillis(r Rational) string {
+	if r.Num == 0 {
+		return "0.000"
+	}
 	micros := big.NewInt(r.Num)
 	micros.Mul(micros, big.NewInt(1000))
 	den := big.NewInt(r.Den)

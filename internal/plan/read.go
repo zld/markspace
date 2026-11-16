@@ -27,11 +27,11 @@ type Segment struct {
 
 // Representation is one encoding rendition (bitrate ladder rung).
 type Representation struct {
-	ID          string    `json:"id"`
-	BandwidthBPS int64    `json:"bandwidth_bps"`
-	Timescale   int64     `json:"timescale"`
-	StartTicks  int64     `json:"start_ticks"`
-	Segments    []Segment `json:"segments"`
+	ID           string    `json:"id"`
+	BandwidthBPS int64     `json:"bandwidth_bps"`
+	Timescale    int64     `json:"timescale"`
+	StartTicks   int64     `json:"start_ticks"`
+	Segments     []Segment `json:"segments"`
 }
 
 // Plan is the full segment index for a media presentation.
