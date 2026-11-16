@@ -11,8 +11,9 @@ from . import ebml
 from .ebml import EbmlParser, Element, Limits
 from .errors import InputFormatError
 from .matroska import (MatroskaFile, SEGMENT_CHILD_IDS,
-                       CLUSTER_CHILD_IDS, ID_TRACK_ENTRY, ID_TRACKS,
-                       ID_TRACK_NUMBER, ID_CLUSTER, ID_SIMPLE_BLOCK,
+                       CLUSTER_CHILD_IDS, NESTED_SCAN_VOCAB,
+                       ID_TRACK_ENTRY, ID_TRACKS,
+                       ID_CLUSTER, ID_SIMPLE_BLOCK,
                        ID_BLOCK_GROUP, ID_BLOCK)
 
 TREE_MAX_DEPTH = 6
@@ -35,8 +36,17 @@ def _element_name(element_id: int) -> str:
     return names.get(element_id, f"0x{element_id:X}")
 
 
+def _vocab_for(element_id: int) -> frozenset[int]:
+    if element_id == ID_CLUSTER:
+        return CLUSTER_CHILD_IDS
+    if element_id == ebml.ID_SEGMENT:
+        return SEGMENT_CHILD_IDS
+    return frozenset()
+
+
 def _walk(parser: EbmlParser, element: Element, depth: int,
-          counters: dict, path_ids: frozenset | None) -> dict:
+          counters: dict, path_ids: frozenset | None,
+          stop_ids: frozenset | None = None) -> dict:
     node = {
         "id": f"0x{element.id:X}",
         "name": _element_name(element.id),
@@ -57,12 +67,18 @@ def _walk(parser: EbmlParser, element: Element, depth: int,
             node["children"] = []
             return node
     else:
-        ids = path_ids or frozenset()
-        kids = ebml.scan_unknown_children(parser, element, ids)
+        # Derive the vocabulary from the element itself so a recursive call
+        # for an unknown Cluster always uses Cluster child IDs.
+        own_vocab = _vocab_for(element.id) or path_ids or frozenset()
+        kids = ebml.scan_unknown_children(
+            parser, element, own_vocab, NESTED_SCAN_VOCAB,
+            stop_ids=stop_ids or frozenset())
     children: list[dict] = []
-    nested_ids = (CLUSTER_CHILD_IDS if element.id == ID_CLUSTER
-                  else SEGMENT_CHILD_IDS if element.id == ebml.ID_SEGMENT
-                  else None)
+    # When this element contains Cluster children (i.e. it is the Segment),
+    # an unknown Cluster child must stop at Segment-level sibling headers.
+    cluster_stop = (SEGMENT_CHILD_IDS - CLUSTER_CHILD_IDS) | {ID_CLUSTER}
+    nested_stop = cluster_stop if any(
+        k.id == ID_CLUSTER for k in kids) else stop_ids
     for kid in kids:
         if kid.known_length and kid.size == 0:
             counters["count"] += 1
@@ -76,7 +92,7 @@ def _walk(parser: EbmlParser, element: Element, depth: int,
                       ID_TRACKS, ID_TRACK_ENTRY, ID_CLUSTER, 0x1C53BB6B,
                       ID_BLOCK_GROUP):
             children.append(_walk(parser, kid, depth + 1, counters,
-                                  nested_ids))
+                                  _vocab_for(kid.id), nested_stop))
         else:
             counters["count"] += 1
             children.append({"id": f"0x{kid.id:X}",

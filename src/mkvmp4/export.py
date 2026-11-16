@@ -18,8 +18,7 @@ from dataclasses import asdict
 from .bmff import Mp4Writer, TrackOutput, read_mp4_index
 from .codec import map_codec, validate_video_block
 from .ebml import Limits
-from .errors import (ConversionError, InputFormatError, VerificationError,
-                     MkvMp4Error)
+from .errors import (ConversionError, InputFormatError, VerificationError)
 from .matroska import parse_matrouska
 from .timeline import build_all, TrackTimeline
 
@@ -86,12 +85,21 @@ def remux(input_path: str, output_path: str, *, mode: str,
     with open(input_path, "rb") as handle:
         data = handle.read()
     mkv = parse_matrouska(data, input_path, limits)
+    # Use the same bounded full-tree walk as inspect so element_count and
+    # unknown_length_count are stable across commands for a given input.
+    from .report import element_tree
+    tree_info = element_tree(data, limits)
     chosen, selected_numbers = _select_tracks(mkv, track_selection)
+
+    # Reject any unrepresentable codec (subtitles, unknown encoders, ...)
+    # before touching the timeline so users get a codec-scoped category-2
+    # error instead of a later conversion failure.
+    mappings = {track.number: map_codec(track) for track in chosen}
 
     timelines = build_all(chosen, mkv.clusters)
     outputs: list[TrackOutput] = []
     for timeline in timelines:
-        mapping = map_codec(timeline.track)
+        mapping = mappings[timeline.track.number]
         if mapping.timescale and mapping.timescale != timeline.stats.timescale:
             raise ConversionError(
                 f"track {timeline.track.number}: codec timescale "
@@ -140,8 +148,8 @@ def remux(input_path: str, output_path: str, *, mode: str,
         "track_map": _track_map(outputs, timelines),
         "timelines": [asdict(t.stats) for t in timelines],
         "verification": verify_result,
-        "element_count": mkv.element_count,
-        "unknown_length_count": mkv.unknown_length_count,
+        "element_count": tree_info["element_count"],
+        "unknown_length_count": tree_info["unknown_length_count"],
     }
 
 
