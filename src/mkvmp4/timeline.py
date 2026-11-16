@@ -181,9 +181,16 @@ def build_timeline(track: Track, blocks: list[Block]) -> TrackTimeline:
 
 
 def build_all(tracks: list[Track], clusters) -> list[TrackTimeline]:
-    """Group cluster blocks per track (preserving decode order) and normalize."""
+    """Group cluster blocks per selected track (preserving decode order).
+
+    Blocks belonging to tracks outside the selection are ignored; every
+    selected track is guaranteed an entry even if it later fails for having
+    no samples (which build_timeline reports explicitly).
+    """
+    wanted = {t.number for t in tracks}
     per_track: dict[int, list[Block]] = {t.number: [] for t in tracks}
     for cluster in clusters:
         for block in cluster.blocks:
-            per_track[block.track_number].append(block)
+            if block.track_number in wanted:
+                per_track[block.track_number].append(block)
     return [build_timeline(t, per_track[t.number]) for t in tracks]
