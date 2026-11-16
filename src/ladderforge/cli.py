@@ -13,7 +13,7 @@ import argparse
 import signal
 import sys
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
 
 from . import __version__, encoder, fixtures, metrics, planner, selector, store
@@ -123,24 +123,41 @@ def _cmd_scan(args: argparse.Namespace) -> int:
     completed = 0
     pool = ThreadPoolExecutor(max_workers=args.workers)
     try:
-        while not stop.is_set():
-            due = db.due_tasks(MAX_ATTEMPTS)
-            if not due:
-                break
-            futures = {pool.submit(_run_task, db, t, src, out_dir): t for t in due}
-            for fut in as_completed(futures):
+        due = db.due_tasks(MAX_ATTEMPTS)
+        idx = 0
+        in_flight = {}
+        # Keep at most `workers` tasks in flight so --stop-after and
+        # SIGINT leave the remaining tasks pending for --resume.
+        while True:
+            while idx < len(due) and len(in_flight) < args.workers \
+                    and not stop.is_set():
+                task = due[idx]
+                idx += 1
+                in_flight[pool.submit(_run_task, db, task, src, out_dir)] = task
+            if not in_flight:
+                if stop.is_set():
+                    break
+                due = db.due_tasks(MAX_ATTEMPTS)  # pick up retried failures
+                idx = 0
+                if not due:
+                    break
+                continue
+            done, _ = wait(in_flight, return_when=FIRST_COMPLETED)
+            for fut in done:
+                in_flight.pop(fut)
                 if fut.result() == "done":
                     completed += 1
                     if args.stop_after and completed >= args.stop_after:
                         stop.set()
-                        break
+        for fut in in_flight:  # let running tasks commit their results
+            fut.result()
     finally:
-        pool.shutdown(wait=True, cancel_futures=True)
+        pool.shutdown(wait=True)
         signal.signal(signal.SIGINT, previous)
     counts = db.counts()
     print(f"tasks: {counts['done']} done, {counts['pending']} pending, "
           f"{counts['running']} running, {counts['failed']} failed")
-    if counts["pending"] or stop.is_set():
+    if counts["pending"] or counts["running"]:
         print("interrupted with work remaining; rerun with --resume to continue")
         return EXIT_INTERRUPTED
     if counts["failed"]:
