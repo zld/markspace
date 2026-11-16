@@ -15,7 +15,7 @@ namespace avsync {
 class VideoPath {
  public:
   VideoPath(FrameQueue& frames, const Synchronizer& synchronizer,
-            Metrics& metrics, JitterSource& jitter);
+            Metrics& metrics);
 
   // One scheduler tick driven by the master clock. Returns false on queue
   // error; sets |fatal_error| when the frame queue signalled a decode failure.
@@ -32,7 +32,6 @@ class VideoPath {
   FrameQueue& frames_;
   const Synchronizer& sync_;
   Metrics& metrics_;
-  JitterSource& jitter_;
 
   std::optional<DecodedFrame> head_;       // Poped-but-not-yet-shown frame.
   std::optional<double> last_shown_pts_;
