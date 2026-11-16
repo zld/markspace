@@ -11,6 +11,16 @@ python3.11 -m venv .venv
 .venv/bin/python -m pip install -e '.[test]'
 ```
 
+If `python3.11` is a uv-managed standalone interpreter whose stdlib `venv`
+cannot resolve its shared library, create the equivalent root-level
+environment with pip pre-seeded instead (the remaining commands are
+unchanged and always invoke `.venv/bin/python`):
+
+```
+uv venv --seed --python 3.11 .venv
+.venv/bin/python -m pip install -e '.[test]'
+```
+
 ## Generate deterministic samples
 
 ```
