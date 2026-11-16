@@ -431,8 +431,8 @@ def build_fixture(*, video_frames: int = 20, width: int = 320,
         opus_packets = int(video_frames * 40 / 20)
         for n in range(opus_packets):
             pts_ms = n * 20
-            # RFC 6716 TOC config 17 = CELT-only 20 ms, code 0 = one frame.
-            packet = bytes([(17 << 3)]) + bytes(
+            # RFC 6716 TOC config 19 = CELT-only 20 ms, code 0 = one frame.
+            packet = bytes([(19 << 3)]) + bytes(
                 (n * 17 + i) & 0xFF for i in range(16))
             opus_blocks.append((pts_ms, packet))
 
