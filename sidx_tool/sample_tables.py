@@ -11,8 +11,9 @@ import struct
 from dataclasses import dataclass, field
 from typing import BinaryIO
 
+from . import MAX_SAMPLES
 from .boxes import Box, read_fullbox_payload, read_payload
-from .errors import FormatError
+from .errors import FormatError, LimitError
 
 VIDEO_HANDLER = "vide"
 AUDIO_HANDLER = "soun"
@@ -230,6 +231,8 @@ def parse_trak(trak: Box, stream: BinaryIO) -> SampleTable:
         raise FormatError(f"track {track_id}: stbl missing stts/stsc")
     sizes, _stz2 = _parse_sizes(stbl, stream)
     count = len(sizes)
+    if count > MAX_SAMPLES:
+        raise LimitError(f"track {track_id}: {count} samples exceeds safety limit {MAX_SAMPLES}")
     _, _, stts_data = read_fullbox_payload(stream, stts)
     dts = _parse_stts(stts_data, count)
     ctts_box = stbl.find("ctts")

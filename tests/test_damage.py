@@ -69,6 +69,16 @@ def test_largesize_overrun_reports_boundary(tmp_path: Path) -> None:
         parse_file(path)
 
 
+def test_sample_count_cap_enforced(source: Path, tmp_path: Path, monkeypatch) -> None:
+    import sidx_tool
+    import sidx_tool.sample_tables as sample_tables
+
+    monkeypatch.setattr(sidx_tool, "MAX_SAMPLES", 10)
+    monkeypatch.setattr(sample_tables, "MAX_SAMPLES", 10)
+    with pytest.raises(LimitError, match="safety limit"):
+        rebuild(source, tmp_path / "out.mp4", 500, 80)
+
+
 def test_largesize_box_that_fits_parses(tmp_path: Path) -> None:
     path = tmp_path / "fit.mp4"
     path.write_bytes(struct.pack(">I4sQ", 1, b"mdat", 24) + b"\x00" * 8)
