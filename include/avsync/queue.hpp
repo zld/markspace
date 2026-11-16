@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <condition_variable>
 #include <cstddef>
 #include <deque>
@@ -44,10 +45,39 @@ class BoundedQueue {
     return pop_locked();
   }
 
+  // Non-blocking push. Returns false (item left untouched) when the queue is
+  // full, closed or errored; lets a demuxer service the other stream instead
+  // of blocking one path behind the other's backpressure.
+  bool try_push(T& item, size_t item_bytes) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (closed_ || error_) return false;
+    if (items_.size() >= max_items_ || bytes_ + item_bytes > max_bytes_) {
+      return false;
+    }
+    bytes_ += item_bytes;
+    items_.emplace_back(std::move(item), item_bytes);
+    not_empty_.notify_one();
+    return true;
+  }
+
   // Blocking pop for worker threads. nullopt means drained + closed or error.
   std::optional<T> pop() {
     std::unique_lock<std::mutex> lock(mutex_);
     not_empty_.wait(lock, [&] { return closed_ || error_ || !items_.empty(); });
+    if (items_.empty()) return std::nullopt;
+    return pop_locked();
+  }
+
+  // Bounded blocking pop used by the audio path on underrun: waits for the
+  // decoder instead of burning scheduler wall-time in a busy loop. nullopt on
+  // timeout, drain or error.
+  template <typename Rep, typename Period>
+  std::optional<T> pop_timeout(const std::chrono::duration<Rep, Period>& wait) {
+    std::unique_lock<std::mutex> lock(mutex_);
+    if (!not_empty_.wait_for(lock, wait,
+                             [&] { return closed_ || error_ || !items_.empty(); })) {
+      return std::nullopt;
+    }
     if (items_.empty()) return std::nullopt;
     return pop_locked();
   }

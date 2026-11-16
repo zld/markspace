@@ -2,20 +2,15 @@
 
 #include "avsync/common.hpp"
 #include "avsync/queue.hpp"
+#include "avsync/watermark_queue.hpp"
 
 namespace avsync {
 
 // Compressed packets routed from the demuxer to each decoder.
 using PacketQueue = BoundedQueue<PacketPtr>;
 
-// A decoded frame plus its position on the normalized zero-based timeline.
-struct DecodedFrame {
-  FramePtr frame;
-  double pts_seconds = 0.0;
-  double duration_seconds = 0.0;
-};
-
-// Decoded frames waiting for the audio/video output paths.
-using FrameQueue = BoundedQueue<DecodedFrame>;
+// DecodedFrame is defined in watermark_queue.hpp. The PTS water mark keeps
+// decoders a bounded lead ahead of the playback clock.
+using FrameQueue = WatermarkFrameQueue;
 
 }  // namespace avsync
