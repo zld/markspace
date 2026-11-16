@@ -107,3 +107,58 @@ func TestFormatDuration(t *testing.T) {
 		t.Fatalf("duration = %q, want PT12.500S", got)
 	}
 }
+
+func TestExpandTimelineRoundTrip(t *testing.T) {
+	for _, id := range []string{"r360", "r720", "r1080"} {
+		bounds := boundsFromDemo(t, id)
+		tl, err := BuildTimeline(bounds)
+		if err != nil {
+			t.Fatalf("%s: build: %v", id, err)
+		}
+		ticks, err := ExpandTimeline(tl)
+		if err != nil {
+			t.Fatalf("%s: expand: %v", id, err)
+		}
+		if len(ticks) != len(bounds) {
+			t.Fatalf("%s: expanded %d ticks, want %d", id, len(ticks), len(bounds))
+		}
+		for i, b := range bounds {
+			if ticks[i].Start != b.StartTicks || ticks[i].Duration != b.DurationTicks {
+				t.Fatalf("%s segment %d: expanded %+v, want start %d dur %d",
+					id, b.Number, ticks[i], b.StartTicks, b.DurationTicks)
+			}
+		}
+	}
+}
+
+func TestExpandTimelineGapAndErrors(t *testing.T) {
+	bounds := []align.SegmentBounds{
+		{Number: 1, StartTicks: 0, DurationTicks: 10},
+		{Number: 2, StartTicks: 20, DurationTicks: 10, Gap: true},
+		{Number: 3, StartTicks: 30, DurationTicks: 12},
+	}
+	tl, err := BuildTimeline(bounds)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ticks, err := ExpandTimeline(tl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []TimelineTick{{0, 10}, {20, 10}, {30, 12}}
+	for i, w := range want {
+		if ticks[i] != w {
+			t.Fatalf("tick %d = %+v, want %+v", i, ticks[i], w)
+		}
+	}
+	if _, err := ExpandTimeline(nil); err == nil {
+		t.Fatal("nil timeline must error")
+	}
+	if _, err := ExpandTimeline(&SegmentTimeline{}); err == nil {
+		t.Fatal("empty timeline must error")
+	}
+	noTime := &SegmentTimeline{Entries: []TimelineEntry{{Duration: 10}}}
+	if _, err := ExpandTimeline(noTime); err == nil {
+		t.Fatal("entry without t must error")
+	}
+}

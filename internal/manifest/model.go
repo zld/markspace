@@ -117,6 +117,48 @@ func TimelineSegmentCount(tl *SegmentTimeline) int64 {
 	return n
 }
 
+// TimelineTick is one expanded segment in native timescale ticks.
+type TimelineTick struct {
+	Start    int64
+	Duration int64
+}
+
+// ExpandTimeline reverses BuildTimeline: every S entry yields Repeat+1
+// segments starting at t, t+d, t+2d, ... . It returns an error on a missing
+// explicit time or integer overflow.
+func ExpandTimeline(tl *SegmentTimeline) ([]TimelineTick, error) {
+	if tl == nil {
+		return nil, fmt.Errorf("manifest: missing SegmentTimeline")
+	}
+	var out []TimelineTick
+	for ei, e := range tl.Entries {
+		if e.Time == nil {
+			return nil, fmt.Errorf("manifest: S entry %d has no explicit t", ei)
+		}
+		if e.Duration <= 0 {
+			return nil, fmt.Errorf("manifest: S entry %d has non-positive duration", ei)
+		}
+		start := *e.Time
+		for k := int64(0); k <= e.Repeat; k++ {
+			if k > 0 {
+				next, ok := timebase.Add64(start, e.Duration)
+				if !ok {
+					return nil, fmt.Errorf("manifest: timeline start overflows at entry %d", ei)
+				}
+				start = next
+			}
+			if _, ok := timebase.Add64(start, e.Duration); !ok {
+				return nil, fmt.Errorf("manifest: timeline end overflows at entry %d", ei)
+			}
+			out = append(out, TimelineTick{Start: start, Duration: e.Duration})
+		}
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("manifest: empty SegmentTimeline")
+	}
+	return out, nil
+}
+
 // FormatDuration renders an exact millisecond rational as an ISO-8601
 // duration of the form PT12.500S (no hours/minutes split needed for clips).
 func FormatDuration(ms timebase.Rational) string {
