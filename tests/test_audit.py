@@ -204,3 +204,22 @@ def test_probe_mov_zero_length_tail_box(tmp_path):
     assert info.container == "mov"
     assert info.track_counts()["video"] == 1
     assert info.duration_ms == 5000
+
+
+def test_compare_flags_hidden_track(tmp_path):
+    hidden = m_build_hidden(tmp_path)
+    manifest = {"groups": [{"name": "g", "files": ["h.mp4"], "expect": []}]}
+    result = compare_batch({"h.mp4": hidden}, manifest, 0)
+    assert any(m.kind == "hidden_track" for m in result.mismatches)
+
+
+def m_build_hidden(tmp_path):
+    trak = samples.trak(
+        1, b"vide", "eng", samples.video_entry(b"avc1", 320, 240),
+        enabled=False, width=320, height=240,
+    )
+    data = samples.build_iso(b"isom", 1000, [trak])
+    path = _write(tmp_path, "h.mp4", data)
+    info = probe_file(path)
+    info.name = "h.mp4"
+    return info

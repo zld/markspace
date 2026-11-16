@@ -6,6 +6,9 @@ __pycache__/
 build/
 dist/
 
+# macOS Finder metadata
+.DS_Store
+
 # Local virtual environment (must live at repository root)
 .venv/
 
