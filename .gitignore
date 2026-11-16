@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Local virtual environment (third-party packages live only here)
+.venv/
+
+# Working data: generated fixtures, converted outputs, reports
+.work/
+
+# OS cruft
+.DS_Store

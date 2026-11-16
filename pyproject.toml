@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "audioprep"
+version = "0.1.0"
+description = "Local, reproducible batch audio preparation pipeline (resampling, loudness, peak control)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+authors = [{ name = "Audio Team" }]
+dependencies = [
+    "soundfile==0.14.0",
+    "numpy==2.4.3",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest==9.2.0",
+]
+
+[project.scripts]
+audioprep = "audioprep.cli:main"
+
+[tool.setuptools]
+packages = ["audioprep"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
