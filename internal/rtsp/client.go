@@ -44,7 +44,9 @@ type Stats struct {
 // Run executes one full RTSP session against rawURL and returns the
 // collected statistics. Partial statistics are returned together with
 // an error on protocol failures, timeouts or early disconnects.
-func Run(ctx context.Context, rawURL string, mode TransportMode, idleTimeout time.Duration) (*Stats, error) {
+// skipPayload, when non-nil, excludes matching packets (e.g. test
+// stream padding) from the RTP pipeline.
+func Run(ctx context.Context, rawURL string, mode TransportMode, idleTimeout time.Duration, skipPayload func([]byte) bool) (*Stats, error) {
 	u, err := base.ParseURL(rawURL)
 	if err != nil {
 		return nil, fmt.Errorf("parse url: %w", err)
@@ -68,6 +70,8 @@ func Run(ctx context.Context, rawURL string, mode TransportMode, idleTimeout tim
 		Transport:    &transport,
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 5 * time.Second,
+		// the audit pipeline does its own gap accounting
+		OnPacketsLost: func(uint64) {},
 	}
 
 	stats := &Stats{}
@@ -120,6 +124,9 @@ func Run(ctx context.Context, rawURL string, mode TransportMode, idleTimeout tim
 		return stats, fmt.Errorf("setup: %w", runErr)
 	}
 	c.OnPacketRTPAny(func(medi *description.Media, forma format.Format, pkt *pionrtp.Packet) {
+		if skipPayload != nil && skipPayload(pkt.Payload) {
+			return
+		}
 		mu.Lock()
 		defer mu.Unlock()
 		lastPacket = time.Now()

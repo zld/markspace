@@ -79,11 +79,13 @@ func Start(packets []PacketSpec) (*Server, error) {
 		ReadTimeout:     10 * time.Second,
 	}
 	s.stream = &gortsplib.ServerStream{Server: s.srv, Desc: desc}
-	if err := s.stream.Initialize(); err != nil {
-		return nil, fmt.Errorf("stream init: %w", err)
-	}
 	if err := s.srv.Start(); err != nil {
 		return nil, fmt.Errorf("server start: %w", err)
+	}
+	if err := s.stream.Initialize(); err != nil {
+		s.srv.Close()
+		s.srv.Wait()
+		return nil, fmt.Errorf("stream init: %w", err)
 	}
 	return s, nil
 }

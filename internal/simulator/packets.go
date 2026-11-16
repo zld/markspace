@@ -100,7 +100,36 @@ func Generate(scenario string, seed int64) []PacketSpec {
 			break
 		}
 	}
+	// Padding burst: the gortsplib client buffers out-of-order UDP
+	// packets in a 64 slot reorder window with no timeout, so packets
+	// following the intentional gap would stay stuck inside the
+	// library. Enough consecutive padding packets force the window to
+	// overflow and release them. Padding carries a marker payload and
+	// is filtered out by the audit client before the RTP pipeline.
+	last := out[len(out)-1]
+	for i := 0; i < paddingCount; i++ {
+		last.Seq++
+		out = append(out, PacketSpec{
+			Seq:       last.Seq,
+			Timestamp: last.Timestamp,
+			SSRC:      streamSSRC,
+			Payload:   []byte{PaddingMarker},
+		})
+	}
 	return out
+}
+
+// PaddingMarker is the single-byte payload marking padding packets.
+// NAL type 0 is forbidden in H.264, so it cannot collide with real
+// video payloads.
+const PaddingMarker = 0x00
+
+// paddingCount exceeds the 64 slot client-side reorder window.
+const paddingCount = 70
+
+// IsPaddingPayload reports whether a payload is a padding packet.
+func IsPaddingPayload(p []byte) bool {
+	return len(p) == 1 && p[0] == PaddingMarker
 }
 
 type frame struct {
