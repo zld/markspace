@@ -85,7 +85,13 @@ def read_vint(buf: bytes, pos: int, *, is_id: bool,
         raise EbmlError(
             "invalid VINT: leading byte 0x00 has no length marker",
             offset=pos)
-    width = 8 - first.bit_length() + 1  # number of leading zero bits + 1
+    # Leading byte 0xFF cannot begin a shorter VINT: its marker only exists
+    # at the maximum (8-byte) width, where it doubles as the unknown-length
+    # encoding.
+    if first == 0xFF:
+        width = MAX_VINT_WIDTH
+    else:
+        width = 8 - first.bit_length() + 1  # leading zero bits + 1
     if width > MAX_VINT_WIDTH:
         raise EbmlError(f"VINT width {width} exceeds {MAX_VINT_WIDTH}",
                         offset=pos)
@@ -98,13 +104,17 @@ def read_vint(buf: bytes, pos: int, *, is_id: bool,
         if _is_all_ones(raw):
             raise EbmlError("reserved all-ones EBML ID VINT", offset=pos)
         return int.from_bytes(raw, "big"), width, False
-    mask = (1 << (8 * width - width)) - 1
-    payload = int.from_bytes(raw, "big") & mask
+    # An all-ones VINT marks unknown length. The width comes from the
+    # leading byte's marker (1..8); both 0xFF and an 8-byte 0xFF*8 run are
+    # legal unknown-length encodings (Matroska writes the 8-byte form).
     if _is_all_ones(raw):
         if not unknown_allowed:
             raise EbmlError("unknown-length VINT where a size is required",
                             offset=pos)
-        return payload, width, True
+        mask = (1 << (8 * width - width)) - 1
+        return int.from_bytes(raw, "big") & mask, width, True
+    mask = (1 << (8 * width - width)) - 1
+    payload = int.from_bytes(raw, "big") & mask
     return payload, width, False
 
 
@@ -133,11 +143,17 @@ class EbmlParser:
             element = Element(eid, pos, header_size, None, body_start, None)
         else:
             body_end = body_start + size
-            end_limit = parent_end if parent_end is not None else self.file_size
-            if body_end > end_limit:
+            # parent_end is a hard boundary only for a known-length parent;
+            # an unknown-length parent passes None and is bounded by EOF.
+            if parent_end is not None and body_end > parent_end:
                 raise EbmlError(
                     f"element 0x{eid:X} end 0x{body_end:X} crosses parent "
-                    f"boundary 0x{end_limit:X}",
+                    f"boundary 0x{parent_end:X}",
+                    offset=pos, element_id=eid)
+            if body_end > self.file_size:
+                raise EbmlError(
+                    f"element 0x{eid:X} end 0x{body_end:X} crosses EOF "
+                    f"0x{self.file_size:X}",
                     offset=pos, element_id=eid)
             element = Element(eid, pos, header_size, size, body_start,
                               body_end)
@@ -203,39 +219,67 @@ class EbmlParser:
 
 
 def scan_unknown_children(parser: EbmlParser, element: Element,
-                          valid_child_ids: frozenset[int]) -> list[Element]:
+                          valid_child_ids: frozenset[int],
+                          nested_vocab: dict[int, frozenset[int]] | None = None,
+                          stop_ids: frozenset[int] | None = None
+                          ) -> list[Element]:
     """Scan the body of an unknown-length element by child boundaries.
 
-    Every candidate header must name an ID from ``valid_child_ids`` and have
-    a size VINT whose declared payload fits in the remaining bytes. When no
-    valid boundary can be established the input is rejected - arbitrary
-    bytes are never swallowed into a media block.
+    Every candidate header must name an ID from ``valid_child_ids``. A nested
+    unknown-length child (e.g. an unknown Cluster inside an unknown Segment)
+    is resolved recursively with ``nested_vocab[child_id]`` and stops at the
+    first header from ``stop_ids`` (the upper-level sibling vocabulary).
+    When no valid boundary can be established the input is rejected -
+    arbitrary bytes are never swallowed into a media block.
     """
     if element.known_length:
         raise EbmlError("element has a known length; use iter_children",
                         offset=element.position, element_id=element.id)
+    nested_vocab = nested_vocab or {}
+    stop_ids = stop_ids or frozenset()
     children: list[Element] = []
     pos = element.body_start
     while pos < parser.file_size:
+        # An unknown-length parent has no hard child boundary: read_element
+        # enforces the EOF check itself when parent_end is None.
         try:
-            candidate = parser.read_element(pos, parser.file_size)
+            candidate = parser.read_element(pos, None)
         except EbmlError:
             raise EbmlError(
                 "undecidable boundary inside unknown-length element "
                 f"0x{element.id:X}",
                 offset=pos, element_id=element.id)
+        # Reached the next upper-level sibling: this unknown element ends.
+        if candidate.id in stop_ids:
+            break
         if candidate.id not in valid_child_ids:
             raise EbmlError(
                 f"unexpected ID 0x{candidate.id:X} while scanning "
                 f"unknown-length element 0x{element.id:X}",
                 offset=pos, element_id=candidate.id)
         children.append(candidate)
-        if not candidate.known_length:
-            # Nested unknown element (e.g. unknown Cluster inside an unknown
-            # Segment): recurse with the same vocabulary is unsafe, so the
-            # Matroska layer handles nesting explicitly instead.
+        if candidate.known_length:
+            pos = candidate.body_end  # type: ignore[assignment]
+            continue
+        vocab = nested_vocab.get(candidate.id)
+        if vocab is None:
             raise EbmlError(
-                "nested unknown-length element while scanning",
+                "nested unknown-length element has no scanning "
+                f"vocabulary: 0x{candidate.id:X}",
                 offset=candidate.position, element_id=candidate.id)
-        pos = candidate.body_end  # type: ignore[assignment]
+        # The nested element ends at the next upper-level sibling header,
+        # i.e. anything outside its own vocabulary that the current parent
+        # is allowed to contain (including another instance of the nested
+        # element, such as the next Cluster).
+        sibling_ids = valid_child_ids - vocab
+        if candidate.id in valid_child_ids:
+            sibling_ids = sibling_ids | {candidate.id}
+        nested_stop = stop_ids | sibling_ids
+        nested = scan_unknown_children(
+            parser, candidate, vocab, nested_vocab,
+            stop_ids=nested_stop)
+        # Resume after the nested element's last known child. The sibling
+        # header that terminated the recursion sits at exactly this offset.
+        known_ends = [c.body_end for c in nested if c.known_length]
+        pos = max(known_ends, default=candidate.body_start)
     return children
