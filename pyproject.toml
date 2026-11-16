@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ladderforge"
+version = "0.1.0"
+description = "Adaptive bitrate ladder scanner for cutscenes and replays"
+requires-python = ">=3.11"
+dependencies = ["numpy==2.2.6"]
+
+[project.scripts]
+ladderforge = "ladderforge.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
