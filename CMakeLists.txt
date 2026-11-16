@@ -27,7 +27,8 @@ add_library(avsync_core STATIC
   src/decoder.cpp
   src/metrics.cpp
   src/audio_path.cpp
-  src/video_path.cpp)
+  src/video_path.cpp
+  src/pipeline.cpp)
 target_include_directories(avsync_core PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(avsync_core PUBLIC PkgConfig::FFMPEG)
