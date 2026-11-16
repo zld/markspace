@@ -91,10 +91,14 @@ func TestOutOfWindowCounted(t *testing.T) {
 func TestSequenceWraparound(t *testing.T) {
 	v := clock.NewVirtual()
 	c := New(v)
-	pushAt(c, v, 0, 65534)
-	pushAt(c, v, frameInterval, 65535)
-	pushAt(c, v, 2*frameInterval, 0) // wrap
-	pushAt(c, v, 3*frameInterval, 1)
+	// Timestamps come from a continuous sample clock; only the 16-bit
+	// sequence number wraps.
+	for i, seq := range []uint16{65534, 65535, 0, 1} {
+		p := pkt(seq)
+		p.Timestamp = uint32(65534+i) * wire.SamplesPerFrame
+		v.Set(time.Duration(i) * frameInterval)
+		c.Push(p)
+	}
 	for want := uint16(65534); ; want++ {
 		p, ok := c.Poll()
 		if !ok || p.Seq != want {
@@ -134,8 +138,9 @@ func TestMissingFrameSkippedNotBurst(t *testing.T) {
 func TestStallRealigns(t *testing.T) {
 	v := clock.NewVirtual()
 	c := New(v)
-	pushAt(c, v, 0, 0)
+	fillTarget(c, v, 2)
 	c.Poll() // drains the buffer
+	c.Poll()
 	v.Set(stallRealign + time.Millisecond)
 	if _, ok := c.Poll(); ok {
 		t.Fatal("stalled controller must not emit")

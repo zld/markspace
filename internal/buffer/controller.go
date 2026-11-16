@@ -139,18 +139,18 @@ func (c *Controller) Poll() (wire.Packet, bool) {
 	if !c.started {
 		return wire.Packet{}, false
 	}
-	if !c.playing {
-		if len(c.buf) < c.target {
-			return wire.Packet{}, false
-		}
-		c.playing = true
-	}
 	if len(c.buf) == 0 && now-c.lastInput > stallRealign {
 		// Input stalled: resync to the next arriving packet instead of
 		// emitting a burst of expired frames.
 		c.started, c.playing = false, false
 		c.stats.Realigned++
 		return wire.Packet{}, false
+	}
+	if !c.playing {
+		if len(c.buf) < c.target {
+			return wire.Packet{}, false
+		}
+		c.playing = true
 	}
 	if p, ok := c.buf[c.playSeq]; ok {
 		delete(c.buf, c.playSeq)
