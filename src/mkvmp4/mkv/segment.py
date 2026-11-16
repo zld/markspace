@@ -221,6 +221,7 @@ def parse_matroska(path: str, *, max_samples: int,
     rejected: list[int] = []
     rejected_messages: list[str] = []
     with EbmlReader(path, max_element_size=max_packet_size) as reader:
+        reader.open_root()
         _read_ebml_header(reader)
         segment = None
         while (root := reader.next_element()) is not None:

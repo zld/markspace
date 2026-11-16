@@ -157,11 +157,22 @@ def _split_frames(body: bytes, payload_offset: int, flags: int
     return frames
 
 
+def _frame_spacing_ticks(track: TrackInfo, timestamp_scale_ns: int) -> int | None:
+    """Per-frame spacing in timescale ticks, from DefaultDuration when known."""
+    if not track.default_duration:
+        return None
+    spacing = track.default_duration / timestamp_scale_ns
+    if spacing <= 0 or abs(spacing - round(spacing)) > 1e-9:
+        return None
+    return int(round(spacing))
+
+
 def deinterlace(mkv: MatroskaFile, *, max_samples: int,
                 max_packet_size: int) -> list[Sample]:
     """Read every block body and expand it into per-track samples."""
     samples: list[Sample] = []
     track_cache: dict[int, TrackInfo] = {t.number: t for t in mkv.tracks}
+    last_pts: dict[int, int] = {}
     for block in mkv.blocks:
         body = _read_block_body(mkv, block, max_packet_size)
         track_number, relative_tc, flags, payload_offset = _parse_header(body)
@@ -170,8 +181,13 @@ def deinterlace(mkv: MatroskaFile, *, max_samples: int,
                 f"block references undeclared track number {track_number}",
                 offset=block.element_offset)
         block.track_number = track_number
+        track = track_cache[track_number]
         absolute_tc = block.cluster_timecode + relative_tc
         frames = _split_frames(body, payload_offset, flags)
+        # Laced sub-frames share one block timecode on the wire; spread them
+        # by the track's frame spacing so each gets its own presentation time.
+        spacing = _frame_spacing_ticks(track, mkv.timestamp_scale)
+        laced = len(frames) > 1
         for index, frame in enumerate(frames):
             if len(frame) == 0:
                 raise CorruptMKVError(
@@ -185,9 +201,19 @@ def deinterlace(mkv: MatroskaFile, *, max_samples: int,
                 raise LimitExceededError(
                     f"sample count limit ({max_samples}) exceeded",
                     offset=block.element_offset)
+            if laced and spacing is not None:
+                pts_ticks = absolute_tc + index * spacing
+            elif laced:
+                # No DefaultDuration: continue from the previous sample at a
+                # unit cadence rather than emitting duplicate timestamps.
+                previous = last_pts.get(track_number, absolute_tc - 1)
+                pts_ticks = max(absolute_tc, previous + 1) if index else absolute_tc
+            else:
+                pts_ticks = absolute_tc
+            last_pts[track_number] = pts_ticks
             samples.append(Sample(
                 track_number=track_number,
-                pts_ticks=absolute_tc,
+                pts_ticks=pts_ticks,
                 data=bytes(frame),
                 keyframe=block.keyframe,
                 duration_ticks=block.duration_ticks,
