@@ -280,3 +280,233 @@ def _track_entry(number: int, uid: int, ttype: int, codec_id: str,
         payload += element(ID_VIDEO,
                            uint_element(ID_PIXEL_WIDTH, width)
                            + uint_element(ID_PIXEL_HEIGHT, height))
+    return element(ID_TRACK_ENTRY, payload)
+
+
+
+
+# --- document assembly ------------------------------------------------------
+
+def make_ebml_header() -> bytes:
+    payload = (uint_element(ID_EBML_VERSION, 1)
+               + uint_element(ID_EBML_READ_VERSION, 1)
+               + uint_element(ID_EBML_MAX_ID_LENGTH, 4)
+               + uint_element(ID_EBML_MAX_SIZE_LENGTH, 8)
+               + string_element(ID_DOC_TYPE, "matroska")
+               + uint_element(ID_DOC_TYPE_VERSION, 4)
+               + uint_element(ID_DOC_TYPE_READ_VERSION, 2))
+    return element(ID_EBML_HEADER, payload)
+
+
+def make_info(timestamp_scale_ns: int) -> bytes:
+    payload = (uint_element(ID_TIMECODE_SCALE, timestamp_scale_ns)
+               + string_element(ID_MUXING_APP, "mkvmp4-fixture"))
+    return element(ID_INFO, payload)
+
+
+def make_hvcc() -> bytes:
+    """Minimal HEVC decoder configuration record with VPS/SPS/PPS arrays.
+
+    The NAL payloads are tagged filler but structurally complete: the remuxer
+    validates the hvcC container (array types and lengths), not bitstream
+    internals. Layout per ISO/IEC 14496-15 8.3.3.1.
+    """
+    header = bytearray(23)
+    header[0] = 1                       # configurationVersion
+    header[1] = 1                       # general_profile_space(0)+idc
+    header[12] = 0xF0 | 1              # general... level idc low bits
+    header[21] = 0xFC | 3             # lengthSizeMinusOne = 3 (4 bytes)
+    header[22] = 3                    # numOfArrays
+    body = bytearray(header)
+
+    def array(nal_type: int, nal: bytes) -> bytes:
+        return (bytes([0x80 | nal_type]) + (1).to_bytes(2, "big")
+                + len(nal).to_bytes(2, "big") + nal)
+
+    body += array(32, bytes([0x40]) + b"vps-fixture")
+    body += array(33, bytes([0x42]) + b"sps-fixture")
+    body += array(34, bytes([0x44]) + b"pps-fixture")
+    return bytes(body)
+
+
+def make_tracks(video_codec: str, include_opus: bool,
+                include_subtitle: bool, width: int,
+                height: int) -> bytes:
+    if video_codec == "V_MPEGH/ISO/HEVC":
+        private = make_hvcc()
+    else:
+        private = make_avcc(width // 16, height // 16)
+    entries = _track_entry(
+        1, 1001, 1, video_codec, private, default=True,
+        default_duration_ns=40_000_000, language="und",
+        video=(width, height))
+    entries += _track_entry(
+        2, 1002, 2, "A_AAC", make_aac_config(), default=True,
+        language="eng", audio=(48000.0, 2))
+    next_number = 3
+    if include_opus:
+        entries += _track_entry(
+            next_number, 1003, 2, "A_OPUS", make_opus_head(),
+            default=False, language="fra", audio=(48000.0, 2))
+        next_number += 1
+    if include_subtitle:
+        entries += _track_entry(
+            next_number, 1004, 17, "S_TEXT/UTF8", None,
+            default=False, language="und")
+    return element(ID_TRACKS, entries)
+
+
+def make_cluster(timecode_ms: int, blocks: list[bytes],
+                 *, unknown_length: bool) -> bytes:
+    payload = uint_element(ID_CLUSTER_TIMECODE, timecode_ms) + b"".join(blocks)
+    if unknown_length:
+        return encode_id(ID_CLUSTER) + encode_size(0, unknown=True,
+                                                   width=8) + payload
+    return element(ID_CLUSTER, payload)
+
+
+def build_fixture(*, video_frames: int = 20, width: int = 320,
+                  height: int = 240, video_codec: str = "V_MPEG4/ISO/AVC",
+                  include_opus: bool = True,
+                  include_subtitle: bool = False,
+                  unknown_segment: bool = True) -> bytes:
+    """Assemble the synthetic Matroska document.
+
+    Timing is in milliseconds (TimestampScale 1,000,000 ns). Video runs at
+    25 fps in groups of five decode positions; the last position of each
+    group is a B-frame whose presentation slot is swapped with the previous
+    one, giving valid positive/negative relative timecodes within one
+    cluster. One duplicate presentation timestamp is injected. Audio is AAC
+    at 48 kHz in 1024-sample packets (~21.33 ms) plus 20 ms Opus packets.
+    """
+    parts = [make_ebml_header()]
+    info_tracks = make_info(1_000_000) + make_tracks(
+        video_codec, include_opus, include_subtitle, width, height)
+
+    # (absolute PTS ms, relative TC inside its cluster, keyframe, NAL bytes)
+    video_blocks: list[tuple[int, int, bool, bytes]] = []
+    frame_index = 0
+    group = 5
+    for n in range(video_frames):
+        slot = n % group
+        cluster_index = n // group
+        base_ms = cluster_index * group * 40
+        if slot == group - 1:
+            # B-frame decoded last, presented one slot earlier: PTS at
+            # base + (group-2)*40, relative TC = (group-2)*40.
+            present_slot = group - 2
+            rel = present_slot * 40
+            nal_type = 61  # TRAIL_R / non-reference marker for filler
+            keyframe = False
+        elif slot == group - 2:
+            # Frame decoded before the B-frame but presented in its slot.
+            present_slot = group - 1
+            rel = present_slot * 40
+            nal_type = 65
+            keyframe = (cluster_index == 0)
+        else:
+            present_slot = slot
+            rel = slot * 40
+            nal_type = 65
+            keyframe = (slot == 0)
+        pts_ms = base_ms + present_slot * 40
+        # Duplicate PTS: frame 6 repeats frame 5's presentation timestamp.
+        if n == 6:
+            pts_ms = 5 * 40
+            rel = pts_ms - base_ms
+        nal = make_nal_frame(nal_type, 48, frame_index)
+        frame_index += 1
+        video_blocks.append((pts_ms, rel, keyframe, nal))
+
+    audio_packets = int(video_frames * 40 / (1024 / 48))
+    audio_blocks: list[tuple[int, bytes]] = []
+    for n in range(audio_packets):
+        pts_ms = int(round(n * (1024 / 48)))
+        packet = bytes([0x21]) + bytes(
+            (n * 13 + i) & 0xFF for i in range(24))
+        audio_blocks.append((pts_ms, packet))
+
+    opus_blocks: list[tuple[int, bytes]] = []
+    if include_opus:
+        opus_packets = int(video_frames * 40 / 20)
+        for n in range(opus_packets):
+            pts_ms = n * 20
+            # RFC 6716 TOC config 17 = CELT-only 20 ms, code 0 = one frame.
+            packet = bytes([(17 << 3)]) + bytes(
+                (n * 17 + i) & 0xFF for i in range(16))
+            opus_blocks.append((pts_ms, packet))
+
+    cluster_span_ms = group * 40  # five video frames per cluster
+    max_ms = video_frames * 40
+    cluster_payloads: list[bytes] = []
+    unknown_seen = False
+    for cluster_index, base_ms in enumerate(
+            range(0, max_ms, cluster_span_ms)):
+        end_ms = base_ms + cluster_span_ms
+        body: list[bytes] = []
+        # Video blocks belong to a cluster by decode position, never by
+        # (possibly reordered) presentation timestamp.
+        lo = cluster_index * group
+        hi = min(lo + group, video_frames)
+        for n in range(lo, hi):
+            _pts_ms, rel, key, nal = video_blocks[n]
+            body.append(make_simple_block(1, rel, key, nal))
+        for pts_ms, packet in audio_blocks:
+            if base_ms <= pts_ms < end_ms:
+                body.append(make_simple_block(2, pts_ms - base_ms, True,
+                                              packet))
+        for pts_ms, packet in opus_blocks:
+            if base_ms <= pts_ms < end_ms:
+                body.append(make_simple_block(3, pts_ms - base_ms, True,
+                                              packet))
+        # The second cluster is unknown length on purpose.
+        is_unknown = (cluster_index == 1) and not unknown_seen
+        unknown_seen = unknown_seen or is_unknown
+        cluster_payloads.append(
+            make_cluster(base_ms, body, unknown_length=is_unknown))
+
+    segment_body = info_tracks + b"".join(cluster_payloads)
+    if unknown_segment:
+        segment = (encode_id(ID_SEGMENT)
+                   + encode_size(0, unknown=True, width=8) + segment_body)
+    else:
+        segment = element(ID_SEGMENT, segment_body)
+    parts.append(segment)
+    return b"".join(parts)
+
+
+def main(argv: list[str] | None = None) -> int:
+    import argparse
+    import json
+    import os
+
+    parser = argparse.ArgumentParser(
+        description="Generate a synthetic Matroska remuxer fixture")
+    parser.add_argument("--output", required=True)
+    parser.add_argument("--frames", type=int, default=20)
+    parser.add_argument("--width", type=int, default=320)
+    parser.add_argument("--height", type=int, default=240)
+    parser.add_argument("--codec", choices=("avc", "hevc"), default="avc")
+    parser.add_argument("--no-opus", action="store_true")
+    parser.add_argument("--with-subtitle", action="store_true")
+    parser.add_argument("--known-length-segment", action="store_true")
+    args = parser.parse_args(argv)
+
+    video_codec = ("V_MPEGH/ISO/HEVC" if args.codec == "hevc"
+                   else "V_MPEG4/ISO/AVC")
+    data = build_fixture(
+        video_frames=args.frames, width=args.width, height=args.height,
+        video_codec=video_codec, include_opus=not args.no_opus,
+        include_subtitle=args.with_subtitle,
+        unknown_segment=not args.known_length_segment)
+    out_dir = os.path.dirname(os.path.abspath(args.output)) or "."
+    os.makedirs(out_dir, exist_ok=True)
+    with open(args.output, "wb") as handle:
+        handle.write(data)
+    print(json.dumps({"output": args.output, "bytes": len(data)},
+                     indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
