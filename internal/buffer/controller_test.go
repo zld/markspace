@@ -141,7 +141,7 @@ func TestStallRealigns(t *testing.T) {
 	fillTarget(c, v, 2)
 	c.Poll() // drains the buffer
 	c.Poll()
-	v.Set(stallRealign + time.Millisecond)
+	v.Set(stallRealign + 2*frameInterval + time.Millisecond)
 	if _, ok := c.Poll(); ok {
 		t.Fatal("stalled controller must not emit")
 	}
@@ -149,8 +149,8 @@ func TestStallRealigns(t *testing.T) {
 		t.Fatalf("Realigned = %d, want 1", got)
 	}
 	// Next packet re-anchors the timeline.
-	pushAt(c, v, stallRealign+2*time.Millisecond, 7)
-	pushAt(c, v, stallRealign+3*time.Millisecond, 8)
+	pushAt(c, v, stallRealign+3*frameInterval, 7)
+	pushAt(c, v, stallRealign+4*frameInterval, 8)
 	if p, ok := c.Poll(); !ok || p.Seq != 7 {
 		t.Fatalf("after realign Poll = seq %d ok %v, want seq 7", p.Seq, ok)
 	}
