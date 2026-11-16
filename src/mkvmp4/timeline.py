@@ -97,13 +97,21 @@ def _build_dts_sequence(pts: np.ndarray) -> np.ndarray:
     return first_dts + step * np.arange(pts.size, dtype=np.int64)
 
 
-def _sample_durations(pts_ms: np.ndarray) -> np.ndarray:
-    """Per-sample durations in movie timescale units; last sample repeats."""
-    if pts_ms.size == 0:
+def _sample_durations(dts_ms: np.ndarray) -> np.ndarray:
+    """Per-sample durations from the monotonic DTS cadence.
+
+    PTS diffs are unusable for duration when B-frames reorder presentation,
+    because they can be negative. The decode timeline always advances, so the
+    gap to the next DTS is the correct sample duration; the last sample
+    repeats the previous cadence.
+    """
+    if dts_ms.size == 0:
         return np.zeros(0, dtype=np.int64)
-    if pts_ms.size == 1:
+    if dts_ms.size == 1:
         return np.array([0], dtype=np.int64)
-    durations = np.diff(pts_ms)
+    durations = np.diff(dts_ms)
+    if np.any(durations <= 0):
+        raise CorruptMKVError("non-positive sample duration derived from DTS")
     return np.append(durations, durations[-1])
 
 
@@ -158,7 +166,7 @@ def build_timeline(mkv: MatroskaFile, samples: list[Sample]) -> Timeline:
         if np.any(dts_ms < 0) or np.any(pts_ms < 0):
             raise CorruptMKVError(
                 f"track {track.number} has negative timestamps after rebasing")
-        durations_ms = _sample_durations(pts_ms)
+        durations_ms = _sample_durations(dts_ms)
         track_samples = by_track[track.number]
         timed = [
             TimedSample(
