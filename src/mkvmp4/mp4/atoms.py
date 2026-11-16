@@ -83,11 +83,20 @@ def parse_boxes(data: bytes, start: int, end: int, depth: int = 0,
     return boxes
 
 
-#: Box types whose payload is a sequence of child boxes (containers).
+#: Box types whose payload is a plain sequence of child boxes (containers).
+#: ``stsd`` is handled separately (entry-count prefix), and sample entries
+#: (avc1/mp4a) carry fixed binary fields before their nested config box.
 CONTAINER_BOXES = frozenset({
     "moov", "trak", "mdia", "minf", "stbl", "dinf", "edts",
-    "mvex", "moof", "traf", "mfra",
+    "mvex", "moof", "traf", "mfra", "stsd",
 })
+
+#: Sample-entry box types and the size of their fixed (non-box) prefix.
+#: Values match the exact byte layout emitted by the flat/fragmented writers.
+SAMPLE_ENTRY_PREFIX = {
+    "avc1": 76,   # bytes before the trailing avcC config box
+    "mp4a": 42,   # bytes before the trailing esds config box
+}
 
 
 def validate_structure(data: bytes, expected: list[str] | None = None
@@ -100,15 +109,30 @@ def validate_structure(data: bytes, expected: list[str] | None = None
     """
     index: dict[str, ParsedBox] = {}
 
-    def walk(start: int, end: int, depth: int) -> None:
+    def walk(start: int, end: int, depth: int, skip_prefix: int) -> None:
         if depth > max_depth_local:
             raise IndexValidationError(
                 f"box nesting exceeds depth {max_depth_local}")
-        for parsed in parse_boxes(data, start, end, depth):
+        # ``skip_prefix`` handles stsd's 4-byte entry count: both bounds move
+        # past it so the remaining range is exactly the child box sequence.
+        child_start = start + skip_prefix
+        for parsed in parse_boxes(data, child_start, end, depth):
             index.setdefault(parsed.box_type, parsed)
-            if parsed.box_type in CONTAINER_BOXES:
-                walk(parsed.payload_start, parsed.payload_end, depth + 1)
-
+            if parsed.box_type in SAMPLE_ENTRY_PREFIX:
+                # Sample entries carry fixed binary fields; only the trailing
+                # config box region (avcC/esds...) is itself box-structured.
+                inner_start = (parsed.payload_start +
+                               SAMPLE_ENTRY_PREFIX[parsed.box_type])
+                for nested in parse_boxes(data, inner_start,
+                                          parsed.payload_end, depth + 1):
+                    index.setdefault(nested.box_type, nested)
+            elif parsed.box_type in CONTAINER_BOXES:
+                # stsd is a full box: skip its 4 version/flags bytes plus its
+                # 4-byte sample-entry count to reach the child box sequence.
+                # Each recursion is bounded by the box's own payload end.
+                prefix = 8 if parsed.box_type == "stsd" else 0
+                walk(parsed.payload_start, parsed.payload_end,
+                     depth + 1, prefix)
     max_depth_local = 8
     top = parse_boxes(data, 0, len(data))
     top_types = [b.box_type for b in top]
@@ -120,7 +144,7 @@ def validate_structure(data: bytes, expected: list[str] | None = None
     for parsed in top:
         index.setdefault(parsed.box_type, parsed)
         if parsed.box_type in CONTAINER_BOXES:
-            walk(parsed.payload_start, parsed.payload_end, 1)
+            walk(parsed.payload_start, parsed.payload_end, 1, 0)
     return index
 
 
