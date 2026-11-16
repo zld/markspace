@@ -75,10 +75,13 @@ func CheckProfile(dir string) *ProfileReport {
 			rep.ChecksumFailures = append(rep.ChecksumFailures, seg.Seq)
 			rep.noteReorder(pl, i, sum)
 		}
-		first, last, count, err := segmentPTS(path)
+		first, last, count, anomalies, err := segmentPTS(path)
 		if err != nil {
 			rep.Errors = append(rep.Errors, fmt.Sprintf("%s: %v", seg.URI, err))
 			continue
+		}
+		for _, a := range anomalies {
+			rep.Errors = append(rep.Errors, fmt.Sprintf("%s: %s", seg.URI, a))
 		}
 		rep.Starts[seg.Seq] = first
 		if havePrev {
@@ -135,14 +138,14 @@ func hashFile(path string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-func segmentPTS(path string) (first, last int64, count int, err error) {
+func segmentPTS(path string) (first, last int64, count int, anomalies []ts.Anomaly, err error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return 0, 0, 0, err
+		return 0, 0, 0, nil, err
 	}
 	defer f.Close()
-	first, last, count, _, err = ts.ScanPTS(f)
-	return first, last, count, err
+	first, last, count, anomalies, err = ts.ScanPTS(f)
+	return first, last, count, anomalies, err
 }
 
 func abs(x float64) float64 {

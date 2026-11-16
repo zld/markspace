@@ -64,6 +64,13 @@ func Slice(ctx context.Context, r io.Reader, outDir string, opt Options) (*Resul
 		return nil, fmt.Errorf("no keyframes found: cannot slice")
 	}
 	s.res.Anomalies = s.rd.Anomalies()
+	// A sync-byte error isolates the profile: its output is not
+	// trustworthy even after resync. Continuity jumps stay non-fatal.
+	for _, a := range s.res.Anomalies {
+		if a.Kind == "resync" {
+			return nil, fmt.Errorf("sync byte error near offset %d: profile isolated", a.Offset)
+		}
+	}
 	return &s.res, nil
 }
 
