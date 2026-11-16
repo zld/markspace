@@ -79,11 +79,20 @@ def synth_cue_track(
     return track
 
 
-def detect_onsets(track: np.ndarray, threshold: float = 0.5) -> list[int]:
-    """Return sample indices where the cue track rises above ``threshold``."""
-    above = np.abs(track) > threshold
-    rising = np.flatnonzero(above & ~np.roll(above, 1))
-    return [int(i) for i in rising]
+def detect_onsets(
+    track: np.ndarray, min_gap: int, threshold: float = 0.5
+) -> list[int]:
+    """Return the start sample of each cue burst in ``track``.
+
+    Samples above ``threshold`` are grouped into bursts; indices closer
+    than ``min_gap`` samples belong to the same burst (a tone oscillates
+    across the threshold many times within one burst).
+    """
+    above = np.flatnonzero(np.abs(track) > threshold)
+    if above.size == 0:
+        return []
+    groups = np.split(above, np.flatnonzero(np.diff(above) > min_gap) + 1)
+    return [int(group[0]) for group in groups]
 
 
 def measure_alignment(
@@ -94,7 +103,9 @@ def measure_alignment(
         raise AudioSyncError("cannot align a zero-frame timeline")
     frame_times = [float(clock.frame_start(i)) for i in range(frame_count)]
     track = synth_cue_track(frame_times, config)
-    onsets = detect_onsets(track)
+    interval_s = frame_times[1] - frame_times[0] if frame_count > 1 else 1.0
+    min_gap = max(1, int(0.25 * interval_s * config.sample_rate))
+    onsets = detect_onsets(track, min_gap)
     if len(onsets) != frame_count:
         raise AudioSyncError(
             f"detected {len(onsets)} cues, expected {frame_count}"
