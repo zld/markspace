@@ -54,9 +54,11 @@ def _is_within(root: Path, candidate: Path) -> bool:
 def scan_input(input_dir: Path) -> list[InputFile]:
     """Recursively collect supported files in sorted relative-path order.
 
-    Raises :class:`AudioInputError` on symlink escape, duplicate output
-    targets or unsupported channel layouts. Empty/zero-frame files are kept
-    here and reported per-file later by the pipeline.
+    Structural problems (symlink escape, unsupported extension, duplicate
+    output targets) raise :class:`AudioInputError`, which maps to a usage
+    error. Decodability and channel count are intentionally *not* checked
+    here: a corrupt or unsupported-channel file is an ordinary per-file
+    failure so the rest of the batch can still be processed.
     """
     root = Path(input_dir)
     if not root.is_dir():
@@ -80,11 +82,6 @@ def scan_input(input_dir: Path) -> list[InputFile]:
             ext = file_path.suffix.lower()
             if ext not in SUPPORTED_EXTS:
                 raise AudioInputError(f"unsupported input format: {file_path}")
-            info = sf.info(str(file_path))
-            if info.channels not in (1, 2):
-                raise AudioInputError(
-                    f"unsupported channel count {info.channels}: {file_path}"
-                )
             found.append(InputFile(file_path, file_path.relative_to(root)))
 
     found.sort(key=lambda item: item.relative.as_posix())
