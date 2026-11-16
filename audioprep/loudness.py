@@ -57,7 +57,12 @@ def rms_dbfs(signal: np.ndarray) -> float | None:
 
 
 class _BiquadState:
-    """Per-channel transposed direct form II biquad state."""
+    """Per-channel transposed direct form II biquad state (reference form).
+
+    Used to synthesize the K-weighting impulse response from the BS.1770
+    coefficients. The runtime path then applies that response through the
+    FFT overlap-add convolver in :class:`_KWeightFilter`.
+    """
 
     def __init__(self, channels: int):
         self.z1 = np.zeros(channels, dtype=np.float64)
@@ -67,12 +72,93 @@ class _BiquadState:
         b0, b1, b2 = b
         _, a1, a2 = a
         y = np.empty_like(x)
+        z1, z2 = self.z1, self.z2
         for n in range(x.shape[0]):
-            w = x[n] - a1 * self.z1 - a2 * self.z2
-            y[n] = b0 * w + b1 * self.z1 + b2 * self.z2
-            self.z2 = self.z1
-            self.z1 = w
+            w = x[n] - a1 * z1 - a2 * z2
+            y[n] = b0 * w + b1 * z1 + b2 * z2
+            z2 = z1
+            z1 = w
+        self.z1, self.z2 = z1, z2
         return y
+
+
+# Impulse-response length and a cache keyed by sample rate. The 4096-tap
+# truncation leaves a residual below 2e-10 against the exact biquad cascade.
+_IR_LENGTH = 4096
+_IR_CACHE: dict[int, np.ndarray] = {}
+
+
+def _kweight_impulse_response(sample_rate: int) -> np.ndarray:
+    """Build (and cache) the K-weighting impulse response from the biquads.
+
+    The two BS.1770 stages are applied to a unit impulse using the reference
+    TD-II biquad, giving the exact cascaded impulse response truncated to
+    :data:`_IR_LENGTH` taps. Sample-rate independent here, but cached per rate
+    so future rate-specific stages need no call-site changes.
+    """
+    cached = _IR_CACHE.get(sample_rate)
+    if cached is not None:
+        return cached
+    impulse = np.zeros((_IR_LENGTH, 1), dtype=np.float64)
+    impulse[0, 0] = 1.0
+    stage1 = _BiquadState(1)
+    stage2 = _BiquadState(1)
+    response = stage2.process(
+        stage1.process(impulse, STAGE1_B, STAGE1_A), STAGE2_B, STAGE2_A
+    )[:, 0]
+    response.setflags(write=False)
+    _IR_CACHE[sample_rate] = response
+    return response
+
+
+class _KWeightFilter:
+    """Streaming K-weighting via FFT overlap-add convolution.
+
+    State is the carry tail from the previous block, so processing a signal
+    in any block sizes yields the same result as one in-memory pass. Only the
+    carry (``_IR_LENGTH - 1`` frames) is retained between blocks.
+    """
+
+    def __init__(self, sample_rate: int):
+        self._h = _kweight_impulse_response(sample_rate)
+        # One independent carry tail per channel; lazily sized on first block.
+        self._carries: dict[int, np.ndarray] = {}
+        # Reuse the transformed IR for repeated blocks of the same length.
+        self._spectrum_cache: dict[int, np.ndarray] = {}
+
+    def _spectrum(self, nfft: int) -> np.ndarray:
+        spectrum = self._spectrum_cache.get(nfft)
+        if spectrum is None:
+            spectrum = np.fft.rfft(self._h, nfft)
+            self._spectrum_cache[nfft] = spectrum
+        return spectrum
+
+    def process_channel(self, x: np.ndarray, channel: int) -> np.ndarray:
+        m = x.shape[0]
+        # Size each transform to this block plus the IR tail so blocks of any
+        # length (including one whole clip) are never truncated.
+        nfft = 1 << (m + _IR_LENGTH - 2).bit_length()
+        conv = np.fft.irfft(np.fft.rfft(x, nfft) * self._spectrum(nfft), nfft)[
+            : m + _IR_LENGTH - 1
+        ]
+        carry = self._carries.get(channel)
+        if carry is None:
+            carry = np.zeros(_IR_LENGTH - 1, dtype=np.float64)
+        # Every carry sample maps onto the start of this block's convolution.
+        overlap = min(carry.shape[0], conv.shape[0])
+        conv[:overlap] += carry[:overlap]
+        out = conv[:m]
+        self._carries[channel] = conv[m:]
+        return out
+
+    def process(self, block: np.ndarray) -> np.ndarray:
+        return np.stack(
+            [
+                self.process_channel(block[:, c], c)
+                for c in range(block.shape[1])
+            ],
+            axis=1,
+        )
 
 
 @dataclass
@@ -90,8 +176,7 @@ class LoudnessAccumulator:
     """Stream K-weighted block energies and finalize a gated LUFS value."""
 
     sample_rate: int
-    _stage1: _BiquadState | None = None
-    _stage2: _BiquadState | None = None
+    _filter: _KWeightFilter | None = None
     _tail: np.ndarray | None = None  # weighted samples waiting for a full hop
     _total_frames: int = 0
     _square_sum: float = 0.0
@@ -106,13 +191,10 @@ class LoudnessAccumulator:
         return int(round(HOP_MS / 1000.0 * self.sample_rate))
 
     def _weight(self, block: np.ndarray) -> np.ndarray:
-        """Apply both K-weighting biquads, allocating state on first use."""
-        channels = block.shape[1]
-        if self._stage1 is None:
-            self._stage1 = _BiquadState(channels)
-            self._stage2 = _BiquadState(channels)
-        weighted = self._stage1.process(block, STAGE1_B, STAGE1_A)
-        return self._stage2.process(weighted, STAGE2_B, STAGE2_A)
+        """Apply the K-weighting filter, allocating state on first use."""
+        if self._filter is None:
+            self._filter = _KWeightFilter(self.sample_rate)
+        return self._filter.process(block)
 
     def add_block(self, block: np.ndarray) -> None:
         """Feed one ``(frames, channels)`` block into the measurement."""

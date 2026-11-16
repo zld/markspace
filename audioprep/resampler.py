@@ -160,12 +160,6 @@ class StreamingResampler:
             self._buffer = np.concatenate((self._buffer, block), axis=0)
         self._total_in += block.shape[0]
 
-    def _row(self, input_index: int, upper_bound: int) -> np.ndarray | None:
-        """Buffer row for an input index, or None where zero padding applies."""
-        if input_index < 0 or input_index >= upper_bound:
-            return None
-        return self._buffer[input_index - self._offset]
-
     def _next_geometry(self) -> tuple[int, int, int]:
         """Return (phase row, first tap input index, output index j).
 
@@ -178,41 +172,78 @@ class StreamingResampler:
         start = center - HALF_TAPS + 1
         return phase, start, j
 
+    def _gather(self, j_indices: np.ndarray, tail_pad: bool) -> np.ndarray:
+        """Vector polyphase convolution for the given absolute output indices.
+
+        The current buffer covers global input frames ``[offset, offset +
+        len(buffer))``. It is wrapped in leading zeros (and, at flush,
+        trailing zeros); any tap index outside the real input range reads as
+        zero. Returns shape ``(len(j_indices), channels)``.
+        """
+        up, down = self.plan.up, self.plan.down
+        t = j_indices * down
+        centers = t // up
+        phases = t % up
+        starts = centers - HALF_TAPS + 1
+        tap_offsets = np.arange(2 * HALF_TAPS)
+        source_index = starts[:, None] + tap_offsets[None, :]  # (J, K)
+        in_range = (source_index >= 0) & (source_index < self._total_in)
+
+        pad = HALF_TAPS - 1
+        trailing = pad if tail_pad else 0
+        padded = np.concatenate(
+            (
+                np.zeros((pad, self._buffer.shape[1])),
+                self._buffer,
+                np.zeros((trailing, self._buffer.shape[1])),
+            ),
+            axis=0,
+        )
+        # Local row inside `padded` for a global input index.
+        local_row = source_index - self._offset + pad
+        safe_row = np.where(in_range, local_row, 0)
+        samples = padded[safe_row]  # (J, K, channels)
+        samples = np.where(in_range[:, :, None], samples, 0.0)
+        weights = self.plan.phases[phases]  # (J, K)
+        return np.einsum("jkc,jk->jc", samples, weights)
+
     def process_block(self, block: np.ndarray) -> np.ndarray:
         """Feed one input block; return every output block now computable."""
         self._append(block)
+        channels = self._buffer.shape[1]
         if self.plan.passthrough:
             out = self._buffer.copy()
-            self._buffer = np.empty((0, self._buffer.shape[1]))
+            self._buffer = np.empty((0, channels))
             self._offset = self._total_in
             self._n_out += out.shape[0]
             return out
 
-        taps = self.plan.phases
-        rows: list[np.ndarray] = []
-        channels = self._buffer.shape[1]
-        while True:
-            phase, start, j = self._next_geometry()
-            last = start + 2 * HALF_TAPS - 1
-            end_index = self._offset + self._buffer.shape[0] - 1
-            if last > end_index:
-                break
-            row = np.zeros(channels, dtype=np.float64)
-            for k, weight in enumerate(taps[phase]):
-                source = self._row(start + k, self._total_in)
-                if source is not None:  # left-side zero padding stays zero
-                    row += weight * source
-            rows.append(row)
-            self._n_out = j + 1
+        end_index = self._offset + self._buffer.shape[0] - 1
+        j_max = self._emittable_count(end_index)
+        if j_max <= self._n_out:
+            emitted = np.empty((0, channels))
+        else:
+            j_indices = np.arange(self._n_out, j_max)
+            emitted = self._gather(j_indices, tail_pad=False)
+            self._n_out = j_max
 
         # Drop only frames strictly before the next output's first tap.
         _, next_start, _ = self._next_geometry()
-        keep_from = next_start
-        if keep_from > self._offset:
-            drop = min(keep_from - self._offset, self._buffer.shape[0])
+        if next_start > self._offset:
+            drop = min(next_start - self._offset, self._buffer.shape[0])
             self._buffer = self._buffer[drop:]
             self._offset += drop
-        return np.asarray(rows, dtype=np.float64).reshape(-1, channels)
+        return emitted
+
+    def _emittable_count(self, end_index: int) -> int:
+        """One-past count of output frames whose last tap is available."""
+        up, down = self.plan.up, self.plan.down
+        bound = end_index - HALF_TAPS
+        if bound < 0:
+            return self._n_out
+        # Largest j with floor(j*D/L) <= bound: j*D < (bound+1)*L.
+        j_limit = ((bound + 1) * up - 1) // down
+        return max(self._n_out, int(j_limit) + 1)
 
     def flush(self) -> np.ndarray:
         """Emit remaining outputs with tail zero padding, trimmed to length."""
@@ -225,18 +256,12 @@ class StreamingResampler:
             self._n_out += out.shape[0]
             return out[:expected]
 
-        taps = self.plan.phases
-        rows: list[np.ndarray] = []
-        while self._n_out < expected:
-            phase, start, j = self._next_geometry()
-            row = np.zeros(channels, dtype=np.float64)
-            for k, weight in enumerate(taps[phase]):
-                # Indices past the final input frame contribute zero.
-                source = self._row(start + k, self._total_in)
-                if source is not None:
-                    row += weight * source
-            rows.append(row)
-            self._n_out = j + 1
+        j_indices = np.arange(self._n_out, expected)
+        if j_indices.size:
+            emitted = self._gather(j_indices, tail_pad=True)
+            self._n_out = expected
+        else:
+            emitted = np.empty((0, channels))
         self._buffer = np.empty((0, channels))
         self._offset = self._total_in
-        return np.asarray(rows, dtype=np.float64).reshape(-1, channels)[:expected]
+        return emitted[:expected]
