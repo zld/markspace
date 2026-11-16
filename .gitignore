@@ -1,0 +1,8 @@
+# Build artifacts and local demo data are never part of the delivery.
+build/
+cmake-build-*/
+sample.mp4
+sample_*.mp4
+report.json
+*.json.tmp
+.DS_Store
