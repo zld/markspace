@@ -34,6 +34,28 @@ python -m mkvmp4.cli remux --input /tmp/demo.mkv --output /tmp/demo.mp4 \
 python -m mkvmp4.cli verify --input /tmp/demo.mp4 --json
 ```
 
+## Tests
+
+The test suite needs no third-party runner; each file is an executable
+script that exits non-zero on the first failed check:
+
+```
+python tests/make_fixtures.py --output /tmp/demo.mkv   # synthetic media
+python tests/test_core.py                              # unit checks
+python tests/test_pipeline.py                          # end-to-end CLI
+```
+
+`test_pipeline.py` generates its own fixtures in a temporary directory and
+covers both export modes, exit codes, track selection, codec rejection,
+atomic output replacement and the no-source-overwrite guarantee.
+
+## Safety limits
+
+`--max-bytes`, `--max-elements` and `--max-sample-bytes` bound every parse.
+Outputs are always written to a hidden same-directory temp file and only
+atomically replace the destination after the read-back verify pass; the
+source file is never modified and failures leave no temp files behind.
+
 ## Design notes
 
 * `ebml.py` - hand-written EBML VINT/element parser, unknown-length support.
