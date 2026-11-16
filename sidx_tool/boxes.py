@@ -104,8 +104,9 @@ def _parse_children(
             box_type = box_type_bytes.decode("ascii")
         except UnicodeDecodeError:
             raise FormatError(f"non-ASCII box type {box_type_bytes!r} at offset {start}")
+        current_path = f"{path_prefix}/{box_type}" if path_prefix else box_type
         if not all(0x20 <= c <= 0x7E for c in box_type_bytes):
-            raise FormatError(f"invalid box type {box_type!r} at offset {start}")
+            raise FormatError(f"invalid box type {box_type!r} at offset {start} (path {current_path})")
         header_end = start + HEADER_SIZE
         if size32 == 1:  # largesize
             large = struct.unpack(">Q", _read_exact(stream, 8, "largesize"))[0]
@@ -120,13 +121,13 @@ def _parse_children(
         if size < header_end - start:
             raise FormatError(f"box {box_type} size {size} smaller than its header at offset {start}")
         end = start + size
-        if end > limit_end:
+        if end < start or end > limit_end:
             raise FormatError(
-                f"box {box_type} at offset {start} ends at {end}, beyond boundary {limit_end}"
+                f"box {box_type} at offset {start} ends at {end}, beyond boundary {limit_end} "
+                f"(path {current_path or '/'}): truncated or overflowing container"
             )
         if size > MAX_BOX_SIZE:
             raise LimitError(f"box {box_type} at offset {start} exceeds maximum size {MAX_BOX_SIZE}")
-        current_path = f"{path_prefix}/{box_type}" if path_prefix else box_type
         box = Box(box_type, start, header_end, end, path=current_path)
         if box_type in CONTAINER_TYPES or box_type in FULL_CONTAINER_TYPES:
             if depth + 1 > MAX_BOX_DEPTH:

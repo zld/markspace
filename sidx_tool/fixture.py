@@ -195,8 +195,7 @@ def _build_mdat(video_payload, audio_payload, config: FixtureConfig) -> tuple[li
         vdata, adata = b"".join(video_payload), b"".join(audio_payload)
         mdats.append(MdatSpec(_box(b"mdat", vdata + adata), len(vdata) + len(adata)))
         segments.append((len(vdata), len(adata), 500 * chunk_count))
-    # Absolute offsets cannot be known until ftyp+moov+sidx sizes are fixed;
-    # return relative (header-relative) values and patch after serialization.
+    # Relative offsets inside the media region (absolute prefix added later).
     cursor = 0
     if config.multi_mdat:
         for index in range(chunk_count):
@@ -205,8 +204,17 @@ def _build_mdat(video_payload, audio_payload, config: FixtureConfig) -> tuple[li
             audio_offsets.append(cursor + 8)
             cursor += 8 + segments[index][1]
     else:
-        video_offsets.append(8)
-        audio_offsets.append(8 + segments[0][0])
+        # One mdat: all video chunks first, then all audio chunks, each chunk
+        # packed back-to-back at its sample size * group length.
+        inner = 8
+        for index in range(chunk_count):
+            lo, hi = index * group, min(n, (index + 1) * group)
+            video_offsets.append(inner)
+            inner += (hi - lo) * config.sample_bytes
+        for index in range(chunk_count):
+            lo, hi = index * group, min(n, (index + 1) * group)
+            audio_offsets.append(inner)
+            inner += (hi - lo) * config.sample_bytes
     plan = ChunkPlan(video_offsets, audio_offsets, segments)
     return mdats, plan
 

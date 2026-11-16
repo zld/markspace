@@ -12,8 +12,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .boxes import Box, parse_file
-from .errors import FormatError, ValidationError
-from .sample_tables import VIDEO_HANDLER, SampleTable, parse_trak, validate_mdat_coverage
+from .errors import ValidationError
+from .sample_tables import SampleTable, parse_trak, validate_mdat_coverage
 from .sidx import Sidx, SidxParseError, parse_sidx
 
 
@@ -83,7 +83,6 @@ def _cross_check(tables: list[SampleTable], mdats: list[Box], sidx: Sidx, sidx_b
     for (s1, e1), (s2, e2) in zip(sample_spans, sample_spans[1:]):
         if s2 < e1:
             raise ValidationError(f"overlapping sample byte ranges [{s1},{e1}) vs [{s2},{e2})")
-    offsets_ok = total_samples
 
     # 2. SIDX references: contiguous, exactly covering all mdat bytes.
     ref_ranges = sidx.byte_ranges(sidx_box.start)

@@ -61,6 +61,21 @@ def test_size_smaller_than_header_rejected(tmp_path: Path) -> None:
         parse_file(path)
 
 
+def test_largesize_overrun_reports_boundary(tmp_path: Path) -> None:
+    # size32 == 1 selects the 64-bit largesize field, here claiming 2^40.
+    path = tmp_path / "large.mp4"
+    path.write_bytes(struct.pack(">I4sQ", 1, b"mdat", 1 << 40) + b"\x00" * 48)
+    with pytest.raises(FormatError, match="beyond boundary"):
+        parse_file(path)
+
+
+def test_largesize_box_that_fits_parses(tmp_path: Path) -> None:
+    path = tmp_path / "fit.mp4"
+    path.write_bytes(struct.pack(">I4sQ", 1, b"mdat", 24) + b"\x00" * 8)
+    boxes = parse_file(path)
+    assert len(boxes) == 1 and boxes[0].type == "mdat" and boxes[0].size == 24
+
+
 def test_unknown_boxes_are_skipped(source: Path, tmp_path: Path) -> None:
     data = source.read_bytes()
     top = parse_file(source)

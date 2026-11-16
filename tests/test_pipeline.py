@@ -108,6 +108,15 @@ def test_rebuild_rejects_drift_beyond_tolerance(workspace: Path) -> None:
         rebuild(source, workspace / "bad.mp4", segment_ms=700, max_drift_ms=10)
 
 
+def test_in_place_rebuild_via_atomic_replace(workspace: Path) -> None:
+    path = _make_source(workspace / "inplace.mp4")
+    original = path.read_bytes()
+    rebuild(path, path, segment_ms=500, max_drift_ms=80)
+    assert path.read_bytes() != original  # file replaced, not half-written
+    assert verify_bytes(path).segment_count == 4
+    assert list(workspace.rglob("*.tmp")) == []
+
+
 def test_atomic_write_leaves_no_temp_files(workspace: Path) -> None:
     source = _make_source(workspace / "source.mp4")
     output = workspace / "nested" / "rebuilt.mp4"
@@ -132,26 +141,12 @@ def test_cli_rebuild_and_verify_json(capsys: pytest.CaptureFixture[str], workspa
     assert parsed[0]["start_ms"] == 0 and parsed[-1]["end_ms"] == 2000
 
 
-def test_rebuild_promotes_stco_to_co64(monkeypatch, workspace: Path) -> None:
+def test_rebuild_promotes_stco_to_co64(workspace: Path) -> None:
     source = _make_source(workspace / "source.mp4")
-    output = workspace / "co64.mp4"
-    # Force every output chunk offset beyond the 32-bit boundary; the writer
-    # must emit co64 instead of stco and the validator must still accept it.
-    import sidx_tool.rebuild as rebuild_mod
-
-    original = rebuild_mod._mdat_layout
-
-    def shifted(layout, tables, prefix):
-        offsets, ranges, total = original(layout, tables, prefix + 0x1_0000_0000)
-        offsets = {key: value + 0x1_0000_0000 for key, value in offsets.items()}
-        ranges = [(lo + 0x1_0000_0000, hi + 0x1_0000_0000) for lo, hi in ranges]
-        return offsets, ranges, total + 0x1_0000_0000
-
-    monkeypatch.setattr(rebuild_mod, "_mdat_layout", shifted)
-    # The synthetic shift breaks the final prefix consistency check, so this
-    # test instead verifies the writer's selection logic directly.
-    from sidx_tool.moov_writer import MoovRewriter
+    # The writer must emit co64 instead of stco when offsets exceed 32 bits;
+    # verify the selection logic directly against a high-offset chunk plan.
     from sidx_tool.boxes import parse_file
+    from sidx_tool.moov_writer import MoovRewriter
 
     top = parse_file(source)
     moov = next(b for b in top if b.type == "moov")
@@ -160,6 +155,12 @@ def test_rebuild_promotes_stco_to_co64(monkeypatch, workspace: Path) -> None:
                 2: [(0x1_0000_8000, 15), (0x1_0000_C000, 15)]}
         rendered = MoovRewriter(moov, stream, plan).render()
     assert b"co64" in rendered and b"stco" not in rendered
+
+    # Conversely, 32-bit offsets keep stco.
+    with source.open("rb") as stream:
+        small_plan = {1: [(1024, 15), (2048, 15)], 2: [(4096, 15), (8192, 15)]}
+        rendered_32 = MoovRewriter(moov, stream, small_plan).render()
+    assert b"stco" in rendered_32 and b"co64" not in rendered_32
 
 
 def test_module_invocation_matches_cli(workspace: Path) -> None:

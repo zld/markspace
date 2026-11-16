@@ -10,7 +10,6 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from pathlib import Path
 
 from .errors import SidxToolError
 from .fixture import FixtureConfig, write_fixture

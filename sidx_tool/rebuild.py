@@ -20,7 +20,7 @@ from .boxes import Box, parse_file
 from .errors import FileError, FormatError, ValidationError
 from .layout import Layout, collect_sample_bytes, plan_segments
 from .moov_writer import MoovRewriter
-from .sample_tables import VIDEO_HANDLER, SampleTable, parse_trak, validate_mdat_coverage
+from .sample_tables import SampleTable, parse_trak, validate_mdat_coverage
 from .sidx import Sidx, build_sidx
 from .validate import verify_bytes
 
@@ -46,8 +46,51 @@ def _load(path: Path) -> tuple[list[Box], list[SampleTable], list[Box]]:
         raise FormatError("input has no mdat box")
     with path.open("rb") as stream:
         tables = [parse_trak(trak, stream) for trak in moov.find_all("trak")]
+        _relocate_if_needed(tables, mdats)
         validate_mdat_coverage(tables, mdats)
     return top, tables, mdats
+
+
+def _relocate_if_needed(tables: list[SampleTable], mdats: list[Box]) -> None:
+    """Recover from a uniform mdat relocation that invalidated stco/co64.
+
+    When recorded chunk offsets miss every mdat but one common delta moves all
+    of them back inside, the media region was shifted (e.g. a header edit moved
+    mdat without refreshing stco); apply the single compensating delta.
+    Non-uniform or ambiguous failures stay hard errors, never silent guesses.
+    """
+    ranges = sorted((m.start, m.end) for m in mdats)
+
+    def inside(offset: int, length: int) -> bool:
+        return any(lo <= offset and offset + length <= hi for lo, hi in ranges)
+
+    def all_resolve(delta: int) -> bool:
+        for table in tables:
+            for chunk in table.chunks:
+                length = sum(table.sizes[i] for i in chunk.samples)
+                if not inside(chunk.offset + delta, length):
+                    return False
+        return True
+
+    if all_resolve(0):
+        return
+    # Candidate deltas: shift the first failing chunk onto each mdat start.
+    first_bad = next(
+        (table, chunk) for table in tables for chunk in table.chunks
+        if not inside(chunk.offset, sum(table.sizes[i] for i in chunk.samples))
+    )
+    table0, chunk0 = first_bad
+    candidates = {m.start - chunk0.offset for m in mdats}
+    working = [delta for delta in candidates if all_resolve(delta)]
+    if len(working) != 1:
+        raise FormatError(
+            "chunk offsets fall outside mdat and no unique relocation delta exists"
+        )
+    delta = working[0]
+    for table in tables:
+        for chunk in table.chunks:
+            chunk.offset += delta
+        table._sample_offsets = [offset + delta for offset in table._sample_offsets]
 
 
 def _plan_chunks(layout: Layout, tables: list[SampleTable], mdat_offsets: dict[tuple[int, int], int]):
@@ -139,7 +182,10 @@ def _box_bytes(stream: BinaryIO, box: Box) -> bytes:
 
 def _atomic_write(input_path, output_path, src, ftyp_bytes, moov_bytes, sidx_bytes,
                   layout, tables, offsets, payload_sizes, expected_total) -> None:
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise FileError(f"cannot create output directory {output_path.parent}: {exc}") from exc
     tmp_fd, tmp_name = tempfile.mkstemp(prefix=output_path.name + ".", suffix=".tmp", dir=output_path.parent)
     tmp_path = Path(tmp_name)
     try:

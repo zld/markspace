@@ -51,9 +51,7 @@ class SampleTable:
         """Absolute [start_offset, end_offset) byte range of samples [start, end)."""
         if not (0 <= start <= end <= self.count):
             raise FormatError(f"sample range [{start},{end}) out of bounds (count={self.count})")
-        offset = self.chunk_offsets_lookup()
-        base = self._sample_offsets
-        return base[start], base[end]
+        return self._sample_offsets[start], self._sample_offsets[end]
 
     def chunk_offsets_lookup(self) -> list[int]:
         return [c.offset for c in self.chunks]
@@ -71,7 +69,6 @@ class SampleTable:
             raise FormatError(f"track {self.track_id}: chunks cover {len(offsets)} samples, expected {self.count}")
         offsets.append(running)
         self._sample_offsets = offsets
-
 
 def _u32_list(data: bytes, name: str) -> list[int]:
     if len(data) % 4:
