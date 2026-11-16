@@ -134,11 +134,14 @@ def _parse_tkhd(payload: bytes) -> int | None:
     if len(payload) < 4:
         raise ContainerError("truncated tkhd")
     version = payload[0]
-    off = 4 if version == 0 else 8
-    if version not in (0, 1) or len(payload) < off + 8:
+    if version not in (0, 1):
         raise ContainerError("unsupported tkhd version")
-    # track_ID is the second integer after creation/modification time.
-    return _u32(payload, off + 4)
+    # v0: creation(4)+modification(4) then track_ID at offset 12;
+    # v1: two 8-byte timestamps then track_ID at offset 20.
+    off = 12 if version == 0 else 20
+    if len(payload) < off + 4:
+        raise ContainerError("truncated tkhd track id")
+    return _u32(payload, off)
 
 
 _HANDLER_TYPES = {b"vide": "video", b"soun": "audio", b"subt": "subtitle",
@@ -152,7 +155,7 @@ def _parse_hdlr(payload: bytes) -> str | None:
     return _HANDLER_TYPES.get(handler)
 
 
-def _parse_stsd(payload: bytes) -> dict | None:
+def _parse_stsd(payload: bytes, track_type: str | None) -> dict | None:
     if len(payload) < 8:
         raise ContainerError("truncated stsd")
     entry_count = _u32(payload, 4)
@@ -166,12 +169,18 @@ def _parse_stsd(payload: bytes) -> dict | None:
     codec = payload[12:16]
     body = payload[16:8 + size]
     info: dict = {"codec": codec.decode("latin-1")}
-    if len(body) >= 18:
-        info["width"] = _u16(body, 8)
-        info["height"] = _u16(body, 10)
-    if len(body) >= 28:
-        info["sample_rate"] = _u16(body, 16)
-        info["channels"] = _u16(body, 20)
+    # SampleEntry layouts are codec-specific; only read the offsets that
+    # belong to the handler's type so video entries never gain audio
+    # fields or vice versa.  Missing fields stay null, never zero.
+    if track_type == "video" and len(body) >= 28:
+        # 6 reserved + 2 data-ref-index + 16 pre-defined -> w/h at 24/26.
+        info["width"] = _u16(body, 24)
+        info["height"] = _u16(body, 26)
+    elif track_type == "audio" and len(body) >= 28:
+        # AudioSampleEntry: channels at offset 16; sample rate is a 16.16
+        # fixed-point value at offset 24, keep only its integer part.
+        info["channels"] = _u16(body, 16)
+        info["sample_rate"] = _u16(body, 24)
     return info
 
 
@@ -209,7 +218,7 @@ def parse_mp4(f, file_size: int) -> dict:
                 for hdlr in find_boxes(f, mdia.header, mdia.end, b"hdlr"):
                     track["type"] = _parse_hdlr(hdlr.payload())
                 for stsd in find_boxes(f, mdia.header, mdia.end, b"stsd"):
-                    entry = _parse_stsd(stsd.payload())
+                    entry = _parse_stsd(stsd.payload(), track["type"])
                     if entry:
                         track.update(entry)
             result["tracks"].append(track)
@@ -281,7 +290,7 @@ def read_vint(f, pos: int, end: int) -> tuple[int, int, bool]:
     lead = first[0]
     if lead == 0:
         raise ContainerError("invalid VINT leading byte")
-    length = (lead ^ 0xFF).bit_length() + 1  # leading zero count + 1
+    length = 9 - lead.bit_length()  # leading zero count + 1
     if length > 8 or pos + length > end:
         raise ContainerError("incomplete VINT")
     rest = f.read(length - 1)
@@ -307,7 +316,7 @@ def read_ebml_id(f, pos: int, end: int) -> tuple[int, int]:
     lead = first[0]
     if lead == 0:
         raise ContainerError("invalid EBML id leading byte")
-    length = (lead ^ 0xFF).bit_length() + 1
+    length = 9 - lead.bit_length()
     if length > 4 or pos + length > end:
         raise ContainerError("incomplete EBML id")
     rest = f.read(length - 1)

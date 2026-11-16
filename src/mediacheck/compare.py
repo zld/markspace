@@ -189,7 +189,11 @@ def compare_results(results: list[ProbeResult],
             report.mismatches.extend(
                 _duplicate_ids(name, member.path, member.tracks))
         if len(members) > 1:
-            reference = members[0]
+            # The richest file is the reference: missing/extra labels then
+            # describe what the other deliveries lack or add.  Ties keep
+            # the deterministic (path-sorted) order.
+            reference = max(members, key=lambda r: (len(r.tracks),
+                                                    -members.index(r)))
             for member in members[1:]:
                 pairs, missing, extra = match_tracks(
                     reference.tracks, member.tracks)
