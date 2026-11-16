@@ -22,8 +22,8 @@ const (
 // Packet is one parsed 188-byte TS packet.
 type Packet struct {
 	PID        uint16
-	PUSI       bool   // payload unit start indicator
-	CC         uint8  // continuity counter
+	PUSI       bool  // payload unit start indicator
+	CC         uint8 // continuity counter
 	HasPayload bool
 	Payload    []byte // valid until the next Next call
 	Raw        []byte // the full 188 bytes, valid until the next Next call

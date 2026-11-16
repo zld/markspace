@@ -23,16 +23,16 @@ const gapLimitTicks = ts.ClockRate / 5
 
 // ProfileReport aggregates every defect found in one profile directory.
 type ProfileReport struct {
-	Name             string           `json:"name"`
-	BitrateKbps      int              `json:"bitrate_kbps"`
-	Segments         int              `json:"segments"` // entries declared by the manifest
-	DurationDeltaMs  float64          `json:"duration_delta_ms"`
-	Missing          []int            `json:"missing,omitempty"`
-	Reordered        int              `json:"reordered"`
-	ChecksumFailures []int            `json:"checksum_failures,omitempty"`
-	PTSGaps          []string         `json:"pts_gaps,omitempty"`
-	Errors           []string         `json:"errors,omitempty"`
-	Starts           map[int]int64    `json:"-"` // manifest seq -> first unwrapped PTS
+	Name             string        `json:"name"`
+	BitrateKbps      int           `json:"bitrate_kbps"`
+	Segments         int           `json:"segments"` // entries declared by the manifest
+	DurationDeltaMs  float64       `json:"duration_delta_ms"`
+	Missing          []int         `json:"missing,omitempty"`
+	Reordered        int           `json:"reordered"`
+	ChecksumFailures []int         `json:"checksum_failures,omitempty"`
+	PTSGaps          []string      `json:"pts_gaps,omitempty"`
+	Errors           []string      `json:"errors,omitempty"`
+	Starts           map[int]int64 `json:"-"` // manifest seq -> first unwrapped PTS
 }
 
 // OK reports whether the profile is clean.
