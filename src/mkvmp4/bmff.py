@@ -438,28 +438,35 @@ def _plan_writes(tracks: list[TrackOutput], temp_dir: str,
                       use_co64)
 
 
-def _build_chunks(tracks: list[TrackOutput], plan: _WritePlan,
-                  mdat_payload_start: int) -> None:
-    """Assign absolute offsets and populate each track's chunk list."""
+def _build_chunks(tracks: list[TrackOutput], plan: _WritePlan) -> None:
+    """Populate each track's chunk list with mdat-relative offsets.
+
+    Offsets are relative to the mdat payload start (so the first chunk is
+    at 0); the writer adds the absolute payload start afterwards. Building
+    structure before measuring moov keeps every sample-table box's shape
+    independent of the final absolute offsets.
+    """
     for track in tracks:
         track.chunks.clear()
-    cursor = mdat_payload_start
+    cursor = 0  # relative to mdat payload start
     last_key: tuple[int, int] | None = None
-    for ti, first, count, _segment in plan.units:
+    for ti, first, count, segment in plan.units:
         track = tracks[ti]
-        key = (ti, _segment)
-        for si in range(first, first + count):
-            cursor += len(track.sample_bytes[si])
+        key = (ti, segment)
+        run_size = sum(
+            len(track.sample_bytes[si])
+            for si in range(first, first + count))
         if last_key == key:
-            prev = track.chunks[-1]
-            prev.sample_count += count
+            # Continuation of the same track within one segment: merge into
+            # the previous chunk instead of starting a new one.
+            track.chunks[-1].sample_count += count
         else:
             track.chunks.append(
-                Chunk(offset=cursor - sum(
-                    len(track.sample_bytes[si])
-                    for si in range(first, first + count)),
-                    first_sample=first, sample_count=count))
+                Chunk(offset=cursor, first_sample=first,
+                      sample_count=count))
+        cursor += run_size
         last_key = key
+    return cursor  # total mdat payload bytes, cross-checked by the writer
 
 
 class Mp4Writer:
@@ -496,15 +503,24 @@ class Mp4Writer:
     def write(self) -> dict:
         self._write_parts()
         ftyp = build_ftyp()
-        mdat_header_placeholder = b"\x00" * self.plan.mdat_header_size
+        # Build chunk structure with mdat-relative offsets first; the shape
+        # of every sample-table box is then independent of absolute offsets.
+        planned_total = _build_chunks(self.tracks, self.plan)
+        if planned_total != self.plan.mdat_data_size:
+            raise ConversionError(
+                "chunk planner and part writer disagree on mdat size")
+        placeholder_moov = build_moov(
+            self.tracks, self.plan.use_co64, self.manifest)
         mdat_payload_start = (
-            len(ftyp)
-            + len(build_moov(self.tracks, self.plan.use_co64, self.manifest))
+            len(ftyp) + len(placeholder_moov)
             + self.plan.mdat_header_size)
-        _build_chunks(self.tracks, self.plan, mdat_payload_start)
+        # Convert relative offsets to absolute without changing cardinality,
+        # so stco/co64 widths and the moov byte size stay identical.
+        for track in self.tracks:
+            for chunk in track.chunks:
+                chunk.offset += mdat_payload_start
         moov = build_moov(self.tracks, self.plan.use_co64, self.manifest)
-        if len(moov) + len(ftyp) + self.plan.mdat_header_size \
-                != mdat_payload_start:
+        if len(moov) != len(placeholder_moov):
             raise ConversionError(
                 "moov size changed between reservation and back-fill")
         total_size = mdat_payload_start + self.plan.mdat_data_size
@@ -659,9 +675,9 @@ def _read_stbl(data: bytes, stbl: RawBox) -> dict:
 
     stsz_box = boxes[b"stsz"]
     pos = stsz_box.payload_start + 4
-    _uniform = int.from_bytes(data[pos:pos + 4], "big")
-    sample_count = int.from_bytes(data[pos + 4:pos + 8], "big")
-    pos += 8
+    pos += 4  # skip sample_size (uniform-size field, always 0 here)
+    sample_count = int.from_bytes(data[pos:pos + 4], "big")
+    pos += 4
     sample_sizes = [
         int.from_bytes(data[pos + 4 * i:pos + 4 * i + 4], "big")
         for i in range(sample_count)]
@@ -703,7 +719,6 @@ def _read_stbl(data: bytes, stbl: RawBox) -> dict:
         "stts_entries": stts_entries,
         "ctts_entries": ctts_entries,
         "stss_entries": stss_entries,
-        "offset_width": width,
     }
 
 
@@ -726,8 +741,10 @@ def read_mp4_index(data: bytes) -> tuple[list[TrackIndex], RawBox]:
         tkhd = find_box(data, trak.payload_start, trak.payload_end, b"tkhd")
         if tkhd is None:
             raise VerificationError("trak missing tkhd")
+        # tkhd is a full box: payload begins with a 4-byte version/flags
+        # header, then creation/modification time (8) and track_ID (4).
         track_id = int.from_bytes(
-            data[tkhd.payload_start + 8:tkhd.payload_start + 12], "big")
+            data[tkhd.payload_start + 12:tkhd.payload_start + 16], "big")
         mdia = find_box(data, trak.payload_start, trak.payload_end, b"mdia")
         if mdia is None:
             raise VerificationError("trak missing mdia")
