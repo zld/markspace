@@ -21,7 +21,8 @@ pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET
 
 add_library(avsync_core STATIC
   src/common.cpp
-  src/master_clock.cpp)
+  src/master_clock.cpp
+  src/synchronizer.cpp)
 target_include_directories(avsync_core PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(avsync_core PUBLIC PkgConfig::FFMPEG)
