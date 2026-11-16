@@ -129,11 +129,27 @@ Options parse_args(int argc, char** argv) {
 
 bool build_speed_map(const DemoConfig& config, SpeedMap* map,
                      std::string* error) {
+    // --speed may carry several comma-separated tokens in one argument.
+    std::vector<std::string> tokens;
+    for (const std::string& group : config.speed_tokens) {
+        std::size_t start = 0;
+        while (start <= group.size()) {
+            const std::size_t comma = group.find(',', start);
+            const std::string token =
+                group.substr(start, comma == std::string::npos
+                                         ? std::string::npos
+                                         : comma - start);
+            if (!token.empty()) tokens.push_back(token);
+            if (comma == std::string::npos) break;
+            start = comma + 1;
+        }
+    }
+
     std::vector<SpeedNode> nodes;
-    if (config.speed_tokens.empty()) {
+    if (tokens.empty()) {
         nodes.push_back(SpeedNode{0, Rate{1, 1}});
     } else {
-        for (const std::string& token : config.speed_tokens) {
+        for (const std::string& token : tokens) {
             SpeedNode node;
             if (!parse_rate_spec(token, &node, error)) return false;
             nodes.push_back(node);

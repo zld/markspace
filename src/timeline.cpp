@@ -73,18 +73,17 @@ bool SpeedMap::build(std::vector<SpeedNode> nodes, int max_output,
     };
     if (max_output < 0) return fail("max output frame is negative");
     if (nodes.empty()) return fail("speed map needs at least one node");
-    std::sort(nodes.begin(), nodes.end(),
-              [](const SpeedNode& a, const SpeedNode& b) {
-                  return a.output_frame < b.output_frame;
-              });
-    if (nodes.front().output_frame != 0)
-        return fail("speed map must define a node at frame 0");
+    // Input order is validated before any reordering: duplicate nodes
+    // and nodes that move backwards in time are explicit errors rather
+    // than being silently sorted away.
     for (std::size_t i = 1; i < nodes.size(); ++i) {
         if (nodes[i].output_frame == nodes[i - 1].output_frame)
             return fail("duplicate speed node frame");
         if (nodes[i].output_frame < nodes[i - 1].output_frame)
             return fail("speed nodes move backwards in time");
     }
+    if (nodes.front().output_frame != 0)
+        return fail("speed map must define a node at frame 0");
     if (nodes.back().output_frame > max_output)
         return fail("speed node frame beyond output range");
 

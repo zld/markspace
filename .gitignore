@@ -1,0 +1,11 @@
+# macOS metadata
+.DS_Store
+
+# Build artifacts (conventionally written to /tmp, ignore any local ones)
+/transition_lab
+*.o
+*.obj
+
+# Generated frame output
+*.ppm
+*.tmp
