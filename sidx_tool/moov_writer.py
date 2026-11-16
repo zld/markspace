@@ -12,9 +12,8 @@ from __future__ import annotations
 import struct
 from typing import BinaryIO
 
-from .boxes import Box, FULL_CONTAINER_TYPES, HEADER_SIZE, make_box, read_payload
+from .boxes import Box, FULL_CONTAINER_TYPES, HEADER_SIZE, read_payload
 from .errors import FormatError
-from .sample_tables import SampleTable
 
 STSC_TYPES = frozenset({"stsc", "stco", "co64"})
 
@@ -113,7 +112,36 @@ class MoovRewriter:
         return struct.unpack(">I", data[offset:offset + 4])[0]
 
     def _chunk_boxes(self, track_id: int) -> list[bytes]:
-        raise NotImplementedError  # filled in the next change-set
+        plan = self._plans[track_id]
+        if not plan:
+            raise FormatError(f"track {track_id}: no chunks planned")
+        offsets = [offset for offset, _ in plan]
+        use_co64 = any(offset > 0xFFFFFFFF for offset in offsets)
+        # stsc: one run, first_chunk=1, samples_per_chunk from the plan.
+        samples_per_chunk = plan[0][1]
+        if any(count != samples_per_chunk for _, count in plan):
+            entries = b"".join(
+                struct.pack(">III", index + 1, count, 1) for index, (_, count) in enumerate(plan)
+            )
+            stsc_payload = struct.pack(">I", len(plan)) + entries
+        else:
+            stsc_payload = struct.pack(">I", 1) + struct.pack(">III", 1, samples_per_chunk, 1)
+        boxes_out = [
+            struct.pack(">I4s", HEADER_SIZE + 4 + len(stsc_payload), b"stsc")
+            + b"\x00\x00\x00\x00"
+            + stsc_payload
+        ]
+        if use_co64:
+            payload = struct.pack(">I", len(offsets)) + b"".join(struct.pack(">Q", o) for o in offsets)
+            boxes_out.append(
+                struct.pack(">I4s", HEADER_SIZE + 4 + len(payload), b"co64") + b"\x00\x00\x00\x00" + payload
+            )
+        else:
+            payload = struct.pack(">I", len(offsets)) + b"".join(struct.pack(">I", o) for o in offsets)
+            boxes_out.append(
+                struct.pack(">I4s", HEADER_SIZE + 4 + len(payload), b"stco") + b"\x00\x00\x00\x00" + payload
+            )
+        return boxes_out
 
 
 def _fullbox(stream: BinaryIO, box: Box) -> tuple[int, int, bytes]:

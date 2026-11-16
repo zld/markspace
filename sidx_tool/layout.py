@@ -39,7 +39,7 @@ def _ms_units(timescale: int) -> Fraction:
     return Fraction(timescale, 1000)
 
 
-def _video_boundary_samples(video: SampleTable, segment_ms: int, max_segments: int) -> list[tuple[int, Fraction]]:
+def _video_boundary_samples(video: SampleTable, segment_ms: int, target_count: int) -> list[tuple[int, Fraction]]:
     """Sync sample indices opening each segment, plus the end sentinel.
 
     Returns ``(sample_index, boundary_time_ms)`` pairs where the final pair is
@@ -54,23 +54,22 @@ def _video_boundary_samples(video: SampleTable, segment_ms: int, max_segments: i
     dts_ms = [Fraction(d, 1) * unit for d in video.dts]
     duration_ms = Fraction(video.duration, 1) * unit
     boundaries: list[tuple[int, Fraction]] = []
-    for segment_index in range(max_segments + 1):
+    for segment_index in range(target_count + 1):
         target = Fraction(segment_ms * segment_index, 1)
         if segment_index == 0:
             boundaries.append((sync[0], Fraction(0)))
-            continue
-        if target >= duration_ms:
+        elif segment_index == target_count:
+            # Final sentinel: one past the last sample at the true duration.
             boundaries.append((video.count, duration_ms))
-            break
-        # Nearest sync sample at or before the target; segments must open on SAP.
-        candidate = sync[0]
-        for sample_index in sync:
-            if dts_ms[sample_index] <= target:
-                candidate = sample_index
-            else:
-                break
-        drift = abs(dts_ms[candidate] - target)
-        boundaries.append((candidate, dts_ms[candidate]))
+        else:
+            # Nearest sync sample at or before the target; segments open on SAP.
+            candidate = sync[0]
+            for sample_index in sync:
+                if dts_ms[sample_index] <= target:
+                    candidate = sample_index
+                else:
+                    break
+            boundaries.append((candidate, dts_ms[candidate]))
     # Deduplicate zero-length opening (first sync must be sample 0).
     if boundaries[0][0] != 0:
         raise FormatError("first video sync sample is not sample 0; cannot anchor timeline")
@@ -90,7 +89,10 @@ def plan_segments(tables: list[SampleTable], segment_ms: int, max_drift_ms: int)
     if segment_ms <= 0 or max_drift_ms < 0:
         raise FormatError("segment-ms must be positive and max-drift-ms non-negative")
     unit_ms = Fraction(1000, video.timescale)
-    duration_ms = Fraction(video.duration, 1) * unit_ms
+    # Full stts timeline: last DTS plus the final sample's own delta.  This is
+    # the authoritative media duration and must agree with mdhd at parse time.
+    last_delta = video.dts[-1] - video.dts[-2] if video.count > 1 else (video.duration - video.dts[-1])
+    duration_ms = Fraction(video.dts[-1] + last_delta, 1) * unit_ms
     target_count = round(duration_ms / segment_ms)
     if target_count <= 0:
         raise FormatError("media shorter than one target segment")

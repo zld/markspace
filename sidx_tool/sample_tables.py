@@ -81,7 +81,7 @@ def _u32_list(data: bytes, name: str) -> list[int]:
 
 def _parse_stts(data: bytes, count: int) -> list[int]:
     values = _u32_list(data, "stts")
-    if len(values) < 2 or len(values) != 2 * values[0]:
+    if len(values) < 1 or len(values) != 1 + 2 * values[0]:
         raise FormatError("stts entry count does not match payload size")
     dts: list[int] = []
     running = 0
@@ -89,8 +89,9 @@ def _parse_stts(data: bytes, count: int) -> list[int]:
         entry_count, delta = values[1 + 2 * i], values[2 + 2 * i]
         if entry_count == 0:
             raise FormatError("stts entry with zero sample count")
-        dts.extend([running] * entry_count)
-        running += entry_count * delta
+        for _ in range(entry_count):
+            dts.append(running)
+            running += delta
     if len(dts) != count:
         raise FormatError(f"stts covers {len(dts)} samples, stsz declares {count}")
     return dts
@@ -161,7 +162,7 @@ def _parse_sizes(stbl: Box, stream: BinaryIO) -> tuple[list[int], bool]:
 
 def _parse_stsc(data: bytes, chunk_count: int, count: int) -> tuple[list[int], list[tuple[int, int, int]]]:
     values = _u32_list(data, "stsc")
-    if len(values) < 4 or len(values) != 1 + 3 * values[0]:
+    if len(values) < 1 or len(values) != 1 + 3 * values[0]:
         raise FormatError("stsc entry count does not match payload size")
     entries = [(values[1 + 3 * i], values[2 + 3 * i], values[3 + 3 * i]) for i in range(values[0])]
     if entries[0][0] != 1 or any(entries[i][0] >= entries[i + 1][0] for i in range(len(entries) - 1)):
