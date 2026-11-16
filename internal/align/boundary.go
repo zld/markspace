@@ -127,7 +127,13 @@ func buildTimeline(rep *plan.Representation) (RepTimeline, []error) {
 		seg := &rep.Segments[i]
 		if i > 0 {
 			prev := &rep.Segments[i-1]
-			prevEnd, _ := timebase.Add64(prev.StartTicks, prev.DurationTicks)
+			prevEnd, ok := timebase.Add64(prev.StartTicks, prev.DurationTicks)
+			if !ok {
+				errs = append(errs, &TimelineError{
+					Kind: KindOverlap, RepID: rep.ID, Number: prev.Number,
+					Msg: "previous segment start+duration overflows int64",
+				})
+			}
 			prevEndTicks = prevEnd
 			switch {
 			case seg.StartTicks < prev.StartTicks:
@@ -135,7 +141,7 @@ func buildTimeline(rep *plan.Representation) (RepTimeline, []error) {
 					Kind: KindOutOfOrder, RepID: rep.ID, Number: seg.Number,
 					Msg: fmt.Sprintf("start %d is before previous start %d", seg.StartTicks, prev.StartTicks),
 				})
-			case seg.StartTicks < prevEnd:
+			case ok && seg.StartTicks < prevEnd:
 				errs = append(errs, &TimelineError{
 					Kind: KindOverlap, RepID: rep.ID, Number: seg.Number,
 					Msg: fmt.Sprintf("start %d overlaps previous end %d", seg.StartTicks, prevEnd),
@@ -144,17 +150,17 @@ func buildTimeline(rep *plan.Representation) (RepTimeline, []error) {
 		}
 		startMs, err := timebase.TicksToMs(seg.StartTicks, rep.Timescale)
 		if err != nil {
-			errs = append(errs, &TimelineError{Kind: KindOverlap, RepID: rep.ID, Number: seg.Number, Msg: err.Error()})
+			errs = append(errs, &TimelineError{Kind: KindOutOfOrder, RepID: rep.ID, Number: seg.Number, Msg: err.Error()})
 			continue
 		}
 		dur, err := timebase.TicksToMs(seg.DurationTicks, rep.Timescale)
 		if err != nil {
-			errs = append(errs, &TimelineError{Kind: KindOverlap, RepID: rep.ID, Number: seg.Number, Msg: err.Error()})
+			errs = append(errs, &TimelineError{Kind: KindOutOfOrder, RepID: rep.ID, Number: seg.Number, Msg: err.Error()})
 			continue
 		}
 		end, err := addRational(startMs, dur)
 		if err != nil {
-			errs = append(errs, &TimelineError{Kind: KindOverlap, RepID: rep.ID, Number: seg.Number, Msg: err.Error()})
+			errs = append(errs, &TimelineError{Kind: KindOutOfOrder, RepID: rep.ID, Number: seg.Number, Msg: err.Error()})
 			continue
 		}
 		tl.Bounds = append(tl.Bounds, SegmentBounds{

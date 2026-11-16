@@ -90,6 +90,23 @@ func TestOverlap(t *testing.T) {
 	}
 }
 
+func TestReverseButNonOverlappingIsOutOfOrder(t *testing.T) {
+	// Segment 2 starts before segment 1's start but never overlaps its range;
+	// this must classify as out_of_order, not overlap.
+	p := &plan.Plan{Representations: []plan.Representation{{
+		ID: "r", BandwidthBPS: 1, Timescale: 100,
+		Segments: []plan.Segment{
+			{Number: 1, StartTicks: 100, DurationTicks: 10},
+			{Number: 2, StartTicks: 5, DurationTicks: 10},
+		},
+	}}}
+	_, err := Build(p)
+	var te *TimelineError
+	if !errors.As(err, &te) || te.Kind != KindOutOfOrder {
+		t.Fatalf("want out_of_order error, got %v", err)
+	}
+}
+
 func TestMissingSegment(t *testing.T) {
 	p := demo.Build()
 	p.Representations[0].Segments = p.Representations[0].Segments[:5] // drop number 6

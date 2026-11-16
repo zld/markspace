@@ -83,18 +83,18 @@ func BuildTimeline(bounds []align.SegmentBounds) (*SegmentTimeline, error) {
 	tl := &SegmentTimeline{}
 	var (
 		entries []TimelineEntry
-		prevEnd int64
 		prevDur int64
 	)
 	for i, b := range bounds {
 		if b.DurationTicks <= 0 {
 			return nil, fmt.Errorf("manifest: segment %d has non-positive duration", b.Number)
 		}
-		end, ok := timebase.Add64(b.StartTicks, b.DurationTicks)
-		if !ok {
+		if _, ok := timebase.Add64(b.StartTicks, b.DurationTicks); !ok {
 			return nil, fmt.Errorf("manifest: segment %d end overflows int64", b.Number)
 		}
-		explicitTime := i == 0 || b.Gap || b.StartTicks != prevEnd
+		// A new explicit-time entry is needed for the first segment, any
+		// gap/jump (Gap means start != previous end), or a duration change.
+		explicitTime := i == 0 || b.Gap
 		durationChange := i > 0 && b.DurationTicks != prevDur
 		if explicitTime || durationChange {
 			t := b.StartTicks
@@ -102,7 +102,7 @@ func BuildTimeline(bounds []align.SegmentBounds) (*SegmentTimeline, error) {
 		} else {
 			entries[len(entries)-1].Repeat++
 		}
-		prevEnd, prevDur = end, b.DurationTicks
+		prevDur = b.DurationTicks
 	}
 	tl.Entries = entries
 	return tl, nil
