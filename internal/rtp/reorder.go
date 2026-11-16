@@ -88,7 +88,7 @@ func (r *Reorderer) Feed(pkt *rtp.Packet) []*rtp.Packet {
 		r.stats.Reordered++
 	}
 	if seqDiff(r.high, seq) > 0 {
-		if seq < r.base { // wrapped past 65535
+		if seq < r.high { // sequence number wrapped past 65535
 			r.stats.Wraps++
 		}
 		r.high = seq
