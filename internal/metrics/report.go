@@ -83,6 +83,7 @@ type Summary struct {
 	DropsLate         uint64  `json:"drops_late"`
 	DropsOutOfWindow  uint64  `json:"drops_out_of_window"`
 	DropsQueueFull    uint64  `json:"drops_queue_full"`
+	Realigned         uint64  `json:"realigned"`
 	ConcealedFrames   int     `json:"concealed_frames"`
 	ContinuityOKRatio float64 `json:"continuity_ok_ratio"`
 	MaxBoundaryJump   int     `json:"max_boundary_jump"`

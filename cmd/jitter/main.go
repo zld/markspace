@@ -149,6 +149,7 @@ loop:
 		DropsLate:         st.Late,
 		DropsOutOfWindow:  st.OutOfWindow,
 		DropsQueueFull:    st.DroppedFull,
+		Realigned:         st.Realigned,
 		ConcealedFrames:   concealer.Concealed,
 		ContinuityOKRatio: concealer.ContinuityRatio(),
 		MaxBoundaryJump:   concealer.MaxJump,

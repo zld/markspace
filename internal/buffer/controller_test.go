@@ -191,6 +191,30 @@ func TestQueueFullDropsWithoutBlocking(t *testing.T) {
 	}
 }
 
+func TestStarvationResync(t *testing.T) {
+	v := clock.NewVirtual()
+	c := New(v)
+	fillTarget(c, v, 2)
+	c.Poll() // play 0
+	c.Poll() // play 1, buffer now empty
+	v.Advance(frameInterval)
+	c.Poll() // miss: playSeq skips ahead of every arrival
+	// The next in-order arrival must resync the starved play position
+	// instead of being stranded behind the runaway playSeq.
+	pushAt(c, v, 3*frameInterval, 2)
+	p, ok := c.Poll()
+	if !ok || p.Seq != 2 {
+		t.Fatalf("Poll = seq %d ok %v, want resynced seq 2", p.Seq, ok)
+	}
+	pushAt(c, v, 4*frameInterval, 3)
+	if p, ok := c.Poll(); !ok || p.Seq != 3 {
+		t.Fatalf("Poll = seq %d ok %v, want seq 3", p.Seq, ok)
+	}
+	if c.Queued() != 0 {
+		t.Fatalf("Queued = %d, want 0 (no stranded frames)", c.Queued())
+	}
+}
+
 func TestTargetClampedAndGrowsOnMisses(t *testing.T) {
 	v := clock.NewVirtual()
 	c := New(v)

@@ -101,6 +101,13 @@ func (c *Controller) Push(p wire.Packet) {
 			c.stats.OutOfWindow++
 			return
 		}
+		if c.playing && len(c.buf) == 0 && seqBehind(p.Seq, c.playSeq) {
+			// Playback starved and the play position ran ahead of every
+			// arrival (input slower than the play clock): pull playSeq
+			// back to this fresh arrival instead of letting it run away
+			// and strand every later frame in the queue.
+			c.playSeq = p.Seq
+		}
 		if diff == 1 {
 			dev := math.Abs(float64(now-c.lastInOrderArrival-frameInterval)) / float64(time.Millisecond)
 			c.jitterMs += (dev - c.jitterMs) / 16
