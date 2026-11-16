@@ -174,9 +174,9 @@ class EndToEndTest(unittest.TestCase):
         self.assertIn("\t2\t", text)  # merged duplicate target has alias_count 2
 
     def test_invalid_inputs_exit_2(self):
-        rc = cli.main(self.scan_args[:1] + ["--input", str(self.src) + ".missing"]
-                      + self.scan_args[2:])
-        self.assertEqual(rc, 2)
+        missing = self.scan_args.copy()
+        missing[missing.index("--input") + 1] = str(self.src) + ".missing"
+        self.assertEqual(cli.main(missing), 2)
         bogus = Path(self.tmp.name) / "bogus.mp4"
         bogus.write_text("not a video")
         rc = cli.main(["scan", "--input", str(bogus), "--db",

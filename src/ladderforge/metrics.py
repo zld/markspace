@@ -62,11 +62,13 @@ def quality_score(
     sse = 0.0
     while True:
         ref = next(src_frames, None)
+        if ref is not None:
+            n_src += 1
         cand = next(enc_frames, None)
+        if cand is not None:
+            n_enc += 1
         if ref is None or cand is None:
             break
-        n_src += 1
-        n_enc += 1
         diff = ref - cand
         sse += float(np.dot(diff.ravel(), diff.ravel()))
     if n_src == 0:

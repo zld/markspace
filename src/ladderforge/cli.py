@@ -135,11 +135,11 @@ def _cmd_scan(args: argparse.Namespace) -> int:
                         stop.set()
                         break
     finally:
-        pool.shutdown(wait=False, cancel_futures=True)
+        pool.shutdown(wait=True, cancel_futures=True)
         signal.signal(signal.SIGINT, previous)
     counts = db.counts()
     print(f"tasks: {counts['done']} done, {counts['pending']} pending, "
-          f"{counts['failed']} failed")
+          f"{counts['running']} running, {counts['failed']} failed")
     if counts["pending"] or stop.is_set():
         print("interrupted with work remaining; rerun with --resume to continue")
         return EXIT_INTERRUPTED
