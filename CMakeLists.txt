@@ -37,3 +37,7 @@ add_executable(avsync src/main.cpp)
 target_link_libraries(avsync PRIVATE avsync_core)
 
 enable_testing()
+
+add_executable(kernel_test tests/kernel_test.cpp)
+target_link_libraries(kernel_test PRIVATE avsync_core)
+add_test(NAME kernel_test COMMAND kernel_test)
