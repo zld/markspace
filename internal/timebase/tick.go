@@ -81,6 +81,14 @@ func (r Rational) Mul(n int64) (Rational, error) {
 	return fromBig(new(big.Int).Mul(big.NewInt(r.Num), big.NewInt(n)), big.NewInt(r.Den))
 }
 
+// Div returns r/n as a reduced rational.
+func (r Rational) Div(n int64) (Rational, error) {
+	if n == 0 {
+		return Rational{}, errors.New("rational: division by zero")
+	}
+	return fromBig(big.NewInt(r.Num), new(big.Int).Mul(big.NewInt(r.Den), big.NewInt(n)))
+}
+
 // TicksToMs converts ticks counted in timescale units to milliseconds.
 func TicksToMs(ticks, timescale int64) (Rational, error) {
 	if timescale <= 0 {
@@ -96,27 +104,33 @@ func TicksToMs(ticks, timescale int64) (Rational, error) {
 // FormatMillis prints r (already expressed in milliseconds) with exactly three
 // decimal places, using integer rounding instead of floating point.
 func FormatMillis(r Rational) string {
+	return FormatFixed(r, 3)
+}
+
+// FormatFixed prints r with exactly decimals digits after the point, rounding
+// half away from zero using integer arithmetic only.
+func FormatFixed(r Rational, decimals int) string {
 	if r.Num == 0 {
-		return "0.000"
+		return "0." + strings.Repeat("0", decimals)
 	}
-	micros := big.NewInt(r.Num)
-	micros.Mul(micros, big.NewInt(1000))
-	den := big.NewInt(r.Den)
-	q, rem := new(big.Int).QuoRem(micros, den, new(big.Int))
-	if rem.Sign() != 0 && new(big.Int).Abs(rem).Mul(new(big.Int).Abs(rem), big.NewInt(2)).Cmp(new(big.Int).Abs(den)) >= 0 {
+	scale := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(decimals)), nil)
+	scaled := new(big.Int).Mul(big.NewInt(r.Num), scale)
+	q, rem := new(big.Int).QuoRem(scaled, big.NewInt(r.Den), new(big.Int))
+	twice := new(big.Int).Mul(new(big.Int).Abs(rem), big.NewInt(2))
+	if twice.Cmp(new(big.Int).Abs(big.NewInt(r.Den))) >= 0 {
 		q.Add(q, big.NewInt(1))
 	}
 	neg := q.Sign() < 0
 	if neg {
 		q.Neg(q)
 	}
-	whole := new(big.Int).Quo(q, big.NewInt(1000))
-	frac := new(big.Int).Mod(q, big.NewInt(1000))
+	whole := new(big.Int).Quo(q, scale)
+	frac := new(big.Int).Mod(q, scale)
 	sign := ""
 	if neg {
 		sign = "-"
 	}
-	return fmt.Sprintf("%s%s.%03d", sign, whole.String(), frac)
+	return fmt.Sprintf("%s%s.%0*d", sign, whole.String(), decimals, frac)
 }
 
 // Add64 returns a+b and ok=false on signed overflow.

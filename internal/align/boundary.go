@@ -44,10 +44,12 @@ func (e *MissingError) Error() string {
 
 // SegmentBounds is one segment expressed in exact millisecond rationals.
 type SegmentBounds struct {
-	Number   int64
-	StartMs  timebase.Rational
-	Duration timebase.Rational
-	EndMs    timebase.Rational
+	Number        int64
+	StartTicks    int64 // native timescale ticks, retained for MPD S@t/S@d
+	DurationTicks int64
+	StartMs       timebase.Rational
+	Duration      timebase.Rational
+	EndMs         timebase.Rational
 	// Gap is true when this segment does not begin exactly where the previous
 	// segment ended (used by SegmentTimeline compression).
 	Gap bool
@@ -156,11 +158,13 @@ func buildTimeline(rep *plan.Representation) (RepTimeline, []error) {
 			continue
 		}
 		tl.Bounds = append(tl.Bounds, SegmentBounds{
-			Number:   seg.Number,
-			StartMs:  startMs,
-			Duration: dur,
-			EndMs:    end,
-			Gap:      i > 0 && seg.StartTicks != prevEndTicks,
+			Number:        seg.Number,
+			StartTicks:    seg.StartTicks,
+			DurationTicks: seg.DurationTicks,
+			StartMs:       startMs,
+			Duration:      dur,
+			EndMs:         end,
+			Gap:           i > 0 && seg.StartTicks != prevEndTicks,
 		})
 	}
 	return tl, errs
