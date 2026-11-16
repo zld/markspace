@@ -134,13 +134,26 @@ class MatroskaFile:
     segment_unknown_length: bool
 
 
+NESTED_SCAN_VOCAB = {
+    ebml.ID_SEGMENT: SEGMENT_CHILD_IDS,
+    ID_CLUSTER: CLUSTER_CHILD_IDS,
+}
+
+
 def _children(parser: EbmlParser, parent: Element,
               valid_ids: frozenset[int] | None = None) -> list[Element]:
     if parent.known_length:
         kids = parser.iter_children(parent.body_start, parent.body_end)
     else:
         ids = valid_ids or frozenset()
-        kids = ebml.scan_unknown_children(parser, parent, ids)
+        # An unknown Cluster is terminated by the next Segment-level
+        # sibling header (another Cluster, Cues, Tags, ...).
+        if parent.id == ID_CLUSTER:
+            stop = (SEGMENT_CHILD_IDS - CLUSTER_CHILD_IDS) | {ID_CLUSTER}
+        else:
+            stop = frozenset()
+        kids = ebml.scan_unknown_children(
+            parser, parent, ids, NESTED_SCAN_VOCAB, stop_ids=stop)
     return kids
 
 
@@ -309,7 +322,9 @@ def parse_block(data: bytes, base_offset: int, default_keyframe: bool,
     pos = 0
     if not data:
         raise EbmlError("empty block payload", offset=base_offset)
-    track_number, id_w, _ = ebml.read_vint(data, pos, is_id=True,
+    # The block track number is a data VINT (marker bit stripped), not an
+    # EBML element ID VINT.
+    track_number, id_w, _ = ebml.read_vint(data, pos, is_id=False,
                                            unknown_allowed=False)
     pos += id_w
     if pos + 3 > len(data):
