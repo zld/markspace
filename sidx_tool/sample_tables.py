@@ -96,7 +96,7 @@ def _parse_stts(data: bytes, count: int) -> list[int]:
 
 def _parse_ctts(version: int, data: bytes, count: int) -> list[int]:
     width = 4 if version == 0 else 8
-    if len(data) < 4 or len(data) % (4 + width):
+    if len(data) < 4:
         raise FormatError("malformed ctts payload")
     entry_count = struct.unpack(">I", data[:4])[0]
     if len(data) != 4 + entry_count * (4 + width):
@@ -142,8 +142,9 @@ def _parse_sizes(stbl: Box, stream: BinaryIO) -> tuple[list[int], bool]:
     sample_count = struct.unpack(">I", data[4:8])[0]
     packed = data[8:]
     if field_size == 4:
-        sizes = [b >> 4 for b in packed] + [b & 0x0F for b in packed]
-        sizes = sizes[:sample_count]
+        # High nibble of each byte is the earlier sample (ISO 14496-12 8.7.3.3).
+        nibbles = [value for byte in packed for value in (byte >> 4, byte & 0x0F)]
+        sizes = nibbles[:sample_count]
     elif field_size == 8:
         sizes = list(packed)
     elif field_size == 16:
