@@ -9,3 +9,6 @@ __pycache__/
 *.sqlite
 *.sqlite-journal
 *.zip
+
+# macOS metadata
+.DS_Store
