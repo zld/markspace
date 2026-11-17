@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <fstream>
 #include <nlohmann/json.hpp>
+#include <system_error>
 
 #include "fmp4/safe_path.hpp"
 
@@ -157,9 +158,55 @@ InitInfo parse_init_segment(const std::string &abs_path) {
   return info;
 }
 
-// Fragment parsing and build_index arrive in the next batch.
-FragmentIndex build_index(const std::string &) {
-  throw Fmp4Error("build_index not implemented yet");
+// Fragment parsing (fragment_parse.cpp).
+FragmentInfo parse_fragment_file(const std::string &abs_path,
+                                 const InitInfo &init);
+
+FragmentIndex build_index(const std::string &dir) {
+  FragmentIndex idx;
+  idx.root_dir = path::canonical_existing(dir);
+  std::string mp = manifest_path(idx.root_dir);
+  std::ifstream is(mp, std::ios::binary);
+  if (!is) throw Fmp4Error("manifest not found: " + mp, mp, 0);
+  json j;
+  try {
+    is >> j;
+  } catch (const std::exception &e) {
+    throw Fmp4Error(std::string("invalid manifest JSON: ") + e.what(), mp, 0);
+  }
+  if (!j.is_object() || !j.contains("fragments") ||
+      !j["fragments"].is_array())
+    throw Fmp4Error("manifest missing 'fragments' array", mp, 0);
+  std::string init_rel = j.value("init_segment", "init.mp4");
+  idx.init = parse_init_segment(path::join_under(idx.root_dir, init_rel));
+
+  for (const auto &el : j["fragments"]) {
+    if (!el.is_object() || !el.contains("sequence") ||
+        !el.contains("path"))
+      throw Fmp4Error("manifest entry needs sequence and path", mp, 0);
+    FragmentInfo fi;
+    fi.manifest_seq = el["sequence"].get<uint32_t>();
+    fi.rel_path = el["path"].get<std::string>();
+    fi.abs_path = path::join_under(idx.root_dir, fi.rel_path);
+    if (idx.find_manifest(fi.manifest_seq))
+      idx.duplicate_sequences.push_back(fi.manifest_seq);
+    std::error_code ec;
+    if (fs::exists(fi.abs_path, ec) && !ec) {
+      fi.present = true;
+      FragmentInfo parsed = parse_fragment_file(fi.abs_path, idx.init);
+      fi.mfhd_sequence = parsed.mfhd_sequence;
+      fi.file_size = parsed.file_size;
+      fi.moof_offset = parsed.moof_offset;
+      fi.mfhd_offset = parsed.mfhd_offset;
+      fi.mfhd_header_size = parsed.mfhd_header_size;
+      fi.tracks = std::move(parsed.tracks);
+    } else {
+      fi.present = false;
+      idx.missing_sequences.push_back(fi.manifest_seq);
+    }
+    idx.fragments.push_back(std::move(fi));
+  }
+  return idx;
 }
 
 } // namespace fmp4

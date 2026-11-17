@@ -376,3 +376,81 @@ FMP4_TEST(parse_fragment_rejects_unknown_track_and_truncation) {
   FMP4_CHECK(threw);
   fs::remove_all(d);
 }
+
+FMP4_TEST(build_index_detects_missing_and_duplicate) {
+  fs::path d = fs::temp_directory_path() / "fmp4_idx_test";
+  fs::remove_all(d); fs::create_directories(d);
+  // Write a minimal init.mp4 with one trex-backed track (reuse parser shape).
+  auto mk_init = [&] {
+    std::vector<uint8_t> mdhd_p(20, 0);
+    mdhd_p[12] = 0; mdhd_p[13] = 1; mdhd_p[14] = 0x5f; mdhd_p[15] = 0x90;
+    auto mdhd = box("mdhd", mdhd_p);
+    std::vector<uint8_t> hdlr_p(12, 0);
+    hdlr_p[8] = 'v'; hdlr_p[9] = 'i'; hdlr_p[10] = 'd'; hdlr_p[11] = 'e';
+    auto hdlr = box("hdlr", hdlr_p);
+    std::vector<uint8_t> stsd_p;
+    put32(stsd_p, 0); put32(stsd_p, 1);
+    put_bytes(stsd_p, box("avc1", std::vector<uint8_t>(8, 0)));
+    auto stsd = box("stsd", stsd_p);
+    auto stbl = box("stbl", stsd);
+    auto minf = box("minf", stbl);
+    std::vector<uint8_t> mdia_b; put_bytes(mdia_b, mdhd);
+    put_bytes(mdia_b, hdlr); put_bytes(mdia_b, minf);
+    std::vector<uint8_t> tkhd_p(20, 0);
+    tkhd_p[15] = 1;
+    auto tkhd = box("tkhd", tkhd_p);
+    std::vector<uint8_t> trak_b; put_bytes(trak_b, tkhd);
+    put_bytes(trak_b, box("mdia", mdia_b));
+    std::vector<uint8_t> trex_p;
+    put32(trex_p, 0);    // version/flags
+    put32(trex_p, 1);    // track id
+    put32(trex_p, 1);    // sample desc index
+    put32(trex_p, 3000); // default sample duration
+    trex_p.resize(trex_p.size() + 8); // size + flags
+    auto trex = box("trex", trex_p);
+    std::vector<uint8_t> moov_b;
+    put_bytes(moov_b, box("trak", trak_b));
+    put_bytes(moov_b, box("mvex", trex));
+    return box("moov", moov_b);
+  };
+  write_file(d / "init.mp4", mk_init());
+
+  auto mk_frag = [&](uint32_t mfhd_seq, uint32_t track,
+                     const std::string &name) {
+    std::vector<uint8_t> tfhd; put32(tfhd, track);
+    std::vector<uint8_t> trun; put32(trun, 1);
+    put32(trun, 3000); // sample duration (trun flag 0x100)
+    std::vector<uint8_t> traf;
+    put_bytes(traf, fullbox("tfhd", 0, 0, tfhd));
+    put_bytes(traf, fullbox("trun", 0, 0x000100, trun));
+    std::vector<uint8_t> moof_b;
+    put_bytes(moof_b, mfhd(mfhd_seq));
+    put_bytes(moof_b, box("traf", traf));
+    write_file(d / name, box("moof", moof_b));
+  };
+  mk_frag(1, 1, "f1.m4s");
+  mk_frag(2, 1, "f2.m4s");
+  // f3 intentionally omitted; sequence 4 duplicated in the manifest.
+  std::ofstream m(d / "fragments.manifest");
+  m << R"({"init_segment":"init.mp4","fragments":[
+       {"sequence":1,"path":"f1.m4s"},
+       {"sequence":2,"path":"f2.m4s"},
+       {"sequence":3,"path":"f3.m4s"},
+       {"sequence":4,"path":"f4a.m4s"},
+       {"sequence":4,"path":"f4b.m4s"}]})";
+  m.close();
+  mk_frag(4, 1, "f4a.m4s");
+  mk_frag(4, 1, "f4b.m4s");
+
+  auto idx = fmp4::build_index(d.string());
+  FMP4_CHECK(idx.fragments.size() == 5);
+  FMP4_CHECK(idx.missing_sequences.size() == 1);
+  FMP4_CHECK(idx.missing_sequences[0] == 3);
+  FMP4_CHECK(idx.duplicate_sequences.size() == 1);
+  FMP4_CHECK(idx.duplicate_sequences[0] == 4);
+  FMP4_CHECK(idx.fragments[0].present && idx.fragments[0].mfhd_sequence == 1);
+  FMP4_CHECK(!idx.fragments[2].present);
+  FMP4_CHECK(idx.init.tracks[0].timescale == 90000);
+  FMP4_CHECK(idx.find_manifest(2) != nullptr);
+  fs::remove_all(d);
+}
