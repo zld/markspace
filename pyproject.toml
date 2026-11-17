@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "frameaudit"
+version = "0.1.0"
+description = "Offline decode-frame audit and PTS repair tool for action-game replay clips"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "av==18.1.0",
+    "numpy==2.2.6",
+]
+
+[project.scripts]
+frameaudit = "frameaudit.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-dir]
+"" = "src"
