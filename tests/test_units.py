@@ -145,6 +145,34 @@ class ManifestValidationTest(unittest.TestCase):
         with self.assertRaises(AudioError):
             self._load([{"id": "e", "file": "empty.wav",
                          "start_frame": 0}])
+        non_finite = np.zeros((16, 2), dtype=np.float32)
+        non_finite[3, 0] = np.nan
+        non_finite[7, 1] = np.inf
+        sf.write(str(self.dir / "nf.wav"), non_finite, 48000,
+                 subtype="FLOAT", format="WAV")
+        with self.assertRaises(AudioError) as ctx:
+            self._load([{"id": "nf", "file": "nf.wav",
+                         "start_frame": 0}])
+        self.assertIn("nf", str(ctx.exception))
+
+    def test_explicit_matrix_accepts_zero_and_negative_coefficients(self) -> None:
+        tone = np.ones((8, 2), dtype=np.float32) * 0.5
+        sf.write(str(self.dir / "tone.wav"), tone, 48000)
+        manifest = {
+            "target_rate": 48000, "total_frames": 16, "channels": 1,
+            "tracks": [{
+                "id": "mix", "file": "tone.wav", "start_frame": 0,
+                "channel_matrix": [[-1.0], [0.5]],
+            }],
+        }
+        path = self.dir / "matrix.json"
+        path.write_text(json.dumps(manifest))
+        loaded = load_manifest(path)
+        graph = build_graph(loaded)
+        master = graph.evaluate_block(0, 16)
+        # -1.0*0.5 + 0.5*0.5 == -0.25 while the track is active
+        self.assertTrue(np.isclose(master[0, 0], -0.25))
+        self.assertTrue(np.all(master[8:] == 0.0))
 
 
 class GraphTest(unittest.TestCase):
