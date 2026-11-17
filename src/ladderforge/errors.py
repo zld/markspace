@@ -55,6 +55,12 @@ class TaskError(LadderForgeError):
     exit_code = EXIT_FAILURE
 
 
+class CancelledError(TaskError):
+    """A task was stopped on purpose and should return to the queue."""
+
+    exit_code = EXIT_INTERRUPTED
+
+
 class NonMonotonicLadderError(LadderForgeError):
     """A monotonic ladder could not be constructed."""
 

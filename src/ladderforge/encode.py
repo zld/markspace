@@ -17,7 +17,7 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
-from .errors import EncoderUnavailableError, TaskError
+from .errors import CancelledError, EncoderUnavailableError, TaskError
 from .plan import JobSpec, Resolution
 from .synth import SourceClip
 
@@ -214,7 +214,7 @@ def encode(
 
     if cancelled:
         _unlink_quiet(temp_path)
-        raise TaskError("cancelled")
+        raise CancelledError("cancelled")
     if timed_out:
         _unlink_quiet(temp_path)
         raise TaskError(f"ffmpeg timed out after {timeout:.0f}s")
