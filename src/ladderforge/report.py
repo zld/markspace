@@ -21,14 +21,11 @@ class ReportPayload:
     ladder: dict[str, object] | None
     failed: list[dict[str, object]]
 
+    def to_dict(self) -> dict[str, object]:
+        return {"run": self.run, "ladder": self.ladder, "failed": self.failed}
+
     def to_json(self) -> str:
-        return json.dumps(self, default=_as_json, indent=2, sort_keys=True)
-
-
-def _as_json(value):
-    if hasattr(value, "to_dict"):
-        return value.to_dict()
-    raise TypeError(f"cannot serialise {type(value).__name__}")
+        return json.dumps(self.to_dict(), indent=2, sort_keys=True)
 
 
 def build_payload(

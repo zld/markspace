@@ -68,10 +68,11 @@ class Ladder:
 
 
 # A candidate may serve a target only if its actual bitrate is within this
-# ratio of the target.  Without a band the DP can "cheat" monotonicity by
-# assigning a far-off encode to a tier, producing a ladder that is monotone
-# but useless (and would silently accept a PSNR regression).
-ELIGIBILITY_RATIO = 2.0
+# ratio of the target.  Short clips overshoot badly at low targets, so the band
+# is generous; it still prevents serving a 250 kbps rung with a 1 Mbps encode.
+# Without a band the DP can satisfy monotonicity by assigning far-off encodes
+# to low tiers, which would hide a real PSNR regression.
+ELIGIBILITY_RATIO = 3.0
 
 
 def _eligible(candidate: Candidate, target_bps: int) -> bool:
@@ -81,11 +82,13 @@ def _eligible(candidate: Candidate, target_bps: int) -> bool:
     return 1.0 / ELIGIBILITY_RATIO <= ratio <= ELIGIBILITY_RATIO
 
 
-def _compatible(previous: Candidate, current: Candidate) -> bool:
-    # "Must not fall": equal actual bitrate is permitted, so two adjacent
-    # targets may legitimately share the same candidate.  Each target still
-    # keeps its own rung record.
-    if current.actual_bps < previous.actual_bps:
+def _compatible(previous: Candidate, current: Candidate, *, strict: bool) -> bool:
+    if strict:
+        if current.actual_bps <= previous.actual_bps:
+            return False
+    elif current.actual_bps < previous.actual_bps:
+        # "Must not fall": equal bitrate is permitted, letting two adjacent
+        # targets share a candidate while each keeps its own rung record.
         return False
     return current.quality_psnr_db >= previous.quality_psnr_db - _EPS
 
@@ -96,7 +99,9 @@ def _cost(candidate: Candidate, target_bps: int) -> float:
     return abs(candidate.actual_bps - target_bps) * 1000.0 - candidate.quality_psnr_db
 
 
-def _select(candidates: Sequence[Candidate], target_bps: Sequence[int]) -> list[Candidate] | None:
+def _select(
+    candidates: Sequence[Candidate], target_bps: Sequence[int], *, strict: bool
+) -> list[Candidate] | None:
     """DP: minimise total |actual-target| under monotonic constraints."""
     if not candidates:
         return None
@@ -121,7 +126,7 @@ def _select(candidates: Sequence[Candidate], target_bps: Sequence[int]) -> list[
                 for prev in range(count):
                     if previous_cost[prev] == float("inf"):
                         continue
-                    if not _compatible(candidates[prev], candidates[current]):
+                    if not _compatible(candidates[prev], candidates[current], strict=strict):
                         continue
                     total = previous_cost[prev] + _cost(candidates[current], target)
                     if total < best:
@@ -158,7 +163,13 @@ def build_ladder(
     ordered_tiers = sorted(targets, key=lambda tier: tier.target_bps)
     target_values = [tier.target_bps for tier in ordered_tiers]
 
-    selection = _select(candidates, target_values)
+    # Prefer a strictly climbing ladder (each target maps to a higher actual
+    # bitrate).  Only when that is impossible do we allow adjacent targets to
+    # share one candidate; the spec explicitly permits that with separate
+    # records per target.
+    selection = _select(candidates, target_values, strict=True)
+    if selection is None:
+        selection = _select(candidates, target_values, strict=False)
     if selection is None:
         closest = []
         for value in target_values:

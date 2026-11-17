@@ -210,6 +210,8 @@ def encode(
         time.sleep(0.05)
 
     stderr_tail = _drain(proc.stderr).strip()[-800:]
+    if proc.stderr is not None:
+        proc.stderr.close()
     returncode = proc.wait()
 
     if cancelled:
