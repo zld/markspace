@@ -118,3 +118,33 @@ def write_json(path: Path, payload: dict, force: bool) -> None:
     except OSError as exc:
         tmp_path.unlink(missing_ok=True)
         raise WriteError(f"failed to write JSON {path}: {exc}") from exc
+
+
+def write_render_bundle(
+    output_dir: Path,
+    stem: str,
+    samples: np.ndarray,
+    sample_rate: int,
+    report: dict,
+    force: bool,
+) -> tuple[Path, Path]:
+    """Write the WAV and JSON report as an all-or-nothing overwrite unit.
+
+    Both destinations are checked for an existing file *before* any byte
+    is written, so a refusal on the JSON cannot leave a freshly written
+    WAV behind (and vice versa).
+    """
+    output_dir = Path(output_dir)
+    wav_path = output_dir / f"{stem}.wav"
+    json_path = output_dir / f"{stem}.json"
+    refuse_overwrite(wav_path, force)
+    refuse_overwrite(json_path, force)
+    write_wav(wav_path, samples, sample_rate, force=True)
+    try:
+        write_json(json_path, report, force=True)
+    except WriteError:
+        # Roll back the WAV we just created so the bundle stays atomic
+        # relative to the pre-render state.
+        wav_path.unlink(missing_ok=True)
+        raise
+    return wav_path, json_path

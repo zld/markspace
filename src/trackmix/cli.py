@@ -134,7 +134,7 @@ def _automation_samples(manifest: Manifest) -> list[dict]:
 
 
 def _execute(manifest: Manifest, args: argparse.Namespace) -> dict:
-    from .io_utils import write_json, write_wav
+    from .io_utils import write_render_bundle
     from .offline import evaluate_offline
 
     graph = build_graph(manifest)
@@ -148,14 +148,10 @@ def _execute(manifest: Manifest, args: argparse.Namespace) -> dict:
         report["stream_check"] = verify_against_offline(
             master, graph, manifest.total_frames, args.block_frames
         )
-    output_dir = Path(args.output_dir)
-    write_wav(
-        output_dir / f"{args.stem}.wav",
-        master,
-        manifest.target_rate,
-        args.force,
+    write_render_bundle(
+        Path(args.output_dir), args.stem, master,
+        manifest.target_rate, report, args.force,
     )
-    write_json(output_dir / f"{args.stem}.json", report, args.force)
     return report
 
 

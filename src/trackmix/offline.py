@@ -8,7 +8,7 @@ import numpy as np
 
 from . import metrics
 from .graph import Graph, TrackNode
-from .io_utils import write_json, write_wav
+from .io_utils import write_render_bundle
 
 
 def collect_track_metrics(graph: Graph) -> list[dict]:
@@ -71,7 +71,7 @@ def run_offline(
 ) -> tuple[np.ndarray, dict]:
     """Evaluate the entire timeline in one block and persist outputs."""
     master, report = evaluate_offline(graph, total_frames, target_rate)
-    output_dir = Path(output_dir)
-    write_wav(output_dir / f"{stem}.wav", master, target_rate, force)
-    write_json(output_dir / f"{stem}.json", report, force)
+    write_render_bundle(
+        Path(output_dir), stem, master, target_rate, report, force
+    )
     return master, report
