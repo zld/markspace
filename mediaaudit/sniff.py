@@ -7,6 +7,7 @@ type is derived from magic bytes, never from the file extension.
 from __future__ import annotations
 
 import os
+import stat
 
 EBML_MAGIC = b"\x1a\x45\xdf\xa3"
 DEFAULT_MAX_BYTES = 512 * 1024 * 1024
@@ -36,9 +37,7 @@ def _check_path(path: str, base_dir: str, max_bytes: int) -> int:
         st = os.stat(path, follow_symlinks=False)
     except OSError as exc:
         raise SniffError(f"cannot stat {path}: {exc.strerror or exc}") from exc
-    import stat as statmod
-
-    if not statmod.S_ISREG(st.st_mode):
+    if not stat.S_ISREG(st.st_mode):
         raise SniffError(f"not a regular file: {path}")
     if st.st_size > max_bytes:
         raise SniffError(f"file exceeds size limit ({st.st_size} > {max_bytes} bytes): {path}")
