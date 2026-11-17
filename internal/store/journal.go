@@ -66,12 +66,13 @@ type Parameters struct {
 	TotalFrames       int     `json:"total_frames"`
 }
 type Checkpoint struct {
-	Version    int                `json:"version"`
-	Params     Parameters         `json:"parameters"`
-	Jobs       map[string]*Job    `json:"jobs"`
-	CreatedAt  time.Time          `json:"created_at"`
-	UpdatedAt  time.Time          `json:"updated_at"`
-	Interrupted bool              `json:"interrupted"`
+	Version     int             `json:"version"`
+	Params      Parameters      `json:"parameters"`
+	Jobs        map[string]*Job `json:"jobs"`
+	DoneSegs    map[int]int     `json:"done_segments"`
+	CreatedAt   time.Time       `json:"created_at"`
+	UpdatedAt   time.Time       `json:"updated_at"`
+	Interrupted bool            `json:"interrupted"`
 }
 var ErrFingerprintMismatch = errors.New("checkpoint parameters do not match; refusing to mix runs")
 type Store struct {
@@ -80,6 +81,7 @@ type Store struct {
 	journal   *os.File
 	writer    *bufio.Writer
 	cp        *Checkpoint
+	recovered int
 }
 const (
 	dirMode    = 0o755
@@ -104,10 +106,11 @@ func Open(dir string, params Parameters) (*Store, error) {
 		return nil, fmt.Errorf("store: open journal: %w", err)
 	}
 	st := &Store{
-		dir:     dir,
-		journal: jf,
-		writer:  bufio.NewWriterSize(jf, 1<<16),
-		cp:      cp,
+		dir:       dir,
+		journal:   jf,
+		writer:    bufio.NewWriterSize(jf, 1<<16),
+		cp:        cp,
+		recovered: requeued,
 	}
 	if requeued > 0 {
 		err = st.persistLocked()

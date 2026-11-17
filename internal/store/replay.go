@@ -41,6 +41,7 @@ func replay(jPath string, cp *Checkpoint) (int, error) {
 			requeued++
 		}
 	}
+	cp.Interrupted = true
 	return requeued, nil
 }
 
@@ -77,6 +78,11 @@ func applyEvent(cp *Checkpoint, ev *Event) {
 		}
 	case EvRunInterrupt:
 		cp.Interrupted = true
+	case EvSegmentDone:
+		if cp.DoneSegs == nil {
+			cp.DoneSegs = map[int]int{}
+		}
+		cp.DoneSegs[ev.Segment] = ev.QP
 	}
 }
 
