@@ -197,3 +197,167 @@ class Scheduler:
         if self._heartbeat is not None:
             return
 
+        def beat() -> None:
+            while not self.control.stopped:
+                time.sleep(HEARTBEAT_SECONDS)
+                for key, worker in self._inflight.snapshot():
+                    if self.control.stopped:
+                        return
+                    try:
+                        self.store.renew(key, worker, LEASE_SECONDS)
+                    except StoreLockError:
+                        continue
+
+        self._heartbeat = threading.Thread(
+            target=beat, name="ladderforge-heartbeat", daemon=True
+        )
+        self._heartbeat.start()
+
+    # -- job execution ---------------------------------------------------
+    def _process(self, row, worker_id: str, frames: int) -> bool:
+        key = str(row["task_key"])
+        resolution = Resolution(int(row["width"]), int(row["height"]))
+        bitrate = int(row["bitrate_kbps"])
+        preset = str(row["preset"])
+        label = resolution.label
+        try:
+            clip = self.clips[resolution]
+            job = JobSpec(resolution=resolution, bitrate_kbps=bitrate, preset=preset)
+            out_path = self._output_path(
+                PlannedJob(
+                    job=job,
+                    source_sha256=str(row["source_sha256"]),
+                    ffmpeg_version=str(row["ffmpeg_version"]),
+                    frames=frames,
+                    fps=int(row["fps"]),
+                    key=key,
+                )
+            )
+            outcome = encode(
+                self.encoder,
+                clip,
+                job,
+                output_path=out_path,
+                worker_id=worker_id,
+                cancel_check=lambda: self.control.stopped,
+            )
+            measurement = measure(
+                self.encoder,
+                outcome.output_path,
+                resolution,
+                frames=frames,
+                reference_luma=self._reference(resolution),
+                timeout=120.0,
+            )
+            if self.control.stopped:
+                return False
+            committed = self._store_call(
+                self.store.complete,
+                task_key=key,
+                worker_id=worker_id,
+                actual_bps=measurement.actual_bps,
+                quality_psnr_db=measurement.quality_psnr_db,
+                encoded_bytes=measurement.encoded_bytes,
+                duration_s=measurement.duration_s,
+                output_path=str(outcome.output_path),
+            )
+            if not committed:
+                self._record_error(key, label, bitrate, preset, "lease lost before commit")
+            return bool(committed)
+        except CancelledError:
+            # Deliberate stop: hand the job back without recording a failure.
+            try:
+                self._store_call(self.store.release, key, worker_id, "interrupted")
+            except StoreLockError as exc:
+                self._record_error(key, label, bitrate, preset, f"release failed: {exc}")
+            return False
+        except TaskError as exc:
+            self._fail(key, worker_id, label, bitrate, preset, str(exc))
+            return False
+        except StoreLockError as exc:
+            self._fail(key, worker_id, label, bitrate, preset, f"database lock: {exc}")
+            return False
+        except Exception as exc:  # noqa: BLE001 - isolate per-job failures
+            self._fail(
+                key, worker_id, label, bitrate, preset, f"{type(exc).__name__}: {exc}"
+            )
+            return False
+
+    def _fail(self, key: str, worker_id: str, label: str, bitrate: int, preset: str, error: str) -> None:
+        self._record_error(key, label, bitrate, preset, error)
+        try:
+            self._store_call(self.store.fail, key, worker_id, error[:800])
+        except StoreLockError as exc:
+            self._record_error(key, label, bitrate, preset, f"could not record failure: {exc}")
+
+    # -- worker loop -----------------------------------------------------
+    def _worker(self, index: int, limit: _Limit, frames: int) -> None:
+        worker_id = f"w{index}"
+        try:
+            while not self.control.stopped:
+                if not self.control.wait_until_runnable():
+                    break
+                if not limit.take():
+                    break
+                try:
+                    rows = self._store_call(
+                        self.store.claim,
+                        worker_id,
+                        limit=1,
+                        lease_seconds=LEASE_SECONDS,
+                    )
+                except StoreLockError as exc:
+                    self._record_error("", "claim", 0, worker_id, f"claim failed: {exc}")
+                    break
+                if not rows:
+                    break
+                for row in rows:
+                    self._inflight.add(str(row["task_key"]), worker_id)
+                    try:
+                        self._process(row, worker_id, frames)
+                    finally:
+                        self._inflight.discard(str(row["task_key"]))
+                if self.control.stopped:
+                    break
+        finally:
+            self.store.release_owned(worker_id, "worker stopped")
+
+    # -- entry point -----------------------------------------------------
+    def run(self, *, workers: int, limit_jobs: int | None = None) -> RunSummary:
+        total = len(self.jobs)
+        keys = tuple(job.key for job in self.jobs)
+        reused = len(self.store.completed_keys(keys))
+        before_completed = reused
+
+        self._start_heartbeat()
+        limit = _Limit(limit_jobs if limit_jobs and limit_jobs > 0 else None)
+        threads = [
+            threading.Thread(
+                target=self._worker,
+                args=(i + 1, limit, self.jobs[0].frames),
+                name=f"ladderforge-worker-{i + 1}",
+                daemon=True,
+            )
+            for i in range(workers)
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            while thread.is_alive():
+                thread.join(timeout=0.2)
+
+        counts = self.store.state_counts(keys)
+        completed = counts["completed"]
+        summary = RunSummary(
+            jobs_total=total,
+            completed=completed,
+            pending=counts["pending"],
+            failed=counts["failed"],
+            running=counts["running"],
+            reused=before_completed,
+            newly_completed=max(0, completed - before_completed),
+            state=_state_from_counts(completed, total, counts["failed"]),
+            errors=list(self._errors),
+            stop_reason=self.control.stop_reason,
+        )
+        return summary
