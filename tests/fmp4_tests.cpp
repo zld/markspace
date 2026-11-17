@@ -13,6 +13,7 @@
 #include "fmp4/safe_path.hpp"
 #include "fmp4/validator.hpp"
 #include "fmp4/repacker.hpp"
+#include "fmp4/fixture_writer.hpp"
 
 namespace fs = std::filesystem;
 
@@ -638,4 +639,78 @@ FMP4_TEST(repack_rewrites_mfhd_and_preserves_bytes) {
   FMP4_CHECK(!fs::exists(out2));
   fs::remove_all(base); fs::remove_all(out);
   fs::remove_all(base2); fs::remove_all(out2);
+}
+
+FMP4_TEST(fixture_writer_two_tracks_mixed_versions_and_gap) {
+  using namespace fmp4;
+  fs::path d = fs::temp_directory_path() / "fmp4_fixture_ok";
+  fs::remove_all(d);
+  fixture::Options opt;
+  opt.dir = d.string();
+  opt.segments = 6;
+  opt.mixed_versions = true;
+  opt.mfhd_gap_at = 4;
+  auto seqs = fixture::write_fixture(opt);
+  FMP4_CHECK(seqs.size() == 6);
+  // 101,102,103, then a skip at segment 4, then 105,106.
+  FMP4_CHECK(seqs[0] == 101 && seqs[2] == 103 && seqs[3] == 105);
+  FMP4_CHECK(seqs[5] == 107);
+
+  auto idx = build_index(d.string());
+  FMP4_CHECK(idx.fragments.size() == 6);
+  FMP4_CHECK(idx.missing_sequences.empty());
+  FMP4_CHECK(idx.init.tracks.size() == 2);
+  FMP4_CHECK(idx.init.tracks[0].timescale == 90000);
+  FMP4_CHECK(idx.init.tracks[1].timescale == 48000);
+  auto rep = validate_index(idx);
+  FMP4_CHECK(!rep.mfhd_contiguous);
+  FMP4_CHECK(rep.mfhd_gaps.size() == 1 && rep.mfhd_gaps[0] == 104);
+  const auto *v = rep.timeline(1);
+  const auto *a = rep.timeline(2);
+  FMP4_CHECK(v && a);
+  FMP4_CHECK(v->decode_start == 0);
+  FMP4_CHECK(v->total_duration == 6 * 3000);
+  FMP4_CHECK(a->total_duration == 6 * 1024);
+  FMP4_CHECK(ticks_to_seconds(v->total_duration, 90000) == 0.2);
+  fs::remove_all(d);
+}
+
+FMP4_TEST(fixture_writer_omit_corrupt_and_incompatible) {
+  using namespace fmp4;
+  fs::path d = fs::temp_directory_path() / "fmp4_fixture_bad";
+  fs::remove_all(d);
+  fixture::Options opt;
+  opt.dir = d.string();
+  opt.segments = 6;
+  opt.omit_file_for_seq = 4;
+  fixture::write_fixture(opt);
+  auto idx = build_index(d.string());
+  FMP4_CHECK(idx.missing_sequences.size() == 1);
+  FMP4_CHECK(idx.missing_sequences[0] == 4);
+  FMP4_CHECK(!idx.fragments[3].present);
+  fs::remove_all(d);
+
+  fs::path d2 = fs::temp_directory_path() / "fmp4_fixture_corrupt";
+  fs::remove_all(d2);
+  fixture::Options c;
+  c.dir = d2.string();
+  c.segments = 3;
+  c.corrupt_length_at = 2;
+  fixture::write_fixture(c);
+  bool threw = false;
+  try { build_index(d2.string()); }
+  catch (const Fmp4Error &) { threw = true; }
+  FMP4_CHECK(threw);
+  fs::remove_all(d2);
+
+  fs::path d3 = fs::temp_directory_path() / "fmp4_fixture_incompat";
+  fs::remove_all(d3);
+  fixture::Options g;
+  g.dir = d3.string();
+  g.segments = 2;
+  g.incompatible_init = true;
+  fixture::write_fixture(g);
+  auto bad_init = parse_init_segment((d3 / "init.mp4").string());
+  FMP4_CHECK(bad_init.tracks[0].sample_entry == FOURCC("encv"));
+  fs::remove_all(d3);
 }
