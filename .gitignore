@@ -1,0 +1,13 @@
+# Local workspaces and run artifacts
+/workspace/
+*.y4m
+*.m4v
+*.mp4
+checkpoint.json
+events.jsonl
+# Build outputs
+/rateqa
+/rateqa-check/
+# Editor/OS noise
+.DS_Store
+*.swp
