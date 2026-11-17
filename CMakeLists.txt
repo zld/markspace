@@ -13,6 +13,7 @@ add_library(tl_core STATIC
   src/generators.cpp
   src/ppm_writer.cpp
   src/renderer.cpp
+  src/demo_factory.cpp
 )
 target_include_directories(tl_core PUBLIC include)
 
