@@ -95,10 +95,13 @@ def _parse_stsd(data: bytes, s: int, e: int, track_type: str):
     codec = table.get(raw, f"unknown:{raw}")
     sample_rate = channels = None
     if track_type == "audio":
-        if entry + 28 > e:
+        # AudioSampleEntry: size+format (8), reserved (6),
+        # data_reference_index (2), reserved (8), then channelcount,
+        # samplesize, pre_defined, reserved, samplerate (16.16 fixed).
+        if entry + 36 > e:
             raise MP4Error("truncated audio sample entry")
-        channels = struct.unpack_from(">H", data, entry + 16)[0]
-        sample_rate = struct.unpack_from(">I", data, entry + 24)[0] >> 16
+        channels = struct.unpack_from(">H", data, entry + 24)[0]
+        sample_rate = struct.unpack_from(">I", data, entry + 32)[0] >> 16
     return codec, raw, sample_rate, channels
 
 
