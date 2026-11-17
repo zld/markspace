@@ -4,9 +4,8 @@ Container muxers reject non-monotonic packet timestamps, so the four replay
 fault classes cannot all be embedded reliably at the container level.
 Instead the fixture is built as two deterministic artefacts:
 
-1. a clean H.264 clip (regular GOP, real I/P/B frames) re-muxed into a
-   Matroska body carried under the demo's ``.mp4`` extension — PyAV/FFmpeg
-   probe container format by content;
+1. a clean H.264 clip (regular GOP, real I/P/B frames) re-muxed into an
+   MP4 container on an exact 90 kHz time base;
 2. a sidecar manifest (``.faults.json``) describing, by **presentation
    position**, which timestamp faults to apply.
 
@@ -29,15 +28,18 @@ import numpy as np
 from .errors import OutputError, UsageError
 
 FAULT_ORDER = ("missing", "backward", "jump", "duplicate")
-FIXTURE_TIME_BASE = Fraction(1, 1000)
+# 90 kHz is the classic MPEG time base: 30 fps maps to an exact 3000-tick
+# frame step, so every timestamp and the repaired cadence stay rational with
+# no millisecond rounding error.
+FIXTURE_TIME_BASE = Fraction(1, 90000)
+FRAME_STEP_TICKS = 3000
 GOP_SIZE = 25
 MAX_B_FRAMES = 3
-# Jump distortion in frame durations.  A +2 frame shift opens a gap of three
-# frame durations (100 ms at 30 fps) without colliding with the next frame's
-# PTS, so it produces exactly one ``jump`` repair with no cascade.  The gap
-# exceeds the 1.5x repair threshold (50 ms); the repair restores the normal
-# 33.3 ms per-frame cadence.
-JUMP_SHIFT_FRAMES = 2
+# Jump distortion in frame durations.  A +1 frame shift makes the gap twice a
+# normal frame duration (66.7 ms at 30 fps), which just crosses the 1.5x
+# repair threshold (50 ms).  The excess over one frame duration is therefore
+# exactly one frame interval — the 33.3 ms reported as max_jump_ms.
+JUMP_SHIFT_FRAMES = 1
 # Backward distortion in frame durations.
 BACKWARD_SHIFT_FRAMES = 2
 
@@ -47,17 +49,29 @@ def _fault_positions(frame_count: int, faults: int) -> dict[int, str]:
         raise UsageError(
             f"cannot inject {faults} faults into {frame_count} frames"
         )
-    # Interior IDR positions are stable anchors; one fault per fault class.
-    idr_positions = list(range(GOP_SIZE, frame_count, GOP_SIZE))
-    if len(idr_positions) < faults:
-        raise UsageError(
-            f"need at least {faults} interior IDR frames for fault injection, "
-            f"clip of {frame_count} frames only has {len(idr_positions)}"
-        )
     chosen: dict[int, str] = {}
-    for n in range(faults):
-        idx = (n * len(idr_positions)) // faults
-        chosen[idr_positions[idx]] = FAULT_ORDER[n % len(FAULT_ORDER)]
+    kinds = [FAULT_ORDER[n % len(FAULT_ORDER)] for n in range(faults)]
+
+    # A +1-frame jump shares a PTS with the following frame, which would read
+    # as a second (duplicate) repair.  Placing the jump on the final frame
+    # removes the follower, so the jump is the sole repair at that position.
+    if "jump" in kinds:
+        chosen[frame_count - 1] = "jump"
+        kinds.remove("jump")
+
+    # Remaining faults land on well-separated interior IDR frames.
+    interior = [k for k in kinds if k != "jump"]
+    if interior:
+        idr_positions = list(range(GOP_SIZE, frame_count - 1, GOP_SIZE))
+        if len(idr_positions) < len(interior):
+            raise UsageError(
+                f"need at least {len(interior)} interior IDR frames for fault "
+                f"injection, clip of {frame_count} frames only has "
+                f"{len(idr_positions)}"
+            )
+        for n, kind in enumerate(interior):
+            idx = (n * len(idr_positions)) // max(len(interior), 1)
+            chosen[idr_positions[idx]] = kind
     return chosen
 
 
@@ -118,7 +132,7 @@ def _remux_clean(raw_path: Path, out_path: Path, frame_count: int) -> None:
     src = av.open(str(raw_path))
     try:
         src_stream = src.streams.video[0]
-        dst = av.open(str(out_path), "w", format="matroska")
+        dst = av.open(str(out_path), "w", format="mp4")
         try:
             dst_stream = dst.add_stream_from_template(src_stream)
             packets = [
@@ -128,7 +142,7 @@ def _remux_clean(raw_path: Path, out_path: Path, frame_count: int) -> None:
                 pres = pres_of_packet[n]
                 packet.stream = dst_stream
                 packet.time_base = FIXTURE_TIME_BASE
-                packet.pts = pres * round(1000 / 30)  # ms, 30 fps base
+                packet.pts = pres * FRAME_STEP_TICKS  # exact 30 fps grid
                 packet.dts = None
                 dst.mux(packet)
         finally:
@@ -178,7 +192,7 @@ def generate_fixture(
             "media": out_path.name,
             "frame_count": frame_count,
             "fps": fps,
-            "time_base": "1/1000",
+            "time_base": "1/90000",
             "faults": [
                 {
                     "presentation_position": pos,

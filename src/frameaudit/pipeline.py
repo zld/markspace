@@ -42,6 +42,12 @@ def process_file(
     decoded = list(iter_decoded_frames(container, stream))
     ordered = list(reorder_frames(decoded, limit=reorder_limit))
 
+    # Auto-discover a sidecar manifest next to the media when none is given.
+    if faults_manifest is None:
+        candidate = input_path.with_suffix(".faults.json")
+        if candidate.is_file():
+            faults_manifest = candidate
+
     if faults_manifest is not None:
         manifest = load_manifest(faults_manifest)
         ordered = apply_faults(ordered, manifest, frame_rate)

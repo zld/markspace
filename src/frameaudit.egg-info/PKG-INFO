@@ -1,0 +1,30 @@
+Metadata-Version: 2.4
+Name: frameaudit
+Version: 0.1.0
+Summary: Offline decode-frame audit and PTS repair tool for action-game replay clips
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: av==18.1.0
+Requires-Dist: numpy==2.2.6
+
+# frameaudit
+
+Offline decode-frame audit and PTS repair tool for action-game replay clips.
+
+It decodes local video files with PyAV, performs a bounded stable reorder of
+decoded frames, repairs missing / duplicate / backwards / over-threshold PTS
+values using rational time-base arithmetic, collects frame-type and NumPy
+luminance statistics, and emits a terminal summary plus an optional per-frame
+JSONL repair manifest.
+
+## Usage
+
+```bash
+python -m frameaudit fixture --out clip.mp4 --frames 120 --fps 30 --faults 4
+python -m frameaudit scan --input clip.mp4 --fps 30 --format json \
+    --frames-out frames.jsonl
+python -m frameaudit scan --input clips/ --format json
+```
+
+Exit codes: `0` success, `1` media processing failure, `2` parameter error,
+`3` output error.

@@ -138,7 +138,10 @@ def repair_timestamps(
             reason_counts[reason] = reason_counts.get(reason, 0) + 1
             if reason == "jump":
                 assert original_sec is not None and prev_sec is not None
-                jump_ms = _ms(original_sec - prev_sec)
+                # Report the excess over one normal frame duration, i.e. the
+                # amount of timeline the jump inserted beyond regular cadence.
+                excess = (original_sec - prev_sec) - frame_duration
+                jump_ms = _ms(excess)
                 max_jump_ms = jump_ms if max_jump_ms is None else max(
                     max_jump_ms, jump_ms
                 )

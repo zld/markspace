@@ -38,7 +38,7 @@ def apply_faults(
     Frames are copied (shallowly) so the original decode output stays
     untouched; only the ``pts`` field is mutated on the copies.
     """
-    step_ms = Fraction(1000, 1) / frame_rate  # ms per frame
+    step_ticks = frames[0].time_base.denominator / frame_rate  # ticks/frame
     by_position = {
         entry["presentation_position"]: entry for entry in manifest["faults"]
     }
@@ -54,11 +54,11 @@ def apply_faults(
 
         kind = entry.get("kind")
         shift = int(entry.get("shift_frames", 0))
-        # Work in milliseconds, the fixture's shared time base.
-        base_ms = (
-            frame.pts * frame.time_base * 1000
+        # Work in the frame's own tick time base (exact rational arithmetic).
+        base_ticks = (
+            Fraction(frame.pts)
             if frame.pts is not None
-            else Fraction(order_index) * step_ms
+            else Fraction(order_index) * step_ticks
         )
         new_frame = DecodedFrame(
             decode_index=frame.decode_index,
@@ -75,11 +75,9 @@ def apply_faults(
         if kind == "missing":
             new_frame.pts = None
         elif kind == "backward":
-            shifted = base_ms - Fraction(shift) * step_ms
-            new_frame.pts = round(shifted / (frame.time_base * 1000))
+            new_frame.pts = round(base_ticks - Fraction(shift) * step_ticks)
         elif kind == "jump":
-            shifted = base_ms + Fraction(shift) * step_ms
-            new_frame.pts = round(shifted / (frame.time_base * 1000))
+            new_frame.pts = round(base_ticks + Fraction(shift) * step_ticks)
         elif kind == "duplicate":
             new_frame.pts = previous_pts
         else:
