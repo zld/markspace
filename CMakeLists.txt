@@ -13,6 +13,7 @@ add_compile_options(-Wall -Wextra -Wpedantic)
 
 add_library(tl_core
   src/frame_buffer.cpp
+  src/ppm.cpp
 )
 target_include_directories(tl_core PUBLIC include)
 
