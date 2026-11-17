@@ -15,6 +15,7 @@ add_library(tl_core
   src/frame_buffer.cpp
   src/ppm.cpp
   src/transition.cpp
+  src/timeline.cpp
 )
 target_include_directories(tl_core PUBLIC include)
 
