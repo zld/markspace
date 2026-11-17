@@ -213,5 +213,60 @@ class VerifyFailureTest(unittest.TestCase):
                 verify_against_offline(corrupted, graph, 128, 7)
 
 
+class CliExitCodeTest(unittest.TestCase):
+    def test_parameter_errors_return_exit_2(self) -> None:
+        from trackmix.cli import main
+
+        self.assertEqual(main(["demo", "--tracks", "0"]), 2)
+        self.assertEqual(main(["demo", "--block-frames", "-1"]), 2)
+        self.assertEqual(main(["demo", "--frames", "abc"]), 2)
+        self.assertEqual(main([]), 2)
+
+    def test_write_failure_returns_exit_4(self) -> None:
+        from trackmix.cli import main
+
+        with tempfile.TemporaryDirectory() as tmp:
+            locked = Path(tmp) / "locked"
+            locked.mkdir()
+            os.chmod(locked, stat.S_IRUSR | stat.S_IXUSR)
+            try:
+                code = main([
+                    "demo", "--output-dir", str(locked / "out"),
+                    "--seed", "1", "--frames", "1200", "--tracks", "2",
+                ])
+                self.assertEqual(code, 4)
+            finally:
+                os.chmod(locked, stat.S_IRWXU)
+
+    def test_verification_failure_returns_exit_5(self) -> None:
+        from trackmix import cli as cli_module
+        from trackmix.cli import main
+
+        def boom(*_args, **_kwargs):
+            raise StreamVerifyError("forced divergence")
+
+        original = cli_module.verify_against_offline
+        cli_module.verify_against_offline = boom
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                wav = Path(tmp) / "a.wav"
+                sf.write(str(wav), np.ones((32, 1)) * 0.1, 48000)
+                manifest = {
+                    "target_rate": 48000, "total_frames": 64,
+                    "channels": 1,
+                    "tracks": [{"id": "a", "file": "a.wav",
+                                "start_frame": 0}],
+                }
+                manifest_path = Path(tmp) / "m.json"
+                manifest_path.write_text(json.dumps(manifest))
+                code = main([
+                    "mix", str(manifest_path), "--verify-stream",
+                    "--output-dir", str(Path(tmp) / "render"),
+                ])
+                self.assertEqual(code, 5)
+        finally:
+            cli_module.verify_against_offline = original
+
+
 if __name__ == "__main__":
     unittest.main()
