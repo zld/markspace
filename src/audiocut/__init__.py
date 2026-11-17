@@ -5,14 +5,6 @@ The package is fully local: it only depends on the Python standard library
 detector is used; the detection algorithm lives in :mod:`audiocut.detector`.
 """
 
-from .wavio import WavFormatError, WavInfo, WavReader, WavWriter, copy_segment
-
-__all__ = [
-    "WavFormatError",
-    "WavInfo",
-    "WavReader",
-    "WavWriter",
-    "copy_segment",
-]
-
 __version__ = "0.1.0"
+
+__all__ = ["__version__"]
