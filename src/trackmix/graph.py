@@ -144,7 +144,6 @@ class TrackNode(Node):
 
     def evaluate(self, start: int, length: int, *ignored: object) -> np.ndarray:
         rt = self.runtime
-        end_frame = self.start_frame + self.resampled_len
         local_start = start - self.start_frame
         local_end = start + length - self.start_frame
         overlap = max(0, min(local_end, self.resampled_len)
