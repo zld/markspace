@@ -12,6 +12,7 @@ add_library(tl_core STATIC
   src/transition_kernel.cpp
   src/generators.cpp
   src/ppm_writer.cpp
+  src/renderer.cpp
 )
 target_include_directories(tl_core PUBLIC include)
 
