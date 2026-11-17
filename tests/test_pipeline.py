@@ -12,24 +12,17 @@ import unittest
 from pathlib import Path
 
 from ladderforge.__main__ import main
-from ladderforge.encode import EncoderInfo, detect_encoder
-from ladderforge.errors import EXIT_FAILURE, EXIT_INTERRUPTED, EXIT_OK
+from ladderforge.encode import detect_encoder
+from ladderforge.errors import EXIT_FAILURE, EXIT_OK
 from ladderforge.ladder import Candidate, build_ladder
 from ladderforge.measure import compute_psnr, measure, probe
-from ladderforge.plan import Resolution, build_plan, materialise_jobs, source_id
+from ladderforge.plan import Resolution, build_plan, materialise_jobs
 from ladderforge.scheduler import Control, Scheduler
 from ladderforge.store import Store
 from ladderforge.synth import generate_clip, read_reference_luma
 
 SMALL = "320x180"
 FRAMES = 12
-
-
-def encoder_or_skip(testcase: unittest.TestCase) -> EncoderInfo:
-    try:
-        return detect_encoder()
-    except Exception as exc:  # pragma: no cover - depends on host tooling
-        testcase.skipTest(f"FFmpeg/libx264 unavailable: {exc}")
 
 
 def run_cli(args: list[str]) -> tuple[int, str]:
