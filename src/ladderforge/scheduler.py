@@ -113,17 +113,29 @@ class Control:
 
 
 class _Limit:
+    """Caps how many *newly claimed* jobs a run may start.
+
+    A slot is reserved before claiming and refunded when the claim comes back
+    empty, so concurrent workers can never exceed the limit and an idle worker
+    does not burn part of another worker's budget.
+    """
+
     def __init__(self, limit: int | None) -> None:
         self._limit = limit
         self._claimed = 0
         self._lock = threading.Lock()
 
-    def take(self) -> bool:
+    def reserve(self) -> bool:
         with self._lock:
             if self._limit is not None and self._claimed >= self._limit:
                 return False
             self._claimed += 1
             return True
+
+    def refund(self) -> None:
+        with self._lock:
+            if self._claimed > 0:
+                self._claimed -= 1
 
 
 class _InFlight:
@@ -327,7 +339,7 @@ class Scheduler:
             while not self.control.stopped and not self.control.draining:
                 if not self.control.wait_until_runnable():
                     break
-                if not limit.take():
+                if not limit.reserve():
                     break
                 try:
                     rows = self._store_call(
@@ -337,9 +349,11 @@ class Scheduler:
                         lease_seconds=LEASE_SECONDS,
                     )
                 except StoreLockError as exc:
+                    limit.refund()
                     self._record_error("", "claim", 0, worker_id, f"claim failed: {exc}")
                     break
                 if not rows:
+                    limit.refund()
                     break
                 for row in rows:
                     self._inflight.add(str(row["task_key"]), worker_id)
