@@ -11,6 +11,7 @@ add_library(tl_core STATIC
   src/timeline.cpp
   src/transition_kernel.cpp
   src/generators.cpp
+  src/ppm_writer.cpp
 )
 target_include_directories(tl_core PUBLIC include)
 
