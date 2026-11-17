@@ -1,0 +1,11 @@
+# virtualenv and caches
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# generated media, reports, archives and databases
+.work/
+*.sqlite
+*.sqlite-journal
+*.zip
