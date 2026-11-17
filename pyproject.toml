@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools==75.8.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "audiocut"
+version = "0.1.0"
+description = "Local PCM WAV silence detection and dialogue slicing toolkit"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+authors = [{ name = "Audio Asset Engineering" }]
+dependencies = ["numpy==2.2.6"]
+
+[project.scripts]
+audiocut = "audiocut.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
