@@ -3,10 +3,12 @@
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
+#include <fstream>
 #include <functional>
 #include <vector>
 
 #include "fmp4/box_reader.hpp"
+#include "fmp4/fragment_index.hpp"
 #include "fmp4/safe_path.hpp"
 
 namespace fs = std::filesystem;
@@ -135,4 +137,112 @@ FMP4_TEST(safe_path_rejects_traversal_and_symlink) {
   catch (const fmp4::Fmp4Error &) { threw = true; }
   FMP4_CHECK(threw);
   fs::remove_all(root);
+}
+
+namespace {
+[[maybe_unused]] void put16(std::vector<uint8_t> &v, uint16_t x) {
+  v.push_back(uint8_t(x >> 8));
+  v.push_back(uint8_t(x));
+}
+[[maybe_unused]] void put64(std::vector<uint8_t> &v, uint64_t x) {
+  for (int i = 7; i >= 0; --i) v.push_back(uint8_t(x >> (8 * i)));
+}
+void put_bytes(std::vector<uint8_t> &v, const std::vector<uint8_t> &b) {
+  v.insert(v.end(), b.begin(), b.end());
+}
+std::vector<uint8_t> box(const char *type,
+                         const std::vector<uint8_t> &payload) {
+  std::vector<uint8_t> b;
+  put32(b, uint32_t(8 + payload.size()));
+  putcc(b, type);
+  put_bytes(b, payload);
+  return b;
+}
+} // namespace
+
+FMP4_TEST(parse_init_segment_two_tracks) {
+  auto mdhd = [](uint32_t scale) {
+    std::vector<uint8_t> p(20, 0); // v0, timescale at rel 12
+    p[12] = uint8_t(scale >> 24);
+    p[13] = uint8_t(scale >> 16);
+    p[14] = uint8_t(scale >> 8);
+    p[15] = uint8_t(scale);
+    return box("mdhd", p);
+  };
+  auto hdlr = [](const char *kind) {
+    std::vector<uint8_t> p(12, 0);
+    p[8] = kind[0]; p[9] = kind[1]; p[10] = kind[2]; p[11] = kind[3];
+    return box("hdlr", p);
+  };
+  auto stsd = [](const char *entry) {
+    std::vector<uint8_t> p;
+    put32(p, 0);             // version/flags
+    put32(p, 1);             // entry count
+    // sample entry box; its payload starts with reserved[6]+data_index(2)
+    put_bytes(p, box(entry, std::vector<uint8_t>(8, 0)));
+    return box("stsd", p);
+  };
+  auto tkhd = [](uint32_t id) {
+    std::vector<uint8_t> p(20, 0); // v0, track_id at rel 12
+    p[12] = uint8_t(id >> 24);
+    p[13] = uint8_t(id >> 16);
+    p[14] = uint8_t(id >> 8);
+    p[15] = uint8_t(id);
+    return box("tkhd", p);
+  };
+  auto trex = [](uint32_t id, uint32_t dur) {
+    std::vector<uint8_t> p(24, 0);
+    p[4] = uint8_t(id >> 24); p[5] = uint8_t(id >> 16);
+    p[6] = uint8_t(id >> 8);  p[7] = uint8_t(id);
+    p[12] = uint8_t(dur >> 24); p[13] = uint8_t(dur >> 16);
+    p[14] = uint8_t(dur >> 8);  p[15] = uint8_t(dur);
+    return box("trex", p);
+  };
+  auto trak = [&](uint32_t id, uint32_t scale, const char *handler,
+                  const char *entry) {
+    std::vector<uint8_t> stbl;
+    put_bytes(stbl, stsd(entry));
+    std::vector<uint8_t> minf;
+    put_bytes(minf, box("stbl", stbl));
+    std::vector<uint8_t> mdia;
+    put_bytes(mdia, mdhd(scale));
+    put_bytes(mdia, hdlr(handler));
+    put_bytes(mdia, box("minf", minf));
+    std::vector<uint8_t> t;
+    put_bytes(t, tkhd(id));
+    put_bytes(t, box("mdia", mdia));
+    return box("trak", t);
+  };
+  std::vector<uint8_t> mvex;
+  put_bytes(mvex, trex(1, 3000));
+  put_bytes(mvex, trex(2, 1024));
+  std::vector<uint8_t> moov;
+  put_bytes(moov, trak(1, 90000, "vide", "avc1"));
+  put_bytes(moov, trak(2, 48000, "soun", "mp4a"));
+  put_bytes(moov, box("mvex", mvex));
+  std::vector<uint8_t> file;
+  put_bytes(file, box("ftyp", std::vector<uint8_t>(8, 0)));
+  put_bytes(file, box("moov", moov));
+
+  fs::path d = fs::temp_directory_path() / "fmp4_init_test";
+  fs::remove_all(d);
+  fs::create_directories(d);
+  std::string p = (d / "init.mp4").string();
+  std::ofstream os(p, std::ios::binary);
+  os.write(reinterpret_cast<const char *>(file.data()),
+           std::streamsize(file.size()));
+  os.close();
+
+  fmp4::InitInfo init = fmp4::parse_init_segment(p);
+  FMP4_CHECK(init.tracks.size() == 2);
+  FMP4_CHECK(init.tracks[0].track_id == 1);
+  FMP4_CHECK(init.tracks[0].timescale == 90000);
+  FMP4_CHECK(init.tracks[0].handler == fmp4::FOURCC("vide"));
+  FMP4_CHECK(init.tracks[0].sample_entry == fmp4::FOURCC("avc1"));
+  FMP4_CHECK(init.tracks[0].default_sample_duration == 3000);
+  FMP4_CHECK(init.tracks[1].track_id == 2);
+  FMP4_CHECK(init.tracks[1].timescale == 48000);
+  FMP4_CHECK(init.tracks[1].sample_entry == fmp4::FOURCC("mp4a"));
+  FMP4_CHECK(init.tracks[1].default_sample_duration == 1024);
+  fs::remove_all(d);
 }
