@@ -12,6 +12,7 @@ import os
 import re
 import shutil
 import subprocess
+import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -153,6 +154,18 @@ def temp_path_for(output_path: Path, worker_id: str | None = None) -> Path:
     return output_path.with_name(f".{output_path.stem}.{owner}.{token}.partial.mp4")
 
 
+def _drain(stream) -> str:
+    if stream is None:
+        return ""
+    try:
+        raw = stream.read()
+    except (OSError, ValueError):
+        return ""
+    if isinstance(raw, bytes):
+        return raw.decode("utf-8", "replace")
+    return raw or ""
+
+
 def encode(
     encoder: EncoderInfo,
     clip: SourceClip,
@@ -163,33 +176,51 @@ def encode(
     timeout: float = 300.0,
     cancel_check=None,
 ) -> EncodeOutcome:
-    """Encode one job to a temp file; promote it to ``output_path`` on success."""
+    """Encode one job to a temp file; promote it to ``output_path`` on success.
+
+    FFmpeg runs under :class:`subprocess.Popen` and is polled so that a pause or
+    SIGINT can stop it promptly; the partial file is then removed.
+    """
     output_path.parent.mkdir(parents=True, exist_ok=True)
     temp_path = temp_path_for(output_path, worker_id)
     args = build_encode_args(encoder, clip, job, destination=temp_path)
     try:
-        proc = subprocess.run(
+        proc = subprocess.Popen(
             args,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
             shell=False,
-            check=False,
         )
-    except subprocess.TimeoutExpired as exc:
-        _unlink_quiet(temp_path)
-        raise TaskError(f"ffmpeg timed out after {timeout:.0f}s") from exc
     except OSError as exc:
         _unlink_quiet(temp_path)
         raise TaskError(f"could not start ffmpeg: {exc}") from exc
 
-    stderr_tail = (proc.stderr or "").strip()[-800:]
-    if cancel_check is not None and cancel_check():
+    deadline = time.monotonic() + timeout
+    cancelled = False
+    timed_out = False
+    while proc.poll() is None:
+        if cancel_check is not None and cancel_check():
+            cancelled = True
+            _terminate(proc)
+            break
+        if time.monotonic() >= deadline:
+            timed_out = True
+            _terminate(proc)
+            break
+        time.sleep(0.05)
+
+    stderr_tail = _drain(proc.stderr).strip()[-800:]
+    returncode = proc.wait()
+
+    if cancelled:
         _unlink_quiet(temp_path)
         raise TaskError("cancelled")
-    if proc.returncode != 0:
+    if timed_out:
         _unlink_quiet(temp_path)
-        detail = stderr_tail or f"exit status {proc.returncode}"
+        raise TaskError(f"ffmpeg timed out after {timeout:.0f}s")
+    if returncode != 0:
+        _unlink_quiet(temp_path)
+        detail = stderr_tail or f"exit status {returncode}"
         raise TaskError(f"ffmpeg failed: {detail}")
     if not temp_path.exists() or temp_path.stat().st_size == 0:
         _unlink_quiet(temp_path)
@@ -197,6 +228,20 @@ def encode(
 
     os.replace(temp_path, output_path)
     return EncodeOutcome(output_path=output_path, temp_path=temp_path, stderr_tail=stderr_tail)
+
+
+def _terminate(proc: subprocess.Popen) -> None:
+    try:
+        proc.terminate()
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            pass
+    except OSError:
+        pass
 
 
 def _unlink_quiet(path: Path) -> None:
