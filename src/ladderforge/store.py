@@ -178,3 +178,134 @@ class Store:
                 (key, value),
             )
         )
+    # -- enqueue / resume -------------------------------------------------
+    def sync_plan(self, jobs: tuple[PlannedJob, ...]) -> dict[str, int]:
+        """Insert missing jobs without disturbing existing state."""
+        return self.sync_plan_rows([planned.insert_row() for planned in jobs])
+
+    def sync_plan_rows(self, rows: list[tuple[object, ...]]) -> dict[str, int]:
+        def op(conn: sqlite3.Connection):
+            now = time.time()
+            inserted = existing = 0
+            for row in rows:
+                cursor = conn.execute(
+                    """
+                    INSERT INTO jobs (
+                        task_key, resolution, width, height, bitrate_kbps,
+                        target_bps, preset, source_sha256, ffmpeg_version,
+                        frames, fps, state, attempts, created_at, updated_at
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,'pending',0,?,?)
+                    ON CONFLICT(task_key) DO NOTHING
+                    """,
+                    (*row, now, now),
+                )
+                if cursor.rowcount:
+                    inserted += 1
+                else:
+                    existing += 1
+            return {"inserted": inserted, "existing": existing}
+
+        return self._write(op)
+
+    # -- leases -----------------------------------------------------------
+    def recover_expired(self, now: float | None = None) -> int:
+        moment = time.time() if now is None else now
+
+        def op(conn: sqlite3.Connection):
+            cursor = conn.execute(
+                "UPDATE jobs SET state='pending', lease_owner=NULL, "
+                "lease_expires_at=NULL, updated_at=? "
+                "WHERE state='running' AND (lease_expires_at IS NULL "
+                "OR lease_expires_at <= ?)",
+                (moment, moment),
+            )
+            return cursor.rowcount
+
+        return int(self._write(op))
+
+    def claim(
+        self,
+        worker_id: str,
+        *,
+        limit: int,
+        lease_seconds: float,
+        now: float | None = None,
+    ) -> list[sqlite3.Row]:
+        moment = time.time() if now is None else now
+
+        def op(conn: sqlite3.Connection):
+            conn.execute(
+                "UPDATE jobs SET state='pending', lease_owner=NULL, "
+                "lease_expires_at=NULL, updated_at=? "
+                "WHERE state='running' AND (lease_expires_at IS NULL "
+                "OR lease_expires_at <= ?)",
+                (moment, moment),
+            )
+            rows = conn.execute(
+                "SELECT * FROM jobs WHERE state='pending' "
+                "ORDER BY task_key LIMIT ?",
+                (limit,),
+            ).fetchall()
+            for row in rows:
+                conn.execute(
+                    "UPDATE jobs SET state='running', lease_owner=?, "
+                    "lease_expires_at=?, attempts=attempts+1, error=NULL, "
+                    "updated_at=? WHERE task_key=? AND state='pending'",
+                    (
+                        worker_id,
+                        moment + lease_seconds,
+                        moment,
+                        row["task_key"],
+                    ),
+                )
+            keys = [row["task_key"] for row in rows]
+            if not keys:
+                return []
+            placeholders = ",".join("?" for _ in keys)
+            return conn.execute(
+                f"SELECT * FROM jobs WHERE task_key IN ({placeholders})",
+                keys,
+            ).fetchall()
+
+        return list(self._write(op))
+
+    def renew(self, task_key: str, worker_id: str, lease_seconds: float) -> bool:
+        moment = time.time()
+
+        def op(conn: sqlite3.Connection):
+            cursor = conn.execute(
+                "UPDATE jobs SET lease_expires_at=?, updated_at=? "
+                "WHERE task_key=? AND state='running' AND lease_owner=?",
+                (moment + lease_seconds, moment, task_key, worker_id),
+            )
+            return cursor.rowcount > 0
+
+        return bool(self._write(op))
+
+    def release(self, task_key: str, worker_id: str, reason: str | None = None) -> bool:
+        moment = time.time()
+
+        def op(conn: sqlite3.Connection):
+            cursor = conn.execute(
+                "UPDATE jobs SET state='pending', lease_owner=NULL, "
+                "lease_expires_at=NULL, error=COALESCE(?, error), updated_at=? "
+                "WHERE task_key=? AND state='running' AND lease_owner=?",
+                (reason, moment, task_key, worker_id),
+            )
+            return cursor.rowcount > 0
+
+        return bool(self._write(op))
+
+    def release_owned(self, worker_id: str, reason: str | None = None) -> int:
+        moment = time.time()
+
+        def op(conn: sqlite3.Connection):
+            cursor = conn.execute(
+                "UPDATE jobs SET state='pending', lease_owner=NULL, "
+                "lease_expires_at=NULL, error=COALESCE(?, error), updated_at=? "
+                "WHERE state='running' AND lease_owner=?",
+                (reason, moment, worker_id),
+            )
+            return cursor.rowcount
+
+        return int(self._write(op))
