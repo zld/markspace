@@ -15,6 +15,7 @@ find_package(nlohmann_json 3.11 REQUIRED)
 
 add_library(fmp4 STATIC
   src/box_reader.cpp
+  src/safe_path.cpp
 )
 target_include_directories(fmp4 PUBLIC include)
 target_link_libraries(fmp4 PUBLIC nlohmann_json::nlohmann_json)
