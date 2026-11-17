@@ -83,9 +83,14 @@ func NewReader(r io.Reader) (*Reader, error) {
 	if h.FPSNum <= 0 || h.FPSDen <= 0 {
 		return nil, fmt.Errorf("y4m: illegal frame rate %d/%d", h.FPSNum, h.FPSDen)
 	}
-	// Only plain 8-bit C420 is accepted; C422/C444, 10-bit variants and
-	// alternate chroma siting are explicitly rejected.
-	if h.Color != "C420" {
+	// Only 8-bit 4:2:0 is accepted. C420jpeg/mpeg2/paldv are the same
+	// planar 8-bit 4:2:0 layout with different chroma siting tags (FFmpeg's
+	// decoder emits C420mpeg2); normalize them. C422/C444 and 10/12-bit
+	// variants are rejected.
+	switch h.Color {
+	case "C420", "C420jpeg", "C420mpeg2", "C420paldv":
+		h.Color = "C420"
+	default:
 		return nil, fmt.Errorf("y4m: unsupported chroma format %q, only 8-bit C420", h.Color)
 	}
 	h.FrameSize = h.Width * h.Height * 3 / 2
