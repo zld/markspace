@@ -9,6 +9,8 @@ add_library(tl_core STATIC
   src/hash.cpp
   src/manifest.cpp
   src/timeline.cpp
+  src/transition_kernel.cpp
+  src/generators.cpp
 )
 target_include_directories(tl_core PUBLIC include)
 
