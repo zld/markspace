@@ -121,10 +121,18 @@ def _luma_sample(frame: av.video.frame.VideoFrame) -> np.ndarray:
 
 
 def _pict_type(frame: av.video.frame.VideoFrame) -> str:
-    name = getattr(frame.pict_type, "name", "") or ""
+    # PyAV may expose either a PictureType enum or a bare integer; normalise
+    # through the enum so frame-type counts stay reliable across builds.
+    try:
+        name = av.video.frame.PictureType(frame.pict_type).name
+    except ValueError:
+        name = ""
     if name in ("I", "P", "B"):
         return name
-    if frame.keyframe:
+    if name in ("S", "SI", "SP", "BI"):
+        # Non-IDR sync and mixed macroblock types map to their base type.
+        return name[0] if name[0] in ("I", "P", "B") else "?"
+    if frame.key_frame:
         return "I"
     return "?"
 
@@ -145,7 +153,7 @@ def iter_decoded_frames(
                 pts=frame.pts,
                 dts=frame.dts,
                 time_base=frame_tb,
-                keyframe=bool(frame.keyframe),
+                keyframe=bool(frame.key_frame),
                 pict_type=_pict_type(frame),
                 width=frame.width,
                 height=frame.height,
