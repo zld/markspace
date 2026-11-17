@@ -167,6 +167,28 @@ class PipelineTest(unittest.TestCase):
             self.dir / "render", "master", force=True,
         )
 
+    def test_refusal_leaves_no_partial_bundle(self) -> None:
+        from trackmix.errors import WriteError
+        from trackmix.io_utils import write_render_bundle
+
+        out = self.dir / "bundle"
+        out.mkdir()
+        # Pre-existing JSON but no WAV: the pre-flight check must refuse
+        # before writing anything, leaving no stray WAV behind.
+        (out / "master.json").write_text('{"old": true}')
+        data = np.zeros((8, 2), dtype=np.float64)
+        with self.assertRaises(WriteError):
+            write_render_bundle(out, "master", data, 48000, {"x": 1},
+                                force=False)
+        self.assertFalse((out / "master.wav").exists())
+        self.assertEqual((out / "master.json").read_text(), '{"old": true}')
+
+        # force=True writes the full bundle atomically.
+        write_render_bundle(out, "master", data, 48000, {"x": 1},
+                            force=True)
+        self.assertTrue((out / "master.wav").exists())
+        self.assertTrue((out / "master.json").exists())
+
     def test_rendered_wav_is_byte_deterministic(self) -> None:
         from trackmix.io_utils import write_wav
 
