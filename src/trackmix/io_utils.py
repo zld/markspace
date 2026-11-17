@@ -43,9 +43,12 @@ def write_wav(
     """Write a float32 WAV atomically; overloads above 1.0 are preserved."""
     refuse_overwrite(path, force)
     ensure_output_dir(path.parent)
-    fd, tmp_name = tempfile.mkstemp(
-        prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent)
-    )
+    try:
+        fd, tmp_name = tempfile.mkstemp(
+            prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent)
+        )
+    except OSError as exc:
+        raise WriteError(f"failed to create temporary file for {path}: {exc}") from exc
     os.close(fd)
     tmp_path = Path(tmp_name)
     try:
@@ -66,9 +69,12 @@ def write_json(path: Path, payload: dict, force: bool) -> None:
     """Write a JSON report atomically with stable key ordering."""
     refuse_overwrite(path, force)
     ensure_output_dir(path.parent)
-    fd, tmp_name = tempfile.mkstemp(
-        prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent)
-    )
+    try:
+        fd, tmp_name = tempfile.mkstemp(
+            prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent)
+        )
+    except OSError as exc:
+        raise WriteError(f"failed to create temporary file for {path}: {exc}") from exc
     os.close(fd)
     tmp_path = Path(tmp_name)
     try:

@@ -34,21 +34,15 @@ def collect_track_metrics(graph: Graph) -> list[dict]:
     return report
 
 
-def run_offline(
-    graph: Graph,
-    total_frames: int,
-    target_rate: int,
-    output_dir: Path,
-    stem: str,
-    force: bool,
-) -> tuple[np.ndarray, dict]:
-    """Evaluate the entire timeline in one block and persist outputs.
+def evaluate_offline(graph: Graph, total_frames: int,
+                     target_rate: int) -> tuple[np.ndarray, dict]:
+    """Evaluate the whole timeline and build its metrics report.
 
-    Returns the master mix (unclipped float64) and the metrics report.
+    No files are touched here, so callers can add a streaming check to
+    the report before anything is persisted.
     """
     graph.reset()
     master = graph.evaluate_block(0, total_frames)
-
     track_report = collect_track_metrics(graph)
     clip = metrics.clipping_stats(master)
     report = {
@@ -64,10 +58,20 @@ def run_offline(
             ),
         },
     }
+    return master, report
 
+
+def run_offline(
+    graph: Graph,
+    total_frames: int,
+    target_rate: int,
+    output_dir: Path,
+    stem: str,
+    force: bool,
+) -> tuple[np.ndarray, dict]:
+    """Evaluate the entire timeline in one block and persist outputs."""
+    master, report = evaluate_offline(graph, total_frames, target_rate)
     output_dir = Path(output_dir)
-    wav_path = output_dir / f"{stem}.wav"
-    json_path = output_dir / f"{stem}.json"
-    write_wav(wav_path, master, target_rate, force)
-    write_json(json_path, report, force)
+    write_wav(output_dir / f"{stem}.wav", master, target_rate, force)
+    write_json(output_dir / f"{stem}.json", report, force)
     return master, report

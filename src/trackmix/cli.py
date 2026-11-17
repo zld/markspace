@@ -24,7 +24,6 @@ from .automation import GainCurve
 from .errors import TrackMixError
 from .graph import build_graph
 from .manifest import Manifest, Track, load_manifest
-from .offline import run_offline
 from .streaming import verify_against_offline
 
 DEFAULT_RATES = (48000, 44100, 32000, 22050)
@@ -133,21 +132,28 @@ def _automation_samples(manifest: Manifest) -> list[dict]:
 
 
 def _execute(manifest: Manifest, args: argparse.Namespace) -> dict:
+    from .io_utils import write_json, write_wav
+    from .offline import evaluate_offline
+
     graph = build_graph(manifest)
-    output_dir = Path(args.output_dir)
-    master, report = run_offline(
-        graph,
-        manifest.total_frames,
-        manifest.target_rate,
-        output_dir,
-        stem=args.stem,
-        force=args.force,
+    # Evaluate and verify before any file is written, so the persisted
+    # report always contains the streaming check when requested.
+    master, report = evaluate_offline(
+        graph, manifest.total_frames, manifest.target_rate
     )
     report["automation_samples"] = _automation_samples(manifest)
     if args.verify_stream:
         report["stream_check"] = verify_against_offline(
             master, graph, manifest.total_frames, args.block_frames
         )
+    output_dir = Path(args.output_dir)
+    write_wav(
+        output_dir / f"{args.stem}.wav",
+        master,
+        manifest.target_rate,
+        args.force,
+    )
+    write_json(output_dir / f"{args.stem}.json", report, args.force)
     return report
 
 
