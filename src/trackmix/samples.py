@@ -13,11 +13,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
-import soundfile as sf
 
 from .errors import WriteError
+from .io_utils import write_wav
 
 FLAVOURS = ("dialog", "music", "ambient", "impulse")
+DEFAULT_RATES = (48000, 44100, 32000, 22050)
+DEFAULT_CHANNELS = (2, 1, 2, 1)
 
 
 @dataclass(frozen=True)
@@ -126,9 +128,6 @@ def generate_track(
             f"cannot create source directory {directory}: {exc}"
         ) from exc
     path = directory / f"src_{ordinal:02d}_{flavour}_{rate}.wav"
-    try:
-        sf.write(str(path), data.astype(np.float32), rate, subtype="FLOAT",
-                 format="WAV")
-    except (OSError, sf.LibsndfileError) as exc:
-        raise WriteError(f"failed to write generated WAV {path}: {exc}") from exc
+    # Reuse the deterministic (PEAK-stripping, atomic) WAV writer.
+    write_wav(path, data, rate, force=True)
     return GeneratedTrack(path, rate, frames, channels, flavour, seed)

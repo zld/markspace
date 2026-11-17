@@ -167,6 +167,41 @@ class PipelineTest(unittest.TestCase):
             self.dir / "render", "master", force=True,
         )
 
+    def test_rendered_wav_is_byte_deterministic(self) -> None:
+        from trackmix.io_utils import write_wav
+
+        data = np.linspace(-1.2, 1.2, 64, dtype=np.float64).reshape(-1, 1)
+        first = self.dir / "a.wav"
+        second = self.dir / "b.wav"
+        write_wav(first, data, 48000, force=False)
+        write_wav(second, data, 48000, force=False)
+        self.assertEqual(first.read_bytes(), second.read_bytes())
+        self.assertNotIn(b"PEAK", first.read_bytes())
+
+    def test_demo_outputs_byte_identical_across_runs(self) -> None:
+        import hashlib
+
+        out_a = self.dir / "run_a"
+        out_b = self.dir / "run_b"
+        argv_tail = [
+            "--seed", "23", "--tracks", "3", "--frames", "4800",
+            "--rate", "48000", "--block-frames", "257",
+            "--automation-step", "800", "--stress-clip",
+        ]
+        self.assertEqual(main(["demo", *argv_tail,
+                               "--output-dir", str(out_a)]), 0)
+        self.assertEqual(main(["demo", *argv_tail,
+                               "--output-dir", str(out_b)]), 0)
+
+        def digest(root: Path) -> set[str]:
+            return {
+                hashlib.sha256(p.read_bytes()).hexdigest()
+                for p in root.rglob("*")
+                if p.is_file() and p.name != ".DS_Store"
+            }
+
+        self.assertEqual(digest(out_a), digest(out_b))
+
 
 if __name__ == "__main__":
     unittest.main()

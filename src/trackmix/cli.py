@@ -26,9 +26,6 @@ from .graph import build_graph
 from .manifest import Manifest, Track, load_manifest
 from .streaming import verify_against_offline
 
-DEFAULT_RATES = (48000, 44100, 32000, 22050)
-DEFAULT_CHANNELS = (2, 1, 2, 1)
-
 
 class _Parser(argparse.ArgumentParser):
     """Argument parser whose usage errors map to the spec's exit code 2."""
@@ -48,8 +45,10 @@ def _build_demo_manifest(
     track_entries: list[Track] = []
     for ordinal in range(args.tracks):
         flavour = samples.FLAVOURS[ordinal % len(samples.FLAVOURS)]
-        rate = DEFAULT_RATES[ordinal % len(DEFAULT_RATES)]
-        channels = DEFAULT_CHANNELS[ordinal % len(DEFAULT_CHANNELS)]
+        rate = samples.DEFAULT_RATES[ordinal % len(samples.DEFAULT_RATES)]
+        channels = samples.DEFAULT_CHANNELS[
+            ordinal % len(samples.DEFAULT_CHANNELS)
+        ]
         # Spread sources across the timeline, leaving headroom at the end.
         span = max(1, args.frames // args.tracks)
         start = (ordinal * span) // 2

@@ -29,6 +29,28 @@ def ensure_output_dir(path: Path) -> None:
         ) from exc
 
 
+def _strip_peak_chunk(raw: bytes) -> bytes:
+    """Remove the libsndfile PEAK chunk from a RIFF/WAV byte string.
+
+    The PEAK chunk holds runtime peak metadata whose storage is not
+    byte-stable across runs even for identical PCM, so dropping it makes
+    rendered WAV files reproducible byte-for-byte.  All other chunks and
+    the PCM payload are preserved untouched.
+    """
+    if raw[:4] != b"RIFF" or raw[8:12] != b"WAVE":
+        return raw
+    body = bytearray(b"WAVE")
+    pos = 12
+    while pos + 8 <= len(raw):
+        chunk_id = raw[pos:pos + 4]
+        size = int.from_bytes(raw[pos + 4:pos + 8], "little")
+        padded = size + (size & 1)
+        if chunk_id != b"PEAK":
+            body += raw[pos:pos + 8 + padded]
+        pos += 8 + padded
+    return b"RIFF" + (len(body) - 4).to_bytes(4, "little") + bytes(body)
+
+
 def refuse_overwrite(path: Path, force: bool) -> None:
     if path.exists() and not force:
         raise WriteError(
@@ -42,7 +64,11 @@ def write_wav(
     sample_rate: int,
     force: bool,
 ) -> None:
-    """Write a float32 WAV atomically; overloads above 1.0 are preserved."""
+    """Write a float32 WAV atomically; overloads above 1.0 are preserved.
+
+    The auto-generated PEAK chunk is stripped so identical audio yields
+    byte-identical files across runs.
+    """
     refuse_overwrite(path, force)
     ensure_output_dir(path.parent)
     try:
@@ -61,6 +87,8 @@ def write_wav(
             subtype="FLOAT",
             format="WAV",
         )
+        raw = tmp_path.read_bytes()
+        tmp_path.write_bytes(_strip_peak_chunk(raw))
         os.replace(tmp_path, path)
     except (OSError, sf.LibsndfileError, RuntimeError) as exc:
         tmp_path.unlink(missing_ok=True)
