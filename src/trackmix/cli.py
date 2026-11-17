@@ -21,7 +21,7 @@ import numpy as np
 
 from . import samples
 from .automation import GainCurve
-from .errors import TrackMixError
+from .errors import ManifestError, TrackMixError
 from .graph import build_graph
 from .manifest import Manifest, Track, load_manifest
 from .streaming import verify_against_offline
@@ -30,16 +30,19 @@ DEFAULT_RATES = (48000, 44100, 32000, 22050)
 DEFAULT_CHANNELS = (2, 1, 2, 1)
 
 
+class _Parser(argparse.ArgumentParser):
+    """Argument parser whose usage errors map to the spec's exit code 2."""
+
+    def error(self, message: str) -> None:
+        raise ManifestError(f"parameter error: {message}")
+
+
 # ---------------------------------------------------------------------- #
 # Demo fixture construction
 # ---------------------------------------------------------------------- #
 def _build_demo_manifest(
     args: argparse.Namespace, work_dir: Path
 ) -> Manifest:
-    if args.tracks < 1 or args.tracks > 16:
-        raise TrackMixError("--tracks must be between 1 and 16")
-    if args.block_frames <= 0:
-        raise TrackMixError("--block-frames must be positive")
     src_dir = work_dir / "sources"
     generated: list[samples.GeneratedTrack] = []
     track_entries: list[Track] = []
@@ -161,11 +164,12 @@ def _execute(manifest: Manifest, args: argparse.Namespace) -> dict:
 # Argument parsing
 # ---------------------------------------------------------------------- #
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = _Parser(
         prog="trackmix",
         description="Deterministic local multi-rate audio mixing tool",
     )
-    sub = parser.add_subparsers(dest="command", required=True)
+    sub = parser.add_subparsers(dest="command", required=True,
+                                parser_class=_Parser)
 
     demo = sub.add_parser("demo", help="generate fixtures and run a demo mix")
     demo.add_argument("--seed", type=int, default=23)
@@ -191,10 +195,19 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _require_range(name: str, value: int, low: int, high: int) -> int:
+    if not low <= value <= high:
+        raise ManifestError(
+            f"parameter {name}={value} outside allowed range [{low}, {high}]"
+        )
+    return value
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
-    args = parser.parse_args(argv)
     try:
+        args = parser.parse_args(argv)
+        _validate_args(args)
         if args.command == "demo":
             work_dir = Path(args.output_dir)
             manifest = _build_demo_manifest(args, work_dir)
@@ -207,6 +220,18 @@ def main(argv: list[str] | None = None) -> int:
         return exc.exit_code
     print(json.dumps(report, indent=2, sort_keys=True))
     return 0
+
+
+def _validate_args(args: argparse.Namespace) -> None:
+    """Range checks that must surface as parameter errors (exit code 2)."""
+    _require_range("--block-frames", args.block_frames, 1, 200_000_000)
+    if args.command == "demo":
+        _require_range("--tracks", args.tracks, 1, 16)
+        _require_range("--frames", args.frames, 1, 200_000_000)
+        _require_range("--rate", args.rate, 1, 1_000_000)
+        _require_range("--channels", args.channels, 1, 16)
+        _require_range("--automation-step", args.automation_step, 1,
+                       200_000_000)
 
 
 def _write_demo_manifest(manifest: Manifest, work_dir: Path,

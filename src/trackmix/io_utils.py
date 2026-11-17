@@ -24,7 +24,9 @@ def ensure_output_dir(path: Path) -> None:
     try:
         path.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
-        raise WriteError(f"cannot create output directory {path}: {exc}") from exc
+        raise WriteError(
+            f"cannot create output directory {path}: {exc}"
+        ) from exc
 
 
 def refuse_overwrite(path: Path, force: bool) -> None:

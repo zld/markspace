@@ -119,7 +119,12 @@ def generate_track(
         raise WriteError(f"generated track {ordinal} produced non-finite samples")
 
     directory = Path(directory)
-    directory.mkdir(parents=True, exist_ok=True)
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise WriteError(
+            f"cannot create source directory {directory}: {exc}"
+        ) from exc
     path = directory / f"src_{ordinal:02d}_{flavour}_{rate}.wav"
     try:
         sf.write(str(path), data.astype(np.float32), rate, subtype="FLOAT",
