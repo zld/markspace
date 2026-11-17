@@ -10,7 +10,7 @@ namespace fmp4 {
 class StructuralError : public Fmp4Error {
 public:
   explicit StructuralError(const Fmp4Error &e)
-      : Fmp4Error(e.what(), e.file(), e.offset()) {}
+      : Fmp4Error(e.raw_message(), e.file(), e.offset()) {}
   StructuralError(const std::string &msg, std::string f = "",
                   uint64_t off = 0)
       : Fmp4Error(msg, std::move(f), off) {}

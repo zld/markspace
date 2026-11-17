@@ -20,15 +20,18 @@ class Fmp4Error : public std::runtime_error {
 public:
   Fmp4Error(const std::string &msg, std::string file = "", uint64_t off = 0)
       : std::runtime_error(make(msg, file, off)), file_(std::move(file)),
-        offset_(off) {}
+        offset_(off), raw_msg_(msg) {}
   const std::string &file() const noexcept { return file_; }
   uint64_t offset() const noexcept { return offset_; }
+  // Original message without the file/offset annotation.
+  const std::string &raw_message() const noexcept { return raw_msg_; }
 
 private:
   static std::string make(const std::string &msg, const std::string &f,
                           uint64_t off);
   std::string file_;
   uint64_t offset_;
+  std::string raw_msg_;
 };
 
 struct ParseLimits {
