@@ -158,3 +158,161 @@ def _run(args: argparse.Namespace) -> int:
         workers=args.workers,
         fps=args.fps,
     )
+    _print_plan(plan)
+
+    encoder: EncoderInfo = detect_encoder()
+    print(f"encoder={encoder.version}")
+
+    sources_dir, outputs_dir = _work_dirs(args.db, args.work_dir)
+    removed = cleanup_stale_partials(outputs_dir)
+    if removed:
+        print(f"cleaned_partials={removed}")
+
+    clips = {
+        resolution: generate_clip(
+            resolution, plan.frames, plan.fps, args.content_seed, sources_dir
+        )
+        for resolution in plan.resolutions
+    }
+    for clip in clips.values():
+        print(
+            f"source resolution={clip.resolution.label} frames={clip.frames} "
+            f"sha256={clip.sha256[:16]}"
+        )
+
+    jobs = materialise_jobs(
+        plan, {res: clip.sha256 for res, clip in clips.items()}, encoder.version
+    )
+
+    control = Control()
+    previous_sigint = _install_sigint(control)
+
+    store = Store(args.db)
+    try:
+        store.init_schema()
+        signature = Scheduler.signature_for(jobs)
+        recorded = store.get_meta("plan_signature")
+        if args.resume:
+            if recorded is not None and recorded != signature:
+                raise ConfigError(
+                    "refusing to resume: the recorded scan was built from a "
+                    "different source or parameters (plan signature changed). "
+                    "Start a new --db or rerun without --resume."
+                )
+            if recorded is None and store.has_rows():
+                raise ConfigError(
+                    "refusing to resume: this database has rows but no plan "
+                    "signature to verify them against"
+                )
+        elif recorded is not None and recorded != signature and store.has_rows():
+            print(
+                "note=plan changed; previously completed rows will not be "
+                "reused and stay in the database"
+            )
+        store.set_meta("plan_signature", signature)
+
+        if args.retry_failed:
+            requeued = store.requeue_failed()
+            print(f"requeued_failed={requeued}")
+        store.sync_plan(jobs)
+
+        scheduler = Scheduler(
+            store=store,
+            encoder=encoder,
+            jobs=jobs,
+            clips=clips,
+            output_dir=outputs_dir,
+            control=control,
+            timeout=args.timeout_seconds,
+        )
+        summary = scheduler.run(workers=args.workers, limit_jobs=args.limit_jobs)
+        keys = tuple(job.key for job in jobs)
+
+        ladder = None
+        failed = _failed_rows(store, keys)
+        candidates = _candidates(store, keys)
+        exit_code = EXIT_OK
+        if summary.state == "COMPLETE":
+            try:
+                ladder = build_ladder(candidates, plan.targets)
+            except NonMonotonicLadderError as exc:
+                print(f"ladder_error={exc}")
+                exit_code = EXIT_NON_MONOTONIC
+        elif summary.state in ("PARTIAL", "PENDING"):
+            # A controlled pause or a --limit-jobs slice is not a failure; the
+            # next run resumes from the rows already committed.
+            print("ladder_skipped=scan incomplete; resume to build the ladder")
+        else:
+            exit_code = EXIT_FAILURE
+
+        if failed:
+            exit_code = EXIT_FAILURE
+        if control.stop_reason == "interrupt":
+            exit_code = EXIT_INTERRUPTED
+
+        payload = build_payload(summary, ladder, failed, plan=plan.to_dict())
+        print_summary(payload)
+        if args.json_out is not None:
+            write_json(payload, args.json_out)
+            print(f"json_out={args.json_out}")
+        return exit_code
+    finally:
+        store.close()
+        _restore_sigint(previous_sigint)
+
+
+def _install_sigint(control: Control):
+    def on_sigint(signum, frame):  # noqa: ARG001
+        if control.stopped:
+            raise KeyboardInterrupt
+        control.stop("interrupt")
+        print(
+            "\nSIGINT: cancelling in-flight encodes and releasing their leases",
+            file=sys.stderr,
+        )
+
+    def on_sigterm(signum, frame):  # noqa: ARG001
+        # SIGTERM is the controlled pause: stop claiming, let work finish.
+        if control.draining:
+            return
+        control.drain("paused")
+        print(
+            "\nSIGTERM: pausing scan; in-flight jobs will finish",
+            file=sys.stderr,
+        )
+
+    previous = {
+        signal.SIGINT: signal.getsignal(signal.SIGINT),
+        signal.SIGTERM: signal.getsignal(signal.SIGTERM),
+    }
+    signal.signal(signal.SIGINT, on_sigint)
+    signal.signal(signal.SIGTERM, on_sigterm)
+    return previous
+
+
+def _restore_sigint(previous) -> None:
+    for signum, handler in previous.items():
+        signal.signal(signum, handler)
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    try:
+        if args.command == "run":
+            return _run(args)
+        parser.error(f"unknown command {args.command}")
+        return EXIT_FAILURE
+    except LadderForgeError as exc:
+        print(f"error={exc}", file=sys.stderr)
+        return exc.exit_code
+    except StoreLockError as exc:
+        print(f"error=database_lock {exc}", file=sys.stderr)
+        return EXIT_FAILURE
+    except KeyboardInterrupt:
+        print("interrupted", file=sys.stderr)
+        return EXIT_INTERRUPTED
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
