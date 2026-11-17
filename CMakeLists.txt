@@ -17,6 +17,7 @@ add_library(tl_core
   src/transition.cpp
   src/timeline.cpp
   src/biome.cpp
+  src/render_pipeline.cpp
 )
 target_include_directories(tl_core PUBLIC include)
 
