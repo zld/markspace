@@ -27,7 +27,10 @@ target_link_libraries(fmp4 PUBLIC nlohmann_json::nlohmann_json)
 
 enable_testing()
 
-add_executable(fmp4tool src/cli.cpp)
+add_executable(fmp4tool
+  src/cli.cpp
+  src/cli_verify.cpp
+)
 target_link_libraries(fmp4tool PRIVATE fmp4)
 
 add_executable(fmp4_tests tests/fmp4_tests.cpp)

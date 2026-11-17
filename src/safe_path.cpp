@@ -39,7 +39,14 @@ std::string canonical_output(const std::string &p) {
   fs::path parent = norm.parent_path();
   if (parent.empty() || !fs::exists(parent))
     throw Fmp4Error("output parent directory does not exist", p, 0);
-  return canonical_existing(parent.string()) + "/" + norm.filename().string();
+  // System prefix symlinks (macOS /tmp -> /private/tmp) are resolved by
+  // canonical(); tree-internal escape is enforced separately via join_under.
+  std::error_code ec;
+  fs::path cparent = fs::canonical(parent, ec);
+  if (ec) throw Fmp4Error("cannot canonicalize output parent", p, 0);
+  // The output target itself, if it already exists, must not be a symlink.
+  if (fs::exists(norm)) reject_if_symlink(norm);
+  return cparent.string() + "/" + norm.filename().string();
 }
 
 std::string join_under(const std::string &root, const std::string &rel) {

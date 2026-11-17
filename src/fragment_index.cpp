@@ -1,3 +1,5 @@
+#include "fmp4/box_reader.hpp"
+#include "fmp4/errors.hpp"
 #include "fmp4/fragment_index.hpp"
 
 #include <filesystem>
@@ -178,7 +180,12 @@ FragmentIndex build_index(const std::string &dir) {
       !j["fragments"].is_array())
     throw Fmp4Error("manifest missing 'fragments' array", mp, 0);
   std::string init_rel = j.value("init_segment", "init.mp4");
-  idx.init = parse_init_segment(path::join_under(idx.root_dir, init_rel));
+  try {
+    idx.init =
+        parse_init_segment(path::join_under(idx.root_dir, init_rel));
+  } catch (const Fmp4Error &e) {
+    throw StructuralError(e);
+  }
 
   for (const auto &el : j["fragments"]) {
     if (!el.is_object() || !el.contains("sequence") ||
@@ -193,13 +200,17 @@ FragmentIndex build_index(const std::string &dir) {
     std::error_code ec;
     if (fs::exists(fi.abs_path, ec) && !ec) {
       fi.present = true;
-      FragmentInfo parsed = parse_fragment_file(fi.abs_path, idx.init);
-      fi.mfhd_sequence = parsed.mfhd_sequence;
-      fi.file_size = parsed.file_size;
-      fi.moof_offset = parsed.moof_offset;
-      fi.mfhd_offset = parsed.mfhd_offset;
-      fi.mfhd_header_size = parsed.mfhd_header_size;
-      fi.tracks = std::move(parsed.tracks);
+      try {
+        FragmentInfo parsed = parse_fragment_file(fi.abs_path, idx.init);
+        fi.mfhd_sequence = parsed.mfhd_sequence;
+        fi.file_size = parsed.file_size;
+        fi.moof_offset = parsed.moof_offset;
+        fi.mfhd_offset = parsed.mfhd_offset;
+        fi.mfhd_header_size = parsed.mfhd_header_size;
+        fi.tracks = std::move(parsed.tracks);
+      } catch (const Fmp4Error &e) {
+        throw StructuralError(e);
+      }
     } else {
       fi.present = false;
       idx.missing_sequences.push_back(fi.manifest_seq);
