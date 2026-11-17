@@ -62,6 +62,29 @@ class ClaimTests(StoreTestCase):
         second = {r["task_key"] for r in self.store.claim("w2", limit=2, lease_seconds=30)}
         self.assertFalse(first & second)
 
+    def test_claim_scoped_to_current_plan_keys(self) -> None:
+        # Simulate an old plan's rows sitting in the same database.
+        stale_plan = build_plan(
+            frames=8,
+            resolutions="320x180",
+            bitrates="9999",
+            presets="fast",
+        )
+        stale_jobs = materialise_jobs(
+            stale_plan, {Resolution(320, 180): "stale-hash"}, "9.0.2"
+        )
+        self.store.sync_plan(stale_jobs)
+
+        scoped = self.store.claim("w1", limit=10, lease_seconds=30, keys=self.keys)
+        claimed = {row["task_key"] for row in scoped}
+        self.assertEqual(claimed, set(self.keys))
+        self.assertFalse(claimed & {job.key for job in stale_jobs})
+
+    def test_claim_with_empty_key_set_returns_nothing(self) -> None:
+        self.assertEqual(
+            self.store.claim("w1", limit=5, lease_seconds=30, keys=()), []
+        )
+
     def test_expired_lease_is_reclaimed(self) -> None:
         self.store.claim("w1", limit=1, lease_seconds=0.01)
         reclaimed = self.store.claim("w2", limit=1, lease_seconds=30, now=10**12)

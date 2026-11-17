@@ -177,6 +177,7 @@ class Scheduler:
         self.output_dir = output_dir
         self.control = control or Control()
         self.timeout = timeout
+        self._keys = tuple(job.key for job in jobs)
         self._inflight = _InFlight()
         self._errors: list[dict[str, str]] = []
         self._errors_lock = threading.Lock()
@@ -347,6 +348,7 @@ class Scheduler:
                         worker_id,
                         limit=1,
                         lease_seconds=LEASE_SECONDS,
+                        keys=self._keys,
                     )
                 except StoreLockError as exc:
                     limit.refund()

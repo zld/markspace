@@ -232,7 +232,13 @@ class Store:
         limit: int,
         lease_seconds: float,
         now: float | None = None,
+        keys: tuple[str, ...] | None = None,
     ) -> list[sqlite3.Row]:
+        """Claim up to ``limit`` pending jobs.
+
+        When ``keys`` is given, only those task keys are eligible; this keeps a
+        scan from picking up rows left in the database by an unrelated plan.
+        """
         moment = time.time() if now is None else now
 
         def op(conn: sqlite3.Connection):
@@ -243,11 +249,21 @@ class Store:
                 "OR lease_expires_at <= ?)",
                 (moment, moment),
             )
-            rows = conn.execute(
-                "SELECT * FROM jobs WHERE state='pending' "
-                "ORDER BY task_key LIMIT ?",
-                (limit,),
-            ).fetchall()
+            if keys is None:
+                rows = conn.execute(
+                    "SELECT * FROM jobs WHERE state='pending' "
+                    "ORDER BY task_key LIMIT ?",
+                    (limit,),
+                ).fetchall()
+            elif not keys:
+                return []
+            else:
+                placeholders = ",".join("?" for _ in keys)
+                rows = conn.execute(
+                    f"SELECT * FROM jobs WHERE state='pending' "
+                    f"AND task_key IN ({placeholders}) ORDER BY task_key LIMIT ?",
+                    (*keys, limit),
+                ).fetchall()
             for row in rows:
                 conn.execute(
                     "UPDATE jobs SET state='running', lease_owner=?, "
@@ -260,13 +276,13 @@ class Store:
                         row["task_key"],
                     ),
                 )
-            keys = [row["task_key"] for row in rows]
-            if not keys:
+            claimed = [row["task_key"] for row in rows]
+            if not claimed:
                 return []
-            placeholders = ",".join("?" for _ in keys)
+            placeholders = ",".join("?" for _ in claimed)
             return conn.execute(
                 f"SELECT * FROM jobs WHERE task_key IN ({placeholders})",
-                keys,
+                claimed,
             ).fetchall()
 
         return list(self._write(op))
