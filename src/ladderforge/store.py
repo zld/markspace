@@ -156,7 +156,9 @@ class Store:
     # -- schema ----------------------------------------------------------
     def init_schema(self) -> None:
         def op(conn: sqlite3.Connection):
-            conn.executescript(_SCHEMA)
+            for statement in _SCHEMA.split(";"):
+                if statement.strip():
+                    conn.execute(statement)
             conn.execute(
                 "INSERT OR IGNORE INTO meta(key, value) VALUES('schema_version', ?)",
                 (str(SCHEMA_VERSION),),
@@ -309,3 +311,156 @@ class Store:
             return cursor.rowcount
 
         return int(self._write(op))
+    # -- completion -------------------------------------------------------
+    def complete(
+        self,
+        *,
+        task_key: str,
+        worker_id: str,
+        actual_bps: int,
+        quality_psnr_db: float,
+        encoded_bytes: int,
+        duration_s: float,
+        output_path: str,
+    ) -> bool:
+        moment = time.time()
+
+        def op(conn: sqlite3.Connection):
+            row = conn.execute(
+                "SELECT state, lease_owner FROM jobs WHERE task_key=?",
+                (task_key,),
+            ).fetchone()
+            if row is None:
+                raise StoreLockError(f"unknown task {task_key}")
+            if row["state"] == COMPLETED:
+                return False
+            if row["state"] != RUNNING or row["lease_owner"] != worker_id:
+                return False
+            conn.execute(
+                "INSERT INTO results(task_key, actual_bps, quality_psnr_db, "
+                "encoded_bytes, duration_s, output_path, measured_at) "
+                "VALUES (?,?,?,?,?,?,?) "
+                "ON CONFLICT(task_key) DO UPDATE SET "
+                "actual_bps=excluded.actual_bps, "
+                "quality_psnr_db=excluded.quality_psnr_db, "
+                "encoded_bytes=excluded.encoded_bytes, "
+                "duration_s=excluded.duration_s, "
+                "output_path=excluded.output_path, "
+                "measured_at=excluded.measured_at",
+                (
+                    task_key,
+                    actual_bps,
+                    quality_psnr_db,
+                    encoded_bytes,
+                    duration_s,
+                    output_path,
+                    moment,
+                ),
+            )
+            conn.execute(
+                "UPDATE jobs SET state='completed', lease_owner=NULL, "
+                "lease_expires_at=NULL, error=NULL, updated_at=? "
+                "WHERE task_key=?",
+                (moment, task_key),
+            )
+            return True
+
+        return bool(self._write(op))
+
+    def fail(self, task_key: str, worker_id: str, error: str) -> bool:
+        moment = time.time()
+
+        def op(conn: sqlite3.Connection):
+            cursor = conn.execute(
+                "UPDATE jobs SET state='failed', lease_owner=NULL, "
+                "lease_expires_at=NULL, error=?, updated_at=? "
+                "WHERE task_key=? AND state='running' AND lease_owner=?",
+                (error, moment, task_key, worker_id),
+            )
+            return cursor.rowcount > 0
+
+        return bool(self._write(op))
+
+    def requeue_failed(self) -> int:
+        moment = time.time()
+
+        def op(conn: sqlite3.Connection):
+            cursor = conn.execute(
+                "UPDATE jobs SET state='pending', error=NULL, updated_at=? "
+                "WHERE state='failed'",
+                (moment,),
+            )
+            return cursor.rowcount
+
+        return int(self._write(op))
+
+    # -- queries ----------------------------------------------------------
+    def state_counts(self, keys: tuple[str, ...]) -> dict[str, int]:
+        counts = {state: 0 for state in STATES}
+        if not keys:
+            return counts
+        placeholders = ",".join("?" for _ in keys)
+
+        def op(conn: sqlite3.Connection):
+            return conn.execute(
+                f"SELECT state, COUNT(*) AS n FROM jobs "
+                f"WHERE task_key IN ({placeholders}) GROUP BY state",
+                keys,
+            ).fetchall()
+
+        for row in self._read(op):
+            counts[str(row["state"])] = int(row["n"])
+        return counts
+
+    def completed_keys(self, keys: tuple[str, ...]) -> set[str]:
+        if not keys:
+            return set()
+        placeholders = ",".join("?" for _ in keys)
+        rows = self._read(
+            lambda c: c.execute(
+                f"SELECT task_key FROM jobs WHERE state='completed' "
+                f"AND task_key IN ({placeholders})",
+                keys,
+            ).fetchall()
+        )
+        return {str(row["task_key"]) for row in rows}
+
+    def results(self, keys: tuple[str, ...]) -> list[sqlite3.Row]:
+        if not keys:
+            return []
+        placeholders = ",".join("?" for _ in keys)
+        return list(
+            self._read(
+                lambda c: c.execute(
+                    f"""
+                    SELECT j.task_key, j.resolution, j.width, j.height,
+                           j.bitrate_kbps, j.target_bps, j.preset,
+                           r.actual_bps, r.quality_psnr_db, r.encoded_bytes,
+                           r.duration_s, r.output_path
+                    FROM jobs j JOIN results r ON r.task_key = j.task_key
+                    WHERE j.task_key IN ({placeholders})
+                    ORDER BY j.width, j.height, j.target_bps, j.preset
+                    """,
+                    keys,
+                ).fetchall()
+            )
+        )
+
+    def failed_jobs(self, keys: tuple[str, ...]) -> list[sqlite3.Row]:
+        if not keys:
+            return []
+        placeholders = ",".join("?" for _ in keys)
+        return list(
+            self._read(
+                lambda c: c.execute(
+                    f"SELECT task_key, resolution, bitrate_kbps, preset, error "
+                    f"FROM jobs WHERE state='failed' AND task_key IN "
+                    f"({placeholders}) ORDER BY resolution, bitrate_kbps, preset",
+                    keys,
+                ).fetchall()
+            )
+        )
+
+    def has_rows(self) -> bool:
+        row = self._read(lambda c: c.execute("SELECT 1 FROM jobs LIMIT 1").fetchone())
+        return row is not None
