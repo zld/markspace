@@ -20,11 +20,11 @@ import (
 
 // Header describes a validated Y4M stream.
 type Header struct {
-	Width   int
-	Height  int
-	FPSNum  int
-	FPSDen  int
-	Color   string
+	Width     int
+	Height    int
+	FPSNum    int
+	FPSDen    int
+	Color     string
 	FrameSize int // raw bytes of one YUV420p frame
 }
 
@@ -136,11 +136,11 @@ func WriteHeader(w io.Writer, h Header) error {
 
 // SegmentRef points at a Y4M file holding one scene segment.
 type SegmentRef struct {
-	Index            int
-	Path             string
-	Frames           int
-	Width, Height    int
-	FPSNum, FPSDen   int
+	Index          int
+	Path           string
+	Frames         int
+	Width, Height  int
+	FPSNum, FPSDen int
 }
 
 // Header rebuilds a Header for the segment file.
@@ -220,11 +220,11 @@ func SplitToSegments(r *Reader, dir string, framesPer int) ([]SegmentRef, error)
 
 // DemoConfig controls deterministic sample generation.
 type DemoConfig struct {
-	Path               string
-	Width, Height      int
-	FPSNum, FPSDen     int
-	Segments           int
-	FramesPerSegment   int
+	Path             string
+	Width, Height    int
+	FPSNum, FPSDen   int
+	Segments         int
+	FramesPerSegment int
 }
 
 // lcg is a tiny deterministic PRNG (Numerical Recipes constants).
@@ -292,7 +292,7 @@ func GenerateDemo(cfg DemoConfig) (int, error) {
 				if absInt(x-bandX) < 12 {
 					v = 255 - v/2
 				}
-				blockY := (fi*(5+seg)) % cfg.Height
+				blockY := (fi * (5 + seg)) % cfg.Height
 				if absInt(y-blockY) < 10 {
 					v = (v + 128) & 0xff
 				}

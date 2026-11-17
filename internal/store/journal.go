@@ -15,23 +15,21 @@ import (
 
 // Job lifecycle states and journal event kinds.
 const (
-	StateQueued, StateRunning, StateRetryable, StateCompleted, StateFailed =
-		"queued", "running", "retryable", "completed", "failed"
-	EvJobCreated, EvClaim, EvRetry, EvCompleted, EvFailed, EvSegmentDone, EvRunInterrupt =
-		"job_created", "job_claimed", "job_retry", "job_completed",
+	StateQueued, StateRunning, StateRetryable, StateCompleted, StateFailed               = "queued", "running", "retryable", "completed", "failed"
+	EvJobCreated, EvClaim, EvRetry, EvCompleted, EvFailed, EvSegmentDone, EvRunInterrupt = "job_created", "job_claimed", "job_retry", "job_completed",
 		"job_failed", "segment_done", "run_interrupted"
 )
 
 // CandidateMetrics holds measured results for one encode candidate.
 type CandidateMetrics struct {
-	Bytes        int64   `json:"bytes"`
-	BitrateKbps  float64 `json:"bitrate_kbps"`
-	ErrorPct     float64 `json:"bitrate_error_pct"`
-	PSNRMean     float64 `json:"psnr_mean_db"`
-	PSNRMin      float64 `json:"psnr_min_db"`
-	PSNRMax      float64 `json:"psnr_max_db"`
-	PSNRStd      float64 `json:"psnr_std_db"`
-	Frames       int     `json:"frames"`
+	Bytes       int64   `json:"bytes"`
+	BitrateKbps float64 `json:"bitrate_kbps"`
+	ErrorPct    float64 `json:"bitrate_error_pct"`
+	PSNRMean    float64 `json:"psnr_mean_db"`
+	PSNRMin     float64 `json:"psnr_min_db"`
+	PSNRMax     float64 `json:"psnr_max_db"`
+	PSNRStd     float64 `json:"psnr_std_db"`
+	Frames      int     `json:"frames"`
 }
 type Job struct {
 	ID         string           `json:"id"`
@@ -45,14 +43,14 @@ type Job struct {
 	UpdatedAt  time.Time        `json:"updated_at"`
 }
 type Event struct {
-	Kind      string           `json:"kind"`
-	JobID     string           `json:"job_id,omitempty"`
-	Segment   int              `json:"segment,omitempty"`
-	QP        int              `json:"qp,omitempty"`
-	State     string           `json:"state,omitempty"`
-	Error     string           `json:"error,omitempty"`
+	Kind      string            `json:"kind"`
+	JobID     string            `json:"job_id,omitempty"`
+	Segment   int               `json:"segment,omitempty"`
+	QP        int               `json:"qp,omitempty"`
+	State     string            `json:"state,omitempty"`
+	Error     string            `json:"error,omitempty"`
 	Metrics   *CandidateMetrics `json:"metrics,omitempty"`
-	Timestamp time.Time        `json:"ts"`
+	Timestamp time.Time         `json:"ts"`
 }
 type Parameters struct {
 	SourceFingerprint string  `json:"source_fingerprint"`
@@ -74,7 +72,9 @@ type Checkpoint struct {
 	UpdatedAt   time.Time       `json:"updated_at"`
 	Interrupted bool            `json:"interrupted"`
 }
+
 var ErrFingerprintMismatch = errors.New("checkpoint parameters do not match; refusing to mix runs")
+
 type Store struct {
 	dir       string
 	mu        sync.Mutex
@@ -83,9 +83,10 @@ type Store struct {
 	cp        *Checkpoint
 	recovered int
 }
+
 const (
-	dirMode    = 0o755
-	fileMode   = 0o644
+	dirMode     = 0o755
+	fileMode    = 0o644
 	journalName = "events.jsonl"
 	cpName      = "checkpoint.json"
 )

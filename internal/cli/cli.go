@@ -40,7 +40,7 @@ type Options struct {
 	FramesPerSegment int
 	TargetKbps       int
 	Workers          int
-	FailAfter       int
+	FailAfter        int
 }
 
 // ErrUsage wraps parameter problems so main maps them to exit code 2.

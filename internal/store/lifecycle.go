@@ -90,31 +90,6 @@ func (s *Store) Params() Parameters {
 // Recovered returns how many unfinished candidates were requeued on open.
 func (s *Store) Recovered() int { return s.recovered }
 
-// Requeue marks a running job back to queued without consuming an attempt,
-// used when a run stops itself (fail-after) while candidates are in flight.
-func (s *Store) Requeue(jobID string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	j, ok := s.cp.Jobs[jobID]
-	if !ok || j.State != StateRunning {
-		return nil
-	}
-	return s.appendLocked(Event{Kind: EvRetry, JobID: jobID, Error: "interrupted: requeued"})
-}
-
-// CountInState returns how many jobs currently hold the given state.
-func (s *Store) CountInState(state string) int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	n := 0
-	for _, j := range s.cp.Jobs {
-		if j.State == state {
-			n++
-		}
-	}
-	return n
-}
-
 // DoneSegment reports the selected QP for a finished segment, if any.
 func (s *Store) DoneSegment(seg int) (qp int, done bool) {
 	s.mu.Lock()

@@ -56,7 +56,7 @@ func prepareShared(ctx context.Context, opts cli.Options, sourceY4M string,
 	params := store.Parameters{
 		SourceFingerprint: fp, Width: hdr.Width, Height: hdr.Height,
 		FPSNum: hdr.FPSNum, FPSDen: hdr.FPSDen, Segments: len(refs),
-		TargetKbps: float64(opts.TargetKbps),
+		TargetKbps:       float64(opts.TargetKbps),
 		FramesPerSegment: opts.FramesPerSegment, TotalFrames: totalFrames,
 	}
 	return specs, params, nil

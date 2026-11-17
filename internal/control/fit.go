@@ -13,9 +13,9 @@ import (
 // Sample is one measured candidate: quantizer, achieved bitrate (kbps) and
 // mean luma PSNR in dB.
 type Sample struct {
-	QP        int
+	QP          int
 	BitrateKbps float64
-	PSNRdB    float64
+	PSNRdB      float64
 }
 
 // LineModel is a univariate linear fit: y = Intercept + Slope*x.

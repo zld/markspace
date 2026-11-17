@@ -29,7 +29,7 @@ type EncodeOptions struct {
 
 // FrameStats aggregates per-frame PSNR statistics for one segment.
 type FrameStats struct {
-	Frames  int
+	Frames   int
 	PSNRMean float64
 	PSNRMin  float64
 	PSNRMax  float64

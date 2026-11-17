@@ -7,13 +7,13 @@ import (
 
 // QP search bounds and policy limits.
 const (
-	MinQP        = 2
-	MaxQP        = 31
-	MaxRounds    = 5
-	probeLow     = 8
-	probeMid     = 16
-	probeHigh    = 24
-	convergePct  = 8.0 // within 8% of target counts as converged
+	MinQP       = 2
+	MaxQP       = 31
+	MaxRounds   = 5
+	probeLow    = 8
+	probeMid    = 16
+	probeHigh   = 24
+	convergePct = 8.0 // within 8% of target counts as converged
 )
 
 // Fallback reasons recorded when model-based search is abandoned.

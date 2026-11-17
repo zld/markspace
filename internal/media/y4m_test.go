@@ -49,10 +49,10 @@ func TestReaderValid(t *testing.T) {
 
 func TestReaderRejects(t *testing.T) {
 	cases := map[string][]byte{
-		"bad magic":   []byte("NOTY4M\n"),
-		"bad width":   writeY4M(t, 16, 16, 1, "C420"),
-		"bad chroma":  writeY4M(t, 16, 16, 1, "C422"),
-		"odd width":   writeY4M(t, 15, 16, 1, "C420"),
+		"bad magic":  []byte("NOTY4M\n"),
+		"bad width":  writeY4M(t, 16, 16, 1, "C420"),
+		"bad chroma": writeY4M(t, 16, 16, 1, "C422"),
+		"odd width":  writeY4M(t, 15, 16, 1, "C420"),
 	}
 	cases["bad width"] = bytes.Replace(cases["bad width"], []byte("W16"), []byte("W0"), 1)
 	for name, raw := range cases {

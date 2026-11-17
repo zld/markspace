@@ -17,19 +17,19 @@ import (
 
 // SegmentReport is the summary for one scene segment.
 type SegmentReport struct {
-	Segment       int     `json:"segment"`
-	SelectedQP    int     `json:"selected_qp"`
-	BitrateKbps   float64 `json:"actual_kbps"`
-	TargetKbps    float64 `json:"target_kbps"`
-	ErrorPct      float64 `json:"bitrate_error_pct"`
-	PSNRMean      float64 `json:"psnr_mean_db"`
-	PSNRMin       float64 `json:"psnr_min_db"`
-	PSNRMax       float64 `json:"psnr_max_db"`
-	PSNRStd       float64 `json:"psnr_std_db"`
-	Frames        int     `json:"frames"`
-	BoundedSearch bool    `json:"bounded_search"`
-	FallbackReason string `json:"fallback_reason,omitempty"`
-	Rounds        int     `json:"search_rounds"`
+	Segment        int     `json:"segment"`
+	SelectedQP     int     `json:"selected_qp"`
+	BitrateKbps    float64 `json:"actual_kbps"`
+	TargetKbps     float64 `json:"target_kbps"`
+	ErrorPct       float64 `json:"bitrate_error_pct"`
+	PSNRMean       float64 `json:"psnr_mean_db"`
+	PSNRMin        float64 `json:"psnr_min_db"`
+	PSNRMax        float64 `json:"psnr_max_db"`
+	PSNRStd        float64 `json:"psnr_std_db"`
+	Frames         int     `json:"frames"`
+	BoundedSearch  bool    `json:"bounded_search"`
+	FallbackReason string  `json:"fallback_reason,omitempty"`
+	Rounds         int     `json:"search_rounds"`
 }
 
 // Summary is the whole-clip aggregate.
@@ -63,8 +63,8 @@ func Build(st *store.Store, results []jobs.SegmentResult) Report {
 		row := SegmentReport{
 			Segment: r.Index, SelectedQP: r.Selected.QP,
 			BitrateKbps: round2(r.Selected.BitrateKbps), TargetKbps: params.TargetKbps,
-			ErrorPct: round2(100 * (r.Selected.BitrateKbps - params.TargetKbps) / params.TargetKbps),
-			PSNRMean: round2(r.Selected.PSNRdB),
+			ErrorPct:      round2(100 * (r.Selected.BitrateKbps - params.TargetKbps) / params.TargetKbps),
+			PSNRMean:      round2(r.Selected.PSNRdB),
 			BoundedSearch: r.Bounded, FallbackReason: r.Reason, Rounds: r.Rounds,
 		}
 		if m := metricsFor(st, r.Index, r.Selected.QP); m != nil {
@@ -91,10 +91,10 @@ func Build(st *store.Store, results []jobs.SegmentResult) Report {
 	actual := weightedBitrate / weightedFrames
 	rep.Summary = Summary{
 		Status: "complete", Segments: len(rep.Segments), TargetKbps: params.TargetKbps,
-		ActualKbps: round2(actual),
+		ActualKbps:      round2(actual),
 		BitrateErrorPct: round2(100 * (actual - params.TargetKbps) / params.TargetKbps),
-		PSNRMean:       round2(meanPSNR),
-		SegmentPSNRMin: round2(minP), SegmentPSNRMax: round2(maxP),
+		PSNRMean:        round2(meanPSNR),
+		SegmentPSNRMin:  round2(minP), SegmentPSNRMax: round2(maxP),
 		SegmentPSNRStd: round2(stdDev(means, meanPSNR)),
 		Recovered:      st.Recovered(),
 	}
