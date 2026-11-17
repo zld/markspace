@@ -5,12 +5,14 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <iterator>
 #include <vector>
 
 #include "fmp4/box_reader.hpp"
 #include "fmp4/fragment_index.hpp"
 #include "fmp4/safe_path.hpp"
 #include "fmp4/validator.hpp"
+#include "fmp4/repacker.hpp"
 
 namespace fs = std::filesystem;
 
@@ -522,4 +524,118 @@ FMP4_TEST(validator_detects_sample_entry_drift) {
   for (const auto &i : rep.issues)
     if (i.kind == IssueKind::IncompatibleSampleEntry) drift = true;
   FMP4_CHECK(drift);
+}
+
+FMP4_TEST(repack_rewrites_mfhd_and_preserves_bytes) {
+  using namespace fmp4;
+  fs::path base = fs::temp_directory_path() / "fmp4_repack_in";
+  fs::path out = fs::temp_directory_path() / "fmp4_repack_out";
+  fs::remove_all(base); fs::remove_all(out);
+  fs::create_directories(base);
+
+  // One-track init segment.
+  {
+    std::vector<uint8_t> mdhd_p(20, 0);
+    mdhd_p[13] = 1; mdhd_p[14] = 0x5f; mdhd_p[15] = 0x90; // 90000
+    std::vector<uint8_t> hdlr_p(12, 0);
+    hdlr_p[8] = 'v'; hdlr_p[9] = 'i'; hdlr_p[10] = 'd'; hdlr_p[11] = 'e';
+    std::vector<uint8_t> stsd_p; put32(stsd_p, 0); put32(stsd_p, 1);
+    put_bytes(stsd_p, box("avc1", std::vector<uint8_t>(8, 0)));
+    std::vector<uint8_t> mdia_b;
+    put_bytes(mdia_b, box("mdhd", mdhd_p));
+    put_bytes(mdia_b, box("hdlr", hdlr_p));
+    put_bytes(mdia_b, box("minf", box("stbl", box("stsd", stsd_p))));
+    std::vector<uint8_t> tkhd_p(20, 0); tkhd_p[15] = 1;
+    std::vector<uint8_t> trak_b;
+    put_bytes(trak_b, box("tkhd", tkhd_p));
+    put_bytes(trak_b, box("mdia", mdia_b));
+    std::vector<uint8_t> trex_p;
+    put32(trex_p, 0); put32(trex_p, 1); put32(trex_p, 1);
+    put32(trex_p, 3000); trex_p.resize(trex_p.size() + 8);
+    std::vector<uint8_t> moov_b;
+    put_bytes(moov_b, box("trak", trak_b));
+    put_bytes(moov_b, box("mvex", box("trex", trex_p)));
+    write_file(base / "init.mp4", box("moov", moov_b));
+  }
+  auto mkfrag = [&](const std::string &name, uint32_t mseq,
+                    const std::vector<uint8_t> &marker) {
+    std::vector<uint8_t> tfhd; put32(tfhd, 1);
+    std::vector<uint8_t> trun; put32(trun, 1); put32(trun, 3000);
+    std::vector<uint8_t> traf;
+    put_bytes(traf, fullbox("tfhd", 0, 0, tfhd));
+    put_bytes(traf, fullbox("trun", 0, 0x000100, trun));
+    std::vector<uint8_t> moof_b;
+    put_bytes(moof_b, mfhd(mseq));
+    put_bytes(moof_b, box("traf", traf));
+    std::vector<uint8_t> file = box("moof", moof_b);
+    put_bytes(file, box("free", marker)); // unknown/skipped box
+    put_bytes(file, box("mdat", marker)); // media bytes preserved
+    write_file(base / name, file);
+  };
+  std::vector<uint8_t> m1 = {0xa1, 0xb2, 0xc3};
+  std::vector<uint8_t> m2 = {0x0d, 0x0e, 0x0f};
+  mkfrag("frag-1.m4s", 1, m1);
+  mkfrag("frag-2.m4s", 3, m2); // mfhd gap (1 then 3)
+  std::ofstream m(base / "fragments.manifest");
+  m << R"({"init_segment":"init.mp4","fragments":[
+       {"sequence":1,"path":"frag-1.m4s"},
+       {"sequence":2,"path":"frag-2.m4s"}]})";
+  m.close();
+
+  RepackResult r = repack_directory(base.string(), out.string());
+  FMP4_CHECK(r.input_fragment_count == 2);
+  FMP4_CHECK(r.output_fragment_count == 2);
+  FMP4_CHECK(r.mfhd_before.size() == 2 && r.mfhd_before[0] == 1 &&
+             r.mfhd_before[1] == 3);
+  FMP4_CHECK(r.mfhd_after.size() == 2 && r.mfhd_after[0] == 1 &&
+             r.mfhd_after[1] == 2);
+  FMP4_CHECK(r.verification.ok());
+
+  auto out_idx = build_index(out.string());
+  FMP4_CHECK(out_idx.fragments.size() == 2);
+  FMP4_CHECK(out_idx.fragments[0].mfhd_sequence == 1);
+  FMP4_CHECK(out_idx.fragments[1].mfhd_sequence == 2);
+  auto out_rep = validate_index(out_idx);
+  FMP4_CHECK(out_rep.mfhd_contiguous);
+
+  auto read_all = [](const fs::path &p) {
+    std::ifstream is(p, std::ios::binary);
+    return std::vector<uint8_t>((std::istreambuf_iterator<char>(is)),
+                                std::istreambuf_iterator<char>());
+  };
+  std::pair<std::string, std::vector<uint8_t>> cases[] = {
+      {"frag-1.m4s", m1}, {"frag-2.m4s", m2}};
+  for (auto &pair : cases) {
+    auto bytes = read_all(out / pair.first);
+    FMP4_CHECK(std::search(bytes.begin(), bytes.end(), pair.second.begin(),
+                           pair.second.end()) != bytes.end());
+  }
+  // Output files stay the same length (only 4 patched bytes).
+  FMP4_CHECK(fs::file_size(out / "frag-1.m4s") ==
+             fs::file_size(base / "frag-1.m4s"));
+
+  // Missing fragment: structural failure, no partial output remains.
+  fs::path base2 = fs::temp_directory_path() / "fmp4_repack_missing";
+  fs::path out2 = fs::temp_directory_path() / "fmp4_repack_missing_out";
+  fs::remove_all(base2); fs::remove_all(out2);
+  fs::create_directories(base2);
+  fs::copy_file(base / "init.mp4", base2 / "init.mp4");
+  fs::copy_file(base / "frag-1.m4s", base2 / "frag-1.m4s");
+  std::ofstream m2f(base2 / "fragments.manifest");
+  m2f << R"({"init_segment":"init.mp4","fragments":[
+       {"sequence":1,"path":"frag-1.m4s"},
+       {"sequence":2,"path":"frag-2.m4s"}]})";
+  m2f.close();
+  bool threw = false;
+  try { repack_directory(base2.string(), out2.string()); }
+  catch (const RepackError &e) {
+    threw = true;
+    FMP4_CHECK(e.exit_code() == 3);
+    FMP4_CHECK(e.missing_sequences.size() == 1 &&
+               e.missing_sequences[0] == 2);
+  }
+  FMP4_CHECK(threw);
+  FMP4_CHECK(!fs::exists(out2));
+  fs::remove_all(base); fs::remove_all(out);
+  fs::remove_all(base2); fs::remove_all(out2);
 }
