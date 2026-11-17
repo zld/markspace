@@ -10,6 +10,7 @@
 #include "fmp4/box_reader.hpp"
 #include "fmp4/fragment_index.hpp"
 #include "fmp4/safe_path.hpp"
+#include "fmp4/validator.hpp"
 
 namespace fs = std::filesystem;
 
@@ -453,4 +454,72 @@ FMP4_TEST(build_index_detects_missing_and_duplicate) {
   FMP4_CHECK(idx.init.tracks[0].timescale == 90000);
   FMP4_CHECK(idx.find_manifest(2) != nullptr);
   fs::remove_all(d);
+}
+
+FMP4_TEST(validator_flags_missing_gaps_and_timeline_deltas) {
+  using namespace fmp4;
+  FragmentIndex idx;
+  TrackInit t1; t1.track_id = 1; t1.timescale = 90000;
+  t1.sample_entry = FOURCC("avc1"); t1.handler = FOURCC("vide");
+  idx.init.tracks = {t1};
+  auto add = [&](uint32_t mseq, uint32_t mfhd, bool present,
+                 uint64_t tfdt, uint64_t dur) {
+    FragmentInfo f;
+    f.manifest_seq = mseq; f.rel_path = "f" + std::to_string(mseq) + ".m4s";
+    f.present = present; f.mfhd_sequence = mfhd; f.mfhd_offset = 8;
+    if (present) {
+      TrackRun r; r.track_id = 1; r.decode_start = tfdt; r.duration = dur;
+      f.tracks = {r};
+    }
+    idx.fragments.push_back(f);
+  };
+  add(1, 1, true, 0, 3000);
+  add(2, 2, true, 3000, 3000);
+  add(3, 3, false, 0, 0);      // missing file
+  add(4, 5, true, 9000, 3000); // mfhd gap: 4 skipped
+  for (uint32_t s : {3}) idx.missing_sequences.push_back(s);
+
+  auto rep = validate_index(idx);
+  FMP4_CHECK(!rep.ok());
+  FMP4_CHECK(rep.mfhd_contiguous == false);
+  FMP4_CHECK(rep.mfhd_gaps.size() == 2);
+  FMP4_CHECK(rep.mfhd_gaps[0] == 3 && rep.mfhd_gaps[1] == 4);
+  bool has_missing = false, has_gap = false;
+  for (const auto &i : rep.issues) {
+    if (i.kind == IssueKind::MissingFragment && i.sequence == 3)
+      has_missing = true;
+    if (i.kind == IssueKind::MfhdGap) has_gap = true;
+  }
+  FMP4_CHECK(has_missing && has_gap);
+  const auto *tl = rep.timeline(1);
+  FMP4_CHECK(tl && tl->decode_start == 0 && tl->total_duration == 9000);
+  FMP4_CHECK(ticks_to_seconds(9000, 90000) == 0.1);
+
+  // Baseline comparison: identical timeline => zero deltas.
+  FragmentIndex copy = idx;
+  // Replace the missing fragment with a present one in the "output".
+  FragmentInfo &m = copy.fragments[2];
+  m.present = true; m.mfhd_sequence = 4;
+  TrackRun r; r.track_id = 1; r.decode_start = 6000; r.duration = 3000;
+  m.tracks = {r};
+  copy.missing_sequences.clear();
+  auto out_rep = validate_against_baseline(copy, idx);
+  const auto *otl = out_rep.timeline(1);
+  FMP4_CHECK(otl && otl->decode_start_delta == 0);
+  FMP4_CHECK(otl->duration_delta == 3000); // output gained one fragment
+}
+
+FMP4_TEST(validator_detects_sample_entry_drift) {
+  using namespace fmp4;
+  FragmentIndex base, out;
+  TrackInit b; b.track_id = 1; b.timescale = 90000;
+  b.sample_entry = FOURCC("avc1"); b.handler = FOURCC("vide");
+  TrackInit o = b; o.sample_entry = FOURCC("encv");
+  base.init.tracks = {b};
+  out.init.tracks = {o};
+  auto rep = validate_against_baseline(out, base);
+  bool drift = false;
+  for (const auto &i : rep.issues)
+    if (i.kind == IssueKind::IncompatibleSampleEntry) drift = true;
+  FMP4_CHECK(drift);
 }
