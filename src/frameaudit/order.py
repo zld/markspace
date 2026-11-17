@@ -89,7 +89,6 @@ def _merge_missing(
     """Insert missing-PTS frames at their decode-order positions, stably."""
     if not missing:
         return timestamped
-    missing_by_index = {f.decode_index: f for f in missing}
     # Walk decode indices; for every missing frame, place it after the most
     # recently emitted frame with a smaller decode index.
     result: list[DecodedFrame] = []

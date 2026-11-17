@@ -10,7 +10,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import EXIT_MEDIA, EXIT_OK, EXIT_OUTPUT, EXIT_USAGE
+from . import EXIT_MEDIA, EXIT_OK
 from .errors import FrameAuditError
 from .fixture import generate_fixture
 from .order import DEFAULT_REORDER_LIMIT

@@ -92,18 +92,17 @@ def open_video(
         )
 
     stream = video_streams[stream_index]
-    if not stream.codec_context.is_decoder:
-        # PyAV wires a decoder lazily; an unsupported codec fails on first
-        # decode, but surface the obvious case eagerly.
+    codec_name = stream.codec_context.name
+    # An unknown codec name means FFmpeg has no decoder registered for it.
+    if not codec_name:
         container.close()
         raise CodecNotSupportedError(
-            f"no decoder available for codec {stream.codec_context.name!r} "
-            f"in {path}"
+            f"unsupported or unknown codec in stream {stream_index} of {path}"
         )
 
     info = StreamInfo(
         stream_index=stream_index,
-        codec_name=stream.codec_context.name,
+        codec_name=codec_name,
         width=stream.codec_context.width or 0,
         height=stream.codec_context.height or 0,
         time_base=_fraction(stream.time_base),
@@ -161,8 +160,15 @@ def iter_decoded_frames(
             )
             decode_index += 1
     except av.FFmpegError as exc:
+        # Decoder-not-found / unsupported codec errors carry distinct errnos;
+        # surface them as CodecNotSupportedError, everything else as media.
+        message = exc.strerror or str(exc)
+        if "decoder" in message.lower() or "codec" in message.lower():
+            raise CodecNotSupportedError(
+                f"unsupported codec in stream {stream.index}: {message}"
+            ) from exc
         raise MediaError(
-            f"decode failure in stream {stream.index}: {exc.strerror or exc}"
+            f"decode failure in stream {stream.index}: {message}"
         ) from exc
     finally:
         container.close()
