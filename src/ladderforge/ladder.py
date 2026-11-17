@@ -75,11 +75,26 @@ class Ladder:
 ELIGIBILITY_RATIO = 3.0
 
 
-def _eligible(candidate: Candidate, target_bps: int) -> bool:
+def _in_band(candidate: Candidate, target_bps: int) -> bool:
     if target_bps <= 0:
         return False
     ratio = candidate.actual_bps / target_bps
     return 1.0 / ELIGIBILITY_RATIO <= ratio <= ELIGIBILITY_RATIO
+
+
+def _allowed(candidates: Sequence[Candidate], target_bps: int) -> list[bool]:
+    """Which candidates may serve this target tier.
+
+    Normally only candidates encoded for this exact tier qualify, regardless of
+    how far their *measured* bitrate landed from the target: CBR-style
+    overshoot on very short clips is expected and is the caller's business.
+    Only when a tier has no candidates of its own may it borrow an in-band
+    encode; that is the case where two targets can select the same candidate.
+    """
+    own = any(c.target_bps == target_bps for c in candidates)
+    if own:
+        return [c.target_bps == target_bps for c in candidates]
+    return [_in_band(c, target_bps) for c in candidates]
 
 
 def _compatible(previous: Candidate, current: Candidate, *, strict: bool) -> bool:
@@ -106,20 +121,22 @@ def _select(
     if not candidates:
         return None
     count = len(candidates)
+    allowed = [_allowed(candidates, target) for target in target_bps]
     # cost[i][j]: best cost with tier i served by candidate j.
     cost: list[list[float]] = []
     back: list[list[int]] = []
     for index, target in enumerate(target_bps):
         layer = [float("inf")] * count
         pointers = [-1] * count
+        permitted = allowed[index]
         if index == 0:
             for current in range(count):
-                if _eligible(candidates[current], target):
+                if permitted[current]:
                     layer[current] = _cost(candidates[current], target)
         else:
             previous_cost = cost[index - 1]
             for current in range(count):
-                if not _eligible(candidates[current], target):
+                if not permitted[current]:
                     continue
                 best = float("inf")
                 best_prev = -1

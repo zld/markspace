@@ -72,17 +72,12 @@ class LadderTests(unittest.TestCase):
             build_ladder(candidates, [TargetTier(250), TargetTier(1000)])
 
     def test_bitrate_inversion_is_rejected(self) -> None:
-        # Both candidates are in-band for both targets, so sharing is possible
-        # only at equal bitrate; a strictly falling sequence is still invalid.
         candidates = [
             cand("lo", 250, 900_000, 30.0),
             cand("hi", 1000, 400_000, 33.0),
         ]
-        ladder = build_ladder(candidates, [TargetTier(250), TargetTier(1000)])
-        self.assertTrue(verify_monotonic(ladder.rungs))
-        self.assertGreaterEqual(
-            ladder.rungs[1].actual_bps, ladder.rungs[0].actual_bps
-        )
+        with self.assertRaises(NonMonotonicLadderError):
+            build_ladder(candidates, [TargetTier(250), TargetTier(1000)])
 
     def test_alternate_candidate_can_rescue_monotonicity(self) -> None:
         # Closest pick at 1000 sits below the 500 rung's bitrate and PSNR.

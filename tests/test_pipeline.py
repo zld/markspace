@@ -352,6 +352,59 @@ class CliTests(unittest.TestCase):
                 self.assertIsInstance(rung["actual_bps"], int)
                 self.assertTrue(0.0 < rung["quality_psnr_db"] < 200.0)
 
+    def test_cli_exits_two_on_non_monotonic_ladder(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "demo.sqlite"
+            args = [
+                "run",
+                "--db",
+                str(db),
+                "--frames",
+                str(FRAMES),
+                "--resolutions",
+                SMALL,
+                "--bitrates-kbps",
+                "200,500,1000",
+                "--presets",
+                "ultrafast",
+            ]
+            # Build the real plan so task keys match, then seed results that
+            # violate monotonicity (PSNR falls as bitrate rises).
+            plan = build_plan(
+                frames=FRAMES,
+                resolutions=SMALL,
+                bitrates="200,500,1000",
+                presets="ultrafast",
+            )
+            res = Resolution(320, 180)
+            clip = generate_clip(res, FRAMES, 24, 9, Path(tmp) / "seed")
+            encoder = self.encoder
+            jobs = materialise_jobs(plan, {res: clip.sha256}, encoder.version)
+            seeds = {
+                200_000: (250_000, 34.0),
+                500_000: (600_000, 32.0),
+                1_000_000: (1_200_000, 31.0),
+            }
+            with Store(db) as store:
+                store.init_schema()
+                store.sync_plan(jobs)
+                store.set_meta("plan_signature", Scheduler.signature_for(jobs))
+                for _ in range(len(jobs)):
+                    row = store.claim("seed", limit=1, lease_seconds=60)[0]
+                    actual, psnr = seeds[int(row["target_bps"])]
+                    store.complete(
+                        task_key=row["task_key"],
+                        worker_id="seed",
+                        actual_bps=actual,
+                        quality_psnr_db=psnr,
+                        encoded_bytes=1000,
+                        duration_s=1.0,
+                        output_path=str(Path(tmp) / "seed.mp4"),
+                    )
+            code, out = run_cli(args + ["--content-seed", "9", "--resume"])
+            self.assertEqual(code, 2)
+            self.assertIn("ladder_error=", out)
+
 
 if __name__ == "__main__":
     unittest.main()
