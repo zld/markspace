@@ -17,6 +17,7 @@ add_library(fmp4 STATIC
   src/box_reader.cpp
   src/safe_path.cpp
   src/fragment_index.cpp
+  src/fragment_parse.cpp
 )
 target_include_directories(fmp4 PUBLIC include)
 target_link_libraries(fmp4 PUBLIC nlohmann_json::nlohmann_json)

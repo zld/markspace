@@ -246,3 +246,133 @@ FMP4_TEST(parse_init_segment_two_tracks) {
   FMP4_CHECK(init.tracks[1].default_sample_duration == 1024);
   fs::remove_all(d);
 }
+
+namespace {
+std::vector<uint8_t> fullbox(const char *type, uint8_t ver, uint32_t flags,
+                             const std::vector<uint8_t> &rest) {
+  std::vector<uint8_t> p;
+  p.push_back(ver);
+  p.push_back(uint8_t(flags >> 16));
+  p.push_back(uint8_t(flags >> 8));
+  p.push_back(uint8_t(flags));
+  put_bytes(p, rest);
+  return box(type, p);
+}
+void write_file(const fs::path &p, const std::vector<uint8_t> &buf) {
+  std::ofstream os(p, std::ios::binary);
+  os.write(reinterpret_cast<const char *>(buf.data()),
+           std::streamsize(buf.size()));
+}
+fmp4::InitInfo two_track_init() {
+  fmp4::InitInfo init;
+  fmp4::TrackInit v; v.track_id = 1; v.timescale = 90000;
+  v.handler = fmp4::FOURCC("vide"); v.sample_entry = fmp4::FOURCC("avc1");
+  v.default_sample_duration = 3000;
+  fmp4::TrackInit a; a.track_id = 2; a.timescale = 48000;
+  a.handler = fmp4::FOURCC("soun"); a.sample_entry = fmp4::FOURCC("mp4a");
+  a.default_sample_duration = 1024;
+  init.tracks = {v, a};
+  return init;
+}
+std::vector<uint8_t> mfhd(uint32_t seq) {
+  std::vector<uint8_t> r; put32(r, 0); put32(r, seq);
+  return box("mfhd", r);
+}
+} // namespace
+
+FMP4_TEST(parse_fragment_tfdt_trun_versions_and_fallbacks) {
+  fs::path d = fs::temp_directory_path() / "fmp4_frag_test";
+  fs::remove_all(d); fs::create_directories(d);
+  auto init = two_track_init();
+
+  // Fragment 1: tfdt v0, trun v1 with per-sample duration + signed cto.
+  {
+    std::vector<uint8_t> tfdt; put32(tfdt, 9000); // v0: u32 value
+    std::vector<uint8_t> trun;
+    put32(trun, 2);        // sample count
+    put32(trun, 3000); put32(trun, 100); put32(trun, 50); // s1 d/sz/cto
+    put32(trun, 3000); put32(trun, 110); put32(trun, -50);
+    std::vector<uint8_t> tfhd; put32(tfhd, 1); // track id, no defaults
+    std::vector<uint8_t> traf;
+    put_bytes(traf, fullbox("tfhd", 0, 0, tfhd));
+    put_bytes(traf, fullbox("tfdt", 0, 0, tfdt));
+    put_bytes(traf, fullbox("trun", 1, 0x000100 | 0x000200 | 0x000800, trun));
+    std::vector<uint8_t> moof;
+    put_bytes(moof, mfhd(1));
+    put_bytes(moof, box("traf", traf));
+    std::vector<uint8_t> file = box("moof", moof);
+    write_file(d / "f1.m4s", file);
+    auto fi = fmp4::parse_fragment_file((d / "f1.m4s").string(), init);
+    FMP4_CHECK(fi.mfhd_sequence == 1);
+    FMP4_CHECK(fi.tracks.size() == 1);
+    FMP4_CHECK(fi.tracks[0].track_id == 1);
+    FMP4_CHECK(fi.tracks[0].decode_start == 9000);
+    FMP4_CHECK(fi.tracks[0].sample_count == 2);
+    FMP4_CHECK(fi.tracks[0].duration == 6000);
+    FMP4_CHECK(fi.mfhd_offset == 8);
+  }
+  // Fragment 2: tfdt v1 (64-bit), trun v0 without durations -> tfhd default.
+  {
+    std::vector<uint8_t> tfdt; put64(tfdt, 15000ull);
+    std::vector<uint8_t> trun; put32(trun, 3); // count only
+    std::vector<uint8_t> tfhd;
+    put32(tfhd, 2);          // track id
+    put32(tfhd, 1024);       // default sample duration (flag 0x8)
+    std::vector<uint8_t> traf;
+    put_bytes(traf, fullbox("tfhd", 0, 0x000008, tfhd));
+    put_bytes(traf, fullbox("tfdt", 1, 0, tfdt));
+    put_bytes(traf, fullbox("trun", 0, 0, trun));
+    std::vector<uint8_t> moof;
+    put_bytes(moof, mfhd(7));
+    put_bytes(moof, box("traf", traf));
+    write_file(d / "f2.m4s", box("moof", moof));
+    auto fi = fmp4::parse_fragment_file((d / "f2.m4s").string(), init);
+    FMP4_CHECK(fi.tracks[0].decode_start == 15000);
+    FMP4_CHECK(fi.tracks[0].sample_count == 3);
+    FMP4_CHECK(fi.tracks[0].duration == 3072); // tfhd default wins over trex
+  }
+  // Fragment 3: no trun durations, no tfhd default -> trex fallback.
+  {
+    std::vector<uint8_t> trun; put32(trun, 2);
+    std::vector<uint8_t> tfhd; put32(tfhd, 1);
+    std::vector<uint8_t> traf;
+    put_bytes(traf, fullbox("tfhd", 0, 0, tfhd));
+    put_bytes(traf, fullbox("trun", 0, 0, trun));
+    std::vector<uint8_t> moof;
+    put_bytes(moof, mfhd(2));
+    put_bytes(moof, box("traf", traf));
+    write_file(d / "f3.m4s", box("moof", moof));
+    auto fi = fmp4::parse_fragment_file((d / "f3.m4s").string(), init);
+    FMP4_CHECK(fi.tracks[0].duration == 6000); // 2 * trex 3000
+  }
+  fs::remove_all(d);
+}
+
+FMP4_TEST(parse_fragment_rejects_unknown_track_and_truncation) {
+  fs::path d = fs::temp_directory_path() / "fmp4_frag_bad";
+  fs::remove_all(d); fs::create_directories(d);
+  auto init = two_track_init();
+  std::vector<uint8_t> tfhd; put32(tfhd, 99); put32(tfhd, 0);
+  std::vector<uint8_t> traf;
+  put_bytes(traf, fullbox("tfhd", 0, 0, tfhd));
+  std::vector<uint8_t> moof;
+  put_bytes(moof, mfhd(1));
+  put_bytes(moof, box("traf", traf));
+  write_file(d / "bad.m4s", box("moof", moof));
+  bool threw = false;
+  try { fmp4::parse_fragment_file((d / "bad.m4s").string(), init); }
+  catch (const fmp4::Fmp4Error &e) {
+    threw = true;
+    FMP4_CHECK(e.offset() != 0);
+  }
+  FMP4_CHECK(threw);
+
+  std::vector<uint8_t> cut;
+  put32(cut, 8); putcc(cut, "moof"); // claims 8 but traf payload missing
+  write_file(d / "cut.m4s", cut);
+  threw = false;
+  try { fmp4::parse_fragment_file((d / "cut.m4s").string(), init); }
+  catch (const fmp4::Fmp4Error &) { threw = true; }
+  FMP4_CHECK(threw);
+  fs::remove_all(d);
+}

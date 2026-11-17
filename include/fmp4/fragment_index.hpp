@@ -63,6 +63,12 @@ FragmentIndex build_index(const std::string &dir);
 // Parse an init segment independently (verify --baseline).
 InitInfo parse_init_segment(const std::string &abs_path);
 
+// Parse one fragment file against init defaults. File-derived fields are
+// filled; manifest_seq/rel_path are assigned later by build_index. Throws on
+// corrupt boxes, unknown tracks or malformed tfhd/tfdt/trun.
+FragmentInfo parse_fragment_file(const std::string &abs_path,
+                                 const InitInfo &init);
+
 std::string manifest_path(const std::string &dir);
 
 } // namespace fmp4
