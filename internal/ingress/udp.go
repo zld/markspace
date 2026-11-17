@@ -30,7 +30,8 @@ func RunUDP(conn *net.UDPConn, events []sim.Event, ctrl *jitter.Controller, st *
 		if err != nil {
 			var nerr net.Error
 			if errors.As(err, &nerr) && nerr.Timeout() {
-				ctrl.Tick(now)
+				// Check stream end before ticking so the tail is not
+				// padded with concealment frames.
 				switch {
 				case ctrl.Tail(now):
 					st.EndReason = "udp_idle_timeout"
@@ -39,6 +40,7 @@ func RunUDP(conn *net.UDPConn, events []sim.Event, ctrl *jitter.Controller, st *
 					st.EndReason = "udp_no_data_timeout"
 					st.Timeouts++
 				default:
+					ctrl.Tick(now)
 					continue
 				}
 				break

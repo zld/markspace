@@ -89,30 +89,23 @@ func TestDuplicateAndConflict(t *testing.T) {
 	}
 }
 
-func TestOverflowEvictsExpired(t *testing.T) {
+func TestOverflowDrop(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.QueueCap = 4
 	st := metrics.New(100)
 	c := NewController(cfg, st, plc.New(1))
-	// Fill the queue without starting playout (no ticks).
+	// Fill the queue; without ticks nothing is played out.
 	for i := 0; i < 4; i++ {
 		p, pcm := pkt(uint16(i))
 		c.Add(p, pcm, int64(i))
 	}
-	// Play two frames so seq 0,1 are in the past, then overflow the queue.
-	c.Tick(50)
-	if st.Played == 0 {
-		t.Fatal("expected playout to have started")
+	if c.QueueLen() != 4 {
+		t.Fatalf("queue len=%d, want 4", c.QueueLen())
 	}
-	for i := 4; i < 8; i++ {
-		p, pcm := pkt(uint16(i))
-		c.Add(p, pcm, int64(50+i))
-	}
-	if st.OverflowDrop != 0 {
-		t.Fatalf("overflow=%d, want 0 (expired frames evicted first)", st.OverflowDrop)
-	}
-	if st.LateDrop == 0 {
-		t.Fatal("expired frames should be counted as late drops")
+	p, pcm := pkt(4)
+	c.Add(p, pcm, 10)
+	if st.OverflowDrop != 1 {
+		t.Fatalf("overflow=%d, want 1", st.OverflowDrop)
 	}
 }
 

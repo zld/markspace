@@ -5,6 +5,8 @@
 package jitter
 
 import (
+	"math"
+
 	"jbcheck/internal/metrics"
 	"jbcheck/internal/packet"
 	"jbcheck/internal/plc"
@@ -49,6 +51,7 @@ type Controller struct {
 	nextSeq uint16
 
 	started         bool
+	anchorMs        int64 // arrival time anchoring the current playout schedule
 	prefillDeadline int64
 	nextPlayMs      int64
 	lastPacketMs    int64
@@ -106,6 +109,11 @@ func (c *Controller) Add(p packet.Packet, pcm []int16, nowMs int64) {
 	if SeqLess(p.Seq, c.nextSeq) {
 		c.st.LateDrop++
 		return
+	}
+	// A packet arriving into an empty, not-yet-started buffer anchors the
+	// next playout schedule (initial prefill and re-buffering alike).
+	if !c.started && c.q.Len() == 0 {
+		c.anchorMs = nowMs
 	}
 	switch err := c.q.Insert(Frame{Seq: p.Seq, Timestamp: p.Timestamp, PCM: pcm}); err {
 	case nil:
@@ -172,7 +180,7 @@ func (c *Controller) maybeStart(nowMs int64) {
 	}
 	if c.q.Len() >= c.target || (c.q.Len() > 0 && nowMs >= c.prefillDeadline) {
 		c.started = true
-		c.nextPlayMs = nowMs
+		c.nextPlayMs = c.anchorMs + int64(c.target)*10
 	}
 }
 
@@ -184,7 +192,7 @@ func (c *Controller) maybeAdjust(nowMs int64) {
 		return
 	}
 	c.lastAdjustMs = nowMs
-	desired := c.cfg.MinTarget + int(c.jitterEst/10.0)
+	desired := c.cfg.MinTarget + int(math.Ceil(c.jitterEst/5.0))
 	if desired < c.cfg.MinTarget {
 		desired = c.cfg.MinTarget
 	}
@@ -194,6 +202,10 @@ func (c *Controller) maybeAdjust(nowMs int64) {
 	switch {
 	case desired >= c.target+2 && c.target < c.cfg.MaxTarget:
 		c.target++
+		// Growing the buffer delays playout by one frame slot.
+		if c.started {
+			c.nextPlayMs += 10
+		}
 	case desired <= c.target-2 && c.target > c.cfg.MinTarget:
 		c.target--
 	}
