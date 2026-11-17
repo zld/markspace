@@ -54,13 +54,20 @@ def _state_from_counts(completed: int, total: int, failed: int) -> str:
 
 
 class Control:
-    """Pause / stop signalling shared by the CLI, scheduler and workers."""
+    """Pause / drain / stop signalling shared by the CLI, scheduler and workers.
+
+    * ``pause`` freezes claiming but leaves leases intact.
+    * ``drain`` stops claiming new jobs and lets in-flight work finish: a
+      controlled pause that exits with success.
+    * ``stop`` cancels in-flight work so a SIGINT can unwind promptly.
+    """
 
     def __init__(self) -> None:
         self._run = threading.Event()
         self._run.set()
         self._stop = threading.Event()
-        self._stop_reason: str | None = None
+        self._draining = threading.Event()
+        self._reason: str | None = None
         self._lock = threading.Lock()
 
     def pause(self) -> None:
@@ -69,10 +76,19 @@ class Control:
     def resume(self) -> None:
         self._run.set()
 
-    def stop(self, reason: str | None = None) -> None:
+    def _set_reason(self, reason: str | None) -> None:
         with self._lock:
-            if self._stop_reason is None and reason is not None:
-                self._stop_reason = reason
+            if self._reason is None and reason is not None:
+                self._reason = reason
+
+    def drain(self, reason: str | None = None) -> None:
+        self._set_reason(reason)
+        self._draining.set()
+        self._run.set()
+
+    def stop(self, reason: str | None = None) -> None:
+        self._set_reason(reason)
+        self._draining.set()
         self._run.set()
         self._stop.set()
 
@@ -81,16 +97,18 @@ class Control:
         return self._stop.is_set()
 
     @property
+    def draining(self) -> bool:
+        return self._draining.is_set()
+
+    @property
     def stop_reason(self) -> str | None:
-        return self._stop_reason
+        return self._reason
 
     def wait_until_runnable(self, timeout: float = 0.2) -> bool:
-        """Block while paused; returns False when stopped."""
-        while not self.stopped:
+        """Block while paused; returns False when stopped or draining."""
+        while not self.stopped and not self.draining:
             if self._run.wait(timeout):
-                if self.stopped:
-                    return False
-                return True
+                return not (self.stopped or self.draining)
         return False
 
 
@@ -138,6 +156,7 @@ class Scheduler:
         clips: dict[Resolution, SourceClip],
         output_dir: Path,
         control: Control | None = None,
+        timeout: float = 300.0,
     ) -> None:
         self.store = store
         self.encoder = encoder
@@ -145,6 +164,7 @@ class Scheduler:
         self.clips = clips
         self.output_dir = output_dir
         self.control = control or Control()
+        self.timeout = timeout
         self._inflight = _InFlight()
         self._errors: list[dict[str, str]] = []
         self._errors_lock = threading.Lock()
@@ -152,9 +172,18 @@ class Scheduler:
         self._references: dict[Resolution, object] = {}
 
     # -- helpers ---------------------------------------------------------
-    def plan_signature(self) -> str:
-        payload = "|".join(sorted(f"{j.key}:{j.job.resolution.label}" for j in self.jobs))
+    @staticmethod
+    def signature_for(jobs: tuple[PlannedJob, ...]) -> str:
+        payload = "|".join(
+            sorted(
+                f"{j.key}:{j.source_sha256}:{j.ffmpeg_version}:{j.frames}:{j.fps}"
+                for j in jobs
+            )
+        )
         return hashlib.sha256(payload.encode()).hexdigest()[:16]
+
+    def plan_signature(self) -> str:
+        return self.signature_for(self.jobs)
 
     def _reference(self, resolution: Resolution):
         if resolution not in self._references:
@@ -239,6 +268,7 @@ class Scheduler:
                 job,
                 output_path=out_path,
                 worker_id=worker_id,
+                timeout=self.timeout,
                 cancel_check=lambda: self.control.stopped,
             )
             measurement = measure(
@@ -294,7 +324,7 @@ class Scheduler:
     def _worker(self, index: int, limit: _Limit, frames: int) -> None:
         worker_id = f"w{index}"
         try:
-            while not self.control.stopped:
+            while not self.control.stopped and not self.control.draining:
                 if not self.control.wait_until_runnable():
                     break
                 if not limit.take():
@@ -317,8 +347,6 @@ class Scheduler:
                         self._process(row, worker_id, frames)
                     finally:
                         self._inflight.discard(str(row["task_key"]))
-                if self.control.stopped:
-                    break
         finally:
             self.store.release_owned(worker_id, "worker stopped")
 
@@ -348,7 +376,9 @@ class Scheduler:
 
         counts = self.store.state_counts(keys)
         completed = counts["completed"]
-        summary = RunSummary(
+        total = len(keys)
+        state = _state_from_counts(completed, total, counts["failed"])
+        return RunSummary(
             jobs_total=total,
             completed=completed,
             pending=counts["pending"],
@@ -356,8 +386,7 @@ class Scheduler:
             running=counts["running"],
             reused=before_completed,
             newly_completed=max(0, completed - before_completed),
-            state=_state_from_counts(completed, total, counts["failed"]),
+            state=state,
             errors=list(self._errors),
             stop_reason=self.control.stop_reason,
         )
-        return summary
