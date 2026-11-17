@@ -1,0 +1,16 @@
+# Virtual environment (local only, never committed)
+.venv/
+
+# Python caches and build artefacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# macOS metadata
+.DS_Store
+
+# Generated fixtures and local outputs
+*.faults.json
+frames*.jsonl
