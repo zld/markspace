@@ -8,7 +8,9 @@ keys and can therefore be resumed safely.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import hashlib
+import json
+from dataclasses import dataclass
 
 from .errors import (
     ALLOWED_PRESETS,
@@ -229,4 +231,81 @@ def build_plan(
         jobs=jobs,
         duplicate_targets=duplicate_targets,
         max_workers=workers,
+    )
+def source_id(resolution: Resolution, frames: int, fps: int, content_seed: int) -> str:
+    payload = {
+        "kind": "synthetic-moving-texture",
+        "width": resolution.width,
+        "height": resolution.height,
+        "frames": frames,
+        "fps": fps,
+        "seed": content_seed,
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def task_key(
+    *,
+    source_sha256: str,
+    job: JobSpec,
+    ffmpeg_version: str,
+    frames: int,
+    fps: int,
+) -> str:
+    payload = {
+        "source_sha256": source_sha256,
+        "params": job.canonical_params(),
+        "ffmpeg_version": ffmpeg_version,
+        "frames": frames,
+        "fps": fps,
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+@dataclass(frozen=True)
+class PlannedJob:
+    job: JobSpec
+    source_sha256: str
+    ffmpeg_version: str
+    frames: int
+    fps: int
+    key: str
+
+    def insert_row(self) -> tuple[object, ...]:
+        return (
+            self.key,
+            self.job.resolution.label,
+            self.job.resolution.width,
+            self.job.resolution.height,
+            self.job.bitrate_kbps,
+            self.job.target_bps,
+            self.job.preset,
+            self.source_sha256,
+            self.ffmpeg_version,
+            self.frames,
+            self.fps,
+        )
+
+
+def materialise_jobs(
+    plan: Plan, source_sha256: dict[Resolution, str], ffmpeg_version: str
+) -> tuple[PlannedJob, ...]:
+    return tuple(
+        PlannedJob(
+            job=job,
+            source_sha256=source_sha256[job.resolution],
+            ffmpeg_version=ffmpeg_version,
+            frames=plan.frames,
+            fps=plan.fps,
+            key=task_key(
+                source_sha256=source_sha256[job.resolution],
+                job=job,
+                ffmpeg_version=ffmpeg_version,
+                frames=plan.frames,
+                fps=plan.fps,
+            ),
+        )
+        for job in plan.jobs
     )
