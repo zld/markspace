@@ -7,6 +7,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_library(tl_core STATIC
   src/hash.cpp
+  src/manifest.cpp
 )
 target_include_directories(tl_core PUBLIC include)
 
