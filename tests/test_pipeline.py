@@ -198,3 +198,160 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(len(ladder.rungs), 3)
             self.assertEqual(ladder.monotonicity, "PASS")
             previous = 0
+            for rung in ladder.rungs:
+                self.assertGreater(rung.actual_bps, 0)
+                self.assertGreaterEqual(rung.actual_bps, previous)
+                previous = rung.actual_bps
+
+    def test_limit_then_resume_reuses_completed(self) -> None:
+        with Store(self.db) as store:
+            store.sync_plan(self.jobs)
+            first = self.make_scheduler(store).run(workers=1, limit_jobs=2)
+            self.assertEqual(first.completed, 2)
+            self.assertEqual(first.pending, 1)
+
+            second = self.make_scheduler(store).run(workers=2)
+            self.assertEqual(second.state, "COMPLETE")
+            self.assertEqual(second.reused, 2)
+            self.assertEqual(second.newly_completed, 1)
+
+    def test_failed_job_does_not_block_others(self) -> None:
+        with Store(self.db) as store:
+            store.sync_plan(self.jobs)
+            failing = self.jobs[0]
+            original_complete = store.complete
+
+            def flaky_complete(**kwargs):
+                if kwargs["task_key"] == failing.key:
+                    raise RuntimeError("simulated failure")
+                return original_complete(**kwargs)
+
+            store.complete = flaky_complete  # type: ignore[assignment]
+            summary = self.make_scheduler(store).run(workers=1)
+            self.assertGreaterEqual(summary.failed, 1)
+            self.assertGreaterEqual(summary.completed, 1)
+
+    def test_sigint_like_stop_returns_jobs_to_pending(self) -> None:
+        control = Control()
+        with Store(self.db) as store:
+            store.sync_plan(self.jobs)
+            scheduler = self.make_scheduler(store, control)
+            timer = threading.Timer(0.02, lambda: control.stop("interrupt"))
+            timer.start()
+            try:
+                summary = scheduler.run(workers=1)
+            finally:
+                timer.cancel()
+            keys = tuple(job.key for job in self.jobs)
+            counts = store.state_counts(keys)
+            self.assertEqual(summary.state, "PENDING")
+            self.assertEqual(counts["running"], 0)
+            self.assertEqual(counts["failed"], 0)
+            self.assertEqual(counts["pending"], len(keys))
+
+    def test_pause_then_resume_completes(self) -> None:
+        control = Control()
+        with Store(self.db) as store:
+            store.sync_plan(self.jobs)
+            scheduler = self.make_scheduler(store, control)
+            control.pause()
+            thread = threading.Thread(target=lambda: scheduler.run(workers=1))
+            thread.start()
+            time.sleep(0.15)
+            # Nothing should have been claimed while paused.
+            keys = tuple(job.key for job in self.jobs)
+            self.assertEqual(store.state_counts(keys)["pending"], len(keys))
+            control.resume()
+            thread.join(timeout=60)
+            self.assertFalse(thread.is_alive())
+            self.assertEqual(store.state_counts(keys)["completed"], len(keys))
+
+
+class CliTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.encoder = detect_encoder()
+
+    def test_cli_limit_then_resume(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "demo.sqlite"
+            common = [
+                "run",
+                "--db",
+                str(db),
+                "--frames",
+                str(FRAMES),
+                "--resolutions",
+                SMALL,
+                "--bitrates-kbps",
+                "200,500,1000,1000",
+                "--presets",
+                "ultrafast",
+                "--workers",
+                "2",
+            ]
+            code, out = run_cli(common + ["--limit-jobs", "2"])
+            self.assertEqual(code, EXIT_OK)
+            self.assertIn("state=PARTIAL", out)
+            self.assertIn("jobs_total=3", out)
+
+            code, out = run_cli(common + ["--resume"])
+            self.assertEqual(code, EXIT_OK)
+            self.assertIn("state=COMPLETE", out)
+            self.assertIn("duplicate_targets=1", out)
+            self.assertIn("reused=2", out)
+            self.assertIn("monotonicity=PASS", out)
+
+    def test_cli_rejects_bad_configuration(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "demo.sqlite"
+            code, out = run_cli(
+                ["run", "--db", str(db), "--resolutions", "641x361", "--frames", "8"]
+            )
+            self.assertEqual(code, EXIT_FAILURE)
+            self.assertIn("error=", out)
+
+    def test_cli_refuses_resume_after_plan_change(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "demo.sqlite"
+            base = ["run", "--db", str(db), "--frames", str(FRAMES), "--presets", "ultrafast"]
+            code, _ = run_cli(base + ["--resolutions", SMALL, "--limit-jobs", "1"])
+            self.assertEqual(code, EXIT_OK)
+            code, out = run_cli(
+                base + ["--resolutions", "480x270", "--resume"]
+            )
+            self.assertEqual(code, EXIT_FAILURE)
+            self.assertIn("refusing to resume", out)
+
+    def test_cli_json_report_written(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "demo.sqlite"
+            json_out = Path(tmp) / "report.json"
+            code, _ = run_cli(
+                [
+                    "run",
+                    "--db",
+                    str(db),
+                    "--frames",
+                    str(FRAMES),
+                    "--resolutions",
+                    SMALL,
+                    "--bitrates-kbps",
+                    "200,500,1000",
+                    "--presets",
+                    "ultrafast",
+                    "--json-out",
+                    str(json_out),
+                ]
+            )
+            self.assertEqual(code, EXIT_OK)
+            payload = json.loads(json_out.read_text())
+            self.assertEqual(payload["run"]["state"], "COMPLETE")
+            self.assertEqual(len(payload["ladder"]["rungs"]), 3)
+            for rung in payload["ladder"]["rungs"]:
+                self.assertIsInstance(rung["actual_bps"], int)
+                self.assertTrue(0.0 < rung["quality_psnr_db"] < 200.0)
+
+
+if __name__ == "__main__":
+    unittest.main()
