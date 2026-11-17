@@ -67,6 +67,20 @@ class Ladder:
         }
 
 
+# A candidate may serve a target only if its actual bitrate is within this
+# ratio of the target.  Without a band the DP can "cheat" monotonicity by
+# assigning a far-off encode to a tier, producing a ladder that is monotone
+# but useless (and would silently accept a PSNR regression).
+ELIGIBILITY_RATIO = 2.0
+
+
+def _eligible(candidate: Candidate, target_bps: int) -> bool:
+    if target_bps <= 0:
+        return False
+    ratio = candidate.actual_bps / target_bps
+    return 1.0 / ELIGIBILITY_RATIO <= ratio <= ELIGIBILITY_RATIO
+
+
 def _compatible(previous: Candidate, current: Candidate) -> bool:
     # "Must not fall": equal actual bitrate is permitted, so two adjacent
     # targets may legitimately share the same candidate.  Each target still
@@ -74,6 +88,12 @@ def _compatible(previous: Candidate, current: Candidate) -> bool:
     if current.actual_bps < previous.actual_bps:
         return False
     return current.quality_psnr_db >= previous.quality_psnr_db - _EPS
+
+
+def _cost(candidate: Candidate, target_bps: int) -> float:
+    # Primary term: absolute bitrate error (scaled to bits so it dominates).
+    # Secondary term: nudge toward the higher-PSNR encode on near-ties.
+    return abs(candidate.actual_bps - target_bps) * 1000.0 - candidate.quality_psnr_db
 
 
 def _select(candidates: Sequence[Candidate], target_bps: Sequence[int]) -> list[Candidate] | None:
@@ -85,16 +105,17 @@ def _select(candidates: Sequence[Candidate], target_bps: Sequence[int]) -> list[
     cost: list[list[float]] = []
     back: list[list[int]] = []
     for index, target in enumerate(target_bps):
-        layer = [
-            float(abs(candidate.actual_bps - target))
-            if index == 0
-            else float("inf")
-            for candidate in candidates
-        ]
+        layer = [float("inf")] * count
         pointers = [-1] * count
-        if index > 0:
+        if index == 0:
+            for current in range(count):
+                if _eligible(candidates[current], target):
+                    layer[current] = _cost(candidates[current], target)
+        else:
             previous_cost = cost[index - 1]
             for current in range(count):
+                if not _eligible(candidates[current], target):
+                    continue
                 best = float("inf")
                 best_prev = -1
                 for prev in range(count):
@@ -102,9 +123,7 @@ def _select(candidates: Sequence[Candidate], target_bps: Sequence[int]) -> list[
                         continue
                     if not _compatible(candidates[prev], candidates[current]):
                         continue
-                    total = previous_cost[prev] + abs(
-                        candidates[current].actual_bps - target
-                    )
+                    total = previous_cost[prev] + _cost(candidates[current], target)
                     if total < best:
                         best = total
                         best_prev = prev
