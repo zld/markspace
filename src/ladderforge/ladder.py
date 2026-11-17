@@ -68,9 +68,10 @@ class Ladder:
 
 
 def _compatible(previous: Candidate, current: Candidate) -> bool:
-    # A ladder must climb: a higher target has to yield a genuinely higher
-    # bitrate, otherwise every tier could collapse onto one encode.
-    if current.actual_bps <= previous.actual_bps:
+    # "Must not fall": equal actual bitrate is permitted, so two adjacent
+    # targets may legitimately share the same candidate.  Each target still
+    # keeps its own rung record.
+    if current.actual_bps < previous.actual_bps:
         return False
     return current.quality_psnr_db >= previous.quality_psnr_db - _EPS
 
@@ -170,7 +171,7 @@ def build_ladder(
 
 def verify_monotonic(rungs: Sequence[LadderRung]) -> bool:
     for previous, current in zip(rungs, rungs[1:]):
-        if current.actual_bps <= previous.actual_bps:
+        if current.actual_bps < previous.actual_bps:
             return False
         if current.quality_psnr_db < previous.quality_psnr_db - _EPS:
             return False
