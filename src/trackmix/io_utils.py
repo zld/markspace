@@ -39,7 +39,7 @@ def _strip_peak_chunk(raw: bytes) -> bytes:
     """
     if raw[:4] != b"RIFF" or raw[8:12] != b"WAVE":
         return raw
-    body = bytearray(b"WAVE")
+    body = bytearray()  # chunks only; the 4-byte "WAVE" id is excluded
     pos = 12
     while pos + 8 <= len(raw):
         chunk_id = raw[pos:pos + 4]
@@ -48,7 +48,10 @@ def _strip_peak_chunk(raw: bytes) -> bytes:
         if chunk_id != b"PEAK":
             body += raw[pos:pos + 8 + padded]
         pos += 8 + padded
-    return b"RIFF" + (len(body) - 4).to_bytes(4, "little") + bytes(body)
+    # RIFF size counts every byte after the 8-byte RIFF/size header,
+    # i.e. the "WAVE" id (4) plus all retained chunks.
+    riff_size = 4 + len(body)
+    return b"RIFF" + riff_size.to_bytes(4, "little") + b"WAVE" + bytes(body)
 
 
 def refuse_overwrite(path: Path, force: bool) -> None:

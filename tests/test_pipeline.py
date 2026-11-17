@@ -175,8 +175,22 @@ class PipelineTest(unittest.TestCase):
         second = self.dir / "b.wav"
         write_wav(first, data, 48000, force=False)
         write_wav(second, data, 48000, force=False)
-        self.assertEqual(first.read_bytes(), second.read_bytes())
-        self.assertNotIn(b"PEAK", first.read_bytes())
+        raw = first.read_bytes()
+        self.assertEqual(raw, second.read_bytes())
+        self.assertNotIn(b"PEAK", raw)
+        # RIFF size header must exactly match the container body length.
+        riff_size = int.from_bytes(raw[4:8], "little")
+        self.assertEqual(riff_size, len(raw) - 8)
+        # Odd frame counts exercise chunk padding; header must stay valid.
+        odd = self.dir / "odd.wav"
+        write_wav(odd, np.ones((7, 1), dtype=np.float32), 48000, force=False)
+        odd_raw = odd.read_bytes()
+        self.assertEqual(
+            int.from_bytes(odd_raw[4:8], "little"), len(odd_raw) - 8
+        )
+        check, rate = sf.read(str(odd), dtype="float32", always_2d=True)
+        self.assertEqual(rate, 48000)
+        np.testing.assert_array_equal(check, np.ones((7, 1), np.float32))
 
     def test_demo_outputs_byte_identical_across_runs(self) -> None:
         import hashlib
