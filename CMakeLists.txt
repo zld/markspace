@@ -25,3 +25,14 @@ add_executable(transition_lab src/main.cpp)
 target_link_libraries(transition_lab PRIVATE tl_core)
 
 enable_testing()
+
+add_executable(renderer_test tests/renderer_test.cpp)
+target_link_libraries(renderer_test PRIVATE tl_core)
+
+set(TL_SCRATCH ${CMAKE_CURRENT_BINARY_DIR}/test_scratch)
+add_test(NAME endpoints COMMAND renderer_test endpoints)
+add_test(NAME determinism COMMAND renderer_test determinism)
+add_test(NAME concurrency COMMAND renderer_test concurrency)
+add_test(NAME ppm_strict COMMAND renderer_test ppm ${TL_SCRATCH})
+add_test(NAME timeline COMMAND renderer_test timeline)
+add_test(NAME manifest COMMAND renderer_test manifest ${TL_SCRATCH})
