@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Virtual environment (created at project root, never committed)
+.venv/
+
+# Generated audio / reports
+out/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
