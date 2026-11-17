@@ -13,12 +13,7 @@ import numpy as np
 import soundfile as sf
 
 from trackmix.automation import GainCurve
-from trackmix.errors import (
-    AudioError,
-    ManifestError,
-    StreamVerifyError,
-    WriteError,
-)
+from trackmix.errors import AudioError, ManifestError, StreamVerifyError, WriteError
 from trackmix.graph import Graph, Node, SumNode, TrackNode, build_graph
 from trackmix.io_utils import write_wav
 from trackmix.manifest import load_manifest
