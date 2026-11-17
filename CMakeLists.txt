@@ -16,6 +16,7 @@ add_library(tl_core
   src/ppm.cpp
   src/transition.cpp
   src/timeline.cpp
+  src/biome.cpp
 )
 target_include_directories(tl_core PUBLIC include)
 
