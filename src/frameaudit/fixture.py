@@ -32,8 +32,12 @@ FAULT_ORDER = ("missing", "backward", "jump", "duplicate")
 FIXTURE_TIME_BASE = Fraction(1, 1000)
 GOP_SIZE = 25
 MAX_B_FRAMES = 3
-# Jump distortion in frame durations; exceeds the 1.5x repair threshold.
-JUMP_SHIFT_FRAMES = 4
+# Jump distortion in frame durations.  A +2 frame shift opens a gap of three
+# frame durations (100 ms at 30 fps) without colliding with the next frame's
+# PTS, so it produces exactly one ``jump`` repair with no cascade.  The gap
+# exceeds the 1.5x repair threshold (50 ms); the repair restores the normal
+# 33.3 ms per-frame cadence.
+JUMP_SHIFT_FRAMES = 2
 # Backward distortion in frame durations.
 BACKWARD_SHIFT_FRAMES = 2
 
