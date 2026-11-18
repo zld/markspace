@@ -16,10 +16,12 @@ from .errors import ConsistencyError, ManifestError, RenderError
 from .graph import MixGraph
 from .metrics import StatsAccumulator
 
+_MEMORY_BUDGET_BYTES = 1024 * 1024 * 1024
+
 
 @dataclass
 class StreamResult:
-    master: np.ndarray
+    master: np.ndarray | None
     tracks: dict[str, np.ndarray] = field(default_factory=dict)
     block_lengths: list[int] = field(default_factory=list)
     master_stats: StatsAccumulator = field(default_factory=StatsAccumulator)
@@ -59,12 +61,17 @@ def render_offline(graph: MixGraph) -> tuple[np.ndarray, dict[str, np.ndarray]]:
     return result.master, result.tracks
 
 
-def render_streaming(graph: MixGraph, block_frames: int) -> StreamResult:
-    """Render block by block; the final block may be shorter than the length."""
+def render_streaming(graph: MixGraph, block_frames: int,
+                     *, keep_tracks: bool = True) -> StreamResult:
+    """Render block by block; the final block may be shorter.
+
+    ``keep_tracks=False`` accumulates per-track statistics without retaining
+    the full per-track buffers.
+    """
     block_frames = validate_block_frames(block_frames)
     master = np.zeros((graph.total_frames, 2), dtype=np.float64)
-    tracks = {p.track.id: np.zeros((graph.total_frames, 2), dtype=np.float64)
-              for p in graph.programs}
+    tracks = ({p.track.id: np.zeros((graph.total_frames, 2), dtype=np.float64)
+               for p in graph.programs} if keep_tracks else {})
     master_stats = StatsAccumulator()
     track_stats = {p.track.id: StatsAccumulator() for p in graph.programs}
     lengths: list[int] = []
@@ -74,7 +81,8 @@ def render_streaming(graph: MixGraph, block_frames: int) -> StreamResult:
         master[start:start + frames] = result.master
         master_stats.add(result.master)
         for track_id, samples in result.tracks.items():
-            tracks[track_id][start:start + frames] = samples
+            if keep_tracks:
+                tracks[track_id][start:start + frames] = samples
             track_stats[track_id].add(samples)
         lengths.append(frames)
     return StreamResult(master=master, tracks=tracks, block_lengths=lengths,
@@ -111,15 +119,30 @@ def statistics(tracks: dict[str, np.ndarray], master: np.ndarray) -> dict:
     return {"tracks": track_stats, "master": master_acc.as_dict()}
 
 
+def _check_memory_budget(graph: MixGraph, streaming: bool) -> None:
+    """Refuse sessions whose full-length buffers would exhaust the machine."""
+    bytes_per_frame = 2 * 8 * (len(graph.programs) + 1 + (1 if streaming else 0))
+    needed = graph.total_frames * bytes_per_frame
+    if needed > _MEMORY_BUDGET_BYTES:
+        raise ManifestError(
+            f"session of {graph.total_frames} frames needs about "
+            f"{needed / 2**20:.0f} MiB of render buffers, above the "
+            f"{_MEMORY_BUDGET_BYTES / 2**20:.0f} MiB budget; shorten duration_ms "
+            f"or lower the output rate",
+            field="duration_ms",
+        )
+
+
 def process(session, rate: int, block_frames: int | None) -> dict:
     """Render the requested path(s) and return audio, stats and comparison."""
     graph = MixGraph(session, rate)
+    _check_memory_budget(graph, streaming=block_frames is not None)
     offline_master, offline_tracks = render_offline(graph)
     comparison = None
     stream = None
     if block_frames is not None:
         block_frames = validate_block_frames(block_frames)
-        stream = render_streaming(graph, block_frames)
+        stream = render_streaming(graph, block_frames, keep_tracks=False)
         comparison = compare(offline_master, stream.master)
         if not comparison.consistent:
             raise ConsistencyError(
@@ -128,6 +151,7 @@ def process(session, rate: int, block_frames: int | None) -> dict:
                 f"channel {comparison.first_diff_channel}",
                 field="render",
             )
+        del stream.master  # the offline master is the delivered audio
     return {
         "graph": graph,
         "master": offline_master,

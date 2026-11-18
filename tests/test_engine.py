@@ -173,6 +173,15 @@ def test_invalid_block_frames(value) -> None:
         validate_block_frames(value)
 
 
+def test_oversized_session_refused_with_exit_2(tmp_path: Path) -> None:
+    write_wav(tmp_path / "a.wav", tone(48, 48000), 48000)
+    session = _session(tmp_path, [{"id": "a", "path": "a.wav", "channels": "mono"}],
+                       duration_ms=3_600_000)
+    with pytest.raises(ManifestError, match="budget") as excinfo:
+        process(session, 48000, 257)
+    assert excinfo.value.exit_code == 2
+
+
 def test_process_reports_comparison_and_stats(tmp_path: Path) -> None:
     write_wav(tmp_path / "a.wav", tone(4410, 44100, level=0.2), 44100)
     session = _session(tmp_path, [{"id": "a", "path": "a.wav", "channels": "mono"}],
