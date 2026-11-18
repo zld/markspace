@@ -1,0 +1,6 @@
+build/
+out/
+fixtures/
+*.tmp
+*.ppm.tmp
+.DS_Store
