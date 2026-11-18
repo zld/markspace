@@ -115,7 +115,6 @@ class SilenceDetector:
         starts: np.ndarray,
         n_samples: int,
         frame_len: int,
-        sample_rate: int,
         open_thr: float,
         close_thr: float,
     ) -> list[Region]:
@@ -182,7 +181,7 @@ class SilenceDetector:
         close_thr, open_thr, floor = self._thresholds(db)
         n_samples = int(np.asarray(samples).shape[0])
         raw = self._raw_segments(
-            db, starts, n_samples, frame_len, sample_rate, open_thr, close_thr
+            db, starts, n_samples, frame_len, open_thr, close_thr
         )
         silence, silence_total = self._silence_from_raw(raw, n_samples)
         merged = self._merge(raw, ms_to_samples(p.merge_gap_ms, sample_rate))

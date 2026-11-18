@@ -3,8 +3,8 @@ import unittest
 
 import numpy as np
 
-from audioslice.detector import DetectParams, Region, SilenceDetector
-from audioslice.signal import frame_rms, ms_to_samples, rms_to_db
+from audioslice.detector import DetectParams, SilenceDetector
+from audioslice.signal import frame_rms, rms_to_db
 
 SR = 8000
 

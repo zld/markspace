@@ -9,7 +9,6 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
@@ -21,7 +20,7 @@ from .report import (
     build_summary_report,
     render_json,
 )
-from .signal import AudioError, generate_fixtures, read_wav
+from .signal import AudioError, generate_fixtures
 from .storage import Storage, StorageError
 
 
