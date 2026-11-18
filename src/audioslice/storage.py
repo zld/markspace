@@ -181,37 +181,24 @@ class Storage:
         return self._load_result(int(row["id"]), dict(row))
 
     def _load_result(self, result_id: int, base: dict) -> dict:
-        def regions(table: str) -> list[dict]:
-            rows = self.conn.execute(
-                f"SELECT start_sample, end_sample FROM {table} "
-                "WHERE result_id = ? ORDER BY ord",
-                (result_id,),
-            ).fetchall()
+        def regions(sql: str, params: tuple) -> list[dict]:
+            rows = self.conn.execute(sql, params).fetchall()
             return [
                 {"start_sample": int(r["start_sample"]), "end_sample": int(r["end_sample"])}
                 for r in rows
             ]
-        base["segments"] = [
-            r
-            for r in self.conn.execute(
-                "SELECT start_sample, end_sample FROM segments "
-                "WHERE result_id = ? AND kind = 'merged' ORDER BY ord",
-                (result_id,),
-            ).fetchall()
-        ]
-        base["segments"] = [
-            {"start_sample": int(r["start_sample"]), "end_sample": int(r["end_sample"])}
-            for r in base["segments"]
-        ]
-        base["raw_segments"] = [
-            {"start_sample": int(r["start_sample"]), "end_sample": int(r["end_sample"])}
-            for r in self.conn.execute(
-                "SELECT start_sample, end_sample FROM segments "
-                "WHERE result_id = ? AND kind = 'raw' ORDER BY ord",
-                (result_id,),
-            ).fetchall()
-        ]
-        base["silence_regions"] = regions("silence_zones")
+
+        seg_sql = (
+            "SELECT start_sample, end_sample FROM segments "
+            "WHERE result_id = ? AND kind = ? ORDER BY ord"
+        )
+        base["segments"] = regions(seg_sql, (result_id, "merged"))
+        base["raw_segments"] = regions(seg_sql, (result_id, "raw"))
+        base["silence_regions"] = regions(
+            "SELECT start_sample, end_sample FROM silence_zones "
+            "WHERE result_id = ? ORDER BY ord",
+            (result_id,),
+        )
         return base
 
     def save_result(
