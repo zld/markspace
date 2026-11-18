@@ -18,14 +18,14 @@ type CueLine struct {
 
 // FileResult aggregates one input file's conversion and verification.
 type FileResult struct {
-	Path           string
-	Encoding       string
-	InputCount     int
-	OutputCount    int
-	Dropped        int
-	MaxAbsDeltaMS  int64
-	Cues           []CueLine
-	Error          string
+	Path          string
+	Encoding      string
+	InputCount    int
+	OutputCount   int
+	Dropped       int
+	MaxAbsDeltaMS int64
+	Cues          []CueLine
+	Error         string
 }
 
 // Summary is the batch-level rollup.

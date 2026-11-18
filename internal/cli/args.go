@@ -29,17 +29,17 @@ const (
 
 // VerifyArgs holds every parsed option of a verify command.
 type VerifyArgs struct {
-	Input    string
-	Output   string
-	From     cue.Format
-	To       cue.Format
+	Input     string
+	Output    string
+	From      cue.Format
+	To        cue.Format
 	Roundtrip cue.Format
-	Rate     timebase.Rate
-	Strategy string
-	Encoding string
-	Jobs     int
-	Force    bool
-	IsBatch  bool
+	Rate      timebase.Rate
+	Strategy  string
+	Encoding  string
+	Jobs      int
+	Force     bool
+	IsBatch   bool
 }
 
 // UsageError marks argument problems so main can map them to exit code 2.

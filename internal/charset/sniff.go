@@ -19,10 +19,10 @@ import (
 
 // Encoding names reported to the user and accepted on the command line.
 const (
-	UTF8    = "utf-8"
-	UTF16LE = "utf-16le"
-	UTF16BE = "utf-16be"
-	GBK     = "gbk"
+	UTF8     = "utf-8"
+	UTF16LE  = "utf-16le"
+	UTF16BE  = "utf-16be"
+	GBK      = "gbk"
 	ShiftJIS = "shift-jis"
 )
 
