@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Project-local virtual environment (required at repository root)
+.venv/
+
+# Local demo and scratch outputs
+demo.sqlite3
+demo-fixtures/
+*.sqlite3
+*.wav
+.pytest_cache/
