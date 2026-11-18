@@ -14,6 +14,7 @@ add_library(tr_core STATIC
   src/hash.cpp
   src/timeline.cpp
   src/transition.cpp
+  src/renderer.cpp
 )
 target_include_directories(tr_core PUBLIC src)
 target_compile_options(tr_core PRIVATE -Wall -Wextra -Wpedantic)
