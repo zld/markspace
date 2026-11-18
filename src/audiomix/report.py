@@ -22,11 +22,17 @@ from .model import RenderError
 
 
 class StatsAccumulator:
-    """Streaming statistics for one track or the mix bus (float64)."""
+    """Streaming statistics for one track or the mix bus (float64).
+
+    All reductions are independent of block boundaries: square sums use
+    pairwise (Neumaier) accumulation while active-frame and clipping counts
+    are integer counts over the same global sample set.
+    """
 
     def __init__(self, name: str):
         self.name = name
-        self._sum_sq = 0.0
+        self._compensated_sum = 0.0
+        self._compensation = 0.0
         self._peak = 0.0
         self._active_frames = 0
         self._clipped = 0
@@ -41,7 +47,15 @@ class StatsAccumulator:
                 f"non-finite sample reached statistics for {self.name!r}",
                 track=self.name)
         self._channels = block.shape[1]
-        self._sum_sq += float(np.sum(block * block, dtype=np.float64))
+        # Neumaier compensated summation over block-level partial sums.
+        partial = float(np.sum(block * block, dtype=np.float64))
+        total = self._compensated_sum + partial
+        if abs(self._compensated_sum) >= abs(partial):
+            self._compensation += (
+                self._compensated_sum - total) + partial
+        else:
+            self._compensation += (partial - total) + self._compensated_sum
+        self._compensated_sum = total
         self._peak = max(self._peak, float(np.max(np.abs(block))))
         self._active_frames += int(np.count_nonzero(
             np.any(block != 0.0, axis=1)))
@@ -50,7 +64,8 @@ class StatsAccumulator:
 
     def as_dict(self) -> dict[str, Any]:
         sample_count = self._active_frames * max(self._channels, 1)
-        rms = (np.sqrt(self._sum_sq / sample_count)
+        total_sum = self._compensated_sum + self._compensation
+        rms = (np.sqrt(total_sum / sample_count)
                if sample_count > 0 else 0.0)
         out = {
             "peak": float(self._peak),
