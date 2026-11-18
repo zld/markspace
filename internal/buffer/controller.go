@@ -83,7 +83,11 @@ type Slot struct {
 	BufferMs   int
 	TargetMs   int
 	ConcealRun int
-	Finished   bool
+	// Recovered is set on the first real frame after a conceal run and
+	// Delta is the sample jump against the last concealed payload.
+	Recovered bool
+	Delta     float64
+	Finished  bool
 }
 
 // Controller is safe for concurrent use by one producer and one playout
@@ -285,6 +289,8 @@ func (c *Controller) play(nowMs int64) Slot {
 			Kind:       out.Kind,
 			Payload:    out.Payload,
 			ConcealRun: 0,
+			Recovered:  recovered,
+			Delta:      delta,
 		}
 	}
 
