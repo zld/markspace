@@ -9,8 +9,9 @@ from dataclasses import dataclass
 class Limits:
     """Every parser boundary check draws from this object.
 
-    Sizes are bytes.  Parsers seek over payloads instead of loading them, so
-    ``max_payload_read`` is the only amount read into memory for inspection.
+    Sizes are bytes.  Parsers seek over payloads and only read small,
+    explicit slices (box headers, sample entries, descriptors), so memory use
+    stays flat regardless of file size.
     """
 
     max_file_size: int = 256 * 1024 * 1024
@@ -18,7 +19,6 @@ class Limits:
     max_depth: int = 16
     max_tracks: int = 64
     max_sample_entries: int = 32
-    max_payload_read: int = 1 * 1024 * 1024
     max_chunk: int = 1024 * 1024
 
     def check_file_size(self, size: int) -> None:
