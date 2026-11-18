@@ -11,6 +11,7 @@ import pytest
 from cutline.model import Clip, ModelError, Timeline, Track
 from cutline.rational import RationalTime, Span, TimeError, parse_rate, round_half_away
 from cutline.conflicts import ConflictKind, detect
+from cutline.resolve import DecisionAction, Strategy, resolve
 
 
 def _clip(clip_id: str, start: str, duration: str, priority: int = 0, rate: str = "24") -> Clip:
@@ -124,3 +125,10 @@ def test_detection_is_stable_across_input_order():
 # ---------------------------------------------------------------------------
 # resolution
 # ---------------------------------------------------------------------------
+
+
+def test_reject_strategy_changes_nothing():
+    timeline = Timeline(id="t", tracks=[_track("v1", _clip("a", "0", "4"), _clip("b", "2", "4"))])
+    result = resolve(timeline, Strategy.REJECT)
+    assert result.has_unresolved
+    assert result.timeline.tracks[0].clips[0].span.as_text() == {"start": "0", "end": "4"}
