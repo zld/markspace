@@ -23,6 +23,7 @@ add_executable(h264-self-test
   tests/runner.cpp
   tests/test_bytes.cpp
   tests/test_rbsp.cpp
+  tests/test_exp_golomb.cpp
 )
 target_link_libraries(h264-self-test PRIVATE h264core)
 target_include_directories(h264-self-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests)
