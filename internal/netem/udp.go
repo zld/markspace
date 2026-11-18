@@ -96,10 +96,11 @@ func (s *Sender) Send(data []byte) error {
 
 // SendStats reports what the sender actually put on the wire.
 type SendStats struct {
-	Sent   int
-	Lost   int
-	Failed int
-	Faults int
+	Sent       int // datagrams written to the socket, duplicates included
+	Lost       int // plan events modelling loss before transmission
+	Failed     int
+	Faults     int
+	Duplicated int // datagrams that are retransmissions of an earlier frame
 }
 
 // PlayPlan transmits a plan in real time relative to the current clock.
@@ -128,6 +129,9 @@ func PlayPlan(s *Sender, plan testkit.Plan, stop <-chan struct{}) (SendStats, er
 		}
 		if ev.Fault != testkit.FaultNone {
 			stats.Faults++
+		}
+		if ev.Duplicate {
+			stats.Duplicated++
 		}
 		if err := s.Send(ev.Wire); err != nil {
 			stats.Failed++
