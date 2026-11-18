@@ -33,3 +33,6 @@ target_link_libraries(fixture_core PUBLIC mp4_core)
 
 add_executable(make_fixtures tools/make_fixtures.cpp)
 target_link_libraries(make_fixtures PRIVATE fixture_core)
+
+add_executable(mp4_repack src/main.cpp)
+target_link_libraries(mp4_repack PRIVATE mp4_core)
