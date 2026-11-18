@@ -10,11 +10,11 @@ import (
 type State int
 
 const (
-	StateNew State = iota
-	StateOfferExchanged // offer sent (offerer) or received (answerer)
-	StateAnswered       // answer exchanged both ways
-	StateICEGathering   // trickle ICE in progress
-	StateReady          // end-of-candidates seen on both sides
+	StateNew            State = iota
+	StateOfferExchanged       // offer sent (offerer) or received (answerer)
+	StateAnswered             // answer exchanged both ways
+	StateICEGathering         // trickle ICE in progress
+	StateReady                // end-of-candidates seen on both sides
 	StateClosed
 	StateFailed
 )
@@ -59,7 +59,7 @@ type Endpoint struct {
 	// iceDoneDirs counts end-of-candidates markers seen; both directions
 	// must signal it before the endpoint is ready.
 	iceDoneDirs int
-	err     error
+	err         error
 	// lastActivity drives Stall(), which the runner polls to detect a
 	// signaling exchange that stopped making progress.
 	lastActivity time.Time

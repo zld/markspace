@@ -10,12 +10,12 @@ import (
 // Window accumulates receive statistics. It is safe for concurrent use by
 // the receive loop and the summary printer.
 type Window struct {
-	mu         sync.Mutex
-	clockRate  float64 // RTP clock rate, e.g. 90000 for video
-	received   uint64
-	jitter     float64 // RFC 3550 estimate, in timestamp units
+	mu          sync.Mutex
+	clockRate   float64 // RTP clock rate, e.g. 90000 for video
+	received    uint64
+	jitter      float64 // RFC 3550 estimate, in timestamp units
 	prevTransit float64
-	started    bool
+	started     bool
 }
 
 // NewWindow creates a Window for the given RTP clock rate.

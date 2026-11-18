@@ -17,10 +17,10 @@ const MaxMessageSize = 64 * 1024
 type MessageType string
 
 const (
-	TypeOffer   MessageType = "offer"
-	TypeAnswer  MessageType = "answer"
-	TypeICE     MessageType = "ice"
-	TypeClose   MessageType = "close"
+	TypeOffer  MessageType = "offer"
+	TypeAnswer MessageType = "answer"
+	TypeICE    MessageType = "ice"
+	TypeClose  MessageType = "close"
 )
 
 // Envelope is the wire form of every signaling message.
