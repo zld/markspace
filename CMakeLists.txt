@@ -48,6 +48,7 @@ add_executable(h264-self-test
   tests/test_slice.cpp
   tests/test_access_unit.cpp
   tests/test_recovery.cpp
+  tests/test_report.cpp
 )
 target_link_libraries(h264-self-test PRIVATE h264core)
 target_include_directories(h264-self-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests)
