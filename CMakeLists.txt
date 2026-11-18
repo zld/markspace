@@ -36,3 +36,13 @@ target_link_libraries(make_fixtures PRIVATE fixture_core)
 
 add_executable(mp4_repack src/main.cpp)
 target_link_libraries(mp4_repack PRIVATE mp4_core)
+
+enable_testing()
+find_package(Catch2 3.7.1 REQUIRED)
+
+add_executable(mp4_tests tests/test_pipeline.cpp)
+target_link_libraries(mp4_tests PRIVATE fixture_core Catch2::Catch2WithMain)
+
+include(CTest)
+include(Catch)
+catch_discover_tests(mp4_tests)
