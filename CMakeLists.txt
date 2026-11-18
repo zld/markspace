@@ -13,6 +13,7 @@ endif()
 find_package(Threads REQUIRED)
 
 add_library(lutcheck_core
+  src/color_space.cpp
   src/lut_parser.cpp
 )
 

@@ -8,10 +8,13 @@
 #include "errors.hpp"
 #include "interpolation.hpp"
 #include "lut_parser.hpp"
+#include "color_space.hpp"
 
 using lutcheck::ExitCode;
 using lutcheck::Lut3D;
 using lutcheck::Vec3;
+using lutcheck::Mat3;
+using lutcheck::ColorSpace;
 
 namespace {
 
@@ -172,5 +175,65 @@ TEST_CASE("configured grid limit is enforced", "[parser]") {
   } catch (const lutcheck::AppError& error) {
     CHECK(error.code() == ExitCode::Input);
     CHECK(contains(error.what(), "outside supported range"));
+  }
+}
+
+TEST_CASE("color space matrices round trip", "[color]") {
+  for (auto from :
+       {ColorSpace::Rgb, ColorSpace::Rec709, ColorSpace::DisplayP3}) {
+    for (auto to :
+         {ColorSpace::Rgb, ColorSpace::Rec709, ColorSpace::DisplayP3}) {
+      const Mat3 forward = lutcheck::build_conversion(from, to);
+      const Mat3 backward = lutcheck::build_conversion(to, from);
+      const Mat3 identity = backward * forward;
+      for (std::size_t i = 0; i < 9; ++i) {
+        CHECK(identity.m[i] ==
+              Catch::Approx(i % 4 == 0 ? 1.0 : 0.0).margin(1e-12));
+      }
+    }
+  }
+}
+
+TEST_CASE("rec709 to p3 maps the white point and primaries", "[color]") {
+  const Mat3 to_p3 =
+      lutcheck::conversion_matrix(ColorSpace::Rec709, ColorSpace::DisplayP3);
+  const Vec3 white = to_p3.apply(Vec3{1.0, 1.0, 1.0});
+  CHECK(white.r == Catch::Approx(1.0).margin(1e-12));
+  CHECK(white.g == Catch::Approx(1.0).margin(1e-12));
+  CHECK(white.b == Catch::Approx(1.0).margin(1e-12));
+  // Rec.709 red lies outside the Display-P3 gamut, so it maps to a P3 value
+  // with slightly lower red and small positive green/blue.
+  const Vec3 red = to_p3.apply(Vec3{1.0, 0.0, 0.0});
+  CHECK(red.r == Catch::Approx(0.8224620).margin(1e-6));
+  CHECK(red.g == Catch::Approx(0.0331942).margin(1e-6));
+  CHECK(red.b == Catch::Approx(0.0170826).margin(1e-6));
+  // P3 red, on the other hand, is well outside Rec.709.
+  const Mat3 to_709 =
+      lutcheck::conversion_matrix(ColorSpace::DisplayP3, ColorSpace::Rec709);
+  const Vec3 p3_red = to_709.apply(Vec3{1.0, 0.0, 0.0});
+  CHECK(p3_red.r == Catch::Approx(1.2249402).margin(1e-6));
+  const Vec3 black = to_p3.apply(Vec3{0.0, 0.0, 0.0});
+  CHECK(black.r == Catch::Approx(0.0));
+}
+
+TEST_CASE("unknown color space is a usage error", "[color]") {
+  ColorSpace space = ColorSpace::Rgb;
+  CHECK_FALSE(lutcheck::parse_color_space("adobe-rgb", &space));
+  CHECK(lutcheck::parse_color_space("display-p3", &space));
+  CHECK(space == ColorSpace::DisplayP3);
+  CHECK(lutcheck::parse_color_space("p3", &space));
+  CHECK(lutcheck::color_space_name(space) == std::string("display-p3"));
+}
+
+TEST_CASE("singular matrix reports a located error", "[color]") {
+  Mat3 singular;
+  singular.m = {1, 2, 3, 2, 4, 6, 7, 8, 9};
+  CHECK(singular.determinant() == Catch::Approx(0.0).margin(1e-12));
+  try {
+    singular.inverse();
+    FAIL("expected singular matrix rejection");
+  } catch (const lutcheck::AppError& error) {
+    CHECK(error.code() == ExitCode::Input);
+    CHECK(contains(error.what(), "singular"));
   }
 }
