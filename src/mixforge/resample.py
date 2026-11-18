@@ -29,9 +29,74 @@ def _kaiser_sinc(phase: np.ndarray) -> np.ndarray:
     return _CUTOFF * kernel * window
 
 
+def output_frame_count(in_frames: int, src_rate: int, dst_rate: int) -> int:
+    """Frames produced for ``in_frames``; always at least one."""
+    if in_frames <= 0:
+        return 0
+    return max(1, int(round(in_frames * dst_rate / src_rate)))
+
+
+def source_window(local_start: int, local_end: int, ratio: float,
+                  in_frames: int) -> tuple[int, int]:
+    """Source frames needed to render output frames ``[local_start, local_end)``.
+
+    The window includes the full kernel reach and is clamped to the file, so
+    blocks never read outside the source.
+    """
+    if local_end <= local_start:
+        return 0, 0
+    first = int(np.floor(local_start * ratio)) - _HALF_TAPS + 1
+    last = int(np.floor((local_end - 1) * ratio)) + _HALF_TAPS
+    return max(0, first), min(in_frames, last + 1)
+
+
+def resample_range(data: np.ndarray, data_start: int, src_rate: int, dst_rate: int,
+                   out_start: int, out_end: int,
+                   *, track_id: str | None = None) -> np.ndarray:
+    """Render output frames ``[out_start, out_end)`` from a source window.
+
+    ``data`` holds source frames starting at ``data_start``. Output frame
+    positions are absolute, so any partition of a range yields bit-identical
+    samples. Samples outside the window are treated as silence.
+    """
+    block = np.asarray(data, dtype=np.float64)
+    if block.ndim != 2:
+        raise RenderError("resampler expects a 2-D (frames, channels) array",
+                          track_id=track_id, field="audio")
+    if src_rate <= 0 or dst_rate <= 0:
+        raise RenderError("sample rates must be positive", track_id=track_id,
+                          field="rate")
+    count = out_end - out_start
+    if count <= 0:
+        return np.zeros((0, block.shape[1]), dtype=np.float64)
+    if src_rate == dst_rate:
+        local = np.arange(out_start, out_end) - data_start
+        valid = (local >= 0) & (local < block.shape[0])
+        out = np.zeros((count, block.shape[1]), dtype=np.float64)
+        out[valid] = block[local[valid]]
+        return out
+
+    ratio = src_rate / dst_rate
+    positions = np.arange(out_start, out_end, dtype=np.float64) * ratio
+    centres = np.floor(positions).astype(np.int64)
+    phases = positions - centres
+
+    offsets = np.arange(-_HALF_TAPS + 1, _HALF_TAPS + 1, dtype=np.int64)
+    indices = centres[:, None] + offsets[None, :] - data_start
+    valid = (indices >= 0) & (indices < block.shape[0])
+    clamped = np.clip(indices, 0, block.shape[0] - 1)
+    weights = _kaiser_sinc(phases[:, None] - offsets[None, :])
+    weights = np.where(valid, weights, 0.0)
+    return np.stack(
+        [np.sum(weights * block[clamped, ch], axis=1)
+         for ch in range(block.shape[1])],
+        axis=1,
+    )
+
+
 def resample(samples: np.ndarray, src_rate: int, dst_rate: int,
-             *, track_id: str | None = None) -> np.ndarray:
-    """Resample ``samples`` (frames, channels) with deterministic sinc interpolation."""
+             *, track_id: str | None = None, chunk: int = 4096) -> np.ndarray:
+    """Resample a whole (frames, channels) array in bounded-memory chunks."""
     data = np.asarray(samples, dtype=np.float64)
     if data.ndim != 2:
         raise RenderError("resampler expects a 2-D (frames, channels) array",
@@ -39,28 +104,12 @@ def resample(samples: np.ndarray, src_rate: int, dst_rate: int,
     if src_rate <= 0 or dst_rate <= 0:
         raise RenderError("sample rates must be positive", track_id=track_id,
                           field="rate")
-    if src_rate == dst_rate or data.shape[0] == 0:
-        return data.copy()
-
-    in_frames = data.shape[0]
-    out_frames = max(1, int(round(in_frames * dst_rate / src_rate)))
-    ratio = src_rate / dst_rate
-    # Positions in source frames for each output frame.
-    positions = np.arange(out_frames, dtype=np.float64) * ratio
-    centres = np.floor(positions).astype(np.int64)
-    phases = positions - centres
-
-    offsets = np.arange(-_HALF_TAPS + 1, _HALF_TAPS + 1, dtype=np.int64)
-    indices = centres[:, None] + offsets[None, :]
-    # Outside the source the signal is zero (no wrap, no reflection).
-    valid = (indices >= 0) & (indices < in_frames)
-    clamped = np.clip(indices, 0, in_frames - 1)
-    weights = _kaiser_sinc(phases[:, None] - offsets[None, :])
-    weights = np.where(valid, weights, 0.0)
-
-    out = np.zeros((out_frames, data.shape[1]), dtype=np.float64)
-    for channel in range(data.shape[1]):
-        out[:, channel] = np.sum(weights * data[clamped, channel], axis=1)
+    total = output_frame_count(data.shape[0], src_rate, dst_rate)
+    out = np.zeros((total, data.shape[1]), dtype=np.float64)
+    for start in range(0, total, max(1, chunk)):
+        end = min(total, start + max(1, chunk))
+        out[start:end] = resample_range(data, 0, src_rate, dst_rate, start, end,
+                                        track_id=track_id)
     return out
 
 
