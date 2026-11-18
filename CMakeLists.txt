@@ -12,6 +12,7 @@ endif()
 
 add_library(h264core STATIC
   src/byte_source.cpp
+  src/analysis_result.cpp
   src/bit_reader.cpp
   src/exp_golomb.cpp
   src/nal_parser.cpp
