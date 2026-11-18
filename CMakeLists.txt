@@ -14,6 +14,7 @@ find_package(Threads REQUIRED)
 
 add_library(lutcheck_core
   src/color_space.cpp
+  src/histogram.cpp
   src/interpolation.cpp
   src/lut_parser.cpp
   src/ppm.cpp

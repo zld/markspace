@@ -11,6 +11,7 @@
 #include "errors.hpp"
 #include "interpolation.hpp"
 #include "lut_parser.hpp"
+#include "histogram.hpp"
 #include "ppm.hpp"
 #include "color_space.hpp"
 #include "interpolation.hpp"
@@ -365,4 +366,62 @@ TEST_CASE("ppm reader rejects truncated and oversized data", "[ppm]") {
     }
   }
   std::filesystem::remove_all(dir);
+}
+
+TEST_CASE("histogram counts every pixel and closes the last bin", "[histogram]") {
+  lutcheck::Image image;
+  image.width = 2;
+  image.height = 2;
+  image.pixels = {{0.0, 0.0, 1.0}, {0.999, 0.5, 0.25},
+                  {0.5, 0.5, 0.5}, {1.0, 1.0, 0.0}};
+  const lutcheck::Histogram histogram = lutcheck::compute_histogram(image, 4);
+  CHECK(histogram.bins == 4);
+  CHECK(histogram.total() == 12);
+  // Red values 0.0, 0.999, 0.5, 1.0 over four bins: bin 3 is closed, so both
+  // 0.999 and the pure 1.0 land there.
+  CHECK(histogram.channels[0][0] == 1);
+  CHECK(histogram.channels[0][1] == 0);
+  CHECK(histogram.channels[0][2] == 1);
+  CHECK(histogram.channels[0][3] == 2);
+  // Blue values 1.0, 0.25, 0.5, 0.0 spread across all four bins.
+  CHECK(histogram.channels[2][0] == 1);
+  CHECK(histogram.channels[2][1] == 1);
+  CHECK(histogram.channels[2][2] == 1);
+  CHECK(histogram.channels[2][3] == 1);
+}
+
+TEST_CASE("histogram clamps out of range values", "[histogram]") {
+  lutcheck::Image image;
+  image.width = 1;
+  image.height = 2;
+  image.pixels = {{-0.5, 1.5, 0.5}, {2.0, -1.0, 0.5}};
+  const lutcheck::Histogram histogram = lutcheck::compute_histogram(image, 8);
+  CHECK(histogram.channels[0][0] == 1);  // -0.5 -> bin 0
+  CHECK(histogram.channels[0][7] == 1);  // 2.0 -> last bin
+  CHECK(histogram.channels[1][0] == 1);  // -1.0
+  CHECK(histogram.channels[1][7] == 1);  // 1.5
+  CHECK(histogram.channels[2][4] == 2);  // 0.5 stays put
+}
+
+TEST_CASE("histogram json is stable and parseable", "[histogram]") {
+  lutcheck::Image image;
+  image.width = 1;
+  image.height = 1;
+  image.pixels = {{0.0, 0.5, 1.0}};
+  const std::string json =
+      lutcheck::histogram_json(lutcheck::compute_histogram(image, 2));
+  CHECK(json == std::string("{\"bins\":2,\"r\":[1,0],\"g\":[0,1],\"b\":[0,1]}"));
+}
+
+TEST_CASE("histogram bin limits are enforced", "[histogram]") {
+  lutcheck::Image image;
+  image.width = 1;
+  image.height = 1;
+  image.pixels = {{0.5, 0.5, 0.5}};
+  try {
+    lutcheck::compute_histogram(image, 0);
+    FAIL("expected bin count rejection");
+  } catch (const lutcheck::AppError& error) {
+    CHECK(error.code() == ExitCode::Usage);
+  }
 }
