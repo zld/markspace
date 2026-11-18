@@ -1,13 +1,18 @@
-"""Read the cutline v1 exchange format.
+"""Read and write the cutline v1 and v2 exchange formats.
 
 v1
     Integer frames plus an explicit frame rate on every track.  Clip timing is
     ``start_frame`` / ``duration_frames``.
 
-The document keeps a top-level ``version`` key, a ``timeline`` object, an
-ordered ``tracks`` list and an ordered ``clips`` list.  The reader validates
-the version, required fields and unknown fields (policy: ``error``,
-``warn`` or ``ignore``); v2 and writers follow in later commits.
+v2
+    Exact rational seconds (``"1201/1000"`` or ``"2"``), with optional track
+    metadata and a per-clip rate.
+
+Both versions keep a top-level ``version`` key, a ``timeline`` object, an
+ordered ``tracks`` list and an ordered ``clips`` list.  Readers validate the
+version, required fields and unknown fields (policy: ``error``, ``warn`` or
+``ignore``).  Writers can emit either version with stable key order, so the
+same model serialises to byte-identical files across runs.
 """
 
 from __future__ import annotations
@@ -17,10 +22,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
 
-from .model import ModelError, ModelIssue, Timeline, build_timeline
+from .model import ModelError, ModelIssue, Timeline, build_timeline, validate_timeline
 from .rational import RationalTime, TimeError, format_fraction, parse_rate, parse_seconds
 
-SUPPORTED_VERSIONS = ("v1",)
+SUPPORTED_VERSIONS = ("v1", "v2")
 UNKNOWN_POLICIES = ("error", "warn", "ignore")
 
 _V1_TOP = {"version", "timeline"}
@@ -28,6 +33,10 @@ _V1_TIMELINE = {"id", "name", "metadata", "tracks"}
 _V1_TRACK = {"id", "name", "rate", "metadata", "clips"}
 _V1_CLIP = {"id", "name", "start_frame", "duration_frames", "rate", "priority", "metadata"}
 
+_V2_TOP = {"version", "timeline"}
+_V2_TIMELINE = {"id", "name", "metadata", "tracks"}
+_V2_TRACK = {"id", "name", "rate", "metadata", "clips"}
+_V2_CLIP = {"id", "name", "start", "duration", "rate", "priority", "metadata"}
 
 
 class ExchangeError(ValueError):
@@ -90,7 +99,10 @@ def load_exchange(
     if not isinstance(timeline_raw, dict):
         raise ExchangeError("timeline", "required object 'timeline' is missing or not an object")
 
-    data = _decode_v1(timeline_raw, checker)
+    if version == "v1":
+        data = _decode_v1(timeline_raw, checker)
+    else:
+        data = _decode_v2(timeline_raw, checker)
 
     try:
         timeline = build_timeline(data)
@@ -198,3 +210,82 @@ def _decode_v1_clip(
     }
 
 
+def _decode_v2(timeline_raw: dict[str, Any], checker: _UnknownChecker) -> dict[str, Any]:
+    checker.check(timeline_raw, _V2_TIMELINE, "timeline")
+    tracks_raw = _require(timeline_raw, "tracks", "timeline")
+    if not isinstance(tracks_raw, list):
+        raise ExchangeError("timeline.tracks", "must be a list")
+
+    tracks: list[dict[str, Any]] = []
+    for t_index, track_raw in enumerate(tracks_raw):
+        t_path = f"timeline.tracks[{t_index}]"
+        if not isinstance(track_raw, dict):
+            raise ExchangeError(t_path, "must be an object")
+        checker.check(track_raw, _V2_TRACK, t_path)
+        try:
+            rate = parse_rate(track_raw.get("rate", 24), f"{t_path}.rate")
+        except TimeError as exc:
+            raise ExchangeError(str(exc.path or t_path), str(exc)) from None
+        metadata = track_raw.get("metadata", {})
+        if not isinstance(metadata, dict):
+            raise ExchangeError(f"{t_path}.metadata", "must be an object")
+        clips_raw = track_raw.get("clips", [])
+        if not isinstance(clips_raw, list):
+            raise ExchangeError(f"{t_path}.clips", "must be a list")
+        clips: list[dict[str, Any]] = []
+        for c_index, clip_raw in enumerate(clips_raw):
+            c_path = f"{t_path}.clips[{c_index}]"
+            if not isinstance(clip_raw, dict):
+                raise ExchangeError(c_path, "must be an object")
+            checker.check(clip_raw, _V2_CLIP, c_path)
+            clips.append(_decode_v2_clip(clip_raw, c_path, rate))
+        tracks.append(
+            {
+                "id": track_raw.get("id", f"track-{t_index}"),
+                "name": track_raw.get("name"),
+                "rate": format_fraction(rate),
+                "metadata": dict(metadata),
+                "clips": clips,
+            }
+        )
+    timeline_metadata = timeline_raw.get("metadata", {})
+    if not isinstance(timeline_metadata, dict):
+        raise ExchangeError("timeline.metadata", "must be an object")
+    return {
+        "id": timeline_raw.get("id", "timeline"),
+        "name": timeline_raw.get("name"),
+        "metadata": dict(timeline_metadata),
+        "tracks": tracks,
+    }
+
+
+def _decode_v2_clip(clip_raw: dict[str, Any], path: str, track_rate: Any) -> dict[str, Any]:
+    start_raw = _require(clip_raw, "start", path)
+    duration_raw = _require(clip_raw, "duration", path)
+    try:
+        start = parse_seconds(start_raw, f"{path}.start")
+        duration = parse_seconds(duration_raw, f"{path}.duration")
+    except TimeError as exc:
+        raise ExchangeError(str(exc.path or path), str(exc)) from None
+    try:
+        rate = parse_rate(clip_raw.get("rate", track_rate), f"{path}.rate")
+    except TimeError as exc:
+        raise ExchangeError(str(exc.path or path), str(exc)) from None
+    priority = clip_raw.get("priority", 0)
+    if isinstance(priority, bool) or not isinstance(priority, int):
+        raise ExchangeError(f"{path}.priority", "must be an integer")
+    metadata = clip_raw.get("metadata", {})
+    if not isinstance(metadata, dict):
+        raise ExchangeError(f"{path}.metadata", "must be an object")
+    return {
+        "id": clip_raw.get("id"),
+        "name": clip_raw.get("name"),
+        "start": format_fraction(start),
+        "duration": format_fraction(duration),
+        "rate": format_fraction(rate),
+        "priority": priority,
+        "metadata": dict(metadata),
+    }
+
+
+# Writers arrive in the next commit.

@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import json
-import subprocess
-import sys
 from fractions import Fraction
 from pathlib import Path
 
@@ -15,9 +13,6 @@ from cutline.rational import RationalTime, Span, TimeError, parse_rate, round_ha
 from cutline.conflicts import ConflictKind, detect
 from cutline.resolve import DecisionAction, Strategy, resolve
 from cutline.exchange import ExchangeError, load_exchange
-
-ROOT = Path(__file__).resolve().parents[1]
-SAMPLE_SCRIPT = ROOT / "scripts" / "make_samples.py"
 
 
 def _clip(clip_id: str, start: str, duration: str, priority: int = 0, rate: str = "24") -> Clip:
@@ -45,27 +40,6 @@ def _snapshot(timeline: Timeline) -> list:
         )
         for track in timeline.tracks
     ]
-
-
-@pytest.fixture()
-
-def sample_path(tmp_path: Path) -> Path:
-    out = tmp_path / "sample-v2.json"
-    subprocess.run(
-        [sys.executable, str(SAMPLE_SCRIPT), "--out", str(out)],
-        check=True,
-        capture_output=True,
-    )
-    return out
-
-
-def sample_dict(sample_path: Path) -> dict:
-    return json.loads(sample_path.read_text(encoding="utf-8"))
-
-
-# ---------------------------------------------------------------------------
-# rational time
-# ---------------------------------------------------------------------------
 
 
 def test_rational_converts_ntsc_rates_exactly():
@@ -112,6 +86,29 @@ def test_span_touching_is_not_overlap():
 # ---------------------------------------------------------------------------
 # model validation
 # ---------------------------------------------------------------------------
+
+
+def test_negative_start_is_reported_with_path(tmp_path: Path):
+    payload = {
+        "version": "v2",
+        "timeline": {
+            "id": "t",
+            "tracks": [
+                {
+                    "id": "a",
+                    "rate": "24",
+                    "clips": [{"id": "c1", "start": "-1", "duration": "2"}],
+                }
+            ],
+        },
+    }
+    path = tmp_path / "bad.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ExchangeError) as info:
+        load_exchange(path)
+    message = str(info.value)
+    assert "tracks[0].clips[0].start" in message
+    assert "negative start" in message
 
 
 def test_zero_duration_is_rejected():
