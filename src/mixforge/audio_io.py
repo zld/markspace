@@ -11,6 +11,7 @@ import numpy as np
 import soundfile as sf
 
 from .errors import RenderError
+from .wavutil import normalise_wav_chunks
 
 
 @dataclass(frozen=True)
@@ -93,6 +94,8 @@ def write_float_wav(path: Path, samples: np.ndarray, rate: int) -> None:
         os.fsync(handle.fileno())
         handle.close()
         handle = None
+        # Strip the wall-clock PEAK timestamp so repeated renders are byte-equal.
+        normalise_wav_chunks(Path(tmp_name))
         os.replace(tmp_name, path)
         tmp_name = None
     except (sf.LibsndfileError, RuntimeError, OSError, ValueError) as exc:
