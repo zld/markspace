@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 from fractions import Fraction
 from pathlib import Path
 
@@ -13,6 +15,9 @@ from cutline.rational import RationalTime, Span, TimeError, parse_rate, round_ha
 from cutline.conflicts import ConflictKind, detect
 from cutline.resolve import DecisionAction, Strategy, resolve
 from cutline.exchange import ExchangeError, dump_exchange, load_exchange, write_exchange
+
+ROOT = Path(__file__).resolve().parents[1]
+SAMPLE_SCRIPT = ROOT / "scripts" / "make_samples.py"
 
 
 def _clip(clip_id: str, start: str, duration: str, priority: int = 0, rate: str = "24") -> Clip:
@@ -40,6 +45,22 @@ def _snapshot(timeline: Timeline) -> list:
         )
         for track in timeline.tracks
     ]
+
+
+@pytest.fixture()
+def sample_path(tmp_path: Path) -> Path:
+    out = tmp_path / "sample-v2.json"
+    subprocess.run(
+        [sys.executable, str(SAMPLE_SCRIPT), "--out", str(out)],
+        check=True,
+        capture_output=True,
+    )
+    return out
+
+
+@pytest.fixture()
+def sample_dict(sample_path: Path) -> dict:
+    return json.loads(sample_path.read_text(encoding="utf-8"))
 
 
 def test_rational_converts_ntsc_rates_exactly():
@@ -233,6 +254,46 @@ def test_resolution_is_deterministic():
 # ---------------------------------------------------------------------------
 
 
+def test_v1_v2_round_trip_is_stable(sample_dict: dict, tmp_path: Path):
+    source = tmp_path / "sample.json"
+    source.write_text(json.dumps(sample_dict), encoding="utf-8")
+    loaded = load_exchange(source)
+    v1_path = write_exchange(loaded.timeline, tmp_path / "out-v1.json", "v1")
+    v1_loaded = load_exchange(v1_path)
+    v2_path = write_exchange(v1_loaded.timeline, tmp_path / "out-v2.json", "v2")
+    assert json.loads(v2_path.read_text(encoding="utf-8")) == sample_dict
+    # Every clip survives the frame round trip within one target frame.
+    original = {clip.id: clip for _, clip in loaded.timeline.iter_clips()}
+    round_tripped = {clip.id: clip for _, clip in v1_loaded.timeline.iter_clips()}
+    assert original.keys() == round_tripped.keys()
+    for clip_id, clip in original.items():
+        restored = round_tripped[clip_id]
+        assert abs(restored.start.seconds - clip.start.seconds) <= Fraction(1, 24)
+        assert abs(restored.duration.seconds - clip.duration.seconds) <= Fraction(1, 24)
+
+
+def test_unknown_fields_policies(sample_dict: dict, tmp_path: Path):
+    payload = json.loads(json.dumps(sample_dict))
+    payload["timeline"]["tracks"][0]["clips"][0]["mystery"] = 1
+    path = tmp_path / "unknown.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ExchangeError):
+        load_exchange(path)
+    warned = load_exchange(path, unknown_fields="warn")
+    assert any("mystery" in warning for warning in warned.warnings)
+    ignored = load_exchange(path, unknown_fields="ignore")
+    assert ignored.timeline.clip_count == 9
+
+
+def test_unsupported_version_is_reported(sample_dict: dict, tmp_path: Path):
+    payload = dict(sample_dict, version="v9")
+    path = tmp_path / "v9.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ExchangeError) as info:
+        load_exchange(path)
+    assert "unsupported exchange version" in str(info.value)
+
+
 def test_malformed_json_is_located(tmp_path: Path):
     path = tmp_path / "broken.json"
     path.write_text('{"version": "v2", "timeline": {', encoding="utf-8")
@@ -241,44 +302,12 @@ def test_malformed_json_is_located(tmp_path: Path):
     assert "malformed JSON" in str(info.value)
 
 
-def test_v1_v2_writer_round_trip_is_stable(tmp_path: Path):
-    payload = {
-        "version": "v2",
-        "timeline": {
-            "id": "rt",
-            "name": None,
-            "metadata": {},
-            "tracks": [
-                {
-                    "id": "a",
-                    "name": None,
-                    "rate": "24",
-                    "metadata": {"role": "picture"},
-                    "clips": [
-                        {"id": "c1", "name": None, "start": "0", "duration": "2",
-                         "rate": "24", "priority": 1, "metadata": {"note": "wide"}},
-                        {"id": "c2", "name": None, "start": "1001/8000",
-                         "duration": "1001/4800", "rate": "24000/1001",
-                         "priority": 0, "metadata": {}},
-                    ],
-                },
-            ],
-        },
-    }
-    source = tmp_path / "in.json"
-    source.write_text(json.dumps(payload), encoding="utf-8")
-    loaded = load_exchange(source)
-    v1_path = write_exchange(loaded.timeline, tmp_path / "out-v1.json", "v1")
-    v1_loaded = load_exchange(v1_path)
-    v2_path = write_exchange(v1_loaded.timeline, tmp_path / "out-v2.json", "v2")
-    assert json.loads(v2_path.read_text(encoding="utf-8")) == payload
-    assert json.loads(v1_path.read_text(encoding="utf-8"))["version"] == "v1"
-
-
-def test_writer_refuses_to_overwrite_input(tmp_path: Path):
-    payload = {"version": "v2", "timeline": {"tracks": []}}
-    source = tmp_path / "in.json"
-    source.write_text(json.dumps(payload), encoding="utf-8")
-    loaded = load_exchange(source)
+def test_writer_refuses_to_overwrite_input(sample_path: Path):
+    loaded = load_exchange(sample_path)
     with pytest.raises(ExchangeError):
-        write_exchange(loaded.timeline, source, "v1", forbidden_paths=[source])
+        write_exchange(loaded.timeline, sample_path, "v1", forbidden_paths=[sample_path])
+
+
+# ---------------------------------------------------------------------------
+# OTIO bridge
+# ---------------------------------------------------------------------------
