@@ -13,6 +13,7 @@ endif()
 find_package(Threads REQUIRED)
 
 add_library(lutcheck_core
+  src/cli.cpp
   src/color_space.cpp
   src/fixtures.cpp
   src/histogram.cpp
@@ -34,7 +35,7 @@ target_compile_options(lutcheck_core PRIVATE
 
 target_link_libraries(lutcheck_core PUBLIC Threads::Threads)
 
-add_executable(lutcheck src/main.cpp src/cli.cpp)
+add_executable(lutcheck src/main.cpp)
 target_link_libraries(lutcheck PRIVATE lutcheck_core)
 target_compile_options(lutcheck PRIVATE -Wall -Wextra -Wpedantic -Wshadow)
 

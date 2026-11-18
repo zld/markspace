@@ -14,6 +14,8 @@
 #include "histogram.hpp"
 #include "ppm.hpp"
 #include "render_paths.hpp"
+#include "cli.hpp"
+#include "report.hpp"
 #include "fixtures.hpp"
 #include <atomic>
 #include <chrono>
@@ -635,4 +637,135 @@ TEST_CASE("fixture size limits are enforced", "[fixtures]") {
   } catch (const lutcheck::AppError& error) {
     CHECK(error.code() == ExitCode::Usage);
   }
+}
+
+namespace {
+
+lutcheck::Options analysis_options() {
+  lutcheck::Options options;
+  options.path_scalar = true;
+  options.path_parallel = true;
+  options.threads = 2;
+  options.histogram_bins = 4;
+  options.threshold = 1e-6;
+  options.lut_space = "rec709";
+  options.input_space = "rgb";
+  return options;
+}
+
+}  // namespace
+
+TEST_CASE("analysis reports both paths and histogram shapes", "[report]") {
+  const lutcheck::Lut3D lut = graded_lut(5);
+  const lutcheck::Image image = graded_image(16, 12);
+  const lutcheck::Analysis analysis =
+      lutcheck::run_analysis(image, lut, analysis_options());
+  CHECK(analysis.pixels == 192);
+  CHECK(analysis.grid_size == 5);
+  CHECK(analysis.paths ==
+        std::vector<std::string>{"scalar", "parallel"});
+  CHECK(analysis.deviation.max() == 0.0);
+  CHECK_FALSE(analysis.deviation_exceeded);
+  CHECK(analysis.before.bins == 4);
+  CHECK(analysis.before.channels[0].size() == 4);
+  CHECK(analysis.before.total() == 192 * 3);
+  CHECK(analysis.after.total() == 192 * 3);
+  CHECK(lutcheck::report_exit_code(analysis) == 0);
+}
+
+TEST_CASE("analysis json contains the contract fields", "[report]") {
+  const lutcheck::Lut3D lut = graded_lut(3);
+  const lutcheck::Image image = graded_image(8, 8);
+  const std::string json = lutcheck::analysis_json(
+      lutcheck::run_analysis(image, lut, analysis_options()), false);
+  for (const char* key :
+       {"\"grid_size\":3", "\"pixels\":64", "\"max_deviation_rgb\":{\"r\":0",
+        "\"histogram_before\":{\"bins\":4", "\"histogram_after\":{\"bins\":4",
+        "\"deviation_exceeded\":false"}) {
+    CHECK(json.find(key) != std::string::npos);
+  }
+  // Exactly three channels of four counts each, twice.
+  std::size_t arrays = 0;
+  for (std::size_t i = 0; i + 2 < json.size(); ++i) {
+    if (json.compare(i, 5, "\"r\":[") == 0) ++arrays;
+  }
+  CHECK(arrays == 2);
+}
+
+TEST_CASE("granularity threshold controls the deviation exit code", "[report]") {
+  const lutcheck::Lut3D lut = graded_lut(5);
+  const lutcheck::Image image = graded_image(12, 9);
+  lutcheck::Options options = analysis_options();
+  // Both paths are bit-identical, so any negative slack is unreachable; use
+  // scalar only and a zero threshold to prove the flag path is inert.
+  options.path_parallel = false;
+  options.threshold = 0.0;
+  const lutcheck::Analysis analysis =
+      lutcheck::run_analysis(image, lut, options);
+  CHECK(analysis.paths == std::vector<std::string>{"scalar"});
+  CHECK_FALSE(analysis.deviation_exceeded);
+  CHECK(lutcheck::report_exit_code(analysis) == 0);
+}
+
+TEST_CASE("analysis rejects unknown spaces before rendering", "[report]") {
+  const lutcheck::Lut3D lut = graded_lut(2);
+  const lutcheck::Image image = graded_image(2, 2);
+  lutcheck::Options options = analysis_options();
+  options.lut_space = "adobe-rgb";
+  try {
+    lutcheck::run_analysis(image, lut, options);
+    FAIL("expected unknown space rejection");
+  } catch (const lutcheck::AppError& error) {
+    CHECK(error.code() == ExitCode::Usage);
+    CHECK(contains(error.what(), "unknown LUT color space"));
+  }
+}
+
+TEST_CASE("option parsing validates flags and ranges", "[cli]") {
+  auto parse = [](std::vector<std::string> args, lutcheck::Options* options,
+                  std::string* error) {
+    std::vector<char*> argv;
+    argv.push_back(const_cast<char*>("lutcheck"));
+    for (const std::string& arg : args) argv.push_back(const_cast<char*>(arg.c_str()));
+    return lutcheck::parse_options(static_cast<int>(argv.size()), argv.data(),
+                                   options, error);
+  };
+  lutcheck::Options options;
+  std::string error;
+
+  CHECK_FALSE(parse({"demo", "--size", "1"}, &options, &error));
+  CHECK(contains(error, "--size must be in"));
+  CHECK_FALSE(parse({"demo", "--size", "66"}, &options, &error));
+  CHECK_FALSE(parse({"demo", "--threads", "0"}, &options, &error));
+  CHECK_FALSE(parse({"demo", "--threads", "33"}, &options, &error));
+  CHECK_FALSE(parse({"demo", "--histogram-bins", "0"}, &options, &error));
+  CHECK_FALSE(parse({"demo", "--threshold", "nan"}, &options, &error));
+  CHECK_FALSE(parse({"demo", "--threshold", "-1"}, &options, &error));
+  CHECK_FALSE(parse({"demo", "--space", "srgb"}, &options, &error));
+  CHECK_FALSE(parse({"demo", "--compare", "bogus"}, &options, &error));
+  CHECK_FALSE(parse({"demo", "--size"}, &options, &error));
+  CHECK_FALSE(parse({"demo", "--nope"}, &options, &error));
+  CHECK_FALSE(parse({"bogus"}, &options, &error));
+  lutcheck::Options render_options;
+  CHECK_FALSE(parse({"render", "--input", "a.ppm", "--compare", "scalar"},
+                    &render_options, &error));
+  CHECK(contains(error, "render requires --lut"));
+
+  lutcheck::Options good;
+  std::string good_error;
+  CHECK(parse({"demo", "--size", "17", "--space", "rec709", "--compare",
+               "scalar,parallel", "--histogram-bins", "16", "--json"},
+              &good, &good_error));
+  CHECK(good.grid_size == 17);
+  CHECK(good.lut_space == "rec709");
+  CHECK(good.input_space == "rec709");
+  CHECK(good.path_scalar);
+  CHECK(good.path_parallel);
+  CHECK(good.histogram_bins == 16);
+  CHECK(good.json);
+
+  lutcheck::Options help;
+  std::string help_error;
+  CHECK(parse({"--help"}, &help, &help_error));
+  CHECK(help.help);
 }
