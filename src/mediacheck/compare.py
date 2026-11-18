@@ -177,7 +177,23 @@ def _compare_track(
     for name in ("sample_rate", "channels", "bit_depth", "block_align"):
         exp_value = getattr(expected, name)
         act_value = getattr(actual, name)
-        if exp_value is not None and act_value is not None and exp_value != act_value:
+        if exp_value is None or act_value is None:
+            if exp_value is not None or act_value is not None:
+                report.mismatches.append(
+                    Mismatch(
+                        code="unknown_field",
+                        path=path,
+                        detail=(
+                            f"track {_describe(actual)} field {name} is "
+                            "unknown on one side"
+                        ),
+                        expected=exp_value,
+                        actual=act_value,
+                        tracks=[actual.stable_index],
+                    )
+                )
+            continue
+        if exp_value != act_value:
             report.mismatches.append(
                 Mismatch(
                     code="parameter_drift",
