@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mkvmp4"
+version = "0.1.0"
+description = "Offline Matroska (MKV) to MP4 remuxer: stream copy, timestamp rewrite, index rebuild"
+requires-python = ">=3.11"
+dependencies = ["numpy==1.26.4"]
+
+[project.scripts]
+mkvmp4 = "mkvmp4.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
