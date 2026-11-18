@@ -40,7 +40,10 @@ target_link_libraries(mp4_repack PRIVATE mp4_core)
 enable_testing()
 find_package(Catch2 3.7.1 REQUIRED)
 
-add_executable(mp4_tests tests/test_pipeline.cpp)
+add_executable(mp4_tests
+    tests/test_pipeline.cpp
+    tests/test_rewriter.cpp
+)
 target_link_libraries(mp4_tests PRIVATE fixture_core Catch2::Catch2WithMain)
 
 include(CTest)
