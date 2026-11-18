@@ -769,3 +769,83 @@ TEST_CASE("option parsing validates flags and ranges", "[cli]") {
   CHECK(parse({"--help"}, &help, &help_error));
   CHECK(help.help);
 }
+
+TEST_CASE("ppm reader decodes binary and ascii pixels", "[ppm]") {
+  const std::string dir = "lutcheck_ppm_pixels";
+  std::filesystem::create_directories(dir);
+  SECTION("binary p6") {
+    const std::string path = dir + "/bin.ppm";
+    {
+      std::ofstream out(path, std::ios::binary);
+      out << "P6\n# comment line\n2 1\n255\n";
+      out.put(static_cast<char>(0)).put(static_cast<char>(128)).put(static_cast<char>(255));
+      out.put(static_cast<char>(64)).put(static_cast<char>(0)).put(static_cast<char>(32));
+    }
+    const lutcheck::Image image = lutcheck::read_ppm(path);
+    CHECK(image.width == 2);
+    CHECK(image.height == 1);
+    CHECK(image.pixels[0].r == Catch::Approx(0.0));
+    CHECK(image.pixels[0].g == Catch::Approx(128 / 255.0).margin(1e-12));
+    CHECK(image.pixels[0].b == Catch::Approx(1.0));
+    CHECK(image.pixels[1].r == Catch::Approx(64 / 255.0).margin(1e-12));
+    CHECK(image.pixels[1].b == Catch::Approx(32 / 255.0).margin(1e-12));
+  }
+  SECTION("ascii p3") {
+    const std::string path = dir + "/ascii.ppm";
+    {
+      std::ofstream out(path, std::ios::binary);
+      out << "P3\n2 2\n15\n0 15 7\n15 0 0\n1 2 3\n4 5 6\n";
+    }
+    const lutcheck::Image image = lutcheck::read_ppm(path);
+    REQUIRE(image.pixels.size() == 4);
+    CHECK(image.pixels[0].g == Catch::Approx(1.0));
+    CHECK(image.pixels[0].b == Catch::Approx(7 / 15.0).margin(1e-12));
+    CHECK(image.pixels[3].b == Catch::Approx(6 / 15.0).margin(1e-12));
+  }
+  SECTION("ascii truncation") {
+    const std::string path = dir + "/short.ppm";
+    {
+      std::ofstream out(path, std::ios::binary);
+      out << "P3\n2 2\n255\n0 0 0\n";
+    }
+    try {
+      lutcheck::read_ppm(path);
+      FAIL("expected truncation error");
+    } catch (const lutcheck::AppError& error) {
+      CHECK(error.code() == ExitCode::Input);
+      CHECK(contains(error.what(), "truncated ASCII pixel"));
+    }
+  }
+  SECTION("pixel limit") {
+    const std::string path = dir + "/limit.ppm";
+    {
+      std::ofstream out(path, std::ios::binary);
+      out << "P6\n5000 2001\n255\n";
+    }
+    try {
+      lutcheck::read_ppm(path);
+      FAIL("expected limit error");
+    } catch (const lutcheck::AppError& error) {
+      CHECK(error.code() == ExitCode::Input);
+      CHECK(contains(error.what(), "10000000"));
+    }
+  }
+  std::filesystem::remove_all(dir);
+}
+
+TEST_CASE("atomic writer leaves no temp file behind", "[ppm]") {
+  const std::string dir = "lutcheck_ppm_atomic";
+  std::filesystem::create_directories(dir);
+  const std::string path = dir + "/out.ppm";
+  lutcheck::Image image;
+  image.width = 2;
+  image.height = 1;
+  image.pixels = {{2.0, -1.0, 0.5}, {0.5, 0.5, 0.5}};
+  lutcheck::write_ppm_atomic(path, image);
+  CHECK(std::filesystem::exists(path));
+  CHECK_FALSE(std::filesystem::exists(path + ".tmp"));
+  const lutcheck::Image decoded = lutcheck::read_ppm(path);
+  CHECK(decoded.pixels[0].r == Catch::Approx(1.0));  // clamped
+  CHECK(decoded.pixels[0].g == Catch::Approx(0.0));
+  std::filesystem::remove_all(dir);
+}
