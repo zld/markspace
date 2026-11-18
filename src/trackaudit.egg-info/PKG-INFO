@@ -1,0 +1,5 @@
+Metadata-Version: 2.4
+Name: trackaudit
+Version: 0.1.0
+Summary: Multi-track MP4/ISO BMFF master auditing: box structure validation, track metadata extraction, consistency comparison and packaging.
+Requires-Python: >=3.11
