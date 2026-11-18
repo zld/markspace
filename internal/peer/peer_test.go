@@ -21,11 +21,11 @@ func negotiate(t *testing.T) (*Peer, *Peer, *CandidateCounters) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, err := New("A", apiA, ca)
+	a, err := New("A", apiA, ca, RoleSender)
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := New("B", apiB, cb)
+	b, err := New("B", apiB, cb, RoleReceiver)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestTrickleCandidatePath(t *testing.T) {
 func TestCloseIsIdempotent(t *testing.T) {
 	c := &CandidateCounters{}
 	api, _ := NewLoopbackAPI(c)
-	p, err := New("C", api, c)
+	p, err := New("C", api, c, RoleReceiver)
 	if err != nil {
 		t.Fatal(err)
 	}

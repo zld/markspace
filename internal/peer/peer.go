@@ -64,31 +64,50 @@ func NewLoopbackAPI(counters *CandidateCounters) (*webrtc.API, error) {
 		webrtc.WithSettingEngine(se)), nil
 }
 
+// Role selects whether a peer sends media or receives it.
+type Role string
+
+const (
+	RoleSender   Role = "sender"
+	RoleReceiver Role = "receiver"
+)
+
 // New constructs a Peer and wires the connection/gathering/track callbacks.
-func New(name string, api *webrtc.API, counters *CandidateCounters) (*Peer, error) {
-	track, err := webrtc.NewTrackLocalStaticRTP(webrtc.RTPCodecCapability{
-		MimeType:  webrtc.MimeTypePCMU,
-		ClockRate: 8000,
-	}, "audio-"+name, "relaylab")
-	if err != nil {
-		return nil, fmt.Errorf("create track: %w", err)
-	}
+// A sender adds a static local track; a receiver installs a recvonly
+// transceiver so the answer's media section stays active for OnTrack.
+func New(name string, api *webrtc.API, counters *CandidateCounters, role Role) (*Peer, error) {
 	pc, err := api.NewPeerConnection(webrtc.Configuration{})
 	if err != nil {
 		return nil, fmt.Errorf("new peer connection: %w", err)
 	}
-	if _, err := pc.AddTrack(track); err != nil {
-		_ = pc.Close()
-		return nil, fmt.Errorf("add track: %w", err)
-	}
 	p := &Peer{
 		name:          name,
 		pc:            pc,
-		track:         track,
 		counters:      counters,
 		connCh:        make(chan struct{}),
 		remoteTrackCh: make(chan struct{}),
 		gatherDone:    make(chan struct{}),
+	}
+	if role == RoleSender {
+		track, terr := webrtc.NewTrackLocalStaticRTP(webrtc.RTPCodecCapability{
+			MimeType:  webrtc.MimeTypePCMU,
+			ClockRate: 8000,
+		}, "audio-"+name, "relaylab")
+		if terr != nil {
+			_ = pc.Close()
+			return nil, fmt.Errorf("create track: %w", terr)
+		}
+		if _, terr = pc.AddTrack(track); terr != nil {
+			_ = pc.Close()
+			return nil, fmt.Errorf("add track: %w", terr)
+		}
+		p.track = track
+	} else {
+		if _, terr := pc.AddTransceiverFromKind(webrtc.RTPCodecTypeAudio,
+			webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionRecvonly}); terr != nil {
+			_ = pc.Close()
+			return nil, fmt.Errorf("add recvonly transceiver: %w", terr)
+		}
 	}
 	pc.OnICEConnectionStateChange(p.onICEState)
 	pc.OnICEGatheringStateChange(func(state webrtc.ICEGatheringState) {
@@ -244,3 +263,33 @@ func (p *Peer) Close() error {
 
 // Name reports the peer label.
 func (p *Peer) Name() string { return p.name }
+
+// ICEState exposes the current ICE connection state (diagnostics).
+func (p *Peer) ICEState() webrtc.ICEConnectionState { return p.pc.ICEConnectionState() }
+
+// TransceiverInfo describes one transceiver for diagnostics.
+type TransceiverInfo struct {
+	Mid          string
+	Direction    string
+	HasReceiver  bool
+}
+
+// Transceivers snapshots the peer's transceiver states (diagnostics).
+func (p *Peer) Transceivers() []TransceiverInfo {
+	out := make([]TransceiverInfo, 0, len(p.pc.GetTransceivers()))
+	for _, tr := range p.pc.GetTransceivers() {
+		out = append(out, TransceiverInfo{
+			Mid:         tr.Mid(),
+			Direction:   tr.Direction().String(),
+			HasReceiver: tr.Receiver() != nil,
+		})
+	}
+	return out
+}
+
+// HasTrack reports whether an inbound track has been announced (diagnostics).
+func (p *Peer) HasTrack() bool {
+	p.remoteMu.Lock()
+	defer p.remoteMu.Unlock()
+	return p.remoteTrack != nil
+}
