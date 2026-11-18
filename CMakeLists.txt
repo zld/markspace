@@ -20,6 +20,7 @@ add_library(h264core STATIC
   src/sps_dimensions.cpp
   src/pps_parser.cpp
   src/slice_types.cpp
+  src/slice_parser.cpp
   src/slice_header_lists.cpp
 )
 target_include_directories(h264core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
