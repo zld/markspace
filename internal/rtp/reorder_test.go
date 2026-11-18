@@ -23,17 +23,22 @@ func seqs(out []*Packet) []uint16 {
 func TestReorderInOrderAndWraparound(t *testing.T) {
 	r := NewReorderer(8, 25*time.Millisecond)
 	now := time.Unix(0, 0)
-	// Deliver across the uint16 boundary slightly out of order so buffering
-	// is exercised: 0xfffe first, then 0x0000, finally 0xffff.
+	// Reach the uint16 boundary in order, then cross it with a small reorder:
+	// wrapped seq 1 arrives before seq 0.
 	if out := r.Push(mkPkt(0xfffe, 1, false), now); len(out) != 1 {
 		t.Fatalf("first packet should emit immediately: %v", seqs(out))
 	}
-	r.Push(mkPkt(0x0000, 1, false), now) // buffered beyond 0xffff
-	out := r.Push(mkPkt(0xffff, 1, true), now)
-	if len(out) != 2 || seqs(out)[0] != 0xffff || seqs(out)[1] != 0 {
+	if out := r.Push(mkPkt(0xffff, 1, false), now); len(out) != 1 {
+		t.Fatalf("0xffff should emit: %v", seqs(out))
+	}
+	if out := r.Push(mkPkt(0x0001, 2, false), now); len(out) != 0 {
+		t.Fatalf("wrapped future packet must wait for 0: %v", seqs(out))
+	}
+	out := r.Push(mkPkt(0x0000, 2, true), now)
+	if len(out) != 2 || seqs(out)[0] != 0 || seqs(out)[1] != 1 {
 		t.Fatalf("wraparound order wrong: %v", seqs(out))
 	}
-	if r.Stats().Received != 3 || r.Stats().Duplicates != 0 {
+	if r.Stats().Received != 4 || r.Stats().Duplicates != 0 {
 		t.Fatalf("unexpected stats: %+v", r.Stats())
 	}
 }
@@ -75,25 +80,40 @@ func TestReorderDuplicateAndLate(t *testing.T) {
 	r := NewReorderer(8, 25*time.Millisecond)
 	now := time.Unix(0, 0)
 	r.Push(mkPkt(10, 1, false), now)
-	r.Push(mkPkt(11, 1, false), now)
+	// Repeat seq 10 while it is still the frontier: exact duplicate, dropped.
 	if out := r.Push(mkPkt(10, 1, false), now); len(out) != 0 {
 		t.Fatalf("duplicate emitted: %v", seqs(out))
 	}
-	// A late packet older than the frontier (after a gap flush) is rejected
-	// immediately and can never enter an already emitted frame again.
-	r.Push(mkPkt(19, 1, false), now) // overflow: flushes 12..18 gap, emits 19
-	if out := r.Push(mkPkt(12, 1, false), now); len(out) != 0 {
+	r.Push(mkPkt(11, 1, false), now)
+
+	// Switch to a small-window reorderer to force an overflow gap.
+	small := NewReorderer(4, 25*time.Millisecond)
+	small.Push(mkPkt(10, 1, false), now)
+	small.Push(mkPkt(19, 1, false), now) // flushes missing 11..18, emits 19
+	if out := small.Push(mkPkt(12, 1, false), now); len(out) != 0 {
 		t.Fatalf("late packet re-entered output: %v", seqs(out))
 	}
-	if out := r.Tick(now.Add(25 * time.Millisecond)); len(out) != 0 {
+	if out := small.Tick(now.Add(25 * time.Millisecond)); len(out) != 0 {
 		t.Fatalf("late packet leaked through timeout flush: %v", seqs(out))
 	}
-	st := r.Stats()
-	if st.Duplicates != 2 {
-		t.Fatalf("duplicate counter wrong: %+v", st)
+	st := small.Stats()
+	if st.Duplicates != 0 {
+		t.Fatalf("unexpected duplicate count: %+v", st)
 	}
-	if st.MissingPackets != 6 { // 12..18 flushed by the window overflow
+	if st.LatePackets != 1 {
+		t.Fatalf("late counter wrong: %+v", st)
+	}
+	if st.MissingPackets != 8 { // 11..18 flushed by the window overflow
 		t.Fatalf("missing counter wrong: %+v", st)
+	}
+	// Reset must purge the stranded late packet so no state leaks to next run.
+	small.Reset()
+	if len(small.entries) != 0 || small.init {
+		t.Fatalf("reset left residue: entries=%v init=%v", small.entries, small.init)
+	}
+
+	if st := r.Stats(); st.Duplicates != 1 {
+		t.Fatalf("duplicate counter wrong: %+v", st)
 	}
 }
 
