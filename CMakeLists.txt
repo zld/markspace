@@ -12,21 +12,22 @@ endif()
 
 find_package(Threads REQUIRED)
 
-add_executable(lutcheck src/main.cpp)
+add_library(lutcheck_core
+  src/lut_parser.cpp
+)
 
-target_include_directories(lutcheck PRIVATE src)
+target_include_directories(lutcheck_core PUBLIC src)
 
-target_compile_options(lutcheck PRIVATE
+target_compile_options(lutcheck_core PRIVATE
   -Wall
   -Wextra
   -Wpedantic
   -Wshadow
 )
 
-target_link_libraries(lutcheck PRIVATE Threads::Threads)
+target_link_libraries(lutcheck_core PUBLIC Threads::Threads)
 
-option(LUTCHECK_BUILD_TESTS "Build the Catch2 test suite" ON)
+add_executable(lutcheck src/main.cpp)
+target_link_libraries(lutcheck PRIVATE lutcheck_core)
+target_compile_options(lutcheck PRIVATE -Wall -Wextra -Wpedantic -Wshadow)
 
-if(LUTCHECK_BUILD_TESTS)
-  enable_testing()
-endif()
