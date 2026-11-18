@@ -16,6 +16,7 @@ add_library(h264core STATIC
   src/exp_golomb.cpp
   src/nal_parser.cpp
   src/nal_types.cpp
+  src/sps_dimensions.cpp
 )
 target_include_directories(h264core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
