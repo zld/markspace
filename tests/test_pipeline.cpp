@@ -14,6 +14,7 @@
 #include "histogram.hpp"
 #include "ppm.hpp"
 #include "render_paths.hpp"
+#include "fixtures.hpp"
 #include <atomic>
 #include <chrono>
 #include <thread>
@@ -571,4 +572,67 @@ TEST_CASE("empty input renders without spawning work", "[paths]") {
   const auto parallel = lutcheck::render_parallel(empty, lut, options, 8);
   CHECK(parallel.image.pixels.empty());
   CHECK(lutcheck::render_scalar(empty, lut, options).pixels.empty());
+}
+
+TEST_CASE("fixture generation is byte-for-byte deterministic", "[fixtures]") {
+  const std::string a = "/tmp/lutcheck_fixture_a.cube";
+  const std::string b = "/tmp/lutcheck_fixture_b.cube";
+  lutcheck::write_fixture_lut(a, 5);
+  lutcheck::write_fixture_lut(b, 5);
+  auto slurp = [](const std::string& path) {
+    std::ifstream in(path, std::ios::binary);
+    return std::string((std::istreambuf_iterator<char>(in)),
+                       std::istreambuf_iterator<char>());
+  };
+  const std::string first = slurp(a);
+  CHECK(first == slurp(b));
+  CHECK(first.find("LUT_3D_SIZE 5") != std::string::npos);
+  // The fixture must parse cleanly as blue-major data.
+  const lutcheck::Lut3D lut = lutcheck::load_cube_file(a);
+  CHECK(lut.size == 5);
+  CHECK(lut.node_count() == 125);
+  // Corner (1,1,1) is near white but not exactly, thanks to the cross mix.
+  const Vec3 white = lut.at(4, 4, 4);
+  CHECK(white.r == Catch::Approx(1.0).margin(1e-9));
+  CHECK(white.g == Catch::Approx(1.0).margin(1e-9));
+  CHECK(white.b == Catch::Approx(1.0).margin(1e-9));
+  std::filesystem::remove(a);
+  std::filesystem::remove(b);
+}
+
+TEST_CASE("fixture image is deterministic and exercises out of range data",
+          "[fixtures]") {
+  const lutcheck::Image first = lutcheck::make_fixture_image(64, 48);
+  const lutcheck::Image second = lutcheck::make_fixture_image(64, 48);
+  REQUIRE(first.pixels.size() == second.pixels.size());
+  CHECK(first.width == 64);
+  CHECK(first.height == 48);
+  for (std::size_t i = 0; i < first.pixels.size(); ++i) {
+    CHECK(first.pixels[i].r == second.pixels[i].r);
+    CHECK(first.pixels[i].g == second.pixels[i].g);
+    CHECK(first.pixels[i].b == second.pixels[i].b);
+  }
+  bool saw_negative = false;
+  bool saw_above_one = false;
+  for (const Vec3& pixel : first.pixels) {
+    saw_negative = saw_negative || pixel.r < 0.0;
+    saw_above_one = saw_above_one || pixel.g > 1.0;
+  }
+  CHECK(saw_negative);
+  CHECK(saw_above_one);
+}
+
+TEST_CASE("fixture size limits are enforced", "[fixtures]") {
+  try {
+    lutcheck::write_fixture_lut("/tmp/lutcheck_bad.cube", 1);
+    FAIL("expected size rejection");
+  } catch (const lutcheck::AppError& error) {
+    CHECK(error.code() == ExitCode::Usage);
+  }
+  try {
+    lutcheck::make_fixture_image(0, 10);
+    FAIL("expected dimension rejection");
+  } catch (const lutcheck::AppError& error) {
+    CHECK(error.code() == ExitCode::Usage);
+  }
 }
