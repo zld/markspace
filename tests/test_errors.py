@@ -14,7 +14,6 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from make_samples import BASE_TRACKS, build_container, write_samples  # noqa: E402
 from trackcheck import cli  # noqa: E402
-from trackcheck.consistency import compare_media  # noqa: E402
 from trackcheck.package import PackageError, package_media  # noqa: E402
 from trackcheck.probe import (  # noqa: E402
     HEADER_FORMAT,
@@ -27,7 +26,6 @@ from trackcheck.probe import (  # noqa: E402
     parse_container,
     probe_file,
 )
-from trackcheck.store import SnapshotStore, StoreError  # noqa: E402
 
 
 @pytest.fixture()

@@ -15,18 +15,9 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from make_samples import build_container, write_samples, BASE_TRACKS  # noqa: E402
+from make_samples import write_samples  # noqa: E402
 from trackcheck import cli  # noqa: E402
-from trackcheck.model import CODEC_H264, KIND_VIDEO  # noqa: E402
-from trackcheck.probe import (  # noqa: E402
-    HEADER_FORMAT,
-    HEADER_SIZE,
-    MAGIC,
-    TRACK_ENTRY_SIZE,
-    probe_file,
-)
-from trackcheck.store import SnapshotStore, StoreError  # noqa: E402
-import struct  # noqa: E402
+from trackcheck.probe import probe_file  # noqa: E402
 
 
 @pytest.fixture()
