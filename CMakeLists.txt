@@ -16,6 +16,7 @@ add_library(lutcheck_core
   src/color_space.cpp
   src/interpolation.cpp
   src/lut_parser.cpp
+  src/ppm.cpp
 )
 
 target_include_directories(lutcheck_core PUBLIC src)

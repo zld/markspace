@@ -1,6 +1,8 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <cmath>
+#include <filesystem>
+#include <fstream>
 #include <sstream>
 #include <string>
 
@@ -9,6 +11,7 @@
 #include "errors.hpp"
 #include "interpolation.hpp"
 #include "lut_parser.hpp"
+#include "ppm.hpp"
 #include "color_space.hpp"
 #include "interpolation.hpp"
 
@@ -307,4 +310,59 @@ TEST_CASE("trilinear honours an explicit domain", "[interp]") {
   CHECK(neg.r == Catch::Approx(0.0));
   const Vec3 pos = lutcheck::sample_trilinear(lut, Vec3{1.0, 1.0, 1.0});
   CHECK(pos.b == Catch::Approx(1.0));
+}
+
+TEST_CASE("ppm round trip preserves pixels", "[ppm]") {
+  lutcheck::Image image;
+  image.width = 3;
+  image.height = 2;
+  image.pixels = {{0.0, 0.5, 1.0}, {1.0, 0.0, 0.25}, {0.125, 0.75, 0.5},
+                  {0.2, 0.4, 0.6}, {0.9, 0.9, 0.9}, {0.0, 0.0, 0.0}};
+  const std::string encoded = lutcheck::encode_ppm(image);
+  CHECK(encoded.rfind("P6\n3 2\n255\n", 0) == 0);
+  CHECK(encoded.size() == 11 + 6 * 3);
+}
+
+TEST_CASE("ppm reader rejects truncated and oversized data", "[ppm]") {
+  const std::string dir = "lutcheck_ppm_test";
+  std::filesystem::create_directories(dir);
+  SECTION("truncated") {
+    const std::string path = dir + "/truncated.ppm";
+    {
+      std::ofstream out(path, std::ios::binary);
+      out << "P6\n2 2\n255\n" << "\x01\x02";
+    }
+    try {
+      lutcheck::read_ppm(path);
+      FAIL("expected truncation error");
+    } catch (const lutcheck::AppError& error) {
+      CHECK(error.code() == ExitCode::Input);
+      CHECK(contains(error.what(), "truncated pixel data"));
+    }
+  }
+  SECTION("overflowing dimensions") {
+    const std::string path = dir + "/huge.ppm";
+    {
+      std::ofstream out(path, std::ios::binary);
+      out << "P6\n65535 65535\n255\n";
+    }
+    try {
+      lutcheck::read_ppm(path);
+      FAIL("expected size error");
+    } catch (const lutcheck::AppError& error) {
+      CHECK(error.code() == ExitCode::Input);
+      CHECK(contains(error.what(), "limit is"));
+    }
+  }
+  SECTION("empty file") {
+    const std::string path = dir + "/empty.ppm";
+    { std::ofstream out(path, std::ios::binary); }
+    try {
+      lutcheck::read_ppm(path);
+      FAIL("expected format error");
+    } catch (const lutcheck::AppError& error) {
+      CHECK(error.code() == ExitCode::Input);
+    }
+  }
+  std::filesystem::remove_all(dir);
 }
