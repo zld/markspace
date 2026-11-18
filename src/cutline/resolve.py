@@ -1,34 +1,50 @@
-"""Conflict resolution: priority trimming and rejection.
+"""Conflict resolution strategies with an auditable decision log.
 
-``priority`` trims the weaker clip of each colliding pair (lower priority,
-then larger id), keeps the larger surviving piece, logs discarded pieces and
-removes fully covered clips with an explicit reason.
+Strategies
+----------
+``priority``
+    For every conflicting pair, the weaker clip (lower priority, then larger
+    id) is trimmed against the stronger one.  A partial overlap keeps the
+    larger piece (ties keep the left piece); the discarded piece is logged.
+    A fully covered clip is trimmed to zero duration and then removed with an
+    explicit reason -- never dropped silently.  Because trimming only ever
+    shrinks a span, one deterministic pass over the initial conflict list
+    leaves the timeline overlap-free.
+``shift``
+    Same-track only.  The later-arriving clip (by start, then id) is moved
+    left so that it ends exactly where the earlier clip begins.  If the move
+    would start before zero it cannot be contained, so the clip is left in
+    place and the conflict is reported as unresolved.  Cross-track overlaps
+    fall through to the priority pass so tracks stay stacked.
+``reject``
+    Change nothing; every conflict becomes an ``unresolved`` entry.
 
-``reject`` changes nothing and marks every conflict unresolved.
-
-Determinism: pairs are processed in sorted intersection order and comparisons
+Determinism: pairs are taken in sorted intersection order and comparisons
 fall back to clip ids, so repeated runs produce identical decisions.
 """
 
 from __future__ import annotations
 
+import bisect
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from .conflicts import Conflict, detect
+from .conflicts import Conflict, ConflictKind, detect
 from .model import Clip, Timeline, Track
-from .rational import Span
+from .rational import RationalTime, Span
 
 
 class Strategy(str, Enum):
     PRIORITY = "priority"
+    SHIFT = "shift"
     REJECT = "reject"
 
 
 class DecisionAction(str, Enum):
     TRIMMED = "trimmed"
     DISCARDED = "discarded"
+    SHIFTED = "shifted"
     REMOVED = "removed"
     UNRESOLVED = "unresolved"
 
@@ -123,7 +139,12 @@ def resolve(timeline: Timeline, strategy: Strategy | str) -> ResolutionResult:
 
     working = _clone(timeline)
     decisions: list[Decision] = []
-    _resolve_priority(working, decisions)
+    if strategy is Strategy.PRIORITY:
+        _resolve_priority(working, decisions)
+    else:
+        _resolve_shift(working, decisions)
+
+    _drop_empty(working, decisions)
 
     remaining = detect(working).conflicts
     for conflict in remaining:
@@ -259,7 +280,12 @@ def _trim_pair(
         )
 
 
-def _resolve_priority(timeline: Timeline, decisions: list[Decision]) -> None:
+def _resolve_priority(
+    timeline: Timeline,
+    decisions: list[Decision],
+    *,
+    cross_track_only: bool = False,
+) -> None:
     """One deterministic pass over the initial conflict list.
 
     Every action shrinks a span, so no action can create a new overlap.
@@ -267,8 +293,91 @@ def _resolve_priority(timeline: Timeline, decisions: list[Decision]) -> None:
     timeline; a final :func:`detect` in :func:`resolve` verifies it.
     """
     conflicts = detect(timeline).conflicts
+    if cross_track_only:
+        conflicts = [
+            conflict
+            for conflict in conflicts
+            if conflict.kind is not ConflictKind.SAME_TRACK_OVERLAP
+        ]
     positions = _index(timeline)
     for conflict in conflicts:
         _trim_pair(timeline, positions, conflict, decisions)
 
 
+# ---------------------------------------------------------------------------
+# shift strategy
+# ---------------------------------------------------------------------------
+
+
+def _resolve_shift(timeline: Timeline, decisions: list[Decision]) -> None:
+    """Shift later same-track clips left into the gap before their neighbour.
+
+    Clips are visited in ``(start, id)`` order.  Earlier clips stay where they
+    are; a clip that collides with an already-placed clip moves left so that
+    it ends exactly where that neighbour begins, repeating if the new position
+    collides again.  If no non-negative placement exists, the clip is left
+    untouched and reported as unresolved instead of being dropped.  The
+    placed set stays sorted and non-overlapping, so each clip costs
+    ``O(k log n)`` for the ``k`` neighbours it steps past.
+
+    Cross-track overlaps are not a shift concern (tracks are stacked), so
+    only they fall through to the priority trimming pass afterwards.
+    """
+    for track in timeline.tracks:
+        ordered = sorted(track.clips, key=lambda item: (item.start.seconds, item.id))
+        placed_starts: list[Any] = []
+        placed_ends: list[Any] = []
+        for clip in ordered:
+            duration = clip.duration.seconds
+            original = clip.span
+            start = clip.start.seconds
+            failed = False
+            while True:
+                index = bisect.bisect_right(placed_ends, start)
+                if index == len(placed_starts) or placed_starts[index] >= start + duration:
+                    break
+                start = placed_starts[index] - duration
+                if start < 0:
+                    failed = True
+                    break
+            if failed:
+                # Leave the clip where it is; the final report will list it
+                # as an unresolved conflict rather than dropping it.
+                continue
+            if start != clip.start.seconds:
+                clip.start = RationalTime(start)
+                decisions.append(
+                    Decision(
+                        action=DecisionAction.SHIFTED,
+                        clip_id=clip.id,
+                        track_id=track.id,
+                        reason="shifted left to clear same-track overlaps",
+                        before=original,
+                        after=clip.span,
+                    )
+                )
+            position = bisect.bisect_left(placed_starts, start)
+            placed_starts.insert(position, start)
+            placed_ends.insert(position, start + duration)
+
+    _resolve_priority(timeline, decisions, cross_track_only=True)
+
+
+def _drop_empty(timeline: Timeline, decisions: list[Decision]) -> None:
+    """Remove zero-duration clips and log the removal reason."""
+    for track in timeline.tracks:
+        kept: list[Clip] = []
+        for clip in track.clips:
+            if clip.duration.seconds <= 0:
+                decisions.append(
+                    Decision(
+                        action=DecisionAction.REMOVED,
+                        clip_id=clip.id,
+                        track_id=track.id,
+                        reason="zero duration after trimming",
+                        before=clip.span,
+                    )
+                )
+                continue
+            kept.append(clip)
+        track.clips = kept

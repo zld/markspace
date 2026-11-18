@@ -28,6 +28,19 @@ def _track(track_id: str, *clips: Clip) -> Track:
     return Track(id=track_id, clips=list(clips), rate=Fraction(24))
 
 
+def _snapshot(timeline: Timeline) -> list:
+    return [
+        (
+            track.id,
+            [
+                (clip.id, clip.start.as_seconds_text(), clip.duration.as_seconds_text())
+                for clip in track.clips
+            ],
+        )
+        for track in timeline.tracks
+    ]
+
+
 def test_rational_converts_ntsc_rates_exactly():
     rate = parse_rate("24000/1001")
     frames = RationalTime.from_frames(24000, rate)
@@ -155,8 +168,42 @@ def test_fully_covered_clip_is_removed_with_reason():
     assert "fully covered" in removed[0].reason
 
 
+def test_shift_moves_later_clip_left_into_free_space():
+    timeline = Timeline(id="t", tracks=[_track("v1", _clip("a", "5", "2"), _clip("b", "6", "2"))])
+    result = resolve(timeline, Strategy.SHIFT)
+    assert result.unresolved == []
+    kept = {clip.id: clip for clip in result.timeline.tracks[0].clips}
+    assert kept["b"].span.as_text() == {"start": "3", "end": "5"}
+    assert any(d.action is DecisionAction.SHIFTED for d in result.decisions)
+
+
+def test_shift_reports_clip_that_cannot_fit():
+    timeline = Timeline(id="t", tracks=[_track("v1", _clip("a", "0", "2"), _clip("b", "1", "2"))])
+    result = resolve(timeline, Strategy.SHIFT)
+    assert result.has_unresolved
+
+
 def test_reject_strategy_changes_nothing():
     timeline = Timeline(id="t", tracks=[_track("v1", _clip("a", "0", "4"), _clip("b", "2", "4"))])
     result = resolve(timeline, Strategy.REJECT)
     assert result.has_unresolved
     assert result.timeline.tracks[0].clips[0].span.as_text() == {"start": "0", "end": "4"}
+
+
+def test_resolution_is_deterministic():
+    timeline = Timeline(
+        id="t",
+        tracks=[
+            _track("v1", _clip("a", "0", "5"), _clip("b", "1", "5"), _clip("c", "3", "5")),
+            _track("v2", _clip("x", "2", "4"), _clip("y", "5", "2")),
+        ],
+    )
+    first = resolve(timeline, Strategy.PRIORITY)
+    second = resolve(timeline, Strategy.PRIORITY)
+    assert [d.as_dict() for d in first.decisions] == [d.as_dict() for d in second.decisions]
+    assert _snapshot(first.timeline) == _snapshot(second.timeline)
+
+
+# ---------------------------------------------------------------------------
+# render plan and summary
+# ---------------------------------------------------------------------------
