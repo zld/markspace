@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from cutline.rational import RationalTime, TimeError, parse_rate, round_half_away
+from cutline.rational import RationalTime, Span, TimeError, parse_rate, round_half_away
 
 
 def test_rational_converts_ntsc_rates_exactly():
@@ -42,3 +42,16 @@ def test_invalid_rates_are_located(bad: str):
 def test_float_rates_are_rejected():
     with pytest.raises(TimeError):
         parse_rate(23.976, "clips[0].rate")
+
+
+def test_span_touching_is_not_overlap():
+    a = Span(RationalTime(Fraction(0)), RationalTime(Fraction(2)))
+    b = Span(RationalTime(Fraction(2)), RationalTime(Fraction(4)))
+    assert not a.overlaps(b)
+    assert a.touches(b)
+    assert a.intersection(b) is None
+
+
+# ---------------------------------------------------------------------------
+# model validation
+# ---------------------------------------------------------------------------

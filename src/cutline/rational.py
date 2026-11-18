@@ -159,3 +159,55 @@ class RationalTime:
         return self.seconds < 0
 
 
+@dataclass(frozen=True)
+class Span:
+    """A half-open time interval ``[start, end)``.
+
+    Touching spans (``a.end == b.start``) do **not** overlap and are reported
+    separately as adjacency.
+    """
+
+    start: RationalTime
+    end: RationalTime
+
+    def __post_init__(self) -> None:
+        if self.end < self.start:
+            raise TimeError(
+                f"span end {self.end.as_seconds_text()} precedes start {self.start.as_seconds_text()}"
+            )
+
+    @classmethod
+    def from_start_duration(cls, start: RationalTime, duration: RationalTime) -> "Span":
+        if duration.is_negative():
+            raise TimeError(f"negative duration {duration.as_seconds_text()}")
+        return cls(start, start + duration)
+
+    @property
+    def duration(self) -> RationalTime:
+        return self.end - self.start
+
+    @property
+    def is_empty(self) -> bool:
+        return self.end == self.start
+
+    def overlaps(self, other: "Span") -> bool:
+        return self.start < other.end and other.start < self.end
+
+    def touches(self, other: "Span") -> bool:
+        return self.end == other.start or other.end == self.start
+
+    def intersection(self, other: "Span") -> "Span | None":
+        lo = self.start.max(other.start)
+        hi = self.end.min(other.end)
+        if lo < hi:
+            return Span(lo, hi)
+        return None
+
+    def contains(self, other: "Span") -> bool:
+        return self.start <= other.start and other.end <= self.end
+
+    def union_span(self, other: "Span") -> "Span":
+        return Span(self.start.min(other.start), self.end.max(other.end))
+
+    def as_text(self) -> dict[str, str]:
+        return {"start": self.start.as_seconds_text(), "end": self.end.as_seconds_text()}
