@@ -18,7 +18,7 @@ add_library(mp4_core STATIC
     src/compatibility.cpp
     src/rewriter.cpp
     src/rewriter_package.cpp
-    src/rewriter_io_stub.cpp
+    src/rewriter_io.cpp
     src/sha256.cpp
 )
 target_include_directories(mp4_core PUBLIC src)
