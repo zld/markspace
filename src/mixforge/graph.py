@@ -18,7 +18,9 @@ from .errors import ManifestError, RenderError
 from .manifest import Session, Track
 from .resample import (
     apply_layout,
+    apply_matrix,
     db_to_gain,
+    default_matrix,
     ms_to_frames,
     output_frame_count,
     resample_range,
@@ -98,15 +100,24 @@ class MixGraph:
     def _load_track(self, track: Track, rate: int) -> TrackProgram:
         info = probe(track.path, track_id=track.id)
         data = read_all(info, track_id=track.id)
-        if track.channel_count != info.channels:
-            raise RenderError(
-                f"manifest declares {track.channel_count} channel(s) but source "
-                f"has {info.channels}",
-                track_id=track.id, field="channels",
-            )
-        matrix = np.array(track.channel_matrix, dtype=np.float64)
-        # apply_layout validates width; do it here so the error precedes rendering.
-        apply_layout(data[:1], track.channel_matrix, track_id=track.id)
+        if track.explicit_layout:
+            assert track.channel_matrix is not None
+            if track.channel_count != info.channels:
+                raise RenderError(
+                    f"manifest declares {track.channel_count} channel(s) but "
+                    f"source has {info.channels}",
+                    track_id=track.id, field="channels",
+                )
+            matrix = np.array(track.channel_matrix, dtype=np.float64)
+        else:
+            try:
+                matrix = np.array(default_matrix(info.channels), dtype=np.float64)
+            except RenderError as exc:
+                raise RenderError(exc.message, track_id=track.id,
+                                  field=exc.field) from exc
+        # Validate width before decoding the rest of the render path.
+        apply_layout(data[:1], tuple(tuple(row) for row in matrix),
+                     track_id=track.id)
         out_frames = output_frame_count(info.frames, info.rate, rate)
         return TrackProgram(
             track=track,
@@ -130,10 +141,11 @@ class MixGraph:
         return result
 
     def bus_gain_samples(self, times_ms: np.ndarray) -> dict[str, np.ndarray]:
+        ones = np.ones_like(times_ms, dtype=np.float64)
         return {
             bus_id: db_to_gain(bus.gain_db) * (
                 bus.automation.gains_at_ms(times_ms)
-                if bus.automation is not None else 1.0
+                if bus.automation is not None else ones
             )
             for bus_id, bus in self.buses.items()
         }
@@ -180,7 +192,7 @@ class MixGraph:
             program.data[src_a:src_b], src_a, program.info.rate, self.rate,
             local_start, local_end, track_id=program.track.id,
         )
-        chunk = chunk @ program.matrix.T
+        chunk = apply_matrix(chunk, program.matrix)
         env = _gain_envelope(program.track.automation, program.base_gain,
                              lo, hi, self.rate)
         out[lo - start:hi - start] = chunk * env[:, None]

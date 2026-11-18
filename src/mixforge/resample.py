@@ -113,6 +113,19 @@ def resample(samples: np.ndarray, src_rate: int, dst_rate: int,
     return out
 
 
+def default_matrix(channel_count: int) -> tuple[tuple[float, ...], ...]:
+    """Identity layout up to stereo; mono is duplicated to both outputs."""
+    if channel_count == 1:
+        return ((1.0,), (1.0,))
+    if channel_count == 2:
+        return ((1.0, 0.0), (0.0, 1.0))
+    raise RenderError(
+        f"source has {channel_count} channels; provide an explicit 2-row channel "
+        f"matrix",
+        field="channels",
+    )
+
+
 def validate_layout(channel_count: int, matrix: tuple[tuple[float, ...], ...],
                     *, track_id: str) -> None:
     """Reject a channel matrix whose width does not match the source.
@@ -132,16 +145,32 @@ def validate_layout(channel_count: int, matrix: tuple[tuple[float, ...], ...],
         )
 
 
+def apply_matrix(samples: np.ndarray, matrix: np.ndarray) -> np.ndarray:
+    """Project (frames, source channels) to stereo with a validated matrix.
+
+    Written as scalar multiply-adds rather than a BLAS matmul so the result
+    does not depend on array length or block size.
+    """
+    data = np.asarray(samples, dtype=np.float64)
+    weights = np.asarray(matrix, dtype=np.float64)
+    out = np.zeros((data.shape[0], weights.shape[0]), dtype=np.float64)
+    for row in range(weights.shape[0]):
+        acc = np.zeros(data.shape[0], dtype=np.float64)
+        for col in range(data.shape[1]):
+            acc += data[:, col] * float(weights[row, col])
+        out[:, row] = acc
+    return out
+
+
 def apply_layout(samples: np.ndarray, matrix: tuple[tuple[float, ...], ...],
                  *, track_id: str) -> np.ndarray:
-    """Project (frames, source channels) to stereo using the explicit matrix."""
+    """Validate an explicit layout against the source width, then apply it."""
     data = np.asarray(samples, dtype=np.float64)
     if data.ndim != 2:
         raise RenderError("channel layout expects a 2-D (frames, channels) array",
                           track_id=track_id, field="audio")
     validate_layout(data.shape[1], matrix, track_id=track_id)
-    weights = np.array(matrix, dtype=np.float64)  # (2, src)
-    return data @ weights.T
+    return apply_matrix(data, np.array(matrix, dtype=np.float64))
 
 
 def db_to_gain(db: float) -> float:

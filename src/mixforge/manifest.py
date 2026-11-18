@@ -26,11 +26,15 @@ class Track:
     id: str
     path: Path
     offset_ms: float
-    channel_count: int
-    channel_matrix: tuple[tuple[float, ...], ...]
+    channel_count: int | None
+    channel_matrix: tuple[tuple[float, ...], ...] | None
     gain_db: float
     bus: str
     automation: AutomationCurve | None
+
+    @property
+    def explicit_layout(self) -> bool:
+        return self.channel_matrix is not None
 
 
 @dataclass(frozen=True)
@@ -170,6 +174,11 @@ def _parse_track(item: dict[str, Any], track_id: str, where: str, root: Path,
     if not source.is_absolute():
         source = root / source
     source = source.resolve()
+    if not source.is_relative_to(root):
+        raise ManifestError(
+            f"path escapes the manifest directory: {source}",
+            field=f"{where}.path", track_id=track_id,
+        )
 
     offset_ms = finite_number(item.get("offset_ms", 0.0), f"{where}.offset_ms",
                               track_id=track_id)
@@ -204,10 +213,11 @@ def _parse_track(item: dict[str, Any], track_id: str, where: str, root: Path,
 
 
 def _parse_channels(raw: Any, where: str,
-                    track_id: str) -> tuple[int, tuple[tuple[float, ...], ...]]:
+                    track_id: str) -> tuple[int | None, tuple[tuple[float, ...], ...] | None]:
+    """Return the declared layout, or ``(None, None)`` to infer from the source."""
     field_name = f"{where}.channels"
     if raw is None:
-        return 2, ((1.0, 0.0), (0.0, 1.0))
+        return None, None
     if isinstance(raw, str):
         count = _CHANNEL_ALIASES.get(raw.lower())
         if count is None:
@@ -218,6 +228,9 @@ def _parse_channels(raw: Any, where: str,
         return 2, ((1.0, 0.0), (0.0, 1.0))
     if not isinstance(raw, list) or not raw or not all(isinstance(r, list) for r in raw):
         raise ManifestError("channels matrix must be a non-empty array of arrays",
+                            field=field_name, track_id=track_id)
+    if len(raw) != 2:
+        raise ManifestError(f"channels matrix must have 2 output rows, got {len(raw)}",
                             field=field_name, track_id=track_id)
     width = len(raw[0])
     if width == 0:
