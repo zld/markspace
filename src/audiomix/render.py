@@ -173,21 +173,23 @@ class BlockRenderer:
     def __iter__(self):
         return self
 
-    def __next__(self) -> tuple[int, np.ndarray]:
+    def __next__(self) -> tuple[int, np.ndarray, list[np.ndarray]]:
         if self._cursor >= self.total_frames:
             self.close()
             raise StopIteration
         start = self._cursor
         count = min(self.block_frames, self.total_frames - start)
         bus = np.zeros((count, self.timeline.channels), dtype=np.float64)
+        track_blocks: list[np.ndarray] = []
         for node_index, player in enumerate(self.players):
             raw = player.read_block(start, count)
             processed = self.graph.process_track_block(
                 node_index, raw, start)
+            track_blocks.append(processed)
             bus += processed
         block = self.graph.mix_tail(bus, start)
         self._cursor += count
-        return start, block
+        return start, block, track_blocks
 
     def close(self) -> None:
         if not self._closed:
@@ -215,7 +217,7 @@ def render_to_file(timeline: Timeline, out_path: str | Path,
         writer = sf.SoundFile(
             str(tmp_path), mode="w", samplerate=timeline.output_rate,
             channels=timeline.channels, subtype="FLOAT", format="WAV")
-        for _start, block in renderer:
+        for _start, block, _track_blocks in renderer:
             if limit:
                 np.clip(block, -1.0, 1.0, out=block)
             writer.write(block.astype(np.float32, copy=False))
