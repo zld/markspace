@@ -1,0 +1,7 @@
+# Generated fixture output and local MPD artifacts
+testdata/generated/
+*.mpd
+*.tmp
+
+# Compiled binaries
+/dashforge
