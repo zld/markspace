@@ -36,6 +36,9 @@ add_library(h264core STATIC
 )
 target_include_directories(h264core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
+add_executable(h264-inspect src/main.cpp)
+target_link_libraries(h264-inspect PRIVATE h264core)
+
 enable_testing()
 
 add_executable(h264-self-test
