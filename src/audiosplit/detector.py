@@ -78,14 +78,21 @@ def frame_signal(samples: np.ndarray, frame_samples: int) -> FrameEnvelope:
         empty = np.zeros(0, dtype=np.float64)
         return FrameEnvelope(empty, empty.copy(), np.zeros(0, dtype=np.int64), frame_samples)
     frame_count = (total + frame_samples - 1) // frame_samples
-    padded = np.zeros(frame_count * frame_samples, dtype=np.float64)
-    padded[:total] = samples
-    blocks = padded.reshape(frame_count, frame_samples)
-    sumsq = np.einsum("ij,ij->i", blocks, blocks)
-    peak = np.max(np.abs(blocks), axis=1)
-    counts = np.full(frame_count, frame_samples, dtype=np.int64)
-    counts[-1] = total - (frame_count - 1) * frame_samples
-    rms = np.sqrt(sumsq / counts)
+    rms = np.empty(frame_count, dtype=np.float64)
+    peak = np.empty(frame_count, dtype=np.float64)
+    counts = np.empty(frame_count, dtype=np.int64)
+    full = total // frame_samples
+    if full:
+        blocks = samples[: full * frame_samples].reshape(full, frame_samples)
+        sumsq = np.einsum("ij,ij->i", blocks, blocks)
+        rms[:full] = np.sqrt(sumsq / frame_samples)
+        peak[:full] = np.maximum(blocks.max(axis=1), -blocks.min(axis=1))
+        counts[:full] = frame_samples
+    if total > full * frame_samples:
+        tail = samples[full * frame_samples :]
+        rms[full] = np.sqrt(np.mean(np.square(tail)))
+        peak[full] = max(abs(float(tail.max())), abs(float(tail.min())))
+        counts[full] = tail.size
     return FrameEnvelope(rms=rms, peak=peak, counts=counts, frame_samples=frame_samples)
 
 

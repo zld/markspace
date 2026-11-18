@@ -70,16 +70,20 @@ def _decode(payload: bytes, tag: int, channels: int, bits: int) -> np.ndarray:
         dtype = "<f4" if bits == 32 else "<f8"
         data = np.frombuffer(raw, dtype=dtype).astype(np.float64)
     elif bits == 8:
-        data = (np.frombuffer(raw, dtype=np.uint8).astype(np.float64) - 128.0) / 128.0
+        data = np.frombuffer(raw, dtype=np.uint8).astype(np.float64)
+        data -= 128.0
+        data /= 128.0
     elif bits == 16:
-        data = np.frombuffer(raw, dtype="<i2").astype(np.float64) / 32768.0
+        data = np.frombuffer(raw, dtype="<i2").astype(np.float64)
+        data /= 32768.0
     elif bits == 24:
         triples = np.frombuffer(raw, dtype=np.uint8).reshape(-1, 3).astype(np.int32)
         values = triples[:, 0] | (triples[:, 1] << 8) | (triples[:, 2] << 16)
         values = np.where(values >= 1 << 23, values - (1 << 24), values)
         data = values.astype(np.float64) / float(1 << 23)
     else:
-        data = np.frombuffer(raw, dtype="<i4").astype(np.float64) / float(1 << 31)
+        data = np.frombuffer(raw, dtype="<i4").astype(np.float64)
+        data /= float(1 << 31)
     if not data.size:
         return np.zeros(0, dtype=np.float64)
     if not np.all(np.isfinite(data)):
@@ -88,7 +92,7 @@ def _decode(payload: bytes, tag: int, channels: int, bits: int) -> np.ndarray:
         raise AudioError("partial sample frame at end of WAV")
     data = data.reshape(-1, channels)
     if channels == 1:
-        return data[:, 0].copy()
+        return data.reshape(-1)
     return data.mean(axis=1)
 
 

@@ -88,6 +88,24 @@ class EdgeCaseTests(Harness):
         self.assertLessEqual(plan.segments[0].start, 1000)
         self.assertGreaterEqual(plan.segments[0].end, 5000)
 
+    def test_fade_boundaries_are_clamped_and_applied(self) -> None:
+        from audiosplit.exporter import _apply_fades
+
+        samples = np.zeros(SR)
+        samples[1000:6000] = 0.5
+        plan = self.detect_plan(samples, fade_ms=5.0)
+        self.assertEqual(len(plan.segments), 1)
+        segment = plan.segments[0]
+        self.assertGreater(segment.fade_in, 0)
+        self.assertGreater(segment.fade_out, 0)
+        self.assertLessEqual(segment.fade_in, segment.length // 2)
+        self.assertTrue(0 <= segment.start < segment.end <= SR)
+        audio = samples[segment.start : segment.end]
+        faded = _apply_fades(audio, segment.fade_in, segment.fade_out)
+        self.assertAlmostEqual(float(abs(faded[0])), 0.0, places=6)
+        self.assertAlmostEqual(float(abs(faded[-1])), 0.0, places=6)
+        self.assertAlmostEqual(float(np.max(np.abs(faded))), 0.5, places=3)
+
     def test_partition_is_exact_for_impulses(self) -> None:
         rng = np.random.default_rng(3)
         samples = rng.normal(0.0, 0.0005, SR)
