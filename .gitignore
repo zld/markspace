@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Local virtual environment and generated deterministic fixtures
+.venv/
+
+# Test / tooling caches
+.pytest_cache/
+.coverage
+htmlcov/
