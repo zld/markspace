@@ -57,25 +57,24 @@ func (p *Peer) Close() error {
 // or fails on Failed/Disconnected/Closed or context expiry.
 func (p *Peer) WaitConnected(ctx context.Context) error {
 	done := make(chan error, 1)
-	p.PC.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
+	check := func(state webrtc.ICEConnectionState) {
+		var err error
 		switch state {
 		case webrtc.ICEConnectionStateConnected, webrtc.ICEConnectionStateCompleted:
-			select {
-			case done <- nil:
-			default:
-			}
 		case webrtc.ICEConnectionStateFailed:
-			select {
-			case done <- fmt.Errorf("ICE connection failed"):
-			default:
-			}
+			err = fmt.Errorf("ICE connection failed")
 		case webrtc.ICEConnectionStateDisconnected, webrtc.ICEConnectionStateClosed:
-			select {
-			case done <- fmt.Errorf("ICE connection %s before connected", state):
-			default:
-			}
+			err = fmt.Errorf("ICE connection %s before connected", state)
+		default:
+			return
 		}
-	})
+		select {
+		case done <- err:
+		default:
+		}
+	}
+	p.PC.OnICEConnectionStateChange(check)
+	check(p.PC.ICEConnectionState()) // the state may already be terminal
 	select {
 	case err := <-done:
 		if err != nil {
