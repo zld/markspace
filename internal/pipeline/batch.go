@@ -34,6 +34,9 @@ func samePath(a, b string) bool {
 // place. Existing outputs are refused unless force is set.
 func atomicWrite(path string, data []byte, force bool) error {
 	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("create output directory %s: %w", dir, err)
+	}
 	tmp, err := os.CreateTemp(dir, ".subtitle-*."+filepath.Base(path))
 	if err != nil {
 		return fmt.Errorf("create temp output: %w", err)
@@ -93,37 +96,40 @@ type BatchOptions struct {
 	Jobs int
 }
 
-// Batch converts every input path with at most jobs concurrent workers. One
-// file failing never aborts the others; results come back sorted by path.
-func Batch(paths []string, jobs int, base Options) []report.FileResult {
+// Batch converts every option set with at most jobs concurrent workers. Each
+// entry carries its own input and output path. One file failing never aborts
+// the others; results come back sorted by input path.
+func Batch(optionSets []Options, jobs int) []report.FileResult {
+	paths := make([]string, len(optionSets))
+	for i, o := range optionSets {
+		paths[i] = o.InputPath
+	}
 	if jobs < 1 {
 		jobs = 1
 	}
-	if jobs > len(paths) {
-		jobs = len(paths)
+	if jobs > len(optionSets) {
+		jobs = len(optionSets)
 	}
 	type indexed struct {
 		idx int
 		res report.FileResult
 	}
-	ch := make(chan indexed, len(paths))
+	ch := make(chan indexed, len(optionSets))
 	sem := make(chan struct{}, jobs)
 	var wg sync.WaitGroup
-	for i, p := range paths {
+	for i, opts := range optionSets {
 		wg.Add(1)
-		go func(idx int, path string) {
+		go func(idx int, o Options) {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			opts := base
-			opts.InputPath = path
-			ch <- indexed{idx: idx, res: Run(opts)}
-		}(i, p)
+			ch <- indexed{idx: idx, res: Run(o)}
+		}(i, opts)
 	}
 	wg.Wait()
 	close(ch)
 
-	results := make([]report.FileResult, len(paths))
+	results := make([]report.FileResult, len(optionSets))
 	for item := range ch {
 		results[item.idx] = item.res
 	}

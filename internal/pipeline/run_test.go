@@ -131,8 +131,15 @@ func TestBatchContinuesAfterFailure(t *testing.T) {
 	if len(paths) != 2 {
 		t.Fatalf("discovered %d paths", len(paths))
 	}
-	base := good
-	results := Batch(paths, 2, base)
+	optionSets := make([]Options, len(paths))
+	for i, p := range paths {
+		o := good
+		o.InputPath = p
+		o.OutputPath = filepath.Join(dir, "out", "o"+string(rune('0'+i))+".ass")
+		o.Force = true
+		optionSets[i] = o
+	}
+	results := Batch(optionSets, 2)
 	failed, ok := 0, 0
 	for _, r := range results {
 		if r.Error != "" {
