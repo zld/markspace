@@ -15,6 +15,7 @@ from cutline.rational import RationalTime, Span, TimeError, parse_rate, round_ha
 from cutline.conflicts import ConflictKind, detect
 from cutline.resolve import DecisionAction, Strategy, resolve
 from cutline.exchange import ExchangeError, dump_exchange, load_exchange, write_exchange
+from cutline.otio_adapter import OTIOUnmappedError, from_otio, to_otio
 
 ROOT = Path(__file__).resolve().parents[1]
 SAMPLE_SCRIPT = ROOT / "scripts" / "make_samples.py"
@@ -310,4 +311,39 @@ def test_writer_refuses_to_overwrite_input(sample_path: Path):
 
 # ---------------------------------------------------------------------------
 # OTIO bridge
+# ---------------------------------------------------------------------------
+
+
+def test_otio_round_trip_preserves_order_ids_and_times(sample_path: Path):
+    import opentimelineio as otio
+
+    loaded = load_exchange(sample_path)
+    root = to_otio(loaded.timeline)
+    assert [track.id for track in loaded.timeline.tracks] == ["v1", "v2", "subs"]
+    assert [track.name for track in root.tracks] == ["Editorial", "Background", "Subtitles"]
+    assert [child.metadata["cutline"]["id"] for child in root.tracks[0]] == [
+        "sh010",
+        "sh020",
+        "sh030",
+        "sh040",
+        "sh050",
+    ]
+    round_tripped = from_otio(root)
+    assert dump_exchange(round_tripped) == dump_exchange(loaded.timeline)
+
+
+def test_otio_unmappable_object_reports_path(sample_path: Path):
+    import opentimelineio as otio
+
+    loaded = load_exchange(sample_path)
+    root = to_otio(loaded.timeline)
+    root.tracks[1].insert(0, otio.schema.Transition(name="dissolve"))
+    with pytest.raises(OTIOUnmappedError) as info:
+        from_otio(root)
+    assert "tracks[1].children[0]" in str(info.value)
+    assert "Transition" in str(info.value)
+
+
+# ---------------------------------------------------------------------------
+# CLI
 # ---------------------------------------------------------------------------
