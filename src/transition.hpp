@@ -16,6 +16,10 @@ struct Weight {
   std::int64_t aWeight;
   std::int64_t bWeight;
   std::int64_t den;
+
+  bool operator==(const Weight& o) const noexcept {
+    return aWeight == o.aWeight && bWeight == o.bWeight && den == o.den;
+  }
 };
 
 // Everything a kernel needs to know about the frame and progress.

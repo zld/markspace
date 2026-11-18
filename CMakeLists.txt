@@ -24,3 +24,7 @@ target_compile_options(tr_core PRIVATE -Wall -Wextra -Wpedantic)
 add_executable(transition_render src/main.cpp)
 target_link_libraries(transition_render PRIVATE tr_core)
 target_compile_options(transition_render PRIVATE -Wall -Wextra -Wpedantic)
+
+add_executable(transition_selftest tests/self_test.cpp)
+target_link_libraries(transition_selftest PRIVATE tr_core)
+target_compile_options(transition_selftest PRIVATE -Wall -Wextra -Wpedantic)

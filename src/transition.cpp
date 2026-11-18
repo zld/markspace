@@ -46,12 +46,24 @@ Weight linearKernel(const KernelParams& p) {
 }
 
 Weight wipeKernel(const KernelParams& p) {
-  // Vertical boundary sweeps left to right: B fills [0, xSplit), A the rest.
+  // Vertical boundary sweeps left to right: B fills columns with
+  // (x+1)/w <= t, A the rest. At t=0 every column is A; the half-open end
+  // frame (t=1) is never rendered, so a thin A column can persist to the
+  // final output frame by construction.
   const i128 tNum = p.progressNum;
   const i128 tDen = p.progressDen;
-  const i128 xNum = static_cast<i128>(p.x) + 1;  // half-open column test
+  const i128 xNum = static_cast<i128>(p.x) + 1;  // half-open column count
   const i128 xDen = p.width;
-  return linearThreshold(xNum, xDen, tNum, tDen);
+  const i128 lhs = xNum * tDen;
+  const i128 rhs = tNum * xDen;
+  if (lhs <= rhs - tDen) return Weight{0, 1, 1};  // strictly inside B
+  if (lhs >= rhs + tDen) return Weight{1, 0, 1};  // strictly inside A
+  // One-column anti-aliasing band around the moving boundary.
+  const i128 bNum = lhs - (rhs - tDen);
+  const i128 den = 2 * tDen;
+  return Weight{static_cast<std::int64_t>(den - bNum),
+                static_cast<std::int64_t>(bNum),
+                static_cast<std::int64_t>(den)};
 }
 
 Weight circleKernel(const KernelParams& p) {
