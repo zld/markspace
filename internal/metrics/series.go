@@ -49,6 +49,7 @@ type Summary struct {
 	Recoveries       int     `json:"recoveries"`
 	ContinuityDelta  float64 `json:"continuity_delta"`
 	ConcealRatio     float64 `json:"conceal_ratio"`
+	BufferMs         int     `json:"buffer_ms"`
 	BufferMsMin      int     `json:"buffer_ms_min"`
 	BufferMsMax      int     `json:"buffer_ms_max"`
 	BufferMsAvg      float64 `json:"buffer_ms_avg"`

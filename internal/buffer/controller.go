@@ -244,8 +244,11 @@ func (c *Controller) Tick(nowMs int64) Slot {
 		return Slot{BufferMs: c.bufferMs(), TargetMs: c.targetMs()}
 	}
 
+	// Water level is sampled before the slot is emitted so it includes the
+	// frame being played, matching what the jitter buffer actually holds.
+	level := c.bufferMs()
 	slot := c.play(nowMs)
-	slot.BufferMs = c.bufferMs()
+	slot.BufferMs = level
 	slot.TargetMs = c.targetMs()
 	c.stats.PlayoutSlots++
 	if c.finished && c.drained() {
