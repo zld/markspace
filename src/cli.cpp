@@ -292,7 +292,6 @@ std::string usage_text() {
 
 namespace {
 
-ColorSpace parse_or_fail(const std::string& text);
 
 int emit(const Analysis& analysis, const Options& options) {
   if (options.json) {
