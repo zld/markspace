@@ -18,7 +18,6 @@ class Limits:
     max_depth: int = 16
     max_tracks: int = 64
     max_sample_entries: int = 32
-    max_stts_entries: int = 100_000
     max_payload_read: int = 1 * 1024 * 1024
     max_chunk: int = 1024 * 1024
 
