@@ -30,7 +30,7 @@ MAGIC = b"PWMC"
 HEADER_FORMAT = ">4sBHII"
 HEADER_SIZE = struct.calcsize(HEADER_FORMAT)  # 15
 TRACK_FORMAT = ">IB4sIIIIIIIH16sB"
-TRACK_ENTRY_SIZE = struct.calcsize(TRACK_FORMAT)  # 52
+TRACK_ENTRY_SIZE = struct.calcsize(TRACK_FORMAT)  # 56
 
 # Byte offsets of header fields, used in diagnostics.
 OFF_MAGIC = 0
@@ -131,11 +131,18 @@ def parse_container(data: bytes, path: str) -> Media:
     payload_cursor = table_end
     for index in range(track_count):
         entry_off = header_len + index * TRACK_ENTRY_SIZE
-        fields = struct.unpack_from(TRACK_FORMAT, data, entry_off)
         (track_id, kind, codec_raw, timebase, start_ts, sample_count,
-         width, height, sample_rate, channels, lang_raw, flags) = fields
+         width, height, sample_rate, channels, lang_len, lang_raw,
+         flags) = struct.unpack_from(TRACK_FORMAT, data, entry_off)
         codec_id = codec_raw.decode("latin-1")
         language, lang_raw_field = _decode_language(lang_raw)
+        if lang_len > len(lang_raw):
+            media.errors.append(_err(
+                "E_LANG_LENGTH",
+                f"track {track_id} language length {lang_len} exceeds the "
+                f"16-byte label field",
+                offset=entry_off + 39, track_id=track_id,
+            ))
         payload_offset = payload_cursor
         payload_length = sample_count  # payload byte count equals sample count
         raw: dict[str, int | str] = {}
