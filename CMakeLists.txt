@@ -15,6 +15,7 @@ add_library(mp4_core STATIC
     src/box_reader.cpp
     src/fragment_index.cpp
     src/fragment_index_io.cpp
+    src/compatibility.cpp
     src/sha256.cpp
 )
 target_include_directories(mp4_core PUBLIC src)
