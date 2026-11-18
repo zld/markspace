@@ -38,7 +38,10 @@ def build_summary(
         "max_duration_delta_ms": max_duration_delta_ms,
     }
     if counts is not None:
-        summary["counts"] = counts
+        summary["counts"] = {
+            "mismatches_by_category": counts["mismatches_by_category"],
+            "failures_by_code": counts["failures_by_code"],
+        }
     return summary
 
 

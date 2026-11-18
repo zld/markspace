@@ -113,6 +113,28 @@ def _write_json(path: str | None, payload: dict[str, Any]) -> str | None:
 # -- commands ---------------------------------------------------------------
 
 
+def _failure_counts(failures: list[dict]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for item in failures:
+        code = item.get("error_code", ERR_INTERNAL)
+        counts[code] = counts.get(code, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def _record_failure_safely(
+    st: store.Store | None, outcome: scan.ScanOutcome
+) -> dict | None:
+    """Record a failed scan without letting index trouble hide the failure."""
+    failure = outcome.failure
+    code = failure.code if failure else ERR_INTERNAL
+    if st is not None:
+        try:
+            st.record_failure(outcome.task.rel_path, outcome.task.rel_path, code)
+        except store.StoreError:
+            pass
+    return _failure_entry_from(outcome)
+
+
 def cmd_check(args: argparse.Namespace) -> int:
     try:
         limits = _limits(args)
@@ -184,16 +206,7 @@ def cmd_check(args: argparse.Namespace) -> int:
                     except store.StoreError as exc:
                         failures.append(_failure_entry(outcome.task.rel_path, exc))
             else:
-                failures.append(_failure_entry_from(outcome))
-                if st is not None:
-                    try:
-                        st.record_failure(
-                            outcome.task.rel_path,
-                            outcome.task.rel_path,
-                            outcome.failure.code if outcome.failure else ERR_INTERNAL,
-                        )
-                    except store.StoreError:
-                        pass
+                failures.append(_record_failure_safely(st, outcome))
     finally:
         if st is not None:
             st.close()
@@ -205,7 +218,10 @@ def cmd_check(args: argparse.Namespace) -> int:
         failures=len(failures),
         max_duration_delta_ms=max_delta,
         skipped=len(discovery.skipped),
-        counts=aggregate,
+        counts={
+            "mismatches_by_category": aggregate,
+            "failures_by_code": _failure_counts(failures),
+        },
     )
     payload = report.build_report(summary, files, mismatches, failures)
     if discovery.skipped:
@@ -250,16 +266,7 @@ def cmd_scan(args: argparse.Namespace) -> int:
                     except store.StoreError as exc:
                         failures.append(_failure_entry(outcome.task.rel_path, exc))
             else:
-                failures.append(_failure_entry_from(outcome))
-                if st is not None and outcome.failure is not None:
-                    try:
-                        st.record_failure(
-                            outcome.task.rel_path,
-                            outcome.task.rel_path,
-                            outcome.failure.code,
-                        )
-                    except store.StoreError:
-                        pass
+                failures.append(_record_failure_safely(st, outcome))
     finally:
         if st is not None:
             st.close()
@@ -270,6 +277,8 @@ def cmd_scan(args: argparse.Namespace) -> int:
         failures=len(failures),
         max_duration_delta_ms=None,
         skipped=len(discovery.skipped),
+        counts={"mismatches_by_category": {}, "failures_by_code":
+                _failure_counts(failures)},
     )
     payload = report.build_report(summary, files, [], failures)
     if discovery.skipped:
@@ -360,6 +369,8 @@ def cmd_pack(args: argparse.Namespace) -> int:
         failures=len(failures),
         max_duration_delta_ms=None,
         skipped=len(discovery.skipped),
+        counts={"mismatches_by_category": {}, "failures_by_code":
+                _failure_counts(failures)},
     )
     payload = report.build_report(summary, files, [], failures)
     report.print_summary(summary, failures)
