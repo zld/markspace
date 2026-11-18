@@ -13,5 +13,6 @@ add_compile_options(-Wall -Wextra -Wpedantic)
 
 add_library(mp4_core STATIC
     src/box_reader.cpp
+    src/sha256.cpp
 )
 target_include_directories(mp4_core PUBLIC src)
