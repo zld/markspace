@@ -45,15 +45,16 @@ def expand_timestamps(timestamps_units, scale_ns: int, timescale: int,
     if not np.all(np.abs(exact - pts.astype(np.float64)) <= 0.5 + 1e-6):
         raise TimestampError("rounding error exceeds half a tick")
 
-    if pts.min() < 0:  # negative start: shift the whole track to zero
-        pts = pts - pts.min()
-
     # Enforce strictly increasing pts (repairs duplicate timestamps by
-    # nudging later samples one tick forward).
+    # nudging later samples one tick forward). Done before shifting so
+    # pts[0] is the track minimum and MP4 dts matches pts exactly.
     pts = np.maximum.accumulate(pts - np.arange(n, dtype=np.int64)) \
         + np.arange(n, dtype=np.int64)
     if not np.all(np.diff(pts) > 0):
         raise TimestampError("could not make timestamps strictly increasing")
+
+    if pts[0] != 0:  # negative or late start: shift the track to zero
+        pts = pts - pts[0]
 
     durations = np.empty(n, dtype=np.int64)
     durations[:-1] = np.diff(pts)
