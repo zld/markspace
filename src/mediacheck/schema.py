@@ -35,6 +35,11 @@ CREATE TABLE IF NOT EXISTS scan_tracks (
     extra_json TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_scan_tracks_scan ON scan_tracks(scan_id);
+CREATE TABLE IF NOT EXISTS scan_paths (
+    relative_path TEXT PRIMARY KEY,
+    scan_id INTEGER NOT NULL REFERENCES scans(id) ON DELETE CASCADE,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 CREATE TABLE IF NOT EXISTS compare_runs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     duration_tolerance_ms REAL NOT NULL,

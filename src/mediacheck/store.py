@@ -161,6 +161,29 @@ class Store:
         ).fetchone()
         return int(row[0]) if row else None
 
+    # -- per-path baselines --------------------------------------------
+    def remember_path(self, relative_path: str, scan_id: int) -> None:
+        """Record the most recent scan seen at a relative path."""
+        try:
+            with self.conn:
+                self.conn.execute(
+                    """INSERT INTO scan_paths(relative_path, scan_id)
+                       VALUES (?, ?)
+                       ON CONFLICT(relative_path) DO UPDATE SET
+                           scan_id = excluded.scan_id,
+                           updated_at = datetime('now')""",
+                    (relative_path, scan_id),
+                )
+        except sqlite3.Error as exc:
+            raise StoreError(f"cannot record path baseline: {exc}") from exc
+
+    def find_scan_by_path(self, relative_path: str) -> int | None:
+        row = self.conn.execute(
+            "SELECT scan_id FROM scan_paths WHERE relative_path = ?",
+            (relative_path,),
+        ).fetchone()
+        return int(row[0]) if row else None
+
     # -- compare runs --------------------------------------------------
     def record_compare(self, report: CompareReport) -> int:
         try:
