@@ -48,7 +48,7 @@ def _parse_mdhd(data: bytes, s: int, e: int):
     return timescale, duration
 
 
-def _parse_stts(data: bytes, s: int):
+def _parse_stts(data: bytes, s: int, e: int):
     (count,) = struct.unpack_from(">I", data, s + 4)
     entries, pos = [], s + 8
     for _ in range(count):

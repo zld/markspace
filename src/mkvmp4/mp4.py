@@ -101,9 +101,9 @@ def _stsd(meta: dict) -> bytes:
     return full_box(b"stsd", 0, 0, struct.pack(">I", 1) + entry)
 
 
-def _table_u32(tag: bytes, pairs) -> bytes:
-    body = struct.pack(">I", len(pairs))
-    body += b"".join(struct.pack(">II", a, b) for a, b in pairs)
+def _table_u32(tag: bytes, rows) -> bytes:
+    body = struct.pack(">I", len(rows))
+    body += b"".join(struct.pack(">" + "I" * len(row), *row) for row in rows)
     return full_box(tag, 0, 0, body)
 
 
