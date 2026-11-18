@@ -20,6 +20,7 @@ add_library(lutcheck_core
   src/lut_parser.cpp
   src/ppm.cpp
   src/render_paths.cpp
+  src/report.cpp
 )
 
 target_include_directories(lutcheck_core PUBLIC src)
@@ -33,7 +34,7 @@ target_compile_options(lutcheck_core PRIVATE
 
 target_link_libraries(lutcheck_core PUBLIC Threads::Threads)
 
-add_executable(lutcheck src/main.cpp)
+add_executable(lutcheck src/main.cpp src/cli.cpp)
 target_link_libraries(lutcheck PRIVATE lutcheck_core)
 target_compile_options(lutcheck PRIVATE -Wall -Wextra -Wpedantic -Wshadow)
 
