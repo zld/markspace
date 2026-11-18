@@ -15,3 +15,12 @@ add_library(h264core STATIC
 )
 target_include_directories(h264core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
+enable_testing()
+
+add_executable(h264-self-test
+  tests/runner.cpp
+  tests/test_bytes.cpp
+)
+target_link_libraries(h264-self-test PRIVATE h264core)
+target_include_directories(h264-self-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests)
+add_test(NAME self_test COMMAND h264-self-test)
