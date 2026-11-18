@@ -20,3 +20,7 @@ add_library(tr_core STATIC
 )
 target_include_directories(tr_core PUBLIC src)
 target_compile_options(tr_core PRIVATE -Wall -Wextra -Wpedantic)
+
+add_executable(transition_render src/main.cpp)
+target_link_libraries(transition_render PRIVATE tr_core)
+target_compile_options(transition_render PRIVATE -Wall -Wextra -Wpedantic)
