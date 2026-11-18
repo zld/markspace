@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mediacheck"
+version = "0.1.0"
+description = "Offline container metadata verifier for WAV/MP4 media assets"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+mediacheck = "mediacheck.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+mediacheck = ["py.typed"]
