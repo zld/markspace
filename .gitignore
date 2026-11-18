@@ -1,0 +1,4 @@
+# Build artifacts stay in /tmp; ignore any stray local binaries.
+/relaylab
+*.out
+*.test
