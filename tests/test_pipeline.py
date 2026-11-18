@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from cutline.model import Clip, ModelError, Timeline, Track
 from cutline.rational import RationalTime, Span, TimeError, parse_rate, round_half_away
 
 
@@ -54,4 +55,23 @@ def test_span_touching_is_not_overlap():
 
 # ---------------------------------------------------------------------------
 # model validation
+# ---------------------------------------------------------------------------
+
+
+def test_zero_duration_is_rejected():
+    payload = {
+        "version": "v2",
+        "timeline": {
+            "tracks": [
+                {"id": "a", "rate": "24", "clips": [{"id": "c1", "start": "1", "duration": "0"}]}
+            ]
+        },
+    }
+    with pytest.raises(ModelError) as info:
+        __import__("cutline.model", fromlist=["build_timeline"]).build_timeline(payload["timeline"])
+    assert "duration must be positive" in str(info.value)
+
+
+# ---------------------------------------------------------------------------
+# conflict detection
 # ---------------------------------------------------------------------------
