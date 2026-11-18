@@ -13,6 +13,11 @@
 #include "lut_parser.hpp"
 #include "histogram.hpp"
 #include "ppm.hpp"
+#include "render_paths.hpp"
+#include <atomic>
+#include <chrono>
+#include <thread>
+#include <stdexcept>
 #include "color_space.hpp"
 #include "interpolation.hpp"
 
@@ -424,4 +429,146 @@ TEST_CASE("histogram bin limits are enforced", "[histogram]") {
   } catch (const lutcheck::AppError& error) {
     CHECK(error.code() == ExitCode::Usage);
   }
+}
+
+namespace {
+
+// Builds a non-affine LUT so interpolation error, not just matrix math, is
+// exercised by the path comparison.
+lutcheck::Lut3D graded_lut(int size) {
+  std::ostringstream out;
+  out << "LUT_3D_SIZE " << size << "\n";
+  const double d = size - 1;
+  for (int b = 0; b < size; ++b)
+    for (int g = 0; g < size; ++g)
+      for (int r = 0; r < size; ++r) {
+        const double rr = r / d, gg = g / d, bb = b / d;
+        out << rr * rr << ' ' << std::sqrt(gg) << ' ' << (bb + rr * 0.25) << '\n';
+      }
+  return parse_text(out.str());
+}
+
+lutcheck::Image graded_image(int width, int height) {
+  lutcheck::Image image;
+  image.width = static_cast<std::uint32_t>(width);
+  image.height = static_cast<std::uint32_t>(height);
+  image.pixels.resize(static_cast<std::size_t>(width) * height);
+  for (int y = 0; y < height; ++y)
+    for (int x = 0; x < width; ++x) {
+      const double u = static_cast<double>(x) / (width - 1);
+      const double v = static_cast<double>(y) / (height - 1);
+      image.pixels[static_cast<std::size_t>(y) * width + x] = {u, v, 0.5 * (u + v)};
+    }
+  return image;
+}
+
+}  // namespace
+
+TEST_CASE("scalar and parallel paths agree exactly", "[paths]") {
+  const lutcheck::Lut3D lut = graded_lut(9);
+  const lutcheck::Image input = graded_image(97, 61);
+  lutcheck::RenderOptions options;
+  const lutcheck::Image scalar = lutcheck::render_scalar(input, lut, options);
+  for (int threads : {1, 2, 3, 7, 16}) {
+    const auto parallel =
+        lutcheck::render_parallel(input, lut, options, threads, 13);
+    REQUIRE(parallel.image.pixels.size() == scalar.pixels.size());
+    const lutcheck::Deviation deviation =
+        lutcheck::compare_images(scalar, parallel.image);
+    CHECK(deviation.r == 0.0);
+    CHECK(deviation.g == 0.0);
+    CHECK(deviation.b == 0.0);
+    CHECK(parallel.threads_used <= threads);
+  }
+}
+
+TEST_CASE("parallel output order is independent of chunking", "[paths]") {
+  const lutcheck::Lut3D lut = graded_lut(5);
+  const lutcheck::Image input = graded_image(40, 3);
+  lutcheck::RenderOptions options;
+  const lutcheck::Image reference = lutcheck::render_scalar(input, lut, options);
+  for (std::size_t chunk : {1, 2, 7, 64, 1000}) {
+    const auto parallel =
+        lutcheck::render_parallel(input, lut, options, 4, chunk);
+    CHECK(parallel.image.pixels[0].r ==
+          Catch::Approx(reference.pixels[0].r).margin(0.0));
+    for (std::size_t i = 0; i < reference.pixels.size(); ++i) {
+      REQUIRE(parallel.image.pixels[i].r == reference.pixels[i].r);
+      REQUIRE(parallel.image.pixels[i].g == reference.pixels[i].g);
+      REQUIRE(parallel.image.pixels[i].b == reference.pixels[i].b);
+    }
+  }
+}
+
+TEST_CASE("transform applies the conversion matrix before the LUT", "[paths]") {
+  // Identity LUT: output must equal the matrix-mapped input.
+  const lutcheck::Lut3D lut = parse_text(make_cube(2));
+  lutcheck::RenderOptions options;
+  options.input_to_lut =
+      lutcheck::build_conversion(lutcheck::ColorSpace::Rec709,
+                                 lutcheck::ColorSpace::DisplayP3);
+  const Vec3 out = lutcheck::transform_sample(lut, options, Vec3{1.0, 0.0, 0.0});
+  CHECK(out.r == Catch::Approx(0.8224620).margin(1e-9));
+  CHECK(out.g == Catch::Approx(0.0331942).margin(1e-9));
+  CHECK(out.b == Catch::Approx(0.0170826).margin(1e-9));
+}
+
+TEST_CASE("render path limits are enforced", "[paths]") {
+  const lutcheck::Lut3D lut = graded_lut(2);
+  const lutcheck::Image input = graded_image(4, 4);
+  lutcheck::RenderOptions options;
+  try {
+    lutcheck::render_parallel(input, lut, options, 0);
+    FAIL("expected thread count rejection");
+  } catch (const lutcheck::AppError& error) {
+    CHECK(error.code() == ExitCode::Usage);
+  }
+  try {
+    lutcheck::render_parallel(input, lut, options, lutcheck::kMaxThreads + 1);
+    FAIL("expected thread count rejection");
+  } catch (const lutcheck::AppError& error) {
+    CHECK(error.code() == ExitCode::Usage);
+  }
+}
+
+TEST_CASE("comparing mismatched images is a usage error", "[paths]") {
+  const lutcheck::Image a = graded_image(4, 4);
+  const lutcheck::Image b = graded_image(4, 5);
+  try {
+    lutcheck::compare_images(a, b);
+    FAIL("expected size mismatch rejection");
+  } catch (const lutcheck::AppError& error) {
+    CHECK(error.code() == ExitCode::Usage);
+  }
+}
+
+TEST_CASE("worker exceptions are propagated after all threads join", "[paths]") {
+  std::atomic<int> calls{0};
+  std::atomic<bool> escaped{false};
+  try {
+    lutcheck::run_chunked(1000, 4, 10, [&](std::size_t begin, std::size_t) {
+      calls.fetch_add(1);
+      if (begin == 300) throw std::runtime_error("worker boom");
+    });
+  } catch (const std::runtime_error& error) {
+    escaped = true;
+    CHECK(std::string(error.what()) == "worker boom");
+  }
+  CHECK(escaped.load());
+  // All workers joined before the rethrow, so the count is final here and
+  // never grows after the exception surfaces.
+  const int settled = calls.load();
+  std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  CHECK(calls.load() == settled);
+}
+
+TEST_CASE("empty input renders without spawning work", "[paths]") {
+  lutcheck::Lut3D lut = graded_lut(2);
+  lutcheck::Image empty;
+  empty.width = 0;
+  empty.height = 0;
+  lutcheck::RenderOptions options;
+  const auto parallel = lutcheck::render_parallel(empty, lut, options, 8);
+  CHECK(parallel.image.pixels.empty());
+  CHECK(lutcheck::render_scalar(empty, lut, options).pixels.empty());
 }

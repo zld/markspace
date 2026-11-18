@@ -18,6 +18,7 @@ add_library(lutcheck_core
   src/interpolation.cpp
   src/lut_parser.cpp
   src/ppm.cpp
+  src/render_paths.cpp
 )
 
 target_include_directories(lutcheck_core PUBLIC src)
