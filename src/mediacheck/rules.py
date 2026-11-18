@@ -49,8 +49,16 @@ class BatchReport:
 
 
 def group_key(path: str, root: str) -> str:
-    """Relative directory inside the scan root, used to group versions."""
-    rel = os.path.relpath(os.path.abspath(path), os.path.abspath(root))
+    """Directory of a file label, used to group versions of one asset.
+
+    Labels produced by the CLI are already relative to the scan root; tests
+    and library callers may pass absolute paths, which are made relative.
+    """
+
+    rel = (
+        os.path.relpath(os.path.abspath(path), os.path.abspath(root))
+        if os.path.isabs(path) else os.path.normpath(path)
+    )
     return os.path.dirname(rel).replace(os.sep, "/")
 
 
@@ -148,6 +156,17 @@ def _compare_pair(ref: Container, other: Container, tolerance: int) -> list[Issu
                 expected=ref.timescale, actual=other.timescale,
             ))
     if len(ref.tracks) == len(other.tracks):
+        for old, new in zip(ref.tracks, other.tracks):
+            if old.timescale is None or new.timescale is None:
+                continue
+            if old.timescale != new.timescale:
+                issues.append(_file_issue(
+                    other, "timescale-drift", "R004",
+                    f"track time base {new.timescale} differs from reference "
+                    f"{old.timescale}",
+                    expected=old.timescale, actual=new.timescale,
+                    track_id=new.track_id,
+                ))
         ref_sigs = [_track_signature(t) for t in ref.tracks]
         other_sigs = [_track_signature(t) for t in other.tracks]
         if ref_sigs != other_sigs:
@@ -203,15 +222,13 @@ def evaluate(containers: list[Container], root: str, duration_tolerance_ms: int 
             report.files.append(FileResult(container=container, issues=file_issues))
             report.issues.extend(file_issues)
 
-    for container in ordered:
-        if container.duration_ms is None:
-            continue
-        for other in groups[group_key(container.path, root)]:
-            if other.duration_ms is not None:
-                report.duration_deviation_ms = max(
-                    report.duration_deviation_ms,
-                    abs(other.duration_ms - container.duration_ms),
-                )
+    for group in sorted(groups):
+        durations = [c.duration_ms for c in groups[group]
+                     if c.duration_ms is not None]
+        if durations:
+            report.duration_deviation_ms = max(
+                report.duration_deviation_ms, max(durations) - min(durations)
+            )
     merged: dict[str, list[str]] = {}
     for container in ordered:
         for kind, codecs in _summary_by_kind(container.tracks).items():

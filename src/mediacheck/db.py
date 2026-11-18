@@ -180,8 +180,9 @@ class Database:
         return containers, issues
 
     def latest_batch(self) -> sqlite3.Row | None:
+        # rowid reflects insertion order, unlike second-precision timestamps.
         with closing(self.conn.execute(
-            "SELECT * FROM batches ORDER BY created_at DESC, batch_id DESC LIMIT 1"
+            "SELECT * FROM batches ORDER BY rowid DESC LIMIT 1"
         )) as cursor:
             return cursor.fetchone()
 

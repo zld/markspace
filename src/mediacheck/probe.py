@@ -274,7 +274,7 @@ def _finalise_tracks(container: Container) -> None:
         track_id = track.track_id
         if track_id is not None and counts[track_id] > 1:
             track.problems.append(
-                f"duplicate track number {track_id} ({counts[track_id]} entries)"
+                f"duplicate-track-number:{track_id} ({counts[track_id]} entries)"
             )
         if (
             track.start_ms is not None
@@ -283,9 +283,8 @@ def _finalise_tracks(container: Container) -> None:
             and track.start_ms + track.duration_ms > container.duration_ms
         ):
             track.problems.append(
-                "track extends past container duration "
-                f"({track.start_ms + track.duration_ms} ms > "
-                f"{container.duration_ms} ms)"
+                "track-duration-overflow:"
+                f"{track.start_ms + track.duration_ms}>{container.duration_ms}"
             )
 
 
@@ -582,11 +581,11 @@ def probe_path(path: str, max_bytes: int = MAX_FILE_BYTES) -> Container:
         if not os.path.isfile(path) or os.path.islink(path):
             raise ProbeError("not a regular file (symlinks are not followed)", 0)
         result.size = stat.st_size
-        result.sha256 = _hash_file(path)
         if stat.st_size > max_bytes:
             raise ProbeError(
                 f"file is {stat.st_size} bytes, limit is {max_bytes} bytes", 0
             )
+        result.sha256 = _hash_file(path)
         with open(path, "rb") as handle:
             data = handle.read()
     except OSError as exc:

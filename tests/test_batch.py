@@ -256,6 +256,33 @@ class CliTests(unittest.TestCase):
         self.assertIn("files: 2", out)
         self.assertIn("tracks: 4", out)
 
+    def test_scan_reports_are_byte_identical_across_runs(self) -> None:
+        outputs = []
+        for index in range(2):
+            db = self.base / f"db{index}.sqlite"
+            report = self.base / f"report{index}.json"
+            code, stdout, _ = CliTests.run_cli(self, [
+                "scan", str(self.root), "--db", str(db), "--json", str(report),
+                "--duration-tolerance-ms", "100",
+            ])
+            self.assertEqual(code, 1)
+            outputs.append((stdout, report.read_text()))
+        self.assertEqual(outputs[0], outputs[1])
+
+    def test_same_batch_rerun_updates_in_place(self) -> None:
+        args = ["scan", str(self.root), "--db", str(self.db)]
+        self.run_cli(args)
+        self.run_cli(args)
+        with Database(self.db) as database:
+            self.assertEqual(database.batch_count(), 1)
+
+    def test_max_depth_bound(self) -> None:
+        code, _, err = self.run_cli([
+            "scan", str(self.root), "--db", str(self.db), "--max-depth", "17",
+        ])
+        self.assertEqual(code, 2)
+        self.assertIn("between 0 and 16", err)
+
     def test_missing_path_is_environment_error(self) -> None:
         code, _, err = self.run_cli(["scan", str(self.base / "nope"),
                                      "--db", str(self.db)])

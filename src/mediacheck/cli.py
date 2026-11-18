@@ -6,6 +6,7 @@ import argparse
 import fnmatch
 import json
 import os
+import sqlite3
 import sys
 import tempfile
 from pathlib import Path
@@ -25,6 +26,24 @@ class CliError(Exception):
     """A command-line or environment error (exit code 2)."""
 
 
+def _display_path(path: str) -> str:
+    """Path relative to the working directory when it lives below it."""
+    absolute = os.path.abspath(path)
+    cwd = os.getcwd()
+    try:
+        inside = os.path.commonpath([absolute, cwd]) == cwd
+    except ValueError:  # different drives / unmatchable paths
+        inside = False
+    return absolute.replace(os.sep, "/") if not inside else os.path.relpath(
+        absolute, cwd
+    ).replace(os.sep, "/")
+
+
+def _skip_targets(paths: Sequence[str]) -> list[str]:
+    """Absolute paths of this run's own outputs (db, json, manifest)."""
+    return [os.path.realpath(p) for p in paths if p]
+
+
 def _is_excluded(relative: str, excludes: Sequence[str]) -> bool:
     name = os.path.basename(relative)
     return any(
@@ -34,7 +53,8 @@ def _is_excluded(relative: str, excludes: Sequence[str]) -> bool:
 
 
 def collect_files(roots: list[str], excludes: Sequence[str] = (),
-                  max_depth: int = MAX_DEPTH) -> list[str]:
+                  max_depth: int = MAX_DEPTH,
+                  skip: Sequence[str] = ()) -> list[str]:
     """Return a stable, sorted list of regular files below `roots`.
 
     Symbolic links are never followed and depth is bounded.  A file that is
@@ -42,6 +62,7 @@ def collect_files(roots: list[str], excludes: Sequence[str] = (),
     rejected.
     """
 
+    skipped = {os.path.realpath(p) for p in skip}
     collected: list[str] = []
     for raw_root in roots:
         root = os.path.abspath(raw_root)
@@ -51,7 +72,8 @@ def collect_files(roots: list[str], excludes: Sequence[str] = (),
             raise CliError(f"root is a symbolic link: {raw_root}")
         real_root = os.path.realpath(root)
         if os.path.isfile(root):
-            collected.append(root)
+            if os.path.realpath(root) not in skipped:
+                collected.append(root)
             continue
         if not os.path.isdir(root):
             raise CliError(f"not a file or directory: {raw_root}")
@@ -75,6 +97,8 @@ def collect_files(roots: list[str], excludes: Sequence[str] = (),
                 if os.path.islink(full):
                     continue
                 real = os.path.realpath(full)
+                if real in skipped:
+                    continue
                 if os.path.commonpath([real, real_root]) != real_root:
                     continue
                 collected.append(os.path.abspath(full))
@@ -82,9 +106,19 @@ def collect_files(roots: list[str], excludes: Sequence[str] = (),
 
 
 def _probe_all(paths: list[str]) -> list[Container]:
-    """Probe every file; one failing file never aborts the rest."""
+    """Probe every file; one failing file never aborts the rest.
 
-    return [probe_path(path, max_bytes=MAX_FILE_BYTES) for path in sorted(paths)]
+    Paths are reported relative to the working directory (absolute when the
+    file lives elsewhere) so that reports stay stable across runs.
+    """
+
+    containers = []
+    for path in sorted(paths):
+        display = _display_path(path)
+        container = probe_path(path, max_bytes=MAX_FILE_BYTES)
+        container.path = display
+        containers.append(container)
+    return sorted(containers, key=lambda c: c.path)
 
 
 def _atomic_write_json(target: str, payload: dict[str, Any]) -> None:
@@ -104,6 +138,7 @@ def _atomic_write_json(target: str, payload: dict[str, Any]) -> None:
         handle.write(text)
         handle.flush()
         os.fsync(handle.fileno())
+        os.fchmod(handle.fileno(), 0o644)
         handle.close()
         handle = None
         os.replace(temporary, target)
@@ -155,13 +190,16 @@ def _options(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def _scan_paths(args: argparse.Namespace) -> tuple[list[Container], BatchReport, str]:
-    paths = collect_files(args.paths, args.exclude, args.max_depth)
+    paths = collect_files(
+        args.paths, args.exclude, args.max_depth,
+        skip=_skip_targets([getattr(args, "db", None), getattr(args, "json", None)]),
+    )
     if not paths:
         raise CliError("no input files matched")
     containers = _probe_all(paths)
     options = _options(args)
     batch_id = compute_batch_id(containers, options, RULES_VERSION)
-    report = evaluate(containers, os.path.abspath(args.paths[0]),
+    report = evaluate(containers, os.getcwd(),
                       args.duration_tolerance_ms, args.strict)
     return containers, report, batch_id
 
@@ -244,6 +282,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="mediacheck",
         description="Probe local media containers and check version consistency.",
+        epilog="exit codes: 0 consistent, 1 inconsistencies found, 2 usage or "
+               "environment error",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -280,6 +320,11 @@ def main(argv: list[str] | None = None) -> int:
         print("mediacheck: error: --duration-tolerance-ms must be >= 0",
               file=sys.stderr)
         return EXIT_ERROR
+    if getattr(args, "max_depth", 0) is not None and args.command != "pack":
+        if args.max_depth < 0 or args.max_depth > MAX_DEPTH:
+            print(f"mediacheck: error: --max-depth must be between 0 and "
+                  f"{MAX_DEPTH}", file=sys.stderr)
+            return EXIT_ERROR
     try:
         if args.command == "scan":
             return cmd_scan(args)
@@ -288,6 +333,9 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_pack(args)
     except CliError as exc:
         print(f"mediacheck: error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    except sqlite3.Error as exc:
+        print(f"mediacheck: error: database failure: {exc}", file=sys.stderr)
         return EXIT_ERROR
     except (OSError, ValueError) as exc:
         print(f"mediacheck: error: {exc}", file=sys.stderr)

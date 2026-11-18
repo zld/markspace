@@ -7,8 +7,6 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 UNKNOWN = "unknown"
-KNOWN_ROLES = ("video", "audio", "subtitle")
-KNOWN_CODECS = ("h264", "aac", "srt")
 
 
 @dataclass
@@ -26,7 +24,9 @@ class Track:
 
     def to_dict(self) -> dict[str, Any]:
         # json round-trip coerces tuples in params to lists and proves it is serialisable.
-        return json.loads(json.dumps(asdict(self), sort_keys=True))
+        data = json.loads(json.dumps(asdict(self), sort_keys=True))
+        data["end_ms"] = _end_ms(self.start_ms, self.duration_ms)
+        return data
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Track":
@@ -58,7 +58,9 @@ class Container:
     error_offset: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return json.loads(json.dumps(asdict(self), sort_keys=True))
+        data = json.loads(json.dumps(asdict(self), sort_keys=True))
+        data["end_ms"] = _end_ms(self.start_ms, self.duration_ms)
+        return data
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Container":
@@ -111,6 +113,13 @@ class FileResult:
         data = self.container.to_dict()
         data["issues"] = [i.to_dict() for i in sorted(selected, key=issue_sort_key)]
         return data
+
+
+def _end_ms(start_ms: int | None, duration_ms: int | None) -> int | None:
+    """Derived end time; unknown unless both inputs are known."""
+    if start_ms is None or duration_ms is None:
+        return None
+    return start_ms + duration_ms
 
 
 def issue_sort_key(issue: Issue) -> tuple[str, int, str, str]:
