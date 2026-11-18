@@ -26,9 +26,9 @@ Expected terminal output:
 ```
 tracks=3 rate=48000 frames=96000
 track=dialogue peak=0.236029 rms=0.057225 automation_samples=11 clip_count=0
-track=music peak=0.175687 rms=0.037132 automation_samples=11 clip_count=0
+track=music peak=0.461982 rms=0.116049 automation_samples=11 clip_count=0
 track=ambience peak=0.383525 rms=0.022257 automation_samples=11 clip_count=0
-master peak=0.298749 rms=0.060787 clip_count=0
+master peak=0.429511 rms=0.085513 clip_count=0
 blocks=374 block_frames=257 last_block_frames=139
 offline_stream_max_error=0.000e+00
 ```
