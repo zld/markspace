@@ -16,6 +16,7 @@ from cutline.conflicts import ConflictKind, detect
 from cutline.resolve import DecisionAction, Strategy, resolve
 from cutline.exchange import ExchangeError, dump_exchange, load_exchange, write_exchange
 from cutline.otio_adapter import OTIOUnmappedError, from_otio, to_otio
+from cutline.render import build_plan
 
 ROOT = Path(__file__).resolve().parents[1]
 SAMPLE_SCRIPT = ROOT / "scripts" / "make_samples.py"
@@ -253,6 +254,22 @@ def test_resolution_is_deterministic():
 # ---------------------------------------------------------------------------
 # render plan and summary
 # ---------------------------------------------------------------------------
+
+
+def test_render_plan_lists_order_gaps_and_overlaps():
+    timeline = Timeline(
+        id="t",
+        tracks=[
+            _track("v1", _clip("a", "0", "2"), _clip("b", "3", "2")),
+            _track("v2", _clip("x", "1", "3")),
+        ],
+    )
+    plan = build_plan(timeline, "24")
+    assert plan.track_count == 2
+    assert [clip.clip_id for clip in plan.tracks[0].clips] == ["a", "b"]
+    assert plan.tracks[0].gaps[0].duration_frames == 24
+    assert plan.tracks[0].requires_compositing  # overlaps v2
+    assert plan.duration_frames == 120
 
 
 def test_v1_v2_round_trip_is_stable(sample_dict: dict, tmp_path: Path):
