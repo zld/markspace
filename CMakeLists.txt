@@ -10,3 +10,8 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 add_compile_options(-Wall -Wextra -Wpedantic)
+
+add_library(mp4_core STATIC
+    src/box_reader.cpp
+)
+target_include_directories(mp4_core PUBLIC src)
