@@ -22,6 +22,9 @@ struct Analysis {
   std::vector<std::string> paths;
   double threshold = 0.0;
   bool deviation_exceeded = false;
+  // The image the after-histogram was computed from; also what `--output`
+  // writes, so the file and the report can never disagree.
+  Image rendered;
 };
 
 // Runs the full in-memory pipeline: color conversion, requested render paths,
@@ -36,6 +39,9 @@ std::string analysis_json(const Analysis& analysis, bool pretty);
 
 // Human readable summary used when --json is not requested.
 std::string analysis_text(const Analysis& analysis);
+
+// Escapes a string for JSON, including quote and backslash characters.
+std::string json_quote(const std::string& text);
 
 // Maps a completed analysis to its process exit code: ExitCode::Deviation
 // only when a path comparison ran and exceeded the threshold.

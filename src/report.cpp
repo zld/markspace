@@ -4,6 +4,7 @@
 #include <charconv>
 #include <cmath>
 #include <sstream>
+#include <utility>
 
 #include "color_space.hpp"
 #include "errors.hpp"
@@ -60,6 +61,8 @@ std::string string_array(const std::vector<std::string>& values) {
 
 }  // namespace
 
+std::string json_quote(const std::string& text) { return quoted(text); }
+
 Analysis run_analysis(const Image& input, const Lut3D& lut,
                       const Options& options) {
   Analysis analysis;
@@ -109,6 +112,7 @@ Analysis run_analysis(const Image& input, const Lut3D& lut,
     }
   }
   analysis.after = compute_histogram(reference, options.histogram_bins);
+  analysis.rendered = std::move(reference);
   return analysis;
 }
 

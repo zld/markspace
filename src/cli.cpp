@@ -127,8 +127,15 @@ bool validate_options(const Options& options, std::string* error) {
     return fail_with(error, "unknown LUT color space '" + options.lut_space +
                                 "'; expected " + known_color_spaces());
   }
-  if (!options.path_scalar && !options.path_parallel) {
+  // Only rendering commands need a path; parse is pure inspection.
+  const bool renders = options.command == "demo" ||
+                       options.command == "render" ||
+                       options.command == "batch";
+  if (renders && !options.path_scalar && !options.path_parallel) {
     return fail_with(error, "no render path selected; use --compare");
+  }
+  if (!options.output.empty() && options.command == "parse") {
+    return fail_with(error, "parse does not write rendered images");
   }
   if (options.command == "demo") {
     if (options.generate_fixtures && options.output.empty()) {
@@ -210,6 +217,7 @@ bool parse_options(int argc, char** argv, Options* options, std::string* error) 
     } else if (flag == "--output") {
       if (!need()) return false;
       options->output = value;
+      options->write_rendered = true;
     } else if (flag == "--out-dir") {
       if (!need()) return false;
       options->out_dir = value;
@@ -312,10 +320,17 @@ Lut3D load_or_fixture_lut(const Options& options) {
   return load_cube_file(join_path("fixtures", "grade.cube"));
 }
 
-int run_demo(const Options& options) {
-  if (options.generate_fixtures && !options.lut.empty()) {
-    fail(ExitCode::Usage, "--lut cannot be combined with --generate-fixtures");
+int report_and_write(const Image& image, const Lut3D& lut,
+                     const Options& options, const std::string& output_path) {
+  const Analysis analysis = run_analysis(image, lut, options);
+  const int code = emit(analysis, options);
+  if (!output_path.empty()) {
+    write_ppm_atomic(output_path, analysis.rendered);
   }
+  return code;
+}
+
+int run_demo(const Options& options) {
   if (options.generate_fixtures) {
     if (!ensure_directory("fixtures")) {
       fail(ExitCode::Output, "fixtures: path is not a directory");
@@ -327,51 +342,33 @@ int run_demo(const Options& options) {
   }
   const Lut3D lut = load_or_fixture_lut(options);
   const Image image = load_or_fixture_image(options);
-  const Analysis analysis = run_analysis(image, lut, options);
-  const int code = emit(analysis, options);
-  if (!options.output.empty()) {
-    const Image rendered = [&] {
-      RenderOptions render;
-      render.input_to_lut =
-          build_conversion(parse_or_fail(options.input_space),
-                           parse_or_fail(options.lut_space));
-      return render_scalar(image, lut, render);
-    }();
-    write_ppm_atomic(options.output, rendered);
-  }
-  return code;
-}
-
-ColorSpace parse_or_fail(const std::string& text) {
-  ColorSpace space = ColorSpace::Rgb;
-  if (!parse_color_space(text, &space)) {
-    fail(ExitCode::Usage, "unknown color space '" + text + "'");
-  }
-  return space;
+  return report_and_write(image, lut, options, options.output);
 }
 
 int run_render(const Options& options) {
   const Lut3D lut = load_cube_file(options.lut);
   const Image image = read_ppm(options.input);
-  const Analysis analysis = run_analysis(image, lut, options);
-  const int code = emit(analysis, options);
-  if (!options.output.empty()) {
-    RenderOptions render;
-    render.input_to_lut = build_conversion(parse_or_fail(options.input_space),
-                                           parse_or_fail(options.lut_space));
-    Image rendered = render_scalar(image, lut, render);
-    write_ppm_atomic(options.output, rendered);
-  }
-  return code;
+  return report_and_write(image, lut, options, options.output);
 }
 
 int run_parse(const Options& options) {
   const Lut3D lut = load_cube_file(options.lut);
-  std::cout << "{\"title\":\"" << lut.title << "\",\"grid_size\":" << lut.size
+  auto number = [](double value) {
+    char buffer[64];
+    const auto result = std::to_chars(buffer, buffer + sizeof(buffer), value,
+                                      std::chars_format::general);
+    if (result.ec != std::errc()) {
+      fail(ExitCode::Output, "cannot format numeric value");
+    }
+    return std::string(buffer, result.ptr);
+  };
+  std::cout << "{\"title\":" << json_quote(lut.title)
+            << ",\"grid_size\":" << lut.size
             << ",\"nodes\":" << lut.node_count() << ",\"domain_min\":["
-            << lut.domain_min.r << ',' << lut.domain_min.g << ','
-            << lut.domain_min.b << "],\"domain_max\":[" << lut.domain_max.r
-            << ',' << lut.domain_max.g << ',' << lut.domain_max.b << "]}\n";
+            << number(lut.domain_min.r) << ',' << number(lut.domain_min.g)
+            << ',' << number(lut.domain_min.b) << "],\"domain_max\":["
+            << number(lut.domain_max.r) << ',' << number(lut.domain_max.g)
+            << ',' << number(lut.domain_max.b) << "]}\n";
   if (!std::cout) {
     fail(ExitCode::Output, "cannot write report to stdout");
   }
@@ -380,12 +377,13 @@ int run_parse(const Options& options) {
 
 int run_batch(const Options& options) {
   if (!ensure_directory(options.out_dir)) {
-    fail(ExitCode::Output, options.out_dir + ": cannot use as output directory");
+    fail(ExitCode::Output,
+         options.out_dir + ": cannot use as output directory");
   }
   const Lut3D lut = load_cube_file(options.lut);
   int worst = static_cast<int>(ExitCode::Ok);
-  int index = 0;
-  for (const std::string& path : options.inputs) {
+  for (std::size_t index = 0; index < options.inputs.size(); ++index) {
+    const std::string& path = options.inputs[index];
     const Image image = read_ppm(path);
     const Analysis analysis = run_analysis(image, lut, options);
     if (options.json) {
@@ -396,19 +394,15 @@ int run_batch(const Options& options) {
     if (!std::cout) {
       fail(ExitCode::Output, "cannot write batch report");
     }
-    if (!options.output.empty()) {
-      RenderOptions render;
-      render.input_to_lut = build_conversion(parse_or_fail(options.input_space),
-                                             parse_or_fail(options.lut_space));
-      Image rendered = render_scalar(image, lut, render);
-      const std::string name =
-          "render_" + std::to_string(index) + ".ppm";
-      write_ppm_atomic(join_path(options.out_dir, name), rendered);
+    if (options.write_rendered) {
+      // Each item is written atomically; a failure aborts the batch before any
+      // later item starts, so no partially written file is ever left behind.
+      const std::string name = "render_" + std::to_string(index) + ".ppm";
+      write_ppm_atomic(join_path(options.out_dir, name), analysis.rendered);
     }
     if (analysis.deviation_exceeded) {
       worst = static_cast<int>(ExitCode::Deviation);
     }
-    ++index;
   }
   return worst;
 }

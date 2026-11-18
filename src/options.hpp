@@ -12,7 +12,8 @@ struct Options {
   std::string command;
   std::string input;        // single input for render/demo
   std::string lut;          // explicit .cube path, optional for demo
-  std::string output;       // output PPM or JSON path, optional
+  std::string output;       // optional rendered PPM path
+  bool write_rendered = false;
   std::string out_dir;      // batch output directory
   std::string input_space = "rgb";
   std::string lut_space = "rgb";
