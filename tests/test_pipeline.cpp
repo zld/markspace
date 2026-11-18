@@ -5,10 +5,12 @@
 #include <string>
 
 #include "color_space.hpp"
+#include "interpolation.hpp"
 #include "errors.hpp"
 #include "interpolation.hpp"
 #include "lut_parser.hpp"
 #include "color_space.hpp"
+#include "interpolation.hpp"
 
 using lutcheck::ExitCode;
 using lutcheck::Lut3D;
@@ -236,4 +238,73 @@ TEST_CASE("singular matrix reports a located error", "[color]") {
     CHECK(error.code() == ExitCode::Input);
     CHECK(contains(error.what(), "singular"));
   }
+}
+
+TEST_CASE("trilinear interpolation reproduces grid nodes", "[interp]") {
+  const Lut3D lut = parse_text(make_cube(2));
+  for (int b = 0; b < 2; ++b) {
+    for (int g = 0; g < 2; ++g) {
+      for (int r = 0; r < 2; ++r) {
+        const Vec3 out =
+            lutcheck::sample_trilinear(lut, Vec3{static_cast<double>(r),
+                                                 static_cast<double>(g),
+                                                 static_cast<double>(b)});
+        CHECK(out.r == Catch::Approx(r).margin(1e-12));
+        CHECK(out.g == Catch::Approx(g).margin(1e-12));
+        CHECK(out.b == Catch::Approx(b).margin(1e-12));
+      }
+    }
+  }
+}
+
+TEST_CASE("trilinear interpolation matches an affine LUT exactly", "[interp]") {
+  // A LUT whose samples are an affine function is reproduced exactly by the
+  // trilinear kernel everywhere, which makes it a strong correctness fixture.
+  std::ostringstream text;
+  text << "LUT_3D_SIZE 5\n";
+  for (int b = 0; b < 5; ++b) {
+    for (int g = 0; g < 5; ++g) {
+      for (int r = 0; r < 5; ++r) {
+        const double rr = r / 4.0, gg = g / 4.0, bb = b / 4.0;
+        text << 0.1 + 0.8 * rr << ' ' << 0.2 - 0.1 * gg + 0.5 * bb << ' '
+             << 0.3 * rr + 0.6 * bb << '\n';
+      }
+    }
+  }
+  const Lut3D lut = parse_text(text.str());
+  for (double t : {0.0, 0.05, 0.17, 0.5, 0.9, 1.0}) {
+    const Vec3 out = lutcheck::sample_trilinear(lut, Vec3{t, 1.0 - t, 0.25});
+    CHECK(out.r == Catch::Approx(0.1 + 0.8 * t).margin(1e-12));
+    CHECK(out.g == Catch::Approx(0.2 - 0.1 * (1.0 - t) + 0.5 * 0.25)
+                          .margin(1e-12));
+    CHECK(out.b == Catch::Approx(0.3 * t + 0.6 * 0.25).margin(1e-12));
+  }
+}
+
+TEST_CASE("trilinear clamps out of domain input", "[interp]") {
+  const Lut3D lut = parse_text(make_cube(4));
+  const Vec3 low = lutcheck::sample_trilinear(lut, Vec3{-3.0, -0.001, -7.0});
+  CHECK(low.r == Catch::Approx(0.0));
+  CHECK(low.g == Catch::Approx(0.0));
+  CHECK(low.b == Catch::Approx(0.0));
+  const Vec3 high = lutcheck::sample_trilinear(lut, Vec3{9.0, 1.5, 100.0});
+  CHECK(high.r == Catch::Approx(1.0));
+  CHECK(high.g == Catch::Approx(1.0));
+  CHECK(high.b == Catch::Approx(1.0));
+}
+
+TEST_CASE("trilinear honours an explicit domain", "[interp]") {
+  std::ostringstream text;
+  text << "LUT_3D_SIZE 2\nDOMAIN_MIN -1 -1 -1\nDOMAIN_MAX 1 1 1\n";
+  for (int b = 0; b < 2; ++b)
+    for (int g = 0; g < 2; ++g)
+      for (int r = 0; r < 2; ++r)
+        text << r << ' ' << g << ' ' << b << '\n';
+  const Lut3D lut = parse_text(text.str());
+  const Vec3 zero = lutcheck::sample_trilinear(lut, Vec3{0.0, 0.0, 0.0});
+  CHECK(zero.r == Catch::Approx(0.5));
+  const Vec3 neg = lutcheck::sample_trilinear(lut, Vec3{-1.0, -1.0, -1.0});
+  CHECK(neg.r == Catch::Approx(0.0));
+  const Vec3 pos = lutcheck::sample_trilinear(lut, Vec3{1.0, 1.0, 1.0});
+  CHECK(pos.b == Catch::Approx(1.0));
 }
