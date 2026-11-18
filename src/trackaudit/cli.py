@@ -153,7 +153,12 @@ def _pick_reference(results, requested):
                 return info
         raise _UsageError(f"reference {requested} is not a valid input "
                           "file with parseable structure")
-    return ok_results[0] if ok_results else None
+    if not ok_results:
+        return None
+    # Default reference: the valid file with the most tracks (ties break
+    # by path order), so a stripped-down variant is not picked as the
+    # baseline against which everything else looks "added".
+    return sorted(ok_results, key=lambda r: (-len(r.tracks), r.path))[0]
 
 
 def _exit_code(results, mismatches, input_errors) -> int:
