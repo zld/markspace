@@ -31,6 +31,8 @@ add_library(h264core STATIC
   src/report_json.cpp
   src/report_text.cpp
   src/report.cpp
+  src/sample_syntax.cpp
+  src/sample_generator.cpp
 )
 target_include_directories(h264core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
