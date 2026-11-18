@@ -28,6 +28,7 @@ add_library(h264core STATIC
   src/frame_grouping.cpp
   src/access_unit.cpp
   src/report_support.cpp
+  src/report_json.cpp
   src/report_text.cpp
 )
 target_include_directories(h264core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
