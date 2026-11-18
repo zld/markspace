@@ -22,7 +22,7 @@ def decode_file(path: Path, meta: AudioMeta | None = None) -> tuple[np.ndarray, 
     channel layouts, and non-finite samples.
     """
     try:
-        data = sf.read(path, dtype="float32", always_2d=True)
+        data, _ = sf.read(path, dtype="float32", always_2d=True)
     except Exception as exc:
         raise DecodeError(f"failed to decode {path.name}: {exc}") from exc
 
