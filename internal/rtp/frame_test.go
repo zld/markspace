@@ -64,16 +64,26 @@ func TestFrameResetFlushesIncomplete(t *testing.T) {
 	rm := NewReassembler()
 	rm.Push(framePkt(1, 0, 100, false))
 	rm.Push(framePkt(2, 0, 200, false))
-	flushed := rm.Reset()
+	flushed := rm.FlushIncomplete()
 	if len(flushed) != 2 {
 		t.Fatalf("expected 2 flushed open frames, got %d", len(flushed))
 	}
 	for _, fr := range flushed {
 		if fr.Complete {
-			t.Fatalf("reset must mark frames incomplete: %+v", fr)
+			t.Fatalf("flush must mark frames incomplete: %+v", fr)
 		}
 	}
-	if len(rm.streams) != 0 || rm.Stats().IncompleteFrames != 2 {
+	if rm.Stats().IncompleteFrames != 2 {
+		t.Fatalf("stats wrong: %+v", rm.Stats())
+	}
+}
+
+func TestFrameResetIsSilentAndClean(t *testing.T) {
+	rm := NewReassembler()
+	rm.Push(framePkt(1, 0, 100, false))
+	rm.Push(framePkt(2, 0, 200, false))
+	rm.Reset()
+	if len(rm.streams) != 0 || rm.Stats() != (FrameStats{}) {
 		t.Fatalf("reset residue: streams=%d stats=%+v", len(rm.streams), rm.Stats())
 	}
 	// Next run starts clean: same SSRC begins a fresh frame.

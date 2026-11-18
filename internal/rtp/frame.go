@@ -45,19 +45,30 @@ func NewReassembler() *Reassembler {
 // Stats returns a copy of the current frame counters.
 func (f *Reassembler) Stats() FrameStats { return f.stats }
 
-// Reset closes every open frame as incomplete and clears all stream state, so
-// a disconnect cannot leak partial frames into the next run.
-func (f *Reassembler) Reset() []Frame {
+// FlushIncomplete closes every open frame as incomplete and returns it. Use it
+// when a stream ends normally (TEARDOWN) so unclosed frames are reported
+// rather than silently lost.
+func (f *Reassembler) FlushIncomplete() []Frame {
 	var flushed []Frame
 	for ssrc, st := range f.streams {
 		if st.frame != nil {
 			st.frame.Complete = false
 			f.stats.IncompleteFrames++
 			flushed = append(flushed, *st.frame)
+			st.frame = nil
 		}
 		delete(f.streams, ssrc)
 	}
 	return flushed
+}
+
+// Reset drops every open frame without counting and clears all stream state,
+// so a hard disconnect cannot leak partial frames into the next run.
+func (f *Reassembler) Reset() {
+	for ssrc := range f.streams {
+		delete(f.streams, ssrc)
+	}
+	f.stats = FrameStats{}
 }
 
 // Push adds one already reordered packet. It returns frames that become

@@ -182,3 +182,27 @@ func (r *Reorderer) Tick(now time.Time) []*Packet {
 	out := r.advanceTo(target)
 	return append(out, r.drain()...)
 }
+
+// Flush ends a stream: every hole is abandoned. The frontier advances to one
+// past the furthest buffered packet, all remaining missing sequences are
+// registered as gaps, and buffered packets are returned in order.
+func (r *Reorderer) Flush(now time.Time) []*Packet {
+	if !r.init || len(r.entries) == 0 {
+		return nil
+	}
+	maxKey := uint32(0)
+	found := false
+	for key := range r.entries {
+		if !found || delta(key, uint32(r.expected)) > delta(maxKey, uint32(r.expected)) {
+			maxKey, found = key, true
+		}
+	}
+	if !found {
+		return nil
+	}
+	target := r.expected + uint64(int64(int32(maxKey-uint32(r.expected)))) + 1
+	return r.advanceTo(target)
+}
+
+// delta returns a signed 32-bit distance between two sequence keys.
+func delta(a, b uint32) int32 { return int32(a - b) }
