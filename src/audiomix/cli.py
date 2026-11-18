@@ -15,7 +15,7 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
-from .model import AudioMixError, ManifestError, RenderError, parse_manifest
+from .model import AudioMixError, RenderError, parse_manifest
 from .render import BlockRenderer
 from .report import StatsAccumulator, build_report, write_report
 
