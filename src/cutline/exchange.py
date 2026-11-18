@@ -288,4 +288,109 @@ def _decode_v2_clip(clip_raw: dict[str, Any], path: str, track_rate: Any) -> dic
     }
 
 
-# Writers arrive in the next commit.
+# ---------------------------------------------------------------------------
+# writing
+# ---------------------------------------------------------------------------
+
+
+def dump_exchange(timeline: Timeline, version: str = "v2") -> dict[str, Any]:
+    """Serialise ``timeline`` to a JSON-ready dict in the requested version."""
+    if version not in SUPPORTED_VERSIONS:
+        raise ExchangeError("version", f"unsupported exchange version {version!r}")
+    validate_timeline(timeline)
+
+    if version == "v1":
+        return _downgrade_to_v1(timeline)
+    return _encode_v2(timeline)
+
+
+def _downgrade_to_v1(timeline: Timeline) -> dict[str, Any]:
+    """Encode v1 (integer frames plus an explicit rate).
+
+    Frames are rounded once from the exact rational and never accumulated, so
+    a v1 file holds timing to within one target frame.  Optional metadata is
+    carried through so a v2 -> v1 -> v2 round trip is lossless.
+    """
+    return {
+        "version": "v1",
+        "timeline": {
+            "id": timeline.id,
+            "name": timeline.name,
+            "metadata": dict(timeline.metadata),
+            "tracks": [
+                {
+                    "id": track.id,
+                    "name": track.name,
+                    "rate": format_fraction(track.rate),
+                    "metadata": dict(track.metadata),
+                    "clips": [
+                        {
+                            "id": clip.id,
+                            "name": clip.name,
+                            "start_frame": clip.start.to_frames(clip.rate),
+                            "duration_frames": max(1, clip.duration.to_frames(clip.rate)),
+                            "rate": format_fraction(clip.rate),
+                            "priority": clip.priority,
+                            "metadata": dict(clip.metadata),
+                        }
+                        for clip in track.clips
+                    ],
+                }
+                for track in timeline.tracks
+            ],
+        },
+    }
+
+
+def _encode_v2(timeline: Timeline) -> dict[str, Any]:
+    return {
+        "version": "v2",
+        "timeline": {
+            "id": timeline.id,
+            "name": timeline.name,
+            "metadata": dict(timeline.metadata),
+            "tracks": [
+                {
+                    "id": track.id,
+                    "name": track.name,
+                    "rate": format_fraction(track.rate),
+                    "metadata": dict(track.metadata),
+                    "clips": [
+                        {
+                            "id": clip.id,
+                            "name": clip.name,
+                            "start": clip.start.as_seconds_text(),
+                            "duration": clip.duration.as_seconds_text(),
+                            "rate": format_fraction(clip.rate),
+                            "priority": clip.priority,
+                            "metadata": dict(clip.metadata),
+                        }
+                        for clip in track.clips
+                    ],
+                }
+                for track in timeline.tracks
+            ],
+        },
+    }
+
+
+def write_exchange(
+    timeline: Timeline,
+    path: str | Path,
+    version: str = "v2",
+    *,
+    forbidden_paths: Iterable[str | Path] = (),
+) -> Path:
+    """Write ``timeline`` atomically, refusing to overwrite protected inputs."""
+    target = Path(path)
+    protected = {Path(item).resolve() for item in forbidden_paths}
+    if target.resolve() in protected:
+        raise ExchangeError(str(target), "refusing to overwrite an input file")
+    if target.exists() and target.is_dir():
+        raise ExchangeError(str(target), "output path is a directory")
+    payload = dump_exchange(timeline, version)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_name(f".{target.name}.tmp")
+    tmp.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(target)
+    return target
