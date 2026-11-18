@@ -25,6 +25,7 @@ add_library(h264core STATIC
   src/slice_header_lists.cpp
   src/param_set_store.cpp
   src/boundary_rules.cpp
+  src/frame_grouping.cpp
 )
 target_include_directories(h264core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
