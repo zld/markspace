@@ -314,7 +314,6 @@ func (e *Engine) streamMedia(ctx context.Context, pcA, pcB *peer.Peer) error {
 	}
 }
 
-
 // shutdown closes peers and the relay inside the grace window and reports
 // whether every component released within the deadline.
 func (e *Engine) shutdown(pcA, pcB *peer.Peer) bool {

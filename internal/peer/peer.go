@@ -18,15 +18,15 @@ var ErrNotConnected = errors.New("peer connection not established")
 // Peer wraps one Pion PeerConnection with loopback-only gathering and the
 // single static audio track used by the experiment.
 type Peer struct {
-	name      string
-	pc        *webrtc.PeerConnection
-	track     *webrtc.TrackLocalStaticRTP
-	counters  *CandidateCounters
+	name     string
+	pc       *webrtc.PeerConnection
+	track    *webrtc.TrackLocalStaticRTP
+	counters *CandidateCounters
 
-	mu       sync.Mutex
+	mu        sync.Mutex
 	connected bool
-	connCh   chan struct{}
-	closed   bool
+	connCh    chan struct{}
+	closed    bool
 
 	remoteMu      sync.Mutex
 	remoteTrack   *webrtc.TrackRemote
@@ -269,9 +269,9 @@ func (p *Peer) ICEState() webrtc.ICEConnectionState { return p.pc.ICEConnectionS
 
 // TransceiverInfo describes one transceiver for diagnostics.
 type TransceiverInfo struct {
-	Mid          string
-	Direction    string
-	HasReceiver  bool
+	Mid         string
+	Direction   string
+	HasReceiver bool
 }
 
 // Transceivers snapshots the peer's transceiver states (diagnostics).

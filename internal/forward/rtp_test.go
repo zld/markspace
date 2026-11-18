@@ -77,11 +77,11 @@ func TestParseRejectsMalformed(t *testing.T) {
 	claimsCSRC := make([]byte, 12)
 	claimsCSRC[0] = 0x83 // V=2, CC=3
 	cases := map[string][]byte{
-		"short":         {0x80, 0x00},
-		"bad version":   append([]byte{0x40}, good[1:]...),
-		"missing csrc":  claimsCSRC,
-		"header only":   good[:11],
-		"empty":         {},
+		"short":        {0x80, 0x00},
+		"bad version":  append([]byte{0x40}, good[1:]...),
+		"missing csrc": claimsCSRC,
+		"header only":  good[:11],
+		"empty":        {},
 	}
 	for name, buf := range cases {
 		if _, err := Parse(buf); err == nil {

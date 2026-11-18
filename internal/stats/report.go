@@ -19,23 +19,23 @@ type CandidatePair struct {
 
 // Report is the terminal JSON summary of one experiment run.
 type Report struct {
-	Status            string                `json:"status"`
-	Seed              int64                 `json:"seed"`
-	DurationMS        int64                 `json:"duration_ms"`
-	CandidatePairs    []CandidatePair       `json:"candidate_pairs"`
-	SentPackets       int64                 `json:"sent_packets"`
-	ForwardedPackets  int64                 `json:"forwarded_packets"`
-	DroppedPackets    int64                 `json:"dropped_packets"`
-	DuplicatePackets  int64                 `json:"duplicate_packets"`
-	ReorderedPackets  int64                 `json:"reordered_packets"`
-	MalformedPackets  int64                 `json:"malformed_packets"`
-	UnforwardedAtExit int64                 `json:"unforwarded_at_exit"`
-	JitterRTPTicks    uint64                `json:"jitter_rtp_ticks"`
-	JitterMS          float64               `json:"jitter_ms"`
-	ShutdownClean     bool                  `json:"shutdown_clean"`
-	Signaling         SignalingCounters     `json:"signaling"`
-	Relay             forward.RelayStats    `json:"relay"`
-	Elapsed           time.Duration         `json:"-"`
+	Status            string             `json:"status"`
+	Seed              int64              `json:"seed"`
+	DurationMS        int64              `json:"duration_ms"`
+	CandidatePairs    []CandidatePair    `json:"candidate_pairs"`
+	SentPackets       int64              `json:"sent_packets"`
+	ForwardedPackets  int64              `json:"forwarded_packets"`
+	DroppedPackets    int64              `json:"dropped_packets"`
+	DuplicatePackets  int64              `json:"duplicate_packets"`
+	ReorderedPackets  int64              `json:"reordered_packets"`
+	MalformedPackets  int64              `json:"malformed_packets"`
+	UnforwardedAtExit int64              `json:"unforwarded_at_exit"`
+	JitterRTPTicks    uint64             `json:"jitter_rtp_ticks"`
+	JitterMS          float64            `json:"jitter_ms"`
+	ShutdownClean     bool               `json:"shutdown_clean"`
+	Signaling         SignalingCounters  `json:"signaling"`
+	Relay             forward.RelayStats `json:"relay"`
+	Elapsed           time.Duration      `json:"-"`
 }
 
 // SignalingCounters mirrors the server-side rejection counters.

@@ -39,8 +39,8 @@ type queuedPacket struct {
 // Interval packets are forwarded, the consumer pauses for Pause, letting
 // arrivals accumulate in the bounded queue and exercise the overflow policy.
 type Backpressure struct {
-	Every    int
-	Pause    time.Duration
+	Every int
+	Pause time.Duration
 }
 
 // Relay is a bounded single-producer/single-consumer RTP queue. It never

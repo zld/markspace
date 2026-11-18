@@ -14,10 +14,10 @@ import (
 type sessionState string
 
 const (
-	stateNew     sessionState = "new"
-	stateOpen    sessionState = "open"
+	stateNew      sessionState = "new"
+	stateOpen     sessionState = "open"
 	stateAnswered sessionState = "answered"
-	stateClosed  sessionState = "closed"
+	stateClosed   sessionState = "closed"
 )
 
 // Counters aggregates protocol-level rejection statistics.

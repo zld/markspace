@@ -10,7 +10,7 @@ import (
 func TestIsLoopbackOnly(t *testing.T) {
 	accept := []string{"127.0.0.1", "127.1.2.3", "127.255.255.254"}
 	reject := []string{
-		"::1", "fe80::1", "2001:db8::1",          // IPv6 incl. loopback
+		"::1", "fe80::1", "2001:db8::1", // IPv6 incl. loopback
 		"192.168.1.5", "10.0.0.2", "169.254.1.1", // non-loop IPv4
 		"host.local", "example.com", "",
 	}

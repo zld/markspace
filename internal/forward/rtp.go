@@ -24,11 +24,11 @@ func (e *ValidationFailure) Error() string {
 
 // Common validation errors, wrapped by ValidationFailure at call sites.
 var (
-	errTooShort   = errors.New("shorter than the 12-byte fixed header")
-	errVersion    = errors.New("RTP version must be 2")
-	errHeader     = errors.New("header unmarshal failed")
-	errPayload    = errors.New("declared header exceeds packet length")
-	errBadExt     = errors.New("extension header length inconsistent")
+	errTooShort = errors.New("shorter than the 12-byte fixed header")
+	errVersion  = errors.New("RTP version must be 2")
+	errHeader   = errors.New("header unmarshal failed")
+	errPayload  = errors.New("declared header exceeds packet length")
+	errBadExt   = errors.New("extension header length inconsistent")
 )
 
 // Parse validates the wire bytes and returns the parsed packet without

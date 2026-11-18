@@ -73,15 +73,15 @@ func runExperiment(args []string) int {
 	}
 
 	cfg := scenario.Config{
-		Duration:      *duration,
-		Packets:       *packets,
-		QueueSize:     *queueSize,
-		Overflow:      forward.OverflowMode(*overflow),
-		Seed:          *seed,
-		ReorderRate:   *reorder,
-		BurstEvery:    *burstEvery,
-		BurstDelayMS:  *burstDelay,
-		DuplicateRate: *duplicate,
+		Duration:        *duration,
+		Packets:         *packets,
+		QueueSize:       *queueSize,
+		Overflow:        forward.OverflowMode(*overflow),
+		Seed:            *seed,
+		ReorderRate:     *reorder,
+		BurstEvery:      *burstEvery,
+		BurstDelayMS:    *burstDelay,
+		DuplicateRate:   *duplicate,
 		ShutdownTimeout: *shutdownTimeout,
 	}
 
