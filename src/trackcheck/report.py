@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -53,13 +54,13 @@ def build_report(result: ComparisonResult,
 def write_json_report(path: str | Path, payload: dict[str, Any]) -> None:
     """Atomically write a sorted JSON report."""
     p = Path(path)
-    p.parent.mkdir(parents=True, exist_ok=True)
     tmp = p.with_name(f".{p.name}.tmp")
     try:
+        p.parent.mkdir(parents=True, exist_ok=True)
         with tmp.open("w", encoding="utf-8") as fh:
             json.dump(payload, fh, indent=2, sort_keys=True)
             fh.write("\n")
-        p.replace(tmp)
+        os.replace(tmp, p)
     except OSError as exc:
         try:
             tmp.unlink(missing_ok=True)

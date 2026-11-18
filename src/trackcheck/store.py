@@ -17,10 +17,14 @@ class StoreError(RuntimeError):
 class SnapshotStore:
     """Caches probe results; unchanged files are served from the cache."""
 
-    def __init__(self, db_path: str | Path):
+    def __init__(self, db_path: str | Path, rebuild: bool = False):
         self.db_path = Path(db_path)
         try:
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
+            if rebuild and self.db_path.exists():
+                # SQLite rejects any SQL on a non-database file, so a
+                # rebuild must remove the corrupt file before reconnecting.
+                self.db_path.unlink()
             self.conn = sqlite3.connect(str(self.db_path))
             self.conn.row_factory = sqlite3.Row
             self._ensure_schema()
@@ -101,6 +105,7 @@ class SnapshotStore:
                 "DROP TABLE IF EXISTS snapshots; DROP TABLE IF EXISTS meta;"
             )
             self._ensure_schema()
+            self.conn.commit()
         except sqlite3.DatabaseError as exc:
             raise StoreError(f"failed to rebuild store: {exc}") from exc
 

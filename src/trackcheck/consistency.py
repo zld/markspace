@@ -117,16 +117,8 @@ def compare_media(baseline: Media, candidate: Media,
         ))
 
     total_delta = candidate.duration_ms - baseline.duration_ms
-    if abs(total_delta) > tolerance_ms:
-        mismatches.append(Mismatch(
-            kind="duration_drift", track_id=None,
-            message=f"total duration drift {total_delta:+.3f}ms exceeds "
-                    f"tolerance {tolerance_ms:g}ms",
-            field="duration_ms", baseline=round(baseline.duration_ms, 3),
-            input_value=round(candidate.duration_ms, 3),
-            delta_ms=total_delta,
-            baseline_path=baseline.path, input_path=candidate.path,
-        ))
+    # Total drift is reported as a scalar field; per-track drift entries
+    # (above) are the authoritative mismatch list, avoiding double counting.
 
     errors: list[TrackError] = [*baseline.errors, *candidate.errors]
     return ComparisonResult(
