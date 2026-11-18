@@ -72,7 +72,10 @@ class LinearResampler:
             local = (i0_global - start_index).astype(np.int64)
             left = buf[local]
             right = buf[local + 1]
-            out = left + frac * (right - left)
+            # Non-finite source values propagate here on purpose; the mix
+            # graph locates them to the owning track and aborts the render.
+            with np.errstate(invalid="ignore"):
+                out = left + frac * (right - left)
         else:
             out = np.empty((0, buf.shape[1]), dtype=np.float64)
         if length > 0:
