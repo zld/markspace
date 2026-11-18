@@ -4,7 +4,11 @@ import (
 	"context"
 	"sync"
 	"sync/atomic"
+	"time"
 )
+
+// holdPollInterval bounds CPU use while the consumer is held for backpressure.
+const holdPollInterval = 2 * time.Millisecond
 
 // OverflowMode controls queue-full behaviour.
 type OverflowMode string
@@ -31,11 +35,20 @@ type queuedPacket struct {
 	raw []byte
 }
 
+// Backpressure configures deterministic consumer-side pauses. After every
+// Interval packets are forwarded, the consumer pauses for Pause, letting
+// arrivals accumulate in the bounded queue and exercise the overflow policy.
+type Backpressure struct {
+	Every    int
+	Pause    time.Duration
+}
+
 // Relay is a bounded single-producer/single-consumer RTP queue. It never
 // mutates packet media fields: raw bytes travel unchanged to the sink.
 type Relay struct {
 	queue    chan queuedPacket
 	mode     OverflowMode
+	bp       Backpressure
 	stats    RelayStats
 	closed   chan struct{}
 	doneOnce sync.Once
@@ -45,6 +58,9 @@ type Relay struct {
 	seen    map[uint16]struct{} // sequence numbers already observed
 	maxSeq  uint16
 	hasMax  bool
+
+	holdMu sync.Mutex
+	hold   bool // when true, the consumer pauses draining to build backpressure
 }
 
 // NewRelay builds a relay of the given capacity (must be > 0).
@@ -60,6 +76,9 @@ func NewRelay(capacity int, mode OverflowMode) *Relay {
 	}
 	return r
 }
+
+// SetBackpressure installs the deterministic consumer-pause schedule.
+func (r *Relay) SetBackpressure(bp Backpressure) { r.bp = bp }
 
 // Enqueue validates and queues one packet. Returns false when the packet is
 // rejected (malformed or dropped on a full queue). Block mode waits for room
@@ -109,17 +128,48 @@ func (r *Relay) Enqueue(ctx context.Context, raw []byte) (bool, error) {
 	}
 }
 
-// Run drains the queue into sink until Close or ctx cancellation. Any
-// packets still queued at shutdown are forwarded once without blocking;
-// anything that cannot be drained counts as unforwarded via Stats.
+// SetHold pauses (true) or resumes (false) consumer draining. While held,
+// producers keep enqueuing, so a small queue fills and exercises the
+// configured overflow policy to create reproducible backpressure.
+func (r *Relay) SetHold(on bool) {
+	r.holdMu.Lock()
+	r.hold = on
+	r.holdMu.Unlock()
+}
+
+func (r *Relay) isHeld() bool {
+	r.holdMu.Lock()
+	defer r.holdMu.Unlock()
+	return r.hold
+}
+
+// Run drains the queue into sink until Close or ctx cancellation. A
+// deterministic backpressure schedule periodically pauses draining so
+// arrivals accumulate and the overflow policy triggers. Any packets still
+// queued at shutdown are forwarded once without blocking.
 func (r *Relay) Run(ctx context.Context, sink func(raw []byte)) {
 	r.wg.Add(1)
 	defer r.wg.Done()
+	sincePause := 0
 	for {
+		if r.isHeld() {
+			if !r.waitHold(ctx) {
+				r.drainRemaining(sink)
+				return
+			}
+		}
 		select {
 		case entry := <-r.queue:
 			sink(entry.raw)
 			atomic.AddInt64(&r.stats.Forwarded, 1)
+			sincePause++
+			if r.bp.Every > 0 && r.bp.Pause > 0 && sincePause >= r.bp.Every {
+				sincePause = 0
+				if !r.pause(ctx) {
+					r.drainRemaining(sink)
+					return
+				}
+			}
 		case <-ctx.Done():
 			r.drainRemaining(sink)
 			return
@@ -127,6 +177,35 @@ func (r *Relay) Run(ctx context.Context, sink func(raw []byte)) {
 			r.drainRemaining(sink)
 			return
 		}
+	}
+}
+
+// pause blocks for the backpressure duration unless shutdown intervenes.
+// It returns false when the relay should terminate.
+func (r *Relay) pause(ctx context.Context) bool {
+	t := time.NewTimer(r.bp.Pause)
+	defer t.Stop()
+	select {
+	case <-t.C:
+		return true
+	case <-ctx.Done():
+		return false
+	case <-r.closed:
+		return false
+	}
+}
+
+// waitHold sleeps briefly while an external hold is active.
+func (r *Relay) waitHold(ctx context.Context) bool {
+	t := time.NewTimer(holdPollInterval)
+	defer t.Stop()
+	select {
+	case <-t.C:
+		return true
+	case <-ctx.Done():
+		return false
+	case <-r.closed:
+		return false
 	}
 }
 

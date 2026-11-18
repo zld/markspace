@@ -23,6 +23,15 @@ type Injector struct {
 	rng *rand.Rand
 	cfg InjectConfig
 	n   int64 // packets observed
+	cnt InjectorCounters
+}
+
+// InjectorCounters counts faults as they are planned, independent of any
+// downstream deduplication (e.g. SRTP replay protection).
+type InjectorCounters struct {
+	Delays     int64 `json:"burst_delays"`
+	Duplicates int64 `json:"duplicates_planned"`
+	Reorders   int64 `json:"reorders_planned"`
 }
 
 // NewInjector builds an injector from the supplied configuration.
@@ -45,14 +54,24 @@ func (g *Injector) Plan() Decision {
 	d := Decision{}
 	if g.cfg.BurstEvery > 1 && g.n%int64(g.cfg.BurstEvery) == 0 {
 		d.DelayMS = g.cfg.BurstDelay
+		g.cnt.Delays++
 	}
 	if g.cfg.ReorderRate > 0 && g.rng.Float64() < g.cfg.ReorderRate {
 		d.Reorder = true
+		g.cnt.Reorders++
 	}
 	if g.cfg.DuplicateRate > 0 && g.rng.Float64() < g.cfg.DuplicateRate {
 		d.Duplicate = true
+		g.cnt.Duplicates++
 	}
 	return d
+}
+
+// Counters returns a snapshot of the planned fault counts.
+func (g *Injector) Counters() InjectorCounters {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.cnt
 }
 
 // Sleep waits for the decision's delay, returning early on cancellation.
