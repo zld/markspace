@@ -168,7 +168,8 @@ class Storage:
         """Return an existing successful result for this exact input+params, else None."""
         row = self.conn.execute(
             """
-            SELECT r.* FROM results r
+            SELECT r.*, t.sample_rate AS task_sample_rate, t.path AS task_path
+            FROM results r
             JOIN tasks t ON t.id = r.task_id
             WHERE t.sha256 = ? AND r.param_fingerprint = ? AND r.status = 'ok'
             ORDER BY r.id DESC LIMIT 1
