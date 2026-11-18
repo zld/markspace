@@ -21,8 +21,6 @@ const (
 	MaxFrameMs = 500
 	// MaxDelayMs bounds target and maximum wait latency.
 	MaxDelayMs = 10_000
-	// maxCatchUp limits how many slots one tick may emit after a stall.
-	maxCatchUp = 8
 	// jitterAlpha weights each new arrival-jitter sample.
 	jitterAlpha = 0.25
 )
@@ -48,6 +46,9 @@ func (c Config) Validate() error {
 	}
 	if c.TargetMs > c.MaxWaitMs {
 		return fmt.Errorf("buffer: target-ms %d exceeds max-wait-ms %d", c.TargetMs, c.MaxWaitMs)
+	}
+	if c.MaxWaitMs < c.FrameMs {
+		return fmt.Errorf("buffer: max-wait-ms %d is shorter than one frame (%d ms)", c.MaxWaitMs, c.FrameMs)
 	}
 	if c.WindowSize <= 0 || c.WindowSize > MaxWindowSize {
 		return fmt.Errorf("buffer: window %d must be in 1..%d", c.WindowSize, MaxWindowSize)
@@ -129,7 +130,9 @@ func New(cfg Config, decay float64) (*Controller, error) {
 	if err != nil {
 		return nil, err
 	}
-	base := ceilDiv(cfg.TargetMs, cfg.FrameMs)
+	// One frame of scheduling margin sits above the configured target so a
+	// single lost or late frame does not immediately drain the buffer.
+	base := ceilDiv(cfg.TargetMs, cfg.FrameMs) + 1
 	maxFrames := ceilDiv(cfg.MaxWaitMs, cfg.FrameMs)
 	minFrames := base / 2
 	if minFrames < 1 {
@@ -217,9 +220,8 @@ func (c *Controller) adaptTarget() {
 }
 
 // Tick advances the playout clock to nowMs and returns at most one
-// playable slot. Callers drive it repeatedly; slots missed during a stall
-// are caught up up to maxCatchUp per call. Finished is set once Finish was
-// called and all buffered audio has been played.
+// playable slot. Callers drive it once per frame; Finished is set once
+// Finish was called and all buffered audio has been played.
 func (c *Controller) Tick(nowMs int64) Slot {
 	c.mu.Lock()
 	defer c.mu.Unlock()

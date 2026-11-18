@@ -112,3 +112,44 @@ func TestStretchMs(t *testing.T) {
 		t.Fatalf("StretchMs(1000) = %d, want 990", got)
 	}
 }
+
+func TestDelayAndJitterShiftArrivals(t *testing.T) {
+	base := Options{Frames: 40, FrameMs: 20, Seed: 3}
+	if err := base.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	plain, _ := Generate(base)
+	delayed := base
+	delayed.ExtraDelayMs = 100
+	shifted, _ := Generate(delayed)
+	for i := range plain.Events {
+		if got := shifted.Events[i].AtMs - plain.Events[i].AtMs; got != 100 {
+			t.Fatalf("event %d shifted by %d, want 100", i, got)
+		}
+	}
+
+	jittery := base
+	jittery.JitterMs = 15
+	noisy, _ := Generate(jittery)
+	if reflect.DeepEqual(noisy.Events, plain.Events) {
+		t.Fatal("jitter had no effect on arrival times")
+	}
+	for i := range noisy.Events {
+		gap := noisy.Events[i].AtMs - int64(i*base.FrameMs)
+		if gap < 0 || gap > 15 {
+			t.Fatalf("event %d jitter = %d, want 0..15", i, gap)
+		}
+	}
+}
+
+func TestDelayBounds(t *testing.T) {
+	bad := []Options{
+		{Frames: 10, FrameMs: 20, ExtraDelayMs: -1},
+		{Frames: 10, FrameMs: 20, JitterMs: 5001},
+	}
+	for i, opt := range bad {
+		if err := opt.Validate(); err == nil {
+			t.Errorf("case %d accepted %+v", i, opt)
+		}
+	}
+}

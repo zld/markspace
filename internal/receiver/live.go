@@ -221,9 +221,12 @@ func Live(ctx context.Context, cfg LiveConfig) (LiveResult, error) {
 		}
 	}
 
+	// Let the sender exit on the stop signal before closing the sockets,
+	// so its final write cannot fail and be mistaken for an I/O error.
+	// Closing the receiver then unblocks the reader's pending Read.
 	stopSender()
-	closeSockets()
 	<-senderDone
+	closeSockets()
 	<-readerDone
 
 	mu.Lock()

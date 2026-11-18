@@ -74,6 +74,10 @@ common flags:
   --window N          reorder window in frames (1..4096)
   --seed N            deterministic impairment seed
   --loss P            packet loss probability (0..1)
+  --delay-ms MS       fixed added path latency
+  --jitter-ms MS      maximum random added latency
+  --burst-loss P      burst-loss start probability
+  --burst-len N       frames lost per burst
   --reorder P         reorder probability (0..1)
   --duplicate P       duplicate probability (0..1)
   --max-invalid-run N consecutive corrupt packets before aborting (default 16)
@@ -104,6 +108,8 @@ type commonFlags struct {
 	burst         float64
 	burstLen      int
 	drift         int
+	delayMs       int
+	jitterMs      int
 	maxInvalidRun int
 	out           string
 }
@@ -121,6 +127,8 @@ func (c *commonFlags) register(fs *flag.FlagSet) {
 	fs.Float64Var(&c.burst, "burst-loss", 0, "per-frame burst-loss start probability")
 	fs.IntVar(&c.burstLen, "burst-len", 0, "frames lost per burst")
 	fs.IntVar(&c.drift, "drift-ppm", 0, "receiver clock drift in parts per million")
+	fs.IntVar(&c.delayMs, "delay-ms", 0, "fixed added path latency in milliseconds")
+	fs.IntVar(&c.jitterMs, "jitter-ms", 0, "maximum uniform added latency jitter in milliseconds")
 	fs.IntVar(&c.maxInvalidRun, "max-invalid-run", receiver.DefaultMaxInvalidRun,
 		"consecutive corrupt packets before aborting")
 	fs.StringVar(&c.out, "out", "", `JSON Lines path ("-" or empty for stdout)`)
@@ -137,15 +145,17 @@ func (c *commonFlags) bufferConfig() buffer.Config {
 
 func (c *commonFlags) options() testkit.Options {
 	return testkit.Options{
-		Frames:     c.frames,
-		FrameMs:    c.frameMs,
-		Seed:       c.seed,
-		Loss:       c.loss,
-		Reorder:    c.reorder,
-		Duplicate:  c.duplicate,
-		BurstStart: c.burst,
-		BurstLen:   c.burstLen,
-		DriftPPM:   c.drift,
+		Frames:       c.frames,
+		FrameMs:      c.frameMs,
+		Seed:         c.seed,
+		Loss:         c.loss,
+		Reorder:      c.reorder,
+		Duplicate:    c.duplicate,
+		BurstStart:   c.burst,
+		BurstLen:     c.burstLen,
+		DriftPPM:     c.drift,
+		ExtraDelayMs: c.delayMs,
+		JitterMs:     c.jitterMs,
 	}
 }
 

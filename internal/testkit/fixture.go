@@ -57,6 +57,11 @@ type Options struct {
 	BurstStart float64
 	BurstLen   int
 
+	// ExtraDelayMs shifts every arrival later by a fixed amount, modelling
+	// path latency. JitterMs adds a uniform random 0..JitterMs on top.
+	ExtraDelayMs int
+	JitterMs     int
+
 	// ReorderDelay is the maximum additional delay, in frames, applied to
 	// reordered packets. DuplicateDelay is the maximum lag of a duplicate.
 	ReorderDelay   int
@@ -89,6 +94,12 @@ func (o Options) Validate() error {
 	}
 	if o.BurstLen < 0 || o.BurstLen > o.Frames {
 		return fmt.Errorf("testkit: burst-len %d out of range", o.BurstLen)
+	}
+	if o.ExtraDelayMs < 0 || o.ExtraDelayMs > 5000 {
+		return fmt.Errorf("testkit: delay-ms %d must be in 0..5000", o.ExtraDelayMs)
+	}
+	if o.JitterMs < 0 || o.JitterMs > 5000 {
+		return fmt.Errorf("testkit: jitter-ms %d must be in 0..5000", o.JitterMs)
 	}
 	if o.ReorderDelay < 0 || o.ReorderDelay > 256 {
 		return fmt.Errorf("testkit: reorder-delay %d out of range", o.ReorderDelay)
@@ -170,17 +181,22 @@ func Generate(opt Options) (Plan, error) {
 			continue
 		}
 
+		var extra int64
+		if opt.JitterMs > 0 {
+			extra = int64(rng.intn(opt.JitterMs + 1))
+		}
 		delay := 0
 		if opt.ReorderDelay > 0 && rng.float() < opt.Reorder {
 			delay = 1 + rng.intn(opt.ReorderDelay)
 			plan.Stats.Reordered++
 		}
-		plan.Events = append(plan.Events, newEvent(at+int64(delay)*int64(opt.FrameMs), seq, frame, rng, opt, false, &plan.Stats))
+		arrive := at + int64(opt.ExtraDelayMs) + extra + int64(delay)*int64(opt.FrameMs)
+		plan.Events = append(plan.Events, newEvent(arrive, seq, frame, rng, opt, false, &plan.Stats))
 
 		if opt.DuplicateDelay > 0 && rng.float() < opt.Duplicate {
 			lag := 1 + rng.intn(opt.DuplicateDelay)
 			plan.Stats.Duplicated++
-			plan.Events = append(plan.Events, newEvent(at+int64(lag)*int64(opt.FrameMs), seq, frame, rng, opt, true, &plan.Stats))
+			plan.Events = append(plan.Events, newEvent(arrive+int64(lag)*int64(opt.FrameMs), seq, frame, rng, opt, true, &plan.Stats))
 		}
 	}
 	return plan, nil

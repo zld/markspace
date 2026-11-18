@@ -31,6 +31,7 @@ func TestConfigValidation(t *testing.T) {
 		{"target exceeds wait", Config{FrameMs: 20, TargetMs: 400, MaxWaitMs: 200, WindowSize: 8}},
 		{"window zero", Config{FrameMs: 20, TargetMs: 80, MaxWaitMs: 200, WindowSize: 0}},
 		{"window over limit", Config{FrameMs: 20, TargetMs: 80, MaxWaitMs: 200, WindowSize: MaxWindowSize + 1}},
+		{"max wait below one frame", Config{FrameMs: 20, TargetMs: 20, MaxWaitMs: 10, WindowSize: 8}},
 		{"frame over limit", Config{FrameMs: MaxFrameMs + 1, TargetMs: 80, MaxWaitMs: 200, WindowSize: 8}},
 	}
 	for _, tc := range cases {
@@ -149,12 +150,15 @@ func TestControllerShedsLatency(t *testing.T) {
 func TestControllerMaxConcealRunAndFinish(t *testing.T) {
 	c := newController(t)
 	feed(c, 0, 4, 0, 20)
-	c.Tick(100) // start, play 0
-	c.Finish()
-	c.Tick(120) // play 1
-	c.Tick(140) // play 2
-	c.Tick(160) // play 3
-	c.Tick(180) // input done and drained: report Finished
+	c.Tick(100) // below target and not finished: nothing plays yet
+	c.Finish()  // end-of-stream lets playout start with what is buffered
+	c.Tick(120) // play 0
+	c.Tick(140) // play 1
+	c.Tick(160) // play 2
+	c.Tick(180) // play 3
+	if slot := c.Tick(200); slot.Played || !slot.Finished {
+		t.Fatalf("drained slot = %+v, want finished without playout", slot)
+	}
 	st := c.Snapshot()
 	if st.PlayoutSlots != 4 {
 		t.Fatalf("stats = %+v, want 4 played slots", st)
