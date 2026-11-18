@@ -17,6 +17,7 @@ from cutline.resolve import DecisionAction, Strategy, resolve
 from cutline.exchange import ExchangeError, dump_exchange, load_exchange, write_exchange
 from cutline.otio_adapter import OTIOUnmappedError, from_otio, to_otio
 from cutline.render import build_plan
+from cutline.report import build_summary
 
 ROOT = Path(__file__).resolve().parents[1]
 SAMPLE_SCRIPT = ROOT / "scripts" / "make_samples.py"
@@ -270,6 +271,63 @@ def test_render_plan_lists_order_gaps_and_overlaps():
     assert plan.tracks[0].gaps[0].duration_frames == 24
     assert plan.tracks[0].requires_compositing  # overlaps v2
     assert plan.duration_frames == 120
+
+
+def test_empty_timeline_summary_is_complete():
+    timeline = Timeline(id="empty", tracks=[])
+    plan = build_plan(timeline, "24")
+    summary = build_summary(
+        timeline,
+        timeline,
+        duration_after_frames=plan.duration_frames,
+        exchange_version="v2",
+        strategy="none",
+        rate="24",
+    )
+    payload = summary.as_dict()
+    assert payload["conflict_count"] == 0
+    assert payload["resolved_intervals"] == []
+    assert payload["duration_delta_frames"] == 0
+    assert payload["render_track_count"] == 0
+    assert summary.exit_code == 0
+
+
+def test_single_clip_summary_is_complete():
+    timeline = Timeline(id="one", tracks=[_track("v1", _clip("a", "1", "2"))])
+    plan = build_plan(timeline, "24")
+    summary = build_summary(
+        timeline,
+        timeline,
+        duration_after_frames=plan.duration_frames,
+        exchange_version="v2",
+        strategy="none",
+        rate="24",
+    )
+    assert summary.duration_before_frames == 48
+    assert summary.duration_after_frames == 48
+    assert len(summary.resolved_intervals) == 1
+
+
+def test_duration_out_of_tolerance_fails():
+    before = Timeline(id="t", tracks=[_track("v1", _clip("a", "0", "4"))])
+    after = Timeline(id="t", tracks=[_track("v1", _clip("a", "0", "2"))])
+    summary = build_summary(
+        before,
+        after,
+        duration_after_frames=48,
+        exchange_version="v2",
+        strategy="priority",
+        tolerance_frames=0,
+        rate="24",
+    )
+    assert summary.duration_delta_frames == -48
+    assert not summary.within_tolerance
+    assert summary.exit_code == 3
+
+
+# ---------------------------------------------------------------------------
+# exchange formats
+# ---------------------------------------------------------------------------
 
 
 def test_v1_v2_round_trip_is_stable(sample_dict: dict, tmp_path: Path):
