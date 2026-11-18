@@ -15,6 +15,10 @@ import (
 	"jitterlab/internal/testkit"
 )
 
+// drainQuiet is how long the reader waits for a datagram after the sender
+// has finished before deciding the stream is complete.
+const drainQuiet = 5 * time.Millisecond
+
 // LiveConfig controls a real-time loopback run.
 type LiveConfig struct {
 	Buffer        buffer.Config
@@ -136,22 +140,26 @@ func Live(ctx context.Context, cfg LiveConfig) (LiveResult, error) {
 				return
 			default:
 			}
-			dg, rerr := rx.Read(buf, cfg.Timeout)
+			deadline := cfg.Timeout
+			if stopped(senderDone) {
+				// After the final datagram is written everything still in
+				// flight is already queued on loopback, so a short quiet
+				// period is enough to drain it. This keeps the tail of the
+				// stream from being concealed while we wait out a long
+				// read deadline.
+				deadline = drainQuiet
+			}
+			dg, rerr := rx.Read(buf, deadline)
 			if rerr != nil {
 				if stopped(stop) || ctx.Err() != nil || errors.Is(rerr, net.ErrClosed) {
 					return
 				}
 				var ne net.Error
 				if errors.As(rerr, &ne) && ne.Timeout() {
-					// An idle socket is fine while the sender is pacing;
-					// after the plan is exhausted, keep waiting briefly for
-					// stragglers and then stop.
-					select {
-					case <-senderDone:
+					if stopped(senderDone) {
 						return
-					default:
-						continue
 					}
+					continue
 				}
 				mu.Lock()
 				readErr = fmt.Errorf("receiver: read: %w", rerr)

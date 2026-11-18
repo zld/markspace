@@ -80,7 +80,6 @@ type Recorder struct {
 	seed  int64
 
 	frames    int
-	real      int
 	concealed int
 	silent    int
 	run       int
@@ -139,7 +138,6 @@ func (r *Recorder) ObserveSlot(slot buffer.Slot) Frame {
 	r.frames++
 	switch slot.Kind {
 	case conceal.KindReal:
-		r.real++
 		if slot.Recovered {
 			r.recoveries++
 			r.continuity += slot.Delta

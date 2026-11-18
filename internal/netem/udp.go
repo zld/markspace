@@ -6,6 +6,7 @@ package netem
 import (
 	"fmt"
 	"net"
+	"sort"
 	"time"
 
 	"jitterlab/internal/testkit"
@@ -104,20 +105,38 @@ type SendStats struct {
 }
 
 // PlayPlan transmits a plan in real time relative to the current clock.
-// Events marked Dropped are skipped (they model loss before transmission),
-// and events are paced by their AtMs offsets so the receiver sees the
-// intended jitter. The returned stats allow the live path to reconcile
-// input counts against the plan.
+// Events marked Dropped are skipped (they model loss before transmission).
+// The remaining events are paced by their (drift-adjusted) arrival times,
+// which are sorted first: reordered and delayed packets must actually leave
+// out of order or the receiver would never observe the impairment. The
+// returned stats let the live path reconcile input counts with the plan.
 func PlayPlan(s *Sender, plan testkit.Plan, stop <-chan struct{}) (SendStats, error) {
 	var stats SendStats
 	start := time.Now()
-	for _, ev := range plan.Events {
+
+	type sendAt struct {
+		at  int64
+		idx int
+		ev  testkit.Event
+	}
+	queue := make([]sendAt, 0, len(plan.Events))
+	for i, ev := range plan.Events {
 		if ev.Dropped {
 			stats.Lost++
 			continue
 		}
-		at := plan.Options.StretchMs(ev.AtMs)
-		wait := time.Until(start.Add(time.Duration(at) * time.Millisecond))
+		queue = append(queue, sendAt{at: plan.Options.StretchMs(ev.AtMs), idx: i, ev: ev})
+	}
+	sort.SliceStable(queue, func(a, b int) bool {
+		if queue[a].at != queue[b].at {
+			return queue[a].at < queue[b].at
+		}
+		return queue[a].idx < queue[b].idx
+	})
+
+	for _, item := range queue {
+		ev := item.ev
+		wait := time.Until(start.Add(time.Duration(item.at) * time.Millisecond))
 		if wait > 0 {
 			timer := time.NewTimer(wait)
 			select {

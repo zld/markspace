@@ -40,11 +40,10 @@ const (
 // Decode errors. Callers count these separately; nothing may be recovered
 // from a packet that returns one of them.
 var (
-	ErrTruncated       = errors.New("packet: truncated frame")
-	ErrUnknownVersion  = errors.New("packet: unknown version")
-	ErrBadLength       = errors.New("packet: bad length field")
-	ErrChecksum        = errors.New("packet: checksum mismatch")
-	ErrPayloadMismatch = errors.New("packet: payload does not match header")
+	ErrTruncated      = errors.New("packet: truncated frame")
+	ErrUnknownVersion = errors.New("packet: unknown version")
+	ErrBadLength      = errors.New("packet: bad length field")
+	ErrChecksum       = errors.New("packet: checksum mismatch")
 )
 
 var crcTable = crc32.MakeTable(crc32.IEEE)

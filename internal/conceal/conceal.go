@@ -57,11 +57,10 @@ type Concealer struct {
 	maxRun int
 	decay  float64
 
-	last         [packet.PayloadSize]byte
-	hasLast      bool
-	run          int
-	lastConceal  [packet.PayloadSize]byte
-	hasConcealed bool
+	last        [packet.PayloadSize]byte
+	hasLast     bool
+	run         int
+	lastConceal [packet.PayloadSize]byte
 }
 
 // New creates a concealer. maxRun is the number of concealed slots before
@@ -95,7 +94,6 @@ func (c *Concealer) Present(f packet.Frame) (out Output, delta float64, recovere
 	c.last = f.Payload
 	c.hasLast = true
 	c.run = 0
-	c.hasConcealed = false
 	return Output{Kind: KindReal, Payload: f.Payload}, delta, recovered
 }
 
@@ -108,7 +106,6 @@ func (c *Concealer) Conceal() Output {
 	if !c.hasLast || c.run > c.maxRun {
 		out := Output{Kind: KindSilence, Run: c.run}
 		c.lastConceal = out.Payload
-		c.hasConcealed = true
 		return out
 	}
 
@@ -126,7 +123,6 @@ func (c *Concealer) Conceal() Output {
 		payload[i] = attenuate(b, atten)
 	}
 	c.lastConceal = payload
-	c.hasConcealed = true
 	return Output{Kind: kind, Payload: payload, Run: c.run, Attenuation: atten}
 }
 

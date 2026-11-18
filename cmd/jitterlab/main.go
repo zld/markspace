@@ -89,7 +89,7 @@ replay-only flags:
   --corrupt P --truncate P --bad-version P
 
 live-only flags:
-  --duration D --read-timeout D
+  --duration D --read-timeout D --reorder-delay N --duplicate-delay N
 
 exit codes: 0 ok, 2 bad parameters, 3 damaged input, 4 output failure
 `
@@ -292,10 +292,14 @@ func runLive(args []string, stderr io.Writer) int {
 		duration time.Duration
 		timeout  time.Duration
 		decay    float64
+		reorderD int
+		dupD     int
 	)
 	c.register(fs)
 	fs.DurationVar(&duration, "duration", 0, "hard run limit (0 = until the plan drains)")
 	fs.DurationVar(&timeout, "read-timeout", 200*time.Millisecond, "socket read deadline")
+	fs.IntVar(&reorderD, "reorder-delay", 3, "maximum reorder delay in frames")
+	fs.IntVar(&dupD, "duplicate-delay", 3, "maximum duplicate lag in frames")
 	fs.Float64Var(&decay, "decay", 0.6, "concealment attenuation per slot")
 	if err := parseFlags(fs, args, stderr); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -305,6 +309,7 @@ func runLive(args []string, stderr io.Writer) int {
 		return exitUsage
 	}
 	opts := c.options()
+	opts.ReorderDelay, opts.DuplicateDelay = reorderD, dupD
 	if err := validate(&c, opts); err != nil {
 		fmt.Fprintf(stderr, "jitterlab live: %v\n", err)
 		return exitUsage
