@@ -26,6 +26,10 @@ target_include_directories(mp4_core PUBLIC src)
 add_library(fixture_core STATIC
     tools/fixture_builder.cpp
     tools/fixture_builder_frag.cpp
+    tools/fixture_builder_fault.cpp
 )
 target_include_directories(fixture_core PUBLIC tools)
 target_link_libraries(fixture_core PUBLIC mp4_core)
+
+add_executable(make_fixtures tools/make_fixtures.cpp)
+target_link_libraries(make_fixtures PRIVATE fixture_core)
