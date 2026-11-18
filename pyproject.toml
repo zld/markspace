@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "audiopack"
+version = "0.1.0"
+description = "Offline batch audio transcoder: resample + loudness normalization to WAV"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.26,<2",
+    "soundfile>=0.12",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[project.scripts]
+audiopack = "audiopack.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

@@ -1,0 +1,7 @@
+.venv/
+.tmp-input/
+.tmp-output/
+.tmp-report.json
+__pycache__/
+*.egg-info/
+.pytest_cache/
