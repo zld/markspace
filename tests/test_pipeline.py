@@ -127,6 +127,34 @@ def test_detection_is_stable_across_input_order():
 # ---------------------------------------------------------------------------
 
 
+def test_priority_trim_keeps_stronger_clip():
+    timeline = Timeline(
+        id="t", tracks=[_track("v1", _clip("low", "0", "4", priority=1), _clip("high", "2", "4", priority=9))]
+    )
+    result = resolve(timeline, Strategy.PRIORITY)
+    assert result.unresolved == []
+    kept = {clip.id: clip for clip in result.timeline.tracks[0].clips}
+    assert kept["low"].span.as_text() == {"start": "0", "end": "2"}
+    assert kept["high"].span.as_text() == {"start": "2", "end": "6"}
+
+
+def test_equal_priority_breaks_ties_by_id():
+    timeline = Timeline(id="t", tracks=[_track("v1", _clip("bbb", "0", "4"), _clip("aaa", "2", "4"))])
+    result = resolve(timeline, Strategy.PRIORITY)
+    kept = {clip.id: clip for clip in result.timeline.tracks[0].clips}
+    assert kept["bbb"].span.as_text() == {"start": "0", "end": "2"}
+    assert kept["aaa"].span.as_text() == {"start": "2", "end": "6"}
+
+
+def test_fully_covered_clip_is_removed_with_reason():
+    timeline = Timeline(id="t", tracks=[_track("v1", _clip("long", "0", "6"), _clip("short", "2", "2"))])
+    result = resolve(timeline, Strategy.PRIORITY)
+    assert [clip.id for clip in result.timeline.tracks[0].clips] == ["long"]
+    removed = [d for d in result.decisions if d.action is DecisionAction.REMOVED]
+    assert removed and removed[0].clip_id == "short"
+    assert "fully covered" in removed[0].reason
+
+
 def test_reject_strategy_changes_nothing():
     timeline = Timeline(id="t", tracks=[_track("v1", _clip("a", "0", "4"), _clip("b", "2", "4"))])
     result = resolve(timeline, Strategy.REJECT)

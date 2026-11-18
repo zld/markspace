@@ -1,4 +1,4 @@
-"""Conflict resolution: strategy surface and rejection.
+"""Conflict resolution: priority trimming and rejection.
 
 ``priority`` trims the weaker clip of each colliding pair (lower priority,
 then larger id), keeps the larger surviving piece, logs discarded pieces and
@@ -145,24 +145,130 @@ def resolve(timeline: Timeline, strategy: Strategy | str) -> ResolutionResult:
     )
 
 
-def resolve(timeline: Timeline, strategy: Strategy | str) -> ResolutionResult:
-    """Report every conflict as unresolved (trimming follows)."""
-    strategy = Strategy(strategy)
-    working = _clone(timeline)
-    conflicts = detect(working).conflicts
-    decisions = [
-        Decision(
-            action=DecisionAction.UNRESOLVED,
-            clip_id=conflict.clip_b,
-            track_id=conflict.track_b,
-            reason=f"{strategy.value} strategy cannot resolve {conflict.kind.value} with {conflict.clip_a}",
-            before=conflict.intersection,
-        )
-        for conflict in conflicts
-    ]
-    return ResolutionResult(
-        timeline=working,
-        decisions=decisions,
-        unresolved=list(conflicts),
-        strategy=strategy,
+def _index(timeline: Timeline) -> dict[str, tuple[Track, Clip]]:
+    return {clip.id: (track, clip) for track, clip in timeline.iter_clips()}
+
+
+# ---------------------------------------------------------------------------
+# priority strategy
+# ---------------------------------------------------------------------------
+
+
+def _surviving_piece(keep: Clip, victim: Clip) -> tuple[Span, Span | None]:
+    """Return ``(surviving span, discarded span or None)`` for ``victim``.
+
+    Only the region overlapping ``keep`` is removed.  When the victim extends
+    on both sides the larger piece survives (ties keep the left piece), and
+    the other piece is reported as discarded rather than silently lost.
+    """
+    victim_span = victim.span
+    keep_span = keep.span
+    if keep_span.contains(victim_span):
+        return Span(victim_span.start, victim_span.start), victim_span
+    left = (
+        Span(victim_span.start, keep_span.start)
+        if victim_span.start < keep_span.start
+        else None
     )
+    right = (
+        Span(keep_span.end, victim_span.end)
+        if keep_span.end < victim_span.end
+        else None
+    )
+    if left is not None and right is not None:
+        if left.duration.seconds >= right.duration.seconds:
+            return left, right
+        return right, left
+    if left is not None:
+        return left, None
+    if right is not None:
+        return right, None
+    return Span(victim_span.start, victim_span.start), victim_span
+
+
+def _trim_pair(
+    timeline: Timeline,
+    positions: dict[str, tuple[Track, Clip]],
+    conflict: Conflict,
+    decisions: list[Decision],
+) -> None:
+    """Trim the weaker clip of ``conflict`` if the pair still overlaps."""
+    entry_a = positions.get(conflict.clip_a)
+    entry_b = positions.get(conflict.clip_b)
+    if entry_a is None or entry_b is None:
+        return  # a clip was already removed by an earlier decision
+    track_a, left = entry_a
+    track_b, right = entry_b
+    if not left.span.overlaps(right.span):
+        return  # already separated by an earlier trim
+    verdict = _stronger(left, right)
+    if verdict == 0:
+        return
+    keep, victim = (left, right) if verdict < 0 else (right, left)
+    victim_track = track_b if victim is right else track_a
+    survivor, discarded = _surviving_piece(keep, victim)
+    before = victim.span
+
+    if survivor.is_empty:
+        decisions.append(
+            Decision(
+                action=DecisionAction.REMOVED,
+                clip_id=victim.id,
+                track_id=victim_track.id,
+                reason=f"fully covered by {keep.id}; trimmed to zero duration",
+                before=before,
+                after=Span(before.start, before.start),
+            )
+        )
+        victim_track.clips = [clip for clip in victim_track.clips if clip.id != victim.id]
+        positions.pop(victim.id, None)
+        return
+
+    victim.start = survivor.start
+    victim.duration = survivor.duration
+    same_track = conflict.track_a == conflict.track_b
+    decisions.append(
+        Decision(
+            action=DecisionAction.TRIMMED,
+            clip_id=victim.id,
+            track_id=victim_track.id,
+            reason=(
+                f"{'cross-track' if not same_track else 'same-track'} overlap with {keep.id}; "
+                + (
+                    "lower priority"
+                    if keep.priority != victim.priority
+                    else "id tie-break"
+                )
+            ),
+            before=before,
+            after=survivor,
+        )
+    )
+    if discarded is not None and not discarded.is_empty:
+        decisions.append(
+            Decision(
+                action=DecisionAction.REMOVED,
+                clip_id=victim.id,
+                track_id=victim_track.id,
+                reason=(
+                    f"piece {discarded.as_text()['start']}..{discarded.as_text()['end']} "
+                    f"of {victim.id} discarded to fit around {keep.id}"
+                ),
+                before=discarded,
+            )
+        )
+
+
+def _resolve_priority(timeline: Timeline, decisions: list[Decision]) -> None:
+    """One deterministic pass over the initial conflict list.
+
+    Every action shrinks a span, so no action can create a new overlap.
+    Processing each original pair once is therefore sufficient for the whole
+    timeline; a final :func:`detect` in :func:`resolve` verifies it.
+    """
+    conflicts = detect(timeline).conflicts
+    positions = _index(timeline)
+    for conflict in conflicts:
+        _trim_pair(timeline, positions, conflict, decisions)
+
+
