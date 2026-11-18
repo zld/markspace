@@ -77,7 +77,7 @@ def build_summary_report(storage: Storage, task: str | None = None) -> dict:
         "silence_total_seconds": (
             round(silence_samples / rate, 6) if rate else None
         ),
-        "mixed_sample_rates": None if rate is None else sorted(rates),
+        "sample_rates": sorted(rates),
         "failed_paths": [r["path"] for r in failed],
     }
 

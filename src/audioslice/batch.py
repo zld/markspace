@@ -75,6 +75,55 @@ def list_wav_files(input_dir: str | Path) -> list[Path]:
     )
 
 
+def process_file(
+    wav_path: str | Path, storage: Storage, params: DetectParams
+) -> FileOutcome:
+    """Analyse one WAV with the same detector/cache path as batch mode."""
+    params.validate()
+    detector = SilenceDetector(params)
+    param_fp = params.fingerprint()
+    params_json = json.dumps(params.to_dict(), sort_keys=True)
+    wav_path = Path(wav_path)
+    path_str = str(wav_path)
+    sha, size = "", 0
+    try:
+        sha, size = file_fingerprint(wav_path)
+        cached = storage.lookup_result(sha, param_fp)
+        if cached is not None:
+            return FileOutcome(
+                path=path_str,
+                status="cached",
+                segments=len(cached["segments"]),
+                silence_total_seconds=int(cached["silence_total_samples"] or 0)
+                / int(cached["task_sample_rate"] or 1),
+                result_id=int(cached["id"]),
+            )
+        wave = read_wav(wav_path)
+        result = detector.detect(wave.samples, wave.sample_rate).to_dict()
+        result_id = storage.save_result(
+            path=path_str,
+            sha256=sha,
+            byte_size=size,
+            sample_rate=wave.sample_rate,
+            n_samples=wave.n_samples,
+            params_json=params_json,
+            param_fingerprint=param_fp,
+            detection=result,
+            error_message=None,
+        )
+        return FileOutcome(
+            path=path_str,
+            status="ok",
+            segments=len(result["segments"]),
+            silence_total_seconds=result["silence_total_seconds"],
+            result_id=result_id,
+        )
+    except (AudioError, OSError) as exc:
+        return _error_outcome(
+            storage, path_str, sha, size, params_json, param_fp, exc
+        )
+
+
 def process_directory(
     input_dir: str | Path, storage: Storage, params: DetectParams
 ) -> BatchSummary:
@@ -127,22 +176,23 @@ def process_directory(
                 )
             )
         except (AudioError, OSError) as exc:
-            _record_error(
-                storage, summary, path_str, sha, size, params_json, param_fp, exc
+            summary.files.append(
+                _error_outcome(
+                    storage, path_str, sha, size, params_json, param_fp, exc
+                )
             )
     return summary
 
 
-def _record_error(
+def _error_outcome(
     storage: Storage,
-    summary: BatchSummary,
     path_str: str,
     sha: str,
     size: int,
     params_json: str,
     param_fp: str,
     exc: Exception,
-) -> None:
+) -> FileOutcome:
     message = f"{type(exc).__name__}: {exc}"
     result_id = None
     if sha:
@@ -160,6 +210,6 @@ def _record_error(
             )
         except Exception:
             result_id = None
-    summary.files.append(
-        FileOutcome(path=path_str, status="error", error=message, result_id=result_id)
+    return FileOutcome(
+        path=path_str, status="error", error=message, result_id=result_id
     )
