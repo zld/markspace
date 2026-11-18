@@ -96,16 +96,17 @@ func Generate(seed int64, plan Plan) []Item {
 		ts += 3600 // deterministic timestamp stride per frame
 	}
 
-	// Apply the adjacent swap before dropping the missing packet.
+	// Apply the adjacent swap before dropping the missing packet. Locate each
+	// sequence by index so the exchange cannot match twice.
 	ordered := make([]spec, len(ideal))
 	copy(ordered, ideal)
-	for i := range ordered {
-		if ordered[i].seq == plan.SwapAdjacent[0] {
-			for j := range ordered {
-				if ordered[j].seq == plan.SwapAdjacent[1] {
-					ordered[i], ordered[j] = ordered[j], ordered[i]
-				}
-			}
+	index := make(map[uint16]int, len(ordered))
+	for i, s := range ordered {
+		index[s.seq] = i
+	}
+	if i, ok1 := index[plan.SwapAdjacent[0]]; ok1 {
+		if j, ok2 := index[plan.SwapAdjacent[1]]; ok2 {
+			ordered[i], ordered[j] = ordered[j], ordered[i]
 		}
 	}
 
