@@ -1,13 +1,11 @@
 package receiver
 
 import (
-	"fmt"
 	"sort"
 
 	"jitterlab/internal/buffer"
 	"jitterlab/internal/metrics"
 	"jitterlab/internal/packet"
-	"jitterlab/internal/report"
 	"jitterlab/internal/testkit"
 )
 
@@ -82,8 +80,14 @@ func Replay(cfg ReplayConfig) (ReplayResult, error) {
 
 	res := ReplayResult{ExitCode: ExitOK}
 	frameMs := int64(cfg.Buffer.FrameMs)
-	limit := int64(len(arrivals)+1)*frameMs + int64(cfg.Buffer.MaxWaitMs) + 2*frameMs
-	maxTicks := int(limit/frameMs) + cfg.Options.Frames + 8
+	// The playout clock only needs to cover the last arrival plus enough
+	// ticks to play out what the buffer can hold; the controller sheds
+	// beyond max-wait, and a drained stream finishes without extra ticks.
+	endAt := int64(0)
+	if n := len(arrivals); n > 0 {
+		endAt = arrivals[n-1].at
+	}
+	maxTicks := int(endAt/frameMs) + cfg.Buffer.MaxWaitMs/cfg.Buffer.FrameMs + 4
 
 	next := 0
 	finished := false
@@ -92,7 +96,7 @@ func Replay(cfg ReplayConfig) (ReplayResult, error) {
 		for next < len(arrivals) && arrivals[next].at <= at {
 			a := arrivals[next]
 			next++
-			err := decodeEvent(a.ev)
+			f, err := decodeEvent(a.ev)
 			rec.ObserveDatagram(len(a.ev.Wire), err)
 			if gerr := guard.Observe(err); gerr != nil {
 				res.Err = gerr
@@ -100,11 +104,9 @@ func Replay(cfg ReplayConfig) (ReplayResult, error) {
 				finished = true
 				break
 			}
-			if err != nil {
-				continue
+			if err == nil {
+				ctl.Offer(f, a.at)
 			}
-			f, _ := packet.Decode(a.ev.Wire)
-			ctl.Offer(f, a.at)
 		}
 		if finished {
 			break
@@ -122,10 +124,6 @@ func Replay(cfg ReplayConfig) (ReplayResult, error) {
 		}
 	}
 
-	res.Summary = rec.Summary(ctl.Snapshot())
-	res.Summary.Seed = cfg.Options.Seed
-	res.Summary.Frames = len(res.Frames)
-	res.Summary.TargetMs = ctl.TargetMs()
 	rec.SetSenderStats(plan.Stats.Lost, plan.Stats.Duplicated, plan.Stats.Reordered, plan.Stats.Faults)
 	res.Summary = rec.Summary(ctl.Snapshot())
 	res.Summary.Seed = cfg.Options.Seed
@@ -137,22 +135,11 @@ func Replay(cfg ReplayConfig) (ReplayResult, error) {
 	return res, res.Err
 }
 
-func decodeEvent(ev testkit.Event) error {
+// decodeEvent decodes one planned datagram, treating an empty wire payload
+// as truncation so injected faults all flow through the same classifier.
+func decodeEvent(ev testkit.Event) (packet.Frame, error) {
 	if len(ev.Wire) == 0 {
-		return packet.ErrTruncated
+		return packet.Frame{}, packet.ErrTruncated
 	}
-	_, err := packet.Decode(ev.Wire)
-	return err
+	return packet.Decode(ev.Wire)
 }
-
-// WriteResult emits frames then the summary line.
-func WriteResult(w *report.Writer, res ReplayResult) error {
-	for _, f := range res.Frames {
-		if err := w.WriteFrame(f); err != nil {
-			return err
-		}
-	}
-	return w.WriteSummary(res.Summary)
-}
-
-var _ = fmt.Sprintf

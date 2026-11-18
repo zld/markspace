@@ -300,12 +300,8 @@ func (c *Controller) play(nowMs int64) Slot {
 	}
 
 	// Nothing at the playout point: conceal this slot. SkipNext keeps the
-	// clock moving so a late packet can never overwrite it; a frame that
-	// was still buffered but out of order is counted as dropped.
+	// clock moving so a late packet can never overwrite it.
 	out := c.plc.Conceal()
-	if c.win.HasNext() {
-		c.stats.Dropped++
-	}
 	c.win.SkipNext()
 	c.stats.Concealed++
 	if out.Kind == conceal.KindSilence {
@@ -365,21 +361,11 @@ func (c *Controller) Snapshot() Stats {
 	return c.stats
 }
 
-// FrameMs returns the configured frame duration.
-func (c *Controller) FrameMs() int { return c.cfg.FrameMs }
-
 // TargetMs returns the current adaptive target water level.
 func (c *Controller) TargetMs() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.targetMs()
-}
-
-// BufferMs returns the current water level in milliseconds.
-func (c *Controller) BufferMs() int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.bufferMs()
 }
 
 func (c *Controller) targetMs() int { return c.targetFrames * c.cfg.FrameMs }
