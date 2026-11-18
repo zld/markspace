@@ -36,33 +36,39 @@ type Protocol struct {
 
 // Summary is the aggregated result of one run.
 type Summary struct {
-	Frames           int       `json:"frames"`
-	InputPackets     int       `json:"input_packets"`
-	ValidPackets     int       `json:"valid_packets"`
-	InvalidPackets   int       `json:"invalid_packets"`
-	DuplicatePackets int       `json:"duplicate_packets"`
-	ReorderedPackets int       `json:"reordered_packets"`
-	DroppedPackets   int       `json:"dropped_packets"`
-	ConcealedFrames  int       `json:"concealed_frames"`
-	SilentFrames     int       `json:"silent_frames"`
-	MaxConcealRun    int       `json:"max_conceal_run"`
-	Recoveries       int       `json:"recoveries"`
-	ContinuityDelta  float64   `json:"continuity_delta"`
-	ConcealRatio     float64   `json:"conceal_ratio"`
-	BufferMsMin      int       `json:"buffer_ms_min"`
-	BufferMsMax      int       `json:"buffer_ms_max"`
-	BufferMsAvg      float64   `json:"buffer_ms_avg"`
-	TargetMs         int       `json:"target_ms"`
-	MaxWaitMs        int       `json:"max_wait_ms"`
-	WindowSize       int       `json:"reorder_window"`
-	FrameMs          int       `json:"frame_ms"`
-	Seed             int64     `json:"seed"`
-	Truncated        int       `json:"truncated_packets"`
-	VersionErrors    int       `json:"version_errors"`
-	LengthErrors     int       `json:"length_errors"`
-	ChecksumErrors   int       `json:"checksum_errors"`
-	LongestBadRun    int       `json:"longest_bad_run"`
-	RecoveryJumps    []float64 `json:"-"`
+	Frames           int     `json:"frames"`
+	InputPackets     int     `json:"input_packets"`
+	ValidPackets     int     `json:"valid_packets"`
+	InvalidPackets   int     `json:"invalid_packets"`
+	DuplicatePackets int     `json:"duplicate_packets"`
+	ReorderedPackets int     `json:"reordered_packets"`
+	DroppedPackets   int     `json:"dropped_packets"`
+	ConcealedFrames  int     `json:"concealed_frames"`
+	SilentFrames     int     `json:"silent_frames"`
+	MaxConcealRun    int     `json:"max_conceal_run"`
+	Recoveries       int     `json:"recoveries"`
+	ContinuityDelta  float64 `json:"continuity_delta"`
+	ConcealRatio     float64 `json:"conceal_ratio"`
+	BufferMsMin      int     `json:"buffer_ms_min"`
+	BufferMsMax      int     `json:"buffer_ms_max"`
+	BufferMsAvg      float64 `json:"buffer_ms_avg"`
+	TargetMs         int     `json:"target_ms"`
+	MaxWaitMs        int     `json:"max_wait_ms"`
+	WindowSize       int     `json:"reorder_window"`
+	FrameMs          int     `json:"frame_ms"`
+	Seed             int64   `json:"seed"`
+	Truncated        int     `json:"truncated_packets"`
+	VersionErrors    int     `json:"version_errors"`
+	LengthErrors     int     `json:"length_errors"`
+	ChecksumErrors   int     `json:"checksum_errors"`
+	LongestBadRun    int     `json:"longest_bad_run"`
+
+	// Sender-side accounting so input totals can be reconciled with the
+	// generated plan: input = frames - lost + injected duplicates.
+	LostPackets        int `json:"lost_packets"`
+	InjectedDuplicates int `json:"injected_duplicates"`
+	InjectedReordered  int `json:"injected_reordered"`
+	InjectedFaults     int `json:"injected_faults"`
 }
 
 // Recorder accumulates statistics over one receive path. It is owned by a
@@ -82,10 +88,16 @@ type Recorder struct {
 	bufferSum  int64
 	bufferMin  int
 	bufferMax  int
+	bufferLast int
 	haveBuffer bool
 
 	recoveries int
 	continuity float64
+
+	planLost    int
+	planDups    int
+	planReorder int
+	planFaults  int
 }
 
 // New builds a recorder for the given buffer configuration and run seed.
@@ -143,6 +155,7 @@ func (r *Recorder) ObserveSlot(slot buffer.Slot) Frame {
 		r.maxRun = r.run
 	}
 	r.bufferSum += int64(slot.BufferMs)
+	r.bufferLast = slot.BufferMs
 	if !r.haveBuffer || slot.BufferMs < r.bufferMin {
 		r.bufferMin = slot.BufferMs
 	}
@@ -162,6 +175,15 @@ func (r *Recorder) ObserveSlot(slot buffer.Slot) Frame {
 	}
 }
 
+// SetSenderStats records the impairments injected on the sender side so the
+// summary can reconcile input counts with the generated plan.
+func (r *Recorder) SetSenderStats(lost, duplicates, reordered, faults int) {
+	r.planLost = lost
+	r.planDups = duplicates
+	r.planReorder = reordered
+	r.planFaults = faults
+}
+
 // Protocol returns a copy of the datagram classification counters.
 func (r *Recorder) Protocol() Protocol { return r.proto }
 
@@ -175,22 +197,29 @@ func (r *Recorder) Summary(st buffer.Stats) Summary {
 		InvalidPackets:   r.proto.Invalid,
 		DuplicatePackets: st.Duplicates,
 		ReorderedPackets: st.Reordered,
-		DroppedPackets:   st.Dropped,
-		ConcealedFrames:  r.concealed,
-		SilentFrames:     r.silent,
-		MaxConcealRun:    r.maxRun,
-		Recoveries:       r.recoveries,
-		MaxWaitMs:        r.cfg.MaxWaitMs,
-		WindowSize:       r.cfg.WindowSize,
-		FrameMs:          r.cfg.FrameMs,
-		Seed:             r.seed,
-		Truncated:        r.proto.Truncated,
-		VersionErrors:    r.proto.UnknownVersion,
-		LengthErrors:     r.proto.BadLength,
-		ChecksumErrors:   r.proto.Checksum,
-		LongestBadRun:    r.proto.Consecutive,
-		BufferMsMin:      r.bufferMin,
-		BufferMsMax:      r.bufferMax,
+		// Dropped covers every frame that never reached playout: frames
+		// lost in transit on the generated plan, frames the window had to
+		// abandon, and frames shed to cap latency.
+		DroppedPackets:     st.Dropped + r.planLost,
+		ConcealedFrames:    r.concealed,
+		SilentFrames:       r.silent,
+		MaxConcealRun:      r.maxRun,
+		Recoveries:         r.recoveries,
+		MaxWaitMs:          r.cfg.MaxWaitMs,
+		WindowSize:         r.cfg.WindowSize,
+		FrameMs:            r.cfg.FrameMs,
+		Seed:               r.seed,
+		Truncated:          r.proto.Truncated,
+		VersionErrors:      r.proto.UnknownVersion,
+		LengthErrors:       r.proto.BadLength,
+		ChecksumErrors:     r.proto.Checksum,
+		LongestBadRun:      r.proto.Consecutive,
+		BufferMsMin:        r.bufferMin,
+		BufferMsMax:        r.bufferMax,
+		LostPackets:        r.planLost,
+		InjectedDuplicates: r.planDups,
+		InjectedReordered:  r.planReorder,
+		InjectedFaults:     r.planFaults,
 	}
 	if r.recoveries > 0 {
 		s.ContinuityDelta = r.continuity / float64(r.recoveries)

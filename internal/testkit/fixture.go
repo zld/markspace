@@ -210,7 +210,8 @@ func newEvent(at int64, seq uint64, f packet.Frame, rng *rng, opt Options, dup b
 }
 
 // StretchMs maps sender time onto the receiver clock after drift. A
-// positive ppm makes the receiver clock run fast.
+// positive ppm makes the receiver clock run fast, so intervals between
+// arrivals measure longer and the playout clock has less slack.
 func (o Options) StretchMs(atMs int64) int64 {
 	return atMs + atMs*int64(o.DriftPPM)/1_000_000
 }

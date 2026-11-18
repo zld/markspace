@@ -363,6 +363,20 @@ func (c *Controller) Snapshot() Stats {
 // FrameMs returns the configured frame duration.
 func (c *Controller) FrameMs() int { return c.cfg.FrameMs }
 
+// TargetMs returns the current adaptive target water level.
+func (c *Controller) TargetMs() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.targetMs()
+}
+
+// BufferMs returns the current water level in milliseconds.
+func (c *Controller) BufferMs() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.bufferMs()
+}
+
 func (c *Controller) targetMs() int { return c.targetFrames * c.cfg.FrameMs }
 
 func (c *Controller) bufferMs() int {
