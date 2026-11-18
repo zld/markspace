@@ -21,6 +21,9 @@ type Peer struct {
 func newAPI() *webrtc.API {
 	se := webrtc.SettingEngine{}
 	se.SetIPFilter(func(ip net.IP) bool { return ip.IsLoopback() })
+	// Pion skips loopback interfaces during gathering by default; this
+	// tool runs entirely on loopback, so enable them explicitly.
+	se.SetIncludeLoopbackCandidate(true)
 	se.SetNetworkTypes([]webrtc.NetworkType{
 		webrtc.NetworkTypeUDP4,
 		webrtc.NetworkTypeUDP6,

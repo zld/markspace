@@ -56,9 +56,9 @@ type Endpoint struct {
 	name  string
 	role  Role
 	state State
-	// iceSeen counts ICE envelopes; iceDone is set once the peer signals
-	// end-of-candidates (empty candidate) so Ready can be reached.
-	iceDone bool
+	// iceDoneDirs counts end-of-candidates markers seen; both directions
+	// must signal it before the endpoint is ready.
+	iceDoneDirs int
 	err     error
 	// lastActivity drives Stall(), which the runner polls to detect a
 	// signaling exchange that stopped making progress.
@@ -132,8 +132,10 @@ func (e *Endpoint) HandleMessage(env *Envelope) error {
 			}
 			e.state = StateICEGathering
 			if p.Candidate == "" { // end-of-candidates marker
-				e.iceDone = true
-				e.state = StateReady
+				e.iceDoneDirs++
+				if e.iceDoneDirs >= 2 {
+					e.state = StateReady
+				}
 			}
 		case TypeClose:
 			e.state = StateClosed

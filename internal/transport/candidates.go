@@ -45,6 +45,7 @@ func CollectPairs(pc *webrtc.PeerConnection) PairSummary {
 	}
 
 	sum := PairSummary{}
+	nominatedState := ""
 	for _, s := range report {
 		pair, ok := s.(webrtc.ICECandidatePairStats)
 		if !ok {
@@ -54,6 +55,14 @@ func CollectPairs(pc *webrtc.PeerConnection) PairSummary {
 		if pair.ID == selectedID {
 			sum.SelectedState = string(pair.State)
 		}
+		if pair.Nominated {
+			nominatedState = string(pair.State)
+		}
+	}
+	// Pion does not populate SelectedCandidatePairID; the nominated pair
+	// is the selected one per RFC 8445.
+	if sum.SelectedState == "" {
+		sum.SelectedState = nominatedState
 	}
 	return sum
 }
