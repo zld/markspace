@@ -3,6 +3,7 @@
 #include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <sstream>
 #include <string>
 
@@ -848,4 +849,35 @@ TEST_CASE("atomic writer leaves no temp file behind", "[ppm]") {
   CHECK(decoded.pixels[0].r == Catch::Approx(1.0));  // clamped
   CHECK(decoded.pixels[0].g == Catch::Approx(0.0));
   std::filesystem::remove_all(dir);
+}
+
+TEST_CASE("deviation over threshold maps to the dedicated exit code", "[report]") {
+  lutcheck::Analysis analysis;
+  analysis.deviation = {0.0, 0.0, 2e-6};
+  analysis.threshold = 1e-6;
+  analysis.deviation_exceeded = true;
+  CHECK(lutcheck::report_exit_code(analysis) ==
+        static_cast<int>(ExitCode::Deviation));
+  analysis.deviation_exceeded = false;
+  CHECK(lutcheck::report_exit_code(analysis) == 0);
+}
+
+TEST_CASE("json serialization refuses non-finite values", "[report]") {
+  lutcheck::Analysis analysis;
+  analysis.histogram_bins = 1;
+  analysis.before = lutcheck::compute_histogram([] {
+    lutcheck::Image image;
+    image.width = 1;
+    image.height = 1;
+    image.pixels = {{0.5, 0.5, 0.5}};
+    return image;
+  }(), 1);
+  analysis.after = analysis.before;
+  analysis.deviation.r = std::numeric_limits<double>::quiet_NaN();
+  try {
+    lutcheck::analysis_json(analysis, false);
+    FAIL("expected non-finite rejection");
+  } catch (const lutcheck::AppError& error) {
+    CHECK(error.code() == ExitCode::Output);
+  }
 }

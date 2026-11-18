@@ -62,4 +62,11 @@ if(LUTCHECK_BUILD_TESTS)
 
   include(Catch)
   catch_discover_tests(lutcheck_tests)
+
+  add_test(
+    NAME e2e_acceptance
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/e2e_acceptance.sh
+            $<TARGET_FILE:lutcheck>
+  )
+  set_tests_properties(e2e_acceptance PROPERTIES TIMEOUT 120)
 endif()
