@@ -3,7 +3,7 @@
 // offset, missing segment number, duration drift). It also optionally creates
 // placeholder segment files so reference-existence checks can be exercised
 // fully offline.
-package testdata
+package fixtures
 
 import (
 	"encoding/json"
