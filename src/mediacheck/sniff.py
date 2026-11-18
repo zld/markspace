@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .isobmff import parse_mp4
 from .model import SniffResult
 from .util import MAX_FILE_SIZE
 from .wav import parse_wav_stream
@@ -38,11 +39,7 @@ def sniff_file(path: str | Path) -> SniffResult:
             if container == "wav":
                 return parse_wav_stream(handle, file_size=size)
             if container == "mp4":
-                return SniffResult(
-                    container="mp4",
-                    size=size,
-                    error="MP4 extraction not available yet",
-                )
+                return parse_mp4(handle, size)
     except OSError as exc:
         return SniffResult(container="unknown", size=size, error=f"cannot read file: {exc}")
     return SniffResult(
