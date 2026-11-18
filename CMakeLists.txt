@@ -11,6 +11,7 @@ endif()
 
 add_library(tr_core STATIC
   src/frame_buffer.cpp
+  src/hash.cpp
 )
 target_include_directories(tr_core PUBLIC src)
 target_compile_options(tr_core PRIVATE -Wall -Wextra -Wpedantic)
