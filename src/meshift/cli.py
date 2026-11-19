@@ -116,8 +116,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
-    args = parser.parse_args(argv)
     try:
+        args = parser.parse_args(argv)
         report = _run_convert(args)
     except TruncatedInputError as exc:
         print(f"error: truncated input: {exc}", file=sys.stderr)
