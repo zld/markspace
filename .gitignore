@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual environment (must live at project root, never committed)
+.venv/
+
+# Generated media fixtures and sidecar manifests
+fixtures/
+*.tmp
+.pytest_cache/
