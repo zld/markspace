@@ -24,6 +24,7 @@ pkg_check_modules(NLOHMANN_JSON REQUIRED IMPORTED_TARGET nlohmann_json>=3.11)
 
 add_library(subtitle_core STATIC
     src/ass_document.cpp
+    src/style_resolver.cpp
 )
 target_include_directories(subtitle_core PUBLIC src)
 target_link_libraries(subtitle_core PUBLIC
