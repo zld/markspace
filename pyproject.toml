@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "medcheck"
+version = "0.1.0"
+description = "Offline media container metadata extractor and consistency checker for WAV and MP4/MOV assets"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+medcheck = "medcheck.cli:entrypoint"
+
+[tool.setuptools.packages.find]
+where = ["src"]
