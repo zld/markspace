@@ -16,6 +16,7 @@ add_library(lutcore STATIC
     src/render_paths.cpp
     src/histogram.cpp
     src/options.cpp
+    src/demo_data.cpp
 )
 target_include_directories(lutcore PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_options(lutcore PRIVATE -Wall -Wextra -Wpedantic)
