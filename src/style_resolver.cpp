@@ -161,6 +161,28 @@ void apply_integer_field(EffStyle& s, EffStyle::Integer& slot, const RawStyle& r
                          int lo, int hi, int fallback);
 
 
+const char* const kDialogueFields[] = {
+    "name", "fontname", "fontsize", "primarycolour", "secondarycolour", "outlinecolour",
+    "backcolour", "bold", "italic", "underline", "strikeout", "scalex", "scaley", "spacing",
+    "angle", "borderstyle", "outline", "shadow", "alignment", "marginl", "marginr", "marginv",
+    "encoding", "parent"};
+
+// Flags columns that do not exist in the style format. Extra columns past the
+// Format list are almost always a missing value earlier in the line.
+void report_unknown_style_columns(EffStyle& s, const RawStyle& raw) {
+    for (const auto& entry : raw.fields) {
+        bool known = false;
+        for (const char* field : kDialogueFields) {
+            if (entry.first == field) { known = true; break; }
+        }
+        if (!known) {
+            adjust(s, "column:" + entry.first, entry.second.value,
+                   "ignored (not a style field)", "style: " + raw.name);
+        }
+    }
+}
+
+
 void apply_text_field(EffStyle& s, EffStyle::Text& slot, const RawStyle& raw, const std::string& field,
                       const std::string& /*display*/, const char* /*fallback_why*/) {
     auto it = raw.fields.find(field);
@@ -274,6 +296,7 @@ void apply_colour_field(EffStyle& s, EffStyle::Integer& slot, const RawStyle& ra
 }
 
 void merge_style(EffStyle& s, const RawStyle& raw) {
+    report_unknown_style_columns(s, raw);
     apply_text_field(s, s.font_name, raw, "fontname", "Fontname", "empty font name");
     apply_number_field(s, s.font_size, raw, "fontsize", kFontSizeMin, kFontSizeMax, 48.0);
     apply_integer_field(s, s.bold, raw, "bold", 0, 1, 0);
