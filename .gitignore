@@ -1,0 +1,12 @@
+# Python virtual environment (created at repo root per project convention)
+.venv/
+
+# Bytecode caches and test artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Generated media / reports
+*.mp4
+*.mkv
+report.json

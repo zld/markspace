@@ -75,6 +75,17 @@ CONTAINERS = frozenset({
 #: when one of these siblings (or the buffer end) is reached.
 TOPLEVEL_IDS = frozenset({EBML_HEADER, SEGMENT, SEEK_HEAD, VOID, CRC32})
 
+#: Direct children of a Segment. An unknown-length Cluster (the only nested
+#: unknown-length master we emit) closes at the next Cluster/top-level sibling.
+SECTION_IDS = frozenset({SEEK_HEAD, INFO, TRACKS, CLUSTER, VOID, CRC32})
+
+#: Boundary siblings used when an unknown-length element needs an explicit
+#: end marker instead of a declared byte length.
+_BOUNDARIES = {
+    SEGMENT: TOPLEVEL_IDS,
+    CLUSTER: SECTION_IDS,
+}
+
 _MAX_VINT_WIDTH = 8
 
 
@@ -86,29 +97,51 @@ def element_name(element_id: int) -> str:
 def _vint_width(first_octet: int, offset: int) -> int:
     if first_octet == 0:
         raise EBMLError("illegal VINT: zero first octet", offset)
-    width = 8 - first_octet.bit_length() + 1
+    # VINT width is one plus the count of leading zero bits.
+    width = 9 - first_octet.bit_length()
     if width > _MAX_VINT_WIDTH:
         raise EBMLError(f"illegal VINT width {width}", offset)
     return width
 
 
 def read_vint(data: bytes, pos: int, *, kind: str) -> tuple[int, int, bool]:
-    """Read an EBML variable-length integer.
+    """Read an EBML variable-length *size* integer (marker stripped).
 
     Returns ``(value, width, is_unknown)``. ``is_unknown`` means every data
-    bit is set (unknown size for sizes; a reserved value for ids).
+    bit is set (the unknown-size sentinel). Element IDs use a different rule
+    (the marker is retained); see :func:`read_element_id`.
     """
     if pos >= len(data):
         raise TruncatedInputError(f"truncated {kind} VINT", pos)
     width = _vint_width(data[pos], pos)
     if pos + width > len(data):
         raise TruncatedInputError(f"truncated {kind} VINT", pos)
-    data_mask = 0x7F >> (width - 1)
-    value = data[pos] & data_mask
+    # The marker occupies the leading (9-width) bits of the first octet;
+    # keep only the low (8-width) data bits there.
+    first_data_mask = 0xFF >> width
+    value = data[pos] & first_data_mask
     for octet in data[pos + 1:pos + width]:
         value = (value << 8) | octet
     all_ones = (1 << (7 * width)) - 1
     return value, width, value == all_ones
+
+
+def read_element_id(data: bytes, pos: int) -> tuple[int, int]:
+    """Read an EBML Element ID, retaining its length marker bits.
+
+    Returns ``(element_id, width)`` where ``element_id`` is the full raw
+    class identifier (e.g. ``0x1A45DFA3``) used as the element's identity.
+    """
+    if pos >= len(data):
+        raise TruncatedInputError("truncated element id VINT", pos)
+    width = _vint_width(data[pos], pos)
+    if pos + width > len(data):
+        raise TruncatedInputError("truncated element id VINT", pos)
+    element_id = int.from_bytes(data[pos:pos + width], "big")
+    data_mask = (1 << (7 * width)) - 1
+    if element_id & data_mask == data_mask:
+        raise EBMLError("reserved EBML id VINT", pos)
+    return element_id, width
 
 
 @dataclass
@@ -156,9 +189,7 @@ class Element:
 
 
 def _read_header(data: bytes, pos: int, path: tuple[str, ...]) -> Element:
-    ident, id_width, reserved = read_vint(data, pos, kind="id")
-    if reserved:
-        raise EBMLError("reserved EBML id VINT", pos, path)
+    ident, id_width = read_element_id(data, pos)
     size, size_width, unknown = read_vint(data, pos + id_width, kind="size")
     header_len = id_width + size_width
     data_start = pos + header_len
@@ -176,13 +207,19 @@ def _read_header(data: bytes, pos: int, path: tuple[str, ...]) -> Element:
 def _parse_children(data: bytes, start: int, limit: int,
                     stop_ids: frozenset[int],
                     path: tuple[str, ...]) -> list[Element]:
+    """Parse children within ``[start, limit)``.
+
+    ``stop_ids`` is non-empty only when enclosing an unknown-length parent:
+    a recognised sibling id then marks the parent's end. For known-length
+    containers and the document root it is empty, so every element is read.
+    """
     if limit > len(data):
         raise TruncatedInputError("declared parent ends past buffer", start, path)
     elements: list[Element] = []
     pos = start
     while pos < limit:
         element = _read_header(data, pos, path)
-        if element.element_id in stop_ids:
+        if stop_ids and element.element_id in stop_ids:
             break
         child_path = path + (element.name,)
         if element.size is None:
@@ -190,8 +227,11 @@ def _parse_children(data: bytes, start: int, limit: int,
                 raise EBMLError(
                     "unknown-length VINT only legal on master elements",
                     pos, child_path)
+            # The unknown-length parent ends at its next sibling; if no
+            # boundary set is known the buffer/parent limit applies.
+            boundary = _BOUNDARIES.get(element.element_id, stop_ids)
             element.children = _parse_children(
-                data, element.data_start, limit, stop_ids, child_path)
+                data, element.data_start, limit, boundary, child_path)
             element.end = (element.children[-1].end
                            if element.children else element.data_start)
         else:
@@ -210,7 +250,7 @@ def _parse_children(data: bytes, start: int, limit: int,
 
 def parse_tree(data: bytes) -> list[Element]:
     """Parse a complete EBML document into a list of root elements."""
-    return _parse_children(data, 0, len(data), TOPLEVEL_IDS, ())
+    return _parse_children(data, 0, len(data), frozenset(), ())
 
 
 def count_elements(roots: list[Element]) -> int:
