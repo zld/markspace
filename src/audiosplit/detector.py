@@ -16,12 +16,15 @@ _MIN_DB = -120.0
 _SEED_WINDOW_MS = 2000.0
 _SEED_MIN_FRAMES = 8
 
+
 def amplitude_to_db(value: float) -> float:
     """Convert a linear amplitude to dBFS, clamped at -120 dB."""
     return max(_MIN_DB, 20.0 * math.log10(max(float(value), _EPSILON)))
 
+
 def db_to_amplitude(db: float) -> float:
     return 10.0 ** (db / 20.0)
+
 
 @dataclass(frozen=True)
 class DetectorConfig:
@@ -73,6 +76,7 @@ class DetectorConfig:
     def min_silence_samples(self, sample_rate: int) -> int:
         return int(round(self.min_silence_ms * sample_rate / 1000.0))
 
+
 @dataclass(frozen=True)
 class DetectedEvent:
     """Raw event with left-closed, right-open sample coordinates."""
@@ -84,12 +88,14 @@ class DetectedEvent:
     noise_floor_db: float
     frame_count: int = 1
 
+
 @dataclass
 class DetectionResult:
     events: list[DetectedEvent] = field(default_factory=list)
     frame_count: int = 0
     total_samples: int = 0
     noise_floor_db: float = _MIN_DB
+
 
 @dataclass
 class _VoiceState:
@@ -109,6 +115,7 @@ class _VoiceState:
         self.peak = 0.0
         self.energy_sum = 0.0
         self.frames = 0
+
 
 class FrameEnergyDetector:
     """Incremental detector; memory is bounded by its configured window."""
@@ -140,6 +147,7 @@ class FrameEnergyDetector:
     @property
     def noise_floor_db(self) -> float:
         return amplitude_to_db(self._noise_floor)
+
     def push(self, block: np.ndarray) -> None:
         """Feed int16 or float samples shaped ``(frames, channels)``."""
         block = np.asarray(block)
