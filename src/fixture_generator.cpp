@@ -209,6 +209,12 @@ bool generateFixture(const FixtureOptions& o, std::string& error_message) {
             static_cast<std::int64_t>(o.audio_duration_seconds * o.sample_rate);
         std::int64_t pts =
             static_cast<std::int64_t>(o.audio_start_seconds * o.sample_rate);
+        // Deterministic one-sample PTS jitter (zero-mean cycle) so the audio
+        // master clock has measurable, repeatable drift against its nominal
+        // frame step. nb_samples stays fixed; only presentation times move.
+        static constexpr int kAudioPtsJitter[6] = {0, 1, 0, 0, -1, 0};
+        int audio_index = 0;
+        std::int64_t jitter_ticks = 0;
         while (total_samples < target) {
             const int n = static_cast<int>(
                 std::min<std::int64_t>(frame_size, target - total_samples));
@@ -224,13 +230,15 @@ bool generateFixture(const FixtureOptions& o, std::string& error_message) {
                     dst[s] = (static_cast<double>(r & 0xFFFF) / 32768.0 - 1.0) * 0.05;
                 }
             }
-            frame->pts = pts;
+            jitter_ticks += kAudioPtsJitter[audio_index % 6];
+            frame->pts = pts + jitter_ticks;
             if (!encodeFrame(actx, frame, pkt, fmt, ast)) {
                 error_message = "audio encode failed";
                 break;
             }
             pts += n;
             total_samples += n;
+            ++audio_index;
             av_frame_unref(frame);
         }
         if (error_message.empty() && !encodeFrame(actx, nullptr, pkt, fmt, ast)) {
