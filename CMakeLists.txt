@@ -40,3 +40,10 @@ target_compile_options(subtitle_core PRIVATE -Wall -Wextra -Wpedantic)
 add_executable(subtitle_probe src/main.cpp)
 target_link_libraries(subtitle_probe PRIVATE subtitle_core)
 target_compile_options(subtitle_probe PRIVATE -Wall -Wextra -Wpedantic)
+
+add_executable(subtitle_probe_tests tests/integration.cpp)
+target_link_libraries(subtitle_probe_tests PRIVATE subtitle_core)
+target_compile_options(subtitle_probe_tests PRIVATE -Wall -Wextra -Wpedantic)
+
+enable_testing()
+add_test(NAME integration COMMAND subtitle_probe_tests)
