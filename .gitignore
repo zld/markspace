@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 *.pyo
 *.sqlite3
+*.jsonl
 .sample-data/
 .pytest_cache/
 *.egg-info/
