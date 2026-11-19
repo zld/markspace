@@ -94,6 +94,9 @@ class WavValidationTests(PipelineFixture):
                 WavReader(path)
             self.assertIn(str(path), str(ctx.exception))
             self.assertIn(needle, str(ctx.exception).lower())
+        with self.assertRaises(WavError) as empty_ctx:
+            WavReader(empty)
+        self.assertIn("0 bytes", str(empty_ctx.exception))
 
     def test_rejects_truncated_data_block(self) -> None:
         good = self.make_file("good.wav", np.zeros(RATE, dtype=np.float32))
@@ -203,6 +206,10 @@ class ExportTests(PipelineFixture):
         paths = [row["input_path"] for row in rows]
         self.assertEqual(paths, sorted(paths))
         self.assertTrue(all("file_hash" in row and "run_id" in row for row in rows))
+        self.assertTrue(all(row["params"]["frame_ms"] == 10.0 for row in rows))
+        self.assertTrue(all(row["segment_count"] == sum(
+            1 for other in rows if other["input_path"] == row["input_path"]
+        ) for row in rows))
         code, out, _err = run_cli(
             "export", "--db", str(self.db), "--out", str(self.export)
         )

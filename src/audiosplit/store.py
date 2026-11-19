@@ -357,10 +357,10 @@ class Store:
         """Return segment rows ordered stably by path then ordinal."""
         try:
             rows = self.connection.execute(
-                "SELECT j.run_id, j.id AS job_id, j.input_path, j.file_hash, j.sample_rate, "
-                "j.channels, j.total_samples, j.segment_count, s.ordinal, "
-                "s.start_sample, s.end_sample, s.peak, s.rms, s.noise_floor_db, "
-                "s.duration_ms FROM segments s "
+                "SELECT j.run_id, j.id AS job_id, j.input_path, j.file_hash, "
+                "j.sample_rate, j.channels, j.total_samples, j.segment_count, "
+                "r.params_json, s.ordinal, s.start_sample, s.end_sample, s.peak, "
+                "s.rms, s.noise_floor_db, s.duration_ms FROM segments s "
                 "JOIN jobs j ON j.id = s.job_id "
                 "JOIN runs r ON r.id = j.run_id "
                 "WHERE j.run_id = ? AND j.status = 'ok' "
@@ -369,7 +369,12 @@ class Store:
             ).fetchall()
         except sqlite3.Error as exc:
             raise StoreError(f"cannot export run {run_id}: {exc}") from exc
-        return [dict(row) for row in rows]
+        exported = []
+        for row in rows:
+            record = dict(row)
+            record["params"] = json.loads(record.pop("params_json"))
+            exported.append(record)
+        return exported
 
 
 def _rollback(conn: sqlite3.Connection) -> None:

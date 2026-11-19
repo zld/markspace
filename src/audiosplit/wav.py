@@ -162,6 +162,8 @@ def inspect(path: os.PathLike[str] | str) -> WavInfo:
         raise WavError(display, f"cannot stat file: {exc.strerror or exc}") from exc
     if not os.path.isfile(path):
         raise WavError(display, "not a regular file")
+    if st.st_size == 0:
+        raise WavError(display, "empty file (0 bytes)")
     try:
         with open(path, "rb") as handle:
             return _parse_header(handle, display, st.st_size)
@@ -212,10 +214,3 @@ class WavReader:
             raise WavError(
                 self.path, f"cannot read file: {exc.strerror or exc}"
             ) from exc
-
-    def __enter__(self) -> "WavReader":
-        return self
-
-    def __exit__(self, *exc: object) -> None:
-        return None
-
