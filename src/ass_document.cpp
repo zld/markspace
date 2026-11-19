@@ -101,12 +101,64 @@ bool Document::has_error() const {
 
 namespace {
 
-// Styles and events are parsed in the next steps; this module currently only
-// normalises Script Info headers and validates the file structure.
 struct Section {
     enum Kind { None, ScriptInfo, Styles, Events, Other } kind = None;
     std::string name;
 };
+
+std::vector<std::string> normalize_format(const std::string& line, const char* prefix) {
+    std::string rest = trim_ascii(line.substr(std::strlen(prefix)));
+    std::vector<std::string> out;
+    for (const std::string& field : split_commas(rest, 0))
+        out.push_back(lower_ascii(trim_ascii(field)));
+    return out;
+}
+
+void add_diag(Document& doc, Severity severity, int line, const char* code, std::string message, int event_id = -1) {
+    doc.diagnostics.push_back(Diagnostic{severity, line, code, std::move(message), event_id});
+}
+
+RawStyle parse_style_line(Document& doc, const std::string& line, int line_no,
+                          const std::vector<std::string>& format) {
+    RawStyle style;
+    style.line = line_no;
+    std::string rest = trim_ascii(line.substr(std::string("Style:").size()));
+    std::vector<std::string> fields = split_commas(rest, 0);
+    if (format.empty()) {
+        add_diag(doc, Severity::Error, line_no, "style-format-missing",
+                 "Style: line appears before a Format: line in [V4+ Styles]");
+        return style;
+    }
+    if (fields.size() != format.size()) {
+        add_diag(doc, Severity::Error, line_no, "style-field-count",
+                 "Style: has " + std::to_string(fields.size()) + " fields but Format declares " +
+                     std::to_string(format.size()));
+    }
+    // A blank column normally means "inherit from the parent". To keep an
+    // explicit empty distinct from "unspecified", the fixture format writes an
+    // explicit empty as a quoted empty string (""), which clears the field.
+    for (size_t i = 0; i < format.size() && i < fields.size(); ++i) {
+        std::string raw = trim_ascii(fields[i]);
+        FieldValue value;
+        if (raw == "\"\"") {
+            value.present = true;
+            value.explicit_empty = true;
+        } else if (!raw.empty()) {
+            value.present = true;
+            value.value = raw;
+        }
+        style.fields[format[i]] = value;
+    }
+    if (style.fields.count("name") && style.fields["name"].present)
+        style.name = style.fields["name"].value;
+    if (style.fields.count("parent") && style.fields["parent"].present)
+        style.parent = style.fields["parent"].value;
+    if (style.name.empty()) {
+        add_diag(doc, Severity::Error, line_no, "style-name-missing", "Style: line has no Name field");
+        style.name = "<unnamed@" + std::to_string(line_no) + ">";
+    }
+    return style;
+}
 
 }  // namespace
 
@@ -114,16 +166,22 @@ Document parse_ass_document(const std::string& content, const std::string& sourc
     Document doc;
     doc.source_name = source_name;
     Section section;
+    std::vector<std::string> style_format;
+    std::map<std::string, int> style_name_lines;
+
     size_t pos = 0;
     int line_no = 0;
     while (pos <= content.size()) {
         size_t nl = content.find('\n', pos);
-        if (nl == std::string::npos && pos >= content.size()) break;
         std::string raw = content.substr(pos, nl == std::string::npos ? std::string::npos : nl - pos);
         if (!raw.empty() && raw.back() == '\r') raw.pop_back();
         ++line_no;
+        if (nl == std::string::npos && pos >= content.size()) break;
         pos = nl == std::string::npos ? content.size() + 1 : nl + 1;
+
         std::string line = trim_ascii(raw);
+        if (line.empty() || line[0] == ';') continue;
+
         if (line.size() >= 2 && line.front() == '[' && line.back() == ']') {
             std::string name = lower_ascii(trim_ascii(line.substr(1, line.size() - 2)));
             if (name == "script info") section.kind = Section::ScriptInfo;
@@ -133,28 +191,52 @@ Document parse_ass_document(const std::string& content, const std::string& sourc
             section.name = name;
             continue;
         }
-        if (section.kind != Section::ScriptInfo) continue;
-        size_t colon = line.find(':');
-        if (colon == std::string::npos) continue;
-        std::string key = lower_ascii(trim_ascii(line.substr(0, colon)));
-        std::string value = trim_ascii(line.substr(colon + 1));
-        if (key == "playresx") {
-            try { doc.info.play_res_x = std::stoi(value); } catch (...) {
-                doc.diagnostics.push_back(Diagnostic{Severity::Warning, line_no, "script-info-invalid",
-                                                     "PlayResX is not an integer", -1});
+
+        std::string lower = lower_ascii(line);
+        if (section.kind == Section::ScriptInfo) {
+            size_t colon = line.find(':');
+            if (colon == std::string::npos) continue;
+            std::string key = lower_ascii(trim_ascii(line.substr(0, colon)));
+            std::string value = trim_ascii(line.substr(colon + 1));
+            if (key == "playresx") {
+                try { doc.info.play_res_x = std::stoi(value); } catch (...) {
+                    add_diag(doc, Severity::Warning, line_no, "script-info-invalid", "PlayResX is not an integer");
+                }
+            } else if (key == "playresy") {
+                try { doc.info.play_res_y = std::stoi(value); } catch (...) {
+                    add_diag(doc, Severity::Warning, line_no, "script-info-invalid", "PlayResY is not an integer");
+                }
+            } else if (key == "wrapstyle") {
+                try { doc.info.wrap_style = std::stoi(value); } catch (...) {}
+            } else if (key == "scaledborderandshadow") {
+                std::string lv = lower_ascii(value);
+                doc.info.scaled_border_and_shadow = (lv == "yes" || lv == "1" || lv == "true");
+            } else if (key == "ycbcr matrix") {
+                doc.info.ycbcr_matrix = value;
             }
-        } else if (key == "playresy") {
-            try { doc.info.play_res_y = std::stoi(value); } catch (...) {
-                doc.diagnostics.push_back(Diagnostic{Severity::Warning, line_no, "script-info-invalid",
-                                                     "PlayResY is not an integer", -1});
+            continue;
+        }
+
+        if (section.kind == Section::Styles) {
+            if (lower.rfind("format:", 0) == 0) {
+                style_format = normalize_format(line, "Format:");
+                continue;
             }
-        } else if (key == "wrapstyle") {
-            try { doc.info.wrap_style = std::stoi(value); } catch (...) {}
-        } else if (key == "scaledborderandshadow") {
-            std::string lv = lower_ascii(value);
-            doc.info.scaled_border_and_shadow = (lv == "yes" || lv == "1" || lv == "true");
-        } else if (key == "ycbcr matrix") {
-            doc.info.ycbcr_matrix = value;
+            if (lower.rfind("style:", 0) == 0) {
+                RawStyle style = parse_style_line(doc, line, line_no, style_format);
+                ++doc.style_line_count;
+                auto existing = style_name_lines.find(style.name);
+                if (existing != style_name_lines.end()) {
+                    add_diag(doc, Severity::Error, line_no, "style-duplicate-name",
+                             "duplicate style name '" + sanitize_for_output(style.name, 60) +
+                                 "' (first defined on line " + std::to_string(existing->second) + ")");
+                    continue;
+                }
+                style_name_lines[style.name] = line_no;
+                doc.styles.push_back(std::move(style));
+                continue;
+            }
+            continue;
         }
     }
     return doc;
