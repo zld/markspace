@@ -43,6 +43,11 @@ class NormalizedTrack:
     samples: list[NormalizedSample] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
+    @property
+    def kind_name(self) -> str:
+        return {1: "video", 2: "audio", 17: "subtitle"}.get(
+            self.kind, f"type{self.kind}")
+
     def dts_array(self) -> np.ndarray:
         return np.array([s.dts_ns for s in self.samples], dtype=np.int64)
 
@@ -90,30 +95,48 @@ def _raw_dts_ns(block: RawBlock, scale: int) -> int | None:
     return (block.cluster_timecode + block.relative_timecode) * scale
 
 
-def _fill_missing(blocks: list[RawBlock], scale: int) -> list[int | None]:
-    dts: list[int | None] = []
-    last_known: int | None = None
-    gap = 0
-    for block in blocks:
-        value = _raw_dts_ns(block, scale)
-        if value is None:
-            gap += 1
-            dts.append(None)
-            continue
-        if last_known is not None and gap:
-            step = (value - last_known) // (gap + 1)
+def _fill_missing(blocks: list[RawBlock], scale: int
+                  ) -> tuple[list[int], list[str]]:
+    """Return per-block raw DTS (ns), imputing blocks lacking a timecode.
+
+    Blocks between two known anchors are spaced evenly; leading blocks keep
+    the first anchor's value and trailing blocks extend the last one. Every
+    imputation is reported so no sample is moved silently.
+    """
+    raw = [_raw_dts_ns(block, scale) for block in blocks]
+    known = [idx for idx, value in enumerate(raw) if value is not None]
+    warnings: list[str] = []
+    if not known:
+        raise TimelineError(
+            "track has no timestamped sample to anchor untimestamped blocks")
+
+    first, last = known[0], known[-1]
+    for idx in range(first):
+        raw[idx] = raw[first]
+        warnings.append(
+            f"untimestamped leading sample at {_location(blocks[idx])} "
+            "aligned to first known DTS")
+
+    for left, right in zip(known, known[1:]):
+        gap = right - left
+        if gap > 1:
+            step = (raw[right] - raw[left]) // gap
             if step <= 0:
                 raise TimelineError(
                     "untimestamped samples cannot be placed without "
-                    f"overlapping; near {_location(block)}")
-            for idx in range(1, gap + 1):
-                dts[-idx] = value - step * (gap - idx + 1)
-        last_known, gap = value, 0
-        dts.append(value)
-    if gap:         # Trailing samples have no following anchor: flat fill.
-        for idx in range(1, gap + 1):
-            dts[-idx] = (last_known or 0)
-    return dts
+                    f"overlapping; near {_location(blocks[right])}")
+            for idx in range(left + 1, right):
+                raw[idx] = raw[left] + step * (idx - left)
+                warnings.append(
+                    f"untimestamped sample at {_location(blocks[idx])} "
+                    "imputed between known anchors")
+
+    for idx in range(last + 1, len(raw)):
+        raw[idx] = raw[last]
+        warnings.append(
+            f"untimestamped trailing sample at {_location(blocks[idx])} "
+            "aligned to last known DTS")
+    return [int(value) for value in raw], warnings
 
 
 def normalize(mkv: MatroskaFile,
@@ -133,12 +156,13 @@ def normalize(mkv: MatroskaFile,
         if not blocks:
             normalized.warnings.append("empty track: no samples present")
             continue
-        raw_dts = _fill_missing(blocks, mkv.timecode_scale)
+        raw_dts, imputation_warnings = _fill_missing(
+            blocks, mkv.timecode_scale)
+        normalized.warnings.extend(imputation_warnings)
 
-        base_dts = next(v for v in raw_dts if v is not None)
+        base_dts = raw_dts[0]
         previous: int | None = None
         for block, dts_raw in zip(blocks, raw_dts):
-            assert dts_raw is not None
             dts = dts_raw - base_dts
             if previous is not None and dts <= previous:
                 normalized.warnings.append(
