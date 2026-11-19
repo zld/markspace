@@ -64,6 +64,10 @@ class StoredJob:
     input_path: str
     file_hash: str
     segment_count: int
+    sample_rate: int
+    channels: int
+    total_samples: int
+    noise_floor_db: float
 
 
 def _dumps(value: dict[str, Any]) -> str:
@@ -115,7 +119,8 @@ class Store:
     def find_reusable(self, input_path: str, file_hash: str) -> StoredJob | None:
         try:
             row = self.connection.execute(
-                "SELECT id, input_path, file_hash, segment_count FROM jobs "
+                "SELECT id, input_path, file_hash, segment_count, sample_rate, "
+                "channels, total_samples, noise_floor_db FROM jobs "
                 "WHERE input_path = ? AND file_hash = ? AND status = 'ok' "
                 "ORDER BY id DESC LIMIT 1",
                 (input_path, file_hash),
@@ -124,7 +129,37 @@ class Store:
             raise StoreError(f"cannot query existing jobs: {exc}") from exc
         if row is None:
             return None
-        return StoredJob(row["id"], row["input_path"], row["file_hash"], row["segment_count"])
+        return StoredJob(
+            row["id"],
+            row["input_path"],
+            row["file_hash"],
+            row["segment_count"],
+            int(row["sample_rate"]),
+            int(row["channels"]),
+            int(row["total_samples"]),
+            float(row["noise_floor_db"]),
+        )
+
+    def load_segments(self, job_id: int) -> list[Segment]:
+        try:
+            rows = self.connection.execute(
+                "SELECT start_sample, end_sample, peak, rms, noise_floor_db, "
+                "duration_ms FROM segments WHERE job_id = ? ORDER BY ordinal",
+                (job_id,),
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise StoreError(f"cannot read segments for job {job_id}: {exc}") from exc
+        return [
+            Segment(
+                start_sample=row["start_sample"],
+                end_sample=row["end_sample"],
+                peak=row["peak"],
+                rms=row["rms"],
+                noise_floor_db=row["noise_floor_db"],
+                duration_ms=row["duration_ms"],
+            )
+            for row in rows
+        ]
 
     def record_success(
         self,
@@ -133,13 +168,10 @@ class Store:
         file_hash: str,
         meta: JobMeta,
         segments: Iterable[Segment],
-        *,
-        force: bool,
     ) -> StoredJob:
         rows = list(segments)
         try:
             self.connection.execute("BEGIN IMMEDIATE")
-            _delete_existing(self.connection, run_id, input_path, file_hash, force)
             cursor = self.connection.execute(
                 "INSERT INTO jobs (run_id, input_path, file_hash, status, "
                 "sample_rate, channels, total_samples, noise_floor_db, "
@@ -181,7 +213,16 @@ class Store:
         except BaseException:
             _rollback(self.connection)
             raise
-        return StoredJob(job_id, input_path, file_hash, len(rows))
+        return StoredJob(
+            job_id,
+            input_path,
+            file_hash,
+            len(rows),
+            meta.sample_rate,
+            meta.channels,
+            meta.total_samples,
+            meta.noise_floor_db,
+        )
 
     def record_failure(
         self, run_id: int, input_path: str, file_hash: str, error: str
@@ -254,22 +295,6 @@ class Store:
         except sqlite3.Error as exc:
             raise StoreError(f"cannot export run {run_id}: {exc}") from exc
         return [dict(row) for row in rows]
-
-
-def _delete_existing(
-    conn: sqlite3.Connection,
-    run_id: int,
-    input_path: str,
-    file_hash: str,
-    force: bool,
-) -> None:
-    """Drop stale rows for the same identity when recomputing."""
-    if not force:
-        return
-    conn.execute(
-        "DELETE FROM jobs WHERE input_path = ? AND file_hash = ? AND run_id <> ?",
-        (input_path, file_hash, run_id),
-    )
 
 
 def _rollback(conn: sqlite3.Connection) -> None:
