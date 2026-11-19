@@ -136,3 +136,237 @@ def validate_paths(input_dir: str, output_dir: str) -> None:
         raise ConfigError("output directory must not be inside the input directory")
     if common == dst:
         raise ConfigError("input directory must not be inside the output directory")
+
+
+# ---------------------------------------------------------------------------
+# Per-file processing
+# ---------------------------------------------------------------------------
+
+def _peak_ceiling(max_peak_db: Optional[float]) -> float:
+    """Linear peak ceiling from a dBFS limit.
+
+    Clamped to just below 1.0 so rounding at full scale can never push a
+    predicted peak above the representable grid.
+    """
+    if max_peak_db is None:
+        return PEAK_CEILING
+    if not math.isfinite(max_peak_db) or max_peak_db > 0.0:
+        raise ConfigError(f"max_peak_db must be <= 0, got {max_peak_db!r}")
+    return min(PEAK_CEILING, 10.0 ** (max_peak_db / 20.0))
+
+
+def _measurement_dict(meas) -> dict:
+    return {
+        "rms": meas.rms,
+        "rms_per_channel": list(meas.rms_per_channel),
+        "lufs": meas.lufs,
+        "peak": meas.peak,
+        "clipped_samples": meas.clipped_samples,
+        "frames": meas.frames,
+    }
+
+
+def _empty_record(config: FileConfig) -> dict:
+    return {
+        "relative_path": config.relative_path,
+        "status": "error",
+        "input": {
+            "sample_rate": None,
+            "channels": None,
+            "frames": None,
+            "subtype": None,
+        },
+        "output": {
+            "path": config.relative_path,
+            "sample_rate": config.output_rate,
+            "channels": None,
+            "frames": None,
+            "subtype": config.output_subtype,
+        },
+        "padding_frames": None,
+        "before": {},
+        "after": {},
+        "gain": {},
+        "resample": {},
+        "error": None,
+        "duration_seconds": None,
+    }
+
+
+def process_file(config: FileConfig) -> dict:
+    """Process one file and return its report record (never raises).
+
+    Two streaming passes:
+
+    1. resample the input through the polyphase kernel and measure the
+       resampled, pre-gain programme (``before``), then plan the gain;
+    2. repeat resampling, apply the gain, quantise, measure the decoded
+       output samples (``after``) and write the WAV.
+
+    Both passes are block based, so memory is one block plus the
+    resampler history regardless of file length.
+    """
+    started = time.perf_counter()
+    record = _empty_record(config)
+    ceiling = _peak_ceiling(config.max_peak_db)
+    try:
+        info = probe_wav(config.input_path)
+        record["input"].update(
+            {
+                "sample_rate": info.sample_rate,
+                "channels": info.channels,
+                "frames": info.frames,
+                "subtype": info.subtype,
+            }
+        )
+        record["output"]["channels"] = info.channels
+
+        # ---- pass 1: resample and measure the pre-gain programme ------
+        resampler = PolyphaseResampler(info.sample_rate, config.output_rate, info.channels)
+        before_meter = LevelMeter(config.output_rate, info.channels)
+        source_rail_samples = 0
+
+        def first_pass(block: np.ndarray, reader) -> None:
+            nonlocal source_rail_samples
+            source_rail_samples += count_rail_samples(block, reader.info.subtype)
+            before_meter.feed(resampler.process_chunk(block))
+
+        in_frames = _stream(
+            config,
+            first_pass,
+            final=lambda: before_meter.feed(resampler.finish()),
+        )
+        before = before_meter.snapshot()
+        expected = resampler.output_frames_for(in_frames)
+        if info.frames and in_frames != info.frames:
+            raise PipelineError(
+                "internal_error", f"read {in_frames} frames, header declares {info.frames}"
+            )
+        if before.frames != expected:
+            raise PipelineError(
+                "internal_error",
+                f"measured {before.frames} frames, expected {expected}",
+            )
+        decision = decide_gain(
+            before.lufs,
+            before.peak,
+            config.target_lufs,
+            max_gain_db=config.max_gain_db,
+            peak_ceiling=ceiling,
+        )
+
+        # ---- pass 2: gain, quantise, measure decoded output, write ----
+        resampler = PolyphaseResampler(info.sample_rate, config.output_rate, info.channels)
+        after_meter = LevelMeter(config.output_rate, info.channels)
+        writer = WavWriter(
+            config.output_path, config.output_rate, info.channels, config.output_subtype
+        )
+        try:
+
+            def handle(block: np.ndarray, _reader) -> None:
+                out = resampler.process_chunk(block)
+                if out.shape[0]:
+                    _write_gained(writer, out, decision.gain_linear, after_meter)
+
+            _stream(config, handle, final=lambda: _write_gained(
+                writer, resampler.finish(), decision.gain_linear, after_meter
+            ))
+            if writer.frames_written != expected:
+                raise PipelineError(
+                    "internal_error",
+                    f"wrote {writer.frames_written} frames, expected {expected}",
+                )
+            writer.commit()
+        except BaseException:
+            writer.abort()
+            raise
+        after = after_meter.snapshot()
+
+        left_pad, right_pad = resampler.padding_breakdown
+        record.update(
+            {
+                "status": "ok",
+                "padding_frames": left_pad + right_pad,
+                "resample": {
+                    "input_rate": info.sample_rate,
+                    "output_rate": config.output_rate,
+                    "numerator": resampler.ratio.numerator,
+                    "denominator": resampler.ratio.denominator,
+                    "input_frames": in_frames,
+                    "output_frames": writer.frames_written,
+                    "padding_left_frames": left_pad,
+                    "padding_right_frames": right_pad,
+                    "filter": resampler.spec.to_dict(),
+                },
+                "before": _measurement_dict(before),
+                "after": _measurement_dict(after),
+                "gain": _gain_dict(decision, config.max_gain_db),
+            }
+        )
+        record["output"]["frames"] = writer.frames_written
+        record["output"]["out_of_range_samples"] = writer.out_of_range_samples
+        # Clipping is reported as four distinct quantities, never merged:
+        #  * input.rail_clipped_samples -- source samples pinned to a PCM
+        #    rail (clipping already present in the input material);
+        #  * before.clipped_samples / resample.overshoot_samples -- the
+        #    resampled programme above full scale before any gain
+        #    (interpolation overshoot);
+        #  * output.out_of_range_samples -- post-gain samples outside
+        #    [-1, 1] immediately before quantisation;
+        #  * after.clipped_samples -- samples pinned to an output PCM rail,
+        #    i.e. magnitude actually lost to the fixed-point grid.
+        record["input"]["rail_clipped_samples"] = source_rail_samples
+        record["resample"]["overshoot_samples"] = before.clipped_samples
+        record["after"]["clipped_samples"] = writer.rail_samples
+        return record
+    except PipelineError as exc:
+        record["error"] = exc.to_dict()
+        return record
+    except Exception as exc:  # isolate unexpected per-file failures too
+        record["error"] = {
+            "code": "internal_error",
+            "message": f"{type(exc).__name__}: {exc}",
+        }
+        return record
+    finally:
+        record["duration_seconds"] = time.perf_counter() - started
+
+
+def _gain_dict(decision, max_gain_db: Optional[float]) -> dict:
+    return {
+        "applied_gain_db": decision.gain_db,
+        "linear_gain": decision.gain_linear,
+        "requested_gain_db": decision.requested_gain_db,
+        "max_gain_db": max_gain_db,
+        "max_gain_limited": decision.max_gain_limited,
+        "peak_limited": decision.peak_limited,
+        "predicted_peak": decision.predicted_peak,
+        "reason": decision.reason,
+    }
+
+
+def _stream(config: FileConfig, handle, *, final=None) -> int:
+    """Read in blocks, call ``handle(block, reader)``, then ``final()``."""
+    in_frames = 0
+    with WavReader(config.input_path, block_frames=config.block_frames) as reader:
+        for block in reader.blocks():
+            in_frames += block.shape[0]
+            handle(block, reader)
+    if final is not None:
+        final()
+    return in_frames
+
+
+def _write_gained(writer: WavWriter, block: np.ndarray, gain: float, meter: LevelMeter) -> None:
+    """Apply gain; measure the decoded output samples; write.
+
+    The meter sees the exact decoded samples (``ints / scale``), so the
+    reported "after" figures describe the audio in the output file, while
+    the writer counts pre-quantisation out-of-range samples separately.
+    """
+    if block.shape[0] == 0:
+        return
+    scaled = block * gain
+    _ints, decoded, _out_of_range, _rail_samples = quantise_pcm(scaled, writer.subtype)
+    meter.feed(decoded)
+    writer.write(scaled)
