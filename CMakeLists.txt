@@ -9,6 +9,10 @@ add_executable(lutcheck
   src/main.cpp
   src/cube_parser.cpp
   src/color_space.cpp
+  src/lut.cpp
+  src/render_scalar.cpp
+  src/render_tiled.cpp
+  src/histogram.cpp
 )
 
 target_include_directories(lutcheck PRIVATE include)

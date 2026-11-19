@@ -117,11 +117,71 @@ CMakeFiles/lutcheck.dir/src/color_space.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/lutcheck.dir/src/color_space.cpp.s"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /Users/zld/WorkSpace/pair-wise-workspace/14087/src/color_space.cpp -o CMakeFiles/lutcheck.dir/src/color_space.cpp.s
 
+CMakeFiles/lutcheck.dir/src/lut.cpp.o: CMakeFiles/lutcheck.dir/flags.make
+CMakeFiles/lutcheck.dir/src/lut.cpp.o: /Users/zld/WorkSpace/pair-wise-workspace/14087/src/lut.cpp
+CMakeFiles/lutcheck.dir/src/lut.cpp.o: CMakeFiles/lutcheck.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/zld/WorkSpace/pair-wise-workspace/14087/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Building CXX object CMakeFiles/lutcheck.dir/src/lut.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/lutcheck.dir/src/lut.cpp.o -MF CMakeFiles/lutcheck.dir/src/lut.cpp.o.d -o CMakeFiles/lutcheck.dir/src/lut.cpp.o -c /Users/zld/WorkSpace/pair-wise-workspace/14087/src/lut.cpp
+
+CMakeFiles/lutcheck.dir/src/lut.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/lutcheck.dir/src/lut.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /Users/zld/WorkSpace/pair-wise-workspace/14087/src/lut.cpp > CMakeFiles/lutcheck.dir/src/lut.cpp.i
+
+CMakeFiles/lutcheck.dir/src/lut.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/lutcheck.dir/src/lut.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /Users/zld/WorkSpace/pair-wise-workspace/14087/src/lut.cpp -o CMakeFiles/lutcheck.dir/src/lut.cpp.s
+
+CMakeFiles/lutcheck.dir/src/render_scalar.cpp.o: CMakeFiles/lutcheck.dir/flags.make
+CMakeFiles/lutcheck.dir/src/render_scalar.cpp.o: /Users/zld/WorkSpace/pair-wise-workspace/14087/src/render_scalar.cpp
+CMakeFiles/lutcheck.dir/src/render_scalar.cpp.o: CMakeFiles/lutcheck.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/zld/WorkSpace/pair-wise-workspace/14087/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Building CXX object CMakeFiles/lutcheck.dir/src/render_scalar.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/lutcheck.dir/src/render_scalar.cpp.o -MF CMakeFiles/lutcheck.dir/src/render_scalar.cpp.o.d -o CMakeFiles/lutcheck.dir/src/render_scalar.cpp.o -c /Users/zld/WorkSpace/pair-wise-workspace/14087/src/render_scalar.cpp
+
+CMakeFiles/lutcheck.dir/src/render_scalar.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/lutcheck.dir/src/render_scalar.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /Users/zld/WorkSpace/pair-wise-workspace/14087/src/render_scalar.cpp > CMakeFiles/lutcheck.dir/src/render_scalar.cpp.i
+
+CMakeFiles/lutcheck.dir/src/render_scalar.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/lutcheck.dir/src/render_scalar.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /Users/zld/WorkSpace/pair-wise-workspace/14087/src/render_scalar.cpp -o CMakeFiles/lutcheck.dir/src/render_scalar.cpp.s
+
+CMakeFiles/lutcheck.dir/src/render_tiled.cpp.o: CMakeFiles/lutcheck.dir/flags.make
+CMakeFiles/lutcheck.dir/src/render_tiled.cpp.o: /Users/zld/WorkSpace/pair-wise-workspace/14087/src/render_tiled.cpp
+CMakeFiles/lutcheck.dir/src/render_tiled.cpp.o: CMakeFiles/lutcheck.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/zld/WorkSpace/pair-wise-workspace/14087/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_6) "Building CXX object CMakeFiles/lutcheck.dir/src/render_tiled.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/lutcheck.dir/src/render_tiled.cpp.o -MF CMakeFiles/lutcheck.dir/src/render_tiled.cpp.o.d -o CMakeFiles/lutcheck.dir/src/render_tiled.cpp.o -c /Users/zld/WorkSpace/pair-wise-workspace/14087/src/render_tiled.cpp
+
+CMakeFiles/lutcheck.dir/src/render_tiled.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/lutcheck.dir/src/render_tiled.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /Users/zld/WorkSpace/pair-wise-workspace/14087/src/render_tiled.cpp > CMakeFiles/lutcheck.dir/src/render_tiled.cpp.i
+
+CMakeFiles/lutcheck.dir/src/render_tiled.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/lutcheck.dir/src/render_tiled.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /Users/zld/WorkSpace/pair-wise-workspace/14087/src/render_tiled.cpp -o CMakeFiles/lutcheck.dir/src/render_tiled.cpp.s
+
+CMakeFiles/lutcheck.dir/src/histogram.cpp.o: CMakeFiles/lutcheck.dir/flags.make
+CMakeFiles/lutcheck.dir/src/histogram.cpp.o: /Users/zld/WorkSpace/pair-wise-workspace/14087/src/histogram.cpp
+CMakeFiles/lutcheck.dir/src/histogram.cpp.o: CMakeFiles/lutcheck.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/zld/WorkSpace/pair-wise-workspace/14087/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_7) "Building CXX object CMakeFiles/lutcheck.dir/src/histogram.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/lutcheck.dir/src/histogram.cpp.o -MF CMakeFiles/lutcheck.dir/src/histogram.cpp.o.d -o CMakeFiles/lutcheck.dir/src/histogram.cpp.o -c /Users/zld/WorkSpace/pair-wise-workspace/14087/src/histogram.cpp
+
+CMakeFiles/lutcheck.dir/src/histogram.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/lutcheck.dir/src/histogram.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /Users/zld/WorkSpace/pair-wise-workspace/14087/src/histogram.cpp > CMakeFiles/lutcheck.dir/src/histogram.cpp.i
+
+CMakeFiles/lutcheck.dir/src/histogram.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/lutcheck.dir/src/histogram.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /Users/zld/WorkSpace/pair-wise-workspace/14087/src/histogram.cpp -o CMakeFiles/lutcheck.dir/src/histogram.cpp.s
+
 # Object files for target lutcheck
 lutcheck_OBJECTS = \
 "CMakeFiles/lutcheck.dir/src/main.cpp.o" \
 "CMakeFiles/lutcheck.dir/src/cube_parser.cpp.o" \
-"CMakeFiles/lutcheck.dir/src/color_space.cpp.o"
+"CMakeFiles/lutcheck.dir/src/color_space.cpp.o" \
+"CMakeFiles/lutcheck.dir/src/lut.cpp.o" \
+"CMakeFiles/lutcheck.dir/src/render_scalar.cpp.o" \
+"CMakeFiles/lutcheck.dir/src/render_tiled.cpp.o" \
+"CMakeFiles/lutcheck.dir/src/histogram.cpp.o"
 
 # External object files for target lutcheck
 lutcheck_EXTERNAL_OBJECTS =
@@ -129,9 +189,13 @@ lutcheck_EXTERNAL_OBJECTS =
 lutcheck: CMakeFiles/lutcheck.dir/src/main.cpp.o
 lutcheck: CMakeFiles/lutcheck.dir/src/cube_parser.cpp.o
 lutcheck: CMakeFiles/lutcheck.dir/src/color_space.cpp.o
+lutcheck: CMakeFiles/lutcheck.dir/src/lut.cpp.o
+lutcheck: CMakeFiles/lutcheck.dir/src/render_scalar.cpp.o
+lutcheck: CMakeFiles/lutcheck.dir/src/render_tiled.cpp.o
+lutcheck: CMakeFiles/lutcheck.dir/src/histogram.cpp.o
 lutcheck: CMakeFiles/lutcheck.dir/build.make
 lutcheck: CMakeFiles/lutcheck.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/Users/zld/WorkSpace/pair-wise-workspace/14087/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Linking CXX executable lutcheck"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/Users/zld/WorkSpace/pair-wise-workspace/14087/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_8) "Linking CXX executable lutcheck"
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/lutcheck.dir/link.txt --verbose=$(VERBOSE)
 
 # Rule to build all files generated by this target.

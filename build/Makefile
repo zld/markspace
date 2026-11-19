@@ -188,6 +188,54 @@ src/cube_parser.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/lutcheck.dir/build.make CMakeFiles/lutcheck.dir/src/cube_parser.cpp.s
 .PHONY : src/cube_parser.cpp.s
 
+src/histogram.o: src/histogram.cpp.o
+.PHONY : src/histogram.o
+
+# target to build an object file
+src/histogram.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/lutcheck.dir/build.make CMakeFiles/lutcheck.dir/src/histogram.cpp.o
+.PHONY : src/histogram.cpp.o
+
+src/histogram.i: src/histogram.cpp.i
+.PHONY : src/histogram.i
+
+# target to preprocess a source file
+src/histogram.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/lutcheck.dir/build.make CMakeFiles/lutcheck.dir/src/histogram.cpp.i
+.PHONY : src/histogram.cpp.i
+
+src/histogram.s: src/histogram.cpp.s
+.PHONY : src/histogram.s
+
+# target to generate assembly for a file
+src/histogram.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/lutcheck.dir/build.make CMakeFiles/lutcheck.dir/src/histogram.cpp.s
+.PHONY : src/histogram.cpp.s
+
+src/lut.o: src/lut.cpp.o
+.PHONY : src/lut.o
+
+# target to build an object file
+src/lut.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/lutcheck.dir/build.make CMakeFiles/lutcheck.dir/src/lut.cpp.o
+.PHONY : src/lut.cpp.o
+
+src/lut.i: src/lut.cpp.i
+.PHONY : src/lut.i
+
+# target to preprocess a source file
+src/lut.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/lutcheck.dir/build.make CMakeFiles/lutcheck.dir/src/lut.cpp.i
+.PHONY : src/lut.cpp.i
+
+src/lut.s: src/lut.cpp.s
+.PHONY : src/lut.s
+
+# target to generate assembly for a file
+src/lut.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/lutcheck.dir/build.make CMakeFiles/lutcheck.dir/src/lut.cpp.s
+.PHONY : src/lut.cpp.s
+
 src/main.o: src/main.cpp.o
 .PHONY : src/main.o
 
@@ -212,6 +260,54 @@ src/main.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/lutcheck.dir/build.make CMakeFiles/lutcheck.dir/src/main.cpp.s
 .PHONY : src/main.cpp.s
 
+src/render_scalar.o: src/render_scalar.cpp.o
+.PHONY : src/render_scalar.o
+
+# target to build an object file
+src/render_scalar.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/lutcheck.dir/build.make CMakeFiles/lutcheck.dir/src/render_scalar.cpp.o
+.PHONY : src/render_scalar.cpp.o
+
+src/render_scalar.i: src/render_scalar.cpp.i
+.PHONY : src/render_scalar.i
+
+# target to preprocess a source file
+src/render_scalar.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/lutcheck.dir/build.make CMakeFiles/lutcheck.dir/src/render_scalar.cpp.i
+.PHONY : src/render_scalar.cpp.i
+
+src/render_scalar.s: src/render_scalar.cpp.s
+.PHONY : src/render_scalar.s
+
+# target to generate assembly for a file
+src/render_scalar.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/lutcheck.dir/build.make CMakeFiles/lutcheck.dir/src/render_scalar.cpp.s
+.PHONY : src/render_scalar.cpp.s
+
+src/render_tiled.o: src/render_tiled.cpp.o
+.PHONY : src/render_tiled.o
+
+# target to build an object file
+src/render_tiled.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/lutcheck.dir/build.make CMakeFiles/lutcheck.dir/src/render_tiled.cpp.o
+.PHONY : src/render_tiled.cpp.o
+
+src/render_tiled.i: src/render_tiled.cpp.i
+.PHONY : src/render_tiled.i
+
+# target to preprocess a source file
+src/render_tiled.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/lutcheck.dir/build.make CMakeFiles/lutcheck.dir/src/render_tiled.cpp.i
+.PHONY : src/render_tiled.cpp.i
+
+src/render_tiled.s: src/render_tiled.cpp.s
+.PHONY : src/render_tiled.s
+
+# target to generate assembly for a file
+src/render_tiled.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/lutcheck.dir/build.make CMakeFiles/lutcheck.dir/src/render_tiled.cpp.s
+.PHONY : src/render_tiled.cpp.s
+
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -227,9 +323,21 @@ help:
 	@echo "... src/cube_parser.o"
 	@echo "... src/cube_parser.i"
 	@echo "... src/cube_parser.s"
+	@echo "... src/histogram.o"
+	@echo "... src/histogram.i"
+	@echo "... src/histogram.s"
+	@echo "... src/lut.o"
+	@echo "... src/lut.i"
+	@echo "... src/lut.s"
 	@echo "... src/main.o"
 	@echo "... src/main.i"
 	@echo "... src/main.s"
+	@echo "... src/render_scalar.o"
+	@echo "... src/render_scalar.i"
+	@echo "... src/render_scalar.s"
+	@echo "... src/render_tiled.o"
+	@echo "... src/render_tiled.i"
+	@echo "... src/render_tiled.s"
 .PHONY : help
 
 

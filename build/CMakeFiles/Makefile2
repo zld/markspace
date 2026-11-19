@@ -88,12 +88,12 @@ clean: CMakeFiles/lutcheck.dir/clean
 CMakeFiles/lutcheck.dir/all:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/lutcheck.dir/build.make CMakeFiles/lutcheck.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/lutcheck.dir/build.make CMakeFiles/lutcheck.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/Users/zld/WorkSpace/pair-wise-workspace/14087/build/CMakeFiles --progress-num=1,2,3,4 "Built target lutcheck"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/Users/zld/WorkSpace/pair-wise-workspace/14087/build/CMakeFiles --progress-num=1,2,3,4,5,6,7,8 "Built target lutcheck"
 .PHONY : CMakeFiles/lutcheck.dir/all
 
 # Build rule for subdir invocation for target.
 CMakeFiles/lutcheck.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /Users/zld/WorkSpace/pair-wise-workspace/14087/build/CMakeFiles 4
+	$(CMAKE_COMMAND) -E cmake_progress_start /Users/zld/WorkSpace/pair-wise-workspace/14087/build/CMakeFiles 8
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/lutcheck.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /Users/zld/WorkSpace/pair-wise-workspace/14087/build/CMakeFiles 0
 .PHONY : CMakeFiles/lutcheck.dir/rule
@@ -105,7 +105,7 @@ lutcheck: CMakeFiles/lutcheck.dir/rule
 # codegen rule for target.
 CMakeFiles/lutcheck.dir/codegen:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/lutcheck.dir/build.make CMakeFiles/lutcheck.dir/codegen
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/Users/zld/WorkSpace/pair-wise-workspace/14087/build/CMakeFiles --progress-num=1,2,3,4 "Finished codegen for target lutcheck"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/Users/zld/WorkSpace/pair-wise-workspace/14087/build/CMakeFiles --progress-num=1,2,3,4,5,6,7,8 "Finished codegen for target lutcheck"
 .PHONY : CMakeFiles/lutcheck.dir/codegen
 
 # clean rule for target.
