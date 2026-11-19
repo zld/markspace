@@ -130,15 +130,16 @@ func (rt *Runtime) processChunk(m *manifest.Manifest, idx int) manifest.ChunkRes
 		return fail(res, manifest.ReasonChunkReordered, "manifest round disagrees with key schedule")
 	}
 
-	// 4. License scope and time window (with optional overlap grace).
+	// 4. License scope and time window. The "expired" injection exercises
+	// strict verification (no grace), while "out-of-window" shifts the clock
+	// past the overlap window so grace itself reports key_expired.
 	now := rt.now()
 	if fault == fixture.InjectWindow {
-		// Simulate a request arriving after the overlap window elapsed.
 		now = now.Add(rt.grace + time.Second)
 	}
 	if rt.lic != nil {
 		var lerr error
-		if rt.grace > 0 {
+		if rt.grace > 0 && fault != fixture.InjectExpired {
 			lerr = rt.lic.ExpiredWithGrace(rt.signingKey, m.Asset.ID, round, idx, now)
 		} else {
 			lerr = rt.lic.Verify(rt.signingKey, m.Asset.ID, round, idx, now)
