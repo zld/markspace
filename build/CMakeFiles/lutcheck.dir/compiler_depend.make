@@ -6419,7 +6419,8 @@ CMakeFiles/lutcheck.dir/tests/self_test.cpp.o: /Users/zld/WorkSpace/pair-wise-wo
   /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/21/include/stdarg.h \
   /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/21/include/stddef.h \
   /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/21/include/stdint.h \
-  /Users/zld/WorkSpace/pair-wise-workspace/14087/include/color_types.hpp
+  /Users/zld/WorkSpace/pair-wise-workspace/14087/include/color_types.hpp \
+  /Users/zld/WorkSpace/pair-wise-workspace/14087/include/cube_parser.hpp
 
 
 /Users/zld/WorkSpace/pair-wise-workspace/14087/tests/self_test.cpp:
