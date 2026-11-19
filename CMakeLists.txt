@@ -18,8 +18,15 @@ add_library(h264core STATIC
     src/h264_sps.cpp
     src/h264_slice.cpp
     src/access_unit.cpp
+    src/report_json.cpp
+    src/report_text.cpp
 )
 target_include_directories(h264core PUBLIC include)
+
+# Command-line driver for local stream analysis.
+add_executable(h264scan src/main.cpp tests/fixture_stream.cpp tests/bit_writer.cpp)
+target_include_directories(h264scan PRIVATE include tests)
+target_link_libraries(h264scan PRIVATE h264core)
 
 # Deterministic fixture generator; does not link the parsing library so the
 # test stream stays an independent encoder-side construction.
