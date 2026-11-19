@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "audioprep"
+version = "0.1.0"
+description = "Offline batch WAV preparation: self-contained polyphase resampling, frame layout handling and loudness normalization"
+requires-python = ">=3.11"
+dependencies = ["soundfile==0.12.1", "numpy==1.26.4"]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+packages = ["audioprep"]
