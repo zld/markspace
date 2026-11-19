@@ -27,25 +27,25 @@ DURATION_SECONDS = 5.0
 
 
 def dialogue(frames: int) -> np.ndarray:
-    """Mono 'dialogue' burst: two tone chunks with silence between."""
+    """Mono 'dialogue' phrase: two syllables with silence between."""
 
     t = np.arange(frames) / TARGET_RATE
-    signal = 0.55 * np.sin(2.0 * np.pi * 220.0 * t)
-    signal += 0.20 * np.sin(2.0 * np.pi * 440.0 * t + 0.3)
-    gate = ((t > 0.05) & (t < 1.2)) | ((t > 2.1) & (t < 2.75))
-    signal = signal * gate
-    return signal[:frames]
+    signal = 0.85 * np.sin(2.0 * np.pi * 220.0 * t)
+    signal += 0.30 * np.sin(2.0 * np.pi * 440.0 * t + 0.3)
+    signal += 0.10 * np.sin(2.0 * np.pi * 660.0 * t + 0.7)
+    gate = ((t > 0.05) & (t < 1.1)) | ((t > 1.4) & (t < 1.9))
+    return (signal * gate)[:frames]
 
 
 def music(frames: int) -> np.ndarray:
-    """Stereo music bed: a chord-like stack with an excursion over 1.0."""
+    """Stereo music bed whose 2.5 s section is intentionally hot."""
 
     t = np.arange(frames) / TARGET_RATE
     left = 0.62 * np.sin(2.0 * np.pi * 110.0 * t)
     left += 0.28 * np.sin(2.0 * np.pi * 165.0 * t + 1.1)
     right = 0.58 * np.sin(2.0 * np.pi * 110.0 * t + 0.4)
     right += 0.30 * np.sin(2.0 * np.pi * 220.0 * t + 0.2)
-    swell = 1.0 + 0.9 * np.exp(-0.5 * ((t - 4.1) / 0.35) ** 2)
+    swell = 1.0 + 1.9 * np.exp(-0.5 * ((t - 2.5) / 0.35) ** 2)
     return np.column_stack([left * swell, right * swell])
 
 
@@ -53,10 +53,10 @@ def ambience(frames: int) -> np.ndarray:
     """Mono deterministic noise bed (fixed seed)."""
 
     rng = np.random.default_rng(20240517)
-    noise = rng.standard_normal(frames) * 0.08
+    noise = rng.standard_normal(frames) * 0.45
     # Slow deterministic low-pass so it reads as ambience, not hiss.
     blurred = np.convolve(noise, np.ones(24) / 24.0, mode="same")
-    return blurred
+    return blurred / max(float(np.abs(blurred).max()), 1e-12) * 0.35
 
 
 def seconds(value: float) -> float:
@@ -95,7 +95,8 @@ def build_workdir(workdir: Path) -> dict[str, Path]:
                 "id": "dialogue",
                 "path": "assets/dialogue.wav",
                 "start_seconds": seconds(0.25),
-                "gain_db": -1.5,
+                "gain_db": 0.0,
+                "bus": "dialogue",
                 "automation": {
                     "unit": "seconds",
                     "interpolation": "linear",
@@ -114,15 +115,16 @@ def build_workdir(workdir: Path) -> dict[str, Path]:
                 "id": "music",
                 "path": "assets/music_bed.wav",
                 "start_frame": 0,
-                "gain_db": -2.0,
+                "gain_db": 2.0,
                 "bus": "music",
                 "automation": {
                     "unit": "frames",
                     "interpolation": "step",
                     "points": [
-                        {"time": 0, "gain_db": -24.0},
-                        {"time": 24_000, "gain_db": -12.0},
-                        {"time": 120_000, "gain_db": -6.0},
+                        {"time": 0, "gain_db": -30.0},
+                        {"time": 24_000, "gain_db": -14.0},
+                        {"time": 72_000, "gain_db": -6.0},
+                        {"time": 168_000, "gain_db": 0.0},
                     ],
                 },
             },
@@ -130,7 +132,8 @@ def build_workdir(workdir: Path) -> dict[str, Path]:
                 "id": "ambience",
                 "path": "assets/ambience.wav",
                 "start_seconds": seconds(0.1),
-                "gain_db": -14.0,
+                "gain_db": -18.0,
+                "bus": "ambience",
                 "automation": {
                     "unit": "seconds",
                     "interpolation": "linear",
@@ -142,8 +145,12 @@ def build_workdir(workdir: Path) -> dict[str, Path]:
                 },
             },
         ],
-        "buses": [{"id": "music", "gain_db": -3.0}],
-        "master": {"gain_db": -0.5, "limiter": {"enabled": True, "ceiling": 0.98}},
+        "buses": [
+            {"id": "music", "gain_db": -1.0},
+            {"id": "dialogue", "gain_db": -2.0},
+            {"id": "ambience", "gain_db": -2.0},
+        ],
+        "master": {"gain_db": -1.5, "limiter": {"enabled": True, "ceiling": 0.98}},
         "loop": {"start_seconds": 1.0, "end_seconds": 1.5, "count": 3},
     }
     project_path = workdir / "project.json"
