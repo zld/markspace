@@ -70,7 +70,7 @@ class StoredJob:
     noise_floor_db: float
 
 
-def _dumps(value: dict[str, Any]) -> str:
+def dumps_params(value: dict[str, Any]) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"))
 
 
@@ -110,20 +110,23 @@ class Store:
     def start_run(self, params: dict[str, Any]) -> int:
         try:
             cursor = self.connection.execute(
-                "INSERT INTO runs (params_json) VALUES (?)", (_dumps(params),)
+                "INSERT INTO runs (params_json) VALUES (?)", (dumps_params(params),)
             )
             return int(cursor.lastrowid)
         except sqlite3.Error as exc:
             raise StoreError(f"cannot record run parameters: {exc}") from exc
 
-    def find_reusable(self, input_path: str, file_hash: str) -> StoredJob | None:
+    def find_reusable(
+        self, input_path: str, file_hash: str, params_json: str
+    ) -> StoredJob | None:
         try:
             row = self.connection.execute(
-                "SELECT id, input_path, file_hash, segment_count, sample_rate, "
-                "channels, total_samples, noise_floor_db FROM jobs "
-                "WHERE input_path = ? AND file_hash = ? AND status = 'ok' "
-                "ORDER BY id DESC LIMIT 1",
-                (input_path, file_hash),
+                "SELECT j.id, j.input_path, j.file_hash, j.segment_count, "
+                "j.sample_rate, j.channels, j.total_samples, j.noise_floor_db "
+                "FROM jobs j JOIN runs r ON r.id = j.run_id "
+                "WHERE j.input_path = ? AND j.file_hash = ? AND j.status = 'ok' "
+                "AND r.params_json = ? ORDER BY j.id DESC LIMIT 1",
+                (input_path, file_hash, params_json),
             ).fetchone()
         except sqlite3.Error as exc:
             raise StoreError(f"cannot query existing jobs: {exc}") from exc

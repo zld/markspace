@@ -65,6 +65,7 @@ class Segment:
 class Interval:
     start: int
     end: int
+    noise_floor_db: float
 
 
 def build_segments(
@@ -89,26 +90,31 @@ def build_segments(
         for event in events
     )
     merged: list[Interval] = []
-    for start, end, *_rest in expanded:
+    for start, end, floor, _peak, _rms in expanded:
         if end <= start:
             continue
         if merged and start - merged[-1].end <= min_silence:
-            if end > merged[-1].end:
-                merged[-1] = Interval(merged[-1].start, end)
+            previous = merged[-1]
+            if end > previous.end or floor < previous.noise_floor_db:
+                merged[-1] = Interval(
+                    previous.start,
+                    max(end, previous.end),
+                    min(floor, previous.noise_floor_db),
+                )
             continue
-        merged.append(Interval(start, end))
+        merged.append(Interval(start, end, floor))
     segments: list[Segment] = []
-    for start, end in merged:
-        if end - start < min_event:
+    for interval in merged:
+        if interval.end - interval.start < min_event:
             continue
         segments.append(
             Segment(
-                start_sample=start,
-                end_sample=end,
+                start_sample=interval.start,
+                end_sample=interval.end,
                 peak=0.0,
                 rms=0.0,
-                noise_floor_db=0.0,
-                duration_ms=(end - start) * 1000.0 / sample_rate,
+                noise_floor_db=interval.noise_floor_db,
+                duration_ms=(interval.end - interval.start) * 1000.0 / sample_rate,
             )
         )
     return segments
@@ -118,7 +124,6 @@ def measure(
     path: str,
     info: WavInfo,
     segments: list[Segment],
-    noise_floor_db: float,
 ) -> list[Segment]:
     """Fill peak/RMS for every segment with one streaming file pass."""
     if not segments:
@@ -156,7 +161,7 @@ def measure(
                 end_sample=segment.end_sample,
                 peak=peaks[index] if count else 0.0,
                 rms=math.sqrt(sums[index] / count) if count else 0.0,
-                noise_floor_db=noise_floor_db,
+                noise_floor_db=segment.noise_floor_db,
                 duration_ms=segment.duration_ms,
             )
         )
