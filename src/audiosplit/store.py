@@ -307,6 +307,22 @@ class Store:
             summary["segments"] += count["s"]
         return summary
 
+    def get_run(self, run_id: int) -> dict[str, Any] | None:
+        try:
+            row = self.connection.execute(
+                "SELECT id, params_json, created_at FROM runs WHERE id = ?",
+                (run_id,),
+            ).fetchone()
+        except sqlite3.Error as exc:
+            raise StoreError(f"cannot read run {run_id}: {exc}") from exc
+        if row is None:
+            return None
+        return {
+            "run_id": row["id"],
+            "params": json.loads(row["params_json"]),
+            "created_at": row["created_at"],
+        }
+
     def latest_run_id(self) -> int | None:
         try:
             row = self.connection.execute(

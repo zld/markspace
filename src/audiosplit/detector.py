@@ -266,8 +266,9 @@ class FrameEnergyDetector:
             state.reset()
 
     def _release_frames(self) -> int:
-        silence = math.ceil(self.min_silence / self.hop) if self.min_silence else 0
-        return max(1, self.config.hold_frames, silence)
+        # Gaps are merged by duration in :mod:`audiosplit.merge`; here we only
+        # hold a short tail so fades and decay are not clipped.
+        return max(1, self.config.hold_frames)
 
     def _emit(self, start: int, end: int) -> None:
         state = self._state
