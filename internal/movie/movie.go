@@ -98,6 +98,12 @@ func Parse(rd *box.Reader) (*Movie, error) {
 			if err := m.parseMvhd(rd, k); err != nil {
 				return nil, err
 			}
+		case "trak":
+			t, err := parseTrak(rd, k)
+			if err != nil {
+				return nil, err
+			}
+			m.Tracks = append(m.Tracks, t)
 		}
 	}
 	if m.Timescale == 0 {
