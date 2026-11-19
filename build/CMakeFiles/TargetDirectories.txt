@@ -1,0 +1,3 @@
+/Users/zld/WorkSpace/pair-wise-workspace/14087/build/CMakeFiles/lutcheck.dir
+/Users/zld/WorkSpace/pair-wise-workspace/14087/build/CMakeFiles/edit_cache.dir
+/Users/zld/WorkSpace/pair-wise-workspace/14087/build/CMakeFiles/rebuild_cache.dir
