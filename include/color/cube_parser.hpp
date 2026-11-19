@@ -28,6 +28,7 @@ LUT parseCube(std::istream& input, const std::string& source = "<stream>");
 LUT parseCubeText(const std::string& text, const std::string& source = "<memory>");
 
 // Serialises a LUT using red-fastest sample order. The output is parseable by
+// parseCube and is used to exercise the parser in the demo path.
 std::string serializeCube(const LUT& lut, const std::string& title = {});
 
 }  // namespace color
