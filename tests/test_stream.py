@@ -238,3 +238,13 @@ def test_cli_generate_sample_is_deterministic(tmp_path: Path):
                  "--output", str(first / "mix.wav"),
                  "--rate", "48000", "--block-frames", "257",
                  "--mode", "stream", "--quiet"]) == 0
+
+
+def test_cli_refuses_to_overwrite_manifest(session_dir: Path):
+    manifest = _mixed_session(session_dir)
+    before = manifest.read_bytes()
+    code = main(["render", "--manifest", str(manifest),
+                 "--output", str(session_dir / "mix.wav"),
+                 "--report", str(manifest)])
+    assert code == 2
+    assert manifest.read_bytes() == before

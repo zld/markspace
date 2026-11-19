@@ -87,8 +87,9 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _protected_paths(session: Session) -> list[Path]:
-    return [track.path for track in session.tracks]
+def _protected_paths(session: Session, manifest: Path) -> list[Path]:
+    """Inputs that must never be overwritten, including the manifest itself."""
+    return [track.path for track in session.tracks] + [manifest]
 
 
 def _cmd_generate(args: argparse.Namespace) -> int:
@@ -110,7 +111,7 @@ def _cmd_render(args: argparse.Namespace) -> int:
         if args.block_frames <= 0:
             raise _UsageError(f"--block-frames must be positive, got {args.block_frames}")
     policy = parse_policy(args.clip)
-    protected = _protected_paths(session)
+    protected = _protected_paths(session, args.manifest)
 
     graph = MixGraph(session, rate, policy)
     targets: dict[str, Path] = {}
@@ -145,7 +146,7 @@ def _cmd_compare(args: argparse.Namespace) -> int:
     if args.block_frames <= 0:
         raise _UsageError(f"--block-frames must be positive, got {args.block_frames}")
     policy = parse_policy(args.clip)
-    protected = _protected_paths(session)
+    protected = _protected_paths(session, args.manifest)
     graph = MixGraph(session, rate, policy)
     offline = render_offline(graph, policy)
     paths: dict[str, Path] = {}
