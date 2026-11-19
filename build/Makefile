@@ -150,6 +150,30 @@ test_prep/all: cmake_check_build_system
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_prep/all
 .PHONY : test_prep/all
 
+src/clock.o: src/clock.cpp.o
+.PHONY : src/clock.o
+
+# target to build an object file
+src/clock.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/pwsync_core.dir/build.make CMakeFiles/pwsync_core.dir/src/clock.cpp.o
+.PHONY : src/clock.cpp.o
+
+src/clock.i: src/clock.cpp.i
+.PHONY : src/clock.i
+
+# target to preprocess a source file
+src/clock.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/pwsync_core.dir/build.make CMakeFiles/pwsync_core.dir/src/clock.cpp.i
+.PHONY : src/clock.cpp.i
+
+src/clock.s: src/clock.cpp.s
+.PHONY : src/clock.s
+
+# target to generate assembly for a file
+src/clock.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/pwsync_core.dir/build.make CMakeFiles/pwsync_core.dir/src/clock.cpp.s
+.PHONY : src/clock.cpp.s
+
 src/media_types.o: src/media_types.cpp.o
 .PHONY : src/media_types.o
 
@@ -184,6 +208,9 @@ help:
 	@echo "... rebuild_cache"
 	@echo "... test"
 	@echo "... pwsync_core"
+	@echo "... src/clock.o"
+	@echo "... src/clock.i"
+	@echo "... src/clock.s"
 	@echo "... src/media_types.o"
 	@echo "... src/media_types.i"
 	@echo "... src/media_types.s"

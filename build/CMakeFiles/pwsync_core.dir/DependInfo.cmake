@@ -8,6 +8,7 @@ set(CMAKE_DEPENDS_LANGUAGES
 
 # The set of dependency files which are needed:
 set(CMAKE_DEPENDS_DEPENDENCY_FILES
+  "/Users/zld/WorkSpace/pair-wise-workspace/14074/src/clock.cpp" "CMakeFiles/pwsync_core.dir/src/clock.cpp.o" "gcc" "CMakeFiles/pwsync_core.dir/src/clock.cpp.o.d"
   "/Users/zld/WorkSpace/pair-wise-workspace/14074/src/media_types.cpp" "CMakeFiles/pwsync_core.dir/src/media_types.cpp.o" "gcc" "CMakeFiles/pwsync_core.dir/src/media_types.cpp.o.d"
   )
 

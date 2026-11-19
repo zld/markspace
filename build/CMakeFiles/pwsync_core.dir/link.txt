@@ -1,2 +1,2 @@
-/usr/bin/ar qc libpwsync_core.a CMakeFiles/pwsync_core.dir/src/media_types.cpp.o
+/usr/bin/ar qc libpwsync_core.a CMakeFiles/pwsync_core.dir/src/media_types.cpp.o CMakeFiles/pwsync_core.dir/src/clock.cpp.o
 /usr/bin/ranlib libpwsync_core.a
