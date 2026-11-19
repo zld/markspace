@@ -13,19 +13,21 @@ import (
 // It never parses PSI: relevance comes exclusively from the effective mapping
 // owned by program.Manager, so there is a single source of truth.
 type Slicer struct {
-	w          io.Writer
-	enabled    bool
-	program    uint16
-	maxBuffer  int
-	stats      SliceStats
-	pending    []*transport.Packet
-	pmtPID     uint16
-	streamPIDs map[uint16]bool
-	version    uint8
-	haveTable  bool
-	ended      bool
-	curPMT     *program.PMTState
-	writeErr   error
+	w              io.Writer
+	enabled        bool
+	program        uint16
+	maxBuffer      int
+	stats          SliceStats
+	pending        []*transport.Packet
+	pmtPID         uint16
+	streamPIDs     map[uint16]bool
+	version        uint8
+	haveTable      bool
+	ended          bool
+	curPMT         *program.PMTState
+	boundaryOffset int64
+	boundaryDue    *Boundary
+	writeErr       error
 }
 
 // NewSlicer creates a slicer. A nil writer disables output but keeps stats.
@@ -80,6 +82,14 @@ func (s *Slicer) Observe(pkt *transport.Packet, verdict metrics.Verdict, progs *
 		return
 	}
 	if !s.haveTable || pmt.Version != s.version || pmt.PID != s.pmtPID {
+		// Cached packets predate the table but still belong to the program.
+		// They are written first, so the boundary is anchored at the earliest
+		// relevant one; without a cache the live packet is the anchor. The
+		// output position is filled in when the first packet is written.
+		s.boundaryOffset = pkt.Offset
+		if p := firstRelevant(s.pending, pmt); p != nil {
+			s.boundaryOffset = p.Offset
+		}
 		s.adoptTable(pmt)
 		s.flushPending()
 	}
@@ -119,9 +129,11 @@ func (s *Slicer) adoptTable(pmt *program.PMTState) {
 	}
 	s.stats.VersionSeen = pmt.Version
 	s.stats.HaveVersion = true
+	s.stageBoundary()
 }
 
 func (s *Slicer) emit(pkt *transport.Packet) {
+	s.noteBoundaryIfDue()
 	if s.w != nil {
 		n, err := s.w.Write(pkt.Raw[:])
 		if err != nil && s.writeErr == nil {
