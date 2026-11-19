@@ -4,7 +4,12 @@
 // 4 path-consistency failure, 5 file read/write error.
 #include <cstdio>
 #include <cstdlib>
+#include <fstream>
+#include <iostream>
+#include <new>
+#include <ostream>
 #include <string>
+#include <vector>
 
 #include "color_types.hpp"
 #include "cube_parser.hpp"
@@ -12,7 +17,9 @@
 namespace {
 
 using lutcheck::ColorSpace;
+using lutcheck::HistogramSet;
 using lutcheck::Lut3D;
+using lutcheck::Rgb;
 
 constexpr long kMaxPixels = 10000000L;
 constexpr double kDeviationTolerance = 1e-6;
@@ -127,11 +134,151 @@ bool parse_args(int argc, char** argv, Options& opt) {
   return true;
 }
 
+double fract(double v) { return v - std::floor(v); }
+
+// Deterministic sample pixels authored as sRGB-encoded values: color bars,
+// boundary/out-of-range samples, then a gradient from irrational strides.
+std::vector<Rgb> generate_pixels(std::size_t count) {
+  static const Rgb kBars[8] = {{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1},
+                               {1, 1, 0}, {1, 0, 1}, {0, 1, 1}, {1, 1, 1}};
+  static const Rgb kBounds[6] = {{0, 0, 0},
+                                 {1, 1, 1},
+                                 {-0.05f, 0.5f, 0.5f},
+                                 {1.05f, 0.5f, 0.5f},
+                                 {0.5f, -0.02f, 1.03f},
+                                 {0.5f, 1.07f, -0.01f}};
+  std::vector<Rgb> px;
+  px.reserve(count);
+  for (std::size_t i = 0; i < count; ++i) {
+    if (i < 8) {
+      px.push_back(kBars[i]);
+    } else if (i < 14) {
+      px.push_back(kBounds[i - 8]);
+    } else {
+      const double t = static_cast<double>(i);
+      px.push_back(Rgb{static_cast<float>(fract(t * 0.7548776662466927)),
+                       static_cast<float>(fract(t * 0.5698402909980532)),
+                       static_cast<float>(fract(t * 0.3183098861837907))});
+    }
+  }
+  return px;
+}
+
+// Re-encode generated sRGB pixels into the requested working space,
+// converting through XYZ in the linear-light domain.
+void convert_pixels_to_space(std::vector<Rgb>& px, ColorSpace target) {
+  if (target == ColorSpace::kSrgb) return;
+  const lutcheck::Mat3 to_xyz = lutcheck::rgb_to_xyz_matrix(ColorSpace::kSrgb);
+  const lutcheck::Mat3 from_xyz = lutcheck::xyz_to_rgb_matrix(target);
+  for (Rgb& p : px) {
+    const Rgb lin = lutcheck::space_decode(ColorSpace::kSrgb, p);
+    if (target == ColorSpace::kLinearSrgb) {
+      p = lin;
+    } else {
+      p = lutcheck::space_encode(
+          target,
+          lutcheck::mat_apply(from_xyz, lutcheck::mat_apply(to_xyz, lin)));
+    }
+  }
+}
+
+// Deterministic synthetic grade: mild cross-channel mix plus a smoothstep
+// toe on blue, sampled onto the grid in the [0,1] domain.
+Lut3D make_synthetic_lut(int size) {
+  Lut3D lut;
+  lut.size = size;
+  lut.title = "synthetic-demo";
+  lut.data.resize(static_cast<std::size_t>(size) * size * size * 3u);
+  for (int r = 0; r < size; ++r) {
+    const double x = static_cast<double>(r) / (size - 1);
+    for (int g = 0; g < size; ++g) {
+      const double y = static_cast<double>(g) / (size - 1);
+      for (int b = 0; b < size; ++b) {
+        const double z = static_cast<double>(b) / (size - 1);
+        const std::size_t idx = lut.node_index(r, g, b);
+        lut.data[idx + 0] = static_cast<float>(0.85 * x + 0.10 * y + 0.02);
+        lut.data[idx + 1] = static_cast<float>(0.05 * x + 0.88 * y + 0.04 * z);
+        lut.data[idx + 2] =
+            static_cast<float>(0.01 + 0.94 * z * z * (3.0 - 2.0 * z));
+      }
+    }
+  }
+  return lut;
+}
+
+void print_histogram_text(std::ostream& os, const char* tag,
+                          const HistogramSet& hs) {
+  const char* names[3] = {"r", "g", "b"};
+  for (int c = 0; c < 3; ++c) {
+    os << tag << " channel=" << names[c]
+       << " underflow=" << hs.channel[c].underflow
+       << " overflow=" << hs.channel[c].overflow << " bins=";
+    for (std::size_t i = 0; i < hs.channel[c].bins.size(); ++i) {
+      os << (i ? "," : "") << hs.channel[c].bins[i];
+    }
+    os << "\n";
+  }
+}
+
 int run_pipeline(const Options& opt, bool demo_mode) {
-  (void)opt;
-  (void)demo_mode;
-  std::fprintf(stderr, "lutcheck: pipeline not linked in this build stage\n");
-  return 2;
+  Lut3D lut = demo_mode ? make_synthetic_lut(opt.size)
+                        : lutcheck::parse_cube_file(opt.lut_path);
+  const std::size_t count = static_cast<std::size_t>(opt.pixels);
+  if (count > static_cast<std::size_t>(-1) / sizeof(Rgb)) {
+    std::fprintf(stderr, "lutcheck: pixel count overflows allocation size\n");
+    return 2;
+  }
+  std::vector<Rgb> pixels = generate_pixels(count);
+  convert_pixels_to_space(pixels, opt.space);
+
+  lutcheck::RenderOptions ropt;
+  ropt.space = opt.space;
+  ropt.clamp_output = opt.clamp;
+
+  const HistogramSet before = lutcheck::compute_histogram(pixels, opt.bins);
+  std::vector<Rgb> out_scalar, out_tiled;
+  lutcheck::render_scalar(lut, pixels, out_scalar, ropt);
+  lutcheck::render_tiled(lut, pixels, out_tiled, opt.block_size, ropt);
+  const HistogramSet after = lutcheck::compute_histogram(out_tiled, opt.bins);
+
+  double dev[3] = {0.0, 0.0, 0.0};
+  for (std::size_t i = 0; i < count; ++i) {
+    const float a[3] = {out_scalar[i].r, out_scalar[i].g, out_scalar[i].b};
+    const float b[3] = {out_tiled[i].r, out_tiled[i].g, out_tiled[i].b};
+    for (int c = 0; c < 3; ++c) {
+      const double d = std::fabs(static_cast<double>(a[c]) - b[c]);
+      if (d > dev[c]) dev[c] = d;
+    }
+  }
+
+  std::ofstream file;
+  std::ostream& os = opt.out_path.empty() ? std::cout : file;
+  if (!opt.out_path.empty()) {
+    file.open(opt.out_path, std::ios::binary | std::ios::trunc);
+    if (!file) throw lutcheck::IoError("cannot write summary: " + opt.out_path);
+  }
+  char grid[32];
+  std::snprintf(grid, sizeof grid, "%dx%dx%d", lut.size, lut.size, lut.size);
+  os << "lut_grid=" << grid << "\n"
+     << "space=" << lutcheck::color_space_name(opt.space) << "\n"
+     << "input_pixels=" << count << "\n"
+     << "output_pixels=" << count << "\n";
+  char line[160];
+  std::snprintf(line, sizeof line, "max_abs_deviation_rgb=%.9e %.9e %.9e\n",
+                dev[0], dev[1], dev[2]);
+  os << line;
+  print_histogram_text(os, "histogram_before", before);
+  print_histogram_text(os, "histogram_after", after);
+  os.flush();
+  if (!os) throw lutcheck::IoError("failed while writing summary");
+
+  if (dev[0] >= kDeviationTolerance || dev[1] >= kDeviationTolerance ||
+      dev[2] >= kDeviationTolerance) {
+    std::fprintf(stderr, "lutcheck: scalar/tiled paths diverge beyond %.0e\n",
+                 kDeviationTolerance);
+    return 4;
+  }
+  return 0;
 }
 
 }  // namespace
