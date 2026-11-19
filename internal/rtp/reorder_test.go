@@ -54,20 +54,44 @@ func TestReorderOutOfOrderWithinWindow(t *testing.T) {
 func TestReorderDuplicates(t *testing.T) {
 	r, _ := NewReorderer(8)
 	r.Push(pkt(0))
-	// Re-send an already emitted packet: late, not re-emitted.
+	// Re-send an already emitted packet: a true duplicate.
 	if out := r.Push(pkt(0)); out != nil {
 		t.Fatalf("re-send of emitted packet must produce no output, got %v", seqs(out))
+	}
+	if r.Stats().Duplicates != 1 {
+		t.Fatalf("duplicates = %d, want 1", r.Stats().Duplicates)
+	}
+	r.Push(pkt(2)) // held behind missing 1
+	// Exact re-delivery of a pending packet: also a duplicate.
+	if out := r.Push(pkt(2)); out != nil {
+		t.Fatalf("duplicate of pending packet must produce no output, got %v", seqs(out))
+	}
+	if r.Stats().Duplicates != 2 {
+		t.Fatalf("duplicates = %d, want 2", r.Stats().Duplicates)
+	}
+	if r.Stats().Late != 0 {
+		t.Fatalf("late = %d, want 0", r.Stats().Late)
+	}
+}
+
+func TestReorderLateGapFill(t *testing.T) {
+	r, _ := NewReorderer(4)
+	r.Push(pkt(0))
+	r.Push(pkt(1))
+	// seq 2 missing; fill the window so the gap is skipped.
+	r.Push(pkt(3))
+	r.Push(pkt(4))
+	r.Push(pkt(5))
+	r.Push(pkt(6)) // forces advance over the hole at 2
+	// A late arrival for the never-delivered seq 2 is Late, not Dup.
+	if out := r.Push(pkt(2)); out != nil {
+		t.Fatalf("late gap fill must not be emitted, got %v", seqs(out))
 	}
 	if r.Stats().Late != 1 {
 		t.Fatalf("late = %d, want 1", r.Stats().Late)
 	}
-	r.Push(pkt(2)) // held behind missing 1
-	// Exact re-delivery of a pending packet: true duplicate.
-	if out := r.Push(pkt(2)); out != nil {
-		t.Fatalf("duplicate of pending packet must produce no output, got %v", seqs(out))
-	}
-	if r.Stats().Duplicates != 1 {
-		t.Fatalf("duplicates = %d, want 1", r.Stats().Duplicates)
+	if r.Stats().Duplicates != 0 {
+		t.Fatalf("duplicates = %d, want 0", r.Stats().Duplicates)
 	}
 }
 
@@ -108,12 +132,10 @@ func TestReorderWindowExhaustion(t *testing.T) {
 	if s.Gaps != 1 || s.Flushed != 1 {
 		t.Fatalf("gap accounting wrong: %+v", s)
 	}
-	// The skipped slot is now in the past: late arrival is not re-emitted.
+	// The skipped slot is in the past and never delivered; a late
+	// arrival is classified by the dedicated TestReorderLateGapFill.
 	if out := r.Push(pkt(2)); out != nil {
 		t.Fatalf("late packet after advance must not be emitted, got %v", seqs(out))
-	}
-	if r.Stats().Late != 1 {
-		t.Fatalf("late = %d, want 1", r.Stats().Late)
 	}
 }
 

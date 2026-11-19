@@ -28,7 +28,12 @@ type Reorderer struct {
 	buf      map[uint16]*Packet
 	expected uint16
 	started  bool
-	stats    Stats
+	// emitted tracks sequence numbers already released, within a
+	// bounded history, so a re-sent packet is a duplicate while a
+	// packet filling a previously skipped gap is merely late.
+	emitted     map[uint16]struct{}
+	emittedFIFO []uint16
+	stats       Stats
 }
 
 // NewReorderer creates a Reorderer with the given window size.
@@ -37,9 +42,34 @@ func NewReorderer(window int) (*Reorderer, error) {
 		return nil, ErrInvalidWindow
 	}
 	return &Reorderer{
-		window: window,
-		buf:    make(map[uint16]*Packet, window),
+		window:      window,
+		buf:         make(map[uint16]*Packet, window),
+		emitted:     make(map[uint16]struct{}, window),
+		emittedFIFO: make([]uint16, 0, window),
 	}, nil
+}
+
+// recordEmitted marks a released sequence number and evicts the oldest
+// entry once the bounded history fills, keeping memory proportional to
+// the configured window.
+func (r *Reorderer) recordEmitted(seq uint16) {
+	if _, ok := r.emitted[seq]; ok {
+		return
+	}
+	r.emitted[seq] = struct{}{}
+	r.emittedFIFO = append(r.emittedFIFO, seq)
+	if len(r.emittedFIFO) > r.window {
+		oldest := r.emittedFIFO[0]
+		r.emittedFIFO = r.emittedFIFO[1:]
+		delete(r.emitted, oldest)
+	}
+}
+
+// wasEmitted reports whether seq was released and is still inside the
+// bounded emitted-history window.
+func (r *Reorderer) wasEmitted(seq uint16) bool {
+	_, ok := r.emitted[seq]
+	return ok
 }
 
 // seqDistance returns (a - b) interpreted as a signed 16-bit value.
@@ -69,13 +99,16 @@ func (r *Reorderer) Push(p *Packet) []*Packet {
 
 	switch {
 	case d < 0:
-		// The slot is in the past. If an identical copy is still
-		// buffered it is a true duplicate; otherwise the slot was
-		// already emitted or skipped over as a gap, making this a
-		// late packet that must not be re-emitted.
-		if _, exists := r.buf[seq]; exists {
+		switch {
+		case r.buf[seq] != nil:
+			// An identical copy is still queued: true duplicate.
 			r.stats.Duplicates++
-		} else {
+		case r.wasEmitted(seq):
+			// The sequence was delivered once already: re-delivery.
+			r.stats.Duplicates++
+		default:
+			// It was skipped as a gap and never received: a late
+			// fill that must not be re-emitted.
 			r.stats.Late++
 		}
 		return nil
@@ -110,6 +143,7 @@ func (r *Reorderer) Push(p *Packet) []*Packet {
 		}
 		delete(r.buf, r.expected)
 		out = append(out, pkt)
+		r.recordEmitted(r.expected)
 		r.expected++
 		r.stats.Emitted++
 	}
@@ -142,6 +176,7 @@ func (r *Reorderer) advanceWindow(out *[]*Packet) {
 		}
 		delete(r.buf, r.expected)
 		*out = append(*out, pkt)
+		r.recordEmitted(r.expected)
 		r.expected++
 		r.stats.Emitted++
 	}
@@ -180,6 +215,7 @@ func (r *Reorderer) Flush() []*Packet {
 		pkt := r.buf[r.expected]
 		delete(r.buf, r.expected)
 		out = append(out, pkt)
+		r.recordEmitted(r.expected)
 		r.expected++
 		r.stats.Emitted++
 	}
