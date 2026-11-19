@@ -10,10 +10,12 @@ import numpy as np
 
 from .errors import ProcessingError
 
-#: Clip counting domain.  ``pre_limit`` is recorded on the master summary.
+#: Clip counting domain.  Both master domains are reported so pre- and
+#: post-limiter counts are never conflated.
 DOMAIN_TRACK = "track_post_gain"
 DOMAIN_BUS = "bus_post_gain"
 DOMAIN_MASTER = "master_pre_limit"
+DOMAIN_POST_LIMIT = "master_post_limit"
 
 
 @dataclass
@@ -135,6 +137,7 @@ class Summary:
     tracks: list[TrackReport] = field(default_factory=list)
     buses: dict[str, SignalStats] = field(default_factory=dict)
     master: SignalStats = field(default_factory=SignalStats)
+    master_post_limit: SignalStats = field(default_factory=SignalStats)
     automation_samples: list[dict[str, Any]] = field(default_factory=list)
     extra: dict[str, Any] = field(default_factory=dict)
 
@@ -154,6 +157,7 @@ class Summary:
                 for bus_id, stats in self.buses.items()
             },
             "master": self.master.as_dict(domain=DOMAIN_MASTER),
+            "master_post_limit": self.master_post_limit.as_dict(domain=DOMAIN_POST_LIMIT),
             "automation_samples": self.automation_samples,
         }
         payload.update(self.extra)

@@ -86,8 +86,9 @@ def stream_render(
                     track_stats[track_id].feed(data, location=f"track[{track_id}]")
                 for bus_id, data in block.buses.items():
                     bus_stats[bus_id].feed(data, location=f"bus[{bus_id}]")
-                summary.master.feed(
-                    block.master_pre_limit, location="master"
+                summary.master.feed(block.master_pre_limit, location="master")
+                summary.master_post_limit.feed(
+                    block.master, location="master_post_limit"
                 )
                 summary.extra["streamed_blocks"] = summary.extra.get("streamed_blocks", 0) + 1
                 yield block.master

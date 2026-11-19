@@ -137,7 +137,23 @@ def test_track_stats_and_master_clip_domain(fixture_dir):
     assert tone["clip_count"] > 0
     assert tone["clip_domain"] == "track_post_gain"
     assert payload["master"]["clip_domain"] == "master_pre_limit"
-    assert payload["master"]["clip_count"] >= tone["clip_count"] - 1
+    assert payload["master_post_limit"]["clip_domain"] == "master_post_limit"
+    assert payload["master"]["clip_count"] > 0
+    assert payload["master"]["samples"] == 24_000 * 2
+    # With the limiter off, the two master domains describe the same signal.
+    assert payload["master"]["clip_count"] == payload["master_post_limit"]["clip_count"]
+    assert payload["master"]["peak"] == payload["master_post_limit"]["peak"]
+
+
+def test_limiter_clip_counts_are_pre_and_post_limiter(fixture_dir):
+    project = make_project(fixture_dir.parent, base_spec())
+    _, summary = render_offline(project, block_size=1024)
+    payload = summary.as_dict()
+    assert payload["master"]["clip_domain"] == "master_pre_limit"
+    assert payload["master_post_limit"]["clip_domain"] == "master_post_limit"
+    assert payload["master"]["clip_count"] > 0
+    assert payload["master_post_limit"]["clip_count"] == 0
+    assert payload["master_post_limit"]["peak"] <= 0.9 + 1e-15
     muted = next(track for track in payload["tracks"] if track["id"] == "silence")
     assert muted["peak"] == 0.0
     assert muted["clip_count"] == 0

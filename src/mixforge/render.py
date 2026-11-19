@@ -75,8 +75,8 @@ def render_offline(
             for bus_id, data in block.buses.items():
                 bus_stats[bus_id].feed(data, location=f"bus[{bus_id}]")
             summary.master.feed(block.master_pre_limit, location="master")
+            summary.master_post_limit.feed(block.master, location="master_post_limit")
     summary.buses = bus_stats
     if not np.all(np.isfinite(master)):
         raise ProcessingError("rendered master contains non-finite samples", location="master")
-    summary.master.feed(master, location="master")
     return master, summary
