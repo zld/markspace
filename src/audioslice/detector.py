@@ -236,12 +236,12 @@ class ActivityDetector:
             end = min(feats.frame_start_sample(b - 1) + feats.frame_length,
                       feats.frame_start_sample(feats.n_frames - 1) + feats.frame_length)
             member = tuple(
-                (feats.frame_start_sample(x),
-                 feats.frame_start_sample(y - 1) + feats.frame_length)
+                (int(feats.frame_start_sample(x)),
+                 int(feats.frame_start_sample(y - 1) + feats.frame_length))
                 for x, y in candidates if x >= a and y <= b and (x, y) in kept
             )
             segs.append(Segment(
-                start_sample=start, end_sample=end, kind="activity",
+                start_sample=int(start), end_sample=int(end), kind="activity",
                 reason=reason,
                 candidates=member if reason.startswith("merged") else (),
             ))
@@ -253,8 +253,9 @@ class ActivityDetector:
         cursor = 0
         for seg in activity:
             if seg.start_sample > cursor:
-                silence.append(Segment(cursor, seg.start_sample, "silence", "complement"))
+                silence.append(Segment(int(cursor), int(seg.start_sample),
+                                       "silence", "complement"))
             cursor = seg.end_sample
         if cursor < total:
-            silence.append(Segment(cursor, total, "silence", "complement"))
+            silence.append(Segment(int(cursor), int(total), "silence", "complement"))
         return silence
