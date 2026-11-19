@@ -110,6 +110,7 @@ def run_batch(
         rel_path = _relative(path, root)
         outcome = process_file(path, params)
         outcome.rel_path = rel_path
+        summary.outcomes.append(outcome)
         # Savepoint isolates this file's writes inside the run transaction.
         store.conn.execute("SAVEPOINT file_write")
         try:

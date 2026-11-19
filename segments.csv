@@ -1,0 +1,13 @@
+file,kind,idx,start_sample,end_sample,status,error
+ambience_48k.wav,segment,0,0,288000,ok,
+broken_truncated.wav,file,,,,failed,truncated frames: header declares 16000 frames (32000 bytes) but only 15978 data bytes present
+dialogue_32k.wav,segment,0,13760,40640,ok,
+dialogue_32k.wav,segment,1,64960,88640,ok,
+dialogue_32k.wav,silence,0,0,13760,ok,
+dialogue_32k.wav,silence,1,40640,64960,ok,
+dialogue_32k.wav,silence,2,88640,102400,ok,
+interactive_44100_stereo.wav,segment,0,12789,24696,ok,
+interactive_44100_stereo.wav,segment,1,30870,39690,ok,
+interactive_44100_stereo.wav,silence,0,0,12789,ok,
+interactive_44100_stereo.wav,silence,1,24696,30870,ok,
+interactive_44100_stereo.wav,silence,2,39690,52920,ok,
