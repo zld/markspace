@@ -241,3 +241,95 @@ def build_wav(path: Path, *, sample_rate: int, channels: int, bits: int,
     riff = b"RIFF" + struct.pack("<I", 4 + len(chunks)) + b"WAVE" + chunks
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(riff)
+
+
+# ---------------------------------------------------------------------------
+# Fixture set
+# ---------------------------------------------------------------------------
+
+
+def build_default_samples(out: Path) -> list[Path]:
+    """Write the default fixture set and return the paths in stable order."""
+    out.mkdir(parents=True, exist_ok=True)
+    created: list[Path] = []
+
+    level_wav = out / "level_intro_vo.wav"
+    build_wav(level_wav, sample_rate=48000, channels=1, bits=16, seconds=2.0)
+    created.append(level_wav)
+
+    cutscene = out / "cutscene_01.mp4"
+    build_mp4(cutscene, movie_timescale=1000, tracks=[
+        {"kind": "video", "timescale": 30000, "duration": 60000,
+         "track_id": 1, "width": 1920, "height": 1080},
+        {"kind": "audio", "timescale": 48000, "duration": 96000,
+         "track_id": 2, "sample_rate": 48000, "channels": 2},
+    ])
+    created.append(cutscene)
+
+    dialogue = out / "dialogue_scene2.mp4"
+    build_mp4(dialogue, movie_timescale=600, tracks=[
+        {"kind": "video", "timescale": 24000, "duration": 48000,
+         "track_id": 3, "width": 1280, "height": 720},
+        {"kind": "audio", "timescale": 44100, "duration": 88200,
+         "track_id": 4, "sample_rate": 44100, "channels": 1},
+    ])
+    created.append(dialogue)
+
+    broken = out / "corrupt_truncated.mp4"
+    data = cutscene.read_bytes()
+    # Cut mid-file so the top-level mdat box declares a size the file cannot
+    # satisfy; the parser must locate the overflow instead of reading past EOF.
+    broken.write_bytes(data[: len(data) // 3])
+    created.append(broken)
+    return created
+
+
+def build_edge_samples(out: Path) -> list[Path]:
+    """Extra fixtures used by tests for comparison and error paths."""
+    out.mkdir(parents=True, exist_ok=True)
+    created: list[Path] = []
+
+    offset = out / "offset_start.mp4"
+    build_mp4(offset, movie_timescale=1000, edit_list=True, tracks=[
+        {"kind": "video", "timescale": 30000, "duration": 60000,
+         "track_id": 9, "width": 1920, "height": 1080, "start_time": 1000},
+    ])
+    created.append(offset)
+
+    no_video = out / "audio_only.mp4"
+    build_mp4(no_video, movie_timescale=1000, tracks=[
+        {"kind": "audio", "timescale": 48000, "duration": 96000,
+         "track_id": 2, "sample_rate": 48000, "channels": 2},
+    ])
+    created.append(no_video)
+
+    # Deliberately out of delivery sync: audio runs 0.4s longer than video.
+    drifted = out / "av_drift.mp4"
+    build_mp4(drifted, movie_timescale=1000, tracks=[
+        {"kind": "video", "timescale": 30000, "duration": 30000,
+         "track_id": 1, "width": 1920, "height": 1080},
+        {"kind": "audio", "timescale": 48000, "duration": 48000 + 19200,
+         "track_id": 2, "sample_rate": 48000, "channels": 2},
+    ])
+    created.append(drifted)
+
+    return created
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Generate local media fixtures")
+    parser.add_argument("--out", required=True, type=Path,
+                        help="directory to write fixture files into")
+    parser.add_argument("--edge", action="store_true",
+                        help="also write comparison-oriented edge fixtures")
+    args = parser.parse_args(argv)
+    created = build_default_samples(args.out)
+    if args.edge:
+        created += build_edge_samples(args.out)
+    for path in created:
+        print(f"{path} ({path.stat().st_size} bytes)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
