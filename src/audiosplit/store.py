@@ -168,10 +168,17 @@ class Store:
         file_hash: str,
         meta: JobMeta,
         segments: Iterable[Segment],
+        *,
+        replace: bool = False,
     ) -> StoredJob:
         rows = list(segments)
         try:
             self.connection.execute("BEGIN IMMEDIATE")
+            if replace:
+                self.connection.execute(
+                    "DELETE FROM jobs WHERE input_path = ? AND file_hash = ?",
+                    (input_path, file_hash),
+                )
             cursor = self.connection.execute(
                 "INSERT INTO jobs (run_id, input_path, file_hash, status, "
                 "sample_rate, channels, total_samples, noise_floor_db, "
