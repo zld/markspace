@@ -49,6 +49,7 @@ type Assembler struct {
 	maxFrames  int
 	pending    map[uint32]*pendingFrame // one open frame per SSRC
 	order      []uint32                  // insertion order of SSRCs
+	seenTS     map[uint32]map[uint32]struct{}
 	stats      Stats
 }
 
@@ -67,6 +68,7 @@ func NewAssembler(maxPacketsPerFrame, maxBufferedFrames int) *Assembler {
 		maxFrames:  maxBufferedFrames,
 		pending:    make(map[uint32]*pendingFrame),
 		order:      make([]uint32, 0, 8),
+		seenTS:     make(map[uint32]map[uint32]struct{}),
 	}
 }
 
@@ -102,6 +104,13 @@ func (a *Assembler) Push(p *rtp.Packet) ([]Frame, error) {
 
 	pf.frame.Packets = append(pf.frame.Packets, p)
 	pf.frame.Size += len(p.Payload)
+
+	tsSet, ok := a.seenTS[p.SSRC]
+	if !ok {
+		tsSet = make(map[uint32]struct{})
+		a.seenTS[p.SSRC] = tsSet
+	}
+	tsSet[p.Timestamp] = struct{}{}
 
 	if p.Marker {
 		out = append(out, a.closeComplete(p.SSRC))
@@ -166,6 +175,18 @@ func (a *Assembler) Flush() []Frame {
 
 // Stats returns a copy of the reassembly counters.
 func (a *Assembler) Stats() Stats { return a.stats }
+
+// FramesAccounted returns how many distinct (SSRC, timestamp) frames
+// have started arriving, including frames still open because their
+// marker was lost. It is the live completion signal: terminal
+// incomplete counts are only finalized by the end-of-session Flush.
+func (a *Assembler) FramesAccounted() int {
+	n := 0
+	for _, tsSet := range a.seenTS {
+		n += len(tsSet)
+	}
+	return n
+}
 
 // Pending reports how many frames are currently open.
 func (a *Assembler) Pending() int { return len(a.pending) }

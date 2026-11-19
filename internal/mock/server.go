@@ -47,9 +47,13 @@ type Server struct {
 	mu       sync.Mutex
 	conn     *gortsplib.ServerConn
 
-	schedule []PacketSpec
-	done     chan struct{}
-	rtpPort  int
+	schedule  []PacketSpec
+	done      chan struct{}
+	ready     chan struct{}
+	sent      chan struct{}
+	readyOnce sync.Once
+	sentOnce  sync.Once
+	rtpPort   int
 }
 
 // NewServer creates (but does not start) a mock server. rtpPort and
@@ -84,6 +88,8 @@ func NewServer(cfg ServerConfig, rtpPort, rtcpPort int) (*Server, error) {
 		listener: ln,
 		schedule: GenerateStream(cfg.FrameCount, cfg.Fault),
 		done:     make(chan struct{}),
+		ready:    make(chan struct{}),
+		sent:     make(chan struct{}),
 		rtpPort:  rtpPort,
 	}
 
@@ -92,6 +98,9 @@ func NewServer(cfg ServerConfig, rtpPort, rtcpPort int) (*Server, error) {
 		RTSPAddress:    ln.Addr().String(),
 		UDPRTPAddress:  fmt.Sprintf("127.0.0.1:%d", rtpPort),
 		UDPRTCPAddress: fmt.Sprintf("127.0.0.1:%d", rtcpPort),
+		// Large enough to absorb a full frame's burst without
+		// dropping; pacing in sendLoop keeps it from filling.
+		WriteQueueSize: 1024,
 		// Hand over the pre-bound loopback listener.
 		Listen: func(network, address string) (net.Listener, error) {
 			return s.listener, nil
@@ -118,11 +127,17 @@ func (s *Server) RTSPAddress() string {
 // Description exposes the negotiated session description.
 func (s *Server) Description() *description.Session { return s.desc }
 
+// ScheduledPackets is the number of datagrams the send loop will
+// attempt to deliver (drops excluded, duplicates included). It is the
+// deterministic completion target for the receive side.
+func (s *Server) ScheduledPackets() int { return len(s.schedule) }
+
 // Wait blocks until the scheduled stream has been fully sent.
 func (s *Server) Wait() { <-s.done }
 
 // Close releases the stream and the server listener.
 func (s *Server) Close() {
+	s.readyOnce.Do(func() { close(s.ready) })
 	if s.stream != nil {
 		s.stream.Close()
 	}
@@ -182,21 +197,41 @@ func (s *Server) OnPlay(
 		ctx.Conn.Close()
 		return &base.Response{StatusCode: base.StatusOK}, nil
 	}
+	// The reader is only activated by gortsplib after this handler
+	// returns, so unblock the send loop on the next scheduler turn.
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		s.readyOnce.Do(func() { close(s.ready) })
+	}()
 	go s.sendLoop(ctx.Session)
 	return &base.Response{StatusCode: base.StatusOK}, nil
 }
 
 // sendLoop writes every scheduled packet with deterministic jitter.
 func (s *Server) sendLoop(sess *gortsplib.ServerSession) {
-	closeOnce := sync.Once{}
-	finish := func() { closeOnce.Do(func() { close(s.done) }) }
-	defer finish()
+	finishDone := sync.Once{}
+	finishSent := sync.Once{}
+	defer finishDone.Do(func() { close(s.done) })
+	defer finishSent.Do(func() { close(s.sent) })
+
+	// Wait until the reader has been activated post-PLAY.
+	select {
+	case <-s.ready:
+	case <-time.After(2 * time.Second):
+		return
+	}
 
 	media := s.desc.Medias[0]
 	for _, spec := range s.schedule {
-		if spec.DelayJitter > 0 {
-			time.Sleep(time.Duration(spec.DelayJitter) * time.Microsecond)
+		// Pacing keeps the server write queue from overflowing when
+		// the client is still draining the control connection. With
+		// configured jitter that delay is used; otherwise a fixed
+		// microsecond tick preserves an even, deterministic cadence.
+		wait := spec.DelayJitter
+		if wait == 0 {
+			wait = 50
 		}
+		time.Sleep(time.Duration(wait) * time.Microsecond)
 		var pkt pionrtp.Packet
 		if err := pkt.Unmarshal(spec.Data); err != nil {
 			continue // skip but never crash the mock
@@ -208,3 +243,7 @@ func (s *Server) sendLoop(sess *gortsplib.ServerSession) {
 	}
 	_ = sess
 }
+
+// Sent returns a channel closed once the full schedule has been
+// written to the stream (or the send loop exited early).
+func (s *Server) Sent() <-chan struct{} { return s.sent }

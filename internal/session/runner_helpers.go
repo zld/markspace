@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"time"
 
 	"github.com/bluenviron/gortsplib/v4/pkg/base"
 
@@ -58,6 +59,9 @@ func (r *Runner) negotiateAndReceive(
 	if err := client.SetupAll(desc.BaseURL, desc.Medias); err != nil {
 		return r.fail(machine, "setup", err)
 	}
+	// gortsplib stores RTP callbacks on the setupped media, so the
+	// handler must be attached after SETUP and before PLAY.
+	adapter.OnRTP(r.rawHandler)
 	if err := machine.Transition(EventSetupOK); err != nil {
 		return r.fail(machine, "state", err)
 	}
@@ -74,29 +78,64 @@ func (r *Runner) negotiateAndReceive(
 		return r.fail(machine, "state", err)
 	}
 
-	// Receive until the stream ends, the timeout fires or the
-	// context is cancelled. Connection loss surfaces via Wait.
+	// Receive until the expected number of frames is reassembled,
+	// the connection fails, or the stream timeout elapses. The mock
+	// keeps the control connection open after sending, so completion
+	// is driven by frame count rather than by connection close.
 	waitCh := make(chan error, 1)
 	go func() { waitCh <- client.Wait() }()
 
 	streamCtx, cancel := context.WithTimeout(ctx, r.cfg.StreamTimeout)
 	defer cancel()
+	ticker := time.NewTicker(20 * time.Millisecond)
+	defer ticker.Stop()
 
-	select {
-	case err := <-waitCh:
-		if err != nil {
-			return r.fail(machine, "receive", err)
+	// Once the source signals end-of-stream, allow a short drain
+	// window for in-flight UDP datagrams to arrive, then finish even
+	// if some were lost on the transport.
+	var drain *time.Timer
+	drainCh := func() <-chan time.Time {
+		if drain == nil {
+			return nil
 		}
-	case <-streamCtx.Done():
-		// A clean run normally ends when the server closes the
-		// session; a deadline means data stopped unexpectedly.
-		if ctx.Err() != nil {
-			return r.fail(machine, "receive", ctx.Err())
-		}
-		return r.fail(machine, "receive", streamCtx.Err())
+		return drain.C
 	}
+	streamDone := r.cfg.SentCh
 
-	// Stopping -> Closed (TEARDOWN itself is issued by adapter.Close).
+	for {
+		// Fast path: every scheduled packet was received (TCP case).
+		if reorderer.Stats().Received >= r.cfg.ExpectedPackets {
+			return r.stopAndClose(machine)
+		}
+		select {
+		case err := <-waitCh:
+			if err != nil {
+				return r.fail(machine, "receive", err)
+			}
+			return r.fail(machine, "receive", errors.New("session ended before stream completed"))
+		case <-streamDone:
+			// Arm the drain window once; nil the channel so this
+			// case does not re-fire.
+			if drain == nil {
+				drain = time.NewTimer(300 * time.Millisecond)
+			}
+			streamDone = nil
+		case <-drainCh():
+			return r.stopAndClose(machine)
+		case <-ticker.C:
+			// Re-check the fast path on the next loop iteration.
+		case <-streamCtx.Done():
+			if ctx.Err() != nil {
+				return r.fail(machine, "receive", ctx.Err())
+			}
+			return r.fail(machine, "receive", streamCtx.Err())
+		}
+	}
+}
+
+// stopAndClose drives the last two happy-path transitions. TEARDOWN
+// itself is issued later by adapter.Close in Run.
+func (r *Runner) stopAndClose(machine *Machine) error {
 	if err := machine.Transition(EventStop); err != nil {
 		return r.fail(machine, "state", err)
 	}

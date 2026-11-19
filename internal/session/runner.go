@@ -26,6 +26,14 @@ type Config struct {
 	UDPMaxPort         int
 	Seed               int64
 	FramesRequested    int
+	// ExpectedPackets is the deterministic number of datagrams the
+	// source will deliver; used as a fast completion check.
+	ExpectedPackets int
+	// SentCh, when non-nil, is closed once the source has finished
+	// writing its full schedule. The runner then waits one quiet
+	// drain window before ending the receive phase, tolerating
+	// transport-level (e.g. UDP) losses.
+	SentCh <-chan struct{}
 }
 
 // PhaseError annotates an error with the RTSP phase that failed, so
@@ -40,7 +48,8 @@ func (e *PhaseError) Unwrap() error { return e.Err }
 
 // Runner executes the full RTSP validation lifecycle.
 type Runner struct {
-	cfg Config
+	cfg        Config
+	rawHandler transport.RawHandler
 }
 
 // NewRunner validates the configuration and returns a runner.
@@ -88,7 +97,7 @@ func (r *Runner) Run(ctx context.Context) (report.Report, error) {
 	assembler := frame.NewAssembler(r.cfg.MaxFramePackets, r.cfg.MaxBufferedFrames)
 
 	var malformed int
-	adapter.OnRTP(func(raw []byte) {
+	r.rawHandler = func(raw []byte) {
 		pkt, perr := rtp.Parse(raw)
 		if perr != nil {
 			malformed++
@@ -97,7 +106,7 @@ func (r *Runner) Run(ctx context.Context) (report.Report, error) {
 		for _, ordered := range reorderer.Push(pkt) {
 			_, _ = assembler.Push(ordered)
 		}
-	})
+	}
 
 	runErr := r.negotiateAndReceive(ctx, machine, adapter, reorderer, assembler)
 
