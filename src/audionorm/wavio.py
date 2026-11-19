@@ -59,7 +59,7 @@ def write_wav_atomic(path: Path, data: np.ndarray, rate: int) -> None:
     tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
     try:
         clipped = np.clip(data, -1.0, 1.0)
-        sf.write(str(tmp), clipped, rate, subtype=OUTPUT_SUBTYPE)
+        sf.write(str(tmp), clipped, rate, subtype=OUTPUT_SUBTYPE, format="WAV")
         info = sf.info(str(tmp))  # readability check
         if (info.samplerate != rate or info.channels != data.shape[1]
                 or info.frames != data.shape[0]):

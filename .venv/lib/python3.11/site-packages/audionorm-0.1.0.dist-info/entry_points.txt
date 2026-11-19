@@ -1,0 +1,2 @@
+[console_scripts]
+audionorm = audionorm.cli:main

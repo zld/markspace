@@ -50,7 +50,11 @@ def generate_all(input_dir: Path) -> list[Path]:
     add("silence.wav", np.zeros((4800, 2)), 48000)
     # Single-frame file.
     add("single_frame.wav", np.array([[0.25, -0.25]]), 44100)
-    # Hot float WAV whose samples exceed full scale (clipped_before > 0).
-    hot = _tone(44100, 0.5, [100.0, 100.0], 1.4)
+    # Hot float WAV: quiet tone + full-scale impulses. Loudness is low
+    # (positive gain demanded) but the true peak exceeds the -1 dBTP
+    # ceiling, so the gain limiter must engage; samples beyond full
+    # scale give clipped_before > 0.
+    hot = _tone(44100, 0.5, [440.0, 440.0], 0.05)
+    hot[::4410, :] = 1.15
     add("hot_float.wav", hot, 44100, subtype="FLOAT")
     return written

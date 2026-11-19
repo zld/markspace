@@ -1,0 +1,9 @@
+Metadata-Version: 2.4
+Name: audionorm
+Version: 0.1.0
+Summary: Offline batch WAV resample + loudness normalization with reproducible JSON evidence
+Requires-Python: >=3.11
+Requires-Dist: numpy<2.0,>=1.26
+Requires-Dist: soundfile<0.13,>=0.12
+Provides-Extra: test
+Requires-Dist: pytest<9,>=8; extra == "test"

@@ -1,0 +1,5 @@
+numpy<2.0,>=1.26
+soundfile<0.13,>=0.12
+
+[test]
+pytest<9,>=8

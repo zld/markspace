@@ -95,14 +95,14 @@ def limit_gain_for_peak(samples: np.ndarray, rate: int, gain_db: float,
                         ceiling: float, true_peak_fn) -> tuple[float, bool]:
     """Clamp gain so the post-gain true peak stays under ``ceiling`` (linear).
 
-    Returns (possibly reduced gain_db, was_limited).
+    Returns (possibly reduced gain_db, was_limited). The clamp applies in
+    both directions: a boost is reduced, and if the ungained signal already
+    exceeds the ceiling the gain is pulled below 0 dB.
     """
-    if gain_db <= 0.0:
-        return gain_db, False
     peak = true_peak_fn(samples, rate)
     if peak <= 0.0:
         return gain_db, False
     max_gain = 20.0 * math.log10(ceiling / peak)
     if gain_db > max_gain:
-        return max(0.0, max_gain), True
+        return max_gain, True
     return gain_db, False

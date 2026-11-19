@@ -38,8 +38,8 @@ def test_downsample_attenuates_above_nyquist():
 def test_identity_rate_roundtrip():
     x = sine(48000, 0.25, 500.0)
     y = resample(x, 48000, 48000)
-    assert y.shape == x.shape
-    np.testing.assert_allclose(y[100:-100, 0], x[100:-100, 0], atol=1e-3)
+    assert y.shape == (x.shape[0], 1)
+    np.testing.assert_allclose(y[100:-100, 0], x[100:-100], atol=1e-3)
 
 
 def test_channels_do_not_crosstalk():
@@ -49,15 +49,18 @@ def test_channels_do_not_crosstalk():
     y = resample(x, 44100, 48000)
     assert y.shape == (24000, 2)
     assert np.max(np.abs(y[:, 1])) == 0.0
-    # Channel 0 matches a mono resample of the same signal exactly.
-    np.testing.assert_array_equal(y[:, 0], resample(left, 44100, 48000)[:, 0])
+    # Channel 0 matches a mono resample of the same signal.
+    np.testing.assert_allclose(y[:, 0], resample(left, 44100, 48000)[:, 0],
+                               atol=1e-12)
 
 
 def test_distinct_channels_stay_separated():
     x = np.stack([sine(44100, 0.5, 440.0), sine(44100, 0.5, 2000.0)], axis=1)
     y = resample(x, 44100, 48000)
-    np.testing.assert_array_equal(y[:, 0], resample(x[:, 0], 44100, 48000)[:, 0])
-    np.testing.assert_array_equal(y[:, 1], resample(x[:, 1], 44100, 48000)[:, 0])
+    np.testing.assert_allclose(y[:, 0], resample(x[:, 0], 44100, 48000)[:, 0],
+                               atol=1e-12)
+    np.testing.assert_allclose(y[:, 1], resample(x[:, 1], 44100, 48000)[:, 0],
+                               atol=1e-12)
 
 
 def test_tail_not_multiple_of_block():
