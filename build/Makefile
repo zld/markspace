@@ -140,6 +140,30 @@ test_prep/all: cmake_check_build_system
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_prep/all
 .PHONY : test_prep/all
 
+src/cube_parser.o: src/cube_parser.cpp.o
+.PHONY : src/cube_parser.o
+
+# target to build an object file
+src/cube_parser.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/lutcheck.dir/build.make CMakeFiles/lutcheck.dir/src/cube_parser.cpp.o
+.PHONY : src/cube_parser.cpp.o
+
+src/cube_parser.i: src/cube_parser.cpp.i
+.PHONY : src/cube_parser.i
+
+# target to preprocess a source file
+src/cube_parser.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/lutcheck.dir/build.make CMakeFiles/lutcheck.dir/src/cube_parser.cpp.i
+.PHONY : src/cube_parser.cpp.i
+
+src/cube_parser.s: src/cube_parser.cpp.s
+.PHONY : src/cube_parser.s
+
+# target to generate assembly for a file
+src/cube_parser.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/lutcheck.dir/build.make CMakeFiles/lutcheck.dir/src/cube_parser.cpp.s
+.PHONY : src/cube_parser.cpp.s
+
 src/main.o: src/main.cpp.o
 .PHONY : src/main.o
 
@@ -173,6 +197,9 @@ help:
 	@echo "... edit_cache"
 	@echo "... rebuild_cache"
 	@echo "... lutcheck"
+	@echo "... src/cube_parser.o"
+	@echo "... src/cube_parser.i"
+	@echo "... src/cube_parser.s"
 	@echo "... src/main.o"
 	@echo "... src/main.i"
 	@echo "... src/main.s"
