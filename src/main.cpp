@@ -136,24 +136,17 @@ bool parse_args(int argc, char** argv, Options& opt) {
 
 double fract(double v) { return v - std::floor(v); }
 
-// Deterministic sample pixels authored as sRGB-encoded values: color bars,
-// boundary/out-of-range samples, then a gradient from irrational strides.
+// Deterministic sample pixels authored as sRGB-encoded values: color bars
+// first, then a gradient from irrational strides. Out-of-range boundary
+// samples are injected later, after the working-space conversion.
 std::vector<Rgb> generate_pixels(std::size_t count) {
   static const Rgb kBars[8] = {{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1},
                                {1, 1, 0}, {1, 0, 1}, {0, 1, 1}, {1, 1, 1}};
-  static const Rgb kBounds[6] = {{0, 0, 0},
-                                 {1, 1, 1},
-                                 {-0.05f, 0.5f, 0.5f},
-                                 {1.05f, 0.5f, 0.5f},
-                                 {0.5f, -0.02f, 1.03f},
-                                 {0.5f, 1.07f, -0.01f}};
   std::vector<Rgb> px;
   px.reserve(count);
   for (std::size_t i = 0; i < count; ++i) {
     if (i < 8) {
       px.push_back(kBars[i]);
-    } else if (i < 14) {
-      px.push_back(kBounds[i - 8]);
     } else {
       const double t = static_cast<double>(i);
       px.push_back(Rgb{static_cast<float>(fract(t * 0.7548776662466927)),
@@ -162,6 +155,21 @@ std::vector<Rgb> generate_pixels(std::size_t count) {
     }
   }
   return px;
+}
+
+// Overwrite a few leading pixels with boundary and out-of-range values in
+// the working space, so clamping and histogram under/overflow are exercised
+// regardless of the selected color space.
+void inject_boundary_samples(std::vector<Rgb>& px) {
+  static const Rgb kBounds[6] = {{0, 0, 0},
+                                 {1, 1, 1},
+                                 {-0.05f, 0.5f, 0.5f},
+                                 {1.05f, 0.5f, 0.5f},
+                                 {0.5f, -0.02f, 1.03f},
+                                 {0.5f, 1.07f, -0.01f}};
+  for (std::size_t i = 0; i < 6 && 8 + i < px.size(); ++i) {
+    px[8 + i] = kBounds[i];
+  }
 }
 
 // Re-encode generated sRGB pixels into the requested working space,
@@ -245,6 +253,7 @@ int run_pipeline(const Options& opt, bool demo_mode) {
   }
   std::vector<Rgb> pixels = generate_pixels(count);
   convert_pixels_to_space(pixels, opt.space);
+  inject_boundary_samples(pixels);
 
   lutcheck::RenderOptions ropt;
   ropt.space = opt.space;
