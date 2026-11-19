@@ -154,12 +154,12 @@ func run(args []string, stdout, stderr *os.File) int {
 		// Also used as the gortsplib read timeout: keep it above the
 		// whole stream duration so it does not fire mid-receive.
 		NegotiationTimeout: 10 * time.Second,
-		UDPMinPort:        o.udpMinPort,
-		UDPMaxPort:        o.udpMaxPort,
-		Seed:              o.seed,
-		FramesRequested:   o.frames,
-		ExpectedPackets:   srv.ScheduledPackets(),
-		SentCh:            srv.Sent(),
+		UDPMinPort:         o.udpMinPort,
+		UDPMaxPort:         o.udpMaxPort,
+		Seed:               o.seed,
+		FramesRequested:    o.frames,
+		ExpectedPackets:    srv.ScheduledPackets(),
+		SentCh:             srv.Sent(),
 	})
 	if err != nil {
 		fmt.Fprintln(stderr, "rtspcheck:", err)

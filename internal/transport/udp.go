@@ -119,9 +119,9 @@ func newUDPAdapter(cfg Config) (*udpAdapter, error) {
 	return &udpAdapter{client: client, allocator: alloc}, nil
 }
 
-func (a *udpAdapter) Mode() Mode                 { return ModeUDP }
-func (a *udpAdapter) Client() *gortsplib.Client  { return a.client }
-func (a *udpAdapter) OnRTP(h RawHandler)         { a.client.OnPacketRTPAny(wireCallback(h)) }
+func (a *udpAdapter) Mode() Mode                { return ModeUDP }
+func (a *udpAdapter) Client() *gortsplib.Client { return a.client }
+func (a *udpAdapter) OnRTP(h RawHandler)        { a.client.OnPacketRTPAny(wireCallback(h)) }
 
 func (a *udpAdapter) MarkStarted() {
 	a.mu.Lock()

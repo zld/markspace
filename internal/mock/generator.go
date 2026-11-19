@@ -36,8 +36,8 @@ type PacketSpec struct {
 }
 
 const (
-	videoPT        = 96
-	videoSSRC      = 0x4d534d4b // "MSMK"
+	videoPT         = 96
+	videoSSRC       = 0x4d534d4b // "MSMK"
 	packetsPerFrame = 4
 	clockTicks      = 3600
 	maxPayload      = 1200

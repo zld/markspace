@@ -82,10 +82,10 @@ var allowedTransitions = map[State]map[Event]State{
 // transition increments TransitionCount; rejected transitions are
 // reported as locatable errors without changing the state.
 type Machine struct {
-	state            State
-	transitionCount  int
+	state             State
+	transitionCount   int
 	illegalRejections int
-	history          []transitionRecord
+	history           []transitionRecord
 }
 
 type transitionRecord struct {

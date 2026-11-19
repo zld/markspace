@@ -21,13 +21,13 @@ const (
 
 // Parse errors. They are returned wrapped; use errors.Is.
 var (
-	ErrPacketTooLarge  = errors.New("rtp: packet exceeds MaxPacketSize")
-	ErrShortPacket     = errors.New("rtp: packet shorter than fixed header")
-	ErrBadVersion      = errors.New("rtp: unsupported RTP version")
-	ErrCSRCOverflow    = errors.New("rtp: CSRC list runs past packet end")
+	ErrPacketTooLarge    = errors.New("rtp: packet exceeds MaxPacketSize")
+	ErrShortPacket       = errors.New("rtp: packet shorter than fixed header")
+	ErrBadVersion        = errors.New("rtp: unsupported RTP version")
+	ErrCSRCOverflow      = errors.New("rtp: CSRC list runs past packet end")
 	ErrExtensionOverflow = errors.New("rtp: header extension runs past packet end")
-	ErrPaddingOverflow = errors.New("rtp: padding larger than payload section")
-	ErrZeroPadding     = errors.New("rtp: padding flag set but padding size is zero")
+	ErrPaddingOverflow   = errors.New("rtp: padding larger than payload section")
+	ErrZeroPadding       = errors.New("rtp: padding flag set but padding size is zero")
 )
 
 // Packet is the parsed view of one RTP datagram. Byte slices alias

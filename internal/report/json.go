@@ -90,7 +90,7 @@ func (r Report) summarize() string {
 	return strings.Join(fields, " ")
 }
 
-func kvInt(key string, v int) string  { return key + "=" + strconv.Itoa(v) }
+func kvInt(key string, v int) string { return key + "=" + strconv.Itoa(v) }
 func kvInt64(key string, v int64) string {
 	return key + "=" + strconv.FormatInt(v, 10)
 }

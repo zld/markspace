@@ -48,7 +48,7 @@ type Assembler struct {
 	maxPackets int
 	maxFrames  int
 	pending    map[uint32]*pendingFrame // one open frame per SSRC
-	order      []uint32                  // insertion order of SSRCs
+	order      []uint32                 // insertion order of SSRCs
 	seenTS     map[uint32]map[uint32]struct{}
 	stats      Stats
 }

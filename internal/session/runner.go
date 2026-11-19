@@ -13,10 +13,10 @@ import (
 
 // Config parameterizes one validation run.
 type Config struct {
-	Mode            transport.Mode
-	URL             string
-	ReorderWindow   int
-	MaxFramePackets int
+	Mode              transport.Mode
+	URL               string
+	ReorderWindow     int
+	MaxFramePackets   int
 	MaxBufferedFrames int
 	// StreamTimeout bounds how long the runner waits for RTP after PLAY.
 	StreamTimeout time.Duration
