@@ -7,23 +7,23 @@ import (
 
 // PipelineStats is a point-in-time snapshot of every pipeline counter.
 type PipelineStats struct {
-	ParseErrors       int
-	Received          int
-	Duplicates        int
-	LatePackets       int
-	MissingPackets    int
-	GapEvents         int
-	TimeoutFlushes    int
-	CompleteFrames    int
-	IncompleteFrames  int
+	ParseErrors      int
+	Received         int
+	Duplicates       int
+	LatePackets      int
+	MissingPackets   int
+	GapEvents        int
+	TimeoutFlushes   int
+	CompleteFrames   int
+	IncompleteFrames int
 }
 
 // Pipeline wires the parser, reorderer and frame reassembler into the single
 // entry point used by both RTSP transport adapters. It is safe for the
 // gortsplib callback goroutine and an external timeout ticker concurrently.
 type Pipeline struct {
-	parser     *Parser
-	reorderer  *Reorderer
+	parser      *Parser
+	reorderer   *Reorderer
 	reassembler *Reassembler
 
 	mu          sync.Mutex

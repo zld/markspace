@@ -47,17 +47,17 @@ const (
 type Server struct {
 	cfg Config
 
-	mu        sync.Mutex
-	gortsrv   *gortsplib.Server
-	stream    *gortsplib.ServerStream
-	media     *description.Media
-	clientSS  *gortsplib.ServerSession
-	clientC   *gortsplib.ServerConn
-	written   int
-	writeErrors int
+	mu           sync.Mutex
+	gortsrv      *gortsplib.Server
+	stream       *gortsplib.ServerStream
+	media        *description.Media
+	clientSS     *gortsplib.ServerSession
+	clientC      *gortsplib.ServerConn
+	written      int
+	writeErrors  int
 	lastWriteErr error
-	closed    bool
-	rtspAddr  string
+	closed       bool
+	rtspAddr     string
 }
 
 // handler adapts the gortsplib callback interfaces to *Server.

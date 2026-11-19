@@ -81,7 +81,7 @@ func (p *Parser) Parse(buf []byte) (*Packet, error) {
 		PayloadType:    b1 & 0x7f,
 		Marker:         b1&0x80 != 0,
 		SequenceNumber: uint16(buf[2])<<8 | uint16(buf[3]),
-		Timestamp:      uint32(buf[4])<<24 | uint32(buf[5])<<16 |
+		Timestamp: uint32(buf[4])<<24 | uint32(buf[5])<<16 |
 			uint32(buf[6])<<8 | uint32(buf[7]),
 		SSRC: uint32(buf[8])<<24 | uint32(buf[9])<<16 |
 			uint32(buf[10])<<8 | uint32(buf[11]),

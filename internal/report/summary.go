@@ -10,20 +10,20 @@ import (
 
 // Summary is the final per-run diagnostic report.
 type Summary struct {
-	Transport         string `json:"transport"`
-	Seed              int64  `json:"seed"`
-	StateTransitions  int    `json:"state_transitions"`
-	RejectedTransitions int  `json:"rejected_transitions"`
-	SequenceGaps      int    `json:"sequence_gaps"`
-	MissingPackets    int    `json:"missing_packets"`
-	DuplicatePackets  int    `json:"duplicate_packets"`
-	LatePackets       int    `json:"late_packets"`
-	TimeoutFlushes    int    `json:"reorder_timeout_flushes"`
-	ReassembledFrames int    `json:"reassembled_frames"`
-	IncompleteFrames  int    `json:"incomplete_frames"`
-	ParseErrors       int    `json:"parse_errors"`
-	Disconnected      bool   `json:"server_disconnected"`
-	DurationMS        int64  `json:"duration_ms"`
+	Transport           string `json:"transport"`
+	Seed                int64  `json:"seed"`
+	StateTransitions    int    `json:"state_transitions"`
+	RejectedTransitions int    `json:"rejected_transitions"`
+	SequenceGaps        int    `json:"sequence_gaps"`
+	MissingPackets      int    `json:"missing_packets"`
+	DuplicatePackets    int    `json:"duplicate_packets"`
+	LatePackets         int    `json:"late_packets"`
+	TimeoutFlushes      int    `json:"reorder_timeout_flushes"`
+	ReassembledFrames   int    `json:"reassembled_frames"`
+	IncompleteFrames    int    `json:"incomplete_frames"`
+	ParseErrors         int    `json:"parse_errors"`
+	Disconnected        bool   `json:"server_disconnected"`
+	DurationMS          int64  `json:"duration_ms"`
 }
 
 // WriteJSON emits the summary as pretty-printed JSON.

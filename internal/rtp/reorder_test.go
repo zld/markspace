@@ -7,7 +7,7 @@ import (
 
 func mkPkt(seq uint16, ts uint32, marker bool) *Packet {
 	return &Packet{
-		Header: Header{SequenceNumber: seq, Timestamp: ts, Marker: marker, SSRC: 1},
+		Header:  Header{SequenceNumber: seq, Timestamp: ts, Marker: marker, SSRC: 1},
 		Payload: []byte{byte(seq)},
 	}
 }

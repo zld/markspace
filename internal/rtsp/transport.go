@@ -32,10 +32,10 @@ type Pipeline interface {
 
 // AdapterConfig parameterizes one client-side transport adapter.
 type AdapterConfig struct {
-	Transport       config.TransportMode
-	URL             string
-	Window          int
-	ReorderTimeout  time.Duration
+	Transport      config.TransportMode
+	URL            string
+	Window         int
+	ReorderTimeout time.Duration
 	// ReadTimeout bounds blocking RTSP reads so a dead server cannot hang.
 	ReadTimeout time.Duration
 	Pipeline    Pipeline

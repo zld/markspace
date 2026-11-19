@@ -3,8 +3,8 @@ package rtp
 // Frame is a reassembled RTP frame: all packets of one SSRC sharing one RTP
 // timestamp, closed by a marker bit.
 type Frame struct {
-	SSRC       uint32
-	Timestamp  uint32
+	SSRC      uint32
+	Timestamp uint32
 	// Packets are the ordered packets that make up the frame.
 	Packets []*Packet
 	// Complete is false when the frame was flushed because the timestamp
