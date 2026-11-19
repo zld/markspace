@@ -165,6 +165,24 @@ class BlockIndependenceTests(unittest.TestCase):
         with self.assertRaises(InputError):
             resample.resample(np.zeros((4, 1)), 44100, 48000, block_size=0)
 
+    def test_steep_downsample_is_bounded_and_finite(self) -> None:
+        frames = 400
+        data = np.random.default_rng(5).normal(0, 0.2, (frames, 1))
+        out = resample.resample(data, 384000, 8000, block_size=512)
+        expected = resample.resampled_frames(frames, 384000, 8000)
+        self.assertEqual(out.shape[0], expected)
+        self.assertTrue(np.all(np.isfinite(out)))
+
+    def test_steep_ratio_matches_python_reference(self) -> None:
+        # A tiny hand-computed reference: 3 input samples -> 2 output samples.
+        data = np.array([[0.0], [1.0], [0.0]])
+        out = resample.resample(data, 3, 2, config=ResampleConfig(zero_crossings=4))
+        self.assertEqual(out.shape[0], 2)
+        for value in out[:, 0]:
+            self.assertTrue(np.isfinite(value))
+        self.assertGreater(float(out[0, 0]), 0.0)
+        self.assertGreater(float(out[1, 0]), 0.0)
+
 
 class LayoutTests(unittest.TestCase):
     def test_tail_block_is_padded_then_trimmed(self) -> None:

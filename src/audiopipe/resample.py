@@ -25,6 +25,10 @@ from .errors import InputError
 
 BOUNDARY_RULE = "mirror-edge"  # -1 -> 0, -2 -> 1, N -> N-1, N+1 -> N-2
 TWO_PI = 2.0 * math.pi
+#: Upper bound on the (block x taps) gather buffer, in bytes. Extreme
+#: downsampling ratios need very long kernels, so the working block is shrunk
+#: to keep memory bounded. Block boundaries never change sample values.
+GATHER_BUDGET_BYTES = 64 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -144,9 +148,12 @@ def resample(
     half = int(math.ceil(cfg.zero_crossings / cut)) + 1
     offsets = np.arange(-half, half + 1, dtype=np.int64)
     source = np.ascontiguousarray(data, dtype=np.float64)
+    # Long anti-alias kernels would otherwise need a huge gather buffer.
+    rows = max(1, GATHER_BUDGET_BYTES // (offsets.size * 8))
+    step = max(1, min(block_size, rows))
 
-    for start in range(0, frames_out, block_size):
-        stop = min(start + block_size, frames_out)
+    for start in range(0, frames_out, step):
+        stop = min(start + step, frames_out)
         base, frac = phases(np.arange(start, stop, dtype=np.int64), ratio)
         weights = kernel_weights(offsets, frac, cut, cfg.zero_crossings)
         idx = base[:, None] + offsets[None, :]

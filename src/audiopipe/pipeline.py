@@ -74,13 +74,11 @@ def process_file(
     frames_in = audio.frames
     rate_in = audio.rate
     source = loudness.quick_stats(audio.data)
-    # Reject a wrong channel layout before spending time on DSP.
-    layout.map_channels(audio.data, config.channels)
-    ratio: Ratio = rational_ratio(rate_in, config.target_rate)
-    frames_out_expected = resampled_frames(frames_in, rate_in, config.target_rate)
-
+    # Map once: the same call validates the channel policy before any DSP.
     mapped = layout.map_channels(audio.data, config.channels)
     channels_out = int(mapped.shape[1])
+    ratio: Ratio = rational_ratio(rate_in, config.target_rate)
+    frames_out_expected = resampled_frames(frames_in, rate_in, config.target_rate)
 
     resampled = resample.resample(
         mapped,
