@@ -242,3 +242,172 @@ class BatchEndToEndTests(TempDirMixin, unittest.TestCase):
         for rel in scan_inputs(self.path("out")):
             info = sf.info(os.path.join(self.path("out"), rel))
             self.assertEqual(info.subtype, "PCM_16")
+
+
+class FailureRecoveryTests(TempDirMixin, unittest.TestCase):
+    def test_corrupt_file_does_not_stop_batch(self) -> None:
+        input_dir = self.path("in")
+        write_wav(os.path.join(input_dir, "good.wav"), sine(440, 48000, 4800)[:, None], 48000)
+        os.makedirs(os.path.join(input_dir, "bad"))
+        with open(os.path.join(input_dir, "bad", "broken.wav"), "wb") as fh:
+            fh.write(b"RIFF\x00\x00\x00\x00WAVEjunk")
+        config = BatchConfig(
+            input_dir=input_dir,
+            output_dir=self.path("out"),
+            report_path=self.path("report.json"),
+            output_rate=48000,
+        )
+        report = batch.run_batch(config)
+        self.assertEqual(report["summary"], {"files": 2, "success": 1, "failed": 1})
+        failed = [r for r in report["files"] if r["status"] == "error"][0]
+        self.assertEqual(failed["error"]["code"], "unreadable")
+        self.assertEqual(failed["relative_path"], "bad/broken.wav")
+        self.assertTrue(os.path.exists(os.path.join(self.path("out"), "good.wav")))
+        self.assertFalse(os.path.exists(os.path.join(self.path("out"), "bad", "broken.wav")))
+
+    def test_write_failure_is_isolated_and_cleans_up(self) -> None:
+        input_dir = self.path("in")
+        write_wav(os.path.join(input_dir, "a.wav"), sine(440, 48000, 4800)[:, None], 48000)
+        write_wav(os.path.join(input_dir, "b.wav"), sine(440, 48000, 4800)[:, None], 48000)
+        real_write = batch.WavWriter.write
+
+        def failing_write(writer, block):
+            if writer.path.endswith("a.wav"):
+                raise batch.PipelineError("write_failed", "simulated disk failure")
+            return real_write(writer, block)
+
+        config = BatchConfig(
+            input_dir=input_dir,
+            output_dir=self.path("out"),
+            report_path=self.path("report.json"),
+            output_rate=48000,
+        )
+        with mock.patch.object(batch.WavWriter, "write", failing_write):
+            report = batch.run_batch(config)
+        self.assertEqual(report["summary"], {"files": 2, "success": 1, "failed": 1})
+        failed = [r for r in report["files"] if r["status"] == "error"][0]
+        self.assertEqual(failed["error"]["code"], "write_failed")
+        self.assertFalse(os.path.exists(os.path.join(self.path("out"), "a.wav")))
+        self.assertTrue(os.path.exists(os.path.join(self.path("out"), "b.wav")))
+        leftovers = [
+            name
+            for _root, _dirs, names in os.walk(self.path("out"))
+            for name in names
+            if name.endswith(".part.wav")
+        ]
+        self.assertEqual(leftovers, [])
+
+    def test_invalid_inputs_are_rejected_individually(self) -> None:
+        input_dir = self.path("in")
+        edge_fixtures(input_dir)
+        config = BatchConfig(
+            input_dir=input_dir,
+            output_dir=self.path("out"),
+            report_path=self.path("report.json"),
+            output_rate=48000,
+            output_subtype="PCM_24",
+        )
+        report = batch.run_batch(config)
+        codes = {
+            record["relative_path"]: (record["error"] or {}).get("code")
+            for record in report["files"]
+        }
+        self.assertEqual(codes["invalid/nine_channels.wav"], "unsupported_channels")
+        self.assertEqual(codes["invalid/float_encoding.wav"], "unsupported_format")
+        self.assertEqual(codes["invalid/low_rate.wav"], "invalid_sample_rate")
+        self.assertEqual(codes["invalid/corrupt.wav"], "unreadable")
+        ok = [r for r in report["files"] if r["status"] == "ok"]
+        self.assertGreaterEqual(len(ok), 6)
+        for record in ok:
+            self.assertIsNone(record["error"])
+
+    def test_empty_and_single_frame_files(self) -> None:
+        input_dir = self.path("in")
+        write_wav(os.path.join(input_dir, "empty.wav"), np.zeros((0, 2)), 44100)
+        write_wav(os.path.join(input_dir, "one.wav"), np.array([[0.3]]), 44100)
+        config = BatchConfig(
+            input_dir=input_dir,
+            output_dir=self.path("out"),
+            report_path=self.path("report.json"),
+            output_rate=48000,
+        )
+        report = batch.run_batch(config)
+        self.assertEqual(report["summary"]["success"], 2)
+        records = {r["relative_path"]: r for r in report["files"]}
+        self.assertEqual(records["empty.wav"]["output"]["frames"], 0)
+        self.assertEqual(records["empty.wav"]["after"]["rms"], 0.0)
+        self.assertEqual(records["one.wav"]["output"]["frames"], 1)
+        self.assertTrue(np.isfinite(records["one.wav"]["after"]["rms"]))
+
+
+class CliExitCodeTests(TempDirMixin, unittest.TestCase):
+    def _run(self, *args: str) -> int:
+        return cli_main(list(args))
+
+    def test_success_exit_zero(self) -> None:
+        input_dir = self.path("in")
+        demo_fixtures(input_dir)
+        code = self._run(
+            "normalize", "--input", input_dir, "--output", self.path("out"),
+            "--report", self.path("r.json"), "--rate", "48000", "--jobs", "2",
+        )
+        self.assertEqual(code, 0)
+        self.assertTrue(os.path.exists(self.path("r.json")))
+
+    def test_partial_failure_exit_one(self) -> None:
+        input_dir = self.path("in")
+        write_wav(os.path.join(input_dir, "good.wav"), sine(440, 48000, 4800)[:, None], 48000)
+        with open(os.path.join(input_dir, "bad.wav"), "wb") as fh:
+            fh.write(b"not a wav at all")
+        code = self._run(
+            "normalize", "--input", input_dir, "--output", self.path("out"),
+            "--report", self.path("r.json"), "--rate", "48000",
+        )
+        self.assertEqual(code, 1)
+        self.assertTrue(os.path.exists(self.path("r.json")))
+
+    def test_config_error_exit_two(self) -> None:
+        self.assertEqual(
+            self._run(
+                "normalize", "--input", self.path("missing"), "--output", self.path("o"),
+                "--report", self.path("r.json"), "--rate", "48000",
+            ),
+            2,
+        )
+        self.assertEqual(
+            self._run(
+                "normalize", "--input", self.path("in"), "--output", self.path("o"),
+                "--report", self.path("r.json"), "--rate", "12345",
+            ),
+            2,
+        )
+
+    def test_report_failure_exit_three(self) -> None:
+        input_dir = self.path("in")
+        write_wav(os.path.join(input_dir, "a.wav"), sine(440, 48000, 4800)[:, None], 48000)
+        os.makedirs(self.path("blocked"))
+        config_dir = self.path("blocked", "r.json")
+        os.makedirs(config_dir)  # a directory where the report file must go
+        code = self._run(
+            "normalize", "--input", input_dir, "--output", self.path("out"),
+            "--report", config_dir, "--rate", "48000",
+        )
+        self.assertEqual(code, 3)
+
+    def test_verify_command_exit_codes(self) -> None:
+        input_dir = self.path("in")
+        demo_fixtures(input_dir)
+        report_path = self.path("r.json")
+        self.assertEqual(
+            self._run(
+                "normalize", "--input", input_dir, "--output", self.path("out"),
+                "--report", report_path, "--rate", "48000",
+            ),
+            0,
+        )
+        self.assertEqual(self._run("verify", "--report", report_path), 0)
+        self.assertEqual(self._run("verify", "--report", self.path("nope.json")), 2)
+
+
+if __name__ == "__main__":
+    unittest.main()
