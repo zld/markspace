@@ -435,6 +435,12 @@ def test_cli_duplicate_input_exits_2(sample_path: Path, capsys):
     assert "duplicate input path" in capsys.readouterr().err
 
 
+def test_cli_refuses_output_over_input(sample_path: Path, capsys):
+    code = main(["analyze", str(sample_path), "--exchange-out", str(sample_path)])
+    assert code == 2
+    assert "refusing to overwrite input" in capsys.readouterr().err
+
+
 def test_cli_batch_continues_after_error(sample_path: Path, tmp_path: Path, capsys):
     corrupt = tmp_path / "corrupt.json"
     corrupt.write_text("{", encoding="utf-8")
@@ -451,6 +457,50 @@ def test_cli_missing_file_exits_2(tmp_path: Path, capsys):
     assert code == 2
     payload = json.loads(capsys.readouterr().out)
     assert payload["status"] == "error"
+
+
+def test_cli_tolerance_violation_exits_3(tmp_path: Path):
+    payload = {
+        "version": "v2",
+        "timeline": {
+            "tracks": [
+                {
+                    "id": "v1",
+                    "rate": "24",
+                    "clips": [
+                        {"id": "a", "start": "0", "duration": "4"},
+                        {"id": "b", "start": "1", "duration": "2", "priority": 5},
+                    ],
+                }
+            ]
+        },
+    }
+    path = tmp_path / "tol.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    # b cuts a in half; a keeps its left piece, shrinking the span from 4s to
+    # 3s (24 frames). Tolerance 0 fails, tolerance 24 passes.
+    assert main(["analyze", str(path), "--resolve", "priority", "--tolerance", "0"]) == 3
+    assert main(["analyze", str(path), "--resolve", "priority", "--tolerance", "24"]) == 0
+
+
+def test_cli_text_format(sample_path: Path, capsys):
+    assert main(["analyze", str(sample_path), "--resolve", "priority", "--format", "text"]) == 0
+    output = capsys.readouterr().out
+    assert "conflicts: 3" in output
+    assert "render tracks: 3" in output
+
+
+def test_cli_output_options_reject_multiple_inputs(sample_path: Path, tmp_path: Path, capsys):
+    code = main(
+        [
+            "analyze",
+            str(sample_path),
+            str(sample_path.parent / sample_path.name),
+            "--exchange-out",
+            str(tmp_path / "out.json"),
+        ]
+    )
+    assert code == 2
 
 
 def test_cli_negative_tolerance_is_usage_error(sample_path: Path):

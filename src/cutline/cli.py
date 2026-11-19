@@ -28,7 +28,7 @@ from typing import Any, Sequence
 
 from . import __version__
 from .conflicts import detect
-from .exchange import ExchangeError, LoadedExchange, load_exchange
+from .exchange import ExchangeError, LoadedExchange, load_exchange, write_exchange
 from .model import ModelError, Timeline
 from .rational import TimeError
 from .render import RenderPlan, build_plan
@@ -129,6 +129,20 @@ def build_parser() -> argparse.ArgumentParser:
 # ---------------------------------------------------------------------------
 
 
+def _ensure_output_paths(inputs: Sequence[Path], outputs: Sequence[Path | None]) -> None:
+    protected = {path.resolve() for path in inputs}
+    seen: set[Path] = set()
+    for output in outputs:
+        if output is None:
+            continue
+        resolved = output.resolve()
+        if resolved in protected:
+            raise CLIError(f"refusing to overwrite input file: {output}", EXIT_USAGE)
+        if resolved in seen:
+            raise CLIError(f"duplicate output path: {output}", EXIT_USAGE)
+        seen.add(resolved)
+
+
 def _ensure_unique_inputs(inputs: Sequence[Path]) -> None:
     seen: set[Path] = set()
     for path in inputs:
@@ -195,6 +209,34 @@ def analyze_loaded(
     return AnalyzeOutcome(resolved=resolved, summary=summary, plan=plan)
 
 
+def _write_json(path: Path, payload: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.tmp")
+    tmp.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(path)
+
+
+def _format_text(payload: dict[str, Any]) -> str:
+    lines = [
+        f"status: {payload['status']}",
+        f"exchange: {payload['exchange_version']}  strategy: {payload['strategy']}",
+        f"conflicts: {payload['conflict_count']}  unresolved: {len(payload['unresolved'])}",
+        (
+            f"duration: {payload['duration_before_frames']} -> {payload['duration_after_frames']} frames"
+            f" (delta {payload['duration_delta_frames']}, tolerance {payload['tolerance_frames']})"
+        ),
+        f"render tracks: {payload['render_track_count']}  clips: {payload['clip_count_after']}",
+    ]
+    for interval in payload["resolved_intervals"]:
+        lines.append(
+            f"  {interval['track']:>12}  {interval['clip']:<24} "
+            f"{interval['start']} .. {interval['end']}"
+        )
+    for warning in payload["warnings"]:
+        lines.append(f"warning: {warning}")
+    return "\n".join(lines)
+
+
 # ---------------------------------------------------------------------------
 # commands
 # ---------------------------------------------------------------------------
@@ -203,8 +245,15 @@ def analyze_loaded(
 def _cmd_analyze(args: argparse.Namespace) -> int:
     inputs = [Path(item) for item in args.inputs]
     _ensure_unique_inputs(inputs)
+    if len(inputs) > 1 and (args.exchange_out or args.plan_out or args.otio_out):
+        raise CLIError(
+            "output options require a single input file; run one file at a time",
+            EXIT_USAGE,
+        )
     if args.tolerance < 0:
         raise CLIError("--tolerance must be zero or greater", EXIT_USAGE)
+    outputs = [Path(p) if p else None for p in (args.exchange_out, args.plan_out, args.otio_out)]
+    _ensure_output_paths(inputs, outputs)
 
     results: list[dict[str, Any]] = []
     overall = EXIT_OK
@@ -217,6 +266,17 @@ def _cmd_analyze(args: argparse.Namespace) -> int:
                 tolerance=args.tolerance,
                 plan_rate=args.plan_rate,
             )
+            if args.exchange_out:
+                write_exchange(
+                    outcome.resolved,
+                    args.exchange_out,
+                    args.exchange_version,
+                    forbidden_paths=inputs,
+                )
+            if args.plan_out:
+                _write_json(Path(args.plan_out), outcome.plan.as_dict())
+            if args.otio_out:
+                raise CLIError("--otio-out arrives with the OTIO commands", EXIT_INTERNAL)
             payload = outcome.summary.as_dict()
             payload["input"] = str(path)
             payload["plan"] = outcome.plan.as_dict()
@@ -234,7 +294,18 @@ def _cmd_analyze(args: argparse.Namespace) -> int:
             overall = max(overall, EXIT_USAGE)
 
     payload: Any = results[0] if len(inputs) == 1 else {"results": results}
-    print(json.dumps(payload, indent=2))
+    if args.format == "json":
+        print(json.dumps(payload, indent=2))
+    else:
+        for index, item in enumerate(results):
+            if len(inputs) > 1:
+                print(f"== {item['input']} ==")
+            if item.get("status") == "error":
+                print(f"error: {item['error']}")
+            else:
+                print(_format_text(item))
+            if len(inputs) > 1 and index != len(results) - 1:
+                print()
     return overall
 
 
