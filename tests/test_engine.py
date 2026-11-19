@@ -199,3 +199,202 @@ class BufferTests(unittest.TestCase):
         with self.assertRaises(ConfigError):
             BufferModel(30.0).consume(300.0, 4.0, 0.0)
 
+def make_ladder() -> Ladder:
+    return Ladder((300.0, 750.0, 1200.0, 1850.0, 2600.0), 4.0)
+
+
+class PolicyTests(unittest.TestCase):
+    def test_low_buffer_forces_downgrade_even_when_bandwidth_allows(self) -> None:
+        ladder = make_ladder()
+        policy = AbrPolicy(ladder, PolicyConfig(danger_buffer_seconds=5.0), initial_tier=3)
+        decision = policy.select(available_kbps=5000.0, buffer_seconds=4.999)
+        self.assertLess(decision.tier, 3)
+        self.assertEqual(decision.reason, "buffer-danger")
+
+        edge = AbrPolicy(ladder, PolicyConfig(danger_buffer_seconds=5.0), initial_tier=3)
+        held = edge.select(available_kbps=5000.0, buffer_seconds=5.0)
+        self.assertEqual(held.tier, 3)
+        self.assertEqual(held.reason, "hold")
+
+    def test_downgrade_is_immediate_and_not_delayed_by_up_hysteresis(self) -> None:
+        ladder = make_ladder()
+        policy = AbrPolicy(ladder, PolicyConfig(min_dwell_segments=99, up_streak_segments=99), initial_tier=4)
+        decision = policy.select(available_kbps=800.0, buffer_seconds=25.0)
+        self.assertEqual(decision.tier, 1)
+        self.assertTrue(decision.changed)
+        self.assertEqual(decision.reason, "down-bandwidth")
+
+    def test_up_switch_needs_streak_and_safety_margin(self) -> None:
+        ladder = make_ladder()
+        config = PolicyConfig(
+            danger_buffer_seconds=2.0,
+            up_min_buffer_seconds=8.0,
+            up_safety_margin=1.2,
+            min_dwell_segments=1,
+            up_streak_segments=3,
+        )
+        policy = AbrPolicy(ladder, config)
+        # 750 * 1.2 = 900; 899 is insufficient, 900 is sufficient.
+        decisions = [policy.select(899.0, 20.0) for _ in range(5)]
+        self.assertTrue(all(d.tier == 0 for d in decisions))
+        self.assertEqual(policy.up_streak, 0)
+
+        margin_ok = AbrPolicy(ladder, config)
+        margin_ok.select(900.0, 20.0)
+        self.assertEqual(margin_ok.up_streak, 1)
+        margin_ok.select(900.0, 20.0)
+        self.assertEqual(margin_ok.up_streak, 2)
+        final = margin_ok.select(900.0, 20.0)
+        self.assertEqual(final.tier, 1)
+        self.assertEqual(final.reason, "up")
+
+    def test_up_switch_requires_minimum_buffer(self) -> None:
+        ladder = make_ladder()
+        config = PolicyConfig(
+            danger_buffer_seconds=2.0, up_min_buffer_seconds=10.0, up_streak_segments=1,
+            min_dwell_segments=0,
+        )
+        policy = AbrPolicy(ladder, config)
+        low = policy.select(5000.0, 9.99)
+        self.assertEqual(low.tier, 0)
+        high = AbrPolicy(ladder, config).select(5000.0, 10.0)
+        self.assertEqual(high.tier, 1)
+
+    def test_min_dwell_delays_up_switch(self) -> None:
+        ladder = make_ladder()
+        config = PolicyConfig(
+            danger_buffer_seconds=0.0, up_min_buffer_seconds=0.0, up_streak_segments=1,
+            min_dwell_segments=2,
+        )
+        policy = AbrPolicy(ladder, config)
+        self.assertEqual(policy.select(5000.0, 20.0).tier, 0)
+        self.assertEqual(policy.select(5000.0, 20.0).tier, 0)
+        self.assertEqual(policy.select(5000.0, 20.0).tier, 1)
+
+    def test_up_switch_climbs_one_tier_at_a_time(self) -> None:
+        ladder = make_ladder()
+        config = PolicyConfig(
+            danger_buffer_seconds=0.0, up_min_buffer_seconds=0.0, up_streak_segments=1,
+            min_dwell_segments=0,
+        )
+        policy = AbrPolicy(ladder, config)
+        tiers = [policy.select(100000.0, 20.0).tier for _ in range(5)]
+        self.assertEqual(tiers, [1, 2, 3, 4, 4])
+
+    def test_invalid_policy_configuration(self) -> None:
+        ladder = make_ladder()
+        with self.assertRaises(ConfigError):
+            AbrPolicy(ladder, PolicyConfig(up_safety_margin=0.9))
+        with self.assertRaises(ConfigError):
+            AbrPolicy(ladder, PolicyConfig(up_streak_segments=0))
+        with self.assertRaises(ConfigError):
+            AbrPolicy(ladder, PolicyConfig(min_dwell_segments=-1))
+        with self.assertRaises(ConfigError):
+            AbrPolicy(ladder, initial_tier=5)
+        with self.assertRaises(ConfigError):
+            AbrPolicy(ladder).select(0.0, 10.0)
+        with self.assertRaises(ConfigError):
+            AbrPolicy(ladder).select(1000.0, -1.0)
+
+
+class SimulationTests(unittest.TestCase):
+    def run_engine(self, segments: int = 120, seed: int = 41):
+        return simulate_from_parameters(
+            segments=segments,
+            seed=seed,
+            ladder=make_ladder(),
+            initial_buffer_seconds=12.0,
+            buffer_capacity_seconds=30.0,
+        )
+
+    def test_record_stream_matches_segment_count(self) -> None:
+        result = self.run_engine()
+        self.assertEqual(len(result.records), 120)
+        self.assertEqual(result.summary.segments, 120)
+        self.assertEqual([r.segment for r in result.records], list(range(1, 121)))
+        self.assertTrue(0 <= result.summary.switch_count <= 119)
+        self.assertGreaterEqual(result.summary.stall_seconds, 0.0)
+
+    def test_switches_match_record_transitions(self) -> None:
+        result = self.run_engine()
+        transitions = sum(
+            1
+            for previous, current in zip(result.records, result.records[1:])
+            if previous.tier != current.tier
+        )
+        flagged = sum(1 for record in result.records if record.switched)
+        self.assertEqual(result.summary.switch_count, transitions)
+        self.assertEqual(flagged, transitions)
+        self.assertFalse(result.records[0].switched)
+
+    def test_means_are_positive(self) -> None:
+        summary = self.run_engine().summary
+        self.assertGreater(summary.mean_estimated_kbps, 0.0)
+        self.assertGreater(summary.mean_selected_kbps, 0.0)
+        self.assertTrue(math.isfinite(summary.mean_estimated_kbps))
+
+    def test_buffer_never_exceeds_capacity(self) -> None:
+        result = self.run_engine()
+        for record in result.records:
+            self.assertLessEqual(record.buffer_after_seconds, 30.0 + 1e-9)
+            self.assertGreaterEqual(record.buffer_after_seconds, 0.0)
+
+    def test_bandwidth_drop_causes_immediate_downgrade(self) -> None:
+        trace = NetworkTrace(
+            samples=(
+                NetworkSample(5000.0, 30.0, 0.0, False),
+                NetworkSample(5000.0, 30.0, 0.0, False),
+                NetworkSample(200.0, 30.0, 0.0, False),
+                NetworkSample(200.0, 30.0, 0.0, False),
+            ),
+            seed=0,
+            base_kbps=5000.0,
+            jitter_kbps=1.0,
+            base_rtt_ms=30.0,
+            loss_probability=0.0,
+        )
+        ladder = make_ladder()
+        policy = AbrPolicy(ladder, PolicyConfig(danger_buffer_seconds=2.0), initial_tier=4)
+        model = BufferModel(30.0, 12.0)
+        # Forget factor 1.0 makes the estimator react to the new rate at once;
+        # a warm start keeps the cold-start fallback out of this scenario.
+        estimator = BandwidthEstimator(forget_factor=1.0, safety_factor=1.0)
+        estimator.update(5000.0)
+        result = simulate(trace, ladder, policy, model, estimator)
+        self.assertEqual(result.records[0].tier, 4)
+        # The drop is observed by the estimator after segment 3 downloads,
+        # so segment 4 is the first to act on it.
+        self.assertEqual(result.records[3].reason, "down-bandwidth")
+        self.assertLess(result.records[3].tier, 4)
+        self.assertEqual(result.records[-1].selected_kbps, ladder.lowest_kbps)
+
+    def test_stall_is_accumulated_across_segments(self) -> None:
+        trace = NetworkTrace(
+            samples=tuple(NetworkSample(100.0, 10.0, 0.0, False) for _ in range(3)),
+            seed=0,
+            base_kbps=100.0,
+            jitter_kbps=1.0,
+            base_rtt_ms=10.0,
+            loss_probability=0.0,
+        )
+        ladder = make_ladder()
+        model = BufferModel(30.0, 0.0)
+        result = simulate(trace, ladder, AbrPolicy(ladder), model)
+        self.assertAlmostEqual(result.summary.stall_seconds, sum(r.stall_seconds for r in result.records))
+        # 300 kbps * 4 s / 100 kbps = 12 s of transfer per segment.
+        self.assertAlmostEqual(result.records[0].stall_seconds, 12.01)
+        self.assertAlmostEqual(result.records[1].stall_seconds, 8.01)
+        self.assertAlmostEqual(result.records[2].stall_seconds, 8.01)
+        self.assertAlmostEqual(result.summary.stall_seconds, 28.03)
+
+    def test_loss_burst_lowers_effective_throughput(self) -> None:
+        def run(sample: NetworkSample):
+            trace = NetworkTrace((sample,), 0, 1000.0, 1.0, 10.0, 0.0)
+            ladder = make_ladder()
+            return simulate(trace, ladder, AbrPolicy(ladder), BufferModel(30.0, 10.0))
+
+        clean = run(NetworkSample(1000.0, 20.0, 0.0, False))
+        lossy = run(NetworkSample(1000.0, 20.0, 0.25, True))
+        self.assertLess(lossy.records[0].throughput_kbps, clean.records[0].throughput_kbps)
+        self.assertGreater(lossy.records[0].rtt_ms, clean.records[0].rtt_ms)
+
