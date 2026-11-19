@@ -5,11 +5,13 @@ namespace h264::gen {
 void BitWriter::write_bits(std::uint32_t value, unsigned n) {
     for (unsigned i = n; i > 0; --i) {
         const unsigned bit = (value >> (i - 1)) & 1u;
-        if (bit_count_ == 0) data_.push_back(0);
-        data_.back() = static_cast<std::uint8_t>(
-            data_.back() | (static_cast<std::uint8_t>(bit)
-                            << (7 - bit_count_)));
-        bit_count_ = (bit_count_ + 1) & 7u;
+        accum_ = (accum_ << 1) | bit;
+        ++pending_;
+        if (pending_ == 8) {
+            data_.push_back(static_cast<std::uint8_t>(accum_ & 0xffu));
+            accum_ = 0;
+            pending_ = 0;
+        }
     }
 }
 
@@ -37,14 +39,18 @@ void BitWriter::write_se(std::int32_t value) {
 }
 
 void BitWriter::align_zero() {
-    if (bit_count_ != 0) {
-        write_bits(0, 8 - bit_count_);
+    if (pending_ != 0) {
+        const unsigned pad = 8 - pending_;
+        accum_ <<= pad;
+        data_.push_back(static_cast<std::uint8_t>(accum_ & 0xffu));
+        accum_ = 0;
+        pending_ = 0;
     }
 }
 
 std::vector<std::uint8_t> BitWriter::take_escaped() {
     std::vector<std::uint8_t> out;
-    out.reserve(data_.size() + data_.size() / 16);
+    out.reserve(data_.size() + data_.size() / 16 + 1);
     unsigned zero_run = 0;
     for (std::uint8_t byte : data_) {
         if (zero_run >= 2 && byte <= 0x03) {

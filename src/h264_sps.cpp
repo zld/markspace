@@ -15,15 +15,6 @@ std::vector<std::uint8_t> payload_rbsp_sps(const NalUnit& nal,
 
 }  // namespace
 
-const char* picture_type_name(PictureType type) {
-    switch (type) {
-        case PictureType::kI: return "I";
-        case PictureType::kP: return "P";
-        case PictureType::kB: return "B";
-        default: return "unknown";
-    }
-}
-
 SpsInfo parse_sps(const NalUnit& nal, const std::uint8_t* stream,
                   DiagnosticSink& diag) {
     SpsInfo sps;
@@ -49,16 +40,23 @@ SpsInfo parse_sps(const NalUnit& nal, const std::uint8_t* stream,
         profile == 138 || profile == 139 || profile == 134 ||
         profile == 135) {
         uint32_t scaling_present = 0;
+        uint32_t bit_depth_luma = 0;
+        uint32_t bit_depth_chroma = 0;
+        uint32_t qpprime_bypass = 0;
+        uint32_t separate_colour = 0;
         if (!br.read_ue(chroma) ||
-            !br.skip_bits(1) || !br.skip_bits(1) || !br.skip_bits(1) ||
-            !br.read_ue(scaling_present)) {
+            !br.read_bits(1, separate_colour) ||
+            !br.read_ue(bit_depth_luma) ||
+            !br.read_ue(bit_depth_chroma) ||
+            !br.read_bits(1, qpprime_bypass) ||
+            !br.read_bits(1, scaling_present)) {
             diag.error(nal.start_offset, "sps_truncated",
                        "high-profile SPS extension is truncated");
             return sps;
         }
-        if (chroma == 3 && !br.skip_bits(1)) {
-            diag.error(nal.start_offset, "sps_truncated",
-                       "SPS missing separate_colour_plane_flag");
+        if (separate_colour != 0) {
+            diag.error(nal.start_offset, "sps_unsupported",
+                       "separate colour plane (4:4:4) is not supported");
             return sps;
         }
         if (scaling_present != 0) {
@@ -113,7 +111,7 @@ SpsInfo parse_sps(const NalUnit& nal, const std::uint8_t* stream,
     }
 
     uint32_t direct_8x8 = 0, crop_flag = 0;
-    if (!br.skip_bits(1) || !br.read_bits(1, direct_8x8) ||
+    if (!br.read_bits(1, direct_8x8) ||
         !br.read_bits(1, crop_flag)) {
         diag.error(nal.start_offset, "sps_truncated",
                    "SPS ended before frame cropping fields");

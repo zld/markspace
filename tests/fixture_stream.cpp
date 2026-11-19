@@ -18,24 +18,33 @@ std::vector<std::uint8_t> make_sps() {
     w.write_bits(100, 8);   // profile_idc: High, exercises high-profile path
     w.write_bits(40, 8);    // level_idc 4.0
     w.write_ue(0);          // seq_parameter_set_id
+    // High-profile extension, exact field order per H.264 7.3.2.1.1.
     w.write_ue(1);          // chroma_format_idc = 4:2:0
     w.write_flag(false);    // separate_colour_plane_flag
-    w.write_bits(0, 1);     // bit_depth_luma_minus8
-    w.write_bits(0, 1);     // bit_depth_chroma_minus8
-    w.write_ue(0);          // qpprime_y_zero_transform_bypass_flag
-    w.write_ue(0);          // seq_scaling_matrix_present_flag
+    w.write_ue(0);          // bit_depth_luma_minus8
+    w.write_ue(0);          // bit_depth_chroma_minus8
+    w.write_flag(false);    // qpprime_y_zero_transform_bypass_flag
+    w.write_flag(false);    // seq_scaling_matrix_present_flag
     w.write_ue(0);          // log2_max_frame_num_minus4 -> 4-bit frame_num
     w.write_ue(0);          // pic_order_cnt_type = 0
     w.write_ue(0);          // log2_max_pic_order_cnt_lsb_minus4
     w.write_ue(4);          // max_num_ref_frames
     w.write_flag(false);    // gaps_in_frame_num_value_allowed_flag
-    // 1280 / 16 - 1 = 79 ; 720 / 16 - 1 = 44
-    w.write_ue(79);         // pic_width_in_mbs_minus1
-    w.write_ue(44);         // pic_height_in_map_units_minus1
+    // 1280 / 16 - 1 = 79.  Because frame_mbs_only_flag=0, height is expressed
+    // in field map units: 23 units yield 23*16*2 = 736 frame lines, and the
+    // frame cropping below removes the extra 16 lines to land on 720.
+    w.write_ue(79);         // pic_width_in_mbs_minus1  -> 1280
+    w.write_ue(22);         // pic_height_in_map_units_minus1 (23 units)
     w.write_flag(false);    // frame_mbs_only_flag = 0: fields allowed
     w.write_flag(false);    // mb_adaptive_frame_field_flag
     w.write_flag(true);     // direct_8x8_inference_flag
-    w.write_flag(false);    // frame_cropping_flag
+    w.write_flag(true);     // frame_cropping_flag
+    // 4:2:0, frame_mbs_only=0 => CropUnitY = 2*(2-0) = 4; crop 4 units
+    // removes 4*4 = 16 frame lines, taking 736 down to the target 720.
+    w.write_ue(0);          // frame_crop_left_offset
+    w.write_ue(0);          // frame_crop_right_offset
+    w.write_ue(0);          // frame_crop_top_offset
+    w.write_ue(4);          // frame_crop_bottom_offset
     w.write_flag(false);    // vui_parameters_present_flag
     w.align_zero();
     return w.take_escaped();
@@ -77,9 +86,10 @@ void write_slice_header(BitWriter& w, std::uint32_t first_mb,
         w.write_flag(false);       // field_pic_flag
     }
     if (idr) w.write_ue(0);        // idr_pic_id
-    // Remaining optional headers are all absent via default PPS/SPS flags;
-    // pad with a zero byte so every NAL has non-header payload.
-    w.write_bits(0, 8);
+    // All remaining optional slice header flags default to absent.  Terminate
+    // the RBSP with rbsp_stop_one_bit and zero alignment bits, which is the
+    // legal end-of-RBSP syntax and keeps every NAL self-delimiting.
+    w.write_flag(true);
     w.align_zero();
 }
 

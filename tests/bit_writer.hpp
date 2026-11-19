@@ -22,7 +22,8 @@ public:
 
 private:
     std::vector<std::uint8_t> data_;
-    unsigned bit_count_ = 0;  // bits already written in the current byte
+    std::uint64_t accum_ = 0;   // bits buffered MSB-first, not yet flushed
+    unsigned pending_ = 0;      // number of valid bits held in accum_
 };
 
 // Appends a NAL unit with the given header and RBSP payload, choosing a
