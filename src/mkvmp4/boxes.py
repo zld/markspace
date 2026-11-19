@@ -193,3 +193,117 @@ def dinf_dref_box() -> bytes:
     url = make_fullbox(b"url ", 0, 1, b"")
     dref = make_fullbox(b"dref", 0, 0, struct.pack(">I", 1) + url)
     return make_box(b"dinf", dref)
+
+
+# --------------------------------------------------------------------------
+# Sample entry boxes (avc1 / mp4a) and codec configuration
+# --------------------------------------------------------------------------
+
+def _descriptor(tag: int, payload: bytes) -> bytes:
+    """Wrap an MPEG-4 object descriptor with expandable length encoding."""
+    size = len(payload)
+    header = bytearray([tag])
+    while True:
+        byte = size & 0x7F
+        size >>= 7
+        if size:
+            header.append(byte | 0x80)
+        else:
+            header.append(byte)
+            break
+    return bytes(header) + payload
+
+
+def esds_box(audio_specific_config: bytes) -> bytes:
+    dsi = _descriptor(0x05, audio_specific_config)
+    dec_config = _descriptor(0x04, b"".join([
+        bytes([0x40, 0x15]),                    # AAC object type, audio stream
+        b"\x00\x00\x00",                        # buffer size DB
+        struct.pack(">II", 0, 0),               # max / average bitrate
+        dsi,
+    ]))
+    sl_config = _descriptor(0x06, b"\x02")
+    es_desc = _descriptor(0x03, struct.pack(">H", 0) + b"\x00" + dec_config
+                          + sl_config)
+    return make_fullbox(b"esds", 0, 0, es_desc)
+
+
+def avc1_box(width: int, height: int, avc_config: bytes) -> bytes:
+    avcc = make_box(b"avcC", avc_config)
+    payload = b"".join([
+        b"\x00" * 6,
+        struct.pack(">H", 1),                   # data reference index
+        b"\x00" * 2 + b"\x00" * 12,             # pre-defined + reserved
+        struct.pack(">HH", width, height),
+        struct.pack(">II", 0x00480000, 0x00480000),  # 72 dpi
+        struct.pack(">I", 0),                   # reserved
+        struct.pack(">H", 1),                   # frame count
+        pascal_string(""),                      # compressor name
+        struct.pack(">Hh", 0x0018, -1),         # depth, pre-defined
+        avcc,
+    ])
+    return make_box(b"avc1", payload)
+
+
+def mp4a_box(channels: int, sample_size: int, sample_rate: float,
+             audio_specific_config: bytes) -> bytes:
+    payload = b"".join([
+        b"\x00" * 6,
+        struct.pack(">H", 1),                   # data reference index
+        b"\x00" * 8,                            # reserved
+        struct.pack(">HH", channels, sample_size),
+        struct.pack(">HH", 0, 0),               # pre-defined, reserved
+        struct.pack(">I", int(round(sample_rate)) << 16),
+        esds_box(audio_specific_config),
+    ])
+    return make_box(b"mp4a", payload)
+
+
+def stsd_box(sample_entry: bytes) -> bytes:
+    return make_fullbox(b"stsd", 0, 0, struct.pack(">I", 1) + sample_entry)
+
+
+# --------------------------------------------------------------------------
+# Sample table boxes
+# --------------------------------------------------------------------------
+
+def stts_box(durations: list[int]) -> bytes:
+    runs: list[tuple[int, int]] = []
+    for delta in durations:
+        if runs and runs[-1][1] == delta:
+            runs[-1] = (runs[-1][0] + 1, delta)
+        else:
+            runs.append((1, delta))
+    payload = struct.pack(">I", len(runs))
+    payload += b"".join(struct.pack(">II", count, delta)
+                        for count, delta in runs)
+    return make_fullbox(b"stts", 0, 0, payload)
+
+
+def stss_box(keyframe_numbers: list[int]) -> bytes:
+    payload = struct.pack(">I", len(keyframe_numbers))
+    payload += b"".join(struct.pack(">I", n) for n in keyframe_numbers)
+    return make_fullbox(b"stss", 0, 0, payload)
+
+
+def stsc_box(samples_per_chunk: int) -> bytes:
+    # One run: every chunk carries the same number of samples, desc index 1.
+    payload = struct.pack(">III", 1, 1, samples_per_chunk, 1)
+    return make_fullbox(b"stsc", 0, 0, payload)
+
+
+def stsz_box(sizes: list[int]) -> bytes:
+    payload = struct.pack(">II", 0, len(sizes))
+    payload += b"".join(struct.pack(">I", size) for size in sizes)
+    return make_fullbox(b"stsz", 0, 0, payload)
+
+
+def chunk_offset_box(offsets: list[int]) -> bytes:
+    """Emit stco when all offsets fit in 32 bits, otherwise co64."""
+    if all(0 <= off <= 0xFFFFFFFF for off in offsets):
+        payload = struct.pack(">I", len(offsets))
+        payload += b"".join(struct.pack(">I", off) for off in offsets)
+        return make_fullbox(b"stco", 0, 0, payload)
+    payload = struct.pack(">I", len(offsets))
+    payload += b"".join(struct.pack(">Q", off) for off in offsets)
+    return make_fullbox(b"co64", 0, 0, payload)
