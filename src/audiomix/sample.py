@@ -20,7 +20,7 @@ import numpy as np
 import soundfile as sf
 
 SAMPLE_RATE = 48000
-SECONDS = 0.5
+SECONDS = 1.0
 DURATION_FRAMES = int(SECONDS * SAMPLE_RATE)
 
 
@@ -60,7 +60,7 @@ def generate_sample(directory: Path) -> Path:
     # start. It pushes both the track and the bus past +-1.0, so the default
     # report policy shows reproducible per-track and master clip counts.
     music = _tone(SECONDS, 48000, 110.0, 164.0, 0.30, 22)
-    music = _add_transient(music, 3000, 2.2)
+    music = _add_transient(music, 9000, 2.2)
     sf.write(str(directory / "music.wav"), music, 48000, subtype="FLOAT")
     # ambience: mono 22.05 kHz, quiet.
     ambience = _tone(SECONDS, 22050, 55.0, 55.0, 0.05, 33)[:, :1]
@@ -88,7 +88,7 @@ def generate_sample(directory: Path) -> Path:
                 "path": "music.wav",
                 "start_frame": 500,
                 "gain_db": -3.0,
-                "loop": {"start_frame": 2000, "end_frame": 18000},
+                "loop": {"start_frame": 4000, "end_frame": 30000},
                 "automation": [
                     {"frame": 0, "value": 0.4, "unit": "linear"},
                     {"frame": 12000, "value": 0.9, "unit": "linear"},
