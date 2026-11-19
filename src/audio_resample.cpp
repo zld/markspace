@@ -1,5 +1,6 @@
 #include "audio_resample.hpp"
 
+#include <deque>
 #include <cstring>
 #include <new>
 
@@ -9,6 +10,7 @@ extern "C" {
 #include <libavutil/channel_layout.h>
 #include <libavutil/error.h>
 #include <libavutil/frame.h>
+#include <libavutil/mathematics.h>
 #include <libavutil/mem.h>
 #include <libavutil/samplefmt.h>
 #include <libswresample/swresample.h>
@@ -34,10 +36,17 @@ struct AudioConverter::Impl {
     int channels = 0;
     int frame_samples = 0;
     bool opened = false;
-    // PTS bookkeeping in seconds of the first sample currently buffered.
-    double pts_seconds = 0.0;
-    bool pts_valid = false;
+    // Piecewise-linear PTS anchors: cumulative input sample position and the
+    // PTS reported by the encoder for that position. Packet-level PTS jitter
+    // lives between anchors and is preserved when output blocks are mapped.
+    struct Anchor {
+        std::int64_t input_position;
+        double pts_seconds;
+    };
+    std::deque<Anchor> anchors;
+    int input_sample_rate = 0;
     std::int64_t total_input_samples = 0;
+    std::int64_t total_emitted_samples = 0;
 };
 
 AudioConverter::AudioConverter() : impl_(new Impl) {}
@@ -76,6 +85,7 @@ bool AudioConverter::open(AVCodecContext* decoder, int target_sample_rate,
     }
     impl_->out_capacity = 0;
     impl_->opened = true;
+    impl_->input_sample_rate = decoder->sample_rate;
     return true;
 }
 
@@ -102,8 +112,10 @@ void AudioConverter::close() {
     impl_->out_data = nullptr;
     impl_->block_data = nullptr;
     impl_->opened = false;
-    impl_->pts_valid = false;
+    impl_->anchors.clear();
+    impl_->input_sample_rate = 0;
     impl_->total_input_samples = 0;
+    impl_->total_emitted_samples = 0;
 }
 
 int AudioConverter::sampleRate() const { return impl_->sample_rate; }
@@ -114,10 +126,9 @@ bool AudioConverter::push(const AVFrame* frame, double pts_seconds, const EmitFn
     if (!impl_->opened) {
         return false;
     }
-    if (!impl_->pts_valid) {
-        impl_->pts_seconds = pts_seconds;
-        impl_->pts_valid = true;
-    }
+    // Anchor at the start of this input frame before consuming its samples.
+    impl_->anchors.push_back({impl_->total_input_samples, pts_seconds});
+
     const std::int64_t delay = swr_get_delay(impl_->swr, frame->sample_rate);
     int expected = static_cast<int>(av_rescale_rnd(
         delay + frame->nb_samples, impl_->sample_rate, frame->sample_rate, AV_ROUND_UP));
@@ -149,6 +160,30 @@ bool AudioConverter::push(const AVFrame* frame, double pts_seconds, const EmitFn
         return false;
     }
 
+    // Map an output-sample offset back to an input-sample position, then
+    // interpolate within the surrounding encoder PTS anchors.
+    auto map_pts = [&](std::int64_t emitted_offset) -> double {
+        const std::int64_t input_pos = av_rescale_q(
+            emitted_offset, AVRational{1, impl_->sample_rate},
+            AVRational{1, impl_->input_sample_rate});
+        while (impl_->anchors.size() >= 2 &&
+               impl_->anchors[1].input_position <= input_pos) {
+            impl_->anchors.pop_front();
+        }
+        const auto& a0 = impl_->anchors.front();
+        if (impl_->anchors.size() == 1) {
+            return a0.pts_seconds +
+                   static_cast<double>(input_pos - a0.input_position) /
+                       impl_->input_sample_rate;
+        }
+        const auto& a1 = impl_->anchors[1];
+        const double span = static_cast<double>(a1.input_position - a0.input_position);
+        const double frac = span > 0.0
+                                ? static_cast<double>(input_pos - a0.input_position) / span
+                                : 0.0;
+        return a0.pts_seconds + frac * (a1.pts_seconds - a0.pts_seconds);
+    };
+
     while (av_audio_fifo_size(impl_->fifo) >= impl_->frame_samples) {
         if (av_audio_fifo_read(impl_->fifo,
                                reinterpret_cast<void* const*>(impl_->block_data),
@@ -157,14 +192,14 @@ bool AudioConverter::push(const AVFrame* frame, double pts_seconds, const EmitFn
         }
         NormalizedFrame nf;
         nf.type = MediaType::Audio;
-        nf.pts_seconds = impl_->pts_seconds;
+        nf.pts_seconds = map_pts(impl_->total_emitted_samples);
         nf.duration_seconds =
             static_cast<double>(impl_->frame_samples) / impl_->sample_rate;
         nf.sample_rate = impl_->sample_rate;
         nf.channels = impl_->channels;
         nf.nb_samples = impl_->frame_samples;
         emit(nf);
-        impl_->pts_seconds += nf.duration_seconds;
+        impl_->total_emitted_samples += impl_->frame_samples;
     }
     return true;
 }
@@ -204,22 +239,27 @@ bool AudioConverter::flush(double next_pts_seconds, const EmitFn& emit) {
     if (remaining <= 0) {
         return true;
     }
-    // Emit one final (possibly short) block. Keep PTS continuity unless the
-    // caller supplies a known boundary timestamp.
+    // Emit one final (possibly short) block; extrapolate from the last anchor.
     (void)next_pts_seconds;
     if (av_audio_fifo_read(impl_->fifo, reinterpret_cast<void* const*>(impl_->block_data),
                            remaining) < remaining) {
         return false;
     }
+    const std::int64_t input_pos = av_rescale_q(
+        impl_->total_emitted_samples, AVRational{1, impl_->sample_rate},
+        AVRational{1, impl_->input_sample_rate});
+    const auto& a0 = impl_->anchors.back();
     NormalizedFrame nf;
     nf.type = MediaType::Audio;
-    nf.pts_seconds = impl_->pts_seconds;
+    nf.pts_seconds = a0.pts_seconds +
+                     static_cast<double>(input_pos - a0.input_position) /
+                         impl_->input_sample_rate;
     nf.duration_seconds = static_cast<double>(remaining) / impl_->sample_rate;
     nf.sample_rate = impl_->sample_rate;
     nf.channels = impl_->channels;
     nf.nb_samples = remaining;
     emit(nf);
-    impl_->pts_seconds += nf.duration_seconds;
+    impl_->total_emitted_samples += remaining;
     return true;
 }
 
