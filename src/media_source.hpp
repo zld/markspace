@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -59,10 +60,12 @@ struct DecodeResult {
 
 // Blocking demux+decode of the sample file; pushes into the queues until
 // EOF or until a queue is closed by the consumer. Injection of duplicates,
-// missing pts and decode-latency spikes happens here.
+// missing pts and decode-latency spikes happens here. The optional stop flag
+// lets an external abort unblock a push into a queue whose consumer died.
 DecodeResult decode_into_queues(const std::string& path,
                                 const InjectionConfig& inj,
                                 BoundedQueue<AudioChunk>& audio_q,
-                                BoundedQueue<VideoFrameMsg>& video_q);
+                                BoundedQueue<VideoFrameMsg>& video_q,
+                                std::atomic<bool>* stop = nullptr);
 
 }  // namespace avsync

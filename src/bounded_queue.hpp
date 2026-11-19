@@ -28,6 +28,25 @@ public:
         return true;
     }
 
+    // Push with a timeout. Sets timed_out when the wait expired; returns false
+    // on timeout or closed queue. Lets producers observe an external stop flag.
+    template <typename Rep, typename Period>
+    bool push_for(T item, const std::chrono::duration<Rep, Period>& d,
+                  bool& timed_out) {
+        std::unique_lock<std::mutex> lk(mu_);
+        timed_out = false;
+        if (!not_full_.wait_for(lk, d,
+                                [&] { return closed_ || items_.size() < capacity_; })) {
+            timed_out = true;
+            return false;
+        }
+        if (closed_) return false;
+        items_.push_back(std::move(item));
+        lk.unlock();
+        not_empty_.notify_one();
+        return true;
+    }
+
     // Blocks while empty; returns false once closed and drained.
     bool pop(T& out) {
         std::unique_lock<std::mutex> lk(mu_);

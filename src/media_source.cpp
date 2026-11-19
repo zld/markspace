@@ -118,7 +118,9 @@ bool generate_sample(const SampleConfig& cfg, std::string& err) {
     actx->sample_rate = cfg.sample_rate;
     actx->sample_fmt = AV_SAMPLE_FMT_S16;
     actx->ch_layout = AV_CHANNEL_LAYOUT_STEREO;
-    actx->time_base = AVRational{1, cfg.sample_rate};
+    // Match the container's millisecond time base so pts rescaling cannot
+    // distort the audio timeline relative to video.
+    actx->time_base = AVRational{1, 1000};
     if ((rc = avcodec_open2(actx, aenc, nullptr)) < 0) {
         err = "open audio encoder failed";
         return false;
@@ -200,7 +202,7 @@ bool generate_sample(const SampleConfig& cfg, std::string& err) {
             out[2 * i] = static_cast<int16_t>(s);
             out[2 * i + 1] = static_cast<int16_t>(s);
         }
-        f->pts = pts_us;  // audio time base is 1/sample_rate
+        f->pts = pts_us / 1000;  // encoder time base is 1/1000 s
         rc = avcodec_send_frame(actx, f);
         av_frame_unref(f);
         if (rc < 0) return rc;
@@ -307,7 +309,8 @@ int64_t frame_pts_us(const AVFrame* f, const AVRational& tb) {
 DecodeResult decode_into_queues(const std::string& path,
                                 const InjectionConfig& inj,
                                 BoundedQueue<AudioChunk>& audio_q,
-                                BoundedQueue<VideoFrameMsg>& video_q) {
+                                BoundedQueue<VideoFrameMsg>& video_q,
+                                std::atomic<bool>* stop) {
     DecodeResult res;
     AVFormatContext* fmt = nullptr;
     int rc = avformat_open_input(&fmt, path.c_str(), nullptr, nullptr);
@@ -360,8 +363,39 @@ DecodeResult decode_into_queues(const std::string& path,
     AVFrame* frame = av_frame_alloc();
     if (!pkt || !frame) {
         res.error = "av packet/frame alloc failed";
-        goto done;
+        if (pkt) av_packet_free(&pkt);
+        if (frame) av_frame_free(&frame);
+        avformat_close_input(&fmt);
+        return res;
     }
+    {
+    // Abortable pushes: if a consumer dies the queue would stay full forever,
+    // so poll an external stop flag while waiting for room.
+    auto push_video = [&](VideoFrameMsg m) -> bool {        for (;;) {
+            bool timed_out = false;
+            if (video_q.push_for(std::move(m), std::chrono::milliseconds(50),
+                                 timed_out))
+                return true;
+            if (!timed_out) { res.error = "video queue closed"; return false; }
+            if (stop && stop->load(std::memory_order_relaxed)) {
+                res.error = "decode aborted by shutdown";
+                return false;
+            }
+        }
+    };
+    auto push_audio = [&](AudioChunk c) -> bool {
+        for (;;) {
+            bool timed_out = false;
+            if (audio_q.push_for(std::move(c), std::chrono::milliseconds(50),
+                                 timed_out))
+                return true;
+            if (!timed_out) { res.error = "audio queue closed"; return false; }
+            if (stop && stop->load(std::memory_order_relaxed)) {
+                res.error = "decode aborted by shutdown";
+                return false;
+            }
+        }
+    };
     while (true) {
         rc = av_read_frame(fmt, pkt);
         if (rc == AVERROR_EOF) {
@@ -370,14 +404,14 @@ DecodeResult decode_into_queues(const std::string& path,
             rc = 0;
             break;
         }
-        if (rc < 0) { res.error = "av_read_frame failed"; goto done; }
+        if (rc < 0) { res.error = "av_read_frame failed"; goto decode_failed; }
         AVCodecContext* dec =
             pkt->stream_index == vi ? vg.ctx
             : pkt->stream_index == ai ? ag.ctx : nullptr;
         if (dec && (rc = avcodec_send_packet(dec, pkt)) < 0) {
             res.error = "avcodec_send_packet failed";
             av_packet_unref(pkt);
-            goto done;
+            goto decode_failed;
         }
         av_packet_unref(pkt);
         if (!dec) continue;
@@ -385,7 +419,7 @@ DecodeResult decode_into_queues(const std::string& path,
         while (true) {
             rc = avcodec_receive_frame(dec, frame);
             if (rc == AVERROR(EAGAIN) || rc == AVERROR_EOF) { rc = 0; break; }
-            if (rc < 0) { res.error = "avcodec_receive_frame failed"; goto done; }
+            if (rc < 0) { res.error = "avcodec_receive_frame failed"; goto decode_failed; }
             if (dec == vg.ctx) {
                 // Decode-latency spike on every 7th presentation frame.
                 if (inj.video_delay_ms > 0 &&
@@ -406,15 +440,11 @@ DecodeResult decode_into_queues(const std::string& path,
                     msg.pts_us = 0;
                     ++res.injected_missing_pts;
                 }
-                if (!video_q.push(msg)) { res.error = "video queue closed"; goto done; }
+                if (!push_video(msg)) goto decode_failed;
                 ++res.video_frames;
                 if (inj.duplicate_every > 0 &&
                     res.video_frames % inj.duplicate_every == 0) {
-                    VideoFrameMsg dup = msg;
-                    if (!video_q.push(dup)) {
-                        res.error = "video queue closed";
-                        goto done;
-                    }
+                    if (!push_video(msg)) goto decode_failed;
                     ++res.injected_duplicates;
                     ++res.video_frames;
                 }
@@ -425,17 +455,14 @@ DecodeResult decode_into_queues(const std::string& path,
                 chunk.sample_rate = conv.rate();
                 chunk.channels = 2;
                 int n = conv.convert(frame, chunk.interleaved);
-                if (n < 0) { res.error = "swr_convert failed"; goto done; }
+                if (n < 0) { res.error = "swr_convert failed"; goto decode_failed; }
                 chunk.nb_samples = n;
-                if (!audio_q.push(chunk)) {
-                    res.error = "audio queue closed";
-                    goto done;
-                }
+                if (!push_audio(std::move(chunk))) goto decode_failed;
                 res.audio_samples += n;
             }
             av_frame_unref(frame);
         }
-        if (rc < 0) goto done;
+        if (rc < 0) goto decode_failed;
     }
 
     // Flush both decoders after the EOF packet was signalled above.
@@ -444,7 +471,7 @@ DecodeResult decode_into_queues(const std::string& path,
         while (true) {
             int r2 = avcodec_receive_frame(dec, frame);
             if (r2 == AVERROR_EOF || r2 == AVERROR(EAGAIN)) break;
-            if (r2 < 0) { res.error = "decoder flush failed"; goto done; }
+            if (r2 < 0) { res.error = "decoder flush failed"; goto decode_failed; }
             if (dec == vg.ctx) {
                 VideoFrameMsg msg;
                 msg.index = res.video_frames;
@@ -459,7 +486,7 @@ DecodeResult decode_into_queues(const std::string& path,
                     msg.pts_valid = false;
                     ++res.injected_missing_pts;
                 }
-                if (!video_q.push(msg)) { res.error = "video queue closed"; goto done; }
+                if (!push_video(msg)) goto decode_failed;
                 ++res.video_frames;
             } else {
                 AudioChunk chunk;
@@ -468,20 +495,19 @@ DecodeResult decode_into_queues(const std::string& path,
                 chunk.sample_rate = conv.rate();
                 chunk.channels = 2;
                 int n = conv.convert(frame, chunk.interleaved);
-                if (n < 0) { res.error = "swr_convert failed"; goto done; }
+                if (n < 0) { res.error = "swr_convert failed"; goto decode_failed; }
                 chunk.nb_samples = n;
-                if (!audio_q.push(chunk)) {
-                    res.error = "audio queue closed";
-                    goto done;
-                }
+                if (!push_audio(std::move(chunk))) goto decode_failed;
                 res.audio_samples += n;
             }
             av_frame_unref(frame);
         }
     }
     res.ok = true;
+decode_failed:
+    ;
+    }  // end decode block (all gotos stay inside this scope)
 
-done:
     if (pkt) av_packet_free(&pkt);
     if (frame) av_frame_free(&frame);
     avformat_close_input(&fmt);

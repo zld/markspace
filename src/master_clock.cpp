@@ -24,7 +24,8 @@ void MasterClock::start(int64_t media_us) {
 void MasterClock::pause() {
     std::lock_guard<std::mutex> lk(mu_);
     if (!running_) return;
-    // Freeze at the current value.
+    // Freeze the media clock. The ideal (wall-paced) timeline keeps running,
+    // exactly so an underrun shows up as growing negative drift.
     base_media_us_ = base_media_us_ + (wall_us() - base_wall_us_);
     base_wall_us_ = wall_us();
     running_ = false;
@@ -39,6 +40,8 @@ void MasterClock::resume() {
 
 void MasterClock::reset(int64_t media_us) {
     std::lock_guard<std::mutex> lk(mu_);
+    // Re-anchor only the media clock; the ideal timeline is owned by
+    // start() and untouched, so accumulated drift stays visible.
     base_media_us_ = media_us;
     base_wall_us_ = wall_us();
 }
@@ -65,10 +68,11 @@ bool MasterClock::running() const {
 
 int64_t MasterClock::drift_us() const {
     std::lock_guard<std::mutex> lk(mu_);
+    int64_t now = wall_us();
     int64_t t = base_media_us_;
-    if (running_) t += wall_us() - base_wall_us_;
-    if (t < last_returned_us_) t = last_returned_us_;
-    int64_t ideal = ideal_media_us_ + (wall_us() - ideal_wall_us_);
+    if (running_) t += now - base_wall_us_;
+    int64_t ideal = ideal_media_us_;
+    if (running_) ideal += now - ideal_wall_us_;
     return t - ideal;
 }
 
