@@ -151,5 +151,186 @@ const char* field_source(const std::string& source) {
     return source.empty() ? "builtin" : source.c_str();
 }
 
+namespace {
+
+void apply_text_field(EffStyle& s, EffStyle::Text& slot, const RawStyle& raw, const std::string& field,
+                      const std::string& display, const char* fallback_why);
+void apply_number_field(EffStyle& s, EffStyle::Number& slot, const RawStyle& raw, const std::string& field,
+                        double lo, double hi, double fallback);
+void apply_integer_field(EffStyle& s, EffStyle::Integer& slot, const RawStyle& raw, const std::string& field,
+                         int lo, int hi, int fallback);
+
+
+const char* const kDialogueFields[] = {
+    "name", "fontname", "fontsize", "primarycolour", "secondarycolour", "outlinecolour",
+    "backcolour", "bold", "italic", "underline", "strikeout", "scalex", "scaley", "spacing",
+    "angle", "borderstyle", "outline", "shadow", "alignment", "marginl", "marginr", "marginv",
+    "encoding", "parent"};
+
+// Flags columns that do not exist in the style format. Extra columns past the
+// Format list are almost always a missing value earlier in the line.
+void report_unknown_style_columns(EffStyle& s, const RawStyle& raw) {
+    for (const auto& entry : raw.fields) {
+        bool known = false;
+        for (const char* field : kDialogueFields) {
+            if (entry.first == field) { known = true; break; }
+        }
+        if (!known) {
+            adjust(s, "column:" + entry.first, entry.second.value,
+                   "ignored (not a style field)", "style: " + raw.name);
+        }
+    }
+}
+
+
+void apply_text_field(EffStyle& s, EffStyle::Text& slot, const RawStyle& raw, const std::string& field,
+                      const std::string& /*display*/, const char* /*fallback_why*/) {
+    auto it = raw.fields.find(field);
+    if (it == raw.fields.end() || !it->second.present) return;
+    if (it->second.explicit_empty) {
+        slot.value.clear();
+        slot.cleared = true;
+        slot.source = "style: " + raw.name;
+        s.cleared_fields.push_back(field);
+        return;
+    }
+    slot.value = it->second.value;
+    slot.cleared = false;
+    slot.source = "style: " + raw.name;
+}
+
+void apply_number_field(EffStyle& s, EffStyle::Number& slot, const RawStyle& raw, const std::string& field,
+                        double lo, double hi, double fallback) {
+    auto it = raw.fields.find(field);
+    if (it == raw.fields.end() || !it->second.present) return;
+    if (it->second.explicit_empty) {
+        slot.value = fallback;
+        slot.cleared = true;
+        slot.source = "style: " + raw.name;
+        s.cleared_fields.push_back(field);
+        return;
+    }
+    double parsed = 0;
+    std::string why;
+    if (!parse_number_value(it->second.value, parsed, why)) {
+        slot.value = fallback;
+        slot.cleared = false;
+        slot.source = "style: " + raw.name;
+        adjust(s, field, it->second.value, fmt_double(fallback) + " (" + why + ")",
+               "style: " + raw.name);
+        return;
+    }
+    double clamped = 0;
+    bool out_of_range = clamp_number(parsed, lo, hi, clamped);
+    if (out_of_range) {
+        adjust(s, field, it->second.value, fmt_double(clamped) + " (clamped to [" + fmt_double(lo) +
+                                                          ", " + fmt_double(hi) + "])",
+               "style: " + raw.name);
+    }
+    slot.value = clamped;
+    slot.cleared = false;
+    slot.source = "style: " + raw.name;
+}
+
+void apply_integer_field(EffStyle& s, EffStyle::Integer& slot, const RawStyle& raw, const std::string& field,
+                         int lo, int hi, int fallback) {
+    auto it = raw.fields.find(field);
+    if (it == raw.fields.end() || !it->second.present) return;
+    if (it->second.explicit_empty) {
+        slot.value = fallback;
+        slot.cleared = true;
+        slot.source = "style: " + raw.name;
+        s.cleared_fields.push_back(field);
+        return;
+    }
+    std::string text = trim_ascii(it->second.value);
+    try {
+        size_t used = 0;
+        long v = std::stol(text, &used);
+        if (used != text.size()) throw std::invalid_argument("trailing");
+        int iv = static_cast<int>(v);
+        if (v < lo || v > hi) {
+            int clamped = std::max(lo, std::min(hi, iv));
+            adjust(s, field, it->second.value, fmt_int(clamped) + " (clamped to [" + fmt_int(lo) + ", " +
+                                                              fmt_int(hi) + "])",
+                   "style: " + raw.name);
+            iv = clamped;
+        }
+        slot.value = iv;
+        slot.cleared = false;
+        slot.source = "style: " + raw.name;
+    } catch (...) {
+        slot.value = fallback;
+        slot.cleared = false;
+        slot.source = "style: " + raw.name;
+        adjust(s, field, it->second.value, fmt_int(fallback) + " (not an integer)", "style: " + raw.name);
+    }
+}
+
+// Colour fields carry a 32-bit value that is not range-clamped; invalid input
+// falls back to the inherited value with an adjustment record.
+void apply_colour_field(EffStyle& s, EffStyle::Integer& slot, const RawStyle& raw, const std::string& field,
+                        int fallback) {
+    auto it = raw.fields.find(field);
+    if (it == raw.fields.end() || !it->second.present) return;
+    if (it->second.explicit_empty) {
+        slot.value = fallback;
+        slot.cleared = true;
+        slot.source = "style: " + raw.name;
+        s.cleared_fields.push_back(field);
+        return;
+    }
+    int parsed = 0;
+    std::string why;
+    if (!parse_colour_value(it->second.value, parsed, why)) {
+        slot.value = fallback;
+        slot.cleared = false;
+        slot.source = "style: " + raw.name;
+        adjust(s, field, it->second.value, colour_to_ass_string(fallback) + " (" + why + ")",
+               "style: " + raw.name);
+        return;
+    }
+    slot.value = parsed;
+    slot.cleared = false;
+    slot.source = "style: " + raw.name;
+}
+
+void merge_style(EffStyle& s, const RawStyle& raw) {
+    report_unknown_style_columns(s, raw);
+    apply_text_field(s, s.font_name, raw, "fontname", "Fontname", "empty font name");
+    apply_number_field(s, s.font_size, raw, "fontsize", kFontSizeMin, kFontSizeMax, 48.0);
+    apply_integer_field(s, s.bold, raw, "bold", 0, 1, 0);
+    apply_integer_field(s, s.italic, raw, "italic", 0, 1, 0);
+    apply_integer_field(s, s.underline, raw, "underline", 0, 1, 0);
+    apply_integer_field(s, s.strikeout, raw, "strikeout", 0, 1, 0);
+    apply_colour_field(s, s.primary_colour, raw, "primarycolour", 0x00FFFFFF);
+    apply_colour_field(s, s.secondary_colour, raw, "secondarycolour", 0x00FFFFFF);
+    apply_colour_field(s, s.outline_colour, raw, "outlinecolour", 0x00000000);
+    apply_colour_field(s, s.back_colour, raw, "backcolour", 0x00000000);
+    apply_number_field(s, s.border_style, raw, "borderstyle", 1.0, 3.0, 1.0);
+    apply_number_field(s, s.outline, raw, "outline", 0.0, kOutlineMax, 0.0);
+    apply_number_field(s, s.shadow, raw, "shadow", 0.0, kShadowMax, 0.0);
+    apply_integer_field(s, s.alignment, raw, "alignment", 1, 9, 2);
+    apply_integer_field(s, s.margin_l, raw, "marginl", 0, kMarginMax, 20);
+    apply_integer_field(s, s.margin_r, raw, "marginr", 0, kMarginMax, 20);
+    apply_integer_field(s, s.margin_v, raw, "marginv", 0, kMarginMax, 20);
+    apply_number_field(s, s.scale_x, raw, "scalex", kScaleMin, kScaleMax, 100.0);
+    apply_number_field(s, s.scale_y, raw, "scaley", kScaleMin, kScaleMax, 100.0);
+    apply_number_field(s, s.spacing, raw, "spacing", -100.0, 100.0, 0.0);
+    apply_number_field(s, s.angle, raw, "angle", -360.0, 360.0, 0.0);
+    apply_integer_field(s, s.encoding, raw, "encoding", 0, 255, 1);
+    // A style may declare Parent as a plain field; it is consumed by the chain
+    // walker, not merged.
+}
+
+
+const RawStyle* find_style(const Document& doc, const std::string& name) {
+    for (const RawStyle& style : doc.styles) {
+        if (style.name == name) return &style;
+    }
+    return nullptr;
+}
+
+}  // namespace
 
 }  // namespace sp
