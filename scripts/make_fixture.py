@@ -8,7 +8,12 @@ timecodes, negative composition offsets and truncated inputs.
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
+
+# Allow running as a bare script (`python scripts/make_fixture.py`) against
+# the src/ layout without requiring an install or PYTHONPATH.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from meshift.ebml import (BLOCK, BLOCK_GROUP, CLUSTER, CODEC_ID, COMPOSITION_OFFSET,
                           DEFAULT_DURATION, EBML_HEADER, INFO, REFERENCE_BLOCK,

@@ -6,6 +6,11 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 
+# Packaging metadata from editable installs
+*.egg-info/
+build/
+dist/
+
 # Generated media / reports
 *.mp4
 *.mkv
