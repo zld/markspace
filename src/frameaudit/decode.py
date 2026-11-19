@@ -1,14 +1,21 @@
 """Decode video frames with PyAV and emit raw :class:`FrameRecord` objects.
 
 Only the first video stream is consumed; audio and other streams are ignored.
-This stage performs no reordering and no timestamp repair: the records reflect
-the order in which the decoder produced frames, which for B-frame content
-differs from presentation order.
+
+FFmpeg's modern decode API (``avcodec_send_packet`` /
+``avcodec_receive_frame``) always surfaces frames in presentation order, even
+for B-frame content where packets arrive in decode (DTS) order.  To preserve
+the real decoder sequence this module walks packets in demux order, assigns
+each data packet an incrementing ``decode_index``, and then pairs each
+decoded frame back to its originating packet by PTS.  Frames are therefore
+emitted in true decode order, with missing/duplicate PTS handled via FIFO
+queues so no frame is silently dropped.
 """
 
 from __future__ import annotations
 
 import os
+from collections import defaultdict, deque
 from fractions import Fraction
 from pathlib import Path
 from typing import Iterator, Optional
@@ -90,42 +97,83 @@ class VideoInput:
     def iter_frames(
         self, max_frames: int = DEFAULT_MAX_FRAMES
     ) -> Iterator[FrameRecord]:
-        """Yield decoded frames in decoder order up to ``max_frames``."""
+        """Yield decoded frames in true decoder (DTS/demux) order.
+
+        The decoder emits frames in presentation order with a delay, while
+        packets arrive in coded order.  We record each packet's coded index,
+        pair every decoded frame to its originating packet, and only then
+        re-emit the records sorted by coded index so downstream reordering
+        has genuine decode-order input to work with.
+        """
         if max_frames <= 0:
             raise LimitExceededError(
                 f"max_frames must be positive, got {max_frames}"
             )
-        index = 0
-        try:
-            for frame in self._container.decode(self.stream):
-                if index >= max_frames:
-                    raise LimitExceededError(
-                        "frame record limit of "
-                        f"{max_frames} exceeded while decoding {self.path}; "
-                        "raise --max-frames if this input is expected"
-                    )
-                time_base: Optional[Fraction] = frame.time_base
-                if time_base is None:
-                    time_base = self.stream.time_base
-                yield FrameRecord(
-                    decode_index=index,
-                    frame_type=classify_frame(frame.pict_type),
-                    pts=frame.pts,
-                    time_base=time_base,
-                    key_frame=bool(frame.key_frame),
+        codec = self.stream.codec_context
+        # PTS -> FIFO of coded indices; FIFO handles duplicate PTS and the
+        # separate ``None`` queue preserves missing-PTS frames.
+        pts_queues: dict[Optional[int], deque[int]] = defaultdict(deque)
+        decoded: list[FrameRecord] = []
+        next_index = 0
+
+        def assign_index(packet: av.Packet) -> None:
+            nonlocal next_index
+            if next_index >= max_frames:
+                raise LimitExceededError(
+                    "frame record limit of "
+                    f"{max_frames} exceeded while decoding {self.path}; "
+                    "raise --max-frames if this input is expected"
                 )
-                index += 1
+            pts_queues[packet.pts].append(next_index)
+            next_index += 1
+
+        def pair(frame: av.VideoFrame) -> FrameRecord:
+            queue = pts_queues.get(frame.pts)
+            if queue:
+                decode_index = queue.popleft()
+            elif pts_queues.get(None):
+                # Fallback for containers that synthesize a frame PTS even
+                # though the originating packet had none.
+                decode_index = pts_queues[None].popleft()
+            else:
+                raise DecodeError(
+                    f"could not pair decoded frame pts={frame.pts} with a "
+                    "source packet; stream metadata is inconsistent"
+                )
+            time_base: Optional[Fraction] = frame.time_base or self.stream.time_base
+            return FrameRecord(
+                decode_index=decode_index,
+                frame_type=classify_frame(frame.pict_type),
+                pts=frame.pts,
+                time_base=time_base,
+                key_frame=bool(frame.key_frame),
+            )
+
+        try:
+            for packet in self._container.demux(self.stream):
+                if packet.size == 0:
+                    # End-of-stream flush marker: drain buffered frames.
+                    decoded.extend(codec.decode(None))
+                    continue
+                assign_index(packet)
+                decoded.extend(codec.decode(packet))
         except LimitExceededError:
             raise
         except av.FFmpegError as exc:
             raise DecodeError(
-                f"decoding failed for {self.path} after {index} frames: {exc}"
+                f"decoding failed for {self.path} after {next_index} "
+                f"packets: {exc}"
             ) from exc
 
-        if index == 0:
+        if not decoded:
             raise InputError(
                 f"no decodable video frames found in {self.path}"
             )
+
+        records = [pair(frame) for frame in decoded]
+        records.sort(key=lambda record: record.decode_index)
+        for record in records:
+            yield record
 
     def close(self) -> None:
         self._container.close()
