@@ -13,7 +13,8 @@ import numpy as np
 
 _EPSILON = 1e-12
 _MIN_DB = -120.0
-_SEED_FRAMES = 100
+_SEED_WINDOW_MS = 2000.0
+_SEED_MIN_FRAMES = 8
 
 def amplitude_to_db(value: float) -> float:
     """Convert a linear amplitude to dBFS, clamped at -120 dB."""
@@ -130,6 +131,10 @@ class FrameEnergyDetector:
         )
         self._noise_floor = db_to_amplitude(_MIN_DB)
         self._seed_frames: list[tuple[int, float, float]] = []
+        self._seed_limit = max(
+            _SEED_MIN_FRAMES,
+            int(round(_SEED_WINDOW_MS / (1000.0 * self.hop / sample_rate))),
+        )
         self._seeded = False
 
     @property
@@ -218,7 +223,7 @@ class FrameEnergyDetector:
         rms = math.sqrt(max(energy, 0.0))
         if not self._seeded:
             self._seed_frames.append((start, rms, peak))
-            if len(self._seed_frames) < _SEED_FRAMES:
+            if len(self._seed_frames) < self._seed_limit:
                 return
             self._seed_and_flush()
             return
