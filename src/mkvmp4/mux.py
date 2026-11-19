@@ -110,7 +110,6 @@ def _build_stbl(track: Track, mt: MuxedTrack, tl: TrackTimeline,
         entry = boxes.avc1_box(track.pixel_width or 0,
                                track.pixel_height or 0,
                                track.codec_private)
-        media_header = boxes.vmhd_box()
     else:
         if not track.codec_private:
             raise MuxError(
@@ -118,7 +117,6 @@ def _build_stbl(track: Track, mt: MuxedTrack, tl: TrackTimeline,
         entry = boxes.mp4a_box(track.channels or 2, track.bit_depth or 16,
                                track.sampling_frequency or 48000.0,
                                track.codec_private)
-        media_header = boxes.smhd_box()
 
     parts = [
         boxes.stsd_box(entry),

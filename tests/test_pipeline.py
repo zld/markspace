@@ -5,7 +5,6 @@ from __future__ import annotations
 import io
 import json
 import os
-import struct
 import subprocess
 import sys
 import tempfile
@@ -202,6 +201,44 @@ class TimelineTests(FixtureBackedTestCase):
         self.assertTrue(any("last sample" in w for w in warnings))
         for tl in timelines.values():
             self.assertTrue(tl.last_duration_estimated)
+
+    def test_duplicate_timestamps_kept_in_order(self):
+        from mkvmp4.matroska import Sample
+        # Collapse every video sample onto the same timestamp: none may be
+        # dropped and order must survive non-regression clamping.
+        original = [s for s in self.mkv.samples if s.track_number == 1]
+        shared = original[0].abs_time_ns
+        self.mkv.samples = [
+            Sample(1, shared, s.payload_offset, s.payload_size, s.keyframe)
+            if s.track_number == 1 else s for s in self.mkv.samples
+        ]
+        mapping = select_tracks(self.mkv.tracks)
+        timelines, _, _ = build_timelines(
+            self.mkv, mapping.accepted_numbers)
+        video_tl = timelines[1]
+        self.assertEqual(video_tl.sample_count, len(original))
+        self.assertEqual(set(video_tl.sample_times), {0})
+        # All entries retained, in original order, none de-duplicated.
+        self.assertEqual(
+            len(video_tl.sample_times), len(video_tl.sample_durations))
+
+
+class EbmlBoundaryTests(unittest.TestCase):
+    def test_child_crossing_parent_boundary_rejected(self):
+        header_id = ebml.encode_id(0x1A45DFA3)
+        bogus = (header_id + encode_vint(2)
+                 + ebml.encode_id(0x4287) + encode_vint(5) + b"\x00" * 5)
+        reader = EbmlReader(io.BytesIO(bogus))
+        header = reader.read_element_header(0)
+        with self.assertRaises(EbmlError):
+            list(reader.iter_children(header))
+
+    def test_unknown_length_only_allowed_for_approved_ids(self):
+        # A non-approved element carrying an unknown-length size is rejected.
+        raw = ebml.encode_id(0x4287) + ebml.unknown_size_vint(1)
+        reader = EbmlReader(io.BytesIO(raw))
+        with self.assertRaises(EbmlError):
+            reader.read_element_header(0)
 
 
 if __name__ == "__main__":

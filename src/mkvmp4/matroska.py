@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .ebml import EbmlError, EbmlReader, Element
+from .ebml import EbmlReader, Element
 
 # --------------------------------------------------------------------------
 # EBML / Matroska element IDs (constants already include VINT markers).
