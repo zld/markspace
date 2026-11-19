@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "audionorm"
+version = "0.1.0"
+description = "Offline batch WAV resample + loudness normalization with reproducible JSON evidence"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.26,<2.0",
+    "soundfile>=0.12,<0.13",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8,<9"]
+
+[project.scripts]
+audionorm = "audionorm.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
