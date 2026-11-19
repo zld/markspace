@@ -1,0 +1,4 @@
+/mediakey
+/dist/
+*.out
+.DS_Store
