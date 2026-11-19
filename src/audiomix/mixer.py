@@ -3,9 +3,9 @@
 Design
 ------
 Every track's source audio is loaded once and resampled once to the project
-rate. The graph stores, per track, a *prepared source*: a float64 array whose
-row ``k`` already reflects loop repetition where applicable. Mapping a
-project frame to a prepared row is pure integer arithmetic:
+rate. The graph keeps that resampled material as a float64 array; it is not
+expanded, so memory stays proportional to the source. Mapping a project frame
+to a source row is pure integer arithmetic (:meth:`MixGraph.source_index`):
 
 * no loop: ``row = frame - start_frame`` (out of range -> silence)
 * loop: the material before ``loop.start_frame`` plays once, then rows
