@@ -116,3 +116,123 @@ def _round(value: float | None, digits: int = 6) -> float | None:
     if value is None:
         return None
     return round(value, digits)
+
+
+def summarize_file(path: str | Path) -> dict[str, Any]:
+    """Sniff one local file and return its normalized summary dict."""
+    target = Path(path)
+    try:
+        result = sniff_path(target)
+    except SniffError as exc:
+        raise ExtractError(str(target), exc.code, exc.message,
+                           offset=exc.offset, box_path=exc.path) from None
+    except OSError as exc:
+        raise ExtractError(str(target), "io_error",
+                           f"{type(exc).__name__}: {exc.strerror or exc}") from None
+    return summary_from_sniff(target, result)
+
+
+def summary_from_sniff(target: Path, result: SniffResult) -> dict[str, Any]:
+    tracks = [_track_summary(t, i, movie_timescale=result.movie_timescale,
+                             movie_duration_units=result.movie_duration_units)
+              for i, t in enumerate(result.tracks)]
+    durations = [t["duration_seconds"] for t in tracks
+                 if t["duration_seconds"] is not None]
+    starts = [t["start_seconds"] for t in tracks
+              if t["start_seconds"] is not None]
+    kinds = sorted({t["kind"] for t in tracks})
+    duration_s = max(durations) if durations else None
+    summary: dict[str, Any] = {
+        "manifest_version": MANIFEST_VERSION,
+        "path": str(target),
+        "name": target.name,
+        "container": result.container,
+        "file_size": result.file_size,
+        "brands": list(result.brands),
+        "movie_timescale": result.movie_timescale,
+        "movie_duration_units": result.movie_duration_units,
+        "movie_duration_seconds": _round(
+            _seconds(result.movie_duration_units, result.movie_timescale)),
+        "track_count": len(tracks),
+        "track_kinds": kinds,
+        "duration_seconds": _round(duration_s),
+        "start_seconds": _round(min(starts)) if starts else None,
+        "codec_summary": sorted(
+            {t["codec"] for t in tracks if t["codec"] is not None}),
+        "tracks": tracks,
+        "warnings": [w.to_dict() for w in result.warnings],
+    }
+    if summary["duration_seconds"] is None:
+        summary["duration_reason"] = _REASON_NULL
+    return summary
+
+
+def summarize_many(paths: list[Path]) -> tuple[list[dict], list[dict]]:
+    """Summarize files, returning (summaries, failures) without aborting."""
+    summaries: list[dict] = []
+    failures: list[dict] = []
+    for path in paths:
+        try:
+            summaries.append(summarize_file(path))
+        except ExtractError as exc:
+            failures.append(exc.to_dict())
+    return summaries, failures
+
+
+@dataclass
+class ExtractBatch:
+    summaries: list[dict] = field(default_factory=list)
+    failures: list[dict] = field(default_factory=list)
+
+    @property
+    def ok(self) -> bool:
+        return not self.failures
+
+
+SUPPORTED_SUFFIXES = {".mp4", ".m4v", ".m4a", ".mov", ".wav", ".wave"}
+
+
+def discover_media(root: Path, *, recursive: bool = True,
+                   failures: list[dict] | None = None) -> list[Path]:
+    """Return media files under root in a stable, platform-independent order.
+
+    Directories that cannot be listed are appended to ``failures`` (when a
+    list is supplied) so a permission problem on one subtree does not hide
+    files elsewhere in the batch.
+    """
+    if root.is_file():
+        return [root]
+    if not root.is_dir():
+        raise ExtractError(str(root), "not_found", f"{root} does not exist")
+
+    unreadable = list(failures) if failures is not None else None
+
+    def on_error(exc: OSError) -> None:
+        if unreadable is not None:
+            unreadable.append({
+                "path": exc.filename or str(root),
+                "code": "io_error",
+                "message": f"{type(exc).__name__}: {exc.strerror or exc}",
+                "offset": None,
+                "box_path": None,
+            })
+
+    files: list[Path] = []
+    if recursive:
+        for dirpath, _dirnames, filenames in os.walk(root, onerror=on_error):
+            base = Path(dirpath)
+            for name in filenames:
+                candidate = base / name
+                if candidate.suffix.lower() in SUPPORTED_SUFFIXES:
+                    files.append(candidate)
+    else:
+        try:
+            for candidate in root.iterdir():
+                if candidate.is_file() and \
+                        candidate.suffix.lower() in SUPPORTED_SUFFIXES:
+                    files.append(candidate)
+        except OSError as exc:
+            on_error(exc)
+    if failures is not None and unreadable is not None:
+        failures[:] = unreadable
+    return sorted(files, key=lambda p: p.relative_to(root).as_posix())
