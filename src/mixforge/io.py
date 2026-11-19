@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import soundfile as sf
 
-from .errors import AudioIOError, ProcessingError
+from .errors import AudioIOError
 
 MAX_CHANNELS = 2
 

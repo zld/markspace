@@ -61,11 +61,11 @@ class SignalStats:
 
 
 def _clean(value: float) -> float:
-    """Round summary numbers to 12 significant digits for stable output."""
+    """Round summary numbers for compact, deterministic JSON output."""
 
     if not math.isfinite(value):
         raise ProcessingError("non-finite statistic", location="stats")
-    return float(f"{value:.12g}")
+    return float(f"{value:.15g}")
 
 
 def compare_samples(
