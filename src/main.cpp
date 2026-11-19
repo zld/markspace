@@ -220,6 +220,21 @@ void print_histogram_text(std::ostream& os, const char* tag,
   }
 }
 
+void print_histogram_json(std::ostream& os, const HistogramSet& hs) {
+  const char* names[3] = {"r", "g", "b"};
+  os << "{";
+  for (int c = 0; c < 3; ++c) {
+    os << (c ? "," : "") << "\"" << names[c] << "\":{\"underflow\":"
+       << hs.channel[c].underflow << ",\"overflow\":" << hs.channel[c].overflow
+       << ",\"bins\":[";
+    for (std::size_t i = 0; i < hs.channel[c].bins.size(); ++i) {
+      os << (i ? "," : "") << hs.channel[c].bins[i];
+    }
+    os << "]}";
+  }
+  os << "}";
+}
+
 int run_pipeline(const Options& opt, bool demo_mode) {
   Lut3D lut = demo_mode ? make_synthetic_lut(opt.size)
                         : lutcheck::parse_cube_file(opt.lut_path);
@@ -259,16 +274,30 @@ int run_pipeline(const Options& opt, bool demo_mode) {
   }
   char grid[32];
   std::snprintf(grid, sizeof grid, "%dx%dx%d", lut.size, lut.size, lut.size);
-  os << "lut_grid=" << grid << "\n"
-     << "space=" << lutcheck::color_space_name(opt.space) << "\n"
-     << "input_pixels=" << count << "\n"
-     << "output_pixels=" << count << "\n";
-  char line[160];
-  std::snprintf(line, sizeof line, "max_abs_deviation_rgb=%.9e %.9e %.9e\n",
-                dev[0], dev[1], dev[2]);
-  os << line;
-  print_histogram_text(os, "histogram_before", before);
-  print_histogram_text(os, "histogram_after", after);
+  if (opt.json) {
+    char num[3][32];
+    for (int c = 0; c < 3; ++c) std::snprintf(num[c], 32, "%.9e", dev[c]);
+    os << "{\n  \"lut_grid\": \"" << grid << "\",\n  \"space\": \""
+       << lutcheck::color_space_name(opt.space) << "\",\n"
+       << "  \"input_pixels\": " << count << ",\n  \"output_pixels\": " << count
+       << ",\n  \"max_abs_deviation_rgb\": [" << num[0] << ", " << num[1]
+       << ", " << num[2] << "],\n  \"histogram_before\": ";
+    print_histogram_json(os, before);
+    os << ",\n  \"histogram_after\": ";
+    print_histogram_json(os, after);
+    os << "\n}\n";
+  } else {
+    os << "lut_grid=" << grid << "\n"
+       << "space=" << lutcheck::color_space_name(opt.space) << "\n"
+       << "input_pixels=" << count << "\n"
+       << "output_pixels=" << count << "\n";
+    char line[160];
+    std::snprintf(line, sizeof line, "max_abs_deviation_rgb=%.9e %.9e %.9e\n",
+                  dev[0], dev[1], dev[2]);
+    os << line;
+    print_histogram_text(os, "histogram_before", before);
+    print_histogram_text(os, "histogram_after", after);
+  }
   os.flush();
   if (!os) throw lutcheck::IoError("failed while writing summary");
 
