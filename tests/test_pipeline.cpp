@@ -909,3 +909,20 @@ TEST_CASE("ppm header accepts CRLF line endings", "[ppm]") {
   CHECK(image.pixels[0].b == Catch::Approx(128 / 255.0).margin(1e-12));
   std::filesystem::remove_all(dir);
 }
+
+TEST_CASE("failed atomic write leaves nothing behind", "[ppm]") {
+  lutcheck::Image image;
+  image.width = 2;
+  image.height = 2;
+  image.pixels.assign(4, Vec3{0.5, 0.5, 0.5});
+  const std::string path = "lutcheck_missing_dir/out.ppm";
+  std::filesystem::remove_all("lutcheck_missing_dir");
+  try {
+    lutcheck::write_ppm_atomic(path, image);
+    FAIL("expected output failure");
+  } catch (const lutcheck::AppError& error) {
+    CHECK(error.code() == ExitCode::Output);
+  }
+  CHECK_FALSE(std::filesystem::exists(path));
+  CHECK_FALSE(std::filesystem::exists(path + ".tmp"));
+}
