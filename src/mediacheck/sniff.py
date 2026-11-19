@@ -342,3 +342,287 @@ def _require_payload(box: BoxHeader, minimum: int, needed: str) -> None:
         raise SniffError("truncated_box",
                          f"{box.name} needs {minimum} bytes for {needed}, has {box.payload_size}",
                          offset=box.start, path=box.path)
+
+
+# ---------------------------------------------------------------------------
+# MP4 / ISO BMFF
+# ---------------------------------------------------------------------------
+
+def sniff_mp4(reader: Reader, ctx: SniffContext) -> SniffResult:
+    top = reader.read_box_header(0, reader.size, "")
+    if top.fourcc != FTYP:
+        raise SniffError("missing_ftyp", "first box is not ftyp",
+                         offset=0, path="")
+    _require_payload(top, 8, "major brand and minor version")
+    ftyp = _mp4_payload(reader, top)
+    brands = [fourcc_str(ftyp[0:4])]
+    for i in range(8, len(ftyp) - 3, 4):
+        if len(brands) >= MAX_BRANDS:
+            ctx.warn("brand_limit", f"more than {MAX_BRANDS} compatible brands",
+                     offset=top.start, path=top.path)
+            break
+        brands.append(fourcc_str(ftyp[i:i + 4]))
+
+    movie_timescale: int | None = None
+    movie_duration: int | None = None
+    tracks: list[SniffTrack] = []
+    moov_seen = False
+    moov_count = 0
+
+    for box in iter_boxes(reader, 0, reader.size, ctx, "", 0):
+        if box.fourcc == FTYP:
+            continue
+        if box.fourcc == MOOV:
+            moov_count += 1
+            if moov_count > 1:
+                raise SniffError("duplicate_moov", "more than one moov box",
+                                 offset=box.start, path=box.path)
+            moov_seen = True
+            movie_timescale, movie_duration, moov_tracks = _parse_moov(
+                reader, box, ctx)
+            tracks.extend(moov_tracks)
+            continue
+        if box.fourcc in IGNORABLE_TYPES or box.fourcc in (b"mdat", b"moof",
+                                                           b"mfra", b"styp"):
+            continue
+        if box.fourcc == b"uuid":
+            continue
+        # Unknown top-level box: record but do not fail; it is structurally
+        # sound because iter_boxes already validated its bounds.
+        ctx.warn("unknown_box", f"unhandled top-level box {box.name!r} "
+                 f"({box.size} bytes) was skipped", offset=box.start, path=box.path)
+
+    if not moov_seen:
+        raise SniffError("missing_moov", "no moov box found; metadata unavailable",
+                         offset=0, path="")
+
+    return SniffResult(
+        container="mp4", file_size=reader.size, brands=brands,
+        movie_timescale=movie_timescale, movie_duration_units=movie_duration,
+        tracks=tracks, warnings=ctx.warnings,
+    )
+
+
+def _parse_moov(reader: Reader, box: BoxHeader, ctx: SniffContext
+                ) -> tuple[int | None, int | None, list[SniffTrack]]:
+    timescale = None
+    duration = None
+    tracks: list[SniffTrack] = []
+    for child in iter_boxes(reader, box.payload_start, box.end, ctx,
+                            box.path, 1):
+        if child.fourcc == b"mvhd":
+            timescale, duration = _parse_mvhd(reader, child, ctx)
+        elif child.fourcc == b"trak":
+            tracks.append(_parse_trak(reader, child, ctx))
+        elif child.fourcc in CONTAINER_TYPES:
+            raise SniffError("unexpected_container",
+                             f"unexpected container {child.name} inside moov",
+                             offset=child.start, path=child.path)
+        elif child.fourcc not in IGNORABLE_TYPES:
+            ctx.warn("unknown_box", f"unhandled box {child.name!r} inside moov",
+                     offset=child.start, path=child.path)
+    return timescale, duration, tracks
+
+
+def _parse_mvhd(reader: Reader, box: BoxHeader, ctx: SniffContext
+                ) -> tuple[int | None, int | None]:
+    _require_payload(box, 20, "mvhd")
+    data = _mp4_payload(reader, box)
+    version, _flags, body = _full_box(data, box.path)
+    if version == 1:
+        if len(body) < 28:
+            raise SniffError("truncated_box", "mvhd v1 is truncated",
+                             offset=box.start, path=box.path)
+        ts = int.from_bytes(body[16:20], "big")
+        dur = int.from_bytes(body[20:28], "big")
+    else:
+        ts = int.from_bytes(body[8:12], "big")
+        dur = int.from_bytes(body[12:16], "big")
+    if ts == 0:
+        ctx.warn("zero_timescale", "mvhd timescale is zero; durations cannot be converted",
+                 offset=box.start, path=box.path)
+        ts = None
+    if dur == 0xFFFFFFFF or dur == 0xFFFFFFFFFFFFFFFF:
+        ctx.warn("unknown_duration", "mvhd duration is the unknown sentinel",
+                 offset=box.start, path=box.path)
+        dur = None
+    return ts, dur
+
+
+def _parse_trak(reader: Reader, box: BoxHeader, ctx: SniffContext) -> SniffTrack:
+    track = SniffTrack(None, None, None, None, None, None, None, None,
+                       None, None, None, None, None)
+    timescale = None
+    duration_units = None
+    media_time = None
+    presentation_start = None
+    stsd_info: dict = {}
+    hdlr_type = None
+    tkhd_width = tkhd_height = None
+    hdlr_name = None
+    seen_mdia = False
+    for child in iter_boxes(reader, box.payload_start, box.end, ctx,
+                            box.path, 2):
+        if child.fourcc == b"tkhd":
+            track_id, tkhd_width, tkhd_height = _parse_tkhd(reader, child, ctx)
+            track.track_id = track_id
+        elif child.fourcc == b"edts":
+            presentation_start, media_time = _parse_edts(reader, child, ctx)
+        elif child.fourcc == b"mdia":
+            if seen_mdia:
+                raise SniffError("duplicate_mdia",
+                                 "more than one mdia box inside trak",
+                                 offset=child.start, path=child.path)
+            seen_mdia = True
+            timescale, duration_units, hdlr_type, hdlr_name, stsd_info = \
+                _parse_mdia(reader, child, ctx)
+        elif child.fourcc in CONTAINER_TYPES and child.fourcc != b"edts":
+            raise SniffError("unexpected_container",
+                             f"unexpected container {child.name} inside trak",
+                             offset=child.start, path=child.path)
+        elif child.fourcc not in IGNORABLE_TYPES:
+            ctx.warn("unknown_box", f"unhandled box {child.name!r} inside trak",
+                     offset=child.start, path=child.path)
+    track.timescale = timescale
+    track.duration_units = duration_units
+    track.start_time_units = media_time
+    track.start_movie_units = presentation_start
+    track.handler = hdlr_type
+    track.language = stsd_info.get("language") or hdlr_name
+    if track.handler == "video":
+        track.width = tkhd_width if tkhd_width is not None else stsd_info.get("width")
+        track.height = tkhd_height if tkhd_height is not None else stsd_info.get("height")
+    elif track.handler == "audio":
+        track.sample_rate = stsd_info.get("sample_rate")
+        track.channels = stsd_info.get("channels")
+        track.bit_depth = stsd_info.get("bit_depth")
+    if stsd_info:
+        track.codec = stsd_info.get("codec")
+        track.codec_raw = stsd_info.get("codec_raw")
+        if stsd_info.get("reasons"):
+            track.reasons.update(stsd_info["reasons"])
+    _mark_missing(track, seen_mdia)
+    return track
+
+
+def _mark_missing(track: SniffTrack, seen_mdia: bool = True) -> None:
+    if track.track_id is None:
+        track.reasons["track_id"] = "tkhd box missing or unreadable"
+    if not seen_mdia:
+        # A trak with no mdia is structurally odd but not a read error; record
+        # it and keep the batch going instead of rejecting the whole file.
+        track.reasons.setdefault("handler", "trak has no mdia box")
+        track.reasons.setdefault("timescale", "trak has no mdia box")
+        track.reasons.setdefault("duration_seconds", "trak has no mdia box")
+        return
+    if track.handler is None:
+        track.reasons["handler"] = "mdia/hdlr box missing or unreadable"
+    if track.timescale is None:
+        track.reasons["timescale"] = "mdia/mdhd timescale missing or zero"
+    if track.duration_units is None:
+        track.reasons["duration"] = "mdia/mdhd duration missing or unknown sentinel"
+    if track.codec is None and "codec" not in track.reasons:
+        track.reasons["codec"] = "stsd sample entry missing or unsupported"
+    if track.handler == "video":
+        if track.width is None:
+            track.reasons.setdefault("width", "tkhd/stsd width unavailable")
+        if track.height is None:
+            track.reasons.setdefault("height", "tkhd/stsd height unavailable")
+    if track.handler == "audio":
+        if track.sample_rate is None:
+            track.reasons.setdefault("sample_rate", "stsd audio entry sample rate unavailable")
+        if track.channels is None:
+            track.reasons.setdefault("channels", "stsd audio entry channel count unavailable")
+
+
+def _parse_tkhd(reader: Reader, box: BoxHeader, ctx: SniffContext
+                ) -> tuple[int | None, int | None, int | None]:
+    _require_payload(box, 16, "tkhd")
+    data = _mp4_payload(reader, box)
+    version, _flags, body = _full_box(data, box.path)
+    if version == 1:
+        # creation, modification, track_id, reserved, duration (8-byte times)
+        if len(body) < 32:
+            raise SniffError("truncated_box", "tkhd v1 is truncated",
+                             offset=box.start, path=box.path)
+        track_id = int.from_bytes(body[16:20], "big")
+        pos = 32
+    else:
+        if len(body) < 20:
+            raise SniffError("truncated_box", "tkhd v0 is truncated",
+                             offset=box.start, path=box.path)
+        track_id = int.from_bytes(body[8:12], "big")
+        pos = 20
+    width_fixed = height_fixed = None
+    # skip reserved(8) + layer(2) + alternate_group(2) + volume(2) + reserved(2)
+    pos += 16
+    # matrix is 36 bytes, then width and height are 16.16 fixed point
+    if len(body) >= pos + 36 + 8:
+        width_fixed = int.from_bytes(body[pos + 36:pos + 40], "big")
+        height_fixed = int.from_bytes(body[pos + 40:pos + 44], "big")
+    width = round(width_fixed / 65536) if width_fixed else None
+    height = round(height_fixed / 65536) if height_fixed else None
+    if track_id == 0:
+        ctx.warn("zero_track_id", "tkhd track_id is zero",
+                 offset=box.start, path=box.path)
+        track_id = None
+    return track_id, width, height
+
+
+def _parse_edts(reader: Reader, box: BoxHeader, ctx: SniffContext
+                ) -> tuple[int | None, int | None]:
+    """Return (presentation_start_in_movie, media_time) from edts/elst.
+
+    An empty edit (media_time == -1) delays the track by its segment
+    duration, measured in movie timescale. A non-empty edit with a positive
+    media_time trims the head of the media. Both are converted to movie
+    units so callers can build a unified time base.
+    """
+    media_time = None
+    presentation_start = None
+    for child in iter_boxes(reader, box.payload_start, box.end, ctx,
+                            box.path, 3):
+        if child.fourcc != b"elst":
+            if child.fourcc not in IGNORABLE_TYPES:
+                ctx.warn("unknown_box", f"unhandled box {child.name!r} inside edts",
+                         offset=child.start, path=child.path)
+            continue
+        data = _mp4_payload(reader, child)
+        version, _flags, body = _full_box(data, child.path)
+        if len(body) < 4:
+            raise SniffError("truncated_box", "elst entry count is truncated",
+                             offset=child.start, path=child.path)
+        count = int.from_bytes(body[0:4], "big")
+        if count > MAX_EDIT_ENTRIES:
+            raise SniffError("edit_limit", f"elst declares {count} entries "
+                             f"(limit {MAX_EDIT_ENTRIES})",
+                             offset=child.start, path=child.path)
+        entry = 20 if version == 1 else 12
+        if len(body) < 4 + count * entry:
+            raise SniffError("truncated_box",
+                             f"elst needs {count} entries of {entry} bytes",
+                             offset=child.start, path=child.path)
+        offset = 0
+        for i in range(count):
+            base = 4 + i * entry
+            if version == 1:
+                seg_dur = int.from_bytes(body[base:base + 8], "big", signed=True)
+                mt = int.from_bytes(body[base + 8:base + 16], "big", signed=True)
+            else:
+                seg_dur = int.from_bytes(body[base:base + 4], "big", signed=True)
+                mt = int.from_bytes(body[base + 4:base + 8], "big", signed=True)
+            if mt == -1:
+                # Empty edit: the track is silent/blank for seg_dur movie units.
+                offset += seg_dur
+                continue
+            media_time = mt if mt > 0 else 0
+            presentation_start = offset
+            break
+        else:
+            media_time = None
+            presentation_start = None
+        if count and presentation_start is None and media_time is None:
+            ctx.warn("edit_list_empty",
+                     "elst contains only empty edits; track never presents",
+                     offset=child.start, path=child.path)
+    return presentation_start, media_time
