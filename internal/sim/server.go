@@ -22,20 +22,24 @@ import (
 type Config struct {
 	// Transport selects which transport the client is expected to use. UDP
 	// listeners are only opened for the UDP mode.
-	Transport fixtureTransport
+	Transport Mode
 	// Items are the deterministic datagrams to stream once PLAY starts.
 	Items []fixture.Item
 	// PacketInterval spaces out RTP writes so reorder timeouts can elapse.
 	PacketInterval time.Duration
 	// DisconnectAfter, when positive, forces a server disconnect after this
-	// many RTP packets have been written.
+	// many RTP packets have been written. Zero disables mid-stream disconnect.
 	DisconnectAfter int
+	// DisconnectAtEnd closes the control connection after every item was
+	// streamed, exercising client cleanup without losing RTP data.
+	DisconnectAtEnd bool
 }
 
-type fixtureTransport int
+// Mode selects the RTP transport of the mock server.
+type Mode int
 
 const (
-	TransportUDP fixtureTransport = iota
+	TransportUDP Mode = iota
 	TransportTCP
 )
 
@@ -50,6 +54,8 @@ type Server struct {
 	clientSS  *gortsplib.ServerSession
 	clientC   *gortsplib.ServerConn
 	written   int
+	writeErrors int
+	lastWriteErr error
 	closed    bool
 	rtspAddr  string
 }
@@ -90,15 +96,23 @@ func Start(cfg Config) (*Server, error) {
 		WriteTimeout:             5 * time.Second,
 		DisableRTCPSenderReports: true,
 	}
+	var heldConns []net.PacketConn
 	if cfg.Transport == TransportUDP {
-		rtpAddr, rtcpAddr, err := reserveUDPPair()
+		rtpConn, rtcpConn, rtpAddr, rtcpAddr, err := reserveUDPPair()
 		if err != nil {
 			return nil, err
 		}
+		heldConns = []net.PacketConn{rtpConn, rtcpConn}
 		gs.UDPRTPAddress = rtpAddr
 		gs.UDPRTCPAddress = rtcpAddr
+		// Hand gortsplib the already-bound sockets so the ports it advertises
+		// in SETUP are exactly the sockets it sends RTP/RTCP from.
+		gs.ListenPacket = reusePacketConns(rtpConn, rtcpConn)
 	}
 	if err := gs.Start(); err != nil {
+		for _, c := range heldConns {
+			_ = c.Close()
+		}
 		return nil, fmt.Errorf("sim: server start: %w", err)
 	}
 	s.gortsrv = gs
@@ -115,31 +129,52 @@ func (s *Server) Address() string {
 // Media exposes the single media description for client setup.
 func (s *Server) Media() *description.Media { return s.media }
 
-// reserveUDPPair finds two consecutive free loopback UDP ports and releases
-// them for gortsplib to rebind. gortsplib requires RTP/RTCP ports adjacent.
-func reserveUDPPair() (string, string, error) {
-	for attempt := 0; attempt < 16; attempt++ {
-		c1, err := net.ListenPacket("udp", "127.0.0.1:0")
+// reserveUDPPair binds two consecutive free loopback UDP ports (RTP on an
+// even port, RTCP on the following odd port) and keeps the sockets open. The
+// caller hands them to gortsplib via a ListenPacket hook, so there is no
+// release/rebind window and no port mismatch.
+func reserveUDPPair() (net.PacketConn, net.PacketConn, string, string, error) {
+	for attempt := 0; attempt < 32; attempt++ {
+		probe, err := net.ListenPacket("udp", "127.0.0.1:0")
 		if err != nil {
-			return "", "", fmt.Errorf("sim: reserve udp: %w", err)
+			return nil, nil, "", "", fmt.Errorf("sim: reserve udp: %w", err)
 		}
-		addr1 := c1.LocalAddr().(*net.UDPAddr)
-		_ = c1.Close()
+		rtpPort := probe.LocalAddr().(*net.UDPAddr).Port
+		_ = probe.Close()
+		if rtpPort%2 != 0 {
+			rtpPort++ // gortsplib requires an even RTP port
+		}
 
-		port1 := addr1.Port
-		c2, err := net.ListenPacket("udp", net.JoinHostPort("127.0.0.1",
-			fmt.Sprintf("%d", port1+1)))
+		rtpConn, err := net.ListenPacket("udp",
+			net.JoinHostPort("127.0.0.1", fmt.Sprintf("%d", rtpPort)))
 		if err != nil {
-			continue // odd port or neighbor taken; retry with a fresh random port
+			continue // port got taken; retry with a fresh random candidate
 		}
-		addr2 := c2.LocalAddr().(*net.UDPAddr)
-		_ = c2.Close()
-		if addr2.Port != port1+1 {
+		rtcpConn, err := net.ListenPacket("udp",
+			net.JoinHostPort("127.0.0.1", fmt.Sprintf("%d", rtpPort+1)))
+		if err != nil {
+			_ = rtpConn.Close()
 			continue
 		}
-		return addr1.String(), addr2.String(), nil
+		return rtpConn, rtcpConn,
+			rtpConn.LocalAddr().String(), rtcpConn.LocalAddr().String(), nil
 	}
-	return "", "", fmt.Errorf("sim: could not reserve consecutive UDP ports")
+	return nil, nil, "", "", fmt.Errorf("sim: could not reserve consecutive UDP ports")
+}
+
+// reusePacketConns returns a ListenPacket that serves the two pre-bound
+// sockets for their exact address, and delegates any other address normally.
+func reusePacketConns(conns ...net.PacketConn) func(string, string) (net.PacketConn, error) {
+	byAddr := make(map[string]net.PacketConn, len(conns))
+	for _, c := range conns {
+		byAddr[c.LocalAddr().String()] = c
+	}
+	return func(network, address string) (net.PacketConn, error) {
+		if c, ok := byAddr[address]; ok {
+			return c, nil
+		}
+		return net.ListenPacket(network, address)
+	}
 }
 
 // Written reports how many RTP packets have been sent.
@@ -147,6 +182,13 @@ func (s *Server) Written() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.written
+}
+
+// WriteError reports the first write failure and how many occurred.
+func (s *Server) WriteError() (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.writeErrors, s.lastWriteErr
 }
 
 // Close releases the stream, server and all bound ports.
@@ -185,7 +227,11 @@ func (s *Server) streamLoop(session *gortsplib.ServerSession) {
 				continue
 			}
 			if err := s.stream.WritePacketRTP(s.media, pkt); err != nil {
-				return // client went away
+				s.mu.Lock()
+				s.writeErrors++
+				s.lastWriteErr = err
+				s.mu.Unlock()
+				return // client went away or write queue full
 			}
 			s.mu.Lock()
 			s.written++
@@ -195,6 +241,12 @@ func (s *Server) streamLoop(session *gortsplib.ServerSession) {
 				s.forceDisconnect()
 				return
 			}
+		}
+		if s.cfg.DisconnectAtEnd {
+			// Give in-flight UDP datagrams time to land, then sever the
+			// control channel so the client observes a server disconnect.
+			time.Sleep(5 * s.cfg.PacketInterval)
+			s.forceDisconnect()
 		}
 	}()
 }

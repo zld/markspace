@@ -4,21 +4,21 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"sync"
 	"time"
 
 	"github.com/bluenviron/gortsplib/v4"
 	"github.com/bluenviron/gortsplib/v4/pkg/base"
+	"github.com/bluenviron/gortsplib/v4/pkg/description"
+	"github.com/bluenviron/gortsplib/v4/pkg/format"
 	"github.com/pion/rtp"
 
 	"rtspdiag/internal/config"
 )
 
-// Transport constants re-exported so callers depend on our package only.
-var (
-	gortTransportUDP = gortsplib.TransportUDP
-	gortTransportTCP = gortsplib.TransportTCP
-)
+// gortTransportTCP is the gortsplib RTP-over-TCP transport selector.
+var gortTransportTCP = gortsplib.TransportTCP
 
 // Pipeline receives every parsed RTP packet in delivery order. It is
 // implemented by the reorder/frame wiring in the rtspdiag runner.
@@ -39,6 +39,15 @@ type AdapterConfig struct {
 	// ReadTimeout bounds blocking RTSP reads so a dead server cannot hang.
 	ReadTimeout time.Duration
 	Pipeline    Pipeline
+	// InjectMalformed, when non-nil, is fed straight into the pipeline after
+	// PLAY so the project-owned parser records a parse error. It models a
+	// corrupted datagram that never reaches gortsplib's own decoder.
+	InjectMalformed []byte
+	// AnyPortEnable relaxes gortsplib's strict UDP source-port filtering.
+	AnyPortEnable bool
+	// WrapPacketConn, when set, decorates each client UDP PacketConn. It is
+	// used for diagnostics and socket-level observation.
+	WrapPacketConn func(net.PacketConn) net.PacketConn
 }
 
 // Adapter drives the shared RTSP state machine over either UDP or
@@ -62,17 +71,40 @@ func (a *Adapter) Session() *Session { return a.session }
 
 // Run performs the full OPTIONS..PLAY..TEARDOWN exchange against the in-process
 // mock server and streams RTP until the context ends, the server disconnects,
-// or a fatal protocol error occurs.
+// or a fatal protocol error occurs. UDP uses a self-managed data plane so the
+// project-owned reorderer handles gaps; TCP uses gortsplib interleaved frames.
+// Both paths drive the same Session state machine and Pipeline.
 func (a *Adapter) Run(ctx context.Context) error {
-	transport := gortTransportUDP
-	if a.cfg.Transport == config.TransportTCP {
-		transport = gortTransportTCP
+	if a.cfg.Transport == config.TransportUDP {
+		return a.runUDP(ctx)
 	}
+	return a.runTCP(ctx)
+}
+
+// runTCP uses gortsplib's RTP-over-TCP (interleaved) transport. TCP provides
+// reliable, ordered delivery, so gortsplib's reorder buffer never stalls on a
+// network gap and the callback path is sufficient.
+func (a *Adapter) runTCP(ctx context.Context) error {
+	transport := gortTransportTCP
 	client := &gortsplib.Client{
-		Transport:            &transport,
-		ReadTimeout:          a.cfg.ReadTimeout,
-		WriteTimeout:         a.cfg.ReadTimeout,
+		Transport:             &transport,
+		ReadTimeout:           a.cfg.ReadTimeout,
+		WriteTimeout:          a.cfg.ReadTimeout,
 		InitialUDPReadTimeout: 2 * time.Second,
+		AnyPortEnable:         a.cfg.AnyPortEnable,
+		// Swallow gortsplib's default log lines; loss and decode events are
+		// measured by the project pipeline instead of printing to stderr.
+		OnPacketLost:  func(error) {},
+		OnDecodeError: func(error) {},
+	}
+	if a.cfg.WrapPacketConn != nil {
+		client.ListenPacket = func(network, address string) (net.PacketConn, error) {
+			pc, err := net.ListenPacket(network, address)
+			if err != nil {
+				return nil, err
+			}
+			return a.cfg.WrapPacketConn(pc), nil
+		}
 	}
 	if err := client.Start(a.scheme(), a.host()); err != nil {
 		return fmt.Errorf("rtsp: client start: %w", err)
@@ -110,8 +142,10 @@ func (a *Adapter) Run(ctx context.Context) error {
 		return err
 	}
 
-	// Every RTP packet, regardless of transport, enters through one callback.
-	client.OnPacketRTP(media, media.Formats[0], a.onPacket)
+	// RTP-over-TCP packets enter through one callback.
+	client.OnPacketRTPAny(func(_ *description.Media, _ format.Format, pkt *rtp.Packet) {
+		a.onPacket(pkt)
+	})
 
 	if _, err := client.Play(nil); err != nil {
 		return fmt.Errorf("rtsp: play: %w", err)
@@ -120,19 +154,13 @@ func (a *Adapter) Run(ctx context.Context) error {
 		return err
 	}
 
-	// Block until the context is cancelled or the server disconnects. Wait
-	// surfaces connection errors including forced server-side closes.
-	err = a.waitUntilDone(ctx, client)
+	if len(a.cfg.InjectMalformed) > 0 {
+		_ = a.cfg.Pipeline.Ingest(a.cfg.InjectMalformed, time.Now())
+	}
 
-	if teardownErr := a.session.Apply(MethodTeardown); teardownErr != nil {
-		// A disconnect can make TEARDOWN illegal on the wire; the state machine
-		// still records nothing and we keep the original disconnect cause.
-		a.mu.Lock()
-		disconnected := !a.gotData || err != nil
-		a.mu.Unlock()
-		if !disconnected {
-			return teardownErr
-		}
+	err = a.waitUntilDone(ctx, client)
+	if teardownErr := a.session.Apply(MethodTeardown); teardownErr != nil && err == nil {
+		return teardownErr
 	}
 	return err
 }
