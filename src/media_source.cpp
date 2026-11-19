@@ -6,6 +6,7 @@
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
+#include <libavutil/dict.h>
 #include <libavutil/imgutils.h>
 #include <libavutil/opt.h>
 #include <libavutil/rational.h>
@@ -133,6 +134,12 @@ bool generate_sample(const SampleConfig& cfg, std::string& err) {
     }
     ast->time_base = actx->time_base;
 
+    // Bit-exact mode suppresses non-deterministic container data (e.g. the
+    // matroska wall-clock DateUTC element); combined with the pinned creation
+    // time below, identical seeds yield byte-identical samples.
+    fmt->flags |= AVFMT_FLAG_BITEXACT;
+    av_dict_set(&fmt->metadata, "creation_time",
+                "2000-01-01T00:00:00.000000Z", 0);
     if (!(fmt->oformat->flags & AVFMT_NOFILE)) {
         if ((rc = avio_open(&fmt->pb, cfg.path.c_str(), AVIO_FLAG_WRITE)) < 0) {
             err = "avio_open failed for sample file";
