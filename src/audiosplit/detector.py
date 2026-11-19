@@ -22,6 +22,10 @@ from .models import AudioData, DetectParams, DetectionResult, Segment, Silence
 _EPS_ENERGY = 1e-12  # keeps log10 finite for digital silence
 _HYSTERESIS_DB = 3.0
 _ALPHA_FAST = 0.35  # downward adaptation (quieter frame encountered)
+# Robust global noise reference: low percentile of all frame levels, which
+# ignores transient spikes unlike a hard minimum and does not anchor on a
+# single unusually quiet lead-in.
+_NOISE_PERCENTILE = 10.0
 _MIN_WINDOW_MS = 500.0
 _MIN_WINDOW_FRAMES = 5
 # Fallback pass for constant-level clips without any quiet reference frame:
@@ -63,13 +67,15 @@ def _sliding_min(values: np.ndarray, window: int) -> np.ndarray:
 
 
 def _noise_floor(db: np.ndarray, window: int) -> np.ndarray:
-    """Combined noise estimate.
+    """Robust per-frame noise estimate combining three references.
 
-    The sliding minimum gives the true floor once a quiet frame exists inside
-    the window. The downward-only tracker covers clips that are loud from the
-    first frame (no quiet reference for the sliding minimum) by adapting
-    quickly whenever the level drops. Taking the minimum of the two keeps the
-    estimate on the quiet side, so thresholds never track the signal itself.
+      * a downward-only tracker that adapts fast when the level drops, so
+        clips loud from frame one still get a floor once any dip appears;
+      * a trailing-window minimum for quick response to real silences;
+      * the file-wide low percentile as a stable cap, preventing both
+        estimators from locking onto an anomalously quiet lead-in.
+    The local estimate is raised to the percentile cap so the floor never
+    anchors on a single unusually quiet stretch.
     """
     tracker = np.empty_like(db)
     estimate = db[0]
@@ -77,7 +83,9 @@ def _noise_floor(db: np.ndarray, window: int) -> np.ndarray:
         if level < estimate:
             estimate = _ALPHA_FAST * level + (1.0 - _ALPHA_FAST) * estimate
         tracker[k] = estimate
-    return np.minimum(tracker, _sliding_min(db, window))
+    percentile_floor = float(np.percentile(db, _NOISE_PERCENTILE))
+    local = np.minimum(tracker, _sliding_min(db, window))
+    return np.maximum(local, percentile_floor)
 
 
 def _sound_runs(db: np.ndarray, high: np.ndarray, low: np.ndarray) -> list[tuple[int, int]]:
