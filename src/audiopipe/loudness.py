@@ -72,17 +72,27 @@ def _highpass_coeffs(rate: float) -> Biquad:
 
 
 def _apply_biquad(x: np.ndarray, coef: Biquad) -> np.ndarray:
-    """Direct-form-I biquad along axis 0, per channel, zero initial state."""
-    y = np.zeros_like(x, dtype=np.float64)
-    z1 = np.zeros(x.shape[1], dtype=np.float64)
-    z2 = np.zeros(x.shape[1], dtype=np.float64)
+    """Direct-form-II transposed biquad along axis 0, per channel.
+
+    Each channel runs as a tight scalar loop over Python floats: a biquad is
+    inherently recursive, and fusing it in scalar code is roughly ten times
+    faster than per-sample NumPy operations.
+    """
+    frames, channels = x.shape
+    y = np.empty((frames, channels), dtype=np.float64)
     b0, b1, b2, a1, a2 = coef.b0, coef.b1, coef.b2, coef.a1, coef.a2
-    for n in range(x.shape[0]):
-        xn = x[n]
-        yn = b0 * xn + z1
-        z1 = b1 * xn - a1 * yn + z2
-        z2 = b2 * xn - a2 * yn
-        y[n] = yn
+    for channel in range(channels):
+        source = x[:, channel].tolist()
+        out = [0.0] * frames
+        z1 = 0.0
+        z2 = 0.0
+        for n in range(frames):
+            xn = source[n]
+            yn = b0 * xn + z1
+            z1 = b1 * xn - a1 * yn + z2
+            z2 = b2 * xn - a2 * yn
+            out[n] = yn
+        y[:, channel] = out
     return y
 
 
@@ -202,6 +212,44 @@ def measure(data: np.ndarray, rate: int) -> LoudnessStats:
         peak_abs=peak_abs,
         clipped_samples=clipped,
         silent=silent,
+    )
+
+
+@dataclass(frozen=True)
+class QuickStats:
+    """Cheap level check used for the delivered (pre-resampling) file."""
+
+    rms: float
+    rms_dbfs: float | None
+    peak_abs: float
+    peak_dbfs: float | None
+    clipped_samples: int
+    silent: bool
+
+    def as_dict(self) -> dict[str, float | None | int | bool]:
+        return {
+            "rms": _num(self.rms),
+            "rms_dbfs": _num(self.rms_dbfs),
+            "peak_dbfs": _num(self.peak_dbfs),
+            "clipped_samples": int(self.clipped_samples),
+            "silent": bool(self.silent),
+        }
+
+
+def quick_stats(data: np.ndarray) -> QuickStats:
+    """RMS, peak and clipped sample count without the K-weighting pass."""
+    if data.size == 0:
+        return QuickStats(0.0, None, 0.0, None, 0, True)
+    peak_abs = float(np.max(np.abs(data)))
+    clipped = int(np.count_nonzero(np.abs(data) > 1.0))
+    rms = math.sqrt(max(float(np.mean(np.square(data, dtype=np.float64))), 0.0))
+    return QuickStats(
+        rms=rms,
+        rms_dbfs=_to_db(rms),
+        peak_abs=peak_abs,
+        peak_dbfs=_to_db(peak_abs),
+        clipped_samples=clipped,
+        silent=peak_abs == 0.0,
     )
 
 

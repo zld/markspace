@@ -55,6 +55,10 @@ def make_fixtures(out: Path) -> list[Path]:
     emit("mono_96000.wav", sine(96000, 96000, 880.0, 0.2), 96000, "PCM_24")
     emit("silence_44100.wav", np.zeros((44100, 2)), 44100)
     emit("full_scale_sine.wav", sine(48000, 48000, 1000.0, 1.0, channels=2), 48000)
+    # Full-scale square wave: resampler overshoot makes the pre-gain peak
+    # exceed 0 dBFS, which exercises the clipping counters.
+    square = np.sign(sine(48000, 24000, 250.0, 1.0, channels=1)[:, 0])
+    emit("square_48000.wav", square[:, None], 48000, "PCM_16")
     # 333 frames: tail shorter than one processing block and the kernel.
     emit("short_tail.wav", noise(32000, 333, 2, 0.08), 32000, "PCM_24")
     emit("one_frame.wav", np.array([[0.5]]), 44100)
@@ -65,12 +69,13 @@ def make_fixtures(out: Path) -> list[Path]:
     multi = np.column_stack([np.clip(ramp - 0.05 * ch, 0.0, 1.0) for ch in range(8)])
     emit("multi_8ch_44100.wav", multi, 44100, "PCM_24")
     # Non-integer ratios: 44100 -> 48000 keeps duration, 32000 -> 44100 upsamples.
+    # The right channel is quieter so channel swaps show up in the output.
     emit(
         "sweep_44100.wav",
         np.column_stack(
             (
                 sine(44100, 4410, 1000.0, 0.5)[:, 0],
-                sine(44100, 4410, 1500.0, 0.5)[:, 0],
+                sine(44100, 4410, 1500.0, 0.3)[:, 0],
             )
         ),
         44100,

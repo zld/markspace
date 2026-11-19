@@ -73,6 +73,7 @@ def process_file(
     channels_in = audio.channels
     frames_in = audio.frames
     rate_in = audio.rate
+    source = loudness.quick_stats(audio.data)
     # Reject a wrong channel layout before spending time on DSP.
     layout.map_channels(audio.data, config.channels)
     ratio: Ratio = rational_ratio(rate_in, config.target_rate)
@@ -152,6 +153,11 @@ def process_file(
         "duration_out_s": _round(after_data.shape[0] / config.target_rate, 9),
     }
     stats = {
+        "source_rms": _round(source.rms, 9),
+        "source_rms_dbfs": _round(source.rms_dbfs, 4),
+        "source_peak_dbfs": _round(source.peak_dbfs, 4),
+        "source_clipped_samples": int(source.clipped_samples),
+        "source_silent": bool(source.silent),
         "rms_before": _round(before.rms, 9),
         "rms_after": _round(after.rms, 9),
         "lufs_before": _round(before.lufs, 4),
@@ -172,6 +178,9 @@ def process_file(
     elif decision is not None and decision.limited_by_peak:
         reason = "peak_limited"
         message = "target loudness would exceed the peak ceiling; gain reduced"
+    elif before.clipped_samples > 0 and after.clipped_samples == 0:
+        reason = "declicked"
+        message = "resampler overshoot was removed by the normalisation gain"
     return FileResult(
         input_path=relative,
         output_path=output_relative,
