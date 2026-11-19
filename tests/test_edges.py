@@ -111,7 +111,7 @@ def test_non_finite_wav_rejected_at_read(fixture_dir, tmp_path, capsys):
     assert "NaN" in payload["message"]
 
 
-def test_mismatch_reports_first_diff_and_exits_one(fixture_dir, tmp_path, capsys, monkeypatch):
+def _run_tampered_compare(fixture_dir, tmp_path, capsys, monkeypatch, bad_block, bad_frame):
     project = write_spec(fixture_dir.parent, base_spec())
     from mixforge import stream as stream_module
 
@@ -122,9 +122,9 @@ def test_mismatch_reports_first_diff_and_exits_one(fixture_dir, tmp_path, capsys
 
         def tampered():
             for index, block in enumerate(blocks):
-                if index == 3:
+                if index == bad_block:
                     block = block.copy()
-                    block[5, 0] += 0.25
+                    block[bad_frame, 0] += 0.25
                 yield block
 
         return tampered(), summary
@@ -143,11 +143,30 @@ def test_mismatch_reports_first_diff_and_exits_one(fixture_dir, tmp_path, capsys
         "--output",
         str(output),
     )
+    return code, payload, output
+
+
+def test_mismatch_reports_first_diff_and_exits_one(fixture_dir, tmp_path, capsys, monkeypatch):
+    code, payload, output = _run_tampered_compare(
+        fixture_dir, tmp_path, capsys, monkeypatch, bad_block=3, bad_frame=5
+    )
     assert code == 1
     assert payload["status"] == "mismatch"
     assert payload["max_abs_diff"] == pytest.approx(0.25)
-    assert payload["first_diff_sample"] == 3 * 64 * 2 + 5 * 2
+    assert payload["first_diff_sample"] == (3 * 64 + 5) * 2
     assert not output.exists()
+
+
+def test_first_diff_sample_is_correct_past_the_first_batch(
+    fixture_dir, tmp_path, capsys, monkeypatch
+):
+    # Compare batches 16 blocks at a time; block 40 is in the third batch.
+    bad_block, bad_frame = 40, 5
+    code, payload, _ = _run_tampered_compare(
+        fixture_dir, tmp_path, capsys, monkeypatch, bad_block=bad_block, bad_frame=bad_frame
+    )
+    assert code == 1
+    assert payload["first_diff_sample"] == (bad_block * 64 + bad_frame) * 2
 
 
 def test_stream_mode_writes_short_final_block(fixture_dir, tmp_path, capsys):
@@ -190,5 +209,47 @@ def test_inspect_reports_plan(fixture_dir, capsys):
     code, payload = run_cli(capsys, "inspect", "--project", str(project), "--block-size", "256")
     assert code == 0
     assert payload["tracks"][0]["automation"]["interpolation"] == "linear"
+    assert payload["tracks"][0]["clip_frames"] == 4_800
     assert payload["loop"] is None
     assert payload["automation_samples"]
+
+
+def test_inspect_rejects_fades_render_would_reject(fixture_dir, capsys):
+    spec = base_spec()
+    spec["tracks"] = [
+        {"id": "ramp", "path": "assets/ramp.wav", "fade": {"in_frames": 8_000, "out_frames": 8_000}}
+    ]
+    project = write_spec(fixture_dir.parent, spec)
+    render_code, render_payload = run_cli(capsys, "render", "--project", str(project))
+    inspect_code, inspect_payload = run_cli(capsys, "inspect", "--project", str(project))
+    assert render_code == inspect_code == 2
+    assert "fade" in str(render_payload["location"])
+    assert "fade" in str(inspect_payload["location"])
+
+
+def test_inspect_rejects_missing_source(fixture_dir, capsys):
+    spec = base_spec()
+    spec["tracks"][0]["path"] = "assets/missing.wav"
+    project = write_spec(fixture_dir.parent, spec)
+    code, payload = run_cli(capsys, "inspect", "--project", str(project))
+    assert code == 2
+    assert "track[ramp]" in payload["location"]
+
+
+@pytest.mark.parametrize("gain", [7_000, 1e9])
+def test_extreme_gain_is_a_config_error_not_a_traceback(fixture_dir, capsys, gain):
+    spec = base_spec()
+    spec["tracks"][0]["gain_db"] = gain
+    project = write_spec(fixture_dir.parent, spec)
+    code, payload = run_cli(capsys, "render", "--project", str(project))
+    assert code == 2
+    assert "tracks[0].gain_db" in payload["location"]
+
+
+def test_extreme_automation_gain_is_a_config_error(fixture_dir, capsys):
+    spec = base_spec()
+    spec["tracks"][0]["automation"]["points"][0]["gain_db"] = 7_000
+    project = write_spec(fixture_dir.parent, spec)
+    code, payload = run_cli(capsys, "inspect", "--project", str(project))
+    assert code == 2
+    assert "automation.points[0].gain_db" in payload["location"]

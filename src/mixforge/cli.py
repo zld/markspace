@@ -107,7 +107,10 @@ def _compare_streaming(
         if local_max > max_diff:
             max_diff = local_max
         if first_diff is None and local_first is not None:
-            first_diff = compared + local_first
+            # compare_samples returns a flat frame-major sample index inside
+            # this batch, so the batch's starting sample offset must be a
+            # sample count, not a frame count.
+            first_diff = compared * joined.shape[1] + local_first
         compared += joined.shape[0]
 
     def flush_batch(graph: MixGraph) -> None:
@@ -217,6 +220,12 @@ def run_render(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
 def run_inspect(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     block_size = validate_block_size(args.block_size)
     project = load_project(args.project)
+    # Inspect is a validation command: build the same graph render would, so
+    # missing sources, bad fades and unreadable WAVs fail here too.
+    with MixGraph(project) as graph:
+        clip_frames = {
+            runtime.track.id: runtime.clip_frames for runtime in graph.runtimes
+        }
     payload: dict[str, Any] = {
         "status": "ok",
         "sample_rate": project.sample_rate,
@@ -231,6 +240,7 @@ def run_inspect(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
                 "gain_db": track.gain_db,
                 "mute": track.mute,
                 "bus": track.bus,
+                "clip_frames": clip_frames[track.id],
                 "automation": (
                     None
                     if track.automation is None

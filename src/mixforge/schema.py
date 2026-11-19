@@ -60,7 +60,11 @@ def number(obj: Mapping[str, Any], key: str, location: str, *, default: float | 
 
 def gain_db(obj: Mapping[str, Any], key: str, location: str, *, default: float = 0.0) -> float:
     value = number(obj, key, location, default=default)
-    if not math.isfinite(10.0 ** (value / 20.0)):
+    try:
+        amplitude = 10.0 ** (value / 20.0)
+    except OverflowError:
+        fail(f"{location}.{key}", "gain_db is outside the representable range")
+    if not math.isfinite(amplitude):
         fail(f"{location}.{key}", "gain_db is outside the representable range")
     return value
 
