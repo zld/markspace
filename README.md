@@ -31,9 +31,9 @@ The batch prints, for example:
 
 ```
 files=3 success=3 failed=0
-  ambience_48000_stereo.wav: rate=48000 channels=2 frames=48000 padding=0 rms=0.1296 lufs=-18.00 gain_db=8.09 (target)
-  dialogue_44100_mono.wav: rate=48000 channels=1 frames=57600 padding=32 rms=0.1404 lufs=-18.00 gain_db=0.49 (target)
-  music_22050_6ch.wav: rate=48000 channels=6 frames=48000 padding=32 rms=0.1403 lufs=-18.00 gain_db=-0.51 (target)
+  ambience_48000_stereo.wav: rate=48000 channels=2 frames=48000 padding=0 rms=0.0912 lufs=-18.00 gain_db=5.04 (target)
+  dialogue_44100_mono.wav: rate=48000 channels=1 frames=57600 padding=96 rms=0.1397 lufs=-18.00 gain_db=0.44 (target)
+  music_22050_6ch.wav: rate=48000 channels=6 frames=48000 padding=96 rms=0.0570 lufs=-18.00 gain_db=-8.33 (target)
 report: .tmp/report.json
 ```
 
@@ -61,6 +61,18 @@ comparing them with the JSON record:
 | `after.peak`           | `1e-9`                          |
 | `after.lufs`           | `1e-4`                          |
 | `after.clipped_samples`| exact                           |
+
+## Options
+
+| flag | default | notes |
+| ---- | ------- | ----- |
+| `--rate` | required | output rate, 8–384 kHz |
+| `--target-lufs` | `-18` | accepted range `-70 … 0` |
+| `--max-gain-db` | `12` | finite and non-negative |
+| `--max-peak-db` | `-0.1` | ≤ 0 dBFS; the linear ceiling is capped just below full scale |
+| `--format` | `PCM_24` | `PCM_16` or `PCM_24` |
+| `--jobs` | `1` | worker processes |
+| `--block-frames` | `65536` | streaming block size, 1–1048576 |
 
 ## Exit codes
 
@@ -107,10 +119,11 @@ pool (`--jobs N`); a failure in one file never affects another.
 `src/audiopipe/resample.py`, no external resampler involved:
 
 * ratio reduced to coprime `L / M` with `gcd(in_rate, out_rate)`;
-* `K = 32 * ceil(M / L)` taps per phase (32 taps per phase at the output
+* `K = 96 * ceil(M / L)` taps per phase (96 taps per phase at the output
   rate at any ratio), prototype length `K·L + 1`;
-* Kaiser window, β = 8.6 (≈80 dB design stopband);
-* cutoff at 96 % of the lower Nyquist frequency;
+* Kaiser window, β = 8.6;
+* cutoff at 93 % of the lower Nyquist frequency — under 1 dB droop below
+  0.9·Nyquist, > 55 dB rejection from 0.98·Nyquist and > 90 dB beyond;
 * every polyphase branch normalised to unit DC gain;
 * odd, exactly centred prototype — output grid aligned with input time
   zero, **no fractional delay**;
@@ -127,9 +140,14 @@ bit-identical regardless of chunk boundaries.
   the BS.1770 K-weighting cascade (high shelf +4 dB @ 1682 Hz, high-pass
   @ 38 Hz).  The coefficients are designed from the analog prototype with
   a bilinear transform, so the same code is correct at any sample rate;
-  at 48 kHz it tracks the published table within 0.05 dB.  The ungated
+  at 48 kHz it tracks the published table within 0.001 dB.  The ungated
   formula is used (documented as an approximation) for both before and
-  after, so the two are directly comparable.  Silence reports `lufs: null`.
+  after, so the two are directly comparable.  On steady material it
+  matches a gated BS.1770 measurement exactly; on programmes with long
+  quiet passages the missing relative gate reads a few LU low (the demo
+  ambience and music clips differ from gated by about 0.5 LU), which is
+  the known limitation of the approximation.  Silence reports
+  `lufs: null`.
 * **Clipping — four distinct quantities, never merged:**
   * `input.rail_clipped_samples` — source samples pinned to a PCM rail
     (clipping already present in the input material);
@@ -155,20 +173,20 @@ bit-identical regardless of chunk boundaries.
       "output": {"path": "dialogue_44100_mono.wav", "sample_rate": 48000,
                  "channels": 1, "frames": 57600, "subtype": "PCM_24",
                  "out_of_range_samples": 0},
-      "padding_frames": 32,
+      "padding_frames": 96,
       "resample": {"numerator": 160, "denominator": 147,
                    "input_frames": 52920, "output_frames": 57600,
-                   "padding_left_frames": 16, "padding_right_frames": 16,
+                   "padding_left_frames": 48, "padding_right_frames": 48,
                    "overshoot_samples": 0,
-                   "filter": {"taps_per_phase": 32, "filter_length": 5121,
+                   "filter": {"taps_per_phase": 96, "filter_length": 15361,
                               "window": "kaiser", "window_beta": 8.6,
                               "cutoff_hz": 21168.0, "dc_gain": 1.0}},
-      "before": {"rms": 0.133, "lufs": -18.53, "peak": 0.45,
+      "before": {"rms": 0.1328, "lufs": -18.49, "peak": 0.350,
                  "clipped_samples": 0, "frames": 57600},
-      "after":  {"rms": 0.141, "lufs": -18.00, "peak": 0.48,
+      "after":  {"rms": 0.1404, "lufs": -18.00, "peak": 0.370,
                  "clipped_samples": 0, "frames": 57600},
-      "gain":   {"applied_gain_db": 0.53, "requested_gain_db": 0.53,
-                 "linear_gain": 1.06, "max_gain_limited": false,
+      "gain":   {"applied_gain_db": 0.49, "requested_gain_db": 0.49,
+                 "linear_gain": 1.058, "max_gain_limited": false,
                  "peak_limited": false, "reason": "target"},
       "error": null
     }
@@ -180,7 +198,9 @@ Failed files have `"status": "error"` and
 `"error": {"code": "...", "message": "..."}` with codes
 `unreadable`, `unsupported_format`, `invalid_sample_rate`,
 `unsupported_channels`, `non_finite_input`, `write_failed`,
-`non_finite_output`, `internal_error`.
+`non_finite_output`, `internal_error` (and `worker_failed` if a pool
+worker dies).  An input sitting on a PCM rail is *not* an error: it is
+counted and processed normally.
 
 ## Layout
 
@@ -199,6 +219,7 @@ tests/
   test_pipeline.py       end-to-end, boundary and failure recovery
   test_resample.py       kernel contract
   test_loudness.py       meter and gain planning
+  test_io.py             probing, quantisation, atomic writes
   support.py             shared helpers
 scripts/make_fixtures.py deterministic fixture generator
 ```
