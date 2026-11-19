@@ -127,7 +127,7 @@ class AuditResult:
 
     @property
     def repaired_timestamps(self) -> int:
-        """Timestamps actually rewritten (0 under the ``report`` policy)."""
+        """Anomalies the repair policy rewrote (0 under the ``report`` policy)."""
         return sum(1 for frame in self.frames if frame.applied)
 
     @property

@@ -174,6 +174,10 @@ def _next_known_pts(
             return int(pts)
     return None
 
+# Note: the next value may itself be a duplicate/regression, in which case the
+# lookahead only informs spacing; the repair pass still enforces strict
+# monotonicity for it.
+
 
 def _missing_run_length(
     frames: Sequence[FrameRecord], order: Sequence[int], start: int
@@ -208,7 +212,7 @@ def _repair_pass(
             upcoming = _next_known_pts(frames, order, position)
             if cursor is None:
                 value: int | None = 0
-            elif upcoming is not None and upcoming > cursor:
+            elif upcoming is not None and upcoming - cursor > run:
                 # Leave one slot for every frame in the run, never colliding
                 # with the next real timestamp.
                 room = upcoming - cursor
@@ -218,11 +222,7 @@ def _repair_pass(
         elif cursor is None:
             value = 0 if original < 0 else original
         elif original <= cursor:
-            upcoming = _next_known_pts(frames, order, position)
-            candidate = cursor + step
-            if upcoming is not None and candidate >= upcoming:
-                candidate = cursor + 1
-            value = candidate
+            value = cursor + step
         else:
             value = original
 
