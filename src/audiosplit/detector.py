@@ -101,6 +101,8 @@ class _VoiceState:
     peak: float = 0.0
     energy_sum: float = 0.0
     frames: int = 0
+    attack_peak: float = 0.0
+    attack_energy: float = 0.0
 
     def reset(self) -> None:
         self.active = False
@@ -109,6 +111,8 @@ class _VoiceState:
         self.peak = 0.0
         self.energy_sum = 0.0
         self.frames = 0
+        self.attack_peak = 0.0
+        self.attack_energy = 0.0
 
 
 class FrameEnergyDetector:
@@ -261,16 +265,20 @@ class FrameEnergyDetector:
         if not state.active:
             if rms >= on_amp:
                 state.attack_run += 1
+                state.attack_peak = max(state.attack_peak, peak)
+                state.attack_energy += rms * rms
             else:
                 state.attack_run = 0
+                state.attack_peak = 0.0
+                state.attack_energy = 0.0
             if state.attack_run >= self.config.attack_frames:
                 state.active = True
                 state.start_frame = index - state.attack_run + 1
                 state.last_active_frame = index
                 state.quiet_run = 0
-                state.peak = peak
-                state.energy_sum = rms * rms
-                state.frames = 1
+                state.peak = state.attack_peak
+                state.energy_sum = state.attack_energy
+                state.frames = state.attack_run
             return
 
         state.peak = max(state.peak, peak)
