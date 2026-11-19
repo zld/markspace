@@ -15,6 +15,7 @@ set(CMAKE_DEPENDS_DEPENDENCY_FILES
   "/Users/zld/WorkSpace/pair-wise-workspace/14087/src/main.cpp" "CMakeFiles/lutcheck.dir/src/main.cpp.o" "gcc" "CMakeFiles/lutcheck.dir/src/main.cpp.o.d"
   "/Users/zld/WorkSpace/pair-wise-workspace/14087/src/render_scalar.cpp" "CMakeFiles/lutcheck.dir/src/render_scalar.cpp.o" "gcc" "CMakeFiles/lutcheck.dir/src/render_scalar.cpp.o.d"
   "/Users/zld/WorkSpace/pair-wise-workspace/14087/src/render_tiled.cpp" "CMakeFiles/lutcheck.dir/src/render_tiled.cpp.o" "gcc" "CMakeFiles/lutcheck.dir/src/render_tiled.cpp.o.d"
+  "/Users/zld/WorkSpace/pair-wise-workspace/14087/tests/self_test.cpp" "CMakeFiles/lutcheck.dir/tests/self_test.cpp.o" "gcc" "CMakeFiles/lutcheck.dir/tests/self_test.cpp.o.d"
   )
 
 # Targets to which this target links which contain Fortran sources.

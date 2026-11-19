@@ -13,6 +13,7 @@ add_executable(lutcheck
   src/render_scalar.cpp
   src/render_tiled.cpp
   src/histogram.cpp
+  tests/self_test.cpp
 )
 
 target_include_directories(lutcheck PRIVATE include)

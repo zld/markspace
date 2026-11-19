@@ -308,6 +308,30 @@ src/render_tiled.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/lutcheck.dir/build.make CMakeFiles/lutcheck.dir/src/render_tiled.cpp.s
 .PHONY : src/render_tiled.cpp.s
 
+tests/self_test.o: tests/self_test.cpp.o
+.PHONY : tests/self_test.o
+
+# target to build an object file
+tests/self_test.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/lutcheck.dir/build.make CMakeFiles/lutcheck.dir/tests/self_test.cpp.o
+.PHONY : tests/self_test.cpp.o
+
+tests/self_test.i: tests/self_test.cpp.i
+.PHONY : tests/self_test.i
+
+# target to preprocess a source file
+tests/self_test.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/lutcheck.dir/build.make CMakeFiles/lutcheck.dir/tests/self_test.cpp.i
+.PHONY : tests/self_test.cpp.i
+
+tests/self_test.s: tests/self_test.cpp.s
+.PHONY : tests/self_test.s
+
+# target to generate assembly for a file
+tests/self_test.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/lutcheck.dir/build.make CMakeFiles/lutcheck.dir/tests/self_test.cpp.s
+.PHONY : tests/self_test.cpp.s
+
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -338,6 +362,9 @@ help:
 	@echo "... src/render_tiled.o"
 	@echo "... src/render_tiled.i"
 	@echo "... src/render_tiled.s"
+	@echo "... tests/self_test.o"
+	@echo "... tests/self_test.i"
+	@echo "... tests/self_test.s"
 .PHONY : help
 
 

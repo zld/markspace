@@ -13,6 +13,8 @@ file(REMOVE_RECURSE
   "CMakeFiles/lutcheck.dir/src/render_scalar.cpp.o.d"
   "CMakeFiles/lutcheck.dir/src/render_tiled.cpp.o"
   "CMakeFiles/lutcheck.dir/src/render_tiled.cpp.o.d"
+  "CMakeFiles/lutcheck.dir/tests/self_test.cpp.o"
+  "CMakeFiles/lutcheck.dir/tests/self_test.cpp.o.d"
   "lutcheck"
   "lutcheck.pdb"
 )
