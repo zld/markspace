@@ -76,7 +76,8 @@ int run(const Options& options) {
     convertInPlace(working, options.inputSpace, options.lutSpace);
 
     // The reference path always uses one thread; the parallel path uses the
-    // requested worker count. Both call the same interpolation kernel.
+    // requested worker count. Both call the same interpolation kernel, so any
+    // non-zero max_abs_diff below is a real path divergence.
     const std::vector<RGB> baseline = renderScalar(lut, working, options.boundary);
     const std::vector<RGB> threaded =
         renderParallel(lut, working, options.boundary, options.threads);
