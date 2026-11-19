@@ -38,6 +38,14 @@ python3.11 -m venv .venv
 Exit codes: `0` success, `2` invalid arguments or configuration, `1` a trace or
 simulation invariant failed at runtime.
 
+## Trace shape
+
+A seeded trace layers a base level, a slow sine "congestion wave", uniform
+jitter, and one sustained congestion episode (a smooth notch over a contiguous
+window). RTT rises with congestion, and loss arrives in short bursts. The
+episode is what lets a simulation drain the buffer and expose stalls; deepen it
+with `--loss-probability` or a lower `--base-kbps` to stress a policy harder.
+
 ## Policy
 
 Each segment is decided from the estimator's *previous* observations:

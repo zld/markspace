@@ -75,8 +75,10 @@ def generate_trace(
 
     The same seed always yields the same trace. Bandwidth follows a base level
     plus a sine "congestion wave" and uniform jitter, clamped to stay positive
-    and at least 50 kbps. RTT correlates with congestion, and loss arrives in
-    short bursts whose onset probability is driven by ``loss_probability``.
+    and at least 50 kbps. A single seeded congestion episode (when there are
+    enough segments) dims a contiguous window so the buffer can actually drain.
+    RTT correlates with congestion, and loss arrives in short bursts whose
+    onset probability is driven by ``loss_probability``.
     """
     if not isinstance(segments, int) or isinstance(segments, bool):
         raise ConfigError(f"segments must be an integer, got {segments!r}")
@@ -95,6 +97,17 @@ def generate_trace(
     noise = rng.uniform(-1.0, 1.0, segments)
     throughput = base_kbps * (1.0 + wave) + jitter_kbps * noise
     throughput = np.maximum(throughput, 50.0)
+
+    # One sustained congestion episode: a smooth notch that removes most of the
+    # link for a contiguous window, deep enough to drain a healthy buffer.
+    congestion = np.ones(segments)
+    if segments >= 8:
+        span = int(rng.integers(8, min(16, segments) + 1))
+        start = int(rng.integers(0, segments - span + 1))
+        depth = float(rng.uniform(0.65, 0.9))
+        taper = np.hanning(span + 2)[1:-1]
+        congestion[start : start + span] = 1.0 - depth * taper
+    throughput = np.maximum(throughput * congestion, 50.0)
 
     rtt_noise = rng.normal(0.0, 8.0, segments)
     load = np.clip((base_kbps - throughput) / max(base_kbps, 1.0), 0.0, None)
