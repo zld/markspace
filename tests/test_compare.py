@@ -263,6 +263,11 @@ def test_missing_field_severity_configurable():
                and i["severity"] == "warning" for i in result["issues"])
 
 
+# ---------------------------------------------------------------------------
+# Policy parsing
+# ---------------------------------------------------------------------------
+
+
 def test_policy_parse_full_document():
     policy = parse_policy({
         "name": "delivery",

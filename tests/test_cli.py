@@ -37,6 +37,25 @@ def test_edit_list_offsets_presentation_start(edge_dir):
     assert track["duration_seconds"] == pytest.approx(2.0)
 
 
+def test_summarize_av_drift_flags_mismatch(edge_dir):
+    summary = summarize_file(edge_dir / "av_drift.mp4")
+    durations = {t["kind"]: t["duration_seconds"] for t in summary["tracks"]}
+    assert durations["video"] == pytest.approx(1.0)
+    assert durations["audio"] == pytest.approx(1.4)
+    assert summary["duration_seconds"] == pytest.approx(1.4)
+
+
+def test_summarize_many_isolates_failures(edge_dir):
+    paths = discover_media(edge_dir)
+    summaries, failures = summarize_many(paths)
+    names = {Path(s["path"]).name for s in summaries}
+    failed = {Path(f["path"]).name for f in failures}
+    assert "corrupt_truncated.mp4" in failed
+    assert "corrupt_truncated.mp4" not in names
+    assert len(summaries) == len(paths) - len(failures)
+    assert failures[0]["offset"] is not None
+
+
 def test_discover_is_sorted_and_recursive(tmp_path):
     (tmp_path / "z").mkdir()
     (tmp_path / "a").mkdir()
@@ -64,23 +83,9 @@ def test_extract_error_has_location(tmp_path):
     assert info.value.path == str(path)
 
 
-def test_summarize_av_drift_flags_mismatch(edge_dir):
-    summary = summarize_file(edge_dir / "av_drift.mp4")
-    durations = {t["kind"]: t["duration_seconds"] for t in summary["tracks"]}
-    assert durations["video"] == pytest.approx(1.0)
-    assert durations["audio"] == pytest.approx(1.4)
-    assert summary["duration_seconds"] == pytest.approx(1.4)
-
-
-def test_summarize_many_isolates_failures(edge_dir):
-    paths = discover_media(edge_dir)
-    summaries, failures = summarize_many(paths)
-    names = {Path(s["path"]).name for s in summaries}
-    failed = {Path(f["path"]).name for f in failures}
-    assert "corrupt_truncated.mp4" in failed
-    assert "corrupt_truncated.mp4" not in names
-    assert len(summaries) == len(paths) - len(failures)
-    assert failures[0]["offset"] is not None
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
 
 
 def run(capsys, *argv):
