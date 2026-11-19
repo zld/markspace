@@ -1,1 +1,3 @@
-# Executables are added in later patches.
+# Command line scanner. The fixture generator target is added separately.
+add_executable(h264scan ${CMAKE_CURRENT_SOURCE_DIR}/../src/main.cpp)
+target_link_libraries(h264scan PRIVATE h264core)

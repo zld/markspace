@@ -143,6 +143,19 @@ h264core/fast:
 .PHONY : h264core/fast
 
 #=============================================================================
+# Target rules for targets named h264scan
+
+# Build rule for target.
+h264scan: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 h264scan
+.PHONY : h264scan
+
+# fast build rule for target.
+h264scan/fast:
+	$(MAKE) $(MAKESILENT) -f tools/CMakeFiles/h264scan.dir/build.make tools/CMakeFiles/h264scan.dir/build
+.PHONY : h264scan/fast
+
+#=============================================================================
 # Convenience rules to build test dependencies.
 
 # Build the dependencies of a test.
@@ -256,6 +269,7 @@ help:
 	@echo "... rebuild_cache"
 	@echo "... test"
 	@echo "... h264core"
+	@echo "... h264scan"
 	@echo "... src/access_unit.o"
 	@echo "... src/access_unit.i"
 	@echo "... src/access_unit.s"

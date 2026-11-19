@@ -129,6 +129,44 @@ depend:
 	cd /Users/zld/WorkSpace/pair-wise-workspace/13786/build && $(CMAKE_COMMAND) -S$(CMAKE_SOURCE_DIR) -B$(CMAKE_BINARY_DIR) --check-build-system CMakeFiles/Makefile.cmake 1
 .PHONY : depend
 
+# Convenience name for target.
+tools/CMakeFiles/h264scan.dir/rule:
+	cd /Users/zld/WorkSpace/pair-wise-workspace/13786/build && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 tools/CMakeFiles/h264scan.dir/rule
+.PHONY : tools/CMakeFiles/h264scan.dir/rule
+
+# Convenience name for target.
+h264scan: tools/CMakeFiles/h264scan.dir/rule
+.PHONY : h264scan
+
+# fast build rule for target.
+h264scan/fast:
+	cd /Users/zld/WorkSpace/pair-wise-workspace/13786/build && $(MAKE) $(MAKESILENT) -f tools/CMakeFiles/h264scan.dir/build.make tools/CMakeFiles/h264scan.dir/build
+.PHONY : h264scan/fast
+
+__/src/main.o: __/src/main.cpp.o
+.PHONY : __/src/main.o
+
+# target to build an object file
+__/src/main.cpp.o:
+	cd /Users/zld/WorkSpace/pair-wise-workspace/13786/build && $(MAKE) $(MAKESILENT) -f tools/CMakeFiles/h264scan.dir/build.make tools/CMakeFiles/h264scan.dir/__/src/main.cpp.o
+.PHONY : __/src/main.cpp.o
+
+__/src/main.i: __/src/main.cpp.i
+.PHONY : __/src/main.i
+
+# target to preprocess a source file
+__/src/main.cpp.i:
+	cd /Users/zld/WorkSpace/pair-wise-workspace/13786/build && $(MAKE) $(MAKESILENT) -f tools/CMakeFiles/h264scan.dir/build.make tools/CMakeFiles/h264scan.dir/__/src/main.cpp.i
+.PHONY : __/src/main.cpp.i
+
+__/src/main.s: __/src/main.cpp.s
+.PHONY : __/src/main.s
+
+# target to generate assembly for a file
+__/src/main.cpp.s:
+	cd /Users/zld/WorkSpace/pair-wise-workspace/13786/build && $(MAKE) $(MAKESILENT) -f tools/CMakeFiles/h264scan.dir/build.make tools/CMakeFiles/h264scan.dir/__/src/main.cpp.s
+.PHONY : __/src/main.cpp.s
+
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -138,6 +176,10 @@ help:
 	@echo "... edit_cache"
 	@echo "... rebuild_cache"
 	@echo "... test"
+	@echo "... h264scan"
+	@echo "... __/src/main.o"
+	@echo "... __/src/main.i"
+	@echo "... __/src/main.s"
 .PHONY : help
 
 
