@@ -263,3 +263,84 @@ class MediaStore:
             )
             written += 1
         return written
+
+    # ------------------------------------------------------------------
+    # Read side used by report / compare
+    # ------------------------------------------------------------------
+
+    def latest_batch(self) -> dict | None:
+        row = self.conn.execute(
+            "SELECT * FROM batches WHERE status = 'complete' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        return dict(row) if row else None
+
+    def batch_failures(self, batch_id: int) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT * FROM failures WHERE batch_id = ? ORDER BY path",
+            (batch_id,)).fetchall()
+        return [dict(r) for r in rows]
+
+    def batch_summaries(self, batch_id: int) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT summary_json FROM media WHERE last_seen_batch = ? ORDER BY path",
+            (batch_id,)).fetchall()
+        return [json.loads(r["summary_json"]) for r in rows]
+
+    def media_count(self) -> int:
+        return int(self.conn.execute("SELECT COUNT(*) FROM media").fetchone()[0])
+
+    def track_count(self) -> int:
+        return int(self.conn.execute("SELECT COUNT(*) FROM tracks").fetchone()[0])
+
+
+def batch_manifest(store: MediaStore, batch_id: int | None = None) -> dict:
+    """Build a manifest-shaped document from persisted batch records.
+
+    This lets compare/report consume database history through exactly the
+    same structure that pack writes to JSON.
+    """
+    from . import MANIFEST_VERSION
+
+    batch = (store.latest_batch() if batch_id is None
+             else _get_batch(store, batch_id))
+    if batch is None:
+        raise StoreError("no completed scan batch found")
+    summaries = store.batch_summaries(int(batch["id"]))
+    # Comparisons key media by manifest-relative path. Recompute it from the
+    # batch root so database-backed and pack-based manifests agree on nested
+    # directory trees.
+    root = Path(batch["root"])
+    for summary in summaries:
+        try:
+            summary["relative_path"] = Path(summary["path"]).relative_to(
+                root).as_posix()
+        except ValueError:
+            summary["relative_path"] = summary.get("name") or summary["path"]
+    failures = store.batch_failures(int(batch["id"]))
+    return {
+        "manifest_version": MANIFEST_VERSION,
+        "kind": "mediacheck.manifest",
+        "source": "database",
+        "label": f"db:{store.db_path}@batch{batch['id']}",
+        "root": batch["root"],
+        "batch": {
+            "id": batch["id"],
+            "started_at": batch["started_at"],
+            "finished_at": batch["finished_at"],
+            "status": batch["status"],
+            "files_ok": batch["files_ok"],
+            "files_failed": batch["files_failed"],
+        },
+        "files_scanned": int(batch["files_ok"]) + int(batch["files_failed"]),
+        "files_ok": int(batch["files_ok"]),
+        "files_failed": int(batch["files_failed"]),
+        "tracks_total": sum(s.get("track_count", 0) for s in summaries),
+        "media": summaries,
+        "failures": failures,
+    }
+
+
+def _get_batch(store: MediaStore, batch_id: int) -> dict | None:
+    row = store.conn.execute("SELECT * FROM batches WHERE id = ?",
+                             (batch_id,)).fetchone()
+    return dict(row) if row else None
