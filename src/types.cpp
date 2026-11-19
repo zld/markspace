@@ -135,4 +135,40 @@ bool Domain::contains(const RGB& value) const {
            value.g <= max.g && value.b >= min.b && value.b <= max.b;
 }
 
+std::size_t LUT::sampleCount() const {
+    if (nx <= 0 || ny <= 0 || nz <= 0) return 0;
+    return static_cast<std::size_t>(nx) * static_cast<std::size_t>(ny) *
+           static_cast<std::size_t>(nz);
+}
+
+std::size_t LUT::index(int x, int y, int z) const {
+    return (static_cast<std::size_t>(z) * static_cast<std::size_t>(ny) +
+            static_cast<std::size_t>(y)) *
+               static_cast<std::size_t>(nx) +
+           static_cast<std::size_t>(x);
+}
+
+const RGB& LUT::at(int x, int y, int z) const { return data.at(index(x, y, z)); }
+
+void validateLut(const LUT& lut) {
+    if (lut.nx < kMinLutSize || lut.nx > kMaxLutSize || lut.ny < kMinLutSize ||
+        lut.ny > kMaxLutSize || lut.nz < kMinLutSize || lut.nz > kMaxLutSize) {
+        throw LutError("LUT grid size out of range [2,65]: " + std::to_string(lut.nx) + "x" +
+                       std::to_string(lut.ny) + "x" + std::to_string(lut.nz));
+    }
+    if (!lut.domain.valid()) {
+        throw LutError("LUT domain is invalid (zero or non-finite width)");
+    }
+    if (lut.data.size() != lut.sampleCount()) {
+        throw LutError("LUT sample count mismatch: expected " +
+                       std::to_string(lut.sampleCount()) + ", got " +
+                       std::to_string(lut.data.size()));
+    }
+    for (std::size_t i = 0; i < lut.data.size(); ++i) {
+        if (!isFinite(lut.data[i])) {
+            throw LutError("LUT sample " + std::to_string(i) + " is not finite");
+        }
+    }
+}
+
 }  // namespace color

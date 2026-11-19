@@ -86,4 +86,38 @@ constexpr std::size_t kNoPixel = static_cast<std::size_t>(-1);
 RGB convertColor(ColorSpace from, ColorSpace to, const RGB& value,
                  std::size_t pixelIndex = kNoPixel);
 
+// A 3D LUT. Samples are stored red-fastest: index = (z * ny + y) * nx + x.
+// Values are always store-order RGB after any declared channel-order mapping.
+struct LUT {
+    int nx = 0;
+    int ny = 0;
+    int nz = 0;
+    Domain domain;
+    std::vector<RGB> data;
+
+    std::size_t sampleCount() const;
+    std::size_t index(int x, int y, int z) const;
+    const RGB& at(int x, int y, int z) const;
+};
+
+void validateLut(const LUT& lut);
+
+struct Image {
+    std::vector<RGB> pixels;
+};
+
+enum class BoundaryPolicy { Clamp, Reject };
+
+struct Histogram {
+    std::array<std::uint64_t, kHistogramBuckets> buckets{};
+    std::uint64_t total() const;
+};
+
+struct ChannelHistograms {
+    Histogram r;
+    Histogram g;
+    Histogram b;
+    std::uint64_t total() const;
+};
+
 }  // namespace color
