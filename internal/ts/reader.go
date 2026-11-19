@@ -29,6 +29,7 @@ type Packet struct {
 	TransportError     bool
 	Discontinuity      bool
 	Payload            []byte
+	Raw                []byte // full 188-byte packet as read from the input
 }
 
 // SyncError reports a packet that did not begin with the 0x47 sync byte.
@@ -54,11 +55,30 @@ func (c *countingReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
+// rawTap keeps a copy of the last complete packet handed to the demuxer so the
+// caller can write slices byte-for-byte while still using astits for parsing.
+type rawTap struct {
+	cr   *countingReader
+	last [PacketSize]byte
+	has  bool
+}
+
+func (t *rawTap) Read(p []byte) (int, error) {
+	n, err := t.cr.Read(p)
+	if n == PacketSize {
+		copy(t.last[:], p[:PacketSize])
+		t.has = true
+	} else if n > 0 {
+		t.has = false
+	}
+	return n, err
+}
+
 // Reader streams 188-byte packets from a local file.
 type Reader struct {
 	f       *os.File
 	dmx     *astits.Demuxer
-	cr      *countingReader
+	tap     *rawTap
 	prefix  int64
 	index   int64
 	packets int64
@@ -92,11 +112,12 @@ func Open(path string, offset int64) (*Reader, error) {
 		}
 	}
 	cr := &countingReader{r: f}
+	tap := &rawTap{cr: cr}
 	return &Reader{
 		f:      f,
-		cr:     cr,
+		tap:    tap,
 		prefix: offset,
-		dmx:    astits.NewDemuxer(context.Background(), cr, astits.DemuxerOptPacketSize(PacketSize)),
+		dmx:    astits.NewDemuxer(context.Background(), tap, astits.DemuxerOptPacketSize(PacketSize)),
 	}, nil
 }
 
@@ -111,14 +132,14 @@ func (r *Reader) Next() (*Packet, error) {
 		if errors.Is(err, astits.ErrNoMorePackets) {
 			r.done = true
 			consumed := r.packets * PacketSize
-			if r.cr.n > consumed {
-				r.trail = r.cr.n - consumed
+			if r.tap.cr.n > consumed {
+				r.trail = r.tap.cr.n - consumed
 			}
 			return nil, io.EOF
 		}
 		r.done = true
 		if strings.Contains(err.Error(), astits.ErrPacketMustStartWithASyncByte.Error()) {
-			at := r.prefix + r.cr.n - PacketSize
+			at := r.prefix + r.tap.cr.n - PacketSize
 			if at < r.prefix {
 				at = r.prefix
 			}
@@ -139,6 +160,9 @@ func (r *Reader) Next() (*Packet, error) {
 	}
 	if p.AdaptationField != nil {
 		pkt.Discontinuity = p.AdaptationField.DiscontinuityIndicator
+	}
+	if r.tap.has {
+		pkt.Raw = append([]byte(nil), r.tap.last[:]...)
 	}
 	r.index++
 	r.packets++
@@ -173,4 +197,4 @@ func (r *Reader) TrailingPackets() int64 {
 func (r *Reader) PrefixOffset() int64 { return r.prefix }
 
 // BytesRead returns all bytes consumed from the file, including prefix bytes.
-func (r *Reader) BytesRead() int64 { return r.prefix + r.cr.n }
+func (r *Reader) BytesRead() int64 { return r.prefix + r.tap.cr.n }
