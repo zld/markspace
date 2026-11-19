@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     segment_count INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
-CREATE UNIQUE INDEX IF NOT EXISTS jobs_identity ON jobs (input_path, file_hash);
+CREATE INDEX IF NOT EXISTS jobs_identity ON jobs (input_path, file_hash, status);
 CREATE INDEX IF NOT EXISTS jobs_run ON jobs (run_id);
 CREATE TABLE IF NOT EXISTS segments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -168,18 +168,10 @@ class Store:
         file_hash: str,
         meta: JobMeta,
         segments: Iterable[Segment],
-        *,
-        replace: bool = False,
     ) -> StoredJob:
         rows = list(segments)
         try:
             self.connection.execute("BEGIN IMMEDIATE")
-            if replace:
-                # Explicit recompute supersedes the previous identity.
-                self.connection.execute(
-                    "DELETE FROM jobs WHERE input_path = ? AND file_hash = ?",
-                    (input_path, file_hash),
-                )
             cursor = self.connection.execute(
                 "INSERT INTO jobs (run_id, input_path, file_hash, status, "
                 "sample_rate, channels, total_samples, noise_floor_db, "
