@@ -10,7 +10,7 @@ from typing import Any, Sequence
 
 import numpy as np
 
-from .automation import automation_samples
+from .automation import automation_samples, boundary_stride
 from .errors import (
     AudioIOError,
     MixForgeError,
@@ -60,8 +60,11 @@ def _compare_streaming(
 ) -> tuple[Summary, float, int | None]:
     """Interleave streaming blocks with lazily rendered offline chunks.
 
-    Only one offline render chunk and one comparison batch are resident at a
-    time.  When ``output`` is given, the streaming master is written as it is
+    Only one offline render chunk and one pending batch are resident at a
+    time.  The reference window is trimmed to the last rendered chunk plus
+    the current batch, so residency is bounded by
+    ``max(block_size, OFFLINE_CHUNK)`` frames rather than project length.
+    When ``output`` is given, the streaming master is written as it is
     produced, so the result is never assembled in memory.
     """
 
@@ -277,6 +280,7 @@ def run_inspect(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
             }
         ),
         "automation_samples": automation_samples(project, block_size),
+        "block_boundary_stride": boundary_stride(project, block_size),
     }
     return payload, EXIT_OK
 

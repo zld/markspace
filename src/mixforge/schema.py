@@ -7,6 +7,11 @@ from typing import Any, Mapping
 
 from .errors import ConfigError
 
+#: Largest frame index representable exactly as a Python float and safely as
+#: int64 in NumPy index arithmetic.  Beyond this, validation rejects the value
+#: instead of letting ``np.int64`` raise ``OverflowError`` at render time.
+MAX_FRAME = 2**53 - 1
+
 
 def fail(location: str, message: str) -> None:
     raise ConfigError(message, location=location)
@@ -99,4 +104,6 @@ def frame_field(
         fail(location, f"missing {frame_key} or {seconds_key}")
     if frame is None or frame < 0:
         fail(location, "frame position must be non-negative")
+    if frame > MAX_FRAME:
+        fail(location, f"frame position exceeds the supported maximum {MAX_FRAME}")
     return frame

@@ -13,6 +13,7 @@ from typing import Any
 
 from .errors import ConfigError
 from .schema import (
+    MAX_FRAME,
     boolean,
     fail,
     frame_field,
@@ -135,6 +136,8 @@ def _parse_automation(raw: Any, sample_rate: int, location: str) -> AutomationSp
             frame = time_value
             if frame < 0:
                 fail(f"{point_loc}.time", "frame must be non-negative")
+        if frame > MAX_FRAME:
+            fail(f"{point_loc}.time", f"frame exceeds the supported maximum {MAX_FRAME}")
         if frame in seen:
             first = seen[frame]
             raise ConfigError(
@@ -225,6 +228,8 @@ def parse_project(data: Any, *, source_dir: Path | str, source: str = "<project>
         frames = seconds_to_frames(seconds, sample_rate)
     if frames < 0:
         fail("duration_frames", "must be non-negative")
+    if frames > MAX_FRAME:
+        fail("duration_frames", f"duration exceeds the supported maximum {MAX_FRAME} frames")
 
     tracks_raw = obj.get("tracks")
     if not isinstance(tracks_raw, list):

@@ -6,7 +6,7 @@ from typing import Iterator
 
 import numpy as np
 
-from .automation import automation_samples
+from .automation import automation_samples, boundary_stride
 from .errors import AudioIOError
 from .graph import BlockResult, MixGraph
 from .model import Project
@@ -58,6 +58,7 @@ def stream_render(
         mode="stream",
     )
     summary.automation_samples = automation_samples(project, block_size)
+    summary.extra["block_boundary_stride"] = boundary_stride(project, block_size)
     graph = MixGraph(project)
     track_stats = {track.id: SignalStats() for track in project.tracks}
     bus_stats = {bus.id: SignalStats() for bus in project.buses}

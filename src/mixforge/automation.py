@@ -9,6 +9,10 @@ import numpy as np
 from .errors import ConfigError
 from .model import AutomationSpec, Project, Track
 
+#: Upper bound on block-boundary rows per automation track.  Keeps the JSON
+#: summary proportional to keyframes rather than to ``frames / block_size``.
+MAX_BOUNDARY_SAMPLES = 512
+
 
 def db_to_linear(db: float | np.ndarray) -> float | np.ndarray:
     """Convert decibels to a linear amplitude without hiding overflow."""
@@ -125,12 +129,28 @@ def _add_role(roles: dict[int, set[str]], frame: int, role: str, limit: int) -> 
         roles.setdefault(frame, set()).add(role)
 
 
+def boundary_stride(project: Project, block_size: int) -> int:
+    """How many blocks pass between included boundary samples (>= 1)."""
+
+    if block_size <= 0:
+        raise ConfigError("block_size must be positive", location="block_size")
+    if project.frames == 0:
+        return 1
+    boundary_count = (project.frames + block_size - 1) // block_size
+    return max(1, boundary_count // MAX_BOUNDARY_SAMPLES)
+
+
 def automation_samples(project: Project, block_size: int) -> list[dict[str, object]]:
     """Sample automation around keyframes and block boundaries.
 
     Returning both exact coordinates and their immediate neighbours makes it
     possible to verify continuity across a stream block split without
     re-rendering the project.
+
+    Every keyframe, loop edge and endpoint is always included.  Block
+    boundaries are strided so the listing stays bounded even for
+    ``block_size=1``; strided rows carry the role ``block_boundary_sampled``
+    and the stride used is reported on ``summary.extra`` by the renderers.
     """
 
     if block_size <= 0:
@@ -139,6 +159,9 @@ def automation_samples(project: Project, block_size: int) -> list[dict[str, obje
     samples: list[dict[str, object]] = []
     if frames == 0:
         return samples
+
+    boundary_count = (frames + block_size - 1) // block_size
+    stride = boundary_stride(project, block_size)
 
     for track in project.tracks:
         if track.automation is None:
@@ -151,8 +174,13 @@ def automation_samples(project: Project, block_size: int) -> list[dict[str, obje
             _add_role(roles, point.frame, "keyframe", frames)
             _add_role(roles, point.frame - 1, "keyframe_neighbor", frames)
             _add_role(roles, point.frame + 1, "keyframe_neighbor", frames)
-        for boundary in range(0, frames, block_size):
-            _add_role(roles, boundary, "block_boundary", frames)
+        boundary_role = "block_boundary" if stride == 1 else "block_boundary_sampled"
+        boundaries = [index * block_size for index in range(0, boundary_count, stride)]
+        last_boundary = (boundary_count - 1) * block_size
+        if boundaries[-1] != last_boundary:
+            boundaries.append(last_boundary)
+        for boundary in boundaries:
+            _add_role(roles, boundary, boundary_role, frames)
             _add_role(roles, boundary - 1, "block_boundary_neighbor", frames)
             _add_role(roles, boundary + 1, "block_boundary_neighbor", frames)
         if project.loop is not None:

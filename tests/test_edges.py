@@ -253,3 +253,44 @@ def test_extreme_automation_gain_is_a_config_error(fixture_dir, capsys):
     code, payload = run_cli(capsys, "inspect", "--project", str(project))
     assert code == 2
     assert "automation.points[0].gain_db" in payload["location"]
+
+
+@pytest.mark.parametrize(
+    "mutate, location",
+    [
+        (lambda spec: spec["tracks"][0].update(start_frame=2**63), "tracks[0].start"),
+        (lambda spec: spec["tracks"][0].update(start_frame=2**53), "tracks[0].start"),
+        (
+            lambda spec: spec["tracks"][0]["automation"]["points"].__setitem__(
+                0, {"time": 2**63, "gain_db": 0.0}
+            ),
+            "automation.points[0].time",
+        ),
+        (lambda spec: spec.update(duration_frames=2**63), "duration_frames"),
+    ],
+)
+def test_huge_frame_values_are_config_errors(fixture_dir, capsys, mutate, location):
+    spec = base_spec()
+    mutate(spec)
+    project = write_spec(fixture_dir.parent, spec)
+    for command in ("render", "inspect"):
+        code, payload = run_cli(capsys, command, "--project", str(project))
+        assert code == 2, (command, payload)
+        assert location in payload["location"], payload
+
+
+def test_automation_summary_is_bounded_for_tiny_blocks(fixture_dir, capsys):
+    # 24k frames at block size 1 would otherwise emit 72k boundary rows.
+    project = write_spec(fixture_dir.parent, base_spec())
+    code, payload = run_cli(
+        capsys, "render", "--project", str(project), "--mode", "compare", "--block-size", "1"
+    )
+    assert code == 0
+    assert payload["block_boundary_stride"] > 1
+    rows = payload["automation_samples"]
+    assert len(rows) < 20_000
+    sampled = [row for row in rows if "block_boundary_sampled" in row["roles"]]
+    assert sampled
+    # Keyframes are never thinned out.
+    keyframes = {row["frame"] for row in rows if "keyframe" in row["roles"]}
+    assert keyframes == {0, 5_000, 13_000}

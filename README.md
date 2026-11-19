@@ -77,6 +77,7 @@ Successful runs print JSON and exit `0`:
     {"track": "dialogue", "frame": 1024, "gain_db": -5.488,
      "effective_gain_db": -7.488, "roles": ["block_boundary"]}
   ],
+  "block_boundary_stride": 1,
   "max_abs_diff": 0.0,
   "first_diff_sample": null,
   "identical": true,
@@ -95,6 +96,10 @@ Details:
   attenuation is never confused with clipping at a track or bus.
 - `automation_samples` lists keyframes, block boundaries and loop boundaries
   (plus their immediate neighbours) with the interpolated gain and its roles.
+  Keyframes, loop edges and endpoints are always included; block boundaries
+  are strided when needed so the listing stays bounded even for
+  `--block-size 1`. `block_boundary_stride` reports the stride, and thinned
+  rows carry the role `block_boundary_sampled`.
 - `compare` reports `max_abs_diff` and `first_diff_sample` (a flat
   frame-major sample index, or `null` when identical).
 
@@ -137,7 +142,9 @@ Details:
 
 - `duration_frames` may replace `duration_seconds` (exactly one is required).
 - Positions accept either `*_frame(s)` integers or `*_seconds` values; declaring
-  both for one field is an error.
+  both for one field is an error. Frame values must be non-negative and no
+  larger than `2**53 - 1`; larger values are configuration errors rather than
+  NumPy index overflows.
 - Automation `unit` is `"seconds"` or `"frames"`; `interpolation` is
   `"linear"` or `"step"`. Keyframes must be unique after conversion, gains
   finite, and positions non-negative. Gains interpolate in the dB domain;
