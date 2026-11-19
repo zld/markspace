@@ -150,6 +150,30 @@ test_prep/all: cmake_check_build_system
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_prep/all
 .PHONY : test_prep/all
 
+src/audio_resample.o: src/audio_resample.cpp.o
+.PHONY : src/audio_resample.o
+
+# target to build an object file
+src/audio_resample.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/pwsync_core.dir/build.make CMakeFiles/pwsync_core.dir/src/audio_resample.cpp.o
+.PHONY : src/audio_resample.cpp.o
+
+src/audio_resample.i: src/audio_resample.cpp.i
+.PHONY : src/audio_resample.i
+
+# target to preprocess a source file
+src/audio_resample.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/pwsync_core.dir/build.make CMakeFiles/pwsync_core.dir/src/audio_resample.cpp.i
+.PHONY : src/audio_resample.cpp.i
+
+src/audio_resample.s: src/audio_resample.cpp.s
+.PHONY : src/audio_resample.s
+
+# target to generate assembly for a file
+src/audio_resample.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/pwsync_core.dir/build.make CMakeFiles/pwsync_core.dir/src/audio_resample.cpp.s
+.PHONY : src/audio_resample.cpp.s
+
 src/clock.o: src/clock.cpp.o
 .PHONY : src/clock.o
 
@@ -173,6 +197,30 @@ src/clock.s: src/clock.cpp.s
 src/clock.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/pwsync_core.dir/build.make CMakeFiles/pwsync_core.dir/src/clock.cpp.s
 .PHONY : src/clock.cpp.s
+
+src/demux_decode.o: src/demux_decode.cpp.o
+.PHONY : src/demux_decode.o
+
+# target to build an object file
+src/demux_decode.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/pwsync_core.dir/build.make CMakeFiles/pwsync_core.dir/src/demux_decode.cpp.o
+.PHONY : src/demux_decode.cpp.o
+
+src/demux_decode.i: src/demux_decode.cpp.i
+.PHONY : src/demux_decode.i
+
+# target to preprocess a source file
+src/demux_decode.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/pwsync_core.dir/build.make CMakeFiles/pwsync_core.dir/src/demux_decode.cpp.i
+.PHONY : src/demux_decode.cpp.i
+
+src/demux_decode.s: src/demux_decode.cpp.s
+.PHONY : src/demux_decode.s
+
+# target to generate assembly for a file
+src/demux_decode.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/pwsync_core.dir/build.make CMakeFiles/pwsync_core.dir/src/demux_decode.cpp.s
+.PHONY : src/demux_decode.cpp.s
 
 src/media_types.o: src/media_types.cpp.o
 .PHONY : src/media_types.o
@@ -232,9 +280,15 @@ help:
 	@echo "... rebuild_cache"
 	@echo "... test"
 	@echo "... pwsync_core"
+	@echo "... src/audio_resample.o"
+	@echo "... src/audio_resample.i"
+	@echo "... src/audio_resample.s"
 	@echo "... src/clock.o"
 	@echo "... src/clock.i"
 	@echo "... src/clock.s"
+	@echo "... src/demux_decode.o"
+	@echo "... src/demux_decode.i"
+	@echo "... src/demux_decode.s"
 	@echo "... src/media_types.o"
 	@echo "... src/media_types.i"
 	@echo "... src/media_types.s"

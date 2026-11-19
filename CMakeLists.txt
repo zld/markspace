@@ -59,8 +59,11 @@ add_library(pwsync_core STATIC
     src/media_types.cpp
     src/clock.cpp
     src/synchronizer.cpp
+    src/audio_resample.cpp
+    src/demux_decode.cpp
 )
 target_include_directories(pwsync_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_options(pwsync_core PRIVATE -Wall -Wextra -Wpedantic)
+target_link_libraries(pwsync_core PUBLIC ${PW_FFMPEG_LIBS})
 
 enable_testing()

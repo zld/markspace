@@ -4,7 +4,7 @@
 # compile CXX with /usr/bin/c++
 CXX_DEFINES = 
 
-CXX_INCLUDES = -I/Users/zld/WorkSpace/pair-wise-workspace/14074/include
+CXX_INCLUDES = -I/Users/zld/WorkSpace/pair-wise-workspace/14074/include -isystem /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include
 
 CXX_FLAGSarm64 = -O3 -DNDEBUG -std=c++17 -arch arm64 -Wall -Wextra -Wpedantic
 
