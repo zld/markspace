@@ -39,6 +39,7 @@ import numpy as np
 
 __all__ = [
     "CLIP_THRESHOLD",
+    "GainDecision",
     "LevelMeter",
     "Measurement",
     "analyse_blocks",
@@ -244,3 +245,107 @@ class LevelMeter:
             lufs=lufs_from_energy(mean_square),
             k_weighted_mean_square=float(mean_square),
         )
+
+
+@dataclass(frozen=True)
+class GainDecision:
+    """Result of planning a normalisation gain."""
+
+    gain_db: float
+    gain_linear: float
+    requested_gain_db: Optional[float]
+    peak_limited: bool
+    max_gain_limited: bool
+    predicted_peak: float
+    reason: str
+
+    def to_dict(self) -> dict:
+        return {
+            "gain_db": self.gain_db,
+            "gain_linear": self.gain_linear,
+            "requested_gain_db": self.requested_gain_db,
+            "peak_limited": self.peak_limited,
+            "max_gain_limited": self.max_gain_limited,
+            "predicted_peak": self.predicted_peak,
+            "reason": self.reason,
+        }
+
+
+def decide_gain(
+    lufs: Optional[float],
+    peak: float,
+    target_lufs: float,
+    *,
+    max_gain_db: Optional[float] = None,
+    peak_ceiling: float = PEAK_CEILING,
+) -> GainDecision:
+    """Plan a normalisation gain in dB.
+
+    1. ``requested = target_lufs - lufs``; silence gets ``0 dB`` with
+       ``reason="no_loudness"``.
+    2. The gain is capped at ``max_gain_db`` when that limit is supplied.
+    3. If the capped gain would push the peak above ``peak_ceiling``, the
+       gain is reduced to ``20 log10(peak_ceiling / peak)`` and
+       ``peak_limited`` is set.  ``reason`` records which rule won.
+    """
+    if not math.isfinite(peak) or peak < 0.0:
+        raise ValueError(f"peak must be finite and non-negative, got {peak!r}")
+    if not math.isfinite(target_lufs):
+        raise ValueError(f"target_lufs must be finite, got {target_lufs!r}")
+    if max_gain_db is not None and not math.isfinite(max_gain_db):
+        raise ValueError(f"max_gain_db must be finite, got {max_gain_db!r}")
+    if not 0.0 < peak_ceiling <= 1.0:
+        raise ValueError(f"peak_ceiling must be in (0, 1], got {peak_ceiling!r}")
+
+    if lufs is None or not math.isfinite(lufs):
+        return GainDecision(
+            gain_db=0.0,
+            gain_linear=1.0,
+            requested_gain_db=None,
+            peak_limited=False,
+            max_gain_limited=False,
+            predicted_peak=0.0,
+            reason="no_loudness",
+        )
+
+    requested = float(target_lufs - lufs)
+    gain = requested
+    max_limited = False
+    if max_gain_db is not None and gain > max_gain_db:
+        gain = float(max_gain_db)
+        max_limited = True
+
+    peak_limited = False
+    linear = 10.0 ** (gain / 20.0)
+    predicted = peak * linear
+    if peak > 0.0 and predicted > peak_ceiling:
+        gain = 20.0 * math.log10(peak_ceiling / peak)
+        if max_gain_db is not None:
+            gain = min(gain, float(max_gain_db))
+        linear = 10.0 ** (gain / 20.0)
+        predicted = peak * linear
+        peak_limited = True
+
+    if peak_limited:
+        reason = "peak_limit"
+    elif max_limited:
+        reason = "max_gain_limit"
+    else:
+        reason = "target"
+    return GainDecision(
+        gain_db=float(gain),
+        gain_linear=float(linear),
+        requested_gain_db=float(requested),
+        peak_limited=peak_limited,
+        max_gain_limited=max_limited,
+        predicted_peak=float(predicted),
+        reason=reason,
+    )
+
+
+def analyse_blocks(blocks, sample_rate: int, channels: int) -> Measurement:
+    """Measure a sequence of ``frames x channels`` blocks."""
+    meter = LevelMeter(sample_rate, channels)
+    for block in blocks:
+        meter.feed(block)
+    return meter.snapshot()
