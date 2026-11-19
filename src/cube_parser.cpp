@@ -257,4 +257,25 @@ LUT parseCube(std::istream& input, const std::string& source) {
     return lut;
 }
 
+std::string serializeCube(const LUT& lut, const std::string& title) {
+    validateLut(lut);
+    std::ostringstream out;
+    out.precision(9);
+    if (!title.empty()) out << "TITLE \"" << title << "\"\n";
+    out << "LUT_3D_SIZE " << lut.nx << " " << lut.ny << " " << lut.nz << "\n";
+    out << "DOMAIN_MIN " << lut.domain.min.r << " " << lut.domain.min.g << " "
+        << lut.domain.min.b << "\n";
+    out << "DOMAIN_MAX " << lut.domain.max.r << " " << lut.domain.max.g << " "
+        << lut.domain.max.b << "\n";
+    for (int z = 0; z < lut.nz; ++z) {
+        for (int y = 0; y < lut.ny; ++y) {
+            for (int x = 0; x < lut.nx; ++x) {
+                const RGB& sample = lut.at(x, y, z);
+                out << sample.r << " " << sample.g << " " << sample.b << "\n";
+            }
+        }
+    }
+    return out.str();
+}
+
 }  // namespace color
