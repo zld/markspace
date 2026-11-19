@@ -9,7 +9,10 @@
 
 #include "bounded_queue.hpp"
 #include "master_clock.hpp"
+#include "media_source.hpp"
+#include "metrics.hpp"
 #include "sync_controller.hpp"
+#include "video_output.hpp"
 
 namespace {
 
@@ -167,6 +170,44 @@ void test_bounded_queue_drains_before_close_returns_false() {
     CHECK(!q.pop(v));        // drained: now signals end
 }
 
+// End-to-end on the real video thread: once the clock runs ahead, valid
+// monotonic frames arriving late must be dropped and the last shown frame
+// repeated, with matching counters.
+void test_video_thread_drops_late_and_repeats() {
+    avsync::BoundedQueue<avsync::VideoFrameMsg> q(64);
+    avsync::MasterClock clock;
+    avsync::Metrics metrics;
+    std::atomic<bool> stop{false};
+    clock.start(1'000'000);
+    avsync::VideoOutput video(q, clock, metrics, 33'367);
+    video.start(stop);
+
+    avsync::VideoFrameMsg f0;
+    f0.index = 0;
+    f0.pts_valid = true;
+    f0.pts_us = 1'000'000;
+    q.push(f0);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+    // Clock leaps ahead; subsequent frames are valid but >40ms late.
+    clock.set(1'600'000);
+    for (int i = 1; i <= 4; ++i) {
+        avsync::VideoFrameMsg f;
+        f.index = i;
+        f.pts_valid = true;
+        f.pts_us = 1'000'000 + static_cast<int64_t>(i) * 33'367;
+        q.push(f);
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    q.close();
+    video.stop();
+
+    CHECK(metrics.displayed() == 1);
+    CHECK(metrics.dropped() == 4);
+    CHECK(metrics.repeated() == 4);
+    CHECK(metrics.av_offset().count == 5);  // one offset sample per decision
+}
+
 }  // namespace
 
 int main() {
@@ -181,6 +222,7 @@ int main() {
     test_bounded_queue_close_wakes_blocked_consumer();
     test_bounded_queue_close_wakes_blocked_producer();
     test_bounded_queue_drains_before_close_returns_false();
+    test_video_thread_drops_late_and_repeats();
 
     if (g_failures == 0) {
         std::printf("sync_scenarios: all %d checks passed\n", g_checks);
