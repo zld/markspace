@@ -65,18 +65,23 @@ void VideoOutput::run() {
         }
         if (stop_flag_->load(std::memory_order_relaxed)) return;
 
+        // Whether this frame lacks a usable pts is a property of the frame,
+        // fixed before any decision so a re-decision never double counts it.
+        const bool pts_missing = !msg.pts_valid;
+        if (pts_missing) metrics_.inc_missing_pts();
         SyncDecision d =
             sync_.decide(msg.pts_us, msg.pts_valid, clock_.now_us());
-        if (d.pts_estimated) metrics_.inc_missing_pts();
 
         switch (d.action) {
             case FrameAction::kWait: {
                 sleep_interruptible_us(d.wait_us);
                 if (stop_flag_->load(std::memory_order_relaxed)) return;
                 // Re-decide against the advanced clock: a long stall may have
-                // turned an early frame into a late one.
+                // turned an early frame into a late one. The missing-pts event
+                // was already counted above, so do not count it again.
                 d = sync_.decide(msg.pts_us, msg.pts_valid, clock_.now_us());
-                if (d.action == FrameAction::kDrop) {                    metrics_.inc_dropped();
+                if (d.action == FrameAction::kDrop) {
+                    metrics_.inc_dropped();
                     if (sync_.has_last()) {
                         metrics_.inc_repeated();
                         metrics_.add_av_offset_us(d.offset_us);
