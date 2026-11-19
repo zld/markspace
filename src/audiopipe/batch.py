@@ -370,3 +370,131 @@ def _write_gained(writer: WavWriter, block: np.ndarray, gain: float, meter: Leve
     _ints, decoded, _out_of_range, _rail_samples = quantise_pcm(scaled, writer.subtype)
     meter.feed(decoded)
     writer.write(scaled)
+
+
+# ---------------------------------------------------------------------------
+# Batch scheduling
+# ---------------------------------------------------------------------------
+
+def _to_posix(path: str) -> str:
+    return path.replace(os.sep, "/")
+
+
+def _report_config(config: BatchConfig, file_count: int) -> dict:
+    return {
+        "input_dir": _to_posix(config.input_dir),
+        "output_dir": _to_posix(config.output_dir),
+        "output_rate": config.output_rate,
+        "output_subtype": config.output_subtype,
+        "target_lufs": config.target_lufs,
+        "max_gain_db": config.max_gain_db,
+        "max_peak_db": config.max_peak_db,
+        "jobs": config.jobs,
+        "block_frames": config.block_frames,
+        "files_discovered": file_count,
+    }
+
+
+def _file_config(config: BatchConfig, relative_path: str) -> FileConfig:
+    return FileConfig(
+        input_dir=config.input_dir,
+        output_dir=config.output_dir,
+        relative_path=relative_path,
+        output_rate=config.output_rate,
+        output_subtype=config.output_subtype,
+        target_lufs=config.target_lufs,
+        max_gain_db=config.max_gain_db,
+        max_peak_db=config.max_peak_db,
+        block_frames=config.block_frames,
+    )
+
+
+def _validate_batch_config(config: BatchConfig) -> None:
+    """Reject batch-level misconfiguration before any audio is touched."""
+    if not isinstance(config.output_rate, int) or isinstance(config.output_rate, bool):
+        raise ConfigError("output rate must be an integer")
+    if not 8000 <= config.output_rate <= 384000:
+        raise ConfigError(f"output rate out of range: {config.output_rate}")
+    if config.output_subtype not in ("PCM_16", "PCM_24"):
+        raise ConfigError(
+            f"output subtype must be PCM_16 or PCM_24, got {config.output_subtype!r}"
+        )
+    if not math.isfinite(config.target_lufs):
+        raise ConfigError("target LUFS must be finite")
+    if config.max_gain_db is not None:
+        if not math.isfinite(config.max_gain_db) or config.max_gain_db < 0.0:
+            raise ConfigError(
+                f"max gain must be finite and non-negative, got {config.max_gain_db!r}"
+            )
+    _peak_ceiling(config.max_peak_db)
+    if config.jobs < 1:
+        raise ConfigError(f"jobs must be >= 1, got {config.jobs}")
+    if config.block_frames < 1:
+        raise ConfigError(f"block frames must be >= 1, got {config.block_frames}")
+    if not config.report_path or not str(config.report_path).strip():
+        raise ConfigError("report path must not be empty")
+    validate_paths(config.input_dir, config.output_dir)
+    # The report must not be written inside the source tree, and it must
+    # be a file path, not an existing directory.
+    report_resolved = _resolved(config.report_path)
+    source = _resolved(config.input_dir)
+    if os.path.commonpath([source, report_resolved]) == source:
+        raise ConfigError("report must not be written inside the input directory")
+    if os.path.isdir(report_resolved):
+        raise ReportWriteError(f"report path is a directory: {config.report_path}")
+
+
+def run_batch(config: BatchConfig) -> dict:
+    """Process every WAV under ``config.input_dir``; return the report dict.
+
+    Per-file errors are captured in the records; only batch-level
+    problems raise :class:`ConfigError`.
+    """
+    _validate_batch_config(config)
+    try:
+        os.makedirs(config.output_dir, exist_ok=True)
+    except OSError as exc:
+        raise ConfigError(f"cannot create output directory: {exc}") from exc
+    if not os.path.isdir(config.output_dir):
+        raise ConfigError(f"output path is not a directory: {config.output_dir}")
+
+    relative_paths = scan_inputs(config.input_dir)
+    configs = [_file_config(config, rel) for rel in relative_paths]
+    started_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    started = time.perf_counter()
+
+    if config.jobs == 1 or len(configs) <= 1:
+        records = [process_file(cfg) for cfg in configs]
+    else:
+        records = [None] * len(configs)
+        executor_class = concurrent.futures.ProcessPoolExecutor
+        with executor_class(max_workers=min(config.jobs, len(configs))) as pool:
+            futures = {pool.submit(process_file, cfg): idx for idx, cfg in enumerate(configs)}
+            for future in concurrent.futures.as_completed(futures):
+                idx = futures[future]
+                try:
+                    records[idx] = future.result()
+                except Exception as exc:  # pragma: no cover - worker died
+                    record = _empty_record(configs[idx])
+                    record["error"] = {
+                        "code": "worker_failed",
+                        "message": f"{type(exc).__name__}: {exc}",
+                    }
+                    records[idx] = record
+    duration = time.perf_counter() - started
+    return report_mod.build_batch_report(
+        command="normalize",
+        config=_report_config(config, len(relative_paths)),
+        files=records,
+        started_at=started_at,
+        duration_seconds=duration,
+    )
+
+
+def format_summary(report: dict) -> str:
+    """One-line terminal summary, e.g. ``files=3 success=3 failed=0``."""
+    summary = report["summary"]
+    return (
+        f"files={summary['files']} success={summary['success']} "
+        f"failed={summary['failed']}"
+    )
