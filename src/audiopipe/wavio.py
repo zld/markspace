@@ -15,7 +15,6 @@ from .errors import InputError, ProcessingError
 
 _PCM_SUBTYPES = {"PCM_16", "PCM_24", "PCM_32", "PCM_U8"}
 _BYTES_PER_SAMPLE = {"PCM_U8": 1, "PCM_16": 2, "PCM_24": 3, "PCM_32": 4}
-_HEADER_LIMIT = 1 << 20
 
 
 @dataclass(frozen=True)
@@ -38,29 +37,35 @@ def inspect_riff(handle, file_size: int) -> dict[str, int]:
     """Validate the RIFF chunk layout and return the data chunk bounds.
 
     libsndfile silently returns fewer frames for a truncated payload, which
-    would make a damaged asset look like a valid short one. Checking the
-    declared chunk sizes ourselves keeps corrupt files traceable.
+    would make a damaged asset look like a valid short one. The chunk list is
+    walked with seeks so arbitrarily large metadata chunks are handled without
+    trusting the decoder.
     """
-    header = handle.read(_HEADER_LIMIT)
-    if len(header) < 12 or header[0:4] not in (b"RIFF", b"RIFX") or header[8:12] != b"WAVE":
+    head = handle.read(12)
+    if len(head) < 12 or head[8:12] != b"WAVE" or head[0:4] not in (b"RIFF", b"RIFX"):
         raise InputError("not a RIFF/WAVE file", reason="corrupt")
-    if header[0:4] == b"RIFX":
+    if head[0:4] == b"RIFX":
         raise InputError("big-endian RIFX is not supported", reason="unsupported_encoding")
     pos = 12
     fmt_seen = False
-    while pos + 8 <= len(header):
-        chunk_id = header[pos : pos + 4]
-        (chunk_size,) = struct.unpack("<I", header[pos + 4 : pos + 8])
+    while pos + 8 <= file_size:
+        handle.seek(pos)
+        header = handle.read(8)
+        if len(header) < 8:
+            break
+        chunk_id = header[0:4]
+        (chunk_size,) = struct.unpack("<I", header[4:8])
         body = pos + 8
         if chunk_id == b"fmt ":
             fmt_seen = True
         elif chunk_id == b"data":
             if not fmt_seen:
                 raise InputError("data chunk before fmt chunk", reason="corrupt")
-            if body + chunk_size > file_size:
+            available = max(file_size - body, 0)
+            if chunk_size > available:
                 raise InputError(
                     f"data chunk truncated: declares {chunk_size} bytes, "
-                    f"file has {max(file_size - body, 0)}",
+                    f"file has {available}",
                     reason="corrupt",
                 )
             return {"data_offset": body, "data_bytes": chunk_size, "file_size": file_size}
