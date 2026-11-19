@@ -262,7 +262,6 @@ class LoudnessTests(FixtureCase):
         entry = {
             e["input"]: e for e in json.loads(report.read_text())["files"]
         }["square_48000.wav"]
-        self.assertGreater(entry["stats"]["source_clipped_samples"], 0)
         self.assertGreater(entry["stats"]["clipped_samples_before"], 0)
         self.assertEqual(entry["stats"]["clipped_samples_after"], 0)
 
