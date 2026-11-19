@@ -4,5 +4,6 @@ __pycache__/
 .sample/
 results.sqlite
 segments.json
+segments.csv
 *.egg-info/
 .pytest_cache/
