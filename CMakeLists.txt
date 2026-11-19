@@ -61,6 +61,8 @@ add_library(pwsync_core STATIC
     src/synchronizer.cpp
     src/audio_resample.cpp
     src/demux_decode.cpp
+    src/path_simulator.cpp
+    src/report.cpp
 )
 target_include_directories(pwsync_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_options(pwsync_core PRIVATE -Wall -Wextra -Wpedantic)
