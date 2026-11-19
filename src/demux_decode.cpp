@@ -309,6 +309,10 @@ DecodeResult runDecodePipeline(const std::string& path, const DecodeConfig& conf
     result.timestamp_repairs += video.normalizer->repairs() + audio.normalizer->repairs();
     result.discontinuities += video.normalizer->discontinuities() +
                               audio.normalizer->discontinuities();
+    result.video_packets = video.packets;
+    result.audio_packets = audio.packets;
+    result.video_frames = video.frames;
+    result.audio_frames = audio.frames;
     result.ok = result.errors.empty();
     avcodec_free_context(&video.codec);
     avcodec_free_context(&audio.codec);

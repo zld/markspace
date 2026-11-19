@@ -35,6 +35,10 @@ struct DecodeResult {
     std::uint64_t discontinuities = 0;
     std::uint64_t decode_failures = 0;
     std::uint64_t flushed_frames = 0;
+    std::uint64_t video_packets = 0;
+    std::uint64_t audio_packets = 0;
+    std::uint64_t video_frames = 0;
+    std::uint64_t audio_frames = 0;
     std::vector<MediaError> errors;
 };
 
