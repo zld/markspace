@@ -2,8 +2,12 @@
 
 Commands
 --------
-Commands and their handlers are added incrementally; this stage provides the
-argument surface, path guards and exit-code contract.
+``analyze``
+    Load one or more exchange files, detect (and optionally resolve)
+    conflicts, and print a JSON/text summary.  A single input prints a flat
+    summary object; multiple inputs print ``{"results": [...]}`` in input
+    order, and a per-file failure never stops the run.
+convert and the OTIO commands follow in the next commit.
 
 Exit codes
 ----------
@@ -18,13 +22,18 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Sequence
 
 from . import __version__
-from .exchange import ExchangeError
-from .model import ModelError
+from .conflicts import detect
+from .exchange import ExchangeError, LoadedExchange, load_exchange
+from .model import ModelError, Timeline
 from .rational import TimeError
+from .render import RenderPlan, build_plan
+from .report import AnalyzeSummary, build_summary
+from .resolve import Strategy, resolve
 
 EXIT_OK = 0
 EXIT_INTERNAL = 1
@@ -116,22 +125,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 # ---------------------------------------------------------------------------
-# guards
+# path guards
 # ---------------------------------------------------------------------------
-
-
-def _ensure_output_paths(inputs: Sequence[Path], outputs: Sequence[Path | None]) -> None:
-    protected = {path.resolve() for path in inputs}
-    seen: set[Path] = set()
-    for output in outputs:
-        if output is None:
-            continue
-        resolved = output.resolve()
-        if resolved in protected:
-            raise CLIError(f"refusing to overwrite input file: {output}", EXIT_USAGE)
-        if resolved in seen:
-            raise CLIError(f"duplicate output path: {output}", EXIT_USAGE)
-        seen.add(resolved)
 
 
 def _ensure_unique_inputs(inputs: Sequence[Path]) -> None:
@@ -144,6 +139,106 @@ def _ensure_unique_inputs(inputs: Sequence[Path]) -> None:
 
 
 # ---------------------------------------------------------------------------
+# core analysis
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class AnalyzeOutcome:
+    resolved: Timeline
+    summary: AnalyzeSummary
+    plan: RenderPlan
+
+
+def analyze_loaded(
+    loaded: LoadedExchange,
+    *,
+    strategy: str,
+    tolerance: int,
+    plan_rate: Any = None,
+) -> AnalyzeOutcome:
+    """Resolve, plan and summarise one loaded timeline."""
+    if strategy == "none":
+        resolved = loaded.timeline
+        decisions: list[dict[str, Any]] = []
+        # Nothing was resolved, so every remaining conflict is unresolved and
+        # the run must report failure (exit 3) rather than pretend success.
+        unresolved = list(detect(resolved).conflicts)
+        removed: list[str] = []
+        warnings: list[str] = []
+    else:
+        result = resolve(loaded.timeline, Strategy(strategy))
+        resolved = result.timeline
+        decisions = [decision.as_dict() for decision in result.decisions]
+        unresolved = list(result.unresolved)
+        removed = [decision.clip_id for decision in result.removed]
+        warnings = []
+        if strategy == "reject" and unresolved:
+            warnings.append(f"reject strategy left {len(unresolved)} conflict(s) unresolved")
+        elif unresolved:
+            warnings.append(f"{len(unresolved)} conflict(s) could not be resolved by {strategy}")
+
+    plan = build_plan(resolved, plan_rate)
+    summary = build_summary(
+        loaded.timeline,
+        resolved,
+        duration_after_frames=plan.duration_frames,
+        exchange_version=loaded.version,
+        strategy=strategy,
+        tolerance_frames=tolerance,
+        rate=plan.plan_rate,
+        decisions=decisions,
+        unresolved=unresolved,
+        removed_clips=removed,
+        warnings=loaded.warnings + warnings,
+    )
+    return AnalyzeOutcome(resolved=resolved, summary=summary, plan=plan)
+
+
+# ---------------------------------------------------------------------------
+# commands
+# ---------------------------------------------------------------------------
+
+
+def _cmd_analyze(args: argparse.Namespace) -> int:
+    inputs = [Path(item) for item in args.inputs]
+    _ensure_unique_inputs(inputs)
+    if args.tolerance < 0:
+        raise CLIError("--tolerance must be zero or greater", EXIT_USAGE)
+
+    results: list[dict[str, Any]] = []
+    overall = EXIT_OK
+    for path in inputs:
+        try:
+            loaded = load_exchange(path, unknown_fields=args.unknown_fields)
+            outcome = analyze_loaded(
+                loaded,
+                strategy=args.resolve,
+                tolerance=args.tolerance,
+                plan_rate=args.plan_rate,
+            )
+            payload = outcome.summary.as_dict()
+            payload["input"] = str(path)
+            payload["plan"] = outcome.plan.as_dict()
+            results.append(payload)
+            overall = max(overall, outcome.summary.exit_code)
+        except (ExchangeError, ModelError, TimeError, CLIError) as exc:
+            results.append(
+                {
+                    "input": str(path),
+                    "status": "error",
+                    "exit_code": EXIT_USAGE,
+                    "error": str(exc),
+                }
+            )
+            overall = max(overall, EXIT_USAGE)
+
+    payload: Any = results[0] if len(inputs) == 1 else {"results": results}
+    print(json.dumps(payload, indent=2))
+    return overall
+
+
+# ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
 
@@ -152,7 +247,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
-        raise CLIError(f"{args.command}: not implemented yet", EXIT_INTERNAL)
+        if args.command == "analyze":
+            return _cmd_analyze(args)
+        if args.command in {"convert", "otio-export", "otio-import"}:
+            raise CLIError(f"{args.command}: not implemented yet", EXIT_INTERNAL)
     except CLIError as exc:
         print(f"cutline: error: {exc}", file=sys.stderr)
         if exc.details:

@@ -18,6 +18,7 @@ from cutline.exchange import ExchangeError, dump_exchange, load_exchange, write_
 from cutline.otio_adapter import OTIOUnmappedError, from_otio, to_otio
 from cutline.render import build_plan
 from cutline.report import build_summary
+from cutline.cli import main
 
 ROOT = Path(__file__).resolve().parents[1]
 SAMPLE_SCRIPT = ROOT / "scripts" / "make_samples.py"
@@ -422,3 +423,35 @@ def test_otio_unmappable_object_reports_path(sample_path: Path):
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
+
+def test_cli_reject_strategy_exits_3(sample_path: Path):
+    assert main(["analyze", str(sample_path), "--resolve", "reject"]) == 3
+
+
+def test_cli_duplicate_input_exits_2(sample_path: Path, capsys):
+    code = main(["analyze", str(sample_path), str(sample_path)])
+    assert code == 2
+    assert "duplicate input path" in capsys.readouterr().err
+
+
+def test_cli_batch_continues_after_error(sample_path: Path, tmp_path: Path, capsys):
+    corrupt = tmp_path / "corrupt.json"
+    corrupt.write_text("{", encoding="utf-8")
+    code = main(["analyze", str(sample_path), str(corrupt), "--resolve", "priority"])
+    assert code == 2
+    payload = json.loads(capsys.readouterr().out)
+    statuses = [item["status"] for item in payload["results"]]
+    assert statuses == ["ok", "error"]
+    assert payload["results"][1]["exit_code"] == 2
+
+
+def test_cli_missing_file_exits_2(tmp_path: Path, capsys):
+    code = main(["analyze", str(tmp_path / "nope.json")])
+    assert code == 2
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "error"
+
+
+def test_cli_negative_tolerance_is_usage_error(sample_path: Path):
+    assert main(["analyze", str(sample_path), "--resolve", "priority", "--tolerance", "-1"]) == 2
