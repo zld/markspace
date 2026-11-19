@@ -225,6 +225,44 @@ class ProbeFixtureTest(FixtureCase):
             if issue.code == "mkv.unknown_size_cluster":
                 self.assertIn("boundary inferred", issue.message)
 
+    def test_unreadable_moov_is_fatal(self) -> None:
+        # A moov whose child declares a size larger than moov itself yields
+        # no mvhd and no tracks; that must not read as a clean empty file.
+        inner = b"\x00\x00\x10\x00" + b"trak" + b"\x00" * 16
+        moov = (len(inner) + 8).to_bytes(4, "big") + b"moov" + inner
+        ftyp = make_samples.box(b"ftyp", b"isom" + b"\x00" * 8)
+        path = self.fixtures / "bad_moov.mp4"
+        path.write_bytes(ftyp + moov)
+        media = probe_path(path)
+        self.assertTrue(media.fatal)
+        self.assertEqual(media.tracks, [])
+        codes = {i.code for i in media.issues}
+        self.assertTrue({"mp4.box_overrun", "mp4.moov_unreadable"} & codes)
+
+    def test_truncated_element_inside_segment_is_fatal(self) -> None:
+        # A Tracks element declares more bytes than the segment provides.
+        segment = make_samples.el(
+            b"\x18\x53\x80\x67",
+            b"\x16\x54\xAE\x6B" + b"\x11\x00\x10\x00" + b"\xAE" * 4)
+        path = self.fixtures / "truncated_segment.mkv"
+        path.write_bytes(make_samples.ebml_header() + segment)
+        media = probe_path(path)
+        self.assertTrue(media.fatal)
+        self.assertIn("mkv.element_overrun",
+                      {i.code for i in media.issues})
+
+    def test_segment_without_tracks_is_not_fatal(self) -> None:
+        path = self.fixtures / "info_only.mkv"
+        segment = make_samples.el(
+            b"\x18\x53\x80\x67",
+            make_samples.el(b"\x15\x49\xA9\x66",
+                            make_samples.el_float(b"\x44\x89", 500.0)))
+        path.write_bytes(make_samples.ebml_header() + segment)
+        media = probe_path(path)
+        self.assertFalse(media.fatal)
+        self.assertEqual(media.tracks, [])
+        self.assertAlmostEqual(media.duration_ms, 500.0, places=3)
+
     def test_size_limit_is_enforced(self) -> None:
         path = self.fixtures / "sparse.mp4"
         with path.open("wb") as handle:

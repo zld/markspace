@@ -41,6 +41,13 @@ from .model import (
 
 MAX_TRACKS = 256
 
+# Diagnostics that make the whole file unusable rather than one track.
+_FATAL_MP4_CODES = frozenset({
+    "mp4.box_overrun", "mp4.invalid_box_size", "mp4.truncated_largesize",
+    "mp4.depth_exceeded", "mp4.missing_ftyp", "mp4.missing_moov",
+    "mp4.moov_unreadable",
+})
+
 
 class _TrackBuilder:
     """Accumulates the fields of one trak while its boxes are walked."""
@@ -205,7 +212,14 @@ def probe_mp4(data: bytes, media: MediaFile) -> MediaFile:
                      if t.duration_ms is not None]
         media.duration_ms = max(durations) if durations else None
 
-    if any(i.code == "mp4.box_overrun" for i in media.issues):
+    if any(i.code in _FATAL_MP4_CODES for i in media.issues):
+        media.fatal = True
+    elif not media.tracks and movie_timescale == 0:
+        # moov was found but nothing inside it could be read: treat as an
+        # unusable container rather than reporting a clean empty file.
+        media.add_issue(issue(
+            "mp4.moov_unreadable",
+            "moov box is present but yielded no movie header or tracks", 0))
         media.fatal = True
     return media
 

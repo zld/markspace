@@ -167,6 +167,9 @@ def _walk_segment(el: Element, media: MediaFile, scale: int,
             for track_no, end_ms in cluster_blocks(seg_el, media, scale):
                 if end_ms > track_ends.get(track_no, 0.0):
                     track_ends[track_no] = end_ms
+        # Cues, SeekHead, Tags, Chapters, Attachments and anything else are
+        # skipped by their checked length.  Their payloads are never
+        # interpreted, so unknown data cannot drive further recursion.
     return scale, segment_duration
 
 
@@ -209,7 +212,8 @@ def _finalize(media: MediaFile, saw_header: bool, saw_segment: bool,
                                   message=f"DocType {doc_type!r}",
                                   offset=0, severity=SEVERITY_INFO))
     if any(i.code in ("mkv.missing_ebml_header", "mkv.missing_segment",
-                      "mkv.element_overrun") for i in media.issues):
+                      "mkv.element_overrun", "mkv.truncated_element_header",
+                      "mkv.depth_exceeded") for i in media.issues):
         media.fatal = True
 
 
