@@ -63,6 +63,24 @@ void AccessUnitAssembler::handle_nal(const NalUnit& nal, Diagnostics& diag) {
                      std::to_string(nal.nal_type));
         return;
     }
+    if (nal.nal_type == NAL_DPA || nal.nal_type == NAL_DPB ||
+        nal.nal_type == NAL_DPC) {
+        // Data-partitioned slices (Annex G) are not reconstructed here;
+        // record them explicitly rather than guessing a frame type.
+        diag.add(nal.nal_offset,
+                 "data-partitioned slice NAL (type " +
+                     std::to_string(nal.nal_type) +
+                     ") is unsupported; counted as unknown picture");
+        flush_picture();
+        PictureInfo pic;
+        pic.start_offset = nal.start_offset;
+        pic.kind = FrameKind::Unknown;
+        pic.slice_count = 1;
+        pic.parse_failed = true;
+        open_ = pic;
+        have_open_ = true;
+        return;
+    }
 
     SliceHeader sh;
     const bool ok = parse_slice_header(nal, store_, sh, diag);

@@ -129,6 +129,46 @@ TEST_CASE("slice referencing an undefined PPS keeps an error and continues",
     CHECK(au.groups().size() == 1);
 }
 
+TEST_CASE("data-partition NALs are recorded as unknown, not guessed",
+          "[access_unit]") {
+    Harness h;
+    AccessUnitAssembler au(h.store);
+    NalUnit nal;
+    nal.nal_offset = 12;
+    nal.start_offset = 8;
+    nal.nal_type = NAL_DPA;  // type 2
+    nal.valid = true;
+    nal.payload = {fixture::nal_header(2, NAL_DPA), 0x80};
+    au.handle_nal(nal, h.diag);
+    au.finish(h.diag);
+    REQUIRE(h.diag.has_errors());
+    CHECK(au.pictures().size() == 1);
+    CHECK(au.pictures()[0].kind == FrameKind::Unknown);
+    CHECK(au.stats().unknown == 1);
+}
+
+TEST_CASE("PPS whose SPS is missing fails but later NALs still parse",
+          "[access_unit]") {
+    Harness h;
+    // Register a PPS pointing at an SPS id that the store does not have.
+    PpsInfo orphan;
+    orphan.pps_id = 7;
+    orphan.sps_id = 77;
+    h.store.add_pps(orphan);
+
+    AccessUnitAssembler au(h.store);
+    au.handle_nal(make_vcl(false, 0, SLICE_P, 0, false, false, 7, 4, 11),
+                  h.diag);
+    au.handle_nal(make_vcl(true, 0, SLICE_I, 0, false, false, 0, 4, 21),
+                  h.diag);
+    au.finish(h.diag);
+    REQUIRE(h.diag.has_errors());
+    CHECK(h.diag[0].offset == 11);
+    // The valid IDR after the broken slice still assembles into a GOP.
+    CHECK(au.groups().size() == 1);
+    CHECK(au.pictures().size() == 2);
+}
+
 TEST_CASE("unsupported slice type lands in the unknown bucket",
           "[access_unit]") {
     Harness h;
