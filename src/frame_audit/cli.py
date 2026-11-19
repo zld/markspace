@@ -17,7 +17,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from . import __version__
-from .audit import audit_file
+from .audit import audit_file, relative_name
 from .errors import EXIT_INPUT, EXIT_OK, EXIT_USAGE, AuditError
 from .model import AuditResult, BatchReport, Policy
 from .probe import VIDEO_EXTENSIONS, is_probable_video
@@ -155,15 +155,6 @@ def _collect_targets(
     return targets, ([root] if root is not None else []), skipped
 
 
-def _display_name(path: Path, root: Path | None) -> str:
-    if root is not None:
-        try:
-            return path.resolve().relative_to(root.resolve()).as_posix()
-        except ValueError:
-            pass
-    return str(path)
-
-
 def _run_audit(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     if args.max_frames is not None and args.max_frames <= 0:
         _usage_error(parser, "--max-frames must be a positive integer")
@@ -179,7 +170,7 @@ def _run_audit(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int
                 path,
                 max_frames=args.max_frames,
                 policy=policy,
-                display_path=_display_name(path, root),
+                display_path=relative_name(path, root),
             )
         )
     results.extend(skipped)

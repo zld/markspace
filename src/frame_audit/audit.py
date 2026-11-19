@@ -19,7 +19,7 @@ from .model import AuditResult, Policy
 from .probe import probe
 from .timeline import build_timeline
 
-__all__ = ["audit_file", "audit_many"]
+__all__ = ["audit_file", "audit_many", "relative_name"]
 
 
 def audit_file(
@@ -51,7 +51,9 @@ def audit_file(
         )
 
     try:
-        outcome = decode_frames(source, time_base=info.time_base, max_frames=max_frames)
+        outcome = decode_frames(
+            source, time_base=info.time_base, max_frames=max_frames, info=info
+        )
     except AuditError as exc:
         return AuditResult(
             path=str(source),
@@ -128,7 +130,7 @@ def audit_many(
     results: list[AuditResult] = []
     for path in paths:
         source = Path(path)
-        shown = _relative_name(source, display_root)
+        shown = relative_name(source, display_root)
         results.append(
             audit_file(
                 source,
@@ -140,7 +142,8 @@ def audit_many(
     return results
 
 
-def _relative_name(path: Path, root: Path | None) -> str:
+def relative_name(path: Path, root: Path | None) -> str:
+    """Display name for ``path``: relative to ``root`` when it is inside it."""
     if root is not None:
         try:
             return path.resolve().relative_to(root.resolve()).as_posix()

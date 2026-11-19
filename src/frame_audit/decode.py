@@ -21,7 +21,7 @@ from pathlib import Path
 import av
 
 from .errors import DecodeError, InputError
-from .model import FrameRecord
+from .model import FrameRecord, StreamInfo
 from .probe import probe
 
 __all__ = ["DecodeOutcome", "decode_frames"]
@@ -60,6 +60,7 @@ def decode_frames(
     *,
     time_base: Fraction | None = None,
     max_frames: int | None = None,
+    info: StreamInfo | None = None,
 ) -> DecodeOutcome:
     """Decode ``path`` sequentially and return per-frame records.
 
@@ -69,13 +70,16 @@ def decode_frames(
     :class:`DecodeError`.  When ``max_frames`` is reached before the stream ends
     the outcome is marked ``truncated`` so callers never report it as a complete
     scan.
+
+    ``info`` lets a caller pass stream facts it has already probed, avoiding a
+    second header parse; it is validated the same way either way.
     """
     if max_frames is not None and max_frames <= 0:
         raise ValueError("max_frames must be positive when provided")
 
     source = Path(path)
-    info = probe(source)
-    base = time_base if time_base is not None else info.time_base
+    stream_info = info if info is not None else probe(source)
+    base = time_base if time_base is not None else stream_info.time_base
     if base is None or base <= 0:
         raise DecodeError("stream reports no usable time base", reason="invalid_time_base")
 
