@@ -261,3 +261,72 @@ def test_missing_field_severity_configurable():
     result = compare_policy(ref, tgt, policy)
     assert any(i["code"] == "codec_missing_field"
                and i["severity"] == "warning" for i in result["issues"])
+
+
+def test_policy_parse_full_document():
+    policy = parse_policy({
+        "name": "delivery",
+        "duration": {"tolerance_seconds": 0.05, "tolerance_ratio": 0.001,
+                     "start_severity": "warning"},
+        "matching": {
+            "pairs": [{"reference_track_id": 1, "target_track_id": 10}],
+            "require_kinds": ["audio"],
+            "ignore_kinds": ["timecode"],
+            "match_by_index": True,
+        },
+        "codec": {
+            "whitelist": {"audio": [{"codec": "aac", "sample_rate": 48000}]},
+            "warn_fields": ["bit_depth"],
+            "ignore_fields": ["language"],
+            "missing_severity": "info",
+        },
+    })
+    assert policy.duration.tolerance_seconds == 0.05
+    assert policy.matching.pairs[0] == TrackPair(1, 10)
+    assert policy.codec.whitelist["audio"][0]["codec"] == "aac"
+
+
+def test_policy_unknown_field_reports_path():
+    with pytest.raises(PolicyError) as info:
+        parse_policy({"duration": {"tolerance_secondz": 0.1}})
+    assert info.value.field_path == "duration.tolerance_secondz"
+
+
+def test_policy_bad_type_reports_path():
+    with pytest.raises(PolicyError) as info:
+        parse_policy({"duration": {"tolerance_seconds": "fast"}})
+    assert info.value.field_path == "duration.tolerance_seconds"
+
+
+def test_policy_bad_pair_reports_index():
+    with pytest.raises(PolicyError) as info:
+        parse_policy({"matching": {"pairs": [{"reference_track_id": 1}]}})
+    assert info.value.field_path == "matching.pairs[0].target_track_id"
+
+
+def test_policy_bad_kind_reports_index():
+    with pytest.raises(PolicyError) as info:
+        parse_policy({"codec": {"whitelist": {"sounds": []}}})
+    assert info.value.field_path == "codec.whitelist.sounds"
+
+
+def test_policy_json_syntax_error_has_line_column(tmp_path):
+    path = tmp_path / "bad.json"
+    path.write_text('{\n  "duration": {\n    "tolerance_seconds": ,\n  }\n}\n')
+    with pytest.raises(PolicyError) as info:
+        load_policy(path)
+    assert info.value.line == 3
+    assert info.value.column is not None
+
+
+def test_policy_negative_tolerance_from_cli():
+    with pytest.raises(PolicyError):
+        load_policy(None, tolerance_seconds=-1)
+
+
+def test_policy_dumped_and_reloaded_roundtrip(tmp_path):
+    policy = Policy()
+    path = tmp_path / "policy.json"
+    path.write_text(json.dumps(policy.to_dict()))
+    loaded = load_policy(path)
+    assert loaded.to_dict() == policy.to_dict()
