@@ -44,7 +44,7 @@ class KWeightingTests(unittest.TestCase):
             * response(reference_b[1], reference_a[1], omega)
         )
         deviation_db = np.max(np.abs(20.0 * np.log10(ours / theirs)))
-        self.assertLess(float(deviation_db), 0.1)
+        self.assertLess(float(deviation_db), 0.01)
 
     def test_stable_at_other_rates(self) -> None:
         for rate in (8000, 22050, 44100, 96000, 192000):
@@ -65,6 +65,17 @@ class MeterTests(unittest.TestCase):
         np.testing.assert_allclose(snapshot.rms_per_channel, [0.5, 0.25])
         self.assertAlmostEqual(snapshot.rms, float(np.sqrt((0.25 + 0.0625) / 2)))
         self.assertAlmostEqual(snapshot.peak, 0.5)
+
+    def test_channel_energies_are_summed(self) -> None:
+        """BS.1770 sums per-channel energy: N identical channels add 10log10(N)."""
+        mono = sine(997.0, 48000, 48000, 0.1)[:, None]
+        reference = analyse_blocks([mono], 48000, 1).lufs
+        for channels in (2, 6, 8):
+            data = np.repeat(mono, channels, axis=1)
+            measured = analyse_blocks([data], 48000, channels).lufs
+            self.assertAlmostEqual(
+                measured, reference + 10.0 * np.log10(channels), places=6
+            )
 
     def test_silence_has_no_loudness(self) -> None:
         snapshot = analyse_blocks([np.zeros((128, 2))], 48000, 2)
@@ -91,10 +102,15 @@ class MeterTests(unittest.TestCase):
         self.assertAlmostEqual(whole.lufs, chunked.lufs, places=9)
 
     def test_reference_level(self) -> None:
-        """A 997 Hz stereo sine at -20 dBFS measures about -23.06 LUFS."""
+        """A 997 Hz stereo sine at -20 dBFS per channel measures about -20.04 LUFS.
+
+        BS.1770 sums channel energy, so two identical -20 dBFS channels
+        read 3.01 LU above the mono value of about -23.05 LUFS (the
+        ungated approximation is 0.04 dB below the published table).
+        """
         data = np.repeat(sine(997.0, 48000, 48000, 10 ** (-20 / 20))[:, None], 2, axis=1)
         snapshot = analyse_blocks([data], 48000, 2)
-        self.assertAlmostEqual(snapshot.lufs, -23.06, delta=0.5)
+        self.assertAlmostEqual(snapshot.lufs, -20.04, delta=0.1)
 
     def test_preroll_does_not_bias_short_files(self) -> None:
         """Filter priming must not contribute to the loudness denominator."""

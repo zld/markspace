@@ -11,14 +11,17 @@ actually needed.
 
 Filter definition (fully reproducible, reported in the JSON report):
 
-* ``K = 32 * max(1, ceil(M / L))`` taps per phase (``K`` is always even;
-  this equals 32 taps per phase at the *output* rate, independent of the
+* ``K = 96 * max(1, ceil(M / L))`` taps per phase (``K`` is always even;
+  this equals 96 taps per phase at the *output* rate, independent of the
   conversion ratio),
 * total prototype length ``N = K * L + 1`` taps on the upsampled grid,
 * Kaiser window with shape ``beta = 8.6`` (~80 dB design stopband),
-* one-sided cutoff ``fc = 0.48 * min(fi, fo)`` Hz, i.e. 96 % of the lower
-  of the two Nyquist frequencies, leaving a guard band for the finite
-  filter length,
+* one-sided cutoff ``fc = 0.465 * min(fi, fo)`` Hz, i.e. 93 % of the
+  lower of the two Nyquist frequencies.  With 96 taps per phase this
+  gives < 1 dB passband droop below 0.9 of that Nyquist, > 55 dB rejection
+  from 0.98 of it, and > 90 dB beyond it; aliasing of content within 2 %
+  above the output Nyquist is therefore bounded while the passband stays
+  usable,
 * every polyphase branch is normalised to unit DC gain, so a constant
   signal is resampled to the same constant (no ripple at DC).
 
@@ -58,13 +61,13 @@ __all__ = [
     "reduce_ratio",
 ]
 
-TAPS_PER_PHASE = 32
+TAPS_PER_PHASE = 96
 KAISER_BETA = 8.6
-CUTOFF_FRACTION = 0.48
+CUTOFF_FRACTION = 0.465
 
 # Bound the gather block so temporary index arrays stay small (~2M floats).
 _MAX_BLOCK_OUTPUTS = 1 << 14
-_MAX_BLOCK_FLOATS = 1 << 21
+_MAX_BLOCK_FLOATS = 1 << 19
 
 
 @dataclass(frozen=True)

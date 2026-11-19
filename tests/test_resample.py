@@ -56,7 +56,7 @@ class KernelDesignTests(unittest.TestCase):
         np.testing.assert_allclose(taps.sum(axis=1), 1.0, atol=1e-12)
         self.assertEqual(spec.window, "kaiser")
         self.assertAlmostEqual(spec.window_beta, KAISER_BETA)
-        self.assertAlmostEqual(spec.cutoff_hz, 0.48 * 44100, places=6)
+        self.assertAlmostEqual(spec.cutoff_hz, 0.465 * 44100, places=6)
 
     def test_design_is_deterministic(self) -> None:
         first, spec_a = design_filter(48000, 44100)
@@ -67,8 +67,8 @@ class KernelDesignTests(unittest.TestCase):
     def test_decimation_uses_more_taps(self) -> None:
         _taps, up = design_filter(48000, 96000)
         _taps, down = design_filter(96000, 48000)
-        self.assertEqual(up.taps_per_phase, 32)
-        self.assertEqual(down.taps_per_phase, 64)
+        self.assertEqual(up.taps_per_phase, 96)
+        self.assertEqual(down.taps_per_phase, 192)
 
 
 class FidelityTests(unittest.TestCase):
@@ -92,6 +92,23 @@ class FidelityTests(unittest.TestCase):
         out, _ = _run(sine(20000.0, 44100, 44100)[:, None], 44100, 22050)
         energy = float(np.sqrt(np.mean(out[500:-500, 0] ** 2)))
         self.assertLess(energy, 1e-3)
+
+    @staticmethod
+    def _tone_gain_db(tone: float, in_rate: int, out_rate: int, amplitude: float = 0.5) -> float:
+        out, _ = _run(sine(tone, in_rate, in_rate, amplitude)[:, None], in_rate, out_rate)
+        segment = out[2000:-2000, 0]
+        rms = float(np.sqrt(np.mean(segment ** 2)))
+        reference = amplitude / np.sqrt(2.0)
+        return 20.0 * np.log10(max(rms / reference, 1e-15))
+
+    def test_stopband_rejects_content_just_above_nyquist(self) -> None:
+        """Content just above the output Nyquist must not fold back loudly."""
+        self.assertLess(self._tone_gain_db(1.02 * 12000.0, 48000, 24000), -60.0)
+        self.assertLess(self._tone_gain_db(1.05 * 12000.0, 48000, 24000), -80.0)
+        self.assertLess(self._tone_gain_db(1.20 * 12000.0, 48000, 24000), -90.0)
+
+    def test_near_nyquist_passband_is_not_severely_drooped(self) -> None:
+        self.assertGreater(self._tone_gain_db(0.9 * 12000.0, 48000, 24000), -1.0)
 
     def test_output_is_block_size_invariant(self) -> None:
         data = np.random.default_rng(7).standard_normal((3000, 3))
@@ -172,6 +189,24 @@ class EdgeCaseTests(unittest.TestCase):
         resampler.finish()
         with self.assertRaises(RuntimeError):
             resampler.process_chunk(np.ones((10, 1)))
+
+
+class ReferenceTests(unittest.TestCase):
+    def test_matches_direct_convolution(self) -> None:
+        """The streaming engine must equal a naive per-output convolution."""
+        taps, spec = design_filter(44100, 48000)
+        L, M, half = 160, 147, spec.taps_per_phase // 2
+        data = np.random.default_rng(5).standard_normal((300, 2))
+        out, _ = _run(data, 44100, 48000)
+        expected = np.zeros_like(out)
+        for j in range(out.shape[0]):
+            base = (j * M) // L
+            phase = (j * M) % L
+            for r in range(spec.taps_per_phase + 1):
+                index = base + half - r
+                if 0 <= index < data.shape[0]:
+                    expected[j] += taps[phase, r] * data[index]
+        np.testing.assert_allclose(out, expected, rtol=0.0, atol=1e-12)
 
 
 class UtilityTests(unittest.TestCase):

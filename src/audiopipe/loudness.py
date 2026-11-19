@@ -21,6 +21,8 @@ mean square: ``-0.691 + 10 log10(ms)``.  This is the documented
 "K-weighted loudness approximation": it is the same ungated formula used
 by common meters before the relative gate is applied, and it is used for
 both the before and the after measurement so the two are comparable.
+On steady material it agrees with a gated BS.1770 measurement; with long
+quiet passages the missing gate biases it low by a few LU.
 
 Gain planning
 -------------
@@ -87,9 +89,18 @@ def _shelf_coefficients(sample_rate: int) -> tuple[np.ndarray, np.ndarray]:
 
 
 def _highpass_coefficients(sample_rate: int) -> tuple[np.ndarray, np.ndarray]:
+    """Stage-2 high pass, ``s^2 / (s^2 + s/Q + 1)`` under the bilinear map.
+
+    The numerator is ``(1 - z^-1)^2`` with *unit* leading coefficient (the
+    analogue prototype has unity gain at infinite frequency); only the
+    denominator is normalised by ``a0``.  BS.1770's published 48 kHz table
+    uses exactly ``b = [1, -2, 1]``, so dividing the numerator by ``a0``
+    would attenuate the whole weighting curve by ``20 log10(a0)`` (about
+    0.043 dB at 48 kHz, more at lower rates).
+    """
     k = math.tan(math.pi * _HIGHPASS_F0 / sample_rate)
     a0 = 1.0 + k / _HIGHPASS_Q + k * k
-    b = np.array([1.0 / a0, -2.0 / a0, 1.0 / a0], dtype=np.float64)
+    b = np.array([1.0, -2.0, 1.0], dtype=np.float64)
     a = np.array(
         [1.0, 2.0 * (k * k - 1.0) / a0, (1.0 - k / _HIGHPASS_Q + k * k) / a0],
         dtype=np.float64,
@@ -205,10 +216,17 @@ class LevelMeter:
                 )
 
     def _feed_kfilter(self, block: np.ndarray) -> None:
+        """K-weight every channel and accumulate BS.1770 mean-square energy.
+
+        BS.1770 loudness is ``-0.691 + 10 log10(sum_c mean(y_c^2))``:
+        channel energies are *summed*, so ``_k_sum_sq`` holds the sum over
+        channels of the sum of squares and ``_k_frames`` counts frames
+        once (not frames x channels).
+        """
         for ch in range(self.channels):
             filtered, _ = _kfilter_chunk(block[:, ch], self._coeffs, self._state[ch])
             self._k_sum_sq += float(np.dot(filtered, filtered))
-            self._k_frames += filtered.shape[0]
+        self._k_frames += block.shape[0]
 
     def feed(self, block: np.ndarray) -> None:
         arr = np.asarray(block, dtype=np.float64)
