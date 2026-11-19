@@ -881,3 +881,31 @@ TEST_CASE("json serialization refuses non-finite values", "[report]") {
     CHECK(error.code() == ExitCode::Output);
   }
 }
+
+TEST_CASE("cube parser accepts CRLF and trailing comments", "[parser]") {
+  const std::string text =
+      "TITLE \"crlf\"\r\n"
+      "LUT_3D_SIZE 2\r\n"
+      "0 0 0   # origin\r\n"
+      "1 0 0\r\n0 1 0\r\n1 1 0\r\n0 0 1\r\n1 0 1\r\n0 1 1\r\n1 1 1\r\n";
+  const lutcheck::Lut3D lut = parse_text(text);
+  CHECK(lut.title == "crlf");
+  CHECK(lut.node_count() == 8);
+  CHECK(lut.at(1, 1, 1).b == Catch::Approx(1.0));
+}
+
+TEST_CASE("ppm header accepts CRLF line endings", "[ppm]") {
+  const std::string dir = "lutcheck_ppm_crlf";
+  std::filesystem::create_directories(dir);
+  const std::string path = dir + "/crlf.ppm";
+  {
+    std::ofstream out(path, std::ios::binary);
+    out << "P6\r\n1 1\r\n255\r\n";
+    out.put(static_cast<char>(255)).put(static_cast<char>(0)).put(static_cast<char>(128));
+  }
+  const lutcheck::Image image = lutcheck::read_ppm(path);
+  CHECK(image.width == 1);
+  CHECK(image.pixels[0].r == Catch::Approx(1.0));
+  CHECK(image.pixels[0].b == Catch::Approx(128 / 255.0).margin(1e-12));
+  std::filesystem::remove_all(dir);
+}

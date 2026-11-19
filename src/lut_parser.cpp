@@ -61,7 +61,10 @@ std::vector<std::string> split_tokens(const std::string& line) {
     if (i == line.size()) break;
     const std::size_t start = i;
     while (i < line.size() && line[i] != ' ' && line[i] != '\t') ++i;
-    tokens.push_back(line.substr(start, i - start));
+    const std::string token = line.substr(start, i - start);
+    // A token that begins with '#' starts a trailing comment.
+    if (!token.empty() && token.front() == '#') break;
+    tokens.push_back(token);
   }
   return tokens;
 }

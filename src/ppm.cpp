@@ -1,5 +1,7 @@
 #include "ppm.hpp"
 
+#include <unistd.h>
+
 #include <cerrno>
 #include <charconv>
 #include <cstdio>
@@ -102,11 +104,16 @@ Image read_ppm(const std::string& path) {
     fail(ExitCode::Input, path + ": max value " + std::to_string(max_value) +
                               " exceeds 65535");
   }
-  // Exactly one whitespace character terminates the header.
+  // Exactly one whitespace character terminates the header; CRLF counts as
+  // one terminator, otherwise the LF would be read as pixel data.
   if (pos >= text.size()) {
     fail(ExitCode::Input, path + ": truncated PPM header");
   }
-  ++pos;
+  if (text[pos] == '\r' && pos + 1 < text.size() && text[pos + 1] == '\n') {
+    pos += 2;
+  } else {
+    ++pos;
+  }
 
   Image image;
   image.width = width;
@@ -186,7 +193,9 @@ void write_ppm_atomic(const std::string& path, const Image& image,
         max_pixels)) {
     fail(ExitCode::Output, path + ": refusing to write oversized image");
   }
-  const std::string temp = path + ".tmp";
+  // Include the pid so two concurrent processes writing the same target do
+  // not race on one temporary file.
+  const std::string temp = path + ".tmp." + std::to_string(::getpid());
   const std::string payload = encode_ppm(image);
   {
     std::ofstream out(temp, std::ios::binary | std::ios::trunc);
