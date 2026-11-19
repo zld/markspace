@@ -267,7 +267,9 @@ class FrameEnergyDetector:
     def _emit_closed_event(self) -> None:
         state = self._state
         start = max(0, state.start_frame * self.hop)
-        self._emit(start, (state.last_active_frame + 1) * self.hop)
+        # Keep the tail: hold_frames of silence still belong to the event.
+        end = (state.last_active_frame + 1 + self.config.hold_frames) * self.hop
+        self._emit(start, end)
 
     def _close_active(self, total_samples: int) -> None:
         state = self._state
