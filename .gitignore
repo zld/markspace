@@ -1,0 +1,12 @@
+# Build output
+/build/
+/build-*/
+
+# Generated media fixtures (regenerated into the build directory)
+*.mp4
+*.mkv
+*.mov
+
+# Editor / OS noise
+*.swp
+.DS_Store
