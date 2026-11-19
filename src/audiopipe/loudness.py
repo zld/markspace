@@ -175,15 +175,15 @@ def measure(data: np.ndarray, rate: int) -> LoudnessStats:
         return LoudnessStats(0.0, None, None, None, 0.0, 0, True)
     peak_abs = float(np.max(np.abs(data))) if data.size else 0.0
     clipped = int(np.count_nonzero(np.abs(data) > 1.0))
-    # BS.1770 sums the (unity-weighted) mean square of every channel. Using a
-    # mean instead would under-report stereo material by 3 dB.
-    mean_square = float(np.sum(np.mean(np.square(data, dtype=np.float64), axis=0)))
-    rms = math.sqrt(max(mean_square, 0.0))
+    # RMS is the classic all-sample statistic and always lies in [0, peak].
+    rms = math.sqrt(max(float(np.mean(np.square(data, dtype=np.float64))), 0.0))
     silent = peak_abs == 0.0
     lufs: float | None = None
     if not silent:
         weighted = k_weight(data, rate)
         spans = block_powers(frames, rate)
+        # BS.1770 sums the (unity-weighted) mean square of every channel, which
+        # is why a dual-mono file reads 3 dB louder than either channel alone.
         powers = np.array(
             [
                 float(np.sum(np.mean(np.square(weighted[a:b], dtype=np.float64), axis=0)))

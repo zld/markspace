@@ -37,6 +37,14 @@ def map_channels(data: np.ndarray, mode: str) -> np.ndarray:
             return data
         # Energy-preserving average; shape stays 2-D so callers are uniform.
         return data.mean(axis=1, keepdims=True, dtype=np.float64)
+    if mode.startswith("exact:") or mode.isdigit():
+        wanted = int(mode.split(":", 1)[1]) if mode.startswith("exact:") else int(mode)
+        if data.shape[1] != wanted:
+            raise InputError(
+                f"file has {data.shape[1]} channel(s), {wanted} required",
+                reason="channel_mismatch",
+            )
+        return data
     raise InputError(f"unknown channel mode {mode!r}", reason="bad_channels")
 
 
@@ -44,7 +52,10 @@ def channel_note(channels_in: int, mode: str) -> str:
     """Human readable description of the channel mapping for reports."""
     if mode == "preserve":
         return f"preserved {channels_in} channel(s)"
-    return f"averaged {channels_in} channel(s) to mono"
+    if mode == "mono":
+        return f"averaged {channels_in} channel(s) to mono"
+    wanted = int(mode.split(":", 1)[1]) if mode.startswith("exact:") else int(mode)
+    return f"kept {channels_in} channel(s); required exactly {wanted}"
 
 
 def iter_frame_blocks(

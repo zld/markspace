@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import struct
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -13,6 +14,8 @@ from .config import check_input_limits
 from .errors import InputError, ProcessingError
 
 _PCM_SUBTYPES = {"PCM_16", "PCM_24", "PCM_32", "PCM_U8"}
+_BYTES_PER_SAMPLE = {"PCM_U8": 1, "PCM_16": 2, "PCM_24": 3, "PCM_32": 4}
+_HEADER_LIMIT = 1 << 20
 
 
 @dataclass(frozen=True)
@@ -31,23 +34,70 @@ class Audio:
         return int(self.data.shape[1])
 
 
+def inspect_riff(handle, file_size: int) -> dict[str, int]:
+    """Validate the RIFF chunk layout and return the data chunk bounds.
+
+    libsndfile silently returns fewer frames for a truncated payload, which
+    would make a damaged asset look like a valid short one. Checking the
+    declared chunk sizes ourselves keeps corrupt files traceable.
+    """
+    header = handle.read(_HEADER_LIMIT)
+    if len(header) < 12 or header[0:4] not in (b"RIFF", b"RIFX") or header[8:12] != b"WAVE":
+        raise InputError("not a RIFF/WAVE file", reason="corrupt")
+    if header[0:4] == b"RIFX":
+        raise InputError("big-endian RIFX is not supported", reason="unsupported_encoding")
+    pos = 12
+    fmt_seen = False
+    while pos + 8 <= len(header):
+        chunk_id = header[pos : pos + 4]
+        (chunk_size,) = struct.unpack("<I", header[pos + 4 : pos + 8])
+        body = pos + 8
+        if chunk_id == b"fmt ":
+            fmt_seen = True
+        elif chunk_id == b"data":
+            if not fmt_seen:
+                raise InputError("data chunk before fmt chunk", reason="corrupt")
+            if body + chunk_size > file_size:
+                raise InputError(
+                    f"data chunk truncated: declares {chunk_size} bytes, "
+                    f"file has {max(file_size - body, 0)}",
+                    reason="corrupt",
+                )
+            return {"data_offset": body, "data_bytes": chunk_size, "file_size": file_size}
+        if chunk_size > file_size:
+            break
+        pos = body + chunk_size + (chunk_size & 1)
+    raise InputError("no data chunk found", reason="corrupt")
+
+
 def read_wav(path: str | os.PathLike[str], *, max_bytes: int) -> Audio:
-    """Read a local PCM WAV, enforcing format and size limits."""
+    """Read a local PCM WAV, enforcing format, integrity and size limits."""
     p = Path(path)
     try:
         stat = p.stat()
-    except OSError as exc:
-        raise InputError(f"cannot stat input: {exc.strerror}", reason="unreadable") from None
+    except OSError:
+        raise InputError("cannot stat input", reason="unreadable") from None
     if not p.is_file():
         raise InputError("input is not a regular file", reason="not_a_file")
     try:
+        with open(p, "rb") as handle:
+            bounds = inspect_riff(handle, stat.st_size)
+    except OSError:
+        raise InputError("cannot read input", reason="unreadable") from None
+    try:
         info = sf.info(str(p))
-    except Exception as exc:  # soundfile raises RuntimeError/LibsndfileError
-        raise InputError(f"unreadable WAV: {exc}", reason="corrupt") from None
+    except Exception:
+        raise InputError("unreadable WAV header", reason="corrupt") from None
     if info.subtype not in _PCM_SUBTYPES:
         raise InputError(
             f"unsupported encoding {info.subtype}; PCM WAV required",
             reason="unsupported_encoding",
+        )
+    expected_bytes = int(info.frames) * int(info.channels) * _BYTES_PER_SAMPLE[info.subtype]
+    if expected_bytes > bounds["data_bytes"]:
+        raise InputError(
+            "header/data mismatch: sample data shorter than header claims",
+            reason="corrupt",
         )
     check_input_limits(
         int(info.samplerate),
@@ -58,9 +108,9 @@ def read_wav(path: str | os.PathLike[str], *, max_bytes: int) -> Audio:
     )
     try:
         data, rate = sf.read(str(p), dtype="float64", always_2d=True)
-    except Exception as exc:
-        raise InputError(f"could not decode WAV: {exc}", reason="corrupt") from None
-    if data.ndim != 2 or data.shape[1] != info.channels:
+    except Exception:
+        raise InputError("could not decode WAV payload", reason="corrupt") from None
+    if data.ndim != 2 or data.shape[1] != info.channels or data.shape[0] != info.frames:
         raise InputError("decoded layout disagrees with header", reason="corrupt")
     return Audio(data=np.ascontiguousarray(data), rate=int(rate))
 

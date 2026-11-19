@@ -24,12 +24,24 @@ class AudioPipeError(Exception):
 
     def __init__(self, message: str, *, reason: str | None = None) -> None:
         super().__init__(message)
-        self.message = message
+        # libsndfile's message embeds the file path; strip it so reports and
+        # terminal output never contain machine-absolute paths.
+        self.message = _sanitise(message)
         if reason is not None:
             self.reason = reason
 
     def as_dict(self) -> dict[str, str]:
         return {"reason": self.reason, "message": self.message}
+
+
+def _sanitise(text: str) -> str:
+    """Drop libsndfile's quoted path prefix from an error message."""
+    text = text.replace("'", "").replace('"', "")
+    marker = ": Error"
+    if marker in text:
+        text = text.split(marker, 1)[1]
+        text = ("Error" + text).strip()
+    return text
 
 
 class UsageError(AudioPipeError):

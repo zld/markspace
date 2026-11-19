@@ -8,6 +8,9 @@ from dataclasses import dataclass
 from .errors import MAX_CHANNELS, MAX_FRAMES, MAX_SAMPLE_RATE, UsageError
 
 CHANNEL_MODES = ("preserve", "mono")
+#: ``--channels`` also accepts an exact channel count ("1", "2", ...); files
+#: with a different count are rejected rather than having channels dropped.
+EXACT_CHANNELS_PREFIX = "exact:"
 DEFAULT_BLOCK_SIZE = 4096
 
 
@@ -41,9 +44,10 @@ class Config:
             raise UsageError(
                 f"target rate {self.target_rate} outside [1, {MAX_SAMPLE_RATE}]"
             )
-        if self.channels not in CHANNEL_MODES:
+        if not _valid_channel_mode(self.channels):
             raise UsageError(
-                f"channels must be one of {CHANNEL_MODES}, got {self.channels!r}"
+                "channels must be 'preserve', 'mono' or a positive channel count, "
+                f"got {self.channels!r}"
             )
         if self.target_lufs is not None:
             if not math.isfinite(self.target_lufs):
@@ -61,6 +65,22 @@ class Config:
     @property
     def normalise(self) -> bool:
         return self.target_lufs is not None
+
+    @property
+    def exact_channels(self) -> int | None:
+        """Channel count a file must have, or None when no exact mode is set."""
+        if self.channels.startswith(EXACT_CHANNELS_PREFIX):
+            return int(self.channels[len(EXACT_CHANNELS_PREFIX):])
+        if self.channels.isdigit():
+            return int(self.channels)
+        return None
+
+
+def _valid_channel_mode(mode: str) -> bool:
+    if mode in CHANNEL_MODES:
+        return True
+    count = mode[len(EXACT_CHANNELS_PREFIX):] if mode.startswith(EXACT_CHANNELS_PREFIX) else mode
+    return count.isdigit() and 1 <= int(count) <= MAX_CHANNELS
 
 
 def check_input_limits(
