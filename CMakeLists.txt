@@ -36,3 +36,7 @@ target_link_libraries(subtitle_core PUBLIC
     Threads::Threads
 )
 target_compile_options(subtitle_core PRIVATE -Wall -Wextra -Wpedantic)
+
+add_executable(subtitle_probe src/main.cpp)
+target_link_libraries(subtitle_probe PRIVATE subtitle_core)
+target_compile_options(subtitle_probe PRIVATE -Wall -Wextra -Wpedantic)
