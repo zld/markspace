@@ -2,9 +2,8 @@
 
 Curve semantics
 ---------------
-* Points live at *project-sample* frame indices. For a track they are relative
-  to that track's first rendered output sample (before ``start_frame``), so a
-  looping track follows its own playback position.
+* Points live at *project-sample* frame indices (absolute session frames, not
+  seconds), so a curve is independent of track placement and block size.
 * A curve uses a single unit, either ``"linear"`` (amplitude) or ``"db"``.
   Linear curves interpolate amplitude; dB curves interpolate in the dB domain
   and convert with ``10 ** (db / 20)``. Mixing units in one curve is rejected
@@ -31,7 +30,7 @@ _UNIT_LABELS = {"linear": "linear", "db": "dB"}
 
 @dataclass(frozen=True)
 class AutomationPoint:
-    """One gain keyframe at a track-local project frame."""
+    """One gain keyframe at a project frame."""
 
     frame: int
     value: float
@@ -49,7 +48,7 @@ class AutomationCurve:
         return self.points[0].unit
 
     def gain_at(self, frames: np.ndarray | int | float) -> np.ndarray:
-        """Return the gain at the given track-local frame(s).
+        """Return the gain at the given project frame(s).
 
         Uses ``numpy.interp`` on the curve's native unit domain and clamps
         outside the curve, matching the documented extrapolation rule.
@@ -66,7 +65,7 @@ class AutomationCurve:
     def sampled_points(self, start: int, end: int) -> list[dict[str, Any]]:
         """Report the start, every contained keyframe, and the end.
 
-        ``start`` and ``end`` are inclusive track-local frames.
+        ``start`` and ``end`` are inclusive project frames.
         """
         if end < start:
             end = start
