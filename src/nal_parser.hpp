@@ -28,6 +28,18 @@ enum NalType : std::uint8_t {
 
 const char* nal_type_name(unsigned nal_type);
 
+// Lightweight per-NAL record retained in the summary. The (potentially large)
+// RBSP payload is intentionally excluded so report memory stays bounded
+// regardless of input file length.
+struct NalMeta {
+    std::uint64_t start_offset = 0;
+    std::uint64_t nal_offset = 0;
+    std::uint64_t raw_size = 0;
+    unsigned nal_ref_idc = 0;
+    unsigned nal_type = 0;
+    bool valid = true;
+};
+
 // One parsed NAL unit. `payload` holds the RBSP with emulation prevention
 // bytes (0x03 after 00 00) already removed, so syntax parsers never see them.
 struct NalUnit {
@@ -40,6 +52,11 @@ struct NalUnit {
     bool size_exceeded = false;       // payload hit max_nal_bytes
     std::vector<std::uint8_t> payload;  // header byte + RBSP, bounded in size
 };
+
+inline NalMeta nal_meta(const NalUnit& n) {
+    return NalMeta{n.start_offset, n.nal_offset, n.raw_size,
+                   n.nal_ref_idc, n.nal_type, n.valid};
+}
 
 // Streaming Annex B scanner. Feed file chunks of any size; the scanner keeps
 // only byte-sized state plus the single NAL in flight, so memory does not
