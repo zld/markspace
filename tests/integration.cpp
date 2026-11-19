@@ -215,6 +215,94 @@ int main(int argc, char** argv) {
         check(sp::canonicalize_for_render(R"({\b1 x)") == R"({\b1 x})", "unclosed block closed canonically");
         check(sp::canonicalize_for_render(R"({\b1}x)") == R"({\b1}x)", "balanced block untouched");
     }
+
+    // ---- rendering ---------------------------------------------------------
+    {
+        sp::RenderOptions opts;
+        opts.canvas_width = 640;
+        opts.canvas_height = 360;
+        opts.font_dir = font_dir;
+        sp::LayoutProbe probe;
+        std::string err;
+        check(probe.initialize(opts, err), "renderer initialises: " + err);
+        sp::ScriptInfo info;
+        info.play_res_x = 640;
+        info.play_res_y = 360;
+        sp::EffStyle style = sp::builtin_style();
+        style.font_name.value = "Helvetica";
+        style.font_size.value = 40;
+        probe.set_context(info, {sp::StyleDefinition{"Root", style}});
+
+        sp::Event event;
+        event.style_name = "Root";
+
+        event.text = "Hello";
+        sp::RenderResult r = probe.render_event(event, style, {});
+        check(r.ok && r.has_area, "plain text renders a region");
+        check(r.width > 0 && r.height > 0 && r.x >= 0 && r.y >= 0, "region is positive and inside canvas");
+        check(r.sha256.size() == 64, "sha256 is 64 hex chars");
+        check(r.nontransparent_pixels > 0, "visible pixels counted");
+
+        event.text = "";
+        r = probe.render_event(event, style, {});
+        check(r.ok && r.empty_text && !r.has_area, "empty text has no region");
+
+        event.text = R"({\alpha&HFF&}Gone)";
+        r = probe.render_event(event, style, {});
+        check(r.ok && !r.has_area && r.fully_transparent, "fully transparent text flagged");
+
+        event.text = R"({\fs400\an7\pos(0,20)}HUGE)";
+        r = probe.render_event(event, style, {});
+        check(r.has_area && r.clipped, "oversized text reports clipping");
+
+        sp::EffStyle missing = style;
+        missing.font_name.value = "DefinitelyNoSuchFontXYZ";
+        event.text = "x";
+        r = probe.render_event(event, missing, {});
+        check(!r.ok, "missing font is a render failure");
+        check(!r.font_warnings.empty(), "font fallback diagnostic captured");
+    }
+
+    // ---- report ------------------------------------------------------------
+    {
+        sp::Report report;
+        report.input_path = "inline";
+        report.canvas.width = 640;
+        report.canvas.height = 360;
+        sp::EventReport er;
+        er.event_id = 0;
+        er.style_requested = "Root";
+        er.style_chain = {sp::ChainLink{"Root", 1, false}};
+        er.status = "rendered";
+        er.render.ok = true;
+        er.render.has_area = true;
+        er.render.x = 4;
+        er.render.y = 5;
+        er.render.width = 10;
+        er.render.height = 11;
+        er.render.sha256 = std::string(64, 'a');
+        report.events.push_back(er);
+        report.summary.events = 1;
+        report.summary.styles = 1;
+        report.summary.rendered = 1;
+        std::string json = sp::build_json(report);
+        check(json.find("\"event_id\": 0") != std::string::npos, "json contains event id");
+        check(json.find("\"style_chain\": \"Root\"") != std::string::npos, "json contains style chain");
+        check(json.find("\"width\": 10") != std::string::npos, "json contains region width");
+
+        namespace fs = std::filesystem;
+        fs::path dir = fs::temp_directory_path() / ("subtitle_probe_test_" + std::to_string(::getpid()));
+        fs::create_directories(dir);
+        std::string path = (dir / "report.json").string();
+        std::string err;
+        check(sp::write_json_report(report, path, err), "json report written: " + err);
+        check(fs::exists(path), "report file exists");
+        std::string bad = (dir / "missing" / "x.json").string();
+        check(!sp::write_json_report(report, bad, err), "write into a missing directory fails");
+        check(!fs::exists(bad), "failed write leaves no partial file");
+        fs::remove_all(dir);
+    }
+
     std::printf("integration checks: %d, failures: %d\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;
 }
