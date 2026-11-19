@@ -1,0 +1,16 @@
+# Virtual environment
+.venv/
+
+# Generated runtime artifacts
+.tmp/
+*.sqlite
+*.sqlite3
+*.db
+*.wav
+*.jsonl
+
+# Python caches
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
