@@ -1,0 +1,53 @@
+Start testing: Nov 20 01:08 CST
+----------------------------------------------------------
+1/2 Testing: core_unit_tests
+1/2 Test: core_unit_tests
+Command: "/Users/zld/WorkSpace/pair-wise-workspace/14074/build/test_core"
+Directory: /Users/zld/WorkSpace/pair-wise-workspace/14074/build
+"core_unit_tests" start time: Nov 20 01:08 CST
+Output:
+----------------------------------------------------------
+core unit tests OK
+<end of output>
+Test time =   0.03 sec
+----------------------------------------------------------
+Test Passed.
+"core_unit_tests" end time: Nov 20 01:08 CST
+"core_unit_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+2/2 Testing: acceptance
+2/2 Test: acceptance
+Command: "/bin/bash" "/Users/zld/WorkSpace/pair-wise-workspace/14074/tests/run_acceptance.sh" "/Users/zld/WorkSpace/pair-wise-workspace/14074/build"
+Directory: /Users/zld/WorkSpace/pair-wise-workspace/14074
+"acceptance" start time: Nov 20 01:08 CST
+Output:
+----------------------------------------------------------
+== configure and build ==
+-- Configuring done (0.2s)
+-- Generating done (0.0s)
+-- Build files have been written to: /Users/zld/WorkSpace/pair-wise-workspace/14074/build
+[ 62%] Built target pwsync_core
+[100%] Built target pw_sync
+[100%] Built target generate_fixture
+[100%] Built target test_core
+== generate fixture ==
+[aac @ 0x7b0ec20a80] Qavg: 140.893
+== run analysis twice (determinism pair) ==
+== validate JSON contract and determinism ==
+report validation OK: /Users/zld/WorkSpace/pair-wise-workspace/14074/build/report_run1.json
+== exit code contract ==
+  usage exit code 2 OK
+  missing exit code 2 OK
+  broken exit code 3 OK
+  report exit code 4 OK
+acceptance OK
+<end of output>
+Test time =   0.86 sec
+----------------------------------------------------------
+Test Passed.
+"acceptance" end time: Nov 20 01:08 CST
+"acceptance" time elapsed: 00:00:00
+----------------------------------------------------------
+
+End testing: Nov 20 01:08 CST

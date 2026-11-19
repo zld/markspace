@@ -143,6 +143,19 @@ pwsync_core/fast:
 .PHONY : pwsync_core/fast
 
 #=============================================================================
+# Target rules for targets named pw_sync
+
+# Build rule for target.
+pw_sync: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 pw_sync
+.PHONY : pw_sync
+
+# fast build rule for target.
+pw_sync/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/pw_sync.dir/build.make CMakeFiles/pw_sync.dir/build
+.PHONY : pw_sync/fast
+
+#=============================================================================
 # Target rules for targets named generate_fixture
 
 # Build rule for target.
@@ -156,7 +169,30 @@ generate_fixture/fast:
 .PHONY : generate_fixture/fast
 
 #=============================================================================
+# Target rules for targets named test_core
+
+# Build rule for target.
+test_core: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_core
+.PHONY : test_core
+
+# fast build rule for target.
+test_core/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_core.dir/build.make CMakeFiles/test_core.dir/build
+.PHONY : test_core/fast
+
+#=============================================================================
 # Convenience rules to build test dependencies.
+
+# Build the dependencies of a test.
+test_prep/acceptance: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_prep/acceptance
+.PHONY : test_prep/acceptance
+
+# Build the dependencies of a test.
+test_prep/core_unit_tests: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_prep/core_unit_tests
+.PHONY : test_prep/core_unit_tests
 
 # Build the dependencies of a test.
 test_prep/all: cmake_check_build_system
@@ -186,6 +222,30 @@ src/audio_resample.s: src/audio_resample.cpp.s
 src/audio_resample.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/pwsync_core.dir/build.make CMakeFiles/pwsync_core.dir/src/audio_resample.cpp.s
 .PHONY : src/audio_resample.cpp.s
+
+src/cli.o: src/cli.cpp.o
+.PHONY : src/cli.o
+
+# target to build an object file
+src/cli.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/pwsync_core.dir/build.make CMakeFiles/pwsync_core.dir/src/cli.cpp.o
+.PHONY : src/cli.cpp.o
+
+src/cli.i: src/cli.cpp.i
+.PHONY : src/cli.i
+
+# target to preprocess a source file
+src/cli.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/pwsync_core.dir/build.make CMakeFiles/pwsync_core.dir/src/cli.cpp.i
+.PHONY : src/cli.cpp.i
+
+src/cli.s: src/cli.cpp.s
+.PHONY : src/cli.s
+
+# target to generate assembly for a file
+src/cli.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/pwsync_core.dir/build.make CMakeFiles/pwsync_core.dir/src/cli.cpp.s
+.PHONY : src/cli.cpp.s
 
 src/clock.o: src/clock.cpp.o
 .PHONY : src/clock.o
@@ -258,6 +318,30 @@ src/fixture_generator.s: src/fixture_generator.cpp.s
 src/fixture_generator.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/pwsync_core.dir/build.make CMakeFiles/pwsync_core.dir/src/fixture_generator.cpp.s
 .PHONY : src/fixture_generator.cpp.s
+
+src/main.o: src/main.cpp.o
+.PHONY : src/main.o
+
+# target to build an object file
+src/main.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/pw_sync.dir/build.make CMakeFiles/pw_sync.dir/src/main.cpp.o
+.PHONY : src/main.cpp.o
+
+src/main.i: src/main.cpp.i
+.PHONY : src/main.i
+
+# target to preprocess a source file
+src/main.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/pw_sync.dir/build.make CMakeFiles/pw_sync.dir/src/main.cpp.i
+.PHONY : src/main.cpp.i
+
+src/main.s: src/main.cpp.s
+.PHONY : src/main.s
+
+# target to generate assembly for a file
+src/main.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/pw_sync.dir/build.make CMakeFiles/pw_sync.dir/src/main.cpp.s
+.PHONY : src/main.cpp.s
 
 src/media_types.o: src/media_types.cpp.o
 .PHONY : src/media_types.o
@@ -379,6 +463,30 @@ tests/generate_fixture.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/generate_fixture.dir/build.make CMakeFiles/generate_fixture.dir/tests/generate_fixture.cpp.s
 .PHONY : tests/generate_fixture.cpp.s
 
+tests/test_core.o: tests/test_core.cpp.o
+.PHONY : tests/test_core.o
+
+# target to build an object file
+tests/test_core.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_core.dir/build.make CMakeFiles/test_core.dir/tests/test_core.cpp.o
+.PHONY : tests/test_core.cpp.o
+
+tests/test_core.i: tests/test_core.cpp.i
+.PHONY : tests/test_core.i
+
+# target to preprocess a source file
+tests/test_core.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_core.dir/build.make CMakeFiles/test_core.dir/tests/test_core.cpp.i
+.PHONY : tests/test_core.cpp.i
+
+tests/test_core.s: tests/test_core.cpp.s
+.PHONY : tests/test_core.s
+
+# target to generate assembly for a file
+tests/test_core.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/test_core.dir/build.make CMakeFiles/test_core.dir/tests/test_core.cpp.s
+.PHONY : tests/test_core.cpp.s
+
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -389,10 +497,15 @@ help:
 	@echo "... rebuild_cache"
 	@echo "... test"
 	@echo "... generate_fixture"
+	@echo "... pw_sync"
 	@echo "... pwsync_core"
+	@echo "... test_core"
 	@echo "... src/audio_resample.o"
 	@echo "... src/audio_resample.i"
 	@echo "... src/audio_resample.s"
+	@echo "... src/cli.o"
+	@echo "... src/cli.i"
+	@echo "... src/cli.s"
 	@echo "... src/clock.o"
 	@echo "... src/clock.i"
 	@echo "... src/clock.s"
@@ -402,6 +515,9 @@ help:
 	@echo "... src/fixture_generator.o"
 	@echo "... src/fixture_generator.i"
 	@echo "... src/fixture_generator.s"
+	@echo "... src/main.o"
+	@echo "... src/main.i"
+	@echo "... src/main.s"
 	@echo "... src/media_types.o"
 	@echo "... src/media_types.i"
 	@echo "... src/media_types.s"
@@ -417,6 +533,9 @@ help:
 	@echo "... tests/generate_fixture.o"
 	@echo "... tests/generate_fixture.i"
 	@echo "... tests/generate_fixture.s"
+	@echo "... tests/test_core.o"
+	@echo "... tests/test_core.i"
+	@echo "... tests/test_core.s"
 .PHONY : help
 
 

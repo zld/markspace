@@ -9,6 +9,7 @@ set(CMAKE_DEPENDS_LANGUAGES
 # The set of dependency files which are needed:
 set(CMAKE_DEPENDS_DEPENDENCY_FILES
   "/Users/zld/WorkSpace/pair-wise-workspace/14074/src/audio_resample.cpp" "CMakeFiles/pwsync_core.dir/src/audio_resample.cpp.o" "gcc" "CMakeFiles/pwsync_core.dir/src/audio_resample.cpp.o.d"
+  "/Users/zld/WorkSpace/pair-wise-workspace/14074/src/cli.cpp" "CMakeFiles/pwsync_core.dir/src/cli.cpp.o" "gcc" "CMakeFiles/pwsync_core.dir/src/cli.cpp.o.d"
   "/Users/zld/WorkSpace/pair-wise-workspace/14074/src/clock.cpp" "CMakeFiles/pwsync_core.dir/src/clock.cpp.o" "gcc" "CMakeFiles/pwsync_core.dir/src/clock.cpp.o.d"
   "/Users/zld/WorkSpace/pair-wise-workspace/14074/src/demux_decode.cpp" "CMakeFiles/pwsync_core.dir/src/demux_decode.cpp.o" "gcc" "CMakeFiles/pwsync_core.dir/src/demux_decode.cpp.o.d"
   "/Users/zld/WorkSpace/pair-wise-workspace/14074/src/fixture_generator.cpp" "CMakeFiles/pwsync_core.dir/src/fixture_generator.cpp.o" "gcc" "CMakeFiles/pwsync_core.dir/src/fixture_generator.cpp.o.d"

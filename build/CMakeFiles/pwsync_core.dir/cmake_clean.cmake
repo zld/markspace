@@ -1,6 +1,8 @@
 file(REMOVE_RECURSE
   "CMakeFiles/pwsync_core.dir/src/audio_resample.cpp.o"
   "CMakeFiles/pwsync_core.dir/src/audio_resample.cpp.o.d"
+  "CMakeFiles/pwsync_core.dir/src/cli.cpp.o"
+  "CMakeFiles/pwsync_core.dir/src/cli.cpp.o.d"
   "CMakeFiles/pwsync_core.dir/src/clock.cpp.o"
   "CMakeFiles/pwsync_core.dir/src/clock.cpp.o.d"
   "CMakeFiles/pwsync_core.dir/src/demux_decode.cpp.o"

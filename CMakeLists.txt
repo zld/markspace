@@ -80,4 +80,19 @@ add_executable(generate_fixture tests/generate_fixture.cpp)
 target_link_libraries(generate_fixture PRIVATE pwsync_core)
 target_compile_options(generate_fixture PRIVATE -Wall -Wextra -Wpedantic)
 
+# Pure C++ unit tests for the FFmpeg-free core.
+add_executable(test_core tests/test_core.cpp)
+target_link_libraries(test_core PRIVATE pwsync_core)
+target_compile_options(test_core PRIVATE -Wall -Wextra -Wpedantic)
+
+find_package(Python3 COMPONENTS Interpreter QUIET)
+
 enable_testing()
+add_test(NAME core_unit_tests COMMAND test_core)
+add_test(
+    NAME acceptance
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_acceptance.sh
+            ${CMAKE_BINARY_DIR}
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+set_tests_properties(acceptance PROPERTIES
+    ENVIRONMENT "PYTHON=$<IF:$<BOOL:${Python3_EXECUTABLE}>,${Python3_EXECUTABLE},python3>")

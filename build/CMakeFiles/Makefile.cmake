@@ -24,6 +24,8 @@ set(CMAKE_MAKEFILE_DEPENDS
   "/opt/homebrew/share/cmake/Modules/FindPackageHandleStandardArgs.cmake"
   "/opt/homebrew/share/cmake/Modules/FindPackageMessage.cmake"
   "/opt/homebrew/share/cmake/Modules/FindPkgConfig.cmake"
+  "/opt/homebrew/share/cmake/Modules/FindPython/Support.cmake"
+  "/opt/homebrew/share/cmake/Modules/FindPython3.cmake"
   "/opt/homebrew/share/cmake/Modules/Internal/CMakeCXXLinkerInformation.cmake"
   "/opt/homebrew/share/cmake/Modules/Internal/CMakeCommonLinkerInformation.cmake"
   "/opt/homebrew/share/cmake/Modules/Linker/AppleClang-CXX.cmake"
@@ -52,5 +54,7 @@ set(CMAKE_MAKEFILE_PRODUCTS
 # Dependency information for all targets:
 set(CMAKE_DEPEND_INFO_FILES
   "CMakeFiles/pwsync_core.dir/DependInfo.cmake"
+  "CMakeFiles/pw_sync.dir/DependInfo.cmake"
   "CMakeFiles/generate_fixture.dir/DependInfo.cmake"
+  "CMakeFiles/test_core.dir/DependInfo.cmake"
   )

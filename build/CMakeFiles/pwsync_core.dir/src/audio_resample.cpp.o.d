@@ -808,6 +808,8 @@ CMakeFiles/pwsync_core.dir/src/audio_resample.cpp.o: \
   /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/__locale_dir/wbuffer_convert.h \
   /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/__locale_dir/wstring_convert.h \
   /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/cstdarg \
+  /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/deque \
+  /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/__fwd/deque.h \
   /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavcodec/avcodec.h \
   /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavutil/samplefmt.h \
   /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavutil/attributes.h \

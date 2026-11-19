@@ -426,6 +426,17 @@ FFMPEG_libswresample_VERSION:INTERNAL=7.1.102
 PKG_CONFIG_ARGN-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: PKG_CONFIG_EXECUTABLE
 PKG_CONFIG_EXECUTABLE-ADVANCED:INTERNAL=1
+//Compiler reason failure
+_Python3_Compiler_REASON_FAILURE:INTERNAL=
+//Development reason failure
+_Python3_Development_REASON_FAILURE:INTERNAL=
+//Path to a program.
+_Python3_EXECUTABLE:INTERNAL=/opt/homebrew/Frameworks/Python.framework/Versions/3.15/bin/python3.15
+//Python3 Properties
+_Python3_INTERPRETER_PROPERTIES:INTERNAL=Python;3;15;2;ARM64;ARM;64;32;<none>;cpython-315-darwin;abi3t;abi3-darwin;/opt/homebrew/opt/python@3.15/Frameworks/Python.framework/Versions/3.15/lib/python3.15;/opt/homebrew/opt/python@3.15/Frameworks/Python.framework/Versions/3.15/lib/python3.15;/opt/homebrew/lib/python3.15/site-packages;/opt/homebrew/lib/python3.15/site-packages
+_Python3_INTERPRETER_SIGNATURE:INTERNAL=09fbc8615c62871048409eb46c57afe3
+//NumPy reason failure
+_Python3_NumPy_REASON_FAILURE:INTERNAL=
 __pkg_config_arguments_FFMPEG:INTERNAL=QUIET;IMPORTED_TARGET;libavcodec>=61;libavformat>=61;libavutil>=59;libswresample>=5
 __pkg_config_checked_FFMPEG:INTERNAL=1
 //ADVANCED property for variable: pkgcfg_lib_FFMPEG_avcodec
