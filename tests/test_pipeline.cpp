@@ -578,8 +578,10 @@ TEST_CASE("empty input renders without spawning work", "[paths]") {
 }
 
 TEST_CASE("fixture generation is byte-for-byte deterministic", "[fixtures]") {
-  const std::string a = "/tmp/lutcheck_fixture_a.cube";
-  const std::string b = "/tmp/lutcheck_fixture_b.cube";
+  const std::string dir = "lutcheck_fixture_determinism";
+  std::filesystem::create_directories(dir);
+  const std::string a = dir + "/a.cube";
+  const std::string b = dir + "/b.cube";
   lutcheck::write_fixture_lut(a, 5);
   lutcheck::write_fixture_lut(b, 5);
   auto slurp = [](const std::string& path) {
@@ -599,8 +601,7 @@ TEST_CASE("fixture generation is byte-for-byte deterministic", "[fixtures]") {
   CHECK(white.r == Catch::Approx(1.0).margin(1e-9));
   CHECK(white.g == Catch::Approx(1.0).margin(1e-9));
   CHECK(white.b == Catch::Approx(1.0).margin(1e-9));
-  std::filesystem::remove(a);
-  std::filesystem::remove(b);
+  std::filesystem::remove_all(dir);
 }
 
 TEST_CASE("fixture image is deterministic and exercises out of range data",
@@ -627,7 +628,7 @@ TEST_CASE("fixture image is deterministic and exercises out of range data",
 
 TEST_CASE("fixture size limits are enforced", "[fixtures]") {
   try {
-    lutcheck::write_fixture_lut("/tmp/lutcheck_bad.cube", 1);
+    lutcheck::write_fixture_lut("lutcheck_bad_size.cube", 1);
     FAIL("expected size rejection");
   } catch (const lutcheck::AppError& error) {
     CHECK(error.code() == ExitCode::Usage);
