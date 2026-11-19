@@ -1,5 +1,6 @@
 #include "fixture_generator.hpp"
 
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <string>
@@ -72,7 +73,7 @@ void paintFrame(AVFrame* frame, int index, std::uint32_t& rng) {
 }
 
 bool encodeFrame(AVCodecContext* enc, AVFrame* frame, AVPacket* pkt,
-                 AVFormatContext* fmt, AVStream* st) {
+                 AVFormatContext* fmt, AVStream* st, bool drop_pts = false) {
     if (avcodec_send_frame(enc, frame) < 0) {
         return false;
     }
@@ -85,6 +86,11 @@ bool encodeFrame(AVCodecContext* enc, AVFrame* frame, AVPacket* pkt,
             return false;
         }
         av_packet_rescale_ts(pkt, enc->time_base, st->time_base);
+        if (drop_pts) {
+            // Simulate a container/demuxer that provides no presentation
+            // timestamp; the decode pipeline must infer and count the repair.
+            pkt->pts = AV_NOPTS_VALUE;
+        }
         pkt->stream_index = st->index;
         if (av_interleaved_write_frame(fmt, pkt) < 0) {
             return false;
@@ -97,9 +103,12 @@ bool encodeFrame(AVCodecContext* enc, AVFrame* frame, AVPacket* pkt,
 
 bool generateFixture(const FixtureOptions& o, std::string& error_message) {
     AVFormatContext* fmt = nullptr;
-    int rc = avformat_alloc_output_context2(&fmt, nullptr, "mp4", o.output_path.c_str());
+    // NULL format guesses the muxer from the file extension, so .mp4 and .mkv
+    // (the latter needed to persist missing-timestamp packets) both work.
+    int rc = avformat_alloc_output_context2(&fmt, nullptr, nullptr,
+                                            o.output_path.c_str());
     if (rc < 0 || !fmt) {
-        error_message = "cannot allocate mp4 muxer: " + err(rc);
+        error_message = "cannot allocate output muxer: " + err(rc);
         return false;
     }
     const AVCodec* venc = avcodec_find_encoder(AV_CODEC_ID_MPEG4);
@@ -180,7 +189,11 @@ bool generateFixture(const FixtureOptions& o, std::string& error_message) {
             frame->duration = nominal_ticks + next_extra;
             av_frame_make_writable(frame);
             paintFrame(frame, i, rng);
-            if (!encodeFrame(vctx, frame, pkt, fmt, vst)) {
+            const bool drop_pts =
+                std::find(o.drop_pts_at_frames.begin(),
+                          o.drop_pts_at_frames.end(),
+                          i) != o.drop_pts_at_frames.end();
+            if (!encodeFrame(vctx, frame, pkt, fmt, vst, drop_pts)) {
                 error_message = "video encode failed at frame " + std::to_string(i);
                 av_packet_free(&pkt);
                 av_frame_free(&frame);

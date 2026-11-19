@@ -34,6 +34,10 @@ struct FixtureOptions {
         {2.0, 0.45},  // forward gap beyond the discontinuity tolerance
         {3.1, 0.30},  // second, smaller forward gap
     };
+    // Zero-based video frame indices whose packet PTS is deliberately removed
+    // before muxing. Only honored by containers that can store missing
+    // timestamps (e.g. Matroska); the MP4 muxer would regenerate them.
+    std::vector<int> drop_pts_at_frames;
     std::uint32_t seed = 0x5157u;  // fixed LCG seed -> deterministic content
 };
 
