@@ -51,7 +51,13 @@ class TrackMapping:
         return [e for e in self.entries if e.decision == "rejected"]
 
 
-def select_tracks(tracks: list[Track]) -> TrackMapping:
+def select_tracks(tracks: list[Track], *, strict: bool = True) -> TrackMapping:
+    """Build the mapping in input order.
+
+    With ``strict=True`` (the remux path) unsupported codecs/encryption and
+    empty selections raise :class:`MappingError`. With ``strict=False`` (the
+    inspect path) the same decisions are recorded in the report instead.
+    """
     mapping = TrackMapping()
     next_mp4_id = 1
     for track in tracks:  # input order -> stable MP4 track IDs
@@ -94,14 +100,17 @@ def select_tracks(tracks: list[Track]) -> TrackMapping:
             next_mp4_id += 1
         mapping.entries.append(entry)
 
-    if mapping.rejected:
-        details = "; ".join(
-            f"track {e.mkv_track_number}: {e.reason}" for e in mapping.rejected
-        )
-        raise MappingError(f"unusable tracks ({details}); only "
-                           f"{sorted(SUPPORTED_CODECS)} are supported")
-    if not mapping.accepted:
-        raise MappingError(
-            "no supported H.264/AVC or AAC track found in input"
-        )
+    if strict:
+        if mapping.rejected:
+            details = "; ".join(
+                f"track {e.mkv_track_number}: {e.reason}"
+                for e in mapping.rejected
+            )
+            raise MappingError(
+                f"unusable tracks ({details}); only "
+                f"{sorted(SUPPORTED_CODECS)} are supported")
+        if not mapping.accepted:
+            raise MappingError(
+                "no supported H.264/AVC or AAC track found in input"
+            )
     return mapping

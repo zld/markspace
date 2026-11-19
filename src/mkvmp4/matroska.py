@@ -195,6 +195,7 @@ def parse_matroska(stream) -> MatroskaFile:
     reader = EbmlReader(stream, allowed_unknown_ids=UNKNOWN_LENGTH_ALLOWED)
     stream.seek(0, 2)
     file_size = stream.tell()
+    stream.seek(0)
     from . import MAX_TOTAL_SAMPLES
 
     # -- EBML header -------------------------------------------------------
@@ -223,6 +224,7 @@ def parse_matroska(stream) -> MatroskaFile:
     duration_ns: float | None = None
     cluster_count = 0
     cue_count = 0
+    cluster_timecodes_ns: list[int] = []
     warnings: list[str] = []
 
     for top in reader.iter_children(seg, terminator_ids=set()):

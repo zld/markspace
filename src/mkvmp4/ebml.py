@@ -11,7 +11,9 @@ from dataclasses import dataclass
 
 from . import MAX_ELEMENT_DEPTH, MAX_ELEMENT_SIZE
 
-# VINT data-bit masks per octet count, e.g. 2 octets -> 0x3FFF.
+# VINT data-bit masks per octet count. An N-octet VINT has a 1-bit length
+# marker plus 7*N data bits (7 in the first octet, 8 in every following one),
+# so its all-ones reserved value is 2^(7*N) - 1.
 _VINT_MASKS = [(1 << (7 * n)) - 1 for n in range(1, 9)]
 
 
@@ -38,15 +40,14 @@ class Element:
 def _vint_length(first_byte: int) -> int:
     if first_byte == 0:
         raise EbmlError("VINT starts with 0x00: no length marker")
-    n = 1
-    marker = 0x80
-    while first_byte & marker == 0:
-        marker >>= 1
-        n += 1
-        if n > 8:
+    # The marker's bit position, counted from the LSB (bit 0), gives the
+    # octet count: marker at bit 7 -> 1 octet, bit 6 -> 2, ... bit 0 -> 8.
+    bit = 7
+    while first_byte & (1 << bit) == 0:
+        bit -= 1
+        if bit < 0:
             raise EbmlError("VINT longer than 8 octets")
-    return n
-
+    return 8 - bit
 
 class EbmlReader:
     """Cursor-based EBML reader over a seekable binary stream."""
@@ -70,14 +71,34 @@ class EbmlReader:
             raise EbmlError(f"truncated element: wanted {n} bytes, got {len(data)}")
         return data
 
+    def read_id(self) -> tuple[int, int]:
+        """Read an EBML element ID.
+
+        Unlike a size VINT, an ID keeps the marker in the leading octet's
+        high bit and treats every other bit (including the rest of that
+        octet) as identifier data.
+        """
+        start = self.pos()
+        first = self._read_exact(1)[0]
+        n = _vint_length(first)
+        tail = self._read_exact(n - 1)
+        value = first
+        for byte in tail:
+            value = (value << 8) | byte
+        if value == _VINT_MASKS[n - 1]:
+            raise EbmlError(f"reserved EBML ID at offset {start}")
+        return value, n
+
     def read_vint(self, *, allow_unknown: bool = False) -> tuple[int | None, int]:
         """Return (value, octet_count); value is None for an unknown length."""
         start = self.pos()
         first = self._read_exact(1)[0]
         n = _vint_length(first)
-        raw = self._read_exact(n - 1)
-        value = first & _VINT_MASKS[n - 1]
-        for byte in raw:
+        tail = self._read_exact(n - 1)
+        # First octet keeps 8-n data bits below the marker; tail octets each
+        # carry 8 data bits, for 7*N data bits overall.
+        value = first & (0x7F >> (n - 1))
+        for byte in tail:
             value = (value << 8) | byte
         if value == _VINT_MASKS[n - 1]:
             if not allow_unknown:
@@ -91,10 +112,7 @@ class EbmlReader:
         if depth > MAX_ELEMENT_DEPTH:
             raise EbmlError(f"element nesting exceeds {MAX_ELEMENT_DEPTH}")
         header_start = self.pos()
-        eid, id_len = self.read_vint()
-        # Reserved EBML IDs have every data bit set.
-        if eid == _VINT_MASKS[id_len - 1]:
-            raise EbmlError(f"reserved EBML ID at offset {header_start}")
+        eid, id_len = self.read_id()
         size, size_len = self.read_vint(
             allow_unknown=eid in self._unknown_ids
         )
@@ -115,9 +133,7 @@ class EbmlReader:
         return Element(eid, header_start, data_start, size, end, depth)
 
     def push_bound(self, element: Element) -> None:
-        if element.known_size:
-            self.seek(element.end)  # sanity: bounded parent fully consumed later
-            self.seek(element.data_start)
+        self.seek(element.data_start)
         self._bounds.append(element.end)
 
     def pop_bound(self) -> None:
@@ -147,7 +163,7 @@ class EbmlReader:
                 peek = self._f.read(1)
                 if not peek:
                     if parent.end is None:
-                        return  # unknown-length parent ends at EOF
+                        return  # unknown-length parent ends cleanly at EOF
                     raise EbmlError("truncated parent element before boundary")
                 self.seek(header_pos)
                 child = self.read_element_header(parent.depth + 1)
@@ -206,17 +222,22 @@ class EbmlReader:
 
 
 def encode_id(eid: int) -> bytes:
-    """Encode an EBML ID constant (already carries VINT marker bits)."""
+    """Encode an EBML ID constant.
+
+    Element IDs keep their length marker in the high bit of the leading
+    octet (the marker position is fixed by the ID's class width), so the
+    constant is serialized at its natural big-endian byte width after
+    validating that the leading octet actually contains a legal marker.
+    """
     if eid <= 0:
         raise EbmlError(f"invalid EBML ID {eid!r}")
-    for n in range(1, 5):
-        if eid < 1 << (8 * n):
-            encoded = eid.to_bytes(n, "big")
-            # The leading byte must contain a VINT length marker.
-            if _vint_length(encoded[0]) != n:
-                raise EbmlError(f"ID {eid:#x} lacks a legal VINT marker")
-            return encoded
-    raise EbmlError(f"EBML ID {eid:#x} too long")
+    n = max(1, (eid.bit_length() + 7) // 8)
+    if n > 4:
+        raise EbmlError(f"EBML ID {eid:#x} too long")
+    encoded = eid.to_bytes(n, "big")
+    if _vint_length(encoded[0]) != n:
+        raise EbmlError(f"ID {eid:#x} lacks a legal VINT marker for width {n}")
+    return encoded
 
 
 def encode_vint(value: int, num_octets: int | None = None) -> bytes:
@@ -224,22 +245,31 @@ def encode_vint(value: int, num_octets: int | None = None) -> bytes:
     if value < 0:
         raise EbmlError("VINT cannot encode negative values")
     if num_octets is None:
+        # Data values 0..mask-1 fit; mask (all data bits 1) is the reserved
+        # unknown-length pattern and must widen the encoding.
         num_octets = 1
-        while value >= _VINT_MASKS[num_octets - 1]:  # all-ones is reserved
+        while value >= _VINT_MASKS[num_octets - 1]:
             num_octets += 1
             if num_octets > 8:
                 raise EbmlError("VINT value too large")
     if value >= _VINT_MASKS[num_octets - 1]:
         raise EbmlError(f"value {value} does not fit in {num_octets}-octet VINT")
-    marker = 1 << (8 * num_octets - 1)
+    # Marker bit sits immediately above the 7*N data bits.
+    marker = 1 << (7 * num_octets)
     return (marker | value).to_bytes(num_octets, "big")
 
 
 def unknown_size_vint(num_octets: int) -> bytes:
-    """Return the all-ones unknown-length VINT header of the given width."""
+    """Return the all-ones unknown-length VINT header of the given width.
+
+    The leading octet carries the marker at bit ``8 - num_octets``; every
+    data bit, in the leading and following octets, is set to one.
+    """
     if not 1 <= num_octets <= 8:
         raise EbmlError("VINT octet count must be 1..8")
-    return b"\xff" if num_octets == 1 else (b"\x7f" + b"\xff" * (num_octets - 1))
+    marker = 1 << (8 - num_octets)
+    leading = marker | (marker - 1)  # marker plus all lower data bits
+    return bytes([leading]) + b"\xff" * (num_octets - 1)
 
 
 def encode_element(eid: int, payload: bytes) -> bytes:
