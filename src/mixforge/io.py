@@ -104,6 +104,72 @@ def write_wav(path: Path | str, data: np.ndarray, sample_rate: int) -> None:
         raise AudioIOError(f"cannot write WAV: {exc}", location=location) from exc
 
 
+class WavWriter:
+    """Incremental float32 WAV writer for the streaming path."""
+
+    def __init__(self, path: Path | str, sample_rate: int, channels: int) -> None:
+        self.path = Path(path)
+        self.location = _path_location(self.path)
+        if sample_rate <= 0:
+            raise AudioIOError("invalid sample rate", location=self.location)
+        if channels not in (1, MAX_CHANNELS):
+            raise AudioIOError("expected mono or stereo output", location=self.location)
+        self.sample_rate = int(sample_rate)
+        self.channels = int(channels)
+        self.frames_written = 0
+        self._handle: sf.SoundFile | None = None
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self._handle = sf.SoundFile(
+                str(self.path),
+                mode="w",
+                samplerate=self.sample_rate,
+                channels=self.channels,
+                format="WAV",
+                subtype="FLOAT",
+            )
+        except (RuntimeError, OSError, TypeError, ValueError) as exc:
+            raise AudioIOError(f"cannot open WAV for writing: {exc}", location=self.location) from exc
+
+    def write(self, data: np.ndarray) -> None:
+        array = _validate_audio(np.asarray(data, dtype=np.float64), self.location)
+        if self._handle is None:
+            raise AudioIOError("writer is closed", location=self.location)
+        if array.shape[1] != self.channels:
+            raise AudioIOError(
+                f"expected {self.channels} output channels, got {array.shape[1]}",
+                location=self.location,
+            )
+        try:
+            self._handle.write(array.astype(np.float32))
+        except (RuntimeError, OSError, TypeError, ValueError) as exc:
+            raise AudioIOError(
+                f"cannot write WAV frames starting at {self.frames_written}: {exc}",
+                location=self.location,
+            ) from exc
+        self.frames_written += int(array.shape[0])
+
+    def close(self) -> None:
+        if self._handle is not None:
+            self._handle.close()
+            self._handle = None
+
+    def abort(self) -> None:
+        """Close and remove a partially written file."""
+
+        self.close()
+        try:
+            self.path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    def __enter__(self) -> "WavWriter":
+        return self
+
+    def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+        self.close()
+
+
 class WavSource:
     """Seekable source reader; each read is bounded by the requested range."""
 
