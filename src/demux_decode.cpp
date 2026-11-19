@@ -246,7 +246,8 @@ DecodeResult runDecodePipeline(const std::string& path, const DecodeConfig& conf
             ++sc->packets;
             const bool corrupt = (packet->flags & AV_PKT_FLAG_CORRUPT) != 0;
             auto norm = sc->normalizer->normalize(
-                packet->pts, packet->pts != AV_NOPTS_VALUE, packet->duration,
+                packet->pts, packet->pts != AV_NOPTS_VALUE,
+                packet->dts, packet->dts != AV_NOPTS_VALUE, packet->duration,
                 toTimeBase(fmt->streams[sc->index]->time_base));
             sc->pending_flags.emplace_back(norm.repaired, norm.discontinuity);
             if (config.on_packet) {

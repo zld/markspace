@@ -23,25 +23,27 @@ TimestampNormalizer::TimestampNormalizer(double discontinuity_tolerance_seconds,
                                      : 0.0) {}
 
 TimestampNormalizer::Result TimestampNormalizer::normalize(
-    std::int64_t pts, bool pts_valid, std::int64_t duration_ticks,
-    const StreamTimeBase& time_base) {
+    std::int64_t pts_ticks, bool pts_valid,
+    std::int64_t order_ticks, bool order_valid,
+    std::int64_t duration_ticks, const StreamTimeBase& time_base) {
     Result out;
     const double tick = time_base.secondsPerTick();
-    double pts_seconds = pts_valid ? static_cast<double>(pts) * tick : 0.0;
+    double pts_seconds = pts_valid ? static_cast<double>(pts_ticks) * tick : 0.0;
 
-    // Missing PTS: infer from the previous frame's duration.
+    // Missing presentation PTS: infer from the previous frame's duration.
     if (!pts_valid) {
         out.repaired = true;
         ++repairs_;
         pts_seconds = initialized_ ? last_pts_seconds_ + last_duration_seconds_ : 0.0;
     }
 
+    // Discontinuity classification runs on decode-order timestamps so B-frame
+    // PTS reordering is not mistaken for a rollback. Fall back to PTS only if
+    // the container provides no order timestamp.
+    const double order_seconds =
+        order_valid ? static_cast<double>(order_ticks) * tick : pts_seconds;
     if (initialized_) {
-        const double delta = pts_seconds - last_pts_seconds_;
-        // Backward beyond tolerance, or a forward gap far exceeding the
-        // nominal frame period, is treated as a discontinuity. The nominal
-        // period (not the previous packet's own duration) is used so that a
-        // jump packet carrying a widened duration is still detected.
+        const double delta = order_seconds - last_order_seconds_;
         const bool backward = delta < -tolerance_seconds_;
         const bool forward_gap =
             delta > fallback_duration_seconds_ + tolerance_seconds_ &&
@@ -49,10 +51,6 @@ TimestampNormalizer::Result TimestampNormalizer::normalize(
         if (backward || forward_gap) {
             out.discontinuity = true;
             ++discontinuities_;
-        } else if (delta < 0.0) {
-            // Small rollback inside the tolerance window: keep monotonic
-            // without emitting a discontinuity event.
-            pts_seconds = last_pts_seconds_;
         }
     }
 
@@ -68,6 +66,7 @@ TimestampNormalizer::Result TimestampNormalizer::normalize(
 
     initialized_ = true;
     last_pts_seconds_ = pts_seconds;
+    last_order_seconds_ = order_seconds;
     last_duration_seconds_ = duration_seconds;
     return out;
 }

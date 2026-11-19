@@ -30,8 +30,14 @@ public:
         bool discontinuity = false;
     };
 
-    // duration_ticks may be 0 if the demuxer provides no packet duration.
-    Result normalize(std::int64_t pts, bool pts_valid, std::int64_t duration_ticks,
+    // Normalizes one packet. order_ticks is the decode-order timestamp (DTS)
+    // used only for discontinuity classification, since B-frame reordering
+    // makes PTS non-monotonic in arrival order. pts_ticks is the presentation
+    // timestamp reported downstream; when it is missing the previous frame
+    // duration is used and the repair is counted.
+    Result normalize(std::int64_t pts_ticks, bool pts_valid,
+                     std::int64_t order_ticks, bool order_valid,
+                     std::int64_t duration_ticks,
                      const StreamTimeBase& time_base);
 
     std::uint64_t repairs() const { return repairs_; }
@@ -45,6 +51,7 @@ private:
     double fallback_duration_seconds_;
     bool initialized_ = false;
     double last_pts_seconds_ = 0.0;
+    double last_order_seconds_ = 0.0;
     double last_duration_seconds_ = 0.0;
     std::uint64_t repairs_ = 0;
     std::uint64_t discontinuities_ = 0;
