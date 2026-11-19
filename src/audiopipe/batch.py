@@ -498,3 +498,162 @@ def format_summary(report: dict) -> str:
         f"files={summary['files']} success={summary['success']} "
         f"failed={summary['failed']}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Report verification
+# ---------------------------------------------------------------------------
+
+RMS_TOLERANCE_ABS = 1e-9
+RMS_TOLERANCE_REL = 1e-6
+PEAK_TOLERANCE = 1e-9
+LUFS_TOLERANCE = 1e-4
+
+
+class VerificationError(Exception):
+    """The report itself cannot be used for verification."""
+
+
+def verify_report(report_path: str) -> dict:
+    """Re-read every successful output and recompute its measurements.
+
+    Checks the sample rate, channel count, frame count, RMS, peak,
+    K-weighted LUFS and rail-clipping count against the JSON record
+    within documented tolerances.  Returns a verification document.
+    """
+    try:
+        with open(report_path, "r", encoding="utf-8") as fh:
+            report = json.load(fh)
+    except (OSError, ValueError) as exc:
+        raise VerificationError(f"cannot read report: {exc}") from exc
+    if not isinstance(report, dict) or not isinstance(report.get("files"), list):
+        raise VerificationError("report is missing a 'files' list")
+
+    output_dir = report.get("config", {}).get("output_dir")
+    if not output_dir:
+        raise VerificationError("report is missing config.output_dir")
+
+    results = []
+    for record in report["files"]:
+        if record.get("status") != "ok":
+            results.append(
+                {
+                    "relative_path": record.get("relative_path"),
+                    "status": "skipped",
+                    "reason": "processing failed",
+                }
+            )
+            continue
+        results.append(_verify_record(record, output_dir))
+
+    checked = sum(1 for r in results if r["status"] in ("ok", "mismatch"))
+    mismatched = sum(1 for r in results if r["status"] == "mismatch")
+    return {
+        "report": report_path,
+        "summary": {
+            "files": len(results),
+            "checked": checked,
+            "mismatched": mismatched,
+            "skipped": len(results) - checked,
+        },
+        "files": results,
+    }
+
+
+def _verify_record(record: dict, output_dir: str) -> dict:
+    relative_path = record.get("relative_path")
+    expected = record.get("output", {})
+    subtype = expected.get("subtype", "PCM_24")
+    path = os.path.join(output_dir, *str(relative_path).split("/"))
+    checks: list[dict] = []
+    try:
+        info = probe_wav(path)
+        meter = LevelMeter(info.sample_rate, info.channels)
+        rails = 0
+        with WavReader(path, block_frames=DEFAULT_BLOCK_FRAMES) as reader:
+            for block in reader.blocks():
+                meter.feed(block)
+                rails += count_rail_samples(block, subtype)
+        measured = meter.snapshot()
+    except PipelineError as exc:
+        return {
+            "relative_path": relative_path,
+            "status": "mismatch",
+            "error": exc.to_dict(),
+            "checks": checks,
+        }
+
+    def check(name, reported, recomputed, ok, tolerance=None):
+        checks.append(
+            {
+                "name": name,
+                "reported": reported,
+                "recomputed": recomputed,
+                "tolerance": tolerance,
+                "ok": bool(ok),
+            }
+        )
+
+    check(
+        "sample_rate",
+        expected.get("sample_rate"),
+        info.sample_rate,
+        expected.get("sample_rate") == info.sample_rate,
+    )
+    check(
+        "channels",
+        expected.get("channels"),
+        info.channels,
+        expected.get("channels") == info.channels and 1 <= info.channels <= 8,
+    )
+    check(
+        "frames",
+        expected.get("frames"),
+        info.frames,
+        expected.get("frames") == info.frames,
+    )
+    reported_after = record.get("after", {})
+    reported_rms = reported_after.get("rms")
+    ok = (
+        isinstance(reported_rms, (int, float))
+        and abs(reported_rms - measured.rms)
+        <= max(RMS_TOLERANCE_ABS, RMS_TOLERANCE_REL * abs(measured.rms))
+    )
+    check(
+        "after.rms",
+        reported_rms,
+        measured.rms,
+        ok,
+        {"abs": RMS_TOLERANCE_ABS, "rel": RMS_TOLERANCE_REL},
+    )
+    reported_peak = reported_after.get("peak")
+    check(
+        "after.peak",
+        reported_peak,
+        measured.peak,
+        isinstance(reported_peak, (int, float))
+        and abs(reported_peak - measured.peak) <= PEAK_TOLERANCE,
+        {"abs": PEAK_TOLERANCE},
+    )
+    reported_lufs = reported_after.get("lufs")
+    if reported_lufs is None or measured.lufs is None:
+        lufs_ok = reported_lufs == measured.lufs
+        lufs_delta = None
+    else:
+        lufs_delta = abs(reported_lufs - measured.lufs)
+        lufs_ok = lufs_delta <= LUFS_TOLERANCE
+    check("after.lufs", reported_lufs, measured.lufs, lufs_ok, {"abs": LUFS_TOLERANCE})
+    reported_clipped = reported_after.get("clipped_samples")
+    check(
+        "after.clipped_samples",
+        reported_clipped,
+        rails,
+        reported_clipped == rails,
+        {"abs": 0},
+    )
+    status = "ok" if all(c["ok"] for c in checks) else "mismatch"
+    return {
+        "relative_path": relative_path,
+        "status": status,
+        "checks": checks,
+    }
