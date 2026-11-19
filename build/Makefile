@@ -156,6 +156,19 @@ h264scan/fast:
 .PHONY : h264scan/fast
 
 #=============================================================================
+# Target rules for targets named fixture_gen
+
+# Build rule for target.
+fixture_gen: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 fixture_gen
+.PHONY : fixture_gen
+
+# fast build rule for target.
+fixture_gen/fast:
+	$(MAKE) $(MAKESILENT) -f tools/CMakeFiles/fixture_gen.dir/build.make tools/CMakeFiles/fixture_gen.dir/build
+.PHONY : fixture_gen/fast
+
+#=============================================================================
 # Convenience rules to build test dependencies.
 
 # Build the dependencies of a test.
@@ -268,6 +281,7 @@ help:
 	@echo "... edit_cache"
 	@echo "... rebuild_cache"
 	@echo "... test"
+	@echo "... fixture_gen"
 	@echo "... h264core"
 	@echo "... h264scan"
 	@echo "... src/access_unit.o"

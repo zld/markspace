@@ -54,4 +54,5 @@ set(CMAKE_MAKEFILE_PRODUCTS
 set(CMAKE_DEPEND_INFO_FILES
   "CMakeFiles/h264core.dir/DependInfo.cmake"
   "tools/CMakeFiles/h264scan.dir/DependInfo.cmake"
+  "tools/CMakeFiles/fixture_gen.dir/DependInfo.cmake"
   )

@@ -143,6 +143,20 @@ h264scan/fast:
 	cd /Users/zld/WorkSpace/pair-wise-workspace/13786/build && $(MAKE) $(MAKESILENT) -f tools/CMakeFiles/h264scan.dir/build.make tools/CMakeFiles/h264scan.dir/build
 .PHONY : h264scan/fast
 
+# Convenience name for target.
+tools/CMakeFiles/fixture_gen.dir/rule:
+	cd /Users/zld/WorkSpace/pair-wise-workspace/13786/build && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 tools/CMakeFiles/fixture_gen.dir/rule
+.PHONY : tools/CMakeFiles/fixture_gen.dir/rule
+
+# Convenience name for target.
+fixture_gen: tools/CMakeFiles/fixture_gen.dir/rule
+.PHONY : fixture_gen
+
+# fast build rule for target.
+fixture_gen/fast:
+	cd /Users/zld/WorkSpace/pair-wise-workspace/13786/build && $(MAKE) $(MAKESILENT) -f tools/CMakeFiles/fixture_gen.dir/build.make tools/CMakeFiles/fixture_gen.dir/build
+.PHONY : fixture_gen/fast
+
 __/src/main.o: __/src/main.cpp.o
 .PHONY : __/src/main.o
 
@@ -167,6 +181,30 @@ __/src/main.cpp.s:
 	cd /Users/zld/WorkSpace/pair-wise-workspace/13786/build && $(MAKE) $(MAKESILENT) -f tools/CMakeFiles/h264scan.dir/build.make tools/CMakeFiles/h264scan.dir/__/src/main.cpp.s
 .PHONY : __/src/main.cpp.s
 
+generate_fixture.o: generate_fixture.cpp.o
+.PHONY : generate_fixture.o
+
+# target to build an object file
+generate_fixture.cpp.o:
+	cd /Users/zld/WorkSpace/pair-wise-workspace/13786/build && $(MAKE) $(MAKESILENT) -f tools/CMakeFiles/fixture_gen.dir/build.make tools/CMakeFiles/fixture_gen.dir/generate_fixture.cpp.o
+.PHONY : generate_fixture.cpp.o
+
+generate_fixture.i: generate_fixture.cpp.i
+.PHONY : generate_fixture.i
+
+# target to preprocess a source file
+generate_fixture.cpp.i:
+	cd /Users/zld/WorkSpace/pair-wise-workspace/13786/build && $(MAKE) $(MAKESILENT) -f tools/CMakeFiles/fixture_gen.dir/build.make tools/CMakeFiles/fixture_gen.dir/generate_fixture.cpp.i
+.PHONY : generate_fixture.cpp.i
+
+generate_fixture.s: generate_fixture.cpp.s
+.PHONY : generate_fixture.s
+
+# target to generate assembly for a file
+generate_fixture.cpp.s:
+	cd /Users/zld/WorkSpace/pair-wise-workspace/13786/build && $(MAKE) $(MAKESILENT) -f tools/CMakeFiles/fixture_gen.dir/build.make tools/CMakeFiles/fixture_gen.dir/generate_fixture.cpp.s
+.PHONY : generate_fixture.cpp.s
+
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -176,10 +214,14 @@ help:
 	@echo "... edit_cache"
 	@echo "... rebuild_cache"
 	@echo "... test"
+	@echo "... fixture_gen"
 	@echo "... h264scan"
 	@echo "... __/src/main.o"
 	@echo "... __/src/main.i"
 	@echo "... __/src/main.s"
+	@echo "... generate_fixture.o"
+	@echo "... generate_fixture.i"
+	@echo "... generate_fixture.s"
 .PHONY : help
 
 
