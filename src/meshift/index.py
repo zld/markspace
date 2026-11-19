@@ -65,7 +65,7 @@ def _fullbox_head(box: Box) -> tuple[int, int]:
     if len(payload) < 4:
         raise IndexCheckError(f"{box.box_type!r} missing fullbox header")
     version = payload[0]
-    flags = struct.unpack(">I", payload)[0] & 0x00FFFFFF
+    flags = struct.unpack(">I", payload[:4])[0] & 0x00FFFFFF
     return version, flags
 
 
@@ -76,7 +76,13 @@ def _read_table(box: Box, width: int) -> list[tuple[int, ...]]:
     pos = 4
     for _ in range(count):
         if width == 2:
-            entries.append(struct.unpack_from(">iI", payload, pos))
+            sample_count = struct.unpack_from(">I", payload, pos)[0]
+            if box.box_type == b"ctts":
+                # Version 1 composition offsets are signed 32-bit values.
+                value = struct.unpack_from(">i", payload, pos + 4)[0]
+            else:
+                value = struct.unpack_from(">I", payload, pos + 4)[0]
+            entries.append((sample_count, value))
             pos += 8
         else:
             entries.append((struct.unpack_from(">I", payload, pos)[0],))
@@ -115,7 +121,7 @@ def verify_index(data: bytes, tracks: list[NormalizedTrack],
                 f"track {track.output_number}: stsz size mismatch")
 
         offsets = [struct.unpack_from(
-            ">Q", co64.payload, 12 + 8 * idx)[0]
+            ">Q", co64.payload, 8 + 8 * idx)[0]
             for idx in range(len(track.samples))]
         if any(not (mdat_start <= off < mdat_end) for off in offsets):
             raise IndexCheckError(

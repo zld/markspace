@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import struct
+from dataclasses import dataclass
 
 from . import MAX_OUTPUT_BYTES
 from .errors import MP4WriteError, SizeLimitError, UnsupportedCodecError
@@ -22,6 +23,14 @@ CODEC_MAPPING = {
 }
 
 FTYP_BRANDS = b"isomiso5mp42"
+
+
+@dataclass
+class MP4Layout:
+    payload: bytes
+    mdat_start: int
+    mdat_end: int
+    chunk_offsets: list[list[int]]
 
 
 def box(box_type: bytes, payload: bytes = b"") -> bytes:
@@ -113,7 +122,9 @@ def _ctts(track: NormalizedTrack) -> bytes:
             entries.append((1, sample.composition_offset_ns))
     payload = struct.pack(">I", len(entries))
     for count, offset in entries:
-        payload += struct.pack(">iI", count, offset)
+        # Version 1 ctts treats sample_offset as signed; the wire field is
+        # still a 32-bit word, so encode through the signed integer range.
+        payload += struct.pack(">II", count, offset & 0xFFFFFFFF)
     return fullbox(b"ctts", 1, 0, payload)
 
 
@@ -131,8 +142,9 @@ def _minf(track: NormalizedTrack, offsets: list[int]) -> bytes:
 
 def _mdia(track: NormalizedTrack, offsets: list[int]) -> bytes:
     mdhd = fullbox(b"mdhd", 1, 0,
-                   struct.pack(">QQII", 0, OUTPUT_TIMESCALE,
-                               track.last_dts_ns, 0x55C40000, 0))
+                   struct.pack(">QQIQ", 0, 0, OUTPUT_TIMESCALE,
+                               track.last_dts_ns)
+                   + struct.pack(">HH", 0x55C4, 0))
     handler = (b"\x00" * 4
                + (b"vide" if track.kind == TRACK_VIDEO else b"soun")
                + b"\x00" * 12 + b"meshift\x00")
@@ -167,7 +179,7 @@ def build_moov(tracks: list[NormalizedTrack],
     return box(b"moov", mvhd + traks)
 
 
-def build_mp4(tracks: list[NormalizedTrack]) -> bytes:
+def build_mp4(tracks: list[NormalizedTrack]) -> MP4Layout:
     """Serialize ftyp + moov + mdat and validate the size ceiling."""
     ftyp = box(b"ftyp", b"isom" + struct.pack(">I", 0x200) + FTYP_BRANDS)
     media = b"".join(s.payload for t in tracks for s in t.samples)
@@ -193,4 +205,5 @@ def build_mp4(tracks: list[NormalizedTrack]) -> bytes:
     if total > MAX_OUTPUT_BYTES:
         raise SizeLimitError(
             f"output would be {total} bytes, limit is {MAX_OUTPUT_BYTES}")
-    return ftyp + moov + box(b"mdat", media)
+    return MP4Layout(ftyp + moov + box(b"mdat", media),
+                     mdat_base, mdat_base + len(media), chunk_offsets)
