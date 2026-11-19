@@ -52,6 +52,7 @@ import numpy as np
 
 __all__ = [
     "FilterSpec",
+    "PolyphaseResampler",
     "RateRatio",
     "design_filter",
     "reduce_ratio",
@@ -180,3 +181,204 @@ def _identity_spec(in_rate: int, out_rate: int) -> FilterSpec:
         cutoff_normalized=1.0,
         dc_gain=1.0,
     )
+
+
+class PolyphaseResampler:
+    """Streaming multi-channel rational resampler."""
+
+    def __init__(self, in_rate: int, out_rate: int, channels: int) -> None:
+        _check_rate("in_rate", in_rate)
+        _check_rate("out_rate", out_rate)
+        if not isinstance(channels, int) or isinstance(channels, bool) or not 1 <= channels <= 8:
+            raise ValueError(f"channels must be an integer between 1 and 8, got {channels!r}")
+        self.in_rate = in_rate
+        self.out_rate = out_rate
+        self.channels = channels
+        self.ratio = reduce_ratio(in_rate, out_rate)
+        self.identity = self.ratio.numerator == self.ratio.denominator
+        if self.identity:
+            self.taps = np.zeros((1, 0), dtype=np.float64)
+            self.spec = _identity_spec(in_rate, out_rate)
+        else:
+            if self.ratio.numerator > 4096 or self.ratio.denominator > 4096:
+                raise ValueError(
+                    "sample rate ratio is too large to design a practical kernel: "
+                    f"{self.ratio.numerator}/{self.ratio.denominator}"
+                )
+            self.taps, self.spec = design_filter(in_rate, out_rate)
+
+        self._K = self.spec.taps_per_phase
+        self._half = self._K // 2
+        self._buf = np.zeros((0, channels), dtype=np.float64)
+        self._buf_start = 0
+        self._n_received = 0
+        self._next_output = 0
+        self._finished = False
+        self._total_output = 0
+
+    # -- geometry ----------------------------------------------------------
+    @property
+    def _L(self) -> int:
+        return self.ratio.numerator
+
+    @property
+    def _M(self) -> int:
+        return self.ratio.denominator
+
+    def output_frames_for(self, input_frames: int) -> int:
+        if input_frames < 0:
+            raise ValueError("input_frames must be non-negative")
+        if self.identity:
+            return input_frames
+        return (input_frames * self._L) // self._M
+
+    @property
+    def padding_frames(self) -> int:
+        """Zero-padded input frames required for the convolution.
+
+        Counts the virtual pre-roll of ``K/2`` frames on the left and the
+        trailing taps that cross the end of the signal on the right.  An
+        empty input needs no padding because no output sample exists.
+        """
+        return self.padding_breakdown[0] + self.padding_breakdown[1]
+
+    @property
+    def padding_breakdown(self) -> tuple[int, int]:
+        if self.identity or self._n_received == 0:
+            return (0, 0)
+        n_out = self.output_frames_for(self._n_received)
+        if n_out == 0:
+            return (self._half, 0)
+        last_j = n_out - 1
+        last_needed = (last_j * self._M) // self._L + self._half
+        right = max(0, last_needed - (self._n_received - 1))
+        return (self._half, right)
+
+    # -- processing --------------------------------------------------------
+    def process_chunk(self, chunk: np.ndarray) -> np.ndarray:
+        """Resample one chunk and return ``(out_frames, channels)`` float64."""
+        if self._finished:
+            raise RuntimeError("process_chunk() called after finish()")
+        arr = np.asarray(chunk, dtype=np.float64)
+        if arr.ndim != 2 or arr.shape[1] != self.channels:
+            raise ValueError(
+                f"expected a 2-D array with {self.channels} channels, got shape {arr.shape}"
+            )
+        if not np.all(np.isfinite(arr)):
+            raise ValueError("input contains non-finite samples")
+        if arr.shape[0] == 0:
+            return np.zeros((0, self.channels), dtype=np.float64)
+        self._n_received += arr.shape[0]
+        if self.identity:
+            return arr.copy()
+
+        self._buf = np.concatenate((self._buf, arr), axis=0)
+        available_last = self._n_received - 1
+        limit = available_last - self._half
+        if limit < 0:
+            return np.zeros((0, self.channels), dtype=np.float64)
+        # Smallest j_stop with floor(j*M/L) > limit, i.e. ceil((limit+1)*L/M).
+        j_stop = ((limit + 1) * self._L + self._M - 1) // self._M
+        out = self._emit(self._next_output, j_stop, buffered=True)
+        self._next_output += out.shape[0]
+        self._prune()
+        return out
+
+    def finish(self) -> np.ndarray:
+        """Emit the remaining output frames (tail zero-padded)."""
+        if self._finished:
+            raise RuntimeError("finish() called twice")
+        self._finished = True
+        if self.identity:
+            self._total_output = self._n_received
+            return np.zeros((0, self.channels), dtype=np.float64)
+        total = self.output_frames_for(self._n_received)
+        out = self._emit(self._next_output, total, buffered=False)
+        self._total_output = total
+        self._next_output = total
+        return out
+
+    def _prune(self) -> None:
+        if self.identity:
+            return
+        # Output j reads input indices floor(j*M/L) + K/2 - K ... + K/2.
+        keep_from = (self._next_output * self._M) // self._L - self._half
+        keep_from = max(0, keep_from)
+        drop = keep_from - self._buf_start
+        if drop > 0:
+            self._buf = self._buf[drop:]
+            self._buf_start = keep_from
+
+    def _emit(self, j_start: int, j_stop: int, *, buffered: bool) -> np.ndarray:
+        if j_stop <= j_start:
+            return np.zeros((0, self.channels), dtype=np.float64)
+        if self.identity:
+            raise RuntimeError("identity resampler has no filtered path")
+        count = j_stop - j_start
+        out = np.empty((count, self.channels), dtype=np.float64)
+        K = self._K
+        half = self._half
+        taps = self.taps
+        r = np.arange(K + 1, dtype=np.int64)
+        block = max(1, min(_MAX_BLOCK_OUTPUTS, _MAX_BLOCK_FLOATS // max(1, (K + 1) * self.channels)))
+        buf_len = self._buf.shape[0]
+        for off in range(0, count, block):
+            stop = min(count, off + block)
+            js = np.arange(j_start + off, j_start + stop, dtype=np.int64)
+            q = (js * self._M) // self._L
+            phases = (js * self._M) % self._L
+            idx = q[:, None] + half - r[None, :]  # absolute input index
+            rel = idx - self._buf_start
+            buf_end = self._buf_start + buf_len  # exclusive
+            valid = (idx >= 0) & (idx < buf_end)  # zeros outside the signal
+            if buffered:
+                # Mid-stream the buffer must cover every non-negative index;
+                # only the virtual pre-roll (idx < 0 at the stream start) is
+                # allowed to fall outside it.
+                floor = 0 if self._buf_start == 0 else self._buf_start
+                if not np.all((idx < 0) | ((idx >= floor) & (idx < buf_end))):
+                    raise RuntimeError(
+                        "resampler buffer underrun; chunk history was pruned too aggressively"
+                    )
+            np.clip(rel, 0, buf_len - 1, out=rel)
+            weights = taps[phases]
+            for ch in range(self.channels):
+                gathered = self._buf[rel, ch]
+                if not np.all(valid):
+                    gathered = np.where(valid, gathered, 0.0)
+                out[off:stop, ch] = np.einsum(
+                    "ij,ij->i", weights, gathered, optimize=False
+                )
+        if not np.all(np.isfinite(out)):
+            raise ValueError("resampler produced non-finite output")
+        return out
+
+    @property
+    def input_frames(self) -> int:
+        return self._n_received
+
+    @property
+    def output_frames(self) -> int:
+        return self._total_output if self._finished else self._next_output
+
+    @property
+    def expected_output_frames(self) -> int:
+        return self.output_frames_for(self._n_received)
+
+
+def resample_array(
+    data: np.ndarray, in_rate: int, out_rate: int, *, block_frames: int = 65536
+) -> tuple[np.ndarray, PolyphaseResampler]:
+    """Convenience wrapper: resample a whole ``frames x channels`` array."""
+    arr = np.asarray(data, dtype=np.float64)
+    if arr.ndim != 2:
+        raise ValueError("expected a 2-D frames x channels array")
+    rs = PolyphaseResampler(in_rate, out_rate, arr.shape[1])
+    parts = []
+    for start in range(0, arr.shape[0], max(1, block_frames)):
+        parts.append(rs.process_chunk(arr[start : start + block_frames]))
+    parts.append(rs.finish())
+    if not parts:
+        return np.zeros((0, arr.shape[1])), rs
+    out = np.concatenate(parts, axis=0) if len(parts) > 1 else parts[0]
+    return out, rs
