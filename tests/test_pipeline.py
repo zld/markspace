@@ -350,7 +350,7 @@ class FailureTests(FixtureCase):
         for path in self.invalid.iterdir():
             (mixed / path.name).write_bytes(path.read_bytes())
         result, output, report = self.batch(
-            "--rate", "48000", "--jobs", "3", out="mixed", input_dir=mixed
+            "--rate", "48000", "--jobs", "3", out="mixed-out", input_dir=mixed
         )
         self.assertEqual(result.returncode, 1)
         document = json.loads(report.read_text())
@@ -407,6 +407,52 @@ class FailureTests(FixtureCase):
         self.assertEqual(document["counts"]["total"], 1)
         self.assertEqual(document["files"][0]["input"], "mono_22050.wav")
         self.assertTrue((self.tmp / "single" / "mono_22050.wav").exists())
+
+    def test_output_equal_to_input_is_refused(self) -> None:
+        result = run_cli(
+            "batch",
+            "--input",
+            str(self.input),
+            "--output",
+            str(self.input),
+            "--rate",
+            "48000",
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("output_equals_input", result.stderr)
+
+    def test_single_file_into_its_own_directory_is_refused(self) -> None:
+        result = run_cli(
+            "batch",
+            "--input",
+            str(self.input / "mono_22050.wav"),
+            "--output",
+            str(self.input),
+            "--rate",
+            "48000",
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("output_equals_input", result.stderr)
+
+    def test_case_insensitive_name_collision_is_rejected(self) -> None:
+        # APFS cannot hold both files, so exercise the guard directly: two
+        # inputs whose names differ only by case must not silently overwrite.
+        from audiopipe.batch import _unique_output
+
+        taken: dict[str, str] = {}
+        _unique_output("dir/Clip.WAV", taken, input_relative="dir/Clip.WAV")
+        with self.assertRaises(Exception) as caught:
+            _unique_output("dir/clip.wav", taken, input_relative="dir/clip.wav")
+        self.assertEqual(getattr(caught.exception, "reason", None), "output_collision")
+
+    def test_distinct_directories_do_not_collide(self) -> None:
+        from audiopipe.batch import _unique_output
+
+        taken: dict[str, str] = {}
+        _unique_output("a/tone.WAV", taken, input_relative="a/tone.WAV")
+        path, rel = _unique_output("b/tone.WAV", taken, input_relative="b/tone.WAV")
+        self.assertEqual(rel, "b/tone.wav")
+        self.assertTrue(path.as_posix().endswith("b/tone.wav"))
 
     def test_rejects_oversized_rate_via_limit(self) -> None:
         # A file claiming 400 kHz is beyond the documented input limit.

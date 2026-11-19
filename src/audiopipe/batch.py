@@ -40,7 +40,7 @@ def discover_inputs(root: Path, *, exclude: list[Path]) -> list[tuple[Path, str]
             if Path(name).suffix.lower() in WAV_SUFFIXES:
                 path = here / name
                 found.append((path, path.relative_to(root).as_posix()))
-    found.sort(key=lambda item: item[1])
+    found.sort(key=lambda item: item[1].lower())
     if not found:
         raise UsageError(f"no WAV files found under {root}", reason="empty_input")
     return found
@@ -76,13 +76,18 @@ class BatchOutcome:
 def _unique_output(
     relative: str, taken: dict[str, str], *, input_relative: str
 ) -> tuple[Path, str]:
-    """Map a relative input path to a collision-free output relative path."""
+    """Map a relative input path to a collision-free output relative path.
+
+    Files that differ only by extension case (``A.WAV`` / ``a.wav``) would
+    otherwise race on a case-insensitive volume such as macOS APFS, so the
+    second one is rejected rather than silently overwriting the first.
+    """
     rel = Path(relative)
     candidate = rel.with_name(output_name(rel))
     key = candidate.as_posix().lower()
     if key in taken and taken[key] != input_relative:
         raise InputError(
-            f"output name collides with {taken[key]}",
+            f"output name collides case-insensitively with {taken[key]}",
             reason="output_collision",
         )
     taken[key] = input_relative
@@ -102,8 +107,19 @@ def run_batch(
     if jobs < 1:
         raise UsageError("jobs must be >= 1")
     out_abs = _resolve(output_root)
+    in_abs = _resolve(input_root)
+    if in_abs.is_dir() and out_abs == in_abs:
+        raise UsageError(
+            "output directory must differ from the input directory",
+            reason="output_equals_input",
+        )
     # Pruning the output tree is what keeps reruns from re-ingesting products.
     entries = discover_inputs(input_root, exclude=[out_abs])
+    if input_root.is_file() and _resolve(input_root).parent == out_abs:
+        raise UsageError(
+            "output directory would overwrite the input file",
+            reason="output_equals_input",
+        )
 
     taken: dict[str, str] = {}
     planned: list[tuple[Path, Path, str, str]] = []
