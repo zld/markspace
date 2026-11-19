@@ -15,5 +15,6 @@ add_library(h264core STATIC
     src/diagnostic.cpp
     src/bit_reader.cpp
     src/nal_scanner.cpp
+    src/h264_sps.cpp
 )
 target_include_directories(h264core PUBLIC include)
