@@ -1,0 +1,10 @@
+/Users/zld/WorkSpace/pair-wise-workspace/13786/build/CMakeFiles/h264core.dir
+/Users/zld/WorkSpace/pair-wise-workspace/13786/build/CMakeFiles/test.dir
+/Users/zld/WorkSpace/pair-wise-workspace/13786/build/CMakeFiles/edit_cache.dir
+/Users/zld/WorkSpace/pair-wise-workspace/13786/build/CMakeFiles/rebuild_cache.dir
+/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tools/CMakeFiles/test.dir
+/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tools/CMakeFiles/edit_cache.dir
+/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tools/CMakeFiles/rebuild_cache.dir
+/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/CMakeFiles/test.dir
+/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/CMakeFiles/edit_cache.dir
+/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/CMakeFiles/rebuild_cache.dir

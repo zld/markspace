@@ -17,7 +17,7 @@ constexpr unsigned kMaxLeadingZeroBits = 32;
 //   codeNum = 2^n - 1 + read_bits(n)
 // Truncated code words and over-long zero runs raise ParseError carrying the
 // NAL file offset supplied to the BitReader.
-std::uint32_t read_ue(BitReader& br) {
+inline std::uint32_t read_ue(BitReader& br) {
     unsigned zeros = 0;
     while (zeros <= kMaxLeadingZeroBits) {
         if (br.eof()) {
@@ -46,7 +46,7 @@ std::uint32_t read_ue(BitReader& br) {
 
 // signed Exp-Golomb (se(v)) mapping:
 //   codeNum 0 -> 0; even -> +codeNum/2; odd -> -(codeNum+1)/2
-std::int32_t read_se(BitReader& br) {
+inline std::int32_t read_se(BitReader& br) {
     const std::uint32_t code_num = read_ue(br);
     if (code_num == 0u) {
         return 0;

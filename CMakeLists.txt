@@ -11,10 +11,16 @@ endif()
 
 add_compile_options(-Wall -Wextra -Wpedantic)
 
-# Header-only core library: bit reader, exp-golomb, NAL / parameter set /
-# slice parsers, access unit assembly and summary writing.
-add_library(h264core INTERFACE)
-target_include_directories(h264core INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+# Core library: bit reader, exp-golomb, NAL / parameter set / slice parsers,
+# access unit assembly and summary writing. Header-only parsers live alongside
+# the translated translation units.
+add_library(h264core STATIC
+    src/parameter_sets.cpp
+    src/slice_parser.cpp
+    src/access_unit.cpp
+    src/summary_writer.cpp
+)
+target_include_directories(h264core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 option(H264SCAN_BUILD_TESTS "Build Catch2 unit tests" ON)
 option(H264SCAN_BUILD_TOOLS "Build fixture generator and scanner executables" ON)

@@ -1,0 +1,2 @@
+/usr/bin/ar qc libh264core.a CMakeFiles/h264core.dir/src/parameter_sets.cpp.o CMakeFiles/h264core.dir/src/slice_parser.cpp.o CMakeFiles/h264core.dir/src/access_unit.cpp.o CMakeFiles/h264core.dir/src/summary_writer.cpp.o
+/usr/bin/ranlib libh264core.a
