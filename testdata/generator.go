@@ -114,17 +114,6 @@ func Drop(segments []Segment, index int) []Segment {
 	return out
 }
 
-// DeterministicSeedMaterial derives a fixed key/signing seed from an integer
-// seed. It is only used in seeded demo mode; production mode uses crypto/rand.
-func DeterministicSeedMaterial(seed int64) []byte {
-	h := sha256.New()
-	h.Write([]byte("mediakey/seed/v1"))
-	var b [8]byte
-	binary.BigEndian.PutUint64(b[:], uint64(seed))
-	h.Write(b[:])
-	return h.Sum(nil)
-}
-
 // BaseTime is the fixed wall-clock anchor used by seeded demo runs so
 // boundary times are reproducible across machines.
 var BaseTime = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)

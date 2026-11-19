@@ -2,7 +2,6 @@ package generator
 
 import (
 	"bytes"
-	"strings"
 	"testing"
 )
 
@@ -114,22 +113,5 @@ func TestDropKeepsOriginalIndices(t *testing.T) {
 	}
 	if len(segs) != 5 {
 		t.Fatal("Drop mutated its input")
-	}
-}
-
-func TestDeterministicSeedMaterial(t *testing.T) {
-	a := DeterministicSeedMaterial(9)
-	b := DeterministicSeedMaterial(9)
-	if !bytes.Equal(a, b) {
-		t.Fatal("seed material is not deterministic")
-	}
-	if len(a) != 32 {
-		t.Fatalf("seed material is %d bytes, want 32", len(a))
-	}
-	if bytes.Equal(a, DeterministicSeedMaterial(10)) {
-		t.Fatal("different seeds produced the same material")
-	}
-	if strings.Contains(string(a), "mediakey/seed") {
-		t.Fatal("label leaked into the derived material")
 	}
 }

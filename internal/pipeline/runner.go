@@ -9,6 +9,7 @@ import (
 	"mediakey/internal/reason"
 	"mediakey/internal/replay"
 	"mediakey/internal/report"
+	generator "mediakey/testdata"
 )
 
 // Runner wires packaging, validation, replay and boundary checks into one
@@ -66,10 +67,8 @@ func applyDeliveryFaults(pkg *Packaged, cfg Config) map[int][]byte {
 	}
 	if cfg.CorruptSegment >= 0 {
 		if ct, ok := delivered[cfg.CorruptSegment]; ok {
-			corrupted := make([]byte, len(ct))
-			copy(corrupted, ct)
-			corrupted[len(corrupted)/2] ^= 0xff
-			delivered[cfg.CorruptSegment] = corrupted
+			// Corrupt returns a modified copy, so packaged output is untouched.
+			delivered[cfg.CorruptSegment] = generator.Corrupt(ct)
 		}
 	}
 	if cfg.DropSegment >= 0 {
