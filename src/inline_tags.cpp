@@ -218,12 +218,124 @@ std::string normalise_tag_value(const std::string& name, const std::string& raw)
 
 }  // namespace
 
-InlineParse parse_inline_tags(const std::string&, int, int) {
-    return InlineParse{};
+InlineParse parse_inline_tags(const std::string& raw_text, int event_id, int line) {
+    InlineParse out;
+    std::string body = raw_text;
+    bool in_block = false;
+    bool unclosed_reported = false;
+    size_t i = 0;
+    std::string plain;
+
+    while (i < body.size()) {
+        char ch = body[i];
+        if (ch == '\\' && i + 1 < body.size()) {
+            char next = body[i + 1];
+            if (next == 'N' || next == 'n') {
+                ++out.counts.line_break;
+                plain += ' ';
+                i += 2;
+                continue;
+            }
+            if (next == 'h') {
+                ++out.counts.hard_space;
+                plain += ' ';
+                i += 2;
+                continue;
+            }
+        }
+        if (ch == '{') {
+            // Tags inside a brace block. Nested braces are treated as literal
+            // text (matching libass), while unclosed blocks are reported.
+            if (!in_block) in_block = true;
+            size_t close = body.find('}', i + 1);
+            bool unclosed = close == std::string::npos;
+            if (unclosed) {
+                out.diagnostics.push_back(Diagnostic{
+                    Severity::Warning, line, "tag-unclosed",
+                    "unclosed override block starting at column " + std::to_string(i + 1) +
+                        " is closed at end of event",
+                    event_id});
+                unclosed_reported = true;
+                close = body.size();
+            }
+            std::string content = body.substr(i + 1, close - i - 1);
+            size_t pos = 0;
+            bool has_tag = false;
+            while (pos < content.size()) {
+                while (pos < content.size() && (content[pos] == ' ' || content[pos] == '\t'))
+                    ++pos;
+                if (pos >= content.size()) break;
+                if (content[pos] != '\\') {
+                    // Unknown text inside braces: count as unknown, skip to next tag.
+                    size_t next = content.find('\\', pos);
+                    if (next == std::string::npos) break;
+                    pos = next;
+                    continue;
+                }
+                ++pos;  // skip backslash
+                has_tag = true;
+                TagToken token = parse_tag(content, pos);
+                bool known = false;
+                count_token(out.counts, token, token.arg, known);
+                if (!known && !token.name.empty()) {
+                    out.diagnostics.push_back(Diagnostic{
+                        Severity::Warning, line, "tag-unknown",
+                        "unknown inline tag '\\" + sanitize_for_output(token.name, 20) + "'",
+                        event_id});
+                }
+                std::string key;
+                if (!token.name.empty())
+                    key = token.name;
+                if (known && !key.empty()) {
+                    bool is_reset = (key == "r");
+                    std::string value = normalise_tag_value(key, token.arg);
+                    out.overrides.values[key] = value;
+                    std::string trace_value = value.empty() ? key : key + "=" + value;
+                    out.overrides.trace.push_back(trace_value);
+                    if (is_reset) {
+                        out.overrides.has_reset = true;
+                        out.overrides.last_reset_target = trim_ascii(token.arg);
+                        if (!out.overrides.last_reset_target.empty())
+                            out.overrides.reset_target_missing = false;  // checked by caller
+                    }
+                }
+            }
+            if (!has_tag) {
+                // A brace group without tags is literal text in ASS; keep it.
+                plain += body.substr(i, close - i + 1);
+            }
+            i = unclosed ? body.size() : close + 1;
+            in_block = false;
+            continue;
+        }
+        plain += ch;
+        ++i;
+    }
+    if (in_block && !unclosed_reported) {
+        out.diagnostics.push_back(Diagnostic{
+            Severity::Warning, line, "tag-unclosed",
+            "unclosed override block at end of event", event_id});
+    }
+    out.normalized_text = plain;
+    return out;
 }
 
 std::string canonicalize_for_render(const std::string& raw_text) {
-    return raw_text;
+    // libass already handles unclosed override blocks by implicitly closing
+    // them at the end of the line, so the canonical form only needs to make
+    // that implicit close explicit. This keeps libass's interpretation while
+    // guaranteeing the block cannot leak into the following event (each event
+    // is rendered from its own single-event track anyway).
+    std::string result;
+    bool in_block = false;
+    for (size_t i = 0; i < raw_text.size(); ++i) {
+        char ch = raw_text[i];
+        if (ch == '{') in_block = true;
+        else if (ch == '}' && in_block) in_block = false;
+        result += ch;
+    }
+    if (in_block) result += "}";
+    return result;
 }
 
 }  // namespace sp
