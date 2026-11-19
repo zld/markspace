@@ -573,3 +573,219 @@ def _collect_codecs(ref_media: dict[str, dict],
                 if track.get("codec"):
                     codecs.add(str(track["codec"]))
     return sorted(codecs)
+
+
+def _effective_start(track: dict) -> float | None:
+    return track.get("start_seconds")
+
+
+def _effective_end(track: dict) -> float | None:
+    start = _effective_start(track)
+    duration = track.get("duration_seconds")
+    if start is None or duration is None:
+        return None
+    return start + duration
+
+
+def _compare_media(self, key: str, ref: dict, tgt: dict
+                   ) -> tuple[list[Issue], list[dict]]:
+    issues: list[Issue] = []
+    pairs_out: list[dict] = []
+    if ref.get("container") != tgt.get("container"):
+        issues.append(Issue(
+            "container_mismatch", "warning",
+            f"{key}: container differs ({ref.get('container')} vs {tgt.get('container')})",
+            scope="file", path=key, reference=ref.get("container"),
+            target=tgt.get("container")))
+
+    ref_tracks = ref.get("tracks") or []
+    tgt_tracks = tgt.get("tracks") or []
+    matcher = TrackMatcher(self.policy)
+    pairs, match_issues = matcher.compare(ref_tracks, tgt_tracks)
+    for issue in match_issues:
+        issue.path = key
+        issues.append(issue)
+
+    for ref_track, tgt_track in pairs:
+        track_issues, result = self._compare_track_pair(key, ref_track, tgt_track)
+        issues.extend(track_issues)
+        pairs_out.append(result)
+
+    # File-level duration uses the union of matched tracks on one time base.
+    ref_duration = ref.get("duration_seconds")
+    tgt_duration = tgt.get("duration_seconds")
+    file_check = self._duration_check(ref_duration, tgt_duration,
+                                      scope="file", path=key,
+                                      label="media duration")
+    if file_check:
+        issues.append(file_check)
+    return issues, pairs_out
+
+
+def _duration_check(self, ref_s: float | None, tgt_s: float | None, *,
+                    scope: str, path: str | None, label: str,
+                    track_pair: dict | None = None) -> Issue | None:
+    dp = self.policy.duration
+    if ref_s is None or tgt_s is None:
+        return Issue(
+            "duration_unavailable", "warning",
+            f"{path or label}: duration unavailable "
+            f"(reference={ref_s!r}, target={tgt_s!r})",
+            scope=scope, path=path, reference=ref_s, target=tgt_s)
+    delta = tgt_s - ref_s
+    ratio = (delta / ref_s) if ref_s else None
+    allowed = dp.tolerance_seconds
+    if ratio is not None:
+        allowed = max(allowed, dp.tolerance_ratio * abs(ref_s))
+    over = abs(delta) > allowed + 1e-9
+    if track_pair is not None:
+        track_pair["duration_delta_seconds"] = round(delta, 6)
+        track_pair["duration_delta_ratio"] = (round(ratio, 6)
+                                              if ratio is not None else None)
+        track_pair["duration_within_tolerance"] = not over
+    if not over:
+        return None
+    return Issue(
+        "duration_delta_exceeded", HARD,
+        f"{path or label}: {label} differs by {delta:+.3f}s "
+        f"({(ratio or 0.0) * 100:+.2f}%), tolerance {allowed:.3f}s",
+        scope=scope, path=path, reference=ref_s, target=tgt_s,
+        detail={"delta_seconds": round(delta, 6),
+                "delta_ratio": round(ratio, 6) if ratio is not None else None,
+                "tolerance_seconds": allowed})
+
+
+def _compare_track_pair(self, key: str, ref: dict, tgt: dict
+                        ) -> tuple[list[Issue], dict]:
+    issues: list[Issue] = []
+    pair_id = f"{key}#{ref.get('track_id')}->{tgt.get('track_id')}"
+    result = {
+        "path": key,
+        "reference_track_id": ref.get("track_id"),
+        "target_track_id": tgt.get("track_id"),
+        "kind": ref.get("kind"),
+        "duration_delta_seconds": None,
+        "duration_delta_ratio": None,
+        "duration_within_tolerance": None,
+        "codec_matches": None,
+        "start_delta_seconds": None,
+    }
+    if ref.get("kind") != tgt.get("kind"):
+        issues.append(Issue(
+            "track_kind_mismatch", HARD,
+            f"{pair_id}: kind {ref.get('kind')} vs {tgt.get('kind')}",
+            scope="track", path=key, reference=ref.get("kind"),
+            target=tgt.get("kind")))
+
+    ref_d = ref.get("duration_seconds")
+    tgt_d = tgt.get("duration_seconds")
+    check = self._duration_check(ref_d, tgt_d, scope="track", path=key,
+                                 label=f"track {pair_id}", track_pair=result)
+    if check:
+        check.detail.setdefault("track_pair", {
+            "reference_track_id": ref.get("track_id"),
+            "target_track_id": tgt.get("track_id")})
+        issues.append(check)
+
+    ref_start = _effective_start(ref)
+    tgt_start = _effective_start(tgt)
+    if ref_start is not None and tgt_start is not None:
+        delta = tgt_start - ref_start
+        result["start_delta_seconds"] = round(delta, 6)
+        tolerance = self.policy.duration.tolerance_seconds
+        if abs(delta) > tolerance + 1e-9 and self.policy.duration.start_severity != "ignore":
+            issues.append(Issue(
+                "start_time_mismatch", self.policy.duration.start_severity,
+                f"{pair_id}: start time differs by {delta:+.3f}s "
+                f"(tolerance {tolerance:.3f}s)",
+                scope="track", path=key, reference=ref_start, target=tgt_start,
+                detail={"delta_seconds": round(delta, 6)}))
+
+    codec_issues = self._compare_codec(key, ref, tgt, pair_id)
+    issues.extend(codec_issues)
+    result["codec_matches"] = not any(i.code.startswith("codec")
+                                      and i.severity == HARD
+                                      for i in codec_issues)
+    return issues, result
+
+
+_CODEC_COMPARE_FIELDS = ("codec", "width", "height", "sample_rate", "channels",
+                         "bit_depth", "language")
+# Fields that only make sense for a given track kind; comparing the others
+# would report "missing" noise on every audio or video track.
+_FIELDS_BY_KIND = {
+    "video": {"codec", "width", "height", "language"},
+    "audio": {"codec", "sample_rate", "channels", "bit_depth", "language"},
+    "subtitle": {"codec", "language"},
+    "timecode": {"codec"},
+    "hint": {"codec"},
+    "other": {"codec", "language"},
+}
+
+
+def _compare_codec(self, key: str, ref: dict, tgt: dict, pair_id: str
+                   ) -> list[Issue]:
+    cp = self.policy.codec
+    if not cp.enabled:
+        return []
+    issues: list[Issue] = []
+    kind = ref.get("kind") or tgt.get("kind") or "other"
+    allowed_entries = cp.whitelist.get(kind)
+    relevant = _FIELDS_BY_KIND.get(kind, {"codec"})
+    for field in _CODEC_COMPARE_FIELDS:
+        if field not in relevant:
+            continue
+        if field in cp.ignore_fields:
+            continue
+        rv, tv = ref.get(field), tgt.get(field)
+        label = f"{pair_id}: {field}"
+        if rv is None or tv is None:
+            if rv is None and tv is None:
+                # Neither side carries the field (for example a WAV track has
+                # no language); there is nothing to reconcile.
+                continue
+            severity = cp.missing_severity
+            if severity == "ignore":
+                continue
+            issues.append(Issue(
+                "codec_missing_field", severity,
+                f"{label} missing on {'reference' if rv is None else 'target'}"
+                f" (reference={rv!r}, target={tv!r})",
+                scope="track", path=key, reference=rv, target=tv,
+                detail={"field": field}))
+            continue
+        if rv == tv:
+            continue
+        severity = "warning" if field in cp.warn_fields else HARD
+        permitted = False
+        if allowed_entries is not None:
+            # A difference is tolerated only when some whitelist entry names
+            # the exact target value and is consistent with the target codec.
+            for entry in allowed_entries:
+                if field == "codec":
+                    if entry.get("codec") == tv:
+                        permitted = True
+                        break
+                elif (entry.get("codec", tgt.get("codec")) == tgt.get("codec")
+                      and entry.get(field) == tv):
+                    permitted = True
+                    break
+        if permitted:
+            issues.append(Issue(
+                "codec_whitelisted", "info",
+                f"{label} differs ({rv!r} -> {tv!r}) but {tv!r} is whitelisted",
+                scope="track", path=key, reference=rv, target=tv,
+                detail={"field": field}))
+            continue
+        issues.append(Issue(
+            "codec_mismatch", severity,
+            f"{label} differs: {rv!r} vs {tv!r}",
+            scope="track", path=key, reference=rv, target=tv,
+            detail={"field": field}))
+    return issues
+
+
+Comparator._compare_media = _compare_media
+Comparator._duration_check = _duration_check
+Comparator._compare_track_pair = _compare_track_pair
+Comparator._compare_codec = _compare_codec
