@@ -114,9 +114,10 @@ func (rt *Runtime) processChunk(m *manifest.Manifest, idx int) manifest.ChunkRes
 		fixture.TamperEnvelope(&env)
 	}
 
-	// 2. Replay protection: unique nonce + monotonic sequence, shared cache.
-	nonce, seq := rt.nextRequest(idx, fault)
-	if err := rt.cache.Check(nonce, seq, rt.now()); err != nil {
+	// 2. Replay protection: sequence allocation and cache admission happen
+	// under one lock so concurrent workers can never observe a regression
+	// between the two steps.
+	if err := rt.admitRequest(idx, fault); err != nil {
 		return fail(res, manifest.ErrorCode(err), err.Error())
 	}
 
@@ -161,9 +162,10 @@ func (rt *Runtime) processChunk(m *manifest.Manifest, idx int) manifest.ChunkRes
 	return res
 }
 
-// nextRequest produces the nonce and sequence for a chunk request. Replay
-// injection reuses another chunk's nonce so the shared cache rejects it.
-func (rt *Runtime) nextRequest(idx int, fault string) (string, int64) {
+// admitRequest atomically allocates the next sequence number and asks the
+// replay cache to admit the request. Replay injection reuses the previous
+// chunk's nonce so the shared cache rejects it.
+func (rt *Runtime) admitRequest(idx int, fault string) error {
 	rt.seqMu.Lock()
 	defer rt.seqMu.Unlock()
 	rt.seq++
@@ -180,7 +182,7 @@ func (rt *Runtime) nextRequest(idx int, fault string) (string, int64) {
 	if fault == fixture.InjectReplay && idx > 0 {
 		nonce = rt.nonceFor(idx - 1)
 	}
-	return nonce, seq
+	return rt.cache.Check(nonce, seq, rt.now())
 }
 
 func fail(r manifest.ChunkResult, code manifest.FailureReason, detail string) manifest.ChunkResult {
