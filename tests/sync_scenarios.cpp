@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <string>
 #include <thread>
 
 #include "bounded_queue.hpp"
@@ -208,6 +209,25 @@ void test_video_thread_drops_late_and_repeats() {
     CHECK(metrics.av_offset().count == 5);  // one offset sample per decision
 }
 
+// An empty sample set must render explicit JSON nulls, never fabricated zeros.
+void test_metrics_empty_renders_null() {
+    avsync::Metrics empty;
+    avsync::StatsSummary s = empty.av_offset();
+    CHECK(s.empty);
+    CHECK(s.count == 0);
+    std::string json = avsync::stats_to_json("av_offset_ms", s);
+    CHECK(json.find("\"min\":null") != std::string::npos);
+    CHECK(json.find("\"max\":null") != std::string::npos);
+    CHECK(json.find("\"p99\":null") != std::string::npos);
+    CHECK(json.find("0.000") == std::string::npos);  // no fabricated zero
+
+    // After one sample it is non-empty and carries a real millisecond value.
+    empty.add_av_offset_us(2'500);
+    avsync::StatsSummary one = empty.av_offset();
+    CHECK(!one.empty && one.count == 1);
+    CHECK(one.min_ms == 2.5 && one.max_ms == 2.5 && one.p50_ms == 2.5);
+}
+
 }  // namespace
 
 int main() {
@@ -223,6 +243,7 @@ int main() {
     test_bounded_queue_close_wakes_blocked_producer();
     test_bounded_queue_drains_before_close_returns_false();
     test_video_thread_drops_late_and_repeats();
+    test_metrics_empty_renders_null();
 
     if (g_failures == 0) {
         std::printf("sync_scenarios: all %d checks passed\n", g_checks);
