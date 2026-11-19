@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fragcheck"
+version = "0.1.0"
+description = "Local fMP4 index (sidx/stbl) validation and deterministic rebuild tool"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+fragcheck = "fragcheck.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
