@@ -17,7 +17,7 @@ from dataclasses import dataclass, replace
 from fractions import Fraction
 from typing import Any, Iterable
 
-from .errors import ModelError
+from .errors import ModelError, TimebaseError
 from .timebase import FrameRate, FrameSpan, positive_fraction, require_int
 
 TRACK_KINDS = frozenset({"video", "audio"})
@@ -29,6 +29,23 @@ def _require_id(value: Any, field: str) -> str:
     return value
 
 
+def _model_int(value: Any, field: str, minimum: int | None = None, *,
+               clip_id: str | None = None) -> int:
+    """Exact integer check that reports model errors, not raw timebase errors."""
+
+    try:
+        return require_int(value, field, minimum=minimum)
+    except TimebaseError as exc:
+        raise ModelError(exc.message, clip_id=clip_id) from exc
+
+
+def _model_speed(value: Any, field: str) -> Fraction:
+    try:
+        return positive_fraction(value, field)
+    except TimebaseError as exc:
+        raise ModelError(exc.message) from exc
+
+
 @dataclass(frozen=True, slots=True)
 class RateSegment:
     """A constant-speed run inside a clip, measured in clip-local frames."""
@@ -38,9 +55,9 @@ class RateSegment:
     speed: Fraction = Fraction(1)
 
     def __post_init__(self) -> None:
-        require_int(self.offset, "rate segment offset", minimum=0)
-        require_int(self.duration, "rate segment duration", minimum=1)
-        speed = positive_fraction(self.speed, "rate segment speed")
+        _model_int(self.offset, "rate segment offset", minimum=0)
+        _model_int(self.duration, "rate segment duration", minimum=1)
+        speed = _model_speed(self.speed, "rate segment speed")
         consumed = speed * self.duration
         if consumed.denominator != 1:
             raise ModelError(
@@ -87,13 +104,13 @@ class Clip:
     def __post_init__(self) -> None:
         _require_id(self.id, "clip id")
         _require_id(self.media_id, "clip media_id")
-        require_int(self.timeline_start, "clip timeline_start", minimum=0)
-        require_int(self.duration, "clip duration", minimum=1)
-        require_int(self.source_in, "clip source_in", minimum=0)
-        require_int(self.source_duration, "clip source_duration", minimum=1)
-        require_int(self.fade_in, "clip fade_in", minimum=0)
-        require_int(self.fade_out, "clip fade_out", minimum=0)
-        require_int(self.priority, "clip priority")
+        _model_int(self.timeline_start, "clip timeline_start", 0, clip_id=self.id)
+        _model_int(self.duration, "clip duration", 1, clip_id=self.id)
+        _model_int(self.source_in, "clip source_in", 0, clip_id=self.id)
+        _model_int(self.source_duration, "clip source_duration", 1, clip_id=self.id)
+        _model_int(self.fade_in, "clip fade_in", 0, clip_id=self.id)
+        _model_int(self.fade_out, "clip fade_out", 0, clip_id=self.id)
+        _model_int(self.priority, "clip priority", clip_id=self.id)
 
         segments = tuple(self.rate_segments) or constant_rate(self.duration)
         self._validate_segments(segments)
@@ -201,7 +218,7 @@ class Track:
         _require_id(self.id, "track id")
         if self.kind not in TRACK_KINDS:
             raise ModelError(f"unsupported track kind {self.kind!r}", track_id=self.id)
-        require_int(self.level, "track level", minimum=0)
+        _model_int(self.level, "track level", minimum=0)
         clips = tuple(self.clips)
         seen: set[str] = set()
         for clip in clips:

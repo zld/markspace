@@ -11,7 +11,7 @@ Two component-level modes are offered:
 ``to_otio_clip``
     Structural export used by :func:`to_otio_track` and the CLI.  It raises
     :class:`BridgeError` for a segmented rate mapping, which a single OTIO clip
-    cannot express.  Fades do not affect timing and are carried in
+    cannot express, and tracks are refused if overlaps remain unresolved.  Fades do not affect timing and are carried in
     ``metadata["cutline"]``.  A whole clip trimmed away by resolution is
     simply absent.
 
@@ -31,6 +31,7 @@ from opentimelineio.schema import ExternalReference, Gap, LinearTimeWarp, Track 
 
 from .errors import BridgeError
 from .model import Clip, RateSegment, Sequence, Track
+from .overlap import scan_sequence
 from .timebase import FrameRate
 
 _KIND_TO_OTIO = {"video": otio.schema.Track.Kind.Video, "audio": otio.schema.Track.Kind.Audio}
@@ -44,7 +45,8 @@ class OTIOExportInfo:
     track_id: str
     kind: str
     clip_order: tuple[str, ...]
-    clip_ranges: tuple[tuple[int, int], ...]
+    clip_ranges: tuple[tuple[int, int], ...]      # (timeline_start, duration)
+    source_ranges: tuple[tuple[int, int], ...]    # (source_in, source_duration)
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -52,6 +54,7 @@ class OTIOExportInfo:
             "kind": self.kind,
             "clip_order": list(self.clip_order),
             "clip_ranges": [list(pair) for pair in self.clip_ranges],
+            "source_ranges": [list(pair) for pair in self.source_ranges],
         }
 
 
@@ -96,22 +99,27 @@ def to_otio_clip(clip: Clip, rate: FrameRate) -> OtioClip:
 
 
 def to_otio_track(track: Track, rate: FrameRate) -> OtioTrack:
+    conflicts = scan_sequence(Sequence(id="export", frame_rate=rate, tracks=(track,)))
+    if conflicts.conflict_count:
+        conflict = conflicts.conflicts[0]
+        raise BridgeError(
+            f"clips {conflict.first_id!r} and {conflict.second_id!r} overlap by "
+            f"{conflict.overlap_frames} frames; resolve overlaps before exporting",
+            track_id=track.id,
+            clip_id=conflict.second_id,
+        )
     otio_track = OtioTrack(name=track.id, kind=_KIND_TO_OTIO[track.kind])
+    # A resolved track has no overlaps, so children are strictly sequential:
+    # each clip is preceded by a Gap covering the timeline frames before it.
     cursor = 0
     for clip in sorted(track.clips, key=lambda c: (c.timeline_start, c.id)):
-        if clip.timeline_start < cursor:
-            raise BridgeError(
-                f"clip starts at {clip.timeline_start} before cursor {cursor}; "
-                "resolve overlaps before exporting",
-                track_id=track.id,
-                clip_id=clip.id,
-            )
         if clip.timeline_start > cursor:
             gap = Gap()
             gap.source_range = _range(0, clip.timeline_start - cursor, rate)
             otio_track.append(gap)
+            cursor = clip.timeline_start
         otio_track.append(to_otio_clip(clip, rate))
-        cursor = clip.end
+        cursor += clip.duration
     return otio_track
 
 
@@ -132,19 +140,23 @@ def inspect_otio_track(otio_track: OtioTrack, rate: FrameRate) -> OTIOExportInfo
 
     names: list[str] = []
     ranges: list[tuple[int, int]] = []
+    sources: list[tuple[int, int]] = []
     for item in otio_track:
         if isinstance(item, Gap):
             continue
         if not isinstance(item, OtioClip):
             raise BridgeError(f"unsupported OTIO item {type(item).__name__}")
         span = item.range_in_parent()
+        source = item.source_range
         names.append(item.name)
         ranges.append((int(round(span.start_time.value)), int(round(span.duration.value))))
+        sources.append((int(round(source.start_time.value)), int(round(source.duration.value))))
     return OTIOExportInfo(
         track_id=otio_track.name,
         kind=_OTIO_TO_KIND.get(otio_track.kind, otio_track.kind),
         clip_order=tuple(names),
         clip_ranges=tuple(ranges),
+        source_ranges=tuple(sources),
     )
 
 
@@ -175,6 +187,16 @@ def verify_round_trip(sequence: Sequence, timeline: otio.schema.Timeline) -> lis
             raise BridgeError(
                 f"time range mismatch for track {track.id!r}: "
                 f"OTIO {info.clip_ranges} != model {expected_ranges}",
+                track_id=track.id,
+            )
+        expected_sources = tuple(
+            (clip.source_in, clip.source_frames)
+            for clip in sorted(track.clips, key=lambda c: (c.timeline_start, c.id))
+        )
+        if info.source_ranges != expected_sources:
+            raise BridgeError(
+                f"source range mismatch for track {track.id!r}: "
+                f"OTIO {info.source_ranges} != model {expected_sources}",
                 track_id=track.id,
             )
         probe = next((item for item in otio_track if isinstance(item, OtioClip)), None)

@@ -256,8 +256,9 @@ def _resolve_priority(sequence: Sequence) -> Sequence:
             if not pieces:
                 continue  # fully covered by higher-priority material
             pieces.sort(key=lambda piece: piece.start)
+            origin_span = clip.span
             for index, piece in enumerate(pieces):
-                fragment = slice_clip(clip, piece.start - clip.timeline_start, piece.end - clip.timeline_start)
+                fragment = slice_clip(clip, piece.start - origin_span.start, piece.end - origin_span.start)
                 fragment = replace(
                     fragment,
                     id=_fragment_id(clip.id, index, len(pieces)),
