@@ -39,8 +39,11 @@ class DetectorConfig:
             raise ValueError(f"invalid sample rate {sample_rate}")
         if not math.isfinite(self.frame_ms) or self.frame_ms <= 0:
             raise ValueError("frame_ms must be a positive finite number")
-        if self.frame_samples(sample_rate) < 1:
-            raise ValueError("frame_ms is too small for this sample rate")
+        if self.frame_ms * sample_rate / 1000.0 < 1.0:
+            raise ValueError(
+                f"frame_ms={self.frame_ms} is shorter than one sample at "
+                f"{sample_rate} Hz"
+            )
         if not (math.isfinite(self.on_db) and math.isfinite(self.off_db)):
             raise ValueError("on_db and off_db must be finite")
         if self.on_db <= 0 or self.off_db <= 0:

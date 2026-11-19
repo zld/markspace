@@ -244,6 +244,40 @@ class StoreTests(PipelineFixture):
                     (job,),
                 )
 
+    def test_failed_segment_insert_rolls_back_the_job(self) -> None:
+        from audiosplit.merge import Segment
+        from audiosplit.store import JobMeta, StoreError
+
+        with Store(self.db) as store:
+            run = store.start_run({"frame_ms": 10.0})
+            store.connection.execute(
+                "CREATE TRIGGER reject_segments BEFORE INSERT ON segments "
+                "BEGIN SELECT RAISE(ABORT, 'simulated disk failure'); END"
+            )
+            segment = Segment(0, 100, 0.5, 0.3, -50.0, 10.0)
+            with self.assertRaises(StoreError):
+                store.record_success(
+                    run,
+                    "clip.wav",
+                    "hash",
+                    JobMeta(48000, 1, 48000, -60.0),
+                    [segment],
+                )
+            self.assertEqual(store.run_summary(run)["files_ok"], 0)
+            self.assertIsNone(store.find_reusable("clip.wav", "hash", "{}"))
+
+    def test_mixed_sample_rates_are_diagnosed(self) -> None:
+        self.make_file("a.wav", np.zeros(48000, dtype=np.float32))
+        other = self.audio / "b.wav"
+        write_pcm16(other, np.zeros(44100, dtype=np.float32), 44100)
+        code, out, err = self.scan()
+        self.assertEqual(code, 0)
+        self.assertIn("mixes sample rates", err)
+        self.assertEqual(summary(out)["files_ok"], "2")
+        with sqlite3.connect(self.db) as conn:
+            rates = [row[0] for row in conn.execute("SELECT sample_rate FROM jobs")]
+        self.assertEqual(sorted(rates), [44100, 48000])
+
     def test_missing_database_parent_is_created(self) -> None:
         nested = self.root / "a" / "b" / "c.db"
         with Store(nested) as store:
