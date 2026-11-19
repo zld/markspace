@@ -47,6 +47,7 @@ class TrackRuntime:
     curve: AutomationCurve | None
     _fade_in: int = 0
     _fade_out: int = 0
+    _fade_scale: float = 1.0
 
     def close(self) -> None:
         self.source.close()
@@ -64,7 +65,7 @@ class TrackRuntime:
         )
 
     def _source_positions(self, output_positions: np.ndarray, target_rate: int) -> np.ndarray:
-        ratio = target_rate / self.source.sample_rate
+        ratio = self.source.sample_rate / target_rate
         return output_positions.astype(np.float64) * ratio
 
     def _resampled(
@@ -96,9 +97,13 @@ class TrackRuntime:
         )
         data = blend_linear(chunk, left - low, right - low, fraction)
         if self._fade_in > 0 or self._fade_out > 0:
-            ratio = target_rate / self.source.sample_rate
-            fade_in = int(np.floor(self._fade_in * ratio + 0.5))
-            fade_out = int(np.floor(self._fade_out * ratio + 0.5))
+            # Rounding the converted fade lengths independently could push
+            # their sum one frame past the clip; clamp deterministically.
+            fade_in = min(int(np.floor(self._fade_in * self._fade_scale + 0.5)), self.clip_frames)
+            fade_out = min(
+                int(np.floor(self._fade_out * self._fade_scale + 0.5)),
+                self.clip_frames - fade_in,
+            )
             data = data * fade_amplitude(
                 self.clip_frames,
                 fade_in,
@@ -192,6 +197,7 @@ class MixGraph:
             curve=curve,
             _fade_in=int(np.floor(track.fade.in_frames * ratio + 0.5)),
             _fade_out=int(np.floor(track.fade.out_frames * ratio + 0.5)),
+            _fade_scale=ratio,
         )
 
     def close(self) -> None:

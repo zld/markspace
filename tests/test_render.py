@@ -7,6 +7,7 @@ import pytest
 
 from mixforge.automation import AutomationCurve, db_to_linear, fade_amplitude
 from mixforge.errors import ConfigError
+from mixforge.io import read_wav
 from mixforge.model import AutomationSpec, GainPoint
 from mixforge.render import render_offline
 from mixforge.resample import output_length, resample_audio
@@ -93,6 +94,38 @@ def test_resample_rejects_non_finite_input():
 
 def test_db_helper_matches_reference():
     assert float(db_to_linear(-6.0)) == pytest.approx(10 ** (-6 / 20))
+
+
+def test_graph_resampling_matches_standalone_resampler(fixture_dir):
+    """A lone track at unity must equal the documented resampler output."""
+
+    spec = {
+        "sample_rate": 48_000,
+        "channels": 1,
+        "duration_frames": 3_000,
+        "tracks": [{"id": "ramp", "path": "assets/ramp.wav"}],
+        "master": {"limiter": False},
+    }
+    project = make_project(fixture_dir.parent, spec)
+    audio, _ = render_offline(project, block_size=333)
+    source, rate = read_wav(fixture_dir / "ramp.wav")
+    expected = resample_audio(source, rate, 48_000)[:3_000]
+    np.testing.assert_array_equal(audio[: expected.shape[0]], expected)
+    np.testing.assert_array_equal(audio[expected.shape[0] :], 0.0)
+
+
+def test_graph_does_not_stretch_audio_when_rates_match(fixture_dir):
+    spec = {
+        "sample_rate": 24_000,
+        "channels": 1,
+        "duration_frames": 2_400,
+        "tracks": [{"id": "ramp", "path": "assets/ramp.wav"}],
+        "master": {"limiter": False},
+    }
+    project = make_project(fixture_dir.parent, spec)
+    audio, _ = render_offline(project, block_size=128)
+    source, _ = read_wav(fixture_dir / "ramp.wav")
+    np.testing.assert_allclose(audio, source, rtol=0.0, atol=1e-15)
 
 
 def test_track_stats_and_master_clip_domain(fixture_dir):
