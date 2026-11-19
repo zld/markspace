@@ -68,16 +68,17 @@ The JSON report contains these top-level sections:
 - `pps` — PPS id, referenced SPS id, entropy mode, and byte offset.
 - `frames` — totals split by picture type (`i`/`p`/`b`/`unknown`), a separate
   `fields` block with `pairs` and `isolated`, plus per-frame items carrying
-  `type`, `idr`, `reference`, field flags, `frame_num`, slice count, byte
-  offset, an error flag, and an explicit `uncertainty` note where a boundary
-  could not be decided confidently.
+  `type`, `idr`, `reference`, field flags, `frame_num`, the macroblock span
+  (`first_mb_min`/`first_mb_max`), slice count, byte offset, an error flag, and
+  an explicit `uncertainty` note where a boundary could not be decided
+  confidently.
 - `groups` — image groups with `start_nal_offset`, `first_frame_type`,
   `boundary` basis (`first_picture`, `idr_picture`, `parameter_set_change`),
   frame/field/slice counts, and `complete`/`uncertain`.
 - `exp_golomb` — `ue_calls`, `se_calls`, their failure counts, maximum codeword
   widths, maximum leading-zero run, and maximum decoded values.
-- `nal_scan` — NAL unit count, leading garbage/zero bytes, consecutive start
-  codes, empty NAL units, and inter-NAL/trailing zero padding.
+- `nal_scan` — `nal_units` count, total bytes, leading garbage/zero bytes,
+  consecutive start codes, empty NAL units, and inter-NAL/trailing zero padding.
 - `errors` — ordered list of `{kind, offset, message}` diagnostics.
 
 ## Architecture
@@ -87,15 +88,19 @@ The JSON report contains these top-level sections:
 | `include/byte_source.hpp`, `src/byte_source.cpp` | Bounded whole-file read with absolute offsets |
 | `include/bit_reader.hpp`, `src/bit_reader.cpp` | RBSP emulation-byte removal, bounded bit reads, trailing-bit validation |
 | `include/exp_golomb.hpp`, `src/exp_golomb.cpp` | `ue(v)`/`se(v)` with shared call/failure/width statistics |
-| `include/nal_parser.hpp`, `src/nal_parser.cpp` | Annex B start-code scanning and NAL boundaries |
-| `include/sps_parser.hpp`, `src/sps_parser.cpp` | SPS fields, cropping, frame/field structure, overflow checks |
+| `include/nal_parser.hpp`, `src/nal_parser.cpp`, `src/nal_types.cpp` | Annex B start-code scanning, NAL boundaries and type names |
+| `include/sps_types.hpp`, `include/sps_dimensions.hpp`, `src/sps_dimensions.cpp` | SPS field model, cropped dimensions, overflow and crop checks |
+| `include/sps_parser.hpp`, `src/sps_parser.cpp` | SPS syntax decoding |
 | `include/pps_parser.hpp`, `src/pps_parser.cpp` | PPS fields needed by slice headers |
-| `include/slice_parser.hpp`, `src/slice_parser.cpp` | Slice header extraction for grouping |
-| `include/access_unit.hpp`, `src/access_unit.cpp` | Picture segmentation, field pairing, image groups |
-| `include/report.hpp`, `src/report.cpp` | Text and JSON rendering |
-| `include/sample_generator.hpp`, `src/sample_generator.cpp` | Deterministic sample streams |
+| `include/slice_types.hpp`, `include/slice_parser.hpp`, `include/slice_header_lists.hpp` | Slice type names, slice header decoding, optional header lists |
+| `include/param_set_store.hpp`, `src/param_set_store.cpp` | Active SPS/PPS definitions with content revisions |
+| `include/boundary_rules.hpp`, `src/boundary_rules.cpp` | H.264 7.4.1.2.4 picture-boundary decisions |
+| `include/frame_grouping.hpp`, `src/frame_grouping.cpp` | Picture-to-frame folding and image-group splitting |
+| `include/access_unit.hpp`, `src/access_unit.cpp` | Stream driver tying scanning, parsing and grouping together |
+| `include/report*.hpp`, `src/report*.cpp` | Summary counts plus text and JSON rendering |
+| `include/sample_syntax.hpp`, `include/sample_generator.hpp` | Deterministic sample streams |
 | `src/main.cpp` | CLI entry point and exit codes |
-| `tests/self_test.cpp` | Self-generated fixture tests |
+| `tests/test_*.cpp` | Self-generated fixture suites driven by `tests/runner.cpp` |
 
 ## Limits
 
