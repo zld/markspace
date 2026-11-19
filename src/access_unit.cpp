@@ -60,7 +60,10 @@ StreamSummary analyze_stream(const std::uint8_t* data, std::size_t size) {
 
     std::unordered_map<std::uint32_t, SpsInfo> sps_sets;
     std::unordered_map<std::uint32_t, PpsBinding> pps_sets;
-    const SpsInfo* active_sps = nullptr;
+    // Track the active SPS by id rather than by pointer: sps_sets rehashes on
+    // insertion, so a raw pointer/reference into it could dangle.
+    bool have_active_sps = false;
+    std::uint32_t active_sps_id = 0;
 
     // Maps an in-progress picture to its index in summary.images so that
     // follow-on slices of the same picture are merged instead of counted as
@@ -84,10 +87,12 @@ StreamSummary analyze_stream(const std::uint8_t* data, std::size_t size) {
         switch (nal.unit_type) {
             case kNalSps: {
                 SpsInfo parsed = parse_sps(nal, data, summary.diagnostics);
-                sps_sets[parsed.seq_parameter_set_id] = parsed;
+                const std::uint32_t sps_id = parsed.seq_parameter_set_id;
+                sps_sets[sps_id] = parsed;
                 if (parsed.valid) {
                     summary.sps = parsed;
-                    active_sps = &summary.sps;
+                    have_active_sps = true;
+                    active_sps_id = sps_id;
                 }
                 break;
             }
@@ -107,6 +112,13 @@ StreamSummary analyze_stream(const std::uint8_t* data, std::size_t size) {
             case kNalNonIdrSlice:
             case kNalIdrSlice: {
                 const PpsBinding* binding = nullptr;
+                // Resolve the active SPS freshly each time from its id so the
+                // parser never receives a pointer invalidated by rehashing.
+                const SpsInfo* active_sps = nullptr;
+                if (have_active_sps) {
+                    auto it = sps_sets.find(active_sps_id);
+                    if (it != sps_sets.end()) active_sps = &it->second;
+                }
                 SliceInfo slice = parse_slice_header(
                     nal, i, data, active_sps, summary.diagnostics);
                 auto bound = pps_sets.find(slice.pic_parameter_set_id);
@@ -120,7 +132,8 @@ StreamSummary analyze_stream(const std::uint8_t* data, std::size_t size) {
                 } else {
                     auto sps_it = sps_sets.find(binding->sps_id);
                     if (sps_it != sps_sets.end() && sps_it->second.valid) {
-                        active_sps = &sps_it->second;
+                        have_active_sps = true;
+                        active_sps_id = binding->sps_id;
                     }
                 }
 
