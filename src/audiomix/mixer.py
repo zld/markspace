@@ -217,17 +217,13 @@ class MixGraph:
         of the bus depending on the policy; callers should write ``master``.
         """
         frames = np.arange(start, start + count, dtype=np.int64)
-        master = np.zeros((count, self.layout), dtype=np.float64)
         bus = np.zeros((count, self.layout), dtype=np.float64)
         per_track: dict[str, np.ndarray] = {}
         for track in self.tracks:
             block = self._render_track(track, frames)
             per_track[track.spec.name] = block
             bus += block
-        if self.clip.limit:
-            master = np.clip(bus, -1.0, 1.0)
-        else:
-            master = bus
+        master = np.clip(bus, -1.0, 1.0) if self.clip.limit else bus
         return {"tracks": per_track, "bus": bus, "master": master}
 
     def _render_track(self, track: PreparedTrack, frames: np.ndarray) -> np.ndarray:

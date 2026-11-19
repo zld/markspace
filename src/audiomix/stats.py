@@ -55,7 +55,8 @@ class SignalStats:
         samples = self.valid_frames * max(1, self.channels)
         if samples == 0:
             return 0.0
-        return float(np.sqrt(self._sum_squares / samples))
+        # Clamp tiny negative rounding residue before the square root.
+        return float(np.sqrt(max(0.0, self._sum_squares / samples)))
 
     def to_dict(self) -> dict[str, float | int]:
         return {
