@@ -97,63 +97,70 @@ def repair_timestamps(
         None,
     )
 
-    # Pre-compute repaired timestamps.  Leading missing frames are back-filled
-    # relative to the anchor first so the main forward pass always starts from
-    # a strictly increasing prefix.  The frame immediately before the anchor is
-    # placed one interval below it, so no back-filled value can collide with
-    # the anchor itself.
-    repaired_seconds: list[float] = [0.0] * len(frames)
-    if anchor_index is not None and anchor_index > 0:
-        first_value = max(
-            0.0, anchor_seconds - (anchor_index + 1) * interval
-        )
-        for order_index in range(anchor_index):
-            repaired_seconds[order_index] = first_value + order_index * interval
-
     normalized: list[NormalizedFrame] = []
     repaired_count = 0
     max_jump_seconds = 0.0
+    # Output clock: last timestamp accepted into the strictly increasing series.
     last_kept_seconds: Optional[float] = None
+    # Diagnosis reference: PTS of the preceding frame as stored in the input.
     previous_original_seconds: Optional[float] = None
 
     for order_index, frame in enumerate(frames):
         original_seconds = frame.pts_seconds()
         reasons: list[str] = []
 
+        # ---- Phase 1: diagnose against the ORIGINAL timestamp sequence ----
         if original_seconds is None:
             reasons.append(REASON_MISSING)
-        else:
-            if previous_original_seconds is not None:
-                delta = abs(original_seconds - previous_original_seconds)
-                if delta > max_jump_seconds:
-                    max_jump_seconds = delta
-            if last_kept_seconds is not None:
-                if original_seconds == last_kept_seconds:
-                    reasons.append(REASON_DUPLICATE)
-                elif original_seconds < last_kept_seconds:
-                    reasons.append(REASON_REGRESSION)
-                elif original_seconds - last_kept_seconds > jump_threshold:
-                    reasons.append(REASON_JUMP)
+        elif previous_original_seconds is not None:
+            delta = original_seconds - previous_original_seconds
+            if abs(delta) > max_jump_seconds:
+                max_jump_seconds = abs(delta)
+            if delta == 0:
+                reasons.append(REASON_DUPLICATE)
+            elif delta < 0:
+                reasons.append(REASON_REGRESSION)
+            elif delta > jump_threshold:
+                reasons.append(REASON_JUMP)
 
-        if not reasons:
+        # ---- Phase 2: assign a strictly increasing output timestamp -------
+        # A frame keeps its original PTS only when it is fault-free AND still
+        # lands strictly above the previously accepted clock value.  Otherwise
+        # it is placed one interval above the clock so the output stays
+        # strictly increasing.  The ``repaired`` flag tracks whether the
+        # frame's *own* original timestamp was faulty; a healthy frame that has
+        # to step forward because an earlier fault shifted the clock is moved
+        # but not counted as a repaired timestamp.
+        keep_original = (
+            not reasons
+            and original_seconds is not None
+            and (
+                last_kept_seconds is None
+                or original_seconds > last_kept_seconds
+            )
+        )
+        own_fault = bool(reasons)
+
+        if keep_original:
             assert original_seconds is not None
-            repaired_seconds[order_index] = original_seconds
-            repaired = False
-        elif anchor_index is not None and order_index < anchor_index:
-            # Value already back-filled before the anchor.
-            repaired = True
+            repaired_seconds = original_seconds
         elif last_kept_seconds is None:
-            # No anchor exists at all: synthesize a clock starting at zero.
-            repaired_seconds[order_index] = order_index * interval
-            repaired = True
+            if anchor_index is not None and order_index < anchor_index:
+                # Back-fill leading missing frames relative to the anchor so
+                # the last of them sits one interval below the anchor.
+                gap = anchor_index - order_index
+                repaired_seconds = max(
+                    0.0, anchor_seconds - gap * interval
+                )
+            else:
+                repaired_seconds = 0.0
         else:
-            repaired_seconds[order_index] = last_kept_seconds + interval
-            repaired = True
+            repaired_seconds = last_kept_seconds + interval
 
-        last_kept_seconds = repaired_seconds[order_index]
+        last_kept_seconds = repaired_seconds
         if original_seconds is not None:
             previous_original_seconds = original_seconds
-        if repaired:
+        if own_fault:
             repaired_count += 1
 
         normalized.append(
@@ -165,8 +172,8 @@ def repair_timestamps(
                 original_pts=frame.pts,
                 time_base=frame.time_base,
                 original_pts_seconds=original_seconds,
-                repaired_pts_seconds=repaired_seconds[order_index],
-                timestamp_repaired=repaired,
+                repaired_pts_seconds=repaired_seconds,
+                timestamp_repaired=own_fault,
                 repair_reasons=reasons,
             )
         )
