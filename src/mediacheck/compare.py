@@ -292,3 +292,284 @@ def load_policy(path: str | Path | None,
                               field_path="duration.tolerance_seconds")
         policy.duration.tolerance_seconds = float(tolerance_seconds)
     return policy
+
+
+# ---------------------------------------------------------------------------
+# Comparison
+# ---------------------------------------------------------------------------
+
+SEVERITY_RANK = {"info": 0, "warning": 1, "error": 2}
+HARD = "error"
+
+
+@dataclass
+class Issue:
+    code: str
+    severity: str
+    message: str
+    scope: str
+    path: str | None = None
+    reference: Any = None
+    target: Any = None
+    detail: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict:
+        return {
+            "code": self.code,
+            "severity": self.severity,
+            "message": self.message,
+            "scope": self.scope,
+            "path": self.path,
+            "reference": self.reference,
+            "target": self.target,
+            "detail": self.detail,
+        }
+
+
+def _index_media(manifest: dict, scope: str) -> dict[str, dict]:
+    """Map relative paths to media summaries; duplicates are reported later."""
+    if not isinstance(manifest, dict):
+        raise PolicyError(f"{scope} manifest must be a JSON object")
+    media = manifest.get("media")
+    if not isinstance(media, list):
+        raise PolicyError(f"{scope} manifest is missing a 'media' list",
+                          field_path="media")
+    out: dict[str, dict] = {}
+    duplicates: list[str] = []
+    for i, entry in enumerate(media):
+        if not isinstance(entry, dict):
+            raise PolicyError(f"{scope} media entry {i} is not an object",
+                              field_path=f"media[{i}]")
+        key = entry.get("relative_path") or entry.get("name") or entry.get("path")
+        if not key:
+            raise PolicyError(f"{scope} media entry {i} has no name or path",
+                              field_path=f"media[{i}].name")
+        key = str(key)
+        if key in out:
+            duplicates.append(key)
+            continue
+        out[key] = entry
+    if duplicates:
+        # A duplicate path means the manifest itself is inconsistent; refuse
+        # rather than silently dropping whichever entry came second.
+        raise PolicyError(
+            f"{scope} manifest lists {len(set(duplicates))} path(s) more than "
+            f"once: {sorted(set(duplicates))[:5]}",
+            field_path="media")
+    return out
+
+
+def _track_sort(track: dict) -> tuple:
+    track_id = track.get("track_id")
+    return (0 if track_id is not None else 1,
+            track_id if track_id is not None else 0,
+            track.get("index", 0))
+
+
+class TrackMatcher:
+    """Pair reference and target tracks without ever guessing on ambiguity."""
+
+    def __init__(self, policy: Policy):
+        self.policy = policy
+        mp = policy.matching
+        self.explicit = {p.reference_track_id: p.target_track_id
+                         for p in mp.pairs}
+        self.explicit_targets = {p.target_track_id: p.reference_track_id
+                                 for p in mp.pairs}
+        self.ignore = set(mp.ignore_kinds)
+        self.require = set(mp.require_kinds)
+
+    def compare(self, ref_tracks: list[dict], tgt_tracks: list[dict]
+                ) -> tuple[list[tuple[dict, dict]], list[Issue]]:
+        issues: list[Issue] = []
+        pairs: list[tuple[dict, dict]] = []
+        used_ref: set[int] = set()
+        used_tgt: set[int] = set()
+
+        # 1. Explicit track_id mapping wins. It is applied before the ignore
+        #    filter because an explicit pair is more specific than a kind rule.
+        for ref in ref_tracks:
+            rid = ref.get("track_id")
+            if rid is None or rid not in self.explicit:
+                continue
+            wanted = self.explicit[rid]
+            matches = [t for t in tgt_tracks if t.get("track_id") == wanted]
+            if len(matches) != 1:
+                issues.append(Issue(
+                    "explicit_pair_missing", HARD,
+                    f"policy pairs reference track_id {rid} with target "
+                    f"track_id {wanted}, but the target has {len(matches)} such tracks",
+                    scope="track", reference=rid, target=wanted))
+                continue
+            pairs.append((ref, matches[0]))
+            used_ref.add(id(ref))
+            used_tgt.add(id(matches[0]))
+
+        # 2. Remaining tracks pair by kind, but only when unambiguous.
+        usable_ref = [t for t in ref_tracks if self._usable(t)]
+        usable_tgt = [t for t in tgt_tracks if self._usable(t)]
+        remaining_ref = [t for t in usable_ref if id(t) not in used_ref]
+        remaining_tgt = [t for t in usable_tgt if id(t) not in used_tgt]
+        kinds = sorted({t.get("kind", "other") for t in remaining_ref}
+                       | {t.get("kind", "other") for t in remaining_tgt})
+        for kind in kinds:
+            refs = sorted((t for t in remaining_ref if t.get("kind", "other") == kind),
+                          key=_track_sort)
+            tgts = sorted((t for t in remaining_tgt if t.get("kind", "other") == kind),
+                          key=_track_sort)
+            if self.policy.matching.match_by_index and len(refs) == len(tgts):
+                if self._indexes_unique(refs) and self._indexes_unique(tgts):
+                    for ref, tgt in zip(refs, tgts):
+                        pairs.append((ref, tgt))
+                        used_ref.add(id(ref))
+                        used_tgt.add(id(tgt))
+                    continue
+            if len(refs) == 1 and len(tgts) == 1:
+                pairs.append((refs[0], tgts[0]))
+                used_ref.add(id(refs[0]))
+                used_tgt.add(id(tgts[0]))
+                continue
+            if len(refs) > 1 and len(tgts) > 1:
+                issues.append(Issue(
+                    "ambiguous_tracks", HARD,
+                    f"{len(refs)} reference and {len(tgts)} target {kind} tracks "
+                    "cannot be uniquely matched; add explicit track_id pairs",
+                    scope="track", reference=[t.get("track_id") for t in refs],
+                    target=[t.get("track_id") for t in tgts],
+                    detail={"kind": kind}))
+                for t in refs:
+                    used_ref.add(id(t))
+                for t in tgts:
+                    used_tgt.add(id(t))
+                continue
+            if len(refs) > 1:
+                issues.append(Issue(
+                    "extra_reference_tracks", HARD,
+                    f"{len(refs)} reference {kind} tracks but only {len(tgts)} "
+                    "target track(s); cannot decide which one is authoritative",
+                    scope="track", reference=[t.get("track_id") for t in refs],
+                    detail={"kind": kind}))
+                for t in refs:
+                    used_ref.add(id(t))
+                for t in tgts:
+                    used_tgt.add(id(t))
+                continue
+            if len(tgts) > 1:
+                issues.append(Issue(
+                    "extra_target_tracks", HARD,
+                    f"{len(tgts)} target {kind} tracks but no reference "
+                    f"{kind} track; cannot pick one",
+                    scope="track", target=[t.get("track_id") for t in tgts],
+                    detail={"kind": kind}))
+                for t in tgts:
+                    used_tgt.add(id(t))
+                continue
+
+        for ref in remaining_ref:
+            if id(ref) in used_ref:
+                continue
+            issues.append(Issue(
+                "missing_target_track", HARD,
+                f"reference {ref.get('kind')} track {ref.get('track_id')} "
+                "has no target counterpart",
+                scope="track", reference=ref.get("track_id"),
+                detail={"kind": ref.get("kind")}))
+        for tgt in remaining_tgt:
+            if id(tgt) in used_tgt:
+                continue
+            issues.append(Issue(
+                "unexpected_target_track", HARD,
+                f"target {tgt.get('kind')} track {tgt.get('track_id')} "
+                "has no reference counterpart",
+                scope="track", target=tgt.get("track_id"),
+                detail={"kind": tgt.get("kind")}))
+        for kind in sorted(self.require):
+            if not any(t.get("kind") == kind for t in ref_tracks):
+                issues.append(Issue(
+                    "required_kind_missing", HARD,
+                    f"policy requires a {kind} track in the reference, none found",
+                    scope="track", detail={"kind": kind}))
+        pairs.sort(key=lambda pair: (_track_sort(pair[0]), _track_sort(pair[1])))
+        return pairs, issues
+
+    def _usable(self, track: dict) -> bool:
+        kind = track.get("kind", "other")
+        if kind in self.ignore:
+            return False
+        return True
+
+    @staticmethod
+    def _indexes_unique(tracks: list[dict]) -> bool:
+        values = [t.get("index") for t in tracks]
+        return len(values) == len(set(values))
+
+
+class Comparator:
+    def __init__(self, policy: Policy):
+        self.policy = policy
+
+    def compare(self, reference: dict, target: dict) -> dict[str, Any]:
+        ref_media = _index_media(reference, "reference")
+        tgt_media = _index_media(target, "target")
+        issues: list[Issue] = []
+        file_results: list[dict] = []
+        pairs: list[dict] = []
+
+        ref_label = reference.get("label") or reference.get("root")
+        tgt_label = target.get("label") or target.get("root")
+
+        for key in sorted(ref_media):
+            ref = ref_media[key]
+            tgt = tgt_media.get(key)
+            if tgt is None:
+                issues.append(Issue(
+                    "missing_target_media", HARD,
+                    f"{key} is in the reference package but absent from the target",
+                    scope="file", path=key))
+                continue
+            file_issues, file_pairs = self._compare_media(key, ref, tgt)
+            issues.extend(file_issues)
+            pairs.extend(file_pairs)
+        for key in sorted(set(tgt_media) - set(ref_media)):
+            issues.append(Issue(
+                "unexpected_target_media", HARD,
+                f"{key} is in the target package but absent from the reference",
+                scope="file", path=key))
+
+        issues.sort(key=lambda i: (-SEVERITY_RANK[i.severity], i.scope,
+                                   i.path or "", i.code))
+        counts = {"error": 0, "warning": 0, "info": 0}
+        for issue in issues:
+            counts[issue.severity] += 1
+        hard = counts["error"]
+        return {
+            "policy_version": POLICY_VERSION,
+            "policy": self.policy.to_dict(),
+            "reference": {"label": ref_label, "files": len(ref_media)},
+            "target": {"label": tgt_label, "files": len(tgt_media)},
+            "files_compared": len(set(ref_media) & set(tgt_media)),
+            "duration_delta_seconds": max(
+                (abs(p["duration_delta_seconds"]) for p in pairs
+                 if p.get("duration_delta_seconds") is not None), default=0.0),
+            "duration_delta_ratio": max(
+                (abs(p["duration_delta_ratio"]) for p in pairs
+                 if p.get("duration_delta_ratio") is not None), default=0.0),
+            "inconsistency_count": len(issues),
+            "hard_inconsistency_count": hard,
+            "counts": counts,
+            "issues": [i.to_dict() for i in issues],
+            "pairs": pairs,
+            "codec_summary": _collect_codecs(ref_media, tgt_media),
+            "ok": hard == 0,
+        }
+
+
+def _collect_codecs(ref_media: dict[str, dict],
+                    tgt_media: dict[str, dict]) -> list[str]:
+    codecs: set[str] = set()
+    for side in (ref_media, tgt_media):
+        for media in side.values():
+            for track in media.get("tracks", []):
+                if track.get("codec"):
+                    codecs.add(str(track["codec"]))
+    return sorted(codecs)
