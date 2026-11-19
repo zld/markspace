@@ -121,4 +121,18 @@ RGB multiply(const Mat3& matrix, const RGB& value) {
             matrix(2, 0) * value.r + matrix(2, 1) * value.g + matrix(2, 2) * value.b};
 }
 
+RGB Domain::width() const {
+    return {max.r - min.r, max.g - min.g, max.b - min.b};
+}
+
+bool Domain::valid() const {
+    return isFinite(min) && isFinite(max) && width().r > 0.0 && width().g > 0.0 &&
+           width().b > 0.0;
+}
+
+bool Domain::contains(const RGB& value) const {
+    return isFinite(value) && value.r >= min.r && value.r <= max.r && value.g >= min.g &&
+           value.g <= max.g && value.b >= min.b && value.b <= max.b;
+}
+
 }  // namespace color

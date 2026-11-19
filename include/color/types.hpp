@@ -68,4 +68,22 @@ struct Domain {
     bool contains(const RGB& value) const;
 };
 
+enum class ColorSpace { Srgb, LinearRgb, Xyz };
+
+ColorSpace parseColorSpace(const std::string& name);
+const char* colorSpaceName(ColorSpace space);
+
+RGB srgbToLinear(const RGB& encoded);
+RGB linearToSrgb(const RGB& linear);
+RGB linearRgbToXyz(const RGB& linear);
+RGB xyzToLinearRgb(const RGB& xyz);
+const Mat3& srgbToXyzMatrix();
+const Mat3& xyzToSrgbMatrix();
+
+// Converts a value between colour spaces. `pixelIndex` is used in error
+// messages when the input is not finite (pass kNoPixel if unknown).
+constexpr std::size_t kNoPixel = static_cast<std::size_t>(-1);
+RGB convertColor(ColorSpace from, ColorSpace to, const RGB& value,
+                 std::size_t pixelIndex = kNoPixel);
+
 }  // namespace color

@@ -10,6 +10,7 @@ find_package(Threads REQUIRED)
 
 add_library(lutcore STATIC
     src/types.cpp
+    src/color_space.cpp
 )
 target_include_directories(lutcore PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_options(lutcore PRIVATE -Wall -Wextra -Wpedantic)
