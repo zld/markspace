@@ -42,18 +42,25 @@ def _expected_blocks(frames: int, block_size: int) -> list[int]:
 
 def test_stream_does_not_precompute_full_mix(fixture_dir, monkeypatch):
     project = make_project(fixture_dir.parent, base_spec())
-    blocks, _ = stream_render(project, block_size=1024)
+    from mixforge import graph as graph_module
+
+    calls = []
+    original = graph_module.MixGraph.render_block
+
+    def guarded(self, start, frames):
+        calls.append((start, frames))
+        return original(self, start, frames)
+
+    monkeypatch.setattr(graph_module.MixGraph, "render_block", guarded)
+    blocks, summary = stream_render(project, block_size=1024)
     first = next(blocks)
     assert first.shape == (1024, 2)
-    blocks.close()
-
-    summaries = []
-    counts = []
-    for blocks, summary in [stream_render(project, block_size=2048) for _ in range(1)]:
-        counts.append(sum(block.shape[0] for block in blocks))
-        summaries.append(summary)
-    assert counts == [project.frames]
-    assert summaries[0].master.frames == project.frames
+    # Pulling one block must not have rendered the whole project.
+    assert calls == [(0, 1024)]
+    assert summary.master.samples == 1024 * 2
+    remaining = sum(block.shape[0] for block in blocks)
+    assert remaining == project.frames - 1024
+    assert len(calls) == len(_expected_blocks(project.frames, 1024))
 
 
 def test_zero_frame_project_streams_nothing(fixture_dir):
@@ -115,6 +122,61 @@ def test_loop_outside_duration_is_rejected(fixture_dir):
             fixture_dir.parent,
             base_spec(duration_frames=8_000, loop={"start_frame": 0, "end_frame": 3_000, "count": 3}),
         )
+
+
+def test_loop_does_not_reset_automation_on_repeats(fixture_dir):
+    """A DC clip makes the applied gain directly readable from samples."""
+
+    spec = {
+        "sample_rate": 48_000,
+        "channels": 1,
+        "duration_frames": 10_000,
+        "tracks": [
+            {
+                "id": "dc",
+                "path": "assets/dc.wav",
+                "automation": {
+                    "unit": "frames",
+                    "interpolation": "linear",
+                    "points": [{"time": 0, "gain_db": 0.0}, {"time": 9_000, "gain_db": -20.0}],
+                },
+            }
+        ],
+        "master": {"limiter": False},
+        "loop": {"start_frame": 1_000, "end_frame": 3_000, "count": 3},
+    }
+    project = make_project(fixture_dir.parent, spec)
+    audio, _ = render_offline(project, block_size=256)
+    samples = audio[:, 0]
+    # Content repeats, but gain follows the output timeline: every tile is
+    # progressively quieter because automation never resets at the loop edge.
+    first_tile = samples[1_000:3_000]
+    second_tile = samples[3_000:5_000]
+    third_tile = samples[5_000:7_000]
+    assert np.all(np.abs(first_tile) > np.abs(second_tile))
+    assert np.all(np.abs(second_tile) > np.abs(third_tile))
+    # Each tile starts where automation says for its output frame, not at 0 dB.
+    assert abs(samples[3_000]) < abs(samples[1_000]) < 0.5
+
+
+def test_mono_and_stereo_sources_follow_project_channels(fixture_dir):
+    spec = {
+        "sample_rate": 48_000,
+        "channels": 2,
+        "duration_frames": 4_000,
+        "tracks": [
+            {"id": "mono", "path": "assets/ramp.wav", "start_frame": 0},
+            {"id": "stereo", "path": "assets/tone.wav", "start_frame": 0, "gain_db": -20.0},
+        ],
+        "master": {"limiter": False},
+    }
+    project = make_project(fixture_dir.parent, spec)
+    graph_audio, _ = render_offline(project, block_size=512)
+    assert graph_audio.shape == (4_000, 2)
+    mono_only = dict(spec, tracks=[spec["tracks"][0]])
+    mono_project = make_project(fixture_dir.parent, mono_only)
+    rendered, _ = render_offline(mono_project, block_size=512)
+    np.testing.assert_array_equal(rendered[:, 0], rendered[:, 1])
 
 
 def test_invalid_block_size_rejected(fixture_dir):

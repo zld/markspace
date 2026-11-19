@@ -30,6 +30,8 @@ def fixture_dir(tmp_path: Path) -> Path:
     write_wav(assets / "tone.wav", tone, 48_000)
     # Silent mono clip.
     write_wav(assets / "silence.wav", np.zeros((4800, 1)), 48_000)
+    # Constant DC clip: repeats expose gain automation independently of content.
+    write_wav(assets / "dc.wav", np.full((9600, 1), 0.5), 48_000)
     return assets
 
 

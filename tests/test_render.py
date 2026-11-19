@@ -70,6 +70,44 @@ def test_fade_envelope_edges_and_overlong_rejected():
         fade_amplitude(10, 8, 8, np.array([0]))
 
 
+def test_resampled_track_fade_spans_the_whole_clip(fixture_dir):
+    """A fade declared in output frames must cover the converted clip."""
+
+    spec = {
+        "sample_rate": 48_000,
+        "channels": 1,
+        "duration_frames": 10_000,
+        "tracks": [
+            {
+                "id": "dc",
+                "path": "assets/dc.wav",
+                "fade": {"in_frames": 480, "out_frames": 480},
+            }
+        ],
+        "master": {"limiter": False},
+    }
+    project = make_project(fixture_dir.parent, spec)
+    audio, _ = render_offline(project, block_size=100)
+    samples = audio[:, 0]
+    # The 9600-frame 48 kHz clip is output-length 9600 here: fade in ends at
+    # sample 480, fade out starts at 9600 - 480.  Beyond the clip: silence.
+    assert samples[0] == pytest.approx(0.0)
+    assert samples[480] == pytest.approx(0.5)
+    assert samples[4_799] == pytest.approx(0.5)
+    assert samples[9_600 - 481] == pytest.approx(0.5)
+    assert samples[9_600 - 1] == pytest.approx(0.0)
+    np.testing.assert_array_equal(samples[9_600:], 0.0)
+    # A shrinking source still fades over the resampled clip's own length.
+    spec["sample_rate"] = 24_000
+    spec["duration_frames"] = 2_000
+    project = make_project(fixture_dir.parent, spec)
+    audio, _ = render_offline(project, block_size=64)
+    assert audio.shape == (2_000, 1)
+    assert audio[0, 0] == pytest.approx(0.0)
+    assert audio[959, 0] == pytest.approx(0.5)
+    assert audio[1_919, 0] == pytest.approx(0.5)
+
+
 def test_resample_lengths_and_special_inputs():
     x = np.array([[0.0], [0.5], [1.0]])
     assert resample_audio(x, 2, 4).ravel().tolist() == pytest.approx(
