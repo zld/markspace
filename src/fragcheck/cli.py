@@ -68,19 +68,22 @@ def _emit_rebuild(summary, as_json):
         print(f"error: {err}", file=sys.stderr)
 
 
-def _analyze_or_exit(path):
+def _analyze_or_none(path):
+    """Analyze a file, printing structural/read errors; None on failure."""
     try:
         return validate.analyze(path)
     except StructuralError as exc:
         print(f"error: {exc}", file=sys.stderr)
-        raise SystemExit(2) from None
+        return None
     except OSError as exc:
         print(f"error: cannot read {path}: {exc}", file=sys.stderr)
-        raise SystemExit(2) from None
+        return None
 
 
 def cmd_inspect(args):
-    analysis = _analyze_or_exit(args.file)
+    analysis = _analyze_or_none(args.file)
+    if analysis is None:
+        return 2
     report = analysis.report()
     _emit(report, args.json)
     return 0 if not report["errors"] else 3
@@ -91,7 +94,9 @@ def cmd_rebuild(args):
         print("error: --out must differ from the input file; "
               "inputs are read-only", file=sys.stderr)
         return 2
-    analysis = _analyze_or_exit(args.file)
+    analysis = _analyze_or_none(args.file)
+    if analysis is None:
+        return 2
     try:
         plan = repair.plan_rebuild(analysis)
     except repair.RepairError as exc:
@@ -107,7 +112,9 @@ def cmd_rebuild(args):
         print(f"error: cannot write {args.out}: {exc}", file=sys.stderr)
         return 2
 
-    out_analysis = _analyze_or_exit(args.out)
+    out_analysis = _analyze_or_none(args.out)
+    if out_analysis is None:
+        return 3  # rebuild produced an unreadable file: treat as failure
     out_report = out_analysis.report()
     summary = {
         "file": args.file,
