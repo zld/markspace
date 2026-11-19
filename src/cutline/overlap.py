@@ -1,7 +1,8 @@
 """Overlap detection for clips sharing a track.
 
 The scanner sorts clips by ``(timeline_start, id)`` and sweeps with an active
-set keyed on ``end``.  A clip is compared only against still-active clips, so
+min-heap keyed on ``end``.  Each reported pair is verified with a half-open
+intersection, so same-track clips that only touch do not conflict.  A clip is compared only against still-active clips, so
 the cost is ``O(n log n + k)`` for ``k`` reported conflicts instead of the
 ``O(n^2)`` of a pairwise comparison.  Semi-open spans mean that clips which
 merely touch (``a.end == b.start``) never conflict, and different tracks are
@@ -105,7 +106,7 @@ def scan_track(track: Track) -> list[Conflict]:
         # Drop clips that end at or before this clip's start: no shared frames.
         while active and active[0][0] <= clip.timeline_start:
             heapq.heappop(active)
-        for _, other_id, other in sorted(active, key=lambda item: (item[2].timeline_start, item[1])):
+        for _, _, other in active:
             overlap = other.span.intersection(clip.span)
             if overlap is None:
                 continue
