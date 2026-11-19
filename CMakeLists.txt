@@ -17,9 +17,14 @@ add_library(lutcore STATIC
     src/histogram.cpp
     src/options.cpp
     src/demo_data.cpp
+    src/report.cpp
 )
 target_include_directories(lutcore PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_options(lutcore PRIVATE -Wall -Wextra -Wpedantic)
 target_link_libraries(lutcore PUBLIC Threads::Threads)
+
+add_executable(lutcheck src/main.cpp)
+target_link_libraries(lutcheck PRIVATE lutcore)
+target_compile_options(lutcheck PRIVATE -Wall -Wextra -Wpedantic)
 
 include(CTest)
