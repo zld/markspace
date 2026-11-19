@@ -84,9 +84,18 @@ def audit_file(
 
     error = None
     reason = None
-    if not outcome.frames and outcome.decode_errors:
-        error = "stream produced no decodable frames"
-        reason = "decode_failed"
+    if not outcome.frames:
+        if outcome.decode_errors:
+            error = "stream produced no decodable frames"
+            reason = "decode_failed"
+        elif outcome.truncated:
+            # The decode limit stopped the scan before a single frame: the file
+            # is not proven broken, but the audit is not usable either.
+            error = "frame limit reached before any frame decoded"
+            reason = "no_frames_within_limit"
+        else:
+            error = "video stream contains no frames"
+            reason = "no_frames"
 
     return AuditResult(
         path=str(source),
