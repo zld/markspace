@@ -47,6 +47,27 @@ def _emit(report, as_json):
         print(f"error: {err}", file=sys.stderr)
 
 
+def _emit_rebuild(summary, as_json):
+    if as_json:
+        print(json.dumps(summary, indent=2, sort_keys=True))
+    else:
+        print(f"file: {summary['file']} -> {summary['out']} "
+              f"({summary['written_bytes']} bytes)")
+        print(f"rebuilt: true "
+              f"sidx_offset_valid={str(summary['sidx_offset_valid']).lower()} "
+              f"output_sidx_offset_valid="
+              f"{str(summary['output_sidx_offset_valid']).lower()}")
+        for t in summary["tracks"]:
+            print(f"track {t['track_id']}: sample_entries="
+                  f"{t['sample_entries']} timescale={t['timescale']}")
+        print(f"fragments: {len(summary['fragments'])}")
+        for f in summary["fragments"]:
+            print(f"  [{f['index']}] {f['start_offset']}..{f['end_offset']} "
+                  f"({f['byte_length']} bytes)")
+    for err in summary["errors"]:
+        print(f"error: {err}", file=sys.stderr)
+
+
 def _analyze_or_exit(path):
     try:
         return validate.analyze(path)
@@ -99,7 +120,7 @@ def cmd_rebuild(args):
         "written_bytes": written,
         "errors": out_report["errors"],
     }
-    _emit(summary, args.json)
+    _emit_rebuild(summary, args.json)
     return 0 if not out_report["errors"] else 3
 
 

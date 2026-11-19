@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from fractions import Fraction
 
 from .boxes import MAX_FILE_SIZE, StructuralError, find_child, parse_boxes
-from .fragments import scan_fragments
+from .fragments import covered_by_ranges, orphan_mdats, scan_fragments
 from .sidx import parse_sidx
 from .stbl import (parse_stco, parse_stsc, parse_stsz, parse_stts,
                    samples_per_chunk)
@@ -211,6 +211,19 @@ def analyze(path):
         if not f.closed:
             warnings.append(
                 f"unclosed fragment at offset {f.start_offset}: {f.note}")
+    chunk_ranges = []
+    for t in tracks:
+        chunk_ranges.extend(zip(t.chunk_offsets,
+                                (o + s for o, s in zip(t.chunk_offsets,
+                                                       t.chunk_sizes))))
+    for box in orphan_mdats(top, fragments):
+        if covered_by_ranges(box, chunk_ranges):
+            warnings.append(
+                f"mdat at offset {box.offset} holds sample table chunks")
+        else:
+            warnings.append(
+                f"mdat at offset {box.offset} is not attributable to any "
+                f"fragment or the sample table")
     tfdts = [(f.index, f.tfdt) for f in fragments
              if f.closed and f.tfdt is not None]
     for (i0, t0), (i1, t1) in zip(tfdts, tfdts[1:]):
@@ -250,6 +263,15 @@ def analyze(path):
             sidx_errors.append(
                 f"overlapping references: range [{a1}, {b1}) from sidx at "
                 f"{o1} overlaps range [{a0}, {b0}) from sidx at {o0}")
+    if sidxes and not any(r.reference_type == 1 for s in sidxes
+                          for r in s.references):
+        closed = [(f.start_offset, f.end_offset)
+                  for f in fragments if f.closed]
+        actual = [r for s in sidxes for r in s.reference_ranges()]
+        if not sidx_errors and actual != closed:
+            sidx_errors.append(
+                "sidx references do not match the moof/mdat fragment "
+                "boundaries")
     errors.extend(sidx_errors)
     return Analysis(path, data, top, tracks, sidxes, sidx_errors,
                     fragments, warnings, errors)

@@ -88,3 +88,16 @@ def orphan_mdats(top_boxes, fragments):
         if not any(s <= box.offset and box.end <= e for s, e in covered):
             orphans.append(box)
     return orphans
+
+
+def covered_by_ranges(box, ranges):
+    """True if the box's data range is fully tiled by (start, end) ranges."""
+    pos = box.data_offset
+    for (s, e) in sorted(ranges):
+        if s > pos:
+            return False
+        if e > pos:
+            pos = e
+        if pos >= box.end:
+            return True
+    return pos >= box.end

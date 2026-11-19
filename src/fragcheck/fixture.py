@@ -124,6 +124,8 @@ def build_fixture(corrupt=None):
         data += sidx
     if corrupt == "sidx-dup":
         data += sidx  # second copy: overlapping, misaligned references
+    if corrupt == "orphan-mdat":
+        data += _box(b"mdat", _fill(300, 255))  # unattributable mdat
     data += fragments
 
     if corrupt == "sidx-offset":
@@ -134,7 +136,7 @@ def build_fixture(corrupt=None):
         at = data.index(b"sidx") - 4 + 20  # earliest_presentation_time
         data = data[:at] + struct.pack(">Q", 0xFFFFFFFFFFFFFFFF) + data[at + 8:]
     elif corrupt == "stts-count":
-        at = data.index(b"stts") - 4 + 12  # first entry's sample_count
+        at = data.index(b"stts") - 4 + 16  # first entry's sample_count
         data = data[:at] + struct.pack(">I", 90) + data[at + 4:]
     elif corrupt == "bad-box-size":
         at = len(ftyp)  # moov size field
@@ -143,8 +145,6 @@ def build_fixture(corrupt=None):
         data = data[:-100]
     elif corrupt == "unclosed":
         data += _moof(FRAGMENT_COUNT, FRAGMENT_COUNT * FRAGMENT_DURATION)
-    elif corrupt == "orphan-mdat":
-        data += _box(b"mdat", _fill(300, 255))
     return data
 
 

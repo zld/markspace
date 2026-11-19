@@ -14,7 +14,7 @@ import struct
 import tempfile
 from dataclasses import dataclass
 
-from .fragments import orphan_mdats
+from .fragments import covered_by_ranges, orphan_mdats
 
 
 class RepairError(Exception):
@@ -45,19 +45,6 @@ def build_sidx(reference_id, timescale, ept, durations, byte_lengths):
     return struct.pack(">I4s", 8 + len(payload), b"sidx") + payload
 
 
-def _covered_by_chunks(box, chunk_ranges):
-    """True if the box's data range is fully tiled by sample-table chunks."""
-    pos = box.data_offset
-    for (s, e) in sorted(chunk_ranges):
-        if s > pos:
-            return False
-        if e > pos:
-            pos = e
-        if pos >= box.end:
-            return True
-    return pos >= box.end
-
-
 def plan_rebuild(analysis):
     """Build a deterministic rebuild Plan or raise RepairError with reasons."""
     reasons = []
@@ -79,7 +66,7 @@ def plan_rebuild(analysis):
                                 (o + s for o, s in zip(t.chunk_offsets,
                                                        t.chunk_sizes))))
     for box in orphan_mdats(analysis.top_boxes, analysis.fragments):
-        if not _covered_by_chunks(box, chunk_ranges):
+        if not covered_by_ranges(box, chunk_ranges):
             reasons.append(
                 f"mdat at offset {box.offset} cannot be uniquely "
                 f"attributed to a fragment or the sample table")
