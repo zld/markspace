@@ -332,6 +332,27 @@ class Store:
             raise StoreError(f"cannot query runs: {exc}") from exc
         return None if row is None or row["id"] is None else int(row["id"])
 
+    def silence_ms(self, run_id: int) -> float:
+        """Total uncovered duration for successful files in *run_id*."""
+        try:
+            rows = self.connection.execute(
+                "SELECT j.sample_rate, j.total_samples, "
+                "COALESCE(SUM(s.end_sample - s.start_sample), 0) AS covered "
+                "FROM jobs j LEFT JOIN segments s ON s.job_id = j.id "
+                "WHERE j.run_id = ? AND j.status = 'ok' GROUP BY j.id",
+                (run_id,),
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise StoreError(f"cannot compute silence for run {run_id}: {exc}") from exc
+        total = 0.0
+        for row in rows:
+            rate = int(row["sample_rate"] or 0)
+            if rate <= 0:
+                continue
+            silent = max(0, int(row["total_samples"] or 0) - int(row["covered"]))
+            total += silent * 1000.0 / rate
+        return total
+
     def export_run(self, run_id: int) -> list[dict[str, Any]]:
         """Return segment rows ordered stably by path then ordinal."""
         try:

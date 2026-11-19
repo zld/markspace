@@ -135,17 +135,15 @@ class FrameEnergyDetector:
     def push(self, block: np.ndarray) -> None:
         """Feed int16 or float samples shaped ``(frames, channels)``."""
         block = np.asarray(block)
-        if block.ndim == 1:
-            mono = block
-        elif block.ndim == 2 and block.shape[1] >= 1:
+        if block.ndim not in (1, 2) or (block.ndim == 2 and block.shape[1] < 1):
+            raise ValueError("expected samples shaped (frames, channels)")
+        if np.issubdtype(block.dtype, np.integer):
+            block = block.astype(np.float64) / 32768.0
+        if block.ndim == 2:
             mono = block.mean(axis=1, dtype=np.float64)
         else:
-            raise ValueError("expected samples shaped (frames, channels)")
-        if np.issubdtype(mono.dtype, np.integer):
-            mono = mono.astype(np.float32) / 32768.0
-        else:
-            mono = mono.astype(np.float32, copy=False)
-        self.push_mono(mono)
+            mono = block
+        self.push_mono(mono.astype(np.float32, copy=False))
 
     def push_mono(self, samples: np.ndarray) -> None:
         samples = np.asarray(samples, dtype=np.float32).reshape(-1)

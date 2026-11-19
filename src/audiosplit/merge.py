@@ -150,6 +150,10 @@ def measure(
             peaks[cursor] = max(peaks[cursor], float(np.max(np.abs(mono))))
             sums[cursor] += float(np.sum(np.square(mono)))
             counts[cursor] += hi - lo
+            if segment.end_sample <= block_end:
+                cursor += 1
+                continue
+            break  # segment continues into the next block
         if cursor >= len(segments):
             break
     result: list[Segment] = []
