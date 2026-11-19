@@ -1,6 +1,7 @@
 #include "media_source.hpp"
 
 #include <cmath>
+#include <thread>
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -8,6 +9,7 @@ extern "C" {
 #include <libavutil/imgutils.h>
 #include <libavutil/opt.h>
 #include <libavutil/rational.h>
+#include <libswresample/swresample.h>
 }
 
 namespace avsync {
@@ -252,6 +254,238 @@ bool generate_sample(const SampleConfig& cfg, std::string& err) {
         return false;
     }
     return true;
+}
+
+namespace {
+
+// Convert any decoded audio layout/format to interleaved stereo s16.
+class AudioConverter {
+public:
+    bool open(AVCodecContext* dec, int dst_rate, std::string& err) {
+        swr_ = swr_alloc();
+        if (!swr_) { err = "swr_alloc failed"; return false; }
+        AVChannelLayout stereo = AV_CHANNEL_LAYOUT_STEREO;
+        av_opt_set_chlayout(swr_, "in_chlayout", &dec->ch_layout, 0);
+        av_opt_set_int(swr_, "in_sample_rate", dec->sample_rate, 0);
+        av_opt_set_sample_fmt(swr_, "in_sample_fmt", dec->sample_fmt, 0);
+        av_opt_set_chlayout(swr_, "out_chlayout", &stereo, 0);
+        av_opt_set_int(swr_, "out_sample_rate", dst_rate, 0);
+        av_opt_set_sample_fmt(swr_, "out_sample_fmt", AV_SAMPLE_FMT_S16, 0);
+        if (swr_init(swr_) < 0) { err = "swr_init failed"; return false; }
+        rate_ = dst_rate;
+        return true;
+    }
+    ~AudioConverter() { if (swr_) swr_free(&swr_); }
+
+    // Returns number of converted samples per channel, or -1 on error.
+    int convert(const AVFrame* f, std::vector<int16_t>& out) {
+        int cap = swr_get_out_samples(swr_, f->nb_samples);
+        if (cap < 0) return -1;
+        out.resize(static_cast<size_t>(cap) * 2);
+        uint8_t* dst[1] = {reinterpret_cast<uint8_t*>(out.data())};
+        int n = swr_convert(swr_, dst, cap,
+                            const_cast<const uint8_t**>(f->extended_data),
+                            f->nb_samples);
+        if (n < 0) return -1;
+        out.resize(static_cast<size_t>(n) * 2);
+        return n;
+    }
+    int rate() const { return rate_; }
+
+private:
+    SwrContext* swr_ = nullptr;
+    int rate_ = 0;
+};
+
+int64_t frame_pts_us(const AVFrame* f, const AVRational& tb) {
+    if (f->pts == AV_NOPTS_VALUE) return 0;
+    return av_rescale_q(f->pts, tb, AVRational{1, 1'000'000});
+}
+
+}  // namespace
+
+DecodeResult decode_into_queues(const std::string& path,
+                                const InjectionConfig& inj,
+                                BoundedQueue<AudioChunk>& audio_q,
+                                BoundedQueue<VideoFrameMsg>& video_q) {
+    DecodeResult res;
+    AVFormatContext* fmt = nullptr;
+    int rc = avformat_open_input(&fmt, path.c_str(), nullptr, nullptr);
+    if (rc < 0) {
+        res.error = "avformat_open_input failed";
+        return res;
+    }
+    if ((rc = avformat_find_stream_info(fmt, nullptr)) < 0) {
+        res.error = "avformat_find_stream_info failed";
+        avformat_close_input(&fmt);
+        return res;
+    }
+    int vi = av_find_best_stream(fmt, AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
+    int ai = av_find_best_stream(fmt, AVMEDIA_TYPE_AUDIO, -1, -1, nullptr, 0);
+    if (vi < 0 || ai < 0) {
+        res.error = "sample must contain both audio and video streams";
+        avformat_close_input(&fmt);
+        return res;
+    }
+    res.start_time_us =
+        fmt->start_time != AV_NOPTS_VALUE
+            ? fmt->start_time  // AV_TIME_BASE_Q is microseconds
+            : 0;
+
+    const AVCodec* vcodec = avcodec_find_decoder(
+        fmt->streams[vi]->codecpar->codec_id);
+    const AVCodec* acodec = avcodec_find_decoder(
+        fmt->streams[ai]->codecpar->codec_id);
+    CodecCtxGuard vg, ag;
+    vg.ctx = avcodec_alloc_context3(vcodec);
+    ag.ctx = avcodec_alloc_context3(acodec);
+    if (!vg.ctx || !ag.ctx ||
+        avcodec_parameters_to_context(vg.ctx, fmt->streams[vi]->codecpar) < 0 ||
+        avcodec_parameters_to_context(ag.ctx, fmt->streams[ai]->codecpar) < 0 ||
+        avcodec_open2(vg.ctx, vcodec, nullptr) < 0 ||
+        avcodec_open2(ag.ctx, acodec, nullptr) < 0) {
+        res.error = "decoder setup failed";
+        avformat_close_input(&fmt);
+        return res;
+    }
+    AudioConverter conv;
+    if (!conv.open(ag.ctx, ag.ctx->sample_rate, res.error)) {
+        avformat_close_input(&fmt);
+        return res;
+    }
+    AVRational vtb = fmt->streams[vi]->time_base;
+    AVRational atb = fmt->streams[ai]->time_base;
+
+    AVPacket* pkt = av_packet_alloc();
+    AVFrame* frame = av_frame_alloc();
+    if (!pkt || !frame) {
+        res.error = "av packet/frame alloc failed";
+        goto done;
+    }
+    while (true) {
+        rc = av_read_frame(fmt, pkt);
+        if (rc == AVERROR_EOF) {
+            avcodec_send_packet(vg.ctx, nullptr);
+            avcodec_send_packet(ag.ctx, nullptr);
+            rc = 0;
+            break;
+        }
+        if (rc < 0) { res.error = "av_read_frame failed"; goto done; }
+        AVCodecContext* dec =
+            pkt->stream_index == vi ? vg.ctx
+            : pkt->stream_index == ai ? ag.ctx : nullptr;
+        if (dec && (rc = avcodec_send_packet(dec, pkt)) < 0) {
+            res.error = "avcodec_send_packet failed";
+            av_packet_unref(pkt);
+            goto done;
+        }
+        av_packet_unref(pkt);
+        if (!dec) continue;
+
+        while (true) {
+            rc = avcodec_receive_frame(dec, frame);
+            if (rc == AVERROR(EAGAIN) || rc == AVERROR_EOF) { rc = 0; break; }
+            if (rc < 0) { res.error = "avcodec_receive_frame failed"; goto done; }
+            if (dec == vg.ctx) {
+                // Decode-latency spike on every 7th presentation frame.
+                if (inj.video_delay_ms > 0 &&
+                    res.video_frames % 7 == 6)
+                    std::this_thread::sleep_for(
+                        std::chrono::milliseconds(inj.video_delay_ms));
+                VideoFrameMsg msg;
+                msg.index = res.video_frames;
+                msg.width = frame->width;
+                msg.height = frame->height;
+                msg.pts_valid = frame->pts != AV_NOPTS_VALUE;
+                msg.pts_us = msg.pts_valid ? frame_pts_us(frame, vtb) : 0;
+                bool blank = inj.missing_pts_every > 0 &&
+                             res.video_frames > 0 &&
+                             res.video_frames % inj.missing_pts_every == 0;
+                if (blank) {
+                    msg.pts_valid = false;
+                    msg.pts_us = 0;
+                    ++res.injected_missing_pts;
+                }
+                if (!video_q.push(msg)) { res.error = "video queue closed"; goto done; }
+                ++res.video_frames;
+                if (inj.duplicate_every > 0 &&
+                    res.video_frames % inj.duplicate_every == 0) {
+                    VideoFrameMsg dup = msg;
+                    if (!video_q.push(dup)) {
+                        res.error = "video queue closed";
+                        goto done;
+                    }
+                    ++res.injected_duplicates;
+                    ++res.video_frames;
+                }
+            } else {
+                AudioChunk chunk;
+                chunk.pts_valid = frame->pts != AV_NOPTS_VALUE;
+                chunk.pts_us = chunk.pts_valid ? frame_pts_us(frame, atb) : 0;
+                chunk.sample_rate = conv.rate();
+                chunk.channels = 2;
+                int n = conv.convert(frame, chunk.interleaved);
+                if (n < 0) { res.error = "swr_convert failed"; goto done; }
+                chunk.nb_samples = n;
+                if (!audio_q.push(chunk)) {
+                    res.error = "audio queue closed";
+                    goto done;
+                }
+                res.audio_samples += n;
+            }
+            av_frame_unref(frame);
+        }
+        if (rc < 0) goto done;
+    }
+
+    // Flush both decoders after the EOF packet was signalled above.
+    for (AVCodecContext* dec : {static_cast<AVCodecContext*>(vg.ctx),
+                                static_cast<AVCodecContext*>(ag.ctx)}) {
+        while (true) {
+            int r2 = avcodec_receive_frame(dec, frame);
+            if (r2 == AVERROR_EOF || r2 == AVERROR(EAGAIN)) break;
+            if (r2 < 0) { res.error = "decoder flush failed"; goto done; }
+            if (dec == vg.ctx) {
+                VideoFrameMsg msg;
+                msg.index = res.video_frames;
+                msg.width = frame->width;
+                msg.height = frame->height;
+                msg.pts_valid = frame->pts != AV_NOPTS_VALUE;
+                msg.pts_us = msg.pts_valid ? frame_pts_us(frame, vtb) : 0;
+                bool blank = inj.missing_pts_every > 0 &&
+                             res.video_frames > 0 &&
+                             res.video_frames % inj.missing_pts_every == 0;
+                if (blank) {
+                    msg.pts_valid = false;
+                    ++res.injected_missing_pts;
+                }
+                if (!video_q.push(msg)) { res.error = "video queue closed"; goto done; }
+                ++res.video_frames;
+            } else {
+                AudioChunk chunk;
+                chunk.pts_valid = frame->pts != AV_NOPTS_VALUE;
+                chunk.pts_us = chunk.pts_valid ? frame_pts_us(frame, atb) : 0;
+                chunk.sample_rate = conv.rate();
+                chunk.channels = 2;
+                int n = conv.convert(frame, chunk.interleaved);
+                if (n < 0) { res.error = "swr_convert failed"; goto done; }
+                chunk.nb_samples = n;
+                if (!audio_q.push(chunk)) {
+                    res.error = "audio queue closed";
+                    goto done;
+                }
+                res.audio_samples += n;
+            }
+            av_frame_unref(frame);
+        }
+    }
+    res.ok = true;
+
+done:
+    if (pkt) av_packet_free(&pkt);
+    if (frame) av_frame_free(&frame);
+    avformat_close_input(&fmt);
+    return res;
 }
 
 }  // namespace avsync
