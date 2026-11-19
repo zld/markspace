@@ -61,7 +61,7 @@ def run_audit(
         metadata = video.metadata
         frames = list(video.iter_frames(max_frames=max_frames))
 
-    ordered, overflow_count = reorder_frames(
+    ordered, overflow_count, overflow_indices = reorder_frames(
         frames, window_size=window_size, max_frames=max_frames
     )
 
@@ -72,6 +72,10 @@ def run_audit(
         jump_threshold=jump_threshold,
         explicit_interval=frame_interval,
     )
+    for normalized_frame in normalized:
+        normalized_frame.reorder_overflow = (
+            normalized_frame.decode_index in overflow_indices
+        )
 
     counts = Counter(frame.frame_type for frame in frames)
     frame_type_counts = {label: int(counts.get(label, 0)) for label in FRAME_TYPES}

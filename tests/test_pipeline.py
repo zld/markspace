@@ -221,3 +221,18 @@ def test_module_invocation_matches_console_entry(fixture_video):
     assert "repaired_timestamps=" in result.stdout
     assert "max_jump_seconds=" in result.stdout
     assert "reorder_overflows=" in result.stdout
+
+
+def test_per_frame_overflow_flags_match_aggregate(fixture_video):
+    wide = run_audit(fixture_video, fps=Fraction(30000, 1001), window_size=16)
+    assert wide.reorder_overflows == 0
+    assert all(not f.reorder_overflow for f in wide.frames)
+
+    shallow = run_audit(
+        fixture_video, fps=Fraction(30000, 1001), window_size=1
+    )
+    flagged = [f for f in shallow.frames if f.reorder_overflow]
+    assert shallow.reorder_overflows > 0
+    assert len(flagged) == shallow.reorder_overflows
+    # No frame is lost when overflows occur.
+    assert len(shallow.frames) == shallow.decoded_frames

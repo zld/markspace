@@ -30,14 +30,14 @@ def coded_b_frame_sequence() -> list[FrameRecord]:
 
 def test_reorders_b_frame_sequence_into_presentation_order():
     frames = coded_b_frame_sequence()
-    ordered, overflows = reorder_frames(frames, window_size=8)
+    ordered, overflows, _ = reorder_frames(frames, window_size=8)
     assert [f.pts for f in ordered] == [0, 1000, 2000, 3000]
     assert overflows == 0
 
 
 def test_decode_and_presentation_orders_differ():
     frames = coded_b_frame_sequence()
-    ordered, _ = reorder_frames(frames, window_size=8)
+    ordered, _, _ = reorder_frames(frames, window_size=8)
     assert [f.decode_index for f in frames] != [
         f.decode_index for f in ordered
     ]
@@ -49,7 +49,7 @@ def test_duplicate_pts_keeps_decode_order_stably():
         make_record(1, 100),
         make_record(2, 200),
     ]
-    ordered, overflows = reorder_frames(frames, window_size=8)
+    ordered, overflows, _ = reorder_frames(frames, window_size=8)
     assert [f.decode_index for f in ordered] == [0, 1, 2]
     assert overflows == 0
 
@@ -60,7 +60,7 @@ def test_missing_pts_sorts_last_and_is_never_dropped():
         make_record(1, None),
         make_record(2, 100),
     ]
-    ordered, overflows = reorder_frames(frames, window_size=8)
+    ordered, overflows, _ = reorder_frames(frames, window_size=8)
     assert [f.decode_index for f in ordered] == [2, 0, 1]
     assert ordered[-1].pts is None
     assert len(ordered) == 3
@@ -76,16 +76,24 @@ def test_shallow_window_reports_overflow_without_losing_frames():
         make_record(3, 400),
         make_record(4, 50),
     ]
-    ordered, overflows = reorder_frames(frames, window_size=2)
+    ordered, overflows, _ = reorder_frames(frames, window_size=2)
     assert len(ordered) == 5
     assert overflows >= 1
     # The late frame is still present, appended deterministically at the tail.
     assert {f.decode_index for f in ordered} == {0, 1, 2, 3, 4}
+    tail = ordered[-1]
+    assert tail.decode_index == 4 and tail.pts == 50
+    # Re-running yields the identical order (no hidden nondeterminism).
+    again, again_overflows, _ = reorder_frames(frames, window_size=2)
+    assert [f.decode_index for f in again] == [
+        f.decode_index for f in ordered
+    ]
+    assert again_overflows == overflows
 
 
 def test_adequate_window_produces_zero_overflows():
     frames = coded_b_frame_sequence()
-    _, overflows = reorder_frames(frames, window_size=16)
+    _, overflows, _overflow_idx = reorder_frames(frames, window_size=16)
     assert overflows == 0
 
 
@@ -94,7 +102,7 @@ def test_large_window_matches_pure_stable_sort():
         make_record(4, None),
         make_record(5, 3000),
     ]
-    buffered, _ = reorder_frames(frames, window_size=10_000)
+    buffered, _unused, _idx = reorder_frames(frames, window_size=10_000)
     pure = stable_presentation_order(frames)
     assert [f.decode_index for f in buffered] == [
         f.decode_index for f in pure
@@ -117,7 +125,7 @@ def test_real_bframe_fixture_reorders_losslessly(fixture_video):
 
     records, _ = decode_frames(fixture_video)
     assert any(r.frame_type == "B" for r in records)
-    ordered, overflows = reorder_frames(records, window_size=16)
+    ordered, overflows, _ = reorder_frames(records, window_size=16)
     assert len(ordered) == len(records)
     # A window wider than the GOP depth never overflows.
     assert overflows == 0

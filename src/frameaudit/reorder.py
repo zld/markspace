@@ -59,6 +59,8 @@ class ReorderBuffer:
         self._released_key: Optional[tuple[float, int]] = None
         # Frames that arrived too late to join the released prefix.
         self._late: list[FrameRecord] = []
+        # Every frame that triggered an overflow, retained for per-frame flags.
+        self.overflowed_frames: list[FrameRecord] = []
         self.overflow_count = 0
         self.total_seen = 0
 
@@ -74,6 +76,7 @@ class ReorderBuffer:
         key = _sort_key(frame)
         if self._released_key is not None and key < self._released_key:
             self._late.append(frame)
+            self.overflowed_frames.append(frame)
             self.overflow_count += 1
             return None
         self._released_key = key
@@ -112,14 +115,22 @@ def reorder_frames(
     frames: Iterable[FrameRecord],
     window_size: int = DEFAULT_WINDOW_SIZE,
     max_frames: Optional[int] = None,
-) -> tuple[list[FrameRecord], int]:
-    """Reorder a complete frame list; return ordered frames and overflows."""
+) -> tuple[list[FrameRecord], int, set[int]]:
+    """Reorder a complete frame list.
+
+    Returns the ordered frames, the window overflow count and the set of
+    ``decode_index`` values belonging to frames that overflowed (late frames
+    parked on the tail), so callers can flag them per frame.
+    """
     buffer = ReorderBuffer(window_size=window_size, max_frames=max_frames)
     ordered: list[FrameRecord] = []
     for frame in frames:
         ordered.extend(buffer.push(frame))
     ordered.extend(buffer.finish())
-    return ordered, buffer.overflow_count
+    overflow_indices = {
+        frame.decode_index for frame in buffer.overflowed_frames
+    }
+    return ordered, buffer.overflow_count, overflow_indices
 
 
 def stable_presentation_order(frames: Iterable[FrameRecord]) -> list[FrameRecord]:
