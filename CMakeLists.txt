@@ -13,6 +13,8 @@ add_library(lutcore STATIC
     src/color_space.cpp
     src/cube_parser.cpp
     src/lut_kernel.cpp
+    src/render_paths.cpp
+    src/histogram.cpp
 )
 target_include_directories(lutcore PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_options(lutcore PRIVATE -Wall -Wextra -Wpedantic)

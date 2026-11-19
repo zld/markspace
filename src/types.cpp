@@ -171,4 +171,12 @@ void validateLut(const LUT& lut) {
     }
 }
 
+std::uint64_t Histogram::total() const {
+    std::uint64_t sum = 0;
+    for (std::uint64_t count : buckets) sum += count;
+    return sum;
+}
+
+std::uint64_t ChannelHistograms::total() const { return r.total() + g.total() + b.total(); }
+
 }  // namespace color
