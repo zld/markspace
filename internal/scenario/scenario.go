@@ -118,27 +118,33 @@ func lossPattern(rnd *rand.Rand, n, burst int) []bool {
 	return lost
 }
 
-// emissionOrder emits surviving seqs, holding up to depth packets back so
-// they leave out of order. depth 0 keeps natural order.
+// emissionOrder emits surviving seqs with per-packet displacement bounded
+// by depth positions, so reordering never exceeds the configured window.
+// depth 0 keeps natural order.
 func emissionOrder(rnd *rand.Rand, n int, lost []bool, depth int) []int {
-	order := make([]int, 0, n)
-	var pending []int
-	evict := func() {
-		j := rnd.Intn(len(pending))
-		order = append(order, pending[j])
-		pending = append(pending[:j], pending[j+1:]...)
+	type displaced struct {
+		pos, seq int
 	}
+	var items []displaced
 	for i := 0; i < n; i++ {
 		if lost[i] {
 			continue
 		}
-		pending = append(pending, i)
-		for len(pending) > depth {
-			evict()
+		d := 0
+		if depth > 0 {
+			d = rnd.Intn(depth + 1) // hold back at most depth positions
 		}
+		items = append(items, displaced{pos: i + d, seq: i})
 	}
-	for len(pending) > 0 {
-		evict()
+	sort.Slice(items, func(a, b int) bool {
+		if items[a].pos != items[b].pos {
+			return items[a].pos < items[b].pos
+		}
+		return items[a].seq < items[b].seq
+	})
+	order := make([]int, len(items))
+	for i, it := range items {
+		order[i] = it.seq
 	}
 	return order
 }

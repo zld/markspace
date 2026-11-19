@@ -102,7 +102,7 @@ func (c *ctlFlags) controller() *jitter.Controller {
 		WindowSize:          c.window,
 		SampleInterval:      time.Duration(c.sampleMs * float64(time.Millisecond)),
 		ConcealThreshold:    c.concealThr,
-		MaxSendRegressionMs: 250,
+		MaxSendRegressionMs: 2000,
 	})
 }
 
