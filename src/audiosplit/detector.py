@@ -13,6 +13,7 @@ import numpy as np
 
 _EPSILON = 1e-12
 _MIN_DB = -120.0
+_SEED_FRAMES = 4
 
 def amplitude_to_db(value: float) -> float:
     """Convert a linear amplitude to dBFS, clamped at -120 dB."""
@@ -125,7 +126,8 @@ class FrameEnergyDetector:
             maxlen=config.noise_window_frames
         )
         self._noise_floor = db_to_amplitude(_MIN_DB)
-        self._answered_any = False
+        self._seed_frames: list[tuple[int, float, float]] = []
+        self._seeded = False
 
     @property
     def noise_floor_db(self) -> float:
@@ -176,6 +178,8 @@ class FrameEnergyDetector:
                     valid=valid,
                 )
                 position += self.hop
+        if not self._seeded:
+            self._seed_and_flush()
         self._close_active(total_samples)
         return DetectionResult(
             events=self._events,
@@ -193,16 +197,32 @@ class FrameEnergyDetector:
 
     def _process_frame(self, samples: np.ndarray, start: int, valid: int) -> None:
         samples = samples[:valid]
-        if not self._answered_any:
-            # Seed from the first frame: steady noise must not read as events.
-            self._noise_floor = max(
-                float(np.sqrt(np.mean(np.square(samples, dtype=np.float64)))),
-                _EPSILON,
-            )
-            self._answered_any = True
         energy = float(np.mean(np.square(samples, dtype=np.float64)))
         peak = float(np.max(np.abs(samples)))
         rms = math.sqrt(max(energy, 0.0))
+        if not self._seeded:
+            self._seed_frames.append((start, rms, peak))
+            if len(self._seed_frames) < _SEED_FRAMES:
+                return
+            self._seed_and_flush()
+            return
+        self._evaluate(start, rms, peak)
+
+    def _seed_and_flush(self) -> None:
+        """Seed the floor from the quietest early frame, then replay frames.
+
+        Using the minimum of a few frames keeps a single spike from
+        inflating the floor while still giving steady noise a sane start.
+        """
+        self._noise_floor = max(
+            min(rms for _start, rms, _peak in self._seed_frames), _EPSILON
+        )
+        self._seeded = True
+        pending, self._seed_frames = self._seed_frames, []
+        for start, rms, peak in pending:
+            self._evaluate(start, rms, peak)
+
+    def _evaluate(self, start: int, rms: float, peak: float) -> None:
         self._apply_state(self._next_index, start, rms, peak)
         self._next_index += 1
         self._update_noise(rms)
