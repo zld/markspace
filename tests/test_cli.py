@@ -220,3 +220,186 @@ def test_pack_and_compare_identical(tmp_path, capsys, sample_dir):
     result = json.loads(out_json.read_text())
     assert result["ok"] is True
     assert result["policy_version"] == 1
+
+
+def test_pack_clean_tree_exits_zero(tmp_path, capsys, valid_mp4, valid_wav):
+    out = tmp_path / "m.json"
+    code, _out, _err = run(capsys, "pack", str(tmp_path), "--out", str(out))
+    assert code == cli.EXIT_OK
+
+
+def test_pack_write_failure_exits_three(tmp_path, capsys, valid_mp4):
+    blocker = tmp_path / "blocker"
+    blocker.write_text("x")
+    code, _out, err = run(capsys, "pack", str(valid_mp4),
+                          "--out", str(blocker / "out.json"))
+    assert code == cli.EXIT_BATCH_FAILED
+    assert "cannot write manifest" in err
+
+
+def test_compare_codec_difference_exits_one(tmp_path, capsys, valid_mp4):
+    ref = tmp_path / "ref.json"
+    tgt = tmp_path / "tgt.json"
+    run(capsys, "pack", str(valid_mp4), "--out", str(ref))
+    data = json.loads(ref.read_text())
+    for media in data["media"]:
+        for track in media["tracks"]:
+            if track["kind"] == "video":
+                track["codec"] = "hevc"
+    tgt.write_text(json.dumps(data))
+    code, out, _err = run(capsys, "compare", str(ref), str(tgt))
+    assert code == cli.EXIT_INCONSISTENT
+    assert "codec_mismatch" in out
+    assert "result: HARD_INCONSISTENCIES" in out
+
+
+def test_compare_duration_difference_exits_one(tmp_path, capsys, valid_mp4):
+    ref = tmp_path / "ref.json"
+    tgt = tmp_path / "tgt.json"
+    run(capsys, "pack", str(valid_mp4), "--out", str(ref))
+    data = json.loads(ref.read_text())
+    for media in data["media"]:
+        media["duration_seconds"] = 4.0
+        for track in media["tracks"]:
+            track["duration_seconds"] = 4.0
+    tgt.write_text(json.dumps(data))
+    code, out, _err = run(capsys, "compare", str(ref), str(tgt),
+                          "--duration-tolerance", "0.02")
+    assert code == cli.EXIT_INCONSISTENT
+    assert "duration_delta_exceeded" in out
+    assert "duration_delta_seconds: 2.000" in out
+
+
+def test_compare_with_example_policy(tmp_path, capsys, valid_mp4):
+    import json as _json
+    root = Path(__file__).resolve().parent.parent
+    policy = root / "examples" / "delivery-policy.json"
+    assert _json.loads(policy.read_text())["name"] == "level-delivery"
+    manifest = tmp_path / "m.json"
+    run(capsys, "pack", str(valid_mp4), "--out", str(manifest))
+    code, out, _err = run(capsys, "compare", str(manifest), str(manifest),
+                          "--policy", str(policy))
+    assert code == cli.EXIT_OK
+    assert "result: OK" in out
+
+
+def test_compare_bad_policy_exits_two(tmp_path, capsys, valid_mp4):
+    manifest = tmp_path / "m.json"
+    run(capsys, "pack", str(valid_mp4), "--out", str(manifest))
+    policy = tmp_path / "policy.json"
+    policy.write_text('{"duration": {"tolerance": 0.1}}')
+    code, _out, err = run(capsys, "compare", str(manifest), str(manifest),
+                          "--policy", str(policy))
+    assert code == cli.EXIT_USAGE
+    assert "policy error" in err
+    assert "duration.tolerance" in err
+
+
+def test_compare_negative_tolerance_is_usage_error(tmp_path, capsys,
+                                                  valid_mp4):
+    manifest = tmp_path / "m.json"
+    run(capsys, "pack", str(valid_mp4), "--out", str(manifest))
+    code, _out, err = run(capsys, "compare", str(manifest), str(manifest),
+                          "--duration-tolerance", "-0.5")
+    assert code == cli.EXIT_USAGE
+    assert "duration-tolerance" in err
+
+
+def test_compare_bad_policy_syntax_reports_position(tmp_path, capsys,
+                                                    valid_mp4):
+    manifest = tmp_path / "m.json"
+    run(capsys, "pack", str(valid_mp4), "--out", str(manifest))
+    policy = tmp_path / "policy.json"
+    policy.write_text('{\n  "duration": ,\n}\n')
+    code, _out, err = run(capsys, "compare", str(manifest), str(manifest),
+                          "--policy", str(policy))
+    assert code == cli.EXIT_USAGE
+    assert "line 2" in err
+
+
+def test_compare_missing_manifest_is_usage_error(tmp_path, capsys):
+    code, _out, err = run(capsys, "compare", str(tmp_path / "nope.json"),
+                          str(tmp_path / "nope.json"))
+    assert code == cli.EXIT_USAGE
+    assert "cannot read" in err
+
+
+def test_compare_accepts_directories(capsys, sample_dir):
+    code, out, _err = run(capsys, "compare", str(sample_dir), str(sample_dir))
+    assert code == cli.EXIT_OK
+    assert "files_compared: 3" in out
+
+
+def test_compare_against_database(tmp_path, capsys, sample_dir):
+    db = tmp_path / "m.sqlite"
+    run(capsys, "scan", str(sample_dir), "--db", str(db))
+    manifest = tmp_path / "m.json"
+    run(capsys, "pack", str(sample_dir), "--out", str(manifest))
+    code, out, _err = run(capsys, "compare", str(manifest), str(manifest),
+                          "--ref-db", str(db))
+    assert code == cli.EXIT_OK
+    assert "files_compared: 3" in out
+
+
+def test_compare_database_matches_nested_tree_manifest(tmp_path, capsys,
+                                                      valid_mp4, valid_wav):
+    import shutil
+    root = tmp_path / "tree"
+    (root / "nested").mkdir(parents=True)
+    shutil.copy(valid_mp4, root / "nested" / "clip.mp4")
+    shutil.copy(valid_wav, root / "vo.wav")
+    db = tmp_path / "m.sqlite"
+    manifest = tmp_path / "m.json"
+    run(capsys, "scan", str(root), "--db", str(db))
+    run(capsys, "pack", str(root), "--out", str(manifest))
+    code, out, _err = run(capsys, "compare", str(manifest), str(manifest),
+                          "--ref-db", str(db))
+    assert code == cli.EXIT_OK
+    assert "missing_target_media" not in out
+    assert "files_compared: 2" in out
+
+
+def test_compare_without_any_completed_batch_is_usage_error(tmp_path, capsys,
+                                                            valid_mp4):
+    db = tmp_path / "empty.sqlite"
+    from mediacheck.store import MediaStore
+    MediaStore(db).close()
+    manifest = tmp_path / "m.json"
+    run(capsys, "pack", str(valid_mp4), "--out", str(manifest))
+    code, _out, err = run(capsys, "compare", str(manifest), str(manifest),
+                          "--ref-db", str(db))
+    assert code == cli.EXIT_USAGE
+    assert "no completed scan batch" in err
+
+
+def test_usage_error_exit_two(capsys):
+    code, _out, _err = run(capsys, "scan")
+    assert code == cli.EXIT_USAGE
+
+
+def test_report_latest_batch(tmp_path, capsys, sample_dir):
+    db = tmp_path / "m.sqlite"
+    run(capsys, "scan", str(sample_dir), "--db", str(db))
+    code, out, _err = run(capsys, "report", "--db", str(db))
+    assert code == cli.EXIT_BATCH_FAILED
+    assert "files_scanned: 4" in out
+    assert "tracks_total:  5" in out
+
+
+def test_report_json_output(tmp_path, capsys, sample_dir):
+    db = tmp_path / "m.sqlite"
+    run(capsys, "scan", str(sample_dir), "--db", str(db))
+    out_json = tmp_path / "report.json"
+    run(capsys, "report", "--db", str(db), "--json", str(out_json))
+    document = json.loads(out_json.read_text())
+    assert document["kind"] == "mediacheck.scan"
+    assert "codec_summary" in document
+
+
+def test_report_missing_database_is_usage_error(tmp_path, capsys):
+    blocker = tmp_path / "blocker"
+    blocker.write_text("x")
+    code, _out, err = run(capsys, "report", "--db",
+                          str(blocker / "x" / "m.sqlite"))
+    assert code == cli.EXIT_USAGE
+    assert "report:" in err
