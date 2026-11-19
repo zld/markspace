@@ -176,3 +176,208 @@ def parse_block(
         for offset, size in frames
     ]
 
+
+# --------------------------------------------------------------------------
+# High-level Segment parser
+# --------------------------------------------------------------------------
+
+
+def _bump(tree: list[dict], name: str, depth: int) -> None:
+    """Maintain a compact outline: count siblings at the same depth."""
+    if tree and tree[-1]["name"] == name and tree[-1]["depth"] == depth:
+        tree[-1]["count"] += 1
+    else:
+        tree.append({"name": name, "depth": depth, "count": 1})
+
+
+def parse_matroska(stream) -> MatroskaFile:
+    reader = EbmlReader(stream, allowed_unknown_ids=UNKNOWN_LENGTH_ALLOWED)
+    stream.seek(0, 2)
+    file_size = stream.tell()
+    from . import MAX_TOTAL_SAMPLES
+
+    # -- EBML header -------------------------------------------------------
+    header = reader.read_element_header(0)
+    if header.id != ID_EBML_HEADER:
+        raise MatroskaError("file does not start with an EBML Header element")
+    tree: list[dict] = [{"name": "EBML", "depth": 0, "count": 1}]
+    doc_type = None
+    for child in reader.iter_children(header):
+        if child.id == ID_EBML_DOC_TYPE:
+            doc_type = reader.read_string(child)
+        else:
+            reader.read_payload(child)
+    if doc_type not in ("matroska", "webm"):
+        raise MatroskaError(f"unsupported DocType {doc_type!r} (need matroska/webm)")
+
+    # -- exactly one Segment ----------------------------------------------
+    seg = reader.read_element_header(0)
+    if seg.id != ID_SEGMENT:
+        raise MatroskaError("EBML Header must be followed by a Segment")
+    _bump(tree, "Segment", 0)
+
+    tracks: list[Track] = []
+    samples: list[Sample] = []
+    scale_ns = 1_000_000
+    duration_ns: float | None = None
+    cluster_count = 0
+    cue_count = 0
+    warnings: list[str] = []
+
+    for top in reader.iter_children(seg, terminator_ids=set()):
+        if top.id == ID_SEGMENT_INFO:
+            _bump(tree, "Info", 1)
+            for child in reader.iter_children(top):
+                if child.id == ID_TIMECODE_SCALE:
+                    scale_ns = reader.read_uint(child)
+                    if scale_ns <= 0:
+                        raise MatroskaError("TimecodeScale must be positive")
+                elif child.id == ID_DURATION:
+                    duration_ns = reader.read_float(child) * scale_ns
+                else:
+                    reader.read_payload(child)
+        elif top.id == ID_TRACKS:
+            _bump(tree, "Tracks", 1)
+            for entry in reader.iter_children(top):
+                if entry.id != ID_TRACK_ENTRY:
+                    reader.read_payload(entry)
+                    continue
+                tracks.append(_parse_track(reader, entry, tree))
+        elif top.id == ID_CLUSTER:
+            cluster_count += 1
+            _bump(tree, "Cluster", 1)
+            cluster_tc_ns = None
+            for child in reader.iter_children(
+                top, terminator_ids={ID_CLUSTER, ID_CUES, ID_TRACKS,
+                                     ID_SEGMENT_INFO, ID_SEEK_HEAD,
+                                     0x1254C367, 0x1043A770}
+            ):
+                if child.id == ID_CLUSTER_TIMECODE:
+                    cluster_tc_ns = reader.read_uint(child) * scale_ns
+                elif child.id == ID_SIMPLE_BLOCK:
+                    if cluster_tc_ns is None:
+                        raise MatroskaError("SimpleBlock before Cluster Timecode")
+                    samples.extend(parse_block(
+                        reader, child, cluster_tc_ns, scale_ns, simple=True))
+                elif child.id == ID_BLOCK_GROUP:
+                    if cluster_tc_ns is None:
+                        raise MatroskaError("BlockGroup before Cluster Timecode")
+                    samples.extend(
+                        _parse_block_group(reader, child, cluster_tc_ns, scale_ns))
+                else:
+                    reader.read_payload(child)
+            if len(samples) > MAX_TOTAL_SAMPLES:
+                raise MatroskaError(f"sample count exceeds limit {MAX_TOTAL_SAMPLES}")
+        elif top.id == ID_CUES:
+            _bump(tree, "Cues", 1)
+            for point in reader.iter_children(top):
+                if point.id == ID_CUE_POINT:
+                    cue_count += 1
+                    for sub in reader.iter_children(point):
+                        reader.read_payload(sub)
+                else:
+                    reader.read_payload(point)
+        else:
+            reader.read_payload(top)
+
+    # Any trailing garbage after a bounded Segment is an error.
+    if seg.known_size and reader.pos() < file_size:
+        raise MatroskaError("trailing bytes after a single bounded Segment")
+
+    if not tracks:
+        raise MatroskaError("Segment contains no Track entries")
+    if not samples:
+        raise MatroskaError("Segment contains no media samples")
+    return MatroskaFile(
+        timecode_scale_ns=scale_ns,
+        duration_ns=duration_ns,
+        tracks=tracks,
+        samples=samples,
+        tree=tree,
+        warnings=warnings,
+        cluster_count=cluster_count,
+        cue_count=cue_count,
+    )
+
+
+def _parse_track(reader: EbmlReader, entry: Element,
+                 tree: list[dict]) -> Track:
+    _bump(tree, "TrackEntry", 2)
+    t = Track(number=-1, uid=None, type=0, codec_id="")
+    for child in reader.iter_children(entry):
+        cid = child.id
+        if cid == ID_TRACK_NUMBER:
+            t.number = reader.read_uint(child)
+        elif cid == ID_TRACK_UID:
+            t.uid = reader.read_uint(child)
+        elif cid == ID_TRACK_TYPE:
+            t.type = reader.read_uint(child)
+        elif cid == ID_CODEC_ID:
+            t.codec_id = reader.read_string(child)
+        elif cid == ID_DEFAULT_DURATION:
+            t.default_duration_ns = reader.read_uint(child)
+        elif cid == ID_CODEC_PRIVATE:
+            t.codec_private = reader.read_binary(child)
+        elif cid == ID_FLAG_ENABLED:
+            t.enabled = bool(reader.read_uint(child))
+        elif cid == ID_VIDEO:
+            _bump(tree, "Video", 3)
+            for v in reader.iter_children(child):
+                if v.id == ID_PIXEL_WIDTH:
+                    t.pixel_width = reader.read_uint(v)
+                elif v.id == ID_PIXEL_HEIGHT:
+                    t.pixel_height = reader.read_uint(v)
+                elif v.id == ID_FRAME_RATE:
+                    t.frame_rate = reader.read_float(v)
+                else:
+                    reader.read_payload(v)
+        elif cid == ID_AUDIO:
+            _bump(tree, "Audio", 3)
+            for a in reader.iter_children(child):
+                if a.id == ID_SAMPLING_FREQUENCY:
+                    t.sampling_frequency = reader.read_float(a)
+                elif a.id == ID_CHANNELS:
+                    t.channels = reader.read_uint(a)
+                elif a.id == ID_BIT_DEPTH:
+                    t.bit_depth = reader.read_uint(a)
+                else:
+                    reader.read_payload(a)
+        elif cid == ID_CONTENT_ENCODINGS:
+            _bump(tree, "ContentEncodings", 3)
+            for enc in reader.iter_children(child):
+                if enc.id != ID_CONTENT_ENCODING:
+                    reader.read_payload(enc)
+                    continue
+                for e in reader.iter_children(enc):
+                    if e.id == ID_CONTENT_ENCODING_TYPE and \
+                            reader.read_uint(e) == 1:
+                        t.header_compression = True
+                    elif e.id == ID_CONTENT_ENC_ALGO and \
+                            reader.read_uint(e) != 0:
+                        t.encrypted = True
+                    elif e.id == ID_CONTENT_COMPRESSION:
+                        for k in reader.iter_children(e):
+                            if k.id == ID_CONTENT_COMP_ALGO and \
+                                    reader.read_uint(k) != 0:
+                                t.header_compression = True
+                            else:
+                                reader.read_payload(k)
+                    else:
+                        reader.read_payload(e)
+        else:
+            reader.read_payload(child)
+    if t.number < 0:
+        raise MatroskaError("TrackEntry missing TrackNumber")
+    return t
+
+
+def _parse_block_group(reader: EbmlReader, group: Element,
+                       cluster_tc_ns: int, scale_ns: int) -> list[Sample]:
+    out: list[Sample] = []
+    for child in reader.iter_children(group):
+        if child.id == ID_BLOCK:
+            out.extend(parse_block(reader, child, cluster_tc_ns,
+                                   scale_ns, simple=False))
+        else:
+            reader.read_payload(child)
+    return out
