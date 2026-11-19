@@ -8,6 +8,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 add_executable(lutcheck
   src/main.cpp
   src/cube_parser.cpp
+  src/color_space.cpp
 )
 
 target_include_directories(lutcheck PRIVATE include)

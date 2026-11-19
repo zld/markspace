@@ -140,6 +140,30 @@ test_prep/all: cmake_check_build_system
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_prep/all
 .PHONY : test_prep/all
 
+src/color_space.o: src/color_space.cpp.o
+.PHONY : src/color_space.o
+
+# target to build an object file
+src/color_space.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/lutcheck.dir/build.make CMakeFiles/lutcheck.dir/src/color_space.cpp.o
+.PHONY : src/color_space.cpp.o
+
+src/color_space.i: src/color_space.cpp.i
+.PHONY : src/color_space.i
+
+# target to preprocess a source file
+src/color_space.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/lutcheck.dir/build.make CMakeFiles/lutcheck.dir/src/color_space.cpp.i
+.PHONY : src/color_space.cpp.i
+
+src/color_space.s: src/color_space.cpp.s
+.PHONY : src/color_space.s
+
+# target to generate assembly for a file
+src/color_space.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/lutcheck.dir/build.make CMakeFiles/lutcheck.dir/src/color_space.cpp.s
+.PHONY : src/color_space.cpp.s
+
 src/cube_parser.o: src/cube_parser.cpp.o
 .PHONY : src/cube_parser.o
 
@@ -197,6 +221,9 @@ help:
 	@echo "... edit_cache"
 	@echo "... rebuild_cache"
 	@echo "... lutcheck"
+	@echo "... src/color_space.o"
+	@echo "... src/color_space.i"
+	@echo "... src/color_space.s"
 	@echo "... src/cube_parser.o"
 	@echo "... src/cube_parser.i"
 	@echo "... src/cube_parser.s"

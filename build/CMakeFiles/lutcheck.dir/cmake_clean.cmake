@@ -1,4 +1,6 @@
 file(REMOVE_RECURSE
+  "CMakeFiles/lutcheck.dir/src/color_space.cpp.o"
+  "CMakeFiles/lutcheck.dir/src/color_space.cpp.o.d"
   "CMakeFiles/lutcheck.dir/src/cube_parser.cpp.o"
   "CMakeFiles/lutcheck.dir/src/cube_parser.cpp.o.d"
   "CMakeFiles/lutcheck.dir/src/main.cpp.o"
