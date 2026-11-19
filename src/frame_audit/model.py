@@ -53,13 +53,19 @@ class FrameRecord:
 
 @dataclass(frozen=True, slots=True)
 class TimelineFrame:
-    """A frame after presentation-order sorting and timestamp repair."""
+    """A frame after presentation-order sorting and timestamp repair.
+
+    ``kind`` records why a timestamp was unusable; ``applied`` says whether the
+    result actually rewrote it.  Under the ``report`` policy anomalies are still
+    detected and counted, but the original timestamp is left untouched.
+    """
 
     frame: FrameRecord
     position: int
     original_pts: int | None
     repaired_pts: int | None
     kind: RepairKind
+    applied: bool = False
 
     @property
     def pict_type(self) -> str:
@@ -121,6 +127,12 @@ class AuditResult:
 
     @property
     def repaired_timestamps(self) -> int:
+        """Timestamps actually rewritten (0 under the ``report`` policy)."""
+        return sum(1 for frame in self.frames if frame.applied)
+
+    @property
+    def detected_anomalies(self) -> int:
+        """Unusable timestamps found, whether or not they were rewritten."""
         return sum(1 for frame in self.frames if frame.kind.repaired)
 
     def count_type(self, pict_type: str) -> int:
@@ -157,6 +169,7 @@ class AuditResult:
 
     @property
     def repair_breakdown(self) -> dict[str, int]:
+        """Anomalies by kind, independent of whether repair was applied."""
         counts = {kind.value: 0 for kind in RepairKind if kind.repaired}
         for frame in self.frames:
             if frame.kind.repaired:
