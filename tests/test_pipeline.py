@@ -208,3 +208,154 @@ if __name__ == "__main__":
     unittest.main(verbosity=2)
 
 
+class MuxOutputTests(FixtureBackedTestCase):
+    def test_remux_roundtrip_and_offsets(self):
+        mapping, timelines, result, dst = self.remux()
+        self.assertEqual(result.mdat_data_start, 40)  # ftyp(32) + mdat head(8)
+        self.assertLess(result.mdat_data_start, result.mdat_data_end)
+        for mt in result.muxed_tracks:
+            self.assertEqual(len(mt.chunk_offsets), mt.sample_count)
+            self.assertEqual(len(mt.sample_sizes), mt.sample_count)
+            for off, size in zip(mt.chunk_offsets, mt.sample_sizes):
+                self.assertGreaterEqual(off, result.mdat_data_start)
+                self.assertLessEqual(off + size, result.mdat_data_end)
+
+    def test_independent_mp4_inspection_matches(self):
+        mapping, timelines, result, dst = self.remux()
+        report = inspect_mp4(dst)
+        self.assertEqual(report["box_count"], result.total_boxes)
+        self.assertEqual(report["track_count"], 2)
+        ids = sorted(t["mp4_track_id"] for t in report["tracks"])
+        self.assertEqual(ids, [1, 2])
+        for track in report["tracks"]:
+            self.assertGreaterEqual(track["sample_count"], 3)
+            self.assertEqual(track["first_timestamp_seconds"], "0.000000")
+            self.assertGreater(float(track["last_timestamp_seconds"]), 0.1)
+            self.assertFalse(track["uses_co64"])
+
+    def test_required_boxes_present(self):
+        _, _, result, dst = self.remux()
+        report = inspect_mp4(dst)
+        names = {node["name"] for node in report["box_tree"]}
+        for required in ("ftyp", "mdat", "moov", "mvhd", "trak", "tkhd",
+                         "mdhd", "hdlr", "stbl", "stsd", "stts", "stsc",
+                         "stsz", "stco"):
+            self.assertIn(required, names)
+
+    def test_video_has_sync_table_audio_does_not(self):
+        _, _, _, dst = self.remux()
+        report = inspect_mp4(dst)
+        by_handler = {t["handler"]: t for t in report["tracks"]}
+        self.assertGreater(by_handler["vide"]["sync_sample_count"], 0)
+        self.assertEqual(by_handler["soun"]["sync_sample_count"], 0)
+
+    def test_co64_selected_for_large_offsets(self):
+        # Force every chunk offset above the 32-bit boundary by lying about
+        # the mdat base; the table builder must switch stco -> co64.
+        from mkvmp4 import boxes
+        mapping, timelines, result, dst = self.remux()
+        mt = result.muxed_tracks[0]
+        huge = [off + 0x1_0000_0000 for off in mt.chunk_offsets]
+        table = boxes.chunk_offset_box(huge)
+        self.assertEqual(table[4:8], b"co64")
+        small_table = boxes.chunk_offset_box(mt.chunk_offsets)
+        self.assertEqual(small_table[4:8], b"stco")
+
+    def test_sample_offset_outside_mdat_rejected(self):
+        mapping = select_tracks(self.mkv.tracks, strict=True)
+        timelines, _, _ = build_timelines(
+            self.mkv, mapping.accepted_numbers)
+        dst = io.BytesIO()
+        result = remux_to_stream(
+            self.src, dst, self.mkv, mapping, timelines)
+        # Corrupt one offset so verification must fail.
+        result.muxed_tracks[0].chunk_offsets[0] = result.mdat_data_end + 999
+        with self.assertRaises(MuxError):
+            verify_mp4(dst, result)
+
+    def test_payload_bytes_are_copied_not_encoded(self):
+        mapping, timelines, result, dst = self.remux()
+        dst.seek(result.mdat_data_start)
+        blob = dst.read(result.mdat_data_end - result.mdat_data_start)
+        # Every source frame payload must appear verbatim inside mdat.
+        for sample in self.mkv.samples:
+            self.src.seek(sample.payload_offset)
+            frame = self.src.read(sample.payload_size)
+            self.assertIn(frame, blob)
+
+
+class CliTests(FixtureBackedTestCase):
+    @property
+    def _python(self) -> str:
+        return sys.executable
+
+    def _run(self, *args) -> subprocess.CompletedProcess:
+        env = dict(os.environ)
+        env["PYTHONPATH"] = os.path.join(ROOT, "src")
+        return subprocess.run(
+            [self._python, "-m", "mkvmp4.cli", *args],
+            capture_output=True, text=True, env=env, cwd=ROOT)
+
+    def test_success_exit_code_zero_and_json(self):
+        out = os.path.join(self.tmp.name, "out.mp4")
+        proc = self._run("remux", self.mkv_path, "--output", out, "--json")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["status"], "ok")
+        self.assertIn("mp4", payload)
+        self.assertTrue(os.path.exists(out))
+
+    def test_bad_arguments_exit_code_two(self):
+        proc = self._run("remux", self.mkv_path)  # missing --output
+        self.assertEqual(proc.returncode, 2)
+
+    def test_missing_input_exit_code_one(self):
+        proc = self._run("inspect", os.path.join(self.tmp.name, "nope.mkv"))
+        self.assertEqual(proc.returncode, 1)
+
+    def test_corrupt_input_exit_code_one(self):
+        broken = os.path.join(self.tmp.name, "broken.mkv")
+        fb.truncated_header_fixture(broken)
+        proc = self._run("remux", broken,
+                         "--output", os.path.join(self.tmp.name, "x.mp4"))
+        self.assertEqual(proc.returncode, 1)
+
+    def test_atomic_replace_keeps_existing_target_on_failure(self):
+        target = os.path.join(self.tmp.name, "keep.mp4")
+        sentinel = b"original-target-bytes"
+        with open(target, "wb") as f:
+            f.write(sentinel)
+        broken = os.path.join(self.tmp.name, "broken.mkv")
+        fb.truncated_header_fixture(broken)
+        proc = self._run("remux", broken, "--output", target)
+        self.assertEqual(proc.returncode, 1)
+        with open(target, "rb") as f:
+            self.assertEqual(f.read(), sentinel)
+        # No leftover temporary files in the output directory.
+        leftovers = [n for n in os.listdir(self.tmp.name)
+                     if n.startswith(".mkvmp4-")]
+        self.assertEqual(leftovers, [])
+
+    def test_inspect_mp4_exit_code_and_fields(self):
+        out = os.path.join(self.tmp.name, "out.mp4")
+        self._run("remux", self.mkv_path, "--output", out)
+        proc = self._run("inspect-mp4", out, "--json")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        payload = json.loads(proc.stdout)
+        self.assertGreater(payload["box_count"], 0)
+        self.assertEqual(payload["warning_count"], 0)
+
+
+class PerformanceTests(FixtureBackedTestCase):
+    def test_fixture_end_to_end_under_two_seconds(self):
+        import time
+
+        mapping = select_tracks(self.mkv.tracks, strict=True)
+        timelines, _, _ = build_timelines(
+            self.mkv, mapping.accepted_numbers)
+        start = time.perf_counter()
+        dst = io.BytesIO()
+        result = remux_to_stream(
+            self.src, dst, self.mkv, mapping, timelines)
+        verify_mp4(dst, result)
+        self.assertLess(time.perf_counter() - start, 2.0)
