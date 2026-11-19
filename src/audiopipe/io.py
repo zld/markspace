@@ -10,8 +10,10 @@ materialised as a single array.  ``channels`` is always the second axis
 (``always_2d=True``); the interleaved layout of the file is handled by
 libsndfile and never confused with the time axis.
 
-Reading never materialises a whole file and never confuses the channel
-axis with time.
+Writing targets a temporary ``.part`` file in the destination directory,
+which is atomically renamed to the final name only on success.  If
+anything fails, the temporary file is removed, so a failed job can never
+leave a half-written WAV behind.
 """
 
 from __future__ import annotations
@@ -28,6 +30,7 @@ __all__ = [
     "SUPPORTED_SUBTYPES",
     "WavInfo",
     "WavReader",
+    "WavWriter",
     "probe_wav",
     "PipelineError",
 ]
@@ -204,3 +207,161 @@ class WavReader:
 
     def __exit__(self, exc_type, exc, tb) -> None:
         self.close()
+
+
+def pcm_grid(subtype: str) -> tuple[int, float]:
+    """Return ``(bit depth, scale)`` for a supported output subtype."""
+    if subtype == "PCM_16":
+        return 16, 32768.0
+    if subtype == "PCM_24":
+        return 24, 8388608.0
+    raise ValueError(f"output subtype must be PCM_16 or PCM_24, got {subtype!r}")
+
+
+def quantise_pcm(
+    block: np.ndarray, subtype: str
+) -> tuple[np.ndarray, np.ndarray, int, int]:
+    """Quantise float samples onto the integer PCM grid.
+
+    Returns ``(ints, decoded, out_of_range, rail_samples)``:
+
+    * ``ints`` -- integer samples exactly as written;
+    * ``decoded == ints / scale`` -- exactly what a reader gets back;
+    * ``out_of_range`` -- samples with ``|x| > 1`` *before* quantisation
+      (the value that must be reported separately from input clipping);
+    * ``rail_samples`` -- decoded samples pinned to the minimum or maximum
+      PCM code, i.e. samples sitting on a full-scale rail.
+
+    The mapping is deterministic and independent of libsndfile's own
+    float handling.
+    """
+    bits, scale = pcm_grid(subtype)
+    arr = np.asarray(block, dtype=np.float64)
+    if not np.all(np.isfinite(arr)):
+        raise PipelineError("non_finite_output", "refusing to quantise non-finite samples")
+    out_of_range = int(np.count_nonzero(np.abs(arr) > 1.0))
+    maximum = (1 << (bits - 1)) - 1
+    minimum = -(1 << (bits - 1))
+    q = np.clip(np.round(np.clip(arr, -1.0, 1.0) * scale), minimum, maximum)
+    rail_samples = int(np.count_nonzero((q <= minimum) | (q >= maximum)))
+    dtype = np.int16 if bits == 16 else np.int32
+    ints = q.astype(dtype)
+    decoded = q / scale
+    return ints, decoded, out_of_range, rail_samples
+
+
+class WavWriter:
+    """Atomic block-wise PCM WAV writer.
+
+    ``commit()`` closes the file and renames the temporary ``.part`` file
+    to ``path``.  ``abort()`` (also called by ``__exit__`` on error)
+    closes and deletes the temporary file.
+    """
+
+    def __init__(self, path: str, sample_rate: int, channels: int, subtype: str) -> None:
+        if subtype not in ("PCM_16", "PCM_24"):
+            raise ValueError(f"output subtype must be PCM_16 or PCM_24, got {subtype!r}")
+        self._bits, self._scale = pcm_grid(subtype)
+        if not MIN_SAMPLE_RATE <= sample_rate <= MAX_SAMPLE_RATE:
+            raise ValueError(f"invalid output sample rate {sample_rate}")
+        if not 1 <= channels <= MAX_CHANNELS:
+            raise ValueError(f"invalid output channel count {channels}")
+        self.path = path
+        self.subtype = subtype
+        self.frames_written = 0
+        # Samples with |x| > 1 before quantisation, and samples actually
+        # pinned to a PCM rail.  Both are kept out of the input clipping
+        # count so they can be reported separately.
+        self.out_of_range_samples = 0
+        self.rail_samples = 0
+        self._closed = False
+        self._committed = False
+        directory = os.path.dirname(os.path.abspath(path))
+        os.makedirs(directory, exist_ok=True)
+        try:
+            handle, self._tmp_path = tempfile.mkstemp(
+                prefix=".audiopipe-", suffix=".part.wav", dir=directory
+            )
+            os.close(handle)
+            self._file = sf.SoundFile(
+                self._tmp_path,
+                mode="w",
+                samplerate=sample_rate,
+                channels=channels,
+                subtype=subtype,
+                format="WAV",
+            )
+        except (OSError, sf.LibsndfileError) as exc:
+            raise PipelineError("write_failed", f"cannot create output WAV: {exc}") from exc
+
+    def write(self, block: np.ndarray) -> None:
+        """Quantise and write one block.
+
+        Quantisation is done here rather than by libsndfile so the
+        mapping is fixed by this code and reproducible.  Pre-quantisation
+        overshoot and rail-pinned samples are accumulated separately (see
+        :func:`quantise_pcm`).
+        """
+        ints, _decoded, out_of_range, rail_samples = quantise_pcm(block, self.subtype)
+        if ints.shape[0] == 0:
+            return
+        if ints.ndim != 2:
+            raise ValueError("expected a frames x channels array")
+        self.out_of_range_samples += out_of_range
+        self.rail_samples += rail_samples
+        if self._bits == 24:
+            # 24-bit samples are stored left-justified in 32-bit words.
+            ints = (ints.astype(np.int32) << 8).astype(np.int32)
+        try:
+            self._file.write(ints)
+        except (sf.LibsndfileError, OSError, ValueError) as exc:
+            raise PipelineError("write_failed", f"error writing WAV: {exc}") from exc
+        self.frames_written += ints.shape[0]
+
+    def commit(self) -> None:
+        if self._closed:
+            raise RuntimeError("writer already closed")
+        try:
+            self._file.close()
+        except (sf.LibsndfileError, OSError) as exc:
+            self._closed = True
+            self._cleanup()
+            raise PipelineError("write_failed", f"error finalising WAV: {exc}") from exc
+        self._closed = True
+        try:
+            os.replace(self._tmp_path, self.path)
+        except OSError as exc:
+            self._cleanup()
+            raise PipelineError(
+                "write_failed", f"cannot move output into place: {exc}"
+            ) from exc
+        self._committed = True
+
+    def abort(self) -> None:
+        if self._closed:
+            if not self._committed:
+                self._cleanup()
+            return
+        try:
+            self._file.close()
+        except Exception:  # pragma: no cover - best effort
+            pass
+        self._closed = True
+        self._cleanup()
+
+    def _cleanup(self) -> None:
+        try:
+            if os.path.exists(self._tmp_path):
+                os.unlink(self._tmp_path)
+        except OSError:  # pragma: no cover - cleanup must not raise
+            pass
+
+    def __enter__(self) -> "WavWriter":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        if exc_type is None:
+            if not self._closed:
+                self.abort()
+        else:
+            self.abort()
