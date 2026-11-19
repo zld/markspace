@@ -10,6 +10,7 @@ set(CMAKE_DEPENDS_LANGUAGES
 set(CMAKE_DEPENDS_DEPENDENCY_FILES
   "/Users/zld/WorkSpace/pair-wise-workspace/14074/src/clock.cpp" "CMakeFiles/pwsync_core.dir/src/clock.cpp.o" "gcc" "CMakeFiles/pwsync_core.dir/src/clock.cpp.o.d"
   "/Users/zld/WorkSpace/pair-wise-workspace/14074/src/media_types.cpp" "CMakeFiles/pwsync_core.dir/src/media_types.cpp.o" "gcc" "CMakeFiles/pwsync_core.dir/src/media_types.cpp.o.d"
+  "/Users/zld/WorkSpace/pair-wise-workspace/14074/src/synchronizer.cpp" "CMakeFiles/pwsync_core.dir/src/synchronizer.cpp.o" "gcc" "CMakeFiles/pwsync_core.dir/src/synchronizer.cpp.o.d"
   )
 
 # Targets to which this target links which contain Fortran sources.

@@ -198,6 +198,30 @@ src/media_types.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/pwsync_core.dir/build.make CMakeFiles/pwsync_core.dir/src/media_types.cpp.s
 .PHONY : src/media_types.cpp.s
 
+src/synchronizer.o: src/synchronizer.cpp.o
+.PHONY : src/synchronizer.o
+
+# target to build an object file
+src/synchronizer.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/pwsync_core.dir/build.make CMakeFiles/pwsync_core.dir/src/synchronizer.cpp.o
+.PHONY : src/synchronizer.cpp.o
+
+src/synchronizer.i: src/synchronizer.cpp.i
+.PHONY : src/synchronizer.i
+
+# target to preprocess a source file
+src/synchronizer.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/pwsync_core.dir/build.make CMakeFiles/pwsync_core.dir/src/synchronizer.cpp.i
+.PHONY : src/synchronizer.cpp.i
+
+src/synchronizer.s: src/synchronizer.cpp.s
+.PHONY : src/synchronizer.s
+
+# target to generate assembly for a file
+src/synchronizer.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/pwsync_core.dir/build.make CMakeFiles/pwsync_core.dir/src/synchronizer.cpp.s
+.PHONY : src/synchronizer.cpp.s
+
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -214,6 +238,9 @@ help:
 	@echo "... src/media_types.o"
 	@echo "... src/media_types.i"
 	@echo "... src/media_types.s"
+	@echo "... src/synchronizer.o"
+	@echo "... src/synchronizer.i"
+	@echo "... src/synchronizer.s"
 .PHONY : help
 
 

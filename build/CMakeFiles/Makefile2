@@ -88,12 +88,12 @@ clean: CMakeFiles/pwsync_core.dir/clean
 CMakeFiles/pwsync_core.dir/all:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/pwsync_core.dir/build.make CMakeFiles/pwsync_core.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/pwsync_core.dir/build.make CMakeFiles/pwsync_core.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/Users/zld/WorkSpace/pair-wise-workspace/14074/build/CMakeFiles --progress-num=1,2,3 "Built target pwsync_core"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/Users/zld/WorkSpace/pair-wise-workspace/14074/build/CMakeFiles --progress-num=1,2,3,4 "Built target pwsync_core"
 .PHONY : CMakeFiles/pwsync_core.dir/all
 
 # Build rule for subdir invocation for target.
 CMakeFiles/pwsync_core.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /Users/zld/WorkSpace/pair-wise-workspace/14074/build/CMakeFiles 3
+	$(CMAKE_COMMAND) -E cmake_progress_start /Users/zld/WorkSpace/pair-wise-workspace/14074/build/CMakeFiles 4
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/pwsync_core.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /Users/zld/WorkSpace/pair-wise-workspace/14074/build/CMakeFiles 0
 .PHONY : CMakeFiles/pwsync_core.dir/rule
@@ -105,7 +105,7 @@ pwsync_core: CMakeFiles/pwsync_core.dir/rule
 # codegen rule for target.
 CMakeFiles/pwsync_core.dir/codegen:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/pwsync_core.dir/build.make CMakeFiles/pwsync_core.dir/codegen
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/Users/zld/WorkSpace/pair-wise-workspace/14074/build/CMakeFiles --progress-num=1,2,3 "Finished codegen for target pwsync_core"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/Users/zld/WorkSpace/pair-wise-workspace/14074/build/CMakeFiles --progress-num=1,2,3,4 "Finished codegen for target pwsync_core"
 .PHONY : CMakeFiles/pwsync_core.dir/codegen
 
 # clean rule for target.

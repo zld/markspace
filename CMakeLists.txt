@@ -58,6 +58,7 @@ endif()
 add_library(pwsync_core STATIC
     src/media_types.cpp
     src/clock.cpp
+    src/synchronizer.cpp
 )
 target_include_directories(pwsync_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_options(pwsync_core PRIVATE -Wall -Wextra -Wpedantic)
