@@ -17,12 +17,8 @@ namespace lutcheck {
 inline constexpr int kMaxThreads = 32;
 
 struct RenderOptions {
+  // Sample -> LUT input space. Defaults to identity for same-space renders.
   Mat3 input_to_lut = Mat3::identity();
-  // Samples whose LUT-space value falls outside this range are still
-  // interpolated after clamping; keeping it explicit documents that the
-  // pipeline never silently rescales.
-  double min_value = 0.0;
-  double max_value = 1.0;
 };
 
 // Applies the conversion matrix and the LUT to one sample. Both render paths

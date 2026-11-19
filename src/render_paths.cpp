@@ -78,8 +78,6 @@ Vec3 transform_sample(const Lut3D& lut, const RenderOptions& options,
   // The matrix maps the sample into the LUT's input space; interpolation then
   // applies the domain and clamps. Both paths call this exact function.
   const Vec3 mapped = options.input_to_lut.apply(input);
-  (void)options.min_value;
-  (void)options.max_value;
   if (!std::isfinite(mapped.r) || !std::isfinite(mapped.g) ||
       !std::isfinite(mapped.b)) {
     // A finite input through a finite matrix cannot overflow to infinity for
