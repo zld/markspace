@@ -30,7 +30,6 @@ from .batch import (
     format_summary,
     run_batch,
     scan_inputs,
-    validate_paths,
     verify_report,
     VerificationError,
     _validate_batch_config,
@@ -63,6 +62,13 @@ def _sample_rate(text: str) -> int:
     return value
 
 
+def _lufs(text: str) -> float:
+    value = _finite_float(text)
+    if not -70.0 <= value <= 0.0:
+        raise argparse.ArgumentTypeError("must be between -70 and 0 LUFS")
+    return value
+
+
 def _positive_int(text: str) -> int:
     try:
         value = int(text)
@@ -70,6 +76,13 @@ def _positive_int(text: str) -> int:
         raise argparse.ArgumentTypeError(f"not an integer: {text!r}") from exc
     if value < 1:
         raise argparse.ArgumentTypeError("must be >= 1")
+    return value
+
+
+def _block_frames(text: str) -> int:
+    value = _positive_int(text)
+    if value > 1_048_576:
+        raise argparse.ArgumentTypeError("must be <= 1048576")
     return value
 
 
@@ -90,7 +103,7 @@ def build_parser() -> argparse.ArgumentParser:
     norm.add_argument("--report", required=True, help="path of the JSON report to write")
     norm.add_argument("--rate", required=True, type=_sample_rate, help="output sample rate in Hz")
     norm.add_argument(
-        "--target-lufs", type=_finite_float, default=-18.0, help="target LUFS (default: -18)"
+        "--target-lufs", type=_lufs, default=-18.0, help="target LUFS, -70..0 (default: -18)"
     )
     norm.add_argument(
         "--max-gain-db",
@@ -116,7 +129,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     norm.add_argument(
         "--block-frames",
-        type=_positive_int,
+        type=_block_frames,
         default=65536,
         help="frames per streaming block (default: 65536)",
     )

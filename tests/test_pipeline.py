@@ -61,6 +61,20 @@ class PathTests(TempDirMixin, unittest.TestCase):
             validate_paths(os.path.join(src, "in"), src)
         validate_paths(src, self.path("out"))
 
+    def test_case_aliased_paths_rejected(self) -> None:
+        """On case-insensitive volumes Input/ and input/ are the same tree."""
+        from audiopipe.batch import _CASE_INSENSITIVE
+
+        src = self.path("Input")
+        write_wav(os.path.join(src, "a.wav"), np.zeros((10, 1)), 48000)
+        alias = self.path("input")
+        if not _CASE_INSENSITIVE:
+            self.skipTest("case-sensitive filesystem")
+        with self.assertRaises(ConfigError):
+            validate_paths(src, alias)
+        with self.assertRaises(ConfigError):
+            validate_paths(src, os.path.join(alias, "OUT"))
+
     def test_cli_rejects_nested_paths(self) -> None:
         root = self.path("in")
         write_wav(os.path.join(root, "a.wav"), np.zeros((10, 1)), 48000)
@@ -189,6 +203,22 @@ class BatchEndToEndTests(TempDirMixin, unittest.TestCase):
         self.assertEqual(hot["after"]["clipped_samples"], 0)
         self.assertLessEqual(hot["after"]["peak"], 1.0)
 
+    def test_multichannel_normalises_to_target(self) -> None:
+        """A 6-channel file must reach the LUFS target on summed channel energy."""
+        import math
+
+        input_dir = self.path("in")
+        tone = sine(997.0, 48000, 48000, 0.1)[:, None]
+        write_wav(os.path.join(input_dir, "six.wav"), np.repeat(tone, 6, axis=1), 48000, "PCM_24")
+        report = batch.run_batch(self._config(input_dir))
+        record = report["files"][0]
+        self.assertEqual(record["output"]["channels"], 6)
+        self.assertAlmostEqual(record["after"]["lufs"], -18.0, delta=0.05)
+        mono_gain = record["gain"]["applied_gain_db"]
+        # A mono copy of the same material would need the same gain; the
+        # 6-channel sum changes the measured level, not the applied rule.
+        self.assertIsInstance(mono_gain, float)
+
     def test_many_rate_and_channel_combinations(self) -> None:
         input_dir = self.path("in")
         rng = np.random.default_rng(21)
@@ -222,7 +252,7 @@ class BatchEndToEndTests(TempDirMixin, unittest.TestCase):
             output_dir=self.path("out"),
             report_path=self.path("r.json"),
             output_rate=48000,
-            target_lufs=3.0,
+            target_lufs=0.0,
             max_gain_db=60.0,
             max_peak_db=0.0,
         )
@@ -232,6 +262,21 @@ class BatchEndToEndTests(TempDirMixin, unittest.TestCase):
         self.assertEqual(record["output"]["out_of_range_samples"], 0)
         self.assertEqual(record["after"]["clipped_samples"], 0)
         self.assertLess(record["after"]["peak"], 1.0)
+
+    def test_extreme_peak_limit_does_not_underflow(self) -> None:
+        input_dir = self.path("in")
+        write_wav(os.path.join(input_dir, "a.wav"), sine(440, 48000, 4800, 0.5)[:, None], 48000)
+        config = BatchConfig(
+            input_dir=input_dir,
+            output_dir=self.path("out"),
+            report_path=self.path("r.json"),
+            output_rate=48000,
+            max_peak_db=-7000.0,
+        )
+        record = batch.run_batch(config)["files"][0]
+        self.assertEqual(record["status"], "ok")
+        self.assertIsNone(record["error"])
+        self.assertLess(record["after"]["peak"], 1e-5)
 
     def test_pcm16_output(self) -> None:
         input_dir = self.path("in")
@@ -382,6 +427,18 @@ class CliExitCodeTests(TempDirMixin, unittest.TestCase):
             2,
         )
 
+    def test_out_of_range_target_lufs_is_a_config_error(self) -> None:
+        input_dir = self.path("in")
+        write_wav(os.path.join(input_dir, "a.wav"), sine(440, 48000, 480)[:, None], 48000)
+        for target in ("100", "-100"):
+            with self.assertRaises(SystemExit) as ctx:
+                self._run(
+                    "normalize", "--input", input_dir, "--output", self.path("out"),
+                    "--report", self.path("r.json"), "--rate", "48000",
+                    "--target-lufs", target,
+                )
+            self.assertEqual(ctx.exception.code, 2)
+
     def test_report_failure_exit_three(self) -> None:
         input_dir = self.path("in")
         write_wav(os.path.join(input_dir, "a.wav"), sine(440, 48000, 4800)[:, None], 48000)
@@ -393,6 +450,28 @@ class CliExitCodeTests(TempDirMixin, unittest.TestCase):
             "--report", config_dir, "--rate", "48000",
         )
         self.assertEqual(code, 3)
+
+    def test_verify_rejects_malformed_reports(self) -> None:
+        import json as json_mod
+
+        cases = [
+            {"files": []},
+            {"config": {}, "files": []},
+            {"config": {"output_dir": self.path("out")}, "files": [42]},
+        ]
+        for index, document in enumerate(cases):
+            path = self.path(f"bad{index}.json")
+            with open(path, "w", encoding="utf-8") as fh:
+                json_mod.dump(document, fh)
+            self.assertEqual(self._run("verify", "--report", path), 2)
+        # A structurally valid report with a malformed record is a mismatch.
+        path = self.path("badrecord.json")
+        with open(path, "w", encoding="utf-8") as fh:
+            json_mod.dump(
+                {"config": {"output_dir": self.path("out")}, "files": [{"status": "ok"}]},
+                fh,
+            )
+        self.assertEqual(self._run("verify", "--report", path), 1)
 
     def test_verify_command_exit_codes(self) -> None:
         input_dir = self.path("in")

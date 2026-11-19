@@ -23,6 +23,8 @@ import concurrent.futures
 import json
 import math
 import os
+import shutil
+import tempfile
 import time
 from dataclasses import dataclass
 from typing import Optional
@@ -55,6 +57,25 @@ __all__ = [
 ]
 
 DEFAULT_BLOCK_FRAMES = 65536
+# Floor for a dBFS peak limit so extreme values cannot underflow to zero.
+_MIN_PEAK_CEILING = 1e-6
+
+
+def _probe_case_sensitivity() -> bool:
+    """Whether the filesystem holding the working directory folds case."""
+    probe = tempfile.mkdtemp(prefix="audiopipe-case-")
+    try:
+        sample = os.path.join(probe, "Probe")
+        with open(sample, "w", encoding="utf-8") as fh:
+            fh.write("")
+        return os.path.exists(os.path.join(probe, "probe"))
+    except OSError:  # pragma: no cover - fall back to the platform default
+        return os.uname().sysname == "Darwin"
+    finally:
+        shutil.rmtree(probe, ignore_errors=True)
+
+
+_CASE_INSENSITIVE = _probe_case_sensitivity()
 
 
 class ConfigError(Exception):
@@ -125,16 +146,39 @@ def _resolved(path: str) -> str:
     return os.path.realpath(os.path.abspath(path))
 
 
+def _fold(path: str) -> str:
+    """Comparison form for a path, honouring filesystem case sensitivity.
+
+    On a case-insensitive filesystem (the macOS default) ``Input`` and
+    ``input`` name the same directory; folding the case catches that,
+    while a case-sensitive volume keeps the distinction.
+    """
+    resolved = _resolved(path)
+    if _CASE_INSENSITIVE:
+        return resolved.casefold()
+    return resolved
+
+
+def _is_within(child: str, parent: str) -> bool:
+    """Whether ``child`` equals or lives below ``parent`` (both folded)."""
+    if child == parent:
+        return True
+    return child.startswith(parent.rstrip(os.sep) + os.sep)
+
+
 def validate_paths(input_dir: str, output_dir: str) -> None:
-    """Reject identical or nested input/output trees."""
-    src = _resolved(input_dir)
-    dst = _resolved(output_dir)
+    """Reject identical or nested input/output trees.
+
+    Uses the real path so symlinks cannot smuggle an overlap through,
+    plus case folding to match the filesystem's own comparison rules.
+    """
+    src = _fold(input_dir)
+    dst = _fold(output_dir)
     if src == dst:
         raise ConfigError("input and output directories must differ")
-    common = os.path.commonpath([src, dst])
-    if common == src:
+    if _is_within(dst, src):
         raise ConfigError("output directory must not be inside the input directory")
-    if common == dst:
+    if _is_within(src, dst):
         raise ConfigError("input directory must not be inside the output directory")
 
 
@@ -152,7 +196,10 @@ def _peak_ceiling(max_peak_db: Optional[float]) -> float:
         return PEAK_CEILING
     if not math.isfinite(max_peak_db) or max_peak_db > 0.0:
         raise ConfigError(f"max_peak_db must be <= 0, got {max_peak_db!r}")
-    return min(PEAK_CEILING, 10.0 ** (max_peak_db / 20.0))
+    # Very negative limits underflow to 0.0, which is not a usable ceiling;
+    # clamp into the representable and meaningful range instead.
+    linear = 10.0 ** (max_peak_db / 20.0)
+    return min(PEAK_CEILING, max(linear, _MIN_PEAK_CEILING))
 
 
 def _measurement_dict(meas) -> dict:
@@ -421,6 +468,10 @@ def _validate_batch_config(config: BatchConfig) -> None:
         )
     if not math.isfinite(config.target_lufs):
         raise ConfigError("target LUFS must be finite")
+    if not -70.0 <= config.target_lufs <= 0.0:
+        raise ConfigError(
+            f"target LUFS must be in -70..0, got {config.target_lufs}"
+        )
     if config.max_gain_db is not None:
         if not math.isfinite(config.max_gain_db) or config.max_gain_db < 0.0:
             raise ConfigError(
@@ -429,8 +480,10 @@ def _validate_batch_config(config: BatchConfig) -> None:
     _peak_ceiling(config.max_peak_db)
     if config.jobs < 1:
         raise ConfigError(f"jobs must be >= 1, got {config.jobs}")
-    if config.block_frames < 1:
-        raise ConfigError(f"block frames must be >= 1, got {config.block_frames}")
+    if not 1 <= config.block_frames <= 1_048_576:
+        raise ConfigError(
+            f"block frames must be in 1..1048576, got {config.block_frames}"
+        )
     if not config.report_path or not str(config.report_path).strip():
         raise ConfigError("report path must not be empty")
     validate_paths(config.input_dir, config.output_dir)
@@ -529,12 +582,15 @@ def verify_report(report_path: str) -> dict:
     if not isinstance(report, dict) or not isinstance(report.get("files"), list):
         raise VerificationError("report is missing a 'files' list")
 
-    output_dir = report.get("config", {}).get("output_dir")
-    if not output_dir:
+    config = report.get("config")
+    if not isinstance(config, dict) or not config.get("output_dir"):
         raise VerificationError("report is missing config.output_dir")
+    output_dir = config["output_dir"]
 
     results = []
     for record in report["files"]:
+        if not isinstance(record, dict):
+            raise VerificationError("report contains a malformed file record")
         if record.get("status") != "ok":
             results.append(
                 {
@@ -562,7 +618,17 @@ def verify_report(report_path: str) -> dict:
 
 def _verify_record(record: dict, output_dir: str) -> dict:
     relative_path = record.get("relative_path")
-    expected = record.get("output", {})
+    expected = record.get("output")
+    if not isinstance(expected, dict) or not isinstance(record.get("after"), dict):
+        return {
+            "relative_path": relative_path,
+            "status": "mismatch",
+            "error": {
+                "code": "malformed_record",
+                "message": "record is missing output/after objects",
+            },
+            "checks": [],
+        }
     subtype = expected.get("subtype", "PCM_24")
     path = os.path.join(output_dir, *str(relative_path).split("/"))
     checks: list[dict] = []

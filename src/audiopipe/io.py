@@ -51,6 +51,9 @@ _RAILS: dict[str, tuple[float, float]] = {
 }
 
 
+_RAIL_BITS: dict[str, int] = {"PCM_16": 16, "PCM_24": 24, "PCM_32": 32}
+
+
 def rail_values(subtype: str) -> tuple[float, float]:
     """Minimum and maximum representable value of ``subtype`` in float64."""
     try:
@@ -67,13 +70,17 @@ def count_rail_samples(block: np.ndarray, subtype: str) -> int:
     can hold.  Comparing against those exact rails (rather than
     ``|x| > 1``, which integer PCM can never satisfy) is what makes the
     input clipping count meaningful.
+
+    The tolerance is half a quantisation step for the *source* subtype:
+    libsndfile's integer->float conversion is exact for 16- and 24-bit
+    and within one float64 ulp for 32-bit, so this admits rounded rails
+    without counting ordinary near-full-scale samples.
     """
     low, high = rail_values(subtype)
+    bits = _RAIL_BITS[subtype]
+    half_step = 0.5 / float(1 << (bits - 1))
     arr = np.asarray(block)
-    # Both rails are exact binary fractions, so equality is safe.  Allow a
-    # single-ulp margin for libsndfile's float conversion.
-    eps = 1.0 / (1 << 30)
-    return int(np.count_nonzero((arr <= low + eps) | (arr >= high - eps)))
+    return int(np.count_nonzero((arr <= low + half_step) | (arr >= high - half_step)))
 
 
 class PipelineError(Exception):
@@ -153,7 +160,6 @@ class WavReader:
         self.path = path
         self.info = probe_wav(path)
         self.block_frames = block_frames
-        self.rail_samples = 0
         try:
             self._file = sf.SoundFile(path, mode="r")
         except (sf.LibsndfileError, OSError) as exc:
@@ -191,7 +197,6 @@ class WavReader:
                     raise PipelineError(
                         "non_finite_input", "input contains NaN or infinite samples"
                     )
-                self.rail_samples += count_rail_samples(block, self.info.subtype)
                 yield block
         except sf.LibsndfileError as exc:
             raise PipelineError("unreadable", f"error reading WAV: {exc}") from exc
@@ -278,6 +283,7 @@ class WavWriter:
         self._committed = False
         directory = os.path.dirname(os.path.abspath(path))
         os.makedirs(directory, exist_ok=True)
+        self._tmp_path = ""
         try:
             handle, self._tmp_path = tempfile.mkstemp(
                 prefix=".audiopipe-", suffix=".part.wav", dir=directory
@@ -292,6 +298,8 @@ class WavWriter:
                 format="WAV",
             )
         except (OSError, sf.LibsndfileError) as exc:
+            # mkstemp already created the temporary file; do not leak it.
+            self._cleanup()
             raise PipelineError("write_failed", f"cannot create output WAV: {exc}") from exc
 
     def write(self, block: np.ndarray) -> None:
@@ -360,8 +368,14 @@ class WavWriter:
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
+        """Commit on clean exit, abort on any exception.
+
+        The context manager makes the safe outcome the default: leaving
+        the block normally publishes the file, while an exception (or an
+        explicit ``abort()``) removes the temporary output.
+        """
         if exc_type is None:
             if not self._closed:
-                self.abort()
+                self.commit()
         else:
             self.abort()

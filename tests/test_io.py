@@ -87,6 +87,15 @@ class ReaderTests(TempDirMixin, unittest.TestCase):
         )
         self.assertEqual(count_rail_samples(np.zeros((10, 1)), "PCM_24"), 0)
 
+    def test_rail_tolerance_scales_with_bit_depth(self) -> None:
+        """A fixed epsilon over-counted near-full-scale 32-bit samples."""
+        top32 = 2147483647 / 2147483648.0
+        step32 = 1.0 / 2147483648.0
+        values = np.array(
+            [[top32], [top32 - step32], [top32 - 2 * step32], [-1.0], [0.0]]
+        )
+        self.assertEqual(count_rail_samples(values, "PCM_32"), 2)
+
 
 class QuantiseTests(unittest.TestCase):
     def test_mapping_and_counts(self) -> None:
@@ -154,6 +163,25 @@ class WriterTests(TempDirMixin, unittest.TestCase):
                 raise RuntimeError("boom")
         self.assertFalse(os.path.exists(path))
         self.assertEqual(glob.glob(self.path(".audiopipe-*")), [])
+
+    def test_clean_context_exit_commits(self) -> None:
+        path = self.path("ctx.wav")
+        with WavWriter(path, 48000, 1, "PCM_16") as writer:
+            writer.write(sine(440, 48000, 100)[:, None])
+        self.assertTrue(os.path.exists(path))
+        self.assertEqual(probe_wav(path).frames, 100)
+
+    def test_open_failure_leaves_no_temp_file(self) -> None:
+        from unittest import mock
+
+        import audiopipe.io as io_mod
+
+        path = self.path("fail.wav")
+        with mock.patch.object(io_mod.sf, "SoundFile", side_effect=OSError("no space")):
+            with self.assertRaises(PipelineError):
+                WavWriter(path, 48000, 1, "PCM_16")
+        self.assertEqual(glob.glob(self.path(".audiopipe-*")), [])
+        self.assertFalse(os.path.exists(path))
 
     def test_commit_moves_into_place(self) -> None:
         path = self.path("nested", "dir", "out.wav")
