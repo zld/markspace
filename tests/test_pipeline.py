@@ -10,15 +10,15 @@ from pathlib import Path
 
 import pytest
 
-from cutline.model import Clip, ModelError, Timeline, Track
-from cutline.rational import RationalTime, Span, TimeError, parse_rate, round_half_away
-from cutline.conflicts import ConflictKind, detect
-from cutline.resolve import DecisionAction, Strategy, resolve
-from cutline.exchange import ExchangeError, dump_exchange, load_exchange, write_exchange
-from cutline.otio_adapter import OTIOUnmappedError, from_otio, to_otio
-from cutline.render import build_plan
-from cutline.report import build_summary
 from cutline.cli import main
+from cutline.conflicts import ConflictKind, detect
+from cutline.exchange import ExchangeError, dump_exchange, load_exchange, write_exchange
+from cutline.model import Clip, ModelError, Timeline, Track
+from cutline.otio_adapter import OTIOUnmappedError, from_otio, to_otio
+from cutline.rational import RationalTime, Span, TimeError, parse_rate, round_half_away
+from cutline.render import build_plan
+from cutline.resolve import DecisionAction, Strategy, resolve
+from cutline.report import build_summary
 
 ROOT = Path(__file__).resolve().parents[1]
 SAMPLE_SCRIPT = ROOT / "scripts" / "make_samples.py"
@@ -67,6 +67,11 @@ def sample_dict(sample_path: Path) -> dict:
     return json.loads(sample_path.read_text(encoding="utf-8"))
 
 
+# ---------------------------------------------------------------------------
+# rational time
+# ---------------------------------------------------------------------------
+
+
 def test_rational_converts_ntsc_rates_exactly():
     rate = parse_rate("24000/1001")
     frames = RationalTime.from_frames(24000, rate)
@@ -87,8 +92,6 @@ def test_round_half_away_is_symmetric():
 
 
 @pytest.mark.parametrize("bad", ["0", "-24", "abc", "", "1/0"])
-
-
 def test_invalid_rates_are_located(bad: str):
     with pytest.raises(TimeError) as info:
         parse_rate(bad, "tracks[0].rate")
@@ -425,6 +428,31 @@ def test_otio_unmappable_object_reports_path(sample_path: Path):
 # ---------------------------------------------------------------------------
 
 
+def test_cli_analyze_acceptance(sample_path: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+    exchange_out = tmp_path / "roundtrip-v1.json"
+    code = main(
+        [
+            "analyze",
+            str(sample_path),
+            "--resolve",
+            "priority",
+            "--exchange-out",
+            str(exchange_out),
+            "--format",
+            "json",
+        ]
+    )
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["conflict_count"] == 3
+    assert len(payload["resolved_intervals"]) >= 4
+    assert {"track", "clip", "start", "end"} <= set(payload["resolved_intervals"][0])
+    assert payload["duration_delta_frames"] == 0
+    assert payload["render_track_count"] >= 2
+    assert payload["exchange_version"] == "v2"
+    assert json.loads(exchange_out.read_text(encoding="utf-8"))["version"] == "v1"
+
+
 def test_cli_reject_strategy_exits_3(sample_path: Path):
     assert main(["analyze", str(sample_path), "--resolve", "reject"]) == 3
 
@@ -490,6 +518,14 @@ def test_cli_text_format(sample_path: Path, capsys):
     assert "render tracks: 3" in output
 
 
+def test_cli_without_resolution_reports_conflicts_as_unresolved(sample_path: Path, capsys):
+    assert main(["analyze", str(sample_path)]) == 3
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "unresolved_conflicts"
+    assert len(payload["unresolved"]) == 3
+    assert payload["clip_count_after"] == 9
+
+
 def test_cli_output_options_reject_multiple_inputs(sample_path: Path, tmp_path: Path, capsys):
     code = main(
         [
@@ -505,3 +541,24 @@ def test_cli_output_options_reject_multiple_inputs(sample_path: Path, tmp_path: 
 
 def test_cli_negative_tolerance_is_usage_error(sample_path: Path):
     assert main(["analyze", str(sample_path), "--resolve", "priority", "--tolerance", "-1"]) == 2
+
+
+def test_cli_convert_round_trip(sample_path: Path, tmp_path: Path):
+    v1_path = tmp_path / "conv-v1.json"
+    v2_path = tmp_path / "conv-v2.json"
+    assert main(["convert", str(sample_path), "--out", str(v1_path), "--version", "v1"]) == 0
+    assert main(["convert", str(v1_path), "--out", str(v2_path), "--version", "v2"]) == 0
+    assert json.loads(v2_path.read_text(encoding="utf-8")) == json.loads(
+        sample_path.read_text(encoding="utf-8")
+    )
+
+
+def test_cli_otio_export_import(sample_path: Path, tmp_path: Path, capsys):
+    otio_path = tmp_path / "sample.otio"
+    exchange_path = tmp_path / "from-otio.json"
+    assert main(["otio-export", str(sample_path), "--out", str(otio_path)]) == 0
+    assert main(["otio-import", str(otio_path), "--out", str(exchange_path)]) == 0
+    capsys.readouterr()
+    loaded = load_exchange(exchange_path)
+    source = load_exchange(sample_path)
+    assert dump_exchange(loaded.timeline) == dump_exchange(source.timeline)

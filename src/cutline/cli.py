@@ -7,7 +7,10 @@ Commands
     conflicts, and print a JSON/text summary.  A single input prints a flat
     summary object; multiple inputs print ``{"results": [...]}`` in input
     order, and a per-file failure never stops the run.
-convert and the OTIO commands follow in the next commit.
+``convert``
+    Read an exchange file and rewrite it in v1 or v2.
+``otio-export`` / ``otio-import``
+    Bridge to OpenTimelineIO ``.otio`` JSON.
 
 Exit codes
 ----------
@@ -38,7 +41,7 @@ from .resolve import Strategy, resolve
 EXIT_OK = 0
 EXIT_INTERNAL = 1
 EXIT_USAGE = 2
-EXIT_CONFLICT = 3
+EXIT_CONFLICT = 3  # unresolved conflicts or out-of-tolerance drift
 
 
 class CLIError(Exception):
@@ -216,6 +219,17 @@ def _write_json(path: Path, payload: Any) -> None:
     tmp.replace(path)
 
 
+def _write_otio(timeline: Timeline, path: Path) -> None:
+    import opentimelineio as otio
+
+    from .otio_adapter import to_otio
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.tmp.otio")
+    otio.adapters.write_to_file(to_otio(timeline), str(tmp))
+    tmp.replace(path)
+
+
 def _format_text(payload: dict[str, Any]) -> str:
     lines = [
         f"status: {payload['status']}",
@@ -276,12 +290,13 @@ def _cmd_analyze(args: argparse.Namespace) -> int:
             if args.plan_out:
                 _write_json(Path(args.plan_out), outcome.plan.as_dict())
             if args.otio_out:
-                raise CLIError("--otio-out arrives with the OTIO commands", EXIT_INTERNAL)
+                _write_otio(outcome.resolved, Path(args.otio_out))
             payload = outcome.summary.as_dict()
             payload["input"] = str(path)
             payload["plan"] = outcome.plan.as_dict()
             results.append(payload)
-            overall = max(overall, outcome.summary.exit_code)
+            if outcome.summary.exit_code == EXIT_CONFLICT:
+                overall = EXIT_CONFLICT
         except (ExchangeError, ModelError, TimeError, CLIError) as exc:
             results.append(
                 {
@@ -309,6 +324,64 @@ def _cmd_analyze(args: argparse.Namespace) -> int:
     return overall
 
 
+def _cmd_convert(args: argparse.Namespace) -> int:
+    source = Path(args.input)
+    target = Path(args.out)
+    _ensure_output_paths([source], [target])
+    loaded = load_exchange(source, unknown_fields=args.unknown_fields)
+    write_exchange(loaded.timeline, target, args.version, forbidden_paths=[source])
+    print(
+        json.dumps(
+            {"status": "ok", "input": str(source), "output": str(target), "version": args.version}
+        )
+    )
+    return EXIT_OK
+
+
+def _cmd_otio_export(args: argparse.Namespace) -> int:
+    import opentimelineio as otio
+
+    from .otio_adapter import to_otio
+
+    source = Path(args.input)
+    target = Path(args.out)
+    _ensure_output_paths([source], [target])
+    loaded = load_exchange(source, unknown_fields=args.unknown_fields)
+    timeline = loaded.timeline
+    if args.resolve != "none":
+        timeline = resolve(timeline, Strategy(args.resolve)).timeline
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_name(f".{target.name}.tmp.otio")
+    otio.adapters.write_to_file(to_otio(timeline), str(tmp))
+    tmp.replace(target)
+    print(json.dumps({"status": "ok", "input": str(source), "output": str(target)}))
+    return EXIT_OK
+
+
+def _cmd_otio_import(args: argparse.Namespace) -> int:
+    import opentimelineio as otio
+
+    from .otio_adapter import OTIOUnmappedError, from_otio
+
+    source = Path(args.input)
+    target = Path(args.out)
+    _ensure_output_paths([source], [target])
+    try:
+        root = otio.adapters.read_from_file(str(source))
+        timeline = from_otio(root)
+    except OTIOUnmappedError as exc:
+        raise CLIError(f"cannot import OTIO from {source}: {exc}", EXIT_USAGE) from None
+    except (OSError, ValueError) as exc:
+        raise CLIError(f"cannot read OTIO file {source}: {exc}", EXIT_USAGE) from None
+    write_exchange(timeline, target, args.version, forbidden_paths=[source])
+    print(
+        json.dumps(
+            {"status": "ok", "input": str(source), "output": str(target), "version": args.version}
+        )
+    )
+    return EXIT_OK
+
+
 # ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
@@ -320,8 +393,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if args.command == "analyze":
             return _cmd_analyze(args)
-        if args.command in {"convert", "otio-export", "otio-import"}:
-            raise CLIError(f"{args.command}: not implemented yet", EXIT_INTERNAL)
+        if args.command == "convert":
+            return _cmd_convert(args)
+        if args.command == "otio-export":
+            return _cmd_otio_export(args)
+        if args.command == "otio-import":
+            return _cmd_otio_import(args)
     except CLIError as exc:
         print(f"cutline: error: {exc}", file=sys.stderr)
         if exc.details:
