@@ -101,3 +101,52 @@ def elst(media_time: int, segment_duration: int, movie_timescale: int,
         body = struct.pack(">I", 1) + struct.pack(
             ">Iihh", segment_duration, media_time, 1, 0)
     return box(b"edts", full_box(b"elst", version, 0, body))
+
+
+# ---------------------------------------------------------------------------
+# Sample entries
+# ---------------------------------------------------------------------------
+
+
+def visual_entry(width: int, height: int, fourcc: bytes = b"avc1") -> bytes:
+    # VisualSampleEntry fixed fields are 78 bytes before child boxes.
+    body = b"\x00" * 6 + struct.pack(">H", 1)
+    body += b"\x00" * 16
+    body += struct.pack(">HH", width, height)
+    body += struct.pack(">II", 0x00480000, 0x00480000)  # 72 dpi
+    body += b"\x00" * 4
+    body += struct.pack(">H", 1)          # frame_count
+    body += b"\x00" * 32                  # compressorname (32 bytes)
+    body += struct.pack(">Hh", 24, -1)    # depth, pre_defined
+    child = box(b"avcC", b"\x01\x64\x00\x1f\xff\xe1\x00\x00\x00\x00\x01")
+    payload = body + child
+    return struct.pack(">I", 8 + len(payload)) + fourcc + payload
+
+
+def audio_entry(sample_rate: int, channels: int, fourcc: bytes = b"mp4a",
+                bitrate: int = 128000) -> bytes:
+    body = b"\x00" * 6 + struct.pack(">H", 1)
+    body += b"\x00" * 8
+    body += struct.pack(">HH", channels, 16)
+    body += struct.pack(">HH", 0, 0)
+    body += struct.pack(">I", sample_rate << 16)
+    # esds with objectTypeIndication 0x40 (AAC)
+    dec_specific = b"\x05\x02\x12\x10"
+    decoder_config = (b"\x04" + bytes([13 + len(dec_specific)]) +
+                      bytes([0x40, 0x15]) +
+                      b"\x00\x00\x00" +
+                      struct.pack(">I", bitrate) + struct.pack(">I", bitrate) +
+                      dec_specific)
+    sl_config = b"\x06\x01\x02"
+    es = b"\x03" + bytes([3 + len(decoder_config) + len(sl_config)]) + b"\x00\x01\x00" + decoder_config + sl_config
+    payload = body + full_box(b"esds", 0, 0, es)
+    return struct.pack(">I", 8 + len(payload)) + fourcc + payload
+
+
+def mdat_payload(size: int, tag: int) -> bytes:
+    seed = (tag * 2654435761) & 0xFFFFFFFF
+    out = bytearray()
+    while len(out) < size:
+        seed = (seed * 1103515245 + 12345) & 0xFFFFFFFF
+        out += seed.to_bytes(4, "little")
+    return bytes(out[:size])
