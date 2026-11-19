@@ -343,6 +343,89 @@ void testRenderPathsAndHistograms() {
     CHECK(histogramBucket(0.0625) == 1);
 }
 
+void testDeterminismAndReport() {
+    const std::vector<RGB> first = makeDemoPixels(1024, ColorSpace::Srgb, 777);
+    const std::vector<RGB> second = makeDemoPixels(1024, ColorSpace::Srgb, 777);
+    CHECK(first.size() == second.size());
+    bool identical = true;
+    for (std::size_t i = 0; i < first.size(); ++i) {
+        if (!(first[i] == second[i])) identical = false;
+    }
+    CHECK(identical);
+
+    Report report;
+    report.pixels = 4;
+    report.before.r.buckets[0] = 4;
+    report.before.g.buckets[0] = 4;
+    report.before.b.buckets[0] = 4;
+    report.after = report.before;
+    CHECK(validateCounts(report).empty());
+    report.after.b.buckets[0] = 3;
+    CHECK(!validateCounts(report).empty());
+
+    const std::string json = renderJson(report);
+    CHECK(json.find("\"max_abs_diff\"") != std::string::npos);
+    CHECK(json.find("histogram_after") != std::string::npos);
+    const std::string text = renderText(report);
+    CHECK(text.find("histogram_before") != std::string::npos);
+    CHECK(!text.empty() && text.back() == '\n');
+}
+
+std::vector<char*> argvOf(std::vector<std::string>& storage) {
+    std::vector<char*> argv;
+    for (std::string& item : storage) argv.push_back(item.data());
+    return argv;
+}
+
+void testOptions() {
+    auto parse = [](std::vector<std::string> args) {
+        std::vector<char*> argv = argvOf(args);
+        return parseOptions(static_cast<int>(argv.size()), argv.data());
+    };
+    auto rejects = [&](std::vector<std::string> args) {
+        try {
+            parse(std::move(args));
+        } catch (const std::invalid_argument&) {
+            return true;
+        }
+        return false;
+    };
+
+    const Options defaults = parse({"lutcheck", "demo"});
+    CHECK(defaults.size == 17);
+    CHECK(defaults.pixels == 65536);
+    CHECK(defaults.threads == 4);
+    CHECK(defaults.inputSpace == ColorSpace::Srgb);
+    CHECK(defaults.lutSpace == ColorSpace::LinearRgb);
+    CHECK(defaults.boundary == BoundaryPolicy::Clamp);
+
+    const Options custom = parse({"lutcheck", "demo", "--size", "33", "--pixels", "10",
+                                  "--threads", "2", "--lut-space", "xyz", "--boundary",
+                                  "reject", "--format", "json", "--seed", "99"});
+    CHECK(custom.size == 33);
+    CHECK(custom.pixels == 10);
+    CHECK(custom.threads == 2);
+    CHECK(custom.lutSpace == ColorSpace::Xyz);
+    CHECK(custom.boundary == BoundaryPolicy::Reject);
+    CHECK(custom.format == OutputFormat::Json);
+    CHECK(custom.seed == 99);
+
+    CHECK(parse({"lutcheck", "--help"}).requestHelp);
+    CHECK(rejects({"lutcheck"}));
+    CHECK(rejects({"lutcheck", "render"}));
+    CHECK(rejects({"lutcheck", "demo", "--size", "1"}));
+    CHECK(rejects({"lutcheck", "demo", "--size", "66"}));
+    CHECK(rejects({"lutcheck", "demo", "--pixels", "0"}));
+    CHECK(rejects({"lutcheck", "demo", "--pixels", "16777217"}));
+    CHECK(rejects({"lutcheck", "demo", "--threads", "0"}));
+    CHECK(rejects({"lutcheck", "demo", "--threads", "33"}));
+    CHECK(rejects({"lutcheck", "demo", "--seed", "-3"}));
+    CHECK(rejects({"lutcheck", "demo", "--size"}));
+    CHECK(rejects({"lutcheck", "demo", "--input-space", "xyz"}));
+    CHECK(rejects({"lutcheck", "demo", "--lut-order", "bgr", "--lut-file", "x.cube"}));
+    CHECK(rejects({"lutcheck", "demo", "--bogus"}));
+}
+
 }  // namespace
 
 int main() {
@@ -351,6 +434,8 @@ int main() {
     testColorSpaces();
     testInterpolation();
     testRenderPathsAndHistograms();
+    testDeterminismAndReport();
+    testOptions();
     if (g_failures != 0) {
         std::cerr << g_failures << " check(s) failed\n";
         return 1;
