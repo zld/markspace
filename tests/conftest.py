@@ -94,6 +94,65 @@ def corrupt_mp4(media_dir: Path) -> Path:
     return _generate(path, "--frames", "96", "--inject-corrupt")
 
 
+def zero_sample_tables(source: Path, destination: Path) -> Path:
+    """Copy an MP4 and clear its sample tables so it holds no frames.
+
+    The result still opens as a valid container with a video stream, which is
+    the "zero frames" case the audit must report rather than silently pass.
+    """
+    import struct
+
+    data = bytearray(source.read_bytes())
+
+    def walk(start: int, end: int):
+        offset = start
+        while offset + 8 <= end:
+            size = struct.unpack(">I", data[offset:offset + 4])[0]
+            kind = data[offset + 4:offset + 8].decode("latin1")
+            header = 8
+            if size == 1:
+                size = struct.unpack(">Q", data[offset + 8:offset + 16])[0]
+                header = 16
+            elif size == 0:
+                size = end - offset
+            yield kind, offset, size, header
+            if kind in ("moov", "trak", "mdia", "minf", "stbl"):
+                yield from walk(offset + header, offset + size)
+            offset += size
+
+    for kind, offset, _, header in walk(0, len(data)):
+        if kind in ("stts", "ctts", "stco", "stsc", "stsz"):
+            struct.pack_into(">I", data, offset + header + 4, 0)
+    destination.write_bytes(bytes(data))
+    return destination
+
+
+@pytest.fixture(scope="session")
+def zero_frame_mp4(media_dir: Path, clean_mp4: Path) -> Path:
+    return zero_sample_tables(clean_mp4, media_dir / "zero-frames.mp4")
+
+
+@pytest.fixture(scope="session")
+def audio_only(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """An MP4 with an audio stream and no video stream at all."""
+    import av
+
+    path = tmp_path_factory.mktemp("audio") / "audio.m4a"
+    with av.open(str(path), "w", format="mp4") as container:
+        stream = container.add_stream("aac", rate=44_100)
+        stream.layout = "mono"
+        stream.format = "fltp"
+        for index in range(4):
+            frame = av.AudioFrame(format="fltp", layout="mono", samples=1024)
+            frame.sample_rate = 44_100
+            frame.pts = index * 1024
+            for packet in stream.encode(frame):
+                container.mux(packet)
+        for packet in stream.encode(None):
+            container.mux(packet)
+    return path
+
+
 @pytest.fixture
 def batch_dir(tmp_path: Path, sample_mp4: Path, clean_ts: Path) -> Path:
     """A directory with two videos plus non-video files that must be skipped."""
