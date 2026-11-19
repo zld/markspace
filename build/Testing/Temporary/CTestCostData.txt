@@ -1,31 +1,31 @@
-BitReader reads big-endian bits and bytes 2 0.00282
-BitReader rejects impossible widths 4 0.00524
-BitReader throws with offset on over-read 4 0.00552953
-IDR pictures delimit GOPs with first-NAL offsets 4 0.00794718
-NAL larger than the byte cap reports and truncates 4 0.00589352
-PPS resolves to its SPS id and is cached 3 0.00238601
-baseline SPS yields profile, dimensions and frame-only flag 3 0.00242582
-complementary fields are two field pictures 4 0.00699257
-crop larger than the picture is rejected 4 0.00547656
-empty NAL between start codes records an offset error 4 0.00555766
-emulation prevention bytes are removed from payloads 4 0.00817684
-forbidden_zero_bit invalidates the NAL but scanning continues 4 0.00640682
-frame_num change opens a new picture even at first_mb zero 4 0.00252375
-high profile SPS parses crop-adjusted dimensions 3 0.00242143
-input with no start code is an error 4 0.00262899
-interlaced SPS reports field coding and doubled map height 3 0.00299824
-multiple slices of one picture count as a single frame 4 0.00244719
-over-long leading zero run is rejected 4 0.00261583
-signed Exp-Golomb maps code numbers per the spec 3 0.00278773
-slice referencing an undefined PPS keeps an error and continues 4 0.0025442
-three and four byte start codes both delimit NAL units 4 0.00262578
-trailing NAL without a following start code is flushed at EOF 4 0.0026561
-truncated Exp-Golomb suffix reports a parse error 2 0.00304861
-truncated SPS fails and keeps the NAL offset 4 0.00264129
-unsigned Exp-Golomb round trips canonical code words 4 0.00259499
-unsupported slice type lands in the unknown bucket 4 0.00239515
-truncated Exp-Golomb with no terminating one is rejected 3 0.00337139
-fixture generator produces an in-range deterministic stream 1 0.36194
-strict mode returns 2 on a corrupt stream and 64 on bad arguments 1 0.701467
-strict scan of a clean fixture succeeds and emits the JSON contract 1 0.304576
+BitReader reads big-endian bits and bytes 3 0.00273976
+BitReader rejects impossible widths 5 0.00473922
+BitReader throws with offset on over-read 5 0.00503271
+IDR pictures delimit GOPs with first-NAL offsets 5 0.0069049
+NAL larger than the byte cap reports and truncates 5 0.00523026
+PPS resolves to its SPS id and is cached 4 0.00257615
+baseline SPS yields profile, dimensions and frame-only flag 4 0.00249463
+complementary fields are two field pictures 5 0.00620102
+crop larger than the picture is rejected 5 0.00494881
+empty NAL between start codes records an offset error 5 0.00503889
+emulation prevention bytes are removed from payloads 5 0.00710411
+forbidden_zero_bit invalidates the NAL but scanning continues 5 0.00569771
+frame_num change opens a new picture even at first_mb zero 5 0.00262233
+high profile SPS parses crop-adjusted dimensions 4 0.00253532
+input with no start code is an error 5 0.00269151
+interlaced SPS reports field coding and doubled map height 4 0.00290712
+multiple slices of one picture count as a single frame 5 0.00263689
+over-long leading zero run is rejected 5 0.00268409
+signed Exp-Golomb maps code numbers per the spec 4 0.00278523
+slice referencing an undefined PPS keeps an error and continues 5 0.00267495
+three and four byte start codes both delimit NAL units 5 0.00268512
+trailing NAL without a following start code is flushed at EOF 5 0.00270376
+truncated Exp-Golomb suffix reports a parse error 3 0.00297971
+truncated SPS fails and keeps the NAL offset 5 0.00270523
+unsigned Exp-Golomb round trips canonical code words 5 0.00270293
+unsupported slice type lands in the unknown bucket 5 0.00241431
+truncated Exp-Golomb with no terminating one is rejected 4 0.00321288
+fixture generator produces an in-range deterministic stream 2 0.187381
+strict mode returns 2 on a corrupt stream and 64 on bad arguments 2 0.378573
+strict scan of a clean fixture succeeds and emits the JSON contract 2 0.158303
 ---
