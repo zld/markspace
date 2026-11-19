@@ -160,6 +160,93 @@ RawStyle parse_style_line(Document& doc, const std::string& line, int line_no,
     return style;
 }
 
+Event parse_event_line(Document& doc, const std::string& line, int line_no,
+                       const std::vector<std::string>& format, const std::string& kind) {
+    Event event;
+    event.line = line_no;
+    event.id = static_cast<int>(doc.events.size());
+    const std::string prefix = kind + ":";
+    std::string rest = trim_ascii(line.substr(prefix.size()));
+    std::vector<std::string> fields = split_commas(rest, format.empty() ? 0 : format.size());
+    if (format.empty()) {
+        add_diag(doc, Severity::Error, line_no, "event-format-missing",
+                 kind + ": line appears before a Format: line in [Events]", event.id);
+        event.valid = false;
+        return event;
+    }
+    if (fields.size() != format.size()) {
+        add_diag(doc, Severity::Error, line_no, "event-field-count",
+                 kind + ": has " + std::to_string(fields.size()) + " fields but Format declares " +
+                     std::to_string(format.size()),
+                 event.id);
+        // Best effort: keep the trailing field as text so the report still
+        // shows what the line contained.
+        if (!fields.empty()) event.text = fields.back();
+        event.valid = false;
+        return event;
+    }
+    std::map<std::string, std::string> values;
+    for (size_t i = 0; i < format.size(); ++i) values[format[i]] = fields[i];
+
+    auto grab = [&](const char* key, std::string& out) {
+        auto it = values.find(key);
+        if (it != values.end()) out = trim_ascii(it->second);
+    };
+    auto grab_int = [&](const char* key, int& out, bool& ok) {
+        auto it = values.find(key);
+        if (it == values.end()) return;
+        std::string v = trim_ascii(it->second);
+        if (v.empty()) { out = 0; return; }
+        try {
+            size_t used = 0;
+            long parsed = std::stol(v, &used);
+            if (used != v.size()) throw std::invalid_argument("trailing");
+            out = static_cast<int>(parsed);
+        } catch (...) {
+            add_diag(doc, Severity::Error, line_no, "event-field-invalid",
+                     kind + ": field '" + key + "' is not an integer: '" + sanitize_for_output(v, 40) + "'",
+                     event.id);
+            ok = false;
+        }
+    };
+
+    bool ok = true;
+    grab_int("layer", event.layer, ok);
+    grab("style", event.style_name);
+    grab("name", event.name);
+    grab("effect", event.effect);
+    grab_int("marginl", event.margin_l, ok);
+    grab_int("marginr", event.margin_r, ok);
+    grab_int("marginv", event.margin_v, ok);
+    std::string start_raw, end_raw;
+    grab("start", start_raw);
+    grab("end", end_raw);
+    if (!parse_ass_time(start_raw, event.start_ms)) {
+        add_diag(doc, Severity::Error, line_no, "event-time-invalid",
+                 kind + ": invalid start timestamp '" + sanitize_for_output(start_raw, 40) + "'", event.id);
+        ok = false;
+    }
+    if (!parse_ass_time(end_raw, event.end_ms)) {
+        add_diag(doc, Severity::Error, line_no, "event-time-invalid",
+                 kind + ": invalid end timestamp '" + sanitize_for_output(end_raw, 40) + "'", event.id);
+        ok = false;
+    }
+    if (ok && event.end_ms < event.start_ms) {
+        add_diag(doc, Severity::Error, line_no, "event-time-inverted",
+                 kind + ": end timestamp precedes start timestamp", event.id);
+        ok = false;
+    }
+    event.duration_ms = event.end_ms - event.start_ms;
+    auto text_it = values.find("text");
+    event.text = text_it == values.end() ? "" : text_it->second;
+    if (event.style_name.empty()) {
+        add_diag(doc, Severity::Warning, line_no, "event-style-empty",
+                 kind + ": empty Style field, falling back to default style", event.id);
+    }
+    event.valid = ok;
+    return event;
+}
+
 }  // namespace
 
 Document parse_ass_document(const std::string& content, const std::string& source_name) {
@@ -167,6 +254,7 @@ Document parse_ass_document(const std::string& content, const std::string& sourc
     doc.source_name = source_name;
     Section section;
     std::vector<std::string> style_format;
+    std::vector<std::string> event_format;
     std::map<std::string, int> style_name_lines;
 
     size_t pos = 0;
@@ -235,6 +323,32 @@ Document parse_ass_document(const std::string& content, const std::string& sourc
                 style_name_lines[style.name] = line_no;
                 doc.styles.push_back(std::move(style));
                 continue;
+            }
+            continue;
+        }
+
+        if (section.kind == Section::Events) {
+            if (lower.rfind("format:", 0) == 0) {
+                event_format = normalize_format(line, "Format:");
+                continue;
+            }
+            if (lower.rfind("dialogue:", 0) == 0) {
+                doc.events.push_back(parse_event_line(doc, line, line_no, event_format, "Dialogue"));
+                continue;
+            }
+            if (lower.rfind("comment:", 0) == 0) {
+                ++doc.comment_count;
+                continue;
+            }
+            // Unknown event-ish keyword inside [Events]: report with line number.
+            size_t colon = line.find(':');
+            if (colon != std::string::npos) {
+                std::string kind = line.substr(0, colon);
+                bool known = lower.rfind("picture:", 0) == 0 || lower.rfind("sound:", 0) == 0 ||
+                             lower.rfind("movie:", 0) == 0 || lower.rfind("command:", 0) == 0;
+                add_diag(doc, known ? Severity::Warning : Severity::Error, line_no,
+                         known ? "event-unsupported" : "event-unknown",
+                         "unknown event type '" + sanitize_for_output(kind, 40) + "' in [Events]");
             }
             continue;
         }

@@ -25,7 +25,7 @@ std::vector<std::string> split_commas(const std::string& text, size_t max_fields
 
 // One ASS style column. `present` is false when the column is absent from the
 // Format line or the style leaves it blank (inherit from parent). An explicit
-// empty is written as "" in the fixture format and overrides a parent value.
+// empty string is written as "" in the fixture format and overrides a parent.
 struct FieldValue {
     bool present = false;
     bool explicit_empty = false;
@@ -39,6 +39,23 @@ struct RawStyle {
     std::map<std::string, FieldValue> fields;
 };
 
+struct Event {
+    int id = 0;
+    int line = 0;
+    int layer = 0;
+    long long start_ms = 0;
+    long long end_ms = 0;
+    long long duration_ms = 0;
+    std::string style_name;
+    std::string name;
+    std::string effect;
+    int margin_l = 0;
+    int margin_r = 0;
+    int margin_v = 0;
+    std::string text;
+    bool valid = true;
+};
+
 struct ScriptInfo {
     int play_res_x = 0;
     int play_res_y = 0;
@@ -50,8 +67,10 @@ struct ScriptInfo {
 struct Document {
     ScriptInfo info;
     std::vector<RawStyle> styles;  // unique names, first definition wins
+    std::vector<Event> events;     // Dialogue events only
     std::vector<Diagnostic> diagnostics;
     int style_line_count = 0;
+    int comment_count = 0;
     std::string source_name;
 
     bool has_error() const;
