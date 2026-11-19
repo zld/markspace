@@ -398,3 +398,87 @@ class SimulationTests(unittest.TestCase):
         self.assertLess(lossy.records[0].throughput_kbps, clean.records[0].throughput_kbps)
         self.assertGreater(lossy.records[0].rtt_ms, clean.records[0].rtt_ms)
 
+
+class CliTests(unittest.TestCase):
+    def run_cli(self, argv: list[str]) -> tuple[int, str, str]:
+        out, err = StringIO(), StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            code = main(argv)
+        return code, out.getvalue(), err.getvalue()
+
+    def test_json_success_shape(self) -> None:
+        code, out, err = self.run_cli(
+            ["simulate", "--segments", "5", "--seed", "41", "--output", "json"]
+        )
+        self.assertEqual(code, EXIT_OK)
+        self.assertEqual(err, "")
+        payload = json.loads(out)
+        summary = payload["summary"]
+        for key in (
+            "segments",
+            "switch_count",
+            "stall_seconds",
+            "mean_estimated_kbps",
+            "mean_selected_kbps",
+        ):
+            self.assertIn(key, summary)
+        self.assertEqual(len(payload["segments"]), 5)
+
+    def test_text_output_has_one_line_per_segment(self) -> None:
+        code, out, _ = self.run_cli(["simulate", "--segments", "7", "--seed", "2"])
+        self.assertEqual(code, EXIT_OK)
+        lines = out.strip().splitlines()
+        segment_lines = [line for line in lines if line.startswith("segment=")]
+        self.assertEqual(len(segment_lines), 7)
+        self.assertTrue(any(line.startswith("segments=7") for line in lines))
+
+    def test_configuration_errors_exit_2(self) -> None:
+        cases = [
+            ["simulate", "--segments", "0", "--seed", "1"],
+            ["simulate", "--segments", "5", "--seed", "1", "--bitrates", "750,300"],
+            ["simulate", "--segments", "5", "--seed", "1", "--bitrates", "300,300"],
+            ["simulate", "--segments", "5", "--seed", "1", "--buffer-capacity", "5"],
+            ["simulate", "--segments", "5", "--seed", "1", "--loss-probability", "2"],
+            ["simulate", "--segments", "5", "--seed", "1", "--initial-tier", "9"],
+        ]
+        for argv in cases:
+            code, out, err = self.run_cli(argv)
+            self.assertEqual(code, EXIT_CONFIG_ERROR, argv)
+            self.assertEqual(out, "", argv)
+            self.assertIn("error:", err, argv)
+
+    def test_simulation_error_exits_1(self) -> None:
+        code, out, err = self.run_cli(["simulate", "--segments", "0", "--seed", "1"])
+        self.assertEqual(code, EXIT_CONFIG_ERROR)
+        self.assertEqual(out, "")
+        self.assertIn("segments must be at least 1", err)
+        # An empty trace reaches the simulator only by bypassing validation.
+        empty = NetworkTrace((), 0, 100.0, 1.0, 10.0, 0.0)
+        from abr_engine.errors import SimulationError
+
+        with self.assertRaises(SimulationError):
+            simulate(empty, make_ladder(), AbrPolicy(make_ladder()), BufferModel(30.0, 0.0))
+
+    def test_missing_arguments_exit_2(self) -> None:
+        completed = subprocess.run(
+            [sys.executable, "-m", "abr_engine", "simulate", "--seed", "1"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, EXIT_CONFIG_ERROR)
+        self.assertEqual(completed.stdout, "")
+        self.assertIn("error:", completed.stderr)
+
+    def test_module_entry_point_runs(self) -> None:
+        completed = subprocess.run(
+            [sys.executable, "-m", "abr_engine", "simulate", "--segments", "3", "--seed", "9"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(completed.stderr, "")
+        self.assertEqual(len([l for l in completed.stdout.splitlines() if l.startswith("segment=")]), 3)
