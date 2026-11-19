@@ -1,0 +1,4 @@
+/Users/zld/WorkSpace/pair-wise-workspace/14074/build/CMakeFiles/pwsync_core.dir
+/Users/zld/WorkSpace/pair-wise-workspace/14074/build/CMakeFiles/test.dir
+/Users/zld/WorkSpace/pair-wise-workspace/14074/build/CMakeFiles/edit_cache.dir
+/Users/zld/WorkSpace/pair-wise-workspace/14074/build/CMakeFiles/rebuild_cache.dir
