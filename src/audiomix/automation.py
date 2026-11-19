@@ -25,7 +25,8 @@ import numpy as np
 from .errors import AutomationError
 
 UNITS = ("linear", "db")
-_UNIT_LABELS = {"linear": "linear", "db": "dB"}
+# 200 dB is a gain of 1e10; beyond it a curve is almost certainly a data bug.
+MAX_DB = 200.0
 
 
 @dataclass(frozen=True)
@@ -51,7 +52,9 @@ class AutomationCurve:
         """Return the gain at the given project frame(s).
 
         Uses ``numpy.interp`` on the curve's native unit domain and clamps
-        outside the curve, matching the documented extrapolation rule.
+        outside the curve, matching the documented extrapolation rule. dB
+        values are validated to a representable range, but the conversion is
+        guarded anyway so a pathological curve cannot inject Inf into a mix.
         """
         frames_arr = np.asarray(frames, dtype=np.float64)
         frames_arr = np.where(frames_arr < 0.0, 0.0, frames_arr)
@@ -59,18 +62,26 @@ class AutomationCurve:
         key_values = np.array([p.value for p in self.points], dtype=np.float64)
         sampled = np.interp(frames_arr, key_frames, key_values)
         if self.unit == "db":
-            return np.power(10.0, sampled / 20.0)
+            gains = np.power(10.0, sampled / 20.0)
+            if not np.all(np.isfinite(gains)):
+                raise AutomationError(
+                    f"automation dB gain is not representable; check points near "
+                    f"{sampled[~np.isfinite(gains)][0]:.1f} dB"
+                )
+            return gains
         return sampled
 
     def sampled_points(self, start: int, end: int) -> list[dict[str, Any]]:
-        """Report the start, every contained keyframe, and the end.
+        """Report the start, every keyframe, and the end.
 
-        ``start`` and ``end`` are inclusive project frames.
+        All keyframes are included even when they lie outside
+        ``[start, end]``, so the report documents the whole curve rather than
+        a window of it. ``start`` and ``end`` are inclusive project frames.
         """
         if end < start:
             end = start
         frames = {int(start), int(end)}
-        frames.update(p.frame for p in self.points if start <= p.frame <= end)
+        frames.update(p.frame for p in self.points)
         return [
             {
                 "frame": frame,
@@ -124,6 +135,11 @@ def _parse_point(raw: Mapping[str, Any], track: str, index: int) -> AutomationPo
         raise AutomationError(
             f"track '{track}': automation point {index} has negative linear gain {numeric}"
         )
+    if unit == "db" and abs(numeric) > MAX_DB:
+        raise AutomationError(
+            f"track '{track}': automation point {index} dB value {numeric} is outside "
+            f"[-{MAX_DB}, {MAX_DB}]"
+        )
     return AutomationPoint(int(frame), numeric, unit)
 
 
@@ -154,8 +170,3 @@ def parse_automation(raw: Sequence[Mapping[str, Any]] | None, track: str) -> Aut
         raise AutomationError(f"track '{track}': 'automation' must be an array")
     points = [_parse_point(item, track, index) for index, item in enumerate(raw)]
     return validate_points(points, track)
-
-
-def describe_curve(curve: AutomationCurve) -> str:
-    """Short human-readable summary used by the terminal report."""
-    return f"{len(curve.points)} {_UNIT_LABELS[curve.unit]} point(s)"

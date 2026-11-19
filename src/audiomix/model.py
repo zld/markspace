@@ -23,9 +23,12 @@ A session manifest is JSON:
 ```
 
 All frame indices are project-rate samples. ``loop`` is an optional half-open
-range of *source* frames that repeats until the session ends. ``start_frame``
-is the project frame where the track begins. When ``frames`` is absent the
-session length is the latest natural track end, measured in project frames.
+range in the track's own resampled material (project-rate frames, before
+``start_frame`` is applied) that repeats until the session ends.
+``start_frame`` is the project frame where the track begins. When ``frames``
+is absent the session ends at the latest track's first-cycle end, so a
+looping track contributes one full cycle; set ``frames`` explicitly to loop
+material for longer.
 
 Paths must stay relative to the manifest directory: absolute paths and ``..``
 escapes are rejected so a manifest cannot pull audio from outside its session
@@ -49,7 +52,7 @@ DEFAULT_SAMPLE_RATE = 48000
 
 @dataclass(frozen=True)
 class LoopRegion:
-    """A half-open source-frame range that repeats during playback."""
+    """A half-open range of resampled track frames that repeats."""
 
     start_frame: int
     end_frame: int
@@ -184,6 +187,8 @@ def parse_track(raw: Any, base: Path, project_channels: int) -> TrackSpec:
 
 def parse_manifest(data: Any, manifest_path: Path) -> Session:
     """Validate a decoded manifest and resolve it against its own directory."""
+    if isinstance(data, (str, bytes, list)):
+        raise ManifestError("manifest root must be a JSON object")
     root = _require_mapping(data, "manifest")
     channels = _require_int(root.get("channels", 2), "manifest channels")
     if channels not in SUPPORTED_CHANNELS:
