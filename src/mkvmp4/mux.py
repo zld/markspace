@@ -136,12 +136,12 @@ def _build_stbl(track: Track, mt: MuxedTrack, tl: TrackTimeline,
 
 def _build_trak(track: Track, mt: MuxedTrack, tl: TrackTimeline,
                 frames: list[Sample], movie_timescale: int) -> bytes:
+    media_duration = tl.sample_times[-1] + tl.sample_durations[-1]
     track_duration = round(mt.end_seconds * movie_timescale)
     tkhd = boxes.tkhd_box(mt.mp4_track_id, track_duration,
                           track.pixel_width or 0, track.pixel_height or 0,
                           is_audio=track.type != 1)
-    mdhd = boxes.mdhd_box(tl.timescale,
-                          tl.sample_times[-1] + tl.sample_durations[-1])
+    mdhd = boxes.mdhd_box(tl.timescale, media_duration)
     handler = b"vide" if track.type == 1 else b"soun"
     hdlr = boxes.hdlr_box(handler, f"{track.codec_id} handler")
     minf = make_box(b"minf", b"".join([
@@ -150,7 +150,10 @@ def _build_trak(track: Track, mt: MuxedTrack, tl: TrackTimeline,
         _build_stbl(track, mt, tl, frames),
     ]))
     mdia = make_box(b"mdia", mdhd + hdlr + minf)
-    return make_box(b"trak", tkhd + mdia)
+    # The edit list maps movie time 0 onto the track's original first sample
+    # position, preserving inter-track alignment after per-track zeroing.
+    edts = boxes.elst_box(tl.media_start_units, media_duration, tl.timescale)
+    return make_box(b"trak", tkhd + edts + mdia)
 
 
 def _write_moov(writer: BoxWriter, mkv: MatroskaFile,
@@ -160,16 +163,15 @@ def _write_moov(writer: BoxWriter, mkv: MatroskaFile,
     movie_duration = max(round(m.end_seconds * movie_timescale)
                          for m in muxed)
     writer.open_box(b"moov")
-    writer.write_box(b"mvhd",
-                     boxes.mvhd_box(movie_timescale, movie_duration,
-                                    len(muxed) + 1)[8:])
+    writer.write_raw(
+        boxes.mvhd_box(movie_timescale, movie_duration, len(muxed) + 1))
     tracks_by_num = {t.number: t for t in mkv.tracks}
     for mt in muxed:
         track = tracks_by_num[mt.mkv_track_number]
         tl = timelines[mt.mkv_track_number]
         frames = _frames_for(mkv, mt.mkv_track_number)
-        writer.write_box(b"trak", _build_trak(
-            track, mt, tl, frames, movie_timescale)[8:])
+        writer.write_raw(
+            _build_trak(track, mt, tl, frames, movie_timescale))
     writer.end_box()
     return movie_timescale, movie_duration
 

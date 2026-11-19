@@ -12,8 +12,6 @@ from __future__ import annotations
 import struct
 from dataclasses import dataclass
 
-BOX_HEADER_PLACEHOLDER = 8
-
 
 def box_header(box_type: bytes, payload_size: int) -> bytes:
     if len(box_type) != 4:
@@ -68,7 +66,9 @@ class BoxWriter:
 
     def open_box(self, box_type: bytes) -> None:
         pos = self.tell()
-        self._f.write(b"\x00" * BOX_HEADER_PLACEHOLDER + box_type)
+        # Standard 8-byte header placeholder; type is written immediately so
+        # end_box only has to backfill the leading 4-byte size.
+        self._f.write(b"\x00" * 4 + box_type)
         self._stack.append(_OpenBox(box_type, pos, pos + 8))
 
     def end_box(self) -> int:
@@ -77,8 +77,13 @@ class BoxWriter:
         opened = self._stack.pop()
         end = self.tell()
         payload_size = end - opened.payload_start
+        header = box_header(opened.box_type, payload_size)
+        if len(header) != 8:
+            raise OverflowError(
+                "streamed containers must fit a 32-bit box size; got a box "
+                f"requiring largesize at offset {opened.header_pos}")
         self._f.seek(opened.header_pos)
-        self._f.write(box_header(opened.box_type, payload_size))
+        self._f.write(header)  # exactly 8 bytes: size + type, in place
         self._f.seek(end)
         return end - opened.header_pos
 
@@ -195,6 +200,23 @@ def dinf_dref_box() -> bytes:
     return make_box(b"dinf", dref)
 
 
+def elst_box(media_start_units: int, duration_units: int,
+             timescale: int) -> bytes:
+    """One-entry edit list mapping movie time onto the media timeline.
+
+    A non-zero ``media_start_units`` shifts a track whose first sample does
+    not sit at media time zero (legal in Matroska after the global shift).
+    Version 1 uses 64-bit media time fields.
+    """
+    payload = b"".join([
+        struct.pack(">I", 1),                              # entry count
+        struct.pack(">Q", duration_units),                 # segment duration
+        struct.pack(">q", media_start_units),              # media time
+        struct.pack(">I", 0x00010000),                     # rate 1.0 fixed16.16
+    ])
+    return make_box(b"edts", make_fullbox(b"elst", 1, 0, payload))
+
+
 # --------------------------------------------------------------------------
 # Sample entry boxes (avc1 / mp4a) and codec configuration
 # --------------------------------------------------------------------------
@@ -287,8 +309,10 @@ def stss_box(keyframe_numbers: list[int]) -> bytes:
 
 
 def stsc_box(samples_per_chunk: int) -> bytes:
-    # One run: every chunk carries the same number of samples, desc index 1.
-    payload = struct.pack(">III", 1, 1, samples_per_chunk, 1)
+    # One run starting at the first chunk: every chunk carries the same
+    # number of samples and uses sample description index 1.
+    payload = struct.pack(">I", 1) + struct.pack(
+        ">III", 1, samples_per_chunk, 1)
     return make_fullbox(b"stsc", 0, 0, payload)
 
 

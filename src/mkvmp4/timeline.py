@@ -33,8 +33,9 @@ class TimelineError(MatroskaError):
 class TrackTimeline:
     track_number: int
     timescale: int
-    sample_times: list[int]        # non-decreasing, first sample at >= 0
+    sample_times: list[int]        # non-decreasing, first sample at 0
     sample_durations: list[int]    # one entry per sample; last may be estimated
+    media_start_units: int         # original first-sample time; moved to elst
     first_seconds: float
     last_seconds: float
     last_duration_estimated: bool
@@ -139,9 +140,14 @@ def _build_one(
                     f"(median interval {median_gap:.1f})"
                 )
 
-    sample_times = [int(x) for x in rounded]
+    # Per-track media timeline starts at zero; the original first-sample
+    # offset is preserved separately and carried by the MP4 edit list so
+    # inter-track alignment (the global shift) is not lost.
+    media_start = int(rounded[0])
+    zero_based = rounded - np.int64(media_start)
+    sample_times = [int(x) for x in zero_based]
     sample_durations, estimated_last = _derive_durations(
-        track, rounded, timescale, twarns
+        track, zero_based, timescale, twarns
     )
     first_s = sample_times[0] / timescale
     last_s = sample_times[-1] / timescale
@@ -151,6 +157,7 @@ def _build_one(
         timescale=timescale,
         sample_times=sample_times,
         sample_durations=sample_durations,
+        media_start_units=media_start,
         first_seconds=first_s,
         last_seconds=last_s,
         last_duration_estimated=estimated_last,

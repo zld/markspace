@@ -51,6 +51,7 @@ def track_timeline_report(
             "mp4_track_id": mapping.accepted[number],
             "timescale": tl.timescale,
             "sample_count": tl.sample_count,
+            "media_start_units": tl.media_start_units,
             "first_timestamp_seconds": _seconds(tl.first_seconds),
             "last_timestamp_seconds": _seconds(tl.last_seconds),
             "end_timestamp_seconds": _seconds(
@@ -192,13 +193,16 @@ def _read_payload(stream, node: _BoxNode) -> bytes:
 
 
 def _parse_mdhd(payload: bytes) -> tuple[int, int]:
+    # Payload starts after the 4-byte fullbox version/flags header.
     version = payload[0]
     if version == 1:
-        timescale = int.from_bytes(payload[12:16], "big")
-        duration = int.from_bytes(payload[16:24], "big")
+        # creation(8) + modification(8), then timescale and duration
+        timescale = int.from_bytes(payload[20:24], "big")
+        duration = int.from_bytes(payload[24:32], "big")
     else:
-        timescale = int.from_bytes(payload[8:12], "big")
-        duration = int.from_bytes(payload[12:16], "big")
+        # creation(4) + modification(4), then timescale and duration
+        timescale = int.from_bytes(payload[12:16], "big")
+        duration = int.from_bytes(payload[16:20], "big")
     return timescale, duration
 
 
@@ -270,8 +274,10 @@ def inspect_mp4(stream) -> dict:
         tkhd_payload = _read_payload(stream, tkhd)
         version = tkhd_payload[0]
         if version == 1:
-            track_id = int.from_bytes(tkhd_payload[16:20], "big")
+            # after fullbox(4) + creation(8) + modification(8)
+            track_id = int.from_bytes(tkhd_payload[20:24], "big")
         else:
+            # after fullbox(4) + creation(4) + modification(4)
             track_id = int.from_bytes(tkhd_payload[12:16], "big")
         mdhd = _find(mdia, b"mdhd")
         hdlr = _find(mdia, b"hdlr")
@@ -295,7 +301,26 @@ def inspect_mp4(stream) -> dict:
         if sample_size == 0 and len(stsz_payload) != 12 + 4 * sample_count:
             raise Mp4InspectionError("stsz size array length mismatch")
         runs = _parse_stts(stts_payload)
-        times = _sample_times(runs, sample_count)
+        media_times = _sample_times(runs, sample_count)
+        # An optional edit list records the original first-sample media time
+        # that per-track zeroing moved out of the sample table.
+        edts = _find(trak, b"edts")
+        media_start = 0
+        if edts is not None:
+            elst = _find(edts, b"elst")
+            if elst is not None:
+                elst_payload = _read_payload(stream, elst)
+                elst_version = elst_payload[0]
+                if elst_version == 1:
+                    # fullbox(4) + entry_count(4) + segment_duration(8)
+                    # + media_time(8) -> media_time starts at offset 16
+                    media_start = int.from_bytes(
+                        elst_payload[16:24], "big", signed=True)
+                else:
+                    # fullbox(4) + entry_count(4) + segment_duration(4)
+                    # + media_time(4) -> media_time starts at offset 12
+                    media_start = int.from_bytes(
+                        elst_payload[12:16], "big", signed=True)
         stco = _find(stbl, b"stco")
         co64 = _find(stbl, b"co64")
         if (stco is None) == (co64 is None):
@@ -308,8 +333,9 @@ def inspect_mp4(stream) -> dict:
         if stss is not None:
             sync_count = int.from_bytes(
                 _read_payload(stream, stss)[4:8], "big")
-        first_s = (times[0] if times else 0) / timescale
-        last_s = (times[-1] if times else 0) / timescale
+        # Sample tables are zero-based per track; movie time equals media time.
+        first_s = (media_times[0] if media_times else 0) / timescale
+        last_s = (media_times[-1] if media_times else 0) / timescale
         end_s = mdhd_duration / timescale
         track_reports.append({
             "mp4_track_id": track_id,
@@ -319,6 +345,7 @@ def inspect_mp4(stream) -> dict:
             "chunk_count": chunk_count,
             "uses_co64": co64 is not None,
             "sync_sample_count": sync_count,
+            "edit_list_media_start_units": max(0, media_start),
             "first_timestamp_seconds": _seconds(first_s),
             "last_timestamp_seconds": _seconds(last_s),
             "end_timestamp_seconds": _seconds(end_s),
