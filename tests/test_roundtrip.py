@@ -146,6 +146,15 @@ def test_size_limit_enforced(monkeypatch, normalized):
         build_mp4(tracks)
 
 
+def test_cli_rejects_oversize_input(tmp_path, monkeypatch, fixture_bytes):
+    source = tmp_path / "big.mkv"
+    source.write_bytes(fixture_bytes)
+    monkeypatch.setattr("meshift.cli.MAX_OUTPUT_BYTES", 16)
+    rc = main(["convert", str(source), str(tmp_path / "big.mp4")])
+    assert rc == 3
+    assert not (tmp_path / "big.mp4").exists()
+
+
 def test_cli_refuses_overwrite(tmp_path, fixture_bytes):
     source = tmp_path / "in.mkv"
     target = tmp_path / "out.mp4"

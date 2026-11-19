@@ -8,8 +8,9 @@ import sys
 import tempfile
 from pathlib import Path
 
+from . import MAX_OUTPUT_BYTES
 from .errors import (EXIT_CORRUPT, EXIT_OK, MeshiftError,
-                     TruncatedInputError, UsageError)
+                     SizeLimitError, TruncatedInputError, UsageError)
 from .index import verify_index
 from .matroska import parse_matroska
 from .mp4 import build_mp4
@@ -60,11 +61,17 @@ def _run_convert(args: argparse.Namespace) -> dict:
         raise UsageError(
             f"{target} already exists; pass --overwrite to replace it")
     try:
+        source_size = source.stat().st_size
         data = source.read_bytes()
     except FileNotFoundError as exc:
         raise MeshiftError(f"input file not found: {source}") from exc
     except OSError as exc:
         raise MeshiftError(f"cannot read {source}: {exc}") from exc
+    # Fail fast on oversize inputs instead of buffering a doomed remux.
+    if source_size > MAX_OUTPUT_BYTES:
+        raise SizeLimitError(
+            f"input {source} is {source_size} bytes; single-file limit is "
+            f"{MAX_OUTPUT_BYTES} bytes")
     mkv = parse_matroska(data)
     tracks = normalize(mkv, _parse_map(args.track_map))
 
