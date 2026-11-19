@@ -33,8 +33,13 @@ def _cell(value: object) -> str:
 
 
 def render_table(results: Sequence[AuditResult]) -> str:
-    """Render the terminal summary table plus a line per failure or warning."""
-    rows = [[_cell(summary_fields(result)[field]) for field in REPORT_FIELDS] for result in results]
+    """Render the terminal summary table plus a line per failure or warning.
+
+    Skipped files are metadata only, so they never occupy a data row; their
+    reason is printed as a separate line instead.
+    """
+    audited = [result for result in results if result.skipped_reason is None]
+    rows = [[_cell(summary_fields(result)[field]) for field in REPORT_FIELDS] for result in audited]
     headers = list(REPORT_FIELDS)
 
     widths = [len(header) for header in headers]
