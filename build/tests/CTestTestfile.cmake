@@ -4,3 +4,4 @@
 # 
 # This file includes the relevant testing commands required for 
 # testing this directory and lists subdirectories to be tested as well.
+include("/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests-b12d07c_include.cmake")

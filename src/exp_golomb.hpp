@@ -44,17 +44,17 @@ inline std::uint32_t read_ue(BitReader& br) {
     return static_cast<std::uint32_t>(code_num);
 }
 
-// signed Exp-Golomb (se(v)) mapping:
-//   codeNum 0 -> 0; even -> +codeNum/2; odd -> -(codeNum+1)/2
+// signed Exp-Golomb (se(v)), H.264 Table 9-3:
+//   codeNum 0 -> 0; odd  -> +(codeNum+1)/2; even -> -codeNum/2
 inline std::int32_t read_se(BitReader& br) {
     const std::uint32_t code_num = read_ue(br);
     if (code_num == 0u) {
         return 0;
     }
     if ((code_num & 1u) != 0u) {
-        return -static_cast<std::int32_t>((code_num + 1u) / 2u);
+        return static_cast<std::int32_t>((code_num + 1u) / 2u);
     }
-    return static_cast<std::int32_t>(code_num / 2u);
+    return -static_cast<std::int32_t>(code_num / 2u);
 }
 
 }  // namespace h264
