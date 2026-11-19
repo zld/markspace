@@ -18,7 +18,7 @@ from typing import Any, Sequence
 
 from . import __version__
 from .compare import blocking_mismatches, compare_media
-from .model import MediaFile
+from .model import STATUS_PROBE_ERROR, MediaFile
 from .packer import PackError, build_manifest, write_manifest
 from .probe import probe_path
 from .store import Store, StoreError, open_store
@@ -64,6 +64,12 @@ def _write_json(payload: dict[str, Any], path: Path | None) -> None:
             f"cannot write {path}: {exc.strerror or exc}", EXIT_STORE) from exc
 
 
+def _flush_then_error(message: str) -> None:
+    """Flush the summary so diagnostics appear after it, not before."""
+    sys.stdout.flush()
+    print(message, file=sys.stderr)
+
+
 def _load_media(path: str) -> MediaFile:
     return probe_path(path)
 
@@ -106,7 +112,7 @@ def cmd_probe(args: argparse.Namespace) -> int:
     _write_json(payload, args.json)
     _emit(payload, args.print_json)
     if media.fatal:
-        print(f"error: {_fatal_reason(media)}", file=sys.stderr)
+        _flush_then_error(f"error: {_fatal_reason(media)}")
         return EXIT_INPUT
     return EXIT_OK
 
@@ -172,8 +178,8 @@ def cmd_compare(args: argparse.Namespace) -> int:
             print(f"  - {mismatch.kind}{offset}: {mismatch.message}")
 
     if baseline.fatal or candidate.fatal:
-        print(f"error: {_fatal_reason(baseline if baseline.fatal else candidate)}",
-              file=sys.stderr)
+        _flush_then_error(
+            f"error: {_fatal_reason(baseline if baseline.fatal else candidate)}")
         return EXIT_INPUT
     if blocking_mismatches(result):
         return EXIT_MISMATCH
@@ -185,11 +191,23 @@ def cmd_compare(args: argparse.Namespace) -> int:
 def cmd_pack(args: argparse.Namespace) -> int:
     entries = []
     failed = False
+    baseline = _load_media(args.baseline) if args.baseline else None
+    if baseline is not None and baseline.fatal:
+        failed = True
+
     for raw in args.input:
         media = _load_media(raw)
         if media.fatal:
             failed = True
-        entries.append((media, None))
+        validation = None
+        if baseline is not None:
+            validation = compare_media(
+                baseline, media,
+                tolerance_ms=args.tolerance_ms,
+                ignore_fields=_split_fields(args.ignore_field))
+            if validation.status == STATUS_PROBE_ERROR:
+                failed = True
+        entries.append((media, validation))
 
     manifest = build_manifest(entries, allow_issues=args.allow_issues)
     payload = {
@@ -210,14 +228,14 @@ def cmd_pack(args: argparse.Namespace) -> int:
     _emit(payload, args.print_json)
 
     if failed:
-        print("error: one or more inputs could not be probed", file=sys.stderr)
+        _flush_then_error("error: one or more inputs could not be probed")
         return EXIT_INPUT
     if manifest["status"] == "blocked":
-        print("error: manifest blocked by validation problems", file=sys.stderr)
+        _flush_then_error("error: manifest blocked by validation problems")
         return EXIT_MISMATCH
     if manifest["status"] == "diagnostic":
-        print("warning: diagnostic manifest includes blocking problems",
-              file=sys.stderr)
+        _flush_then_error(
+            "warning: diagnostic manifest includes blocking problems")
     return EXIT_OK
 
 
@@ -254,6 +272,12 @@ def build_parser() -> argparse.ArgumentParser:
     pack = sub.add_parser("pack", help="build a packing manifest")
     pack.add_argument("--input", action="append", required=True,
                       help="media file to include (repeatable)")
+    pack.add_argument("--baseline",
+                      help="compare every --input against this baseline and "
+                           "refuse media with blocking inconsistencies")
+    pack.add_argument("--tolerance-ms", type=float, default=40.0)
+    pack.add_argument("--ignore-field", action="append", default=[],
+                      help="field name to ignore in --input comparisons")
     pack.add_argument("--db")
     pack.add_argument("--json", type=Path)
     pack.add_argument("--allow-issues", action="store_true",
@@ -268,13 +292,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         return int(args.func(args))
     except CliError as exc:
-        print(f"error: {exc.message}", file=sys.stderr)
+        _flush_then_error(f"error: {exc.message}")
         return exc.code
     except StoreError as exc:
-        print(f"error: {exc}", file=sys.stderr)
+        _flush_then_error(f"error: {exc}")
         return EXIT_STORE
     except PackError as exc:
-        print(f"error: {exc}", file=sys.stderr)
+        _flush_then_error(f"error: {exc}")
         return EXIT_STORE
     except BrokenPipeError:  # pragma: no cover - shell pipe closed early
         return EXIT_OK
