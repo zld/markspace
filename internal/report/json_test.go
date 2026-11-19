@@ -149,3 +149,22 @@ func TestSummaryIncludesOptionalSections(t *testing.T) {
 		t.Fatalf("missing boundary line:\n%s", out)
 	}
 }
+
+func TestKeyFactsAreSortedAndRendered(t *testing.T) {
+	r := sampleReport()
+	r.Keys = []KeyFact{
+		{KeyID: "k2", Version: 2, Active: true},
+		{KeyID: "k1", Version: 1, Expired: true},
+	}
+	var buf bytes.Buffer
+	if err := r.WriteSummary(&buf); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "key key_id=k1 version=1 active=false expired_at_validation=true") {
+		t.Fatalf("missing key line:\n%s", out)
+	}
+	if strings.Index(out, "key_id=k1") > strings.Index(out, "key_id=k2") {
+		t.Fatal("key facts are not sorted by version")
+	}
+}
