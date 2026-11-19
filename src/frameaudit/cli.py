@@ -83,7 +83,11 @@ def _parse_args(argv: Optional[Sequence[str]]) -> argparse.Namespace:
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
-    args = _parse_args(argv)
+    try:
+        args = _parse_args(argv)
+    except SystemExit as exc:
+        # argparse reports usage errors with exit code 2; preserve the code.
+        return int(exc.code) if exc.code is not None else 2
 
     try:
         fps: Optional[Fraction] = (
