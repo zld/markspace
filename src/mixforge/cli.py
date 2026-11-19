@@ -92,6 +92,8 @@ def _compare_streaming(
             reference_end += take
         reference = np.concatenate(parts, axis=0)
         if compared > reference_start:
+            # Drop already-compared frames so the reference window stays
+            # bounded by the batch size, not the project length.
             reference = reference[compared - reference_start :]
             reference_start = compared
 
@@ -108,6 +110,14 @@ def _compare_streaming(
             first_diff = compared + local_first
         compared += joined.shape[0]
 
+    def flush_batch(graph: MixGraph) -> None:
+        nonlocal pending_frames
+        if not pending:
+            return
+        check(np.concatenate(pending, axis=0), graph)
+        pending.clear()
+        pending_frames = 0
+
     try:
         with MixGraph(project) as graph:
             for block in stream_blocks:
@@ -117,29 +127,26 @@ def _compare_streaming(
                 pending.append(block)
                 pending_frames += block.shape[0]
                 if pending_frames >= batch_target:
-                    check(np.concatenate(pending, axis=0), graph)
-                    pending.clear()
-                    pending_frames = 0
-            if pending:
-                check(np.concatenate(pending, axis=0), graph)
-        if compared != project.frames:
-            raise ProcessingError(
-                "streaming output length differs from the project duration",
-                location="compare",
-                context={
-                    "stream_frames": compared,
-                    "project_frames": project.frames,
-                    "streamed_blocks": consumed,
-                    "block_size": block_size,
-                },
-            )
-        if writer is not None:
-            if max_diff != 0.0:
-                # Never leave a mismatched preview that looks valid.
-                writer.abort()
-            else:
-                writer.close()
-        ok = True
+                    flush_batch(graph)
+            flush_batch(graph)
+            if compared != project.frames:
+                raise ProcessingError(
+                    "streaming output length differs from the project duration",
+                    location="compare",
+                    context={
+                        "stream_frames": compared,
+                        "project_frames": project.frames,
+                        "streamed_blocks": consumed,
+                        "block_size": block_size,
+                    },
+                )
+            if writer is not None:
+                if max_diff != 0.0:
+                    # Never leave a mismatched preview that looks valid.
+                    writer.abort()
+                else:
+                    writer.close()
+            ok = True
     finally:
         if writer is not None and not ok:
             writer.abort()
