@@ -40,7 +40,8 @@ struct ParallelResult {
   int threads_used = 0;
 };
 
-// Runs `body(begin, end)` over contiguous chunks of `total` items. Chunk
+// Runs `body(begin, end)` over contiguous chunks of `total` items. This is
+// internal plumbing exposed for tests; prefer render_parallel. Chunk
 // boundaries are derived only from `total` and `chunk_pixels`, so results are
 // independent of thread count. Any exception thrown by `body` is captured,
 // all workers are joined, and the first exception is rethrown. Returns the
