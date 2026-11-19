@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import heapq
 from dataclasses import dataclass
-from typing import Iterable
 
 from .model import Clip, Sequence, Track
 from .timebase import FrameSpan

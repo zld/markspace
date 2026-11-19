@@ -236,6 +236,9 @@ def serialize_clip(clip: Clip, rate: FrameRate) -> OtioClip:
         media_reference=ExternalReference(target_url=clip.media_id),
         source_range=_range(clip.source_in, clip.source_frames, rate),
     )
+    speed = clip.speed
+    if clip.is_constant_speed and speed != 1:
+        otio_clip.effects.append(LinearTimeWarp(time_scalar=float(speed)))
     otio_clip.metadata["cutline"] = {
         "id": clip.id,
         "timeline_start": clip.timeline_start,

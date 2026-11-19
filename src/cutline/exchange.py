@@ -37,7 +37,6 @@ UPGRADE_DEFAULTS: dict[str, Any] = {
     "fade_in": 0,
     "fade_out": 0,
     "priority": 0,
-    "speed": 1,
 }
 
 _SEQUENCE = {"id", "name", "frame_rate", "tracks"}
@@ -45,9 +44,12 @@ _TRACK = {"id", "kind", "level", "clips"}
 _CLIP_COMMON = {"id", "media_id", "timeline_start", "duration", "source_in",
                 "source_duration", "fade_in", "fade_out", "priority"}
 _CLIP = {1: _CLIP_COMMON | {"speed"}, 2: _CLIP_COMMON | {"rate_segments"}}
-_REQUIRED_CLIP = {1: {"id", "media_id", "timeline_start", "duration", "source_in", "source_duration"},
-                  2: {"id", "media_id", "timeline_start", "duration", "source_in",
-                      "source_duration", "rate_segments"}}
+_REQUIRED_CLIP = {
+    1: {"id", "media_id", "timeline_start", "duration", "source_in",
+        "source_duration", "speed"},
+    2: {"id", "media_id", "timeline_start", "duration", "source_in",
+        "source_duration", "rate_segments"},
+}
 _SPEED = {"numerator", "denominator"}
 
 
@@ -115,7 +117,8 @@ def _parse_speed(value: Any, path: str) -> Fraction:
 
 def _segments_for(clip_obj: dict[str, Any], path: str, version: int) -> tuple[RateSegment, ...]:
     if version == 1:
-        speed = _int(clip_obj.get("speed", UPGRADE_DEFAULTS["speed"]), f"{path}.speed", minimum=1)
+        # v1 requires the constant speed; there is no implied default.
+        speed = _int(clip_obj["speed"], f"{path}.speed", minimum=1)
         return (RateSegment(0, clip_obj["duration"], Fraction(speed)),)
     items = clip_obj["rate_segments"]
     if not isinstance(items, list) or not items:

@@ -25,6 +25,7 @@ from typing import Any
 
 from .errors import RenderError
 from .model import Clip, Sequence, Track
+from .overlap import scan_sequence
 from .timebase import require_int
 
 
@@ -122,6 +123,18 @@ def render(sequence: Sequence, *, step: int = 1, start: int = 0,
     if end is not None and end < start:
         raise RenderError(f"end {end} is before start {start}")
 
+    # Rendering consumes the resolved model only: validate up front so a
+    # sparse sample step cannot silently skip an overlap.
+    report = scan_sequence(sequence)
+    if report.conflict_count:
+        first = report.conflicts[0]
+        raise RenderError(
+            f"{report.conflict_count} unresolved conflict(s); resolve conflicts "
+            f"before rendering (first: {first.first_id!r}/{first.second_id!r} "
+            f"overlap {first.overlap_frames} frames)",
+            track_id=first.track_id,
+            clip_id=first.second_id,
+        )
     video_tracks = [track for track in sequence.tracks if track.kind == "video"]
     if not video_tracks:
         raise RenderError("sequence has no video track to sample")
@@ -136,13 +149,6 @@ def render(sequence: Sequence, *, step: int = 1, start: int = 0,
         chosen: tuple[Track, Clip] | None = None
         for cursor in cursors:
             hits = cursor.clips_at(frame)
-            if len(hits) > 1:
-                raise RenderError(
-                    f"frame {frame} is covered by {len(hits)} overlapping clips on "
-                    f"track {cursor.track.id!r}; resolve conflicts before rendering",
-                    track_id=cursor.track.id,
-                    clip_id=hits[1].id,
-                )
             if hits:
                 chosen = (cursor.track, hits[0])
                 break

@@ -75,7 +75,7 @@ def test_v1_upgrade_applies_documented_defaults():
             "frame_rate": 25,
             "tracks": [{"id": "t", "clips": [
                 {"id": "c", "media_id": "m", "timeline_start": 0, "duration": 10,
-                 "source_in": 0, "source_duration": 10},
+                 "source_in": 0, "source_duration": 10, "speed": 1},
             ]}],
         },
     }
@@ -90,6 +90,11 @@ def test_v1_upgrade_applies_documented_defaults():
     assert (clip_doc["fade_in"], clip_doc["fade_out"], clip_doc["priority"]) == (0, 0, 0)
     assert upgraded["sequence"]["tracks"][0]["kind"] == "video"
     assert upgraded["sequence"]["tracks"][0]["level"] == 0
+
+    # v1 speed is mandatory: no silent 1x assumption.
+    del document["sequence"]["tracks"][0]["clips"][0]["speed"]
+    with pytest.raises(ExchangeError, match="missing required field.*speed"):
+        exchange.upgrade_v1_to_v2(document)
 
 
 @pytest.mark.parametrize("mutate, message", [
@@ -208,8 +213,11 @@ def test_render_rejects_unresolved_overlaps():
     a = Clip(id="a", media_id="m", timeline_start=0, duration=6, source_in=0, source_duration=6)
     b = Clip(id="b", media_id="m", timeline_start=2, duration=6, source_in=0, source_duration=6)
     sequence = Sequence(id="s", frame_rate=FrameRate(24), tracks=(Track(id="t", clips=(a, b)),))
-    with pytest.raises(RenderError, match="overlapping clips"):
+    with pytest.raises(RenderError, match="unresolved conflict"):
         render(sequence)
+    # Even a sample step that misses the overlap must still be rejected.
+    with pytest.raises(RenderError, match="unresolved conflict"):
+        render(sequence, start=5, step=7)
 
 
 def test_render_after_resolution_matches_model(sample_sequence):

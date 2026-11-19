@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from . import exchange
-from .errors import CutlineError, ExchangeError, ResolutionError
+from .errors import CutlineError, ExchangeError
 from .model import Sequence
 from .overlap import scan_sequence
 from .render import RenderSummary, render

@@ -21,13 +21,13 @@ slice would land between source frames the resolver raises a
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from fractions import Fraction
 from typing import Any, Iterable
 
 from .errors import ResolutionError
 from .model import Clip, RateSegment, Sequence, Track
-from .overlap import ConflictReport, scan_sequence
+from .overlap import scan_sequence
 from .timebase import FrameSpan, require_int
 
 STRATEGIES = ("priority", "preserve-duration")
@@ -72,6 +72,9 @@ class ResolutionResult:
     conflicts_after: int
     duration_before: int
     duration_after: int
+    # Resolved clip id -> input clip id.  Fragments get fresh ids, and this map
+    # keeps provenance exact even when input ids themselves contain '#'.
+    origins: dict[str, str] = field(default_factory=dict, compare=False, repr=False)
 
     @property
     def duration_delta_frames(self) -> int:
@@ -96,9 +99,9 @@ def resolve(sequence: Sequence, strategy: str) -> ResolutionResult:
         )
     before = scan_sequence(sequence)
     if strategy == "priority":
-        resolved = _resolve_priority(sequence)
+        resolved, origins = _resolve_priority(sequence)
     else:
-        resolved = _resolve_preserve_duration(sequence)
+        resolved, origins = _resolve_preserve_duration(sequence)
     after = scan_sequence(resolved)
     if after.conflict_count:
         raise ResolutionError(
@@ -107,7 +110,7 @@ def resolve(sequence: Sequence, strategy: str) -> ResolutionResult:
             clip_id=after.conflicts[0].first_id,
         )
     _verify_intervals(sequence, resolved)
-    intervals = tuple(_intervals_for(resolved))
+    intervals = tuple(_intervals_for(resolved, origins))
     return ResolutionResult(
         strategy=strategy,
         sequence=resolved,
@@ -116,16 +119,18 @@ def resolve(sequence: Sequence, strategy: str) -> ResolutionResult:
         conflicts_after=after.conflict_count,
         duration_before=sequence.duration,
         duration_after=resolved.duration,
+        origins=origins,
     )
 
 
-def _intervals_for(sequence: Sequence) -> Iterable[ResolvedInterval]:
+def _intervals_for(sequence: Sequence,
+                   origins: dict[str, str]) -> Iterable[ResolvedInterval]:
     for track in sequence.tracks:
         for clip in sorted(track.clips, key=lambda c: (c.timeline_start, c.id)):
             yield ResolvedInterval(
                 track_id=track.id,
                 clip_id=clip.id,
-                origin_clip_id=clip.id.split("#", 1)[0],
+                origin_clip_id=origins.get(clip.id, clip.id),
                 timeline_start=clip.timeline_start,
                 duration=clip.duration,
                 source_in=clip.source_in,
@@ -173,7 +178,7 @@ def slice_clip(clip: Clip, start_local: int, end_local: int) -> Clip:
         return clip
 
     head_source = _exact_source_offset(clip, start_local)
-    tail_source = _exact_source_offset(clip, end_local)
+    _exact_source_offset(clip, end_local)  # both cut points must be exact
     segments: list[RateSegment] = []
     for segment in clip.rate_segments:
         lo = max(start_local, segment.offset)
@@ -237,16 +242,24 @@ def _subtract(span: FrameSpan, occupied: list[FrameSpan]) -> list[FrameSpan]:
     return pieces
 
 
-def _fragment_id(origin_id: str, index: int, total: int) -> str:
-    return origin_id if index == 0 else f"{origin_id}#{index + 1}"
+def _fragment_id(origin_id: str, index: int, used: set[str]) -> str:
+    """First fragment keeps the input id; later ones get a fresh ``#n`` suffix."""
+
+    if index == 0:
+        return origin_id
+    ordinal = index + 1
+    while f"{origin_id}#{ordinal}" in used:
+        ordinal += 1
+    return f"{origin_id}#{ordinal}"
 
 
-def _resolve_priority(sequence: Sequence) -> Sequence:
+def _resolve_priority(sequence: Sequence) -> tuple[Sequence, dict[str, str]]:
     resolved_tracks: list[Track] = []
+    origins: dict[str, str] = {}
     for track in sequence.tracks:
-        indexed = list(enumerate(track.clips))
+        used = {clip.id for clip in track.clips}
         candidates = sorted(
-            indexed,
+            enumerate(track.clips),
             key=lambda item: (-item[1].priority, item[0], item[1].id),
         )
         accepted: list[Clip] = []
@@ -256,33 +269,39 @@ def _resolve_priority(sequence: Sequence) -> Sequence:
             if not pieces:
                 continue  # fully covered by higher-priority material
             pieces.sort(key=lambda piece: piece.start)
-            origin_span = clip.span
             for index, piece in enumerate(pieces):
-                fragment = slice_clip(clip, piece.start - origin_span.start, piece.end - origin_span.start)
-                fragment = replace(
-                    fragment,
-                    id=_fragment_id(clip.id, index, len(pieces)),
+                fragment = slice_clip(
+                    clip,
+                    piece.start - clip.timeline_start,
+                    piece.end - clip.timeline_start,
                 )
-                accepted.append(fragment)
+                fragment_id = _fragment_id(clip.id, index, used)
+                used.add(fragment_id)
+                origins[fragment_id] = clip.id
+                accepted.append(replace(fragment, id=fragment_id))
         accepted.sort(key=lambda c: (c.timeline_start, c.id))
         resolved_tracks.append(track.with_clips(accepted))
-    return sequence.with_tracks(resolved_tracks)
+    return sequence.with_tracks(resolved_tracks), origins
 
 
-def _resolve_preserve_duration(sequence: Sequence) -> Sequence:
+def _resolve_preserve_duration(sequence: Sequence) -> tuple[Sequence, dict[str, str]]:
     resolved_tracks: list[Track] = []
+    origins: dict[str, str] = {}
     for track in sequence.tracks:
-        ordered = [clip for _, clip in sorted(enumerate(track.clips), key=lambda item: (item[0], item[1].id))]
+        # Ties are decided by original order, then by stable id.
+        ordered = [clip for _, clip in sorted(enumerate(track.clips),
+                                              key=lambda item: (item[0], item[1].id))]
         placed: list[Clip] = []
         cursor = 0
         for clip in ordered:
             start = max(clip.timeline_start, cursor)
             moved = replace(clip, timeline_start=start)
             placed.append(moved)
+            origins[moved.id] = clip.id
             cursor = start + clip.duration
         placed.sort(key=lambda c: (c.timeline_start, c.id))
         resolved_tracks.append(track.with_clips(placed))
-    return sequence.with_tracks(resolved_tracks)
+    return sequence.with_tracks(resolved_tracks), origins
 
 
 # --------------------------------------------------------------------------
@@ -290,7 +309,6 @@ def _resolve_preserve_duration(sequence: Sequence) -> Sequence:
 
 
 def _verify_intervals(original: Sequence, resolved: Sequence) -> None:
-    before = original.clip_locations()
     for track in resolved.tracks:
         for clip in track.clips:
             try:
@@ -313,13 +331,6 @@ def _verify_intervals(original: Sequence, resolved: Sequence) -> None:
             if clip.duration <= 0:
                 raise ResolutionError(
                     "resolved clip has non-positive duration",
-                    track_id=track.id,
-                    clip_id=clip.id,
-                )
-            origin_id = clip.id.split("#", 1)[0]
-            if origin_id not in before:
-                raise ResolutionError(
-                    f"resolved clip {clip.id!r} does not trace to an input clip",
                     track_id=track.id,
                     clip_id=clip.id,
                 )
