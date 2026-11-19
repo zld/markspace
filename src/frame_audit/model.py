@@ -9,8 +9,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
+from collections.abc import Sequence
 from fractions import Fraction
-from typing import Sequence
+from itertools import pairwise
 
 
 class RepairKind(str, Enum):
@@ -163,9 +164,7 @@ class AuditResult:
         ]
         if len(values) < 2:
             return 0
-        return max(
-            abs(later - earlier) for earlier, later in zip(values, values[1:])
-        )
+        return max(abs(later - earlier) for earlier, later in pairwise(values))
 
     @property
     def repair_breakdown(self) -> dict[str, int]:

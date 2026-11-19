@@ -10,11 +10,11 @@ object, so the two cannot diverge on counts or repaired timestamps.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 from .decode import decode_frames
-from .errors import AuditError, DecodeError, InputError
+from .errors import AuditError
 from .model import AuditResult, Policy
 from .probe import probe
 from .timeline import build_timeline

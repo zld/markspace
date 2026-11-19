@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from itertools import pairwise
+
 from fractions import Fraction
 
 import pytest
@@ -123,7 +125,7 @@ def test_missing_timestamps_are_filled_and_counted() -> None:
     frames = [frame(0, "I", 0), frame(1, "B", None), frame(2, "B", None), frame(3, "P", 3)]
     data = build_timeline(frames, time_base=TB, average_rate=Fraction(30))
     result = [v for v in values(data) if v is not None]
-    assert all(b > a for a, b in zip(result, result[1:]))
+    assert all(b > a for a, b in pairwise(result))
     assert data.breakdown["missing"] == 2
     assert data.repairs == 2
 
@@ -143,7 +145,7 @@ def test_regression_is_repaired_monotonically() -> None:
     frames = [frame(0, "I", 0), frame(1, "B", 1), frame(2, "B", 9), frame(3, "P", 3)]
     data = build_timeline(frames, time_base=TB)
     result = [v for v in values(data) if v is not None]
-    assert all(b > a for a, b in zip(result, result[1:]))
+    assert all(b > a for a, b in pairwise(result))
     assert data.repairs >= 1
     assert data.breakdown["regression"] + data.breakdown["duplicate"] >= 1
 
@@ -164,7 +166,7 @@ def test_first_frame_missing_is_a_repair() -> None:
     data = build_timeline(frames, time_base=TB)
     assert data.breakdown["first_frame"] == 1
     result = [v for v in values(data) if v is not None]
-    assert all(b > a for a, b in zip(result, result[1:]))
+    assert all(b > a for a, b in pairwise(result))
 
 
 def test_all_missing_timestamps_still_produce_a_timeline() -> None:
@@ -186,7 +188,7 @@ def test_repairs_never_emit_a_decreasing_timeline() -> None:
     ]
     data = build_timeline(frames, time_base=TB)
     result = [v for v in values(data) if v is not None]
-    assert all(b > a for a, b in zip(result, result[1:]))
+    assert all(b > a for a, b in pairwise(result))
     assert data.repairs >= 3
 
 

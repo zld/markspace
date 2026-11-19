@@ -7,6 +7,8 @@ mocked.
 
 from __future__ import annotations
 
+from itertools import pairwise
+
 import json
 from fractions import Fraction
 from pathlib import Path
@@ -142,7 +144,7 @@ def test_audit_emits_a_strictly_increasing_timeline(sample_mp4: Path) -> None:
     result = audit_file(sample_mp4)
     timeline = [frame.repaired_pts for frame in result.frames]
     assert all(value is not None for value in timeline)
-    assert all(b > a for a, b in zip(timeline, timeline[1:]))
+    assert all(b > a for a, b in pairwise(timeline))
 
 
 def test_audit_keeps_original_timestamps_alongside_repairs(sample_mp4: Path) -> None:

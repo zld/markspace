@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from itertools import pairwise
+
 import json
 from pathlib import Path
 
@@ -45,7 +47,7 @@ def parse_table(output: str) -> dict[str, dict[str, str]]:
     for line in lines[1:]:
         cells = line.split()
         assert len(cells) == len(headers), line
-        values = dict(zip(headers, cells))
+        values = dict(zip(headers, cells, strict=True))
         rows[values["file"]] = values
     return rows
 
@@ -107,7 +109,7 @@ def test_terminal_and_json_share_repaired_frames(
 
     # The emitted timeline is strictly increasing for every frame it produced.
     timeline = [f["repaired_pts"] for f in document["frames"] if f["repaired_pts"] is not None]
-    assert all(b > a for a, b in zip(timeline, timeline[1:]))
+    assert all(b > a for a, b in pairwise(timeline))
 
 
 def test_json_flag_prints_the_same_document(

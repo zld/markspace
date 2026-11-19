@@ -134,22 +134,25 @@ def zero_frame_mp4(media_dir: Path, clean_mp4: Path) -> Path:
 
 @pytest.fixture(scope="session")
 def audio_only(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """An MP4 with an audio stream and no video stream at all."""
-    import av
+    """An audio-only media file with no video stream at all.
 
-    path = tmp_path_factory.mktemp("audio") / "audio.m4a"
-    with av.open(str(path), "w", format="mp4") as container:
-        stream = container.add_stream("aac", rate=44_100)
-        stream.layout = "mono"
-        stream.format = "fltp"
-        for index in range(4):
-            frame = av.AudioFrame(format="fltp", layout="mono", samples=1024)
-            frame.sample_rate = 44_100
-            frame.pts = index * 1024
-            for packet in stream.encode(frame):
-                container.mux(packet)
-        for packet in stream.encode(None):
-            container.mux(packet)
+    Written as a PCM WAV with the standard library: PyAV's AAC encoder
+    intermittently rejects synthetic frames, and this fixture only needs "a
+    container with audio and no video".
+    """
+    import struct
+    import wave
+
+    path = tmp_path_factory.mktemp("audio") / "audio.wav"
+    with wave.open(str(path), "wb") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(48_000)
+        samples = [
+            struct.pack("<h", int(1000 * ((index % 50) / 50.0 - 0.5)))
+            for index in range(4800)
+        ]
+        handle.writeframes(b"".join(samples))
     return path
 
 

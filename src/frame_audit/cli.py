@@ -13,19 +13,13 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
-from . import __version__, audit
+from . import __version__
 from .audit import audit_file
-from .errors import (
-    EXIT_INPUT,
-    EXIT_OK,
-    EXIT_OUTPUT,
-    EXIT_USAGE,
-    AuditError,
-)
-from .model import AuditResult, BatchReport, Policy, RepairKind
+from .errors import EXIT_INPUT, EXIT_OK, EXIT_USAGE, AuditError
+from .model import AuditResult, BatchReport, Policy
 from .probe import VIDEO_EXTENSIONS, is_probable_video
 from .sinks import write_json_lines, write_json_stream, write_table
 
@@ -193,13 +187,12 @@ def _run_audit(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int
     audited = tuple(results)
     report = BatchReport(results=audited)
 
-    if args.json or args.json_out:
-        if args.json:
-            try:
-                write_json_stream(audited, sys.stdout)
-            except AuditError as exc:
-                _report_error(exc)
-                return exc.exit_code
+    if args.json:
+        try:
+            write_json_stream(audited, sys.stdout)
+        except AuditError as exc:
+            _report_error(exc)
+            return exc.exit_code
     if not args.quiet and not args.json:
         try:
             write_table(audited, sys.stdout)

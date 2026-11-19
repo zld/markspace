@@ -29,9 +29,10 @@ testable and both output sinks consume exactly the same result.
 from __future__ import annotations
 
 import statistics
+from collections.abc import Sequence
 from dataclasses import dataclass
 from fractions import Fraction
-from typing import Sequence
+from itertools import pairwise
 
 from .model import FrameRecord, Policy, RepairKind, TimelineFrame
 
@@ -87,7 +88,7 @@ class TimelineData:
         known = [value for value in values if value is not None]
         if len(known) < 2:
             return 0
-        return max(abs(b - a) for a, b in zip(known, known[1:]))
+        return max(abs(b - a) for a, b in pairwise(known))
 
 
 def derive_step_ticks(
@@ -103,7 +104,7 @@ def derive_step_ticks(
     fallback for streams with fewer than two usable timestamps.
     """
     ordered = sorted({int(value) for value in timestamps})
-    deltas = [b - a for a, b in zip(ordered, ordered[1:]) if b > a]
+    deltas = [b - a for a, b in pairwise(ordered) if b > a]
     if deltas:
         return max(1, int(statistics.median(deltas)))
     if time_base and average_rate and average_rate > 0:

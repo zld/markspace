@@ -10,8 +10,9 @@ from __future__ import annotations
 
 import json
 import sys
+from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import IO, Iterable, Sequence
+from typing import IO
 
 from .errors import OutputError
 from .model import AuditResult
