@@ -227,6 +227,41 @@ class Store:
             meta.noise_floor_db,
         )
 
+    def clone_job(self, source: StoredJob, run_id: int) -> StoredJob:
+        """Copy a prior result into *run_id* so this run is self-contained."""
+        try:
+            self.connection.execute("BEGIN IMMEDIATE")
+            cursor = self.connection.execute(
+                "INSERT INTO jobs (run_id, input_path, file_hash, status, error, "
+                "sample_rate, channels, total_samples, noise_floor_db, "
+                "segment_count) SELECT ?, input_path, file_hash, status, error, "
+                "sample_rate, channels, total_samples, noise_floor_db, "
+                "segment_count FROM jobs WHERE id = ?",
+                (run_id, source.job_id),
+            )
+            job_id = int(cursor.lastrowid)
+            self.connection.execute(
+                "INSERT INTO segments (job_id, ordinal, start_sample, end_sample, "
+                "peak, rms, noise_floor_db, duration_ms) "
+                "SELECT ?, ordinal, start_sample, end_sample, peak, rms, "
+                "noise_floor_db, duration_ms FROM segments WHERE job_id = ?",
+                (job_id, source.job_id),
+            )
+            self.connection.execute("COMMIT")
+        except sqlite3.Error as exc:
+            _rollback(self.connection)
+            raise StoreError(f"cannot reuse job {source.job_id}: {exc}") from exc
+        return StoredJob(
+            job_id,
+            source.input_path,
+            source.file_hash,
+            source.segment_count,
+            source.sample_rate,
+            source.channels,
+            source.total_samples,
+            source.noise_floor_db,
+        )
+
     def record_failure(
         self, run_id: int, input_path: str, file_hash: str, error: str
     ) -> None:
