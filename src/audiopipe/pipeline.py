@@ -14,7 +14,7 @@ import numpy as np
 
 from . import layout, loudness, resample, wavio
 from .config import Config
-from .errors import AudioPipeError, InputError, ProcessingError
+from .errors import AudioPipeError, ProcessingError
 from .resample import BOUNDARY_RULE, Ratio, rational_ratio, resampled_frames
 
 #: Output bit depth; PCM_24 gives enough headroom for normalised programme.
@@ -114,7 +114,7 @@ def process_file(
     if not math.isfinite(gain_db):
         raise ProcessingError("non-finite gain", reason="bad_gain")
     gain = loudness.gain_linear(gain_db)
-    after_data = layout.apply_gain(resampled, gain)
+    after_data = layout.apply_gain_blocks(resampled, gain, config.block_size)
     after = loudness.measure(after_data, config.target_rate)
 
     wavio.write_wav_atomic(output_path, after_data, config.target_rate, subtype=OUTPUT_SUBTYPE)
@@ -172,7 +172,10 @@ def process_file(
     }
     reason = None
     message = None
-    if after.silent:
+    if after_data.shape[0] == 0 and frames_in > 0:
+        reason = "empty_output"
+        message = "target rate rounds this short input to zero frames"
+    elif after.silent:
         reason = "silent"
         message = "input is silent; loudness is undefined and gain is 0 dB"
     elif decision is not None and decision.limited_by_peak:

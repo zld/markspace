@@ -207,6 +207,16 @@ class LayoutTests(unittest.TestCase):
         np.testing.assert_array_equal(out, np.full((3, 1), 2.0))
         np.testing.assert_array_equal(data, np.ones((3, 1)))
 
+    def test_block_gain_trims_padded_tail(self) -> None:
+        data = np.arange(23, dtype=np.float64)[:, None]
+        out = layout.apply_gain_blocks(data, 2.0, 5)
+        self.assertEqual(out.shape, data.shape)
+        np.testing.assert_array_equal(out, data * 2.0)
+
+    def test_block_gain_handles_empty(self) -> None:
+        out = layout.apply_gain_blocks(np.zeros((0, 2)), 2.0, 4)
+        self.assertEqual(out.shape, (0, 2))
+
 
 if __name__ == "__main__":
     unittest.main()

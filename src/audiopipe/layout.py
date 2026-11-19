@@ -104,3 +104,18 @@ def truncate_tail(data: np.ndarray, frames: int) -> np.ndarray:
         return np.ascontiguousarray(data[:frames])
     pad = np.zeros((frames - current, data.shape[1]), dtype=data.dtype)
     return np.concatenate((data, pad), axis=0)
+
+
+def apply_gain_blocks(data: np.ndarray, gain: float, block_size: int) -> np.ndarray:
+    """Apply gain block by block with a zero-padded final block.
+
+    The padded frames take part in the per-block computation (as they would for
+    any block-oriented DSP) but the result is trimmed back to the real frame
+    count, so output length always equals input length.
+    """
+    chunks = iter_frame_blocks(data, block_size, pad_tail=True)
+    if not chunks:
+        return np.array(data, dtype=np.float64, copy=True)
+    processed = [apply_gain(chunk.data, gain) for chunk in chunks]
+    merged = np.concatenate(processed, axis=0)
+    return truncate_tail(merged, int(data.shape[0]))
