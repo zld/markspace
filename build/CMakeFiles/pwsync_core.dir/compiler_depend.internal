@@ -15,6 +15,7 @@ CMakeFiles/pwsync_core.dir/src/audio_resample.cpp.o
  /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/_bounds.h
  /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/_ctermid.h
  /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/_ctype.h
+ /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/_inttypes.h
  /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/_locale.h
  /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/_locale_posix2008.h
  /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/_mb_cur_max.h
@@ -630,6 +631,7 @@ CMakeFiles/pwsync_core.dir/src/audio_resample.cpp.o
  /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/exception
  /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/functional
  /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/initializer_list
+ /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/inttypes.h
  /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/ios
  /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/iosfwd
  /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/iterator
@@ -663,6 +665,7 @@ CMakeFiles/pwsync_core.dir/src/audio_resample.cpp.o
  /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/wctype.h
  /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/ctype.h
  /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/errno.h
+ /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/inttypes.h
  /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/libkern/_OSByteOrder.h
  /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/libkern/arm/_OSByteOrder.h
  /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/limits.h
@@ -784,6 +787,7 @@ CMakeFiles/pwsync_core.dir/src/audio_resample.cpp.o
  /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/xlocale.h
  /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/xlocale/___wctype.h
  /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/xlocale/_ctype.h
+ /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/xlocale/_inttypes.h
  /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/xlocale/_stdio.h
  /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/xlocale/_stdlib.h
  /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/xlocale/_string.h
@@ -805,12 +809,46 @@ CMakeFiles/pwsync_core.dir/src/audio_resample.cpp.o
  /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/21/include/__stddef_size_t.h
  /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/21/include/__stddef_wchar_t.h
  /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/21/include/float.h
+ /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/21/include/inttypes.h
  /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/21/include/limits.h
  /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/21/include/ptrcheck.h
  /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/21/include/stdarg.h
  /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/21/include/stddef.h
  /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/21/include/stdint.h
  /Users/zld/WorkSpace/pair-wise-workspace/14074/include/audio_resample.hpp
+ /Users/zld/WorkSpace/pair-wise-workspace/14074/include/media_types.hpp
+ /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavcodec/avcodec.h
+ /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavcodec/codec.h
+ /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavcodec/codec_desc.h
+ /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavcodec/codec_id.h
+ /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavcodec/codec_par.h
+ /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavcodec/defs.h
+ /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavcodec/packet.h
+ /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavcodec/version.h
+ /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavcodec/version_major.h
+ /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavutil/attributes.h
+ /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavutil/audio_fifo.h
+ /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavutil/avconfig.h
+ /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavutil/avutil.h
+ /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavutil/buffer.h
+ /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavutil/channel_layout.h
+ /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavutil/common.h
+ /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavutil/dict.h
+ /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavutil/error.h
+ /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavutil/frame.h
+ /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavutil/hwcontext.h
+ /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavutil/intfloat.h
+ /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavutil/log.h
+ /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavutil/macros.h
+ /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavutil/mathematics.h
+ /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavutil/mem.h
+ /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavutil/pixfmt.h
+ /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavutil/rational.h
+ /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavutil/samplefmt.h
+ /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavutil/version.h
+ /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libswresample/swresample.h
+ /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libswresample/version.h
+ /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libswresample/version_major.h
 
 CMakeFiles/pwsync_core.dir/src/clock.cpp.o
  /Users/zld/WorkSpace/pair-wise-workspace/14074/src/clock.cpp
@@ -1875,6 +1913,7 @@ CMakeFiles/pwsync_core.dir/src/demux_decode.cpp.o
  /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/__fwd/bit_reference.h
  /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/__fwd/byte.h
  /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/__fwd/complex.h
+ /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/__fwd/deque.h
  /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/__fwd/fstream.h
  /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/__fwd/functional.h
  /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/__fwd/get.h
@@ -2227,6 +2266,7 @@ CMakeFiles/pwsync_core.dir/src/demux_decode.cpp.o
  /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/ctype.h
  /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/cwchar
  /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/cwctype
+ /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/deque
  /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/errno.h
  /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/exception
  /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/functional

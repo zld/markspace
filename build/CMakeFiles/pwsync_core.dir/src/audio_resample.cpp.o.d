@@ -807,4 +807,42 @@ CMakeFiles/pwsync_core.dir/src/audio_resample.cpp.o: \
   /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/__locale_dir/time.h \
   /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/__locale_dir/wbuffer_convert.h \
   /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/__locale_dir/wstring_convert.h \
-  /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/cstdarg
+  /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/cstdarg \
+  /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavcodec/avcodec.h \
+  /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavutil/samplefmt.h \
+  /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavutil/attributes.h \
+  /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavutil/avutil.h \
+  /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavutil/common.h \
+  /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1/inttypes.h \
+  /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/21/include/inttypes.h \
+  /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/inttypes.h \
+  /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/_inttypes.h \
+  /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/xlocale/_inttypes.h \
+  /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavutil/error.h \
+  /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavutil/macros.h \
+  /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavutil/avconfig.h \
+  /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavutil/version.h \
+  /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavutil/mem.h \
+  /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavutil/rational.h \
+  /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavutil/mathematics.h \
+  /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavutil/intfloat.h \
+  /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavutil/log.h \
+  /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavutil/pixfmt.h \
+  /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavutil/buffer.h \
+  /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavutil/channel_layout.h \
+  /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavutil/dict.h \
+  /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavutil/frame.h \
+  /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavcodec/codec.h \
+  /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavutil/hwcontext.h \
+  /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavcodec/codec_id.h \
+  /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavcodec/defs.h \
+  /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavcodec/packet.h \
+  /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavcodec/version_major.h \
+  /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavcodec/version.h \
+  /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavcodec/codec_desc.h \
+  /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavcodec/codec_par.h \
+  /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libavutil/audio_fifo.h \
+  /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libswresample/swresample.h \
+  /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libswresample/version_major.h \
+  /opt/homebrew/Cellar/ffmpeg/9.0.2_1/include/libswresample/version.h \
+  /Users/zld/WorkSpace/pair-wise-workspace/14074/include/media_types.hpp
