@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "audioslice"
+version = "0.1.0"
+description = "Offline detector for activity and silence regions in procedural level soundscape recordings"
+requires-python = ">=3.11,<3.12"
+dependencies = ["numpy==2.1.3"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
