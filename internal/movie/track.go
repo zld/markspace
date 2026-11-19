@@ -32,6 +32,16 @@ func parseTrak(rd *box.Reader, trak box.Box) (*Track, error) {
 	if t.Timescale == 0 {
 		return nil, fmt.Errorf("trak %d: missing mdhd timescale", t.ID)
 	}
+	if t.Stts == nil || t.Sizes == nil || t.Stsc == nil || t.Chunks == nil {
+		return nil, fmt.Errorf("trak %d: missing required sample table (stts/stsz/stsc/stco)", t.ID)
+	}
+	var sttsTotal uint64
+	for _, e := range t.Stts {
+		sttsTotal += uint64(e.Count)
+	}
+	if sttsTotal != uint64(len(t.Sizes)) {
+		return nil, fmt.Errorf("trak %d: stts sample count %d != stsz count %d", t.ID, sttsTotal, len(t.Sizes))
+	}
 	return t, nil
 }
 
@@ -179,11 +189,5 @@ func (t *Track) parseMinf(rd *box.Reader, minf box.Box) error {
 			return fmt.Errorf("trak %d: %w", t.ID, err)
 		}
 	}
-	return nil
-}
-
-// parseTable decodes one stbl child; table parsers land in the next
-// batch, until then unknown tables are skipped.
-func (t *Track) parseTable(rd *box.Reader, b box.Box) error {
 	return nil
 }
