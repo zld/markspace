@@ -161,28 +161,6 @@ void apply_integer_field(EffStyle& s, EffStyle::Integer& slot, const RawStyle& r
                          int lo, int hi, int fallback);
 
 
-const char* const kDialogueFields[] = {
-    "name", "fontname", "fontsize", "primarycolour", "secondarycolour", "outlinecolour",
-    "backcolour", "bold", "italic", "underline", "strikeout", "scalex", "scaley", "spacing",
-    "angle", "borderstyle", "outline", "shadow", "alignment", "marginl", "marginr", "marginv",
-    "encoding", "parent"};
-
-// Flags columns that do not exist in the style format. Extra columns past the
-// Format list are almost always a missing value earlier in the line.
-void report_unknown_style_columns(EffStyle& s, const RawStyle& raw) {
-    for (const auto& entry : raw.fields) {
-        bool known = false;
-        for (const char* field : kDialogueFields) {
-            if (entry.first == field) { known = true; break; }
-        }
-        if (!known) {
-            adjust(s, "column:" + entry.first, entry.second.value,
-                   "ignored (not a style field)", "style: " + raw.name);
-        }
-    }
-}
-
-
 void apply_text_field(EffStyle& s, EffStyle::Text& slot, const RawStyle& raw, const std::string& field,
                       const std::string& /*display*/, const char* /*fallback_why*/) {
     auto it = raw.fields.find(field);
@@ -296,7 +274,6 @@ void apply_colour_field(EffStyle& s, EffStyle::Integer& slot, const RawStyle& ra
 }
 
 void merge_style(EffStyle& s, const RawStyle& raw) {
-    report_unknown_style_columns(s, raw);
     apply_text_field(s, s.font_name, raw, "fontname", "Fontname", "empty font name");
     apply_number_field(s, s.font_size, raw, "fontsize", kFontSizeMin, kFontSizeMax, 48.0);
     apply_integer_field(s, s.bold, raw, "bold", 0, 1, 0);
@@ -332,5 +309,107 @@ const RawStyle* find_style(const Document& doc, const std::string& name) {
 }
 
 }  // namespace
+
+StyleResolution resolve_style(const Document& doc, const std::string& name) {
+    StyleResolution result;
+    result.requested = name;
+    std::string current = name;
+    std::set<std::string> seen;
+    std::vector<const RawStyle*> stack;  // leaf-first
+    std::vector<std::string> visited_names;  // leaf-first
+
+    while (true) {
+        const RawStyle* style = find_style(doc, current);
+        if (!style) {
+            result.chain.push_back(ChainLink{current, 0, true});
+            if (stack.empty()) {
+                result.diagnostics.push_back(Diagnostic{
+                    Severity::Error, 0, "style-missing",
+                    "style '" + sanitize_for_output(name, 60) + "' is not defined", -1});
+            } else {
+                result.diagnostics.push_back(Diagnostic{
+                    Severity::Error, stack.back()->line, "parent-missing",
+                    "style '" + sanitize_for_output(stack.back()->name, 60) +
+                        "' references missing parent '" + sanitize_for_output(current, 60) + "'",
+                    -1});
+            }
+            break;
+        }
+        if (seen.count(current)) {
+            // Cycle: report the edge that closes the loop and stop. The loop
+            // starts at the first occurrence of the repeated style name.
+            auto first = std::find(visited_names.begin(), visited_names.end(), current);
+            std::string loop;
+            for (auto it = first; it != visited_names.end(); ++it) {
+                loop += *it;
+                loop += " -> ";
+            }
+            loop += current;
+            result.diagnostics.push_back(Diagnostic{
+                Severity::Error, style->line, "style-cycle",
+                "style inheritance cycle: " + sanitize_for_output(loop, 160), -1});
+            break;
+        }
+        seen.insert(current);
+        visited_names.push_back(current);
+        result.chain.push_back(ChainLink{current, style->line, false});
+        stack.push_back(style);
+        if (style->parent.empty()) break;
+        current = style->parent;
+    }
+
+    // Build the merge order root -> leaf. On cycle/missing-parent the partial
+    // chain is still merged so the rest of the report stays meaningful.
+    std::vector<const RawStyle*> order(stack.rbegin(), stack.rend());
+    // Reverse the chain link list so it reads root -> leaf for the report.
+    std::reverse(result.chain.begin(), result.chain.end());
+
+    EffStyle style = builtin_style();
+    for (const RawStyle* raw : order) merge_style(style, *raw);
+    result.style = style;
+    return result;
+}
+
+std::vector<Diagnostic> resolve_all_styles(const Document& doc, std::vector<StyleResolution>& out) {
+    std::vector<Diagnostic> diagnostics;
+    out.clear();
+    for (const RawStyle& style : doc.styles) {
+        StyleResolution resolution = resolve_style(doc, style.name);
+        for (const Diagnostic& d : resolution.diagnostics) diagnostics.push_back(d);
+        out.push_back(std::move(resolution));
+    }
+    return diagnostics;
+}
+
+void apply_event_margins(EffStyle& style, const Event& event, int canvas_w, int canvas_h) {
+    (void)canvas_w;
+    (void)canvas_h;
+    struct MarginMapping {
+        const char* field;
+        int value;
+        EffStyle::Integer* slot;
+    };
+    MarginMapping mappings[] = {
+        {"marginl", event.margin_l, &style.margin_l},
+        {"marginr", event.margin_r, &style.margin_r},
+        {"marginv", event.margin_v, &style.margin_v},
+    };
+    for (const MarginMapping& m : mappings) {
+        if (m.value == 0) continue;  // 0 means inherit from the style
+        int clamped = m.value;
+        if (clamped < 0) {
+            style.adjustments.push_back(Adjustment{m.field, fmt_int(m.value),
+                                                   "0 (negative margin clamped)", "event"});
+            clamped = 0;
+        } else if (clamped > kMarginMax) {
+            style.adjustments.push_back(Adjustment{m.field, fmt_int(m.value),
+                                                   fmt_int(kMarginMax) + " (clamped)", "event"});
+            clamped = kMarginMax;
+        }
+        m.slot->value = clamped;
+        m.slot->source = "event";
+        m.slot->cleared = false;
+    }
+}
 
 }  // namespace sp
