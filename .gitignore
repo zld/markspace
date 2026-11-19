@@ -1,0 +1,11 @@
+# build artifacts
+/rtspcheck
+*.out
+
+# test/coverage artifacts
+coverage.txt
+
+# OS/editor noise
+.DS_Store
+.idea/
+.vscode/
