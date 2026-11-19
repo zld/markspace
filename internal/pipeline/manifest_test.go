@@ -58,3 +58,24 @@ func TestValidateNilManifest(t *testing.T) {
 		t.Fatal("nil manifest was not reported as a failure")
 	}
 }
+
+func TestValidateUnexpectedExtraSegment(t *testing.T) {
+	h := newHarness(t, 4, 2)
+	delivered := cloneCiphertexts(h.pkg.Ciphertexts)
+	delivered[40] = []byte("stray bytes")
+	out := Validate(h.pkg.Manifest, h.pkg.License, delivered, ValidateOptions{
+		Secret: h.pkg.Secret, Now: h.base, Distributor: h.pkg.Distributor, AssetID: h.cfg.AssetID,
+	})
+	found := false
+	for _, s := range out.Segments {
+		if s.SegmentIndex == 40 {
+			found = s.Reason == reason.SEGMENT_UNEXPECTED
+		}
+	}
+	if !found {
+		t.Fatal("index 40 was not reported as SEGMENT_UNEXPECTED")
+	}
+	if len(out.Segments) != 5 {
+		t.Fatalf("%d results, want 4 manifest segments plus one extra", len(out.Segments))
+	}
+}

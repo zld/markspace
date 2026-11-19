@@ -96,6 +96,19 @@ type BoundaryCheck struct {
 	Segments       []SegmentResult `json:"segments"`
 }
 
+// KeyFact is a material-free diagnostic snapshot of one key version. It is
+// emitted so an operator can see which versions existed, when they were
+// issued and whether they were still usable at validation time, without any
+// key bytes ever leaving the process.
+type KeyFact struct {
+	KeyID     string `json:"key_id"`
+	Version   int    `json:"version"`
+	CreatedAt string `json:"created_at"`
+	ExpiresAt string `json:"expires_at,omitempty"`
+	Active    bool   `json:"active"`
+	Expired   bool   `json:"expired_at_validation"`
+}
+
 // Report is the complete result of one demo or validation run.
 type Report struct {
 	AssetID       string          `json:"asset_id"`
@@ -107,6 +120,7 @@ type Report struct {
 	License       LicenseResult   `json:"license"`
 	Manifest      ManifestCheck   `json:"manifest_check"`
 	Rotations     []Rotation      `json:"rotations"`
+	Keys          []KeyFact       `json:"keys"`
 	Segments      []SegmentResult `json:"segments"`
 	Replay        ReplayResult    `json:"replay"`
 	Boundary      BoundaryCheck   `json:"boundary_check"`
@@ -130,6 +144,9 @@ func (r *Report) Finalize() {
 	})
 	sort.SliceStable(r.Boundary.Segments, func(i, j int) bool {
 		return r.Boundary.Segments[i].SegmentIndex < r.Boundary.Segments[j].SegmentIndex
+	})
+	sort.SliceStable(r.Keys, func(i, j int) bool {
+		return r.Keys[i].Version < r.Keys[j].Version
 	})
 	r.SegmentCount = len(r.Segments)
 	r.OKCount = 0
@@ -200,6 +217,12 @@ func (r *Report) WriteSummary(w io.Writer) error {
 	if _, err := fmt.Fprintf(w, "license serial=%s status=%s reason=%s key_range=%d-%d\n",
 		r.License.Serial, r.License.Status, r.License.Reason, r.License.KeyMin, r.License.KeyMax); err != nil {
 		return err
+	}
+	for _, k := range r.Keys {
+		if _, err := fmt.Fprintf(w, "key key_id=%s version=%d active=%t expired_at_validation=%t\n",
+			k.KeyID, k.Version, k.Active, k.Expired); err != nil {
+			return err
+		}
 	}
 	for _, rot := range r.Rotations {
 		if _, err := fmt.Fprintf(w, "rotation index=%d from=%s to=%s at_segment=%d\n",

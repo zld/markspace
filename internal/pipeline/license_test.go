@@ -148,3 +148,33 @@ func TestValidateReplayIsAtomic(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateKeyOutsideLicensedRange(t *testing.T) {
+	h := newHarness(t, 9, 3)
+	// Narrow the license scope to versions 1-2, so segments sealed under k3
+	// are refused even though the key is present and unexpired.
+	narrow, err := license.NewSigner(license.Options{
+		Secret: h.pkg.Secret, Now: func() time.Time { return h.base },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lic, err := narrow.Issue(h.cfg.AssetID, 1, 2, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := Validate(h.pkg.Manifest, lic, h.pkg.Ciphertexts, ValidateOptions{
+		Secret: h.pkg.Secret, Now: h.base, Distributor: h.pkg.Distributor, AssetID: h.cfg.AssetID,
+	})
+	for _, s := range out.Segments {
+		if s.SegmentIndex < 6 {
+			if s.Reason != reason.NONE {
+				t.Fatalf("segment %d unexpectedly failed: %s", s.SegmentIndex, s.Reason)
+			}
+			continue
+		}
+		if s.Reason != reason.KEY_OUT_OF_RANGE {
+			t.Fatalf("segment %d reason = %s, want KEY_OUT_OF_RANGE", s.SegmentIndex, s.Reason)
+		}
+	}
+}

@@ -44,6 +44,7 @@ func (r *Runner) Run(cfg Config) (*report.Report, error) {
 		License:       out.License,
 		Manifest:      out.Manifest,
 		Rotations:     nonNilRotations(pkg.Rotations),
+		Keys:          keyFacts(pkg, cfg.Clock.Now()),
 		Segments:      out.Segments,
 	}
 	if cfg.ReplayCheck {
@@ -189,6 +190,26 @@ func countReason(results []report.SegmentResult, code reason.Code) int {
 		}
 	}
 	return n
+}
+
+// keyFacts snapshots key version history without exposing key material.
+func keyFacts(pkg *Packaged, now time.Time) []report.KeyFact {
+	history := pkg.Distributor.History()
+	out := make([]report.KeyFact, 0, len(history))
+	for _, k := range history {
+		fact := report.KeyFact{
+			KeyID:     k.ID,
+			Version:   k.Version,
+			CreatedAt: k.CreatedAt.UTC().Format(time.RFC3339),
+			Active:    k.Active,
+			Expired:   !k.ExpiresAt.IsZero() && !now.Before(k.ExpiresAt),
+		}
+		if !k.ExpiresAt.IsZero() {
+			fact.ExpiresAt = k.ExpiresAt.UTC().Format(time.RFC3339)
+		}
+		out = append(out, fact)
+	}
+	return out
 }
 
 func nonNilRotations(in []report.Rotation) []report.Rotation {

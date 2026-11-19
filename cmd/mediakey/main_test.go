@@ -214,3 +214,16 @@ func TestRotationEverySegment(t *testing.T) {
 		}
 	}
 }
+
+func TestProductionModeUsesSystemEntropy(t *testing.T) {
+	args := []string{"demo", "--segments", "5", "--production", "--json"}
+	_, first, _ := runCLI(t, args...)
+	_, second, _ := runCLI(t, args...)
+	if first == second {
+		t.Fatal("production mode produced identical output across runs")
+	}
+	r := decodeJSON(t, first)
+	if r.Verdict != "ok" || r.FailedCount != 0 {
+		t.Fatalf("production run failed: %+v", r)
+	}
+}

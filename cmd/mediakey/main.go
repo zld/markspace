@@ -39,6 +39,7 @@ type demoFlags struct {
 	corruptSegment int
 	dropSegment    int
 	seed           int64
+	production     bool
 	assetID        string
 	segmentSize    int
 	replayAttempts int
@@ -84,6 +85,8 @@ flags:
   --corrupt-segment N   flip a byte in segment N to provoke AUTH_FAILED
   --drop-segment N      withhold segment N to provoke SEGMENT_MISSING
   --seed N              deterministic seed for content, keys and nonces
+  --production          use the system clock and crypto/rand instead of the
+                        seeded demo clock and streams
   --asset-id ID         asset identifier (default demo-asset)
   --segment-size N      nominal plaintext size per segment (default 4096)
   --replay-attempts N   concurrent replay presentations (default 4)
@@ -111,23 +114,7 @@ func runDemo(args []string, stdout, stderr io.Writer) int {
 		return fail(stdout, stderr, reason.INVALID_INPUT, err)
 	}
 
-	// Seeded mode derives three independent streams so keys, nonces and the
-	// license secret never share bytes, while remaining reproducible.
-	runCfg := pipeline.Config{
-		AssetID:        cfg.assetID,
-		Segments:       segments,
-		RotateEvery:    cfg.rotateEvery,
-		LicenseTTL:     cfg.licenseTTL,
-		AdvanceClock:   cfg.advanceClock,
-		CorruptSegment: cfg.corruptSegment,
-		DropSegment:    cfg.dropSegment,
-		ReplayCheck:    cfg.replayCheck,
-		ReplayAttempts: cfg.replayAttempts,
-		Clock:          pipeline.NewClock(generator.BaseTime),
-		KeyRandom:      generator.NewDeterministicStream(cfg.seed, "keys"),
-		NonceRandom:    generator.NewDeterministicStream(cfg.seed, "nonces"),
-		SecretRandom:   generator.NewDeterministicStream(cfg.seed, "license-secret"),
-	}
+	runCfg := cfg.pipelineConfig(segments)
 
 	rep, err := (&pipeline.Runner{}).Run(runCfg)
 	if err != nil {
@@ -183,7 +170,8 @@ func parseDemoFlags(args []string, stderr io.Writer) (demoFlags, int, bool) {
 	fs.BoolVar(&cfg.replayCheck, "replay-check", false, "probe concurrent replay of one serial")
 	fs.IntVar(&cfg.corruptSegment, "corrupt-segment", cfg.corruptSegment, "flip a byte in segment N")
 	fs.IntVar(&cfg.dropSegment, "drop-segment", cfg.dropSegment, "withhold segment N")
-	fs.Int64Var(&cfg.seed, "seed", cfg.seed, "deterministic seed")
+	fs.Int64Var(&cfg.seed, "seed", cfg.seed, "deterministic seed for demo runs")
+	fs.BoolVar(&cfg.production, "production", false, "use the system clock and crypto/rand")
 	fs.StringVar(&cfg.assetID, "asset-id", cfg.assetID, "asset identifier")
 	fs.IntVar(&cfg.segmentSize, "segment-size", cfg.segmentSize, "nominal plaintext size per segment")
 	fs.IntVar(&cfg.replayAttempts, "replay-attempts", cfg.replayAttempts, "concurrent replay presentations")
@@ -204,6 +192,33 @@ func parseDemoFlags(args []string, stderr io.Writer) (demoFlags, int, bool) {
 		return cfg, exitError, true
 	}
 	return cfg, exitOK, false
+}
+
+// pipelineConfig assembles the run configuration. Seeded mode is the demo
+// default: it uses a fixed clock anchor and deterministic streams so rotation
+// and expiry boundaries reproduce on every machine. --production switches to
+// the system clock and crypto/rand, as a deployment would run.
+func (c demoFlags) pipelineConfig(segments []generator.Segment) pipeline.Config {
+	cfg := pipeline.Config{
+		AssetID:        c.assetID,
+		Segments:       segments,
+		RotateEvery:    c.rotateEvery,
+		LicenseTTL:     c.licenseTTL,
+		AdvanceClock:   c.advanceClock,
+		CorruptSegment: c.corruptSegment,
+		DropSegment:    c.dropSegment,
+		ReplayCheck:    c.replayCheck,
+		ReplayAttempts: c.replayAttempts,
+	}
+	if c.production {
+		cfg.Clock = pipeline.SystemClock()
+		return cfg
+	}
+	cfg.Clock = pipeline.NewClock(generator.BaseTime)
+	cfg.KeyRandom = generator.NewDeterministicStream(c.seed, "keys")
+	cfg.NonceRandom = generator.NewDeterministicStream(c.seed, "nonces")
+	cfg.SecretRandom = generator.NewDeterministicStream(c.seed, "license-secret")
+	return cfg
 }
 
 func (c demoFlags) validate() error {

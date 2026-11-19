@@ -3,6 +3,7 @@ package pipeline
 import (
 	"errors"
 	"fmt"
+	"sort"
 
 	"mediakey/internal/asset"
 	"mediakey/internal/crypto"
@@ -32,7 +33,10 @@ func segmentResults(m *asset.Manifest, delivered map[int][]byte, opts ValidateOp
 		}
 	}
 
-	maxIndex := maxInt(m.SegmentCount-1, maxInt(maxKey(byIndex), maxKeyInt(delivered)))
+	// The walk covers only indices the manifest claims: the declared count and
+	// every listed index. Bytes delivered under any other index are reported
+	// as SEGMENT_UNEXPECTED rather than inflating the walk with phantom gaps.
+	maxIndex := maxInt(m.SegmentCount-1, maxKey(byIndex))
 	out := make([]report.SegmentResult, 0, maxIndex+1)
 	for idx := 0; idx <= maxIndex; idx++ {
 		seg, inManifest := byIndex[idx]
@@ -59,6 +63,21 @@ func segmentResults(m *asset.Manifest, delivered map[int][]byte, opts ValidateOp
 			continue
 		}
 		out = append(out, validateOne(seg, delivered[idx], opts))
+	}
+
+	var extras []int
+	for idx := range delivered {
+		if idx < 0 || idx > maxIndex {
+			extras = append(extras, idx)
+		}
+	}
+	sort.Ints(extras)
+	for _, idx := range extras {
+		out = append(out, report.SegmentResult{
+			SegmentIndex: idx, KeyID: "", Status: report.StatusFailed,
+			Reason: reason.SEGMENT_UNEXPECTED,
+			Detail: "ciphertext delivered for an index absent from the manifest",
+		})
 	}
 	return out
 }
@@ -89,6 +108,10 @@ func validateOne(seg asset.Segment, ciphertext []byte, opts ValidateOptions) rep
 			code = reason.KEY_UNKNOWN
 		}
 		return failResult(idx, keyID, code, "%v", err)
+	}
+	if opts.KeyMax > 0 && (key.Version < opts.KeyMin || key.Version > opts.KeyMax) {
+		return failResult(idx, keyID, reason.KEY_OUT_OF_RANGE,
+			"key version %d is outside the licensed range [%d,%d]", key.Version, opts.KeyMin, opts.KeyMax)
 	}
 	if key.Version != seg.KeyVersion && seg.KeyVersion != 0 {
 		return failResult(idx, keyID, reason.KEY_ID_MISMATCH,
@@ -163,16 +186,6 @@ func maxInt(a, b int) int {
 }
 
 func maxKey(m map[int]asset.Segment) int {
-	best := -1
-	for k := range m {
-		if k > best {
-			best = k
-		}
-	}
-	return best
-}
-
-func maxKeyInt(m map[int][]byte) int {
 	best := -1
 	for k := range m {
 		if k > best {

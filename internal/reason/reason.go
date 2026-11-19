@@ -38,6 +38,7 @@ const (
 
 	// Manifest and segment failures.
 	SEGMENT_MISSING        Code = "SEGMENT_MISSING"
+	SEGMENT_UNEXPECTED     Code = "SEGMENT_UNEXPECTED"
 	SEGMENT_DUPLICATE      Code = "SEGMENT_DUPLICATE"
 	SEGMENT_ORDER          Code = "SEGMENT_ORDER"
 	NONCE_INVALID          Code = "NONCE_INVALID"

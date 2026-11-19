@@ -39,6 +39,9 @@ func Validate(m *asset.Manifest, lic *license.License, delivered map[int][]byte,
 		out.Segments = licenseBlockedSegments(m, delivered, out.License.Reason)
 		return out
 	}
+	if lic != nil {
+		opts.KeyMin, opts.KeyMax = lic.KeyMin, lic.KeyMax
+	}
 	out.Segments = segmentResults(m, delivered, opts)
 	return out
 }

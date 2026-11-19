@@ -31,6 +31,9 @@ type ValidateOptions struct {
 	Replay *replay.Cache
 	// AssetID is the asset being opened; the license must cover it.
 	AssetID string
+	// KeyMin and KeyMax are the license's allowed key versions. Zero disables
+	// the range check, which is used by diagnostics that probe keys directly.
+	KeyMin, KeyMax int
 }
 
 // Outcome is the full classification of one validation attempt.
