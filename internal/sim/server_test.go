@@ -7,6 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bluenviron/gortsplib/v4"
+	"github.com/bluenviron/gortsplib/v4/pkg/base"
+
 	"rtspdiag/internal/fixture"
 )
 
@@ -71,4 +74,52 @@ func TestStartDoubleCloseSafe(t *testing.T) {
 	}
 	srv.Close()
 	srv.Close() // must not panic or block
+}
+
+func TestSessionCapacityBound(t *testing.T) {
+	items := fixture.Generate(1, fixture.DefaultPlan(2))
+	srv, err := Start(Config{
+		Transport: TransportTCP, Items: items,
+		PacketInterval: time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	defer srv.Close()
+
+	h := handler{s: srv}
+	// Simulate opening sessions up to the bound without real RTSP clients.
+	for i := 0; i < MaxConcurrentSessions; i++ {
+		ss := &gortsplib.ServerSession{}
+		h.OnSessionOpen(&gortsplib.ServerHandlerOnSessionOpenCtx{Session: ss})
+		// Capacity remains available until the last allowed slot is taken.
+		wantAvailable := i+1 < MaxConcurrentSessions
+		if got := srv.sessionCapacityAvailable(); got != wantAvailable {
+			t.Fatalf("after %d sessions: available=%d want %v",
+				i+1, len(srv.sessions), wantAvailable)
+		}
+	}
+
+	// At capacity, SETUP must be refused.
+	res, _, err := h.OnSetup(nil)
+	if err == nil || res.StatusCode != base.StatusServiceUnavailable {
+		t.Fatalf("expected 503 at capacity, got res=%v err=%v", res, err)
+	}
+
+	// Closing one session frees a slot and SETUP succeeds again.
+	var first *gortsplib.ServerSession
+	srv.mu.Lock()
+	for ss := range srv.sessions {
+		first = ss
+		break
+	}
+	srv.mu.Unlock()
+	h.OnSessionClose(&gortsplib.ServerHandlerOnSessionCloseCtx{Session: first})
+	if !srv.sessionCapacityAvailable() {
+		t.Fatal("slot not released after session close")
+	}
+	res, _, err = h.OnSetup(nil)
+	if err != nil || res.StatusCode != base.StatusOK {
+		t.Fatalf("expected 200 after slot freed, got res=%v err=%v", res, err)
+	}
 }

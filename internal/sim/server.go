@@ -43,6 +43,11 @@ const (
 	TransportTCP
 )
 
+// MaxConcurrentSessions bounds how many RTSP sessions the mock server tracks
+// at once. Anomalous clients cannot make the server accumulate unbounded
+// session state; the limit is small because this is a local single-client tool.
+const MaxConcurrentSessions = 8
+
 // Server is a started mock RTSP server.
 type Server struct {
 	cfg Config
@@ -53,6 +58,7 @@ type Server struct {
 	media        *description.Media
 	clientSS     *gortsplib.ServerSession
 	clientC      *gortsplib.ServerConn
+	sessions     map[*gortsplib.ServerSession]struct{}
 	written      int
 	writeErrors  int
 	lastWriteErr error
@@ -78,7 +84,11 @@ func Start(cfg Config) (*Server, error) {
 	}
 	desc := &description.Session{Medias: []*description.Media{media}}
 
-	s := &Server{cfg: cfg, media: media}
+	s := &Server{
+		cfg:      cfg,
+		media:    media,
+		sessions: make(map[*gortsplib.ServerSession]struct{}),
+	}
 
 	// Reserve an ephemeral loopback TCP port, then release it for gortsplib to
 	// rebind. The process is purely local; no external interface is exposed.
@@ -278,13 +288,24 @@ func (h handler) OnConnClose(_ *gortsplib.ServerHandlerOnConnCloseCtx) {
 func (h handler) OnSessionOpen(ctx *gortsplib.ServerHandlerOnSessionOpenCtx) {
 	h.s.mu.Lock()
 	h.s.clientSS = ctx.Session
+	h.s.sessions[ctx.Session] = struct{}{}
 	h.s.mu.Unlock()
 }
 
-func (h handler) OnSessionClose(_ *gortsplib.ServerHandlerOnSessionCloseCtx) {
+func (h handler) OnSessionClose(ctx *gortsplib.ServerHandlerOnSessionCloseCtx) {
 	h.s.mu.Lock()
-	h.s.clientSS = nil
+	delete(h.s.sessions, ctx.Session)
+	if h.s.clientSS == ctx.Session {
+		h.s.clientSS = nil
+	}
 	h.s.mu.Unlock()
+}
+
+// sessionCapacityAvailable reports whether another session can be admitted.
+func (s *Server) sessionCapacityAvailable() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.sessions) < MaxConcurrentSessions
 }
 
 func (h handler) OnDescribe(_ *gortsplib.ServerHandlerOnDescribeCtx,
@@ -294,6 +315,14 @@ func (h handler) OnDescribe(_ *gortsplib.ServerHandlerOnDescribeCtx,
 
 func (h handler) OnSetup(_ *gortsplib.ServerHandlerOnSetupCtx,
 ) (*base.Response, *gortsplib.ServerStream, error) {
+	if !h.s.sessionCapacityAvailable() {
+		// Refuse new sessions past the bound so the server cannot accumulate
+		// unbounded state under anomalous or looping clients.
+		return &base.Response{
+			StatusCode: base.StatusServiceUnavailable,
+			Header:     base.Header{},
+		}, nil, fmt.Errorf("sim: max concurrent sessions (%d) reached", MaxConcurrentSessions)
+	}
 	return &base.Response{StatusCode: base.StatusOK}, h.s.stream, nil
 }
 
