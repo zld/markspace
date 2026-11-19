@@ -13,7 +13,7 @@ import numpy as np
 
 _EPSILON = 1e-12
 _MIN_DB = -120.0
-_SEED_FRAMES = 4
+_SEED_FRAMES = 100
 
 def amplitude_to_db(value: float) -> float:
     """Convert a linear amplitude to dBFS, clamped at -120 dB."""
@@ -222,13 +222,12 @@ class FrameEnergyDetector:
         self._evaluate(start, rms, peak)
 
     def _seed_and_flush(self) -> None:
-        """Seed the floor from the quietest early frame, then replay frames.
-
-        Using the minimum of a few frames keeps a single spike from
-        inflating the floor while still giving steady noise a sane start.
-        """
+        """Seed the floor from the warmup window, then replay its frames."""
+        values = np.fromiter(
+            (rms for _start, rms, _peak in self._seed_frames), dtype=np.float64
+        )
         self._noise_floor = max(
-            min(rms for _start, rms, _peak in self._seed_frames), _EPSILON
+            float(np.percentile(values, self.config.noise_percentile)), _EPSILON
         )
         self._seeded = True
         pending, self._seed_frames = self._seed_frames, []
