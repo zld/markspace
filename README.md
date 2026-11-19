@@ -67,3 +67,13 @@ into EOF) plus `invalid/` cases (empty, non-PCM, truncated). A non-recursive
 scan therefore reports `files_ok=3`, while `invalid/` demonstrates the error
 paths with `--recursive` (that batch reports `files_ok=3`, `files_failed=3`
 and exits with status `1`).
+
+## Design notes
+
+- Memory stays flat: detection reads fixed 16 384-frame blocks and keeps only
+  a bounded noise window; measurement re-reads the file once, tracking one
+  cursor per segment.
+- The detector is deterministic; fixtures use fixed NumPy seeds, so repeated
+  runs produce byte-identical JSON Lines exports.
+- Files are hashed (SHA-256) so a re-import with identical content and
+  identical parameters reuses the stored run unless `--force` is passed.
