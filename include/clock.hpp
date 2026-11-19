@@ -18,6 +18,8 @@ ClockMode parseClockMode(const std::string& text);  // throws std::invalid_argum
 // (PTS rollback or large jumps). One instance per stream; stateful.
 class TimestampNormalizer {
 public:
+    // fallback_duration_seconds: used when packets carry no duration and as
+    // the nominal frame period for discontinuity classification.
     TimestampNormalizer(double discontinuity_tolerance_seconds,
                         double fallback_duration_seconds);
 

@@ -39,10 +39,12 @@ TimestampNormalizer::Result TimestampNormalizer::normalize(
     if (initialized_) {
         const double delta = pts_seconds - last_pts_seconds_;
         // Backward beyond tolerance, or a forward gap far exceeding the
-        // expected frame period, is treated as a discontinuity.
+        // nominal frame period, is treated as a discontinuity. The nominal
+        // period (not the previous packet's own duration) is used so that a
+        // jump packet carrying a widened duration is still detected.
         const bool backward = delta < -tolerance_seconds_;
         const bool forward_gap =
-            delta > last_duration_seconds_ + tolerance_seconds_ &&
+            delta > fallback_duration_seconds_ + tolerance_seconds_ &&
             delta > tolerance_seconds_;
         if (backward || forward_gap) {
             out.discontinuity = true;
