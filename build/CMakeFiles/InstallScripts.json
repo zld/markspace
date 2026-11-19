@@ -1,9 +1,0 @@
-{
-	"InstallScripts" : 
-	[
-		"/Users/zld/WorkSpace/pair-wise-workspace/13786/build/cmake_install.cmake",
-		"/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tools/cmake_install.cmake",
-		"/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/cmake_install.cmake"
-	],
-	"Parallel" : false
-}
