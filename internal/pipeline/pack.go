@@ -146,7 +146,7 @@ func Package(cfg Config) (*Packaged, error) {
 		}
 		nonce := asset.EncodeNonce(raw)
 		if owner, exists := used[nonce]; exists {
-			return nil, packErr(reason.DuplicateNonce,
+			return nil, packErr(reason.DUPLICATE_NONCE,
 				"segment %d nonce repeats segment %d; packaging aborted", seg.Index, owner)
 		}
 		used[nonce] = seg.Index

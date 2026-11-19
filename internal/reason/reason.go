@@ -17,10 +17,10 @@ const (
 	BUILD_ERROR   Code = "BUILD_ERROR"
 	INVALID_INPUT Code = "INVALID_INPUT"
 
-	// DuplicateNonce means the random source produced a nonce that is already
+	// DUPLICATE_NONCE means the random source produced a nonce that is already
 	// present in the manifest. Packaging aborts so that no existing segment is
 	// overwritten and no nonce is ever reused under the same key.
-	DuplicateNonce Code = "DUPLICATE_NONCE"
+	DUPLICATE_NONCE Code = "DUPLICATE_NONCE"
 
 	// License failures, reported before any segment is decrypted.
 	LICENSE_INVALID        Code = "LICENSE_INVALID"

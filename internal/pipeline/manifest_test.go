@@ -79,3 +79,21 @@ func TestValidateUnexpectedExtraSegment(t *testing.T) {
 		t.Fatalf("%d results, want 4 manifest segments plus one extra", len(out.Segments))
 	}
 }
+
+func TestValidateDuplicateNonceInManifest(t *testing.T) {
+	h := newHarness(t, 4, 2)
+	m := cloneManifest(h.pkg.Manifest)
+	m.Segments[2].Nonce = m.Segments[0].Nonce
+	out := Validate(m, h.pkg.License, h.pkg.Ciphertexts, ValidateOptions{
+		Secret: h.pkg.Secret, Now: h.base, Distributor: h.pkg.Distributor, AssetID: h.cfg.AssetID,
+	})
+	var flagged []int
+	for _, s := range out.Segments {
+		if s.Reason == reason.DUPLICATE_NONCE {
+			flagged = append(flagged, s.SegmentIndex)
+		}
+	}
+	if len(flagged) != 2 || flagged[0] != 0 || flagged[1] != 2 {
+		t.Fatalf("flagged %v, want both nonce owners [0 2]", flagged)
+	}
+}

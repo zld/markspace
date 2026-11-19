@@ -37,6 +37,14 @@ func segmentResults(m *asset.Manifest, delivered map[int][]byte, opts ValidateOp
 	// every listed index. Bytes delivered under any other index are reported
 	// as SEGMENT_UNEXPECTED rather than inflating the walk with phantom gaps.
 	maxIndex := maxInt(m.SegmentCount-1, maxKey(byIndex))
+
+	// A nonce repeated anywhere in the manifest is a packaging defect, not a
+	// decryption failure: flag every segment that reuses a nonce before any
+	// key is used.
+	nonceOwners := make(map[string]int, len(byIndex))
+	for _, seg := range byIndex {
+		nonceOwners[seg.Nonce]++
+	}
 	out := make([]report.SegmentResult, 0, maxIndex+1)
 	for idx := 0; idx <= maxIndex; idx++ {
 		seg, inManifest := byIndex[idx]
@@ -52,6 +60,14 @@ func segmentResults(m *asset.Manifest, delivered map[int][]byte, opts ValidateOp
 			out = append(out, report.SegmentResult{
 				SegmentIndex: idx, KeyID: "", Status: report.StatusFailed,
 				Reason: reason.SEGMENT_MISSING, Detail: "no manifest entry for this index",
+			})
+			continue
+		}
+		if owners := nonceOwners[seg.Nonce]; owners > 1 {
+			out = append(out, report.SegmentResult{
+				SegmentIndex: idx, KeyID: seg.KeyID, Status: report.StatusFailed,
+				Reason: reason.DUPLICATE_NONCE,
+				Detail: fmt.Sprintf("nonce is shared by %d manifest entries", owners),
 			})
 			continue
 		}

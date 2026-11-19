@@ -75,7 +75,7 @@ func TestPackageAbortsOnDuplicateNonce(t *testing.T) {
 	}
 	_, err = Package(cfg)
 	var pkgErr *PackageError
-	if !errors.As(err, &pkgErr) || pkgErr.Code != reason.DuplicateNonce {
+	if !errors.As(err, &pkgErr) || pkgErr.Code != reason.DUPLICATE_NONCE {
 		t.Fatalf("got %v, want DUPLICATE_NONCE", err)
 	}
 }
