@@ -254,6 +254,35 @@ class PackCliTest(CliFixtureCase):
         self.assertTrue(manifest["blocked"])
         self.assertTrue(manifest["files"][0]["blocking_problems"])
 
+    def test_pack_refuses_baseline_mismatch(self) -> None:
+        # candidate.mkv has a codec change and drift against base.mp4, so it
+        # must not enter the manifest without --allow-issues.
+        target = self.out("mismatch.json")
+        code, _out, err = run_cli(
+            "pack", "--input", self.path("candidate.mkv"),
+            "--baseline", self.path("base.mp4"),
+            "--json", str(target))
+        self.assertEqual(code, EXIT_MISMATCH)
+        self.assertIn("blocked", err)
+        manifest = json.loads(target.read_text())
+        self.assertEqual(manifest["status"], "blocked")
+        self.assertIsNotNone(manifest["files"][0]["validation"])
+        kinds = {m["kind"] for m in
+                 manifest["files"][0]["validation"]["mismatches"]}
+        self.assertIn("codec_change", kinds)
+
+    def test_pack_accepts_matching_baseline(self) -> None:
+        target = self.out("match.json")
+        code, _out, _ = run_cli(
+            "pack", "--input", self.path("base.mp4"),
+            "--baseline", self.path("mov_variant.mov"),
+            "--json", str(target))
+        self.assertEqual(code, EXIT_OK)
+        manifest = json.loads(target.read_text())
+        self.assertEqual(manifest["status"], "ok")
+        self.assertEqual(
+            manifest["files"][0]["validation"]["status"], "match")
+
     def test_pack_unwritable_output_exits_three(self) -> None:
         code, _out, err = run_cli(
             "pack", "--input", self.path("base.mp4"),
