@@ -157,6 +157,60 @@ void testParserRejections() {
     CHECK(nonCubic.sampleCount() == 8);
 }
 
+void testColorSpaces() {
+    for (double value = 0.0; value <= 1.0; value += 1.0 / 64.0) {
+        CHECK_NEAR(linearToSrgb(srgbToLinear({value, value, value})).r, value, 1e-12);
+    }
+    CHECK_NEAR(srgbToLinear({0.04045, 0.04045, 0.04045}).r, 0.04045 / 12.92, 1e-15);
+    CHECK_NEAR(srgbToLinear({0.5, 0.5, 0.5}).r, 0.21404114048223255, 1e-12);
+
+    const RGB white{1.0, 1.0, 1.0};
+    const RGB xyz = linearRgbToXyz(white);
+    CHECK_NEAR(xyz.r, 0.950455927051671, 1e-9);
+    CHECK_NEAR(xyz.g, 1.0, 1e-9);
+    CHECK_NEAR(xyz.b, 1.089057750759878, 1e-9);
+    const RGB back = xyzToLinearRgb(xyz);
+    CHECK_NEAR(back.r, 1.0, 1e-9);
+    CHECK_NEAR(back.g, 1.0, 1e-9);
+    CHECK_NEAR(back.b, 1.0, 1e-9);
+
+    Mat3 inverse;
+    CHECK(invertMatrix(srgbToXyzMatrix(), inverse));
+    const Mat3 identity = multiply(srgbToXyzMatrix(), inverse);
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 3; ++j) {
+            CHECK_NEAR(identity(i, j), i == j ? 1.0 : 0.0, 1e-12);
+        }
+    }
+    Mat3 singular;
+    singular.e = {1, 2, 3, 2, 4, 6, 7, 8, 9};
+    CHECK(!invertMatrix(singular, inverse));
+
+    // srgb -> xyz -> srgb round trip.
+    const RGB sample{0.2, 0.6, 0.9};
+    const RGB viaXyz = convertColor(ColorSpace::Xyz, ColorSpace::Srgb,
+                                    convertColor(ColorSpace::Srgb, ColorSpace::Xyz, sample));
+    CHECK_NEAR(viaXyz.r, sample.r, 1e-9);
+    CHECK_NEAR(viaXyz.g, sample.g, 1e-9);
+    CHECK_NEAR(viaXyz.b, sample.b, 1e-9);
+
+    bool threw = false;
+    try {
+        convertColor(ColorSpace::Srgb, ColorSpace::Xyz, {0.0, NAN, 0.0}, 42);
+    } catch (const ColorError& error) {
+        threw = std::string(error.what()).find("42") != std::string::npos;
+    }
+    CHECK(threw);
+    CHECK(parseColorSpace("Linear-RGB") == ColorSpace::LinearRgb);
+    bool badSpace = false;
+    try {
+        parseColorSpace("rec2020");
+    } catch (const ColorError&) {
+        badSpace = true;
+    }
+    CHECK(badSpace);
+}
+
 LUT identityLut(int n, Domain domain = Domain{}) {
     LUT lut;
     lut.nx = lut.ny = lut.nz = n;
@@ -237,12 +291,66 @@ void testInterpolation() {
     CHECK_NEAR(mapped.b, 1.5, 1e-14);
 }
 
+void testRenderPathsAndHistograms() {
+    const LUT lut = makeDemoLut(9);
+    const std::vector<RGB> pixels = makeDemoPixels(10007, ColorSpace::Srgb, 12345);
+    const std::vector<RGB> working = [&] {
+        std::vector<RGB> out;
+        for (const RGB& pixel : pixels) {
+            out.push_back(convertColor(ColorSpace::Srgb, ColorSpace::LinearRgb, pixel));
+        }
+        return out;
+    }();
+    const std::vector<RGB> scalar = renderScalar(lut, working, BoundaryPolicy::Clamp);
+    for (int threads : {1, 2, 3, 7, 32}) {
+        const std::vector<RGB> parallel =
+            renderParallel(lut, working, BoundaryPolicy::Clamp, threads);
+        const RGB diff = maxAbsDiff(scalar, parallel);
+        CHECK_NEAR(diff.r, 0.0, 0.0);
+        CHECK_NEAR(diff.g, 0.0, 0.0);
+        CHECK_NEAR(diff.b, 0.0, 0.0);
+    }
+    // Partition covers every pixel exactly once, in order.
+    const std::vector<Chunk> chunks = partition(10007, 4);
+    CHECK(chunks.size() == 4);
+    CHECK(chunks.front().begin == 0);
+    CHECK(chunks.back().end == 10007);
+    for (std::size_t i = 1; i < chunks.size(); ++i) CHECK(chunks[i].begin == chunks[i - 1].end);
+    std::size_t total = 0;
+    for (const Chunk& chunk : chunks) total += chunk.end - chunk.begin;
+    CHECK(total == 10007);
+
+    // Reject policy must fail without emitting a partial buffer; the error
+    // reported must be the first one in pixel order.
+    std::vector<RGB> bad = working;
+    bad[500] = {5.0, 0.0, 0.0};
+    bool failed = false;
+    try {
+        renderParallel(lut, bad, BoundaryPolicy::Reject, 8);
+    } catch (const ProcessingError& error) {
+        failed = std::string(error.what()).find("pixel 500") != std::string::npos;
+    }
+    CHECK(failed);
+
+    const ChannelHistograms histogram = buildHistograms(working);
+    CHECK(histogram.r.total() == working.size());
+    CHECK(histogram.g.total() == working.size());
+    CHECK(histogram.b.total() == working.size());
+    CHECK(histogramBucket(-1.0) == 0);
+    CHECK(histogramBucket(10.0) == 15);
+    CHECK(histogramBucket(0.0) == 0);
+    CHECK(histogramBucket(1.0) == 15);
+    CHECK(histogramBucket(0.0625) == 1);
+}
+
 }  // namespace
 
 int main() {
     testParserAcceptance();
     testParserRejections();
+    testColorSpaces();
     testInterpolation();
+    testRenderPathsAndHistograms();
     if (g_failures != 0) {
         std::cerr << g_failures << " check(s) failed\n";
         return 1;
