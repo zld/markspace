@@ -145,13 +145,28 @@ tests/CMakeFiles/h264_tests.dir/test_access_unit.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/h264_tests.dir/test_access_unit.cpp.s"
 	cd /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /Users/zld/WorkSpace/pair-wise-workspace/13786/tests/test_access_unit.cpp -o CMakeFiles/h264_tests.dir/test_access_unit.cpp.s
 
+tests/CMakeFiles/h264_tests.dir/test_integration.cpp.o: tests/CMakeFiles/h264_tests.dir/flags.make
+tests/CMakeFiles/h264_tests.dir/test_integration.cpp.o: /Users/zld/WorkSpace/pair-wise-workspace/13786/tests/test_integration.cpp
+tests/CMakeFiles/h264_tests.dir/test_integration.cpp.o: tests/CMakeFiles/h264_tests.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/zld/WorkSpace/pair-wise-workspace/13786/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_6) "Building CXX object tests/CMakeFiles/h264_tests.dir/test_integration.cpp.o"
+	cd /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT tests/CMakeFiles/h264_tests.dir/test_integration.cpp.o -MF CMakeFiles/h264_tests.dir/test_integration.cpp.o.d -o CMakeFiles/h264_tests.dir/test_integration.cpp.o -c /Users/zld/WorkSpace/pair-wise-workspace/13786/tests/test_integration.cpp
+
+tests/CMakeFiles/h264_tests.dir/test_integration.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/h264_tests.dir/test_integration.cpp.i"
+	cd /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /Users/zld/WorkSpace/pair-wise-workspace/13786/tests/test_integration.cpp > CMakeFiles/h264_tests.dir/test_integration.cpp.i
+
+tests/CMakeFiles/h264_tests.dir/test_integration.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/h264_tests.dir/test_integration.cpp.s"
+	cd /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /Users/zld/WorkSpace/pair-wise-workspace/13786/tests/test_integration.cpp -o CMakeFiles/h264_tests.dir/test_integration.cpp.s
+
 # Object files for target h264_tests
 h264_tests_OBJECTS = \
 "CMakeFiles/h264_tests.dir/test_bit_reader.cpp.o" \
 "CMakeFiles/h264_tests.dir/test_exp_golomb.cpp.o" \
 "CMakeFiles/h264_tests.dir/test_nal_parser.cpp.o" \
 "CMakeFiles/h264_tests.dir/test_parameter_sets.cpp.o" \
-"CMakeFiles/h264_tests.dir/test_access_unit.cpp.o"
+"CMakeFiles/h264_tests.dir/test_access_unit.cpp.o" \
+"CMakeFiles/h264_tests.dir/test_integration.cpp.o"
 
 # External object files for target h264_tests
 h264_tests_EXTERNAL_OBJECTS =
@@ -161,12 +176,13 @@ tests/h264_tests: tests/CMakeFiles/h264_tests.dir/test_exp_golomb.cpp.o
 tests/h264_tests: tests/CMakeFiles/h264_tests.dir/test_nal_parser.cpp.o
 tests/h264_tests: tests/CMakeFiles/h264_tests.dir/test_parameter_sets.cpp.o
 tests/h264_tests: tests/CMakeFiles/h264_tests.dir/test_access_unit.cpp.o
+tests/h264_tests: tests/CMakeFiles/h264_tests.dir/test_integration.cpp.o
 tests/h264_tests: tests/CMakeFiles/h264_tests.dir/build.make
 tests/h264_tests: libh264core.a
 tests/h264_tests: /opt/homebrew/lib/libCatch2Main.a
 tests/h264_tests: /opt/homebrew/lib/libCatch2.a
 tests/h264_tests: tests/CMakeFiles/h264_tests.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/Users/zld/WorkSpace/pair-wise-workspace/13786/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_6) "Linking CXX executable h264_tests"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/Users/zld/WorkSpace/pair-wise-workspace/13786/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_7) "Linking CXX executable h264_tests"
 	cd /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests && $(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/h264_tests.dir/link.txt --verbose=$(VERBOSE)
 	cd /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests && /opt/homebrew/bin/cmake -D TEST_TARGET=h264_tests -D TEST_EXECUTABLE=/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests -D TEST_EXECUTOR= -D TEST_WORKING_DIR=/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests -D TEST_SPEC= -D TEST_EXTRA_ARGS= -D "TEST_PROPERTIES=SKIP_RETURN_CODE;4" -D "TEST_PREFIX=''" -D "TEST_SUFFIX=''" -D TEST_LIST=h264_tests_TESTS -D TEST_REPORTER= -D TEST_OUTPUT_DIR= -D TEST_OUTPUT_PREFIX= -D TEST_OUTPUT_SUFFIX= -D TEST_DL_PATHS= -D TEST_DL_FRAMEWORK_PATHS= -D CTEST_FILE=/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests-b12d07c_tests.cmake -D ADD_TAGS_AS_LABELS=FALSE -P /opt/homebrew/lib/cmake/Catch2/CatchAddTests.cmake
 

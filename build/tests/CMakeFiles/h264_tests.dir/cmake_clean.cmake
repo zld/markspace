@@ -5,6 +5,8 @@ file(REMOVE_RECURSE
   "CMakeFiles/h264_tests.dir/test_bit_reader.cpp.o.d"
   "CMakeFiles/h264_tests.dir/test_exp_golomb.cpp.o"
   "CMakeFiles/h264_tests.dir/test_exp_golomb.cpp.o.d"
+  "CMakeFiles/h264_tests.dir/test_integration.cpp.o"
+  "CMakeFiles/h264_tests.dir/test_integration.cpp.o.d"
   "CMakeFiles/h264_tests.dir/test_nal_parser.cpp.o"
   "CMakeFiles/h264_tests.dir/test_nal_parser.cpp.o.d"
   "CMakeFiles/h264_tests.dir/test_parameter_sets.cpp.o"

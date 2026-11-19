@@ -1,54 +1,14 @@
-Start testing: Nov 19 09:21 CST
+Start testing: Nov 19 09:22 CST
 ----------------------------------------------------------
-1/27 Testing: BitReader reads big-endian bits and bytes
-1/27 Test: BitReader reads big-endian bits and bytes
-Command: "/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests" "BitReader reads big-endian bits and bytes" "--order decl"
-Directory: /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests
-"BitReader reads big-endian bits and bytes" start time: Nov 19 09:21 CST
-Output:
-----------------------------------------------------------
-Filters: "BitReader reads big-endian bits and bytes"
-Randomness seeded to: 3642945402
-===============================================================================
-All tests passed (9 assertions in 1 test case)
-
-<end of output>
-Test time =   0.00 sec
-----------------------------------------------------------
-Test Passed.
-"BitReader reads big-endian bits and bytes" end time: Nov 19 09:21 CST
-"BitReader reads big-endian bits and bytes" time elapsed: 00:00:00
-----------------------------------------------------------
-
-23/27 Testing: truncated Exp-Golomb suffix reports a parse error
-23/27 Test: truncated Exp-Golomb suffix reports a parse error
-Command: "/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests" "truncated Exp-Golomb suffix reports a parse error" "--order decl"
-Directory: /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests
-"truncated Exp-Golomb suffix reports a parse error" start time: Nov 19 09:21 CST
-Output:
-----------------------------------------------------------
-Filters: "truncated Exp-Golomb suffix reports a parse error"
-Randomness seeded to: 2647735790
-===============================================================================
-All tests passed (2 assertions in 1 test case)
-
-<end of output>
-Test time =   0.00 sec
-----------------------------------------------------------
-Test Passed.
-"truncated Exp-Golomb suffix reports a parse error" end time: Nov 19 09:21 CST
-"truncated Exp-Golomb suffix reports a parse error" time elapsed: 00:00:00
-----------------------------------------------------------
-
-11/27 Testing: emulation prevention bytes are removed from payloads
-11/27 Test: emulation prevention bytes are removed from payloads
+11/30 Testing: emulation prevention bytes are removed from payloads
+11/30 Test: emulation prevention bytes are removed from payloads
 Command: "/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests" "emulation prevention bytes are removed from payloads" "--order decl"
 Directory: /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests
-"emulation prevention bytes are removed from payloads" start time: Nov 19 09:21 CST
+"emulation prevention bytes are removed from payloads" start time: Nov 19 09:22 CST
 Output:
 ----------------------------------------------------------
 Filters: "emulation prevention bytes are removed from payloads"
-Randomness seeded to: 2870380869
+Randomness seeded to: 959105905
 ===============================================================================
 All tests passed (2 assertions in 1 test case)
 
@@ -56,19 +16,19 @@ All tests passed (2 assertions in 1 test case)
 Test time =   0.00 sec
 ----------------------------------------------------------
 Test Passed.
-"emulation prevention bytes are removed from payloads" end time: Nov 19 09:21 CST
+"emulation prevention bytes are removed from payloads" end time: Nov 19 09:22 CST
 "emulation prevention bytes are removed from payloads" time elapsed: 00:00:00
 ----------------------------------------------------------
 
-4/27 Testing: IDR pictures delimit GOPs with first-NAL offsets
-4/27 Test: IDR pictures delimit GOPs with first-NAL offsets
+4/30 Testing: IDR pictures delimit GOPs with first-NAL offsets
+4/30 Test: IDR pictures delimit GOPs with first-NAL offsets
 Command: "/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests" "IDR pictures delimit GOPs with first-NAL offsets" "--order decl"
 Directory: /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests
-"IDR pictures delimit GOPs with first-NAL offsets" start time: Nov 19 09:21 CST
+"IDR pictures delimit GOPs with first-NAL offsets" start time: Nov 19 09:22 CST
 Output:
 ----------------------------------------------------------
 Filters: "IDR pictures delimit GOPs with first-NAL offsets"
-Randomness seeded to: 104007707
+Randomness seeded to: 2522405416
 ===============================================================================
 All tests passed (6 assertions in 1 test case)
 
@@ -76,19 +36,19 @@ All tests passed (6 assertions in 1 test case)
 Test time =   0.00 sec
 ----------------------------------------------------------
 Test Passed.
-"IDR pictures delimit GOPs with first-NAL offsets" end time: Nov 19 09:21 CST
+"IDR pictures delimit GOPs with first-NAL offsets" end time: Nov 19 09:22 CST
 "IDR pictures delimit GOPs with first-NAL offsets" time elapsed: 00:00:00
 ----------------------------------------------------------
 
-8/27 Testing: complementary fields are two field pictures
-8/27 Test: complementary fields are two field pictures
+8/30 Testing: complementary fields are two field pictures
+8/30 Test: complementary fields are two field pictures
 Command: "/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests" "complementary fields are two field pictures" "--order decl"
 Directory: /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests
-"complementary fields are two field pictures" start time: Nov 19 09:21 CST
+"complementary fields are two field pictures" start time: Nov 19 09:22 CST
 Output:
 ----------------------------------------------------------
 Filters: "complementary fields are two field pictures"
-Randomness seeded to: 1509554106
+Randomness seeded to: 193406069
 ===============================================================================
 All tests passed (5 assertions in 1 test case)
 
@@ -96,19 +56,19 @@ All tests passed (5 assertions in 1 test case)
 Test time =   0.00 sec
 ----------------------------------------------------------
 Test Passed.
-"complementary fields are two field pictures" end time: Nov 19 09:21 CST
+"complementary fields are two field pictures" end time: Nov 19 09:22 CST
 "complementary fields are two field pictures" time elapsed: 00:00:00
 ----------------------------------------------------------
 
-12/27 Testing: forbidden_zero_bit invalidates the NAL but scanning continues
-12/27 Test: forbidden_zero_bit invalidates the NAL but scanning continues
+13/30 Testing: forbidden_zero_bit invalidates the NAL but scanning continues
+13/30 Test: forbidden_zero_bit invalidates the NAL but scanning continues
 Command: "/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests" "forbidden_zero_bit invalidates the NAL but scanning continues" "--order decl"
 Directory: /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests
-"forbidden_zero_bit invalidates the NAL but scanning continues" start time: Nov 19 09:21 CST
+"forbidden_zero_bit invalidates the NAL but scanning continues" start time: Nov 19 09:22 CST
 Output:
 ----------------------------------------------------------
 Filters: "forbidden_zero_bit invalidates the NAL but scanning continues"
-Randomness seeded to: 3103509868
+Randomness seeded to: 570884880
 ===============================================================================
 All tests passed (5 assertions in 1 test case)
 
@@ -116,19 +76,19 @@ All tests passed (5 assertions in 1 test case)
 Test time =   0.00 sec
 ----------------------------------------------------------
 Test Passed.
-"forbidden_zero_bit invalidates the NAL but scanning continues" end time: Nov 19 09:21 CST
+"forbidden_zero_bit invalidates the NAL but scanning continues" end time: Nov 19 09:22 CST
 "forbidden_zero_bit invalidates the NAL but scanning continues" time elapsed: 00:00:00
 ----------------------------------------------------------
 
-5/27 Testing: NAL larger than the byte cap reports and truncates
-5/27 Test: NAL larger than the byte cap reports and truncates
+5/30 Testing: NAL larger than the byte cap reports and truncates
+5/30 Test: NAL larger than the byte cap reports and truncates
 Command: "/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests" "NAL larger than the byte cap reports and truncates" "--order decl"
 Directory: /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests
-"NAL larger than the byte cap reports and truncates" start time: Nov 19 09:21 CST
+"NAL larger than the byte cap reports and truncates" start time: Nov 19 09:22 CST
 Output:
 ----------------------------------------------------------
 Filters: "NAL larger than the byte cap reports and truncates"
-Randomness seeded to: 4058776685
+Randomness seeded to: 3905143648
 ===============================================================================
 All tests passed (4 assertions in 1 test case)
 
@@ -136,19 +96,19 @@ All tests passed (4 assertions in 1 test case)
 Test time =   0.00 sec
 ----------------------------------------------------------
 Test Passed.
-"NAL larger than the byte cap reports and truncates" end time: Nov 19 09:21 CST
+"NAL larger than the byte cap reports and truncates" end time: Nov 19 09:22 CST
 "NAL larger than the byte cap reports and truncates" time elapsed: 00:00:00
 ----------------------------------------------------------
 
-10/27 Testing: empty NAL between start codes records an offset error
-10/27 Test: empty NAL between start codes records an offset error
+10/30 Testing: empty NAL between start codes records an offset error
+10/30 Test: empty NAL between start codes records an offset error
 Command: "/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests" "empty NAL between start codes records an offset error" "--order decl"
 Directory: /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests
-"empty NAL between start codes records an offset error" start time: Nov 19 09:21 CST
+"empty NAL between start codes records an offset error" start time: Nov 19 09:22 CST
 Output:
 ----------------------------------------------------------
 Filters: "empty NAL between start codes records an offset error"
-Randomness seeded to: 3631515508
+Randomness seeded to: 1983076486
 ===============================================================================
 All tests passed (4 assertions in 1 test case)
 
@@ -156,19 +116,19 @@ All tests passed (4 assertions in 1 test case)
 Test time =   0.00 sec
 ----------------------------------------------------------
 Test Passed.
-"empty NAL between start codes records an offset error" end time: Nov 19 09:21 CST
+"empty NAL between start codes records an offset error" end time: Nov 19 09:22 CST
 "empty NAL between start codes records an offset error" time elapsed: 00:00:00
 ----------------------------------------------------------
 
-3/27 Testing: BitReader throws with offset on over-read
-3/27 Test: BitReader throws with offset on over-read
+3/30 Testing: BitReader throws with offset on over-read
+3/30 Test: BitReader throws with offset on over-read
 Command: "/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests" "BitReader throws with offset on over-read" "--order decl"
 Directory: /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests
-"BitReader throws with offset on over-read" start time: Nov 19 09:21 CST
+"BitReader throws with offset on over-read" start time: Nov 19 09:22 CST
 Output:
 ----------------------------------------------------------
 Filters: "BitReader throws with offset on over-read"
-Randomness seeded to: 2699606228
+Randomness seeded to: 1904085958
 ===============================================================================
 All tests passed (3 assertions in 1 test case)
 
@@ -176,19 +136,19 @@ All tests passed (3 assertions in 1 test case)
 Test time =   0.00 sec
 ----------------------------------------------------------
 Test Passed.
-"BitReader throws with offset on over-read" end time: Nov 19 09:21 CST
+"BitReader throws with offset on over-read" end time: Nov 19 09:22 CST
 "BitReader throws with offset on over-read" time elapsed: 00:00:00
 ----------------------------------------------------------
 
-9/27 Testing: crop larger than the picture is rejected
-9/27 Test: crop larger than the picture is rejected
+9/30 Testing: crop larger than the picture is rejected
+9/30 Test: crop larger than the picture is rejected
 Command: "/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests" "crop larger than the picture is rejected" "--order decl"
 Directory: /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests
-"crop larger than the picture is rejected" start time: Nov 19 09:21 CST
+"crop larger than the picture is rejected" start time: Nov 19 09:22 CST
 Output:
 ----------------------------------------------------------
 Filters: "crop larger than the picture is rejected"
-Randomness seeded to: 629937303
+Randomness seeded to: 2629718347
 ===============================================================================
 All tests passed (2 assertions in 1 test case)
 
@@ -196,19 +156,19 @@ All tests passed (2 assertions in 1 test case)
 Test time =   0.00 sec
 ----------------------------------------------------------
 Test Passed.
-"crop larger than the picture is rejected" end time: Nov 19 09:21 CST
+"crop larger than the picture is rejected" end time: Nov 19 09:22 CST
 "crop larger than the picture is rejected" time elapsed: 00:00:00
 ----------------------------------------------------------
 
-2/27 Testing: BitReader rejects impossible widths
-2/27 Test: BitReader rejects impossible widths
+2/30 Testing: BitReader rejects impossible widths
+2/30 Test: BitReader rejects impossible widths
 Command: "/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests" "BitReader rejects impossible widths" "--order decl"
 Directory: /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests
-"BitReader rejects impossible widths" start time: Nov 19 09:21 CST
+"BitReader rejects impossible widths" start time: Nov 19 09:22 CST
 Output:
 ----------------------------------------------------------
 Filters: "BitReader rejects impossible widths"
-Randomness seeded to: 1043302774
+Randomness seeded to: 4218973137
 ===============================================================================
 All tests passed (2 assertions in 1 test case)
 
@@ -216,39 +176,19 @@ All tests passed (2 assertions in 1 test case)
 Test time =   0.00 sec
 ----------------------------------------------------------
 Test Passed.
-"BitReader rejects impossible widths" end time: Nov 19 09:21 CST
+"BitReader rejects impossible widths" end time: Nov 19 09:22 CST
 "BitReader rejects impossible widths" time elapsed: 00:00:00
 ----------------------------------------------------------
 
-22/27 Testing: trailing NAL without a following start code is flushed at EOF
-22/27 Test: trailing NAL without a following start code is flushed at EOF
-Command: "/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests" "trailing NAL without a following start code is flushed at EOF" "--order decl"
+27/30 Testing: truncated Exp-Golomb with no terminating one is rejected
+27/30 Test: truncated Exp-Golomb with no terminating one is rejected
+Command: "/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests" "truncated Exp-Golomb with no terminating one is rejected" "--order decl"
 Directory: /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests
-"trailing NAL without a following start code is flushed at EOF" start time: Nov 19 09:21 CST
+"truncated Exp-Golomb with no terminating one is rejected" start time: Nov 19 09:22 CST
 Output:
 ----------------------------------------------------------
-Filters: "trailing NAL without a following start code is flushed at EOF"
-Randomness seeded to: 1658251464
-===============================================================================
-All tests passed (3 assertions in 1 test case)
-
-<end of output>
-Test time =   0.00 sec
-----------------------------------------------------------
-Test Passed.
-"trailing NAL without a following start code is flushed at EOF" end time: Nov 19 09:21 CST
-"trailing NAL without a following start code is flushed at EOF" time elapsed: 00:00:00
-----------------------------------------------------------
-
-18/27 Testing: over-long leading zero run is rejected
-18/27 Test: over-long leading zero run is rejected
-Command: "/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests" "over-long leading zero run is rejected" "--order decl"
-Directory: /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests
-"over-long leading zero run is rejected" start time: Nov 19 09:21 CST
-Output:
-----------------------------------------------------------
-Filters: "over-long leading zero run is rejected"
-Randomness seeded to: 4119787601
+Filters: "truncated Exp-Golomb with no terminating one is rejected"
+Randomness seeded to: 2520038795
 ===============================================================================
 All tests passed (1 assertion in 1 test case)
 
@@ -256,19 +196,79 @@ All tests passed (1 assertion in 1 test case)
 Test time =   0.00 sec
 ----------------------------------------------------------
 Test Passed.
-"over-long leading zero run is rejected" end time: Nov 19 09:21 CST
-"over-long leading zero run is rejected" time elapsed: 00:00:00
+"truncated Exp-Golomb with no terminating one is rejected" end time: Nov 19 09:22 CST
+"truncated Exp-Golomb with no terminating one is rejected" time elapsed: 00:00:00
 ----------------------------------------------------------
 
-25/27 Testing: truncated SPS fails and keeps the NAL offset
-25/27 Test: truncated SPS fails and keeps the NAL offset
-Command: "/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests" "truncated SPS fails and keeps the NAL offset" "--order decl"
+26/30 Testing: truncated Exp-Golomb suffix reports a parse error
+26/30 Test: truncated Exp-Golomb suffix reports a parse error
+Command: "/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests" "truncated Exp-Golomb suffix reports a parse error" "--order decl"
 Directory: /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests
-"truncated SPS fails and keeps the NAL offset" start time: Nov 19 09:21 CST
+"truncated Exp-Golomb suffix reports a parse error" start time: Nov 19 09:22 CST
 Output:
 ----------------------------------------------------------
-Filters: "truncated SPS fails and keeps the NAL offset"
-Randomness seeded to: 4007403037
+Filters: "truncated Exp-Golomb suffix reports a parse error"
+Randomness seeded to: 574723984
+===============================================================================
+All tests passed (2 assertions in 1 test case)
+
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"truncated Exp-Golomb suffix reports a parse error" end time: Nov 19 09:22 CST
+"truncated Exp-Golomb suffix reports a parse error" time elapsed: 00:00:00
+----------------------------------------------------------
+
+17/30 Testing: interlaced SPS reports field coding and doubled map height
+17/30 Test: interlaced SPS reports field coding and doubled map height
+Command: "/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests" "interlaced SPS reports field coding and doubled map height" "--order decl"
+Directory: /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests
+"interlaced SPS reports field coding and doubled map height" start time: Nov 19 09:22 CST
+Output:
+----------------------------------------------------------
+Filters: "interlaced SPS reports field coding and doubled map height"
+Randomness seeded to: 1297355883
+===============================================================================
+All tests passed (6 assertions in 1 test case)
+
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"interlaced SPS reports field coding and doubled map height" end time: Nov 19 09:22 CST
+"interlaced SPS reports field coding and doubled map height" time elapsed: 00:00:00
+----------------------------------------------------------
+
+1/30 Testing: BitReader reads big-endian bits and bytes
+1/30 Test: BitReader reads big-endian bits and bytes
+Command: "/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests" "BitReader reads big-endian bits and bytes" "--order decl"
+Directory: /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests
+"BitReader reads big-endian bits and bytes" start time: Nov 19 09:22 CST
+Output:
+----------------------------------------------------------
+Filters: "BitReader reads big-endian bits and bytes"
+Randomness seeded to: 405199334
+===============================================================================
+All tests passed (9 assertions in 1 test case)
+
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"BitReader reads big-endian bits and bytes" end time: Nov 19 09:22 CST
+"BitReader reads big-endian bits and bytes" time elapsed: 00:00:00
+----------------------------------------------------------
+
+25/30 Testing: trailing NAL without a following start code is flushed at EOF
+25/30 Test: trailing NAL without a following start code is flushed at EOF
+Command: "/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests" "trailing NAL without a following start code is flushed at EOF" "--order decl"
+Directory: /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests
+"trailing NAL without a following start code is flushed at EOF" start time: Nov 19 09:22 CST
+Output:
+----------------------------------------------------------
+Filters: "trailing NAL without a following start code is flushed at EOF"
+Randomness seeded to: 2193977276
 ===============================================================================
 All tests passed (3 assertions in 1 test case)
 
@@ -276,19 +276,19 @@ All tests passed (3 assertions in 1 test case)
 Test time =   0.00 sec
 ----------------------------------------------------------
 Test Passed.
-"truncated SPS fails and keeps the NAL offset" end time: Nov 19 09:21 CST
-"truncated SPS fails and keeps the NAL offset" time elapsed: 00:00:00
+"trailing NAL without a following start code is flushed at EOF" end time: Nov 19 09:22 CST
+"trailing NAL without a following start code is flushed at EOF" time elapsed: 00:00:00
 ----------------------------------------------------------
 
-26/27 Testing: unsigned Exp-Golomb round trips canonical code words
-26/27 Test: unsigned Exp-Golomb round trips canonical code words
+29/30 Testing: unsigned Exp-Golomb round trips canonical code words
+29/30 Test: unsigned Exp-Golomb round trips canonical code words
 Command: "/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests" "unsigned Exp-Golomb round trips canonical code words" "--order decl"
 Directory: /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests
-"unsigned Exp-Golomb round trips canonical code words" start time: Nov 19 09:21 CST
+"unsigned Exp-Golomb round trips canonical code words" start time: Nov 19 09:22 CST
 Output:
 ----------------------------------------------------------
 Filters: "unsigned Exp-Golomb round trips canonical code words"
-Randomness seeded to: 3620428615
+Randomness seeded to: 1533465136
 ===============================================================================
 All tests passed (13 assertions in 1 test case)
 
@@ -296,239 +296,79 @@ All tests passed (13 assertions in 1 test case)
 Test time =   0.00 sec
 ----------------------------------------------------------
 Test Passed.
-"unsigned Exp-Golomb round trips canonical code words" end time: Nov 19 09:21 CST
+"unsigned Exp-Golomb round trips canonical code words" end time: Nov 19 09:22 CST
 "unsigned Exp-Golomb round trips canonical code words" time elapsed: 00:00:00
 ----------------------------------------------------------
 
-15/27 Testing: input with no start code is an error
-15/27 Test: input with no start code is an error
-Command: "/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests" "input with no start code is an error" "--order decl"
+19/30 Testing: over-long leading zero run is rejected
+19/30 Test: over-long leading zero run is rejected
+Command: "/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests" "over-long leading zero run is rejected" "--order decl"
 Directory: /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests
-"input with no start code is an error" start time: Nov 19 09:21 CST
+"over-long leading zero run is rejected" start time: Nov 19 09:22 CST
 Output:
 ----------------------------------------------------------
-Filters: "input with no start code is an error"
-Randomness seeded to: 3930065203
-===============================================================================
-All tests passed (3 assertions in 1 test case)
-
-<end of output>
-Test time =   0.00 sec
-----------------------------------------------------------
-Test Passed.
-"input with no start code is an error" end time: Nov 19 09:21 CST
-"input with no start code is an error" time elapsed: 00:00:00
-----------------------------------------------------------
-
-21/27 Testing: three and four byte start codes both delimit NAL units
-21/27 Test: three and four byte start codes both delimit NAL units
-Command: "/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests" "three and four byte start codes both delimit NAL units" "--order decl"
-Directory: /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests
-"three and four byte start codes both delimit NAL units" start time: Nov 19 09:21 CST
-Output:
-----------------------------------------------------------
-Filters: "three and four byte start codes both delimit NAL units"
-Randomness seeded to: 1509219572
-===============================================================================
-All tests passed (9 assertions in 1 test case)
-
-<end of output>
-Test time =   0.00 sec
-----------------------------------------------------------
-Test Passed.
-"three and four byte start codes both delimit NAL units" end time: Nov 19 09:21 CST
-"three and four byte start codes both delimit NAL units" time elapsed: 00:00:00
-----------------------------------------------------------
-
-13/27 Testing: frame_num change opens a new picture even at first_mb zero
-13/27 Test: frame_num change opens a new picture even at first_mb zero
-Command: "/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests" "frame_num change opens a new picture even at first_mb zero" "--order decl"
-Directory: /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests
-"frame_num change opens a new picture even at first_mb zero" start time: Nov 19 09:21 CST
-Output:
-----------------------------------------------------------
-Filters: "frame_num change opens a new picture even at first_mb zero"
-Randomness seeded to: 1093721717
-===============================================================================
-All tests passed (4 assertions in 1 test case)
-
-<end of output>
-Test time =   0.00 sec
-----------------------------------------------------------
-Test Passed.
-"frame_num change opens a new picture even at first_mb zero" end time: Nov 19 09:21 CST
-"frame_num change opens a new picture even at first_mb zero" time elapsed: 00:00:00
-----------------------------------------------------------
-
-20/27 Testing: slice referencing an undefined PPS keeps an error and continues
-20/27 Test: slice referencing an undefined PPS keeps an error and continues
-Command: "/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests" "slice referencing an undefined PPS keeps an error and continues" "--order decl"
-Directory: /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests
-"slice referencing an undefined PPS keeps an error and continues" start time: Nov 19 09:21 CST
-Output:
-----------------------------------------------------------
-Filters: "slice referencing an undefined PPS keeps an error and continues"
-Randomness seeded to: 4110998414
-===============================================================================
-All tests passed (5 assertions in 1 test case)
-
-<end of output>
-Test time =   0.00 sec
-----------------------------------------------------------
-Test Passed.
-"slice referencing an undefined PPS keeps an error and continues" end time: Nov 19 09:21 CST
-"slice referencing an undefined PPS keeps an error and continues" time elapsed: 00:00:00
-----------------------------------------------------------
-
-17/27 Testing: multiple slices of one picture count as a single frame
-17/27 Test: multiple slices of one picture count as a single frame
-Command: "/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests" "multiple slices of one picture count as a single frame" "--order decl"
-Directory: /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests
-"multiple slices of one picture count as a single frame" start time: Nov 19 09:21 CST
-Output:
-----------------------------------------------------------
-Filters: "multiple slices of one picture count as a single frame"
-Randomness seeded to: 3294603591
-===============================================================================
-All tests passed (4 assertions in 1 test case)
-
-<end of output>
-Test time =   0.00 sec
-----------------------------------------------------------
-Test Passed.
-"multiple slices of one picture count as a single frame" end time: Nov 19 09:21 CST
-"multiple slices of one picture count as a single frame" time elapsed: 00:00:00
-----------------------------------------------------------
-
-27/27 Testing: unsupported slice type lands in the unknown bucket
-27/27 Test: unsupported slice type lands in the unknown bucket
-Command: "/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests" "unsupported slice type lands in the unknown bucket" "--order decl"
-Directory: /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests
-"unsupported slice type lands in the unknown bucket" start time: Nov 19 09:21 CST
-Output:
-----------------------------------------------------------
-Filters: "unsupported slice type lands in the unknown bucket"
-Randomness seeded to: 3147771147
-===============================================================================
-All tests passed (3 assertions in 1 test case)
-
-<end of output>
-Test time =   0.00 sec
-----------------------------------------------------------
-Test Passed.
-"unsupported slice type lands in the unknown bucket" end time: Nov 19 09:21 CST
-"unsupported slice type lands in the unknown bucket" time elapsed: 00:00:00
-----------------------------------------------------------
-
-6/27 Testing: PPS resolves to its SPS id and is cached
-6/27 Test: PPS resolves to its SPS id and is cached
-Command: "/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests" "PPS resolves to its SPS id and is cached" "--order decl"
-Directory: /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests
-"PPS resolves to its SPS id and is cached" start time: Nov 19 09:21 CST
-Output:
-----------------------------------------------------------
-Filters: "PPS resolves to its SPS id and is cached"
-Randomness seeded to: 496964127
-===============================================================================
-All tests passed (6 assertions in 1 test case)
-
-<end of output>
-Test time =   0.00 sec
-----------------------------------------------------------
-Test Passed.
-"PPS resolves to its SPS id and is cached" end time: Nov 19 09:21 CST
-"PPS resolves to its SPS id and is cached" time elapsed: 00:00:00
-----------------------------------------------------------
-
-7/27 Testing: baseline SPS yields profile, dimensions and frame-only flag
-7/27 Test: baseline SPS yields profile, dimensions and frame-only flag
-Command: "/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests" "baseline SPS yields profile\, dimensions and frame-only flag" "--order decl"
-Directory: /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests
-"baseline SPS yields profile, dimensions and frame-only flag" start time: Nov 19 09:21 CST
-Output:
-----------------------------------------------------------
-Filters: "baseline SPS yields profile\, dimensions and frame-only flag"
-Randomness seeded to: 194834927
-===============================================================================
-All tests passed (9 assertions in 1 test case)
-
-<end of output>
-Test time =   0.00 sec
-----------------------------------------------------------
-Test Passed.
-"baseline SPS yields profile, dimensions and frame-only flag" end time: Nov 19 09:21 CST
-"baseline SPS yields profile, dimensions and frame-only flag" time elapsed: 00:00:00
-----------------------------------------------------------
-
-14/27 Testing: high profile SPS parses crop-adjusted dimensions
-14/27 Test: high profile SPS parses crop-adjusted dimensions
-Command: "/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests" "high profile SPS parses crop-adjusted dimensions" "--order decl"
-Directory: /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests
-"high profile SPS parses crop-adjusted dimensions" start time: Nov 19 09:21 CST
-Output:
-----------------------------------------------------------
-Filters: "high profile SPS parses crop-adjusted dimensions"
-Randomness seeded to: 1460316372
-===============================================================================
-All tests passed (6 assertions in 1 test case)
-
-<end of output>
-Test time =   0.00 sec
-----------------------------------------------------------
-Test Passed.
-"high profile SPS parses crop-adjusted dimensions" end time: Nov 19 09:21 CST
-"high profile SPS parses crop-adjusted dimensions" time elapsed: 00:00:00
-----------------------------------------------------------
-
-16/27 Testing: interlaced SPS reports field coding and doubled map height
-16/27 Test: interlaced SPS reports field coding and doubled map height
-Command: "/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests" "interlaced SPS reports field coding and doubled map height" "--order decl"
-Directory: /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests
-"interlaced SPS reports field coding and doubled map height" start time: Nov 19 09:21 CST
-Output:
-----------------------------------------------------------
-Filters: "interlaced SPS reports field coding and doubled map height"
-Randomness seeded to: 2320777575
-===============================================================================
-All tests passed (6 assertions in 1 test case)
-
-<end of output>
-Test time =   0.00 sec
-----------------------------------------------------------
-Test Passed.
-"interlaced SPS reports field coding and doubled map height" end time: Nov 19 09:21 CST
-"interlaced SPS reports field coding and doubled map height" time elapsed: 00:00:00
-----------------------------------------------------------
-
-24/27 Testing: truncated Exp-Golomb with no terminating one is rejected
-24/27 Test: truncated Exp-Golomb with no terminating one is rejected
-Command: "/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests" "truncated Exp-Golomb with no terminating one is rejected" "--order decl"
-Directory: /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests
-"truncated Exp-Golomb with no terminating one is rejected" start time: Nov 19 09:21 CST
-Output:
-----------------------------------------------------------
-Filters: "truncated Exp-Golomb with no terminating one is rejected"
-Randomness seeded to: 425592380
+Filters: "over-long leading zero run is rejected"
+Randomness seeded to: 3106205363
 ===============================================================================
 All tests passed (1 assertion in 1 test case)
 
 <end of output>
-Test time =   0.01 sec
+Test time =   0.00 sec
 ----------------------------------------------------------
 Test Passed.
-"truncated Exp-Golomb with no terminating one is rejected" end time: Nov 19 09:21 CST
-"truncated Exp-Golomb with no terminating one is rejected" time elapsed: 00:00:00
+"over-long leading zero run is rejected" end time: Nov 19 09:22 CST
+"over-long leading zero run is rejected" time elapsed: 00:00:00
 ----------------------------------------------------------
 
-19/27 Testing: signed Exp-Golomb maps code numbers per the spec
-19/27 Test: signed Exp-Golomb maps code numbers per the spec
+16/30 Testing: input with no start code is an error
+16/30 Test: input with no start code is an error
+Command: "/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests" "input with no start code is an error" "--order decl"
+Directory: /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests
+"input with no start code is an error" start time: Nov 19 09:22 CST
+Output:
+----------------------------------------------------------
+Filters: "input with no start code is an error"
+Randomness seeded to: 2864486747
+===============================================================================
+All tests passed (3 assertions in 1 test case)
+
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"input with no start code is an error" end time: Nov 19 09:22 CST
+"input with no start code is an error" time elapsed: 00:00:00
+----------------------------------------------------------
+
+28/30 Testing: truncated SPS fails and keeps the NAL offset
+28/30 Test: truncated SPS fails and keeps the NAL offset
+Command: "/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests" "truncated SPS fails and keeps the NAL offset" "--order decl"
+Directory: /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests
+"truncated SPS fails and keeps the NAL offset" start time: Nov 19 09:22 CST
+Output:
+----------------------------------------------------------
+Filters: "truncated SPS fails and keeps the NAL offset"
+Randomness seeded to: 1772973554
+===============================================================================
+All tests passed (3 assertions in 1 test case)
+
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"truncated SPS fails and keeps the NAL offset" end time: Nov 19 09:22 CST
+"truncated SPS fails and keeps the NAL offset" time elapsed: 00:00:00
+----------------------------------------------------------
+
+20/30 Testing: signed Exp-Golomb maps code numbers per the spec
+20/30 Test: signed Exp-Golomb maps code numbers per the spec
 Command: "/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests" "signed Exp-Golomb maps code numbers per the spec" "--order decl"
 Directory: /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests
-"signed Exp-Golomb maps code numbers per the spec" start time: Nov 19 09:21 CST
+"signed Exp-Golomb maps code numbers per the spec" start time: Nov 19 09:22 CST
 Output:
 ----------------------------------------------------------
 Filters: "signed Exp-Golomb maps code numbers per the spec"
-Randomness seeded to: 3810605725
+Randomness seeded to: 2624624147
 ===============================================================================
 All tests passed (7 assertions in 1 test case)
 
@@ -536,8 +376,274 @@ All tests passed (7 assertions in 1 test case)
 Test time =   0.00 sec
 ----------------------------------------------------------
 Test Passed.
-"signed Exp-Golomb maps code numbers per the spec" end time: Nov 19 09:21 CST
+"signed Exp-Golomb maps code numbers per the spec" end time: Nov 19 09:22 CST
 "signed Exp-Golomb maps code numbers per the spec" time elapsed: 00:00:00
 ----------------------------------------------------------
 
-End testing: Nov 19 09:21 CST
+24/30 Testing: three and four byte start codes both delimit NAL units
+24/30 Test: three and four byte start codes both delimit NAL units
+Command: "/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests" "three and four byte start codes both delimit NAL units" "--order decl"
+Directory: /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests
+"three and four byte start codes both delimit NAL units" start time: Nov 19 09:22 CST
+Output:
+----------------------------------------------------------
+Filters: "three and four byte start codes both delimit NAL units"
+Randomness seeded to: 3134956544
+===============================================================================
+All tests passed (9 assertions in 1 test case)
+
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"three and four byte start codes both delimit NAL units" end time: Nov 19 09:22 CST
+"three and four byte start codes both delimit NAL units" time elapsed: 00:00:00
+----------------------------------------------------------
+
+14/30 Testing: frame_num change opens a new picture even at first_mb zero
+14/30 Test: frame_num change opens a new picture even at first_mb zero
+Command: "/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests" "frame_num change opens a new picture even at first_mb zero" "--order decl"
+Directory: /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests
+"frame_num change opens a new picture even at first_mb zero" start time: Nov 19 09:22 CST
+Output:
+----------------------------------------------------------
+Filters: "frame_num change opens a new picture even at first_mb zero"
+Randomness seeded to: 2715254563
+===============================================================================
+All tests passed (4 assertions in 1 test case)
+
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"frame_num change opens a new picture even at first_mb zero" end time: Nov 19 09:22 CST
+"frame_num change opens a new picture even at first_mb zero" time elapsed: 00:00:00
+----------------------------------------------------------
+
+21/30 Testing: slice referencing an undefined PPS keeps an error and continues
+21/30 Test: slice referencing an undefined PPS keeps an error and continues
+Command: "/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests" "slice referencing an undefined PPS keeps an error and continues" "--order decl"
+Directory: /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests
+"slice referencing an undefined PPS keeps an error and continues" start time: Nov 19 09:22 CST
+Output:
+----------------------------------------------------------
+Filters: "slice referencing an undefined PPS keeps an error and continues"
+Randomness seeded to: 3747974477
+===============================================================================
+All tests passed (5 assertions in 1 test case)
+
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"slice referencing an undefined PPS keeps an error and continues" end time: Nov 19 09:22 CST
+"slice referencing an undefined PPS keeps an error and continues" time elapsed: 00:00:00
+----------------------------------------------------------
+
+18/30 Testing: multiple slices of one picture count as a single frame
+18/30 Test: multiple slices of one picture count as a single frame
+Command: "/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests" "multiple slices of one picture count as a single frame" "--order decl"
+Directory: /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests
+"multiple slices of one picture count as a single frame" start time: Nov 19 09:22 CST
+Output:
+----------------------------------------------------------
+Filters: "multiple slices of one picture count as a single frame"
+Randomness seeded to: 3732973289
+===============================================================================
+All tests passed (4 assertions in 1 test case)
+
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"multiple slices of one picture count as a single frame" end time: Nov 19 09:22 CST
+"multiple slices of one picture count as a single frame" time elapsed: 00:00:00
+----------------------------------------------------------
+
+30/30 Testing: unsupported slice type lands in the unknown bucket
+30/30 Test: unsupported slice type lands in the unknown bucket
+Command: "/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests" "unsupported slice type lands in the unknown bucket" "--order decl"
+Directory: /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests
+"unsupported slice type lands in the unknown bucket" start time: Nov 19 09:22 CST
+Output:
+----------------------------------------------------------
+Filters: "unsupported slice type lands in the unknown bucket"
+Randomness seeded to: 1777003924
+===============================================================================
+All tests passed (3 assertions in 1 test case)
+
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"unsupported slice type lands in the unknown bucket" end time: Nov 19 09:22 CST
+"unsupported slice type lands in the unknown bucket" time elapsed: 00:00:00
+----------------------------------------------------------
+
+6/30 Testing: PPS resolves to its SPS id and is cached
+6/30 Test: PPS resolves to its SPS id and is cached
+Command: "/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests" "PPS resolves to its SPS id and is cached" "--order decl"
+Directory: /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests
+"PPS resolves to its SPS id and is cached" start time: Nov 19 09:22 CST
+Output:
+----------------------------------------------------------
+Filters: "PPS resolves to its SPS id and is cached"
+Randomness seeded to: 1794568498
+===============================================================================
+All tests passed (6 assertions in 1 test case)
+
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"PPS resolves to its SPS id and is cached" end time: Nov 19 09:22 CST
+"PPS resolves to its SPS id and is cached" time elapsed: 00:00:00
+----------------------------------------------------------
+
+7/30 Testing: baseline SPS yields profile, dimensions and frame-only flag
+7/30 Test: baseline SPS yields profile, dimensions and frame-only flag
+Command: "/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests" "baseline SPS yields profile\, dimensions and frame-only flag" "--order decl"
+Directory: /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests
+"baseline SPS yields profile, dimensions and frame-only flag" start time: Nov 19 09:22 CST
+Output:
+----------------------------------------------------------
+Filters: "baseline SPS yields profile\, dimensions and frame-only flag"
+Randomness seeded to: 3856618018
+===============================================================================
+All tests passed (9 assertions in 1 test case)
+
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"baseline SPS yields profile, dimensions and frame-only flag" end time: Nov 19 09:22 CST
+"baseline SPS yields profile, dimensions and frame-only flag" time elapsed: 00:00:00
+----------------------------------------------------------
+
+15/30 Testing: high profile SPS parses crop-adjusted dimensions
+15/30 Test: high profile SPS parses crop-adjusted dimensions
+Command: "/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests" "high profile SPS parses crop-adjusted dimensions" "--order decl"
+Directory: /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests
+"high profile SPS parses crop-adjusted dimensions" start time: Nov 19 09:22 CST
+Output:
+----------------------------------------------------------
+Filters: "high profile SPS parses crop-adjusted dimensions"
+Randomness seeded to: 2790407389
+===============================================================================
+All tests passed (6 assertions in 1 test case)
+
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"high profile SPS parses crop-adjusted dimensions" end time: Nov 19 09:22 CST
+"high profile SPS parses crop-adjusted dimensions" time elapsed: 00:00:00
+----------------------------------------------------------
+
+12/30 Testing: fixture generator produces an in-range deterministic stream
+12/30 Test: fixture generator produces an in-range deterministic stream
+Command: "/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests" "fixture generator produces an in-range deterministic stream" "--order decl"
+Directory: /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests
+"fixture generator produces an in-range deterministic stream" start time: Nov 19 09:22 CST
+Output:
+----------------------------------------------------------
+Filters: "fixture generator produces an in-range deterministic stream"
+Randomness seeded to: 3466086173
+wrote 1976 bytes to /tmp/h264_it_fixture.h264
+===============================================================================
+All tests passed (4 assertions in 1 test case)
+
+<end of output>
+Test time =   0.36 sec
+----------------------------------------------------------
+Test Passed.
+"fixture generator produces an in-range deterministic stream" end time: Nov 19 09:22 CST
+"fixture generator produces an in-range deterministic stream" time elapsed: 00:00:00
+----------------------------------------------------------
+
+23/30 Testing: strict scan of a clean fixture succeeds and emits the JSON contract
+23/30 Test: strict scan of a clean fixture succeeds and emits the JSON contract
+Command: "/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests" "strict scan of a clean fixture succeeds and emits the JSON contract" "--order decl"
+Directory: /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests
+"strict scan of a clean fixture succeeds and emits the JSON contract" start time: Nov 19 09:22 CST
+Output:
+----------------------------------------------------------
+Filters: "strict scan of a clean fixture succeeds and emits the JSON contract"
+Randomness seeded to: 3004569489
+===============================================================================
+All tests passed (9 assertions in 1 test case)
+
+<end of output>
+Test time =   0.30 sec
+----------------------------------------------------------
+Test Passed.
+"strict scan of a clean fixture succeeds and emits the JSON contract" end time: Nov 19 09:22 CST
+"strict scan of a clean fixture succeeds and emits the JSON contract" time elapsed: 00:00:00
+----------------------------------------------------------
+
+22/30 Testing: strict mode returns 2 on a corrupt stream and 64 on bad arguments
+22/30 Test: strict mode returns 2 on a corrupt stream and 64 on bad arguments
+Command: "/Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests/h264_tests" "strict mode returns 2 on a corrupt stream and 64 on bad arguments" "--order decl"
+Directory: /Users/zld/WorkSpace/pair-wise-workspace/13786/build/tests
+"strict mode returns 2 on a corrupt stream and 64 on bad arguments" start time: Nov 19 09:22 CST
+Output:
+----------------------------------------------------------
+Filters: "strict mode returns 2 on a corrupt stream and 64 on bad arguments"
+Randomness seeded to: 546182994
+wrote 1982 bytes to /tmp/h264_it_corrupt.h264
+H.264 bitstream summary
+  input: /tmp/h264_it_corrupt.h264
+  file_size_bytes: 1982
+  nal_count: 24
+  max_nal_bytes: 16777216
+  parameter sets:
+    SPS[0] profile=66 level=30 chroma=1 luma_bitdepth=8 320x240 frame_mbs_only=1
+    SPS[1] profile=100 level=40 chroma=1 luma_bitdepth=8 636x480 frame_mbs_only=1
+    SPS[2] profile=100 level=30 chroma=1 luma_bitdepth=8 352x288 frame_mbs_only=0
+    PPS[0] sps=0 cabac=0
+    PPS[1] sps=1 cabac=1
+    PPS[2] sps=2 cabac=0
+  frames: total=12 I=2 P=5 B=5 unknown=0
+  frame_pictures=10 field_pictures=2
+  ratios: I=16.67% P=41.67% B=41.67%
+  leading_pictures_without_idr: 0
+  groups: 2
+    gop[0] start_offset=86 pictures=6 closed=true
+    gop[1] start_offset=914 pictures=6 closed=false
+  errors: 2
+    @0 empty NAL unit between start codes
+    @3 empty NAL unit between start codes
+H.264 bitstream summary
+  input: /tmp/h264_it_corrupt.h264
+  file_size_bytes: 1982
+  nal_count: 24
+  max_nal_bytes: 16777216
+  parameter sets:
+    SPS[0] profile=66 level=30 chroma=1 luma_bitdepth=8 320x240 frame_mbs_only=1
+    SPS[1] profile=100 level=40 chroma=1 luma_bitdepth=8 636x480 frame_mbs_only=1
+    SPS[2] profile=100 level=30 chroma=1 luma_bitdepth=8 352x288 frame_mbs_only=0
+    PPS[0] sps=0 cabac=0
+    PPS[1] sps=1 cabac=1
+    PPS[2] sps=2 cabac=0
+  frames: total=12 I=2 P=5 B=5 unknown=0
+  frame_pictures=10 field_pictures=2
+  ratios: I=16.67% P=41.67% B=41.67%
+  leading_pictures_without_idr: 0
+  groups: 2
+    gop[0] start_offset=86 pictures=6 closed=true
+    gop[1] start_offset=914 pictures=6 closed=false
+  errors: 2
+    @0 empty NAL unit between start codes
+    @3 empty NAL unit between start codes
+===============================================================================
+All tests passed (6 assertions in 1 test case)
+
+<end of output>
+Test time =   0.70 sec
+----------------------------------------------------------
+Test Passed.
+"strict mode returns 2 on a corrupt stream and 64 on bad arguments" end time: Nov 19 09:22 CST
+"strict mode returns 2 on a corrupt stream and 64 on bad arguments" time elapsed: 00:00:00
+----------------------------------------------------------
+
+End testing: Nov 19 09:22 CST

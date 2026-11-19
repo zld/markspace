@@ -607,6 +607,30 @@ test_exp_golomb.cpp.s:
 	cd /Users/zld/WorkSpace/pair-wise-workspace/13786/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/h264_tests.dir/build.make tests/CMakeFiles/h264_tests.dir/test_exp_golomb.cpp.s
 .PHONY : test_exp_golomb.cpp.s
 
+test_integration.o: test_integration.cpp.o
+.PHONY : test_integration.o
+
+# target to build an object file
+test_integration.cpp.o:
+	cd /Users/zld/WorkSpace/pair-wise-workspace/13786/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/h264_tests.dir/build.make tests/CMakeFiles/h264_tests.dir/test_integration.cpp.o
+.PHONY : test_integration.cpp.o
+
+test_integration.i: test_integration.cpp.i
+.PHONY : test_integration.i
+
+# target to preprocess a source file
+test_integration.cpp.i:
+	cd /Users/zld/WorkSpace/pair-wise-workspace/13786/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/h264_tests.dir/build.make tests/CMakeFiles/h264_tests.dir/test_integration.cpp.i
+.PHONY : test_integration.cpp.i
+
+test_integration.s: test_integration.cpp.s
+.PHONY : test_integration.s
+
+# target to generate assembly for a file
+test_integration.cpp.s:
+	cd /Users/zld/WorkSpace/pair-wise-workspace/13786/build && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/h264_tests.dir/build.make tests/CMakeFiles/h264_tests.dir/test_integration.cpp.s
+.PHONY : test_integration.cpp.s
+
 test_nal_parser.o: test_nal_parser.cpp.o
 .PHONY : test_nal_parser.o
 
@@ -702,6 +726,9 @@ help:
 	@echo "... test_exp_golomb.o"
 	@echo "... test_exp_golomb.i"
 	@echo "... test_exp_golomb.s"
+	@echo "... test_integration.o"
+	@echo "... test_integration.i"
+	@echo "... test_integration.s"
 	@echo "... test_nal_parser.o"
 	@echo "... test_nal_parser.i"
 	@echo "... test_nal_parser.s"

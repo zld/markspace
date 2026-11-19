@@ -164,7 +164,7 @@ tools/clean: tools/CMakeFiles/fixture_gen.dir/clean
 CMakeFiles/h264core.dir/all:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/h264core.dir/build.make CMakeFiles/h264core.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/h264core.dir/build.make CMakeFiles/h264core.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/Users/zld/WorkSpace/pair-wise-workspace/13786/build/CMakeFiles --progress-num=9,10,11,12,13 "Built target h264core"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/Users/zld/WorkSpace/pair-wise-workspace/13786/build/CMakeFiles --progress-num=10,11,12,13,14 "Built target h264core"
 .PHONY : CMakeFiles/h264core.dir/all
 
 # Build rule for subdir invocation for target.
@@ -181,7 +181,7 @@ h264core: CMakeFiles/h264core.dir/rule
 # codegen rule for target.
 CMakeFiles/h264core.dir/codegen:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/h264core.dir/build.make CMakeFiles/h264core.dir/codegen
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/Users/zld/WorkSpace/pair-wise-workspace/13786/build/CMakeFiles --progress-num=9,10,11,12,13 "Finished codegen for target h264core"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/Users/zld/WorkSpace/pair-wise-workspace/13786/build/CMakeFiles --progress-num=10,11,12,13,14 "Finished codegen for target h264core"
 .PHONY : CMakeFiles/h264core.dir/codegen
 
 # clean rule for target.
@@ -196,7 +196,7 @@ CMakeFiles/h264core.dir/clean:
 tools/CMakeFiles/h264scan.dir/all: CMakeFiles/h264core.dir/all
 	$(MAKE) $(MAKESILENT) -f tools/CMakeFiles/h264scan.dir/build.make tools/CMakeFiles/h264scan.dir/depend
 	$(MAKE) $(MAKESILENT) -f tools/CMakeFiles/h264scan.dir/build.make tools/CMakeFiles/h264scan.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/Users/zld/WorkSpace/pair-wise-workspace/13786/build/CMakeFiles --progress-num=14,15 "Built target h264scan"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/Users/zld/WorkSpace/pair-wise-workspace/13786/build/CMakeFiles --progress-num=15,16 "Built target h264scan"
 .PHONY : tools/CMakeFiles/h264scan.dir/all
 
 # Build rule for subdir invocation for target.
@@ -213,7 +213,7 @@ h264scan: tools/CMakeFiles/h264scan.dir/rule
 # codegen rule for target.
 tools/CMakeFiles/h264scan.dir/codegen:
 	$(MAKE) $(MAKESILENT) -f tools/CMakeFiles/h264scan.dir/build.make tools/CMakeFiles/h264scan.dir/codegen
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/Users/zld/WorkSpace/pair-wise-workspace/13786/build/CMakeFiles --progress-num=14,15 "Finished codegen for target h264scan"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/Users/zld/WorkSpace/pair-wise-workspace/13786/build/CMakeFiles --progress-num=15,16 "Finished codegen for target h264scan"
 .PHONY : tools/CMakeFiles/h264scan.dir/codegen
 
 # clean rule for target.
@@ -258,14 +258,16 @@ tools/CMakeFiles/fixture_gen.dir/clean:
 
 # All Build rule for target.
 tests/CMakeFiles/h264_tests.dir/all: CMakeFiles/h264core.dir/all
+tests/CMakeFiles/h264_tests.dir/all: tools/CMakeFiles/h264scan.dir/all
+tests/CMakeFiles/h264_tests.dir/all: tools/CMakeFiles/fixture_gen.dir/all
 	$(MAKE) $(MAKESILENT) -f tests/CMakeFiles/h264_tests.dir/build.make tests/CMakeFiles/h264_tests.dir/depend
 	$(MAKE) $(MAKESILENT) -f tests/CMakeFiles/h264_tests.dir/build.make tests/CMakeFiles/h264_tests.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/Users/zld/WorkSpace/pair-wise-workspace/13786/build/CMakeFiles --progress-num=3,4,5,6,7,8 "Built target h264_tests"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/Users/zld/WorkSpace/pair-wise-workspace/13786/build/CMakeFiles --progress-num=3,4,5,6,7,8,9 "Built target h264_tests"
 .PHONY : tests/CMakeFiles/h264_tests.dir/all
 
 # Build rule for subdir invocation for target.
 tests/CMakeFiles/h264_tests.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /Users/zld/WorkSpace/pair-wise-workspace/13786/build/CMakeFiles 11
+	$(CMAKE_COMMAND) -E cmake_progress_start /Users/zld/WorkSpace/pair-wise-workspace/13786/build/CMakeFiles 16
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 tests/CMakeFiles/h264_tests.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /Users/zld/WorkSpace/pair-wise-workspace/13786/build/CMakeFiles 0
 .PHONY : tests/CMakeFiles/h264_tests.dir/rule
@@ -275,9 +277,10 @@ h264_tests: tests/CMakeFiles/h264_tests.dir/rule
 .PHONY : h264_tests
 
 # codegen rule for target.
-tests/CMakeFiles/h264_tests.dir/codegen:
+tests/CMakeFiles/h264_tests.dir/codegen: tools/CMakeFiles/h264scan.dir/codegen
+tests/CMakeFiles/h264_tests.dir/codegen: tools/CMakeFiles/fixture_gen.dir/codegen
 	$(MAKE) $(MAKESILENT) -f tests/CMakeFiles/h264_tests.dir/build.make tests/CMakeFiles/h264_tests.dir/codegen
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/Users/zld/WorkSpace/pair-wise-workspace/13786/build/CMakeFiles --progress-num=3,4,5,6,7,8 "Finished codegen for target h264_tests"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/Users/zld/WorkSpace/pair-wise-workspace/13786/build/CMakeFiles --progress-num=3,4,5,6,7,8,9 "Finished codegen for target h264_tests"
 .PHONY : tests/CMakeFiles/h264_tests.dir/codegen
 
 # clean rule for target.
