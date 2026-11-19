@@ -109,11 +109,6 @@ def _display_path(item: dict) -> str:
     return item.get("relative_path") or item.get("name") or item.get("path") or "?"
 
 
-def render_summary(summary: dict, stream: TextIO) -> None:
-    """Render a database-backed summary using the same keys as render_scan."""
-    render_scan(summary, stream)
-
-
 def write_json(payload: dict, out: str | Path) -> Path:
     """Write JSON atomically; raise ReportError with a diagnostic on failure."""
     target = Path(out)

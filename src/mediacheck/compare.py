@@ -512,7 +512,6 @@ class Comparator:
         ref_media = _index_media(reference, "reference")
         tgt_media = _index_media(target, "target")
         issues: list[Issue] = []
-        file_results: list[dict] = []
         pairs: list[dict] = []
 
         ref_label = reference.get("label") or reference.get("root")
