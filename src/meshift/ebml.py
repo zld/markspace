@@ -193,11 +193,13 @@ def _read_header(data: bytes, pos: int, path: tuple[str, ...]) -> Element:
     size, size_width, unknown = read_vint(data, pos + id_width, kind="size")
     header_len = id_width + size_width
     data_start = pos + header_len
+    self_path = path + (element_name(ident),)
     if not unknown:
         end = data_start + size
         if end > len(data):
             raise TruncatedInputError(
-                f"element {element_name(ident)} ends past buffer", pos, path)
+                f"element {element_name(ident)} ends past buffer",
+                pos, self_path)
     else:
         end = -1  # resolved while parsing children
     return Element(ident, pos, header_len, None if unknown else size,
