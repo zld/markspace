@@ -143,6 +143,19 @@ pwsync_core/fast:
 .PHONY : pwsync_core/fast
 
 #=============================================================================
+# Target rules for targets named generate_fixture
+
+# Build rule for target.
+generate_fixture: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 generate_fixture
+.PHONY : generate_fixture
+
+# fast build rule for target.
+generate_fixture/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/generate_fixture.dir/build.make CMakeFiles/generate_fixture.dir/build
+.PHONY : generate_fixture/fast
+
+#=============================================================================
 # Convenience rules to build test dependencies.
 
 # Build the dependencies of a test.
@@ -222,6 +235,30 @@ src/demux_decode.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/pwsync_core.dir/build.make CMakeFiles/pwsync_core.dir/src/demux_decode.cpp.s
 .PHONY : src/demux_decode.cpp.s
 
+src/fixture_generator.o: src/fixture_generator.cpp.o
+.PHONY : src/fixture_generator.o
+
+# target to build an object file
+src/fixture_generator.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/pwsync_core.dir/build.make CMakeFiles/pwsync_core.dir/src/fixture_generator.cpp.o
+.PHONY : src/fixture_generator.cpp.o
+
+src/fixture_generator.i: src/fixture_generator.cpp.i
+.PHONY : src/fixture_generator.i
+
+# target to preprocess a source file
+src/fixture_generator.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/pwsync_core.dir/build.make CMakeFiles/pwsync_core.dir/src/fixture_generator.cpp.i
+.PHONY : src/fixture_generator.cpp.i
+
+src/fixture_generator.s: src/fixture_generator.cpp.s
+.PHONY : src/fixture_generator.s
+
+# target to generate assembly for a file
+src/fixture_generator.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/pwsync_core.dir/build.make CMakeFiles/pwsync_core.dir/src/fixture_generator.cpp.s
+.PHONY : src/fixture_generator.cpp.s
+
 src/media_types.o: src/media_types.cpp.o
 .PHONY : src/media_types.o
 
@@ -245,6 +282,54 @@ src/media_types.s: src/media_types.cpp.s
 src/media_types.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/pwsync_core.dir/build.make CMakeFiles/pwsync_core.dir/src/media_types.cpp.s
 .PHONY : src/media_types.cpp.s
+
+src/path_simulator.o: src/path_simulator.cpp.o
+.PHONY : src/path_simulator.o
+
+# target to build an object file
+src/path_simulator.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/pwsync_core.dir/build.make CMakeFiles/pwsync_core.dir/src/path_simulator.cpp.o
+.PHONY : src/path_simulator.cpp.o
+
+src/path_simulator.i: src/path_simulator.cpp.i
+.PHONY : src/path_simulator.i
+
+# target to preprocess a source file
+src/path_simulator.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/pwsync_core.dir/build.make CMakeFiles/pwsync_core.dir/src/path_simulator.cpp.i
+.PHONY : src/path_simulator.cpp.i
+
+src/path_simulator.s: src/path_simulator.cpp.s
+.PHONY : src/path_simulator.s
+
+# target to generate assembly for a file
+src/path_simulator.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/pwsync_core.dir/build.make CMakeFiles/pwsync_core.dir/src/path_simulator.cpp.s
+.PHONY : src/path_simulator.cpp.s
+
+src/report.o: src/report.cpp.o
+.PHONY : src/report.o
+
+# target to build an object file
+src/report.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/pwsync_core.dir/build.make CMakeFiles/pwsync_core.dir/src/report.cpp.o
+.PHONY : src/report.cpp.o
+
+src/report.i: src/report.cpp.i
+.PHONY : src/report.i
+
+# target to preprocess a source file
+src/report.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/pwsync_core.dir/build.make CMakeFiles/pwsync_core.dir/src/report.cpp.i
+.PHONY : src/report.cpp.i
+
+src/report.s: src/report.cpp.s
+.PHONY : src/report.s
+
+# target to generate assembly for a file
+src/report.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/pwsync_core.dir/build.make CMakeFiles/pwsync_core.dir/src/report.cpp.s
+.PHONY : src/report.cpp.s
 
 src/synchronizer.o: src/synchronizer.cpp.o
 .PHONY : src/synchronizer.o
@@ -270,6 +355,30 @@ src/synchronizer.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/pwsync_core.dir/build.make CMakeFiles/pwsync_core.dir/src/synchronizer.cpp.s
 .PHONY : src/synchronizer.cpp.s
 
+tests/generate_fixture.o: tests/generate_fixture.cpp.o
+.PHONY : tests/generate_fixture.o
+
+# target to build an object file
+tests/generate_fixture.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/generate_fixture.dir/build.make CMakeFiles/generate_fixture.dir/tests/generate_fixture.cpp.o
+.PHONY : tests/generate_fixture.cpp.o
+
+tests/generate_fixture.i: tests/generate_fixture.cpp.i
+.PHONY : tests/generate_fixture.i
+
+# target to preprocess a source file
+tests/generate_fixture.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/generate_fixture.dir/build.make CMakeFiles/generate_fixture.dir/tests/generate_fixture.cpp.i
+.PHONY : tests/generate_fixture.cpp.i
+
+tests/generate_fixture.s: tests/generate_fixture.cpp.s
+.PHONY : tests/generate_fixture.s
+
+# target to generate assembly for a file
+tests/generate_fixture.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/generate_fixture.dir/build.make CMakeFiles/generate_fixture.dir/tests/generate_fixture.cpp.s
+.PHONY : tests/generate_fixture.cpp.s
+
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -279,6 +388,7 @@ help:
 	@echo "... edit_cache"
 	@echo "... rebuild_cache"
 	@echo "... test"
+	@echo "... generate_fixture"
 	@echo "... pwsync_core"
 	@echo "... src/audio_resample.o"
 	@echo "... src/audio_resample.i"
@@ -289,12 +399,24 @@ help:
 	@echo "... src/demux_decode.o"
 	@echo "... src/demux_decode.i"
 	@echo "... src/demux_decode.s"
+	@echo "... src/fixture_generator.o"
+	@echo "... src/fixture_generator.i"
+	@echo "... src/fixture_generator.s"
 	@echo "... src/media_types.o"
 	@echo "... src/media_types.i"
 	@echo "... src/media_types.s"
+	@echo "... src/path_simulator.o"
+	@echo "... src/path_simulator.i"
+	@echo "... src/path_simulator.s"
+	@echo "... src/report.o"
+	@echo "... src/report.i"
+	@echo "... src/report.s"
 	@echo "... src/synchronizer.o"
 	@echo "... src/synchronizer.i"
 	@echo "... src/synchronizer.s"
+	@echo "... tests/generate_fixture.o"
+	@echo "... tests/generate_fixture.i"
+	@echo "... tests/generate_fixture.s"
 .PHONY : help
 
 

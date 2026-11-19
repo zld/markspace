@@ -63,9 +63,15 @@ add_library(pwsync_core STATIC
     src/demux_decode.cpp
     src/path_simulator.cpp
     src/report.cpp
+    src/fixture_generator.cpp
 )
 target_include_directories(pwsync_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_options(pwsync_core PRIVATE -Wall -Wextra -Wpedantic)
 target_link_libraries(pwsync_core PUBLIC ${PW_FFMPEG_LIBS})
+
+# Deterministic fixture generator (also embedded in the main CLI later).
+add_executable(generate_fixture tests/generate_fixture.cpp)
+target_link_libraries(generate_fixture PRIVATE pwsync_core)
+target_compile_options(generate_fixture PRIVATE -Wall -Wextra -Wpedantic)
 
 enable_testing()

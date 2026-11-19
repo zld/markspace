@@ -67,10 +67,12 @@ CMAKE_BINARY_DIR = /Users/zld/WorkSpace/pair-wise-workspace/14074/build
 
 # The main recursive "all" target.
 all: CMakeFiles/pwsync_core.dir/all
+all: CMakeFiles/generate_fixture.dir/all
 .PHONY : all
 
 # The main recursive "codegen" target.
 codegen: CMakeFiles/pwsync_core.dir/codegen
+codegen: CMakeFiles/generate_fixture.dir/codegen
 .PHONY : codegen
 
 # The main recursive "preinstall" target.
@@ -79,6 +81,7 @@ preinstall:
 
 # The main recursive "clean" target.
 clean: CMakeFiles/pwsync_core.dir/clean
+clean: CMakeFiles/generate_fixture.dir/clean
 .PHONY : clean
 
 #=============================================================================
@@ -88,12 +91,12 @@ clean: CMakeFiles/pwsync_core.dir/clean
 CMakeFiles/pwsync_core.dir/all:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/pwsync_core.dir/build.make CMakeFiles/pwsync_core.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/pwsync_core.dir/build.make CMakeFiles/pwsync_core.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/Users/zld/WorkSpace/pair-wise-workspace/14074/build/CMakeFiles --progress-num=1,2,3,4,5,6 "Built target pwsync_core"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/Users/zld/WorkSpace/pair-wise-workspace/14074/build/CMakeFiles --progress-num=3,4,5,6,7,8,9,10,11 "Built target pwsync_core"
 .PHONY : CMakeFiles/pwsync_core.dir/all
 
 # Build rule for subdir invocation for target.
 CMakeFiles/pwsync_core.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /Users/zld/WorkSpace/pair-wise-workspace/14074/build/CMakeFiles 6
+	$(CMAKE_COMMAND) -E cmake_progress_start /Users/zld/WorkSpace/pair-wise-workspace/14074/build/CMakeFiles 9
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/pwsync_core.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /Users/zld/WorkSpace/pair-wise-workspace/14074/build/CMakeFiles 0
 .PHONY : CMakeFiles/pwsync_core.dir/rule
@@ -105,13 +108,45 @@ pwsync_core: CMakeFiles/pwsync_core.dir/rule
 # codegen rule for target.
 CMakeFiles/pwsync_core.dir/codegen:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/pwsync_core.dir/build.make CMakeFiles/pwsync_core.dir/codegen
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/Users/zld/WorkSpace/pair-wise-workspace/14074/build/CMakeFiles --progress-num=1,2,3,4,5,6 "Finished codegen for target pwsync_core"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/Users/zld/WorkSpace/pair-wise-workspace/14074/build/CMakeFiles --progress-num=3,4,5,6,7,8,9,10,11 "Finished codegen for target pwsync_core"
 .PHONY : CMakeFiles/pwsync_core.dir/codegen
 
 # clean rule for target.
 CMakeFiles/pwsync_core.dir/clean:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/pwsync_core.dir/build.make CMakeFiles/pwsync_core.dir/clean
 .PHONY : CMakeFiles/pwsync_core.dir/clean
+
+#=============================================================================
+# Target rules for target CMakeFiles/generate_fixture.dir
+
+# All Build rule for target.
+CMakeFiles/generate_fixture.dir/all: CMakeFiles/pwsync_core.dir/all
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/generate_fixture.dir/build.make CMakeFiles/generate_fixture.dir/depend
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/generate_fixture.dir/build.make CMakeFiles/generate_fixture.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/Users/zld/WorkSpace/pair-wise-workspace/14074/build/CMakeFiles --progress-num=1,2 "Built target generate_fixture"
+.PHONY : CMakeFiles/generate_fixture.dir/all
+
+# Build rule for subdir invocation for target.
+CMakeFiles/generate_fixture.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /Users/zld/WorkSpace/pair-wise-workspace/14074/build/CMakeFiles 11
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/generate_fixture.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /Users/zld/WorkSpace/pair-wise-workspace/14074/build/CMakeFiles 0
+.PHONY : CMakeFiles/generate_fixture.dir/rule
+
+# Convenience name for target.
+generate_fixture: CMakeFiles/generate_fixture.dir/rule
+.PHONY : generate_fixture
+
+# codegen rule for target.
+CMakeFiles/generate_fixture.dir/codegen:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/generate_fixture.dir/build.make CMakeFiles/generate_fixture.dir/codegen
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/Users/zld/WorkSpace/pair-wise-workspace/14074/build/CMakeFiles --progress-num=1,2 "Finished codegen for target generate_fixture"
+.PHONY : CMakeFiles/generate_fixture.dir/codegen
+
+# clean rule for target.
+CMakeFiles/generate_fixture.dir/clean:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/generate_fixture.dir/build.make CMakeFiles/generate_fixture.dir/clean
+.PHONY : CMakeFiles/generate_fixture.dir/clean
 
 #=============================================================================
 # Targets to build the dependencies of tests.

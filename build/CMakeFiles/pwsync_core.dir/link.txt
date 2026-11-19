@@ -1,2 +1,2 @@
-/usr/bin/ar qc libpwsync_core.a CMakeFiles/pwsync_core.dir/src/media_types.cpp.o CMakeFiles/pwsync_core.dir/src/clock.cpp.o CMakeFiles/pwsync_core.dir/src/synchronizer.cpp.o CMakeFiles/pwsync_core.dir/src/audio_resample.cpp.o CMakeFiles/pwsync_core.dir/src/demux_decode.cpp.o
+/usr/bin/ar qc libpwsync_core.a CMakeFiles/pwsync_core.dir/src/media_types.cpp.o CMakeFiles/pwsync_core.dir/src/clock.cpp.o CMakeFiles/pwsync_core.dir/src/synchronizer.cpp.o CMakeFiles/pwsync_core.dir/src/audio_resample.cpp.o CMakeFiles/pwsync_core.dir/src/demux_decode.cpp.o CMakeFiles/pwsync_core.dir/src/path_simulator.cpp.o CMakeFiles/pwsync_core.dir/src/report.cpp.o CMakeFiles/pwsync_core.dir/src/fixture_generator.cpp.o
 /usr/bin/ranlib libpwsync_core.a

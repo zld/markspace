@@ -145,13 +145,58 @@ CMakeFiles/pwsync_core.dir/src/demux_decode.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/pwsync_core.dir/src/demux_decode.cpp.s"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /Users/zld/WorkSpace/pair-wise-workspace/14074/src/demux_decode.cpp -o CMakeFiles/pwsync_core.dir/src/demux_decode.cpp.s
 
+CMakeFiles/pwsync_core.dir/src/path_simulator.cpp.o: CMakeFiles/pwsync_core.dir/flags.make
+CMakeFiles/pwsync_core.dir/src/path_simulator.cpp.o: /Users/zld/WorkSpace/pair-wise-workspace/14074/src/path_simulator.cpp
+CMakeFiles/pwsync_core.dir/src/path_simulator.cpp.o: CMakeFiles/pwsync_core.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/zld/WorkSpace/pair-wise-workspace/14074/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_6) "Building CXX object CMakeFiles/pwsync_core.dir/src/path_simulator.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/pwsync_core.dir/src/path_simulator.cpp.o -MF CMakeFiles/pwsync_core.dir/src/path_simulator.cpp.o.d -o CMakeFiles/pwsync_core.dir/src/path_simulator.cpp.o -c /Users/zld/WorkSpace/pair-wise-workspace/14074/src/path_simulator.cpp
+
+CMakeFiles/pwsync_core.dir/src/path_simulator.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/pwsync_core.dir/src/path_simulator.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /Users/zld/WorkSpace/pair-wise-workspace/14074/src/path_simulator.cpp > CMakeFiles/pwsync_core.dir/src/path_simulator.cpp.i
+
+CMakeFiles/pwsync_core.dir/src/path_simulator.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/pwsync_core.dir/src/path_simulator.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /Users/zld/WorkSpace/pair-wise-workspace/14074/src/path_simulator.cpp -o CMakeFiles/pwsync_core.dir/src/path_simulator.cpp.s
+
+CMakeFiles/pwsync_core.dir/src/report.cpp.o: CMakeFiles/pwsync_core.dir/flags.make
+CMakeFiles/pwsync_core.dir/src/report.cpp.o: /Users/zld/WorkSpace/pair-wise-workspace/14074/src/report.cpp
+CMakeFiles/pwsync_core.dir/src/report.cpp.o: CMakeFiles/pwsync_core.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/zld/WorkSpace/pair-wise-workspace/14074/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_7) "Building CXX object CMakeFiles/pwsync_core.dir/src/report.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/pwsync_core.dir/src/report.cpp.o -MF CMakeFiles/pwsync_core.dir/src/report.cpp.o.d -o CMakeFiles/pwsync_core.dir/src/report.cpp.o -c /Users/zld/WorkSpace/pair-wise-workspace/14074/src/report.cpp
+
+CMakeFiles/pwsync_core.dir/src/report.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/pwsync_core.dir/src/report.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /Users/zld/WorkSpace/pair-wise-workspace/14074/src/report.cpp > CMakeFiles/pwsync_core.dir/src/report.cpp.i
+
+CMakeFiles/pwsync_core.dir/src/report.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/pwsync_core.dir/src/report.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /Users/zld/WorkSpace/pair-wise-workspace/14074/src/report.cpp -o CMakeFiles/pwsync_core.dir/src/report.cpp.s
+
+CMakeFiles/pwsync_core.dir/src/fixture_generator.cpp.o: CMakeFiles/pwsync_core.dir/flags.make
+CMakeFiles/pwsync_core.dir/src/fixture_generator.cpp.o: /Users/zld/WorkSpace/pair-wise-workspace/14074/src/fixture_generator.cpp
+CMakeFiles/pwsync_core.dir/src/fixture_generator.cpp.o: CMakeFiles/pwsync_core.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/zld/WorkSpace/pair-wise-workspace/14074/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_8) "Building CXX object CMakeFiles/pwsync_core.dir/src/fixture_generator.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/pwsync_core.dir/src/fixture_generator.cpp.o -MF CMakeFiles/pwsync_core.dir/src/fixture_generator.cpp.o.d -o CMakeFiles/pwsync_core.dir/src/fixture_generator.cpp.o -c /Users/zld/WorkSpace/pair-wise-workspace/14074/src/fixture_generator.cpp
+
+CMakeFiles/pwsync_core.dir/src/fixture_generator.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/pwsync_core.dir/src/fixture_generator.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /Users/zld/WorkSpace/pair-wise-workspace/14074/src/fixture_generator.cpp > CMakeFiles/pwsync_core.dir/src/fixture_generator.cpp.i
+
+CMakeFiles/pwsync_core.dir/src/fixture_generator.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/pwsync_core.dir/src/fixture_generator.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /Users/zld/WorkSpace/pair-wise-workspace/14074/src/fixture_generator.cpp -o CMakeFiles/pwsync_core.dir/src/fixture_generator.cpp.s
+
 # Object files for target pwsync_core
 pwsync_core_OBJECTS = \
 "CMakeFiles/pwsync_core.dir/src/media_types.cpp.o" \
 "CMakeFiles/pwsync_core.dir/src/clock.cpp.o" \
 "CMakeFiles/pwsync_core.dir/src/synchronizer.cpp.o" \
 "CMakeFiles/pwsync_core.dir/src/audio_resample.cpp.o" \
-"CMakeFiles/pwsync_core.dir/src/demux_decode.cpp.o"
+"CMakeFiles/pwsync_core.dir/src/demux_decode.cpp.o" \
+"CMakeFiles/pwsync_core.dir/src/path_simulator.cpp.o" \
+"CMakeFiles/pwsync_core.dir/src/report.cpp.o" \
+"CMakeFiles/pwsync_core.dir/src/fixture_generator.cpp.o"
 
 # External object files for target pwsync_core
 pwsync_core_EXTERNAL_OBJECTS =
@@ -161,9 +206,12 @@ libpwsync_core.a: CMakeFiles/pwsync_core.dir/src/clock.cpp.o
 libpwsync_core.a: CMakeFiles/pwsync_core.dir/src/synchronizer.cpp.o
 libpwsync_core.a: CMakeFiles/pwsync_core.dir/src/audio_resample.cpp.o
 libpwsync_core.a: CMakeFiles/pwsync_core.dir/src/demux_decode.cpp.o
+libpwsync_core.a: CMakeFiles/pwsync_core.dir/src/path_simulator.cpp.o
+libpwsync_core.a: CMakeFiles/pwsync_core.dir/src/report.cpp.o
+libpwsync_core.a: CMakeFiles/pwsync_core.dir/src/fixture_generator.cpp.o
 libpwsync_core.a: CMakeFiles/pwsync_core.dir/build.make
 libpwsync_core.a: CMakeFiles/pwsync_core.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/Users/zld/WorkSpace/pair-wise-workspace/14074/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_6) "Linking CXX static library libpwsync_core.a"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/Users/zld/WorkSpace/pair-wise-workspace/14074/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_9) "Linking CXX static library libpwsync_core.a"
 	$(CMAKE_COMMAND) -P CMakeFiles/pwsync_core.dir/cmake_clean_target.cmake
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/pwsync_core.dir/link.txt --verbose=$(VERBOSE)
 
