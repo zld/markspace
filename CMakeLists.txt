@@ -27,6 +27,7 @@ add_library(subtitle_core STATIC
     src/style_resolver.cpp
     src/inline_tags.cpp
     src/layout_probe.cpp
+    src/report.cpp
 )
 target_include_directories(subtitle_core PUBLIC src)
 target_link_libraries(subtitle_core PUBLIC
