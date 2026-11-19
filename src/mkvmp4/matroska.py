@@ -138,6 +138,7 @@ class MatroskaFile:
     warnings: list[str] = field(default_factory=list)
     cluster_count: int = 0
     cue_count: int = 0
+    cluster_timecodes_ns: list[int] = field(default_factory=list)
 
     def samples_for(self, track_number: int) -> list[Sample]:
         return [s for s in self.samples if s.track_number == track_number]
@@ -254,6 +255,7 @@ def parse_matroska(stream) -> MatroskaFile:
             ):
                 if child.id == ID_CLUSTER_TIMECODE:
                     cluster_tc_ns = reader.read_uint(child) * scale_ns
+                    cluster_timecodes_ns.append(cluster_tc_ns)
                 elif child.id == ID_SIMPLE_BLOCK:
                     if cluster_tc_ns is None:
                         raise MatroskaError("SimpleBlock before Cluster Timecode")
@@ -297,6 +299,7 @@ def parse_matroska(stream) -> MatroskaFile:
         warnings=warnings,
         cluster_count=cluster_count,
         cue_count=cue_count,
+        cluster_timecodes_ns=cluster_timecodes_ns,
     )
 
 
