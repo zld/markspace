@@ -17,7 +17,7 @@ from .automation import AutomationCurve, db_to_linear, fade_amplitude
 from .errors import ConfigError, ProcessingError
 from .io import WavSource
 from .model import Project, Track
-from .resample import output_length
+from .resample import blend_linear, interpolation_indices, output_length
 
 
 def loop_map(timeline: np.ndarray, project: Project) -> np.ndarray:
@@ -84,15 +84,17 @@ class TrackRuntime:
         if count == 0:
             return np.empty((0, self.source.channels), dtype=np.float64)
         source_pos = self._source_positions(output_positions, target_rate)
-        left = np.floor(source_pos).astype(np.int64)
-        np.clip(left, 0, self.source.frames - 1, out=left)
-        right = np.minimum(left + 1, self.source.frames - 1)
-        fraction = source_pos - left
+        source_pos = np.minimum(source_pos, float(self.source.frames - 1))
+        left, right, fraction = interpolation_indices(
+            source_pos,
+            self.source.frames,
+            location=f"track[{self.track.id}]",
+        )
         low, high = int(left.min()), int(right.max())
         chunk = self.source.read(
             low, high - low + 1, block_start=block_start, block_frames=block_frames
         )
-        data = chunk[left - low] * (1.0 - fraction)[:, None] + chunk[right - low] * fraction[:, None]
+        data = blend_linear(chunk, left - low, right - low, fraction)
         if self._fade_in > 0 or self._fade_out > 0:
             ratio = target_rate / self.source.sample_rate
             fade_in = int(np.floor(self._fade_in * ratio + 0.5))
