@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import sys
 from dataclasses import asdict, dataclass
@@ -63,6 +64,8 @@ class ScanSettings:
             raise UsageError(str(exc)) from exc
         if self.pre_roll < 0 or self.post_roll < 0:
             raise UsageError("pre_roll and post_roll must be non-negative")
+        if not math.isfinite(self.min_event_ms) or self.min_event_ms < 0:
+            raise UsageError("min_event_ms must be a non-negative number")
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -301,6 +304,8 @@ def _run_scan(args: argparse.Namespace) -> int:
                 print(f"error: {exc}", file=sys.stderr)
                 return 2
         silence_total_ms = store.silence_ms(run_id)
+    if not args.quiet:
+        _report_sample_rates(inputs)
     files_ok = sum(1 for outcome in outcomes if outcome.ok)
     files_failed = len(outcomes) - files_ok
     segments = sum(outcome.segment_count for outcome in outcomes)
@@ -310,6 +315,27 @@ def _run_scan(args: argparse.Namespace) -> int:
     print(f"segments={segments}")
     print(f"silence_total_ms={int(round(silence_total_ms))}")
     return 0 if files_failed == 0 else 1
+
+
+def _report_sample_rates(inputs: list[Path]) -> None:
+    """Warn when a batch mixes sample rates; files are still independent."""
+    rates: dict[int, list[str]] = {}
+    for path in inputs:
+        try:
+            info = WavReader(path).info
+        except WavError:
+            continue
+        rates.setdefault(info.sample_rate, []).append(path.name)
+    if len(rates) > 1:
+        detail = ", ".join(
+            f"{rate} Hz ({len(names)} file{'s' if len(names) != 1 else ''})"
+            for rate, names in sorted(rates.items())
+        )
+        print(
+            f"note: batch mixes sample rates [{detail}]; "
+            "each file is analyzed at its own rate",
+            file=sys.stderr,
+        )
 
 
 def _run_export(args: argparse.Namespace) -> int:
@@ -334,6 +360,7 @@ def _run_export(args: argparse.Namespace) -> int:
             print(f"error: {exc}", file=sys.stderr)
             return 2
     print(f"run_id={run_id}")
+    print(f"params={json.dumps(meta['params'], sort_keys=True)}")
     print(f"segments={len(rows)}")
     print(f"out={args.out}")
     return 0

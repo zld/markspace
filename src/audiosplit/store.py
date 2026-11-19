@@ -357,7 +357,7 @@ class Store:
         """Return segment rows ordered stably by path then ordinal."""
         try:
             rows = self.connection.execute(
-                "SELECT j.id AS job_id, j.input_path, j.file_hash, j.sample_rate, "
+                "SELECT j.run_id, j.id AS job_id, j.input_path, j.file_hash, j.sample_rate, "
                 "j.channels, j.total_samples, j.segment_count, s.ordinal, "
                 "s.start_sample, s.end_sample, s.peak, s.rms, s.noise_floor_db, "
                 "s.duration_ms FROM segments s "

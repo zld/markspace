@@ -179,6 +179,21 @@ class FrameEnergyDetector:
         if not self._seeded:
             self._seed_and_flush()
         self._close_active(total_samples)
+        kept: list[DetectedEvent] = []
+        for event in self._events:
+            end = min(event.end_sample, total_samples)
+            if event.start_sample < end:
+                kept.append(
+                    DetectedEvent(
+                        event.start_sample,
+                        end,
+                        event.peak,
+                        event.rms,
+                        event.noise_floor_db,
+                        event.frame_count,
+                    )
+                )
+        self._events = kept
         return DetectionResult(
             events=self._events,
             frame_count=self._next_index,
