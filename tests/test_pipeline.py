@@ -107,6 +107,13 @@ class WavValidationTests(PipelineFixture):
         self.assertIn("truncated", str(ctx.exception))
         self.assertIn(str(cut), str(ctx.exception))
 
+    def test_trailing_bytes_outside_riff_are_ignored(self) -> None:
+        good = self.make_file("good.wav", np.zeros(RATE, dtype=np.float32))
+        padded = self.audio / "padded.wav"
+        padded.write_bytes(good.read_bytes() + b"\x00ID3junk-trailer")
+        reader = WavReader(padded)
+        self.assertEqual(reader.info.total_samples, RATE)
+
     def test_iter_blocks_is_bounded(self) -> None:
         samples = np.zeros(RATE * 3, dtype=np.float32)
         path = self.make_file("long.wav", samples)

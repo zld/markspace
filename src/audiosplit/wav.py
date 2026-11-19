@@ -64,13 +64,15 @@ def _parse_header(handle: BinaryIO, path: str, file_size: int) -> WavInfo:
         raise WavError(path, "not a RIFF/WAVE file")
     if riff_size < 4:
         raise WavError(path, f"invalid RIFF size {riff_size}")
-
+    # Trust the declared RIFF extent so trailing non-RIFF bytes are ignored,
+    # but never read past the physical file.
+    limit = min(file_size, 8 + riff_size)
     fmt_data: bytes | None = None
     data_offset = 0
     data_size = 0
     offset = _HEADER.size
-    while offset < file_size:
-        if offset + _CHUNK_HEADER.size > file_size:
+    while offset < limit:
+        if offset + _CHUNK_HEADER.size > limit:
             raise WavError(path, f"truncated chunk header at byte {offset}")
         handle.seek(offset)
         chunk_id, chunk_size = _CHUNK_HEADER.unpack(
