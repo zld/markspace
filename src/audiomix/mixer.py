@@ -22,26 +22,28 @@ Per-track processing order (fixed, shared by all drivers):
 2. static gain in dB converted to linear amplitude
 3. automation curve sampled at the current project frame (absolute frames)
 4. pan law applied to the project layout
-5. clipping policy per track, then accumulation into the bus
-6. bus clipping policy, then accumulation into the master
+5. accumulation into the bus
+6. the clip policy applied once to the final master
+
+The clip policy is deliberately applied only at the master: track and bus
+stats then report where clipping really came from, instead of hiding it with
+an early clamp. Under ``limit`` the master is clamped to +-1.0, so its
+``clip_count`` is zero while track and bus counts still expose the overs.
 
 Statistics are accumulated on the exact samples that are written, excluding
-look-ahead padding, so ``valid_frames`` describes real output only.
+padding, so ``valid_frames`` describes real output only.
 """
 
 from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Iterable
-
 import numpy as np
 import soundfile as sf
 
-from .automation import AutomationCurve
 from .errors import TrackError
 from .model import LoopRegion, Session, TrackSpec
-from .resample import output_frames, resample_linear
+from .resample import resample_linear
 
 
 @dataclass(frozen=True)
@@ -71,14 +73,12 @@ def db_to_gain(db: float) -> float:
 
 
 def pan_gains(pan: float) -> tuple[float, float]:
-    """Constant-power stereo pan, ``pan`` in [-1, 1]. Mono returns (1, 1)."""
+    """Constant-power stereo gains for ``pan`` in [-1, 1] (L=cos, R=sin)."""
     angle = (pan + 1.0) * math.pi / 4.0
     return math.cos(angle), math.sin(angle)
 
 
-def map_source_channels(
-    data: np.ndarray, track: TrackSpec, layout: int
-) -> np.ndarray:
+def map_source_channels(data: np.ndarray, track: TrackSpec, layout: int) -> np.ndarray:
     """Expand ``data`` (frames x source_channels) to the project layout."""
     source_channels = int(data.shape[1])
     mapping = track.channel_map
@@ -97,10 +97,6 @@ def map_source_channels(
         return np.array(data, dtype=np.float64, copy=True)
     if source_channels == 1:
         return np.repeat(data[:, :1], layout, axis=1)
-    if source_channels == 2 and layout == 1:
-        raise TrackError(
-            track.name, "a stereo source needs a stereo project layout or an explicit channel_map"
-        )
     raise TrackError(
         track.name,
         f"cannot map {source_channels} source channel(s) onto a {layout}-channel project "
@@ -128,13 +124,6 @@ class PreparedTrack:
     source_rate: int
     static_gain: float
 
-    def describe(self) -> str:
-        return (
-            f"{self.spec.name}: {self.source.shape[0]} source frame(s) "
-            f"@ {self.source_rate} Hz"
-        )
-
-
 def load_track(spec: TrackSpec, project_rate: int) -> PreparedTrack:
     """Load and resample one track, reporting every failure with its name."""
     try:
@@ -143,6 +132,8 @@ def load_track(spec: TrackSpec, project_rate: int) -> PreparedTrack:
         raise TrackError(spec.name, f"cannot read audio: {exc}") from exc
     if rate <= 0:
         raise TrackError(spec.name, f"invalid sample rate {rate}")
+    if data.shape[0] == 0:
+        raise TrackError(spec.name, "audio file contains no frames")
     if data.shape[1] == 0:
         raise TrackError(spec.name, "audio file has no channels")
     if not np.all(np.isfinite(data)):
@@ -252,7 +243,5 @@ class MixGraph:
         gains = track.spec.automation.gain_at(frames[valid])
         sampled *= gains[:, None]
         sampled = apply_pan(sampled, track.spec.pan)
-        if self.clip.limit:
-            sampled = np.clip(sampled, -1.0, 1.0)
         block[valid] = sampled
         return block

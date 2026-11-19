@@ -68,7 +68,11 @@ def build_report(
 
 
 def write_json(report: Mapping[str, Any], path: Path) -> None:
-    """Write deterministic, human-diffable JSON (sorted keys, no NaN)."""
+    """Write deterministic, human-diffable JSON (sorted keys, no NaN).
+
+    ``path`` is a staged temp file chosen by :class:`ArtifactSet`; committing
+    it into place is the caller's responsibility.
+    """
     try:
         text = json.dumps(report, indent=2, sort_keys=True, allow_nan=False)
     except (TypeError, ValueError) as exc:
