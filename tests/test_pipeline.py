@@ -10,7 +10,8 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
-from mixforge.model import load_manifest
+from mixforge.automation import evaluate
+from mixforge.model import AutomationCurve, AutomationNode, load_manifest
 from mixforge.render import render, render_offline
 from mixforge.stream import render_stream
 
@@ -161,6 +162,19 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(result.bus_post_limiter.peak, 0.0)
             self.assertEqual(result.bus_post_limiter.rms, 0.0)
             self.assertEqual(result.bus_post_limiter.clips, 0)
+
+    def test_hold_and_linear_interpolation_with_endpoint_hold(self) -> None:
+        nodes = (
+            AutomationNode(0.0, 1.0),
+            AutomationNode(1.0, 0.0),
+        )
+        times = np.array([-1.0, 0.0, 0.5, 1.0, 2.0])
+        linear = evaluate(AutomationCurve(nodes, "linear"), times)
+        np.testing.assert_allclose(
+            linear, [1.0, 1.0, 0.5, 0.0, 0.0], atol=1e-12
+        )
+        hold = evaluate(AutomationCurve(nodes, "hold"), times)
+        np.testing.assert_allclose(hold, [1.0, 1.0, 1.0, 0.0, 0.0])
 
 
 if __name__ == "__main__":
