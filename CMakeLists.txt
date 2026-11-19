@@ -20,3 +20,12 @@ add_library(h264core STATIC
     src/access_unit.cpp
 )
 target_include_directories(h264core PUBLIC include)
+
+# Deterministic fixture generator; does not link the parsing library so the
+# test stream stays an independent encoder-side construction.
+add_executable(generate_fixture
+    tests/generate_fixture.cpp
+    tests/bit_writer.cpp
+    tests/fixture_stream.cpp
+)
+target_include_directories(generate_fixture PRIVATE tests)
