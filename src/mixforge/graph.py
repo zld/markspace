@@ -47,7 +47,6 @@ class TrackRuntime:
     curve: AutomationCurve | None
     _fade_in: int = 0
     _fade_out: int = 0
-    _fade_scale: float = 1.0
 
     def close(self) -> None:
         self.source.close()
@@ -97,13 +96,11 @@ class TrackRuntime:
         )
         data = blend_linear(chunk, left - low, right - low, fraction)
         if self._fade_in > 0 or self._fade_out > 0:
-            # Rounding the converted fade lengths independently could push
-            # their sum one frame past the clip; clamp deterministically.
-            fade_in = min(int(np.floor(self._fade_in * self._fade_scale + 0.5)), self.clip_frames)
-            fade_out = min(
-                int(np.floor(self._fade_out * self._fade_scale + 0.5)),
-                self.clip_frames - fade_in,
-            )
+            # Fade lengths are authored in project (output) frames, so no
+            # rate conversion happens here.  Clamp only so the two ramps can
+            # never overlap when they exactly fill the clip.
+            fade_in = min(self._fade_in, self.clip_frames)
+            fade_out = min(self._fade_out, self.clip_frames - fade_in)
             data = data * fade_amplitude(
                 self.clip_frames,
                 fade_in,
@@ -189,15 +186,23 @@ class MixGraph:
             np.empty(0, dtype=np.int64),
             location=f"track[{track.id}].fade",
         )
-        ratio = self.project.sample_rate / source.sample_rate
+        if track.fade.in_frames + track.fade.out_frames > clip_frames:
+            raise ConfigError(
+                "fade durations exceed the resampled clip length",
+                location=f"track[{track.id}].fade",
+                context={
+                    "clip_frames": clip_frames,
+                    "fade_in": track.fade.in_frames,
+                    "fade_out": track.fade.out_frames,
+                },
+            )
         return TrackRuntime(
             track=track,
             source=source,
             clip_frames=clip_frames,
             curve=curve,
-            _fade_in=int(np.floor(track.fade.in_frames * ratio + 0.5)),
-            _fade_out=int(np.floor(track.fade.out_frames * ratio + 0.5)),
-            _fade_scale=ratio,
+            _fade_in=track.fade.in_frames,
+            _fade_out=track.fade.out_frames,
         )
 
     def close(self) -> None:

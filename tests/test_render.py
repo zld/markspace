@@ -7,7 +7,7 @@ import pytest
 
 from mixforge.automation import AutomationCurve, db_to_linear, fade_amplitude
 from mixforge.errors import ConfigError
-from mixforge.io import read_wav
+from mixforge.io import read_wav, write_wav
 from mixforge.model import AutomationSpec, GainPoint
 from mixforge.render import render_offline
 from mixforge.resample import output_length, resample_audio
@@ -97,15 +97,25 @@ def test_resampled_track_fade_spans_the_whole_clip(fixture_dir):
     assert samples[9_600 - 481] == pytest.approx(0.5)
     assert samples[9_600 - 1] == pytest.approx(0.0)
     np.testing.assert_array_equal(samples[9_600:], 0.0)
-    # A shrinking source still fades over the resampled clip's own length.
-    spec["sample_rate"] = 24_000
-    spec["duration_frames"] = 2_000
-    project = make_project(fixture_dir.parent, spec)
-    audio, _ = render_offline(project, block_size=64)
-    assert audio.shape == (2_000, 1)
-    assert audio[0, 0] == pytest.approx(0.0)
-    assert audio[959, 0] == pytest.approx(0.5)
-    assert audio[1_919, 0] == pytest.approx(0.5)
+    # A resampled clip must not rescale a fade authored in project frames:
+    # the 44.1 kHz fixture's 100-frame fade still lasts exactly 100 frames.
+    write_wav(fixture_dir / "dc44.wav", np.full((44_100, 1), 0.5), 44_100)
+    resampled_spec = {
+        "sample_rate": 48_000,
+        "channels": 1,
+        "duration_frames": 48_200,
+        "tracks": [
+            {"id": "dc", "path": "assets/dc44.wav", "fade": {"in_frames": 100}}
+        ],
+        "master": {"limiter": False},
+    }
+    resampled_project = make_project(fixture_dir.parent, resampled_spec)
+    resampled_audio, _ = render_offline(resampled_project, block_size=64)
+    values = resampled_audio[:, 0]
+    assert values[0] == pytest.approx(0.0)
+    assert values[99] == pytest.approx(0.5 * 99 / 100)
+    assert values[100] == pytest.approx(0.5)
+    assert values[300] == pytest.approx(0.5)
 
 
 def test_resample_lengths_and_special_inputs():
