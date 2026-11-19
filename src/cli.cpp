@@ -134,8 +134,11 @@ bool validate_options(const Options& options, std::string* error) {
   if (renders && !options.path_scalar && !options.path_parallel) {
     return fail_with(error, "no render path selected; use --compare");
   }
-  if (!options.output.empty() && options.command == "parse") {
-    return fail_with(error, "parse does not write rendered images");
+  if (!options.output.empty() &&
+      (options.command == "parse" || options.command == "batch")) {
+    return fail_with(error, options.command == "parse"
+                                ? "parse does not write rendered images"
+                                : "batch writes into --out-dir, not --output");
   }
   if (options.command == "demo") {
     if (options.generate_fixtures && options.output.empty()) {
@@ -217,7 +220,6 @@ bool parse_options(int argc, char** argv, Options* options, std::string* error) 
     } else if (flag == "--output") {
       if (!need()) return false;
       options->output = value;
-      options->write_rendered = true;
     } else if (flag == "--out-dir") {
       if (!need()) return false;
       options->out_dir = value;
@@ -280,6 +282,7 @@ std::string usage_text() {
   out << "  lutcheck batch  --inputs A.ppm,B.ppm --out-dir DIR --lut LUT.cube\n";
   out << "                  [--input-space S] [--lut-space S] [--threads N]\n";
   out << "                  [--histogram-bins N] [--json]\n";
+  out << "                  (each input is rendered to DIR/render_N.ppm)\n";
   out << "  lutcheck parse  --lut LUT.cube [--json]\n\n";
   out << "Color spaces: " << known_color_spaces() << "\n";
   out << "Limits: grid size [" << kMinGridSize << ", " << kMaxGridSize
@@ -393,12 +396,10 @@ int run_batch(const Options& options) {
     if (!std::cout) {
       fail(ExitCode::Output, "cannot write batch report");
     }
-    if (options.write_rendered) {
-      // Each item is written atomically; a failure aborts the batch before any
-      // later item starts, so no partially written file is ever left behind.
-      const std::string name = "render_" + std::to_string(index) + ".ppm";
-      write_ppm_atomic(join_path(options.out_dir, name), analysis.rendered);
-    }
+    // Each item is written atomically; a failure aborts the batch before any
+    // later item starts, so no half-written file is ever left behind.
+    const std::string name = "render_" + std::to_string(index) + ".ppm";
+    write_ppm_atomic(join_path(options.out_dir, name), analysis.rendered);
     if (analysis.deviation_exceeded) {
       worst = static_cast<int>(ExitCode::Deviation);
     }
