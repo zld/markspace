@@ -61,6 +61,14 @@ class TraceTests(unittest.TestCase):
         quiet = generate_trace(100, seed=5, loss_probability=0.0)
         self.assertFalse(any(sample.loss_burst for sample in quiet))
 
+    def test_congestion_episode_is_sustained_and_bounded(self) -> None:
+        trace = generate_trace(120, seed=41)
+        base = sum(sample.throughput_kbps for sample in trace) / len(trace)
+        window = [sample.throughput_kbps for sample in trace[36:52]]
+        self.assertLess(min(window), base * 0.3)
+        quiet = generate_trace(4, seed=41)
+        self.assertEqual(len(quiet), 4)
+
     def test_zero_and_negative_segments_rejected(self) -> None:
         for value in (0, -1):
             with self.assertRaises(ConfigError):
