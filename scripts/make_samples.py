@@ -150,3 +150,94 @@ def mdat_payload(size: int, tag: int) -> bytes:
         seed = (seed * 1103515245 + 12345) & 0xFFFFFFFF
         out += seed.to_bytes(4, "little")
     return bytes(out[:size])
+
+
+# ---------------------------------------------------------------------------
+# MP4 assembly
+# ---------------------------------------------------------------------------
+
+
+def build_mp4(path: Path, *, movie_timescale: int, tracks: list[dict],
+              mdat_size: int | None = None, brand: bytes = b"isom",
+              edit_list: bool = False) -> None:
+    """Write a minimal but structurally valid MP4.
+
+    Each track dict supplies: kind ('video'|'audio'), timescale, duration,
+    track_id, plus width/height or sample_rate/channels, and optionally
+    start_time (edit list media_time, in track timescale units).
+
+    ``edit_list`` writes a real edts/elst that shifts presentation later by
+    ``start_time`` while keeping media_time at zero, matching how editors
+    express a delayed track.
+    """
+    if mdat_size is None:
+        # Roughly the payload a clip of this duration would carry.
+        mdat_size = max(1024, min(64 * 1024,
+                                  int(max(t["duration"] / t["timescale"]
+                                          for t in tracks) * 4096)))
+    ftyp = box(b"ftyp", brand + struct.pack(">I", 512) +
+               b"isom" + b"iso2" + b"mp41")
+    # mdat sits after ftyp + moov. moov size depends on its contents but not
+    # on the chunk offset value width, so build once to measure, then patch
+    # the offset into the single stco entry.
+    def assemble(chunk_offset: int) -> bytes:
+        traks = []
+        for t in tracks:
+            if t["kind"] == "video":
+                entry = visual_entry(t["width"], t["height"])
+                handler = b"vide"
+                volume = 0
+                w, h = t["width"], t["height"]
+            else:
+                entry = audio_entry(t["sample_rate"], t["channels"])
+                handler = b"soun"
+                volume = 0x0100
+                w = h = 0
+            stbl = sample_table(entry, sample_count=1,
+                                sample_size=min(mdat_size, 1024),
+                                chunk_offset=chunk_offset)
+            minf = box(b"minf",
+                       full_box(b"vmhd" if handler == b"vide" else b"smhd",
+                                0, 1, b"\x00" * (8 if handler == b"vide" else 4))
+                       + dinf() + stbl)
+            mdia = box(b"mdia", mdhd(t["timescale"], t["duration"],
+                                     t.get("language", "und")) +
+                       hdlr(handler, "VideoHandler" if handler == b"vide"
+                            else "SoundHandler") + minf)
+            header = tkhd(t["track_id"], 0, w, h, volume)
+            if edit_list and t.get("start_time"):
+                header += elst(0, t["duration"], movie_timescale,
+                               shift=t["start_time"])
+            traks.append(box(b"trak", header + mdia))
+        movie_duration = max(
+            int(round(movie_timescale * t["duration"] / t["timescale"]))
+            for t in tracks)
+        return box(b"moov", mvhd(movie_timescale, movie_duration)
+                   + b"".join(traks))
+
+    probe = assemble(0)
+    mdat_offset = len(ftyp) + len(probe) + 8
+    moov = assemble(mdat_offset)
+    if len(moov) != len(probe):  # offsets are fixed width; this must hold
+        raise AssertionError("moov size changed when patching chunk offset")
+    mdat = box(b"mdat", mdat_payload(mdat_size, len(tracks)))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(ftyp + moov + mdat)
+
+
+def riff_chunk(fourcc: bytes, payload: bytes) -> bytes:
+    pad = b"\x00" if len(payload) & 1 else b""
+    return fourcc + struct.pack("<I", len(payload)) + payload + pad
+
+
+def build_wav(path: Path, *, sample_rate: int, channels: int, bits: int,
+              seconds: float, tag: int = 1) -> None:
+    block_align = channels * bits // 8
+    frames = int(round(seconds * sample_rate))
+    data = bytes(frames * block_align)
+    fmt = struct.pack("<HHIIHH", tag, channels, sample_rate,
+                      sample_rate * block_align, block_align, bits)
+    chunks = riff_chunk(b"fmt ", fmt) + riff_chunk(b"data", data)
+    riff = b"RIFF" + struct.pack("<I", 4 + len(chunks)) + b"WAVE" + chunks
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(riff)
