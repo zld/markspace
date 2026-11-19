@@ -626,3 +626,244 @@ def _parse_edts(reader: Reader, box: BoxHeader, ctx: SniffContext
                      "elst contains only empty edits; track never presents",
                      offset=child.start, path=child.path)
     return presentation_start, media_time
+
+
+def _parse_mdia(reader: Reader, box: BoxHeader, ctx: SniffContext):
+    timescale = None
+    duration = None
+    hdlr_type = None
+    hdlr_name = None
+    language = None
+    stsd_info: dict = {}
+    for child in iter_boxes(reader, box.payload_start, box.end, ctx,
+                            box.path, 3):
+        if child.fourcc == b"mdhd":
+            timescale, duration, language = _parse_mdhd(reader, child, ctx)
+        elif child.fourcc == b"hdlr":
+            hdlr_type, hdlr_name = _parse_hdlr(reader, child, ctx)
+        elif child.fourcc == b"minf":
+            stsd_info = _parse_minf(reader, child, ctx)
+        elif child.fourcc in CONTAINER_TYPES:
+            raise SniffError("unexpected_container",
+                             f"unexpected container {child.name} inside mdia",
+                             offset=child.start, path=child.path)
+        elif child.fourcc not in IGNORABLE_TYPES:
+            ctx.warn("unknown_box", f"unhandled box {child.name!r} inside mdia",
+                     offset=child.start, path=child.path)
+    stsd_info["language"] = language or hdlr_name
+    return timescale, duration, hdlr_type, hdlr_name, stsd_info
+
+
+def _parse_mdhd(reader: Reader, box: BoxHeader, ctx: SniffContext
+                ) -> tuple[int | None, int | None, str | None]:
+    _require_payload(box, 20, "mdhd")
+    data = _mp4_payload(reader, box)
+    version, _flags, body = _full_box(data, box.path)
+    if version == 1:
+        if len(body) < 28:
+            raise SniffError("truncated_box", "mdhd v1 is truncated",
+                             offset=box.start, path=box.path)
+        ts = int.from_bytes(body[16:20], "big")
+        dur = int.from_bytes(body[20:28], "big")
+        lang_code = int.from_bytes(body[28:30], "big") if len(body) >= 30 else 0
+    else:
+        if len(body) < 16:
+            raise SniffError("truncated_box", "mdhd v0 is truncated",
+                             offset=box.start, path=box.path)
+        ts = int.from_bytes(body[8:12], "big")
+        dur = int.from_bytes(body[12:16], "big")
+        lang_code = int.from_bytes(body[16:18], "big") if len(body) >= 18 else 0
+    if ts == 0:
+        ctx.warn("zero_timescale", "mdhd timescale is zero",
+                 offset=box.start, path=box.path)
+        ts = None
+    if dur in (0xFFFFFFFF, 0xFFFFFFFFFFFFFFFF):
+        ctx.warn("unknown_duration", "mdhd duration is the unknown sentinel",
+                 offset=box.start, path=box.path)
+        dur = None
+    return ts, dur, _decode_language(lang_code)
+
+
+def _parse_hdlr(reader: Reader, box: BoxHeader, ctx: SniffContext
+                ) -> tuple[str | None, str | None]:
+    _require_payload(box, 12, "hdlr")
+    data = _mp4_payload(reader, box)
+    handler_bytes = data[8:12]
+    kind = HANDLER_KINDS.get(handler_bytes)
+    if kind is None:
+        ctx.warn("unknown_handler",
+                 f"unsupported handler type {fourcc_str(handler_bytes)!r}",
+                 offset=box.start, path=box.path)
+        kind = fourcc_str(handler_bytes)
+    name = None
+    if len(data) >= 24:
+        name_bytes = data[24:].split(b"\x00", 1)[0]
+        if name_bytes:
+            name = name_bytes.decode("utf-8", "replace")
+    return kind, name
+
+
+def _parse_minf(reader: Reader, box: BoxHeader, ctx: SniffContext) -> dict:
+    info: dict = {}
+    for child in iter_boxes(reader, box.payload_start, box.end, ctx,
+                            box.path, 4):
+        if child.fourcc == b"stbl":
+            info = _parse_stbl(reader, child, ctx)
+        elif child.fourcc in CONTAINER_TYPES:
+            continue  # dinf
+        elif child.fourcc not in IGNORABLE_TYPES:
+            ctx.warn("unknown_box", f"unhandled box {child.name!r} inside minf",
+                     offset=child.start, path=child.path)
+    return info
+
+
+def _parse_stbl(reader: Reader, box: BoxHeader, ctx: SniffContext) -> dict:
+    info: dict = {}
+    for child in iter_boxes(reader, box.payload_start, box.end, ctx,
+                            box.path, 5):
+        if child.fourcc == b"stsd":
+            info.update(_parse_stsd(reader, child, ctx))
+        elif child.fourcc not in IGNORABLE_TYPES:
+            ctx.warn("unknown_box", f"unhandled box {child.name!r} inside stbl",
+                     offset=child.start, path=child.path)
+    return info
+
+
+def _parse_stsd(reader: Reader, box: BoxHeader, ctx: SniffContext) -> dict:
+    _require_payload(box, 8, "stsd")
+    data = _mp4_payload(reader, box)
+    _version, _flags, body = _full_box(data, box.path)
+    entry_count = int.from_bytes(body[0:4], "big") if len(body) >= 4 else 0
+    if entry_count > MAX_SAMPLE_ENTRIES:
+        raise SniffError("sample_entry_limit",
+                         f"stsd declares {entry_count} entries (limit {MAX_SAMPLE_ENTRIES})",
+                         offset=box.start, path=box.path)
+    result: dict = {}
+    pos = 4
+    for index in range(entry_count):
+        if pos + 8 > len(body):
+            ctx.warn("truncated_box", "stsd entry table ends early",
+                     offset=box.start, path=box.path)
+            break
+        size = int.from_bytes(body[pos:pos + 4], "big")
+        fourcc = body[pos + 4:pos + 8]
+        if size < 8 or pos + size > len(body):
+            ctx.warn("invalid_size",
+                     f"stsd entry {fourcc_str(fourcc)!r} has size {size} "
+                     f"at payload {pos}", offset=box.start, path=box.path)
+            break
+        payload = body[pos + 8:pos + size]
+        display = fourcc_str(fourcc)
+        codec = CODEC_NAMES.get(fourcc)
+        info = _parse_sample_entry(fourcc, payload, box, display, ctx)
+        if index == 0:
+            result = info
+            result["codec_raw"] = display
+            if codec:
+                result["codec"] = codec
+            else:
+                result["codec"] = display
+                result.setdefault("reasons", {})["codec"] = (
+                    f"sample entry {display!r} is not in the supported codec table")
+                ctx.warn("unsupported_codec",
+                         f"sample entry {display!r} is not a known codec",
+                         offset=box.start, path=box.path)
+        elif info.get("codec_raw") != display:
+            ctx.warn("mixed_sample_entries",
+                     f"stsd entry {index} is {display!r}, differing from first entry",
+                     offset=box.start, path=box.path)
+        pos += size
+    return result
+
+
+def _parse_sample_entry(fourcc: bytes, payload: bytes, box: BoxHeader,
+                        display: str, ctx: SniffContext) -> dict:
+    info: dict = {}
+    reasons: dict[str, str] = {}
+    if fourcc in VIDEO_CODECS:
+        # VisualSampleEntry: 6 reserved + 2 data_ref_index, then 16 bytes
+        # pre_defined/reserved, width(2) height(2), resolutions, etc.
+        if len(payload) < 78:
+            ctx.warn("truncated_sample_entry",
+                     f"video sample entry {display!r} has {len(payload)} bytes, need 78",
+                     offset=box.start, path=box.path)
+            return {"reasons": {"width": "video sample entry truncated",
+                                "height": "video sample entry truncated"}}
+        info["width"] = int.from_bytes(payload[24:26], "big")
+        info["height"] = int.from_bytes(payload[26:28], "big")
+        info["bit_depth"] = int.from_bytes(payload[74:76], "big")
+    elif fourcc in AUDIO_CODECS:
+        if len(payload) < 28:
+            ctx.warn("truncated_sample_entry",
+                     f"audio sample entry {display!r} has {len(payload)} bytes, need 28",
+                     offset=box.start, path=box.path)
+            return {"reasons": {"sample_rate": "audio sample entry truncated",
+                                "channels": "audio sample entry truncated"}}
+        channels = int.from_bytes(payload[16:18], "big")
+        bit_depth = int.from_bytes(payload[18:20], "big")
+        rate_fixed = int.from_bytes(payload[24:28], "big")
+        info["channels"] = channels
+        info["bit_depth"] = bit_depth
+        rate = round(rate_fixed / 65536)
+        if rate > 0:
+            info["sample_rate"] = rate
+        else:
+            reasons["sample_rate"] = "sample entry stores rate 0; check esds"
+        if fourcc == b"mp4a":
+            esds = _find_esds(payload[28:], box, ctx)
+            if esds:
+                oti, rate2 = esds
+                info["codec"] = ESDS_OBJECT_TYPES.get(oti, f"mpeg4-audio-0x{oti:02x}")
+                if info.get("sample_rate") is None and rate2:
+                    info["sample_rate"] = rate2
+    return {**info, "reasons": reasons}
+
+
+def _find_esds(payload: bytes, box: BoxHeader, ctx: SniffContext
+               ) -> tuple[int, int | None] | None:
+    """Walk child boxes of an audio sample entry to find esds.
+
+    Returns (objectTypeIndication, average bitrate sample rate hint) or None.
+    """
+    pos = 0
+    while pos + 8 <= len(payload):
+        size = int.from_bytes(payload[pos:pos + 4], "big")
+        fourcc = payload[pos + 4:pos + 8]
+        if size < 8 or pos + size > len(payload):
+            break
+        if fourcc == b"esds":
+            body = payload[pos + 8:pos + size]
+            return _parse_esds(body, box)
+        pos += size
+    return None
+
+
+def _parse_esds(body: bytes, box: BoxHeader) -> tuple[int, int | None] | None:
+    if len(body) < 4:
+        return None
+    data = body[4:]  # skip full-box header
+    pos = 0
+    oti = None
+    # ES_Descriptor tag 0x03, DecoderConfigDescriptor 0x04, DecSpecificInfo 0x05
+    while pos < len(data):
+        tag = data[pos]
+        pos += 1
+        length = 0
+        for _ in range(4):
+            if pos >= len(data):
+                return None
+            b = data[pos]
+            pos += 1
+            length = (length << 7) | (b & 0x7F)
+            if not b & 0x80:
+                break
+        if pos + length > len(data):
+            return None
+        if tag == 0x04 and length >= 13:
+            oti = data[pos]
+            max_bitrate = int.from_bytes(data[pos + 5:pos + 9], "big")
+            avg_bitrate = int.from_bytes(data[pos + 9:pos + 13], "big")
+            rate_hint = avg_bitrate if avg_bitrate else None
+            return (oti, rate_hint) if oti is not None else None
+        pos += length
+    return None
