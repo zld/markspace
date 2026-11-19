@@ -867,3 +867,210 @@ def _parse_esds(body: bytes, box: BoxHeader) -> tuple[int, int | None] | None:
             return (oti, rate_hint) if oti is not None else None
         pos += length
     return None
+
+
+# ---------------------------------------------------------------------------
+# RIFF / WAVE
+# ---------------------------------------------------------------------------
+
+WAV_FORMAT_NAMES = {
+    0x0001: "pcm_s16le", 0x0003: "pcm_f32", 0x0006: "pcm_alaw",
+    0x0007: "pcm_mulaw", 0xFFFE: "pcm_extensible",
+}
+WAV_SUPPORTED_TAGS = {0x0001, 0x0003, 0x0006, 0x0007, 0xFFFE}
+
+
+def sniff_wav(reader: Reader, ctx: SniffContext) -> SniffResult:
+    head = reader.read_at(0, 12, path="")
+    if head[0:4] != b"RIFF" or head[8:12] != b"WAVE":
+        raise SniffError("bad_riff", "missing RIFF/WAVE signature", offset=0, path="")
+    riff_size = int.from_bytes(head[4:8], "little")
+    declared_end = 8 + riff_size
+    warnings = ctx.warnings
+    if declared_end > reader.size:
+        warnings.append(Warning(
+            "riff_size_overflow",
+            f"RIFF declares {riff_size} bytes but file has {reader.size - 8}; "
+            "using actual file size",
+            offset=4, path="riff"))
+        riff_end = reader.size
+    elif declared_end < reader.size:
+        ctx.warn("trailing_bytes",
+                 f"{reader.size - declared_end} bytes follow the declared RIFF chunk",
+                 offset=declared_end, path="riff")
+        riff_end = declared_end
+    else:
+        riff_end = declared_end
+
+    fmt: dict | None = None
+    data_size: int | None = None
+    chunk_count = 0
+    pos = 12
+    while pos < riff_end:
+        if riff_end - pos < 8:
+            raise SniffError("truncated_chunk",
+                             "fewer than 8 bytes remain for a chunk header",
+                             offset=pos, path="riff")
+        chunk_count += 1
+        if chunk_count > MAX_WAV_CHUNKS:
+            raise SniffError("chunk_limit", f"more than {MAX_WAV_CHUNKS} chunks",
+                             offset=pos, path="riff")
+        fourcc = reader.read_at(pos, 4, path="riff")
+        size = int.from_bytes(reader.read_at(pos + 4, 4, path="riff"), "little")
+        body_start = pos + 8
+        body_end = body_start + size
+        name = fourcc_str(fourcc)
+        pad = size & 1
+        if body_end > riff_end:
+            raise SniffError("out_of_bounds",
+                             f"chunk {name!r} ends at {body_end}, past RIFF end {riff_end}",
+                             offset=pos, path=f"riff/{name}")
+        next_pos = body_end + pad
+        if next_pos > riff_end:
+            ctx.warn("missing_pad",
+                     f"chunk {name!r} needs a pad byte past the RIFF end",
+                     offset=pos, path=f"riff/{name}")
+            next_pos = riff_end
+        if fourcc == b"fmt ":
+            if fmt is not None:
+                ctx.warn("duplicate_chunk", "second fmt chunk ignored",
+                         offset=pos, path="riff/fmt ")
+            else:
+                fmt = _parse_wav_fmt(reader, body_start, size, pos)
+        elif fourcc == b"data":
+            if data_size is not None:
+                ctx.warn("duplicate_chunk", "second data chunk ignored",
+                         offset=pos, path="riff/data")
+            else:
+                data_size = size
+                data_start = body_start
+        elif fourcc in (b"LIST", b"fact", b"bext", b"cue ", b"smpl", b"junk"):
+            pass
+        else:
+            ctx.warn("unknown_chunk", f"unhandled RIFF chunk {name!r} "
+                     f"({size} bytes)", offset=pos, path=f"riff/{name}")
+        pos = next_pos
+
+    if fmt is None:
+        raise SniffError("missing_fmt", "no fmt chunk; audio parameters unavailable",
+                         offset=12, path="riff")
+    if data_size is None:
+        raise SniffError("missing_data", "no data chunk; duration unavailable",
+                         offset=12, path="riff")
+
+    tag = fmt["tag"]
+    block_align = fmt["block_align"]
+    sample_rate = fmt["sample_rate"]
+    channels = fmt["channels"]
+    reasons: dict[str, str] = {}
+    codec = WAV_FORMAT_NAMES.get(tag)
+    if tag not in WAV_SUPPORTED_TAGS:
+        ctx.warn("unsupported_codec",
+                 f"WAV format tag 0x{tag:04x} is not supported", offset=0,
+                 path="riff/fmt ")
+        codec = f"wav-0x{tag:04x}"
+    if sample_rate <= 0:
+        reasons["sample_rate"] = "fmt chunk sample rate is zero"
+    if channels <= 0:
+        reasons["channels"] = "fmt chunk channel count is zero"
+    if block_align <= 0:
+        reasons["duration"] = "fmt chunk block align is zero; duration cannot be derived"
+        duration_units = None
+    else:
+        duration_units = data_size // block_align
+
+    track = SniffTrack(
+        track_id=1, handler="audio", timescale=sample_rate if sample_rate > 0 else None,
+        duration_units=duration_units, start_time_units=0, codec=codec,
+        codec_raw=f"0x{tag:04x}", language=None, width=None, height=None,
+        sample_rate=sample_rate if sample_rate > 0 else None,
+        channels=channels if channels > 0 else None,
+        bit_depth=fmt["bits_per_sample"] or None,
+        reasons=reasons,
+    )
+    if track.sample_rate is None:
+        track.reasons.setdefault("sample_rate", "fmt chunk sample rate is zero")
+    if track.channels is None:
+        track.reasons.setdefault("channels", "fmt chunk channel count is zero")
+    if track.duration_units is None:
+        track.reasons.setdefault("duration", "data size or block align unavailable")
+
+    _ = data_start  # data payload is intentionally not read
+    return SniffResult(
+        container="wav", file_size=reader.size, brands=[],
+        movie_timescale=sample_rate if sample_rate > 0 else None,
+        movie_duration_units=duration_units, tracks=[track],
+        warnings=warnings, wav_format_tag=fmt["declared_tag"],
+    )
+
+
+def _parse_wav_fmt(reader: Reader, body_start: int, size: int,
+                   chunk_start: int) -> dict:
+    if size < 16:
+        raise SniffError("truncated_chunk",
+                         f"fmt chunk is {size} bytes, minimum is 16",
+                         offset=chunk_start, path="riff/fmt ")
+    raw = reader.read_at(body_start, min(size, 64), path="riff/fmt ")
+    tag = int.from_bytes(raw[0:2], "little")
+    channels = int.from_bytes(raw[2:4], "little")
+    sample_rate = int.from_bytes(raw[4:8], "little")
+    block_align = int.from_bytes(raw[12:14], "little")
+    bits = int.from_bytes(raw[14:16], "little")
+    declared_tag = tag
+    if tag == 0xFFFE:
+        # WAVE_FORMAT_EXTENSIBLE carries the real codec in the first two
+        # bytes of the SubFormat GUID.
+        if len(raw) < 26:
+            raise SniffError("truncated_chunk",
+                             "WAVE_FORMAT_EXTENSIBLE fmt chunk is truncated",
+                             offset=chunk_start, path="riff/fmt ")
+        tag = int.from_bytes(raw[24:26], "little")
+    return {
+        "tag": tag, "declared_tag": declared_tag, "channels": channels,
+        "sample_rate": sample_rate, "block_align": block_align,
+        "bits_per_sample": bits,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Dispatch
+# ---------------------------------------------------------------------------
+
+def sniff_path(path) -> SniffResult:
+    """Open a local file, detect its container and return a SniffResult.
+
+    Raises SniffError for structural problems and OSError for I/O problems;
+    callers turn both into per-file failures.
+    """
+    from pathlib import Path
+
+    p = Path(path)
+    size = p.stat().st_size
+    if size > MAX_FILE_BYTES:
+        raise SniffError("file_too_large",
+                         f"{p} is {size} bytes; limit is {MAX_FILE_BYTES}",
+                         offset=0, path="")
+    if size < 12:
+        raise SniffError("file_too_small",
+                         f"{p} is {size} bytes; too small for any supported container",
+                         offset=0, path="")
+    ctx = SniffContext()
+    with p.open("rb") as handle:
+        reader = Reader(handle, size)
+        magic = reader.read_at(0, 12, path="")
+        if magic[4:8] == FTYP:
+            try:
+                return sniff_mp4(reader, ctx)
+            except SniffError as exc:
+                exc.file_size = size
+                raise
+        if magic[0:4] == b"RIFF" and magic[8:12] == b"WAVE":
+            try:
+                return sniff_wav(reader, ctx)
+            except SniffError as exc:
+                exc.file_size = size
+                raise
+        raise SniffError(
+            "unknown_container",
+            f"unrecognized signature {magic!r}; expected ftyp or RIFF/WAVE",
+            offset=0, path="")
