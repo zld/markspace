@@ -8,7 +8,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from .errors import (EXIT_CORRUPT, EXIT_OK, EXIT_USAGE, MeshiftError,
+from .errors import (EXIT_CORRUPT, EXIT_OK, MeshiftError,
                      TruncatedInputError, UsageError)
 from .index import verify_index
 from .matroska import parse_matroska

@@ -3,15 +3,14 @@
 from __future__ import annotations
 
 import importlib.util
-import struct
 from pathlib import Path
 
 import pytest
 
 from meshift import ebml
-from meshift.cli import build_parser, main
+from meshift.cli import main
 from meshift.errors import (EBMLError, IndexCheckError, MatroskaError,
-                            SizeLimitError, UnsupportedCodecError, UsageError)
+                            SizeLimitError, UnsupportedCodecError)
 from meshift.index import parse_mp4, verify_index
 from meshift.matroska import parse_matroska
 from meshift.mp4 import build_mp4
