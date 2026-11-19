@@ -28,7 +28,19 @@ std::string number(double value) {
   return std::string(buffer, result.ptr);
 }
 
-std::string quoted(const std::string& text) {
+std::string string_array(const std::vector<std::string>& values) {
+  std::string out = "[";
+  for (std::size_t i = 0; i < values.size(); ++i) {
+    if (i != 0) out += ',';
+    out += json_quote(values[i]);
+  }
+  out += ']';
+  return out;
+}
+
+}  // namespace
+
+std::string json_quote(const std::string& text) {
   std::string out = "\"";
   for (char c : text) {
     switch (c) {
@@ -48,20 +60,6 @@ std::string quoted(const std::string& text) {
   out.push_back('"');
   return out;
 }
-
-std::string string_array(const std::vector<std::string>& values) {
-  std::string out = "[";
-  for (std::size_t i = 0; i < values.size(); ++i) {
-    if (i != 0) out += ',';
-    out += quoted(values[i]);
-  }
-  out += ']';
-  return out;
-}
-
-}  // namespace
-
-std::string json_quote(const std::string& text) { return quoted(text); }
 
 Analysis run_analysis(const Image& input, const Lut3D& lut,
                       const Options& options) {
@@ -123,15 +121,15 @@ std::string analysis_json(const Analysis& analysis, bool pretty) {
   out << '{' << newline;
   auto field = [&](const std::string& name, const std::string& value,
                    bool last) {
-    out << sep << quoted(name) << ':' << sep << value
+    out << sep << json_quote(name) << ':' << sep << value
         << (last ? "" : ",") << newline;
   };
-  field("conversion", quoted(analysis.input_space + "->" + analysis.lut_space),
+  field("conversion", json_quote(analysis.input_space + "->" + analysis.lut_space),
         false);
   field("grid_size", std::to_string(analysis.grid_size), false);
   field("pixels", std::to_string(analysis.pixels), false);
-  field("input_space", quoted(analysis.input_space), false);
-  field("lut_space", quoted(analysis.lut_space), false);
+  field("input_space", json_quote(analysis.input_space), false);
+  field("lut_space", json_quote(analysis.lut_space), false);
   field("paths", string_array(analysis.paths), false);
   field("threads", std::to_string(analysis.threads), false);
   field("workers", std::to_string(analysis.workers), false);
