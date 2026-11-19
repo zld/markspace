@@ -9,6 +9,9 @@ description = "Offline PCM WAV segmentation tool with noise-floor adaptive detec
 requires-python = ">=3.11"
 dependencies = ["numpy==1.26.4"]
 
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
 [project.scripts]
 audiosplit = "audiosplit.cli:main"
 
