@@ -114,47 +114,51 @@ def _usage_error(parser: argparse.ArgumentParser, message: str) -> int:
 
 def _collect_targets(
     inputs: Sequence[str],
-) -> tuple[list[Path], list[AuditResult]]:
+) -> tuple[list[Path], list[Path], list[AuditResult]]:
     """Expand files and directories into audit targets.
 
     Directories are walked recursively and sorted by relative path so runs are
     reproducible.  Files with a known non-video suffix are turned into skipped
-    results that carry the reason, never silently dropped.
+    results that carry the reason, never silently dropped.  Target paths are
+    derived from a single directory root when possible so batch reports show
+    relative names.
     """
     targets: list[Path] = []
     skipped: list[AuditResult] = []
+    root: Path | None = None
 
     for raw in inputs:
         path = Path(raw)
-        if path.is_dir():
-            discovered = sorted(
-                (entry for entry in path.rglob("*") if entry.is_file()),
-                key=lambda entry: entry.relative_to(path).as_posix(),
-            )
-            for entry in discovered:
-                relative = entry.relative_to(path).as_posix()
-                reason = _SKIP_SUFFIXES.get(entry.suffix.lower())
-                if reason is None and not is_probable_video(entry):
-                    reason = (
-                        f"unsupported extension '{entry.suffix or '(none)'}' "
-                        f"(accepted: {', '.join(sorted(VIDEO_EXTENSIONS))})"
-                    )
-                if reason is not None:
-                    skipped.append(
-                        AuditResult(
-                            path=str(entry),
-                            display_path=relative,
-                            stream=None,
-                            skipped_reason=reason,
-                        )
-                    )
-                    continue
-                targets.append(entry)
-            audit.DISPLAY_ROOT = path
-        else:
+        if not path.is_dir():
             targets.append(path)
+            continue
+        if root is None:
+            root = path
+        discovered = sorted(
+            (entry for entry in path.rglob("*") if entry.is_file()),
+            key=lambda entry: entry.relative_to(path).as_posix(),
+        )
+        for entry in discovered:
+            relative = entry.relative_to(path).as_posix()
+            reason = _SKIP_SUFFIXES.get(entry.suffix.lower())
+            if reason is None and not is_probable_video(entry):
+                reason = (
+                    f"unsupported extension '{entry.suffix or '(none)'}' "
+                    f"(accepted: {', '.join(sorted(VIDEO_EXTENSIONS))})"
+                )
+            if reason is not None:
+                skipped.append(
+                    AuditResult(
+                        path=str(entry),
+                        display_path=relative,
+                        stream=None,
+                        skipped_reason=reason,
+                    )
+                )
+                continue
+            targets.append(entry)
 
-    return targets, skipped
+    return targets, ([root] if root is not None else []), skipped
 
 
 def _display_name(path: Path, root: Path | None) -> str:
@@ -170,12 +174,20 @@ def _run_audit(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int
     if args.max_frames is not None and args.max_frames <= 0:
         _usage_error(parser, "--max-frames must be a positive integer")
 
-    targets, skipped = _collect_targets(args.paths)
+    targets, roots, skipped = _collect_targets(args.paths)
+    root = roots[0] if roots else None
     policy = Policy(args.on_timestamp_error)
 
     results: list[AuditResult] = []
     for path in targets:
-        results.append(audit_file(path, max_frames=args.max_frames, policy=policy))
+        results.append(
+            audit_file(
+                path,
+                max_frames=args.max_frames,
+                policy=policy,
+                display_path=_display_name(path, root),
+            )
+        )
     results.extend(skipped)
 
     audited = tuple(results)
@@ -212,13 +224,14 @@ def _report_error(error: AuditError) -> None:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Parse ``argv`` and run the requested command, returning an exit code."""
+    """Parse ``argv`` and run the requested command, returning an exit code.
+
+    Argument errors follow the argparse convention and raise ``SystemExit(2)``
+    (``--help``/``--version`` exit 0), so shells and subprocess callers see the
+    documented codes without a traceback.
+    """
     parser = build_parser()
-    try:
-        args = parser.parse_args(argv)
-    except SystemExit as exc:  # argparse exits on --help/--version and on errors
-        code = exc.code if isinstance(exc.code, int) else EXIT_USAGE
-        return code
+    args = parser.parse_args(argv)
 
     if args.command is None:
         parser.print_help(sys.stderr)

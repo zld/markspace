@@ -19,22 +19,7 @@ from .model import AuditResult, Policy
 from .probe import probe
 from .timeline import build_timeline
 
-__all__ = ["audit_file", "audit_many", "DISPLAY_ROOT"]
-
-
-#: Directory used to derive the relative names shown in reports.  Set by the
-#: CLI when it scans a directory; ``None`` keeps the display path as given.
-DISPLAY_ROOT: Path | None = None
-
-
-def _display_path(path: Path) -> str:
-    root = DISPLAY_ROOT
-    if root is not None:
-        try:
-            return str(path.resolve().relative_to(root.resolve()))
-        except ValueError:
-            pass
-    return str(path)
+__all__ = ["audit_file", "audit_many"]
 
 
 def audit_file(
@@ -50,7 +35,7 @@ def audit_file(
     instead of raising, so one bad file in a batch cannot erase the others.
     """
     source = Path(path)
-    shown = display_path if display_path is not None else _display_path(source)
+    shown = display_path if display_path is not None else str(source)
 
     try:
         info = probe(source)
@@ -124,9 +109,32 @@ def audit_many(
     *,
     max_frames: int | None = None,
     policy: Policy = Policy.REPAIR,
+    display_root: Path | None = None,
 ) -> list[AuditResult]:
-    """Audit several files; a failure in one never suppresses the others."""
+    """Audit several files; a failure in one never suppresses the others.
+
+    ``display_root`` relativises the reported names (batch mode); it is passed
+    explicitly so no module-level state survives between invocations.
+    """
     results: list[AuditResult] = []
     for path in paths:
-        results.append(audit_file(path, max_frames=max_frames, policy=policy))
+        source = Path(path)
+        shown = _relative_name(source, display_root)
+        results.append(
+            audit_file(
+                source,
+                max_frames=max_frames,
+                policy=policy,
+                display_path=shown,
+            )
+        )
     return results
+
+
+def _relative_name(path: Path, root: Path | None) -> str:
+    if root is not None:
+        try:
+            return path.resolve().relative_to(root.resolve()).as_posix()
+        except ValueError:
+            pass
+    return str(path)
