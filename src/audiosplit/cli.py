@@ -43,7 +43,6 @@ class ScanSettings:
             frame_ms=self.frame_ms,
             on_db=self.on_db,
             off_db=self.off_db,
-            min_silence_ms=self.min_silence_ms,
             noise_window_frames=self.noise_window_frames,
             noise_percentile=self.noise_percentile,
             noise_adapt_rate=self.noise_adapt_rate,
@@ -75,9 +74,8 @@ class ScanSettings:
 class FileOutcome:
     path: str
     ok: bool
-    segments: list[Segment]
-    error: str | None = None
     segment_count: int = 0
+    error: str | None = None
     reused: bool = False
 
 
@@ -159,11 +157,7 @@ def _process_file(
                 cloned = store.clone_job(reusable, run_id)
                 segments = store.load_segments(cloned.job_id)
                 return FileOutcome(
-                    path=display,
-                    ok=True,
-                    segments=segments,
-                    segment_count=len(segments),
-                    reused=True,
+                    path=display, ok=True, segment_count=len(segments), reused=True
                 )
         info, segments, noise_floor_db = scan_file(path, settings)
         store.record_success(
@@ -178,18 +172,16 @@ def _process_file(
             ),
             segments,
         )
-        return FileOutcome(
-            path=display, ok=True, segments=segments, segment_count=len(segments)
-        )
+        return FileOutcome(path=display, ok=True, segment_count=len(segments))
     except (WavError, MergeError, OSError) as exc:
         reason = str(exc)
         try:
             store.record_failure(run_id, display, _safe_hash(path), reason)
         except StoreError as store_exc:
-            return FileOutcome(display, False, [], f"{reason}; {store_exc}")
-        return FileOutcome(display, False, [], reason)
+            return FileOutcome(display, False, error=f"{reason}; {store_exc}")
+        return FileOutcome(display, False, error=reason)
     except StoreError as exc:
-        return FileOutcome(display, False, [], str(exc))
+        return FileOutcome(display, False, error=str(exc))
 
 
 def _safe_hash(path: Path) -> str:

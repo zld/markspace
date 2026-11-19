@@ -31,7 +31,6 @@ class DetectorConfig:
     frame_ms: float = 10.0
     on_db: float = 4.0
     off_db: float = 2.0
-    min_silence_ms: float = 120.0
     attack_frames: int = 2
     hold_frames: int = 2
     noise_window_frames: int = 300
@@ -54,8 +53,6 @@ class DetectorConfig:
             raise ValueError("on_db and off_db must be greater than 0")
         if self.off_db >= self.on_db:
             raise ValueError("off_db must be smaller than on_db")
-        if not math.isfinite(self.min_silence_ms) or self.min_silence_ms < 0:
-            raise ValueError("min_silence_ms must be a non-negative number")
         if self.attack_frames < 1:
             raise ValueError("attack_frames must be at least 1")
         if self.hold_frames < 0:
@@ -72,9 +69,6 @@ class DetectorConfig:
 
     def hop_samples(self, sample_rate: int) -> int:
         return max(1, self.frame_samples(sample_rate) // 2)
-
-    def min_silence_samples(self, sample_rate: int) -> int:
-        return int(round(self.min_silence_ms * sample_rate / 1000.0))
 
 
 @dataclass(frozen=True)
@@ -126,7 +120,6 @@ class FrameEnergyDetector:
         self.config = config
         self.frame = config.frame_samples(sample_rate)
         self.hop = config.hop_samples(sample_rate)
-        self.min_silence = config.min_silence_samples(sample_rate)
         self._buffer = np.empty(0, dtype=np.float32)
         self._buffer_start = 0
         self._total_pushed = 0

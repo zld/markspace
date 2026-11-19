@@ -34,7 +34,7 @@ class DetectorConfigTests(unittest.TestCase):
         self.assertEqual(config.frame_samples(48000), 480)
         self.assertEqual(config.hop_samples(48000), 240)
         self.assertEqual(config.frame_samples(44100), 441)
-        self.assertEqual(config.min_silence_samples(48000), 5760)
+        self.assertEqual(MergeConfig(min_silence_ms=120).min_silence_samples(48000), 5760)
 
     def test_invalid_threshold_relationship_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "off_db"):

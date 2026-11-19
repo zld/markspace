@@ -219,9 +219,3 @@ class WavReader:
     def __exit__(self, *exc: object) -> None:
         return None
 
-
-def to_float(block: np.ndarray) -> np.ndarray:
-    """Normalize int16 samples to float32 in [-1, 1)."""
-    if block.dtype != np.int16:
-        block = block.astype(np.int16, copy=False)
-    return block.astype(np.float32) / 32768.0
