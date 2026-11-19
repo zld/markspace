@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "abr-engine"
+version = "0.1.0"
+description = "Deterministic adaptive-bitrate decision engine over synthetic network traces"
+readme = "README.md"
+requires-python = ">=3.11,<3.12"
+dependencies = ["numpy>=2.1,<2.2"]
+
+[project.optional-dependencies]
+test = []
+
+[project.scripts]
+abr-engine = "abr_engine.cli:entrypoint"
+
+[tool.setuptools.packages.find]
+where = ["src"]
