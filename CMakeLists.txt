@@ -17,5 +17,6 @@ add_library(h264core STATIC
     src/nal_scanner.cpp
     src/h264_sps.cpp
     src/h264_slice.cpp
+    src/access_unit.cpp
 )
 target_include_directories(h264core PUBLIC include)
