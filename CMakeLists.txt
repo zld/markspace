@@ -28,3 +28,17 @@ target_link_libraries(lutcheck PRIVATE lutcore)
 target_compile_options(lutcheck PRIVATE -Wall -Wextra -Wpedantic)
 
 include(CTest)
+if(BUILD_TESTING)
+    add_executable(lutcheck_tests tests/test_pipeline.cpp)
+    target_link_libraries(lutcheck_tests PRIVATE lutcore)
+    target_compile_options(lutcheck_tests PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME pipeline COMMAND lutcheck_tests)
+    add_test(NAME cli_demo
+             COMMAND lutcheck demo --size 17 --pixels 4096 --threads 4 --format json)
+    set_tests_properties(cli_demo PROPERTIES
+        PASS_REGULAR_EXPRESSION "\"lut_size\":17")
+    add_test(NAME cli_bad_argument COMMAND lutcheck demo --threads 0)
+    set_tests_properties(cli_bad_argument PROPERTIES WILL_FAIL TRUE)
+    add_test(NAME cli_bad_space COMMAND lutcheck demo --lut-space sepia)
+    set_tests_properties(cli_bad_space PROPERTIES WILL_FAIL TRUE)
+endif()
