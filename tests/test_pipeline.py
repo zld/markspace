@@ -7,6 +7,7 @@ from PIL import Image
 import numpy as np
 from timeline_composer.assets import AssetError, AssetStore
 from timeline_composer.clock import ClockError, FrameClock
+from timeline_composer.compositor import CompositorError, FrameCompositor
 from timeline_composer.schema import SchemaError, parse_timeline
 from fractions import Fraction
 
@@ -189,6 +190,90 @@ class AssetTests(unittest.TestCase):
         store.load("ok.png")
         store.load("second.png")
         self.assertEqual(len(store), 1)
+
+class CompositorTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        Image.fromarray(_solid_rgba(8, 8, (255, 0, 0, 255))).save(self.root / "red.png")
+        Image.fromarray(_solid_rgba(8, 8, (0, 0, 255, 255))).save(self.root / "blue.png")
+        Image.fromarray(_solid_rgba(8, 8, (0, 0, 0, 0))).save(self.root / "clear.png")
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def _compose(self, layers, width=16, height=16, frame=0):
+        timeline = parse_timeline({
+            "canvas": {"width": width, "height": height},
+            "fps": 24, "frames": 2, "layers": layers,
+        })
+        return FrameCompositor(timeline, AssetStore(self.root)).compose(frame)
+
+    def test_declaration_order_breaks_rank_ties(self) -> None:
+        red_then_blue = self._compose([
+            {"id": "r", "source": "red.png", "order": 0},
+            {"id": "b", "source": "blue.png", "order": 0},
+        ])
+        blue_then_red = self._compose([
+            {"id": "b", "source": "blue.png", "order": 0},
+            {"id": "r", "source": "red.png", "order": 0},
+        ])
+        self.assertEqual(red_then_blue[0, 0].tolist(), [0, 0, 255, 255])
+        self.assertEqual(blue_then_red[0, 0].tolist(), [255, 0, 0, 255])
+
+    def test_higher_order_draws_on_top(self) -> None:
+        frame = self._compose([
+            {"id": "b", "source": "blue.png", "order": 9},
+            {"id": "r", "source": "red.png", "order": 1},
+        ])
+        self.assertEqual(frame[0, 0].tolist(), [0, 0, 255, 255])
+
+    def test_no_layers_yields_transparent_canvas(self) -> None:
+        frame = self._compose([])
+        self.assertTrue((frame == 0).all())
+
+    def test_fully_transparent_layer_is_a_no_op(self) -> None:
+        frame = self._compose([
+            {"id": "r", "source": "red.png", "order": 0},
+            {"id": "c", "source": "clear.png", "order": 1},
+        ])
+        self.assertEqual(frame[0, 0].tolist(), [255, 0, 0, 255])
+
+    def test_zero_opacity_layer_is_a_no_op(self) -> None:
+        frame = self._compose([
+            {"id": "r", "source": "red.png", "order": 0},
+            {"id": "b", "source": "blue.png", "order": 1, "opacity": 0},
+        ])
+        self.assertEqual(frame[0, 0].tolist(), [255, 0, 0, 255])
+
+    def test_off_canvas_and_negative_positions_clip(self) -> None:
+        partial = self._compose([{"id": "r", "source": "red.png", "position": {"x": -4, "y": 12}}])
+        self.assertEqual(partial[12, 0].tolist(), [255, 0, 0, 255])   # visible strip
+        self.assertEqual(partial[0, 0].tolist(), [0, 0, 0, 0])        # above the strip
+        fully_out = self._compose([{"id": "r", "source": "red.png", "position": {"x": 99, "y": 0}}])
+        self.assertTrue((fully_out == 0).all())
+
+    def test_scale_changes_rendered_extent(self) -> None:
+        half = self._compose([{"id": "r", "source": "red.png", "scale": {"value": "1/2"}}])
+        self.assertEqual(half[0, 0].tolist(), [255, 0, 0, 255])
+        self.assertEqual(half[5, 5].tolist(), [0, 0, 0, 0])
+
+    def test_layer_window_boundary_is_half_open(self) -> None:
+        layers = [{"id": "r", "source": "red.png", "start": "1/24", "end": "2/24"}]
+        timeline = parse_timeline({
+            "canvas": {"width": 4, "height": 4}, "fps": 24, "frames": 2, "layers": layers,
+        })
+        composer = FrameCompositor(timeline, AssetStore(self.root))
+        self.assertTrue((composer.compose(0) == 0).all())
+        self.assertEqual(composer.compose(1)[0, 0].tolist(), [255, 0, 0, 255])
+
+    def test_missing_asset_surfaces_as_asset_error(self) -> None:
+        timeline = parse_timeline({
+            "canvas": {"width": 4, "height": 4}, "fps": 24, "frames": 1,
+            "layers": [{"id": "x", "source": "nope.png"}],
+        })
+        with self.assertRaises(AssetError):
+            FrameCompositor(timeline, AssetStore(self.root)).compose(0)
 
 
 if __name__ == "__main__":
