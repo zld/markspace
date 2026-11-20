@@ -2,16 +2,22 @@
 
 from __future__ import annotations
 
+import array
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import BinaryIO
+
+import numpy as np
 
 from . import ebml
 from . import ebml_ids as ids
 
 MAX_PACKET_BYTES = 256 * 1024 * 1024
 MAX_SAMPLES = 5_000_000
-MAX_LACE_FRAMES = 255
+MAX_LACE_FRAMES = 256
+# Blocks are retained as objects only for small inputs; larger inputs keep just
+# the compact per-track index (offsets/sizes/PTS/durations/keyframes).
+BLOCK_RETENTION_BYTES = 64 * 1024 * 1024
 
 VIDEO_CODEC = "V_MPEG4/ISO/AVC"
 AAC_PREFIX = "A_AAC"
@@ -79,12 +85,23 @@ class Track:
 
 
 @dataclass(slots=True)
+class TrackSamples:
+    """Compact per-track sample index (all NumPy int64/bool arrays)."""
+
+    pts_ns: np.ndarray
+    offset: np.ndarray
+    size: np.ndarray
+    duration_ns: np.ndarray
+    keyframe: np.ndarray
+
+
+@dataclass(slots=True)
 class ParsedMatroska:
     path: str
     document: ebml.Document
     timestamp_scale_ns: int
     tracks: list[Track]
-    blocks: list[Block]
+    samples: dict[int, TrackSamples]
     duration_ticks: float | None
     attachment_count: int
     frame_count: int
@@ -92,6 +109,8 @@ class ParsedMatroska:
     clusters: int
     simple_blocks: int
     block_groups: int
+    lacing_counts: dict[str, int]
+    blocks: list[Block] | None = None
 
     def track_by_number(self, number: int) -> Track:
         for track in self.tracks:
@@ -183,7 +202,12 @@ def _text_leaf(fh: BinaryIO, parent: ebml.Element, element_id: int) -> str | Non
 
 def _float_leaf(fh: BinaryIO, parent: ebml.Element, element_id: int) -> float | None:
     data = _leaf(fh, parent, element_id)
-    return None if data is None else ebml.float_value(data)
+    if data is None:
+        return None
+    try:
+        return ebml.float_value(data)
+    except ValueError as exc:
+        raise ebml.EBMLError(parent.offset, str(exc)) from exc
 
 
 def validate_avcc(data: bytes) -> None:
@@ -319,6 +343,12 @@ def _parse_lace_sizes(reader: _PayloadReader, lacing: int) -> list[int]:
     count = reader.read_byte() + 1
     if count < 1 or count > MAX_LACE_FRAMES:
         raise ebml.EBMLError(reader.pos - 1, f"invalid lace frame count {count}")
+    if count == 1:
+        # With a single frame no lace-size headers follow the count byte.
+        size = reader.remaining
+        if size <= 0:
+            raise ebml.EBMLError(reader.pos, "empty laced block payload")
+        return [size]
     sizes: list[int] = []
     if lacing == 1:  # Xiph
         for _ in range(count - 1):
@@ -407,9 +437,141 @@ def _parse_block(fh: BinaryIO, element: ebml.Element, cluster_index: int,
                  reference_blocks=references, discard_padding=None)
 
 
-def parse_matroska(path: str) -> ParsedMatroska:
-    document = ebml.parse_file(path)
-    file_size = document.file_size
+class _SampleCollector:
+    """Streaming hook: parses blocks into compact per-track arrays."""
+
+    def __init__(self, path: str, scale_ns: int, known_tracks: set[int]):
+        self.path = path
+        self.scale_ns = scale_ns
+        self.known_tracks = known_tracks
+        self.keep_blocks = os.path.getsize(path) <= BLOCK_RETENTION_BYTES
+        self.blocks: list[Block] | None = [] if self.keep_blocks else None
+        self.arrays = {
+            number: {"pts": array.array("q"), "offset": array.array("q"),
+                     "size": array.array("q"), "duration": array.array("q"),
+                     "key": bytearray()} for number in known_tracks}
+        self.cluster_ids: dict[int, tuple[int, int]] = {}
+        self.frame_count = 0
+        self.media_bytes = 0
+        self.simple_blocks = 0
+        self.block_groups = 0
+        self.lacing_counts = {"none": 0, "xiph": 0, "fixed": 0, "ebml": 0}
+        self.cluster_count = 0
+
+    def _cluster_info(self, fh: BinaryIO, cluster: ebml.Element) -> tuple[int, int]:
+        cached = self.cluster_ids.get(cluster.offset)
+        if cached is not None:
+            return cached
+        timecode = _uint_leaf(fh, cluster, ids.TIMECODE)
+        if timecode is None:
+            raise ebml.EBMLError(cluster.offset, "Cluster lacks Timecode")
+        info = (self.cluster_count, timecode)
+        self.cluster_ids[cluster.offset] = info
+        self.cluster_count += 1
+        return info
+
+    def __call__(self, fh: BinaryIO, parent: ebml.Element,
+                 child: ebml.Element) -> None:
+        cluster_index, cluster_timecode = self._cluster_info(fh, parent)
+        if child.element_id == ids.SIMPLE_BLOCK:
+            block = _parse_block(fh, child, cluster_index, cluster_timecode,
+                                 True, None, 0)
+            self.simple_blocks += 1
+        elif child.element_id == ids.BLOCK_GROUP:
+            self.block_groups += 1
+            block_elem = child.find(ids.BLOCK)
+            if block_elem is None:
+                raise ebml.EBMLError(child.offset, "BlockGroup lacks Block")
+            duration = _uint_leaf(fh, child, ids.BLOCK_DURATION)
+            if duration is not None and duration <= 0:
+                duration = None
+            refs = len(child.children_of(ids.REFERENCE_BLOCK))
+            block = _parse_block(fh, block_elem, cluster_index, cluster_timecode,
+                                 False, duration, refs)
+        else:
+            return
+        if block.track_number not in self.known_tracks:
+            raise ebml.EBMLError(block.offset,
+                                 f"block references unknown track {block.track_number}")
+        self._record(block)
+        if self.blocks is not None:
+            self.blocks.append(block)
+
+    def _record(self, block: Block) -> None:
+        bucket = self.arrays[block.track_number]
+        count = len(block.frames)
+        scale = self.scale_ns
+        block_pts = block.timecode * scale
+        if abs(block_pts) > (1 << 62):
+            raise LimitError("block PTS overflows int64", offset=block.offset)
+        block_dur = None
+        if block.duration_ticks is not None:
+            block_dur = block.duration_ticks * scale
+        per_frame = None
+        if count > 1:
+            if block_dur is not None and block_dur % count == 0:
+                per_frame = block_dur // count
+            else:
+                default = self.default_waiter(block.track_number)
+                if default:
+                    per_frame = default
+                else:
+                    raise ebml.EBMLError(
+                        block.offset,
+                        f"laced block has {count} frames but no derivable "
+                        f"per-frame duration")
+        self.lacing_counts[block.lacing] += 1
+        for index, frame in enumerate(block.frames):
+            pts = block_pts + (per_frame * index if per_frame is not None else 0)
+            bucket["pts"].append(pts)
+            bucket["offset"].append(frame.offset)
+            bucket["size"].append(frame.size)
+            duration = per_frame if count > 1 else block_dur
+            bucket["duration"].append(duration or 0)
+            bucket["key"].append(1 if block.keyframe else 0)
+        self.frame_count += count
+        if self.frame_count > MAX_SAMPLES:
+            raise LimitError(f"sample count exceeds {MAX_SAMPLES}",
+                             offset=block.offset)
+        self.media_bytes += sum(f.size for f in block.frames)
+        if self.media_bytes > ebml.MAX_INPUT_BYTES:
+            raise LimitError("frame payload exceeds input byte limit",
+                             offset=block.offset)
+
+    def default_waiter(self, number: int) -> int | None:
+        track = self.track_defaults.get(number)
+        return track
+
+    def finish(self) -> dict[int, TrackSamples]:
+        result = {}
+        for number, bucket in self.arrays.items():
+            result[number] = TrackSamples(
+                pts_ns=np.frombuffer(bucket["pts"], dtype=np.int64).copy(),
+                offset=np.frombuffer(bucket["offset"], dtype=np.int64).copy(),
+                size=np.frombuffer(bucket["size"], dtype=np.int64).copy(),
+                duration_ns=np.frombuffer(bucket["duration"], dtype=np.int64).copy(),
+                keyframe=np.frombuffer(bytes(bucket["key"]), dtype=np.uint8)
+                .view(bool).copy())
+        return result
+
+
+def parse_matroska(path: str, *, keep_blocks: bool | None = None) -> ParsedMatroska:
+    """Parse tracks and sample data; media bytes are never buffered."""
+
+    holder: dict[str, object] = {}
+
+    def hook(fh: BinaryIO, parent: ebml.Element, child: ebml.Element) -> None:
+        collector = holder.get("collector")
+        if collector is None:
+            collector = _SampleCollector(path, holder["scale"], holder["tracks"])
+            collector.track_defaults = holder["defaults"]
+            holder["collector"] = collector
+        collector(fh, parent, child)
+
+    # Two-pass: a lightweight metadata pass determines tracks and TimestampScale
+    # before blocks are streamed into the collector.
+    discard = lambda fh, parent, child: None  # noqa: E731 - metadata only
+    document = ebml.parse_file(path, presentation_hook=discard)
     segment = document.find_root(ids.SEGMENT)
     if segment is None:
         raise ebml.EBMLError(0, "missing Segment")
@@ -442,61 +604,28 @@ def parse_matroska(path: str) -> ParsedMatroska:
             raise ebml.EBMLError(segment.offset, "missing Tracks")
         tracks = [_read_track(fh, entry)
                   for entry in tracks_elem.children_of(ids.TRACK_ENTRY)]
-        if not tracks:
-            raise ebml.EBMLError(tracks_elem.offset, "Tracks has no TrackEntry")
-        numbers = [t.number for t in tracks]
-        if len(set(numbers)) != len(numbers):
-            raise ebml.EBMLError(tracks_elem.offset, "duplicate TrackNumber")
-        tracks.sort(key=lambda t: t.number)
-        known = set(numbers)
-        blocks: list[Block] = []
-        frame_count = 0
-        media_bytes = 0
-        clusters = 0
-        simple_count = 0
-        blockgroup_count = 0
-        for cluster_index, cluster in enumerate(segment.children_of(ids.CLUSTER)):
-            clusters += 1
-            timecode = _uint_leaf(fh, cluster, ids.TIMECODE)
-            if timecode is None:
-                raise ebml.EBMLError(cluster.offset, "Cluster lacks Timecode")
-            for child in cluster.children:
-                if child.element_id == ids.SIMPLE_BLOCK:
-                    block = _parse_block(fh, child, cluster_index, timecode,
-                                         True, None, 0)
-                    simple_count += 1
-                elif child.element_id == ids.BLOCK_GROUP:
-                    blockgroup_count += 1
-                    block_elem = child.find(ids.BLOCK)
-                    if block_elem is None:
-                        raise ebml.EBMLError(child.offset, "BlockGroup lacks Block")
-                    duration = _uint_leaf(fh, child, ids.BLOCK_DURATION)
-                    if duration is not None and duration <= 0:
-                        duration = None
-                    refs = len(child.children_of(ids.REFERENCE_BLOCK))
-                    block = _parse_block(fh, block_elem, cluster_index, timecode,
-                                         False, duration, refs)
-                    if block.duration_ticks is not None:
-                        pass
-                else:
-                    continue
-                if block.track_number not in known:
-                    raise ebml.EBMLError(block.offset,
-                                         f"block references unknown track {block.track_number}")
-                blocks.append(block)
-                frame_count += len(block.frames)
-                if frame_count > MAX_SAMPLES:
-                    raise LimitError(f"sample count exceeds {MAX_SAMPLES}",
-                                     offset=block.offset)
-                media_bytes += sum(f.size for f in block.frames)
-                if media_bytes > ebml.MAX_INPUT_BYTES:
-                    raise LimitError("frame payload exceeds input byte limit",
-                                     offset=block.offset)
-    if not blocks:
+    if not tracks:
+        raise ebml.EBMLError(segment.offset, "Tracks has no TrackEntry")
+    numbers = [t.number for t in tracks]
+    if len(set(numbers)) != len(numbers):
+        raise ebml.EBMLError(segment.offset, "duplicate TrackNumber")
+    tracks.sort(key=lambda t: t.number)
+    holder["scale"] = timestamp_scale
+    holder["tracks"] = set(numbers)
+    holder["defaults"] = {t.number: t.default_duration_ns for t in tracks}
+    ebml.parse_file(path, presentation_hook=hook)
+    collector = holder.get("collector")
+    if collector is None:
         raise ebml.EBMLError(segment.offset, "no blocks found")
-    return ParsedMatroska(path=path, document=document,
-                          timestamp_scale_ns=timestamp_scale, tracks=tracks,
-                          blocks=blocks, duration_ticks=duration_ticks,
-                          attachment_count=attachments, frame_count=frame_count,
-                          media_bytes=media_bytes, clusters=clusters,
-                          simple_blocks=simple_count, block_groups=blockgroup_count)
+    if collector.frame_count == 0:
+        raise ebml.EBMLError(segment.offset, "no blocks found")
+    if keep_blocks is False or not collector.keep_blocks:
+        collector.blocks = None
+    return ParsedMatroska(
+        path=path, document=document, timestamp_scale_ns=timestamp_scale,
+        tracks=tracks, samples=collector.finish(),
+        duration_ticks=duration_ticks, attachment_count=attachments,
+        frame_count=collector.frame_count, media_bytes=collector.media_bytes,
+        clusters=document.counts().get("Cluster", 0),
+        simple_blocks=collector.simple_blocks, block_groups=collector.block_groups,
+        lacing_counts=collector.lacing_counts, blocks=collector.blocks)

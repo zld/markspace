@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from .matroska import ParsedMatroska, Track
+from .matroska import ParsedMatroska, Track, TrackSamples
 
 INT64_MIN = -(1 << 63)
 INT64_MAX = (1 << 63) - 1
@@ -54,6 +54,8 @@ def ns_to_ticks(ns: np.ndarray | int, timescale: int) -> np.ndarray | int:
     array = np.asarray(ns, dtype=np.int64)
     if np.any(array > INT64_MAX // timescale) or np.any(array < INT64_MIN // timescale):
         raise TimebaseOverflow("timestamp * timescale overflows int64")
+    if np.any(array == INT64_MIN):
+        raise TimebaseOverflow("timestamp INT64_MIN cannot be rescaled")
     product = array * np.int64(timescale)
     magnitude = np.abs(product)
     quotient = magnitude // np.int64(NS_PER_S)
@@ -108,6 +110,8 @@ class Timeline:
     global_last_pts: int
     sample_count: int
     ctts_tracks: int
+    source_first_pts: int = 0
+    normalized: bool = False
 
     def track(self, mkv_number: int) -> TrackTimeline:
         for item in self.tracks:
@@ -116,42 +120,10 @@ class Timeline:
         raise KeyError(mkv_number)
 
 
-def _collect(mkv: ParsedMatroska) -> dict[int, dict[str, list[int] | list[bool]]]:
-    tracks = {t.number: t for t in mkv.tracks}
-    data: dict[int, dict[str, list[int] | list[bool]]] = {
-        t.number: {"pts": [], "dur": [], "default": [], "offset": [], "size": [],
-                   "key": []} for t in mkv.tracks}
-    for block in mkv.blocks:
-        track = tracks[block.track_number]
-        count = len(block.frames)
-        block_pts = _check_i64(block.timecode * mkv.timestamp_scale_ns,
-                               "block PTS in nanoseconds")
-        block_dur = None
-        if block.duration_ticks is not None:
-            block_dur = _check_i64(block.duration_ticks * mkv.timestamp_scale_ns,
-                                   "BlockDuration in nanoseconds")
-        per_frame = None
-        if count > 1:
-            if block_dur is not None and block_dur % count == 0:
-                per_frame = block_dur // count
-            elif track.default_duration_ns:
-                per_frame = track.default_duration_ns
-            else:
-                raise TimelineError(
-                    f"track {track.number}: laced block at offset {block.offset} "
-                    f"has {count} frames but no derivable per-frame duration")
-        bucket = data[track.number]
-        for index, frame in enumerate(block.frames):
-            pts = block_pts + (per_frame * index if per_frame is not None else 0)
-            _check_i64(pts, "sample PTS")
-            duration = per_frame if count > 1 else block_dur
-            bucket["pts"].append(pts)
-            bucket["dur"].append(duration or 0)
-            bucket["default"].append(track.default_duration_ns or 0)
-            bucket["offset"].append(frame.offset)
-            bucket["size"].append(frame.size)
-            bucket["key"].append(block.keyframe)
-    return data
+def _collect(mkv: ParsedMatroska) -> dict[int, TrackSamples]:
+    if mkv.timestamp_scale_ns <= 0:
+        raise TimelineError("TimestampScale must be positive")
+    return {track.number: mkv.samples[track.number] for track in mkv.tracks}
 
 
 def _resolve_durations(pts: np.ndarray, known: np.ndarray,
@@ -180,19 +152,23 @@ def _resolve_durations(pts: np.ndarray, known: np.ndarray,
     return duration
 
 
-def _build_track(track: Track, mp4_id: int, bucket: dict, scale_ns: int,
+def _build_track(track: Track, mp4_id: int, bucket: TrackSamples, scale_ns: int,
                  shift_ns: int, timescale: int, mode: str) -> TrackTimeline:
-    pts_ns = np.asarray(bucket["pts"], dtype=np.int64)
+    pts_ns = bucket.pts_ns
     if pts_ns.size == 0:
         raise TimelineError(f"track {track.number} has no samples")
-    known = np.asarray(bucket["dur"], dtype=np.int64)
-    default = np.asarray(bucket["default"], dtype=np.int64)
+    known = bucket.duration_ns
+    default = np.full(pts_ns.shape, track.default_duration_ns or 0, dtype=np.int64)
     durations_ns = _resolve_durations(pts_ns, known, default, track)
     scale = np.int64(scale_ns)
     if np.any(pts_ns > INT64_MAX // scale_ns) or np.any(pts_ns < INT64_MIN // scale_ns):
         raise TimebaseOverflow("PTS * TimestampScale overflows int64")
     if np.any(durations_ns > INT64_MAX // scale_ns):
         raise TimebaseOverflow("duration * TimestampScale overflows int64")
+    if shift_ns > 0 and np.any(pts_ns < INT64_MIN + shift_ns):
+        raise TimebaseOverflow("PTS shift underflows int64")
+    if shift_ns < 0 and np.any(pts_ns > INT64_MAX + shift_ns):
+        raise TimebaseOverflow("PTS shift overflows int64")
     global_pts = ns_to_ticks(pts_ns - shift_ns, timescale)
     duration = ns_to_ticks(durations_ns, timescale)
     if np.any(duration <= 0):
@@ -228,10 +204,9 @@ def _build_track(track: Track, mp4_id: int, bucket: dict, scale_ns: int,
     return TrackTimeline(
         track=track, mp4_track_id=mp4_id, pts=global_pts, media_pts=media_pts,
         dts=dts, ctts=ctts, duration=duration,
-        offset=np.asarray(bucket["offset"], dtype=np.int64),
-        size=np.asarray(bucket["size"], dtype=np.int64),
-        keyframe=np.asarray(bucket["key"], dtype=bool), media_base=media_base,
-        first_pts=decode_pts[0], last_pts=decode_pts[-1],
+        offset=bucket.offset, size=bucket.size, keyframe=bucket.keyframe,
+        media_base=media_base,
+        first_pts=int(global_pts.min()), last_pts=int(global_pts.max()),
         max_pts=int(global_pts.max()), duration_ticks=duration_ticks)
 
 
@@ -245,9 +220,10 @@ def prepare(mkv: ParsedMatroska, timescale: int, mode: str) -> Timeline:
     data = _collect(mkv)
     if mkv.frame_count == 0:
         raise TimelineError("input has no media samples")
-    all_pts = [pts for bucket in data.values() for pts in bucket["pts"]]
-    global_min_ns = min(all_pts)
-    global_max_ns = max(all_pts)
+    global_min_ns = min(int(bucket.pts_ns.min()) for bucket in data.values()
+                        if bucket.pts_ns.size)
+    global_max_ns = max(int(bucket.pts_ns.max()) for bucket in data.values()
+                        if bucket.pts_ns.size)
     shift_ns = global_min_ns if (mode == "rewrite" or global_min_ns < 0) else 0
     tracks: list[TrackTimeline] = []
     for mp4_id, track in enumerate(mkv.tracks, start=1):
@@ -259,6 +235,8 @@ def prepare(mkv: ParsedMatroska, timescale: int, mode: str) -> Timeline:
     if mode == "rewrite" and first != 0:
         raise TimelineError("global earliest PTS did not normalize to zero")
     ctts_tracks = sum(1 for item in tracks if item.has_ctts)
+    source_first = int(ns_to_ticks(global_min_ns, timescale))
     return Timeline(timescale=timescale, mode=mode, tracks=tracks, shift_ns=shift_ns,
                     global_first_pts=int(first), global_last_pts=int(last),
-                    sample_count=int(mkv.frame_count), ctts_tracks=ctts_tracks)
+                    sample_count=int(mkv.frame_count), ctts_tracks=ctts_tracks,
+                    source_first_pts=source_first, normalized=shift_ns != 0)

@@ -45,6 +45,9 @@ class ExportResult:
             "sample_count": self.timeline.sample_count,
             "ctts_tracks": self.timeline.ctts_tracks,
             "timescale": self.timeline.timescale,
+            "source_first_pts_ms": _ms(self.timeline.source_first_pts,
+                                       self.timeline.timescale),
+            "normalized_start": self.timeline.normalized,
             "mdat": self.audit["dur"],
         }
 

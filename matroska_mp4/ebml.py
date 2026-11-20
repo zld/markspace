@@ -137,8 +137,11 @@ def _is_known_master(element_id: int) -> bool:
     return element_id in ids.MASTER_CHILDREN
 
 
+PresentationHook = "Callable[[BinaryIO, Element, Element], None]"
+
+
 def _parse_children(fh: BinaryIO, parent: Element, limit: int, level_ids: frozenset[int],
-                    depth: int) -> None:
+                    depth: int, hook=None, counts: dict[str, int] | None = None) -> None:
     """Parse children until limit; unknown-size parents end at a sibling ID."""
 
     if depth > MAX_ELEMENT_DEPTH:
@@ -146,10 +149,7 @@ def _parse_children(fh: BinaryIO, parent: Element, limit: int, level_ids: frozen
     cursor = parent.data_offset
     while True:
         if cursor == limit:
-            if parent.size is not None and cursor != parent.end:
-                raise EBMLError(parent.offset, "element size mismatch")
-            if parent.unknown:
-                parent.end = cursor
+            parent.end = limit
             return
         if cursor > limit:
             raise EBMLError(parent.offset, "child overruns parent boundary")
@@ -167,19 +167,27 @@ def _parse_children(fh: BinaryIO, parent: Element, limit: int, level_ids: frozen
                             f"unknown-size leaf {child.name} is not allowed")
         if _is_known_master(header.element_id):
             child_limit = limit if header.unknown else header.data_offset + header.size
-            _parse_children(fh, child, child_limit, ids.MASTER_CHILDREN[header.element_id],
-                            depth + 1)
             if not header.unknown:
                 child.end = child_limit
+            _parse_children(fh, child, child_limit, ids.MASTER_CHILDREN[header.element_id],
+                            depth + 1, hook, counts)
         else:
             if header.unknown:
                 raise EBMLError(header.offset, f"unknown-size leaf {child.name}")
             child.end = header.data_offset + header.size
-        parent.children.append(child)
+        if hook is not None and header.element_id in ids.PRESENTATION_ELEMENTS:
+            if counts is not None:
+                # Presentation subtrees are released after the hook, so count
+                # every name they contain while the element is still alive.
+                for item in (child, *child.iter_descendants()):
+                    counts[item.name] = counts.get(item.name, 0) + 1
+            hook(fh, parent, child)
+        else:
+            parent.children.append(child)
         cursor = child.end
         if cursor is None:
             raise EBMLError(child.offset, f"{child.name} has no determined end")
-        if parent.size is not None and cursor > parent.end:
+        if parent.size is not None and cursor > limit:
             raise EBMLError(child.offset, "child overruns known-size parent")
 
 
@@ -188,6 +196,7 @@ class Document:
     path: str
     file_size: int
     roots: list[Element]
+    presentation_counts: dict[str, int] = field(default_factory=dict)
 
     def find_root(self, element_id: int) -> Element | None:
         for root in self.roots:
@@ -200,6 +209,8 @@ class Document:
         for root in self.roots:
             for element in (root, *root.iter_descendants()):
                 counts[element.name] = counts.get(element.name, 0) + 1
+        for name, value in self.presentation_counts.items():
+            counts[name] = counts.get(name, 0) + value
         return counts
 
     def unknown_sizes(self) -> dict[str, int]:
@@ -211,20 +222,29 @@ class Document:
         return sizes
 
 
-def parse_file(path: str) -> Document:
-    """Parse an EBML document from disk with strict bounds checks."""
+def parse_file(path: str, presentation_hook=None) -> Document:
+    """Parse an EBML document from disk with strict bounds checks.
+
+    When ``presentation_hook`` is supplied, SimpleBlock/BlockGroup subtrees are
+    handed to it and *not* retained, so media-sized inputs keep only a compact
+    index.  The tree still records all metadata elements and unknown-size
+    boundaries.
+    """
 
     if not os.path.isfile(path):
         raise FileNotFoundError(path)
     file_size = os.path.getsize(path)
     if file_size > MAX_INPUT_BYTES:
         raise EBMLError(0, f"input is {file_size} bytes; limit is {MAX_INPUT_BYTES}")
+    counts: dict[str, int] = {}
     with open(path, "rb") as fh:
-        roots = _parse_roots(fh, file_size)
-    return Document(path=path, file_size=file_size, roots=roots)
+        roots = _parse_roots(fh, file_size, presentation_hook, counts)
+    return Document(path=path, file_size=file_size, roots=roots,
+                    presentation_counts=counts)
 
 
-def _parse_roots(fh: BinaryIO, limit: int) -> list[Element]:
+def _parse_roots(fh: BinaryIO, limit: int, hook=None,
+                 counts: dict[str, int] | None = None) -> list[Element]:
     roots: list[Element] = []
     cursor = 0
     seen_segment = False
@@ -243,10 +263,10 @@ def _parse_roots(fh: BinaryIO, limit: int) -> list[Element]:
             child_limit = limit
         else:
             child_limit = header.data_offset + header.size
-        _parse_children(fh, root, child_limit,
-                        ids.MASTER_CHILDREN[header.element_id], 0)
         if not header.unknown:
             root.end = child_limit
+        _parse_children(fh, root, child_limit,
+                        ids.MASTER_CHILDREN[header.element_id], 0, hook, counts)
         if root.element_id == ids.SEGMENT:
             if seen_segment:
                 raise EBMLError(root.offset, "multiple Segment roots")

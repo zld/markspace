@@ -229,6 +229,14 @@ def build_monotonic() -> bytes:
     return _header() + _segment(tracks, cluster1 + cluster2, False, 260.0)
 
 
+def build_raw(block_element: bytes) -> bytes:
+    """One-cluster fixture containing a caller-supplied (possibly corrupt) block."""
+
+    cluster = master(ids.CLUSTER, uint_elem(ids.TIMECODE, 0) + block_element)
+    tracks = master(ids.TRACKS, _video_track(None) + _audio_track())
+    return _header() + _segment(tracks, cluster, True, 0.0)
+
+
 def generate(out_dir: str) -> dict[str, str]:
     os.makedirs(out_dir, exist_ok=True)
     paths = {}

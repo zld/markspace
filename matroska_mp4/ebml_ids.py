@@ -141,6 +141,7 @@ MASTER_CHILDREN = {
 }
 UNKNOWN_SIZE_IDS = frozenset({SEGMENT, CLUSTER})
 PRESENTATION_LEAF_IDS = frozenset({SIMPLE_BLOCK, BLOCK, FILE_DATA})
+PRESENTATION_ELEMENTS = frozenset({SIMPLE_BLOCK, BLOCK_GROUP})
 
 
 def element_name(element_id: int) -> str:

@@ -259,7 +259,7 @@ def _ftyp() -> bytes:
     return box(b"ftyp", b"isom" + _u32(512) + b"isomiso2avc1mp41")
 
 
-def _copy_track(source, sink, track: TrackTimeline, data_start: int) -> list[int]:
+def _copy_track(source, sink, track: TrackTimeline, data_start: int) -> tuple[list[int], int]:
     offsets: list[int] = []
     position = data_start
     for chunk_start in range(0, track.sample_count, CHUNK_SAMPLES):
@@ -275,7 +275,7 @@ def _copy_track(source, sink, track: TrackTimeline, data_start: int) -> list[int
                 raise OSError(f"short read for sample {index}")
             sink.write(payload)
             position += size
-    return offsets
+    return offsets, position
 
 
 def write_mp4(source_path: str, mkv: ParsedMatroska, timeline: Timeline,
@@ -293,9 +293,10 @@ def write_mp4(source_path: str, mkv: ParsedMatroska, timeline: Timeline,
         else:
             sink.write(_u32(1) + b"mdat" + _u64(total_bytes + 16))
         chunk_offsets: dict[int, list[int]] = {}
+        cursor = data_start
         for track in timeline.tracks:
-            chunk_offsets[track.mp4_track_id] = _copy_track(
-                source, sink, track, data_start)
+            offsets, cursor = _copy_track(source, sink, track, cursor)
+            chunk_offsets[track.mp4_track_id] = offsets
         if sink.tell() != data_start + total_bytes:
             raise OSError("mdat size mismatch while copying samples")
         sink.write(build_moov(timeline, chunk_offsets))

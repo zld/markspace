@@ -1,12 +1,14 @@
-"""Independent read-back audit of a written MP4.
+"""Independent, memory-bounded read-back audit of a written MP4.
 
-The audit re-parses the output with the same low-level box reader, rebuilds the
-sample index from ``stts``/``ctts``/``stsc``/``stsz``/``stss``/``stco``/``co64``
-and verifies it against the source frames and the ``mdat`` boundaries.
+The output is memory-mapped and its box tree re-parsed from scratch.  Sample
+tables are expanded with NumPy (never into per-sample Python objects), then
+verified against the source index and the ``mdat`` boundaries.
 """
 
 from __future__ import annotations
 
+import mmap
+import os
 import struct
 from dataclasses import dataclass
 
@@ -15,7 +17,8 @@ import numpy as np
 from .matroska import MAX_PACKET_BYTES, ParsedMatroska
 from .timeline import Timeline
 
-UINT64_MAX = (1 << 64) - 1
+UINT32_MAX = (1 << 32) - 1
+COMPARE_SLICE = 1 << 20
 
 
 class AuditError(Exception):
@@ -35,7 +38,7 @@ class Box:
         return self.offset + self.size
 
 
-def _read_boxes(data: bytes, start: int, end: int) -> list[Box]:
+def _read_boxes(data, start: int, end: int) -> list[Box]:
     boxes: list[Box] = []
     cursor = start
     while cursor < end:
@@ -67,244 +70,298 @@ def _child(boxes: list[Box], kind: bytes) -> Box:
     raise AuditError(f"missing {kind!r} box")
 
 
-def _children(boxes: list[Box], kind: bytes) -> list[Box]:
-    return [item for item in boxes if item.kind == kind]
-
-
-def _u32(data: bytes, offset: int) -> int:
+def _u32(data, offset: int) -> int:
     return struct.unpack_from(">I", data, offset)[0]
 
 
-def _u64(data: bytes, offset: int) -> int:
-    return struct.unpack_from(">Q", data, offset)[0]
+def _array(data, offset: int, count: int, dtype: str) -> np.ndarray:
+    """Read ``count`` big-endian integers at ``offset`` (offset need not align)."""
+
+    raw = bytes(data[offset:offset + np.dtype(dtype).itemsize * count])
+    if len(raw) != np.dtype(dtype).itemsize * count:
+        raise AuditError("sample table is truncated")
+    return np.frombuffer(raw, dtype=dtype).astype(np.int64, copy=True)
 
 
-def _full_header(data: bytes, box: Box) -> tuple[int, int]:
-    return data[box.data_offset], int.from_bytes(
-        data[box.data_offset + 1:box.data_offset + 4], "big")
+def _pair_table(data, offset: int, runs: int, value_dtype: str) -> tuple[np.ndarray, np.ndarray]:
+    """Read packed (uint32 count, value) run pairs without per-sample objects."""
+
+    width = np.dtype(value_dtype).itemsize
+    stride = 4 + width
+    raw = bytes(data[offset:offset + runs * stride])
+    if len(raw) != runs * stride:
+        raise AuditError("sample table is truncated")
+    if runs == 0:
+        return np.zeros(0, dtype=np.int64), np.zeros(0, dtype=np.int64)
+    structured = np.frombuffer(raw, dtype=np.dtype([("count", ">u4"),
+                                                    ("value", value_dtype)]))
+    return (structured["count"].astype(np.int64),
+            structured["value"].astype(np.int64))
 
 
-def _parse_stbl(data: bytes, stbl: Box) -> dict:
+def _runs_to_values(counts: np.ndarray, values: np.ndarray) -> np.ndarray:
+    if counts.size == 0:
+        return np.zeros(0, dtype=np.int64)
+    if np.any(counts <= 0):
+        raise AuditError("sample table contains a zero-length run")
+    if values.size and values.max() > UINT32_MAX:
+        raise AuditError("sample table value exceeds uint32")
+    return np.repeat(values, counts)
+
+
+def _version(data, box: Box) -> int:
+    return int(data[box.data_offset])
+
+
+def _parse_stbl(data, stbl: Box) -> dict:
     boxes = _read_boxes(data, stbl.data_offset, stbl.end)
     stsd = _child(boxes, b"stsd")
-    entry_count = _u32(data, stsd.data_offset + 4)
-    if entry_count != 1:
-        raise AuditError(f"stsd entry count {entry_count} != 1")
+    if _u32(data, stsd.data_offset + 4) != 1:
+        raise AuditError("stsd must contain exactly one sample entry")
     entry = _read_boxes(data, stsd.data_offset + 8, stsd.end)[0]
     if entry.kind not in (b"avc1", b"mp4a"):
         raise AuditError(f"unexpected sample entry {entry.kind!r}")
+
     stts = _child(boxes, b"stts")
-    count = _u32(data, stts.data_offset + 4)
-    durations: list[int] = []
-    pos = stts.data_offset + 8
-    for _ in range(count):
-        run, delta = _u32(data, pos), _u32(data, pos + 4)
-        if run == 0 or delta == 0:
-            raise AuditError("stts contains a zero run or delta")
-        durations.extend([delta] * run)
-        pos += 8
-    if pos != stts.end:
+    runs = _u32(data, stts.data_offset + 4)
+    if stts.data_offset + 8 + runs * 8 != stts.end:
         raise AuditError("stts payload size mismatch")
+    counts, deltas = _pair_table(data, stts.data_offset + 8, runs, ">u4")
+    durations = _runs_to_values(counts, deltas)
+
     ctts_box = next((b for b in boxes if b.kind == b"ctts"), None)
-    offsets: list[int] = []
-    ctts_version = 0
+    offsets = np.zeros(0, dtype=np.int64)
+    ctts_version = None
     if ctts_box is not None:
-        ctts_version, _ = _full_header(data, ctts_box)
-        count = _u32(data, ctts_box.data_offset + 4)
-        pos = ctts_box.data_offset + 8
-        for _ in range(count):
-            run = _u32(data, pos)
-            if ctts_version == 1:
-                offset = struct.unpack_from(">i", data, pos + 4)[0]
-            else:
-                offset = _u32(data, pos + 4)
-            offsets.extend([offset] * run)
-            pos += 8
-        if pos != ctts_box.end:
+        ctts_version = _version(data, ctts_box)
+        runs = _u32(data, ctts_box.data_offset + 4)
+        if ctts_box.data_offset + 8 + runs * 8 != ctts_box.end:
             raise AuditError("ctts payload size mismatch")
+        dtype = ">i4" if ctts_version == 1 else ">u4"
+        counts, values = _pair_table(data, ctts_box.data_offset + 8, runs, dtype)
+        offsets = _runs_to_values(counts, values)
+
     stsz = _child(boxes, b"stsz")
     fixed = _u32(data, stsz.data_offset + 4)
     sample_count = _u32(data, stsz.data_offset + 8)
+    if sample_count > 5_000_000:
+        raise AuditError("stsz sample count exceeds limit")
     if fixed:
-        sizes = [fixed] * sample_count
+        sizes = np.full(sample_count, fixed, dtype=np.int64)
     else:
-        sizes = list(struct.unpack_from(f">{sample_count}I", data,
-                                        stsz.data_offset + 12))
+        if stsz.data_offset + 12 + sample_count * 4 != stsz.end:
+            raise AuditError("stsz payload size mismatch")
+        sizes = _array(data, stsz.data_offset + 12, sample_count, ">u4")
+
     stsc = _child(boxes, b"stsc")
     entries = _u32(data, stsc.data_offset + 4)
-    per_chunk: list[tuple[int, int]] = []
-    pos = stsc.data_offset + 8
-    for _ in range(entries):
-        first, per, desc = struct.unpack_from(">III", data, pos)
+    if stsc.data_offset + 8 + entries * 12 != stsc.end:
+        raise AuditError("stsc payload size mismatch")
+    stsc_runs = []
+    for index in range(entries):
+        first, per, desc = struct.unpack_from(
+            ">III", data, stsc.data_offset + 8 + index * 12)
         if desc != 1:
             raise AuditError("stsc references an unknown sample description")
-        per_chunk.append((first, per))
-        pos += 12
+        stsc_runs.append((first, per))
+
     stco_box = next((b for b in boxes if b.kind in (b"stco", b"co64")), None)
     if stco_box is None:
         raise AuditError("missing stco/co64")
     count = _u32(data, stco_box.data_offset + 4)
-    if stco_box.kind == b"stco":
-        chunk_offsets = list(struct.unpack_from(f">{count}I", data,
-                                                stco_box.data_offset + 8))
-    else:
-        chunk_offsets = list(struct.unpack_from(f">{count}Q", data,
-                                                stco_box.data_offset + 8))
+    width = 4 if stco_box.kind == b"stco" else 8
+    if stco_box.data_offset + 8 + count * width != stco_box.end:
+        raise AuditError("stco/co64 payload size mismatch")
+    chunks = _array(data, stco_box.data_offset + 8, count,
+                    ">u4" if width == 4 else ">u8")
+
     stss_box = next((b for b in boxes if b.kind == b"stss"), None)
-    sync: set[int] | None = None
+    sync = None
     if stss_box is not None:
         count = _u32(data, stss_box.data_offset + 4)
-        sync = set(struct.unpack_from(f">{count}I", data, stss_box.data_offset + 8))
+        if stss_box.data_offset + 8 + count * 4 != stss_box.end:
+            raise AuditError("stss payload size mismatch")
+        sync = _array(data, stss_box.data_offset + 8, count, ">u4")
     return {"kind": entry.kind, "durations": durations, "ctts": offsets,
-            "ctts_version": ctts_version, "sizes": sizes, "stsc": per_chunk,
-            "chunks": chunk_offsets, "sync": sync}
+            "ctts_version": ctts_version, "sizes": sizes, "stsc": stsc_runs,
+            "chunks": chunks, "sync": sync}
 
 
-def _expand_chunks(stsc: list[tuple[int, int]], chunk_count: int) -> list[int]:
+def _expand_chunks(stsc: list[tuple[int, int]], chunk_count: int) -> np.ndarray:
     if chunk_count == 0:
         if stsc:
             raise AuditError("stsc entries present with zero chunks")
-        return []
+        return np.zeros(0, dtype=np.int64)
     if not stsc or stsc[0][0] != 1:
         raise AuditError("stsc does not start at chunk 1")
-    per_chunk: list[int] = []
+    per_chunk = []
     for index, (first, per) in enumerate(stsc):
         limit = stsc[index + 1][0] if index + 1 < len(stsc) else chunk_count + 1
         if first < 1 or first > chunk_count or limit <= first:
             raise AuditError("stsc chunk runs overlap or are unordered")
         per_chunk.extend([per] * (limit - first))
     if len(per_chunk) != chunk_count:
-        raise AuditError("stsc does not cover every chunk")
-    return per_chunk
+        raise AuditError("stsc does not cover every chunk per chunk")
+    return np.asarray(per_chunk, dtype=np.int64)
 
 
-def _parse_moov_tracks(data: bytes, moov: Box) -> tuple[list[dict], int]:
+def _parse_moov_tracks(data, moov: Box, file_end: int) -> tuple[list[dict], int]:
     boxes = _read_boxes(data, moov.data_offset, moov.end)
     mvhd = _child(boxes, b"mvhd")
-    version, _ = _full_header(data, mvhd)
+    version = _version(data, mvhd)
     timescale = _u32(data, mvhd.data_offset + (20 if version else 12))
     if timescale <= 0:
         raise AuditError("mvhd timescale is zero")
+    if moov.end != file_end:
+        raise AuditError("trailing bytes after moov")
     tracks = []
-    for trak in _children(boxes, b"trak"):
+    for trak in (b for b in boxes if b.kind == b"trak"):
         children = _read_boxes(data, trak.data_offset, trak.end)
         tkhd = _child(children, b"tkhd")
-        version, _ = _full_header(data, tkhd)
+        version = _version(data, tkhd)
         track_id = _u32(data, tkhd.data_offset + (20 if version else 12))
         mdia = _child(children, b"mdia")
         mdia_boxes = _read_boxes(data, mdia.data_offset, mdia.end)
         mdhd = _child(mdia_boxes, b"mdhd")
-        version, _ = _full_header(data, mdhd)
+        version = _version(data, mdhd)
         md_timescale = _u32(data, mdhd.data_offset + (20 if version else 12))
         if md_timescale != timescale:
             raise AuditError(f"track {track_id} timescale differs from mvhd")
         minf = _child(mdia_boxes, b"minf")
-        minf_boxes = _read_boxes(data, minf.data_offset, minf.end)
-        stbl = _child(minf_boxes, b"stbl")
+        stbl = _child(_read_boxes(data, minf.data_offset, minf.end), b"stbl")
         entry = _parse_stbl(data, stbl)
-        entry.update(track_id=track_id, mdia=mdia_boxes, children=children)
+        entry["track_id"] = track_id
         tracks.append(entry)
     return tracks, timescale
+
+
+def _sample_offsets(chunks: np.ndarray, per_chunk: np.ndarray,
+                    sizes: np.ndarray) -> np.ndarray:
+    """Absolute file offset of every sample, derived from stsc/stco/stsz."""
+
+    count = int(per_chunk.sum())
+    if count != sizes.size:
+        raise AuditError(f"stsc covers {count} samples, stsz has {sizes.size}")
+    cumulative = np.cumsum(sizes)
+    first = np.cumsum(per_chunk) - per_chunk
+    chunk_base = cumulative[first] - sizes[first]
+    within = cumulative - sizes - np.repeat(chunk_base, per_chunk)
+    return np.repeat(chunks, per_chunk) + within
+
+
+def _frame_spans(offsets: np.ndarray, sizes: np.ndarray) -> list[tuple[int, int, int, int]]:
+    """Group adjacent source frames into contiguous read spans."""
+
+    spans = []
+    if offsets.size == 0:
+        return spans
+    start = 0
+    for index in range(1, offsets.size):
+        if offsets[index] != offsets[index - 1] + sizes[index - 1]:
+            spans.append((start, index))
+            start = index
+    spans.append((start, offsets.size))
+    return [(int(offsets[a]), int(offsets[b - 1] + sizes[b - 1]), a, b)
+            for a, b in spans]
+
+
+def _compare_bytes(mm, source, mp4_offsets: np.ndarray, source_offsets: np.ndarray,
+                   sizes: np.ndarray, track_id: int) -> None:
+    for src_start, src_end, first, last in _frame_spans(source_offsets, sizes):
+        source.seek(src_start)
+        remaining = src_end - src_start
+        read_at = src_start
+        while remaining:
+            take = min(COMPARE_SLICE, remaining)
+            original = source.read(take)
+            if len(original) != take:
+                raise AuditError("source frame is truncated during audit")
+            mp4_at = int(mp4_offsets[first]) + (read_at - src_start)
+            if mm[mp4_at:mp4_at + take] != original:
+                raise AuditError(f"track {track_id}: frame bytes for samples "
+                                 f"{first + 1}..{last} differ from source")
+            read_at += take
+            remaining -= take
 
 
 def audit_mp4(path: str, mkv: ParsedMatroska, timeline: Timeline) -> dict:
     """Read the output back and verify counts, mapping, offsets and mdat."""
 
-    with open(path, "rb") as handle:
-        data = handle.read()
-    source = open(mkv.path, "rb")
-    try:
-        return _audit_loaded(data, source, mkv, timeline, path)
-    finally:
-        source.close()
+    with open(path, "rb") as handle, open(mkv.path, "rb") as source:
+        size = os.path.getsize(path)
+        mm = mmap.mmap(handle.fileno(), 0, access=mmap.ACCESS_READ)
+        try:
+            return _audit(mm, size, source, mkv, timeline)
+        finally:
+            mm.close()
 
 
-def _audit_loaded(data: bytes, source, mkv: ParsedMatroska, timeline: Timeline,
-                  path: str) -> dict:
-    top = _read_boxes(data, 0, len(data))
-    if top[0].kind != b"ftyp":
+def _audit(mm, file_size: int, source, mkv: ParsedMatroska,
+           timeline: Timeline) -> dict:
+    top = _read_boxes(mm, 0, file_size)
+    if not top or top[0].kind != b"ftyp":
         raise AuditError("output does not start with ftyp")
     mdat = _child(top, b"mdat")
     moov = _child(top, b"moov")
     if mdat.end > moov.offset:
         raise AuditError("moov must follow mdat (non-fragmented layout)")
-    if moov.end != len(data):
-        raise AuditError("trailing bytes after moov")
-    tracks, timescale = _parse_moov_tracks(data, moov)
+    tracks, timescale = _parse_moov_tracks(mm, moov, file_size)
     if timescale != timeline.timescale:
         raise AuditError(f"output timescale {timescale} != {timeline.timescale}")
     if len(tracks) != len(timeline.tracks):
         raise AuditError(f"track count {len(tracks)} != {len(timeline.tracks)}")
+    mdat_bytes = mdat.end - mdat.data_offset
+    total_sizes = 0
     total_samples = 0
     track_map = []
     for expected, entry in zip(timeline.tracks, tracks):
-        if entry["track_id"] != expected.mp4_track_id:
-            raise AuditError(f"track ID {entry['track_id']} != {expected.mp4_track_id}")
-        sizes = entry["sizes"]
-        durations = entry["durations"]
+        track_id = entry["track_id"]
+        if track_id != expected.mp4_track_id:
+            raise AuditError(f"track ID {track_id} != {expected.mp4_track_id}")
+        sizes, durations = entry["sizes"], entry["durations"]
+        if sizes.size != expected.sample_count:
+            raise AuditError(f"track {track_id}: stsz count {sizes.size} != "
+                             f"{expected.sample_count}")
+        if durations.size != expected.sample_count:
+            raise AuditError(f"track {track_id}: stts count {durations.size} != "
+                             f"{expected.sample_count}")
+        if not np.array_equal(sizes, expected.size):
+            raise AuditError(f"track {track_id}: stsz sizes differ")
+        if not np.array_equal(durations, expected.duration):
+            raise AuditError(f"track {track_id}: stts deltas differ")
         offsets = entry["ctts"]
-        if len(sizes) != expected.sample_count:
-            raise AuditError(f"track {entry['track_id']}: stsz count "
-                             f"{len(sizes)} != {expected.sample_count}")
-        if len(durations) != expected.sample_count:
-            raise AuditError(f"track {entry['track_id']}: stts count mismatch")
-        if not np.array_equal(np.asarray(sizes, dtype=np.int64), expected.size):
-            raise AuditError(f"track {entry['track_id']}: stsz sizes differ")
-        if not np.array_equal(np.asarray(durations, dtype=np.int64), expected.duration):
-            raise AuditError(f"track {entry['track_id']}: stts deltas differ")
         if expected.has_ctts:
-            if not offsets:
-                raise AuditError(f"track {entry['track_id']}: ctts missing")
+            if offsets.size == 0:
+                raise AuditError(f"track {track_id}: ctts missing")
             if entry["ctts_version"] != 1:
-                raise AuditError(f"track {entry['track_id']}: ctts is not version 1")
-            if not np.array_equal(np.asarray(offsets, dtype=np.int64), expected.ctts):
-                raise AuditError(f"track {entry['track_id']}: ctts offsets differ")
-        elif offsets and any(offsets):
-            raise AuditError(f"track {entry['track_id']}: unexpected ctts")
-        per_chunk = _expand_chunks(entry["stsc"], len(entry["chunks"]))
-        if sum(per_chunk) != expected.sample_count:
-            raise AuditError(f"track {entry['track_id']}: stsc sample count mismatch")
+                raise AuditError(f"track {track_id}: ctts is not version 1")
+            if not np.array_equal(offsets, expected.ctts):
+                raise AuditError(f"track {track_id}: ctts offsets differ")
+        elif offsets.size and bool(np.any(offsets)):
+            raise AuditError(f"track {track_id}: unexpected ctts")
+        per_chunk = _expand_chunks(entry["stsc"], entry["chunks"].size)
+        mp4_offsets = _sample_offsets(entry["chunks"], per_chunk, sizes)
+        if sizes.size and (mp4_offsets.min() < mdat.data_offset or
+                           (mp4_offsets + sizes).max() > mdat.end):
+            raise AuditError(f"track {track_id}: sample outside mdat")
+        chunk_first = np.cumsum(per_chunk) - per_chunk
+        chunk_last = chunk_first + per_chunk - 1
+        if per_chunk.size > 1:
+            ends = mp4_offsets[chunk_last[:-1]] + sizes[chunk_last[:-1]]
+            if np.any(entry["chunks"][1:] < ends):
+                raise AuditError(f"track {track_id}: overlapping chunks")
         if entry["sync"] is not None:
             synced = np.zeros(expected.sample_count, dtype=bool)
-            for index in entry["sync"]:
-                if index < 1 or index > expected.sample_count:
-                    raise AuditError(f"track {entry['track_id']}: bad stss index")
-                synced[index - 1] = True
+            sync = entry["sync"]
+            if sync.size and (sync.min() < 1 or sync.max() > expected.sample_count):
+                raise AuditError(f"track {track_id}: bad stss index")
+            synced[sync - 1] = True
             if not np.array_equal(synced, expected.keyframe):
-                raise AuditError(f"track {entry['track_id']}: stss differs")
+                raise AuditError(f"track {track_id}: stss differs")
         elif not bool(np.all(expected.keyframe)):
-            raise AuditError(f"track {entry['track_id']}: missing stss")
-        sample = 0
-        previous_chunk_end = mdat.data_offset
-        for chunk_index, (chunk_offset, count) in enumerate(
-                zip(entry["chunks"], per_chunk)):
-            if chunk_index and chunk_offset < previous_chunk_end:
-                raise AuditError(f"track {entry['track_id']}: overlapping chunks")
-            if chunk_offset < mdat.data_offset or chunk_offset > mdat.end:
-                raise AuditError(f"track {entry['track_id']}: chunk outside mdat")
-            cursor = chunk_offset
-            for _ in range(count):
-                size = sizes[sample]
-                if size <= 0 or size > MAX_PACKET_BYTES:
-                    raise AuditError("invalid sample size")
-                if cursor + size > mdat.end:
-                    raise AuditError(f"track {entry['track_id']}: sample "
-                                     f"{sample + 1} overruns mdat")
-                source_offset = int(expected.offset[sample])
-                source.seek(source_offset)
-                original = source.read(size)
-                if len(original) != size:
-                    raise AuditError("source frame is truncated during audit")
-                if data[cursor:cursor + size] != original:
-                    raise AuditError(f"track {entry['track_id']}: sample "
-                                     f"{sample + 1} bytes differ from source")
-                cursor += size
-                sample += 1
-            if cursor > mdat.end:
-                raise AuditError("chunk overruns mdat")
-            previous_chunk_end = cursor
-        if sample != expected.sample_count:
-            raise AuditError(f"track {entry['track_id']}: chunk coverage mismatch")
+            raise AuditError(f"track {track_id}: missing stss")
+        _compare_bytes(mm, source, mp4_offsets, expected.offset, sizes, track_id)
+        total_sizes += int(sizes.sum())
         total_samples += expected.sample_count
         track_map.append({
             "mkv_track": expected.track.number,
@@ -315,15 +372,15 @@ def _audit_loaded(data: bytes, source, mkv: ParsedMatroska, timeline: Timeline,
             "last_pts": expected.last_pts,
             "ctts": expected.has_ctts,
         })
+    if total_sizes != mdat_bytes:
+        raise AuditError(f"mdat holds {mdat_bytes} bytes but tables describe "
+                         f"{total_sizes}")
     if total_samples > 5_000_000:
         raise AuditError("audited sample count exceeds limit")
-    if mdat.size < 8 or mdat.data_offset > mdat.end:
-        raise AuditError("mdat is invalid")
     return {
         "dur": {"mdat_offset": mdat.offset, "mdat_end": mdat.end,
                 "mdat_size": mdat.size, "moov_offset": moov.offset,
-                "file_size": len(data)},
+                "file_size": file_size},
         "track_map": track_map, "sample_count": total_samples,
         "timescale": timescale,
     }
-
