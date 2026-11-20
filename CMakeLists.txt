@@ -30,3 +30,7 @@ enable_testing()
 add_executable(test_pipeline tests/test_pipeline.cpp)
 target_link_libraries(test_pipeline PRIVATE grade)
 add_test(NAME pipeline COMMAND test_pipeline)
+
+add_executable(test_render tests/test_render.cpp)
+target_link_libraries(test_render PRIVATE grade)
+add_test(NAME render COMMAND test_render)
