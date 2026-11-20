@@ -21,7 +21,7 @@ All third-party source is committed under `vendor/`.
 ## Build and run
 
 ```sh
-go mod vendor
+make vendor            # go mod vendor + restore the documented gortsplib patch
 go test -mod=vendor ./...
 go build -mod=vendor -o /tmp/rtsp-ingest ./cmd/rtsp-ingest
 /tmp/rtsp-ingest demo --transport both --seed 17 --json
@@ -91,6 +91,18 @@ units are discarded and counted.
 
 gortsplib's server-side UDP path normally reorders packets and silently drops
 duplicates before the application callback, which would make application-level
-gap/duplicate accounting impossible. `vendor/README.md` documents the single
-small patch that bypasses that queue so packets arrive in raw order. Re-apply
-it after any `go mod vendor`.
+gap/duplicate accounting impossible. The vendored
+`server_session_format.go` is patched to bypass that queue so packets arrive in
+raw order (details in `vendor/README.md`).
+
+A bare `go mod vendor` refreshes `vendor/` from the pristine module and wipes
+this hunk. Use the wrapper target, which vendors and immediately restores it:
+
+```sh
+make vendor
+```
+
+or re-apply it manually with `go run -mod=vendor ./tools/apply-vendor-patch`
+(the tool is idempotent). If the patch is ever missing, the
+`TestVendorPatchPresent` integration test fails with the same remediation
+message rather than letting counters silently go wrong.
