@@ -71,13 +71,14 @@ CLI → EBML parser → Matroska track/block extraction → shared timeline
   lacing modes (none, Xiph, fixed, EBML) with a size-sum check. Subtitle,
   attachment, and non-H.264/AAC tracks fail with exit 4 — never dropped
   silently. The same applies to features that would change timing or bytes if
-  ignored: `ContentEncodings`, `DiscardPadding`, `TrackTimestampScale != 1`,
-  `MaxBlockAdditionID`, and dimensions/channels outside the 16-bit MP4
-  sample-entry range. `CodecDelay` is accepted: the priming samples stay in
-  the media and an initial edit-list trim removes them, as ffmpeg does.
-  Blocks are streamed through an EBML presentation hook into compact
-  `array.array` indexes, so a 5M-sample input does not keep Python objects per
-  frame.
+  ignored: `ContentEncodings`, `DiscardPadding`, `SilentTracks`,
+  `BlockAdditions`, `TrackTimestampScale != 1`, and dimensions/channels
+  outside the 16-bit MP4 sample-entry range. The AAC `AudioSpecificConfig`
+  rate/channels must agree with the `Audio` element. `CodecDelay` is
+  accepted: the priming samples stay in the media and an initial edit-list
+  trim removes them, as ffmpeg does. Blocks are streamed through an EBML
+  presentation hook into compact `array.array` indexes, so a 5M-sample input
+  does not keep Python objects per frame.
 - **`timeline.py`** — NumPy `int64` timebase conversion with overflow
   detection, two rounding modes, duration resolution (BlockDuration →
   DefaultDuration → following interval; the final sample must resolve), signed
