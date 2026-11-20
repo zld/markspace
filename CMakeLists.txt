@@ -11,5 +11,10 @@ endif()
 
 add_compile_options(-Wall -Wextra)
 
+add_library(fmp4core STATIC
+  src/box.cpp
+)
+target_include_directories(fmp4core PUBLIC include)
+
 add_executable(fmp4ctl src/main.cpp)
-target_include_directories(fmp4ctl PRIVATE include)
+target_link_libraries(fmp4ctl PRIVATE fmp4core)
