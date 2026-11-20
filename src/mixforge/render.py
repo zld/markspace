@@ -74,8 +74,8 @@ def _curve_samples(
     for track in project.tracks:
         curve = GainCurve(track.keyframes)
         times = set(grid)
-        for kf in curve.times:
-            absolute = track.start + float(kf)
+        for kf in track.keyframes:
+            absolute = track.start + kf.time
             if 0.0 <= absolute <= duration + 1e-9:
                 times.add(round(absolute, 9))
         points = []
