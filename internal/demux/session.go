@@ -23,6 +23,11 @@ type Session struct {
 	psiErrors  int
 	sectionCRC int
 	sections   int
+
+	// Cached PAT-derived PSI PID set; rebuilt only when the PAT pointer or
+	// version changes, so the per-packet hot path avoids allocations.
+	psiPAT  *psi.PAT
+	psiPIDs map[uint16]bool
 }
 
 // NewSession creates an empty parse session.
@@ -48,12 +53,14 @@ func (s *Session) IsPSIPID(pid uint16) bool {
 	if pid == PATPID {
 		return true
 	}
-	for _, p := range s.Tables.PMTPIDs() {
-		if p == pid {
-			return true
+	if pat := s.Tables.PAT(); pat != s.psiPAT {
+		s.psiPAT = pat
+		s.psiPIDs = make(map[uint16]bool)
+		for _, p := range s.Tables.PMTPIDs() {
+			s.psiPIDs[p] = true
 		}
 	}
-	return false
+	return s.psiPIDs[pid]
 }
 
 // sniffsPMT allows a PMT to be reassembled before any PAT has been seen, so a
