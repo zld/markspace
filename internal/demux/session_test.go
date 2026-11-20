@@ -166,3 +166,21 @@ func TestSlicePendingPMTFails(t *testing.T) {
 		t.Fatal("failed slice left an output file")
 	}
 }
+
+func TestSliceRenumbersContinuity(t *testing.T) {
+	src := generate(t, fixture.ScenarioUpdatesLoss)
+	out := filepath.Join(t.TempDir(), "clean.ts")
+	res, err := Slice(SliceRequest{InputPath: src, OutputPath: out, Program: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.ContinuityErrs == 0 {
+		t.Fatal("expected source continuity gaps to be reported")
+	}
+	// The written slice must itself be continuity-clean because counters are
+	// renumbered, including adaptation-only packets.
+	s, _, _ := parse(t, out)
+	if got := s.Counter.Totals().ContinuityErrs; got != 0 {
+		t.Fatalf("sliced output has %d continuity errors", got)
+	}
+}
