@@ -56,9 +56,13 @@ def block_payload(track: int, relative: int, flags: int, frames: list[bytes],
     lacing_bits = {"none": 0, "xiph": 1, "fixed": 2, "ebml": 3}[lacing]
     flags = (flags & 0xF9) | (lacing_bits << 1)
     body = bytearray()
+    # The lace count byte is always present; a lace of exactly one frame then
+    # carries no per-frame size headers, regardless of the declared mode.
     if lacing != "none":
         body.append(len(frames) - 1)
-        if lacing == "xiph":
+        if len(frames) == 1:
+            pass  # count byte only, no per-frame sizes
+        elif lacing == "xiph":
             for frame in frames[:-1]:
                 size = len(frame)
                 while size >= 255:

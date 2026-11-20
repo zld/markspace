@@ -488,3 +488,63 @@ class TestLacingRejections(FixtureTestCase):
         with self.assertRaises(ebml.EBMLError) as ctx:
             matroska.parse_matroska(path)
         self.assertIn("empty frame", str(ctx.exception))
+
+
+class TestBlockHardening(FixtureTestCase):
+    """Malformed or unsupported block features fail; none may hang or crash."""
+
+    def _fixture(self, block_body: bytes, name: str) -> str:
+        block = fixture.leaf(fixture.ids.SIMPLE_BLOCK, block_body)
+        path = self.path(name)
+        with open(path, "wb") as handle:
+            handle.write(fixture.build_raw(block))
+        return path
+
+    def test_zero_lead_track_vint_fails_fast(self):
+        # A 0x00 lead byte never terminates the VINT length loop; this used
+        # to hang the parser instead of reporting corruption.
+        path = self._fixture(b"\x00\x00\x00\x80abc", "zero-track.mkv")
+        with self.assertRaises(ebml.EBMLError) as ctx:
+            matroska.parse_matroska(path)
+        self.assertIn("track number VINT", str(ctx.exception))
+
+    def test_single_frame_laces_parse(self):
+        # Xiph/EBML blocks with one frame store no size headers; all lacing
+        # modes must accept them.
+        for mode in ("xiph", "fixed", "ebml"):
+            body = fixture.block_payload(1, 0, 0x80, [b"abcdefgh"], mode)
+            path = self.path(f"one-{mode}.mkv")
+            with open(path, "wb") as handle:
+                handle.write(fixture.build_raw(fixture.leaf(
+                    fixture.ids.SIMPLE_BLOCK, body)))
+            mkv = matroska.parse_matroska(path)
+            self.assertEqual(mkv.frame_count, 1)
+            self.assertEqual(mkv.blocks[0].frames[0].size, 8)
+
+    def test_discard_padding_is_unsupported(self):
+        group = fixture.master(fixture.ids.BLOCK_GROUP,
+                               fixture.leaf(fixture.ids.BLOCK, fixture.block_payload(
+                                   1, 0, 0, [b"x" * 8], "none")) +
+                               fixture.int_elem(fixture.ids.DISCARD_PADDING, 5000))
+        path = self.path("padding.mkv")
+        with open(path, "wb") as handle:
+            handle.write(fixture.build_raw(group))
+        with self.assertRaises(matroska.UnsupportedFormat) as ctx:
+            matroska.parse_matroska(path)
+        self.assertIn("DiscardPadding", str(ctx.exception))
+
+    def test_oversized_dimensions_are_unsupported(self):
+        entry = fixture._track_entry(1, 1, "V_MPEG4/ISO/AVC",
+                                     fixture.avcc(fixture.VIDEO_SPS, fixture.VIDEO_PPS),
+                                     None, width=100000, height=48)
+        cluster = fixture.master(fixture.ids.CLUSTER,
+                                 fixture.uint_elem(fixture.ids.TIMECODE, 0) +
+                                 fixture._simple(1, 0, b"x" * 8, True))
+        path = self.path("wide.mkv")
+        with open(path, "wb") as handle:
+            handle.write(fixture._header() + fixture._segment(
+                fixture.master(fixture.ids.TRACKS, entry), cluster, True, 0.0))
+        with self.assertRaises(matroska.UnsupportedFormat) as ctx:
+            matroska.parse_matroska(path)
+        self.assertIn("dimensions", str(ctx.exception))
+
