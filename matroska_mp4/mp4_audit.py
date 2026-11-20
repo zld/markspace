@@ -323,6 +323,32 @@ def audit_mp4(path: str, source_path: str, samples: dict[int, TrackSamples],
             mm.close()
 
 
+def _check_chunk_layout(spans: list[tuple[int, int, int]], start: int,
+                        end: int) -> None:
+    """Require every track's chunks to tile ``mdat`` without gaps or overlap.
+
+    ``total_sizes == mdat size`` alone does not prove consistency: two tracks
+    could point at the same bytes while another region stays unreferenced.
+    Sorting the chunk byte ranges must reproduce one gapless run that covers
+    the whole payload.
+    """
+
+    if not spans:
+        if end != start:
+            raise AuditError("mdat has payload but no chunks reference it")
+        return
+    spans.sort(key=lambda span: (span[0], span[1]))
+    cursor = start
+    for offset, stop, track_id in spans:
+        if offset != cursor:
+            kind = "overlap" if offset < cursor else "gap"
+            raise AuditError(f"track {track_id}: chunk at {offset} leaves an "
+                             f"mdat {kind} at byte {cursor}")
+        cursor = stop
+    if cursor != end:
+        raise AuditError(f"mdat ends at {end} but chunks cover only {cursor}")
+
+
 def _audit(mm, file_size: int, source, samples: dict[int, TrackSamples],
            timeline_tracks: list[TrackTimeline], timescale: int) -> dict:
     top = _read_boxes(mm, 0, file_size)
@@ -341,6 +367,7 @@ def _audit(mm, file_size: int, source, samples: dict[int, TrackSamples],
     total_sizes = 0
     total_samples = 0
     track_map = []
+    chunk_spans: list[tuple[int, int, int]] = []
     for expected, entry in zip(timeline_tracks, tracks):
         track_id = entry["track_id"]
         if track_id != expected.mp4_track_id:
@@ -392,6 +419,11 @@ def _audit(mm, file_size: int, source, samples: dict[int, TrackSamples],
             ends = mp4_offsets[chunk_last[:-1]] + sizes[chunk_last[:-1]]
             if np.any(entry["chunks"][1:] < ends):
                 raise AuditError(f"track {track_id}: overlapping chunks")
+        for chunk, first, last in zip(entry["chunks"].tolist(),
+                                      chunk_first.tolist(), chunk_last.tolist()):
+            chunk_spans.append((int(chunk),
+                                int(mp4_offsets[last] + sizes[last]),
+                                track_id))
         if entry["sync"] is not None:
             synced = np.zeros(expected.sample_count, dtype=bool)
             sync = entry["sync"]
@@ -418,6 +450,7 @@ def _audit(mm, file_size: int, source, samples: dict[int, TrackSamples],
     if total_sizes != mdat_bytes:
         raise AuditError(f"mdat holds {mdat_bytes} bytes but tables describe "
                          f"{total_sizes}")
+    _check_chunk_layout(chunk_spans, mdat.data_offset, mdat.end)
     if total_samples > 5_000_000:
         raise AuditError("audited sample count exceeds limit")
     return {
