@@ -127,12 +127,13 @@ def read_payload(fp: BinaryIO, box: Box, *, limit: int = MAX_METADATA_BOX) -> by
 
 
 def _display_type(raw: bytes) -> str:
-    # ISO BMFF metadata boxes may use 0xA9-prefixed latin-1 names in udta.
+    """Decode a four-character box type; ``url `` legitimately carries a space."""
     try:
         name = raw.decode("ascii")
     except UnicodeDecodeError:
+        # ISO BMFF metadata boxes may use 0xA9-prefixed latin-1 names in udta.
         name = raw.decode("latin-1")
-    if any(ord(ch) < 0x20 or ch == " " for ch in name):
+    if not name or any(ord(ch) < 0x20 for ch in name) or "\x00" in name:
         raise MediaStructureError(f"invalid box type {raw!r}")
     return name
 

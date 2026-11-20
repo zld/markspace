@@ -92,6 +92,19 @@ class BoxParsingTests(unittest.TestCase):
         with self.assertRaises(UnsupportedFeatureError):
             parse_boxes(io.BytesIO(data), len(data))
 
+    def test_metadata_and_url_box_types_accepted(self) -> None:
+        data = (
+            struct.pack(">I4s", 8, b"url ")
+            + bytes.fromhex("00000008a96e616d")  # 0xA9 'nam' metadata box
+        )
+        tree = parse_boxes(io.BytesIO(data), len(data))
+        self.assertEqual([box.type for box in tree.top_level], ["url ", "\u00a9nam"])
+
+    def test_control_char_in_box_type_rejected(self) -> None:
+        data = struct.pack(">I4s", 8, b"ab\x01d")
+        with self.assertRaises(MediaStructureError):
+            parse_boxes(io.BytesIO(data), len(data))
+
     def test_child_overruns_container(self) -> None:
         child = struct.pack(">I4s", 40, b"free") + b"\x00" * 32
         container = struct.pack(">I4s", 8 + len(child) - 8, b"moov") + child

@@ -7,9 +7,6 @@ from dataclasses import dataclass, field
 from .errors import IndexValidationError, MediaStructureError
 from .samples import SampleTables
 
-MAX_CTTS_OFFSET = 1 << 31
-
-
 @dataclass(frozen=True)
 class Sample:
     index: int
@@ -193,11 +190,6 @@ def build_sample_map(
             delta = composition_offsets[cursor]
             min_ctts = min(min_ctts, delta)
             max_ctts = max(max_ctts, delta)
-            if abs(delta) > MAX_CTTS_OFFSET:
-                raise IndexValidationError(
-                    f"sample {cursor + 1} ctts offset {delta} exceeds 32-bit range",
-                    location="ctts",
-                )
             samples.append(
                 Sample(
                     index=cursor,
@@ -216,7 +208,7 @@ def build_sample_map(
     warnings: list[str] = []
     if min_ctts < 0 or max_ctts > 0:
         warnings.append(
-            f"ctts uses composition offsets in [{min_ctts}, {max_ctts}]"
+            f"ctts composition offsets span [{min_ctts}, {max_ctts}]"
         )
     if tables.duration and dts != tables.duration:
         # A mismatch is an index inconsistency, not a cosmetic warning.
@@ -246,11 +238,17 @@ def _range_contains(
     return any(low <= start and end <= high for low, high in ranges)
 
 
+def _format_ranges(ranges: list[tuple[int, int]], limit: int = 4) -> str:
+    shown = ", ".join(f"[{low}, {high})" for low, high in ranges[:limit])
+    if len(ranges) > limit:
+        shown += f", ... ({len(ranges) - limit} more)"
+    return shown
+
+
 def validate_sample_ranges(
     sample_map: SampleMap, mdat_ranges: list[tuple[int, int]]
 ) -> None:
     previous_end: int | None = None
-    seen: set[tuple[int, int]] = set()
     for sample in sample_map.samples:
         if sample.size <= 0:
             raise IndexValidationError(
@@ -259,25 +257,18 @@ def validate_sample_ranges(
             )
         if not _range_contains(mdat_ranges, sample.offset, sample.end):
             raise IndexValidationError(
-                f"sample {sample.index + 1} byte range [{sample.offset}, {sample.end}) "
-                f"is outside every mdat payload "
-                f"({', '.join(f'[{a}, {b})' for a, b in mdat_ranges)})",
+                f"sample {sample.index + 1} byte range "
+                f"[{sample.offset}, {sample.end}) is outside every mdat payload "
+                f"({_format_ranges(mdat_ranges)})",
                 location="stco/co64",
             )
         if previous_end is not None and sample.offset < previous_end:
             raise IndexValidationError(
-                f"sample {sample.index + 1} byte range [{sample.offset}, {sample.end}) "
-                f"overlaps the previous sample ending at {previous_end}",
+                f"sample {sample.index + 1} byte range "
+                f"[{sample.offset}, {sample.end}) overlaps the previous sample ending "
+                f"at {previous_end}",
                 location="stco/co64",
             )
-        key = (sample.offset, sample.size)
-        if key in seen:
-            raise IndexValidationError(
-                f"sample {sample.index + 1} repeats byte range "
-                f"[{sample.offset}, {sample.end})",
-                location="stco/co64",
-            )
-        seen.add(key)
         previous_end = sample.end
 
 
