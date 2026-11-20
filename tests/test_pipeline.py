@@ -289,5 +289,55 @@ class ScanTests(unittest.TestCase):
             scan_wavs(self.indir)
 
 
+class CliTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.indir = os.path.join(self.tmp.name, "in")
+        self.db = os.path.join(self.tmp.name, "r.sqlite")
+        generate(self.indir)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _batch(self, *extra):
+        return cli_mod.main(["batch", "--input", self.indir, "--db",
+                             self.db, "--workers", "2"] + list(extra))
+
+    def test_full_demo_flow_exit_codes(self):
+        self.assertEqual(self._batch(), cli_mod.EXIT_OK)
+        out = os.path.join(self.tmp.name, "out.jsonl")
+        self.assertEqual(cli_mod.main(["export", "--db", self.db,
+                                       "--run-id", "latest", "--out", out]),
+                         cli_mod.EXIT_OK)
+        with open(out) as fh:
+            records = [json.loads(line) for line in fh]
+        self.assertEqual(len(records), 3)
+
+    def test_partial_failure_exit_code_one(self):
+        with open(os.path.join(self.indir, "bad.wav"), "wb") as fh:
+            fh.write(b"corrupt")
+        self.assertEqual(self._batch(), cli_mod.EXIT_FAILURE)
+
+    def test_bad_params_exit_code_two(self):
+        cases = (["--frame-ms", "5", "--hop-ms", "10"],
+                 ["--silence-dbfs", "10"],
+                 ["--workers", "0"])
+        for extra in cases:
+            self.assertEqual(self._batch(*extra), cli_mod.EXIT_PARAMS, extra)
+        empty = os.path.join(self.tmp.name, "empty")
+        os.makedirs(empty)
+        self.assertEqual(
+            cli_mod.main(["batch", "--input", empty, "--db", self.db]),
+            cli_mod.EXIT_PARAMS)
+
+    def test_detect_subcommand(self):
+        path = os.path.join(self.indir, "fade.wav")
+        self.assertEqual(cli_mod.main(["detect", path]), cli_mod.EXIT_OK)
+        bad = os.path.join(self.tmp.name, "bad.wav")
+        with open(bad, "wb") as fh:
+            fh.write(b"nope")
+        self.assertEqual(cli_mod.main(["detect", bad]), cli_mod.EXIT_FAILURE)
+
+
 if __name__ == "__main__":
     unittest.main()
