@@ -383,7 +383,11 @@ def _audit(mm, file_size: int, source, samples: dict[int, TrackSamples],
         expected_edits = []
         if expected.media_base > 0:
             expected_edits.append((expected.media_base, -1))
-        expected_edits.append((expected.duration_ticks, 0))
+        edit_duration = expected.edit_duration
+        if edit_duration is None:
+            edit_duration = expected.duration_ticks
+        if edit_duration > 0:
+            expected_edits.append((edit_duration, expected.codec_delay))
         if entry["edits"] != expected_edits:
             raise AuditError(f"track {track_id}: edit list {entry['edits']} != "
                              f"{expected_edits}")

@@ -121,18 +121,20 @@ def _edit_entries(track: TrackTimeline) -> list[tuple[int, int]]:
     """Map the movie timeline onto this track's media timeline.
 
     ``media_time = -1`` inserts an empty edit that delays the track so its
-    first presented sample lands at the original global PTS.  The remaining
-    media is then played from its own first presented sample.
+    first presented sample lands at the original global PTS.  ``media_time``
+    > 0 trims decoder priming (CodecDelay) from the start of the media.
     """
 
+    duration = track.edit_duration
+    if duration is None:
+        duration = track.duration_ticks
     media_end = track.media_base + track.duration_ticks
-    empty = track.media_base
     entries = []
-    if empty > 0:
-        entries.append((empty, -1))
-    media_duration = max(0, media_end - track.media_base)
+    if track.media_base > 0:
+        entries.append((track.media_base, -1))
+    media_duration = max(0, min(duration, max(0, media_end - track.media_base)))
     if media_duration > 0:
-        entries.append((media_duration, 0))
+        entries.append((media_duration, track.codec_delay))
     return entries
 
 

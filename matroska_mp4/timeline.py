@@ -89,6 +89,8 @@ class TrackTimeline:
     last_pts: int          # PTS of the last sample in decode order
     max_pts: int
     duration_ticks: int    # media duration, covering the last presented frame
+    codec_delay: int = 0   # decoder priming to trim from the start (ticks)
+    edit_duration: int | None = None  # explicit edit length, else duration_ticks
 
     @property
     def sample_count(self) -> int:
@@ -213,6 +215,15 @@ def _build_track(track: Track, mp4_id: int, bucket: TrackSamples, scale_ns: int,
             f"track {track.number}: sample duration exceeds uint32 stts range")
     media_base = int(global_pts.min())
     media_pts = global_pts - np.int64(media_base)
+    # CodecDelay is decoder priming that Matroska already excludes from PTS.
+    # MP4 instead keeps the priming samples in the media and trims them with
+    # an initial edit, so the media timeline starts codec_delay ticks early.
+    codec_delay = 0
+    if track.codec_delay_ns:
+        codec_delay = ns_to_ticks(track.codec_delay_ns, timescale)
+    aligned_pts = media_pts
+    if codec_delay:
+        media_pts = media_pts + np.int64(codec_delay)
     # Both modes store zero-based DTS inside the track; ``edts``/``elst``
     # delays the track by ``media_base`` on the movie timeline.
     dts = np.zeros_like(duration)
@@ -228,8 +239,9 @@ def _build_track(track: Track, mp4_id: int, bucket: TrackSamples, scale_ns: int,
                 f"track {track.number}: composition offset exceeds signed int32")
     else:
         # Preserve durations are the rounded PTS deltas, so the sample table
-        # reproduces PTS exactly and no composition offset is needed.
-        if not np.array_equal(dts, media_pts):
+        # reproduces PTS exactly and no composition offset is needed.  Priming
+        # is handled by the edit list, not by ctts.
+        if not np.array_equal(dts, aligned_pts):
             raise TimelineError(
                 f"track {track.number}: preserve timeline produced a "
                 f"composition offset")
@@ -244,7 +256,9 @@ def _build_track(track: Track, mp4_id: int, bucket: TrackSamples, scale_ns: int,
         offset=bucket.offset, size=bucket.size, keyframe=bucket.keyframe,
         media_base=media_base,
         first_pts=int(global_pts.min()), last_pts=int(global_pts.max()),
-        max_pts=int(global_pts.max()), duration_ticks=duration_ticks)
+        max_pts=int(global_pts.max()), duration_ticks=duration_ticks,
+        codec_delay=codec_delay,
+        edit_duration=max(0, duration_ticks - codec_delay) if codec_delay else None)
 
 
 def prepare(mkv: ParsedMatroska, timescale: int, mode: str) -> Timeline:

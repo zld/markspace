@@ -90,6 +90,7 @@ class Track:
     channels: int | None
     mp4_codec: str
     handler: str
+    codec_delay_ns: int = 0
 
 
 @dataclass(slots=True)
@@ -329,10 +330,9 @@ def _read_track(fh: BinaryIO, entry: ebml.Element) -> Track:
     if track_scale is not None and track_scale != 1.0:
         raise UnsupportedFormat(
             f"TrackTimestampScale {track_scale:g} is unsupported", track=number)
-    codec_delay = _uint_leaf(fh, entry, ids.CODE_DELAY)
-    if codec_delay:
-        raise UnsupportedFormat(
-            f"CodecDelay {codec_delay} ns is unsupported", track=number)
+    codec_delay = _uint_leaf(fh, entry, ids.CODE_DELAY) or 0
+    if codec_delay > MAX_DURATION_NS:
+        raise LimitError("CodecDelay overflows int64", offset=entry.offset)
     if _uint_leaf(fh, entry, ids.MAX_BLOCK_ADDITION_ID):
         # BlockAdditions carry extra per-block data we do not copy.
         raise UnsupportedFormat("BlockAdditions are unsupported", track=number)
@@ -400,7 +400,7 @@ def _read_track(fh: BinaryIO, entry: ebml.Element) -> Track:
                  codec_private=codec_private, default_duration_ns=default_duration,
                  name=name, language=language, width=width, height=height,
                  sample_rate=sample_rate, channels=channels, mp4_codec=mp4_codec,
-                 handler=handler)
+                 handler=handler, codec_delay_ns=codec_delay)
 
 
 def _parse_lace_sizes(reader: _PayloadReader, lacing: int) -> list[int]:

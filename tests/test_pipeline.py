@@ -651,4 +651,43 @@ class TestBlockHardening(FixtureTestCase):
                 matroska.parse_matroska(path)
             self.assertIn(needle, str(ctx.exception))
 
+    def test_codec_delay_is_trimmed_by_edit_list(self):
+        # ffmpeg AAC tracks carry CodecDelay (encoder priming).  The media
+        # keeps the priming samples and an initial edit trims them, so the
+        # presented first sample still lands at 0 ms.
+        base = fixture._track_entry(2, 2, "A_AAC", fixture.asc(), 32_000_000,
+                                    channels=2, sample_rate=48000.0)
+        header = ebml.read_header(io.BytesIO(base), 0, len(base))
+        payload = base[header.data_offset:header.data_offset + header.size]
+        entry = fixture.master(
+            fixture.ids.TRACK_ENTRY,
+            payload + fixture.uint_elem(fixture.ids.CODE_DELAY, 21_333_333))
+        frames = [fixture._audio_frame(i, 10) for i in range(4)]
+        cluster = fixture.master(fixture.ids.CLUSTER,
+                                 fixture.uint_elem(fixture.ids.TIMECODE, 0) +
+                                 fixture.leaf(fixture.ids.SIMPLE_BLOCK,
+                                              fixture.block_payload(2, 0, 0x80,
+                                                                    frames, "xiph")))
+        path = self.path("codec-delay.mkv")
+        with open(path, "wb") as handle:
+            handle.write(fixture._header() + fixture._segment(
+                fixture.master(fixture.ids.TRACKS, entry), cluster, True, 0.0))
+        mkv = matroska.parse_matroska(path)
+        self.assertEqual(mkv.tracks[0].codec_delay_ns, 21_333_333)
+        result = run_rewrite(mkv, 60000, self.path("codec-delay.mp4"))
+        track = result.timeline.tracks[0]
+        self.assertEqual(int(track.codec_delay), 1280)
+        self.assertEqual(track.media_pts.tolist(), [1280, 3200, 5120, 7040])
+        self.assertEqual(track.dts.tolist(), [0, 1920, 3840, 5760])
+        self.assertEqual(track.edit_duration, track.duration_ticks - 1280)
+        # The written edit list must include the priming trim.
+        with open(result.path, "rb") as handle:
+            raw = handle.read()
+        from matroska_mp4.mp4_audit import _child, _parse_edits, _read_boxes
+        moov = _child(_read_boxes(raw, 0, len(raw)), b"moov")
+        trak = _child(_read_boxes(raw, moov.data_offset, moov.end), b"trak")
+        edits = _parse_edits(_read_boxes(raw, trak.data_offset, trak.end), raw)
+        self.assertEqual(edits, [(track.edit_duration, 1280)])
+
+
 
