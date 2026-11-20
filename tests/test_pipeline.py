@@ -5,6 +5,7 @@ partial failures, run resume, deduplication, schema version checks and
 the CLI exit-code mapping.
 """
 import io
+import json
 import os
 import sqlite3
 import tempfile
@@ -135,7 +136,6 @@ class ExportTests(unittest.TestCase):
         count = export_jsonl(self.store, "latest", buf)
         self.assertEqual(count, 3)
         lines = buf.getvalue().strip().split("\n")
-        import json
         records = [json.loads(line) for line in lines]
         required = {"status", "sample_rate", "sample_frames", "clip_count",
                     "segments", "silence_total_seconds"}
@@ -167,6 +167,126 @@ class ExportTests(unittest.TestCase):
         self.assertEqual(resolve_run_id(self.store, str(self.rid)), self.rid)
         with self.assertRaises(StoreError):
             resolve_run_id(self.store, "9999")
+
+
+class BatchTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.indir = os.path.join(self.tmp.name, "in")
+        os.makedirs(self.indir)
+        self.db = os.path.join(self.tmp.name, "r.sqlite")
+        self.store = Store(self.db)
+
+    def tearDown(self):
+        self.store.close()
+        self.tmp.cleanup()
+
+    def _run(self, workers=1, resume=False, rid=None):
+        if rid is None:
+            rid = self.store.create_run(
+                self.indir, PARAMS.summary_json(), PARAMS.digest())
+        return rid, run_batch(self.store, rid, self.indir, PARAMS,
+                              workers=workers, resume=resume)
+
+    def test_multi_bitdepth_and_antiphase_stereo(self):
+        write_pcm(os.path.join(self.indir, "a8.wav"),
+                  np.zeros(SR, dtype=np.int64), 1)
+        write_pcm(os.path.join(self.indir, "b24.wav"),
+                  (tone(SR) * 8388607).astype(np.int64), 3)
+        write_pcm(os.path.join(self.indir, "c32.wav"),
+                  (tone(SR) * (2**31 - 1)).astype(np.int64), 4)
+        stereo = np.column_stack([tone(SR), -tone(SR)])
+        write_pcm(os.path.join(self.indir, "d_stereo.wav"),
+                  (stereo * 32767).astype(np.int64), 2, channels=2)
+        _, summary = self._run(workers=3)
+        self.assertEqual((summary.files_seen, summary.failed), (4, 0))
+        rows = {r["path"]: r for r in self.store.files_of_run(summary.run_id)}
+        self.assertEqual(rows["d_stereo.wav"]["channels"], 2)
+        self.assertEqual(rows["d_stereo.wav"]["clip_count"], 1)
+        self.assertEqual(rows["a8.wav"]["clip_count"], 0)
+
+    def test_partial_failure_isolated_and_persisted(self):
+        write_pcm(os.path.join(self.indir, "good.wav"),
+                  (tone(SR) * 32767).astype(np.int64), 2)
+        with open(os.path.join(self.indir, "broken.wav"), "wb") as fh:
+            fh.write(b"RIFF\x00\x00\x00\x00WAVEgarbage")
+        rid, summary = self._run()
+        self.assertEqual(summary.failed, 1)
+        self.assertEqual(summary.succeeded, 1)
+        rows = {r["path"]: r for r in self.store.files_of_run(rid)}
+        self.assertEqual(rows["broken.wav"]["status"], "error")
+        self.assertIn("broken.wav", rows["broken.wav"]["error"])
+        self.assertEqual(rows["good.wav"]["status"], "ok")
+        self.assertTrue(summary.errors)
+
+    def test_resume_skips_completed_files(self):
+        write_pcm(os.path.join(self.indir, "a.wav"),
+                  (tone(SR) * 32767).astype(np.int64), 2)
+        rid, first = self._run()
+        self.assertEqual(first.files_seen, 1)
+        write_pcm(os.path.join(self.indir, "b.wav"),
+                  (tone(SR, amp=0.4) * 32767).astype(np.int64), 2)
+        _, second = self._run(workers=2, resume=True, rid=rid)
+        self.assertEqual(second.files_seen, 2)
+        self.assertEqual(second.skipped, 1)
+        self.assertEqual(second.succeeded, 1)
+        paths = [r["path"] for r in self.store.files_of_run(rid)]
+        self.assertEqual(sorted(paths), ["a.wav", "b.wav"])
+
+    def test_dedup_reuses_identical_content_and_params(self):
+        write_pcm(os.path.join(self.indir, "a.wav"),
+                  (tone(SR) * 32767).astype(np.int64), 2)
+        _, first = self._run()
+        self.assertEqual(first.reused, 0)
+        rid2, second = self._run()
+        self.assertEqual(second.reused, 1)
+        self.assertEqual(second.succeeded, 1)
+        segs = {r["path"]: r["segments"]
+                for r in self.store.files_of_run(rid2)}
+        self.assertEqual(segs["a.wav"],
+                         self.store.files_of_run(first.run_id)[0]["segments"])
+
+    def test_failed_record_leaves_no_half_intervals(self):
+        from audiocut import DetectionResult, Segment
+        rid = self.store.create_run(self.indir, "{}", "d")
+        result = DetectionResult(
+            sample_rate=SR, channels=1, sample_frames=100,
+            segments=[Segment(0, 50)], silence=[Segment(50, 100)])
+        self.store.record_file(rid, "a.wav", "sha", "ok", result=result)
+        # A second row for the same (run, path) violates UNIQUE; the
+        # whole transaction must roll back with no orphan segments.
+        with self.assertRaises(StoreError):
+            self.store.record_file(rid, "a.wav", "sha", "ok", result=result)
+        rows = self.store.files_of_run(rid)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["segments"], [(0, 50)])
+        seg_count = self.store.conn.execute(
+            "SELECT COUNT(*) FROM segments").fetchone()[0]
+        self.assertEqual(seg_count, 1)
+
+
+class ScanTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.indir = os.path.join(self.tmp.name, "in")
+        os.makedirs(os.path.join(self.indir, "sub"))
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_sorted_recursive_and_symlink_skip(self):
+        for rel in ("z.wav", "sub/a.WAV", "sub/b.txt"):
+            with open(os.path.join(self.indir, rel), "wb") as fh:
+                fh.write(b"x")
+        os.symlink(os.path.join(self.indir, "z.wav"),
+                   os.path.join(self.indir, "link.wav"))
+        self.assertEqual(scan_wavs(self.indir), ["sub/a.WAV", "z.wav"])
+
+    def test_missing_and_empty_directories(self):
+        with self.assertRaises(FileNotFoundError):
+            scan_wavs(os.path.join(self.tmp.name, "nope"))
+        with self.assertRaises(ValueError):
+            scan_wavs(self.indir)
 
 
 if __name__ == "__main__":
