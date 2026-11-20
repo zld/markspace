@@ -243,6 +243,9 @@ class TestGaps(FixtureTestCase):
         self.assertEqual(video.dts.tolist(), [0, 2400, 4800, 7200])
         self.assertEqual(video.ctts.tolist(), [0, 0, 2400, 2400])
         self.assertEqual(result.timeline.ctts_tracks, 1)
+        # Only the video track has a real hole; audio's 32 ms cadence does not.
+        self.assertTrue(video.has_intra_gaps)
+        self.assertFalse(result.timeline.tracks[1].has_intra_gaps)
 
     def test_preserve_durations_follow_rounded_pts(self):
         # 27 ms spacing at timescale 60 rounds each gap to 2 ticks, but the
