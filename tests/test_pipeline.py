@@ -677,7 +677,8 @@ class TestBlockHardening(FixtureTestCase):
         result = run_rewrite(mkv, 60000, self.path("codec-delay.mp4"))
         track = result.timeline.tracks[0]
         self.assertEqual(int(track.codec_delay), 1280)
-        self.assertEqual(track.media_pts.tolist(), [1280, 3200, 5120, 7040])
+        # Media timestamps stay as authored; the edit trims the priming.
+        self.assertEqual(track.media_pts.tolist(), [0, 1920, 3840, 5760])
         self.assertEqual(track.dts.tolist(), [0, 1920, 3840, 5760])
         self.assertEqual(track.edit_duration, track.duration_ticks - 1280)
         # The written edit list must include the priming trim.

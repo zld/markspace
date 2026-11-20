@@ -215,15 +215,12 @@ def _build_track(track: Track, mp4_id: int, bucket: TrackSamples, scale_ns: int,
             f"track {track.number}: sample duration exceeds uint32 stts range")
     media_base = int(global_pts.min())
     media_pts = global_pts - np.int64(media_base)
-    # CodecDelay is decoder priming that Matroska already excludes from PTS.
-    # MP4 instead keeps the priming samples in the media and trims them with
-    # an initial edit, so the media timeline starts codec_delay ticks early.
+    # CodecDelay is decoder priming.  Matroska's block timestamps already
+    # include it, so the media stays zero-based; the edit list trims the
+    # first codec_delay ticks when the track is presented (as ffmpeg does).
     codec_delay = 0
     if track.codec_delay_ns:
         codec_delay = ns_to_ticks(track.codec_delay_ns, timescale)
-    aligned_pts = media_pts
-    if codec_delay:
-        media_pts = media_pts + np.int64(codec_delay)
     # Both modes store zero-based DTS inside the track; ``edts``/``elst``
     # delays the track by ``media_base`` on the movie timeline.
     dts = np.zeros_like(duration)
@@ -239,9 +236,8 @@ def _build_track(track: Track, mp4_id: int, bucket: TrackSamples, scale_ns: int,
                 f"track {track.number}: composition offset exceeds signed int32")
     else:
         # Preserve durations are the rounded PTS deltas, so the sample table
-        # reproduces PTS exactly and no composition offset is needed.  Priming
-        # is handled by the edit list, not by ctts.
-        if not np.array_equal(dts, aligned_pts):
+        # reproduces PTS exactly and no composition offset is needed.
+        if not np.array_equal(dts, media_pts):
             raise TimelineError(
                 f"track {track.number}: preserve timeline produced a "
                 f"composition offset")
@@ -250,6 +246,10 @@ def _build_track(track: Track, mp4_id: int, bucket: TrackSamples, scale_ns: int,
     duration_ticks = max(int(duration.sum()), int(ends.max()))
     if duration_ticks < 0 or media_base + duration_ticks > INT64_MAX:
         raise TimebaseOverflow("track media duration overflows int64")
+    if codec_delay >= duration_ticks:
+        raise TimelineError(
+            f"track {track.number}: CodecDelay {track.codec_delay_ns} ns "
+            f"covers the entire track; nothing would be presented")
     return TrackTimeline(
         track=track, mp4_track_id=mp4_id, pts=global_pts, media_pts=media_pts,
         dts=dts, ctts=ctts, duration=duration,
@@ -258,7 +258,7 @@ def _build_track(track: Track, mp4_id: int, bucket: TrackSamples, scale_ns: int,
         first_pts=int(global_pts.min()), last_pts=int(global_pts.max()),
         max_pts=int(global_pts.max()), duration_ticks=duration_ticks,
         codec_delay=codec_delay,
-        edit_duration=max(0, duration_ticks - codec_delay) if codec_delay else None)
+        edit_duration=duration_ticks - codec_delay if codec_delay else None)
 
 
 def prepare(mkv: ParsedMatroska, timescale: int, mode: str) -> Timeline:
