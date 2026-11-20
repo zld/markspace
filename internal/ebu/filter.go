@@ -3,6 +3,7 @@ package ebu
 import (
 	"fmt"
 	"math"
+	"sync"
 )
 
 // Biquad is a second-order IIR section in direct form I. Coefficients are
@@ -36,29 +37,42 @@ func (q Biquad) Process(s *State, x float64) float64 {
 	return y
 }
 
-// kWeightingRate lists the sample rates for which exact BS.1770 coefficients
-// (De Man / libebur128 derivation) are tabulated. Other rates are an error:
-// silently resampling or borrowing another rate's coefficients would make the
-// reported LUFS wrong.
+// kWeightingRate is the K-weighting filter pair for one sample rate.
 type kWeightingRate struct {
 	HighPass Biquad
 	Shelf    Biquad
+	Rate     int
 }
 
-var kWeightingTable = map[int]kWeightingRate{}
+// minKWeightingRate is the lowest rate the analytic design is meaningful for.
+// The shelf at 1.7 kHz is a large fraction of an 8 kHz Nyquist limit, and the
+// bilinear transform's warping there shifts the 1 kHz response by about
+// 0.2 dB. Below 8 kHz the error grows quickly, so such files are rejected
+// rather than reported as if they had been measured to BS.1770.
+const minKWeightingRate = 8000
+
+// kWeightingTable caches the coefficients for rates already requested. The
+// coefficients are derived at the file's real rate rather than borrowed from
+// a 48 kHz table, which is what libebur128 does: a 32 kHz asset then measures
+// correctly instead of being rejected or silently resampled.
+var kWeightingTable = sync.Map{} // int -> kWeightingRate
 
 func init() {
-	for _, fs := range []float64{44100, 48000, 88200, 96000, 192000} {
-		kWeightingTable[int(fs)] = deriveKWeighting(fs)
+	// Pre-seed the common rates so a typo in a test cannot hide a derivation
+	// bug: the 48 kHz pair is checked against the BS.1770 reference values.
+	for _, fs := range []int{44100, 48000, 88200, 96000, 192000} {
+		kWeightingTable.Store(fs, deriveKWeighting(float64(fs)))
 	}
 }
 
 // deriveKWeighting computes BS.1770 K-weighting for an arbitrary rate using the
 // De Man analytic design, matching the tabulated 48 kHz reference values.
 func deriveKWeighting(fs float64) kWeightingRate {
-	highPass := deriveHighPass(fs)
-	shelf := deriveShelf(fs)
-	return kWeightingRate{HighPass: highPass, Shelf: shelf}
+	return kWeightingRate{
+		HighPass: deriveHighPass(fs),
+		Shelf:    deriveShelf(fs),
+		Rate:     int(fs),
+	}
 }
 
 func deriveHighPass(fs float64) Biquad {
@@ -92,13 +106,18 @@ func deriveShelf(fs float64) Biquad {
 	}
 }
 
-// KWeightingFor returns the K-weighting filter pair for a sample rate.
+// KWeightingFor returns the K-weighting filter pair for a sample rate,
+// deriving and caching it when the rate has not been seen before.
 func KWeightingFor(sampleRate int) (kWeightingRate, error) {
-	kw, ok := kWeightingTable[sampleRate]
-	if !ok {
-		return kWeightingRate{}, fmt.Errorf("unsupported sample rate %d Hz for K-weighting (supported: 44100, 48000, 88200, 96000, 192000)", sampleRate)
+	if sampleRate < minKWeightingRate {
+		return kWeightingRate{}, fmt.Errorf("sample rate %d Hz is below the %d Hz minimum for K-weighting", sampleRate, minKWeightingRate)
 	}
-	return kw, nil
+	if cached, ok := kWeightingTable.Load(sampleRate); ok {
+		return cached.(kWeightingRate), nil
+	}
+	kw := deriveKWeighting(float64(sampleRate))
+	actual, _ := kWeightingTable.LoadOrStore(sampleRate, kw)
+	return actual.(kWeightingRate), nil
 }
 
 // Chain is a per-channel cascade of the two K-weighting stages.

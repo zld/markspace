@@ -73,12 +73,19 @@ func TestValidateOverrideWithDuplicateLabels(t *testing.T) {
 	}
 }
 
-func TestValidateUnsupportedSampleRate(t *testing.T) {
+func TestValidateSampleRateFloor(t *testing.T) {
+	// 32 kHz is derived at its real rate and accepted; below 8 kHz the
+	// K-weighting design is not trustworthy, so the file is rejected.
 	s := stereoStream()
 	s.SampleRate = "32000"
 	out := ffprobeOutput{Streams: []ffprobeStream{s}}
+	if _, err := validate("x", out, nil, Limits{}); err != nil {
+		t.Fatalf("32 kHz rejected: %v", err)
+	}
+	s.SampleRate = "4000"
+	out = ffprobeOutput{Streams: []ffprobeStream{s}}
 	if _, err := validate("x", out, nil, Limits{}); err == nil {
-		t.Fatal("32 kHz accepted without K-weighting coefficients")
+		t.Fatal("4 kHz accepted")
 	}
 }
 

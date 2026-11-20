@@ -17,7 +17,8 @@ func TestCoefficientsAt48kMatchReference(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// Reference values from the De Man derivation used by libebur128.
+	// Reference values from the De Man derivation used by libebur128. The
+	// 48 kHz pair is pre-seeded, so this also pins the table's first entry.
 	wantHP := []float64{0.9950299263000474, -1.9900598526000948, 0.9950299263000474}
 	wantHPA := []float64{-1.9900474548339797, 0.9900722503662099}
 	gotHP := []float64{kw.HighPass.B0, kw.HighPass.B1, kw.HighPass.B2}
@@ -83,8 +84,41 @@ func TestChainStateIsPerChannel(t *testing.T) {
 	}
 }
 
-func TestUnsupportedRateRejected(t *testing.T) {
-	if _, err := KWeightingFor(32000); err == nil {
-		t.Fatal("expected error for unsupported rate")
+func TestArbitraryRatesAreDerived(t *testing.T) {
+	// Rates outside the common set are derived at their real rate rather than
+	// rejected: a 32 kHz asset must measure correctly, not be refused.
+	for _, rate := range []int{8000, 22050, 32000, 64000} {
+		kw, err := KWeightingFor(rate)
+		if err != nil {
+			t.Fatalf("%d Hz: %v", rate, err)
+		}
+		if kw.Rate != rate {
+			t.Errorf("%d Hz: rate = %d", rate, kw.Rate)
+		}
+		// The design matches the 48 kHz reference closely while the shelf is
+		// in its flat region and warping stays small; at 8 kHz the bilinear
+		// transform pushes the shelf down by about 0.2 dB at 1 kHz, which is
+		// inherent to deriving at that rate rather than borrowing 48 kHz
+		// coefficients.
+		h := response(kw.HighPass, float64(rate), 1000) * response(kw.Shelf, float64(rate), 1000)
+		got := 20 * math.Log10(cmplx.Abs(h))
+		tolerance := 0.15
+		if rate < 16000 {
+			tolerance = 0.3
+		}
+		if math.Abs(got-0.65) > tolerance {
+			t.Errorf("%d Hz: 1 kHz gain = %.3f dB", rate, got)
+		}
+	}
+	if _, err := KWeightingFor(7999); err == nil {
+		t.Fatal("expected error below the minimum rate")
+	}
+}
+
+func TestCoefficientsAreCachedPerRate(t *testing.T) {
+	a, _ := KWeightingFor(32000)
+	b, _ := KWeightingFor(32000)
+	if a.HighPass != b.HighPass || a.Shelf != b.Shelf {
+		t.Fatal("cached coefficients differ between calls")
 	}
 }
