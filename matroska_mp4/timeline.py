@@ -28,21 +28,19 @@ class TimebaseOverflow(TimelineError):
     """A timestamp or duration does not fit in signed 64-bit arithmetic."""
 
 
-def _check_i64(value: int, what: str) -> int:
-    if value < INT64_MIN or value > INT64_MAX:
-        raise TimebaseOverflow(f"{what} {value} overflows int64")
-    return value
-
-
 def ticks_to_ns(ticks: np.ndarray | int, scale_ns: int) -> np.ndarray | int:
     """Multiply tick counts by a positive scale, checking int64 bounds."""
 
     if scale_ns <= 0:
         raise TimelineError("TimestampScale must be positive")
     array = np.asarray(ticks, dtype=np.int64)
-    if np.any(array > INT64_MAX // scale_ns) or np.any(array < INT64_MIN // scale_ns):
+    # Floor division would let a small negative value through; compare against
+    # the exact representable range instead.
+    if np.any(array > INT64_MAX // scale_ns) or np.any(array < -(INT64_MAX // scale_ns)):
         raise TimebaseOverflow("timestamp * TimestampScale overflows int64")
     result = array * np.int64(scale_ns)
+    if result.size and (result.min() < INT64_MIN or result.max() > INT64_MAX):
+        raise TimebaseOverflow("timestamp * TimestampScale overflows int64")
     return int(result) if np.isscalar(ticks) else result
 
 
@@ -52,16 +50,17 @@ def ns_to_ticks(ns: np.ndarray | int, timescale: int) -> np.ndarray | int:
     if timescale <= 0:
         raise TimelineError("MP4 timescale must be positive")
     array = np.asarray(ns, dtype=np.int64)
-    if np.any(array > INT64_MAX // timescale) or np.any(array < INT64_MIN // timescale):
+    # ``ns * timescale`` must fit; rounding afterwards can only add one tick.
+    if (np.any(array > (INT64_MAX - 1) // timescale) or
+            np.any(array < -(INT64_MAX - 1) // timescale)):
         raise TimebaseOverflow("timestamp * timescale overflows int64")
-    if np.any(array == INT64_MIN):
-        raise TimebaseOverflow("timestamp INT64_MIN cannot be rescaled")
     product = array * np.int64(timescale)
+    negative = product < 0
     magnitude = np.abs(product)
     quotient = magnitude // np.int64(NS_PER_S)
     remainder = magnitude % np.int64(NS_PER_S)
     rounded = quotient + (remainder >= np.int64(NS_PER_S // 2))
-    result = np.where(product < 0, -rounded, rounded).astype(np.int64)
+    result = np.where(negative, -rounded, rounded)
     if result.size and (result.min() < INT64_MIN or result.max() > INT64_MAX):
         raise TimebaseOverflow("rescaled timestamp overflows int64")
     return int(result) if np.isscalar(ns) else result
@@ -172,29 +171,39 @@ def _build_track(track: Track, mp4_id: int, bucket: TrackSamples, scale_ns: int,
     known = bucket.duration_ns
     default = np.full(pts_ns.shape, track.default_duration_ns or 0, dtype=np.int64)
     durations_ns = _resolve_durations(pts_ns, known, default, track)
-    if mode == "preserve":
-        # Preserve gaps: with zero ctts, stts deltas must equal the actual PTS
-        # spacing, otherwise a gap would silently close up.
-        if pts_ns.size > 1:
-            gaps = pts_ns[1:] - pts_ns[:-1]
-            if bool(np.any(gaps <= 0)):
-                raise TimelineError(
-                    f"track {track.number}: PTS must strictly increase in "
-                    f"decode order for preserve mode (duplicate or reversed "
-                    f"timestamp)")
-            last = int(durations_ns[-1])
-            durations_ns = np.concatenate((gaps, np.asarray([last], np.int64)))
-    scale = np.int64(scale_ns)
-    if np.any(pts_ns > INT64_MAX // scale_ns) or np.any(pts_ns < INT64_MIN // scale_ns):
-        raise TimebaseOverflow("PTS * TimestampScale overflows int64")
-    if np.any(durations_ns > INT64_MAX // scale_ns):
-        raise TimebaseOverflow("duration * TimestampScale overflows int64")
+    if mode == "preserve" and pts_ns.size > 1:
+        gaps = pts_ns[1:] - pts_ns[:-1]
+        if bool(np.any(gaps <= 0)):
+            raise TimelineError(
+                f"track {track.number}: PTS must strictly increase in "
+                f"decode order for preserve mode (duplicate or reversed "
+                f"timestamp)")
     if shift_ns > 0 and np.any(pts_ns < INT64_MIN + shift_ns):
         raise TimebaseOverflow("PTS shift underflows int64")
     if shift_ns < 0 and np.any(pts_ns > INT64_MAX + shift_ns):
         raise TimebaseOverflow("PTS shift overflows int64")
     global_pts = ns_to_ticks(pts_ns - shift_ns, timescale)
     duration = ns_to_ticks(durations_ns, timescale)
+    if mode == "preserve":
+        if global_pts.size > 1:
+            # Preserve represents timing only through stts (ctts stays zero),
+            # so durations must be the *rounded* PTS deltas.  Deriving them
+            # from rounded nanosecond gaps could drift by a tick per sample
+            # and desynchronise the edit list from the sample table.
+            if bool(np.any(global_pts[1:] < global_pts[:-1])):
+                position = int(np.flatnonzero(global_pts[1:] < global_pts[:-1])[0])
+                raise TimelineError(
+                    f"track {track.number}: PTS is not monotonic in decode order "
+                    f"(sample {position + 2} at {int(global_pts[position + 1])} "
+                    f"precedes {int(global_pts[position])}); reordered frames "
+                    f"require --mode rewrite")
+            last = ns_to_ticks(int(durations_ns[-1]), timescale)
+            if last <= 0:
+                raise TimelineError(
+                    f"track {track.number}: final sample duration rounds to "
+                    f"zero at timescale {timescale}")
+            duration = np.concatenate((np.diff(global_pts),
+                                       np.asarray([last], np.int64)))
     if np.any(duration <= 0):
         raise TimelineError(
             f"track {track.number}: sample duration rounds to zero at timescale "
@@ -202,39 +211,33 @@ def _build_track(track: Track, mp4_id: int, bucket: TrackSamples, scale_ns: int,
     if np.any(duration > UINT32_MAX):
         raise TimelineError(
             f"track {track.number}: sample duration exceeds uint32 stts range")
-    if mode == "preserve":
-        if global_pts.size > 1 and bool(np.any(global_pts[1:] < global_pts[:-1])):
-            position = int(np.flatnonzero(global_pts[1:] < global_pts[:-1])[0])
-            raise TimelineError(
-                f"track {track.number}: PTS is not monotonic in decode order "
-                f"(sample {position + 2} at {int(global_pts[position + 1])} "
-                f"precedes {int(global_pts[position])}); reordered frames "
-                f"require --mode rewrite")
-        dts = global_pts.copy()
     media_base = int(global_pts.min())
     media_pts = global_pts - np.int64(media_base)
+    # Both modes store zero-based DTS inside the track; ``edts``/``elst``
+    # delays the track by ``media_base`` on the movie timeline.
+    dts = np.zeros_like(duration)
+    if duration.size > 1:
+        if int(duration[:-1].sum()) > INT64_MAX:
+            raise TimebaseOverflow("cumulative DTS overflows int64")
+        dts[1:] = np.cumsum(duration[:-1], dtype=np.int64)
     if mode == "rewrite":
-        dts = np.zeros_like(duration)
-        if duration.size > 1:
-            if int(duration[:-1].sum()) > INT64_MAX:
-                raise TimebaseOverflow("cumulative DTS overflows int64")
-            dts[1:] = np.cumsum(duration[:-1], dtype=np.int64)
         ctts = media_pts.astype(np.int64) - dts
         too_big = np.any(ctts > INT32_MAX) or np.any(ctts < INT32_MIN)
         if too_big:
             raise TimelineError(
                 f"track {track.number}: composition offset exceeds signed int32")
     else:
-        dts = np.zeros_like(duration)
-        if duration.size > 1:
-            dts[1:] = np.cumsum(duration[:-1], dtype=np.int64)
-        ctts = media_pts - dts
-        if bool(np.any(ctts != 0)):
+        # Preserve durations are the rounded PTS deltas, so the sample table
+        # reproduces PTS exactly and no composition offset is needed.
+        if not np.array_equal(dts, media_pts):
             raise TimelineError(
                 f"track {track.number}: preserve timeline produced a "
                 f"composition offset")
+        ctts = np.zeros_like(duration)
     ends = media_pts + duration
     duration_ticks = max(int(duration.sum()), int(ends.max()))
+    if duration_ticks < 0 or media_base + duration_ticks > INT64_MAX:
+        raise TimebaseOverflow("track media duration overflows int64")
     return TrackTimeline(
         track=track, mp4_track_id=mp4_id, pts=global_pts, media_pts=media_pts,
         dts=dts, ctts=ctts, duration=duration,

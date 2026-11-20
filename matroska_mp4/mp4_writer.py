@@ -117,7 +117,7 @@ def _elst(entries: list[tuple[int, int]]) -> bytes:
     return full_box(b"elst", 1 if wide else 0, 0, payload)
 
 
-def _edit_entries(track: TrackTimeline, movie_timescale: int) -> list[tuple[int, int]]:
+def _edit_entries(track: TrackTimeline) -> list[tuple[int, int]]:
     """Map the movie timeline onto this track's media timeline.
 
     ``media_time = -1`` inserts an empty edit that delays the track so its
@@ -252,7 +252,7 @@ def build_stbl(track: TrackTimeline, chunk_offsets: list[int]) -> bytes:
 def _trak(track: TrackTimeline, chunk_offsets: list[int], timescale: int) -> bytes:
     is_video = track.track.handler == "vide"
     track_duration = track.media_base + track.duration_ticks
-    entries = _edit_entries(track, timescale)
+    entries = _edit_entries(track)
     if is_video:
         media_info = box(b"vmhd", _u8(0) * 4 + bytes(8))
         media_name = "VideoHandler"
