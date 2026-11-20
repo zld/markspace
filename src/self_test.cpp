@@ -5,9 +5,10 @@
 #include <string>
 #include <vector>
 
+#include "h264/analyzer.hpp"
 #include "h264/bit_reader.hpp"
-#include "h264/syntax.hpp"
 #include "h264/bit_writer.hpp"
+#include "h264/fixture_writer.hpp"
 #include "h264/nal.hpp"
 
 namespace h264 {
@@ -72,6 +73,13 @@ std::vector<std::uint8_t> make_sps_rbsp(int profile_idc, int level_idc,
   w.write_bit(false);
   w.append_trailing_bits();
   return w.bytes();
+}
+
+AnalysisReport analyze(const std::vector<std::uint8_t>& bytes,
+                       AnalyzeMode mode = AnalyzeMode::kStrict) {
+  AnalysisOptions options;
+  options.mode = mode;
+  return analyze_stream(bytes, options);
 }
 
 // --- 1. Exp-Golomb edges -------------------------------------------------
@@ -212,6 +220,254 @@ void test_parameter_sets() {
   });
 }
 
+// --- 5. Multi-slice and interlaced fields --------------------------------
+
+void test_copy_of_demo_stream_is_handled() {
+  FixtureOptions options;
+  options.profile = FixtureProfile::kInterlacedMultislice;
+  const std::vector<std::uint8_t> bytes = build_fixture(options);
+  const AnalysisReport report = analyze(bytes);
+  check(report.stats.pictures == 5, "demo pictures");
+  check(report.stats.slices == 8, "demo slices");
+  check(report.stats.all_types.i == 2, "demo I pictures");
+  check(report.stats.all_types.p == 1, "demo P pictures");
+  check(report.stats.all_types.b == 2, "demo B pictures");
+  check(report.stats.field_pictures == 2, "demo field pictures");
+  check(report.stats.gop_count == 2, "demo GOP count");
+  check(!report.gops.gops.empty() && report.gops.gops[0].start_offset_bytes > 0,
+        "first GOP offset after parameter sets");
+}
+
+// --- 6. Missing parameter sets, truncation, recovery ----------------------
+
+std::vector<std::uint8_t> make_pps_rbsp() {
+  BitWriter w;
+  w.write_ue(0);       // pps_id
+  w.write_ue(0);       // sps_id
+  w.write_bit(false);
+  w.write_bit(false);
+  w.write_ue(0);
+  w.write_ue(0);
+  w.write_ue(0);
+  w.write_bit(false);
+  w.write_bits(0, 2);
+  w.write_se(0);
+  w.write_se(0);
+  w.write_se(0);
+  w.write_bit(true);
+  w.write_bit(false);
+  w.write_bit(false);
+  w.append_trailing_bits();
+  return w.bytes();
+}
+
+void test_missing_parameter_sets() {
+  BitWriter slice;
+  slice.write_ue(0);  // first_mb_in_slice
+  slice.write_ue(7);  // I slice
+  slice.write_ue(0);  // pps_id
+  slice.write_bits(0, 4);
+  slice.write_bit(false);
+  slice.write_ue(0);
+  slice.write_bits(0, 6);
+  slice.write_bit(false);
+  slice.write_bit(false);
+  slice.append_trailing_bits();
+
+  // Complete stream: SPS + PPS + slice parses to a single I picture.
+  std::vector<std::uint8_t> bytes;
+  append_nal(&bytes, 3, 7, make_sps_rbsp(66, 30, 4, 2, false), true);
+  append_nal(&bytes, 3, 8, make_pps_rbsp(), true);
+  append_nal(&bytes, 3, 5, slice.bytes(), true);
+  const AnalysisReport ok = analyze(bytes);
+  check(ok.stats.pictures == 1 && ok.stats.all_types.i == 1,
+        "slice with valid parameter sets");
+
+  // PPS + slice but no SPS: the slice references an unknown parameter set.
+  std::vector<std::uint8_t> no_sps;
+  append_nal(&no_sps, 3, 8, make_pps_rbsp(), true);
+  append_nal(&no_sps, 3, 5, slice.bytes(), true);
+  expect_throw("missing SPS is an error", [&] { analyze(no_sps); });
+  const AnalysisReport recovered = analyze(no_sps, AnalyzeMode::kRecovery);
+  check(!recovered.ok && recovered.incomplete,
+        "recovery flags incomplete report");
+  check(!recovered.errors.empty(), "recovery records the diagnostic");
+
+  // A PPS that names an SPS id that was never sent is rejected up front.
+  BitWriter orphan_pps;
+  orphan_pps.write_ue(0);
+  orphan_pps.write_ue(3);  // sps_id 3, never defined
+  orphan_pps.write_bit(false);
+  orphan_pps.write_bit(false);
+  orphan_pps.write_ue(0);
+  orphan_pps.write_ue(0);
+  orphan_pps.write_ue(0);
+  orphan_pps.write_bit(false);
+  orphan_pps.write_bits(0, 2);
+  orphan_pps.write_se(0);
+  orphan_pps.write_se(0);
+  orphan_pps.write_se(0);
+  orphan_pps.write_bit(true);
+  orphan_pps.write_bit(false);
+  orphan_pps.write_bit(false);
+  orphan_pps.append_trailing_bits();
+  std::vector<std::uint8_t> pps_only;
+  append_nal(&pps_only, 3, 7, make_sps_rbsp(66, 30, 4, 2, false), true);
+  append_nal(&pps_only, 3, 8, orphan_pps.bytes(), true);
+  expect_throw("PPS with unknown SPS id", [&] { analyze(pps_only); });
+}
+
+void test_truncated_stream() {
+  FixtureOptions options;
+  options.profile = FixtureProfile::kInterlacedMultislice;
+  std::vector<std::uint8_t> bytes = build_fixture(options);
+  bytes.resize(bytes.size() - 3);  // cut inside the final slice
+
+  const AnalysisReport recovered = analyze(bytes, AnalyzeMode::kRecovery);
+  check(recovered.incomplete, "truncated stream marked incomplete");
+  expect_throw("truncated stream fails strict mode", [&] { analyze(bytes); });
+
+  std::vector<std::uint8_t> dangling_start_code = bytes;
+  dangling_start_code.push_back(0x00);
+  dangling_start_code.push_back(0x00);
+  dangling_start_code.push_back(0x01);
+  const AnalysisReport dangling =
+      analyze(dangling_start_code, AnalyzeMode::kRecovery);
+  check(dangling.had_truncated_start_code, "dangling start code reported");
+}
+
+void test_unsupported_syntax() {
+  std::vector<std::uint8_t> bytes;
+  append_nal(&bytes, 3, 7, make_sps_rbsp(66, 30, 4, 2, false), true);
+  append_nal(&bytes, 3, 20, {0x00}, true);  // slice extension
+  expect_throw("extension NAL rejected", [&] { analyze(bytes); });
+  const AnalysisReport recovered = analyze(bytes, AnalyzeMode::kRecovery);
+  check(recovered.incomplete, "unsupported stream marked incomplete");
+  check(!recovered.errors.empty(),
+        "recovery records the unsupported extension");
+
+  std::vector<std::uint8_t> fmo;
+  append_nal(&fmo, 3, 7, make_sps_rbsp(66, 30, 4, 2, true), true);
+  BitWriter w;
+  w.write_ue(0);
+  w.write_ue(0);
+  w.write_bit(false);
+  w.write_bit(false);
+  w.write_ue(2);  // num_slice_groups_minus1 -> FMO
+  w.append_trailing_bits();
+  append_nal(&fmo, 3, 8, w.bytes(), true);
+  expect_throw("FMO rejected", [&] { analyze(fmo); });
+}
+
+void test_baseline_fixture() {
+  FixtureOptions options;
+  options.profile = FixtureProfile::kBaseline;
+  const AnalysisReport report = analyze(build_fixture(options));
+  check(report.stats.pictures == 2, "baseline pictures");
+  check(report.stats.slices == 3, "baseline slices");
+  check(report.stats.all_types.i == 1 && report.stats.all_types.p == 1,
+        "baseline types");
+  check(report.stats.gop_count == 1, "baseline GOP count");
+}
+
+// --- ES. Picture boundaries and slice consistency -------------------------
+
+struct PicturePlanForTest {
+  int kind;  // raw slice_type: 7 = I, 5 = P, 6 = B
+  int frame_num;
+  int poc_lsb;
+};
+
+std::vector<std::uint8_t> build_pictures(
+    const std::vector<PicturePlanForTest>& plan, bool idr_first) {
+  std::vector<std::uint8_t> bytes;
+  append_nal(&bytes, 3, 7, make_sps_rbsp(66, 30, 4, 2, true), true);
+  append_nal(&bytes, 3, 8, make_pps_rbsp(), true);
+  for (std::size_t i = 0; i < plan.size(); ++i) {
+    const bool idr = idr_first && i == 0;
+    BitWriter w;
+    w.write_ue(0);
+    w.write_ue(static_cast<std::uint32_t>(plan[i].kind));
+    w.write_ue(0);
+    w.write_bits(static_cast<std::uint32_t>(plan[i].frame_num), 4);
+    if (idr) w.write_ue(0);
+    w.write_bits(static_cast<std::uint32_t>(plan[i].poc_lsb), 6);
+    if (plan[i].kind % 5 == 1) w.write_bit(true);
+    if (plan[i].kind % 5 == 0 || plan[i].kind % 5 == 1) w.write_bit(false);
+    w.write_bit(false);  // adaptive_ref_pic_marking_mode_flag
+    w.append_trailing_bits();
+    append_nal(&bytes, idr ? 3 : 0, idr ? 5 : 1, w.bytes(), true);
+  }
+  return bytes;
+}
+
+void test_picture_boundaries() {
+  // Two P pictures sharing frame_num but differing in POC must not merge.
+  const std::vector<std::uint8_t> same_frame = build_pictures(
+      {{7, 0, 0}, {5, 0, 4}, {5, 0, 8}}, true);
+  const AnalysisReport report = analyze(same_frame);
+  check(report.stats.pictures == 3, "POC splits pictures sharing frame_num");
+
+  // Three slices with identical identity collapse to one picture.
+  std::vector<std::uint8_t> multi = build_pictures({{5, 1, 2}}, false);
+  for (int i = 0; i < 2; ++i) {
+    BitWriter w;
+    w.write_ue(static_cast<std::uint32_t>(8 * (i + 1)));  // next MB
+    w.write_ue(5);
+    w.write_ue(0);
+    w.write_bits(1, 4);
+    w.write_bits(2, 6);
+    w.write_bit(false);
+    w.write_bit(false);
+    w.append_trailing_bits();
+    append_nal(&multi, 0, 1, w.bytes(), true);
+  }
+  const AnalysisReport multi_report = analyze(multi);
+  check(multi_report.stats.pictures == 1, "multi-slice picture counted once");
+  check(multi_report.stats.slices == 3, "slice count preserved");
+}
+
+void test_slice_type_disagreement() {
+  // Two slices of the same picture with different slice types must fail.
+  std::vector<std::uint8_t> bytes;
+  append_nal(&bytes, 3, 7, make_sps_rbsp(66, 30, 4, 2, true), true);
+  append_nal(&bytes, 3, 8, make_pps_rbsp(), true);
+  for (int i = 0; i < 2; ++i) {
+    BitWriter w;
+    w.write_ue(static_cast<std::uint32_t>(i * 8));
+    w.write_ue(i == 0 ? 7 : 5);  // I slice then P slice, same identity
+    w.write_ue(0);
+    w.write_bits(1, 4);
+    w.write_bits(2, 6);
+    w.write_bit(false);
+    w.write_bit(false);
+    w.append_trailing_bits();
+    append_nal(&bytes, 3, i == 0 ? 5 : 1, w.bytes(), true);
+  }
+  expect_throw("slice type disagreement", [&] { analyze(bytes); });
+}
+
+void test_three_byte_start_codes() {
+  FixtureOptions options;
+  options.profile = FixtureProfile::kInterlacedMultislice;
+  options.use_four_byte_start_codes = false;
+  const AnalysisReport report = analyze(build_fixture(options));
+  check(report.stats.pictures == 5 && report.stats.slices == 8,
+        "three-byte start codes parse identically");
+
+  // Double start code (back-to-back prefixes) leaves an empty NAL behind.
+  std::vector<std::uint8_t> bytes;
+  append_nal(&bytes, 3, 7, make_sps_rbsp(66, 30, 4, 2, true), false);
+  bytes.push_back(0x00);
+  bytes.push_back(0x00);
+  bytes.push_back(0x01);
+  append_nal(&bytes, 3, 8, make_pps_rbsp(), false);
+  const AnalysisReport double_prefix = analyze(bytes);
+  check(double_prefix.empty_nal_count == 1, "double start code counted empty");
+  check(double_prefix.stats.sps_count == 1 && double_prefix.stats.pps_count == 1,
+        "double start code keeps both parameter sets");
+}
+
 }  // namespace
 
 int run_self_tests(bool verbose) {
@@ -222,6 +478,14 @@ int run_self_tests(bool verbose) {
   test_rbsp_escape();
   test_start_codes();
   test_parameter_sets();
+  test_copy_of_demo_stream_is_handled();
+  test_missing_parameter_sets();
+  test_truncated_stream();
+  test_unsupported_syntax();
+  test_baseline_fixture();
+  test_picture_boundaries();
+  test_slice_type_disagreement();
+  test_three_byte_start_codes();
   if (g_failures == 0) {
     std::printf("self-test: %d checks passed\n", g_checks);
   } else {
