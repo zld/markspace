@@ -4,6 +4,23 @@ package continuity
 
 import "tsmap/internal/ts"
 
+// Event kinds recorded by the tracker.
+const (
+	EventGap           = "cc_gap"
+	EventDuplicate     = "duplicate"
+	EventDiscontinuity = "discontinuity"
+)
+
+// Event is a single continuity observation with its file offset.
+type Event struct {
+	PID      uint16
+	Offset   int64
+	Kind     string
+	Expected byte
+	Got      byte
+	Lost     int
+}
+
 // PIDStats summarizes continuity observations for one PID.
 type PIDStats struct {
 	PID             uint16
@@ -24,11 +41,15 @@ type state struct {
 
 // Tracker keeps independent continuity state per PID.
 type Tracker struct {
-	per map[uint16]*state
+	per    map[uint16]*state
+	events []Event
 }
 
 // New returns an empty Tracker.
 func New() *Tracker { return &Tracker{per: make(map[uint16]*state)} }
+
+// Events returns the recorded continuity events in observation order.
+func (t *Tracker) Events() []Event { return t.events }
 
 // Observe folds one packet into the per-PID continuity state.
 func (t *Tracker) Observe(p *ts.Packet) {
@@ -48,6 +69,7 @@ func (t *Tracker) Observe(p *ts.Packet) {
 	}
 	if p.DiscontinuityIndicator {
 		s.stats.Discontinuities++
+		t.events = append(t.events, Event{PID: p.PID, Offset: p.Offset, Kind: EventDiscontinuity})
 		s.haveLast = true
 		s.lastCC = p.ContinuityCounter
 		s.lastRaw = p.Raw
@@ -65,10 +87,14 @@ func (t *Tracker) Observe(p *ts.Packet) {
 		// normal advance
 	case p.ContinuityCounter == s.lastCC && p.Raw == s.lastRaw:
 		s.stats.Duplicates++
+		t.events = append(t.events, Event{PID: p.PID, Offset: p.Offset, Kind: EventDuplicate,
+			Expected: expected, Got: p.ContinuityCounter})
 	default:
 		s.stats.GapEvents++
 		lost := (int(p.ContinuityCounter) - int(expected)) & 0xf
 		s.stats.EstimatedLost += uint64(lost)
+		t.events = append(t.events, Event{PID: p.PID, Offset: p.Offset, Kind: EventGap,
+			Expected: expected, Got: p.ContinuityCounter, Lost: lost})
 	}
 	s.lastCC = p.ContinuityCounter
 	s.lastRaw = p.Raw
