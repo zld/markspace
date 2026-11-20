@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import unittest
 import hashlib
+import json
 import tempfile
 from pathlib import Path
 from PIL import Image
 import numpy as np
+from timeline_composer import cli
 from timeline_composer.assets import AssetError, AssetStore
 from timeline_composer.audio_sync import align_events, nearest_frame
 from timeline_composer.clock import ClockError, FrameClock
+from timeline_composer.color import blend, encode_frame, linear_to_srgb8, srgb8_to_linear
 from timeline_composer.compositor import CompositorError, FrameCompositor
 from timeline_composer.exporter import ExportError, export_summary, read_summary
 from timeline_composer.fixtures import DEMO_LAYER_ASSETS, build_demo, write_demo_assets
@@ -150,6 +153,56 @@ def _solid_rgba(width: int, height: int, color: tuple[int, int, int, int]) -> np
     frame = np.empty((height, width, 4), dtype=np.uint8)
     frame[...] = color
     return frame
+
+class ColorTests(unittest.TestCase):
+    def test_srgb_linear_round_trip_is_exact_for_8_bit(self) -> None:
+        codes = np.arange(256, dtype=np.uint8)
+        linear = srgb8_to_linear(codes)
+        self.assertEqual(linear_to_srgb8(linear).tolist(), codes.tolist())
+
+    def test_midpoint_matches_reference_formula(self) -> None:
+        expected = ((128 / 255 + 0.055) / 1.055) ** 2.4
+        self.assertAlmostEqual(float(srgb8_to_linear(np.array([128]))[0]), expected, places=6)
+
+    def test_normal_blend_is_source_over_in_linear_light(self) -> None:
+        dst_rgb = np.zeros((1, 1, 3), dtype=np.float32)
+        dst_a = np.zeros((1, 1), dtype=np.float32)
+        red = srgb8_to_linear(np.array([[[255, 0, 0]]], dtype=np.uint8))
+        out_rgb, out_a = blend(dst_rgb, dst_a, red, np.ones((1, 1), np.float32), "normal")
+        np.testing.assert_allclose(out_rgb, red, rtol=0, atol=1e-6)
+        np.testing.assert_allclose(out_a, 1.0, rtol=0, atol=1e-6)
+
+    def test_transparent_source_leaves_destination_untouched(self) -> None:
+        dst_rgb = np.array([[[0.2, 0.4, 0.6]]], dtype=np.float32)
+        dst_a = np.ones((1, 1), dtype=np.float32)
+        out_rgb, out_a = blend(
+            dst_rgb, dst_a, np.zeros((1, 1, 3), np.float32), np.zeros((1, 1), np.float32), "screen"
+        )
+        np.testing.assert_allclose(out_rgb, dst_rgb, atol=1e-6)
+        np.testing.assert_allclose(out_a, 1.0, atol=1e-6)
+
+    def test_multiply_and_screen_against_straight_colours(self) -> None:
+        dst = np.array([[[0.5, 0.5, 0.5]]], dtype=np.float32)
+        dst_a = np.ones((1, 1), dtype=np.float32)
+        src = np.array([[[0.5, 0.5, 0.5]]], dtype=np.float32)
+        src_a = np.ones((1, 1), dtype=np.float32)
+        mult, _ = blend(dst, dst_a, src, src_a, "multiply")
+        screen, _ = blend(dst, dst_a, src, src_a, "screen")
+        np.testing.assert_allclose(mult, 0.25, atol=1e-6)
+        np.testing.assert_allclose(screen, 0.75, atol=1e-6)
+
+    def test_unknown_mode_is_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            blend(np.zeros((1, 1, 3), np.float32), np.zeros((1, 1), np.float32),
+                  np.zeros((1, 1, 3), np.float32), np.zeros((1, 1), np.float32), "overlay")
+
+    def test_encode_rounding_is_half_up_and_transparent_zeroes(self) -> None:
+        rgb = np.zeros((1, 2, 3), dtype=np.float32)
+        alpha = np.array([[0.0, 1.0]], dtype=np.float32)
+        rgb[0, 1] = srgb8_to_linear(np.array([255, 128, 0]))
+        encoded = encode_frame(rgb, alpha)
+        self.assertEqual(encoded[0, 0].tolist(), [0, 0, 0, 0])
+        self.assertEqual(encoded[0, 1].tolist(), [255, 128, 0, 255])
 
 class AssetTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -414,6 +467,174 @@ class ExporterTests(unittest.TestCase):
             read_summary(bad)
         with self.assertRaises(ExportError):
             read_summary(self.root / "missing.jsonl")
+
+class CliEndToEndTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.summary = self.root / "summary.jsonl"
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def _demo(self, *extra: str) -> int:
+        return cli.main([
+            "demo", "--fps", "30000/1001", "--frames", "120", "--canvas", "64x36",
+            "--workers", "3", "--summary", str(self.summary), *extra,
+        ])
+
+    def test_demo_then_verify_roundtrip(self) -> None:
+        with self.assertRedirectsOutput():
+            self.assertEqual(self._demo(), 0)
+        header, rows = read_summary(self.summary)
+        self.assertEqual(header["frame_count"], 120)
+        self.assertEqual(header["audio_events"], 3)
+        self.assertAlmostEqual(header["av_max_abs_error_ms"], 6.008333333, places=6)
+        self.assertEqual(len(rows), 120)
+        self.assertTrue(all(len(row["pixel_sha256"]) == 64 for row in rows))
+        with self.assertRedirectsOutput():
+            code = cli.main([
+                "verify", "--demo", "--fps", "30000/1001", "--frames", "120",
+                "--canvas", "64x36", "--workers", "2", "--summary", str(self.summary),
+            ])
+        self.assertEqual(code, 0)
+
+    def test_verify_detects_tampering(self) -> None:
+        with self.assertRedirectsOutput():
+            self.assertEqual(self._demo(), 0)
+        lines = self.summary.read_text(encoding="utf-8").splitlines()
+        record = json.loads(lines[5])
+        record["pixel_sha256"] = "0" * 64
+        lines[5] = json.dumps(record, sort_keys=True, separators=(",", ":"))
+        self.summary.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        with self.assertRedirectsOutput():
+            code = cli.main([
+                "verify", "--demo", "--frames", "120", "--canvas", "64x36",
+                "--summary", str(self.summary),
+            ])
+        self.assertEqual(code, 4)
+
+    def test_argument_errors_exit_two(self) -> None:
+        cases = [
+            ["demo", "--fps", "nope", "--summary", str(self.summary)],
+            ["demo", "--workers", "0", "--summary", str(self.summary)],
+            ["demo", "--canvas", "oops", "--summary", str(self.summary)],
+            ["demo", "--frames", "100001", "--summary", str(self.summary)],
+            ["verify", "--summary", str(self.summary)],  # missing --demo
+        ]
+        for argv in cases:
+            with self.subTest(argv=argv), self.assertRedirectsOutput():
+                self.assertEqual(cli.main(argv), 2)
+        self.assertFalse(self.summary.exists())
+
+    def test_missing_summary_exits_four(self) -> None:
+        with self.assertRedirectsOutput():
+            code = cli.main(["verify", "--demo", "--summary", str(self.root / "absent.jsonl")])
+        self.assertEqual(code, 4)
+
+    def test_bad_asset_root_exits_three(self) -> None:
+        timeline_path = self.root / "timeline.json"
+        timeline_path.write_text(json.dumps({
+            "canvas": {"width": 4, "height": 4}, "fps": 24, "frames": 2,
+            "layers": [{"id": "x", "source": "missing.png"}],
+        }), encoding="utf-8")
+        (self.root / "assets").mkdir()
+        with self.assertRedirectsOutput():
+            code = cli.main([
+                "compose", "--timeline", str(timeline_path),
+                "--assets", str(self.root / "assets"), "--summary", str(self.summary),
+            ])
+        self.assertEqual(code, 3)
+        self.assertFalse(self.summary.exists())
+
+    def test_compose_from_explicit_timeline(self) -> None:
+        assets = self.root / "assets"
+        assets.mkdir()
+        Image.fromarray(_solid_rgba(4, 4, (0, 128, 255, 200))).save(assets / "sq.png")
+        timeline_path = self.root / "timeline.json"
+        timeline_path.write_text(json.dumps({
+            "canvas": {"width": 8, "height": 8}, "fps": "24000/1001", "frames": 10,
+            "layers": [{"id": "sq", "source": "sq.png", "scale": {"value": "1/2"}}],
+            "audio_events": [{"label": "hit", "sample": 1001, "sample_rate": 24000}],
+        }), encoding="utf-8")
+        with self.assertRedirectsOutput():
+            code = cli.main([
+                "compose", "--timeline", str(timeline_path), "--assets", str(assets),
+                "--workers", "2", "--summary", str(self.summary),
+            ])
+        self.assertEqual(code, 0)
+        header, rows = read_summary(self.summary)
+        self.assertEqual(header["frame_count"], 10)
+        self.assertEqual(header["fps"], "24000/1001")
+        self.assertEqual(rows[1]["audio_errors_ms"], [0.0])
+
+    def assertRedirectsOutput(self):
+        import contextlib
+        import io
+
+        @contextlib.contextmanager
+        def _redirect():
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                yield
+
+        return _redirect()
+
+class LimitAndDeterminismTests(unittest.TestCase):
+    def test_canvas_pixel_limit_rejects_just_over_sixteen_megapixels(self) -> None:
+        document = {
+            "canvas": {"width": 4001, "height": 4000}, "fps": 24, "frames": 1,
+            "layers": [],
+        }
+        self.assertGreater(4001 * 4000, 16_000_000)
+        with self.assertRaises(SchemaError):
+            parse_timeline(document)
+        # At the boundary it is accepted.
+        parse_timeline({
+            "canvas": {"width": 4000, "height": 4000}, "fps": 24, "frames": 1,
+            "layers": [],
+        })
+
+    def test_frame_limit_boundary(self) -> None:
+        document = {
+            "canvas": {"width": 2, "height": 2}, "fps": 24, "frames": 100_000,
+            "layers": [],
+        }
+        self.assertEqual(parse_timeline(document).frame_count, 100_000)
+        document["frames"] = 100_001
+        with self.assertRaises(SchemaError):
+            parse_timeline(document)
+
+    def test_fixtures_are_byte_deterministic(self) -> None:
+        with tempfile.TemporaryDirectory() as first, tempfile.TemporaryDirectory() as second:
+            root_a = write_demo_assets(first)
+            root_b = write_demo_assets(second)
+            for name, _ in DEMO_LAYER_ASSETS:
+                self.assertEqual(
+                    (root_a / name).read_bytes(), (root_b / name).read_bytes(), name
+                )
+
+    def test_parallel_render_is_stable_across_runs(self) -> None:
+        with tempfile.TemporaryDirectory() as workspace:
+            timeline, root = build_demo(workspace, 40, "30000/1001", 96, 54)
+            store = AssetStore(root, cache_size=1)  # forces eviction churn
+            composer = FrameCompositor(timeline, store)
+            out_a = Path(workspace) / "a.jsonl"
+            out_b = Path(workspace) / "b.jsonl"
+            export_summary(composer, out_a, workers=8)
+            store.clear()
+            export_summary(composer, out_b, workers=8)
+            self.assertEqual(out_a.read_bytes(), out_b.read_bytes())
+
+    def test_compose_writes_nothing_but_the_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as workspace:
+            timeline, root = build_demo(workspace, 6, 24, 32, 18)
+            assets_before = sorted(p.name for p in root.iterdir())
+            out_dir = Path(workspace) / "out"
+            export_summary(FrameCompositor(timeline, AssetStore(root)), out_dir / "s.jsonl")
+            self.assertEqual(
+                sorted(p.name for p in root.iterdir() if p.is_file()), assets_before
+            )
+            self.assertEqual([p.name for p in out_dir.iterdir()], ["s.jsonl"])
 
 
 if __name__ == "__main__":
