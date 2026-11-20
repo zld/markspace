@@ -36,7 +36,7 @@ func (s *Section) TableIDExtension() uint16 {
 func (s *Section) Version() byte { return (s.Data[5] >> 1) & 0x1f }
 
 // CurrentNext reports the current_next_indicator bit.
-func (s *Section) CurrentNext() bool { return s.Data[6]&1 != 0 }
+func (s *Section) CurrentNext() bool { return s.Data[5]&1 != 0 }
 
 // SectionNumber returns the section_number byte.
 func (s *Section) SectionNumber() byte { return s.Data[6] }

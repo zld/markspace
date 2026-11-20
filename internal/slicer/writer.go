@@ -42,11 +42,11 @@ func Slice(input string, opt Options) (*Result, error) {
 		return nil, fmt.Errorf("max-packets must be positive")
 	}
 	if err := os.MkdirAll(opt.OutDir, 0o755); err != nil {
-		return nil, fmt.Errorf("%s: %w", demux.FatalIO, err)
+		return nil, fmt.Errorf("%w: %v", demux.ErrIO, err)
 	}
 	f, err := os.Open(input)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", demux.FatalIO, err)
+		return nil, fmt.Errorf("%w: %v", demux.ErrIO, err)
 	}
 	defer f.Close()
 
@@ -55,7 +55,7 @@ func Slice(input string, opt Options) (*Result, error) {
 	res := &Result{}
 	var cur *partWriter
 	var written int
-	lastSig := ""
+	lastChanges := 0
 	flush := func() error {
 		if cur == nil {
 			return nil
@@ -80,16 +80,16 @@ func Slice(input string, opt Options) (*Result, error) {
 				cur.abort()
 			}
 			res.Fatal = demux.FatalResync
-			return res, fmt.Errorf("%s: %w", demux.FatalResync, err)
+			return res, fmt.Errorf("%w: %v", demux.ErrResync, err)
 		}
 		a.Process(pkt)
-		sig := versionSig(a.Tables().Current())
-		if cur != nil && (written >= opt.MaxPackets || (sig != lastSig && lastSig != "")) {
+		changes := versionChanges(a.Tables())
+		if cur != nil && (written >= opt.MaxPackets || changes != lastChanges) {
 			if err := flush(); err != nil {
 				return res, err
 			}
 		}
-		lastSig = sig
+		lastChanges = changes
 		if cur == nil {
 			cur, err = newPartWriter(opt.OutDir, len(res.Files)+1)
 			if err != nil {
@@ -99,7 +99,7 @@ func Slice(input string, opt Options) (*Result, error) {
 		}
 		if err := cur.writePacket(pkt); err != nil {
 			cur.abort()
-			return res, fmt.Errorf("%s: %w", demux.FatalIO, err)
+			return res, fmt.Errorf("%w: %v", demux.ErrIO, err)
 		}
 		written++
 	}
@@ -109,24 +109,15 @@ func Slice(input string, opt Options) (*Result, error) {
 	return res, nil
 }
 
-// versionSig identifies the committed table versions at a point in the stream.
-func versionSig(s *psi.Snapshot) string {
-	if !s.HasPAT {
-		return ""
+// versionChanges totals the committed PAT/PMT version transitions so far;
+// first commits and re-broadcasts never move it, so it only advances when
+// a full new table version takes effect.
+func versionChanges(t *psi.TableTracker) int {
+	n := t.Stats.PATChanges
+	for _, c := range t.Stats.PMTChanges {
+		n += c
 	}
-	progs := make([]int, 0, len(s.Programs))
-	for num := range s.Programs {
-		progs = append(progs, int(num))
-	}
-	sort.Ints(progs)
-	sig := fmt.Sprintf("pat=%d", s.PATVersion)
-	for _, num := range progs {
-		p := s.Programs[uint16(num)]
-		if p.HasPMT {
-			sig += fmt.Sprintf(",pmt%d=%d", num, p.PMTVersion)
-		}
-	}
-	return sig
+	return n
 }
 
 // partWriter accumulates one slice in a temp file inside the output
@@ -144,7 +135,7 @@ func newPartWriter(dir string, seq int) (*partWriter, error) {
 	final := filepath.Join(dir, fmt.Sprintf("part-%06d.ts", seq))
 	tmp, err := os.CreateTemp(dir, ".tmp-part-*.ts")
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", demux.FatalIO, err)
+		return nil, fmt.Errorf("%w: %v", demux.ErrIO, err)
 	}
 	return &partWriter{dir: dir, final: final, tmp: tmp, cc: make(map[uint16]byte)}, nil
 }
@@ -221,11 +212,11 @@ func (w *partWriter) writePacket(p *ts.Packet) error {
 func (w *partWriter) commit() (*FileInfo, error) {
 	if err := w.tmp.Close(); err != nil {
 		os.Remove(w.tmp.Name())
-		return nil, fmt.Errorf("%s: %w", demux.FatalIO, err)
+		return nil, fmt.Errorf("%w: %v", demux.ErrIO, err)
 	}
 	if err := os.Rename(w.tmp.Name(), w.final); err != nil {
 		os.Remove(w.tmp.Name())
-		return nil, fmt.Errorf("%s: %w", demux.FatalIO, err)
+		return nil, fmt.Errorf("%w: %v", demux.ErrIO, err)
 	}
 	return &FileInfo{Path: w.final, InjectedPAT: w.pat, InjectedPMT: w.pmt}, nil
 }

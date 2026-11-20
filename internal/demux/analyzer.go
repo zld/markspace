@@ -25,6 +25,13 @@ const (
 	FatalIO       = "io_error"        // file read/write failure
 )
 
+// Sentinel errors wrapped by pipeline failures so the CLI can map them to
+// exit codes with errors.Is.
+var (
+	ErrIO     = errors.New(FatalIO)
+	ErrResync = errors.New(FatalResync)
+)
+
 // Anomaly is a non-fatal observation tied to a file offset.
 type Anomaly struct {
 	Offset int64  `json:"offset"`
@@ -243,7 +250,7 @@ func AnalyzeFile(path string) (*Summary, error) {
 	a := New()
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", FatalIO, err)
+		return nil, fmt.Errorf("%w: %v", ErrIO, err)
 	}
 	defer f.Close()
 	r := ts.NewReader(f)
