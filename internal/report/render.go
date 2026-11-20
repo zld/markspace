@@ -28,6 +28,8 @@ type FileReport struct {
 	DroppedCount  int       `json:"dropped_count"`
 	MaxAbsDeltaMs int64     `json:"max_abs_delta_ms"`
 	Cues          []CueLine `json:"cues,omitempty"`
+	// Code is the process exit code category for this file (0 = ok).
+	Code int `json:"-"`
 }
 
 // RenderTerminal writes human-readable per-cue rows and a summary per file.
