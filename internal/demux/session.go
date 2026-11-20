@@ -91,6 +91,11 @@ func (s *Session) Feed(p *ts.Packet) error {
 		}
 		s.Tables.DiscardPendingPID(p.PID)
 	}
+	if p.TransportError {
+		// The payload of a packet flagged corrupt cannot be trusted, even
+		// though later packets on the PID may be fine.
+		return nil
+	}
 	if !p.HasPayload || len(p.Payload) == 0 {
 		return nil
 	}

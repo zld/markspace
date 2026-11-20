@@ -119,3 +119,23 @@ func TestAssemblerRejectsOverlongSection(t *testing.T) {
 		t.Fatalf("length errors = %d", a.Stats().LengthErrors)
 	}
 }
+
+func TestAssemblerPointerSplitsSamePacket(t *testing.T) {
+	first := buildSection(TableIDPAT, 1, 0, true, 0, 0, patBody([2]uint16{1, 0x100})).Raw
+	second := buildSection(TableIDPAT, 1, 0, true, 0, 0, patBody([2]uint16{2, 0x200})).Raw
+	a := NewAssembler()
+	// Start the first section, but only its first 10 bytes fit.
+	if got, err := a.Push(append([]byte{0x00}, first[:10]...), true); err != nil || len(got) != 0 {
+		t.Fatalf("partial start: %v %v", got, err)
+	}
+	// Pointer field completes the first section, then a second begins.
+	ptr := len(first) - 10
+	payload := append(append([]byte{byte(ptr)}, first[10:]...), second...)
+	got, err := a.Push(payload, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || !bytes.Equal(got[0].Raw, first) || !bytes.Equal(got[1].Raw, second) {
+		t.Fatalf("pointer split produced %d sections", len(got))
+	}
+}
