@@ -11,10 +11,13 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+import numpy as np
+
 from .matroska import ParsedMatroska
 from .mp4_audit import AuditError, audit_mp4
 from .mp4_writer import temporary_output, write_mp4
-from .timeline import TimebaseOverflow, Timeline, TimelineError, prepare
+from .timeline import (TimebaseOverflow, Timeline, TimelineError, TrackTimeline,
+                       prepare)
 
 
 class PreserveError(Exception):
@@ -64,6 +67,15 @@ def _element_tree(mkv: ParsedMatroska) -> dict:
     return {name: value for name, value in tree.items() if value}
 
 
+def _has_intra_gaps(track: TrackTimeline) -> bool:
+    """True when a duration exceeds the track's natural frame interval."""
+
+    if track.duration.size < 2:
+        return False
+    natural = track.duration.min()
+    return bool(np.any(track.duration > natural))
+
+
 def _track_map(timeline: Timeline) -> list[dict]:
     entries = []
     for track in timeline.tracks:
@@ -75,6 +87,7 @@ def _track_map(timeline: Timeline) -> list[dict]:
             "first_pts_ms": _ms(track.first_pts, timeline.timescale),
             "last_pts_ms": _ms(track.last_pts, timeline.timescale),
             "gaps": bool(track.media_base > 0),
+            "has_intra_track_gaps": _has_intra_gaps(track),
         })
     return entries
 
@@ -89,7 +102,7 @@ def run_preserve(mkv: ParsedMatroska, timescale: int, output_path: str) -> Expor
         if any(word in message for word in ("monotonic", "reordered", "decode order")):
             raise PreserveError(
                 f"preserve mode refuses reordered frames: {message}") from exc
-        raise
+        raise PreserveError(f"preserve mode refused the input: {message}") from exc
     result = ExportResult(path=output_path, mode="preserve", timeline=timeline,
                           audit={}, element_tree=_element_tree(mkv),
                           unknown_size=mkv.document.unknown_sizes(),
