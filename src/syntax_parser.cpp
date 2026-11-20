@@ -298,4 +298,149 @@ Pps parse_pps(const std::uint8_t* payload, std::size_t size,
 }
 
 
+namespace {
+
+void skip_ref_pic_list_modification(BitReader& r, SliceKind kind,
+                                    std::size_t nal_offset) {
+  const int lists = kind == SliceKind::kB ? 2 : 1;
+  for (int list = 0; list < lists; ++list) {
+    if (!r.read_bit()) continue;  // ref_pic_list_modification_flag_lX
+    for (int guard = 0;; ++guard) {
+      if (guard > 65) {
+        fail("ref_pic_list_modification loop too long", nal_offset);
+      }
+      const std::uint32_t idc = r.read_ue();
+      if (idc == 3) break;  // modification_of_pic_nums_idc == 3
+      if (idc > 3) fail("invalid ref_pic_list_modification idc", nal_offset);
+      r.read_ue();
+    }
+  }
+}
+
+}  // namespace
+
+namespace {
+
+void skip_pred_weight_table(BitReader& r, SliceKind kind, const Sps& sps,
+                            const Pps& pps) {
+  const bool is_b = kind == SliceKind::kB;
+  r.read_ue();  // luma_log2_weight_denom
+  if (sps.chroma_array_type() != 0) r.read_ue();  // chroma_log2_weight_denom
+  const int lists = is_b ? 2 : 1;
+  const int counts[2] = {pps.num_ref_idx_l0_default_active,
+                         pps.num_ref_idx_l1_default_active};
+  for (int list = 0; list < lists; ++list) {
+    for (int i = 0; i < counts[list]; ++i) {
+      if (r.read_bit()) {
+        r.read_se();
+        r.read_se();
+      }
+      if (sps.chroma_array_type() != 0 && r.read_bit()) {
+        for (int c = 0; c < 4; ++c) r.read_se();
+      }
+    }
+  }
+}
+
+void skip_dec_ref_pic_marking(BitReader& r, bool idr, std::size_t nal_offset) {
+  if (idr) {
+    r.read_bit();  // no_output_of_prior_pics_flag
+    r.read_bit();  // long_term_reference_flag
+    return;
+  }
+  if (!r.read_bit()) return;  // adaptive_ref_pic_marking_mode_flag
+  for (int guard = 0; guard <= 65; ++guard) {
+    const std::uint32_t op = r.read_ue();
+    if (op == 0) return;
+    if (op > 6) {
+      fail("invalid memory_management_control_operation", nal_offset);
+    }
+    r.read_ue();  // difference_of_pic_nums_minus1 / long_term_pic_num /
+                  // max_long_term_frame_idx_plus1
+    if (op == 3 || op == 6) r.read_ue();  // long_term_frame_idx
+    if (guard == 65) fail("dec_ref_pic_marking loop too long", nal_offset);
+  }
+}
+
+}  // namespace
+
+SliceHeader parse_slice_header(const std::uint8_t* payload, std::size_t size,
+                               int nal_unit_type, int nal_ref_idc,
+                               std::size_t nal_offset,
+                               const ParameterSets& sets) {
+  const std::vector<std::uint8_t> rbsp =
+      rbsp_unescape(payload, size, nal_offset);
+  BitReader r(rbsp.data(), rbsp.size(), nal_offset);
+
+  SliceHeader h;
+  h.nal_unit_type = nal_unit_type;
+  h.idr = nal_unit_type == 5;
+  h.nal_ref_idc = nal_ref_idc;
+  h.nal_offset = nal_offset;
+
+  h.first_mb_in_slice = static_cast<int>(r.read_ue());
+  const std::uint32_t kind = r.read_ue();
+  if (kind > 9) fail("slice_type out of range", nal_offset);
+  h.slice_kind = static_cast<SliceKind>(kind % 5);
+  h.pps_id = static_cast<int>(r.read_ue());
+  if (h.pps_id > 255) fail("slice references out-of-range PPS id", nal_offset);
+
+  const Pps& pps = sets.require_pps(h.pps_id, nal_offset);
+  const Sps& sps = sets.require_sps(pps.sps_id, nal_offset);
+  h.sps_id = pps.sps_id;
+
+  if (sps.chroma_array_type() == 0) {
+    h.colour_plane_id = static_cast<int>(r.read_bits(2));
+    h.separate_colour_plane = true;
+  }
+
+  h.frame_num = static_cast<int>(
+      r.read_bits(static_cast<int>(sps.log2_max_frame_num)));
+  if (!sps.frame_mbs_only_flag) {
+    h.field_pic_flag = r.read_bit();
+    if (h.field_pic_flag) h.bottom_field_flag = r.read_bit();
+  }
+  if (h.idr) h.idr_pic_id = static_cast<int>(r.read_ue());
+
+  if (sps.pic_order_cnt_type == 0) {
+    h.pic_order_cnt_lsb = static_cast<int>(
+        r.read_bits(static_cast<int>(sps.log2_max_pic_order_cnt_lsb)));
+    if (pps.bottom_field_pic_order_in_frame_present_flag && !h.field_pic_flag) {
+      h.delta_pic_order_cnt_bottom = r.read_se();
+    }
+  } else if (sps.pic_order_cnt_type == 1 &&
+             !sps.delta_pic_order_always_zero_flag) {
+    h.delta_pic_order_cnt0 = r.read_se();
+    if (pps.bottom_field_pic_order_in_frame_present_flag && !h.field_pic_flag) {
+      h.delta_pic_order_cnt1 = r.read_se();
+    }
+  }
+  if (pps.redundant_pic_cnt_present_flag) {
+    h.redundant_pic_cnt = static_cast<int>(r.read_ue());
+  }
+
+  const bool is_b = h.slice_kind == SliceKind::kB;
+  const bool is_p_sp = h.slice_kind == SliceKind::kP ||
+                       h.slice_kind == SliceKind::kSP;
+  if (is_b) r.read_bit();  // direct_spatial_mv_pred_flag
+
+  if (is_p_sp || is_b) {
+    if (r.read_bit()) {  // num_ref_idx_active_override_flag
+      r.read_ue();       // num_ref_idx_l0_active_minus1
+      if (is_b) r.read_ue();
+    }
+  }
+
+  const bool is_i = h.slice_kind == SliceKind::kI ||
+                    h.slice_kind == SliceKind::kSI;
+  if (!is_i) skip_ref_pic_list_modification(r, h.slice_kind, nal_offset);
+  if ((pps.weighted_pred_flag && is_p_sp) ||
+      (pps.weighted_bipred_idc == 1 && is_b)) {
+    skip_pred_weight_table(r, h.slice_kind, sps, pps);
+  }
+  if (nal_ref_idc != 0) skip_dec_ref_pic_marking(r, h.idr, nal_offset);
+
+  return h;
+}
+
 }  // namespace h264
