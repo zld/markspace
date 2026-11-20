@@ -252,7 +252,13 @@ def validate_avcc(data: bytes) -> None:
         pos += size
 
 
-def validate_audio_specific_config(data: bytes) -> None:
+AAC_SAMPLE_RATES = (96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050,
+                    16000, 12000, 11025, 8000, 7350)
+
+
+def parse_audio_specific_config(data: bytes) -> tuple[int, int | None, int]:
+    """Return (object_type, sample_rate_hz, channel_count) from an AAC ASC."""
+
     if len(data) < 2:
         raise UnsupportedFormat("invalid AAC CodecPrivate (AudioSpecificConfig)")
     bit_pos = 0
@@ -274,8 +280,13 @@ def validate_audio_specific_config(data: bytes) -> None:
     if object_type == 0:
         raise UnsupportedFormat("AAC object type 0 is invalid")
     freq_index = bits(4)
+    sample_rate: int | None
     if freq_index == 15:
-        bits(24)
+        sample_rate = bits(24) or None
+    elif freq_index < len(AAC_SAMPLE_RATES):
+        sample_rate = AAC_SAMPLE_RATES[freq_index]
+    else:
+        sample_rate = None
     channels = bits(4)
     if channels == 0:
         raise UnsupportedFormat("AAC channel configuration 0 is unsupported")
@@ -284,6 +295,11 @@ def validate_audio_specific_config(data: bytes) -> None:
         if extension_freq == 15:
             bits(24)
         bits(5)
+    return object_type, sample_rate, channels
+
+
+def validate_audio_specific_config(data: bytes) -> None:
+    parse_audio_specific_config(data)
 
 
 def _read_track(fh: BinaryIO, entry: ebml.Element) -> Track:
@@ -363,6 +379,18 @@ def _read_track(fh: BinaryIO, entry: ebml.Element) -> Track:
             raise UnsupportedFormat(
                 f"AAC sample rate {sample_rate:g} Hz exceeds the MP4 16.16 "
                 f"sample entry range", track=number)
+        _, asc_rate, asc_channels = parse_audio_specific_config(codec_private)
+        if asc_rate is not None and int(round(sample_rate)) != asc_rate:
+            # The sample entry's rate and the decoder's rate must agree; a
+            # mismatch would play at the wrong speed or at a different rate
+            # than the AudioSpecificConfig describes.
+            raise UnsupportedFormat(
+                f"AAC sample rate {sample_rate:g} Hz disagrees with "
+                f"AudioSpecificConfig {asc_rate} Hz", track=number)
+        if asc_channels != channels:
+            raise UnsupportedFormat(
+                f"AAC channel count {channels} disagrees with "
+                f"AudioSpecificConfig {asc_channels}", track=number)
         mp4_codec, handler = "mp4a", "soun"
     else:
         kind = {17: "subtitle", 18: "button", 32: "control"}.get(track_type, "unknown")

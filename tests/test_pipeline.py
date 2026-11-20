@@ -629,3 +629,26 @@ class TestBlockHardening(FixtureTestCase):
             matroska.parse_matroska(path)
         self.assertIn("dimensions", str(ctx.exception))
 
+    def test_audio_config_must_match_audio_settings(self):
+        # AudioSpecificConfig says 48 kHz stereo; the Audio element must
+        # agree or the sample entry would describe a different stream.
+        cases = {
+            "rate": (fixture._track_entry(2, 2, "A_AAC", fixture.asc(), None,
+                                          channels=2, sample_rate=44100.0), "sample rate"),
+            "channels": (fixture._track_entry(2, 2, "A_AAC", fixture.asc(), None,
+                                              channels=1, sample_rate=48000.0),
+                         "channel count"),
+        }
+        for name, (entry, needle) in cases.items():
+            cluster = fixture.master(fixture.ids.CLUSTER,
+                                     fixture.uint_elem(fixture.ids.TIMECODE, 0) +
+                                     fixture._simple(2, 0, b"x" * 8, True))
+            path = self.path(f"asc-{name}.mkv")
+            with open(path, "wb") as handle:
+                handle.write(fixture._header() + fixture._segment(
+                    fixture.master(fixture.ids.TRACKS, entry), cluster, True, 0.0))
+            with self.assertRaises(matroska.UnsupportedFormat) as ctx:
+                matroska.parse_matroska(path)
+            self.assertIn(needle, str(ctx.exception))
+
+
