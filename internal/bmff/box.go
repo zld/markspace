@@ -117,7 +117,11 @@ func (r *Reader) parseHeader(off, limit int64, depth int, path string) (Box, err
 		return Box{}, fmt.Errorf("%w: box %q at %d size %d exceeds region end %d",
 			ErrTruncated, typ, off, size, limit)
 	}
-	return Box{Type: typ, Offset: off, Size: size, HdrSize: hdrSize, Depth: depth, Path: path + "/" + typ}, nil
+	p := typ
+	if path != "" {
+		p = path + "/" + typ
+	}
+	return Box{Type: typ, Offset: off, Size: size, HdrSize: hdrSize, Depth: depth, Path: p}, nil
 }
 
 // WalkFunc is invoked for every box. Returning descend=true walks into the
