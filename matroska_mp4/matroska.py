@@ -554,6 +554,8 @@ class _SampleCollector:
             block_elem = child.find(ids.BLOCK)
             if block_elem is None:
                 raise ebml.EBMLError(child.offset, "BlockGroup lacks Block")
+            if child.find(ids.BLOCK_ADDITIONS) is not None:
+                raise UnsupportedFormat("BlockAdditions are unsupported")
             duration = _uint_leaf(fh, child, ids.BLOCK_DURATION)
             if duration is not None and duration <= 0:
                 duration = None
@@ -669,6 +671,11 @@ def parse_matroska(path: str, *, keep_blocks: bool | None = None) -> ParsedMatro
     segment = document.find_root(ids.SEGMENT)
     if segment is None:
         raise ebml.EBMLError(0, "missing Segment")
+    for cluster in segment.children_of(ids.CLUSTER):
+        if cluster.find(ids.SILENT_TRACKS) is not None:
+            raise UnsupportedFormat(
+                "SilentTracks is unsupported (it suppresses a track for "
+                "part of a cluster)")
     for singleton in (ids.INFO, ids.TRACKS):
         if len(segment.children_of(singleton)) > 1:
             raise ebml.EBMLError(

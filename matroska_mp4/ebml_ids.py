@@ -49,8 +49,13 @@ CHANNELS = 0x9F
 BIT_DEPTH = 0x6264
 CLUSTER = 0x1F43B675
 TIMECODE = 0xE7
+POSITION = 0xA7
+PREV_SIZE = 0xAB
+SILENT_TRACKS = 0x5854
 SIMPLE_BLOCK = 0xA3
 BLOCK_GROUP = 0xA0
+BLOCK_ADDITIONS = 0x75A1
+BLOCK_ADDITION = 0xA5
 BLOCK = 0xA1
 BLOCK_DURATION = 0x9B
 REFERENCE_BLOCK = 0xFB
@@ -90,7 +95,9 @@ ELEMENT_NAMES = {
     DISPLAY_WIDTH: "DisplayWidth", DISPLAY_HEIGHT: "DisplayHeight",
     AUDIO: "Audio", SAMPLING_FREQUENCY: "SamplingFrequency", CHANNELS: "Channels",
     BIT_DEPTH: "BitDepth", CLUSTER: "Cluster", TIMECODE: "Timecode",
+    POSITION: "Position", PREV_SIZE: "PrevSize", SILENT_TRACKS: "SilentTracks",
     SIMPLE_BLOCK: "SimpleBlock", BLOCK_GROUP: "BlockGroup", BLOCK: "Block",
+    BLOCK_ADDITIONS: "BlockAdditions", BLOCK_ADDITION: "BlockAddition",
     BLOCK_DURATION: "BlockDuration", REFERENCE_BLOCK: "ReferenceBlock",
     DISCARD_PADDING: "DiscardPadding", CUES: "Cues", CUE_POINT: "CuePoint",
     CUE_TIME: "CueTime", CUE_TRACK_POSITIONS: "CueTrackPositions",
@@ -105,9 +112,10 @@ SEGMENT_LEVEL = frozenset({SEEK_HEAD, INFO, TRACKS, CLUSTER, CUES, ATTACHMENTS,
                            CHAPTERS, TAGS, VOID, CRC32})
 # Children allowed directly under a Cluster.  This set is also used to find
 # the end of an unknown-length Cluster: the first Segment-level element ends it.
-CLUSTER_LEVEL = frozenset({TIMECODE, SIMPLE_BLOCK, BLOCK_GROUP, VOID, CRC32})
-BLOCK_GROUP_LEVEL = frozenset({BLOCK, BLOCK_DURATION, REFERENCE_BLOCK,
-                               DISCARD_PADDING, VOID, CRC32})
+CLUSTER_LEVEL = frozenset({TIMECODE, POSITION, PREV_SIZE, SILENT_TRACKS,
+                           SIMPLE_BLOCK, BLOCK_GROUP, VOID, CRC32})
+BLOCK_GROUP_LEVEL = frozenset({BLOCK, BLOCK_ADDITIONS, BLOCK_DURATION,
+                               REFERENCE_BLOCK, DISCARD_PADDING, VOID, CRC32})
 INFO_LEVEL = frozenset({TIMESTAMP_SCALE, DURATION, MUXING_APP, WRITING_APP,
                         TITLE, VOID, CRC32})
 TRACKS_LEVEL = frozenset({TRACK_ENTRY, VOID, CRC32})
