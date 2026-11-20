@@ -1,22 +1,29 @@
 from __future__ import annotations
 
-import unittest
 import hashlib
 import json
 import tempfile
+import unittest
+from fractions import Fraction
 from pathlib import Path
-from PIL import Image
+
 import numpy as np
+from PIL import Image
+
 from timeline_composer import cli
 from timeline_composer.assets import AssetError, AssetStore
 from timeline_composer.audio_sync import align_events, nearest_frame
 from timeline_composer.clock import ClockError, FrameClock
-from timeline_composer.color import blend, encode_frame, linear_to_srgb8, srgb8_to_linear
+from timeline_composer.color import (
+    blend,
+    encode_frame,
+    linear_to_srgb8,
+    srgb8_to_linear,
+)
 from timeline_composer.compositor import CompositorError, FrameCompositor
 from timeline_composer.exporter import ExportError, export_summary, read_summary
 from timeline_composer.fixtures import DEMO_LAYER_ASSETS, build_demo, write_demo_assets
 from timeline_composer.schema import SchemaError, parse_timeline
-from fractions import Fraction
 
 
 class FrameClockTests(unittest.TestCase):
@@ -59,6 +66,7 @@ class FrameClockTests(unittest.TestCase):
         for index in (-1, clock.frame_count, True, 1.0):
             with self.subTest(index=index), self.assertRaises(ClockError):
                 clock.pts(index)  # type: ignore[arg-type]
+
 
 class SchemaTests(unittest.TestCase):
     def _minimal(self, **overrides):
@@ -149,10 +157,12 @@ class SchemaTests(unittest.TestCase):
 if __name__ == "__main__":
     unittest.main()
 
+
 def _solid_rgba(width: int, height: int, color: tuple[int, int, int, int]) -> np.ndarray:
     frame = np.empty((height, width, 4), dtype=np.uint8)
     frame[...] = color
     return frame
+
 
 class ColorTests(unittest.TestCase):
     def test_srgb_linear_round_trip_is_exact_for_8_bit(self) -> None:
@@ -204,6 +214,7 @@ class ColorTests(unittest.TestCase):
         self.assertEqual(encoded[0, 0].tolist(), [0, 0, 0, 0])
         self.assertEqual(encoded[0, 1].tolist(), [255, 128, 0, 255])
 
+
 class AssetTests(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
@@ -247,6 +258,7 @@ class AssetTests(unittest.TestCase):
         store.load("ok.png")
         store.load("second.png")
         self.assertEqual(len(store), 1)
+
 
 class CompositorTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -332,6 +344,7 @@ class CompositorTests(unittest.TestCase):
         with self.assertRaises(AssetError):
             FrameCompositor(timeline, AssetStore(self.root)).compose(0)
 
+
 class AudioSyncTests(unittest.TestCase):
     def test_nearest_frame_and_tie_goes_earlier(self) -> None:
         clock = FrameClock.from_rate(10, 1)  # frame period 0.1 s
@@ -363,6 +376,7 @@ class AudioSyncTests(unittest.TestCase):
         summary = align_events(timeline.clock, timeline.audio_events)
         self.assertEqual(summary.event_count, 3)
         self.assertAlmostEqual(summary.max_abs_error_ms, 6.008333333, places=6)
+
 
 class ExporterTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -467,6 +481,7 @@ class ExporterTests(unittest.TestCase):
             read_summary(bad)
         with self.assertRaises(ExportError):
             read_summary(self.root / "missing.jsonl")
+
 
 class CliEndToEndTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -579,6 +594,7 @@ class CliEndToEndTests(unittest.TestCase):
 
         return _redirect()
 
+
 class LimitAndDeterminismTests(unittest.TestCase):
     def test_canvas_pixel_limit_rejects_just_over_sixteen_megapixels(self) -> None:
         document = {
@@ -635,7 +651,3 @@ class LimitAndDeterminismTests(unittest.TestCase):
                 sorted(p.name for p in root.iterdir() if p.is_file()), assets_before
             )
             self.assertEqual([p.name for p in out_dir.iterdir()], ["s.jsonl"])
-
-
-if __name__ == "__main__":
-    unittest.main()
