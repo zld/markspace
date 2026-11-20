@@ -54,6 +54,29 @@ func TestReorderWraparound(t *testing.T) {
 	}
 }
 
+func TestReorderWraparoundWithReordering(t *testing.T) {
+	b := NewReorderBuffer()
+	// stream 65534,65535,0,1,2 but 65535 and 0 arrive swapped
+	b.Push(mkPacket(65534))
+	b.Push(mkPacket(0)) // parks: expected 65535, rel distance of 0 is +2
+	out := b.Push(mkPacket(65535))
+	if got := seqs(out); len(got) != 2 || got[0] != 65535 || got[1] != 0 {
+		t.Fatalf("wrap reorder expected [65535 0], got %v", got)
+	}
+	out = b.Push(mkPacket(1))
+	if got := seqs(out); len(got) != 1 || got[0] != 1 {
+		t.Fatalf("expected [1], got %v", got)
+	}
+	b.Push(mkPacket(2))
+	// the temporary hole at 65535 healed, so no real gap remains
+	if got := b.Stats().Gaps; got != 0 {
+		t.Fatalf("healed wrap hole must not count, gaps=%d", got)
+	}
+	if got := b.Stats().LateOutOfWindow; got != 0 {
+		t.Fatalf("packets stayed in window, late=%d", got)
+	}
+}
+
 func TestReorderOutOfOrderOneSwap(t *testing.T) {
 	b := NewReorderBuffer()
 	if out := b.Push(mkPacket(5)); len(out) != 1 || out[0].SequenceNumber != 5 {
