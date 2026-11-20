@@ -20,9 +20,21 @@ add_library(h264core STATIC
   src/fixture_writer.cpp
   src/analyzer.cpp
   src/report.cpp
+  src/self_test.cpp
+  src/self_test.cpp
 )
 target_include_directories(h264core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
   target_compile_options(h264core PRIVATE -Wall -Wextra -Wpedantic)
 endif()
+
+add_executable(h264scan src/main.cpp)
+target_link_libraries(h264scan PRIVATE h264core)
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+  target_compile_options(h264scan PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+enable_testing()
+add_test(NAME h264scan_self_test COMMAND h264scan self-test)
