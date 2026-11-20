@@ -12,6 +12,7 @@ endif()
 add_library(h264core STATIC
   src/bit_reader.cpp
   src/bit_writer.cpp
+  src/annexb_reader.cpp
 )
 target_include_directories(h264core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
