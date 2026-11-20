@@ -271,6 +271,45 @@ class TestGaps(FixtureTestCase):
         self.assertFalse(video.has_ctts)
 
 
+@unittest.skipUnless(shutil.which("ffprobe"), "ffprobe is not installed")
+class TestInterop(FixtureTestCase):
+    """Cross-check container timing with ffprobe when it is available."""
+
+    def _packets(self, path: str, stream: str) -> list[tuple[str, str]]:
+        completed = subprocess.run(
+            ["ffprobe", "-v", "quiet", "-select_streams", stream,
+             "-show_entries", "packet=pts_time,dts_time",
+             "-of", "csv=p=0", path],
+            capture_output=True, text=True, timeout=60)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        return [tuple(line.split(",")) for line in completed.stdout.split()]
+
+    def test_rewrite_decode_and_presentation_order(self):
+        output = self.path("interop-rewrite.mp4")
+        mkv = matroska.parse_matroska(self.fixtures["reordered"])
+        run_rewrite(mkv, 60000, output)
+        packets = self._packets(output, "v:0")
+        self.assertEqual([dts for _, dts in packets],
+                         ["0.040000", "0.080000", "0.120000", "0.160000"])
+        self.assertEqual([pts for pts, _ in packets],
+                         ["0.040000", "0.120000", "0.080000", "0.160000"])
+        audio = self._packets(output, "a:0")
+        self.assertEqual(len(audio), 7)
+        self.assertEqual(audio[0], ("0.000000", "0.000000"))
+        self.assertEqual(audio[-1][0], "0.192000")
+
+    def test_preserve_keeps_start_offset_and_sync(self):
+        output = self.path("interop-preserve.mp4")
+        mkv = matroska.parse_matroska(self.fixtures["monotonic"])
+        run_preserve(mkv, 60000, output)
+        video = self._packets(output, "v:0")
+        audio = self._packets(output, "a:0")
+        self.assertEqual(video[0][0], "0.100000")
+        self.assertEqual(audio[0][0], "0.100000")
+        self.assertEqual(video[-1][0], "0.220000")
+        self.assertEqual(audio[-1][0], "0.260000")
+
+
 class TestChunking(FixtureTestCase):
     def test_multi_chunk_tables(self):
         from matroska_mp4.mp4_writer import build_stbl, _chunk_map
