@@ -34,6 +34,8 @@ def _u24(value: int) -> bytes:
 
 
 def _u32(value: int) -> bytes:
+    if not 0 <= value <= UINT32_MAX:
+        raise ValueError(f"{value} does not fit in uint32")
     return struct.pack(">I", value)
 
 
@@ -42,6 +44,8 @@ def _u64(value: int) -> bytes:
 
 
 def _i32(value: int) -> bytes:
+    if not -(1 << 31) <= value < (1 << 31):
+        raise ValueError(f"{value} does not fit in int32")
     return struct.pack(">i", value)
 
 
