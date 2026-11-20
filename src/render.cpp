@@ -223,12 +223,122 @@ RenderResult renderSerial(const PpmImage& input, const CubeLut& lut,
     return result;
 }
 
-// Parallel scheduling arrives in the renderer scheduling batch.
-RenderResult renderParallel(const PpmImage&, const CubeLut&,
-                            const RenderConfig&, PpmImage&, int);
-RenderResult renderImage(const PpmImage&, const CubeLut&,
-                         const RenderConfig&, PpmImage&);
-std::array<double, 3> maximumChannelDifference(const PpmImage&,
-                                               const PpmImage&);
+RenderResult renderParallel(const PpmImage& input, const CubeLut& lut,
+                            const RenderConfig& config, PpmImage& output,
+                            int threads) {
+    if (threads <= 0 || threads > kMaxWorkerThreads) {
+        throw UsageError("thread count must be in [1, " +
+                         std::to_string(kMaxWorkerThreads) + "]");
+    }
+    if (input.width() != output.width() ||
+        input.height() != output.height()) {
+        throw RenderError("parallel render: output image size mismatch");
+    }
+    RenderResult result;
+    result.lutGrid = lut.gridSize();
+    result.pixels = input.pixelCount();
+    result.threads = threads;
+
+    int rows = input.height();
+    int workers = std::min(threads, rows);
+    std::vector<uint64_t> clampCounters(static_cast<size_t>(workers), 0);
+    std::vector<ChannelHistograms> before(static_cast<size_t>(workers));
+    std::vector<ChannelHistograms> after(static_cast<size_t>(workers));
+    std::vector<std::exception_ptr> failures(static_cast<size_t>(workers));
+
+    auto worker = [&](int workerId, int rowBegin, int rowEnd) {
+        try {
+            uint64_t& localClamps =
+                clampCounters[static_cast<size_t>(workerId)];
+            ChannelHistograms& localBefore =
+                before[static_cast<size_t>(workerId)];
+            ChannelHistograms& localAfter =
+                after[static_cast<size_t>(workerId)];
+            for (int row = rowBegin; row < rowEnd; ++row) {
+                size_t first = static_cast<size_t>(row) *
+                               static_cast<size_t>(input.width());
+                size_t last = first + static_cast<size_t>(input.width());
+                for (size_t i = first; i < last; ++i) {
+                    PpmImage::Pixel beforeEncoded;
+                    PpmImage::Pixel graded = gradePixel(
+                        input.at(i), lut, config, localClamps,
+                        &beforeEncoded);
+                    output.at(i) = graded;
+                    accumulateHistogram(localBefore, beforeEncoded);
+                    accumulateHistogram(localAfter, graded);
+                }
+            }
+        } catch (...) {
+            // Hand back to the caller; the output image is not touched
+            // beyond this worker's chunk and must not be published.
+            failures[static_cast<size_t>(workerId)] = std::current_exception();
+        }
+    };
+
+    std::vector<std::thread> pool;
+    pool.reserve(static_cast<size_t>(workers));
+    int rowsPerWorker = rows / workers;
+    int remainder = rows % workers;
+    int rowCursor = 0;
+    for (int workerId = 0; workerId < workers; ++workerId) {
+        int chunk = rowsPerWorker + (workerId < remainder ? 1 : 0);
+        int rowBegin = rowCursor;
+        int rowEnd = rowCursor + chunk;
+        rowCursor = rowEnd;
+        pool.emplace_back(worker, workerId, rowBegin, rowEnd);
+    }
+
+    // Join every worker before touching any exception so a throwing task
+    // cannot leave a joinable thread behind, then surface the first error.
+    for (auto& thread : pool) {
+        thread.join();
+    }
+    for (const auto& failure : failures) {
+        if (failure) {
+            std::rethrow_exception(failure);
+        }
+    }
+
+    for (int workerId = 0; workerId < workers; ++workerId) {
+        result.outOfBounds += clampCounters[static_cast<size_t>(workerId)];
+        const ChannelHistograms& localBefore =
+            before[static_cast<size_t>(workerId)];
+        const ChannelHistograms& localAfter =
+            after[static_cast<size_t>(workerId)];
+        for (size_t bin = 0; bin < kHistogramBins; ++bin) {
+            result.before.r[bin] += localBefore.r[bin];
+            result.before.g[bin] += localBefore.g[bin];
+            result.before.b[bin] += localBefore.b[bin];
+            result.after.r[bin] += localAfter.r[bin];
+            result.after.g[bin] += localAfter.g[bin];
+            result.after.b[bin] += localAfter.b[bin];
+        }
+    }
+    return result;
+}
+
+RenderResult renderImage(const PpmImage& input, const CubeLut& lut,
+                         const RenderConfig& config, PpmImage& output) {
+    if (config.threads <= 1) {
+        return renderSerial(input, lut, config, output);
+    }
+    return renderParallel(input, lut, config, output, config.threads);
+}
+
+std::array<double, 3> maximumChannelDifference(const PpmImage& a,
+                                               const PpmImage& b) {
+    if (a.width() != b.width() || a.height() != b.height()) {
+        throw RenderError("comparison requires images of equal size");
+    }
+    std::array<double, 3> maxDiff{{0.0, 0.0, 0.0}};
+    for (size_t i = 0; i < a.pixelCount(); ++i) {
+        for (size_t channel = 0; channel < 3; ++channel) {
+            maxDiff[channel] =
+                std::max(maxDiff[channel],
+                         std::fabs(a.at(i)[channel] - b.at(i)[channel]));
+        }
+    }
+    return maxDiff;
+}
 
 } // namespace grade
