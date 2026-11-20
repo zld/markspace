@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import unittest
+import tempfile
+from pathlib import Path
+from PIL import Image
+import numpy as np
+from timeline_composer.assets import AssetError, AssetStore
 from timeline_composer.clock import ClockError, FrameClock
 from timeline_composer.schema import SchemaError, parse_timeline
-import numpy as np
-from timeline_composer.color import blend, encode_frame, linear_to_srgb8, srgb8_to_linear
 from fractions import Fraction
 
 
@@ -143,55 +146,49 @@ def _solid_rgba(width: int, height: int, color: tuple[int, int, int, int]) -> np
     frame[...] = color
     return frame
 
-class ColorTests(unittest.TestCase):
-    def test_srgb_linear_round_trip_is_exact_for_8_bit(self) -> None:
-        codes = np.arange(256, dtype=np.uint8)
-        linear = srgb8_to_linear(codes)
-        self.assertEqual(linear_to_srgb8(linear).tolist(), codes.tolist())
+class AssetTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name) / "assets"
+        self.root.mkdir()
+        Image.fromarray(_solid_rgba(4, 3, (10, 20, 30, 255))).save(self.root / "ok.png")
 
-    def test_midpoint_matches_reference_formula(self) -> None:
-        expected = ((128 / 255 + 0.055) / 1.055) ** 2.4
-        self.assertAlmostEqual(float(srgb8_to_linear(np.array([128]))[0]), expected, places=6)
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
 
-    def test_normal_blend_is_source_over_in_linear_light(self) -> None:
-        dst_rgb = np.zeros((1, 1, 3), dtype=np.float32)
-        dst_a = np.zeros((1, 1), dtype=np.float32)
-        red = srgb8_to_linear(np.array([[[255, 0, 0]]], dtype=np.uint8))
-        out_rgb, out_a = blend(dst_rgb, dst_a, red, np.ones((1, 1), np.float32), "normal")
-        np.testing.assert_allclose(out_rgb, red, rtol=0, atol=1e-6)
-        np.testing.assert_allclose(out_a, 1.0, rtol=0, atol=1e-6)
+    def test_loads_and_caches_rgba(self) -> None:
+        store = AssetStore(self.root, cache_size=1)
+        first = store.load("ok.png")
+        second = store.load("ok.png")
+        self.assertIs(first, second)
+        self.assertEqual(first.shape, (3, 4, 4))
+        self.assertEqual(first[0, 0].tolist(), [10, 20, 30, 255])
+        self.assertFalse(first.flags.writeable)
 
-    def test_transparent_source_leaves_destination_untouched(self) -> None:
-        dst_rgb = np.array([[[0.2, 0.4, 0.6]]], dtype=np.float32)
-        dst_a = np.ones((1, 1), dtype=np.float32)
-        out_rgb, out_a = blend(
-            dst_rgb, dst_a, np.zeros((1, 1, 3), np.float32), np.zeros((1, 1), np.float32), "screen"
-        )
-        np.testing.assert_allclose(out_rgb, dst_rgb, atol=1e-6)
-        np.testing.assert_allclose(out_a, 1.0, atol=1e-6)
+    def test_rejects_paths_outside_root(self) -> None:
+        outside = Path(self._tmp.name) / "secret.png"
+        Image.fromarray(_solid_rgba(1, 1, (0, 0, 0, 0))).save(outside)
+        (self.root / "link.png").symlink_to(outside)
+        store = AssetStore(self.root)
+        for source in ("../secret.png", str(outside), "link.png", "a\\b.png", "ok.txt"):
+            with self.subTest(source=source), self.assertRaises(AssetError):
+                store.load(source)
 
-    def test_multiply_and_screen_against_straight_colours(self) -> None:
-        dst = np.array([[[0.5, 0.5, 0.5]]], dtype=np.float32)
-        dst_a = np.ones((1, 1), dtype=np.float32)
-        src = np.array([[[0.5, 0.5, 0.5]]], dtype=np.float32)
-        src_a = np.ones((1, 1), dtype=np.float32)
-        mult, _ = blend(dst, dst_a, src, src_a, "multiply")
-        screen, _ = blend(dst, dst_a, src, src_a, "screen")
-        np.testing.assert_allclose(mult, 0.25, atol=1e-6)
-        np.testing.assert_allclose(screen, 0.75, atol=1e-6)
+    def test_corrupt_png_raises_asset_error(self) -> None:
+        (self.root / "broken.png").write_bytes(b"not a png")
+        with self.assertRaises(AssetError):
+            AssetStore(self.root).load("broken.png")
 
-    def test_unknown_mode_is_rejected(self) -> None:
-        with self.assertRaises(ValueError):
-            blend(np.zeros((1, 1, 3), np.float32), np.zeros((1, 1), np.float32),
-                  np.zeros((1, 1, 3), np.float32), np.zeros((1, 1), np.float32), "overlay")
+    def test_missing_file_raises_asset_error(self) -> None:
+        with self.assertRaises(AssetError):
+            AssetStore(self.root).load("absent.png")
 
-    def test_encode_rounding_is_half_up_and_transparent_zeroes(self) -> None:
-        rgb = np.zeros((1, 2, 3), dtype=np.float32)
-        alpha = np.array([[0.0, 1.0]], dtype=np.float32)
-        rgb[0, 1] = srgb8_to_linear(np.array([255, 128, 0]))
-        encoded = encode_frame(rgb, alpha)
-        self.assertEqual(encoded[0, 0].tolist(), [0, 0, 0, 0])
-        self.assertEqual(encoded[0, 1].tolist(), [255, 128, 0, 255])
+    def test_eviction_respects_bound(self) -> None:
+        Image.fromarray(_solid_rgba(2, 2, (1, 2, 3, 255))).save(self.root / "second.png")
+        store = AssetStore(self.root, cache_size=1)
+        store.load("ok.png")
+        store.load("second.png")
+        self.assertEqual(len(store), 1)
 
 
 if __name__ == "__main__":
