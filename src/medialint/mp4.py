@@ -124,9 +124,64 @@ def _parse_hdlr(data: bytes, box: _Box, rel: str) -> bytes:
     return data[box.payload + 8:box.payload + 12]
 
 
+def _read_descriptor(data: bytes, pos: int, end: int, rel: str) -> tuple[int, int, int]:
+    """Return (tag, payload_start, payload_end) for one MPEG-4 descriptor."""
+    if pos + 2 > end:
+        raise MediaError("truncated-box", f"{rel}: descriptor header cut off at offset {pos}", pos)
+    tag = data[pos]
+    pos += 1
+    size = 0
+    for _ in range(4):
+        b = data[pos]
+        pos += 1
+        size = (size << 7) | (b & 0x7F)
+        if not b & 0x80:
+            break
+    if pos + size > end:
+        raise MediaError("truncated-box", f"{rel}: descriptor tag {tag} at offset {pos} overruns its box", pos)
+    return tag, pos, pos + size
+
+
 def _parse_esds(data: bytes, box: _Box, rel: str) -> tuple[int | None, int | None]:
     """Extract (sample_rate, channels) from an esds box, if decodable."""
+    pos = box.payload + 4  # skip fullbox version/flags
+    tag, start, end = _read_descriptor(data, pos, box.end, rel)
+    if tag != 0x03:
+        return None, None
+    pos = start + 3  # ES_ID (2) + flags (1)
+    flags = data[start + 2]
+    if flags & 0x80:
+        pos += 2
+    if flags & 0x40:
+        pos += 1 + data[pos]
+    if flags & 0x20:
+        pos += 2
+    while pos < end:
+        tag, dstart, dend = _read_descriptor(data, pos, end, rel)
+        if tag == 0x04:  # DecoderConfigDescriptor: scan its children
+            sub = dstart + 13
+            while sub < dend:
+                stag, sstart, send = _read_descriptor(data, sub, dend, rel)
+                if stag == 0x05:
+                    return _parse_audio_specific_config(data, sstart, send)
+                sub = send
+        elif tag == 0x05:
+            return _parse_audio_specific_config(data, dstart, dend)
+        pos = dend
     return None, None
+
+
+def _parse_audio_specific_config(data: bytes, start: int, end: int) -> tuple[int | None, int | None]:
+    if end - start < 2:
+        return None, None
+    b0, b1 = data[start], data[start + 1]
+    freq_index = ((b0 & 0x07) << 1) | (b1 >> 7)
+    if freq_index == 0x0F or freq_index >= len(AAC_SAMPLE_RATES):
+        rate = None
+    else:
+        rate = AAC_SAMPLE_RATES[freq_index]
+    channels = (b1 >> 3) & 0x0F
+    return rate, channels or None
 
 
 def _parse_avc1(data: bytes, entry: _Box, rel: str) -> CodecParams:
