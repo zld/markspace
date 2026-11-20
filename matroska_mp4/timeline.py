@@ -91,6 +91,7 @@ class TrackTimeline:
     duration_ticks: int    # media duration, covering the last presented frame
     codec_delay: int = 0   # decoder priming to trim from the start (ticks)
     edit_duration: int | None = None  # explicit edit length, else duration_ticks
+    has_intra_gaps: bool = False      # a PTS hole exceeds one source-tick quantum
 
     @property
     def sample_count(self) -> int:
@@ -246,6 +247,18 @@ def _build_track(track: Track, mp4_id: int, bucket: TrackSamples, scale_ns: int,
     duration_ticks = max(int(duration.sum()), int(ends.max()))
     if duration_ticks < 0 or media_base + duration_ticks > INT64_MAX:
         raise TimebaseOverflow("track media duration overflows int64")
+    # A source hole is a presentation spacing that exceeds the sample's own
+    # known duration (BlockDuration or DefaultDuration) by more than one
+    # Matroska tick.  Comparing in nanoseconds avoids mistaking the 21/22 ms
+    # rounding jitter of real AAC for gaps.
+    has_gaps = False
+    if pts_ns.size > 1:
+        order = np.argsort(pts_ns, kind="stable")
+        ordered = pts_ns[order]
+        spacing = ordered[1:] - ordered[:-1]
+        base = np.where(known > 0, known,
+                        np.int64(track.default_duration_ns or 0))[order][:-1]
+        has_gaps = bool(np.any((base > 0) & (spacing > base + scale_ns)))
     if codec_delay >= duration_ticks:
         raise TimelineError(
             f"track {track.number}: CodecDelay {track.codec_delay_ns} ns "
@@ -258,7 +271,8 @@ def _build_track(track: Track, mp4_id: int, bucket: TrackSamples, scale_ns: int,
         first_pts=int(global_pts.min()), last_pts=int(global_pts.max()),
         max_pts=int(global_pts.max()), duration_ticks=duration_ticks,
         codec_delay=codec_delay,
-        edit_duration=duration_ticks - codec_delay if codec_delay else None)
+        edit_duration=duration_ticks - codec_delay if codec_delay else None,
+        has_intra_gaps=has_gaps)
 
 
 def prepare(mkv: ParsedMatroska, timescale: int, mode: str) -> Timeline:
