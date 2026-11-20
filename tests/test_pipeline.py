@@ -6,6 +6,7 @@ from pathlib import Path
 from PIL import Image
 import numpy as np
 from timeline_composer.assets import AssetError, AssetStore
+from timeline_composer.audio_sync import align_events, nearest_frame
 from timeline_composer.clock import ClockError, FrameClock
 from timeline_composer.compositor import CompositorError, FrameCompositor
 from timeline_composer.schema import SchemaError, parse_timeline
@@ -274,6 +275,31 @@ class CompositorTests(unittest.TestCase):
         })
         with self.assertRaises(AssetError):
             FrameCompositor(timeline, AssetStore(self.root)).compose(0)
+
+class AudioSyncTests(unittest.TestCase):
+    def test_nearest_frame_and_tie_goes_earlier(self) -> None:
+        clock = FrameClock.from_rate(10, 1)  # frame period 0.1 s
+        self.assertEqual(nearest_frame(clock, Fraction(0)), 0)
+        self.assertEqual(nearest_frame(clock, Fraction(1, 20)), 0)   # exact tie -> earlier
+        self.assertEqual(nearest_frame(clock, Fraction(3, 20)), 1)
+        self.assertEqual(nearest_frame(clock, Fraction(99, 1000)), 1)
+        self.assertEqual(nearest_frame(clock, Fraction(-1)), 0)
+        self.assertEqual(nearest_frame(clock, Fraction(5)), 9)       # clamp to last frame
+
+    def test_signed_error_is_positive_when_cue_is_late(self) -> None:
+        clock = FrameClock.from_rate(10, 1)
+        events = parse_timeline({
+            "canvas": {"width": 2, "height": 2}, "fps": 10, "frames": 10,
+            "audio_events": [
+                {"label": "late", "sample": 105, "sample_rate": 1000},   # 105 ms -> frame 1 (100 ms)
+                {"label": "early", "sample": 95, "sample_rate": 1000},   # 95 ms -> frame 1 (100 ms)
+            ],
+        }).audio_events
+        summary = align_events(clock, events)
+        self.assertEqual([a.frame_index for a in summary.alignments], [1, 1])
+        self.assertAlmostEqual(summary.alignments[0].error_ms, 5.0, places=9)
+        self.assertAlmostEqual(summary.alignments[1].error_ms, -5.0, places=9)
+        self.assertAlmostEqual(summary.max_abs_error_ms, 5.0, places=9)
 
 
 if __name__ == "__main__":
