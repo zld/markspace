@@ -111,10 +111,18 @@ func (r *Reader) fill() error {
 // possible. Bytes skipped during resync are discarded.
 func (r *Reader) ensureSync() error {
 	if r.buf[0] == SyncByte {
+		// A sync byte at the next 188-boundary confirms 188-byte packets.
+		// If it is missing but sync bytes repeat at 192/204, the input uses
+		// an encapsulation this tool does not support.
+		if len(r.buf) >= PacketSize*syncConfirm && r.buf[PacketSize] != SyncByte {
+			for _, stride := range []int{192, 204} {
+				if r.alignedAt(stride) {
+					return ErrUnsupportedPacketSize
+				}
+			}
+		}
 		return nil
 	}
-	// Detect unsupported 192/204-byte encapsulation: sync byte present but
-	// the next sync arrives late with a fixed stride.
 	for _, stride := range []int{192, 204} {
 		if r.alignedAt(stride) {
 			return ErrUnsupportedPacketSize

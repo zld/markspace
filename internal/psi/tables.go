@@ -10,8 +10,8 @@ const (
 
 // Stream is one elementary stream entry of a PMT.
 type Stream struct {
-	PID        uint16
-	StreamType byte // kept as a raw number; unknown types are preserved
+	PID        uint16 `json:"pid"`
+	StreamType byte   `json:"stream_type"` // kept as a raw number; unknown types are preserved
 }
 
 // ProgramSnapshot is the committed view of one program.
