@@ -1,0 +1,6 @@
+# Compiled binaries
+/hlscheck
+*.out
+
+# Local demo working directories
+/demo-work/
