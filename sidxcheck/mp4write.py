@@ -13,15 +13,6 @@ def box(box_type: str, payload: bytes) -> bytes:
     return struct.pack(">I", 8 + len(payload)) + raw_type + payload
 
 
-def box64(box_type: str, payload: bytes) -> bytes:
-    raw_type = box_type.encode("ascii")
-    return struct.pack(">I4sQ", 1, raw_type, 16 + len(payload)) + payload
-
-
-def box_to_end(box_type: str, payload: bytes) -> bytes:
-    return struct.pack(">I", 0) + box_type.encode("ascii") + payload
-
-
 def full_box(box_type: str, version: int, flags: int, payload: bytes) -> bytes:
     if not 0 <= flags <= 0xFFFFFF:
         raise ValueError("flags must fit 24 bits")

@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import BinaryIO
 
-from .boxes import Box, BoxTree, parse_boxes, read_payload
+from .boxes import Box, BoxTree, parse_boxes
 from .errors import IndexValidationError, MediaStructureError
 from .samplemap import SampleMap, build_sample_map
 from .sidx import Sidx, parse_sidx_box, validate_sidx_structure
@@ -59,6 +59,18 @@ class CheckResult:
         return self.index_checks[0] if self.index_checks else None
 
 
+def _describe_offset(samples: list, offset: int) -> str:
+    for sample in samples:
+        if sample.offset <= offset < sample.end:
+            return (
+                f"byte {offset} falls inside sample {sample.index + 1} "
+                f"[{sample.offset}, {sample.end})"
+            )
+        if sample.offset > offset:
+            return f"byte {offset} falls before sample {sample.index + 1} at {sample.offset}"
+    return f"byte {offset} is past the last sample (ends {samples[-1].end})"
+
+
 def _match_reference_to_samples(
     sidx: Sidx,
     sample_map: SampleMap,
@@ -71,15 +83,12 @@ def _match_reference_to_samples(
     by_start = {sample.offset: index for index, sample in enumerate(samples)}
     position = sidx.anchor_offset
     covered = 0
-    last_covered_index = -1
     for ref_index, reference in enumerate(sidx.references):
         where = f"reference[{ref_index}]"
         start_index = by_start.get(position)
         if start_index is None:
             check.problems.append(
-                f"{where} starts at byte {position}, which is not a sample boundary "
-                f"(sample {last_covered_index + 2} starts at "
-                f"{samples[last_covered_index + 1].offset if last_covered_index + 1 < len(samples) else 'EOF'})"
+                f"{where} starts at a non-sample boundary: {_describe_offset(samples, position)}"
             )
             return covered
         end = position + reference.referenced_size
@@ -120,7 +129,6 @@ def _match_reference_to_samples(
                     f"{where} claims SAP but sample {start_index + 1} is not a sync sample"
                 )
         covered += index - start_index
-        last_covered_index = index - 1
         position = end
     if require_full_coverage:
         if covered != len(samples):
@@ -272,9 +280,3 @@ def check_open_file(
         result.problems.append("no index was checked")
     return result
 
-
-def summarize_offset(result: CheckResult) -> tuple[bool, int | None]:
-    primary = result.primary_index
-    if primary is None:
-        return False, None
-    return primary.offset_ok, primary.offset_delta

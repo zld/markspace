@@ -9,7 +9,6 @@ from pathlib import Path
 from .mp4write import (
     SegmentRefSpec,
     box,
-    box_to_end,
     full_box,
     ftpy,
     s32,
@@ -51,6 +50,7 @@ class MovieSpec:
     encrypted_sample_entry: bool = False
     sidx_version: int = 0
     sidx_omit_tail: int = 0     # drop this many trailing references from the old index
+    sidx_nested: bool = False   # mark the first old reference as hierarchical
     free_box_size: int = 0      # insert a 'free' box after the old SIDX
 
     def __post_init__(self) -> None:
@@ -61,9 +61,12 @@ class MovieSpec:
                 modulus = 255
             else:
                 modulus = 37
-            self.sample_sizes = [
-                1 + (64 + index * 7) % modulus for index in range(self.sample_count)
-            ]
+            if self.use_stz2 and self.stz2_field_size == 4:
+                self.sample_sizes = [1 + (index * 5) % 15 for index in range(self.sample_count)]
+            else:
+                self.sample_sizes = [
+                    1 + (64 + index * 7) % modulus for index in range(self.sample_count)
+                ]
         if not self.sync_samples:
             step = self.sample_count // 4 or 1
             self.sync_samples = list(range(1, self.sample_count + 1, step))
@@ -275,6 +278,12 @@ def build_movie(
         if spec.sidx_omit_tail >= len(refs):
             raise ValueError("cannot omit every reference from the old index")
         refs = refs[: len(refs) - spec.sidx_omit_tail]
+    if spec.sidx_nested:
+        refs[0] = SegmentRefSpec(
+            size=refs[0].size,
+            duration=refs[0].duration,
+            reference_type=1,
+        )
     if spec.old_index == "none":
         sidx = b""
     else:

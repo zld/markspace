@@ -64,6 +64,7 @@ class _Layout:
     patched: MoovPatch
     passes: int
     chunk_offset_kind: str
+    warnings: list[str] = field(default_factory=list)
 
 
 def _moov_size(payload_len: int) -> int:
@@ -77,11 +78,13 @@ def _plan(
     first_mdat: Box,
     sidx_size: int,
     moov_len: int,
+    stale: set[str] | None = None,
 ) -> list[_Piece]:
     pieces: list[_Piece] = []
     sidx_placed = False
+    stale = stale or set()
     for box in tree.top_level:
-        if existing is not None and box is existing:
+        if box.path in stale or (existing is not None and box is existing):
             continue
         if box is first_mdat and not sidx_placed:
             pieces.append(_Piece("sidx", sidx_size))
@@ -124,13 +127,8 @@ def _layout(
     moov: Box,
     moov_payload: bytes,
     first_mdat: Box,
+    stale: set[str] | None = None,
 ) -> _Layout:
-    if existing is not None and existing.start > first_mdat.start:
-        raise UnsupportedFeatureError(
-            "existing SIDX sits after the first mdat; references cannot be anchored "
-            "without negative offsets",
-            location="sidx",
-        )
     if len(plan.segments) > 0xFFFF:
         raise UnsupportedFeatureError(
             f"{len(plan.segments)} references exceed the 65535 limit of one SIDX",
@@ -148,12 +146,14 @@ def _layout(
     patched: MoovPatch | None = None
     shift = 0
     passes = 0
+    warnings_layout: list[str] = []
     pieces = _plan(
         tree,
         existing=existing,
         first_mdat=first_mdat,
         sidx_size=sidx_size,
         moov_len=moov_len,
+        stale=stale,
     )
     while True:
         passes += 1
@@ -191,6 +191,7 @@ def _layout(
                     first_mdat=first_mdat,
                     sidx_size=sidx_size,
                     moov_len=moov_len,
+                    stale=stale,
                 )
                 continue
             raise MediaStructureError(
@@ -207,9 +208,15 @@ def _layout(
                 first_mdat=first_mdat,
                 sidx_size=sidx_size,
                 moov_len=moov_len,
+                stale=stale,
             )
             continue
         shift = new_shift
+        if passes > 1:
+            warnings_layout.append(
+                f"layout stabilized after {passes} passes because moov changed size "
+                f"(stco->co64 upgrade or re-patching)"
+            )
         break
     assert patched is not None
     if not patched.patched_entries:
@@ -218,6 +225,7 @@ def _layout(
             location="stbl",
         )
     return _Layout(
+        warnings=warnings_layout,
         pieces=pieces,
         sidx_offset=sidx_offset,
         sidx_size=sidx_size,
@@ -242,6 +250,13 @@ def _build_sidx(sample_map: SampleMap, plan: SegmentPlan, layout: _Layout) -> Si
         )
         for segment in plan.segments
     ]
+    for index, reference in enumerate(references):
+        if reference.referenced_size > 0x7FFFFFFF:
+            raise UnsupportedFeatureError(
+                f"segment {index} spans {reference.referenced_size} bytes, which "
+                f"exceeds the 31-bit SIDX referenced_size limit of 2147483647",
+                location="sidx",
+            )
     version = 1 if layout.first_offset > 0xFFFFFFFF else 0
     sidx = Sidx(
         version=version,
@@ -347,11 +362,16 @@ def rewrite_with_sidx(
             moov = tree.first("moov", required=True, unique=True)
             assert moov is not None
             top_sidx = [box for box in tree.all("sidx") if box.depth == 0]
-            if len(top_sidx) > 1:
+            # Only a SIDX before the first mdat can be replaced in place; any
+            # later one is a stale index that must not survive the rewrite.
+            replaceable = [box for box in top_sidx if box.start < tree.all("mdat")[0].start]
+            if len(replaceable) > 1:
                 raise UnsupportedFeatureError(
-                    f"file has {len(top_sidx)} top-level SIDX boxes", location="sidx"
+                    f"file has {len(replaceable)} top-level SIDX boxes before the mdat",
+                    location="sidx",
                 )
-            existing = top_sidx[0] if top_sidx else None
+            stale = [box for box in top_sidx if box not in replaceable]
+            existing = replaceable[0] if replaceable else None
             first_mdat = tree.all("mdat")[0]
             moov_payload = read_payload(fp, moov)
             layout = _layout(
@@ -362,11 +382,13 @@ def rewrite_with_sidx(
                 moov=moov,
                 moov_payload=moov_payload,
                 first_mdat=first_mdat,
+                stale={box.path for box in stale},
             )
             sidx = _build_sidx(sample_map, plan, layout)
             sidx_bytes = serialize_sidx(sidx)
             warnings = list(sample_map.warnings) + list(plan.warnings)
             warnings.extend(layout.patched.warnings or [])
+            warnings.extend(layout.warnings)
             _write_new_file(
                 source,
                 destination,
@@ -382,7 +404,9 @@ def rewrite_with_sidx(
         raise IOErrorFailure(
             f"rewritten file {destination} is missing: {exc}", location=str(destination)
         ) from exc
-    expected = tree.file_size + layout.shift
+    expected = sum(piece.size for piece in layout.pieces)
+    with destination.open("rb") as handle:
+        parse_boxes(handle, destination_size)
     if destination_size != expected:
         raise IOErrorFailure(
             f"written size {destination_size} does not match planned {expected}",

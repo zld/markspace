@@ -15,7 +15,7 @@ from .fixtures import (
     MovieSpec,
     write_demo,
 )
-from .report import check_payload, render_check, render_rebuild
+from .report import render_check, render_rebuild
 from .rewrite import rewrite_with_sidx
 from .segments import plan_segments
 from .verify import check_file
@@ -216,7 +216,7 @@ def main(argv: list[str] | None = None) -> int:
     handlers = {"demo": run_demo, "check": run_check, "rebuild": run_rebuild}
     handler = handlers[args.command]
     try:
-        return handler(args)
+        return handler(args, stdout=sys.stdout, stderr=sys.stderr)
     except SidxCheckError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return exc.exit_code

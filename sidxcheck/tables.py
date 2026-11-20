@@ -8,10 +8,7 @@ from .boxes import Box, BoxTree, read_payload
 from .errors import BoxLimitError, MediaStructureError, UnsupportedFeatureError
 from .samples import (
     MAX_SAMPLES,
-    CompositionOffsetEntry,
     SampleTables,
-    SampleToChunkEntry,
-    TimeToSampleEntry,
     parse_co64,
     parse_ctts,
     parse_hdlr,
@@ -43,19 +40,6 @@ def _single_child(tree: BoxTree, parent: Box, box_type: str, *, required: bool) 
             )
         return None
     return matches[0]
-
-
-def list_track_ids(fp: BinaryIO, tree: BoxTree) -> list[int]:
-    moov = tree.first("moov", required=True, unique=True)
-    assert moov is not None
-    track_ids: list[int] = []
-    for trak in tree.children(moov):
-        if trak.type != "trak":
-            continue
-        tkhd = _single_child(tree, trak, "tkhd", required=True)
-        assert tkhd is not None
-        track_ids.append(parse_tkhd(tkhd, read_payload(fp, tkhd)).track_id)
-    return track_ids
 
 
 def load_track_tables(fp: BinaryIO, tree: BoxTree, track_id: int) -> SampleTables:

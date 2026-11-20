@@ -7,9 +7,7 @@ from __future__ import annotations
 
 import struct
 from dataclasses import dataclass
-from typing import BinaryIO
-
-from .boxes import Box, BoxTree, read_payload
+from .boxes import Box
 from .errors import BoxLimitError, MediaStructureError, UnsupportedFeatureError
 
 MAX_SAMPLES = 1_000_000

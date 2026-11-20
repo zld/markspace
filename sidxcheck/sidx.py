@@ -160,18 +160,6 @@ def parse_sidx_box(fp: BinaryIO, box: Box) -> Sidx:
     return parse_sidx_payload(payload, box_start=box.start, box_end=box.end)
 
 
-def choose_version(
-    *, reference_id: int, timescale: int, earliest_presentation_time: int,
-    first_offset: int, references: list[SidxReference],
-) -> int:
-    needs_v1 = (
-        earliest_presentation_time > 0xFFFFFFFF
-        or first_offset > 0xFFFFFFFF
-        or len(references) > 0xFFFF
-    )
-    return 1 if needs_v1 else 0
-
-
 def serialize_sidx(sidx: Sidx) -> bytes:
     version = sidx.version
     if version not in (0, 1):
@@ -209,6 +197,10 @@ def serialize_sidx(sidx: Sidx) -> bytes:
         if ref.reference_type not in (0, 1):
             raise IndexValidationError(
                 f"reference {index} has invalid type {ref.reference_type}", location="sidx"
+            )
+        if ref.referenced_size == 0:
+            raise IndexValidationError(
+                f"reference {index} has zero referenced_size", location="sidx"
             )
         if not 0 <= ref.referenced_size <= SIDX_REFERENCE_SIZE_LIMIT:
             raise IndexValidationError(
