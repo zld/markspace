@@ -9,6 +9,7 @@ from timeline_composer.assets import AssetError, AssetStore
 from timeline_composer.audio_sync import align_events, nearest_frame
 from timeline_composer.clock import ClockError, FrameClock
 from timeline_composer.compositor import CompositorError, FrameCompositor
+from timeline_composer.fixtures import DEMO_LAYER_ASSETS, build_demo, write_demo_assets
 from timeline_composer.schema import SchemaError, parse_timeline
 from fractions import Fraction
 
@@ -300,6 +301,13 @@ class AudioSyncTests(unittest.TestCase):
         self.assertAlmostEqual(summary.alignments[0].error_ms, 5.0, places=9)
         self.assertAlmostEqual(summary.alignments[1].error_ms, -5.0, places=9)
         self.assertAlmostEqual(summary.max_abs_error_ms, 5.0, places=9)
+
+    def test_demo_max_error_matches_expected_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as workspace:
+            timeline, _ = build_demo(workspace, 120, "30000/1001", 320, 180)
+        summary = align_events(timeline.clock, timeline.audio_events)
+        self.assertEqual(summary.event_count, 3)
+        self.assertAlmostEqual(summary.max_abs_error_ms, 6.008333333, places=6)
 
 
 if __name__ == "__main__":
