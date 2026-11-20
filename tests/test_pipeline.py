@@ -244,6 +244,32 @@ class TestGaps(FixtureTestCase):
         self.assertEqual(video.ctts.tolist(), [0, 0, 2400, 2400])
         self.assertEqual(result.timeline.ctts_tracks, 1)
 
+    def test_preserve_durations_follow_rounded_pts(self):
+        # 27 ms spacing at timescale 60 rounds each gap to 2 ticks, but the
+        # rounded endpoints advance by 1 then 2.  Deriving stts from rounded
+        # nanosecond gaps therefore disagreed with the actual PTS; preserve
+        # must use the rounded PTS deltas so the sample table matches.
+        groups = b"".join(
+            fixture._group(1, offset, bytes([0x61 + index]) * 8, 27, 0)
+            for index, offset in enumerate((9, 36, 63)))
+        cluster = fixture.master(fixture.ids.CLUSTER,
+                                 fixture.uint_elem(fixture.ids.TIMECODE, 0) +
+                                 groups)
+        path = self.path("rounding.mkv")
+        with open(path, "wb") as handle:
+            handle.write(fixture._header() + fixture._segment(
+                fixture.master(fixture.ids.TRACKS, fixture._video_track(None)),
+                cluster, True, 0.0))
+        result = run_preserve(matroska.parse_matroska(path), 60,
+                              self.path("rounding.mp4"))
+        video = result.timeline.tracks[0]
+        self.assertEqual(video.pts.tolist(), [1, 2, 4])
+        # The final sample has no following interval, so its BlockDuration
+        # (27 ms -> 2 ticks) supplies the last delta.
+        self.assertEqual(video.duration.tolist(), [1, 2, 2])
+        self.assertEqual(video.dts.tolist(), [0, 1, 3])
+        self.assertFalse(video.has_ctts)
+
 
 class TestChunking(FixtureTestCase):
     def test_multi_chunk_tables(self):
@@ -442,6 +468,18 @@ class TestAuditIndexCorruption(FixtureTestCase):
             audit_mp4(output, mkv.path, mkv.samples, result.timeline.tracks,
                       result.timeline.timescale)
 
+    def test_overlapping_chunk_layout_detected(self):
+        # Equal total sizes do not prove the index is consistent; two tracks
+        # pointing at the same bytes must be rejected.
+        from matroska_mp4.mp4_audit import AuditError, _check_chunk_layout
+        with self.assertRaises(AuditError) as ctx:
+            _check_chunk_layout([(100, 150, 1), (120, 200, 2)], 100, 220)
+        self.assertIn("overlap", str(ctx.exception))
+        with self.assertRaises(AuditError) as ctx:
+            _check_chunk_layout([(100, 150, 1), (160, 220, 2)], 100, 220)
+        self.assertIn("gap", str(ctx.exception))
+        _check_chunk_layout([(100, 150, 1), (150, 220, 2)], 100, 220)
+
     def test_audit_ok_for_untampered(self):
         from matroska_mp4.mp4_audit import audit_mp4
         output = self.path("clean.mp4")
@@ -502,11 +540,15 @@ class TestBlockHardening(FixtureTestCase):
 
     def test_zero_lead_track_vint_fails_fast(self):
         # A 0x00 lead byte never terminates the VINT length loop; this used
-        # to hang the parser instead of reporting corruption.
+        # to hang the parser instead of reporting corruption.  Run in a
+        # subprocess so a regression cannot block the whole test run.
         path = self._fixture(b"\x00\x00\x00\x80abc", "zero-track.mkv")
-        with self.assertRaises(ebml.EBMLError) as ctx:
-            matroska.parse_matroska(path)
-        self.assertIn("track number VINT", str(ctx.exception))
+        completed = subprocess.run(
+            [sys.executable, "-m", "matroska_mp4", "remux", "--input", path,
+             "--output", path + ".mp4"],
+            cwd=ROOT, capture_output=True, text=True, timeout=20)
+        self.assertEqual(completed.returncode, 3, completed.stderr)
+        self.assertIn("track number VINT", completed.stderr)
 
     def test_single_frame_laces_parse(self):
         # Xiph/EBML blocks with one frame store no size headers; all lacing
