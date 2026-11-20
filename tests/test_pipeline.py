@@ -402,3 +402,41 @@ class TestAuditIndexCorruption(FixtureTestCase):
         result = run_preserve(mkv, 60000, output)
         again = audit_mp4(output, mkv, result.timeline)
         self.assertEqual(again["sample_count"], 10)
+
+
+class TestLacingRejections(FixtureTestCase):
+    """Malformed lace headers must fail with an EBML offset, not be guessed."""
+
+    def _fixture(self, block_body: bytes, name: str) -> str:
+        block = fixture.leaf(fixture.ids.SIMPLE_BLOCK, block_body)
+        path = self.path(name)
+        with open(path, "wb") as handle:
+            handle.write(fixture.build_raw(block))
+        return path
+
+    def test_xiph_lace_exceeds_payload(self):
+        # Track 2, Xiph lacing, 3 frames, first two declare 100 bytes each.
+        path = self._fixture(b"\x82\x00\x00\x02\x02\x64\x64ab", "xiph-over.mkv")
+        with self.assertRaises(ebml.EBMLError) as ctx:
+            matroska.parse_matroska(path)
+        self.assertIn("exceed", str(ctx.exception))
+        self.assertGreater(ctx.exception.offset, 0)
+
+    def test_fixed_lace_uneven(self):
+        path = self._fixture(b"\x82\x00\x00\x04\x01abc", "fixed-odd.mkv")
+        with self.assertRaises(ebml.EBMLError) as ctx:
+            matroska.parse_matroska(path)
+        self.assertIn("divisible", str(ctx.exception))
+
+    def test_missing_lace_count_byte(self):
+        path = self._fixture(b"\x82\x00\x00\x02ab", "xiph-nocount.mkv")
+        with self.assertRaises(ebml.EBMLError):
+            matroska.parse_matroska(path)
+
+    def test_zero_length_frame_rejected(self):
+        # EBML lacing with 2 frames: first frame size 0 (VINT 0x80), one byte
+        # of payload left for the final frame.
+        path = self._fixture(b"\x82\x00\x00\x06\x01\x80a", "zero-lace.mkv")
+        with self.assertRaises(ebml.EBMLError) as ctx:
+            matroska.parse_matroska(path)
+        self.assertIn("empty frame", str(ctx.exception))

@@ -343,8 +343,8 @@ def _parse_lace_sizes(reader: _PayloadReader, lacing: int) -> list[int]:
     count = reader.read_byte() + 1
     if count < 1 or count > MAX_LACE_FRAMES:
         raise ebml.EBMLError(reader.pos - 1, f"invalid lace frame count {count}")
-    if count == 1:
-        # With a single frame no lace-size headers follow the count byte.
+    if lacing == 2 and count == 1:
+        # A single frame under fixed lacing has no lace-size headers.
         size = reader.remaining
         if size <= 0:
             raise ebml.EBMLError(reader.pos, "empty laced block payload")
@@ -363,7 +363,7 @@ def _parse_lace_sizes(reader: _PayloadReader, lacing: int) -> list[int]:
         remaining = reader.remaining
         if remaining % count:
             raise ebml.EBMLError(reader.pos, "fixed lacing size is not divisible")
-        sizes = [remaining // count] * count
+        return [remaining // count] * count
     elif lacing == 3:  # EBML
         first = reader.read_vint(signed=False)
         sizes.append(first)
@@ -375,18 +375,13 @@ def _parse_lace_sizes(reader: _PayloadReader, lacing: int) -> list[int]:
             sizes.append(next_size)
     else:
         raise ebml.EBMLError(reader.pos, f"invalid lacing value {lacing}")
-    used = sum(sizes)
     remaining = reader.remaining
-    last = remaining - used
-    if lacing in (1, 3):
-        if last < 0:
-            raise ebml.EBMLError(reader.pos, "lace sizes exceed block payload")
-        sizes.append(last)
-    elif lacing == 2:
-        pass
-    total = sum(sizes)
-    if total != remaining:
-        raise ebml.EBMLError(reader.pos, "lace sizes do not sum to payload size")
+    if sum(sizes) > remaining:
+        raise ebml.EBMLError(reader.pos, "lace sizes exceed block payload")
+    sizes.append(remaining - sum(sizes))
+    if len(sizes) != count:
+        raise ebml.EBMLError(reader.pos, f"lacing describes {len(sizes)} frames "
+                                         f"but declared {count}")
     return sizes
 
 
