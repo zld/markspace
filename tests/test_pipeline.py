@@ -224,6 +224,27 @@ class TestTimeline(FixtureTestCase):
         self.assertEqual(ns_to_ticks(16_666_666, 60000), 1000)
 
 
+class TestGaps(FixtureTestCase):
+    def test_preserve_retains_intra_track_gap(self):
+        mkv = matroska.parse_matroska(self.fixtures["gapped"])
+        result = run_preserve(mkv, 60000, self.path("gapped-preserve.mp4"))
+        video = result.timeline.tracks[0]
+        # PTS spacing 40/40/80/40 ms -> stts deltas include the 80 ms hole.
+        self.assertEqual(video.duration.tolist(), [2400, 4800, 2400, 2400])
+        self.assertEqual(video.dts.tolist(), video.media_pts.tolist())
+        self.assertFalse(video.has_ctts)
+        self.assertEqual(result.audit["sample_count"], 8)
+
+    def test_rewrite_keeps_display_times_of_gapped_input(self):
+        mkv = matroska.parse_matroska(self.fixtures["gapped"])
+        result = run_rewrite(mkv, 60000, self.path("gapped-rewrite.mp4"))
+        video = result.timeline.tracks[0]
+        self.assertEqual(video.pts.tolist(), [0, 2400, 7200, 9600])
+        self.assertEqual(video.dts.tolist(), [0, 2400, 4800, 7200])
+        self.assertEqual(video.ctts.tolist(), [0, 0, 2400, 2400])
+        self.assertEqual(result.timeline.ctts_tracks, 1)
+
+
 class TestChunking(FixtureTestCase):
     def test_multi_chunk_tables(self):
         from matroska_mp4.mp4_writer import build_stbl, _chunk_map
@@ -372,7 +393,8 @@ class TestCLI(FixtureTestCase):
         target = self.path("fixture-cli")
         code, out, _ = self._run(["fixture", "--out-dir", target])
         self.assertEqual(code, 0)
-        self.assertEqual(sorted(json.loads(out)["fixtures"]), ["monotonic", "reordered"])
+        self.assertEqual(sorted(json.loads(out)["fixtures"]),
+                         ["gapped", "monotonic", "reordered"])
 
 
 if __name__ == "__main__":

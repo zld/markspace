@@ -229,6 +229,27 @@ def build_monotonic() -> bytes:
     return _header() + _segment(tracks, cluster1 + cluster2, False, 260.0)
 
 
+def build_gapped() -> bytes:
+    """Monotonic video with a 80 ms hole between the 2nd and 3rd frames.
+
+    Preserve must keep the hole (stts deltas follow real PTS spacing), while
+    rewrite keeps the presented PTS and fills DTS from block durations.
+    """
+
+    relative = [100, 140, 220, 260]
+    video = [_simple(1, r, _video_frame(50 + i, 16 + i), True)
+             for i, r in enumerate(relative)]
+    audio_frames = [_audio_frame(60 + i, 10) for i in range(4)]
+    audio = block_payload(2, 100, 0x80, audio_frames, "xiph")
+    cluster1 = master(ids.CLUSTER, uint_elem(ids.TIMECODE, 0) +
+                      video[0] + video[1] +
+                      leaf(ids.SIMPLE_BLOCK, audio))
+    cluster2 = master(ids.CLUSTER, uint_elem(ids.TIMECODE, 0) +
+                      video[2] + video[3])
+    tracks = master(ids.TRACKS, _video_track(40_000_000) + _audio_track())
+    return _header() + _segment(tracks, cluster1 + cluster2, True, 300.0)
+
+
 def build_raw(block_element: bytes) -> bytes:
     """One-cluster fixture containing a caller-supplied (possibly corrupt) block."""
 
@@ -241,7 +262,8 @@ def generate(out_dir: str) -> dict[str, str]:
     os.makedirs(out_dir, exist_ok=True)
     paths = {}
     for name, builder in (("reordered", build_reordered),
-                          ("monotonic", build_monotonic)):
+                          ("monotonic", build_monotonic),
+                          ("gapped", build_gapped)):
         path = os.path.join(out_dir, f"{name}.mkv")
         payload = builder()
         with open(path, "wb") as handle:
