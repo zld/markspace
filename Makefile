@@ -1,8 +1,9 @@
 GO ?= go
 BIN ?= /tmp/tsinspect
 DEMO ?= /tmp/demo.ts
+PROGRAM ?= /tmp/program-1.ts
 
-.PHONY: build demo test fmt vet clean
+.PHONY: build demo inspect slice test fmt vet clean
 
 build:
 	$(GO) build -o $(BIN) ./cmd/tsinspect
@@ -10,6 +11,12 @@ build:
 demo: build
 	$(BIN) generate --out $(DEMO) --scenario updates-loss
 	$(BIN) inspect --input $(DEMO) --json
+
+inspect: build
+	$(BIN) inspect --input $(DEMO)
+
+slice: build
+	$(BIN) slice --input $(DEMO) --program 1 --out $(PROGRAM)
 
 test:
 	$(GO) test ./...
@@ -21,4 +28,4 @@ vet:
 	$(GO) vet ./...
 
 clean:
-	rm -f $(BIN) $(DEMO) /tmp/program-1.ts
+	rm -f $(BIN) $(DEMO) $(PROGRAM)
