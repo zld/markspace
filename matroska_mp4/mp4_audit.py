@@ -252,17 +252,14 @@ def _sample_offsets(chunks: np.ndarray, per_chunk: np.ndarray,
 def _frame_spans(offsets: np.ndarray, sizes: np.ndarray) -> list[tuple[int, int, int, int]]:
     """Group adjacent source frames into contiguous read spans."""
 
-    spans = []
     if offsets.size == 0:
-        return spans
-    start = 0
-    for index in range(1, offsets.size):
-        if offsets[index] != offsets[index - 1] + sizes[index - 1]:
-            spans.append((start, index))
-            start = index
-    spans.append((start, offsets.size))
-    return [(int(offsets[a]), int(offsets[b - 1] + sizes[b - 1]), a, b)
-            for a, b in spans]
+        return []
+    contiguous = offsets[1:] == offsets[:-1] + sizes[:-1]
+    cuts = np.flatnonzero(~contiguous) + 1
+    starts = np.concatenate(([0], cuts))
+    ends = np.concatenate((cuts, [offsets.size]))
+    return [(int(offsets[a]), int(offsets[b - 1] + sizes[b - 1]), int(a), int(b))
+            for a, b in zip(starts.tolist(), ends.tolist())]
 
 
 def _compare_bytes(mm, source, mp4_offsets: np.ndarray, source_offsets: np.ndarray,

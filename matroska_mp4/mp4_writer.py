@@ -97,6 +97,8 @@ def _tkhd(duration: int, track_id: int, volume: int, width: int, height: int,
 
 
 def _elst(entries: list[tuple[int, int]]) -> bytes:
+    """Entry list of (segment duration, media time) in movie timescale."""
+
     wide = any(duration > UINT32_MAX or media_time > 0x7FFFFFFF
                for duration, media_time in entries)
     payload = _u32(len(entries))
@@ -107,6 +109,25 @@ def _elst(entries: list[tuple[int, int]]) -> bytes:
             payload += _u32(duration) + _i32(media_time)
         payload += _u16(1) + _u16(0)
     return full_box(b"elst", 1 if wide else 0, 0, payload)
+
+
+def _edit_entries(track: TrackTimeline, movie_timescale: int) -> list[tuple[int, int]]:
+    """Map the movie timeline onto this track's media timeline.
+
+    ``media_time = -1`` inserts an empty edit that delays the track so its
+    first presented sample lands at the original global PTS.  The remaining
+    media is then played from its own first presented sample.
+    """
+
+    media_end = track.media_base + track.duration_ticks
+    empty = track.media_base
+    entries = []
+    if empty > 0:
+        entries.append((empty, -1))
+    media_duration = max(0, media_end - track.media_base)
+    if media_duration > 0:
+        entries.append((media_duration, 0))
+    return entries
 
 
 def _mdhd(duration: int, timescale: int) -> bytes:
@@ -225,10 +246,7 @@ def build_stbl(track: TrackTimeline, chunk_offsets: list[int]) -> bytes:
 def _trak(track: TrackTimeline, chunk_offsets: list[int], timescale: int) -> bytes:
     is_video = track.track.handler == "vide"
     track_duration = track.media_base + track.duration_ticks
-    entries = []
-    if track.media_base > 0:
-        entries.append((track.media_base, -1))
-    entries.append((track.duration_ticks, 0))
+    entries = _edit_entries(track, timescale)
     if is_video:
         media_info = box(b"vmhd", _u8(0) * 4 + bytes(8))
         media_name = "VideoHandler"
@@ -259,22 +277,41 @@ def _ftyp() -> bytes:
     return box(b"ftyp", b"isom" + _u32(512) + b"isomiso2avc1mp41")
 
 
+def _copy_chunk(source, sink, offsets: np.ndarray, sizes: np.ndarray) -> int:
+    """Copy one chunk, coalescing contiguous source frames into one read."""
+
+    if offsets.size == 0:
+        return 0
+    contiguous = offsets[1:] == offsets[:-1] + sizes[:-1]
+    cuts = np.flatnonzero(~contiguous) + 1
+    starts = np.concatenate(([0], cuts))
+    ends = np.concatenate((cuts, [offsets.size]))
+    written = 0
+    for first, stop in zip(starts.tolist(), ends.tolist()):
+        length = int(sizes[first:stop].sum())
+        source.seek(int(offsets[first]))
+        payload = source.read(length)
+        if len(payload) != length:
+            raise OSError(f"short read for samples {first + 1}..{stop}")
+        sink.write(payload)
+        written += length
+    return written
+
+
 def _copy_track(source, sink, track: TrackTimeline, data_start: int) -> tuple[list[int], int]:
     offsets: list[int] = []
     position = data_start
     for chunk_start in range(0, track.sample_count, CHUNK_SAMPLES):
-        offsets.append(position)
         chunk_end = min(track.sample_count, chunk_start + CHUNK_SAMPLES)
-        for index in range(chunk_start, chunk_end):
-            size = int(track.size[index])
-            if size <= 0 or size > MAX_PACKET_BYTES:
-                raise OSError(f"invalid frame size {size} at sample {index}")
-            source.seek(int(track.offset[index]))
-            payload = source.read(size)
-            if len(payload) != size:
-                raise OSError(f"short read for sample {index}")
-            sink.write(payload)
-            position += size
+        sizes = track.size[chunk_start:chunk_end]
+        if sizes.size == 0 or int(sizes.min()) <= 0:
+            raise OSError(f"invalid frame size at sample {chunk_start + 1}")
+        if int(sizes.max()) > MAX_PACKET_BYTES:
+            raise OSError(f"frame exceeds {MAX_PACKET_BYTES} bytes at sample "
+                          f"{chunk_start + 1}")
+        offsets.append(position)
+        position += _copy_chunk(source, sink, track.offset[chunk_start:chunk_end],
+                                sizes)
     return offsets, position
 
 
