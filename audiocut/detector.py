@@ -124,12 +124,14 @@ def silence_window_runs(db_levels: np.ndarray, threshold: float) -> List[Tuple[i
 def _runs_to_samples(
     runs: List[Tuple[int, int]], n_windows: int, hop: int, total_frames: int
 ) -> List[Segment]:
+    # Every window k starts at sample k*hop (flush windows included), so
+    # both run edges map onto the hop grid; the final edge is clamped to
+    # the file length. This keeps segments and silence symmetric and
+    # guarantees they jointly cover [0, total_frames) without overlap.
     out = []
     for w0, w1 in runs:
         start = w0 * hop
-        # A run reaching the final window extends to the end of file so
-        # that segments and silence together cover [0, total_frames).
-        end = total_frames if w1 >= n_windows else min(w1 * hop, total_frames)
+        end = min(w1 * hop, total_frames)
         if end > start:
             out.append(Segment(start, end))
     return out
