@@ -16,6 +16,7 @@ add_library(fmp4core STATIC
   src/fragment_index.cpp
   src/init_compat.cpp
   src/repacker.cpp
+  src/fixture.cpp
 )
 target_include_directories(fmp4core PUBLIC include)
 
