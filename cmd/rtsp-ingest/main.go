@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"rtspingest/internal/cli"
 	"rtspingest/internal/fsm"
@@ -28,12 +30,19 @@ func run(argv []string, stdout, stderr *os.File) int {
 		return cli.ExitArgs
 	}
 
-	failed := false
+	// SIGINT / SIGTERM cancel the root context; every in-flight session then
+	// unwinds through its deferred runner.Close(), releasing TCP and UDP ports.
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	cancelled := false
 	for _, name := range opts.Transports() {
-		line, code, err := runOne(name, opts)
+		line, code, err := runOne(ctx, name, opts)
 		if err != nil {
 			fmt.Fprintf(stderr, "rtsp-ingest: %s transport failed: %v\n", name, err)
-			failed = true
+			if errors.Is(err, context.Canceled) {
+				cancelled = true
+			}
 			if code != cli.ExitOK {
 				return code
 			}
@@ -43,15 +52,15 @@ func run(argv []string, stdout, stderr *os.File) int {
 			return cli.ExitTimeoutOrFatal
 		}
 	}
-	if failed {
-		return cli.ExitMediaInvalid
+	if cancelled {
+		return cli.ExitTimeoutOrFatal
 	}
 	return cli.ExitOK
 }
 
 // runOne executes a single end-to-end transport session and builds its
 // report line. The returned code classifies any failure.
-func runOne(name string, opts cli.Options) (report.Line, int, error) {
+func runOne(root context.Context, name string, opts cli.Options) (report.Line, int, error) {
 	fixture := sim.BuildFixture(opts.Seed)
 	machine := fsm.NewMachine()
 
@@ -87,7 +96,7 @@ func runOne(name string, opts cli.Options) (report.Line, int, error) {
 		return report.Line{}, cli.ExitArgs, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), opts.Timeout)
+	ctx, cancel := context.WithTimeout(root, opts.Timeout)
 	defer cancel()
 
 	pubErr := make(chan error, 1)
@@ -96,8 +105,12 @@ func runOne(name string, opts cli.Options) (report.Line, int, error) {
 	select {
 	case <-runner.Handler().Done():
 	case <-ctx.Done():
+		if errors.Is(ctx.Err(), context.Canceled) {
+			return report.Line{Transport: adapter.Name()}, cli.ExitTimeoutOrFatal,
+				fmt.Errorf("cancelled while waiting for RTSP session teardown: %w", context.Canceled)
+		}
 		return report.Line{Transport: adapter.Name()}, cli.ExitTimeoutOrFatal,
-			errors.New("timed out waiting for RTSP session teardown")
+			fmt.Errorf("timed out waiting for RTSP session teardown: %w", context.DeadlineExceeded)
 	}
 
 	if err := <-pubErr; err != nil {
@@ -158,7 +171,7 @@ func verifyExpectations(line report.Line) (int, error) {
 
 // classify maps a publisher error onto the documented exit codes.
 func classify(err error) int {
-	if errors.Is(err, context.DeadlineExceeded) {
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 		return cli.ExitTimeoutOrFatal
 	}
 	return cli.ExitRTSPFailure
