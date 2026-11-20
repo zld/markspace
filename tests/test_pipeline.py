@@ -3,6 +3,8 @@ from __future__ import annotations
 import unittest
 from timeline_composer.clock import ClockError, FrameClock
 from timeline_composer.schema import SchemaError, parse_timeline
+import numpy as np
+from timeline_composer.color import blend, encode_frame, linear_to_srgb8, srgb8_to_linear
 from fractions import Fraction
 
 
@@ -135,6 +137,61 @@ class SchemaTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+def _solid_rgba(width: int, height: int, color: tuple[int, int, int, int]) -> np.ndarray:
+    frame = np.empty((height, width, 4), dtype=np.uint8)
+    frame[...] = color
+    return frame
+
+class ColorTests(unittest.TestCase):
+    def test_srgb_linear_round_trip_is_exact_for_8_bit(self) -> None:
+        codes = np.arange(256, dtype=np.uint8)
+        linear = srgb8_to_linear(codes)
+        self.assertEqual(linear_to_srgb8(linear).tolist(), codes.tolist())
+
+    def test_midpoint_matches_reference_formula(self) -> None:
+        expected = ((128 / 255 + 0.055) / 1.055) ** 2.4
+        self.assertAlmostEqual(float(srgb8_to_linear(np.array([128]))[0]), expected, places=6)
+
+    def test_normal_blend_is_source_over_in_linear_light(self) -> None:
+        dst_rgb = np.zeros((1, 1, 3), dtype=np.float32)
+        dst_a = np.zeros((1, 1), dtype=np.float32)
+        red = srgb8_to_linear(np.array([[[255, 0, 0]]], dtype=np.uint8))
+        out_rgb, out_a = blend(dst_rgb, dst_a, red, np.ones((1, 1), np.float32), "normal")
+        np.testing.assert_allclose(out_rgb, red, rtol=0, atol=1e-6)
+        np.testing.assert_allclose(out_a, 1.0, rtol=0, atol=1e-6)
+
+    def test_transparent_source_leaves_destination_untouched(self) -> None:
+        dst_rgb = np.array([[[0.2, 0.4, 0.6]]], dtype=np.float32)
+        dst_a = np.ones((1, 1), dtype=np.float32)
+        out_rgb, out_a = blend(
+            dst_rgb, dst_a, np.zeros((1, 1, 3), np.float32), np.zeros((1, 1), np.float32), "screen"
+        )
+        np.testing.assert_allclose(out_rgb, dst_rgb, atol=1e-6)
+        np.testing.assert_allclose(out_a, 1.0, atol=1e-6)
+
+    def test_multiply_and_screen_against_straight_colours(self) -> None:
+        dst = np.array([[[0.5, 0.5, 0.5]]], dtype=np.float32)
+        dst_a = np.ones((1, 1), dtype=np.float32)
+        src = np.array([[[0.5, 0.5, 0.5]]], dtype=np.float32)
+        src_a = np.ones((1, 1), dtype=np.float32)
+        mult, _ = blend(dst, dst_a, src, src_a, "multiply")
+        screen, _ = blend(dst, dst_a, src, src_a, "screen")
+        np.testing.assert_allclose(mult, 0.25, atol=1e-6)
+        np.testing.assert_allclose(screen, 0.75, atol=1e-6)
+
+    def test_unknown_mode_is_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            blend(np.zeros((1, 1, 3), np.float32), np.zeros((1, 1), np.float32),
+                  np.zeros((1, 1, 3), np.float32), np.zeros((1, 1), np.float32), "overlay")
+
+    def test_encode_rounding_is_half_up_and_transparent_zeroes(self) -> None:
+        rgb = np.zeros((1, 2, 3), dtype=np.float32)
+        alpha = np.array([[0.0, 1.0]], dtype=np.float32)
+        rgb[0, 1] = srgb8_to_linear(np.array([255, 128, 0]))
+        encoded = encode_frame(rgb, alpha)
+        self.assertEqual(encoded[0, 0].tolist(), [0, 0, 0, 0])
+        self.assertEqual(encoded[0, 1].tolist(), [255, 128, 0, 255])
 
 
 if __name__ == "__main__":
