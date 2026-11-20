@@ -87,6 +87,7 @@ def discover_sources(input_dir: Path, output_dir: Path,
                 if suffix in {".mp3", ".aac", ".ogg", ".m4a", ".aiff"}:
                     pre_errors.append({
                         "source": str(path.relative_to(in_resolved)),
+                        "status": "error",
                         "error": f"unsupported format: {suffix}",
                     })
                 continue
@@ -105,12 +106,14 @@ def discover_sources(input_dir: Path, output_dir: Path,
             except Exception as exc:  # corrupt/unreadable header
                 pre_errors.append({
                     "source": str(relative),
+                    "status": "error",
                     "error": f"cannot read audio header: {exc}",
                 })
                 continue
             if channels not in SUPPORTED_LAYOUTS:
                 pre_errors.append({
                     "source": str(relative),
+                    "status": "error",
                     "error": (f"unsupported channel layout: {channels} "
                               "channels (only 1, 2, 6 are supported)"),
                 })
