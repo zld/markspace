@@ -225,6 +225,29 @@ class TestTimeline(FixtureTestCase):
         self.assertEqual(ns_to_ticks(16_666_666, 60000), 1000)
 
 
+class TestChunking(FixtureTestCase):
+    def test_multi_chunk_tables(self):
+        from matroska_mp4.mp4_writer import build_stbl, _chunk_map
+        self.assertEqual(_chunk_map(4), [(1, 4)])
+        self.assertEqual(_chunk_map(1024), [(1, 1024)])
+        self.assertEqual(_chunk_map(1025), [(1, 1024), (2, 1)])
+        self.assertEqual(_chunk_map(3000), [(1, 1024), (3, 952)])
+        from matroska_mp4 import mp4_writer
+        from matroska_mp4.mp4_audit import _expand_chunks
+        mkv = matroska.parse_matroska(self.fixtures["reordered"])
+        timeline = prepare(mkv, 60000, "rewrite")
+        track = timeline.tracks[1]
+        mp4_writer.CHUNK_SAMPLES = 3  # 7 samples -> 3,3,1
+        try:
+            self.assertEqual(mp4_writer._chunk_map(track.sample_count),
+                             [(1, 3), (3, 1)])
+            stbl = mp4_writer.build_stbl(track, [100, 200, 300])
+        finally:
+            mp4_writer.CHUNK_SAMPLES = 1024
+        self.assertIn(b"stsc", stbl)
+        self.assertEqual(_expand_chunks([(1, 3), (3, 1)], 3).tolist(), [3, 3, 1])
+
+
 class TestContainerEdges(FixtureTestCase):
     def test_unknown_size_inner_master(self):
         with open(self.fixtures["monotonic"], "rb") as handle:
