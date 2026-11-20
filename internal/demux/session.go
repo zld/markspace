@@ -77,9 +77,15 @@ func (s *Session) sniffsPMT(p *ts.Packet) bool {
 func (s *Session) Feed(p *ts.Packet) error {
 	issue := s.Counter.Observe(p)
 	switch issue {
-	case IssueCCJump, IssueTransportError:
-		// Packets were lost or corrupt: any partially assembled section on
-		// this PID is unusable, and so are pending tables fed by it.
+	case IssueTransportError:
+		// A corrupt packet tells us nothing about lost neighbours, so the
+		// continuity baseline is dropped without discarding PSI state.
+		if a := s.assemblers[p.PID]; a != nil {
+			a.Discard(psi.DiscardTransport)
+		}
+	case IssueCCJump:
+		// Packets were lost: any partially assembled section on this PID is
+		// unusable, and so are pending tables fed by it.
 		if a := s.assemblers[p.PID]; a != nil {
 			a.Discard(psi.DiscardContinuity)
 		}
@@ -139,6 +145,9 @@ func (s *Session) SectionStats() SectionStats {
 // ParseErrorCount returns non-fatal table/PSI semantic errors seen so far.
 func (s *Session) ParseErrorCount() int { return s.psiErrors }
 
+// ErrNoPackets indicates the input contained no synchronized TS packet.
+var ErrNoPackets = errors.New("input contains no transport packets")
+
 // ParseFile streams every packet of path through a fresh session.
 func ParseFile(path string, offset int64) (*Session, *ts.Reader, error) {
 	r, err := ts.Open(path, offset)
@@ -159,6 +168,10 @@ func ParseFile(path string, offset int64) (*Session, *ts.Reader, error) {
 			r.Close()
 			return nil, nil, err
 		}
+	}
+	if r.Packets() == 0 {
+		r.Close()
+		return nil, nil, fmt.Errorf("%w: no %d-byte packet with sync byte 0x47 was found", ErrNoPackets, ts.PacketSize)
 	}
 	return s, r, nil
 }

@@ -3,6 +3,7 @@
 package fixture
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -185,9 +186,11 @@ func build(w io.Writer, scenario string) error {
 		m.sendAdaptationOnly(video1PID, 90000)
 		emitMedia(m, 3)
 
-		// A second incomplete version at end of stream stays pending.
+		// A second incomplete version at end of stream stays pending: the PAT
+		// announces two sections but only section 0 is sent, and the PMT is
+		// likewise declared as two sections with only section 0 present.
 		m.section(patPID, patSection(tsid, 3, true, 0, 1, [][2]uint16{{1, pmt1PID}}))
-		m.section(pmt1PID, pmtSection(1, 3, true, 0, 0, video1PID,
+		m.section(pmt1PID, pmtSection(1, 3, true, 0, 1, video1PID,
 			[]stream{{Type: 0x1b, PID: video1PID}, {Type: 0x0f, PID: audio1PID}}))
 	}
 	if corrupt {
@@ -199,6 +202,9 @@ func build(w io.Writer, scenario string) error {
 		emitMedia(m, 2)
 		m.section(patPID, patV1())
 		m.section(pmt1PID, pmtFor(1, 1, true))
+		// A transport error before the repeat keeps the recovery honest: the
+		// counter baseline must resync rather than report a false jump.
+		m.sendTEI(pmt2PID, videoPayload(pmt2PID, 8))
 		m.section(pmt2PID, pmtFor(2, 1, false))
 		emitMedia(m, 4)
 	}
@@ -215,4 +221,16 @@ func emitMedia(m *mux, n int) {
 		m.send(video2PID, videoPayload(video2PID, payloadSize), false)
 		m.send(audio2PID, videoPayload(audio2PID, payloadSize), false)
 	}
+}
+
+// PATOnlyBytes returns a tiny stream whose PAT maps program 1 to a PMT PID
+// that never carries a table. It is exported for negative slicing tests.
+func PATOnlyBytes() []byte {
+	var buf bytes.Buffer
+	m := newMux(&buf)
+	for i := 0; i < 3; i++ {
+		m.section(patPID, patV0())
+	}
+	m.tail(5)
+	return buf.Bytes()
 }
