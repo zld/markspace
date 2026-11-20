@@ -55,7 +55,6 @@ SILENT_TRACKS = 0x5854
 SIMPLE_BLOCK = 0xA3
 BLOCK_GROUP = 0xA0
 BLOCK_ADDITIONS = 0x75A1
-BLOCK_ADDITION = 0xA5
 BLOCK = 0xA1
 BLOCK_DURATION = 0x9B
 REFERENCE_BLOCK = 0xFB
@@ -97,7 +96,7 @@ ELEMENT_NAMES = {
     BIT_DEPTH: "BitDepth", CLUSTER: "Cluster", TIMECODE: "Timecode",
     POSITION: "Position", PREV_SIZE: "PrevSize", SILENT_TRACKS: "SilentTracks",
     SIMPLE_BLOCK: "SimpleBlock", BLOCK_GROUP: "BlockGroup", BLOCK: "Block",
-    BLOCK_ADDITIONS: "BlockAdditions", BLOCK_ADDITION: "BlockAddition",
+    BLOCK_ADDITIONS: "BlockAdditions",
     BLOCK_DURATION: "BlockDuration", REFERENCE_BLOCK: "ReferenceBlock",
     DISCARD_PADDING: "DiscardPadding", CUES: "Cues", CUE_POINT: "CuePoint",
     CUE_TIME: "CueTime", CUE_TRACK_POSITIONS: "CueTrackPositions",
