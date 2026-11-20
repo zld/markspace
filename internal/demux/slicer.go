@@ -33,24 +33,34 @@ type SliceRequest struct {
 
 // SliceResult reports what was written.
 type SliceResult struct {
-	Packets    int64
-	Bytes      int64
-	PMTVersion int
-	Streams    []uint16
+	Packets        int64
+	Bytes          int64
+	PMTVersion     int
+	Streams        []uint16
+	ContinuityErrs int64
 }
 
-// pktWriter writes selected packets with per-PID continuity counters
-// renumbered to a clean sequence. Adaptation-only packets keep the counter of
-// the preceding payload packet, as required by ISO/IEC 13818-1.
+// pktWriter writes selected packets and renumbers each PID's continuity
+// counter into one clean sequence. Payload packets advance the counter;
+// adaptation-only packets reuse the last one, so the output remains valid
+// even after gaps in the source.
 type pktWriter struct {
-	w       io.Writer
-	cc      map[uint16]uint8
-	packets int64
-	bytes   int64
+	w        io.Writer
+	outCC    map[uint16]uint8 // continuity counter written for each PID
+	srcCC    map[uint16]uint8 // last source payload counter seen per PID
+	hasCC    map[uint16]bool
+	packets  int64
+	bytes    int64
+	ccErrors int64
 }
 
 func newPktWriter(w io.Writer) *pktWriter {
-	return &pktWriter{w: w, cc: make(map[uint16]uint8)}
+	return &pktWriter{
+		w:     w,
+		outCC: make(map[uint16]uint8),
+		srcCC: make(map[uint16]uint8),
+		hasCC: make(map[uint16]bool),
+	}
 }
 
 func (pw *pktWriter) write(raw []byte) error {
@@ -61,13 +71,20 @@ func (pw *pktWriter) write(raw []byte) error {
 	copy(b, raw)
 	pid := uint16(b[1]&0x1f)<<8 | uint16(b[2])
 	hasPayload := b[3]&0x10 != 0
-	hasAF := b[3]&0x20 != 0
 	if hasPayload {
-		next := pw.cc[pid]
-		pw.cc[pid] = (next + 1) & 0x0f
-		b[3] = b[3]&0xf0 | next
-	} else if hasAF {
-		b[3] = b[3]&0xf0 | pw.cc[pid]
+		src := b[3] & 0x0f
+		if pw.hasCC[pid] && src != (pw.srcCC[pid]+1)&0x0f {
+			// Source gap on this PID: renumbering heals the output, but the
+			// count is reported so callers can see the slice is lossy.
+			pw.ccErrors++
+		}
+		b[3] = b[3]&0xf0 | pw.outCC[pid]
+		pw.outCC[pid] = (pw.outCC[pid] + 1) & 0x0f
+		pw.srcCC[pid] = src
+		pw.hasCC[pid] = true
+	} else {
+		// Adaptation-only packets repeat the preceding counter.
+		b[3] = b[3]&0xf0 | (pw.outCC[pid]+15)&0x0f
 	}
 	if _, err := pw.w.Write(b); err != nil {
 		return fmt.Errorf("slice: writing packet: %w", err)
@@ -148,9 +165,10 @@ func Slice(req SliceRequest) (*SliceResult, error) {
 		return nil, err
 	}
 	res := &SliceResult{
-		PMTVersion: int(pmt.Version),
-		Packets:    info.packets,
-		Bytes:      info.bytes,
+		PMTVersion:     int(pmt.Version),
+		Packets:        info.packets,
+		Bytes:          info.bytes,
+		ContinuityErrs: info.ccErrors,
 	}
 	for _, es := range pmt.Streams {
 		res.Streams = append(res.Streams, es.PID)
@@ -159,8 +177,9 @@ func Slice(req SliceRequest) (*SliceResult, error) {
 }
 
 type writeStats struct {
-	packets int64
-	bytes   int64
+	packets  int64
+	bytes    int64
+	ccErrors int64
 }
 
 func writeSlice(req SliceRequest, keep, mediaPIDs map[uint16]bool, version uint8) (stats writeStats, err error) {
@@ -235,7 +254,7 @@ func writeSlice(req SliceRequest, keep, mediaPIDs map[uint16]bool, version uint8
 		return stats, fmt.Errorf("slice: publishing output: %w", err)
 	}
 	published = true
-	return writeStats{packets: pw.packets, bytes: pw.bytes}, nil
+	return writeStats{packets: pw.packets, bytes: pw.bytes, ccErrors: pw.ccErrors}, nil
 }
 
 func samePath(a, b string) bool {

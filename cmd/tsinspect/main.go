@@ -190,7 +190,7 @@ func runSlice(args []string, stdout io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("slice: %w", err)
 	}
-	fmt.Fprintf(stdout, "wrote %s: program %d, PMT version %d, %d packets (%d bytes)\n",
-		*out, *program, res.PMTVersion, res.Packets, res.Bytes)
+	fmt.Fprintf(stdout, "wrote %s: program %d, PMT version %d, %d packets (%d bytes), source continuity errors %d\n",
+		*out, *program, res.PMTVersion, res.Packets, res.Bytes, res.ContinuityErrs)
 	return nil
 }
