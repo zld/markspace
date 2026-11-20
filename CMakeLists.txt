@@ -18,6 +18,7 @@ add_library(h264core STATIC
   src/gop_index.cpp
   src/stats.cpp
   src/fixture_writer.cpp
+  src/analyzer.cpp
 )
 target_include_directories(h264core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
