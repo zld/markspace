@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+import hashlib
 import tempfile
 from pathlib import Path
 from PIL import Image
@@ -9,6 +10,7 @@ from timeline_composer.assets import AssetError, AssetStore
 from timeline_composer.audio_sync import align_events, nearest_frame
 from timeline_composer.clock import ClockError, FrameClock
 from timeline_composer.compositor import CompositorError, FrameCompositor
+from timeline_composer.exporter import ExportError, export_summary, read_summary
 from timeline_composer.fixtures import DEMO_LAYER_ASSETS, build_demo, write_demo_assets
 from timeline_composer.schema import SchemaError, parse_timeline
 from fractions import Fraction
@@ -308,6 +310,110 @@ class AudioSyncTests(unittest.TestCase):
         summary = align_events(timeline.clock, timeline.audio_events)
         self.assertEqual(summary.event_count, 3)
         self.assertAlmostEqual(summary.max_abs_error_ms, 6.008333333, places=6)
+
+class ExporterTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        for name, color in (
+            ("red.png", (255, 0, 0, 255)),
+            ("half.png", (0, 255, 0, 128)),
+        ):
+            Image.fromarray(_solid_rgba(8, 8, color)).save(self.root / name)
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def _timeline(self, frames=6, layers=None):
+        document = {
+            "canvas": {"width": 12, "height": 12}, "fps": 24, "frames": frames,
+            "layers": layers if layers is not None else [
+                {"id": "r", "source": "red.png", "order": 0},
+                {"id": "h", "source": "half.png", "order": 1, "blend": "screen"},
+            ],
+            "audio_events": [{"label": "c", "sample": 10, "sample_rate": 1000}],
+        }
+        return parse_timeline(document)
+
+    def _composer(self, timeline):
+        return FrameCompositor(timeline, AssetStore(self.root))
+
+    def test_summary_has_header_and_one_row_per_frame_in_order(self) -> None:
+        target = self.root / "out" / "summary.jsonl"
+        timeline = self._timeline()
+        result = export_summary(self._composer(timeline), target, workers=3)
+        header, rows = read_summary(target)
+        self.assertEqual(header["frame_count"], result.frame_count)
+        self.assertEqual([row["frame"] for row in rows], list(range(6)))
+        self.assertEqual([row["pts"] for row in rows], [
+            f"{Fraction(i, 24).numerator}/{Fraction(i, 24).denominator}" for i in range(6)
+        ])
+        self.assertTrue(all(len(row["pixel_sha256"]) == 64 for row in rows))
+
+    def test_parallel_and_serial_outputs_are_identical(self) -> None:
+        timeline = self._timeline()
+        serial = self.root / "serial.jsonl"
+        parallel = self.root / "parallel.jsonl"
+        export_summary(self._composer(timeline), serial, workers=1)
+        export_summary(self._composer(timeline), parallel, workers=4)
+        self.assertEqual(serial.read_bytes(), parallel.read_bytes())
+
+    def test_digest_matches_direct_hash_of_composed_frame(self) -> None:
+        timeline = self._timeline(frames=2)
+        composer = self._composer(timeline)
+        pixels = composer.compose(0)
+        expected = hashlib.sha256(pixels.tobytes()).hexdigest()
+        target = self.root / "one.jsonl"
+        export_summary(composer, target, workers=1)
+        _, rows = read_summary(target)
+        self.assertEqual(rows[0]["pixel_sha256"], expected)
+
+    def test_worker_failure_leaves_no_destination_file(self) -> None:
+        timeline = self._timeline(frames=8, layers=[{"id": "r", "source": "red.png"}])
+        composer = self._composer(timeline)
+        target = self.root / "broken.jsonl"
+        original = composer.compose
+        calls = {"n": 0}
+
+        def flaky(index):
+            calls["n"] += 1
+            if index == 3:
+                raise CompositorError("boom at frame 3")
+            return original(index)
+
+        composer.compose = flaky  # type: ignore[method-assign]
+        with self.assertRaises(CompositorError):
+            export_summary(composer, target, workers=2)
+        self.assertFalse(target.exists())
+        self.assertEqual(list(self.root.glob("*.tmp")), [])
+        self.assertEqual(list(self.root.glob(".*.tmp")), [])
+
+    def test_existing_destination_survives_failed_export(self) -> None:
+        timeline = self._timeline(frames=4, layers=[{"id": "r", "source": "red.png"}])
+        target = self.root / "kept.jsonl"
+        target.write_text("sentinel\n", encoding="utf-8")
+        composer = self._composer(timeline)
+        composer.compose = lambda index: (_ for _ in ()).throw(CompositorError("nope"))  # type: ignore[method-assign]
+        with self.assertRaises(CompositorError):
+            export_summary(composer, target, workers=2)
+        self.assertEqual(target.read_text(encoding="utf-8"), "sentinel\n")
+
+    def test_empty_timeline_writes_header_only_summary(self) -> None:
+        timeline = self._timeline(frames=0)
+        target = self.root / "zero.jsonl"
+        result = export_summary(self._composer(timeline), target, workers=2)
+        header, rows = read_summary(target)
+        self.assertEqual(result.frame_count, 0)
+        self.assertEqual(rows, [])
+        self.assertEqual(header["frame_count"], 0)
+
+    def test_read_summary_rejects_malformed_input(self) -> None:
+        bad = self.root / "bad.jsonl"
+        bad.write_text("not json\n", encoding="utf-8")
+        with self.assertRaises(ExportError):
+            read_summary(bad)
+        with self.assertRaises(ExportError):
+            read_summary(self.root / "missing.jsonl")
 
 
 if __name__ == "__main__":
