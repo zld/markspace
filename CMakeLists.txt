@@ -34,3 +34,7 @@ add_test(NAME pipeline COMMAND test_pipeline)
 add_executable(test_render tests/test_render.cpp)
 target_link_libraries(test_render PRIVATE grade)
 add_test(NAME render COMMAND test_render)
+
+add_executable(test_e2e tests/test_e2e.cpp)
+target_link_libraries(test_e2e PRIVATE grade)
+add_test(NAME e2e COMMAND test_e2e)
