@@ -31,6 +31,8 @@ func Parse(f Format, text, file string) ([]cue.Cue, error) {
 	switch f {
 	case SRT:
 		return ParseSRT(text, file)
+	case VTT:
+		return ParseVTT(text, file)
 	}
 	return nil, fmt.Errorf("unknown input format %q", f)
 }
@@ -40,6 +42,8 @@ func Serialize(f Format, cues []cue.Cue) ([]byte, error) {
 	switch f {
 	case SRT:
 		return SerializeSRT(cues), nil
+	case VTT:
+		return SerializeVTT(cues), nil
 	}
 	return nil, fmt.Errorf("unknown output format %q", f)
 }
