@@ -47,6 +47,9 @@ func (s *Section) LastSectionNumber() byte { return s.Data[7] }
 // CRCValid reports whether the MPEG-2 CRC32 over the whole section is zero.
 func CRCValid(b []byte) bool { return crc32mpeg(b) == 0 }
 
+// Checksum returns the MPEG-2 CRC32 of b (used to build sections).
+func Checksum(b []byte) uint32 { return crc32mpeg(b) }
+
 var crcTable [256]uint32
 
 func init() {
