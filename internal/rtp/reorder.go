@@ -184,10 +184,12 @@ func (b *ReorderBuffer) drainLocked() []*rtp.Packet {
 	return out
 }
 
-// countGaps records every missing sequence number in [from, to) once.
+// countGaps records every still-missing sequence number in [from, to) once.
+// markSeen removes a sequence from this set (and refunds its counter) when
+// the late packet finally arrives, so only holes that survive a flush count.
 func (b *ReorderBuffer) countGaps(from, to uint16) {
 	for seq := from; seq != to; seq++ {
-		if _, ok := b.gapCounted[seq]; !ok {
+		if _, ok := b.gapCounted[seq]; !ok && !b.wasSeen(seq) {
 			b.gapCounted[seq] = struct{}{}
 			b.stats.Gaps++
 		}
@@ -195,6 +197,10 @@ func (b *ReorderBuffer) countGaps(from, to uint16) {
 }
 
 func (b *ReorderBuffer) markSeen(seq uint16) {
+	if _, ok := b.gapCounted[seq]; ok {
+		delete(b.gapCounted, seq)
+		b.stats.Gaps--
+	}
 	b.seen[seq/8] |= 1 << (seq % 8)
 }
 

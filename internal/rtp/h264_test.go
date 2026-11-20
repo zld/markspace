@@ -69,17 +69,23 @@ func TestH264FUAComplete(t *testing.T) {
 
 	fu1 := []byte{indicator, 0x80 | nalType}
 	fu1 = append(fu1, body[:chunk]...)
-	if _, err := r.Process(h264Packet(1, 96, 9000, false, fu1)); err != nil {
+	p1 := h264Packet(1, 96, 9000, false, fu1)
+	p1.SequenceNumber = 1
+	if _, err := r.Process(p1); err != nil {
 		t.Fatal(err)
 	}
 	fu2 := []byte{indicator, nalType}
 	fu2 = append(fu2, body[chunk:2*chunk]...)
-	if _, err := r.Process(h264Packet(1, 96, 9000, false, fu2)); err != nil {
+	p2 := h264Packet(1, 96, 9000, false, fu2)
+	p2.SequenceNumber = 2
+	if _, err := r.Process(p2); err != nil {
 		t.Fatal(err)
 	}
 	fu3 := []byte{indicator, 0x40 | nalType}
 	fu3 = append(fu3, body[2*chunk:]...)
-	frame, err := r.Process(h264Packet(1, 96, 9000, true, fu3))
+	p3 := h264Packet(1, 96, 9000, true, fu3)
+	p3.SequenceNumber = 3
+	frame, err := r.Process(p3)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,6 +114,26 @@ func TestH264FUAMissingFragment(t *testing.T) {
 	}
 	st := r.Stats()
 	if st.DiscardedFrames != 1 || st.MissingFragments != 1 {
+		t.Fatalf("unexpected stats: %+v", st)
+	}
+}
+
+func TestH264FUAMissingMiddleFragment(t *testing.T) {
+	r := NewReassembler()
+	indicator, nalType := byte(0x7C), byte(5)
+	// packets carry consecutive sequence numbers, but seq 2 is lost
+	fu1 := h264Packet(1, 96, 9000, false, append([]byte{indicator, 0x80 | nalType}, 1))
+	fu1.SequenceNumber = 1
+	if _, err := r.Process(fu1); err != nil {
+		t.Fatal(err)
+	}
+	fu3 := h264Packet(1, 96, 9000, true, append([]byte{indicator, 0x40 | nalType}, 3))
+	fu3.SequenceNumber = 3
+	if _, err := r.Process(fu3); err == nil {
+		t.Fatal("expected missing-fragment error")
+	}
+	st := r.Stats()
+	if st.MissingFragments != 1 || st.DiscardedFrames != 1 || st.ReassembledFrames != 0 {
 		t.Fatalf("unexpected stats: %+v", st)
 	}
 }
@@ -143,10 +169,18 @@ func TestH264OversizedFrame(t *testing.T) {
 func TestH264KeyIsolation(t *testing.T) {
 	r := NewReassembler()
 	// two senders interleave fragments of the same timestamp
-	_, _ = r.Process(h264Packet(1, 96, 9000, false, []byte{0x7C, 0x85, 1}))
-	_, _ = r.Process(h264Packet(2, 96, 9000, false, []byte{0x7C, 0x85, 9}))
-	f1, _ := r.Process(h264Packet(1, 96, 9000, true, []byte{0x7C, 0x45, 2}))
-	f2, _ := r.Process(h264Packet(2, 96, 9000, true, []byte{0x7C, 0x45, 8}))
+	p1 := h264Packet(1, 96, 9000, false, []byte{0x7C, 0x85, 1})
+	p1.SequenceNumber = 10
+	p2 := h264Packet(2, 96, 9000, false, []byte{0x7C, 0x85, 9})
+	p2.SequenceNumber = 20
+	p3 := h264Packet(1, 96, 9000, true, []byte{0x7C, 0x45, 2})
+	p3.SequenceNumber = 11
+	p4 := h264Packet(2, 96, 9000, true, []byte{0x7C, 0x45, 8})
+	p4.SequenceNumber = 21
+	_, _ = r.Process(p1)
+	_, _ = r.Process(p2)
+	f1, _ := r.Process(p3)
+	f2, _ := r.Process(p4)
 	if f1 == nil || f2 == nil || f1.Key.SSRC == f2.Key.SSRC {
 		t.Fatalf("expected two isolated frames, got %+v %+v", f1, f2)
 	}

@@ -66,22 +66,22 @@ func TestReorderOutOfOrderOneSwap(t *testing.T) {
 	if got := seqs(out); len(got) != 2 || got[0] != 6 || got[1] != 7 {
 		t.Fatalf("expected [6 7], got %v", got)
 	}
-	st := b.Stats()
-	if st.Gaps != 1 {
-		t.Fatalf("expected 1 gap, got %d", st.Gaps)
+	// the hole at 6 was only temporary: once filled it is not a real gap
+	if got := b.Stats().Gaps; got != 0 {
+		t.Fatalf("temporary hole must not be counted, got %d", got)
 	}
 }
 
-func TestReorderGapCountedOnce(t *testing.T) {
+func TestReorderGapSurvivesFlush(t *testing.T) {
 	b := NewReorderBuffer()
 	b.Push(mkPacket(10))
-	b.Push(mkPacket(11)) // hole at 12
-	b.Push(mkPacket(13)) // parks, gap 12 counted
+	b.Push(mkPacket(11))
+	b.Push(mkPacket(13)) // hole at 12 is observed, packet 13 parked
 	b.Flush()
 	if got := b.Stats().Gaps; got != 1 {
-		t.Fatalf("first flush gap = %d, want 1", got)
+		t.Fatalf("real gap = %d, want 1", got)
 	}
-	// a second flush must not recount the same hole
+	// flushing again must not recount the same hole
 	b.Flush()
 	if got := b.Stats().Gaps; got != 1 {
 		t.Fatalf("second flush gap = %d, want 1", got)
@@ -95,6 +95,7 @@ func TestReorderDuplicate(t *testing.T) {
 	if out := b.Push(mkPacket(20)); out != nil {
 		t.Fatalf("already-delivered duplicate must not be delivered")
 	}
+	b.Flush() // 21 never arrives, so it becomes a real gap
 	st := b.Stats()
 	if st.Duplicates != 1 {
 		t.Fatalf("duplicates = %d, want 1", st.Duplicates)
@@ -133,7 +134,6 @@ func TestReorderFlushDeliversParked(t *testing.T) {
 		t.Fatalf("unexpected stats: %+v", b.Stats())
 	}
 }
-
 func TestReorderWindowFullResync(t *testing.T) {
 	b := NewReorderBuffer()
 	b.Push(mkPacket(0))

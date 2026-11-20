@@ -70,6 +70,8 @@ type fuAssembly struct {
 	data     []byte
 	started  bool
 	oversize bool
+	lastSeq  uint16
+	haveSeq  bool
 }
 
 // NewReassembler creates a reassembler with the 8 MiB frame limit.
@@ -102,14 +104,20 @@ func (r *Reassembler) Process(pkt *rtp.Packet) (*Frame, error) {
 		return nil, nil
 	}
 
-	if err := r.processPayload(key, au, pkt.Payload); err != nil {
+	if err := r.processPayload(key, au, pkt); err != nil {
 		r.discard(key, au)
-		if errors.Is(err, errOversize) {
+		switch {
+		case errors.Is(err, errOversize):
 			r.stats.OversizedFrames++
-		} else if errors.Is(err, errIllegalFU) {
+		case errors.Is(err, errIllegalFU):
 			r.stats.IllegalFUHeaders++
-		} else {
+		case errors.Is(err, errMissingFragment):
+			r.stats.MissingFragments++
+		default:
 			r.stats.MalformedPackets++
+		}
+		if pkt.Marker {
+			delete(r.pending, key)
 		}
 		return nil, err
 	}
@@ -173,12 +181,14 @@ func (r *Reassembler) Stats() ReassemblyStats {
 }
 
 var (
-	errMalformed = errors.New("rtp: malformed H264 payload")
-	errIllegalFU = errors.New("rtp: illegal FU-A start/end markers")
-	errOversize  = errors.New("rtp: access unit exceeds 8 MiB")
+	errMalformed       = errors.New("rtp: malformed H264 payload")
+	errIllegalFU       = errors.New("rtp: illegal FU-A start/end markers")
+	errMissingFragment = errors.New("rtp: missing FU-A fragment")
+	errOversize        = errors.New("rtp: access unit exceeds 8 MiB")
 )
 
-func (r *Reassembler) processPayload(key FrameKey, au *accessUnit, payload []byte) error {
+func (r *Reassembler) processPayload(key FrameKey, au *accessUnit, pkt *rtp.Packet) error {
+	payload := pkt.Payload
 	if len(payload) == 0 {
 		return fmt.Errorf("%w: empty payload", errMalformed)
 	}
@@ -190,7 +200,7 @@ func (r *Reassembler) processPayload(key FrameKey, au *accessUnit, payload []byt
 	case nalType == nalTypeSTAPA:
 		return r.processSTAPA(key, au, payload)
 	case nalType == nalTypeFUA:
-		return r.processFUA(key, au, payload)
+		return r.processFUA(key, au, pkt)
 	default:
 		// STAP-B / FU-B / reserved types are not valid in this profile.
 		return fmt.Errorf("%w: unsupported NAL type %d", errMalformed, nalType)
@@ -216,7 +226,8 @@ func (r *Reassembler) processSTAPA(key FrameKey, au *accessUnit, payload []byte)
 	return nil
 }
 
-func (r *Reassembler) processFUA(key FrameKey, au *accessUnit, payload []byte) error {
+func (r *Reassembler) processFUA(key FrameKey, au *accessUnit, pkt *rtp.Packet) error {
+	payload := pkt.Payload
 	if len(payload) < 2 {
 		return fmt.Errorf("%w: truncated FU-A header", errIllegalFU)
 	}
@@ -234,10 +245,21 @@ func (r *Reassembler) processFUA(key FrameKey, au *accessUnit, payload []byte) e
 		asm = &fuAssembly{
 			header:  (indicator & 0xE0) | nalType,
 			started: true,
+			lastSeq: pkt.SequenceNumber,
+			haveSeq: true,
 		}
 		r.fu[key] = asm
-	} else if asm == nil || !asm.started {
-		return fmt.Errorf("%w: FU-A fragment without start", errIllegalFU)
+	} else {
+		if asm == nil || !asm.started {
+			return fmt.Errorf("%w: FU-A fragment without start", errIllegalFU)
+		}
+		// a continuation fragment must be exactly one sequence number after
+		// the previous one; a jump proves an intervening fragment was lost.
+		if pkt.SequenceNumber != asm.lastSeq+1 {
+			return fmt.Errorf("%w: expected seq %d, got %d",
+				errMissingFragment, asm.lastSeq+1, pkt.SequenceNumber)
+		}
+		asm.lastSeq = pkt.SequenceNumber
 	}
 
 	asm.data = append(asm.data, body...)
