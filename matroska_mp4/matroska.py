@@ -641,6 +641,11 @@ def parse_matroska(path: str, *, keep_blocks: bool | None = None) -> ParsedMatro
     segment = document.find_root(ids.SEGMENT)
     if segment is None:
         raise ebml.EBMLError(0, "missing Segment")
+    for singleton in (ids.INFO, ids.TRACKS):
+        if len(segment.children_of(singleton)) > 1:
+            raise ebml.EBMLError(
+                segment.children_of(singleton)[1].offset,
+                f"multiple {ids.element_name(singleton)} elements in Segment")
     attachments = 0
     attach = segment.find(ids.ATTACHMENTS)
     if attach is not None:
