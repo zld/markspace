@@ -172,6 +172,18 @@ def _build_track(track: Track, mp4_id: int, bucket: TrackSamples, scale_ns: int,
     known = bucket.duration_ns
     default = np.full(pts_ns.shape, track.default_duration_ns or 0, dtype=np.int64)
     durations_ns = _resolve_durations(pts_ns, known, default, track)
+    if mode == "preserve":
+        # Preserve gaps: with zero ctts, stts deltas must equal the actual PTS
+        # spacing, otherwise a gap would silently close up.
+        if pts_ns.size > 1:
+            gaps = pts_ns[1:] - pts_ns[:-1]
+            if bool(np.any(gaps <= 0)):
+                raise TimelineError(
+                    f"track {track.number}: PTS must strictly increase in "
+                    f"decode order for preserve mode (duplicate or reversed "
+                    f"timestamp)")
+            last = int(durations_ns[-1])
+            durations_ns = np.concatenate((gaps, np.asarray([last], np.int64)))
     scale = np.int64(scale_ns)
     if np.any(pts_ns > INT64_MAX // scale_ns) or np.any(pts_ns < INT64_MIN // scale_ns):
         raise TimebaseOverflow("PTS * TimestampScale overflows int64")
@@ -213,8 +225,14 @@ def _build_track(track: Track, mp4_id: int, bucket: TrackSamples, scale_ns: int,
             raise TimelineError(
                 f"track {track.number}: composition offset exceeds signed int32")
     else:
-        dts = media_pts.copy()
-        ctts = np.zeros_like(media_pts)
+        dts = np.zeros_like(duration)
+        if duration.size > 1:
+            dts[1:] = np.cumsum(duration[:-1], dtype=np.int64)
+        ctts = media_pts - dts
+        if bool(np.any(ctts != 0)):
+            raise TimelineError(
+                f"track {track.number}: preserve timeline produced a "
+                f"composition offset")
     ends = media_pts + duration
     duration_ticks = max(int(duration.sum()), int(ends.max()))
     return TrackTimeline(
@@ -240,7 +258,14 @@ def prepare(mkv: ParsedMatroska, timescale: int, mode: str) -> Timeline:
                         if bucket.pts_ns.size)
     global_max_ns = max(int(bucket.pts_ns.max()) for bucket in data.values()
                         if bucket.pts_ns.size)
-    shift_ns = global_min_ns if (mode == "rewrite" or global_min_ns < 0) else 0
+    if mode == "preserve":
+        if global_min_ns < 0:
+            raise TimelineError(
+                f"preserve mode cannot represent a negative global start "
+                f"({global_min_ns} ns); use --mode rewrite to normalize")
+        shift_ns = 0
+    else:
+        shift_ns = global_min_ns
     tracks: list[TrackTimeline] = []
     for mp4_id, track in enumerate(mkv.tracks, start=1):
         item = _build_track(track, mp4_id, data[track.number], mkv.timestamp_scale_ns,

@@ -210,12 +210,11 @@ class TestTimeline(FixtureTestCase):
         timeline = prepare(mkv, 60000, "rewrite")
         self.assertEqual(timeline.global_first_pts, 0)
         self.assertEqual(timeline.source_first_pts, -54000)
-        # preserve also normalizes a negative start (MP4 cannot carry negative
-        # base PTS), but reports the original start and keeps track offsets.
-        timeline = prepare(mkv, 60000, "preserve")
-        self.assertEqual(timeline.global_first_pts, 0)
-        self.assertEqual(timeline.source_first_pts, -54000)
-        self.assertTrue(timeline.normalized)
+        # preserve must not silently move a negative start; it requires
+        # rewrite for normalization.
+        with self.assertRaises(TimelineError) as ctx:
+            prepare(mkv, 60000, "preserve")
+        self.assertIn("negative global start", str(ctx.exception))
 
     def test_int64_overflow_detected(self):
         with self.assertRaises(TimebaseOverflow):

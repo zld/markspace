@@ -215,11 +215,15 @@ def _parse_moov_tracks(data, moov: Box, file_end: int) -> tuple[list[dict], int]
     if moov.end != file_end:
         raise AuditError("trailing bytes after moov")
     tracks = []
+    seen_ids: set[int] = set()
     for trak in (b for b in boxes if b.kind == b"trak"):
         children = _read_boxes(data, trak.data_offset, trak.end)
         tkhd = _child(children, b"tkhd")
         version = _version(data, tkhd)
         track_id = _u32(data, tkhd.data_offset + (20 if version else 12))
+        if track_id == 0 or track_id in seen_ids:
+            raise AuditError(f"duplicate or zero track ID {track_id}")
+        seen_ids.add(track_id)
         mdia = _child(children, b"mdia")
         mdia_boxes = _read_boxes(data, mdia.data_offset, mdia.end)
         mdhd = _child(mdia_boxes, b"mdhd")
@@ -231,10 +235,33 @@ def _parse_moov_tracks(data, moov: Box, file_end: int) -> tuple[list[dict], int]
         stbl = _child(_read_boxes(data, minf.data_offset, minf.end), b"stbl")
         entry = _parse_stbl(data, stbl)
         entry["track_id"] = track_id
+        entry["edits"] = _parse_edits(children, data)
         hdlr = _child(mdia_boxes, b"hdlr")
         entry["handler"] = bytes(data[hdlr.data_offset + 8:hdlr.data_offset + 12])
         tracks.append(entry)
     return tracks, timescale
+
+
+def _parse_edits(children: list[Box], data) -> list[tuple[int, int]]:
+    edts = next((box for box in children if box.kind == b"edts"), None)
+    if edts is None:
+        return []
+    elst = _child(_read_boxes(data, edts.data_offset, edts.end), b"elst")
+    version = _version(data, elst)
+    count = _u32(data, elst.data_offset + 4)
+    width = 8 if version else 4
+    if elst.data_offset + 8 + count * (width * 2 + 4) != elst.end:
+        raise AuditError("elst payload size mismatch")
+    entries = []
+    cursor = elst.data_offset + 8
+    for _ in range(count):
+        if version:
+            duration, media_time = struct.unpack_from(">Qq", data, cursor)
+        else:
+            duration, media_time = struct.unpack_from(">Ii", data, cursor)
+        entries.append((int(duration), int(media_time)))
+        cursor += width * 2 + 4
+    return entries
 
 
 def _sample_offsets(chunks: np.ndarray, per_chunk: np.ndarray,
@@ -326,6 +353,13 @@ def _audit(mm, file_size: int, source, samples: dict[int, TrackSamples],
         if entry["kind"] != wanted_kind:
             raise AuditError(f"track {track_id}: codec box {entry['kind']!r} != "
                              f"{wanted_kind!r}")
+        expected_edits = []
+        if expected.media_base > 0:
+            expected_edits.append((expected.media_base, -1))
+        expected_edits.append((expected.duration_ticks, 0))
+        if entry["edits"] != expected_edits:
+            raise AuditError(f"track {track_id}: edit list {entry['edits']} != "
+                             f"{expected_edits}")
         sizes, durations = entry["sizes"], entry["durations"]
         if sizes.size != expected.sample_count:
             raise AuditError(f"track {track_id}: stsz count {sizes.size} != "

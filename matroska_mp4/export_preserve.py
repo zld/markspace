@@ -85,9 +85,10 @@ def run_preserve(mkv: ParsedMatroska, timescale: int, output_path: str) -> Expor
     except TimebaseOverflow as exc:
         raise PreserveError(str(exc)) from exc
     except TimelineError as exc:
-        if "reorder" in str(exc) or "monotonic" in str(exc):
+        message = str(exc)
+        if any(word in message for word in ("monotonic", "reordered", "decode order")):
             raise PreserveError(
-                f"preserve mode refuses reordered frames: {exc}") from exc
+                f"preserve mode refuses reordered frames: {message}") from exc
         raise
     result = ExportResult(path=output_path, mode="preserve", timeline=timeline,
                           audit={}, element_tree=_element_tree(mkv),
