@@ -354,3 +354,51 @@ class TestCLI(FixtureTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestAuditIndexCorruption(FixtureTestCase):
+    """The audit must reject a container that parses but has a broken index."""
+
+    def _tamper(self, needle: bytes, delta: int) -> tuple[str, object]:
+        output = self.path(f"tamper-{needle.decode()}.mp4")
+        mkv = matroska.parse_matroska(self.fixtures["reordered"])
+        result = run_rewrite(mkv, 60000, output)
+        with open(output, "rb") as handle:
+            raw = handle.read()
+        from matroska_mp4.mp4_audit import _child, _read_boxes
+        top = _read_boxes(raw, 0, len(raw))
+        moov = _child(top, b"moov")
+        trak = _child(_read_boxes(raw, moov.data_offset, moov.end), b"trak")
+        mdia = _child(_read_boxes(raw, trak.data_offset, trak.end), b"mdia")
+        minf = _child(_read_boxes(raw, mdia.data_offset, mdia.end), b"minf")
+        stbl = _child(_read_boxes(raw, minf.data_offset, minf.end), b"stbl")
+        box = _child(_read_boxes(raw, stbl.data_offset, stbl.end), needle)
+        entry = box.data_offset + 8
+        data = bytearray(raw)
+        value = struct.unpack_from(">I", data, entry)[0]
+        struct.pack_into(">I", data, entry, value + delta)
+        with open(output, "wb") as handle:
+            handle.write(data)
+        return output, result
+
+    def test_chunk_offset_corruption_detected(self):
+        from matroska_mp4.mp4_audit import AuditError, audit_mp4
+        output, result = self._tamper(b"stco", 1)
+        with self.assertRaises(AuditError):
+            audit_mp4(output, matroska.parse_matroska(self.fixtures["reordered"]),
+                      result.timeline)
+
+    def test_sample_size_corruption_detected(self):
+        from matroska_mp4.mp4_audit import AuditError, audit_mp4
+        output, result = self._tamper(b"stsz", 1)
+        with self.assertRaises(AuditError):
+            audit_mp4(output, matroska.parse_matroska(self.fixtures["reordered"]),
+                      result.timeline)
+
+    def test_audit_ok_for_untampered(self):
+        from matroska_mp4.mp4_audit import audit_mp4
+        output = self.path("clean.mp4")
+        mkv = matroska.parse_matroska(self.fixtures["monotonic"])
+        result = run_preserve(mkv, 60000, output)
+        again = audit_mp4(output, mkv, result.timeline)
+        self.assertEqual(again["sample_count"], 10)

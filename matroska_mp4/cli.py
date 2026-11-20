@@ -83,6 +83,15 @@ def _error_kind(exc: BaseException) -> tuple[str, int]:
 
 
 def _run_remux(args) -> int:
+    try:
+        return _remux(args)
+    except KeyboardInterrupt:
+        _emit({"ok": False, "kind": "interrupted", "error": "interrupted",
+               "exit_code": EXIT_WRITE}, stream=sys.stderr)
+        return EXIT_WRITE
+
+
+def _remux(args) -> int:
     if not os.path.isfile(args.input):
         _emit({"ok": False, "kind": "arguments",
                "error": f"input not found: {args.input}",
@@ -103,7 +112,7 @@ def _run_remux(args) -> int:
         runner = run_preserve if args.mode == "preserve" else run_rewrite
         result = runner(mkv, args.timescale, args.output)
     except (EBMLError, LimitError, UnsupportedFormat, PreserveError,
-            TimelineError, TimebaseOverflow, AuditError, OSError) as exc:
+            TimelineError, TimebaseOverflow, AuditError, OSError, ValueError) as exc:
         kind, code = _error_kind(exc)
         offset = getattr(exc, "offset", None)
         payload = {"ok": False, "kind": kind, "error": str(exc),
