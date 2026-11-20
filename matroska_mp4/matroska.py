@@ -14,6 +14,8 @@ from . import ebml_ids as ids
 
 MAX_PACKET_BYTES = 256 * 1024 * 1024
 MAX_SAMPLES = 5_000_000
+# A lace count byte encodes 1..256 frames; the guard only bounds pathological
+# payloads (256 frames of 256 MiB cannot be a valid single Block).
 MAX_LACE_FRAMES = 256
 # Blocks are retained as objects only for small inputs; larger inputs keep just
 # the compact per-track index (offsets/sizes/PTS/durations/keyframes).
@@ -335,22 +337,26 @@ def _read_track(fh: BinaryIO, entry: ebml.Element) -> Track:
 
 
 def _parse_lace_sizes(reader: _PayloadReader, lacing: int) -> list[int]:
+    """Return per-frame sizes for a block's lacing mode.
+
+    ``lacing`` is 0 none, 1 Xiph, 2 fixed, 3 EBML.  The payload header is
+    bounded by the block size, so a truncated lace raises with an offset.
+    """
+
     if lacing == 0:
         size = reader.remaining
         if size <= 0:
             raise ebml.EBMLError(reader.pos, "empty Block payload")
         return [size]
     count = reader.read_byte() + 1
-    if count < 1 or count > MAX_LACE_FRAMES:
-        raise ebml.EBMLError(reader.pos - 1, f"invalid lace frame count {count}")
     if lacing == 2 and count == 1:
-        # A single frame under fixed lacing has no lace-size headers.
+        # Fixed lacing with one frame carries no size headers at all.
         size = reader.remaining
         if size <= 0:
             raise ebml.EBMLError(reader.pos, "empty laced block payload")
         return [size]
     sizes: list[int] = []
-    if lacing == 1:  # Xiph
+    if lacing == 1:  # Xiph: sum of 255-terminated values per frame.
         for _ in range(count - 1):
             size = 0
             while True:
@@ -359,17 +365,15 @@ def _parse_lace_sizes(reader: _PayloadReader, lacing: int) -> list[int]:
                 if part != 255:
                     break
             sizes.append(size)
-    elif lacing == 2:  # fixed
+    elif lacing == 2:  # fixed: divide the remainder evenly.
         remaining = reader.remaining
         if remaining % count:
             raise ebml.EBMLError(reader.pos, "fixed lacing size is not divisible")
         return [remaining // count] * count
-    elif lacing == 3:  # EBML
-        first = reader.read_vint(signed=False)
-        sizes.append(first)
+    elif lacing == 3:  # EBML: first size then signed deltas.
+        sizes.append(reader.read_vint(signed=False))
         for _ in range(count - 2):
-            delta = reader.read_vint(signed=True)
-            next_size = sizes[-1] + delta
+            next_size = sizes[-1] + reader.read_vint(signed=True)
             if next_size < 0:
                 raise ebml.EBMLError(reader.pos, "EBML lace size became negative")
             sizes.append(next_size)
