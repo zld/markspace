@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <filesystem>
+#include <unistd.h>
 
 #include "fmp4/fixture.hpp"
 #include "fmp4/fragment_index.hpp"
@@ -12,8 +13,11 @@ namespace fs = std::filesystem;
 namespace {
 
 const fs::path& fixture_root() {
+  // Per-process directory: ctest may run test cases in parallel, and each
+  // process regenerates its own fixture tree.
   static const fs::path root = [] {
-    fs::path p = fs::temp_directory_path() / "fmp4-index-test";
+    fs::path p = fs::temp_directory_path() /
+                 ("fmp4-index-test-" + std::to_string(getpid()));
     std::error_code ec;
     fs::remove_all(p, ec);
     write_fixture(p.string());
@@ -189,7 +193,8 @@ void write_moof_with_trun(const fs::path& path, uint8_t trun_version,
 }  // namespace
 
 TEST_CASE("unknown trun version and flags fail explicitly") {
-  fs::path dir = fs::temp_directory_path() / "fmp4-badtrun";
+  fs::path dir = fs::temp_directory_path() /
+                 ("fmp4-badtrun-" + std::to_string(getpid()));
   std::error_code ec;
   fs::create_directories(dir, ec);
   write_moof_with_trun(dir / "v9.mp4", 9, 0x200);

@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <filesystem>
+#include <unistd.h>
 
 #include "fmp4/fixture.hpp"
 #include "fmp4/fragment_index.hpp"
@@ -12,8 +13,11 @@ namespace fs = std::filesystem;
 namespace {
 
 const fs::path& fixture_root() {
+  // Per-process directory: ctest may run test cases in parallel, and each
+  // process regenerates its own fixture tree.
   static const fs::path root = [] {
-    fs::path p = fs::temp_directory_path() / "fmp4-repack-test";
+    fs::path p = fs::temp_directory_path() /
+                 ("fmp4-repack-test-" + std::to_string(getpid()));
     std::error_code ec;
     fs::remove_all(p, ec);
     write_fixture(p.string());
@@ -27,7 +31,8 @@ RepackOptions make_opts(const std::string& set, const std::string& out_name,
   RepackOptions opt;
   opt.init_path = (fixture_root() / "init.mp4").string();
   opt.segments_dir = (fixture_root() / set).string();
-  opt.out_dir = (fs::temp_directory_path() / out_name).string();
+  opt.out_dir = (fs::temp_directory_path() /
+                 (out_name + "-" + std::to_string(getpid()))).string();
   opt.first_seq = 41;
   opt.last_seq = 44;
   opt.max_decode_delta_ticks = tolerance;
@@ -103,7 +108,8 @@ TEST_CASE("decode delta beyond tolerance reports exit code 6") {
 }
 
 TEST_CASE("duplicate sequence reports exit code 4") {
-  fs::path dup = fs::temp_directory_path() / "fmp4-dup-segments";
+  fs::path dup = fs::temp_directory_path() /
+                 ("fmp4-dup-segments-" + std::to_string(getpid()));
   std::error_code ec;
   fs::remove_all(dup, ec);
   fs::create_directories(dup);
