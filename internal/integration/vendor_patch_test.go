@@ -38,7 +38,7 @@ func vendoredFile(t *testing.T) (string, bool) {
 // gortsplib's server-side UDP path reorders and de-duplicates packets before
 // the application callback, which would hide the gaps and duplicates the
 // ingest tool must measure. The vendored readPacketRTPUDP is patched to
-// deliver packets in raw arrival order (see vendor/README.md and
+// deliver packets in raw arrival order (see docs/VENDOR_PATCH.md and
 // tools/apply-vendor-patch). Running a bare `go mod vendor` restores the
 // pristine file; this test then fails with an explicit remediation message
 // instead of producing confusing zeroed counters.
@@ -61,5 +61,5 @@ func TestVendorPatchPresent(t *testing.T) {
 		"gortsplib vendor patch is missing — a bare 'go mod vendor' restored the\n" +
 			"pristine file. Re-apply the modification with:\n\n" +
 			"    go run -mod=vendor ./tools/apply-vendor-patch\n\n" +
-			"Then re-run the tests. See vendor/README.md for details.")
+			"Then re-run the tests. See docs/VENDOR_PATCH.md for details.")
 }

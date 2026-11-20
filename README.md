@@ -93,7 +93,7 @@ gortsplib's server-side UDP path normally reorders packets and silently drops
 duplicates before the application callback, which would make application-level
 gap/duplicate accounting impossible. The vendored
 `server_session_format.go` is patched to bypass that queue so packets arrive in
-raw order (details in `vendor/README.md`).
+raw order (details in `docs/VENDOR_PATCH.md`).
 
 A bare `go mod vendor` refreshes `vendor/` from the pristine module and wipes
 this hunk. Use the wrapper target, which vendors and immediately restores it:
