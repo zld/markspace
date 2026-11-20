@@ -60,14 +60,16 @@ def full_box(kind: bytes, version: int, flags: int, payload: bytes) -> bytes:
     return box(kind, _u8(version) + _u24(flags) + payload)
 
 
-def _time_fields(duration: int) -> tuple[int, bytes]:
-    """(version, creation+modification+timescale+duration) or raise."""
+def _time_version(duration: int) -> int:
+    """Pick header version 0 or 1 for a duration field (32- vs 64-bit)."""
 
+    if duration < 0:
+        raise ValueError("duration must not be negative")
     if duration <= UINT32_MAX:
-        return 0, _u32(0) + _u32(0)
+        return 0
     if duration > (1 << 63) - 1:
         raise ValueError("duration overflows signed 64-bit")
-    return 1, _u64(0) + _u64(0)
+    return 1
 
 
 def _runs(values: np.ndarray) -> list[tuple[int, int]]:
@@ -80,7 +82,7 @@ def _runs(values: np.ndarray) -> list[tuple[int, int]]:
 
 
 def _mvhd(duration: int, timescale: int, next_track: int) -> bytes:
-    version, _ = _time_fields(duration)
+    version = _time_version(duration)
     head = ((bytes(16) if version else bytes(8)) + _u32(timescale) +
             (_u64(duration) if version else _u32(duration)))
     body = (_u32(0x00010000) + _u16(0x0100) + bytes(10) + UNITY_MATRIX +
@@ -90,7 +92,7 @@ def _mvhd(duration: int, timescale: int, next_track: int) -> bytes:
 
 def _tkhd(duration: int, track_id: int, volume: int, width: int, height: int,
           is_video: bool) -> bytes:
-    version, _ = _time_fields(duration)
+    version = _time_version(duration)
     times = bytes(16) if version else bytes(8)
     head = (times + _u32(track_id) + _u32(0) +
             (_u64(duration) if version else _u32(duration)))
@@ -135,7 +137,7 @@ def _edit_entries(track: TrackTimeline, movie_timescale: int) -> list[tuple[int,
 
 
 def _mdhd(duration: int, timescale: int) -> bytes:
-    version, _ = _time_fields(duration)
+    version = _time_version(duration)
     head = (bytes(16) if version else bytes(8)) + _u32(timescale) + (
         _u64(duration) if version else _u32(duration))
     return full_box(b"mdhd", version, 0, head + _u16(0x55C4) + _u16(0))
@@ -254,13 +256,15 @@ def _trak(track: TrackTimeline, chunk_offsets: list[int], timescale: int) -> byt
     if is_video:
         media_info = box(b"vmhd", _u8(0) * 4 + bytes(8))
         media_name = "VideoHandler"
+        handler = "vide"
     else:
         media_info = full_box(b"smhd", 0, 0, bytes(4))
         media_name = "SoundHandler"
+        handler = "soun"
     stbl = build_stbl(track, chunk_offsets)
     minf = box(b"minf", media_info + _dinf() + stbl)
     mdia = box(b"mdia", _mdhd(track.duration_ticks, timescale) +
-               _hdlr("vide" if is_video else "soun", media_name) + minf)
+               _hdlr(handler, media_name) + minf)
     return box(b"trak", b"".join([
         _tkhd(track_duration, track.mp4_track_id, 0 if is_video else 0x0100,
               track.track.width or 0, track.track.height or 0, is_video),
