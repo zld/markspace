@@ -189,6 +189,9 @@ class Resampler:
                 [self._buf, np.zeros((1, self.channels), dtype=np.float64)],
                 axis=0)
             self._emit(self._in_count + pad_frames)
+        # Rounding can let one centre past the contract; never emit it.
+        if self._out_count > wanted:
+            self._out_count = wanted
         tail_count = self._out_count - start_out
         # Recompute the tail outputs as one contiguous slice for return.
         tail = self._tail_outputs(start_out, tail_count)
