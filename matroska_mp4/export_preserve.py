@@ -93,9 +93,19 @@ def run_preserve(mkv: ParsedMatroska, timescale: int, output_path: str) -> Expor
                           audit={}, element_tree=_element_tree(mkv),
                           unknown_size=mkv.document.unknown_sizes(),
                           track_map=_track_map(timeline))
+    _write_and_audit(mkv, timeline, output_path, result)
+    return result
+
+
+def _write_and_audit(mkv: ParsedMatroska, timeline: Timeline, output_path: str,
+                     result: ExportResult) -> None:
+    """Write, audit, and only then atomically publish the output."""
+
     with temporary_output(output_path) as temp_path:
         write_mp4(mkv.path, mkv, timeline, temp_path)
-        result.audit = audit_mp4(temp_path, mkv.path, mkv.samples, timeline.tracks,
-                                 timeline.timescale)
+        audit = audit_mp4(temp_path, mkv.path, mkv.samples, timeline.tracks,
+                          timeline.timescale)
+        if audit["sample_count"] != timeline.sample_count:
+            raise AuditError("audited sample count differs from the timeline")
         os.replace(temp_path, output_path)
-    return result
+    result.audit = audit

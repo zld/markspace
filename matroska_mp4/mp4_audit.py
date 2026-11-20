@@ -231,6 +231,8 @@ def _parse_moov_tracks(data, moov: Box, file_end: int) -> tuple[list[dict], int]
         stbl = _child(_read_boxes(data, minf.data_offset, minf.end), b"stbl")
         entry = _parse_stbl(data, stbl)
         entry["track_id"] = track_id
+        hdlr = _child(mdia_boxes, b"hdlr")
+        entry["handler"] = bytes(data[hdlr.data_offset + 8:hdlr.data_offset + 12])
         tracks.append(entry)
     return tracks, timescale
 
@@ -316,6 +318,14 @@ def _audit(mm, file_size: int, source, samples: dict[int, TrackSamples],
         track_id = entry["track_id"]
         if track_id != expected.mp4_track_id:
             raise AuditError(f"track ID {track_id} != {expected.mp4_track_id}")
+        wanted_handler = expected.track.handler.encode("ascii")
+        if entry["handler"] != wanted_handler:
+            raise AuditError(f"track {track_id}: handler {entry['handler']!r} != "
+                             f"{wanted_handler!r}")
+        wanted_kind = b"avc1" if wanted_handler == b"vide" else b"mp4a"
+        if entry["kind"] != wanted_kind:
+            raise AuditError(f"track {track_id}: codec box {entry['kind']!r} != "
+                             f"{wanted_kind!r}")
         sizes, durations = entry["sizes"], entry["durations"]
         if sizes.size != expected.sample_count:
             raise AuditError(f"track {track_id}: stsz count {sizes.size} != "
