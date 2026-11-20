@@ -317,6 +317,9 @@ def _read_track(fh: BinaryIO, entry: ebml.Element) -> Track:
     if codec_delay:
         raise UnsupportedFormat(
             f"CodecDelay {codec_delay} ns is unsupported", track=number)
+    if _uint_leaf(fh, entry, ids.MAX_BLOCK_ADDITION_ID):
+        # BlockAdditions carry extra per-block data we do not copy.
+        raise UnsupportedFormat("BlockAdditions are unsupported", track=number)
     width = height = channels = None
     sample_rate = None
     if track_type == 1:
