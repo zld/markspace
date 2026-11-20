@@ -13,6 +13,7 @@ add_compile_options(-Wall -Wextra)
 
 add_library(fmp4core STATIC
   src/box.cpp
+  src/fragment_index.cpp
 )
 target_include_directories(fmp4core PUBLIC include)
 
