@@ -2,12 +2,16 @@ package server
 
 import (
 	"errors"
+	"io"
+	"net"
+	"strings"
 	"sync"
 
 	"github.com/bluenviron/gortsplib/v4"
 	"github.com/bluenviron/gortsplib/v4/pkg/base"
 	"github.com/bluenviron/gortsplib/v4/pkg/description"
 	"github.com/bluenviron/gortsplib/v4/pkg/format"
+	"github.com/bluenviron/gortsplib/v4/pkg/liberrors"
 	"github.com/pion/rtp"
 
 	"rtspingest/internal/fsm"
@@ -65,11 +69,30 @@ func (h *Handler) recordErr(err error) {
 // OnConnOpen satisfies the gortsplib interface.
 func (h *Handler) OnConnOpen(_ *gortsplib.ServerHandlerOnConnOpenCtx) {}
 
-// OnConnClose records a transport-level connection error.
+// OnConnClose records a transport-level connection error. A clean client
+// disconnect surfaces as io.EOF or a closed-socket error and is expected
+// after TEARDOWN, so it is ignored.
 func (h *Handler) OnConnClose(ctx *gortsplib.ServerHandlerOnConnCloseCtx) {
-	if ctx.Error != nil {
-		h.recordErr(ctx.Error)
+	if ctx.Error == nil || errors.Is(ctx.Error, io.EOF) {
+		return
 	}
+	if isBenignClose(ctx.Error) {
+		return
+	}
+	h.recordErr(ctx.Error)
+}
+
+// isBenignClose reports operating-system level "connection closed" errors
+// that accompany an orderly client shutdown.
+func isBenignClose(err error) bool {
+	var netErr *net.OpError
+	if errors.As(err, &netErr) {
+		if errors.Is(netErr.Err, net.ErrClosed) {
+			return true
+		}
+		return strings.Contains(netErr.Err.Error(), "closed")
+	}
+	return strings.Contains(err.Error(), "closed")
 }
 
 // OnSessionOpen satisfies the gortsplib interface.
@@ -82,7 +105,10 @@ func (h *Handler) OnSessionClose(ctx *gortsplib.ServerHandlerOnSessionCloseCtx) 
 	wasReady := h.ready
 	h.mu.Unlock()
 
-	if ctx.Error != nil {
+	// a client TEARDOWN is the expected, successful end of the session, not
+	// an error; only record unexpected failures.
+	var tornDown liberrors.ErrServerSessionTornDown
+	if ctx.Error != nil && !errors.As(ctx.Error, &tornDown) {
 		h.recordErr(ctx.Error)
 	}
 	if wasReady {
@@ -92,6 +118,15 @@ func (h *Handler) OnSessionClose(ctx *gortsplib.ServerHandlerOnSessionCloseCtx) 
 	h.adapter.Close()
 	close(h.closed)
 }
+
+// OnPacketLost is intentionally a no-op: sequence gaps are accounted for by
+// the application reorder buffer, and implementing this callback also stops
+// gortsplib from printing its own message to stderr.
+func (h *Handler) OnPacketLost(_ *gortsplib.ServerHandlerOnPacketLostCtx) {}
+
+// OnDecodeError swallows non-fatal decode noise; invalid media is counted by
+// the H.264 reassembler instead.
+func (h *Handler) OnDecodeError(_ *gortsplib.ServerHandlerOnDecodeErrorCtx) {}
 
 // OnAnnounce validates the SDP and moves Created -> Announced.
 func (h *Handler) OnAnnounce(ctx *gortsplib.ServerHandlerOnAnnounceCtx) (*base.Response, error) {

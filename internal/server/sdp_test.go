@@ -50,7 +50,7 @@ func TestValidateDescriptionFailures(t *testing.T) {
 		{
 			"missing control url",
 			&description.Session{Medias: []*description.Media{{
-				Type: description.MediaTypeVideo,
+				Type:    description.MediaTypeVideo,
 				Formats: []format.Format{&format.H264{PayloadTyp: 96, PacketizationMode: 1}},
 			}}},
 		},

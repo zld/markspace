@@ -1,0 +1,11 @@
+# build output lives in /tmp and must never be committed
+/rtsp-ingest
+/rtsp-ingest.exe
+*.test
+*.out
+
+# editor / OS noise
+.DS_Store
+*.swp
+.idea/
+.vscode/

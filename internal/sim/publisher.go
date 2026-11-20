@@ -75,12 +75,13 @@ func (p *Publisher) Publish(ctx context.Context, fx *Fixture) error {
 		WriteTimeout:  p.timeout,
 		AnyPortEnable: true, // server UDP ports are ephemeral, still loopback
 	}
-	if err := client.StartRecording(p.baseURL, Description()); err != nil {
+	desc := Description()
+	if err := client.StartRecording(p.baseURL, desc); err != nil {
 		return fmt.Errorf("sim: StartRecording failed: %w", err)
 	}
 	defer client.Close()
 
-	media := Description().Medias[0]
+	media := desc.Medias[0]
 	for _, pkt := range fx.Packets {
 		select {
 		case <-ctx.Done():

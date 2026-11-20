@@ -166,6 +166,31 @@ func TestH264OversizedFrame(t *testing.T) {
 	}
 }
 
+func TestH264RealEightMiBLimit(t *testing.T) {
+	// exercise the production 8 MiB constant rather than a shrunken limit.
+	if MaxFrameSize != 8*1024*1024 {
+		t.Fatalf("MaxFrameSize = %d, want 8 MiB", MaxFrameSize)
+	}
+	r := NewReassembler()
+	nal := make([]byte, MaxFrameSize+1)
+	nal[0] = 0x65
+	if _, err := r.Process(h264Packet(1, 96, 9000, true, nal)); err == nil {
+		t.Fatal("expected oversize error above 8 MiB")
+	}
+	if r.Stats().OversizedFrames != 1 {
+		t.Fatalf("oversized = %d, want 1", r.Stats().OversizedFrames)
+	}
+
+	// a frame exactly at the boundary is still accepted
+	r2 := NewReassembler()
+	boundary := make([]byte, MaxFrameSize)
+	boundary[0] = 0x65
+	frame, err := r2.Process(h264Packet(1, 96, 9000, true, boundary))
+	if err != nil || frame == nil {
+		t.Fatalf("boundary frame rejected: %v", err)
+	}
+}
+
 func TestH264KeyIsolation(t *testing.T) {
 	r := NewReassembler()
 	// two senders interleave fragments of the same timestamp

@@ -12,9 +12,9 @@ observe them.
 
 This ingest tool must account for sequence gaps, duplicates and
 out-of-order delivery itself (see `internal/rtp/reorder.go`). The vendored
-`readPacketRTPUDP` was therefore changed to deliver packets in raw arrival
-order. Loss *detection* is retained through `rtplossdetector.LossDetector`,
-which is purely observational and never drops a packet. No other file or
-behavior is modified.
+`readPacketRTPUDP` was therefore changed to call `handlePacketRTP` directly,
+delivering packets in raw arrival order with nothing dropped and no library
+loss reporting. The application's own wraparound-aware reorder buffer
+replaces both functions. No other file or behavior is modified.
 
 Re-apply this hunk whenever `go mod vendor` is re-run.

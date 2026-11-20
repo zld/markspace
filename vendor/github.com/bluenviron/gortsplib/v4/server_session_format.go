@@ -77,27 +77,12 @@ func (sf *serverSessionFormat) stop() {
 }
 
 func (sf *serverSessionFormat) readPacketRTPUDP(pkt *rtp.Packet, now time.Time) {
-	// [rtspingest vendor patch] bypass the internal 64-packet reorder queue.
-	// The ingest tool performs its own sequence reordering, gap and
-	// duplicate accounting in internal/rtp, so packets must reach the
-	// OnPacketRTP callback in raw arrival order. Loss detection (which only
-	// observes the stream and does not drop packets) is preserved.
-	lost := sf.tcpLossDetectorOrReordererLoss(pkt)
-	if lost != 0 {
-		sf.onPacketRTPLost(lost)
-	}
+	// [rtspingest vendor patch] bypass the internal 64-packet reorder queue
+	// and the library loss reporting entirely. The ingest tool performs its
+	// own sequence reordering, gap and duplicate accounting in
+	// internal/rtp (wraparound-aware), so packets must reach the
+	// OnPacketRTP callback in raw arrival order with nothing dropped.
 	sf.handlePacketRTP(pkt, now)
-}
-
-// tcpLossDetectorOrReordererLoss reports packet loss without reordering or
-// dropping anything. On the record (server) side the UDP path previously
-// used only the reorderer; here the same jump logic is provided by the loss
-// detector so arrival order stays untouched.
-func (sf *serverSessionFormat) tcpLossDetectorOrReordererLoss(pkt *rtp.Packet) uint {
-	if sf.tcpLossDetector == nil {
-		sf.tcpLossDetector = &rtplossdetector.LossDetector{}
-	}
-	return sf.tcpLossDetector.Process(pkt)
 }
 
 func (sf *serverSessionFormat) readPacketRTPTCP(pkt *rtp.Packet) {
