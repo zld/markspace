@@ -73,6 +73,10 @@ class Reader {
   size_t remaining() const { return len_ - pos_; }
   uint64_t abs_pos() const { return base_ + pos_; }
   void require(size_t n, const char* what);
+  void skip(size_t n) {
+    require(n, "skip");
+    pos_ += n;
+  }
 
  private:
   const uint8_t* data_;
