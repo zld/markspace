@@ -25,6 +25,15 @@ class EBMLError(Exception):
         super().__init__(f"EBML error at offset {offset}: {message}")
 
 
+class LimitError(Exception):
+    """A configured resource limit was exceeded (not format corruption)."""
+
+    def __init__(self, message: str, *, offset: int | None = None):
+        self.offset = offset
+        self.message = message
+        super().__init__(message)
+
+
 @dataclass(slots=True)
 class Vint:
     value: int
@@ -123,12 +132,17 @@ def read_header(fh: BinaryIO, offset: int, limit: int) -> Header:
     size_offset = offset + id_vint.length
     size_vint = read_vint(fh, size_offset, limit, for_id=False)
     data_offset = size_offset + size_vint.length
-    size = None if size_vint.unknown else size_vint.value
-    if size is not None and data_offset + size > limit:
+    if size_vint.unknown and id_vint.value not in ids.UNKNOWN_SIZE_IDS:
+        raise EBMLError(offset,
+                        f"unknown-size {ids.element_name(id_vint.value)} is "
+                        f"not allowed")
+    size = size_vint.value
+    if not size_vint.unknown and data_offset + size > limit:
         raise EBMLError(offset,
                         f"{ids.element_name(id_vint.value)} claims {size} bytes "
                         f"but only {max(0, limit - data_offset)} remain")
-    return Header(element_id=id_vint.value, id_length=id_vint.length, size=size,
+    return Header(element_id=id_vint.value, id_length=id_vint.length,
+                  size=None if size_vint.unknown else size,
                   size_length=size_vint.length, data_offset=data_offset,
                   offset=offset, unknown=size_vint.unknown)
 
@@ -235,7 +249,8 @@ def parse_file(path: str, presentation_hook=None) -> Document:
         raise FileNotFoundError(path)
     file_size = os.path.getsize(path)
     if file_size > MAX_INPUT_BYTES:
-        raise EBMLError(0, f"input is {file_size} bytes; limit is {MAX_INPUT_BYTES}")
+        raise LimitError(f"input is {file_size} bytes; limit is {MAX_INPUT_BYTES}",
+                         offset=0)
     counts: dict[str, int] = {}
     with open(path, "rb") as fh:
         roots = _parse_roots(fh, file_size, presentation_hook, counts)

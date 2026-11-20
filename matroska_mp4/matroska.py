@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import array
+import math
 import os
 from dataclasses import dataclass
 from typing import BinaryIO
@@ -14,6 +15,10 @@ from . import ebml_ids as ids
 
 MAX_PACKET_BYTES = 256 * 1024 * 1024
 MAX_SAMPLES = 5_000_000
+# Timestamps are kept in signed 64-bit arrays; keep a safety margin for the
+# PTS arithmetic that follows (track offsets and sample durations).
+MAX_TIMESTAMP_NS = 1 << 62
+MAX_DURATION_NS = (1 << 63) - 1
 # A lace count byte encodes 1..256 frames; the guard only bounds pathological
 # payloads (256 frames of 256 MiB cannot be a valid single Block).
 MAX_LACE_FRAMES = 256
@@ -23,6 +28,10 @@ BLOCK_RETENTION_BYTES = 64 * 1024 * 1024
 
 VIDEO_CODEC = "V_MPEG4/ISO/AVC"
 AAC_PREFIX = "A_AAC"
+# Sample entries store these as 16-bit fields in ISO-BMFF.
+MAX_TRACK_DIMENSION = 0xFFFF
+MAX_AUDIO_CHANNELS = 0xFFFF
+MAX_AUDIO_RATE = 0xFFFF
 
 
 class UnsupportedFormat(Exception):
@@ -34,11 +43,8 @@ class UnsupportedFormat(Exception):
         super().__init__(message)
 
 
-class LimitError(Exception):
-    def __init__(self, message: str, *, offset: int | None = None):
-        self.offset = offset
-        self.message = message
-        super().__init__(message)
+# Resource-limit failures live with the EBML layer; re-export for callers.
+LimitError = ebml.LimitError
 
 
 @dataclass(slots=True)
@@ -291,10 +297,26 @@ def _read_track(fh: BinaryIO, entry: ebml.Element) -> Track:
     codec_private = _leaf(fh, entry, ids.CODEC_PRIVATE) or b""
     uid = _uint_leaf(fh, entry, ids.TRACK_UID)
     default_duration = _uint_leaf(fh, entry, ids.DEFAULT_DURATION)
-    if default_duration is not None and default_duration <= 0:
-        default_duration = None
+    if default_duration is not None:
+        if default_duration <= 0:
+            default_duration = None
+        elif default_duration > MAX_DURATION_NS:
+            raise LimitError("DefaultDuration overflows int64",
+                             offset=entry.offset)
     name = _text_leaf(fh, entry, ids.NAME)
     language = _text_leaf(fh, entry, ids.LANGUAGE)
+    if entry.find(ids.CONTENT_ENCODINGS) is not None:
+        # Compressed or encrypted frames would need to be decoded before the
+        # bytes could be copied into MP4.
+        raise UnsupportedFormat("ContentEncodings are unsupported", track=number)
+    track_scale = _float_leaf(fh, entry, ids.TRACK_TIMESTAMP_SCALE)
+    if track_scale is not None and track_scale != 1.0:
+        raise UnsupportedFormat(
+            f"TrackTimestampScale {track_scale:g} is unsupported", track=number)
+    codec_delay = _uint_leaf(fh, entry, ids.CODE_DELAY)
+    if codec_delay:
+        raise UnsupportedFormat(
+            f"CodecDelay {codec_delay} ns is unsupported", track=number)
     width = height = channels = None
     sample_rate = None
     if track_type == 1:
@@ -310,6 +332,10 @@ def _read_track(fh: BinaryIO, entry: ebml.Element) -> Track:
         height = _uint_leaf(fh, video, ids.PIXEL_HEIGHT)
         if not width or not height:
             raise UnsupportedFormat("H.264 track lacks pixel dimensions", track=number)
+        if width > MAX_TRACK_DIMENSION or height > MAX_TRACK_DIMENSION:
+            raise UnsupportedFormat(
+                f"video dimensions {width}x{height} exceed MP4 16-bit sample "
+                f"entry range", track=number)
         mp4_codec, handler = "avc1", "vide"
     elif track_type == 2:
         if not codec_id.startswith(AAC_PREFIX):
@@ -324,6 +350,16 @@ def _read_track(fh: BinaryIO, entry: ebml.Element) -> Track:
         channels = _uint_leaf(fh, audio, ids.CHANNELS)
         if not sample_rate or sample_rate <= 0 or not channels:
             raise UnsupportedFormat("AAC track lacks sample rate/channels", track=number)
+        if channels > MAX_AUDIO_CHANNELS:
+            raise UnsupportedFormat(
+                f"audio channel count {channels} exceeds MP4 16-bit range",
+                track=number)
+        if not math.isfinite(sample_rate):
+            raise UnsupportedFormat("AAC sample rate is not finite", track=number)
+        if sample_rate > MAX_AUDIO_RATE:
+            raise UnsupportedFormat(
+                f"AAC sample rate {sample_rate:g} Hz exceeds the MP4 16.16 "
+                f"sample entry range", track=number)
         mp4_codec, handler = "mp4a", "soun"
     else:
         kind = {17: "subtitle", 18: "button", 32: "control"}.get(track_type, "unknown")
@@ -349,8 +385,9 @@ def _parse_lace_sizes(reader: _PayloadReader, lacing: int) -> list[int]:
             raise ebml.EBMLError(reader.pos, "empty Block payload")
         return [size]
     count = reader.read_byte() + 1
-    if lacing == 2 and count == 1:
-        # Fixed lacing with one frame carries no size headers at all.
+    if count == 1:
+        # No lace size headers are stored when only one frame is present,
+        # regardless of the lacing mode declared in the flags.
         size = reader.remaining
         if size <= 0:
             raise ebml.EBMLError(reader.pos, "empty laced block payload")
@@ -391,7 +428,7 @@ def _parse_lace_sizes(reader: _PayloadReader, lacing: int) -> list[int]:
 
 def _parse_block(fh: BinaryIO, element: ebml.Element, cluster_index: int,
                  cluster_timecode: int, is_simple: bool, duration: int | None,
-                 references: int) -> Block:
+                 references: int, discard_padding: int | None = None) -> Block:
     if element.size is None or element.size < 4:
         raise ebml.EBMLError(element.offset, "Block payload too small")
     if element.size > MAX_PACKET_BYTES * MAX_LACE_FRAMES:
@@ -400,6 +437,9 @@ def _parse_block(fh: BinaryIO, element: ebml.Element, cluster_index: int,
     end = element.data_offset + element.size
     reader = _PayloadReader(fh, element.data_offset, end)
     first = reader.read_byte()
+    if first == 0:
+        raise ebml.EBMLError(element.data_offset,
+                             "invalid block track number VINT: leading zero byte")
     length = 1
     mask = 0x80
     while not (first & mask):
@@ -433,7 +473,7 @@ def _parse_block(fh: BinaryIO, element: ebml.Element, cluster_index: int,
                  flags=flags, lacing=("none", "xiph", "fixed", "ebml")[lacing],
                  frames=frames, offset=element.offset, is_simple=is_simple,
                  keyframe=keyframe, duration_ticks=duration,
-                 reference_blocks=references, discard_padding=None)
+                 reference_blocks=references, discard_padding=discard_padding)
 
 
 class _SampleCollector:
@@ -487,8 +527,16 @@ class _SampleCollector:
             if duration is not None and duration <= 0:
                 duration = None
             refs = len(child.children_of(ids.REFERENCE_BLOCK))
+            padding_data = _leaf(fh, child, ids.DISCARD_PADDING)
+            padding = None if padding_data is None else ebml.int_value(padding_data)
             block = _parse_block(fh, block_elem, cluster_index, cluster_timecode,
-                                 False, duration, refs)
+                                 False, duration, refs, padding)
+            if padding:
+                # MP4 would need sample groups to trim the frame; silently
+                # copying the padding would shift audio, so fail instead.
+                raise UnsupportedFormat(
+                    f"DiscardPadding {padding} ns is unsupported",
+                    track=block.track_number)
         else:
             return
         if block.track_number not in self.known_tracks:
@@ -502,11 +550,14 @@ class _SampleCollector:
         bucket = self.arrays[block.track_number]
         count = len(block.frames)
         scale = self.scale_ns
-        block_pts = block.timecode * scale
-        if abs(block_pts) > (1 << 62):
+        if abs(block.timecode) > MAX_TIMESTAMP_NS // scale:
             raise LimitError("block PTS overflows int64", offset=block.offset)
+        block_pts = block.timecode * scale
         block_dur = None
         if block.duration_ticks is not None:
+            if block.duration_ticks > MAX_DURATION_NS // scale:
+                raise LimitError("BlockDuration overflows int64",
+                                 offset=block.offset)
             block_dur = block.duration_ticks * scale
         per_frame = None
         if count > 1:
@@ -522,6 +573,11 @@ class _SampleCollector:
                         f"laced block has {count} frames but no derivable "
                         f"per-frame duration")
         self.lacing_counts[block.lacing] += 1
+        last_pts = block_pts
+        if per_frame is not None and count > 1:
+            last_pts = block_pts + per_frame * (count - 1)
+        if abs(last_pts) > MAX_TIMESTAMP_NS:
+            raise LimitError("laced frame PTS overflows int64", offset=block.offset)
         for index, frame in enumerate(block.frames):
             pts = block_pts + (per_frame * index if per_frame is not None else 0)
             bucket["pts"].append(pts)
