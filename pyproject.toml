@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools==75.3.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "medialint"
+version = "0.1.0"
+description = "Local media delivery linter: sniff containers, extract track metadata, compare against manifest, package verified assets"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+medialint = "medialint.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
