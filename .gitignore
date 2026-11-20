@@ -1,0 +1,7 @@
+# Build artifacts (build output goes to /tmp)
+/jitterlab
+*.test
+*.out
+
+# Editor/OS noise
+.DS_Store
