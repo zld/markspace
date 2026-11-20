@@ -137,11 +137,13 @@ def _remux(args) -> int:
 def _run_fixture(args) -> int:
     try:
         paths = fixture.generate(args.out_dir)
-    except OSError as exc:
+        verified = fixture.verify_frame_bytes(paths)
+    except (OSError, ValueError, EBMLError) as exc:
         _emit({"ok": False, "kind": "write", "error": str(exc),
                "exit_code": EXIT_WRITE}, stream=sys.stderr)
         return EXIT_WRITE
     _emit({"ok": True, "exit_code": EXIT_OK, "fixtures": paths,
+           "frames": verified,
            "description": {
                "reordered": "unknown-size Segment/Cluster, B-frame BlockGroups, "
                             "all four lacing modes",

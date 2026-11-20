@@ -274,3 +274,30 @@ def generate(out_dir: str) -> dict[str, str]:
             handle.write(payload)
         paths[name] = path
     return paths
+
+
+def verify_frame_bytes(fixture_paths: dict[str, str]) -> dict[str, int]:
+    """Re-read each fixture and confirm every indexed frame round-trips.
+
+    This is the guard the acceptance flow expects: it proves the fixture bytes
+    are actually reachable through the offsets/sizes the parser derives, so a
+    later remux audit failure cannot be blamed on a broken fixture.
+    """
+
+    from .matroska import parse_matroska
+
+    verified: dict[str, int] = {}
+    for name, path in fixture_paths.items():
+        parsed = parse_matroska(path)
+        frames = 0
+        with open(path, "rb") as handle:
+            for track in parsed.tracks:
+                index = parsed.samples[track.number]
+                for offset, size in zip(index.offset.tolist(), index.size.tolist()):
+                    handle.seek(int(offset))
+                    if len(handle.read(int(size))) != int(size):
+                        raise ValueError(
+                            f"{name}: frame at {offset} is truncated")
+                    frames += 1
+        verified[name] = frames
+    return verified
