@@ -128,25 +128,37 @@ def _collect(mkv: ParsedMatroska) -> dict[int, TrackSamples]:
 
 def _resolve_durations(pts: np.ndarray, known: np.ndarray,
                        default: np.ndarray, track: Track) -> np.ndarray:
+    """Resolve each sample duration: BlockDuration, DefaultDuration, interval.
+
+    Vectorised: the only cross-sample dependency is the following presentation
+    interval, which is a shifted difference over the PTS sort order.
+    """
+
     duration = known.copy()
-    presentation = np.argsort(pts, kind="stable")
-    for position, index in enumerate(presentation.tolist()):
-        if duration[index] > 0:
-            continue
-        if default[index] > 0:
-            duration[index] = default[index]
-            continue
-        if position + 1 < presentation.size:
-            nxt = int(presentation[position + 1])
-            interval = int(pts[nxt]) - int(pts[index])
-            if interval > 0:
-                duration[index] = interval
-                continue
-        position_kind = "final" if position == presentation.size - 1 else "sample"
+    unresolved = duration <= 0
+    if not np.any(unresolved):
+        return duration
+    use_default = unresolved & (default > 0)
+    duration[use_default] = default[use_default]
+    unresolved &= ~use_default
+    if not np.any(unresolved):
+        return duration
+    order = np.argsort(pts, kind="stable")
+    ordered_pts = pts[order]
+    interval = np.zeros_like(pts)
+    if ordered_pts.size > 1:
+        interval[order[:-1]] = ordered_pts[1:] - ordered_pts[:-1]
+    usable = unresolved & (interval > 0)
+    duration[usable] = interval[usable]
+    unresolved &= ~usable
+    if np.any(unresolved):
+        index = int(np.flatnonzero(unresolved)[0])
+        final = index == int(order[-1])
+        kind = "final" if final else "sample"
         raise TimelineError(
-            f"track {track.number}: cannot determine duration of {position_kind} "
-            f"at PTS {int(pts[index])} ns (no BlockDuration, DefaultDuration, "
-            f"or following interval)")
+            f"track {track.number}: cannot determine duration of {kind} at PTS "
+            f"{int(pts[index])} ns (no BlockDuration, DefaultDuration, or "
+            f"following interval)")
     if np.any(duration <= 0):
         raise TimelineError(f"track {track.number}: non-positive sample duration")
     return duration
@@ -178,20 +190,24 @@ def _build_track(track: Track, mp4_id: int, bucket: TrackSamples, scale_ns: int,
     if np.any(duration > UINT32_MAX):
         raise TimelineError(
             f"track {track.number}: sample duration exceeds uint32 stts range")
-    decode_pts = [int(v) for v in global_pts.tolist()]
     if mode == "preserve":
-        if any(b < a for a, b in zip(decode_pts, decode_pts[1:])):
+        if global_pts.size > 1 and bool(np.any(global_pts[1:] < global_pts[:-1])):
+            position = int(np.flatnonzero(global_pts[1:] < global_pts[:-1])[0])
             raise TimelineError(
-                f"track {track.number}: PTS is not monotonic in decode order; "
-                f"reordered frames require --mode rewrite")
+                f"track {track.number}: PTS is not monotonic in decode order "
+                f"(sample {position + 2} at {int(global_pts[position + 1])} "
+                f"precedes {int(global_pts[position])}); reordered frames "
+                f"require --mode rewrite")
         dts = global_pts.copy()
     media_base = int(global_pts.min())
     media_pts = global_pts - np.int64(media_base)
     if mode == "rewrite":
         dts = np.zeros_like(duration)
         if duration.size > 1:
+            if int(duration[:-1].sum()) > INT64_MAX:
+                raise TimebaseOverflow("cumulative DTS overflows int64")
             dts[1:] = np.cumsum(duration[:-1], dtype=np.int64)
-        ctts = media_pts - dts
+        ctts = media_pts.astype(np.int64) - dts
         too_big = np.any(ctts > INT32_MAX) or np.any(ctts < INT32_MIN)
         if too_big:
             raise TimelineError(

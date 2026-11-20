@@ -440,17 +440,19 @@ def _parse_block(fh: BinaryIO, element: ebml.Element, cluster_index: int,
 class _SampleCollector:
     """Streaming hook: parses blocks into compact per-track arrays."""
 
-    def __init__(self, path: str, scale_ns: int, known_tracks: set[int]):
+    def __init__(self, path: str, scale_ns: int, known_tracks: set[int],
+                 keep_blocks: bool):
         self.path = path
         self.scale_ns = scale_ns
         self.known_tracks = known_tracks
-        self.keep_blocks = os.path.getsize(path) <= BLOCK_RETENTION_BYTES
+        self.keep_blocks = keep_blocks
         self.blocks: list[Block] | None = [] if self.keep_blocks else None
         self.arrays = {
             number: {"pts": array.array("q"), "offset": array.array("q"),
                      "size": array.array("q"), "duration": array.array("q"),
                      "key": bytearray()} for number in known_tracks}
         self.cluster_ids: dict[int, tuple[int, int]] = {}
+        self.track_defaults: dict[int, int | None] = {}
         self.frame_count = 0
         self.media_bytes = 0
         self.simple_blocks = 0
@@ -512,7 +514,7 @@ class _SampleCollector:
             if block_dur is not None and block_dur % count == 0:
                 per_frame = block_dur // count
             else:
-                default = self.default_waiter(block.track_number)
+                default = self.track_defaults.get(block.track_number)
                 if default:
                     per_frame = default
                 else:
@@ -538,32 +540,38 @@ class _SampleCollector:
             raise LimitError("frame payload exceeds input byte limit",
                              offset=block.offset)
 
-    def default_waiter(self, number: int) -> int | None:
-        track = self.track_defaults.get(number)
-        return track
-
     def finish(self) -> dict[int, TrackSamples]:
         result = {}
         for number, bucket in self.arrays.items():
             result[number] = TrackSamples(
-                pts_ns=np.frombuffer(bucket["pts"], dtype=np.int64).copy(),
-                offset=np.frombuffer(bucket["offset"], dtype=np.int64).copy(),
-                size=np.frombuffer(bucket["size"], dtype=np.int64).copy(),
-                duration_ns=np.frombuffer(bucket["duration"], dtype=np.int64).copy(),
+                pts_ns=_to_int64(bucket["pts"]),
+                offset=_to_int64(bucket["offset"]),
+                size=_to_int64(bucket["size"]),
+                duration_ns=_to_int64(bucket["duration"]),
                 keyframe=np.frombuffer(bytes(bucket["key"]), dtype=np.uint8)
-                .view(bool).copy())
+                .astype(bool))
         return result
+
+
+def _to_int64(values: array.array) -> np.ndarray:
+    """Zero-copy conversion of an array.array('q') to a read-only int64 array."""
+
+    return np.frombuffer(values, dtype=np.int64)
 
 
 def parse_matroska(path: str, *, keep_blocks: bool | None = None) -> ParsedMatroska:
     """Parse tracks and sample data; media bytes are never buffered."""
 
     holder: dict[str, object] = {}
+    file_size = os.path.getsize(path) if os.path.isfile(path) else 0
+    holder["keep_blocks"] = (file_size <= BLOCK_RETENTION_BYTES
+                             if keep_blocks is None else keep_blocks)
 
     def hook(fh: BinaryIO, parent: ebml.Element, child: ebml.Element) -> None:
         collector = holder.get("collector")
         if collector is None:
-            collector = _SampleCollector(path, holder["scale"], holder["tracks"])
+            collector = _SampleCollector(path, holder["scale"], holder["tracks"],
+                                         holder["keep_blocks"])
             collector.track_defaults = holder["defaults"]
             holder["collector"] = collector
         collector(fh, parent, child)
@@ -619,8 +627,6 @@ def parse_matroska(path: str, *, keep_blocks: bool | None = None) -> ParsedMatro
         raise ebml.EBMLError(segment.offset, "no blocks found")
     if collector.frame_count == 0:
         raise ebml.EBMLError(segment.offset, "no blocks found")
-    if keep_blocks is False or not collector.keep_blocks:
-        collector.blocks = None
     return ParsedMatroska(
         path=path, document=document, timestamp_scale_ns=timestamp_scale,
         tracks=tracks, samples=collector.finish(),
