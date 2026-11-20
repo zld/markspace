@@ -26,6 +26,10 @@ public:
     size_t pixelCount() const noexcept { return pixels_.size(); }
     int maxval() const noexcept { return maxval_; }
 
+    // Selects the output bit depth; valid range is [1, 65535] and values
+    // above 255 produce 16-bit big-endian samples on write.
+    void setMaxval(int maxval);
+
     const std::vector<Pixel>& pixels() const noexcept { return pixels_; }
     std::vector<Pixel>& pixels() noexcept { return pixels_; }
 

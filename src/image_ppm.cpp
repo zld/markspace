@@ -143,6 +143,13 @@ PpmImage::PpmImage(int width, int height)
     pixels_.resize(static_cast<size_t>(width) * static_cast<size_t>(height));
 }
 
+void PpmImage::setMaxval(int maxval) {
+    if (maxval <= 0 || maxval > kMaxPpmMaxval) {
+        throw UsageError("PPM maxval must be in [1, 65535]");
+    }
+    maxval_ = maxval;
+}
+
 PpmImage parsePpmBytes(const std::vector<uint8_t>& bytes) {
     HeaderReader reader(bytes.data(), bytes.size());
     std::string magic = reader.nextToken();

@@ -15,6 +15,7 @@ add_library(grade
   src/cli.cpp
   src/color.cpp
   src/cube_lut.cpp
+  src/fixture.cpp
   src/image_ppm.cpp
   src/render.cpp
 )
