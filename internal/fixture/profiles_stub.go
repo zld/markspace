@@ -1,6 +1,5 @@
 package fixture
 
-// Skeleton: profile builders are filled in by follow-up commits.
+// Skeleton: fragmented profile is filled in by a follow-up commit.
 
-func buildEditWrap() []byte       { return nil }
 func buildFragmentedWrap() []byte { return nil }
