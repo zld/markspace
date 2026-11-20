@@ -29,7 +29,8 @@ def run_rewrite(mkv: ParsedMatroska, timescale: int, output_path: str) -> Export
                           track_map=_track_map(timeline))
     with temporary_output(output_path) as temp_path:
         write_mp4(mkv.path, mkv, timeline, temp_path)
-        result.audit = audit_mp4(temp_path, mkv, timeline)
+        result.audit = audit_mp4(temp_path, mkv.path, mkv.samples, timeline.tracks,
+                                 timeline.timescale)
         if result.audit["sample_count"] != timeline.sample_count:
             raise audit_mp4.AuditError("audited sample count differs")
         os.replace(temp_path, output_path)

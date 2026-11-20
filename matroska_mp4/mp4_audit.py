@@ -14,8 +14,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from .matroska import MAX_PACKET_BYTES, ParsedMatroska
-from .timeline import Timeline
+from .matroska import MAX_PACKET_BYTES, ParsedMatroska, TrackSamples
+from .timeline import TrackTimeline
 
 UINT32_MAX = (1 << 32) - 1
 COMPARE_SLICE = 1 << 20
@@ -281,20 +281,21 @@ def _compare_bytes(mm, source, mp4_offsets: np.ndarray, source_offsets: np.ndarr
             remaining -= take
 
 
-def audit_mp4(path: str, mkv: ParsedMatroska, timeline: Timeline) -> dict:
+def audit_mp4(path: str, source_path: str, samples: dict[int, TrackSamples],
+              tracks: list[TrackTimeline], timescale: int) -> dict:
     """Read the output back and verify counts, mapping, offsets and mdat."""
 
-    with open(path, "rb") as handle, open(mkv.path, "rb") as source:
+    with open(path, "rb") as handle, open(source_path, "rb") as source:
         size = os.path.getsize(path)
         mm = mmap.mmap(handle.fileno(), 0, access=mmap.ACCESS_READ)
         try:
-            return _audit(mm, size, source, mkv, timeline)
+            return _audit(mm, size, source, samples, tracks, timescale)
         finally:
             mm.close()
 
 
-def _audit(mm, file_size: int, source, mkv: ParsedMatroska,
-           timeline: Timeline) -> dict:
+def _audit(mm, file_size: int, source, samples: dict[int, TrackSamples],
+           timeline_tracks: list[TrackTimeline], timescale: int) -> dict:
     top = _read_boxes(mm, 0, file_size)
     if not top or top[0].kind != b"ftyp":
         raise AuditError("output does not start with ftyp")
@@ -302,16 +303,16 @@ def _audit(mm, file_size: int, source, mkv: ParsedMatroska,
     moov = _child(top, b"moov")
     if mdat.end > moov.offset:
         raise AuditError("moov must follow mdat (non-fragmented layout)")
-    tracks, timescale = _parse_moov_tracks(mm, moov, file_size)
-    if timescale != timeline.timescale:
-        raise AuditError(f"output timescale {timescale} != {timeline.timescale}")
-    if len(tracks) != len(timeline.tracks):
-        raise AuditError(f"track count {len(tracks)} != {len(timeline.tracks)}")
+    tracks, movie_timescale = _parse_moov_tracks(mm, moov, file_size)
+    if movie_timescale != timescale:
+        raise AuditError(f"output timescale {movie_timescale} != {timescale}")
+    if len(tracks) != len(timeline_tracks):
+        raise AuditError(f"track count {len(tracks)} != {len(timeline_tracks)}")
     mdat_bytes = mdat.end - mdat.data_offset
     total_sizes = 0
     total_samples = 0
     track_map = []
-    for expected, entry in zip(timeline.tracks, tracks):
+    for expected, entry in zip(timeline_tracks, tracks):
         track_id = entry["track_id"]
         if track_id != expected.mp4_track_id:
             raise AuditError(f"track ID {track_id} != {expected.mp4_track_id}")
@@ -357,7 +358,8 @@ def _audit(mm, file_size: int, source, mkv: ParsedMatroska,
                 raise AuditError(f"track {track_id}: stss differs")
         elif not bool(np.all(expected.keyframe)):
             raise AuditError(f"track {track_id}: missing stss")
-        _compare_bytes(mm, source, mp4_offsets, expected.offset, sizes, track_id)
+        source_index = samples[expected.track.number]
+        _compare_bytes(mm, source, mp4_offsets, source_index.offset, sizes, track_id)
         total_sizes += int(sizes.sum())
         total_samples += expected.sample_count
         track_map.append({
@@ -379,5 +381,5 @@ def _audit(mm, file_size: int, source, mkv: ParsedMatroska,
                 "mdat_size": mdat.size, "moov_offset": moov.offset,
                 "file_size": file_size},
         "track_map": track_map, "sample_count": total_samples,
-        "timescale": timescale,
+        "timescale": movie_timescale,
     }

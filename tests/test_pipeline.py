@@ -285,7 +285,8 @@ class TestContainerEdges(FixtureTestCase):
             handle.write(data)
         from matroska_mp4.mp4_audit import AuditError, audit_mp4
         with self.assertRaises(AuditError):
-            audit_mp4(output, mkv, result.timeline)
+            audit_mp4(output, mkv.path, mkv.samples, result.timeline.tracks,
+                      result.timeline.timescale)
 
     def test_unsupported_codec_is_explicit(self):
         entry = fixture._track_entry(3, 1, "V_MPEG2", b"\x00" * 8, None,
@@ -384,23 +385,26 @@ class TestAuditIndexCorruption(FixtureTestCase):
     def test_chunk_offset_corruption_detected(self):
         from matroska_mp4.mp4_audit import AuditError, audit_mp4
         output, result = self._tamper(b"stco", 1)
+        mkv = matroska.parse_matroska(self.fixtures["reordered"])
         with self.assertRaises(AuditError):
-            audit_mp4(output, matroska.parse_matroska(self.fixtures["reordered"]),
-                      result.timeline)
+            audit_mp4(output, mkv.path, mkv.samples, result.timeline.tracks,
+                      result.timeline.timescale)
 
     def test_sample_size_corruption_detected(self):
         from matroska_mp4.mp4_audit import AuditError, audit_mp4
         output, result = self._tamper(b"stsz", 1)
+        mkv = matroska.parse_matroska(self.fixtures["reordered"])
         with self.assertRaises(AuditError):
-            audit_mp4(output, matroska.parse_matroska(self.fixtures["reordered"]),
-                      result.timeline)
+            audit_mp4(output, mkv.path, mkv.samples, result.timeline.tracks,
+                      result.timeline.timescale)
 
     def test_audit_ok_for_untampered(self):
         from matroska_mp4.mp4_audit import audit_mp4
         output = self.path("clean.mp4")
         mkv = matroska.parse_matroska(self.fixtures["monotonic"])
         result = run_preserve(mkv, 60000, output)
-        again = audit_mp4(output, mkv, result.timeline)
+        again = audit_mp4(output, mkv.path, mkv.samples, result.timeline.tracks,
+                          result.timeline.timescale)
         self.assertEqual(again["sample_count"], 10)
 
 

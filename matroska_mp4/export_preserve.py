@@ -95,6 +95,7 @@ def run_preserve(mkv: ParsedMatroska, timescale: int, output_path: str) -> Expor
                           track_map=_track_map(timeline))
     with temporary_output(output_path) as temp_path:
         write_mp4(mkv.path, mkv, timeline, temp_path)
-        result.audit = audit_mp4(temp_path, mkv, timeline)
+        result.audit = audit_mp4(temp_path, mkv.path, mkv.samples, timeline.tracks,
+                                 timeline.timescale)
         os.replace(temp_path, output_path)
     return result
