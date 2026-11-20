@@ -15,6 +15,7 @@ add_library(h264core STATIC
   src/annexb_reader.cpp
   src/syntax_parser.cpp
   src/au_assembler.cpp
+  src/gop_index.cpp
 )
 target_include_directories(h264core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
