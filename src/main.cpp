@@ -22,29 +22,115 @@ enum ExitCode {
 struct Options {
     std::string input;
     std::string output;
+    std::string font;
+    int width = 0;
+    int safe_inset = -1;
+    int max_lines = 0;
+    std::string missing_glyph;
+    bool collect_errors = false;
 };
 
 void usage(std::ostream& out) {
     out << "usage:\n"
-        << "  subtitle-metrics measure --input FILE --output FILE\n";
+        << "  subtitle-metrics measure --input FILE --output FILE [options]\n"
+        << "options:\n"
+        << "  --font FILE            font used for metrics\n"
+        << "  --width N              canvas width in pixels\n"
+        << "  --safe-inset N         horizontal inset on both sides\n"
+        << "  --max-lines N          maximum lines per subtitle\n"
+        << "  --missing-glyph MODE   error (default) or fallback\n"
+        << "  --collect-errors       keep going after item errors\n"
+        << "  --strict               stop at the first item error (default)\n";
+}
+
+bool parse_int(const std::string& text, int min_value, int max_value, int& out) {
+    if (text.empty()) {
+        return false;
+    }
+    long long value = 0;
+    for (const char c : text) {
+        if (c < '0' || c > '9') {
+            return false;
+        }
+        value = value * 10 + (c - '0');
+        if (value > max_value) {
+            return false;
+        }
+    }
+    if (value < min_value) {
+        return false;
+    }
+    out = static_cast<int>(value);
+    return true;
+}
+
+bool take_value(int argc, char** argv, int& index, const std::string& flag,
+                std::string& target, std::string& error) {
+    if (index + 1 >= argc) {
+        error = flag + " needs a value";
+        return false;
+    }
+    target = argv[++index];
+    return true;
 }
 
 bool parse_options(int argc, char** argv, Options& options, std::string& error) {
-    if (argc < 2 || std::string(argv[1]) != "measure") {
-        error = "expected the measure command";
+    if (argc < 2) {
+        error = "missing command";
         return false;
     }
-    for (int index = 2; index < argc; ++index) {
+    int index = 1;
+    const std::string command = argv[index++];
+    if (command == "--help" || command == "-h") {
+        usage(std::cout);
+        std::exit(kOk);
+    }
+    if (command != "measure") {
+        error = "unknown command: " + command;
+        return false;
+    }
+    for (; index < argc; ++index) {
         const std::string flag = argv[index];
-        if (flag != "--input" && flag != "--output") {
+        std::string raw;
+        if (flag == "--collect-errors") {
+            options.collect_errors = true;
+        } else if (flag == "--strict") {
+            options.collect_errors = false;
+        } else if (flag == "--input") {
+            if (!take_value(argc, argv, index, flag, options.input, error)) return false;
+        } else if (flag == "--output") {
+            if (!take_value(argc, argv, index, flag, options.output, error)) return false;
+        } else if (flag == "--font") {
+            if (!take_value(argc, argv, index, flag, options.font, error)) return false;
+        } else if (flag == "--missing-glyph") {
+            if (!take_value(argc, argv, index, flag, raw, error)) return false;
+            if (raw != "error" && raw != "fallback") {
+                error = "--missing-glyph must be error or fallback";
+                return false;
+            }
+            options.missing_glyph = raw;
+        } else if (flag == "--width") {
+            if (!take_value(argc, argv, index, flag, raw, error)) return false;
+            if (!parse_int(raw, 1, 1000000, options.width)) {
+                error = "--width must be a positive integer";
+                return false;
+            }
+        } else if (flag == "--safe-inset") {
+            if (!take_value(argc, argv, index, flag, raw, error)) return false;
+            if (!parse_int(raw, 0, 1000000, options.safe_inset)) {
+                error = "--safe-inset must be a non-negative integer";
+                return false;
+            }
+        } else if (flag == "--max-lines") {
+            if (!take_value(argc, argv, index, flag, raw, error)) return false;
+            if (!parse_int(raw, 1, 100, options.max_lines)) {
+                error = "--max-lines must be an integer between 1 and 100";
+                return false;
+            }
+        } else {
             error = "unknown option: " + flag;
             return false;
         }
-        if (index + 1 >= argc) {
-            error = flag + " needs a value";
-            return false;
-        }
-        (flag == "--input" ? options.input : options.output) = argv[++index];
     }
     if (options.input.empty()) {
         error = "--input is required";
@@ -74,13 +160,12 @@ int run_measure(const Options& options) {
         return kInvalidInput;
     }
 
-    FontMetrics metrics;
-    std::string font_error;
-    if (!metrics.load(manifest.font.path, manifest.font.size,
-                      manifest.font.letter_spacing, manifest.font.line_spacing,
-                      font_error)) {
-        std::cerr << "$.font.path: " << font_error << "\n";
-        return kInvalidInput;
+    if (!options.font.empty()) manifest.font.path = options.font;
+    if (options.width > 0) manifest.canvas.width = options.width;
+    if (options.safe_inset >= 0) manifest.canvas.safe_inset = options.safe_inset;
+    if (options.max_lines > 0) manifest.max_lines = options.max_lines;
+    if (!options.missing_glyph.empty()) {
+        manifest.font.missing_glyph = options.missing_glyph;
     }
     const int usable_width =
         manifest.canvas.width - 2 * manifest.canvas.safe_inset;
@@ -89,12 +174,38 @@ int run_measure(const Options& options) {
         return kInvalidInput;
     }
 
+    FontMetrics metrics;
+    std::string font_error;
+    if (!metrics.load(manifest.font.path, manifest.font.size,
+                      manifest.font.letter_spacing, manifest.font.line_spacing,
+                      font_error)) {
+        std::cerr << "$.font.path: " << font_error << "\n";
+        return kInvalidInput;
+    }
+
+    const bool strict = !options.collect_errors;
     std::vector<SubtitleSummary> summaries;
     int total_lines = 0;
     int total_overflows = 0;
     int total_missing = 0;
     int total_errors = 0;
-    for (std::size_t index = 0; index < manifest.items.size(); ++index) {
+    bool aborted = false;
+
+    auto fail_item = [&](std::size_t index, const std::string& id,
+                         const std::string& message, SubtitleSummary& summary) {
+        ++total_errors;
+        summary.errors.push_back(message);
+        std::cerr << "subtitle[" << index << "] (" << id << "): " << message
+                  << "\n";
+        if (strict) {
+            aborted = true;
+            return false;
+        }
+        return true;
+    };
+
+    for (std::size_t index = 0; index < manifest.items.size() && !aborted;
+         ++index) {
         const SubtitleItem& item = manifest.items[index];
         SubtitleSummary summary;
         summary.id = item.id;
@@ -103,43 +214,50 @@ int run_measure(const Options& options) {
         TimingResult timing;
         strip_timing_markers(item.text, timing);
         for (const TimingIssue& issue : timing.issues) {
-            ++total_errors;
-            summary.errors.push_back("byte " + std::to_string(issue.byte_offset) +
-                                     ": " + issue.message);
-            std::cerr << "subtitle[" << index << "] (" << item.id
-                      << "): byte " << issue.byte_offset << ": "
-                      << issue.message << "\n";
+            if (!fail_item(index, item.id,
+                           "byte " + std::to_string(issue.byte_offset) + ": " +
+                               issue.message,
+                           summary)) {
+                break;
+            }
         }
+        if (aborted) break;
+
         std::vector<Cluster> clusters;
         std::vector<char32_t> codepoints;
         DecodeError decode_error;
         if (!shape_text(timing.stripped, clusters, decode_error, codepoints)) {
-            ++total_errors;
-            const std::string message =
-                "byte " + std::to_string(decode_error.byte_offset) +
-                ": invalid UTF-8 (" + decode_error.message + ")";
-            summary.errors.push_back(message);
-            std::cerr << "subtitle[" << index << "] (" << item.id << "): "
-                      << message << "\n";
+            fail_item(index, item.id,
+                      "byte " + std::to_string(decode_error.byte_offset) +
+                          ": invalid UTF-8 (" + decode_error.message + ")",
+                      summary);
+            if (aborted) break;
         }
+
         ShapedText shaped = shape_clusters(clusters, codepoints, metrics);
+        for (const std::string& error : shaped.errors) {
+            if (!fail_item(index, item.id, error, summary)) break;
+        }
+        if (aborted) break;
         if (!shaped.missing_codepoints.empty() &&
             manifest.font.missing_glyph == "error") {
             std::string list;
             for (const std::string& label : shaped.missing_codepoints) {
                 list += (list.empty() ? "" : ", ") + label;
             }
-            ++total_errors;
-            summary.errors.push_back("font has no glyph for " + list);
+            if (!fail_item(index, item.id, "font has no glyph for " + list,
+                           summary)) {
+                break;
+            }
         }
+
         TextLayout layout = layout_clusters(clusters, shaped, metrics,
                                             usable_width, manifest.max_lines);
-        for (const std::string& message : layout.errors) {
-            ++total_errors;
-            summary.errors.push_back(message);
-            std::cerr << "subtitle[" << index << "] (" << item.id << "): "
-                      << message << "\n";
+        for (const std::string& error : layout.errors) {
+            if (!fail_item(index, item.id, error, summary)) break;
         }
+        if (aborted) break;
+
         summary.line_count = static_cast<int>(layout.lines.size());
         summary.overflow_count = layout.overflow_count;
         summary.missing_glyphs = shaped.missing_glyphs;
@@ -162,6 +280,15 @@ int run_measure(const Options& options) {
         if (summary.overflow_count > 0) ++total_overflows;
         if (summary.missing_glyphs > 0) ++total_missing;
         summaries.push_back(std::move(summary));
+    }
+
+    if (aborted) {
+        // Strict mode keeps the previous summary on disk untouched.
+        std::cout << "subtitles=" << summaries.size() << " lines=" << total_lines
+                  << " overflows=" << total_overflows
+                  << " missing_glyphs=" << total_missing
+                  << " errors=" << total_errors << "\n";
+        return kItemErrors;
     }
 
     std::string write_error;
