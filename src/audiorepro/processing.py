@@ -83,6 +83,49 @@ def stage_resample(
     return analyzer.finish(frames=frames_out), frames_out
 
 
+def strip_timestamp_chunks(path: Path) -> None:
+    """Remove libsndfile's non-deterministic PEAK chunk from a WAV.
+
+    FLOAT WAVs gain a PEAK chunk whose position field is a wall-clock
+    timestamp, so two identical runs would otherwise differ byte for
+    byte.  The audio payload is untouched; callers open the file only
+    after this rewrite.
+    """
+    try:
+        with open(path, "rb") as handle:
+            data = handle.read()
+    except OSError:
+        return
+    if len(data) < 12 or data[:4] != b"RIFF" or data[8:12] != b"WAVE":
+        return
+    payload = bytearray()
+    offset = 12
+    while offset + 8 <= len(data):
+        chunk_id = data[offset : offset + 4]
+        size = int.from_bytes(data[offset + 4 : offset + 8], "little")
+        end = offset + 8 + size + (size & 1)
+        if chunk_id not in (b"PEAK", b"fact"):
+            payload += data[offset:min(end, len(data))]
+        offset = end
+    rebuilt = bytearray(b"RIFF")
+    rebuilt += (len(payload) + 4).to_bytes(4, "little")
+    rebuilt += b"WAVE"
+    rebuilt += payload
+    if len(rebuilt) == len(data):
+        return
+    fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".strip", dir=path.parent)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(rebuilt)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_name, path)
+        temp_name = None
+    finally:
+        if temp_name is not None:
+            remove_file(Path(temp_name))
+
+
 def stage_finalize(
     staging: Path,
     target: Path,
@@ -121,6 +164,7 @@ def stage_finalize(
                     )
                 analyzer.feed(scaled)
                 out.write(scaled.astype(np.float32))
+        strip_timestamp_chunks(temp_path)
         os.replace(temp_path, target)
         temp_path = None
     finally:

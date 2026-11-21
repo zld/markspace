@@ -125,6 +125,19 @@ class PipelineContractTests(TempDirTest):
             else:
                 self.assertAlmostEqual(entry["lufs_after"], recomputed.lufs, places=5)
 
+    def test_outputs_are_byte_identical_across_runs(self) -> None:
+        generate(self.tmp / "input", seed=17)
+        first = run_pipeline(_params(self.tmp, jobs=1), self.tmp / "r1.json")
+        second = run_pipeline(
+            _params(self.tmp, jobs=4, output_dir=self.tmp / "output2"), self.tmp / "r2.json"
+        )
+        hashes_a = {f["relative_path"]: f["output_sha256"] for f in first.report["files"]}
+        hashes_b = {f["relative_path"]: f["output_sha256"] for f in second.report["files"]}
+        self.assertEqual(hashes_a, hashes_b)
+        raw = (self.tmp / "output" / "mono" / "mono_tone.wav").read_bytes()
+        self.assertNotIn(b"PEAK", raw)
+        self.assertNotIn(b"fact", raw)
+
     def test_failed_file_does_not_block_others(self) -> None:
         generate(self.tmp / "input", seed=17)
         (self.tmp / "input" / "mono" / "mono_tone.wav").write_bytes(b"RIFF....WAVEbroken")
