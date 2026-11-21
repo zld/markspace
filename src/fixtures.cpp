@@ -2,6 +2,7 @@
 
 #include <filesystem>
 
+#include "lut/color_space.hpp"
 #include "lut/cube_reader.hpp"
 
 namespace lut {
@@ -40,10 +41,11 @@ Lut3D makeFixtureLut(int size) {
     return lut;
 }
 
-Image makeFixtureImage(std::uint32_t maxval) {
+Image makeFixtureImage(ColorSpaceId spaceId, std::uint32_t maxval) {
     if (maxval == 0 || maxval > 65535) {
         throw UsageError("fixture maxval out of PPM range");
     }
+    const ColorSpace space(spaceId);
     Image image;
     image.width = kFixtureImageSide;
     image.height = kFixtureImageSide;
@@ -53,18 +55,20 @@ Image makeFixtureImage(std::uint32_t maxval) {
     std::uint32_t i = 0;
     for (std::uint32_t y = 0; y < image.height; ++y) {
         for (std::uint32_t x = 0; x < image.width; ++x) {
-            // Deterministic modular ramps give broad channel coverage while
-            // every value remains a legal encoded sample in [0,1].
+            // Deterministic modular ramps are treated as linear-light values,
+            // then encoded through the requested transfer so the stored
+            // samples are valid encoded values for that colour space.
             const double r = static_cast<double>((x * 7 + y * 3) % 64) / 63.0;
             const double g = static_cast<double>((x * 5 + y * 11) % 64) / 63.0;
             const double b = static_cast<double>((x * 13 + y * 2) % 64) / 63.0;
-            image.pixels[i++] = RGB{r, g, b};
+            image.pixels[i++] =
+                space.encode(RGB{r, g, b});
         }
     }
     return image;
 }
 
-void writeFixtures(const std::string& outDir, ColorSpaceId /*patchSpace*/) {
+void writeFixtures(const std::string& outDir, ColorSpaceId patchSpace) {
     std::error_code ec;
     std::filesystem::create_directories(outDir, ec);
     if (ec) {
@@ -72,7 +76,7 @@ void writeFixtures(const std::string& outDir, ColorSpaceId /*patchSpace*/) {
                       ec.message());
     }
     const Lut3D lut = makeFixtureLut();
-    const Image patches = makeFixtureImage();
+    const Image patches = makeFixtureImage(patchSpace);
     writeCube((std::filesystem::path(outDir) / "source.cube").string(), lut);
     writePpm((std::filesystem::path(outDir) / "patches.ppm").string(),
              patches);

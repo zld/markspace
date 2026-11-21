@@ -16,8 +16,11 @@ inline constexpr std::uint32_t kFixtureImageSide = 64;
 // cover all pixels without out-of-domain noise.
 Lut3D makeFixtureLut(int size = kFixtureLutSize);
 
-// A deterministic 64x64 RGB patch field (4096 pixels) with varied hues.
-Image makeFixtureImage(std::uint32_t maxval = 255);
+// A deterministic 64x64 RGB patch field (4096 pixels) with varied hues. The
+// underlying linear ramps are encoded through `space`'s transfer function,
+// so different spaces produce distinct, space-legal encoded samples.
+Image makeFixtureImage(ColorSpaceId space = ColorSpaceId::Srgb,
+                       std::uint32_t maxval = 255);
 
 // Writes source.cube and patches.ppm under `outDir` (created if needed).
 void writeFixtures(const std::string& outDir, ColorSpaceId patchSpace);

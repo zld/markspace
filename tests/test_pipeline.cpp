@@ -312,6 +312,29 @@ void testCounterUnits() {
     CHECK(one.stats.outOfDomain == 1);
 }
 
+// --patch-space must shape the encoded samples: sRGB and Display-P3 share a
+// transfer, while Rec.709 uses a different one; all values stay in range.
+void testFixturePatchSpace() {
+    Image srgb = makeFixtureImage(ColorSpaceId::Srgb);
+    Image p3 = makeFixtureImage(ColorSpaceId::DisplayP3);
+    Image rec709 = makeFixtureImage(ColorSpaceId::Rec709);
+    double srgbP3 = 0.0;
+    double srgbRec = 0.0;
+    for (std::size_t i = 0; i < srgb.pixels.size(); ++i) {
+        srgbP3 = std::max(srgbP3,
+                          std::fabs(srgb.pixels[i].r - p3.pixels[i].r));
+        srgbRec = std::max(srgbRec,
+                           std::fabs(srgb.pixels[i].r - rec709.pixels[i].r));
+        for (const Image* im : {&srgb, &p3, &rec709}) {
+            for (const RGB& px : im->pixels) {
+                CHECK(px.r >= 0.0 && px.r <= 1.0);
+            }
+        }
+    }
+    CHECK(srgbP3 < 1e-12);  // Same transfer function.
+    CHECK(srgbRec > 1e-3);  // Different transfer function.
+}
+
 }  // namespace
 
 int main() {
@@ -325,5 +348,6 @@ int main() {
     RUN_TEST(testBakeDeviation);
     RUN_TEST(testDomainPoliciesInRender);
     RUN_TEST(testCounterUnits);
+    RUN_TEST(testFixturePatchSpace);
     return luttest::finish();
 }
