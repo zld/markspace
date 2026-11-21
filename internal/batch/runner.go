@@ -49,9 +49,10 @@ type Summary struct {
 	NotPassed int
 }
 
-// AllPassed reports whether every file measured and met every threshold.
+// AllPassed reports whether there was at least one file and every file
+// measured and met every threshold.
 func (s Summary) AllPassed() bool {
-	return s.Failed == 0 && s.NotPassed == 0 && s.Passed == len(s.Results)
+	return len(s.Results) > 0 && s.Failed == 0 && s.NotPassed == 0 && s.Passed == len(s.Results)
 }
 
 // Options selects layouts and thresholds for a run.
