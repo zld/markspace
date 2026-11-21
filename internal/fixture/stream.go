@@ -103,6 +103,19 @@ func (b *packetBuilder) write(pid uint16, pusi bool, payload []byte) {
 	b.out = append(b.out, pkt...)
 }
 
+// writeNull emits an MPEG-TS null/filler packet (PID 0x1FFF). A null packet
+// carries neither payload nor adaptation flags, so the remaining bytes are
+// simply filler that the scanner ignores.
+func (b *packetBuilder) writeNull(filler []byte) {
+	pkt := make([]byte, ts.PacketSize)
+	pkt[0] = ts.SyncByte
+	pkt[1] = 0x1f
+	pkt[2] = 0xff
+	pkt[3] = 0x00 // no adaptation, no payload indicator
+	copy(pkt[4:], filler)
+	b.out = append(b.out, pkt...)
+}
+
 func encodePTS(pts uint64) []byte {
 	return []byte{
 		0x21 | byte((pts>>30)&0x07)<<1,
@@ -172,11 +185,14 @@ func BuildTier(tier Tier, numSegs int, segmentDur time.Duration, opts Options) B
 		apl := make([]byte, ts.PacketSize-4)
 		copy(apl, audioPES)
 		b.write(AudioPID, true, apl)
-		// Remaining packets: deterministic video continuation payload.
+		// Remaining packets are null/filler packets (PID 0x1FFF), matching
+		// how a real muxer pads to the target bitrate. They keep the
+		// segment size and bitrate accurate without polluting the video
+		// PES stream, so each keyframe PES stays a self-contained unit.
 		for p := 2; p < packetsPerSeg; p++ {
 			cpl := make([]byte, ts.PacketSize-4)
 			lcgFill(cpl, uint32(tier.BandwidthBPS)^uint32(seg)<<16^uint32(p))
-			b.write(VideoPID, false, cpl)
+			b.writeNull(cpl)
 		}
 		ranges = append(ranges, SegmentRange{
 			Sequence: seg, Start: start, End: len(b.out),
