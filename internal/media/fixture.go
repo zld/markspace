@@ -194,10 +194,11 @@ func writeAll(w io.Writer, buf []byte) error {
 	return nil
 }
 
-// EnsureFileExists is a small guard used by callers before probing.
+// EnsureFileExists is a small guard used by callers before probing. A missing
+// file is an input error (exit 2), not an encoding failure.
 func EnsureFileExists(path string) error {
 	if _, err := os.Stat(path); err != nil {
-		return fmt.Errorf("input path %s: %w", path, err)
+		return &InputError{Err: fmt.Errorf("input path %s: %w", path, err)}
 	}
 	return nil
 }

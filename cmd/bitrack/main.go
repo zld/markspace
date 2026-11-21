@@ -169,6 +169,11 @@ func prepareAndRun(ctx context.Context, o *cli.Options) (*model.Checkpoint, int)
 			fmt.Fprintf(os.Stderr, "bitrack: %v\n", err)
 			return cp, cli.ExitUsage
 		}
+		var inputErr *media.InputError
+		if errors.As(err, &inputErr) {
+			fmt.Fprintf(os.Stderr, "bitrack: %v\n", err)
+			return cp, cli.ExitUsage
+		}
 		return cp, failEncode(err)
 	}
 	return cp, cli.ExitOK

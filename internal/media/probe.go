@@ -56,10 +56,26 @@ func parseRate(r string) (float64, error) {
 	return num / den, nil
 }
 
-// Probe runs ffprobe on path and validates that the source is a local,
-// progressive, constant-frame-rate H.264-compatible video. Every rejection
-// returns an error whose message names the exact reason.
+// InputError marks a rejected or unreadable source video. Callers map it to
+// the usage/input exit code (2), distinct from encoding failures (4).
+type InputError struct{ Err error }
+
+func (e *InputError) Error() string { return e.Err.Error() }
+func (e *InputError) Unwrap() error { return e.Err }
+
+// Probe runs ffprobe and validates the source. Every failure is returned as an
+// InputError so the CLI can distinguish bad inputs (exit 2) from encode faults
+// (exit 4).
 func Probe(ctx context.Context, path string) (model.ProbeInfo, error) {
+	info, err := probeRaw(ctx, path)
+	if err != nil {
+		return info, &InputError{Err: err}
+	}
+	return info, nil
+}
+
+// probeRaw contains the actual ffprobe invocation and validation rules.
+func probeRaw(ctx context.Context, path string) (model.ProbeInfo, error) {
 	var info model.ProbeInfo
 	cmd := exec.CommandContext(ctx, "ffprobe",
 		"-v", "error",
