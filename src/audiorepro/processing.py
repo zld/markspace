@@ -111,7 +111,7 @@ def strip_timestamp_chunks(path: Path) -> None:
     rebuilt += (len(payload) + 4).to_bytes(4, "little")
     rebuilt += b"WAVE"
     rebuilt += payload
-    if len(rebuilt) == len(data):
+    if rebuilt == data:
         return
     fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".strip", dir=path.parent)
     try:
