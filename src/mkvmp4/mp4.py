@@ -1,7 +1,8 @@
-"""Shared integer helpers for MP4 box construction.
+"""ISOBMFF writer and independent re-reader.
 
-Kept separate from :mod:`mkvmp4.mp4` so the temporal structure (boxes, sample
-tables) can be reasoned about independently of Matroska adaptation.
+Box encoding, sample entries, sample tables and index verification are all
+implemented here; no muxer library is used.  The verifier deliberately shares
+no code with the writer so a writer bug cannot validate itself.
 """
 
 from __future__ import annotations
@@ -307,10 +308,8 @@ def build_stco_chunk(offsets: list[int], *, force_co64: bool = False) -> bytes:
     return full_box("stco", 0, 0, payload)
 
 
-def build_stss(sync_samples: list[int]) -> bytes | None:
-    """Sync sample numbers (1-based).  ``None`` when every sample is a sync."""
-    if not sync_samples:
-        return None
+def build_stss(sync_samples: list[int]) -> bytes:
+    """Sync sample numbers (1-based); an empty list means no sync samples."""
     payload = u32(len(sync_samples)) + b"".join(u32(n) for n in sync_samples)
     return full_box("stss", 0, 0, payload)
 
@@ -454,10 +453,12 @@ def build_media_header(handler: str) -> bytes:
 
 def build_stbl(spec: TrackSpec) -> bytes:
     sync = [i + 1 for i, key in enumerate(spec.keyframes) if key]
-    stss = build_stss(sync) if len(sync) != len(spec.keyframes) else None
+    # An absent stss means "every sample is a sync sample".  Emit stss whenever
+    # that is not true, including a zero-entry stss for a track with no
+    # keyframes at all, so the index never over-promises.
     children = [build_stts(spec.durations), build_stsz(spec.sizes)]
-    if stss is not None:
-        children.append(stss)
+    if len(sync) != len(spec.keyframes):
+        children.append(build_stss(sync))
     children.append(build_stsc([len(spec.sizes)]))
     children.append(build_stco_chunk([spec.chunk_offset]))
     return box("stbl", *children)
@@ -477,16 +478,18 @@ def build_elst(empty_edit: int, media_duration: int) -> bytes:
 
 
 def build_trak(spec: TrackSpec, movie_timescale: int) -> bytes:
-    """Encode one track, including the edit list that positions sample 0."""
+    """Encode one track, including the edit list that positions sample 0.
+
+    Only called with ``movie_timescale == spec.timescale``; the pipeline uses
+    a single timescale so no tick value ever needs lossy rescaling here.
+    """
+    if movie_timescale != spec.timescale:
+        raise OutputError(
+            f"track {spec.track_id}: movie timescale {movie_timescale} differs "
+            f"from track timescale {spec.timescale}"
+        )
     media_duration = spec.media_duration
-    empty_edit = 0
-    if spec.first_tick > 0:
-        empty_edit = spec.first_tick * movie_timescale // spec.timescale
-        if empty_edit * spec.timescale != spec.first_tick * movie_timescale:
-            raise OutputError(
-                f"track {spec.track_id}: first tick {spec.first_tick} cannot be "
-                f"represented exactly at movie timescale {movie_timescale}"
-            )
+    empty_edit = spec.first_tick
     tkhd = build_tkhd(
         spec.track_id,
         empty_edit + media_duration,
@@ -507,12 +510,7 @@ def build_trak(spec: TrackSpec, movie_timescale: int) -> bytes:
 def build_moov(*, movie_timescale: int, tracks: list[TrackSpec]) -> bytes:
     """Assemble ``moov``; chunk offsets in ``tracks`` must already be final."""
     duration = max(
-        (
-            t.first_tick * movie_timescale // t.timescale
-            + t.media_duration * movie_timescale // t.timescale
-            for t in tracks
-        ),
-        default=0,
+        (t.first_tick + t.media_duration for t in tracks), default=0
     )
     next_track_id = max((t.track_id for t in tracks), default=0) + 1
     mvhd = build_mvhd(movie_timescale, duration, next_track_id)

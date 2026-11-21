@@ -57,17 +57,13 @@ TRACK_TYPE_NAMES = {
 
 DEFAULT_TIMESTAMP_SCALE = 1_000_000  # Matroska default: 1 ms in ns
 
-# Codec IDs this tool maps without transcoding.  Anything else is rejected.
+# The exact codec subset this build can mux without transcoding.  The MP4
+# sample entry for each ID lives in :mod:`mkvmp4.mp4`; both tables must agree,
+# which ``_check_codec_tables`` enforces at import time.
 SUPPORTED_CODECS: dict[str, tuple[str, str]] = {
     "V_MPEG4/ISO/AVC": ("video", "avc1"),
-    "V_MPEGH/ISO/HEVC": ("video", "hvc1"),
-    "V_VP9": ("video", "vp09"),
-    "V_VP8": ("video", "vp08"),
     "A_AAC": ("audio", "mp4a"),
-    "A_OPUS": ("audio", "Opus"),
-    "A_VORBIS": ("audio", "vorbis"),
-    "S_TEXT/UTF8": ("subtitle", "stpp"),
-    "S_TEXT/WEBVTT": ("subtitle", "wvtt"),
+    "S_TEXT/UTF8": ("subtitle", "tx3g"),
 }
 
 
@@ -377,6 +373,22 @@ def _parse_tracks(data: bytes, tracks_node: RawNode, base: int) -> list[Track]:
             path=tracks_node.path,
         )
     return tracks
+
+
+def _check_codec_tables() -> None:
+    from .mp4 import SUPPORTED_MP4_CODECS
+
+    if set(SUPPORTED_CODECS) != set(SUPPORTED_MP4_CODECS):
+        raise RuntimeError(
+            "codec tables disagree: "
+            f"{sorted(set(SUPPORTED_CODECS) ^ set(SUPPORTED_MP4_CODECS))}"
+        )
+    for codec_id, (_, entry) in SUPPORTED_CODECS.items():
+        if SUPPORTED_MP4_CODECS[codec_id] != entry:
+            raise RuntimeError(f"codec {codec_id}: sample entry mismatch")
+
+
+_check_codec_tables()
 
 
 def parse_block_header(

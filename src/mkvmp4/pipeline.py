@@ -125,20 +125,13 @@ class Mapping:
                 stage="mapping",
             )
         for track in tracks:
-            if not track.codec_supported:
+            if not track.codec_supported or track.codec_id not in mp4.SUPPORTED_MP4_CODECS:
                 raise UnsupportedError(
                     f"track {track.number}: codec {track.codec_id} is not in the "
-                    f"supported subset {sorted(mp4.SUPPORTED_MP4_CODECS)}",
+                    f"supported subset {sorted(mp4.SUPPORTED_MP4_CODECS)}; "
+                    "this build does not transcode",
                     offset=track.entry_offset,
                     path=track.path,
-                    track=track.number,
-                    stage="mapping",
-                )
-            if track.codec_id not in mp4.SUPPORTED_MP4_CODECS:
-                raise UnsupportedError(
-                    f"track {track.number}: codec {track.codec_id} has no MP4 "
-                    "sample entry in this build",
-                    offset=track.entry_offset,
                     track=track.number,
                     stage="mapping",
                 )
@@ -217,7 +210,6 @@ class RemuxOptions:
     rounding: str = "round"
     clip_negative: bool = True
     max_gap_ms: int | None = None
-    movie_timescale: int | None = None
     derive_mapping: bool = False
 
     @property
@@ -408,14 +400,8 @@ def remux_file(path: str | Path, options: RemuxOptions) -> RemuxResult:
             clip_negative=options.clip_negative,
             max_gap_ms=options.max_gap_ms,
         )
-        movie_timescale = options.movie_timescale or options.timescale
-        if movie_timescale % options.timescale and options.timescale % movie_timescale:
-            raise UsageError(
-                f"movie timescale {movie_timescale} and track timescale "
-                f"{options.timescale} are not multiples of one another"
-            )
         specs = _build_track_specs(mk, mapping, timeline)
-        result = _write_and_verify(mk, specs, timeline, movie_timescale, output)
+        result = _write_and_verify(mk, specs, timeline, options.timescale, output)
         result.output = str(output)
         result.mapping_derived = bool(options.derive_mapping and not options.mapping.by_source)
         return result
@@ -503,8 +489,12 @@ def _write_and_verify(
                 )
             sink.flush()
             os.fsync(sink.fileno())
-        verify_temp = temp_path.read_bytes()
-        inspection = mp4.inspect_mp4(verify_temp)
+        with temp_path.open("rb") as check_handle:
+            mapped = mmap.mmap(check_handle.fileno(), 0, access=mmap.ACCESS_READ)
+            try:
+                inspection = mp4.inspect_mp4(mapped)
+            finally:
+                mapped.close()
         if not inspection.ok:
             raise VerifyError(
                 "written MP4 failed index verification: " + "; ".join(inspection.failures),
@@ -583,8 +573,13 @@ def verify_file(path: str | Path) -> dict[str, Any]:
         raise VerifyError(f"cannot stat {p}: {exc.strerror}", stage="verify") from exc
     if size == 0:
         raise VerifyError(f"{p} is empty", stage="verify")
-    data = p.read_bytes()
-    inspection = mp4.inspect_mp4(data)
+    with p.open("rb") as handle:
+        data = mmap.mmap(handle.fileno(), 0, access=mmap.ACCESS_READ)
+        try:
+            inspection = mp4.inspect_mp4(data)
+            digest = hashlib.sha256(data).hexdigest()
+        finally:
+            data.close()
     if not inspection.ok:
         raise VerifyError(
             "index verification failed: " + "; ".join(inspection.failures),
@@ -594,7 +589,7 @@ def verify_file(path: str | Path) -> dict[str, Any]:
     return {
         "path": str(p),
         "file_size": size,
-        "sha256": hashlib.sha256(data).hexdigest(),
+        "sha256": digest,
         "box_count": payload["box_count"],
         "boxes": payload["boxes"],
         "sample_count": payload["sample_count"],
