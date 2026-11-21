@@ -22,6 +22,7 @@ set(SUBTITLE_METRICS_SOURCES
   src/json.cpp
   src/manifest.cpp
   src/unicode.cpp
+  src/font_metrics.cpp
 )
 
 add_executable(subtitle-metrics ${SUBTITLE_METRICS_SOURCES})

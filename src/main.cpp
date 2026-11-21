@@ -1,5 +1,6 @@
 #include "manifest.h"
 #include "unicode.h"
+#include "font_metrics.h"
 
 #include <iostream>
 
@@ -34,6 +35,17 @@ int main(int argc, char** argv) {
         }
         clusters += shaped.size();
     }
-    std::cout << "subtitles=" << manifest.items.size() << " clusters=" << clusters << "\n";
+    FontMetrics metrics;
+    std::string font_error;
+    if (!metrics.load(manifest.font.path, manifest.font.size,
+                      manifest.font.letter_spacing, manifest.font.line_spacing,
+                      font_error)) {
+        std::cerr << font_error << "\n";
+        return 2;
+    }
+    std::cout << "subtitles=" << manifest.items.size() << " clusters=" << clusters
+              << " ascent=" << metrics.ascent()
+              << " descent=" << metrics.descent()
+              << " line_height=" << metrics.line_height() << "\n";
     return 0;
 }
