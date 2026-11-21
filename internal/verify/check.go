@@ -109,6 +109,10 @@ func (c *Checker) CheckTier(spec TierSpec) TierResult {
 	wantSeq := int64(pl.MediaSequence)
 	var wantFileSeq int64 = -1
 	var maxDev int64
+	// Contiguous out-of-order positions form one logical reordering (e.g. an
+	// adjacent swap) and are reported as a single failure rather than one per
+	// displaced entry.
+	inOrderRun := true
 	for i, seg := range pl.Segments {
 		if int64(seg.Sequence) != wantSeq {
 			res.Failures = append(res.Failures, Failure{
@@ -119,17 +123,25 @@ func (c *Checker) CheckTier(spec TierSpec) TierResult {
 			})
 		}
 		wantSeq++
-		// Detect gaps and reordering encoded in the segment file names,
-		// which a re-numbered playlist sequence alone would hide.
+		// Detect reordering encoded in the segment file names, which a
+		// re-numbered playlist sequence alone would hide.
 		if fileSeq, ok := segmentFileSequence(seg.URI); ok {
 			if wantFileSeq >= 0 && fileSeq != wantFileSeq {
-				res.Failures = append(res.Failures, Failure{
-					Code: FailOutOfOrder, Tier: spec.Name, Segment: seg.URI,
-					Sequence: fileSeq,
-					Message: fmt.Sprintf("segment file sequence %d follows %d",
-						fileSeq, wantFileSeq-1),
-				})
+				if inOrderRun {
+					res.Failures = append(res.Failures, Failure{
+						Code: FailOutOfOrder, Tier: spec.Name, Segment: seg.URI,
+						Sequence: fileSeq,
+						Message: fmt.Sprintf(
+							"segment file sequence %d out of order (expected %d)",
+							fileSeq, wantFileSeq),
+					})
+				}
+				inOrderRun = false
+			} else {
+				inOrderRun = true
 			}
+			// Re-sync the expectation to the observed index so the rest of a
+			// contiguous displaced block is folded into the single event.
 			wantFileSeq = fileSeq + 1
 		}
 		if prev, ok := seen[seg.URI]; ok {

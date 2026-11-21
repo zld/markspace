@@ -53,17 +53,20 @@ func NewEngine(cfg EngineConfig) *Engine {
 }
 
 // Feed pushes one parsed packet. Table PIDs update PAT/PMT state; the video
-// PID drives keyframe-aware cutting; every packet is also copied verbatim
-// into the currently open segment.
+// PID drives keyframe-aware cutting; every packet (including PSI tables and
+// null filler packets) is copied verbatim into the open segment so the
+// output .ts stays decodable and preserves the source's effective bitrate.
 func (e *Engine) Feed(p *ts.Packet, dir string) (*CutEvent, error) {
-	if p.PID == ts.PIDNull {
-		return nil, nil
-	}
+	// Tables update parsing state first, but are still written below.
 	switch {
 	case p.PID == ts.PIDPAT:
-		return nil, e.feedTable(p, true)
+		if err := e.feedTable(p, true); err != nil {
+			return nil, err
+		}
 	case e.pmtPIDs[p.PID]:
-		return nil, e.feedTable(p, false)
+		if err := e.feedTable(p, false); err != nil {
+			return nil, err
+		}
 	}
 	if err := e.ensureSegment(dir); err != nil {
 		return nil, err
@@ -71,6 +74,7 @@ func (e *Engine) Feed(p *ts.Packet, dir string) (*CutEvent, error) {
 	if err := e.writePacket(p); err != nil {
 		return nil, err
 	}
+	// Only the video elementary stream drives cut decisions.
 	if e.videoPID == 0 || p.PID != e.videoPID {
 		return nil, nil
 	}
@@ -109,8 +113,16 @@ func (e *Engine) feedTable(p *ts.Packet, isPAT bool) error {
 	return nil
 }
 
-// feedVideo reassembles PES units, expands PTS and cuts at keyframes.
+// feedVideo handles video packets. A PUSI packet starts a fresh, complete
+// PES unit (the fixture and common muxers emit one frame per PUSI), so it
+// is processed immediately; continuation fragments are buffered through the
+// reassembler for streams that split a PES across multiple packets.
 func (e *Engine) feedVideo(p *ts.Packet) (*CutEvent, error) {
+	if p.PUSI {
+		return e.handlePES(p.Payload())
+	}
+	// Continuation fragment: accumulate and process only when a later PUSI
+	// completes the unit. This path is rare for frame-sized PES packets.
 	completed, _ := e.pes.Push(*p)
 	if completed == nil {
 		return nil, nil
@@ -146,7 +158,16 @@ func (e *Engine) handlePES(unit []byte) (*CutEvent, error) {
 		e.window.OpenSegment(exp)
 	}
 	if e.window.ShouldCut(keyframe, exp) {
-		return e.closeSegment(filepath.Dir(e.outPath), exp, keyframe)
+		ev, err := e.closeSegment(filepath.Dir(e.outPath), exp, keyframe)
+		if err != nil {
+			return nil, err
+		}
+		// The boundary keyframe starts the next segment immediately so the
+		// following frames accumulate against a fresh PTS origin.
+		if keyframe {
+			e.window.OpenSegment(exp)
+		}
+		return ev, nil
 	}
 	return nil, nil
 }
