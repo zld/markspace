@@ -20,6 +20,9 @@ import (
 // loopbackHost is the only address the mock ever binds or accepts.
 const loopbackHost = "127.0.0.1"
 
+// drainDelay lets in-flight UDP datagrams arrive before sessions close.
+const drainDelay = 100 * time.Millisecond
+
 // FaultMode selects server-side failure behaviour used by cleanup tests.
 type FaultMode int
 
@@ -80,11 +83,7 @@ func (m *MockServer) Start() error {
 	if err != nil {
 		return err
 	}
-	rtpPort, err := freeLoopbackPort()
-	if err != nil {
-		return err
-	}
-	rtcpPort, err := freeLoopbackPort()
+	rtpPort, rtcpPort, err := freeLoopbackPortPair()
 	if err != nil {
 		return err
 	}
@@ -160,11 +159,16 @@ func (m *MockServer) Stream(ctx context.Context, manifest *demo.Manifest) error 
 	ticker := time.NewTicker(m.pace)
 	defer ticker.Stop()
 
-	for _, p := range manifest.Packets {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
+	for i, p := range manifest.Packets {
+		// The first packet goes out immediately after PLAY so the client's
+		// initial UDP read timeout cannot expire before data starts; later
+		// packets keep the configured pacing.
+		if i > 0 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-ticker.C:
+			}
 		}
 		m.mu.Lock()
 		st := m.stream
@@ -177,7 +181,30 @@ func (m *MockServer) Stream(ctx context.Context, manifest *demo.Manifest) error 
 		// pruned by gortsplib and must not stop the run.
 		_ = st.WritePacketRTP(medi, p.Packet)
 	}
+
+	// Let the last datagrams drain, then close the PLAY sessions so the
+	// client's Wait() returns instead of blocking until its read timeout.
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(drainDelay):
+	}
+	m.closePlayers()
 	return nil
+}
+
+// closePlayers terminates every active PLAY session. It drives the client
+// through an orderly connection close rather than a timeout.
+func (m *MockServer) closePlayers() {
+	m.playMu.Lock()
+	sessions := make([]*gortsplib.ServerSession, 0, len(m.playSessions))
+	for s := range m.playSessions {
+		sessions = append(sessions, s)
+	}
+	m.playMu.Unlock()
+	for _, s := range sessions {
+		s.Close()
+	}
 }
 
 // waitForPlayer blocks until at least one session entered PLAY or ctx ends.
@@ -264,6 +291,41 @@ func freeLoopbackPort() (int, error) {
 	}
 	defer l.Close()
 	return l.Addr().(*net.TCPAddr).Port, nil
+}
+
+// freeLoopbackPortPair returns a free, consecutive (even, odd) UDP port
+// pair on loopback, as required by the RTP/RTCP transport rule. Both
+// sockets are closed before returning, so a retry loop handles the rare
+// race where another process grabs the ports first.
+func freeLoopbackPortPair() (rtpPort, rtcpPort int, err error) {
+	for attempt := 0; attempt < 16; attempt++ {
+		c, err := net.ListenPacket("udp", net.JoinHostPort(loopbackHost, "0"))
+		if err != nil {
+			return 0, 0, err
+		}
+		port := c.LocalAddr().(*net.UDPAddr).Port
+		c.Close()
+
+		if port%2 != 0 {
+			port--
+		}
+		rtpAddr := net.JoinHostPort(loopbackHost, fmt.Sprintf("%d", port))
+		rtcpAddr := net.JoinHostPort(loopbackHost, fmt.Sprintf("%d", port+1))
+
+		rc, errR := net.ListenPacket("udp", rtpAddr)
+		if errR != nil {
+			continue
+		}
+		cc, errC := net.ListenPacket("udp", rtcpAddr)
+		if errC != nil {
+			rc.Close()
+			continue
+		}
+		rc.Close()
+		cc.Close()
+		return port, port + 1, nil
+	}
+	return 0, 0, fmt.Errorf("could not allocate a free RTP/RTCP port pair")
 }
 
 func listenLoopback(network, address string) (net.Listener, error) {
