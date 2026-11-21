@@ -1,12 +1,12 @@
-# Build artifacts
+# Build artifacts (root-level binary only; never ignore cmd/mediakey sources)
 /tmp/
-mediakey
+/mediakey
 *.test
 *.out
 
 # Reports, keys and token files must never be delivered
-*.report.json
 media-key-report.json
+*.report.json
 *.key
 *.pem
 *token*
