@@ -86,6 +86,7 @@ def assign_times(
     result: list[Sample] = []
     position = 0
     dts = 0
+    max_ticks = (1 << 64) - 1
     for run_count, delta in stts:
         for _ in range(run_count):
             if position >= len(samples):
@@ -105,6 +106,12 @@ def assign_times(
                     chunk_index=chunk_index,
                 )
             )
+            if dts > max_ticks - delta:
+                raise ConsistencyError(
+                    "decode time accumulation overflows 64 bits",
+                    box_type=b"stts",
+                    offset=stts_start,
+                )
             dts += delta
             position += 1
     if position != len(samples):

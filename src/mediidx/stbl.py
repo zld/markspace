@@ -34,6 +34,27 @@ from .tables import (
 UNSUPPORTED_TRACK_BOXES = frozenset(
     {b"saiz", b"saio", b"senc", b"tenc", b"pssh", b"mvex", b"trex", b"moof", b"traf"}
 )
+FRAGMENTED_TOP_LEVEL = frozenset({b"moof", b"mfra", b"mvex", b"styp"})
+
+# Boxes this parser understands inside stbl.  An unknown box whose type starts
+# with an upper-case letter is treated as an unrecognised *required* box (the
+# convention used by this tool for vendor-critical extensions) and stops the
+# rebuild; unknown lower-case boxes are ignored as optional extensions.
+KNOWN_STBL_BOXES = frozenset(
+    {
+        b"stts",
+        b"stsc",
+        b"stsz",
+        b"stco",
+        b"co64",
+        b"stss",
+        b"stsd",
+        b"sgpd",
+        b"sbgp",
+        b"padb",
+        b"stdp",
+    }
+)
 
 
 def parse_offsets(view: memoryview, stbl: Box) -> tuple[bytes, list[int]]:
@@ -168,7 +189,30 @@ def find_mdat(view: memoryview, roots: list[Box]) -> Box:
     return mdats[0]
 
 
+def _reject_fragmented_top_level(roots: list[Box]) -> None:
+    for box in roots:
+        if box.type in FRAGMENTED_TOP_LEVEL:
+            raise StructureError(
+                f"fragmented or segmented container box {box.label} is not supported",
+                box_type=box.type,
+                offset=box.start,
+            )
+
+
+def _reject_unknown_required_stbl(stbl: Box) -> None:
+    for child in stbl.children:
+        if child.type in KNOWN_STBL_BOXES or child.type in UNSUPPORTED_TRACK_BOXES:
+            continue
+        if child.type[:1].isupper():
+            raise StructureError(
+                f"unknown required box {child.label} in stbl",
+                box_type=child.type,
+                offset=child.start,
+            )
+
+
 def parse_track(view: memoryview, roots: list[Box], mdat: Box) -> Track:
+    _reject_fragmented_top_level(roots)
     moovs = find_all(roots, b"moov")
     if not moovs:
         raise StructureError("no moov box found at the top level")
@@ -198,6 +242,7 @@ def parse_track(view: memoryview, roots: list[Box], mdat: Box) -> Track:
     minf = _single_child(mdia, b"minf")
     stbl = _single_child(minf, b"stbl")
     _reject_unsupported_stbl(stbl)
+    _reject_unknown_required_stbl(stbl)
 
     handler = _parse_hdlr(view, mdia)
     if handler != b"vide":

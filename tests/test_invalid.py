@@ -198,6 +198,18 @@ class DamagedInputTests(unittest.TestCase):
         self.assertEqual(result.boundaries, [[0, 4], [4, 6]])
         self.assertTrue(validate_bytes(output.read_bytes()).ok)
 
+    def test_unknown_required_box_rejected(self):
+        data = fixture.build_default(extra_stbl_boxes=(fixture.box(b"Zreq", b"\x00" * 4),))
+        self._assert_rejected(data, "unknown required box Zreq")
+
+    def test_unknown_optional_box_is_ignored(self):
+        data = fixture.build_default(extra_stbl_boxes=(fixture.box(b"zopt", b"\x00" * 4),))
+        self.assertTrue(validate_bytes(data).ok)
+
+    def test_fragmented_container_rejected(self):
+        data = fixture.build_default() + fixture.box(b"moof", b"\x00" * 8)
+        self._assert_rejected(data, "fragmented")
+
     def test_zero_timescale_rejected(self):
         data = bytearray(self.baseline)
         start, _end = _nested_box(data, [b"moov", b"trak", b"mdia"])
