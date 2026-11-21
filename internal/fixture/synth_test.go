@@ -109,10 +109,38 @@ func TestEncodeDataFirstAndOddJunk(t *testing.T) {
 	if !(junk < dataAt && dataAt < fmtAt) {
 		t.Errorf("chunk order junk=%d data=%d fmt=%d", junk, dataAt, fmtAt)
 	}
-	// Odd-sized JUNK payloads must be followed by a pad byte, so the next
-	// chunk starts at an even offset relative to the chunk start.
-	if (dataAt-8)%2 != 0 {
-		t.Logf("data chunk at odd offset %d (allowed: payload length decides)", dataAt)
+	// The JUNK payload must be odd-length and followed by exactly one pad
+	// byte; otherwise the chunk walker lands one byte early and every later
+	// chunk header is garbage. Check by walking the chunk list the same way
+	// a real parser does.
+	pos := 12
+	seenJunk := false
+	for pos+8 <= len(data) {
+		chunkAt := pos
+		id := string(data[pos : pos+4])
+		n := int(binary.LittleEndian.Uint32(data[pos+4 : pos+8]))
+		if id == "JUNK" {
+			seenJunk = true
+			if n%2 != 1 {
+				t.Fatalf("JUNK payload is %d bytes, want odd", n)
+			}
+		}
+		if pos+8+n > len(data) {
+			t.Fatalf("chunk %q at %d claims %d bytes past EOF", id, chunkAt, n)
+		}
+		pos += 8 + n
+		if n%2 == 1 {
+			if pos >= len(data) || data[pos] != 0 {
+				t.Fatalf("chunk %q at %d is odd-sized but has no zero pad byte", id, chunkAt)
+			}
+			pos++
+		}
+	}
+	if !seenJunk {
+		t.Fatal("JUNK chunk not found while walking")
+	}
+	if pos != len(data) {
+		t.Fatalf("chunk walk ended at %d, file is %d bytes", pos, len(data))
 	}
 }
 

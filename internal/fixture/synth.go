@@ -201,13 +201,18 @@ func Encode(opts Options, samples []float64) []byte {
 		}
 	}
 	appendUnknown := func() {
-		payload := []byte("generated-by-loudcheck")
+		// The payload is deliberately odd-length (23 bytes) so the pad byte
+		// is actually exercised. Emitting a pad after an even payload would
+		// shift every later chunk and corrupt the file.
+		payload := []byte("odd-payload-for-loudcheck")
 		body = append(body, "JUNK"...)
 		var sz [4]byte
 		binary.LittleEndian.PutUint32(sz[:], uint32(len(payload)))
 		body = append(body, sz[:]...)
 		body = append(body, payload...)
-		body = append(body, 0)
+		if len(payload)%2 == 1 {
+			body = append(body, 0)
+		}
 	}
 	if opts.OddJunk {
 		appendUnknown()
