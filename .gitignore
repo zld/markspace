@@ -1,0 +1,4 @@
+build/
+*.jsonl
+*.tmp.*
+.DS_Store
