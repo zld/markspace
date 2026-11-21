@@ -7,17 +7,30 @@
 namespace lut {
 namespace {
 
-// The full colour pipeline for one encoded input coordinate.
+// The full colour-managed pipeline for one target-encoded input coordinate.
+// The source LUT grades source-encoded values, so coordinates are mapped into
+// the source space before sampling and the graded result is mapped back. This
+// is the explicit sequence required by the spec: input decode, space
+// conversion, LUT sampling, output encode (naively copying node values across
+// spaces would change the grade and is deliberately avoided).
 RGB gradeOnce(const RGB& encodedInput, const ColorSpace& sourceSpace,
               const ColorSpace& targetSpace, const Interpolator& sourceLut) {
-    // 1. Input decode: encoded signal -> linear source RGB.
-    RGB linearIn = sourceSpace.decode(encodedInput);
-    // 2. Space conversion: linear source RGB -> linear target RGB.
-    RGB linearTarget = sourceSpace.convertLinear(linearIn, targetSpace);
-    // 3. LUT sampling on the encoded table. The table stores encoded values,
-    //    so coordinates and returned values stay in encoded target space.
-    RGB encodedLutInput = targetSpace.encode(linearTarget);
-    RGB encodedOutput = sourceLut.sample(encodedLutInput);
+    // 1. Input decode: target-encoded signal -> linear target RGB.
+    RGB linearTargetIn = targetSpace.decode(encodedInput);
+    // 2a. Space conversion: linear target RGB -> linear source RGB, the
+    //     coordinate system the source LUT actually lives in.
+    RGB linearSourceIn = targetSpace.convertLinear(linearTargetIn, sourceSpace);
+    // 2b. Encode to the source transfer to obtain a valid source-LUT address.
+    RGB encodedLutInput = sourceSpace.encode(linearSourceIn);
+    // 3. LUT sampling through the shared trilinear kernel. The table stores
+    //    source-encoded graded values.
+    RGB encodedLutOutput = sourceLut.sample(encodedLutInput);
+    // 2c. Decode the graded source-encoded result back to linear source RGB.
+    RGB linearSourceOut = sourceSpace.decode(encodedLutOutput);
+    // 2d. Convert linear source RGB -> linear target RGB.
+    RGB linearTargetOut = sourceSpace.convertLinear(linearSourceOut, targetSpace);
+    // 4. Output encode: linear target RGB -> target-encoded stored value.
+    RGB encodedOutput = targetSpace.encode(linearTargetOut);
     if (!std::isfinite(encodedOutput.r) || !std::isfinite(encodedOutput.g) ||
         !std::isfinite(encodedOutput.b)) {
         throw LutDataError("non-finite value produced by bake pipeline");

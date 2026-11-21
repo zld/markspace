@@ -225,6 +225,36 @@ void testBakeDeviation() {
     CHECK(cross.probeCount == 4913u);
     CHECK(cross.deviation.worst() <= 0.02);
 
+    // Ground-truth cross-space check, reconstructed independently of
+    // gradeOnce. For a non-identity LUT a naive node-copy / half-conversion
+    // diverges here (~1e-2), while the full decode/convert/sample/convert/
+    // encode round trip matches to machine precision. This is the regression
+    // guard against transplanting RGB values between colour spaces.
+    {
+        const int n = 33;
+        BakeResult truth = bakeLut(source, srgb, p3, n, n,
+                                   DomainPolicy::Clamp);
+        Interpolator bakedSampler(truth.baked, DomainPolicy::Clamp);
+        Interpolator sourceSampler2(source, DomainPolicy::Clamp);
+        double worstGroundTruth = 0.0;
+        for (int k = 0; k < n; ++k) {
+            const double t = static_cast<double>(k) / (n - 1);
+            const RGB targetEncoded{t, t, t};
+            const RGB sourceEncoded = srgb.encode(
+                p3.convertLinear(p3.decode(targetEncoded), srgb));
+            const RGB gradedSource = sourceSampler2.sample(sourceEncoded);
+            const RGB truthLinear =
+                srgb.convertLinear(srgb.decode(gradedSource), p3);
+            const RGB gotLinear =
+                p3.decode(bakedSampler.sample(targetEncoded));
+            worstGroundTruth = std::max(
+                {worstGroundTruth, std::fabs(truthLinear.r - gotLinear.r),
+                 std::fabs(truthLinear.g - gotLinear.g),
+                 std::fabs(truthLinear.b - gotLinear.b)});
+        }
+        CHECK(worstGroundTruth < 1e-9);
+    }
+
     BakeResult same = bakeLut(source, srgb, srgb, source.size, 17,
                               DomainPolicy::Clamp);
     CHECK(same.deviation.worst() < 1e-9);
