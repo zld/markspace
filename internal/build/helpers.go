@@ -49,7 +49,8 @@ func WriteMasterPlaylist(outDir string, tiers []fixture.Tier) error {
 		master.Variants = append(master.Variants, m3u8.Variant{
 			URI:       t.Name + "/index.m3u8",
 			Bandwidth: t.BandwidthBPS,
-			Codecs:    `"avc1.640028,mp4a.40.2"`,
+			// Raw codec list; the m3u8 writer applies the required quoting.
+			Codecs: "avc1.640028,mp4a.40.2",
 		})
 	}
 	return atomicWrite(filepath.Join(outDir, "master.m3u8"), func(f *os.File) error {
