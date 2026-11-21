@@ -221,6 +221,12 @@ func (p *Parser) checkCC(pkt Packet) error {
 	return nil
 }
 
+// RawPacket returns a copy of the 188 bytes behind the most recent packet
+// returned by Read, so callers (the slicer) can re-emit packets verbatim.
+func (p *Parser) RawPacket(pkt Packet) []byte {
+	return append([]byte(nil), p.scan[:]...)
+}
+
 // ResetCC clears continuity-counter state, used at a new source segment.
 func (p *Parser) ResetCC() {
 	p.cc = map[uint16]uint8{}
