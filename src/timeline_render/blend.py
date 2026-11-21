@@ -65,7 +65,7 @@ def unpremultiply(canvas_p: np.ndarray, canvas_a: np.ndarray) -> np.ndarray:
     """
     h, w = canvas_a.shape
     rgb = np.zeros((h, w, 3), dtype=np.uint16)
-    np.divide(
+    np.floor_divide(
         canvas_p * 255,
         canvas_a[..., None],
         out=rgb,
