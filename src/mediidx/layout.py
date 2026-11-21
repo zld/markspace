@@ -74,6 +74,8 @@ def plan_layout(track: Track, target_ticks: Fraction | int) -> Layout:
                 if next_duration > target:
                     break
                 if accumulated + next_duration > target:
+                    # Stop at the closest whole-chunk boundary that does not
+                    # exceed the threshold.
                     break
                 accumulated += next_duration
                 end += 1
