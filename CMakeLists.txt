@@ -19,6 +19,7 @@ find_package(Freetype REQUIRED)
 # Filled in as modules land; keep this list buildable after every commit.
 set(SUBTITLE_METRICS_SOURCES
   src/main.cpp
+  src/json.cpp
 )
 
 add_executable(subtitle-metrics ${SUBTITLE_METRICS_SOURCES})
