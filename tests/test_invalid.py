@@ -175,6 +175,29 @@ class DamagedInputTests(unittest.TestCase):
         self.assertTrue(any("nested index" in error for error in report.errors))
         self.assertEqual(track.sample_count, 6)
 
+    def test_truncated_trailing_sidx_is_regenerated(self):
+        base = fixture.build_default(include_sidx=False)
+        damaged = base + struct.pack(">I4s", 500, b"sidx") + b"\x00" * 30
+        source = self._path("truncated.mp4", damaged)
+        output = self.dir / "truncated-out.mp4"
+        result = rebuild(source, str(output), target_duration=2, timescale=1)
+        self.assertEqual(result.boundaries, [[0, 2], [2, 4], [4, 6]])
+        self.assertEqual(result.reference_count, 3)
+        self.assertTrue(any("truncated" in note for note in result.warnings))
+        self.assertTrue(validate_bytes(output.read_bytes()).ok)
+
+    def test_multi_sample_chunks_stay_whole(self):
+        data = fixture.build_default(samples_per_chunk=(2, 2, 2))
+        report = validate_bytes(data)
+        self.assertTrue(report.ok)
+        source = self._path("multi.mp4", data)
+        output = self.dir / "multi-out.mp4"
+        result = rebuild(source, str(output), target_duration=3)
+        # Three chunks of two samples each at target 3: every chunk is a
+        # complete reference and no chunk is cut.
+        self.assertEqual(result.boundaries, [[0, 4], [4, 6]])
+        self.assertTrue(validate_bytes(output.read_bytes()).ok)
+
     def test_zero_timescale_rejected(self):
         data = bytearray(self.baseline)
         start, _end = _nested_box(data, [b"moov", b"trak", b"mdia"])

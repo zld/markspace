@@ -154,7 +154,8 @@ def rebuild(
         else read_file_bytes(source, max_bytes=max_file_bytes)
     )
     view = memoryview(data)
-    roots = BoxReader(view).parse_top_level(tolerate_broken_sidx=True)
+    reader = BoxReader(view)
+    roots = reader.parse_top_level(tolerate_broken_sidx=True)
     mdat = find_mdat(view, roots)
     track = parse_track(view, roots, mdat)
     existing = _existing_sidx(roots, view)
@@ -224,7 +225,9 @@ def rebuild(
     if len(index_bytes) != len(probe):
         raise AssertionError("sidx size changed between probe and final encode")
 
-    assembled = assemble(data, roots, index_bytes)
+    assembled = assemble(
+        data, roots, index_bytes, drop_trailing=reader.broken_sidx
+    )
     if delta != 0:
         assembled = patch_chunk_offsets(assembled, track, delta)
 
@@ -281,7 +284,11 @@ def rebuild(
         index_offset_check=validation.index_offset_check,
         duration_check=validation.duration_check,
         coverage_check=validation.coverage_check,
-        warnings=list(layout.notes),
+        warnings=(
+            (["truncated trailing sidx was dropped and regenerated"]
+             if reader.broken_sidx else [])
+            + list(layout.notes)
+        ),
         validation=validation,
     )
 

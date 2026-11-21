@@ -133,8 +133,10 @@ def _stbl(
     offsets: tuple[int, ...],
     use_co64: bool,
     extra_boxes: tuple[bytes, ...] = (),
+    samples_per_chunk: tuple[int, ...] | None = None,
 ) -> bytes:
-    samples_per_chunk = tuple(1 for _ in sizes)
+    if samples_per_chunk is None:
+        samples_per_chunk = tuple(1 for _ in sizes)
     return box(
         b"stbl",
         _stts(durations)
@@ -152,6 +154,7 @@ def _moov(
     offsets: tuple[int, ...],
     use_co64: bool,
     extra_boxes: tuple[bytes, ...] = (),
+    samples_per_chunk: tuple[int, ...] | None = None,
 ) -> bytes:
     duration = sum(durations)
     trak = box(
@@ -165,7 +168,14 @@ def _moov(
                 b"minf",
                 _vmhd()
                 + _dinf()
-                + _stbl(durations, sizes, offsets, use_co64, extra_boxes),
+                + _stbl(
+                    durations,
+                    sizes,
+                    offsets,
+                    use_co64,
+                    extra_boxes,
+                    samples_per_chunk,
+                ),
             ),
         ),
     )
@@ -222,18 +232,38 @@ def build_default(
     earliest_presentation_time: int = 0,
     index_override: bytes | None = None,
     extra_stbl_boxes: tuple[bytes, ...] = (),
+    samples_per_chunk: tuple[int, ...] | None = None,
 ) -> bytes:
     if len(durations) != len(sizes):
         raise ValueError("durations and sizes must have the same length")
     if timescale <= 0:
         raise ValueError("timescale must be positive")
 
+    if samples_per_chunk is None:
+        samples_per_chunk = tuple(1 for _ in sizes)
+    if sum(samples_per_chunk) != len(sizes):
+        raise ValueError("samples_per_chunk must cover every sample")
+
+    # Split samples into chunks according to the plan.
+    chunk_spans: list[tuple[int, int]] = []
+    cursor_sample = 0
+    for count in samples_per_chunk:
+        if count <= 0:
+            raise ValueError("each chunk needs at least one sample")
+        chunk_spans.append((cursor_sample, cursor_sample + count))
+        cursor_sample += count
     sample_chunks = list(zip(durations, sizes))
+    chunk_sizes = [
+        sum(sizes[first:last]) for first, last in chunk_spans
+    ]
+    chunk_durations = [
+        sum(durations[first:last]) for first, last in chunk_spans
+    ]
 
     # Lay the file out: ftyp, optional sidx, moov, mdat.  moov depends on chunk
     # offsets, offsets depend on the moov size, and moov size does not depend on
     # the offsets, so two passes converge exactly.
-    placeholder_offsets = tuple(0 for _ in sizes)
+    placeholder_offsets = tuple(0 for _ in chunk_sizes)
     moov_len = len(
         _moov(
             timescale,
@@ -242,6 +272,7 @@ def build_default(
             placeholder_offsets,
             use_co64,
             extra_stbl_boxes,
+            samples_per_chunk,
         )
     )
 
@@ -249,10 +280,10 @@ def build_default(
     # so encode once with a zero offset to learn its length.
     groups: list[tuple[int, int, int]] = []
     start = 0
-    while start < len(sample_chunks):
-        group_end = min(start + 2, len(sample_chunks))
-        group_duration = sum(d for d, _s in sample_chunks[start:group_end])
-        group_size = sum(s for _d, s in sample_chunks[start:group_end])
+    while start < len(chunk_sizes):
+        group_end = min(start + 2, len(chunk_sizes))
+        group_duration = sum(chunk_durations[start:group_end])
+        group_size = sum(chunk_sizes[start:group_end])
         groups.append((group_size, group_duration, start))
         start = group_end
 
@@ -284,7 +315,7 @@ def build_default(
     data_start = len(ftyp()) + len(index_bytes) + moov_len + 8
     offsets: list[int] = []
     cursor = data_start
-    for _duration, size in sample_chunks:
+    for size in chunk_sizes:
         offsets.append(cursor)
         cursor += size
     moov = _moov(
@@ -294,6 +325,7 @@ def build_default(
         tuple(offsets),
         use_co64,
         extra_stbl_boxes,
+        samples_per_chunk,
     )
     if len(moov) != moov_len:
         raise AssertionError("moov size changed between layout passes; fixture is unstable")

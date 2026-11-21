@@ -28,8 +28,19 @@ def sidx_insert_at(roots: list[Box]) -> int:
     return ftyp.end if ftyp is not None else 0
 
 
-def assemble(data: bytes, roots: list[Box], index_bytes: bytes) -> bytes:
-    """Remove all top-level sidx boxes and insert the new one after ftyp."""
+def assemble(
+    data: bytes,
+    roots: list[Box],
+    index_bytes: bytes,
+    *,
+    drop_trailing: bool = False,
+) -> bytes:
+    """Remove all top-level sidx boxes and insert the new one after ftyp.
+
+    ``drop_trailing`` is used when the reader had to stop at a truncated
+    trailing sidx: those unparsed bytes are the damaged index and must not be
+    copied into the rebuilt file.
+    """
 
     insert_at = sidx_insert_at(roots)
     out = bytearray()
@@ -43,7 +54,7 @@ def assemble(data: bytes, roots: list[Box], index_bytes: bytes) -> bytes:
         out = bytearray(index_bytes) + out
     # Any bytes between / after boxes (not expected for well-formed input) are
     # preserved so the rewrite is byte-faithful outside the index region.
-    if roots and roots[-1].end < len(data):
+    if not drop_trailing and roots and roots[-1].end < len(data):
         out += data[roots[-1].end :]
     return bytes(out)
 
