@@ -152,3 +152,269 @@ def _intra_block_offsets_ns(
         extras[i] = step * sample.intra_block_index
     return extras
 
+
+def rewrite_timeline(
+    samples: Iterable[SampleInput],
+    *,
+    timestamp_scale: int,
+    timescale: int,
+    offset_ms: int = 0,
+    mode: Mode = "strict",
+    rounding: Rounding = "round",
+    clip_negative: bool = True,
+    max_gap_ms: int | None = None,
+) -> TimelineReport:
+    """Convert all samples and enforce / repair per-track monotonicity."""
+    if timestamp_scale <= 0:
+        raise TimestampPolicyError("TimestampScale must be positive", stage="timestamps")
+    if timescale <= 0:
+        raise TimestampPolicyError("MP4 timescale must be positive", stage="timestamps")
+    if mode not in ("strict", "repair"):
+        raise TimestampPolicyError(f"unknown policy mode {mode!r}", stage="timestamps")
+    if rounding not in ("round", "floor", "ceil"):
+        raise TimestampPolicyError(f"unknown rounding mode {rounding!r}", stage="timestamps")
+
+    sample_list = list(samples)
+    base_ticks = _checked_tick_base(sample_list, timestamp_scale)
+    extras = _intra_block_offsets_ns(sample_list, timestamp_scale, mode=mode)
+
+    ns = base_ticks * np.int64(timestamp_scale)
+    if extras.size:
+        if int(extras.max()) > INT64_MAX - int(ns.max()):
+            raise TimestampPolicyError(
+                "intra-block lacing offset overflows int64 nanoseconds",
+                stage="timestamps",
+            )
+        ns = ns + extras
+
+    offset_ns = offset_ms * NS_PER_MS
+    if offset_ns >= 0:
+        if int(ns.max()) > INT64_MAX - offset_ns:
+            raise TimestampPolicyError(
+                "uniform offset would overflow int64 nanoseconds",
+                stage="timestamps",
+            )
+    else:
+        if int(ns.min()) < INT64_MIN - offset_ns:
+            raise TimestampPolicyError(
+                "uniform offset would underflow int64 nanoseconds",
+                stage="timestamps",
+            )
+    shifted = ns + np.int64(offset_ns)
+
+    clipped_mask = shifted < 0
+    clipped_count = int(clipped_mask.sum())
+    if clipped_count and not clip_negative:
+        first = int(np.flatnonzero(clipped_mask)[0])
+        sample = sample_list[first]
+        raise TimestampPolicyError(
+            f"track {sample.track}: sample {first} is negative after the "
+            f"{offset_ms} ms offset and negative clipping is disabled",
+            offset=sample.data_offset,
+            track=sample.track,
+            sample_index=first,
+            stage="timestamps",
+        )
+    shifted = np.where(clipped_mask, np.int64(0), shifted)
+
+    ticks, rounded = _to_timescale(shifted, timescale, timestamp_scale, rounding)
+
+    # Group sample indices by track, preserving container (decode) order.
+    by_track: dict[int, list[int]] = {}
+    for index, sample in enumerate(sample_list):
+        by_track.setdefault(sample.track, []).append(index)
+
+    timelines: dict[int, TrackTimeline] = {}
+    for track, indices in by_track.items():
+        order = np.asarray(indices, dtype=np.int64)
+        track_ticks = ticks[order]
+        track_rounded = rounded[order]
+        track_clipped = clipped_mask[order]
+        stats = {
+            "clipped": int(track_clipped.sum()),
+            "rounded": int(track_rounded.sum()),
+            "non_monotonic": 0,
+            "zero_duration": 0,
+            "gaps": 0,
+            "last_duration_fallback": 0,
+        }
+        track_ticks, stats_update = _enforce_monotonic(
+            track_ticks,
+            [sample_list[i] for i in indices],
+            mode=mode,
+            max_gap_ticks=(
+                None if max_gap_ms is None else max_gap_ms * timescale // 1000
+            ),
+            track=track,
+        )
+        stats.update(stats_update)
+        durations, fallback = _durations(
+            track_ticks,
+            [sample_list[i] for i in indices],
+            timestamp_scale=timestamp_scale,
+            timescale=timescale,
+            mode=mode,
+            track=track,
+        )
+        stats["last_duration_fallback"] += fallback
+        timelines[track] = TrackTimeline(
+            track=track,
+            ticks=track_ticks,
+            durations=durations,
+            keyframes=np.asarray(
+                [sample_list[i].keyframe for i in indices], dtype=bool
+            ),
+            data_offsets=np.asarray(
+                [sample_list[i].data_offset for i in indices], dtype=np.int64
+            ),
+            data_lengths=np.asarray(
+                [sample_list[i].data_length for i in indices], dtype=np.int64
+            ),
+            input_offsets=[sample_list[i].data_offset for i in indices],
+            stats=stats,
+        )
+
+    return TimelineReport(
+        tracks=timelines,
+        timescale=timescale,
+        offset_ns=offset_ns,
+        mode=mode,
+        rounding=rounding,
+    )
+
+
+def _to_timescale(
+    ns: np.ndarray, timescale: int, timestamp_scale: int, rounding: Rounding
+) -> tuple[np.ndarray, np.ndarray]:
+    """Exact ns -> ticks with explicit overflow detection and rounding count."""
+    if ns.size == 0:
+        return np.zeros(0, dtype=np.int64), np.zeros(0, dtype=bool)
+    worst = int(ns.max())
+    if worst > INT64_MAX // timescale:
+        raise TimestampPolicyError(
+            f"timestamp {worst} ns cannot be scaled to a {timescale} Hz timescale "
+            "without 64-bit overflow",
+            stage="timestamps",
+        )
+    scaled = ns * np.int64(timescale)
+    quotient, remainder = np.divmod(scaled, np.int64(timestamp_scale))
+    rounded = remainder != 0
+    if rounding == "round":
+        quotient = quotient + (remainder * 2 >= timestamp_scale).astype(np.int64)
+    elif rounding == "ceil":
+        quotient = quotient + (remainder != 0).astype(np.int64)
+    return quotient, rounded
+
+
+def _enforce_monotonic(
+    ticks: np.ndarray,
+    samples: list[SampleInput],
+    *,
+    mode: str,
+    max_gap_ticks: int | None,
+    track: int,
+) -> tuple[np.ndarray, dict[str, int]]:
+    """Strict: reject regressions/overlaps/gaps.  Repair: force +1 per sample."""
+    stats = {"non_monotonic": 0, "gaps": 0}
+    if ticks.size < 2:
+        return ticks, stats
+    deltas = np.diff(ticks)
+    bad = np.flatnonzero(deltas <= 0)
+    gap_ticks = np.zeros(0, dtype=np.int64)
+    if max_gap_ticks is not None:
+        gap_ticks = np.flatnonzero(deltas > max_gap_ticks)
+    if mode == "strict":
+        if bad.size:
+            index = int(bad[0]) + 1
+            sample = samples[index]
+            raise TimestampPolicyError(
+                f"track {track}: sample {index} is not after sample {index - 1} "
+                f"({int(ticks[index])} <= {int(ticks[index - 1])})",
+                offset=sample.data_offset,
+                track=track,
+                sample_index=index,
+                stage="timestamps",
+            )
+        if gap_ticks.size:
+            index = int(gap_ticks[0]) + 1
+            sample = samples[index]
+            raise TimestampPolicyError(
+                f"track {track}: gap of {int(deltas[int(gap_ticks[0])])} ticks before "
+                f"sample {index} exceeds the configured limit of {max_gap_ticks}",
+                offset=sample.data_offset,
+                track=track,
+                sample_index=index,
+                stage="timestamps",
+            )
+        return ticks, stats
+
+    # Repair: each sample must be at least one tick after its predecessor.
+    # max(ticks[i], ticks[i-1] + 1) accumulated == max.accumulate(ticks - i) + i
+    positions = np.arange(ticks.size, dtype=np.int64)
+    repaired = np.maximum.accumulate(ticks - positions) + positions
+    stats["non_monotonic"] = int(bad.size)
+    stats["gaps"] = int(gap_ticks.size)
+    return repaired, stats
+
+
+def _durations(
+    ticks: np.ndarray,
+    samples: list[SampleInput],
+    *,
+    timestamp_scale: int,
+    timescale: int,
+    mode: str,
+    track: int,
+) -> tuple[np.ndarray, int]:
+    """Per-sample duration in target ticks; never zero, never fabricated silently."""
+    count = ticks.size
+    if count == 0:
+        return np.zeros(0, dtype=np.int64), 0
+    durations = np.zeros(count, dtype=np.int64)
+    if count > 1:
+        durations[:-1] = np.diff(ticks)
+    zero = np.flatnonzero(durations[:-1] <= 0)
+    if zero.size:
+        index = int(zero[0]) + 1
+        sample = samples[index]
+        raise TimestampPolicyError(
+            f"track {track}: sample {index} has zero duration after rewriting",
+            offset=sample.data_offset,
+            track=track,
+            sample_index=index,
+            stage="timestamps",
+        )
+    last = samples[-1]
+    last_duration = 0
+    if last.default_duration_ns:
+        last_duration = _ns_to_ticks(last.default_duration_ns, timestamp_scale, timescale)
+    if last_duration <= 0 and count > 1:
+        last_duration = int(durations[-2])
+    if last_duration <= 0:
+        if mode == "strict":
+            raise TimestampPolicyError(
+                f"track {track}: cannot determine a positive duration for the last sample",
+                offset=last.data_offset,
+                track=track,
+                sample_index=count - 1,
+                stage="timestamps",
+            )
+        last_duration = 1
+        durations[-1] = 1
+        return durations, 1
+    durations[-1] = last_duration
+    return durations, 0
+
+
+def _ns_to_ticks(value_ns: int, timestamp_scale: int, timescale: int) -> int:
+    """Rounded, overflow-checked conversion used for default durations."""
+    if value_ns > INT64_MAX // timescale:
+        raise TimestampPolicyError(
+            f"duration {value_ns} ns overflows when scaled to {timescale} Hz",
+            stage="timestamps",
+        )
+    num = value_ns * timescale
+    quotient, remainder = divmod(num, timestamp_scale)
+    if remainder * 2 >= timestamp_scale:
+        quotient += 1
+    return quotient
