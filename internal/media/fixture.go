@@ -63,7 +63,7 @@ func GenerateFixture(ctx context.Context, workDir string, spec FixtureSpec) (Fix
 	if err != nil {
 		return FixtureManifest{}, err
 	}
-	var stderr sink
+	var stderr Sink
 	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
 		return FixtureManifest{}, fmt.Errorf("start ffmpeg for fixture: %w", err)
@@ -163,16 +163,16 @@ func validateFixtureSpec(s FixtureSpec) error {
 	return nil
 }
 
-// sink captures subprocess stderr without letting it flood the terminal.
-type sink struct{ b []byte }
+// Sink captures subprocess stderr without letting it flood the terminal.
+type Sink struct{ b []byte }
 
-func (s *sink) Write(p []byte) (int, error) {
+func (s *Sink) Write(p []byte) (int, error) {
 	if len(s.b) < 4096 {
 		s.b = append(s.b, p...)
 	}
 	return len(p), nil
 }
-func (s *sink) String() string {
+func (s *Sink) String() string {
 	if len(s.b) > 2048 {
 		return string(s.b[:2048]) + "...(truncated)"
 	}

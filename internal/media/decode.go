@@ -23,12 +23,12 @@ func DecodeFrames(ctx context.Context, path string, width, height, start, count 
 		"-frames:v", fmt.Sprintf("%d", count),
 		"-f", "rawvideo", "-pix_fmt", "yuv420p",
 		"pipe:1")
-	var stderr sink
+	var stderr Sink
 	cmd.Stderr = &stderr
 	raw, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("ffmpeg decode %s frames [%d,%d): %w: %s",
-			path, start, start+count, explainExit(err), stderr.String())
+			path, start, start+count, ExplainExit(err), stderr.String())
 	}
 	if len(raw) < frameSize*count {
 		return nil, fmt.Errorf("decode: expected %d bytes for %d frames, got %d (frame count mismatch)",
@@ -50,7 +50,7 @@ func ProbeFrameCount(ctx context.Context, path string) (int, error) {
 		"-of", "csv=p=0", path)
 	out, err := cmd.Output()
 	if err != nil {
-		return 0, fmt.Errorf("count frames in %s: %w", path, explainExit(err))
+		return 0, fmt.Errorf("count frames in %s: %w", path, ExplainExit(err))
 	}
 	var n int
 	if _, err := fmt.Sscanf(string(bytes.TrimSpace(out)), "%d", &n); err != nil {

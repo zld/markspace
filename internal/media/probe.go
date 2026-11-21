@@ -68,7 +68,7 @@ func Probe(ctx context.Context, path string) (model.ProbeInfo, error) {
 		path)
 	out, err := cmd.Output()
 	if err != nil {
-		return info, fmt.Errorf("ffprobe failed on %s: %w", path, explainExit(err))
+		return info, fmt.Errorf("ffprobe failed on %s: %w", path, ExplainExit(err))
 	}
 	var parsed ffprobeJSON
 	if err := json.Unmarshal(out, &parsed); err != nil {
@@ -149,9 +149,9 @@ func absRate(x float64) float64 {
 	return x
 }
 
-// explainExit turns an *exec.ExitError into a message that keeps stderr,
+// ExplainExit turns an *exec.ExitError into a message that keeps stderr,
 // so missing-binary and encoder failures remain locatable.
-func explainExit(err error) error {
+func ExplainExit(err error) error {
 	if ee, ok := err.(*exec.ExitError); ok {
 		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(ee.Stderr)))
 	}
