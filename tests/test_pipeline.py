@@ -108,6 +108,23 @@ class PipelineContractTests(TempDirTest):
         rms = [float(np.sqrt(np.mean(data[:, ch] ** 2))) for ch in range(6)]
         self.assertEqual(rms.index(min(rms)), 3)
 
+    def test_report_matches_the_written_product(self) -> None:
+        from audiorepro.loudness import analyze_array
+
+        generate(self.tmp / "input", seed=17)
+        run_pipeline(_params(self.tmp), self.tmp / "report.json")
+        report = json.loads((self.tmp / "report.json").read_text())
+        for entry in report["files"]:
+            product = self.tmp / "output" / entry["output_path"]
+            data, rate = sf.read(str(product), always_2d=True)
+            recomputed = analyze_array(data, rate)
+            self.assertAlmostEqual(entry["rms_after_dbfs"], recomputed.rms_dbfs, places=5)
+            self.assertEqual(entry["clip_samples_after"], recomputed.clip_samples)
+            if entry["lufs_after"] is None:
+                self.assertIsNone(recomputed.lufs)
+            else:
+                self.assertAlmostEqual(entry["lufs_after"], recomputed.lufs, places=5)
+
     def test_failed_file_does_not_block_others(self) -> None:
         generate(self.tmp / "input", seed=17)
         (self.tmp / "input" / "mono" / "mono_tone.wav").write_bytes(b"RIFF....WAVEbroken")

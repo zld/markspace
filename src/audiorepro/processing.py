@@ -112,7 +112,9 @@ def stage_finalize(
                 block = src.read(params.chunk_frames, dtype="float64", always_2d=True)
                 if block.shape[0] == 0:
                     break
-                scaled = block * gain
+                # Quantize exactly what will be written so the reported
+                # statistics describe the product byte for byte.
+                scaled = (block * gain).astype(np.float32).astype(np.float64)
                 if not np.isfinite(scaled).all():
                     raise TaskError(
                         item.relative_path, "normalize", "non-finite samples after gain"
