@@ -580,3 +580,33 @@ def _write_and_verify(
         int(t.ticks[-1] + t.durations[-1]) for t in timeline.tracks.values()
     )
     return result
+
+
+def verify_file(path: str | Path) -> dict[str, Any]:
+    """Re-read a finished MP4 and report box/sample/index evidence."""
+    p = Path(path)
+    try:
+        size = p.stat().st_size
+    except OSError as exc:
+        raise VerifyError(f"cannot stat {p}: {exc.strerror}", stage="verify") from exc
+    if size == 0:
+        raise VerifyError(f"{p} is empty", stage="verify")
+    data = p.read_bytes()
+    inspection = mp4.inspect_mp4(data)
+    if not inspection.ok:
+        raise VerifyError(
+            "index verification failed: " + "; ".join(inspection.failures),
+            stage="verify",
+        )
+    payload = inspection.to_dict()
+    return {
+        "path": str(p),
+        "file_size": size,
+        "sha256": hashlib.sha256(data).hexdigest(),
+        "box_count": payload["box_count"],
+        "boxes": payload["boxes"],
+        "sample_count": payload["sample_count"],
+        "index_ok": payload["index_ok"],
+        "tracks": payload["tracks"],
+        "failures": payload["failures"],
+    }
