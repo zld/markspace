@@ -158,6 +158,7 @@ AssDocument parse_ass(const std::string& text, const std::string& source_name) {
         "marginl", "marginr", "marginv", "effect", "text"};
 
     int event_count = 0;
+    bool limit_reported = false;
     for (int lineno = 1; lineno <= static_cast<int>(lines.size()); ++lineno) {
         std::string raw = lines[static_cast<std::size_t>(lineno) - 1];
         std::string line = trim_copy(raw);
@@ -249,9 +250,15 @@ AssDocument parse_ass(const std::string& text, const std::string& source_name) {
             ev.style_name = field_at(fields, index_of(names, "style"));
             ev.text = field_at(fields, index_of(names, "text"));
             if (doc.events.size() >= MAX_EVENTS) {
-                add_diag(doc, DiagLevel::Error, DiagKind::TooManyEvents,
-                         lineno, ev.index,
-                         "event limit of 10000 exceeded; remaining events dropped");
+                // Report the overflow once; every further Dialogue row is
+                // silently dropped rather than spamming diagnostics.
+                if (!limit_reported) {
+                    add_diag(doc, DiagLevel::Error, DiagKind::TooManyEvents,
+                             lineno, ev.index,
+                             "event limit of 10000 exceeded; remaining "
+                             "events dropped");
+                    limit_reported = true;
+                }
                 continue;
             }
             doc.events.push_back(std::move(ev));
