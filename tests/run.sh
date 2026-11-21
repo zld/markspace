@@ -138,6 +138,72 @@ expect_exit "collect mode item error" 3 "$BIN" measure --input "$TMP/demo.json" 
 expect_exit "strict mode item error" 3 "$BIN" measure --input "$TMP/demo.json" \
   --output "$TMP/x.jsonl" --font "$FONT" --width 640 --safe-inset 32 \
   --max-lines 2 --strict
+# Duplicate-id manifest.
+cat > "$TMP/dup.json" <<'EOF'
+{"font":{"path":"FONT","size":40},"canvas":{"width":640,"safe_inset":32},
+ "max_lines":2,"subtitles":[
+  {"id":"same","language":"en","text":"A"},
+  {"id":"same","language":"en","text":"B"}]}
+EOF
+sed -i '' "s|FONT|$FONT|" "$TMP/dup.json"
+expect_exit "duplicate id rejected" 2 "$BIN" measure --input "$TMP/dup.json" \
+  --output "$TMP/x.jsonl" --font "$FONT"
+
+# Atomic replacement: an existing summary survives an invalid run.
+echo '{"id":"previous"}' > "$TMP/keep.jsonl"
+"$BIN" measure --input "$TMP/dup.json" --output "$TMP/keep.jsonl" --font "$FONT" \
+  >/dev/null 2>&1
+if grep -q previous "$TMP/keep.jsonl"; then
+  PASS=$((PASS + 1))
+else
+  echo "FAIL: failed run must preserve the previous summary" >&2
+  FAIL=$((FAIL + 1))
+fi
+
+# Unwritable output -> exit 4.
+mkdir -p "$TMP/readonly"
+chmod 500 "$TMP/readonly"
+expect_exit "write failure" 4 "$BIN" measure --input "$TMP/explicit.json" \
+  --output "$TMP/readonly/out.jsonl" --font "$FONT" --width 640 --safe-inset 32 \
+  --max-lines 3
+chmod 700 "$TMP/readonly"
+
+# JSON \u escapes decode to UTF-8 and measure cleanly.
+printf '{"font":{"path":"%s","size":40},"canvas":{"width":640,"safe_inset":32},"max_lines":2,"subtitles":[{"id":"esc","language":"en","text":"caf\\u00e9"}]}' \
+  "$FONT" > "$TMP/ok.json"
+expect_exit "valid escape-manifest" 0 "$BIN" measure --input "$TMP/ok.json" \
+  --output "$TMP/ok.jsonl" --font "$FONT" --width 640 --safe-inset 32 --max-lines 2
+json_check "escaped accent measured as one line" "$TMP/ok.jsonl" \
+  "len(records) == 1 and records[0]['lines'] == 1 and records[0]['missing_glyphs'] == 0"
+
+# A raw invalid byte inside a JSON string is reported as an item error.
+printf '{"font":{"path":"%s","size":40},"canvas":{"width":640,"safe_inset":32},"max_lines":2,"subtitles":[{"id":"bad-utf8","language":"en","text":"caf\303("}]}' \
+  "$FONT" > "$TMP/badutf.json"
+expect_exit "invalid UTF-8 item error" 3 "$BIN" measure --input "$TMP/badutf.json" \
+  --output "$TMP/badutf.jsonl" --font "$FONT" --width 640 --safe-inset 32 --max-lines 2 \
+  --collect-errors
+
+# A single cluster wider than the safe area is an overflow, not a crash.
+printf '{"font":{"path":"%s","size":120},"canvas":{"width":120,"safe_inset":10},"max_lines":2,"subtitles":[{"id":"huge","language":"en","text":"W"}]}' \
+  "$FONT" > "$TMP/huge.json"
+expect_exit "over-wide cluster" 3 "$BIN" measure --input "$TMP/huge.json" \
+  --output "$TMP/huge.jsonl" --font "$FONT" --collect-errors
+json_check "over-wide cluster is recorded" "$TMP/huge.jsonl" \
+  "records[0]['overflow_count'] == 1 and 'cluster_too_wide' in records[0]['overflow_reasons']"
+
+cat > "$TMP/missing.json" <<'EOF'
+{"canvas":{"width":640,"safe_inset":32},"max_lines":2,"subtitles":[]}
+EOF
+expect_exit "missing font block" 2 "$BIN" measure --input "$TMP/missing.json" \
+  --output "$TMP/x.jsonl" --font "$FONT"
+
+# The standalone review script must agree with the run.
+if python3 "$(dirname "$0")/validate_summary.py" "$TMP/summary.jsonl" >/dev/null; then
+  PASS=$((PASS + 1))
+else
+  echo "FAIL: validate_summary.py rejected the demo summary" >&2
+  FAIL=$((FAIL + 1))
+fi
 
 echo "passed=$PASS failed=$FAIL"
 [[ "$FAIL" -eq 0 ]]
