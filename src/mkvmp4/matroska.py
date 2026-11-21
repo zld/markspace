@@ -51,6 +51,7 @@ ID_SIMPLE_BLOCK = 0xA3
 ID_BLOCK_GROUP = 0xA0
 ID_BLOCK = 0xA1
 ID_BLOCK_DURATION = 0x9B
+ID_REFERENCE_BLOCK = 0xFB
 
 TRACK_TYPE_VIDEO = 1
 TRACK_TYPE_AUDIO = 2
@@ -135,12 +136,9 @@ class Block:
     cluster_offset: int
     lace_index: int = 0
     lace_count: int = 1
+    keyframe: bool = False
     block_duration: int | None = None  # BlockDuration in TimestampScale ticks
     sample_index: int = -1  # filled in decode order by the pipeline
-
-    @property
-    def keyframe(self) -> bool:
-        return bool(self.flags & 0x80)
 
     @property
     def lacing(self) -> int:
@@ -536,6 +534,13 @@ def _parse_cluster(data: bytes, cluster_node: RawNode, base: int) -> Cluster:
                 data, block_node.data_offset, block_node.end_offset, base, block_node.path,
                 base + cluster_node.offset,
             )
+            # Inside a BlockGroup the block header's 0x80 bit is reserved; a
+            # frame is a keyframe exactly when no ReferenceBlock is present.
+            has_reference = any(
+                child.element_id == ID_REFERENCE_BLOCK for child in item.children
+            )
+            for frame in frames:
+                frame.keyframe = not has_reference
             if duration is not None and len(frames) == 1:
                 frames[0].block_duration = duration
             blocks.extend(frames)
@@ -583,6 +588,7 @@ def _parse_block_payload(
                 cluster_offset=cluster_offset,
                 lace_index=index,
                 lace_count=len(sizes),
+                keyframe=bool(flags & 0x80),
             )
         )
         offset += size
