@@ -30,5 +30,6 @@ add_library(lutcore STATIC
     src/image.cpp
     src/baker.cpp
     src/render.cpp
+    src/fixtures.cpp
 )
 target_link_libraries(lutcore PUBLIC lutbase)
