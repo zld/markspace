@@ -111,8 +111,12 @@ func rebalance(budgets []int64, weights []float64, minBits []int64, total int64,
 		}
 	} else if delta < 0 {
 		// Take from the highest-weight segments while per-segment floors hold.
-		guard := 0
-		for delta < 0 {
+		// Termination is driven by "no segment can give another bit"; the hard
+		// cap only guards against an accidental infinite loop.
+		for steps := 0; delta < 0; steps++ {
+			if steps > 1<<30 {
+				return &AllocationError{Reason: "rebalance did not converge"}
+			}
 			moved := false
 			for _, idx := range order {
 				if delta >= 0 {
@@ -127,9 +131,6 @@ func rebalance(budgets []int64, weights []float64, minBits []int64, total int64,
 			if !moved {
 				return &AllocationError{Reason: fmt.Sprintf(
 					"cannot reduce to %d bits without violating segment minimums", total)}
-			}
-			if guard++; guard > len(budgets)*2 {
-				return &AllocationError{Reason: "rebalance did not converge"}
 			}
 		}
 	}

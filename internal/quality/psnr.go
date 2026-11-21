@@ -86,6 +86,8 @@ func Aggregate(segments []*model.Segment, maxDropDB float64) (mean, stddev float
 	vals := make([]float64, len(segments))
 	for i, s := range segments {
 		vals[i] = s.PSNRDB
+		// Delta is stored as current-baseline; a drop is therefore a negative
+		// delta whose magnitude exceeds the allowed threshold.
 		if s.BaselinePSNR > 0 && s.BaselinePSNR-s.PSNRDB > maxDropDB {
 			regressions++
 		}
