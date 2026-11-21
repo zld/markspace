@@ -21,6 +21,8 @@ add_library(asspipe STATIC
   src/inheritance.cpp
   src/tag_resolver.cpp
   src/fixture_builder.cpp
+  src/layout_engine.cpp
+  src/layout_event.cpp
 )
 target_include_directories(asspipe PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/include
