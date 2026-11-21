@@ -77,11 +77,14 @@ func (t *Tracker) Observe(pid uint16, cc uint8, hasPayload, transportError bool)
 		return
 	}
 
-	expected := st.prev + 1
-	if expected != cc {
-		missing := int(cc-st.prev) & 0x0f
-		missing-- // one step is the legal increment
-		if missing > 0 {
+	if cc != st.prev {
+		// Forward distance on the 4-bit counter ring. A legal +1 step (which
+		// includes 15 -> 0 wrap) yields distance 1 and hence zero missing
+		// packets; any larger forward jump means the intervening counters were
+		// never received.
+		distance := (int(cc) - int(st.prev)) & 0x0f
+		if distance > 1 {
+			missing := distance - 1
 			st.stats.GapEvents++
 			st.stats.GapPackets += missing
 		}

@@ -40,13 +40,13 @@ func (a *Analyzer) buildSummary(strict bool) *Summary {
 		PMTVersionChanges: pmtChanges,
 		PATWraps:          patWraps,
 		PMTWraps:          pmtWraps,
-		PublishedVersions: append([]psi.Publication(nil), a.assembler.Publications...),
+		PublishedVersions: append([]psi.Publication{}, a.assembler.Publications...),
 		Mappings:          a.progs.Records(),
 		PIDCounters:       counters,
-		CorruptSections:   append([]psi.SectionCandidate(nil), a.assembler.Corrupt...),
+		CorruptSections:   append([]psi.SectionCandidate{}, a.assembler.Corrupt...),
 		HasCompletePAT:    completePAT,
 		MissingPMTs:       missing,
-		StructuralErrors:  append([]string(nil), a.errs...),
+		StructuralErrors:  append([]string{}, a.errs...),
 	}
 	sum.ExitCode = a.deriveExitCode(sum, strict)
 	return sum
@@ -98,7 +98,11 @@ func (a *Analyzer) buildCounters() []PIDCounters {
 		c := PIDCounters{PID: pid, TotalPackets: a.rawPID[pid]}
 		if v, ok := cc[pid]; ok {
 			c.ValidPackets, c.Duplicates = v.valid, v.dup
-			c.ContinuityGaps, c.GapEvents = v.gaps, v.events
+			// PSI PIDs legitimately restart their counter whenever a new table
+			// instance is inserted, so their jumps are not stream gaps.
+			if !a.psiPIDs[pid] {
+				c.ContinuityGaps, c.GapEvents = v.gaps, v.events
+			}
 			c.ErrorPackets = v.errs
 		}
 		out = append(out, c)
@@ -117,8 +121,20 @@ func (a *Analyzer) deriveExitCode(sum *Summary, strict bool) int {
 	if structural {
 		return ExitStructural
 	}
-	if strict && a.tracker.TotalGapPackets() > 0 {
+	if strict && a.elementaryGapPackets() > 0 {
 		return ExitStrictContinuity
 	}
 	return ExitOK
+}
+
+// elementaryGapPackets sums missing packets over non-PSI PIDs only; PSI
+// counter restarts on table insertion are legal rather than packet loss.
+func (a *Analyzer) elementaryGapPackets() int {
+	total := 0
+	for _, s := range a.tracker.Stats() {
+		if !a.psiPIDs[s.PID] {
+			total += s.GapPackets
+		}
+	}
+	return total
 }

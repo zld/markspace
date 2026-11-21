@@ -7,6 +7,8 @@ import (
 	"errors"
 	"io"
 
+	"github.com/asticode/go-astits"
+
 	"github.com/example/tsaudit/internal/continuity"
 	"github.com/example/tsaudit/internal/program"
 	"github.com/example/tsaudit/internal/psi"
@@ -134,20 +136,32 @@ func (a *Analyzer) feed(pkt *tsreader.Packet) {
 		return
 	}
 
-	switch {
-	case h.PID == psi.PIDPAT:
-		a.assembler.FeedPayload(h.PID, h.PayloadUnitStartIndicator, pkt.Payload)
-	case a.pmtPIDsKnown[h.PID]:
-		a.assembler.FeedPayload(h.PID, h.PayloadUnitStartIndicator, pkt.Payload)
-	default:
-		// A PUSI payload beginning with a PSI table id on an unknown PID is
-		// still fed to the assembler, which rejects unsupported content; this
-		// keeps PMT discovery working if ordering ever exposes it early.
-		if h.PayloadUnitStartIndicator && len(pkt.Payload) > 1 &&
-			(pkt.Payload[1] == psi.TableIDPMT) {
-			a.assembler.FeedPayload(h.PID, h.PayloadUnitStartIndicator, pkt.Payload)
-		}
+	// Known elementary PIDs carry PES, not PSI: never send their PUSI packets
+	// to section reassembly. Everything else with a section start, plus known
+	// PSI continuation packets, goes to the assembler, which rejects
+	// unsupported table ids during validation.
+	if a.isElementary(h.PID) {
+		return
 	}
+	if h.PayloadUnitStartIndicator || h.PID == psi.PIDPAT || a.pmtPIDsKnown[h.PID] {
+		a.feedPSI(h, pkt.Payload)
+	}
+}
+
+// isElementary reports whether pid is currently mapped as an elementary
+// stream by any published PMT.
+func (a *Analyzer) isElementary(pid uint16) bool {
+	return a.progs.IsElementaryPID(pid)
+}
+
+// feedPSI forwards a PSI payload to the shared section assembler. The
+// tsreader has already removed the pointer_field, so payload[0] is the
+// table id.
+func (a *Analyzer) feedPSI(h astits.PacketHeader, payload []byte) {
+	if len(payload) == 0 {
+		return
+	}
+	a.assembler.FeedPayload(h.PID, h.PayloadUnitStartIndicator, payload)
 }
 
 // onPublication applies each fully validated table to the program map.

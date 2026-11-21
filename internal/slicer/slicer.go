@@ -7,6 +7,8 @@ import (
 	"errors"
 	"io"
 
+	"github.com/asticode/go-astits"
+
 	"github.com/example/tsaudit/internal/program"
 	"github.com/example/tsaudit/internal/psi"
 	"github.com/example/tsaudit/internal/tsreader"
@@ -87,11 +89,12 @@ func (s *Slicer) Run(r io.Reader, w io.Writer) (*Result, error) {
 		}
 
 		// Re-run the identical PSI pipeline to confirm the mapping source.
-		if h.PID == psi.PIDPAT || (s.haveProgram && h.PID == s.pmtPID) {
-			s.assembler.FeedPayload(h.PID, h.PayloadUnitStartIndicator, pkt.Payload)
-		} else if h.PayloadUnitStartIndicator && len(pkt.Payload) > 1 &&
-			pkt.Payload[1] == psi.TableIDPMT {
-			s.assembler.FeedPayload(h.PID, h.PayloadUnitStartIndicator, pkt.Payload)
+		// Known elementary PIDs carry PES and never reach reassembly.
+		if s.progs.IsElementaryPID(h.PID) {
+			// not a PSI packet
+		} else if h.PayloadUnitStartIndicator || h.PID == psi.PIDPAT ||
+			(s.haveProgram && h.PID == s.pmtPID) {
+			s.feedPSI(h, pkt.Payload)
 		}
 
 		if !s.shouldWrite(h.PID) {
@@ -115,6 +118,16 @@ func (s *Slicer) Run(r io.Reader, w io.Writer) (*Result, error) {
 	result.MappingIntervals = s.intervals()
 	result.CorruptSections = append([]psi.SectionCandidate(nil), s.assembler.Corrupt...)
 	return result, nil
+}
+
+// feedPSI forwards a PSI payload to the shared section assembler. The
+// tsreader has already removed the pointer_field, so payload[0] is the
+// table id.
+func (s *Slicer) feedPSI(h astits.PacketHeader, payload []byte) {
+	if len(payload) == 0 {
+		return
+	}
+	s.assembler.FeedPayload(h.PID, h.PayloadUnitStartIndicator, payload)
 }
 
 // shouldWrite keeps PAT packets, this program's PMT packets, and elementary

@@ -144,6 +144,11 @@ func (m *Map) IsActive(program, pid uint16) bool {
 	return m.activePIDs[pid] != nil && m.activePIDs[pid][program]
 }
 
+// IsElementaryPID reports whether pid was ever mapped as an elementary stream.
+func (m *Map) IsElementaryPID(pid uint16) bool {
+	return len(m.activePIDs[pid]) > 0
+}
+
 // PMTPID returns the PMT PID assigned to a program, or false if unknown.
 func (m *Map) PMTPID(program uint16) (uint16, bool) {
 	st, ok := m.programs[program]

@@ -12,47 +12,47 @@ const (
 
 // StreamInfo is one elementary stream entry of a PMT.
 type StreamInfo struct {
-	StreamType uint8  // raw value is retained even when unknown to this tool
-	ElementaryPID uint16
+	StreamType    uint8  `json:"stream_type"` // raw value retained even if unknown
+	ElementaryPID uint16 `json:"elementary_pid"`
 }
 
 // PMT is the semantic content of one published Program Map Table version.
 type PMT struct {
-	ProgramNumber uint16
-	Version       uint8
-	PCRPID        uint16
-	Streams       []StreamInfo
+	ProgramNumber uint16       `json:"program_number"`
+	Version       uint8        `json:"version"`
+	PCRPID        uint16       `json:"pcr_pid"`
+	Streams       []StreamInfo `json:"streams"`
 }
 
 // PAT is the semantic content of one published Program Association Table.
 type PAT struct {
-	Version       uint8
+	Version uint8 `json:"version"`
 	// Programs maps program_number to the PID carrying its PMT.
-	Programs      map[uint16]uint16
+	Programs map[uint16]uint16 `json:"programs"`
 }
 
 // Publication is emitted once for every newly published, fully validated
 // table version. Retransmissions of a known version do not produce one.
 type Publication struct {
-	PID     uint16
-	TableID uint8
-	Version uint8
+	PID     uint16 `json:"pid"`
+	TableID uint8  `json:"table_id"`
+	Version uint8  `json:"version"`
 	// Wrapped is true when the version counter went 31 -> 0.
-	Wrapped bool
+	Wrapped bool `json:"wrapped"`
 	// PAT or PMT is populated according to TableID.
-	PAT *PAT
-	PMT *PMT
+	PAT *PAT `json:"pat"`
+	PMT *PMT `json:"pmt"`
 }
 
 // VersionStats summarises how the version of one table PID evolved.
 type VersionStats struct {
-	PID             uint16
-	TableID         uint8
-	PublishedCount  int   // number of distinct versions ever published
-	VersionChanges  int   // transitions to a different published version
-	Retransmissions int   // repeats of an already published complete table
-	Wraps           int   // 31 -> 0 transitions
-	CurrentVersion  int   // -1 when nothing has been published yet
+	PID             uint16 `json:"pid"`
+	TableID         uint8  `json:"table_id"`
+	PublishedCount  int    `json:"published_count"`
+	VersionChanges  int    `json:"version_changes"`
+	Retransmissions int    `json:"retransmissions"`
+	Wraps           int    `json:"wraps"`
+	CurrentVersion  int    `json:"current_version"`
 }
 
 type perPID struct {
@@ -108,8 +108,9 @@ func (a *Assembler) Stats() []VersionStats {
 }
 
 // FeedPayload delivers one packet payload for a PSI PID. payloadUnitStart
-// mirrors the transport header PUSI flag. Transport-error packets must be
-// withheld by the caller.
+// mirrors the transport header PUSI flag. On a start packet the payload must
+// already exclude the one-byte pointer_field: callers strip it after
+// validating it. Transport-error packets must be withheld by the caller.
 func (a *Assembler) FeedPayload(pid uint16, payloadUnitStart bool, payload []byte) {
 	if len(payload) == 0 {
 		return
@@ -121,32 +122,14 @@ func (a *Assembler) FeedPayload(pid uint16, payloadUnitStart bool, payload []byt
 	}
 
 	if payloadUnitStart {
-		if len(payload) < 1 {
-			return
-		}
-		// A new section starts; any bytes left over from the previous section
-		// could not form a complete frame and are reported as such.
+		// Any bytes left over from the previous section could not form a
+		// complete frame and are reported before the new section begins.
 		if st.started && !st.gotSection && len(st.buf) > 0 {
 			a.recordIncomplete(pid, st.buf)
 		}
-		pointer := int(payload[0])
-		st.buf = st.buf[:0]
+		st.buf = append(st.buf[:0], payload...)
 		st.started = true
 		st.gotSection = false
-		if pointer == 0 {
-			st.buf = append(st.buf, payload[1:]...)
-		} else {
-			// pointer_field skips pointer bytes of the previous section.
-			if pointer+1 > len(payload) {
-				a.recordMalformed(pid, nil, "pointer_field exceeds payload")
-				st.started = false
-				return
-			}
-			if pointer > 0 {
-				a.recordIncomplete(pid, payload[1:1+pointer])
-			}
-			st.buf = append(st.buf, payload[1+pointer:]...)
-		}
 	} else if st.started {
 		st.buf = append(st.buf, payload...)
 	} else {
@@ -180,10 +163,11 @@ func (a *Assembler) tryExtract(pid uint16, st *perPID) {
 		} else {
 			a.acceptSection(pid, section)
 		}
-		// Anything beyond the extracted frame is stray data; PAT/PMT use one
-		// section per PUSI in practice, so discard it defensively.
-		st.buf = st.buf[total:]
+		// PAT/PMT carry one section per PUSI; whatever follows the extracted
+		// section is 0xFF stuffing, not another section, so stop here.
+		st.buf = nil
 		st.gotSection = true
+		return
 	}
 }
 

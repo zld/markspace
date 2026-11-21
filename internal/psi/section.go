@@ -65,8 +65,9 @@ func ValidateSection(data []byte) (*Section, error) {
 		return nil, fmt.Errorf("%w: section_syntax_indicator must be 1 for table_id 0x%02x",
 			ErrMalformedSection, tableID)
 	}
-	// Reserved bits 0x40 and 0x30 of the second byte must both be set.
-	if data[1]&0x70 != 0x70 {
+	// Reserved bits are the two bits 0x80..0x40 of the second byte; the low
+	// nibble plus byte 3 form the 12-bit section_length.
+	if data[1]&0xc0 != 0xc0 {
 		return nil, fmt.Errorf("%w: reserved bits not set", ErrMalformedSection)
 	}
 
@@ -103,10 +104,10 @@ func ValidateSection(data []byte) (*Section, error) {
 
 // SectionCandidate describes a damaged section attempt for diagnostic reports.
 type SectionCandidate struct {
-	PID     uint16
-	TableID uint8
-	Version int // 5-bit candidate when decodable, -1 otherwise
-	Reason  string
+	PID     uint16 `json:"pid"`
+	TableID uint8  `json:"table_id"`
+	Version int    `json:"version"` // 5-bit candidate when decodable, -1 otherwise
+	Reason  string `json:"reason"`
 }
 
 // crc32MPEG2 computes CRC-32/MPEG-2 (poly 0x04C11DB7, init 0xFFFFFFFF,
