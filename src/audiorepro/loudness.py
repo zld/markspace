@@ -50,6 +50,8 @@ def _biquad_coeffs(kind: str, rate: int) -> tuple[list[float], list[float]]:
         freq, q = 38.13547087602444, 0.5003270373238773
         k = math.tan(math.pi * freq / rate)
         a0 = 1.0 + k / q + k * k
+        # The high-pass numerator is used un-normalized in BS.1770; only the
+        # denominator is scaled by a0 (matches the published 48 kHz values).
         b = [1.0, -2.0, 1.0]
         a = [1.0, 2.0 * (k * k - 1.0) / a0, (1.0 - k / q + k * k) / a0]
     else:  # pragma: no cover - internal misuse

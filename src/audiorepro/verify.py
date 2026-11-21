@@ -27,32 +27,43 @@ def _measure(path: Path, chunk_frames: int = 65536) -> tuple[Any, Any]:
         raise VerifyError(f"cannot open {path}: {exc}") from exc
     if info.channels not in (1, 2, 6):
         raise VerifyError(f"{path} has unsupported layout {info.channels}ch")
+    try:
+        handle = sf.SoundFile(str(path), "r")
+    except Exception as exc:
+        raise VerifyError(f"cannot open {path}: {exc}") from exc
+    with handle:
 
-    def reader(start: int, count: int):
-        try:
-            with sf.SoundFile(str(path), "r") as handle:
+        def reader(start: int, count: int):
+            try:
                 handle.seek(int(start))
                 return handle.read(int(count), dtype="float64", always_2d=True)
-        except Exception as exc:  # pragma: no cover - corrupt product
-            raise VerifyError(f"cannot decode {path}: {exc}") from exc
+            except Exception as exc:  # pragma: no cover - corrupt product
+                raise VerifyError(f"cannot decode {path}: {exc}") from exc
 
-    analysis = analyze_reader(
-        reader, int(info.frames), int(info.channels), int(info.samplerate), chunk_frames
-    )
+        analysis = analyze_reader(
+            reader, int(info.frames), int(info.channels), int(info.samplerate), chunk_frames
+        )
     return analysis, info
+
+
+def _required(recorded: dict[str, Any], key: str) -> Any:
+    if key not in recorded:
+        raise VerifyError(f"report entry for {recorded.get('relative_path')} lacks {key}")
+    return recorded[key]
 
 
 def _recompute(
     recorded: dict[str, Any], input_dir: Path, output_dir: Path
 ) -> tuple[dict[str, Any], list[str]]:
     notes: list[str] = []
-    relative = recorded["relative_path"]
+    relative = _required(recorded, "relative_path")
     source = input_dir / relative
     product = output_dir / check_output_relative(relative)
     if not source.is_file():
         raise VerifyError(f"source for {relative} is missing: {source}")
     if not product.is_file():
         raise VerifyError(f"output for {relative} is missing: {product}")
+    recorded_rate = int(_required(recorded, "sample_rate"))
 
     source_hash = sha256_file(source)
     if recorded.get("source_sha256") not in (None, source_hash):
@@ -63,19 +74,16 @@ def _recompute(
 
     before, source_info = _measure(source)
     after, output_info = _measure(product)
-    recorded_rate = recorded.get("sample_rate")
     expected_frames = output_length(
-        int(source_info.frames), int(source_info.samplerate), int(recorded_rate)
+        int(source_info.frames), int(source_info.samplerate), recorded_rate
     )
     if after.frames != expected_frames:
         notes.append(
             f"output has {after.frames} frames, expected {expected_frames} for "
             f"{source_info.samplerate} -> {recorded_rate} Hz"
         )
-    if int(output_info.samplerate) != int(recorded_rate):
-        notes.append(
-            f"output sample rate is {output_info.samplerate}, recorded {recorded_rate}"
-        )
+    if int(output_info.samplerate) != recorded_rate:
+        notes.append(f"output sample rate is {output_info.samplerate}, recorded {recorded_rate}")
     if output_info.channels != source_info.channels:
         notes.append(
             f"output has {output_info.channels} channels, source has {source_info.channels}"
@@ -84,7 +92,7 @@ def _recompute(
         "frames_in": int(source_info.frames),
         "frames_out": int(after.frames),
         "channels": int(source_info.channels),
-        "sample_rate": int(recorded_rate),
+        "sample_rate": recorded_rate,
         "rms_before_dbfs": before.rms_dbfs,
         "lufs_before": before.lufs,
         "peak_before_dbfs": before.peak_dbfs,

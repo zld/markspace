@@ -105,9 +105,10 @@ def _print_summary(report: dict[str, Any]) -> None:
     summary = report["summary"]
     print(
         f"files={summary['files']} failed={summary['failed']} "
-        f"resumed={summary['resumed']} sample_rate={summary['sample_rate']} "
+        f"sample_rate={summary['sample_rate']} "
         f"channels={json.dumps(summary['channels'], separators=(',', ':'))}"
     )
+    print(f"resumed={summary['resumed']}")
     for item in report["files"]:
         print(
             f"{item['relative_path']}: {item['input_sample_rate']}Hz->{item['sample_rate']}Hz "
