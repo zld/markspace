@@ -5,6 +5,7 @@
 package slicer
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -58,8 +59,32 @@ func Discover(dir string) (files []SourceFile, rejects []string, err error) {
 	return files, rejects, nil
 }
 
-// ReorderedCount compares the on-disk arrival order (readdir order) against
-// the sorted sequence order and counts how many files moved.
+// ArrivalManifest mirrors the fixture's record of drop order and gaps.
+type ArrivalManifest struct {
+	Order   []int  `json:"order"`
+	Missing []int  `json:"missing"`
+}
+
+// LoadArrival reads an arrival.json next to the source files, if present.
+// Production encoders that do not write one simply get nil back and the
+// pipeline falls back to sorted discovery with zero reorder accounting.
+func LoadArrival(dir string) (*ArrivalManifest, error) {
+	data, err := os.ReadFile(filepath.Join(dir, "arrival.json"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var m ArrivalManifest
+	if err := json.Unmarshal(data, &m); err != nil {
+		return nil, fmt.Errorf("parse arrival manifest: %w", err)
+	}
+	return &m, nil
+}
+
+// ReorderedCount compares the recorded arrival order against the sorted
+// sequence order and counts how many files moved position.
 func ReorderedCount(arrival []int, sorted []SourceFile) int {
 	if len(arrival) != len(sorted) {
 		return 0
