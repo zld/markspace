@@ -301,33 +301,58 @@ class BlockFactory(Protocol):
     def __call__(self) -> Iterable[np.ndarray]: ...
 
 
-def _scan(factory: BlockFactory, cfg: DetectorConfig) -> tuple[list[WindowMetric], Calibration]:
+def detect_from_blocks(factory: BlockFactory, cfg: DetectorConfig) -> DetectionResult:
+    """Two bounded-memory streaming passes over the same block source.
+
+    Pass 1 streams windows into the calibrator; pass 2 re-streams the source,
+    labels each window through the dual thresholds and feeds the label to a
+    :class:`~audioslice.streaming.StreamingSegmenter`.  Only the current block,
+    window carry and a handful of runs are retained, so memory is independent
+    of recording length.  ``factory`` must return a fresh block iterable on
+    every call.
+    """
+    from .streaming import StreamingSegmenter  # local: avoid a circular import
+
     analyzer = WindowAnalyzer(cfg.window_frames)
     calibrator = Calibrator(cfg.noise_margin_db, cfg.hysteresis_db)
-    metrics: list[WindowMetric] = []
+    window_count = 0
+    total_frames = 0
     for block in factory():
         for metric in analyzer.process(block):
-            metrics.append(metric)
             calibrator.add(np.array([metric.rms]))
-    metrics.extend(analyzer.flush())
+            window_count += 1
+            total_frames += metric.length
+    for metric in analyzer.flush():
+        calibrator.add(np.array([metric.rms]))
+        window_count += 1
+        total_frames += metric.length
     calibration = calibrator.finalize()
-    return metrics, calibration
+    forced = calibrator.homogeneous_label(calibration.on_threshold)
 
-
-def detect_from_blocks(factory: BlockFactory, cfg: DetectorConfig) -> DetectionResult:
-    """Two bounded-memory passes: calibrate, then label and segment.
-
-    ``factory`` must return a fresh iterable of PCM blocks on every call
-    (the second pass rewinds the source).  Only window metrics are retained,
-    never the full audio, so memory stays flat as recordings get longer.
-    """
-    metrics, calibration = _scan(factory, cfg)
-    rms = np.array([m.rms for m in metrics])
-    labels = label_windows(rms, calibration.on_threshold, calibration.off_threshold)
-    segments, silences = _build_segments(metrics, labels, cfg)
-    total_frames = sum(m.length for m in metrics)
+    analyzer = WindowAnalyzer(cfg.window_frames)
+    segmenter = StreamingSegmenter(cfg)
+    voiced = False
+    for block in factory():
+        for metric in analyzer.process(block):
+            voiced = _next_label(metric.rms, calibration, voiced, forced)
+            segmenter.add(metric, voiced)
+    for metric in analyzer.flush():
+        voiced = _next_label(metric.rms, calibration, voiced, forced)
+        segmenter.add(metric, voiced)
+    segments, silences = segmenter.finalize()
     return DetectionResult(cfg.sample_rate, total_frames, segments, silences,
-                           calibration, len(metrics))
+                           calibration, window_count)
+
+
+def _next_label(rms: float, calibration: Calibration, voiced: bool,
+                forced: bool | None) -> bool:
+    if forced is not None:
+        return forced
+    if not voiced and rms >= calibration.on_threshold:
+        return True
+    if voiced and rms <= calibration.off_threshold:
+        return False
+    return voiced
 
 
 def detect_samples(samples: np.ndarray, cfg: DetectorConfig) -> DetectionResult:

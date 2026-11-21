@@ -75,10 +75,17 @@ class Calibrator:
         self._rng = np.random.default_rng(seed)
         self._reservoir = np.empty(capacity, dtype=np.float64)
         self._seen = 0
+        self.min_rms: float | None = None
+        self.max_rms: float | None = None
 
     def add(self, window_rms: np.ndarray) -> None:
         """Add one window's RMS (or a vector of window RMS values)."""
         values = np.asarray(window_rms, dtype=np.float64).reshape(-1)
+        if values.size:
+            self.min_rms = float(values.min()) if self.min_rms is None \
+                else min(self.min_rms, float(values.min()))
+            self.max_rms = float(values.max()) if self.max_rms is None \
+                else max(self.max_rms, float(values.max()))
         for value in values:
             if self._seen < self._capacity:
                 self._reservoir[self._seen] = value
@@ -106,6 +113,21 @@ class Calibrator:
             off_threshold=min(off_threshold, on_threshold),
             window_count=self._seen,
         )
+
+    def homogeneous_label(self, on_threshold: float) -> bool | None:
+        """Decide the forced label for a file without usable dynamic range.
+
+        Returns ``True`` (whole file voiced), ``False`` (whole file silent) or
+        ``None`` when the dynamic range is wide enough for normal hysteresis.
+        """
+        if not self._seen or self.min_rms is None or self.max_rms is None:
+            return None
+        floor = max(self.min_rms, 1e-12)
+        spread_db = 20.0 * np.log10(max(self.max_rms, floor) / floor)
+        margin = 20.0 * np.log10(on_threshold / floor)
+        if np.isfinite(spread_db) and spread_db < margin:
+            return self.min_rms > 1e-9
+        return None
 
 
 def calibrate_rms(window_rms: np.ndarray, noise_margin_db: float,
