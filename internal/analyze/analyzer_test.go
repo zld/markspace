@@ -140,3 +140,32 @@ func TestMissingPMTIsStructural(t *testing.T) {
 		t.Fatalf("missing PMT not structural: exit=%d missing=%v", sum.ExitCode, sum.MissingPMTs)
 	}
 }
+
+func TestTransportErrorPacketCountedWithoutCCPoison(t *testing.T) {
+	var buf bytes.Buffer
+	put := func(p [188]byte) { buf.Write(p[:]) }
+	put(psiPacket(0, 0, patSection(0)))
+	put(psiPacket(4096, 0, pmtSection(0, 256)))
+	put(esPacket(257, 0))
+	bad := esPacket(257, 1)
+	bad[1] |= 0x80 // transport_error_indicator
+	put(bad)
+	put(esPacket(257, 1)) // same CC as the damaged frame, still legal
+
+	sum, err := New("mem", &buf).Run(false)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if sum.Transport.TransportErrorPackets != 1 {
+		t.Fatalf("transport errors=%d, want 1", sum.Transport.TransportErrorPackets)
+	}
+	var cc *PIDCounters
+	for i := range sum.PIDCounters {
+		if sum.PIDCounters[i].PID == 257 {
+			cc = &sum.PIDCounters[i]
+		}
+	}
+	if cc == nil || cc.ErrorPackets != 1 || cc.ContinuityGaps != 0 {
+		t.Fatalf("TEI packet poisoned CC accounting: %+v", cc)
+	}
+}
