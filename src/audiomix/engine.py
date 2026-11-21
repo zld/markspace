@@ -197,14 +197,61 @@ def _check_output_not_a_source(output_path: Path, paths: list[Path]) -> None:
             raise ValueError(f"output path {output_path} would overwrite source {path}")
 
 
-def _next_offline_block(offline: _MixPass, buffer: np.ndarray,
-                        needed: int) -> np.ndarray:
-    while buffer.shape[1] < needed:
-        try:
-            buffer = np.concatenate([buffer, next(offline)], axis=1)
-        except StopIteration:
-            break
-    return buffer
+class _Bridge:
+    """Holds offline blocks until the streaming pass has verified them.
+
+    Offline blocks are large, streaming blocks can be tiny; keeping a list of
+    chunks (instead of re-concatenating a growing buffer) keeps the comparison
+    linear in the number of frames.
+    """
+
+    def __init__(self) -> None:
+        self.chunks: list[np.ndarray] = []
+        self.offset = 0
+        self.remaining = 0
+
+    def push(self, block: np.ndarray) -> None:
+        if block.shape[1]:
+            self.chunks.append(block)
+            self.remaining += block.shape[1]
+
+    def take(self, count: int) -> np.ndarray | None:
+        """Return exactly ``count`` frames, or ``None`` if not enough remain."""
+        if self.remaining < count:
+            return None
+        head = self.chunks[0]
+        available = head.shape[1] - self.offset
+        if available >= count:
+            out = head[:, self.offset:self.offset + count]
+            self.offset += count
+            if self.offset == head.shape[1]:
+                self.chunks.pop(0)
+                self.offset = 0
+            self.remaining -= count
+            return out
+        out = np.empty((2, count), dtype=np.float64)
+        filled = 0
+        while filled < count:
+            head = self.chunks[0]
+            available = head.shape[1] - self.offset
+            used = min(available, count - filled)
+            out[:, filled:filled + used] = head[:, self.offset:self.offset + used]
+            filled += used
+            self.offset += used
+            if self.offset == head.shape[1]:
+                self.chunks.pop(0)
+                self.offset = 0
+        self.remaining -= count
+        return out
+
+    def fill_from(self, offline: "_MixPass", count: int) -> np.ndarray | None:
+        """Take ``count`` frames, pulling offline blocks as needed."""
+        while self.remaining < count:
+            try:
+                self.push(next(offline))
+            except StopIteration:
+                break
+        return self.take(count)
 
 
 def render_project(project: Project, paths: list[Path],
@@ -250,7 +297,7 @@ def render_project(project: Project, paths: list[Path],
     streaming = _MixPass(project, paths, curves, frames_total,
                          block=chunk_frames, read_block=chunk_frames)
     try:
-        bridge = np.zeros((2, 0), dtype=np.float64)
+        bridge = _Bridge()
         max_abs_diff = 0.0
         written = 0
         with AtomicWavWriter(output_path, TARGET_SAMPLE_RATE) as writer:
@@ -258,13 +305,12 @@ def render_project(project: Project, paths: list[Path],
                 count = stream_mix.shape[1]
                 if count <= 0:
                     continue
-                bridge = _next_offline_block(offline, bridge, count)
-                if bridge.shape[1] < count:
+                reference = bridge.fill_from(offline, count)
+                if reference is None:
                     raise ConsistencyError(
                         f"offline pass ended early: needed {count} frames, "
-                        f"had {bridge.shape[1]}"
+                        f"had {bridge.remaining}"
                     )
-                reference = bridge[:, :count]
                 diff = float(np.max(np.abs(reference - stream_mix)))
                 max_abs_diff = max(max_abs_diff, diff)
                 if max_abs_diff > CONSISTENCY_TOLERANCE:
@@ -274,7 +320,6 @@ def render_project(project: Project, paths: list[Path],
                     )
                 writer.write(reference)
                 written += count
-                bridge = bridge[:, count:]
 
             # Drain both passes so bus totals and per-track statistics finalise
             # before the writer publishes the file.
@@ -287,9 +332,9 @@ def render_project(project: Project, paths: list[Path],
                     f"clip counts diverged: offline {offline.clip_count}, "
                     f"streaming {streaming.clip_count}"
                 )
-            if bridge.size:
+            if bridge.remaining:
                 raise ConsistencyError(
-                    f"offline pass produced {bridge.shape[1]} unverified trailing frames"
+                    f"offline pass produced {bridge.remaining} unverified trailing frames"
                 )
             if written != frames_total:
                 raise ConsistencyError(
