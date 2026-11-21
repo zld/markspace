@@ -47,7 +47,6 @@ class TrackTimeline:
     keyframes: np.ndarray
     data_offsets: np.ndarray  # into the input file
     data_lengths: np.ndarray
-    input_offsets: list[int]
     stats: dict[str, int] = field(default_factory=dict)
 
     @property
@@ -270,7 +269,6 @@ def rewrite_timeline(
             data_lengths=np.asarray(
                 [sample_list[i].data_length for i in indices], dtype=np.int64
             ),
-            input_offsets=[sample_list[i].data_offset for i in indices],
             stats=stats,
         )
 
