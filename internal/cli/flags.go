@@ -129,6 +129,7 @@ func Parse(argv []string, stderr io.Writer) (Options, error) {
 type synthFlags struct {
 	encoding     string
 	toneChannels int
+	channels     int
 }
 
 func parseAnalysis(fs *flag.FlagSet, o *Options) {
@@ -144,7 +145,7 @@ func parseAnalysis(fs *flag.FlagSet, o *Options) {
 func parseSynth(fs *flag.FlagSet, o *Options, s *synthFlags) {
 	fs.StringVar(&o.SynthOut, "out", "", "output WAV path (required)")
 	fs.StringVar(&o.LayoutName, "layout", "stereo", "mono, stereo, 5.1, 7.1, or custom")
-	fs.StringVar(&o.Mapping, "map", "", "explicit per-channel weights for a custom layout")
+	fs.IntVar(&s.channels, "channels", 0, "channel count for --layout custom")
 	fs.Float64Var(&o.Synth.Seconds, "seconds", 12, "duration in seconds")
 	fs.Float64Var(&o.Synth.ToneDBFS, "tone-dbfs", -23, "sine amplitude in dBFS")
 	fs.Float64Var(&o.Synth.ToneHz, "tone-hz", 997, "sine frequency in Hz")
@@ -181,7 +182,7 @@ func finishSynth(o *Options, s *synthFlags, args []string) error {
 	}
 	o.Synth.Encoding = enc
 
-	channels, err := synthChannels(o.LayoutName)
+	channels, err := synthChannels(o.LayoutName, s.channels)
 	if err != nil {
 		return err
 	}
@@ -198,8 +199,10 @@ func finishSynth(o *Options, s *synthFlags, args []string) error {
 	return nil
 }
 
-// synthChannels resolves the channel count a layout name implies.
-func synthChannels(name string) (int, error) {
+// synthChannels resolves the channel count a layout name implies. "custom"
+// takes the count from --channels so a layout the meter only knows through
+// --map can still be generated.
+func synthChannels(name string, custom int) (int, error) {
 	switch name {
 	case "mono", "":
 		return 1, nil
@@ -210,7 +213,10 @@ func synthChannels(name string) (int, error) {
 	case "7.1":
 		return 8, nil
 	case "custom":
-		return 0, usagef("--layout custom requires --map")
+		if custom < 1 || custom > 64 {
+			return 0, usagef("--layout custom requires --channels between 1 and 64")
+		}
+		return custom, nil
 	}
 	return 0, usagef("unknown synth layout %q", name)
 }

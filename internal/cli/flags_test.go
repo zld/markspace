@@ -90,6 +90,19 @@ func TestParseSynth(t *testing.T) {
 	}
 }
 
+func TestParseSynthCustomLayout(t *testing.T) {
+	o, err := parse(t, "synth", "--out", "x.wav", "--layout", "custom", "--channels", "4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o.Synth.Channels != 4 {
+		t.Errorf("channels = %d, want 4", o.Synth.Channels)
+	}
+	if _, err := parse(t, "synth", "--out", "x.wav", "--layout", "custom"); err == nil {
+		t.Error("custom layout without --channels should fail")
+	}
+}
+
 func TestParseRejectsBadArguments(t *testing.T) {
 	cases := [][]string{
 		{},
