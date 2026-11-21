@@ -1,4 +1,5 @@
 #include "exporter.h"
+#include "fixtures.h"
 #include "font_metrics.h"
 #include "line_breaker.h"
 #include "manifest.h"
@@ -6,6 +7,8 @@
 #include "unicode.h"
 
 #include <algorithm>
+#include <cstdio>
+#include <fstream>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -28,10 +31,12 @@ struct Options {
     int max_lines = 0;
     std::string missing_glyph;
     bool collect_errors = false;
+    std::string make_fixture;
 };
 
 void usage(std::ostream& out) {
     out << "usage:\n"
+        << "  subtitle-metrics --make-fixture FILE\n"
         << "  subtitle-metrics measure --input FILE --output FILE [options]\n"
         << "options:\n"
         << "  --font FILE            font used for metrics\n"
@@ -84,6 +89,14 @@ bool parse_options(int argc, char** argv, Options& options, std::string& error) 
     if (command == "--help" || command == "-h") {
         usage(std::cout);
         std::exit(kOk);
+    }
+    if (command == "--make-fixture") {
+        if (index >= argc) {
+            error = "--make-fixture needs an output path";
+            return false;
+        }
+        options.make_fixture = argv[index];
+        return true;
     }
     if (command != "measure") {
         error = "unknown command: " + command;
@@ -160,6 +173,7 @@ int run_measure(const Options& options) {
         return kInvalidInput;
     }
 
+    // Command-line values override the manifest for the fields they name.
     if (!options.font.empty()) manifest.font.path = options.font;
     if (options.width > 0) manifest.canvas.width = options.width;
     if (options.safe_inset >= 0) manifest.canvas.safe_inset = options.safe_inset;
@@ -169,8 +183,12 @@ int run_measure(const Options& options) {
     }
     const int usable_width =
         manifest.canvas.width - 2 * manifest.canvas.safe_inset;
-    if (usable_width <= 0) {
-        std::cerr << "$.canvas: safe inset leaves no usable text width\n";
+    if (manifest.font.path.empty() || manifest.font.size <= 0 ||
+        manifest.canvas.width <= 0 || manifest.canvas.safe_inset < 0 ||
+        usable_width <= 0 || manifest.max_lines <= 0 ||
+        (manifest.font.missing_glyph != "error" &&
+         manifest.font.missing_glyph != "fallback")) {
+        std::cerr << "invalid font or layout parameters\n";
         return kInvalidInput;
     }
 
@@ -183,6 +201,9 @@ int run_measure(const Options& options) {
         return kInvalidInput;
     }
 
+    // Collect mode is explicit: any item error makes the run report it and
+    // keep going. Without the flag the run is strict and stops at the first
+    // bad subtitle, leaving an existing summary untouched.
     const bool strict = !options.collect_errors;
     std::vector<SubtitleSummary> summaries;
     int total_lines = 0;
@@ -264,9 +285,12 @@ int run_measure(const Options& options) {
         int widest = 0;
         bool first_line = true;
         for (const LineLayout& line : layout.lines) {
-            summary.line_ranges.push_back({line.begin_cluster, line.end_cluster});
+            LineRange range{line.begin_cluster, line.end_cluster};
+            summary.line_ranges.push_back(range);
             summary.break_reasons.push_back(line.break_reason);
-            summary.overflow_reasons.push_back(line.overflow_reason);
+            if (!line.overflow_reason.empty()) {
+                summary.overflow_reasons.push_back(line.overflow_reason);
+            }
             widest = std::max(widest, line.width);
             if (!first_line && line.begin_cluster < clusters.size()) {
                 summary.line_breaks.push_back(
@@ -303,6 +327,22 @@ int run_measure(const Options& options) {
     return total_errors > 0 ? kItemErrors : kOk;
 }
 
+bool write_fixture(const std::string& path) {
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    if (!out) {
+        std::cerr << "cannot write fixture: " << path << "\n";
+        return false;
+    }
+    out << make_fixture_json();
+    out.flush();
+    if (!out) {
+        std::cerr << "cannot write fixture: " << path << "\n";
+        return false;
+    }
+    std::cout << "fixture=" << path << "\n";
+    return true;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -312,6 +352,9 @@ int main(int argc, char** argv) {
         std::cerr << "error: " << error << "\n\n";
         usage(std::cerr);
         return kInvalidInput;
+    }
+    if (!options.make_fixture.empty()) {
+        return write_fixture(options.make_fixture) ? kOk : kWriteFailure;
     }
     return run_measure(options);
 }

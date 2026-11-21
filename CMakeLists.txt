@@ -26,6 +26,7 @@ set(SUBTITLE_METRICS_SOURCES
   src/line_breaker.cpp
   src/timing.cpp
   src/exporter.cpp
+  tests/fixtures.cpp
 )
 
 add_executable(subtitle-metrics ${SUBTITLE_METRICS_SOURCES})
