@@ -91,15 +91,28 @@ func TestParseSynth(t *testing.T) {
 }
 
 func TestParseSynthCustomLayout(t *testing.T) {
-	o, err := parse(t, "synth", "--out", "x.wav", "--layout", "custom", "--channels", "4")
+	o, err := parse(t, "synth", "--out", "x.wav", "--layout", "custom", "--channels", "4",
+		"--map", "1,1,0,1")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if o.Synth.Channels != 4 {
 		t.Errorf("channels = %d, want 4", o.Synth.Channels)
 	}
+	if o.Mapping != "1,1,0,1" {
+		t.Errorf("mapping = %q", o.Mapping)
+	}
 	if _, err := parse(t, "synth", "--out", "x.wav", "--layout", "custom"); err == nil {
 		t.Error("custom layout without --channels should fail")
+	}
+	// Without a mapping synth cannot verify what it wrote, so refuse up front
+	// rather than emitting a file the analyzer rejects.
+	if _, err := parse(t, "synth", "--out", "x.wav", "--layout", "custom", "--channels", "4"); err == nil {
+		t.Error("custom layout without --map should fail")
+	}
+	if _, err := parse(t, "synth", "--out", "x.wav", "--layout", "custom", "--channels", "4",
+		"--map", "1,1,1"); err == nil {
+		t.Error("a mapping shorter than the channel count should fail")
 	}
 }
 

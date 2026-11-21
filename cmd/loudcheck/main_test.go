@@ -66,6 +66,67 @@ func TestBatchDemoScenario(t *testing.T) {
 	}
 }
 
+func TestSynthCustomLayoutRoundTrips(t *testing.T) {
+	dir := t.TempDir()
+	wav := filepath.Join(dir, "quad.wav")
+	// A custom channel count is generated and verified with the same weights
+	// in one invocation; before the mapping was forwarded this wrote the file
+	// and then exited 2 on its own verification.
+	code, out, errOut := runCLI(t, "synth", "--out", wav, "--layout", "custom",
+		"--channels", "4", "--map", "1,1,0,1", "--seconds", "4", "--tone-dbfs", "-27",
+		"--target-lufs", "-25", "--tolerance-lu", "1")
+	if code != 0 {
+		t.Fatalf("synth exit = %d\nstdout:\n%s\nstderr:\n%s", code, out, errOut)
+	}
+	if !strings.Contains(out, "result=PASS") || !strings.Contains(out, "layout=custom") {
+		t.Errorf("custom synth did not verify:\n%s", out)
+	}
+
+	// Three audible channels sum to about -25.2 LUFS; giving the fourth
+	// channel weight 1 as well must raise the result by about 1.25 LU,
+	// which proves the map's zero really excludes that channel.
+	code, out, _ = runCLI(t, "analyze", wav, "--map", "1,1,0,1",
+		"--target-lufs", "-25", "--tolerance-lu", "1")
+	if code != 0 {
+		t.Fatalf("analyze exit = %d\n%s", code, out)
+	}
+	if !strings.Contains(out, "integrated_lufs=-25.2") {
+		t.Errorf("weighted custom layout measured unexpected loudness:\n%s", out)
+	}
+	_, out, _ = runCLI(t, "analyze", wav, "--map", "1,1,1,1", "--format", "json")
+	if !strings.Contains(out, `"integrated_lufs": -23.9`) {
+		t.Errorf("enabling the excluded channel should raise loudness:\n%s", out)
+	}
+}
+
+func TestSynthOddChunksStayParseable(t *testing.T) {
+	dir := t.TempDir()
+	wav := filepath.Join(dir, "chunks.wav")
+	if code, _, errOut := runCLI(t, "synth", "--out", wav, "--seconds", "4",
+		"--tone-dbfs", "-23", "--data-first", "--odd-junk"); code != 0 {
+		t.Fatalf("synth failed: %s", errOut)
+	}
+	code, out, _ := runCLI(t, "analyze", wav, "--format", "text")
+	if code != 0 {
+		t.Fatalf("analyze exit = %d, want 0\n%s", code, out)
+	}
+	if !strings.Contains(out, "result=PASS") {
+		t.Errorf("data-first/odd-junk file did not analyse cleanly:\n%s", out)
+	}
+}
+
+func TestSynthCustomLayoutRequiresMap(t *testing.T) {
+	dir := t.TempDir()
+	wav := filepath.Join(dir, "quad.wav")
+	code, _, errOut := runCLI(t, "synth", "--out", wav, "--layout", "custom", "--channels", "4")
+	if code != 2 {
+		t.Fatalf("exit = %d, want 2\n%s", code, errOut)
+	}
+	if _, err := os.Stat(wav); !os.IsNotExist(err) {
+		t.Errorf("a refused synth must not leave a file behind: %v", err)
+	}
+}
+
 func TestThresholdMissExitsOne(t *testing.T) {
 	dir := t.TempDir()
 	wav := filepath.Join(dir, "quiet.wav")

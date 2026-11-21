@@ -47,7 +47,9 @@ func runSynth(opts cli.Options, stdout, stderr io.Writer) int {
 		return cli.ExitUsage
 	}
 	// Verify the freshly written file with the same analyzer the batch path
-	// uses; this keeps synth honest about what it produced.
+	// uses; this keeps synth honest about what it produced. analyzeOptions
+	// forwards the layout and mapping, so a custom channel count verifies
+	// with the same weights it was generated for.
 	summary := batch.AnalyzeFiles([]string{opts.SynthOut}, analyzeOptions(opts))
 	if err := report.WriteBatch(stdout, summary, opts.Format); err != nil {
 		fmt.Fprintf(stderr, "loudcheck: %v\n", err)

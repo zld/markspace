@@ -9,6 +9,7 @@ import (
 	"runtime"
 
 	"loudcheck/internal/fixture"
+	"loudcheck/internal/loudness"
 	"loudcheck/internal/policy"
 	"loudcheck/internal/report"
 )
@@ -146,6 +147,7 @@ func parseSynth(fs *flag.FlagSet, o *Options, s *synthFlags) {
 	fs.StringVar(&o.SynthOut, "out", "", "output WAV path (required)")
 	fs.StringVar(&o.LayoutName, "layout", "stereo", "mono, stereo, 5.1, 7.1, or custom")
 	fs.IntVar(&s.channels, "channels", 0, "channel count for --layout custom")
+	fs.StringVar(&o.Mapping, "map", "", "per-channel weights for --layout custom, e.g. 1,1,0")
 	fs.Float64Var(&o.Synth.Seconds, "seconds", 12, "duration in seconds")
 	fs.Float64Var(&o.Synth.ToneDBFS, "tone-dbfs", -23, "sine amplitude in dBFS")
 	fs.Float64Var(&o.Synth.ToneHz, "tone-hz", 997, "sine frequency in Hz")
@@ -185,6 +187,15 @@ func finishSynth(o *Options, s *synthFlags, args []string) error {
 	channels, err := synthChannels(o.LayoutName, s.channels)
 	if err != nil {
 		return err
+	}
+	// A custom channel count needs an explicit mapping; validate it here so
+	// synth never writes a file it would then refuse to verify.
+	if o.Mapping != "" {
+		if _, err := loudness.Resolve(o.LayoutName, channels, o.Mapping); err != nil {
+			return usagef("%v", err)
+		}
+	} else if o.LayoutName == "custom" {
+		return usagef("--layout custom requires --map with one weight per channel")
 	}
 	o.Synth.Channels = channels
 	if s.toneChannels < 0 || s.toneChannels > channels {
@@ -245,7 +256,8 @@ usage:
   loudcheck synth   --out FILE [--layout L] [--seconds S] [--tone-dbfs D]
                     [--tone-hz F] [--sample-rate R] [--encoding E]
                     [--extensible] [--tone-channels N] [--channels N]
-                    [--data-first] [--odd-junk] [--format text|json]
+                    [--map W,W,...] [--data-first] [--odd-junk]
+                    [--format text|json]
   loudcheck analyze FILE [--layout L] [--map W,W,...] [--target-lufs T]
                     [--tolerance-lu U] [--max-true-peak-dbtp P]
                     [--format text|json] [--quiet]
