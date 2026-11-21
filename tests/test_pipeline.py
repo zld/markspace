@@ -359,6 +359,39 @@ class CliTests(unittest.TestCase):
         self.assertEqual(code, 4)
         self.assertIn("consistency", stderr.getvalue())
         self.assertFalse((self.dir / "out.wav").exists())
+        leftovers = [p.name for p in self.dir.iterdir() if p.name.endswith(".tmp")]
+        self.assertEqual(leftovers, [])
+
+    def test_clip_count_disagreement_is_fatal_before_write(self) -> None:
+        import audiomix.engine as engine
+        from audiomix.nodes import BusNode
+
+        _write_wav(self.dir / "a.wav", _tone(480, 48000), 48000)
+        project = parse_manifest(_manifest([{"name": "a", "path": "a.wav"}]))
+        original = BusNode.finish
+
+        def skewed_finish(self) -> int:
+            count = original(self)
+            # Make only the second bus to finish disagree.
+            self.clip_count = count + 1 if self is not first_bus[0] else count
+            return self.clip_count
+
+        first_bus: list[BusNode] = []
+        original_init = BusNode.__init__
+
+        def tracking_init(self, frames_total: int) -> None:
+            original_init(self, frames_total)
+            if not first_bus:
+                first_bus.append(self)
+
+        from unittest import mock
+
+        out = self.dir / "out.wav"
+        with mock.patch.object(BusNode, "__init__", tracking_init), \
+                mock.patch.object(BusNode, "finish", skewed_finish):
+            with self.assertRaises(engine.ConsistencyError):
+                render_project(project, [self.dir / "a.wav"], out, 64)
+        self.assertFalse(out.exists())
 
     def test_module_entry_point_runs(self) -> None:
         result = subprocess.run(
