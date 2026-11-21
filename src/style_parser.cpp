@@ -283,9 +283,4 @@ AssDocument parse_ass(const std::string& text, const std::string& source_name) {
     return doc;
 }
 
-// resolve_style() is implemented in the inheritance-graph batch.
-ResolvedStyle resolve_style(const AssDocument&, const Style&) {
-    return ResolvedStyle{};
-}
-
 } // namespace asspipe

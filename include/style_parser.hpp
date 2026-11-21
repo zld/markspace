@@ -19,6 +19,11 @@ namespace asspipe {
 AssDocument parse_ass(const std::string& text,
                       const std::string& source_name = "<memory>");
 
+// Build inheritance ancestor chains and mark invalid styles. Records
+// MissingParent, SelfInheritance and InheritanceCycle diagnostics (with
+// source line numbers) and increments the document error counters.
+void build_inheritance_graph(AssDocument& doc);
+
 // Build a concrete ResolvedStyle for `style` by walking its ancestor chain
 // (nearest first) and taking the first explicitly set value per field,
 // then applying ASS defaults. Requires style.valid == true.

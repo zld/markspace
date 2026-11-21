@@ -18,6 +18,7 @@ find_package(ZLIB REQUIRED)
 # Core library; sources are appended per implementation batch.
 add_library(asspipe STATIC
   src/style_parser.cpp
+  src/inheritance.cpp
 )
 target_include_directories(asspipe PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/include
