@@ -168,3 +168,13 @@ func (m *Machine) History() []string {
 	copy(out, m.history)
 	return out
 }
+
+// Close applies the shared closing transitions (teardown, then closed).
+// It is valid from every pre-closing state, so UDP and TCP runners use the
+// exact same cleanup path. The returned error describes an illegal move.
+func (m *Machine) Close() error {
+	if err := m.Handle(EvTeardown); err != nil {
+		return err
+	}
+	return m.Handle(EvClosed)
+}
