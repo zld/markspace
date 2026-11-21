@@ -378,3 +378,197 @@ def _parse_tracks(data: bytes, tracks_node: RawNode, base: int) -> list[Track]:
         )
     return tracks
 
+
+def parse_block_header(
+    data: bytes, start: int, end: int, *, base: int, path: str
+) -> tuple[int, int, int, int]:
+    """Decode a (Simple)Block header: track number, relative timecode, flags.
+
+    Returns ``(track, relative_timecode, flags, payload_start)``.  The track
+    number uses an EBML VINT without the marker bit.
+    """
+    from .ebml import read_vint_id
+
+    if start >= end:
+        raise EbmlParseError("empty block", offset=base + start, path=path)
+    first = data[start]
+    if first == 0:
+        raise EbmlParseError(
+            "invalid block track VINT: leading zero byte", offset=base + start, path=path
+        )
+    length = 9 - first.bit_length()
+    if length > 8:
+        raise EbmlParseError(
+            "invalid block track VINT length", offset=base + start, path=path
+        )
+    if start + length > end:
+        raise EbmlParseError("truncated block track number", offset=base + start, path=path)
+    track = first & (0xFF >> length)
+    for byte in data[start + 1 : start + length]:
+        track = (track << 8) | byte
+    pos = start + length
+    if pos + 3 > end:
+        raise EbmlParseError(
+            "truncated block header: need 3 bytes for timecode and flags",
+            offset=base + pos,
+            path=path,
+        )
+    timecode = int.from_bytes(data[pos : pos + 2], "big", signed=True)
+    flags = data[pos + 2]
+    return track, timecode, flags, pos + 3
+
+
+def lace_frame_sizes(
+    data: bytes, start: int, end: int, lacing: int, *, base: int, path: str
+) -> tuple[list[int], int]:
+    """Split a laced payload into frame sizes.
+
+    Returns ``(frame_sizes, payload_offset)`` where ``payload_offset`` is the
+    first byte after the lace header.  Frame sizes sum to ``end - offset``.
+    Only the lacing modes Matroska defines are supported; malformed lace
+    headers are rejected with their byte offset.  Laced blocks are expanded
+    into one logical sample per frame by the caller.
+    """
+    payload_len = end - start
+    if lacing == 0:
+        return [payload_len], start
+    if payload_len < 1:
+        raise EbmlParseError("laced block has no lace header", offset=base + start, path=path)
+    frame_count = data[start] + 1
+    pos = start + 1
+    sizes: list[int] = []
+    if lacing == 1:  # Xiph: n-1 sizes, each a chain of 255s terminated < 255
+        for _ in range(frame_count - 1):
+            size = 0
+            while True:
+                if pos >= end:
+                    raise EbmlParseError("truncated Xiph lace", offset=base + pos, path=path)
+                byte = data[pos]
+                size += byte
+                pos += 1
+                if byte != 255:
+                    break
+            sizes.append(size)
+    elif lacing == 3:  # EBML: unsigned first size, signed VINT deltas after
+        from .ebml import read_vint_size
+
+        first_size, length, unknown = read_vint_size(data, pos, base=base, path=path)
+        if unknown or first_size is None:
+            raise EbmlParseError("invalid EBML lace size", offset=base + pos, path=path)
+        sizes.append(first_size)
+        pos += length
+        for _ in range(frame_count - 2):
+            raw, length, bad = read_vint_size(data, pos, base=base, path=path)
+            if bad or raw is None:
+                raise EbmlParseError("invalid EBML lace delta", offset=base + pos, path=path)
+            bias = (1 << (7 * length - 1)) - 1
+            sizes.append(sizes[-1] + (raw - bias))
+            pos += length
+    elif lacing == 2:  # fixed-size: equal frames, no size list
+        remaining = payload_len - 1
+        if frame_count <= 0 or remaining < 0 or remaining % frame_count:
+            raise EbmlParseError(
+                f"fixed-size lace of {frame_count} frames does not divide {remaining} bytes",
+                offset=base + start,
+                path=path,
+            )
+        frame = remaining // frame_count
+        return [frame] * frame_count, start + 1
+    else:
+        raise EbmlParseError(
+            f"unsupported lacing mode {lacing}", offset=base + start, path=path
+        )
+
+    header_bytes = pos - start
+    total_known = sum(sizes)
+    remaining = payload_len - header_bytes - total_known
+    if remaining < 0:
+        raise EbmlParseError(
+            f"lace sizes overrun payload by {-remaining} bytes",
+            offset=base + start,
+            path=path,
+        )
+    sizes.append(remaining)
+    return sizes, pos
+
+
+def _parse_cluster(data: bytes, cluster_node: RawNode, base: int) -> Cluster:
+    timestamp = 0
+    blocks: list[Block] = []
+    ts_seen = False
+    for item in cluster_node.children:
+        if item.element_id == ID_CLUSTER_TIMESTAMP:
+            timestamp = _uint_field(data, item, base)
+            ts_seen = True
+        elif item.element_id == ID_SIMPLE_BLOCK:
+            blocks.extend(
+                _parse_block_payload(
+                    data, item.data_offset, item.end_offset, base, item.path,
+                    base + cluster_node.offset,
+                )
+            )
+        elif item.element_id == ID_BLOCK_GROUP:
+            block_node = _find_child(item.children, ID_BLOCK)
+            if block_node is None:
+                raise InputError(
+                    "BlockGroup without a Block element",
+                    offset=base + item.offset,
+                    path=item.path,
+                )
+            duration_node = _find_child(item.children, ID_BLOCK_DURATION)
+            duration = _uint_field(data, duration_node, base) if duration_node else None
+            frames = _parse_block_payload(
+                data, block_node.data_offset, block_node.end_offset, base, block_node.path,
+                base + cluster_node.offset,
+            )
+            if duration is not None and len(frames) == 1:
+                frames[0].block_duration = duration
+            blocks.extend(frames)
+    if not ts_seen:
+        # Matroska requires a cluster timestamp; treating a missing one as 0
+        # would silently shift every frame, so refuse instead.
+        raise InputError(
+            "Cluster has no Timestamp element",
+            offset=base + cluster_node.offset,
+            path=cluster_node.path,
+        )
+    return Cluster(
+        offset=base + cluster_node.offset,
+        end_offset=base + cluster_node.end_offset,
+        timestamp=timestamp,
+        blocks=blocks,
+        unknown_size=cluster_node.unknown_size,
+    )
+
+
+def _parse_block_payload(
+    data: bytes, start: int, end: int, base: int, path: str, cluster_offset: int
+) -> list[Block]:
+    """Split one (Simple)Block into logical frames, honouring lacing."""
+    track, timecode, flags, payload_start = parse_block_header(
+        data, start, end, base=base, path=path
+    )
+    lacing = (flags >> 1) & 0x03
+    if lacing:
+        sizes, frame_start = lace_frame_sizes(
+            data, payload_start, end, lacing, base=base, path=path
+        )
+    else:
+        sizes, frame_start = [end - payload_start], payload_start
+    frames: list[Block] = []
+    offset = frame_start
+    for index, size in enumerate(sizes):
+        frames.append(
+            Block(
+                track=track,
+                data_offset=base + offset,
+                data_length=size,
+                timecode=timecode,
+                flags=flags,
+                cluster_offset=cluster_offset,
+                lace_index=index,
+                lace_count=len(sizes),
+            )
+        )
+        offset += size
+    return frames
