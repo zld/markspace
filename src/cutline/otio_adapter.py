@@ -1,10 +1,14 @@
 """Adapter between the cutline model and OpenTimelineIO objects.
 
 OTIO tracks are sequential stacks, so explicit start times are encoded
-by inserting Gap children between clips.  Exact rational values that
-OTIO cannot represent (its RationalTime stores floats) are preserved in
-``metadata["cutline"]`` so a round trip is lossless.  Unsupported
-objects or missing time ranges raise AdapterError naming the object.
+by inserting Gap children between clips.  Layered tracks, whose clips
+may overlap, are decomposed into non-overlapping lanes (interval graph
+coloring); each lane becomes an OTIO track carrying ``group``/``lane``
+metadata so ``from_otio`` can merge them back.  Exact rational values
+that OTIO cannot represent (its RationalTime stores floats) are
+preserved in ``metadata["cutline"]`` so a round trip is lossless.
+Unsupported objects or missing time ranges raise AdapterError naming
+the object.
 """
 
 from __future__ import annotations
@@ -42,6 +46,67 @@ def _frac_from_meta(value: Any) -> Fraction:
     return Fraction(value)
 
 
+def _fill_track(ot_track: "otio.schema.Track", items: list[Any],
+                rate: Fraction, track_name: str) -> None:
+    cursor = Fraction(0)
+    for item in sorted(items, key=lambda it: it.start):
+        if item.start > cursor:
+            ot_track.append(otio.schema.Gap(
+                source_range=_time_range(cursor, item.start - cursor, rate)))
+        elif item.start < cursor:
+            raise AdapterError(
+                f"track {track_name!r}: item at {item.start} overlaps previous "
+                f"content ending at {cursor}; resolve conflicts before OTIO export"
+            )
+        if isinstance(item, Gap):
+            ot_track.append(otio.schema.Gap(
+                source_range=_time_range(item.start, item.duration, rate)))
+        else:
+            ot_track.append(_clip_to_otio(item))
+        cursor = item.end
+
+
+def _clip_to_otio(item: Clip) -> "otio.schema.Clip":
+    ot_clip = otio.schema.Clip(name=item.name)
+    ot_clip.source_range = _time_range(
+        item.source_in, item.source_out - item.source_in, item.media.rate)
+    available = (_time_range(Fraction(0), item.media.duration, item.media.rate)
+                 if item.media.duration is not None else None)
+    ot_clip.media_reference = otio.schema.ExternalReference(
+        target_url=item.media.uri or item.media.name,
+        available_range=available,
+    )
+    ot_clip.metadata[META_KEY] = {
+        "clip_id": item.clip_id,
+        "priority": item.priority,
+        "start": _frac_meta(item.start),
+        "duration": _frac_meta(item.duration),
+        "source_in": _frac_meta(item.source_in),
+        "source_out": _frac_meta(item.source_out),
+        "media_rate": _frac_meta(item.media.rate),
+        "media_duration": (_frac_meta(item.media.duration)
+                           if item.media.duration is not None else None),
+        "media_name": item.media.name,
+    }
+    return ot_clip
+
+
+def _lanes(items: list[Any]) -> list[list[Any]]:
+    """Assign items to the fewest non-overlapping lanes (greedy, stable)."""
+    lanes: list[list[Any]] = []
+    lane_ends: list[Fraction] = []
+    for item in sorted(items, key=lambda it: (it.start, getattr(it, "clip_id", ""))):
+        for li, end in enumerate(lane_ends):
+            if item.start >= end:
+                lanes[li].append(item)
+                lane_ends[li] = item.end
+                break
+        else:
+            lanes.append([item])
+            lane_ends.append(item.end)
+    return lanes
+
+
 def to_otio(timeline: Timeline) -> otio.schema.Timeline:
     result = otio.schema.Timeline(name=timeline.name)
     result.metadata[META_KEY] = {
@@ -49,50 +114,19 @@ def to_otio(timeline: Timeline) -> otio.schema.Timeline:
         "version": 1,
     }
     for track in timeline.tracks:
-        ot_track = otio.schema.Track(
-            name=track.name,
-            kind=(otio.schema.TrackKind.Video if track.kind == "video"
-                  else otio.schema.TrackKind.Audio),
-        )
-        ot_track.metadata[META_KEY] = {"mode": track.mode}
-        cursor = Fraction(0)
-        for item in sorted(track.items, key=lambda it: it.start):
-            if item.start > cursor:
-                ot_track.append(otio.schema.Gap(
-                    source_range=_time_range(cursor, item.start - cursor, timeline.rate)))
-            elif item.start < cursor:
-                raise AdapterError(
-                    f"track {track.name!r}: item at {item.start} overlaps previous "
-                    f"content ending at {cursor}; resolve conflicts before OTIO export"
-                )
-            if isinstance(item, Gap):
-                ot_track.append(otio.schema.Gap(
-                    source_range=_time_range(item.start, item.duration, timeline.rate)))
-            else:
-                ot_clip = otio.schema.Clip(name=item.name)
-                ot_clip.source_range = _time_range(
-                    item.source_in, item.source_out - item.source_in, item.media.rate)
-                available = (_time_range(Fraction(0), item.media.duration, item.media.rate)
-                             if item.media.duration is not None else None)
-                ot_clip.media_reference = otio.schema.ExternalReference(
-                    target_url=item.media.uri or item.media.name,
-                    available_range=available,
-                )
-                ot_clip.metadata[META_KEY] = {
-                    "clip_id": item.clip_id,
-                    "priority": item.priority,
-                    "start": _frac_meta(item.start),
-                    "duration": _frac_meta(item.duration),
-                    "source_in": _frac_meta(item.source_in),
-                    "source_out": _frac_meta(item.source_out),
-                    "media_rate": _frac_meta(item.media.rate),
-                    "media_duration": (_frac_meta(item.media.duration)
-                                       if item.media.duration is not None else None),
-                    "media_name": item.media.name,
-                }
-                ot_track.append(ot_clip)
-            cursor = item.end
-        result.tracks.append(ot_track)
+        kind = (otio.schema.TrackKind.Video if track.kind == "video"
+                else otio.schema.TrackKind.Audio)
+        lanes = _lanes(track.items) if track.mode == "layered" else [track.items]
+        for lane_idx, lane_items in enumerate(lanes):
+            name = track.name if lane_idx == 0 else f"{track.name}#{lane_idx}"
+            ot_track = otio.schema.Track(name=name, kind=kind)
+            ot_track.metadata[META_KEY] = {
+                "mode": track.mode,
+                "group": track.name,
+                "lane": lane_idx,
+            }
+            _fill_track(ot_track, lane_items, timeline.rate, track.name)
+            result.tracks.append(ot_track)
     return result
 
 
@@ -108,7 +142,8 @@ def from_otio(timeline: otio.schema.Timeline) -> Timeline:
             f"cannot determine project frame rate"
         )
     rate = _frac_from_meta(meta["rate"])
-    tracks: list[Track] = []
+    groups: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
     for ti, ot_track in enumerate(timeline.tracks):
         if not isinstance(ot_track, otio.schema.Track):
             raise AdapterError(
@@ -117,21 +152,25 @@ def from_otio(timeline: otio.schema.Timeline) -> Timeline:
             )
         tmeta = ot_track.metadata.get(META_KEY, {})
         mode = tmeta.get("mode", "exclusive")
+        group = tmeta.get("group", ot_track.name or f"track{ti}")
         kind = "video" if ot_track.kind == otio.schema.TrackKind.Video else "audio"
-        items: list[Any] = []
+        if group not in groups:
+            groups[group] = {"mode": mode, "kind": kind, "items": []}
+            order.append(group)
+        items: list[Any] = groups[group]["items"]
         cursor = Fraction(0)
         for ci, child in enumerate(ot_track):
             ctx = f"track {ot_track.name!r} child[{ci}]"
             if isinstance(child, otio.schema.Gap):
-                rng = child.source_range()
-                dur = (_frames_at(rng.duration(), rate, ctx) if rng is not None
+                rng = child.source_range
+                dur = (_frames_at(rng.duration, rate, ctx) if rng is not None
                        else Fraction(0))
                 if dur > 0:
                     items.append(Gap(start=cursor, duration=dur))
                 cursor += dur
             elif isinstance(child, otio.schema.Clip):
                 cmeta = child.metadata.get(META_KEY, {})
-                rng = child.source_range()
+                rng = child.source_range
                 if rng is None and not cmeta:
                     raise AdapterError(
                         f"{ctx}: clip {child.name!r} has no source range"
@@ -149,8 +188,8 @@ def from_otio(timeline: otio.schema.Timeline) -> Timeline:
                     priority = int(cmeta.get("priority", 0))
                 else:
                     start = cursor
-                    dur = _frames_at(rng.duration(), rate, ctx)
-                    source_in = _frames_at(rng.start_time(), rate, ctx)
+                    dur = _frames_at(rng.duration, rate, ctx)
+                    source_in = _frames_at(rng.start_time, rate, ctx)
                     source_out = source_in + dur
                     media_rate = rate
                     media_dur = None
@@ -176,6 +215,11 @@ def from_otio(timeline: otio.schema.Timeline) -> Timeline:
                     f"{ctx}: unsupported object {type(child).__name__} "
                     f"{getattr(child, 'name', '')!r}"
                 )
-        tracks.append(Track(name=ot_track.name or f"track{ti}", kind=kind,
-                            mode=mode, items=items))
+    tracks = [
+        Track(name=group, kind=groups[group]["kind"],
+              mode=groups[group]["mode"],
+              items=sorted(groups[group]["items"],
+                           key=lambda it: (it.start, getattr(it, "clip_id", ""))))
+        for group in order
+    ]
     return Timeline(name=timeline.name or "timeline", rate=rate, tracks=tracks)

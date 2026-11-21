@@ -14,12 +14,16 @@ class FormatError(ValueError):
     """Raised when an exchange document is malformed or unrepresentable."""
 
 
+class DocumentIOError(OSError):
+    """Raised when an input document cannot be read from disk."""
+
+
 def read_document(path: Union[str, Path]) -> dict[str, Any]:
     p = Path(path)
     try:
         size = p.stat().st_size
     except OSError as exc:
-        raise FormatError(f"cannot stat input {p}: {exc}") from exc
+        raise DocumentIOError(f"cannot stat input {p}: {exc}") from exc
     if size > MAX_INPUT_BYTES:
         raise FormatError(
             f"input {p} is {size} bytes, exceeds {MAX_INPUT_BYTES} byte limit"
@@ -27,7 +31,7 @@ def read_document(path: Union[str, Path]) -> dict[str, Any]:
     try:
         text = p.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
-        raise FormatError(f"cannot read input {p}: {exc}") from exc
+        raise DocumentIOError(f"cannot read input {p}: {exc}") from exc
     try:
         doc = json.loads(text)
     except json.JSONDecodeError as exc:

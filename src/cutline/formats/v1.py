@@ -1,9 +1,12 @@
 """Exchange format v1: integer project rate, start/duration frame counts.
 
-v1 has no explicit track mode; tracks are read as exclusive.  Layered
-tracks and non-integer rates are not representable and are rejected on
-write unless ``quantize`` is requested, in which case every frame count
-is rounded to the nearest integer and the maximum error is reported.
+v1 has no required track mode; tracks default to exclusive.  A layered
+track is written with an optional ``"mode": "layered"`` extension field
+so it survives a round trip; readers that ignore unknown keys simply
+treat every track as exclusive.  Non-integer rates are not
+representable and are rejected on write unless ``quantize`` is
+requested, in which case every frame count is rounded to the nearest
+integer and the maximum error is reported.
 """
 
 from __future__ import annotations
@@ -58,7 +61,7 @@ def loads(doc: dict[str, Any]) -> Timeline:
         tracks.append(Track(
             name=str(require(tdoc, "name", ctx)),
             kind=str(tdoc.get("kind", "video")),
-            mode="exclusive",
+            mode=str(tdoc.get("mode", "exclusive")),
             items=items,
         ))
     return Timeline(name=str(doc.get("name", "timeline")), rate=Fraction(rate),
@@ -101,10 +104,9 @@ def dumps(timeline: Timeline, quantize: bool = False) -> tuple[dict[str, Any], F
 
     tracks = []
     for track in timeline.tracks:
-        if track.mode != "exclusive":
+        if track.mode not in ("exclusive", "layered"):
             raise FormatError(
-                f"v1 export: track {track.name!r} mode {track.mode!r} is not "
-                f"representable in v1 (tracks are implicitly exclusive)"
+                f"v1 export: track {track.name!r} has unknown mode {track.mode!r}"
             )
         items = []
         for item in track.items:
@@ -131,7 +133,10 @@ def dumps(timeline: Timeline, quantize: bool = False) -> tuple[dict[str, Any], F
                            if item.media.duration is not None else {}),
                     },
                 })
-        tracks.append({"name": track.name, "kind": track.kind, "items": items})
+        tdoc: dict[str, Any] = {"name": track.name, "kind": track.kind, "items": items}
+        if track.mode != "exclusive":
+            tdoc["mode"] = track.mode
+        tracks.append(tdoc)
     doc = {"version": VERSION, "name": timeline.name, "rate": int(rate),
            "tracks": tracks}
     return doc, max_error
