@@ -25,5 +25,6 @@ add_library(lutcore STATIC
     src/color_space.cpp
     src/cube_reader.cpp
     src/io_util.cpp
+    src/interpolator.cpp
 )
 target_link_libraries(lutcore PUBLIC lutbase)
