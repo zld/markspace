@@ -19,6 +19,7 @@ add_library(mp4flow_core STATIC
   src/fragment_index.cpp
   src/fixture_builder.cpp
   src/repack.cpp
+  src/validator.cpp
 )
 target_include_directories(mp4flow_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
