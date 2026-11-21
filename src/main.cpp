@@ -1,6 +1,7 @@
 #include "manifest.h"
 #include "unicode.h"
 #include "font_metrics.h"
+#include "line_breaker.h"
 
 #include <iostream>
 
@@ -43,9 +44,28 @@ int main(int argc, char** argv) {
         std::cerr << font_error << "\n";
         return 2;
     }
-    std::cout << "subtitles=" << manifest.items.size() << " clusters=" << clusters
-              << " ascent=" << metrics.ascent()
-              << " descent=" << metrics.descent()
-              << " line_height=" << metrics.line_height() << "\n";
+    const int usable_width =
+        manifest.canvas.width - 2 * manifest.canvas.safe_inset;
+    int lines = 0;
+    int overflows = 0;
+    int missing = 0;
+    for (const SubtitleItem& item : manifest.items) {
+        std::vector<Cluster> shaped;
+        std::vector<char32_t> codepoints;
+        DecodeError error;
+        shape_text(item.text, shaped, error, codepoints);
+        ShapedText advances = shape_clusters(shaped, codepoints, metrics);
+        TextLayout layout = layout_clusters(shaped, advances, metrics,
+                                            usable_width, manifest.max_lines);
+        lines += static_cast<int>(layout.lines.size());
+        overflows += layout.overflow_count;
+        missing += advances.missing_glyphs;
+        for (const std::string& message : layout.errors) {
+            std::cerr << item.id << ": " << message << "\n";
+        }
+    }
+    std::cout << "subtitles=" << manifest.items.size() << " lines=" << lines
+              << " overflows=" << overflows << " missing_glyphs=" << missing
+              << "\n";
     return 0;
 }

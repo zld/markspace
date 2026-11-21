@@ -23,6 +23,7 @@ set(SUBTITLE_METRICS_SOURCES
   src/manifest.cpp
   src/unicode.cpp
   src/font_metrics.cpp
+  src/line_breaker.cpp
 )
 
 add_executable(subtitle-metrics ${SUBTITLE_METRICS_SOURCES})
