@@ -174,6 +174,22 @@ void testPpmRoundTripAndErrors() {
         CHECK(fromComment.pixels == back.pixels);
     }
 
+    // 16-bit raster whose first sample byte is itself whitespace (0x0C form
+    // feed). The separator logic must not swallow raster bytes (regression for
+    // an off-by-one that truncated every such file by one byte).
+    {
+        const std::string header = "P6\n1 1\n65535\n";
+        const std::string raster = std::string("\x00\x0c", 2) +
+                                   std::string("\xff\xff", 2) +
+                                   std::string("\x80\x00", 2);
+        writeFile(dir + "/ws16.ppm", header + raster);
+        Image ws = readPpm(dir + "/ws16.ppm");
+        CHECK(ws.maxval == 65535);
+        CHECK_NEAR(ws.pixels[0].r, 12.0 / 65535.0, 1e-9);
+        CHECK_NEAR(ws.pixels[0].g, 1.0, 1e-9);
+        CHECK_NEAR(ws.pixels[0].b, 0x8000 / 65535.0, 1e-9);
+    }
+
     auto expectIo = [&](const std::string& bytes) {
         const std::string p = dir + "/bad.ppm";
         writeFile(p, bytes);

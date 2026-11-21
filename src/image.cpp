@@ -49,28 +49,31 @@ public:
         return static_cast<std::uint32_t>(value);
     }
 
-    // The PPM spec mandates one whitespace byte after maxval, but real files
-    // use CRLF (two bytes) and occasionally a comment line there. Consume the
-    // required separator and any additional header whitespace/comments so the
-    // position lands exactly on the first raster byte.
+    // The PPM spec allows exactly ONE whitespace character after maxval,
+    // then the raster begins verbatim. The raster's first byte may itself be
+    // a whitespace code, so we must never keep skipping whitespace here or we
+    // would swallow raster data. We do tolerate a CRLF separator (the '\r'
+    // is the separator, the following '\n' is consumed) and an optional
+    // comment line, which cannot appear inside the binary raster by spec.
     void enterRaster() {
         if (pos_ >= data_.size() ||
             !std::isspace(static_cast<unsigned char>(data_[pos_]))) {
             throw IoError("missing raster separator in PPM " + path_);
         }
+        const bool wasCr = data_[pos_] == '\r';
         ++pos_;  // The single spec-required separator.
-        for (;;) {
-            while (pos_ < data_.size() &&
-                   std::isspace(static_cast<unsigned char>(data_[pos_]))) {
+        if (wasCr && pos_ < data_.size() && data_[pos_] == '\n') {
+            ++pos_;  // Complete a CRLF separator without touching the raster.
+        }
+        // A comment may legally sit between header and raster; skip whole
+        // comment lines until the next newline, which then starts the raster.
+        while (pos_ < data_.size() && data_[pos_] == '#') {
+            while (pos_ < data_.size() && data_[pos_] != '\n') {
                 ++pos_;
             }
-            if (pos_ < data_.size() && data_[pos_] == '#') {
-                while (pos_ < data_.size() && data_[pos_] != '\n') {
-                    ++pos_;
-                }
-                continue;
+            if (pos_ < data_.size()) {
+                ++pos_;  // Consume the newline ending the comment.
             }
-            break;
         }
     }
 
