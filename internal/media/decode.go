@@ -17,8 +17,8 @@ func DecodeFrames(ctx context.Context, path string, width, height, start, count 
 	frameSize := width * height * 3 / 2
 	cmd := exec.CommandContext(ctx, "ffmpeg",
 		"-v", "error",
-		"-select_streams", "v:0",
 		"-i", path,
+		"-map", "0:v:0",
 		"-vf", fmt.Sprintf("select='between(n,%d,%d)',setpts=N/FRAME_RATE/TB", start, start+count-1),
 		"-frames:v", fmt.Sprintf("%d", count),
 		"-f", "rawvideo", "-pix_fmt", "yuv420p",

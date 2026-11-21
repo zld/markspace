@@ -2,6 +2,8 @@ package media
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -198,4 +200,19 @@ func EnsureFileExists(path string) error {
 		return fmt.Errorf("input path %s: %w", path, err)
 	}
 	return nil
+}
+
+// FileSHA256Pub returns the lowercase hex SHA-256 of a file. It mirrors
+// checkpoint.FileSHA256 but keeps the media package free of upward imports.
+func FileSHA256Pub(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
