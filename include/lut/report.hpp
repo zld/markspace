@@ -22,8 +22,9 @@ struct Deviation {
     double worst() const;
 };
 
-// Histograms plus the counters for pixels that fell outside the domain
-// (before grading) or were clipped back into [0,1] (after encoding).
+// Histograms plus pixel counters. Both counters use the same unit: a pixel
+// is counted once when any channel is outside the domain (before grading)
+// or clipped back into [0,1] (after encoding).
 struct ImageStats {
     std::array<Histogram, 3> before{};
     std::array<Histogram, 3> after{};

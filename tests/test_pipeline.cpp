@@ -292,6 +292,26 @@ void testDomainPoliciesInRender() {
     CHECK(threw);
 }
 
+// Clip and out-of-domain counters share a pixel unit: one pixel with several
+// offending channels increments each counter exactly once.
+void testCounterUnits() {
+    Lut3D lut = makeFixtureLut();
+    for (RGB& node : lut.nodes) {
+        node.r += 0.5;  // Push many red outputs above 1.0.
+        node.g += 0.5;
+    }
+    Image patches = makeFixtureImage();
+    RenderResult result = renderImage(lut, patches, DomainPolicy::Clamp, 16);
+    CHECK(result.stats.clipped <= patches.pixelCount());
+    CHECK(result.stats.outOfDomain <= patches.pixelCount());
+
+    // One in-range image with a single multi-channel out-of-domain input.
+    Image single = makeFixtureImage();
+    single.pixels[0] = RGB{1.3, -0.4, 0.5};
+    RenderResult one = renderImage(lut, single, DomainPolicy::Clamp, 16);
+    CHECK(one.stats.outOfDomain == 1);
+}
+
 }  // namespace
 
 int main() {
@@ -304,5 +324,6 @@ int main() {
     RUN_TEST(testTwoPathEquivalence);
     RUN_TEST(testBakeDeviation);
     RUN_TEST(testDomainPoliciesInRender);
+    RUN_TEST(testCounterUnits);
     return luttest::finish();
 }

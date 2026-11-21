@@ -26,16 +26,21 @@ RGB gradePixel(const Interpolator& interpolator, const RGB& input,
     const RGB output = renderProbe(interpolator, input);
     const double outChannels[3] = {output.r, output.g, output.b};
     double graded[3];
+    bool pixelClipped = false;
     for (int c = 0; c < 3; ++c) {
         double value = outChannels[c];
         if (inUnitRange(value)) {
             accumulateHistogram(stats.after[c], value);
         } else {
-            ++stats.clipped;
+            pixelClipped = true;
             value = std::clamp(value, 0.0, 1.0);
             accumulateHistogram(stats.after[c], value);
         }
         graded[c] = value;
+    }
+    // Count pixels (not channels), matching the out-of-domain counter unit.
+    if (pixelClipped) {
+        ++stats.clipped;
     }
     return RGB{graded[0], graded[1], graded[2]};
 }
