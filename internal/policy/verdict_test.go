@@ -79,7 +79,7 @@ func TestValidateThresholds(t *testing.T) {
 		t.Fatalf("defaults rejected: %v", err)
 	}
 	for name, th := range map[string]Thresholds{
-		"positive target": {TargetLUFS: 3, ToleranceLU: 1, MaxTruePeakDBTP: -1},
+		"positive target":    {TargetLUFS: 3, ToleranceLU: 1, MaxTruePeakDBTP: -1},
 		"negative tolerance": {TargetLUFS: -23, ToleranceLU: -1, MaxTruePeakDBTP: -1},
 		"nan target":         {TargetLUFS: math.NaN(), ToleranceLU: 1, MaxTruePeakDBTP: -1},
 		"absurd peak":        {TargetLUFS: -23, ToleranceLU: 1, MaxTruePeakDBTP: 40},
