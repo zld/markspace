@@ -69,7 +69,54 @@ func Verify(job *config.Job, outputRoot *safeio.Root) (*Report, error) {
 				Failure{Reason: "unreferenced files present: " + fmt.Sprint(extras)})
 		}
 	}
+	applyVerifyDrift(report, index, job)
 	return report, nil
+}
+
+// applyVerifyDrift recomputes cross-rendition boundary drift entirely from the
+// reloaded integrity index, so verify does not depend on build-time memory.
+func applyVerifyDrift(report *Report, index *integrity.Index, job *config.Job) {
+	if len(job.Renditions) < 2 {
+		return
+	}
+	refName := job.Renditions[0].Name
+	ref := index.Renditions[refName].Entries
+	tolerance := job.DriftTolerance.Duration.Seconds()
+	for i := 1; i < len(job.Renditions); i++ {
+		name := job.Renditions[i].Name
+		entries := index.Renditions[name].Entries
+		var maxDrift float64
+		var atSeg int
+		n := len(ref)
+		if len(entries) < n {
+			n = len(entries)
+		}
+		for j := 0; j < n; j++ {
+			d := entries[j].BoundarySeconds - ref[j].BoundarySeconds
+			if absFloat(d) > absFloat(maxDrift) {
+				maxDrift, atSeg = d, entries[j].Segment
+			}
+		}
+		for k := range report.Renditions {
+			if report.Renditions[k].Rendition != name {
+				continue
+			}
+			report.Renditions[k].DriftSeconds = round3(maxDrift)
+			if tolerance > 0 && absFloat(maxDrift) > tolerance {
+				report.Renditions[k].Failures = append(report.Renditions[k].Failures, Failure{
+					Rendition: name, Segment: atSeg,
+					Reason: fmt.Sprintf("timeline drift %.3fs exceeds tolerance %.3fs", maxDrift, tolerance),
+				})
+			}
+		}
+	}
+}
+
+func absFloat(v float64) float64 {
+	if v < 0 {
+		return -v
+	}
+	return v
 }
 
 func verifyEntries(

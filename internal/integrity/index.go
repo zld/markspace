@@ -23,6 +23,9 @@ type Entry struct {
 	SHA256   string  `json:"sha256"`
 	Size     int64   `json:"size"`
 	Duration float64 `json:"duration"`
+	// BoundarySeconds is the segment start on the shared cross-rendition
+	// timeline, retained so verification can recompute drift from the index.
+	BoundarySeconds float64 `json:"boundary_seconds"`
 }
 
 // RenditionIndex groups entries under a rendition name.

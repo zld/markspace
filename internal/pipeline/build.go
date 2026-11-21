@@ -147,21 +147,23 @@ func processRendition(
 			if err := outputRoot.AtomicWrite(rel, cut.Data); err != nil {
 				return nil, nil, err
 			}
+			// Boundary on the shared timeline: cumulative position plus this
+			// rendition's fixed PTS phase offset.
+			boundary := streamPos + (cut.StartPTS - firstPTS) + phaseOffset
+			boundarySec := ts.Seconds(boundary)
+			out.boundaries = append(out.boundaries, boundarySec)
 			dur := cut.DurationSeconds()
 			index.Add(rd.Name, integrity.Entry{
 				Segment: mediaSeq, File: rel,
 				SHA256: integrity.HashBytes(cut.Data),
 				Size:   int64(len(cut.Data)), Duration: dur,
+				BoundarySeconds: round3(boundarySec),
 			})
 			playlist.Segments = append(playlist.Segments, m3u8.Segment{
 				URI: file, Duration: dur,
 				Discontinuity: pendingDiscontinuity && haveCut,
 				MediaSeq:      mediaSeq,
 			})
-			// Boundary on the shared timeline: cumulative position plus this
-			// rendition's fixed PTS phase offset.
-			boundary := streamPos + (cut.StartPTS - firstPTS) + phaseOffset
-			out.boundaries = append(out.boundaries, ts.Seconds(boundary))
 			streamPos += cut.EndPTS - cut.StartPTS
 			out.duration += dur
 			mediaSeq++

@@ -87,11 +87,18 @@ func TestBuildAndVerifyFaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	var checksumFails int
+	var sawDrift bool
 	for _, line := range vrep.Renditions {
 		checksumFails += line.ChecksumFailures
+		if line.DriftSeconds != 0 {
+			sawDrift = true
+		}
 	}
 	if checksumFails != 1 {
 		t.Fatalf("checksum failures = %d, want 1 (injected fault)", checksumFails)
+	}
+	if !sawDrift {
+		t.Fatal("verify did not recompute cross-rendition drift from the index")
 	}
 }
 
