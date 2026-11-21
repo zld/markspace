@@ -66,7 +66,8 @@ kernel, so identical inputs produce identical outputs.
 `bake` prints `grid_size`, `probe_count`, per-channel
 `max_deviation_r/g/b`, and `hist_before_*` / `hist_after_*` as 16
 integers per channel (each channel totals the pixel count). Out-of-domain
-inputs and clipped outputs are counted separately.
+input pixels and clipped output pixels are counted separately, both per
+pixel (a pixel with several offending channels counts once).
 
 ## Exit codes
 
