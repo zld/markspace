@@ -20,8 +20,8 @@ Pipeline:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Callable, Iterable, Protocol
+from dataclasses import dataclass
+from typing import Iterable, Protocol
 
 import numpy as np
 
