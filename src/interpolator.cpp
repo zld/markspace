@@ -21,8 +21,6 @@ double applyDomain(double value, double lo, double hi, int component,
     return value;
 }
 
-double lerp(double a, double b, double t) { return a + (b - a) * t; }
-
 }  // namespace
 
 RGB Interpolator::sample(const RGB& position) const {
