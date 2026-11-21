@@ -90,6 +90,11 @@ Lut3D readCube(const std::string& path) {
                                  "LUT_3D_SIZE out of range [2,65]: " + token);
             }
             lut.size = static_cast<int>(rawSize);
+            std::string extra;
+            if (ss >> extra) {
+                throw ParseError(lineNo,
+                                 "unexpected token after LUT_3D_SIZE: " + extra);
+            }
             haveSize = true;
         } else if (keyword == "DOMAIN_MIN" || keyword == "DOMAIN_MAX") {
             const bool isMin = keyword == "DOMAIN_MIN";
@@ -104,6 +109,12 @@ Lut3D readCube(const std::string& path) {
                 }
                 (isMin ? lut.domainMin : lut.domainMax)[i] =
                     parseFinite(token, lineNo);
+            }
+            std::string extra;
+            if (ss >> extra) {
+                throw ParseError(lineNo,
+                                 "unexpected token after " + keyword + ": " +
+                                     extra);
             }
             (isMin ? haveMin : haveMax) = true;
         } else if (keyword == "LUT_1D_SIZE" || keyword == "LUT_1D_INPUT") {

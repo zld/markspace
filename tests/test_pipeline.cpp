@@ -109,6 +109,8 @@ void testCubeParseErrors() {
     expectParse("LUT_3D_SIZE 2\nLUT_3D_SIZE 3\n", 2);
     expectParse("LUT_1D_SIZE 4\n", 1);
     expectParse("LUT_3D_SIZE 66\n", 1);
+    expectParse("LUT_3D_SIZE 2 garbage\n", 1);
+    expectParse("LUT_3D_SIZE 2\nDOMAIN_MIN 0 0 0 junk\n", 2);
     expectParse("LUT_3D_SIZE 2\nBOGUS 1 2\n", 2);
     expectData("LUT_3D_SIZE 2\n0.1 0.2 0.3\n");  // Missing nodes.
 }
