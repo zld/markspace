@@ -151,6 +151,23 @@ class RebuildTests(unittest.TestCase):
             )
         )
 
+    def test_corrupt_reference_reports_each_mismatch(self):
+        source = self._write("sample.mp4", fixture.build_default())
+        output = str(self.dir / "rebuilt.mp4")
+        rebuild(source, output, target_duration=2)
+        data = bytearray(Path(output).read_bytes())
+        roots = BoxReader(memoryview(bytes(data))).parse_top_level()
+        box = next(item for item in roots if item.type == b"sidx")
+        # Second reference's size word follows the header and the first entry.
+        ref2 = box.payload_start + 12 + 8 + 2 + 2 + 12
+        word = int.from_bytes(data[ref2 : ref2 + 4], "big")
+        data[ref2 : ref2 + 4] = (word - 5).to_bytes(4, "big")
+        report = validate_bytes(bytes(data))
+        self.assertFalse(report.ok)
+        statuses = [check["status"] for check in report.offset_checks]
+        self.assertEqual(statuses, ["ok", "mismatch", "mismatch"])
+        self.assertTrue(report.errors)
+
     def test_sidx_version_1_round_trip(self):
         data = fixture.build_default(
             sidx_version=1, earliest_presentation_time=2**33
