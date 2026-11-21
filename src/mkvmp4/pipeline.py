@@ -349,11 +349,8 @@ def _build_track_specs(
     mk: MatroskaFile,
     mapping: dict[int, int],
     timeline: TimelineReport,
-    *,
-    min_movie_timescale: int,
-) -> tuple[list[mp4.TrackSpec], dict[str, int]]:
+) -> list[mp4.TrackSpec]:
     specs: list[mp4.TrackSpec] = []
-    offsets: dict[str, int] = {}
     for track in mk.tracks:
         target_id = mapping[track.number]
         tl = timeline.tracks[track.number]
@@ -383,8 +380,7 @@ def _build_track_specs(
             sample_rate=round(track.sampling_frequency or 48000),
         )
         specs.append(spec)
-        offsets[str(target_id)] = 0
-    return specs, offsets
+    return specs
 
 
 def remux_file(path: str | Path, options: RemuxOptions) -> RemuxResult:
@@ -418,9 +414,7 @@ def remux_file(path: str | Path, options: RemuxOptions) -> RemuxResult:
                 f"movie timescale {movie_timescale} and track timescale "
                 f"{options.timescale} are not multiples of one another"
             )
-        specs, _ = _build_track_specs(
-            mk, mapping, timeline, min_movie_timescale=movie_timescale
-        )
+        specs = _build_track_specs(mk, mapping, timeline)
         result = _write_and_verify(mk, specs, timeline, movie_timescale, output)
         result.output = str(output)
         result.mapping_derived = bool(options.derive_mapping and not options.mapping.by_source)
@@ -439,7 +433,6 @@ def _layout(movie_timescale: int, specs: list[mp4.TrackSpec]) -> tuple[bytes, by
     ftyp = mp4.build_ftyp()
     total_payload = sum(sum(spec.sizes) for spec in specs)
     header = mp4.mdat_header(total_payload)
-    first_offset = len(ftyp) + 0 + len(header)
     # Start with an optimistic moov size, iterate until sizes stabilise.
     probe = mp4.build_moov(movie_timescale=movie_timescale, tracks=specs)
     for _ in range(8):
@@ -464,7 +457,6 @@ def _layout(movie_timescale: int, specs: list[mp4.TrackSpec]) -> tuple[bytes, by
         cursor += sum(spec.sizes)
     if cursor != len(ftyp) + len(probe) + len(header) + total_payload:
         raise OutputError("mdat layout does not match the sum of sample sizes")
-    del first_offset
     return ftyp + probe, header, total_payload
 
 

@@ -7,7 +7,7 @@ tree, track number and sample index where applicable.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 EXIT_OK = 0
@@ -126,18 +126,3 @@ class VerifyError(OutputError):
     stage = "verify"
 
 
-@dataclass
-class FailureReport:
-    """Failure detail kept alongside a partially written temp file."""
-
-    phase: str
-    error: MkvMp4Error
-    target: str
-    extra: dict[str, Any] = field(default_factory=dict)
-
-    def to_dict(self) -> dict[str, Any]:
-        data = self.error.to_dict()
-        data["phase"] = self.phase
-        data["target"] = self.target
-        data.update(self.extra)
-        return data

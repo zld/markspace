@@ -94,16 +94,6 @@ MATRIX_IDENTITY = (
 )
 
 
-@dataclass
-class BoxIndex:
-    """Byte ranges of top-level boxes, for later index verification."""
-
-    entries: list[dict[str, object]] = field(default_factory=list)
-
-    def add(self, box_type: str, offset: int, size: int) -> None:
-        self.entries.append({"type": box_type, "offset": offset, "size": size})
-
-
 # ---------------------------------------------------------------------------
 # Sample entries (codec configuration recorded from Matroska CodecPrivate)
 # ---------------------------------------------------------------------------
@@ -543,9 +533,6 @@ def mdat_header(payload_size: int) -> bytes:
 # ---------------------------------------------------------------------------
 # Verification: re-read the written file and check the index against the data
 # ---------------------------------------------------------------------------
-
-CONTAINER_BOXES = frozenset({b"moov", b"trak", b"mdia", b"minf", b"stbl", b"dinf", b"edts"})
-
 
 @dataclass
 class ParsedBox:
