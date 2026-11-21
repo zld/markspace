@@ -148,14 +148,6 @@ class RawNode:
     path: str
     children: list["RawNode"] = field(default_factory=list)
 
-    @property
-    def byte_length(self) -> int:
-        return self.end_offset - self.offset
-
-    @property
-    def data_length(self) -> int:
-        return self.end_offset - self.data_offset
-
     def walk(self) -> Iterator["RawNode"]:
         yield self
         for child in self.children:
@@ -213,9 +205,6 @@ class TreeSummary:
             "unknown_sizes": self.unknown_sizes,
             "nodes": [n.to_dict() for n in self.nodes],
         }
-
-    def find(self, name: str) -> Iterator[SummaryNode]:
-        return (n for n in self.nodes if n.name == name)
 
 
 def _node_path(parent_path: str, name: str) -> str:

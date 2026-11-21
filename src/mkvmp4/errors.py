@@ -37,18 +37,6 @@ class ErrorContext:
                 out[key] = value
         return out
 
-    def describe(self) -> str:
-        parts = [self.stage]
-        if self.path:
-            parts.append(f"path={self.path}")
-        if self.offset is not None:
-            parts.append(f"offset={self.offset}")
-        if self.track is not None:
-            parts.append(f"track={self.track}")
-        if self.sample_index is not None:
-            parts.append(f"sample={self.sample_index}")
-        return " ".join(parts)
-
 
 class MkvMp4Error(Exception):
     """Base error: exit code, machine-readable context and a message."""

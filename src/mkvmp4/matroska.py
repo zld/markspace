@@ -11,7 +11,6 @@ from dataclasses import dataclass, field
 
 from .ebml import (
     decode_float,
-    decode_int,
     decode_string,
     decode_uint,
     read_vint_id,
@@ -144,10 +143,6 @@ class Block:
     def lacing(self) -> int:
         return (self.flags >> 1) & 0x03
 
-    @property
-    def discardable(self) -> bool:
-        return bool(self.flags & 0x01)
-
 
 @dataclass
 class Cluster:
@@ -181,10 +176,6 @@ class MatroskaFile:
 
 def _uint_field(data: bytes, node: RawNode, base: int) -> int:
     return decode_uint(data, node.data_offset, node.size, base=base, path=node.path)
-
-
-def _int_field(data: bytes, node: RawNode, base: int) -> int:
-    return decode_int(data, node.data_offset, node.size, base=base, path=node.path)
 
 
 def _find_child(nodes: list[RawNode], element_id: int) -> RawNode | None:

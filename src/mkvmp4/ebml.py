@@ -11,10 +11,6 @@ from dataclasses import dataclass
 
 from .errors import EbmlParseError
 
-# The largest element header we are willing to read: an 8-byte ID plus an
-# 8-byte size field.
-MAX_HEADER_BYTES = 16
-
 # Split at 1 << 56 so that "no 8-byte VINT can carry this value" is decided in
 # Python integers before any unvalidated data can become a NumPy scalar.
 _VINT56 = 1 << 56
@@ -30,17 +26,6 @@ class ElementHeader:
     size_len: int
     size: int | None  # None means "unknown size"
     data_offset: int  # first byte of the element data
-
-    @property
-    def header_len(self) -> int:
-        return self.id_len + self.size_len
-
-    @property
-    def end_offset(self) -> int | None:
-        """Exclusive end when the size is known, else ``None``."""
-        if self.size is None:
-            return None
-        return self.data_offset + self.size
 
 
 def read_vint_id(data: bytes, pos: int, *, base: int = 0, path: str = "") -> tuple[int, int]:
