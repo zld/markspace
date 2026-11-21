@@ -58,6 +58,7 @@ def validate_routing(buses: dict) -> list[str]:
     for name in buses:
         if state.get(name, 0) == 0:
             visit(name, [])
+    order.reverse()
     return order  # children always appear before their parents
 
 
