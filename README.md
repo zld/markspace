@@ -21,10 +21,13 @@ All sample data is produced locally by the Go generator; no external media is
 needed.
 
 ```sh
-go run ./testdata --scenario normal       --out /tmp/sample.ts
-go run ./testdata --scenario bad-sections --out /tmp/bad-sections.ts
-go run ./testdata --scenario bad-cc       --out /tmp/bad-cc.ts
+go run ./testdata/generate.go --scenario normal       --out /tmp/sample.ts
+go run ./testdata/generate.go --scenario bad-sections --out /tmp/bad-sections.ts
+go run ./testdata/generate.go --scenario bad-cc       --out /tmp/bad-cc.ts
 ```
+
+The generator is a single runnable file (`testdata/generate.go`); the packet
+and table builders it imports live in `internal/tsbuild`.
 
 The `normal` fixture is exactly 120 packets with two complete PMT versions:
 v0 maps video to PID 256 and audio to PID 257; v1 remaps video to PID 258

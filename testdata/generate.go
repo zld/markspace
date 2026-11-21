@@ -1,6 +1,7 @@
-// Test-data generator for tsaudit. Run with:
+// Test-data generator for tsaudit. Run with either:
 //
-//	go run ./testdata/generate.go --scenario normal --out /tmp/sample.ts
+//	go run ./testdata/generate.go --out /tmp/sample.ts
+//	go run ./testdata --scenario bad-cc --out /tmp/bad-cc.ts
 //
 // Scenarios:
 //
@@ -15,6 +16,7 @@ import (
 	"os"
 
 	"github.com/example/tsaudit/internal/psi"
+	"github.com/example/tsaudit/internal/tsbuild"
 	"github.com/example/tsaudit/internal/tsreader"
 )
 
@@ -69,22 +71,21 @@ func main() {
 func psiPackets(pid uint16, section []byte, count int, startCC uint8) [][tsreader.PacketSize]byte {
 	out := make([][tsreader.PacketSize]byte, 0, count)
 	for i := 0; i < count; i++ {
-		out = append(out, psiPacket(pid, (startCC+uint8(i))&0x0f, section))
+		out = append(out, tsbuild.PSIPacket(pid, (startCC+uint8(i))&0x0f, section))
 	}
 	return out
 }
 
 // esPackets emits n elementary packets for pid, optionally injecting a CC gap.
 func esPackets(pid uint16, n int, tag byte, gapAfter, gapCount int) [][tsreader.PacketSize]byte {
-	w := newCCWriter(pid)
+	w := tsbuild.NewCCWriter(pid)
 	if gapCount > 0 {
-		w.withGap(gapAfter, gapCount)
+		w.WithGap(gapAfter, gapCount)
 	}
 	out := make([][tsreader.PacketSize]byte, 0, n)
 	for i := 0; i < n; i++ {
-		cc := w.next()
-		out = append(out, esPacket(pid, cc, tag))
-		w.advance()
+		out = append(out, tsbuild.ESPacket(pid, w.Next(), tag))
+		w.Advance()
 	}
 	return out
 }
@@ -100,7 +101,7 @@ type esStream struct {
 func (s *esStream) emit(n int, tag byte) [][tsreader.PacketSize]byte {
 	out := make([][tsreader.PacketSize]byte, 0, n)
 	for i := 0; i < n; i++ {
-		out = append(out, esPacket(s.pid, s.cc, tag))
+		out = append(out, tsbuild.ESPacket(s.pid, s.cc, tag))
 		s.cc = (s.cc + 1) & 0x0f
 	}
 	return out
@@ -109,16 +110,16 @@ func (s *esStream) emit(n int, tag byte) [][tsreader.PacketSize]byte {
 // buildNormal constructs the 120-packet remap fixture described in the
 // acceptance criteria.
 func buildNormal() [][tsreader.PacketSize]byte {
-	pat := buildPAT(0, program1, pmtPID)
-	pmtV0 := buildPMT(0, program1, pidVideo0, []psi.StreamInfo{
-		{StreamType: stVideo, ElementaryPID: pidVideo0},
-		{StreamType: stAudio, ElementaryPID: pidAudio},
-		{StreamType: stVideo, ElementaryPID: pidOther},
+	pat := tsbuild.BuildPAT(0, program1, pmtPID)
+	pmtV0 := tsbuild.BuildPMT(0, program1, pidVideo0, []psi.StreamInfo{
+		{StreamType: tsbuild.StreamTypeVideo, ElementaryPID: pidVideo0},
+		{StreamType: tsbuild.StreamTypeAudio, ElementaryPID: pidAudio},
+		{StreamType: tsbuild.StreamTypeVideo, ElementaryPID: pidOther},
 	})
-	pmtV1 := buildPMT(1, program1, pidVideo1, []psi.StreamInfo{
-		{StreamType: stVideo, ElementaryPID: pidVideo1},
-		{StreamType: stAudio, ElementaryPID: pidAudio},
-		{StreamType: stVideo, ElementaryPID: pidOther},
+	pmtV1 := tsbuild.BuildPMT(1, program1, pidVideo1, []psi.StreamInfo{
+		{StreamType: tsbuild.StreamTypeVideo, ElementaryPID: pidVideo1},
+		{StreamType: tsbuild.StreamTypeAudio, ElementaryPID: pidAudio},
+		{StreamType: tsbuild.StreamTypeVideo, ElementaryPID: pidOther},
 	})
 
 	var out [][tsreader.PacketSize]byte
@@ -153,16 +154,16 @@ func buildNormal() [][tsreader.PacketSize]byte {
 // buildBadCC keeps valid PAT/PMT v0 and jumps PID 257 from counter 5 to 8
 // (two missing packets), then continues 9, 10, ...
 func buildBadCC() [][tsreader.PacketSize]byte {
-	pat := buildPAT(0, program1, pmtPID)
-	pmtV0 := buildPMT(0, program1, pidVideo0, []psi.StreamInfo{
-		{StreamType: stVideo, ElementaryPID: pidVideo0},
-		{StreamType: stAudio, ElementaryPID: pidAudio},
+	pat := tsbuild.BuildPAT(0, program1, pmtPID)
+	pmtV0 := tsbuild.BuildPMT(0, program1, pidVideo0, []psi.StreamInfo{
+		{StreamType: tsbuild.StreamTypeVideo, ElementaryPID: pidVideo0},
+		{StreamType: tsbuild.StreamTypeAudio, ElementaryPID: pidAudio},
 	})
 	var out [][tsreader.PacketSize]byte
 	out = append(out, psiPackets(patPID, pat, 2, 0)...)
 	out = append(out, psiPackets(pmtPID, pmtV0, 2, 0)...)
 	out = append(out, esPackets(pidVideo0, 10, 0x10, -1, 0)...)
-	// 12 packets, counters 0..4 then 8..13: gap of two missing counters.
+	// 12 packets, counters 0..5 then 8..13: two missing counters (6 and 7).
 	out = append(out, esPackets(pidAudio, 12, 0x20, 5, 2)...)
 	return out
 }
@@ -171,13 +172,13 @@ func buildBadCC() [][tsreader.PacketSize]byte {
 // PMT section and a CRC-corrupted PMT section. Neither damaged attempt may
 // publish a new version.
 func buildBadSections() [][tsreader.PacketSize]byte {
-	pat := buildPAT(0, program1, pmtPID)
-	pmtV0 := buildPMT(0, program1, pidVideo0, []psi.StreamInfo{
-		{StreamType: stVideo, ElementaryPID: pidVideo0},
-		{StreamType: stAudio, ElementaryPID: pidAudio},
+	pat := tsbuild.BuildPAT(0, program1, pmtPID)
+	pmtV0 := tsbuild.BuildPMT(0, program1, pidVideo0, []psi.StreamInfo{
+		{StreamType: tsbuild.StreamTypeVideo, ElementaryPID: pidVideo0},
+		{StreamType: tsbuild.StreamTypeAudio, ElementaryPID: pidAudio},
 	})
-	pmtBad := buildPMT(2, program1, pidVideo0, []psi.StreamInfo{
-		{StreamType: stVideo, ElementaryPID: pidVideo1},
+	pmtBad := tsbuild.BuildPMT(2, program1, pidVideo0, []psi.StreamInfo{
+		{StreamType: tsbuild.StreamTypeVideo, ElementaryPID: pidVideo1},
 	})
 
 	var out [][tsreader.PacketSize]byte
@@ -187,11 +188,11 @@ func buildBadSections() [][tsreader.PacketSize]byte {
 
 	// Incomplete section: PUSI packet carrying only the first bytes of v2,
 	// with no continuation packet to complete it.
-	incomplete := psiPacket(pmtPID, 2, pmtBad[:12])
+	incomplete := tsbuild.PSIPacket(pmtPID, 2, pmtBad[:12])
 	out = append(out, incomplete)
 
-	// CRC-invalid section: flip a payload byte inside a otherwise complete v2.
-	corrupt := psiPacket(pmtPID, 3, pmtBad)
+	// CRC-invalid section: flip a payload byte inside an otherwise complete v2.
+	corrupt := tsbuild.PSIPacket(pmtPID, 3, pmtBad)
 	corrupt[20] ^= 0xff
 	out = append(out, corrupt)
 
