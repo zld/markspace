@@ -16,8 +16,8 @@ const PacketSize = 188
 
 // Well-known PIDs and stream types.
 const (
-	PIDPAT       = 0x0000
-	StreamH264   = 0x1B
+	PIDPAT        = 0x0000
+	StreamH264    = 0x1B
 	StreamAACADTS = 0x0F
 	StreamAACLATM = 0x11
 )
@@ -152,12 +152,12 @@ type Parser struct {
 	ccSeen   map[uint16]bool
 	sections map[uint16]*section
 	// PMTPID is discovered from the PAT.
-	PMTPID    uint16
-	PMTSeen   bool
+	PMTPID     uint16
+	PMTSeen    bool
 	Elementary map[uint16]byte // PID -> stream type
-	videoPID  uint16
-	audioPID  uint16
-	scan      [PacketSize]byte
+	videoPID   uint16
+	audioPID   uint16
+	scan       [PacketSize]byte
 }
 
 // NewParser constructs a parser over r.

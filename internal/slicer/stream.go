@@ -61,8 +61,8 @@ func Discover(dir string) (files []SourceFile, rejects []string, err error) {
 
 // ArrivalManifest mirrors the fixture's record of drop order and gaps.
 type ArrivalManifest struct {
-	Order   []int  `json:"order"`
-	Missing []int  `json:"missing"`
+	Order   []int `json:"order"`
+	Missing []int `json:"missing"`
 }
 
 // LoadArrival reads an arrival.json next to the source files, if present.
@@ -118,4 +118,3 @@ func WaitForGap(dir string, seq int, timeout time.Duration) bool {
 	}
 	return false
 }
-

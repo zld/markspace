@@ -90,8 +90,8 @@ func applyDrift(report *Report, built []*builtRendition, tolerance float64) {
 				if tolerance > 0 && math.Abs(maxDrift) > tolerance {
 					report.addFailure(cand.report.Rendition, Failure{
 						Rendition: cand.report.Rendition,
-						Segment:  n - 1,
-						Reason:   fmt.Sprintf("timeline drift %.3fs exceeds tolerance %.3fs", maxDrift, tolerance),
+						Segment:   n - 1,
+						Reason:    fmt.Sprintf("timeline drift %.3fs exceeds tolerance %.3fs", maxDrift, tolerance),
 					})
 				}
 			}

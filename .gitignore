@@ -1,0 +1,9 @@
+# Local demo and scratch output
+.tmp/
+
+# Compiled binaries
+/hlsflow
+*.test
+
+# OS/editor noise
+.DS_Store

@@ -10,9 +10,9 @@ const (
 // Clock tracks a 33-bit 90kHz timestamp stream and converts raw, wrapping
 // values into a monotonic tick count that never decreases.
 type Clock struct {
-	last   int64
-	rolls  int64
-	has    bool
+	last  int64
+	rolls int64
+	has   bool
 }
 
 // Push feeds one raw timestamp and returns the unwrapped, monotonic value.
@@ -41,9 +41,9 @@ func Seconds(ticks int64) float64 { return float64(ticks) / TicksPerSecond }
 
 // Timeline accumulates PTS observations for one PID and surfaces gaps.
 type Timeline struct {
-	pts      Clock
-	lastPTS  int64
-	has      bool
+	pts     Clock
+	lastPTS int64
+	has     bool
 	// Wraps counts PTS wraparound events seen on this timeline.
 	Wraps int64
 }
@@ -74,10 +74,10 @@ func (p *PCR) Push(base int64, _ uint16) int64 { return p.base.Push(base) }
 
 // NAL types relevant to slicing (ITU-T H.264 Table 7-1).
 const (
-	NALNonIDR  = 1
-	NALIDR     = 5
-	NALSPS     = 7
-	NALPPS     = 8
+	NALNonIDR = 1
+	NALIDR    = 5
+	NALSPS    = 7
+	NALPPS    = 8
 )
 
 // NALUnit is one Annex B network abstraction layer unit.

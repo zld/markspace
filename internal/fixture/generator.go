@@ -32,16 +32,16 @@ var defaultRates = []struct {
 // which declared sequences are intentionally absent. Build reads it to count
 // reordered arrivals; the gaps still come from the real on-disk state.
 type ArrivalManifest struct {
-	Order      []int `json:"order"`
-	Missing    []int `json:"missing"`
-	FirstSeq   int   `json:"first_seq"`
-	LastSeq    int   `json:"last_seq"`
+	Order    []int `json:"order"`
+	Missing  []int `json:"missing"`
+	FirstSeq int   `json:"first_seq"`
+	LastSeq  int   `json:"last_seq"`
 }
 
 // Result summarizes a generated fixture tree.
 type Result struct {
-	JobPath   string
-	InputRoot string
+	JobPath    string
+	InputRoot  string
 	Renditions []config.Rendition
 }
 

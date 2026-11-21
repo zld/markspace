@@ -38,15 +38,15 @@ func TestLoadValid(t *testing.T) {
 
 func TestValidationFailures(t *testing.T) {
 	cases := map[string]string{
-		"empty":            `{"renditions":[]}`,
-		"duplicate name":   `{"renditions":[{"name":"a","bitrate":1,"codec":"h264","first_seq":0,"last_seq":1},{"name":"a","bitrate":2,"codec":"h264","first_seq":0,"last_seq":1}]}`,
-		"bad codec":        `{"renditions":[{"name":"a","bitrate":1,"codec":"hevc","first_seq":0,"last_seq":1}]}`,
-		"bad bitrate":      `{"renditions":[{"name":"a","bitrate":0,"codec":"h264","first_seq":0,"last_seq":1}]}`,
-		"bad range":        `{"renditions":[{"name":"a","bitrate":1,"codec":"h264","first_seq":5,"last_seq":2}]}`,
-		"path traversal":   `{"renditions":[{"name":"../a","bitrate":1,"codec":"h264","first_seq":0,"last_seq":1}]}`,
+		"empty":             `{"renditions":[]}`,
+		"duplicate name":    `{"renditions":[{"name":"a","bitrate":1,"codec":"h264","first_seq":0,"last_seq":1},{"name":"a","bitrate":2,"codec":"h264","first_seq":0,"last_seq":1}]}`,
+		"bad codec":         `{"renditions":[{"name":"a","bitrate":1,"codec":"hevc","first_seq":0,"last_seq":1}]}`,
+		"bad bitrate":       `{"renditions":[{"name":"a","bitrate":0,"codec":"h264","first_seq":0,"last_seq":1}]}`,
+		"bad range":         `{"renditions":[{"name":"a","bitrate":1,"codec":"h264","first_seq":5,"last_seq":2}]}`,
+		"path traversal":    `{"renditions":[{"name":"../a","bitrate":1,"codec":"h264","first_seq":0,"last_seq":1}]}`,
 		"duplicate bitrate": `{"renditions":[{"name":"a","bitrate":9,"codec":"h264","first_seq":0,"last_seq":1},{"name":"b","bitrate":9,"codec":"h264","first_seq":0,"last_seq":1}]}`,
-		"unknown fault":    `{"renditions":[{"name":"a","bitrate":1,"codec":"h264","first_seq":0,"last_seq":1}],"faults":[{"rendition":"x","segment":1,"offset":0,"xor":1}]}`,
-		"bad duration":     `{"renditions":[{"name":"a","bitrate":1,"codec":"h264","first_seq":0,"last_seq":1}],"gap_timeout":"nope"}`,
+		"unknown fault":     `{"renditions":[{"name":"a","bitrate":1,"codec":"h264","first_seq":0,"last_seq":1}],"faults":[{"rendition":"x","segment":1,"offset":0,"xor":1}]}`,
+		"bad duration":      `{"renditions":[{"name":"a","bitrate":1,"codec":"h264","first_seq":0,"last_seq":1}],"gap_timeout":"nope"}`,
 	}
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {

@@ -39,10 +39,10 @@ type Rendition struct {
 
 // Job is the validated job configuration.
 type Job struct {
-	Renditions    []Rendition     `json:"renditions"`
-	GapTimeout    Duration        `json:"gap_timeout"`
-	DriftTolerance Duration       `json:"drift_tolerance"`
-	Faults        []FaultInjection `json:"faults,omitempty"`
+	Renditions     []Rendition      `json:"renditions"`
+	GapTimeout     Duration         `json:"gap_timeout"`
+	DriftTolerance Duration         `json:"drift_tolerance"`
+	Faults         []FaultInjection `json:"faults,omitempty"`
 }
 
 // Duration wraps time.Duration with millisecond JSON encoding.

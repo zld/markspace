@@ -11,7 +11,7 @@ import (
 type Cut struct {
 	// StartPTS and EndPTS are unwrapped 90kHz timestamps.
 	StartPTS int64
-	EndPTS int64
+	EndPTS   int64
 	// Data is the reassigned TS payload (PSI prefix plus source packets).
 	Data []byte
 }
@@ -19,8 +19,8 @@ type Cut struct {
 // Cutter splits a single source transport stream at IDR boundaries while
 // preserving PSI continuity at the head of each output.
 type Cutter struct {
-	parser *ts.Parser
-	patPMT [][]byte // raw PSI packets to prepend to every output
+	parser   *ts.Parser
+	patPMT   [][]byte // raw PSI packets to prepend to every output
 	pending  [][]byte
 	open     bool
 	start    int64
