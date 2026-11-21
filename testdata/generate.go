@@ -83,7 +83,24 @@ func esPackets(pid uint16, n int, tag byte, gapAfter, gapCount int) [][tsreader.
 	for i := 0; i < n; i++ {
 		cc := w.next()
 		out = append(out, esPacket(pid, cc, tag))
-		w.cc = uint8((int(w.cc) + 1) & 0x0f)
+		w.advance()
+	}
+	return out
+}
+
+// esStream emits elementary packets while preserving the continuity counter
+// across calls, so a stream spanning a PMT change keeps one legal 4-bit
+// sequence (15 -> 0 is a normal wrap, not a gap).
+type esStream struct {
+	pid uint16
+	cc  uint8
+}
+
+func (s *esStream) emit(n int, tag byte) [][tsreader.PacketSize]byte {
+	out := make([][tsreader.PacketSize]byte, 0, n)
+	for i := 0; i < n; i++ {
+		out = append(out, esPacket(s.pid, s.cc, tag))
+		s.cc = (s.cc + 1) & 0x0f
 	}
 	return out
 }
@@ -104,21 +121,26 @@ func buildNormal() [][tsreader.PacketSize]byte {
 	})
 
 	var out [][tsreader.PacketSize]byte
-	// Epoch 0: PAT v0 three times + PMT v0 five times + 12 PID256 + 20 audio +
-	// 20 PID300 packets.
+	// Audio and the secondary stream persist across the PMT change, so their
+	// continuity counters continue (and wrap 15 -> 0) rather than restart.
+	audio := &esStream{pid: pidAudio}
+	other := &esStream{pid: pidOther}
+
+	// Epoch 0: PAT v0 three times + PMT v0 seven times + 12 PID256 + 20 audio
+	// + 20 PID300 packets.
 	out = append(out, psiPackets(patPID, pat, 3, 0)...)
 	out = append(out, psiPackets(pmtPID, pmtV0, 7, 0)...)
 	out = append(out, esPackets(pidVideo0, 12, 0x10, -1, 0)...)
-	out = append(out, esPackets(pidAudio, 20, 0x20, -1, 0)...)
-	out = append(out, esPackets(pidOther, 20, 0x30, -1, 0)...)
+	out = append(out, audio.emit(20, 0x20)...)
+	out = append(out, other.emit(20, 0x30)...)
 
-	// Epoch 1: PAT v0 retransmitted three times (duplicate) + PMT v1 five
+	// Epoch 1: PAT v0 retransmitted three times (duplicate) + PMT v1 seven
 	// times + 8 PID258 + 20 audio + 20 PID300 packets.
 	out = append(out, psiPackets(patPID, pat, 3, 3)...)
 	out = append(out, psiPackets(pmtPID, pmtV1, 7, 5)...)
 	out = append(out, esPackets(pidVideo1, 8, 0x40, -1, 0)...)
-	out = append(out, esPackets(pidAudio, 20, 0x21, -1, 0)...)
-	out = append(out, esPackets(pidOther, 20, 0x31, -1, 0)...)
+	out = append(out, audio.emit(20, 0x21)...)
+	out = append(out, other.emit(20, 0x31)...)
 
 	if len(out) != 120 {
 		fmt.Fprintf(os.Stderr, "generate: internal error: %d packets, want 120\n", len(out))

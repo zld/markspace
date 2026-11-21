@@ -35,8 +35,13 @@ type Packet struct {
 	Raw [PacketSize]byte
 	// Header is interpreted through go-astits' exported header type.
 	Header astits.PacketHeader
-	// Payload is the slice of Raw carrying the packet payload (may be empty).
+	// Payload is the packet payload. For PUSI packets carrying PSI sections it
+	// starts at the section bytes: the one-byte pointer_field is removed here
+	// once so every downstream consumer sees identical alignment.
 	Payload []byte
+	// PointerField is the raw pointer_field value of a PUSI packet (-1 when
+	// the packet has no payload or PUSI is clear).
+	PointerField int
 	// SyncOK is false when the sync byte was missing. Such a frame is still
 	// counted and delivered so downstream counters stay aligned with input.
 	SyncOK bool
@@ -77,14 +82,29 @@ func (r *Reader) Next() (*Packet, error) {
 		return nil, err
 	}
 
-	p := &Packet{Index: r.next, SyncOK: r.buf[0] == SyncByte}
+	p := &Packet{Index: r.next, SyncOK: r.buf[0] == SyncByte, PointerField: -1}
 	r.next++
 	copy(p.Raw[:], r.buf[:])
 
 	// The transport header can still be interpreted for framing statistics;
 	// callers must check SyncOK before trusting the payload.
 	p.Header = parseHeader(r.buf[:])
-	p.Payload = extractPayload(r.buf[:], p.Header)
+	payload := extractPayload(r.buf[:], p.Header)
+
+	// PSI section-start packets prefix the section with a one-byte
+	// pointer_field. Strip it centrally so reassembly always sees the section
+	// beginning at payload[0]. Non-zero pointers also carry tail bytes of a
+	// previous section, which are not needed for forward reassembly.
+	if p.Header.HasPayload && p.Header.PayloadUnitStartIndicator && len(payload) >= 1 {
+		pointer := int(payload[0])
+		p.PointerField = pointer
+		if pointer+1 <= len(payload) {
+			payload = payload[1+pointer:]
+		} else {
+			payload = nil
+		}
+	}
+	p.Payload = payload
 
 	if !p.SyncOK {
 		return p, ErrSyncByte
@@ -92,28 +112,29 @@ func (r *Reader) Next() (*Packet, error) {
 	return p, nil
 }
 
-// parseHeader reads the three-byte transport header using the same bit layout
-// as go-astits' internal parser and returns its exported header type.
+// parseHeader reads the transport header of the full 188-byte packet b.
+// Layout: b[0] sync 0x47; b[1] TEI/PUSI/priority + high 5 PID bits; b[2] low
+// 8 PID bits; b[3] scrambling + adaptation/payload flags + 4-bit CC.
 func parseHeader(b []byte) astits.PacketHeader {
 	return astits.PacketHeader{
-		TransportErrorIndicator:   b[0]&0x80 > 0,
-		PayloadUnitStartIndicator: b[0]&0x40 > 0,
-		TransportPriority:         b[0]&0x20 > 0,
-		PID:                       uint16(b[0]&0x1f)<<8 | uint16(b[1]),
-		TransportScramblingControl: uint8(b[2]) >> 6 & 0x3,
-		HasAdaptationField:         b[2]&0x20 > 0,
-		HasPayload:                 b[2]&0x10 > 0,
-		ContinuityCounter:          b[2] & 0x0f,
+		TransportErrorIndicator:   b[1]&0x80 > 0,
+		PayloadUnitStartIndicator: b[1]&0x40 > 0,
+		TransportPriority:         b[1]&0x20 > 0,
+		PID:                        uint16(b[1]&0x1f)<<8 | uint16(b[2]),
+		TransportScramblingControl: (b[3] >> 6) & 0x3,
+		HasAdaptationField:         b[3]&0x20 > 0,
+		HasPayload:                 b[3]&0x10 > 0,
+		ContinuityCounter:          b[3] & 0x0f,
 	}
 }
 
-// extractPayload returns the payload portion of a packet, accounting for an
-// optional adaptation field. The result aliases the caller-provided buffer.
+// extractPayload returns the payload portion of a packet. Without an
+// adaptation field the payload starts at b[4] (after the four-byte transport
+// header). With one, b[4] is its length byte and the field follows.
 func extractPayload(b []byte, h astits.PacketHeader) []byte {
-	offset := 3
+	offset := 4
 	if h.HasAdaptationField {
-		// Adaptation field length occupies the byte right after the header.
-		offset += 1 + int(b[3])
+		offset += 1 + int(b[4])
 	}
 	if !h.HasPayload || offset > PacketSize {
 		return nil
