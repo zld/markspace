@@ -121,8 +121,9 @@ void writeFragment(Bytes& out, const FixturePlan& plan,
     w.beginFull(fourcc("tfhd"), 0, 0x020000); // default-base-is-moof
     w.u32(tr.trackId);
     w.endBox();
-    w.beginFull(fourcc("tfdt"), 1, 0);
-    w.u64(frag.tfdt[ti]);
+    w.beginFull(fourcc("tfdt"), frag.tfdtVersion, 0);
+    if (frag.tfdtVersion == 1) w.u64(frag.tfdt[ti]);
+    else w.u32(uint32_t(frag.tfdt[ti]));
     w.endBox();
     uint32_t count = frag.sampleCounts[ti];
     uint32_t flags = 0x000001 | 0x000100 | 0x000200; // data_off,dur,size

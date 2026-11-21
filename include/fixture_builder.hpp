@@ -28,6 +28,7 @@ struct FixtureFragment {
   int32_t dataOffsetBias = 0;         // perturb trun data_offset
   int64_t cttsOffset = 0;             // signed composition offset on sample 0
   uint8_t trunVersion = 0;            // 0 unsigned / 1 signed ctts
+  uint8_t tfdtVersion = 1;            // 0 -> 32-bit, 1 -> 64-bit tfdt
 };
 
 struct FixturePlan {

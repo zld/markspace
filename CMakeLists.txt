@@ -27,3 +27,15 @@ option(MP4FLOW_BUILD_TESTS "Build Catch2 based tests" ON)
 
 add_executable(mp4flow src/main.cpp src/cli.cpp)
 target_link_libraries(mp4flow PRIVATE mp4flow_core)
+
+if(MP4FLOW_BUILD_TESTS)
+  find_package(Catch2 3 REQUIRED)
+  add_executable(mp4flow_tests
+    tests/pipeline_test.cpp
+    tests/box_parse_test.cpp
+  )
+  target_link_libraries(mp4flow_tests PRIVATE mp4flow_core Catch2::Catch2WithMain)
+  include(CTest)
+  include(Catch)
+  catch_discover_tests(mp4flow_tests)
+endif()
