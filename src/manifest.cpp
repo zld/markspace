@@ -5,6 +5,7 @@
 #include <cerrno>
 #include <cmath>
 #include <fstream>
+#include <set>
 #include <sstream>
 
 namespace {
@@ -88,6 +89,15 @@ bool parse_font(const JsonValue& root, Manifest& manifest,
     long number = 0;
     bool ok = true;
     ok &= require_string(*font, "path", "$.font", manifest.font.path, errors);
+    if (ok) {
+        std::ifstream probe(manifest.font.path, std::ios::binary);
+        if (!probe) {
+            add_error(errors, "$.font.path",
+                      "font file does not exist or cannot be read: " +
+                          manifest.font.path);
+            ok = false;
+        }
+    }
     ok &= require_int(*font, "size", "$.font", 1, 512, number, errors);
     if (number != 0) {
         manifest.font.size = static_cast<int>(number);
@@ -145,6 +155,13 @@ bool parse_canvas(const JsonValue& root, Manifest& manifest,
     ok &= require_int(*canvas, "safe_inset", "$.canvas", 0, 1000000, number,
                       errors);
     manifest.canvas.safe_inset = static_cast<int>(number);
+    if (ok && static_cast<long>(manifest.canvas.width) -
+                 2L * manifest.canvas.safe_inset <
+              1L) {
+        add_error(errors, "$.canvas",
+                  "safe_inset leaves no usable width inside the canvas");
+        ok = false;
+    }
     return ok;
 }
 
@@ -155,6 +172,12 @@ bool parse_subtitles(const JsonValue& root, Manifest& manifest,
         add_error(errors, "$.subtitles", "required array is missing or invalid");
         return false;
     }
+    if (list->array.size() > kMaxSubtitles) {
+        add_error(errors, "$.subtitles",
+                  "batch exceeds the 10000 subtitle limit");
+        return false;
+    }
+    std::set<std::string> ids;
     bool ok = true;
     for (std::size_t i = 0; i < list->array.size(); ++i) {
         const JsonValue& item = list->array[i];
@@ -168,11 +191,37 @@ bool parse_subtitles(const JsonValue& root, Manifest& manifest,
         SubtitleItem subtitle;
         const bool has_id =
             require_string(item, "id", path, subtitle.id, errors);
+        std::string id_for_error = has_id ? subtitle.id : std::string();
         const bool has_language =
             require_string(item, "language", path, subtitle.language, errors);
         const bool has_text =
             require_string(item, "text", path, subtitle.text, errors);
         if (!has_id || !has_language || !has_text) {
+            ok = false;
+            continue;
+        }
+        if (subtitle.id.empty()) {
+            add_error(errors, path + ".id", "id must not be empty",
+                      static_cast<int>(i));
+            ok = false;
+            continue;
+        }
+        if (!ids.insert(subtitle.id).second) {
+            add_error(errors, path + ".id", "duplicate id \"" + subtitle.id + "\"",
+                      static_cast<int>(i), subtitle.id);
+            ok = false;
+            continue;
+        }
+        if (subtitle.language.empty()) {
+            add_error(errors, path + ".language", "language must not be empty",
+                      static_cast<int>(i), subtitle.id);
+            ok = false;
+            continue;
+        }
+        if (subtitle.text.size() > kMaxTextBytes) {
+            add_error(errors, path + ".text",
+                      "text exceeds the 16 KiB per-subtitle limit",
+                      static_cast<int>(i), subtitle.id);
             ok = false;
             continue;
         }

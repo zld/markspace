@@ -11,7 +11,13 @@ int main(int argc, char** argv) {
     std::vector<ManifestError> errors;
     if (!load_manifest(argv[1], manifest, errors)) {
         for (const ManifestError& error : errors) {
-            std::cerr << error.path << ": " << error.message << "\n";
+            std::cerr << error.path;
+            if (error.item_index >= 0) {
+                std::cerr << " (subtitle[" << error.item_index << "]";
+                if (!error.item_id.empty()) std::cerr << " " << error.item_id;
+                std::cerr << ")";
+            }
+            std::cerr << ": " << error.message << "\n";
         }
         return 2;
     }
