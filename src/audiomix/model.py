@@ -186,10 +186,3 @@ def check_duration(frames_in: int, rate_in: int, track: str = "") -> None:
         )
     if resampled_frames(frames_in, rate_in) > MAX_DURATION_FRAMES:
         raise ManifestError("resampled length exceeds the two-hour limit", track or None, "path")
-
-
-def output_frames_for(duration_seconds: float, sample_rate: int = TARGET_SAMPLE_RATE) -> int:
-    """Convert a duration to frames using the same half-up frame clock."""
-    if not math.isfinite(duration_seconds) or duration_seconds < 0:
-        raise ValueError("duration must be a finite non-negative number")
-    return int(duration_seconds * sample_rate + 0.5)
