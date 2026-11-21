@@ -111,6 +111,18 @@ func DigestParams(p model.Params) (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
+// DigestBaseline hashes the bitrate-independent encoding subset. A run at a
+// different target kbps with the same encoder settings matches the same
+// baseline, while any encoder/geometry change does not.
+func DigestBaseline(p model.Params) (string, error) {
+	data, err := json.Marshal(p.BaselineKey())
+	if err != nil {
+		return "", fmt.Errorf("digest baseline key: %w", err)
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:]), nil
+}
+
 // ReuseDecision explains why a committed segment was or was not reused.
 type ReuseDecision struct {
 	Reusable bool

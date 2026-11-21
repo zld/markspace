@@ -17,27 +17,32 @@ func (e *AllocationError) Error() string { return "rate allocation infeasible: "
 // returned budgets equals totalTargetBits exactly. Each segment's weight is its
 // complexity scaled by its frame count (short tails therefore claim less).
 //
-// A per-segment minimum of minSegmentBits is enforced. If even equal minimums
-// exceed the total, an AllocationError is returned.
+// minSegmentBits gives a per-segment floor (it may differ per segment because
+// tails are shorter). If the floors alone already exceed the total, an
+// AllocationError is returned.
 func Allocate(totalTargetBits int64, complexities []float64, frameCounts []int,
-	minSegmentBits int64) ([]int64, error) {
+	minSegmentBits []int64) ([]int64, error) {
 	n := len(complexities)
 	if n == 0 {
 		return nil, &AllocationError{Reason: "no segments to budget"}
 	}
-	if len(frameCounts) != n {
-		return nil, &AllocationError{Reason: "frame count / complexity length mismatch"}
+	if len(frameCounts) != n || len(minSegmentBits) != n {
+		return nil, &AllocationError{Reason: "complexity/frame-count/min-length mismatch"}
 	}
 	if totalTargetBits <= 0 {
 		return nil, &AllocationError{Reason: "total target budget must be positive"}
 	}
-	if minSegmentBits <= 0 {
-		return nil, &AllocationError{Reason: "minimum segment budget must be positive"}
+	var minSum int64
+	for _, m := range minSegmentBits {
+		if m <= 0 {
+			return nil, &AllocationError{Reason: "minimum segment budgets must be positive"}
+		}
+		minSum += m
 	}
-	if totalTargetBits < minSegmentBits*int64(n) {
+	if totalTargetBits < minSum {
 		return nil, &AllocationError{Reason: fmt.Sprintf(
-			"target %d bits cannot cover %d segments at minimum %d bits each (need %d)",
-			totalTargetBits, n, minSegmentBits, minSegmentBits*int64(n))}
+			"target %d bits cannot cover %d segments whose minimums sum to %d bits",
+			totalTargetBits, n, minSum)}
 	}
 
 	weights := make([]float64, n)
@@ -56,8 +61,8 @@ func Allocate(totalTargetBits int64, complexities []float64, frameCounts []int,
 	var allocated int64
 	for i := range weights {
 		b := int64(math.Round(float64(totalTargetBits) * weights[i] / weightSum))
-		if b < minSegmentBits {
-			b = minSegmentBits
+		if b < minSegmentBits[i] {
+			b = minSegmentBits[i]
 		}
 		budgets[i] = b
 		allocated += b
@@ -71,7 +76,11 @@ func Allocate(totalTargetBits int64, complexities []float64, frameCounts []int,
 	}
 
 	var sum int64
-	for _, b := range budgets {
+	for i, b := range budgets {
+		if b < minSegmentBits[i] {
+			return nil, &AllocationError{Reason: fmt.Sprintf(
+				"segment %d budget %d below minimum %d", i, b, minSegmentBits[i])}
+		}
 		sum += b
 	}
 	if sum != totalTargetBits {
@@ -81,8 +90,8 @@ func Allocate(totalTargetBits int64, complexities []float64, frameCounts []int,
 }
 
 // rebalance fixes an over/under allocation by moving whole bits between
-// segments, never below the minimum and always along weight order.
-func rebalance(budgets []int64, weights []float64, minBits, total int64, delta int64) error {
+// segments, never below each segment's own floor.
+func rebalance(budgets []int64, weights []float64, minBits []int64, total int64, delta int64) error {
 	order := make([]int, len(budgets))
 	for i := range order {
 		order[i] = i
@@ -101,7 +110,7 @@ func rebalance(budgets []int64, weights []float64, minBits, total int64, delta i
 			delta--
 		}
 	} else if delta < 0 {
-		// Take from the highest-budget (highest weight) segments while floors hold.
+		// Take from the highest-weight segments while per-segment floors hold.
 		guard := 0
 		for delta < 0 {
 			moved := false
@@ -109,7 +118,7 @@ func rebalance(budgets []int64, weights []float64, minBits, total int64, delta i
 				if delta >= 0 {
 					break
 				}
-				if budgets[idx] > minBits {
+				if budgets[idx] > minBits[idx] {
 					budgets[idx]--
 					delta++
 					moved = true
@@ -117,7 +126,7 @@ func rebalance(budgets []int64, weights []float64, minBits, total int64, delta i
 			}
 			if !moved {
 				return &AllocationError{Reason: fmt.Sprintf(
-					"cannot reduce to %d bits without violating segment minimum %d", total, minBits)}
+					"cannot reduce to %d bits without violating segment minimums", total)}
 			}
 			if guard++; guard > len(budgets)*2 {
 				return &AllocationError{Reason: "rebalance did not converge"}

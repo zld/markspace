@@ -47,17 +47,18 @@ type Attempt struct {
 
 // Checkpoint is the atomically persisted pipeline state.
 type Checkpoint struct {
-	Version       int        `json:"version"`
-	JobID         string     `json:"job_id"`
-	InputPath     string     `json:"input_path"`
-	InputSHA256   string     `json:"input_sha256"`
-	ParamsDigest  string     `json:"params_digest"`
-	Probe         ProbeInfo  `json:"probe"`
-	Params        Params     `json:"params"`
-	Segments      []*Segment `json:"segments"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
-	InterruptKind string     `json:"interrupt_kind,omitempty"`
+	Version        int        `json:"version"`
+	JobID          string     `json:"job_id"`
+	InputPath      string     `json:"input_path"`
+	InputSHA256    string     `json:"input_sha256"`
+	ParamsDigest   string     `json:"params_digest"`
+	BaselineDigest string     `json:"baseline_digest"`
+	Probe          ProbeInfo  `json:"probe"`
+	Params         Params     `json:"params"`
+	Segments       []*Segment `json:"segments"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+	InterruptKind  string     `json:"interrupt_kind,omitempty"`
 }
 
 // ProbeInfo captures the validated properties of the source video.
@@ -91,6 +92,28 @@ type Params struct {
 	FailureInjection string  `json:"failure_injection,omitempty"`
 }
 
+// BaselineKey returns the parameter subset that identifies an encoding
+// configuration independent of the delivery bitrate: two runs at different
+// target kbps but identical encoder settings share a baseline.
+func (p Params) BaselineKey() BaselineParams {
+	return BaselineParams{
+		SegmentFrames: p.SegmentFrames, Width: p.Width, Height: p.Height,
+		FrameRate: p.FrameRate, Encoder: p.Encoder, Preset: p.Preset,
+		PixelFormat: p.PixelFormat,
+	}
+}
+
+// BaselineParams is the bitrate-independent encoding fingerprint.
+type BaselineParams struct {
+	SegmentFrames int     `json:"segment_frames"`
+	Width         int     `json:"width"`
+	Height        int     `json:"height"`
+	FrameRate     float64 `json:"frame_rate"`
+	Encoder       string  `json:"encoder"`
+	Preset        string  `json:"preset"`
+	PixelFormat   string  `json:"pixel_format"`
+}
+
 // SegmentReport is the per-segment view rendered in the JSON summary.
 type SegmentReport struct {
 	Index        int          `json:"index"`
@@ -108,26 +131,27 @@ type SegmentReport struct {
 
 // Summary is the top-level JSON report emitted by run / resume / baseline.
 type Summary struct {
-	JobID             string          `json:"job_id"`
-	Mode              string          `json:"mode"`
-	TargetKbps        int             `json:"target_kbps"`
-	ActualKbps        float64         `json:"actual_kbps"`
-	BitrateDeviation  float64         `json:"bitrate_deviation_pct"`
-	PSNRMeanDB        float64         `json:"psnr_mean_db"`
-	SegmentPSNRStdDev float64         `json:"segment_psnr_stddev_db"`
-	RegressionCount   int             `json:"regression_count"`
-	MaxPSNRDropDB     float64         `json:"max_psnr_drop_db"`
-	ReusedSegments    int             `json:"reused_segments"`
-	TotalFrames       int             `json:"total_frames"`
-	DurationSec       float64         `json:"duration_sec"`
-	Segments          []SegmentReport `json:"segments"`
-	InputSHA256       string          `json:"input_sha256"`
-	ParamsDigest      string          `json:"params_digest"`
-	InterruptKind     string          `json:"interrupt_kind,omitempty"`
-	Message           string          `json:"message,omitempty"`
+	JobID               string          `json:"job_id"`
+	Mode                string          `json:"mode"`
+	TargetKbps          int             `json:"target_kbps"`
+	ActualKbps          float64         `json:"actual_kbps"`
+	BitrateDeviation    float64         `json:"bitrate_deviation_pct"`
+	PSNRMeanDB          float64         `json:"psnr_mean_db"`
+	SegmentPSNRStdDevDB float64         `json:"segment_psnr_stddev_db"`
+	RegressionCount     int             `json:"regression_count"`
+	MaxPSNRDropDB       float64         `json:"max_psnr_drop_db"`
+	ReusedSegments      int             `json:"reused_segments"`
+	TotalFrames         int             `json:"total_frames"`
+	DurationSec         float64         `json:"duration_sec"`
+	Segments            []SegmentReport `json:"segments"`
+	InputSHA256         string          `json:"input_sha256"`
+	ParamsDigest        string          `json:"params_digest"`
+	InterruptKind       string          `json:"interrupt_kind,omitempty"`
+	Message             string          `json:"message,omitempty"`
 }
 
-// BaselineRecord binds quality numbers to the input fingerprint and parameters.
+// BaselineRecord binds quality numbers to the input fingerprint and the
+// bitrate-independent encoding parameter digest.
 type BaselineRecord struct {
 	InputSHA256  string          `json:"input_sha256"`
 	ParamsDigest string          `json:"params_digest"`

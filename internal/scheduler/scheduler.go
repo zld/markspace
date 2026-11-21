@@ -40,6 +40,7 @@ type Result struct {
 type Scheduler struct {
 	cfg         Config
 	proc        Processor
+	onCommit    func(*model.Segment)
 	mu          sync.Mutex
 	cond        *sync.Cond
 	segs        []*model.Segment
@@ -58,7 +59,12 @@ func New(cfg Config, proc Processor, segs []*model.Segment) *Scheduler {
 	s := &Scheduler{cfg: cfg, proc: proc, segs: segs}
 	s.cond = sync.NewCond(&s.mu)
 	return s
-} // Run dispatches segments until all are terminal, the context is cancelled, or
+}
+
+// OnCommit registers a callback fired after every successful commit. It runs
+// synchronously inside the worker while the scheduler lock is held, so the
+// checkpoint can never observe a half-updated segment.
+func (s *Scheduler) OnCommit(fn func(*model.Segment)) { s.onCommit = fn } // Run dispatches segments until all are terminal, the context is cancelled, or
 // FailAfter fires. Segments already committed before Run are counted as reused
 // and never re-dispatched.
 func (s *Scheduler) Run(ctx context.Context) Result {
@@ -200,6 +206,9 @@ func (s *Scheduler) execute(ctx context.Context, seg *model.Segment) {
 			s.mu.Lock()
 			_ = task.Move(seg, model.StateCommitted)
 			s.commitCount.Add(1)
+			if s.onCommit != nil {
+				s.onCommit(seg)
+			}
 			s.mu.Unlock()
 			if s.interruptFired() {
 				// Deterministic crash point: committed work is durable, the
