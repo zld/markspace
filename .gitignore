@@ -1,0 +1,12 @@
+# Build output
+/streamcheck
+/bin/
+/dist/
+
+# Local fixture and report output
+/tmp/
+*.m3u8
+*.out
+
+# macOS
+.DS_Store
