@@ -19,6 +19,7 @@ find_package(ZLIB REQUIRED)
 add_library(asspipe STATIC
   src/style_parser.cpp
   src/inheritance.cpp
+  src/tag_resolver.cpp
 )
 target_include_directories(asspipe PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/include
