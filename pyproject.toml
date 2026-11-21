@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "audiomix"
+version = "0.1.0"
+description = "Deterministic offline/streaming audio mixdown engine for battlefield encounter stress testing"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy==1.26.4",
+    "soundfile==0.12.1",
+]
+
+[project.scripts]
+audiomix = "audiomix.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["audiomix*"]
