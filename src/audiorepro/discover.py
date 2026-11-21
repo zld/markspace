@@ -10,7 +10,7 @@ from pathlib import Path
 
 import soundfile as sf
 
-from .errors import TaskError
+from .errors import TaskError, UsageError
 from .resample import channels_label, is_supported_rate
 
 SUPPORTED_EXTENSIONS = {".wav": "WAV", ".flac": "FLAC", ".aiff": "AIFF", ".aif": "AIFF"}
@@ -108,13 +108,34 @@ def discover(input_dir: Path) -> Discovery:
 
     A single bad file is recorded as an error and does not stop the scan.
     """
+    if not input_dir.is_dir():
+        raise UsageError(f"input directory does not exist: {input_dir}")
     files: list[InputFile] = []
     errors: list[TaskError] = []
     by_target: dict[str, list[str]] = {}
-    for root, dirnames, filenames in os.walk(input_dir, followlinks=False):
-        dirnames[:] = sorted(d for d in dirnames if not _is_symlink(Path(root) / d))
+
+    def note_walk_error(exc: OSError) -> None:
+        failed_path = Path(getattr(exc, "filename", None) or input_dir)
+        try:
+            relative = failed_path.relative_to(input_dir).as_posix() or "."
+        except ValueError:
+            relative = failed_path.name or "."
+        errors.append(TaskError(relative, "discover", f"cannot read directory: {exc}"))
+
+    for root, dirnames, filenames in os.walk(
+        input_dir, followlinks=False, onerror=note_walk_error
+    ):
+        root_path = Path(root)
+        for name in sorted(dirnames):
+            link = root_path / name
+            if _is_symlink(link):
+                relative = link.relative_to(input_dir).as_posix()
+                errors.append(
+                    TaskError(relative, "discover", "symbolic links are not accepted")
+                )
+        dirnames[:] = sorted(d for d in dirnames if not _is_symlink(root_path / d))
         for name in sorted(filenames):
-            path = Path(root) / name
+            path = root_path / name
             if path.suffix.lower() not in SUPPORTED_EXTENSIONS:
                 continue
             relative = path.relative_to(input_dir).as_posix()

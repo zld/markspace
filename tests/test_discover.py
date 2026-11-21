@@ -77,6 +77,21 @@ class DiscoverTests(TempDirTest):
         self.assertIn("channel layout", reasons)
         self.assertIn("no audio frames", reasons)
 
+    def test_symlinked_directory_is_rejected(self) -> None:
+        real = self.tmp / "real"
+        write_audio(real / "a.wav", np.zeros((100, 1)), 48000)
+        self.input.mkdir()
+        os.symlink(real, self.input / "linked")
+        result = discover(self.input)
+        self.assertEqual(result.files, [])
+        self.assertEqual([e.path for e in result.errors], ["linked"])
+
+    def test_missing_input_directory_is_a_usage_error(self) -> None:
+        from audiorepro.errors import UsageError
+
+        with self.assertRaises(UsageError):
+            discover(self.tmp / "does-not-exist")
+
     def test_hash_is_content_stable(self) -> None:
         path = write_audio(self.input / "x.wav", np.zeros((100, 1)), 48000)
         self.assertEqual(sha256_file(path), sha256_file(path))
