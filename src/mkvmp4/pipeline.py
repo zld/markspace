@@ -385,3 +385,198 @@ def _build_track_specs(
         specs.append(spec)
         offsets[str(target_id)] = 0
     return specs, offsets
+
+
+def remux_file(path: str | Path, options: RemuxOptions) -> RemuxResult:
+    """Parse, map, rewrite and mux; write atomically after a full verification."""
+    if options.timescale <= 0:
+        raise UsageError("--timescale must be a positive integer")
+    output = Path(options.output)
+    if output.exists() and output.resolve() == Path(path).resolve():
+        raise UsageError("output path must differ from the input path")
+    handle, data = open_ro(path)
+    try:
+        mk = parse_matroska(data, source=str(path))
+        if not mk.clusters:
+            raise InputError("Segment contains no Cluster elements", stage="remux")
+        mapping = options.mapping.resolve(mk.tracks, derive=options.derive_mapping)
+        _check_payload_bounds(mk)
+        samples = _gather_samples(mk)
+        timeline = rewrite_timeline(
+            samples,
+            timestamp_scale=mk.timestamp_scale,
+            timescale=options.timescale,
+            offset_ms=options.offset_ms,
+            mode=options.mode,
+            rounding=options.rounding,
+            clip_negative=options.clip_negative,
+            max_gap_ms=options.max_gap_ms,
+        )
+        movie_timescale = options.movie_timescale or options.timescale
+        if movie_timescale % options.timescale and options.timescale % movie_timescale:
+            raise UsageError(
+                f"movie timescale {movie_timescale} and track timescale "
+                f"{options.timescale} are not multiples of one another"
+            )
+        specs, _ = _build_track_specs(
+            mk, mapping, timeline, min_movie_timescale=movie_timescale
+        )
+        result = _write_and_verify(mk, specs, timeline, movie_timescale, output)
+        result.output = str(output)
+        result.mapping_derived = bool(options.derive_mapping and not options.mapping.by_source)
+        return result
+    finally:
+        data.close()
+        handle.close()
+
+
+def _layout(movie_timescale: int, specs: list[mp4.TrackSpec]) -> tuple[bytes, bytes, int]:
+    """Compute ftyp+moov with final chunk offsets.
+
+    ``moov`` size is independent of the offset *values* only when stco/co64
+    widths do not change, so we iterate to a fixed point and re-check.
+    """
+    ftyp = mp4.build_ftyp()
+    total_payload = sum(sum(spec.sizes) for spec in specs)
+    header = mp4.mdat_header(total_payload)
+    first_offset = len(ftyp) + 0 + len(header)
+    # Start with an optimistic moov size, iterate until sizes stabilise.
+    probe = mp4.build_moov(movie_timescale=movie_timescale, tracks=specs)
+    for _ in range(8):
+        cursor = len(ftyp) + len(probe) + len(header)
+        for spec in specs:
+            spec.chunk_offset = cursor
+            cursor += sum(spec.sizes)
+        candidate = mp4.build_moov(movie_timescale=movie_timescale, tracks=specs)
+        if len(candidate) == len(probe):
+            probe = candidate
+            break
+        probe = candidate
+    else:
+        raise OutputError("moov/offset layout did not converge")
+    cursor = len(ftyp) + len(probe) + len(header)
+    for spec in specs:
+        if spec.chunk_offset != cursor:
+            raise OutputError(
+                f"track {spec.track_id}: chunk offset {spec.chunk_offset} does not "
+                f"match layout position {cursor}"
+            )
+        cursor += sum(spec.sizes)
+    if cursor != len(ftyp) + len(probe) + len(header) + total_payload:
+        raise OutputError("mdat layout does not match the sum of sample sizes")
+    del first_offset
+    return ftyp + probe, header, total_payload
+
+
+def _write_and_verify(
+    mk: MatroskaFile,
+    specs: list[mp4.TrackSpec],
+    timeline: TimelineReport,
+    movie_timescale: int,
+    output: Path,
+) -> RemuxResult:
+    plan = _payload_plan(specs, timeline)
+    prefix, header, total_payload = _layout(movie_timescale, specs)
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(
+        prefix=f".{output.name}.", suffix=".tmp", dir=str(output.parent)
+    )
+    temp_path = Path(temp_name)
+    try:
+        with os.fdopen(fd, "wb") as sink:
+            sink.write(prefix)
+            sink.write(header)
+            written = 0
+            for source_track, pairs in plan:
+                for sample_index, (offset, length) in enumerate(pairs):
+                    # Slice from the mmap: one sample is copied at a time and
+                    # released immediately, never the whole media track.
+                    chunk = mk.data[offset : offset + length]
+                    if len(chunk) != length:
+                        raise OutputError(
+                            "short read from the input while copying sample payload",
+                            offset=offset,
+                            track=source_track,
+                            sample_index=sample_index,
+                            stage="write",
+                        )
+                    sink.write(chunk)
+                    written += length
+            if written != total_payload:
+                raise OutputError(
+                    f"wrote {written} payload bytes but the layout expected "
+                    f"{total_payload}",
+                    stage="write",
+                )
+            sink.flush()
+            os.fsync(sink.fileno())
+        verify_temp = temp_path.read_bytes()
+        inspection = mp4.inspect_mp4(verify_temp)
+        if not inspection.ok:
+            raise VerifyError(
+                "written MP4 failed index verification: " + "; ".join(inspection.failures),
+                stage="verify",
+            )
+        expected_samples = sum(s.sample_count for s in timeline.tracks.values())
+        if inspection.to_dict()["sample_count"] != expected_samples:
+            raise VerifyError(
+                f"written file has {inspection.to_dict()['sample_count']} samples "
+                f"but {expected_samples} were expected",
+                stage="verify",
+            )
+        os.replace(temp_path, output)
+    except BaseException:
+        try:
+            temp_path.unlink()
+        except OSError:
+            pass
+        raise
+
+    result = RemuxResult(
+        output=str(output),
+        timescale=movie_timescale,
+        box_count=len(inspection.boxes),
+        index_ok=inspection.ok,
+        file_size=inspection.file_size,
+    )
+    reports = {t.track: t for t in timeline.tracks.values()}
+    for spec in specs:
+        report = reports[spec.source_track]
+        result.samples += len(spec.sizes)
+        result.mdat_offsets[str(spec.track_id)] = spec.chunk_offset
+        result.tracks.append(
+            {
+                "source_track": spec.source_track,
+                "track_id": spec.track_id,
+                "handler": spec.handler,
+                "codec_id": next(
+                    t.codec_id for t in mk.tracks if t.number == spec.source_track
+                ),
+                "sample_entry": mp4.SUPPORTED_MP4_CODECS[
+                    next(t.codec_id for t in mk.tracks if t.number == spec.source_track)
+                ],
+                "samples": len(spec.sizes),
+                "first_tick": int(report.ticks[0]),
+                "last_tick": int(report.ticks[-1]),
+                "last_end_tick": int(report.ticks[-1] + report.durations[-1]),
+                **report.stats,
+            }
+        )
+    corrections = {
+        key: sum(int(t.stats.get(key, 0)) for t in timeline.tracks.values())
+        for key in (
+            "clipped",
+            "rounded",
+            "non_monotonic",
+            "zero_duration",
+            "gaps",
+            "last_duration_fallback",
+        )
+    }
+    result.corrections = corrections
+    result.first_tick = min(int(t.ticks[0]) for t in timeline.tracks.values())
+    result.last_end_tick = max(
+        int(t.ticks[-1] + t.durations[-1]) for t in timeline.tracks.values()
+    )
+    return result
