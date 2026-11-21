@@ -456,13 +456,27 @@ def _write_and_verify(
     plan = _payload_plan(specs, timeline)
     prefix, header, total_payload = _layout(movie_timescale, specs)
 
-    output.parent.mkdir(parents=True, exist_ok=True)
-    fd, temp_name = tempfile.mkstemp(
-        prefix=f".{output.name}.", suffix=".tmp", dir=str(output.parent)
-    )
+    try:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        fd, temp_name = tempfile.mkstemp(
+            prefix=f".{output.name}.", suffix=".tmp", dir=str(output.parent)
+        )
+    except OSError as exc:
+        # Nothing has been written yet, so the existing target is untouched.
+        raise OutputError(
+            f"cannot create a temporary file next to {output}: {exc.strerror}",
+            stage="write",
+        ) from exc
     temp_path = Path(temp_name)
     try:
-        with os.fdopen(fd, "wb") as sink:
+        try:
+            sink_context = os.fdopen(fd, "wb")
+        except OSError as exc:
+            raise OutputError(
+                f"cannot open the temporary file for writing: {exc.strerror}",
+                stage="write",
+            ) from exc
+        with sink_context as sink:
             sink.write(prefix)
             sink.write(header)
             written = 0
@@ -507,7 +521,12 @@ def _write_and_verify(
                 f"but {expected_samples} were expected",
                 stage="verify",
             )
-        os.replace(temp_path, output)
+        try:
+            os.replace(temp_path, output)
+        except OSError as exc:
+            raise OutputError(
+                f"cannot replace {output}: {exc.strerror}", stage="write"
+            ) from exc
     except BaseException:
         try:
             temp_path.unlink()
@@ -523,6 +542,7 @@ def _write_and_verify(
         file_size=inspection.file_size,
     )
     reports = {t.track: t for t in timeline.tracks.values()}
+    codecs = {t.number: t.codec_id for t in mk.tracks}
     for spec in specs:
         report = reports[spec.source_track]
         result.samples += len(spec.sizes)
@@ -532,12 +552,8 @@ def _write_and_verify(
                 "source_track": spec.source_track,
                 "track_id": spec.track_id,
                 "handler": spec.handler,
-                "codec_id": next(
-                    t.codec_id for t in mk.tracks if t.number == spec.source_track
-                ),
-                "sample_entry": mp4.SUPPORTED_MP4_CODECS[
-                    next(t.codec_id for t in mk.tracks if t.number == spec.source_track)
-                ],
+                "codec_id": codecs[spec.source_track],
+                "sample_entry": mp4.SUPPORTED_MP4_CODECS[codecs[spec.source_track]],
                 "samples": len(spec.sizes),
                 "first_tick": int(report.ticks[0]),
                 "last_tick": int(report.ticks[-1]),
