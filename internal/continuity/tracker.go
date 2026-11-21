@@ -20,9 +20,9 @@ type Stats struct {
 }
 
 type pidState struct {
-	stats     Stats
-	hasPrev   bool
-	prev      uint8
+	stats   Stats
+	hasPrev bool
+	prev    uint8
 	// prevDup tracks the counter of an accepted duplicate so repeated
 	// duplicates are counted individually.
 }

@@ -3,9 +3,10 @@
 //	go run ./testdata/generate.go --scenario normal --out /tmp/sample.ts
 //
 // Scenarios:
-//   normal       120 packets, two complete PMT versions with a PID remap
-//   bad-sections incomplete section and a CRC-invalid section, no new version
-//   bad-cc       valid tables plus a PID 257 counter jump 5 -> 8
+//
+//	normal       120 packets, two complete PMT versions with a PID remap
+//	bad-sections incomplete section and a CRC-invalid section, no new version
+//	bad-cc       valid tables plus a PID 257 counter jump 5 -> 8
 package main
 
 import (

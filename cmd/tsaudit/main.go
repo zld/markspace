@@ -17,11 +17,11 @@ import (
 
 func main() {
 	var (
-		input        = flag.String("input", "-", "input TS file, or - for standard input")
-		format       = flag.String("format", "text", "output format: text|json")
-		program      = flag.Uint("program", 0, "program number to slice (with --slice)")
-		slicePath    = flag.String("slice", "", "write the selected program's packets to this file")
-		strict       = flag.Bool("strict-continuity", false, "exit 3 when any continuity gap is found")
+		input     = flag.String("input", "-", "input TS file, or - for standard input")
+		format    = flag.String("format", "text", "output format: text|json")
+		program   = flag.Uint("program", 0, "program number to slice (with --slice)")
+		slicePath = flag.String("slice", "", "write the selected program's packets to this file")
+		strict    = flag.Bool("strict-continuity", false, "exit 3 when any continuity gap is found")
 	)
 	flag.Parse()
 

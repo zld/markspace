@@ -31,10 +31,10 @@ type MappingInterval struct {
 
 // Result describes a produced slice.
 type Result struct {
-	ProgramNumber    uint16                  `json:"program_number"`
-	WrittenPackets   int64                   `json:"written_packets"`
-	MappingIntervals []MappingInterval       `json:"mapping_intervals"`
-	CorruptSections  []psi.SectionCandidate  `json:"corrupt_sections"`
+	ProgramNumber    uint16                 `json:"program_number"`
+	WrittenPackets   int64                  `json:"written_packets"`
+	MappingIntervals []MappingInterval      `json:"mapping_intervals"`
+	CorruptSections  []psi.SectionCandidate `json:"corrupt_sections"`
 }
 
 // Slicer selects packets for a single program while preserving input order.
@@ -131,10 +131,12 @@ func (s *Slicer) feedPSI(h astits.PacketHeader, payload []byte) {
 }
 
 // shouldWrite keeps PAT packets, this program's PMT packets, and elementary
-// packets currently mapped to the program.
+// packets currently mapped to the program. PAT packets are always retained:
+// they are the table evidence backing the slice even before the first PMT
+// version has been fully assembled.
 func (s *Slicer) shouldWrite(pid uint16) bool {
 	if pid == psi.PIDPAT {
-		return s.haveProgram // PAT only once the program table is complete
+		return true
 	}
 	if s.haveProgram && pid == s.pmtPID {
 		return true

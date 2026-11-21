@@ -114,8 +114,8 @@ func finish(body []byte) []byte {
 func buildPAT(version uint8, program, pmtPID uint16) []byte {
 	body := make([]byte, 0, 20)
 	body = append(body, psi.TableIDPAT)
-	body = append(body, 0xf0, 0x00) // section_length placeholder
-	body = append(body, 0x00, 0x01) // transport_stream_id
+	body = append(body, 0xf0, 0x00)             // section_length placeholder
+	body = append(body, 0x00, 0x01)             // transport_stream_id
 	body = append(body, 0xc0|(version<<1)|0x01) // current=1
 	body = append(body, 0x00, 0x00)             // section/last section number
 	body = append(body, byte(program>>8), byte(program))

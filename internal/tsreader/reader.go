@@ -117,9 +117,9 @@ func (r *Reader) Next() (*Packet, error) {
 // 8 PID bits; b[3] scrambling + adaptation/payload flags + 4-bit CC.
 func parseHeader(b []byte) astits.PacketHeader {
 	return astits.PacketHeader{
-		TransportErrorIndicator:   b[1]&0x80 > 0,
-		PayloadUnitStartIndicator: b[1]&0x40 > 0,
-		TransportPriority:         b[1]&0x20 > 0,
+		TransportErrorIndicator:    b[1]&0x80 > 0,
+		PayloadUnitStartIndicator:  b[1]&0x40 > 0,
+		TransportPriority:          b[1]&0x20 > 0,
 		PID:                        uint16(b[1]&0x1f)<<8 | uint16(b[2]),
 		TransportScramblingControl: (b[3] >> 6) & 0x3,
 		HasAdaptationField:         b[3]&0x20 > 0,

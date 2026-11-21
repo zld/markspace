@@ -84,8 +84,8 @@ type Assembler struct {
 // NewAssembler creates an empty section assembler.
 func NewAssembler() *Assembler {
 	return &Assembler{
-		pids:     map[uint16]*perPID{},
-		partial:  map[uint16]map[uint8]*Section{},
+		pids:    map[uint16]*perPID{},
+		partial: map[uint16]map[uint8]*Section{},
 	}
 }
 

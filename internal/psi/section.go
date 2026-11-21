@@ -33,9 +33,9 @@ var (
 
 // Section is one fully assembled PSI section before semantic interpretation.
 type Section struct {
-	TableID          uint8
+	TableID uint8
 	// SyntaxSection is true when the private/section-syntax-indicator bit is 1.
-	SyntaxSection    bool
+	SyntaxSection bool
 	// Length is the section_length value: bytes from after the length field to
 	// the end of the section, including the CRC.
 	Length           int

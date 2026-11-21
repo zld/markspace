@@ -17,46 +17,46 @@ import (
 
 // Exit codes reported through Summary.ExitCode.
 const (
-	ExitOK             = 0 // clean audit
-	ExitStructural     = 2 // unreadable input or unusable structure
+	ExitOK               = 0 // clean audit
+	ExitStructural       = 2 // unreadable input or unusable structure
 	ExitStrictContinuity = 3 // strict mode found continuity gaps
 )
 
 // TransportStats covers framing-level findings.
 type TransportStats struct {
-	TotalPackets        int64 `json:"total_packets"`
-	SyncErrors          int64 `json:"sync_errors"`
-	TruncatedTailBytes  int   `json:"truncated_tail_bytes"`
+	TotalPackets          int64 `json:"total_packets"`
+	SyncErrors            int64 `json:"sync_errors"`
+	TruncatedTailBytes    int   `json:"truncated_tail_bytes"`
 	TransportErrorPackets int64 `json:"transport_error_packets"`
 }
 
 // PIDCounters are the per-PID packet counts required by the audit report.
 type PIDCounters struct {
-	PID           uint16 `json:"pid"`
-	TotalPackets  int64  `json:"total_packets"`
-	ValidPackets  int    `json:"valid_packets"`
-	Duplicates    int    `json:"duplicate_packets"`
-	ContinuityGaps int   `json:"continuity_gaps"`
-	GapEvents     int    `json:"gap_events"`
-	ErrorPackets  int    `json:"error_packets"`
+	PID            uint16 `json:"pid"`
+	TotalPackets   int64  `json:"total_packets"`
+	ValidPackets   int    `json:"valid_packets"`
+	Duplicates     int    `json:"duplicate_packets"`
+	ContinuityGaps int    `json:"continuity_gaps"`
+	GapEvents      int    `json:"gap_events"`
+	ErrorPackets   int    `json:"error_packets"`
 }
 
 // Summary is the stable, serialisable result of an audit.
 type Summary struct {
-	Source             string                       `json:"source"`
-	Transport          TransportStats               `json:"transport"`
-	PATVersionChanges  int                          `json:"pat_version_changes"`
-	PMTVersionChanges  int                          `json:"pmt_version_changes"`
-	PATWraps           int                          `json:"pat_wraps"`
-	PMTWraps           int                          `json:"pmt_wraps"`
-	PublishedVersions  []psi.Publication            `json:"published_versions"`
-	Mappings           []program.MappingRecord      `json:"mappings"`
-	PIDCounters        []PIDCounters                `json:"pid_counters"`
-	CorruptSections    []psi.SectionCandidate       `json:"corrupt_sections"`
-	HasCompletePAT     bool                         `json:"has_complete_pat"`
-	MissingPMTs        []uint16                     `json:"missing_pmts"`
-	StructuralErrors   []string                     `json:"structural_errors"`
-	ExitCode           int                          `json:"exit_code"`
+	Source            string                  `json:"source"`
+	Transport         TransportStats          `json:"transport"`
+	PATVersionChanges int                     `json:"pat_version_changes"`
+	PMTVersionChanges int                     `json:"pmt_version_changes"`
+	PATWraps          int                     `json:"pat_wraps"`
+	PMTWraps          int                     `json:"pmt_wraps"`
+	PublishedVersions []psi.Publication       `json:"published_versions"`
+	Mappings          []program.MappingRecord `json:"mappings"`
+	PIDCounters       []PIDCounters           `json:"pid_counters"`
+	CorruptSections   []psi.SectionCandidate  `json:"corrupt_sections"`
+	HasCompletePAT    bool                    `json:"has_complete_pat"`
+	MissingPMTs       []uint16                `json:"missing_pmts"`
+	StructuralErrors  []string                `json:"structural_errors"`
+	ExitCode          int                     `json:"exit_code"`
 }
 
 // Analyzer owns the pipeline state for one input stream.
@@ -72,8 +72,8 @@ type Analyzer struct {
 	rawPID map[uint16]int64
 	// pmtPIDsKnown tracks PIDs identified by a published PAT as PMT carriers.
 	pmtPIDsKnown map[uint16]bool
-	psiPIDs       map[uint16]bool
-	errs          []string
+	psiPIDs      map[uint16]bool
+	errs         []string
 }
 
 // New creates an analyzer over r. source is used for display only.

@@ -51,7 +51,7 @@ type Map struct {
 	programs    map[uint16]*programState
 	// activePIDs maps an elementary PID to the programs currently referencing
 	// it, so Lookup stays O(1) even during a remap.
-	activePIDs  map[uint16]map[uint16]bool
+	activePIDs map[uint16]map[uint16]bool
 }
 
 // New creates an empty program map.
