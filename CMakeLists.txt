@@ -28,5 +28,6 @@ add_library(lutcore STATIC
     src/interpolator.cpp
     src/report.cpp
     src/image.cpp
+    src/baker.cpp
 )
 target_link_libraries(lutcore PUBLIC lutbase)
