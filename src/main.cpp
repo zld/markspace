@@ -2,6 +2,7 @@
 #include "unicode.h"
 #include "font_metrics.h"
 #include "line_breaker.h"
+#include "timing.h"
 
 #include <iostream>
 
@@ -50,10 +51,16 @@ int main(int argc, char** argv) {
     int overflows = 0;
     int missing = 0;
     for (const SubtitleItem& item : manifest.items) {
+        TimingResult timing;
+        strip_timing_markers(item.text, timing);
+        for (const TimingIssue& issue : timing.issues) {
+            std::cerr << item.id << ": byte " << issue.byte_offset << ": "
+                      << issue.message << "\n";
+        }
         std::vector<Cluster> shaped;
         std::vector<char32_t> codepoints;
         DecodeError error;
-        shape_text(item.text, shaped, error, codepoints);
+        shape_text(timing.stripped, shaped, error, codepoints);
         ShapedText advances = shape_clusters(shaped, codepoints, metrics);
         TextLayout layout = layout_clusters(shaped, advances, metrics,
                                             usable_width, manifest.max_lines);

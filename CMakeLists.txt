@@ -24,6 +24,7 @@ set(SUBTITLE_METRICS_SOURCES
   src/unicode.cpp
   src/font_metrics.cpp
   src/line_breaker.cpp
+  src/timing.cpp
 )
 
 add_executable(subtitle-metrics ${SUBTITLE_METRICS_SOURCES})
