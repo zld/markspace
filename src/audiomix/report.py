@@ -63,6 +63,23 @@ class RenderReport:
         return json.dumps(self.to_dict(), ensure_ascii=False, indent=indent, sort_keys=False)
 
 
+def _default_file_mode() -> int:
+    """Permissions a normal ``open()`` under the current umask would grant."""
+    umask = os.umask(0)
+    os.umask(umask)
+    return 0o666 & ~umask
+
+
+def _make_temp(target: Path) -> tuple[int, str]:
+    """Create a private temp file beside ``target`` for the atomic rename."""
+    parent = target.parent
+    if parent and not parent.exists():
+        parent.mkdir(parents=True, exist_ok=True)
+    fd, name = tempfile.mkstemp(prefix=f".{target.name}.", suffix=".tmp", dir=str(parent))
+    os.chmod(name, _default_file_mode())
+    return fd, name
+
+
 class AtomicWavWriter:
     """Streaming WAV writer that only publishes the file on clean close.
 
@@ -83,12 +100,7 @@ class AtomicWavWriter:
         self._closed = False
 
     def __enter__(self) -> "AtomicWavWriter":
-        parent = self.target.parent
-        if parent and not parent.exists():
-            parent.mkdir(parents=True, exist_ok=True)
-        fd, self._tmp_name = tempfile.mkstemp(
-            prefix=f".{self.target.name}.", suffix=".tmp", dir=str(parent)
-        )
+        fd, self._tmp_name = _make_temp(self.target)
         os.close(fd)
         try:
             self._handle = sf.SoundFile(
@@ -145,11 +157,8 @@ class AtomicWavWriter:
 def write_json_atomic(path: str | os.PathLike[str], payload: dict | str) -> None:
     """Write JSON atomically for reproducible reports."""
     target = Path(path)
-    parent = target.parent
-    if parent and not parent.exists():
-        parent.mkdir(parents=True, exist_ok=True)
     text = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False, indent=2)
-    fd, tmp_name = tempfile.mkstemp(prefix=f".{target.name}.", suffix=".tmp", dir=str(parent))
+    fd, tmp_name = _make_temp(target)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write(text)
