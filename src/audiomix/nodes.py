@@ -13,7 +13,7 @@ import numpy as np
 import soundfile as sf
 
 from .automation import AutomationCurve, db_to_linear, gain_at
-from .model import check_duration
+from .model import ManifestError, check_duration
 from .resample import StreamingResampler
 
 
@@ -25,8 +25,8 @@ class ConsistencyError(RuntimeError):
     """Raised when offline and streaming renders disagree."""
 
 
-def _open_error(path: str, exc: Exception) -> AudioIOError:
-    return AudioIOError(f"cannot read audio file {path}: {exc}")
+def _open_error(path: str, track_name: str, exc: Exception) -> AudioIOError:
+    return AudioIOError(f"track {track_name!r}: cannot read audio file {path}: {exc}")
 
 
 @dataclass(frozen=True)
@@ -45,7 +45,7 @@ class SourceNode:
         try:
             self._file = sf.SoundFile(path, mode="r")
         except Exception as exc:  # soundfile raises several backend variants
-            raise _open_error(path, exc) from exc
+            raise _open_error(path, track_name, exc) from exc
         try:
             self.info = WavInfo(
                 frames=int(self._file.frames),
@@ -55,19 +55,19 @@ class SourceNode:
             self._validate()
         except Exception as exc:
             self.close()
-            if isinstance(exc, (AudioIOError, ConsistencyError)):
+            if isinstance(exc, (AudioIOError, ConsistencyError, ManifestError)):
                 raise
-            raise _open_error(path, exc) from exc
+            raise _open_error(path, track_name, exc) from exc
 
     def _validate(self) -> None:
         if self.info.frames <= 0:
-            raise AudioIOError(f"{self.path}: audio file is empty")
+            raise AudioIOError(f"track {self.track_name!r}: {self.path}: audio file is empty")
         if self.info.sample_rate <= 0:
-            raise AudioIOError(f"{self.path}: invalid sample rate")
+            raise AudioIOError(f"track {self.track_name!r}: {self.path}: invalid sample rate")
         if self.info.channels not in (1, 2):
             raise AudioIOError(
-                f"{self.path}: unsupported channel count {self.info.channels} "
-                "(mono or stereo only)"
+                f"track {self.track_name!r}: {self.path}: unsupported channel count "
+                f"{self.info.channels} (mono or stereo only)"
             )
         check_duration(self.info.frames, self.info.sample_rate, self.track_name)
 
@@ -88,7 +88,7 @@ class SourceNode:
         try:
             data = self._file.read(count, dtype="float64", always_2d=True)
         except Exception as exc:
-            raise _open_error(self.path, exc) from exc
+            raise _open_error(self.path, self.track_name, exc) from exc
         if data.size == 0:
             return np.zeros((self.info.channels, 0), dtype=np.float64)
         return np.ascontiguousarray(data.T, dtype=np.float64)
