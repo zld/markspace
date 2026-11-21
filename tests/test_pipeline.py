@@ -311,6 +311,54 @@ class RemuxTests(unittest.TestCase):
         self.assertEqual(code, 3)
         self.assertEqual(report["context"]["offset"], 20)
 
+    def test_verify_rejects_corrupted_sample_size(self) -> None:
+        out = self.dir / "sample.mp4"
+        self.run_cli(
+            "remux", str(self.mkv), "--out", str(out), "--repair",
+            "--map", "1:1,2:2",
+        )
+        blob = bytearray(out.read_bytes())
+        stsz = blob.index(b"stsz")
+        # Inflate the first per-sample size so sample offsets leave mdat.
+        blob[stsz + 16 : stsz + 20] = (0xFFFFFF).to_bytes(4, "big")
+        out.write_bytes(bytes(blob))
+        code, report = self.run_cli("verify", str(out), "--json")
+        self.assertEqual(code, 5)
+        self.assertEqual(report["error"], "VerifyError")
+        self.assertIn("outside mdat", report["message"])
+
+    def test_verify_rejects_truncated_file(self) -> None:
+        out = self.dir / "sample.mp4"
+        self.run_cli(
+            "remux", str(self.mkv), "--out", str(out), "--repair",
+            "--map", "1:1,2:2",
+        )
+        out.write_bytes(out.read_bytes()[:-40])
+        code, report = self.run_cli("verify", str(out), "--json")
+        self.assertEqual(code, 5)
+        self.assertEqual(report["exit_code"], 5)
+
+    def test_stss_present_when_not_all_samples_are_sync(self) -> None:
+        out = self.dir / "sample.mp4"
+        self.run_cli(
+            "remux", str(self.mkv), "--out", str(out), "--repair",
+            "--map", "1:1,2:2",
+        )
+        _, verify = self.run_cli("verify", str(out), "--json")
+        video = next(t for t in verify["tracks"] if t["handler"] == "vide")
+        self.assertIn("stss", video["stbl_children"])
+        self.assertEqual(video["sync_samples"], 2)
+
+    def test_non_json_output_prints_track_map(self) -> None:
+        out = self.dir / "sample.mp4"
+        code, _ = self.run_cli(
+            "remux", str(self.mkv), "--out", str(out), "--repair",
+            "--map", "1:1,2:2",
+        )
+        self.assertEqual(code, 0)
+        code, _ = self.run_cli("verify", str(out))
+        self.assertEqual(code, 0)
+
     def test_usage_error_exit_code(self) -> None:
         code, _ = self.run_cli("remux", str(self.mkv), "--out", str(self.dir / "x.mp4"),
                                "--map", "1", "--json")
