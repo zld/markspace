@@ -4,6 +4,8 @@
 #include <fstream>
 #include <sstream>
 
+#include "lut/io_util.hpp"
+
 namespace lut {
 namespace {
 
@@ -170,15 +172,7 @@ std::string renderCube(const Lut3D& lut) {
 }
 
 void writeCube(const std::string& path, const Lut3D& lut) {
-    std::ofstream out(path, std::ios::binary | std::ios::trunc);
-    if (!out) {
-        throw IoError("cannot open cube file for write: " + path);
-    }
-    const std::string text = renderCube(lut);
-    out.write(text.data(), static_cast<std::streamsize>(text.size()));
-    if (!out) {
-        throw IoError("failure while writing cube file: " + path);
-    }
+    writeFileAtomic(path, renderCube(lut));
 }
 
 }  // namespace lut
