@@ -1,0 +1,7 @@
+# Build artifacts
+/looprelay
+/dist/
+*.test
+
+# Local tooling
+.DS_Store
