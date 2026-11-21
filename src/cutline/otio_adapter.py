@@ -41,9 +41,18 @@ def _frac_meta(value: Fraction) -> Any:
 
 
 def _frac_from_meta(value: Any) -> Fraction:
-    if isinstance(value, list):
-        return Fraction(value[0], value[1])
-    return Fraction(value)
+    if isinstance(value, bool):
+        raise AdapterError(f"cannot decode rational from metadata {value!r}")
+    if isinstance(value, int):
+        return Fraction(value)
+    # OTIO may store sequences as its own AnyVector type, not list.
+    try:
+        seq = list(value)
+    except TypeError as exc:
+        raise AdapterError(f"cannot decode rational from metadata {value!r}") from exc
+    if len(seq) == 2 and all(isinstance(v, int) and not isinstance(v, bool) for v in seq):
+        return Fraction(seq[0], seq[1])
+    raise AdapterError(f"cannot decode rational from metadata {value!r}")
 
 
 def _fill_track(ot_track: "otio.schema.Track", items: list[Any],
@@ -59,8 +68,10 @@ def _fill_track(ot_track: "otio.schema.Track", items: list[Any],
                 f"content ending at {cursor}; resolve conflicts before OTIO export"
             )
         if isinstance(item, Gap):
-            ot_track.append(otio.schema.Gap(
-                source_range=_time_range(item.start, item.duration, rate)))
+            ot_gap = otio.schema.Gap(
+                source_range=_time_range(item.start, item.duration, rate))
+            ot_gap.metadata[META_KEY] = {"explicit": True}
+            ot_track.append(ot_gap)
         else:
             ot_track.append(_clip_to_otio(item))
         cursor = item.end
@@ -87,6 +98,7 @@ def _clip_to_otio(item: Clip) -> "otio.schema.Clip":
         "media_duration": (_frac_meta(item.media.duration)
                            if item.media.duration is not None else None),
         "media_name": item.media.name,
+        "media_uri": item.media.uri if item.media.uri is not None else "",
     }
     return ot_clip
 
@@ -165,7 +177,9 @@ def from_otio(timeline: otio.schema.Timeline) -> Timeline:
                 rng = child.source_range
                 dur = (_frames_at(rng.duration, rate, ctx) if rng is not None
                        else Fraction(0))
-                if dur > 0:
+                # Only gaps the model explicitly declared round-trip as Gap
+                # items; the rest are spacing inserted by _fill_track.
+                if dur > 0 and child.metadata.get(META_KEY, {}).get("explicit"):
                     items.append(Gap(start=cursor, duration=dur))
                 cursor += dur
             elif isinstance(child, otio.schema.Clip):
@@ -198,6 +212,9 @@ def from_otio(timeline: otio.schema.Timeline) -> Timeline:
                     priority = 0
                 ref = child.media_reference
                 uri = getattr(ref, "target_url", None) if ref is not None else None
+                if cmeta:
+                    meta_uri = cmeta.get("media_uri", "")
+                    uri = meta_uri if meta_uri else None
                 items.append(Clip(
                     clip_id=clip_id,
                     name=child.name,
