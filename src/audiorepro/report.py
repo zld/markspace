@@ -136,6 +136,7 @@ def summarize_verify(
         "report": str(report_path),
         "tolerance": tolerance,
         "files_checked": len(files),
+        "files_scored": sum(1 for item in files if item.get("recomputed") is not None),
         "files_with_differences": len(mismatched),
         "ok": not mismatched,
         "files": files,

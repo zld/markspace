@@ -161,11 +161,19 @@ class VerifyTests(TempDirTest):
         self.assertIn("lufs_after", fields)
         self.assertIn("integrity", fields)
 
-    def test_verify_detects_missing_output(self) -> None:
+    def test_verify_reports_missing_output_without_aborting(self) -> None:
         _, report_path = self._run()
         (self.tmp / "output" / "mono" / "mono_tone.wav").unlink()
-        with self.assertRaises(Exception):
-            verify(self.tmp / "input", self.tmp / "output", report_path, 0.15)
+        outcome = verify(self.tmp / "input", self.tmp / "output", report_path, 0.15)
+        self.assertFalse(outcome["ok"])
+        self.assertEqual(outcome["files_checked"], 6)
+        self.assertEqual(outcome["files_scored"], 5)
+        self.assertEqual(outcome["files_with_differences"], 1)
+        self.assertEqual(outcome["files"][0]["relative_path"], "mono/mono_short.aiff")
+        broken = next(
+            item for item in outcome["files"] if item["relative_path"] == "mono/mono_tone.wav"
+        )
+        self.assertEqual(broken["diffs"][0]["field"], "integrity")
 
 
 class CliTests(TempDirTest):

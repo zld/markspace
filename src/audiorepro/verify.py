@@ -119,10 +119,32 @@ def verify(
     for recorded in report["files"]:
         if not isinstance(recorded, dict) or "relative_path" not in recorded:
             raise VerifyError("report contains a malformed file entry")
-        recomputed, notes = _recompute(recorded, input_dir, output_dir)
+        try:
+            recomputed, notes = _recompute(recorded, input_dir, output_dir)
+        except VerifyError as exc:
+            # A missing or unreadable product is a verification difference
+            # for that file, not a reason to abandon the rest of the report.
+            entries.append(
+                {
+                    "relative_path": recorded["relative_path"],
+                    "recorded": recorded,
+                    "recomputed": None,
+                    "diffs": [
+                        {
+                            "field": "integrity",
+                            "recorded": None,
+                            "recomputed": str(exc),
+                            "delta": None,
+                        }
+                    ],
+                }
+            )
+            continue
         diffs = compare_entry(recorded, recomputed, tolerance)
         for note in notes:
-            diffs.append({"field": "integrity", "recorded": None, "recomputed": note, "delta": None})
+            diffs.append(
+                {"field": "integrity", "recorded": None, "recomputed": note, "delta": None}
+            )
         entries.append(
             {
                 "relative_path": recorded["relative_path"],
