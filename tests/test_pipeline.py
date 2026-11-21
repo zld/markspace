@@ -180,3 +180,162 @@ class TimestampTests(unittest.TestCase):
         huge = SampleInput(1, 2**40, 2**40, 0, 1, 0, 10, True, None)
         with self.assertRaises(TimestampPolicyError):
             rewrite_timeline([huge], timestamp_scale=1_000_000, timescale=1_000)
+
+
+class RemuxTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+        self.mkv = self.dir / "sample.mkv"
+        self.mkv.write_bytes(make_fixture.build_sample_document())
+
+    def tearDown(self) -> None:
+        self.tmp.cleanup()
+
+    def run_cli(self, *args: str) -> tuple[int, dict]:
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            code = cli.main(list(args))
+        text = buffer.getvalue()
+        return code, json.loads(text) if text.strip().startswith("{") else {}
+
+    def test_inspect_reports_tracks_and_ranges(self) -> None:
+        code, report = self.run_cli("inspect", str(self.mkv), "--json")
+        self.assertEqual(code, 0)
+        self.assertEqual(report["track_count"], 2)
+        self.assertGreaterEqual(report["element_count"], 20)
+        segment = report["segments_and_clusters"][0]
+        self.assertEqual(segment["name"], "Segment")
+        self.assertEqual(segment["offset"], 20)
+
+    def test_remux_produces_verified_index(self) -> None:
+        out = self.dir / "sample.mp4"
+        code, report = self.run_cli(
+            "remux", str(self.mkv), "--out", str(out), "--timescale", "1000000",
+            "--offset-ms", "250", "--repair", "--map", "1:1,2:2", "--json",
+        )
+        self.assertEqual(code, 0)
+        self.assertEqual(report["sample_count"], 10)
+        self.assertEqual(report["corrections"]["non_monotonic"], 1)
+        self.assertEqual(report["first_tick"], 250_000_000)
+        self.assertTrue(report["index_ok"])
+        code, verify = self.run_cli("verify", str(out), "--json")
+        self.assertEqual(code, 0)
+        self.assertTrue(verify["index_ok"])
+        self.assertEqual(verify["sample_count"], 10)
+        self.assertEqual([t["track_id"] for t in verify["tracks"]], [1, 2])
+
+    def test_payload_bytes_are_copied_verbatim(self) -> None:
+        out = self.dir / "sample.mp4"
+        self.run_cli(
+            "remux", str(self.mkv), "--out", str(out), "--repair",
+            "--map", "1:1,2:2",
+        )
+        src = self.mkv.read_bytes()
+        dst = out.read_bytes()
+        for marker in (b"VID1", b"VID2", b"VID3", b"VID4", b"AUD1", b"AUD6"):
+            self.assertIn(marker, dst)
+        self.assertEqual(
+            src.count(b"VID1"), dst.count(b"VID1"), "payload must not be altered"
+        )
+
+    def test_strict_failure_preserves_existing_target(self) -> None:
+        out = self.dir / "keep.mp4"
+        out.write_bytes(b"ORIGINAL")
+        code, report = self.run_cli(
+            "remux", str(self.mkv), "--out", str(out), "--map", "1:1,2:2", "--json"
+        )
+        self.assertEqual(code, 4)
+        self.assertEqual(report["error"], "TimestampPolicyError")
+        self.assertEqual(report["context"]["track"], 1)
+        self.assertEqual(report["context"]["sample_index"], 3)
+        self.assertEqual(out.read_bytes(), b"ORIGINAL")
+        self.assertEqual(list(self.dir.glob(".*.tmp")), [])
+
+    def test_missing_mapping_is_reported_per_track(self) -> None:
+        code, report = self.run_cli(
+            "remux", str(self.mkv), "--out", str(self.dir / "x.mp4"),
+            "--require-map", "--json",
+        )
+        self.assertEqual(code, 3)
+        self.assertEqual(report["error"], "TrackMappingError")
+        self.assertIn("source tracks [1, 2]", report["message"])
+
+    def test_partial_mapping_is_rejected_even_with_derivation_enabled(self) -> None:
+        code, report = self.run_cli(
+            "remux", str(self.mkv), "--out", str(self.dir / "x.mp4"),
+            "--map", "1:1", "--json",
+        )
+        self.assertEqual(code, 3)
+        self.assertIn("source track 2", report["message"])
+
+    def test_derived_mapping_is_flagged(self) -> None:
+        out = self.dir / "derived.mp4"
+        code, report = self.run_cli(
+            "remux", str(self.mkv), "--out", str(out), "--repair", "--json"
+        )
+        self.assertEqual(code, 0)
+        self.assertTrue(report["mapping_derived"])
+        self.assertEqual([t["track_id"] for t in report["tracks"]], [1, 2])
+
+    def test_duplicate_target_rejected(self) -> None:
+        code, report = self.run_cli(
+            "remux", str(self.mkv), "--out", str(self.dir / "x.mp4"),
+            "--map", "1:3,2:3", "--json",
+        )
+        self.assertEqual(code, 3)
+        self.assertIn("used by both", report["message"])
+
+    def test_unsupported_codec_rejected(self) -> None:
+        bad = self.dir / "flac.mkv"
+        bad.write_bytes(make_fixture.build_unsupported_codec_document())
+        code, report = self.run_cli(
+            "remux", str(bad), "--out", str(self.dir / "x.mp4"),
+            "--map", "1:1,2:2", "--json",
+        )
+        self.assertEqual(code, 3)
+        self.assertEqual(report["error"], "UnsupportedError")
+        self.assertEqual(report["context"]["track"], 2)
+
+    def test_bad_vint_reports_offset(self) -> None:
+        bad = self.dir / "bad.mkv"
+        bad.write_bytes(make_fixture.build_bad_vint_document())
+        code, report = self.run_cli("inspect", str(bad), "--json")
+        self.assertEqual(code, 3)
+        self.assertEqual(report["context"]["offset"], 24)
+
+    def test_truncated_input_reports_offset(self) -> None:
+        bad = self.dir / "trunc.mkv"
+        bad.write_bytes(make_fixture.build_truncated_document())
+        code, report = self.run_cli("inspect", str(bad), "--json")
+        self.assertEqual(code, 3)
+        self.assertEqual(report["context"]["offset"], 20)
+
+    def test_usage_error_exit_code(self) -> None:
+        code, _ = self.run_cli("remux", str(self.mkv), "--out", str(self.dir / "x.mp4"),
+                               "--map", "1", "--json")
+        self.assertEqual(code, 2)
+
+
+class Mp4UnitTests(unittest.TestCase):
+    def test_language_packing(self) -> None:
+        self.assertEqual(mp4.decode_language(mp4.encode_language("eng")), "eng")
+        self.assertEqual(mp4.decode_language(mp4.encode_language("???")), "und")
+
+    def test_co64_selected_for_large_offsets(self) -> None:
+        small = mp4.build_stco_chunk([100])
+        large = mp4.build_stco_chunk([0x1_0000_0000])
+        self.assertEqual(small[4:8], b"stco")
+        self.assertEqual(large[4:8], b"co64")
+
+    def test_stsz_rejects_zero_length_samples(self) -> None:
+        with self.assertRaises(mp4.OutputError):
+            mp4.build_stsz([10, 0])
+
+    def test_box_size_field_matches_payload(self) -> None:
+        encoded = mp4.full_box("test", 0, 0, b"abcd")
+        self.assertEqual(int.from_bytes(encoded[:4], "big"), len(encoded))
+
+
+if __name__ == "__main__":
+    unittest.main()
