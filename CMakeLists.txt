@@ -17,6 +17,7 @@ add_library(mp4flow_core STATIC
   src/init_compat.cpp
   src/box_writer.cpp
   src/fragment_index.cpp
+  src/fixture_builder.cpp
 )
 target_include_directories(mp4flow_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 

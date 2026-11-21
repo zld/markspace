@@ -54,7 +54,7 @@ TrackFragment parseTraf(const ParsedFile& pf, const Box& traf,
       if (fh.flags & 0x000002) { tfhdDefDur = c.u32(); haveTfhdDur = true; }
       if (fh.flags & 0x000004) { tfhdDefSize = c.u32(); haveTfhdSize = true; }
       if (fh.flags & 0x000008) c.u32(); // default_sample_flags
-      baseIsMoof = (fh.flags & 0x010000) != 0; // default-base-is-moof
+      baseIsMoof = (fh.flags & 0x020000) != 0; // default-base-is-moof (bit17)
       auto it = trex.find(tf.trackId);
       if (it == trex.end())
         throw Mp4Error(ErrorKind::BadValue, bp,

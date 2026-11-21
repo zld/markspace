@@ -77,17 +77,16 @@ InitSignature extractInit(const ParsedFile& pf) {
               "moov/trak/tkhd");
     FullHeader tver = readFull(tc);
     if (tver.version == 1) {
-      tc.u64();
-      tc.u64();
-      tc.u32();
+      tc.u64(); // creation_time
+      tc.u64(); // modification_time
+      sig.trackId = tc.u32();
     } else if (tver.version == 0) {
-      tc.u32();
-      tc.u32();
-      tc.u32();
+      tc.u32(); // creation_time
+      tc.u32(); // modification_time
+      sig.trackId = tc.u32();
     } else {
       throw Mp4Error(ErrorKind::BadValue, tc.path, "tkhd version 0 or 1 only");
     }
-    sig.trackId = tc.u32();
 
     const Box* mdhd = mdia->findChild(fourcc("mdhd"));
     const Box* hdlr = mdia->findChild(fourcc("hdlr"));
