@@ -268,26 +268,27 @@ def render_project(project: Project, paths: list[Path],
                 written += count
                 bridge = bridge[:, count:]
 
-        # Drain both passes so bus totals and per-track statistics finalise.
-        for _ in offline:
-            pass
-        for _ in streaming:
-            pass
-        if offline.clip_count != streaming.clip_count:
-            raise ConsistencyError(
-                f"clip counts diverged: offline {offline.clip_count}, "
-                f"streaming {streaming.clip_count}"
-            )
-        if bridge.size:
-            raise ConsistencyError(
-                f"offline pass produced {bridge.shape[1]} unverified trailing frames"
-            )
-        if written != frames_total:
-            raise ConsistencyError(
-                f"wrote {written} frames, expected {frames_total}"
-            )
-        clip_count = offline.clip_count
-        accumulators = offline.accumulators
+            # Drain both passes so bus totals and per-track statistics finalise
+            # before the writer publishes the file.
+            for _ in offline:
+                pass
+            for _ in streaming:
+                pass
+            if offline.clip_count != streaming.clip_count:
+                raise ConsistencyError(
+                    f"clip counts diverged: offline {offline.clip_count}, "
+                    f"streaming {streaming.clip_count}"
+                )
+            if bridge.size:
+                raise ConsistencyError(
+                    f"offline pass produced {bridge.shape[1]} unverified trailing frames"
+                )
+            if written != frames_total:
+                raise ConsistencyError(
+                    f"wrote {written} frames, expected {frames_total}"
+                )
+            clip_count = offline.clip_count
+            accumulators = offline.accumulators
     finally:
         offline.close()
         streaming.close()
