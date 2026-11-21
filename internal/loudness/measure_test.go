@@ -31,6 +31,25 @@ func analyzeTone(t *testing.T, seconds float64, dbfs float64, weights []float64)
 	return an.Finish()
 }
 
+// analyzeToneChannels is analyzeTone with explicit tone channels, so a test
+// can put signal on the LFE channel and confirm it is ignored.
+func analyzeToneChannels(t *testing.T, seconds, dbfs float64, weights []float64, toneCh []int) Result {
+	t.Helper()
+	opts := fixture.Options{
+		SampleRate: testRate, Channels: len(weights), Seconds: seconds,
+		Encoding: fixture.Float32, ToneDBFS: dbfs, ToneHz: 997,
+		ToneChannels: toneCh,
+	}
+	sig := fixture.Signal(opts)
+	buf := make([]float32, len(sig))
+	for i, v := range sig {
+		buf[i] = float32(v)
+	}
+	an := NewAnalyzer(testRate, weights)
+	an.Write(buf)
+	return an.Finish()
+}
+
 func near(got, want, tol float64) bool { return math.Abs(got-want) <= tol }
 
 // A single full-scale 997 Hz sine measures -3.01 LUFS per BS.1770. Two
@@ -52,11 +71,14 @@ func TestIntegratedLoudnessCalibration(t *testing.T) {
 		t.Errorf("stereo integrated = %.3f, want %.3f", stereo.IntegratedLUFS, mono.IntegratedLUFS+3.01)
 	}
 
-	// LFE weight 0 must not contribute at all.
-	withLFE := analyzeTone(t, 5, -23, []float64{1, 1, 1, 0, 1.41, 1.41})
-	lfeSilent := analyzeTone(t, 5, -23, []float64{1, 1, 1, 0, 1.41, 1.41})
-	if !near(withLFE.IntegratedLUFS, lfeSilent.IntegratedLUFS, 1e-9) {
-		t.Errorf("LFE channel changed the result")
+	// The LFE channel carries a full-weight tone, but its weight is zero, so
+	// it must not contribute. Comparing against the same layout with a
+	// silent LFE proves the exclusion rather than just repeating the run.
+	withLFE := analyzeToneChannels(t, 5, -23, []float64{1, 1, 1, 0, 1.41, 1.41}, []int{0, 1, 2, 3, 4, 5})
+	withoutLFE := analyzeToneChannels(t, 5, -23, []float64{1, 1, 1, 0, 1.41, 1.41}, []int{0, 1, 2, 4, 5})
+	if !near(withLFE.IntegratedLUFS, withoutLFE.IntegratedLUFS, 1e-9) {
+		t.Errorf("LFE channel changed the result: %.9f vs %.9f",
+			withLFE.IntegratedLUFS, withoutLFE.IntegratedLUFS)
 	}
 }
 
@@ -120,6 +142,7 @@ func TestShortTermWindowNeedsThreeSeconds(t *testing.T) {
 
 // A quiet passage plus a loud passage must be dominated by the loud one: the
 // relative gate removes blocks more than 10 LU below the ungated mean.
+// With a 30 dB step the quiet half sits ~33 LU down, well outside the gate.
 func TestRelativeGate(t *testing.T) {
 	opts := fixture.Options{
 		SampleRate: testRate, Channels: 1, Seconds: 10,
