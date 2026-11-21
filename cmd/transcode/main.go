@@ -199,12 +199,20 @@ func execute(cfg config.Config, demoDur float64) int {
 }
 
 // runHash identifies a run by every parameter that affects results.
+// Concurrency, output paths and retry policy are excluded: they do not
+// change the encoded artifacts.
 func runHash(cfg config.Config, digest string, segs []segment.Segment) (string, error) {
 	id := struct {
-		cfg   config.Config
-		Digest string
-		Bounds [][2]float64
-	}{cfg, digest, nil}
+		TargetKbps  int
+		SegmentSec  float64
+		Codec       string
+		MinSegKbps  int
+		MaxSegKbps  int
+		PSNRFloorDB float64
+		Digest      string
+		Bounds      [][2]float64
+	}{cfg.TargetKbps, cfg.SegmentSec, cfg.Codec, cfg.MinSegKbps,
+		cfg.MaxSegKbps, cfg.PSNRFloorDB, digest, nil}
 	for _, s := range segs {
 		id.Bounds = append(id.Bounds, [2]float64{s.StartSec, s.EndSec})
 	}

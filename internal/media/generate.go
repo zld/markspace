@@ -35,9 +35,10 @@ func GenerateSample(ctx context.Context, path string, durationSec, fps float64) 
 		}
 		args = append(args, "-i", src)
 	}
-	// Concat the four phases, then add a fixed-seed spatial noise floor
-	// so PSNR is finite and complexity differs across phases.
-	filter := "concat=n=4:v=1:a=0[v];[v]noise=alls=8:allf=u,format=yuv420p[out]"
+	// Concat the four phases, then add deterministic temporal noise so
+	// every segment carries a real bitrate demand and PSNR stays in a
+	// realistic range.
+	filter := "concat=n=4:v=1:a=0[v];[v]noise=alls=16:allf=t+u,format=yuv420p[out]"
 	args = append(args,
 		"-filter_complex", filter,
 		"-map", "[out]",
