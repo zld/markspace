@@ -60,7 +60,7 @@ class _PhaseTable:
     staying exact for coprime rates too.
     """
 
-    MAX_ENTRIES = 8192
+    MAX_ENTRIES = 2048
 
     def __init__(self, kernel: Kernel, rate_out: int):
         self.kernel = kernel
