@@ -56,6 +56,7 @@ type SegmentState struct {
 type State struct {
 	Version     int             `json:"version"`
 	ConfigHash  string          `json:"config_hash"`
+	Config      json.RawMessage `json:"config,omitempty"`
 	InputDigest string          `json:"input_digest"`
 	Input       string          `json:"input"`
 	Segments    []SegmentState  `json:"segments"`
