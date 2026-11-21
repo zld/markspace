@@ -1,0 +1,6 @@
+# macOS build artifacts and pipeline outputs
+/build/
+/out/
+*.o
+*.a
+compile_commands.json
