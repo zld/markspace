@@ -47,27 +47,43 @@ def build_parser() -> argparse.ArgumentParser:
 
     fixture = sub.add_parser("fixture", help="generate deterministic sample audio")
     fixture.add_argument("--out", type=Path, required=True, help="destination directory")
-    fixture.add_argument("--seed", type=int, default=17)
+    fixture.add_argument("--seed", type=int, default=17, help="fixture seed (default: 17)")
     fixture.set_defaults(handler=_cmd_fixture)
 
-    process = sub.add_parser("process", help="resample and normalize a batch")
-    process.add_argument("--input", type=Path, required=True)
-    process.add_argument("--output", type=Path, required=True)
-    process.add_argument("--report", type=Path, required=True)
-    process.add_argument("--rate", type=int, required=True)
-    process.add_argument("--target-lufs", type=float, default=-23.0)
-    process.add_argument("--peak-dbfs", type=float, default=-1.0)
-    process.add_argument("--jobs", type=int, default=1)
-    process.add_argument("--resume", action="store_true")
-    process.add_argument("--chunk-frames", type=int, default=16384)
+    process = sub.add_parser(
+        "process", help="resample and normalize a batch",
+        description="Recursively process WAV/FLAC/AIFF files and write a JSON report.",
+    )
+    process.add_argument("--input", type=Path, required=True, help="source directory")
+    process.add_argument("--output", type=Path, required=True, help="product directory")
+    process.add_argument("--report", type=Path, required=True, help="JSON report path")
+    process.add_argument("--rate", type=int, required=True, help="output sample rate (Hz)")
+    process.add_argument(
+        "--target-lufs", type=float, default=-23.0, help="integrated loudness target"
+    )
+    process.add_argument(
+        "--peak-dbfs", type=float, default=-1.0, help="output sample-peak ceiling"
+    )
+    process.add_argument("--jobs", type=int, default=1, help="parallel workers (default: 1)")
+    process.add_argument(
+        "--resume", action="store_true", help="reuse unchanged products keyed by SHA-256"
+    )
+    process.add_argument(
+        "--chunk-frames", type=int, default=16384, help="frames per working block"
+    )
     process.set_defaults(handler=_cmd_process)
 
-    verify = sub.add_parser("verify", help="independently recompute a report")
-    verify.add_argument("--input", type=Path, required=True)
-    verify.add_argument("--output", type=Path, required=True)
-    verify.add_argument("--report", type=Path, required=True)
-    verify.add_argument("--tolerance", type=float, default=0.15)
-    verify.add_argument("--json-out", type=Path, default=None)
+    verify = sub.add_parser(
+        "verify", help="independently recompute a report",
+        description="Re-read sources and products and compare every reported value.",
+    )
+    verify.add_argument("--input", type=Path, required=True, help="source directory")
+    verify.add_argument("--output", type=Path, required=True, help="product directory")
+    verify.add_argument("--report", type=Path, required=True, help="JSON report to verify")
+    verify.add_argument(
+        "--tolerance", type=float, default=0.15, help="allowed dB / LU difference"
+    )
+    verify.add_argument("--json-out", type=Path, default=None, help="optional result JSON")
     verify.set_defaults(handler=_cmd_verify)
     return parser
 
