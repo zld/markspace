@@ -11,6 +11,14 @@ endif()
 
 add_compile_options(-Wall -Wextra -Wpedantic)
 
+# Optional universal binary (Apple Silicon + Intel). Off by default because
+# every Homebrew dependency must itself provide both slices; enable with
+# -DBUILD_UNIVERSAL=ON when a universal libass is available.
+option(BUILD_UNIVERSAL "Build an arm64;x86_64 universal macOS binary" OFF)
+if(BUILD_UNIVERSAL AND APPLE)
+  set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "" FORCE)
+endif()
+
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(LIBASS REQUIRED IMPORTED_TARGET libass)
 find_package(ZLIB REQUIRED)
@@ -36,6 +44,10 @@ add_executable(ass_pipeline src/main.cpp)
 target_link_libraries(ass_pipeline PRIVATE asspipe)
 
 enable_testing()
-add_executable(integration_tests tests/integration.cpp)
+add_executable(integration_tests
+  tests/integration.cpp
+  tests/test_parser.cpp
+  tests/test_layout.cpp
+)
 target_link_libraries(integration_tests PRIVATE asspipe)
 add_test(NAME integration COMMAND integration_tests)
