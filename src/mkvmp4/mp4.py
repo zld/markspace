@@ -251,3 +251,297 @@ def build_sample_entry(
 # ---------------------------------------------------------------------------
 # Sample tables
 # ---------------------------------------------------------------------------
+
+
+def run_length(values: list[int]) -> list[tuple[int, int]]:
+    """Collapse a sequence into (count, value) runs, preserving order."""
+    entries: list[tuple[int, int]] = []
+    for value in values:
+        if value < 0:
+            raise OutputError(f"sample table value {value} is negative")
+        if entries and entries[-1][1] == value:
+            entries[-1] = (entries[-1][0] + 1, value)
+        else:
+            entries.append((1, value))
+    return entries
+
+
+def build_stts(durations: list[int]) -> bytes:
+    if not durations or any(d <= 0 for d in durations):
+        raise OutputError("stts requires at least one positive duration")
+    entries = run_length(durations)
+    payload = u32(len(entries)) + b"".join(
+        u32(count) + u32(delta) for count, delta in entries
+    )
+    return full_box("stts", 0, 0, payload)
+
+
+def build_stsz(sizes: list[int]) -> bytes:
+    if not sizes:
+        raise OutputError("stsz requires at least one sample")
+    if any(s <= 0 for s in sizes):
+        raise OutputError("stsz rejects zero-length samples")
+    if len(set(sizes)) == 1:
+        return full_box("stsz", 0, 0, u32(sizes[0]) + u32(len(sizes)))
+    payload = u32(0) + u32(len(sizes)) + b"".join(u32(s) for s in sizes)
+    return full_box("stsz", 0, 0, payload)
+
+
+def build_stsc(samples_per_chunk: list[int]) -> bytes:
+    """One chunk per entry-less run; entries must be contiguous chunks 1..N."""
+    if not samples_per_chunk:
+        raise OutputError("stsc requires at least one chunk")
+    if any(s <= 0 for s in samples_per_chunk):
+        raise OutputError("stsc rejects empty chunks")
+    entries: list[tuple[int, int]] = []
+    for index, count in enumerate(samples_per_chunk, start=1):
+        if entries and entries[-1][1] == count:
+            continue
+        entries.append((index, count))
+    payload = u32(len(entries)) + b"".join(
+        u32(first) + u32(count) + u32(1) for first, count in entries
+    )
+    return full_box("stsc", 0, 0, payload)
+
+
+def build_stco_chunk(offsets: list[int], *, force_co64: bool = False) -> bytes:
+    if not offsets:
+        raise OutputError("chunk offset table requires at least one chunk")
+    if force_co64 or any(o > 0xFFFFFFFF for o in offsets):
+        for offset in offsets:
+            if offset < 0 or offset > 0xFFFFFFFFFFFFFFFF:
+                raise OutputError(f"chunk offset {offset} does not fit in 64 bits")
+        payload = u32(len(offsets)) + b"".join(u64(o) for o in offsets)
+        return full_box("co64", 0, 0, payload)
+    payload = u32(len(offsets)) + b"".join(u32(o) for o in offsets)
+    return full_box("stco", 0, 0, payload)
+
+
+def build_stss(sync_samples: list[int]) -> bytes | None:
+    """Sync sample numbers (1-based).  ``None`` when every sample is a sync."""
+    if not sync_samples:
+        return None
+    payload = u32(len(sync_samples)) + b"".join(u32(n) for n in sync_samples)
+    return full_box("stss", 0, 0, payload)
+
+
+# ---------------------------------------------------------------------------
+# Movie assembly
+# ---------------------------------------------------------------------------
+
+# ISO-639-2/T packed into a 15-bit mdhd field (each letter minus 0x60).
+_LANGUAGE_UND = 0x55C4
+
+
+def encode_language(tag: str | None) -> int:
+    """Pack a three-letter ISO-639-2 code; anything else becomes ``und``."""
+    if not tag:
+        return _LANGUAGE_UND
+    code = tag.lower()
+    if len(code) != 3 or not all("a" <= c <= "z" for c in code):
+        return _LANGUAGE_UND
+    return ((ord(code[0]) - 0x60) << 10) | ((ord(code[1]) - 0x60) << 5) | (ord(code[2]) - 0x60)
+
+
+def decode_language(packed: int) -> str:
+    letters = [((packed >> shift) & 0x1F) + 0x60 for shift in (10, 5, 0)]
+    try:
+        text = "".join(chr(c) for c in letters)
+    except ValueError:
+        return "und"
+    return text if text.isalpha() else "und"
+
+
+@dataclass
+class TrackSpec:
+    """Everything needed to encode one ``trak`` box."""
+
+    track_id: int
+    source_track: int
+    handler: str  # vide | soun | sbtl
+    timescale: int
+    sample_entry: bytes
+    durations: list[int]
+    sizes: list[int]
+    keyframes: list[bool]
+    chunk_offset: int
+    first_tick: int = 0
+    language: str | None = None
+    width: int = 0
+    height: int = 0
+    channels: int = 2
+    sample_rate: int = 48000
+
+    @property
+    def media_duration(self) -> int:
+        return sum(self.durations)
+
+
+def build_ftyp(brand: str = "isom", compatible: tuple[str, ...] = ("isom", "iso2", "avc1", "mp41")) -> bytes:
+    payload = fourcc(brand) + u32(0x200) + b"".join(fourcc(c) for c in compatible)
+    return Box("ftyp", payload).encode()
+
+
+def build_mvhd(movie_timescale: int, duration: int, next_track_id: int) -> bytes:
+    payload = (
+        u32(0) + u32(0)  # creation/modification time (no fabricated clock data)
+        + u32(movie_timescale)
+        + u32(duration)
+        + u32(0x00010000)  # rate 1.0
+        + u16(0x0100)  # volume 1.0
+        + b"\x00\x00"
+        + b"\x00" * 8
+        + MATRIX_IDENTITY
+        + b"\x00" * 24
+        + u32(next_track_id)
+    )
+    return full_box("mvhd", 0, 0, payload)
+
+
+def build_tkhd(
+    track_id: int,
+    duration: int,
+    *,
+    width: int = 0,
+    height: int = 0,
+    volume: float = 0.0,
+) -> bytes:
+    flags = 0x000007  # enabled | in movie | in preview
+    payload = (
+        u32(0) + u32(0)
+        + u32(track_id)
+        + u32(0)
+        + u32(duration)
+        + b"\x00" * 8
+        + u16(0)  # layer
+        + u16(0)  # alternate_group
+        + u16(round(volume * 0x0100))
+        + u16(0)
+        + MATRIX_IDENTITY
+        + u32(width << 16)
+        + u32(height << 16)
+    )
+    return full_box("tkhd", 0, flags, payload)
+
+
+def build_mdhd(timescale: int, duration: int, language: str | None) -> bytes:
+    payload = (
+        u32(0) + u32(0)
+        + u32(timescale)
+        + u32(duration)
+        + u16(encode_language(language))
+        + u16(0)
+    )
+    return full_box("mdhd", 0, 0, payload)
+
+
+_HANDLER_NAMES = {
+    "vide": "VideoHandler",
+    "soun": "SoundHandler",
+    "sbtl": "SubtitleHandler",
+}
+
+
+def build_hdlr(handler: str) -> bytes:
+    name = _HANDLER_NAMES.get(handler, "Handler")
+    payload = u32(0) + fourcc(handler) + b"\x00" * 12 + name.encode("utf-8") + b"\x00"
+    return full_box("hdlr", 0, 0, payload)
+
+
+def build_dinf() -> bytes:
+    url = full_box("url ", 0, 0x000001)  # media in this file
+    dref = full_box("dref", 0, 0, u32(1) + url)
+    return box("dinf", dref)
+
+
+def build_media_header(handler: str) -> bytes:
+    if handler == "vide":
+        return full_box("vmhd", 0, 1, u16(0) + u16(0) + u16(0) + u16(0))
+    if handler == "soun":
+        return full_box("smhd", 0, 0, u16(0) + u16(0))
+    return full_box("nmhd", 0, 0)
+
+
+def build_stbl(spec: TrackSpec) -> bytes:
+    sync = [i + 1 for i, key in enumerate(spec.keyframes) if key]
+    stss = build_stss(sync) if len(sync) != len(spec.keyframes) else None
+    children = [build_stts(spec.durations), build_stsz(spec.sizes)]
+    if stss is not None:
+        children.append(stss)
+    children.append(build_stsc([len(spec.sizes)]))
+    children.append(build_stco_chunk([spec.chunk_offset]))
+    return box("stbl", *children)
+
+
+def build_elst(empty_edit: int, media_duration: int) -> bytes:
+    """Edit list expressing the first-sample delay, in movie timescale.
+
+    ``stts`` deltas only describe spacing between samples; MP4 media time
+    starts at zero.  A leading empty edit delays the media so the first
+    presentation tick recorded by the timestamp stage is preserved exactly.
+    """
+    payload = u32(2)
+    payload += u32(empty_edit) + u32(0xFFFFFFFF) + u32(0x00010000)  # empty edit
+    payload += u32(media_duration) + u32(0) + u32(0x00010000)  # media at t=0
+    return full_box("elst", 0, 0, payload)
+
+
+def build_trak(spec: TrackSpec, movie_timescale: int) -> bytes:
+    """Encode one track, including the edit list that positions sample 0."""
+    media_duration = spec.media_duration
+    empty_edit = 0
+    if spec.first_tick > 0:
+        empty_edit = spec.first_tick * movie_timescale // spec.timescale
+        if empty_edit * spec.timescale != spec.first_tick * movie_timescale:
+            raise OutputError(
+                f"track {spec.track_id}: first tick {spec.first_tick} cannot be "
+                f"represented exactly at movie timescale {movie_timescale}"
+            )
+    tkhd = build_tkhd(
+        spec.track_id,
+        empty_edit + media_duration,
+        width=spec.width,
+        height=spec.height,
+        volume=0.0 if spec.handler == "vide" else 1.0,
+    )
+    mdhd = build_mdhd(spec.timescale, media_duration, spec.language)
+    minf = box(
+        "minf", build_media_header(spec.handler), build_dinf(), build_stbl(spec)
+    )
+    mdia = box("mdia", mdhd, build_hdlr(spec.handler), minf)
+    if empty_edit:
+        return box("trak", tkhd, box("edts", build_elst(empty_edit, media_duration)), mdia)
+    return box("trak", tkhd, mdia)
+
+
+def build_moov(*, movie_timescale: int, tracks: list[TrackSpec]) -> bytes:
+    """Assemble ``moov``; chunk offsets in ``tracks`` must already be final."""
+    duration = max(
+        (
+            t.first_tick * movie_timescale // t.timescale
+            + t.media_duration * movie_timescale // t.timescale
+            for t in tracks
+        ),
+        default=0,
+    )
+    next_track_id = max((t.track_id for t in tracks), default=0) + 1
+    mvhd = build_mvhd(movie_timescale, duration, next_track_id)
+    return box("moov", mvhd, *(build_trak(t, movie_timescale) for t in tracks))
+
+
+def mdat_header(payload_size: int) -> bytes:
+    if payload_size < 0:
+        raise OutputError("mdat payload size cannot be negative")
+    if payload_size + 8 <= 0xFFFFFFFF:
+        return u32(payload_size + 8) + b"mdat"
+    # 64-bit extended size: size field == 1, then a 64-bit size after the type.
+    if payload_size + 16 > 0xFFFFFFFFFFFFFFFF:
+        raise OutputError("mdat payload exceeds the 64-bit box size limit")
+    return u32(1) + b"mdat" + u64(payload_size + 16)
+
+
+# ---------------------------------------------------------------------------
+# Verification: re-read the written file and check the index against the data
+# ---------------------------------------------------------------------------
+
+CONTAINER_BOXES = frozenset({b"moov", b"trak", b"mdia", b"minf", b"stbl", b"dinf", b"edts"})
