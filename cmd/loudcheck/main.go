@@ -76,6 +76,10 @@ func writeSynthFile(opts cli.Options) error {
 }
 
 func runAnalyze(opts cli.Options, stdout, stderr io.Writer) int {
+	if err := checkInputs(opts.Files); err != nil {
+		fmt.Fprintf(stderr, "loudcheck: %v\n", err)
+		return cli.ExitUsage
+	}
 	summary := batch.AnalyzeFiles(opts.Files, analyzeOptions(opts))
 	if err := report.WriteBatch(stdout, summary, opts.Format); err != nil {
 		fmt.Fprintf(stderr, "loudcheck: %v\n", err)
@@ -103,6 +107,23 @@ func runBatch(opts cli.Options, stdout, stderr io.Writer) int {
 		return cli.ExitUsage
 	}
 	return report.ExitCode(summary, false)
+}
+
+// checkInputs rejects missing or non-regular inputs before analysis starts.
+// A file that exists but is corrupt remains a file-level failure (exit 3);
+// a path that is not there at all is a usage error (exit 2), because no
+// measurement was attempted.
+func checkInputs(paths []string) error {
+	for _, p := range paths {
+		st, err := os.Stat(p)
+		if err != nil {
+			return fmt.Errorf("%v", err)
+		}
+		if !st.Mode().IsRegular() {
+			return fmt.Errorf("%s is not a regular file", p)
+		}
+	}
+	return nil
 }
 
 func analyzeOptions(opts cli.Options) batch.Options {
