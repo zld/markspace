@@ -242,3 +242,211 @@ class _Budget:
     def spend(self) -> None:
         self.count += 1
 
+
+def _peek_element_id(data: bytes, pos: int, limit: int) -> int | None:
+    if pos >= limit:
+        return None
+    try:
+        element_id, length = read_vint_id(data, pos)
+    except EbmlParseError:
+        return None
+    if pos + length > limit:
+        return None
+    return element_id
+
+
+def _parse_children(
+    data: bytes,
+    start: int,
+    limit: int,
+    level: int,
+    parent_path: str,
+    *,
+    base: int,
+    budget: _Budget,
+    stop_ids: frozenset[int] | None,
+    out: list[RawNode],
+) -> int:
+    """Parse elements in ``[start, limit)`` and return the stop position.
+
+    ``stop_ids`` is set for unknown-size containers: the first element whose
+    ID is a stopper is not consumed and its offset is returned.
+    """
+    pos = start
+    while pos < limit:
+        if budget.count >= budget.max_count:
+            raise BoundaryError(
+                f"element budget of {budget.max_count} exhausted; refusing to parse "
+                "further (possible hostile nesting)",
+                offset=base + pos,
+                path=_truncate_path(parent_path),
+            )
+        if stop_ids is not None:
+            peeked = _peek_element_id(data, pos, limit)
+            if peeked in stop_ids:
+                return pos
+        header: ElementHeader = read_element_header(
+            data, pos, base=base, path=_truncate_path(parent_path), limit=limit
+        )
+        name = element_name(header.element_id)
+        node_path = _node_path(parent_path, name)
+        if level > budget.max_depth:
+            raise BoundaryError(
+                f"maximum nesting depth {budget.max_depth} exceeded",
+                offset=base + pos,
+                path=_truncate_path(node_path),
+            )
+        unknown = header.size is None
+        if unknown and header.element_id not in UNKNOWN_SIZE_ALLOWED:
+            raise BoundaryError(
+                f"element {name} has unknown size and no rule can bound it",
+                offset=base + pos,
+                path=_truncate_path(node_path),
+                element_name=name,
+            )
+        budget.spend()
+        if unknown:
+            budget.unknown_sizes += 1
+            child_limit = limit
+            child_stoppers: frozenset[int] | None = _BOUNDARY_STOPPERS.get(
+                header.element_id, frozenset()
+            )
+        else:
+            assert header.size is not None
+            child_limit = header.data_offset + header.size
+            child_stoppers = None
+
+        node = RawNode(
+            element_id=header.element_id,
+            name=name,
+            level=level,
+            offset=pos,
+            data_offset=header.data_offset,
+            end_offset=child_limit,
+            size=child_limit - header.data_offset,
+            unknown_size=unknown,
+            path=node_path,
+        )
+        out.append(node)
+
+        is_master = header.element_id in MASTER_ELEMENTS
+        if not is_master:
+            pos = child_limit
+            continue
+        if child_limit <= header.data_offset and not unknown:
+            pos = child_limit
+            continue
+
+        children: list[RawNode] = []
+        node.children = children
+        stop_pos = _parse_children(
+            data,
+            header.data_offset,
+            child_limit,
+            level + 1,
+            node_path,
+            base=base,
+            budget=budget,
+            stop_ids=child_stoppers,
+            out=children,
+        )
+        if unknown:
+            # The unknown-size container ends where its stopper begins (or at
+            # the enclosing limit); the true byte range is now known.
+            node.end_offset = stop_pos
+            node.size = stop_pos - node.data_offset
+            pos = stop_pos
+        else:
+            pos = child_limit
+    return pos
+
+
+def parse_tree(
+    data: bytes,
+    *,
+    base: int = 0,
+    start: int = 0,
+    end: int | None = None,
+    max_depth: int = 64,
+    max_elements: int = 200_000,
+) -> tuple[list[RawNode], dict[str, Any]]:
+    """Parse ``data[start:end]`` into a raw element tree.
+
+    Returns top-level nodes plus statistics.  Raises ``BoundaryError`` when an
+    unknown-size element cannot be bounded or a budget is exceeded, and
+    ``EbmlParseError`` for malformed VINTs or overrunning sizes.
+    """
+    if end is None:
+        end = len(data)
+    if start < 0 or end > len(data) or start > end:
+        raise BoundaryError(
+            f"invalid parse region [{start}, {end}) for {len(data)} bytes",
+            offset=base + start,
+        )
+    budget = _Budget(max_elements, max_depth)
+    top: list[RawNode] = []
+    _parse_children(
+        data,
+        start,
+        end,
+        0,
+        "",
+        base=base,
+        budget=budget,
+        stop_ids=None,
+        out=top,
+    )
+    stats: dict[str, Any] = {
+        "total_count": budget.count,
+        "max_depth": max(
+            (n.level for root in top for n in root.walk()), default=-1
+        ),
+        "unknown_sizes": budget.unknown_sizes,
+        "truncated": False,
+    }
+    return top, stats
+
+
+def summarize(
+    nodes: list[RawNode],
+    stats: dict[str, Any],
+    *,
+    max_nodes: int = 10_000,
+) -> TreeSummary:
+    """Flatten a raw tree into serialisable summary rows.
+
+    ``max_nodes`` caps the number of reported rows so a huge but legal file
+    still produces bounded JSON; ``truncated`` says the report is partial.
+    """
+    rows: list[SummaryNode] = []
+    truncated = False
+    unknown = 0
+    total = 0
+    for root in nodes:
+        for item in root.walk():
+            total += 1
+            unknown += int(item.unknown_size)
+            if len(rows) >= max_nodes:
+                truncated = True
+                continue
+            rows.append(
+                SummaryNode(
+                    element_id=item.element_id,
+                    name=item.name,
+                    level=item.level,
+                    offset=item.offset,
+                    data_offset=item.data_offset,
+                    end_offset=item.end_offset,
+                    size=item.size,
+                    unknown_size=item.unknown_size,
+                    path=item.path,
+                    child_count=len(item.children),
+                )
+            )
+    return TreeSummary(
+        nodes=rows,
+        max_depth=stats.get("max_depth", 0),
+        total_count=total,
+        truncated=truncated,
+        unknown_sizes=unknown,
+    )
