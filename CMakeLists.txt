@@ -23,5 +23,6 @@ enable_testing()
 add_library(lutcore STATIC
     src/model.cpp
     src/color_space.cpp
+    src/cube_reader.cpp
 )
 target_link_libraries(lutcore PUBLIC lutbase)
