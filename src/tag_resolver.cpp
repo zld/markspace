@@ -52,6 +52,28 @@ int int_or(const std::string& s, int fallback) {
     }
 }
 
+// Parse an ASS &HAABB& style hexadecimal value after the '&H' prefix.
+int hex_after_h(const std::string& s, std::size_t h_pos, int fallback) {
+    if (h_pos == std::string::npos || h_pos + 2 > s.size()) return fallback;
+    try {
+        return static_cast<int>(
+            std::stoul(s.substr(h_pos + 2), nullptr, 16) & 0xFFFFFFFFUL);
+    } catch (...) {
+        return fallback;
+    }
+}
+
+// True when `token` is exactly `prefix` or starts with prefix + '&' (an
+// ASS colour/alpha value attached without parentheses).
+bool colour_like(const std::string& token, char digit, bool alpha) {
+    char key = alpha ? 'a' : 'c';
+    if (digit == 0) return token == std::string(1, key) ||
+                        (token.size() > 1 && token[0] == key &&
+                         token[1] == '&');
+    if (token.empty() || token[0] != digit || token[1] != key) return false;
+    return token.size() == 2 || token[2] == '&';
+}
+
 // Extract a parenthesised argument list, e.g. pos(12,34) -> "12,34".
 // Returns "" and consumes nothing when the token is not of that shape.
 std::string paren_arg(const std::string& token, const std::string& name) {
@@ -123,20 +145,22 @@ void apply_token(const std::string& raw, TagCounts& counts,
         state.fontname = raw.substr(2); // keep original casing of the name
         return;
     }
-    // Colour: \c, \1c, \2c, \3c, \4c (with &H..& value, value optional).
-    if (token == "c" || (token.size() >= 2 && token[0] >= '1' &&
-                         token[0] <= '4' && token[1] == 'c')) {
+    // Colour: \c, \1c, \2c, \3c, \4c (with an optional &H..& value).
+    if (colour_like(token, 0, false) || colour_like(token, '1', false) ||
+        colour_like(token, '2', false) || colour_like(token, '3', false) ||
+        colour_like(token, '4', false)) {
         counts.c++;
         auto v = token.find('&');
         state.colour = v == std::string::npos ? std::string{} : token.substr(v);
         return;
     }
-    if (token == "alpha" ||
-        (token.size() >= 2 && token[0] >= '1' && token[0] <= '4' &&
-         token.substr(1) == "a")) {
+    // Alpha: \alpha, \1a, \2a, \3a, \4a.
+    if (token == "alpha" || starts_with_ci(token, "alpha&") ||
+        colour_like(token, '1', true) || colour_like(token, '2', true) ||
+        colour_like(token, '3', true) || colour_like(token, '4', true)) {
         counts.alpha++;
         auto v = token.find('&');
-        state.alpha = v == std::string::npos ? -1 : int_or(token.substr(v + 2), -1);
+        state.alpha = v == std::string::npos ? -1 : hex_after_h(token, v, -1);
         return;
     }
     std::string pos_arg = paren_arg(token, "pos");
@@ -179,17 +203,69 @@ EffectiveState resolve_tags(const std::string& text, TagCounts& counts,
         }
         auto close = text.find('}', i + 1);
         if (close == std::string::npos) {
-            // Unclosed block: recover by treating the remainder as the body
-            // and flag it; no text outside braces has been dropped.
+            // Unclosed block. The remainder is scanned tag-by-tag: each
+            // backslash-led token that looks like a known tag is applied,
+            // everything else (including the opening brace's literal tail)
+            // is kept as visible text, so no content is silently swallowed.
             unclosed_block = true;
-            std::string body = text.substr(i + 1);
-            for (const auto& tok : tokenize_block(body))
-                apply_token(tok, counts, state);
+            std::size_t p = i + 1;
+            std::string literal;
+            auto flush_literal = [&]() {
+                if (!literal.empty()) {
+                    visible_text += literal;
+                    literal.clear();
+                }
+            };
+            while (p < text.size()) {
+                if (text[p] != '\\') {
+                    literal.push_back(text[p++]);
+                    continue;
+                }
+                auto next = text.find('\\', p + 1);
+                std::string segment = text.substr(
+                    p + 1, next == std::string::npos
+                                 ? std::string::npos
+                                 : next - p - 1);
+                std::string head = segment;
+                auto amp = head.find('&');
+                auto par = head.find('(');
+                std::size_t cut = std::min(amp, par);
+                if (cut != std::string::npos) head = head.substr(0, cut);
+                // A token counts as a known tag when its leading letters
+                // name one of the supported tag families.
+                static const char* kKnown[] = {"r",  "b",  "i",  "fs",
+                                               "fn", "c",  "1c", "2c",
+                                               "3c", "4c", "alpha", "1a",
+                                               "2a", "3a", "4a", "pos",
+                                               "an"};
+                bool known = false;
+                for (const char* k : kKnown)
+                    if (starts_with_ci(head, k)) {
+                        known = true;
+                        break;
+                    }
+                if (known) {
+                    flush_literal();
+                    apply_token(segment, counts, state);
+                } else {
+                    literal.push_back('\\');
+                    literal += segment;
+                }
+                if (next == std::string::npos) break;
+                p = next;
+            }
+            flush_literal();
             break;
         }
         std::string body = text.substr(i + 1, close - i - 1);
-        for (const auto& tok : tokenize_block(body))
-            apply_token(tok, counts, state);
+        if (body.empty()) {
+            // An empty override block changes no state; record it as a
+            // reset so empty blocks are observable rather than invisible.
+            counts.r++;
+        } else {
+            for (const auto& tok : tokenize_block(body))
+                apply_token(tok, counts, state);
+        }
         i = close + 1;
     }
     return state;

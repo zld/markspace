@@ -19,18 +19,31 @@ void mark_invalid(AssDocument& doc, const std::string& key) {
     if (it != doc.styles.end()) it->second.valid = false;
 }
 
-void diag(AssDocument& doc, DiagKind kind, int line, std::string msg) {
+void diag(AssDocument& doc, DiagKind kind, int line, std::string msg,
+          std::set<int>& counted_lines, bool& cycle_counted) {
     doc.diagnostics.push_back(
         Diagnostic{DiagLevel::Error, kind, line, 0, std::move(msg)});
-    ++doc.inheritance_errors;
+    // Diagnostics are emitted per affected style line (so every cycle node
+    // is reported with its line number), while the headline error counter
+    // counts distinct defects: one per missing/self edge and one cycle
+    // regardless of how many styles the cycle contains.
+    if (kind == DiagKind::InheritanceCycle) {
+        if (!cycle_counted) {
+            cycle_counted = true;
+            ++doc.inheritance_errors;
+        }
+    } else if (counted_lines.insert(line).second) {
+        ++doc.inheritance_errors;
+    }
 }
 
 // Walk one style's parent chain. `stack` holds the keys currently being
 // resolved (nearest first) so cycles and repeated ancestors are detectable.
-// `reported` collects lines already diagnosed so one cycle yields one
-// diagnostic per participating style even when reached from several roots.
+// `counted_lines` deduplicates per-style diagnostics; `cycle_counted` makes
+// the headline counter treat a whole cycle as a single defect.
 bool walk(AssDocument& doc, const std::string& key,
-          std::vector<std::string> stack, std::set<int>& reported) {
+          std::vector<std::string> stack, std::set<int>& counted_lines,
+          bool& cycle_counted) {
     auto it = doc.styles.find(key);
     if (it == doc.styles.end()) return false;
     Style& st = it->second;
@@ -40,11 +53,14 @@ bool walk(AssDocument& doc, const std::string& key,
             mark_invalid(doc, k);
             auto sit = doc.styles.find(k);
             int line = sit == doc.styles.end() ? 0 : sit->second.line;
-            if (reported.insert(line).second)
+            // Gate by line so a cycle reached from several roots reports
+            // each participating style only once.
+            if (counted_lines.insert(line).second)
                 diag(doc, DiagKind::InheritanceCycle, line,
                      "style '" +
                          (sit == doc.styles.end() ? k : sit->second.name) +
-                         "' participates in an inheritance cycle");
+                         "' participates in an inheritance cycle",
+                     counted_lines, cycle_counted);
         }
         return false;
     }
@@ -56,21 +72,20 @@ bool walk(AssDocument& doc, const std::string& key,
     }
     if (lower_of(st.parent) == key) {
         st.valid = false;
-        if (reported.insert(st.line).second)
-            diag(doc, DiagKind::SelfInheritance, st.line,
-                 "style '" + st.name + "' inherits from itself");
+        diag(doc, DiagKind::SelfInheritance, st.line,
+             "style '" + st.name + "' inherits from itself", counted_lines, cycle_counted);
         return false;
     }
     auto pit = doc.styles.find(lower_of(st.parent));
     if (pit == doc.styles.end()) {
         st.valid = false;
-        if (reported.insert(st.line).second)
-            diag(doc, DiagKind::MissingParent, st.line,
-                 "style '" + st.name + "' references missing parent '" +
-                     st.parent + "'");
+        diag(doc, DiagKind::MissingParent, st.line,
+             "style '" + st.name + "' references missing parent '" +
+                 st.parent + "'",
+             counted_lines, cycle_counted);
         return false;
     }
-    if (!walk(doc, pit->first, stack, reported)) {
+    if (!walk(doc, pit->first, stack, counted_lines, cycle_counted)) {
         st.valid = false;
         return false;
     }
@@ -107,10 +122,11 @@ void build_inheritance_graph(AssDocument& doc) {
         st.ancestors.clear();
         st.valid = true;
     }
-    std::set<int> reported;
+    std::set<int> counted_lines;
+    bool cycle_counted = false;
     for (auto& [key, st] : doc.styles) {
         if (st.ancestors.empty() && st.parent.empty()) continue; // root
-        walk(doc, key, {}, reported);
+        walk(doc, key, {}, counted_lines, cycle_counted);
     }
 }
 
