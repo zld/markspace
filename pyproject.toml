@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mediidx"
+version = "0.1.0"
+description = "Rebuild sidx indexes from MP4 sample tables with independent validation"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+mediidx = "mediidx.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
