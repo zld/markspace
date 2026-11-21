@@ -160,3 +160,13 @@ type BaselineRecord struct {
 	PSNRMeanDB   float64         `json:"psnr_mean_db"`
 	CreatedAt    time.Time       `json:"created_at"`
 }
+
+// ManifestSummary is the top-level report for a multi-job manifest run: one
+// summary per job plus aggregate regression and failure accounting.
+type ManifestSummary struct {
+	Mode            string    `json:"mode"`
+	JobCount        int       `json:"job_count"`
+	Jobs            []Summary `json:"jobs"`
+	RegressionCount int       `json:"regression_count"`
+	FailedJobs      []string  `json:"failed_jobs,omitempty"`
+}

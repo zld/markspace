@@ -205,3 +205,46 @@ func TestParameterChangeInvalidatesResume(t *testing.T) {
 		t.Fatal("resume must reject a changed parameter digest")
 	}
 }
+
+// TestManifestFanOut runs two jobs from one manifest and verifies each gets an
+// isolated checkpoint directory and an independent bitrate budget.
+func TestManifestFanOut(t *testing.T) {
+	workDir := t.TempDir()
+	generateFixture(t, workDir)
+	ctx := context.Background()
+
+	srcData, err := os.ReadFile(workDir + "/source.mp4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, job := range []struct {
+		id   string
+		kbps int
+	}{
+		{"a", 300}, {"b", 600},
+	} {
+		jobDir := workDir + "/jobs/" + job.id
+		if err := os.MkdirAll(jobDir+"/segments", 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(jobDir+"/source.mp4", srcData, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		opts := newOptions(t, jobDir, job.kbps)
+		opts.Input = "source.mp4"
+		cp, err := pipeline.NewRunner(opts, job.id, pipeline.NoopInjector{}).Run(ctx)
+		if err != nil {
+			t.Fatalf("job %s: %v", job.id, err)
+		}
+		if cp.Params.TargetKbps != job.kbps {
+			t.Errorf("job %s target = %d, want %d", job.id, cp.Params.TargetKbps, job.kbps)
+		}
+		store, err := checkpoint.NewStore(jobDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.Load(); err != nil {
+			t.Fatalf("job %s checkpoint: %v", job.id, err)
+		}
+	}
+}

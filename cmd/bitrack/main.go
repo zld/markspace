@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"bitrack/internal/cli"
@@ -88,6 +89,11 @@ func cmdRun(ctx context.Context, o *cli.Options) int {
 			return failEncode(err)
 		}
 	}
+	// A manifest fans out into one isolated runner per job; each job gets its
+	// own subdirectory under the workdir so checkpoints never collide.
+	if len(o.Jobs) > 0 {
+		return runManifest(ctx, o)
+	}
 	cp, code := prepareAndRun(ctx, o)
 	if code != cli.ExitOK && code != cli.ExitInterrupted {
 		return code
@@ -119,6 +125,60 @@ func cmdRun(ctx context.Context, o *cli.Options) int {
 		return cli.ExitRegression
 	}
 	return cli.ExitOK
+}
+
+// runManifest executes one isolated runner per manifest job. Each job lives in
+// workdir/jobs/<id>/ so checkpoints and segment outputs cannot collide or
+// escape the work directory. The worst per-job outcome determines exit code.
+func runManifest(ctx context.Context, o *cli.Options) int {
+	summary := model.ManifestSummary{Mode: "run", JobCount: len(o.Jobs)}
+	worst := cli.ExitOK
+	for _, job := range o.Jobs {
+		jobDir := filepath.Join(o.WorkDir, "jobs", job.ID)
+		if err := os.MkdirAll(filepath.Join(jobDir, "segments"), 0o755); err != nil {
+			fmt.Fprintf(os.Stderr, "bitrack: job %s: %v\n", job.ID, err)
+			summary.FailedJobs = append(summary.FailedJobs, job.ID)
+			worst = cli.ExitEncode
+			continue
+		}
+		jobOpts := *o // clone shared flags, then override per-job fields
+		jobOpts.WorkDir = jobDir
+		jobOpts.Input = job.Input
+		jobOpts.TargetKbps = job.TargetKbps
+		if job.SegmentSeconds > 0 {
+			jobOpts.SegmentSeconds = job.SegmentSeconds
+		}
+		jobOpts.Jobs = nil
+		jobOpts.Manifest = ""
+		cp, code := prepareAndRun(ctx, &jobOpts)
+		if code != cli.ExitOK {
+			summary.FailedJobs = append(summary.FailedJobs, job.ID)
+			if code > worst {
+				worst = code
+			}
+			continue
+		}
+		if o.BaselinePath != "" {
+			if err := pipeline.ApplyBaseline(cp, o.BaselinePath); err != nil {
+				fmt.Fprintf(os.Stderr, "bitrack: job %s baseline: %v\n", job.ID, err)
+				worst = cli.ExitUsage
+				continue
+			}
+		}
+		sum := report.BuildSummary(cp, "run", 0)
+		sum.JobID = job.ID
+		summary.Jobs = append(summary.Jobs, sum)
+		summary.RegressionCount += sum.RegressionCount
+		if sum.RegressionCount > 0 && worst < cli.ExitRegression {
+			worst = cli.ExitRegression
+		}
+	}
+	if o.JSON {
+		emit(summary)
+	} else {
+		printHuman(summary)
+	}
+	return worst
 }
 
 func cmdResume(ctx context.Context, o *cli.Options) int {

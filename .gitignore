@@ -1,0 +1,16 @@
+# Runtime artifacts: all run data must live in the user-specified work
+# directory, never inside the repository.
+source.mp4
+baseline.json
+checkpoint.json
+checkpoint.json.tmp
+segments/
+*.mp4
+*.tmp
+
+# Local binaries
+/bitrack
+
+# OS/editor noise
+.DS_Store
+*.swp
