@@ -24,3 +24,6 @@ add_library(mp4flow_core STATIC
 target_include_directories(mp4flow_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 option(MP4FLOW_BUILD_TESTS "Build Catch2 based tests" ON)
+
+add_executable(mp4flow src/main.cpp src/cli.cpp)
+target_link_libraries(mp4flow PRIVATE mp4flow_core)
