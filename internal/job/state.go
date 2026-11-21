@@ -28,6 +28,9 @@ var allowed = map[Status][]Status{
 	Running:     {Succeeded, Failed, Interrupted},
 	Failed:      {Queued},
 	Interrupted: {Queued},
+	// A succeeded segment may be requeued on resume when its output
+	// artifact is missing from disk.
+	Succeeded: {Queued},
 }
 
 // SegmentState is the persisted record of one segment.
