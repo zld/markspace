@@ -14,7 +14,13 @@ import soundfile as sf
 from . import __version__
 from .engine import render_project
 from .graph import AudioIOError, ConsistencyError
-from .model import DEFAULT_CHUNK_FRAMES, ManifestError, parse_manifest, resolve_track_paths
+from .model import (
+    DEFAULT_CHUNK_FRAMES,
+    MAX_DURATION_SECONDS,
+    ManifestError,
+    parse_manifest,
+    resolve_track_paths,
+)
 from .report import write_json_atomic
 
 EXIT_OK = 0
@@ -81,8 +87,14 @@ def generate_demo_fixtures(workdir: Path, duration: float) -> dict:
     """
     if not math.isfinite(duration) or duration <= 0:
         raise ValueError("duration must be a finite positive number")
+    if duration > MAX_DURATION_SECONDS:
+        raise ValueError(
+            f"duration must not exceed {MAX_DURATION_SECONDS}s (two hours)"
+        )
     frames_a = int(duration * 48000 + 0.5)
     frames_b = int(duration * 44100 + 0.5)
+    if frames_a <= 0 or frames_b <= 0:
+        raise ValueError("duration is too short to produce any audio frames")
     t_a = np.arange(frames_a, dtype=np.float64) / 48000.0
     t_b = np.arange(frames_b, dtype=np.float64) / 44100.0
 

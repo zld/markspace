@@ -28,6 +28,7 @@ from .model import (
     CONSISTENCY_TOLERANCE,
     TARGET_CHANNELS,
     TARGET_SAMPLE_RATE,
+    ManifestError,
     Project,
     resampled_frames,
 )
@@ -133,11 +134,19 @@ def probe_sources(project: Project, paths: list[Path]) -> list[WavInfo]:
 
 
 def _build_curves(project: Project, frames_total: int) -> list[AutomationCurve]:
-    return [
-        build_curve(track.automation, frames_total=frames_total,
-                    sample_rate=TARGET_SAMPLE_RATE)
-        for track in project.tracks
-    ]
+    curves: list[AutomationCurve] = []
+    for track in project.tracks:
+        try:
+            curves.append(
+                build_curve(
+                    track.automation,
+                    frames_total=frames_total,
+                    sample_rate=TARGET_SAMPLE_RATE,
+                )
+            )
+        except ValueError as exc:
+            raise ManifestError(str(exc), track.name, "automation") from exc
+    return curves
 
 
 def _track_reports(project: Project, info: list[WavInfo],
