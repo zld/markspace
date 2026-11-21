@@ -49,13 +49,29 @@ public:
         return static_cast<std::uint32_t>(value);
     }
 
-    // After the maxval token, exactly one whitespace byte precedes the raster.
+    // The PPM spec mandates one whitespace byte after maxval, but real files
+    // use CRLF (two bytes) and occasionally a comment line there. Consume the
+    // required separator and any additional header whitespace/comments so the
+    // position lands exactly on the first raster byte.
     void enterRaster() {
         if (pos_ >= data_.size() ||
             !std::isspace(static_cast<unsigned char>(data_[pos_]))) {
             throw IoError("missing raster separator in PPM " + path_);
         }
-        ++pos_;
+        ++pos_;  // The single spec-required separator.
+        for (;;) {
+            while (pos_ < data_.size() &&
+                   std::isspace(static_cast<unsigned char>(data_[pos_]))) {
+                ++pos_;
+            }
+            if (pos_ < data_.size() && data_[pos_] == '#') {
+                while (pos_ < data_.size() && data_[pos_] != '\n') {
+                    ++pos_;
+                }
+                continue;
+            }
+            break;
+        }
     }
 
     std::size_t rasterOffset() const { return pos_; }

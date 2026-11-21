@@ -157,6 +157,21 @@ void testPpmRoundTripAndErrors() {
     for (std::size_t i = 0; i < wide.pixels.size(); ++i)
         CHECK_NEAR(back16.pixels[i].g, wide.pixels[i].g, 1.0 / 1023.0);
 
+    // Legal headers using CRLF separators and a comment after maxval must
+    // resolve to the same raster as a plain LF header (regression guard).
+    {
+        const std::string raster =
+            renderPpm(img).substr(renderPpm(img).find("255\n") + 4);
+        writeFile(dir + "/crlf.ppm", "P6\r\n3 2\r\n255\r\n" + raster);
+        Image fromCrlf = readPpm(dir + "/crlf.ppm");
+        CHECK(fromCrlf.pixels == back.pixels);
+
+        writeFile(dir + "/comment.ppm",
+                  "P6\n3 2\n# note\n255\n# tail\n" + raster);
+        Image fromComment = readPpm(dir + "/comment.ppm");
+        CHECK(fromComment.pixels == back.pixels);
+    }
+
     auto expectIo = [&](const std::string& bytes) {
         const std::string p = dir + "/bad.ppm";
         writeFile(p, bytes);
