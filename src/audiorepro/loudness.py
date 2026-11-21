@@ -151,21 +151,8 @@ def analyze_reader(
 ) -> Analysis:
     """Measure a stream without holding it in memory."""
     frames = int(frames)
-    weights = np.asarray(channel_weights(channels), dtype=np.float64)
-    shelf = _Biquad(rate, "shelf", channels)
-    highpass = _Biquad(rate, "highpass", channels)
-    hop = max(1, int(round(rate * 0.1)))
-    hop_sums = []
-    recent: list[np.ndarray] = []
-    blocks: list[float] = []
-    total_sq = 0.0
-    total_samples = 0
-    peak = 0.0
-    clips = 0
-    pending = np.zeros(channels, dtype=np.float64)
-    pending_count = 0
+    analyzer = StreamAnalyzer(channels, rate)
     offset = 0
-
     while offset < frames:
         count = min(chunk_frames, frames - offset)
         data = np.asarray(reader(offset, count), dtype=np.float64)
@@ -175,42 +162,77 @@ def analyze_reader(
             raise ValueError(
                 f"reader returned shape {data.shape}, expected ({count}, {channels})"
             )
+        analyzer.feed(data)
         offset += count
-        total_sq += float(np.square(data).sum())
-        total_samples += data.size
-        peak = max(peak, float(np.abs(data).max(initial=0.0)))
-        clips += int(np.count_nonzero(np.abs(data) >= 1.0))
-        weighted = highpass.process(shelf.process(data))
+    return analyzer.finish(frames=frames)
+
+
+class StreamAnalyzer:
+    """Incremental RMS / peak / clipped-sample / gated-loudness measurement."""
+
+    def __init__(self, channels: int, rate: int) -> None:
+        self.channels = int(channels)
+        self.rate = int(rate)
+        self.weights = np.asarray(channel_weights(self.channels), dtype=np.float64)
+        self.shelf = _Biquad(rate, "shelf", self.channels)
+        self.highpass = _Biquad(rate, "highpass", self.channels)
+        self.hop = max(1, int(round(rate * 0.1)))
+        self._recent: list[np.ndarray] = []
+        self._blocks: list[float] = []
+        self._pending = np.zeros(self.channels, dtype=np.float64)
+        self._pending_count = 0
+        self._total_sq = 0.0
+        self._total_samples = 0
+        self._peak = 0.0
+        self._clips = 0
+        self.frames = 0
+
+    def feed(self, data: np.ndarray) -> None:
+        if data.ndim == 1:
+            data = data[:, None]
+        if data.shape[1] != self.channels:
+            raise ValueError(f"expected {self.channels} channels, got {data.shape[1]}")
+        count = data.shape[0]
+        if count == 0:
+            return
+        self.frames += count
+        self._total_sq += float(np.square(data).sum())
+        self._total_samples += data.size
+        self._peak = max(self._peak, float(np.abs(data).max(initial=0.0)))
+        self._clips += int(np.count_nonzero(np.abs(data) >= 1.0))
+        weighted = self.highpass.process(self.shelf.process(data))
         squared = np.square(weighted)
         index = 0
         while index < count:
-            take = min(hop - pending_count, count - index)
-            pending += squared[index : index + take].sum(axis=0)
-            pending_count += take
+            take = min(self.hop - self._pending_count, count - index)
+            self._pending += squared[index : index + take].sum(axis=0)
+            self._pending_count += take
             index += take
-            if pending_count == hop:
-                hop_sums.append(pending / hop)
-                recent.append(hop_sums[-1])
-                if len(recent) > BLOCK_HOPS:
-                    recent.pop(0)
-                if len(recent) == BLOCK_HOPS:
-                    mean_sq = np.mean(np.stack(recent), axis=0)
-                    blocks.append(float(np.dot(weights, mean_sq)))
-                pending = np.zeros(channels, dtype=np.float64)
-                pending_count = 0
+            if self._pending_count == self.hop:
+                hop_mean = self._pending / self.hop
+                self._recent.append(hop_mean)
+                if len(self._recent) > BLOCK_HOPS:
+                    self._recent.pop(0)
+                if len(self._recent) == BLOCK_HOPS:
+                    mean_sq = np.mean(np.stack(self._recent), axis=0)
+                    self._blocks.append(float(np.dot(self.weights, mean_sq)))
+                self._pending = np.zeros(self.channels, dtype=np.float64)
+                self._pending_count = 0
 
-    rms_power = total_sq / total_samples if total_samples else 0.0
-    return Analysis(
-        frames=frames,
-        channels=channels,
-        sample_rate=rate,
-        rms_dbfs=_to_db(rms_power),
-        lufs=_gate(blocks),
-        peak_dbfs=_to_db(peak * peak),
-        peak_linear=peak,
-        clip_samples=clips,
-        measured_blocks=len(blocks),
-    )
+    def finish(self, frames: int | None = None) -> Analysis:
+        rms_power = self._total_sq / self._total_samples if self._total_samples else 0.0
+        return Analysis(
+            frames=int(frames if frames is not None else self.frames),
+            channels=self.channels,
+            sample_rate=self.rate,
+            rms_dbfs=_to_db(rms_power),
+            lufs=_gate(self._blocks),
+            peak_dbfs=_to_db(self._peak * self._peak),
+            peak_linear=self._peak,
+            clip_samples=self._clips,
+            measured_blocks=len(self._blocks),
+        )
+
 
 
 def analyze_array(samples: np.ndarray, rate: int, chunk_frames: int = 65536) -> Analysis:
