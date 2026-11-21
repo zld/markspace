@@ -91,14 +91,15 @@ func runAnalyze(opts cli.Options, stdout, stderr io.Writer) int {
 func runBatch(opts cli.Options, stdout, stderr io.Writer) int {
 	paths := append([]string(nil), opts.Files...)
 	if opts.InputDir != "" {
-		found, err := batch.ExpandPath(opts.InputDir)
-		if err != nil {
-			fmt.Fprintf(stderr, "loudcheck: %v\n", err)
-			return cli.ExitUsage
-		}
-		paths = append(paths, found...)
+		paths = append(paths, opts.InputDir)
 	}
-	summary := batch.AnalyzeFiles(paths, analyzeOptions(opts))
+	// Each argument may be a file or a directory; ExpandPath decides which.
+	expanded, err := expandAll(paths)
+	if err != nil {
+		fmt.Fprintf(stderr, "loudcheck: %v\n", err)
+		return cli.ExitUsage
+	}
+	summary := batch.AnalyzeFiles(expanded, analyzeOptions(opts))
 	if !opts.Quiet && opts.Format == report.Text {
 		fmt.Fprintln(stderr, report.ThresholdSummary(opts.Thresholds))
 	}
@@ -107,6 +108,20 @@ func runBatch(opts cli.Options, stdout, stderr io.Writer) int {
 		return cli.ExitUsage
 	}
 	return report.ExitCode(summary, false)
+}
+
+// expandAll resolves each argument to one or more files, preserving argument
+// order so the final report ordering is deterministic.
+func expandAll(paths []string) ([]string, error) {
+	var out []string
+	for _, p := range paths {
+		got, err := batch.ExpandPath(p)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, got...)
+	}
+	return out, nil
 }
 
 // checkInputs rejects missing or non-regular inputs before analysis starts.
