@@ -21,8 +21,9 @@ import (
 	"loudcheck/internal/wav"
 )
 
-// FrameBlock is the number of frames decoded per read, bounding each
-// worker's buffer to roughly one second of 32-bit audio.
+// FrameBlock is the number of frames decoded per read. With the decoder's
+// float32 buffer this holds one worker near 96 KB for a 5.1 file, so a
+// 64-worker batch stays well inside the memory budget.
 const FrameBlock = 8192
 
 // FileReport is the outcome for one file. Exactly one of Err or a complete

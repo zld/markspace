@@ -64,6 +64,10 @@ type Analyzer struct {
 
 // NewAnalyzer creates an analyzer for the given sample rate and per-channel
 // loudness weights. A weight of zero excludes a channel (for example LFE).
+//
+// Each analyzer owns its filters and true-peak history, so switching files
+// means constructing a new analyzer rather than resetting shared state: no
+// tail from a previous file can ever contribute to the next measurement.
 func NewAnalyzer(sampleRate int, weights []float64) *Analyzer {
 	ch := len(weights)
 	a := &Analyzer{
