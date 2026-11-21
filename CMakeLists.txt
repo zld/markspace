@@ -29,5 +29,6 @@ add_library(lutcore STATIC
     src/report.cpp
     src/image.cpp
     src/baker.cpp
+    src/render.cpp
 )
 target_link_libraries(lutcore PUBLIC lutbase)

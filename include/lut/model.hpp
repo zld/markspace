@@ -28,6 +28,12 @@ struct RGB {
     double r = 0.0;
     double g = 0.0;
     double b = 0.0;
+
+    bool operator==(const RGB& other) const {
+        return r == other.r && g == other.g && b == other.b;
+    }
+
+    bool operator!=(const RGB& other) const { return !(*this == other); }
 };
 
 // A uniform cubic 3D LUT. Nodes are stored red-fast: index = b*N*N + g*N + r.
