@@ -205,3 +205,183 @@ def inspect_file(path: str | Path, *, max_depth: int = 64, max_elements: int = 2
 # ---------------------------------------------------------------------------
 # Remux
 # ---------------------------------------------------------------------------
+
+
+@dataclass
+class RemuxOptions:
+    output: str
+    mapping: Mapping
+    timescale: int = 1_000_000
+    offset_ms: int = 0
+    repair: bool = False
+    rounding: str = "round"
+    clip_negative: bool = True
+    max_gap_ms: int | None = None
+    movie_timescale: int | None = None
+    derive_mapping: bool = False
+
+    @property
+    def mode(self) -> str:
+        return "repair" if self.repair else "strict"
+
+
+@dataclass
+class RemuxResult:
+    output: str
+    tracks: list[dict[str, Any]] = field(default_factory=list)
+    samples: int = 0
+    corrections: dict[str, int] = field(default_factory=dict)
+    first_tick: int | None = None
+    last_end_tick: int | None = None
+    timescale: int = 1_000_000
+    box_count: int = 0
+    index_ok: bool = False
+    mdat_offsets: dict[str, int] = field(default_factory=dict)
+    mapping_derived: bool = False
+    file_size: int = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "output": self.output,
+            "timescale": self.timescale,
+            "tracks": self.tracks,
+            "sample_count": self.samples,
+            "corrections": self.corrections,
+            "first_tick": self.first_tick,
+            "last_end_tick": self.last_end_tick,
+            "box_count": self.box_count,
+            "index_ok": self.index_ok,
+            "mdat_offsets": self.mdat_offsets,
+            "mapping_derived": self.mapping_derived,
+            "file_size": self.file_size,
+        }
+
+
+def _samples_for_track(mk: MatroskaFile, track: Track) -> list[SampleInput]:
+    """Flatten blocks of one track in container (decode) order.
+
+    Each laced frame becomes its own MP4 sample; ``intra_block_index`` carries
+    its position so the timestamp stage can space frames that share a block
+    timecode.
+    """
+    samples: list[SampleInput] = []
+    for cluster in mk.clusters:
+        for block in cluster.blocks:
+            if block.track != track.number:
+                continue
+            samples.append(
+                SampleInput(
+                    track=track.number,
+                    cluster_timestamp=cluster.timestamp,
+                    block_timecode=block.timecode,
+                    intra_block_index=block.lace_index,
+                    intra_block_count=block.lace_count,
+                    data_offset=block.data_offset,
+                    data_length=block.data_length,
+                    keyframe=block.keyframe,
+                    default_duration_ns=track.default_duration_ns,
+                    block_duration=block.block_duration,
+                )
+            )
+    return samples
+
+
+def _gather_samples(mk: MatroskaFile) -> list[SampleInput]:
+    all_samples: list[SampleInput] = []
+    for track in mk.tracks:
+        samples = _samples_for_track(mk, track)
+        if not samples:
+            raise InputError(
+                f"track {track.number} has no media blocks",
+                offset=track.entry_offset,
+                path=track.path,
+                track=track.number,
+                stage="remux",
+            )
+        all_samples.extend(samples)
+    if not all_samples:
+        raise InputError("input contains no media blocks", stage="remux")
+    return all_samples
+
+
+def _payload_plan(
+    specs: list[mp4.TrackSpec], timeline: TimelineReport
+) -> list[tuple[int, list[tuple[int, int]]]]:
+    """Per-track contiguous payload plan: (source_track, [(offset, length)]).
+
+    MP4 describes each track as chunks of samples, so payload is laid out
+    grouped per track in decode order.  Only slice references are held; media
+    bytes are streamed once during the write.
+    """
+    plan: list[tuple[int, list[tuple[int, int]]]] = []
+    for spec in specs:
+        report = timeline.tracks[spec.source_track]
+        pairs = [
+            (int(off), int(length))
+            for off, length in zip(report.data_offsets, report.data_lengths)
+        ]
+        plan.append((spec.source_track, pairs))
+    return plan
+
+
+def _check_payload_bounds(mk: MatroskaFile) -> None:
+    limit = len(mk.data)
+    for cluster in mk.clusters:
+        for block in cluster.blocks:
+            if block.data_offset < 0 or block.data_offset + block.data_length > limit:
+                raise InputError(
+                    f"block payload [{block.data_offset}, "
+                    f"{block.data_offset + block.data_length}) crosses the file end",
+                    offset=block.data_offset,
+                    track=block.track,
+                    stage="remux",
+                )
+            if block.data_length <= 0:
+                raise InputError(
+                    "zero-length block payload",
+                    offset=block.data_offset,
+                    track=block.track,
+                    stage="remux",
+                )
+
+
+def _build_track_specs(
+    mk: MatroskaFile,
+    mapping: dict[int, int],
+    timeline: TimelineReport,
+    *,
+    min_movie_timescale: int,
+) -> tuple[list[mp4.TrackSpec], dict[str, int]]:
+    specs: list[mp4.TrackSpec] = []
+    offsets: dict[str, int] = {}
+    for track in mk.tracks:
+        target_id = mapping[track.number]
+        tl = timeline.tracks[track.number]
+        entry = mp4.build_sample_entry(
+            track.codec_id,
+            codec_private=track.codec_private,
+            width=track.pixel_width or 0,
+            height=track.pixel_height or 0,
+            channels=track.channels or 2,
+            sample_rate=round(track.sampling_frequency or 48000),
+        )
+        spec = mp4.TrackSpec(
+            track_id=target_id,
+            source_track=track.number,
+            handler=HANDLER_BY_TRACK_TYPE[track.track_type],
+            timescale=timeline.timescale,
+            sample_entry=entry,
+            durations=[int(d) for d in tl.durations],
+            sizes=[int(s) for s in tl.data_lengths],
+            keyframes=[bool(k) for k in tl.keyframes],
+            chunk_offset=0,
+            first_tick=int(tl.ticks[0]),
+            language=track.language,
+            width=track.pixel_width or 0,
+            height=track.pixel_height or 0,
+            channels=track.channels or 2,
+            sample_rate=round(track.sampling_frequency or 48000),
+        )
+        specs.append(spec)
+        offsets[str(target_id)] = 0
+    return specs, offsets
