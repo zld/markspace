@@ -33,17 +33,27 @@ type Flags struct {
 	Seed      int64
 	Timeout   time.Duration
 	Format    string
+	// Fault selects an optional server-side failure used to verify cleanup
+	// and exit-code mapping. Empty means the healthy demo stream.
+	Fault string
 }
+
+// Supported fault names.
+const (
+	FaultNone      = "none"
+	FaultBadSDP    = "bad-sdp"
+	FaultSetupFail = "setup-fail"
+)
 
 // Parse validates osArgs (normally os.Args[1:]) and returns a populated Flags.
 // The returned error always carries a user-facing message; callers map it to
 // exit code 2.
 func Parse(osArgs []string) (*Flags, error) {
-	if len(osArgs) == 0 {
+	if len(osArgs) < 2 {
 		return nil, errors.New("missing command, expected \"demo\"")
 	}
 
-	f := &Flags{Command: osArgs[1:][0]}
+	f := &Flags{Command: osArgs[1]}
 	if f.Command != "demo" {
 		return nil, fmt.Errorf("unknown command %q, only \"demo\" is supported", f.Command)
 	}
@@ -54,7 +64,8 @@ func Parse(osArgs []string) (*Flags, error) {
 	seed := fs.Int64("seed", 41, "deterministic seed for the generated sample stream")
 	timeout := fs.Duration("timeout", DefaultTimeout, "maximum duration of one transport run")
 	format := fs.String("format", "json", "output format: json")
-	if err := fs.Parse(osArgs[1:]); err != nil {
+	fault := fs.String("fault", FaultNone, "optional server failure: none|bad-sdp|setup-fail")
+	if err := fs.Parse(osArgs[2:]); err != nil {
 		return nil, err
 	}
 
@@ -63,6 +74,7 @@ func Parse(osArgs []string) (*Flags, error) {
 	f.Seed = *seed
 	f.Timeout = *timeout
 	f.Format = *format
+	f.Fault = *fault
 
 	if err := f.validate(); err != nil {
 		return nil, err
@@ -87,6 +99,11 @@ func (f *Flags) validate() error {
 	}
 	if f.Format != "json" {
 		return fmt.Errorf("invalid format %q: only json is supported", f.Format)
+	}
+	switch f.Fault {
+	case FaultNone, FaultBadSDP, FaultSetupFail:
+	default:
+		return fmt.Errorf("invalid fault %q: must be none, bad-sdp or setup-fail", f.Fault)
 	}
 	return nil
 }
