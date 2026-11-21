@@ -3,9 +3,9 @@
 A project is rendered twice: once with a very large block and once with the
 caller's chunk size. Both passes build the same graph topology and node
 classes; only the block sizes differ, so any difference in output would mean
-state leaks across block boundaries. Blocks from the offline pass are consumed
-in streaming-sized slices and compared frame by frame, keeping the final
-float64 mix in memory only one small bridge block at a time.
+state leaks across block boundaries. The offline reference is held in a
+chunked bridge and compared frame by frame against the streaming output, so
+the full mix is never resident in memory twice.
 """
 
 from __future__ import annotations
