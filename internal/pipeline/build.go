@@ -25,6 +25,10 @@ type builtRendition struct {
 	duration   float64
 }
 
+// publishFunc atomically republishes the rendition playlist and shared index
+// after each source segment, enabling incremental (event-style) publishing.
+type publishFunc func(pl m3u8.MediaPlaylist, idx *integrity.Index) error
+
 // processRendition reorders source files, waits on gaps, slices each present
 // source segment at IDR boundaries and publishes the resulting files. Missing
 // source data always yields a discontinuity, never a silent splice.
@@ -34,9 +38,12 @@ func processRendition(
 	targetTicks int64,
 	gapTimeout config.Duration,
 	index *integrity.Index,
+	publish publishFunc,
 ) (*builtRendition, []Failure, error) {
 	out := &builtRendition{report: RenditionReport{Rendition: rd.Name, Bitrate: rd.Bitrate}}
 	var hardFailures []Failure
+	targetDuration := int((targetTicks + ts.TicksPerSecond - 1) / ts.TicksPerSecond)
+	playlist := m3u8.MediaPlaylist{TargetDuration: targetDuration, MediaSequence: 0}
 
 	inRel := rd.Name // inbox/<name>
 	absDir, err := inputRoot.Join(inRel)
@@ -73,7 +80,6 @@ func processRendition(
 	}
 
 	mediaSeq := 0
-	var segments []m3u8.Segment
 	pendingDiscontinuity := false
 	haveCut := false
 	var phaseOffset int64 // first IDR PTS: the rendition's timeline phase
@@ -119,6 +125,18 @@ func processRendition(
 				Rendition: rd.Name, Segment: seq, Reason: reason,
 			})
 		}
+		if cutter.PTSWraps > 0 {
+			hardFailures = append(hardFailures, Failure{
+				Rendition: rd.Name, Segment: seq,
+				Reason: fmt.Sprintf("PTS wraparound x%d", cutter.PTSWraps),
+			})
+		}
+		if cutter.PTSBackward > 0 {
+			hardFailures = append(hardFailures, Failure{
+				Rendition: rd.Name, Segment: seq,
+				Reason: fmt.Sprintf("PTS moved backward x%d", cutter.PTSBackward),
+			})
+		}
 		if len(cuts) > 0 && !havePhase {
 			phaseOffset = firstPTS
 			havePhase = true
@@ -135,7 +153,7 @@ func processRendition(
 				SHA256: integrity.HashBytes(cut.Data),
 				Size:   int64(len(cut.Data)), Duration: dur,
 			})
-			segments = append(segments, m3u8.Segment{
+			playlist.Segments = append(playlist.Segments, m3u8.Segment{
 				URI: file, Duration: dur,
 				Discontinuity: pendingDiscontinuity && haveCut,
 				MediaSeq:      mediaSeq,
@@ -150,14 +168,17 @@ func processRendition(
 			haveCut = true
 			pendingDiscontinuity = false
 		}
+		// Incremental, atomic publish after every source segment so a reader
+		// never observes a half-written playlist even if the process is killed.
+		if publish != nil {
+			if err := publish(playlist, index); err != nil {
+				return nil, nil, err
+			}
+		}
 	}
 
-	out.playlist = m3u8.MediaPlaylist{
-		TargetDuration: int((targetTicks + ts.TicksPerSecond - 1) / ts.TicksPerSecond),
-		MediaSequence:  0,
-		Segments:       segments,
-	}
-	out.report.Segments = len(segments)
+	out.playlist = playlist
+	out.report.Segments = len(playlist.Segments)
 	out.report.DurationSeconds = round3(out.duration)
 	return out, hardFailures, nil
 }

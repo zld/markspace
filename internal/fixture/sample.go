@@ -7,6 +7,20 @@ func SampleSegment(segmentSeq int, renditionOffset int64) []byte {
 	return segmentTS(segmentSeq, renditionOffset)
 }
 
+// NewMuxerForTest exposes the deterministic muxer for cross-package tests.
+func NewMuxerForTest() *Muxer { return NewMuxer() }
+
+// IDRFrameForTest returns one synthetic IDR access unit.
+func IDRFrameForTest(index int) []byte { return videoFrame(true, index) }
+
+// WriteVideoForTest emits one timestamped video PES packet.
+func (m *Muxer) WriteVideoForTest(au []byte, pts int64) {
+	m.writePayload(videoPID, true, buildPES(0xE0, pts, au))
+}
+
+// BytesForTest returns the muxed bytes.
+func (m *Muxer) BytesForTest() []byte { return m.Bytes() }
+
 // ContinuousStream builds one muxer stream containing idrCount IDR access
 // units with continuous PTS and continuity counters, unlike concatenating
 // independent SampleSegment outputs (each of which restarts its CC state).

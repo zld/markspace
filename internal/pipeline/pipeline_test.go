@@ -1,13 +1,18 @@
 package pipeline
 
 import (
+	"bytes"
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"hlsflow/internal/config"
 	"hlsflow/internal/fixture"
+	"hlsflow/internal/integrity"
+	"hlsflow/internal/m3u8"
 	"hlsflow/internal/safeio"
+	"hlsflow/internal/ts"
 )
 
 func TestBuildAndVerifyClean(t *testing.T) {
@@ -108,6 +113,42 @@ func TestVerifyDetectsExtraFile(t *testing.T) {
 	}
 	if len(vrep.ExtraFiles) != 1 {
 		t.Fatalf("extras = %v", vrep.ExtraFiles)
+	}
+}
+
+func TestIncrementalPublishesAreParseable(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "demo")
+	if _, err := fixture.Generate(dir, fixture.ScenarioClean, []int{800000}); err != nil {
+		t.Fatal(err)
+	}
+	job, inputRoot, outRoot := roots(t, dir)
+	rd := job.Renditions[0]
+	index := integrity.New()
+	var publishes int
+	cb := func(pl m3u8.MediaPlaylist, idx *integrity.Index) error {
+		publishes++
+		parsed, err := m3u8.ParseMedia(bytes.NewReader(pl.Bytes()))
+		if err != nil {
+			return err
+		}
+		if parsed.Closed {
+			return fmt.Errorf("intermediate playlist must stay open (EVENT)")
+		}
+		if len(parsed.Segments) == 0 {
+			return fmt.Errorf("intermediate playlist had no segments")
+		}
+		return idx.Save(outRoot)
+	}
+	br, _, err := processRendition(rd, inputRoot, outRoot, 2*ts.TicksPerSecond,
+		config.Duration{}, index, cb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if publishes != rd.ExpectedCount() {
+		t.Fatalf("publishes = %d, want %d", publishes, rd.ExpectedCount())
+	}
+	if br.report.Segments == 0 {
+		t.Fatal("no segments built")
 	}
 }
 

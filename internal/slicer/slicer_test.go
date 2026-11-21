@@ -101,6 +101,25 @@ func TestDiscoverAndReorder(t *testing.T) {
 	}
 }
 
+func TestCutterDetectsBackwardPTS(t *testing.T) {
+	// Two IDR frames whose second PTS moves backward without wraparound.
+	m := fixture.NewMuxerForTest()
+	au := fixture.IDRFrameForTest(0)
+	m.WriteVideoForTest(au, 90000)
+	m.WriteVideoForTest(au, 50000) // genuine backward jump
+	p := ts.NewParser(bytes.NewReader(m.BytesForTest()))
+	c := NewCutter(p)
+	if _, _, _, err := c.Run(ts.TicksPerSecond); err != nil {
+		t.Fatal(err)
+	}
+	if c.PTSBackward != 1 {
+		t.Fatalf("backward PTS count = %d, want 1", c.PTSBackward)
+	}
+	if c.PTSWraps != 0 {
+		t.Fatalf("unexpected wrap count %d", c.PTSWraps)
+	}
+}
+
 func TestWaitForGap(t *testing.T) {
 	dir := t.TempDir()
 	if WaitForGap(dir, 4, 60*time.Millisecond) {

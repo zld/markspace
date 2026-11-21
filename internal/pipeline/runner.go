@@ -27,7 +27,17 @@ func Build(job *config.Job, inputRoot, outputRoot *safeio.Root, opts Options) (*
 
 	var built []*builtRendition
 	for _, rd := range job.Renditions {
-		br, failures, err := processRendition(rd, inputRoot, outputRoot, targetTicks, gap, index)
+		plPath := filepath.Join(rd.Name, "index.m3u8")
+		// During ingest the playlist stays open (EVENT); it is only closed in
+		// the final write below when --finalize is requested.
+		publish := func(pl m3u8.MediaPlaylist, idx *integrity.Index) error {
+			pl.Closed = false
+			if err := outputRoot.AtomicWrite(plPath, pl.Bytes()); err != nil {
+				return err
+			}
+			return idx.Save(outputRoot)
+		}
+		br, failures, err := processRendition(rd, inputRoot, outputRoot, targetTicks, gap, index, publish)
 		if err != nil {
 			return nil, fmt.Errorf("build rendition %q: %w", rd.Name, err)
 		}
@@ -37,8 +47,10 @@ func Build(job *config.Job, inputRoot, outputRoot *safeio.Root, opts Options) (*
 			report.addFailure(rd.Name, f)
 		}
 		br.playlist.Closed = opts.Finalize
-		plPath := filepath.Join(rd.Name, "index.m3u8")
 		if err := outputRoot.AtomicWrite(plPath, br.playlist.Bytes()); err != nil {
+			return nil, err
+		}
+		if err := index.Save(outputRoot); err != nil {
 			return nil, err
 		}
 		built = append(built, br)

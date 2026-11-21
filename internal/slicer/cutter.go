@@ -25,6 +25,10 @@ type Cutter struct {
 	open     bool
 	start    int64
 	timeline ts.Timeline
+	// PTSWraps counts 33-bit wraparounds observed on the video timeline.
+	PTSWraps int64
+	// PTSBackward counts non-wraparound backward PTS movements.
+	PTSBackward int64
 }
 
 // NewCutter requires a parser; the video PID is resolved lazily because the
@@ -115,7 +119,13 @@ func (c *Cutter) videoBoundary(pkt ts.Packet) (bool, int64) {
 	if err != nil || !info.HasPTS {
 		return false, 0
 	}
-	pts, _ := c.timeline.ObservePTS(info.PTS)
+	pts, backward := c.timeline.ObservePTS(info.PTS)
+	if c.timeline.Wraps > c.PTSWraps {
+		c.PTSWraps = c.timeline.Wraps
+	}
+	if backward {
+		c.PTSBackward++
+	}
 	return ts.ContainsIDR(info.Data), pts
 }
 
