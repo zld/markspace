@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 
 	"transcode/internal/config"
@@ -53,7 +54,9 @@ func (r *Runner) VerifyReusable() error {
 }
 
 // Run processes all pending segments with at most cfg.Workers
-// concurrent ffmpeg subprocesses. A cancelled context kills in-flight
+// concurrent ffmpeg subprocesses. Targets are allocated serially in
+// segment order (the controller reserves budget per allocation), while
+// encoding proceeds concurrently. A cancelled context kills in-flight
 // encodes and marks them interrupted; completed segments are kept.
 func (r *Runner) Run(ctx context.Context) error {
 	pending := r.state.Pending(r.cfg.MaxRetries)
@@ -63,26 +66,30 @@ func (r *Runner) Run(ctx context.Context) error {
 		if ctx.Err() != nil {
 			break
 		}
+		target := r.ctrl.Target(idx) // serial, in index order
+		r.mu.Lock()
+		r.state.Segments[idx].TargetKbps = target
+		r.mu.Unlock()
 		wg.Add(1)
 		sem <- struct{}{}
-		go func(idx int) {
+		go func(idx int, target float64) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			r.runSegment(ctx, idx)
-		}(idx)
+			r.runSegment(ctx, idx, target)
+		}(idx, target)
 	}
 	wg.Wait()
 	return nil
 }
 
 // runSegment attempts one segment up to MaxRetries+1 times.
-func (r *Runner) runSegment(ctx context.Context, idx int) {
+func (r *Runner) runSegment(ctx context.Context, idx int, target float64) {
 	for attempt := 0; attempt <= r.cfg.MaxRetries; attempt++ {
 		if ctx.Err() != nil {
 			r.transition(idx, job.Interrupted, ctx.Err())
 			return
 		}
-		err := r.encodeOnce(ctx, idx)
+		err := r.encodeOnce(ctx, idx, target)
 		if err == nil {
 			return
 		}
@@ -99,13 +106,11 @@ func (r *Runner) runSegment(ctx context.Context, idx int) {
 	}
 }
 
-// encodeOnce performs target allocation, encoding, measurement and
-// quality regression for one segment.
-func (r *Runner) encodeOnce(ctx context.Context, idx int) error {
+// encodeOnce performs encoding, measurement and quality regression
+// for one segment with an already-allocated target.
+func (r *Runner) encodeOnce(ctx context.Context, idx int, target float64) error {
 	seg := r.segs[idx]
-	target := r.ctrl.Target(idx)
 	r.mu.Lock()
-	r.state.Segments[idx].TargetKbps = target
 	err := r.state.Transition(idx, job.Running, nil)
 	r.mu.Unlock()
 	if err != nil {
@@ -139,9 +144,12 @@ func (r *Runner) encodeOnce(ctx context.Context, idx int) error {
 	if err != nil {
 		return err
 	}
-	qs, err := quality.Range(ctx, r.cfg.Input, final, seg.StartSec, seg.Duration(), r.info.Width, r.info.Height, r.cfg.PSNRFloorDB)
+	qs, err := quality.Range(ctx, r.cfg.Input, final, seg.StartSec, seg.Duration(), r.info.AvgFPS, r.info.Width, r.info.Height, r.cfg.PSNRFloorDB)
 	if err != nil {
 		return fmt.Errorf("quality regression: %w", err)
+	}
+	if ctx.Err() != nil {
+		return ctx.Err() // decode pipes were killed by cancellation
 	}
 	if qs.FrameMismatch {
 		return fmt.Errorf("frame count mismatch between reference and segment %d; refusing to fabricate PSNR", idx)
@@ -167,8 +175,18 @@ func (r *Runner) transition(idx int, to job.Status, err error) {
 	r.state.Transition(idx, to, err)
 }
 
-// measureKbps derives the actual video bitrate from the artifact size.
+// measureKbps derives the actual video bitrate from the container's
+// stream metadata, falling back to file size when the muxer did not
+// record a stream bitrate.
 func measureKbps(path string, dur float64) (float64, error) {
+	out, err := exec.Command("ffprobe",
+		"-v", "error", "-select_streams", "v:0",
+		"-show_entries", "stream=bit_rate", "-of", "csv=p=0", path).Output()
+	if err == nil {
+		if v, perr := strconv.ParseFloat(strings.TrimSpace(string(out)), 64); perr == nil && v > 0 {
+			return v / 1000, nil
+		}
+	}
 	st, err := os.Stat(path)
 	if err != nil {
 		return 0, err

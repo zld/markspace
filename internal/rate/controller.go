@@ -11,7 +11,6 @@ import (
 	"os/exec"
 	"sync"
 
-	"gonum.org/v1/gonum/floats"
 	"gonum.org/v1/gonum/stat"
 
 	"transcode/internal/segment"
@@ -100,14 +99,18 @@ func absDiff(a, b byte) float64 {
 }
 
 // Controller hands out per-segment bitrate targets under a total
-// budget and applies error feedback from measured actuals. Safe for
-// concurrent use by scheduler workers.
+// budget and applies error feedback from measured actuals. Targets
+// must be requested in increasing segment order (the scheduler
+// dispatches in order); each target reserves its bits from the
+// remaining budget, and Feedback settles the reservation against the
+// measured actual. Safe for concurrent use.
 type Controller struct {
 	mu         sync.Mutex
-	budgetBits float64   // remaining bits for unassigned segments
+	budgetBits float64   // bits not yet spent or reserved
 	weights    []float64 // demand weight per segment
 	durs       []float64
-	assigned   []bool
+	assigned   []bool // target handed out (bits reserved)
+	done       []bool // feedback received (bits settled)
 	minKbps    float64
 	maxKbps    float64
 	targets    []float64 // history for error regression
@@ -123,6 +126,7 @@ func New(totalKbps float64, segs []segment.Segment, m []Metrics, minKbps, maxKbp
 		weights:  make([]float64, len(segs)),
 		durs:     make([]float64, len(segs)),
 		assigned: make([]bool, len(segs)),
+		done:     make([]bool, len(segs)),
 		minKbps:  minKbps,
 		maxKbps:  maxKbps,
 		alpha:    1.0,
@@ -137,20 +141,19 @@ func New(totalKbps float64, segs []segment.Segment, m []Metrics, minKbps, maxKbp
 	return c
 }
 
-// Target returns the bitrate in kbps for segment i, proportional to
-// its share of the remaining demand weight, clamped to [min,max] and
-// corrected by the fitted error model.
+// Target returns the bitrate in kbps for segment i: its demand share
+// of the bits not yet spent or reserved, clamped to [min,max],
+// corrected by the fitted error model, and reserved from the budget.
 func (c *Controller) Target(i int) float64 {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	remaining := make([]float64, len(c.weights))
-	for j := range c.weights {
-		if !c.assigned[j] {
-			remaining[j] = c.weights[j]
+	var sum float64
+	for j := i; j < len(c.weights); j++ {
+		if !c.assigned[j] && !c.done[j] {
+			sum += c.weights[j]
 		}
 	}
-	sum := floats.Sum(remaining)
-	if sum <= 0 {
+	if sum <= 0 || c.budgetBits <= 0 {
 		return c.minKbps
 	}
 	kbps := c.budgetBits * (c.weights[i] / sum) / c.durs[i] / 1000
@@ -166,16 +169,23 @@ func (c *Controller) Target(i int) float64 {
 		kbps = c.maxKbps
 	}
 	c.assigned[i] = true
+	c.budgetBits -= kbps * 1000 * c.durs[i] // reserve
 	return kbps
 }
 
-// Feedback records the measured bitrate of a finished segment, debits
-// the remaining budget by the actual spend, and refits the linear
-// error model actual = alpha*target + beta via gonum least squares.
+// Feedback settles segment i against its measured bitrate: the
+// reservation (or, for replayed history, the full actual) is debited
+// and the linear error model actual = alpha*target + beta is refit
+// via gonum least squares.
 func (c *Controller) Feedback(i int, targetKbps, actualKbps float64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.budgetBits -= actualKbps * 1000 * c.durs[i]
+	if c.assigned[i] {
+		c.budgetBits -= (actualKbps - targetKbps) * 1000 * c.durs[i]
+	} else {
+		c.budgetBits -= actualKbps * 1000 * c.durs[i]
+	}
+	c.done[i] = true
 	c.targets = append(c.targets, targetKbps)
 	c.actuals = append(c.actuals, actualKbps)
 	if len(c.targets) >= 2 {
