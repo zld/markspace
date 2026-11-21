@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mixforge"
+version = "0.1.0"
+description = "Local deterministic timeline audio mixer with verifiable per-track statistics"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=2.1,<2.2",
+    "soundfile>=0.12,<0.13",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8",
+]
+
+[project.scripts]
+mixforge = "mixforge.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
