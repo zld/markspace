@@ -8,7 +8,6 @@ a batch of files therefore designs each kernel only once.
 
 from __future__ import annotations
 
-import math
 import threading
 from dataclasses import asdict, dataclass
 from typing import Callable, Iterator
@@ -183,19 +182,9 @@ class Resampler:
         return np.concatenate(blocks, axis=0) if blocks else np.zeros((0, channels))
 
 
-def suggest_cutoff_hz(in_rate: int, out_rate: int, config: ResamplerConfig | None = None) -> float:
-    cfg = config or ResamplerConfig()
-    return 0.5 * min(in_rate, out_rate) * cfg.cutoff_ratio
-
-
 def is_supported_rate(rate: int) -> bool:
     return 8000 <= int(rate) <= 192000
 
 
 def channels_label(channels: int) -> str:
     return {1: "mono", 2: "stereo", 6: "5.1"}.get(channels, f"{channels}ch")
-
-
-def gcd_ratio(in_rate: int, out_rate: int) -> tuple[int, int]:
-    g = math.gcd(in_rate, out_rate) or 1
-    return in_rate // g, out_rate // g

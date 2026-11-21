@@ -50,10 +50,6 @@ class Discovery:
     errors: list[TaskError]
 
     @property
-    def ok_count(self) -> int:
-        return len(self.files)
-
-    @property
     def failed_count(self) -> int:
         return len(self.errors)
 

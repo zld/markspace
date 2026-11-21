@@ -68,35 +68,6 @@ def write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
                 pass
 
 
-def build_report(
-    params: dict[str, Any],
-    params_hash: str,
-    files: list[dict[str, Any]],
-    errors: list[dict[str, Any]],
-    resumed: int,
-) -> dict[str, Any]:
-    channels: dict[str, int] = {}
-    for item in files:
-        key = str(item["channels"])
-        channels[key] = channels.get(key, 0) + 1
-    return {
-        "schema": REPORT_SCHEMA,
-        "tool_version": __version__,
-        "generated_at": utc_now(),
-        "params": params,
-        "params_hash": params_hash,
-        "summary": {
-            "files": len(files),
-            "failed": len(errors),
-            "resumed": resumed,
-            "sample_rate": params["sample_rate"],
-            "channels": dict(sorted(channels.items())),
-        },
-        "files": files,
-        "errors": errors,
-    }
-
-
 def load_report(path: Path) -> dict[str, Any]:
     try:
         with open(path, "r", encoding="utf-8") as handle:

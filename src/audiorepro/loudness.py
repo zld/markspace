@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Callable, Iterable
+from typing import Callable
 
 import numpy as np
 
@@ -272,9 +272,3 @@ def gain_to_target(
     if peak_linear > 0.0 and peak_linear * 10.0 ** (gain_db / 20.0) > ceiling:
         gain_db = 20.0 * math.log10(ceiling / peak_linear)
     return gain_db, True
-
-
-def rms_of(blocks: Iterable[Analysis]) -> float | None:
-    """Convenience helper for combining analyses (used by tests)."""
-    values = [item.rms_dbfs for item in blocks if item.rms_dbfs is not None]
-    return max(values) if values else None
