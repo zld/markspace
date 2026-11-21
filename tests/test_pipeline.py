@@ -223,6 +223,17 @@ class CliTests(TempDirTest):
         self.assertEqual(main(["nonsense"]), 2)
         self.assertEqual(main([]), 2)
 
+    def test_output_inside_input_is_rejected(self) -> None:
+        generate(self.tmp / "input", seed=17)
+        self.assertEqual(
+            main([
+                "process", "--input", str(self.tmp / "input"),
+                "--output", str(self.tmp / "input" / "out"),
+                "--report", str(self.tmp / "r.json"), "--rate", "48000",
+            ]),
+            2,
+        )
+
     def test_task_failure_exit_3(self) -> None:
         generate(self.tmp / "input", seed=17)
         (self.tmp / "input" / "mono" / "mono_tone.wav").write_bytes(b"RIFF....WAVEbad")

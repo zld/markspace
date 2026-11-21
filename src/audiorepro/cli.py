@@ -101,6 +101,14 @@ def _validate_process(args: argparse.Namespace) -> None:
         raise UsageError("--chunk-frames must be at least 256")
     if not args.input.is_dir():
         raise UsageError(f"--input is not a directory: {args.input}")
+    try:
+        output = args.output.resolve()
+        source = args.input.resolve()
+    except OSError as exc:
+        raise UsageError(f"cannot resolve input/output paths: {exc}") from exc
+    if output == source or source in output.parents:
+        # Otherwise the next run would rediscover its own products as input.
+        raise UsageError("--output must not be the input directory or nested inside it")
 
 
 def _cmd_fixture(args: argparse.Namespace) -> int:
