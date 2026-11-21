@@ -129,6 +129,9 @@ func (o *Options) validate(sub string) error {
 	if o.FailAfter < 0 {
 		return fmt.Errorf("--fail-after must be >= 0")
 	}
+	if o.TailFrames == -1 {
+		o.TailFrames = o.FramesPerSegment / 4
+	}
 	switch sub {
 	case "fixture":
 		return o.validateFixture()
@@ -150,9 +153,6 @@ func (o *Options) validateFixture() error {
 	if o.FPS <= 0 {
 		return fmt.Errorf("fixture --fps must be positive")
 	}
-	if o.TailFrames == -1 {
-		o.TailFrames = o.FramesPerSegment / 4
-	}
 	if o.TailFrames < 0 || o.TailFrames >= o.FramesPerSegment {
 		return fmt.Errorf("--tail-frames must be in [0, frames-per-segment)")
 	}
@@ -160,7 +160,9 @@ func (o *Options) validateFixture() error {
 }
 
 func (o *Options) validateRunLike(sub string) error {
-	if o.TargetKbps <= 0 {
+	// A manifest carries per-job targets, so the global target flag is only
+	// mandatory for single-video invocations.
+	if o.Manifest == "" && o.TargetKbps <= 0 {
 		return fmt.Errorf("--target-kbps must be positive, got %d", o.TargetKbps)
 	}
 	if o.SegmentSeconds <= 0 {

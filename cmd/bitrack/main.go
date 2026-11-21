@@ -139,8 +139,8 @@ func cmdResume(ctx context.Context, o *cli.Options) int {
 		emit(sum)
 	} else {
 		printHuman(sum)
+		fmt.Printf("resumed: reused %d committed segment(s)\n", reused)
 	}
-	fmt.Printf("resumed: reused %d committed segment(s)\n", reused)
 	if sum.RegressionCount > 0 {
 		return cli.ExitRegression
 	}
@@ -177,9 +177,11 @@ func prepareAndRun(ctx context.Context, o *cli.Options) (*model.Checkpoint, int)
 func buildInjector(o *cli.Options) pipeline.Injector {
 	switch o.InterruptKind {
 	case pipeline.FaultDiskFail:
-		return pipeline.NewFaultInjector(pipeline.FaultDiskFail, 0, o.WorkDir)
+		// -1: fire on the first segment that reaches the encoder, robust to
+		// non-deterministic worker dispatch order.
+		return pipeline.NewFaultInjector(pipeline.FaultDiskFail, -1, o.WorkDir)
 	case pipeline.FaultFFmpegFail:
-		return pipeline.NewFaultInjector(pipeline.FaultFFmpegFail, 0, o.WorkDir)
+		return pipeline.NewFaultInjector(pipeline.FaultFFmpegFail, -1, o.WorkDir)
 	default:
 		return pipeline.NoopInjector{}
 	}

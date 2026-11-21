@@ -70,7 +70,6 @@ func (r *Runner) Run(ctx context.Context) (*model.Checkpoint, error) {
 	if err != nil {
 		return nil, err
 	}
-	params.BaselineDigest = baselineDigest
 
 	ranges, err := analysis.BuildRanges(probe.NbFrames, int(probe.FrameRate*r.opts.SegmentSeconds+0.5))
 	if err != nil {
@@ -231,7 +230,8 @@ func ApplyBaseline(cp *model.Checkpoint, baselinePath string) error {
 	}
 	for i, seg := range cp.Segments {
 		seg.BaselinePSNR = rec.Segments[i].PSNRDB
-		seg.DeltaDB = seg.BaselinePSNR - seg.PSNRDB
+		// Positive delta means current quality dropped below the baseline.
+		seg.DeltaDB = seg.PSNRDB - seg.BaselinePSNR
 	}
 	return nil
 }

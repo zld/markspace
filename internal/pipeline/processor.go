@@ -65,10 +65,13 @@ func (p *Processor) Process(ctx context.Context, seg *model.Segment) error {
 			})
 			return err
 		}
-		actualBits, merr := encode.VideoPacketBytes(ctx, outPath)
+		// VideoPacketBytes returns on-disk BYTES; the rate budget and the
+		// report are in BITS, so convert once at the boundary.
+		packetBytes, merr := encode.VideoPacketBytes(ctx, outPath)
 		if merr != nil {
 			return merr
 		}
+		actualBits := packetBytes * 8
 		nextKbps, deviation, converged := ctrl.NextKbps(kbps, actualBits)
 		reason := "bitrate-correction"
 		if converged {

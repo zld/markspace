@@ -88,7 +88,6 @@ type Params struct {
 	Preset           string  `json:"preset"`
 	PixelFormat      string  `json:"pixel_format"`
 	MaxPSNRDropDB    float64 `json:"max_psnr_drop_db"`
-	BaselineDigest   string  `json:"baseline_digest,omitempty"`
 	FailureInjection string  `json:"failure_injection,omitempty"`
 }
 
