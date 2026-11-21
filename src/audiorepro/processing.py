@@ -23,6 +23,8 @@ from .loudness import StreamAnalyzer, algorithm_parameters, gain_to_target
 from .params import OUTPUT_FORMAT, OUTPUT_SUBTYPE, PipelineParams
 from .resample import Resampler
 
+STREAM_BLOCK = 1 << 20
+
 
 def read_block(handle: sf.SoundFile, start: int, count: int) -> np.ndarray:
     handle.seek(int(start))
@@ -83,47 +85,73 @@ def stage_resample(
     return analyzer.finish(frames=frames_out), frames_out
 
 
+def _read_wav_chunks(path: Path) -> list[tuple[bytes, int, int]] | None:
+    """Return [(id, payload_offset, payload_size)] or None if not RIFF/WAVE."""
+    try:
+        with open(path, "rb") as handle:
+            header = handle.read(12)
+            if len(header) < 12 or header[:4] != b"RIFF" or header[8:12] != b"WAVE":
+                return None
+            file_size = path.stat().st_size
+            chunks: list[tuple[bytes, int, int]] = []
+            offset = 12
+            while offset + 8 <= file_size:
+                handle.seek(offset)
+                chunk_id = handle.read(4)
+                size = int.from_bytes(handle.read(4), "little")
+                chunks.append((chunk_id, offset + 8, size))
+                offset += 8 + size + (size & 1)
+    except OSError:
+        return None
+    return chunks
+
+
 def strip_timestamp_chunks(path: Path) -> None:
     """Remove libsndfile's non-deterministic PEAK chunk from a WAV.
 
     FLOAT WAVs gain a PEAK chunk whose position field is a wall-clock
     timestamp, so two identical runs would otherwise differ byte for
-    byte.  The audio payload is untouched; callers open the file only
-    after this rewrite.
+    byte.  The audio payload is untouched and the rewrite is streamed in
+    fixed-size blocks so memory stays bounded.
     """
-    try:
-        with open(path, "rb") as handle:
-            data = handle.read()
-    except OSError:
+    chunks = _read_wav_chunks(path)
+    if chunks is None:
         return
-    if len(data) < 12 or data[:4] != b"RIFF" or data[8:12] != b"WAVE":
-        return
-    payload = bytearray()
-    offset = 12
-    while offset + 8 <= len(data):
-        chunk_id = data[offset : offset + 4]
-        size = int.from_bytes(data[offset + 4 : offset + 8], "little")
-        end = offset + 8 + size + (size & 1)
-        if chunk_id not in (b"PEAK", b"fact"):
-            payload += data[offset:min(end, len(data))]
-        offset = end
-    rebuilt = bytearray(b"RIFF")
-    rebuilt += (len(payload) + 4).to_bytes(4, "little")
-    rebuilt += b"WAVE"
-    rebuilt += payload
-    if rebuilt == data:
+    dropped = [c for c in chunks if c[0] in (b"PEAK", b"fact")]
+    if not dropped:
         return
     fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".strip", dir=path.parent)
+    temp_path = Path(temp_name)
     try:
-        with os.fdopen(fd, "wb") as handle:
-            handle.write(rebuilt)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temp_name, path)
-        temp_name = None
+        payload_size = 0
+        with open(path, "rb") as src, os.fdopen(fd, "wb") as dst:
+            dst.write(b"RIFF\x00\x00\x00\x00WAVE")
+            for chunk_id, payload_offset, size in chunks:
+                if chunk_id in (b"PEAK", b"fact"):
+                    continue
+                dst.write(chunk_id)
+                dst.write(int(size).to_bytes(4, "little"))
+                src.seek(payload_offset)
+                remaining = size
+                while remaining > 0:
+                    block = src.read(min(STREAM_BLOCK, remaining))
+                    if not block:
+                        raise OSError("unexpected end of WAV data")
+                    dst.write(block)
+                    remaining -= len(block)
+                if size & 1:
+                    dst.write(b"\x00")
+                    payload_size += 1
+                payload_size += 8 + size
+            dst.seek(4)
+            dst.write(int(payload_size + 4).to_bytes(4, "little"))
+            dst.flush()
+            os.fsync(dst.fileno())
+        os.replace(temp_path, path)
+        temp_path = None
     finally:
-        if temp_name is not None:
-            remove_file(Path(temp_name))
+        if temp_path is not None:
+            remove_file(temp_path)
 
 
 def stage_finalize(
