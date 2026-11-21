@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cutline"
+version = "0.1.0"
+description = "Terminal timeline checker and resolver for editorial tracks"
+requires-python = ">=3.11"
+dependencies = [
+    "OpenTimelineIO==0.18.1",
+]
+
+[project.scripts]
+cutline = "cutline.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
