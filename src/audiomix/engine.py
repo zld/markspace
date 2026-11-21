@@ -34,7 +34,7 @@ from .model import (
 )
 from .report import AtomicWavWriter, RenderReport, TrackReport
 
-OFFLINE_BLOCK = 1 << 16
+OFFLINE_BLOCK = 1 << 14
 MIN_AUTOMATION_SAMPLES = 3
 
 

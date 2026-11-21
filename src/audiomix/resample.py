@@ -15,7 +15,9 @@ from .model import resampled_frames as resampled_length
 
 ZERO_CROSSINGS = 16
 MAX_HALF_WIDTH = ZERO_CROSSINGS * 8
-EMIT_SLICE = 8192
+# Bound on (output frames x taps) gathered at once: a 4096-frame slice with
+# 33 taps is ~1 MB per channel, so peak memory stays flat for any block size.
+EMIT_SLICE = 4096
 
 
 def _window(distance: np.ndarray, half_width: int) -> np.ndarray:
