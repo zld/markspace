@@ -644,3 +644,226 @@ def _table_entries(data: bytes, b: ParsedBox, words: int) -> list[int]:
         int.from_bytes(data[payload + 8 + 4 * i : payload + 12 + 4 * i], "big")
         for i in range(total)
     ]
+
+
+def _parse_stbl(data: bytes, stbl: ParsedBox, path: str, failures: list[str]) -> dict[str, object]:
+    kids = _children(data, stbl, path)
+    info: dict[str, object] = {}
+    stsz = _find(kids, "stsz")
+    if stsz is None:
+        failures.append(f"{path}: stbl has no stsz")
+        return info
+    p = stsz.payload_offset
+    sample_size = int.from_bytes(data[p + 4 : p + 8], "big")
+    count = int.from_bytes(data[p + 8 : p + 12], "big")
+    if sample_size:
+        sizes = [sample_size] * count
+        expected = 12
+    else:
+        sizes = [
+            int.from_bytes(data[p + 12 + 4 * i : p + 16 + 4 * i], "big")
+            for i in range(count)
+        ]
+        expected = 12 + 4 * count
+    if stsz.size - stsz.header_size != expected:
+        failures.append(f"{path}: stsz size does not match its sample count")
+    if any(s == 0 for s in sizes):
+        failures.append(f"{path}: stsz contains a zero-length sample")
+    info["sample_count"] = count
+    info["sample_sizes"] = sizes
+
+    stts = _find(kids, "stts")
+    if stts is None:
+        failures.append(f"{path}: stbl has no stts")
+    else:
+        values = _table_entries(data, stts, 2)
+        if len(values) % 2:
+            failures.append(f"{path}: stts entry count is not a multiple of 2")
+        deltas: list[int] = []
+        for i in range(0, len(values), 2):
+            run, delta = values[i], values[i + 1]
+            if delta == 0:
+                failures.append(f"{path}: stts contains a zero delta")
+            deltas.extend([delta] * run)
+        if len(deltas) != count:
+            failures.append(
+                f"{path}: stts covers {len(deltas)} samples but stsz has {count}"
+            )
+        info["durations"] = deltas
+
+    stsc = _find(kids, "stsc")
+    if stsc is None:
+        failures.append(f"{path}: stbl has no stsc")
+    else:
+        values = _table_entries(data, stsc, 3)
+        if len(values) % 3:
+            failures.append(f"{path}: stsc entry count is not a multiple of 3")
+        entries = [
+            (values[i], values[i + 1]) for i in range(0, len(values) - 2, 3)
+        ]
+        info["stsc"] = entries
+
+    chunk_box = _find(kids, "stco")
+    offset_width = 4
+    if chunk_box is None:
+        chunk_box = _find(kids, "co64")
+        offset_width = 8
+    if chunk_box is None:
+        failures.append(f"{path}: stbl has no stco/co64")
+        info["chunk_offsets"] = []
+    else:
+        p = chunk_box.payload_offset
+        chunk_count = int.from_bytes(data[p + 4 : p + 8], "big")
+        chunks = [
+            int.from_bytes(
+                data[p + 8 + offset_width * i : p + 8 + offset_width * (i + 1)], "big"
+            )
+            for i in range(chunk_count)
+        ]
+        if chunk_box.size - chunk_box.header_size != 8 + offset_width * chunk_count:
+            failures.append(f"{path}: {chunk_box.box_type} size does not match its entry count")
+        info["chunk_offsets"] = chunks
+        info["chunk_box"] = chunk_box.box_type
+
+    stss = _find(kids, "stss")
+    if stss is not None:
+        values = _table_entries(data, stss, 1)
+        info["sync_samples"] = values
+        for value in values:
+            if value < 1 or value > count:
+                failures.append(f"{path}: stss references sample {value} outside 1..{count}")
+
+    info["stbl_children"] = [b.box_type for b in kids]
+    return info
+
+
+def inspect_mp4(data: bytes) -> Mp4Inspection:
+    """Walk every box, rebuild the sample map and cross-check chunk offsets.
+
+    This is deliberately independent of the writing code: it re-derives the
+    sample positions from ``stsc``/``stco`` and confirms each one lands inside
+    the ``mdat`` payload, that chunk offsets are ascending, and that the sum of
+    sample sizes fits the file.
+    """
+    failures: list[str] = []
+    boxes = _iter_boxes(data, 0, len(data), "/")
+    if not boxes:
+        raise OutputError("file contains no boxes")
+    if boxes[0].box_type != "ftyp":
+        failures.append("first box is not ftyp")
+    moov = _find(boxes, "moov")
+    mdat = _find(boxes, "mdat")
+    if moov is None:
+        raise OutputError("file has no moov box")
+    if mdat is None:
+        raise OutputError("file has no mdat box")
+    mdat_start, mdat_end = mdat.payload_offset, mdat.end
+
+    tracks: list[dict[str, object]] = []
+    sample_offsets: list[int] = []
+    moov_kids = _children(data, moov, "/moov")
+    mvhd = _find(moov_kids, "mvhd")
+    if mvhd is None:
+        failures.append("/moov: no mvhd")
+    for trak in (b for b in moov_kids if b.box_type == "trak"):
+        trak_path = f"/moov/trak@{trak.offset}"
+        trak_kids = _children(data, trak, trak_path)
+        tkhd = _find(trak_kids, "tkhd")
+        mdia = _find(trak_kids, "mdia")
+        if tkhd is None or mdia is None:
+            failures.append(f"{trak_path}: missing tkhd or mdia")
+            continue
+        track_id = int.from_bytes(
+            data[tkhd.payload_offset + 12 : tkhd.payload_offset + 16], "big"
+        )
+        mdia_kids = _children(data, mdia, f"{trak_path}/mdia")
+        hdlr = _find(mdia_kids, "hdlr")
+        minf = _find(mdia_kids, "minf")
+        mdhd = _find(mdia_kids, "mdhd")
+        if hdlr is None or minf is None or mdhd is None:
+            failures.append(f"{trak_path}: missing hdlr/minf/mdhd")
+            continue
+        handler = data[hdlr.payload_offset + 8 : hdlr.payload_offset + 12].decode(
+            "latin-1"
+        )
+        timescale = int.from_bytes(
+            data[mdhd.payload_offset + 12 : mdhd.payload_offset + 16], "big"
+        )
+        media_duration = int.from_bytes(
+            data[mdhd.payload_offset + 16 : mdhd.payload_offset + 20], "big"
+        )
+        minf_kids = _children(data, minf, f"{trak_path}/minf")
+        stbl = _find(minf_kids, "stbl")
+        if stbl is None:
+            failures.append(f"{trak_path}: minf has no stbl")
+            continue
+        info = _parse_stbl(data, stbl, f"{trak_path}/stbl", failures)
+        sizes: list[int] = info.pop("sample_sizes", [])
+        durations: list[int] = info.pop("durations", [])
+        chunks: list[int] = info.pop("chunk_offsets", [])
+        stsc: list[tuple[int, int]] = info.pop("stsc", [])
+        # Expand stsc into samples-per-chunk for every chunk.
+        per_chunk: list[int] = []
+        if stsc:
+            for index, (first, spc) in enumerate(stsc):
+                last = stsc[index + 1][0] - 1 if index + 1 < len(stsc) else len(chunks)
+                per_chunk.extend([spc] * (last - first + 1))
+        if len(per_chunk) != len(chunks):
+            failures.append(
+                f"{trak_path}: stsc describes {len(per_chunk)} chunks but "
+                f"stco/co64 has {len(chunks)}"
+            )
+        if sum(per_chunk) != len(sizes):
+            failures.append(
+                f"{trak_path}: chunk table maps {sum(per_chunk)} samples but "
+                f"stsz has {len(sizes)}"
+            )
+        if chunks != sorted(chunks):
+            failures.append(f"{trak_path}: chunk offsets are not strictly ascending")
+        sample_index = 0
+        for chunk_index, (offset, spc) in enumerate(zip(chunks, per_chunk)):
+            cursor = offset
+            for _ in range(spc):
+                if sample_index >= len(sizes):
+                    break
+                size = sizes[sample_index]
+                if cursor < mdat_start or cursor + size > mdat_end:
+                    failures.append(
+                        f"{trak_path}: sample {sample_index + 1} at byte {cursor} "
+                        f"(len {size}) is outside mdat [{mdat_start}, {mdat_end})"
+                    )
+                sample_offsets.append(cursor)
+                cursor += size
+                sample_index += 1
+            if chunk_index + 1 < len(chunks):
+                following = chunks[chunk_index + 1]
+                if cursor > following:
+                    failures.append(
+                        f"{trak_path}: chunk {chunk_index + 1} overlaps the next chunk"
+                    )
+        tracks.append(
+            {
+                "track_id": track_id,
+                "handler": handler,
+                "timescale": timescale,
+                "media_duration": media_duration,
+                "sample_count": len(sizes),
+                "chunks": len(chunks),
+                "chunk_box": info.get("chunk_box"),
+                "duration_sum": sum(durations),
+                "sync_samples": len(info.get("sync_samples", [])),
+                "stbl_children": info.get("stbl_children"),
+            }
+        )
+        if durations and sum(durations) != media_duration:
+            failures.append(
+                f"{trak_path}: stts duration sum {sum(durations)} != mdhd duration "
+                f"{media_duration}"
+            )
+    return Mp4Inspection(
+        boxes=boxes,
+        tracks=tracks,
+        failures=failures,
+        sample_offsets=sample_offsets,
+        file_size=len(data),
+    )
