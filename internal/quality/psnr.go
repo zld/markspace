@@ -31,7 +31,7 @@ type Stats struct {
 // and the already-trimmed decPath. A frame-count mismatch is reported
 // in Stats.FrameMismatch and no quality values are fabricated: MeanDB
 // is left at zero and the caller must treat the segment as failed.
-func Range(ctx context.Context, refPath, decPath string, start, dur float64, width, height int, floorDB float64) (*Stats, error) {
+func Range(ctx context.Context, refPath, decPath string, start, dur, fps float64, width, height int, floorDB float64) (*Stats, error) {
 	if width <= 0 || height <= 0 {
 		return nil, fmt.Errorf("invalid geometry %dx%d", width, height)
 	}
@@ -42,11 +42,11 @@ func Range(ctx context.Context, refPath, decPath string, start, dur float64, wid
 		"-ss", strconv.FormatFloat(start, 'f', 6, 64),
 		"-t", strconv.FormatFloat(dur, 'f', 6, 64),
 		"-i", refPath,
-		"-map", "0:v:0", "-vf", fmt.Sprintf("scale=%d:%d", width, height),
+		"-map", "0:v:0", "-vf", fmt.Sprintf("scale=%d:%d,fps=%g", width, height, fps),
 		"-f", "rawvideo", "-pix_fmt", "yuv420p", "pipe:1")
 	decArgs := append(append([]string{}, base...),
 		"-i", decPath,
-		"-map", "0:v:0", "-vf", fmt.Sprintf("scale=%d:%d", width, height),
+		"-map", "0:v:0", "-vf", fmt.Sprintf("scale=%d:%d,fps=%g", width, height, fps),
 		"-f", "rawvideo", "-pix_fmt", "yuv420p", "pipe:1")
 
 	refCmd := exec.CommandContext(ctx, "ffmpeg", refArgs...)
@@ -74,14 +74,25 @@ func Range(ctx context.Context, refPath, decPath string, start, dur float64, wid
 
 	st := &Stats{MinDB: maxPSNR}
 	var sum, prev float64
-	for {
-		rf, rok := <-refCh
-		df, dok := <-decCh
-		if !rok || !dok {
-			if rok != dok {
-				st.FrameMismatch = true
-			}
-			break
+	// Read both streams to exhaustion even after a mismatch: stopping
+	// early would leave a decoder blocked on a full pipe and Wait
+	// would hang.
+	rok, dok := true, true
+	for rok || dok {
+		var rf, df []byte
+		if rok {
+			rf, rok = <-refCh
+		}
+		if dok {
+			df, dok = <-decCh
+		}
+		if rok != dok {
+			// One stream ended while the other still had a frame.
+			st.FrameMismatch = true
+			continue
+		}
+		if !rok {
+			break // both streams ended together: clean
 		}
 		p := framePSNR(rf[:lumaSize], df[:lumaSize])
 		if st.Frames > 0 {
