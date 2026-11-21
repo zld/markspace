@@ -152,9 +152,14 @@ class Resampler:
         for out_start in range(0, out_len, chunk_frames):
             count = min(chunk_frames, out_len - out_start)
             pos = (out_start + np.arange(count, dtype=np.float64)) * table.step
-            base = np.floor(pos).astype(np.int64) - half + 1
-            frac = pos - np.floor(pos)
-            phase_idx = np.rint(frac * phases).astype(np.int64) % phases
+            whole = np.floor(pos)
+            frac = pos - whole
+            # Round to the nearest tabulated phase; a fraction that rounds up
+            # to ``phases`` is equivalent to phase 0 one input sample later.
+            phase_idx = np.rint(frac * phases).astype(np.int64)
+            carry = phase_idx // phases
+            phase_idx %= phases
+            base = whole.astype(np.int64) - half + 1 + carry
             in_start = int(base[0])
             in_count = int(base[-1] + taps - in_start)
             seg = _read_padded(reader, in_start, in_count, in_len, channels)
