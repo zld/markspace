@@ -108,6 +108,28 @@ class MatroskaTests(unittest.TestCase):
         lengths = [b.data_length for b in audio_blocks]
         self.assertEqual(lengths[:3], [12, 15, 20])
 
+    def test_blockgroup_keyframes_follow_reference_blocks(self) -> None:
+        def block(payload: bytes) -> bytes:
+            return make_fixture.block_header(1, 0, 0) + payload
+
+        def group(*references: int) -> bytes:
+            body = make_fixture.element(make_fixture.ID_BLOCK, block(b"F"))
+            for offset in references:
+                body += make_fixture.element(make_fixture.ID_REFERENCE_BLOCK, bytes([offset]))
+            return make_fixture.element(make_fixture.ID_BLOCK_GROUP, body)
+
+        cluster = make_fixture.element(
+            make_fixture.ID_CLUSTER,
+            make_fixture.uint_element(make_fixture.ID_CLUSTER_TIMESTAMP, 0)
+            + group()              # no ReferenceBlock -> keyframe
+            + group(1, 2),         # references present -> delta frame
+        )
+        doc = make_fixture.element(
+            0x1A45DFA3, make_fixture.string_element(make_fixture.ID_DOCTYPE, "matroska")
+        ) + make_fixture.element(make_fixture.ID_SEGMENT, cluster, unknown_size=True)
+        mk = parse_matroska(doc)
+        self.assertEqual([b.keyframe for b in mk.clusters[0].blocks], [True, False])
+
     def test_unknown_segment_is_bounded(self) -> None:
         mk = parse_matroska(make_fixture.build_sample_document(unknown_segment=True))
         self.assertTrue(mk.segment_unknown_size)
