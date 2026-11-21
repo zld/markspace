@@ -107,13 +107,14 @@ bool LayoutEngine::render_event(const AssDocument& doc, const Event& event,
         if (messages_mention_missing_font(impl_->messages)) {
             error = "font unavailable for event " +
                     std::to_string(event.index) + " (family " + rs.fontname +
-                    "): " + impl_->messages;
+                    ")";
             out_diags.push_back(
                 Diagnostic{DiagLevel::Error, DiagKind::FontMissing, event.line,
                            event.index, error});
         } else {
-            error = "libass produced no glyphs for event " +
-                    std::to_string(event.index);
+            error = "libass produced no visible glyphs for event " +
+                    std::to_string(event.index) +
+                    " (check positioning and text content)";
             out_diags.push_back(
                 Diagnostic{DiagLevel::Error, DiagKind::RenderFailure,
                            event.line, event.index, error});

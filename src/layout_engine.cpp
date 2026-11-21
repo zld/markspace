@@ -117,8 +117,11 @@ void blit_image(std::vector<std::uint8_t>& rgba, int canvas_w,
 }
 
 bool messages_mention_missing_font(const std::string& messages) {
-    static const char* kNeedles[] = {"fontselect", "failed to find",
-                                     "unable to find", "font not found"};
+    // A successful CoreText lookup logs "fontselect: ... -> /path"; only
+    // lookup failures mention inability to find a family.
+    static const char* kNeedles[] = {"failed to find", "unable to find",
+                                     "font not found", "no usable font",
+                                     "could not select font"};
     for (const char* n : kNeedles)
         if (messages.find(n) != std::string::npos) return true;
     return false;
