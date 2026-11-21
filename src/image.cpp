@@ -122,8 +122,15 @@ Image readPpm(const std::string& path) {
     hp.enterRaster();
 
     const std::size_t bytesPerSample = image.maxval < 256 ? 1 : 2;
-    const std::size_t need =
-        static_cast<std::size_t>(image.pixelCount()) * 3 * bytesPerSample;
+    // Reject dimensions whose raster size would overflow size_t before any
+    // multiplication or allocation, so a hostile header cannot wrap to zero.
+    constexpr std::size_t kMaxSize = std::numeric_limits<std::size_t>::max();
+    const std::size_t pixels = image.pixelCount();
+    if (pixels > kMaxSize / 3 ||
+        pixels * 3 > kMaxSize / bytesPerSample) {
+        throw IoError("PPM dimensions overflow addressable size in " + path);
+    }
+    const std::size_t need = pixels * 3 * bytesPerSample;
     const std::size_t available = data.size() - hp.rasterOffset();
     if (available < need) {
         throw IoError("truncated PPM raster in " + path + ": need " +
