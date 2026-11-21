@@ -62,15 +62,15 @@ type Checkpoint struct {
 
 // ProbeInfo captures the validated properties of the source video.
 type ProbeInfo struct {
-	Width        int     `json:"width"`
-	Height       int     `json:"height"`
-	FrameRate    float64 `json:"frame_rate"`
-	NbFrames     int     `json:"nb_frames"`
-	DurationSec  float64 `json:"duration_sec"`
-	PixelFormat  string  `json:"pixel_format"`
-	FieldOrder   string  `json:"field_order"`
-	IsCFR        bool    `json:"is_cfr"`
-	HasVideo     bool    `json:"has_video"`
+	Width       int     `json:"width"`
+	Height      int     `json:"height"`
+	FrameRate   float64 `json:"frame_rate"`
+	NbFrames    int     `json:"nb_frames"`
+	DurationSec float64 `json:"duration_sec"`
+	PixelFormat string  `json:"pixel_format"`
+	FieldOrder  string  `json:"field_order"`
+	IsCFR       bool    `json:"is_cfr"`
+	HasVideo    bool    `json:"has_video"`
 }
 
 // Params is the full encoding parameter set; its digest gates checkpoint reuse.
@@ -108,23 +108,23 @@ type SegmentReport struct {
 
 // Summary is the top-level JSON report emitted by run / resume / baseline.
 type Summary struct {
-	JobID              string          `json:"job_id"`
-	Mode               string          `json:"mode"`
-	TargetKbps         int             `json:"target_kbps"`
-	ActualKbps         float64         `json:"actual_kbps"`
-	BitrateDeviation   float64         `json:"bitrate_deviation_pct"`
-	PSNRMeanDB         float64         `json:"psnr_mean_db"`
-	SegmentPSNRStdDev  float64         `json:"segment_psnr_stddev_db"`
-	RegressionCount    int             `json:"regression_count"`
-	MaxPSNRDropDB      float64         `json:"max_psnr_drop_db"`
-	ReusedSegments     int             `json:"reused_segments"`
-	TotalFrames        int             `json:"total_frames"`
-	DurationSec        float64         `json:"duration_sec"`
-	Segments           []SegmentReport `json:"segments"`
-	InputSHA256        string          `json:"input_sha256"`
-	ParamsDigest       string          `json:"params_digest"`
-	InterruptKind      string          `json:"interrupt_kind,omitempty"`
-	Message            string          `json:"message,omitempty"`
+	JobID             string          `json:"job_id"`
+	Mode              string          `json:"mode"`
+	TargetKbps        int             `json:"target_kbps"`
+	ActualKbps        float64         `json:"actual_kbps"`
+	BitrateDeviation  float64         `json:"bitrate_deviation_pct"`
+	PSNRMeanDB        float64         `json:"psnr_mean_db"`
+	SegmentPSNRStdDev float64         `json:"segment_psnr_stddev_db"`
+	RegressionCount   int             `json:"regression_count"`
+	MaxPSNRDropDB     float64         `json:"max_psnr_drop_db"`
+	ReusedSegments    int             `json:"reused_segments"`
+	TotalFrames       int             `json:"total_frames"`
+	DurationSec       float64         `json:"duration_sec"`
+	Segments          []SegmentReport `json:"segments"`
+	InputSHA256       string          `json:"input_sha256"`
+	ParamsDigest      string          `json:"params_digest"`
+	InterruptKind     string          `json:"interrupt_kind,omitempty"`
+	Message           string          `json:"message,omitempty"`
 }
 
 // BaselineRecord binds quality numbers to the input fingerprint and parameters.
