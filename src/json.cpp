@@ -1,5 +1,7 @@
 #include "json.h"
 
+#include <cerrno>
+#include <cmath>
 #include <cstdlib>
 
 namespace {
@@ -33,6 +35,13 @@ private:
 
     bool at_end() const { return pos_ >= text_.size(); }
     char peek() const { return at_end() ? '\0' : text_[pos_]; }
+    static int hex_digit(char c) {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+        return -1;
+    }
+
     void advance() {
         if (at_end()) return;
         if (text_[pos_++] == '\n') { ++line_; column_ = 1; } else { ++column_; }
@@ -138,6 +147,36 @@ private:
         }
     }
 
+    bool parse_hex4(unsigned& value) {
+        value = 0;
+        for (int i = 0; i < 4; ++i) {
+            if (at_end()) return fail("truncated \\u escape");
+            const int digit = hex_digit(peek());
+            if (digit < 0) return fail("invalid hex digit in \\u escape");
+            value = (value << 4) | static_cast<unsigned>(digit);
+            advance();
+        }
+        return true;
+    }
+
+    static void append_utf8(std::string& out, unsigned cp) {
+        if (cp < 0x80) {
+            out.push_back(static_cast<char>(cp));
+        } else if (cp < 0x800) {
+            out.push_back(static_cast<char>(0xC0 | (cp >> 6)));
+            out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+        } else if (cp < 0x10000) {
+            out.push_back(static_cast<char>(0xE0 | (cp >> 12)));
+            out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+            out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+        } else {
+            out.push_back(static_cast<char>(0xF0 | (cp >> 18)));
+            out.push_back(static_cast<char>(0x80 | ((cp >> 12) & 0x3F)));
+            out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+            out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+        }
+    }
+
     bool parse_string(std::string& out) {
         advance();
         out.clear();
@@ -168,7 +207,30 @@ private:
                 case 'n': simple = "\n"; break;
                 case 'r': simple = "\r"; break;
                 case 't': simple = "\t"; break;
-                case 'u': return fail("\\u escapes are not supported yet");
+                case 'u': {
+                    unsigned cp = 0;
+                    if (!parse_hex4(cp)) return false;
+                    if (cp >= 0xD800 && cp <= 0xDBFF) {
+                        unsigned low = 0;
+                        if (at_end() || peek() != '\\') {
+                            return fail("high surrogate without low surrogate");
+                        }
+                        advance();
+                        if (at_end() || peek() != 'u') {
+                            return fail("high surrogate without low surrogate");
+                        }
+                        advance();
+                        if (!parse_hex4(low)) return false;
+                        if (low < 0xDC00 || low > 0xDFFF) {
+                            return fail("invalid low surrogate");
+                        }
+                        cp = 0x10000 + ((cp - 0xD800) << 10) + (low - 0xDC00);
+                    } else if (cp >= 0xDC00 && cp <= 0xDFFF) {
+                        return fail("lone low surrogate");
+                    }
+                    append_utf8(out, cp);
+                    continue;
+                }
                 default: return fail("invalid escape sequence");
             }
             out.push_back(*simple);
@@ -202,8 +264,15 @@ private:
             while (!at_end() && peek() >= '0' && peek() <= '9') advance();
         }
         const std::string token = text_.substr(begin, pos_ - begin);
+        errno = 0;
+        char* end = nullptr;
+        const double value = std::strtod(token.c_str(), &end);
+        if (errno == ERANGE || end == nullptr || *end != '\0' ||
+            !std::isfinite(value)) {
+            return fail("number out of range");
+        }
         out.type = JsonValue::Type::Number;
-        out.number = std::strtod(token.c_str(), nullptr);
+        out.number = value;
         return true;
     }
 };
