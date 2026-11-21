@@ -139,8 +139,8 @@ func TestTimestampJumpFinalizesAndDropsOpenFU(t *testing.T) {
 func TestMalformedSTAPARejected(t *testing.T) {
 	h := NewH264Reassembler(MaxBufferedAUs)
 	bad := [][]byte{
-		{nalTypeSTAPA, 0, 0, 5, 1, 2},             // declared size exceeds payload
-		{nalTypeSTAPA, 0, 0},                      // truncated size field
+		{nalTypeSTAPA, 0, 0, 5, 1, 2}, // declared size exceeds payload
+		{nalTypeSTAPA, 0, 0},          // truncated size field
 	}
 	for i, p := range bad {
 		if _, err := h.Process(h264pkt(uint16(i), uint32(i*1000), 1, true, p)); err == nil {

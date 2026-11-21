@@ -23,9 +23,9 @@ const (
 	SSRC uint32 = 0x01020304
 	// StartSeq sits close to the 16-bit boundary so a short stream wraps
 	// around and exercises modular sequence arithmetic.
-	StartSeq uint16 = 65530
-	clockRate       = 90000
-	frameStep       = 3000 // 30 fps on a 90 kHz clock
+	StartSeq  uint16 = 65530
+	clockRate        = 90000
+	frameStep        = 3000 // 30 fps on a 90 kHz clock
 	// fuPayload keeps every datagram well below the UDP MTU and makes each
 	// source frame span three FU-A packets.
 	fuPayload = 480

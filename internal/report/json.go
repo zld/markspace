@@ -13,7 +13,7 @@ import (
 // Line is one transport's summary in the exact wire field order.
 type Line struct {
 	Transport         string `json:"transport"`
-	StateTransitions int    `json:"state_transitions"`
+	StateTransitions  int    `json:"state_transitions"`
 	RTPSeqGaps        int    `json:"rtp_seq_gaps"`
 	FramesReassembled int    `json:"frames_reassembled"`
 	FramesDropped     int    `json:"frames_dropped"`
@@ -25,7 +25,7 @@ type Line struct {
 func FromSummary(transport string, transitions, gaps, reassembled, dropped, duplicates int) Line {
 	return Line{
 		Transport:         transport,
-		StateTransitions: transitions,
+		StateTransitions:  transitions,
 		RTPSeqGaps:        gaps,
 		FramesReassembled: reassembled,
 		FramesDropped:     dropped,

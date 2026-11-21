@@ -48,10 +48,10 @@ type MockServer struct {
 	started chan struct{}
 
 	// session bookkeeping
-	sessionWG     sync.WaitGroup
-	playSessions  map[*gortsplib.ServerSession]struct{}
-	playMu        sync.Mutex
-	requests      int
+	sessionWG    sync.WaitGroup
+	playSessions map[*gortsplib.ServerSession]struct{}
+	playMu       sync.Mutex
+	requests     int
 }
 
 // handler adapts the MockServer to gortsplib's callback handler set.

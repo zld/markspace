@@ -56,10 +56,10 @@ type H264Reassembler struct {
 	fuTS      uint32
 
 	// Access unit accumulation, ended by marker or timestamp change.
-	curTS   uint32
-	haveTS  bool
-	nals    [][]byte
-	stats   H264Stats
+	curTS  uint32
+	haveTS bool
+	nals   [][]byte
+	stats  H264Stats
 }
 
 // NewH264Reassembler creates a reassembler. maxBufferedAUs caps how many

@@ -10,8 +10,8 @@ import (
 
 	"github.com/pion/rtp"
 
-	rtspclient "rtspcheck/internal/rtsp"
 	rtpcheck "rtspcheck/internal/rtp"
+	rtspclient "rtspcheck/internal/rtsp"
 	"rtspcheck/internal/session"
 )
 
@@ -19,7 +19,7 @@ import (
 // fixed in internal/report so JSON output stays stable.
 type Summary struct {
 	Transport         string
-	StateTransitions int
+	StateTransitions  int
 	RTPSeqGaps        int
 	FramesReassembled int
 	FramesDropped     int
