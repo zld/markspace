@@ -192,3 +192,189 @@ def _find_child(nodes: list[RawNode], element_id: int) -> RawNode | None:
             return node
     return None
 
+
+def _parse_header(doc_data: bytes, base: int) -> tuple[str, int]:
+    """Read the EBML header: DocType and declared size limits."""
+    if not doc_data:
+        raise InputError("empty input: no EBML header", offset=base)
+    header_nodes, _ = parse_tree(doc_data, base=base, max_depth=8, max_elements=256)
+    if not header_nodes or header_nodes[0].element_id != ID_EBML:
+        raise InputError(
+            "input does not start with an EBML header (expected 0x1A45DFA3)",
+            offset=base,
+            path="/",
+        )
+    ebml = header_nodes[0]
+    doc_type_node = _find_child(ebml.children, ID_DOCTYPE)
+    doc_type = (
+        decode_string(doc_data, doc_type_node.data_offset, doc_type_node.size)
+        if doc_type_node
+        else "matroska"
+    )
+    return doc_type, ebml.end_offset
+
+
+def parse_matroska(data: bytes, *, source: str = "<memory>", base: int = 0) -> MatroskaFile:
+    """Parse a complete Matroska byte string into tracks and clustered blocks."""
+    doc_type, after_header = _parse_header(data, base)
+    if doc_type not in ("matroska", "webm"):
+        raise UnsupportedError(
+            f"unsupported DocType {doc_type!r}: only matroska/webm are accepted",
+            offset=base,
+            path="/EBML/DocType",
+        )
+
+    top_nodes, stats = parse_tree(data, base=base, start=after_header)
+    segment = None
+    for node in top_nodes:
+        if node.element_id == ID_SEGMENT:
+            segment = node
+            break
+    if segment is None:
+        raise InputError(
+            "no Segment element found after the EBML header",
+            offset=base + after_header,
+            path="/",
+        )
+
+    timestamp_scale = DEFAULT_TIMESTAMP_SCALE
+    muxing_app = writing_app = None
+    tracks: list[Track] = []
+    clusters: list[Cluster] = []
+
+    for child in segment.children:
+        if child.element_id == ID_INFO:
+            for item in child.children:
+                if item.element_id == ID_TIMESTAMP_SCALE:
+                    timestamp_scale = _uint_field(data, item, base)
+                elif item.element_id == ID_MUXING_APP:
+                    muxing_app = decode_string(data, item.data_offset, item.size)
+                elif item.element_id == ID_WRITING_APP:
+                    writing_app = decode_string(data, item.data_offset, item.size)
+        elif child.element_id == ID_TRACKS:
+            tracks.extend(_parse_tracks(data, child, base))
+        elif child.element_id == ID_CLUSTER:
+            clusters.append(_parse_cluster(data, child, base))
+
+    if timestamp_scale == 0:
+        raise UnsupportedError(
+            "TimestampScale is zero; cannot convert cluster timestamps",
+            offset=base + segment.data_offset,
+            path="/Segment/Info/TimestampScale",
+        )
+
+    return MatroskaFile(
+        data=data,
+        path=source,
+        doc_type=doc_type,
+        timestamp_scale=timestamp_scale,
+        segment_offset=segment.offset,
+        segment_data_offset=segment.data_offset,
+        segment_end=segment.end_offset,
+        segment_unknown_size=segment.unknown_size,
+        tracks=tracks,
+        clusters=clusters,
+        muxing_app=muxing_app,
+        writing_app=writing_app,
+        tree_stats=stats,
+    )
+
+
+def _parse_tracks(data: bytes, tracks_node: RawNode, base: int) -> list[Track]:
+    seen: set[int] = set()
+    tracks: list[Track] = []
+    for entry in tracks_node.children:
+        if entry.element_id != ID_TRACK_ENTRY:
+            continue
+        number_node = _find_child(entry.children, ID_TRACK_NUMBER)
+        if number_node is None:
+            raise InputError(
+                "TrackEntry without TrackNumber",
+                offset=base + entry.offset,
+                path=entry.path,
+            )
+        number = _uint_field(data, number_node, base)
+        if number == 0:
+            raise InputError(
+                "TrackNumber 0 is reserved and invalid",
+                offset=base + number_node.offset,
+                path=number_node.path,
+            )
+        if number in seen:
+            raise InputError(
+                f"duplicate TrackNumber {number}",
+                offset=base + entry.offset,
+                path=entry.path,
+                track=number,
+            )
+        seen.add(number)
+
+        type_node = _find_child(entry.children, ID_TRACK_TYPE)
+        codec_node = _find_child(entry.children, ID_CODEC_ID)
+        if type_node is None or codec_node is None:
+            raise InputError(
+                "TrackEntry requires both TrackType and CodecID",
+                offset=base + entry.offset,
+                path=entry.path,
+                track=number,
+            )
+        track_type = _uint_field(data, type_node, base)
+        codec_id = decode_string(data, codec_node.data_offset, codec_node.size)
+        if track_type not in TRACK_TYPE_NAMES:
+            raise UnsupportedError(
+                f"track {number}: unsupported TrackType {track_type}",
+                offset=base + type_node.offset,
+                path=type_node.path,
+                track=number,
+            )
+
+        uid_node = _find_child(entry.children, ID_TRACK_UID)
+        private_node = _find_child(entry.children, ID_CODEC_PRIVATE)
+        duration_node = _find_child(entry.children, ID_DEFAULT_DURATION)
+        lacing_node = _find_child(entry.children, ID_FLAG_LACING)
+        name_node = _find_child(entry.children, ID_NAME)
+        lang_node = _find_child(entry.children, ID_LANGUAGE)
+
+        track = Track(
+            number=number,
+            uid=_uint_field(data, uid_node, base) if uid_node else None,
+            kind=track_type,
+            track_type=TRACK_TYPE_NAMES[track_type],
+            codec_id=codec_id,
+            codec_private=(
+                data[private_node.data_offset : private_node.end_offset] if private_node else b""
+            ),
+            default_duration_ns=(
+                _uint_field(data, duration_node, base) if duration_node else None
+            ),
+            flag_lacing=bool(_uint_field(data, lacing_node, base)) if lacing_node else True,
+            name=decode_string(data, name_node.data_offset, name_node.size) if name_node else None,
+            language=decode_string(data, lang_node.data_offset, lang_node.size) if lang_node else None,
+            entry_offset=base + entry.offset,
+            path=entry.path,
+        )
+        audio = _find_child(entry.children, ID_AUDIO)
+        if audio is not None:
+            freq = _find_child(audio.children, ID_SAMPLING_FREQUENCY)
+            chans = _find_child(audio.children, ID_CHANNELS)
+            track.sampling_frequency = (
+                decode_float(data, freq.data_offset, freq.size, base=base, path=freq.path)
+                if freq
+                else None
+            )
+            track.channels = _uint_field(data, chans, base) if chans else None
+        video = _find_child(entry.children, ID_VIDEO)
+        if video is not None:
+            width = _find_child(video.children, ID_PIXEL_WIDTH)
+            height = _find_child(video.children, ID_PIXEL_HEIGHT)
+            track.pixel_width = _uint_field(data, width, base) if width else None
+            track.pixel_height = _uint_field(data, height, base) if height else None
+        tracks.append(track)
+    if not tracks:
+        raise InputError(
+            "Segment contains no TrackEntry elements",
+            offset=base + tracks_node.offset,
+            path=tracks_node.path,
+        )
+    return tracks
+
