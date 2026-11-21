@@ -14,6 +14,10 @@ MAX_TRACKS = 32
 MAX_DURATION_SECONDS = 2 * 60 * 60
 MAX_DURATION_FRAMES = MAX_DURATION_SECONDS * TARGET_SAMPLE_RATE
 CONSISTENCY_TOLERANCE = 1e-6
+# Bounds that still allow a dying whisper or full-scale safety attenuation
+# while keeping linear gain finite (float64) and mixes meaningful.
+MAX_GAIN_DB = 120.0
+MIN_GAIN_DB = -120.0
 
 DEFAULT_CHUNK_FRAMES = 1024
 
@@ -63,6 +67,15 @@ def _require(mapping: dict, key: str, *, track: str | None = None, where: str = 
     return mapping[key]
 
 
+def _gain_db(value: Any, *, track: str, field_name: str) -> float:
+    db = _finite_number(value, track=track, field_name=field_name)
+    if not MIN_GAIN_DB <= db <= MAX_GAIN_DB:
+        raise ManifestError(
+            f"must be within [{MIN_GAIN_DB:g}, {MAX_GAIN_DB:g}] dB", track, field_name
+        )
+    return db
+
+
 def _parse_track(raw: Any, index: int) -> TrackSpec:
     if not isinstance(raw, dict):
         raise ManifestError(f"track #{index} must be an object", f"#{index}")
@@ -76,7 +89,7 @@ def _parse_track(raw: Any, index: int) -> TrackSpec:
         raise ManifestError("must be a non-empty string", name, "path")
     path = path_raw.strip()
 
-    gain_db = _finite_number(raw.get("gain_db", 0.0), track=name, field_name="gain_db")
+    gain_db = _gain_db(raw.get("gain_db", 0.0), track=name, field_name="gain_db")
     pan = _finite_number(raw.get("pan", 0.0), track=name, field_name="pan")
     if not -1.0 <= pan <= 1.0:
         raise ManifestError("must be within [-1.0, 1.0]", name, "pan")
@@ -94,7 +107,7 @@ def _parse_track(raw: Any, index: int) -> TrackSpec:
         t_raw = _require(point, "t", track=name, where=where)
         db_raw = _require(point, "gain_db", track=name, where=where)
         t = _finite_number(t_raw, track=name, field_name="automation.t")
-        db = _finite_number(db_raw, track=name, field_name="automation.gain_db")
+        db = _gain_db(db_raw, track=name, field_name="automation.gain_db")
         if t < 0.0:
             raise ManifestError(f"{where} t must be >= 0", name, "automation.t")
         if points and t <= points[-1][0]:

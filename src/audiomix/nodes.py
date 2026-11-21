@@ -91,6 +91,10 @@ class SourceNode:
             raise _open_error(self.path, self.track_name, exc) from exc
         if data.size == 0:
             return np.zeros((self.info.channels, 0), dtype=np.float64)
+        if not np.all(np.isfinite(data)):
+            raise AudioIOError(
+                f"track {self.track_name!r}: {self.path}: source contains non-finite samples"
+            )
         return np.ascontiguousarray(data.T, dtype=np.float64)
 
     def close(self) -> None:

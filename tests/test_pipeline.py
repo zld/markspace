@@ -74,6 +74,19 @@ class ManifestTests(unittest.TestCase):
         with self.assertRaises(ManifestError):
             parse_manifest(_manifest([{"name": "v", "path": "a.wav", "pan": 1.5}]))
 
+    def test_rejects_out_of_range_gain(self) -> None:
+        for bad in (121.0, -121.0, 1e308):
+            manifest = _manifest([{"name": "v", "path": "a.wav", "gain_db": bad}])
+            with self.assertRaises(ManifestError) as ctx:
+                parse_manifest(manifest)
+            self.assertIn("v", str(ctx.exception))
+        manifest = _manifest([{
+            "name": "v", "path": "a.wav",
+            "automation": [{"t": 0.0, "gain_db": -130.0}],
+        }])
+        with self.assertRaises(ManifestError):
+            parse_manifest(manifest)
+
     def test_rejects_non_increasing_automation(self) -> None:
         manifest = _manifest([{
             "name": "v", "path": "a.wav",
@@ -221,6 +234,16 @@ class GraphTests(unittest.TestCase):
             project = parse_manifest(_manifest([{"name": name, "path": name}]))
             with self.assertRaises(AudioIOError):
                 render_project(project, [self.dir / name], self.dir / "out.wav", 64)
+
+    def test_rejects_non_finite_source_samples(self) -> None:
+        data = np.zeros((100, 2))
+        data[50, 0] = np.nan
+        _write_wav(self.dir / "nan.wav", data, 48000)
+        project = parse_manifest(_manifest([{"name": "nan", "path": "nan.wav"}]))
+        with self.assertRaises(AudioIOError) as ctx:
+            render_project(project, [self.dir / "nan.wav"], self.dir / "out.wav", 64)
+        self.assertIn("nan", str(ctx.exception))
+        self.assertFalse((self.dir / "out.wav").exists())
 
     def test_counting_channels_mapped_to_stereo(self) -> None:
         _write_wav(self.dir / "mono.wav", np.ones(500) * 0.5, 48000)
