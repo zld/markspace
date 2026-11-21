@@ -218,9 +218,10 @@ def render_project(project: Project, paths: list[Path],
     curves = _build_curves(project, frames_total)
     if automation_frames is not None:
         for frame in automation_frames:
-            if frame > frames_total:
+            if frame >= frames_total:
                 raise ValueError(
-                    f"automation frame {frame} exceeds the rendered length {frames_total}"
+                    f"automation frame {frame} is outside the rendered length "
+                    f"{frames_total}"
                 )
 
     offline = _MixPass(project, paths, curves, frames_total,

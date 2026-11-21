@@ -17,7 +17,13 @@ from audiomix.automation import automation_samples, build_curve, gain_at
 from audiomix.cli import main
 from audiomix.engine import render_project
 from audiomix.graph import AudioIOError
-from audiomix.model import ManifestError, parse_manifest, resampled_frames
+from audiomix.model import (
+    MAX_DURATION_SECONDS,
+    ManifestError,
+    check_duration,
+    parse_manifest,
+    resampled_frames,
+)
 from audiomix.resample import StreamingResampler, resampled_length
 
 SR = 48000
@@ -88,6 +94,13 @@ class ManifestTests(unittest.TestCase):
         self.assertEqual(resampled_frames(88200, 44100), 96000)
         self.assertEqual(resampled_frames(44100, 44100), 48000)
         self.assertEqual(resampled_frames(1, 44100), 2)  # ceil(1.088) = 2
+
+    def test_duration_ceiling_is_enforced(self) -> None:
+        check_duration(int(MAX_DURATION_SECONDS * 48000), 48000)
+        with self.assertRaises(ManifestError) as ctx:
+            check_duration(int(MAX_DURATION_SECONDS * 48000) + 1, 48000, "long")
+        self.assertIn("long", str(ctx.exception))
+        self.assertIn("path", str(ctx.exception))
 
 
 class AutomationTests(unittest.TestCase):
@@ -217,6 +230,28 @@ class GraphTests(unittest.TestCase):
         self.assertEqual(data.shape, (500, 2))
         self.assertGreater(report.tracks[0].peak, 0.0)
 
+    def test_explicit_automation_frames_are_reported(self) -> None:
+        _write_wav(self.dir / "a.wav", _tone(4800, 48000), 48000)
+        project = parse_manifest(_manifest([{
+            "name": "a", "path": "a.wav",
+            "automation": [{"t": 0.0, "gain_db": 0.0}, {"t": 0.1, "gain_db": -6.0}],
+        }]))
+        report = render_project(
+            project, [self.dir / "a.wav"], self.dir / "out.wav", 257,
+            automation_frames=[0, 2400, 4799],
+        )
+        rows = [(r["frame"], r["gain_db"]) for r in report.automation_samples]
+        self.assertEqual([f for f, _ in rows], [0, 2400, 4799])
+        self.assertAlmostEqual(rows[1][1], -3.0, places=6)
+
+    def test_output_may_not_overwrite_a_source(self) -> None:
+        source = self.dir / "a.wav"
+        _write_wav(source, _tone(1000, 48000), 48000)
+        project = parse_manifest(_manifest([{"name": "a", "path": "a.wav"}]))
+        with self.assertRaises(ValueError):
+            render_project(project, [source], source, 64)
+        self.assertEqual(sf.info(str(source)).frames, 1000)
+
 
 class CliTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -274,6 +309,56 @@ class CliTests(unittest.TestCase):
     def test_invalid_chunk_size_exits_2(self) -> None:
         code = self._run("demo", "--workdir", str(self.dir), "--chunk-frames", "0")
         self.assertEqual(code, 2)
+
+    def test_automation_frame_flag_is_repeatable(self) -> None:
+        import contextlib
+        import io
+
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            code = self._run(
+                "demo", "--workdir", str(self.dir), "--json",
+                "--automation-frame", "0", "--automation-frame", "95999",
+            )
+        self.assertEqual(code, 0)
+        payload = json.loads(buffer.getvalue())
+        frames = {row["frame"] for row in payload["automation_samples"]}
+        self.assertEqual(frames, {0, 95999})
+
+    def test_out_of_range_automation_frame_exits_2(self) -> None:
+        manifest = self.dir / "p.json"
+        _write_wav(self.dir / "a.wav", _tone(480, 48000), 48000)
+        manifest.write_text(json.dumps(_manifest([{"name": "a", "path": "a.wav"}])),
+                            encoding="utf-8")
+        code = self._run(
+            "render", "--manifest", str(manifest), "--output", str(self.dir / "o.wav"),
+            "--automation-frame", "480",
+        )
+        self.assertEqual(code, 2)
+        self.assertFalse((self.dir / "o.wav").exists())
+
+    def test_consistency_failure_exits_4_and_writes_nothing(self) -> None:
+        import contextlib
+        import io
+        from unittest import mock
+
+        import audiomix.cli as cli
+        import audiomix.engine as engine
+
+        manifest = self.dir / "p.json"
+        _write_wav(self.dir / "a.wav", _tone(480, 48000), 48000)
+        manifest.write_text(json.dumps(_manifest([{"name": "a", "path": "a.wav"}])),
+                            encoding="utf-8")
+        with mock.patch.object(engine, "CONSISTENCY_TOLERANCE", -1.0):
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                code = cli.main([
+                    "render", "--manifest", str(manifest),
+                    "--output", str(self.dir / "out.wav"),
+                ])
+        self.assertEqual(code, 4)
+        self.assertIn("consistency", stderr.getvalue())
+        self.assertFalse((self.dir / "out.wav").exists())
 
     def test_module_entry_point_runs(self) -> None:
         result = subprocess.run(
