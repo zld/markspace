@@ -159,7 +159,7 @@ Lut3D readCube(const std::string& path) {
 
 std::string renderCube(const Lut3D& lut) {
     std::ostringstream out;
-    out.precision(7);
+    out.precision(10);  // Round-trip error stays near double epsilon.
     out << "LUT_3D_SIZE " << lut.size << '\n';
     out << "DOMAIN_MIN " << lut.domainMin[0] << ' ' << lut.domainMin[1]
         << ' ' << lut.domainMin[2] << '\n';
