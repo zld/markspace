@@ -1,6 +1,15 @@
 // Package demo produces deterministic, self-contained H.264-over-RTP
 // sample streams. Every fault (loss, duplication, reordering) is injected
 // at fixed frame positions so runs with the same seed are reproducible.
+//
+// The lost FU-A fragment is always on the LAST source frame and is removed
+// from the wire, opening exactly one RTP sequence gap. Keeping the loss
+// terminal matters because gortsplib's client-side UDP reorderer parks
+// packets behind a gap until its 64-packet buffer fills; on a short stream
+// that never happens, whereas a terminal gap leaves every earlier frame
+// already delivered. Reordering (an adjacent swap) and a duplicate are
+// normalized by the reorderers on both transports and do not affect frame
+// integrity.
 package demo
 
 import (
@@ -22,12 +31,11 @@ const (
 	fuPayload = 480
 )
 
-// Standard fault frame positions (zero based). They require at least eight
-// source frames, which the config layer enforces for the demo command.
+// Standard fault frame positions (zero based). The catalogue requires the
+// minimum frame count below; the config layer enforces it for the demo.
 const (
-	lossFrame     = 2 // one middle FU-A fragment is dropped
-	dupFrame      = 5 // one packet is emitted twice
-	reorderFrame  = 7 // the last two packets are swapped
+	reorderFrame  = 4 // two adjacent packets of this frame are swapped
+	dupFrame      = 6 // one packet is emitted twice
 	standardFault = 8
 )
 
@@ -57,7 +65,8 @@ type Manifest struct {
 	DuplicateSets int
 	ReorderSets   int
 	// ExpectedFramesReassembled / ExpectedDropped encode the deterministic
-	// result a correct reorderer + reassembler must reach.
+	// result a correct reorderer + reassembler must reach on either
+	// transport.
 	ExpectedFramesReassembled int
 	ExpectedDropped           int
 	ExpectedGaps              int
@@ -66,9 +75,11 @@ type Manifest struct {
 
 // Generate builds the sample stream. frames is the number of source H.264
 // frames and seed only varies NAL payload content; fault positions are
-// fixed to guarantee the standard failure catalogue.
+// fixed (with the corrupting loss on the last frame) to guarantee the
+// standard failure catalogue and reproducible results.
 func Generate(frames int, seed int64) *Manifest {
 	m := &Manifest{SourceFrames: frames}
+	lossFrame := frames - 1 // terminal loss: prior frames stay deliverable
 	seq := StartSeq
 	ts := uint32(seed % clockRate)
 	content := seedByte(seed)
@@ -96,16 +107,16 @@ func Generate(frames int, seed int64) *Manifest {
 			framePkts[i] = p
 		}
 
-		out = appendFrame(out, m, framePkts, f)
+		out = appendFrame(out, m, framePkts, f, lossFrame)
 		ts += frameStep
 	}
 
 	m.Packets = out
 	if frames >= standardFault {
-		m.ExpectedFramesReassembled = frames - 1 // lossFrame cannot be rebuilt
+		m.ExpectedFramesReassembled = frames - 1 // the loss frame cannot be rebuilt
 		m.ExpectedDropped = 1
-		m.ExpectedGaps = 1
-		m.ExpectedDuplicates = 1
+		m.ExpectedGaps = 1       // one sequence number removed with the lost fragment
+		m.ExpectedDuplicates = 1 // one duplicate emission
 	} else {
 		m.ExpectedFramesReassembled = frames
 	}
@@ -113,7 +124,7 @@ func Generate(frames int, seed int64) *Manifest {
 }
 
 // appendFrame applies the deterministic fault catalogue for one frame.
-func appendFrame(out []*Packet, m *Manifest, pkts []*rtp.Packet, frame int) []*Packet {
+func appendFrame(out []*Packet, m *Manifest, pkts []*rtp.Packet, frame, lossFrame int) []*Packet {
 	labels := make([]string, len(pkts))
 	for i := range labels {
 		labels[i] = KindNormal
@@ -121,15 +132,22 @@ func appendFrame(out []*Packet, m *Manifest, pkts []*rtp.Packet, frame int) []*P
 
 	switch {
 	case frame == lossFrame:
-		// Drop the middle fragment; the frame must later be discarded.
+		// Remove the middle FU-A fragment from the wire. Its sequence number
+		// opens exactly one RTP gap and the frame can never be reassembled,
+		// so H.264 reassembly drops it. Placed on the last frame, every prior
+		// frame is already complete before the gap is observed.
 		labels[1] = KindLost
 		m.LostPackets++
 	case frame == dupFrame:
-		// Emit the first packet twice with the same sequence number.
+		// A duplicate keeps the same sequence number on the wire. gortsplib
+		// normalizes it on UDP and the project reorderer normalizes it on
+		// TCP, so neither transport reports a sequence gap for it.
 		labels[0] = KindDuplicate
 		m.DuplicateSets++
 	case frame == reorderFrame:
-		// Swap the last two packets while keeping sequence numbers intact.
+		// Swap two adjacent packets while keeping their sequence numbers.
+		// Both reorderers restore the original order, so the delivered
+		// stream is identical across transports.
 		pkts[len(pkts)-2], pkts[len(pkts)-1] = pkts[len(pkts)-1], pkts[len(pkts)-2]
 		labels[len(pkts)-2] = KindReordered
 		labels[len(pkts)-1] = KindReordered
@@ -138,7 +156,7 @@ func appendFrame(out []*Packet, m *Manifest, pkts []*rtp.Packet, frame int) []*P
 
 	for i, p := range pkts {
 		if labels[i] == KindLost {
-			continue
+			continue // the lost fragment is not emitted, producing the gap
 		}
 		out = append(out, &Packet{Packet: p, Frame: frame, Kind: labels[i]})
 		if frame == dupFrame && i == 0 {
@@ -152,8 +170,7 @@ func appendFrame(out []*Packet, m *Manifest, pkts []*rtp.Packet, frame int) []*P
 // buildNAL creates a deterministic IDR-like NAL unit (type 5) whose payload
 // content derives from the seed and frame index.
 func buildNAL(frame int, content byte) []byte {
-	// 2 bytes NAL header byte is added by splitFU; here we only need the
-	// full unit including its reconstructed header byte.
+	// The unit holds its reconstructed header byte plus three FU payloads.
 	nal := make([]byte, 1+3*fuPayload)
 	nal[0] = 0x65 // forbidden=0, nal_ref_idc=3, type=5 (IDR)
 	for i := 1; i < len(nal); i++ {

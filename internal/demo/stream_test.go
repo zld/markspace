@@ -7,7 +7,8 @@ import (
 func TestStandardFaultCatalogue(t *testing.T) {
 	m := Generate(12, 41)
 
-	// 12 frames * 3 packets, minus one lost fragment, plus one duplicate.
+	// 12 frames * 3 packets, minus the one removed fragment, plus one
+	// duplicate emission.
 	if want := 12*3 - 1 + 1; len(m.Packets) != want {
 		t.Fatalf("emitted packets = %d, want %d", len(m.Packets), want)
 	}
@@ -20,24 +21,30 @@ func TestStandardFaultCatalogue(t *testing.T) {
 	}
 }
 
-func TestSequenceWrapAround(t *testing.T) {
+func TestTerminalGapAndWrapAround(t *testing.T) {
 	m := Generate(12, 41)
-	// First packet starts at 65530 and sequence numbers increment per
-	// source packet; the stream must cross the 16-bit boundary.
+	// First packet starts at 65530; the stream crosses the 16-bit boundary.
 	if m.Packets[0].SequenceNumber != StartSeq {
 		t.Fatalf("first seq = %d, want %d", m.Packets[0].SequenceNumber, StartSeq)
 	}
-	seqs := make([]uint16, 0, len(m.Packets))
+	// Build the unique emitted sequence numbers and confirm exactly one
+	// expected number is absent (the removed terminal fragment).
+	emitted := map[uint16]struct{}{}
 	for _, p := range m.Packets {
-		seqs = append(seqs, p.SequenceNumber)
+		emitted[p.SequenceNumber] = struct{}{}
 	}
-	foundZero := false
-	for _, s := range seqs {
-		if s == 0 {
-			foundZero = true
+	missing := 0
+	for i := 0; i < 12*3; i++ {
+		seq := uint16(int(StartSeq) + i)
+		if _, ok := emitted[seq]; !ok {
+			missing++
 		}
 	}
-	if !foundZero {
+	if missing != 1 {
+		t.Fatalf("want exactly one missing sequence number, got %d", missing)
+	}
+	// The stream still crosses seq 0 via wrap-around.
+	if _, ok := emitted[0]; !ok {
 		t.Fatal("stream must wrap past seq 0")
 	}
 }
