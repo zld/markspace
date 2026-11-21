@@ -74,6 +74,10 @@ ShapedText shape_clusters(const std::vector<Cluster>& clusters,
             } else {
                 total += glyph.advance;
             }
+        }
+        // Letter spacing sits between clusters, not between code points, so
+        // a combining sequence is one stepped unit.
+        if (drew_glyph) {
             total += spacing;
         }
         shaped.advances[i] = total;

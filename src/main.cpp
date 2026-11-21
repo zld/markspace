@@ -3,14 +3,18 @@
 #include "font_metrics.h"
 #include "line_breaker.h"
 #include "timing.h"
+#include "exporter.h"
 
+#include <algorithm>
 #include <iostream>
+#include <string>
 
 int main(int argc, char** argv) {
-    if (argc != 2) {
-        std::cerr << "usage: subtitle-metrics MANIFEST.json\n";
+    if (argc != 4 || std::string(argv[2]) != "--output") {
+        std::cerr << "usage: subtitle-metrics MANIFEST.json --output SUMMARY.jsonl\n";
         return 2;
     }
+    const std::string output = argv[3];
     Manifest manifest;
     std::vector<ManifestError> errors;
     if (!load_manifest(argv[1], manifest, errors)) {
@@ -50,6 +54,7 @@ int main(int argc, char** argv) {
     int lines = 0;
     int overflows = 0;
     int missing = 0;
+    std::vector<SubtitleSummary> summaries;
     for (const SubtitleItem& item : manifest.items) {
         TimingResult timing;
         strip_timing_markers(item.text, timing);
@@ -70,6 +75,38 @@ int main(int argc, char** argv) {
         for (const std::string& message : layout.errors) {
             std::cerr << item.id << ": " << message << "\n";
         }
+        SubtitleSummary summary;
+        summary.id = item.id;
+        summary.language = item.language;
+        summary.line_count = static_cast<int>(layout.lines.size());
+        summary.overflow_count = layout.overflow_count;
+        summary.missing_glyphs = advances.missing_glyphs;
+        int widest = 0;
+        bool first_line = true;
+        for (const LineLayout& line : layout.lines) {
+            summary.line_ranges.push_back({line.begin_cluster, line.end_cluster});
+            summary.break_reasons.push_back(line.break_reason);
+            summary.overflow_reasons.push_back(line.overflow_reason);
+            widest = std::max(widest, line.width);
+            if (!first_line && line.begin_cluster < shaped.size()) {
+                summary.line_breaks.push_back(
+                    shaped[line.begin_cluster].codepoint_begin);
+            }
+            first_line = false;
+        }
+        summary.bbox =
+            BBox{0, 0, widest, metrics.block_height(summary.line_count)};
+        summary.errors = layout.errors;
+        for (const TimingIssue& issue : timing.issues) {
+            summary.errors.push_back("byte " + std::to_string(issue.byte_offset) +
+                                     ": " + issue.message);
+        }
+        summaries.push_back(std::move(summary));
+    }
+    std::string write_error;
+    if (!write_summary_atomic(output, summaries, write_error)) {
+        std::cerr << "cannot write summary: " << write_error << "\n";
+        return 4;
     }
     std::cout << "subtitles=" << manifest.items.size() << " lines=" << lines
               << " overflows=" << overflows << " missing_glyphs=" << missing
