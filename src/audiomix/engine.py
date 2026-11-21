@@ -40,7 +40,14 @@ MIN_AUTOMATION_SAMPLES = 3
 
 @dataclass
 class _TrackAccumulator:
+    """Post-automation, pre-bus statistics for one track.
+
+    RMS is the root mean square over all channel samples (frames x channels),
+    matching how the mixed stereo file is measured.
+    """
+
     frames: int = 0
+    samples: int = 0
     sum_squares: float = 0.0
     peak: float = 0.0
 
@@ -49,13 +56,14 @@ class _TrackAccumulator:
             return
         real = block[:, :produced]
         self.frames += produced
+        self.samples += real.size
         self.sum_squares += float(np.sum(real * real))
         self.peak = max(self.peak, float(np.max(np.abs(real))))
 
     def rms(self) -> float:
-        if self.frames == 0:
+        if self.samples == 0:
             return 0.0
-        return float(np.sqrt(self.sum_squares / self.frames))
+        return float(np.sqrt(self.sum_squares / self.samples))
 
 
 class _MixPass:

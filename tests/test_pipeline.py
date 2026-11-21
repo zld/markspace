@@ -230,6 +230,21 @@ class GraphTests(unittest.TestCase):
         self.assertEqual(data.shape, (500, 2))
         self.assertGreater(report.tracks[0].peak, 0.0)
 
+    def test_peak_and_rms_are_pre_bus_after_automation(self) -> None:
+        data = np.zeros((100, 2))
+        data[10, 0] = 0.5
+        data[20, 1] = -0.25
+        _write_wav(self.dir / "sparse.wav", data, 48000)
+        project = parse_manifest(_manifest([
+            {"name": "a", "path": "sparse.wav", "gain_db": 6.020599913279624},
+        ]))
+        report = render_project(project, [self.dir / "sparse.wav"],
+                                self.dir / "out.wav", 7)
+        track = report.tracks[0]
+        self.assertAlmostEqual(track.peak, 1.0, places=6)
+        # RMS over every channel sample: (1.0^2 + 0.5^2) / 200.
+        self.assertAlmostEqual(track.rms, math.sqrt(1.25 / 200), places=6)
+
     def test_explicit_automation_frames_are_reported(self) -> None:
         _write_wav(self.dir / "a.wav", _tone(4800, 48000), 48000)
         project = parse_manifest(_manifest([{
