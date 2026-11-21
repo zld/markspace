@@ -681,12 +681,22 @@ def _parse_stbl(data: bytes, stbl: ParsedBox, path: str, failures: list[str]) ->
         failures.append(f"{path}: stbl has no stsc")
     else:
         values = _table_entries(data, stsc, 3)
-        if len(values) % 3:
-            failures.append(f"{path}: stsc entry count is not a multiple of 3")
         entries = [
-            (values[i], values[i + 1]) for i in range(0, len(values) - 2, 3)
+            (values[i], values[i + 1], values[i + 2])
+            for i in range(0, len(values) - 2, 3)
         ]
-        info["stsc"] = entries
+        previous = 0
+        for first, spc, sdi in entries:
+            if first <= previous:
+                failures.append(f"{path}: stsc first_chunk values are not ascending")
+            if spc == 0:
+                failures.append(f"{path}: stsc maps a chunk to zero samples")
+            if sdi != 1:
+                failures.append(f"{path}: stsc references sample description {sdi}")
+            previous = first
+        if entries and entries[0][0] != 1:
+            failures.append(f"{path}: stsc does not start at chunk 1")
+        info["stsc"] = [(first, spc) for first, spc, _ in entries]
 
     chunk_box = _find(kids, "stco")
     offset_width = 4
