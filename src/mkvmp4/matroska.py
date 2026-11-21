@@ -9,7 +9,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .ebml import decode_float, decode_int, decode_string, decode_uint
+from .ebml import (
+    decode_float,
+    decode_int,
+    decode_string,
+    decode_uint,
+    read_vint_id,
+    read_vint_size,
+)
 from .errors import EbmlParseError, InputError, UnsupportedError
 from .tree import RawNode, parse_tree
 
@@ -399,8 +406,6 @@ def parse_block_header(
     Returns ``(track, relative_timecode, flags, payload_start)``.  The track
     number uses an EBML VINT without the marker bit.
     """
-    from .ebml import read_vint_id
-
     if start >= end:
         raise EbmlParseError("empty block", offset=base + start, path=path)
     first = data[start]
@@ -462,8 +467,6 @@ def lace_frame_sizes(
                     break
             sizes.append(size)
     elif lacing == 3:  # EBML: unsigned first size, signed VINT deltas after
-        from .ebml import read_vint_size
-
         first_size, length, unknown = read_vint_size(data, pos, base=base, path=path)
         if unknown or first_size is None:
             raise EbmlParseError("invalid EBML lace size", offset=base + pos, path=path)
