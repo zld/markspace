@@ -70,6 +70,25 @@ bool has_error_diagnostics(const AssDocument& doc) {
     return false;
 }
 
+// Write the JSON manifest next to the rendered output. Failures are recorded
+// as diagnostics rather than thrown, keeping the pipeline no-throw.
+void write_manifest(const PipelineOptions& opts, const PipelineResult& result,
+                    PipelineResult& io_result) {
+    if (opts.json_path.empty()) return;
+    std::error_code ec;
+    fs::create_directories(fs::path(opts.json_path).parent_path(), ec);
+    std::ofstream jf(opts.json_path, std::ios::binary);
+    if (!jf) {
+        io_result.diagnostics.push_back(
+            {DiagLevel::Error, DiagKind::PathRejected, 0, 0,
+             "cannot write JSON manifest: " + opts.json_path});
+        if (io_result.exit_code == EXIT_OK)
+            io_result.exit_code = EXIT_INVALID_INPUT;
+        return;
+    }
+    jf << render_json(result);
+}
+
 } // namespace
 
 PipelineResult run_pipeline(const PipelineOptions& opts) {
@@ -93,6 +112,7 @@ PipelineResult run_pipeline(const PipelineOptions& opts) {
                  0, 0,
                  "cannot read input (missing or larger than 32 MiB): " +
                      opts.input_path});
+            write_manifest(opts, result, result);
             return result;
         }
     }
@@ -135,6 +155,7 @@ PipelineResult run_pipeline(const PipelineOptions& opts) {
             {DiagLevel::Error, DiagKind::PathRejected, 0, 0,
              "output directory must not be the input file: " +
                  opts.output_dir});
+        write_manifest(opts, result, result);
         return result;
     }
     if (!opts.json_path.empty() && fs::exists(opts.input_path, ec) &&
@@ -143,6 +164,7 @@ PipelineResult run_pipeline(const PipelineOptions& opts) {
         result.diagnostics.push_back(
             {DiagLevel::Error, DiagKind::PathRejected, 0, 0,
              "refusing to overwrite input file with JSON manifest"});
+        write_manifest(opts, result, result);
         return result;
     }
     if (!out_dir.empty()) {
@@ -152,6 +174,7 @@ PipelineResult run_pipeline(const PipelineOptions& opts) {
             result.diagnostics.push_back(
                 {DiagLevel::Error, DiagKind::PathRejected, 0, 0,
                  "cannot create output directory: " + opts.output_dir});
+            write_manifest(opts, result, result);
             return result;
         }
     }
@@ -159,6 +182,7 @@ PipelineResult run_pipeline(const PipelineOptions& opts) {
     // ---- Rendering -----------------------------------------------------
     if (blocking_input_error) {
         result.exit_code = EXIT_INVALID_INPUT;
+        write_manifest(opts, result, result);
         return result;
     }
 
@@ -208,6 +232,7 @@ PipelineResult run_pipeline(const PipelineOptions& opts) {
     }
     result.rendered = static_cast<int>(result.records.size());
     if (render_failed) result.exit_code = EXIT_RENDER_FAILURE;
+    write_manifest(opts, result, result);
     return result;
 }
 
