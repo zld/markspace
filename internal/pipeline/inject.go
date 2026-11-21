@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -27,10 +28,25 @@ const (
 	FaultBadBaseline = "bad-baseline"
 )
 
-// FaultInjector triggers a named fault once, on the segment whose index equals
-// TargetSegment. Disk failures are simulated by pointing the output directory
-// at a non-writable path; FFmpeg failures by swapping the encoder name to a
-// codec this build cannot contain.
+// PermanentError marks a failure that must not be retried: injected faults are
+// deterministic, so a retry would either fail identically or (for one-shot
+// injections) silently succeed and hide the fault. It satisfies the scheduler's
+// permanentError interface via IsPermanent, with no import cycle.
+type PermanentError struct{ Err error }
+
+func (e *PermanentError) Error() string     { return e.Err.Error() }
+func (e *PermanentError) Unwrap() error     { return e.Err }
+func (e *PermanentError) IsPermanent() bool { return true }
+
+// IsPermanent reports whether err wraps a PermanentError.
+func IsPermanent(err error) bool {
+	var pe *PermanentError
+	return errors.As(err, &pe)
+}
+
+// FaultInjector triggers a named fault once. A TargetSegment of -1 means
+// "fire on the first segment that reaches encoding", which is required under
+// concurrent workers where dispatch order is not deterministic.
 type FaultInjector struct {
 	Kind          string
 	TargetSegment int
@@ -44,8 +60,12 @@ func NewFaultInjector(kind string, targetSegment int, workDir string) *FaultInje
 }
 
 // OnEncode fires encode-time faults: disk write failure or encoder failure.
+// Both are returned as PermanentError so the scheduler does not retry them.
 func (f *FaultInjector) OnEncode(seg *model.Segment) error {
-	if f == nil || f.fired || seg.Index != f.TargetSegment {
+	if f == nil || f.fired {
+		return nil
+	}
+	if f.TargetSegment >= 0 && seg.Index != f.TargetSegment {
 		return nil
 	}
 	switch f.Kind {
@@ -56,12 +76,14 @@ func (f *FaultInjector) OnEncode(seg *model.Segment) error {
 		dir := f.workDir + "/segments"
 		_ = os.RemoveAll(dir)
 		if err := os.WriteFile(dir, []byte("blocked"), 0o644); err != nil {
-			return fmt.Errorf("disk-fault setup failed: %w", err)
+			return &PermanentError{Err: fmt.Errorf("disk-fault setup failed: %w", err)}
 		}
-		return fmt.Errorf("injected disk write failure: segments path %s is not a directory", dir)
+		return &PermanentError{Err: fmt.Errorf(
+			"injected disk write failure: segments path %s is not a directory", dir)}
 	case FaultFFmpegFail:
 		f.fired = true
-		return fmt.Errorf("injected encoder failure (simulated non-zero ffmpeg exit)")
+		return &PermanentError{Err: fmt.Errorf(
+			"injected encoder failure (simulated non-zero ffmpeg exit)")}
 	}
 	return nil
 }

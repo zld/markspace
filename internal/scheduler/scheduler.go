@@ -4,6 +4,7 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -16,6 +17,18 @@ import (
 // Implementations own FFmpeg invocation, the closed loop and PSNR checks.
 type Processor interface {
 	Process(ctx context.Context, seg *model.Segment) error
+}
+
+// permanentError is the structural marker for non-retryable failures. Any
+// error implementing it (e.g. pipeline's injected faults) bypasses retries,
+// avoiding an import cycle with the pipeline package.
+type permanentError interface {
+	IsPermanent() bool
+}
+
+func isPermanent(err error) bool {
+	var pe permanentError
+	return errors.As(err, &pe)
 }
 
 // Config tunes the scheduler. FailAfter > 0 deterministically interrupts the
@@ -38,14 +51,17 @@ type Result struct {
 
 // Scheduler coordinates task state transitions. It is single-use: call Run once.
 type Scheduler struct {
-	cfg         Config
-	proc        Processor
-	onCommit    func(*model.Segment)
-	mu          sync.Mutex
-	cond        *sync.Cond
-	segs        []*model.Segment
-	wg          sync.WaitGroup
-	commitCount atomic.Int64
+	cfg       Config
+	proc      Processor
+	onCommit  func(*model.Segment)
+	mu        sync.Mutex
+	cond      *sync.Cond
+	queue     []*model.Segment // segments waiting to run
+	inFlight  int              // segments currently owned by a worker
+	segs      []*model.Segment
+	wg        sync.WaitGroup
+	committed atomic.Int64
+	stopping  bool
 }
 
 // New builds a scheduler over the given segments.
@@ -64,31 +80,45 @@ func New(cfg Config, proc Processor, segs []*model.Segment) *Scheduler {
 // OnCommit registers a callback fired after every successful commit. It runs
 // synchronously inside the worker while the scheduler lock is held, so the
 // checkpoint can never observe a half-updated segment.
-func (s *Scheduler) OnCommit(fn func(*model.Segment)) { s.onCommit = fn } // Run dispatches segments until all are terminal, the context is cancelled, or
+func (s *Scheduler) OnCommit(fn func(*model.Segment)) { s.onCommit = fn }
+
+// Run dispatches segments until all are terminal, the context is cancelled, or
 // FailAfter fires. Segments already committed before Run are counted as reused
 // and never re-dispatched.
 func (s *Scheduler) Run(ctx context.Context) Result {
 	var res Result
+	s.mu.Lock()
 	for _, seg := range s.segs {
 		if seg.State == model.StateCommitted {
 			res.Reused++
-			s.commitCount.Add(1)
+			s.committed.Add(1)
+		} else {
+			// Every non-terminal segment enters the queue, whatever its
+			// persisted state (queued, paused, retryable, ...).
+			seg.State = model.StateQueued
+			s.queue = append(s.queue, seg)
 		}
 	}
+	s.mu.Unlock()
+
 	for w := 0; w < s.cfg.Workers; w++ {
 		s.wg.Add(1)
 		go s.worker(ctx)
 	}
-
-	// Wake workers whenever a task becomes available or state changes.
-	done := make(chan struct{})
-	go func() { s.wg.Wait(); close(done) }()
-	select {
-	case <-done:
-	case <-ctx.Done():
-		s.cond.Broadcast()
-		<-done
-	}
+	// Wake workers parked on the condition when the context is cancelled.
+	stopWatch := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			s.mu.Lock()
+			s.stopping = true
+			s.cond.Broadcast()
+			s.mu.Unlock()
+		case <-stopWatch:
+		}
+	}()
+	s.wg.Wait()
+	close(stopWatch)
 
 	for _, seg := range s.segs {
 		switch seg.State {
@@ -116,110 +146,110 @@ func wasReused(seg *model.Segment) bool {
 	return false
 }
 
+func (s *Scheduler) interruptFired() bool {
+	return s.cfg.FailAfter > 0 && s.committed.Load() >= int64(s.cfg.FailAfter)
+}
+
+// next blocks until a queued segment is available or work is fully drained.
+func (s *Scheduler) next(ctx context.Context) *model.Segment {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for len(s.queue) == 0 {
+		if s.stopping || s.interruptFired() || ctx.Err() != nil || s.inFlight == 0 {
+			return nil
+		}
+		s.cond.Wait()
+	}
+	seg := s.queue[0]
+	s.queue = s.queue[1:]
+	if err := task.Move(seg, model.StateRunning); err != nil {
+		// Illegal move is a programming error; fail the segment explicitly.
+		_ = task.Move(seg, model.StateFailed)
+		seg.LastError = err.Error()
+		return nil
+	}
+	s.inFlight++
+	return seg
+}
+
 func (s *Scheduler) worker(ctx context.Context) {
 	defer s.wg.Done()
 	for {
-		seg := s.pick()
+		if ctx.Err() != nil {
+			return
+		}
+		seg := s.next(ctx)
 		if seg == nil {
 			return
 		}
-		if !s.claim(seg) {
-			continue
-		}
 		s.execute(ctx, seg)
-	}
-}
-
-// pick returns the next queued segment, or nil when work is exhausted or the
-// run must stop. It blocks while remaining segments are still in flight.
-func (s *Scheduler) pick() *model.Segment {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for {
+		s.mu.Lock()
+		s.inFlight--
+		// When the fail-after threshold is reached, park every queued segment
+		// so a resume picks it up; then wake peers so they observe the stop.
 		if s.interruptFired() {
-			return nil
-		}
-		for _, seg := range s.segs {
-			if seg.State == model.StateQueued {
-				return seg
+			s.stopping = true
+			for _, q := range s.queue {
+				_ = task.Move(q, model.StatePaused)
 			}
+			s.queue = nil
 		}
-		// No queued work right now: wait for an in-flight segment to finish
-		// and possibly re-queue itself as retryable, otherwise terminate.
-		if s.anyInFlight() {
-			s.cond.Wait()
-			continue
-		}
-		return nil
-	}
-}
-
-func (s *Scheduler) anyInFlight() bool {
-	for _, seg := range s.segs {
-		if seg.State == model.StateRunning ||
-			seg.State == model.StateValidating ||
-			seg.State == model.StateRetryable ||
-			seg.State == model.StatePaused {
-			return true
-		}
-	}
-	return false
-}
-
-func (s *Scheduler) interruptFired() bool {
-	return s.cfg.FailAfter > 0 && s.commitCount.Load() >= int64(s.cfg.FailAfter)
-}
-
-// claim moves a queued segment into running; a lost race returns false.
-func (s *Scheduler) claim(seg *model.Segment) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if seg.State != model.StateQueued || s.interruptFired() {
 		s.cond.Broadcast()
-		return false
+		s.mu.Unlock()
 	}
-	if err := task.Move(seg, model.StateRunning); err != nil {
-		// State machine rejection is a programming error; fail the segment.
-		_ = task.Move(seg, model.StateFailed)
-		seg.LastError = err.Error()
-		return false
-	}
-	return true
 }
 
 // execute runs the processor with bounded retries and drives state moves.
 func (s *Scheduler) execute(ctx context.Context, seg *model.Segment) {
-	defer s.cond.Broadcast()
 	var lastErr error
 	for attempt := 0; attempt <= s.cfg.MaxRetries; attempt++ {
-		if ctx.Err() != nil || s.interruptFired() {
+		if ctx.Err() != nil {
 			s.markRecoverable(seg, "cancelled before encode: "+ctx.Err().Error())
 			return
 		}
-		// Re-enter running after a retryable attempt.
-		if seg.State == model.StateRetryable {
-			_ = task.Move(seg, model.StateQueued)
-			_ = task.Move(seg, model.StateRunning)
+		if attempt > 0 {
+			// Re-enter running for a retry attempt.
+			if err := task.Move(seg, model.StateQueued); err != nil {
+				s.failSegment(seg, err)
+				return
+			}
+			if err := task.Move(seg, model.StateRunning); err != nil {
+				s.failSegment(seg, err)
+				return
+			}
 		}
 		err := s.proc.Process(ctx, seg)
 		if err == nil {
+			if ctx.Err() != nil {
+				s.markRecoverable(seg, "cancelled after encode: "+ctx.Err().Error())
+				return
+			}
 			s.mu.Lock()
+			// Process performs its quality checks while "running"; a clean
+			// result passes through validating before the terminal commit.
+			if merr := task.Move(seg, model.StateValidating); merr != nil {
+				s.mu.Unlock()
+				s.failSegment(seg, merr)
+				return
+			}
 			_ = task.Move(seg, model.StateCommitted)
-			s.commitCount.Add(1)
+			s.committed.Add(1)
 			if s.onCommit != nil {
 				s.onCommit(seg)
 			}
 			s.mu.Unlock()
-			if s.interruptFired() {
-				// Deterministic crash point: committed work is durable, the
-				// rest stays queued for resume.
-				s.mu.Lock()
-				s.pauseRemaining()
-				s.mu.Unlock()
-			}
+			return
+		}
+		if ctx.Err() != nil {
+			s.markRecoverable(seg, "cancelled during encode: "+err.Error())
 			return
 		}
 		lastErr = err
+		// Injected and other permanent failures are deterministic: retrying
+		// either fails identically or silently succeeds on a one-shot fault.
+		if isPermanent(err) {
+			break
+		}
 		if attempt < s.cfg.MaxRetries {
 			s.mu.Lock()
 			_ = task.Move(seg, model.StateRetryable)
@@ -227,30 +257,27 @@ func (s *Scheduler) execute(ctx context.Context, seg *model.Segment) {
 			s.mu.Unlock()
 		}
 	}
-	s.mu.Lock()
-	_ = task.Move(seg, model.StateFailed)
-	seg.LastError = fmt.Sprintf("exhausted %d retries: %v", s.cfg.MaxRetries, lastErr)
-	s.mu.Unlock()
+	s.failSegment(seg, lastErr)
 }
 
-// markRecoverable parks unfinished work so resume can pick it up.
+func (s *Scheduler) failSegment(seg *model.Segment, lastErr error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_ = task.Move(seg, model.StateFailed)
+	if isPermanent(lastErr) {
+		seg.LastError = fmt.Sprintf("permanent failure (not retried): %v", lastErr)
+	} else {
+		seg.LastError = fmt.Sprintf("exhausted %d retries: %v", s.cfg.MaxRetries, lastErr)
+	}
+}
+
+// markRecoverable parks unfinished work so a later resume can pick it up.
 func (s *Scheduler) markRecoverable(seg *model.Segment, reason string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if seg.State == model.StateRunning || seg.State == model.StateValidating {
-		_ = task.Move(seg, model.StatePaused)
-	} else if seg.State == model.StateQueued {
+	switch seg.State {
+	case model.StateRunning, model.StateValidating, model.StateQueued:
 		_ = task.Move(seg, model.StatePaused)
 	}
 	seg.LastError = reason
-}
-
-// pauseRemaining moves every not-yet-committed segment to paused.
-func (s *Scheduler) pauseRemaining() {
-	for _, seg := range s.segs {
-		if seg.State == model.StateQueued || seg.State == model.StateRunning ||
-			seg.State == model.StateValidating || seg.State == model.StateRetryable {
-			_ = task.Move(seg, model.StatePaused)
-		}
-	}
 }
