@@ -70,9 +70,16 @@ func (r *Reader) parseHeader(size int64) error {
 	return nil
 }
 
+// maxFmtBytes bounds the fmt chunk allocation. Valid PCM/float headers are
+// 16 or 40 bytes; anything larger is a malformed or hostile file.
+const maxFmtBytes = 4096
+
 func (r *Reader) parseFmt(offset, length int64) error {
 	if length < 16 {
 		return fmt.Errorf("wav: fmt chunk is %d bytes, need at least 16", length)
+	}
+	if length > maxFmtBytes {
+		return fmt.Errorf("wav: fmt chunk is %d bytes, limit is %d", length, maxFmtBytes)
 	}
 	raw := make([]byte, length)
 	if _, err := r.f.ReadAt(raw, offset); err != nil {

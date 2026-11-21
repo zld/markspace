@@ -41,6 +41,3 @@ func decodeSamples(src []byte, dst []float32, h header) (int, error) {
 	}
 	return 0, nil
 }
-
-// BytesPerFrame reports the block alignment of the parsed file.
-func (r *Reader) BytesPerFrame() int { return r.header.BlockAlign }

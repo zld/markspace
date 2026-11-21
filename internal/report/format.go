@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"sort"
 	"strings"
 
 	"loudcheck/internal/batch"
@@ -209,12 +208,6 @@ func fmtDBTP(p *float64) string {
 		return "n/a"
 	}
 	return fmt.Sprintf("%.2f", *p)
-}
-
-// SortByPath orders results lexically; the batch runner already does this,
-// but report consumers may assemble results themselves.
-func SortByPath(results []batch.FileReport) {
-	sort.Slice(results, func(i, j int) bool { return results[i].Path < results[j].Path })
 }
 
 // WriteSingle renders one file's report.
