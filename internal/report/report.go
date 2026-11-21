@@ -20,8 +20,16 @@ type Report struct {
 
 // FromResults assembles a Report from per-tier verification results.
 func FromResults(results []verify.TierResult) Report {
-	r := Report{Tiers: results}
-	for _, t := range results {
+	tiers := make([]verify.TierResult, len(results))
+	copy(tiers, results)
+	for i := range tiers {
+		// Emit an empty array rather than null when there are no failures.
+		if tiers[i].Failures == nil {
+			tiers[i].Failures = []verify.Failure{}
+		}
+	}
+	r := Report{Tiers: tiers}
+	for _, t := range tiers {
 		r.ValidationFailures += len(t.Failures)
 		if t.DeviationMS > r.MaxDeviationMS {
 			r.MaxDeviationMS = t.DeviationMS
