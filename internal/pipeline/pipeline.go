@@ -14,12 +14,14 @@ var ErrQueueClosed = errors.New("pipeline: queue closed")
 
 // BoundedQueue is a capacity-limited FIFO. Send blocks while the queue is
 // full, providing natural back-pressure, and honours context cancellation.
-// The data channel is never closed; shutdown is signalled separately so a
-// concurrent Enqueue can never panic on a closed channel.
+// Shutdown is signalled through a separate channel and a mutex so that
+// Close never races an in-flight send into a closed channel.
 type BoundedQueue[T any] struct {
-	ch     chan T
-	closed chan struct{}
-	once   sync.Once
+	ch       chan T
+	closed   chan struct{}
+	mu       sync.RWMutex
+	isClosed bool
+	once     sync.Once
 }
 
 // NewBoundedQueue creates a queue holding at most capacity items.
@@ -34,23 +36,38 @@ func NewBoundedQueue[T any](capacity int) *BoundedQueue[T] {
 }
 
 // Enqueue blocks until space is available, the context is cancelled or the
-// queue is closed. It returns the context error or ErrQueueClosed.
+// queue is closed. It returns the context error or ErrQueueClosed. The data
+// channel is never closed, so a concurrent Close can never cause a send
+// panic; at worst an item sent during shutdown lands in a closed queue and
+// the caller is still told the enqueue failed.
 func (q *BoundedQueue[T]) Enqueue(ctx context.Context, v T) error {
+	q.mu.RLock()
+	closed := q.isClosed
+	q.mu.RUnlock()
+	if closed {
+		return ErrQueueClosed
+	}
 	select {
 	case <-q.closed:
 		return ErrQueueClosed
 	case <-ctx.Done():
 		return ctx.Err()
 	case q.ch <- v:
-		return nil
 	}
+	q.mu.RLock()
+	closed = q.isClosed
+	q.mu.RUnlock()
+	if closed {
+		return ErrQueueClosed
+	}
+	return nil
 }
 
 // Dequeue blocks until an item is available. After Close it drains any
 // buffered items, then returns ok=false; context cancellation also unblocks.
 func (q *BoundedQueue[T]) Dequeue(ctx context.Context) (T, bool, error) {
 	var zero T
-	// First, consume anything already buffered without blocking.
+	// Fast path: consume anything already buffered without blocking.
 	select {
 	case v := <-q.ch:
 		return v, true, nil
@@ -62,7 +79,6 @@ func (q *BoundedQueue[T]) Dequeue(ctx context.Context) (T, bool, error) {
 	case <-ctx.Done():
 		return zero, false, ctx.Err()
 	case <-q.closed:
-		// Closed: drain remaining items, then report end-of-queue.
 		select {
 		case v := <-q.ch:
 			return v, true, nil
@@ -72,9 +88,15 @@ func (q *BoundedQueue[T]) Dequeue(ctx context.Context) (T, bool, error) {
 	}
 }
 
-// Close signals shutdown. Buffered items remain readable until drained.
+// Close signals shutdown and waits for any in-flight Enqueue to settle.
+// Buffered items remain readable until drained.
 func (q *BoundedQueue[T]) Close() {
-	q.once.Do(func() { close(q.closed) })
+	q.once.Do(func() {
+		q.mu.Lock()
+		q.isClosed = true
+		close(q.closed)
+		q.mu.Unlock()
+	})
 }
 
 // Len returns the current number of queued items.

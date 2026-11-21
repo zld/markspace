@@ -161,3 +161,33 @@ func TestRunParentCancellation(t *testing.T) {
 		t.Fatalf("want cancellation, got %v", err)
 	}
 }
+
+// TestCloseOnFullQueueMustNotDeadlock guards the case where Close is called
+// while an Enqueue is blocked on a saturated queue: Close must not wait on a
+// lock held by the blocked sender.
+func TestCloseOnFullQueueMustNotDeadlock(t *testing.T) {
+	q := NewBoundedQueue[int](1)
+	q.Enqueue(context.Background(), 1)
+	blocked := make(chan error, 1)
+	go func() { blocked <- q.Enqueue(context.Background(), 2) }()
+	// Give the sender time to park on the full channel.
+	time.Sleep(20 * time.Millisecond)
+	done := make(chan struct{})
+	go func() {
+		q.Close()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("Close deadlocked while an enqueue was blocked")
+	}
+	select {
+	case err := <-blocked:
+		if !errors.Is(err, ErrQueueClosed) {
+			t.Fatalf("blocked enqueue: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("blocked enqueue never returned after Close")
+	}
+}
