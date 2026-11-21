@@ -175,6 +175,32 @@ class ResampleTests(unittest.TestCase):
         self.assertAlmostEqual(float(np.mean(y[0])), 1.0, places=4)
         self.assertLess(float(np.max(np.abs(y[0] - 1.0))), 1e-4)
 
+    def _resample_tone(self, freq: float, rate_in: int, rate_out: int,
+                       seconds: float = 0.5) -> np.ndarray:
+        frames = int(rate_in * seconds)
+        t = np.arange(frames, dtype=np.float64) / rate_in
+        x = (0.5 * np.sin(2.0 * np.pi * freq * t))[None, :]
+        resampler = StreamingResampler(rate_in, rate_out, 1)
+        chunks = [resampler.pull(x[:, i:i + 1024])
+                  for i in range(0, frames, 1024)]
+        chunks.append(resampler.finalize())
+        return np.concatenate(chunks, axis=1)[0]
+
+    @staticmethod
+    def _core_rms(y: np.ndarray) -> float:
+        core = y[int(len(y) * 0.2):int(len(y) * 0.8)]
+        return float(np.sqrt(np.mean(core * core)))
+
+    def test_passband_tone_keeps_its_level(self) -> None:
+        for rate_in, freq in ((96000, 10000.0), (44100, 5000.0), (8000, 1000.0)):
+            y = self._resample_tone(freq, rate_in, SR)
+            self.assertAlmostEqual(self._core_rms(y), 0.5 / math.sqrt(2), delta=0.002)
+
+    def test_stopband_tone_is_suppressed(self) -> None:
+        # 30 kHz cannot survive a 96k -> 48k conversion (Nyquist 24 kHz).
+        y = self._resample_tone(30000.0, 96000, SR)
+        self.assertLess(self._core_rms(y), 1e-3)
+
 
 class GraphTests(unittest.TestCase):
     def setUp(self) -> None:
