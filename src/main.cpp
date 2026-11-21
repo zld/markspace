@@ -22,15 +22,18 @@ int main(int argc, char** argv) {
         }
         return 2;
     }
+    std::size_t clusters = 0;
     for (const SubtitleItem& item : manifest.items) {
-        std::vector<CodePoint> decoded;
+        std::vector<Cluster> shaped;
+        std::vector<char32_t> codepoints;
         DecodeError error;
-        if (!decode_utf8(item.text, decoded, error)) {
+        if (!shape_text(item.text, shaped, error, codepoints)) {
             std::cerr << item.id << ": byte " << error.byte_offset << ": "
                       << error.message << "\n";
             return 3;
         }
+        clusters += shaped.size();
     }
-    std::cout << "subtitles=" << manifest.items.size() << "\n";
+    std::cout << "subtitles=" << manifest.items.size() << " clusters=" << clusters << "\n";
     return 0;
 }

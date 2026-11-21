@@ -120,3 +120,129 @@ bool decode_utf8(const std::string& text, std::vector<CodePoint>& out,
     return true;
 }
 
+void build_clusters(const std::vector<CodePoint>& codepoints,
+                    std::vector<Cluster>& out) {
+    out.clear();
+    std::size_t i = 0;
+    while (i < codepoints.size()) {
+        Cluster cluster;
+        cluster.first = codepoints[i].value;
+        cluster.byte_begin = codepoints[i].byte_begin;
+        cluster.byte_end = codepoints[i].byte_end;
+        cluster.codepoint_begin = i;
+        cluster.codepoint_count = 1;
+        ++i;
+
+        if (is_separator(cluster.first)) {
+            // A CRLF pair forms one visual cluster.
+            if (cluster.first == '\r' && i < codepoints.size() &&
+                codepoints[i].value == '\n') {
+                cluster.byte_end = codepoints[i].byte_end;
+                ++cluster.codepoint_count;
+                ++i;
+            }
+        } else {
+            while (i < codepoints.size()) {
+                // Extenders always attach, including after a joiner.
+                if (is_extending(codepoints[i].value)) {
+                    cluster.byte_end = codepoints[i].byte_end;
+                    ++cluster.codepoint_count;
+                    ++i;
+                    continue;
+                }
+                // A joiner pulls in the base that follows it, so emoji ZWJ
+                // sequences such as a family emoji stay in one cluster.
+                if (codepoints[i].value == 0x200D) {
+                    cluster.byte_end = codepoints[i].byte_end;
+                    ++cluster.codepoint_count;
+                    ++i;
+                    if (i < codepoints.size() &&
+                        !is_separator(codepoints[i].value)) {
+                        cluster.byte_end = codepoints[i].byte_end;
+                        ++cluster.codepoint_count;
+                        ++i;
+                    }
+                    continue;
+                }
+                // Regional-indicator flags are exactly pairs.
+                if (is_regional_indicator(cluster.first) &&
+                    cluster.codepoint_count == 1 &&
+                    is_regional_indicator(codepoints[i].value)) {
+                    cluster.byte_end = codepoints[i].byte_end;
+                    ++cluster.codepoint_count;
+                    ++i;
+                    continue;
+                }
+                break;
+            }
+        }
+
+        if (is_separator(cluster.first) && !is_whitespace(cluster.first)) {
+            cluster.kind = ClusterKind::Other;
+        } else if (cluster.first == 0x00A0 || cluster.first == 0x202F ||
+                   cluster.first == 0x2060) {
+            cluster.kind = ClusterKind::HardSpace;
+        } else if (is_whitespace(cluster.first)) {
+            cluster.kind = ClusterKind::Whitespace;
+        } else if (is_punctuation(cluster.first) || cluster.first == 0x3000) {
+            cluster.kind = ClusterKind::Punctuation;
+        } else {
+            cluster.kind = ClusterKind::Other;
+        }
+        out.push_back(cluster);
+    }
+}
+
+bool shape_text(const std::string& utf8, std::vector<Cluster>& out,
+                DecodeError& error, std::vector<char32_t>& codepoints) {
+    std::vector<CodePoint> decoded;
+    codepoints.clear();
+    if (!decode_utf8(utf8, decoded, error)) {
+        out.clear();
+        decode_utf8(utf8.substr(0, error.byte_offset), decoded, error);
+        build_clusters(decoded, out);
+        return false;
+    }
+    codepoints.reserve(decoded.size());
+    for (const CodePoint& cp : decoded) {
+        codepoints.push_back(cp.value);
+    }
+    build_clusters(decoded, out);
+    return true;
+}
+
+bool is_extending_cluster(const Cluster& cluster) {
+    if (cluster.codepoint_count == 0) {
+        return false;
+    }
+    return is_extending(cluster.first) || is_regional_indicator(cluster.first);
+}
+
+bool is_format_control(char32_t codepoint) {
+    return codepoint == 0x200B || codepoint == 0x200E || codepoint == 0x200F ||
+           codepoint == 0x202A || codepoint == 0x202B || codepoint == 0x202C ||
+           codepoint == 0x202D || codepoint == 0x202E || codepoint == 0x2066 ||
+           codepoint == 0x2067 || codepoint == 0x2068 || codepoint == 0x2069;
+}
+
+bool is_default_ignorable(char32_t codepoint) {
+    return is_variation_selector(codepoint) || is_format_control(codepoint) ||
+           codepoint == 0x00AD || codepoint == 0x034F || codepoint == 0x200C ||
+           codepoint == 0x200D || codepoint == 0x2060 || codepoint == 0x2061 ||
+           codepoint == 0x2062 || codepoint == 0x2063 || codepoint == 0x2064 ||
+           (codepoint >= 0x180B && codepoint <= 0x180D) ||
+           (codepoint >= 0xFE00 && codepoint <= 0xFE0F);
+}
+
+bool can_break_before(const Cluster* previous, char32_t next,
+                      bool next_is_zwj) {
+    (void)next;
+    if (previous == nullptr) {
+        return false;
+    }
+    if (next_is_zwj) {
+        return false;
+    }
+    return previous->kind == ClusterKind::Whitespace ||
+           previous->kind == ClusterKind::Punctuation;
+}
