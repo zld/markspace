@@ -78,6 +78,11 @@ func runDemo(flags *config.Flags) int {
 			sum.FramesDropped,
 			sum.DuplicatePackets,
 		))
+		// Rejected datagrams indicate a packet-format or resource-limit
+		// problem rather than an RTSP control failure.
+		if sum.MalformedPackets > 0 {
+			worst = maxExit(worst, report.ExitPacketFailure)
+		}
 	}
 
 	// If every transport failed there is no successful summary to render.

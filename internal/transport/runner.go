@@ -24,6 +24,9 @@ type Summary struct {
 	FramesReassembled int
 	FramesDropped     int
 	DuplicatePackets  int
+	// MalformedPackets counts datagrams rejected by RTP validation. It is
+	// not part of the JSON contract but drives exit code 4 when non-zero.
+	MalformedPackets int
 	// Stage identifies where a failure occurred ("" on success).
 	Stage string
 	// Err carries the failure, nil when the run completed.
@@ -162,6 +165,7 @@ func fillMachine(sum *Summary, m *session.Machine) {
 func fillPipeline(sum *Summary, p *pipeline, opts Options) {
 	p.mu.Lock()
 	hs := p.h264.Stats()
+	rs := p.reorderer.Stats()
 	p.mu.Unlock()
 	// Frame counters are always measured from the reassembler. Gap and
 	// duplicate counters come from the deterministic sample: gortsplib's
@@ -171,6 +175,7 @@ func fillPipeline(sum *Summary, p *pipeline, opts Options) {
 	sum.DuplicatePackets = opts.KnownDuplicates
 	sum.FramesReassembled = hs.FramesReassembled
 	sum.FramesDropped = hs.FramesDropped
+	sum.MalformedPackets = rs.MalformedPackets
 }
 
 func stageOf(err error) string {
