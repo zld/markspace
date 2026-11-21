@@ -1,7 +1,10 @@
-"""Per-track signal chain: Source -> Resample -> ChannelMap -> AutomationGain.
+"""Mix graph: node implementations, channel mapping and the per-track chain.
 
-The offline and streaming renderers both instantiate :class:`TrackGraph`;
-only the block sizes they pull differ.
+The node classes (:class:`SourceNode`, :class:`ResampleNode`,
+:class:`ChannelMapNode`, :class:`AutomationGainNode`, :class:`BusNode`) live in
+this module's companion :mod:`audiomix.nodes`; :class:`TrackGraph` assembles
+them into one track's chain. The offline and streaming renderers both
+instantiate :class:`TrackGraph`, so only the block sizes they pull differ.
 """
 
 from __future__ import annotations
