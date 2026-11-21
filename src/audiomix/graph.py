@@ -24,6 +24,9 @@ from .nodes import (
 )
 
 READ_BLOCK_DEFAULT = 4096
+# Reading at least this many source frames per fill keeps tiny processing
+# chunks (even one frame) from paying resampler setup per output frame.
+READ_AHEAD_MIN = 1024
 
 __all__ = [
     "AudioIOError",
@@ -103,7 +106,8 @@ class TrackGraph:
             else:
                 ratio = self.resampler.rate_out / self.resampler.rate_in
                 read_count = int(math.ceil(missing / ratio)) + 2 * self.resampler.rim + 8
-            read_count = min(max(read_count, 1), max(1, self.read_block))
+            read_count = max(read_count, READ_AHEAD_MIN)
+            read_count = min(read_count, max(1, self.read_block))
             if self._source_done:
                 tail = self.resampler.finalize()
                 self._finalized = True

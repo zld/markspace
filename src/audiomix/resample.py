@@ -15,6 +15,7 @@ from .model import resampled_frames as resampled_length
 
 ZERO_CROSSINGS = 16
 MAX_HALF_WIDTH = ZERO_CROSSINGS * 8
+EMIT_SLICE = 8192
 
 
 def _window(distance: np.ndarray, half_width: int) -> np.ndarray:
@@ -47,6 +48,41 @@ class Kernel:
     def weights(self, frac: np.ndarray) -> np.ndarray:
         return kernel_weights(frac, self.half_width, self.cutoff)
 
+    def taps(self, frac: float) -> np.ndarray:
+        """All tap weights for one fractional phase, ordered by offset."""
+        offsets = np.arange(-self.half_width, self.half_width + 1, dtype=np.float64)
+        return kernel_weights(frac - offsets, self.half_width, self.cutoff)
+
+
+class _PhaseTable:
+    """Lazily cached tap rows keyed by the exact rational phase.
+
+    Resampling is periodic: the phase of output frame ``k`` depends only on
+    ``(k * rate_in) mod rate_out``. For typical rate pairs there are a few
+    hundred distinct phases, so caching removes almost all trig work while
+    staying exact for coprime rates too.
+    """
+
+    MAX_ENTRIES = 8192
+
+    def __init__(self, kernel: Kernel, rate_out: int):
+        self.kernel = kernel
+        self.rate_out = rate_out
+        self._cache: dict[int, np.ndarray] = {}
+
+    def row(self, phase: int) -> np.ndarray:
+        row = self._cache.get(phase)
+        if row is None:
+            row = self.kernel.taps(phase / float(self.rate_out))
+            if len(self._cache) < self.MAX_ENTRIES:
+                self._cache[phase] = row
+        return row
+
+    def rows(self, phases: np.ndarray) -> np.ndarray:
+        unique, inverse = np.unique(phases, return_inverse=True)
+        stacked = np.stack([self.row(int(p)) for p in unique])
+        return stacked[inverse]
+
 
 class StreamingResampler:
     """Resample a source of arbitrary length in chunks of arbitrary size.
@@ -65,6 +101,7 @@ class StreamingResampler:
         self.channels = channels
         self.kernel = Kernel.for_rates(rate_in, rate_out)
         self.rim = self.kernel.half_width
+        self._phases = _PhaseTable(self.kernel, rate_out)
         self.history = np.zeros((channels, 0), dtype=np.float64)
         self.history_origin = 0
         self.source_frames = 0
@@ -97,7 +134,7 @@ class StreamingResampler:
         ks = np.arange(self.next_output, limit, dtype=np.int64)
         numerators = ks * self.rate_in
         centers = numerators // self.rate_out
-        frac = (numerators % self.rate_out).astype(np.float64) / float(self.rate_out)
+        phases = numerators % self.rate_out
         self.next_output = limit
 
         self._trim(int(centers[0]))
@@ -108,22 +145,29 @@ class StreamingResampler:
         if self.history_frames == 0:
             raise RuntimeError("internal error: resample history is empty")
 
+        taps = self._phases.rows(phases)  # (count, 2*half_width + 1)
         out = np.zeros((self.channels, count), dtype=np.float64)
         half = self.kernel.half_width
-        for offset in range(-half, half + 1):
-            weights = self.kernel.weights(frac - float(offset))
-            offset_local = local + offset
-            inside = (offset_local >= 0) & (offset_local < self.history_frames)
-            before = offset_local < 0
-            after = offset_local >= self.history_frames
-            values = np.empty((self.channels, count), dtype=np.float64)
-            safe = np.clip(offset_local, 0, self.history_frames - 1)
-            values[:] = self.history[:, safe]
+        offsets = np.arange(-half, half + 1, dtype=np.int64)
+        # Bound the gather working set so very large offline blocks stay small.
+        for start in range(0, count, EMIT_SLICE):
+            stop = min(start + EMIT_SLICE, count)
+            local_slice = local[start:stop]
+            idx = local_slice[:, None] + offsets[None, :]
+            before = idx < 0
+            after = idx >= self.history_frames
+            values = self.history[:, np.clip(idx, 0, self.history_frames - 1)]
             if np.any(before):
-                values[:, before] = self.edge_first[:, None]
+                values[:, before] = np.broadcast_to(
+                    self.edge_first[:, None], (self.channels, int(before.sum()))
+                )
             if np.any(after):
-                values[:, after] = self.edge_last[:, None]
-            out += values * weights[None, :]
+                values[:, after] = np.broadcast_to(
+                    self.edge_last[:, None], (self.channels, int(after.sum()))
+                )
+            out[:, start:stop] = np.einsum(
+                "ckt,kt->ck", values, taps[start:stop], optimize=True
+            )
         return out
 
     def pull(self, new_frames: np.ndarray) -> np.ndarray:
