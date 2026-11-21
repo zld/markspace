@@ -45,9 +45,6 @@ class Kernel:
         half_width = min(int(np.ceil(ZERO_CROSSINGS / cutoff)), MAX_HALF_WIDTH)
         return cls(half_width=half_width, cutoff=cutoff)
 
-    def weights(self, frac: np.ndarray) -> np.ndarray:
-        return kernel_weights(frac, self.half_width, self.cutoff)
-
     def taps(self, frac: float) -> np.ndarray:
         """All tap weights for one fractional phase, ordered by offset."""
         offsets = np.arange(-self.half_width, self.half_width + 1, dtype=np.float64)

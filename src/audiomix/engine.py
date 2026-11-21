@@ -22,7 +22,7 @@ from .automation import (
     automation_samples_at,
     build_curve,
 )
-from .graph import ConsistencyError, SourceNode, TrackGraph, WavInfo
+from .graph import READ_AHEAD_MIN, ConsistencyError, SourceNode, TrackGraph, WavInfo
 from .nodes import BusNode
 from .model import (
     CONSISTENCY_TOLERANCE,
@@ -69,6 +69,10 @@ class _MixPass:
         self.bus = BusNode(frames_total)
         self.accumulators = {track.name: _TrackAccumulator() for track in project.tracks}
         self.graphs: list[TrackGraph] = []
+        # Internal reads may be larger than the processing block: extra frames
+        # wait in the track buffer. This keeps tiny chunks practical without
+        # changing block sizes seen by the resampler or gain nodes.
+        read_block = max(block, READ_AHEAD_MIN)
         try:
             for track, path, curve in zip(project.tracks, paths, curves):
                 self.graphs.append(

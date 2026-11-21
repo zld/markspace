@@ -13,7 +13,7 @@ import numpy as np
 import soundfile as sf
 
 from .automation import AutomationCurve, db_to_linear, gain_at
-from .model import TARGET_SAMPLE_RATE, check_duration, resampled_frames
+from .model import check_duration
 from .resample import StreamingResampler
 
 

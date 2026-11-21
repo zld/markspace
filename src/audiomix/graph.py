@@ -31,6 +31,7 @@ READ_AHEAD_MIN = 1024
 __all__ = [
     "AudioIOError",
     "ConsistencyError",
+    "READ_AHEAD_MIN",
     "READ_BLOCK_DEFAULT",
     "TrackGraph",
     "WavInfo",
@@ -54,7 +55,9 @@ class TrackGraph:
     gain: AutomationGainNode
     frames_out: int
     read_block: int
-    _buffer: np.ndarray = field(default_factory=lambda: np.zeros((2, 0), dtype=np.float64))
+    _chunks: list[np.ndarray] = field(default_factory=list)
+    _chunk_offset: int = 0
+    _queued: int = 0
     _produced: int = 0
     _source_done: bool = False
     _finalized: bool = False
@@ -96,11 +99,12 @@ class TrackGraph:
                 f"track {self.name!r}: produced {self._produced} frames, "
                 f"expected {self.frames_out}"
             )
-        self._buffer = np.concatenate([self._buffer, block], axis=1)
+        self._chunks.append(block)
+        self._queued += block.shape[1]
 
     def _fill(self, needed: int) -> None:
-        while self._buffer.shape[1] < needed and not self._finalized:
-            missing = needed - self._buffer.shape[1]
+        while self._queued < needed and not self._finalized:
+            missing = needed - self._queued
             if self.resampler.passthrough:
                 read_count = missing
             else:
@@ -135,12 +139,21 @@ class TrackGraph:
         if count == 0:
             return np.zeros((2, 0), dtype=np.float64), 0
         self._fill(count)
-        available = self._buffer.shape[1]
-        take = min(count, available)
+        take = min(count, self._queued)
         out = np.zeros((2, count), dtype=np.float64)
-        if take:
-            out[:, :take] = self._buffer[:, :take]
-            self._buffer = self._buffer[:, take:]
+        remaining = take
+        while remaining > 0:
+            head = self._chunks[0]
+            available = head.shape[1] - self._chunk_offset
+            used = min(available, remaining)
+            start = self._chunk_offset
+            out[:, take - remaining:take - remaining + used] = head[:, start:start + used]
+            remaining -= used
+            self._chunk_offset += used
+            if self._chunk_offset >= head.shape[1]:
+                self._chunks.pop(0)
+                self._chunk_offset = 0
+        self._queued -= take
         return out, take
 
     def close(self) -> None:
