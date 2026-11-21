@@ -28,6 +28,7 @@ struct TrackFragment {
   bool tfdtPresent = false;
   uint32_t sampleCount = 0;
   uint64_t totalDuration = 0;    // sum of resolved sample durations
+  bool trunPresent = false;
   std::vector<TrunSample> samples;
   int64_t dataOffset = 0;        // signed trun data_offset field
   bool haveTrunOffset = false;

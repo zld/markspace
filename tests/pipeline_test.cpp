@@ -47,9 +47,12 @@ TEST_CASE("valid case: split, renumber, rebase", "[pipeline]") {
   size_t moofs = 0;
   for (auto& f : idx.files) moofs += f.moofs.size();
   CHECK(moofs == 5);
-  REQUIRE(idx.conflicts.size() == 1);
-  CHECK(idx.conflicts[0].sequence == 103);
+  // Sequences cover 101..105; the last moof's tfdt rewinds to the 104 edge.
+  CHECK(idx.conflicts.empty());
   CHECK(idx.ordinalConflicts.empty());
+  const auto& last = idx.files.back().moofs.back();
+  CHECK(last.sequence == 105);
+  CHECK(last.tracks[0].decodeTime == 540000);
   validateSampleRanges(idx);
 
   RepackOptions opt;
@@ -111,6 +114,30 @@ TEST_CASE("encrypted sample entry is rejected", "[pipeline]") {
   InitCompatReport rep = compareInits(inits);
   CHECK_FALSE(rep.compatible);
   CHECK_FALSE(rep.encryptedRejections.empty());
+}
+
+TEST_CASE("duplicate mfhd sequence is indexed and reported", "[pipeline]") {
+  FixturePlan plan = makePlan(FixtureCase::Valid);
+  plan.fragments.clear();
+  plan.multiMoofJoinAt.clear();
+  plan.fragments.push_back(FixtureFragment{101, {0, 0}, {2, 2}, 0, 0, 0});
+  plan.fragments.push_back(FixtureFragment{101, {0, 0}, {2, 2}, 0, 0, 0});
+  Workspace ws;
+  ws.root = fs::temp_directory_path() / "mp4flow-test-dupseq";
+  fs::remove_all(ws.root);
+  ws.layout = generateFixture(ws.root.string(), plan);
+  auto inits = ws.inits();
+  FragmentIndex idx = buildIndex(ws.media(), inits);
+  REQUIRE(idx.conflicts.size() == 1);
+  CHECK(idx.conflicts[0].sequence == 101);
+  // Repack tolerates duplicate mfhd sequences and renumbers 1..N.
+  RepackOptions opt;
+  opt.mediaDir = ws.media();
+  opt.outDir = (ws.root / "out").string();
+  RepackReport rep = repack(opt, inits, idx);
+  CHECK(rep.outputMoofs == 2);
+  CHECK(rep.firstOutSeq == 1);
+  CHECK(rep.lastOutSeq == 2);
 }
 
 TEST_CASE("multi-moof file splits into separate outputs", "[pipeline]") {

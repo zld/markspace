@@ -219,15 +219,16 @@ FixturePlan makePlan(FixtureCase tc) {
     return FixtureFragment{seq, {t1, t2}, {2, 2}, 0, 0, 0};
   };
   if (tc == FixtureCase::Valid) {
-    // 5 moofs in 4 files. A worker restart re-delivered seq 103 as a retry
-    // fragment carrying the same tfdt as the first attempt. Repacking flattens
-    // them to a continuous 1..5 timeline.
+    // 5 moofs in 4 files. Unique mfhd sequences cover 101..105; seq 105 was
+    // re-delivered after a worker restart as a retry fragment whose tfdt
+    // rewinds to the 104 boundary. Repacking flattens them to a continuous
+    // 1..5 timeline; the largest rebase correction is one fragment step.
     plan.fragments = {
         f(101, 0, 0),
         f(102, 180000, 96000),
         f(103, 360000, 192000),
-        f(103, 360000, 192000), // retry: duplicate seq, identical tfdt
         f(104, 540000, 288000),
+        f(105, 540000, 288000), // retry: duplicate delivery, tfdt rewound
     };
     // The retry moof (fragment index 3) is appended into fragment index 2's
     // file: 5 moofs delivered in 4 ordinal files.

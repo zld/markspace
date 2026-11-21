@@ -33,6 +33,9 @@ struct RepackOptions {
   std::string mediaDir;
   std::string outDir;
   uint64_t maxCorrectionMs = 0; // 0 disables the limit
+  bool hasExpectedRange = false;
+  uint32_t expectFirst = 0;
+  uint32_t expectLast = 0;
 };
 
 // Rebuild every moof as its own output fragment under outDir. Files are

@@ -134,9 +134,24 @@ int cmdRepack(const std::map<std::string, std::string>& f) {
   opt.outDir = f.at("out");
   if (f.count("max-correction-ms"))
     opt.maxCorrectionMs = uint64_t(std::stoull(f.at("max-correction-ms")));
+  if (f.count("expect-seq")) {
+    if (!parseRange(f.at("expect-seq"), opt.expectFirst, opt.expectLast)) {
+      std::fprintf(stderr, "bad --expect-seq, want FIRST:LAST\n");
+      return EX_LAYOUT;
+    }
+    opt.hasExpectedRange = true;
+  }
 
   FragmentIndex idx = buildIndex(opt.mediaDir, inits);
   validateSampleRanges(idx);
+  if (opt.hasExpectedRange) {
+    std::vector<uint32_t> missing =
+        idx.missingSequences(opt.expectFirst, opt.expectLast);
+    for (uint32_t s : missing)
+      std::printf("missing_moof_seq=%u\n", s);
+    if (!missing.empty())
+      return EX_MISSING;
+  }
   RepackReport rep = repack(opt, inits, idx);
   std::printf("input_fragments=%zu\n", rep.inputFragments);
   std::printf("input_moofs=%zu\n", rep.inputMoofs);

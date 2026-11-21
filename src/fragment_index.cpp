@@ -74,6 +74,7 @@ TrackFragment parseTraf(const ParsedFile& pf, const Box& traf,
         throw Mp4Error(ErrorKind::BadValue, bp, "trun version 0 or 1 only");
       uint32_t count = c.u32();
       tf.sampleCount = count;
+      tf.trunPresent = true;
       if (fh.flags & 0x000001) {
         tf.dataOffset = int64_t(c.i32());
         tf.haveTrunOffset = true;
@@ -93,10 +94,17 @@ TrackFragment parseTraf(const ParsedFile& pf, const Box& traf,
   }
   if (tf.trackId == 0)
     throw Mp4Error(ErrorKind::BadValue, "moof/traf/tfhd", "traf has no tfhd");
+  if (!tf.trunPresent && (tf.defaultSize == 0 || tf.defaultDuration == 0))
+    throw Mp4Error(ErrorKind::BadValue, "moof/traf",
+                   "traf without trun must provide non-zero trex/tfhd "
+                   "default size and duration");
   // Resolve trun -> tfhd/trex priority and totals.
   for (TrunSample& s : tf.samples) {
     if (!s.duration) s.duration = tf.defaultDuration;
     if (!s.size) s.size = tf.defaultSize;
+    if (s.size == 0)
+      throw Mp4Error(ErrorKind::BadValue, "moof/traf/trun",
+                     "sample resolved to zero size");
     tf.totalDuration = checkedAdd(tf.totalDuration, s.duration, "moof/traf/trun");
   }
   return tf;
