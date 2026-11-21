@@ -22,5 +22,6 @@ enable_testing()
 # Pipeline implementation library; source files are appended in each module.
 add_library(lutcore STATIC
     src/model.cpp
+    src/color_space.cpp
 )
 target_link_libraries(lutcore PUBLIC lutbase)
