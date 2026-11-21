@@ -215,29 +215,33 @@ FixturePlan makePlan(FixtureCase tc) {
       {2, "soun", 48000, fourcc("mp4a"), 48000, 48},
   };
   auto f = [](uint32_t seq, uint64_t t1, uint64_t t2) {
-    return FixtureFragment{seq, {t1, t2}, {2, 3}, 0, 0, 0};
+    return FixtureFragment{seq, {t1, t2}, {2, 2}, 0, 0, 0};
   };
   if (tc == FixtureCase::Valid) {
-    // 5 moofs in 4 files; worker restart duplicated seq 103 and reset tfdt.
+    // 5 moofs in 4 files. A worker restart re-delivered seq 103 as a retry
+    // fragment carrying the same tfdt as the first attempt. Repacking flattens
+    // them to a continuous 1..5 timeline.
     plan.fragments = {
         f(101, 0, 0),
-        f(102, 90000, 48000),
-        f(103, 180000, 96000),
-        f(103, 0, 0),       // duplicate sequence, tfdt reset to zero
-        f(104, 270000, 144000),
+        f(102, 180000, 96000),
+        f(103, 360000, 192000),
+        f(103, 360000, 192000), // retry: duplicate seq, identical tfdt
+        f(104, 540000, 288000),
     };
-    plan.multiMoofJoinAt = {3}; // two moofs inside one source file
+    // The retry moof (fragment index 3) is appended into fragment index 2's
+    // file: 5 moofs delivered in 4 ordinal files.
+    plan.multiMoofJoinAt = {3};
   } else if (tc == FixtureCase::Gap) {
     plan.fragments = {
         f(101, 0, 0),
-        f(102, 90000, 48000),
+        f(102, 180000, 96000),
         // 103 intentionally missing
-        f(104, 180000, 96000),
-        f(105, 270000, 144000),
+        f(104, 360000, 192000),
+        f(105, 540000, 288000),
     };
   } else if (tc == FixtureCase::BadInit) {
     plan.incompatibleInit = true;
-    plan.fragments = {f(101, 0, 0), f(102, 90000, 48000)};
+    plan.fragments = {f(101, 0, 0), f(102, 180000, 96000)};
   } else {
     plan.encryptedInit = true;
     plan.fragments = {f(101, 0, 0)};

@@ -65,8 +65,9 @@ struct MoofRef {
 
 struct FragmentIndex {
   std::vector<FragmentFile> files;        // sorted by (ordinal, name)
-  std::map<uint32_t, MoofRef> bySeq;      // first owner; duplicates in conflicts
-  std::vector<SeqConflict> conflicts;
+  std::map<uint32_t, MoofRef> bySeq;      // first owner only
+  std::vector<SeqConflict> conflicts;     // duplicate mfhd sequence numbers
+  std::vector<SeqConflict> ordinalConflicts; // same file-name ordinal prefix
 
   const MoofIndex* find(uint32_t seq) const;
   std::vector<uint32_t> missingSequences(uint32_t first, uint32_t last) const;

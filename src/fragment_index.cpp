@@ -189,6 +189,15 @@ FragmentIndex buildIndex(const std::string& dir,
               if (a.ordinal != b.ordinal) return a.ordinal < b.ordinal;
               return a.path < b.path;
             });
+  // Ordinal-prefix conflicts: two different files share one decimal ordinal.
+  for (size_t fi = 1; fi < idx.files.size(); ++fi) {
+    if (idx.files[fi].ordinal == idx.files[fi - 1].ordinal)
+      idx.ordinalConflicts.push_back(
+          {uint32_t(idx.files[fi].ordinal), idx.files[fi - 1].path,
+           idx.files[fi].path});
+  }
+  // Duplicate mfhd sequence numbers are tolerated (repack renumbers them);
+  // bySeq keeps the first owner, all collisions are recorded for reporting.
   for (size_t fi = 0; fi < idx.files.size(); ++fi) {
     const FragmentFile& f = idx.files[fi];
     for (size_t mi = 0; mi < f.moofs.size(); ++mi) {
