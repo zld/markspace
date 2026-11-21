@@ -7,6 +7,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <filesystem>
+#include <fstream>
 
 using namespace mp4flow;
 namespace fs = std::filesystem;
@@ -178,6 +179,77 @@ TEST_CASE("signed composition offset via trun version 1", "[pipeline]") {
   const auto& tf = idx.files[0].moofs[0].tracks[0];
   REQUIRE_FALSE(tf.samples.empty());
   CHECK(tf.samples[0].compositionOffset == -100);
+}
+
+TEST_CASE("sample data exceeding mdat range is rejected", "[pipeline][error]") {
+  Workspace ws = makeWs("oor", FixtureCase::Gap);
+  auto inits = ws.inits();
+  // Corrupt the first media file: inflate a trun sample size so the declared
+  // range runs past the paired mdat payload.
+  fs::path target = fs::path(ws.media()) / fs::directory_iterator(
+      fs::path(ws.media()))->path().filename();
+  ParsedFile pf = parseFile(target.string());
+  const Box* moof = nullptr;
+  for (auto& b : pf.boxes) if (b.type == fourcc("moof")) { moof = &b; break; }
+  REQUIRE(moof != nullptr);
+  const Box* trun = findDeep(*moof, fourcc("trun"));
+  REQUIRE(trun != nullptr);
+  // trun payload: full(4) sample_count(4) data_offset(4) then first sample's
+  // duration(4) and size(4); overwrite that size with a huge 32-bit value.
+  size_t sizeField = size_t(trun->payloadOffset()) + 4 + 4 + 4 + 4;
+  pf.data[sizeField] = 0x7f;
+  pf.data[sizeField + 1] = 0xff;
+  pf.data[sizeField + 2] = 0xff;
+  pf.data[sizeField + 3] = 0xff;
+  std::ofstream out(target, std::ios::binary | std::ios::trunc);
+  out.write(reinterpret_cast<const char*>(pf.data.data()),
+            std::streamsize(pf.data.size()));
+  out.close();
+  FragmentIndex idx = buildIndex(ws.media(), inits);
+  REQUIRE_THROWS_AS(validateSampleRanges(idx), Mp4Error);
+}
+
+TEST_CASE("moof without paired mdat is rejected", "[pipeline][error]") {
+  FixturePlan plan = makePlan(FixtureCase::Valid);
+  plan.fragments.resize(1);
+  Workspace ws;
+  ws.root = fs::temp_directory_path() / "mp4flow-test-nomdat";
+  fs::remove_all(ws.root);
+  ws.layout = generateFixture(ws.root.string(), plan);
+  auto inits = ws.inits();
+  // Truncate the mdat box header off the only fragment file.
+  fs::path f = fs::path(ws.media()) /
+               fs::directory_iterator(fs::path(ws.media()))->path().filename();
+  ParsedFile pf = parseFile(f.string());
+  uint64_t cut = 0;
+  for (auto& b : pf.boxes) if (b.type == fourcc("moof")) cut = b.start + b.size;
+  Bytes clipped(pf.data.begin(), pf.data.begin() + std::streamoff(cut));
+  std::ofstream out(f, std::ios::binary | std::ios::trunc);
+  out.write(reinterpret_cast<const char*>(clipped.data()),
+            std::streamsize(clipped.size()));
+  out.close();
+  REQUIRE_THROWS_AS(buildIndex(ws.media(), inits), Mp4Error);
+}
+
+TEST_CASE("correction beyond max-correction-ms is rejected", "[pipeline][error]") {
+  FixturePlan plan = makePlan(FixtureCase::Valid);
+  plan.fragments.resize(2);
+  // Second moof restarts tfdt at zero while the timeline expects one step.
+  plan.fragments[1].tfdt = {0, 0};
+  Workspace ws;
+  ws.root = fs::temp_directory_path() / "mp4flow-test-maxcorr";
+  fs::remove_all(ws.root);
+  ws.layout = generateFixture(ws.root.string(), plan);
+  auto inits = ws.inits();
+  FragmentIndex idx = buildIndex(ws.media(), inits);
+  validateSampleRanges(idx);
+  RepackOptions opt;
+  opt.mediaDir = ws.media();
+  opt.outDir = (ws.root / "out").string();
+  opt.maxCorrectionMs = 1; // one millisecond is far below a full-step rewind
+  REQUIRE_THROWS_AS(repack(opt, inits, idx), Mp4Error);
+  // No output directory should be published on failure.
+  CHECK(!fs::exists(opt.outDir));
 }
 
 TEST_CASE("tfdt version 0 is parsed as unsigned 32-bit", "[pipeline]") {

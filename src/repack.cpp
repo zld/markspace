@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
+#include <limits>
 #include <set>
 #include <sstream>
 
@@ -76,7 +77,13 @@ Bytes renderFragment(const ParsedFile& src, const MoofIndex& m,
     for (const TrunSample& s : t->samples) {
       w.u32(s.duration);
       w.u32(s.size);
-      if (ctts) w.i32(int32_t(s.compositionOffset));
+      if (ctts) {
+        if (s.compositionOffset > int64_t(INT32_MAX) ||
+            s.compositionOffset < int64_t(INT32_MIN))
+          throw Mp4Error(ErrorKind::LengthOverflow, "moof/traf/trun",
+                         "composition offset exceeds int32 range");
+        w.i32(int32_t(s.compositionOffset));
+      }
     }
     w.endBox(); // trun
     // Preserve unknown traf siblings.
@@ -177,11 +184,22 @@ RepackReport repack(const RepackOptions& opt,
         throw Mp4Error(ErrorKind::BadValue, "moof/traf/tfhd",
                        ff.path + ": missing track " + std::to_string(tid));
       uint64_t expected = nextTime[tid];
+      if (t->decodeTime > uint64_t(std::numeric_limits<int64_t>::max()) ||
+          expected > uint64_t(std::numeric_limits<int64_t>::max()))
+        throw Mp4Error(ErrorKind::LengthOverflow, "moof/traf/tfdt",
+                       ff.path + ": decode time exceeds signed 64-bit range");
       int64_t delta = int64_t(t->decodeTime) - int64_t(expected);
-      int64_t absd = delta < 0 ? -delta : delta;
+      int64_t absd = delta < 0 ? (delta == std::numeric_limits<int64_t>::min()
+                                      ? std::numeric_limits<int64_t>::max()
+                                      : -delta)
+                               : delta;
       if (absd > maxAbsDelta[tid]) maxAbsDelta[tid] = absd;
       if (opt.maxCorrectionMs && timescale[tid]) {
-        int64_t deltaMs = absd * 1000 / int64_t(timescale[tid]);
+        // absd * 1000 cannot overflow: absd <= INT64_MAX and the divide is
+        // reordered to keep the intermediate bounded.
+        int64_t deltaMs = (absd / int64_t(timescale[tid])) * 1000 +
+                          ((absd % int64_t(timescale[tid])) * 1000) /
+                              int64_t(timescale[tid]);
         if (uint64_t(deltaMs) > opt.maxCorrectionMs)
           throw Mp4Error(ErrorKind::BadValue, "moof/traf/tfdt",
                          ff.path + ": track " + std::to_string(tid) +
