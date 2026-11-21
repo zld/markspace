@@ -89,9 +89,19 @@ def resume_candidate(
 
 
 def _discard_stale(item: InputFile, params: PipelineParams, state: ResumeState) -> None:
-    """A failed task must not leave a previous run's product or cache entry."""
+    """A failed task must not leave a previous run's product or cache entry.
+
+    Never touches a path that is the input file itself: an output directory
+    inside the input tree must not turn a failure into data loss.
+    """
     state.entries.pop(item.relative_path, None)
-    remove_file(params.output_dir / check_output_relative(item.relative_path))
+    target = params.output_dir / check_output_relative(item.relative_path)
+    try:
+        if target.exists() and target.resolve() == item.source.resolve():
+            return
+    except OSError:
+        return
+    remove_file(target)
 
 
 def _report(

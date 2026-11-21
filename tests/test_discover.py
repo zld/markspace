@@ -171,6 +171,26 @@ class SafetyTests(TempDirTest):
             process_file(found[0], params, Resampler())
         self.assertTrue(source.is_file())
 
+    def test_failed_same_path_run_preserves_source(self) -> None:
+        from audiorepro.pipeline import ResumeState, _discard_stale
+
+        source = write_audio(self.tmp / "same" / "a.wav", np.zeros((4800, 1)), 48000)
+        params = PipelineParams(
+            input_dir=self.tmp / "same",
+            output_dir=self.tmp / "same",
+            sample_rate=48000,
+            target_lufs=-23.0,
+            peak_dbfs=-1.0,
+            chunk_frames=2048,
+        )
+        item = discover(params.input_dir).files[0]
+        state = ResumeState(self.tmp / "state.json")
+        state.entries[item.relative_path] = {"recorded": {}}
+        _discard_stale(item, params, state)
+        self.assertNotIn(item.relative_path, state.entries)
+        self.assertTrue(source.is_file())
+        self.assertGreater(source.stat().st_size, 0)
+
     def test_source_files_are_never_modified(self) -> None:
         generate(self.tmp / "input", seed=17)
         before = {
