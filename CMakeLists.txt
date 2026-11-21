@@ -23,6 +23,8 @@ add_library(asspipe STATIC
   src/fixture_builder.cpp
   src/layout_engine.cpp
   src/layout_event.cpp
+  src/sha256.cpp
+  src/png_writer.cpp
 )
 target_include_directories(asspipe PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/include
