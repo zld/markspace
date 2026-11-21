@@ -545,3 +545,102 @@ def mdat_header(payload_size: int) -> bytes:
 # ---------------------------------------------------------------------------
 
 CONTAINER_BOXES = frozenset({b"moov", b"trak", b"mdia", b"minf", b"stbl", b"dinf", b"edts"})
+
+
+@dataclass
+class ParsedBox:
+    box_type: str
+    offset: int
+    size: int
+    header_size: int
+    payload_offset: int
+
+    @property
+    def end(self) -> int:
+        return self.offset + self.size
+
+
+@dataclass
+class Mp4Inspection:
+    boxes: list[ParsedBox]
+    tracks: list[dict[str, object]]
+    failures: list[str]
+    sample_offsets: list[int]
+    file_size: int
+
+    @property
+    def ok(self) -> bool:
+        return not self.failures
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "file_size": self.file_size,
+            "box_count": len(self.boxes),
+            "boxes": [
+                {"type": b.box_type, "offset": b.offset, "size": b.size}
+                for b in self.boxes
+            ],
+            "tracks": self.tracks,
+            "sample_count": sum(int(t["sample_count"]) for t in self.tracks),
+            "index_ok": not any("offset" in f or "index" in f for f in self.failures),
+            "failures": self.failures,
+        }
+
+
+def _read_box(data: bytes, pos: int, limit: int, path: str) -> ParsedBox:
+    if pos + 8 > limit:
+        raise OutputError(f"{path}: truncated box header at {pos}")
+    size = int.from_bytes(data[pos : pos + 4], "big")
+    box_type = data[pos + 4 : pos + 8].decode("latin-1")
+    header = 8
+    if size == 1:
+        if pos + 16 > limit:
+            raise OutputError(f"{path}/{box_type}: truncated 64-bit box size")
+        size = int.from_bytes(data[pos + 8 : pos + 16], "big")
+        header = 16
+    elif size == 0:
+        size = limit - pos
+    if size < header:
+        raise OutputError(f"{path}/{box_type}: box size {size} smaller than its header")
+    if pos + size > limit:
+        raise OutputError(
+            f"{path}/{box_type}: box at {pos} declares size {size} beyond {limit}"
+        )
+    return ParsedBox(box_type, pos, size, header, pos + header)
+
+
+def _iter_boxes(data: bytes, start: int, limit: int, path: str) -> list[ParsedBox]:
+    boxes: list[ParsedBox] = []
+    pos = start
+    while pos < limit:
+        parsed = _read_box(data, pos, limit, path)
+        boxes.append(parsed)
+        pos = parsed.end
+    if pos != limit:
+        raise OutputError(f"{path}: child boxes do not fill their parent exactly")
+    return boxes
+
+
+def _children(data: bytes, parent: ParsedBox, path: str) -> list[ParsedBox]:
+    return _iter_boxes(data, parent.payload_offset, parent.end, f"{path}/{parent.box_type}")
+
+
+def _find(boxes: list[ParsedBox], box_type: str) -> ParsedBox | None:
+    return next((b for b in boxes if b.box_type == box_type), None)
+
+
+def _table_entries(data: bytes, b: ParsedBox, words: int) -> list[int]:
+    """Read a full-box table: u32 entry count then ``words`` u32 per entry."""
+    payload = b.payload_offset
+    count = int.from_bytes(data[payload + 4 : payload + 8], "big")
+    total = count * words
+    expected = 8 + 4 * total
+    if b.size - b.header_size != expected:
+        raise OutputError(
+            f"table box {b.box_type} at {b.offset} declares {count} entries but "
+            f"occupies {b.size - b.header_size} payload bytes (expected {expected})"
+        )
+    return [
+        int.from_bytes(data[payload + 8 + 4 * i : payload + 12 + 4 * i], "big")
+        for i in range(total)
+    ]
