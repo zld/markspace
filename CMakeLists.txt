@@ -20,6 +20,7 @@ find_package(Freetype REQUIRED)
 set(SUBTITLE_METRICS_SOURCES
   src/main.cpp
   src/json.cpp
+  src/manifest.cpp
 )
 
 add_executable(subtitle-metrics ${SUBTITLE_METRICS_SOURCES})
