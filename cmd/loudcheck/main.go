@@ -2,7 +2,7 @@
 package main
 
 import (
-	"flag"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -21,7 +21,8 @@ func main() {
 func run(argv []string, stdout, stderr io.Writer) int {
 	opts, err := cli.Parse(argv, stderr)
 	if err != nil {
-		if err == flag.ErrHelp {
+		if errors.Is(err, cli.ErrHelp) {
+			fmt.Fprint(stdout, cli.HelpText)
 			return cli.ExitOK
 		}
 		fmt.Fprintf(stderr, "loudcheck: %v\n", err)

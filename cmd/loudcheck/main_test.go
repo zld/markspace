@@ -173,6 +173,18 @@ func TestJSONBatchOutput(t *testing.T) {
 	}
 }
 
+func TestHelpExitsZero(t *testing.T) {
+	for _, args := range [][]string{{"--help"}, {"help"}, {"analyze", "--help"}} {
+		code, out, _ := runCLI(t, args...)
+		if code != 0 {
+			t.Errorf("%v: exit = %d, want 0", args, code)
+		}
+		if !strings.Contains(out, "usage:") {
+			t.Errorf("%v: help text missing from stdout:\n%s", args, out)
+		}
+	}
+}
+
 func TestSynthDoesNotOverwriteWithoutRenaming(t *testing.T) {
 	// synth writes atomically via a temporary file; no .tmp should be left.
 	dir := t.TempDir()

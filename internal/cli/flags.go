@@ -45,6 +45,10 @@ type Options struct {
 // UsageError marks an error that should exit with ExitUsage.
 type UsageError struct{ Err error }
 
+// ErrHelp signals that the user asked for help. It is not a failure: the
+// entry point prints HelpText and exits 0.
+var ErrHelp = errors.New("help requested")
+
 func (u UsageError) Error() string { return u.Err.Error() }
 func (u UsageError) Unwrap() error { return u.Err }
 
@@ -61,7 +65,7 @@ func Parse(argv []string, stderr io.Writer) (Options, error) {
 	switch cmd {
 	case "synth", "analyze", "batch":
 	case "-h", "--help", "help":
-		return Options{}, UsageError{fmt.Errorf("%s", HelpText)}
+		return Options{}, ErrHelp
 	default:
 		return Options{}, usagef("unknown command %q (want synth, analyze or batch)", cmd)
 	}
@@ -91,7 +95,7 @@ func Parse(argv []string, stderr io.Writer) (Options, error) {
 	for {
 		if err := fs.Parse(rest); err != nil {
 			if errors.Is(err, flag.ErrHelp) {
-				return Options{}, UsageError{Err: flag.ErrHelp}
+				return Options{}, ErrHelp
 			}
 			return Options{}, usagef("%v", err)
 		}
