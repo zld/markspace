@@ -14,6 +14,14 @@ import (
 // buffer holds before it confirms missing packets and slides forward.
 const DefaultWindowSize = 32
 
+// MaxPayload is the largest RTP payload the pipeline accepts. It matches the
+// Ethernet-safe UDP payload budget and bounds every cache in the package.
+const MaxPayload = 1400
+
+// MaxBufferedAUs caps the number of NAL units accumulated in one access
+// unit before the frame is rejected as a resource violation.
+const MaxBufferedAUs = 64
+
 // Errors returned for packets that fail structural validation. They are
 // counted but never panic or block the pipeline.
 var (
