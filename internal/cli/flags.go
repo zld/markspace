@@ -73,7 +73,7 @@ func Parse(argv []string, stderr io.Writer) (Options, error) {
 	o := Options{Command: cmd, Thresholds: policy.DefaultThresholds()}
 	fs := flag.NewFlagSet(cmd, flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	fs.Usage = func() { fmt.Fprint(stderr, HelpText) }
+	fs.Usage = func() {} // Parse reports usage through its error; main prints it.
 
 	format := "text"
 	var synth synthFlags
@@ -242,18 +242,33 @@ func finishAnalysis(o *Options, args []string) error {
 const HelpText = `loudcheck - offline loudness and true-peak meter
 
 usage:
-  loudcheck synth   --out FILE [--layout L] [--seconds S] [--tone-dbfs D] ...
-  loudcheck analyze FILE [--layout L] [--target-lufs T] [--tolerance-lu U]
-                          [--max-true-peak-dbtp P] [--format text|json]
-  loudcheck batch   [FILES...] [--input-dir DIR] [--workers N] [analysis flags]
+  loudcheck synth   --out FILE [--layout L] [--seconds S] [--tone-dbfs D]
+                    [--tone-hz F] [--sample-rate R] [--encoding E]
+                    [--extensible] [--tone-channels N] [--channels N]
+                    [--data-first] [--odd-junk] [--format text|json]
+  loudcheck analyze FILE [--layout L] [--map W,W,...] [--target-lufs T]
+                    [--tolerance-lu U] [--max-true-peak-dbtp P]
+                    [--format text|json] [--quiet]
+  loudcheck batch   [FILES|DIRS...] [--input-dir DIR] [--workers N]
+                    [analysis flags]
+
+analysis flags default to: --target-lufs -23 --tolerance-lu 1
+--max-true-peak-dbtp -1 --layout auto --format text
+batch defaults to --workers equal to the CPU count (clamped to 1..64).
+
+synth defaults to: --layout stereo --seconds 12 --tone-dbfs -23 --tone-hz 997
+--sample-rate 48000 --encoding pcm24 --extensible. synth verifies its own
+output with the same analyzer and thresholds as analyze, and exits with the
+same codes.
 
 exit codes:
   0  all files measured and passed
   1  measurement completed, at least one threshold failed
-  2  bad arguments or unreadable input
+  2  bad arguments, unreadable input, or a layout problem
   3  at least one file failed to parse or analyse
 
 layouts:
   mono, stereo, 5.1 and 7.1 are recognized. Any other channel count needs an
   explicit --map with one weight per channel; LFE channels use weight 0.
+  Surround channels use the BS.1770 1.41 weight and are not folded to front.
 `
