@@ -1,0 +1,13 @@
+# Build artifacts
+/tmp/
+mediakey
+*.test
+*.out
+
+# Reports, keys and token files must never be delivered
+*.report.json
+media-key-report.json
+*.key
+*.pem
+*token*
+*.license
