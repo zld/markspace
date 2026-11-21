@@ -36,6 +36,11 @@ type FileReport struct {
 	Measure  loudness.Result
 	Verdict  policy.Verdict
 	Err      string
+	// FormatErr marks an error caused by the file's channel layout (a
+	// count with no default layout, or a map that does not fit it). These
+	// are configuration/format problems (exit 2) rather than corrupted
+	// files (exit 3).
+	FormatErr bool
 }
 
 // Summary aggregates a batch run.
@@ -43,6 +48,8 @@ type Summary struct {
 	Results []FileReport
 	// Failed counts files whose analysis aborted with an error.
 	Failed int
+	// FormatErrors counts those failures caused by an unusable layout.
+	FormatErrors int
 	// Passed counts files that measured and met every threshold.
 	Passed int
 	// NotPassed counts files that measured but missed a threshold.
@@ -104,6 +111,9 @@ func AnalyzeFiles(paths []string, opts Options) Summary {
 		switch {
 		case r.Err != "":
 			s.Failed++
+			if r.FormatErr {
+				s.FormatErrors++
+			}
 		case r.Verdict.Pass:
 			s.Passed++
 		default:
@@ -139,6 +149,7 @@ func analyzeOne(path string, opts Options) FileReport {
 	layout, err := loudness.Resolve(opts.LayoutName, r.Info.Channels, opts.Mapping)
 	if err != nil {
 		rep.Err = err.Error()
+		rep.FormatErr = errors.Is(err, loudness.ErrLayout)
 		return rep
 	}
 	rep.Layout = layout.Name

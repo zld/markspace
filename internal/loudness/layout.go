@@ -1,6 +1,7 @@
 package loudness
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -67,6 +68,15 @@ func InferLayout(channels int) (Layout, bool) {
 	return Layout{}, false
 }
 
+// ErrLayout marks errors caused by a channel count this tool cannot map, or
+// by a mapping that does not fit the file. These are input-format problems:
+// no measurement can be produced until the caller supplies a usable layout.
+var ErrLayout = errors.New("layout")
+
+func layoutErrorf(format string, args ...any) error {
+	return fmt.Errorf("%w: %s", ErrLayout, fmt.Sprintf(format, args...))
+}
+
 // ParseMapping parses an explicit weight list such as "1,1,1,0,1.41,1.41".
 // The number of weights must equal wantChannels, otherwise analysis is
 // refused: a mapping that does not cover every channel is a configuration
@@ -78,7 +88,7 @@ func ParseMapping(spec string, wantChannels int) (Layout, error) {
 	for _, raw := range parts {
 		item := strings.TrimSpace(raw)
 		if item == "" {
-			return Layout{}, fmt.Errorf("layout: empty weight in mapping %q", spec)
+			return Layout{}, layoutErrorf("empty weight in mapping %q", spec)
 		}
 		// Accept "name=weight" or a bare weight.
 		if i := strings.IndexByte(item, '='); i >= 0 {
@@ -89,15 +99,15 @@ func ParseMapping(spec string, wantChannels int) (Layout, error) {
 		}
 		w, err := strconv.ParseFloat(item, 64)
 		if err != nil {
-			return Layout{}, fmt.Errorf("layout: weight %q is not a number", item)
+			return Layout{}, layoutErrorf("weight %q is not a number", item)
 		}
 		if w < 0 || w > 10 || w != w {
-			return Layout{}, fmt.Errorf("layout: weight %v out of range", w)
+			return Layout{}, layoutErrorf("weight %v out of range", w)
 		}
 		weights = append(weights, w)
 	}
 	if len(weights) != wantChannels {
-		return Layout{}, fmt.Errorf("layout: mapping has %d weights but the file has %d channels",
+		return Layout{}, layoutErrorf("mapping has %d weights but the file has %d channels",
 			len(weights), wantChannels)
 	}
 	for i, n := range names {
@@ -113,26 +123,26 @@ func ParseMapping(spec string, wantChannels int) (Layout, error) {
 func Resolve(name string, channels int, mapping string) (Layout, error) {
 	if mapping != "" {
 		if name != "" && !strings.EqualFold(name, "custom") {
-			return Layout{}, fmt.Errorf("layout: --map cannot be combined with --layout %s", name)
+			return Layout{}, layoutErrorf("--map cannot be combined with --layout %s", name)
 		}
 		return ParseMapping(mapping, channels)
 	}
 	if name == "" || strings.EqualFold(name, "auto") {
 		l, ok := InferLayout(channels)
 		if !ok {
-			return Layout{}, fmt.Errorf("layout: %d channels has no default layout; supply --map", channels)
+			return Layout{}, layoutErrorf("%d channels has no default layout; supply --map", channels)
 		}
 		return l, nil
 	}
 	if strings.EqualFold(name, "custom") {
-		return Layout{}, fmt.Errorf("layout: --layout custom requires --map")
+		return Layout{}, layoutErrorf("--layout custom requires --map")
 	}
 	l, ok := LookupLayout(name)
 	if !ok {
-		return Layout{}, fmt.Errorf("layout: unknown layout %q", name)
+		return Layout{}, layoutErrorf("unknown layout %q", name)
 	}
 	if l.Channels != channels {
-		return Layout{}, fmt.Errorf("layout: %s expects %d channels but the file has %d",
+		return Layout{}, layoutErrorf("%s expects %d channels but the file has %d",
 			l.Name, l.Channels, channels)
 	}
 	return l, nil

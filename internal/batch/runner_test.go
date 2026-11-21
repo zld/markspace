@@ -125,6 +125,9 @@ func TestUnknownLayoutIsPerFileError(t *testing.T) {
 	if summary.Failed != 1 {
 		t.Fatalf("failed = %d, want 1 (errors: %q %q)", summary.Failed, summary.Results[0].Err, summary.Results[1].Err)
 	}
+	if summary.FormatErrors != 1 {
+		t.Errorf("format errors = %d, want 1", summary.FormatErrors)
+	}
 
 	// With an explicit map the same file measures.
 	mapped := AnalyzeFiles([]string{odd}, Options{

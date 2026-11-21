@@ -16,22 +16,22 @@ import (
 // true peak, plus a passing verdict.
 func sample() batch.FileReport {
 	m := loudness.Result{
-		IntegratedLUFS:  -23.2,
-		IntegratedValid: true,
-		GatedBlockCount: 20,
-		TotalBlockCount: 20,
+		IntegratedLUFS:    -23.2,
+		IntegratedValid:   true,
+		GatedBlockCount:   20,
+		TotalBlockCount:   20,
 		ShortTermPeakLUFS: -23.1,
 		ShortTermValid:    true,
 		TruePeak:          math.Pow(10, -3.5/20),
 		SamplePeak:        math.Pow(10, -4.0/20),
 	}
 	return batch.FileReport{
-		Path:    "song.wav",
-		Layout:  "stereo",
-		Format:  "pcm24/2ch/48000Hz",
+		Path:     "song.wav",
+		Layout:   "stereo",
+		Format:   "pcm24/2ch/48000Hz",
 		Channels: []string{"FL", "FR"},
-		Measure: m,
-		Verdict: policy.Verdict{Measured: true, IntegratedPass: true, TruePeakPass: true, Pass: true},
+		Measure:  m,
+		Verdict:  policy.Verdict{Measured: true, IntegratedPass: true, TruePeakPass: true, Pass: true},
 	}
 }
 
@@ -116,9 +116,9 @@ func TestJSONReportValuesAndBatchSummary(t *testing.T) {
 		t.Fatal(err)
 	}
 	var payload struct {
-		Files   int     `json:"files"`
-		Passed  int     `json:"passed"`
-		Result  string  `json:"result"`
+		Files   int    `json:"files"`
+		Passed  int    `json:"passed"`
+		Result  string `json:"result"`
 		Results []struct {
 			Integrated *float64 `json:"integrated_lufs"`
 			TruePeak   *float64 `json:"true_peak_dbtp"`
@@ -164,6 +164,7 @@ func TestExitCodes(t *testing.T) {
 	pass := batch.Summary{Results: []batch.FileReport{{}}, Passed: 1}
 	fail := batch.Summary{Results: []batch.FileReport{{}}, NotPassed: 1}
 	errs := batch.Summary{Results: []batch.FileReport{{}, {}}, Passed: 1, Failed: 1}
+	layoutErr := batch.Summary{Results: []batch.FileReport{{Err: "layout", FormatErr: true}}, Failed: 1, FormatErrors: 1}
 	for _, tc := range []struct {
 		name string
 		s    batch.Summary
@@ -174,6 +175,7 @@ func TestExitCodes(t *testing.T) {
 		{"threshold", fail, false, 1},
 		{"usage", pass, true, 2},
 		{"file error", errs, false, 3},
+		{"layout error", layoutErr, false, 2},
 	} {
 		if got := ExitCode(tc.s, tc.bad); got != tc.want {
 			t.Errorf("%s: exit = %d, want %d", tc.name, got, tc.want)

@@ -220,9 +220,12 @@ func WriteSingle(w io.Writer, r batch.FileReport, f Format) error {
 	return writeFileText(w, Build(r))
 }
 
-// ExitCode maps a batch summary to the documented process exit codes.
+// ExitCode maps a batch summary to the documented process exit codes. A
+// layout problem is a format/configuration error (2) and takes precedence
+// over a corrupt file (3): no amount of retrying the same command will fix
+// it without different arguments.
 func ExitCode(s batch.Summary, formatErr bool) int {
-	if formatErr {
+	if formatErr || s.FormatErrors > 0 {
 		return 2
 	}
 	if s.Failed > 0 {
