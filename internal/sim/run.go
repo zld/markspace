@@ -3,7 +3,6 @@ package sim
 import (
 	"crypto/sha256"
 	"encoding/binary"
-	"encoding/hex"
 
 	"mediacore/adapter"
 	"mediacore/audio"
@@ -12,35 +11,21 @@ import (
 	"mediacore/pipeline"
 )
 
-// Report is the printable, machine-parseable acceptance result. The JSON tags
-// match the exact field names required by the verification command.
-type Report struct {
-	SyncErrorMSP95       float64        `json:"sync_error_ms_p95"`
-	PacketRecoveryRate   float64        `json:"packet_recovery_rate"`
-	PipelineLatencyMSP95 float64        `json:"pipeline_latency_ms_p95"`
-	DriftPPMEstimate     float64        `json:"drift_ppm_estimate"`
-	AudioSamples         int64          `json:"audio_samples"`
-	EventSHA256          string         `json:"event_sha256"`
-	RecoveryCount        int64          `json:"recovery_count"`
-	Status               string         `json:"status"`
-	Paths                map[string]int `json:"paths"`
-}
-
-const (
-	statusOK            = "ok"
-	statusRejected      = "rejected"
-	statusMetricsFailed = "metrics_failed"
-	statusCheckpointBad = "checkpoint_mismatch"
-	reorderWindow       = 64
-)
-
 // senderRefs carries the active run's expanded-seq -> reference PTS table,
 // used once to anchor the ideal timeline on the first emitted audio event.
 var senderRefs map[int64]int64
 
-// Run drives one synthetic stream through the complete kernel and returns the
-// metrics report plus the audio PCM hash used for determinism checks.
+// Run drives one synthetic stream through the complete kernel in a single
+// uninterrupted pass and returns the metrics report.
 func Run(cfg Config) (Report, error) {
+	return runEngine(cfg, 0)
+}
+
+// RunWithCheckpoint processes the stream in two passes. It checkpoints after
+// checkpointAt packets, restores the state onto a fresh engine, then finishes
+// the remaining packets. The returned report must match the uninterrupted run;
+// the checkpoint path count is set to one for the acceptance path report.
+func RunWithCheckpoint(cfg Config, checkpointAt int) (Report, error) {
 	if err := validate(cfg); err != nil {
 		return Report{Status: statusRejected, Paths: map[string]int{}}, err
 	}
@@ -48,140 +33,47 @@ func Run(cfg Config) (Report, error) {
 	pkts := sender.Generate()
 	senderRefs = sender.RefByExpandedSeq
 
-	audioStream, _ := adapter.NewRTPStream(AudioSSRC, AudioClockRate, reorderWindow)
-	videoStream, _ := adapter.NewRTPStream(VideoSSRC, VideoClockRate, reorderWindow)
-	drift := clock.NewDriftEstimator(256, 250_000_000)
-	filler := pipeline.NewAudioFiller(1, AudioClockRate, AudioSamplesPerPkt)
-	videoRec := pipeline.NewVideoRecovery(2)
-	session := pipeline.NewSession()
-	meter := audio.NewLoudnessMeter(2) // post-layout stereo
-
-	var lostAudio, recoveredAudio int64
-	var badPackets, duplicatePackets, latePackets int64
-	var pcm []int16
-	var correction int64 // bounded drift servo offset, nanoseconds
-	// anchor maps the stream's first emitted expanded sequence onto its ideal
-	// reference PTS; every later ref is derived from the fixed 10 ms spacing.
-	var anchorSeq int64
-	var anchorRef int64
-	var anchored bool
-	// observedOrigin removes the sender's arbitrary non-zero RTP timestamp
-	// baseline so the observed timeline starts near zero, matching the ideal.
-	var observedOrigin int64
-	var originSet bool
-	idealPTS := func(expSeq int64) int64 {
-		if !anchored {
-			return 0
+	first := NewEngine(cfg)
+	for i, rp := range pkts {
+		if i == checkpointAt {
+			break
 		}
-		return anchorRef + (expSeq-anchorSeq)*10_000_000
+		first.ProcessPacket(rp)
 	}
-	normalizedObserved := func(rawPTS int64) int64 {
-		if !originSet {
-			observedOrigin, originSet = rawPTS, true
-		}
-		return rawPTS - observedOrigin
-	}
-
-	flushAll := func() {
-		evs, holes := audioStream.Flush()
-		for _, h := range holes {
-			lostAudio += h.End - h.Start
-			fills := filler.FillHole(h.Start, h.End, idealPTS)
-			for _, fe := range fills {
-				recoveryEvent(&fe, &recoveredAudio, session, &pcm, meter)
-			}
-		}
-		emitAudio(evs, session, drift, &correction, &pcm, meter, idealPTS,
-			&anchored, &anchorSeq, &anchorRef, normalizedObserved)
-		vEvts, vHoles := videoStream.Flush()
-		for _, h := range vHoles {
-			ev := videoRec.OpenHole(h.Start, h.End, h)
-			_ = session.Submit(recoveryEventToSession(2, ev))
-		}
-		emitVideo(vEvts, videoRec, session)
-	}
-
-	for _, rp := range pkts {
-		if rp.Data == nil {
-			// Dropped packets are reconciled through the stream's hole
-			// intervals (window expiry and flush); the sender-side drop is not
-			// counted separately to avoid double counting.
-			continue
-		}
-		if rp.Corrupt {
-			badPackets++
-		}
-		var res adapter.PushResult
-		if rp.IsVideo {
-			res = videoStream.Push(rp.Data)
-		} else {
-			res = audioStream.Push(rp.Data)
-		}
-		switch res.Kind {
-		case adapter.RTPBad:
-			badPackets++
-		case adapter.RTPDuplicate:
-			duplicatePackets++
-		case adapter.RTPLate:
-			latePackets++
-		}
-		if !rp.IsVideo {
-			// Establish the anchor from the first emitted event, then reconcile
-			// any holes already declared ahead of it.
-			emitAudio(res.Events, session, drift, &correction, &pcm, meter,
-				idealPTS, &anchored, &anchorSeq, &anchorRef, normalizedObserved)
-			for _, h := range audioStream.DrainHoles() {
-				lostAudio += h.End - h.Start
-				fills := filler.FillHole(h.Start, h.End, idealPTS)
-				for _, fe := range fills {
-					recoveryEvent(&fe, &recoveredAudio, session, &pcm, meter)
-				}
-			}
-		} else {
-			emitVideo(res.Events, videoRec, session)
-		}
-	}
-	flushAll()
-
-	// Audio normalisation stage: mono -> stereo, then loudness control.
-	norm, err := audio.Normalize(pcm, len(pcm), audio.Mono, audio.Stereo, audio.FillZero)
+	snap, err := first.Checkpoint()
 	if err != nil {
 		return Report{}, err
 	}
-	meter.Accumulate(norm.Out)
-	meter.ComputeGain()
-	processed := meter.Apply(norm.Out)
-	audioHash := hashPCM16(processed)
-	session.CreditAudioFrames(1, int64(len(pcm)))
-
-	m := session.Snapshot()
-	chainDigest, _ := hex.DecodeString(m.EventSHA256)
-	combined := sha256.Sum256(append(chainDigest, audioHash[:]...))
-
-	rate := 1.0
-	if lostAudio > 0 {
-		rate = float64(recoveredAudio) / float64(lostAudio)
+	restored, err := RestoreEngine(snap)
+	if err != nil {
+		return Report{}, err
 	}
-	syncP95 := nanosToMillis(m.SyncErrorP95Nanos)
-	latP95 := nanosToMillis(m.LatencyP95Nanos)
+	for i := checkpointAt; i < len(pkts); i++ {
+		restored.ProcessPacket(pkts[i])
+	}
+	restored.Flush()
+	rep := restored.Finish()
+	rep.Paths["checkpoints"] = 1
+	return rep, nil
+}
 
-	rep := Report{
-		SyncErrorMSP95: syncP95, PacketRecoveryRate: rate,
-		PipelineLatencyMSP95: latP95, DriftPPMEstimate: drift.DriftPPM(),
-		AudioSamples: int64(len(pcm)), EventSHA256: hex.EncodeToString(combined[:]),
-		RecoveryCount: m.RecoveryCount,
-		Paths: map[string]int{
-			"normal_events":    int(m.EventCount),
-			"corrupt_rejected": int(badPackets),
-			"duplicates":       int(duplicatePackets),
-			"late_rejected":    int(latePackets),
-			"checkpoints":      0,
-		},
+// runEngine is the shared uninterrupted implementation; checkpointCount is
+// reserved for callers that want to annotate the checkpoint path.
+func runEngine(cfg Config, checkpointCount int) (Report, error) {
+	if err := validate(cfg); err != nil {
+		return Report{Status: statusRejected, Paths: map[string]int{}}, err
 	}
-	rep.Status = statusOK
-	if syncP95 > 20 || rate < 0.99 || latP95 > 50 {
-		rep.Status = statusMetricsFailed
+	sender := NewSender(cfg)
+	pkts := sender.Generate()
+	senderRefs = sender.RefByExpandedSeq
+
+	e := NewEngine(cfg)
+	for _, rp := range pkts {
+		e.ProcessPacket(rp)
 	}
+	e.Flush()
+	rep := e.Finish()
+	rep.Paths["checkpoints"] = checkpointCount
 	return rep, nil
 }
 
@@ -247,8 +139,8 @@ func emitVideo(evs []adapter.RTPEvent, vr *pipeline.VideoRecovery, session *pipe
 		isKey := ev.Marker
 		when := media.Interval{Start: ev.PTSNanos, End: ev.PTSNanos + 33_333_333}
 		ok, recEvs := vr.AcceptFrame(isKey, ev.SeqExpanded, when)
-		for _, re := range recEvs {
-			_ = session.Submit(recoveryEventToSession(2, re))
+		for i := range recEvs {
+			_ = session.Submit(recoveryEventToSession(2, recEvs[i]))
 		}
 		if ok {
 			_ = session.Submit(pipeline.Event{
