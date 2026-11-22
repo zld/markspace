@@ -283,9 +283,8 @@ func writeStss(w *mp4.Writer, spec MP4Spec) error {
 			}
 		}
 	}
-	if len(nums) == 0 {
-		return nil
-	}
+	// Always emit the stss box (even when empty) so the scanner distinguishes
+	// "explicitly no sync samples" from "stss absent => all sync".
 	return leafBox(w, mp4.BoxTypeStss(), &mp4.Stss{
 		EntryCount:   uint32(len(nums)),
 		SampleNumber: nums,

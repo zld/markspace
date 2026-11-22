@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "input_digest": "5660f494f6855f60827d2ba3cd71dd9d8b2985766abbc16ab7cb4220c7a936f6",
+  "next_sample": 600,
+  "samples_done": 600,
+  "bytes_read": 4800,
+  "logical_bytes": 4500000,
+  "batches_done": 5,
+  "output_digest": "1f6a2cb83eccebcde4e23d36ec7d5e21e5a81a8e447c76e6ff13160daa976291"
+}

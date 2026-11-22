@@ -98,7 +98,7 @@ func expandSizes(stsz *mp4.Stsz) ([]uint32, error) {
 func extractSync(r io.ReadSeeker, stbl *mp4.BoxInfo, count uint32, cfg Config) (map[uint32]struct{}, error) {
 	payloads, err := mp4.ExtractBoxWithPayload(r, stbl, mp4.BoxPath{mp4.BoxTypeStss()})
 	if err != nil {
-		// No stss: every sample is a sync sample per ISO 14496-12.
+		// No stss box at all: every sample is a sync sample per ISO 14496-12.
 		sync := make(map[uint32]struct{}, count)
 		for n := uint32(1); n <= count; n++ {
 			sync[n] = struct{}{}
@@ -108,6 +108,10 @@ func extractSync(r io.ReadSeeker, stbl *mp4.BoxInfo, count uint32, cfg Config) (
 	stss := payloads[0].Payload.(*mp4.Stss)
 	if stss.EntryCount > cfg.MaxTableEntries {
 		return nil, clock.ErrRecoverablef("scan.stss", "entry_count %d exceeds cap", stss.EntryCount)
+	}
+	if int(stss.EntryCount) != len(stss.SampleNumber) {
+		return nil, clock.ErrRecoverablef("scan.stss", "entry_count %d != rows %d",
+			stss.EntryCount, len(stss.SampleNumber))
 	}
 	sync := make(map[uint32]struct{}, stss.EntryCount)
 	var last uint32
@@ -121,5 +125,6 @@ func extractSync(r io.ReadSeeker, stbl *mp4.BoxInfo, count uint32, cfg Config) (
 		last = num
 		sync[num] = struct{}{}
 	}
+	// An explicit empty stss means no sync samples, not "all sync".
 	return sync, nil
 }

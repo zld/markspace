@@ -42,7 +42,7 @@ func Run(ctx context.Context, cfg Config, src Sources, cpPath, outputPath, mp4Pa
 		if err := ctx.Err(); err != nil {
 			return &counters, cp, clock.ErrCanceled("stream.run", err)
 		}
-		batch, batchBytes, err := readBatch(ctx, sem, cfg, src, cp.NextSample)
+		batch, physBytes, err := readBatch(ctx, sem, cfg, src, cp.NextSample)
 		if err != nil {
 			return &counters, cp, err
 		}
@@ -55,10 +55,10 @@ func Run(ctx context.Context, cfg Config, src Sources, cpPath, outputPath, mp4Pa
 		for _, rv := range batch.Records {
 			oh.Write(rv)
 		}
-		sem.Release(batchBytes)
+		sem.Release(batch.reserved)
 		counters.BatchesEmitted++
 		counters.SamplesEmitted += uint64(len(batch.Records))
-		counters.BytesRead += batchBytes
+		counters.BytesRead += physBytes
 		counters.LogicalBytes += logical
 		cp.NextSample = batch.FirstSample + uint32(len(batch.Records))
 		cp.SamplesDone = counters.SamplesEmitted
@@ -74,14 +74,17 @@ func Run(ctx context.Context, cfg Config, src Sources, cpPath, outputPath, mp4Pa
 	return &counters, cp, nil
 }
 
-// readBatch assembles one batch under both caps, acquiring byte budget before
-// any mdat read. Every offset/size comes from a verified index record and is
+// readBatch assembles one batch under both caps, acquiring byte budget
+// before any mdat read. Budget is accounted in *logical wire bytes* (the
+// network payload size that drives real memory pressure); every offset/size
+// used for the physical read comes from a verified index record and is
 // re-checked against the file before reading.
 func readBatch(ctx context.Context, sem *Semaphore, cfg Config, src Sources,
 	start uint32) (Batch, int64, error) {
 	var (
-		batch     Batch
-		batchSize int64
+		batch      Batch
+		physBytes  int64
+		wireBytes  int64
 	)
 	batch.FirstSample = start
 	i := start
@@ -91,15 +94,16 @@ func readBatch(ctx context.Context, sem *Semaphore, cfg Config, src Sources,
 			return batch, 0, err
 		}
 		phys := int64(rec.Size)
-		if batchSize > 0 && batchSize+phys > cfg.MaxBatchBytes {
+		wire := int64(rec.WireSize)
+		if wireBytes > 0 && wireBytes+wire > cfg.MaxBatchBytes {
 			break
 		}
-		if err := sem.Acquire(ctx, phys); err != nil {
+		if err := sem.Acquire(ctx, wire); err != nil {
 			return batch, 0, err
 		}
 		payload, err := readPayload(src.MP4, rec)
 		if err != nil {
-			sem.Release(phys)
+			sem.Release(wire)
 			return batch, 0, err
 		}
 		batch.Records = append(batch.Records, RecordView{
@@ -112,11 +116,15 @@ func readBatch(ctx context.Context, sem *Semaphore, cfg Config, src Sources,
 			Sync:        rec.IsSync(),
 			Payload:     payload,
 		})
-		batchSize += phys
+		physBytes += phys
+		wireBytes += wire
 		i++
 	}
 	batch.Index = int(start) / cfg.MaxBatchSamples
-	return batch, batchSize, nil
+	// Return the wire reservation for semaphore release; physical bytes are
+	// reported separately in counters.
+	batch.reserved = wireBytes
+	return batch, physBytes, nil
 }
 
 func readPayload(f *os.File, rec index.Record) ([]byte, error) {

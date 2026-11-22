@@ -71,14 +71,20 @@ func WriteBrokenIndex(path string, hdrLike []byte, recordCount uint32) error {
 	return os.WriteFile(path, data, 0o644)
 }
 
+// allSampleNumbers returns the 1-based number of every sample.
+func allSampleNumbers(count uint32) []uint32 {
+	out := make([]uint32, count)
+	for i := range out {
+		out[i] = uint32(i + 1)
+	}
+	return out
+}
+
 // ManifestForNoKeyframe forces every sync flag off, so a random access past
 // sample zero has no decodable anchor.
 func ManifestForNoKeyframe(m *scan.Manifest) *scan.Manifest {
 	cp := *m
-	cp.ForceNonSync = make([]uint32, m.SampleCount)
-	for i := range cp.ForceNonSync {
-		cp.ForceNonSync[i] = uint32(i + 1)
-	}
+	cp.ForceNonSync = allSampleNumbers(m.SampleCount)
 	return &cp
 }
 

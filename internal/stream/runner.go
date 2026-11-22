@@ -40,9 +40,12 @@ func (c Config) Validate() error {
 
 // Batch is the unit handed to the consumer.
 type Batch struct {
-	Index      int // 0-based batch ordinal
+	Index       int // 0-based batch ordinal
 	FirstSample uint32
-	Records    []RecordView
+	Records     []RecordView
+	// reserved is the total logical wire-byte budget held by this batch in
+	// the backpressure semaphore.
+	reserved int64
 }
 
 // RecordView is the runner's read-only projection of an index record,
