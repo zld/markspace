@@ -34,6 +34,8 @@ type BatchResult struct {
 	Recovered      bool
 	SkippedBlocks  int
 	TornTail       bool
+	// Problems holds non-fatal faults encountered while planning or hashing.
+	Problems []error
 }
 
 // RunBatch processes planned segments in blocks. Committed blocks are skipped
@@ -46,12 +48,8 @@ func RunBatch(planner *Planner, reqs []Request, store *checkpoint.Store, opt Bat
 	if err != nil && len(planned) == 0 {
 		return nil, err
 	}
-	planErr := err
 	res := &BatchResult{TornTail: store.Recovered()}
-	var problems []error
-	if planErr != nil {
-		problems = append(problems, planErr)
-	}
+	res.Problems = collectProblems(err)
 
 	blocks := planBlocks(planned, opt.SamplesPerBlock)
 	done := 0
@@ -70,7 +68,7 @@ func RunBatch(planner *Planner, reqs []Request, store *checkpoint.Store, opt Bat
 		for _, s := range pending {
 			seg, err := planner.Materialize(s)
 			if err != nil {
-				problems = append(problems, err)
+				res.Problems = append(res.Problems, err)
 				continue
 			}
 			res.Segments = append(res.Segments, seg)
@@ -105,10 +103,21 @@ func RunBatch(planner *Planner, reqs []Request, store *checkpoint.Store, opt Bat
 	}
 	res.Fingerprints = uniqueFingerprints(res.Segments, res.Decisions)
 	res.ManifestSHA256 = fingerprint.ManifestHash(res.Fingerprints)
-	if len(problems) > 0 {
-		return res, fault.New("pipeline.batch", fault.KindTruncated, errors.Join(problems...)).Recovered()
+	if len(res.Problems) > 0 {
+		return res, fault.New("pipeline.batch", fault.KindTruncated, errors.Join(res.Problems...)).Recovered()
 	}
 	return res, nil
+}
+
+func collectProblems(err error) []error {
+	if err == nil {
+		return nil
+	}
+	var joined interface{ Unwrap() []error }
+	if errors.As(err, &joined) {
+		return joined.Unwrap()
+	}
+	return []error{err}
 }
 
 func recordOf(s Segment) checkpoint.Record {
