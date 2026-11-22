@@ -75,7 +75,7 @@ func recheckResume(dir string, m *verify.Manifest) error {
 	if len(reqs) == 0 {
 		return fault.Errorf("verify.resume", fault.KindVerify, "resumed run has no requests").Fatal()
 	}
-	res, err := pipeline.RunBatch(planner, reqs, st, pipeline.BatchOptions{BlockSize: 4})
+	res, err := pipeline.RunBatch(planner, reqs, st, pipeline.BatchOptions{SamplesPerBlock: 120})
 	if err != nil && res == nil {
 		return fault.New("verify.resume", fault.KindVerify, err).WithPath(video)
 	}

@@ -70,7 +70,7 @@ func TestBatchCheckpointsEvery128Samples(t *testing.T) {
 	if len(plans) < 20 {
 		t.Fatalf("need many segments, got %d", len(plans))
 	}
-	res, err := RunBatch(p, []Request{{TrackID: 1, StartNS: 0, EndNS: 300 * 100_000_000, MaxSpanNS: 1_000_000_000}}, st, BatchOptions{BlockSize: 4})
+	res, err := RunBatch(p, []Request{{TrackID: 1, StartNS: 0, EndNS: 300 * 100_000_000, MaxSpanNS: 1_000_000_000}}, st, BatchOptions{SamplesPerBlock: 24})
 	if err != nil && len(res.Segments) == 0 {
 		t.Fatalf("batch: %v", err)
 	}
@@ -101,11 +101,15 @@ func TestBatchResumeMatchesContinuousRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const blockSize = 7
-	if len(plans) < 3*blockSize {
-		t.Fatalf("need >=3 blocks, have %d plans", len(plans))
+	const blockSize = 8 // samples per block, so many plans group into blocks
+	total := 0
+	for _, p := range plans {
+		total += p.SampleCount
 	}
-	continuous, err := RunBatch(p, reqs, st, BatchOptions{BlockSize: blockSize})
+	if total < 3*blockSize {
+		t.Fatalf("need >=3 blocks, have %d samples over %d plans", total, len(plans))
+	}
+	continuous, err := RunBatch(p, reqs, st, BatchOptions{SamplesPerBlock: blockSize})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +120,7 @@ func TestBatchResumeMatchesContinuousRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	interrupted, err := RunBatch(p, reqs, st1, BatchOptions{BlockSize: blockSize, StopAfterBlock: 2})
+	interrupted, err := RunBatch(p, reqs, st1, BatchOptions{SamplesPerBlock: blockSize, StopAfterBlock: 2})
 	if err == nil {
 		t.Fatal("expected forced interruption")
 	}
@@ -133,7 +137,7 @@ func TestBatchResumeMatchesContinuousRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer st2.Close()
-	resumed, err := RunBatch(p, reqs, st2, BatchOptions{BlockSize: blockSize})
+	resumed, err := RunBatch(p, reqs, st2, BatchOptions{SamplesPerBlock: blockSize})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -11,13 +11,18 @@ import (
 	"github.com/pairwise/mediad/internal/fingerprint"
 )
 
-// BlockSize is the number of segments committed per checkpoint block.
-const BlockSize = 128
+// SamplesPerBlock is the number of media samples committed per checkpoint
+// block. The journal is fsynced and the checkpoint published atomically at
+// this boundary, so an interruption replays at most the block in flight.
+const SamplesPerBlock = 128
 
 // BatchOptions configures a batch run.
 type BatchOptions struct {
-	BlockSize      int // defaults to 128
-	StopAfterBlock int // >0 simulates a forced interruption after this many blocks
+	// SamplesPerBlock overrides the 128-sample commit budget. Segments are
+	// never split, so a block may exceed the budget by its last segment.
+	SamplesPerBlock int
+	// StopAfterBlock simulates a forced interruption after this many blocks.
+	StopAfterBlock int
 }
 
 // BatchResult reports what a batch run produced.
@@ -34,8 +39,8 @@ type BatchResult struct {
 // RunBatch processes planned segments in blocks. Committed blocks are skipped
 // on a resumed run, and the resulting manifest must equal a continuous run.
 func RunBatch(planner *Planner, reqs []Request, store *checkpoint.Store, opt BatchOptions) (*BatchResult, error) {
-	if opt.BlockSize <= 0 {
-		opt.BlockSize = BlockSize
+	if opt.SamplesPerBlock <= 0 {
+		opt.SamplesPerBlock = SamplesPerBlock
 	}
 	planned, err := planner.Plan(reqs)
 	if err != nil && len(planned) == 0 {
@@ -48,7 +53,7 @@ func RunBatch(planner *Planner, reqs []Request, store *checkpoint.Store, opt Bat
 		problems = append(problems, planErr)
 	}
 
-	blocks := chunk(planned, opt.BlockSize)
+	blocks := planBlocks(planned, opt.SamplesPerBlock)
 	done := 0
 	for bi, block := range blocks {
 		if store.Completed(bi) {
@@ -159,17 +164,23 @@ func recordKey(r checkpoint.Record) string {
 	return fmt.Sprintf("%d|%d|%d|%d", r.TrackID, r.StartNS, r.EndNS, r.FirstSample)
 }
 
-func chunk[T any](in []T, n int) [][]T {
-	var out [][]T
-	for len(in) > 0 {
-		k := n
-		if k > len(in) {
-			k = len(in)
-		}
-		out = append(out, in[:k])
-		in = in[k:]
+// planBlocks groups consecutive segments until the accumulated sample count
+// reaches budget. Plans are deterministic, so a resumed run derives the same
+// block boundaries and can match its journal against them.
+func planBlocks(plans []SegmentPlan, budget int) [][]SegmentPlan {
+	if budget <= 0 {
+		budget = SamplesPerBlock
 	}
-	return out
+	var blocks [][]SegmentPlan
+	start, samples := 0, 0
+	for i, p := range plans {
+		samples += p.SampleCount
+		if samples >= budget || i == len(plans)-1 {
+			blocks = append(blocks, plans[start:i+1])
+			start, samples = i+1, 0
+		}
+	}
+	return blocks
 }
 
 func sortSegments(segs []Segment) {

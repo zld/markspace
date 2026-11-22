@@ -178,20 +178,20 @@ func runBatchComparison(mediaDir string, names []string, m *verify.Manifest, out
 	if len(reqs) == 0 {
 		return nil
 	}
-	const blockSize = 4
+	const samplesPerBlock = 50 // forces several durable blocks in the demo file
 	continuous := filepath.Join(out, "state", "continuous")
 	resumed := filepath.Join(out, "state", "resumed")
 	if err := os.RemoveAll(filepath.Join(out, "state")); err != nil {
 		return fault.New("demo.state", fault.KindIO, err).WithPath(out)
 	}
-	contHash, err := batchHash(planner, reqs, continuous, blockSize, 0)
+	contHash, err := batchHash(planner, reqs, continuous, samplesPerBlock, 0)
 	if err != nil {
 		return err
 	}
-	if err := batchInterrupt(planner, reqs, resumed, blockSize); err != nil {
+	if err := batchInterrupt(planner, reqs, resumed, samplesPerBlock); err != nil {
 		return err
 	}
-	resHash, err := batchHash(planner, reqs, resumed, blockSize, 0)
+	resHash, err := batchHash(planner, reqs, resumed, samplesPerBlock, 0)
 	if err != nil {
 		return err
 	}
@@ -205,25 +205,25 @@ func runBatchComparison(mediaDir string, names []string, m *verify.Manifest, out
 	return nil
 }
 
-func batchHash(p *pipeline.Planner, reqs []pipeline.Request, dir string, blockSize, stop int) (string, error) {
+func batchHash(p *pipeline.Planner, reqs []pipeline.Request, dir string, samplesPerBlock, stop int) (string, error) {
 	st, err := checkpoint.Open(dir)
 	if err != nil {
 		return "", err
 	}
 	defer st.Close()
-	res, err := pipeline.RunBatch(p, reqs, st, pipeline.BatchOptions{BlockSize: blockSize, StopAfterBlock: stop})
+	res, err := pipeline.RunBatch(p, reqs, st, pipeline.BatchOptions{SamplesPerBlock: samplesPerBlock, StopAfterBlock: stop})
 	if err != nil && res == nil {
 		return "", err
 	}
 	return res.ManifestSHA256, nil
 }
 
-func batchInterrupt(p *pipeline.Planner, reqs []pipeline.Request, dir string, blockSize int) error {
+func batchInterrupt(p *pipeline.Planner, reqs []pipeline.Request, dir string, samplesPerBlock int) error {
 	st, err := checkpoint.Open(dir)
 	if err != nil {
 		return err
 	}
-	_, runErr := pipeline.RunBatch(p, reqs, st, pipeline.BatchOptions{BlockSize: blockSize, StopAfterBlock: 1})
+	_, runErr := pipeline.RunBatch(p, reqs, st, pipeline.BatchOptions{SamplesPerBlock: samplesPerBlock, StopAfterBlock: 1})
 	if cerr := st.Close(); cerr != nil {
 		return cerr
 	}
