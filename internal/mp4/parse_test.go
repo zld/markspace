@@ -267,3 +267,52 @@ func TestParseRejectsDepthAndLimits(t *testing.T) {
 		t.Fatalf("huge file accepted")
 	}
 }
+
+func TestParseRejectsBoxSizeOneWithoutLargeHeader(t *testing.T) {
+	data, _, _ := fixture(t)
+	bad := append([]byte(nil), data...)
+	// ftyp declares a 64-bit size but the file ends immediately after the
+	// 8-byte header.
+	binary.BigEndian.PutUint32(bad[0:4], 1)
+	bad = bad[:8]
+	if _, err := ParseFile(bad); err == nil {
+		t.Fatal("truncated large-size header accepted")
+	}
+}
+
+func TestParseRejectsZeroLengthBox(t *testing.T) {
+	// A box of size 8 with an empty payload is legal; size 0 means "to EOF" and
+	// must not be allowed to swallow siblings silently at nested depth.
+	f := []byte{0, 0, 0, 8}
+	f = append(f, []byte("free")...)
+	if _, err := ParseFile(f); err == nil {
+		t.Fatal("file without moov accepted")
+	}
+}
+
+func TestParseEnforcesSampleSizeLimit(t *testing.T) {
+	tracks := []TrackSpec{{ID: 1, Handler: "vide", Timescale: 90000, Width: 64, Height: 64}}
+	payload := bytes.Repeat([]byte{7}, MaxSampleEntry+1)
+	_, err := BuildFile(tracks, []SegmentSpec{{Sequence: 1,
+		Samples: []SampleSpec{{TrackID: 1, Duration: 1, Sync: true, Payload: payload}}}})
+	if !errors.Is(err, ErrIllegalLength) {
+		t.Fatalf("oversized sample built: %v", err)
+	}
+}
+
+func TestParseRejectsEmsgOutsideProfile(t *testing.T) {
+	tracks := []TrackSpec{{ID: 1, Handler: "vide", Timescale: 90000, Width: 64, Height: 64}}
+	segs := []SegmentSpec{{Sequence: 1, Samples: []SampleSpec{
+		{TrackID: 1, Duration: 1, Sync: true, Payload: []byte{1}}}}}
+	data, err := BuildFile(tracks, segs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Inject a version-0 emsg at the top level: the restricted profile only
+	// accepts version 1 absolute presentation times.
+	emsg := []byte{0, 0, 0, 16, 'e', 'm', 's', 'g', 0, 0, 0, 0, 1, 0, 0, 0}
+	bad := append(append([]byte(nil), data...), emsg...)
+	if _, err := ParseFile(bad); !errors.Is(err, meta.ErrMetaFormat) {
+		t.Fatalf("v0 emsg accepted: %v", err)
+	}
+}

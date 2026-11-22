@@ -167,3 +167,47 @@ func TestCheckDeclaredDuration(t *testing.T) {
 		t.Fatalf("zero timescale: %v", err)
 	}
 }
+
+func TestTimelineAcrossFullTimestampWrap(t *testing.T) {
+	tl, err := NewTimeline(1, 90000, 0xFFFFF000, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The epoch sits 0x1000 ticks before the 32-bit boundary, so mapping
+	// 0x2000 after the wrap advances the timeline by 0x1000+0x2000 = 0x3000.
+	if _, err := tl.Map(0xFFFFF000); err != nil {
+		t.Fatal(err)
+	}
+	m, err := tl.Map(0x00002000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Unified != 0x3000 {
+		t.Fatalf("unified %d, want %d", m.Unified, 0x3000)
+	}
+	if !m.Wrapped {
+		t.Fatalf("wrap not flagged: %+v", m)
+	}
+	if m.Backwards {
+		t.Fatalf("wrapped sample marked backwards: %+v", m)
+	}
+	st := tl.Stats()
+	if st.Wraps != 1 || st.NonMonotonic != 0 {
+		t.Fatalf("stats %+v", st)
+	}
+}
+
+func TestConvertRejectsInt64OverflowBothDirections(t *testing.T) {
+	if _, err := Convert(math.MinInt64, 1, 90000); !errors.Is(err, ErrOverflow) {
+		t.Fatalf("negative overflow missed: %v", err)
+	}
+	// 2^62 ticks at 1 Hz scaled into 90 kHz cannot fit in int64.
+	if _, err := Convert(1<<62, 1, 90000); !errors.Is(err, ErrOverflow) {
+		t.Fatalf("positive overflow missed: %v", err)
+	}
+	// Near-boundary values that do fit must convert exactly.
+	v, err := Convert(1<<40, 1, 1)
+	if err != nil || v != 1<<40 {
+		t.Fatalf("identity conversion failed: %d %v", v, err)
+	}
+}
