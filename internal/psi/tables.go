@@ -83,6 +83,35 @@ func ParsePMT(section []byte) (*PMT, error) {
 	return pmt, nil
 }
 
+// parsePATSet merges all sections of a completed PAT set.
+func parsePATSet(set *sectionSet) (*PAT, error) {
+	merged := &PAT{Version: set.version, Programs: map[uint16]uint16{}}
+	for i := 0; i <= set.last; i++ {
+		pat, err := ParsePAT(set.sections[i])
+		if err != nil {
+			return nil, err
+		}
+		for program, pid := range pat.Programs {
+			merged.Programs[program] = pid
+		}
+	}
+	return merged, nil
+}
+
+// parsePMTSet merges all sections of a completed PMT set.
+func parsePMTSet(set *sectionSet) (*PMT, error) {
+	merged := &PMT{Version: set.version}
+	for i := 0; i <= set.last; i++ {
+		pmt, err := ParsePMT(set.sections[i])
+		if err != nil {
+			return nil, err
+		}
+		merged.Program = pmt.Program
+		merged.Streams = append(merged.Streams, pmt.Streams...)
+	}
+	return merged, nil
+}
+
 // IncompleteUpdate describes a table version that started arriving but
 // never completed (or failed CRC) before the input ended. The previous
 // mapping remained in effect.
@@ -195,7 +224,7 @@ func (a *Assembler) FeedSection(pid uint16, section []byte, packetIndex int) (mo
 		if !a.patPending.add(h, section) {
 			return model.Snapshot{}, false
 		}
-		pat, err := ParsePAT(section)
+		pat, err := parsePATSet(a.patPending)
 		if err != nil {
 			a.corrupted++
 			return model.Snapshot{}, false
@@ -230,7 +259,7 @@ func (a *Assembler) FeedSection(pid uint16, section []byte, packetIndex int) (mo
 		if !pending.add(h, section) {
 			return model.Snapshot{}, false
 		}
-		pmt, err := ParsePMT(section)
+		pmt, err := parsePMTSet(pending)
 		if err != nil {
 			a.corrupted++
 			return model.Snapshot{}, false
