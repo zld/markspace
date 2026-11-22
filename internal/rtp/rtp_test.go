@@ -41,29 +41,60 @@ func TestUnmarshalMarshalRoundtrip(t *testing.T) {
 }
 
 func TestSequenceExtensionAndWrap(t *testing.T) {
-	var e Extender
+	// With warmup=1 the first wire sequence is the origin (ext zero).
+	d := NewDemuxWarmup(1)
 	seq := []uint16{65534, 65535, 0, 1, 2}
 	want := []uint64{0, 1, 2, 3, 4}
 	for i, s := range seq {
-		if got := e.Extend(s); got != want[i] {
-			t.Errorf("extend %d => %d, want %d", s, got, want[i])
+		p, ok := d.PushOne(Packet{SSRC: 1, PT: 96, Seq: s})
+		if !ok {
+			t.Fatalf("warmup=1 must release immediately at %d", s)
+		}
+		if p.ExtSeq != want[i] {
+			t.Errorf("extend %d => %d, want %d", s, p.ExtSeq, want[i])
 		}
 	}
-	var e2 Extender
-	e2.Extend(10)
-	if got := e2.Extend(10); got != 0 { // duplicate stays at same ext
-		t.Errorf("duplicate ext = %d, want 0", got)
+	// A duplicate wire sequence maps to the same extended value.
+	d2 := NewDemuxWarmup(1)
+	d2.PushOne(Packet{SSRC: 2, PT: 96, Seq: 10})
+	dup, _ := d2.PushOne(Packet{SSRC: 2, PT: 96, Seq: 10})
+	if dup.ExtSeq != 0 {
+		t.Errorf("duplicate ext = %d, want 0", dup.ExtSeq)
 	}
-	if got := e2.Extend(9); got != ^uint64(0) { // backward jump => reset cycle
-		t.Errorf("reset ext = %d, want max uint64", got)
+	// A later packet extends above the origin without negative underflow.
+	later, _ := d2.PushOne(Packet{SSRC: 2, PT: 96, Seq: 100})
+	if later.ExtSeq != 90 {
+		t.Errorf("later ext = %d, want 90", later.ExtSeq)
+	}
+}
+
+func TestWarmupAnchorsMinimumSequence(t *testing.T) {
+	// First three arrivals are out of order; warmup=3 picks the minimum as
+	// origin so every extended value is non-negative and stable.
+	d := NewDemuxWarmup(3)
+	if out := d.Push(Packet{SSRC: 9, PT: 96, Seq: 60}); out != nil {
+		t.Fatal("first warm-up packet must be buffered")
+	}
+	if out := d.Push(Packet{SSRC: 9, PT: 96, Seq: 62}); out != nil {
+		t.Fatal("second warm-up packet must be buffered")
+	}
+	out := d.Push(Packet{SSRC: 9, PT: 96, Seq: 58}) // completes window, origin=58
+	if len(out) != 3 {
+		t.Fatalf("warm-up flush = %d packets", len(out))
+	}
+	want := map[uint16]uint64{60: 2, 62: 4, 58: 0}
+	for _, p := range out {
+		if p.ExtSeq != want[p.Seq] {
+			t.Errorf("seq %d ext = %d, want %d", p.Seq, p.ExtSeq, want[p.Seq])
+		}
 	}
 }
 
 func TestDemuxSeparation(t *testing.T) {
-	d := NewDemux()
-	a := d.Push(Packet{SSRC: 1, PT: 96, Seq: 5})
-	b := d.Push(Packet{SSRC: 2, PT: 96, Seq: 5})
-	c := d.Push(Packet{SSRC: 1, PT: 96, Seq: 6})
+	d := NewDemuxWarmup(1)
+	a, _ := d.PushOne(Packet{SSRC: 1, PT: 96, Seq: 5})
+	b, _ := d.PushOne(Packet{SSRC: 2, PT: 96, Seq: 5})
+	c, _ := d.PushOne(Packet{SSRC: 1, PT: 96, Seq: 6})
 	if a.ExtSeq != 0 || b.ExtSeq != 0 || c.ExtSeq != 1 {
 		t.Fatalf("ext seqs: %d %d %d", a.ExtSeq, b.ExtSeq, c.ExtSeq)
 	}
@@ -74,9 +105,12 @@ func TestDemuxSeparation(t *testing.T) {
 
 func TestJitterReorderDuplicateLate(t *testing.T) {
 	buf := NewJitterBuffer(JitterConfig{Window: 4, MaxPackets: 64, TickNS: 1000}, nil)
-	d := NewDemux()
+	d := NewDemuxWarmup(1)
 	push := func(seq uint16, ts uint32) {
-		p := d.Push(Packet{SSRC: 7, PT: 96, Seq: seq, RTPTime: ts, Nanos: int64(seq) * 1000})
+		p, ok := d.PushOne(Packet{SSRC: 7, PT: 96, Seq: seq, RTPTime: ts, Nanos: int64(seq) * 1000})
+		if !ok {
+			t.Fatalf("warmup=1 must release seq %d", seq)
+		}
 		buf.Push(p)
 	}
 	// 0,1 then 3 (hole at 2), duplicate 3, late re-send of 0 after advance.
@@ -109,7 +143,10 @@ func TestJitterReorderDuplicateLate(t *testing.T) {
 		}
 	}
 	// Out-of-window late arrival.
-	late := d.Push(Packet{SSRC: 7, PT: 96, Seq: 0, RTPTime: 0, Nanos: 0, ExtSeq: 0})
+	late, ok := d.PushOne(Packet{SSRC: 7, PT: 96, Seq: 0, RTPTime: 0, Nanos: 0})
+	if !ok {
+		t.Fatal("late packet should extend")
+	}
 	buf.Push(late)
 	ev2 := buf.Flush()
 	if len(ev2) != 1 || ev2[0].Kind != EventLate {
@@ -118,10 +155,9 @@ func TestJitterReorderDuplicateLate(t *testing.T) {
 }
 
 func TestXORSingleRecovery(t *testing.T) {
-	d := NewDemux()
 	xr := NewXORRepair()
 	// Group covers extended sequences 0,1,2; parity = XOR of their payloads.
-	p10 := d.Push(Packet{SSRC: 9, PT: 96, Seq: 10, Payload: []byte{0x10, 0x20}})
+	p10 := Packet{SSRC: 9, PT: 96, Seq: 10, ExtSeq: 0, Nanos: 0, Payload: []byte{0x10, 0x20}}
 	parity := []byte{0x10 ^ 0x30 ^ 0x50, 0x20 ^ 0x40 ^ 0x60}
 	if err := xr.AddGroup(ParityGroup{Members: []uint64{0, 1, 2}, RTPTime: 11000, Parity: parity}); err != nil {
 		t.Fatal(err)
@@ -180,12 +216,11 @@ func TestXORDoubleLossBecomesGap(t *testing.T) {
 func TestThroughput100k(t *testing.T) {
 	const n = 100_000
 	buf := NewJitterBuffer(JitterConfig{Window: 64, MaxPackets: 4096, TickNS: 1000}, nil)
-	d := NewDemux()
 	begin := time.Now().UnixNano()
 	for i := 0; i < n; i++ {
-		p := d.Push(Packet{SSRC: 42, PT: 97, Seq: uint16(i),
+		// Extended sequence is pre-computed; this benchmark measures buffer cost.
+		buf.Push(Packet{SSRC: 42, PT: 97, Seq: uint16(i),
 			ExtSeq: uint64(i), Nanos: int64(i) * 1000, Payload: []byte{byte(i)}})
-		buf.Push(p)
 	}
 	events := buf.Flush()
 	elapsed := time.Now().UnixNano() - begin
@@ -199,18 +234,21 @@ func TestThroughput100k(t *testing.T) {
 	t.Logf("throughput=%d packets/s elapsed_ms=%d", pps, elapsed/1_000_000)
 }
 
-// TestBufferMemoryBound ensures hard packet caps force draining rather than
-// unbounded growth under a pathological never-closing hole.
+// TestBufferMemoryBound ensures the hard packet cap forces draining rather
+// than unbounded growth when packets arrive faster than the window releases.
 func TestBufferMemoryBound(t *testing.T) {
-	buf := NewJitterBuffer(JitterConfig{Window: 8, MaxPackets: 16, TickNS: 1000}, nil)
-	for i := uint64(0); i < 1000; i++ {
-		// every packet is one window ahead of the next expected => gaps drain
-		buf.Push(Packet{SSRC: 5, PT: 96, ExtSeq: i * 20, Nanos: int64(i) * 20_000})
+	buf := NewJitterBuffer(JitterConfig{Window: 4, MaxPackets: 16, TickNS: 1000}, nil)
+	// Dense, in-order stream: far more packets than the cap, all within range.
+	for i := uint64(0); i < 2000; i++ {
+		buf.Push(Packet{SSRC: 5, PT: 96, ExtSeq: i, Nanos: int64(i) * 1000})
 	}
 	for _, s := range buf.streams {
 		if len(s.pending) > 16 {
 			t.Fatalf("pending %d exceeds MaxPackets", len(s.pending))
 		}
 	}
-	_ = buf.Flush()
+	events := buf.Flush()
+	if got := CountStats(events).Packets; got != 2000 {
+		t.Fatalf("delivered packets = %d, want 2000", got)
+	}
 }
