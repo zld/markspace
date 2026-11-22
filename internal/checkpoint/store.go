@@ -7,8 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -280,10 +278,3 @@ func writeFileAtomic(path string, data []byte) error {
 func SortOutputs(outs []OutputRecord) {
 	sort.Slice(outs, func(i, j int) bool { return outs[i].Key < outs[j].Key })
 }
-
-// CountOutputs is a small helper for terminal summaries.
-func CountOutputs(outs []OutputRecord) string {
-	return fmt.Sprintf("%d", len(outs))
-}
-
-var _ = io.Discard

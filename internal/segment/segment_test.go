@@ -153,6 +153,34 @@ func TestAlignRejectsEmptySegment(t *testing.T) {
 	}
 }
 
+func TestCompareBoundaries(t *testing.T) {
+	a, err := Align([]Target{{Name: "a", Video: regularTrack(t, 1, 8000, 1000)}},
+		Config{TargetDuration: ms(2000), MaxSegments: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := Align([]Target{{Name: "a", Video: regularTrack(t, 2, 8000, 1000)}},
+		Config{TargetDuration: ms(2000), MaxSegments: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := CompareBoundaries(a, b); err != nil {
+		t.Fatalf("identical boundaries reported as different: %v", err)
+	}
+	c, err := Align([]Target{{Name: "c", Video: regularTrack(t, 3, 8000, 2000)}},
+		Config{TargetDuration: ms(2000), MaxSegments: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.Boundaries) == len(a.Boundaries) {
+		// Force a difference by truncating; the comparison must notice.
+		c.Boundaries = c.Boundaries[:len(c.Boundaries)-1]
+	}
+	if err := CompareBoundaries(a, c); err == nil {
+		t.Fatal("different boundary counts reported as equal")
+	}
+}
+
 func TestAlignWithAudioSnapsAudioStart(t *testing.T) {
 	video := regularTrack(t, 1, 6000, 1000)
 	audio := makeTrack(t, 2, 1000, []int64{0, 20, 40}, map[int64]bool{0: true, 20: true, 40: true})

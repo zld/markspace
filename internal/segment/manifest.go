@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"sort"
 
 	"mediapipeline/internal/container"
@@ -290,13 +289,4 @@ func (m *Manifest) Validate() error {
 func (m *Manifest) Hash() (string, error) {
 	_, sum, err := m.Seal()
 	return sum, err
-}
-
-// RepresentationBytes summarises per-representation sizes for the terminal.
-func (m *Manifest) RepresentationBytes() string {
-	parts := make([]string, 0, len(m.Representations))
-	for _, r := range m.Representations {
-		parts = append(parts, fmt.Sprintf("%s=%dB", r.Name, r.TotalBytes))
-	}
-	return fmt.Sprint(parts)
 }
