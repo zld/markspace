@@ -264,8 +264,8 @@ func TestDriftRecoversFixtureRate(t *testing.T) {
 		t.Fatalf("run: %v", err)
 	}
 	got := res.Metrics.DriftPPM
-	if got < wantPPM-60 || got > wantPPM+60 {
-		t.Fatalf("drift=%f want %f +/- 60", got, wantPPM)
+	if got < wantPPM-5 || got > wantPPM+5 {
+		t.Fatalf("drift=%f want %f +/- 5", got, wantPPM)
 	}
 }
 
