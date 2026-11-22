@@ -87,3 +87,21 @@ func TestKillThresholdBounds(t *testing.T) {
 		t.Fatalf("clamped threshold=%d want 90", n)
 	}
 }
+
+// TestResumeExercisesReplay asserts the resume scenario restores a non-empty
+// replay log from its checkpoint, so recovery semantics are actually tested.
+func TestResumeExercisesReplay(t *testing.T) {
+	m, recoveryMS, replayed, err := RunResume(t.TempDir(), 3*time.Second)
+	if err != nil {
+		t.Fatalf("resume: %v", err)
+	}
+	if replayed == 0 {
+		t.Fatal("resume restored no replayed events; replay path untested")
+	}
+	if !m.Resumed {
+		t.Fatal("resumed metrics not flagged")
+	}
+	if recoveryMS >= 500 {
+		t.Fatalf("recovery_ms=%d exceeds 500 ms target", recoveryMS)
+	}
+}

@@ -27,6 +27,9 @@ func RunResume(dir string, killAfter time.Duration) (Metrics, int64, uint64, err
 	if err != nil {
 		return Metrics{}, 0, 0, err
 	}
+	// Deliver a late batch so the checkpoint carries a non-empty replay log and
+	// the resumed run exercises replay restoration, not just phase restoration.
+	injectLate(events, 80, inRate)
 
 	cfg := pipelineConfig(DemoOptions{Seed: 99, CheckpointEvery: 16})
 
