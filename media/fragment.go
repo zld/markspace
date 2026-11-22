@@ -60,6 +60,11 @@ func BuildFragment(spec FragmentSpec) (*Fragment, error) {
 			return nil, timeline.NewError("FRAGMENT_INVALID",
 				"sample requires positive duration and payload", nil)
 		}
+		if len(s.Payload) > MaxFragmentPayload {
+			return nil, timeline.NewError("FRAGMENT_INVALID",
+				"sample payload exceeds size bound",
+				map[string]any{"bytes": len(s.Payload), "limit": MaxFragmentPayload})
+		}
 		payload.Write(s.Payload)
 		entries = append(entries, mp4.TrunEntry{
 			SampleDuration: s.Duration,

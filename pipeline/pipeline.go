@@ -118,6 +118,15 @@ func (p *Pipeline) Run() (*Metrics, error) {
 	if err != nil {
 		return nil, err
 	}
+	totalSegments := 0
+	for _, r := range mpd.Representations {
+		totalSegments += len(r.Segments)
+	}
+	if totalSegments > MaxSummarySegments {
+		return nil, timeline.NewError("MANIFEST_LIMIT",
+			"published segment count exceeds summary bound",
+			map[string]any{"segments": totalSegments, "limit": MaxSummarySegments})
+	}
 	report, err := p.aligner.Align(mpd.Representations)
 	if err != nil {
 		return nil, err

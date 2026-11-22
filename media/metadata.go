@@ -13,9 +13,7 @@ import (
 const (
 	MaxChannels        = 24
 	MaxFragmentPayload = 1 << 20
-)
-
-// AudioMeta describes one source fragment's audio properties.
+)// AudioMeta describes one source fragment's audio properties.
 type AudioMeta struct {
 	Source     string
 	Channels   int

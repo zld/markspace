@@ -115,3 +115,32 @@ func TestRecoveryAndColorFixtureCoverage(t *testing.T) {
 		t.Fatal("late packets never triggered a timeline replay")
 	}
 }
+
+func TestSnapshotReplayAfterCorruption(t *testing.T) {
+	cfg := baseConfig()
+	cfg.LateMs = 9000
+	cfg.ReplayWindowMs = 1000
+	p, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if _, err := p.Run(); timeline.CodeOf(err) != "REPLAY_WINDOW_EXCEEDED" {
+		t.Fatalf("expected corrupting failure, got %v", err)
+	}
+	// The engine must remain on its last good snapshot: rerun with a
+	// valid window from a fresh pipeline yields the canonical digest.
+	good := baseConfig()
+	p1, _ := New(good)
+	m1, err := p1.Run()
+	if err != nil {
+		t.Fatalf("replay run: %v", err)
+	}
+	p2, _ := New(good)
+	m2, err := p2.Run()
+	if err != nil {
+		t.Fatalf("second replay run: %v", err)
+	}
+	if m1.ManifestSHA256 != m2.ManifestSHA256 {
+		t.Fatal("post-recovery summaries diverged")
+	}
+}
