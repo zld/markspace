@@ -27,25 +27,30 @@ type RepairOptions struct {
 	// track starts at zero on the shared program timeline. Set it after the
 	// fan-in stage decides the common origin.
 	AnchorTicks int64
+	// AnchorToFirst treats the first extended timestamp of the stream as time
+	// zero. This is what a delivery stream needs: its first packet defines the
+	// track origin, even when the raw clock starts near the wrap point.
+	AnchorToFirst bool
 }
 
 // Repairer turns a stream of raw track timestamps into monotonically
 // non-decreasing repaired timestamps on the shared program clock. It records
 // every intervention in Decisions.
 type Repairer struct {
-	track     model.TrackID
-	timescale uint32
-	modulus   int64
-	jitter    int64
-	anchor    int64
-	hasLast   bool
-	lastRaw   int64
-	lastExt   int64
-	epoch     int64
-	decisions []Decision
-	firstExt  int64
-	seen      int64
-	wrapSeen  map[int64]bool
+	track       model.TrackID
+	timescale   uint32
+	modulus     int64
+	jitter      int64
+	anchor      int64
+	hasLast     bool
+	lastRaw     int64
+	lastExt     int64
+	epoch       int64
+	decisions   []Decision
+	firstExt    int64
+	seen        int64
+	wrapSeen    map[int64]bool
+	anchorFirst bool
 }
 
 // NewRepairer validates options and returns a repairer for track.
@@ -67,12 +72,13 @@ func NewRepairer(track model.TrackID, opts RepairOptions) (*Repairer, error) {
 		jitter = DefaultJitterTicks
 	}
 	return &Repairer{
-		track:     track,
-		timescale: opts.Timescale,
-		modulus:   opts.Modulus,
-		jitter:    jitter,
-		anchor:    opts.AnchorTicks,
-		wrapSeen:  make(map[int64]bool),
+		track:       track,
+		timescale:   opts.Timescale,
+		modulus:     opts.Modulus,
+		jitter:      jitter,
+		anchor:      opts.AnchorTicks,
+		anchorFirst: opts.AnchorToFirst,
+		wrapSeen:    make(map[int64]bool),
 	}, nil
 }
 
@@ -138,6 +144,9 @@ func (r *Repairer) extend(raw int64) (int64, model.DecodeState, error) {
 		r.lastExt = raw
 		r.firstExt = raw
 		r.seen = 1
+		if r.anchorFirst && r.anchor == 0 {
+			r.anchor = raw
+		}
 		r.decisions = append(r.decisions, Decision{
 			Track: r.track, Kind: DecisionFirstSeen, RawTicks: raw, Repaired: raw, Recoverable: true,
 			Message: "first timestamp establishes the track epoch",

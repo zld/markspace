@@ -179,7 +179,7 @@ func BuildSEINAL(timeUS int64, kind string) []byte {
 	body = appendSEINum(body, len(payload))
 	body = append(body, payload...)
 	body = append(body, 0x80)
-	nal := append([]byte{0x06, 0x05}, rbspEscape(body)...)
+	nal := append([]byte{0x06}, rbspEscape(body)...)
 	// One access-delimiter NAL, the SEI NAL, and the start code of the next
 	// unit, so the parser must detect the SEI by NAL type, not by position.
 	au := []byte{0x00, 0x00, 0x00, 0x01, 0x09, 0xf0}

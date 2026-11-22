@@ -7,6 +7,7 @@ package ingest
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/pion/rtp"
 
@@ -34,6 +35,8 @@ type RTPOptions struct {
 	// FragmentGapTicks is the maximum timestamp spread inside one access
 	// unit. A packet further away starts a new access unit.
 	FragmentGapTicks int64
+	// AnchorFirst makes the first packet's timestamp the track origin.
+	AnchorFirst bool
 	// AllowDroppedGap controls whether skipped sequence numbers are recorded
 	// as recoverable loss (true) or treated as fatal (false).
 	AllowDroppedGap bool
@@ -96,9 +99,10 @@ func NewRTPReassembler(opts RTPOptions) (*RTPReassembler, error) {
 func (a *RTPReassembler) Push(obs PacketObservation) error {
 	if a.repairer == nil {
 		r, err := clock.NewRepairer(a.opts.Track, clock.RepairOptions{
-			Timescale:   a.opts.Timescale,
-			Modulus:     a.opts.Modulus,
-			JitterTicks: a.opts.Jitter,
+			Timescale:     a.opts.Timescale,
+			Modulus:       a.opts.Modulus,
+			JitterTicks:   a.opts.Jitter,
+			AnchorToFirst: a.opts.AnchorFirst,
 		})
 		if err != nil {
 			return err
@@ -150,6 +154,16 @@ func (a *RTPReassembler) consume(obs PacketObservation) error {
 		a.flush()
 	}
 	return nil
+}
+
+// pendingUnits returns the buffered access units in order without consuming
+// them; used by tests and streaming observers.
+func (a *RTPReassembler) pendingUnits() []accessUnit {
+	out := append([]accessUnit(nil), a.units...)
+	if a.cur != nil {
+		out = append(out, *a.cur)
+	}
+	return out
 }
 
 func sameUnit(cur *accessUnit, obs PacketObservation, gap int64) bool {
@@ -211,7 +225,9 @@ func (a *RTPReassembler) Finish() (RTPResult, error) {
 	}
 
 	// Decode all unit timestamps in observation order to keep repair
-	// decisions deterministic, then index by repaired time.
+	// decisions deterministic, then order by repaired time. A raw timestamp
+	// that is entirely absent (empty payload) is still decoded so the
+	// timeline stays continuous.
 	type stamped struct {
 		u  accessUnit
 		ts model.TimeStamp
@@ -227,6 +243,8 @@ func (a *RTPReassembler) Finish() (RTPResult, error) {
 	}
 
 	// Assign durations from the repaired gap to the next distinct timestamp.
+	// The final unit inherits the previous unit's duration so it is a whole
+	// frame rather than a zero-length tail.
 	for i := range stampedUnits {
 		start, err := clock.FromModel(stampedUnits[i].ts.RepairedTime)
 		if err != nil {
@@ -238,7 +256,14 @@ func (a *RTPReassembler) Finish() (RTPResult, error) {
 				next = n
 			}
 		}
-		dur, err := next.Sub(start)
+		var dur clock.Rational
+		if next.Cmp(start) > 0 {
+			dur, err = next.Sub(start)
+		} else if i > 0 {
+			dur, err = clock.FromModel(a.samples[i-1].Duration)
+		} else {
+			dur = clock.Zero
+		}
 		if err != nil {
 			return RTPResult{}, err
 		}
@@ -253,6 +278,26 @@ func (a *RTPReassembler) Finish() (RTPResult, error) {
 		})
 	}
 
+	// Sort by repaired start so later stages can assume a monotonic timeline.
+	// Stable ordering keeps duplicates in arrival order.
+	sort.SliceStable(a.samples, func(i, j int) bool {
+		ti, _ := clock.FromModel(a.samples[i].Time.RepairedTime)
+		tj, _ := clock.FromModel(a.samples[j].Time.RepairedTime)
+		if c := ti.Cmp(tj); c != 0 {
+			return c < 0
+		}
+		return a.samples[i].Index < a.samples[j].Index
+	})
+	for i := range a.samples {
+		a.samples[i].Index = i
+	}
+	if len(a.samples) == 0 {
+		e := model.NewError(a.opts.Track, model.StageParse, model.CodeMissingPayload, false,
+			"no access units survived reassembly")
+		a.res.Errors = append(a.res.Errors, e)
+		a.res.Samples = a.samples
+		return a.res, e
+	}
 	a.res.Samples = a.samples
 	a.res.Decisions = append(a.res.Decisions, a.decisions...)
 	a.res.Decisions = append(a.res.Decisions, a.repairer.Decisions()...)

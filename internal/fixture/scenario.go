@@ -7,6 +7,7 @@ import (
 
 	"example.com/mediatimeline/internal/ingest"
 	"example.com/mediatimeline/internal/model"
+	"example.com/mediatimeline/internal/pipeline"
 )
 
 // Fault identifies a synthetic failure mode. The demo CLI accepts these as a
@@ -87,6 +88,17 @@ type Reference struct {
 }
 
 // BuildScenario synthesizes the program described by opts.
+// BuildCorruptedLayerScenario is BuildScenario with the corrupt-layer fault
+// forced on. Tests use it to prove per-layer isolation without going through
+// the CLI flag parsing.
+func BuildCorruptedLayerScenario(opts ScenarioOptions) (Scenario, error) {
+	if opts.Faults == nil {
+		opts.Faults = map[Fault]bool{}
+	}
+	opts.Faults[FaultCorruptLayer] = true
+	return BuildScenario(opts)
+}
+
 func BuildScenario(opts ScenarioOptions) (Scenario, error) {
 	if opts.Frames <= 0 {
 		return Scenario{}, fmt.Errorf("frames must be positive")
@@ -181,26 +193,37 @@ func BuildScenario(opts ScenarioOptions) (Scenario, error) {
 		}
 	}
 	if opts.Faults[FaultBackward] {
-		// Inject a packet whose timestamp jumps back by two seconds.
-		bad, err := marshalRTP(PacketSpec{Seq: seq, TS: startTS - uint32(90000*2), Marker: true, Payload: VideoAU(frames, false, true)})
+		// Inject a packet whose timestamp jumps back by about a second, well
+		// beyond any reordering jitter, in the middle of the program.
+		backTicks := uint32(45000) // 0.5 s
+		bad, err := marshalRTP(PacketSpec{Seq: seq, TS: startTS + backTicks, Marker: true, Payload: VideoAU(frames, false, true)})
 		if err != nil {
 			return Scenario{}, err
 		}
 		insertAt := len(s.VideoRTP) / 2
 		s.VideoRTP = append(s.VideoRTP[:insertAt], append([][]byte{bad}, s.VideoRTP[insertAt:]...)...)
+		seq++
 	}
 
 	// Audio RTP: PCM-like frames at 48 kHz.
 	var aseq uint16 = 4000
+	missingTicks := uint32(0)
 	for i := 0; i < audio.Count; i++ {
-		ts := uint32(int64(i) * 1024)
-		raw, err := marshalRTP(PacketSpec{Seq: aseq, TS: ts, Marker: true, Payload: AudioFrame(i, true)})
+		ts := uint32(int64(i)*1024) + missingTicks
+		payload := AudioFrame(i, true)
+		if opts.Faults[FaultAudioShort] && i == audio.Count-1 {
+			payload = payload[:64]
+		}
+		raw, err := marshalRTP(PacketSpec{Seq: aseq, TS: ts, Marker: true, Payload: payload})
 		if err != nil {
 			return Scenario{}, err
 		}
 		aseq++
 		if opts.Faults[FaultAudioGap] && i == 8 {
-			aseq += 6 // six frames missing
+			// Six frames vanish: both the timestamp grid and the sequence
+			// numbers show the hole.
+			aseq += 6
+			missingTicks += 6 * 1024
 		}
 		s.AudioRTP = append(s.AudioRTP, raw)
 	}
@@ -283,4 +306,48 @@ func marshalRTP(p PacketSpec) ([]byte, error) {
 		Payload: p.Payload,
 	}
 	return pkt.Marshal()
+}
+
+// PipelineInput converts a built scenario into pipeline input. The fault set
+// decides which competing declarations and damage flags are visible to the
+// pipeline.
+func PipelineInput(s Scenario, faults []Fault) pipeline.Input {
+	set := map[Fault]bool{}
+	for _, f := range faults {
+		set[f] = true
+	}
+	in := pipeline.Input{
+		MP4:       s.MP4,
+		VideoRTP:  s.VideoRTP,
+		AudioRTP:  s.AudioRTP,
+		WebVTT:    s.WebVTT,
+		Chapters:  s.Chapters,
+		ID3:       s.ID3,
+		ID3Ticks:  s.ID3Ticks,
+		Emsg:      s.Emsg,
+		SEI:       s.SEI,
+		Ladder:    s.Options.Ladder,
+		SegmentMS: s.Options.SegmentMS,
+	}
+	// The container declares BT.709 limited range for every fixture.
+	in.ColorDecls = []model.ColorDeclaration{
+		{Source: model.ColorFromContainer, Primaries: 1, Transfer: 1, Matrix: 1},
+	}
+	if set[FaultColorConflict] {
+		// The bitstream SEI advertises BT.2020; the container keeps BT.709.
+		in.ColorDecls = append(in.ColorDecls, model.ColorDeclaration{
+			Source: model.ColorFromBitstream, Primaries: 9, Transfer: 14, Matrix: 9,
+		})
+	}
+	in.AudioLayouts = []model.AudioDescriptor{
+		{Source: "mp4-stsd", ChannelCount: 2, SampleRate: 48000, Layout: "stereo"},
+	}
+	in.AudioRates = []uint32{48000}
+	if set[FaultAudioOverlap] {
+		in.AudioRates = append(in.AudioRates, 44100)
+	}
+	if set[FaultCorruptLayer] {
+		in.CorruptLayer = true
+	}
+	return in
 }
