@@ -6,7 +6,7 @@ import (
 )
 
 func TestPayloadRoundTrip(t *testing.T) {
-	p := Payload{Flags: FlagKeyframe | FlagFragment, TrackID: 1, Frame: 7, MediaTicks: 90000, Data: []byte("edge-fragment-01")}
+	p := Payload{Flags: FlagKeyframe | FlagFragment, TrackID: 1, Frame: 7, MediaTicks: 90000, FragIndex: 0, FragCount: 2, Data: []byte("edge-fragment-01")}
 	b, err := p.Marshal()
 	if err != nil {
 		t.Fatal(err)
@@ -27,7 +27,7 @@ func TestPayloadRoundTrip(t *testing.T) {
 }
 
 func TestPayloadRejectsCorruptionAndTruncation(t *testing.T) {
-	p := Payload{TrackID: 2, Frame: 1, MediaTicks: 10, Data: []byte("payload")}
+	p := Payload{TrackID: 2, Frame: 1, MediaTicks: 10, FragCount: 1, Data: []byte("payload")}
 	b, err := p.Marshal()
 	if err != nil {
 		t.Fatal(err)
@@ -39,9 +39,10 @@ func TestPayloadRejectsCorruptionAndTruncation(t *testing.T) {
 		{"short", b[:10]},
 		{"magic", append([]byte{'X'}, b[1:]...)},
 		{"version", func() []byte { c := append([]byte(nil), b...); c[4] = 9; return c }()},
-		{"length", func() []byte { c := append([]byte(nil), b...); c[21]++; return c }()},
+		{"length", func() []byte { c := append([]byte(nil), b...); c[25]++; return c }()},
 		{"checksum", func() []byte { c := append([]byte(nil), b...); c[len(c)-1] ^= 0xff; return c }()},
-		{"data corruption", func() []byte { c := append([]byte(nil), b...); c[22] ^= 0xff; return c }()},
+		{"data corruption", func() []byte { c := append([]byte(nil), b...); c[26] ^= 0xff; return c }()},
+		{"fragment range", func() []byte { c := append([]byte(nil), b...); c[20], c[21] = 0, 2; return c }()},
 		{"track zero", func() []byte { c := append([]byte(nil), b...); c[6], c[7] = 0, 0; return c }()},
 	} {
 		if _, err := ParsePayload(tc.data); err == nil {
@@ -51,7 +52,7 @@ func TestPayloadRejectsCorruptionAndTruncation(t *testing.T) {
 }
 
 func TestPayloadSizeLimit(t *testing.T) {
-	p := Payload{TrackID: 1, Data: make([]byte, MaxPayloadData+1)}
+	p := Payload{TrackID: 1, FragCount: 1, Data: make([]byte, MaxPayloadData+1)}
 	if _, err := p.Marshal(); !errors.Is(err, ErrPayloadTooLarge) {
 		t.Fatalf("oversized payload accepted: %v", err)
 	}

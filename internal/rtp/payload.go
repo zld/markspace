@@ -12,7 +12,7 @@ import (
 // Restricted payload layout (all integers big-endian):
 //
 //	magic "MDP1" | version u8 | flags u8 | trackID u16 | frame u32 |
-//	mediaTicks u64 | dataLen u16 | data | checksum[8]
+//	mediaTicks u64 | fragIndex u16 | fragCount u16 | dataLen u16 | data | checksum[8]
 //
 // The checksum is the first 8 bytes of SHA-256 over the header and data. The
 // format is deliberately small and closed: only the project's own generator
@@ -20,7 +20,7 @@ import (
 const (
 	PayloadMagic      = "MDP1"
 	PayloadVersion    = 1
-	payloadHeaderSize = 22
+	payloadHeaderSize = 26
 	payloadSumSize    = 8
 	// MaxPayloadData bounds a single fragment's data allocation.
 	MaxPayloadData = 1024
@@ -47,6 +47,8 @@ type Payload struct {
 	TrackID    uint16
 	Frame      uint32
 	MediaTicks uint64
+	FragIndex  uint16
+	FragCount  uint16
 	Data       []byte
 }
 
@@ -58,6 +60,9 @@ func (p Payload) Marshal() ([]byte, error) {
 	if p.TrackID == 0 {
 		return nil, fmt.Errorf("%w: track id 0", ErrPayloadFormat)
 	}
+	if p.FragCount == 0 || p.FragIndex >= p.FragCount {
+		return nil, fmt.Errorf("%w: fragment %d of %d", ErrPayloadFormat, p.FragIndex, p.FragCount)
+	}
 	buf := make([]byte, payloadHeaderSize+len(p.Data)+payloadSumSize)
 	copy(buf[0:4], PayloadMagic)
 	buf[4] = PayloadVersion
@@ -65,8 +70,10 @@ func (p Payload) Marshal() ([]byte, error) {
 	binary.BigEndian.PutUint16(buf[6:8], p.TrackID)
 	binary.BigEndian.PutUint32(buf[8:12], p.Frame)
 	binary.BigEndian.PutUint64(buf[12:20], p.MediaTicks)
-	binary.BigEndian.PutUint16(buf[20:22], uint16(len(p.Data)))
-	copy(buf[22:], p.Data)
+	binary.BigEndian.PutUint16(buf[20:22], p.FragIndex)
+	binary.BigEndian.PutUint16(buf[22:24], p.FragCount)
+	binary.BigEndian.PutUint16(buf[24:26], uint16(len(p.Data)))
+	copy(buf[26:], p.Data)
 	sum := sha256.Sum256(buf[:payloadHeaderSize+len(p.Data)])
 	copy(buf[payloadHeaderSize+len(p.Data):], sum[:payloadSumSize])
 	return buf, nil
@@ -88,7 +95,9 @@ func ParsePayload(b []byte) (Payload, error) {
 	p.TrackID = binary.BigEndian.Uint16(b[6:8])
 	p.Frame = binary.BigEndian.Uint32(b[8:12])
 	p.MediaTicks = binary.BigEndian.Uint64(b[12:20])
-	n := int(binary.BigEndian.Uint16(b[20:22]))
+	p.FragIndex = binary.BigEndian.Uint16(b[20:22])
+	p.FragCount = binary.BigEndian.Uint16(b[22:24])
+	n := int(binary.BigEndian.Uint16(b[24:26]))
 	if n > MaxPayloadData {
 		return Payload{}, fmt.Errorf("%w: declared data %d", ErrPayloadTooLarge, n)
 	}
@@ -97,6 +106,9 @@ func ParsePayload(b []byte) (Payload, error) {
 	}
 	if p.TrackID == 0 {
 		return Payload{}, fmt.Errorf("%w: track id 0", ErrPayloadFormat)
+	}
+	if p.FragCount == 0 || p.FragIndex >= p.FragCount {
+		return Payload{}, fmt.Errorf("%w: fragment %d of %d", ErrPayloadFormat, p.FragIndex, p.FragCount)
 	}
 	sum := sha256.Sum256(b[:payloadHeaderSize+n])
 	if string(sum[:payloadSumSize]) != string(b[payloadHeaderSize+n:]) {
