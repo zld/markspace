@@ -86,7 +86,8 @@ func TestSilenceRecoveryAndLayoutErrors(t *testing.T) {
 	lr := NewLossRecovery(rc)
 	block := func(seq uint64, t int64, ch int) mediacore.Event {
 		return mediacore.Event{Track: mediacore.TrackAudio1, Kind: mediacore.KindPCM, Seq: seq,
-			Time: t, Samples: 4, Channels: ch, Rate: 8000, Payload: make([]byte, 4*ch*2)}
+			Time: t, OrigTime: t, Samples: 4, Channels: ch, Rate: 8000,
+			Payload: make([]byte, 4*ch*2)}
 	}
 	dur := int64(4) * mediacore.Second / 8000
 	prev, next := block(0, 0, 2), block(2, 2*dur, 2)
