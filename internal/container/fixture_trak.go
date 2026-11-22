@@ -35,8 +35,10 @@ func (g *generator) writeTkhd(w *Writer, ts TrackSpec) {
 		body[off+2] = byte(v >> 8)
 		body[off+3] = byte(v)
 	}
-	put(4, ts.ID)                      // track_ID
-	put(12, uint32(trackDuration(ts))) // duration in movie timescale
+	// tkhd v0 body: creation(4) modification(4) track_ID(4) reserved(4)
+	// duration(4) ... volume at 24, matrix at 36, width/height at 72/76.
+	put(8, ts.ID)                       // track_ID
+	put(20, uint32(trackDuration(ts)))  // duration in movie timescale
 	if ts.Kind == model.KindAudio {
 		body[24] = 0x01 // volume
 	}
