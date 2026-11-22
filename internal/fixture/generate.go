@@ -204,6 +204,9 @@ func buildRTP(rng *rand.Rand, opts Options, fault bool) []byte {
 		out = append(out, lb[:]...)
 		out = append(out, raw...)
 	}
+	var heldSeq uint16
+	var heldTS uint32
+	holding := false
 	for i := 0; i < n; i++ {
 		if fault && i == n/2 {
 			seq += 6 // burst loss of 6 packets
@@ -212,12 +215,23 @@ func buildRTP(rng *rand.Rand, opts Options, fault bool) []byte {
 		if fault && i == 3*n/4 {
 			cur -= 90000 * 10 // timestamp regression: 10 s backward
 		}
-		emit(seq, cur)
+		if fault && i%11 == 5 {
+			heldSeq, heldTS, holding = seq, cur, true // reorder: emit one packet late
+		} else {
+			emit(seq, cur)
+			if holding {
+				emit(heldSeq, heldTS) // arrives after a higher seq: recoverable
+				holding = false
+			}
+		}
 		if fault && i%7 == 0 {
 			emit(seq, cur) // duplicate
 		}
 		seq++
 		ts += 3000
+	}
+	if holding {
+		emit(heldSeq, heldTS)
 	}
 	return out
 }

@@ -119,6 +119,7 @@ func (c *Coordinator) Commit(stage string, inputs []InputDigest, outputDigest st
 			}
 		}
 		c.Rollbacks++
+		delete(c.stages, stage) // uncommitted in memory as well as in the WAL
 		if werr := c.wal.Append(KindRollback, stage, map[string]string{"reason": err.Error()}); werr != nil {
 			return werr
 		}
