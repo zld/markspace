@@ -108,10 +108,6 @@ func run(args []string, stdout, stderr io.Writer) int {
 	cfg.WrapAt = uint32(*wrapAt)
 	cfg.VFR = *vfr
 	cfg.Segments = *segments
-	// The loss plan needs distinct sequence numbers for each loss.
-	if *loss > 1 {
-		cfg.VideoPackets = 160 + 8*(*loss-1)
-	}
 
 	sc, err := pipeline.Generate(cfg)
 	if err != nil {

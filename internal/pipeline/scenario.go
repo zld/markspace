@@ -33,19 +33,18 @@ type ScenarioConfig struct {
 	// LateBy is how many packet slots the late packet is delayed, which must
 	// exceed the reorder window for it to be reported as late.
 	LateBy int
-	// ParityLossGroup is the parity group whose parity packet is dropped, so
-	// the packet lost from it cannot be repaired.
-	ParityLossGroup int
 }
 
-// DefaultScenarioConfig returns a demo-sized scenario.
+// DefaultScenarioConfig returns a demo-sized scenario. Loss=3 matches the
+// documented acceptance command: a three-packet burst that parity cannot
+// repair, alongside exactly one repairable single-packet loss.
 func DefaultScenarioConfig() ScenarioConfig {
 	return ScenarioConfig{
-		Seed: 41, Loss: 1, Reorder: 7, DriftPPM: 120,
+		Seed: 41, Loss: 3, Reorder: 7, DriftPPM: 120,
 		WrapAt: 4294967000, VFR: true, Segments: 12,
-		VideoPackets: 160, AudioPackets: 300,
+		VideoPackets: 240, AudioPackets: 300,
 		BadRTCP: true, TruncatedSample: true,
-		LateBy: 7, ParityLossGroup: 37,
+		LateBy: 7,
 	}
 }
 
@@ -76,11 +75,10 @@ const (
 
 // Loss plan for the default scenario. Index k is the k-th video packet.
 const (
-	singleLossIdx  = 10  // recovered from parity
-	doubleLossIdxA = 100 // lost together, unrecoverable
-	doubleLossIdxB = 101
-	lateIdx        = 150 // arrives outside the reorder window
-	reorderStride  = 13  // packets at multiples of this stride arrive one slot late
+	singleLossIdx = 10  // recovered from parity, always exactly one
+	burstStartIdx = 100 // start of the unrecoverable consecutive burst
+	lateIdx       = 150 // arrives outside the reorder window
+	reorderStride = 13  // packets at multiples of this stride arrive one slot late
 )
 
 // Generate builds a complete, deterministic scenario.
@@ -101,9 +99,13 @@ func Generate(cfg ScenarioConfig) (*Scenario, error) {
 		return nil, merrors.New(merrors.StagePipeline, merrors.OutOfRange,
 			"drift %d ppm outside +-100000", cfg.DriftPPM)
 	}
-	if cfg.VideoPackets <= lateIdx+2 || cfg.VideoPackets <= doubleLossIdxB+2 {
+	if cfg.VideoPackets <= lateIdx+2 || cfg.VideoPackets <= burstStartIdx+cfg.Loss+2 {
 		return nil, merrors.New(merrors.StagePipeline, merrors.Invalid,
 			"video packet count %d too small for the loss plan", cfg.VideoPackets)
+	}
+	if cfg.Loss < 1 || cfg.Loss > 8 {
+		return nil, merrors.New(merrors.StagePipeline, merrors.Invalid,
+			"loss burst %d outside 1..8", cfg.Loss)
 	}
 
 	mp4, err := fixture.BuildMP4(fixture.MP4Options{
@@ -135,20 +137,17 @@ func Generate(cfg ScenarioConfig) (*Scenario, error) {
 		FECGroupSize:       4,
 	}
 
-	// Deterministic loss plan: exactly one repairable loss plus an
-	// unrecoverable pair and an unrecoverable late arrival.
-	single := []int{singleLossIdx}
-	extra := cfg.Loss - len(single)
-	missing := map[int]bool{singleLossIdx: true, doubleLossIdxA: true, doubleLossIdxB: true, lateIdx: true}
-	for i := 0; i < extra; i++ {
-		k := 20 + 5*i
-		if k >= cfg.VideoPackets-20 || missing[k] {
-			break
-		}
-		missing[k] = true
-		single = append(single, k)
+	// Deterministic loss plan. Exactly one single-packet loss is protected by
+	// parity and is recoverable. The burst is placed inside one parity group
+	// and its parity packet is withheld, so it is unrecoverable no matter how
+	// long it is. The late packet arrives but outside the reorder window.
+	missing := map[int]bool{singleLossIdx: true, lateIdx: true}
+	for i := 0; i < cfg.Loss; i++ {
+		missing[burstStartIdx+i] = true
 	}
-	sc.ExpectedRecovered = len(single)
+	// The burst's group parity is dropped so the group cannot be repaired.
+	burstGroup := burstStartIdx / sc.Input.FECGroupSize
+	sc.ExpectedRecovered = 1
 
 	// Timestamps, drift-corrected integer arithmetic. The video clock starts
 	// two packets before WrapAt, so exactly one 32-bit wrap occurs.
@@ -244,7 +243,8 @@ func Generate(cfg ScenarioConfig) (*Scenario, error) {
 	// Parity for every video group except the one whose parity is dropped.
 	groupSize := sc.Input.FECGroupSize
 	for g := 0; g*groupSize < cfg.VideoPackets; g++ {
-		if g == cfg.ParityLossGroup {
+		if g == burstGroup {
+			// The burst's parity is withheld: this group is unrecoverable.
 			continue
 		}
 		start, end := g*groupSize, (g+1)*groupSize

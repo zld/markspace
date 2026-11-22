@@ -18,7 +18,7 @@ func TestRunDefaultDemoPasses(t *testing.T) {
 	stdout := out.String()
 	for _, want := range []string{
 		"roundtrip_rate=", "keyframe_hit_rate=", "segments=12",
-		"segment_sha256=12/12", "recovered_packets=3", "unrecovered_gaps=",
+		"segment_sha256=12/12", "recovered_packets=1", "unrecovered_gaps=",
 		"late_packets=", "clock_wraps=1", "drift_ppm_est=", "truncated_errors=1",
 		"PASS",
 	} {
