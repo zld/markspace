@@ -154,6 +154,23 @@ func TestRepeatRunIsByteStable(t *testing.T) {
 	if out1.Summary.SHA256 != out2.Summary.SHA256 {
 		t.Fatalf("checksum drifted: %s vs %s", out1.Summary.SHA256, out2.Summary.SHA256)
 	}
+	// A checkpointed run is a third execution path that must agree exactly.
+	cp := filepath.Join(root, "stable.json")
+	c1, err := runner(root, cp).Run(names)
+	if err != nil && !errors.Is(err, ErrDamaged) {
+		t.Fatal(err)
+	}
+	c2, err := runner(root, cp).Run(names)
+	if err != nil && !errors.Is(err, ErrDamaged) {
+		t.Fatal(err)
+	}
+	var c bytes.Buffer
+	var d bytes.Buffer
+	_ = WriteJSONL(&c, c1, params, c1.InputDigest, c1.ParamsDigest)
+	_ = WriteJSONL(&d, c2, params, c2.InputDigest, c2.ParamsDigest)
+	if !bytes.Equal(c.Bytes(), d.Bytes()) || !bytes.Equal(a.Bytes(), c.Bytes()) {
+		t.Fatal("checkpointed run differs from a plain run")
+	}
 }
 
 func TestResumeProducesIdenticalResult(t *testing.T) {
