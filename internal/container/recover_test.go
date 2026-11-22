@@ -173,8 +173,6 @@ func TestRescanRejectsCorruptRecordBody(t *testing.T) {
 	b := readFile(t, path)
 	// Flip a payload byte inside the first record's data area so its CRC no
 	// longer matches. The region must become a gap, not fabricated audio.
-	m := fixture.GeneratePCM(fixture.DefaultPlan(fixture.KindNoIndex))
-	_ = m
 	idx := findFirstMagic(b)
 	if idx < 0 {
 		t.Fatal("no record magic in fixture")
