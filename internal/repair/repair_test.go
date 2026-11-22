@@ -112,6 +112,35 @@ func TestSidecarRoundTripAndDeterminism(t *testing.T) {
 	}
 }
 
+func TestSequenceNumber16BitRollover(t *testing.T) {
+	eng, _ := NewEngine(DefaultConfig())
+	// Walk up to the 16-bit sequence boundary and beyond; extended sequences
+	// must keep increasing. RTP timestamps are independent of sequence number,
+	// so they advance monotonically on their own 3000-tick grid.
+	var lastSeq uint64
+	var ts uint32 = 1_000_000
+	first := true
+	for raw := uint16(0xFFF8); ; raw++ {
+		out, err := eng.Push(raw, ts, 1)
+		if err != nil {
+			t.Fatalf("raw=%d: %v", raw, err)
+		}
+		ts += 3000
+		seq := out[0].Sequence
+		if !first && seq <= lastSeq {
+			t.Fatalf("extended sequence did not advance at raw=%d: %d", raw, seq)
+		}
+		lastSeq, first = seq, false
+		if raw == 0x0008 {
+			break
+		}
+	}
+	// 0xFFF8 .. 0x0008 spans the rollover; extended end is start + 16.
+	if lastSeq != uint64(0xFFF8)+16 {
+		t.Fatalf("extended end=%d want %d", lastSeq, uint64(0xFFF8)+16)
+	}
+}
+
 func TestTruncatedSidecar(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "rtp.bin")

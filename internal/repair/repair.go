@@ -140,8 +140,10 @@ func (e *Engine) extendSeq(raw uint16) uint64 {
 		return uint64(raw)
 	}
 	base := e.hiSeq
-	baseLow := uint16(base)
-	delta := int32(raw) - int32(baseLow) // modular signed difference
+	// Modular difference in the 16-bit space: unsigned subtraction wraps,
+	// then reinterpreting the result as int16 sign-extends the delta so a
+	// rollover (e.g. 0x0000 after 0xFFF8) yields +8, not -65528.
+	delta := int16(raw - uint16(base))
 	return uint64(int64(base) + int64(delta))
 }
 
