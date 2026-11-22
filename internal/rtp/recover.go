@@ -287,6 +287,36 @@ type MissingRange struct {
 	Packets      int
 }
 
+// UnresolvedRanges returns, per gap record, the sequences that are still
+// missing. Partially retransmitted gaps report only their remaining
+// sub-ranges, so recovered media is never declared missing.
+func (r *Recovery) UnresolvedRanges() []SeqRange {
+	var out []SeqRange
+	for _, g := range r.gaps {
+		if g.State == GapRecovered || g.State == GapLost && g.Recovered == g.Range.Count {
+			continue
+		}
+		if g.RecoveryMask == nil {
+			out = append(out, g.Range)
+			continue
+		}
+		start := -1
+		for i := 0; i <= g.Range.Count; i++ {
+			missing := i < g.Range.Count && !g.RecoveryMask[i]
+			if missing && start < 0 {
+				start = i
+			}
+			if !missing && start >= 0 {
+				lo := uint16(int(g.Range.Start) + start)
+				hi := uint16(int(g.Range.Start) + i - 1)
+				out = append(out, SeqRange{Start: lo, End: hi, Count: i - start, Wrapped: lo > hi})
+				start = -1
+			}
+		}
+	}
+	return out
+}
+
 // MissingState projects lost gaps into the form consumed by alignment.
 func (r *Recovery) MissingState() []MissingRange {
 	var out []MissingRange

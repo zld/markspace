@@ -23,12 +23,15 @@ var (
 )
 
 // MissingRange mirrors the transport missing state on the unified timeline.
+// Groups lists the media groups the missing packets belonged to; it is the
+// join key back to container samples, which carry no sequence numbers.
 type MissingRange struct {
 	TrackID    uint32
 	StartTicks int64
 	EndTicks   int64
 	Packets    int
 	Source     string // e.g. "rtp:lost", kept for traceability
+	Groups     []uint32
 }
 
 // RawSample is one container sample before timebase conversion.
@@ -179,13 +182,33 @@ func Align(ref, target TrackView, cfg AlignConfig) (Alignment, error) {
 		return a, err
 	}
 	if m, ok := target.InGap(target.Samples[0].CTS, target.Samples[len(target.Samples)-1].CTS); ok {
-		a.Status = "unresolved"
 		a.Diagnostics = append(a.Diagnostics, Diagnostic{
 			Code: "transport_gap", TrackID: target.TrackID, Field: "cts",
-			Severity: "error",
-			Message:  fmt.Sprintf("missing state %s covers [%d..%d] packets=%d", m.Source, m.StartTicks, m.EndTicks, m.Packets),
+			Severity: "warning",
+			Message:  fmt.Sprintf("missing state %s covers [%d..%d] packets=%d groups=%v", m.Source, m.StartTicks, m.EndTicks, m.Packets, m.Groups),
 		})
-		return a, fmt.Errorf("%w: track %d [%d..%d]", ErrMissingState, target.TrackID, m.StartTicks, m.EndTicks)
+		// Contiguous samples on either side of the hole still align; only the
+		// samples the hole actually covers are excluded from the fit.
+		// Copy rather than filter in place: the caller's view must not be
+		// mutated by an alignment pass.
+		kept := make([]SampleTime, 0, len(target.Samples))
+		for _, s := range target.Samples {
+			if _, bad := target.InGap(s.CTS, s.CTS); bad {
+				continue
+			}
+			kept = append(kept, s)
+		}
+		if len(kept) == 0 {
+			a.Status = "unresolved"
+			return a, fmt.Errorf("%w: track %d has no samples outside gaps", ErrMissingState, target.TrackID)
+		}
+		if len(kept) < len(target.Samples) {
+			// The hole covers real samples: the fit is partial and the result
+			// is explicitly unresolved for downstream consumers.
+			a.Status = "unresolved"
+		}
+		target.Samples = kept
+		a.Matched = len(kept)
 	}
 	refTimes := make([]int64, len(ref.Samples))
 	for i, s := range ref.Samples {

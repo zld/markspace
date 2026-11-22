@@ -108,6 +108,16 @@ func (r *Record) Validate() error {
 	return nil
 }
 
+// Reset removes the journal, starting a fresh lineage of commit points. It is
+// used when a run is not a resume: the checkpoint directory describes one
+// pipeline execution history, not an accumulation of unrelated runs.
+func (j *Journal) Reset() error {
+	if err := os.Remove(j.path()); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
 // Journal is an append-only checkpoint log. Each line is length-prefixed and
 // self-checksummed, so a torn write at process death is detected and ignored.
 type Journal struct {

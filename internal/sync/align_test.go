@@ -77,15 +77,35 @@ func TestAlignRejectsNonMonotonic(t *testing.T) {
 	}
 }
 
-func TestAlignUnresolvedAcrossMissingState(t *testing.T) {
-	ref := TrackView{TrackID: 1, Samples: clockTimes(0, 3000, 6000)}
-	target := TrackView{TrackID: 2, Samples: clockTimes(0, 3000, 6000),
-		Missing: []MissingRange{{TrackID: 2, StartTicks: 4000, EndTicks: 5500, Packets: 3, Source: "rtp:lost"}}}
+func TestAlignFlagsMissingStateButKeepsContiguousFit(t *testing.T) {
+	ref := TrackView{TrackID: 1, Samples: clockTimes(0, 3000, 6000, 9000)}
+	target := TrackView{TrackID: 2, Samples: clockTimes(40, 3040, 6040, 9040),
+		Missing: []MissingRange{{TrackID: 2, StartTicks: 4000, EndTicks: 5500, Packets: 3,
+			Source: "rtp:lost", Groups: []uint32{7, 8}}}}
+	a, err := Align(ref, target, AlignConfig{ToleranceTicks: 10})
+	if err != nil {
+		t.Fatalf("alignment around gap failed: %v", err)
+	}
+	if a.Status != "aligned" {
+		t.Fatalf("alignment %+v", a)
+	}
+	if len(a.Diagnostics) != 1 || a.Diagnostics[0].Code != "transport_gap" {
+		t.Fatalf("missing state not propagated: %+v", a.Diagnostics)
+	}
+	if a.Diagnostics[0].Severity != "warning" || a.Offset != 40 {
+		t.Fatalf("diagnostic %+v offset %d", a.Diagnostics[0], a.Offset)
+	}
+}
+
+func TestAlignFullyMissingTrackIsUnresolved(t *testing.T) {
+	ref := TrackView{TrackID: 1, Samples: clockTimes(0, 3000)}
+	target := TrackView{TrackID: 2, Samples: clockTimes(0, 3000),
+		Missing: []MissingRange{{TrackID: 2, StartTicks: -10, EndTicks: 5000, Packets: 4, Source: "rtp:lost"}}}
 	a, err := Align(ref, target, AlignConfig{ToleranceTicks: 10})
 	if !errors.Is(err, ErrMissingState) {
-		t.Fatalf("missing state not propagated: %v", err)
+		t.Fatalf("fully covered track accepted: %v", err)
 	}
-	if a.Status != "unresolved" || len(a.Diagnostics) == 0 || a.Diagnostics[0].Code != "transport_gap" {
+	if a.Status != "unresolved" {
 		t.Fatalf("alignment %+v", a)
 	}
 }

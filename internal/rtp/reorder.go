@@ -43,6 +43,10 @@ type Packet struct {
 	Payload []byte
 }
 
+// Tracef, when non-nil, receives internal jitter-buffer diagnostics. Tests set
+// it to understand rejections; production never assigns it.
+var Tracef func(format string, args ...any)
+
 // PushStatus classifies the outcome of offering a packet to the jitter buffer.
 type PushStatus int
 
@@ -132,15 +136,16 @@ type held struct {
 // a packet twice and never invents packets: missing sequences become explicit
 // gaps handed to the recovery layer.
 type ReorderBuffer struct {
-	cfg     Config
-	started bool
-	next    int64 // next extended sequence expected at the emission point
-	ref     int64 // highest extended sequence seen
-	pending map[int64]held
-	emitted map[int64]struct{}
-	history []Packet // last emitted packets, bounded by Window
-	gapOpen bool     // a due gap at the emission point was already reported
-	stats   ReorderStats
+	cfg      Config
+	started  bool
+	next     int64 // next extended sequence expected at the emission point
+	ref      int64 // highest extended sequence seen
+	pending  map[int64]held
+	emitted  map[int64]struct{}
+	history  []Packet // last emitted packets, bounded by Window
+	gapOpen  bool     // a due gap at the emission point was already reported
+	released bool     // at least one packet has been emitted upstream
+	stats    ReorderStats
 }
 
 // NewReorderBuffer validates cfg and creates an empty buffer.
@@ -216,18 +221,32 @@ func (b *ReorderBuffer) Push(p Packet, arrival int64) (PushResult, error) {
 		b.ref = ext
 	}
 	if ext < b.next {
-		if _, ok := b.emitted[ext]; ok {
-			b.stats.Duplicates++
-			return PushResult{Status: StatusDuplicate}, nil
+		if b.released {
+			if _, ok := b.emitted[ext]; ok {
+				b.stats.Duplicates++
+				return PushResult{Status: StatusDuplicate}, nil
+			}
+			b.stats.LateDropped++
+			return PushResult{Status: StatusLate}, nil
 		}
-		b.stats.LateDropped++
-		return PushResult{Status: StatusLate}, nil
+		// Nothing has been emitted yet, so the emission point can still be
+		// rebased onto an earlier packet that jitter delivered later. The
+		// packet is then buffered normally, never dropped.
+		b.next = ext
+		b.gapOpen = false
 	}
 	if _, ok := b.pending[ext]; ok {
 		b.stats.Duplicates++
 		return PushResult{Status: StatusDuplicate}, nil
 	}
-	if ext < b.ref-int64(b.cfg.Window) || ext > b.next+int64(b.cfg.Window) {
+	// The window bounds reorder depth relative to the highest sequence seen. A
+	// hole at the emission point does not shrink it: packets behind the hole are
+	// still legitimate stream data and are released once the hole is resolved.
+	// Memory is bounded separately by MaxBufferedPackets.
+	if ext > b.ref+int64(b.cfg.Window) {
+		if Tracef != nil {
+			Tracef("outwin seq=%d ext=%d next=%d ref=%d win=%d", p.Seq, ext, b.next, b.ref, b.cfg.Window)
+		}
 		b.stats.OutOfWindow++
 		return PushResult{Status: StatusOutOfWindow}, nil
 	}
@@ -292,6 +311,7 @@ func (b *ReorderBuffer) releaseContiguous(now int64) []Packet {
 		delete(b.pending, b.next)
 		b.acceptEmitted(h.pkt)
 		b.next++
+		b.released = true
 		out = append(out, h.pkt)
 	}
 	if len(out) > 0 {
@@ -355,7 +375,11 @@ func (b *ReorderBuffer) SkipGap(now int64) ([]Packet, SeqRange, bool) {
 	b.stats.GapPackets += uint64(gap.Count)
 	b.next = low
 	b.gapOpen = false
-	return b.releaseContiguous(now), gap, true
+	ready := b.releaseContiguous(now)
+	if len(ready) > 0 {
+		b.released = true
+	}
+	return ready, gap, true
 }
 
 // Drain flushes the buffer at end of stream, emitting remaining packets in
@@ -384,6 +408,7 @@ func (b *ReorderBuffer) Drain() ([]Packet, []SeqRange) {
 		delete(b.pending, ext)
 		b.acceptEmitted(h.pkt)
 		b.next = ext + 1
+		b.released = true
 		out = append(out, h.pkt)
 	}
 	b.stats.Buffered = 0

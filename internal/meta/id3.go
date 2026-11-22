@@ -192,12 +192,15 @@ func parseID3Frame(id string, data []byte) (ID3Frame, error) {
 	if len(data) == 0 {
 		return f, fmt.Errorf("%w: frame %s empty", ErrMetaFormat, id)
 	}
-	body := data[1:]
+	body := data
 	if id != ID3FramePRIV {
+		// Text frames begin with a UTF-8 encoding byte; PRIV frames are raw
+		// owner\0data and have no encoding byte.
 		f.Encoding = data[0]
 		if f.Encoding != 3 {
 			return f, fmt.Errorf("%w: frame %s encoding %d", ErrUnsupportedID3, id, f.Encoding)
 		}
+		body = data[1:]
 	}
 	term := bytes.IndexByte(body, 0)
 	switch id {

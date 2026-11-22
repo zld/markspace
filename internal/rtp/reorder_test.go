@@ -97,12 +97,13 @@ func TestReorderRejectsDuplicatesCountsLate(t *testing.T) {
 	if res, _ := buf.Push(testPacket(21, 210), 1); res.Status != StatusDuplicate {
 		t.Fatalf("pending duplicate status %v", res.Status)
 	}
-	// 20 has never been emitted and the emission point is already past it.
-	if res, _ := buf.Push(testPacket(20, 200), 2); res.Status != StatusLate {
-		t.Fatalf("late status %v", res.Status)
-	}
+	// Before any release the emission point may still be rebased onto a late
+	// but earlier packet.
 	if ready := buf.Flush(100).Ready; len(ready) != 1 || ready[0].Seq != 21 {
 		t.Fatalf("ready %+v", ready)
+	}
+	if res, _ := buf.Push(testPacket(20, 200), 101); res.Status != StatusLate {
+		t.Fatalf("late status %v", res.Status)
 	}
 	if res, _ := buf.Push(testPacket(21, 210), 101); res.Status != StatusDuplicate {
 		t.Fatalf("emitted duplicate status %v", res.Status)
@@ -119,11 +120,18 @@ func TestReorderOutOfWindow(t *testing.T) {
 	if res, _ := buf.Push(testPacket(9, 90), 1); res.Status != StatusOutOfWindow {
 		t.Fatalf("status %v", res.Status)
 	}
-	if res, _ := buf.Push(testPacket(5, 50), 2); res.Status != StatusOutOfWindow {
-		t.Fatalf("beyond next+window status %v", res.Status)
+	if res, _ := buf.Push(testPacket(6, 60), 2); res.Status != StatusOutOfWindow {
+		t.Fatalf("beyond seen+window status %v", res.Status)
 	}
+	// A sequence behind the emission point after release is late, not
+	// out of window.
+	buf.Push(testPacket(2, 20), 3)
+	buf.Push(testPacket(3, 30), 4)
 	buf.Flush(100)
-	if st := buf.Stats(); st.OutOfWindow != 2 {
+	if res, _ := buf.Push(testPacket(0, 0), 101); res.Status != StatusLate {
+		t.Fatalf("late status %v", res.Status)
+	}
+	if st := buf.Stats(); st.OutOfWindow != 2 || st.LateDropped != 1 {
 		t.Fatalf("stats %+v", st)
 	}
 }
