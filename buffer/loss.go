@@ -51,9 +51,12 @@ func (r *LossRecovery) RecoverSilence(gap, prev, next mediacore.Event) (mediacor
 			"recover.uniqueness", int64(gap.Seq),
 			"gap size not uniquely determined by neighbouring block length and sample scale")
 	}
-	// Silence duration must match the hole on the integer timeline exactly.
-	holeStart := prev.Time + prev.Duration()
-	holeEnd := next.Time
+	// The silence duration must match the hole on the integer device scale
+	// exactly. The drift-corrected master time can carry rounding, so the
+	// structural decision uses the original integer device ticks, which are
+	// uniformly spaced by the fixed block size.
+	holeStart := prev.OrigTime + prev.Duration()
+	holeEnd := next.OrigTime
 	wantDur := int64(r.cfg.BlockSamples) * mediacore.Second / int64(r.cfg.Rate)
 	if holeEnd-holeStart != wantDur {
 		return mediacore.Event{}, mediacore.NewError(mediacore.CatOverlap, r.cfg.Track,
@@ -61,8 +64,8 @@ func (r *LossRecovery) RecoverSilence(gap, prev, next mediacore.Event) (mediacor
 	}
 	out := gap
 	out.Kind = mediacore.KindPCM
-	out.Time = holeStart
 	out.OrigTime = holeStart
+	out.Time = prev.Time + prev.Duration() // mapped placement for the timeline
 	out.Samples = r.cfg.BlockSamples
 	out.Channels = r.cfg.Channels
 	out.Rate = r.cfg.Rate
