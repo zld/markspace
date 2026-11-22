@@ -274,3 +274,25 @@ func TestStructuralErrorsRejected(t *testing.T) {
 		}
 	}
 }
+
+// TestRTPSequenceWrapEndToEnd binds RTP sequence numbers to frame sequence
+// numbers so a high capture origin crosses the 16-bit boundary mid-run.
+func TestRTPSequenceWrapEndToEnd(t *testing.T) {
+	cfg := smallConfig(t)
+	cfg.Frames = 700
+	cfg.StartFrameSeq = 65300
+	cfg.OutDir = t.TempDir()
+	r, err := Run(context.Background(), cfg, mustFaults(t, "duplicate", "reorder", "burst-loss"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Manifest.Frames != cfg.Frames {
+		t.Fatalf("frames=%d want %d", r.Manifest.Frames, cfg.Frames)
+	}
+	if r.Faults.Reordered == 0 || r.Faults.Bursts == 0 {
+		t.Fatalf("fault handling across wrap: reorder=%d bursts=%d", r.Faults.Reordered, r.Faults.Bursts)
+	}
+	if r.KeyframeHitRate() < 0.99 {
+		t.Fatalf("hit rate %v", r.KeyframeHitRate())
+	}
+}

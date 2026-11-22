@@ -32,7 +32,10 @@ func producePackets(ctx context.Context, q *pipeline.Queue[wirePacket], gen inge
 				StreamID: f.StreamID, FrameSeq: f.Seq, Ticks: f.Ticks, Key: f.Key,
 				MetaVersion: f.Meta.Version, Length: f.Meta.Length, Sum: f.Sum,
 			}
-			raw, err := transport.EncodePacket(meta, f.Payload, uint16(index), uint32(f.Ticks), f.StreamID)
+			// The RTP sequence follows the frame sequence, so a capture that
+			// starts near the top of the 16-bit range wraps during the run and
+			// exercises the wrap-aware reorder arithmetic.
+			raw, err := transport.EncodePacket(meta, f.Payload, uint16(f.Seq), uint32(f.Ticks), f.StreamID)
 			if err != nil {
 				return err
 			}
