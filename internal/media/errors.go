@@ -176,6 +176,16 @@ func As(err error, target **Error) bool {
 	return false
 }
 
+// AsError returns err as *Error, wrapping unclassified errors as
+// InvariantViolation so callers can always attach location data.
+func AsError(err error) *Error {
+	var e *Error
+	if As(err, &e) {
+		return e
+	}
+	return WrapError(InvariantViolation, err, "unclassified error")
+}
+
 // IsCorruptInput reports whether err represents damaged input rather than an
 // internal failure. The CLI maps corrupt input to exit status 2.
 func IsCorruptInput(err error) bool {
