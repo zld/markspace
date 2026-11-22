@@ -438,15 +438,6 @@ type transportOutcome struct {
 	unrecovered []rtp.SeqRange
 }
 
-// debugTransport, when non-nil, receives transport trace events in tests.
-var debugTransport func(format string, args ...any)
-
-func trace(format string, args ...any) {
-	if debugTransport != nil {
-		debugTransport(format, args...)
-	}
-}
-
 // retransmitDelay is the simulated round trip between a retransmission request
 // and the recovered fragment's arrival.
 const retransmitDelay = 5 * 90
@@ -565,7 +556,6 @@ func (r *Runner) runTransport() (*transportOutcome, error) {
 	var pending []*pendingGap
 	handle := func(ready []rtp.Packet) error {
 		for _, p := range ready {
-			trace("emit seq=%d", p.Seq)
 			if haveLast && p.Seq == lastSeq {
 				return fmt.Errorf("%w: duplicate emission seq %d", ErrInvariant, p.Seq)
 			}
@@ -595,7 +585,6 @@ func (r *Runner) runTransport() (*transportOutcome, error) {
 			out.requests++
 			_ = req
 		}
-		trace("gap %v at t=%d", gap, now)
 		pg := &pendingGap{rangeR: gap, record: g, dueAt: now + r.cfg.RecoverWaitTicks}
 		pending = append(pending, pg)
 		// The sender answers each missing sequence it still holds. Recoverable
@@ -615,7 +604,6 @@ func (r *Runner) runTransport() (*transportOutcome, error) {
 				// packet still arrives, but recovery must not claim it.
 				at = now + r.cfg.RecoverWaitTicks + retransmitDelay
 			}
-			trace("schedule retx seq=%d at t=%d (declared %d)", answer.Packet.Seq, at, now)
 			r.pushEvent(q, event{at: at, pkt: answer.Packet, retransmit: true})
 		}
 		return nil
@@ -634,7 +622,6 @@ func (r *Runner) runTransport() (*transportOutcome, error) {
 				continue
 			}
 			ready, skipped, ok := buf.SkipGap(now)
-			trace("skip %v -> ok=%v ready=%d state=%v", skipped, ok, len(ready), pg.record.State)
 			if ok {
 				out.unrecovered = append(out.unrecovered, skipped)
 				pg.skipped = true
@@ -648,12 +635,10 @@ func (r *Runner) runTransport() (*transportOutcome, error) {
 	processOne := func(ev event) error {
 		rec.AdvanceTo(ev.at)
 		if ev.retransmit {
-			st, err := buf.Push(ev.pkt, ev.at)
-			if err != nil {
+			if _, err := buf.Push(ev.pkt, ev.at); err != nil {
 				return err
 			}
 			ok, oerr := rec.Offer(ev.pkt)
-			trace("retx seq=%d at t=%d push=%v offer=%v/%v", ev.pkt.Seq, ev.at, st.Status, ok, oerr)
 			if oerr == nil && ok {
 				out.recovered++
 			}
@@ -674,7 +659,6 @@ func (r *Runner) runTransport() (*transportOutcome, error) {
 		if err := expireDue(ev.at); err != nil {
 			return err
 		}
-		trace("loop t=%d pending=%d queue=%d", ev.at, len(pending), len(q.items))
 		return nil
 	}
 	for !q.empty() {
@@ -727,9 +711,6 @@ func (r *Runner) runTransport() (*transportOutcome, error) {
 	// sub-ranges, never the packets that did arrive.
 	out.unrecovered = rec.UnresolvedRanges()
 	rs := buf.Stats()
-	trace("stats received=%d accepted=%d emitted=%d reordered=%d dup=%d late=%d outwin=%d gaps=%d gapPkts=%d buffered=%d",
-		rs.Received, rs.Accepted, rs.Emitted, rs.Reordered, rs.Duplicates, rs.LateDropped, rs.OutOfWindow,
-		rs.GapsDeclared, rs.GapPackets, rs.Buffered)
 	out.reordered = int(rs.Reordered)
 	out.duplicates = int(rs.Duplicates)
 	out.late = int(rs.LateDropped)

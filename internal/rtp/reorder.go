@@ -43,10 +43,6 @@ type Packet struct {
 	Payload []byte
 }
 
-// Tracef, when non-nil, receives internal jitter-buffer diagnostics. Tests set
-// it to understand rejections; production never assigns it.
-var Tracef func(format string, args ...any)
-
 // PushStatus classifies the outcome of offering a packet to the jitter buffer.
 type PushStatus int
 
@@ -244,9 +240,6 @@ func (b *ReorderBuffer) Push(p Packet, arrival int64) (PushResult, error) {
 	// still legitimate stream data and are released once the hole is resolved.
 	// Memory is bounded separately by MaxBufferedPackets.
 	if ext > b.ref+int64(b.cfg.Window) {
-		if Tracef != nil {
-			Tracef("outwin seq=%d ext=%d next=%d ref=%d win=%d", p.Seq, ext, b.next, b.ref, b.cfg.Window)
-		}
 		b.stats.OutOfWindow++
 		return PushResult{Status: StatusOutOfWindow}, nil
 	}

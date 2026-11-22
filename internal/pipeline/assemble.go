@@ -145,21 +145,3 @@ func (a *reassembly) incomplete() []groupKey {
 	}
 	return out
 }
-
-// gapLedger tracks declared and unrecovered sequence ranges.
-type gapLedger struct {
-	declared    []rtp.SeqRange
-	unrecovered int
-	recovered   int
-	late        int
-}
-
-func newGapLedger() *gapLedger { return &gapLedger{} }
-
-func (l *gapLedger) register(g *rtp.GapRecord) {}
-
-func (l *gapLedger) declare(rng rtp.SeqRange) {
-	l.declared = append(l.declared, rng)
-}
-
-func (l *gapLedger) isLate(seq uint16) bool { return false }
