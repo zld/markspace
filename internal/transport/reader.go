@@ -44,12 +44,15 @@ type Stats struct {
 	TransportErrors    int
 }
 
-// Reader splits a byte stream into TS packets.
+// Reader splits a byte stream into TS packets. Only a small sliding
+// window is buffered; the media file is never held in memory.
 type Reader struct {
-	r        io.Reader
-	tolerant bool
-	stats    Stats
-	pending  []byte // bytes kept while resyncing
+	r         io.Reader
+	tolerant  bool
+	stats     Stats
+	buf       []byte
+	eof       bool
+	resyncing bool
 }
 
 // NewReader builds a Reader. In tolerant mode corrupt bytes are skipped
@@ -65,47 +68,84 @@ func (r *Reader) Stats() Stats { return r.stats }
 // or ErrCorrupt on structural damage in strict mode.
 func (r *Reader) Next() (*Packet, error) {
 	for {
-		chunk := make([]byte, 0, PacketSize)
-		chunk = append(chunk, r.pending...)
-		r.pending = nil
-		tmp := make([]byte, PacketSize-len(chunk))
-		n, err := io.ReadFull(r.r, tmp)
-		chunk = append(chunk, tmp[:n]...)
-		if err != nil {
-			if len(chunk) == 0 {
-				return nil, io.EOF
-			}
-			r.stats.TruncatedTailBytes += len(chunk)
+		r.need(PacketSize)
+		if len(r.buf) == 0 {
+			return nil, io.EOF
+		}
+		if len(r.buf) < PacketSize { // truncated tail
+			r.stats.TruncatedTailBytes += len(r.buf)
+			r.buf = nil
 			if !r.tolerant {
 				return nil, ErrCorrupt
 			}
 			return nil, io.EOF
 		}
-		if chunk[0] != SyncByte {
-			r.stats.SyncErrors++
+		if r.buf[0] != SyncByte {
 			if !r.tolerant {
 				return nil, ErrCorrupt
 			}
-			// Resync: keep bytes from the next sync candidate onward.
-			if i := bytes.IndexByte(chunk[1:], SyncByte); i >= 0 {
-				r.pending = append([]byte(nil), chunk[i+1:]...)
+			r.markResync()
+			i := bytes.IndexByte(r.buf[1:], SyncByte)
+			if i < 0 {
+				if r.eof {
+					r.stats.TruncatedTailBytes += len(r.buf)
+					r.buf = nil
+					return nil, io.EOF
+				}
+				r.buf = r.buf[:0]
+				continue
 			}
+			r.buf = r.buf[i+1:]
 			continue
 		}
+		if r.resyncing {
+			// A lone 0x47 may be payload data; require the next
+			// packet boundary to confirm alignment.
+			r.need(2 * PacketSize)
+			if len(r.buf) >= 2*PacketSize && r.buf[PacketSize] != SyncByte {
+				r.buf = r.buf[1:]
+				continue
+			}
+		}
+		chunk := r.buf[:PacketSize]
+		r.buf = r.buf[PacketSize:]
 		p, err := parsePacket(chunk)
 		if err != nil {
-			r.stats.SyncErrors++
 			if !r.tolerant {
 				return nil, ErrCorrupt
 			}
+			r.markResync()
 			continue
 		}
+		r.resyncing = false
 		p.Index = r.stats.Packets
 		r.stats.Packets++
 		if p.TransportError {
 			r.stats.TransportErrors++
 		}
 		return p, nil
+	}
+}
+
+// need buffers at least n bytes unless EOF is reached first.
+func (r *Reader) need(n int) {
+	for len(r.buf) < n && !r.eof {
+		tmp := make([]byte, 8192)
+		m, err := r.r.Read(tmp)
+		if m > 0 {
+			r.buf = append(r.buf, tmp[:m]...)
+		}
+		if err != nil {
+			r.eof = true // io.EOF or a read error both end the stream
+		}
+	}
+}
+
+// markResync counts one sync-loss event per resync episode.
+func (r *Reader) markResync() {
+	if !r.resyncing {
+		r.stats.SyncErrors++
+		r.resyncing = true
 	}
 }
 
