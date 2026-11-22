@@ -50,6 +50,9 @@ type FileSpec struct {
 	Brands    []string
 	Tracks    []TrackSpec
 	UseCo64   bool
+	// ExtendedMdat writes mdat with a 64-bit size field, exercising the
+	// extended-size path of the box walker.
+	ExtendedMdat bool
 	// Corruption knobs.
 	TruncateAt    int64 // file is cut at this absolute offset, 0 disables
 	BreakStszAt   int   // sample index whose stsz entry is corrupted, -1 disables
@@ -214,6 +217,22 @@ func box(typ string, payload ...[]byte) []byte {
 	return b
 }
 
+// extendedBox emits a box whose size is declared with the 64-bit escape.
+func extendedBox(typ string, payload ...[]byte) []byte {
+	n := 16
+	for _, p := range payload {
+		n += len(p)
+	}
+	b := make([]byte, 16, n)
+	binary.BigEndian.PutUint32(b, 1)
+	copy(b[4:], typ)
+	binary.BigEndian.PutUint64(b[8:], uint64(n))
+	for _, p := range payload {
+		b = append(b, p...)
+	}
+	return b
+}
+
 func fullBox(typ string, version byte, flags uint32, payload ...[]byte) []byte {
 	h := []byte{version, byte(flags >> 16), byte(flags >> 8), byte(flags)}
 	return box(typ, append([][]byte{h}, payload...)...)
@@ -238,13 +257,17 @@ func Build(spec FileSpec) []byte {
 	ftyp := box("ftyp", []byte(pad4(spec.Major)), u32(0x200), brands(spec.Brands))
 	free := box("free", make([]byte, 8))
 	moovFirst := spec.MoovFirst
+	mdatHeader := int64(8)
+	if spec.ExtendedMdat {
+		mdatHeader = 16
+	}
 	var moov []byte
-	mdatStart := int64(len(ftyp)+len(free)) + 8
+	mdatStart := int64(len(ftyp)+len(free)) + mdatHeader
 	for i := 0; i < 4; i++ {
 		_, layouts := BuildMedia(spec, mdatStart)
 		moov = buildMoov(spec, layouts)
 		if moovFirst {
-			next := int64(len(ftyp)+len(free)+len(moov)) + 8
+			next := int64(len(ftyp)+len(free)+len(moov)) + mdatHeader
 			if next == mdatStart {
 				break
 			}
@@ -255,10 +278,14 @@ func Build(spec FileSpec) []byte {
 	}
 	media, _ := BuildMedia(spec, mdatStart)
 	var out []byte
+	mdatBox := box("mdat", media)
+	if spec.ExtendedMdat {
+		mdatBox = extendedBox("mdat", media)
+	}
 	if moovFirst {
-		out = cat(ftyp, free, moov, box("mdat", media))
+		out = cat(ftyp, free, moov, mdatBox)
 	} else {
-		out = cat(ftyp, free, box("mdat", media), moov)
+		out = cat(ftyp, free, mdatBox, moov)
 	}
 	if spec.TruncateAt > 0 && int64(len(out)) > spec.TruncateAt {
 		out = out[:spec.TruncateAt]

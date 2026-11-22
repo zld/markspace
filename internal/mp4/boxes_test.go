@@ -211,3 +211,41 @@ func TestOversizedFileIsRejected(t *testing.T) {
 		t.Fatalf("error does not name the limit: %v", e)
 	}
 }
+
+func TestExtendedSizeMdatParsesAndSamplesResolve(t *testing.T) {
+	for _, moovFirst := range []bool{true, false} {
+		testExtendedMdat(t, moovFirst)
+	}
+}
+
+func testExtendedMdat(t *testing.T, moovFirst bool) {
+	t.Helper()
+	spec := baseSpec(moovFirst)
+	spec.ExtendedMdat = true
+	raw := fixtures.Build(spec)
+	path := writeTemp(t, raw)
+	tree, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tree.Close()
+	if len(tree.Warnings) != 0 {
+		t.Fatalf("extended mdat produced warnings: %v", tree.Warnings)
+	}
+	mdat := tree.First("mdat")
+	if mdat == nil || !mdat.Extended || mdat.HeaderSize != 16 {
+		t.Fatalf("mdat header not parsed as 64-bit: %+v", mdat)
+	}
+	movie, err := ParseMovie(tree)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := len(movie.Tracks[0].Samples); got != 12 {
+		t.Fatalf("samples=%d want 12", got)
+	}
+	for _, s := range movie.Tracks[0].Samples {
+		if !s.InMdat {
+			t.Fatalf("sample %d not validated against extended mdat", s.Index)
+		}
+	}
+}

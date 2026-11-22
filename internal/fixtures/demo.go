@@ -58,9 +58,15 @@ func DemoFiles() []DemoFile {
 	noSync := cleanSpec(1, 61, nil)
 	noSync.DropSyncAfter = 41
 
+	// A camera that writes a 64-bit mdat header and a moov-first layout.
+	ext := cleanSpec(1, 71, []Range{{Start: 96000, End: 144000}})
+	ext.MoovFirst = true
+	ext.ExtendedMdat = true
+
 	return []DemoFile{
 		{Name: "cam_a_clean.mp4", Spec: cleanA, Expected: "clean baseline with a silent chapter"},
 		{Name: "cam_b_clean.mp4", Spec: cleanB, Expected: "clean baseline"},
+		{Name: "cam_c_extended.mp4", Spec: ext, Expected: "moov-first with a 64-bit mdat header"},
 		// Duplicate camera feed: a second file with identical track payloads.
 		{Name: "cam_b_copy.mp4", Spec: cleanB, Expected: "duplicate feed of cam_b_clean"},
 		{Name: "truncated.mp4", Spec: trunc, Damaged: true, Expected: "mdat truncated mid-payload"},
