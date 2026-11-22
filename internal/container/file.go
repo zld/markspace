@@ -85,7 +85,7 @@ func ScanFile(path string, lim Limits) (*Scan, error) {
 		}
 	}
 	s.Limits = lim
-	if moov == nil {
+	if moov == nil || moov.Truncated {
 		s.warn(core.New(core.CodeMoovMissing, core.StageScan, false,
 			"moov not readable; audio index cannot be trusted"))
 		return s, nil
