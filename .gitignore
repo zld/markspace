@@ -1,0 +1,7 @@
+# Build output
+/mediadump
+/bin/
+*.test
+
+# macOS
+.DS_Store

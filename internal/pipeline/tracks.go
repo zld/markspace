@@ -96,6 +96,16 @@ func processTrack(tr TrackInput, in Input, rep *Report) (*trackResult, error) {
 			rep.Record(perr)
 			continue
 		}
+		// Parity packets are not media: they carry no meaningful RTP
+		// timestamp of their own and must never advance the media clock.
+		if pkt.PayloadType == ParityPayloadType {
+			paritySeqs = append(paritySeqs, pkt.Seq)
+			if err := cache.AddParity(tr.SSRC, pkt.Seq, pkt.Payload); err != nil {
+				rep.Record(err)
+			}
+			continue
+		}
+
 		ext, terr := timeline.Extend(pkt.Timestamp, raw.Arrival)
 		if terr != nil {
 			rep.Record(terr)
@@ -105,14 +115,6 @@ func processTrack(tr TrackInput, in Input, rep *Report) (*trackResult, error) {
 		// position; its arrival jitter is irrelevant.
 		if _, seen := res.ext[pkt.Seq]; !seen || ext < res.ext[pkt.Seq] {
 			res.ext[pkt.Seq] = ext
-		}
-
-		if pkt.PayloadType == ParityPayloadType {
-			paritySeqs = append(paritySeqs, pkt.Seq)
-			if err := cache.AddParity(tr.SSRC, pkt.Seq, pkt.Payload); err != nil {
-				rep.Record(err)
-			}
-			continue
 		}
 		// Video media arrives framed for FEC; the cache stores frames so
 		// parity members are equal length. The delivered payload is the
