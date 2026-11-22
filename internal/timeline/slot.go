@@ -104,6 +104,10 @@ func (s *StreamComposer) Offer(id uint32, f *media.Frame) error {
 	if s.done[id] {
 		return media.NewError(media.KindState, id, f.Seq, -1, "track already finalized")
 	}
+	if f.Seq < s.lo || f.Seq > s.hi {
+		return media.NewError(media.KindRange, id, f.Seq, -1,
+			"sequence %d outside composed span [%d,%d]", f.Seq, s.lo, s.hi)
+	}
 	if s.started && f.Seq < s.next {
 		return media.NewError(media.KindState, id, f.Seq, -1, "slot %d already committed", s.next)
 	}

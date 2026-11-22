@@ -238,6 +238,7 @@ func exitCode(r *session.Result) int {
 
 func printSummary(s session.Summary) {
 	fmt.Printf("frames_in=%d\n", s.FramesIn)
+	fmt.Printf("frames_generated=%d\n", s.FramesGenerated)
 	fmt.Printf("tracks=%d\n", s.Tracks)
 	fmt.Printf("duplicates_dropped=%d\n", s.DuplicatesDropped)
 	fmt.Printf("reordered_recovered=%d\n", s.ReorderedRecovered)

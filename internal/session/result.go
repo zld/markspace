@@ -14,7 +14,8 @@ const SummaryFile = "summary.json"
 
 // Summary is the machine-readable acceptance result.
 type Summary struct {
-	FramesIn             int     `json:"frames_in"`
+	FramesIn             int     `json:"frames_in"`        // per track
+	FramesGenerated      int     `json:"frames_generated"` // across all tracks
 	Tracks               int     `json:"tracks"`
 	DuplicatesDropped    uint64  `json:"duplicates_dropped"`
 	ReorderedRecovered   uint64  `json:"reordered_recovered"`
@@ -39,7 +40,8 @@ type Summary struct {
 // Summarize reduces a run to the acceptance fields.
 func Summarize(r *Result) Summary {
 	return Summary{
-		FramesIn:             r.Config.Frames * r.Config.Tracks,
+		FramesIn:             r.Config.Frames,
+		FramesGenerated:      r.Config.Frames * r.Config.Tracks,
 		Tracks:               r.Config.Tracks,
 		DuplicatesDropped:    uint64(r.Faults.Duplicated),
 		ReorderedRecovered:   uint64(r.Faults.Reordered),

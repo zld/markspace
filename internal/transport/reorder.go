@@ -21,6 +21,9 @@ type Stats struct {
 	GapPackets uint64 // total missing packets inside gaps
 }
 
+// maxWindow bounds the reorder window to the signed 16-bit sequence space.
+const maxWindow = 1<<15 - 1
+
 // seqDiff returns a-b in wrap-aware RFC 1982 arithmetic.
 func seqDiff(a, b uint16) int16 { return int16(a - b) }
 
@@ -51,6 +54,11 @@ type Reorderer struct {
 func NewReorderer(streamID uint32, window, burstThreshold int) *Reorderer {
 	if window < 1 {
 		window = 1
+	}
+	// The wrap-aware distance is signed 16-bit; a larger window would make
+	// the forced-advance loop wrap negative and never terminate.
+	if window > maxWindow {
+		window = maxWindow
 	}
 	if burstThreshold < 1 {
 		burstThreshold = 1

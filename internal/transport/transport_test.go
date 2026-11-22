@@ -198,3 +198,27 @@ func TestBandwidthShiftAdjustsWindow(t *testing.T) {
 		t.Fatalf("hint out of bounds: %d", e.WindowHint())
 	}
 }
+
+func TestReorderWindowClamped(t *testing.T) {
+	r := NewReorderer(1, 1<<20, 3)
+	if r.Window != maxWindow {
+		t.Fatalf("window %d not clamped to %d", r.Window, maxWindow)
+	}
+	// A packet at the far edge must still terminate and commit gaps.
+	if o, g := r.Push(mustPkt(t, 0)); len(o) != 1 || len(g) != 0 {
+		t.Fatalf("first packet: out=%d gaps=%d", len(o), len(g))
+	}
+	// A packet at the far edge of the clamped window still buffers rather
+	// than forcing an int16 overflow in the advance loop.
+	o, g := r.Push(mustPkt(t, maxWindow))
+	if len(o) != 0 || len(g) != 0 {
+		t.Fatalf("edge packet: out=%d gaps=%d", len(o), len(g))
+	}
+	fo, fg := r.Flush()
+	if len(fo) != 1 || fo[0].SequenceNumber != maxWindow {
+		t.Fatalf("flush out: %v", fo)
+	}
+	if len(fg) != 1 || fg[0].Count != maxWindow-1 {
+		t.Fatalf("flush gap: %+v", fg)
+	}
+}
