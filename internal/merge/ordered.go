@@ -12,6 +12,10 @@ import (
 type Record struct {
 	Asset   string
 	StartMs float64
+	// StartUs is the exact source time in microseconds. It is carried through
+	// the merge so the manifest stage can prove that conversion to float
+	// milliseconds did not shift any row beyond rounding.
+	StartUs int64
 	Seq     int64
 	Stage   string
 	Kind    string

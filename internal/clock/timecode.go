@@ -345,3 +345,39 @@ func LabelFromFrame(frame int64, f Format) (Timecode, error) {
 func FormatForTimecodes(rate string, offset int64) (Format, error) {
 	return FormatFromRate(rate, offset)
 }
+
+// ParseRate parses a frame-rate expression into an exact rational frames per
+// second. Unlike FormatFromRate it is not asked to choose a drop-frame label
+// family, so "30000/1001" is unambiguous here: it is simply 30000/1001.
+func ParseRate(s string) (Rational, error) {
+	expr := strings.ToLower(strings.TrimSpace(s))
+	expr = strings.TrimSuffix(strings.TrimSuffix(expr, "fps"), "p")
+	switch expr {
+	case "24":
+		return NewRat(24, 1), nil
+	case "25", "pal":
+		return NewRat(25, 1), nil
+	case "50":
+		return NewRat(50, 1), nil
+	case "30":
+		return NewRat(30, 1), nil
+	case "29.97", "30000/1001", "23.976", "24000/1001":
+		// Both NTSC families share the same real frame duration.
+		if expr == "23.976" || expr == "24000/1001" {
+			return NewRat(24000, 1001), nil
+		}
+		return NewRat(30000, 1001), nil
+	}
+	if i := strings.IndexByte(expr, '/'); i > 0 {
+		num, err1 := strconv.ParseInt(strings.TrimSpace(expr[:i]), 10, 64)
+		den, err2 := strconv.ParseInt(strings.TrimSpace(expr[i+1:]), 10, 64)
+		if err1 == nil && err2 == nil && num > 0 && den > 0 {
+			return NewRat(num, den), nil
+		}
+	}
+	if v, err := strconv.ParseFloat(expr, 64); err == nil && v > 0 {
+		// Decimal rates are interpreted at 1/1000 resolution.
+		return NewRat(int64(v*1000+0.5), 1000), nil
+	}
+	return Zero, diag.New(diag.CodeMissingBase, 0, "cannot parse frame rate %q", s)
+}

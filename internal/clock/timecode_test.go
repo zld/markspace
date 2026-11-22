@@ -230,3 +230,20 @@ func TestFormatForTimecodesRejectsAmbiguousRate(t *testing.T) {
 		t.Fatalf("df rate: %v %v", f, err)
 	}
 }
+
+func TestParseRateKeepsRationalAndAmbiguitySeparate(t *testing.T) {
+	r, err := ParseRate("30000/1001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !r.Equal(NewRat(30000, 1001)) {
+		t.Fatalf("rate = %v", r)
+	}
+	// The same token remains ambiguous for SMPTE labels.
+	if _, err := FormatFromRate("30000/1001", 3); !diag.IsCode(err, diag.CodeAmbiguousDF) {
+		t.Fatalf("label format should be ambiguous: %v", err)
+	}
+	if _, err := ParseRate("bogus"); !diag.IsCode(err, diag.CodeMissingBase) {
+		t.Fatalf("bad rate accepted: %v", err)
+	}
+}
