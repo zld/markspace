@@ -173,15 +173,17 @@ func Generate(opt Options) (*Stream, error) {
 	}
 
 	gapped := buildRTP(16, true)
+	// The gapped capture is named after the node whose drift sidecar it pairs
+	// with, so the correction is bound to a real node identity.
 	st.Files = append(st.Files,
 		File{Name: "net/stream.rtp", Kind: KindRTP, Data: buildRTP(opt.RTPPackets, false)},
-		File{Name: "net/gapped.rtp", Kind: KindRTP, Data: gapped},
+		File{Name: "net/edge-b.rtp", Kind: KindRTP, Data: gapped},
 	)
 	// The gap is observed on the packet that follows the injected loss: its
 	// sequence number jumps past the three that were dropped.
 	if off := rtpRecordOffset(gapped, 6); off >= 0 {
 		st.Expected = append(st.Expected, Expectation{
-			Asset: "net/gapped.rtp", Format: "rtp", Category: "rtp_sequence_gap",
+			Asset: "net/edge-b.rtp", Format: "rtp", Category: "rtp_sequence_gap",
 			Span: core.Span{Start: off, End: off + 20},
 		})
 		st.CorruptOffset = append(st.CorruptOffset, off)

@@ -31,6 +31,9 @@ const (
 	CatRTPWrap Category = "rtp_wrap"
 	// CatNodeDrift marks a measured node clock drift correction.
 	CatNodeDrift Category = "node_drift"
+	// CatClockAlign marks a network loss that breaks clock alignment between
+	// RTP packets; the normalized clock cannot be interpolated across it.
+	CatClockAlign Category = "clock_alignment"
 	// CatTimecodeLabel marks an invalid or misplaced timecode label.
 	CatTimecodeLabel Category = "timecode_label"
 	// CatIndexOutOfRange marks a sample/index reference outside its source.
@@ -183,8 +186,8 @@ func (is Issues) Summary() string {
 func (i Issue) IsDamage() bool {
 	switch i.Category {
 	case CatTruncatedBox, CatMP4Length, CatSRTTime, CatVTTTime, CatTruncatedCue,
-		CatRTPSequence, CatNodeDrift, CatTimecodeLabel, CatIndexOutOfRange,
-		CatMonotonic, CatInvariant, CatUnsupported:
+		CatRTPSequence, CatClockAlign, CatNodeDrift, CatTimecodeLabel,
+		CatIndexOutOfRange, CatMonotonic, CatInvariant, CatUnsupported:
 		return true
 	}
 	return false

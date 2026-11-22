@@ -145,8 +145,14 @@ func abs64(v int64) int64 {
 func TestRepeatRunIsByteStable(t *testing.T) {
 	root, names, _ := setup(t)
 	params := runner(root, "").Params
-	out1, _ := runner(root, "").Run(names)
-	out2, _ := runner(root, "").Run(names)
+	out1, err1 := runner(root, "").Run(names)
+	out2, err2 := runner(root, "").Run(names)
+	if !errors.Is(err1, ErrDamaged) || !errors.Is(err2, ErrDamaged) {
+		t.Fatalf("run errors: %v %v", err1, err2)
+	}
+	if out1 == nil || out2 == nil {
+		t.Fatal("nil output")
+	}
 	var a, b bytes.Buffer
 	if err := WriteJSONL(&a, out1, params, out1.InputDigest, out1.ParamsDigest); err != nil {
 		t.Fatal(err)

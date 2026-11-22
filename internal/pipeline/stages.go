@@ -217,9 +217,18 @@ func (r *Runner) runNormalize(out *Output, cache *parseCache) error {
 			stream := cache.rtp[name]
 			track := "rtp:" + name
 			model := nodeModel(cache, name)
+			// Anchor each capture at its first packet so the RTP clock can be
+			// compared with media tracks that start at zero. Raw and extended
+			// timestamps are preserved on every point.
+			var origin core.Rational
+			if len(stream.Records) > 0 {
+				// ExtTS is already tick-scaled by the track scale, so the
+				// origin must be expressed in seconds, not ticks.
+				origin = core.Rat(-stream.Records[0].ExtTS, r.Params.ClockRate)
+			}
 			tr := clock.Track{
 				Name: track, Kind: clock.KindRTP, Asset: name,
-				Scale: core.Rat(1, r.Params.ClockRate), Origin: core.Zero(),
+				Scale: core.Rat(1, r.Params.ClockRate), Origin: origin,
 			}
 			if model != nil {
 				tr.Drift = model
@@ -231,13 +240,23 @@ func (r *Runner) runNormalize(out *Output, cache *parseCache) error {
 				if _, err := b.AddPoint(track, core.Rat(rec.ExtTS, 1), rec.Wrapped, rec.Span); err != nil {
 					return fmt.Errorf("pipeline: %w", err)
 				}
+				if rec.SeqJump > 0 {
+					// Lost packets break continuity: a node retry must reset
+					// alignment here rather than interpolate across the hole.
+					ns.Issues.Add(diagnose.Issue{
+						Category: diagnose.CatClockAlign, Stage: diagnose.StageNormalize,
+						Format: "rtp", Asset: name, Span: rec.Span,
+						Detail:      fmt.Sprintf("alignment gap after %d lost RTP packets", rec.SeqJump-1),
+						Recoverable: true,
+					})
+				}
 			}
 		case "timecode":
 			tc := cache.tc[name]
 			track := "tc:" + name
 			if err := b.AddTrack(clock.Track{
 				Name: track, Kind: clock.KindTimecode, Asset: name,
-				Scale: core.Rat(1, 1), Origin: core.Zero(),
+				Scale: core.Rat(1, 1000), Origin: core.Zero(),
 			}); err != nil {
 				return fmt.Errorf("pipeline: %w", err)
 			}
@@ -265,6 +284,14 @@ func (r *Runner) runNormalize(out *Output, cache *parseCache) error {
 		}
 		return fmt.Errorf("pipeline: %w", err)
 	}
+	resolveMaster(tl, r.Params.MasterTrack)
+	if err := tl.Validate(); err != nil {
+		ns.Issues.Add(diagnose.Issue{
+			Category: diagnose.CatMonotonic, Stage: diagnose.StageNormalize,
+			Format: "clock", Asset: r.Params.MasterTrack,
+			Span: core.Span{Start: 0, End: 0}, Detail: err.Error(),
+		})
+	}
 	ns.Tracks = tl.Tracks
 	ns.Points = tl.Points
 	ns.Wraps = tl.Wraps
@@ -274,24 +301,48 @@ func (r *Runner) runNormalize(out *Output, cache *parseCache) error {
 	return nil
 }
 
+// resolveMaster picks the timeline reference. The configured name may be a
+// bare kind ("video") while registered tracks are asset-qualified, so the
+// first matching track of that kind becomes the master deterministically.
+func resolveMaster(tl *clock.Timeline, want string) {
+	if want != "" && tl.TrackByName(want) != nil {
+		tl.Master = want
+		return
+	}
+	for _, tr := range tl.Tracks {
+		if want != "" && (string(tr.Kind) == want || strings.HasPrefix(tr.Name, want+"/")) {
+			tl.Master = tr.Name
+			return
+		}
+	}
+	for _, tr := range tl.Tracks {
+		if tr.Kind == clock.KindVideo {
+			tl.Master = tr.Name
+			return
+		}
+	}
+	if len(tl.Tracks) > 0 {
+		tl.Master = tl.Tracks[0].Name
+	}
+}
+
+// nodeModel binds a drift sidecar to the capture it belongs to. The match is
+// by node name appearing in the capture's path; a capture with no matching
+// sidecar is left uncorrected rather than inheriting another node's fit.
 func nodeModel(cache *parseCache, rtpName string) *clock.DriftModel {
-	// Bind a drift sidecar to an RTP capture by a shared asset stem when one
-	// exists; otherwise use the first fitted model so a single-node demo still
-	// exercises audited correction.
-	stem := strings.TrimSuffix(stemOf(rtpName), "stream")
-	stem = strings.TrimSuffix(stem, "gapped")
 	var names []string
 	for n := range cache.drift {
 		names = append(names, n)
 	}
 	sort.Strings(names)
 	for _, n := range names {
-		if strings.Contains(n, stem) && cache.drift[n].Model != nil {
-			return cache.drift[n].Model
+		d := cache.drift[n]
+		if d.Model == nil || d.Node == "" || d.Node == "unknown" {
+			continue
 		}
-	}
-	if len(names) > 0 && cache.drift[names[0]].Model != nil {
-		return cache.drift[names[0]].Model
+		if strings.Contains(rtpName, d.Node) {
+			return d.Model
+		}
 	}
 	return nil
 }
@@ -369,6 +420,13 @@ func (r *Runner) runIndex(assets []*ingest.Asset, out *Output, cache *parseCache
 			idx, issues := index.Build(a.Name, tr, spans)
 			st.Indexes = append(st.Indexes, *idx)
 			st.Issues = append(st.Issues, issues...)
+			if err := idx.Validate(a.Size()); err != nil {
+				st.Issues.Add(diagnose.Issue{
+					Category: diagnose.CatIndexOutOfRange, Stage: diagnose.StageIndex,
+					Format: "mp4", Asset: a.Name, Span: idx.Keyframes[0].Span,
+					Detail: err.Error(),
+				})
+			}
 		}
 	}
 	sort.SliceStable(st.Indexes, func(i, j int) bool {
