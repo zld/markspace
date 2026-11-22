@@ -25,6 +25,7 @@ func main() {
 	lossBurst := fs.Int("loss-burst", 3, "max consecutive audio packets lost (0..3)")
 	driftPPM := fs.Int("drift-ppm", 120, "sender clock drift in ppm")
 	chunkMS := fs.Int("chunk-ms", 20, "processing chunk size in milliseconds")
+	resumeAt := fs.Int("resume-at", 0, "if >0, checkpoint after N packets and resume on a fresh engine")
 	if err := fs.Parse(os.Args[2:]); err != nil {
 		os.Exit(2)
 	}
@@ -36,14 +37,34 @@ func main() {
 		DriftPPM:  *driftPPM,
 		ChunkMS:   *chunkMS,
 	}
-	rep, err := sim.Run(cfg)
+
+	// The uninterrupted run is the reference for every checkpoint comparison.
+	direct, err := sim.Run(cfg)
 	if err != nil {
-		// Invalid parameter or structurally rejected input.
-		out, _ := json.Marshal(rep)
+		out, _ := json.Marshal(sim.Report{Status: "rejected"})
 		fmt.Println(string(out))
 		fmt.Fprintln(os.Stderr, "rejected:", err)
 		os.Exit(2)
 	}
+	rep := direct
+
+	if *resumeAt > 0 {
+		resumed, err := sim.RunWithCheckpoint(cfg, *resumeAt)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "checkpoint restore failed:", err)
+			os.Exit(4)
+		}
+		// A resumed run must reproduce the uninterrupted event hash and the
+		// full audio sample count; any divergence is a recovery inconsistency.
+		if resumed.EventSHA256 != direct.EventSHA256 ||
+			resumed.AudioSamples != direct.AudioSamples {
+			resumed.Status = "checkpoint_mismatch"
+			rep = resumed
+		} else {
+			rep = resumed
+		}
+	}
+
 	out, err := json.Marshal(rep)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "report encode failed:", err)
