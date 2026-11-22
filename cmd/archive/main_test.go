@@ -2,7 +2,9 @@ package main
 
 import (
 	"bytes"
+	"encoding/csv"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -187,4 +189,50 @@ func mustInt(t *testing.T, s string) int {
 		t.Fatalf("int %q: %v", s, err)
 	}
 	return n
+}
+
+func TestCSVExportIsOrderedAndAtomic(t *testing.T) {
+	dir := t.TempDir()
+	csvPath := filepath.Join(dir, "rows.csv")
+	code, _, errs := runCLI(t, "analyze", "--fixture", "normal", "--workdir", dir,
+		"--fps", "30000/1001", "--mode", "recover", "--csv", csvPath)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errs)
+	}
+	f, err := os.Open(csvPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	r := csv.NewReader(f)
+	rows, err := r.ReadAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) < 12 {
+		t.Fatalf("csv rows = %d", len(rows))
+	}
+	if strings.Join(rows[0], ",") != "asset,start_ms,start_us,seq,stage,kind,payload" {
+		t.Fatalf("header = %v", rows[0])
+	}
+	prevAsset, prevStart := "", -1.0
+	for _, row := range rows[1:] {
+		var start float64
+		if _, err := fmt.Sscanf(row[1], "%g", &start); err != nil {
+			t.Fatalf("bad start %q: %v", row[1], err)
+		}
+		if row[0] < prevAsset {
+			t.Fatalf("assets out of order: %q after %q", row[0], prevAsset)
+		}
+		if row[0] == prevAsset && start < prevStart {
+			t.Fatalf("times out of order for %s: %v after %v", row[0], start, prevStart)
+		}
+		prevAsset, prevStart = row[0], start
+	}
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".manifest-") {
+			t.Fatalf("temp file left: %s", e.Name())
+		}
+	}
 }

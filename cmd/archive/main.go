@@ -4,7 +4,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -13,6 +15,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -38,6 +41,7 @@ analyze flags:
   --workers N      bounded worker count (default 4)
   --queue N        bounded queue depth (default 8)
   --manifest PATH  atomically write the JSON manifest to PATH
+  --csv PATH       atomically write manifest rows as CSV to PATH
   --json           print the manifest as JSON instead of the summary
 
 exit codes: 0 complete, 1 media/processing error, 2 bad arguments
@@ -109,6 +113,7 @@ func runAnalyze(args []string, stdout, stderr io.Writer) int {
 	workers := fs.Int("workers", 4, "worker count")
 	queue := fs.Int("queue", 8, "queue depth")
 	manifestPath := fs.String("manifest", "", "atomic JSON manifest output path")
+	csvPath := fs.String("csv", "", "atomic CSV row export path")
 	asJSON := fs.Bool("json", false, "print JSON manifest")
 	var inputs multiFlag
 	fs.Var(&inputs, "input", "explicit input path (repeatable)")
@@ -165,6 +170,12 @@ func runAnalyze(args []string, stdout, stderr io.Writer) int {
 		}
 		if *asJSON {
 			stdout.Write(data)
+		}
+	}
+	if *csvPath != "" {
+		if err := writeCSV(*csvPath, m); err != nil {
+			fmt.Fprintf(stderr, "analyze: write csv: %v\n", err)
+			return 1
 		}
 	}
 	printSummary(stdout, m)
@@ -249,6 +260,38 @@ func attach(a *pipeline.AssetInput, path string) {
 	}
 }
 
+// writeCSV exports manifest rows with encoding/csv so downstream catalogues
+// can import them without parsing the human summary. Rows are already in
+// deterministic total order, and the header is fixed.
+func writeCSV(path string, m *pipeline.Manifest) error {
+	var buf bytes.Buffer
+	w := csv.NewWriter(&buf)
+	if err := w.Write([]string{
+		"asset", "start_ms", "start_us", "seq", "stage", "kind", "payload",
+	}); err != nil {
+		return err
+	}
+	for _, r := range m.Rows {
+		rec := []string{
+			r.Asset,
+			strconv.FormatFloat(r.StartMs, 'f', 3, 64),
+			strconv.FormatInt(r.StartUs, 10),
+			strconv.FormatInt(r.Seq, 10),
+			r.Stage,
+			r.Kind,
+			r.Payload,
+		}
+		if err := w.Write(rec); err != nil {
+			return err
+		}
+	}
+	w.Flush()
+	if err := w.Error(); err != nil {
+		return err
+	}
+	return atomicWrite(path, buf.Bytes())
+}
+
 // atomicWrite writes through a temp file in the destination directory and
 // renames it into place, so a crash never leaves a partial manifest.
 func atomicWrite(path string, data []byte) error {
@@ -292,6 +335,8 @@ func printSummary(w io.Writer, m *pipeline.Manifest) {
 		fmt.Fprintf(w, "damage source=%s code=%s start_offset=%d end_offset=%d fault_count=%d recoverable=%t\n",
 			s.Source, s.Code, s.StartOffset, s.EndOffset, s.FaultCount, s.Recoverable)
 	}
+	fmt.Fprintf(w, "assets=%d rows=%d keyframes=%d samples=%d media_duration_ms=%.3f\n",
+		m.Assets, len(m.Rows), m.Metrics.KeyframeCount, m.Metrics.SampleCount, m.Metrics.MediaDurationMs)
 	for _, f := range m.Faults {
 		fmt.Fprintf(w, "fault code=%s offset=%d detail=%s\n", f.Code, f.Offset, f.Detail)
 	}
