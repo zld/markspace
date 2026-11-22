@@ -37,31 +37,59 @@ func (g *generator) corruptTruncated() {
 	g.out.buf.Write(data[:cut])
 }
 
-// corruptSampleTable rewrites one stco entry so a chunk offset points beyond
-// the file. This is an un-recoverable contradiction: the index cannot be
-// rebuilt from bitstream content because the declared geometry is invalid.
+// corruptSampleTable rewrites the first track's first stco chunk offset so it
+// points beyond the file. This is an un-recoverable contradiction: the index
+// cannot be rebuilt from bitstream content because declared geometry is bad.
 func (g *generator) corruptSampleTable() {
 	data := g.out.Bytes()
-	// locate the first track's stco: search for the FourCC inside moov.
-	idx := findBoxBytes(data, BoxStco, 0)
-	if idx < 0 {
+	res, err := Parse(data)
+	if err != nil {
+		return // leave data untouched; later stages report structural failure
+	}
+	stco, ok := findStcoOffset(res)
+	if !ok {
 		return
 	}
-	payloadStart := idx + 8 + 4 // box header + fullbox prefix + entry_count
-	if payloadStart+4 > len(data) {
+	// stco payload: fullbox(4) + entry_count(4) + first offset(4)
+	firstEntry := stco + 8 + 4 + 4
+	if firstEntry+4 > len(data) {
 		return
 	}
-	binary.BigEndian.PutUint32(data[payloadStart:payloadStart+4],
-		uint32(len(data))+4096)
+	binary.BigEndian.PutUint32(data[firstEntry:firstEntry+4], uint32(len(data))+4096)
 }
 
-// findBoxBytes returns the absolute offset of the first box header matching
-// t at or after from, or -1.
-func findBoxBytes(data []byte, t FourCC, from int) int {
-	for i := from; i+8 <= len(data); i++ {
-		if data[i+4] == t[0] && data[i+5] == t[1] && data[i+6] == t[2] && data[i+7] == t[3] {
-			return i
+// findStcoOffset returns the absolute header offset of the first stco box.
+func findStcoOffset(res *ParseResult) (int, bool) {
+	moov := FindFirst(res.Boxes, BoxMoov)
+	if moov == nil {
+		return 0, false
+	}
+	for _, trak := range FindAll(moov.Children, BoxTrak) {
+		if off := stcoInTrak(trak); off >= 0 {
+			return off, true
 		}
+	}
+	return 0, false
+}
+
+func stcoInTrak(trak *Box) int {
+	mdia := FindFirst(trak.Children, BoxMdia)
+	if mdia == nil {
+		return -1
+	}
+	minf := FindFirst(mdia.Children, BoxMinf)
+	if minf == nil {
+		return -1
+	}
+	stbl := FindFirst(minf.Children, BoxStbl)
+	if stbl == nil {
+		return -1
+	}
+	if stco := FindFirst(stbl.Children, BoxStco); stco != nil {
+		return int(stco.Offset)
+	}
+	if co64 := FindFirst(stbl.Children, BoxCo64); co64 != nil {
+		return int(co64.Offset)
 	}
 	return -1
 }
