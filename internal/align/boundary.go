@@ -22,7 +22,15 @@ func Align(d *model.Description, tolerance model.Rat, loose bool) (*Result, erro
 
 	all := make([]*Boundary, 0)
 	for _, ren := range rens {
-		all = append(all, ren.Boundaries...)
+		for _, b := range ren.Boundaries {
+			if b.Tail {
+				// Tail starts never gate publishing; their ranges are
+				// carried per-representation in the SegmentTimeline.
+				b.consumed = true
+				continue
+			}
+			all = append(all, b)
+		}
 	}
 	sort.SliceStable(all, func(i, j int) bool {
 		c, _ := all[i].Time.Compare(all[j].Time)
@@ -40,6 +48,12 @@ func Align(d *model.Description, tolerance model.Rat, loose bool) (*Result, erro
 		chosen := choosePerRendition(window, anchor)
 		anchor.consumed = true
 		if len(chosen) < len(rens) {
+			// Consume every boundary in the failed window so the
+			// counterpart rendition cannot re-anchor the same skew and
+			// emit a duplicate rejection.
+			for _, b := range window {
+				b.consumed = true
+			}
 			res.rejectMissing(rens, anchor, chosen, tolerance)
 			continue
 		}

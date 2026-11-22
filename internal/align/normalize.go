@@ -13,11 +13,16 @@ import (
 // ticks and in unified seconds. Original ticks are always retained so
 // diagnostics can report the unmodified encode timeline.
 type Boundary struct {
-	RepID    string
-	Tick     int64
-	Time     model.Rat
-	RA       bool
-	Number   int64
+	RepID  string
+	Tick   int64
+	Time   model.Rat
+	RA     bool
+	Number int64
+	// Tail marks the start of the final segment. Per the publishing
+	// contract, tail segments may legitimately differ between rends and
+	// are excluded from common-switch-point matching; their real ranges
+	// remain fully expressed in each representation's SegmentTimeline.
+	Tail     bool
 	consumed bool
 }
 
@@ -61,6 +66,7 @@ func Normalize(d *model.Description) ([]*Rendition, error) {
 			ren.Boundaries = append(ren.Boundaries, &Boundary{
 				RepID: r.ID, Tick: s.StartTick, Time: t,
 				RA: s.RandomAccess, Number: s.Number,
+				Tail: si == len(r.Segments)-1,
 			})
 			endTick, ok := addChecked(s.StartTick, s.Duration)
 			if !ok {
