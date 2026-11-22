@@ -47,6 +47,9 @@ type Options struct {
 	Wrap32        bool // drive timecodes across the 32-bit boundary
 	DriftPPM      float64
 	VFR           bool // variable frame intervals
+	// ClusterStepMS is the timecode delta between successive clusters.
+	// Zero defaults to 1000 ms so one cluster maps to one ~1 s segment.
+	ClusterStepMS uint64
 	Corrupt       Corruption
 }
 
@@ -143,6 +146,13 @@ func Generate(opt Options) []byte {
 	return doc
 }
 
+func maxi(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
 // sizeWidth returns the VINT width needed to encode a payload of size bytes.
 func sizeWidth(size int) int {
 	for w := 1; w <= 8; w++ {
@@ -183,11 +193,18 @@ func GenerateWithLayout(opt Options) ([]byte, Layout) {
 
 	unknownSeg := opt.UnknownLen || opt.Corrupt == CorruptUnknownNesting
 	// Timecode progression, optionally wrapping the 32-bit boundary.
+	clusterStep := opt.ClusterStepMS
+	if clusterStep == 0 {
+		clusterStep = 1000
+	}
 	tc := uint64(0)
 	if opt.Wrap32 {
-		tc = uint64(1)<<32 - uint64(opt.Clusters*opt.BlocksPerClus*40)
+		tc = uint64(1)<<32 - uint64(opt.Clusters)*clusterStep
 	}
-	frameStep := uint64(40) // ms
+	frameStep := clusterStep / uint64(maxi(opt.BlocksPerClus, 1))
+	if frameStep == 0 {
+		frameStep = clusterStep
+	}
 	type blockMark struct {
 		clusterIdx, blockIdx int
 		trackRel             int64 // offset relative to cluster element start
