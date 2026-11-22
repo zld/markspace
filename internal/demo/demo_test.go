@@ -125,3 +125,20 @@ func TestUnknownCaseRejected(t *testing.T) {
 		t.Fatalf("code=%d err=%v", code, err)
 	}
 }
+
+func TestSmallFrameOverrideScalesFeatures(t *testing.T) {
+	dir := t.TempDir()
+	rep, code, err := Run(Options{Case: CaseClean, OutDir: dir, Frames: 120})
+	if err != nil || code != 0 {
+		t.Fatalf("code=%d err=%v", code, err)
+	}
+	if rep.Frames != 120 {
+		t.Fatalf("frames=%d want 120", rep.Frames)
+	}
+	if rep.SilenceMS == 0 || rep.DuplicateGroups != 3 {
+		t.Fatalf("scaled features missing: silence=%d groups=%d", rep.SilenceMS, rep.DuplicateGroups)
+	}
+	if len(rep.Failures) != 0 {
+		t.Fatalf("failures=%+v", rep.Failures)
+	}
+}

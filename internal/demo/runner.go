@@ -108,13 +108,32 @@ func Run(opts Options) (*Report, int, error) {
 	fopts := fixture.DefaultOptions()
 	if opts.Frames > 0 {
 		fopts.Frames = opts.Frames
-		// Scale the quiet window and duplicate pairs into the smaller sample.
-		plan.QuietStart = fopts.Frames / 4
-		plan.QuietCount = fopts.Frames / 20
+		plan.Frames = opts.Frames
+		// Scale the quiet window and duplicate pairs into the smaller sample
+		// while keeping each derived feature large enough to be observable:
+		// at least 25 quiet frames (1 s) and three pairs that fit.
+		plan.QuietStart = fopts.Frames * 2 / 5
+		plan.QuietCount = fopts.Frames / 4
+		if plan.QuietCount < 25 {
+			plan.QuietCount = 25
+		}
+		if plan.QuietStart+plan.QuietCount > fopts.Frames {
+			plan.QuietStart = fopts.Frames - plan.QuietCount
+			if plan.QuietStart < 0 {
+				plan.QuietStart = 0
+			}
+		}
+		// Place the duplicate targets in the back third, distinct from content.
+		base := fopts.Frames - 10
 		plan.DuplicatePairs = [][2]int{
-			{fopts.Frames / 2, fopts.Frames/2 + 100},
-			{fopts.Frames/2 + 1, fopts.Frames/2 + 101},
-			{fopts.Frames/2 + 2, fopts.Frames/2 + 102},
+			{1, base},
+			{2, base + 1},
+			{3, base + 2},
+		}
+		for i := range plan.DuplicatePairs {
+			if plan.DuplicatePairs[i][1] >= fopts.Frames {
+				plan.DuplicatePairs[i][1] = fopts.Frames - 1
+			}
 		}
 	}
 	r := &Runner{opts: opts, plan: plan, fopts: fopts}
