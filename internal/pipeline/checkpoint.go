@@ -144,7 +144,11 @@ func (j *Journal) Append(r Record) error {
 	if r.Format == "" {
 		r.Format = recordFormat
 	}
-	r.StateDigest = r.computeDigest()
+	// An empty digest means "seal this record now". A caller-supplied digest is
+	// verified rather than overwritten, so a mismatched record is rejected.
+	if r.StateDigest == "" {
+		r.StateDigest = r.computeDigest()
+	}
 	if err := r.Validate(); err != nil {
 		return err
 	}

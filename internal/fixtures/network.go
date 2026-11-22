@@ -26,9 +26,9 @@ type FaultConfig struct {
 	LateLateRatio int
 }
 
-// Delivered is one packet that reached the receiver.
+// Delivered is one packet that reached the receiver, as serialized RTP bytes.
 type Delivered struct {
-	Packet  rtp.Packet
+	Wire    []byte
 	Arrival int64
 }
 
@@ -36,6 +36,7 @@ type Delivered struct {
 // Index is the position in the scenario packet order, used to address extended
 // sequence numbers.
 type Retransmit struct {
+	Wire   []byte
 	Packet rtp.Packet
 	Due    int64
 	Index  int
@@ -84,22 +85,26 @@ func Transmit(sc *Scenario, cfg FaultConfig) (*Transmission, error) {
 		if cfg.ReorderPermille > 0 && r.Intn(1000) < cfg.ReorderPermille {
 			arrival += int64(cfg.JitterMS+20) * 90
 		}
-		pkt := rtp.Packet{Seq: raw.Seq, TS: uint32(raw.MediaTicks), SSRC: 7}
+		pkt := rtp.Packet{Seq: raw.Seq, TS: uint32(raw.MediaTicks), SSRC: rtp.WireSSRC}
 		enc, err := rtp.Payload{Flags: raw.Flags, TrackID: uint16(raw.TrackID), Frame: raw.Frame,
 			MediaTicks: raw.MediaTicks, FragIndex: raw.FragIndex, FragCount: raw.FragCount, Data: raw.Data}.Marshal()
 		if err != nil {
 			return nil, err
 		}
 		pkt.Payload = enc
+		wire, werr := rtp.ToWire(pkt)
+		if werr != nil {
+			return nil, werr
+		}
 		if burstAt[i] {
 			late := r.Intn(1000) < cfg.LateLateRatio
-			tx.Retransmit = append(tx.Retransmit, Retransmit{Packet: pkt, Due: arrival + 5*90, Index: i, Late: late})
+			tx.Retransmit = append(tx.Retransmit, Retransmit{Wire: wire, Due: arrival + 5*90, Index: i, Late: late})
 			tx.Lost = append(tx.Lost, raw)
 			continue
 		}
-		tx.Delivered = append(tx.Delivered, Delivered{Packet: pkt, Arrival: arrival})
+		tx.Delivered = append(tx.Delivered, Delivered{Wire: wire, Arrival: arrival})
 		if cfg.DuplicatePermille > 0 && r.Intn(1000) < cfg.DuplicatePermille {
-			tx.Delivered = append(tx.Delivered, Delivered{Packet: pkt, Arrival: arrival + 900})
+			tx.Delivered = append(tx.Delivered, Delivered{Wire: wire, Arrival: arrival + 900})
 			tx.Duplicates++
 		}
 	}

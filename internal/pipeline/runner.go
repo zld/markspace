@@ -523,11 +523,20 @@ func (r *Runner) runTransport() (*transportOutcome, error) {
 	// sequences it actually lost.
 	retx := map[uint16][]fixtures.Retransmit{}
 	for _, rt := range r.tx.Retransmit {
-		retx[rt.Packet.Seq] = append(retx[rt.Packet.Seq], rt)
+		pkt, err := rtp.FromWire(rt.Wire)
+		if err != nil {
+			return nil, fmt.Errorf("pipeline: retransmission wire: %w", err)
+		}
+		rt.Packet = pkt
+		retx[pkt.Seq] = append(retx[pkt.Seq], rt)
 	}
 	q := &eventQueue{}
 	for _, d := range r.tx.Delivered {
-		r.pushEvent(q, event{at: d.Arrival, pkt: d.Packet})
+		pkt, err := rtp.FromWire(d.Wire)
+		if err != nil {
+			return nil, fmt.Errorf("pipeline: delivery wire: %w", err)
+		}
+		r.pushEvent(q, event{at: d.Arrival, pkt: pkt})
 	}
 	var lastSeq uint16
 	haveLast := false
