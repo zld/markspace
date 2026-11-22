@@ -1,0 +1,260 @@
+package pipeline
+
+import (
+	"bytes"
+	"errors"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"mediad/internal/fixture"
+	"mediad/internal/ingest"
+)
+
+// setup writes the demo fixtures into a temp root and returns the root, the
+// manifest names and the generation stream.
+func setup(t *testing.T) (string, []string, *fixture.Stream) {
+	t.Helper()
+	root := t.TempDir()
+	stream, err := fixture.Generate(fixture.DemoDefaults())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range stream.Files {
+		path := filepath.Join(root, filepath.FromSlash(f.Name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, f.Data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return root, stream.Names(), stream
+}
+
+func runner(root, cp string) *Runner {
+	return &Runner{
+		Root: root,
+		Params: Parameters{
+			Seed: 42, ClockRate: 90000, MasterTrack: "video",
+			MaxAssetBytes: ingest.DefaultLimits().MaxAssetBytes,
+		},
+		Checkpoint:     cp,
+		CheckpointRoot: root,
+	}
+}
+
+func TestEndToEndAcceptance(t *testing.T) {
+	root, names, stream := setup(t)
+	out, err := runner(root, "").Run(names)
+	if !errors.Is(err, ErrDamaged) {
+		t.Fatalf("want ErrDamaged for the corrupt corpus, got %v", err)
+	}
+	s := out.Summary
+	if s.Cues < 20 {
+		t.Fatalf("cues=%d want >=20", s.Cues)
+	}
+	if s.Frames < 100 {
+		t.Fatalf("frames=%d want >=100", s.Frames)
+	}
+	if s.KeyframeGaps < 4 {
+		t.Fatalf("keyframe_gaps=%d", s.KeyframeGaps)
+	}
+	if s.CorruptRanges < 5 {
+		t.Fatalf("corrupt_ranges=%d want >=5", s.CorruptRanges)
+	}
+	if s.InvariantsFailed != 0 {
+		t.Fatalf("invariants failed=%d: %v", s.InvariantsFailed, out.Validate.Result.FailedChecks())
+	}
+	if s.SHA256 == "" || len(s.SHA256) != 64 {
+		t.Fatalf("sha256=%q", s.SHA256)
+	}
+	// Every generated MP4 carries the same sample table, so each contributes
+	// (frames/30 - 1) gaps even when its media bytes are damaged.
+	mp4s := 0
+	for _, f := range stream.Files {
+		if f.Kind == fixture.KindMP4 || f.Kind == fixture.KindCorruptMP4 {
+			mp4s++
+		}
+	}
+	if got := mp4s * (stream.NormalFrames/30 - 1); s.KeyframeGaps != got {
+		t.Fatalf("keyframe gaps=%d want %d from %d mp4s", s.KeyframeGaps, got, mp4s)
+	}
+	// Every injected fault class must appear in the diagnosed ranges.
+	want := map[string]bool{
+		"truncated_box": false, "mp4_length": false, "srt_time": false,
+		"vtt_time": false, "rtp_sequence_gap": false, "node_drift": false,
+		"timecode_label": false, "truncated_cue": false,
+	}
+	for _, rg := range out.Diagnose.Ranges {
+		for _, c := range rg.Categories {
+			if _, ok := want[c]; ok {
+				want[c] = true
+			}
+		}
+	}
+	for cat, seen := range want {
+		if !seen {
+			t.Errorf("fault class %s was not localized", cat)
+		}
+	}
+}
+
+func TestOffsetsMatchGroundTruth(t *testing.T) {
+	root, names, stream := setup(t)
+	out, err := runner(root, "").Run(names)
+	if err != nil && !errors.Is(err, ErrDamaged) {
+		t.Fatal(err)
+	}
+	score := 0
+	for _, want := range stream.Expected {
+		best := int64(1 << 40)
+		for _, rg := range out.Diagnose.Ranges {
+			if rg.Asset != want.Asset {
+				continue
+			}
+			has := false
+			for _, c := range rg.Categories {
+				if c == want.Category {
+					has = true
+				}
+			}
+			if !has {
+				continue
+			}
+			for _, cand := range []int64{rg.Span.Start, rg.Span.End} {
+				if d := cand - want.Span.Start; d >= 0 && d < best || d < 0 && -d < best {
+					best = abs64(d)
+				}
+			}
+		}
+		score += int(best)
+	}
+	if score != 0 {
+		t.Fatalf("offset error=%d want 0", score)
+	}
+}
+
+func abs64(v int64) int64 {
+	if v < 0 {
+		return -v
+	}
+	return v
+}
+
+func TestRepeatRunIsByteStable(t *testing.T) {
+	root, names, _ := setup(t)
+	params := runner(root, "").Params
+	out1, _ := runner(root, "").Run(names)
+	out2, _ := runner(root, "").Run(names)
+	var a, b bytes.Buffer
+	if err := WriteJSONL(&a, out1, params, out1.InputDigest, out1.ParamsDigest); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteJSONL(&b, out2, params, out2.InputDigest, out2.ParamsDigest); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(a.Bytes(), b.Bytes()) {
+		t.Fatal("two runs of identical input produced different report bytes")
+	}
+	if out1.Summary.SHA256 != out2.Summary.SHA256 {
+		t.Fatalf("checksum drifted: %s vs %s", out1.Summary.SHA256, out2.Summary.SHA256)
+	}
+}
+
+func TestResumeProducesIdenticalResult(t *testing.T) {
+	root, names, _ := setup(t)
+	cp := filepath.Join(root, "state", "checkpoint.json")
+	full, err := runner(root, cp).Run(names)
+	if err != nil && !errors.Is(err, ErrDamaged) {
+		t.Fatal(err)
+	}
+	params := runner(root, "").Params
+
+	// Simulate a crash after the normalize stage by dropping later stages.
+	store, err := loadStore(cp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := truncateAfter(store, cp, "normalize"); err != nil {
+		t.Fatal(err)
+	}
+	resumed, err := runner(root, cp).Run(names)
+	if err != nil && !errors.Is(err, ErrDamaged) {
+		t.Fatal(err)
+	}
+	if len(resumed.Resumed) != 2 {
+		t.Fatalf("resumed stages=%v want [ingest normalize]", resumed.Resumed)
+	}
+	if len(resumed.Resumed) > 0 && resumed.Resumed[0] != "ingest" {
+		t.Fatalf("resume order=%v", resumed.Resumed)
+	}
+	var a, b bytes.Buffer
+	_ = WriteJSONL(&a, full, params, full.InputDigest, full.ParamsDigest)
+	_ = WriteJSONL(&b, resumed, params, resumed.InputDigest, resumed.ParamsDigest)
+	stripHeader := func(buf *bytes.Buffer) []byte {
+		lines := bytes.Split(bytes.TrimSpace(buf.Bytes()), []byte("\n"))
+		return bytes.Join(lines[1:], []byte("\n"))
+	}
+	if !bytes.Equal(stripHeader(&a), stripHeader(&b)) {
+		t.Fatal("resumed report differs from a full run")
+	}
+	if full.Summary.SHA256 != resumed.Summary.SHA256 {
+		t.Fatalf("resumed checksum %s != %s", resumed.Summary.SHA256, full.Summary.SHA256)
+	}
+	if full.Summary.OffsetErrorBytes != resumed.Summary.OffsetErrorBytes {
+		t.Fatal("offset error changed across resume")
+	}
+}
+
+func TestResumeRejectsChangedInput(t *testing.T) {
+	root, names, _ := setup(t)
+	cp := filepath.Join(root, "cp.json")
+	if _, err := runner(root, cp).Run(names); err != nil && !errors.Is(err, ErrDamaged) {
+		t.Fatal(err)
+	}
+	// Change one input byte; the digest must no longer match.
+	path := filepath.Join(root, filepath.FromSlash(names[2]))
+	if err := os.WriteFile(path, []byte("WEBVTT\n\n00:01.000 --> 00:02.000\nchanged\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := runner(root, cp).Run(names)
+	if !errors.Is(err, ErrCheckpoint) {
+		t.Fatalf("want ErrCheckpoint for changed input, got %v", err)
+	}
+}
+
+func TestVerifyReport(t *testing.T) {
+	root, names, _ := setup(t)
+	out, err := runner(root, "").Run(names)
+	if err != nil && !errors.Is(err, ErrDamaged) {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := WriteJSONL(&buf, out, runner(root, "").Params, out.InputDigest, out.ParamsDigest); err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := ParseReport(bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, digest, match := VerifyReport(parsed)
+	if res.Failed != 0 {
+		t.Fatalf("invariants failed: %v", res.FailedChecks())
+	}
+	if !match || digest != out.Summary.SHA256 {
+		t.Fatalf("checksum mismatch: verify=%s run=%s match=%v", digest, out.Summary.SHA256, match)
+	}
+	if parsed.Summary.CorruptRanges != out.Summary.CorruptRanges {
+		t.Fatalf("summary corrupt ranges=%d want %d", parsed.Summary.CorruptRanges, out.Summary.CorruptRanges)
+	}
+}
+
+func TestReportRejectsUnknownRecords(t *testing.T) {
+	if _, err := ParseReport(bytes.NewReader([]byte(`{"kind":"mystery"}` + "\n"))); err == nil {
+		t.Fatal("want unknown kind error")
+	}
+	if _, err := ParseReport(bytes.NewReader([]byte(`{"kind":"run","version":1,"bogus":true}` + "\n"))); err == nil {
+		t.Fatal("want unknown field error")
+	}
+}
