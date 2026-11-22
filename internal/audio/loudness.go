@@ -172,17 +172,12 @@ func ApplyGain(b *Buffer, req GainRequest) (*Buffer, GainResult, error) {
 		gr.Output = gr.Input
 		return out, gr, nil
 	}
-	gainDB := req.TargetLUFS - gr.Input.IntegratedLUFS
-	// Peak ceiling: never allow the predicted true peak above the ceiling.
-	headroom := req.PeakDBFS - gr.Input.TruePeakDBFS
-	if gainDB > headroom {
-		gainDB = headroom
-		gr.GainLimited = true
+	gainDB, limited, err := gainFor(gr.Input, req)
+	if err != nil {
+		return nil, gr, err
 	}
-	if math.IsNaN(gainDB) || math.IsInf(gainDB, 0) {
-		gainDB = 0
-	}
-	g := math.Pow(10, gainDB/20)
+	gr.GainLimited = limited
+	g := dbToLinear(gainDB)
 	for i := range out.Data {
 		out.Data[i] *= g
 	}
@@ -190,6 +185,32 @@ func ApplyGain(b *Buffer, req GainRequest) (*Buffer, GainResult, error) {
 	gr.Output = Measure(out)
 	return out, gr, nil
 }
+
+// gainFor applies the loudness target and clamps to the peak ceiling. Silent
+// input keeps 0 dB so it stays silent rather than being amplified to noise.
+func gainFor(in LoudnessResult, req GainRequest) (gainDB float64, limited bool, err error) {
+	if req.TargetLUFS > 0 || req.TargetLUFS < -70 {
+		return 0, false, fmt.Errorf("audio: target loudness %.2f outside (-70,0]", req.TargetLUFS)
+	}
+	if req.PeakDBFS > 0 {
+		return 0, false, fmt.Errorf("audio: peak ceiling %.2f above 0 dBFS", req.PeakDBFS)
+	}
+	if in.Frames == 0 || in.IntegratedLUFS <= SilenceLUFS+1e-9 {
+		return 0, false, nil
+	}
+	gainDB = req.TargetLUFS - in.IntegratedLUFS
+	headroom := req.PeakDBFS - in.TruePeakDBFS
+	if gainDB > headroom {
+		gainDB = headroom
+		limited = true
+	}
+	if math.IsNaN(gainDB) || math.IsInf(gainDB, 0) {
+		gainDB = 0
+	}
+	return gainDB, limited, nil
+}
+
+func dbToLinear(db float64) float64 { return math.Pow(10, db/20) }
 
 // CountClipped returns how many samples sit at or beyond full scale.
 func CountClipped(b *Buffer, limit float64) int {
