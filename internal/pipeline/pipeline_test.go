@@ -349,3 +349,55 @@ func TestIllegalCueDoesNotPolluteFollowingCue(t *testing.T) {
 		t.Fatalf("cue after the rejected block absorbed text: %v", lines)
 	}
 }
+
+// TestEachStageCommitsAndCanBeResumedFromAnyPoint truncates the journal after
+// every stage in turn and checks that resuming from that point still produces
+// the full run's checksum and body bytes.
+func TestEachStageCommitsAndCanBeResumedFromAnyPoint(t *testing.T) {
+	root, names, _ := setup(t)
+	params := runner(root, "").Params
+	baseCP := filepath.Join(root, "base.json")
+	full, err := runner(root, baseCP).Run(names)
+	if err != nil && !errors.Is(err, ErrDamaged) {
+		t.Fatal(err)
+	}
+	var want bytes.Buffer
+	if err := WriteJSONL(&want, full, params, full.InputDigest, full.ParamsDigest); err != nil {
+		t.Fatal(err)
+	}
+	stages := StageOrder()
+	for cut := 0; cut < len(stages); cut++ {
+		cp := filepath.Join(root, "stage-"+stages[cut]+".json")
+		src, err := os.ReadFile(baseCP)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(cp, src, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		loaded, err := loadStore(cp)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := truncateAfter(loaded, cp, stages[cut]); err != nil {
+			t.Fatal(err)
+		}
+		got, err := runner(root, cp).Run(names)
+		if err != nil && !errors.Is(err, ErrDamaged) {
+			t.Fatal(err)
+		}
+		if got.Summary.SHA256 != full.Summary.SHA256 {
+			t.Fatalf("resume after %s: checksum %s != %s", stages[cut], got.Summary.SHA256, full.Summary.SHA256)
+		}
+		if got.Resumed[0] != stages[0] {
+			t.Fatalf("resume after %s started at %v", stages[cut], got.Resumed)
+		}
+		var have bytes.Buffer
+		if err := WriteJSONL(&have, got, params, got.InputDigest, got.ParamsDigest); err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(have.Bytes(), want.Bytes()) {
+			t.Fatalf("resume after %s produced different report bytes", stages[cut])
+		}
+	}
+}
