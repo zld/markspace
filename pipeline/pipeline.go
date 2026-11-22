@@ -1,6 +1,8 @@
 package pipeline
 
 import (
+	"encoding/hex"
+
 	"mediacore/index"
 	"mediacore/media"
 )
@@ -47,6 +49,14 @@ func (s *BufferSource) FrameAt(e index.Entry) (*media.Frame, error) {
 	if f.Seq != e.Seq {
 		return nil, media.New(media.CatIndexInput, media.StageSegment,
 			"record seq %d != indexed %d", f.Seq, e.Seq).
+			WithOffset(e.Offset).WithSeq(e.Seq)
+	}
+	// The index recorded each record's own SHA-256. Re-checking it here proves
+	// the pipeline is consuming bytes that still match what was verified at
+	// scan time, not merely bytes that happen to parse.
+	if hex.EncodeToString(f.Digest[:]) != e.Digest {
+		return nil, media.New(media.CatIndexInput, media.StageSegment,
+			"record content digest no longer matches the index").
 			WithOffset(e.Offset).WithSeq(e.Seq)
 	}
 	if s.Seen != nil {

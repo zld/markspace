@@ -320,3 +320,19 @@ func TestInvalidConfigRejected(t *testing.T) {
 		t.Fatal("mismatched timescales must be rejected")
 	}
 }
+
+func TestBufferSourceRejectsIndexDigestMismatch(t *testing.T) {
+	data, idx := buildStream(t, timeline(5, nil))
+	// Tamper the index entry digest only; the record bytes still parse.
+	bad := *idx
+	bad.Entries = append([]index.Entry(nil), idx.Entries...)
+	bad.Entries[2].Digest = "0000000000000000000000000000000000000000000000000000000000000000"
+	src := NewBufferSource(data, media.DefaultLimits())
+	_, err := Run(&bad, src, DefaultConfig(media.DefaultTimescale))
+	if err == nil {
+		t.Fatal("pipeline must reject a record whose digest disagrees with the index")
+	}
+	if media.CategoryOf(err) != media.CatIndexInput {
+		t.Fatalf("category=%s", media.CategoryOf(err))
+	}
+}
