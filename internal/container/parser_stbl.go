@@ -59,9 +59,11 @@ func parseStbl(tr *model.Track, stbl *Box, fileLen uint64, opts ParseOptions) er
 	if uint32(len(samples)) > model.MaxSamples {
 		return model.AtTrack(model.StageIndex, model.ErrLimitExceeded, tr.ID, "sample count")
 	}
-	// Keyframes.
+	// Keyframes. Video requires an explicit or recoverable stss; audio has
+	// no stss by design and every audio sample is independently accessible.
 	keySet := map[uint32]bool{}
-	if stss != nil {
+	switch {
+	case stss != nil:
 		keys, err := parseStss(tr.ID, stss, len(samples))
 		if err != nil {
 			return err
@@ -70,7 +72,12 @@ func parseStbl(tr *model.Track, stbl *Box, fileLen uint64, opts ParseOptions) er
 			keySet[k] = true
 		}
 		tr.IndexMode = "native"
-	} else {
+	case tr.Kind == model.KindAudio:
+		for i := range samples {
+			keySet[uint32(i)] = true
+		}
+		tr.IndexMode = "implicit-audio"
+	default:
 		if rebuildKeyframes(samples, opts.Data) == 0 {
 			return model.AtTrack(model.StageIndex, model.ErrMissingKeyframeIdx, tr.ID,
 				"no stss and no recoverable bitstream keyframe markers")
