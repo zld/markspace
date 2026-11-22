@@ -22,9 +22,11 @@ const (
 func (l Layout) Channels() int { return int(l) }
 
 // Resampler is a streaming linear-interpolation sample-rate converter. The
-// global output position is computed from the emitted-frame counter, so
-// chunk boundaries never affect the result and the total frame count tracks
-// the theoretical value with sub-frame error.
+// global output position is computed from exact integer arithmetic, so chunk
+// boundaries never affect the result and the total frame count tracks the
+// theoretical value with sub-frame error. An output frame that would need
+// the next chunk's first input frame is deferred to the next Process call;
+// Flush emits the deferred tail with a fixed zero-pad rule.
 type Resampler struct {
 	InRate   int
 	OutRate  int
@@ -33,7 +35,8 @@ type Resampler struct {
 	acc      *clock.Accumulator
 	emitted  int64
 	consumed int64
-	last     []float64 // final input frame of the previous chunk
+	pending  int64 // due but deferred (needs future input)
+	last     []float64
 }
 
 // NewResampler builds a Resampler; rates must be positive.
@@ -55,27 +58,44 @@ func ExpectedOut(inFrames int64, inRate, outRate int) int64 {
 }
 
 // Process converts one chunk of interleaved input and returns interleaved
-// output. Frames beyond the chunk end read as zero (fixed tail rule), which
-// only affects the final interpolation interval of the stream.
+// output. Output frames needing not-yet-available input are deferred.
 func (r *Resampler) Process(in []float64) []float64 {
 	frames := int64(len(in) / r.Channels)
-	n := r.acc.Next(frames)
-	out := make([]float64, 0, n*int64(r.Channels))
-	step := float64(r.InRate) / float64(r.OutRate)
-	for k := int64(0); k < n; k++ {
-		pos := float64(r.emitted+k)*step - float64(r.consumed)
-		i0 := int64(math.Floor(pos))
-		frac := pos - float64(i0)
+	r.pending += r.acc.Next(frames)
+	avail := r.consumed + frames - 1 // last available global input frame
+	out := r.emitWhile(in, frames, avail)
+	r.consumed += frames
+	if frames > 0 {
+		r.last = append(r.last[:0], in[(frames-1)*int64(r.Channels):frames*int64(r.Channels)]...)
+	}
+	return out
+}
+
+// Flush emits the deferred tail. The frame after the final input frame
+// reads as zero: the fixed, deterministic end-of-stream padding rule.
+func (r *Resampler) Flush() []float64 {
+	return r.emitWhile(nil, 0, r.consumed)
+}
+
+// emitWhile emits pending output frames whose interpolation inputs lie at
+// or before the global input frame avail.
+func (r *Resampler) emitWhile(in []float64, frames, avail int64) []float64 {
+	var out []float64
+	for r.pending > 0 {
+		g := r.emitted * int64(r.InRate)
+		ig := g / int64(r.OutRate)
+		if ig+1 > avail {
+			break
+		}
+		i0 := ig - r.consumed
+		frac := float64(g%int64(r.OutRate)) / float64(r.OutRate)
 		for ch := 0; ch < r.Channels; ch++ {
 			a := r.sampleAt(in, frames, i0, ch)
 			b := r.sampleAt(in, frames, i0+1, ch)
 			out = append(out, a+(b-a)*frac)
 		}
-	}
-	r.emitted += n
-	r.consumed += frames
-	if frames > 0 {
-		r.last = append(r.last[:0], in[(frames-1)*int64(r.Channels):frames*int64(r.Channels)]...)
+		r.emitted++
+		r.pending--
 	}
 	return out
 }
