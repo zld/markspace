@@ -21,11 +21,14 @@ type Ticks int64
 var ErrOverflow = errors.New("timeline: timestamp conversion overflow")
 
 // MsToTicks converts milliseconds to ticks with overflow protection.
+// At 90 kHz one millisecond is exactly Timescale/1000 = 90 ticks.
 func MsToTicks(ms int64) (Ticks, error) {
+	// The multiply must stay within int64; the trailing /1000 can only
+	// shrink the magnitude, so the product bound is the effective guard.
 	if ms > math.MaxInt64/Timescale || ms < math.MinInt64/Timescale {
 		return 0, ErrOverflow
 	}
-	return Ticks(ms * Timescale), nil
+	return Ticks(ms * Timescale / 1000), nil
 }
 
 // MustMs is MsToTicks for compile-time-safe small constants; it panics
@@ -39,7 +42,7 @@ func MustMs(ms int64) Ticks {
 }
 
 // Millis converts ticks to whole milliseconds, truncated toward zero.
-func (t Ticks) Millis() int64 { return int64(t) / Timescale }
+func (t Ticks) Millis() int64 { return int64(t) / (Timescale / 1000) }
 
 // MillisFloat converts ticks to fractional milliseconds.
 func (t Ticks) MillisFloat() float64 { return float64(t) * 1000 / Timescale }

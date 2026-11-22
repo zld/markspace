@@ -10,11 +10,15 @@ func TestMsToTicksRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ticks != Ticks(90000000) {
-		t.Fatalf("1000ms = %d ticks, want 90000000", ticks)
+	if ticks != Ticks(90000) {
+		t.Fatalf("1000ms = %d ticks, want 90000 (90 kHz)", ticks)
 	}
 	if got := ticks.Millis(); got != 1000 {
 		t.Fatalf("roundtrip = %dms, want 1000", got)
+	}
+	small, err := MsToTicks(15)
+	if err != nil || small != 1350 || small.MillisFloat() != 15 {
+		t.Fatalf("15ms = %d ticks / %.4f ms", small, small.MillisFloat())
 	}
 }
 
