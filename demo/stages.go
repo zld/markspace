@@ -30,15 +30,15 @@ type ingestPayload struct {
 }
 
 type timelinePayload struct {
-	Order        []string               `json:"order"`
-	Start        int64                  `json:"start"`
-	End          int64                  `json:"end"`
-	FPS          int64                  `json:"fps"`
-	FrameCount   int                    `json:"frame_count"`
-	MaxSkewNanos int64                  `json:"max_skew_nanos"`
-	Tracks       []manifest.TrackEntry  `json:"tracks"`
-	Transitions  []timeline.Transition  `json:"transitions"`
-	Clips        []timeline.Clip        `json:"clips"`
+	Order        []string              `json:"order"`
+	Start        int64                 `json:"start"`
+	End          int64                 `json:"end"`
+	FPS          int64                 `json:"fps"`
+	FrameCount   int                   `json:"frame_count"`
+	MaxSkewNanos int64                 `json:"max_skew_nanos"`
+	Tracks       []manifest.TrackEntry `json:"tracks"`
+	Transitions  []timeline.Transition `json:"transitions"`
+	Clips        []timeline.Clip       `json:"clips"`
 }
 
 type renderPayload struct {
@@ -161,7 +161,7 @@ func Stages(in InputSet, def *TimelineDef, params Params, outDir string) []pipel
 			Version: 1, Timebase: "ns",
 			StartNanos: tp.Start, EndNanos: tp.End,
 			FrameIntervalNanos: timeline.FrameInterval(tp.FPS), FPS: tp.FPS,
-			MaxSkewNanos:       tp.MaxSkewNanos,
+			MaxSkewNanos: tp.MaxSkewNanos,
 			Stats: manifest.StatsBlock{
 				Frames: rp.Stats.Frames, ValidFrames: rp.Stats.ValidFrames, GapFrames: rp.Stats.GapFrames,
 				QualityMean: rp.Stats.QualityMean, TargetBps: params.TargetBps, ActualBps: actualBps,

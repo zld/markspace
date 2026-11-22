@@ -20,7 +20,7 @@ const (
 
 // SourceFrame is one input frame aligned to the output grid.
 type SourceFrame struct {
-	Time int64 // nanoseconds on the shared timeline
+	Time int64  // nanoseconds on the shared timeline
 	Data []byte // encoded sample payload (feeds the frame hash)
 	Size int    // encoded size in bytes (feeds bitrate statistics)
 }
@@ -156,7 +156,11 @@ func (c *Compositor) Render(sources []TrackSource, transitions []timeline.Transi
 		if missing || len(hits) == 0 {
 			fr.Valid = false
 			fr.Quality = QualityGap
-			fr.Size = 0
+			// the hole marks the lost track; surviving tracks still
+			// contribute their encoded size to bitrate statistics
+			if pf, ok := findFrame(videos[0].Frames, t); ok {
+				fr.Size = pf.Size
+			}
 			hole := contentPattern(c.Seed, "hole", i, nil, npix)
 			fr.Hash = HashFrame(i, t, false, hole)
 			res.Frames = append(res.Frames, fr)

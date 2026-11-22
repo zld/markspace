@@ -112,8 +112,8 @@ func fixtureTruncatedMP4(out string) fixtureResult {
 	m := &manifest.Manifest{
 		Version: 1, Timebase: "ns", EndNanos: end, FPS: 30,
 		FrameIntervalNanos: timeline.FrameInterval(30),
-		Stats: manifest.StatsBlock{Frames: res.Stats.Frames, ValidFrames: res.Stats.ValidFrames, GapFrames: res.Stats.GapFrames},
-		Tracks: []manifest.TrackEntry{{ID: "v", Kind: "video", CorruptOffset: tr.CorruptOffset}},
+		Stats:              manifest.StatsBlock{Frames: res.Stats.Frames, ValidFrames: res.Stats.ValidFrames, GapFrames: res.Stats.GapFrames},
+		Tracks:             []manifest.TrackEntry{{ID: "v", Kind: "video", CorruptOffset: tr.CorruptOffset}},
 	}
 	for i, fr := range res.Frames {
 		m.Frames = append(m.Frames, manifest.FrameEntry{

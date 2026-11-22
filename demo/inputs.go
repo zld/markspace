@@ -133,7 +133,7 @@ func demoRTPPackets(seed int64) []*rtp.Packet {
 				Timestamp:      uint32(rtpTSBase + i*3000),
 				SSRC:           0x5eed,
 			},
-			Payload: fillFunc(seed + 2)(9, i, 200),
+			Payload: fillFunc(seed+2)(9, i, 200),
 		}
 	}
 	var pkts []*rtp.Packet

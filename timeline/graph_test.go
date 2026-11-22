@@ -89,9 +89,9 @@ func TestClipHalfOpenAndValidation(t *testing.T) {
 		t.Fatal("duration wrong")
 	}
 	for _, bad := range []Clip{
-		{TrackID: "v", SourceIn: 5, SourceOut: 5},   // zero length
-		{TrackID: "v", SourceIn: 6, SourceOut: 5},   // inverted
-		{TrackID: "v", SourceIn: -1, SourceOut: 5},  // negative
+		{TrackID: "v", SourceIn: 5, SourceOut: 5},  // zero length
+		{TrackID: "v", SourceIn: 6, SourceOut: 5},  // inverted
+		{TrackID: "v", SourceIn: -1, SourceOut: 5}, // negative
 		{TrackID: "v", SourceIn: 0, SourceOut: 5, TimelineStart: -1},
 	} {
 		if err := bad.Validate(); err == nil {

@@ -108,8 +108,8 @@ func Verify(m *Manifest) error {
 		if f.Index != i {
 			return merr.Corruptf("manifest", "", "frame %d out of order (index %d)", i, f.Index)
 		}
-		if !f.Valid && f.Size != 0 {
-			return merr.Corruptf("manifest", "", "hole frame %d carries payload size %d", i, f.Size)
+		if !f.Valid && f.Hash == "" {
+			return merr.Corruptf("manifest", "", "hole frame %d has no hash", i)
 		}
 		if err := timeline.GridError("manifest", i, timeline.FrameTime(m.StartNanos, m.FPS, int64(i)), f.TimeNanos); err != nil {
 			return merr.Corruptf("manifest", "", "%v", err)
