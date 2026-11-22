@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"tsaudit/internal/fixture"
 	"tsaudit/internal/report"
@@ -54,7 +55,7 @@ func run(args []string) int {
 	case "audit":
 		fs := flag.NewFlagSet("audit", flag.ContinueOnError)
 		asJSON := fs.Bool("json", false, "emit JSON instead of a terminal summary")
-		if err := fs.Parse(args[1:]); err != nil || fs.NArg() != 1 {
+		if err := fs.Parse(flagsFirst(args[1:])); err != nil || fs.NArg() != 1 {
 			usage()
 			return exitUsage
 		}
@@ -68,7 +69,7 @@ func run(args []string) int {
 	case "fixture":
 		fs := flag.NewFlagSet("fixture", flag.ContinueOnError)
 		gap := fs.Bool("gap", false, "write the fragmented-PMT scenario")
-		if err := fs.Parse(args[1:]); err != nil || fs.NArg() != 1 {
+		if err := fs.Parse(flagsFirst(args[1:])); err != nil || fs.NArg() != 1 {
 			usage()
 			return exitUsage
 		}
@@ -109,6 +110,20 @@ func audit(input string, r io.Reader, asJSON bool) int {
 		return exitNoTables
 	}
 	return exitOK
+}
+
+// flagsFirst reorders args so flags are parsed even when they follow
+// positional arguments (flag.Parse stops at the first positional).
+func flagsFirst(args []string) []string {
+	var flags, positional []string
+	for _, a := range args {
+		if strings.HasPrefix(a, "-") {
+			flags = append(flags, a)
+		} else {
+			positional = append(positional, a)
+		}
+	}
+	return append(flags, positional...)
 }
 
 func usage() {
