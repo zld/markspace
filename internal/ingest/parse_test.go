@@ -310,3 +310,103 @@ func TestReadAssetCap(t *testing.T) {
 }
 
 func span(start, end int64) core.Span { return core.Span{Start: start, End: end} }
+
+func TestTimecodeShortFieldsAndOptions(t *testing.T) {
+	// "MM:SS:FF" is accepted only when explicitly requested.
+	if _, err := ParseTimecode("01:02:03", Rate25, span(0, 8)); err == nil {
+		t.Fatal("short timecode accepted without the option")
+	}
+	tc, err := ParseTimecode("01:02:03", Rate25, span(0, 8), AllowMissingHours())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tc.Hours != 0 || tc.Minutes != 1 || tc.Seconds != 2 || tc.Frames != 3 {
+		t.Fatalf("parsed=%+v", tc)
+	}
+	want := int64((62*25 + 3))
+	if tc.FramesTotal != want {
+		t.Fatalf("frames=%d want %d", tc.FramesTotal, want)
+	}
+}
+
+func TestTimecodeRejectsMalformedSeparators(t *testing.T) {
+	bad := []string{"00:00:00.00", "00;00;00;00", "00:00:00:00;", "00:00:00;00;00", "aa:00:00:00", "00:60:00:00", "00:00:60:00", "00:00:00:999"}
+	for _, raw := range bad {
+		if _, err := ParseTimecode(raw, Rate2997, span(0, int64(len(raw)))); err == nil {
+			t.Errorf("%q: want error", raw)
+		}
+	}
+}
+
+func TestRTPOutOfOrderIsDistinguishedFromLoss(t *testing.T) {
+	var buf []byte
+	for _, seq := range []uint16{10, 11, 14, 12, 13} {
+		buf = appendLengthPrefixed(buf, rtpPacket(seq, uint32(seq)*3000))
+	}
+	st, err := ParseRTP(asset("o.rtp", string(buf)), 90000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.GapLoss != 2 {
+		t.Fatalf("gap loss=%d", st.GapLoss)
+	}
+	// 14 -> 12 is one late packet; 12 -> 13 then advances normally.
+	if st.OutOfOrder != 1 {
+		t.Fatalf("out of order=%d", st.OutOfOrder)
+	}
+	for _, is := range st.IssueList {
+		if is.Category == diagnose.CatRTPSequence && is.Span.Start == 0 {
+			t.Fatalf("finding without an offset: %+v", is)
+		}
+	}
+}
+
+func TestParseSRTSecondPrecisionAndDotFraction(t *testing.T) {
+	// Some encoders emit "00:00:01.500"; the seconds fraction accepts '.'
+	// when it is not the field separator position of a WebVTT timestamp.
+	src := "1\n00:00:01.500 --> 00:00:02.000\nhi\n"
+	subs, err := ParseSRT(asset("dot.srt", src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(subs.Cues) != 1 {
+		t.Fatalf("cues=%d issues=%v", len(subs.Cues), subs.Issues)
+	}
+	if subs.Cues[0].Top.String() != "3/2" {
+		t.Fatalf("top=%s", subs.Cues[0].Top)
+	}
+}
+
+func TestParseVTTRejectsCommaFractions(t *testing.T) {
+	src := "WEBVTT\n\n00:01,000 --> 00:02,000\nwrong\n\n00:03.000 --> 00:04.000\nright\n"
+	subs, err := ParseVTT(asset("comma.vtt", src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(subs.Cues) != 1 || len(subs.Issues) != 1 {
+		t.Fatalf("cues=%d issues=%v", len(subs.Cues), subs.Issues)
+	}
+	if subs.Cues[0].Lines[0] != "right" {
+		t.Fatalf("following cue polluted: %v", subs.Cues[0])
+	}
+	if subs.Issues[0].Span.Start == 0 {
+		t.Fatalf("issue has no offset: %+v", subs.Issues[0])
+	}
+}
+
+func TestUTF16BOMIsReportedNotParsed(t *testing.T) {
+	a := &Asset{Name: "u.srt", Format: "srt", Data: []byte{0xff, 0xfe, 'h', 0, 'i', 0}}
+	subs, err := ParseSRT(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(subs.Cues) != 0 {
+		t.Fatalf("UTF-16 input produced %d cues", len(subs.Cues))
+	}
+	if len(subs.Issues) != 1 || subs.Issues[0].Category != diagnose.CatUnsupported {
+		t.Fatalf("issues=%v", subs.Issues)
+	}
+	if subs.Issues[0].Span != (core.Span{Start: 0, End: 2}) {
+		t.Fatalf("span=%+v", subs.Issues[0].Span)
+	}
+}

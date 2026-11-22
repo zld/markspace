@@ -87,15 +87,3 @@ func firstInvalidUTF8(data []byte) int64 {
 	}
 	return -1
 }
-
-// trimSpaceSpan narrows [start,end) past leading and trailing ASCII spaces
-// and tabs. It never crosses the half-open bound.
-func trimSpaceSpan(data []byte, start, end int64) core.Span {
-	for start < end && (data[start] == ' ' || data[start] == '\t') {
-		start++
-	}
-	for end > start && (data[end-1] == ' ' || data[end-1] == '\t') {
-		end--
-	}
-	return core.Span{Start: start, End: end}
-}

@@ -274,12 +274,3 @@ func (s *Store) SortedStages() []StageRecord {
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
 }
-
-// Digest returns the digest of the whole checkpoint for auditing.
-func (s *Store) Digest() (string, error) {
-	data, err := json.Marshal(s.cp)
-	if err != nil {
-		return "", err
-	}
-	return core.HashParts(data), nil
-}
