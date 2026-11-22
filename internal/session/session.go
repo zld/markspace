@@ -219,8 +219,13 @@ func Run(ctx context.Context, cfg Config, faults Faults) (*Result, error) {
 	}
 	res := &Result{Config: cfg, QueueCap: cfg.Queue}
 	if runErr := pipeline.Run(ctx, produce, decode, compose); runErr != nil {
+		abortBuilders(builders)
+		// A caller cancellation aborts the run; the partially written export
+		// is not a valid acceptance artifact.
+		if ctx.Err() != nil {
+			return nil, media.NewError(media.KindCanceled, 0, 0, -1, "run canceled")
+		}
 		if me, ok := runErr.(*media.Error); !ok || me.Kind != media.KindCanceled {
-			abortBuilders(builders)
 			return nil, runErr
 		}
 	}

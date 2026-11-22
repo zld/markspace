@@ -252,3 +252,12 @@ func (s *StreamComposer) Flush(fn func(OutputFrame) error) error {
 	}
 	return s.Drain(fn)
 }
+
+// NextIndex reports the next sequence number to be composed, or hi+1 once
+// the span is exhausted.
+func (s *StreamComposer) NextIndex() uint64 {
+	if !s.started {
+		return s.lo
+	}
+	return s.next
+}

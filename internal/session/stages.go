@@ -48,7 +48,9 @@ func producePackets(ctx context.Context, q *pipeline.Queue[wirePacket], gen inge
 				return err
 			}
 		}
-		stats[ti].Received = uint64(cfg.Frames + injs[ti].Counts.Duplicated)
+		// Received counts unique capture frames handed to the network; the
+		// identity accepted+rejected+lost == received holds per track.
+		stats[ti].Received = uint64(cfg.Frames)
 		stats[ti].Duplicates = uint64(injs[ti].Counts.Duplicated)
 	}
 	return nil
@@ -197,6 +199,11 @@ func composeExport(ctx context.Context, in *pipeline.Queue[recoveredFrame],
 		if err := sc.Drain(emit); err != nil {
 			return err
 		}
+	}
+	// A canceled run must stop promptly: flushing would render placeholder
+	// frames for the entire unread remainder of the timeline.
+	if err := ctx.Err(); err != nil {
+		return media.NewError(media.KindCanceled, 0, sc.NextIndex(), -1, "export canceled: %v", err)
 	}
 	// Every track is finalized at once: the frame queue closes only after all
 	// of them have been drained, so Flush can decide the tail slots.
