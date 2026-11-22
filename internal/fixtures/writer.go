@@ -433,7 +433,7 @@ func buildStsd(tr TrackSpec) []byte {
 	switch tr.Codec {
 	case CodecPCM:
 		// PCM sample entry: version 0, 2 channels, 16-bit, 48 kHz.
-		body := cat(make([]byte, 6), u16(1), u16(0), u16(0), u16(0),
+		body := cat(make([]byte, 6), u16(1), u16(0), u16(0), u32(0),
 			u16(2), u16(16), u16(0), u16(0), u32(48000<<16))
 		entry = box("twos", body)
 	case CodecAAC:
@@ -441,7 +441,7 @@ func buildStsd(tr TrackSpec) []byte {
 			[]byte{0x03, 0x19, 0x00, 0x01, 0x00, 0x04, 0x11, 0x40, 0x15,
 				0x00, 0x00, 0x00, 0x00, 0x01, 0xf4, 0x00, 0x00, 0x01, 0xf4,
 				0x00, 0x05, 0x02, 0x12, 0x10, 0x06, 0x01, 0x02})
-		body := cat(make([]byte, 6), u16(1), u16(0), u16(0), u16(0),
+		body := cat(make([]byte, 6), u16(1), u16(0), u16(0), u32(0),
 			u16(2), u16(16), u16(0), u16(0), u32(48000<<16), esds)
 		entry = box("mp4a", body)
 	default:

@@ -138,6 +138,19 @@ func (p *Presentation) At(trackID uint32, i int) (int64, bool) {
 // Times exposes the raw slice (zero for unusable samples).
 func (p *Presentation) Times(trackID uint32) []int64 { return p.times[trackID] }
 
+// SegmentPlan is a cut that has been aligned but not yet hashed.
+type SegmentPlan struct {
+	TrackID      uint32
+	StartNS      int64
+	EndNS        int64
+	FirstSample  int
+	SampleCount  int
+	KeyOffset    int64
+	KeyPresented int64
+	KeyExact     bool
+	Gap          int64
+}
+
 // Planner wires parsed media to the index and fingerprint stages.
 type Planner struct {
 	Movie   *mp4.Movie
@@ -162,16 +175,104 @@ func NewPlanner(movie *mp4.Movie, tree *mp4.Tree, ix *index.Index, pres *Present
 		Samples: NewSampleSource(tree, movie)}, nil
 }
 
-// Run segments each requested range, snapping every cut back to the newest
-// sync frame and clamping spans to the 30-minute cap.
-func (p *Planner) Run(reqs []Request) (*Result, error) {
-	res := &Result{Silence: p.Silence}
+// Plan aligns each requested range to sync frames without reading payloads.
+// Partial failures are returned alongside the plans that succeeded.
+func (p *Planner) Plan(reqs []Request) ([]SegmentPlan, error) {
+	var out []SegmentPlan
 	var problems []error
 	for _, req := range reqs {
-		segs, err := p.runTrack(req, res)
-		res.Segments = append(res.Segments, segs...)
+		tr := p.trackByID(req.TrackID)
+		if tr == nil {
+			problems = append(problems, fault.Errorf("pipeline.track", fault.KindParse,
+				"unknown track %d", req.TrackID).WithTrack(req.TrackID))
+			continue
+		}
+		ti := p.indexFor(req.TrackID)
+		if ti == nil {
+			problems = append(problems, fault.Errorf("pipeline.track", fault.KindIndex,
+				"no keyframe index for track %d", req.TrackID).WithTrack(req.TrackID).Wrapped(fault.ErrNoKeyframe))
+			continue
+		}
+		if req.EndNS <= req.StartNS {
+			problems = append(problems, fault.Errorf("pipeline.track", fault.KindIndex,
+				"empty range [%d,%d)", req.StartNS, req.EndNS).WithTrack(req.TrackID))
+			continue
+		}
+		maxSpan := req.MaxSpanNS
+		if maxSpan <= 0 || maxSpan > MaxSegmentNS {
+			maxSpan = MaxSegmentNS
+		}
+		for cur := req.StartNS; cur < req.EndNS; {
+			end := cur + maxSpan
+			if end > req.EndNS {
+				end = req.EndNS
+			}
+			plan, err := p.planOne(ti, tr, cur, end)
+			if err != nil {
+				problems = append(problems, err)
+				break
+			}
+			out = append(out, plan)
+			cur = end
+		}
+	}
+	if len(problems) > 0 {
+		return out, fault.New("pipeline.plan", fault.KindTruncated, errors.Join(problems...)).Recovered()
+	}
+	return out, nil
+}
+
+func (p *Planner) planOne(ti *index.TrackIndex, tr *mp4.Track, start, end int64) (SegmentPlan, error) {
+	entry, gap, err := ti.Align(start)
+	if err != nil {
+		return SegmentPlan{}, err
+	}
+	last := p.lastSampleAtOrBefore(tr, end-1)
+	if last < entry.Sample {
+		last = entry.Sample
+	}
+	return SegmentPlan{
+		TrackID: tr.ID, StartNS: start, EndNS: end, FirstSample: entry.Sample,
+		SampleCount: last - entry.Sample + 1, KeyOffset: entry.Offset,
+		KeyPresented: entry.Presented, KeyExact: entry.Exact, Gap: gap,
+	}, nil
+}
+
+// Materialize hashes one planned segment into a deliverable slice.
+func (p *Planner) Materialize(plan SegmentPlan) (Segment, error) {
+	digest, _, err := fingerprint.Sum(p.Samples, plan.TrackID, plan.FirstSample, plan.SampleCount)
+	if err != nil {
+		return Segment{}, err
+	}
+	hex := fmt.Sprintf("%x", digest)
+	seg := Segment{
+		ID: segmentID(plan.TrackID, plan.FirstSample, plan.SampleCount), TrackID: plan.TrackID,
+		StartNS: plan.StartNS, EndNS: plan.EndNS, FirstSample: plan.FirstSample,
+		SampleCount: plan.SampleCount, KeyOffset: plan.KeyOffset, KeyPresented: plan.KeyPresented,
+		KeyExact: plan.KeyExact, Content: digest, ContentHex: hex, SHA256: hex,
+	}
+	p.annotateSilence(&seg)
+	return seg, nil
+}
+
+// Run plans and materializes in one pass.
+func (p *Planner) Run(reqs []Request) (*Result, error) {
+	plans, planErr := p.Plan(reqs)
+	res := &Result{Silence: p.Silence}
+	var problems []error
+	if planErr != nil {
+		problems = append(problems, planErr)
+	}
+	for _, plan := range plans {
+		seg, err := p.Materialize(plan)
 		if err != nil {
 			problems = append(problems, err)
+			continue
+		}
+		res.Segments = append(res.Segments, seg)
+		res.Cuts++
+		if plan.Gap == 0 {
+			res.KeyframeHits++
 		}
 	}
 	if len(res.Segments) == 0 {
@@ -184,68 +285,6 @@ func (p *Planner) Run(reqs []Request) (*Result, error) {
 		return res, fault.New("pipeline.run", fault.KindTruncated, errors.Join(problems...)).Recovered()
 	}
 	return res, nil
-}
-
-func (p *Planner) runTrack(req Request, res *Result) ([]Segment, error) {
-	tr := p.trackByID(req.TrackID)
-	if tr == nil {
-		return nil, fault.Errorf("pipeline.track", fault.KindParse, "unknown track %d", req.TrackID).WithTrack(req.TrackID)
-	}
-	ti := p.indexFor(req.TrackID)
-	if ti == nil {
-		return nil, fault.Errorf("pipeline.track", fault.KindIndex, "no keyframe index for track %d", req.TrackID).
-			WithTrack(req.TrackID).Wrapped(fault.ErrNoKeyframe)
-	}
-	maxSpan := req.MaxSpanNS
-	if maxSpan <= 0 || maxSpan > MaxSegmentNS {
-		maxSpan = MaxSegmentNS
-	}
-	if req.EndNS <= req.StartNS {
-		return nil, fault.Errorf("pipeline.track", fault.KindIndex, "empty range [%d,%d)", req.StartNS, req.EndNS).WithTrack(req.TrackID)
-	}
-	var out []Segment
-	for cur := req.StartNS; cur < req.EndNS; {
-		end := cur + maxSpan
-		if end > req.EndNS {
-			end = req.EndNS
-		}
-		seg, err := p.segment(ti, tr, cur, end, res)
-		if err != nil {
-			return out, err
-		}
-		out = append(out, seg)
-		cur = end
-	}
-	return out, nil
-}
-
-func (p *Planner) segment(ti *index.TrackIndex, tr *mp4.Track, start, end int64, res *Result) (Segment, error) {
-	entry, gap, err := ti.Align(start)
-	if err != nil {
-		return Segment{}, err
-	}
-	res.Cuts++
-	if gap == 0 {
-		res.KeyframeHits++
-	}
-	last := p.lastSampleAtOrBefore(tr, end-1)
-	if last < entry.Sample {
-		last = entry.Sample
-	}
-	count := last - entry.Sample + 1
-	digest, _, err := fingerprint.Sum(p.Samples, tr.ID, entry.Sample, count)
-	if err != nil {
-		return Segment{}, err
-	}
-	hex := fmt.Sprintf("%x", digest)
-	seg := Segment{
-		ID: fmt.Sprintf("t%02d-s%d", tr.ID, entry.Sample), TrackID: tr.ID,
-		StartNS: start, EndNS: end, FirstSample: entry.Sample, SampleCount: count,
-		KeyOffset: entry.Offset, KeyPresented: entry.Presented, KeyExact: entry.Exact,
-		Content: digest, ContentHex: hex, SHA256: hex,
-	}
-	p.annotateSilence(&seg)
-	return seg, nil
 }
 
 func (p *Planner) annotateSilence(seg *Segment) {

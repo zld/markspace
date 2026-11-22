@@ -193,6 +193,13 @@ func (s *Store) NextBlock() int { return s.state.NextBlock }
 // Completed reports whether operations for block were already committed.
 func (s *Store) Completed(block int) bool { return len(s.state.Blocks[block]) > 0 }
 
+// BlockRecords returns a copy of the committed records for one block.
+func (s *Store) BlockRecords(block int) []Record {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]Record(nil), s.state.Blocks[block]...)
+}
+
 // Records returns a copy of committed records in block order.
 func (s *Store) Records() []Record {
 	s.mu.Lock()
@@ -227,15 +234,14 @@ func (s *Store) Append(recs ...Record) error {
 	if err := s.log.Sync(); err != nil {
 		return fault.New("checkpoint.sync", fault.KindCheckpoint, err).WithPath(s.logPath)
 	}
-	if block >= 0 {
-		for _, r := range recs {
-			s.state.Blocks[r.Block] = append(s.state.Blocks[r.Block], r)
-			s.state.Records = append(s.state.Records, r)
-		}
-		if block >= s.state.NextBlock {
-			s.state.NextBlock = block + 1
+	for _, r := range recs {
+		s.state.Blocks[r.Block] = append(s.state.Blocks[r.Block], r)
+		s.state.Records = append(s.state.Records, r)
+		if r.Block+1 > s.state.NextBlock {
+			s.state.NextBlock = r.Block + 1
 		}
 	}
+	_ = block
 	return nil
 }
 
