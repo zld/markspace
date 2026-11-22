@@ -94,13 +94,9 @@ func ScanAV1(stream int, buf []byte, lim ScanLimits) ScanResult {
 			TemporalID: obu.TemporalID,
 			Truncated:  obu.Truncated,
 		}
-		switch obu.Type {
-		case OBUFrame, OBUFrameHeader:
-			if obu.FrameType == AV1KeyFrame {
-				unit.Keyframe = true
-			}
-		case OBUSequenceHeader:
-			// A sequence header always introduces a key-frame decodable point.
+		// Only a coded frame with frame_type KEY_FRAME is a keyframe anchor.
+		// A sequence header is required for decoding but is not a frame.
+		if obu.Type == OBUFrame && obu.FrameType == AV1KeyFrame {
 			unit.Keyframe = true
 		}
 		res.Units = append(res.Units, unit)
@@ -248,4 +244,20 @@ func resyncOBU(buf []byte, from int) int {
 		return i
 	}
 	return -1
+}
+
+// OBUCanonical returns the complete OBU byte ranges (header, length and
+// payload) in scan order. AV1 samples are stored verbatim in MP4, so the
+// canonical content includes the OBU framing.
+func OBUCanonical(units []Unit, data []byte) []byte {
+	var out []byte
+	for _, u := range units {
+		start := u.Offset
+		end := start + u.HeaderLen + u.Size
+		if start < 0 || end > int64(len(data)) || start >= end {
+			continue
+		}
+		out = append(out, data[start:end]...)
+	}
+	return out
 }

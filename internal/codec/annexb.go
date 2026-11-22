@@ -193,30 +193,17 @@ func ScanH264(stream int, buf []byte, lim ScanLimits) ScanResult {
 	return res
 }
 
-// H264Keyframe reports whether a NAL begins an IDR access unit. Types 5 (IDR)
-// and 7 (SPS, which normally precedes an IDR) are treated as keyframe anchors.
+// H264Keyframe reports whether a NAL begins an IDR access unit. Only type 5 is
+// an IDR slice; SPS/PPS describe the stream but do not decode to a picture, so
+// they are not keyframe anchors on their own.
 func H264Keyframe(nalType int, payload []byte) bool {
-	switch nalType {
-	case 5, 7:
-		return true
-	case 1:
-		// Non-IDR recovery point SEI is type 6, not 1; type 1 is never a key.
-		return false
-	}
-	return false
+	return nalType == 5
 }
 
-// H265Keyframe reports whether a NAL begins an IRAP picture. IRAP types are
-// 16..23 (BLA/IDR/CRA); VPS/SPS/PPS (32,33,34) precede them.
+// H265Keyframe reports whether a NAL is an IRAP picture. IRAP types are 16..23
+// (BLA/IDR/CRA). VPS/SPS/PPS (32..34) are parameter sets, not pictures.
 func H265Keyframe(nalType int) bool {
-	if nalType >= 16 && nalType <= 23 {
-		return true
-	}
-	switch nalType {
-	case 32, 33, 34:
-		return true
-	}
-	return false
+	return nalType >= 16 && nalType <= 23
 }
 
 // ScanH265 splits an Annex B H.265 byte stream into NAL units using the
@@ -321,6 +308,49 @@ func WrapLengthPrefixed(stream int, sample []byte, lim ScanLimits) ([]byte, []me
 		// Annex B start code; the NAL bytes themselves are copied verbatim.
 		out = append(out, 0, 0, 0, 1)
 		out = append(out, sample[off:off+n]...)
+		off += n
+	}
+	return out, damaged
+}
+
+// Canonical returns the unit bytes that define media content, independent of
+// transport framing. For Annex B, start codes are excluded because remuxing
+// replaces them with length prefixes; the NAL payloads themselves are what
+// must survive. Units are concatenated in scan order, so the digest is
+// deterministic.
+func Canonical(units []Unit, data []byte) []byte {
+	var out []byte
+	for _, u := range units {
+		start := u.Offset + u.HeaderLen
+		end := start + u.Size
+		if start < 0 || end > int64(len(data)) || start >= end {
+			continue
+		}
+		out = append(out, data[start:end]...)
+	}
+	return out
+}
+
+// LengthPrefixedCanonical returns the canonical bytes of an MP4-style
+// length-prefixed sample. It is the read-back counterpart of Canonical: the
+// 4-byte prefixes are stripped and the NAL payloads are concatenated.
+func LengthPrefixedCanonical(data []byte, lim ScanLimits) ([]byte, []merr.Span) {
+	lim = lim.validated()
+	var out []byte
+	var damaged []merr.Span
+	off := 0
+	for off < len(data) {
+		if off+4 > len(data) {
+			damaged = append(damaged, merr.OffsetSpan(0, int64(off), int64(len(data)-off)))
+			break
+		}
+		n := int(binary.BigEndian.Uint32(data[off:]))
+		off += 4
+		if int64(n) > lim.MaxUnitBytes || n < 0 || off+n > len(data) {
+			damaged = append(damaged, merr.OffsetSpan(0, int64(off), int64(len(data)-off)))
+			break
+		}
+		out = append(out, data[off:off+n]...)
 		off += n
 	}
 	return out, damaged
