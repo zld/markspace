@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math"
 
 	"mediacore/index"
 	"mediacore/media"
@@ -67,10 +68,13 @@ type TimingBinding struct {
 
 // Manifest is the complete, independently verifiable processing result.
 type Manifest struct {
-	Version         int                        `json:"version"`
-	InputDigest     string                     `json:"input_digest"`
-	IndexDigest     string                     `json:"index_digest"`
-	Timescale       uint32                     `json:"timescale"`
+	Version     int    `json:"version"`
+	InputDigest string `json:"input_digest"`
+	IndexDigest string `json:"index_digest"`
+	Timescale   uint32 `json:"timescale"`
+	// IndexComplete mirrors the index's completeness. A manifest built from a
+	// partial scan says so and fails verification instead of looking whole.
+	IndexComplete   bool                       `json:"index_complete"`
 	ManifestDigest  string                     `json:"manifest_digest"`
 	Segments        []SegmentEntry             `json:"segments"`
 	Silence         []pipeline.SilenceInterval `json:"silence"`
@@ -126,6 +130,7 @@ func Build(idx *index.Index, res *pipeline.Result, opts Options) (*Manifest, err
 		InputDigest:     idx.InputDigest,
 		IndexDigest:     idx.IndexDigest,
 		Timescale:       res.Timescale,
+		IndexComplete:   idx.Complete,
 		Segments:        make([]SegmentEntry, 0, len(res.Segments)),
 		Silence:         res.Silence,
 		DuplicateGroups: res.DuplicateGroups,
@@ -210,6 +215,7 @@ func (m *Manifest) computeStats(res *pipeline.Result) {
 	st.Fingerprints = res.FingerprintCount
 	st.Collisions = res.Collisions
 	st.ActualKBPS, st.DeviationPct = rates(st.TotalBytes, st.DurationMS, st.TargetKBPS)
+	m.Bandwidth.TargetKBPS = st.TargetKBPS
 	m.Bandwidth.ActualKBPS = st.ActualKBPS
 	m.Bandwidth.DeviationPct = st.DeviationPct
 	m.Stats = st
@@ -287,8 +293,9 @@ func (m *Manifest) Summary() string {
 		m.Stats.FrameCount, m.Stats.SegmentCount, m.Stats.SilenceConfirmedMS, m.Stats.DuplicateGroups)
 }
 
-// RateLine renders the required bitrate summary.
+// RateLine renders the required bitrate summary. Deviation is reported as a
+// magnitude: the acceptance line documents how far actual sits from target.
 func (m *Manifest) RateLine() string {
 	return fmt.Sprintf("target_kbps=%d actual_kbps=%d deviation_pct=%.2f",
-		m.Stats.TargetKBPS, m.Stats.ActualKBPS, m.Stats.DeviationPct)
+		m.Stats.TargetKBPS, m.Stats.ActualKBPS, math.Abs(m.Stats.DeviationPct))
 }

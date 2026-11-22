@@ -71,17 +71,22 @@ type Reorder struct {
 }
 
 type streamState struct {
-	id      uint32
-	window  int
-	init    bool
-	baseSeq uint16 // raw sequence corresponding to extended index 0
-	highest int64  // highest extended sequence observed
-	next    int64  // next extended sequence to release
-	pending map[int64]*Packet
-	ordered []*Packet
-	gaps    []Gap
-	dups    int
-	late    int
+	id     uint32
+	window int
+	init   bool
+	// rawRef/extRef is a reference point: the most recently observed new
+	// sequence and its extended index. New packets extend from it with 16-bit
+	// arithmetic, so the timeline keeps working after arbitrary wraps.
+	rawRef   uint16
+	extRef   int64
+	highest  int64 // highest extended sequence observed
+	next     int64 // next extended sequence to release
+	pending  map[int64]*Packet
+	ordered  []*Packet
+	gaps     []Gap
+	gapLimit int
+	dups     int
+	late     int
 }
 
 // NewReorder constructs a reorder stage, clamping invalid configuration.
@@ -99,7 +104,12 @@ func NewReorder(cfg ReorderConfig) *Reorder {
 func (r *Reorder) state(id uint32) *streamState {
 	st := r.streams[id]
 	if st == nil {
-		st = &streamState{id: id, window: r.cfg.Window, pending: make(map[int64]*Packet)}
+		st = &streamState{
+			id:       id,
+			window:   r.cfg.Window,
+			pending:  make(map[int64]*Packet),
+			gapLimit: r.cfg.LateHistory,
+		}
 		r.streams[id] = st
 		r.order = append(r.order, id)
 	}
@@ -107,13 +117,20 @@ func (r *Reorder) state(id uint32) *streamState {
 }
 
 func (st *streamState) rawAt(ext int64) uint16 {
-	return uint16(int64(st.baseSeq) + ext)
+	return uint16(int64(st.rawRef) - (st.extRef - ext))
 }
 
+// inGap reports whether ext fell inside a gap declared recently enough to
+// still classify an arriving packet as late.
 func (st *streamState) inGap(ext int64) bool {
-	for i := range st.gaps {
-		if ext >= st.gaps[i].FromExt && ext <= st.gaps[i].ToExt {
+	for i := len(st.gaps) - 1; i >= 0; i-- {
+		g := st.gaps[i]
+		if ext >= g.FromExt && ext <= g.ToExt {
 			return true
+		}
+		if ext > g.ToExt {
+			// Gaps are appended in increasing order, so nothing older matters.
+			return false
 		}
 	}
 	return false
@@ -125,17 +142,27 @@ func (st *streamState) inGap(ext int64) bool {
 func (r *Reorder) Add(p *Packet) []*Packet {
 	st := r.state(p.StreamID)
 	if !st.init {
+		// The first arriving packet anchors the timeline at extended index 0.
+		// If it is out of order, the re-anchor path below absorbs earlier
+		// packets as long as nothing has been released yet.
 		st.init = true
-		st.baseSeq = p.Seq
+		st.rawRef = p.Seq
+		st.extRef = 0
+		st.highest = 0
+		st.pending[0] = p
+		return st.flush()
 	}
-	ext := extFromBase(p.Seq, st.baseSeq)
-
-	if ext < st.next {
-		if st.inGap(ext) {
-			st.late++
-		} else {
-			st.dups++
+	ext := st.extRef + int64(int16(p.Seq-st.rawRef))
+	if ext < 0 {
+		if st.next == 0 {
+			st.absorbEarlier(p, ext)
+			return st.flush()
 		}
+		st.classifyPast(ext)
+		return nil
+	}
+	if ext < st.next {
+		st.classifyPast(ext)
 		return nil
 	}
 	if _, exists := st.pending[ext]; exists {
@@ -146,17 +173,47 @@ func (r *Reorder) Add(p *Packet) []*Packet {
 	if ext > st.highest {
 		st.highest = ext
 	}
+	if ext > st.extRef {
+		// Advance the reference only on newer packets; duplicates and
+		// reordered stragglers must not move it backwards.
+		st.extRef = ext
+		st.rawRef = p.Seq
+	}
 	return st.flush()
 }
 
-// extFromBase maps a raw sequence to a forward-only extended index relative to
-// base, treating differences beyond 32767 as backward.
-func extFromBase(seq, base uint16) int64 {
-	d := int64(int16(seq - base))
-	if d < 0 {
-		d += 1 << 16
+// absorbEarlier accepts a packet that arrived before anything has been
+// released but sits earlier than the first packet. The extended timeline is
+// shifted so the earlier packet becomes index 0, preserving delivery order.
+func (st *streamState) absorbEarlier(p *Packet, ext int64) {
+	shift := -ext
+	st.pending = shiftPending(st.pending, shift)
+	st.highest += shift
+	if st.highest < 0 {
+		st.highest = 0
 	}
-	return d
+	st.extRef += shift
+	st.rawRef = p.Seq
+	st.pending[0] = p
+}
+
+// classifyPast counts a packet whose extended index is already behind the
+// delivery frontier. Inside a declared gap it is late; otherwise that slot was
+// already released, so it is a duplicate.
+func (st *streamState) classifyPast(ext int64) {
+	if st.inGap(ext) {
+		st.late++
+	} else {
+		st.dups++
+	}
+}
+
+func shiftPending(in map[int64]*Packet, shift int64) map[int64]*Packet {
+	out := make(map[int64]*Packet, len(in))
+	for k, v := range in {
+		out[k+shift] = v
+	}
+	return out
 }
 
 func (st *streamState) flush() []*Packet {
@@ -204,6 +261,15 @@ func (st *streamState) recordGap(to int64) {
 		ToSeq:    st.rawAt(to - 1),
 		Count:    int(to - from),
 	})
+	st.trimGaps()
+}
+
+// trimGaps bounds the retained gap history used for late classification.
+func (st *streamState) trimGaps() {
+	if st.gapLimit <= 0 || len(st.gaps) <= st.gapLimit {
+		return
+	}
+	st.gaps = st.gaps[len(st.gaps)-st.gapLimit:]
 }
 
 // Finalize delivers all remaining buffered packets, emitting gaps for holes,

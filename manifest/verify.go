@@ -75,6 +75,14 @@ func Verify(m *Manifest, opts VerifyOptions) VerifyReport {
 			})
 		}
 	}
+	if !m.IndexComplete {
+		rep.OK = false
+		rep.Failures = append(rep.Failures, Failure{
+			Category: media.CatIndexTruncated, Field: "index_complete",
+			Expected: "true", Actual: "false",
+			Detail: "manifest was built from an incomplete index",
+		})
+	}
 	if m.Version != ManifestVersion {
 		rep.OK = false
 		rep.Failures = append(rep.Failures, Failure{
@@ -206,6 +214,9 @@ func boolCheck(name string, ok bool) Check {
 	}
 	return Check{Name: name, Stored: s, Recomputed: s, Within: ok}
 }
+
+// Itoa renders an int64 without importing strconv into hot paths.
+func Itoa(v int64) string { return itoa(v) }
 
 func itoa(v int64) string {
 	if v == 0 {

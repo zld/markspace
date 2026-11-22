@@ -178,6 +178,8 @@ func (s *Segmenter) Segments(entries []index.Entry) ([]Segment, []GapRef) {
 		}
 		cur.last = e.Seq
 		cur.count++
+		// Bytes are the full encoded record size: this is what the capture
+		// path actually moved and what the bitrate target applies to.
 		cur.bytes += int64(e.Length)
 		cur.end = entryEnd
 		cur.prevTicks = e.Ticks
