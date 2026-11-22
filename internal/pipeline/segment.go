@@ -5,6 +5,7 @@ package pipeline
 import (
 	"errors"
 	"fmt"
+	"sort"
 
 	"github.com/pairwise/mediad/internal/audio"
 	"github.com/pairwise/mediad/internal/clock"
@@ -298,16 +299,48 @@ func (p *Planner) Run(reqs []Request) (*Result, error) {
 	return res, nil
 }
 
+// annotateSilence measures how much of a slice is covered by detected silence.
+// Silence is a property of the presentation timeline, so every analysable
+// audio track contributes, not only a track sharing the segment's ID. When no
+// audio track could be analysed the slice stays explicitly unknown: an absent
+// or undecodable track must never look like a silent one.
 func (p *Planner) annotateSilence(seg *Segment) {
-	res, ok := p.Silence[seg.TrackID]
-	if !ok || !res.Detectable {
+	known := false
+	var covered []audio.Range
+	for _, res := range p.Silence {
+		if !res.Detectable {
+			continue
+		}
+		known = true
+		for _, r := range res.Silence {
+			if hi, lo := min64(seg.EndNS, r.End), max64(seg.StartNS, r.Start); hi > lo {
+				covered = append(covered, audio.Range{Start: max64(seg.StartNS, r.Start), End: hi})
+			}
+		}
+	}
+	if !known {
 		return
 	}
 	seg.SilenceKnown = true
-	for _, r := range res.Silence {
-		if hi, lo := min64(seg.EndNS, r.End), max64(seg.StartNS, r.Start); hi > lo {
-			seg.SilentNS += hi - lo
+	// Merge overlapping intervals from multiple audio tracks so a shared
+	// minute of silence is not counted twice.
+	sort.Slice(covered, func(i, j int) bool { return covered[i].Start < covered[j].Start })
+	var cur *audio.Range
+	for _, r := range covered {
+		if cur == nil || r.Start > cur.End {
+			if cur != nil {
+				seg.SilentNS += cur.End - cur.Start
+			}
+			c := r
+			cur = &c
+			continue
 		}
+		if r.End > cur.End {
+			cur.End = r.End
+		}
+	}
+	if cur != nil {
+		seg.SilentNS += cur.End - cur.Start
 	}
 }
 

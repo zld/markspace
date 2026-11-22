@@ -103,3 +103,21 @@ func TestSilenceCoverageSkipsUndetectableTrack(t *testing.T) {
 		t.Fatalf("silence not annotated: %+v", seg)
 	}
 }
+
+func TestSilenceFromAudioTrackAnnotatesVideoSegment(t *testing.T) {
+	planner := &Planner{Silence: map[uint32]audio.Result{
+		2: {TrackID: 2, Detectable: true, Silence: []audio.Range{
+			{Start: 1_000_000_000, End: 2_000_000_000},
+			{Start: 1_500_000_000, End: 2_500_000_000}, // overlaps the first
+		}},
+		3: audio.Undetectable(3, "compressed"),
+	}}
+	seg := Segment{TrackID: 1, StartNS: 0, EndNS: 3_000_000_000}
+	planner.annotateSilence(&seg)
+	if !seg.SilenceKnown {
+		t.Fatal("silence should be known from the analysable audio track")
+	}
+	if seg.SilentNS != 1_500_000_000 {
+		t.Fatalf("overlap double counted: %d", seg.SilentNS)
+	}
+}

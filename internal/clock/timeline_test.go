@@ -112,9 +112,14 @@ func TestTrackClockDetectsWrapRegressionOverflow(t *testing.T) {
 }
 
 func TestTrackClockRejectsPresentationBeforeOrigin(t *testing.T) {
+	// A track anchored one second into the timeline must reject sample 0,
+	// which would otherwise present at tick zero.
 	clk, _ := NewTrackClock("d.mp4", 1, 1000, NanosecondTimeline(), nil, int64(NanosPerSecond))
-	_, err := clk.Presentation(5, 0)
-	if !errors.Is(err, fault.ErrTimeBackwards) {
+	_, err := clk.Presentation(1, 0)
+	if err == nil {
+		t.Fatal("expected origin error")
+	}
+	if !errors.Is(err, fault.ErrTimeWrap) {
 		t.Fatalf("err=%v", err)
 	}
 }

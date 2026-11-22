@@ -156,6 +156,9 @@ func trackPayloads(sp TrackSpec) [][]byte {
 	if size <= 0 {
 		size = 256
 	}
+	if sp.Codec == CodecAAC && size < 32 {
+		size = 32
+	}
 	for i := range out {
 		b := make([]byte, size)
 		for j := range b {
@@ -169,6 +172,27 @@ func trackPayloads(sp TrackSpec) [][]byte {
 		}
 		// Vary the first bytes so sample payload hashes differ per index.
 		binary.BigEndian.PutUint32(b, uint32(i+1)*2654435761)
+		if sp.Codec == CodecAAC {
+			b[0] = 0xFF // ADTS sync
+			b[1] = 0xF1
+			for j := 9; j < len(b); j++ {
+				b[j] = 0
+			}
+			pos := int64(i) * int64(sp.SampleDur)
+			for _, r := range sp.Silence {
+				if pos >= r.Start && pos < r.End {
+					continue
+				}
+				// Audible frames carry non-zero spectral bytes.
+				for j := 9; j < len(b); j++ {
+					b[j] = byte((i*31 + j*7) & 0xFF)
+					if b[j] == 0 {
+						b[j] = 1
+					}
+				}
+				break
+			}
+		}
 		out[i] = b
 	}
 	return out

@@ -196,18 +196,57 @@ func analyzeAudio(tree *mp4.Tree, movie *mp4.Movie, pres *Presentation) map[uint
 		if !tr.IsAudio() {
 			continue
 		}
+		var res audio.Result
+		var err error
 		switch tr.Entry {
 		case "twos", "sowt", "lpcm", "raw ", "in24", "in32":
-			res, err := pcmResult(tree, tr, pres, cfg)
-			if err != nil {
-				res = audio.Undetectable(tr.ID, err.Error())
-			}
-			out[tr.ID] = res
+			res, err = pcmResult(tree, tr, pres, cfg)
+		case "mp4a":
+			res, err = aacResult(tree, tr, pres, cfg)
 		default:
-			out[tr.ID] = audio.Undetectable(tr.ID, "compressed audio ("+tr.Entry+") is not decoded")
+			res = audio.Undetectable(tr.ID, "compressed audio ("+tr.Entry+") is not decoded")
 		}
+		if err != nil {
+			res = audio.Undetectable(tr.ID, err.Error())
+		}
+		out[tr.ID] = res
 	}
 	return out
+}
+
+// aacResult applies the conservative zero-payload estimator to AAC frames.
+func aacResult(tree *mp4.Tree, tr *mp4.Track, pres *Presentation, cfg audio.Config) (audio.Result, error) {
+	if len(tr.Samples) == 0 {
+		return audio.Undetectable(tr.ID, "no AAC samples"), nil
+	}
+	frames := make([][]byte, 0, len(tr.Samples))
+	for _, s := range tr.Samples {
+		if !s.InMdat || s.Size == 0 {
+			return audio.Result{}, fault.Errorf("pipeline.aac", fault.KindAudio,
+				"sample %d is not readable", s.Index).WithTrack(tr.ID).WithSample(s.Index)
+		}
+		buf, err := tree.ReadAt(s.Offset, int64(s.Size))
+		if err != nil {
+			return audio.Result{}, err
+		}
+		frames = append(frames, buf)
+	}
+	start, ok := pres.At(tr.ID, 0)
+	if !ok {
+		return audio.Undetectable(tr.ID, "AAC track has no usable start time"), nil
+	}
+	dur, err := audio.FrameDurationNS(1024, int(tr.SampleRate))
+	if err != nil {
+		return audio.Undetectable(tr.ID, err.Error()), nil
+	}
+	// Prefer the container's own constant frame duration when it is sane.
+	if tr.Samples[0].Duration > 0 && tr.Timescale > 0 {
+		asNS := int64(tr.Samples[0].Duration) * 1e9 / int64(tr.Timescale)
+		if asNS > 0 {
+			dur = asNS
+		}
+	}
+	return audio.AnalyzeAAC(tr.ID, frames, start, dur, cfg)
 }
 
 func pcmResult(tree *mp4.Tree, tr *mp4.Track, pres *Presentation, cfg audio.Config) (audio.Result, error) {
