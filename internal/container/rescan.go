@@ -67,11 +67,13 @@ func rescan(f *os.File, fileSize int64, out *TrackRecovery, lim Limits, scan *Sc
 			continue
 		}
 		if rate == 0 {
-			rate = 1 // unknown rate: still count frames in a 1 Hz grid
+			rate = int64(recordRate(f, off)) // record header carries the true rate
+			if rate == 0 {
+				rate = 1 // unknown rate: still count frames in a 1 Hz grid
+			}
 		}
 		if channels == 0 {
 			channels = ch
-			out.Format.Channels = ch
 		}
 		dur := timeline.Ticks(frames)
 		out.Samples = append(out.Samples, Sample{
@@ -87,6 +89,9 @@ func rescan(f *os.File, fileSize int64, out *TrackRecovery, lim Limits, scan *Sc
 			"no verifiable records found in mdat").WithOffset(dataStart)
 	}
 	out.Timescale = timeline.MustScale(rate)
+	if out.Format.SampleRate == 0 {
+		out.SourceFormat = AudioFormat{Codec: "pcm-record", SampleRate: int(rate), Channels: channels}
+	}
 	out.TotalBytes = dataEnd - dataStart
 	return nil
 }
@@ -127,6 +132,15 @@ func findMagic(f *os.File, from, end int64) int64 {
 		pos += int64(got)
 	}
 	return 0
+}
+
+// recordRate reads the sample rate field of an already-verified record.
+func recordRate(f *os.File, off int64) uint32 {
+	var b [4]byte
+	if _, err := f.ReadAt(b[:], off+4); err != nil {
+		return 0
+	}
+	return uint32(b[0])<<24 | uint32(b[1])<<16 | uint32(b[2])<<8 | uint32(b[3])
 }
 
 func max64(a, b int64) int64 {
