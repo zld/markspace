@@ -57,6 +57,19 @@ func (r *ScanResult) Keyframes() []Unit {
 	return out
 }
 
+// RAPUnits returns every random access unit in order, including
+// quarantined (corrupt) ones. Planning uses these to build spans so a
+// damaged key frame becomes an isolated segment instead of vanishing.
+func (r *ScanResult) RAPUnits() []Unit {
+	var out []Unit
+	for _, u := range r.Units {
+		if u.Keyframe {
+			out = append(out, u)
+		}
+	}
+	return out
+}
+
 // Scan parses a raw elementary stream. Recoverable damage (truncation,
 // corruption) is reported on the result; only quota violations return
 // an error, because those mean the scan cannot continue safely.

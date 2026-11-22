@@ -79,13 +79,17 @@ func Analyze(workDir string) (*Report, error) {
 		}
 		st := status[rec.Stage]
 		switch rec.Kind {
-		case KindBegin, KindPrepared:
+		case KindBegin:
 			if st.State != StateCommitted {
 				st.State = StatePending
 			}
-			if len(rec.Files) > 0 {
-				st.Files = rec.Files
+		case KindPrepared:
+			if st.State != StateCommitted {
+				st.State = StatePending
 			}
+			// A stage can prepare many temp files across multiple
+			// records; accumulate all of them so rollback misses none.
+			st.Files = append(st.Files, rec.Files...)
 		case KindCommitted:
 			st.State = StateCommitted
 			st.OutputHash = rec.OutputHash

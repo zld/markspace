@@ -87,18 +87,27 @@ func Build(repID string, scan *bitstream.ScanResult, rec *index.Result, cfg Conf
 		}
 	}
 
-	// Pass 1: split the stream into keyframe spans, marking corruption.
-	spans := make([]span, 0, len(plan.Keyframes))
-	for ki, kf := range plan.Keyframes {
+	// Pass 1: split on EVERY random access unit, including corrupt ones,
+	// so a damaged key frame forms its own quarantined span rather than
+	// disappearing from the plan. Provenance for clean spans comes from
+	// the reconciled index; corrupt spans carry bitstream provenance.
+	raps := scan.RAPUnits()
+	spans := make([]span, 0, len(raps))
+	for ki, rap := range raps {
 		limit := scan.CompleteBytes
-		if ki+1 < len(plan.Keyframes) {
-			limit = plan.Keyframes[ki+1].Offset
+		if ki+1 < len(raps) {
+			limit = raps[ki+1].Offset
 		}
-		sp := span{kf: kf, start: kf.Offset, end: limit, startPTS: kf.PTS,
-			src: sourceFor(kf.Offset, sourceByOffset)}
+		sp := span{
+			kf:       index.Entry{Seq: rap.Seq, Offset: rap.Offset, PTS: rap.PTS},
+			start:    rap.Offset,
+			end:      limit,
+			startPTS: rap.PTS,
+			src:      sourceFor(rap.Offset, sourceByOffset),
+		}
 		var lastPTS timeline.Ticks
 		for _, u := range scan.Units {
-			if u.Offset < kf.Offset || u.Offset >= limit {
+			if u.Offset < rap.Offset || u.Offset >= limit {
 				continue
 			}
 			lastPTS = u.PTS
@@ -113,10 +122,13 @@ func Build(repID string, scan *bitstream.ScanResult, rec *index.Result, cfg Conf
 	}
 
 	// Pass 2: merge clean spans up to the target duration; keep each
-	// corrupt span as an isolated quarantined segment.
-	merge := &spans[0]
+	// corrupt span as an isolated quarantined segment. The accumulator
+	// `acc` is the pending segment; it is emitted with the current
+	// boundary number whenever duration, corruption or end-of-stream
+	// forces a boundary.
+	var acc *span
 	boundary := 0
-	flush := func(sp span) {
+	emit := func(sp span) {
 		plan.Segments = append(plan.Segments, &Segment{
 			Index:       boundary,
 			RepID:       repID,
@@ -130,36 +142,30 @@ func Build(repID string, scan *bitstream.ScanResult, rec *index.Result, cfg Conf
 			IndexSource: sp.src,
 			Quarantined: sp.corrupt,
 		})
+		boundary++
 	}
-	for i := 1; i <= len(spans); i++ {
-		atLast := i == len(spans)
-		var next *span
-		if !atLast {
-			next = &spans[i]
-		}
+	for i := range spans {
+		cur := &spans[i]
 		switch {
-		case !atLast && next.corrupt:
-			flush(*merge) // close the clean run before corruption
-			boundary++
-			flush(*next) // isolated quarantined segment
-			boundary++
-			if i+1 < len(spans) {
-				merge = &spans[i+1]
-				i++
+		case cur.corrupt:
+			// Damage never merges: flush any clean accumulator first,
+			// then emit the corrupt span on its own boundary.
+			if acc != nil {
+				emit(*acc)
+				acc = nil
 			}
-		case !atLast && merge.corrupt:
-			flush(*merge)
-			boundary++
-			merge = next
-		case !atLast && next.startPTS-merge.startPTS < cfg.TargetDuration:
-			merge.end, merge.endPTS = next.end, next.endPTS // absorb span
+			emit(*cur)
+		case acc == nil:
+			acc = cur // start a new clean accumulator
+		case cur.startPTS-acc.startPTS < cfg.TargetDuration:
+			acc.end, acc.endPTS = cur.end, cur.endPTS // absorb span
 		default:
-			flush(*merge)
-			boundary++
-			if !atLast {
-				merge = next
-			}
+			emit(*acc) // target duration reached
+			acc = cur
 		}
+	}
+	if acc != nil {
+		emit(*acc)
 	}
 	return plan, nil
 }
