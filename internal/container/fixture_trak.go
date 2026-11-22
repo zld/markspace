@@ -64,21 +64,23 @@ func (g *generator) writeEdts(w *Writer, ts TrackSpec) {
 }
 
 func (g *generator) writeMdhd(w *Writer, ts TrackSpec) {
-	body := make([]byte, 20) // mdhd v0 fixed body
+	body := make([]byte, 20) // mdhd v0 fixed body (ISO 14496)
 	put := func(off int, v uint32) {
 		body[off] = byte(v >> 24)
 		body[off+1] = byte(v >> 16)
 		body[off+2] = byte(v >> 8)
 		body[off+3] = byte(v)
 	}
-	put(8, ts.Timescale)
-	put(12, uint32(trackDuration(ts)))
+	put(8, ts.Timescale)               // timescale
+	put(12, uint32(trackDuration(ts))) // duration
 	body[16] = 0x55
-	body[17] = 0xC4 // 'und' language
+	body[17] = 0xC4 // packed ISO-639 language code (und=0x55C4)
+	// body[18:20] pre_defined stays zero
 	w.WriteBox(BoxMdhd, FullBox(0, 0, body))
 }
 
 func (g *generator) writeHdlr(w *Writer, ts TrackSpec) {
+	// body layout: pre_defined(4) handler_type(4) reserved(12) name(NUL-term)
 	var body []byte
 	body = PutU32(body, 0) // pre_defined
 	if ts.Kind == model.KindVideo {
@@ -86,7 +88,7 @@ func (g *generator) writeHdlr(w *Writer, ts TrackSpec) {
 	} else {
 		body = append(body, 's', 'o', 'u', 'n')
 	}
-	body = append(body, make([]byte, 12)...) // reserved
+	body = append(body, make([]byte, 12)...) // three reserved uint32
 	if ts.Kind == model.KindVideo {
 		body = append(body, []byte("video-handler\x00")...)
 	} else {
@@ -96,9 +98,9 @@ func (g *generator) writeHdlr(w *Writer, ts TrackSpec) {
 }
 
 func (g *generator) writeStsd(w *Writer, ts TrackSpec) {
-	var entry []byte
+	var entryBox []byte
 	if ts.Kind == model.KindVideo {
-		entry = make([]byte, 78) // VisualSampleEntry fixed fields
+		entry := make([]byte, 78) // VisualSampleEntry fixed fields
 		entry[9] = 1             // data_reference_index
 		entry[24] = byte(320 >> 8)
 		entry[25] = byte(320 & 0xFF)
@@ -107,11 +109,11 @@ func (g *generator) writeStsd(w *Writer, ts TrackSpec) {
 		entry[28] = 0x00
 		entry[29] = 0x48
 		entry[30] = 0x00
-		entry[31] = 0x00 // 72dpi
+		entry[31] = 0x00 // horizresolution 72dpi
 		entry[32] = 0x00
 		entry[33] = 0x48
 		entry[34] = 0x00
-		entry[35] = 0x00
+		entry[35] = 0x00 // vertresolution
 		entry[40] = 1 // frame_count
 		entry[74] = 0x18
 		entry[76] = 0xFF
@@ -122,28 +124,21 @@ func (g *generator) writeStsd(w *Writer, ts TrackSpec) {
 		colr = PutU16(colr, ts.Color.Transfer)
 		colr = PutU16(colr, ts.Color.Matrix)
 		entry = append(entry, boxBytes(BoxColr, colr)...)
-		var head []byte
-		head = append(head, 'a', 'v', 'c', '1')
-		head = append(head, entry...)
-		var body []byte
-		body = PutU32(body, 1)
-		body = append(body, head...)
-		w.WriteBox(BoxStsd, FullBox(0, 0, body))
-		return
+		entryBox = boxBytes(FourCC{'a', 'v', 'c', '1'}, entry)
+	} else {
+		entry := make([]byte, 28) // AudioSampleEntry fixed fields
+		entry[9] = 1              // data_reference_index
+		entry[16] = byte(ts.Channels >> 8)
+		entry[17] = byte(ts.Channels) // channelcount at body[16:18]
+		entry[19] = 0x10              // samplesize 16
+		// samplerate is 16.16 fixed point at body[20:24]; integer Hz sits high.
+		entry[20] = byte(ts.SampleRate >> 8)
+		entry[21] = byte(ts.SampleRate & 0xFF)
+		entryBox = boxBytes(FourCC{'m', 'p', '4', 'a'}, entry)
 	}
-	entry = make([]byte, 28) // AudioSampleEntry fixed fields
-	entry[9] = 1
-	entry[16] = byte(ts.Channels >> 8)
-	entry[17] = byte(ts.Channels)
-	entry[19] = 0x10 // sample size 16
-	entry[24] = byte(ts.SampleRate >> 8)
-	entry[25] = byte(ts.SampleRate & 0xFF) // 16.16
-	var head []byte
-	head = append(head, 'm', 'p', '4', 'a')
-	head = append(head, entry...)
 	var body []byte
-	body = PutU32(body, 1)
-	body = append(body, head...)
+	body = PutU32(body, 1) // entry_count
+	body = append(body, entryBox...)
 	w.WriteBox(BoxStsd, FullBox(0, 0, body))
 }
 
@@ -168,9 +163,9 @@ func (g *generator) writeStss(w *Writer, ts TrackSpec) {
 func (g *generator) writeStsc(w *Writer, ts TrackSpec) {
 	var body []byte
 	body = PutU32(body, 1)
-	body = PutU32(body, 1) // first_chunk
-	body = PutU32(body, 1) // samples_per_chunk
-	body = PutU32(body, 1) // sample_description_index
+	body = PutU32(body, 1)                 // first_chunk
+	body = PutU32(body, 1)                 // one sample per chunk (one chunk per sample)
+	body = PutU32(body, 1)                 // sample_description_index
 	w.WriteBox(BoxStsc, FullBox(0, 0, body))
 }
 

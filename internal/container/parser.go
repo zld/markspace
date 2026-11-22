@@ -8,7 +8,15 @@ import (
 
 // ParseContainer parses generated (or archival) bytes into normalized tracks.
 func ParseContainer(data []byte, opts ParseOptions) (*ParsedFile, error) {
-	res, err := Parse(data)
+	var (
+		res *ParseResult
+		err error
+	)
+	if opts.AllowTruncatedRecovery {
+		res, err = ParseLenient(data)
+	} else {
+		res, err = Parse(data)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -124,17 +132,18 @@ func parseMdhd(tr *model.Track, box *Box) error {
 	if !ok || len(fb.Body) < 20 {
 		return model.AtTrack(model.StageContainer, model.ErrCorruptSampleTable, 0, "bad mdhd")
 	}
-	tr.Timescale = U32(fb.Body[12:16])
+	// v0 body: creation(4) modification(4) timescale(4) duration(4) lang...
+	tr.Timescale = U32(fb.Body[8:12])
 	if tr.Timescale == 0 {
 		return model.AtTrack(model.StageTimeline, model.ErrZeroTimescale, tr.ID, "mdhd timescale is zero")
 	}
 	if fb.Version == 1 && len(fb.Body) >= 32 {
-		tr.Duration = U64(fb.Body[16:24])
+		tr.Duration = U64(fb.Body[20:28])
 	} else {
-		tr.Duration = uint64(U32(fb.Body[16:20]))
+		tr.Duration = uint64(U32(fb.Body[12:16]))
 	}
-	if len(fb.Body) >= 20 {
-		lang := uint16(fb.Body[20])<<8 | uint16(fb.Body[21])
+	if len(fb.Body) >= 22 {
+		lang := uint16(fb.Body[16])<<8 | uint16(fb.Body[17])
 		tr.Language = decodeLanguage(lang)
 	}
 	return nil
@@ -145,6 +154,7 @@ func parseHdlr(tr *model.Track, box *Box) {
 	if !ok || len(fb.Body) < 8 {
 		return
 	}
+	// body: pre_defined(4) then handler_type(4)
 	handler := string(fb.Body[4:8])
 	tr.Handler = handler
 	switch handler {

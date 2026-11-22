@@ -46,9 +46,10 @@ func parseStbl(tr *model.Track, stbl *Box, fileLen uint64, opts ParseOptions) er
 	if err != nil {
 		return err
 	}
-	if len(chunks) != len(offsets) {
-		return model.AtTrack(model.StageIndex, model.ErrCorruptSampleTable, tr.ID,
-			fmt.Sprintf("stsc chunks=%d but offsets=%d", len(chunks), len(offsets)))
+	// stsc stores runs (first_chunk, samples_per_chunk); a single run may
+	// cover every chunk, so its length need not match the offset count.
+	if uint32(len(offsets)) > model.MaxSamples {
+		return model.AtTrack(model.StageIndex, model.ErrLimitExceeded, tr.ID, "chunk count")
 	}
 	// Expand chunks into per-sample absolute offsets and validate every range.
 	samples, trimmed, err := expandSamples(tr, dts, durs, sizes, chunks, offsets, fileLen, opts)
@@ -189,7 +190,6 @@ func parseChunks(trackID uint32, box *Box, sampleCount int) ([]chunkRun, error) 
 		return nil, model.AtTrack(model.StageIndex, model.ErrCorruptSampleTable, trackID, "stsc overruns")
 	}
 	var runs []chunkRun
-	var total uint32
 	for i := uint32(0); i < entries; i++ {
 		first := U32(fb.Body[4+i*12 : 8+i*12])
 		spc := U32(fb.Body[8+i*12 : 12+i*12])
@@ -197,10 +197,6 @@ func parseChunks(trackID uint32, box *Box, sampleCount int) ([]chunkRun, error) 
 			return nil, model.AtTrack(model.StageIndex, model.ErrCorruptSampleTable, trackID, "zero stsc field")
 		}
 		runs = append(runs, chunkRun{firstChunk: first, samples: spc})
-		total += spc
-	}
-	if int(total) > sampleCount*2 { // loose sanity; exact expansion checked later
-		return nil, model.AtTrack(model.StageIndex, model.ErrCorruptSampleTable, trackID, "stsc oversamples")
 	}
 	return runs, nil
 }

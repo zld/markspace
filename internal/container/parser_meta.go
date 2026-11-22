@@ -6,28 +6,23 @@ import (
 
 // parseColor extracts the colr box nested in the video sample entry.
 func parseColor(tr *model.Track, stbl *Box) {
-	stsd := FindFirst(stbl.Children, BoxStsd)
-	if stsd == nil {
+	body, ok := sampleEntryBody(stbl)
+	if !ok {
 		tr.Color = model.ColorMeta{Present: false}
 		return
 	}
-	fb, ok := AsFullBox(stsd.Payload)
-	if !ok || len(fb.Body) < 4 {
+	if len(body) < 78 { // VisualSampleEntry fixed fields
+		tr.Color = model.ColorMeta{Present: false}
 		return
 	}
-	// entry_count(4) + sample entry: 8-byte head + 78-byte visual fields.
-	body := fb.Body[4:]
-	if len(body) < 86 {
-		return
-	}
-	rest := body[86:]
+	rest := body[78:]
 	colrOff := findRawBox(rest, BoxColr)
 	if colrOff < 0 {
 		tr.Color = model.ColorMeta{Present: false}
 		return
 	}
 	payload := rest[colrOff+8:]
-	if len(payload) < 8 {
+	if len(payload) < 10 {
 		return
 	}
 	tr.Color = model.ColorMeta{
@@ -42,21 +37,14 @@ func parseColor(tr *model.Track, stbl *Box) {
 // parseAudio extracts channel count and sample rate from the audio sample
 // entry and builds a normalized channel label list.
 func parseAudio(tr *model.Track, stbl *Box) {
-	stsd := FindFirst(stbl.Children, BoxStsd)
-	if stsd == nil {
+	body, ok := sampleEntryBody(stbl)
+	if !ok || len(body) < 20 { // AudioSampleEntry fixed fields
 		return
 	}
-	fb, ok := AsFullBox(stsd.Payload)
-	if !ok || len(fb.Body) < 4 {
-		return
-	}
-	body := fb.Body[4:]
-	if len(body) < 36 { // 8 head + 28 AudioSampleEntry
-		return
-	}
-	audio := body[8:36]
-	channels := U16(audio[8:10])
-	sampleRate := uint32(U16(audio[16:18])) // 16.16 fixed, fixtures use integer
+	// SampleEntry(8) then: version(2) revision(2) vendor(4) channels(2)
+	// samplesize(2) predef(2) reserved(2) samplerate(4, 16.16)
+	channels := U16(body[16:18])
+	sampleRate := U32(body[20:24]) >> 16 // 16.16 fixed point -> integer Hz
 	labels := canonicalLabels(channels)
 	tr.Audio = model.ChannelLayout{
 		Count:      channels,
@@ -64,6 +52,24 @@ func parseAudio(tr *model.Track, stbl *Box) {
 		SampleRate: sampleRate,
 		Valid:      len(labels) == int(channels),
 	}
+}
+
+// sampleEntryBody skips the stsd fullbox prefix, entry_count and the sample
+// entry's own 8-byte box header, returning the sample entry payload.
+func sampleEntryBody(stbl *Box) ([]byte, bool) {
+	stsd := FindFirst(stbl.Children, BoxStsd)
+	if stsd == nil {
+		return nil, false
+	}
+	fb, ok := AsFullBox(stsd.Payload)
+	if !ok || len(fb.Body) < 12 {
+		return nil, false
+	}
+	if U32(fb.Body[0:4]) < 1 {
+		return nil, false
+	}
+	// entry_count(4) + sample entry header size(4)+type(4)
+	return fb.Body[12:], true
 }
 
 // canonicalLabels maps channel counts to the standard ITU speaker order.
