@@ -1,0 +1,8 @@
+# Go build artifacts
+/archive
+/cmd/archive/archive
+*.test
+*.out
+
+# Local working/index state produced by demo runs (regenerated per seed)
+*.tmp
