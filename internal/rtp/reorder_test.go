@@ -227,3 +227,23 @@ func TestReorderWindowAndHoldValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestReorderBufferFullIsReported(t *testing.T) {
+	buf, _ := NewReorderBuffer(Config{Window: MaxWindow, HoldTicks: 10})
+	// A hole at the emission point keeps every later packet queued. The head
+	// packet itself occupies one of the bounded slots.
+	buf.Push(testPacket(0, 0), 0)
+	for i := 1; i < MaxBufferedPackets; i++ {
+		res, _ := buf.Push(testPacket(uint16(i), uint32(i)), 1)
+		if res.Status != StatusAccepted {
+			t.Fatalf("packet %d: %v", i, res.Status)
+		}
+	}
+	res, _ := buf.Push(testPacket(uint16(MaxBufferedPackets), 7), 2)
+	if res.Status != StatusBufferFull {
+		t.Fatalf("status %v, want buffer_full", res.Status)
+	}
+	if buf.Buffered() != MaxBufferedPackets {
+		t.Fatalf("buffered %d", buf.Buffered())
+	}
+}

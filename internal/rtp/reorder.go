@@ -21,8 +21,6 @@ var (
 	ErrInvalidWindow = errors.New("rtp: invalid reorder window")
 	// ErrInvalidHold reports a hold outside [0, MaxHoldTicks].
 	ErrInvalidHold = errors.New("rtp: invalid jitter hold")
-	// ErrBufferFull reports a jitter buffer at its hard memory bound.
-	ErrBufferFull = errors.New("rtp: jitter buffer full")
 )
 
 // Config configures the jitter buffer. Window is the maximum distance, in
