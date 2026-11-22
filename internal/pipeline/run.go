@@ -411,19 +411,51 @@ func prepareTransport(in *Input, opts Options) (
 		allErrs = append(allErrs, buf.Errors()...)
 		allErrs = append(allErrs, rec.Errors()...)
 
+		// The segment grid is relative to each stream's declared origin, so a
+		// non-zero RTP start does not push every sample into a huge segment
+		// index. The origin itself remains visible in the stream report.
+		// Expanded RTP timestamps for this stream. Using the first packet's raw
+		// timestamp as the clock origin keeps later expansion on the short
+		// path; a declared non-zero origin is added on top.
+		originTicks := rawOrigin(parsed.Packets)
+		clock, cerr := timeline.NewClock(src.Timescale, 32)
+		if cerr != nil {
+			return nil, nil, nil, nil, nil, cerr
+		}
+		clock.Start = originTicks
+		stats[len(stats)-1].OriginTicks = originTicks
+		stats[len(stats)-1].OriginNS = clock.ToNS(originTicks)
+		// The unified segment grid starts at each stream's first sample, so a
+		// large non-zero RTP origin does not scatter samples across millions
+		// of empty segments. The origin stays visible in the stream report.
 		specs = append(specs, demux.StreamSpec{
 			Stream: si, TrackID: src.TrackID, Codec: demux.Codec(src.Codec),
 			Timescale: src.Timescale, WrapBits: 32, FrameDuration: 3000,
-			SegmentNS: segmentNS, OriginNS: 0,
+			SegmentNS: segmentNS, OriginNS: clock.OriginNS(),
+			ClockStart: 0,
 		})
 		packets[si] = committed
+		// Only committed loss counts as missing media. Recovered intervals are
+		// present by the time the sample is reassembled.
 		var spans []transport.SeqSpan
 		for _, iv := range rec.Intervals() {
+			if iv.State != transport.LossLost {
+				continue
+			}
 			spans = append(spans, transport.SeqSpan{Stream: si, First: iv.First, Last: iv.Last})
 		}
 		gaps[si] = spans
 	}
 	return specs, packets, gaps, stats, allErrs, nil
+}
+
+// rawOrigin returns the first packet's expanded timestamp, used to anchor a
+// stream clock without forcing a wrap jump on the second sample.
+func rawOrigin(packets []*transport.Packet) int64 {
+	if len(packets) == 0 {
+		return 0
+	}
+	return int64(packets[0].Timestamp)
 }
 
 // finishStreamStats fills in per-stream demux counters.
@@ -438,8 +470,6 @@ func finishStreamStats(stats []StreamReport, dm *demux.Result) []StreamReport {
 			continue
 		}
 		stats[i].Samples = len(st.Samples)
-		stats[i].OriginTicks = st.Clock.Start
-		stats[i].OriginNS = st.Clock.OriginNS()
 		keys := 0
 		damaged := 0
 		dmgSpans := 0

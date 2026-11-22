@@ -153,21 +153,11 @@ func demuxStream(spec StreamSpec, clock *timeline.Clock, packets []*transport.Pa
 			ref = lastExt
 		}
 
-		// Missing packets inside this access unit are counted from the actual
-		// sequence run. A gap between the previous group and this one belongs
-		// to the previous sample's tail and is not charged twice.
+		// Missing packets inside this access unit are counted from the
+		// committed loss set, which is authoritative: reordering must not look
+		// like loss. Missing packets between this group and the previous one
+		// belong to the previous sample's tail and are not charged twice.
 		missing := 0
-		prev := firstExt
-		for _, p := range group[1:] {
-			e := extend(p.Seq, ref, primed)
-			if e > prev+1 {
-				missing += int(e - prev - 1)
-			}
-			prev = e
-		}
-		// Loss intervals are authoritative: count any gap sequence that falls
-		// between this group's first and last packet, even if reordering made
-		// the arithmetic above ambiguous.
 		for gs := firstExt; gs <= lastExt; gs++ {
 			if _, ok := gapSet[gs]; ok {
 				missing++
