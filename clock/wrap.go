@@ -41,16 +41,16 @@ func (r Reason) String() string {
 // timestamps) into int64 space, detects sender clock resets and keeps a
 // restorable baseline so checkpoints can resume deterministically.
 type Unwrapper struct {
-	bits           uint
-	mod            uint64
-	half           int64
-	lateThreshold  uint64 // modular distance tolerated as reordering
-	jumpThreshold  uint64 // forward distance treated as a discontinuity
-	initialized    bool
-	lastRaw        uint64
-	lastExpanded   int64
-	wraps          uint64
-	resets         uint64
+	bits          uint
+	mod           uint64
+	half          int64
+	lateThreshold uint64 // modular distance tolerated as reordering
+	jumpThreshold uint64 // forward distance treated as a discontinuity
+	initialized   bool
+	lastRaw       uint64
+	lastExpanded  int64
+	wraps         uint64
+	resets        uint64
 }
 
 // NewUnwrapper builds an unwrapper. bits is the counter width (16 or 32 for

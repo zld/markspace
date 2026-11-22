@@ -16,12 +16,12 @@ const (
 // Sample is one decoded sample-table entry, located on the unified timeline
 // after edit-list mapping has been applied.
 type Sample struct {
-	Index       uint32 // 0-based sample index inside its track
-	ByteOffset  int64  // absolute file offset of the sample bytes
-	Size        uint32
-	PTS         int64 // presentation time, unified nanoseconds
-	Duration    int64 // unified nanoseconds, always > 0
-	IsKeyframe  bool
+	Index      uint32 // 0-based sample index inside its track
+	ByteOffset int64  // absolute file offset of the sample bytes
+	Size       uint32
+	PTS        int64 // presentation time, unified nanoseconds
+	Duration   int64 // unified nanoseconds, always > 0
+	IsKeyframe bool
 }
 
 // Edit is one mapped edit-list segment on the unified timeline.
@@ -38,12 +38,12 @@ type TrackManifest struct {
 	Timescale media.Rational
 	// StartPTS is the non-zero presentation origin carried by the source,
 	// preserved (not normalised away) for audit.
-	StartPTS  int64
-	Duration  int64 // unified nanoseconds
-	Samples   []Sample
-	Edits     []Edit
-	Channels  uint16 // audio only
-	Rate      uint32 // audio sample rate or video frame rate hint
+	StartPTS int64
+	Duration int64 // unified nanoseconds
+	Samples  []Sample
+	Edits    []Edit
+	Channels uint16 // audio only
+	Rate     uint32 // audio sample rate or video frame rate hint
 }
 
 // Manifest is the parser output for a whole container or stream bundle.

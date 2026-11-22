@@ -35,20 +35,21 @@ type RTPEvent struct {
 // numbers and 32-bit timestamps, reorders within a bounded window and never
 // lets a late or duplicate packet rewrite the committed region.
 type RTPStream struct {
-	ssrc        uint32
-	clockRate   uint32
-	seq         *clock.Unwrapper
-	ts          *clock.Unwrapper
-	window      int
-	pending     map[int64]*rtp.Packet // expanded seq -> packet, not yet committed
-	holes       []media.Interval      // expanded-seq gaps jumped over
-	committedTo int64                 // highest expanded seq already emitted
-	haveHead    bool
-	headSeq     int64
-	emitted     int64
-	duplicates  int64
-	late        int64
-	bad         int64
+	ssrc           uint32
+	clockRate      uint32
+	seq            *clock.Unwrapper
+	ts             *clock.Unwrapper
+	window         int
+	pending        map[int64]*rtp.Packet // expanded seq -> packet, not yet committed
+	holes          []media.Interval      // expanded-seq gaps jumped over
+	committedTo    int64                 // highest expanded seq already emitted
+	firstCommitted int64                 // lowest expanded seq ever emitted
+	haveHead       bool
+	headSeq        int64
+	emitted        int64
+	duplicates     int64
+	late           int64
+	bad            int64
 }
 
 // NewRTPStream builds a stream. window must not exceed media.MaxReorderWindow.
@@ -68,7 +69,7 @@ func NewRTPStream(ssrc uint32, clockRate uint32, window int) (*RTPStream, error)
 	return &RTPStream{
 		ssrc: ssrc, clockRate: clockRate, seq: seq, ts: ts,
 		window: window, pending: map[int64]*rtp.Packet{},
-		committedTo: -1,
+		committedTo: -1, firstCommitted: -1,
 	}, nil
 }
 
@@ -134,11 +135,17 @@ func (s *RTPStream) drain(flushing bool) []RTPEvent {
 				return out
 			}
 			low := s.lowestPending()
-			if low > missing {
+			// Only count a gap as a hole once some packet has been committed;
+			// the space before the stream's first packet is the timeline
+			// origin, not a loss.
+			if s.committedTo >= 0 && low > missing {
 				s.holes = append(s.holes, media.Interval{Start: missing, End: low})
 			}
 			pkt = s.pending[low]
 			missing = low
+		}
+		if s.firstCommitted < 0 {
+			s.firstCommitted = missing
 		}
 		expTS, _ := s.ts.Unwrap(uint64(pkt.Timestamp))
 		out = append(out, s.makeEvent(pkt, missing, expTS))
@@ -148,6 +155,9 @@ func (s *RTPStream) drain(flushing bool) []RTPEvent {
 	}
 	return out
 }
+
+// FirstCommitted returns the lowest expanded sequence ever emitted, or -1.
+func (s *RTPStream) FirstCommitted() int64 { return s.firstCommitted }
 
 func (s *RTPStream) highWater() int64 {
 	hi := s.committedTo
@@ -206,20 +216,21 @@ func (s *RTPStream) CommittedTo() int64 { return s.committedTo }
 
 // RTPStreamState is the serialisable checkpoint of an RTP stream.
 type RTPStreamState struct {
-	SSRC        uint32            `json:"ssrc"`
-	ClockRate   uint32            `json:"clock_rate"`
-	Window      int               `json:"window"`
-	SeqState    clock.UnwrapState `json:"seq_state"`
-	TSState     clock.UnwrapState `json:"ts_state"`
-	CommittedTo int64             `json:"committed_to"`
-	HeadSeq     int64             `json:"head_seq"`
-	HaveHead    bool              `json:"have_head"`
-	Emitted     int64             `json:"emitted"`
-	Duplicates  int64             `json:"duplicates"`
-	Late        int64             `json:"late"`
-	Bad         int64             `json:"bad"`
-	Holes       []media.Interval  `json:"holes"`
-	Pending     map[int64][]byte  `json:"pending"` // expanded seq -> marshalled packet
+	SSRC           uint32            `json:"ssrc"`
+	ClockRate      uint32            `json:"clock_rate"`
+	Window         int               `json:"window"`
+	SeqState       clock.UnwrapState `json:"seq_state"`
+	TSState        clock.UnwrapState `json:"ts_state"`
+	CommittedTo    int64             `json:"committed_to"`
+	FirstCommitted int64             `json:"first_committed"`
+	HeadSeq        int64             `json:"head_seq"`
+	HaveHead       bool              `json:"have_head"`
+	Emitted        int64             `json:"emitted"`
+	Duplicates     int64             `json:"duplicates"`
+	Late           int64             `json:"late"`
+	Bad            int64             `json:"bad"`
+	Holes          []media.Interval  `json:"holes"`
+	Pending        map[int64][]byte  `json:"pending"` // expanded seq -> marshalled packet
 }
 
 // Snapshot captures the stream state. Buffered packets are keyed by their
@@ -237,7 +248,8 @@ func (s *RTPStream) Snapshot() (RTPStreamState, error) {
 	return RTPStreamState{
 		SSRC: s.ssrc, ClockRate: s.clockRate, Window: s.window,
 		SeqState: s.seq.Snapshot(), TSState: s.ts.Snapshot(),
-		CommittedTo: s.committedTo, HeadSeq: s.headSeq, HaveHead: s.haveHead,
+		CommittedTo: s.committedTo, FirstCommitted: s.firstCommitted,
+		HeadSeq: s.headSeq, HaveHead: s.haveHead,
 		Emitted: s.emitted, Duplicates: s.duplicates, Late: s.late, Bad: s.bad,
 		Holes: holes, Pending: pending,
 	}, nil
@@ -258,7 +270,8 @@ func RestoreRTPStream(st RTPStreamState) (*RTPStream, error) {
 		ssrc: st.SSRC, clockRate: st.ClockRate, window: st.Window,
 		seq: seq, ts: ts, pending: map[int64]*rtp.Packet{},
 		holes:       append([]media.Interval(nil), st.Holes...),
-		committedTo: st.CommittedTo, headSeq: st.HeadSeq, haveHead: st.HaveHead,
+		committedTo: st.CommittedTo, firstCommitted: st.FirstCommitted,
+		headSeq: st.HeadSeq, haveHead: st.HaveHead,
 		emitted: st.Emitted, duplicates: st.Duplicates, late: st.Late, bad: st.Bad,
 	}
 	for expSeq, raw := range st.Pending {

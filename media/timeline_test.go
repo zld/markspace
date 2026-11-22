@@ -8,10 +8,10 @@ import (
 
 func TestRationalConvert(t *testing.T) {
 	cases := []struct {
-		name       string
-		value      int64
-		from, to   Rational
-		want       int64
+		name     string
+		value    int64
+		from, to Rational
+		want     int64
 	}{
 		{"44.1k ticks to 48k", 441, TimeScale(44100), TimeScale(48000), 480},
 		{"48k to 44.1k", 480, TimeScale(48000), TimeScale(44100), 441},

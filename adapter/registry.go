@@ -40,7 +40,7 @@ type baseAdapter struct {
 	caps map[Capability]struct{}
 }
 
-func (b baseAdapter) Name() string { return b.name }
+func (b baseAdapter) Name() string    { return b.name }
 func (b baseAdapter) Version() uint32 { return b.ver }
 func (b baseAdapter) Capabilities() []Capability {
 	out := make([]Capability, 0, len(b.caps))
@@ -169,9 +169,9 @@ func EnforceLimits(tracks int, durationNanos int64, parseBytes int) error {
 // boundedReader counts bytes read and fails once the parse budget is spent,
 // turning oversized declarations into hard errors instead of OOM.
 type boundedReader struct {
-	r       io.Reader
-	read    int
-	budget  int
+	r      io.Reader
+	read   int
+	budget int
 }
 
 // NewBoundedReader wraps r with a cumulative byte budget.

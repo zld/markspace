@@ -9,22 +9,22 @@ import (
 type Code string
 
 const (
-	CodeMalformed          Code = "malformed_input"        // container/packet structurally invalid
-	CodeMissingTable       Code = "missing_sample_table"   // required MP4 sample table absent
-	CodeOffsetOutOfRange   Code = "offset_out_of_range"    // chunk/sample offset outside file
-	CodeBadEditSegment     Code = "bad_edit_segment"       // edit list references invalid media time
-	CodeUnsupportedVersion Code = "unsupported_version"    // adapter/box version not negotiated
-	CodeIncompatible       Code = "incompatible_adapter"   // capability negotiation refused
-	CodeOverflow           Code = "integer_overflow"       // declared size/duration overflows
-	CodeLimitExceeded      Code = "limit_exceeded"         // kernel resource limit violated
-	CodeBadPacket          Code = "bad_packet"             // unparsable or corrupt RTP packet
-	CodeLatePacket         Code = "late_packet"            // packet arrived after commit boundary
-	CodeDuplicatePacket    Code = "duplicate_packet"       // packet already committed
-	CodeClockReset         Code = "clock_reset"            // sender clock discontinuity
-	CodeNegativeDuration   Code = "negative_duration"      // frame/interval end <= start
-	CodePTSRollback        Code = "pts_rollback"           // PTS moved backwards on a track
-	CodeIncompleteFrame    Code = "incomplete_frame"       // frame declared but payload missing
-	CodeCheckpointMismatch Code = "checkpoint_mismatch"    // resumed state disagrees with checkpoint
+	CodeMalformed          Code = "malformed_input"      // container/packet structurally invalid
+	CodeMissingTable       Code = "missing_sample_table" // required MP4 sample table absent
+	CodeOffsetOutOfRange   Code = "offset_out_of_range"  // chunk/sample offset outside file
+	CodeBadEditSegment     Code = "bad_edit_segment"     // edit list references invalid media time
+	CodeUnsupportedVersion Code = "unsupported_version"  // adapter/box version not negotiated
+	CodeIncompatible       Code = "incompatible_adapter" // capability negotiation refused
+	CodeOverflow           Code = "integer_overflow"     // declared size/duration overflows
+	CodeLimitExceeded      Code = "limit_exceeded"       // kernel resource limit violated
+	CodeBadPacket          Code = "bad_packet"           // unparsable or corrupt RTP packet
+	CodeLatePacket         Code = "late_packet"          // packet arrived after commit boundary
+	CodeDuplicatePacket    Code = "duplicate_packet"     // packet already committed
+	CodeClockReset         Code = "clock_reset"          // sender clock discontinuity
+	CodeNegativeDuration   Code = "negative_duration"    // frame/interval end <= start
+	CodePTSRollback        Code = "pts_rollback"         // PTS moved backwards on a track
+	CodeIncompleteFrame    Code = "incomplete_frame"     // frame declared but payload missing
+	CodeCheckpointMismatch Code = "checkpoint_mismatch"  // resumed state disagrees with checkpoint
 )
 
 // rejectable codes mean the input itself is invalid and must be refused with
