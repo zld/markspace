@@ -84,6 +84,12 @@ func Load(r io.Reader, lim Limits) (*Index, error) {
 	if err := dec.Decode(&idx); err != nil {
 		return nil, merr.Wrap(merr.StageIndex, "malformed", merr.NoSpan(0), false, err, "decoding index")
 	}
+	// Reject trailing data so a truncated or concatenated document cannot be
+	// silently accepted.
+	if _, err := dec.Token(); err != io.EOF {
+		return nil, merr.New(merr.StageIndex, "trailing_data", merr.NoSpan(0), false,
+			"index has trailing data after the JSON object")
+	}
 	if len(idx.Entries) > lim.MaxEntries {
 		return nil, merr.New(merr.StageIndex, "entry_limit", merr.NoSpan(0), false,
 			"%d entries exceed limit %d", len(idx.Entries), lim.MaxEntries)
