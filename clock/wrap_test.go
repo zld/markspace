@@ -72,9 +72,14 @@ func TestUnwrapResetAndJumpRebuildBaseline(t *testing.T) {
 	if r != ReasonReset || exp != last+1 {
 		t.Fatalf("reset: exp=%d last=%d reason=%s", exp, last, r)
 	}
-	exp2, r2 := u.Unwrap(40000)
-	if r2 != ReasonJump || exp2 != exp+1 {
-		t.Fatalf("jump: exp2=%d exp=%d reason=%s", exp2, exp, r2)
+	exp2, r2 := u.Unwrap(20000)
+	if r2 != ReasonNormal || exp2 != exp+19990 {
+		t.Fatalf("post-reset advance: exp2=%d exp=%d reason=%s", exp2, exp, r2)
+	}
+	// a genuinely oversized forward step is still a jump
+	exp3, r3 := u.Unwrap(50001)
+	if r3 != ReasonJump || exp3 != exp2+1 {
+		t.Fatalf("jump: exp3=%d exp2=%d reason=%s", exp3, exp2, r3)
 	}
 	if u.Resets() != 2 {
 		t.Fatalf("reset count = %d", u.Resets())
