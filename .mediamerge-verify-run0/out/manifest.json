@@ -1,0 +1,80 @@
+{
+  "version": 1,
+  "timescale": 90000,
+  "target_bps": 4000000,
+  "actual_bps": 3996100,
+  "av_skew_num": 0,
+  "av_skew_den": 1,
+  "committed_ranges": [
+    {
+      "start": 0,
+      "end": 45000
+    },
+    {
+      "start": 45000,
+      "end": 90000
+    },
+    {
+      "start": 90000,
+      "end": 135000
+    },
+    {
+      "start": 135000,
+      "end": 180000
+    }
+  ],
+  "segments": [
+    {
+      "index": 0,
+      "start": 0,
+      "end": 45000,
+      "target_bps": 4000000,
+      "actual_bps": 3996000,
+      "gap_packets": 0,
+      "complete_samples": 1,
+      "total_samples": 1
+    },
+    {
+      "index": 1,
+      "start": 45000,
+      "end": 90000,
+      "target_bps": 4000000,
+      "actual_bps": 3978288,
+      "gap_packets": 0,
+      "complete_samples": 1,
+      "total_samples": 1
+    },
+    {
+      "index": 2,
+      "start": 90000,
+      "end": 135000,
+      "target_bps": 4000000,
+      "actual_bps": 4014368,
+      "gap_packets": 0,
+      "complete_samples": 1,
+      "total_samples": 1
+    },
+    {
+      "index": 3,
+      "start": 135000,
+      "end": 180000,
+      "target_bps": 4000000,
+      "actual_bps": 3995744,
+      "gap_packets": 0,
+      "complete_samples": 1,
+      "total_samples": 1
+    }
+  ],
+  "quality": {
+    "packet_loss": 6,
+    "recovered_packets": 65,
+    "duplicates": 119,
+    "gap_count": 1
+  },
+  "hashes": {
+    "normal.mp4": "f33f887a962899721aa5b2a735d635448b63478c8b5db65c91cacc81af5524d8",
+    "segments.bin": "98d60d35a8ebf62e70abe97810a29beac6a4741d2ee0851a896e44e16617e5f8"
+  },
+  "provenance_sha256": "72cb1206ef3644d6ffa3fd020e5529fa126a8ed32bf0466a9837200af5cc6a0a",
+  "content_sha256": "af5b7180c362ed074b2fcb0dee6e3c681399312c6ad42fb92f7f835f516842ea"
+}

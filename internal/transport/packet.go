@@ -23,10 +23,12 @@ type StreamPacket struct {
 
 // Unwrapper expands 16-bit RTP sequence numbers to a monotonic 64-bit
 // space. The rule is deterministic: a forward jump of more than half the
-// sequence space is treated as a backward wrap, and vice versa.
+// sequence space is treated as a backward wrap, and vice versa. Wrap
+// decisions use the highest extended sequence seen so far, so a late
+// packet from a previous cycle never corrupts the cycle counter.
 type Unwrapper struct {
 	cycles  uint64
-	last    uint64
+	maxExt  uint64
 	started bool
 }
 
@@ -35,25 +37,25 @@ func (u *Unwrapper) Unwrap(seq uint16) uint64 {
 	s := uint64(seq)
 	if !u.started {
 		u.started = true
-		u.last = s
+		u.maxExt = s
 		return s
 	}
+	maxLow := u.maxExt & 0xffff
 	cand := u.cycles | s
-	lastLow := u.last & 0xffff
 	switch {
-	case s > lastLow && s-lastLow > 0x8000:
+	case s > maxLow && s-maxLow > 0x8000:
 		// Large forward-looking jump: actually a packet from previous cycle.
 		if cand >= 1<<16 {
 			cand -= 1 << 16
 		}
-	case lastLow > s && lastLow-s > 0x8000:
+	case maxLow > s && maxLow-s > 0x8000:
 		// Wrapped forward into the next cycle.
 		cand += 1 << 16
 	}
-	if cand > u.last {
+	if cand > u.maxExt {
+		u.maxExt = cand
 		u.cycles = cand &^ 0xffff
 	}
-	u.last = cand
 	return cand
 }
 

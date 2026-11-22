@@ -40,6 +40,22 @@ func TestUnwrapLateFromPreviousCycle(t *testing.T) {
 	}
 }
 
+func TestUnwrapWrapWithReorder(t *testing.T) {
+	u := &Unwrapper{}
+	// 65535 is held and arrives after 0 has wrapped forward.
+	u.Unwrap(65534)
+	if got := u.Unwrap(0); got != 65536 {
+		t.Fatalf("wrap = %d, want 65536", got)
+	}
+	if got := u.Unwrap(65535); got != 65535 {
+		t.Fatalf("held packet = %d, want 65535", got)
+	}
+	// The cycle counter must survive the late packet.
+	if got := u.Unwrap(1); got != 65537 {
+		t.Fatalf("after held packet = %d, want 65537", got)
+	}
+}
+
 func TestParseAndNormalize(t *testing.T) {
 	u := &Unwrapper{}
 	p, err := ParseRTP(mkRTP(t, 7, 9000))
