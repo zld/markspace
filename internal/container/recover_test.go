@@ -130,15 +130,41 @@ func TestRecoverNoIndexRebuildsFromRecords(t *testing.T) {
 	}
 }
 
-func TestRecoverNoMoovIsUnrecoverableWithoutTrack(t *testing.T) {
+func TestRecoverNoMoovRebuildsFromRecords(t *testing.T) {
+	// moov loss is recoverable when records can still be proven; the run must
+	// succeed and carry a located warning rather than failing outright.
 	path := writeFixture(t, fixture.KindNoMoov)
 	s, err := ScanFile(path, DefaultLimits())
 	if err != nil {
 		t.Fatal(err)
 	}
+	res, rerr := Recovery{File: path, Scan: s, Limits: DefaultLimits()}.Recover(nil)
+	if rerr != nil {
+		t.Fatalf("recover: %v", rerr)
+	}
+	if res.IndexSource != "rescan" || len(res.Valid) == 0 {
+		t.Fatalf("no rebuilt index: %+v", res)
+	}
+	if res.SourceFormat.SampleRate != 44100 || res.SourceFormat.Channels != 2 {
+		t.Fatalf("source format not recovered: %+v", res.SourceFormat)
+	}
+	if !hasCode(res.Warnings, core.CodeMoovMissing) {
+		t.Fatalf("moov loss not recorded: %v", res.Warnings)
+	}
+}
+
+func TestRecoverGarbledIsUnrecoverable(t *testing.T) {
+	path := writeFixture(t, fixture.KindGarbled)
+	s, err := ScanFile(path, DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
 	_, rerr := Recovery{File: path, Scan: s, Limits: DefaultLimits()}.Recover(nil)
-	if !core.IsCode(rerr, core.CodeMissingTrack) {
-		t.Fatalf("want missing_track, got %v", rerr)
+	if !core.IsCode(rerr, core.CodeUnrecoverable) {
+		t.Fatalf("want unrecoverable, got %v", rerr)
+	}
+	if core.ExitCode(rerr) != 3 {
+		t.Fatalf("exit code = %d, want 3", core.ExitCode(rerr))
 	}
 }
 

@@ -56,7 +56,8 @@ func TestScanTruncatedFileKeepsReadablePrefix(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s.FileSize >= 100_000 {
+	// The damage keeps slightly more than half the media bytes.
+	if s.FileSize >= 355_000 {
 		t.Fatalf("fixture was not truncated: %d", s.FileSize)
 	}
 	// moov precedes mdat, so the index is fully readable even though the
