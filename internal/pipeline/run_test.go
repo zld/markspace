@@ -201,3 +201,70 @@ func TestResumeAndRepeatDeterminism(t *testing.T) {
 		t.Fatalf("bitrate stats drifted: %+v vs %+v", s1, s2)
 	}
 }
+
+// TestResumeFromSimulatedCrash proves recovery from a mid-run interruption: a
+// partial checkpoint makes the resumed run count the already-finished segments
+// as recovered while still producing the complete, identical manifest.
+func TestResumeFromSimulatedCrash(t *testing.T) {
+	work := t.TempDir()
+	in, _ := buildInput(t, 73)
+	cfg := testCfg(work)
+
+	// Baseline full run establishes the expected output.
+	base, _, err := Run(in, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(base.Segments) < 2 {
+		t.Fatalf("need >=2 segments for crash test, got %d", len(base.Segments))
+	}
+
+	// Simulate a crash after the first segment: wipe the natural checkpoint and
+	// write a partial one ending at the first segment boundary.
+	if err := ClearCheckpoint(work); err != nil {
+		t.Fatal(err)
+	}
+	first := base.Segments[0]
+	if err := WritePartialCheckpoint(work, 1, first.EndUS); err != nil {
+		t.Fatal(err)
+	}
+
+	resumeCfg := cfg
+	resumeCfg.Resume = true
+	r2, s2, err := Run(in, resumeCfg)
+	if err != nil {
+		t.Fatalf("resumed run failed: %v", err)
+	}
+	// The first segment is reported as recovered from the checkpoint.
+	if s2.RecoveredSegments != 1 {
+		t.Fatalf("recovered segments = %d, want 1", s2.RecoveredSegments)
+	}
+	// The full manifest is still emitted and matches the baseline exactly.
+	if len(r2.Segments) != len(base.Segments) {
+		t.Fatalf("resumed segment count = %d, want %d", len(r2.Segments), len(base.Segments))
+	}
+	for i := range base.Segments {
+		if r2.Segments[i].StartUS != base.Segments[i].StartUS ||
+			r2.Segments[i].EndUS != base.Segments[i].EndUS {
+			t.Fatalf("segment %d changed after resume", i)
+		}
+	}
+}
+
+// TestMalformedCheckpointIsClassified verifies a corrupt checkpoint surfaces a
+// classified corruption error rather than a panic.
+func TestMalformedCheckpointIsClassified(t *testing.T) {
+	work := t.TempDir()
+	if err := os.MkdirAll(work, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(work, "checkpoint.json"), []byte("{not-json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	in, _ := buildInput(t, 73)
+	cfg := testCfg(work)
+	cfg.Resume = true
+	if _, _, err := Run(in, cfg); timeline.Classify(err) != timeline.KindCorrupt {
+		t.Fatalf("malformed checkpoint: got %v, want KindCorrupt", err)
+	}
+}

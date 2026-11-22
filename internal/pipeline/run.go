@@ -121,6 +121,24 @@ func saveCheckpoint(workDir string, cp *manifest.Checkpoint) error {
 	return os.Rename(tmp, checkpointPath(workDir))
 }
 
+// WritePartialCheckpoint simulates a run that crashed after completing the
+// given number of segments at lastTimelineUS. The subsequent Run with
+// Config.Resume treats that boundary as recovered instead of redoing the work.
+func WritePartialCheckpoint(workDir string, completedSegments int, lastTimelineUS int64) error {
+	return saveCheckpoint(workDir, &manifest.Checkpoint{
+		CompletedSegments: completedSegments,
+		LastTimelineUS:    lastTimelineUS,
+	})
+}
+
+// ClearCheckpoint removes resume state, used to reset a work directory.
+func ClearCheckpoint(workDir string) error {
+	if err := os.Remove(checkpointPath(workDir)); err != nil && !os.IsNotExist(err) {
+		return timeline.WrapError(timeline.KindInternal, "checkpoint remove failed", err)
+	}
+	return nil
+}
+
 // Normalize fills defaults and validates the configuration.
 func (c *Config) Normalize() error {
 	if c.WorkDir == "" {

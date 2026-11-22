@@ -118,15 +118,44 @@ func (w *Window) Push(p *rtp.Packet, timelineUS int64) ([]OrderedPacket, error) 
 			return nil, nil
 		}
 		if dist > w.capacity {
-			// Outside the reorder window: too far ahead to keep, and any
-			// in-between sequence will be reported as a gap by the loss layer.
-			w.stats.Late++
-			return nil, nil
+			// A persistent hole blocks the base and this packet lies beyond the
+			// window. A real jitter buffer slides over the hole: jump base to the
+			// oldest buffered sequence, releasing everything contiguous up to it.
+			// The skipped sequences stay missing and become a gap in the loss
+			// layer rather than poisoning every later packet as "late".
+			advanced := w.advancePastHole()
+			if advanced {
+				// Recompute distance after the slide; the packet may now fit.
+				dist = SeqDistance(w.base, seq)
+			}
+			if dist > w.capacity || dist <= 0 {
+				w.stats.Late++
+				return nil, nil
+			}
 		}
 		w.buf[seq] = OrderedPacket{Packet: p, TimelineUS: timelineUS}
 		w.arrival = append(w.arrival, seq)
 		return w.drain(), nil
 	}
+}
+
+// advancePastHole moves base to the smallest buffered sequence ahead of the
+// current base, releasing nothing but abandoning the unrecoverable hole. It
+// returns false when no forward packet is buffered.
+func (w *Window) advancePastHole() bool {
+	var jump uint16
+	best := 1 << 30
+	for seq := range w.buf {
+		d := SeqDistance(w.base, seq)
+		if d > 0 && d < best {
+			best, jump = d, seq
+		}
+	}
+	if best == 1<<30 {
+		return false
+	}
+	w.base = jump
+	return true
 }
 
 // drain emits the longest contiguous run starting at base, then advances base.
