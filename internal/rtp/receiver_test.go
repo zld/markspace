@@ -275,3 +275,22 @@ func TestConfigValidation(t *testing.T) {
 		t.Fatal("zero buffer accepted")
 	}
 }
+
+func TestWrapCountedOnceEvenWithReordering(t *testing.T) {
+	r := newReceiver(t)
+	// Shuffle arrivals around the wrap point: the counter must report a
+	// single wrap, not one per packet that maps back to the old epoch.
+	seqs := []uint16{65530, 65531, 65532, 65533, 65534, 65535, 0, 1, 2, 3}
+	for i, seq := range seqs {
+		if err := r.Push(mkPacket(seq, uint32(i)*3000, 96), media.Nano(i)); err != nil {
+			t.Fatalf("push %d: %v", seq, err)
+		}
+	}
+	r.Close()
+	if got := r.Stats().Wraps; got != 1 {
+		t.Fatalf("wraps = %d, want 1", got)
+	}
+	if s := r.Stats(); s.Lost != 0 {
+		t.Fatalf("lost = %d", s.Lost)
+	}
+}

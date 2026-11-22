@@ -75,14 +75,15 @@ type Receiver struct {
 	order    []int64 // arrival order of accepted extended sequences
 	arrivals uint64
 
-	dups       int
-	reordered  int
-	recovered  int
-	wrapCount  int
-	lost       int
-	gaps       []Gap
-	lateBeyond int
-	latencies  []media.Nano
+	dups             int
+	reordered        int
+	recovered        int
+	wrapCount        int
+	lastCountedEpoch int64
+	lost             int
+	gaps             []Gap
+	lateBeyond       int
+	latencies        []media.Nano
 }
 
 // New builds a Receiver.
@@ -104,28 +105,43 @@ func (r *Receiver) extend(seq uint16) (int64, error) {
 	if !r.started {
 		return int64(seq), nil
 	}
-	cur := r.base | int64(seq)
-	best, bestDist := cur, int64(1)<<62
-	for _, delta := range []int64{-1 << 16, 0, 1 << 16} {
-		cand := cur + delta
-		if cand < 0 {
-			continue
+	prev := r.highest & 0xffff // int64, 0..65535
+	base := r.highest &^ 0xffff
+	var cand int64
+	sv := int64(seq)
+	switch {
+	case sv >= prev:
+		if sv-prev <= 0xffff-(sv-prev) {
+			cand = base | sv // forward, no wrap
+		} else {
+			cand = base - 1<<16 | sv // backward across the wrap
 		}
-		dist := cand - r.highest
-		if dist < 0 {
-			dist = -dist
+	default:
+		if prev-sv <= 0xffff-(prev-sv) {
+			cand = base | sv // backward, no wrap
+		} else {
+			cand = base + 1<<16 | sv // forward across the wrap
 		}
-		if dist < bestDist {
-			best, bestDist = cand, dist
-		}
+	}
+	if cand < 0 {
+		cand = base | int64(seq)
+	}
+	best := cand
+	bestDist := best - r.highest
+	if bestDist < 0 {
+		bestDist = -bestDist
 	}
 	if bestDist > int64(r.cfg.MaxExtend) {
 		return 0, media.NewError(media.UnrecoverableGap,
 			"sequence %d jumped %d slots from %d (limit %d)",
 			seq, bestDist, uint16(r.highest), r.cfg.MaxExtend).AtSeq(uint32(seq))
 	}
-	if best>>16 != r.highest>>16 {
+	// A wrap is counted once, when the stream first advances into a new
+	// 16-bit epoch. A packet mapping back to the previous epoch is a
+	// reordered arrival, not another wrap.
+	if epoch := best >> 16; epoch > r.highest>>16 && epoch != r.lastCountedEpoch {
 		r.wrapCount++
+		r.lastCountedEpoch = epoch
 	}
 	return best, nil
 }
