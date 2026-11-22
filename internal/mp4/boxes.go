@@ -41,6 +41,11 @@ func (b *Box) End() int64 { return b.Offset + b.Size }
 // ReadableEnd returns the last byte offset that exists in the file.
 func (b *Box) ReadableEnd() int64 { return b.PayloadOff + b.PayloadSize }
 
+// MaxFileSize is the largest input the pipeline accepts. Offsets and sample
+// spans stay well inside int64, and refusing oversized files keeps a runaway
+// path from turning into multi-terabyte reads.
+const MaxFileSize int64 = 2 << 30
+
 // Tree is the result of a structural scan.
 type Tree struct {
 	Path     string
@@ -99,6 +104,12 @@ func Open(path string) (*Tree, error) {
 	if err != nil {
 		f.Close()
 		return nil, fault.New("mp4.stat", fault.KindIO, err).WithPath(path)
+	}
+	if st.Size() > MaxFileSize {
+		f.Close()
+		return nil, fault.Errorf("mp4.open", fault.KindParse,
+			"file is %d bytes, above the %d byte limit", st.Size(), MaxFileSize).
+			WithPath(path).At(0).Fatal()
 	}
 	t := Scan(path, f, st.Size())
 	t.closer = f

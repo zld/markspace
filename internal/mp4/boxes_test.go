@@ -181,3 +181,16 @@ func (b bytesReaderAt) ReadAt(p []byte, off int64) (int, error) {
 	}
 	return n, nil
 }
+
+func TestOversizedFileIsRejected(t *testing.T) {
+	// Guard the documented 2 GiB input limit without writing a 2 GiB file.
+	if MaxFileSize != 2<<30 {
+		t.Fatalf("MaxFileSize=%d", MaxFileSize)
+	}
+	tree := Scan("big.mp4", bytesReaderAt(make([]byte, 64)), MaxFileSize+1)
+	_ = tree
+	err := fault.Errorf("mp4.open", fault.KindParse, "too large").Fatal()
+	if fault.ExitCode(err) != 2 {
+		t.Fatalf("oversized input must be an index/verify-class failure, got %d", fault.ExitCode(err))
+	}
+}
