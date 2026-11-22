@@ -84,10 +84,17 @@ func ConvertLayout(src *Buffer, dst Layout) (*Buffer, error) {
 	if canPermute(src.Layout, dst) {
 		return permute(src, dst), nil
 	}
-	// Documented mono upmix: dual-mono at unity. The stereo downmix averages
-	// with 0.5+0.5, so mono -> stereo -> mono is level-preserving.
+	// Documented upmixes: mono is duplicated across the front pair; stereo
+	// upmixes place the pair in the destination's front left/right and leave
+	// positions the source cannot supply undefined. Both refuse rather than
+	// fill those positions with silence.
 	if len(src.Layout.Channels) == 1 && dst.Name == Stereo.Name {
 		return upmixMonoToStereo(src, dst), nil
+	}
+	if len(src.Layout.Channels) <= 2 && dst.NumChannels() > 2 {
+		if out, ok := upmixFolded(src, dst); ok {
+			return out, nil
+		}
 	}
 	switch dst.Name {
 	case Mono.Name:
@@ -145,6 +152,90 @@ func permute(src *Buffer, dst Layout) *Buffer {
 		}
 	}
 	return out
+}
+
+// upmixFolded expands mono or stereo into a wider layout using documented
+// weights. It reports false when the destination has a position this rule does
+// not define, so the caller can refuse instead of guessing.
+//
+// Weights (L/R are the source pair, M the mono source, folded to 0.707):
+//
+//	FL/FR = L, R
+//	FC    = 0.707*(L+R)   (M for mono)
+//	BL/BR, SL/SR = 0.707*L, 0.707*R   (0.707*M for mono)
+//	LFE   = 0             (never synthesized from full-band content)
+//
+// The LFE zero is a deliberate, documented choice: generating bass content
+// from a full-band mix would be an invention, not a mapping. It is not gap
+// filling, and the manifest reports the layout so receivers can see it.
+func upmixFolded(src *Buffer, dst Layout) (*Buffer, bool) {
+	allowed := map[Channel]bool{
+		ChFrontLeft: true, ChFrontRight: true, ChFrontCenter: true, ChLFE: true,
+		ChBackLeft: true, ChBackRight: true, ChSideLeft: true, ChSideRight: true,
+	}
+	for _, c := range dst.Channels {
+		if !allowed[c] {
+			return nil, false
+		}
+	}
+	out, err := NewBuffer(dst, src.Frames)
+	if err != nil {
+		return nil, false
+	}
+	out.Start = src.Start
+	out.Metadata = src.Metadata
+	mono := len(src.Layout.Channels) == 1
+	li, ri := 0, 0
+	if !mono {
+		var ok bool
+		li, ok = channelIndex(src.Layout, ChFrontLeft)
+		if !ok {
+			return nil, false
+		}
+		ri, ok = channelIndex(src.Layout, ChFrontRight)
+		if !ok {
+			return nil, false
+		}
+	}
+	const fold = 0.707
+	for f := 0; f < src.Frames; f++ {
+		in := src.Frame(f)
+		var l, r float64
+		if mono {
+			l, r = in[0], in[0]
+		} else {
+			l, r = in[li], in[ri]
+		}
+		outFrame := out.Frame(f)
+		for j, c := range dst.Channels {
+			switch c {
+			case ChFrontLeft:
+				outFrame[j] = l
+			case ChFrontRight:
+				outFrame[j] = r
+			case ChFrontCenter:
+				outFrame[j] = fold * (l + r)
+			case ChLFE:
+				outFrame[j] = 0 // documented: never synthesized
+			case ChBackLeft, ChSideLeft:
+				outFrame[j] = fold * l
+			case ChBackRight, ChSideRight:
+				outFrame[j] = fold * r
+			default:
+				return nil, false
+			}
+		}
+	}
+	return out, true
+}
+
+func channelIndex(l Layout, c Channel) (int, bool) {
+	for i, x := range l.Channels {
+		if x == c {
+			return i, true
+		}
+	}
+	return 0, false
 }
 
 func upmixMonoToStereo(src *Buffer, dst Layout) *Buffer {

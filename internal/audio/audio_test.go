@@ -208,3 +208,49 @@ func TestConvertLayoutNeverFillsMissingChannelWithSilence(t *testing.T) {
 		t.Fatal("missing back channels were silently filled")
 	}
 }
+
+func TestUpmixUsesDocumentedWeights(t *testing.T) {
+	// Stereo with distinct channel DC values, expanded to 5.1.
+	src, _ := NewBuffer(Stereo, 1)
+	src.Data = []float64{0.8, 0.2}
+	out, err := ConvertLayout(src, Surround51)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const fold = 0.707
+	want := []float64{
+		0.8,        // FL
+		0.2,        // FR
+		fold * 1.0, // FC
+		0.0,        // LFE: never synthesized
+		fold * 0.8, // BL
+		fold * 0.2, // BR
+	}
+	for i, w := range want {
+		if math.Abs(out.Data[i]-w) > 1e-9 {
+			t.Fatalf("upmix[%d] = %f, want %f", i, out.Data[i], w)
+		}
+	}
+	if out.Layout.NumChannels() != 6 {
+		t.Fatalf("layout = %s", out.Layout.Name)
+	}
+}
+
+func TestUpmixMonoToSurroundIsFoldedNotSilent(t *testing.T) {
+	src, _ := NewBuffer(Mono, 2)
+	src.Data = []float64{0.5, -0.5}
+	out, err := ConvertLayout(src, Quad)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// FL, FR, BL, BR all carry the mono signal at documented weights.
+	for f := 0; f < 2; f++ {
+		fr := out.Frame(f)
+		if fr[0] != src.Data[f] || fr[1] != src.Data[f] {
+			t.Fatalf("front pair not dual-mono at frame %d: %v", f, fr)
+		}
+		if math.Abs(fr[2]-0.707*src.Data[f]) > 1e-9 {
+			t.Fatalf("back left weight wrong at frame %d: %v", f, fr)
+		}
+	}
+}
