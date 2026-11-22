@@ -98,6 +98,7 @@ type IndexRef struct {
 	MinGap     core.Rational
 	MaxGap     core.Rational
 	VFR        bool
+	AssetSize  int64 // 0 means the size table is authoritative
 }
 
 // KeyRef is one keyframe under validation.
@@ -140,6 +141,9 @@ func checkOffsets(res *Result, in Input) {
 	}
 	for _, idx := range in.Indexes {
 		size, ok := in.Sizes[idx.Asset]
+		if !ok && idx.AssetSize > 0 {
+			size, ok = idx.AssetSize, true
+		}
 		for _, kf := range idx.Keyframes {
 			pass := ok && kf.Span.Start >= 0 && kf.Span.End >= kf.Span.Start
 			if pass && kf.Offset >= 0 {

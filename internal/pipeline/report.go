@@ -535,6 +535,7 @@ func VerifyReport(p *ParsedReport) (*validate.Result, string, bool) {
 		idx := validate.IndexRef{
 			Asset: tr.Asset, TrackID: tr.TrackID, Timescale: tr.Timescale,
 			FrameCount: tr.FrameCount, MinGap: tr.MinGap, MaxGap: tr.MaxGap, VFR: tr.VFR,
+			AssetSize: sizes[tr.Asset],
 		}
 		trackIndex[key] = len(in.Indexes)
 		in.Indexes = append(in.Indexes, idx)
