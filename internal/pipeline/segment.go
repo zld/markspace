@@ -1,0 +1,320 @@
+// Package pipeline orchestrates segmentation: it maps tracks onto the unified
+// clock, aligns cuts to sync frames, and content-addresses every slice.
+package pipeline
+
+import (
+	"errors"
+	"fmt"
+
+	"github.com/pairwise/mediad/internal/audio"
+	"github.com/pairwise/mediad/internal/clock"
+	"github.com/pairwise/mediad/internal/fault"
+	"github.com/pairwise/mediad/internal/fingerprint"
+	"github.com/pairwise/mediad/internal/index"
+	"github.com/pairwise/mediad/internal/mp4"
+)
+
+// MaxSegmentNS caps a single delivered segment at 30 minutes.
+const MaxSegmentNS int64 = 30 * 60 * 1_000_000_000
+
+// SampleSource exposes verified sample payloads to the hasher.
+type SampleSource struct {
+	tree *mp4.Tree
+	byID map[uint32]*mp4.Track
+}
+
+// NewSampleSource indexes movie tracks for payload reads.
+func NewSampleSource(tree *mp4.Tree, movie *mp4.Movie) *SampleSource {
+	by := make(map[uint32]*mp4.Track, len(movie.Tracks))
+	for _, t := range movie.Tracks {
+		by[t.ID] = t
+	}
+	return &SampleSource{tree: tree, byID: by}
+}
+
+// Count implements fingerprint.Samples.
+func (s *SampleSource) Count(trackID uint32) int {
+	if t := s.byID[trackID]; t != nil {
+		return len(t.Samples)
+	}
+	return 0
+}
+
+// ReadSample reads one mdat-validated sample payload.
+func (s *SampleSource) ReadSample(trackID uint32, i int) ([]byte, error) {
+	t := s.byID[trackID]
+	if t == nil || i < 0 || i >= len(t.Samples) {
+		return nil, fault.Errorf("pipeline.sample", fault.KindParse, "sample %d outside track %d", i, trackID).WithTrack(trackID)
+	}
+	smp := t.Samples[i]
+	if !smp.InMdat {
+		return nil, fault.Errorf("pipeline.sample", fault.KindParse, "sample %d of track %d was never validated", smp.Index, trackID).
+			WithTrack(trackID).WithSample(smp.Index)
+	}
+	return s.tree.ReadAt(smp.Offset, int64(smp.Size))
+}
+
+// Segment is one deliverable slice.
+type Segment struct {
+	ID           string
+	TrackID      uint32
+	StartNS      int64
+	EndNS        int64
+	FirstSample  int
+	SampleCount  int
+	KeyOffset    int64
+	KeyPresented int64
+	KeyExact     bool
+	Content      [32]byte
+	ContentHex   string
+	SHA256       string
+	SilentNS     int64
+	SilenceKnown bool
+}
+
+// Request asks for one track range.
+type Request struct {
+	TrackID   uint32
+	StartNS   int64
+	EndNS     int64
+	MaxSpanNS int64
+}
+
+// Result is the output of a segmentation run.
+type Result struct {
+	Segments     []Segment
+	Silence      map[uint32]audio.Result
+	KeyframeHits int
+	Cuts         int
+}
+
+// Presentation caches per-track presentation times computed once, in order,
+// because TrackClock is a stateful monotonicity checker.
+type Presentation struct {
+	times  map[uint32][]int64
+	usable map[uint32][]bool
+	clocks map[uint32]*clock.TrackClock
+}
+
+// ComputePresentation converts every sample of every track exactly once.
+// Samples whose timestamps fail the clock checks are marked unusable.
+func ComputePresentation(movie *mp4.Movie, clocks map[uint32]*clock.TrackClock) *Presentation {
+	p := &Presentation{
+		times:  map[uint32][]int64{},
+		usable: map[uint32][]bool{},
+		clocks: clocks,
+	}
+	for _, tr := range movie.Tracks {
+		clk := clocks[tr.ID]
+		n := len(tr.Samples)
+		times := make([]int64, n)
+		usable := make([]bool, n)
+		if clk != nil {
+			for i, s := range tr.Samples {
+				v, err := clk.Presentation(s.DTS, s.CTO)
+				if err != nil {
+					continue
+				}
+				times[i], usable[i] = v, true
+			}
+		}
+		p.times[tr.ID], p.usable[tr.ID] = times, usable
+	}
+	return p
+}
+
+// At returns the presentation time of a sample when known.
+func (p *Presentation) At(trackID uint32, i int) (int64, bool) {
+	if p == nil {
+		return 0, false
+	}
+	ts := p.times[trackID]
+	if i < 0 || i >= len(ts) || !p.usable[trackID][i] {
+		return 0, false
+	}
+	return ts[i], true
+}
+
+// Times exposes the raw slice (zero for unusable samples).
+func (p *Presentation) Times(trackID uint32) []int64 { return p.times[trackID] }
+
+// Planner wires parsed media to the index and fingerprint stages.
+type Planner struct {
+	Movie   *mp4.Movie
+	Index   *index.Index
+	Pres    *Presentation
+	Silence map[uint32]audio.Result
+	Samples *SampleSource
+}
+
+// NewPlanner builds a planner from parsed media and cached presentations.
+func NewPlanner(movie *mp4.Movie, tree *mp4.Tree, ix *index.Index, pres *Presentation, silence map[uint32]audio.Result) (*Planner, error) {
+	if movie == nil || tree == nil {
+		return nil, fault.Errorf("pipeline.plan", fault.KindParse, "nil movie or tree")
+	}
+	if ix == nil {
+		return nil, fault.Errorf("pipeline.plan", fault.KindIndex, "nil index").Fatal()
+	}
+	if silence == nil {
+		silence = map[uint32]audio.Result{}
+	}
+	return &Planner{Movie: movie, Index: ix, Pres: pres, Silence: silence,
+		Samples: NewSampleSource(tree, movie)}, nil
+}
+
+// Run segments each requested range, snapping every cut back to the newest
+// sync frame and clamping spans to the 30-minute cap.
+func (p *Planner) Run(reqs []Request) (*Result, error) {
+	res := &Result{Silence: p.Silence}
+	var problems []error
+	for _, req := range reqs {
+		segs, err := p.runTrack(req, res)
+		res.Segments = append(res.Segments, segs...)
+		if err != nil {
+			problems = append(problems, err)
+		}
+	}
+	if len(res.Segments) == 0 {
+		if len(problems) > 0 {
+			return res, problems[0]
+		}
+		return res, fault.Errorf("pipeline.run", fault.KindIndex, "no segments produced").Fatal()
+	}
+	if len(problems) > 0 {
+		return res, fault.New("pipeline.run", fault.KindTruncated, errors.Join(problems...)).Recovered()
+	}
+	return res, nil
+}
+
+func (p *Planner) runTrack(req Request, res *Result) ([]Segment, error) {
+	tr := p.trackByID(req.TrackID)
+	if tr == nil {
+		return nil, fault.Errorf("pipeline.track", fault.KindParse, "unknown track %d", req.TrackID).WithTrack(req.TrackID)
+	}
+	ti := p.indexFor(req.TrackID)
+	if ti == nil {
+		return nil, fault.Errorf("pipeline.track", fault.KindIndex, "no keyframe index for track %d", req.TrackID).
+			WithTrack(req.TrackID).Wrapped(fault.ErrNoKeyframe)
+	}
+	maxSpan := req.MaxSpanNS
+	if maxSpan <= 0 || maxSpan > MaxSegmentNS {
+		maxSpan = MaxSegmentNS
+	}
+	if req.EndNS <= req.StartNS {
+		return nil, fault.Errorf("pipeline.track", fault.KindIndex, "empty range [%d,%d)", req.StartNS, req.EndNS).WithTrack(req.TrackID)
+	}
+	var out []Segment
+	for cur := req.StartNS; cur < req.EndNS; {
+		end := cur + maxSpan
+		if end > req.EndNS {
+			end = req.EndNS
+		}
+		seg, err := p.segment(ti, tr, cur, end, res)
+		if err != nil {
+			return out, err
+		}
+		out = append(out, seg)
+		cur = end
+	}
+	return out, nil
+}
+
+func (p *Planner) segment(ti *index.TrackIndex, tr *mp4.Track, start, end int64, res *Result) (Segment, error) {
+	entry, gap, err := ti.Align(start)
+	if err != nil {
+		return Segment{}, err
+	}
+	res.Cuts++
+	if gap == 0 {
+		res.KeyframeHits++
+	}
+	last := p.lastSampleAtOrBefore(tr, end-1)
+	if last < entry.Sample {
+		last = entry.Sample
+	}
+	count := last - entry.Sample + 1
+	digest, _, err := fingerprint.Sum(p.Samples, tr.ID, entry.Sample, count)
+	if err != nil {
+		return Segment{}, err
+	}
+	hex := fmt.Sprintf("%x", digest)
+	seg := Segment{
+		ID: fmt.Sprintf("t%02d-s%d", tr.ID, entry.Sample), TrackID: tr.ID,
+		StartNS: start, EndNS: end, FirstSample: entry.Sample, SampleCount: count,
+		KeyOffset: entry.Offset, KeyPresented: entry.Presented, KeyExact: entry.Exact,
+		Content: digest, ContentHex: hex, SHA256: hex,
+	}
+	p.annotateSilence(&seg)
+	return seg, nil
+}
+
+func (p *Planner) annotateSilence(seg *Segment) {
+	res, ok := p.Silence[seg.TrackID]
+	if !ok || !res.Detectable {
+		return
+	}
+	seg.SilenceKnown = true
+	for _, r := range res.Silence {
+		if hi, lo := min64(seg.EndNS, r.End), max64(seg.StartNS, r.Start); hi > lo {
+			seg.SilentNS += hi - lo
+		}
+	}
+}
+
+func (p *Planner) trackByID(id uint32) *mp4.Track {
+	for _, t := range p.Movie.Tracks {
+		if t.ID == id {
+			return t
+		}
+	}
+	return nil
+}
+
+func (p *Planner) indexFor(id uint32) *index.TrackIndex {
+	for _, ti := range p.Index.Tracks {
+		if ti.TrackID == id {
+			return ti
+		}
+	}
+	return nil
+}
+
+// lastSampleAtOrBefore returns the greatest usable sample index presented at
+// or before t. When no presentation data exists, the final verified sample is
+// used, which errs toward including all readable content.
+func (p *Planner) lastSampleAtOrBefore(tr *mp4.Track, t int64) int {
+	n := len(tr.Samples)
+	if n == 0 {
+		return -1
+	}
+	any := false
+	best := 0
+	for i := 0; i < n; i++ {
+		pt, ok := p.Pres.At(tr.ID, i)
+		if !ok {
+			continue
+		}
+		any = true
+		if pt <= t {
+			best = i
+		}
+	}
+	if !any {
+		return n - 1
+	}
+	return best
+}
+
+func min64(a, b int64) int64 {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func max64(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
+}

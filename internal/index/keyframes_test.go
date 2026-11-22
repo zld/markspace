@@ -7,20 +7,30 @@ import (
 	"github.com/pairwise/mediad/internal/mp4"
 )
 
-// linearClock presents dts+cto already in ns.
-type linearClock struct{}
+// linearPres treats dts as ns presentation time.
+type linearPres struct{ movie *mp4.Movie }
 
-func (linearClock) Present(dts uint64, cto int64) (int64, error) {
-	return int64(dts) + cto, nil
+func (l linearPres) At(track uint32, i int) (int64, bool) {
+	for _, tr := range l.movie.Tracks {
+		if tr.ID == track && i < len(tr.Samples) {
+			return int64(tr.Samples[i].DTS), true
+		}
+	}
+	return 0, false
 }
 
-type brokenClock struct{ failAt int }
+// brokenPres fails one track sample, emulating a clock rejection.
+type brokenPres struct {
+	movie  *mp4.Movie
+	track  uint32
+	failAt int
+}
 
-func (b brokenClock) Present(dts uint64, cto int64) (int64, error) {
-	if int(dts) == b.failAt {
-		return 0, fault.Errorf("clock", fault.KindTimeline, "boom")
+func (b brokenPres) At(track uint32, i int) (int64, bool) {
+	if track == b.track && i == b.failAt {
+		return 0, false
 	}
-	return int64(dts) + cto, nil
+	return linearPres{b.movie}.At(track, i)
 }
 
 func videoMovie(samples int, syncEvery int, syncTable bool) *mp4.Movie {
@@ -37,7 +47,7 @@ func videoMovie(samples int, syncEvery int, syncTable bool) *mp4.Movie {
 
 func TestBuildIndexesOnlySyncSamples(t *testing.T) {
 	movie := videoMovie(10, 3, true)
-	ix, err := Build(movie, map[uint32]Clock{1: linearClock{}})
+	ix, err := Build(movie, linearPres{movie})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +78,7 @@ func TestBuildIndexesOnlySyncSamples(t *testing.T) {
 
 func TestAlignBeforeFirstKeyframeFails(t *testing.T) {
 	movie := videoMovie(5, 0, true) // no sync samples
-	ix, err := Build(movie, map[uint32]Clock{1: linearClock{}})
+	ix, err := Build(movie, linearPres{movie})
 	if err != nil {
 		if !isNoKeyframe(err) {
 			t.Fatalf("unexpected error %v", err)
@@ -96,7 +106,7 @@ func isNoKeyframe(err error) bool {
 
 func TestMissingSyncTableMarksInferred(t *testing.T) {
 	movie := videoMovie(5, 0, false) // no stss
-	ix, err := Build(movie, map[uint32]Clock{1: linearClock{}})
+	ix, err := Build(movie, linearPres{movie})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,14 +123,14 @@ func TestMissingSyncTableMarksInferred(t *testing.T) {
 
 func TestClockErrorsBecomeLocatedIndexWarnings(t *testing.T) {
 	movie := videoMovie(6, 2, true)
-	ix, err := Build(movie, map[uint32]Clock{1: brokenClock{failAt: 200}})
+	ix, err := Build(movie, brokenPres{movie: movie, track: 1, failAt: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
 	ti := ix.Tracks[0]
 	var found bool
 	for _, w := range ti.Warnings {
-		if w.Sample == 2 && w.TrackID == 1 && w.Kind == fault.KindTimeline {
+		if w.Sample == 2 && w.TrackID == 1 && w.Kind == fault.KindIndex {
 			found = true
 		}
 	}
@@ -140,7 +150,11 @@ func TestRebuildByScanUsesChunkStartsAndMarksInferred(t *testing.T) {
 		tr.Samples = append(tr.Samples, mp4.Sample{Index: i, DTS: uint64(i * 50), Offset: int64(i * 7), Size: 7})
 	}
 	tr.ChunkOffsets = []int64{0, 14} // chunk starts at samples 0 and 2
-	ti := RebuildByScan(&mp4.Movie{Path: "y.mp4"}, tr, linearClock{})
+	for i := range tr.Samples {
+		tr.Samples[i].DTS = uint64(i)
+	}
+	movie := &mp4.Movie{Path: "y.mp4", Tracks: []*mp4.Track{tr}}
+	ti := RebuildByScan(movie, tr, linearPres{movie})
 	if !ti.Rebuilt {
 		t.Fatal("rebuild flag not set")
 	}

@@ -58,15 +58,16 @@ func (ti *TrackIndex) ExactRate() float64 {
 	return float64(ti.ExactCount) / float64(len(ti.Entries))
 }
 
-// Clock returns the presentation converter matching movie.Tracks.
-type Clock interface {
-	Present(dts uint64, cto int64) (int64, error)
+// Presentation resolves a sample's unified presentation time. Implementations
+// are expected to compute each timestamp once per track.
+type Presentation interface {
+	At(trackID uint32, sample int) (int64, bool)
 }
 
 // Build constructs keyframe indexes for every video track. sampleClocks must
 // provide a presentation mapping per track ID. Audio tracks are skipped since
 // every audio frame is independently decodable.
-func Build(movie *mp4.Movie, sampleClocks map[uint32]Clock) (*Index, error) {
+func Build(movie *mp4.Movie, pres Presentation) (*Index, error) {
 	ix := &Index{Path: movie.Path}
 	var problems []error
 	for _, tr := range movie.Tracks {
@@ -74,24 +75,15 @@ func Build(movie *mp4.Movie, sampleClocks map[uint32]Clock) (*Index, error) {
 			continue
 		}
 		ti := &TrackIndex{TrackID: tr.ID}
-		clk := sampleClocks[tr.ID]
 		var lastPresented int64
 		for i, s := range tr.Samples {
-			var presented int64
-			if clk != nil {
-				p, err := clk.Present(s.DTS, s.CTO)
-				if err != nil {
-					e, _ := fault.As(err)
-					if e == nil {
-						e = fault.New("index.build", fault.KindIndex, err)
-					}
-					e = e.WithTrack(tr.ID).WithSample(i).Recovered()
-					ti.Warnings = append(ti.Warnings, e)
-					continue
-				}
-				presented = p
-			} else {
-				presented = int64(s.DTS)
+			presented, ok := pres.At(tr.ID, i)
+			if !ok {
+				e := fault.Errorf("index.build", fault.KindIndex,
+					"sample %d has no usable presentation time", i).
+					WithPath(movie.Path).WithTrack(tr.ID).WithSample(i).Recovered()
+				ti.Warnings = append(ti.Warnings, e)
+				continue
 			}
 			lastPresented = presented
 			sync := s.Sync
@@ -161,7 +153,7 @@ func (ti *TrackIndex) Align(t int64) (Entry, int64, error) {
 // RebuildByScan reconstructs an index from readable samples when stss is
 // missing or damaged. Samples are assumed sync at chunk starts, which the
 // sample tables encode through stsc; the result is marked inferred.
-func RebuildByScan(movie *mp4.Movie, tr *mp4.Track, clock Clock) *TrackIndex {
+func RebuildByScan(movie *mp4.Movie, tr *mp4.Track, pres Presentation) *TrackIndex {
 	ti := &TrackIndex{TrackID: tr.ID, Rebuilt: true}
 	if len(tr.Samples) == 0 {
 		return ti
@@ -171,15 +163,9 @@ func RebuildByScan(movie *mp4.Movie, tr *mp4.Track, clock Clock) *TrackIndex {
 		if _, ok := starts[s.Offset]; !ok && i != 0 {
 			continue
 		}
-		var presented int64
-		if clock != nil {
-			p, err := clock.Present(s.DTS, s.CTO)
-			if err != nil {
-				continue
-			}
-			presented = p
-		} else {
-			presented = int64(s.DTS)
+		presented, ok := pres.At(tr.ID, i)
+		if !ok {
+			continue
 		}
 		ti.Entries = append(ti.Entries, Entry{
 			TrackID: tr.ID, Sample: i, DecodeTicks: s.DTS, Offset: s.Offset,
