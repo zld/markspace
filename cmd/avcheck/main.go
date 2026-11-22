@@ -225,8 +225,23 @@ func verifyCmd(ctx context.Context, args []string) int {
 	return exit
 }
 
+// sameConfig checks that run.json plausibly describes the manifest: the
+// track count, frame count and segment layout must agree, so a stale run.json
+// copied next to an unrelated export is rejected instead of silently rerun.
 func sameConfig(rc session.RunConfig, man *render.Manifest) bool {
-	return rc.Config.Frames > 0 && rc.Config.Tracks == man.Tracks
+	c := rc.Config
+	if c.Frames <= 0 || c.Tracks <= 0 || c.Tracks != man.Tracks || c.Frames != man.Frames {
+		return false
+	}
+	seg := c.SegFrames
+	if seg <= 0 {
+		seg = c.Frames / 12
+	}
+	if seg < 1 {
+		seg = 1
+	}
+	want := (c.Frames + seg - 1) / seg
+	return want == len(man.Segments)
 }
 
 func exitCode(r *session.Result) int {
