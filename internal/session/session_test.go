@@ -353,3 +353,28 @@ func TestDegradedStateInManifest(t *testing.T) {
 		t.Fatal("expected burst loss to commit gaps")
 	}
 }
+
+// TestKeyRateFromIndexMatchesRun cross-checks the disk-derived keyframe hit
+// rate against the rate the producing run measured in memory.
+func TestKeyRateFromIndexMatchesRun(t *testing.T) {
+	cfg := smallConfig(t)
+	cfg.OutDir = t.TempDir()
+	r, err := Run(context.Background(), cfg, mustFaults(t, "duplicate", "reorder", "burst-loss"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	hits, lookups, err := KeyRateFromIndex(cfg.OutDir, r.Config.Timescale)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lookups == 0 {
+		t.Fatal("no lookups")
+	}
+	disk := HitRatio(hits, lookups)
+	if diff := disk - r.KeyframeHitRate(); diff > 1e-9 || diff < -1e-9 {
+		t.Fatalf("disk hit rate %.6f != run %.6f", disk, r.KeyframeHitRate())
+	}
+	if disk < 0.99 {
+		t.Fatalf("hit rate %.6f below acceptance", disk)
+	}
+}

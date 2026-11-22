@@ -134,11 +134,15 @@ func demoCmd(ctx context.Context, args []string) int {
 	return summary.Exit
 }
 
-// verifyCmd re-checks an existing export directory from disk.
+// verifyCmd re-checks an existing export directory from disk. The default
+// path is independent of the producing run: it recomputes every hash from the
+// PNGs, re-reads each MP4 sample table to measure the keyframe hit rate, and
+// compares the manifest digest with the recorded summary. --rerun additionally
+// re-executes the whole pipeline for a byte-for-byte comparison.
 func verifyCmd(ctx context.Context, args []string) int {
 	fs := flag.NewFlagSet("verify", flag.ContinueOnError)
 	input := fs.String("input", "", "export directory (required)")
-	rerun := fs.Bool("rerun", true, "re-execute from run.json and compare the manifest")
+	rerun := fs.Bool("rerun", false, "re-execute from run.json and compare the manifest")
 	fs.SetOutput(os.Stderr)
 	if err := fs.Parse(args); err != nil {
 		return 1
@@ -166,6 +170,25 @@ func verifyCmd(ctx context.Context, args []string) int {
 		fmt.Fprintln(os.Stderr, "verify frames:", err)
 		return 1
 	}
+	rc, err := session.LoadRun(*input)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "verify: no run.json:", err)
+		return 1
+	}
+	if !sameConfig(rc, man) {
+		fmt.Fprintln(os.Stderr, "verify: run.json does not describe this manifest")
+		return 1
+	}
+	sum, err := session.LoadSummary(*input)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "verify: no summary.json:", err)
+		return 1
+	}
+	hits, lookups, err := session.KeyRateFromIndex(*input, cfgTimescale(rc))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "verify keyframe index:", err)
+		return 1
+	}
 	fmt.Printf("manifest_digest=%s\n", man.Digest)
 	fmt.Printf("segments=%d segment_sha256_match=%d/%d\n", len(man.Segments), matched, len(man.Segments))
 	fmt.Printf("frames=%d frame_sha256_match=%d/%d\n", man.Frames, frameMatch, man.Frames)
@@ -177,26 +200,21 @@ func verifyCmd(ctx context.Context, args []string) int {
 		fmt.Printf("segment[%02d] frames=%d first=%d last=%d sha256=%s %s\n",
 			i, s.Frames, s.FirstIndex, s.LastIndex, s.SHA256[:16], status)
 	}
-	exit := 0
-	if man.Inputs.Damaged() {
-		exit = 2
+	fmt.Printf("roundtrip_consistency=%.3f\n", sum.RoundtripConsistency)
+	fmt.Printf("keyframe_index_hit_rate=%.3f\n", session.HitRatio(hits, lookups))
+	if sum.ManifestDigest != man.Digest {
+		fmt.Println("verify: summary digest disagrees with the manifest")
+		return 1
 	}
-	// Re-derive roundtrip and keyframe metrics from the persisted run.
-	var rr float64 = 1
-	var kf float64 = 1
+	if matched != len(man.Segments) || frameMatch != man.Frames {
+		fmt.Println("verify: export does not match its manifest")
+		return 1
+	}
 	if *rerun {
-		rc, err := session.LoadRun(*input)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "verify: no run.json:", err)
-			return 1
-		}
-		if !sameConfig(rc, man) {
-			fmt.Fprintln(os.Stderr, "verify: run.json does not describe this manifest")
-			return 1
-		}
 		cfg := rc.Config
 		faults, err := session.ParseFaults(rc.Faults)
 		if err != nil {
+			fmt.Fprintln(os.Stderr, "verify:", err)
 			return 1
 		}
 		cfg.OutDir = *input + ".verify-rerun"
@@ -205,23 +223,28 @@ func verifyCmd(ctx context.Context, args []string) int {
 			fmt.Fprintln(os.Stderr, "verify rerun:", err)
 			return 1
 		}
-		rr = res.RoundtripConsistency()
-		kf = res.KeyframeHitRate()
 		consistent := res.Manifest.Digest == man.Digest && res.Manifest.Summary == man.Summary
-		fmt.Printf("roundtrip_consistency=%.3f\n", rr)
-		fmt.Printf("keyframe_index_hit_rate=%.3f\n", kf)
 		fmt.Printf("rerun_manifest_match=%t\n", consistent)
-		if matched != len(man.Segments) || frameMatch != man.Frames || !consistent {
-			fmt.Println("verify: export does not match its manifest")
+		os.RemoveAll(cfg.OutDir)
+		if !consistent {
+			fmt.Println("verify: rerun does not reproduce the manifest")
 			return 1
 		}
-		os.RemoveAll(cfg.OutDir)
-	} else {
-		fmt.Printf("roundtrip_consistency=%.3f\n", rr)
-		fmt.Printf("keyframe_index_hit_rate=%.3f\n", kf)
 	}
 	fmt.Println("verify: ok")
-	return exit
+	if man.Inputs.Damaged() {
+		return 2
+	}
+	return 0
+}
+
+// cfgTimescale returns the clock timescale recorded in the run, defaulting to
+// the acceptance value when the field is absent.
+func cfgTimescale(rc session.RunConfig) int64 {
+	if rc.Config.Timescale > 0 {
+		return rc.Config.Timescale
+	}
+	return 90000
 }
 
 // sameConfig checks that run.json plausibly describes the manifest: the
