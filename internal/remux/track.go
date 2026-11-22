@@ -108,7 +108,7 @@ func (w *Writer) writeStbl(t *Track) error {
 		return err
 	}
 	if t.Kind == "video" {
-		err := w.box(mp4.BoxTypeMp4v(), &mp4.VisualSampleEntry{
+		entry := &mp4.VisualSampleEntry{
 			SampleEntry:     mp4.SampleEntry{DataReferenceIndex: 1},
 			Width:           640,
 			Height:          360,
@@ -117,18 +117,20 @@ func (w *Writer) writeStbl(t *Track) error {
 			FrameCount:      1,
 			Depth:           0x18,
 			PreDefined3:     -1,
-		})
-		if err != nil {
+		}
+		entry.SetType(mp4.BoxTypeMp4v())
+		if err := w.box(mp4.BoxTypeMp4v(), entry); err != nil {
 			return err
 		}
 	} else {
-		err := w.box(mp4.BoxTypeMp4a(), &mp4.AudioSampleEntry{
+		entry := &mp4.AudioSampleEntry{
 			SampleEntry:  mp4.SampleEntry{DataReferenceIndex: 1},
 			ChannelCount: 2,
 			SampleSize:   16,
 			SampleRate:   48000 << 16,
-		})
-		if err != nil {
+		}
+		entry.SetType(mp4.BoxTypeMp4a())
+		if err := w.box(mp4.BoxTypeMp4a(), entry); err != nil {
 			return err
 		}
 	}
