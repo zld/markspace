@@ -215,9 +215,12 @@ func Run(ctx context.Context, cfg Config, faults Faults) (*Result, error) {
 		stats[i].ID = uint32(i + 1)
 	}
 
+	// injected is written only by the producer, so it needs no locking with
+	// the decode stage that owns the remaining per-track counters.
+	injected := make([]FaultCounts, cfg.Tracks)
 	produce := func(ctx context.Context) error {
 		defer packets.Close()
-		return producePackets(ctx, packets, gen, cfg, faults, stats)
+		return producePackets(ctx, packets, gen, cfg, faults, injected)
 	}
 	decode := func(ctx context.Context) error {
 		defer frames.Close()
@@ -239,6 +242,11 @@ func Run(ctx context.Context, cfg Config, faults Faults) (*Result, error) {
 		}
 	}
 	res.QueuePeak = maxInt64(packets.Peak(), frames.Peak())
+	// Merge the producer's injection tally once every stage has stopped.
+	for i := range stats {
+		stats[i].Received = uint64(cfg.Frames)
+		stats[i].Duplicates = uint64(injected[i].Duplicated)
+	}
 	for i, b := range builders {
 		if stats[i].State == timeline.TrackFailed {
 			b.Abort()

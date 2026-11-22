@@ -67,6 +67,10 @@ Exit codes:
 * `verify`: `0` clean input, `2` input was corrupt but recovered under
   policy, `1` on a structural error or an export that fails its manifest.
 
+Note: `go run` reports any non-zero child status as `1` (it prints
+`exit status 2`). Build the binary with `go build -o avcheck ./cmd/avcheck`
+when the exact exit code matters.
+
 ### Export directory
 
 ```

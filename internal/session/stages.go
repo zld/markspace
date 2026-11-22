@@ -16,7 +16,7 @@ import (
 // configured faults and pushes arrival-ordered packets into the queue. Tracks
 // are interleaved so backpressure blocks a realistic multiplex.
 func producePackets(ctx context.Context, q *pipeline.Queue[wirePacket], gen ingest.GenConfig,
-	cfg Config, faults Faults, stats []TrackResult) error {
+	cfg Config, faults Faults, injected []FaultCounts) error {
 	fcfg := DefaultFaultConfig()
 	injs := make([]*injector, cfg.Tracks)
 	for i := range injs {
@@ -52,10 +52,7 @@ func producePackets(ctx context.Context, q *pipeline.Queue[wirePacket], gen inge
 				return err
 			}
 		}
-		// Received counts unique capture frames handed to the network; the
-		// identity accepted+rejected+lost == received holds per track.
-		stats[ti].Received = uint64(cfg.Frames)
-		stats[ti].Duplicates = uint64(injs[ti].Counts.Duplicated)
+		injected[ti] = injs[ti].Counts
 	}
 	return nil
 }
@@ -198,7 +195,6 @@ func decodeValidate(ctx context.Context, in *pipeline.Queue[wirePacket],
 			}
 		}
 		stats[ti].Late = reorders[ti].Stats.Late
-		stats[ti].Duplicates = reorders[ti].Stats.Duplicates
 		stats[ti].Reordered = reorders[ti].Stats.Reordered
 	}
 	return nil
