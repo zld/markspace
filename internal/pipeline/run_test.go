@@ -176,6 +176,24 @@ func TestPlaceRepairedAcrossWrap(t *testing.T) {
 	}
 }
 
+func TestPlaceRepairedUsesNearestNeighbour(t *testing.T) {
+	// Neighbours of the repaired packet are themselves missing; placement
+	// must fall back to the nearest placed packet, not a fixed offset.
+	present := map[uint16]rtp.Packet{100: {}, 107: {}}
+	ext := map[uint16]uint64{100: 1_000_000, 107: 1_021_000}
+	for _, seq := range []uint16{101, 103, 105, 106} {
+		raw := uint32(1_000_000 + int(seq-100)*3000)
+		got, err := placeRepaired(present, seq, raw, ext)
+		if err != nil {
+			t.Fatalf("seq %d: %v", seq, err)
+		}
+		want := uint64(raw)
+		if got != want {
+			t.Fatalf("seq %d placed at %d, want %d", seq, got, want)
+		}
+	}
+}
+
 func TestProcessRejectsBadInput(t *testing.T) {
 	sc, err := Generate(DefaultScenarioConfig())
 	if err != nil {

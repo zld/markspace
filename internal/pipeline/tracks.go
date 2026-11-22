@@ -279,16 +279,37 @@ func processTrack(tr TrackInput, in Input, rep *Report) (*trackResult, error) {
 // Extending the raw timestamp against the stream's current high-water mark
 // instead would misplace it by a whole epoch after a wrap.
 func placeRepaired(present map[uint16]rtp.Packet, seq uint16, raw uint32, ext map[uint16]uint64) (uint64, error) {
-	for _, cand := range []uint16{seq - 1, seq + 1, seq - 2, seq + 2} {
-		if _, ok := present[cand]; !ok {
-			continue
-		}
+	// Choose the placed neighbour nearest in sequence order, preferring an
+	// earlier packet so ties resolve toward the packet the loss followed.
+	bestDist := 0
+	var best uint16
+	found := false
+	for cand := range present {
 		ref, ok := ext[cand]
-		if !ok {
+		if !ok || ref == 0 {
 			continue
 		}
-		return clock.SignExtend(raw, ref), nil
+		d := rtp.SeqDelta(cand, seq)
+		if d == 0 {
+			continue
+		}
+		dist := d
+		if dist < 0 {
+			dist = -dist
+		}
+		if !found || dist < bestDist || (dist == bestDist && d < 0) {
+			best, bestDist, found = cand, dist, true
+		}
 	}
-	return 0, merrors.Packet(merrors.StagePipeline, merrors.Empty, 0, seq,
-		"repaired packet has no placed neighbour")
+	if !found {
+		return 0, merrors.Packet(merrors.StagePipeline, merrors.Empty, 0, seq,
+			"repaired packet has no placed neighbour")
+	}
+	// Sign extension is only unambiguous within +-2^31 ticks, i.e. for any
+	// neighbour within half the 16-bit sequence space, which "nearest" is.
+	if bestDist > 0x4000 {
+		return 0, merrors.Packet(merrors.StagePipeline, merrors.OutOfRange, 0, seq,
+			"repaired packet's nearest neighbour is %d sequences away", bestDist)
+	}
+	return clock.SignExtend(raw, ext[best]), nil
 }
