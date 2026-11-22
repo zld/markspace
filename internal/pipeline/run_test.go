@@ -230,6 +230,62 @@ func TestVFRAndConstantRateBothValid(t *testing.T) {
 	}
 }
 
+// TestRepairFailureAffectsOnlyOneSegment proves the damage-isolation
+// guarantee end to end: withholding the parity that repairs one lost packet
+// changes exactly the hash of the segment containing that packet.
+func TestRepairFailureAffectsOnlyOneSegment(t *testing.T) {
+	cfg := DefaultScenarioConfig()
+	sc, err := Generate(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base, err := Process(sc.Input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if base.Recovered != 1 {
+		t.Fatalf("baseline recovered %d", base.Recovered)
+	}
+
+	// Drop the parity packet for the group holding the single loss.
+	targetGroup := singleLossIdx / 4
+	var kept []RawPacket
+	removed := 0
+	for _, p := range sc.Input.Tracks[0].Packets {
+		r, perr := rtp.Parse(p.Bytes, int64(p.Arrival))
+		if perr != nil {
+			kept = append(kept, p)
+			continue
+		}
+		if r.PayloadType == ParityPayloadType && int(r.Seq-videoSeqStart) == targetGroup*4 {
+			removed++
+			continue
+		}
+		kept = append(kept, p)
+	}
+	if removed != 1 {
+		t.Fatalf("removed %d parity packets, want 1", removed)
+	}
+	sc.Input.Tracks[0].Packets = kept
+
+	damaged, err := Process(sc.Input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if damaged.Recovered != 0 {
+		t.Fatalf("damaged recovered %d, want 0", damaged.Recovered)
+	}
+	changed := 0
+	for i := range base.SegmentHashes {
+		if base.SegmentHashes[i].SHA256 != damaged.SegmentHashes[i].SHA256 {
+			changed++
+		}
+	}
+	if changed != 1 {
+		t.Fatalf("%d of %d segment hashes changed, want exactly 1", changed, len(base.SegmentHashes))
+	}
+}
+
 func TestProcessRejectsBadInput(t *testing.T) {
 	sc, err := Generate(DefaultScenarioConfig())
 	if err != nil {
