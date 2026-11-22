@@ -247,6 +247,10 @@ func runPipeline(cfg config, workDir string, stopAfter string) (*report, error) 
 		return rep, err
 	}
 
-	_ = skew
-	return rep, nil
+	return finishPipeline(&mergeCtx{
+		cfg: cfg, workDir: workDir, coord: coord, prov: prov, rep: rep,
+		fs: fs, digests: digests, fi: fi, tables: tables,
+		rtpFile: rtpFile, tstats: tstats, skew: skew,
+		stageInputs: stageInputs, crashed: crashed,
+	})
 }
