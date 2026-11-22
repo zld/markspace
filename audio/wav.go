@@ -197,6 +197,30 @@ func ParseWAV(r io.Reader) (*WAVHeader, []float64, error) {
 	return h, samples, nil
 }
 
+// WAVPayloadOffset returns the byte offset of the data chunk payload in a
+// RIFF/WAVE container, or a located error when the container is malformed.
+func WAVPayloadOffset(raw []byte) (int, error) {
+	if len(raw) < 12 || string(raw[0:4]) != "RIFF" || string(raw[8:12]) != "WAVE" {
+		return 0, timeline.NewError(timeline.ErrCodeTruncatedWAV, timeline.StageWAV, "",
+			"missing RIFF/WAVE magic")
+	}
+	pos := 12
+	for pos+8 <= len(raw) {
+		id := string(raw[pos : pos+4])
+		size := int(binary.LittleEndian.Uint32(raw[pos+4 : pos+8]))
+		body := pos + 8
+		if body+size > len(raw) {
+			return 0, timeline.NewError(timeline.ErrCodeTruncatedWAV, timeline.StageWAV, "",
+				"chunk %q truncated", id)
+		}
+		if id == "data" {
+			return body, nil
+		}
+		pos = body + size + size%2
+	}
+	return 0, timeline.NewError(timeline.ErrCodeTruncatedWAV, timeline.StageWAV, "", "data chunk missing")
+}
+
 // WriteWAV serializes normalized samples into a minimal PCM RIFF/WAVE file.
 func WriteWAV(w io.Writer, h WAVHeader, samples []float64) error {
 	pcm, err := EncodePCM(samples, h.BitsPerSample)

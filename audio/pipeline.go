@@ -26,6 +26,7 @@ type Pipeline struct {
 	inSpec     LayoutSpec
 	outSpec    LayoutSpec
 	stats      StageStats
+	lastLoud   LoudnessReport
 }
 
 // NewPipeline validates every stage's configuration up front.
@@ -103,6 +104,7 @@ func (p *Pipeline) ProcessBlock(pcm []byte, bits uint16, startSample int64) (*Bl
 	}
 	p.stats.ClippedSamples += int64(loud.ClippedSamples)
 	p.stats.OutputFrames += int64(outN)
+	p.lastLoud = loud
 	outStart := p.resampler.Produced() - int64(outN)
 	return &BlockResult{
 		Samples: limited, Frames: outN, InputFrames: inFrames, Loudness: loud,
@@ -132,6 +134,7 @@ func (p *Pipeline) Flush() (*BlockResult, error) {
 	}
 	p.stats.ClippedSamples += int64(loud.ClippedSamples)
 	p.stats.OutputFrames += int64(outN)
+	p.lastLoud = loud
 	outStart := p.resampler.Produced() - int64(outN)
 	return &BlockResult{
 		Samples: limited, Frames: outN, Loudness: loud,
@@ -141,6 +144,9 @@ func (p *Pipeline) Flush() (*BlockResult, error) {
 
 // Stats returns a copy of the accumulated cross-stage counters.
 func (p *Pipeline) Stats() StageStats { return p.stats }
+
+// LastLoudness returns the most recent loudness-stage report.
+func (p *Pipeline) LastLoudness() LoudnessReport { return p.lastLoud }
 
 // ExpectedOutputFrames is the theoretical total output for n input frames.
 func (p *Pipeline) ExpectedOutputFrames(inputFrames int64) int64 {

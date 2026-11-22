@@ -14,7 +14,7 @@ const MaxQueueBlocks = 64
 type QueuedBlock struct {
 	TrackID  string
 	Sequence int
-	Payload  []byte
+	Payload  any
 	Start    int64 // output-grid sample position
 }
 

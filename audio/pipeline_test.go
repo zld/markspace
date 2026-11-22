@@ -186,10 +186,11 @@ func TestLoudnessSilenceAndLimiter(t *testing.T) {
 	if rep.InputLUFS != SilenceLUFS || rep.OutputLUFS != SilenceLUFS {
 		t.Fatalf("silence loudness = %f/%f", rep.InputLUFS, rep.OutputLUFS)
 	}
-	// Loud signal that starts above the -1 dBTP ceiling.
+	// Full-scale signal: even after attenuation toward the -23 LUFS target the
+	// 4x oversampled true peak reaches the ceiling and the clamp engages.
 	loud := make([]float64, 48000)
 	for i := range loud {
-		loud[i] = 0.95 * math.Sin(float64(i)*0.05)
+		loud[i] = math.Sin(float64(i) * 0.05)
 	}
 	out, rep, err = LimitLoudness(loud, 2, LayoutStereo, 48000, -23)
 	if err != nil {

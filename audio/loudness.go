@@ -180,7 +180,9 @@ func LimitLoudness(samples []float64, channels int, layout string, rate uint32, 
 		gain = 1 // silence must stay silence
 	} else {
 		gain = math.Pow(10, (targetLUFS-inLUFS)/20)
-		// Never let the gain push the true peak past the ceiling.
+		// True-peak ceiling: cap the gain so the 4x oversampled peak cannot
+		// exceed -1 dBTP. Samples whose pre-gain magnitude already pins the
+		// ceiling are counted as quality-clipped.
 		if inTP > -90 {
 			maxGain := ceiling / math.Pow(10, inTP/20)
 			if gain > maxGain {
@@ -188,9 +190,11 @@ func LimitLoudness(samples []float64, channels int, layout string, rate uint32, 
 			}
 		}
 	}
+	// Samples already at or beyond the ceiling are the ones the limiter must
+	// intervene on; they are counted as quality-clipped before gain is applied.
 	out := make([]float64, len(samples))
 	for i, v := range samples {
-		if math.Abs(v) > ceiling {
+		if math.Abs(v) >= ceiling {
 			rep.ClippedSamples++
 		}
 		out[i] = v * gain

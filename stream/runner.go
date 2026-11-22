@@ -89,6 +89,10 @@ func (r *Runner) StartConsumers(ctx context.Context) {
 				}
 				iv, err := r.proc(ctx, b)
 				if err != nil {
+					pe, ok := timeline.AsError(err)
+					if !ok || pe.TrackID == "" {
+						err = timeline.NewError(peCode(err), peStage(err), b.TrackID, "%v", err)
+					}
 					r.fail(err)
 					r.cancel()
 					return
@@ -139,6 +143,20 @@ func (r *Runner) fail(err error) {
 		r.firstErr = pe
 	}
 	r.mu.Unlock()
+}
+
+func peCode(err error) timeline.ErrorCode {
+	if pe, ok := timeline.AsError(err); ok {
+		return pe.Code
+	}
+	return timeline.ErrCodeCheckpoint
+}
+
+func peStage(err error) string {
+	if pe, ok := timeline.AsError(err); ok {
+		return pe.Stage
+	}
+	return timeline.StageRunner
 }
 
 // QueueStats exposes the bounded-memory counters for manifest/CLI output.
