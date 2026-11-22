@@ -44,8 +44,12 @@ func (s *Semaphore) watchContext(ctx context.Context) (stop func()) {
 }
 
 // Acquire reserves n bytes. A request larger than the limit is rejected as a
-// parameter error rather than deadlocking forever.
+// parameter error rather than deadlocking forever. A negative or overflowing
+// request is likewise rejected before any accounting.
 func (s *Semaphore) Acquire(ctx context.Context, n int64) error {
+	if n <= 0 {
+		return clock.ErrInvalidArgument("stream: semaphore acquire requires positive bytes, got %d", n)
+	}
 	if n > s.limit {
 		return clock.ErrInvalidArgument("stream: batch of %d bytes exceeds in-flight budget %d", n, s.limit)
 	}
@@ -63,6 +67,8 @@ func (s *Semaphore) Acquire(ctx context.Context, n int64) error {
 			return clock.ErrCanceled("stream.backpressure", err)
 		}
 	}
+	// The loop condition guarantees used+n <= limit <= MaxInt64, so the
+	// addition cannot overflow (n is positive and used is non-negative).
 	s.used += n
 	if s.used > s.peak {
 		s.peak = s.used

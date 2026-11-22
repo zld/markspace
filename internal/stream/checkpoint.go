@@ -2,6 +2,7 @@ package stream
 
 import (
 	"crypto/sha256"
+	"encoding"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
@@ -13,7 +14,7 @@ import (
 )
 
 // CheckpointVersion is bumped on layout changes.
-const CheckpointVersion uint32 = 1
+const CheckpointVersion uint32 = 2
 
 // Checkpoint is the resumable state persisted atomically after every batch.
 type Checkpoint struct {
@@ -25,6 +26,9 @@ type Checkpoint struct {
 	LogicalBytes  int64  `json:"logical_bytes"`
 	BatchesDone   int    `json:"batches_done"`
 	OutputDigest  string `json:"output_digest"`
+	// HashState is the serialized running output hash, enabling a resumed run
+	// to continue the canonical digest instead of restarting it.
+	HashState []byte `json:"hash_state,omitempty"`
 }
 
 // LoadCheckpoint reads a checkpoint; a missing file yields an empty
@@ -76,14 +80,37 @@ func (c *Checkpoint) Save(path string) error {
 	return nil
 }
 
+// statefulHash is satisfied by crypto/sha256's concrete hash: it combines
+// streaming writes with resumable binary state.
+type statefulHash interface {
+	hash.Hash
+	encoding.BinaryMarshaler
+	encoding.BinaryUnmarshaler
+}
+
 // outputHash keeps the running digest of the canonical output record stream.
 type outputHash struct {
-	h   hash.Hash
+	h   statefulHash
 	buf [32]byte
 }
 
 func newOutputHash() *outputHash {
-	return &outputHash{h: sha256.New()}
+	// crypto/sha256's concrete digest implements encoding.Binary(M|Unm)arshaler.
+	sh := sha256.New().(statefulHash)
+	return &outputHash{h: sh}
+}
+
+// State serializes the running hash so it can survive in a checkpoint.
+func (o *outputHash) State() ([]byte, error) {
+	return o.h.MarshalBinary()
+}
+
+// RestoreState rebuilds a hash from a checkpoint's serialized state.
+func (o *outputHash) RestoreState(state []byte) error {
+	if len(state) == 0 {
+		return nil
+	}
+	return o.h.UnmarshalBinary(state)
 }
 
 func (o *outputHash) Write(r RecordView) {

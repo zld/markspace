@@ -143,9 +143,12 @@ func RunPipeline(ctx context.Context, fs FixtureSet, pcfg PipelineConfig,
 	}
 
 	// Stream execution with byte-accounted backpressure.
-	out, err := os.Create(fs.Output)
+	// Open for append: stream.Run has already aligned the file to the
+	// checkpoint, so resumed batches continue exactly where the prior run
+	// stopped instead of overwriting or duplicating earlier samples.
+	out, err := os.OpenFile(fs.Output, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
-		return nil, clock.ErrRecoverablef("pipeline.output", "create: %v", err)
+		return nil, clock.ErrRecoverablef("pipeline.output", "open: %v", err)
 	}
 	consumer := &fileConsumer{out: out, slowEvery: pcfg.SlowEvery, sleep: sleepHook}
 	scfg := stream.Config{

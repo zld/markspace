@@ -33,10 +33,26 @@ func Run(ctx context.Context, cfg Config, src Sources, cpPath, outputPath, mp4Pa
 		return nil, nil, clock.ErrRecoverablef("stream.run", "checkpoint next_sample %d beyond count %d",
 			cp.NextSample, src.Header.SampleCount)
 	}
+	// On resume, truncate any previous output back to the checkpoint's exact
+	// physical byte position so retried samples are rewritten rather than
+	// appended. A fresh run starts with an empty/new output at size zero.
+	if err := truncateOutput(outputPath, cp.BytesRead); err != nil {
+		return nil, nil, err
+	}
 
 	sem := NewSemaphore(cfg.MaxInFlightBytes)
 	oh := newOutputHash()
-	counters := Counters{}
+	if err := oh.RestoreState(cp.HashState); err != nil {
+		return nil, nil, clock.ErrRecoverablef("stream.run", "restore hash state: %v", err)
+	}
+	// Resume from the checkpoint's accumulated accounting so a continued run
+	// reports totals across both sessions, not only the post-resume batches.
+	counters := Counters{
+		SamplesEmitted: cp.SamplesDone,
+		BytesRead:      cp.BytesRead,
+		LogicalBytes:   cp.LogicalBytes,
+		BatchesEmitted: cp.BatchesDone,
+	}
 
 	for cp.NextSample < src.Header.SampleCount {
 		if err := ctx.Err(); err != nil {
@@ -66,6 +82,11 @@ func Run(ctx context.Context, cfg Config, src Sources, cpPath, outputPath, mp4Pa
 		cp.LogicalBytes = counters.LogicalBytes
 		cp.BatchesDone = counters.BatchesEmitted
 		cp.OutputDigest = oh.Digest()
+		state, err := oh.State()
+		if err != nil {
+			return &counters, cp, clock.ErrInvariantf("stream.run", "hash state: %v", err)
+		}
+		cp.HashState = state
 		if err := cp.Save(cpPath); err != nil {
 			return &counters, cp, err
 		}
@@ -158,4 +179,29 @@ func samePath(a, b string) bool {
 		return a == b
 	}
 	return os.SameFile(ai, bi)
+}
+
+// truncateOutput cuts an existing output file back to the exact physical byte
+// position recorded in the checkpoint. A missing file is left for the
+// consumer to create; an existing file shorter than the checkpoint signals a
+// corrupt/non-matching output and is rejected rather than silently extended.
+func truncateOutput(path string, physicalBytes int64) error {
+	fi, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return clock.ErrRecoverablef("stream.run", "stat output: %v", err)
+	}
+	if fi.Size() < physicalBytes {
+		return clock.ErrRecoverablef("stream.run",
+			"output size %d precedes checkpoint offset %d", fi.Size(), physicalBytes)
+	}
+	if fi.Size() == physicalBytes {
+		return nil // already aligned (fresh or fully consistent)
+	}
+	if err := os.Truncate(path, physicalBytes); err != nil {
+		return clock.ErrRecoverablef("stream.run", "truncate output: %v", err)
+	}
+	return nil
 }
