@@ -1,0 +1,7 @@
+# Build and coverage artifacts
+/mediacore
+*.test
+*.out
+coverage.*
+# Local scratch space
+/tmp/
