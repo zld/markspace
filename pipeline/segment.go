@@ -190,13 +190,15 @@ func (s *Segmenter) Segments(entries []index.Entry) ([]Segment, []GapRef) {
 }
 
 // countMissing returns how many sequence numbers fall strictly between prev
-// and next, honoring 16-bit wraparound.
+// and next, honoring 16-bit wraparound. A backward step (next behind prev, as
+// happens for reordered or wrapped frames on a sorted timeline) is not a gap,
+// so it counts zero rather than a full wraparound's worth of missing frames.
 func countMissing(prev, next uint32) int {
-	d := uint16(next - prev)
-	if d == 0 {
+	d := int16(next - prev)
+	if d <= 0 {
 		return 0
 	}
-	return int(d - 1)
+	return int(d) - 1
 }
 
 // Config exposes the active segment policy.

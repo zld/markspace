@@ -70,3 +70,24 @@ func TestSegmentsPartitionFramesExactly(t *testing.T) {
 		})
 	}
 }
+
+// TestCountMissingHandlesBackwardAndWrap guards against inflating a reordered
+// or wrapped sequence step into a full-window of missing frames.
+func TestCountMissingHandlesBackwardAndWrap(t *testing.T) {
+	cases := []struct {
+		prev, next uint32
+		want       int
+	}{
+		{100, 101, 0},
+		{100, 150, 49},
+		{500, 499, 0}, // backward step is not a gap
+		{65535, 0, 0}, // wrap, no gap
+		{65534, 1, 2}, // wrap spanning two missing
+		{7, 7, 0},
+	}
+	for _, c := range cases {
+		if got := countMissing(c.prev, c.next); got != c.want {
+			t.Fatalf("countMissing(%d,%d)=%d want %d", c.prev, c.next, got, c.want)
+		}
+	}
+}
