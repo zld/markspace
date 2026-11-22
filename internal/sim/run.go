@@ -117,10 +117,12 @@ func emitAudio(evs []adapter.RTPEvent, session *pipeline.Session, drift *clock.D
 		// Drift estimation pairs the ideal reference time (x) with the
 		// origin-normalised observed clock (y); slope converges to true ppm.
 		drift.Observe(ref, observed, false)
-		// Soft servo: per-step correction clamped to 2 ms.
+		// Soft servo: the pre-correction offset is the measurable A/V sync
+		// error. Each correction step is clamped to 2 ms, so a fast drift or a
+		// jump leaves a non-zero residual that cannot be hidden in one packet.
+		syncErr := abs64(observed - (ref + *correction))
 		residual := observed - (ref + *correction)
 		*correction += clock.Clamp(residual)
-		syncErr := abs64(observed - (ref + *correction))
 		latency := int64(10_000_000) + int64(ev.SeqExpanded*13%20)*1_000_000
 		_ = session.Submit(pipeline.Event{
 			TrackID: 1, Kind: pipeline.EventAudio, Seq: ev.SeqExpanded,
