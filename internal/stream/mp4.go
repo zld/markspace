@@ -22,6 +22,9 @@ type Sample struct {
 	Offset   int64
 	Size     uint32
 	Sync     bool
+	// Truncated marks a sample whose declared byte extent runs past the file
+	// end. Such samples exist only on paper; recovery must not cite them.
+	Truncated bool
 }
 
 // Track is one trak with an expanded sample table.
@@ -283,6 +286,19 @@ func sampleDeltas(tr *Track) []float64 {
 		out = append(out, float64(tr.Samples[i].DTS-tr.Samples[i-1].DTS)*1000/float64(tr.Timescale))
 	}
 	return out
+}
+
+// markTruncatedSamples flags samples whose payload is not fully present. A
+// truncated last GOP is the normal failure mode of a stopped tape capture.
+func markTruncatedSamples(a *MP4Analysis) {
+	for _, tr := range a.Tracks {
+		for i := range tr.Samples {
+			s := &tr.Samples[i]
+			if s.Offset+int64(s.Size) > a.Size && s.Size > 0 {
+				s.Truncated = true
+			}
+		}
+	}
 }
 
 func finalizeMP4(a *MP4Analysis) {

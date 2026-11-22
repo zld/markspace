@@ -6,7 +6,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -297,7 +296,3 @@ func printSummary(w io.Writer, m *pipeline.Manifest) {
 		fmt.Fprintf(w, "fault code=%s offset=%d detail=%s\n", f.Code, f.Offset, f.Detail)
 	}
 }
-
-var errUnused = errors.New("")
-
-func init() { _ = errUnused }

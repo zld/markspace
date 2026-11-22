@@ -1,13 +1,9 @@
 package pipeline
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"math"
-	"os"
-	"strconv"
-	"strings"
 
 	"mediaarchive/internal/align"
 	"mediaarchive/internal/clock"
@@ -110,6 +106,15 @@ func analyzeMP4Part(ctx context.Context, a AssetInput, r *assetResult, fps strin
 			continue
 		}
 		exact := clock.FromTicks(s.DTS, int64(v.Timescale))
+		if s.Truncated {
+			// The sample is cited by the table but its bytes are missing: record
+			// an offset-bearing fault and do not fabricate a manifest row.
+			f := diag.New(diag.CodeMP4Truncated, s.Offset,
+				"keyframe sample %d declares %d bytes past end of file", s.Index, s.Size)
+			f.WithMedia(exact.Millis())
+			r.Faults = append(r.Faults, f)
+			continue
+		}
 		r.Rows = append(r.Rows, Row{
 			Asset: a.Asset, StartMs: exact.Millis(), StartUs: exact.Ticks(1_000_000),
 			Seq: int64(s.Index), Stage: "frame", Kind: "keyframe",
@@ -264,13 +269,14 @@ func analyzeSubtitlePart(ctx context.Context, a AssetInput, r *assetResult, opts
 }
 
 func analyzeRTPPart(ctx context.Context, a AssetInput, r *assetResult) error {
-	pkts, err := ReadRTPFile(a.RTP)
+	// Streaming reader: memory stays bounded for million-packet logs.
+	res, err := stream.AnalyzeRTPFile(ctx, a.RTP, stream.RTPOptions{ClockRate: 90000})
 	if err != nil {
-		f := diag.New(diag.CodeRTPSegmentGap, 0, "read %s: %v", a.RTP, err)
+		f := mustFault(err, diag.CodeRTPSegmentGap)
 		r.Faults = append(r.Faults, f)
 		return nil
 	}
-	ra := stream.AnalyzePackets(pkts, stream.RTPOptions{ClockRate: 90000})
+	ra := res.Analysis
 	r.Faults = append(r.Faults, ra.Faults...)
 	dur := ra.DurationMs()
 	for _, f := range ra.Faults {
@@ -279,73 +285,19 @@ func analyzeRTPPart(ctx context.Context, a AssetInput, r *assetResult) error {
 		}
 		f.WithMedia(float64(f.Offset) / float64(ra.Packets) * dur)
 	}
-	step := len(pkts) / 16
-	if step < 1 {
-		step = 1
-	}
-	for i := 0; i < len(pkts); i += step {
+	// One manifest row per retained sample, plus a terminal row so the
+	// timeline closes at the true final packet.
+	for _, p := range res.Samples {
 		if err := ctx.Err(); err != nil {
-			return ErrCanceled(int64(i))
+			return ErrCanceled(p.Offset)
 		}
-		p := pkts[i]
+		tsMs := float64(p.Offset) / math.Max(1, float64(res.Total)) * dur
 		r.Rows = append(r.Rows, Row{
-			Asset: a.Asset, StartMs: float64(i) * dur / math.Max(1, float64(len(pkts))),
-			StartUs: int64(float64(i) * dur / math.Max(1, float64(len(pkts))) * 1000),
-			Seq:     int64(i), Stage: "rtp", Kind: "packet", Payload: fmt.Sprintf("seq=%d", p.Seq),
+			Asset: a.Asset, StartMs: tsMs, StartUs: int64(tsMs*1000 + 0.5),
+			Seq: p.Offset, Stage: "rtp", Kind: "packet", Payload: fmt.Sprintf("seq=%d", p.Seq),
 		})
 	}
 	return nil
-}
-
-// ReadRTPFile reads a fixture packet log: one packet per line as
-// "seq timestamp [ssrc] [payload]" with '#' comments. It uses pion/rtp header
-// semantics via stream.FromRTP in tests; the file format is deliberately
-// simple so archives can ship the log next to the tape notes.
-func ReadRTPFile(path string) ([]stream.Packet, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	var out []stream.Packet
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 0, 64<<10), 1<<20)
-	line := 0
-	for sc.Scan() {
-		line++
-		text := strings.TrimSpace(sc.Text())
-		if text == "" || strings.HasPrefix(text, "#") {
-			continue
-		}
-		fields := strings.Fields(text)
-		if len(fields) < 2 {
-			return nil, fmt.Errorf("line %d: want 'seq timestamp'", line)
-		}
-		seq, err := strconv.ParseUint(fields[0], 10, 16)
-		if err != nil {
-			return nil, fmt.Errorf("line %d: bad sequence: %w", line, err)
-		}
-		ts, err := strconv.ParseUint(fields[1], 10, 32)
-		if err != nil {
-			return nil, fmt.Errorf("line %d: bad timestamp: %w", line, err)
-		}
-		p := stream.Packet{Seq: uint16(seq), Timestamp: uint32(ts), Offset: int64(len(out))}
-		if len(fields) >= 3 {
-			if ssrc, err := strconv.ParseUint(fields[2], 10, 32); err == nil {
-				p.SSRC = uint32(ssrc)
-			}
-		}
-		if len(fields) >= 4 {
-			if pt, err := strconv.ParseUint(fields[3], 10, 8); err == nil {
-				p.Payload = uint8(pt)
-			}
-		}
-		out = append(out, p)
-	}
-	if err := sc.Err(); err != nil {
-		return nil, err
-	}
-	return out, nil
 }
 
 func mustFault(err error, fallback string) *diag.Fault {
