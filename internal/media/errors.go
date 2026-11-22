@@ -57,10 +57,10 @@ func NewError(kind Kind, track uint32, seq uint64, off int64, format string, arg
 type Recovery uint8
 
 const (
-	RecoveryNone     Recovery = iota // no fault observed
-	RecoveryDegraded                 // faults observed, policy: continue
-	RecoveryRecovered                // fault observed then healed
-	RecoveryFailed                   // unrecoverable, stage aborted
+	RecoveryNone      Recovery = iota // no fault observed
+	RecoveryDegraded                  // faults observed, policy: continue
+	RecoveryRecovered                 // fault observed then healed
+	RecoveryFailed                    // unrecoverable, stage aborted
 )
 
 func (r Recovery) String() string {

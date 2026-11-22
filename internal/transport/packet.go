@@ -94,6 +94,16 @@ func EncodePacket(m PacketMeta, payload []byte, rtpSeq uint16, ts uint32, ssrc u
 	return raw, nil
 }
 
+// MetaOf extracts the metadata extension from an already-parsed packet.
+func MetaOf(p *rtp.Packet) (PacketMeta, error) {
+	ext := p.GetExtension(ExtID)
+	if ext == nil {
+		return PacketMeta{}, media.NewError(media.KindCorrupt, 0, 0, 0,
+			"missing metadata extension id=%d", ExtID)
+	}
+	return unmarshalMeta(ext)
+}
+
 // DecodePacket parses a raw RTP packet and its metadata extension.
 func DecodePacket(raw []byte) (*rtp.Packet, PacketMeta, error) {
 	var p rtp.Packet

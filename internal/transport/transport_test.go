@@ -123,6 +123,41 @@ func mustPkt(t *testing.T, seq uint16) *rtp.Packet {
 	return p
 }
 
+func TestPushExReportsRecovery(t *testing.T) {
+	r := NewReorderer(1, 8, 3)
+	if o, rec, _ := r.PushEx(mustPkt(t, 10)); len(o) != 1 || len(rec) != 0 {
+		t.Fatalf("in-order push: out=%d rec=%v", len(o), rec)
+	}
+	o, rec, _ := r.PushEx(mustPkt(t, 12))
+	if len(o) != 0 || len(rec) != 1 || rec[0] != 12 {
+		t.Fatalf("out-of-order push: out=%d rec=%v", len(o), rec)
+	}
+	if r.Stats.Reordered != 1 {
+		t.Fatalf("reordered=%d", r.Stats.Reordered)
+	}
+	o, _, _ = r.PushEx(mustPkt(t, 11))
+	if len(o) != 2 || o[0].SequenceNumber != 11 || o[1].SequenceNumber != 12 {
+		t.Fatalf("buffered packet not released: %v", o)
+	}
+}
+
+func TestMetaOf(t *testing.T) {
+	raw := mkPacket(t, 7, 88)
+	p, want := decode(t, raw)
+	got, err := MetaOf(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("MetaOf=%+v want %+v", got, want)
+	}
+	// a packet without the project extension is corrupt
+	bare := &rtp.Packet{Header: rtp.Header{Version: 2, SequenceNumber: 1}}
+	if _, err := MetaOf(bare); err == nil {
+		t.Fatal("missing extension must be rejected")
+	}
+}
+
 func TestReorderBurstGap(t *testing.T) {
 	r := NewReorderer(1, 4, 3)
 	// lose 20,21,22 (burst of 3), then continue

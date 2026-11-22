@@ -35,8 +35,8 @@ type Reorderer struct {
 	started bool
 	buf     map[uint16]*rtp.Packet
 
-	seen  map[uint16]struct{} // delivered or buffered seqs, bounded ring
-	ring  []uint16
+	seen   map[uint16]struct{} // delivered or buffered seqs, bounded ring
+	ring   []uint16
 	ringAt int
 	nSeen  int
 
@@ -69,6 +69,13 @@ func NewReorderer(streamID uint32, window, burstThreshold int) *Reorderer {
 // gap records committed by this push. Duplicates and too-late packets are
 // counted and dropped, never emitted twice.
 func (r *Reorderer) Push(p *rtp.Packet) (out []*rtp.Packet, gaps []GapRecord) {
+	out, _, gaps = r.PushEx(p)
+	return out, gaps
+}
+
+// PushEx is Push plus the sequence numbers recovered from the reorder
+// buffer (arrived out of order but before their commit point).
+func (r *Reorderer) PushEx(p *rtp.Packet) (out []*rtp.Packet, recovered []uint16, gaps []GapRecord) {
 	r.Stats.Received++
 	seq := p.SequenceNumber
 	if !r.started {
@@ -77,11 +84,11 @@ func (r *Reorderer) Push(p *rtp.Packet) (out []*rtp.Packet, gaps []GapRecord) {
 	}
 	if _, dup := r.seen[seq]; dup {
 		r.Stats.Duplicates++
-		return nil, nil
+		return nil, nil, nil
 	}
 	if seqDiff(seq, r.next) < 0 {
 		r.Stats.Late++
-		return nil, nil
+		return nil, nil, nil
 	}
 	// Force advancement while the packet sits beyond the window.
 	for seqDiff(seq, r.next) >= int16(r.Window) {
@@ -89,6 +96,7 @@ func (r *Reorderer) Push(p *rtp.Packet) (out []*rtp.Packet, gaps []GapRecord) {
 	}
 	if seqDiff(seq, r.next) != 0 {
 		r.Stats.Reordered++
+		recovered = append(recovered, seq)
 	}
 	r.buf[seq] = p
 	r.remember(seq)
@@ -103,7 +111,7 @@ func (r *Reorderer) Push(p *rtp.Packet) (out []*rtp.Packet, gaps []GapRecord) {
 		gaps = r.closeGap(gaps)
 		r.next++
 	}
-	return out, gaps
+	return out, recovered, gaps
 }
 
 // step commits one sequence position: emit if buffered, else extend the gap.
