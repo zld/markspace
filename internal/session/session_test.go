@@ -245,3 +245,32 @@ func TestQueuePeakBounded(t *testing.T) {
 		t.Fatalf("peak %d exceeds capacity %d", r.QueuePeak, cfg.Queue)
 	}
 }
+
+// TestStructuralErrorsRejected: invalid configuration fails before any stage
+// starts and never hangs.
+func TestStructuralErrorsRejected(t *testing.T) {
+	cfg := smallConfig(t)
+	for name, mutate := range map[string]func(*Config){
+		"negative timescale": func(c *Config) { c.Timescale = -1 },
+		"negative frames":    func(c *Config) { c.Frames = -1 },
+		"negative queue":     func(c *Config) { c.Queue = -1 },
+	} {
+		c := cfg
+		mutate(&c)
+		c.OutDir = t.TempDir()
+		done := make(chan error, 1)
+		go func() {
+			_, err := Run(context.Background(), c, Faults{})
+			done <- err
+		}()
+		select {
+		case err := <-done:
+			me, ok := err.(*media.Error)
+			if !ok || me.Kind != media.KindRange {
+				t.Errorf("%s: want range error, got %v", name, err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("%s: run hung", name)
+		}
+	}
+}

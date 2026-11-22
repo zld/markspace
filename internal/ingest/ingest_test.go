@@ -224,3 +224,33 @@ func TestWireFrameDeterministicAndInRange(t *testing.T) {
 		t.Fatal("index out of range must fail")
 	}
 }
+
+func TestReadRejectsIllegalKeyframeIndex(t *testing.T) {
+	tracks, _ := Generate(testConfig())
+	p := filepath.Join(t.TempDir(), "k.mp4")
+	if err := WriteMP4(p, 90000, tracks[0][:5]); err != nil {
+		t.Fatal(err)
+	}
+	data := readFile(t, p)
+	idx := -1
+	for i := 0; i+4 <= len(data); i++ {
+		if string(data[i:i+4]) == "stss" {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		t.Fatal("no stss box")
+	}
+	// stss payload: version/flags(4) entry_count(4), then 1-based sample
+	// numbers. Zeroing the first sample number is illegal.
+	sampleOff := idx + 4 + 8
+	data[sampleOff+3] = 0
+	bad := filepath.Join(t.TempDir(), "bad.mp4")
+	if err := os.WriteFile(bad, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadSampleTable(bad); err == nil {
+		t.Fatal("illegal keyframe index must be rejected")
+	}
+}

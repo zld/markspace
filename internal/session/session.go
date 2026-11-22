@@ -161,6 +161,14 @@ type recoveredFrame struct {
 
 // Run executes the pipeline and writes the export directory.
 func Run(ctx context.Context, cfg Config, faults Faults) (*Result, error) {
+	// Defaults fills zero values; a caller-supplied invalid value is an error
+	// rather than something to silently replace.
+	if cfg.Timescale < 0 || cfg.Frames < 0 || cfg.Tracks < 0 || cfg.Queue < 0 ||
+		cfg.Width < 0 || cfg.Height < 0 || cfg.SegFrames < 0 {
+		return nil, media.NewError(media.KindRange, 0, 0, -1,
+			"negative config field: timescale=%d frames=%d tracks=%d queue=%d %dx%d seg=%d",
+			cfg.Timescale, cfg.Frames, cfg.Tracks, cfg.Queue, cfg.Width, cfg.Height, cfg.SegFrames)
+	}
 	cfg.Defaults()
 	clock, err := media.NewClock(cfg.Timescale)
 	if err != nil {
