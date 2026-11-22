@@ -96,8 +96,12 @@ func TestRunnerCacheHitOnSecondRun(t *testing.T) {
 		t.Fatalf("cold run reported %d hits", first.CacheHits)
 	}
 	second := run(t, cfg)
-	if second.CacheHits != first.Segments {
-		t.Fatalf("warm run hits %d, want %d", second.CacheHits, first.Segments)
+	if second.SegmentCacheHits != first.Segments {
+		t.Fatalf("warm run segment hits %d, want %d", second.SegmentCacheHits, first.Segments)
+	}
+	if second.CacheHits <= second.SegmentCacheHits {
+		t.Fatalf("warm run served no stage entries: %d total, %d segment",
+			second.CacheHits, second.SegmentCacheHits)
 	}
 	if second.CacheRejected != 0 {
 		t.Fatalf("warm run rejected %d", second.CacheRejected)
@@ -139,8 +143,8 @@ func TestRunnerInterruptAndResume(t *testing.T) {
 	if s.Segments != 6 {
 		t.Fatalf("resumed segments %d", s.Segments)
 	}
-	if s.CacheHits < 3 {
-		t.Fatalf("resume did not reuse committed cache entries: %d hits", s.CacheHits)
+	if s.SegmentCacheHits < 3 {
+		t.Fatalf("resume did not reuse committed cache entries: %d segment hits", s.SegmentCacheHits)
 	}
 	// The resumed output must be identical to a single uninterrupted run.
 	full := run(t, testConfig(t))
@@ -201,21 +205,28 @@ func TestRunnerCorruptCacheIsRejectedAndRecomputed(t *testing.T) {
 	if first.CacheHits != 0 {
 		t.Fatalf("cold hits %d", first.CacheHits)
 	}
-	// Corrupt one payload before the warm run. The store must quarantine it and
-	// recompute, and the recomputed hash must still match the cold run.
-	bins, err := filepath.Glob(filepath.Join(cfg.CacheDir, "*", "*.bin"))
-	if err != nil || len(bins) == 0 {
-		t.Fatalf("no cache payloads: %v", err)
+	// Corrupt the committed index entry of one segment before the warm run. The
+	// store must quarantine it and recompute, and the recomputed hash must
+	// still match the cold run.
+	r, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if err := os.WriteFile(bins[0], []byte("forged"), 0o644); err != nil {
+	records, err := r.journal.Records()
+	if err != nil || len(records) == 0 {
+		t.Fatalf("no checkpoint records: %v", err)
+	}
+	committed := records[0].Committed[0].Digest
+	target := filepath.Join(cfg.CacheDir, string(committed[:2]), string(committed)+".bin")
+	if err := os.WriteFile(target, []byte("forged"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	second := run(t, cfg)
 	if second.CacheRejected == 0 {
 		t.Fatalf("corrupt entry not rejected")
 	}
-	if second.CacheHits != first.Segments-1 {
-		t.Fatalf("hits %d rejected %d", second.CacheHits, second.CacheRejected)
+	if second.SegmentCacheHits != first.Segments-1 {
+		t.Fatalf("segment hits %d rejected %d", second.SegmentCacheHits, second.CacheRejected)
 	}
 	found := false
 	for i := range first.SegmentHashes {
@@ -329,5 +340,85 @@ func TestCheckpointRecordsSequenceWindowsAndFragments(t *testing.T) {
 		if rec.Input != r.InputKey() {
 			t.Fatalf("record %d input digest mismatch", i)
 		}
+	}
+}
+
+func TestRunnerStageCachesAreReused(t *testing.T) {
+	cfg := testConfig(t)
+	if s := run(t, cfg); s.CacheHits != 0 {
+		t.Fatalf("cold run hits %d", s.CacheHits)
+	}
+	r, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Run(); err != nil {
+		t.Fatal(err)
+	}
+	// Three stage entries per segment must be served warm: transport,
+	// container and sync, independently of the final index entry.
+	if got, want := r.stageHits(), 3*6; got != want {
+		t.Fatalf("stage hits %d, want %d", got, want)
+	}
+	if r.indexHits != 6 {
+		t.Fatalf("index hits %d", r.indexHits)
+	}
+	if r.rejects != 0 {
+		t.Fatalf("unexpected rejections %d", r.rejects)
+	}
+}
+
+func TestRunnerStageCacheDetectsInputDrift(t *testing.T) {
+	cfg := testConfig(t)
+	run(t, cfg)
+	// A different window changes the scenario input key: no stage entry may be
+	// served, because every stage key is derived from that address.
+	changed := cfg
+	changed.Window = 32
+	s := run(t, changed)
+	if s.CacheHits != 0 {
+		t.Fatalf("changed input reused %d entries", s.CacheHits)
+	}
+}
+
+func TestRunnerStageCacheVersionMismatchRejected(t *testing.T) {
+	cfg := testConfig(t)
+	first := run(t, cfg)
+	if first.Segments != 6 {
+		t.Fatal("setup failed")
+	}
+	r, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Rewriting one stage manifest with a foreign version must trigger
+	// quarantine plus recompute rather than a silent hit.
+	records, err := r.journal.Records()
+	if err != nil || len(records) == 0 {
+		t.Fatal("no records")
+	}
+	digest := records[0].Committed[0].Digest
+	man := filepath.Join(cfg.CacheDir, string(digest[:2]), string(digest)+".manifest.json")
+	raw, err := os.ReadFile(man)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	m["version"] = "mediapipe/0"
+	patched, _ := json.Marshal(m)
+	if err := os.WriteFile(man, patched, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	resumed := cfg
+	resumed.Resume = true
+	s := run(t, resumed)
+	if s.CacheRejected == 0 {
+		t.Fatalf("foreign-version entry not rejected")
+	}
+	if s.Segments != 6 {
+		t.Fatalf("segments %d", s.Segments)
 	}
 }

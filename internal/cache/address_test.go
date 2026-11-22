@@ -111,13 +111,42 @@ func TestCacheRejectsCorruptManifest(t *testing.T) {
 func TestCacheStoreRefusesUnboundContent(t *testing.T) {
 	s, _ := Open(t.TempDir())
 	result := []byte("xyz")
+	// The entry address may be input-derived, but the producing source must
+	// always declare the digest of the bytes actually stored.
 	m := Manifest{Format: "mediapipe-cache/1", Stage: "s", Version: "v1",
-		Key:   KeyFromBytes([]byte("different")),
+		Key:   KeyFromBytes([]byte("entry-address")),
 		Input: testSource(t),
-		ResultSource: Source{ID: "x", Digest: KeyFromBytes([]byte("different")),
+		ResultSource: Source{ID: "x", Digest: KeyFromBytes([]byte("claimed output")),
 			Bytes: int64(len(result)), Locator: "l"}}
-	if err := s.Store(m, result); !errors.Is(err, ErrContentDigest) {
+	if err := s.Store(m, result); !errors.Is(err, ErrProvenance) {
 		t.Fatalf("unbound result stored: %v", err)
+	}
+	// Declaring a mismatched content digest explicitly is also refused.
+	m.ResultSource.Digest = KeyFromBytes(result)
+	m.Content = KeyFromBytes([]byte("other"))
+	if err := s.Store(m, result); !errors.Is(err, ErrContentDigest) {
+		t.Fatalf("mismatched content digest stored: %v", err)
+	}
+}
+
+func TestCacheStoreAcceptInputAddressedEntry(t *testing.T) {
+	s, _ := Open(t.TempDir())
+	result := []byte("stage-bytes")
+	addr := KeyFromBytes([]byte("input-address"))
+	content := KeyFromBytes(result)
+	m := Manifest{Format: "mediapipe-cache/1", Stage: "transport", Version: "v1",
+		Key: addr, Input: testSource(t),
+		ResultSource: Source{ID: "mediapipe/transport", Digest: content,
+			Bytes: int64(len(result)), Locator: "segment:1"}}
+	if err := s.Store(m, result); err != nil {
+		t.Fatalf("input-addressed store: %v", err)
+	}
+	got, err := s.Fetch(Lookup{Key: addr, Stage: "transport", Version: "v1", Input: testSource(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Manifest.Content != content {
+		t.Fatalf("content digest %s, want %s", got.Manifest.Content, content)
 	}
 }
 

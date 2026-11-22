@@ -274,13 +274,18 @@ func (s *Store) Store(manifest Manifest, result []byte) error {
 	if err := manifest.ResultSource.Validate(); err != nil {
 		return err
 	}
-	if manifest.ResultSource.Digest != manifest.Key {
-		return fmt.Errorf("%w: result source digest != cache key", ErrProvenance)
+	// Key is the caller's address for the entry, which may be derived from the
+	// stage's inputs rather than from its output. Content is always the digest
+	// of the stored bytes, and the producing source must declare exactly that
+	// digest; anything else is refused.
+	content := KeyFromBytes(result)
+	if manifest.ResultSource.Digest != content {
+		return fmt.Errorf("%w: result source digest != content digest", ErrProvenance)
 	}
-	if KeyFromBytes(result) != manifest.Key {
-		return fmt.Errorf("%w: result bytes do not hash to key", ErrContentDigest)
+	if manifest.Content != "" && manifest.Content != content {
+		return fmt.Errorf("%w: declared content digest mismatch", ErrContentDigest)
 	}
-	manifest.Content = manifest.Key
+	manifest.Content = content
 	manifest.ResultBytes = int64(len(result))
 	resPath, err := s.pathFor(manifest.Key, ".bin")
 	if err != nil {

@@ -2,9 +2,7 @@ package pipeline
 
 import (
 	"bytes"
-	"crypto/sha256"
 	"encoding/binary"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -200,6 +198,7 @@ type Summary struct {
 	UnrecoveredGaps      int
 	UnrecoveredPackets   int
 	CacheHits            int
+	SegmentCacheHits     int
 	CacheRejected        int
 	CheckpointResumes    int
 	CheckpointCommits    int
@@ -233,13 +232,15 @@ type Runner struct {
 	records []meta.Record
 	layout  map[uint32][]sync.Diagnostic
 
-	results []SegmentResult
-	start   int
-	gen     uint64
-	resumes int
-	commits int
-	hits    int
-	rejects int
+	results   []SegmentResult
+	verified  map[uint32]SegmentResult
+	start     int
+	gen       uint64
+	resumes   int
+	commits   int
+	hits      int
+	indexHits int
+	rejects   int
 
 	reordered int
 	recovered int
@@ -408,6 +409,13 @@ func (r *Runner) resume() error {
 	}
 	r.start = int(prefix)
 	r.gen = prefix
+	// Results restored from the journal are not re-added when the segment is
+	// recomputed later, so clear them and let the main loop rebuild the prefix
+	// from the verified cache where possible.
+	r.results = r.results[:0]
+	// Remember which segments are already proven so the loop can skip them
+	// only after their stage entries have been re-verified.
+	r.verified = bySequence
 	return nil
 }
 
@@ -431,6 +439,7 @@ func (r *Runner) fetchSegment(seq uint32, key cache.Key) (*SegmentResult, error)
 	}
 	res.CacheKey = key
 	r.hits++
+	r.indexHits++
 	return &res, nil
 }
 
@@ -772,15 +781,20 @@ func (r *Runner) runSegments(tr *transportOutcome) error {
 	}
 	for _, spec := range r.scenario.Segments {
 		seq := spec.Sequence
-		if int(seq) <= r.start {
-			continue
-		}
 		result, err := r.processSegment(seq, bySegment[seq], tr)
 		if err != nil {
 			return err
 		}
-		if err != nil {
-			return err
+		if int(seq) <= r.start {
+			// Resume path: the segment is recomputed (its stage entries are
+			// verified and served from cache) and must agree with the
+			// checkpointed result. A disagreement means the journal and the
+			// world diverged.
+			if prev, ok := r.verified[seq]; ok && prev.CacheKey != result.CacheKey {
+				return fmt.Errorf("%w: segment %d differs from its checkpoint", ErrInvariant, seq)
+			}
+			r.results = append(r.results, *result)
+			continue
 		}
 		r.results = append(r.results, *result)
 		if err := r.commit(*result); err != nil {
@@ -795,100 +809,26 @@ func (r *Runner) runSegments(tr *transportOutcome) error {
 
 func (r *Runner) processSegment(seq uint32, groupIdx []int, tr *transportOutcome) (*SegmentResult, error) {
 	res := &SegmentResult{Segment: seq}
-	if w, ok := tr.windows[seq]; ok {
-		res.Transport.SeqStart = w.Start
-		res.Transport.SeqEnd = w.End
-		res.Transport.SeqCount = w.Count
-	}
-	missingSet := map[int]bool{}
-	for _, k := range tr.missing {
-		g := r.groupFor(k)
-		if g != nil && g.Segment == seq {
-			missingSet[g.Index] = true
-		}
-	}
-	// Transport stage counters for this segment.
-	for _, gi := range groupIdx {
-		g := r.scenario.Groups[gi]
-		if g.TrackID == 3 {
-			continue
-		}
-		res.Transport.PacketsIn += g.FragCount
-	}
-	for _, gi := range groupIdx {
-		g := r.scenario.Groups[gi]
-		if missingSet[gi] {
-			res.Transport.MissingGroups = append(res.Transport.MissingGroups, gi)
-			res.Transport.MissingPackets += g.FragCount
-			continue
-		}
-		data, ok := tr.groups.groupData(g.TrackID, g.Frame)
-		if !ok {
-			res.Transport.MissingGroups = append(res.Transport.MissingGroups, gi)
-			res.Transport.MissingPackets += g.FragCount
-			continue
-		}
-		res.Transport.PacketsOut += g.FragCount
-		digest := sha256.Sum256(data)
-		proof := GroupProof{Group: gi, TrackID: g.TrackID, Frame: g.Frame, Kind: g.Kind,
-			Digest: hex.EncodeToString(digest[:]), Source: hex.EncodeToString(g.Digest[:])}
-		proof.Match = digest == g.Digest
-		res.Groups = append(res.Groups, proof)
-		if !proof.Match {
-			res.Container.Mismatched++
-		} else if g.Kind != fixtures.KindMeta {
-			res.Container.Verified++
-		}
-		if g.Kind != fixtures.KindMeta {
-			res.Container.Samples++
-		}
-	}
-	// Container stage: sample counts, keyframes and segment hash from the
-	// authoritative parsed fixture.
-	if idx := segmentIndex(r.index, seq); idx >= 0 {
-		entry := r.index.Segments[idx]
-		res.Container.SegmentHash = entry.HashHex()
-		res.Container.Keyframes = len(entry.KeyframeSeqs)
-		res.Container.Samples = entry.SampleCount
-	}
-	// Metadata round trip: serialize, parse and re-serialize every canonical
-	// record, then verify the emitted emsg bytes decode identically.
-	for _, rec := range r.records {
-		if metaSegment(rec, r.records) != seq {
-			continue
-		}
-		res.Container.MetadataRecs++
-		if err := verifyRecord(rec); err == nil {
-			res.Container.MetadataOK++
-		}
-	}
-	// Sync stage.
-	views, missing, err := r.views(seq, tr)
+	transport, transportKey, err := r.runTransportStage(seq, groupIdx, tr)
 	if err != nil {
 		return nil, err
 	}
-	if len(views) == 2 {
-		res.Sync.VideoSamples = len(views[0].Samples)
-		res.Sync.AudioSamples = len(views[1].Samples)
-		align, err := sync.Align(views[0], views[1], sync.AlignConfig{ToleranceTicks: 4500, BaseUncertainty: 2})
-		if err != nil && !errors.Is(err, sync.ErrMissingState) && !errors.Is(err, sync.ErrNonMonotonic) {
-			return nil, err
-		}
-		res.Sync.OffsetTicks = align.Offset
-		res.Sync.Uncertainty = align.Uncertainty
-		res.Sync.Aligned = align.Status == "aligned"
-		for _, d := range align.Diagnostics {
-			if d.Code == "align_outlier" {
-				res.Sync.NonMonotonic++
-			}
-		}
-		if err != nil && errors.Is(err, sync.ErrMissingState) {
-			// Missing transport state is propagated, never filled in.
-			res.Sync.Aligned = false
-		}
-		_ = missing
+	res.Transport = transport.Stage
+	res.Groups = transport.Proofs
+	container, containerKey, err := r.runContainerStage(seq, transport, transportKey)
+	if err != nil {
+		return nil, err
 	}
-	res.Sync.LayoutIssues = len(r.layout[seq])
+	res.Container = container.Stage
+	syncStage, _, err := r.runSyncStage(seq, containerKey, tr)
+	if err != nil {
+		return nil, err
+	}
+	res.Sync = *syncStage
+	views, _, err := r.views(seq, tr)
+	if err != nil {
+		return nil, err
+	}
 	if err := r.checkInvariants(res, views, tr, seq); err != nil {
 		return nil, err
 	}
@@ -903,6 +843,7 @@ func (r *Runner) processSegment(seq uint32, groupIdx []int, tr *transportOutcome
 	// quarantined by the store and counted as rejected.
 	if got, ferr := r.store.Fetch(cache.Lookup{Key: key, Stage: StageIndex, Version: Version, Input: r.source()}); ferr == nil && bytes.Equal(got.Bytes, body) {
 		r.hits++
+		r.indexHits++
 		return res, nil
 	} else if ferr != nil && !errors.Is(ferr, cache.ErrMissing) {
 		r.rejects++
@@ -1012,7 +953,8 @@ func (r *Runner) commit(result SegmentResult) error {
 func (r *Runner) summarize(tr *transportOutcome) *Summary {
 	s := &Summary{Segments: len(r.results), ReorderedPackets: r.reordered, RecoveredPackets: r.recovered,
 		Duplicates: r.dups, LateDropped: r.late, RecoveryRequests: r.requests,
-		CacheHits: r.hits, CacheRejected: r.rejects, CheckpointResumes: r.resumes,
+		CacheHits: r.hits, SegmentCacheHits: r.indexHits,
+		CacheRejected: r.rejects, CheckpointResumes: r.resumes,
 		CheckpointCommits: r.commits, ResumedFrom: r.gen}
 	verified, matched := 0, 0
 	keyHits, keyTotal := 0, 0

@@ -178,6 +178,7 @@ func printSummary(w *os.File, s *pipeline.Summary, o options) {
 	fmt.Fprintf(w, "late_dropped=%d\n", s.LateDropped)
 	fmt.Fprintf(w, "recovery_requests=%d\n", s.RecoveryRequests)
 	fmt.Fprintf(w, "cache_hits=%d\n", s.CacheHits)
+	fmt.Fprintf(w, "segment_cache_hits=%d\n", s.SegmentCacheHits)
 	fmt.Fprintf(w, "cache_rejected=%d\n", s.CacheRejected)
 	fmt.Fprintf(w, "checkpoint_resumes=%d\n", s.CheckpointResumes)
 	fmt.Fprintf(w, "checkpoint_commits=%d\n", s.CheckpointCommits)

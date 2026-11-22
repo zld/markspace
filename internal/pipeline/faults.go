@@ -226,13 +226,14 @@ func runReorderFault(seed int64) (FaultReport, error) {
 		return rep, fmt.Errorf("RTP timestamp wrap was not exercised")
 	}
 	tsWraps = timelineWraps
-	propagated := warm.CacheHits == warm.Segments && summary.RoundtripMatchRate >= 0.99
+	propagated := warm.SegmentCacheHits == warm.Segments && summary.RoundtripMatchRate >= 0.99
 	rep.DetectedBy = "transport: sequence continuity and per-track monotonic media time"
 	rep.PropagatedTo = []string{"container: sample ownership and payload digests", "sync: alignment",
 		"cache: segment digests served warm"}
 	rep.Recovered = reorderOK && propagated
 	rep.Detail = fmt.Sprintf("emitted=%d expected=%d duplicates=%d reordered=%d seq_wraps=%d ts_wraps=%d roundtrip=%.3f warm_cache_hits=%d",
-		st.Emitted, tx.Expected, st.Duplicates, st.Reordered, wraps, tsWraps, summary.RoundtripMatchRate, warm.CacheHits)
+		st.Emitted, tx.Expected, st.Duplicates, st.Reordered, wraps, tsWraps, summary.RoundtripMatchRate,
+		warm.SegmentCacheHits)
 	if !rep.Recovered {
 		return rep, fmt.Errorf("reorder fault not fully recovered: %s", rep.Detail)
 	}
@@ -298,9 +299,9 @@ func runBurstFault(seed int64) (FaultReport, error) {
 	rep.DetectedBy = "transport: recovery deadline; sync: missing state; cache: segment digest"
 	rep.PropagatedTo = []string{"sync", "cache"}
 	rep.Recovered = s.RoundtripMatchRate >= 0.99 && s.UnrecoveredGaps > 0 && s.MissingGroups > 0 &&
-		warmSummary.CacheHits == s.Segments
+		warmSummary.SegmentCacheHits == s.Segments
 	rep.Detail = fmt.Sprintf("unrecovered_gaps=%d missing_groups=%d unresolved_segments=%d roundtrip=%.3f cached_missing_state=%d",
-		s.UnrecoveredGaps, s.MissingGroups, unresolved, s.RoundtripMatchRate, warmSummary.CacheHits)
+		s.UnrecoveredGaps, s.MissingGroups, unresolved, s.RoundtripMatchRate, warmSummary.SegmentCacheHits)
 	if !rep.Recovered {
 		return rep, fmt.Errorf("burst fault propagation incomplete: %s", rep.Detail)
 	}
