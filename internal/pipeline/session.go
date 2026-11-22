@@ -87,6 +87,11 @@ func OpenSession(path string) (*Session, error) {
 	if ierr != nil {
 		problems = append(problems, ierr)
 	}
+	// An incomplete or incomplete-after-truncation sync table is repaired
+	// from verified samples; repaired landings are marked inferred.
+	if rep := index.Repair(ix, movie, s.Pres); rep != nil {
+		problems = append(problems, rep)
+	}
 	s.Index = ix
 	s.Silence = analyzeAudio(tree, movie, s.Pres)
 	for _, tr := range movie.Tracks {
@@ -124,38 +129,64 @@ func (s *Session) Planner() (*Planner, error) {
 }
 
 // ChapterRequests slices each video track at every step-th declared sync
-// frame. Cut times therefore coincide with real keyframes by construction,
-// which is what an editor means by "chapters on camera sync points"; the
-// measured keyframe hit rate then reports how many cuts actually landed there
-// rather than how lucky the request grid was.
+// frame. Only declared sync frames become boundaries: repaired, inferred
+// landings extend the reachable range but are never presented as if a cut
+// could land exactly there. The final chapter runs to the end of usable
+// media, so a short tail is delivered rather than dropped.
 func (s *Session) ChapterRequests(step int) []Request {
 	if step < 1 {
 		step = 1
 	}
 	var out []Request
 	for _, ti := range s.Index.Tracks {
-		n := len(ti.Entries)
-		if n == 0 {
+		if len(ti.Entries) == 0 {
 			continue
 		}
-		for i := 0; i < n; i += step {
-			start := ti.Entries[i].Presented
-			end := int64(0)
-			if i+step < n {
-				end = ti.Entries[i+step].Presented
-			} else {
-				end = ti.Entries[n-1].Presented + 1
+		exact := make([]index.Entry, 0, len(ti.Entries))
+		for _, e := range ti.Entries {
+			if e.Exact {
+				exact = append(exact, e)
 			}
-			if end <= start {
+		}
+		if len(exact) == 0 {
+			exact = ti.Entries
+		}
+		end := s.usableEnd(ti.TrackID)
+		for i := 0; i < len(exact); i += step {
+			start := exact[i].Presented
+			next := int64(-1)
+			if i+step < len(exact) {
+				next = exact[i+step].Presented
+			}
+			if next <= start {
+				next = end
+			}
+			if next <= start {
 				continue
 			}
-			out = append(out, Request{TrackID: ti.TrackID, StartNS: start, EndNS: end})
+			out = append(out, Request{TrackID: ti.TrackID, StartNS: start, EndNS: next})
 		}
 	}
 	if len(out) > 0 {
 		return out
 	}
 	return s.Requests()
+}
+
+// usableEnd reports the last presentation time this track can reach.
+func (s *Session) usableEnd(trackID uint32) int64 {
+	n := 0
+	for _, tr := range s.Movie.Tracks {
+		if tr.ID == trackID {
+			n = len(tr.Samples)
+		}
+	}
+	for i := n - 1; i >= 0; i-- {
+		if v, ok := s.Pres.At(trackID, i); ok {
+			return v + 1
+		}
+	}
+	return 0
 }
 
 // Requests returns one full-range request per video track. When no video
