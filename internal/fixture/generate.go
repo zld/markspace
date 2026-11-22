@@ -97,11 +97,25 @@ func (b *Builder) Packet(pid uint16, pusi bool, payload []byte) {
 	}
 	pkt[1] |= byte(pid >> 8)
 	pkt[2] = byte(pid)
-	pkt[3] = 0x10 | byte(b.cc[pid]&0x0F)
+	cc := byte(b.cc[pid] & 0x0F)
 	b.cc[pid]++
-	n := copy(pkt[4:], payload)
-	for i := 4 + n; i < 188; i++ {
-		pkt[i] = 0xFF
+	if len(payload) >= 184 {
+		pkt[3] = 0x10 | cc // payload only, no adaptation field
+		copy(pkt[4:], payload[:184])
+	} else {
+		// Pad with an adaptation field (as real encoders do), never
+		// with 0xFF inside the payload, so a section fragment always
+		// fills its packet's payload exactly.
+		pkt[3] = 0x30 | cc // adaptation field + payload
+		afl := 183 - len(payload)
+		pkt[4] = byte(afl)
+		if afl > 0 {
+			pkt[5] = 0x00 // adaptation field flags
+			for i := 6; i < 5+afl; i++ {
+				pkt[i] = 0xFF // stuffing inside the adaptation field
+			}
+		}
+		copy(pkt[5+afl:], payload)
 	}
 	b.buf = append(b.buf, pkt...)
 }

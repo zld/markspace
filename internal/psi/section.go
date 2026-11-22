@@ -98,7 +98,7 @@ func (r *Reassembler) PendingMissing() int {
 	if len(r.buf) < 3 {
 		return 0
 	}
-	total := 3 + int(r.buf[1]&0x0F)<<8 | int(r.buf[2])
+	total := 3 + ((int(r.buf[1]&0x0F) << 8) | int(r.buf[2]))
 	if total > len(r.buf) {
 		return total - len(r.buf)
 	}
@@ -147,7 +147,7 @@ func (r *Reassembler) drain(emit func([]byte)) {
 		if len(r.buf) < 3 {
 			return
 		}
-		total := 3 + int(r.buf[1]&0x0F)<<8 | int(r.buf[2])
+		total := 3 + ((int(r.buf[1]&0x0F) << 8) | int(r.buf[2]))
 		if total > MaxSectionLength || total < 3+5+4 {
 			r.buf = nil // implausible length: drop and resync on next PUSI
 			return

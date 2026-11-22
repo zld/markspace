@@ -130,6 +130,7 @@ type Assembler struct {
 	patChanges  int
 	pmtChanges  int
 	corrupted   int
+	patPublished bool
 	snapshot    model.Snapshot
 	hasSnapshot bool
 }
@@ -199,8 +200,10 @@ func (a *Assembler) FeedSection(pid uint16, section []byte, packetIndex int) (mo
 			a.corrupted++
 			return model.Snapshot{}, false
 		}
-		a.pat, a.patPending = pat, nil
-		a.patChanges++
+		if a.patPublished {
+			a.patChanges++ // count transitions only: first publication is the baseline
+		}
+		a.pat, a.patPending, a.patPublished = pat, nil, true
 		a.pmtByPID = map[uint16]uint16{}
 		for program, pmtPID := range pat.Programs {
 			a.pmtByPID[pmtPID] = program
@@ -233,9 +236,11 @@ func (a *Assembler) FeedSection(pid uint16, section []byte, packetIndex int) (mo
 			return model.Snapshot{}, false
 		}
 		pmt.Program = int(program) // PAT is authoritative for the mapping
+		if _, ok := a.pmts[program]; ok {
+			a.pmtChanges++ // count transitions only: first publication is the baseline
+		}
 		a.pmts[program], a.pmtVersions[program] = pmt, pmt.Version
 		delete(a.pmtPending, pid)
-		a.pmtChanges++
 	default:
 		return model.Snapshot{}, false
 	}
