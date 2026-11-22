@@ -4,59 +4,76 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"sync"
 	"sync/atomic"
 )
 
-// ErrConsumerStalled is reported by SlowConsumer hooks; it is not fatal.
+// ErrConsumerStalled is a consumer-side signal that it stopped consuming; it
+// detaches the consumer without treating the run as failed.
 var ErrConsumerStalled = errors.New("stream: consumer stalled")
 
-// Consumer receives chunks from a fan-out. It must return promptly or block;
-// blocking pauses only this consumer (and the producer once its queue fills).
+// Consumer receives the chunks routed to exactly one representation layer.
 type Consumer interface {
-	// Name identifies the representation layer.
+	// Name identifies the representation layer and is the routing key.
 	Name() string
-	// Offer receives the next chunk. Returning an error detaches the consumer.
+	// Offer receives one chunk. It must respect ctx so cancellation always
+	// unblocks it.
 	Offer(ctx context.Context, ch Chunk) error
 	// Close is called exactly once after the consumer stops.
 	Close() error
 }
 
-// Fanout copies one chunk stream to several consumers with per-consumer
-// bounded queues. A consumer whose queue is full pauses the producer; it never
-// causes unbounded buffering and never drops data for other consumers.
+// Item is one routed chunk. Layer selects the destination consumer.
+type Item struct {
+	Layer string
+	Chunk Chunk
+}
+
+// Feed produces routed chunks in a deterministic order. It returns io.EOF when
+// the stream is exhausted.
+type Feed interface {
+	Next(ctx context.Context) (Item, error)
+}
+
+// FeedFunc adapts a function to Feed.
+type FeedFunc func(ctx context.Context) (Item, error)
+
+// Next implements Feed.
+func (f FeedFunc) Next(ctx context.Context) (Item, error) { return f(ctx) }
+
+// Fanout routes one feed to per-layer bounded queues. When a consumer's queue
+// is full the producer blocks: nothing is dropped and no layer is starved of
+// its already-produced data. Cancellation or Close stops every goroutine.
 type Fanout struct {
-	consumers []*consumerState
+	consumers map[string]*consumerState
+	order     []string
 	queue     int
-	src       *Reader
+	feed      Feed
 
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 
-	mu       sync.Mutex
-	closed   bool
-	produced int64
+	produced atomic.Int64
 	peak     atomic.Int64
-	stalls   atomic.Int64
 }
 
 type consumerState struct {
-	sink   Consumer
-	queue  chan Chunk
-	done   chan struct{}
-	once   sync.Once
-	errMu  sync.Mutex
-	err    error
-	queued atomic.Int64
-	peak   atomic.Int64
-	count  atomic.Int64
+	sink  Consumer
+	queue chan Item
+	done  chan struct{}
+	once  sync.Once
+	errMu sync.Mutex
+	err   error
+	count atomic.Int64
+	peak  atomic.Int64
 }
 
 // NewFanout starts one bounded queue per consumer.
-func NewFanout(ctx context.Context, src *Reader, queue int, consumers ...Consumer) (*Fanout, error) {
-	if src == nil {
-		return nil, errors.New("stream: nil reader")
+func NewFanout(ctx context.Context, feed Feed, queue int, consumers ...Consumer) (*Fanout, error) {
+	if feed == nil {
+		return nil, errors.New("stream: nil feed")
 	}
 	if queue <= 0 {
 		return nil, errors.New("stream: fan-out queue must be positive")
@@ -68,20 +85,18 @@ func NewFanout(ctx context.Context, src *Reader, queue int, consumers ...Consume
 		ctx = context.Background()
 	}
 	ctx, cancel := context.WithCancel(ctx)
-	f := &Fanout{queue: queue, src: src, ctx: ctx, cancel: cancel}
-	seen := map[string]bool{}
+	f := &Fanout{queue: queue, feed: feed, ctx: ctx, cancel: cancel, consumers: map[string]*consumerState{}}
 	for i, c := range consumers {
 		if c == nil {
 			cancel()
 			return nil, fmt.Errorf("stream: nil consumer at %d", i)
 		}
-		if seen[c.Name()] {
+		if _, dup := f.consumers[c.Name()]; dup {
 			cancel()
 			return nil, fmt.Errorf("stream: duplicate consumer %q", c.Name())
 		}
-		seen[c.Name()] = true
-		st := &consumerState{sink: c, queue: make(chan Chunk, queue), done: make(chan struct{})}
-		f.consumers = append(f.consumers, st)
+		f.consumers[c.Name()] = &consumerState{sink: c, queue: make(chan Item, queue), done: make(chan struct{})}
+		f.order = append(f.order, c.Name())
 	}
 	for _, st := range f.consumers {
 		f.wg.Add(1)
@@ -94,100 +109,92 @@ func NewFanout(ctx context.Context, src *Reader, queue int, consumers ...Consume
 
 func (f *Fanout) produce() {
 	defer f.wg.Done()
-	defer f.shutdown()
+	defer f.closeQueues()
 	for {
-		ch, err := f.src.Next(f.ctx)
+		item, err := f.feed.Next(f.ctx)
 		if err != nil {
-			f.recordErr(err)
+			if !errors.Is(err, io.EOF) && !errors.Is(err, context.Canceled) {
+				f.setErr(err)
+			}
 			return
 		}
-		f.mu.Lock()
-		f.produced++
-		f.mu.Unlock()
-		for _, st := range f.consumers {
-			select {
-			case <-st.done:
-				continue
-			default:
-			}
-			select {
-			case st.queue <- ch:
-				depth := int(st.queued.Add(1))
-				notePeak(&st.peak, int64(depth))
-				notePeak(&f.peak, int64(depth))
-			case <-st.done:
-			case <-f.ctx.Done():
-				f.recordErr(f.ctx.Err())
-				return
-			}
+		st, ok := f.consumers[item.Layer]
+		if !ok {
+			f.setErr(fmt.Errorf("stream: feed routed unknown layer %q", item.Layer))
+			return
 		}
+		select {
+		case st.queue <- item:
+			f.produced.Add(1)
+			notePeak(&st.peak, int64(len(st.queue)))
+			notePeak(&f.peak, int64(len(st.queue)))
+		case <-st.done:
+			// This layer detached; its already-queued items are dropped but
+			// every other layer keeps receiving the producer's output.
+		case <-f.ctx.Done():
+			return
+		}
+	}
+}
+
+// closeQueues closes every consumer queue exactly once. It is only called by
+// the producer goroutine, the sole sender, so no send-on-closed race exists.
+func (f *Fanout) closeQueues() {
+	for _, name := range f.order {
+		close(f.consumers[name].queue)
 	}
 }
 
 func (f *Fanout) consume(st *consumerState) {
 	defer f.wg.Done()
-	defer st.once.Do(func() { close(st.done) })
-	defer func() { _ = st.sink.Close() }()
+	defer func() {
+		st.once.Do(func() { _ = st.sink.Close() })
+		close(st.done)
+	}()
 	for {
 		select {
 		case <-f.ctx.Done():
 			return
-		case ch, ok := <-st.queue:
+		case item, ok := <-st.queue:
 			if !ok {
 				return
 			}
-			st.queued.Add(-1)
 			st.count.Add(1)
-			if err := st.sink.Offer(f.ctx, ch); err != nil {
+			if err := st.sink.Offer(f.ctx, item.Chunk); err != nil {
 				if !errors.Is(err, ErrConsumerStalled) {
 					st.errMu.Lock()
 					st.err = err
 					st.errMu.Unlock()
 				}
-				f.stalls.Add(1)
 				return
 			}
 		}
 	}
 }
 
-func (f *Fanout) shutdown() {
-	f.mu.Lock()
-	if f.closed {
-		f.mu.Unlock()
-		return
-	}
-	f.closed = true
-	f.mu.Unlock()
-	for _, st := range f.consumers {
-		st.once.Do(func() { close(st.done) })
-	}
-	_ = f.src.Close()
-}
-
-func (f *Fanout) recordErr(err error) {
-	if errors.Is(err, context.Canceled) || errors.Is(err, ErrClosed) {
-		return
-	}
-}
-
-// Wait blocks until every goroutine exits. All goroutines exit after either
-// cancellation, source exhaustion, or Close.
-func (f *Fanout) Wait() {
-	f.wg.Wait()
-}
-
-// Close cancels the fan-out and waits for all goroutines. It is safe to call
-// more than once and from any goroutine.
-func (f *Fanout) Close() error {
-	f.cancel()
-	f.shutdown()
-	f.Wait()
-	var errs []error
+func (f *Fanout) setErr(err error) {
 	for _, st := range f.consumers {
 		st.errMu.Lock()
+		if st.err == nil {
+			st.err = err
+		}
+		st.errMu.Unlock()
+	}
+}
+
+// Wait blocks until every goroutine exits.
+func (f *Fanout) Wait() { f.wg.Wait() }
+
+// Close cancels, waits and reports consumer failures.
+func (f *Fanout) Close() error {
+	f.cancel()
+	f.Wait()
+	var errs []error
+	for _, name := range f.order {
+		st := f.consumers[name]
+		st.errMu.Lock()
 		if st.err != nil {
-			errs = append(errs, fmt.Errorf("%s: %w", st.sink.Name(), st.err))
+			errs = append(errs, fmt.Errorf("%s: %w", name, st.err))
 		}
 		st.errMu.Unlock()
 	}
@@ -202,29 +209,30 @@ type ConsumerStats struct {
 	Failed     bool
 }
 
-// Stats reports deterministic per-consumer flow accounting.
+// Stats reports per-consumer accounting in deterministic layer order.
 func (f *Fanout) Stats() (int64, []ConsumerStats) {
-	f.mu.Lock()
-	produced := f.produced
-	f.mu.Unlock()
-	out := make([]ConsumerStats, 0, len(f.consumers))
-	for _, st := range f.consumers {
+	out := make([]ConsumerStats, 0, len(f.order))
+	for _, name := range f.order {
+		st := f.consumers[name]
 		st.errMu.Lock()
 		failed := st.err != nil
 		st.errMu.Unlock()
-		out = append(out, ConsumerStats{Name: st.sink.Name(), Delivered: st.count.Load(), PeakQueued: st.peak.Load(), Failed: failed})
+		out = append(out, ConsumerStats{Name: name, Delivered: st.count.Load(), PeakQueued: st.peak.Load(), Failed: failed})
 	}
-	return produced, out
+	return f.produced.Load(), out
 }
 
 // QueueDepth is the configured per-consumer queue bound.
 func (f *Fanout) QueueDepth() int { return f.queue }
 
-// PeakQueued is the largest number of chunks buffered by any single consumer.
+// PeakQueued is the largest number of chunks buffered by any one consumer.
 func (f *Fanout) PeakQueued() int64 { return f.peak.Load() }
 
-// Bound returns the maximum number of chunks the fan-out may hold at once.
+// Bound is the maximum number of chunks the fan-out may buffer at once.
 func (f *Fanout) Bound() int64 { return int64(len(f.consumers)) * int64(f.queue) }
+
+// Cancel requests shutdown without waiting.
+func (f *Fanout) Cancel() { f.cancel() }
 
 func notePeak(counter *atomic.Int64, v int64) {
 	for {
