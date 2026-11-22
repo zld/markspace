@@ -98,6 +98,7 @@ type layout struct {
 	stts        []mp4.SttsEntry
 	stss        []uint32
 	sizes       []uint32
+	movieScale  uint32
 	offsets     []uint32
 	chunkOffset uint32
 	bytes       []byte // concatenated mdat payload for this track
@@ -266,6 +267,7 @@ func WriteFile(dir, name string, plans []TrackPlan, opts Options) (*Report, erro
 		if err != nil {
 			return rep, err
 		}
+		l.movieScale = opts.MovieTimescale
 		layouts = append(layouts, l)
 	}
 	if len(layouts) == 0 {

@@ -144,7 +144,8 @@ func writeTkhd(w *mp4.Writer, l *layout, trackID uint32) error {
 	if _, err := w.StartBox(&mp4.BoxInfo{Type: mp4.BoxTypeTkhd()}); err != nil {
 		return wrapWrite("tkhd_start", err)
 	}
-	duration := uint32(l.duration)
+	// tkhd durations are expressed in the movie timescale, not the track's.
+	duration := uint32(scaleDuration(l.duration, l.plan.Timescale, l.movieScale))
 	tkhd := &mp4.Tkhd{
 		TrackID:    trackID,
 		DurationV0: duration,
@@ -177,11 +178,12 @@ func writeEdts(w *mp4.Writer, l *layout) error {
 		return wrapWrite("elst_start", err)
 	}
 	// Version 1 carries a 64-bit media time, which non-zero RTP origins can
-	// exceed (a 32-bit timestamp near wrap is ~4.29e9 ticks).
+	// exceed (a 32-bit timestamp near wrap is ~4.29e9 ticks). Segment duration
+	// is in movie timescale; media time stays in the track timescale.
 	elst := &mp4.Elst{
 		EntryCount: 1,
 		Entries: []mp4.ElstEntry{{
-			SegmentDurationV1: l.duration,
+			SegmentDurationV1: scaleDuration(l.duration, l.plan.Timescale, l.movieScale),
 			MediaTimeV1:       first,
 			MediaRateInteger:  1,
 		}},
@@ -583,4 +585,17 @@ func collectEvidence(layouts []*layout) []SampleEvidence {
 		}
 	}
 	return out
+}
+
+// scaleDuration converts a duration between timescales, rounding up so a
+// container duration never understates the media it describes.
+func scaleDuration(duration uint64, from, to uint32) uint64 {
+	if from == 0 || to == 0 || from == to {
+		return duration
+	}
+	scaled, err := timeline.Scale(int64(duration), from, to)
+	if err != nil {
+		return duration
+	}
+	return uint64(scaled)
 }

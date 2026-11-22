@@ -115,6 +115,19 @@ func TestWriteFileRoundTrip(t *testing.T) {
 		t.Fatalf("timescale %d", mdhd.Timescale)
 	}
 
+	// tkhd duration must be in movie timescale (default 1000), not track
+	// timescale (90000). Six 3000-tick samples at 90 kHz are 0.2 s.
+	tkhds, err := mp4.ExtractBoxWithPayload(f, nil, mp4.BoxPath{
+		mp4.BoxTypeMoov(), mp4.BoxTypeTrak(), mp4.BoxTypeTkhd(),
+	})
+	if err != nil || len(tkhds) != 1 {
+		t.Fatalf("tkhd: %v n=%d", err, len(tkhds))
+	}
+	tkhd := tkhds[0].Payload.(*mp4.Tkhd)
+	if got := tkhd.DurationV0; got != 200 {
+		t.Fatalf("tkhd duration %d want 200 (ms)", got)
+	}
+
 	// stsz sizes must equal the length-prefixed rewrites of each sample.
 	stszs, err := mp4.ExtractBoxWithPayload(f, nil, mp4.BoxPath{
 		mp4.BoxTypeMoov(), mp4.BoxTypeTrak(), mp4.BoxTypeMdia(),
