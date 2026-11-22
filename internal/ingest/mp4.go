@@ -77,25 +77,34 @@ func WriteMP4(path string, timescale uint32, frames []media.Frame) (err error) {
 	var stts []mp4.SttsEntry
 	var stsz, stss []uint32
 	var totalSize uint64
-	prev := frames[0].Ticks
+	// Sample durations: d[i] = ticks[i+1]-ticks[i]; the last sample reuses
+	// the previous delta so every sample has a duration.
+	deltas := make([]int64, len(frames))
+	for i := 0; i+1 < len(frames); i++ {
+		deltas[i] = frames[i+1].Ticks - frames[i].Ticks
+	}
+	if len(frames) > 1 {
+		deltas[len(frames)-1] = deltas[len(frames)-2]
+	} else {
+		deltas[0] = 1
+	}
+	var duration int64
 	for i, f := range frames {
-		if i > 0 {
-			d := f.Ticks - prev
-			if d <= 0 {
-				return media.NewError(media.KindRange, f.StreamID, f.Seq, -1,
-					"timestamp regression: ticks %d after %d", f.Ticks, prev)
-			}
-			if d > int64(^uint32(0)) {
-				return media.NewError(media.KindOverflow, f.StreamID, f.Seq, -1, "delta %d overflows uint32", d)
-			}
-			delta := uint32(d)
-			if n := len(stts); n > 0 && stts[n-1].SampleDelta == delta {
-				stts[n-1].SampleCount++
-			} else {
-				stts = append(stts, mp4.SttsEntry{SampleCount: 1, SampleDelta: delta})
-			}
-			prev = f.Ticks
+		d := deltas[i]
+		if d <= 0 {
+			return media.NewError(media.KindRange, f.StreamID, f.Seq, -1,
+				"timestamp regression: ticks %d after %d", f.Ticks, frames[max(0, i-1)].Ticks)
 		}
+		if d > int64(^uint32(0)) {
+			return media.NewError(media.KindOverflow, f.StreamID, f.Seq, -1, "delta %d overflows uint32", d)
+		}
+		delta := uint32(d)
+		if n := len(stts); n > 0 && stts[n-1].SampleDelta == delta {
+			stts[n-1].SampleCount++
+		} else {
+			stts = append(stts, mp4.SttsEntry{SampleCount: 1, SampleDelta: delta})
+		}
+		duration += d
 		if len(f.Payload) > int(^uint32(0)) || totalSize+uint64(len(f.Payload)) > uint64(^uint32(0)) {
 			return media.NewError(media.KindOverflow, f.StreamID, f.Seq, -1, "sample size overflow")
 		}
@@ -105,7 +114,6 @@ func WriteMP4(path string, timescale uint32, frames []media.Frame) (err error) {
 			stss = append(stss, uint32(i+1)) // stss is 1-based
 		}
 	}
-	duration := prev - frames[0].Ticks
 	var berr error
 	ftyp := mustMarshal(&mp4.Ftyp{MajorBrand: [4]byte{'i', 's', 'o', 'm'},
 		CompatibleBrands: []mp4.CompatibleBrandElem{{CompatibleBrand: [4]byte{'i', 's', 'o', 'm'}}}}, &berr)
