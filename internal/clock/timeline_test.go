@@ -79,8 +79,13 @@ func TestTimelineReorderedBackStepKeepsClock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != 50000 {
-		t.Fatalf("clock regressed to %d", got)
+	// The reordered packet reports its own earlier position...
+	if got != 49000 {
+		t.Fatalf("reordered packet placed at %d, want 49000", got)
+	}
+	// ...while the committed clock stays at the high-water mark.
+	if last, _ := tl.LastExtended(); last != 50000 {
+		t.Fatalf("committed clock moved to %d, want 50000", last)
 	}
 	if tl.BackStep() != 1000 {
 		t.Fatalf("backstep = %d, want 1000", tl.BackStep())

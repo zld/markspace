@@ -137,7 +137,11 @@ func (t *Timeline) Extend(raw uint32, refTicks uint64) (uint64, error) {
 			t.backStep = back
 		}
 		// lastRaw stays at the high-water mark so that a reordered packet
-		// cannot shift the mapping of later packets.
+		// cannot shift the mapping of later packets, but the packet itself
+		// must report its own position on the timeline, below the committed
+		// mark. Clamping it to the mark would make it collide with later
+		// data and the jitter buffer would treat it as a duplicate position.
+		return uint64(int64(t.lastExt) + delta), nil
 	}
 
 	if refTicks != 0 {
