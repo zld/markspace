@@ -201,7 +201,13 @@ func locateFromTables(out *TrackRecovery, tr *TrackScan, fileSize int64) {
 		delta = append(delta, delta[len(delta)-1])
 	}
 
+	// A declared non-zero media start is preserved as the source origin; it
+	// is never normalised away, because receivers need to know where the
+	// first sample sits.
 	ts := timeline.Ticks(0)
+	if tr.EditShift > 0 {
+		ts = timeline.Ticks(tr.EditShift)
+	}
 	si := 0
 	out.Samples = make([]Sample, 0, nSamples)
 	for c, off := range tr.Offsets {
