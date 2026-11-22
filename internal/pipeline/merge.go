@@ -62,13 +62,11 @@ func MergeTrack(pl *manifest.Playlist, results []SegmentResult, channels int) (*
 		want := int64(ref.Interval.Dur()) // 1 tick == 1 output frame at 48 kHz
 		switch r.Record.Status {
 		case ingest.OK, ingest.Recovered:
-			got := r.Frames
-			if got != want {
-				tm.Violations = append(tm.Violations,
-					fmt.Sprintf("frame count at index %d: got %d want %d", ref.Index, got, want))
-			}
-			tm.Samples = append(tm.Samples, fitFrames(r.Samples, want, channels)...)
-			tm.Frames += want
+			// Append actual frames: a streaming resampler may shift one
+			// frame across segment boundaries; the cumulative check below
+			// keeps the track timeline accountable.
+			tm.Samples = append(tm.Samples, r.Samples...)
+			tm.Frames += r.Frames
 		default: // Missing or Unrecoverable: silence preserves the timeline
 			tm.Samples = append(tm.Samples, make([]float64, want*int64(channels))...)
 			tm.Frames += want
@@ -78,19 +76,13 @@ func MergeTrack(pl *manifest.Playlist, results []SegmentResult, channels int) (*
 		return nil, &clock.StageError{Track: pl.TrackID, Stage: clock.StageMerge, Op: "coverage",
 			Err: fmt.Errorf("%d results without manifest slots", len(byKey))}
 	}
-	return tm, nil
-}
-
-// fitFrames adjusts a sample buffer to exactly want frames per channel by
-// truncating or zero-padding, keeping merge output explainable.
-func fitFrames(in []float64, want int64, channels int) []float64 {
-	n := want * int64(channels)
-	out := make([]float64, n)
-	copy(out, in)
-	if int64(len(in)) > n {
-		return out[:n:n]
+	// Cumulative frame drift must stay within one frame of the manifest
+	// timeline; anything larger is a timeline violation.
+	if d := tm.Frames - int64(pl.Duration()); d < -1 || d > 1 {
+		tm.Violations = append(tm.Violations,
+			fmt.Sprintf("track frames %d diverge from manifest duration %d", tm.Frames, pl.Duration()))
 	}
-	return out
+	return tm, nil
 }
 
 func keyOf(ref manifest.SegmentRef) string {

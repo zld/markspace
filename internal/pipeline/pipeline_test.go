@@ -129,7 +129,8 @@ func buildTrack(trackID string) (*manifest.Playlist, testSource) {
 	return &manifest.Playlist{TrackID: trackID, Refs: refs, Complete: true}, src
 }
 
-// runTrack executes ingest -> audio for every slot through the pool.
+// runTrack executes ingest concurrently, then streams audio per track in
+// manifest order (mirroring the real pipeline's stage split).
 func runTrack(t *testing.T, pl *manifest.Playlist, src testSource, workers int) *TrackMerge {
 	t.Helper()
 	v := &ingest.Validator{Src: src, Channels: 1, MaxRetries: 2}
@@ -137,27 +138,15 @@ func runTrack(t *testing.T, pl *manifest.Playlist, src testSource, workers int) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	var mu sync.Mutex
-	var results []SegmentResult
-	for _, ref := range pl.Refs {
-		ref := ref
+	records := make([]ingest.Record, len(pl.Refs))
+	for i, ref := range pl.Refs {
+		i, ref := i, ref
 		err := pool.Submit(func(ctx context.Context) error {
 			rec, err := v.Ingest(ctx, ref)
 			if err != nil {
 				return err
 			}
-			res := SegmentResult{Record: rec}
-			if rec.Status == ingest.OK || rec.Status == ingest.Recovered {
-				samples := audio.S16LEToFloat(rec.Payload)
-				rs, _ := audio.NewResampler(clock.Rate, clock.Rate, 1)
-				samples = rs.Process(samples)
-				samples = append(samples, rs.Flush()...)
-				res.Samples = samples
-				res.Frames = int64(len(samples))
-			}
-			mu.Lock()
-			results = append(results, res)
-			mu.Unlock()
+			records[i] = rec
 			return nil
 		})
 		if err != nil {
@@ -166,6 +155,24 @@ func runTrack(t *testing.T, pl *manifest.Playlist, src testSource, workers int) 
 	}
 	if err := pool.Wait(); err != nil {
 		t.Fatal(err)
+	}
+	// Audio stage: one streaming resampler per track, flushed at the end.
+	rs, err := audio.NewResampler(clock.Rate, clock.Rate, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var results []SegmentResult
+	for i, rec := range records {
+		res := SegmentResult{Record: rec}
+		if rec.Status == ingest.OK || rec.Status == ingest.Recovered {
+			samples := rs.Process(audio.S16LEToFloat(rec.Payload))
+			if i == len(records)-1 {
+				samples = append(samples, rs.Flush()...)
+			}
+			res.Samples = samples
+			res.Frames = int64(len(samples))
+		}
+		results = append(results, res)
 	}
 	tm, err := MergeTrack(pl, results, 1)
 	if err != nil {
