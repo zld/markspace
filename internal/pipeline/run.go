@@ -276,13 +276,20 @@ func normaliseTimelines(cfg Config, reps []parsedRep) *Error {
 		if len(r.Frames) == 0 {
 			return materialError(ebml.ErrBadElement, -1, "rep %s produced no frames", r.ID)
 		}
+		// Per-track monotonicity: a regression here means wrap expansion could
+		// not orient a timestamp uniquely. Keep the offending block offset.
+		for j := 1; j < len(r.Frames); j++ {
+			if r.Frames[j].T0 < r.Frames[j-1].T0 {
+				return materialError(ebml.ErrBadElement, r.Frames[j].ByteOffset,
+					"rep %s non-monotonic timestamp after wrap/drift at track block offset", r.ID)
+			}
+		}
 		trackMap[uint64(i+1)] = r.Frames
 		// Drift fit against the representation's own ideal grid; clean
 		// synthetic material fits the identity model within tolerance.
 		est := timeline.NewDriftEstimator(uint64(i+1), cfg.DriftLimitPPM)
-		for j, f := range r.Frames {
+		for _, f := range r.Frames {
 			est.Add(f.T0, f.T0) // identity reference until drift is measured
-			_ = j
 		}
 		if _, err := est.Fit(); err != nil {
 			return materialError(ebml.ErrBadElement, r.Frames[0].ByteOffset, "rep %s: %v", r.ID, err)
