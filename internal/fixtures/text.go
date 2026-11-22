@@ -2,7 +2,10 @@ package fixtures
 
 import (
 	"fmt"
+	"math"
 	"strings"
+
+	"mediaarchive/internal/clock"
 )
 
 // NormalSRT returns a valid 12-cue SRT. Two cues carry SMPTE 29.97 drop-frame
@@ -15,9 +18,9 @@ func NormalSRT() string {
 		fmt.Fprintf(&b, "%d\n%s --> %s\n", i+1, srtTime(start), srtTime(end))
 		switch i {
 		case 3:
-			b.WriteString("Field note TC 00:00:05;00 rolls from the head leader\n")
+			fmt.Fprintf(&b, "Field note TC %s rolls from the head leader\n", labelFor(start, 30000, 1001, clock.Format2997DF))
 		case 7:
-			b.WriteString("Field note TC 00:00:08;15 matches the slate\n")
+			fmt.Fprintf(&b, "Field note TC %s matches the slate\n", labelFor(start, 30000, 1001, clock.Format2997DF))
 		default:
 			fmt.Fprintf(&b, "Tape A segment %02d\n", i+1)
 		}
@@ -34,7 +37,7 @@ func MultiRateSRT() string {
 		end := start + 700
 		fmt.Fprintf(&b, "%d\n%s --> %s\n", i+1, srtTime(start), srtTime(end))
 		if i == 5 {
-			b.WriteString("PAL reel TC 00:00:04:10 verified\n")
+			fmt.Fprintf(&b, "PAL reel TC %s verified\n", labelFor(start, 25, 1, clock.Format25))
 		} else {
 			fmt.Fprintf(&b, "PAL reel cue %02d\n", i+1)
 		}
@@ -103,6 +106,21 @@ func NormalVTT() string {
 			vttTime(start), vttTime(end), i+1)
 	}
 	return b.String()
+}
+
+// labelFor converts a media millisecond offset into the SMPTE label that
+// matches it on the given frame rate, so fixture cue text and cue timing are
+// consistent and only genuine defects produce faults.
+func labelFor(ms int, num, den int64, f clock.Format) string {
+	frames := int64(math.Round(float64(ms) * float64(num) / (1000 * float64(den))))
+	if frames < 0 {
+		frames = 0
+	}
+	tc, err := clock.LabelFromFrame(frames, f)
+	if err != nil {
+		return "00:00:00:00"
+	}
+	return tc.String()
 }
 
 func srtTime(ms int) string {

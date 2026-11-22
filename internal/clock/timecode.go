@@ -184,6 +184,37 @@ func (tc Timecode) Position() (Rational, error) {
 	return tc.Format.FrameDuration().MulInt(n), nil
 }
 
+// InferFormat picks the label family for a sequence of timecodes whose
+// separator is only sometimes explicit. A drop-frame label uses ';' by
+// convention. If every label is colon-separated the result is NDF for the
+// 29.97 family. Mixed separators are ambiguous and must not be guessed.
+func InferFormat(labels []string) (Format, error) {
+	var colon, semi int
+	for _, l := range labels {
+		t := strings.TrimSpace(l)
+		if len(t) < 11 {
+			continue
+		}
+		switch t[8] {
+		case ':':
+			colon++
+		case ';':
+			semi++
+		}
+	}
+	switch {
+	case colon > 0 && semi > 0:
+		return 0, diag.New(diag.CodeAmbiguousDF, 0,
+			"timecodes mix ':' and ';' separators (%d colon, %d semicolon)", colon, semi)
+	case semi > 0:
+		return Format2997DF, nil
+	case colon > 0:
+		return Format2997NDF, nil
+	default:
+		return 0, diag.New(diag.CodeMissingBase, 0, "no SMPTE timecode labels found")
+	}
+}
+
 // ParseTimecode parses HH:MM:SS:FF or HH:MM:SS;FF under an explicit format.
 // The separator is preserved so a drop-frame label can be audited, but the
 // format decides frame arithmetic.

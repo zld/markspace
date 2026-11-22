@@ -258,15 +258,27 @@ func analyzeSubtitlePart(ctx context.Context, a AssetInput, r *assetResult, opts
 		// label family. A bare 30000/1001 rate is ambiguous and must not be
 		// silently treated as drop-frame or non-drop-frame.
 		if labels := findTimecodeLabels(c.Text); len(labels) > 0 {
-			format, ferr := subtitleLabelFormat(a.LabelFormat, fps, c.Offset)
+			format, ferr := subtitleLabelFormat(a.LabelFormat, fps, labels, c.Offset)
 			if ferr != nil {
 				r.Faults = append(r.Faults, mustFault(ferr, diag.CodeAmbiguousDF))
 			} else {
 				for _, label := range labels {
-					if _, err := clock.ParseTimecode(label, format); err != nil {
+					// Validate and cross-check the label against the cue's
+					// mapped media time. A label that names a different frame
+					// than the cue start is a sync shift, not a parse error.
+					tc, err := clock.ParseTimecode(label, format)
+					if err != nil {
 						f := mustFault(err, diag.CodeInvalidTime).AtOffset(c.Offset)
 						r.Faults = append(r.Faults, f)
 						break
+					}
+					pos, err := tc.Position()
+					if err != nil {
+						break
+					}
+					if shift := pos.Millis() - media; math.Abs(shift) > TimecodeShiftToleranceMs {
+						r.Faults = append(r.Faults, diag.New(diag.CodeTimestampRollback, c.Offset,
+							"cue %d timecode %s is %.3f ms from its mapped start", c.Index, label, shift).WithMedia(media))
 					}
 				}
 			}
@@ -410,7 +422,7 @@ func oneLine(s string) string {
 // subtitleLabelFormat resolves the SMPTE family used for labels embedded in a
 // subtitle. An explicit per-asset declaration wins; otherwise the rate must be
 // unambiguous, or the caller gets an offset-bearing CodeAmbiguousDF fault.
-func subtitleLabelFormat(declared, fps string, offset int64) (clock.Format, error) {
+func subtitleLabelFormat(declared, fps string, labels []string, offset int64) (clock.Format, error) {
 	if declared != "" {
 		f, err := clock.ParseFormat(declared)
 		if err != nil {
@@ -418,12 +430,29 @@ func subtitleLabelFormat(declared, fps string, offset int64) (clock.Format, erro
 		}
 		return f, nil
 	}
+	// An explicit ';' separator declares drop-frame; all-colon declares NDF.
+	// Only when the rate is not 29.97 do we fall back to the rate itself.
+	if inferred, err := clock.InferFormat(labels); err == nil {
+		if f, rateErr := clock.FormatFromRate(fps, offset); rateErr == nil {
+			if f == clock.Format2997DF && inferred == clock.Format2997NDF {
+				return 0, diag.New(diag.CodeAmbiguousDF, offset,
+					"labels use ':' but the asset declares 29.97df")
+			}
+			return inferred, nil
+		}
+		return inferred, nil
+	}
 	f, err := clock.FormatFromRate(fps, offset)
 	if err != nil {
 		return 0, err
 	}
 	return f, nil
 }
+
+// TimecodeShiftToleranceMs is how far a cue's embedded SMPTE label may sit
+// from its mapped media start before the mapping is reported as shifted. Frame
+// accuracy on archive material is one frame (~33 ms at 29.97).
+const TimecodeShiftToleranceMs = 40.0
 
 // findTimecodeLabels extracts HH:MM:SS:FF / HH:MM:SS;FF tokens from cue text.
 func findTimecodeLabels(text string) []string {

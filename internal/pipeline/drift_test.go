@@ -3,6 +3,8 @@ package pipeline
 import (
 	"context"
 	"math"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"mediaarchive/internal/fixtures"
@@ -90,5 +92,47 @@ func TestTruncatedFixtureRecoveryAndStrict(t *testing.T) {
 	}
 	if _, err := Run(context.Background(), Options{Mode: ModeStrict, Workers: 2, Queue: 2, FPS: "30000/1001"}, assets); err == nil {
 		t.Fatal("strict mode accepted truncated media")
+	}
+}
+
+func TestCueTimecodeShiftIsLocated(t *testing.T) {
+	dir := t.TempDir()
+	srt := "1\n00:00:02,000 --> 00:00:03,000\nslate TC 00:00:10;00 is wrong\n\n"
+	path := filepath.Join(dir, "shift.srt")
+	if err := os.WriteFile(path, []byte(srt), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m, err := Run(context.Background(), Options{Mode: ModeRecover, Workers: 1, Queue: 1, FPS: "30000/1001"}, []AssetInput{
+		{Asset: "shift", Subtitle: path, FPS: "30000/1001", LabelFormat: "29.97df"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, f := range m.Faults {
+		if f.Code == "timestamp_rollback" && f.HasMedia {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("shift not reported: %v", m.Faults)
+	}
+}
+
+func TestMixedSeparatorsAreAmbiguous(t *testing.T) {
+	dir := t.TempDir()
+	srt := "1\n00:00:01,000 --> 00:00:02,000\nTC 00:00:01;00 then TC 00:00:01:05\n\n"
+	path := filepath.Join(dir, "mix.srt")
+	if err := os.WriteFile(path, []byte(srt), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m, err := Run(context.Background(), Options{Mode: ModeRecover, Workers: 1, Queue: 1, FPS: "25"}, []AssetInput{
+		{Asset: "mix", Subtitle: path, FPS: "25"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Faults) == 0 {
+		t.Fatal("mixed separators accepted silently")
 	}
 }

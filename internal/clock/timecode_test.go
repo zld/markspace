@@ -247,3 +247,18 @@ func TestParseRateKeepsRationalAndAmbiguitySeparate(t *testing.T) {
 		t.Fatalf("bad rate accepted: %v", err)
 	}
 }
+
+func TestInferFormatFromSeparators(t *testing.T) {
+	if f, err := InferFormat([]string{"00:00:01;00", "00:00:02;10"}); err != nil || f != Format2997DF {
+		t.Fatalf("semicolon labels: %v %v", f, err)
+	}
+	if f, err := InferFormat([]string{"00:00:01:00", "00:00:02:10"}); err != nil || f != Format2997NDF {
+		t.Fatalf("colon labels: %v %v", f, err)
+	}
+	if _, err := InferFormat([]string{"00:00:01:00", "00:00:02;10"}); !diag.IsCode(err, diag.CodeAmbiguousDF) {
+		t.Fatalf("mixed separators accepted: %v", err)
+	}
+	if _, err := InferFormat([]string{"no labels"}); !diag.IsCode(err, diag.CodeMissingBase) {
+		t.Fatalf("no labels accepted: %v", err)
+	}
+}
