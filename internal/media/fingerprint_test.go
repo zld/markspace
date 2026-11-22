@@ -32,8 +32,9 @@ func TestFingerprintDeterministicAndLengthSensitive(t *testing.T) {
 
 func TestFingerprintTolerance(t *testing.T) {
 	base := pcm(1000, -2000, 3000, -4000)
-	// Small amplitude jitter within one quantization bin at tolerance 1 (step 4).
-	jitter := pcm(1001, -1999, 3002, -4001)
+	// Small amplitude jitter that stays inside the same quantization bin at
+	// tolerance 1 (step 4, truncation toward zero).
+	jitter := pcm(1003, -2003, 3001, -4002)
 	exact, _ := Fingerprint(base, FingerprintConfig{Tolerance: 0})
 	jitterExact, _ := Fingerprint(jitter, FingerprintConfig{Tolerance: 0})
 	if exact == jitterExact {
