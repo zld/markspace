@@ -349,3 +349,45 @@ func EncodeStream(frames []*Frame) ([]byte, error) {
 	}
 	return out, nil
 }
+
+// ParseFrameAt decodes and fully validates the record beginning at offset in
+// buf. It is used by streaming stages that consume verified index entries
+// without trusting the index alone.
+func ParseFrameAt(buf []byte, offset int64, limits Limits) (*Frame, error) {
+	if offset < 0 || offset >= int64(len(buf)) {
+		return nil, New(CatTruncatedFrame, StageScan, "offset %d outside input of %d bytes",
+			offset, len(buf)).WithOffset(offset)
+	}
+	if limits.MaxPayload == 0 {
+		limits = DefaultLimits()
+	}
+	fr := NewFrameReader(bytesReaderAt(buf, offset), limits)
+	f, err := fr.Next()
+	if err != nil {
+		if e, ok := AsError(err); ok {
+			e.FrameOffset = offset + e.FrameOffset
+			return nil, e
+		}
+		return nil, err
+	}
+	f.Offset = offset
+	return f, nil
+}
+
+type sliceReader struct {
+	buf []byte
+	pos int
+}
+
+func bytesReaderAt(buf []byte, off int64) *sliceReader {
+	return &sliceReader{buf: buf, pos: int(off)}
+}
+
+func (s *sliceReader) Read(p []byte) (int, error) {
+	if s.pos >= len(s.buf) {
+		return 0, io.EOF
+	}
+	n := copy(p, s.buf[s.pos:])
+	s.pos += n
+	return n, nil
+}
