@@ -140,7 +140,9 @@ func runAnalyze(args []string, stdout, stderr io.Writer) int {
 	assets, err := collectAssets(*fixture, *workdir, *fps, inputs)
 	if err != nil {
 		fmt.Fprintf(stderr, "analyze: %v\n", err)
-		return 1
+		// An unknown fixture name or missing input path is a parameter
+		// problem, not damaged media, so it must return the argument code.
+		return 2
 	}
 	if len(assets) == 0 {
 		fmt.Fprintf(stderr, "analyze: no inputs (use --fixture or --input)\n")

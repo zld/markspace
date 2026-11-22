@@ -96,7 +96,9 @@ func TestBadArgsReturnTwo(t *testing.T) {
 		{"analyze", "--workers", "0"},
 		{"analyze", "--queue", "0"},
 		{"analyze", "--fixture", "generated", "--bogus"},
-		{"analyze"}, // no inputs
+		{"analyze"},                      // no inputs
+		{"analyze", "--fixture", "nope"}, // unknown fixture is a param error
+		{"analyze", "--input", filepath.Join(t.TempDir(), "missing.mp4")},
 	}
 	for _, args := range cases {
 		if code, out, errs := runCLI(t, args...); code != 2 {
