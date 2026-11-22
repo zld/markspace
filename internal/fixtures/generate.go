@@ -130,7 +130,7 @@ func genNormal2997(dir string) (Asset, error) {
 	if err != nil {
 		return Asset{}, err
 	}
-	srtPath, err := writeSetFile(dir, "normal.srt", []byte(NormalSRT()))
+	srtPath, err := writeSetFile(dir, "normal_2997.srt", []byte(NormalSRT()))
 	if err != nil {
 		return Asset{}, err
 	}
@@ -166,7 +166,7 @@ func genDrift(dir string) (Asset, error) {
 	if err != nil {
 		return Asset{}, err
 	}
-	srtPath, err := writeSetFile(dir, "drift.srt", []byte(DriftSRT()))
+	srtPath, err := writeSetFile(dir, "drift_2997.srt", []byte(DriftSRT()))
 	if err != nil {
 		return Asset{}, err
 	}
@@ -185,8 +185,8 @@ func genVFR(dir string) (Asset, error) {
 		switch {
 		case i == 120:
 			delta = 9009 // three-frame hold
-		case i%37 == 0 && i > 0:
-			delta = 6006 // single dropped frame
+		case i == 180:
+			delta = 1001 // short interval: genuine VFR speed-up
 		}
 		spec.Samples = append(spec.Samples, MP4Sample{Size: sizes[i], Delta: delta, IsSync: i%24 == 0})
 	}

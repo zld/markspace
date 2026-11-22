@@ -132,7 +132,14 @@ func analyzeMP4Part(ctx context.Context, a AssetInput, r *assetResult, fps strin
 				r.Faults = append(r.Faults, f)
 			}
 		}
-		r.Faults = append(r.Faults, vfaults...)
+		// Align reports anomalies by sample index; the stream view reports the
+		// same anomalies with sample byte offsets. Keep only the byte-locatable
+		// form to avoid double-counting one physical defect.
+		for _, f := range vfaults {
+			if f.Code != diag.CodeVFRGap {
+				r.Faults = append(r.Faults, f)
+			}
+		}
 		r.Faults = append(r.Faults, v.DetectVFR(0)...)
 		// Drift is measured from keyframe cadence against the declared rate.
 		// A robust median of per-GOP ratios keeps isolated VFR holds from
