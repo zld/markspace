@@ -265,15 +265,17 @@ func Run(opts Options) (*Result, error) {
 			return nil, err
 		}
 	}
-	// Inject an event that the watermark has already passed, which must force
-	// a deterministic replay of its sealed interval.
-	lateAt := opts.Duration / 2
-	if lateAt < opts.Segment {
-		lateAt = opts.Segment
+	// Inject an event the watermark has already passed. It is placed at the
+	// midpoint of the most recently sealed segment so it is unambiguously late
+	// yet still inside the configured replay window, and therefore must force
+	// a deterministic replay rather than a bounded-window rejection.
+	if lateAt, ok := lateTarget(tl); ok {
+		if err := tl.Push(timeline.Event{Time: lateAt, Track: 250, Seq: ^uint64(0), Payload: "late"}); err != nil {
+			return nil, err
+		}
 	}
-	if err := tl.Push(timeline.Event{Time: lateAt, Track: 250, Seq: ^uint64(0), Payload: "late"}); err != nil {
-		return nil, err
-	}
+	// With zero delivered packets there is nothing to replay; late_events
+	// then honestly reports 0 rather than fabricating a scenario.
 	if err := tl.Flush(); err != nil {
 		return nil, err
 	}
@@ -643,6 +645,18 @@ func rtpTimestampToNanos(ts uint32) media.Nano {
 		return 0
 	}
 	return n
+}
+
+// lateTarget picks a media time inside the most recently sealed segment. Such
+// a time is behind the watermark by construction, so an event stamped there is
+// late, and it is recent enough to fall inside the replay window.
+func lateTarget(tl *timeline.Timeline) (media.Nano, bool) {
+	segs := tl.Segments()
+	if len(segs) == 0 {
+		return 0, false
+	}
+	last := segs[len(segs)-1]
+	return last.Start + (last.End-last.Start)/2, true
 }
 
 // mustLoad returns the current checkpoint or nil. It is used only after a

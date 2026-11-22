@@ -88,12 +88,12 @@ func runDemo(args []string) int {
 		fmt.Fprintf(os.Stderr, "invalid --segment: %v\n", err)
 		return 1
 	}
-	jit, err := parseDuration(*jitter)
+	jit, err := parseNonNegativeDuration(*jitter)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "invalid --jitter: %v\n", err)
 		return 1
 	}
-	lat, err := parseDuration(*late)
+	lat, err := parseNonNegativeDuration(*late)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "invalid --late: %v\n", err)
 		return 1
@@ -140,7 +140,10 @@ func demoInvariantsHold(r *pipeline.Result) bool {
 		}
 	}
 	check("av_sync_max_ms<=40", r.AVSyncMaxMS <= 40, fmt.Sprintf("%.2f", r.AVSyncMaxMS))
-	check("packet_recovery_rate>=0.85", r.PacketRecoveryRate >= 0.85, fmt.Sprintf("%.3f", r.PacketRecoveryRate))
+	// A total-loss channel genuinely fails this quality bar; passing it
+	// silently would misrepresent the run.
+	check("packet_recovery_rate>=0.85", r.PacketRecoveryRate >= 0.85,
+		fmt.Sprintf("%.3f (%d received)", r.PacketRecoveryRate, r.RecvStats.Received))
 	check("p95_latency_ms<=250", r.P95LatencyMS <= 250, fmt.Sprintf("%.2f", r.P95LatencyMS))
 	check("resume_outputs", r.ResumeOutputsEqual, fmt.Sprintf("%t", r.ResumeOutputsEqual))
 	check("aligned_boundaries", r.Segments > 0, fmt.Sprintf("%d", r.Segments))
@@ -210,8 +213,33 @@ func runVerify(args []string) int {
 	return report.ExitCode()
 }
 
-// parseDuration accepts Go durations plus a plain millisecond count.
+// parseDuration accepts Go durations plus a plain millisecond count and
+// requires a strictly positive value.
 func parseDuration(s string) (media.Nano, error) {
+	d, err := parseRawDuration(s)
+	if err != nil {
+		return 0, err
+	}
+	if d <= 0 {
+		return 0, fmt.Errorf("must be positive")
+	}
+	return media.Nano(d), nil
+}
+
+// parseNonNegativeDuration is parseDuration without the positivity check:
+// zero jitter and zero allowed lateness are meaningful configurations.
+func parseNonNegativeDuration(s string) (media.Nano, error) {
+	d, err := parseRawDuration(s)
+	if err != nil {
+		return 0, err
+	}
+	if d < 0 {
+		return 0, fmt.Errorf("must not be negative")
+	}
+	return media.Nano(d), nil
+}
+
+func parseRawDuration(s string) (time.Duration, error) {
 	d, err := time.ParseDuration(s)
 	if err != nil {
 		ms, convErr := strconv.ParseInt(s, 10, 64)
@@ -220,10 +248,7 @@ func parseDuration(s string) (media.Nano, error) {
 		}
 		d = time.Duration(ms) * time.Millisecond
 	}
-	if d <= 0 {
-		return 0, fmt.Errorf("must be positive")
-	}
-	return media.Nano(d), nil
+	return d, nil
 }
 
 // parseBitrates parses a comma-separated list of positive kbps values.
