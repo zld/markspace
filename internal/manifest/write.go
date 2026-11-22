@@ -28,6 +28,15 @@ type Range struct {
 	EndUS   int64 `json:"end_us"`
 }
 
+// Silence status values. Unknown material always carries an explicit non-silent
+// status rather than being reported as silence.
+const (
+	StatusSilent          = "silent"
+	StatusPartialWindow   = "partial-window"
+	StatusTimestampRegress = "timestamp-regress"
+	StatusGapCovered      = "gap-covered"
+)
+
 // Silence is a detected silence interval. Status explains why an interval is or
 // is not classified as silence; unknown intervals are never reported silent.
 type Silence struct {
