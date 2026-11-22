@@ -23,8 +23,12 @@ type ScanResult struct {
 }
 
 // IsMP4 reports whether data looks like an ISO BMFF (MP4) container
-// rather than an Annex B elementary stream.
+// rather than an Annex B elementary stream: it must probe cleanly and
+// start with an ftyp box.
 func IsMP4(data []byte) bool {
+	if len(data) < 8 || string(data[4:8]) != "ftyp" {
+		return false
+	}
 	_, err := mp4.Probe(bytes.NewReader(data))
 	return err == nil
 }
