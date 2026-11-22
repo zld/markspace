@@ -213,6 +213,9 @@ func parseTimestampFlex(s string, allowShort bool) (clock.Rational, error) {
 func parseSRT(data []byte, source string) *ParseResult {
 	res := &ParseResult{Source: source}
 	seenIndex := 0
+	// A record with a valid timing line but no payload text, or a final record
+	// with no --> at all, is damage from a stopped capture rather than bad
+	// authoring. Both are reported as CodeTruncated at the record's offset.
 	for _, b := range splitBlocks(data) {
 		ls := lines(b)
 		if len(ls) == 0 {
@@ -240,7 +243,14 @@ func parseSRT(data []byte, source string) *ParseResult {
 		}
 		start, end, err := parseSRTTiming(ls[timingLine])
 		if err != nil {
-			res.Faults = append(res.Faults, diag.New(diag.CodeInvalidTime, b.off,
+			// A record cut mid-timestamp has no --> yet; that is a truncated
+			// body rather than an illegal time, and needs a different code so
+			// operators can tell capture loss from authoring mistakes.
+			code := diag.CodeInvalidTime
+			if !strings.Contains(ls[timingLine], "-->") {
+				code = diag.CodeTruncated
+			}
+			res.Faults = append(res.Faults, diag.New(code, b.off,
 				"srt cue %d timing: %v", firstNonEmpty(idx, seenIndex+1), err))
 			continue
 		}
@@ -250,6 +260,10 @@ func parseSRT(data []byte, source string) *ParseResult {
 			continue
 		}
 		text := strings.Join(ls[timingLine+1:], "\n")
+		if timingLine+1 >= len(ls) {
+			res.Faults = append(res.Faults, diag.New(diag.CodeTruncated, b.off,
+				"srt cue %d has no payload text", firstNonEmpty(idx, seenIndex+1)))
+		}
 		seenIndex++
 		res.Cues = append(res.Cues, Cue{
 			Index:  firstNonEmpty(idx, seenIndex),

@@ -84,6 +84,7 @@ func analyzeAsset(ctx context.Context, a AssetInput, opts Options) (*assetResult
 	if opts.Mode == ModeStrict && len(r.Faults) > 0 {
 		return r, firstFault(r.Faults)
 	}
+	r.AlignmentErrorMs = maxFloat(r.AlignmentErrorMs, rowAlignmentError(r.Rows))
 	kept := filterRows(r.Rows, r.Segments, opts.Mode)
 	r.Skipped += int64(len(r.Rows) - len(kept))
 	r.Rows = kept
@@ -144,7 +145,7 @@ func analyzeMP4Part(ctx context.Context, a AssetInput, r *assetResult, fps strin
 		for i, s := range v.Samples {
 			dts[i] = s.DTS
 		}
-		ivs, vfaults, verr := align.DeriveIntervals(dts, 0, align.VFROptions{Timescale: int64(v.Timescale)})
+		_, vfaults, verr := align.DeriveIntervals(dts, 0, align.VFROptions{Timescale: int64(v.Timescale)})
 		if verr != nil {
 			if f, ok := diag.As(verr); ok {
 				r.Faults = append(r.Faults, f)
@@ -165,24 +166,13 @@ func analyzeMP4Part(ctx context.Context, a AssetInput, r *assetResult, fps strin
 		if ppm, ok := keyframeDriftPPM(v, fps); ok {
 			r.DriftPPM, r.HasDrift = ppm, true
 		}
-		// Cross-stage alignment: every merged keyframe row must still agree
-		// with its exact source time after tick->float conversion.
-		for _, row := range r.Rows {
-			if row.Stage != "frame" {
-				continue
-			}
-			d := math.Abs(row.StartMs - float64(row.StartUs)/1000)
-			if d > r.AlignmentErrorMs {
-				r.AlignmentErrorMs = d
-			}
-		}
-		_ = median(ivs)
+		// Cross-stage alignment: every manifest row must still agree with its
+		// exact source time after rational-to-float conversion.
+		r.AlignmentErrorMs = maxFloat(r.AlignmentErrorMs, rowAlignmentError(r.Rows))
 	}
 	return nil
 }
 
-// vdriftPoints pairs each keyframe's media time with its ideal cadence label,
-// giving the least-squares fit something trustworthy to regress against.
 // keyframeDriftPPM measures clock drift as the median relative deviation of
 // real inter-keyframe spans from the span implied by the declared frame rate.
 func keyframeDriftPPM(v *stream.Track, fps string) (float64, bool) {
@@ -218,32 +208,25 @@ func keyframeDriftPPM(v *stream.Track, fps string) (float64, bool) {
 	return med * 1e6, true
 }
 
-func median(ivs []align.Interval) float64 {
-	if len(ivs) == 0 {
-		return 0
-	}
-	ds := make([]float64, len(ivs))
-	for i, iv := range ivs {
-		ds[i] = iv.DurationMs
-	}
-	return medianOf(ds)
-}
-
-func medianOf(v []float64) float64 {
-	if len(v) == 0 {
-		return 0
-	}
-	cp := append([]float64(nil), v...)
-	for i := 1; i < len(cp); i++ {
-		for j := i; j > 0 && cp[j] < cp[j-1]; j-- {
-			cp[j], cp[j-1] = cp[j-1], cp[j]
+// rowAlignmentError is the worst gap between a row's float media time and its
+// exact microsecond time. It is computed after every source is merged into the
+// asset so subtitle and RTP rows are covered too.
+func rowAlignmentError(rows []Row) float64 {
+	worst := 0.0
+	for _, row := range rows {
+		d := math.Abs(row.StartMs - float64(row.StartUs)/1000)
+		if d > worst {
+			worst = d
 		}
 	}
-	n := len(cp)
-	if n%2 == 1 {
-		return cp[n/2]
+	return worst
+}
+
+func maxFloat(a, b float64) float64 {
+	if a > b {
+		return a
 	}
-	return (cp[n/2-1] + cp[n/2]) / 2
+	return b
 }
 
 func analyzeSubtitlePart(ctx context.Context, a AssetInput, r *assetResult, opts Options, fps string) error {

@@ -56,8 +56,8 @@ func TestSRTTruncatedTailRecorded(t *testing.T) {
 	if len(res.Cues) != 1 {
 		t.Fatalf("cues = %d", len(res.Cues))
 	}
-	if !res.HasCode(diag.CodeInvalidTime) {
-		t.Fatalf("truncated timing accepted: %v", res.Faults)
+	if !res.HasCode(diag.CodeTruncated) {
+		t.Fatalf("truncated timing not classified as truncation: %v", res.Faults)
 	}
 	if res.Bytes != int64(len(src)) {
 		t.Fatalf("bytes = %d", res.Bytes)
@@ -100,5 +100,44 @@ func TestZeroLengthCueRejected(t *testing.T) {
 	res := Parse(strings.NewReader("WEBVTT\n\n00:00:02.000 --> 00:00:02.000\nzero\n"), "z.vtt")
 	if len(res.Cues) != 0 || !res.HasCode(diag.CodeInvalidTime) {
 		t.Fatalf("zero cue accepted: %+v", res)
+	}
+}
+
+func TestTruncatedRecordIsDistinctFromInvalidTime(t *testing.T) {
+	// A record cut before the arrow must be classified as truncation, not as
+	// an illegal clock value.
+	res := Parse(strings.NewReader("1\n00:00:01,000 --> 00:00:02,000\nok\n\n2\n00:00:03,000"), "cut.srt")
+	if len(res.Cues) != 1 {
+		t.Fatalf("cues = %d", len(res.Cues))
+	}
+	f, ok := diag.As(res.Err())
+	if !ok || f.Code != diag.CodeTruncated {
+		t.Fatalf("fault = %+v", res.Faults)
+	}
+	if f.Offset != 36 {
+		t.Fatalf("offset = %d, want 36", f.Offset)
+	}
+
+	// A timing line present but with no payload is also truncation.
+	res = Parse(strings.NewReader("1\n00:00:01,000 --> 00:00:02,000\n\n2\n00:00:03,000 --> 00:00:04,000\nok\n"), "empty.srt")
+	if !res.HasCode(diag.CodeTruncated) {
+		t.Fatalf("empty payload not flagged: %v", res.Faults)
+	}
+	if len(res.Cues) != 2 {
+		t.Fatalf("cues = %d", len(res.Cues))
+	}
+}
+
+func TestVTTBOMAndCRLF(t *testing.T) {
+	src := "\xEF\xBB\xBFWEBVTT\r\n\r\n00:00:01.000 --> 00:00:02.000\r\nline one\r\nline two\r\n\r\n"
+	res := Parse(strings.NewReader(src), "crlf.vtt")
+	if len(res.Faults) != 0 {
+		t.Fatalf("faults: %v", res.Faults)
+	}
+	if len(res.Cues) != 1 || res.Cues[0].Text != "line one\nline two" {
+		t.Fatalf("cue = %+v", res.Cues)
+	}
+	if res.Cues[0].Offset <= 3 {
+		t.Fatalf("offset = %d, BOM not included", res.Cues[0].Offset)
 	}
 }
