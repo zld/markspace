@@ -1,0 +1,8 @@
+# Local pipeline working directories and build artifacts
+.pipeline-tmp/
+.test-tmp-*/
+run-a/
+run-b/
+chk-*/
+*.out
+/ingest-bin
