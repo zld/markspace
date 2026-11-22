@@ -30,6 +30,11 @@ func NewQueue[T any](capacity int) *Queue[T] {
 // Send 发送元素；队列满时阻塞（背压），取消或关闭时返回错误。
 func (q *Queue[T]) Send(ctx context.Context, v T) error {
 	select {
+	case <-q.done:
+		return ErrClosed
+	default:
+	}
+	select {
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-q.done:
