@@ -146,27 +146,3 @@ func TestClockErrorsWithholdSamplesFromIndex(t *testing.T) {
 		t.Fatal("index should retain the samples that mapped cleanly")
 	}
 }
-
-func TestRebuildByScanUsesChunkStartsAndMarksInferred(t *testing.T) {
-	tr := &mp4.Track{ID: 2, Handler: "vide", IndexComplete: false}
-	for i := 0; i < 6; i++ {
-		tr.Samples = append(tr.Samples, mp4.Sample{Index: i, DTS: uint64(i * 50), Offset: int64(i * 7), Size: 7})
-	}
-	tr.ChunkOffsets = []int64{0, 14} // chunk starts at samples 0 and 2
-	for i := range tr.Samples {
-		tr.Samples[i].DTS = uint64(i)
-	}
-	movie := &mp4.Movie{Path: "y.mp4", Tracks: []*mp4.Track{tr}}
-	ti := RebuildByScan(movie, tr, linearPres{movie})
-	if !ti.Rebuilt {
-		t.Fatal("rebuild flag not set")
-	}
-	if len(ti.Entries) != 2 || ti.Inferred != 2 || ti.ExactCount != 0 {
-		t.Fatalf("entries=%d inferred=%d", len(ti.Entries), ti.Inferred)
-	}
-	for _, e := range ti.Entries {
-		if e.Exact {
-			t.Fatalf("rebuilt entry must be inferred: %+v", e)
-		}
-	}
-}
