@@ -8,9 +8,21 @@ import (
 )
 
 // put16/put32/put64 append big-endian integers to a buffer.
-func put16(b *bytes.Buffer, v uint16) { var t [2]byte; binary.BigEndian.PutUint16(t[:], v); b.Write(t[:]) }
-func put32(b *bytes.Buffer, v uint32) { var t [4]byte; binary.BigEndian.PutUint32(t[:], v); b.Write(t[:]) }
-func put64(b *bytes.Buffer, v uint64) { var t [8]byte; binary.BigEndian.PutUint64(t[:], v); b.Write(t[:]) }
+func put16(b *bytes.Buffer, v uint16) {
+	var t [2]byte
+	binary.BigEndian.PutUint16(t[:], v)
+	b.Write(t[:])
+}
+func put32(b *bytes.Buffer, v uint32) {
+	var t [4]byte
+	binary.BigEndian.PutUint32(t[:], v)
+	b.Write(t[:])
+}
+func put64(b *bytes.Buffer, v uint64) {
+	var t [8]byte
+	binary.BigEndian.PutUint64(t[:], v)
+	b.Write(t[:])
+}
 
 func encodeMdhd(ts uint32, deltas []uint32) []byte {
 	var total uint64
@@ -37,8 +49,8 @@ func encodeMvhd(ts uint32, deltas []uint32) []byte {
 	put32(b, 0)
 	put32(b, ts)
 	put32(b, uint32(total))
-	put32(b, 0x00010000) // rate 1.0
-	put16(b, 0x0100)     // volume
+	put32(b, 0x00010000)      // rate 1.0
+	put16(b, 0x0100)          // volume
 	b.Write(make([]byte, 10)) // reserved
 	b.Write(make([]byte, 36)) // identity matrix
 	b.Write(make([]byte, 24)) // pre_defined
@@ -51,8 +63,8 @@ func encodeTkhd(trackID uint32) []byte {
 	put32(b, 0)
 	put32(b, 0)
 	put32(b, trackID)
-	put32(b, 0) // reserved
-	put32(b, 0) // duration (patched context not needed for parsing tests)
+	put32(b, 0)               // reserved
+	put32(b, 0)               // duration (patched context not needed for parsing tests)
 	b.Write(make([]byte, 8))  // reserved
 	put16(b, 0)               // layer/alt
 	put16(b, 0)               // volume

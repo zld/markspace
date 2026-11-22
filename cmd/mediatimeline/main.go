@@ -28,27 +28,32 @@ func main() {
 	}
 	cmd := os.Args[1]
 	args := parseFlags(os.Args[2:])
-	var code int
-	var err error
-	switch cmd {
-	case "demo":
-		code, err = runDemo(args)
-	case "corrupt":
-		code, err = runCorrupt(args)
-	case "resume":
-		code, err = runResume(args)
-	case "-h", "--help", "help":
-		usage()
-		return
-	default:
-		fmt.Fprintf(os.Stderr, "unknown command %q\n", cmd)
-		usage()
-		os.Exit(1)
-	}
+	code, err := dispatch(cmd, args)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 	}
 	os.Exit(code)
+}
+
+// dispatch routes one command and returns the documented exit code. Scenario
+// commands that locate recoverable damage communicate it through their normal
+// printed fields plus the code, not a thrown error.
+func dispatch(cmd string, args flags) (int, error) {
+	switch cmd {
+	case "demo":
+		return runDemo(args)
+	case "corrupt":
+		return runCorrupt(args)
+	case "resume":
+		return runResume(args)
+	case "-h", "--help", "help":
+		usage()
+		return 0, nil
+	default:
+		fmt.Fprintf(os.Stderr, "unknown command %q\n", cmd)
+		usage()
+		return 1, nil
+	}
 }
 
 func usage() {
@@ -109,12 +114,14 @@ func runCorrupt(f flags) (int, error) {
 		kind = "truncated-stbl"
 	}
 	loc, err := app.RunCorrupt(workDir(), kind)
-	if err != nil {
-		return classify(err), err
-	}
+	// The localization fields are the contract even when damage is present;
+	// print them first, then return the structured error for exit-code mapping.
 	fmt.Printf("error_offset=%d\ntrack_id=%d\nsample_index=%d\n",
 		loc.Offset, loc.TrackID, loc.SampleIndex)
-	return 2, nil
+	if err != nil {
+		return classify(err), nil
+	}
+	return 0, nil
 }
 
 func runResume(f flags) (int, error) {

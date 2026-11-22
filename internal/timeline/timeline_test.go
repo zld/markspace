@@ -14,7 +14,7 @@ func TestWatermarkMonotonicAndLate(t *testing.T) {
 	w := &Watermark{}
 	seq := []container.SampleEvent{
 		ev(1, 0, 100), ev(1, 1, 200), ev(1, 2, 150), // third is late
-		ev(1, 3, 300), ev(1, 4, 50),                 // also late
+		ev(1, 3, 300), ev(1, 4, 50), // also late
 	}
 	wantLate := []bool{false, false, true, false, true}
 	for i, e := range seq {

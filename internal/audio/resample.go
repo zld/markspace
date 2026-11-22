@@ -15,10 +15,10 @@ import (
 type Resampler struct {
 	inRate      uint32
 	outRate     uint32
-	totalInput  uint64 // known total input frames; 0 treats the final block as end
-	phaseNum    uint64 // next output position on the global input timeline
-	consumed    uint64 // total input frames presented so far
-	sampleCount uint64 // total output frames emitted
+	totalInput  uint64    // known total input frames; 0 treats the final block as end
+	phaseNum    uint64    // next output position on the global input timeline
+	consumed    uint64    // total input frames presented so far
+	sampleCount uint64    // total output frames emitted
 	prevFrame   []float64 // last frame of the previous block, for boundary interp
 	lastFrame   []float64
 	channels    int
