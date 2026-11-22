@@ -24,11 +24,11 @@ type Timeline struct {
 	clockRate uint32
 
 	// lastRaw is the most recently accepted 32-bit timestamp.
-	lastRaw  uint32
-	lastExt  uint64
-	hasLast  bool
-	wraps    int
-	backStep uint64 // furthest backwards jitter seen, in ticks
+	lastRaw   uint32
+	lastExt   uint64
+	originRaw uint64
+	hasLast   bool
+	backStep  uint64 // furthest backwards jitter seen, in ticks
 
 	// dependency of the extended clock on the arrival clock. A device whose
 	// clock runs at driftPPM relative to the reference advances 1e6+driftPPM
@@ -49,8 +49,16 @@ func NewTimeline(clockRate uint32) (*Timeline, error) {
 // ClockRate returns the stream clock rate in ticks per second.
 func (t *Timeline) ClockRate() uint32 { return t.clockRate }
 
-// Wraps returns the number of 32-bit wrap-arounds observed.
-func (t *Timeline) Wraps() int { return t.wraps }
+// Wraps returns the number of 32-bit wrap-arounds crossed by the committed
+// timeline. It is derived from the total advance, so reordering or rejected
+// jumps cannot inflate it.
+func (t *Timeline) Wraps() int {
+	if !t.hasLast {
+		return 0
+	}
+	base := t.originRaw / Modulus
+	return int(t.lastExt/Modulus - base)
+}
 
 // LastExtended returns the most recent extended timestamp and whether one
 // exists.
@@ -79,6 +87,7 @@ func (t *Timeline) Extend(raw uint32, refTicks uint64) (uint64, error) {
 	if !t.hasLast {
 		t.lastRaw = raw
 		t.lastExt = uint64(raw)
+		t.originRaw = uint64(raw)
 		t.hasLast = true
 		if refTicks != 0 {
 			t.refAtLast = refTicks
@@ -90,8 +99,6 @@ func (t *Timeline) Extend(raw uint32, refTicks uint64) (uint64, error) {
 	// Signed 32-bit delta handles ordinary advancement, reordering, and
 	// wrap-around in one operation.
 	delta := int64(int32(raw - t.lastRaw))
-	forwardWrap := raw < t.lastRaw && delta > 0
-	backwardWrap := raw > t.lastRaw && delta < 0
 
 	if delta > 0 {
 		if delta > maxForwardStep {
@@ -104,7 +111,13 @@ func (t *Timeline) Extend(raw uint32, refTicks uint64) (uint64, error) {
 			if t.driftPPM != 0 {
 				expected = refDelta + uint64(int64(refDelta)*t.driftPPM/1_000_000)
 			}
-			tolerance := expected/4 + uint64(t.clockRate)/50 + 1
+			// Tolerance must not scale with the arrival delta: several
+			// packets routinely arrive back to back (a burst), each advancing
+			// the media clock by a full packet interval. It is instead a
+			// fixed slack plus a generous fraction of the expected delta.
+			// 250 ms of media is beyond any plausible queueing delay and far
+			// below a genuine clock glitch.
+			tolerance := expected/2 + uint64(t.clockRate)/4 + 1
 			if uint64(delta) > expected+tolerance {
 				// A forward jump far beyond what the arrival clock supports
 				// is a clock glitch: do not advance the committed timeline.
@@ -114,9 +127,6 @@ func (t *Timeline) Extend(raw uint32, refTicks uint64) (uint64, error) {
 		}
 		t.lastExt = uint64(int64(t.lastExt) + delta)
 		t.lastRaw = raw
-		if forwardWrap {
-			t.wraps++
-		}
 	} else if delta < 0 {
 		back := uint64(-delta)
 		if back > maxWrapJump {
@@ -125,9 +135,6 @@ func (t *Timeline) Extend(raw uint32, refTicks uint64) (uint64, error) {
 		}
 		if back > t.backStep {
 			t.backStep = back
-		}
-		if backwardWrap {
-			t.wraps++
 		}
 		// lastRaw stays at the high-water mark so that a reordered packet
 		// cannot shift the mapping of later packets.
@@ -182,5 +189,5 @@ func (t *Timeline) String() string {
 	if t.hasLast {
 		last = int64(t.lastExt)
 	}
-	return fmt.Sprintf("rate=%d last=%d wraps=%d drift=%dppm", t.clockRate, last, t.wraps, t.driftPPM)
+	return fmt.Sprintf("rate=%d last=%d wraps=%d drift=%dppm", t.clockRate, last, t.Wraps(), t.driftPPM)
 }
