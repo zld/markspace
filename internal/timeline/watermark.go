@@ -138,15 +138,15 @@ func (w *Watermark) Advances() int { return w.advances }
 
 // Timeline seals segments once the watermark passes their end.
 type Timeline struct {
-	cfg      Config
-	water    *Watermark
-	sealed   []Segment
-	pending  map[int][]Event // segment index -> events not yet sealed
-	index    map[eventKey]bool
-	late     []LateRecord
-	counts   map[media.Category]int
+	cfg       Config
+	water     *Watermark
+	sealed    []Segment
+	pending   map[int][]Event // segment index -> events not yet sealed
+	index     map[eventKey]bool
+	late      []LateRecord
+	counts    map[media.Category]int
 	finalized bool
-	end      media.Nano // exclusive end of the final sealed range after Flush
+	end       media.Nano // exclusive end of the final sealed range after Flush
 }
 
 type eventKey struct {
@@ -165,11 +165,11 @@ func New(cfg Config) (*Timeline, error) {
 		return nil, err
 	}
 	return &Timeline{
-		cfg:    cfg,
-		water:  w,
+		cfg:     cfg,
+		water:   w,
 		pending: make(map[int][]Event),
-		index:  make(map[eventKey]bool),
-		counts: make(map[media.Category]int),
+		index:   make(map[eventKey]bool),
+		counts:  make(map[media.Category]int),
 	}, nil
 }
 
