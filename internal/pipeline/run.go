@@ -382,6 +382,20 @@ func Run(opts Options) (*Result, error) {
 	if _, err := store.WriteManifest("provenance.json", recordJSON); err != nil {
 		return nil, err
 	}
+	// Only now, with manifest, segments and provenance all durable, may the
+	// checkpoint advance to name the provenance record.
+	provenanceHash := checkpoint.HashBytes(recordJSON)
+	if finalState != nil {
+		finalState.ProvenanceSHA256 = provenanceHash
+		if err := store.Save(finalState); err != nil {
+			return nil, err
+		}
+	}
+	// Reload after the provenance advance so invariants see final state.
+	finalState, err = store.Load()
+	if err != nil {
+		return nil, err
+	}
 	// Cross-stage invariants are checked before the result is reported.
 	var violations []Violation
 	violations = append(violations, CheckInput(in)...)

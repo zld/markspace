@@ -37,7 +37,8 @@ demo flags:
 verify flags:
   --seed N              deterministic seed (default 7)
   --case LIST           comma-separated fault cases
-                        (truncated,zero-timescale,late-event,sequence-wrap,burst-loss)
+                        (truncated,zero-timescale,late-event,sequence-wrap,
+                         burst-loss,corrupt-sample-table,out-of-order-pts)
 `
 
 func main() {
@@ -174,7 +175,11 @@ func runVerify(args []string) int {
 	fs := flag.NewFlagSet("verify", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	seed := fs.Int64("seed", 7, "deterministic seed")
-	cases := fs.String("case", strings.Join([]string{"truncated", "zero-timescale", "late-event", "sequence-wrap", "burst-loss"}, ","), "fault cases")
+	defaults := make([]string, 0, 7)
+	for _, f := range pipeline.AllFaults() {
+		defaults = append(defaults, string(f))
+	}
+	cases := fs.String("case", strings.Join(defaults, ","), "fault cases")
 	if err := fs.Parse(args); err != nil {
 		return 1
 	}

@@ -32,13 +32,17 @@ type SegmentRef struct {
 // State is the durable pipeline state. It is only ever written whole, via a
 // temporary file and an atomic rename, after the manifest itself is durable.
 type State struct {
-	Schema          int        `json:"schema"`
-	InputSHA256     string     `json:"input_sha256"`
-	ManifestSHA256  string     `json:"manifest_sha256"`
-	ContentID       string     `json:"content_id"`
-	SealedSegments  int        `json:"sealed_segments"`
-	BoundaryMS      float64    `json:"boundary_ms"`
-	Representations []RepState `json:"representations"`
+	Schema         int    `json:"schema"`
+	InputSHA256    string `json:"input_sha256"`
+	ManifestSHA256 string `json:"manifest_sha256"`
+	// ProvenanceSHA256 names the provenance record describing this run. It is
+	// written to disk before the checkpoint that carries it, so a checkpoint
+	// can never point at provenance that did not survive.
+	ProvenanceSHA256 string     `json:"provenance_sha256"`
+	ContentID        string     `json:"content_id"`
+	SealedSegments   int        `json:"sealed_segments"`
+	BoundaryMS       float64    `json:"boundary_ms"`
+	Representations  []RepState `json:"representations"`
 	// Outputs lists every artifact written by this run, keyed by idempotency
 	// key, so a repeated run can prove it produced nothing new.
 	Outputs     []OutputRecord     `json:"outputs"`
@@ -172,18 +176,26 @@ func (s *Store) VerifyOrdering(st *State) error {
 				out.Path, info.Size(), out.Bytes)
 		}
 	}
-	if st.ManifestSHA256 != "" {
-		data, err := os.ReadFile(filepath.Join(s.dir, "manifest.json"))
-		if err != nil {
-			return media.NewError(media.CheckpointAhead,
-				"checkpoint names manifest %s but it is unreadable: %v", st.ManifestSHA256, err)
-		}
-		sum := sha256.Sum256(data)
-		if hex.EncodeToString(sum[:]) != st.ManifestSHA256 {
-			return media.NewError(media.CheckpointAhead,
-				"manifest hash %s does not match checkpoint %s",
-				hex.EncodeToString(sum[:]), st.ManifestSHA256)
-		}
+	if err := s.verifyArtifact(st.ManifestSHA256, "manifest.json"); err != nil {
+		return err
+	}
+	return s.verifyArtifact(st.ProvenanceSHA256, "provenance.json")
+}
+
+// verifyArtifact checks that a named artifact exists and hashes as claimed.
+func (s *Store) verifyArtifact(want, name string) error {
+	if want == "" {
+		return nil
+	}
+	data, err := os.ReadFile(filepath.Join(s.dir, name))
+	if err != nil {
+		return media.NewError(media.CheckpointAhead,
+			"checkpoint names %s hash %s but the file is unreadable: %v", name, want, err)
+	}
+	sum := sha256.Sum256(data)
+	if got := hex.EncodeToString(sum[:]); got != want {
+		return media.NewError(media.CheckpointAhead,
+			"%s hash %s does not match checkpoint %s", name, got, want)
 	}
 	return nil
 }

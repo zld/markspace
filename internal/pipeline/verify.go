@@ -13,16 +13,21 @@ import (
 type FaultKind string
 
 const (
-	FaultTruncated     FaultKind = "truncated"
-	FaultZeroTimescale FaultKind = "zero-timescale"
-	FaultLateEvent     FaultKind = "late-event"
-	FaultSequenceWrap  FaultKind = "sequence-wrap"
-	FaultBurstLoss     FaultKind = "burst-loss"
+	FaultTruncated          FaultKind = "truncated"
+	FaultZeroTimescale      FaultKind = "zero-timescale"
+	FaultLateEvent          FaultKind = "late-event"
+	FaultSequenceWrap       FaultKind = "sequence-wrap"
+	FaultBurstLoss          FaultKind = "burst-loss"
+	FaultCorruptSampleTable FaultKind = "corrupt-sample-table"
+	FaultOutOfOrder         FaultKind = "out-of-order-pts"
 )
 
 // AllFaults lists every case the verify command supports.
 func AllFaults() []FaultKind {
-	return []FaultKind{FaultTruncated, FaultZeroTimescale, FaultLateEvent, FaultSequenceWrap, FaultBurstLoss}
+	return []FaultKind{
+		FaultTruncated, FaultZeroTimescale, FaultLateEvent, FaultSequenceWrap,
+		FaultBurstLoss, FaultCorruptSampleTable, FaultOutOfOrder,
+	}
 }
 
 // ParseFaults turns a comma-separated list into validated kinds.
@@ -159,6 +164,10 @@ func verifyOne(seed int64, kind FaultKind) FaultResult {
 		verifySequenceWrap(seed, &res)
 	case FaultBurstLoss:
 		verifyBurstLoss(seed, &res)
+	case FaultCorruptSampleTable:
+		verifyCorruptSampleTable(seed, &res)
+	case FaultOutOfOrder:
+		verifyOutOfOrderPTS(seed, &res)
 	default:
 		res.Err = media.NewError(media.InvalidInput, "unhandled fault kind %q", kind)
 	}
@@ -399,6 +408,79 @@ func verifyBurstLoss(seed int64, res *FaultResult) {
 	res.Recovered = stats.Delivered
 	res.RecoveryRate = stats.RecoveryRate
 	res.Detail = fmt.Sprintf("%d packets lost in %d gaps", stats.Lost, len(r.Gaps()))
+}
+
+// verifyCorruptSampleTable declares more samples than the sample table holds,
+// which must be rejected with a track-located sample-table error.
+func verifyCorruptSampleTable(seed int64, res *FaultResult) {
+	data, err := fixture.BuildMovie(fixture.MovieSpec{
+		Timescale: 1000,
+		Tracks:    []fixture.TrackSpec{verifyTrack(1, seed)},
+	})
+	if err != nil {
+		res.Err = err
+		return
+	}
+	// stsz: type(4) + version/flags(4) + sample_size(4) => count at +12.
+	patched, err := fixture.PatchBoxUint32(data, "stsz", 12, 4096)
+	if err != nil {
+		res.Err = err
+		return
+	}
+	_, err = containerParse(patched)
+	if err == nil {
+		res.Err = media.NewError(media.InvariantViolation, "corrupt sample table accepted")
+		return
+	}
+	cat := media.CategoryOf(err)
+	if cat != media.CorruptSampleTable && cat != media.TruncatedContainer {
+		res.Err = media.NewError(media.InvariantViolation,
+			"corrupt sample table reported as %s", cat)
+		return
+	}
+	e := media.AsError(err)
+	if !e.HasTrack {
+		res.Err = media.NewError(media.InvariantViolation,
+			"corrupt sample table error lacks a track id: %v", err)
+		return
+	}
+	res.Detected = 1
+	res.Category = cat
+	res.Detail = fmt.Sprintf("track %d sample table rejected", e.Track)
+}
+
+// verifyOutOfOrderPTS rewrites the chunk table so sample payloads overlap,
+// making decode times inconsistent, and requires a located rejection.
+func verifyOutOfOrderPTS(seed int64, res *FaultResult) {
+	data, err := fixture.BuildMovie(fixture.MovieSpec{
+		Timescale: 1000,
+		Tracks:    []fixture.TrackSpec{verifyTrack(1, seed)},
+	})
+	if err != nil {
+		res.Err = err
+		return
+	}
+	// Force every chunk to start at the same offset: samples then overlap and
+	// the stream is no longer decodable in order.
+	patched, err := fixture.PatchChunkOffsets(data, 1)
+	if err != nil {
+		res.Err = err
+		return
+	}
+	_, err = containerParse(patched)
+	if err == nil {
+		res.Err = media.NewError(media.InvariantViolation, "overlapping chunk offsets accepted")
+		return
+	}
+	cat := media.CategoryOf(err)
+	if cat != media.CorruptSampleTable && cat != media.OutOfOrderTimestamp {
+		res.Err = media.NewError(media.InvariantViolation,
+			"overlapping samples reported as %s", cat)
+		return
+	}
+	res.Detected = 1
+	res.Category = cat
+	res.Detail = "overlapping chunk layout rejected"
 }
 
 func verifyTrack(id uint32, seed int64) fixture.TrackSpec {

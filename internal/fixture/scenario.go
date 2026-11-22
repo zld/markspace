@@ -164,6 +164,25 @@ func PatchBoxUint32(data []byte, typ string, payloadOffset int, value uint32) ([
 	return out, nil
 }
 
+// PatchChunkOffsets rewrites every stco chunk offset to the first one, so all
+// chunks claim the same start and their samples overlap.
+func PatchChunkOffsets(data []byte, chunkSize int) ([]byte, error) {
+	idx := bytes.Index(data, []byte("stco"))
+	if idx < 0 {
+		return nil, fmt.Errorf("fixture: stco not found")
+	}
+	out := append([]byte(nil), data...)
+	base := idx + 12 // type(4) + version/flags(4) + entry_count(4)
+	if base+chunkSize > len(out) {
+		return nil, fmt.Errorf("fixture: stco truncated at %d", len(out))
+	}
+	first := binary.BigEndian.Uint32(out[base:])
+	for p := base + chunkSize; p+4 <= len(out); p += chunkSize {
+		binary.BigEndian.PutUint32(out[p:], first)
+	}
+	return out, nil
+}
+
 // NetworkTrace is the outcome of simulating a channel.
 type NetworkTrace struct {
 	Packets  []*rtp.Packet
