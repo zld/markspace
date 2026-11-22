@@ -108,22 +108,16 @@ func BuildWebM(spec Spec) ([]byte, Truth) {
 	}
 	truth.Blocks = planned
 
-	// Group blocks into clusters by generation rounds; each round becomes one
-	// cluster starting at the minimum absolute tick inside it.
-	perCluster := spec.BlocksPerCluster * len(specs)
-	for c := 0; c < spec.Clusters; c++ {
-		lo := c * perCluster
-		hi := lo + perCluster
-		if hi > len(planned) {
-			hi = len(planned)
-		}
-		group := planned[lo:hi]
+	// Order every block by absolute time so clusters form contiguous,
+	// monotonic time ranges regardless of per-track generation order.
+	sortBlocks(planned)
+
+	// Group into clusters. With wrapping enabled a cluster must never span a
+	// modulus boundary, otherwise its signed relative timecodes could not
+	// reconstruct the wrapped absolute tick the timeline expects.
+	groups := groupClusters(planned, spec.BlocksPerCluster*len(specs), spec.WrapAt)
+	for _, group := range groups {
 		base := group[0].AbsTick
-		for _, g := range group {
-			if g.AbsTick < base {
-				base = g.AbsTick
-			}
-		}
 		clusterTC := base
 		if spec.WrapAt > 0 {
 			clusterTC = base % spec.WrapAt
@@ -141,6 +135,46 @@ func BuildWebM(spec Spec) ([]byte, Truth) {
 	}
 	out = append(out, ebml.EncodeElement(ebml.IDSegment, segBody)...)
 	return out, truth
+}
+
+// sortBlocks orders blocks by absolute tick, then track and sequence, giving
+// a deterministic interleaving that mirrors a real muxer.
+func sortBlocks(blocks []BlockTruth) {
+	for i := 1; i < len(blocks); i++ {
+		for j := i; j > 0; j-- {
+			a, b := blocks[j-1], blocks[j]
+			if a.AbsTick < b.AbsTick ||
+				(a.AbsTick == b.AbsTick && (a.Track < b.Track ||
+					(a.Track == b.Track && a.Seq < b.Seq))) {
+				break
+			}
+			blocks[j-1], blocks[j] = b, a
+		}
+	}
+}
+
+// groupClusters partitions ordered blocks into groups no larger than maxSize
+// and, when wrap is positive, split at every modulus boundary so no group's
+// relative timecode crosses a wrap point.
+func groupClusters(blocks []BlockTruth, maxSize int, wrap int64) [][]BlockTruth {
+	var groups [][]BlockTruth
+	start := 0
+	for start < len(blocks) {
+		end := start + 1
+		baseMod := blocks[start].AbsTick
+		if wrap > 0 {
+			baseMod = blocks[start].AbsTick / wrap
+		}
+		for end < len(blocks) && end-start < maxSize {
+			if wrap > 0 && blocks[end].AbsTick/wrap != baseMod {
+				break
+			}
+			end++
+		}
+		groups = append(groups, blocks[start:end])
+		start = end
+	}
+	return groups
 }
 
 // wrapRel computes a cluster-relative timecode across a wrap boundary,
