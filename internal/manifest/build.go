@@ -129,8 +129,12 @@ func (b *Builder) wrapped(ts uint32) bool {
 	return ts < b.out.Packets[len(b.out.Packets)-1].Timestamp
 }
 
-// SetGaps records output-timeline holes.
-func (b *Builder) SetGaps(gaps []Gap) { b.out.Gaps = append([]Gap(nil), gaps...) }
+// SetGaps records output-timeline holes. A nil input yields an empty array so
+// the JSON schema stays stable between clean and recovered runs.
+func (b *Builder) SetGaps(gaps []Gap) {
+	b.out.Gaps = make([]Gap, len(gaps))
+	copy(b.out.Gaps, gaps)
+}
 
 // SetLoudness records measured levels.
 func (b *Builder) SetLoudness(in, out float64, gainDB float64, limited bool) {
