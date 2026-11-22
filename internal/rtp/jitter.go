@@ -13,11 +13,12 @@ type JitterConfig struct {
 }
 
 type streamState struct {
-	nextOut uint64
-	gotBase bool
-	pending map[uint64]Packet
-	history map[uint64]Packet // recently emitted, bounded to Window slots for repair
-	prev    *Packet
+	nextOut     uint64
+	gotBase     bool
+	largestSeen uint64 // highest extended sequence observed (water mark)
+	pending     map[uint64]Packet
+	history     map[uint64]Packet // recently emitted, bounded to Window slots for repair
+	prev        *Packet
 }
 
 // JitterBuffer reorders packets per stream within a configured window,
@@ -54,20 +55,46 @@ func (b *JitterBuffer) state(k StreamKey) *streamState {
 
 func (b *JitterBuffer) emit(e Event) { b.out = append(b.out, e) }
 
+// PushBatch inserts a set of packets released together (for example the
+// demultiplexer's warm-up window) and only evaluates the reorder budget after
+// every packet in the batch is buffered. Without this, a wide batch could
+// trip the water mark mid-batch and condemn low-sequence packets that are
+// still arriving later in the same batch as spurious late events.
+func (b *JitterBuffer) PushBatch(pkts []Packet) {
+	for _, p := range pkts {
+		b.push(p, true)
+	}
+	for _, k := range b.streamKeysSorted() {
+		s := b.streams[k]
+		if s.largestSeen-s.nextOut+1 > b.cfg.Window {
+			b.advance(k, s, s.nextOut)
+		}
+	}
+}
+
 // Push inserts one extended packet and drains everything that can be decided.
-func (b *JitterBuffer) Push(p Packet) {
+func (b *JitterBuffer) Push(p Packet) { b.push(p, false) }
+
+func (b *JitterBuffer) push(p Packet, suppressDrain bool) {
 	b.totalIn++
 	k := p.Key()
 	s := b.state(k)
 	if !s.gotBase {
 		s.gotBase = true
 		s.nextOut = p.ExtSeq
+		s.largestSeen = p.ExtSeq
 	}
-	// Late: the sequence has already left the reorder window.
+	// A sequence below nextOut has already been passed. It is only "late"
+	// beyond recovery when it sits outside the reorder window; within the
+	// window it is a reordered packet whose slot was already emitted.
 	if p.ExtSeq < s.nextOut {
+		age := s.nextOut - p.ExtSeq
+		detail := "reordered packet arrived after slot emitted"
+		if age > b.cfg.Window {
+			detail = "sequence outside reorder window"
+		}
 		b.emit(Event{Kind: EventLate, Packet: p, ExtSeq: p.ExtSeq,
-			Nanos: p.Nanos, SSRC: p.SSRC, PT: p.PT,
-			Detail: "sequence outside reorder window"})
+			Nanos: p.Nanos, SSRC: p.SSRC, PT: p.PT, Detail: detail})
 		return
 	}
 	// Duplicate: same extended sequence already buffered or emitted.
@@ -76,16 +103,36 @@ func (b *JitterBuffer) Push(p Packet) {
 			Nanos: p.Nanos, SSRC: p.SSRC, PT: p.PT})
 		return
 	}
+	if p.ExtSeq > s.largestSeen {
+		s.largestSeen = p.ExtSeq
+	}
 	if len(s.pending) >= b.cfg.MaxPackets {
-		b.advance(k, s, p.ExtSeq) // force-drain oldest under memory pressure
+		// Under memory pressure drain oldest slots until the backlog is back
+		// under the cap. The water-mark rule is deliberately bypassed here: the
+		// hard memory limit takes precedence over reorder tolerance.
+		target := s.nextOut + uint64(len(s.pending)-b.cfg.MaxPackets+1)
+		b.advance(k, s, target)
 	}
 	s.pending[p.ExtSeq] = p
-	// Drain once the oldest missing sequence has aged past the window. Using
-	// the hole's age (rather than the highest sequence) keeps recovery groups
-	// intact while their members are still inside the buffered window.
-	if p.ExtSeq-s.nextOut >= b.cfg.Window {
-		b.advance(k, s, p.ExtSeq)
+	// Drain only once the reorder budget is exhausted, and not in the middle
+	// of a multi-packet batch whose later members may fill the lower slots.
+	if !suppressDrain && s.largestSeen-s.nextOut+1 > b.cfg.Window {
+		b.advance(k, s, s.nextOut)
 	}
+}
+
+func (b *JitterBuffer) streamKeysSorted() []StreamKey {
+	keys := make([]StreamKey, 0, len(b.streams))
+	for k := range b.streams {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].SSRC != keys[j].SSRC {
+			return keys[i].SSRC < keys[j].SSRC
+		}
+		return keys[i].PT < keys[j].PT
+	})
+	return keys
 }
 
 // present/payloadOf adapt both the pending window and the bounded emission
