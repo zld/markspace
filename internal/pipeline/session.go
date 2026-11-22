@@ -133,6 +133,11 @@ func (s *Session) Planner() (*Planner, error) {
 	return p, nil
 }
 
+// MinChapterNS is the shortest chapter the demo asks for. It keeps all-intra
+// media, where every sample is a sync frame, from producing thousands of
+// sub-second slices.
+const MinChapterNS int64 = 1_500_000_000
+
 // ChapterRequests slices each video track at every step-th declared sync
 // frame. Only declared sync frames become boundaries: repaired, inferred
 // landings extend the reachable range but are never presented as if a cut
@@ -157,19 +162,27 @@ func (s *Session) ChapterRequests(step int) []Request {
 			exact = ti.Entries
 		}
 		end := s.usableEnd(ti.TrackID)
-		for i := 0; i < len(exact); i += step {
+		for i := 0; i < len(exact); {
 			start := exact[i].Presented
-			next := int64(-1)
-			if i+step < len(exact) {
-				next = exact[i+step].Presented
+			j := i + step
+			// All-intra media declares every sample a sync frame, so a fixed
+			// count of sync frames would produce sub-second chapters. Hold
+			// each chapter open to a minimum duration instead.
+			if j >= len(exact) {
+				j = len(exact)
+			}
+			for j < len(exact) && exact[j].Presented-start < MinChapterNS {
+				j++
+			}
+			next := end
+			if j < len(exact) {
+				next = exact[j].Presented
 			}
 			if next <= start {
-				next = end
-			}
-			if next <= start {
-				continue
+				break
 			}
 			out = append(out, Request{TrackID: ti.TrackID, StartNS: start, EndNS: next})
+			i = j
 		}
 	}
 	if len(out) > 0 {

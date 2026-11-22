@@ -104,19 +104,22 @@ func isNoKeyframe(err error) bool {
 	return e.Kind == fault.KindIndex && e.Recoverable
 }
 
-func TestMissingSyncTableMarksInferred(t *testing.T) {
+func TestMissingSyncTableMeansAllIntra(t *testing.T) {
+	// ISO base media says a missing stss declares every sample a sync sample,
+	// which is how all-intra camera media is written. Those landings are
+	// declared by the container, so they stay exact.
 	movie := videoMovie(5, 0, false) // no stss
 	ix, err := Build(movie, linearPres{movie})
 	if err != nil {
 		t.Fatal(err)
 	}
 	ti := ix.Tracks[0]
-	if len(ti.Entries) != 5 || ti.Inferred != 5 || ti.ExactCount != 0 {
+	if len(ti.Entries) != 5 || ti.Inferred != 0 || ti.ExactCount != 5 {
 		t.Fatalf("entries=%d inferred=%d exact=%d", len(ti.Entries), ti.Inferred, ti.ExactCount)
 	}
 	for _, e := range ti.Entries {
-		if e.Exact {
-			t.Fatalf("entry wrongly exact: %+v", e)
+		if !e.Exact {
+			t.Fatalf("all-intra entry marked inferred: %+v", e)
 		}
 	}
 }

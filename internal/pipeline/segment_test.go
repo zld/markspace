@@ -149,3 +149,40 @@ func TestLastSampleLookupMatchesLinearScan(t *testing.T) {
 		}
 	}
 }
+
+func TestChapterFloorPreventsSubSecondSlicesOnAllIntra(t *testing.T) {
+	dir := t.TempDir()
+	path := writeFile(t, dir, "intra.mp4", fixtures.FileSpec{
+		Timescale: 1000, Brands: []string{"isom"}, BreakStszAt: -1, BreakSizeOf: -1,
+		OmitSyncTable: true,
+		Tracks: []fixtures.TrackSpec{{
+			ID: 1, Codec: fixtures.CodecAVC, Timescale: 90000, SampleDur: 3000,
+			Samples: 180, KeyEvery: 0, SampleSize: 32, SampleSeed: 4,
+		}},
+	})
+	sess, err := OpenSession(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sess.Close()
+	reqs := sess.ChapterRequests(3)
+	if len(reqs) == 0 {
+		t.Fatal("no chapters")
+	}
+	if len(reqs) > 6 {
+		t.Fatalf("all-intra media produced %d chapters despite the floor", len(reqs))
+	}
+	for _, r := range reqs {
+		if r.EndNS-r.StartNS < MinChapterNS && r.EndNS < reqs[len(reqs)-1].EndNS {
+			t.Fatalf("chapter %d..%d shorter than the floor", r.StartNS, r.EndNS)
+		}
+	}
+	planner, _ := sess.Planner()
+	res, err := planner.Run(reqs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.KeyframeHits != res.Cuts {
+		t.Fatalf("all-intra cuts should all be exact: %d/%d", res.KeyframeHits, res.Cuts)
+	}
+}

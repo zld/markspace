@@ -53,6 +53,9 @@ type FileSpec struct {
 	// ExtendedMdat writes mdat with a 64-bit size field, exercising the
 	// extended-size path of the box walker.
 	ExtendedMdat bool
+	// OmitSyncTable writes no stss for video tracks, declaring all-intra
+	// media the way many cameras do.
+	OmitSyncTable bool
 	// Corruption knobs.
 	TruncateAt    int64 // file is cut at this absolute offset, 0 disables
 	BreakStszAt   int   // sample index whose stsz entry is corrupted, -1 disables
@@ -445,7 +448,7 @@ func buildStbl(spec FileSpec, tr TrackSpec, layout trackLayout) []byte {
 				syncs = append(syncs, u32(uint32(i+1))...)
 			}
 		}
-		if tr.KeyEvery > 0 {
+		if tr.KeyEvery > 0 && !spec.OmitSyncTable {
 			parts = append(parts, fullBox("stss", 0, 0, u32(count), syncs))
 		}
 	}

@@ -45,6 +45,12 @@ func DemoFiles() []DemoFile {
 	edited.Tracks[0].EditMedia = 45000
 	edited.MoovFirst = true
 
+	// All-intra camera media: no stss at all, one keyframe per sample.
+	allIntra := cleanSpec(1, 91, nil)
+	allIntra.OmitSyncTable = true
+	allIntra.Tracks[0].KeyEvery = 0
+	allIntra.Tracks[0].SampleSize = 48
+
 	// Truncated mdat: the tail sample cannot be read.
 	truncFull := Build(FileSpec{Timescale: 1000, MoovFirst: true, Major: "isom", Brands: []string{"isom"},
 		BreakStszAt: -1, BreakSizeOf: -1,
@@ -77,6 +83,7 @@ func DemoFiles() []DemoFile {
 		{Name: "cam_b_clean.mp4", Spec: cleanB, Expected: "clean baseline"},
 		{Name: "cam_c_extended.mp4", Spec: ext, Expected: "moov-first with a 64-bit mdat header"},
 		{Name: "cam_d_edits.mp4", Spec: edited, Expected: "edit-list shifted presentation"},
+		{Name: "cam_e_intra.mp4", Spec: allIntra, Expected: "all-intra media without a sync table"},
 		// Duplicate camera feed: a second file with identical track payloads.
 		{Name: "cam_b_copy.mp4", Spec: cleanB, Expected: "duplicate feed of cam_b_clean"},
 		{Name: "truncated.mp4", Spec: trunc, Damaged: true, Expected: "mdat truncated mid-payload"},

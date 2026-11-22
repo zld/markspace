@@ -89,9 +89,11 @@ func Build(movie *mp4.Movie, pres Presentation) (*Index, error) {
 			sync := s.Sync
 			exact := true
 			if !tr.SyncTablePresent {
-				// Absent stss implies every sample is a sync sample, but the
-				// landing point becomes inferred rather than declared.
-				sync, exact = true, false
+				// Absent stss is the format's declaration that every sample is
+				// a sync sample (all-intra media commonly omits it), so these
+				// landings are exact. Inferred is reserved for landings this
+				// pipeline reconstructed itself.
+				sync, exact = true, true
 			}
 			if !sync {
 				continue
