@@ -28,6 +28,21 @@ type Config struct {
 	TargetDuration media.Nano
 	// MaxSegments bounds the number of segments produced.
 	MaxSegments int
+	// MaxStretchFactor bounds how many target durations one segment may span
+	// while the aligner waits for the next common keyframe. Zero means 3.
+	MaxStretchFactor int
+}
+
+// stretchLimit returns the maximum permitted segment length.
+func (c Config) stretchLimit() (media.Nano, error) {
+	factor := c.MaxStretchFactor
+	if factor == 0 {
+		factor = 3
+	}
+	if factor < 1 {
+		return 0, media.NewError(media.InvalidInput, "max stretch factor must be at least 1")
+	}
+	return mulNonNeg(c.TargetDuration, factor)
 }
 
 // Boundary is one aligned cut point.
@@ -100,6 +115,10 @@ func Align(targets []Target, cfg Config) (*Plan, error) {
 	if err != nil {
 		return nil, err
 	}
+	limit, err := cfg.stretchLimit()
+	if err != nil {
+		return nil, err
+	}
 
 	plan := &Plan{Duration: duration}
 	plan.PerTarget = make([]TargetPlan, len(targets))
@@ -107,12 +126,27 @@ func Align(targets []Target, cfg Config) (*Plan, error) {
 		plan.PerTarget[i].Name = tgt.Name
 	}
 
-	var prev media.Nano
+	// The first segment starts at the earliest instant every representation
+	// can begin decoding, which is the first common keyframe.
+	origin := common[0]
+	if origin >= duration {
+		return nil, media.NewError(media.BoundaryNotFound,
+			"first common keyframe at %d ns is at or after content end %d ns",
+			int64(origin), int64(duration)).AtOffset(int64(origin))
+	}
+	first, err := plan.makeBoundary(origin, targets)
+	if err != nil {
+		return nil, err
+	}
+	plan.Boundaries = append(plan.Boundaries, first)
+	prev := origin
+
 	for k := 1; ; k++ {
-		want, err := mulNonNeg(cfg.TargetDuration, k)
+		offset, err := mulNonNeg(cfg.TargetDuration, k)
 		if err != nil {
 			return nil, err
 		}
+		want := origin + offset
 		if want >= duration {
 			break
 		}
@@ -121,10 +155,24 @@ func Align(targets []Target, cfg Config) (*Plan, error) {
 				"segment count exceeded limit %d", cfg.MaxSegments)
 		}
 		boundary, ok := LatestAtOrBefore(common, want)
-		if !ok || boundary <= prev {
+		if !ok {
 			return nil, media.NewError(media.BoundaryNotFound,
-				"no common keyframe in (%d ns, %d ns]: representations %s do not share a cut point",
-				int64(prev), int64(want), targetNames(targets)).AtOffset(int64(want))
+				"no common keyframe at or before %d ns for representations %s",
+				int64(want), targetNames(targets)).AtOffset(int64(want))
+		}
+		if boundary <= prev {
+			// The nearest common keyframe is the one already used: this
+			// target point cannot be a cut, so the segment stretches to the
+			// next target point rather than being emitted empty. Past a bound
+			// the stretch is no longer a reasonable segment and is a hard
+			// error, never a silent merge.
+			if want-prev > limit {
+				return nil, media.NewError(media.BoundaryNotFound,
+					"no common keyframe for %d ns after %d ns (stretch limit %d ns); representations %s",
+					int64(want-prev), int64(prev), int64(limit), targetNames(targets)).
+					AtOffset(int64(prev))
+			}
+			continue
 		}
 		b, err := plan.makeBoundary(boundary, targets)
 		if err != nil {
@@ -195,14 +243,12 @@ func (p *Plan) makeBoundary(start media.Nano, targets []Target) (Boundary, error
 				"representation %q has no audio sample at or before %d ns",
 				tgt.Name, int64(start)).AtTrack(int32(tgt.Audio.ID))
 		}
-		if !b.HasAudio {
+		// Audio frame durations differ per representation, so the audio start
+		// need not be identical; record the latest (worst-case sync offset).
+		if audioStart > b.AudioPTS {
 			b.AudioPTS = audioStart
-			b.HasAudio = true
-		} else if audioStart != b.AudioPTS {
-			return Boundary{}, media.NewError(media.BoundaryNotFound,
-				"audio tracks disagree at %d ns: %d vs %d",
-				int64(start), int64(b.AudioPTS), int64(audioStart))
 		}
+		b.HasAudio = true
 	}
 	return b, nil
 }
@@ -210,35 +256,59 @@ func (p *Plan) makeBoundary(start media.Nano, targets []Target) (Boundary, error
 func (p *Plan) assignSamples(targets []Target) error {
 	for i, tgt := range targets {
 		plan := &p.PerTarget[i]
-		plan.VideoStarts = sampleStartsAt(tgt.Video, p.Boundaries)
+		videoStarts, ok := sampleStartsAt(tgt.Video, p.Boundaries)
+		if !ok {
+			return media.NewError(media.BoundaryNotFound,
+				"representation %q video has no sample starting exactly at a boundary",
+				tgt.Name).AtTrack(int32(tgt.Video.ID))
+		}
+		plan.VideoStarts = videoStarts
 		plan.SegmentCount = len(plan.VideoStarts)
 		if tgt.Audio != nil {
-			plan.AudioStarts = sampleStartsAt(tgt.Audio, p.Boundaries)
-			if len(plan.AudioStarts) != len(plan.VideoStarts) {
-				return media.NewError(media.BoundaryNotFound,
-					"representation %q maps %d audio starts but %d video starts",
-					tgt.Name, len(plan.AudioStarts), len(plan.VideoStarts))
-			}
+			plan.AudioStarts = audioStartsAt(tgt.Audio, p.Boundaries)
 		}
 	}
 	return nil
 }
 
-// sampleStartsAt returns, for each boundary, the index of the first sample at
-// or after the boundary. A boundary that falls inside a sample is a hard error
-// because it would split a decoded unit.
-func sampleStartsAt(tr *container.Track, bounds []Boundary) []int {
+// sampleStartsAt returns, for each boundary, the index of the sample starting
+// exactly at the boundary. Video samples may not be split, so a boundary that
+// falls inside a sample is a hard alignment error.
+func sampleStartsAt(tr *container.Track, bounds []Boundary) ([]int, bool) {
 	out := make([]int, 0, len(bounds))
 	j := 0
 	for _, b := range bounds {
 		for j < len(tr.Samples) && tr.Samples[j].DTSNanos < b.Start {
 			j++
 		}
-		if j < len(tr.Samples) && tr.Samples[j].DTSNanos > b.Start {
-			// Boundary does not coincide with a sample start.
-			return nil
+		if j >= len(tr.Samples) || tr.Samples[j].DTSNanos != b.Start {
+			return nil, false
 		}
 		out = append(out, j)
+	}
+	return out, true
+}
+
+// audioStartsAt returns, for each boundary, the index of the audio sample
+// covering the boundary: the last sample whose start is at or before it.
+// Audio frames may straddle a video boundary; the frame is not split.
+func audioStartsAt(tr *container.Track, bounds []Boundary) []int {
+	out := make([]int, 0, len(bounds))
+	for _, b := range bounds {
+		idx := sort.Search(len(tr.Samples), func(i int) bool {
+			return tr.Samples[i].DTSNanos >= b.Start
+		})
+		if idx < len(tr.Samples) && tr.Samples[idx].DTSNanos == b.Start {
+			out = append(out, idx)
+			continue
+		}
+		if idx > 0 {
+			idx--
+		}
+		if idx >= len(tr.Samples) {
+			idx = len(tr.Samples) - 1
+		}
+		out = append(out, idx)
 	}
 	return out
 }
@@ -252,13 +322,13 @@ func LatestAtOrBefore(times []media.Nano, want media.Nano) (media.Nano, bool) {
 	return times[idx-1], true
 }
 
-// LatestAudioAtOrBefore returns the presentation time of the audio sample
-// covering want, i.e. the last sample whose PTS is <= want.
+// LatestAudioAtOrBefore returns the start time of the audio sample covering
+// want, i.e. the last sample whose start is at or before it.
 func LatestAudioAtOrBefore(tr *container.Track, want media.Nano) (media.Nano, bool) {
 	best := media.Nano(-1)
 	for _, s := range tr.Samples {
-		if s.PTSNanos <= want && s.PTSNanos > best {
-			best = s.PTSNanos
+		if s.DTSNanos <= want && s.DTSNanos > best {
+			best = s.DTSNanos
 		}
 	}
 	if best < 0 {

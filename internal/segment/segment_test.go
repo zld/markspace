@@ -68,9 +68,12 @@ func TestAlignSharedBoundaries(t *testing.T) {
 			t.Fatalf("boundaries not ascending at %d", i)
 		}
 	}
-	// Common keyframes are the 2s multiples shared by every representation.
-	if plan.Boundaries[0].Start != ms(2000) {
-		t.Errorf("first boundary = %d ms, want 2000", int64(plan.Boundaries[0].Start)/1e6)
+	// The first segment starts at 0; shared cuts follow every 2s.
+	if plan.Boundaries[0].Start != 0 {
+		t.Errorf("first boundary = %d ms, want 0", int64(plan.Boundaries[0].Start)/1e6)
+	}
+	if plan.Boundaries[1].Start != ms(2000) {
+		t.Errorf("second boundary = %d ms, want 2000", int64(plan.Boundaries[1].Start)/1e6)
 	}
 	// All targets must have the same segment count.
 	want := len(plan.Boundaries)
@@ -88,12 +91,12 @@ func TestAlignSharedBoundaries(t *testing.T) {
 }
 
 func TestAlignRejectsWhenNoSharedBoundary(t *testing.T) {
-	// Keyframes at 1s and 3s multiples never coincide beyond zero.
+	// Keyframes at 2s and 3s multiples never coincide beyond zero.
 	targets := []Target{
-		{Name: "a", Video: regularTrack(t, 1, 12000, 1000)},
+		{Name: "a", Video: regularTrack(t, 1, 12000, 2000)},
 		{Name: "b", Video: regularTrack(t, 2, 12000, 3000)},
 	}
-	_, err := Align(targets, Config{TargetDuration: ms(2000), MaxSegments: 100})
+	_, err := Align(targets, Config{TargetDuration: ms(2000), MaxSegments: 100, MaxStretchFactor: 1})
 	if err == nil {
 		t.Fatal("expected missing shared boundary error")
 	}
@@ -112,11 +115,14 @@ func TestAlignChoosesLatestKeyframeNotTarget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Align: %v", err)
 	}
-	if got := plan.Boundaries[0].Start; got != ms(700) {
-		t.Errorf("first boundary = %d, want 700", int64(got)/1e6)
+	if got := plan.Boundaries[0].Start; got != 0 {
+		t.Errorf("first boundary = %d, want 0", int64(got)/1e6)
 	}
-	if got := plan.Boundaries[1].Start; got != ms(1400) {
-		t.Errorf("second boundary = %d, want 1400", int64(got)/1e6)
+	if got := plan.Boundaries[1].Start; got != ms(700) {
+		t.Errorf("second boundary = %d, want 700", int64(got)/1e6)
+	}
+	if got := plan.Boundaries[2].Start; got != ms(1400) {
+		t.Errorf("third boundary = %d, want 1400", int64(got)/1e6)
 	}
 }
 
@@ -138,7 +144,7 @@ func TestAlignFailsWithoutKeyframe(t *testing.T) {
 func TestAlignRejectsEmptySegment(t *testing.T) {
 	// Only one keyframe at t=0 for a long timeline: no boundary can be placed.
 	tr := makeTrack(t, 1, 1000, []int64{0, 100, 200, 300}, map[int64]bool{0: true})
-	_, err := Align([]Target{{Name: "x", Video: tr}}, Config{TargetDuration: ms(100), MaxSegments: 10})
+	_, err := Align([]Target{{Name: "x", Video: tr}}, Config{TargetDuration: ms(100), MaxSegments: 10, MaxStretchFactor: 1})
 	if err == nil {
 		t.Fatal("expected empty-segment failure")
 	}

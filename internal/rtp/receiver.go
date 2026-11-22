@@ -18,18 +18,22 @@ type ExtPacket struct {
 	Seq        uint16
 	Timestamp  uint32
 	Track      uint32
-	Recovered  bool // arrived behind the current head and was reordered
+	Ext        int64
+	Recovered  bool // filled a hole that had already been declared missing
+	Reordered  bool // arrived below the highest sequence seen so far
 }
 
 // Config bounds the receiver's buffers.
 type Config struct {
-	// MaxReorderWindow is how many sequence slots behind the highest number
-	// may still be filled before a gap is declared unrecoverable.
+	// MaxReorderWindow is how far behind the highest sequence a packet may
+	// arrive and still be considered recoverable. Holes older than this when
+	// the stream advances are declared unrecoverable, but a packet that
+	// arrives anyway is still delivered and marked Recovered.
 	MaxReorderWindow int
 	// MaxExtend is the largest unsigned sequence jump treated as a wrap or
 	// burst rather than a stream restart. Zero means 1<<15.
 	MaxExtend int
-	// MaxBuffer caps packets held pending reordering.
+	// MaxBuffer caps packets held by the receiver.
 	MaxBuffer int
 }
 
@@ -49,30 +53,36 @@ func (c Config) Validate() error {
 
 // Gap is an unrecoverable run of missing sequence numbers.
 type Gap struct {
-	Start uint16 // extended-ordered first missing 16-bit sequence number
+	Start uint16
 	Count int
 }
 
-// Receiver reorders packets by extended sequence number, counts wraps and
-// duplicates, fills bounded gaps, and declares the rest unrecoverable.
+// Receiver accepts packets in arrival order and produces the sequence order.
+//
+// Output is materialised by Close rather than streamed as soon as it is
+// contiguous: network jitter can put the first arrival several slots into the
+// stream, and committing to a delivery point would turn that skew into
+// phantom loss. Holding the packets and sorting at Close keeps loss
+// accounting exact while the reorder window still governs which holes are
+// classified recoverable.
 type Receiver struct {
-	cfg Config
+	cfg      Config
+	started  bool
+	highest  int64
+	minExt   int64
+	base     int64
+	seen     map[int64]ExtPacket
+	order    []int64 // arrival order of accepted extended sequences
+	arrivals uint64
 
-	started   bool
-	next      int64 // lowest sequence not yet delivered
-	highest   int64 // highest sequence number observed
-	base      int64 // high bits of the extended sequence space
-	buffered  map[int64]ExtPacket
-	delivered []ExtPacket
-
-	arrivals  uint64
-	dups      int
-	reordered int
-	recovered int
-	wrapCount int
-	lost      int
-	gaps      []Gap
-	latencies []media.Nano
+	dups       int
+	reordered  int
+	recovered  int
+	wrapCount  int
+	lost       int
+	gaps       []Gap
+	lateBeyond int
+	latencies  []media.Nano
 }
 
 // New builds a Receiver.
@@ -83,7 +93,7 @@ func New(cfg Config) (*Receiver, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	return &Receiver{cfg: cfg, buffered: make(map[int64]ExtPacket)}, nil
+	return &Receiver{cfg: cfg, seen: make(map[int64]ExtPacket)}, nil
 }
 
 // extend maps a 16-bit sequence onto the monotonic extended sequence space by
@@ -120,55 +130,92 @@ func (r *Receiver) extend(seq uint16) (int64, error) {
 	return best, nil
 }
 
-// Push accepts a packet in arrival order and delivers whatever becomes
-// contiguous. Arrival order is deliberately independent of sequence order.
+// Push accepts a packet in arrival order.
 func (r *Receiver) Push(pkt *rtp.Packet, arrival media.Nano) error {
 	r.arrivals++
 	ext, err := r.extend(pkt.SequenceNumber)
 	if err != nil {
 		return err
 	}
-	if _, ok := r.buffered[ext]; ok {
+	if _, dup := r.seen[ext]; dup {
 		r.dups++
 		return nil
 	}
-	if r.started && ext < r.next {
-		// Already delivered: a retransmission, not new data.
-		r.dups++
-		return nil
+	if len(r.seen) >= r.cfg.MaxBuffer {
+		return media.NewError(media.ReplayLimitExceeded,
+			"receiver holds %d packets (limit %d)", len(r.seen), r.cfg.MaxBuffer).
+			AtSeq(uint32(pkt.SequenceNumber))
 	}
 	if !r.started {
 		r.started = true
-		r.next = ext
 		r.highest = ext
+		r.minExt = ext
 		r.base = ext &^ 0xffff
-	} else if ext > r.highest {
-		r.highest = ext
-		r.base = r.highest &^ 0xffff
+	} else {
+		if ext > r.highest {
+			r.highest = ext
+			r.base = r.highest &^ 0xffff
+		}
+		if ext < r.minExt {
+			r.minExt = ext
+		}
 	}
-	if ext < r.highest {
-		r.reordered++
-	}
-	if len(r.buffered) >= r.cfg.MaxBuffer {
-		return media.NewError(media.ReplayLimitExceeded,
-			"reorder buffer holds %d packets", len(r.buffered)).AtSeq(uint32(pkt.SequenceNumber))
-	}
-	r.buffered[ext] = ExtPacket{
+	reordered := r.started && ext < r.highest
+	ep := ExtPacket{
 		Packet:     pkt,
 		ArrivalSeq: r.arrivals,
 		Arrival:    arrival,
 		Seq:        pkt.SequenceNumber,
 		Timestamp:  pkt.Timestamp,
 		Track:      uint32(pkt.PayloadType),
-		Recovered:  ext < r.highest,
+		Ext:        ext,
+		Reordered:  reordered,
 	}
-	r.drain()
-	r.declareLost()
+	if reordered {
+		r.reordered++
+		// A hole this packet fills is recoverable when the packet arrived
+		// within the reorder window; beyond it, the hole was already
+		// classified unrecoverable and the packet is flagged too-late.
+		behind := r.highest - ext
+		if behind > int64(r.cfg.MaxReorderWindow) {
+			r.lateBeyond++
+			ep.Recovered = false
+		} else {
+			ep.Recovered = true
+			r.recovered++
+		}
+	}
+	r.seen[ext] = ep
+	r.order = append(r.order, ext)
 	return nil
 }
 
-// recordGap appends a missing run, merging it with an immediately preceding
-// gap so progressive declaration does not fragment one loss into many.
+// Close finalises the stream: it sorts accepted packets by sequence, records
+// every hole between the lowest and highest sequence as an unrecoverable gap,
+// and returns those gaps.
+func (r *Receiver) Close() []Gap {
+	if !r.started {
+		return nil
+	}
+	exts := make([]int64, 0, len(r.seen))
+	for ext := range r.seen {
+		exts = append(exts, ext)
+	}
+	sort.Slice(exts, func(i, j int) bool { return exts[i] < exts[j] })
+	r.order = exts
+	r.gaps = r.gaps[:0]
+	r.lost = 0
+	prev := r.minExt - 1
+	for _, ext := range exts {
+		if ext > prev+1 {
+			r.recordGap(uint16(prev+1), int(ext-prev-1))
+		}
+		prev = ext
+	}
+	return r.gaps
+}
+
+// recordGap appends a missing run, merging with an adjacent preceding gap.
 func (r *Receiver) recordGap(start uint16, count int) {
 	r.lost += count
 	if n := len(r.gaps); n > 0 {
@@ -181,63 +228,19 @@ func (r *Receiver) recordGap(start uint16, count int) {
 	r.gaps = append(r.gaps, Gap{Start: start, Count: count})
 }
 
-// drain delivers contiguous buffered packets starting at next.
-func (r *Receiver) drain() {
-	for {
-		ep, ok := r.buffered[r.next]
-		if !ok {
-			return
+// Delivered returns packets in extended sequence order. Close must have been
+// called for the order to be final.
+func (r *Receiver) Delivered() []ExtPacket {
+	out := make([]ExtPacket, 0, len(r.order))
+	for _, ext := range r.order {
+		if ep, ok := r.seen[ext]; ok {
+			out = append(out, ep)
 		}
-		delete(r.buffered, r.next)
-		r.delivered = append(r.delivered, ep)
-		if ep.Recovered {
-			r.recovered++
-		}
-		r.next++
 	}
+	return out
 }
 
-// declareLost advances past slots that can no longer be filled. It only fires
-// once the highest observed sequence is more than the reorder window ahead,
-// so a bounded number of lost packets is tolerated without stalling.
-func (r *Receiver) declareLost() {
-	for r.highest-r.next >= int64(r.cfg.MaxReorderWindow) {
-		target := r.highest - int64(r.cfg.MaxReorderWindow) + 1
-		if target <= r.next {
-			return
-		}
-		r.recordGap(uint16(r.next), int(target-r.next))
-		r.next = target
-		r.drain()
-	}
-}
-
-// Close declares every remaining buffered gap unrecoverable and delivers the
-// buffered packets in order.
-func (r *Receiver) Close() {
-	slots := make([]int64, 0, len(r.buffered))
-	for ext := range r.buffered {
-		slots = append(slots, ext)
-	}
-	sort.Slice(slots, func(i, j int) bool { return slots[i] < slots[j] })
-	for _, ext := range slots {
-		if ext > r.next {
-			r.recordGap(uint16(r.next), int(ext-r.next))
-		}
-		ep := r.buffered[ext]
-		delete(r.buffered, ext)
-		r.delivered = append(r.delivered, ep)
-		if ep.Recovered {
-			r.recovered++
-		}
-		r.next = ext + 1
-	}
-}
-
-// Delivered returns packets in delivery (extended sequence) order.
-func (r *Receiver) Delivered() []ExtPacket { return r.delivered }
-
-// Gaps returns unrecoverable gaps.
+// Gaps returns unrecoverable gaps (valid after Close).
 func (r *Receiver) Gaps() []Gap { return r.gaps }
 
 // Stats is the receiver scoreboard exposed to the CLI and provenance.
@@ -249,22 +252,26 @@ type Stats struct {
 	Reordered         int
 	Wraps             int
 	Recovered         int
+	LateBeyondWindow  int
 	RecoveryRate      float64
 	P95Latency        media.Nano
 	MaxLatency        media.Nano
 	UnrecoverableGaps int
 }
 
-// Stats summarises the receiver. RecoveryRate is delivered/(delivered+lost).
+// Stats summarises the receiver. RecoveryRate is delivered/(delivered+lost),
+// so it measures how much of the sequence space known to have existed was
+// actually handed downstream.
 func (r *Receiver) Stats() Stats {
 	s := Stats{
 		Received:          int(r.arrivals),
-		Delivered:         len(r.delivered),
+		Delivered:         len(r.seen),
 		Lost:              r.lost,
 		Duplicates:        r.dups,
 		Reordered:         r.reordered,
 		Wraps:             r.wrapCount,
 		Recovered:         r.recovered,
+		LateBeyondWindow:  r.lateBeyond,
 		UnrecoverableGaps: len(r.gaps),
 	}
 	if total := s.Delivered + s.Lost; total > 0 {
