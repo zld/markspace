@@ -79,19 +79,32 @@ func contentPattern(seed int64, track string, index int, data []byte, n int) []b
 }
 
 func findFrame(frames []SourceFrame, t int64) (SourceFrame, bool) {
-	// frames are sorted by time; the grid is dense so a linear hint would
-	// do, but binary search keeps this robust for sparse tracks
+	// frames are sorted by time; binary search for the closest frame and
+	// accept it within 1ns to absorb rational rounding on the grid
 	lo, hi := 0, len(frames)-1
+	best := -1
+	var bestD int64
 	for lo <= hi {
 		mid := (lo + hi) / 2
+		d := frames[mid].Time - t
+		ad := d
+		if ad < 0 {
+			ad = -ad
+		}
+		if best == -1 || ad < bestD {
+			best, bestD = mid, ad
+		}
 		switch {
-		case frames[mid].Time == t:
+		case d == 0:
 			return frames[mid], true
-		case frames[mid].Time < t:
+		case d < 0:
 			lo = mid + 1
 		default:
 			hi = mid - 1
 		}
+	}
+	if best >= 0 && bestD <= 1 {
+		return frames[best], true
 	}
 	return SourceFrame{}, false
 }
