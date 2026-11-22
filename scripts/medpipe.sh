@@ -5,7 +5,7 @@
 # 0 success, 1 internal error, 2 located processing failure.
 set -euo pipefail
 
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 BIN="$(go env GOCACHE)/medpipe-bin"
 go build -o "$BIN" ./cmd/medpipe
 exec "$BIN" "$@"

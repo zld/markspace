@@ -116,6 +116,27 @@ func TestResamplerFrameCountAndState(t *testing.T) {
 	}
 }
 
+func TestResamplerOneFrameToleranceAcrossLengths(t *testing.T) {
+	// Fractional ratio over many short and long lengths must never drift past
+	// a single frame against the deterministic theoretical count.
+	r, _ := NewResampler(48000, 44100, 1)
+	var produced, consumed int64
+	for n := int64(1); n <= 500; n += 7 {
+		block := [][]float64{make([]float64, n)}
+		out, err := r.Process(block)
+		if err != nil {
+			t.Fatal(err)
+		}
+		produced += int64(len(out[0]))
+		consumed += n
+	}
+	produced += int64(len(r.Flush()[0]))
+	theory := r.ExpectedOutputs(consumed)
+	if d := produced - theory; d > 1 || d < -1 {
+		t.Fatalf("fractional resample drifted %d frames (got %d want %d)", d, produced, theory)
+	}
+}
+
 func TestResamplerChannelMismatchRejected(t *testing.T) {
 	r, _ := NewResampler(48000, 24000, 2)
 	bad := [][]float64{{1, 2, 3}, {1, 2}}

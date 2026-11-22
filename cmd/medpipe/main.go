@@ -47,6 +47,12 @@ func runDemo(args []string) int {
 		fmt.Fprintf(os.Stderr, "queue capacity must be in [1,%d]\n", stream.MaxQueueBlocks)
 		return 1
 	}
+	switch *channels {
+	case 1, 2, 6, 8:
+	default:
+		fmt.Fprintf(os.Stderr, "unsupported channel count %d (allowed 1, 2, 6, 8)\n", *channels)
+		return 1
+	}
 	opt := app.Options{
 		Seed: *seed, Rate: uint32(*rate), Channels: *channels, Queue: *queue,
 		SlowMS: *slowMS, OutDir: *outDir, Fixture: *fixtureName,
