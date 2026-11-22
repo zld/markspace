@@ -21,7 +21,7 @@ func TestGenerateIsByteDeterministic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(sa.Assets) != len(sb.Assets) || len(sa.Assets) < 8 {
+	if len(sa.Assets) != len(sb.Assets) || len(sa.Assets) < 10 {
 		t.Fatalf("asset sets differ: %d vs %d", len(sa.Assets), len(sb.Assets))
 	}
 	for i := range sa.Assets {
@@ -106,7 +106,7 @@ func TestFixturesAreAnalyzable(t *testing.T) {
 			damagedCues += len(res.Faults)
 		}
 	}
-	if mp4s < 4 || videos < 4 {
+	if mp4s < 6 || videos < 6 {
 		t.Fatalf("mp4s=%d videos=%d", mp4s, videos)
 	}
 	if normalCues < 10 {

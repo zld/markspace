@@ -11,6 +11,8 @@ to materialize the same deterministic set the CLI creates with
 | --- | --- | --- |
 | normal | normal_2997 | 29.97 video, DF labels in cue text, 12 cues |
 | normal | normal_25 | 25 fps reel, 11 cues |
+| normal | normal_50 | 50 fps reel, integer-timecode label, 8 cues |
+| normal | normal_24 | 24 fps film reel, integer-timecode label, 10 cues |
 | drift | drift_2997 | 29.97 with a +~333 ppm sample-clock drift |
 | vfr | vfr_hold | real hold/dropped-frame intervals, WebVTT cues |
 | truncated | truncated | MP4 cut inside mdat, cue past media end |

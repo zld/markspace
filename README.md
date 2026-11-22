@@ -17,8 +17,8 @@ go run ./cmd/archive analyze --fixture generated --fps 30000/1001 \
     --workers 4 --queue 8 --mode recover
 ```
 
-The generated fixture set is created under `tmp/archive` and contains eight
-assets covering 29.97 and 25 fps video, sustained clock drift, VFR hold frames,
+The generated fixture set is created under `tmp/archive` and contains ten
+assets covering 24, 25, 29.97 and 50 fps video, sustained clock drift, VFR hold frames,
 an MP4 truncated mid-capture, RTP sequence/timestamp wrap, RTP loss/reorder and
 subtitles with a BOM and broken cues.
 

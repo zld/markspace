@@ -59,10 +59,10 @@ func Generate(dir, which string) (*Set, error) {
 	var gens []genFunc
 	switch which {
 	case SetAll:
-		gens = []genFunc{genNormal2997, genNormal25, genDrift, genVFR,
-			genTruncated, genRTPWrap, genRTPLossy, genSubtitleBad}
+		gens = []genFunc{genNormal2997, genNormal25, genNormal50, genNormal24,
+			genDrift, genVFR, genTruncated, genRTPWrap, genRTPLossy, genSubtitleBad}
 	case SetNormal:
-		gens = []genFunc{genNormal2997, genNormal25}
+		gens = []genFunc{genNormal2997, genNormal25, genNormal50, genNormal24}
 	case SetDamaged:
 		gens = []genFunc{genTruncated, genRTPLossy, genSubtitleBad}
 	case SetDrift:
@@ -160,6 +160,42 @@ func genNormal25(dir string) (Asset, error) {
 		Name: "normal_25", MP4: mp4Path, Subtitle: srtPath,
 		TargetBps: targetFor(sizes, float64(len(sizes))*1000/25000), Tag: "normal",
 		FPS: "25", LabelFormat: "25",
+	}, nil
+}
+
+func genNormal50(dir string) (Asset, error) {
+	sizes := typicalSizes(400, 7400)
+	spec := mp4Spec(50000, 1000, len(sizes), sizes, 50)
+	mp4Path, err := writeSetFile(dir, "normal_50.mp4", BuildMP4(spec))
+	if err != nil {
+		return Asset{}, err
+	}
+	srtPath, err := writeSetFile(dir, "normal_50.srt", []byte(FiftySRT()))
+	if err != nil {
+		return Asset{}, err
+	}
+	return Asset{
+		Name: "normal_50", MP4: mp4Path, Subtitle: srtPath,
+		TargetBps: targetFor(sizes, float64(len(sizes))*1000/50000), Tag: "normal",
+		FPS: "50", LabelFormat: "50",
+	}, nil
+}
+
+func genNormal24(dir string) (Asset, error) {
+	sizes := typicalSizes(240, 7000)
+	spec := mp4Spec(24000, 1000, len(sizes), sizes, 24)
+	mp4Path, err := writeSetFile(dir, "normal_24.mp4", BuildMP4(spec))
+	if err != nil {
+		return Asset{}, err
+	}
+	srtPath, err := writeSetFile(dir, "normal_24.srt", []byte(TwentyFourSRT()))
+	if err != nil {
+		return Asset{}, err
+	}
+	return Asset{
+		Name: "normal_24", MP4: mp4Path, Subtitle: srtPath,
+		TargetBps: targetFor(sizes, float64(len(sizes))*1000/24000), Tag: "normal",
+		FPS: "24", LabelFormat: "24",
 	}, nil
 }
 

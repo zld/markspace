@@ -46,6 +46,40 @@ func MultiRateSRT() string {
 	return b.String()
 }
 
+// FiftySRT returns 10 cues for a 50 fps reel with integer-timecode labels.
+func FiftySRT() string {
+	var b strings.Builder
+	for i := 0; i < 8; i++ {
+		start := 400 + i*900
+		end := start + 600
+		fmt.Fprintf(&b, "%d\n%s --> %s\n", i+1, srtTime(start), srtTime(end))
+		if i == 4 {
+			fmt.Fprintf(&b, "High-frame-rate reel TC %s checked\n", labelFor(start, 50, 1, clock.Format50))
+		} else {
+			fmt.Fprintf(&b, "HFR cue %02d\n", i+1)
+		}
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+// TwentyFourSRT returns 10 film-rate cues with a 24 fps label.
+func TwentyFourSRT() string {
+	var b strings.Builder
+	for i := 0; i < 10; i++ {
+		start := 400 + i*900
+		end := start + 600
+		fmt.Fprintf(&b, "%d\n%s --> %s\n", i+1, srtTime(start), srtTime(end))
+		if i == 3 {
+			fmt.Fprintf(&b, "Film reel TC %s verified\n", labelFor(start, 24, 1, clock.Format24))
+		} else {
+			fmt.Fprintf(&b, "Film cue %02d\n", i+1)
+		}
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
 // DriftSRT returns 10 cues; timings are shifted by a fixed capture offset so
 // the drift fixture's subtitle-to-media mapping is not a no-op.
 func DriftSRT() string {
