@@ -35,8 +35,11 @@ type Engine struct {
 	current  *program.Interval // active interval for the selected program
 }
 
-// New creates an engine reading from r for the given program number.
+// New creates an engine reading from r for the given program number. The
+// timeline is created up front (its TSID is filled in by the first PAT) so
+// that global PAT statistics are captured from the very first packet.
 func New(r io.Reader, programNumber uint16) *Engine {
+	tl := program.NewTimeline(0)
 	return &Engine{
 		reader:        tsreader.NewReader(r),
 		asm:           psi.NewAssembler(),
@@ -44,8 +47,13 @@ func New(r io.Reader, programNumber uint16) *Engine {
 		pmtTracker:    psi.NewPMTTracker(),
 		programNumber: programNumber,
 		psiPIDs:       map[uint16]bool{tsreader.PIDPAT: true},
+		timeline:      tl,
+		collector:     inspect.NewCollector(programNumber, tl),
 	}
 }
+
+// timelineSeen reports whether at least one PAT has committed.
+func (e *Engine) timelineSeen() bool { return e.patTracker.Current() != nil }
 
 // Next reads and processes one packet. io.EOF marks a clean end of stream.
 func (e *Engine) Next() (*PacketEvent, error) {
@@ -88,10 +96,6 @@ func (e *Engine) handleSections(sections []*psi.Section) (bool, error) {
 			pat, _, err := e.patTracker.Push(sec)
 			if err != nil || pat == nil {
 				continue // bad CRC / incomplete: previous mapping stays active
-			}
-			if e.timeline == nil {
-				e.timeline = program.NewTimeline(pat.TransportStreamID)
-				e.collector = inspect.NewCollector(e.programNumber, e.timeline)
 			}
 			e.timeline.ApplyPAT(pat)
 			for _, p := range pat.Programs {

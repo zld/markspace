@@ -65,6 +65,9 @@ func (t *Timeline) TransportStreamID() uint16 { return t.tsID }
 // version differs from the previously committed one; repeated tables and
 // duplicate sections are ignored by the caller and never reach this twice.
 func (t *Timeline) ApplyPAT(pat *psi.PAT) {
+	if t.tsID == 0 {
+		t.tsID = pat.TransportStreamID
+	}
 	if t.lastPATVersion == nil || *t.lastPATVersion != pat.Version {
 		if t.lastPATVersion != nil {
 			t.patChanges++
