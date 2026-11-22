@@ -119,7 +119,7 @@ func demoCmd(ctx context.Context, args []string) int {
 	summary.RerunManifestMatch = rerunMatch
 	summary.SegmentVerified = matched
 	summary.ElapsedMS = time.Since(begin).Milliseconds()
-	summary.Exit = exitCode(res)
+	summary.Exit = demoExit(res)
 	if err := session.SaveRun(*out, rc); err != nil {
 		fmt.Fprintln(os.Stderr, "save run:", err)
 		return 1
@@ -129,7 +129,7 @@ func demoCmd(ctx context.Context, args []string) int {
 		return 1
 	}
 	printSummary(summary)
-	if summary.Exit == 2 {
+	if res.Faults.Corrupted > 0 || res.Faults.Truncated > 0 {
 		fmt.Println("recovered=corrupt-input")
 	}
 	return summary.Exit
@@ -244,9 +244,16 @@ func sameConfig(rc session.RunConfig, man *render.Manifest) bool {
 	return want == len(man.Segments)
 }
 
-func exitCode(r *session.Result) int {
-	if r.Faults.Corrupted > 0 || r.Faults.Truncated > 0 || r.Burned > 0 {
-		return 2
+// demoExit reports demo success. The demo's purpose is to demonstrate the
+// pipeline, so a run that completes with recovery is a success (0); exit 2 is
+// reserved for verify, which inspects a finished export. Structural failures
+// return 1 earlier.
+func demoExit(r *session.Result) int {
+	if r.Manifest == nil || r.Manifest.Frames == 0 {
+		return 1
+	}
+	if r.RoundtripConsistency() < 1 {
+		return 1
 	}
 	return 0
 }

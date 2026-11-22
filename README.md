@@ -60,8 +60,12 @@ The demo prints `frames_in`, `tracks`, `duplicates_dropped`,
 `keyframe_index_hit_rate`, `segments_verified`, `segment_sha256_match` and
 `rerun_manifest_match`.
 
-Exit codes: `0` clean, `2` recovered from corrupt input, `1` argument or
-unrecoverable structural error.
+Exit codes:
+
+* `demo`: `0` when the run completes and the export is self-consistent,
+  `1` on an argument or unrecoverable structural error.
+* `verify`: `0` clean input, `2` input was corrupt but recovered under
+  policy, `1` on a structural error or an export that fails its manifest.
 
 ### Export directory
 
