@@ -31,9 +31,12 @@ type TrackRecovery struct {
 	Valid       []timeline.Span // contiguous valid runs, no silence insertion
 	Gaps        []Gap
 	IndexSource string // "tables" or "rescan"
-	Warnings    []*core.Error
-	TotalBytes  int64
-	ValidBytes  int64
+	// SourceFormat is filled from verified records when moov metadata is
+	// unavailable; it never overrides declared container metadata.
+	SourceFormat AudioFormat
+	Warnings     []*core.Error
+	TotalBytes   int64
+	ValidBytes   int64
 }
 
 // Gap is a region the kernel refuses to fabricate audio for.
@@ -56,8 +59,11 @@ type Recovery struct {
 // and gaps. It never synthesizes samples: a region that cannot be verified is
 // reported as a gap with its byte offset.
 func (r Recovery) Recover(tr *TrackScan) (*TrackRecovery, error) {
+	// Without moov there is no track metadata at all. Recovery still runs: it
+	// rebuilds what it can from verifiable records and reports the rest as
+	// gaps. Only a file where no record can be proven is unrecoverable.
 	if tr == nil {
-		return nil, core.New(core.CodeMissingTrack, core.StageRecover, false, "no audio track to recover")
+		return r.recoverWithoutTrack()
 	}
 	scale, err := timeline.NewScale(int64(tr.Timescale))
 	if err != nil {
@@ -94,6 +100,32 @@ func (r Recovery) Recover(tr *TrackScan) (*TrackRecovery, error) {
 		return out, core.New(core.CodeUnrecoverable, core.StageRecover, false,
 			"no contiguous valid prefix").WithTrack(tr.ID, 0)
 	}
+	return out, nil
+}
+
+// recoverWithoutTrack handles moov-less input. Format facts come from the
+// first verified record, which is the only trustworthy source left.
+func (r Recovery) recoverWithoutTrack() (*TrackRecovery, error) {
+	f, err := os.Open(r.File)
+	if err != nil {
+		return nil, core.Wrap(core.CodeIO, core.StageRecover, false, "open media", err)
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		return nil, core.Wrap(core.CodeIO, core.StageRecover, false, "stat media", err)
+	}
+	out := &TrackRecovery{IndexSource: "rescan"}
+	if rerr := rescan(f, st.Size(), out, r.Limits, r.Scan, nil); rerr != nil {
+		return out, rerr
+	}
+	finalize(out)
+	if len(out.Samples) == 0 || len(out.Valid) == 0 {
+		return out, core.New(core.CodeUnrecoverable, core.StageRecover, false,
+			"no verifiable records after moov loss")
+	}
+	out.Warnings = append(out.Warnings, core.New(core.CodeMoovMissing, core.StageRecover, true,
+		"index rebuilt from verifiable records after moov loss"))
 	return out, nil
 }
 
