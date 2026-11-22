@@ -92,9 +92,12 @@ func scanSegment(r io.ReaderAt, end, off int64, res *ScanResult) error {
 				return err
 			}
 		case IDCluster:
-			if err := scanCluster(r, el, elEnd, res); err != nil {
+			next, err := scanCluster(r, el, elEnd, res)
+			if err != nil {
 				return err
 			}
+			off = next
+			continue
 		}
 		off = elEnd
 	}
@@ -169,33 +172,52 @@ func scanTrackEntry(r io.ReaderAt, entry Element, end int64) (TrackInfo, error) 
 	return ti, nil
 }
 
-func scanCluster(r io.ReaderAt, cluster Element, end int64, res *ScanResult) error {
+// isSegmentLevel reports whether id starts a new segment-level element,
+// which terminates an unknown-size cluster per EBML rules.
+func isSegmentLevel(id uint32) bool {
+	switch id {
+	case IDCluster, IDInfo, IDTracks, 0x1C53BB6B /* Cues */,
+		0x114D9B74 /* SeekHead */, 0x1043A770 /* Chapters */,
+		0x1254C367 /* Tags */, 0x1941A469 /* Attachments */:
+		return true
+	}
+	return false
+}
+
+// scanCluster consumes blocks until the cluster ends and returns the
+// offset of the first unconsumed element. A known-size cluster ends at
+// its declared boundary; an unknown-size cluster ends at the next
+// segment-level element or the parent limit.
+func scanCluster(r io.ReaderAt, cluster Element, end int64, res *ScanResult) (int64, error) {
 	var clusterTS int64
 	for off := cluster.DataOff; off < end; {
 		el, err := ReadElement(r, off, end)
 		if err != nil {
-			return err
+			return 0, err
+		}
+		if isSegmentLevel(el.ID) {
+			return off, nil
 		}
 		elEnd := el.End(end)
 		switch el.ID {
 		case IDTimestamp:
 			v, err := ReadUint(r, el)
 			if err != nil {
-				return err
+				return 0, err
 			}
 			clusterTS = int64(v)
 		case IDSimpleBlock:
 			if err := scanBlock(r, el, clusterTS, true, res); err != nil {
-				return err
+				return 0, err
 			}
 		case IDBlockGroup:
 			if err := scanBlockGroup(r, el, elEnd, clusterTS, res); err != nil {
-				return err
+				return 0, err
 			}
 		}
 		off = elEnd
 	}
-	return nil
+	return end, nil
 }
 
 func scanBlockGroup(r io.ReaderAt, group Element, end int64, clusterTS int64, res *ScanResult) error {
