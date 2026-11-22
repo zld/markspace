@@ -3,6 +3,7 @@ package pipeline
 import (
 	"testing"
 
+	"example.com/mediaforge/internal/adapter"
 	"example.com/mediaforge/internal/merrors"
 	"example.com/mediaforge/internal/rtp"
 	"example.com/mediaforge/internal/segment"
@@ -283,6 +284,51 @@ func TestRepairFailureAffectsOnlyOneSegment(t *testing.T) {
 	}
 	if changed != 1 {
 		t.Fatalf("%d of %d segment hashes changed, want exactly 1", changed, len(base.SegmentHashes))
+	}
+}
+
+// TestRemuxReparsesCleanly proves the container path end to end: the
+// re-muxed MP4 is itself valid and carries every source sample.
+func TestRemuxReparsesCleanly(t *testing.T) {
+	sc, err := Generate(DefaultScenarioConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := adapter.NewMP4Adapter()
+	parsed, err := a.Parse(sc.Input.MP4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var delivered []deliveredSample
+	for _, tr := range sc.Input.Tracks {
+		for _, s := range parsed.Container.Samples[tr.MP4TrackID] {
+			delivered = append(delivered, deliveredSample{
+				trackID: tr.MP4TrackID, sample: s,
+			})
+		}
+	}
+	out, err := remuxContainer(parsed.Container, delivered, sc.Input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	re, err := a.Parse(out)
+	if err != nil {
+		t.Fatalf("remuxed container unparseable: %v", err)
+	}
+	for _, want := range parsed.Container.Tracks {
+		var got *adapter.TrackInfo
+		for i := range re.Container.Tracks {
+			if re.Container.Tracks[i].ID == want.ID {
+				got = &re.Container.Tracks[i]
+			}
+		}
+		if got == nil {
+			t.Fatalf("track %d missing after remux", want.ID)
+		}
+		if got.SampleCnt != want.SampleCnt || got.Codec != want.Codec {
+			t.Fatalf("track %d = %d samples (%s), want %d (%s)",
+				want.ID, got.SampleCnt, got.Codec, want.SampleCnt, want.Codec)
+		}
 	}
 }
 
