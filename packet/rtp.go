@@ -34,6 +34,9 @@ type RTPInfo struct {
 	HeaderLen  int
 	PaddingLen int
 	RawLen     int
+	// Offset is the byte offset of the packet's record in the input
+	// stream. It is set by the caller, not by ParseRTP.
+	Offset int64
 }
 
 // ValidateRTP checks the RTP v2 header structure: version, CSRC count,

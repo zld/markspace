@@ -37,6 +37,9 @@ type Replayer struct {
 
 	// LateDropped counts late events whose window was already evicted.
 	LateDropped int
+	// Evicted holds windows dropped by the retention bound, in ID order.
+	// Their hashes are final: late events for them are rejected.
+	Evicted []Window
 }
 
 // NewReplayer creates a Replayer with the given window size in ticks.
@@ -76,6 +79,7 @@ func (r *Replayer) evict() {
 				oldest, first = id, true
 			}
 		}
+		r.Evicted = append(r.Evicted, *r.windows[oldest])
 		delete(r.windows, oldest)
 	}
 }
