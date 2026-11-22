@@ -5,7 +5,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -277,5 +276,3 @@ func printSummary(s session.Summary) {
 	fmt.Printf("manifest_digest=%s\n", s.ManifestDigest)
 	fmt.Printf("elapsed_ms=%d\n", s.ElapsedMS)
 }
-
-var _ = errors.New

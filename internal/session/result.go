@@ -2,7 +2,6 @@ package session
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 
@@ -78,8 +77,6 @@ func LoadSummary(dir string) (Summary, error) {
 	err = json.Unmarshal(b, &s)
 	return s, err
 }
-
-var _ = fmt.Sprintf
 
 // PolicySkip and PolicyFailTrack are re-exported so the CLI does not need a
 // separate ingest import just to name a policy.

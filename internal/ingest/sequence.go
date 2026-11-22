@@ -79,26 +79,6 @@ func Placeholder(width, height int) *image.RGBA {
 	return img
 }
 
-// FrameAt builds one frame on demand, deterministically from the seed. It is
-// the streaming counterpart of Generate and keeps memory bounded.
-func FrameAt(cfg GenConfig, track, index int) (*media.Frame, error) {
-	if track < 0 || track >= cfg.Tracks || index < 0 || index >= cfg.Frames {
-		return nil, media.NewError(media.KindRange, uint32(track+1), uint64(index), -1,
-			"frame index outside generated range")
-	}
-	img := Image(cfg, track, cfg.StartFrameSeq+uint64(index))
-	f := &media.Frame{
-		StreamID: uint32(track + 1),
-		Seq:      cfg.StartFrameSeq + uint64(index),
-		Ticks:    cfg.StartTicks + int64(track)*cfg.TrackTickSkew + int64(index)*cfg.TicksPerFrame,
-		Key:      index%cfg.KeyInterval == 0,
-		Meta:     media.Meta{Version: media.MetaVersion, Length: uint32(len(img.Pix))},
-		Payload:  img.Pix,
-	}
-	f.Sum = f.ComputeSum()
-	return f, nil
-}
-
 // Generate builds all tracks deterministically from the seed.
 func Generate(cfg GenConfig) ([][]media.Frame, error) {
 	if cfg.Frames <= 0 || cfg.Tracks <= 0 || cfg.Width <= 0 || cfg.Height <= 0 {

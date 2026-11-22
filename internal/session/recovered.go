@@ -1,7 +1,5 @@
 package session
 
-import "fmt"
-
 // recoveredSet remembers sequence numbers that arrived out of order so the
 // frame can be marked recovered when it is finally emitted. Entries are
 // removed on emit and pruned once they fall a bounded distance behind the
@@ -44,5 +42,3 @@ func (s *recoveredSet) take(seq uint16) bool {
 	delete(s.marks, seq)
 	return ok
 }
-
-func (s *recoveredSet) String() string { return fmt.Sprintf("%d pending", len(s.marks)) }
