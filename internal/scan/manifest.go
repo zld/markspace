@@ -45,37 +45,59 @@ type Manifest struct {
 // LoadManifest reads and validates a sidecar. The MP4 digest is computed by
 // streaming the asset so fixtures of any size cost constant memory.
 func LoadManifest(mp4Path, manifestPath string) (*Manifest, string, error) {
-	f, err := os.Open(manifestPath)
+	m, err := ParseManifest(manifestPath)
 	if err != nil {
-		return nil, "", clock.ErrRecoverablef("scan.manifest", "open sidecar: %v", err)
-	}
-	defer f.Close()
-	data, err := io.ReadAll(f)
-	if err != nil {
-		return nil, "", clock.ErrRecoverablef("scan.manifest", "read sidecar: %v", err)
-	}
-	var m Manifest
-	if err := json.Unmarshal(data, &m); err != nil {
-		return nil, "", clock.ErrRecoverablef("scan.manifest", "invalid sidecar json: %v", err)
-	}
-	if m.ManifestVersion != ManifestVersion {
-		return nil, "", clock.ErrRecoverablef("scan.manifest", "sidecar version %d unsupported (want %d)", m.ManifestVersion, ManifestVersion)
-	}
-	if m.Timescale == 0 || m.SampleCount == 0 {
-		return nil, "", clock.ErrInvalidArgument("manifest: timescale and sample_count must be non-zero")
-	}
-	if len(m.WireSizes) != int(m.SampleCount) {
-		return nil, "", clock.ErrRecoverablef("scan.manifest", "wire_sizes len %d != sample_count %d", len(m.WireSizes), m.SampleCount)
-	}
-	if m.EndNanos <= m.StartNanos {
-		return nil, "", clock.ErrInvalidArgument("manifest: end_nanos must exceed start_nanos")
+		return nil, "", err
 	}
 	digest, err := DigestFile(mp4Path)
 	if err != nil {
 		return nil, "", err
 	}
 	m.DigestHex = digest
-	return &m, digest, nil
+	return m, digest, nil
+}
+
+// LoadManifestWithDigest trusts an externally supplied input digest instead
+// of re-hashing the MP4. It exists for bounded failure-injection tests that
+// must keep an existing index's cache key stable while the underlying bytes
+// are deliberately corrupted; production callers use LoadManifest.
+func LoadManifestWithDigest(manifestPath, trustedDigest string) (*Manifest, error) {
+	m, err := ParseManifest(manifestPath)
+	if err != nil {
+		return nil, err
+	}
+	m.DigestHex = trustedDigest
+	return m, nil
+}
+
+// ParseManifest reads and validates a sidecar without touching the MP4.
+func ParseManifest(manifestPath string) (*Manifest, error) {
+	f, err := os.Open(manifestPath)
+	if err != nil {
+		return nil, clock.ErrRecoverablef("scan.manifest", "open sidecar: %v", err)
+	}
+	defer f.Close()
+	data, err := io.ReadAll(f)
+	if err != nil {
+		return nil, clock.ErrRecoverablef("scan.manifest", "read sidecar: %v", err)
+	}
+	var m Manifest
+	if err := json.Unmarshal(data, &m); err != nil {
+		return nil, clock.ErrRecoverablef("scan.manifest", "invalid sidecar json: %v", err)
+	}
+	if m.ManifestVersion != ManifestVersion {
+		return nil, clock.ErrRecoverablef("scan.manifest", "sidecar version %d unsupported (want %d)", m.ManifestVersion, ManifestVersion)
+	}
+	if m.Timescale == 0 || m.SampleCount == 0 {
+		return nil, clock.ErrInvalidArgument("manifest: timescale and sample_count must be non-zero")
+	}
+	if len(m.WireSizes) != int(m.SampleCount) {
+		return nil, clock.ErrRecoverablef("scan.manifest", "wire_sizes len %d != sample_count %d", len(m.WireSizes), m.SampleCount)
+	}
+	if m.EndNanos <= m.StartNanos {
+		return nil, clock.ErrInvalidArgument("manifest: end_nanos must exceed start_nanos")
+	}
+	return &m, nil
 }
 
 // DigestFile returns the hex SHA-256 of a file, streamed in 1 MiB blocks.

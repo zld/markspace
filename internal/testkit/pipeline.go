@@ -73,6 +73,24 @@ func RunPipeline(ctx context.Context, fs FixtureSet, pcfg PipelineConfig,
 	if err != nil {
 		return nil, err
 	}
+	return runWithManifest(ctx, fs, pcfg, indexCachePath, sleepHook, manifest, digest)
+}
+
+// RunPipelineTrustedDigest runs the pipeline using a caller-supplied input
+// digest instead of re-hashing the MP4. It exists for failure-injection tests
+// that corrupt bytes after a valid index exists, so the cache key stays
+// stable and the execution-stage bounds check is what fails.
+func RunPipelineTrustedDigest(ctx context.Context, fs FixtureSet, pcfg PipelineConfig,
+	trustedDigest string, sleepHook func()) (*PipelineResult, error) {
+	manifest, err := scan.LoadManifestWithDigest(fs.Manifest, trustedDigest)
+	if err != nil {
+		return nil, err
+	}
+	return runWithManifest(ctx, fs, pcfg, "", sleepHook, manifest, trustedDigest)
+}
+
+func runWithManifest(ctx context.Context, fs FixtureSet, pcfg PipelineConfig,
+	indexCachePath string, sleepHook func(), manifest *scan.Manifest, digest string) (*PipelineResult, error) {
 	scanCfg := scan.DefaultConfig()
 	mp4f, tracks, err := scan.OpenFile(fs.MP4, manifest, scanCfg)
 	if err != nil {

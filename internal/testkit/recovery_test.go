@@ -25,8 +25,9 @@ func assertRecoverable(t *testing.T, err error, where string) {
 func TestTruncationPropagatesToIndexAndStream(t *testing.T) {
 	root := t.TempDir()
 	fs := generateNormal(t, root)
-	// Drop enough mdat bytes to remove the final samples.
-	if err := TruncateMP4(fs.MP4, physicalPayload*8+4); err != nil {
+	// Sample-level truncation keeps the box hierarchy valid but removes final
+	// mdat bytes; the failure must surface in index/stream bounds checks.
+	if err := TruncateSampleExtent(fs.MP4, physicalPayload*8+4); err != nil {
 		t.Fatal(err)
 	}
 	// Re-hash sidecar so the digest matches the truncated bytes; the sample
@@ -37,6 +38,39 @@ func TestTruncationPropagatesToIndexAndStream(t *testing.T) {
 	}
 	_, err := RunPipeline(context.Background(), fs, basePipeline(), "", nil)
 	assertRecoverable(t, err, "truncated pipeline")
+}
+
+// TestTruncationAfterIndexBuildFailsInStream proves the propagation path
+// required by the spec: a valid index is built first, then the MP4 is cut so
+// a recorded offset points beyond EOF. Box scanning is never re-run; the
+// stream stage's own payload bounds check must reject it.
+func TestTruncationAfterIndexBuildFailsInStream(t *testing.T) {
+	root := t.TempDir()
+	fs := generateNormal(t, root)
+
+	// First, build a fully valid index by running the pipeline once.
+	first, err := RunPipeline(context.Background(), fs, basePipeline(), "", nil)
+	if err != nil {
+		t.Fatalf("clean run: %v", err)
+	}
+	if first.CacheState != "rebuilt" {
+		t.Fatalf("cache state=%s", first.CacheState)
+	}
+	// Remove the checkpoint/output so the next run starts at sample zero but
+	// reuses the valid index.
+	os.Remove(fs.Checkpoint)
+	os.Remove(fs.Output)
+	originalDigest := mustDigest(t, fs)
+
+	// Now truncate the MP4 using the box-consistent form WITHOUT re-hashing:
+	// the trusted digest keeps the cache key stable, so the pipeline reuses
+	// the existing index whose recorded offsets now point beyond the new EOF,
+	// isolating the stream stage's payload bounds check.
+	if err := TruncateSampleExtent(fs.MP4, physicalPayload*16+3); err != nil {
+		t.Fatal(err)
+	}
+	_, err = RunPipelineTrustedDigest(context.Background(), fs, basePipeline(), originalDigest, nil)
+	assertRecoverable(t, err, "stream after index-build truncation")
 }
 
 func TestEditListOutOfBounds(t *testing.T) {

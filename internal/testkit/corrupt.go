@@ -33,6 +33,56 @@ func TruncateMP4(path string, bytesToDrop int64) error {
 	return os.Truncate(path, fi.Size()-bytesToDrop)
 }
 
+// TruncateSampleExtent models network truncation that survives structural
+// validation: the mdat header is rewritten with size=0 ("extends to EOF"),
+// so the box hierarchy stays internally consistent, while the trailing
+// sample extents in stco/stsz now run past the shortened mdat. The failure
+// therefore surfaces during index construction / stream reads (sample-level
+// bounds), not at the box walk.
+func TruncateSampleExtent(path string, bytesToDrop int64) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return clock.ErrRecoverablef("testkit.corrupt", "read: %v", err)
+	}
+	if bytesToDrop <= 0 || int64(len(data)) <= bytesToDrop {
+		return clock.ErrInvalidArgument("testkit: truncation must drop 0 < n < filesize")
+	}
+	mdatOff, err := findBoxOffset(data, "mdat")
+	if err != nil {
+		return err
+	}
+	// size=0: box occupies the remainder of the file after truncation.
+	binary.BigEndian.PutUint32(data[mdatOff:mdatOff+4], 0)
+	shortened := data[:len(data)-int(bytesToDrop)]
+	return os.WriteFile(path, shortened, 0o644)
+}
+
+// findBoxOffset does a minimal top-level box scan to locate one box type.
+func findBoxOffset(data []byte, want string) (int64, error) {
+	off := 0
+	for off+8 <= len(data) {
+		size := int(binary.BigEndian.Uint32(data[off : off+4]))
+		typ := string(data[off+4 : off+8])
+		hdr := 8
+		if size == 1 {
+			if off+16 > len(data) {
+				return 0, clock.ErrRecoverablef("testkit.corrupt", "64-bit box too short")
+			}
+			size = int(binary.BigEndian.Uint64(data[off+8 : off+16]))
+			hdr = 16
+		}
+		if size == 0 {
+			size = len(data) - off
+		}
+		if typ == want {
+			return int64(off), nil
+		}
+		off += size
+		_ = hdr
+	}
+	return 0, clock.ErrRecoverablef("testkit.corrupt", "box %q not found", want)
+}
+
 // WriteEditOutOfBounds emits an edit list whose media_time starts beyond the
 // track duration. The MP4 is generated twice: the second write carries the
 // excessive edit-list origin while the manifest is generated from the

@@ -155,7 +155,9 @@ func generateForScenario(sc Scenario) error {
 
 	switch sc.Corruption {
 	case CorruptTruncated:
-		if err := TruncateMP4(sc.FixtureSet.MP4, physicalPayload*8+4); err != nil {
+		// Sample-level truncation: box walk stays valid, the failure surfaces
+		// in index construction / stream reads instead.
+		if err := TruncateSampleExtent(sc.FixtureSet.MP4, physicalPayload*8+4); err != nil {
 			return err
 		}
 		// Re-hash so the sidecar digest matches the truncated bytes.
