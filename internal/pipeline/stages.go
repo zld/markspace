@@ -10,15 +10,6 @@ import (
 	"mediacore/internal/timeline"
 )
 
-// colourGraphError attaches the cycle path found in a container's dependency
-// metadata, when present, so the CLI can name the concrete nodes.
-func colourGraphError(err error, scan *container.Scan) error {
-	if !core.IsCode(err, core.CodeMissingTrack) || scan == nil {
-		return err
-	}
-	return err
-}
-
 func countValid(tr *container.TrackRecovery) int {
 	if tr == nil {
 		return 0

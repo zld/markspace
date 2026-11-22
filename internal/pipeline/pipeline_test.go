@@ -359,3 +359,34 @@ func TestGapOffsetsAreMonotonic(t *testing.T) {
 		}
 	}
 }
+
+func TestForceRescanAgreesWithTables(t *testing.T) {
+	// The strongest cross-stage invariant: for intact media, the rebuilt grid
+	// and the declared grid must produce the same distribution.
+	opt := options(fixture.KindClean)
+	res := Run(opt)
+	if res.Err != nil {
+		t.Fatal(res.Err)
+	}
+	opt.ForceRescan = true
+	forced := Run(opt)
+	if forced.Err != nil {
+		t.Fatal(forced.Err)
+	}
+	if forced.Recovery.IndexSource != "rescan" {
+		t.Fatalf("index source = %s", forced.Recovery.IndexSource)
+	}
+	resManifest, forcedManifest := res.Manifest, forced.Manifest
+	if resManifest.PacketCount != forcedManifest.PacketCount {
+		t.Fatalf("packets %d vs %d", resManifest.PacketCount, forcedManifest.PacketCount)
+	}
+	if resManifest.ValidMs != forcedManifest.ValidMs {
+		t.Fatalf("valid ms %d vs %d", resManifest.ValidMs, forcedManifest.ValidMs)
+	}
+	if math.Abs(resManifest.OutputLUFS-forcedManifest.OutputLUFS) > 0.5 {
+		t.Fatalf("loudness %0.2f vs %0.2f", resManifest.OutputLUFS, forcedManifest.OutputLUFS)
+	}
+	if len(forcedManifest.Gaps) != 0 {
+		t.Fatalf("forced rescan invented gaps: %+v", forcedManifest.Gaps)
+	}
+}

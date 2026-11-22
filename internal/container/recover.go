@@ -53,6 +53,9 @@ type Recovery struct {
 	File   string
 	Scan   *Scan
 	Limits Limits
+	// ForceRescan rebuilds the index from verified records even when the
+	// sample tables are complete. It exists to prove the two paths agree.
+	ForceRescan bool
 }
 
 // Recover validates every located sample and splits the track into valid runs
@@ -82,7 +85,7 @@ func (r Recovery) Recover(tr *TrackScan) (*TrackRecovery, error) {
 	}
 	size := st.Size()
 
-	if tr.IndexComplete && len(tr.Sizes) > 0 {
+	if tr.IndexComplete && len(tr.Sizes) > 0 && !r.ForceRescan {
 		out.IndexSource = "tables"
 		locateFromTables(out, tr, size)
 		// One bad sample is a warning; a mostly unreadable table means the

@@ -27,8 +27,8 @@ type Options struct {
 	PacketMs     int
 	OutPath      string
 	Limits       container.Limits
-	// ForceRescan ignores a complete index and rebuilds from records. It is
-	// used to prove that recovery and table paths agree.
+	// ForceRescan rebuilds the index from verified records even when tables
+	// are complete, which lets tests prove both paths agree.
 	ForceRescan bool
 }
 
@@ -134,13 +134,14 @@ func runStages(opt Options, res *Result) (*manifest.Manifest, error) {
 			Stage: string(core.StageGraph), OK: false,
 			Errors: []string{gerr.Error()}, Recoverable: false,
 		})
-		return nil, colourGraphError(gerr, scan)
+		return nil, gerr
 	}
 	res.Graph = g.Order()
 	res.Stages = append(res.Stages, StageRecord{Stage: string(core.StageGraph), OK: true})
 
 	// Stage: recover.
-	recovery := container.Recovery{File: opt.File, Scan: scan, Limits: opt.Limits}
+	recovery := container.Recovery{File: opt.File, Scan: scan, Limits: opt.Limits,
+		ForceRescan: opt.ForceRescan}
 	tr, rerr := recovery.Recover(track)
 	if tr != nil {
 		res.Recovery = tr
