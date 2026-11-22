@@ -160,7 +160,7 @@ func Check(m *Manifest) error {
 				original.SampleCount != s.SampleCount {
 				errs = append(errs, fault.Errorf("verify.check", fault.KindVerify,
 					"segment %q is marked duplicate of %q but payload differs", s.ID, s.DuplicateOf).Fatal())
-			} else if original.StartNS != s.StartNS && original.EndNS != s.EndNS {
+			} else if !overlaps(original, s) {
 				errs = append(errs, fault.Errorf("verify.check", fault.KindVerify,
 					"segment %q is marked duplicate of %q but extents do not overlap", s.ID, s.DuplicateOf).Fatal())
 			}
@@ -175,6 +175,12 @@ func Check(m *Manifest) error {
 			"keyframe_hit_rate %.4f below %.2f", got, MinKeyframeHitRate).Fatal()
 	}
 	return nil
+}
+
+// overlaps reports whether two segments share any timeline interval, which
+// is the minimum evidence that a payload match is the same recording.
+func overlaps(a, b SegmentEntry) bool {
+	return a.StartNS < b.EndNS && b.StartNS < a.EndNS
 }
 
 // KeyframeHitRate is the share of segments whose cut landed exactly on a sync

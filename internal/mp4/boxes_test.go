@@ -3,6 +3,7 @@ package mp4
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/pairwise/mediad/internal/fault"
@@ -183,14 +184,30 @@ func (b bytesReaderAt) ReadAt(p []byte, off int64) (int, error) {
 }
 
 func TestOversizedFileIsRejected(t *testing.T) {
-	// Guard the documented 2 GiB input limit without writing a 2 GiB file.
+	// Drive Open through a sparse file so the guard is exercised without
+	// materialising 2 GiB of data on disk.
 	if MaxFileSize != 2<<30 {
 		t.Fatalf("MaxFileSize=%d", MaxFileSize)
 	}
-	tree := Scan("big.mp4", bytesReaderAt(make([]byte, 64)), MaxFileSize+1)
-	_ = tree
-	err := fault.Errorf("mp4.open", fault.KindParse, "too large").Fatal()
-	if fault.ExitCode(err) != 2 {
-		t.Fatalf("oversized input must be an index/verify-class failure, got %d", fault.ExitCode(err))
+	path := filepath.Join(t.TempDir(), "big.mp4")
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Truncate(MaxFileSize + 1); err != nil {
+		f.Close()
+		t.Skipf("filesystem cannot create a sparse oversized file: %v", err)
+	}
+	f.Close()
+	_, err = Open(path)
+	if err == nil {
+		t.Fatal("oversized file accepted")
+	}
+	e, ok := fault.As(err)
+	if !ok || e.Kind != fault.KindParse {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(e.Error(), "above") {
+		t.Fatalf("error does not name the limit: %v", e)
 	}
 }

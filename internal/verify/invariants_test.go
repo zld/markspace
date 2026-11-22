@@ -133,3 +133,31 @@ func TestRecoveredExitCodeDependsOnProvenance(t *testing.T) {
 		t.Fatal("recoverable damage must map to exit 1")
 	}
 }
+
+func TestDuplicateClaimsRequirePayloadEvidence(t *testing.T) {
+	m := good()
+	m.Segments[1].DuplicateOf = m.Segments[0].ID
+	// Same payload claim but a different hash must be rejected.
+	m.Segments[1].SHA256 = strings.Repeat("ef", 32)
+	if err := Check(m); err == nil {
+		t.Fatal("duplicate claim with mismatched payload accepted")
+	}
+	// Different sample counts are not the same content either.
+	m = good()
+	m.Segments[1].DuplicateOf = m.Segments[0].ID
+	m.Segments[1].SampleCount = m.Segments[0].SampleCount + 1
+	if err := Check(m); err == nil {
+		t.Fatal("duplicate claim with mismatched sample count accepted")
+	}
+	// Shifted but overlapping extents with the same payload are a real
+	// duplicate feed recorded from a different anchor.
+	m = good()
+	m.Segments[1].StartNS = 500_000_000
+	m.Segments[1].EndNS = 1_500_000_000
+	m.Segments[1].SHA256 = m.Segments[0].SHA256
+	m.Segments[1].SampleCount = m.Segments[0].SampleCount
+	m.Segments[1].DuplicateOf = m.Segments[0].ID
+	if err := Check(m); err != nil {
+		t.Fatalf("shifted duplicate rejected: %v", err)
+	}
+}
