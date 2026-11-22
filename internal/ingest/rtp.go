@@ -7,6 +7,7 @@ import (
 
 	"github.com/pion/rtp"
 
+	"mediad/internal/clock"
 	"mediad/internal/core"
 	"mediad/internal/diagnose"
 )
@@ -53,7 +54,7 @@ func ParseRTP(asset *Asset, clockRate int64) (*RTPStream, error) {
 	st := &RTPStream{Asset: asset.Name, ClockRate: clockRate}
 	data := asset.Data
 	var off int64
-	var ext unwrapper
+	var ext clock.Extender
 	for off < int64(len(data)) {
 		if int64(len(data))-off < 4 {
 			st.IssueList.Add(diagnose.Issue{
@@ -86,7 +87,7 @@ func ParseRTP(asset *Asset, clockRate int64) (*RTPStream, error) {
 			off += 4 + n
 			continue
 		}
-		extTS, wrapped := ext.extend(pkt.Timestamp)
+		extTS, wrapped := ext.Extend(pkt.Timestamp)
 		rec := RTPRecord{
 			Seq:       pkt.SequenceNumber,
 			Timestamp: pkt.Timestamp,
@@ -143,30 +144,6 @@ func ParseRTP(asset *Asset, clockRate int64) (*RTPStream, error) {
 		off += 4 + n
 	}
 	return st, nil
-}
-
-// unwrapper maintains a 64-bit monotonic extension of a 32-bit RTP clock.
-type unwrapper struct {
-	started bool
-	last    uint32
-	ext     int64
-}
-
-func (u *unwrapper) extend(ts uint32) (int64, bool) {
-	if !u.started {
-		u.started = true
-		u.last = ts
-		u.ext = int64(ts)
-		return u.ext, false
-	}
-	delta := int64(int32(ts - u.last))
-	// A small positive signed delta whose new raw value is numerically below
-	// the previous one is a wrap. A large negative delta is a genuine
-	// regression and is preserved so continuity checks can reject it.
-	wrapped := delta > 0 && ts < u.last
-	u.ext += delta
-	u.last = ts
-	return u.ext, wrapped
 }
 
 // RTPTimeContinuity reports whether extended timestamps never regress.
