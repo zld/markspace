@@ -51,7 +51,7 @@ func runDemo(args []string, stdout *os.File) int {
 	fs.SetOutput(stdout)
 	var df demoFlags
 	fs.Int64Var(&df.seed, "seed", 42, "deterministic generation seed")
-	fs.StringVar(&df.faults, "faults", "", "comma-separated faults: wrap,loss,backward,color-conflict,audio-gap,audio-overlap,audio-short,corrupt-layer")
+	fs.StringVar(&df.faults, "faults", "", "comma-separated faults: wrap,loss,backward,color-conflict,audio-gap,audio-overlap,audio-loss,audio-short,corrupt-layer")
 	fs.IntVar(&df.ladder, "ladder", 3, "number of ladder layers")
 	fs.Int64Var(&df.segmentMS, "segment-ms", 2000, "segment duration in milliseconds")
 	fs.IntVar(&df.frames, "frames", 90, "number of video frames")
@@ -111,7 +111,8 @@ func (d demoFlags) validate() error {
 func knownFault(s string) bool {
 	switch fixture.Fault(s) {
 	case fixture.FaultWrap, fixture.FaultLoss, fixture.FaultBackward, fixture.FaultColorConflict,
-		fixture.FaultAudioGap, fixture.FaultAudioOverlap, fixture.FaultAudioShort, fixture.FaultCorruptLayer:
+		fixture.FaultAudioGap, fixture.FaultAudioOverlap, fixture.FaultAudioLoss,
+		fixture.FaultAudioShort, fixture.FaultCorruptLayer:
 		return true
 	}
 	return false

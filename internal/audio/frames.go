@@ -52,7 +52,8 @@ const (
 	DecisionShortTailBad DecisionKind = "short-tail-rejected"
 )
 
-// Decision is one frame-level repair.
+// Decision is one frame-level repair. Decisions are surfaced through the
+// report in insertion order and are part of the deterministic output.
 type Decision struct {
 	Track   model.TrackID `json:"track"`
 	Kind    DecisionKind  `json:"kind"`

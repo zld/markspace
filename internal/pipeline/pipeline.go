@@ -68,6 +68,8 @@ type Report struct {
 	UnavailableLayers []int `json:"unavailable_layers"`
 	// Decisions captures every clock repair decision, ordered by track.
 	Decisions []clock.Decision `json:"decisions"`
+	// AudioDecisions captures every audio frame decision in insertion order.
+	AudioDecisions []audio.Decision `json:"audio_decisions"`
 	// RepairLog is the human-readable list of recoverable and fatal repairs.
 	RepairLog []string `json:"repair_log"`
 	// Color records the video color resolution.

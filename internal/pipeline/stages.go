@@ -1,14 +1,8 @@
 package pipeline
 
 import (
-	"fmt"
-	"sort"
-
 	"example.com/mediatimeline/internal/audio"
 	"example.com/mediatimeline/internal/clock"
-	"example.com/mediatimeline/internal/fanin"
-	"example.com/mediatimeline/internal/fanout"
-	"example.com/mediatimeline/internal/index"
 	"example.com/mediatimeline/internal/ingest"
 	"example.com/mediatimeline/internal/model"
 	"example.com/mediatimeline/internal/video"
@@ -51,14 +45,20 @@ func stageIngest(ctx *stageContext) error {
 			ctx.videoBytes[i] = p
 		}
 	}
-	// The color conflict fixture puts BT.2020 in the bitstream SEI and BT.709
-	// in the container. Container wins, and the conflict is recorded.
+	// Color declarations come from two real sources: the container's colr box
+	// and any nclx SEI inside the samples. Declarations supplied by the
+	// caller (a manifest) are merged in last. Container precedence wins and
+	// every disagreement is recorded.
+	bitstream := sampleSEIColors(v)
+	declare := make([]model.ColorDeclaration, 0, len(bitstream)+len(ctx.in.ColorDecls))
+	declare = append(declare, bitstream...)
+	declare = append(declare, ctx.in.ColorDecls...)
 	if v.Color != nil {
-		ctx.rep.Color = videoResolve(ctx, *v.Color, ctx.in.ColorDecls)
-	} else if len(ctx.in.ColorDecls) > 0 {
-		ctx.rep.Color = videoResolve(ctx, ctx.in.ColorDecls[0], ctx.in.ColorDecls[1:])
+		ctx.rep.Color = videoResolve(ctx, *v.Color, declare)
+	} else if len(declare) > 0 {
+		ctx.rep.Color = videoResolve(ctx, declare[0], declare[1:])
 	}
-	if err := addErrors(ctx.rep, colorErrors(ctx, v.Color, ctx.in.ColorDecls)); err != nil {
+	if err := addErrors(ctx.rep, colorErrors(ctx, v.Color, declare)); err != nil {
 		return err
 	}
 
@@ -107,15 +107,48 @@ func stageIngest(ctx *stageContext) error {
 
 func videoResolve(ctx *stageContext, primary model.ColorDeclaration, rest []model.ColorDeclaration) video.Resolution {
 	decls := append([]model.ColorDeclaration{primary}, rest...)
-	res, _, _ := video.Resolve(model.TrackVideoMain, decls)
+	res, _, _ := video.Resolve(model.TrackVideoMain, dedupeColors(decls))
 	return res
+}
+
+// dedupeColors keeps the first declaration per source, so a fixture that
+// repeats the same bitstream tag in every access unit does not multiply the
+// conflict list.
+func dedupeColors(in []model.ColorDeclaration) []model.ColorDeclaration {
+	seen := map[model.ColorSource]bool{}
+	out := make([]model.ColorDeclaration, 0, len(in))
+	for _, d := range in {
+		if seen[d.Source] {
+			continue
+		}
+		seen[d.Source] = true
+		out = append(out, d)
+	}
+	return out
+}
+
+// sampleSEIColors reads the first distinct nclx declaration from the sample
+// payloads. Scanning stops at the first hit: later access units repeat the
+// same tag.
+func sampleSEIColors(v ingest.MP4Track) []model.ColorDeclaration {
+	for i := range v.Samples {
+		payload, ok := v.SamplePayload(i)
+		if !ok {
+			continue
+		}
+		msgs, _ := ingest.ParseSEI(payload)
+		if cols := ingest.SEIColors(msgs); len(cols) > 0 {
+			return cols[:1]
+		}
+	}
+	return nil
 }
 
 func colorErrors(ctx *stageContext, container *model.ColorDeclaration, decls []model.ColorDeclaration) []*model.Error {
 	if container == nil {
 		return nil
 	}
-	all := append([]model.ColorDeclaration{*container}, decls...)
+	all := dedupeColors(append([]model.ColorDeclaration{*container}, decls...))
 	_, errs, _ := video.Resolve(model.TrackVideoMain, all)
 	var kept []*model.Error
 	for _, e := range errs {
@@ -220,238 +253,4 @@ func ticksOf(s model.Sample) (int64, bool) {
 		return 0, false
 	}
 	return t, true
-}
-
-// stageRecoverVideo validates keyframes and adds channel-noise-free video
-// recovery output to the report.
-func stageRecoverVideo(ctx *stageContext) error {
-	candidates := make([]int, 0)
-	for i, s := range ctx.videoSamples {
-		if s.Sync {
-			candidates = append(candidates, i)
-		}
-	}
-	check, errs, err := video.ValidateKeyframes(model.TrackVideoMain, ctx.videoSamples, candidates, ctx.videoTimescale)
-	if err != nil {
-		return err
-	}
-	ctx.rep.RepairLog = append(ctx.rep.RepairLog,
-		fmt.Sprintf("video: %d candidate keyframes, %d off-boundary", len(candidates), check.OffBoundary))
-	return addErrors(ctx.rep, errs)
-}
-
-// stageRecoverAudio reconciles audio frames against the nominal 1024-tick
-// grid at 48 kHz, then reports the decisions.
-func stageRecoverAudio(ctx *stageContext) error {
-	if len(ctx.audioSamples) == 0 {
-		return model.NewError(model.TrackAudioMain, model.StageAudio, model.CodeMissingPayload, false,
-			"audio track has no samples")
-	}
-	opts := audio.ReconcileOptions{
-		Track: model.TrackAudioMain, FrameTicks: 1024, Timescale: 48000,
-		MaxGapTicks: 48000, FullFrameBytes: 192,
-	}
-	frames := make([]audio.Frame, 0, len(ctx.audioSamples))
-	for _, s := range ctx.audioSamples {
-		dur := s.Duration
-		if dur.Den == 0 || (dur.Num == 0 && s.Size == 0) {
-			// RTP audio carries a timestamp but no nominal duration; the
-			// grid defines one frame per 1024 ticks at 48 kHz.
-			r, err := clock.FromTicks(1024, 48000)
-			if err != nil {
-				return err
-			}
-			dur = clock.ToModel(r)
-		}
-		frames = append(frames, audio.Frame{Index: s.Index, Start: s.Time.RepairedTime, Duration: dur, Size: int(s.Size)})
-	}
-	res, err := audio.Reconcile(frames, opts)
-	if err != nil {
-		return err
-	}
-	for _, d := range res.Decisions {
-		ctx.rep.RepairLog = append(ctx.rep.RepairLog, fmt.Sprintf("audio %s #%d: %s", d.Kind, d.Index, d.Message))
-	}
-	if err := addErrors(ctx.rep, res.Errors); err != nil {
-		return err
-	}
-	ctx.rep.AudioSamples = len(res.Frames)
-	return nil
-}
-
-// stageRecoverEvents parses every metadata carrier on its own clock.
-func stageRecoverEvents(ctx *stageContext) error {
-	res, err := ingest.ParseEvents(ingest.EventInput{
-		WebVTT: ctx.in.WebVTT, Chapters: ctx.in.Chapters, ID3: ctx.in.ID3, ID3Ticks: ctx.in.ID3Ticks,
-		Emsg: ctx.in.Emsg, SEI: [][]byte{ctx.in.SEI},
-	})
-	if err != nil {
-		return err
-	}
-	ctx.events = res.Events
-	ctx.rep.EventCount = len(res.Events)
-	ctx.rep.Decisions = append(ctx.rep.Decisions, res.Decisions...)
-	var memory int64
-	for _, e := range res.Events {
-		memory += int64(len(e.ID) + len(e.Text) + len(e.Scheme) + len(e.Value) + len(e.Payload) + 128)
-	}
-	ctx.rep.EventMemoryBytes = memory
-	if memory > ctx.limits.MaxEventMemoryBytes {
-		return model.NewError("", model.StageValidation, model.CodeLimitExceeded, false,
-			"event index needs %d bytes, above the %d-byte limit", memory, ctx.limits.MaxEventMemoryBytes)
-	}
-	if err := addErrors(ctx.rep, res.Errors); err != nil {
-		return err
-	}
-	ctx.rep.RepairLog = append(ctx.rep.RepairLog, fmt.Sprintf("events: %d recovered", len(res.Events)))
-	return nil
-}
-
-// stageFanout expands the video track into the ladder.
-func stageFanout(ctx *stageContext) error {
-	layers := fanout.DefaultLadder(ctx.in.Ladder, 1920, 1080)
-	corrupt := map[int]bool{}
-	corruptLayer := -1
-	damaged := ctx.in.CorruptLayer || ctx.delivery.LostPackets > 0
-	if damaged && len(layers) > 1 {
-		// A damaged delivery fragment makes the finest rung unavailable; the
-		// coarser rungs are recovered from the archive copy and stay
-		// indexable. One layer failing must not contaminate the others.
-		corruptLayer = layers[len(layers)-1].Index
-	}
-	if corruptLayer >= 0 {
-		for i := range ctx.videoSamples {
-			corrupt[i] = true
-		}
-	}
-	res, err := fanout.Build(layers, fanout.LayerInput{
-		Track: model.TrackVideoMain, Timescale: ctx.videoTimescale,
-		Samples: ctx.videoSamples, CorruptIndices: corrupt, CorruptLayer: corruptLayer,
-	}, ctx.in.SegmentMS)
-	if err != nil {
-		return err
-	}
-	ctx.fanoutResult = res
-	if err := addErrors(ctx.rep, res.Errors); err != nil {
-		return err
-	}
-	return nil
-}
-
-// stageFanin validates layer boundaries against the shared clock.
-func stageFanin(ctx *stageContext) error {
-	segTicks, err := segmentTicks(ctx.in.SegmentMS, ctx.videoTimescale)
-	if err != nil {
-		return err
-	}
-	merge, err := fanin.Merge(ctx.fanoutResult, fanin.Options{
-		ToleranceTicks: 1000, Timescale: ctx.videoTimescale,
-		SegmentTicks: segTicks, RequireAllLayers: ctx.in.RequireAllLayers,
-	})
-	ctx.merge = merge
-	ctx.rep.Segments = len(merge.Segments)
-	if err := addErrors(ctx.rep, merge.Errors); err != nil {
-		return err
-	}
-	return nil
-}
-
-func segmentTicks(segmentMS int64, timescale uint32) (int64, error) {
-	d, err := clock.New(segmentMS, 1000)
-	if err != nil {
-		return 0, err
-	}
-	return d.FloorTicks(timescale)
-}
-
-// stageIndex builds the keyframe index and segment hashes for the lowest
-// available layer, then verifies the hashes by recomputing them.
-func stageIndex(ctx *stageContext) error {
-	var chosen *fanout.Layer
-	for i := range ctx.merge.Layers {
-		l := &ctx.merge.Layers[i]
-		if l.Available {
-			chosen = l
-			break
-		}
-	}
-	if chosen == nil {
-		return model.NewError(model.TrackVideoMain, model.StageIndex, model.CodeLayerUnavailable, false,
-			"no available layer to index")
-	}
-	segs := make([]index.Segment, len(ctx.merge.Segments))
-	ticks := make([]int64, len(ctx.merge.Segments))
-	for i, s := range ctx.merge.Segments {
-		segs[i] = index.Segment{Index: s.Index, StartTick: s.StartTick, EndTick: s.EndTick}
-		ticks[i] = s.StartTick
-	}
-	offsets := make([]uint64, len(chosen.Samples))
-	for i := range offsets {
-		offsets[i] = uint64(i) * 1024
-	}
-	kf, err := index.BuildKeyframes(chosen.Track, chosen.Timescale, chosen.Samples, offsets, ticks)
-	if err != nil {
-		return err
-	}
-	ctx.rep.KeyframeIndex = kf
-	ctx.rep.Keyframes = len(kf.Entries)
-	data := func(i int) ([]byte, bool) {
-		src := chosen.SampleIndices[i]
-		p, ok := ctx.videoBytes[src]
-		return p, ok
-	}
-	segIndexes, err := index.BuildSegments(chosen.Track, chosen.Timescale, chosen.Samples, data, segs, nil)
-	if err != nil {
-		return err
-	}
-	ctx.rep.SegmentIndexes = segIndexes
-	matched, total, err := index.VerifySegments(chosen.Track, chosen.Timescale, chosen.Samples, data, segs, segIndexes, nil)
-	if err != nil {
-		return err
-	}
-	if total == 0 {
-		ctx.rep.SegmentHashMatch = 1
-	} else {
-		ctx.rep.SegmentHashMatch = float64(matched) / float64(total)
-	}
-	ctx.rep.KeyframeHitRate = keyframeHitRate(kf, chosen.Samples)
-	return nil
-}
-
-// keyframeHitRate is the fraction of reference keyframes (sync samples of the
-// full track) that the index can reach exactly.
-func keyframeHitRate(kf index.KeyframeIndex, all []model.Sample) float64 {
-	var want []int64
-	for _, s := range all {
-		if !s.Sync {
-			continue
-		}
-		r, err := clock.FromModel(s.Time.RepairedTime)
-		if err != nil {
-			continue
-		}
-		t, err := r.FloorTicks(kf.Timescale)
-		if err != nil {
-			continue
-		}
-		want = append(want, t)
-	}
-	if len(want) == 0 {
-		return 1
-	}
-	hits := 0
-	for _, t := range want {
-		e, ok := kf.Lookup(t)
-		if ok && e.Ticks == t {
-			hits++
-		}
-	}
-	return float64(hits) / float64(len(want))
-}
-
-// sortStrings is a small helper kept for deterministic report rendering.
-func sortStrings(ss []string) []string {
-	s := append([]string(nil), ss...)
-	sort.Strings(s)
-	return s
 }

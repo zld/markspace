@@ -10,6 +10,12 @@ import (
 // withColor is set the SEI advertises BT.2020 primaries/matrix, which
 // conflicts with the container's BT.709 declaration.
 func VideoAU(index int, withColorSEI bool, annexB bool) []byte {
+	return VideoAUSeeded(index, 0, withColorSEI, annexB)
+}
+
+// VideoAUSeeded is VideoAU with a seed folded into the slice filler so that
+// different fixture seeds produce different media bytes.
+func VideoAUSeeded(index int, seed int64, withColorSEI bool, annexB bool) []byte {
 	isSync := index%30 == 0
 	var body []byte
 	nal := func(typ byte, payload []byte) {
@@ -38,7 +44,7 @@ func VideoAU(index int, withColorSEI bool, annexB bool) []byte {
 	}
 	fill := make([]byte, 48)
 	for i := range fill {
-		fill[i] = byte(index*31 + i*7)
+		fill[i] = byte(index*31 + i*7 + int(seed)*17)
 	}
 	nal(sliceType, fill)
 	return body
@@ -63,8 +69,10 @@ func seiPayload(index int, withColor bool) []byte {
 	msg = append(seiUUIDBytes(), body...)
 	out = appendSEI(out, 5, msg)
 	if withColor {
-		// colour_type 'nclx' then primaries/transfer/matrix = BT.2020 (9,14,9)
-		col := []byte{'n', 'c', 'l', 'x', 0, 9, 0, 14, 0, 9, 0x80}
+		// ITU-T T.35 user-data-unregistered payload: country code 0xB5,
+		// provider 0x0031, then an "nclx" colour declaration carrying BT.2020
+		// primaries/transfer/matrix (9, 14, 9).
+		col := []byte{0xB5, 0x00, 0x31, 'n', 'c', 'l', 'x', 0, 9, 0, 14, 0, 9, 0x80}
 		out = appendSEI(out, 5, col)
 	}
 	out = append(out, 0x80)

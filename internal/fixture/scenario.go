@@ -22,6 +22,7 @@ const (
 	FaultBackward      Fault = "backward"
 	FaultAudioGap      Fault = "audio-gap"
 	FaultAudioOverlap  Fault = "audio-overlap"
+	FaultAudioLoss     Fault = "audio-loss"
 	FaultAudioShort    Fault = "audio-short"
 	FaultCorruptLayer  Fault = "corrupt-layer"
 )
@@ -133,7 +134,7 @@ func BuildScenario(opts ScenarioOptions) (Scenario, error) {
 		SampleDur: uint32(frameTicks), Count: frames, SyncEvery: syncEvery,
 		Color: videoColor,
 		Payload: func(i int) []byte {
-			return VideoAU(i, opts.Faults[FaultColorConflict], false)
+			return VideoAUSeeded(i, opts.Seed, opts.Faults[FaultColorConflict], false)
 		},
 	}
 	audio := TrackSpec{
@@ -154,81 +155,8 @@ func BuildScenario(opts ScenarioOptions) (Scenario, error) {
 	}
 	s.MP4 = mp4
 
-	// RTP video: 2 packets per access unit, one frame in timestamp steps.
-	var seq uint16 = 1000
-	startTS := uint32(0)
-	if opts.Faults[FaultWrap] {
-		// Start 1.5 seconds before the 32-bit modulus so it wraps mid-run.
-		startTS = uint32((1 << 32) - (90000 * 3 / 2))
-	}
-	for i := 0; i < frames; i++ {
-		ts := startTS + uint32(int64(i)*frameTicks)
-		au := VideoAU(i, opts.Faults[FaultColorConflict], true)
-		half := len(au) / 2
-		pkts := []PacketSpec{
-			{Seq: seq, TS: ts, Marker: false, Payload: au[:half]},
-			{Seq: seq + 1, TS: ts, Marker: true, Payload: au[half:]},
-		}
-		seq += 2
-		for _, p := range pkts {
-			if opts.Faults[FaultLoss] && i%11 == 5 {
-				seq++
-				continue // drop the whole access unit
-			}
-			if opts.Faults[FaultLoss] && i == 20 && p.Marker {
-				seq++
-				continue // drop only the tail fragment
-			}
-			raw, err := marshalRTP(p)
-			if err != nil {
-				return Scenario{}, err
-			}
-			s.VideoRTP = append(s.VideoRTP, raw)
-		}
-	}
-	if opts.Faults[FaultLoss] {
-		// Reorder two adjacent packets at the start to exercise reorder logic.
-		if len(s.VideoRTP) > 4 {
-			s.VideoRTP[2], s.VideoRTP[3] = s.VideoRTP[3], s.VideoRTP[2]
-		}
-	}
-	if opts.Faults[FaultBackward] {
-		// Inject a packet whose timestamp jumps back by about a second, well
-		// beyond any reordering jitter, in the middle of the program.
-		backTicks := uint32(45000) // 0.5 s
-		bad, err := marshalRTP(PacketSpec{Seq: seq, TS: startTS + backTicks, Marker: true, Payload: VideoAU(frames, false, true)})
-		if err != nil {
-			return Scenario{}, err
-		}
-		insertAt := len(s.VideoRTP) / 2
-		s.VideoRTP = append(s.VideoRTP[:insertAt], append([][]byte{bad}, s.VideoRTP[insertAt:]...)...)
-		seq++
-	}
-
-	// Audio RTP: PCM-like frames at 48 kHz.
-	var aseq uint16 = 4000
-	missingTicks := uint32(0)
-	for i := 0; i < audio.Count; i++ {
-		ts := uint32(int64(i)*1024) + missingTicks
-		payload := AudioFrame(i, true)
-		if opts.Faults[FaultAudioShort] && i == audio.Count-1 {
-			payload = payload[:64]
-		}
-		raw, err := marshalRTP(PacketSpec{Seq: aseq, TS: ts, Marker: true, Payload: payload})
-		if err != nil {
-			return Scenario{}, err
-		}
-		aseq++
-		if opts.Faults[FaultAudioGap] && i == 8 {
-			// Six frames vanish: both the timestamp grid and the sequence
-			// numbers show the hole.
-			aseq += 6
-			missingTicks += 6 * 1024
-		}
-		s.AudioRTP = append(s.AudioRTP, raw)
-	}
-	if opts.Faults[FaultAudioOverlap] && len(s.AudioRTP) > 5 {
-		s.AudioRTP = append(s.AudioRTP[:5], append([][]byte{s.AudioRTP[4]}, s.AudioRTP[5:]...)...)
+	if err := buildStreams(&s, opts, video, audio, frames, frameTicks, syncEvery); err != nil {
+		return Scenario{}, err
 	}
 
 	// Subtitle cues, chapters, ID3, emsg, SEI are spread over the program and
@@ -332,12 +260,6 @@ func PipelineInput(s Scenario, faults []Fault) pipeline.Input {
 	// The container declares BT.709 limited range for every fixture.
 	in.ColorDecls = []model.ColorDeclaration{
 		{Source: model.ColorFromContainer, Primaries: 1, Transfer: 1, Matrix: 1},
-	}
-	if set[FaultColorConflict] {
-		// The bitstream SEI advertises BT.2020; the container keeps BT.709.
-		in.ColorDecls = append(in.ColorDecls, model.ColorDeclaration{
-			Source: model.ColorFromBitstream, Primaries: 9, Transfer: 14, Matrix: 9,
-		})
 	}
 	in.AudioLayouts = []model.AudioDescriptor{
 		{Source: "mp4-stsd", ChannelCount: 2, SampleRate: 48000, Layout: "stereo"},
