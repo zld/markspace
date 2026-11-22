@@ -93,6 +93,11 @@ func parseTrak(trak *Box, fileLen uint64, opts ParseOptions) (*model.Track, erro
 		return nil, model.AtTrack(model.StageContainer, model.ErrUnsupportedBox, 0, "trak missing mdia")
 	}
 	tr := &model.Track{}
+	if tkhd := FindFirst(trak.Children, BoxTkhd); tkhd != nil {
+		if err := parseTkhd(tr, tkhd); err != nil {
+			return nil, err
+		}
+	}
 	mdhd := FindFirst(mdia.Children, BoxMdhd)
 	if mdhd == nil {
 		return nil, model.AtTrack(model.StageContainer, model.ErrUnsupportedBox, 0, "missing mdhd")
@@ -125,6 +130,24 @@ func parseTrak(trak *Box, fileLen uint64, opts ParseOptions) (*model.Track, erro
 		parseAudio(tr, stbl)
 	}
 	return tr, nil
+}
+
+func parseTkhd(tr *model.Track, box *Box) error {
+	fb, ok := AsFullBox(box.Payload)
+	if !ok || len(fb.Body) < 20 {
+		return model.AtTrack(model.StageContainer, model.ErrCorruptSampleTable, 0, "bad tkhd")
+	}
+	// v0: creation(4) modification(4) track_ID(4) reserved(4) duration(4)
+	tr.ID = U32(fb.Body[8:12])
+	if tr.ID == 0 {
+		return model.AtTrack(model.StageContainer, model.ErrCorruptSampleTable, 0, "tkhd track_ID zero")
+	}
+	if fb.Version == 1 && len(fb.Body) >= 32 {
+		tr.Duration = U64(fb.Body[24:32])
+	} else if len(fb.Body) >= 20 {
+		tr.Duration = uint64(U32(fb.Body[16:20]))
+	}
+	return nil
 }
 
 func parseMdhd(tr *model.Track, box *Box) error {
