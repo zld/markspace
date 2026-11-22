@@ -209,7 +209,10 @@ func (c *TrackClock) checkDTS(dts uint64) error {
 		case dts < c.prev:
 			// A 32-bit domain rollover presents as a large drop from the top
 			// half of the space to the bottom half.
-			if c.prev >= 1<<31 && dts < 1<<31 && c.prev-dts > 1<<31 {
+			// Masking a 32-bit clock to its low bits turns a forward past 2^32
+			// into a drop of at least 2^30 from the upper half. Larger drops
+			// are unmistakable; see the 2^31 case below.
+			if c.prev >= 1<<31 && dts < 1<<31 && c.prev-dts >= 1<<30 {
 				return c.err(fault.ErrTimeWrap, c.seen, "dts %d followed by %d indicates 32-bit wrap", c.prev, dts)
 			}
 			return c.err(fault.ErrTimeBackwards, c.seen, "dts %d follows %d", dts, c.prev)

@@ -55,6 +55,7 @@ type FileSpec struct {
 	BreakStszAt   int   // sample index whose stsz entry is corrupted, -1 disables
 	BreakSizeOf   int   // sample index whose payload is cut short, -1 disables
 	DropSyncAfter int   // remove stss entries after this sample number, 0 disables
+	WrapAt        int   // sample index after which the 32-bit clock jumps, 0 disables
 }
 
 // AudioSamples generates a deterministic PCM16LE mono waveform at 48 kHz.
@@ -339,8 +340,7 @@ func buildStbl(spec FileSpec, tr TrackSpec, layout trackLayout) []byte {
 	}
 	stsd := buildStsd(tr)
 
-	// stts: one entry (constant sample duration).
-	stts := fullBox("stts", 0, 0, u32(1), u32(uint32(tr.Samples)), u32(tr.SampleDur))
+	stts := buildStts(spec, tr)
 
 	// stsc: one sample per chunk.
 	var stscEntries []byte
@@ -403,6 +403,29 @@ func buildStbl(spec FileSpec, tr TrackSpec, layout trackLayout) []byte {
 		parts = append(parts, ctts)
 	}
 	return box("stbl", parts...)
+}
+
+// buildStts emits constant-duration runs, injecting two 2^31 jumps at WrapAt
+// so a 32-bit media clock crosses 2^32 and wraps back to a small value.
+func buildStts(spec FileSpec, tr TrackSpec) []byte {
+	if spec.WrapAt <= 0 || spec.WrapAt >= tr.Samples-1 {
+		return fullBox("stts", 0, 0, u32(1), u32(uint32(tr.Samples)), u32(tr.SampleDur))
+	}
+	var entries []byte
+	entries = append(entries, u32(uint32(spec.WrapAt))...)
+	entries = append(entries, u32(tr.SampleDur)...)
+	entries = append(entries, u32(2)...)
+	entries = append(entries, u32(0x80000000)...)
+	rest := tr.Samples - spec.WrapAt - 2
+	if rest > 0 {
+		entries = append(entries, u32(uint32(rest))...)
+		entries = append(entries, u32(tr.SampleDur)...)
+	}
+	count := uint32(2)
+	if rest > 0 {
+		count = 3
+	}
+	return fullBox("stts", 0, 0, u32(count), entries)
 }
 
 func buildStsd(tr TrackSpec) []byte {

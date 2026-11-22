@@ -56,7 +56,10 @@ type Track struct {
 	IndexComplete    bool
 	DroppedSamples   int
 	SyncTablePresent bool
-	Warnings         []*fault.Error
+	// TimestampBits is the width of the media decode clock: 32 for mdhd
+	// version 0, 64 for version 1. Legacy 32-bit clocks wrap at 2^32.
+	TimestampBits int
+	Warnings      []*fault.Error
 
 	// Raw tables retained for reconstruction when IndexComplete is false.
 	Sizes        []uint32
@@ -177,6 +180,10 @@ func parseTrack(tree *Tree, trak *Box) (*Track, []*fault.Error) {
 	} else if h, ok := p.(*isom.Mdhd); ok {
 		tr.Timescale = h.Timescale
 		tr.MediaDuration = h.GetDuration()
+		tr.TimestampBits = 64
+		if h.GetVersion() == 0 {
+			tr.TimestampBits = 32
+		}
 	}
 	if tr.Timescale == 0 {
 		warn(fault.Errorf("mp4.track", fault.KindParse, "zero media timescale").At(mdhd.Offset).Recovered())
@@ -264,6 +271,12 @@ func parseTrack(tree *Tree, trak *Box) (*Track, []*fault.Error) {
 				dts = math.MaxUint64
 			} else {
 				dts += uint64(s.Duration)
+			}
+			if tr.TimestampBits == 32 {
+				// The container declares a 32-bit media clock; positions are
+				// the low 32 bits of the accumulated duration, so a sum past
+				// 2^32 wraps and the next stage reports a located wrap.
+				s.DTS = dts & 0xFFFFFFFF
 			}
 			off += int64(size)
 			sampleIdx++
