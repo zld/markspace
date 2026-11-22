@@ -70,6 +70,7 @@ type Segment struct {
 	SHA256       string
 	SilentNS     int64
 	SilenceKnown bool
+	Recovered    bool
 }
 
 // Request asks for one track range.
@@ -152,6 +153,7 @@ type SegmentPlan struct {
 	KeyPresented int64
 	KeyExact     bool
 	Gap          int64
+	Recovered    bool
 }
 
 // Planner wires parsed media to the index and fingerprint stages.
@@ -161,6 +163,8 @@ type Planner struct {
 	Pres    *Presentation
 	Silence map[uint32]audio.Result
 	Samples *SampleSource
+	// Recovered marks the whole run as salvaged from damaged input.
+	Recovered bool
 }
 
 // NewPlanner builds a planner from parsed media and cached presentations.
@@ -238,6 +242,9 @@ func (p *Planner) planOne(ti *index.TrackIndex, tr *mp4.Track, start, end int64)
 		TrackID: tr.ID, StartNS: start, EndNS: end, FirstSample: entry.Sample,
 		SampleCount: last - entry.Sample + 1, KeyOffset: entry.Offset,
 		KeyPresented: entry.Presented, KeyExact: entry.Exact, Gap: gap,
+		// A cut whose anchor is inferred, or which had to fall back to an
+		// earlier sync frame, is a salvaged slice rather than a clean one.
+		Recovered: p.Recovered || !entry.Exact || gap > 0,
 	}, nil
 }
 
@@ -253,6 +260,7 @@ func (p *Planner) Materialize(plan SegmentPlan) (Segment, error) {
 		StartNS: plan.StartNS, EndNS: plan.EndNS, FirstSample: plan.FirstSample,
 		SampleCount: plan.SampleCount, KeyOffset: plan.KeyOffset, KeyPresented: plan.KeyPresented,
 		KeyExact: plan.KeyExact, Content: digest, ContentHex: hex, SHA256: hex,
+		Recovered: plan.Recovered,
 	}
 	p.annotateSilence(&seg)
 	return seg, nil

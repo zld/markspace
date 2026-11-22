@@ -71,6 +71,9 @@ func RunBatch(planner *Planner, reqs []Request, store *checkpoint.Store, opt Bat
 			res.Segments = append(res.Segments, seg)
 			rec := recordOf(seg)
 			rec.Block = bi
+			if seg.Recovered {
+				res.Recovered = true
+			}
 			recs = append(recs, rec)
 		}
 		if len(recs) > 0 {
@@ -106,7 +109,7 @@ func RunBatch(planner *Planner, reqs []Request, store *checkpoint.Store, opt Bat
 func recordOf(s Segment) checkpoint.Record {
 	return checkpoint.Record{TrackID: s.TrackID, StartNS: s.StartNS, EndNS: s.EndNS,
 		FirstSample: s.FirstSample, Samples: s.SampleCount, Content: s.ContentHex,
-		SilentNS: s.SilentNS, KeyExact: s.KeyExact}
+		SilentNS: s.SilentNS, KeyExact: s.KeyExact, Recovered: s.Recovered}
 }
 
 func segmentsFromRecords(store *checkpoint.Store, block int, plan []SegmentPlan) ([]Segment, error) {
@@ -124,7 +127,7 @@ func segmentsFromRecords(store *checkpoint.Store, block int, plan []SegmentPlan)
 			ID: segmentID(r.TrackID, r.FirstSample, r.Samples, r.StartNS), TrackID: r.TrackID,
 			StartNS: r.StartNS, EndNS: r.EndNS, FirstSample: r.FirstSample,
 			SampleCount: r.Samples, ContentHex: r.Content, SHA256: r.Content,
-			SilentNS: r.SilentNS, KeyExact: r.KeyExact,
+			SilentNS: r.SilentNS, KeyExact: r.KeyExact, Recovered: r.Recovered,
 		}
 		if raw, err := hex.DecodeString(r.Content); err == nil && len(raw) == 32 {
 			copy(seg.Content[:], raw)

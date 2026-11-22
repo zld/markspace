@@ -45,15 +45,27 @@ func OpenSession(path string) (*Session, error) {
 
 	s.Clocks = map[uint32]*clock.TrackClock{}
 	var problems []error
+	// Offsets anchor every track at its earliest presentation tick so
+	// independently clocked tracks line up. They must come from a raw DTS
+	// conversion, not from the monotonic clock, which rejects a first sample
+	// whose low bits already wrapped.
+	offsets := map[uint32]int64{}
+	for _, tr := range movie.Tracks {
+		off, err := trackOffset(movie, tr)
+		if err != nil {
+			problems = append(problems, err)
+			continue
+		}
+		offsets[tr.ID] = off
+	}
 	for _, tr := range movie.Tracks {
 		edits, err := convertEdits(tr, movie.Timescale)
 		if err != nil {
 			problems = append(problems, err)
 			continue
 		}
-		offset, err := trackOffset(movie, tr)
-		if err != nil {
-			problems = append(problems, err)
+		offset, ok := offsets[tr.ID]
+		if !ok {
 			continue
 		}
 		clk, err := clock.NewTrackClock(path, tr.ID, tr.Timescale, clock.NanosecondTimeline(), edits, offset)
@@ -103,7 +115,12 @@ func (s *Session) Close() error {
 
 // Planner builds the segmentation planner for this session.
 func (s *Session) Planner() (*Planner, error) {
-	return NewPlanner(s.Movie, s.Tree, s.Index, s.Pres, s.Silence)
+	p, err := NewPlanner(s.Movie, s.Tree, s.Index, s.Pres, s.Silence)
+	if err != nil {
+		return nil, err
+	}
+	p.Recovered = s.Err != nil
+	return p, nil
 }
 
 // Requests returns one full-range request per video track. When no video

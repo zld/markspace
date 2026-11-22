@@ -10,7 +10,6 @@ import (
 
 	"github.com/pairwise/mediad/internal/checkpoint"
 	"github.com/pairwise/mediad/internal/fault"
-	"github.com/pairwise/mediad/internal/fingerprint"
 	"github.com/pairwise/mediad/internal/fixtures"
 	"github.com/pairwise/mediad/internal/pipeline"
 	"github.com/pairwise/mediad/internal/verify"
@@ -88,9 +87,6 @@ func buildManifest(mediaDir string, files []fixtures.DemoFile, out string) (*ver
 			problems = append(problems, err)
 			continue
 		}
-		if err != nil {
-			problems = append(problems, err)
-		}
 		sess.Close()
 		m.Segments = append(m.Segments, segs...)
 	}
@@ -129,7 +125,7 @@ func analyseFile(sess *pipeline.Session, path, name string) ([]verify.SegmentEnt
 			StartNS: s.StartNS, EndNS: s.EndNS, FirstSample: s.FirstSample,
 			SampleCount: s.SampleCount, KeyOffset: s.KeyOffset, KeyExact: s.KeyExact,
 			Inferred: !s.KeyExact, SilentNS: s.SilentNS, SilenceKnown: s.SilenceKnown,
-			SHA256: s.SHA256, Recovered: sess.Err != nil,
+			SHA256: s.SHA256, Recovered: s.Recovered,
 		})
 	}
 	return out, runErr
@@ -249,5 +245,3 @@ func pickVideoFile(mediaDir string, names []string) string {
 	}
 	return ""
 }
-
-var _ = fingerprint.ManifestHash

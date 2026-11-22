@@ -35,6 +35,7 @@ type Record struct {
 	Content     string `json:"content"`
 	SilentNS    int64  `json:"silent_ns"`
 	KeyExact    bool   `json:"key_exact"`
+	Recovered   bool   `json:"recovered"`
 }
 
 // State is the replayed, verified progress of a batch.

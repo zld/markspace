@@ -210,9 +210,15 @@ func (c *TrackClock) Presentation(dts uint64, compositionOffset int64) (int64, e
 	if err != nil {
 		return 0, c.err(fault.ErrBadSample, c.seen, "%v", err)
 	}
+	// The anchor is the earliest raw presentation tick. Wrapped low bits can
+	// land before it late in the file; that sample is not "before" the
+	// timeline, it jumped via the wrap, and the forward-gap check above
+	// already rejected the sequence that produces it. Clamp rather than
+	// converting a wrap report into a less specific regression report.
 	presented -= c.offset
 	if presented < 0 {
-		return 0, c.err(fault.ErrTimeBackwards, c.seen, "presentation time %d precedes timeline origin by %d", presented, -presented)
+		return 0, c.err(fault.ErrTimeWrap, c.seen,
+			"presentation ticks %d resolve before the track origin at %d", presented+c.offset, c.offset)
 	}
 	return presented, nil
 }

@@ -110,8 +110,7 @@ func Build(movie *mp4.Movie, pres Presentation) (*Index, error) {
 		if tr.SyncTablePresent && tailUnindexed(ti.Entries, len(tr.Samples)) {
 			lastSync := ti.Entries[len(ti.Entries)-1].Sample
 			e := fault.Errorf("index.build", fault.KindIndex,
-				"sync table stops at sample %d of %d, more than two GOPs short; the tail can only be reached by inference",
-				lastSync, len(tr.Samples)).
+				"sync table stops at sample %d of %d, more than two GOPs short", lastSync, len(tr.Samples)).
 				WithPath(movie.Path).WithTrack(tr.ID).WithSample(lastSync).Recovered().Wrapped(fault.ErrIncomplete)
 			ti.Warnings = append(ti.Warnings, e)
 			problems = append(problems, e)

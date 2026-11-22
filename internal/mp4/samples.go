@@ -589,8 +589,12 @@ func validateAgainstMdat(m *Movie, tr *Track, warn func(*fault.Error)) {
 	var dropped []Sample
 	for _, s := range tr.Samples {
 		end := s.End()
+		// A zero size or a reversed range is a table defect, not a missing
+		// payload. Ranges that merely fall outside mdat mean the tail was cut
+		// off; both are withheld, but only the former suggests a bad index.
 		if s.Size == 0 || s.Offset < 0 || end < s.Offset {
 			dropped = append(dropped, s)
+			tr.IndexComplete = false
 			continue
 		}
 		if !inMdat(s.Offset, end) {
