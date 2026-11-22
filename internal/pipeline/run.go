@@ -377,12 +377,20 @@ func encodePackets(pkts []rtp.Packet) []byte {
 	return out
 }
 
-// locateFault reports the first non-packet event at or after the injected
-// first-bad sequence, pairing the extended sequence with its time position.
+// locateFault returns the first non-packet event at or after the injected
+// first-bad sequence plus the absolute localization error in nanoseconds:
+// the time difference between the located event's slot and the exact slot of
+// the injected first-bad packet. A precise hit yields zero.
 func locateFault(faults []FaultRecord, events []rtp.Event, firstBad uint16) (uint64, int64) {
+	const tickNS = int64(1_000_000_000 / 48000) * 160 // 160 samples/packet at 48kHz
+	expectedNS := int64(firstBad) * tickNS
 	for _, e := range events {
 		if e.ExtSeq >= uint64(firstBad) && e.Kind != rtp.EventPacket {
-			return e.ExtSeq, e.Nanos
+			errNS := e.Nanos - expectedNS
+			if errNS < 0 {
+				errNS = -errNS
+			}
+			return e.ExtSeq, errNS
 		}
 	}
 	return uint64(firstBad), 0
