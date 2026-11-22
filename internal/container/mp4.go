@@ -306,6 +306,13 @@ func (p *Parser) readTrak(r io.ReadSeeker, trak *mp4.BoxInfo) (*Track, error) {
 			tr.Keyframes = append(tr.Keyframes, i)
 		}
 	}
+	if len(tr.Keyframes) > 0 && stss != nil && tr.Keyframes[0] != 0 {
+		// A track whose first sample is not a keyframe cannot be decoded from
+		// its start; that is a data error, not something to paper over.
+		return nil, media.NewError(media.CorruptSampleTable,
+			"first sample is not a sync sample (first keyframe is %d)",
+			tr.Keyframes[0]).AtTrack(trackID).AtOffset(int64(tr.Samples[tr.Keyframes[0]].Offset))
+	}
 	return tr, nil
 }
 
@@ -403,19 +410,23 @@ func expandStts(stts *mp4.Stts, count int, trackID int32) ([]uint32, error) {
 			"stts entry_count %d does not match %d entries", stts.EntryCount, len(stts.Entries)).AtTrack(trackID)
 	}
 	deltas := make([]uint32, 0, count)
-	var total float64
+	var total uint64
+	const maxTotal = uint64(1 << 62)
 	for ei, e := range stts.Entries {
 		if uint64(e.SampleCount) > uint64(count-len(deltas)) {
 			return nil, media.NewError(media.CorruptSampleTable,
 				"stts run %d of %d samples overruns sample count %d", ei, e.SampleCount, count).AtTrack(trackID)
 		}
-		for i := uint32(0); i < e.SampleCount; i++ {
-			deltas = append(deltas, e.SampleDelta)
-		}
-		total += float64(e.SampleCount) * float64(e.SampleDelta)
-		if total > 1<<62 {
+		// Check the run's contribution in 64-bit integers before extending,
+		// so an overflowing declared duration is reported rather than
+		// silently saturating.
+		if e.SampleDelta != 0 && uint64(e.SampleCount) > (maxTotal-total)/uint64(e.SampleDelta) {
 			return nil, media.NewError(media.Overflow,
 				"cumulative decode duration overflows int64").AtTrack(trackID)
+		}
+		total += uint64(e.SampleCount) * uint64(e.SampleDelta)
+		for i := uint32(0); i < e.SampleCount; i++ {
+			deltas = append(deltas, e.SampleDelta)
 		}
 	}
 	if len(deltas) != count {

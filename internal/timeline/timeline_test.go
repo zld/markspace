@@ -337,3 +337,67 @@ func TestHashChangesWhenPayloadChanges(t *testing.T) {
 		t.Fatal("empty hash must be stable")
 	}
 }
+
+func TestWatermarkSealsGapsWithoutStalling(t *testing.T) {
+	cfg := testConfig(t)
+	tl, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Segment 1 is never populated; a far-ahead event must still advance the
+	// watermark and seal [0,1000) and [1000,2000) rather than pinning memory.
+	feed(t, tl, []Event{
+		{Time: ms(10), Track: 1, Seq: 1},
+		{Time: ms(9000), Track: 1, Seq: 2},
+	})
+	segs := tl.Segments()
+	if len(segs) < 3 {
+		t.Fatalf("sealed %d segments, expected the watermark to pass the gap", len(segs))
+	}
+	if !segs[1].IsGap || len(segs[1].Events) != 0 {
+		t.Fatalf("segment 1 = %+v, want an empty gap segment", segs[1])
+	}
+	if tl.Counts()[media.UnrecoverableGap] == 0 {
+		t.Error("gap was not counted")
+	}
+	// Every sealed interval must still tile the timeline exactly.
+	for i := 1; i < len(segs); i++ {
+		if segs[i].Start != segs[i-1].End {
+			t.Fatalf("sealed segments are not contiguous at %d", i)
+		}
+	}
+}
+
+func TestLateEventFillsSealedGapAndRetiresIt(t *testing.T) {
+	cfg := testConfig(t)
+	tl, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	feed(t, tl, []Event{
+		{Time: ms(10), Track: 1, Seq: 1},
+		{Time: ms(9000), Track: 1, Seq: 2},
+	})
+	before := tl.Counts()[media.UnrecoverableGap]
+	if before == 0 {
+		t.Fatal("setup did not produce a gap")
+	}
+	// Deliver an event into the gap interval; it is no longer missing.
+	if err := tl.Push(Event{Time: ms(1500), Track: 3, Seq: 7}); err != nil {
+		t.Fatalf("filling a gap: %v", err)
+	}
+	after := tl.Counts()[media.UnrecoverableGap]
+	if after >= before {
+		t.Fatalf("gap count did not fall: %d -> %d", before, after)
+	}
+	seg := tl.Segments()[1]
+	if seg.IsGap {
+		t.Error("filled segment is still flagged as a gap")
+	}
+	if len(seg.Events) != 1 || seg.Events[0].Seq != 7 {
+		t.Fatalf("segment events = %+v", seg.Events)
+	}
+	if seg.Replays != 1 {
+		t.Errorf("replays = %d", seg.Replays)
+	}
+}

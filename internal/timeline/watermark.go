@@ -47,6 +47,10 @@ type Segment struct {
 	End     media.Nano
 	Events  []Event
 	Replays int // number of recomputations that touched this segment
+	// IsGap marks an interval sealed with no events. It keeps the boundary
+	// grid intact and is visible to downstream consumers instead of being
+	// silently absent.
+	IsGap bool
 }
 
 // LateRecord documents one late event and the interval it forced to recompute.
@@ -228,6 +232,14 @@ func (tl *Timeline) Push(ev Event) error {
 			AtTrack(int32(ev.Track)).AtOffset(int64(ev.Time))
 	}
 	seg := &tl.sealed[idx]
+	if seg.IsGap {
+		// The interval had already been published as a gap; filling it means
+		// that gap no longer exists, so retire it rather than double counting.
+		if tl.counts[media.UnrecoverableGap] > 0 {
+			tl.counts[media.UnrecoverableGap]--
+		}
+		seg.IsGap = false
+	}
 	if len(seg.Events)+1 > tl.cfg.MaxEventsPerSegment {
 		tl.counts[media.ReplayLimitExceeded]++
 		return media.NewError(media.ReplayLimitExceeded,
@@ -243,8 +255,12 @@ func (tl *Timeline) Push(ev Event) error {
 	return nil
 }
 
-// sealReady seals every buffered segment whose end is at or below the
-// watermark, stopping at the first gap so sealed output never skips data.
+// sealReady seals every segment whose end is at or below the watermark.
+//
+// An interval with no buffered events is sealed as an explicit empty segment
+// and counted as a gap. Stalling instead would let one missing interval pin
+// the whole timeline in memory, but silently skipping it would shift every
+// later boundary, so the gap is made visible in the output.
 func (tl *Timeline) sealReady() error {
 	wm := tl.water.Value()
 	for {
@@ -255,16 +271,18 @@ func (tl *Timeline) sealReady() error {
 		}
 		evs, ok := tl.pending[idx]
 		if !ok {
-			return nil
+			tl.counts[media.UnrecoverableGap]++
+		} else {
+			sortEvents(evs)
+			delete(tl.pending, idx)
 		}
-		sortEvents(evs)
 		tl.sealed = append(tl.sealed, Segment{
 			Index:  idx,
 			Start:  bounds.Start,
 			End:    bounds.End,
 			Events: evs,
+			IsGap:  !ok,
 		})
-		delete(tl.pending, idx)
 	}
 }
 
@@ -292,7 +310,7 @@ func (tl *Timeline) Flush() error {
 		evs, ok := tl.pending[idx]
 		if !ok {
 			gaps++
-			tl.sealed = append(tl.sealed, Segment{Index: idx, Start: b.Start, End: b.End})
+			tl.sealed = append(tl.sealed, Segment{Index: idx, Start: b.Start, End: b.End, IsGap: true})
 			continue
 		}
 		sortEvents(evs)

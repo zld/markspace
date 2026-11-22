@@ -74,6 +74,8 @@ func (r *Replay) Recompute(events []Event, from, to media.Nano) (Result, error) 
 		if evs, ok := buckets[idx]; ok {
 			sortEvents(evs)
 			seg.Events = evs
+		} else {
+			seg.IsGap = true
 		}
 		res.Segments = append(res.Segments, seg)
 	}
