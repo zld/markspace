@@ -65,8 +65,12 @@ type Sample struct {
 	MissingPackets int
 	// Incomplete is true when the marker/last packet was absent.
 	Incomplete bool
-	SeqFirst   uint16
-	SeqLast    uint16
+	// RawTimestamp is the unexpanded 32-bit RTP timestamp. It is the stable
+	// identity external indexes use, because it survives reordering and loss
+	// of other samples.
+	RawTimestamp uint32
+	SeqFirst     uint16
+	SeqLast      uint16
 	Segment    int
 	Scan       codec.ScanResult
 }
@@ -181,6 +185,7 @@ func demuxStream(spec StreamSpec, clock *timeline.Clock, packets []*transport.Pa
 			Data:           data,
 			MissingPackets: missing,
 			Incomplete:     incomplete,
+			RawTimestamp:   ts,
 			SeqFirst:       group[0].Seq,
 			SeqLast:        group[len(group)-1].Seq,
 			Segment:        int(timeline.SegmentIndex(ns, spec.OriginNS, spec.SegmentNS, timeline.EdgeOwnsRight)),

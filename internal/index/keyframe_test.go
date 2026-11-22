@@ -26,16 +26,21 @@ func sample(key bool, salt byte) []byte {
 	return out
 }
 
+// scansFor builds scans with synthetic timestamps 1000, 2000, ... so tests
+// exercise timestamp-keyed matching rather than ordinals.
 func scansFor(samples [][]byte) []SampleScan {
 	out := make([]SampleScan, 0, len(samples))
 	for i, data := range samples {
 		out = append(out, SampleScan{
-			Stream: 0, Sample: i, Length: int64(len(data)),
+			Stream: 0, Sample: i, Timestamp: uint32(1000 * (i + 1)),
+			Length: int64(len(data)),
 			Result: codec.ScanH264(0, data, codec.DefaultScanLimits()),
 		})
 	}
 	return out
 }
+
+func ts(i int) uint32 { return uint32(1000 * (i + 1)) }
 
 // keyOffset returns the offset of the IDR unit in a sample.
 func keyOffset(t *testing.T, data []byte) int64 {
@@ -50,9 +55,9 @@ func keyOffset(t *testing.T, data []byte) int64 {
 func TestVerifyAcceptsMatchingIndex(t *testing.T) {
 	samples := [][]byte{sample(true, 1), sample(false, 2), sample(true, 3)}
 	idx := &Index{Version: 1, Entries: []Entry{
-		{Stream: 0, Sample: 0, Offset: keyOffset(t, samples[0]), Size: 4, Keyframe: true},
-		{Stream: 0, Sample: 2, Offset: keyOffset(t, samples[2]), Size: 4, Keyframe: true},
-		{Stream: 0, Sample: 1, Offset: 0, Size: 4, Keyframe: false},
+		{Stream: 0, Sample: 0, Timestamp: ts(0), Offset: keyOffset(t, samples[0]), Size: 4, Keyframe: true},
+		{Stream: 0, Sample: 2, Timestamp: ts(2), Offset: keyOffset(t, samples[2]), Size: 4, Keyframe: true},
+		{Stream: 0, Sample: 1, Timestamp: ts(1), Offset: 0, Size: 4, Keyframe: false},
 	}}
 	v := Verify(idx, scansFor(samples))
 	if len(v.Mismatches) != 0 {
@@ -66,8 +71,8 @@ func TestVerifyAcceptsMatchingIndex(t *testing.T) {
 func TestVerifyDetectsOffsetOutOfRange(t *testing.T) {
 	samples := [][]byte{sample(true, 1), sample(false, 2)}
 	idx := &Index{Version: 1, Entries: []Entry{
-		{Stream: 0, Sample: 0, Offset: 1 << 16, Size: 4, Keyframe: true},
-		{Stream: 0, Sample: 1, Offset: 0, Size: 4, Keyframe: false},
+		{Stream: 0, Sample: 0, Timestamp: ts(0), Offset: 1 << 16, Size: 4, Keyframe: true},
+		{Stream: 0, Sample: 1, Timestamp: ts(1), Offset: 0, Size: 4, Keyframe: false},
 	}}
 	v := Verify(idx, scansFor(samples))
 	// The out-of-range row is a mismatch, and its omitted keyframe is also
@@ -95,10 +100,10 @@ func TestVerifyDetectsOffsetOutOfRange(t *testing.T) {
 func TestVerifyDetectsFalseKeyframeClaim(t *testing.T) {
 	samples := [][]byte{sample(true, 1), sample(false, 2)}
 	idx := &Index{Version: 1, Entries: []Entry{
-		{Stream: 0, Sample: 0, Offset: keyOffset(t, samples[0]), Size: 4, Keyframe: true},
+		{Stream: 0, Sample: 0, Timestamp: ts(0), Offset: keyOffset(t, samples[0]), Size: 4, Keyframe: true},
 		// Parameter set at offset 0 is not a keyframe unit.
-		{Stream: 0, Sample: 0, Offset: 0, Size: 4, Keyframe: true},
-		{Stream: 0, Sample: 1, Offset: 0, Size: 4, Keyframe: false},
+		{Stream: 0, Sample: 0, Timestamp: ts(0), Offset: 0, Size: 4, Keyframe: true},
+		{Stream: 0, Sample: 1, Timestamp: ts(1), Offset: 0, Size: 4, Keyframe: false},
 	}}
 	v := Verify(idx, scansFor(samples))
 	if len(v.Mismatches) != 1 || v.Mismatches[0].Kind != MismatchNotKey {
@@ -114,7 +119,7 @@ func TestVerifyDetectsMissedKeyframe(t *testing.T) {
 	v := Verify(idx, scansFor(samples))
 	found := false
 	for _, m := range v.Mismatches {
-		if m.Kind == MismatchMissingKey && m.Entry.Sample == 1 {
+		if m.Kind == MismatchMissingKey && m.Entry.Timestamp == ts(1) {
 			found = true
 		}
 	}
@@ -126,7 +131,7 @@ func TestVerifyDetectsMissedKeyframe(t *testing.T) {
 func TestCheckAndRebuildReplacesBadIndex(t *testing.T) {
 	samples := [][]byte{sample(true, 1), sample(false, 2), sample(true, 3)}
 	idx := &Index{Version: 1, Entries: []Entry{
-		{Stream: 0, Sample: 0, Offset: 1 << 16, Size: 4, Keyframe: true},
+		{Stream: 0, Sample: 0, Timestamp: ts(0), Offset: 1 << 16, Size: 4, Keyframe: true},
 	}}
 	v, effective := CheckAndRebuild(idx, scansFor(samples))
 	if len(v.Mismatches) == 0 {
@@ -153,7 +158,7 @@ func TestCheckAndRebuildReplacesBadIndex(t *testing.T) {
 func TestCheckAndRebuildKeepsGoodIndex(t *testing.T) {
 	samples := [][]byte{sample(true, 1)}
 	idx := &Index{Version: 1, Entries: []Entry{
-		{Stream: 0, Sample: 0, Offset: keyOffset(t, samples[0]), Size: 4, Keyframe: true},
+		{Stream: 0, Sample: 0, Timestamp: ts(0), Offset: keyOffset(t, samples[0]), Size: 4, Keyframe: true},
 	}}
 	_, effective := CheckAndRebuild(idx, scansFor(samples))
 	if effective != idx {
@@ -171,7 +176,7 @@ func TestLoadRejectsMalformedAndOversize(t *testing.T) {
 	if _, err := Load(strings.NewReader(`{"version":1,"entries":[],"extra":1}`), Limits{}); err == nil {
 		t.Fatal("unknown field must be rejected")
 	}
-	big := `{"version":1,"entries":[{"stream":0,"sample":0,"offset":0,"size":4,"keyframe":true}]}`
+	big := `{"version":1,"entries":[{"stream":0,"sample":0,"timestamp":1,"offset":0,"size":4,"keyframe":true}]}`
 	if _, err := Load(strings.NewReader(big), Limits{MaxBytes: 8}); err == nil {
 		t.Fatal("oversize body must be rejected")
 	}
@@ -194,7 +199,7 @@ func TestRebuildIsSortedAndDeterministic(t *testing.T) {
 		}
 	}
 	for i := 1; i < len(a.Entries); i++ {
-		if a.Entries[i-1].Sample > a.Entries[i].Sample {
+		if a.Entries[i-1].Timestamp > a.Entries[i].Timestamp {
 			t.Fatalf("entries not sorted: %+v", a.Entries)
 		}
 	}

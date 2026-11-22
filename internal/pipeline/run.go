@@ -495,7 +495,7 @@ func collectSampleScans(dm *demux.Result) []index.SampleScan {
 	for _, st := range dm.Streams {
 		for _, s := range st.Samples {
 			out = append(out, index.SampleScan{
-				Stream: s.Stream, Sample: s.Index,
+				Stream: s.Stream, Sample: s.Index, Timestamp: s.RawTimestamp,
 				Length: int64(len(s.Data)), Result: s.Scan,
 			})
 		}

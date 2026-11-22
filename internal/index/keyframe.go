@@ -22,11 +22,15 @@ import (
 // when transport loss shifts global byte positions, which is exactly the case
 // the pipeline must detect rather than silently accept.
 type Entry struct {
-	Stream   int   `json:"stream"`
-	Sample   int   `json:"sample"`
-	Offset   int64 `json:"offset"`
-	Size     int64 `json:"size"`
-	Keyframe bool  `json:"keyframe"`
+	Stream int   `json:"stream"`
+	Sample int   `json:"sample"`
+	Offset int64 `json:"offset"`
+	Size   int64 `json:"size"`
+	// Timestamp is the sample's RTP timestamp and is the stable identity used
+	// for verification. Sample is informational: it shifts when an earlier
+	// access unit is lost entirely, while the timestamp does not.
+	Timestamp uint32 `json:"timestamp"`
+	Keyframe  bool   `json:"keyframe"`
 	// Sync marks a row the producer claims is an independent decodable start.
 	Sync bool `json:"sync,omitempty"`
 }
@@ -157,56 +161,48 @@ func (v Verification) HitRate() float64 {
 	return float64(v.Matched) / float64(v.Total)
 }
 
-// SampleScan is one demuxed sample's scan result and payload length.
+// SampleScan is one demuxed sample's scan result, payload length and stable
+// timestamp identity.
 type SampleScan struct {
-	Stream int
-	Sample int
-	Length int64
-	Result codec.ScanResult
+	Stream    int
+	Sample    int
+	Timestamp uint32
+	Length    int64
+	Result    codec.ScanResult
 }
 
-// Verify compares every index entry against the per-sample scans. An entry is
-// a match when its sample exists, its range is inside that sample, and its
-// keyframe flag agrees with the scanned unit covering the offset. Scanned
-// keyframes absent from the index are reported so recall is checked as well.
+// Verify compares every index entry against the per-sample scans. Rows are
+// matched by (stream, timestamp), the stable sample identity, so an entirely
+// lost access unit shifts ordinals without invalidating every later row.
 func Verify(idx *Index, scans []SampleScan) Verification {
 	v := Verification{Total: len(idx.Entries)}
-	byStream := make(map[int]map[int]SampleScan, len(scans))
+	type key struct {
+		stream int
+		ts     uint32
+	}
+	byKey := make(map[key]SampleScan, len(scans))
 	for _, s := range scans {
-		m, ok := byStream[s.Stream]
-		if !ok {
-			m = make(map[int]SampleScan)
-			byStream[s.Stream] = m
-		}
-		m[s.Sample] = s
+		byKey[key{s.Stream, s.Timestamp}] = s
 	}
 	type keyAddr struct {
-		stream, sample int
-		offset         int64
+		k      key
+		offset int64
 	}
 	indexedKeys := make(map[keyAddr]struct{})
 	for _, e := range idx.Entries {
 		if e.Keyframe || e.Sync {
-			indexedKeys[keyAddr{e.Stream, e.Sample, e.Offset}] = struct{}{}
+			indexedKeys[keyAddr{key{e.Stream, e.Timestamp}, e.Offset}] = struct{}{}
 		}
 	}
 
 	for _, e := range idx.Entries {
-		samples, ok := byStream[e.Stream]
+		scan, ok := byKey[key{e.Stream, e.Timestamp}]
 		if !ok {
 			v.Mismatches = append(v.Mismatches, Mismatch{
 				Kind: MismatchInvalidAddress, Entry: e,
-				Detail: fmt.Sprintf("stream %d not scanned", e.Stream),
-				Span:   merr.OffsetSpan(e.Stream, e.Offset, e.Size),
-			})
-			continue
-		}
-		scan, ok := samples[e.Sample]
-		if !ok {
-			v.Mismatches = append(v.Mismatches, Mismatch{
-				Kind: MismatchInvalidAddress, Entry: e,
-				Detail: fmt.Sprintf("sample %d of stream %d not present", e.Sample, e.Stream),
-				Span:   merr.OffsetSpan(e.Stream, e.Offset, e.Size),
+				Detail: fmt.Sprintf("sample with timestamp %d of stream %d is absent",
+					e.Timestamp, e.Stream),
+				Span: merr.OffsetSpan(e.Stream, e.Offset, e.Size),
 			})
 			continue
 		}
@@ -252,10 +248,10 @@ func Verify(idx *Index, scans []SampleScan) Verification {
 		v.Matched++
 	}
 
-	// Recall is checked only for streams the index claims to describe. An
-	// index scoped to one stream must not be penalized for streams it never
-	// mentions; a wrong claim inside its scope is still caught.
-	indexedStreams := make(map[int]struct{}, len(byStream))
+	// Recall is checked only for streams the index claims to describe. A row
+	// whose sample is genuinely absent (lost media) is already a mismatch, so
+	// recall does not double-report it.
+	indexedStreams := make(map[int]struct{}, len(byKey))
 	for _, e := range idx.Entries {
 		indexedStreams[e.Stream] = struct{}{}
 	}
@@ -265,15 +261,16 @@ func Verify(idx *Index, scans []SampleScan) Verification {
 		}
 		for _, ui := range s.Result.Keyframes {
 			u := s.Result.Units[ui]
-			if _, ok := indexedKeys[keyAddr{s.Stream, s.Sample, u.Offset}]; ok {
+			if _, ok := indexedKeys[keyAddr{key{s.Stream, s.Timestamp}, u.Offset}]; ok {
 				continue
 			}
 			v.Mismatches = append(v.Mismatches, Mismatch{
 				Kind: MismatchMissingKey,
-				Entry: Entry{Stream: s.Stream, Sample: s.Sample, Offset: u.Offset,
-					Size: u.HeaderLen + u.Size, Keyframe: true},
-				Detail: fmt.Sprintf("sample %d scanned keyframe at offset %d absent from index", s.Sample, u.Offset),
-				Span:   u.Span(),
+				Entry: Entry{Stream: s.Stream, Sample: s.Sample, Timestamp: s.Timestamp,
+					Offset: u.Offset, Size: u.HeaderLen + u.Size, Keyframe: true},
+				Detail: fmt.Sprintf("sample at timestamp %d has a scanned keyframe at offset %d absent from index",
+					s.Timestamp, u.Offset),
+				Span: u.Span(),
 			})
 		}
 	}
@@ -282,8 +279,8 @@ func Verify(idx *Index, scans []SampleScan) Verification {
 		if a.Entry.Stream != b.Entry.Stream {
 			return a.Entry.Stream < b.Entry.Stream
 		}
-		if a.Entry.Sample != b.Entry.Sample {
-			return a.Entry.Sample < b.Entry.Sample
+		if a.Entry.Timestamp != b.Entry.Timestamp {
+			return a.Entry.Timestamp < b.Entry.Timestamp
 		}
 		return a.Entry.Offset < b.Entry.Offset
 	})
@@ -300,8 +297,8 @@ func unitAt(units []codec.Unit, offset int64) (codec.Unit, bool) {
 }
 
 // Rebuild derives an index from per-sample scan results. Only keyframe units
-// become rows, ordered by stream, sample and offset, which makes the rebuilt
-// index deterministic.
+// become rows, ordered by stream, timestamp and offset, which makes the
+// rebuilt index deterministic and independent of sample ordinals.
 func Rebuild(scans []SampleScan) *Index {
 	idx := &Index{Version: 1}
 	for _, s := range scans {
@@ -310,6 +307,7 @@ func Rebuild(scans []SampleScan) *Index {
 			idx.Entries = append(idx.Entries, Entry{
 				Stream:   s.Stream,
 				Sample:   s.Sample,
+				Timestamp: s.Timestamp,
 				Offset:   u.Offset,
 				Size:     u.HeaderLen + u.Size,
 				Keyframe: true,
@@ -322,8 +320,8 @@ func Rebuild(scans []SampleScan) *Index {
 		if a.Stream != b.Stream {
 			return a.Stream < b.Stream
 		}
-		if a.Sample != b.Sample {
-			return a.Sample < b.Sample
+		if a.Timestamp != b.Timestamp {
+			return a.Timestamp < b.Timestamp
 		}
 		return a.Offset < b.Offset
 	})

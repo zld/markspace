@@ -105,7 +105,7 @@ func TestDemoRejectsBadInput(t *testing.T) {
 		{"demo", "--seed", "-1"},
 		{"demo", "--unknown-tracks", "ignore"},
 		{"demo", "extra-arg"},
-		{"demo", "--loss-burst", "4"}, // >= packets per sample
+		{"demo", "--loss-burst", "5"}, // above packets per sample
 	}
 	for _, args := range cases {
 		var out, errBuf bytes.Buffer
@@ -115,13 +115,22 @@ func TestDemoRejectsBadInput(t *testing.T) {
 	}
 }
 
-func TestDemoLossBeyondRecoveryFailsThreshold(t *testing.T) {
-	// With a very large burst the fixture itself is rejected as an input
-	// error, which is the correct boundary: a burst that erases whole samples
-	// cannot be represented by this generator.
+func TestDemoWholeSampleLossFailsThreshold(t *testing.T) {
+	// A burst equal to the packetization width erases an entire access unit.
+	// Processing still succeeds, but the keyframe hit rate drops below the
+	// gate, so the process must exit with the threshold status (2).
+	dir := t.TempDir()
 	var out, errBuf bytes.Buffer
-	code := run([]string{"demo", "--loss-burst", "9"}, &out, &errBuf)
-	if code != exitInput {
-		t.Fatalf("exit %d want %d: %s", code, exitInput, errBuf.String())
+	code := run([]string{"demo", "--loss-burst", "4", "--out", dir}, &out, &errBuf)
+	if code != exitThreshold {
+		t.Fatalf("exit %d want %d: %s", code, exitThreshold, errBuf.String())
+	}
+	if !strings.Contains(out.String(), "thresholds_met=false") {
+		t.Fatalf("output should report unmet thresholds:\n%s", out.String())
+	}
+	// The run still produced a report, so the failure is about metrics, not
+	// about an unusable input.
+	if _, err := os.Stat(filepath.Join(dir, "report.json")); err != nil {
+		t.Fatalf("report missing on threshold failure: %v", err)
 	}
 }

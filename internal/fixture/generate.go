@@ -130,9 +130,13 @@ func Generate(spec Spec) (*Fixture, error) {
 		return nil, fmt.Errorf("fixture: need at least two keyframes, got %d samples every %d",
 			spec.SampleCount, spec.KeyframeEvery)
 	}
-	if spec.LossBurst < 2 || spec.LossBurst >= spec.PacketsPerSample {
+	// A burst may consume an entire access unit. That is the boundary case a
+	// reviewer needs: with PacketsPerSample losses the sample disappears and
+	// the round-trip ratio drops below the acceptance floor, which must exit
+	// with the "processed but not passing" status rather than an input error.
+	if spec.LossBurst < 2 || spec.LossBurst > spec.PacketsPerSample {
 		return nil, fmt.Errorf("fixture: loss burst %d must be in 2..%d",
-			spec.LossBurst, spec.PacketsPerSample-1)
+			spec.LossBurst, spec.PacketsPerSample)
 	}
 	if spec.TruncatedSample >= spec.SampleCount || spec.RepairedSample >= spec.SampleCount {
 		return nil, fmt.Errorf("fixture: fault samples must be below %d", spec.SampleCount)
@@ -148,8 +152,21 @@ func Generate(spec Spec) (*Fixture, error) {
 		packetize(st, spec)
 	}
 	// Loss first, so duplicate and reorder faults do not interact with it.
-	injectBurstLoss(streams[0], spec, &f.Faults, false)
-	injectBurstLoss(streams[1], spec, &f.Faults, true)
+	// A partial burst shortens a keyframe sample, which is what makes the
+	// index row out of range. A burst covering an entire access unit instead
+	// deletes a non-key sample, so the media loss lowers the round-trip ratio
+	// while the keyframe index stays meaningful.
+	if spec.LossBurst >= spec.PacketsPerSample {
+		// Two separate whole-unit bursts on non-key samples. Erasing a whole
+		// access unit is the recovery boundary the round-trip gate is meant to
+		// catch: processing continues, but the ratio must fall below 98%.
+		for _, target := range []int{spec.TruncatedSample - 2, spec.TruncatedSample - 1} {
+			injectBurstLoss(streams[0], spec, &f.Faults, false, target)
+		}
+	} else {
+		injectBurstLoss(streams[0], spec, &f.Faults, false, 0)
+	}
+	injectBurstLoss(streams[1], spec, &f.Faults, true, 0)
 	injectTruncation(streams[2], spec, &f.Faults)
 	injectDuplicates(streams, &f.Faults)
 	injectReordering(streams, &f.Faults)
@@ -333,8 +350,8 @@ func payloadType(c string) uint8 {
 // injectBurstLoss removes LossBurst consecutive datagrams inside one access
 // unit. With repair=true the removed datagrams become retransmissions sized to
 // arrive while the hole is still pending.
-func injectBurstLoss(st *Stream, spec Spec, fs *FaultSummary, repair bool) {
-	target := 0
+func injectBurstLoss(st *Stream, spec Spec, fs *FaultSummary, repair bool, forcedTarget int) {
+	target := forcedTarget
 	if repair {
 		target = spec.RepairedSample
 	}
@@ -342,16 +359,25 @@ func injectBurstLoss(st *Stream, spec Spec, fs *FaultSummary, repair bool) {
 		return
 	}
 	chunks := st.seqOf[target]
-	start := 1
-	if start+spec.LossBurst > len(chunks) {
-		start = len(chunks) - spec.LossBurst
-	}
-	if start < 1 {
-		start = 1
-	}
 	drop := make(map[uint16]struct{}, spec.LossBurst)
-	for i := start; i < start+spec.LossBurst && i < len(chunks)-1; i++ {
-		drop[chunks[i]] = struct{}{}
+	if spec.LossBurst >= len(chunks) {
+		// Whole access unit: every chunk vanishes. The marker goes with it, so
+		// demux cannot invent an empty sample.
+		for _, seq := range chunks {
+			drop[seq] = struct{}{}
+		}
+	} else {
+		// Keep the first and marker chunks so the sample survives with a hole.
+		start := 1
+		if start+spec.LossBurst > len(chunks)-1 {
+			start = len(chunks) - 1 - spec.LossBurst
+		}
+		if start < 1 {
+			start = 1
+		}
+		for i := start; i < start+spec.LossBurst && i < len(chunks)-1; i++ {
+			drop[chunks[i]] = struct{}{}
+		}
 	}
 	if len(drop) == 0 {
 		return
@@ -433,12 +459,13 @@ func insertAt(list [][]byte, at int, v []byte) [][]byte {
 }
 
 type indexRow struct {
-	Stream   int   `json:"stream"`
-	Sample   int   `json:"sample"`
-	Offset   int64 `json:"offset"`
-	Size     int64 `json:"size"`
-	Keyframe bool  `json:"keyframe"`
-	Sync     bool  `json:"sync,omitempty"`
+	Stream    int    `json:"stream"`
+	Sample    int    `json:"sample"`
+	Timestamp uint32 `json:"timestamp"`
+	Offset    int64  `json:"offset"`
+	Size      int64  `json:"size"`
+	Keyframe  bool   `json:"keyframe"`
+	Sync      bool   `json:"sync,omitempty"`
 }
 
 // buildIndex writes an external index covering only the primary stream's
@@ -452,8 +479,8 @@ func buildIndex(streams []*Stream, spec Spec) ([]byte, int) {
 			continue
 		}
 		rows = append(rows, indexRow{
-			Stream: 0, Sample: u.Index, Offset: u.KeyUnitOffset,
-			Size: 4, Keyframe: true, Sync: true,
+			Stream: 0, Sample: u.Index, Timestamp: u.Timestamp,
+			Offset: u.KeyUnitOffset, Size: 4, Keyframe: true, Sync: true,
 		})
 	}
 	b := make([]byte, 0, len(rows)*64+32)
@@ -463,8 +490,8 @@ func buildIndex(streams []*Stream, spec Spec) ([]byte, int) {
 			b = append(b, ',')
 		}
 		b = append(b, []byte(fmt.Sprintf(
-			`{"stream":%d,"sample":%d,"offset":%d,"size":%d,"keyframe":%t,"sync":%t}`,
-			r.Stream, r.Sample, r.Offset, r.Size, r.Keyframe, r.Sync))...)
+			`{"stream":%d,"sample":%d,"timestamp":%d,"offset":%d,"size":%d,"keyframe":%t,"sync":%t}`,
+			r.Stream, r.Sample, r.Timestamp, r.Offset, r.Size, r.Keyframe, r.Sync))...)
 	}
 	b = append(b, []byte("]}")...)
 	return b, 1
