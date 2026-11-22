@@ -64,9 +64,10 @@ type Source interface {
 // Validator checks segments and produces recovery records.
 type Validator struct {
 	Src        Source
-	Channels   int                    // expected interleaved channels
-	MaxRetries int                    // retries after the first attempt
-	Checksums  map[string][32]byte    // uri -> expected payload hash (optional)
+	Channels   int                 // expected interleaved channels
+	InRate     int                 // source sample rate (defaults to clock.Rate)
+	MaxRetries int                 // retries after the first attempt
+	Checksums  map[string][32]byte // uri -> expected payload hash (optional)
 }
 
 // Ingest fetches and validates one segment reference. It never returns a
@@ -121,10 +122,14 @@ func (v *Validator) tryOnce(ref manifest.SegmentRef, rec *Record) error {
 	if err != nil {
 		return err // truncation / structural corruption
 	}
-	want := int(ref.Interval.Dur()) * v.Channels * 2
+	inRate := v.InRate
+	if inRate <= 0 {
+		inRate = clock.Rate
+	}
+	want := int(ref.Interval.Dur()) * inRate / clock.Rate * v.Channels * 2
 	if len(payload) != want {
-		return fmt.Errorf("payload length %d, want %d for %d ticks x %d ch",
-			len(payload), want, ref.Interval.Dur(), v.Channels)
+		return fmt.Errorf("payload length %d, want %d for %d ticks x %d ch @ %d Hz",
+			len(payload), want, ref.Interval.Dur(), v.Channels, inRate)
 	}
 	if sum, ok := v.Checksums[ref.URI]; ok {
 		got := sha256.Sum256(payload)
