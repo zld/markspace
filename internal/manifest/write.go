@@ -11,15 +11,15 @@ import (
 
 // Segment is one recovered, cuttable archive segment.
 type Segment struct {
-	Index        int    `json:"index"`
-	StartUS      int64  `json:"start_us"`
-	EndUS        int64  `json:"end_us"`
-	KeyframeUS   int64  `json:"keyframe_us"`        // actual decodable boundary used
-	BoundaryDevUS int64 `json:"boundary_dev_us"`    // requested cut vs keyframe
-	Bytes        int64  `json:"bytes"`
-	Fingerprint  string `json:"fingerprint"`
-	SourceAsset  string `json:"source_asset"`
-	SourceRanges []Range `json:"source_ranges,omitempty"` // provenance incl. repeats
+	Index         int     `json:"index"`
+	StartUS       int64   `json:"start_us"`
+	EndUS         int64   `json:"end_us"`
+	KeyframeUS    int64   `json:"keyframe_us"`     // actual decodable boundary used
+	BoundaryDevUS int64   `json:"boundary_dev_us"` // requested cut vs keyframe
+	Bytes         int64   `json:"bytes"`
+	Fingerprint   string  `json:"fingerprint"`
+	SourceAsset   string  `json:"source_asset"`
+	SourceRanges  []Range `json:"source_ranges,omitempty"` // provenance incl. repeats
 }
 
 // Range is a source-media interval in unified timeline coordinates.
@@ -31,10 +31,10 @@ type Range struct {
 // Silence status values. Unknown material always carries an explicit non-silent
 // status rather than being reported as silence.
 const (
-	StatusSilent          = "silent"
-	StatusPartialWindow   = "partial-window"
+	StatusSilent           = "silent"
+	StatusPartialWindow    = "partial-window"
 	StatusTimestampRegress = "timestamp-regress"
-	StatusGapCovered      = "gap-covered"
+	StatusGapCovered       = "gap-covered"
 )
 
 // Silence is a detected silence interval. Status explains why an interval is or
@@ -47,10 +47,10 @@ type Silence struct {
 
 // FingerprintRecord ties a fingerprint to the timeline range it covers.
 type FingerprintRecord struct {
-	Hash       string  `json:"hash"`
-	StartUS    int64  `json:"start_us"`
-	EndUS      int64  `json:"end_us"`
-	Duplicate  bool   `json:"duplicate"`
+	Hash         string  `json:"hash"`
+	StartUS      int64   `json:"start_us"`
+	EndUS        int64   `json:"end_us"`
+	Duplicate    bool    `json:"duplicate"`
 	SourceRanges []Range `json:"source_ranges"`
 }
 
@@ -78,9 +78,9 @@ type ResultManifest struct {
 // Checkpoint records the last fully completed segment so an interrupted run can
 // resume without re-emitting or duplicating earlier output.
 type Checkpoint struct {
-	CompletedSegments int   `json:"completed_segments"`
+	CompletedSegments int    `json:"completed_segments"`
 	LastSequence      uint16 `json:"last_sequence"`
-	LastTimelineUS    int64 `json:"last_timeline_us"`
+	LastTimelineUS    int64  `json:"last_timeline_us"`
 }
 
 // WriteFile validates, serializes and atomically writes a result manifest. The

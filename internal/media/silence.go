@@ -22,7 +22,7 @@ type SilenceConfig struct {
 // DefaultSilenceConfig returns conservative archive defaults.
 func DefaultSilenceConfig() SilenceConfig {
 	return SilenceConfig{
-		ThresholdRMS: 500,                 // ~ -54 dBFS for 16-bit PCM
+		ThresholdRMS: 500, // ~ -54 dBFS for 16-bit PCM
 		MinDuration:  200 * timeline.Millisecond,
 		Window:       20 * timeline.Millisecond,
 	}

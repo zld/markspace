@@ -62,10 +62,10 @@ func Fingerprint(pcm []byte, cfg FingerprintConfig) (string, error) {
 
 // SegmentContent bundles a segment's timeline range with its audio bytes.
 type SegmentContent struct {
-	ID       string
-	StartUS  int64
-	EndUS    int64
-	PCM      []byte
+	ID      string
+	StartUS int64
+	EndUS   int64
+	PCM     []byte
 }
 
 // DedupResult is one fingerprint record after duplicate analysis.

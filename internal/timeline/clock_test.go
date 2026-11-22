@@ -14,11 +14,11 @@ func TestFromScaleRoundingHalfAwayFromZero(t *testing.T) {
 		want      Time
 	}{
 		{"exact millisecond", 1, 1000, 1000},
-		{"half rounds up positive", 1, 2000, 500},          // 0.5 ms -> 500 us
-		{"below half rounds down", 1, 3000, 333},           // 333.333 us
-		{"above half rounds up", 2, 3000, 667},              // 666.667 us
-		{"half rounds away negative", -1, 2000, -500},       // -0.5 ms
-		{"negative below half", -1, 3000, -333},             // -333.333 us
+		{"half rounds up positive", 1, 2000, 500},     // 0.5 ms -> 500 us
+		{"below half rounds down", 1, 3000, 333},      // 333.333 us
+		{"above half rounds up", 2, 3000, 667},        // 666.667 us
+		{"half rounds away negative", -1, 2000, -500}, // -0.5 ms
+		{"negative below half", -1, 3000, -333},       // -333.333 us
 		{"non-zero base offset", 90_000 + 1, 90_000, 1_000_011},
 		{"large exact", 1800, 1, 1_800_000_000},
 	}

@@ -18,11 +18,11 @@ type Detector struct {
 	prevUS   int64 // unified-axis time of the last released packet
 
 	// Open hole state: the first missing sequence after prevSeq.
-	holeOpen    bool
-	holeFirst   uint16
-	holeUS      int64 // estimated start time of the hole
-	holeCount   int
-	confirmed   []manifest.LossGap
+	holeOpen     bool
+	holeFirst    uint16
+	holeUS       int64 // estimated start time of the hole
+	holeCount    int
+	confirmed    []manifest.LossGap
 	totalMissing int
 }
 

@@ -11,22 +11,22 @@ import (
 // JSON report. All numeric fields are always finite: bitrate errors are
 // guarded against zero targets, and quality is a bounded score in [0,100].
 type Stats struct {
-	InputDigest        string  `json:"input_digest"`
-	IndexRebuilt       bool    `json:"index_rebuilt"`
-	PacketsReceived    int     `json:"packets_received"`
-	PacketsEmitted     int     `json:"packets_emitted"`
-	PacketsDuplicate   int     `json:"packets_duplicate"`
-	PacketsLate        int     `json:"packets_late"`
-	LossBursts         int     `json:"loss_bursts"`
-	Segments           int     `json:"segments"`
-	SilenceMS          int64   `json:"silence_ms"`
-	DedupHits          int     `json:"dedup_hits"`
-	TargetBitrateBps   int64   `json:"target_bitrate_bps"`
-	ActualBitrateBps   int64   `json:"actual_bitrate_bps"`
-	BitrateErrorPct    float64 `json:"bitrate_error_pct"`
-	QualityScore       float64 `json:"quality_score"`
-	ManifestAlignMS    int64   `json:"manifest_alignment_ms"`
-	RecoveredSegments  int     `json:"recovered_segments"`
+	InputDigest       string  `json:"input_digest"`
+	IndexRebuilt      bool    `json:"index_rebuilt"`
+	PacketsReceived   int     `json:"packets_received"`
+	PacketsEmitted    int     `json:"packets_emitted"`
+	PacketsDuplicate  int     `json:"packets_duplicate"`
+	PacketsLate       int     `json:"packets_late"`
+	LossBursts        int     `json:"loss_bursts"`
+	Segments          int     `json:"segments"`
+	SilenceMS         int64   `json:"silence_ms"`
+	DedupHits         int     `json:"dedup_hits"`
+	TargetBitrateBps  int64   `json:"target_bitrate_bps"`
+	ActualBitrateBps  int64   `json:"actual_bitrate_bps"`
+	BitrateErrorPct   float64 `json:"bitrate_error_pct"`
+	QualityScore      float64 `json:"quality_score"`
+	ManifestAlignMS   int64   `json:"manifest_alignment_ms"`
+	RecoveredSegments int     `json:"recovered_segments"`
 }
 
 // fillTransport copies window-level counters into the report.

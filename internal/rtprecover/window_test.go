@@ -157,7 +157,7 @@ func TestWindowLimitsAndNil(t *testing.T) {
 	if _, err := NewWindow(0); timeline.Classify(err) != timeline.KindInvalidInput {
 		t.Fatalf("zero capacity: %v", err)
 	}
-	if _, err := NewWindow(MaxWindow+1); timeline.Classify(err) != timeline.KindLimit {
+	if _, err := NewWindow(MaxWindow + 1); timeline.Classify(err) != timeline.KindLimit {
 		t.Fatalf("oversized capacity: %v", err)
 	}
 	w, _ := NewWindow(4)

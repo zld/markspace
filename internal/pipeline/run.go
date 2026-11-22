@@ -19,14 +19,14 @@ import (
 // Config captures every tunable for one run. Values come from CLI flags; zero
 // fields are replaced with safe defaults by Normalize.
 type Config struct {
-	WorkDir         string
-	ManifestPath    string
-	ReorderWindow   int
-	LossThreshold   int
+	WorkDir           string
+	ManifestPath      string
+	ReorderWindow     int
+	LossThreshold     int
 	TargetBitrate     int64
 	SegmentDurationUS int64
-	Silence         media.SilenceConfig
-	Fingerprint     media.FingerprintConfig
+	Silence           media.SilenceConfig
+	Fingerprint       media.FingerprintConfig
 	// CorruptIndex forces an on-disk index digest mismatch to exercise rebuild.
 	CorruptIndex bool
 	// Resume continues from the last checkpoint instead of starting over.
@@ -38,8 +38,8 @@ type Config struct {
 // IndexRecord is the persisted index envelope. A digest mismatch invalidates
 // the index unconditionally and forces a rescan — there is no "trust anyway".
 type IndexRecord struct {
-	InputDigest string          `json:"input_digest"`
-	Index       *media.Index    `json:"index"`
+	InputDigest string       `json:"input_digest"`
+	Index       *media.Index `json:"index"`
 }
 
 // indexPath is the fixed on-disk location next to the work directory.

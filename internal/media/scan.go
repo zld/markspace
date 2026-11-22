@@ -17,18 +17,18 @@ import (
 
 // Scan limits keep a hostile container from exhausting memory or time.
 const (
-	MaxSamples      = 1_000_000
-	MaxScanBytes    = 512 << 20 // 512 MiB
-	MaxTracks       = 64
+	MaxSamples   = 1_000_000
+	MaxScanBytes = 512 << 20 // 512 MiB
+	MaxTracks    = 64
 )
 
 // Sample is one indexed sample expressed on the unified axis.
 type Sample struct {
-	Index       int
-	IsKeyframe  bool
-	StartUS     int64 // media-local start on the unified axis (us)
-	DurationUS  int64
-	Size        uint32
+	Index      int
+	IsKeyframe bool
+	StartUS    int64 // media-local start on the unified axis (us)
+	DurationUS int64
+	Size       uint32
 }
 
 // TrackIndex is the per-track result of a scan.

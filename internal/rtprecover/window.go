@@ -28,7 +28,7 @@ type Stats struct {
 
 // OrderedPacket is one packet placed on the output sequence.
 type OrderedPacket struct {
-	Packet    *rtp.Packet
+	Packet     *rtp.Packet
 	TimelineUS int64 // unified-axis timestamp assigned by the caller
 }
 
@@ -38,9 +38,9 @@ type Window struct {
 	capacity int
 	stats    Stats
 	// base is the next sequence number expected on the output stream.
-	base      uint16
-	haveBase  bool
-	buf       map[uint16]OrderedPacket
+	base     uint16
+	haveBase bool
+	buf      map[uint16]OrderedPacket
 	// firstSeen tracks the arrival-time ordering used when flushing the tail.
 	arrival []uint16
 }

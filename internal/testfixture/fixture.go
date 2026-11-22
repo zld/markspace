@@ -17,13 +17,13 @@ import (
 
 // MP4Spec configures a generated MP4 container.
 type MP4Spec struct {
-	Seed            int64
-	Timescale       uint32 // media timescale (e.g. 48000)
-	SampleCount     int
-	SampleDelta     uint32 // stts delta in timescale units
-	SampleSize      uint32 // constant per-sample payload size
-	KeyframeEvery   int    // stss entry every N samples; 0 disables stss
-	StartOffset     uint32 // non-zero first-sample media time (timescale units)
+	Seed          int64
+	Timescale     uint32 // media timescale (e.g. 48000)
+	SampleCount   int
+	SampleDelta   uint32 // stts delta in timescale units
+	SampleSize    uint32 // constant per-sample payload size
+	KeyframeEvery int    // stss entry every N samples; 0 disables stss
+	StartOffset   uint32 // non-zero first-sample media time (timescale units)
 }
 
 // seekBuffer is an in-memory io.WriteSeeker for the go-mp4 writer.
@@ -100,7 +100,7 @@ func GenerateMP4(spec MP4Spec) ([]byte, error) {
 	must(err)
 	boxEnd()
 
-	duration := uint64(spec.SampleCount) * uint64(spec.SampleDelta) + uint64(spec.StartOffset)
+	duration := uint64(spec.SampleCount)*uint64(spec.SampleDelta) + uint64(spec.StartOffset)
 	// moov
 	boxStart(mp4.BoxTypeMoov())
 	boxStart(mp4.BoxTypeMvhd())

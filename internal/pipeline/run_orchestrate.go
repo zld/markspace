@@ -15,10 +15,10 @@ import (
 // asset description. Keeping it in-memory lets the demo generate everything
 // locally with no network or external sample dependency.
 type Input struct {
-	Asset     *manifest.Asset
-	MP4       []byte
+	Asset      *manifest.Asset
+	MP4        []byte
 	RTPPackets [][]byte // marshalled RTP packets, possibly damaged/ordered
-	Estimator *rtprecover.Estimator
+	Estimator  *rtprecover.Estimator
 }
 
 // Run executes the full data flow for one input and returns the result
@@ -131,11 +131,11 @@ func buildAxis(asset *manifest.Asset, idx *media.Index) (*timeline.Axis, error) 
 // synthetic PCM derived deterministically from its payload (the fixtures carry
 // no codec, so PCM is derived, not decoded).
 type recoveredFrame struct {
-	seq       uint16
-	startUS   int64
-	endUS     int64
-	pcm       []byte
-	rawBytes  int
+	seq      uint16
+	startUS  int64
+	endUS    int64
+	pcm      []byte
+	rawBytes int
 }
 
 // recoverStream drives the reorder window and burst detector and projects

@@ -12,11 +12,11 @@ import (
 // segment output-budget planner, which must keep planned bitrate at or below
 // the available bandwidth while tracking the configured target.
 type Estimator struct {
-	alpha     float64 // smoothing factor in (0,1]
+	alpha       float64 // smoothing factor in (0,1]
 	initialized bool
-	ewmaBps   float64 // bits per second
-	minBps    float64 // floor so a collapsed link cannot drive budget to zero
-	samples   int
+	ewmaBps     float64 // bits per second
+	minBps      float64 // floor so a collapsed link cannot drive budget to zero
+	samples     int
 }
 
 // NewEstimator creates an EWMA estimator. alpha is the weight of each new
@@ -68,10 +68,10 @@ func (e *Estimator) Samples() int { return e.samples }
 
 // Budget is one segment's planned output budget.
 type Budget struct {
-	Index         int
-	DurationUS    int64
+	Index             int
+	DurationUS        int64
 	PlannedBitrateBps int64
-	PlannedBytes  int64
+	PlannedBytes      int64
 }
 
 // PlanBudgets divides the presented duration into segments of segDuration and

@@ -29,8 +29,8 @@ const (
 // duration the pipeline accepts is 24 hours; anything beyond is rejected as an
 // out-of-range timestamp rather than silently wrapping.
 const (
-	MaxTime     Time = 24 * Hour
-	MinTime     Time = -24 * Hour
+	MaxTime      Time = 24 * Hour
+	MinTime      Time = -24 * Hour
 	MaxTimescale      = 1 << 30 // 1 GHz is already absurd for media.
 )
 
