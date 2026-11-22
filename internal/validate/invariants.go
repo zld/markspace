@@ -147,12 +147,16 @@ func checkOffsets(res *Result, in Input) {
 		for _, kf := range idx.Keyframes {
 			pass := ok && kf.Span.Start >= 0 && kf.Span.End >= kf.Span.Start
 			if pass && kf.Offset >= 0 {
-				pass = kf.Span.End <= size
+				// The record carries both the sample offset and its span, so
+				// they must agree; a disagreement means the report was edited
+				// or serialized from inconsistent state.
+				pass = kf.Span.End <= size && kf.Span.Start == kf.Offset
 			}
 			res.Add(Check{
 				Name: "index_reference_valid", Stage: diagnose.StageValidate, Asset: idx.Asset,
 				Passed: pass, Span: kf.Span,
-				Detail: fmt.Sprintf("keyframe %d references [%d,%d) of %d", kf.Number, kf.Span.Start, kf.Span.End, size),
+				Detail: fmt.Sprintf("keyframe %d offset=%d references [%d,%d) of %d",
+					kf.Number, kf.Offset, kf.Span.Start, kf.Span.End, size),
 			})
 		}
 	}

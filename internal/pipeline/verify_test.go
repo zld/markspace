@@ -63,3 +63,32 @@ func TestParseReportRejectsTruncatedLine(t *testing.T) {
 		t.Fatal("want parse error for truncated line")
 	}
 }
+
+// TestVerifyDetectsEditedKeyframeOffset proves a single edited numeric field
+// in the report surfaces as a failed invariant, not just a checksum mismatch.
+func TestVerifyDetectsEditedKeyframeOffset(t *testing.T) {
+	root, names, _ := setup(t)
+	out, err := runner(root, "").Run(names)
+	if err != nil && !strings.Contains(err.Error(), "damaged") {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := WriteJSONL(&buf, out, runner(root, "").Params, out.InputDigest, out.ParamsDigest); err != nil {
+		t.Fatal(err)
+	}
+	txt := strings.Replace(buf.String(), `"offset":2675`, `"offset":999999`, 1)
+	if txt == buf.String() {
+		t.Skip("report layout changed; adjust the anchor")
+	}
+	parsed, err := ParseReport(strings.NewReader(txt))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, _, match := VerifyReport(parsed)
+	if match {
+		t.Fatal("edited offset still matched the checksum")
+	}
+	if res.Failed == 0 {
+		t.Fatal("edited offset produced no failed invariant")
+	}
+}
