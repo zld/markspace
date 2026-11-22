@@ -116,6 +116,25 @@ func TestSessionCheckpointResumeAndContinuity(t *testing.T) {
 	}
 }
 
+func TestSessionOOneCounters(t *testing.T) {
+	s := NewSession()
+	for i := int64(0); i < 100; i++ {
+		if err := s.Submit(audioEvent(i, i*10_000_000, 1_000_000, i*10_000_000)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if s.EventCount() != 100 {
+		t.Fatalf("EventCount=%d", s.EventCount())
+	}
+	if s.TrackSubmitted(1) != 100 || s.TrackSubmitted(99) != 0 {
+		t.Fatal("per-track submitted count wrong")
+	}
+	// the cheap accessor must equal the snapshot's own count without sorting
+	if s.EventCount() != s.Snapshot().EventCount {
+		t.Fatal("O(1) counter disagrees with snapshot")
+	}
+}
+
 func TestSessionMetricsAggregation(t *testing.T) {
 	s := NewSession()
 	for i := int64(0); i < 100; i++ {

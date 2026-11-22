@@ -170,9 +170,9 @@ func (e *Engine) emitAudio(evs []adapter.RTPEvent) {
 }
 
 func (e *Engine) emitVideo(evs []adapter.RTPEvent) {
-	before := e.session.Snapshot().EventCount
+	before := e.session.TrackSubmitted(2)
 	emitVideo(evs, e.videoRec, e.session)
-	e.videoEvents += e.session.Snapshot().EventCount - before
+	e.videoEvents += e.session.TrackSubmitted(2) - before
 }
 
 // VideoEventCount reports how many video frames were actually submitted.

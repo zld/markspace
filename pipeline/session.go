@@ -144,6 +144,18 @@ func (s *Session) appendChain(e Event) {
 	s.chainCount++
 }
 
+// EventCount returns the number of committed events in O(1). Unlike Snapshot
+// it performs no sorting and is safe to call on the per-packet hot path.
+func (s *Session) EventCount() int64 { return s.chainCount }
+
+// TrackSubmitted returns the number of events committed for one track in O(1).
+func (s *Session) TrackSubmitted(trackID uint32) int64 {
+	if ts, ok := s.tracks[trackID]; ok {
+		return ts.submitted
+	}
+	return 0
+}
+
 func defaultFingerprint(e Event) []byte {
 	b := make([]byte, 0, 40)
 	var u [8]byte
