@@ -181,3 +181,28 @@ func TestReplayOrderIsDeterministic(t *testing.T) {
 		}
 	}
 }
+
+func TestTornTailIsVisibleToBatchCallers(t *testing.T) {
+	dir := t.TempDir()
+	st, _ := Open(dir)
+	st.Append(rec(0, 0))
+	st.Commit()
+	st.Close()
+	f, err := os.OpenFile(filepath.Join(dir, "journal.jsonl"), os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Write([]byte{0, 0, 0, 90, 1, 2, 3, 4, '{'})
+	f.Close()
+	st2, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st2.Close()
+	if !st2.Recovered() {
+		t.Fatal("torn tail not surfaced")
+	}
+	if !st2.Completed(0) {
+		t.Fatal("healthy prefix lost")
+	}
+}

@@ -141,8 +141,11 @@ func TestBatchResumeMatchesContinuousRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resumed.SkippedBlocks == 0 {
+	if resumed.SkippedBlocks == 0 || !resumed.Recovered {
 		t.Fatal("resumed run skipped no committed blocks")
+	}
+	if resumed.TornTail {
+		t.Fatal("clean journal reported a torn tail")
 	}
 	if continuous.ManifestSHA256 != resumed.ManifestSHA256 {
 		t.Fatalf("manifest mismatch: continuous=%s resumed=%s", continuous.ManifestSHA256, resumed.ManifestSHA256)
