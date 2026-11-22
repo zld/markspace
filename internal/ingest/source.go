@@ -144,6 +144,8 @@ func FormatOf(name string) string {
 		return "rtp"
 	case ".tc", ".timecode":
 		return "timecode"
+	case ".drift":
+		return "drift"
 	default:
 		return "bin"
 	}

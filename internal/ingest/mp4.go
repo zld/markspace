@@ -26,14 +26,15 @@ type BoxHeader struct {
 
 // MP4Sample is one decoded-frame descriptor. Times are in track ticks.
 type MP4Sample struct {
-	Number   int       `json:"number"`
-	DTS      int64     `json:"dts"`
-	PTS      int64     `json:"pts"`
-	Duration uint32    `json:"duration"`
-	Size     uint32    `json:"size"`
-	Sync     bool      `json:"sync"`
-	Offset   int64     `json:"offset"`
-	Span     core.Span `json:"span"`
+	Number    int       `json:"number"`
+	DTS       int64     `json:"dts"`
+	PTS       int64     `json:"pts"`
+	Duration  uint32    `json:"duration"`
+	Size      uint32    `json:"size"`
+	Sync      bool      `json:"sync"`
+	Offset    int64     `json:"offset"`
+	Span      core.Span `json:"span"`
+	Truncated bool      `json:"truncated"` // sample bytes run past the asset
 }
 
 // MP4Track carries the parsed sample table for one track.
@@ -205,15 +206,35 @@ var knownTypes = map[string]bool{
 }
 
 func findNextBox(data []byte, from, end int64) int64 {
+	// First pass: a well-formed header that fits inside the parent. Second
+	// pass: a plausible known type whose declared size overruns, so the main
+	// loop can still report it as a truncated box instead of losing the tail.
 	for off := from; off+8 <= end; off++ {
-		size := int64(binary.BigEndian.Uint32(data[off:]))
-		typ := string(data[off+4 : off+8])
-		if !knownTypes[typ] || !printableType(typ) || size < 8 || off+size > end {
-			continue
+		if isPlausibleHeader(data[off:], end, off, true) {
+			return off
 		}
-		return off
+	}
+	for off := from; off+8 <= end; off++ {
+		if isPlausibleHeader(data[off:], end, off, false) {
+			return off
+		}
 	}
 	return -1
+}
+
+func isPlausibleHeader(b []byte, end, off int64, requireFit bool) bool {
+	size := int64(binary.BigEndian.Uint32(b))
+	typ := string(b[4:8])
+	if !knownTypes[typ] || !printableType(typ) {
+		return false
+	}
+	if size == 0 || size == 1 {
+		return true
+	}
+	if size < 8 {
+		return false
+	}
+	return !requireFit || off+size <= end
 }
 
 func printableType(t string) bool {
@@ -504,8 +525,25 @@ func (f *MP4File) expandSamples(asset *Asset, trak BoxHeader, timescale uint32, 
 	}
 	cttsOffsets := expandCTTS(ctts, total)
 	samples := make([]MP4Sample, 0, total)
+	assetSize := int64(len(asset.Data))
 	var dts int64
 	syncCount := 0
+	// Consecutive out-of-range samples are reported once per run so a single
+	// cut in mdat does not produce thousands of near-identical findings.
+	runStart, runCount := 0, 0
+	flushRun := func(endSample int) {
+		if runCount == 0 {
+			return
+		}
+		f.Issues.Add(diagnose.Issue{
+			Category: diagnose.CatIndexOutOfRange, Stage: diagnose.StageIngest,
+			Format: "mp4", Asset: asset.Name,
+			Span:   core.Span{Start: trak.Start, End: trak.End},
+			Detail: fmt.Sprintf("samples %d..%d reference bytes past the end of the asset", runStart, endSample),
+		})
+		f.Partial = true
+		runStart, runCount = 0, 0
+	}
 	for i := 0; i < total; i++ {
 		size := stsz.SampleSize
 		if sizes != nil {
@@ -527,19 +565,31 @@ func (f *MP4File) expandSamples(asset *Asset, trak BoxHeader, timescale uint32, 
 			Offset:   off,
 			Span:     span,
 		}
-		if off < 0 || span.End > int64(len(asset.Data)) {
-			f.Issues.Add(diagnose.Issue{
-				Category: diagnose.CatIndexOutOfRange, Stage: diagnose.StageIngest,
-				Format: "mp4", Asset: asset.Name, Span: core.Span{Start: trak.Start, End: trak.End},
-				Detail: fmt.Sprintf("sample %d byte range [%d,%d) outside asset", i+1, span.Start, span.End),
-			})
-			f.Partial = true
-			s.Offset = -1
-			s.Span = core.Span{Start: trak.Start, End: trak.Start}
+		if off < 0 || off > assetSize || span.End > assetSize {
+			if runCount == 0 {
+				runStart = i + 1
+			}
+			runCount++
+			s.Truncated = true
+			if off < 0 {
+				s.Offset = 0
+				s.Span = core.Span{Start: 0, End: 0}
+			} else {
+				// Clamp to the readable prefix so span invariants hold; the
+				// clamping boundary is exactly the damaged cut.
+				if off > assetSize {
+					off = assetSize
+				}
+				s.Offset = off
+				s.Span = core.Span{Start: off, End: assetSize}
+			}
+		} else {
+			flushRun(i)
 		}
 		dts += int64(durs[i])
 		samples = append(samples, s)
 	}
+	flushRun(total)
 	return samples, syncCount
 }
 

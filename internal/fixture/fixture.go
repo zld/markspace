@@ -1,11 +1,14 @@
 package fixture
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"math/rand"
 
 	"github.com/pion/rtp"
+
+	"mediad/internal/core"
 )
 
 // Kind classifies a generated asset.
@@ -18,6 +21,7 @@ const (
 	KindCorruptMP4 Kind = "corrupt-mp4"
 	KindRTP        Kind = "rtp"
 	KindTimecode   Kind = "timecode"
+	KindDrift      Kind = "drift"
 )
 
 // File is one generated in-memory asset.
@@ -29,11 +33,21 @@ type File struct {
 
 // Stream is the complete demo input set.
 type Stream struct {
-	Files        []File
-	NormalFrames int
-	CorruptCues  int
-	KeyframeGaps int
-	ExpectedGaps []int64 // keyframe gaps in track ticks, in order
+	Files         []File
+	NormalFrames  int
+	CorruptCues   int
+	KeyframeGaps  int
+	ExpectedGaps  []int64 // keyframe gaps in track ticks, in order
+	Expected      []Expectation
+	CorruptOffset []int64 // offsets where damage was injected, ascending
+}
+
+// Expectation is ground truth used by the demo to measure offset error.
+type Expectation struct {
+	Asset    string
+	Format   string
+	Category string
+	Span     core.Span
 }
 
 // Options tunes generation. Zero values fall back to the demo defaults.
@@ -107,64 +121,177 @@ func Generate(opt Options) (*Stream, error) {
 
 	// Corrupt video: a good moov, an mdat whose declared size overruns the
 	// file, and a second truncated mdat after it.
-	st.Files = append(st.Files, File{
-		Name: "video/corrupt.mp4", Kind: KindCorruptMP4,
-		Data: corruptMP4(normal),
+	trunc, truncAt, truncDecl := corruptMP4(normal)
+	st.Files = append(st.Files, File{Name: "video/corrupt.mp4", Kind: KindCorruptMP4, Data: trunc})
+	st.Expected = append(st.Expected, Expectation{
+		Asset: "video/corrupt.mp4", Format: "mp4", Category: "truncated_box",
+		Span: core.Span{Start: truncAt, End: int64(len(trunc))},
 	})
+	st.CorruptOffset = append(st.CorruptOffset, truncAt)
+
+	lengthCorrupt, lengthAt := lengthMP4(normal)
+	st.Files = append(st.Files, File{Name: "video/length.mp4", Kind: KindCorruptMP4, Data: lengthCorrupt})
+	st.Expected = append(st.Expected, Expectation{
+		Asset: "video/length.mp4", Format: "mp4", Category: "mp4_length",
+		Span: core.Span{Start: lengthAt, End: lengthAt + 8},
+	})
+	st.CorruptOffset = append(st.CorruptOffset, lengthAt)
 
 	st.Files = append(st.Files, File{
 		Name: "subs/normal.srt", Kind: KindSRT,
 		Data: buildSRT(opt.SRTCues, false, rng),
 	})
-	st.Files = append(st.Files, File{
-		Name: "subs/corrupt.srt", Kind: KindSRT,
-		Data: buildSRT(opt.SRTCues/2+1, true, rng),
-	})
+	corruptSRT := buildSRT(opt.SRTCues/2+1, true, rng)
+	st.Files = append(st.Files, File{Name: "subs/corrupt.srt", Kind: KindSRT, Data: corruptSRT})
+	if off := bytes.Index(corruptSRT, []byte("00:00:99,999")); off >= 0 {
+		st.Expected = append(st.Expected, Expectation{
+			Asset: "subs/corrupt.srt", Format: "srt", Category: "srt_time",
+			Span: core.Span{Start: int64(off), End: int64(off) + 12},
+		})
+		st.CorruptOffset = append(st.CorruptOffset, int64(off))
+	}
+	if off := bytes.Index(corruptSRT, []byte("truncated tail")); off >= 0 {
+		st.Expected = append(st.Expected, Expectation{
+			Asset: "subs/corrupt.srt", Format: "srt", Category: "truncated_cue",
+			Span: core.Span{Start: int64(off), End: int64(len(corruptSRT))},
+		})
+	}
+	st.CorruptCues = 2
+
 	st.Files = append(st.Files, File{
 		Name: "subs/normal.vtt", Kind: KindVTT,
 		Data: buildVTT(opt.VTTCues, false),
 	})
-	st.Files = append(st.Files, File{
-		Name: "subs/broken.vtt", Kind: KindVTT,
-		Data: buildVTT(opt.VTTCues/2+1, true),
-	})
-	st.CorruptCues = 2
+	brokenVTT := buildVTT(opt.VTTCues/2+1, true)
+	st.Files = append(st.Files, File{Name: "subs/broken.vtt", Kind: KindVTT, Data: brokenVTT})
+	if off := bytes.Index(brokenVTT, []byte("00:09.500")); off >= 0 {
+		st.Expected = append(st.Expected, Expectation{
+			Asset: "subs/broken.vtt", Format: "vtt", Category: "vtt_time",
+			Span: core.Span{Start: int64(off), End: int64(off) + 9},
+		})
+		st.CorruptOffset = append(st.CorruptOffset, int64(off))
+	}
 
+	gapped := buildRTP(16, true)
 	st.Files = append(st.Files,
 		File{Name: "net/stream.rtp", Kind: KindRTP, Data: buildRTP(opt.RTPPackets, false)},
-		File{Name: "net/gapped.rtp", Kind: KindRTP, Data: buildRTP(16, true)},
+		File{Name: "net/gapped.rtp", Kind: KindRTP, Data: gapped},
 	)
-	st.Files = append(st.Files, File{Name: "tc/labels.tc", Kind: KindTimecode, Data: buildTimecodes()})
+	// The sixth packet header starts after five length-prefixed packets and
+	// carries the first out-of-sequence number after the injected loss.
+	if off := rtpRecordOffset(gapped, 5); off >= 0 {
+		st.Expected = append(st.Expected, Expectation{
+			Asset: "net/gapped.rtp", Format: "rtp", Category: "rtp_sequence_gap",
+			Span: core.Span{Start: off, End: off + 20},
+		})
+		st.CorruptOffset = append(st.CorruptOffset, off)
+	}
+
+	driftData := buildDrift()
+	st.Files = append(st.Files, File{Name: "net/edge-b.drift", Kind: KindDrift, Data: driftData})
+	if off := bytes.Index(driftData, []byte("1000,1006")); off >= 0 {
+		st.Expected = append(st.Expected, Expectation{
+			Asset: "net/edge-b.drift", Format: "drift", Category: "node_drift",
+			Span: core.Span{Start: int64(off), End: int64(off) + 10},
+		})
+		st.CorruptOffset = append(st.CorruptOffset, int64(off))
+	}
+
+	tcData := buildTimecodes()
+	st.Files = append(st.Files, File{Name: "tc/labels.tc", Kind: KindTimecode, Data: tcData})
+	if off := bytes.Index(tcData, []byte("00:01:00;00")); off >= 0 {
+		st.Expected = append(st.Expected, Expectation{
+			Asset: "tc/labels.tc", Format: "timecode", Category: "timecode_label",
+			Span: core.Span{Start: int64(off), End: int64(off) + 11},
+		})
+		st.CorruptOffset = append(st.CorruptOffset, int64(off))
+	}
+	_ = truncDecl
 	return st, nil
 }
 
-// corruptMP4 rewrites mdat lengths so the first mdat overruns the file and a
-// second, truncated mdat follows the original payload.
-func corruptMP4(orig []byte) []byte {
-	// Locate the first top-level mdat.
+// rtpRecordOffset returns the byte offset of the nth length-prefixed packet.
+func rtpRecordOffset(data []byte, n int) int64 {
+	off := int64(0)
+	for i := 0; i < n; i++ {
+		if off+4 > int64(len(data)) {
+			return -1
+		}
+		size := int64(binary.BigEndian.Uint32(data[off:]))
+		off += 4 + size
+	}
+	if off >= int64(len(data)) {
+		return -1
+	}
+	return off
+}
+
+func buildDrift() []byte {
+	// Node edge-b runs 1500 ppm fast and adds a 5 ms offset. Both the slope
+	// and the intercept are recoverable exactly from these samples.
+	var b bytes.Buffer
+	b.WriteString("#node edge-b\n")
+	b.WriteString("# source_ms,node_ms\n")
+	for i := int64(0); i <= 20; i++ {
+		src := i * 1000
+		node := src + (src*3)/2000 + 5
+		fmt.Fprintf(&b, "%d,%d\n", src, node)
+	}
+	return b.Bytes()
+}
+
+// corruptMP4 physically truncates the media data while leaving the corpus
+// header's declared size intact, so the mdat is a truncated box and samples
+// past the cut cannot be trusted. It returns the data, the mdat offset and the
+// declared size.
+func corruptMP4(orig []byte) ([]byte, int64, uint32) {
+	off := topLevelMdat(orig)
+	if off < 0 {
+		return orig, 0, 0
+	}
+	declared := binary.BigEndian.Uint32(orig[off:])
+	cut := off + 8 + (len(orig)-off-8)/3
+	out := make([]byte, cut)
+	copy(out, orig[:cut])
+	return out, int64(off), declared
+}
+
+// lengthMP4 inserts a top-level box whose declared size is smaller than its
+// own header, which is an unambiguous length-field fault. The scanner must
+// resynchronize and still find the following moov and mdat.
+func lengthMP4(orig []byte) ([]byte, int64) {
+	// Insert the bad box after the complete ftyp so the fault is a genuine
+	// sibling-level length error rather than damage inside a box payload.
+	first := 0
+	if len(orig) >= 8 {
+		first = int(binary.BigEndian.Uint32(orig))
+	}
+	if first < 8 || first > len(orig) {
+		first = 8
+	}
+	out := make([]byte, 0, len(orig)+8)
+	out = append(out, orig[:first]...)
+	at := int64(len(out))
+	out = append(out, be32(2)...)
+	out = append(out, []byte("free")...)
+	out = append(out, orig[first:]...)
+	return out, at
+}
+
+func topLevelMdat(data []byte) int {
 	off := 0
-	for off+8 <= len(orig) {
-		size := int(binary.BigEndian.Uint32(orig[off:]))
-		typ := string(orig[off+4 : off+8])
+	for off+8 <= len(data) {
+		size := int(binary.BigEndian.Uint32(data[off:]))
+		typ := string(data[off+4 : off+8])
 		if typ == "mdat" {
-			out := make([]byte, 0, len(orig)+16)
-			out = append(out, orig[:off]...)
-			// Declared size is far larger than the remaining bytes.
-			out = append(out, be32(uint32(len(orig)))...)
-			out = append(out, []byte("mdat")...)
-			out = append(out, orig[off+8:]...)
-			// Append a box header that claims 64 KiB but carries 32 bytes.
-			out = append(out, be32(65536)...)
-			out = append(out, []byte("mdat")...)
-			out = append(out, make([]byte, 32)...)
-			return out
+			return off
 		}
 		if size < 8 {
-			break
+			return -1
 		}
-		off += int(size)
+		off += size
 	}
-	return orig
+	return -1
 }
 
 func srtStamp(ms int64) string {
@@ -268,6 +395,7 @@ func buildTimecodes() []byte {
 		"00:00:00:00",
 		"00:00:01:00",
 		"00:01:00;02",
+		"00:01:00;00",
 		"00:09:59;29",
 		"00:10:00;00",
 		"01:00:00:00",
