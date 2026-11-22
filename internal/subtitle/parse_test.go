@@ -141,3 +141,45 @@ func TestVTTBOMAndCRLF(t *testing.T) {
 		t.Fatalf("offset = %d, BOM not included", res.Cues[0].Offset)
 	}
 }
+
+func TestIndexGapAndOverlapAreAuditable(t *testing.T) {
+	// Cue 2 is missing and cue 3 starts before cue 1 ends.
+	src := "1\n00:00:01,000 --> 00:00:04,000\na\n\n3\n00:00:03,000 --> 00:00:05,000\nc\n"
+	res := Parse(strings.NewReader(src), "gap.srt")
+	if len(res.Cues) != 2 {
+		t.Fatalf("cues = %d", len(res.Cues))
+	}
+	if !res.HasCode(diag.CodeTruncated) {
+		t.Fatalf("index gap not recorded: %v", res.Faults)
+	}
+	overlap := false
+	media := false
+	for _, f := range res.Faults {
+		if strings.Contains(f.Detail, "starts at 3000.000 ms before") {
+			overlap = true
+		}
+		if f.Code == diag.CodeInvalidTime && f.HasMedia {
+			media = true
+		}
+	}
+	if !overlap || !media {
+		t.Fatalf("overlap fault = %v", res.Faults)
+	}
+}
+
+func TestIndexJumpsThroughBadCueAreStillDetected(t *testing.T) {
+	src := "1\n00:00:00,000 --> 00:00:01,000\na\n\n2\nbad arrow\nx\n\n4\n00:00:02,000 --> 00:00:03,000\nd\n"
+	res := Parse(strings.NewReader(src), "jump.srt")
+	if len(res.Cues) != 2 {
+		t.Fatalf("cues = %d", len(res.Cues))
+	}
+	found := false
+	for _, f := range res.Faults {
+		if f.Code == diag.CodeTruncated && strings.Contains(f.Detail, "index jumps to 4; expected 2") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("jump not reported: %v", res.Faults)
+	}
+}

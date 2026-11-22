@@ -213,6 +213,7 @@ func parseTimestampFlex(s string, allowShort bool) (clock.Rational, error) {
 func parseSRT(data []byte, source string) *ParseResult {
 	res := &ParseResult{Source: source}
 	seenIndex := 0
+	wantIndex := 0
 	// A record with a valid timing line but no payload text, or a final record
 	// with no --> at all, is damage from a stopped capture rather than bad
 	// authoring. Both are reported as CodeTruncated at the record's offset.
@@ -241,6 +242,8 @@ func parseSRT(data []byte, source string) *ParseResult {
 			res.Faults = append(res.Faults, diag.New(diag.CodeTruncated, b.off, "srt cue has no timing line"))
 			continue
 		}
+		// Track the highest index seen, including records that fail below, so a
+		// later jump (2 -> 4) still reports the lost record.
 		start, end, err := parseSRTTiming(ls[timingLine])
 		if err != nil {
 			// A record cut mid-timestamp has no --> yet; that is a truncated
@@ -259,20 +262,37 @@ func parseSRT(data []byte, source string) *ParseResult {
 				"srt cue %d ends before it starts", firstNonEmpty(idx, seenIndex+1)))
 			continue
 		}
+		// A gap in numeric indices (e.g. 1, 2, 5) usually means a record was
+		// lost, not authored that way.
+		if idx >= 0 && wantIndex > 0 && idx > wantIndex {
+			res.Faults = append(res.Faults, diag.New(diag.CodeTruncated, b.off,
+				"srt cue index jumps to %d; expected %d, so %d record(s) are missing", idx, wantIndex, idx-wantIndex))
+		}
+		if idx >= 0 {
+			wantIndex = idx + 1
+		}
 		text := strings.Join(ls[timingLine+1:], "\n")
 		if timingLine+1 >= len(ls) {
 			res.Faults = append(res.Faults, diag.New(diag.CodeTruncated, b.off,
 				"srt cue %d has no payload text", firstNonEmpty(idx, seenIndex+1)))
 		}
 		seenIndex++
-		res.Cues = append(res.Cues, Cue{
+		cue := Cue{
 			Index:  firstNonEmpty(idx, seenIndex),
 			Start:  start,
 			End:    end,
 			Text:   text,
 			Offset: b.off,
 			Source: source,
-		})
+		}
+		// SRT cues are ordered by time; a cue that starts before its
+		// predecessor ends overlaps footage already captioned.
+		if n := len(res.Cues); n > 0 && start.Cmp(res.Cues[n-1].End) < 0 {
+			res.Faults = append(res.Faults, diag.New(diag.CodeInvalidTime, b.off,
+				"srt cue %d starts at %.3f ms before cue %d ends at %.3f ms",
+				cue.Index, start.Millis(), res.Cues[n-1].Index, res.Cues[n-1].End.Millis()).WithMedia(start.Millis()))
+		}
+		res.Cues = append(res.Cues, cue)
 	}
 	return res
 }
