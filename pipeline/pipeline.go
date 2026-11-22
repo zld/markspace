@@ -69,7 +69,9 @@ type Result struct {
 	DurationMS         int64             `json:"duration_ms"`
 	SilenceConfirmedMS int64             `json:"silence_confirmed_ms"`
 	SilenceUnknownMS   int64             `json:"silence_unknown_ms"`
-	Gaps               []GapRef          `json:"gaps"`
+	// MediaDurationMS covers the full span including the final frame duration.
+	MediaDurationMS int64    `json:"media_duration_ms"`
+	Gaps            []GapRef `json:"gaps"`
 }
 
 // Config bundles every streaming policy.
@@ -154,6 +156,7 @@ func Run(idx *index.Index, src FrameSource, cfg Config) (*Result, error) {
 		res.Bytes += int64(e.Length)
 	}
 	res.DurationMS = clk.DurationMS(idx.StartTicks, idx.EndTicks)
+	res.MediaDurationMS = clk.DurationMS(idx.StartTicks, idx.EndTicks+int64(idx.Entries[len(idx.Entries)-1].DurationTicks))
 	res.SilenceConfirmedMS = TotalMS(res.Silence, SilenceConfirmed)
 	res.SilenceUnknownMS = TotalMS(res.Silence, SilenceUnknown)
 	return res, nil
