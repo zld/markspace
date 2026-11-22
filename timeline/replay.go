@@ -96,6 +96,10 @@ func (e *Engine) Commit(actions ...Action) []*Segment {
 	for _, seg := range built {
 		idx := e.seg.SegmentIndex(seg.StartNS)
 		seg.Actions = append(seg.Actions, actions...)
+		// Deterministic index offset: the segment's position in the ordered
+		// sequence of committed buckets, so it is stable across replay and
+		// identical between independent runs.
+		seg.IndexOff = e.indexOffset(idx)
 		e.finalize(seg)
 		switch {
 		case e.idOverride != nil:
@@ -120,6 +124,18 @@ func (e *Engine) Commit(actions ...Action) []*Segment {
 	}
 	e.pending = e.retainUncommitted()
 	return committed
+}
+
+// indexOffset returns the ordinal position of a bucket among all buckets
+// committed so far, counting only buckets at or below the argument.
+func (e *Engine) indexOffset(bucket int) int {
+	off := 0
+	for b := range e.commits {
+		if b < bucket {
+			off++
+		}
+	}
+	return off
 }
 
 // replayWith rolls back deterministically from the nearest checkpoint: every
