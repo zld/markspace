@@ -35,6 +35,10 @@ type Report struct {
 // Fields renders the exact terminal field set required by the acceptance
 // contract in a fixed, greppable key=value order.
 func (r Report) Fields() []Field {
+	boundary := r.CommitBoundary
+	if boundary == "" {
+		boundary = "<none>"
+	}
 	return []Field{
 		{"case_count", fmt.Sprintf("%d", r.CaseCount)},
 		{"fault_count", fmt.Sprintf("%d", r.FaultCount)},
@@ -42,7 +46,7 @@ func (r Report) Fields() []Field {
 		{"locate_error_ns", fmt.Sprintf("%d", r.LocateErrorNS)},
 		{"recovery_ms", fmt.Sprintf("%d", r.RecoveryMS)},
 		{"rollback_stage", r.RollbackStage},
-		{"commit_boundary", r.CommitBoundary},
+		{"commit_boundary", boundary},
 		{"sha256", r.SHA256},
 		{"repeat_sha256_equal", fmt.Sprintf("%t", r.RepeatSHAEqual)},
 	}
