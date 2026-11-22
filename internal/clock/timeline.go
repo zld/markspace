@@ -19,6 +19,7 @@ const (
 	KindWrap              // a wrap could not be resolved consistently
 	KindScale             // an unusable timecode scale was supplied
 	KindDrift             // the estimated device drift changed abruptly
+	KindPacketLoss        // an RTP gap stayed open past the recovery window
 )
 
 // Error is the common failure type for the demuxer, clock and RTP recovery.
