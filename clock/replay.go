@@ -76,7 +76,7 @@ func (r *Replayer) evict() {
 		first := true
 		for id := range r.windows {
 			if first || id < oldest {
-				oldest, first = id, true
+				oldest, first = id, false
 			}
 		}
 		r.Evicted = append(r.Evicted, *r.windows[oldest])
