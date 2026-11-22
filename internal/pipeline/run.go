@@ -132,51 +132,51 @@ type CleanSample struct {
 
 // StreamReport summarizes one demuxed input stream.
 type StreamReport struct {
-	Name            string
-	Stream          int
-	TrackID         uint32
-	Codec           string
-	OriginTicks     int64
-	OriginNS        int64
-	Timescale       uint32
-	Samples         int
-	Keyframes       int
-	DamagedSamples  int
-	Received        int
-	Accepted        int
-	Committed       int
-	Duplicates      int
-	Reordered       int
-	Late            int
-	LostSequences   int64
-	RecoveredSeqs   int64
-	LostBursts      int
-	RecoveredBursts int
-	DamagedSpans    int
+	Name            string `json:"name"`
+	Stream          int    `json:"stream"`
+	TrackID         uint32 `json:"track_id"`
+	Codec           string `json:"codec"`
+	OriginTicks     int64  `json:"origin_ticks"`
+	OriginNS        int64  `json:"origin_ns"`
+	Timescale       uint32 `json:"timescale"`
+	Samples         int    `json:"samples"`
+	Keyframes       int    `json:"keyframes"`
+	DamagedSamples  int    `json:"damaged_samples"`
+	Received        int    `json:"received"`
+	Accepted        int    `json:"accepted"`
+	Committed       int    `json:"committed"`
+	Duplicates      int    `json:"duplicates"`
+	Reordered       int    `json:"reordered"`
+	Late            int    `json:"late"`
+	LostSequences   int64  `json:"lost_sequences"`
+	RecoveredSeqs   int64  `json:"recovered_sequences"`
+	LostBursts      int    `json:"lost_bursts"`
+	RecoveredBursts int    `json:"recovered_bursts"`
+	DamagedSpans    int    `json:"damaged_spans"`
 }
 
 // SegmentReport is one unified-timeline segment across all streams.
 type SegmentReport struct {
-	Index     int
-	StartNS   int64
-	EndNS     int64
-	Samples   int
-	Bytes     int64
-	Lost      int64
-	Keyframes int
-	RateBps   int64
-	BufferCap int64
-	SHA256    string
+	Index     int    `json:"index"`
+	StartNS   int64  `json:"start_ns"`
+	EndNS     int64  `json:"end_ns"`
+	Samples   int    `json:"samples"`
+	Bytes     int64  `json:"bytes"`
+	Lost      int64  `json:"lost"`
+	Keyframes int    `json:"keyframes"`
+	RateBps   int64  `json:"rate_bps"`
+	BufferCap int64  `json:"buffer_cap_bytes"`
+	SHA256    string `json:"sha256"`
 }
 
 // TrackReport records one output track.
 type TrackReport struct {
-	TrackID   uint32
-	InputID   uint32
-	Codec     string
-	Samples   int
-	Keyframes int
-	Timescale uint32
+	TrackID   uint32 `json:"track_id"`
+	InputID   uint32 `json:"input_id"`
+	Codec     string `json:"codec"`
+	Samples   int    `json:"samples"`
+	Keyframes int    `json:"keyframes"`
+	Timescale uint32 `json:"timescale"`
 }
 
 // RunResult is the full evidence for one execution.
@@ -198,11 +198,11 @@ type RunResult struct {
 
 // IndexReport summarizes external-index verification.
 type IndexReport struct {
-	Total       int
-	Matched     int
-	Mismatches  int
-	Rebuilt     bool
-	Reason      string
+	Total      int    `json:"total"`
+	Matched    int    `json:"matched"`
+	Mismatches int    `json:"mismatches"`
+	Rebuilt    bool   `json:"rebuilt"`
+	Reason     string `json:"reason,omitempty"`
 }
 
 // Run executes the pipeline once and writes its outputs. It returns evidence
@@ -422,16 +422,19 @@ func prepareTransport(in *Input, opts Options) (
 		if cerr != nil {
 			return nil, nil, nil, nil, nil, cerr
 		}
-		clock.Start = originTicks
+		// Demux primes its own clock on the first packet, so the stream's
+		// declared origin is recorded here and used to normalize the segment
+		// grid without altering any media timestamp.
+		gridOriginNS := clock.ToNS(originTicks)
 		stats[len(stats)-1].OriginTicks = originTicks
-		stats[len(stats)-1].OriginNS = clock.ToNS(originTicks)
+		stats[len(stats)-1].OriginNS = gridOriginNS
 		// The unified segment grid starts at each stream's first sample, so a
 		// large non-zero RTP origin does not scatter samples across millions
 		// of empty segments. The origin stays visible in the stream report.
 		specs = append(specs, demux.StreamSpec{
 			Stream: si, TrackID: src.TrackID, Codec: demux.Codec(src.Codec),
 			Timescale: src.Timescale, WrapBits: 32, FrameDuration: 3000,
-			SegmentNS: segmentNS, OriginNS: clock.OriginNS(),
+			SegmentNS: segmentNS, OriginNS: gridOriginNS,
 			ClockStart: 0,
 		})
 		packets[si] = committed

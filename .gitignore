@@ -1,0 +1,8 @@
+# Build output
+/mediadist
+/bin/
+*.test
+*.out
+
+# Local demo output (demo writes to a temp dir by default)
+/out/
