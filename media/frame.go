@@ -175,6 +175,18 @@ func (fr *FrameReader) Offset() int64 { return fr.offset }
 // Err returns the sticky error, if any.
 func (fr *FrameReader) Err() error { return fr.err }
 
+// Drain consumes and discards any unread bytes, updating the offset. It is
+// used after a scan stops early so an input digest still covers the whole
+// stream.
+func (fr *FrameReader) Drain() (int64, error) {
+	n, err := io.Copy(io.Discard, fr.r)
+	fr.offset += n
+	if err != nil {
+		return n, err
+	}
+	return n, nil
+}
+
 func (fr *FrameReader) readFull(buf []byte) error {
 	n, err := io.ReadFull(fr.r, buf)
 	fr.offset += int64(n)
@@ -322,4 +334,18 @@ func DescribeError(err error) string {
 		return fmt.Sprintf("%v (recoverable=%t; %s)", e, e.Recoverable, e.Suggestion)
 	}
 	return err.Error()
+}
+
+// EncodeStream serializes frames back-to-back, recomputing each digest. The
+// returned bytes are a complete, valid frame stream for the given frames.
+func EncodeStream(frames []*Frame) ([]byte, error) {
+	var out []byte
+	for _, f := range frames {
+		b, err := f.Encode()
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, b...)
+	}
+	return out, nil
 }
