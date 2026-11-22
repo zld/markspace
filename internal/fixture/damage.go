@@ -78,7 +78,9 @@ func damageTruncated(b []byte, m *Media, lay *layout) ([]byte, error) {
 		return nil, fmt.Errorf("fixture: truncated: need multiple chunks")
 	}
 	first := int(binary.BigEndian.Uint32(b[lay.stcoOffsets[0]:]))
-	end := first + 4096
+	// Keep a substantial but incomplete prefix: a bit more than half of the
+	// media bytes, so several chunks survive and loudness has real signal.
+	end := first + (len(b)-first)*11/20
 	if end >= len(b) {
 		end = len(b) - 1024
 	}
