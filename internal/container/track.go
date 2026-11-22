@@ -39,6 +39,33 @@ func (s *Scan) readTracks(moov *Box) *core.Error {
 	return first
 }
 
+// readTrackDeps reads explicit "dep " children naming prerequisite track ids.
+// Malformed entries are ignored with a warning rather than guessed at.
+func readTrackDeps(f *os.File, udta *Box, tr *TrackScan) []uint32 {
+	dep, ok := findDirect(udta, "dep ")
+	if !ok {
+		return nil
+	}
+	if dep.Truncated || dep.PayloadSize() < 4 {
+		tr.Warnings = append(tr.Warnings, core.New(core.CodeCorruptFragment, core.StageScan, true,
+			"dependency metadata is truncated").WithOffset(dep.Offset).WithTrack(tr.ID, 0))
+		return nil
+	}
+	var raw [4]byte
+	if _, err := f.ReadAt(raw[:], dep.PayloadOffset()); err != nil {
+		tr.Warnings = append(tr.Warnings, core.Wrap(core.CodeIO, core.StageScan, true,
+			"read dependency metadata", err).WithOffset(dep.Offset))
+		return nil
+	}
+	id := uint32(raw[0])<<24 | uint32(raw[1])<<16 | uint32(raw[2])<<8 | uint32(raw[3])
+	if id == 0 {
+		tr.Warnings = append(tr.Warnings, core.New(core.CodeCorruptFragment, core.StageScan, true,
+			"dependency names track 0").WithOffset(dep.Offset).WithTrack(tr.ID, 0))
+		return nil
+	}
+	return []uint32{id}
+}
+
 func (s *Scan) limTracksExceeded(n int) bool {
 	lim := s.Limits.MaxTracks
 	if lim <= 0 {
@@ -104,6 +131,10 @@ func (s *Scan) readTrack(trak *Box) (*TrackScan, *core.Error) {
 					"undecodable elst", err).WithOffset(elstBox.Offset))
 			}
 		}
+	}
+
+	if udta, ok := findDirect(trak, "udta"); ok {
+		tr.DependsOn = readTrackDeps(f, udta, tr)
 	}
 
 	stbl := mdia.Find("stbl")

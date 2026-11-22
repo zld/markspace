@@ -36,6 +36,11 @@ type TrackScan struct {
 	Format    AudioFormat
 	IsAudio   bool
 
+	// DependsOn lists track ids this track declares a dependency on. The
+	// dependency is read from an explicit "dep " child of udta; absent
+	// metadata means no declared dependency, never an inferred one.
+	DependsOn []uint32
+
 	Stts      []SttsRun
 	Stsc      []StscRun
 	Sizes     []uint32 // expanded per-sample sizes
