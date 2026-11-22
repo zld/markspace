@@ -18,7 +18,7 @@ const (
 	slotA       = "checkpoint.a.bin"
 	slotB       = "checkpoint.b.bin"
 	tmpSuffix   = ".tmp"
-	headerBytes = 8 + 4 + 4 // magic + sequence + payload crc
+	headerBytes = 8 + 8 + 4 // magic + sequence + payload crc = 20
 )
 
 // Checkpoint is the versioned state blob exchanged with the pipeline. The
@@ -100,9 +100,12 @@ func (s *Store) Save(cp Checkpoint) error {
 	binary.BigEndian.PutUint32(frame[16:20], crc)
 	copy(frame[headerBytes:], cp.Payload)
 
-	target := slotB
+	// Write the inactive slot so the currently valid checkpoint remains on
+	// disk untouched until the atomic rename lands; then flip to make the new
+	// slot active, leaving the previous one as the fallback.
+	target := slotA
 	if s.useSlotA {
-		target = slotA
+		target = slotB
 	}
 	final := filepath.Join(s.dir, target)
 	tmp := final + tmpSuffix
