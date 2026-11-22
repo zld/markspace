@@ -14,7 +14,6 @@ import (
 type Queue[T any] struct {
 	name string
 	ch   chan T
-	cur  atomic.Int64
 	peak atomic.Int64
 }
 
@@ -31,7 +30,7 @@ func NewQueue[T any](capacity int, name string) *Queue[T] {
 func (q *Queue[T]) Send(ctx context.Context, v T) error {
 	select {
 	case q.ch <- v:
-		n := q.cur.Add(1)
+		n := int64(len(q.ch))
 		for {
 			p := q.peak.Load()
 			if n <= p || q.peak.CompareAndSwap(p, n) {
@@ -49,9 +48,6 @@ func (q *Queue[T]) Send(ctx context.Context, v T) error {
 func (q *Queue[T]) Recv(ctx context.Context) (v T, ok bool) {
 	select {
 	case v, ok := <-q.ch:
-		if ok {
-			q.cur.Add(-1)
-		}
 		return v, ok
 	case <-ctx.Done():
 		return v, false
