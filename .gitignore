@@ -1,4 +1,6 @@
+# Runtime demo output: caches and checkpoint journals are local artifacts.
 /tmp/
+/tmp*/
 *.test
 *.out
 .DS_Store
