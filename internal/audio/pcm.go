@@ -127,9 +127,10 @@ type Buffer struct {
 	Metadata BufferMeta
 }
 
-// BufferMeta carries provenance so gaps and resets survive processing.
+// BufferMeta carries provenance so adjacency and resets survive processing.
+// Gap accounting is not duplicated here: container recovery is the single
+// source of truth, and a second counter would let the two diverge.
 type BufferMeta struct {
-	Gaps          int  // number of gaps this segment was split from
 	Discontinuity bool // true when the segment starts after a gap
 	ResetCount    int  // filter resets applied at segment boundaries
 }
