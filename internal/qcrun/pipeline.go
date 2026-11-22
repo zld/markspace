@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"github.com/pion/rtp"
 
@@ -120,8 +121,14 @@ func streamAndRemux(ctx context.Context, opts Options, idx *ebml.Index, packets 
 	for _, t := range idx.Tracks {
 		codecBySource[t.Number] = t.Codec
 	}
-	for src, dst := range mapping {
-		tr, err := w.AddTrack(src, dst, codecBySource[src])
+	// Deterministic track order: sort mapped sources before AddTrack.
+	sources := make([]uint64, 0, len(mapping))
+	for src := range mapping {
+		sources = append(sources, src)
+	}
+	sort.Slice(sources, func(i, j int) bool { return sources[i] < sources[j] })
+	for _, src := range sources {
+		tr, err := w.AddTrack(src, mapping[src], codecBySource[src])
 		if err != nil {
 			out.Close()
 			return err
