@@ -109,6 +109,9 @@ func demoCmd(ctx context.Context, args []string) int {
 		return 1
 	}
 	rerunMatch := res2.Manifest.Digest == digest1 && res2.Manifest.Summary == res.Manifest.Summary
+	// The rerun exists only to prove reproducibility; its frames are removed
+	// so the requested output directory is the sole artifact.
+	os.RemoveAll(rerunDir)
 	matched, verr := render.VerifySegments(cfg.OutDir, res.Manifest)
 	if verr != nil {
 		fmt.Fprintln(os.Stderr, "verify segments:", verr)
