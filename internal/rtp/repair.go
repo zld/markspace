@@ -13,6 +13,24 @@ const (
 	EventDuplicate               // repeated sequence number, never enters the output twice
 )
 
+// String renders the stable event label used in fault reports.
+func (k EventKind) String() string {
+	switch k {
+	case EventPacket:
+		return "packet"
+	case EventGap:
+		return "gap"
+	case EventRecovered:
+		return "recovered"
+	case EventLate:
+		return "late"
+	case EventDuplicate:
+		return "duplicate"
+	default:
+		return "unknown"
+	}
+}
+
 // Event is one output record. Every loss/late/repair event carries both the
 // sequence number and its position on the shared nanosecond time base.
 type Event struct {

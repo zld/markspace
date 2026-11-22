@@ -97,72 +97,128 @@ func RTPToNanos(ticks uint32, nanos, per int64) int64 {
 // events when only an average packet spacing is available.
 func TickNanos(nanos, per int64) int64 { return nanos / per }
 
-// Extender performs RFC 3550-style 16->64 bit sequence number extension per
-// stream, including restart/reset detection after a large jump.
+// Extender performs 16->64 bit sequence number extension per stream once a
+// fixed origin (the minimum wire sequence in the warm-up window) is known.
 type Extender struct {
-	last      uint16
-	cycles    uint64
-	started   bool
-	base      uint16
-	baseSet   bool
+	origin    uint16
+	originSet bool
 	largest   uint64
 }
 
 const maxJump = 1 << 15 // half the 16-bit space, per RFC 3550 wrap heuristic
 
-// Extend maps a wire sequence number to a monotonic extended value. The very
-// first packet anchors the stream at extended sequence zero.
+// setOrigin pins the extended-zero wire sequence.
+func (e *Extender) setOrigin(seq uint16) {
+	e.origin = seq
+	e.originSet = true
+}
+
+// Extend maps a wire sequence number to a stable, non-negative extended value
+// relative to the fixed origin. Only valid once the origin is established.
 func (e *Extender) Extend(seq uint16) uint64 {
-	if !e.started {
-		e.started = true
-		e.base, e.baseSet = seq, true
-		e.last = seq
-		e.largest = 0
-		return 0
+	d := int32(seq) - int32(e.origin)
+	var ext uint64
+	if d < -maxJump {
+		// Forward wrap across the 16-bit boundary.
+		ext = uint64(int64(seq)-int64(e.origin)) + (1 << 16)
+	} else {
+		if d < 0 {
+			d = 0
+		}
+		ext = uint64(d)
 	}
-	delta := int32(seq) - int32(e.last)
-	switch {
-	case delta > maxJump: // backwards jump over a cycle boundary => stream reset
-		e.cycles -= 1 << 16
-	case delta < -maxJump: // forward wrap past 65535
-		e.cycles += 1 << 16
-	}
-	ext := e.cycles + uint64(seq) - uint64(e.base)
-	e.last = seq
 	if ext > e.largest {
 		e.largest = ext
 	}
 	return ext
 }
 
+// OriginReady reports whether the anchor has been established.
+func (e *Extender) OriginReady() bool { return e.originSet }
+
 // Largest reports the highest extended sequence seen so far.
 func (e *Extender) Largest() uint64 { return e.largest }
 
-// Demux fans incoming packets out per (SSRC, PT) and extends their sequence
-// numbers independently for every stream.
-type Demux struct {
-	ext map[StreamKey]*Extender
+// streamDemux holds the warm-up backlog and extender for one (SSRC,PT) stream.
+type streamDemux struct {
+	warmup  int
+	seen    []uint16
+	pending []Packet
+	ext     *Extender
 }
 
-// NewDemux creates an empty demultiplexer.
-func NewDemux() *Demux { return &Demux{ext: map[StreamKey]*Extender{}} }
+// Demux fans incoming packets out per (SSRC, PT) and extends their sequence
+// numbers independently. It buffers a warm-up window per stream to anchor a
+// non-negative extended origin before releasing any packet downstream.
+type Demux struct {
+	streams map[StreamKey]*streamDemux
+	warmup  int
+}
 
-// Push extends one parsed packet and returns it with ExtSeq filled in.
-func (d *Demux) Push(p Packet) Packet {
-	k := p.Key()
-	e, ok := d.ext[k]
-	if !ok {
-		e = &Extender{}
-		d.ext[k] = e
+// NewDemux creates a demultiplexer with the default 64-packet warm-up.
+func NewDemux() *Demux { return NewDemuxWarmup(64) }
+
+// NewDemuxWarmup sets the per-stream warm-up window in packets.
+func NewDemuxWarmup(warmup int) *Demux {
+	if warmup < 1 {
+		warmup = 1
 	}
-	p.ExtSeq = e.Extend(p.Seq)
-	return p
+	return &Demux{streams: map[StreamKey]*streamDemux{}, warmup: warmup}
+}
+
+// Push buffers a packet until the warm-up window establishes the origin, then
+// returns all now-releasable packets (the backlog plus p when it completes the
+// window) with stable non-negative extended sequence numbers. During warm-up
+// it returns nil.
+func (d *Demux) Push(p Packet) []Packet {
+	k := p.Key()
+	s, ok := d.streams[k]
+	if !ok {
+		s = &streamDemux{warmup: d.warmup, ext: &Extender{}}
+		d.streams[k] = s
+	}
+	if !s.ext.OriginReady() {
+		s.pending = append(s.pending, p)
+		s.seen = append(s.seen, p.Seq)
+		if len(s.seen) < s.warmup {
+			return nil
+		}
+		origin := s.seen[0]
+		for _, q := range s.seen[1:] {
+			if q < origin {
+				origin = q
+			}
+		}
+		s.ext.setOrigin(origin)
+		out := make([]Packet, 0, len(s.pending))
+		for _, b := range s.pending {
+			b.ExtSeq = s.ext.Extend(b.Seq)
+			out = append(out, b)
+		}
+		s.pending = nil
+		s.seen = nil
+		return out
+	}
+	p.ExtSeq = s.ext.Extend(p.Seq)
+	return []Packet{p}
+}
+
+// PushOne extends a single packet once the warm-up origin is established.
+// It returns ok=false while the stream is still collecting its warm-up
+// window; callers that must not lose those packets should use Push and feed
+// every returned packet into the jitter buffer.
+func (d *Demux) PushOne(p Packet) (extended Packet, ok bool) {
+	out := d.Push(p)
+	if len(out) == 0 {
+		return Packet{}, false
+	}
+	return out[len(out)-1], true
 }
 
 // Streams reports the stream keys observed so far.
 func (d *Demux) Streams() []StreamKey {
-	keys := make([]StreamKey, 0, len(d.ext))
-	for k := range d.ext {
+	keys := make([]StreamKey, 0, len(d.streams))
+	for k := range d.streams {
 		keys = append(keys, k)
 	}
 	return keys
