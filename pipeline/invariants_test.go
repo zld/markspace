@@ -91,3 +91,43 @@ func TestCountMissingHandlesBackwardAndWrap(t *testing.T) {
 		}
 	}
 }
+
+// TestSilenceAttributionMatchesTotal ensures per-segment silence sums equal the
+// confirmed total even when an interval spans a segment boundary. It goes
+// through the real manifest, not a copy of the overlap logic.
+func TestSilenceAttributionMatchesTotal(t *testing.T) {
+	// 300 frames of 40 ms = 12 s; quiet from frame 90 to 140 crosses the 4 s
+	// and 8 s boundaries and also sits inside the second segment.
+	frames := timeline(300, func(i int) *float64 {
+		if i >= 90 && i < 140 {
+			return volume(-70)
+		}
+		return volume(-6)
+	})
+	data, idx := buildStream(t, frames)
+	cfg := DefaultConfig(media.DefaultTimescale)
+	res, err := Run(idx, NewBufferSource(data, media.DefaultLimits()), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var perSegment int64
+	confirmed := Confirmed(res.Silence)
+	for _, s := range res.Segments {
+		start, end := s.StartMS, s.EndMS
+		for _, iv := range confirmed {
+			a, b := iv.StartMS, iv.EndMS
+			if a < start {
+				a = start
+			}
+			if b > end {
+				b = end
+			}
+			if b > a {
+				perSegment += b - a
+			}
+		}
+	}
+	if perSegment != res.SilenceConfirmedMS {
+		t.Fatalf("per-segment silence=%dms total=%dms (double count or loss)", perSegment, res.SilenceConfirmedMS)
+	}
+}
