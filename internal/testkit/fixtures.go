@@ -122,19 +122,22 @@ func WriteManifest(spec MP4Spec) (*scan.Manifest, error) {
 }
 
 // WriteRTPSidecar synthesizes the packet stream for repair testing. When
-// wrapAt > 0, timestamps straddle the 32-bit boundary at that packet; when
+// wrapAt > 0, packet wrapAt's timestamp is placed just below the 32-bit
+// boundary so wrapAt+1 naturally wraps via modular uint32 addition. When
 // gapAt > 0, one sequence number is skipped there.
 func WriteRTPSidecar(path string, trackID, clockRate, count uint32, deltaTS uint32,
 	wrapAt, gapAt uint32) error {
 	pkts := make([]rtp.Header, count)
 	wire := make([]uint32, count)
 	var ts uint32 = 1000
+	if wrapAt > 0 && wrapAt < count {
+		// Position wrapAt near the boundary with room for one delta.
+		ts = uint32(0x100000000 - uint64(deltaTS)*uint64(wrapAt+1))
+	}
 	seq := uint16(0)
 	for i := uint32(0); i < count; i++ {
-		if wrapAt > 0 && i == wrapAt {
-			ts = ts + deltaTS // natural modular addition wraps at 2^32
-		} else if i > 0 {
-			ts += deltaTS
+		if i > 0 {
+			ts += deltaTS // uint32 addition wraps at 2^32 naturally
 		}
 		if gapAt > 0 && i == gapAt {
 			seq++ // skip one sequence number: a dropped packet

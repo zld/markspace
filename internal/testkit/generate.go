@@ -37,6 +37,10 @@ type MP4Spec struct {
 	Seed      uint64
 	// ForceNonSync suppresses sync flags for these 1-based numbers.
 	ForceNonSync []uint32
+	// ForceMdhdDuration, when non-zero, overrides the computed mdhd duration.
+	// Used by the edit-out-of-bounds fixture so the edit window genuinely
+	// exceeds the declared media duration.
+	ForceMdhdDuration uint32
 }
 
 // WriteMP4 emits a single-track MP4: ftyp, moov (tkhd/mdhd/edts/stbl) and
@@ -73,6 +77,9 @@ func WriteMP4(spec MP4Spec) error {
 	// MediaStartTicks, so mdhd duration spans the full start + samples.
 	samplesSpan := uint64(spec.SampleCount) * uint64(spec.SampleDelta)
 	duration := uint64(spec.MediaStartTicks) + samplesSpan
+	if spec.ForceMdhdDuration != 0 {
+		duration = uint64(spec.ForceMdhdDuration)
+	}
 	if err := writeMoov(w, spec, duration); err != nil {
 		return err
 	}

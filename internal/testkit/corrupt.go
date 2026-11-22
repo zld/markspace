@@ -34,25 +34,25 @@ func TruncateMP4(path string, bytesToDrop int64) error {
 }
 
 // WriteEditOutOfBounds emits an edit list whose media_time starts beyond the
-// track duration. It is written as a standalone replacement asset; the
+// track duration. The MP4 is generated twice: the second write carries the
+// excessive edit-list origin while the manifest is generated from the
+// original (valid) spec first, so the mismatch is the edit list alone. The
 // scanner's edit resolver must reject it and the failure propagates to the
 // manifest stage.
 func WriteEditOutOfBounds(spec MP4Spec) error {
-	// First generate a valid asset, then rewrite with an excessive origin.
 	if err := WriteMP4(spec); err != nil {
+		return err
+	}
+	if _, err := WriteManifest(spec); err != nil {
 		return err
 	}
 	bad := spec
 	bad.MediaStartTicks = int64(spec.SampleCount)*int64(spec.SampleDelta) + 90000
-	if err := WriteMP4(bad); err != nil {
-		return err
-	}
-	// Manifest keeps the original (valid) window, so the mismatch is the
-	// edit list alone and surfaces as an edit-oob error.
-	if _, err := WriteManifest(spec); err != nil {
-		return err
-	}
-	return nil
+	// Keep the original (short) mdhd duration so the edit window genuinely
+	// exceeds media duration.
+	bad.ForceMdhdDuration = uint32(spec.SampleCount * spec.SampleDelta)
+	// Overwrite only the MP4; the manifest keeps the valid original window.
+	return WriteMP4(bad)
 }
 
 // WriteBrokenIndex creates an index-cache file whose bytes look plausible
