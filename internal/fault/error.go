@@ -27,13 +27,16 @@ const (
 
 // Sentinel causes. Callers can test them with errors.Is against wrapped errors.
 var (
-	ErrTruncated      = errors.New("file truncated")
-	ErrBadBox         = errors.New("invalid box")
-	ErrBadSample      = errors.New("invalid sample range")
-	ErrTimeWrap       = errors.New("timestamp wrapped")
-	ErrTimeBackwards  = errors.New("timestamp moved backwards")
-	ErrTimeOverflow   = errors.New("timestamp overflow")
-	ErrNoKeyframe     = errors.New("no sync frame in range")
+	ErrTruncated     = errors.New("file truncated")
+	ErrBadBox        = errors.New("invalid box")
+	ErrBadSample     = errors.New("invalid sample range")
+	ErrTimeWrap      = errors.New("timestamp wrapped")
+	ErrTimeBackwards = errors.New("timestamp moved backwards")
+	ErrTimeOverflow  = errors.New("timestamp overflow")
+	ErrNoKeyframe    = errors.New("no sync frame in range")
+	// ErrTrimmed marks media the edit list deliberately excludes from
+	// presentation. It is not damage: the sample exists but is not shown.
+	ErrTrimmed        = errors.New("trimmed by edit list")
 	ErrIncomplete     = errors.New("incomplete index")
 	ErrSilenceUnknown = errors.New("silence undetectable")
 	ErrHashCollision  = errors.New("fingerprint collision")

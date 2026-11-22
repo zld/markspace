@@ -6,6 +6,7 @@
 package clock
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"math/bits"
@@ -115,8 +116,11 @@ func (em *EditMap) Map(media int64) (int64, error) {
 		}
 		out += seg
 	}
+	// Media outside every entry is either trimmed off the head/tail or falls
+	// in a gap between edits. Both mean "not presented", not "corrupt".
 	return 0, fault.Errorf("clock.edit", fault.KindTimeline,
-		"media tick %d falls outside %d edit segments", media, len(em.edits))
+		"media tick %d is not presented by any of %d edit segments", media, len(em.edits)).
+		Wrapped(fault.ErrTrimmed)
 }
 
 // PresentationEnd reports the total presentation duration of the edit list.
@@ -209,7 +213,11 @@ func (c *TrackClock) Presentation(dts uint64, compositionOffset int64) (int64, e
 	c.prevMedia = media
 	presented, err := c.edits.Map(media)
 	if err != nil {
-		return 0, c.err(fault.ErrBadSample, c.seen, "%v", err)
+		cause := fault.ErrBadSample
+		if errors.Is(err, fault.ErrTrimmed) {
+			cause = fault.ErrTrimmed
+		}
+		return 0, c.err(cause, c.seen, "%v", err)
 	}
 	// The anchor is the earliest raw presentation tick. Wrapped low bits can
 	// land before it late in the file; that sample is not "before" the

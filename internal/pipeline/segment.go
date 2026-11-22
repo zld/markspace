@@ -117,6 +117,11 @@ func ComputePresentation(movie *mp4.Movie, clocks map[uint32]*clock.TrackClock) 
 			// post-wrap garbage, so they are withheld rather than guessed.
 			for i, s := range tr.Samples {
 				v, err := clk.Presentation(s.DTS, s.CTO)
+				if errors.Is(err, fault.ErrTrimmed) {
+					// Deliberately excluded by the edit list; skip it but
+					// keep mapping the rest of the track.
+					continue
+				}
 				if err != nil {
 					break
 				}

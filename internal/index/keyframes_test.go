@@ -121,26 +121,26 @@ func TestMissingSyncTableMarksInferred(t *testing.T) {
 	}
 }
 
-func TestClockErrorsBecomeLocatedIndexWarnings(t *testing.T) {
+func TestClockErrorsWithholdSamplesFromIndex(t *testing.T) {
 	movie := videoMovie(6, 2, true)
 	ix, err := Build(movie, brokenPres{movie: movie, track: 1, failAt: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
 	ti := ix.Tracks[0]
-	var found bool
-	for _, w := range ti.Warnings {
-		if w.Sample == 2 && w.TrackID == 1 && w.Kind == fault.KindIndex {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("missing located warning: %+v", ti.Warnings)
+	// A rejected timestamp is withheld from the index and counted, rather
+	// than producing a warning per sample; the session reports the clock
+	// fault once, with the track and sample that caused it.
+	if ti.Unpresented != 1 {
+		t.Fatalf("unpresented=%d want 1", ti.Unpresented)
 	}
 	for _, e := range ti.Entries {
 		if e.Sample == 2 {
 			t.Fatal("failed sample leaked into index")
 		}
+	}
+	if ti.ExactCount == 0 {
+		t.Fatal("index should retain the samples that mapped cleanly")
 	}
 }
 

@@ -36,6 +36,15 @@ func DemoFiles() []DemoFile {
 	cleanA := cleanSpec(1, 11, []Range{{Start: 48000, End: 96000}})
 	cleanB := cleanSpec(1, 21, nil)
 
+	// An edit list that trims media and shifts presentation. Only the video
+	// track carries an edit here: the writer derives edit durations from the
+	// media rate, and mixing an audio empty edit with a video trim would make
+	// the two tracks disagree about where the programme starts.
+	edited := cleanSpec(1, 81, nil)
+	edited.Tracks[0].EditShift = 45000 // 0.5 s at 90 kHz
+	edited.Tracks[0].EditMedia = 45000
+	edited.MoovFirst = true
+
 	// Truncated mdat: the tail sample cannot be read.
 	truncFull := Build(FileSpec{Timescale: 1000, MoovFirst: true, Major: "isom", Brands: []string{"isom"},
 		BreakStszAt: -1, BreakSizeOf: -1,
@@ -67,6 +76,7 @@ func DemoFiles() []DemoFile {
 		{Name: "cam_a_clean.mp4", Spec: cleanA, Expected: "clean baseline with a silent chapter"},
 		{Name: "cam_b_clean.mp4", Spec: cleanB, Expected: "clean baseline"},
 		{Name: "cam_c_extended.mp4", Spec: ext, Expected: "moov-first with a 64-bit mdat header"},
+		{Name: "cam_d_edits.mp4", Spec: edited, Expected: "edit-list shifted presentation"},
 		// Duplicate camera feed: a second file with identical track payloads.
 		{Name: "cam_b_copy.mp4", Spec: cleanB, Expected: "duplicate feed of cam_b_clean"},
 		{Name: "truncated.mp4", Spec: trunc, Damaged: true, Expected: "mdat truncated mid-payload"},

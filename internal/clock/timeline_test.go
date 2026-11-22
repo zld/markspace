@@ -193,3 +193,24 @@ func TestCompositionOffsetCannotReorderPresentation(t *testing.T) {
 		t.Fatalf("err=%v", err)
 	}
 }
+
+func TestEditListTrimIsNotDamage(t *testing.T) {
+	// Trimming the head of a track removes media from presentation; it is a
+	// normal edit, not a corrupt timestamp.
+	edits := []Edit{
+		{SegmentDuration: uint64(NanosPerSecond), MediaTime: int64(NanosPerSecond)},
+	}
+	// The edit starts one media second in, so 400 ms is trimmed and 1 s is
+	// presented at the start of the programme.
+	clk, _ := NewTrackClock("trim.mp4", 1, 1000, NanosecondTimeline(), edits, 0)
+	_, err := clk.Presentation(400, 0)
+	if !errors.Is(err, fault.ErrTrimmed) {
+		t.Fatalf("trimmed media should report ErrTrimmed, got %v", err)
+	}
+	if clk.WrapDetected() {
+		t.Fatal("a trim must not be recorded as a clock fault")
+	}
+	if v, err := clk.Presentation(1000, 0); err != nil || v != 0 {
+		t.Fatalf("presented media rejected: %d, %v", v, err)
+	}
+}

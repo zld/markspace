@@ -29,7 +29,10 @@ type TrackIndex struct {
 	Rebuilt    bool
 	// Duration of the media in presentation ticks.
 	Duration int64
-	Warnings []*fault.Error
+	// Unpresented counts samples the edit list trims, or whose clock was
+	// rejected. They are not index entries and not damage by themselves.
+	Unpresented int
+	Warnings    []*fault.Error
 }
 
 // Index is the keyframe index of a movie.
@@ -79,10 +82,7 @@ func Build(movie *mp4.Movie, pres Presentation) (*Index, error) {
 		for i, s := range tr.Samples {
 			presented, ok := pres.At(tr.ID, i)
 			if !ok {
-				e := fault.Errorf("index.build", fault.KindIndex,
-					"sample %d has no usable presentation time", i).
-					WithPath(movie.Path).WithTrack(tr.ID).WithSample(i).Recovered()
-				ti.Warnings = append(ti.Warnings, e)
+				ti.Unpresented++
 				continue
 			}
 			lastPresented = presented
