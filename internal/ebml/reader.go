@@ -86,6 +86,9 @@ func NewReader(r io.Reader, lim Limits) *Reader {
 // Offset returns the absolute byte position of the reader.
 func (r *Reader) Offset() int64 { return r.off }
 
+// ReadByteRaw reads one payload byte without VINT interpretation.
+func (r *Reader) ReadByteRaw() (byte, error) { return r.readByte() }
+
 func (r *Reader) readByte() (byte, error) {
 	var b [1]byte
 	n, err := io.ReadFull(r.r, b[:])
@@ -138,13 +141,16 @@ func (r *Reader) ReadVInt(keepAll bool) (val uint64, width int, unknown bool, er
 		}
 		raw = raw<<8 | uint64(b)
 	}
-	if width == 8 && raw == 0x01ffffffffffffff {
-		return 0, width, true, nil
-	}
 	if keepAll {
 		return raw, width, false, nil
 	}
-	return raw - (uint64(1) << uint(8*width-width)), width, false, nil
+	// EBML unknown-length marker is reserved to the 8-byte form:
+	// length bit 0x01 followed by 56 one-bits (0x01FFFFFFFFFFFFFF).
+	if width == 8 && raw == 0x01FFFFFFFFFFFFFF {
+		return 0, width, true, nil
+	}
+	lengthBit := uint64(1) << uint(8*width-width)
+	return raw - lengthBit, width, false, nil
 }
 
 // ReadElementHeader parses the next element header at depth. A bounded parent
@@ -214,25 +220,21 @@ func (r *Reader) Children(e *Element, hardEnd int64, stopIDs ...uint32) *ChildIt
 
 // Next returns the next child header or io.EOF at the parent boundary.
 func (it *ChildIterator) Next() (*Element, error) {
-	if it.parent.UnknownSize {
-		if it.parentEnd >= 0 && it.r.off >= it.parentEnd {
-			return nil, io.EOF
-		}
-		if it.r.off > it.parent.DataOff {
-			peek, err := it.peekID()
-			if err != nil {
-				return nil, err
-			}
-			if it.stopIDs[peek] {
-				return nil, io.EOF
-			}
-		}
-		return it.r.ReadElementHeader(it.parent.Depth+1, it.parentEnd)
-	}
-	if it.r.off >= it.parent.EndOff {
+	if it.parentEnd >= 0 && it.r.off >= it.parentEnd {
 		return nil, io.EOF
 	}
-	return it.r.ReadElementHeader(it.parent.Depth+1, it.parent.EndOff)
+	// Sibling-ID termination only applies to unknown-length parents: bounded
+	// parents have an exact byte boundary and must read every declared child.
+	if it.parent.UnknownSize && len(it.stopIDs) > 0 && it.r.off > it.parent.DataOff {
+		peek, err := it.peekID()
+		if err != nil {
+			return nil, err
+		}
+		if it.stopIDs[peek] {
+			return nil, io.EOF
+		}
+	}
+	return it.r.ReadElementHeader(it.parent.Depth+1, it.parentEnd)
 }
 
 // peekID decodes only the next element ID, then rewinds to the start.
