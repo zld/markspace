@@ -72,6 +72,10 @@ func (r *Runner) publishDamaged(dir string, rep *Report, damaged []byte, idx *in
 		return
 	}
 	_ = os.WriteFile(filepath.Join(sub, "index.json"), b, 0o644)
+	// Also seed the working cache with the damaged input's index. The repaired
+	// rerun must then reject it as stale and rebuild, which is the invalidation
+	// the acceptance criteria ask to show.
+	_ = index.WriteCache(cachePath(dir), idx.InputDigest, idx)
 	// Build a manifest over the verified prefix so verification can recompute
 	// its statistics and then fail specifically on index completeness.
 	res, err := pipeline.Run(idx, pipeline.NewBufferSource(damaged, media.DefaultLimits()),
