@@ -6,16 +6,57 @@ import (
 	"mediacore/internal/core"
 )
 
+// TrackDependency is one declared prerequisite between source tracks.
+type TrackDependency struct {
+	Track     uint32
+	DependsOn uint32
+}
+
 // Plan describes the requested processing shape. It is the single place where
-// track presence and parameters become graph nodes, so the pipeline never
-// builds nodes ad hoc.
+// track presence, declared track dependencies, and parameters become graph
+// nodes, so the pipeline never builds nodes ad hoc.
 type Plan struct {
 	HaveAudioTrack bool
+	TrackDeps      []TrackDependency
 	SampleRate     int
 	Channels       string
 	TargetKbps     int
 	LoudnessLUFS   float64
 	PeakDBFS       float64
+}
+
+// TrackNodeID names a source track's node.
+func TrackNodeID(id uint32) NodeID { return NodeID("track-" + strconv.FormatUint(uint64(id), 10)) }
+
+// ValidateTrackDeps checks declared dependencies for missing targets and
+// cycles among source tracks alone, before any processing node is added.
+func ValidateTrackDeps(deps []TrackDependency) error {
+	known := map[uint32]bool{}
+	for _, d := range deps {
+		known[d.Track] = true
+	}
+	for _, d := range deps {
+		if !known[d.DependsOn] {
+			return core.New(core.CodeMissingTrack, core.StageGraph, false,
+				"declared dependency names an unknown track").WithNode(string(TrackNodeID(d.Track)))
+		}
+	}
+	nodes := make([]Node, 0, len(deps))
+	seen := map[uint32]bool{}
+	index := map[uint32]int{}
+	for _, d := range deps {
+		if !seen[d.Track] {
+			seen[d.Track] = true
+			index[d.Track] = len(nodes)
+			nodes = append(nodes, Node{ID: TrackNodeID(d.Track)})
+		}
+	}
+	for _, d := range deps {
+		i := index[d.Track]
+		nodes[i].Deps = append(nodes[i].Deps, TrackNodeID(d.DependsOn))
+	}
+	_, err := New(nodes)
+	return err
 }
 
 // Build turns a plan into a validated graph. Missing required tracks and
@@ -50,6 +91,10 @@ func Build(p Plan) (*Graph, error) {
 	nodes = append(nodes, Node{ID: NodeLoudness, Deps: []NodeID{NodeLayout}})
 	nodes = append(nodes, Node{ID: NodePacketize, Deps: []NodeID{NodeLoudness},
 		Params: map[string]string{"target_kbps": strconv.Itoa(p.TargetKbps)}})
+
+	if err := ValidateTrackDeps(p.TrackDeps); err != nil {
+		return nil, err
+	}
 
 	g, err := New(nodes)
 	if err != nil {
