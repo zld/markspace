@@ -162,37 +162,18 @@ func sampleIdxCoverage(raw rawTable, runs []chunkRun, count int) int {
 	return sizes
 }
 
-// channelsFor reads channel_count from the first audio sample entry inside the
-// stbl's stsd. Payloads are raw PCM here, so the decoder never inspects the
-// entry; only the frame width is needed for content accounting. A missing or
-// malformed entry falls back to stereo, matching the fixture generator.
-func (s *Scanner) channelsFor(stbl *mp4.BoxInfo) uint16 {
-	var n uint16 = 2
-	_, _ = mp4.ReadBoxStructureFromInternal(s.f, stbl, func(h *mp4.ReadHandle) (interface{}, error) {
-		if h.BoxInfo.Type == mp4.BoxTypeStsd() && len(h.Path) == 2 {
-			// stsd payload: FullBox(4) + entry_count(4) + sample entry. Inside
-			// an audio sample entry channel_count sits 16 bytes into the entry.
-			buf := make([]byte, 24)
-			if _, err := s.f.ReadAt(buf, int64(h.BoxInfo.Offset+h.BoxInfo.HeaderSize)); err == nil {
-				if c := binary.BigEndian.Uint16(buf[8+8:]); c > 0 {
-					n = c
-				}
-			}
-		}
-		if h.BoxInfo.Type == mp4.BoxTypeStbl() {
-			_, _ = h.Expand()
-		}
-		return nil, nil
-	})
-	return n
-}
-
 // rawTable holds the decoded stbl children.
 type rawTable struct {
 	stts []sttsEntry
 	stsc []stscEntry
 	stsz []uint32 // per-sample sizes; empty means uniformSize applies
 	co   []uint64 // chunk offsets (stco widened to 64 bit)
+	// truncatedAt is the absolute file offset of the first stbl child box that
+	// could not be decoded to completion, or -1 when the table is intact.
+	truncatedAt int64
+	// truncatedKind names the box that was short ("stsz"/"stco"/...); empty
+	// when intact.
+	truncatedKind string
 }
 
 // walkTrakMeta walks the trak subtree and hands each matched box's decoded
@@ -239,46 +220,79 @@ func (s *Scanner) walkTrakMeta(trak *mp4.BoxInfo, paths []mp4.BoxPath,
 	return err
 }
 
-// readStbl decodes the sample-table boxes via go-mp4 payload structs.
+// readStbl decodes the sample-table boxes. A truncated child box does not
+// abort decoding: every box wholly contained in the readable prefix is still
+// parsed, and the damaged box position is recorded so buildSamples can
+// localize the first sample that is no longer covered by the table. This is
+// what turns a cut stbl into an exact (offset, track, sample) report instead
+// of a whole-table -1.
 func (s *Scanner) readStbl(stbl *mp4.BoxInfo) (rawTable, int, error) {
-	paths := []mp4.BoxPath{
-		boxPath(mp4.BoxTypeStts()),
-		boxPath(mp4.BoxTypeStsc()),
-		boxPath(mp4.BoxTypeStsz()),
-		boxPath(mp4.BoxTypeStco()),
-		boxPath(mp4.BoxTypeCo64()),
-	}
-	boxes, err := mp4.ExtractBoxesWithPayload(s.f, stbl, paths)
-	if err != nil {
-		return rawTable{}, 0, clock.NewError(clock.ErrTruncatedBox, err.Error())
-	}
-	var raw rawTable
+	raw := rawTable{truncatedAt: -1}
 	var uniform uint32
 	sampleCount := -1
-	for _, b := range boxes {
-		switch p := b.Payload.(type) {
-		case *mp4.Stts:
-			for _, e := range p.Entries {
-				raw.stts = append(raw.stts, sttsEntry{e.SampleCount, e.SampleDelta})
-			}
-		case *mp4.Stsc:
-			for _, e := range p.Entries {
-				raw.stsc = append(raw.stsc, stscEntry{e.FirstChunk, e.SamplesPerChunk})
-			}
-		case *mp4.Stsz:
-			sampleCount = int(p.SampleCount)
-			uniform = p.SampleSize
-			raw.stsz = append(raw.stsz, p.EntrySize...)
-		case *mp4.Stco:
-			for _, off := range p.ChunkOffset {
-				raw.co = append(raw.co, uint64(off))
-			}
-		case *mp4.Co64:
-			raw.co = append(raw.co, p.ChunkOffset...)
+	declaredEnd := stbl.Offset + stbl.Size
+	if stbl.Size == 0 || stbl.ExtendToEOF {
+		// Size 0 means the box runs to EOF; the file determines its end.
+		if fi, err := s.f.Stat(); err == nil {
+			declaredEnd = uint64(fi.Size())
 		}
 	}
+	off := stbl.Offset + stbl.HeaderSize
+	for off+8 <= declaredEnd {
+		var hdr [8]byte
+		if _, err := s.f.ReadAt(hdr[:], int64(off)); err != nil {
+			raw.truncatedAt = int64(off)
+			raw.truncatedKind = "hdr"
+			break
+		}
+		size := uint64(binary.BigEndian.Uint32(hdr[:4]))
+		typ := string(hdr[4:8])
+		if size == 0 {
+			size = declaredEnd - off // runs to enclosing box end
+		}
+		if size < 8 {
+			raw.truncatedAt = int64(off)
+			raw.truncatedKind = typ
+			break
+		}
+		payloadStart := off + 8
+		payloadEnd := off + size
+		if payloadEnd > declaredEnd {
+			// The declared stbl ends before this child completes: the child is
+			// truncated. Parse what is readable, then stop.
+			raw.truncatedAt = int64(off)
+			raw.truncatedKind = typ
+			payloadEnd = declaredEnd
+		}
+		switch typ {
+		case "stts", "stsc", "stsz", "stco", "co64":
+			s.parseStblChild(&raw, &uniform, &sampleCount, typ, payloadStart, payloadEnd)
+		}
+		if raw.truncatedAt >= 0 {
+			break
+		}
+		off += size
+	}
 	if sampleCount < 0 || len(raw.stts) == 0 || len(raw.stsc) == 0 || len(raw.co) == 0 {
-		return raw, 0, clock.NewError(clock.ErrTruncatedBox, "incomplete stbl sample table")
+		msg := "incomplete stbl sample table"
+		if raw.truncatedKind != "" {
+			msg = "truncated " + raw.truncatedKind + " box"
+		}
+		// Even with an incomplete table, report how far the readable prefix
+		// reaches: every retained stts interval that also has a chunk offset and
+		// a size is locatable, and the first sample beyond it is the damage.
+		if raw.truncatedAt >= 0 {
+			runs, _ := expandStscLenient(raw.stsc, len(raw.co))
+			full := 0
+			for _, r := range raw.stts {
+				full += int(r.sampleCount)
+			}
+			first := sampleIdxCoverage(raw, runs, full)
+			return raw, full, clock.NewError(clock.ErrTruncatedBox, msg).
+				WithPosition(raw.truncatedAt, 0, int64(first))
+		}
+		return raw, 0, clock.NewError(clock.ErrTruncatedBox, msg).
+			WithPosition(raw.truncatedAt, 0, -1)
 	}
 	if uniform != 0 {
 		raw.stsz = make([]uint32, sampleCount)
@@ -287,10 +301,129 @@ func (s *Scanner) readStbl(stbl *mp4.BoxInfo) (rawTable, int, error) {
 		}
 	}
 	if len(raw.stsz) != sampleCount {
+		if raw.truncatedAt >= 0 {
+			// The size table itself was cut: every sample whose size is still
+			// readable can be located; the first unreadable one localizes it.
+			runs, _ := expandStscLenient(raw.stsc, len(raw.co))
+			first := sampleIdxCoverage(raw, runs, sampleCount)
+			return raw, sampleCount, clock.NewError(clock.ErrTruncatedBox,
+				fmt.Sprintf("stsz cut at entry %d of %d", len(raw.stsz), sampleCount)).
+				WithPosition(raw.truncatedAt, 0, int64(first))
+		}
 		return raw, 0, clock.NewError(clock.ErrTruncatedBox,
-			fmt.Sprintf("stsz size entries=%d want %d", len(raw.stsz), sampleCount))
+			fmt.Sprintf("stsz size entries=%d want %d", len(raw.stsz), sampleCount)).
+			WithPosition(raw.truncatedAt, 0, -1)
 	}
 	return raw, sampleCount, nil
+}
+
+// parseStblChild decodes one sample-table child from its payload byte range,
+// tolerating a payload that ends mid-array: complete entries are retained and
+// the incomplete remainder is simply omitted (the caller has already recorded
+// truncation). Field layouts follow ISO/IEC 14496-12 8.x.
+func (s *Scanner) parseStblChild(raw *rawTable, uniform *uint32, sampleCount *int,
+	typ string, start, end uint64) {
+	body := func(skip int) []byte {
+		off := start + uint64(skip)
+		if off > end {
+			return nil
+		}
+		b := make([]byte, end-off)
+		if _, err := s.f.ReadAt(b, int64(off)); err != nil {
+			return nil
+		}
+		return b
+	}
+	switch typ {
+	case "stts", "stsc":
+		// FullBox(4) + entry_count(4) + entries of 8 bytes.
+		b := body(4)
+		if len(b) < 4 {
+			return
+		}
+		count := int(binary.BigEndian.Uint32(b))
+		b = b[4:]
+		if typ == "stsc" {
+			// stsc entries are 12 bytes; the existing decoder uses 8-byte
+			// pairs, so keep every complete entry's first two fields.
+			for i := 0; i < count && len(b) >= 12; i, b = i+1, b[12:] {
+				raw.stsc = append(raw.stsc, stscEntry{
+					binary.BigEndian.Uint32(b), binary.BigEndian.Uint32(b[4:])})
+			}
+			return
+		}
+		for i := 0; i < count && len(b) >= 8; i, b = i+1, b[8:] {
+			raw.stts = append(raw.stts, sttsEntry{
+				binary.BigEndian.Uint32(b), binary.BigEndian.Uint32(b[4:])})
+		}
+	case "stsz":
+		// FullBox(4) + sample_size(4) + sample_count(4) + sizes.
+		b := body(4)
+		if len(b) < 8 {
+			return
+		}
+		*uniform = binary.BigEndian.Uint32(b)
+		*sampleCount = int(binary.BigEndian.Uint32(b[4:]))
+		b = b[8:]
+		for len(b) >= 4 {
+			raw.stsz = append(raw.stsz, binary.BigEndian.Uint32(b))
+			b = b[4:]
+		}
+	case "stco":
+		b := body(4)
+		if len(b) < 4 {
+			return
+		}
+		b = b[4:] // entry_count is advisory; trust the readable entries
+		for len(b) >= 4 {
+			raw.co = append(raw.co, uint64(binary.BigEndian.Uint32(b)))
+			b = b[4:]
+		}
+	case "co64":
+		b := body(4)
+		if len(b) < 4 {
+			return
+		}
+		b = b[4:]
+		for len(b) >= 8 {
+			raw.co = append(raw.co, binary.BigEndian.Uint64(b))
+			b = b[8:]
+		}
+	}
+}
+
+// channelsFor reads channel_count from the first audio sample entry inside the
+// stbl's stsd. Payloads are raw PCM here, so the decoder never inspects the
+// entry; only the frame width is needed for content accounting. A missing or
+// malformed entry falls back to stereo, matching the fixture generator.
+func (s *Scanner) channelsFor(stbl *mp4.BoxInfo) uint16 {
+	var n uint16 = 2
+	_, _ = mp4.ReadBoxStructureFromInternal(s.f, stbl, func(h *mp4.ReadHandle) (interface{}, error) {
+		if h.BoxInfo.Type == mp4.BoxTypeStsd() && len(h.Path) == 2 {
+			// stsd payload: FullBox(4) + entry_count(4) + sample entry. Inside
+			// an audio sample entry the channel_count sits 16 bytes in.
+			buf := make([]byte, 24)
+			if _, err := s.f.ReadAt(buf, int64(h.BoxInfo.Offset+h.BoxInfo.HeaderSize)); err == nil {
+				if c := binary.BigEndian.Uint16(buf[8+8:]); c > 0 {
+					n = c
+				}
+			}
+		}
+		if h.BoxInfo.Type == mp4.BoxTypeStbl() {
+			_, _ = h.Expand()
+		}
+		return nil, nil
+	})
+	return n
+}
+
+// expandStscLenient is expandStsc for a possibly cut stsc table: missing
+// trailing runs simply cover no chunks.
+func expandStscLenient(entries []stscEntry, chunkCount int) ([]chunkRun, error) {
+	if len(entries) == 0 {
+		return nil, clock.NewError(clock.ErrTruncatedBox, "no stsc entries readable")
+	}
+	return expandStsc(entries, chunkCount)
 }
 
 // buildSamples materializes every sample with offset, timing and CRC, enforcing
@@ -309,6 +442,10 @@ func (s *Scanner) buildSamples(stbl *mp4.BoxInfo, trackID, timescale uint32,
 	if err != nil {
 		return nil, err
 	}
+	if raw.truncatedAt >= 0 && sampleIdxCoverage(raw, runs, count) == 0 {
+		return nil, clock.NewError(clock.ErrTruncatedBox, "truncated "+raw.truncatedKind+" box").
+			WithPosition(raw.truncatedAt, trackID, -1)
+	}
 
 	entries := make([]SampleEvent, 0, count)
 	sampleIdx := 0
@@ -319,9 +456,15 @@ func (s *Scanner) buildSamples(stbl *mp4.BoxInfo, trackID, timescale uint32,
 	for _, run := range runs {
 		for chunk := run.firstChunk; chunk < run.lastChunk; chunk++ {
 			if int(chunk) >= len(raw.co) {
+				// The offset table was cut before this chunk: report the first
+				// unreachable sample at the exact first missing chunk offset.
+				pos := int64(-1)
+				if raw.truncatedAt >= 0 {
+					pos = raw.truncatedAt
+				}
 				return nil, clock.NewError(clock.ErrTruncatedBox,
 					"stsc references chunk beyond stco/co64 table").
-					WithPosition(-1, trackID, int64(sampleIdx))
+					WithPosition(pos, trackID, int64(sampleIdx))
 			}
 			offset := int64(raw.co[chunk])
 			for j := uint32(0); j < run.samples; j++ {

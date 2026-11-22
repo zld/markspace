@@ -210,3 +210,32 @@ func TestFixtureWrapsAndCarriesAbsoluteTicks(t *testing.T) {
 		frames += uint64(e.PayloadSize) / (2 * uint64(2))
 	}
 }
+
+// TestTruncatedSTBLLocalizesFirstLostSample checks that a cut sample table is
+// reported at the cut box offset with the first uncovered sample, not -1.
+func TestTruncatedSTBLLocalizesFirstLostSample(t *testing.T) {
+	data, err := BuildMP4(FixtureSpec{
+		Seed: 7, Timescale: 44100, SampleCount: 240, FramesPerSamp: 512, Channels: 2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	corrupt, err := TruncateSTBL(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := writeTemp(t, "cut.m4a", corrupt)
+	s, _ := Open(path)
+	defer s.Close()
+	_, err = s.ScanTracks()
+	var ce *clock.Error
+	if !asClock(err, &ce) || ce.Code != clock.ErrTruncatedBox {
+		t.Fatalf("want TRUNCATED_BOX, got %v", err)
+	}
+	if ce.SampleIndex != 0 {
+		t.Fatalf("sample index=%d want 0 (first lost sample)", ce.SampleIndex)
+	}
+	if ce.FileOffset < 0 || ce.FileOffset >= int64(len(data)) {
+		t.Fatalf("offset=%d outside file", ce.FileOffset)
+	}
+}
