@@ -53,8 +53,15 @@ A normal run is not a resume, so it resets the checkpoint journal; pass
 | `internal/sync/align.go`, `layout.go` | cross-track alignment with propagated uncertainty; layout diff diagnostics |
 | `internal/cache/address.go` | content-addressed cache with provenance, version and content verification plus quarantine |
 | `internal/pipeline/checkpoint.go` | append-only, self-checked journal with torn-tail tolerance and crash resume |
-| `internal/pipeline/runner.go`, `assemble.go`, `faults.go` | stage orchestration, fragment reassembly, fault matrix |
+| `internal/pipeline/runner.go`, `stages.go` | stage orchestration and the four per-stage verified cache entries |
+| `internal/pipeline/assemble.go`, `duration.go`, `faults.go` | fragment reassembly, declared-duration checks, fault matrix |
 | `internal/fixtures/` | deterministic scenario generation and edge-network fault simulation |
+| `cmd/mediapipe/` | flag parsing, exit codes and summary output only |
+
+Every segment produces four independent cache entries — transport, container,
+sync and index — each addressed by the digest of its own inputs and the
+processing version, and each verified on read by stage, provenance, version and
+content digest.
 
 The adapter in `cmd/mediapipe/main.go` contains no media logic.
 
