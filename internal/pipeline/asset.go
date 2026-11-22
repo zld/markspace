@@ -88,6 +88,7 @@ func analyzeAsset(ctx context.Context, a AssetInput, opts Options) (*assetResult
 	// A truncated capture is unreliable from the cut to the declared end, so
 	// collapse the MP4 segments into one window rather than citing instants.
 	r.Segments = widenTruncation(r.Segments, r.HasTruncation, r.TruncationStartMs, r.MediaDurationMs, r.FileSize)
+	stampSource(r.Faults, a.Asset)
 	if opts.Mode == ModeStrict && len(r.Faults) > 0 {
 		return r, firstFault(r.Faults)
 	}
@@ -364,6 +365,16 @@ func RTPMediaTimes(packets []stream.Packet) []float64 {
 		out[i] = float64(unwrapped-base) * 1000 / clockRate
 	}
 	return out
+}
+
+// stampSource attributes every fault to its asset so merge ordering and the
+// manifest digest are independent of which worker finished first.
+func stampSource(faults []*diag.Fault, asset string) {
+	for _, f := range faults {
+		if f.Source == "" {
+			f.Source = asset
+		}
+	}
 }
 
 func mustFault(err error, fallback string) *diag.Fault {

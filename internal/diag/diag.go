@@ -29,7 +29,11 @@ const (
 // Fault is an auditable, offset-bearing error. Offset is a byte offset for
 // text and MP4 sources, and an element/sequence index for packet streams.
 type Fault struct {
-	Code     string
+	Code string
+	// Source names the asset the offset refers to. It is empty for faults
+	// raised before an asset is known, and is always stamped by the pipeline
+	// so ordering and digests never depend on worker scheduling.
+	Source   string
 	Offset   int64
 	MediaMs  float64
 	HasMedia bool

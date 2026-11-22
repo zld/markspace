@@ -225,12 +225,24 @@ func firstFault(faults []*diag.Fault) error {
 	return &cp
 }
 
+// sortFaults imposes a total order so the digest cannot depend on worker
+// completion order: asset, byte offset, media time, code, then detail.
 func sortFaults(faults []*diag.Fault) {
 	sort.SliceStable(faults, func(i, j int) bool {
-		if faults[i].Offset != faults[j].Offset {
-			return faults[i].Offset < faults[j].Offset
+		a, b := faults[i], faults[j]
+		if a.Source != b.Source {
+			return a.Source < b.Source
 		}
-		return faults[i].Code < faults[j].Code
+		if a.Offset != b.Offset {
+			return a.Offset < b.Offset
+		}
+		if a.MediaMs != b.MediaMs {
+			return a.MediaMs < b.MediaMs
+		}
+		if a.Code != b.Code {
+			return a.Code < b.Code
+		}
+		return a.Detail < b.Detail
 	})
 }
 
@@ -315,7 +327,7 @@ func Digest(m *Manifest) string {
 			s.Source, s.Code, s.StartMs, s.EndMs, s.StartOffset, s.EndOffset, s.FaultCount, s.Recoverable)
 	}
 	for _, f := range m.Faults {
-		fmt.Fprintf(h, "f|%s|%d|%.3f\n", f.Code, f.Offset, f.MediaMs)
+		fmt.Fprintf(h, "f|%s|%s|%d|%.3f|%s\n", f.Source, f.Code, f.Offset, f.MediaMs, f.Detail)
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }
