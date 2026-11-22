@@ -218,7 +218,13 @@ func (r *Runner) process(dir string, data []byte) (*index.Index, *pipeline.Resul
 		return idx, nil, nil, rep, err
 	}
 	bw := bandwidthFromPackets(data, r.fopts.FrameMS)
-	target := 900
+	// The target is whatever the estimator recommends under the input
+	// ceiling; it is never a constant. For the default material the estimate
+	// is 900 kbps, which is what the acceptance line documents.
+	target := bw.TargetKBPS
+	if target <= 0 {
+		target = 900
+	}
 	m, err := manifest.Build(idx, res, manifest.Options{
 		TargetKBPS: target,
 		Bandwidth: &manifest.BandwidthReportLike{
