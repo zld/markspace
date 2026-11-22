@@ -2,6 +2,8 @@ package index
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -343,5 +345,26 @@ func TestScanDistinguishesReorderingFromRegression(t *testing.T) {
 	}
 	if !idx2.Reordered {
 		t.Fatal("out-of-order timestamps should set the reordered flag")
+	}
+}
+
+// TestIncompleteScanDigestCoversWholeStream proves the input digest is computed
+// over every byte even when scanning stops at a damaged record, so a later
+// repair is guaranteed to be detected as a change.
+func TestIncompleteScanDigestCoversWholeStream(t *testing.T) {
+	frames := []*media.Frame{
+		synthFrame(0, 0, 0, 8, 8, nil),
+		synthFrame(1, 3600, 40, 8, 8, nil),
+		synthFrame(2, 7200, 80, 8, 8, nil),
+	}
+	data, _ := media.EncodeStream(frames)
+	data[media.FrameHeaderSize+1] ^= 0xFF // corrupt the first payload
+	idx, err := Scan(bytes.NewReader(data), DefaultOptions())
+	if err == nil {
+		t.Fatal("expected a checksum error")
+	}
+	sum := sha256.Sum256(data)
+	if idx.InputDigest != hex.EncodeToString(sum[:]) {
+		t.Fatal("input digest must cover the entire stream, including unread bytes")
 	}
 }
