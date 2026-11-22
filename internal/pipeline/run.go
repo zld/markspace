@@ -114,6 +114,12 @@ func Run(cfg Config) (*Outcome, error) {
 	var plans []*segment.Plan
 	inputHashes := map[string]string{}
 	hitRows, hitTotal := 0, 0
+	hitRate := func() float64 {
+		if hitTotal == 0 {
+			return 1
+		}
+		return float64(hitRows) / float64(hitTotal)
+	}
 	for _, a := range assets {
 		hash := SHA256Hex(a.Data)
 		inputHashes[a.Spec.ID] = hash
@@ -129,7 +135,7 @@ func Run(cfg Config) (*Outcome, error) {
 			rb.AddError(e)
 		}
 		if cfg.FailAfter == FailAfterScan {
-			return stopAt(cfg, w, rb, rec, FailAfterScan)
+			return stopAt(rb, rec, counts, plans, hitRate(), FailAfterScan)
 		}
 		idxFile := &index.File{Stream: a.Spec.ID, Entries: a.Entries}
 		recRes := index.Reconcile(idxFile, scan)
@@ -149,19 +155,21 @@ func Run(cfg Config) (*Outcome, error) {
 	}
 	segment.SortedPlans(plans)
 	if cfg.FailAfter == FailAfterPlan {
-		return stopAt(cfg, w, rb, rec, FailAfterPlan)
+		return stopAt(rb, rec, counts, plans, hitRate(), FailAfterPlan)
+	}
+	if cfg.FailAfter == FailBeforeCommit {
+		// Stage temp files but never commit: recovery must roll them
+		// back. This runs before alignment so the crash is reproducible
+		// even when the damaged inputs would later reject the group.
+		if err := stageOnly(cfg.WorkDir, assets, plans, w); err != nil {
+			return nil, err
+		}
+		return stopAt(rb, rec, counts, plans, hitRate(), FailBeforeCommit)
 	}
 	alignment, err := segment.Align(plans, segment.AlignConfig{Tolerance: cfg.Tolerance})
 	if err != nil {
 		rb.AddError(asTimeline(err))
 		return finalizeRejected(cfg, w, rb, plans, rec, counts, inputHashes, hitRows, hitTotal)
-	}
-	if cfg.FailAfter == FailBeforeCommit {
-		// Stage temp files but never commit: recovery must roll them back.
-		if err := stageOnly(cfg.WorkDir, assets, plans, w); err != nil {
-			return nil, err
-		}
-		return stopAt(cfg, w, rb, rec, FailBeforeCommit)
 	}
 	return commitAndReport(cfg, w, rb, rec, assets, plans, alignment, counts, inputHashes, hitRows, hitTotal)
 }

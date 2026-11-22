@@ -1,0 +1,466 @@
+{
+  "schema_version": 1,
+  "generated_at_utc": "2026-11-22T19:22:00Z",
+  "segments": 42,
+  "quarantined_segments": 3,
+  "keyframe_index_hit_rate": 0.9583333333333334,
+  "roundtrip_consistency": 100,
+  "segment_sha256_match": 100,
+  "cross_representation_skew_ms": 5,
+  "wal_replayed": 12,
+  "rolled_back": 1,
+  "injected_faults": {
+    "truncated_streams": 3,
+    "corrupt_units": 3,
+    "missing_index_rows": 6,
+    "duplicate_index_rows": 0,
+    "misaligned_representations": 0
+  },
+  "segment_hashes": [
+    {
+      "representation": "av1-1080p",
+      "boundary": 0,
+      "path": "tmp/broken/quarantine/av1-1080p-0000.bin",
+      "size": 193,
+      "sha256": "7dde3ac942ef9c8dd88541135f09e1dd1b8177a67010f0d89b658c9916f46146"
+    },
+    {
+      "representation": "av1-1080p",
+      "boundary": 1,
+      "path": "tmp/broken/segments/av1-1080p-0001.bin",
+      "size": 386,
+      "sha256": "d099c6eed92979cc5b894a6c8c3cc75c006ad53dd9393fa14079f516d578d1ee"
+    },
+    {
+      "representation": "av1-1080p",
+      "boundary": 2,
+      "path": "tmp/broken/segments/av1-1080p-0002.bin",
+      "size": 386,
+      "sha256": "653b9462f3a82a982c2c95e158dd6534b3b89ee669f759469c5ac69a05da3264"
+    },
+    {
+      "representation": "av1-1080p",
+      "boundary": 3,
+      "path": "tmp/broken/segments/av1-1080p-0003.bin",
+      "size": 386,
+      "sha256": "c49a1618d2c3efec406c735024ec75a594540e154e6f421fa7ae8bf5638698be"
+    },
+    {
+      "representation": "av1-1080p",
+      "boundary": 4,
+      "path": "tmp/broken/segments/av1-1080p-0004.bin",
+      "size": 386,
+      "sha256": "0dad571fea25138b24d724330edfcf0b055adee59c2d301bbb5199279a6c13ff"
+    },
+    {
+      "representation": "av1-1080p",
+      "boundary": 5,
+      "path": "tmp/broken/segments/av1-1080p-0005.bin",
+      "size": 386,
+      "sha256": "c4bd953fa6fc69b152cb92e55c840c26c11b1aa3ae3ca8c1b0c6b4963794c410"
+    },
+    {
+      "representation": "av1-1080p",
+      "boundary": 6,
+      "path": "tmp/broken/segments/av1-1080p-0006.bin",
+      "size": 386,
+      "sha256": "f21a08229ed3998bf93601d7c12458e861410787caf73040540251d327702099"
+    },
+    {
+      "representation": "av1-1080p",
+      "boundary": 7,
+      "path": "tmp/broken/segments/av1-1080p-0007.bin",
+      "size": 386,
+      "sha256": "2170e0418c5285e4928bb531511baa07e1f71d9f6b40afce262812710172f737"
+    },
+    {
+      "representation": "av1-1080p",
+      "boundary": 8,
+      "path": "tmp/broken/segments/av1-1080p-0008.bin",
+      "size": 386,
+      "sha256": "2728502e81d5150c23c2faf6b9a3e42264ceed5389194031043a2bb1e5552c01"
+    },
+    {
+      "representation": "av1-1080p",
+      "boundary": 9,
+      "path": "tmp/broken/segments/av1-1080p-0009.bin",
+      "size": 386,
+      "sha256": "23465885fbee5e46526b786475d525170c734f5f0017168e6366e212f584e42e"
+    },
+    {
+      "representation": "av1-1080p",
+      "boundary": 10,
+      "path": "tmp/broken/segments/av1-1080p-0010.bin",
+      "size": 386,
+      "sha256": "e903726b3ecc7c45cd2f7639f9b75a6df2392adaa8d9a5261635ed9cf078ecdf"
+    },
+    {
+      "representation": "av1-1080p",
+      "boundary": 11,
+      "path": "tmp/broken/segments/av1-1080p-0011.bin",
+      "size": 386,
+      "sha256": "d969e7300c879038957ec50df690d5af9bd0e3e1ad7bb8015cd940f79c6f025d"
+    },
+    {
+      "representation": "av1-1080p",
+      "boundary": 12,
+      "path": "tmp/broken/segments/av1-1080p-0012.bin",
+      "size": 386,
+      "sha256": "f1e342ad63283f3aded8495f39913c901c4490689a180e7cd7718fcab5496611"
+    },
+    {
+      "representation": "av1-1080p",
+      "boundary": 13,
+      "path": "tmp/broken/segments/av1-1080p-0013.bin",
+      "size": 134,
+      "sha256": "2a333b09e32c0a138a0521141ca02c29f4a8028509ae4f037b500ae46f2b3fa9"
+    },
+    {
+      "representation": "h264-720p",
+      "boundary": 0,
+      "path": "tmp/broken/quarantine/h264-720p-0000.bin",
+      "size": 214,
+      "sha256": "c1d153fcc50747859d1c82fad60bcdc36b50e9b9282c44beff42f4f8f009e057"
+    },
+    {
+      "representation": "h264-720p",
+      "boundary": 1,
+      "path": "tmp/broken/segments/h264-720p-0001.bin",
+      "size": 422,
+      "sha256": "b5665573f71620d31768276cd927c465831007347db14b179897bc24f7f2c2db"
+    },
+    {
+      "representation": "h264-720p",
+      "boundary": 2,
+      "path": "tmp/broken/segments/h264-720p-0002.bin",
+      "size": 422,
+      "sha256": "67e2cc426d1244b42aefa4db3347001dfff3e8d82791920709de4a28e1015437"
+    },
+    {
+      "representation": "h264-720p",
+      "boundary": 3,
+      "path": "tmp/broken/segments/h264-720p-0003.bin",
+      "size": 422,
+      "sha256": "a241c38a4cce159a0fcd3f151e5750f3a64cefddb1eccd1c203ba4d644957373"
+    },
+    {
+      "representation": "h264-720p",
+      "boundary": 4,
+      "path": "tmp/broken/segments/h264-720p-0004.bin",
+      "size": 422,
+      "sha256": "77223e0ac773ad62835ddb0225d0c841b6ac4a98fa995020c2114a17b4f95041"
+    },
+    {
+      "representation": "h264-720p",
+      "boundary": 5,
+      "path": "tmp/broken/segments/h264-720p-0005.bin",
+      "size": 422,
+      "sha256": "fdd695323750ce254ae4ae39a37f1b5df95f199a75ffa6d33634fd02994d6443"
+    },
+    {
+      "representation": "h264-720p",
+      "boundary": 6,
+      "path": "tmp/broken/segments/h264-720p-0006.bin",
+      "size": 422,
+      "sha256": "872bd4147f3f5c4f4e252513cae04599b27560e9837ac4673551e4cc1cdff0b7"
+    },
+    {
+      "representation": "h264-720p",
+      "boundary": 7,
+      "path": "tmp/broken/segments/h264-720p-0007.bin",
+      "size": 422,
+      "sha256": "c56b5a9ae50b1f618fe7fdb4d4b2c5e115436355fd6135ae8d4c6d3550116ea0"
+    },
+    {
+      "representation": "h264-720p",
+      "boundary": 8,
+      "path": "tmp/broken/segments/h264-720p-0008.bin",
+      "size": 422,
+      "sha256": "b320f6e63ddc246700ba0aa804a3f41cdcbf2328bdf421b99a3bcc0074a5cd91"
+    },
+    {
+      "representation": "h264-720p",
+      "boundary": 9,
+      "path": "tmp/broken/segments/h264-720p-0009.bin",
+      "size": 422,
+      "sha256": "a3f9cc8f370c471603e583cbf3d0c2b03b2aafb7eb7be8c08e0e0bab11d21f37"
+    },
+    {
+      "representation": "h264-720p",
+      "boundary": 10,
+      "path": "tmp/broken/segments/h264-720p-0010.bin",
+      "size": 422,
+      "sha256": "2e85b548f382c79f3bb6fa4bfb748c4b007e155cd43759cdb31f73a180fa3bdd"
+    },
+    {
+      "representation": "h264-720p",
+      "boundary": 11,
+      "path": "tmp/broken/segments/h264-720p-0011.bin",
+      "size": 422,
+      "sha256": "8a959a7b6a17123976bef4da29a1b499cf07063bde631bf4c6fce09d2dc8ee0b"
+    },
+    {
+      "representation": "h264-720p",
+      "boundary": 12,
+      "path": "tmp/broken/segments/h264-720p-0012.bin",
+      "size": 422,
+      "sha256": "e4050ec6f78323c9daba03d7f12a390b8acf655651fe51a0032007cc69c4ca0a"
+    },
+    {
+      "representation": "h264-720p",
+      "boundary": 13,
+      "path": "tmp/broken/segments/h264-720p-0013.bin",
+      "size": 146,
+      "sha256": "ed00b6aac16e1e5a90a3fe8b723e81ef7396563b071446ca3307ecec907259b0"
+    },
+    {
+      "representation": "h265-1080p",
+      "boundary": 0,
+      "path": "tmp/broken/quarantine/h265-1080p-0000.bin",
+      "size": 217,
+      "sha256": "3ad358112221f2c53aefebd40c272d4701eb2a771d92950f5cff40129c8430ab"
+    },
+    {
+      "representation": "h265-1080p",
+      "boundary": 1,
+      "path": "tmp/broken/segments/h265-1080p-0001.bin",
+      "size": 428,
+      "sha256": "c7255ad6f7f1e7446c56dac3fadff208e4276b3a7166e40cf0d44c002d892024"
+    },
+    {
+      "representation": "h265-1080p",
+      "boundary": 2,
+      "path": "tmp/broken/segments/h265-1080p-0002.bin",
+      "size": 428,
+      "sha256": "b25bb39ac6d1a8df7cfb472a203a0f5c2bedaf2b31068c61e1027885a4b0c60a"
+    },
+    {
+      "representation": "h265-1080p",
+      "boundary": 3,
+      "path": "tmp/broken/segments/h265-1080p-0003.bin",
+      "size": 428,
+      "sha256": "27364b73c84e368f50c65f09908cd848ab344e4dbc4a76e4603e39c6bacba2b0"
+    },
+    {
+      "representation": "h265-1080p",
+      "boundary": 4,
+      "path": "tmp/broken/segments/h265-1080p-0004.bin",
+      "size": 428,
+      "sha256": "1c45360c3228b8f10415efb7495bb94c1b98358314c1613b6149375575438e09"
+    },
+    {
+      "representation": "h265-1080p",
+      "boundary": 5,
+      "path": "tmp/broken/segments/h265-1080p-0005.bin",
+      "size": 428,
+      "sha256": "c414e53be45c10ddc52e4b60d6ad448262fa9d3135a2ca7813ccea4880dbd539"
+    },
+    {
+      "representation": "h265-1080p",
+      "boundary": 6,
+      "path": "tmp/broken/segments/h265-1080p-0006.bin",
+      "size": 428,
+      "sha256": "6151f1eb8d4213e7a0efd4dbba0946a6e55fdbd2ca01a64055344f68ac3ebdd1"
+    },
+    {
+      "representation": "h265-1080p",
+      "boundary": 7,
+      "path": "tmp/broken/segments/h265-1080p-0007.bin",
+      "size": 428,
+      "sha256": "d31919079c8b8867b68cbbf535c7dcf7e45bec4d3bcec72de443fa5be1cd2aef"
+    },
+    {
+      "representation": "h265-1080p",
+      "boundary": 8,
+      "path": "tmp/broken/segments/h265-1080p-0008.bin",
+      "size": 428,
+      "sha256": "0a0d1243edd7a7becdd907f797045568edac5d3de3ab7022d49e48286c3fac77"
+    },
+    {
+      "representation": "h265-1080p",
+      "boundary": 9,
+      "path": "tmp/broken/segments/h265-1080p-0009.bin",
+      "size": 428,
+      "sha256": "8412fdce7e3b6b575a3c5f587f7f505aa2cae0aa932846687c4396db6b32acc9"
+    },
+    {
+      "representation": "h265-1080p",
+      "boundary": 10,
+      "path": "tmp/broken/segments/h265-1080p-0010.bin",
+      "size": 428,
+      "sha256": "ed0380b2e1776481a09772fed98b474b4b3246379937ca3d8b6b0ea52be145da"
+    },
+    {
+      "representation": "h265-1080p",
+      "boundary": 11,
+      "path": "tmp/broken/segments/h265-1080p-0011.bin",
+      "size": 428,
+      "sha256": "c2f72a7c7e6603a2869cdbea6e4e6ff155bdb824345af14ee3cc0ea345246f48"
+    },
+    {
+      "representation": "h265-1080p",
+      "boundary": 12,
+      "path": "tmp/broken/segments/h265-1080p-0012.bin",
+      "size": 428,
+      "sha256": "d640969b35e383c64b25e5721ce936514f0324d19fbb53bacae30af07bc08c5d"
+    },
+    {
+      "representation": "h265-1080p",
+      "boundary": 13,
+      "path": "tmp/broken/segments/h265-1080p-0013.bin",
+      "size": 148,
+      "sha256": "833fc5ad333546d86281b30a7f162fc97d9f11b56617bac85b1de7f0b08f592e"
+    }
+  ],
+  "quarantine": [
+    {
+      "kind": "mispoint",
+      "representation": "h264-720p",
+      "offset": 0,
+      "detail": "seq=0 pts=0",
+      "recovery_action": "isolate_index_entry"
+    },
+    {
+      "kind": "corrupt_unit",
+      "representation": "h264-720p",
+      "offset": 0,
+      "detail": "boundary=0 seq=0",
+      "recovery_action": "isolate_segment"
+    },
+    {
+      "kind": "mispoint",
+      "representation": "h265-1080p",
+      "offset": 0,
+      "detail": "seq=0 pts=0",
+      "recovery_action": "isolate_index_entry"
+    },
+    {
+      "kind": "corrupt_unit",
+      "representation": "h265-1080p",
+      "offset": 0,
+      "detail": "boundary=0 seq=0",
+      "recovery_action": "isolate_segment"
+    },
+    {
+      "kind": "mispoint",
+      "representation": "av1-1080p",
+      "offset": 0,
+      "detail": "seq=0 pts=450",
+      "recovery_action": "isolate_index_entry"
+    },
+    {
+      "kind": "corrupt_unit",
+      "representation": "av1-1080p",
+      "offset": 0,
+      "detail": "boundary=0 seq=0",
+      "recovery_action": "isolate_segment"
+    }
+  ],
+  "errors": [
+    {
+      "Stage": "reconcile",
+      "Kind": "index_mispoint",
+      "Offset": 0,
+      "Action": "quarantine_entry",
+      "Msg": "no keyframe unit matches seq=0 pts=0"
+    },
+    {
+      "Stage": "reconcile",
+      "Kind": "index_mispoint",
+      "Offset": 0,
+      "Action": "quarantine_entry",
+      "Msg": "no keyframe unit matches seq=0 pts=0"
+    },
+    {
+      "Stage": "reconcile",
+      "Kind": "index_mispoint",
+      "Offset": 0,
+      "Action": "quarantine_entry",
+      "Msg": "no keyframe unit matches seq=0 pts=450"
+    },
+    {
+      "Stage": "reconcile",
+      "Kind": "index_missing",
+      "Offset": 386,
+      "Action": "recover_keyframe",
+      "Msg": "seq=6 proven from bitstream"
+    },
+    {
+      "Stage": "reconcile",
+      "Kind": "index_missing",
+      "Offset": 425,
+      "Action": "recover_keyframe",
+      "Msg": "seq=6 proven from bitstream"
+    },
+    {
+      "Stage": "reconcile",
+      "Kind": "index_missing",
+      "Offset": 431,
+      "Action": "recover_keyframe",
+      "Msg": "seq=6 proven from bitstream"
+    },
+    {
+      "Stage": "reconcile",
+      "Kind": "index_missing",
+      "Offset": 4632,
+      "Action": "recover_keyframe",
+      "Msg": "seq=72 proven from bitstream"
+    },
+    {
+      "Stage": "reconcile",
+      "Kind": "index_missing",
+      "Offset": 5067,
+      "Action": "recover_keyframe",
+      "Msg": "seq=72 proven from bitstream"
+    },
+    {
+      "Stage": "reconcile",
+      "Kind": "index_missing",
+      "Offset": 5139,
+      "Action": "recover_keyframe",
+      "Msg": "seq=72 proven from bitstream"
+    },
+    {
+      "Stage": "scan",
+      "Kind": "corrupt_unit",
+      "Offset": 0,
+      "Action": "quarantine_unit",
+      "Msg": "length mismatch or crc32 failure"
+    },
+    {
+      "Stage": "scan",
+      "Kind": "corrupt_unit",
+      "Offset": 0,
+      "Action": "quarantine_unit",
+      "Msg": "length mismatch or crc32 failure"
+    },
+    {
+      "Stage": "scan",
+      "Kind": "corrupt_unit",
+      "Offset": 0,
+      "Action": "quarantine_unit",
+      "Msg": "length mismatch or crc32 failure"
+    },
+    {
+      "Stage": "scan",
+      "Kind": "truncated_tail",
+      "Offset": 4959,
+      "Action": "discard_incomplete_tail",
+      "Msg": "incomplete final unit excluded from commit"
+    },
+    {
+      "Stage": "scan",
+      "Kind": "truncated_tail",
+      "Offset": 5424,
+      "Action": "discard_incomplete_tail",
+      "Msg": "incomplete final unit excluded from commit"
+    },
+    {
+      "Stage": "scan",
+      "Kind": "truncated_tail",
+      "Offset": 5501,
+      "Action": "discard_incomplete_tail",
+      "Msg": "incomplete final unit excluded from commit"
+    }
+  ]
+}

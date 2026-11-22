@@ -5,7 +5,9 @@
 package pipeline
 
 import (
+	"bytes"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"math/rand"
@@ -160,9 +162,25 @@ func corruptBase(codec bitstream.Codec) int {
 
 // Inject applies the selected faults deterministically and returns the
 // count of each class so the run report can prove what was injected.
+// Ordering is fixed so faults compose instead of cancelling each other:
+// misalign (PTS rewrite on the full stream) -> corrupt -> truncate ->
+// index edits. Byte offsets never move under misalign, so every
+// representation keeps the same boundary count and the aligner fails on
+// the time-skew tolerance, not on a structural count mismatch.
 func Inject(assets []*Asset, faults FaultSet, p SampleParams) FaultCounts {
 	var c FaultCounts
 	rng := rand.New(rand.NewSource(p.Seed + 99))
+	if faults.Misalign {
+		for _, a := range assets {
+			if a.Spec.Codec != bitstream.CodecAV1 {
+				continue
+			}
+			delta := timeline.MustMs(120) // well beyond the 40 ms tolerance
+			shiftPTS(a, delta)
+			a.Spec.Skew += delta
+			c.Misaligned++
+		}
+	}
 	for _, a := range assets {
 		if faults.CorruptUnit {
 			// Flip bytes inside the payload region of the first full
@@ -211,45 +229,47 @@ func Inject(assets []*Asset, faults FaultSet, p SampleParams) FaultCounts {
 			a.Entries[1] = dup
 			c.Duplicate++
 		}
-		if faults.Misalign && a.Spec.Codec == bitstream.CodecAV1 {
-			// Shift AV1 PTS well beyond the 40 ms tolerance by rewriting
-			// the entries; the stream itself carries the same PTS in its
-			// meta headers, so regenerate the asset tail.
-			a.Spec.Skew = timeline.MustMs(120)
-			c.Misaligned++
-		}
-	}
-	if faults.Misalign {
-		regenerateMisaligned(assets, p)
 	}
 	return c
 }
 
-// regenerateMisaligned rebuilds the misaligned representation so its
-// in-stream meta PTS matches the injected skew end to end.
-func regenerateMisaligned(assets []*Asset, p SampleParams) {
-	for _, a := range assets {
-		if a.Spec.Codec != bitstream.CodecAV1 {
+// shiftPTS adds delta to every in-stream meta PTS and every index
+// entry PTS without touching byte offsets, turning a representation
+// into a time-skewed layer whose framing stays byte-identical. The MDIQ
+// magic contains no zero byte, so it survives emulation-prevention
+// escaping unchanged and can be located inside each scanned unit.
+func shiftPTS(a *Asset, delta timeline.Ticks) {
+	scan, err := bitstream.Scan(a.Spec.Codec, a.Data, bitstream.DefaultLimits())
+	if err != nil {
+		return // leave PTS untouched; align will simply see no skew
+	}
+	magic := []byte("MDIQ")
+	for _, u := range scan.Units {
+		span := a.Data[u.Offset : u.Offset+u.Length]
+		idx := bytes.Index(span, magic)
+		if idx < 0 {
 			continue
 		}
-		rng := rand.New(rand.NewSource(p.Seed))
-		var data []byte
-		var entries []index.Entry
-		seq := uint32(0)
-		for k := 0; k < p.Keyframes; k++ {
-			base := timeline.Ticks(k) * p.FrameDuration * timeline.Ticks(p.InterPerKey+1)
-			kpts := base + a.Spec.Skew
-			body := bodyFor(rng, 48)
-			entries = append(entries, index.Entry{Seq: seq, Offset: int64(len(data)), PTS: kpts})
-			data = append(data, encodeUnit(a.Spec.Codec, seq, kpts, true, body)...)
-			seq++
-			for j := 1; j <= p.InterPerKey; j++ {
-				data = append(data, encodeUnit(a.Spec.Codec, seq,
-					kpts+timeline.Ticks(j)*p.FrameDuration, false, bodyFor(rng, 32))...)
-				seq++
-			}
-		}
-		a.Data, a.Entries = data, entries
+		off := u.Offset + int64(idx)
+		cur := binary.BigEndian.Uint64(a.Data[off+8 : off+16])
+		binary.BigEndian.PutUint64(a.Data[off+8:off+16], cur+uint64(delta))
+	}
+	for i := range a.Entries {
+		a.Entries[i].PTS += delta
+	}
+}
+
+// unitFramingLen returns the bytes preceding the MDIQ meta header for
+// a non-escaped unit, used by corruption injection which needs the
+// payload region before any escaping side effects are possible.
+func unitFramingLen(codec bitstream.Codec) int {
+	switch codec {
+	case bitstream.CodecAV1:
+		return 2 // OBU header + 1-byte LEB128
+	case bitstream.CodecH265:
+		return 6 // 4-byte start code + 2 NAL header bytes
+	default:
+		return 5 // 4-byte start code + 1 NAL header byte
 	}
 }
 

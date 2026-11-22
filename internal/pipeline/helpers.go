@@ -180,8 +180,8 @@ func finalizeRejected(cfg Config, w *journal.WAL, rb *report.Builder, plans []*s
 	if hitTotal > 0 {
 		hitRate = float64(hitRows) / float64(hitTotal)
 	}
-	rep := rb.Finalize(plans, hitRate, 0, 0, 0, 0, rec.Replayed, rec.RolledBack,
-		counts.toInjection(), time.Now())
+	rep := rb.Finalize(plans, hitRate, 0, maxSkewMs(plans), 0, 0,
+		rec.Replayed, rec.RolledBack, counts.toInjection(), time.Now())
 	repBytes, err := report.Marshal(rep)
 	if err != nil {
 		return nil, err
@@ -194,11 +194,45 @@ func finalizeRejected(cfg Config, w *journal.WAL, rb *report.Builder, plans []*s
 		InputHashes: inputHashes}, nil
 }
 
-func stopAt(cfg Config, w *journal.WAL, rb *report.Builder, rec *journal.Report,
-	at FailPoint) (*Outcome, error) {
-	rep := rb.Finalize(nil, 1, 0, 0, 0, 0, rec.Replayed, rec.RolledBack,
-		FaultCounts{}.toInjection(), time.Now())
-	return &Outcome{Report: rep, Recover: rec, ExitCode: 1, StoppedAt: at}, nil
+func stopAt(rb *report.Builder, rec *journal.Report, counts FaultCounts,
+	plans []*segment.Plan, hitRate float64, at FailPoint) (*Outcome, error) {
+	rep := rb.Finalize(plans, hitRate, 0, maxSkewMs(plans), 0, 0,
+		rec.Replayed, rec.RolledBack, counts.toInjection(), time.Now())
+	return &Outcome{Plans: plans, Report: rep, Recover: rec, ExitCode: 1, StoppedAt: at}, nil
+}
+
+// maxSkewMs computes the largest clean-boundary start-time spread
+// across representations, mirroring the aligner's measurement so a
+// rejected group still reports the skew that caused the rejection.
+func maxSkewMs(plans []*segment.Plan) float64 {
+	if len(plans) == 0 {
+		return 0
+	}
+	boundaries := len(plans[0].Segments)
+	maxMs := 0.0
+	for b := 0; b < boundaries; b++ {
+		var minTS, maxTS timeline.Ticks
+		first := true
+		for _, p := range plans {
+			if b >= len(p.Segments) || p.Segments[b].Quarantined {
+				continue
+			}
+			ts := p.Segments[b].StartPTS
+			if first || ts < minTS {
+				minTS = ts
+			}
+			if first || ts > maxTS {
+				maxTS = ts
+			}
+			first = false
+		}
+		if !first {
+			if ms := timeline.AbsDiff(maxTS, minTS).MillisFloat(); ms > maxMs {
+				maxMs = ms
+			}
+		}
+	}
+	return maxMs
 }
 
 func asTimeline(err error) *timeline.Error {

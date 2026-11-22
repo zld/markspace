@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "generated_at_utc": "2026-11-22T19:07:34Z",
+  "segments": 39,
+  "quarantined_segments": 0,
+  "keyframe_index_hit_rate": 1,
+  "roundtrip_consistency": 0,
+  "segment_sha256_match": 100,
+  "cross_representation_skew_ms": 0,
+  "wal_replayed": 0,
+  "rolled_back": 0,
+  "injected_faults": {
+    "truncated_streams": 0,
+    "corrupt_units": 0,
+    "missing_index_rows": 0,
+    "duplicate_index_rows": 0,
+    "misaligned_representations": 1
+  },
+  "segment_hashes": null,
+  "quarantine": null,
+  "errors": [
+    {
+      "Stage": "align",
+      "Kind": "skew_exceeded",
+      "Offset": 0,
+      "Action": "reject_group",
+      "Msg": "boundary 0 skew 125.00ms exceeds tolerance 40.00ms"
+    }
+  ]
+}
