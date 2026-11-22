@@ -529,6 +529,21 @@ func (r *Runner) runValidate(assets []*ingest.Asset, out *Output) error {
 	}
 	res := ValidateOutput(out, sizes, formats)
 	vs := &ValidateStage{Result: *res}
+	// Per-stage gates are derived from each stage payload rather than from
+	// in-memory state, so a resumed run that reuses committed stages produces
+	// the same gates as a full run.
+	for _, g := range r.stageGates(assets, out) {
+		vs.Gates = append(vs.Gates, g)
+		if g.Failed > 0 {
+			vs.Issues.Add(diagnose.Issue{
+				Category: diagnose.CatInvariant, Stage: diagnose.StageValidate,
+				Format: "report", Asset: "",
+				Span:   core.Span{Start: 0, End: 0},
+				Detail: fmt.Sprintf("%s stage gate failed %d of %d self-checks", g.Stage, g.Failed, g.Passed+g.Failed),
+			})
+		}
+	}
+	sort.SliceStable(vs.Gates, func(i, j int) bool { return vs.Gates[i].Stage < vs.Gates[j].Stage })
 	for _, c := range res.FailedChecks() {
 		vs.Issues.Add(diagnose.Issue{
 			Category: diagnose.CatInvariant, Stage: diagnose.StageValidate,
@@ -539,4 +554,46 @@ func (r *Runner) runValidate(assets []*ingest.Asset, out *Output) error {
 	vs.Issues.Sort()
 	out.Validate = vs
 	return nil
+}
+
+// stageGates validates each stage's published output in execution order.
+func (r *Runner) stageGates(assets []*ingest.Asset, out *Output) []StageCheck {
+	sizes := make(map[string]int64, len(assets))
+	for _, a := range assets {
+		sizes[a.Name] = a.Size()
+	}
+	var gates []StageCheck
+	if out.Ingest != nil {
+		cues := make([]validate.CueRef, 0, len(out.Ingest.Cues))
+		for _, c := range out.Ingest.Cues {
+			cues = append(cues, validate.CueRef{Asset: c.Asset, Index: c.Index, Span: c.Span, TimingSpan: c.Span})
+		}
+		gates = append(gates, toGate("ingest", validate.IngestStage(sizes, out.Ingest.Issues, cues)))
+	}
+	if out.Normalize != nil {
+		tl, err := rebuildTimeline(out.Normalize)
+		if err != nil {
+			tl = nil
+		}
+		gates = append(gates, toGate("normalize", validate.NormalizeStage(tl, out.Normalize.Points)))
+	}
+	if out.Index != nil {
+		idxs := make([]*index.Index, 0, len(out.Index.Indexes))
+		for i := range out.Index.Indexes {
+			idxs = append(idxs, &out.Index.Indexes[i])
+		}
+		gates = append(gates, toGate("index", validate.IndexStage(keyframeIndexRefs(idxs))))
+	}
+	if out.Diagnose != nil {
+		refs := make([]validate.RangeRef, 0, len(out.Diagnose.Ranges))
+		for _, rg := range out.Diagnose.Ranges {
+			refs = append(refs, validate.RangeRef{Asset: rg.Asset, Format: rg.Format, Span: rg.Span})
+		}
+		gates = append(gates, toGate("diagnose", validate.DiagnoseStage(refs, sizes)))
+	}
+	return gates
+}
+
+func toGate(stage string, res *validate.Result) StageCheck {
+	return StageCheck{Stage: stage, Name: stage + "_gate", Passed: res.Total - res.Failed, Failed: res.Failed}
 }

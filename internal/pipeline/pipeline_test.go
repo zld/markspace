@@ -248,6 +248,12 @@ func TestVerifyReport(t *testing.T) {
 	if res.Failed != 0 {
 		t.Fatalf("invariants failed: %v", res.FailedChecks())
 	}
+	if parsed.GatesFailed != 0 {
+		t.Fatalf("stage gates failed: %d", parsed.GatesFailed)
+	}
+	if len(parsed.Invariants) == 0 {
+		t.Fatal("report carried no invariant records")
+	}
 	if !match || digest != out.Summary.SHA256 {
 		t.Fatalf("checksum mismatch: verify=%s run=%s match=%v", digest, out.Summary.SHA256, match)
 	}

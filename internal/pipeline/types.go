@@ -104,10 +104,20 @@ type DiagnoseStage struct {
 	Issues diagnose.Issues  `json:"issues"`
 }
 
+// StageCheck records the outcome of checking one stage's own output at the
+// point it is produced. It is separate from the final cross-stage validation.
+type StageCheck struct {
+	Stage  string `json:"stage"`
+	Name   string `json:"name"`
+	Passed int    `json:"passed"`
+	Failed int    `json:"failed"`
+}
+
 // ValidateStage is the invariant stage output.
 type ValidateStage struct {
 	Result validate.Result `json:"result"`
 	Issues diagnose.Issues `json:"issues"`
+	Gates  []StageCheck    `json:"gates"`
 }
 
 // StageDigest is one committed stage in the report journal.

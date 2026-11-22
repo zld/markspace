@@ -32,6 +32,7 @@ const (
 	KindRange     ReportKind = "range"
 	KindIssue     ReportKind = "issue"
 	KindStage     ReportKind = "stage"
+	KindGate      ReportKind = "stage_gate"
 	KindInvariant ReportKind = "invariant"
 	KindSummary   ReportKind = "summary"
 )
@@ -52,6 +53,7 @@ type Record struct {
 	Range     *RangeRecord     `json:"range,omitempty"`
 	Issue     *IssueRecord     `json:"issue,omitempty"`
 	Stage     *StageRecordOut  `json:"stage,omitempty"`
+	Gate      *StageCheck      `json:"gate,omitempty"`
 	Invariant *InvariantRecord `json:"invariant,omitempty"`
 	Summary   *SummaryRecord   `json:"summary,omitempty"`
 }
@@ -270,6 +272,14 @@ func WriteJSONL(w io.Writer, out *Output, params Parameters, inputDigest, params
 			}
 		}
 	}
+	if out.Validate != nil {
+		for i := range out.Validate.Gates {
+			g := out.Validate.Gates[i]
+			if err := emit(Record{Kind: KindGate, Gate: &g}); err != nil {
+				return err
+			}
+		}
+	}
 	for _, st := range out.Stages {
 		if err := emit(Record{Kind: KindStage, Stage: &StageRecordOut{
 			Name: st.Name, Digest: st.Digest, RecordsThrough: st.RecordsThrough,
@@ -327,17 +337,18 @@ func WriteReport(path string, out *Output, params Parameters, inputDigest, param
 
 // ParsedReport is the reconstruction of a report used by `verify`.
 type ParsedReport struct {
-	Run        RunRecord
-	Assets     []AssetRecord
-	Points     []PointRecord
-	Tracks     []TrackRecord
-	Keyframes  []KeyframeRecord
-	Ranges     []RangeRecord
-	Issues     []IssueRecord
-	Stages     []StageRecordOut
-	Invariants []InvariantRecord
-	Summary    SummaryRecord
-	Records    int
+	Run         RunRecord
+	Assets      []AssetRecord
+	Points      []PointRecord
+	Tracks      []TrackRecord
+	Keyframes   []KeyframeRecord
+	Ranges      []RangeRecord
+	Issues      []IssueRecord
+	Stages      []StageRecordOut
+	GatesFailed int
+	Invariants  []InvariantRecord
+	Summary     SummaryRecord
+	Records     int
 }
 
 // ParseReport reads a JSON Lines report, rejecting unknown fields and any
@@ -409,6 +420,13 @@ func ParseReport(r io.Reader) (*ParsedReport, error) {
 				return nil, errors.New("pipeline: empty summary record")
 			}
 			out.Summary = *rec.Summary
+		case KindGate:
+			if rec.Gate == nil {
+				return nil, errors.New("pipeline: empty stage gate record")
+			}
+			if rec.Gate.Failed > 0 {
+				out.GatesFailed += rec.Gate.Failed
+			}
 		case KindCue, KindRTP, KindTimecode, KindDrift:
 			// Informational records; verify does not need to re-check them.
 		default:
@@ -488,8 +506,11 @@ func VerifyReport(p *ParsedReport) (*validate.Result, string, bool) {
 		})
 	}
 	res := validate.All(in)
+	// A failed per-stage gate is also a verification failure even if the
+	// cross-stage checks happen to pass.
 	digest := checksumFromStages(p.Stages)
-	return res, digest, digest == p.Summary.SHA256
+	ok := digest == p.Summary.SHA256 && p.GatesFailed == 0
+	return res, digest, ok
 }
 
 // checksumFromStages recomputes the report checksum from committed stage

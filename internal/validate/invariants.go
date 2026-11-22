@@ -288,3 +288,97 @@ func max64(a, b int64) int64 {
 	}
 	return b
 }
+
+// IngestStage checks the parse stage's own outputs: every finding and cue
+// must reference legal bytes of the asset it names.
+func IngestStage(sizes map[string]int64, issues diagnose.Issues, cues []CueRef) *Result {
+	res := &Result{}
+	for _, is := range issues {
+		size, ok := sizes[is.Asset]
+		pass := ok && is.Span.Within(size)
+		res.Add(Check{
+			Name: "ingest_offset_legal", Stage: diagnose.StageIngest, Asset: is.Asset,
+			Passed: pass, Span: is.Span,
+			Detail: fmt.Sprintf("%s at [%d,%d) of %d", is.Category, is.Span.Start, is.Span.End, size),
+		})
+	}
+	for _, c := range cues {
+		size, ok := sizes[c.Asset]
+		pass := ok && c.Span.Within(size) && c.TimingSpan.Within(size)
+		res.Add(Check{
+			Name: "cue_span_legal", Stage: diagnose.StageIngest, Asset: c.Asset,
+			Passed: pass, Span: c.Span,
+			Detail: fmt.Sprintf("cue %d body [%d,%d) timing [%d,%d) of %d",
+				c.Index, c.Span.Start, c.Span.End, c.TimingSpan.Start, c.TimingSpan.End, size),
+		})
+	}
+	res.Finish()
+	return res
+}
+
+// CueRef is the validation view of one parsed cue.
+type CueRef struct {
+	Asset      string
+	Index      int
+	Span       core.Span
+	TimingSpan core.Span
+}
+
+// NormalizeStage checks that normalization produced a usable, monotonic,
+// correctly ordered shared clock.
+func NormalizeStage(tl *clock.Timeline, points []clock.Point) *Result {
+	res := &Result{}
+	if tl != nil {
+		res.Add(Check{
+			Name: "timeline_sealed", Stage: diagnose.StageNormalize,
+			Passed: tl.Master != "" && len(tl.Tracks) > 0,
+			Detail: fmt.Sprintf("master=%q tracks=%d", tl.Master, len(tl.Tracks)),
+		})
+	}
+	var prev core.Rational
+	for i, p := range points {
+		pass := p.Span.Start >= 0 && p.Span.End >= p.Span.Start
+		if i > 0 {
+			pass = pass && p.Master.Cmp(prev) >= 0
+		}
+		res.Add(Check{
+			Name: "normalize_point_monotonic", Stage: diagnose.StageNormalize, Asset: p.Track,
+			Passed: pass, Span: p.Span,
+			Detail: fmt.Sprintf("master=%s previous=%s", p.Master, prev),
+		})
+		prev = p.Master
+	}
+	res.Finish()
+	return res
+}
+
+// IndexStage checks that every keyframe reference resolves inside its asset.
+func IndexStage(indexes []IndexRef) *Result {
+	res := &Result{}
+	for _, idx := range indexes {
+		prev := int64(-1)
+		for i, kf := range idx.Keyframes {
+			pass := kf.Number >= 1 && kf.Number <= idx.FrameCount && kf.Span.Start >= 0 && kf.Span.End >= kf.Span.Start
+			if i > 0 {
+				pass = pass && kf.DTS > prev && kf.Gap.Num > 0
+			}
+			res.Add(Check{
+				Name: "index_reference_valid", Stage: diagnose.StageIndex, Asset: idx.Asset,
+				Passed: pass, Span: kf.Span,
+				Detail: fmt.Sprintf("keyframe %d dts=%d gap=%s", kf.Number, kf.DTS, kf.Gap),
+			})
+			prev = kf.DTS
+		}
+	}
+	res.Finish()
+	return res
+}
+
+// DiagnoseStage checks merged ranges are ordered, disjoint and inside bounds.
+func DiagnoseStage(ranges []RangeRef, sizes map[string]int64) *Result {
+	in := Input{Sizes: sizes, Ranges: ranges}
+	res := &Result{}
+	checkRanges(res, in)
+	res.Finish()
+	return res
+}
