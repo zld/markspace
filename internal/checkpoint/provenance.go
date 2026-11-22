@@ -52,6 +52,76 @@ type ProvenanceRecord struct {
 	OutputKeys []string `json:"output_keys"`
 }
 
+// SegmentProvenance describes one produced segment: which source samples it
+// covers in both nanoseconds and original ticks, and what bytes it hashed to.
+// This is the per-segment trace a reviewer needs to reproduce a single output
+// without replaying the whole run.
+type SegmentProvenance struct {
+	Index      int    `json:"index"`
+	RepName    string `json:"representation"`
+	StartNanos int64  `json:"start_nanos"`
+	EndNanos   int64  `json:"end_nanos"`
+	Timescale  uint32 `json:"timescale"`
+	StartTicks int64  `json:"start_ticks"`
+	EndTicks   int64  `json:"end_ticks"`
+	VideoFirst int    `json:"video_sample_first"`
+	VideoLast  int    `json:"video_sample_last"`
+	AudioFirst int    `json:"audio_sample_first"`
+	AudioLast  int    `json:"audio_sample_last"`
+	SHA256     string `json:"sha256"`
+	Bytes      int64  `json:"bytes"`
+}
+
+// BuildSegmentProvenance projects a manifest into per-segment records, using
+// the representation's timescale to record the source tick range as well.
+func BuildSegmentProvenance(repName string, timescale uint32, segments []SegmentProvenanceInput) ([]SegmentProvenance, error) {
+	out := make([]SegmentProvenance, 0, len(segments))
+	for _, in := range segments {
+		startTicks, err := media.ToTicks(media.Nano(in.StartNanos), timescale)
+		if err != nil {
+			return nil, err
+		}
+		endTicks, err := media.ToTicks(media.Nano(in.EndNanos), timescale)
+		if err != nil {
+			return nil, err
+		}
+		if in.StartNanos < 0 || in.EndNanos <= in.StartNanos {
+			return nil, media.NewError(media.InvalidInput,
+				"segment %d has invalid bounds [%d,%d)", in.Index, in.StartNanos, in.EndNanos)
+		}
+		out = append(out, SegmentProvenance{
+			Index:      in.Index,
+			RepName:    repName,
+			StartNanos: in.StartNanos,
+			EndNanos:   in.EndNanos,
+			Timescale:  timescale,
+			StartTicks: startTicks,
+			EndTicks:   endTicks,
+			VideoFirst: in.VideoFirst,
+			VideoLast:  in.VideoLast,
+			AudioFirst: in.AudioFirst,
+			AudioLast:  in.AudioLast,
+			SHA256:     in.SHA256,
+			Bytes:      in.Bytes,
+		})
+	}
+	return out, nil
+}
+
+// SegmentProvenanceInput is the manifest-derived input to
+// BuildSegmentProvenance.
+type SegmentProvenanceInput struct {
+	Index      int
+	StartNanos int64
+	EndNanos   int64
+	VideoFirst int
+	VideoLast  int
+	AudioFirst int
+	AudioLast  int
+	SHA256     string
+	Bytes      int64
+}
+
 // TimeRange is a half-open media-time interval in nanoseconds plus the
 // original timescale values it was derived from, so the record is checkable
 // against the source container without re-deriving the conversion.

@@ -296,3 +296,30 @@ func TestTimeRangeValidateDetectsInconsistentTicks(t *testing.T) {
 		t.Fatal("inconsistent tick conversion accepted")
 	}
 }
+
+func TestBuildSegmentProvenanceRecordsTicks(t *testing.T) {
+	in := []SegmentProvenanceInput{
+		{Index: 0, StartNanos: 0, EndNanos: 2_000_000_000, VideoFirst: 0, VideoLast: 59, AudioFirst: 0, AudioLast: 99, SHA256: "a", Bytes: 10},
+		{Index: 1, StartNanos: 2_000_000_000, EndNanos: 4_000_000_000, VideoFirst: 60, VideoLast: 119, AudioFirst: 100, AudioLast: 199, SHA256: "b", Bytes: 20},
+	}
+	out, err := BuildSegmentProvenance("400kbps", 90000, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) != 2 {
+		t.Fatalf("records = %d", len(out))
+	}
+	if out[1].StartTicks != 180000 || out[1].EndTicks != 360000 {
+		t.Fatalf("ticks = %d..%d", out[1].StartTicks, out[1].EndTicks)
+	}
+	if out[1].VideoFirst != 60 || out[1].AudioLast != 199 {
+		t.Fatalf("record = %+v", out[1])
+	}
+	// Bad bounds must be rejected, not normalised.
+	if _, err := BuildSegmentProvenance("x", 90000, []SegmentProvenanceInput{{Index: 0, StartNanos: 10, EndNanos: 10}}); err == nil {
+		t.Fatal("empty segment accepted")
+	}
+	if _, err := BuildSegmentProvenance("x", 0, in); err == nil {
+		t.Fatal("zero timescale accepted")
+	}
+}

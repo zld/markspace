@@ -623,6 +623,44 @@ func (tr *Track) KeyframeTimes() []media.Nano {
 	return out
 }
 
+// SourceTicks converts a boundary nanosecond time back to this track's
+// original timescale, so provenance and display can cite source values.
+func (tr *Track) SourceTicks(n media.Nano) (int64, error) {
+	if tr.Timescale == 0 {
+		return 0, media.NewError(media.ZeroTimescale,
+			"track %d has no timescale", tr.ID).AtTrack(int32(tr.ID))
+	}
+	v, err := media.ToTicks(n, tr.Timescale)
+	if err != nil {
+		return 0, media.AsError(err).AtTrack(int32(tr.ID))
+	}
+	return v, nil
+}
+
+// SampleBytes reads one sample's payload out of raw container bytes, checking
+// the range instead of trusting the sample table.
+func (m *Movie) SampleBytes(data []byte, trackIndex, sampleIndex int) ([]byte, error) {
+	if trackIndex < 0 || trackIndex >= len(m.Tracks) {
+		return nil, media.NewError(media.InvalidInput,
+			"track index %d out of range", trackIndex)
+	}
+	tr := m.Tracks[trackIndex]
+	if sampleIndex < 0 || sampleIndex >= len(tr.Samples) {
+		return nil, media.NewError(media.InvalidInput,
+			"sample index %d out of range for track %d", sampleIndex, tr.ID).
+			AtTrack(int32(tr.ID))
+	}
+	s := tr.Samples[sampleIndex]
+	end := s.Offset + uint64(s.Size)
+	if end < s.Offset || end > uint64(len(data)) {
+		return nil, media.NewError(media.TruncatedContainer,
+			"sample %d spans [%d,%d) beyond %d bytes",
+			sampleIndex, s.Offset, end, len(data)).
+			AtTrack(int32(tr.ID)).AtOffset(int64(s.Offset))
+	}
+	return data[s.Offset:end], nil
+}
+
 // String renders a compact track summary for terminal output.
 func (tr *Track) String() string {
 	return fmt.Sprintf("track %d (%s) timescale=%d samples=%d keyframes=%d",

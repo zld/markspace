@@ -636,10 +636,58 @@ func resume(store *checkpoint.Store, in *Input, prior *checkpoint.State) (*passO
 		Representations: repStates,
 		Outputs:         outputs,
 	}
+	// Per-segment provenance is derived from the manifest, which is the
+	// authority on sample ranges and content hashes.
+	segs, err := segmentProvenance(in)
+	if err != nil {
+		return nil, err
+	}
+	state.SegmentProvenance = segs
 	if err := store.Save(state); err != nil {
 		return nil, err
 	}
 	return out, nil
+}
+
+// segmentProvenance builds one trace record per produced segment.
+func segmentProvenance(in *Input) ([]checkpoint.SegmentProvenance, error) {
+	var all []checkpoint.SegmentProvenance
+	for ri := range in.Reps {
+		rep := in.Manifest.Representations[ri]
+		plan := in.Plan.PerTarget[ri]
+		inputs := make([]checkpoint.SegmentProvenanceInput, 0, len(rep.Segments))
+		for si, seg := range rep.Segments {
+			videoLast := len(in.Reps[ri].Track.Samples) - 1
+			if si+1 < len(plan.VideoStarts) {
+				videoLast = plan.VideoStarts[si+1] - 1
+			}
+			audioFirst, audioLast := 0, -1
+			if len(plan.AudioStarts) > si {
+				audioFirst = plan.AudioStarts[si]
+				audioLast = len(in.Audio.Samples) - 1
+				if si+1 < len(plan.AudioStarts) {
+					audioLast = plan.AudioStarts[si+1] - 1
+				}
+			}
+			inputs = append(inputs, checkpoint.SegmentProvenanceInput{
+				Index:      seg.Index,
+				StartNanos: seg.StartNanos,
+				EndNanos:   seg.EndNanos,
+				VideoFirst: plan.VideoStarts[si],
+				VideoLast:  videoLast,
+				AudioFirst: audioFirst,
+				AudioLast:  audioLast,
+				SHA256:     seg.SHA256,
+				Bytes:      seg.ByteSize,
+			})
+		}
+		segs, err := checkpoint.BuildSegmentProvenance(rep.Name, rep.Timescale, inputs)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, segs...)
+	}
+	return all, nil
 }
 
 // writeSegment materialises one segment artifact atomically and checks the

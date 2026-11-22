@@ -292,3 +292,50 @@ func patchBoxUint32(t *testing.T, data []byte, typ string, payloadOffset int, va
 	t.Fatalf("box %q not found", typ)
 	return nil
 }
+
+func TestSampleBytesBoundsChecked(t *testing.T) {
+	spec := fixture.MovieSpec{Timescale: 1000, Tracks: []fixture.TrackSpec{videoTrack(1, 30000, 12, 4)}}
+	data := mustBuild(t, spec)
+	movie, err := Parse(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := movie.SampleBytes(data, 0, 3)
+	if err != nil {
+		t.Fatalf("SampleBytes: %v", err)
+	}
+	if len(got) != int(movie.Tracks[0].Samples[3].Size) {
+		t.Fatalf("len = %d, want %d", len(got), movie.Tracks[0].Samples[3].Size)
+	}
+	// Truncating the backing slice must be caught, not panicked on.
+	if _, err := movie.SampleBytes(data[:100], 0, 3); err == nil {
+		t.Fatal("out-of-range sample accepted")
+	} else if media.CategoryOf(err) != media.TruncatedContainer {
+		t.Fatalf("category = %v", media.CategoryOf(err))
+	}
+	if _, err := movie.SampleBytes(data, 5, 0); err == nil {
+		t.Fatal("bad track index accepted")
+	}
+	if _, err := movie.SampleBytes(data, 0, 999); err == nil {
+		t.Fatal("bad sample index accepted")
+	}
+}
+
+func TestSourceTicksRoundTrip(t *testing.T) {
+	spec := fixture.MovieSpec{Timescale: 1000, Tracks: []fixture.TrackSpec{videoTrack(1, 90000, 10, 2)}}
+	data := mustBuild(t, spec)
+	movie, err := Parse(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr := movie.Tracks[0]
+	for _, s := range tr.Samples {
+		ticks, err := tr.SourceTicks(s.DTSNanos)
+		if err != nil {
+			t.Fatalf("SourceTicks: %v", err)
+		}
+		if ticks != s.DTS {
+			t.Fatalf("ticks = %d, want %d", ticks, s.DTS)
+		}
+	}
+}

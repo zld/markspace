@@ -45,9 +45,12 @@ type State struct {
 	Representations  []RepState `json:"representations"`
 	// Outputs lists every artifact written by this run, keyed by idempotency
 	// key, so a repeated run can prove it produced nothing new.
-	Outputs     []OutputRecord     `json:"outputs"`
-	Provenance  []ProvenanceRecord `json:"provenance"`
-	UpdatedUnix int64              `json:"updated_unix"`
+	Outputs    []OutputRecord     `json:"outputs"`
+	Provenance []ProvenanceRecord `json:"provenance"`
+	// SegmentProvenance explains each produced segment individually, so a
+	// single output can be audited without replaying the entire run.
+	SegmentProvenance []SegmentProvenance `json:"segment_provenance"`
+	UpdatedUnix       int64               `json:"updated_unix"`
 }
 
 // RepState is per-representation checkpoint progress.
