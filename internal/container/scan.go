@@ -69,16 +69,17 @@ func (s *Scanner) ScanTracks() ([]TrackTable, error) {
 
 // scanTrak decodes one trak subtree.
 func (s *Scanner) scanTrak(trak *mp4.BoxInfo, fileSize int64) (TrackTable, error) {
+	// Paths are rooted at the trak box because ReadBoxStructureFromInternal
+	// reports the full relative path (the box itself is the first element).
 	paths := []mp4.BoxPath{
-		boxPath(mp4.BoxTypeTkhd()),
-		boxPath(mp4.BoxTypeMdia(), mp4.BoxTypeMdhd()),
-		boxPath(mp4.BoxTypeMdia(), mp4.BoxTypeHdlr()),
-		boxPath(mp4.BoxTypeMdia(), mp4.BoxTypeMinf(), mp4.BoxTypeStbl()),
-		boxPath(mp4.BoxTypeEdts(), mp4.BoxTypeElst()),
-	}
-	boxes, err := mp4.ExtractBoxesWithPayload(s.f, trak, paths)
-	if err != nil {
-		return TrackTable{}, clock.NewError(clock.ErrTruncatedBox, err.Error())
+		boxPath(mp4.BoxTypeTrak(), mp4.BoxTypeTkhd()),
+		boxPath(mp4.BoxTypeTrak(), mp4.BoxTypeMdia(), mp4.BoxTypeMdhd()),
+		boxPath(mp4.BoxTypeTrak(), mp4.BoxTypeMdia(), mp4.BoxTypeHdlr()),
+		boxPath(mp4.BoxTypeTrak(), mp4.BoxTypeEdts(), mp4.BoxTypeElst()),
+		// stbl is deliberately fetched header-first: a cut stbl makes go-mp4's
+		// recursive payload unmarshal fail before any sample context exists.
+		// The tolerant reader below walks the readable children itself.
+		boxPath(mp4.BoxTypeTrak(), mp4.BoxTypeMdia(), mp4.BoxTypeMinf(), mp4.BoxTypeStbl()),
 	}
 	var (
 		trackID   uint32
@@ -87,20 +88,18 @@ func (s *Scanner) scanTrak(trak *mp4.BoxInfo, fileSize int64) (TrackTable, error
 		stblInfo  *mp4.BoxInfo
 		mediaTime int64 // elst media_time, track ticks
 	)
-	for _, b := range boxes {
-		switch p := b.Payload.(type) {
+	if err := s.walkTrakMeta(trak, paths, func(typ mp4.BoxType, bi mp4.BoxInfo, payload mp4.IBox) {
+		switch p := payload.(type) {
 		case *mp4.Tkhd:
 			trackID = p.TrackID
 		case *mp4.Mdhd:
 			timescale = p.Timescale
 		case *mp4.Hdlr:
 			handler = string(p.HandlerType[:])
-		case *mp4.Stbl:
-			stblInfo = &b.Info
 		case *mp4.Elst:
-			// A non-empty edit list offsets the raw sample timeline; this is
-			// how a node's absolute clock (possibly near the 32-bit boundary)
-			// is carried in the container.
+			// A non-empty edit list with a non-negative media_time offsets the
+			// raw sample timeline; this is how a node's absolute clock (which
+			// may sit near the 32-bit boundary) is carried in the container.
 			if len(p.Entries) > 0 {
 				if p.Version == 1 {
 					mediaTime = p.Entries[0].MediaTimeV1
@@ -109,6 +108,12 @@ func (s *Scanner) scanTrak(trak *mp4.BoxInfo, fileSize int64) (TrackTable, error
 				}
 			}
 		}
+		if typ == mp4.BoxTypeStbl() {
+			info := bi
+			stblInfo = &info
+		}
+	}); err != nil {
+		return TrackTable{}, clock.NewError(clock.ErrTruncatedBox, err.Error())
 	}
 	if timescale == 0 || stblInfo == nil {
 		return TrackTable{}, clock.NewError(clock.ErrTruncatedBox,
@@ -120,9 +125,41 @@ func (s *Scanner) scanTrak(trak *mp4.BoxInfo, fileSize int64) (TrackTable, error
 	}
 	entries, err := s.buildSamples(stblInfo, trackID, timescale, mc, fileSize, mediaTime)
 	if err != nil {
+		if ce, ok := err.(*clock.Error); ok && ce.TrackID == 0 {
+			return TrackTable{}, ce.WithPosition(ce.FileOffset, trackID, ce.SampleIndex)
+		}
 		return TrackTable{}, err
 	}
 	return TrackTable{TrackID: trackID, Timescale: timescale, Handler: handler, Entries: entries}, nil
+}
+
+// sampleIdxCoverage returns how many leading samples the (possibly truncated)
+// table can locate: the intersection of readable stsz sizes, readable chunk
+// offsets, and the stts entries. Used to decide whether a cut table is wholly
+// unusable or still yields a usable prefix plus one localized boundary error.
+func sampleIdxCoverage(raw rawTable, runs []chunkRun, count int) int {
+	sizes := len(raw.stsz)
+	if count < sizes {
+		sizes = count
+	}
+	locatable := 0
+	for _, run := range runs {
+		last := run.lastChunk
+		if int(last) > len(raw.co) {
+			last = uint32(len(raw.co))
+		}
+		if last <= run.firstChunk {
+			break
+		}
+		locatable += int(last-run.firstChunk) * int(run.samples)
+		if locatable >= sizes {
+			return sizes
+		}
+	}
+	if locatable < sizes {
+		return locatable
+	}
+	return sizes
 }
 
 // channelsFor reads channel_count from the first audio sample entry inside the
@@ -156,6 +193,50 @@ type rawTable struct {
 	stsc []stscEntry
 	stsz []uint32 // per-sample sizes; empty means uniformSize applies
 	co   []uint64 // chunk offsets (stco widened to 64 bit)
+}
+
+// walkTrakMeta walks the trak subtree and hands each matched box's decoded
+// payload to visit. Matching is by box path suffix so nested boxes (mdhd inside
+// mdia, stbl inside minf) all arrive once. Payloads that cannot be decoded are
+// passed as nil rather than aborting: structural damage is localized by the
+// caller's tolerant sample-table reader.
+func (s *Scanner) walkTrakMeta(trak *mp4.BoxInfo, paths []mp4.BoxPath,
+	visit func(typ mp4.BoxType, bi mp4.BoxInfo, payload mp4.IBox)) error {
+	_, err := mp4.ReadBoxStructureFromInternal(s.f, trak, func(h *mp4.ReadHandle) (interface{}, error) {
+		// Path is relative to the trak box, so [mdia, mdhd] matches the mdhd
+		// inside this track's mdia.
+		for _, want := range paths {
+			if len(want) != len(h.Path) {
+				continue
+			}
+			matched := true
+			for i := range want {
+				if want[i] != h.Path[i] {
+					matched = false
+					break
+				}
+			}
+			if !matched {
+				continue
+			}
+			bi := h.BoxInfo
+			payload, _, perr := h.ReadPayload()
+			if perr != nil {
+				payload = nil
+			}
+			visit(h.BoxInfo.Type, bi, payload)
+			return nil, nil
+		}
+		// Descend into containers only; leaves outside our paths are ignored.
+		switch h.BoxInfo.Type {
+		case mp4.BoxTypeTrak(), mp4.BoxTypeMdia(), mp4.BoxTypeMinf(), mp4.BoxTypeEdts():
+			if _, err := h.Expand(); err != nil {
+				return nil, nil // damage surfaces in the tolerant reader
+			}
+		}
+		return nil, nil
+	})
+	return err
 }
 
 // readStbl decodes the sample-table boxes via go-mp4 payload structs.
