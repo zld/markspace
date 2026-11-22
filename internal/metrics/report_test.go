@@ -22,8 +22,13 @@ func TestQualityDistribution(t *testing.T) {
 	if q.MeanBytes != 150 || q.P50 < 149 || q.P50 > 151 {
 		t.Fatalf("mean/p50 wrong: %+v", q)
 	}
-	if q.P99 != 199 {
-		t.Fatalf("p99 = %d", q.P99)
+	// nearest-rank: p99 -> rank 99 (1-based) -> index 98 -> value 198.
+	if q.P99 != 198 {
+		t.Fatalf("p99 = %d, want 198", q.P99)
+	}
+	sorted := append([]uint32(nil), sizes...)
+	if percentile(sorted, 100) != 199 {
+		t.Fatal("p100 must equal max")
 	}
 	// input slice must not be mutated
 	if sizes[0] != 100 || sizes[99] != 199 {

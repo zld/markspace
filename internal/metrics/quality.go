@@ -64,9 +64,13 @@ func ComputeQuality(wireSizes []uint32) (Quality, error) {
 // percentile returns the nearest-rank value (ceil(p/100 * n), 1-based).
 func percentile(sorted []uint32, p int) uint32 {
 	n := len(sorted)
+	// ceil(p*n/100): add (100-1) before integer division.
 	rank := (p*n + 99) / 100
 	if rank < 1 {
 		rank = 1
+	}
+	if rank > n {
+		rank = n
 	}
 	return sorted[rank-1]
 }

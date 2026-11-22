@@ -28,12 +28,13 @@ func Bitrate(logicalBytes int64, spanNanos clock.Nanos) (uint64, error) {
 	if spanNanos <= 0 {
 		return 0, clock.ErrInvalidArgument("metrics: non-positive timeline span")
 	}
-	// bytes * 1e9 / nanos, with overflow guard.
+	// bitrate in bits/s: bytes * 8 * 1e9 / nanos, with overflow guard.
 	b := uint64(logicalBytes)
-	if b > (1<<63)/uint64(clock.TicksPerSecond) {
+	tps := uint64(clock.TicksPerSecond)
+	if b > (1<<63)/(8*tps) {
 		return 0, clock.ErrOverflow("metrics.bitrate")
 	}
-	return (b * uint64(clock.TicksPerSecond)) / uint64(spanNanos), nil
+	return (b * 8 * tps) / uint64(spanNanos), nil
 }
 
 // DeviationHundredths returns |actual-target|/target in hundredths of a
