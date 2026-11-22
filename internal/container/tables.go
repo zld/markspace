@@ -12,7 +12,7 @@ import (
 // readStts expands time-to-sample runs and validates that the expanded count
 // agrees with the other tables. A disagreement is recoverable; the declared
 // count is kept so recovery can decide where trusting stops.
-func readStts(f *os.File, box *Box, tr *TrackScan) *core.Error {
+func readStts(f *os.File, box *Box, tr *TrackScan, lim Limits) *core.Error {
 	var v mp4.Stts
 	if err := decodeFile(f, box, &v); err != nil {
 		return core.Wrap(core.CodeTableTruncated, core.StageScan, true,
@@ -37,7 +37,7 @@ func readStts(f *os.File, box *Box, tr *TrackScan) *core.Error {
 	return nil
 }
 
-func readStsc(f *os.File, box *Box, tr *TrackScan) *core.Error {
+func readStsc(f *os.File, box *Box, tr *TrackScan, lim Limits) *core.Error {
 	var v mp4.Stsc
 	if err := decodeFile(f, box, &v); err != nil {
 		return core.Wrap(core.CodeTableTruncated, core.StageScan, true,
@@ -67,16 +67,26 @@ func readStsc(f *os.File, box *Box, tr *TrackScan) *core.Error {
 	return nil
 }
 
-func readStsz(f *os.File, box *Box, tr *TrackScan) *core.Error {
+func readStsz(f *os.File, box *Box, tr *TrackScan, lim Limits) *core.Error {
 	var v mp4.Stsz
 	if err := decodeFile(f, box, &v); err != nil {
 		return core.Wrap(core.CodeTableTruncated, core.StageScan, true,
 			"stsz unreadable", err).WithOffset(box.Offset).WithTrack(tr.ID, 0)
 	}
 	tr.Declared = int(v.SampleCount)
-	if tr.Declared < 0 || tr.Declared > 1<<26 {
+	maxSamples := lim.MaxSamples
+	if maxSamples <= 0 {
+		maxSamples = 1 << 22
+	}
+	if tr.Declared < 0 || tr.Declared > maxSamples {
 		return core.New(core.CodeLimitExceeded, core.StageScan, true,
-			fmt.Sprintf("stsz declares %d samples", tr.Declared)).WithOffset(box.Offset).WithTrack(tr.ID, 0)
+			fmt.Sprintf("stsz declares %d samples, limit %d", tr.Declared, maxSamples)).
+			WithOffset(box.Offset).WithTrack(tr.ID, 0)
+	}
+	if int64(len(v.EntrySize))*4 > limTableBytes(lim) {
+		return core.New(core.CodeLimitExceeded, core.StageScan, true,
+			fmt.Sprintf("stsz table of %d entries exceeds memory limit", len(v.EntrySize))).
+			WithOffset(box.Offset).WithTrack(tr.ID, 0)
 	}
 	if v.SampleSize != 0 {
 		tr.FixedSize = v.SampleSize
@@ -92,7 +102,7 @@ func readStsz(f *os.File, box *Box, tr *TrackScan) *core.Error {
 	return nil
 }
 
-func readStco(f *os.File, box *Box, tr *TrackScan) *core.Error {
+func readStco(f *os.File, box *Box, tr *TrackScan, lim Limits) *core.Error {
 	var v mp4.Stco
 	if err := decodeFile(f, box, &v); err != nil {
 		return core.Wrap(core.CodeTableTruncated, core.StageScan, true,
@@ -104,7 +114,7 @@ func readStco(f *os.File, box *Box, tr *TrackScan) *core.Error {
 	return nil
 }
 
-func readCo64(f *os.File, box *Box, tr *TrackScan) *core.Error {
+func readCo64(f *os.File, box *Box, tr *TrackScan, lim Limits) *core.Error {
 	var v mp4.Co64
 	if err := decodeFile(f, box, &v); err != nil {
 		return core.Wrap(core.CodeTableTruncated, core.StageScan, true,
@@ -118,4 +128,12 @@ func readCo64(f *os.File, box *Box, tr *TrackScan) *core.Error {
 		tr.Offsets = append(tr.Offsets, int64(off))
 	}
 	return nil
+}
+
+// limTableBytes is the per-table byte budget; zero means the default.
+func limTableBytes(lim Limits) int64 {
+	if lim.MaxTableBytes > 0 {
+		return lim.MaxTableBytes
+	}
+	return 64 << 20
 }

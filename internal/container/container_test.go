@@ -190,3 +190,23 @@ func hasCode(errs []*core.Error, code core.Code) bool {
 	}
 	return false
 }
+
+func TestScanEnforcesSampleCountLimit(t *testing.T) {
+	path := writeFixture(t, fixture.KindClean)
+	lim := DefaultLimits()
+	lim.MaxSamples = 10 // the fixture has 87 samples
+	s, err := ScanFile(path, lim)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Tracks) == 0 {
+		t.Fatal("track dropped instead of limited")
+	}
+	tr := s.Tracks[0]
+	if tr.IndexComplete {
+		t.Fatal("over-limit index reported complete")
+	}
+	if !hasCode(tr.Warnings, core.CodeLimitExceeded) {
+		t.Fatalf("want limit_exceeded, got %v", tr.Warnings)
+	}
+}

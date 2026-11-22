@@ -156,7 +156,7 @@ func (s *Scan) readTrack(trak *Box) (*TrackScan, *core.Error) {
 	var firstErr *core.Error
 	for _, step := range []struct {
 		name string
-		fn   func(*os.File, *Box, *TrackScan) *core.Error
+		fn   func(*os.File, *Box, *TrackScan, Limits) *core.Error
 	}{
 		{"stts", readStts}, {"stsc", readStsc}, {"stsz", readStsz},
 		{"stco", readStco}, {"co64", readCo64},
@@ -165,7 +165,7 @@ func (s *Scan) readTrack(trak *Box) (*TrackScan, *core.Error) {
 		if !ok {
 			continue
 		}
-		if err := step.fn(f, box, tr); err != nil {
+		if err := step.fn(f, box, tr, s.Limits); err != nil {
 			tr.IndexComplete = false
 			if firstErr == nil {
 				firstErr = err
