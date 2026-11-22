@@ -195,3 +195,32 @@ func readFile(t *testing.T, p string) []byte {
 }
 
 func writeFile(p string, b []byte) error { return os.WriteFile(p, b, 0o644) }
+
+func TestWireFrameDeterministicAndInRange(t *testing.T) {
+	cfg := testConfig()
+	f, err := WireFrame(cfg, 1, 9)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, _ := WireFrame(cfg, 1, 9)
+	if f.Sum != g.Sum || len(f.Payload) != WirePayloadLen {
+		t.Fatal("wire frame must be deterministic")
+	}
+	if f.Seq != cfg.StartFrameSeq+9 || f.StreamID != 2 {
+		t.Fatalf("identity %+v", f)
+	}
+	wantTicks := cfg.StartTicks + int64(1)*cfg.TrackTickSkew + int64(9)*cfg.TicksPerFrame
+	if f.Ticks != wantTicks {
+		t.Fatalf("ticks %d want %d", f.Ticks, wantTicks)
+	}
+	v := NewValidator(PolicySkip)
+	if err := v.Check(f); err != nil {
+		t.Fatalf("wire frame must validate: %v", err)
+	}
+	if _, err := WireFrame(cfg, cfg.Tracks, 0); err == nil {
+		t.Fatal("track out of range must fail")
+	}
+	if _, err := WireFrame(cfg, 0, cfg.Frames); err == nil {
+		t.Fatal("index out of range must fail")
+	}
+}
