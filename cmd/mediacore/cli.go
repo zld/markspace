@@ -44,6 +44,12 @@ func exerciseCorruptFixtures(goodMP4 []byte, elog *errorLog) int {
 	over := syncerOverBound()
 	elog.record(over.StateError())
 
+	// 4. A malformed RTP packet must be rejected as corrupt, not crash.
+	rtpParser := buffer.NewRTPParser(mediacore.TrackAudio1)
+	if _, _, rerr := rtpParser.Parse([]byte{0x80, 0x00}, 0); rerr != nil {
+		elog.record(rerr)
+	}
+
 	return len(elog.cats) - before
 }
 
