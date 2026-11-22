@@ -84,6 +84,11 @@ func ConvertLayout(src *Buffer, dst Layout) (*Buffer, error) {
 	if canPermute(src.Layout, dst) {
 		return permute(src, dst), nil
 	}
+	// Documented mono upmix: dual-mono at unity. The stereo downmix averages
+	// with 0.5+0.5, so mono -> stereo -> mono is level-preserving.
+	if len(src.Layout.Channels) == 1 && dst.Name == Stereo.Name {
+		return upmixMonoToStereo(src, dst), nil
+	}
 	switch dst.Name {
 	case Mono.Name:
 		return downmixMono(src, dst)
@@ -138,6 +143,18 @@ func permute(src *Buffer, dst Layout) *Buffer {
 		for j, c := range dst.Channels {
 			outFrame[j] = in[index[c]]
 		}
+	}
+	return out
+}
+
+func upmixMonoToStereo(src *Buffer, dst Layout) *Buffer {
+	out, _ := NewBuffer(dst, src.Frames)
+	out.Start = src.Start
+	out.Metadata = src.Metadata
+	for f := 0; f < src.Frames; f++ {
+		v := src.Frame(f)[0]
+		out.Frame(f)[0] = v
+		out.Frame(f)[1] = v
 	}
 	return out
 }
