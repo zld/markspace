@@ -464,14 +464,25 @@ type networkOutcome struct {
 }
 
 // simulateNetwork runs the lossy channel and returns an ordered receiver.
+// maxRTPBuffer bounds packets held by the receiver. The receiver must hold a
+// whole simulated session because delivery is finalised by Close, so the limit
+// is a hard memory ceiling rather than a reorder hint.
+const maxRTPBuffer = 500_000
+
 func simulateNetwork(opts Options, track *container.Track) (*networkOutcome, error) {
+	if len(track.Samples) > maxRTPBuffer {
+		return nil, media.NewError(media.ReplayLimitExceeded,
+			"stream of %d packets exceeds the receiver buffer limit %d",
+			len(track.Samples), maxRTPBuffer)
+	}
 	trace := fixture.SimulateNetwork(fixture.NetworkSpec{
-		Packets:  len(track.Samples),
-		Loss:     opts.Loss,
-		JitterMS: media.Millis(opts.Jitter),
-		Reorder:  opts.ReorderWindow,
-		StartSeq: 65520, // begin just below the 16-bit wrap point
-		Seed:     opts.Seed,
+		Packets:       len(track.Samples),
+		Loss:          opts.Loss,
+		JitterMS:      media.Millis(opts.Jitter),
+		Reorder:       opts.ReorderWindow,
+		StartSeq:      65520, // begin just below the 16-bit wrap point
+		TimestampStep: uint32(90000) / uint32(opts.FrameRate),
+		Seed:          opts.Seed,
 	})
 	receiver, err := rtp.New(rtp.Config{
 		MaxReorderWindow: opts.ReorderWindow,
