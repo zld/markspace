@@ -126,6 +126,10 @@ func Scan(r io.Reader, opts Options) (*Index, error) {
 	}
 	inOrder := true
 	var lastTicks int64
+	var highWater int64
+	var offset int64
+	var prevSeq uint32
+	var haveSeq bool
 	var scanErr error
 	for {
 		f, err := fr.Next()
@@ -139,13 +143,30 @@ func Scan(r io.Reader, opts Options) (*Index, error) {
 			break
 		}
 		p := clk.Observe(f.RTPTimestamp)
-		f.Ticks = p.Ticks
+		// A backward timestamp is only a clock regression when the sequence
+		// also moved forward. A lower sequence is ordinary reordering and is
+		// resolved by sorting, not by cutting the timeline.
+		seqForward := !haveSeq || int32(f.Seq-prevSeq) > 0
+		regressed := p.Regressed && seqForward
+		rawTicks := p.Ticks + offset
+		ticks := rawTicks
+		if regressed {
+			// Re-anchor the regression to the high-water mark so the timeline
+			// keeps advancing instead of interleaving two clock eras, while the
+			// Regressed flag drives an explicit segment split.
+			offset += highWater - rawTicks
+			ticks = highWater
+		}
+		if ticks > highWater {
+			highWater = ticks
+		}
+		f.Ticks = ticks
 		e := Entry{
 			Offset:        f.Offset,
 			Length:        f.Len(),
 			Seq:           f.Seq,
 			RTPTimestamp:  f.RTPTimestamp,
-			Ticks:         p.Ticks,
+			Ticks:         ticks,
 			CaptureMS:     f.CaptureTimeMS,
 			Width:         f.Width,
 			Height:        f.Height,
@@ -155,17 +176,19 @@ func Scan(r io.Reader, opts Options) (*Index, error) {
 			VolumeDBFS:    f.Meta.VolumeDBFS,
 			Digest:        hex.EncodeToString(f.Digest[:]),
 			Wrapped:       p.Wrapped,
-			Regressed:     p.Regressed,
+			Regressed:     regressed,
 		}
-		if p.Regressed {
+		if regressed {
 			idx.Issues = append(idx.Issues, Issue{
 				Category:    media.CatTimestampBack,
 				Offset:      f.Offset,
 				Seq:         f.Seq,
-				Message:     fmt.Sprintf("timestamp moved backwards by %d ticks", p.Ticks-lastTicks),
+				Message:     fmt.Sprintf("timestamp moved backwards by %d ticks; re-anchored", highWater-rawTicks),
 				Recoverable: true,
 			})
 		}
+		prevSeq = f.Seq
+		haveSeq = true
 		if len(idx.Entries) > 0 && e.Ticks < lastTicks {
 			inOrder = false
 		}
@@ -190,6 +213,15 @@ func Scan(r io.Reader, opts Options) (*Index, error) {
 			return idx.Entries[i].Offset < idx.Entries[j].Offset
 		})
 		idx.Reordered = true
+	}
+	// Media time is reported relative to the earliest sorted frame so every
+	// derived range is non-negative even if reordering moved a slightly earlier
+	// frame into the first position.
+	if len(idx.Entries) > 0 && idx.Entries[0].Ticks != 0 {
+		shift := idx.Entries[0].Ticks
+		for i := range idx.Entries {
+			idx.Entries[i].Ticks -= shift
+		}
 	}
 	idx.EntryCount = len(idx.Entries)
 	if len(idx.Entries) > 0 {

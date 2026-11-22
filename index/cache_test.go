@@ -294,3 +294,54 @@ func TestScanRejectsZeroTimescale(t *testing.T) {
 		t.Fatal("expected invalid params")
 	}
 }
+
+// TestScanDistinguishesReorderingFromRegression: a lower sequence with a
+// slightly early timestamp is reordering (sortable, no regression issue); a
+// higher sequence with a backwards timestamp is a clock regression.
+func TestScanDistinguishesReorderingFromRegression(t *testing.T) {
+	reorderFrames := []*media.Frame{
+		synthFrame(0, 3600*2, 0, 8, 8, nil),
+		synthFrame(1, 3600*3, 40, 8, 8, nil),
+		synthFrame(2, 3600*1, 80, 8, 8, nil), // seq 2, ts 40ms earlier: regression
+	}
+	data, _ := media.EncodeStream(reorderFrames)
+	idx, err := Scan(bytes.NewReader(data), DefaultOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	sawRegression := false
+	for _, e := range idx.Entries {
+		if e.Regressed {
+			sawRegression = true
+		}
+	}
+	if !sawRegression {
+		t.Fatalf("forward-seq backward-time should be flagged as regression: %+v", idx.Entries)
+	}
+	// The re-anchored timeline must stay monotonic.
+	for i := 1; i < len(idx.Entries); i++ {
+		if idx.Entries[i].Ticks < idx.Entries[i-1].Ticks {
+			t.Fatalf("timeline not monotonic at %d", i)
+		}
+	}
+
+	// Lower sequence with earlier timestamp is reordering: no regression flag.
+	plainFrames := []*media.Frame{
+		synthFrame(0, 3600*2, 0, 8, 8, nil),
+		synthFrame(2, 3600*4, 80, 8, 8, nil),
+		synthFrame(1, 3600*3, 40, 8, 8, nil),
+	}
+	data2, _ := media.EncodeStream(plainFrames)
+	idx2, err := Scan(bytes.NewReader(data2), DefaultOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range idx2.Entries {
+		if e.Regressed {
+			t.Fatalf("reordering must not be flagged as regression: %+v", idx2.Entries)
+		}
+	}
+	if !idx2.Reordered {
+		t.Fatal("out-of-order timestamps should set the reordered flag")
+	}
+}
