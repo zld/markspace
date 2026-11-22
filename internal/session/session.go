@@ -151,6 +151,7 @@ func (r *Result) RoundtripConsistency() float64 {
 type wirePacket struct {
 	track int
 	raw   []byte
+	at    int64 // arrival time in nanoseconds, drives the rate estimator
 }
 
 type recoveredFrame struct {

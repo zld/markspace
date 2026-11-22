@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"time"
 
 	"avcheck/internal/ingest"
 	"avcheck/internal/media"
@@ -36,7 +37,7 @@ func producePackets(ctx context.Context, q *pipeline.Queue[wirePacket], gen inge
 				return err
 			}
 			for _, p := range injs[ti].push(raw, index) {
-				if err := q.Send(ctx, wirePacket{track: ti, raw: p.raw}); err != nil {
+				if err := q.Send(ctx, wirePacket{track: ti, raw: p.raw, at: p.at}); err != nil {
 					return err
 				}
 			}
@@ -44,7 +45,7 @@ func producePackets(ctx context.Context, q *pipeline.Queue[wirePacket], gen inge
 	}
 	for ti := range injs {
 		for _, p := range injs[ti].flush() {
-			if err := q.Send(ctx, wirePacket{track: ti, raw: p.raw}); err != nil {
+			if err := q.Send(ctx, wirePacket{track: ti, raw: p.raw, at: p.at}); err != nil {
 				return err
 			}
 		}
@@ -64,10 +65,19 @@ func decodeValidate(ctx context.Context, in *pipeline.Queue[wirePacket],
 	builders []*ingest.MP4Builder) error {
 	reorders := make([]*transport.Reorderer, cfg.Tracks)
 	validators := make([]*ingest.Validator, cfg.Tracks)
+	estimators := make([]*transport.Estimator, cfg.Tracks)
 	for i := range reorders {
 		reorders[i] = transport.NewReorderer(uint32(i+1), cfg.ReorderWindow, cfg.BurstThresh)
 		validators[i] = ingest.NewValidator(cfg.Policy)
+		// The estimator only retunes the reorder window; queue capacity stays
+		// fixed, so backpressure is unaffected by rate shifts.
+		minW := cfg.ReorderWindow
+		if minW > 8 {
+			minW = 8
+		}
+		estimators[i] = transport.NewEstimator(minW, cfg.ReorderWindow, 50*time.Millisecond)
 	}
+	epoch := time.Unix(0, 0)
 	// A packet damaged beyond RTP parsing cannot be attributed to a frame;
 	// count it against the track that carried it and skip it.
 	reject := func(ti int, err error) {
@@ -100,6 +110,9 @@ func decodeValidate(ctx context.Context, in *pipeline.Queue[wirePacket],
 			continue
 		}
 		r := reorders[wp.track]
+		r.Window = estimators[wp.track].WindowHint()
+		estimators[wp.track].Observe(len(wp.raw), epoch.Add(time.Duration(wp.at)))
+		r.Window = estimators[wp.track].WindowHint()
 		outs, recovered, gaps := r.PushEx(pkt)
 		st := &stats[wp.track]
 		for _, g := range gaps {
