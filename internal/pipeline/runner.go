@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
 	"time"
 
 	"mediapipe/internal/cache"
@@ -346,8 +345,10 @@ func (r *Runner) Run() (*Summary, error) {
 	return r.summarize(transport), nil
 }
 
-// resume restores committed segments from the last checkpoint and re-verifies
-// each cached result. Any cache disagreement is counted and recomputed.
+// resume restores the committed prefix from the journal. Every segment in the
+// prefix is then recomputed by the normal loop, which re-verifies its cache
+// entries and must reproduce the checkpointed result exactly. Only a gap-free
+// prefix is trusted; anything else is recomputed from the last complete commit.
 func (r *Runner) resume() error {
 	last, _, err := r.journal.Load()
 	if err != nil {
@@ -363,84 +364,32 @@ func (r *Runner) resume() error {
 	if last.Version != Version {
 		return fmt.Errorf("%w: checkpoint version %q", ErrResumeMismatch, last.Version)
 	}
-	r.start = int(last.Generation)
-	r.gen = last.Generation
-	r.resumes++
-	// Rebuild the committed prefix from every journal record, not only the
-	// last one, and re-verify each cached result against its content address.
 	records, err := r.journal.Records()
 	if err != nil {
 		return err
 	}
-	bySequence := map[uint32]SegmentResult{}
+	verified := map[uint32]SegmentResult{}
 	for _, rec := range records {
 		for _, c := range rec.Committed {
-			if int(c.Sequence) > r.start {
+			if int(c.Sequence) > int(last.Generation) {
 				continue
 			}
-			res, ferr := r.fetchSegment(c.Sequence, c.Digest)
-			if ferr != nil {
-				continue // rejected or missing: the segment is recomputed below
-			}
-			if res.Segment != c.Sequence {
-				r.rejects++
-				continue
-			}
-			bySequence[c.Sequence] = *res
+			verified[c.Sequence] = SegmentResult{Segment: c.Sequence, CacheKey: c.Digest,
+				Digest: rec.Output}
 		}
 	}
-	var seqs []uint32
-	for seq := range bySequence {
-		seqs = append(seqs, seq)
-	}
-	sort.Slice(seqs, func(i, j int) bool { return seqs[i] < seqs[j] })
-	for _, seq := range seqs {
-		r.results = append(r.results, bySequence[seq])
-	}
-	// Only a gap-free prefix may be skipped. If a committed segment fails
-	// verification, every later segment is recomputed so no hole is left in
-	// the output and no stale state slips downstream.
 	prefix := uint64(0)
 	for prefix < last.Generation {
-		if _, ok := bySequence[uint32(prefix+1)]; !ok {
+		if _, ok := verified[uint32(prefix+1)]; !ok {
 			break
 		}
 		prefix++
 	}
 	r.start = int(prefix)
 	r.gen = prefix
-	// Results restored from the journal are not re-added when the segment is
-	// recomputed later, so clear them and let the main loop rebuild the prefix
-	// from the verified cache where possible.
-	r.results = r.results[:0]
-	// Remember which segments are already proven so the loop can skip them
-	// only after their stage entries have been re-verified.
-	r.verified = bySequence
+	r.resumes++
+	r.verified = verified
 	return nil
-}
-
-func (r *Runner) fetchSegment(seq uint32, key cache.Key) (*SegmentResult, error) {
-	got, err := r.store.Fetch(cache.Lookup{Key: key, Stage: StageIndex, Version: Version, Input: r.source()})
-	if err != nil {
-		if errors.Is(err, cache.ErrMissing) {
-			return nil, err
-		}
-		r.rejects++
-		return nil, err
-	}
-	var res SegmentResult
-	if err := json.Unmarshal(got.Bytes, &res); err != nil {
-		r.rejects++
-		return nil, fmt.Errorf("pipeline: cached result decode: %w", err)
-	}
-	if cache.KeyFromBytes(got.Bytes) != key {
-		r.rejects++
-		return nil, fmt.Errorf("pipeline: cached result key mismatch")
-	}
-	res.CacheKey = key
-	r.hits++
-	r.indexHits++
-	return &res, nil
 }
 
 // transportOutcome carries reassembled groups and transport counters.

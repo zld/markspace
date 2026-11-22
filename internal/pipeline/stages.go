@@ -41,12 +41,11 @@ func stageKey(input cache.Key, stage string, seq uint32) cache.Key {
 	return cache.DigestParts([]byte(input), []byte(stage), []byte(Version), b[:])
 }
 
-// stageIO bundles the provenance and counters of one stage access.
+// stageIO bundles the address and counters of one stage cache access.
 type stageIO struct {
-	hits     int
-	rejects  int
-	key      cache.Key
-	verified bool
+	hits    int
+	rejects int
+	key     cache.Key
 }
 
 // getStage verifies a cached stage result. A miss is silent; a mismatch is
@@ -77,7 +76,6 @@ func (r *Runner) getStage(key cache.Key, stage string, in cache.Source, dst any)
 	}
 	r.hits++
 	io.hits++
-	io.verified = true
 	return io, true, nil
 }
 
@@ -261,10 +259,4 @@ func (r *Runner) runSyncStage(seq uint32, containerKey cache.Key, tr *transportO
 		return nil, "", err
 	}
 	return &stage, addr, nil
-}
-
-// stageBytes is the size helper used for provenance byte counts.
-func stageBytes(v any) int {
-	b, _ := json.Marshal(v)
-	return len(b)
 }
