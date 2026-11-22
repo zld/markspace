@@ -176,14 +176,17 @@ func writeEdts(w *mp4.Writer, l *layout) error {
 	if _, err := w.StartBox(&mp4.BoxInfo{Type: mp4.BoxTypeElst()}); err != nil {
 		return wrapWrite("elst_start", err)
 	}
+	// Version 1 carries a 64-bit media time, which non-zero RTP origins can
+	// exceed (a 32-bit timestamp near wrap is ~4.29e9 ticks).
 	elst := &mp4.Elst{
 		EntryCount: 1,
 		Entries: []mp4.ElstEntry{{
-			SegmentDurationV0: uint32(l.duration),
-			MediaTimeV0:       int32(first),
+			SegmentDurationV1: l.duration,
+			MediaTimeV1:       first,
 			MediaRateInteger:  1,
 		}},
 	}
+	elst.Version = 1
 	if _, err := mp4.Marshal(w, elst, mp4.Context{}); err != nil {
 		return wrapWrite("elst_marshal", err)
 	}

@@ -63,6 +63,8 @@ type ReorderBuffer struct {
 	stats Stats
 	errs  []*merr.Error
 	gaps  []SeqSpan
+
+	gapLo, gapHi int64
 }
 
 // SeqSpan is an extended sequence interval, inclusive at both ends.
@@ -100,10 +102,12 @@ func NewReorderBuffer(cfg ReorderConfig, lim Limits) (*ReorderBuffer, error) {
 		cfg.MaxSeen = cfg.Window * 2
 	}
 	return &ReorderBuffer{
-		cfg:  cfg,
-		lim:  lim,
-		held: make(map[int64]*Packet, cfg.Window),
-		seen: make(map[int64]struct{}, cfg.MaxSeen),
+		cfg:   cfg,
+		lim:   lim,
+		held:  make(map[int64]*Packet, cfg.Window),
+		seen:  make(map[int64]struct{}, cfg.MaxSeen),
+		gapLo: -1,
+		gapHi: -1,
 	}, nil
 }
 
@@ -190,7 +194,9 @@ func (r *ReorderBuffer) push(p *Packet, repair bool) []*Packet {
 			"sequence %d still buffered", p.Seq))
 		return nil
 	}
-	if ext < r.maxSeen {
+	// A retransmission is deliberately late by construction, so it is not
+	// counted as a reordered arrival; only organic out-of-order packets are.
+	if ext < r.maxSeen && !repair {
 		r.stats.Reordered++
 	}
 	r.held[ext] = p
@@ -249,6 +255,10 @@ func (r *ReorderBuffer) release(force bool) []*Packet {
 		}
 		r.gaps = append(r.gaps, SeqSpan{Stream: r.cfg.Stream, First: first, Last: last})
 		r.stats.Gaps++
+		if r.gapLo < 0 {
+			r.gapLo = first
+		}
+		r.gapHi = last
 		r.noteError(merr.New(merr.StageLoss, "sequence_gap",
 			merr.Span{Stream: r.cfg.Stream, Seq: first, Offset: -1, Length: last - first + 1}, true,
 			"missing %d sequence(s) %d..%d", last-first+1, first, last))
@@ -291,6 +301,18 @@ func (r *ReorderBuffer) PendingGaps() []SeqSpan {
 
 // CommittedThrough is the highest extended sequence number already emitted.
 func (r *ReorderBuffer) CommittedThrough() int64 { return r.next - 1 }
+
+// CommittedGap returns the sequence range that release has newly skipped
+// because it was missing, or (-1,-1) when the last release skipped nothing.
+// The range is consumed once so a caller records each hole exactly once.
+func (r *ReorderBuffer) CommittedGap() (int64, int64) {
+	lo, hi := r.gapLo, r.gapHi
+	r.gapLo, r.gapHi = -1, -1
+	if hi < lo {
+		return -1, -1
+	}
+	return lo, hi
+}
 
 // Gaps returns the loss spans recorded so far, sorted by first sequence.
 func (r *ReorderBuffer) Gaps() []SeqSpan {

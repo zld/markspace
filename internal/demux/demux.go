@@ -135,7 +135,6 @@ func demuxStream(spec StreamSpec, clock *timeline.Clock, packets []*transport.Pa
 	// Extended sequence tracking detects leading and internal holes.
 	primed := false
 	var ref int64
-	expectedNext := int64(0)
 
 	i := 0
 	for i < len(packets) {
@@ -148,17 +147,16 @@ func demuxStream(spec StreamSpec, clock *timeline.Clock, packets []*transport.Pa
 		firstExt := extend(group[0].Seq, ref, primed)
 		if !primed {
 			ref, primed = firstExt, true
-			expectedNext = firstExt
 		}
 		lastExt := extend(group[len(group)-1].Seq, ref, primed)
 		if lastExt > ref {
 			ref = lastExt
 		}
 
+		// Missing packets inside this access unit are counted from the actual
+		// sequence run. A gap between the previous group and this one belongs
+		// to the previous sample's tail and is not charged twice.
 		missing := 0
-		if firstExt > expectedNext {
-			missing += int(firstExt - expectedNext)
-		}
 		prev := firstExt
 		for _, p := range group[1:] {
 			e := extend(p.Seq, ref, primed)
@@ -167,17 +165,15 @@ func demuxStream(spec StreamSpec, clock *timeline.Clock, packets []*transport.Pa
 			}
 			prev = e
 		}
-		// A gap set entry inside the group is authoritative evidence even if
-		// the sequence arithmetic was thrown off by a wrap.
-		for s := firstExt; s <= lastExt; s++ {
-			if _, ok := gapSet[s]; ok {
+		// Loss intervals are authoritative: count any gap sequence that falls
+		// between this group's first and last packet, even if reordering made
+		// the arithmetic above ambiguous.
+		for gs := firstExt; gs <= lastExt; gs++ {
+			if _, ok := gapSet[gs]; ok {
 				missing++
 			}
 		}
 		incomplete := !group[len(group)-1].Marker
-		if incomplete && missing == 0 {
-			missing = 1
-		}
 
 		pts := clock.Expand(ts)
 		ns := clock.ToNS(pts)
@@ -211,7 +207,6 @@ func demuxStream(spec StreamSpec, clock *timeline.Clock, packets []*transport.Pa
 			errs = append(errs, e)
 		}
 		samples = append(samples, s)
-		expectedNext = lastExt + 1
 		i = j
 	}
 	// Durations are the forward difference between sample timestamps, exactly

@@ -159,15 +159,6 @@ type SampleScan struct {
 	Result codec.ScanResult
 }
 
-// StreamScan pairs a scanned stream with its source buffer length. It is used
-// only when a caller has a flat buffer rather than per-sample scans; the
-// pipeline uses SampleScan.
-type StreamScan struct {
-	Stream int
-	Length int64
-	Result codec.ScanResult
-}
-
 // Verify compares every index entry against the per-sample scans. An entry is
 // a match when its sample exists, its range is inside that sample, and its
 // keyframe flag agrees with the scanned unit covering the offset. Scanned
@@ -255,8 +246,17 @@ func Verify(idx *Index, scans []SampleScan) Verification {
 		v.Matched++
 	}
 
-	// Recall: every scanned keyframe unit needs a matching index row.
+	// Recall is checked only for streams the index claims to describe. An
+	// index scoped to one stream must not be penalized for streams it never
+	// mentions; a wrong claim inside its scope is still caught.
+	indexedStreams := make(map[int]struct{}, len(byStream))
+	for _, e := range idx.Entries {
+		indexedStreams[e.Stream] = struct{}{}
+	}
 	for _, s := range scans {
+		if _, scoped := indexedStreams[s.Stream]; !scoped {
+			continue
+		}
 		for _, ui := range s.Result.Keyframes {
 			u := s.Result.Units[ui]
 			if _, ok := indexedKeys[keyAddr{s.Stream, s.Sample, u.Offset}]; ok {

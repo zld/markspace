@@ -12,21 +12,24 @@ import (
 type LossState string
 
 const (
-	// LossPending means the hole is declared but the owning fragment has not
-	// crossed the commit horizon, so a repair can still change the outcome.
+	// LossPending means the hole is declared but not yet committed, so a
+	// repair can still fill it.
 	LossPending LossState = "pending"
-	// LossLost is a committed hole: media inside it is absent from output.
+	// LossLost is a committed hole: the fragment owning it was emitted
+	// without these sequence numbers, so the media inside is absent.
 	LossLost LossState = "lost"
+	// LossRecovered marks sequence numbers a retransmission supplied before
+	// the hole was committed. It is reported as evidence, not as an interval
+	// still missing.
+	LossRecovered LossState = "recovered"
 )
 
-// LossInterval is one contiguous burst of missing sequence numbers.
+// LossInterval is one contiguous run of missing or repaired sequence numbers.
 type LossInterval struct {
 	Stream int       `json:"stream"`
 	First  int64     `json:"first"`
 	Last   int64     `json:"last"`
 	State  LossState `json:"state"`
-	// Cause records how the interval was produced.
-	Cause string `json:"cause"`
 }
 
 // Count is the number of sequence numbers in the interval.
@@ -37,19 +40,21 @@ func (l LossInterval) Count() int64 {
 	return l.Last - l.First + 1
 }
 
-// LossRecorder is the single source of truth for missing-sequence evidence.
-// Intervals are disjoint and sorted. Declared holes start pending; they become
-// lost when the commit horizon passes them, unless a repair removes them
-// first. A repair arriving after commit is refused and surfaces as a late
-// packet instead.
+// LossRecorder is the single source of truth for sequence-level gaps.
+//
+// The reorder buffer decides what is missing; this recorder only classifies
+// it. Declared pending holes may still be repaired. When a hole is committed,
+// its sequence range moves to lost evidence. A retransmission is accepted only
+// for a sequence that is currently pending, so normal reordering, duplicates
+// and bogus repairs can never masquerade as recovery.
 type LossRecorder struct {
-	stream    int
-	max       int
-	items     []LossInterval
-	recovered int64 // sequence numbers repaired before commit
-	bursts    int   // fully repaired intervals
-	late      []merr.Span
-	errs      []*merr.Error
+	stream   int
+	max      int
+	pending  []LossInterval
+	lost     []LossInterval
+	repaired map[int64]struct{}
+	late     []merr.Span
+	errs     []*merr.Error
 }
 
 // NewLossRecorder returns a recorder bounded to max intervals.
@@ -57,112 +62,175 @@ func NewLossRecorder(stream, max int) *LossRecorder {
 	if max <= 0 {
 		max = 1024
 	}
-	return &LossRecorder{stream: stream, max: max}
+	return &LossRecorder{stream: stream, max: max, repaired: make(map[int64]struct{})}
 }
 
-// Record declares a missing range. Touching or overlapping ranges merge, and a
-// merged interval keeps the stricter state: lost dominates pending.
-func (l *LossRecorder) Record(first, last int64) {
+// RecordPending declares holes the reorder buffer is still holding back. They
+// are merge-safe and can be declared repeatedly as the buffer advances.
+func (l *LossRecorder) RecordPending(first, last int64) {
 	if last < first {
 		return
 	}
-	merged := LossInterval{Stream: l.stream, First: first, Last: last, State: LossPending, Cause: "burst"}
-	var rest []LossInterval
-	for _, it := range l.items {
-		if it.First <= merged.Last+1 && merged.First <= it.Last+1 {
-			if it.First < merged.First {
-				merged.First = it.First
-			}
-			if it.Last > merged.Last {
-				merged.Last = it.Last
-			}
-			if it.State == LossLost {
-				merged.State = LossLost
-			}
-			if it.Cause == "partial_repair" {
-				merged.Cause = "partial_repair"
-			}
-			continue
-		}
-		rest = append(rest, it)
-	}
-	rest = append(rest, merged)
-	sort.SliceStable(rest, func(i, j int) bool {
-		if rest[i].First != rest[j].First {
-			return rest[i].First < rest[j].First
-		}
-		return rest[i].Last < rest[j].Last
-	})
-	if len(rest) > l.max {
-		if len(l.errs) < l.max {
-			l.errs = append(l.errs, merr.New(merr.StageLoss, "loss_limit",
-				merr.Span{Stream: l.stream, Seq: first, Offset: -1, Length: last - first + 1}, true,
-				"loss interval limit %d reached", l.max))
-		}
-		rest = rest[:l.max]
-	}
-	l.items = rest
-}
-
-// Recover marks seq as supplied by a repair packet. It returns false when the
-// hole is unknown or already committed, in which case the packet is late.
-func (l *LossRecorder) Recover(seq int64) bool {
-	for i := range l.items {
-		it := &l.items[i]
-		if seq < it.First || seq > it.Last {
-			continue
-		}
-		if it.State != LossPending {
-			l.RecordLateSeq(seq)
-			return false
-		}
-		l.recovered++
-		if it.Count() == 1 {
-			l.items = append(l.items[:i], l.items[i+1:]...)
-			l.bursts++
-			return true
-		}
-		before := LossInterval{Stream: it.Stream, First: it.First, Last: seq - 1, State: LossPending, Cause: it.Cause}
-		after := LossInterval{Stream: it.Stream, First: seq + 1, Last: it.Last, State: LossPending, Cause: "partial_repair"}
-		var replacement []LossInterval
-		if before.Count() > 0 {
-			replacement = append(replacement, before)
-		}
-		if after.Count() > 0 {
-			replacement = append(replacement, after)
-		}
-		l.items = append(l.items[:i], append(replacement, l.items[i+1:]...)...)
-		return true
-	}
-	return false
-}
-
-// CommitUpTo finalizes pending intervals ending at or before seq. Intervals
-// straddling the horizon are split so the committed prefix is exact.
-func (l *LossRecorder) CommitUpTo(seq int64) {
+	merged := LossInterval{Stream: l.stream, First: first, Last: last, State: LossPending}
 	var out []LossInterval
-	for _, it := range l.items {
-		if it.State != LossPending || it.First > seq {
-			out = append(out, it)
+	for _, cur := range l.pending {
+		if cur.First <= merged.Last+1 && merged.First <= cur.Last+1 {
+			if cur.First < merged.First {
+				merged.First = cur.First
+			}
+			if cur.Last > merged.Last {
+				merged.Last = cur.Last
+			}
 			continue
 		}
-		if it.Last <= seq {
-			it.State = LossLost
-			out = append(out, it)
-			continue
-		}
-		out = append(out,
-			LossInterval{Stream: it.Stream, First: it.First, Last: seq, State: LossLost, Cause: it.Cause},
-			LossInterval{Stream: it.Stream, First: seq + 1, Last: it.Last, State: LossPending, Cause: it.Cause},
-		)
+		out = append(out, cur)
 	}
-	l.items = out
+	out = append(out, merged)
+	l.pending = sortIntervals(out)
 }
 
-// Commit finalizes every still-pending interval as lost.
-func (l *LossRecorder) Commit() { l.CommitUpTo(1<<62 - 1) }
+// RecordLost adds a committed gap. Any pending overlap is consumed, and a
+// sequence already repaired is excluded from the lost evidence.
+func (l *LossRecorder) RecordLost(first, last int64) {
+	if last < first {
+		return
+	}
+	l.removePending(first, last)
+	parts, _ := splitAround(first, last, l.repaired)
+	for _, iv := range parts {
+		l.insertLost(iv)
+	}
+}
 
-// RecordLateSeq records a late sequence without a raw packet sequence.
+// removePending removes [first,last] from the pending set.
+func (l *LossRecorder) removePending(first, last int64) {
+	var out []LossInterval
+	for _, cur := range l.pending {
+		if cur.Last < first || cur.First > last {
+			out = append(out, cur)
+			continue
+		}
+		if cur.First < first {
+			out = append(out, LossInterval{Stream: l.stream, First: cur.First, Last: first - 1, State: LossPending})
+		}
+		if cur.Last > last {
+			out = append(out, LossInterval{Stream: l.stream, First: last + 1, Last: cur.Last, State: LossPending})
+		}
+	}
+	l.pending = sortIntervals(out)
+}
+
+// splitAround removes repaired sequences from [first,last].
+func splitAround(first, last int64, repaired map[int64]struct{}) ([]LossInterval, int) {
+	var out []LossInterval
+	cursor := first
+	hits := 0
+	for s := first; s <= last; s++ {
+		if _, ok := repaired[s]; !ok {
+			continue
+		}
+		hits++
+		if s > cursor {
+			out = append(out, LossInterval{First: cursor, Last: s - 1, State: LossLost})
+		}
+		cursor = s + 1
+	}
+	if cursor <= last {
+		out = append(out, LossInterval{First: cursor, Last: last, State: LossLost})
+	}
+	return out, hits
+}
+
+func (l *LossRecorder) insertLost(iv LossInterval) {
+	iv.Stream = l.stream
+	iv.State = LossLost
+	out := l.lost[:0]
+	merged := iv
+	for _, cur := range l.lost {
+		if cur.First <= merged.Last+1 && merged.First <= cur.Last+1 {
+			if cur.First < merged.First {
+				merged.First = cur.First
+			}
+			if cur.Last > merged.Last {
+				merged.Last = cur.Last
+			}
+			continue
+		}
+		out = append(out, cur)
+	}
+	out = append(out, merged)
+	l.lost = sortIntervals(out)
+	if len(l.lost) > l.max {
+		l.lost = l.lost[:l.max]
+	}
+}
+
+func sortIntervals(in []LossInterval) []LossInterval {
+	sort.SliceStable(in, func(i, j int) bool {
+		if in[i].First != in[j].First {
+			return in[i].First < in[j].First
+		}
+		return in[i].Last < in[j].Last
+	})
+	return in
+}
+
+// Recover records a retransmission for a currently pending sequence. It
+// returns false when the sequence is not pending (already committed, a
+// duplicate, or never declared), so the caller can classify the packet.
+func (l *LossRecorder) Recover(seq int64) bool {
+	idx := -1
+	for i := range l.pending {
+		if seq >= l.pending[i].First && seq <= l.pending[i].Last {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		// Already lost: this is a late arrival.
+		for _, iv := range l.lost {
+			if seq >= iv.First && seq <= iv.Last {
+				l.RecordLateSeq(seq)
+				return false
+			}
+		}
+		return false
+	}
+	cur := l.pending[idx]
+	var replacement []LossInterval
+	if seq > cur.First {
+		replacement = append(replacement, LossInterval{Stream: l.stream, First: cur.First, Last: seq - 1, State: LossPending})
+	}
+	if seq < cur.Last {
+		replacement = append(replacement, LossInterval{Stream: l.stream, First: seq + 1, Last: cur.Last, State: LossPending})
+	}
+	next := append(append([]LossInterval(nil), l.pending[:idx]...), replacement...)
+	next = append(next, l.pending[idx+1:]...)
+	l.pending = next
+	l.repaired[seq] = struct{}{}
+	return true
+}
+
+// RecoveredBursts counts contiguous runs of repaired sequence numbers.
+func (l *LossRecorder) RecoveredBursts() int {
+	if len(l.repaired) == 0 {
+		return 0
+	}
+	seqs := make([]int64, 0, len(l.repaired))
+	for s := range l.repaired {
+		seqs = append(seqs, s)
+	}
+	sort.Slice(seqs, func(i, j int) bool { return seqs[i] < seqs[j] })
+	runs := 1
+	for i := 1; i < len(seqs); i++ {
+		if seqs[i] != seqs[i-1]+1 {
+			runs++
+		}
+	}
+	return runs
+}
+
+// RecordLateSeq records a sequence that could not be applied.
 func (l *LossRecorder) RecordLateSeq(seq int64) {
 	if len(l.late) < l.max {
 		l.late = append(l.late, merr.Span{Stream: l.stream, Seq: seq, Offset: -1})
@@ -170,47 +238,59 @@ func (l *LossRecorder) RecordLateSeq(seq int64) {
 	if len(l.errs) < l.max {
 		l.errs = append(l.errs, merr.New(merr.StageLoss, "late_arrival",
 			merr.SeqSpan(l.stream, uint16(seq)), true,
-			"late packet %d recorded outside committed fragments", seq))
+			"late packet %d arrived after its fragment committed", seq))
 	}
 }
 
-// Intervals returns the recorded intervals in ascending order.
+// Intervals returns lost intervals first, then recovered runs, each ascending
+// and each run merged, so reports are stable.
 func (l *LossRecorder) Intervals() []LossInterval {
-	return append([]LossInterval(nil), l.items...)
+	out := append([]LossInterval(nil), l.lost...)
+	if len(l.repaired) > 0 {
+		seqs := make([]int64, 0, len(l.repaired))
+		for s := range l.repaired {
+			seqs = append(seqs, s)
+		}
+		sort.Slice(seqs, func(i, j int) bool { return seqs[i] < seqs[j] })
+		first, prev := seqs[0], seqs[0]
+		for _, s := range seqs[1:] {
+			if s == prev+1 {
+				prev = s
+				continue
+			}
+			out = append(out, LossInterval{Stream: l.stream, First: first, Last: prev, State: LossRecovered})
+			first, prev = s, s
+		}
+		out = append(out, LossInterval{Stream: l.stream, First: first, Last: prev, State: LossRecovered})
+	}
+	return out
 }
 
-// Late returns the late-arrival spans in arrival order.
+// Late returns late-arrival spans in arrival order.
 func (l *LossRecorder) Late() []merr.Span { return append([]merr.Span(nil), l.late...) }
 
 // Errors returns recoverable loss-side errors.
 func (l *LossRecorder) Errors() []*merr.Error { return append([]*merr.Error(nil), l.errs...) }
 
-// Counts returns (lost, recovered, pending) sequence counts.
-func (l *LossRecorder) Counts() (lost, recovered, pending int64) {
-	for _, it := range l.items {
-		switch it.State {
-		case LossLost:
-			lost += it.Count()
-		case LossPending:
-			pending += it.Count()
-		}
+// Counts returns (lost sequences, recovered sequences).
+func (l *LossRecorder) Counts() (lost, recovered int64) {
+	for _, iv := range l.lost {
+		lost += iv.Count()
 	}
-	return lost, l.recovered, pending
+	return lost, int64(len(l.repaired))
 }
 
 // LostBursts counts committed loss intervals.
-func (l *LossRecorder) LostBursts() int {
-	n := 0
-	for _, it := range l.items {
-		if it.State == LossLost {
-			n++
-		}
+func (l *LossRecorder) LostBursts() int { return len(l.lost) }
+
+// PendingCount returns how many sequences are still repairable.
+func (l *LossRecorder) PendingCount() int64 {
+	var n int64
+	for _, iv := range l.pending {
+		n += iv.Count()
 	}
 	return n
 }
-
-// RecoveredBursts counts intervals fully removed by repair.
-func (l *LossRecorder) RecoveredBursts() int { return l.bursts }
 
 // EstimatorConfig configures the sliding-window bandwidth estimator.
 type EstimatorConfig struct {

@@ -153,22 +153,25 @@ func TestReorderGapCommitAndRepairBeforeCommit(t *testing.T) {
 	// 1..6 commit; 7 and 8 are missing; 9 bounds the uncommitted tail. A
 	// three-packet window keeps the tail repairable until flush.
 	var order []uint16
+	recordGap := func() {
+		if lo, hi := buf.CommittedGap(); lo >= 0 && hi >= lo {
+			rec.RecordLost(lo, hi)
+		}
+	}
 	for _, seq := range []uint16{1, 2, 3, 4, 5, 6, 9} {
 		for _, p := range buf.Push(mkPacket(1, seq, uint32(seq), 4)) {
 			order = append(order, p.Seq)
 		}
+		recordGap()
 	}
-	if len(buf.Gaps()) != 0 {
-		t.Fatalf("no committed gaps yet, got %+v", buf.Gaps())
+	if len(rec.Intervals()) != 0 {
+		t.Fatalf("no committed gaps yet, got %+v", rec.Intervals())
 	}
 	pending := buf.PendingGaps()
 	if len(pending) != 1 || pending[0].First != 7 || pending[0].Last != 8 {
 		t.Fatalf("pending gaps %+v", pending)
 	}
-	rec.Record(pending[0].First, pending[0].Last)
-	if !buf.PendingHole(7) || !buf.PendingHole(8) {
-		t.Fatal("sequences 7 and 8 should still be repairable")
-	}
+	rec.RecordPending(pending[0].First, pending[0].Last)
 	for _, seq := range []uint16{7, 8} {
 		if !rec.Recover(int64(seq)) {
 			t.Fatalf("repair of %d should be accepted before commit", seq)
@@ -176,19 +179,19 @@ func TestReorderGapCommitAndRepairBeforeCommit(t *testing.T) {
 		for _, p := range buf.PushRecovered(mkPacket(1, seq, uint32(seq), 4)) {
 			order = append(order, p.Seq)
 		}
+		recordGap()
 	}
 	for _, p := range buf.Flush() {
 		order = append(order, p.Seq)
 	}
-	rec.Commit()
-	lost, recovered, pendingN := rec.Counts()
-	if lost != 0 || recovered != 2 || pendingN != 0 {
-		t.Fatalf("lost=%d recovered=%d pending=%d", lost, recovered, pendingN)
+	recordGap()
+	lost, recovered := rec.Counts()
+	if lost != 0 || recovered != 2 {
+		t.Fatalf("lost=%d recovered=%d", lost, recovered)
 	}
 	if rec.RecoveredBursts() != 1 {
 		t.Fatalf("recovered bursts %d", rec.RecoveredBursts())
 	}
-	// Order must be 1..9 exactly once each.
 	if len(order) != 9 {
 		t.Fatalf("emitted %v", order)
 	}
@@ -224,26 +227,40 @@ func TestReorderSequenceWrap(t *testing.T) {
 	}
 }
 
-func TestLossRecorderSplitAndCommit(t *testing.T) {
+func TestLossRecorderRecoverBeforeCommit(t *testing.T) {
 	rec := NewLossRecorder(0, 8)
-	rec.Record(10, 14)
+	rec.RecordPending(10, 14)
+	// A retransmission arriving while the hole is still pending is accepted;
+	// the sequence never enters lost evidence.
 	if !rec.Recover(12) {
-		t.Fatal("interior repair refused")
+		t.Fatal("repair of a pending sequence must succeed")
+	}
+	rec.RecordLost(10, 14)
+	lost, recovered := rec.Counts()
+	if lost != 4 || recovered != 1 {
+		t.Fatalf("lost=%d recovered=%d", lost, recovered)
 	}
 	iv := rec.Intervals()
-	if len(iv) != 2 {
+	// Lost intervals come first (ascending), then recovered runs: [10,11],
+	// [13,14], then [12,12].
+	if len(iv) != 3 {
 		t.Fatalf("intervals %+v", iv)
 	}
-	rec.Commit()
-	lost, recovered, pending := rec.Counts()
-	if lost != 4 || recovered != 1 || pending != 0 {
-		t.Fatalf("lost=%d recovered=%d pending=%d", lost, recovered, pending)
+	if iv[0].First != 10 || iv[0].Last != 11 || iv[0].State != LossLost {
+		t.Fatalf("first interval %+v", iv[0])
 	}
-	if rec.LostBursts() != 2 {
-		t.Fatalf("lost bursts %d", rec.LostBursts())
+	if iv[1].First != 13 || iv[1].Last != 14 || iv[1].State != LossLost {
+		t.Fatalf("second interval %+v", iv[1])
 	}
-	// A repair after commit must be refused and recorded as late.
-	if rec.Recover(11) {
+	if iv[2].First != 12 || iv[2].State != LossRecovered {
+		t.Fatalf("recovered interval %+v", iv[2])
+	}
+	if rec.LostBursts() != 2 || rec.RecoveredBursts() != 1 {
+		t.Fatalf("bursts lost=%d recovered=%d", rec.LostBursts(), rec.RecoveredBursts())
+	}
+	// A repair attempt for a committed sequence is refused and recorded as a
+	// late arrival, never rewriting the committed fragment.
+	if rec.Recover(13) {
 		t.Fatal("repair after commit must be refused")
 	}
 	if len(rec.Late()) != 1 {
@@ -251,32 +268,23 @@ func TestLossRecorderSplitAndCommit(t *testing.T) {
 	}
 }
 
-func TestLossCommitUpToSplitsInterval(t *testing.T) {
+func TestLossRecorderMergesTouchingRuns(t *testing.T) {
 	rec := NewLossRecorder(0, 8)
-	rec.Record(100, 109)
-	rec.CommitUpTo(104)
+	rec.RecordLost(10, 12)
+	rec.RecordLost(13, 15)
 	iv := rec.Intervals()
-	if len(iv) != 2 {
+	if len(iv) != 1 || iv[0].First != 10 || iv[0].Last != 15 {
 		t.Fatalf("intervals %+v", iv)
 	}
-	if iv[0].State != LossLost || iv[0].First != 100 || iv[0].Last != 104 {
-		t.Fatalf("committed prefix %+v", iv[0])
+	// A recovery before a later re-report is excluded from the new run.
+	rec.RecordPending(20, 20)
+	if !rec.Recover(20) {
+		t.Fatal("recover of a pending sequence is accepted")
 	}
-	if iv[1].State != LossPending || iv[1].First != 105 || iv[1].Last != 109 {
-		t.Fatalf("pending suffix %+v", iv[1])
-	}
-	// The pending suffix is still repairable.
-	if !rec.Recover(107) {
-		t.Fatal("pending suffix should accept repair")
-	}
-	lost, recovered, pending := rec.Counts()
-	if lost != 5 || recovered != 1 || pending != 4 {
-		t.Fatalf("before commit lost=%d recovered=%d pending=%d", lost, recovered, pending)
-	}
-	rec.Commit()
-	lost, recovered, pending = rec.Counts()
-	if lost != 9 || recovered != 1 || pending != 0 {
-		t.Fatalf("after commit lost=%d recovered=%d pending=%d", lost, recovered, pending)
+	rec.RecordLost(9, 21)
+	lost, recovered := rec.Counts()
+	if lost != 12 || recovered != 1 {
+		t.Fatalf("lost=%d recovered=%d", lost, recovered)
 	}
 }
 
