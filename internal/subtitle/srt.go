@@ -77,8 +77,9 @@ func Parse(r io.Reader, source string) *ParseResult {
 		res.Faults = append(res.Faults, diag.New(diag.CodeTruncated, 0, "read %s: %v", source, err))
 		return res
 	}
-	res.Bytes = int64(len(data))
-	return parseBytes(data, source)
+	out := parseBytes(data, source)
+	out.Bytes = int64(len(data))
+	return out
 }
 
 func parseBytes(data []byte, source string) *ParseResult {
@@ -160,7 +161,10 @@ func lines(b block) []string {
 // parseTimestamp accepts HH:MM:SS,mmm, HH:MM:SS.mmm, HH:MM:SS:mmm and the
 // microsecond variants with six fractional digits. Returned position is
 // exact, and the digit count decides ms vs µs unambiguously.
-func parseTimestamp(s string) (clock.Rational, error) {
+func parseTimestamp(s string) (clock.Rational, error) { return parseTimestampFlex(s, false) }
+
+// parseTimestampFlex optionally accepts the WebVTT MM:SS.mmm short form.
+func parseTimestampFlex(s string, allowShort bool) (clock.Rational, error) {
 	s = strings.TrimSpace(s)
 	sep := strings.IndexAny(s, ",.")
 	if sep < 0 {
@@ -177,12 +181,15 @@ func parseTimestamp(s string) (clock.Rational, error) {
 		}
 	}
 	parts := strings.Split(main, ":")
+	if len(parts) == 2 && allowShort {
+		parts = append([]string{"0"}, parts...)
+	}
 	if len(parts) != 3 {
 		return clock.Zero, fmt.Errorf("timestamp %q must be HH:MM:SS", s)
 	}
 	var h, m, sec int64
 	var err error
-	if h, err = strconv.ParseInt(parts[0], 10, 32); err != nil {
+	if h, err = strconv.ParseInt(parts[0], 10, 32); err != nil || h > 9999 {
 		return clock.Zero, fmt.Errorf("timestamp %q bad hours", s)
 	}
 	if m, err = strconv.ParseInt(parts[1], 10, 32); err != nil || m > 59 {

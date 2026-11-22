@@ -66,9 +66,9 @@ func TestDropFrameWallClockAccuracy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 107892 real frames at 1001/30000 is exactly 3599.964 s.
-	if diff := math.Abs(pos.Float() - 3599.964); diff > 1e-9 {
-		t.Fatalf("df hour = %.6f, want 3599.964", pos.Float())
+	// 107892 real frames at 1001/30000 is exactly 3599.9964 s.
+	if diff := math.Abs(pos.Float() - 3599.9964); diff > 1e-9 {
+		t.Fatalf("df hour = %.6f, want 3599.9964", pos.Float())
 	}
 	ndf := Format2997NDF
 	oneHourNDF, _ := ParseTimecode("01:00:00:00", ndf)

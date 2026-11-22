@@ -83,7 +83,7 @@ func parseVTTTiming(line string) (clock.Rational, clock.Rational, string, error)
 	if len(parts) != 2 {
 		return clock.Zero, clock.Zero, "", diag.New(diag.CodeInvalidTime, 0, "missing -->")
 	}
-	start, err := parseTimestamp(strings.TrimSpace(parts[0]))
+	start, err := parseTimestampFlex(strings.TrimSpace(parts[0]), true)
 	if err != nil {
 		return clock.Zero, clock.Zero, "", err
 	}
@@ -94,7 +94,7 @@ func parseVTTTiming(line string) (clock.Rational, clock.Rational, string, error)
 		endTok = rest[:sp]
 		settings = strings.TrimSpace(rest[sp+1:])
 	}
-	end, err := parseTimestamp(endTok)
+	end, err := parseTimestampFlex(endTok, true)
 	if err != nil {
 		return clock.Zero, clock.Zero, "", err
 	}
