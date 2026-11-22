@@ -32,6 +32,9 @@ type Manifest struct {
 	SampleCount     uint32   `json:"sample_count"`
 	StartNanos      int64    `json:"start_nanos"`
 	EndNanos        int64    `json:"end_nanos"`
+	// MediaStartTicks is the non-zero first-sample decode time (edit-list
+	// media_time origin). Zero means samples begin at timeline zero.
+	MediaStartTicks int64    `json:"media_start_ticks,omitempty"`
 	WireSizes       []uint32 `json:"wire_sizes"`
 	ForceNonSync    []uint32 `json:"force_non_sync,omitempty"`
 	JitterSeed      uint64   `json:"jitter_seed"`

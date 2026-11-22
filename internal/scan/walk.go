@@ -95,7 +95,9 @@ func (t *TrackScan) ScanBatches(cfg Config, fn func([]Sample) error) error {
 	batch := make([]Sample, 0, cfg.MaxBatchSamples)
 	sttsCur, sttsLeft := 0, uint32(0)
 	cttsCur, cttsLeft := 0, uint32(0)
-	var dtsTicks int64
+	// First-sample DTS starts at the edit-list media origin; stts then
+	// contributes per-sample deltas.
+	dtsTicks := t.manifest.MediaStartTicks
 	var chunkCursor, sampleInChunk uint32
 	var offsetCursor uint64
 

@@ -25,7 +25,7 @@ func parseTracks(r io.ReadSeeker, fileSize uint64, m *Manifest, cfg Config) ([]*
 	}
 
 	trakBI := traks[0]
-	mdhdPayload, err := onePayload(r, trakBI, mp4.BoxTypeMdhd())
+	mdhdPayload, err := onePayload(r, trakBI, mp4.BoxTypeMdia(), mp4.BoxTypeMdhd())
 	if err != nil {
 		return nil, clock.WithTrack(err, m.TrackID, -1)
 	}
@@ -53,7 +53,7 @@ func parseTracks(r io.ReadSeeker, fileSize uint64, m *Manifest, cfg Config) ([]*
 			"stsz sample_count %d != manifest %d", count, m.SampleCount), m.TrackID, -1)
 	}
 
-	edits, err := ResolveEdits(r, basis, mediaDur)
+	edits, err := ResolveEdits(r, trakBI, basis, mediaDur)
 	if err != nil {
 		return nil, err
 	}
@@ -88,13 +88,13 @@ func extractStbl(r io.ReadSeeker, trak *mp4.BoxInfo) (*mp4.BoxInfo, error) {
 	return bis[0], nil
 }
 
-func onePayload(r io.ReadSeeker, parent *mp4.BoxInfo, t mp4.BoxType) (mp4.IBox, error) {
-	got, err := mp4.ExtractBoxWithPayload(r, parent, mp4.BoxPath{t})
+func onePayload(r io.ReadSeeker, parent *mp4.BoxInfo, path ...mp4.BoxType) (mp4.IBox, error) {
+	got, err := mp4.ExtractBoxWithPayload(r, parent, mp4.BoxPath(path))
 	if err != nil {
-		return nil, clock.ErrRecoverablef("scan."+string(t[:]), "extract: %v", err)
+		return nil, clock.ErrRecoverablef("scan."+string(path[len(path)-1][:]), "extract: %v", err)
 	}
 	if len(got) != 1 {
-		return nil, clock.ErrRecoverablef("scan."+string(t[:]), "expected one box, got %d", len(got))
+		return nil, clock.ErrRecoverablef("scan."+string(path[len(path)-1][:]), "expected one box, got %d", len(got))
 	}
 	return got[0].Payload, nil
 }

@@ -40,21 +40,21 @@ func (m *EditMap) SegmentEndNanos() clock.Nanos {
 	return m.Edits[len(m.Edits)-1].SegmentEnd
 }
 
-// ResolveEdits extracts and validates the edts/elst box (if present) and
-// converts every entry to unified nanoseconds using integer tick math.
+// ResolveEdits extracts and validates the edts/elst box (if present), scoped
+// to the given trak box, and converts every entry to unified nanoseconds.
 //
 // Rejected as recoverable corruption: non-unit media rates, entries whose
 // media_time runs past the track duration, and entries that overflow the
 // unified timeline.
-func ResolveEdits(r io.ReadSeeker, basis clock.TimeBase, mediaDurationTicks int64) (*EditMap, error) {
+func ResolveEdits(r io.ReadSeeker, trak *mp4.BoxInfo, basis clock.TimeBase, mediaDurationTicks int64) (*EditMap, error) {
 	op := "scan.elst"
 	dur, err := basis.ToNanos(mediaDurationTicks)
 	if err != nil {
 		return nil, clock.WithTrack(err, basis.TrackID, -1)
 	}
 
-	payloads, err := mp4.ExtractBoxesWithPayload(r, nil, []mp4.BoxPath{
-		{mp4.BoxTypeMoov(), mp4.BoxTypeTrak(), mp4.BoxTypeEdts(), mp4.BoxTypeElst()},
+	payloads, err := mp4.ExtractBoxesWithPayload(r, trak, []mp4.BoxPath{
+		{mp4.BoxTypeEdts(), mp4.BoxTypeElst()},
 	})
 	if err != nil {
 		return nil, clock.WithTrack(clock.ErrRecoverablef(op, "extract elst: %v", err), basis.TrackID, -1)
