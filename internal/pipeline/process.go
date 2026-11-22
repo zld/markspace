@@ -6,6 +6,7 @@ import (
 	"errors"
 	"hash/crc32"
 	"math"
+	"math/bits"
 	"os"
 	"path/filepath"
 
@@ -78,6 +79,9 @@ func (p *Pipeline) Run(events []container.SampleEvent, killAfter uint64) (*RunRe
 		p.st.NextSample = e.SampleIndex + 1
 		p.st.EventCount++
 		processedSinceCkpt++
+		if p.resumed {
+			p.resumedEvents++
+		}
 
 		// Drain any late events whose time has now been covered by the mark.
 		p.drainReplay(out, res)
@@ -124,7 +128,6 @@ func (p *Pipeline) Run(events []container.SampleEvent, killAfter uint64) (*RunRe
 func (p *Pipeline) processOne(e container.SampleEvent, out *os.File) error {
 	// 32-bit wrap expansion on the raw track ticks.
 	_ = p.unwrap.Extend(uint32(e.DTSRaw))
-	p.drift.Observe(e.DTSNanos, e.DTSRaw)
 
 	pcm, frames, err := p.decodePCM16(e, p.cfg.Channels)
 	if err != nil {
@@ -135,6 +138,22 @@ func (p *Pipeline) processOne(e container.SampleEvent, out *os.File) error {
 		return err
 	}
 	p.totalIn += uint64(frames)
+	// Drift is measured against the content clock, not the container
+	// timestamps: the sample payloads define how much media time has actually
+	// elapsed, while the node DTS carries the unknown rate offset. ContentFrame
+	// is assigned in track order at scan time, so replayed late events still
+	// contribute their true content position. Both axes are expressed in track
+	// ticks, so the fitted slope's deviation is the dimensionless drift ratio.
+	hi, lo := bits.Mul64(e.ContentFrame, uint64(e.Timescale))
+	refTicks, _ := bits.Div64(hi, lo, uint64(p.cfg.InRate))
+	// DTSRaw carries the absolute node counter (including the container's
+	// edit-list offset); subtract the first observed tick so the fit is
+	// origin-relative on both axes.
+	if !p.nodeOriginSet {
+		p.nodeOrigin, p.nodeOriginSet = e.DTSRaw, true
+	}
+	rel := int64(e.DTSRaw) - int64(p.nodeOrigin)
+	p.drift.Observe(refTicks, uint64(rel))
 
 	rs := p.resample.Process(pcm, p.cfg.Channels)
 	mapped := p.mapper.Apply(rs)
@@ -170,9 +189,6 @@ func (p *Pipeline) drainReplay(out *os.File, res *RunResult) {
 	}
 	timeline.StableSort(late)
 	for _, e := range late {
-		// The identity set already guarantees each late sample is processed
-		// once; a replayed event that reached the output before a crash is
-		// filtered by Admit when re-presented, not by an index threshold.
 		if err := p.processOne(e, out); err != nil {
 			if ce, ok := err.(*clock.Error); ok && ce.Recoverable() {
 				res.Skipped = append(res.Skipped, ce)
@@ -205,6 +221,7 @@ func (p *Pipeline) checkpoint() error {
 	p.st.PrevFrame = p.resample.PrevFrame()
 	p.st.Loudness = p.loud.Snapshot()
 	p.st.TotalIn, p.st.TotalOut = p.totalIn, p.totalOut
+	p.st.NodeOrigin, p.st.NodeOriginSet = p.nodeOrigin, p.nodeOriginSet
 	payload, err := json.Marshal(p.st)
 	if err != nil {
 		return err

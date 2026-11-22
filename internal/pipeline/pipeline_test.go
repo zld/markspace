@@ -242,3 +242,79 @@ func TestResumeChecksumMatches(t *testing.T) {
 		t.Fatal("resume did not advance past the kill point")
 	}
 }
+
+// TestDriftRecoversFixtureRate proves the reported ppm tracks the fixture's
+// configured node rate offset rather than reporting a meaningless constant.
+func TestDriftRecoversFixtureRate(t *testing.T) {
+	cfg := baseCfg()
+	const wantPPM = 420.0
+	spec := container.FixtureSpec{
+		Seed: 42, Timescale: cfg.InRate, SampleCount: 240,
+		FramesPerSamp: 512, Channels: 2, Wrap32: true,
+		DriftPPM: wantPPM, VFRJitter: 10,
+	}
+	events, src := buildEvents(t, spec)
+	p, err := New(cfg, t.TempDir(), filepath.Join(t.TempDir(), "out.pcm"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.SetSource(src)
+	res, err := p.Run(events, 0)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	got := res.Metrics.DriftPPM
+	if got < wantPPM-60 || got > wantPPM+60 {
+		t.Fatalf("drift=%f want %f +/- 60", got, wantPPM)
+	}
+}
+
+// TestLateReplayDoesNotDisturbDrift verifies replayed late events still
+// contribute their true content position to the drift fit, so the ppm estimate
+// is unchanged by delivery reordering.
+func TestLateReplayDoesNotDisturbDrift(t *testing.T) {
+	cfg := baseCfg()
+	spec := container.FixtureSpec{
+		Seed: 42, Timescale: cfg.InRate, SampleCount: 240,
+		FramesPerSamp: 512, Channels: 2, Wrap32: true,
+		DriftPPM: 420, VFRJitter: 10,
+	}
+	events, src := buildEvents(t, spec)
+	// Deliver three samples late: rewrite to earlier media time, move to tail.
+	shift := uint64(spec.Timescale) * 80 / 1000
+	lateIdx := []int{len(events) / 4, len(events) / 2, 3 * len(events) / 4}
+	set := map[int]bool{}
+	for _, idx := range lateIdx {
+		if events[idx].DTSNanos > shift {
+			events[idx].DTSNanos -= shift
+			events[idx].PTSNanos = events[idx].DTSNanos
+		}
+		set[idx] = true
+	}
+	var onTime, late []container.SampleEvent
+	for i, e := range events {
+		if set[i] {
+			late = append(late, e)
+		} else {
+			onTime = append(onTime, e)
+		}
+	}
+	shuffled := append(onTime, late...)
+
+	p, err := New(cfg, t.TempDir(), filepath.Join(t.TempDir(), "out.pcm"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.SetSource(src)
+	res, err := p.Run(shuffled, 0)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	got := res.Metrics.DriftPPM
+	if got < 360 || got > 480 {
+		t.Fatalf("late delivery skewed drift: ppm=%f", got)
+	}
+	if res.Metrics.ReplayedEvents != 3 {
+		t.Fatalf("replayed=%d want 3", res.Metrics.ReplayedEvents)
+	}
+}
