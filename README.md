@@ -60,7 +60,18 @@ acceptance bound is `<= 2 ms`.
 | `packets`      | duplicate, reordered, late and burst-lost RTP packets              |
 
 Damaged cases keep the un-repaired material in `<out>/damaged/` so you can
-confirm that verifying it fails (exit 1) while the repaired rerun passes.
+confirm that verifying it fails (exit 1) while the repaired rerun passes:
+
+```sh
+go run ./cmd/mediacore demo --case corrupt --out /tmp/mediacore-corrupt
+go run ./cmd/mediacore verify \
+  --input /tmp/mediacore-corrupt/damaged/frames.bin \
+  --index /tmp/mediacore-corrupt/damaged/index.json \
+  --manifest /tmp/mediacore-corrupt/damaged/manifest.json   # exit 1
+```
+
+The demo also reports the located damage offset, the index invalidation reason
+(`stale` cache, digest change) and the recovered frame count.
 
 ## Architecture
 
@@ -84,6 +95,16 @@ timing ticks, stream id, and a SHA-256 over the header prefix, payload and
 metadata. The payload (`width*height` bytes) and JSON metadata follow. Truncated,
 oversized, dimension-mismatched and checksum-failing records are reported with
 their byte offset and never skipped silently.
+
+### Time policy
+
+Media time is a 64-bit monotonic timeline derived from the 32-bit RTP clock.
+Wraparound is detected and unwrapped. A backward timestamp on a *lower*
+sequence is ordinary reordering and is fixed by sorting; a backward timestamp
+on a *forward* sequence is a clock regression, re-anchored to the high-water
+mark so the timeline keeps advancing and the segmenter cuts an explicit
+boundary. Segment boundaries use the same clock with maximum-duration,
+maximum-gap and boundary-tolerance controls.
 
 ### Determinism
 
