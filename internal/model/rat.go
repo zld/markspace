@@ -198,6 +198,52 @@ func padLeft(s string, width int) string {
 	return strings.Repeat("0", width-len(s)) + s
 }
 
+// DecimalFixed renders a signed fixed-point decimal with exactly digits
+// fractional digits via exact half-up rounding in big.Int; it never uses
+// floating point. Trailing zeros are trimmed while keeping the decimal
+// point for fractional values.
+func (r Rat) DecimalFixed(digits int) string {
+	if digits < 0 {
+		digits = 0
+	}
+	pow := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(digits)), nil)
+	num := big.NewInt(r.num)
+	den := big.NewInt(r.den)
+	scaled := new(big.Int).Mul(num, pow)
+	quo, rem := new(big.Int).QuoRem(scaled, den, new(big.Int))
+	// Half-up rounding on the absolute remainder.
+	twoRem := new(big.Int).Lsh(rem, 1)
+	absTwo := new(big.Int).Abs(twoRem)
+	if absTwo.Cmp(den) >= 0 {
+		if quo.Sign() >= 0 {
+			quo.Add(quo, big.NewInt(1))
+		} else {
+			quo.Sub(quo, big.NewInt(1))
+		}
+	}
+	neg := quo.Sign() < 0
+	abs := new(big.Int).Abs(quo).String()
+	if digits == 0 {
+		if neg {
+			return "-" + abs
+		}
+		return abs
+	}
+	if len(abs) <= digits {
+		abs = strings.Repeat("0", digits+1-len(abs)) + abs
+	}
+	whole, frac := abs[:len(abs)-digits], abs[len(abs)-digits:]
+	frac = strings.TrimRight(frac, "0")
+	s := whole
+	if frac != "" {
+		s = whole + "." + frac
+	}
+	if neg && s != "0" {
+		s = "-" + s
+	}
+	return s
+}
+
 func ratFromBig(br *big.Rat) (Rat, error) {
 	num := br.Num()
 	den := br.Denom()
