@@ -95,6 +95,14 @@ func (d *DriftEstimator) Observe(x, y int64, resetInput bool) ObserveResult {
 		return ObserveResult{Reason: RecoveryNone}
 	}
 
+	// Warm-up: with a single baseline point no slope exists yet, so the
+	// second observation seeds the fit without anomaly detection.
+	if len(d.window) == 1 {
+		d.window = append(d.window, point{float64(x - d.baseX), float64(y - d.baseY)})
+		d.fit()
+		return ObserveResult{Reason: RecoveryNone, DriftPPM: d.DriftPPM()}
+	}
+
 	reason := RecoveryNone
 	if resetInput {
 		reason = RecoveryClockReset
