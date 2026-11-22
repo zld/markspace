@@ -23,6 +23,8 @@ func applyDamage(b []byte, m *Media, lay *layout) ([]byte, error) {
 		return damageBadRange(b, lay)
 	case KindDepCycle:
 		return b, nil
+	case KindGarbled:
+		return damageGarbled(b)
 	default:
 		return nil, fmt.Errorf("fixture: unknown kind %q", m.Plan.Kind)
 	}
@@ -108,6 +110,39 @@ func damageBadRange(b []byte, lay *layout) ([]byte, error) {
 	}
 	entry := stsz + 20
 	binary.BigEndian.PutUint32(b[entry:], 0x7ffffff0)
+	return b, nil
+}
+
+// damageGarbled destroys every sample record and the index, leaving a file
+// with no verifiable audio. Recovery must refuse it rather than invent sound.
+func damageGarbled(b []byte) ([]byte, error) {
+	// Remove the moov by turning its header into free space of the same size.
+	pos := 0
+	for i := 0; i+8 <= len(b); {
+		size := int(binary.BigEndian.Uint32(b[i:]))
+		typ := string(b[i+4 : i+8])
+		if typ == "moov" {
+			copy(b[i+4:], "free")
+			pos = i
+			break
+		}
+		if size < 8 {
+			return nil, fmt.Errorf("fixture: garbled: malformed box")
+		}
+		i += size
+	}
+	if pos == 0 {
+		return nil, fmt.Errorf("fixture: garbled: no moov")
+	}
+	// Zero the mdat payload so no record magic or CRC survives.
+	mdat := findBox(b, "mdat", 0)
+	if mdat < 0 {
+		return nil, fmt.Errorf("fixture: garbled: no mdat")
+	}
+	size := int(binary.BigEndian.Uint32(b[mdat:]))
+	for i := mdat + 8; i < mdat+size && i < len(b); i++ {
+		b[i] = 0
+	}
 	return b, nil
 }
 

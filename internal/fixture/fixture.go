@@ -34,10 +34,11 @@ const (
 	KindDepCycle  Kind = "dep-cycle"
 	KindWrap      Kind = "wrap"
 	KindNoIndex   Kind = "no-index"
+	KindGarbled   Kind = "garbled"
 )
 
 // Kinds lists every fixture the kernel claims to handle.
-var Kinds = []Kind{KindClean, KindNoMoov, KindTruncated, KindBadRange, KindDepCycle, KindWrap, KindNoIndex}
+var Kinds = []Kind{KindClean, KindNoMoov, KindTruncated, KindBadRange, KindDepCycle, KindWrap, KindNoIndex, KindGarbled}
 
 // Plan describes the media a fixture should contain.
 type Plan struct {
