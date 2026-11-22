@@ -64,12 +64,26 @@ func OpenSession(path string) (*Session, error) {
 		s.Clocks[tr.ID] = clk
 	}
 	s.Pres = ComputePresentation(movie, s.Clocks)
+	for _, tr := range movie.Tracks {
+		if clk := s.Clocks[tr.ID]; clk != nil && clk.WrapDetected() {
+			problems = append(problems, fault.Errorf("pipeline.session", fault.KindTimeline,
+				"track %d clock wrapped or regressed; samples after the fault are withheld", tr.ID).
+				WithPath(path).WithTrack(tr.ID).Recovered().Wrapped(fault.ErrTimeWrap))
+		}
+	}
 	ix, ierr := index.Build(movie, s.Pres)
 	if ierr != nil {
 		problems = append(problems, ierr)
 	}
 	s.Index = ix
 	s.Silence = analyzeAudio(tree, movie, s.Pres)
+	for _, tr := range movie.Tracks {
+		if res, ok := s.Silence[tr.ID]; ok && !res.Detectable && tr.IsAudio() {
+			s.Warnings = append(s.Warnings, fault.Errorf("pipeline.audio", fault.KindAudio,
+				"track %d silence undetectable: %s", tr.ID, res.Reason).
+				WithPath(path).WithTrack(tr.ID).Recovered())
+		}
+	}
 	if len(problems) > 0 {
 		joined := errors.Join(problems...)
 		if s.Err == nil {

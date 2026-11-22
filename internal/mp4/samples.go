@@ -586,26 +586,31 @@ func validateAgainstMdat(m *Movie, tr *Track, warn func(*fault.Error)) {
 		return false
 	}
 	kept := tr.Samples[:0]
+	var dropped []Sample
 	for _, s := range tr.Samples {
 		end := s.End()
 		if s.Size == 0 || s.Offset < 0 || end < s.Offset {
-			tr.DroppedSamples++
-			tr.IndexComplete = false
-			warn(fault.Errorf("mp4.sample", fault.KindParse, "sample %d has invalid range [%d,%d)", s.Index, s.Offset, end).
-				At(s.Offset).WithSample(s.Index).Recovered().Wrapped(fault.ErrBadSample))
+			dropped = append(dropped, s)
 			continue
 		}
 		if !inMdat(s.Offset, end) {
-			tr.DroppedSamples++
-			tr.IndexComplete = false
-			warn(fault.Errorf("mp4.sample", fault.KindParse, "sample %d range [%d,%d) is outside every mdat", s.Index, s.Offset, end).
-				At(s.Offset).WithSample(s.Index).Recovered().Wrapped(fault.ErrBadSample))
+			dropped = append(dropped, s)
 			continue
 		}
 		s.InMdat = true
 		kept = append(kept, s)
 	}
 	tr.Samples = kept
+	if len(dropped) == 0 {
+		return
+	}
+	tr.DroppedSamples += len(dropped)
+	tr.IndexComplete = false
+	first := dropped[0]
+	last := dropped[len(dropped)-1]
+	warn(fault.Errorf("mp4.sample", fault.KindParse,
+		"%d samples have ranges outside every mdat (samples %d..%d)", len(dropped), first.Index, last.Index).
+		At(first.Offset).WithSample(first.Index).Recovered().Wrapped(fault.ErrBadSample))
 }
 
 func elstVersion(tree *Tree, b *Box) uint8 {

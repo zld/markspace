@@ -107,6 +107,15 @@ func Build(movie *mp4.Movie, pres Presentation) (*Index, error) {
 			}
 		}
 		ti.Duration = lastPresented
+		if tr.SyncTablePresent && tailUnindexed(ti.Entries, len(tr.Samples)) {
+			lastSync := ti.Entries[len(ti.Entries)-1].Sample
+			e := fault.Errorf("index.build", fault.KindIndex,
+				"sync table stops at sample %d of %d, more than two GOPs short; the tail can only be reached by inference",
+				lastSync, len(tr.Samples)).
+				WithPath(movie.Path).WithTrack(tr.ID).WithSample(lastSync).Recovered().Wrapped(fault.ErrIncomplete)
+			ti.Warnings = append(ti.Warnings, e)
+			problems = append(problems, e)
+		}
 		ix.Tracks = append(ix.Tracks, ti)
 		ix.Warnings = append(ix.Warnings, ti.Warnings...)
 		if len(ti.Entries) == 0 {
@@ -125,6 +134,26 @@ func Build(movie *mp4.Movie, pres Presentation) (*Index, error) {
 		return ix, fault.New("index.build", fault.KindIndex, joinErrors(problems)).WithPath(movie.Path).Recovered()
 	}
 	return ix, nil
+}
+
+// tailUnindexed reports whether the last sync frame is more than two observed
+// GOP intervals from the final sample, which means a damaged or early-ending
+// sync table rather than the normal short final GOP.
+func tailUnindexed(entries []Entry, sampleCount int) bool {
+	if len(entries) < 2 || sampleCount == 0 {
+		return false
+	}
+	last := entries[len(entries)-1].Sample
+	gap := sampleCount - 1 - last
+	if gap <= 0 {
+		return false
+	}
+	first := entries[0].Sample
+	interval := (last - first) / (len(entries) - 1)
+	if interval <= 0 {
+		return false
+	}
+	return gap > 2*interval
 }
 
 func movieRebuilt(m *mp4.Movie) bool {

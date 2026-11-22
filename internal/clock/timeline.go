@@ -133,18 +133,26 @@ func (em *EditMap) PresentationEnd() int64 {
 	return out
 }
 
+// MaxForwardGapNS bounds the jump between consecutive decode timestamps.
+// Decode timestamps inside one track are contiguous by construction, so a
+// multi-minute leap means the clock wrapped past the measurable range and the
+// low bits alone cannot be trusted.
+const MaxForwardGapNS int64 = 5 * 60 * 1_000_000_000
+
 // TrackClock converts one track's decode timestamps to presentation time and
 // enforces monotonicity. Any wrap, regression or overflow yields a located
 // error naming the track and sample.
 type TrackClock struct {
-	group  string
-	track  uint32
-	scale  uint32
-	tl     *Timeline
-	edits  *EditMap
-	prev   uint64
-	seen   int
-	offset int64 // first mapped DTS, used to anchor tracks at zero
+	group     string
+	track     uint32
+	scale     uint32
+	tl        *Timeline
+	edits     *EditMap
+	prev      uint64
+	prevMedia int64
+	seen      int
+	offset    int64 // first mapped DTS, used to anchor tracks at zero
+	broke     bool  // a wrap, regression or overflow was observed
 }
 
 // NewTrackClock builds a clock for a track. The offset anchors the earliest
@@ -192,6 +200,12 @@ func (c *TrackClock) Presentation(dts uint64, compositionOffset int64) (int64, e
 	if err != nil {
 		return 0, c.err(fault.ErrTimeOverflow, c.seen, "%v", err)
 	}
+	if c.seen > 1 && media-c.prevMedia > MaxForwardGapNS {
+		return 0, c.err(fault.ErrTimeWrap, c.seen,
+			"decode jump of %d ns from %d to %d exceeds the %d ns continuity bound",
+			media-c.prevMedia, c.prevMedia, media, MaxForwardGapNS)
+	}
+	c.prevMedia = media
 	presented, err := c.edits.Map(media)
 	if err != nil {
 		return 0, c.err(fault.ErrBadSample, c.seen, "%v", err)
@@ -224,9 +238,15 @@ func (c *TrackClock) checkDTS(dts uint64) error {
 }
 
 func (c *TrackClock) err(cause error, sample int, format string, args ...any) *fault.Error {
+	if cause == fault.ErrTimeWrap || cause == fault.ErrTimeBackwards || cause == fault.ErrTimeOverflow {
+		c.broke = true
+	}
 	return fault.Errorf("clock.track", fault.KindTimeline, format, args...).
 		WithPath(c.group).WithTrack(c.track).WithSample(sample).Wrapped(cause)
 }
+
+// WrapDetected reports whether a wrap or regression was ever observed.
+func (c *TrackClock) WrapDetected() bool { return c.broke }
 
 // DecodeEnd returns the last accepted input dts for diagnostics.
 func (c *TrackClock) DecodeEnd() uint64 { return c.prev }

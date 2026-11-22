@@ -110,10 +110,13 @@ func ComputePresentation(movie *mp4.Movie, clocks map[uint32]*clock.TrackClock) 
 		times := make([]int64, n)
 		usable := make([]bool, n)
 		if clk != nil {
+			// Stop at the first rejected timestamp: once the clock is proven
+			// unreliable, later readings cannot be distinguished from
+			// post-wrap garbage, so they are withheld rather than guessed.
 			for i, s := range tr.Samples {
 				v, err := clk.Presentation(s.DTS, s.CTO)
 				if err != nil {
-					continue
+					break
 				}
 				times[i], usable[i] = v, true
 			}
@@ -246,7 +249,7 @@ func (p *Planner) Materialize(plan SegmentPlan) (Segment, error) {
 	}
 	hex := fmt.Sprintf("%x", digest)
 	seg := Segment{
-		ID: segmentID(plan.TrackID, plan.FirstSample, plan.SampleCount), TrackID: plan.TrackID,
+		ID: segmentID(plan.TrackID, plan.FirstSample, plan.SampleCount, plan.StartNS), TrackID: plan.TrackID,
 		StartNS: plan.StartNS, EndNS: plan.EndNS, FirstSample: plan.FirstSample,
 		SampleCount: plan.SampleCount, KeyOffset: plan.KeyOffset, KeyPresented: plan.KeyPresented,
 		KeyExact: plan.KeyExact, Content: digest, ContentHex: hex, SHA256: hex,

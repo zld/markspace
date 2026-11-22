@@ -121,7 +121,7 @@ func segmentsFromRecords(store *checkpoint.Store, block int, plan []SegmentPlan)
 	out := make([]Segment, 0, len(recs))
 	for _, r := range recs {
 		seg := Segment{
-			ID: segmentID(r.TrackID, r.FirstSample, r.Samples), TrackID: r.TrackID,
+			ID: segmentID(r.TrackID, r.FirstSample, r.Samples, r.StartNS), TrackID: r.TrackID,
 			StartNS: r.StartNS, EndNS: r.EndNS, FirstSample: r.FirstSample,
 			SampleCount: r.Samples, ContentHex: r.Content, SHA256: r.Content,
 			SilentNS: r.SilentNS, KeyExact: r.KeyExact,
@@ -141,10 +141,11 @@ func segmentsFromRecords(store *checkpoint.Store, block int, plan []SegmentPlan)
 	return out, nil
 }
 
-// segmentID names a slice by track and its sample span. Cuts that align to
-// the same sync frame can legitimately overlap, so the end is part of the ID.
-func segmentID(track uint32, first, count int) string {
-	return fmt.Sprintf("t%02d-s%d-e%d", track, first, first+count)
+// segmentID names a slice by track, its sample span and requested window.
+// Cuts that align to the same sync frame can legitimately overlap, so the
+// window is part of the identity.
+func segmentID(track uint32, first, count int, startNS int64) string {
+	return fmt.Sprintf("t%02d-s%d-e%d@%d", track, first, first+count, startNS)
 }
 
 func planKey(p SegmentPlan) string {
