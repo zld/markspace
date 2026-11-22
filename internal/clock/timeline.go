@@ -32,7 +32,8 @@ type Track struct {
 }
 
 // Point is one normalized instant. Native retains the unadjusted input clock
-// and Master is the negotiated shared clock in seconds.
+// in the track's own ticks; Master is the negotiated shared clock in seconds.
+// Missing marks a point skipped because its input bytes were unavailable.
 type Point struct {
 	Track   string        `json:"track"`
 	Kind    TrackKind     `json:"kind"`
