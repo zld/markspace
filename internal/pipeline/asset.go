@@ -30,6 +30,7 @@ type assetResult struct {
 	Skipped           int64
 	HasTruncation     bool
 	TruncationStartMs float64
+	FileSize          int64
 }
 
 // analyzeAsset processes one asset: MP4 structure, subtitles, RTP continuity,
@@ -78,18 +79,8 @@ func analyzeAsset(ctx context.Context, a AssetInput, opts Options) (*assetResult
 		Source: a.Asset, TimeKnown: r.MediaDurationMs > 0,
 	}))
 	// A truncated capture is unreliable from the cut to the declared end, so
-	// widen the MP4 damage window rather than citing a single instant.
-	for i := range r.Segments {
-		if r.Segments[i].Code != "mp4" || !r.HasTruncation {
-			continue
-		}
-		if r.Segments[i].StartMs < r.TruncationStartMs {
-			r.Segments[i].StartMs = r.TruncationStartMs
-		}
-		if r.Segments[i].EndMs < r.MediaDurationMs {
-			r.Segments[i].EndMs = r.MediaDurationMs
-		}
-	}
+	// collapse the MP4 segments into one window rather than citing instants.
+	r.Segments = widenTruncation(r.Segments, r.HasTruncation, r.TruncationStartMs, r.MediaDurationMs, r.FileSize)
 	if opts.Mode == ModeStrict && len(r.Faults) > 0 {
 		return r, firstFault(r.Faults)
 	}
@@ -117,6 +108,7 @@ func analyzeMP4Part(ctx context.Context, a AssetInput, r *assetResult, fps strin
 	r.MediaDurationMs = an.DurationMs
 	r.SampleBytes = an.MdatBytes
 	r.HasTruncation, r.TruncationStartMs = an.HasTruncation, an.TruncationStartMs
+	r.FileSize = an.Size
 	if an.Video == nil {
 		return nil
 	}
@@ -425,3 +417,69 @@ func findTimecodeLabels(text string) []string {
 }
 
 func isDigit(b byte) bool { return b >= '0' && b <= '9' }
+
+// widenTruncation replaces per-fault MP4 segments with one tail segment that
+// starts at the first missing sample and ends at the declared media duration.
+// `stream.Classify` guarantees non-overlap per family, so collapsing is safe.
+func widenTruncation(segs []Segment, has bool, startMs, endMs float64, fileSize int64) []Segment {
+	if !has {
+		return segs
+	}
+	var out []Segment
+	var tail *Segment
+	for i := range segs {
+		s := segs[i]
+		if s.Code != "mp4" || s.Recoverable {
+			out = append(out, s)
+			continue
+		}
+		if tail == nil {
+			cp := s
+			cp.StartMs, cp.EndMs = startMs, endMs
+			if cp.EndMs < cp.StartMs {
+				cp.EndMs = cp.StartMs
+			}
+			cp.FaultCount = s.FaultCount
+			tail = &cp
+			out = append(out, cp)
+			continue
+		}
+		if s.StartMs < tail.StartMs {
+			tail.StartMs = s.StartMs
+		}
+		if s.EndMs > tail.EndMs {
+			tail.EndMs = s.EndMs
+		}
+		tail.FaultCount += s.FaultCount
+		tail.StartOffset = minInt64(tail.StartOffset, s.StartOffset)
+		tail.EndOffset = maxInt64(tail.EndOffset, s.EndOffset)
+		out[len(out)-1] = *tail
+	}
+	// Damage is everything from the first absent byte to EOF when the file
+	// size is known, because no later byte can be recovered.
+	if tail != nil && fileSize > 0 {
+		if tail.EndOffset > fileSize {
+			tail.EndOffset = fileSize
+		}
+		for i := range out {
+			if out[i].Code == "mp4" && !out[i].Recoverable && out[i].StartMs == tail.StartMs {
+				out[i].EndOffset = tail.EndOffset - 1
+			}
+		}
+	}
+	return out
+}
+
+func minInt64(a, b int64) int64 {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func maxInt64(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
+}
