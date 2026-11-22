@@ -223,3 +223,37 @@ func TestDeclsFromFile(t *testing.T) {
 		t.Fatalf("gap diagnostics %+v", gaps)
 	}
 }
+
+func TestCheckLayoutRateTimebaseMismatch(t *testing.T) {
+	decls := []TrackDecl{{Segment: 1, TrackID: 2, Handler: "soun", Channels: 2,
+		Timescale: 44100, SampleRate: 48000, SampleSize: 16}}
+	res := CheckLayout(decls, map[uint32]AudioExpectation{2: {Channels: 2, SampleRate: 48000, SampleSize: 16}}, nil)
+	found := false
+	for _, d := range res.Issues {
+		if d.Code == IssueRateTimebase && d.Segment == 1 && d.Field == "timescale" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("timescale/rate mismatch not reported: %+v", res.Issues)
+	}
+	if len(res.Issues) != 1 {
+		t.Fatalf("unexpected extra issues: %+v", res.Issues)
+	}
+}
+
+func TestCheckLayoutColorChangeIsLocatable(t *testing.T) {
+	decls := []TrackDecl{
+		{Segment: 1, TrackID: 1, Handler: "vide", Width: 640, Height: 360, Color: &mp4.Colr{Primaries: 1}},
+		{Segment: 2, TrackID: 1, Handler: "vide", Width: 640, Height: 360, Color: &mp4.Colr{Primaries: 1}},
+		{Segment: 3, TrackID: 1, Handler: "vide", Width: 640, Height: 360, Color: &mp4.Colr{Primaries: 9}},
+	}
+	res := CheckLayout(decls, nil, map[uint32]bool{1: true})
+	if len(res.Issues) != 1 {
+		t.Fatalf("issues %+v", res.Issues)
+	}
+	d := res.Issues[0]
+	if d.Code != IssueColorChange || d.Segment != 3 || d.TrackID != 1 {
+		t.Fatalf("diagnostic not locatable at the change: %+v", d)
+	}
+}

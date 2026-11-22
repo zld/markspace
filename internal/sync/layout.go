@@ -18,6 +18,7 @@ const (
 	IssueMissingDecl   = "layout_declaration_missing"
 	IssueTrackKind     = "track_kind_mismatch"
 	IssueMissingGap    = "transport_gap_in_track"
+	IssueRateTimebase  = "sample_rate_timescale"
 )
 
 // TrackDecl is the audio/video declaration of one fragment.
@@ -26,6 +27,7 @@ type TrackDecl struct {
 	TrackID      uint32
 	Handler      string
 	Channels     uint16
+	Timescale    uint32
 	SampleRate   uint32
 	SampleSize   uint16
 	Width        uint16
@@ -100,6 +102,16 @@ func CheckLayout(decls []TrackDecl, audio map[uint32]AudioExpectation, video map
 					Message: fmt.Sprintf("declared %d bits, reference %d bits", d.SampleSize, exp.SampleSize),
 				})
 			}
+			// An audio track whose mdhd timescale disagrees with its sample
+			// entry rate has an inconsistent sample clock: every duration
+			// derived from one of them is wrong. The mismatch is reported, not
+			// repaired by choosing a winner.
+			if d.Timescale != 0 && d.Timescale != exp.SampleRate {
+				res.Issues = append(res.Issues, Diagnostic{
+					Code: IssueRateTimebase, TrackID: d.TrackID, Segment: d.Segment, Field: "timescale", Severity: "error",
+					Message: fmt.Sprintf("mdhd timescale %d Hz != sample entry rate %d Hz", d.Timescale, exp.SampleRate),
+				})
+			}
 			for _, rate := range d.PayloadRates {
 				if rate != exp.SampleRate {
 					res.Issues = append(res.Issues, Diagnostic{
@@ -167,7 +179,8 @@ func DeclsFromFile(f *mp4.File) []TrackDecl {
 			if t == nil {
 				continue
 			}
-			d := TrackDecl{Segment: seg.Sequence, TrackID: st.TrackID, Handler: t.Handler, SampleCount: len(st.Samples)}
+			d := TrackDecl{Segment: seg.Sequence, TrackID: st.TrackID, Handler: t.Handler,
+				Timescale: t.Timescale, SampleCount: len(st.Samples)}
 			if t.Audio != nil {
 				d.Channels = t.Audio.ChannelCount
 				d.SampleRate = t.Audio.SampleRate

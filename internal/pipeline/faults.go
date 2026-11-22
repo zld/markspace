@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"mediapipe/internal/cache"
+	"mediapipe/internal/clock"
 	"mediapipe/internal/fixtures"
 	"mediapipe/internal/mp4"
 	"mediapipe/internal/rtp"
@@ -83,7 +84,9 @@ func runReorderFault(seed int64) (FaultReport, error) {
 	events := tx.Delivered
 	var lastEmitted *rtp.Packet
 	wraps := 0
+	tsWraps := uint64(0)
 	var lastPerTrack = map[uint16]int64{}
+	unwrappers := map[uint16]*clock.Timeline{}
 	var lastSeq uint16
 	seen := map[uint16]bool{}
 	check := func(pkts []rtp.Packet) error {
@@ -103,11 +106,24 @@ func runReorderFault(seed int64) (FaultReport, error) {
 			if err != nil {
 				return err
 			}
-			v, err := fixtures.UnifiedFromRTPChecked(pl.MediaTicks, fixtures.TrackTimescale(uint32(pl.TrackID)))
+			// The payload timestamp is the raw 32-bit RTP timestamp, so it must
+			// be folded by the timeline unwrapper before comparison.
+			unw, ok := unwrappers[pl.TrackID]
+			if !ok {
+				var err error
+				unw, err = clock.NewTimeline(uint32(pl.TrackID), fixtures.TrackTimescale(uint32(pl.TrackID)),
+					fixtures.RTPEpoch(uint32(pl.TrackID)), 0, 0)
+				if err != nil {
+					return err
+				}
+				unwrappers[pl.TrackID] = unw
+			}
+			mapped, err := unw.Map(uint32(pl.MediaTicks))
 			if err != nil {
 				return err
 			}
-			if prev, ok := lastPerTrack[pl.TrackID]; ok && v < prev {
+			v := mapped.Unified
+			if prev, seen := lastPerTrack[pl.TrackID]; seen && v < prev {
 				return fmt.Errorf("track %d media time regressed: %d < %d (seq %d)", pl.TrackID, v, prev, p.Seq)
 			}
 			lastPerTrack[pl.TrackID] = v
@@ -198,13 +214,25 @@ func runReorderFault(seed int64) (FaultReport, error) {
 	if err != nil {
 		return rep, err
 	}
+	timelineWraps := uint64(0)
+	for _, tl := range unwrappers {
+		st := tl.Stats()
+		if st.NonMonotonic > 0 {
+			return rep, fmt.Errorf("timeline reported %d backwards timestamps", st.NonMonotonic)
+		}
+		timelineWraps += st.Wraps
+	}
+	if timelineWraps == 0 {
+		return rep, fmt.Errorf("RTP timestamp wrap was not exercised")
+	}
+	tsWraps = timelineWraps
 	propagated := warm.CacheHits == warm.Segments && summary.RoundtripMatchRate >= 0.99
 	rep.DetectedBy = "transport: sequence continuity and per-track monotonic media time"
 	rep.PropagatedTo = []string{"container: sample ownership and payload digests", "sync: alignment",
 		"cache: segment digests served warm"}
 	rep.Recovered = reorderOK && propagated
-	rep.Detail = fmt.Sprintf("emitted=%d expected=%d duplicates=%d reordered=%d wrap_crossings=%d roundtrip=%.3f warm_cache_hits=%d",
-		st.Emitted, tx.Expected, st.Duplicates, st.Reordered, wraps, summary.RoundtripMatchRate, warm.CacheHits)
+	rep.Detail = fmt.Sprintf("emitted=%d expected=%d duplicates=%d reordered=%d seq_wraps=%d ts_wraps=%d roundtrip=%.3f warm_cache_hits=%d",
+		st.Emitted, tx.Expected, st.Duplicates, st.Reordered, wraps, tsWraps, summary.RoundtripMatchRate, warm.CacheHits)
 	if !rep.Recovered {
 		return rep, fmt.Errorf("reorder fault not fully recovered: %s", rep.Detail)
 	}
@@ -301,7 +329,9 @@ func runTruncatedFault(seed int64) (FaultReport, error) {
 func runLayoutFault(seed int64) (FaultReport, error) {
 	rep := FaultReport{Class: FaultLayout, Injected: "audio declared mono 44100 Hz against stereo 48000 Hz reference"}
 	tracks := []mp4.TrackSpec{
-		{ID: 2, Handler: "soun", Timescale: 48000, Channels: 1, SampleSize: 16, SampleRate: 44100},
+		// The mdhd timescale (22 050) disagrees with both the sample entry rate
+		// (44 100) and the reference (48 000): an inconsistent sample clock.
+		{ID: 2, Handler: "soun", Timescale: 22050, Channels: 1, SampleSize: 16, SampleRate: 44100},
 	}
 	segs := []mp4.SegmentSpec{{Sequence: 1, Samples: []mp4.SampleSpec{
 		{TrackID: 2, Duration: 1024, Sync: true, Payload: []byte{1, 2, 3, 4}},
@@ -325,9 +355,10 @@ func runLayoutFault(seed int64) (FaultReport, error) {
 	}
 	rep.DetectedBy = "sync: layout declaration diff, source values preserved"
 	rep.PropagatedTo = []string{"cache: segment result carries layout diagnostics"}
-	rep.Recovered = codes[sync.IssueChannelCount] == 1 && codes[sync.IssueSampleRate] == 1
-	rep.Detail = fmt.Sprintf("channel_issues=%d rate_issues=%d issues=%d",
-		codes[sync.IssueChannelCount], codes[sync.IssueSampleRate], len(res.Issues))
+	rep.Recovered = codes[sync.IssueChannelCount] == 1 && codes[sync.IssueSampleRate] == 1 &&
+		codes[sync.IssueRateTimebase] == 1
+	rep.Detail = fmt.Sprintf("channel_issues=%d rate_issues=%d timescale_issues=%d issues=%d",
+		codes[sync.IssueChannelCount], codes[sync.IssueSampleRate], codes[sync.IssueRateTimebase], len(res.Issues))
 	if !rep.Recovered {
 		return rep, fmt.Errorf("layout fault not detected: %s", rep.Detail)
 	}

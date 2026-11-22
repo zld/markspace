@@ -272,6 +272,11 @@ func New(cfg Config) (*Runner, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Declared durations must agree with the media the fragments actually
+	// carry before any stage consumes the container.
+	if err := CheckDurations(file); err != nil {
+		return nil, err
+	}
 	store, err := cache.Open(cfg.CacheDir)
 	if err != nil {
 		return nil, err

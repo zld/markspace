@@ -27,6 +27,45 @@ const (
 	MaxFragment    = 48
 )
 
+// RTP epoch offsets place the generated streams close to the 32-bit timestamp
+// wrap, so every run genuinely crosses it. Sequence numbers wrap as well.
+const (
+	VideoRTPEpoch uint32 = 0xFFFF0000
+	AudioRTPEpoch uint32 = 0xFFFF8000
+	MetaRTPEpoch  uint32 = 0xFFFFC000
+)
+
+// RTPEpoch returns the raw timestamp origin of a generated track.
+func RTPEpoch(trackID uint32) uint32 {
+	switch trackID {
+	case 1:
+		return VideoRTPEpoch
+	case 2:
+		return AudioRTPEpoch
+	default:
+		return MetaRTPEpoch
+	}
+}
+
+// rawTimestamp converts a unified time to the wrapped 32-bit RTP timestamp of
+// a track, exactly as a live encoder would emit it.
+func rawTimestamp(trackID uint32, unified int64) uint32 {
+	ts := TrackTimescale(trackID)
+	ticks := unified * int64(ts) / int64(clock.UnifiedTimescale)
+	return RTPEpoch(trackID) + uint32(ticks)
+}
+
+// TrackEpochUnified is the unified time of the first group of a track, used to
+// anchor the receiver's timeline unwrapper.
+func TrackEpochUnified(sc *Scenario, trackID uint32) int64 {
+	for _, g := range sc.Groups {
+		if g.TrackID == trackID {
+			return g.UnifiedStart
+		}
+	}
+	return 0
+}
+
 // Group kinds.
 const (
 	KindVideo = "video"
@@ -183,15 +222,7 @@ func Build(seed int64) (*Scenario, error) {
 		default:
 			flags = 4 // FlagMetadata
 		}
-		var mediaTicks uint64
-		switch g.TrackID {
-		case 1:
-			mediaTicks = uint64(int64(g.UnifiedStart) * int64(VideoTimescale) / int64(clock.UnifiedTimescale))
-		case 2:
-			mediaTicks = uint64(int64(g.UnifiedStart) * int64(AudioTimescale) / int64(clock.UnifiedTimescale))
-		default:
-			mediaTicks = uint64(g.UnifiedStart)
-		}
+		mediaTicks := uint64(rawTimestamp(g.TrackID, g.UnifiedStart))
 		for fi := 0; fi < g.FragCount; fi++ {
 			g.PacketSeqs = append(g.PacketSeqs, seq)
 			start := fi * MaxFragment
