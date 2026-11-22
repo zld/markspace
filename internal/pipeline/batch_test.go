@@ -160,3 +160,44 @@ func TestBatchResumeMatchesContinuousRun(t *testing.T) {
 		}
 	}
 }
+
+func TestBatchManifestIgnoresDuplicateContent(t *testing.T) {
+	// Two identical chapter plans over the same media must produce one
+	// fingerprint per distinct payload, and the manifest hash must not change
+	// when the duplicated plan is added.
+	sess, st := setup(t)
+	planner, err := sess.Planner()
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := []Request{{TrackID: 1, StartNS: 0, EndNS: 100_000_000, MaxSpanNS: 1_000_000_000}}
+	once, err := RunBatch(planner, base, st, BatchOptions{SamplesPerBlock: 8})
+	if err != nil {
+		t.Fatal(err)
+	}
+	st2, err := checkpoint.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st2.Close()
+	twice, err := RunBatch(planner, append(base, base...), st2, BatchOptions{SamplesPerBlock: 8})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(twice.Segments) <= len(once.Segments) {
+		t.Fatalf("duplicate plan not materialised: %d vs %d", len(twice.Segments), len(once.Segments))
+	}
+	if twice.ManifestSHA256 != once.ManifestSHA256 {
+		t.Fatalf("manifest changed after adding duplicate content: %s vs %s",
+			twice.ManifestSHA256, once.ManifestSHA256)
+	}
+	var dups int
+	for _, d := range twice.Decisions {
+		if d.Duplicate {
+			dups++
+		}
+	}
+	if dups == 0 {
+		t.Fatal("duplicate decisions not reported")
+	}
+}
