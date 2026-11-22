@@ -115,16 +115,19 @@ func (c Config) validateFields() error {
 
 // TransportStage summarizes one segment's transport outcome.
 type TransportStage struct {
-	PacketsIn      int   `json:"packets_in"`
-	PacketsOut     int   `json:"packets_out"`
-	Reordered      int   `json:"reordered"`
-	Duplicates     int   `json:"duplicates"`
-	Late           int   `json:"late"`
-	Recovered      int   `json:"recovered"`
-	DeclaredGaps   int   `json:"declared_gaps"`
-	MissingGroups  []int `json:"missing_groups"`
-	MissingPackets int   `json:"missing_packets"`
-	ContinuityCuts int   `json:"continuity_cuts"`
+	SeqStart       uint16 `json:"seq_start"`
+	SeqEnd         uint16 `json:"seq_end"`
+	SeqCount       int    `json:"seq_count"`
+	PacketsIn      int    `json:"packets_in"`
+	PacketsOut     int    `json:"packets_out"`
+	Reordered      int    `json:"reordered"`
+	Duplicates     int    `json:"duplicates"`
+	Late           int    `json:"late"`
+	Recovered      int    `json:"recovered"`
+	DeclaredGaps   int    `json:"declared_gaps"`
+	MissingGroups  []int  `json:"missing_groups"`
+	MissingPackets int    `json:"missing_packets"`
+	ContinuityCuts int    `json:"continuity_cuts"`
 }
 
 // ContainerStage verifies recovered payloads against the container fixture.
@@ -429,6 +432,8 @@ func (r *Runner) fetchSegment(seq uint32, key cache.Key) (*SegmentResult, error)
 // transportOutcome carries reassembled groups and transport counters.
 type transportOutcome struct {
 	groups      *reassembly
+	windows     map[uint32]*SeqWindow
+	seqSegment  map[uint16]uint32
 	missing     []groupKey
 	reordered   int
 	recovered   int
@@ -521,7 +526,11 @@ type pendingGap struct {
 }
 
 func (r *Runner) runTransport() (*transportOutcome, error) {
-	out := &transportOutcome{groups: newReassembly()}
+	out := &transportOutcome{groups: newReassembly(), windows: map[uint32]*SeqWindow{},
+		seqSegment: map[uint16]uint32{}}
+	for _, raw := range r.scenario.Packets {
+		out.seqSegment[raw.Seq] = raw.Segment
+	}
 	buf, err := rtp.NewReorderBuffer(rtp.Config{Window: r.cfg.Window, HoldTicks: r.cfg.HoldTicks})
 	if err != nil {
 		return nil, err
@@ -561,6 +570,21 @@ func (r *Runner) runTransport() (*transportOutcome, error) {
 			}
 			lastSeq, haveLast = p.Seq, true
 			lastTS = p.TS
+			if seg, ok := out.seqSegment[p.Seq]; ok {
+				w, seen := out.windows[seg]
+				if !seen || int16(p.Seq-w.Start) < 0 {
+					if !seen {
+						w = &SeqWindow{Start: p.Seq, End: p.Seq}
+						out.windows[seg] = w
+					} else {
+						w.Start = p.Seq
+					}
+				}
+				if !seen || int16(p.Seq-w.End) > 0 {
+					w.End = p.Seq
+				}
+				w.Count++
+			}
 			if err := out.groups.add(p); err != nil {
 				return err
 			}
@@ -750,6 +774,9 @@ func (r *Runner) runSegments(tr *transportOutcome) error {
 		if err != nil {
 			return err
 		}
+		if err != nil {
+			return err
+		}
 		r.results = append(r.results, *result)
 		if err := r.commit(*result); err != nil {
 			return err
@@ -763,6 +790,11 @@ func (r *Runner) runSegments(tr *transportOutcome) error {
 
 func (r *Runner) processSegment(seq uint32, groupIdx []int, tr *transportOutcome) (*SegmentResult, error) {
 	res := &SegmentResult{Segment: seq}
+	if w, ok := tr.windows[seq]; ok {
+		res.Transport.SeqStart = w.Start
+		res.Transport.SeqEnd = w.End
+		res.Transport.SeqCount = w.Count
+	}
 	missingSet := map[int]bool{}
 	for _, k := range tr.missing {
 		g := r.groupFor(k)
@@ -966,7 +998,8 @@ func (r *Runner) commit(result SegmentResult) error {
 	fragment := CommittedFragment{Sequence: result.Segment, Digest: result.CacheKey, Tracks: []uint32{1, 2, 3}}
 	record := Record{Format: recordFormat, Generation: gen, Stage: StageIndex, Version: Version,
 		Input: r.InputKey(), Output: result.Digest,
-		SeqWindow: SeqWindow{Start: 0, End: 0, Count: result.Transport.PacketsIn},
+		SeqWindow: SeqWindow{Start: result.Transport.SeqStart, End: result.Transport.SeqEnd,
+			Count: result.Transport.SeqCount},
 		Committed: []CommittedFragment{fragment}, CompletedAt: time.Now().UnixNano()}
 	return r.journal.Append(record)
 }

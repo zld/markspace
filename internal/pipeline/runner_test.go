@@ -3,10 +3,13 @@ package pipeline
 import (
 	"bytes"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"mediapipe/internal/cache"
 )
 
 func testConfig(t *testing.T) Config {
@@ -264,5 +267,67 @@ func TestRunnerPropagatesMissingStateAcrossSubsystems(t *testing.T) {
 	}
 	if !sawUnresolved && s.MissingGroups > 0 {
 		t.Fatal("missing state did not affect alignment")
+	}
+}
+
+func TestCheckpointRecordsSequenceWindowsAndFragments(t *testing.T) {
+	cfg := testConfig(t)
+	r, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Run(); err != nil {
+		t.Fatal(err)
+	}
+	records, err := r.journal.Records()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(records) != 6 {
+		t.Fatalf("records %d", len(records))
+	}
+	for i, rec := range records {
+		if rec.SeqWindow.Count == 0 {
+			t.Fatalf("record %d has empty sequence window", i)
+		}
+		// Start may be numerically greater than End when the window crosses the
+		// 16-bit wrap. Count is the number of packets that actually reached the
+		// emission point, so it never exceeds the inclusive span and is smaller
+		// exactly when a hole was declared inside the window.
+		span := int(uint16(rec.SeqWindow.End-rec.SeqWindow.Start)) + 1
+		if rec.SeqWindow.Count > span {
+			t.Fatalf("record %d window count %d exceeds span %d", i, rec.SeqWindow.Count, span)
+		}
+		if len(rec.Committed) != 1 || rec.Committed[0].Sequence != uint32(i+1) {
+			t.Fatalf("record %d committed %+v", i, rec.Committed)
+		}
+		// Output is the semantic stage digest; the committed digest is the
+		// content address of the cached result bytes. Both must be valid and
+		// the cached bytes must hash to the committed digest.
+		if !rec.Output.Valid() || !rec.Committed[0].Digest.Valid() {
+			t.Fatalf("record %d invalid digest", i)
+		}
+		store, err := cache.Open(cfg.CacheDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := store.Fetch(cache.Lookup{Key: rec.Committed[0].Digest, Stage: StageIndex,
+			Version: Version, Input: r.source()})
+		if err != nil {
+			t.Fatalf("record %d cache fetch: %v", i, err)
+		}
+		if cache.KeyFromBytes(got.Bytes) != rec.Committed[0].Digest {
+			t.Fatalf("record %d cached bytes do not match committed digest", i)
+		}
+		var res SegmentResult
+		if err := json.Unmarshal(got.Bytes, &res); err != nil {
+			t.Fatal(err)
+		}
+		if res.Digest != rec.Output {
+			t.Fatalf("record %d output digest differs from cached result digest", i)
+		}
+		if rec.Input != r.InputKey() {
+			t.Fatalf("record %d input digest mismatch", i)
+		}
 	}
 }

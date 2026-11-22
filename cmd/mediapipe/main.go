@@ -73,6 +73,9 @@ func parseFlags(args []string, stderr *os.File) (options, error) {
 	return o, nil
 }
 
+// tighten applies the requested fault seed to the scenario and the network
+// model. The pipeline derives every fault decision from the seed, so no
+// additional randomness enters the run.
 func (o options) config() pipeline.Config {
 	cfg := pipeline.DefaultConfig()
 	cfg.Seed = o.seed
