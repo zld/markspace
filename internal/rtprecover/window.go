@@ -205,5 +205,16 @@ func (w *Window) rotate(mark bool) {
 // Head returns the current playout-head sequence number.
 func (w *Window) Head() (uint16, bool) { return w.base, w.started }
 
+// FirstFilled returns the relative offset of the first buffered packet from
+// the playout head, or -1 when the window is empty.
+func (w *Window) FirstFilled() int {
+	for i, f := range w.filled {
+		if f {
+			return i
+		}
+	}
+	return -1
+}
+
 // Stats returns a snapshot of the window counters.
 func (w *Window) Stats() Stats { return w.stats }
