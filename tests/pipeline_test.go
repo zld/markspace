@@ -95,11 +95,11 @@ func TestIncompleteUpdateRetainsMapping(t *testing.T) {
 	b := fixture.NewBuilder()
 	b.Section(psi.PATPID, fixture.PATSection(0, map[uint16]uint16{fixture.ProgramNumber: fixture.PMTPID}))
 	b.Section(fixture.PMTPID, fixture.PMTSection(0, fixture.ProgramNumber,
-		[]fixture.Stream{{fixture.StreamTypeVideo, fixture.VideoPID}, {fixture.StreamTypeAudio, fixture.AudioPIDOld}}))
+		[]fixture.Stream{{Type: fixture.StreamTypeVideo, PID: fixture.VideoPID}, {Type: fixture.StreamTypeAudio, PID: fixture.AudioPIDOld}}))
 	b.Media(fixture.VideoPID, 2)
 	// New PMT version starts but only its first fragment ever arrives.
 	frag := fixture.PMTSection(1, fixture.ProgramNumber,
-		[]fixture.Stream{{fixture.StreamTypeVideo, fixture.VideoPID}, {fixture.StreamTypeAudio, fixture.AudioPIDNew}})[:10]
+		[]fixture.Stream{{Type: fixture.StreamTypeVideo, PID: fixture.VideoPID}, {Type: fixture.StreamTypeAudio, PID: fixture.AudioPIDNew}})[:10]
 	b.Packet(fixture.PMTPID, true, append([]byte{0x00}, frag...)) // pointer_field = 0, then 10 of 26 bytes
 	b.Media(fixture.VideoPID, 2)
 	b.Media(fixture.AudioPIDNew, 3) // not yet mapped: old table still in effect
@@ -136,10 +136,10 @@ func TestCorruptSectionRetainsMapping(t *testing.T) {
 	b := fixture.NewBuilder()
 	b.Section(psi.PATPID, fixture.PATSection(0, map[uint16]uint16{fixture.ProgramNumber: fixture.PMTPID}))
 	b.Section(fixture.PMTPID, fixture.PMTSection(0, fixture.ProgramNumber,
-		[]fixture.Stream{{fixture.StreamTypeVideo, fixture.VideoPID}, {fixture.StreamTypeAudio, fixture.AudioPIDOld}}))
+		[]fixture.Stream{{Type: fixture.StreamTypeVideo, PID: fixture.VideoPID}, {Type: fixture.StreamTypeAudio, PID: fixture.AudioPIDOld}}))
 	b.Media(fixture.VideoPID, 2)
 	corrupt := fixture.PMTSection(1, fixture.ProgramNumber,
-		[]fixture.Stream{{fixture.StreamTypeVideo, fixture.VideoPID}, {fixture.StreamTypeAudio, fixture.AudioPIDNew}})
+		[]fixture.Stream{{Type: fixture.StreamTypeVideo, PID: fixture.VideoPID}, {Type: fixture.StreamTypeAudio, PID: fixture.AudioPIDNew}})
 	corrupt[12] ^= 0xFF // break the CRC
 	b.Section(fixture.PMTPID, corrupt)
 	b.Media(fixture.VideoPID, 2)
@@ -172,7 +172,7 @@ func TestDuplicateSectionsIgnored(t *testing.T) {
 	b := fixture.NewBuilder()
 	pat := fixture.PATSection(0, map[uint16]uint16{fixture.ProgramNumber: fixture.PMTPID})
 	pmt := fixture.PMTSection(0, fixture.ProgramNumber,
-		[]fixture.Stream{{fixture.StreamTypeVideo, fixture.VideoPID}, {fixture.StreamTypeAudio, fixture.AudioPIDOld}})
+		[]fixture.Stream{{Type: fixture.StreamTypeVideo, PID: fixture.VideoPID}, {Type: fixture.StreamTypeAudio, PID: fixture.AudioPIDOld}})
 	b.Section(psi.PATPID, pat)
 	b.Section(psi.PATPID, pat) // duplicate
 	b.Section(fixture.PMTPID, pmt)
@@ -193,7 +193,7 @@ func TestVersionWrap(t *testing.T) {
 	b.Section(psi.PATPID, fixture.PATSection(0, map[uint16]uint16{fixture.ProgramNumber: fixture.PMTPID}))
 	pmt := func(version int, audio uint16) {
 		b.Section(fixture.PMTPID, fixture.PMTSection(version, fixture.ProgramNumber,
-			[]fixture.Stream{{fixture.StreamTypeVideo, fixture.VideoPID}, {fixture.StreamTypeAudio, audio}}))
+			[]fixture.Stream{{Type: fixture.StreamTypeVideo, PID: fixture.VideoPID}, {Type: fixture.StreamTypeAudio, PID: audio}}))
 	}
 	pmt(0, fixture.AudioPIDOld)
 	b.Media(fixture.AudioPIDOld, 1)
@@ -224,8 +224,8 @@ func TestMultiSectionMultiProgram(t *testing.T) {
 	b.Media(fixture.VideoPID, 1) // no complete PAT yet: unmapped
 	b.Section(psi.PATPID, fixture.Resection(fixture.PATSection(0, map[uint16]uint16{fixture.ProgramNumber: fixture.PMTPID}), 0, 1))
 	b.Section(fixture.PMTPID, fixture.PMTSection(0, fixture.ProgramNumber,
-		[]fixture.Stream{{fixture.StreamTypeVideo, fixture.VideoPID}}))
-	b.Section(4097, fixture.PMTSection(0, 2, []fixture.Stream{{fixture.StreamTypeAudio, audioPID2}}))
+		[]fixture.Stream{{Type: fixture.StreamTypeVideo, PID: fixture.VideoPID}}))
+	b.Section(4097, fixture.PMTSection(0, 2, []fixture.Stream{{Type: fixture.StreamTypeAudio, PID: audioPID2}}))
 	b.Media(fixture.VideoPID, 2)
 	b.Media(audioPID2, 3)
 
@@ -258,7 +258,7 @@ func TestContinuityDuplicateAndTransportError(t *testing.T) {
 	b := fixture.NewBuilder()
 	b.Section(psi.PATPID, fixture.PATSection(0, map[uint16]uint16{fixture.ProgramNumber: fixture.PMTPID}))
 	b.Section(fixture.PMTPID, fixture.PMTSection(0, fixture.ProgramNumber,
-		[]fixture.Stream{{fixture.StreamTypeVideo, fixture.VideoPID}}))
+		[]fixture.Stream{{Type: fixture.StreamTypeVideo, PID: fixture.VideoPID}}))
 	b.Media(fixture.VideoPID, 5)
 	data := b.Bytes()
 	setCC := func(pkt int, cc byte) {
