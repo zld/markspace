@@ -9,15 +9,16 @@ import (
 // Stats counts transport-side observations. All counters are plain sums so
 // reports are stable across runs.
 type Stats struct {
-	Received    int
-	Accepted    int
-	Duplicate   int
-	Reordered   int
-	Late        int
-	Committed   int
-	Gaps        int
-	BufferPeak  int
-	Rejected    int
+	Received   int
+	Accepted   int
+	Duplicate  int
+	Reordered  int
+	Late       int
+	Committed  int
+	Gaps       int
+	BufferPeak int
+	Rejected   int
+	Repaired   int
 }
 
 // ReorderConfig configures one stream's reorder buffer.
@@ -133,6 +134,17 @@ func mod64(a, b int64) int64 {
 // Push admits one packet and returns any newly emittable packets in sequence
 // order. Recoverable errors are also retained for the final report.
 func (r *ReorderBuffer) Push(p *Packet) []*Packet {
+	return r.push(p, false)
+}
+
+// PushRecovered admits a retransmitted packet that fills a declared hole. It
+// follows the same ordering rules, but the caller is expected to have already
+// told the loss recorder that this sequence was repaired.
+func (r *ReorderBuffer) PushRecovered(p *Packet) []*Packet {
+	return r.push(p, true)
+}
+
+func (r *ReorderBuffer) push(p *Packet, repair bool) []*Packet {
 	r.stats.Received++
 	ext := extendSeq(p.Seq, r.ref, r.primed)
 	if !r.primed {
@@ -144,24 +156,29 @@ func (r *ReorderBuffer) Push(p *Packet) []*Packet {
 	if ext > r.maxSeen {
 		r.maxSeen = ext
 	}
-
-	if r.isSeen(ext) {
-		r.stats.Duplicate++
-		r.stats.Rejected++
-		r.noteError(merr.New(merr.StageReorder, "duplicate_packet",
-			merr.SeqSpan(r.cfg.Stream, p.Seq), true,
-			"sequence %d already received (extended %d)", p.Seq, ext))
-		return nil
+	if repair {
+		r.stats.Repaired++
 	}
+
 	if ext < r.next {
 		// Below the committed watermark: the fragment owning this sequence is
-		// already final, so the packet is late evidence, not new media.
+		// already final, so the packet is late evidence, not new media. This
+		// check precedes duplicate detection because a repeat of an already
+		// committed sequence is a late arrival, not a duplicate in flight.
 		r.stats.Late++
 		r.stats.Rejected++
 		r.markSeen(ext)
 		r.noteError(merr.New(merr.StageReorder, "late_packet",
 			merr.SeqSpan(r.cfg.Stream, p.Seq), true,
 			"sequence %d arrived after watermark %d", p.Seq, r.next))
+		return nil
+	}
+	if r.isSeen(ext) {
+		r.stats.Duplicate++
+		r.stats.Rejected++
+		r.noteError(merr.New(merr.StageReorder, "duplicate_packet",
+			merr.SeqSpan(r.cfg.Stream, p.Seq), true,
+			"sequence %d already received (extended %d)", p.Seq, ext))
 		return nil
 	}
 	if _, exists := r.held[ext]; exists {
@@ -198,18 +215,17 @@ func (r *ReorderBuffer) Flush() []*Packet {
 	return r.release(true)
 }
 
-// release emits held packets up to the allowed horizon. When force is true the
-// horizon is maxSeen and final holes become loss spans.
+// release emits held packets up to the safe horizon. Non-forced release keeps
+// the most recent Window sequence numbers held back so a retransmission can
+// still fill a hole before it becomes committed loss. Forced release (end of
+// stream) commits everything, turning remaining holes into lost spans.
 func (r *ReorderBuffer) release(force bool) []*Packet {
 	if !r.primed {
 		return nil
 	}
 	horizon := r.maxSeen
 	if !force {
-		horizon = r.next + int64(r.cfg.Window) - 1
-		if horizon > r.maxSeen {
-			horizon = r.maxSeen
-		}
+		horizon = r.maxSeen - int64(r.cfg.Window)
 	}
 	if horizon < r.next {
 		return nil
@@ -222,7 +238,7 @@ func (r *ReorderBuffer) release(force bool) []*Packet {
 			r.stats.Committed++
 			continue
 		}
-		// Hole: extend the current gap if the next sequence is also missing.
+		// Collect one contiguous hole so a burst is reported as one span.
 		first := ext
 		last := ext
 		for last+1 <= horizon {
@@ -241,6 +257,40 @@ func (r *ReorderBuffer) release(force bool) []*Packet {
 	r.next = horizon + 1
 	return out
 }
+
+// PendingHole reports whether seq is currently held back by a hole that has
+// not yet been committed. A repair arriving now can still be applied.
+func (r *ReorderBuffer) PendingHole(seq uint16) bool {
+	ext := extendSeq(seq, r.ref, r.primed)
+	return r.primed && ext >= r.next && ext <= r.maxSeen && !r.isSeen(ext)
+}
+
+// PendingGaps returns the holes inside the uncommitted tail, i.e. sequences in
+// [next, maxSeen] that never arrived. These are repairable: they only become
+// lost when release advances past them.
+func (r *ReorderBuffer) PendingGaps() []SeqSpan {
+	if !r.primed || r.maxSeen < r.next {
+		return nil
+	}
+	var out []SeqSpan
+	ext := r.next
+	for ext <= r.maxSeen {
+		if r.isSeen(ext) {
+			ext++
+			continue
+		}
+		first := ext
+		for ext+1 <= r.maxSeen && !r.isSeen(ext+1) {
+			ext++
+		}
+		out = append(out, SeqSpan{Stream: r.cfg.Stream, First: first, Last: ext})
+		ext++
+	}
+	return out
+}
+
+// CommittedThrough is the highest extended sequence number already emitted.
+func (r *ReorderBuffer) CommittedThrough() int64 { return r.next - 1 }
 
 // Gaps returns the loss spans recorded so far, sorted by first sequence.
 func (r *ReorderBuffer) Gaps() []SeqSpan {

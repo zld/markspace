@@ -1,0 +1,311 @@
+package transport
+
+import (
+	"encoding/binary"
+	"testing"
+
+	"mediadist/internal/timeline"
+)
+
+// mkPacket builds a minimal valid RTP packet with the given sequence number,
+// timestamp and payload length.
+func mkPacket(stream int, seq uint16, ts uint32, payload int) *Packet {
+	raw := make([]byte, 12+payload)
+	raw[0] = 0x80
+	raw[1] = 96
+	binary.BigEndian.PutUint16(raw[2:4], seq)
+	binary.BigEndian.PutUint32(raw[4:8], ts)
+	binary.BigEndian.PutUint32(raw[8:12], 0xDEADBEEF)
+	for i := 12; i < len(raw); i++ {
+		raw[i] = byte(i)
+	}
+	p, err := Parse(raw, ParseOptions{Stream: stream})
+	if err != nil {
+		panic(err)
+	}
+	return p
+}
+
+func TestParseRejectsShortAndKeepsSequence(t *testing.T) {
+	if _, err := Parse([]byte{0x80, 0x60}, ParseOptions{Stream: 1}); err == nil {
+		t.Fatal("expected short header rejection")
+	}
+	if _, err := Parse(make([]byte, 11), ParseOptions{Stream: 1}); err == nil {
+		t.Fatal("expected 11-byte rejection")
+	}
+	// A 12-byte header with a CSRC count of 15 claims 72 bytes: reject but
+	// still report the sequence number.
+	bad := make([]byte, 12)
+	bad[0] = 0x8F
+	binary.BigEndian.PutUint16(bad[2:4], 4242)
+	p, err := Parse(bad, ParseOptions{Stream: 2})
+	if err == nil {
+		t.Fatal("expected CSRC overflow rejection")
+	}
+	if p.Seq != 4242 {
+		t.Fatalf("sequence %d want 4242", p.Seq)
+	}
+
+	// Padding that claims more bytes than present is recoverable.
+	padded := make([]byte, 16)
+	padded[0] = 0xA0 // P bit
+	padded[1] = 96
+	binary.BigEndian.PutUint16(padded[2:4], 7)
+	padded[15] = 200
+	_, err = Parse(padded, ParseOptions{Stream: 0, Strict: true})
+	if err == nil {
+		t.Fatal("expected padding rejection")
+	}
+}
+
+func TestParseStreamSkipsBadDatagrams(t *testing.T) {
+	var dgs [][]byte
+	for i := 0; i < 5; i++ {
+		dgs = append(dgs, mkPacket(0, uint16(100+i), 0, 8).Raw)
+	}
+	dgs = append(dgs[:2], append([][]byte{{0x00}}, dgs[2:]...)...)
+	res, err := ParseStream(0, dgs, DefaultLimits(), false)
+	if err != nil {
+		t.Fatalf("ParseStream: %v", err)
+	}
+	if len(res.Packets) != 5 {
+		t.Fatalf("accepted %d want 5", len(res.Packets))
+	}
+	if res.Skipped != 1 || len(res.Errors) != 1 {
+		t.Fatalf("skipped %d errors %d", res.Skipped, len(res.Errors))
+	}
+	if res.Errors[0].Stage != "transport" {
+		t.Fatalf("stage %s", res.Errors[0].Stage)
+	}
+}
+
+func TestReorderDedupeAndOrder(t *testing.T) {
+	buf, err := NewReorderBuffer(ReorderConfig{Stream: 0, Window: 4}, DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Arrival order: 1, 3, 2, 2(dup), 4, 5. Window 4 holds back only the
+	// newest 4 sequence numbers, so all of these commit by flush time.
+	var emitted []uint16
+	push := func(seq uint16) {
+		for _, p := range buf.Push(mkPacket(0, seq, uint32(seq)*100, 4)) {
+			emitted = append(emitted, p.Seq)
+		}
+	}
+	push(1)
+	push(3)
+	push(2)
+	push(2)
+	push(4)
+	push(5)
+	for _, p := range buf.Flush() {
+		emitted = append(emitted, p.Seq)
+	}
+	want := []uint16{1, 2, 3, 4, 5}
+	if len(emitted) != len(want) {
+		t.Fatalf("emitted %v want %v", emitted, want)
+	}
+	for i := range want {
+		if emitted[i] != want[i] {
+			t.Fatalf("emitted %v want %v", emitted, want)
+		}
+	}
+	st := buf.Stats()
+	if st.Duplicate != 1 {
+		t.Fatalf("duplicates %d", st.Duplicate)
+	}
+	if st.Reordered != 1 {
+		t.Fatalf("reordered %d", st.Reordered)
+	}
+	if len(buf.Gaps()) != 0 {
+		t.Fatalf("unexpected gaps %v", buf.Gaps())
+	}
+}
+
+func TestReorderLatePacketDoesNotRewriteCommittedFragment(t *testing.T) {
+	buf, _ := NewReorderBuffer(ReorderConfig{Stream: 3, Window: 2}, DefaultLimits())
+	var first []uint16
+	for _, seq := range []uint16{10, 11, 12, 13, 14, 15} {
+		for _, p := range buf.Push(mkPacket(3, seq, uint32(seq), 4)) {
+			first = append(first, p.Seq)
+		}
+	}
+	if len(first) == 0 {
+		t.Fatal("expected some committed packets before flush")
+	}
+	// Sequence 10 is already committed. A late copy must not be emitted.
+	late := buf.Push(mkPacket(3, 10, 10, 4))
+	if len(late) != 0 {
+		t.Fatalf("late packet was emitted: %v", late)
+	}
+	st := buf.Stats()
+	if st.Late != 1 {
+		t.Fatalf("late %d", st.Late)
+	}
+	if errs := buf.Errors(); len(errs) == 0 || errs[len(errs)-1].Code != "late_packet" {
+		t.Fatalf("late packet not recorded: %v", errs)
+	}
+}
+
+func TestReorderGapCommitAndRepairBeforeCommit(t *testing.T) {
+	buf, _ := NewReorderBuffer(ReorderConfig{Stream: 1, Window: 3}, DefaultLimits())
+	rec := NewLossRecorder(1, 16)
+	// 1..6 commit; 7 and 8 are missing; 9 bounds the uncommitted tail. A
+	// three-packet window keeps the tail repairable until flush.
+	var order []uint16
+	for _, seq := range []uint16{1, 2, 3, 4, 5, 6, 9} {
+		for _, p := range buf.Push(mkPacket(1, seq, uint32(seq), 4)) {
+			order = append(order, p.Seq)
+		}
+	}
+	if len(buf.Gaps()) != 0 {
+		t.Fatalf("no committed gaps yet, got %+v", buf.Gaps())
+	}
+	pending := buf.PendingGaps()
+	if len(pending) != 1 || pending[0].First != 7 || pending[0].Last != 8 {
+		t.Fatalf("pending gaps %+v", pending)
+	}
+	rec.Record(pending[0].First, pending[0].Last)
+	if !buf.PendingHole(7) || !buf.PendingHole(8) {
+		t.Fatal("sequences 7 and 8 should still be repairable")
+	}
+	for _, seq := range []uint16{7, 8} {
+		if !rec.Recover(int64(seq)) {
+			t.Fatalf("repair of %d should be accepted before commit", seq)
+		}
+		for _, p := range buf.PushRecovered(mkPacket(1, seq, uint32(seq), 4)) {
+			order = append(order, p.Seq)
+		}
+	}
+	for _, p := range buf.Flush() {
+		order = append(order, p.Seq)
+	}
+	rec.Commit()
+	lost, recovered, pendingN := rec.Counts()
+	if lost != 0 || recovered != 2 || pendingN != 0 {
+		t.Fatalf("lost=%d recovered=%d pending=%d", lost, recovered, pendingN)
+	}
+	if rec.RecoveredBursts() != 1 {
+		t.Fatalf("recovered bursts %d", rec.RecoveredBursts())
+	}
+	// Order must be 1..9 exactly once each.
+	if len(order) != 9 {
+		t.Fatalf("emitted %v", order)
+	}
+	for i, seq := range order {
+		if seq != uint16(i+1) {
+			t.Fatalf("order %v", order)
+		}
+	}
+}
+
+func TestReorderSequenceWrap(t *testing.T) {
+	buf, _ := NewReorderBuffer(ReorderConfig{Stream: 2, Window: 2}, DefaultLimits())
+	var emitted []uint16
+	seqs := []uint16{65533, 65534, 65535, 0, 1, 2}
+	for _, seq := range seqs {
+		for _, p := range buf.Push(mkPacket(2, seq, uint32(seq), 4)) {
+			emitted = append(emitted, p.Seq)
+		}
+	}
+	for _, p := range buf.Flush() {
+		emitted = append(emitted, p.Seq)
+	}
+	if len(emitted) != len(seqs) {
+		t.Fatalf("emitted %v", emitted)
+	}
+	for i := range seqs {
+		if emitted[i] != seqs[i] {
+			t.Fatalf("wrap order %v want %v", emitted, seqs)
+		}
+	}
+	if len(buf.Gaps()) != 0 {
+		t.Fatalf("wrap produced gaps %v", buf.Gaps())
+	}
+}
+
+func TestLossRecorderSplitAndCommit(t *testing.T) {
+	rec := NewLossRecorder(0, 8)
+	rec.Record(10, 14)
+	if !rec.Recover(12) {
+		t.Fatal("interior repair refused")
+	}
+	iv := rec.Intervals()
+	if len(iv) != 2 {
+		t.Fatalf("intervals %+v", iv)
+	}
+	rec.Commit()
+	lost, recovered, pending := rec.Counts()
+	if lost != 4 || recovered != 1 || pending != 0 {
+		t.Fatalf("lost=%d recovered=%d pending=%d", lost, recovered, pending)
+	}
+	if rec.LostBursts() != 2 {
+		t.Fatalf("lost bursts %d", rec.LostBursts())
+	}
+	// A repair after commit must be refused and recorded as late.
+	if rec.Recover(11) {
+		t.Fatal("repair after commit must be refused")
+	}
+	if len(rec.Late()) != 1 {
+		t.Fatalf("late %v", rec.Late())
+	}
+}
+
+func TestLossCommitUpToSplitsInterval(t *testing.T) {
+	rec := NewLossRecorder(0, 8)
+	rec.Record(100, 109)
+	rec.CommitUpTo(104)
+	iv := rec.Intervals()
+	if len(iv) != 2 {
+		t.Fatalf("intervals %+v", iv)
+	}
+	if iv[0].State != LossLost || iv[0].First != 100 || iv[0].Last != 104 {
+		t.Fatalf("committed prefix %+v", iv[0])
+	}
+	if iv[1].State != LossPending || iv[1].First != 105 || iv[1].Last != 109 {
+		t.Fatalf("pending suffix %+v", iv[1])
+	}
+	// The pending suffix is still repairable.
+	if !rec.Recover(107) {
+		t.Fatal("pending suffix should accept repair")
+	}
+	lost, recovered, pending := rec.Counts()
+	if lost != 5 || recovered != 1 || pending != 4 {
+		t.Fatalf("before commit lost=%d recovered=%d pending=%d", lost, recovered, pending)
+	}
+	rec.Commit()
+	lost, recovered, pending = rec.Counts()
+	if lost != 9 || recovered != 1 || pending != 0 {
+		t.Fatalf("after commit lost=%d recovered=%d pending=%d", lost, recovered, pending)
+	}
+}
+
+func TestEstimatorUsesWindowAndNeverTouchesTimestamps(t *testing.T) {
+	clock, err := timeline.NewClock(90000, 32)
+	if err != nil {
+		t.Fatal(err)
+	}
+	est, err := NewEstimator(clock, EstimatorConfig{Window: 1e9, MinSamples: 2, MaxRateBps: 1 << 30})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 90000 ticks == 1 second. Two samples of 1000 bytes one second apart:
+	// 2000 bytes/s == 16000 bits/s.
+	est.Add(0, 1000)
+	est.Add(90000, 1000)
+	rate := est.RateBps(90000)
+	if rate != 16000 {
+		t.Fatalf("rate %d want 16000", rate)
+	}
+	cap := est.BufferBytes(90000, 2e9)
+	if cap != 4000 {
+		t.Fatalf("buffer cap %d want 4000", cap)
+	}
+	reports := AggregateFragments([]FragmentSample{
+		{Segment: 1, Bytes: 500, Tick: 45000},
+		{Segment: 0, Bytes: 500, Tick: 0},
+	}, est, 1e9)
+	if len(reports) != 2 || reports[0].Index != 0 || reports[1].Index != 1 {
+		t.Fatalf("reports %+v", reports)
+	}
+}

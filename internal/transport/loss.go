@@ -12,14 +12,11 @@ import (
 type LossState string
 
 const (
-	// LossPending means the interval has been declared but may still be
-	// repaired before its fragment is committed.
+	// LossPending means the hole is declared but the owning fragment has not
+	// crossed the commit horizon, so a repair can still change the outcome.
 	LossPending LossState = "pending"
-	// LossLost is a committed hole; media inside it is absent from output.
+	// LossLost is a committed hole: media inside it is absent from output.
 	LossLost LossState = "lost"
-	// LossRecovered means a repair packet supplied the missing bytes before
-	// the owning fragment was committed.
-	LossRecovered LossState = "recovered"
 )
 
 // LossInterval is one contiguous burst of missing sequence numbers.
@@ -28,7 +25,7 @@ type LossInterval struct {
 	First  int64     `json:"first"`
 	Last   int64     `json:"last"`
 	State  LossState `json:"state"`
-	// Cause is a short machine-readable reason such as "burst" or "repair".
+	// Cause records how the interval was produced.
 	Cause string `json:"cause"`
 }
 
@@ -40,14 +37,19 @@ func (l LossInterval) Count() int64 {
 	return l.Last - l.First + 1
 }
 
-// LossRecorder accumulates loss intervals, merges adjacent bursts, applies
-// repairs, and records late arrivals that could not be applied.
+// LossRecorder is the single source of truth for missing-sequence evidence.
+// Intervals are disjoint and sorted. Declared holes start pending; they become
+// lost when the commit horizon passes them, unless a repair removes them
+// first. A repair arriving after commit is refused and surfaces as a late
+// packet instead.
 type LossRecorder struct {
-	stream int
-	max    int
-	items  []LossInterval
-	late   []merr.Span
-	errs   []*merr.Error
+	stream    int
+	max       int
+	items     []LossInterval
+	recovered int64 // sequence numbers repaired before commit
+	bursts    int   // fully repaired intervals
+	late      []merr.Span
+	errs      []*merr.Error
 }
 
 // NewLossRecorder returns a recorder bounded to max intervals.
@@ -58,73 +60,71 @@ func NewLossRecorder(stream, max int) *LossRecorder {
 	return &LossRecorder{stream: stream, max: max}
 }
 
-// Record adds an observed gap and declares it pending. Adjacent gaps merge.
+// Record declares a missing range. Touching or overlapping ranges merge, and a
+// merged interval keeps the stricter state: lost dominates pending.
 func (l *LossRecorder) Record(first, last int64) {
 	if last < first {
 		return
 	}
-	idx := l.findOverlapping(first, last)
-	if idx >= 0 {
-		it := &l.items[idx]
-		if it.State == LossRecovered {
-			// A previously repaired interval cannot regress; a new gap that
-			// touches it is a separate interval.
-			idx = -1
-		} else {
-			if first < it.First {
-				it.First = first
+	merged := LossInterval{Stream: l.stream, First: first, Last: last, State: LossPending, Cause: "burst"}
+	var rest []LossInterval
+	for _, it := range l.items {
+		if it.First <= merged.Last+1 && merged.First <= it.Last+1 {
+			if it.First < merged.First {
+				merged.First = it.First
 			}
-			if last > it.Last {
-				it.Last = last
+			if it.Last > merged.Last {
+				merged.Last = it.Last
 			}
-			return
+			if it.State == LossLost {
+				merged.State = LossLost
+			}
+			if it.Cause == "partial_repair" {
+				merged.Cause = "partial_repair"
+			}
+			continue
 		}
+		rest = append(rest, it)
 	}
-	if len(l.items) >= l.max {
+	rest = append(rest, merged)
+	sort.SliceStable(rest, func(i, j int) bool {
+		if rest[i].First != rest[j].First {
+			return rest[i].First < rest[j].First
+		}
+		return rest[i].Last < rest[j].Last
+	})
+	if len(rest) > l.max {
 		if len(l.errs) < l.max {
 			l.errs = append(l.errs, merr.New(merr.StageLoss, "loss_limit",
 				merr.Span{Stream: l.stream, Seq: first, Offset: -1, Length: last - first + 1}, true,
 				"loss interval limit %d reached", l.max))
 		}
-		return
+		rest = rest[:l.max]
 	}
-	l.items = append(l.items, LossInterval{
-		Stream: l.stream, First: first, Last: last, State: LossPending, Cause: "burst",
-	})
-	l.sort()
+	l.items = rest
 }
 
-// findOverlapping returns the index of an interval overlapping or touching
-// [first,last], or -1.
-func (l *LossRecorder) findOverlapping(first, last int64) int {
-	for i := range l.items {
-		if l.items[i].First <= last+1 && first <= l.items[i].Last+1 {
-			return i
-		}
-	}
-	return -1
-}
-
-func (l *LossRecorder) sort() {
-	sort.SliceStable(l.items, func(i, j int) bool {
-		if l.items[i].First != l.items[j].First {
-			return l.items[i].First < l.items[j].First
-		}
-		return l.items[i].Last < l.items[j].Last
-	})
-}
-
-// Recover marks a sequence number as repaired. It splits the interval when the
-// repair is interior, so recovery evidence stays exact.
+// Recover marks seq as supplied by a repair packet. It returns false when the
+// hole is unknown or already committed, in which case the packet is late.
 func (l *LossRecorder) Recover(seq int64) bool {
 	for i := range l.items {
 		it := &l.items[i]
-		if seq < it.First || seq > it.Last || it.State == LossRecovered {
+		if seq < it.First || seq > it.Last {
 			continue
 		}
-		before := LossInterval{Stream: it.Stream, First: it.First, Last: seq - 1, State: LossRecovered, Cause: "repair"}
-		after := LossInterval{Stream: it.Stream, First: seq + 1, Last: it.Last, State: LossRecovered, Cause: "repair"}
-		replacement := make([]LossInterval, 0, 2)
+		if it.State != LossPending {
+			l.RecordLateSeq(seq)
+			return false
+		}
+		l.recovered++
+		if it.Count() == 1 {
+			l.items = append(l.items[:i], l.items[i+1:]...)
+			l.bursts++
+			return true
+		}
+		before := LossInterval{Stream: it.Stream, First: it.First, Last: seq - 1, State: LossPending, Cause: it.Cause}
+		after := LossInterval{Stream: it.Stream, First: seq + 1, Last: it.Last, State: LossPending, Cause: "partial_repair"}
+		var replacement []LossInterval
 		if before.Count() > 0 {
 			replacement = append(replacement, before)
 		}
@@ -132,24 +132,38 @@ func (l *LossRecorder) Recover(seq int64) bool {
 			replacement = append(replacement, after)
 		}
 		l.items = append(l.items[:i], append(replacement, l.items[i+1:]...)...)
-		l.sort()
 		return true
 	}
 	return false
 }
 
-// Commit finalizes every still-pending interval as lost. Call after flush.
-func (l *LossRecorder) Commit() {
-	for i := range l.items {
-		if l.items[i].State == LossPending {
-			l.items[i].State = LossLost
+// CommitUpTo finalizes pending intervals ending at or before seq. Intervals
+// straddling the horizon are split so the committed prefix is exact.
+func (l *LossRecorder) CommitUpTo(seq int64) {
+	var out []LossInterval
+	for _, it := range l.items {
+		if it.State != LossPending || it.First > seq {
+			out = append(out, it)
+			continue
 		}
+		if it.Last <= seq {
+			it.State = LossLost
+			out = append(out, it)
+			continue
+		}
+		out = append(out,
+			LossInterval{Stream: it.Stream, First: it.First, Last: seq, State: LossLost, Cause: it.Cause},
+			LossInterval{Stream: it.Stream, First: seq + 1, Last: it.Last, State: LossPending, Cause: it.Cause},
+		)
 	}
+	l.items = out
 }
 
-// RecordLate records a packet that arrived below the commit watermark. Late
-// arrivals never alter recovered media, only the evidence trail.
-func (l *LossRecorder) RecordLate(seq int64) {
+// Commit finalizes every still-pending interval as lost.
+func (l *LossRecorder) Commit() { l.CommitUpTo(1<<62 - 1) }
+
+// RecordLateSeq records a late sequence without a raw packet sequence.
+func (l *LossRecorder) RecordLateSeq(seq int64) {
 	if len(l.late) < l.max {
 		l.late = append(l.late, merr.Span{Stream: l.stream, Seq: seq, Offset: -1})
 	}
@@ -171,23 +185,21 @@ func (l *LossRecorder) Late() []merr.Span { return append([]merr.Span(nil), l.la
 // Errors returns recoverable loss-side errors.
 func (l *LossRecorder) Errors() []*merr.Error { return append([]*merr.Error(nil), l.errs...) }
 
-// Counts returns (lost sequences, recovered sequences, pending sequences).
+// Counts returns (lost, recovered, pending) sequence counts.
 func (l *LossRecorder) Counts() (lost, recovered, pending int64) {
 	for _, it := range l.items {
 		switch it.State {
 		case LossLost:
 			lost += it.Count()
-		case LossRecovered:
-			recovered += it.Count()
 		case LossPending:
 			pending += it.Count()
 		}
 	}
-	return
+	return lost, l.recovered, pending
 }
 
-// BurstCount counts contiguous loss intervals that are not recovered.
-func (l *LossRecorder) BurstCount() int {
+// LostBursts counts committed loss intervals.
+func (l *LossRecorder) LostBursts() int {
 	n := 0
 	for _, it := range l.items {
 		if it.State == LossLost {
@@ -197,24 +209,13 @@ func (l *LossRecorder) BurstCount() int {
 	return n
 }
 
-// RecoveredBursts counts repaired intervals.
-func (l *LossRecorder) RecoveredBursts() int {
-	n := 0
-	for _, it := range l.items {
-		if it.State == LossRecovered {
-			n++
-		}
-	}
-	return n
-}
+// RecoveredBursts counts intervals fully removed by repair.
+func (l *LossRecorder) RecoveredBursts() int { return l.bursts }
 
 // EstimatorConfig configures the sliding-window bandwidth estimator.
 type EstimatorConfig struct {
-	// Window is the wall-clock span of samples considered.
-	Window time.Duration
-	// MinSamples is the floor below which the estimate is reported as zero.
+	Window     time.Duration
 	MinSamples int
-	// MaxRateBps caps absurd estimates from corrupt input.
 	MaxRateBps int64
 }
 
@@ -228,9 +229,8 @@ type bwSample struct {
 	bytes int64
 }
 
-// Estimator computes a sliding-window bitrate from committed packets. The
-// estimate influences only buffering capacity; it never touches media
-// timestamps.
+// Estimator computes a sliding-window bitrate from committed samples. The
+// estimate influences buffer capacity only; it never touches media timestamps.
 type Estimator struct {
 	cfg     EstimatorConfig
 	clock   *timeline.Clock
@@ -241,7 +241,8 @@ type Estimator struct {
 // NewEstimator validates cfg and binds it to the stream clock.
 func NewEstimator(clock *timeline.Clock, cfg EstimatorConfig) (*Estimator, error) {
 	if clock == nil {
-		return nil, merr.New(merr.StageTransport, "nil_clock", merr.NoSpan(0), false, "estimator needs a clock")
+		return nil, merr.New(merr.StageTransport, "nil_clock", merr.NoSpan(0), false,
+			"estimator needs a clock")
 	}
 	if cfg.Window <= 0 {
 		cfg.Window = DefaultEstimatorConfig().Window
@@ -255,7 +256,7 @@ func NewEstimator(clock *timeline.Clock, cfg EstimatorConfig) (*Estimator, error
 	return &Estimator{cfg: cfg, clock: clock}, nil
 }
 
-// Add records a committed packet at the given absolute tick.
+// Add records a committed sample at the given absolute tick.
 func (e *Estimator) Add(tick int64, size int) {
 	if size < 0 {
 		return
@@ -265,7 +266,6 @@ func (e *Estimator) Add(tick int64, size int) {
 	e.expire(tick)
 }
 
-// expire drops samples older than the window relative to now.
 func (e *Estimator) expire(now int64) {
 	winTicks := e.clock.FromNS(int64(e.cfg.Window))
 	cut := now - winTicks
@@ -279,8 +279,8 @@ func (e *Estimator) expire(now int64) {
 	}
 }
 
-// RateBps returns the estimated bitrate in bits per second. It is exact
-// integer arithmetic: bytes*8 scaled by the sample span.
+// RateBps returns the estimated bitrate in bits per second, using exact
+// integer arithmetic over the observed tick span.
 func (e *Estimator) RateBps(now int64) int64 {
 	if len(e.samples) < e.cfg.MinSamples {
 		return 0
@@ -288,19 +288,10 @@ func (e *Estimator) RateBps(now int64) int64 {
 	first := e.samples[0].tick
 	spanTicks := now - first
 	if spanTicks <= 0 {
-		// All samples share a tick; use the window to avoid divide by zero.
-		spanTicks = e.clock.FromNS(int64(e.cfg.Window))
-	}
-	if spanTicks <= 0 {
 		return 0
 	}
-	// rate = bytes*8 * timescale / spanTicks
-	bitsPerSec, err := timeline.Scale(e.bytes*8, e.clock.Timescale, e.clock.Timescale)
-	if err != nil {
-		return 0
-	}
-	scaled, err := scaleDiv(bitsPerSec, int64(e.clock.Timescale), spanTicks)
-	if err != nil {
+	scaled, ok := safeMulDiv(e.bytes*8, int64(e.clock.Timescale), spanTicks)
+	if !ok {
 		return 0
 	}
 	if scaled > e.cfg.MaxRateBps {
@@ -309,102 +300,94 @@ func (e *Estimator) RateBps(now int64) int64 {
 	return scaled
 }
 
-// scaleDiv computes x*y/d with overflow detection for non-negative operands.
-func scaleDiv(x, y, d int64) (int64, error) {
-	if d <= 0 {
-		return 0, merr.New(merr.StageTransport, "bad_divisor", merr.NoSpan(0), false, "divisor %d", d)
+// safeMulDiv computes x*y/d for non-negative operands, splitting the
+// multiplication when the product would overflow.
+func safeMulDiv(x, y, d int64) (int64, bool) {
+	if x < 0 || y < 0 || d <= 0 {
+		return 0, false
 	}
 	const limit = int64(1) << 62
 	if y != 0 && x > limit/y {
-		// Fall back to a two-step division; the estimator tolerates floor.
 		x /= d
-		return x * y, nil
+		if y != 0 && x > limit/y {
+			return 0, false
+		}
+		return x * y, true
 	}
-	return (x * y) / d, nil
+	return (x * y) / d, true
 }
 
-// BufferBytes converts the current estimate into a byte budget for a given
-// buffering duration. This is the only consumer of the estimate.
+// BufferBytes converts the estimate into a byte budget for holding media.
+// This is the only consumer of the estimate.
 func (e *Estimator) BufferBytes(now int64, hold time.Duration) int64 {
 	rate := e.RateBps(now)
 	if rate <= 0 || hold <= 0 {
 		return 0
 	}
-	return rate / 8 * int64(hold/time.Second)
+	secs := int64(hold / time.Second)
+	if secs <= 0 {
+		secs = 1
+	}
+	return rate / 8 * secs
+}
+
+// FragmentSample is one committed sample's contribution to a segment report.
+type FragmentSample struct {
+	Segment  int
+	Bytes    int64
+	Missing  int64
+	Tick     int64
+	Keyframe bool
 }
 
 // FragmentReport is the per-fragment transport evidence.
 type FragmentReport struct {
-	Index      int   `json:"index"`
-	Packets    int   `json:"packets"`
-	Bytes      int64 `json:"bytes"`
-	Lost       int64 `json:"lost"`
-	RateBps    int64 `json:"rate_bps"`
-	BufferCap  int64 `json:"buffer_cap_bytes"`
-	StartTick  int64 `json:"start_tick"`
-	EndTick    int64 `json:"end_tick"`
+	Index     int   `json:"index"`
+	Samples   int   `json:"samples"`
+	Bytes     int64 `json:"bytes"`
+	Lost      int64 `json:"lost"`
+	Keyframes int   `json:"keyframes"`
+	RateBps   int64 `json:"rate_bps"`
+	BufferCap int64 `json:"buffer_cap_bytes"`
+	StartTick int64 `json:"start_tick"`
+	EndTick   int64 `json:"end_tick"`
 }
 
-// Fragmentize assigns committed packets to fixed tick segments and reports
-// bytes, loss and the estimate observed at the segment end. The estimate only
-// drives BufferCap.
-func Fragmentize(clock *timeline.Clock, packets []*Packet, tickOf func(*Packet) int64,
-	losses []SeqSpan, origin, segmentTicks int64, est *Estimator, hold time.Duration) []FragmentReport {
-	if clock == nil || segmentTicks <= 0 {
-		return nil
-	}
+// AggregateFragments builds per-segment reports from committed samples and the
+// estimator's view at each segment end. Bandwidth affects only BufferCap.
+func AggregateFragments(inputs []FragmentSample, est *Estimator, hold time.Duration) []FragmentReport {
 	bySeg := map[int]*FragmentReport{}
-	var segs []int
-	for _, p := range packets {
-		idx := int(timeline.SegmentIndex(tickOf(p), origin, segmentTicks, timeline.EdgeOwnsRight))
-		rep, ok := bySeg[idx]
+	var order []int
+	for _, in := range inputs {
+		rep, ok := bySeg[in.Segment]
 		if !ok {
-			rep = &FragmentReport{Index: idx}
-			bySeg[idx] = rep
-			segs = append(segs, idx)
+			rep = &FragmentReport{Index: in.Segment, StartTick: in.Tick, EndTick: in.Tick}
+			bySeg[in.Segment] = rep
+			order = append(order, in.Segment)
 		}
-		rep.Packets++
-		rep.Bytes += int64(len(p.Raw))
-		tick := tickOf(p)
-		if rep.StartTick == 0 || tick < rep.StartTick {
-			rep.StartTick = tick
+		rep.Samples++
+		rep.Bytes += in.Bytes
+		rep.Lost += in.Missing
+		if in.Keyframe {
+			rep.Keyframes++
 		}
-		if tick > rep.EndTick {
-			rep.EndTick = tick
+		if in.Tick < rep.StartTick {
+			rep.StartTick = in.Tick
+		}
+		if in.Tick > rep.EndTick {
+			rep.EndTick = in.Tick
 		}
 		if est != nil {
-			est.Add(tick, len(p.Raw))
+			est.Add(in.Tick, int(in.Bytes))
 		}
 	}
-	for _, g := range losses {
-		// Attribute a loss to the segment containing its middle tick when a
-		// timestamp is unavailable: sequence-domain losses are attributed to
-		// the segment owning the previous packet in the same stream.
-		idx := lossSegment(packets, tickOf, g.First, origin, segmentTicks)
-		rep, ok := bySeg[idx]
-		if !ok {
-			continue
-		}
-		rep.Lost += g.Count()
-	}
-	sort.Ints(segs)
-	out := make([]FragmentReport, 0, len(segs))
-	for _, idx := range segs {
+	sort.Ints(order)
+	out := make([]FragmentReport, 0, len(order))
+	for _, idx := range order {
 		rep := bySeg[idx]
 		rep.RateBps = est.RateBps(rep.EndTick)
 		rep.BufferCap = est.BufferBytes(rep.EndTick, hold)
 		out = append(out, *rep)
 	}
 	return out
-}
-
-// lossSegment locates the segment of the packet immediately preceding a gap.
-func lossSegment(packets []*Packet, tickOf func(*Packet) int64, first int64,
-	origin, segmentTicks int64) int {
-	for i := len(packets) - 1; i >= 0; i-- {
-		if int64(packets[i].Seq) < first {
-			return int(timeline.SegmentIndex(tickOf(packets[i]), origin, segmentTicks, timeline.EdgeOwnsRight))
-		}
-	}
-	return 0
 }
