@@ -85,6 +85,19 @@ func (r Recovery) Recover(tr *TrackScan) (*TrackRecovery, error) {
 	if tr.IndexComplete && len(tr.Sizes) > 0 {
 		out.IndexSource = "tables"
 		locateFromTables(out, tr, size)
+		// One bad sample is a warning; a mostly unreadable table means the
+		// tables cannot be trusted and the records must be re-proven instead.
+		if invalidRatio(out) > 0.25 {
+			repaired := &TrackRecovery{TrackID: tr.ID, Timescale: out.Timescale, Format: tr.Format,
+				IndexSource: "rescan"}
+			if rerr := rescan(f, size, repaired, r.Limits, r.Scan, tr); rerr == nil &&
+				invalidRatio(repaired) < invalidRatio(out) {
+				repaired.Warnings = append(repaired.Warnings, out.Warnings...)
+				repaired.Warnings = append(repaired.Warnings, core.New(core.CodeTableTruncated,
+					core.StageRecover, true, "sample tables distrusted; index rebuilt from verified records"))
+				out = repaired
+			}
+		}
 	} else {
 		out.IndexSource = "rescan"
 		if err := rescan(f, size, out, r.Limits, r.Scan, tr); err != nil {
@@ -101,6 +114,20 @@ func (r Recovery) Recover(tr *TrackScan) (*TrackRecovery, error) {
 			"no contiguous valid prefix").WithTrack(tr.ID, 0)
 	}
 	return out, nil
+}
+
+// invalidRatio is the fraction of located samples that failed validation.
+func invalidRatio(out *TrackRecovery) float64 {
+	if len(out.Samples) == 0 {
+		return 1
+	}
+	bad := 0
+	for _, s := range out.Samples {
+		if !s.Decoded {
+			bad++
+		}
+	}
+	return float64(bad) / float64(len(out.Samples))
 }
 
 // recoverWithoutTrack handles moov-less input. Format facts come from the
