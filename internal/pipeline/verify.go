@@ -57,6 +57,9 @@ type FaultResult struct {
 	Category     media.Category
 	Recovered    int
 	RecoveryRate float64
+	// CountsDetail is the per-case error count keyed by category, so several
+	// diagnostics from one case remain visible.
+	CountsDetail map[media.Category]int
 	Replay       string // human description of replayed intervals
 	ReplaySpans  []string
 	Detail       string
@@ -87,6 +90,12 @@ func Verify(seed int64, kinds []FaultKind) (*VerifyReport, error) {
 	rep := &VerifyReport{Seed: seed}
 	for _, kind := range kinds {
 		res := verifyOne(seed, kind)
+		if res.CountsDetail == nil {
+			res.CountsDetail = make(map[media.Category]int)
+			if res.Detected > 0 && res.Category != "" {
+				res.CountsDetail[res.Category] = res.Detected
+			}
+		}
 		rep.Results = append(rep.Results, res)
 	}
 	return rep, nil
@@ -111,11 +120,20 @@ func (r *VerifyReport) Lines() []string {
 func (r *VerifyReport) FaultCounts() map[media.Category]int {
 	counts := make(map[media.Category]int)
 	for _, res := range r.Results {
-		if res.Detected > 0 && res.Category != "" {
-			counts[res.Category] += res.Detected
+		for cat, n := range res.CountsDetail {
+			counts[cat] += n
 		}
 	}
 	return counts
+}
+
+// KindCounts maps each case to its primary error count for the terminal.
+func (r *VerifyReport) KindCounts() map[FaultKind]int {
+	out := make(map[FaultKind]int, len(r.Results))
+	for _, res := range r.Results {
+		out[res.Kind] = res.Detected
+	}
+	return out
 }
 
 // ReplaySpans collects every replayed interval across cases.

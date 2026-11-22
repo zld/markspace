@@ -5,6 +5,7 @@ package pipeline
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -342,19 +343,26 @@ func Run(opts Options) (*Result, error) {
 		return nil, err
 	}
 
+	decisions := []checkpoint.Decision{
+		{Stage: "align", Action: string(media.StrategyRecompute),
+			Detail: "shared keyframe alignment", Count: len(in.Plan.Boundaries)},
+		{Stage: "rtp", Action: string(media.StrategyReorder),
+			Detail: "reordered packets", Count: net.receiver.Stats().Reordered},
+		{Stage: "rtp", Action: string(media.StrategyDeduplicate),
+			Category: string(media.DuplicatePacket), Detail: "duplicate packets",
+			Count: net.receiver.Stats().Duplicates},
+		{Stage: "rtp", Action: string(media.StrategySkip),
+			Category: string(media.UnrecoverableGap), Detail: "unrecoverable gaps",
+			Count: net.receiver.Stats().Lost},
+		{Stage: "timeline", Action: string(media.StrategyRecompute),
+			Category: string(media.LateEvent), Detail: "late event replay",
+			Count: len(tl.LateRecords())},
+	}
 	record, err := checkpoint.NewProvenance(
 		fmt.Sprintf("seed-%d", opts.Seed), "segment",
 		in.SourceSHA256, in.SourceBytes,
 		checkpoint.TimeRange{StartNanos: 0, EndNanos: int64(opts.Duration), Timescale: 1000},
-		[]checkpoint.Decision{
-			{Stage: "align", Action: string(media.StrategyRecompute),
-				Detail: "shared keyframe alignment", Count: len(in.Plan.Boundaries)},
-			{Stage: "rtp", Action: string(media.StrategyReorder),
-				Detail: "reordered packets", Count: net.receiver.Stats().Reordered},
-			{Stage: "timeline", Action: string(media.StrategyRecompute),
-				Detail: "late event replay", Count: len(tl.LateRecords())},
-		},
-		in.ManifestJS, pass2.keys,
+		decisions, in.ManifestJS, pass2.keys,
 	)
 	if err != nil {
 		return nil, err
@@ -362,6 +370,25 @@ func Run(opts Options) (*Result, error) {
 	recordHash, err := record.Hash()
 	if err != nil {
 		return nil, err
+	}
+	// Persist the provenance record next to the checkpoint so a later process
+	// can explain the output without re-running anything.
+	recordJSON, err := json.MarshalIndent(record, "", "  ")
+	if err != nil {
+		return nil, media.WrapError(media.InvalidInput, err, "encoding provenance")
+	}
+	if _, err := store.WriteManifest("provenance.json", recordJSON); err != nil {
+		return nil, err
+	}
+	// Cross-stage invariants are checked before the result is reported.
+	var violations []Violation
+	violations = append(violations, CheckInput(in)...)
+	violations = append(violations, CheckState(store, finalState, in)...)
+	violations = append(violations, CheckTimeline(tl, replay)...)
+	violations = append(violations, CheckProvenance([]checkpoint.ProvenanceRecord{record})...)
+	SortViolations(violations)
+	if len(violations) > 0 {
+		return nil, violations[0]
 	}
 	res := &Result{
 		AVSyncMaxMS:        media.Millis(in.AVSyncMax),

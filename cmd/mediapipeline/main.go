@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -188,8 +189,17 @@ func runVerify(args []string) int {
 		fmt.Println(line)
 	}
 	counts := report.FaultCounts()
+	cats := make([]string, 0, len(counts))
+	for c := range counts {
+		cats = append(cats, string(c))
+	}
+	sort.Strings(cats)
+	for _, c := range cats {
+		fmt.Printf("error_count[%s]=%d\n", c, counts[media.Category(c)])
+	}
+	kindCounts := report.KindCounts()
 	for _, k := range pipeline.AllFaults() {
-		if c, ok := counts[media.Category(k)]; ok {
+		if c, ok := kindCounts[k]; ok {
 			fmt.Printf("fault_count[%s]=%d\n", k, c)
 		}
 	}
