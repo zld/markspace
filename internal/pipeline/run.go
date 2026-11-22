@@ -124,7 +124,14 @@ func (r *Runner) Run(names []string) (*Output, error) {
 	}
 	out.InputDigest = inputDigest
 	out.ParamsDigest = paramsDigest
+	// The summary checksum covers the whole report body, so it is computed
+	// here from the same record stream the writer emits.
 	out.Summary = summarize(out)
+	digest, err := ComputeReportChecksum(out, r.Params)
+	if err != nil {
+		return nil, err
+	}
+	out.Summary.SHA256 = digest
 	out.Damaged = out.Summary.CorruptRanges > 0 || out.Summary.Issues > 0
 	if !out.Damaged {
 		return out, nil
@@ -236,7 +243,6 @@ func summarize(out *Output) Summary {
 		s.InvariantsFailed = out.Validate.Result.Failed
 	}
 	s.OffsetErrorBytes = offsetError(out)
-	s.SHA256 = reportDigest(out)
 	return s
 }
 
@@ -253,14 +259,6 @@ func offsetError(out *Output) int64 {
 		total += d
 	}
 	return total
-}
-
-// reportDigest hashes the committed stage digests in fixed stage order. It
-// excludes wall-clock data and iteration order, so identical inputs and
-// parameters always produce the same checksum. verify recomputes it from the
-// stage lines alone.
-func reportDigest(out *Output) string {
-	return summaryChecksum(out.Stages)
 }
 
 // ValidateOutput re-runs the invariant stage over an already completed output.

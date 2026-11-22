@@ -162,6 +162,9 @@ type Output struct {
 	// harness can score localization accuracy.
 	InputDigest  string
 	ParamsDigest string
+	// ReportBody is the canonical serialization of everything the checksum
+	// covers: assets and every stage output except the summary itself.
+	ReportBody   []byte
 	OffsetChecks []OffsetCheck
 	// cache carries typed parse results between stages. It is never encoded
 	// into a checkpoint or a report.

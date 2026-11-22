@@ -101,8 +101,15 @@ func (r Rational) String() string {
 	return strconv.FormatInt(r.Num, 10) + "/" + strconv.FormatInt(r.Den, 10)
 }
 
-// MarshalText encodes the rational as "num/den"; JSON therefore stores a string.
-func (r Rational) MarshalText() ([]byte, error) { return []byte(r.String()), nil }
+// MarshalText encodes the rational as "num/den"; JSON therefore stores a
+// string. A value that never went through Rat (for example a zero-value struct
+// field in generated code) still marshals canonically as "0/1".
+func (r Rational) MarshalText() ([]byte, error) {
+	if r.Den == 0 {
+		r = Zero()
+	}
+	return []byte(r.String()), nil
+}
 
 // UnmarshalText decodes "num/den".
 func (r *Rational) UnmarshalText(text []byte) error {

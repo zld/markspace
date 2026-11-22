@@ -172,133 +172,28 @@ type SummaryRecord struct {
 // WriteJSONL renders an output as canonical JSON Lines. The record order is
 // fixed and each line is canonical JSON, so identical runs are byte-identical.
 func WriteJSONL(w io.Writer, out *Output, params Parameters, inputDigest, paramsDigest string) error {
+	body, err := bodyRecords(out)
+	if err != nil {
+		return err
+	}
 	bw := bufio.NewWriter(w)
 	enc := json.NewEncoder(bw)
 	enc.SetEscapeHTML(false)
-	defer bw.Flush()
-	emit := func(rec Record) error { return enc.Encode(rec) }
-
-	if err := emit(Record{Kind: KindHeader, Version: 1, Run: &RunRecord{
+	header := Record{Kind: KindHeader, Version: 1, Run: &RunRecord{
 		Seed: params.Seed, ClockRate: params.ClockRate, MasterTrack: params.MasterTrack,
 		InputDigest: inputDigest, ParamsDigest: paramsDigest,
 		Resumed: len(out.Resumed) > 0, ReusedStages: append([]string(nil), out.Resumed...),
-	}}); err != nil {
+	}}
+	if err := enc.Encode(header); err != nil {
 		return err
 	}
-	for i := range out.Assets {
-		a := out.Assets[i]
-		if err := emit(Record{Kind: KindAsset, Asset: &AssetRecord{Name: a.Name, Format: a.Format, Size: a.Size, Digest: a.Digest}}); err != nil {
+	for _, rec := range body {
+		if err := enc.Encode(rec); err != nil {
 			return err
-		}
-	}
-	if out.Ingest != nil {
-		for i := range out.Ingest.Cues {
-			c := out.Ingest.Cues[i]
-			if err := emit(Record{Kind: KindCue, Cue: &c}); err != nil {
-				return err
-			}
-		}
-		for i := range out.Ingest.RTP {
-			r := out.Ingest.RTP[i]
-			if err := emit(Record{Kind: KindRTP, RTP: &r}); err != nil {
-				return err
-			}
-		}
-		for i := range out.Ingest.Timecodes {
-			t := out.Ingest.Timecodes[i]
-			if err := emit(Record{Kind: KindTimecode, Timecode: &t}); err != nil {
-				return err
-			}
-		}
-		for i := range out.Ingest.Drifts {
-			d := out.Ingest.Drifts[i]
-			if err := emit(Record{Kind: KindDrift, Drift: &d}); err != nil {
-				return err
-			}
-		}
-	}
-	if out.Normalize != nil {
-		for i := range out.Normalize.Points {
-			p := out.Normalize.Points[i]
-			if err := emit(Record{Kind: KindPoint, Point: &PointRecord{
-				Track: p.Track, Kind: string(p.Kind), Native: p.Native, Master: p.Master,
-				Wrapped: p.Wrapped, Clamped: p.Clamped, Span: p.Span,
-			}}); err != nil {
-				return err
-			}
-		}
-	}
-	if out.Index != nil {
-		for i := range out.Index.Indexes {
-			idx := &out.Index.Indexes[i]
-			tr := &TrackRecord{
-				Asset: idx.Asset, TrackID: idx.TrackID, Timescale: idx.Timescale,
-				FrameCount: idx.FrameCount, Keyframes: len(idx.Keyframes),
-				Trusted: idx.Trusted, Untrusted: idx.Untrusted,
-				MinGap: idx.MinGap, MaxGap: idx.MaxGap, MeanGap: idx.MeanGap, VFR: idx.VFR,
-			}
-			if err := emit(Record{Kind: KindTrack, Track: tr}); err != nil {
-				return err
-			}
-			for _, kf := range idx.Keyframes {
-				k := &KeyframeRecord{
-					Asset: idx.Asset, TrackID: idx.TrackID, Timescale: idx.Timescale,
-					Frame: kf.Number, DTS: kf.DTS, Gap: kf.Gap, GapTicks: kf.GapTicks,
-					Offset: kf.Offset, Span: kf.Span, Trusted: kf.Trusted,
-				}
-				if err := emit(Record{Kind: KindKeyframe, Keyframe: k}); err != nil {
-					return err
-				}
-			}
-		}
-	}
-	if out.Diagnose != nil {
-		for i := range out.Diagnose.Ranges {
-			r := out.Diagnose.Ranges[i]
-			if err := emit(Record{Kind: KindRange, Range: &RangeRecord{
-				Asset: r.Asset, Format: r.Format, Span: r.Span, Categories: r.Categories,
-				Stages: r.Stages, Issues: r.Issues, Recoverable: r.Recoverable,
-			}}); err != nil {
-				return err
-			}
-		}
-		for _, is := range out.Diagnose.Issues {
-			if err := emit(Record{Kind: KindIssue, Issue: &IssueRecord{
-				Category: string(is.Category), Stage: string(is.Stage), Format: is.Format,
-				Asset: is.Asset, Span: is.Span, Detail: is.Detail,
-				Recoverable: is.Recoverable, Node: is.Node,
-			}}); err != nil {
-				return err
-			}
-		}
-	}
-	if out.Validate != nil {
-		for i := range out.Validate.Gates {
-			g := out.Validate.Gates[i]
-			if err := emit(Record{Kind: KindGate, Gate: &g}); err != nil {
-				return err
-			}
-		}
-	}
-	for _, st := range out.Stages {
-		if err := emit(Record{Kind: KindStage, Stage: &StageRecordOut{
-			Name: st.Name, Digest: st.Digest, RecordsThrough: st.RecordsThrough,
-		}}); err != nil {
-			return err
-		}
-	}
-	if out.Validate != nil {
-		for _, c := range out.Validate.Result.Checks {
-			if err := emit(Record{Kind: KindInvariant, Invariant: &InvariantRecord{
-				Name: c.Name, Passed: c.Passed, Detail: c.Detail,
-				Stage: string(c.Stage), Asset: c.Asset, Span: c.Span,
-			}}); err != nil {
-				return err
-			}
 		}
 	}
 	s := out.Summary
-	if err := emit(Record{Kind: KindSummary, Summary: &SummaryRecord{
+	if err := enc.Encode(Record{Kind: KindSummary, Summary: &SummaryRecord{
 		Cues: s.Cues, Frames: s.Frames, KeyframeGaps: s.KeyframeGaps,
 		CorruptRanges: s.CorruptRanges, OffsetErrorBytes: s.OffsetErrorBytes,
 		Issues: s.Issues, InvariantsFailed: s.InvariantsFailed, SHA256: s.SHA256,
@@ -306,6 +201,124 @@ func WriteJSONL(w io.Writer, out *Output, params Parameters, inputDigest, params
 		return err
 	}
 	return bw.Flush()
+}
+
+// bodyRecords renders every record covered by the report checksum, in the
+// fixed order the report uses. The run header is deliberately excluded: it
+// records provenance (which stages were resumed) rather than analysis output,
+// so a resumed run must checksum identically to a full run.
+func bodyRecords(out *Output) ([]Record, error) {
+	var recs []Record
+	for i := range out.Assets {
+		a := out.Assets[i]
+		recs = append(recs, Record{Kind: KindAsset, Asset: &AssetRecord{Name: a.Name, Format: a.Format, Size: a.Size, Digest: a.Digest}})
+	}
+	if out.Ingest != nil {
+		for i := range out.Ingest.Cues {
+			c := out.Ingest.Cues[i]
+			recs = append(recs, Record{Kind: KindCue, Cue: &c})
+		}
+		for i := range out.Ingest.RTP {
+			r := out.Ingest.RTP[i]
+			recs = append(recs, Record{Kind: KindRTP, RTP: &r})
+		}
+		for i := range out.Ingest.Timecodes {
+			t := out.Ingest.Timecodes[i]
+			recs = append(recs, Record{Kind: KindTimecode, Timecode: &t})
+		}
+		for i := range out.Ingest.Drifts {
+			d := out.Ingest.Drifts[i]
+			recs = append(recs, Record{Kind: KindDrift, Drift: &d})
+		}
+	}
+	if out.Normalize != nil {
+		for i := range out.Normalize.Points {
+			p := out.Normalize.Points[i]
+			recs = append(recs, Record{Kind: KindPoint, Point: &PointRecord{
+				Track: p.Track, Kind: string(p.Kind), Native: p.Native, Master: p.Master,
+				Wrapped: p.Wrapped, Clamped: p.Clamped, Span: p.Span,
+			}})
+		}
+	}
+	if out.Index != nil {
+		for i := range out.Index.Indexes {
+			idx := &out.Index.Indexes[i]
+			recs = append(recs, Record{Kind: KindTrack, Track: &TrackRecord{
+				Asset: idx.Asset, TrackID: idx.TrackID, Timescale: idx.Timescale,
+				FrameCount: idx.FrameCount, Keyframes: len(idx.Keyframes),
+				Trusted: idx.Trusted, Untrusted: idx.Untrusted,
+				MinGap: idx.MinGap, MaxGap: idx.MaxGap, MeanGap: idx.MeanGap, VFR: idx.VFR,
+			}})
+			for _, kf := range idx.Keyframes {
+				recs = append(recs, Record{Kind: KindKeyframe, Keyframe: &KeyframeRecord{
+					Asset: idx.Asset, TrackID: idx.TrackID, Timescale: idx.Timescale,
+					Frame: kf.Number, DTS: kf.DTS, Gap: kf.Gap, GapTicks: kf.GapTicks,
+					Offset: kf.Offset, Span: kf.Span, Trusted: kf.Trusted,
+				}})
+			}
+		}
+	}
+	if out.Diagnose != nil {
+		for i := range out.Diagnose.Ranges {
+			r := out.Diagnose.Ranges[i]
+			recs = append(recs, Record{Kind: KindRange, Range: &RangeRecord{
+				Asset: r.Asset, Format: r.Format, Span: r.Span, Categories: r.Categories,
+				Stages: r.Stages, Issues: r.Issues, Recoverable: r.Recoverable,
+			}})
+		}
+		for _, is := range out.Diagnose.Issues {
+			recs = append(recs, Record{Kind: KindIssue, Issue: &IssueRecord{
+				Category: string(is.Category), Stage: string(is.Stage), Format: is.Format,
+				Asset: is.Asset, Span: is.Span, Detail: is.Detail,
+				Recoverable: is.Recoverable, Node: is.Node,
+			}})
+		}
+	}
+	if out.Validate != nil {
+		for i := range out.Validate.Gates {
+			g := out.Validate.Gates[i]
+			recs = append(recs, Record{Kind: KindGate, Gate: &g})
+		}
+	}
+	for _, st := range out.Stages {
+		recs = append(recs, Record{Kind: KindStage, Stage: &StageRecordOut{
+			Name: st.Name, Digest: st.Digest, RecordsThrough: st.RecordsThrough,
+		}})
+	}
+	if out.Validate != nil {
+		for _, c := range out.Validate.Result.Checks {
+			recs = append(recs, Record{Kind: KindInvariant, Invariant: &InvariantRecord{
+				Name: c.Name, Passed: c.Passed, Detail: c.Detail,
+				Stage: string(c.Stage), Asset: c.Asset, Span: c.Span,
+			}})
+		}
+	}
+	return recs, nil
+}
+
+// ComputeReportChecksum hashes the canonical body records. The summary is not
+// part of the digest it carries, and the run header is excluded so a resumed
+// run checksums identically to a full one.
+func ComputeReportChecksum(out *Output, _ Parameters) (string, error) {
+	recs, err := bodyRecords(out)
+	if err != nil {
+		return "", err
+	}
+	return bodyDigest(recs)
+}
+
+// bodyDigest hashes each canonical body record. Records are hashed as full
+// JSON lines so verify can recompute the digest from the report text alone.
+func bodyDigest(recs []Record) (string, error) {
+	parts := make([][]byte, 0, len(recs))
+	for _, rec := range recs {
+		data, err := core.CanonicalJSON(rec)
+		if err != nil {
+			return "", err
+		}
+		parts = append(parts, data)
+	}
+	return core.HashParts(parts...), nil
 }
 
 // WriteReport writes the JSONL report atomically to path.
@@ -349,10 +362,15 @@ type ParsedReport struct {
 	Invariants  []InvariantRecord
 	Summary     SummaryRecord
 	Records     int
+	// Body holds the canonical form of every checksum-covered record, in
+	// report order, so the digest can be recomputed without trusting the
+	// stored value.
+	Body []Record
 }
 
 // ParseReport reads a JSON Lines report, rejecting unknown fields and any
-// record that is not structurally valid.
+// record that is not structurally valid. Every body record is retained
+// verbatim so the checksum can be recomputed from the report text alone.
 func ParseReport(r io.Reader) (*ParsedReport, error) {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 64*1024), 8<<20)
@@ -369,6 +387,9 @@ func ParseReport(r io.Reader) (*ParsedReport, error) {
 			return nil, fmt.Errorf("pipeline: report line %d: %w", out.Records+1, err)
 		}
 		out.Records++
+		if rec.Kind != KindHeader && rec.Kind != KindSummary {
+			out.Body = append(out.Body, rec)
+		}
 		switch rec.Kind {
 		case KindHeader:
 			if rec.Run == nil || rec.Version != 1 {
@@ -508,7 +529,10 @@ func VerifyReport(p *ParsedReport) (*validate.Result, string, bool) {
 	res := validate.All(in)
 	// A failed per-stage gate is also a verification failure even if the
 	// cross-stage checks happen to pass.
-	digest := checksumFromStages(p.Stages)
+	digest, err := bodyDigest(p.Body)
+	if err != nil {
+		digest = "error"
+	}
 	ok := digest == p.Summary.SHA256 && p.GatesFailed == 0
 	return res, digest, ok
 }
@@ -531,9 +555,17 @@ func checksumFromStages(stages []StageRecordOut) string {
 	return core.HashParts(parts...)
 }
 
-// Resummarize recomputes the summary after a caller adds ground-truth offset
-// checks. It keeps the counters and the stage-derived checksum consistent.
-func Resummarize(out *Output) Summary { return summarize(out) }
+// Resummarize recomputes the summary and its checksum after a caller adds
+// ground-truth offset checks, so the counters and the report digest stay
+// consistent with what WriteJSONL will emit.
+func Resummarize(out *Output) Summary {
+	s := summarize(out)
+	if digest, err := ComputeReportChecksum(out, Parameters{}); err == nil {
+		s.SHA256 = digest
+	}
+	out.Summary = s
+	return s
+}
 
 // InputDigestOf returns the run input digest, or "" for an incomplete run.
 func InputDigestOf(out *Output) string { return out.InputDigest }

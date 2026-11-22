@@ -409,7 +409,6 @@ func sortedKeys(m map[string]string) []string {
 func (r *Runner) runIndex(assets []*ingest.Asset, out *Output, cache *parseCache) error {
 	st := &IndexStage{}
 	damage := damageSpans(out)
-	var refs []validate.IndexRef
 	for _, a := range assets {
 		f, ok := cache.mp4[a.Name]
 		if !ok {
@@ -435,7 +434,6 @@ func (r *Runner) runIndex(assets []*ingest.Asset, out *Output, cache *parseCache
 		}
 		return st.Indexes[i].TrackID < st.Indexes[j].TrackID
 	})
-	_ = refs
 	st.Issues.Sort()
 	out.Index = st
 	return nil
