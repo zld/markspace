@@ -8,56 +8,43 @@ import (
 	"github.com/pion/rtp"
 
 	"mediaarchive/internal/diag"
-	"mediaarchive/internal/fixtures"
 )
 
-func writeTempMP4(t *testing.T, spec fixtures.MP4Spec) string {
-	t.Helper()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "clip.mp4")
-	if err := fixtures.WriteFile(path, fixtures.BuildMP4(spec)); err != nil {
-		t.Fatal(err)
-	}
-	return path
-}
-
 func TestAnalyzeMP4SampleTableAndKeyframes(t *testing.T) {
-	spec := fixtures.MP4Spec{Timescale: 90000}
-	for i := 0; i < 120; i++ {
-		spec.Samples = append(spec.Samples, fixtures.MP4Sample{Size: 512, Delta: 3003, IsSync: i%24 == 0})
-	}
-	a, err := AnalyzeMP4(writeTempMP4(t, spec))
+	a, err := AnalyzeMP4(writeMinimal(t))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(a.Faults) != 0 {
 		t.Fatalf("faults: %v", a.Faults)
 	}
-	if a.Video == nil || len(a.Video.Samples) != 120 {
+	if a.Video == nil || len(a.Video.Samples) != 5 {
 		t.Fatalf("video samples = %+v", a.Video)
 	}
-	if got := a.Video.Samples[10].Offset; got == 0 {
+	if got := a.Video.Samples[0].Offset; got == 0 {
 		t.Fatal("chunk offset expansion failed")
 	}
 	gap := a.Video.MaxKeyframeGapMs()
-	if gap < 799 || gap > 802 {
+	if gap < 60 || gap > 70 {
 		t.Fatalf("keyframe gap = %v ms", gap)
 	}
-	if a.Video.SyncSamples[1] != 25 {
-		t.Fatalf("sync sample list = %v", a.Video.SyncSamples[:3])
+	if a.Video.SyncSamples[1] != 3 {
+		t.Fatalf("sync sample list = %v", a.Video.SyncSamples)
 	}
 }
 
+func writeMinimal(t *testing.T) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "min.mp4")
+	writeTestFile(t, p, minimalMP4(t))
+	return p
+}
+
 func TestAnalyzeMP4TruncatedTail(t *testing.T) {
-	spec := fixtures.MP4Spec{Timescale: 90000}
-	for i := 0; i < 60; i++ {
-		spec.Samples = append(spec.Samples, fixtures.MP4Sample{Size: 2048, Delta: 3000, IsSync: i%15 == 0})
-	}
-	data := fixtures.BuildMP4(spec)
-	// Cut inside the last mdat chunk, which must surface as a truncated mdat.
-	cut := data[:len(data)-int(2048*10)]
-	dir := t.TempDir()
-	path := filepath.Join(dir, "cut.mp4")
+	data := minimalMP4(t)
+	// Cut into the mdat payload, which must surface as a truncated mdat.
+	cut := data[:len(data)-200]
+	path := filepath.Join(t.TempDir(), "cut.mp4")
 	if err := os.WriteFile(path, cut, 0o644); err != nil {
 		t.Fatal(err)
 	}

@@ -43,12 +43,10 @@ func TestMP4NotAnMP4(t *testing.T) {
 }
 
 func TestMP4TruncatedStblFaultOffset(t *testing.T) {
-	dir := t.TempDir()
-	spec := minimalSpec()
-	data := buildSpecMP4(t, spec)
+	data := minimalMP4(t)
 	// Cut the moov in half so the sample table itself is incomplete.
 	cut := data[:len(data)/2]
-	p := filepath.Join(dir, "half.mp4")
+	p := filepath.Join(t.TempDir(), "half.mp4")
 	if err := os.WriteFile(p, cut, 0o644); err != nil {
 		t.Fatal(err)
 	}

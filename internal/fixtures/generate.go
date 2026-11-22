@@ -1,10 +1,14 @@
 package fixtures
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
+
+	"github.com/pion/rtp"
+
+	"mediaarchive/internal/stream"
 )
 
 // Asset is one generated fixture asset: any combination of MP4, subtitle and
@@ -232,63 +236,70 @@ func genTruncated(dir string) (Asset, error) {
 }
 
 func genRTPWrap(dir string) (Asset, error) {
-	var b strings.Builder
-	b.WriteString("# rtp wrap fixture: sequence and 32-bit timestamp both wrap\n")
+	var pkts []*rtp.Packet
 	for i := 0; i < 1000; i++ {
-		seq := (65500 + i) & 0xFFFF
-		ts := uint32(0xFFFF0000 + uint32(i)*3000)
-		fmt.Fprintf(&b, "%d %d 4242 96\n", seq, ts)
+		pkts = append(pkts, &rtp.Packet{
+			Header: rtp.Header{
+				Version: 2, PayloadType: 96, SequenceNumber: uint16(65500 + i),
+				Timestamp: 0xFFFF0000 + uint32(i)*3000, SSRC: 4242,
+			},
+			Payload: []byte{0x10},
+		})
 	}
-	path, err := writeSetFile(dir, "wrap.rtp", []byte(b.String()))
-	if err != nil {
+	path := filepath.Join(dir, "wrap.rtp")
+	if err := writeCapture(path, pkts); err != nil {
 		return Asset{}, err
 	}
 	return Asset{Name: "rtp_wrap", RTP: path, Tag: "wrap"}, nil
 }
 
-func genRTPLossy(dir string) (Asset, error) {
-	var b strings.Builder
-	b.WriteString("# rtp lossy fixture: gaps, late fills, duplicate, reorder, timestamp jump\n")
-	next := func(i int) (uint16, uint32) {
-		base := uint16(1000)
-		seq := base + uint16(i)
-		ts := uint32(9_000_000 + i*3000)
-		return seq, ts
+func writeCapture(path string, pkts []*rtp.Packet) error {
+	var b bytes.Buffer
+	if err := stream.WriteRTPCapture(&b, pkts); err != nil {
+		return err
 	}
+	return WriteFile(path, b.Bytes())
+}
+
+func genRTPLossy(dir string) (Asset, error) {
+	next := func(i int) *rtp.Packet {
+		return &rtp.Packet{
+			Header: rtp.Header{
+				Version: 2, PayloadType: 96, SequenceNumber: uint16(1000 + i),
+				Timestamp: 9_000_000 + uint32(i)*3000, SSRC: 4242,
+			},
+			Payload: []byte{0x10},
+		}
+	}
+	var pkts []*rtp.Packet
 	jump := false
 	for i := 0; i < 1200; i++ {
 		if i >= 900 && !jump {
 			jump = true
-			// Emit a burst that advances media time by 500 ms at once.
-			seq, ts := next(i)
-			fmt.Fprintf(&b, "%d %d 4242 96\n", seq, ts+90000*5)
-			continue
 		}
 		switch {
 		case i >= 100 && i <= 104, i >= 400 && i <= 401:
 			continue // packet loss
 		case i == 600:
-			seq, ts := next(i)
-			fmt.Fprintf(&b, "%d %d 4242 96\n", seq, ts)
-			fmt.Fprintf(&b, "%d %d 4242 96\n", seq, ts) // duplicate
+			p := next(i)
+			pkts = append(pkts, p, p) // duplicate
 			continue
 		case i == 700:
-			seq, ts := next(701)
-			fmt.Fprintf(&b, "%d %d 4242 96\n", seq, ts) // reorder pair
+			pkts = append(pkts, next(701)) // reorder pair
 			continue
 		case i == 701:
-			seq, ts := next(700)
-			fmt.Fprintf(&b, "%d %d 4242 96\n", seq, ts)
+			pkts = append(pkts, next(700))
 			continue
 		}
-		seq, ts := next(i)
+		p := next(i)
 		if jump {
-			ts += 90000 * 5
+			// A 5 s forward burst, far beyond any plausible frame interval.
+			p.Timestamp += 90000 * 5
 		}
-		fmt.Fprintf(&b, "%d %d 4242 96\n", seq, ts)
+		pkts = append(pkts, p)
 	}
-	path, err := writeSetFile(dir, "lossy.rtp", []byte(b.String()))
-	if err != nil {
+	path := filepath.Join(dir, "lossy.rtp")
+	if err := writeCapture(path, pkts); err != nil {
 		return Asset{}, err
 	}
 	return Asset{Name: "rtp_lossy", RTP: path, Tag: "rtp"}, nil
