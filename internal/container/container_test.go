@@ -172,3 +172,41 @@ func asClock(err error, target **clock.Error) bool {
 	}
 	return false
 }
+
+// TestFixtureWrapsAndCarriesAbsoluteTicks proves the fixture actually crosses
+// the 32-bit boundary and that raw ticks retain the absolute node counter
+// while presentation nanos stay origin-relative.
+func TestFixtureWrapsAndCarriesAbsoluteTicks(t *testing.T) {
+	data, err := BuildMP4(FixtureSpec{
+		Seed: 42, Timescale: 44100, SampleCount: 240, FramesPerSamp: 512,
+		Channels: 2, Wrap32: true, DriftPPM: 420, VFRJitter: 10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := writeTemp(t, "wrap.m4a", data)
+	s, _ := Open(path)
+	defer s.Close()
+	tracks, err := s.ScanTracks()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := tracks[0].Entries
+	if got[0].DTSNanos != 0 {
+		t.Fatalf("presentation time not origin-relative: %d", got[0].DTSNanos)
+	}
+	if got[0].DTSRaw < 0x80000000 {
+		t.Fatalf("raw start not near boundary: %d", got[0].DTSRaw)
+	}
+	if last := got[len(got)-1].DTSRaw; last <= 0xFFFFFFFF {
+		t.Fatalf("stream did not cross 2^32: last=%d", last)
+	}
+	// ContentFrame is monotonic in track order and begins at zero.
+	var frames uint64
+	for i, e := range got {
+		if e.ContentFrame != frames {
+			t.Fatalf("sample %d content frame=%d want %d", i, e.ContentFrame, frames)
+		}
+		frames += uint64(e.PayloadSize) / (2 * uint64(2))
+	}
+}

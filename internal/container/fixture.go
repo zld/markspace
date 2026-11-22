@@ -27,17 +27,22 @@ func concat(parts ...[]byte) []byte {
 type FixtureSpec struct {
 	Seed          int64
 	Timescale     uint32 // mdhd timescale, e.g. 44100
-	SampleCount   int    // number of samples (each carries FramesPerSample PCM frames)
-	FramesPerSamp int    // PCM frames per sample, e.g. 1024
+	SampleCount   int    // number of samples
+	FramesPerSamp int    // nominal PCM frames per sample; VFRJitter varies it
 	Channels      uint16
 	// Wrap32 makes raw DTS ticks start near the 32-bit boundary so the
 	// unwrapper must cross at least one wrap.
 	Wrap32 bool
-	// DriftPPM perturbs per-sample deltas to emulate a node clock that runs
-	// fast (positive) or slow (negative).
+	// DTSBase is the absolute tick offset of the first sample, written as an
+	// edit-list media_time. Wrap32 derives a near-boundary base when unset.
+	DTSBase uint64
+	// DriftPPM perturbs every sample duration by a constant rate offset,
+	// emulating a node clock that runs fast (positive) or slow (negative).
 	DriftPPM float64
-	// VFR jitters the sample duration by +/- this many ticks while preserving
-	// the total duration; zero means constant durations.
+	// VFRJitter varies each sample's *frame count* (and therefore its stts
+	// duration) by +/- this many frames with zero mean; zero means constant
+	// durations. The variation is content, not timestamp noise, so a drift
+	// estimated from [content frames vs DTS ticks] is not disturbed by it.
 	VFRJitter int
 	// LateIndices marks samples whose container position stays the same but
 	// whose timestamps place them before the running watermark when replayed
@@ -81,26 +86,43 @@ func BuildMP4(spec FixtureSpec) ([]byte, error) {
 	}
 	rng := rand.New(rand.NewSource(spec.Seed))
 
-	// 1. Payloads and per-sample timing.
+	// 1. Payloads and per-sample timing. Each sample's frame count is its
+	// content duration; VFR varies it with zero mean, and the stts delta is
+	// that content length scaled by the node drift rate. Timing therefore
+	// describes the same samples the payloads carry, so the drift fit sees
+	// only the rate offset and not jitter. The drifted position accumulates
+	// in a running fraction and rounds per sample, so a sub-tick rate offset
+	// still integrates into a measurable total over the stream.
 	payloads := make([][]byte, spec.SampleCount)
 	sizes := make([]uint32, spec.SampleCount)
 	deltas := make([]uint32, spec.SampleCount)
-	const nominalDelta = 1024
+	nominalFrames := spec.FramesPerSamp
+	if nominalFrames <= 0 {
+		nominalFrames = 1024
+	}
+	var exact float64 // cumulative drifted position, track ticks
+	var prev uint64
 	for i := 0; i < spec.SampleCount; i++ {
-		payloads[i] = pcmSample(rng, spec.FramesPerSamp, int(spec.Channels))
-		sizes[i] = uint32(len(payloads[i]))
-		delta := uint32(nominalDelta)
+		frames := nominalFrames
 		if spec.VFRJitter > 0 && i > 0 && i < spec.SampleCount-1 {
-			delta = uint32(int(delta) + rng.Intn(2*spec.VFRJitter+1) - spec.VFRJitter)
-		}
-		if spec.DriftPPM != 0 {
-			scaled := int64(float64(delta) * (1 + spec.DriftPPM/1e6))
-			if scaled < 1 {
-				scaled = 1
+			frames += rng.Intn(2*spec.VFRJitter+1) - spec.VFRJitter
+			if frames < 1 {
+				frames = 1
 			}
-			delta = uint32(scaled)
 		}
-		deltas[i] = delta
+		payloads[i] = pcmSample(rng, frames, int(spec.Channels))
+		sizes[i] = uint32(len(payloads[i]))
+		step := float64(frames) * (1 + spec.DriftPPM/1e6)
+		if step < 1 {
+			step = 1
+		}
+		exact += step
+		end := uint64(exact + 0.5)
+		if end <= prev {
+			end = prev + 1 // keep strictly increasing
+		}
+		deltas[i] = uint32(end - prev)
+		prev = end
 	}
 
 	// 2. stbl child boxes.
@@ -118,7 +140,17 @@ func BuildMP4(spec FixtureSpec) ([]byte, error) {
 		stblBody.Write(p)
 	}
 
-	// 3. Track and movie metadata.
+	// 3. Track and movie metadata. The edit list shifts media time so raw
+	// sample timestamps start at an arbitrary absolute tick, which is how a
+	// real node's 32-bit counter can sit near the wrap boundary.
+	base := spec.DTSBase
+	if base == 0 && spec.Wrap32 {
+		// Position the stream so its midpoint sits on the 32-bit boundary:
+		// half the samples run below, half above, guaranteeing a wrap while
+		// keeping raw ticks near the boundary for localization tests.
+		span := uint64(spec.SampleCount) * uint64(spec.FramesPerSamp)
+		base = uint64(0xFFFFFFFF) - span/2
+	}
 	mdhd := box("mdhd", fullBox(0, encodeMdhd(spec.Timescale, deltas)))
 	hdlr := box("hdlr", fullBox(0, encodeHdlr("soun")))
 	minf := box("minf", concat(
@@ -126,31 +158,59 @@ func BuildMP4(spec FixtureSpec) ([]byte, error) {
 		box("dinf", box("dref", fullBox(0, encodeDref()))),
 		box("stbl", stblBody.Bytes())))
 	mdia := box("mdia", concat(mdhd, hdlr, minf))
+	var edts []byte
+	if base != 0 {
+		edts = box("edts", box("elst", fullBox(1, encodeElst(base))))
+	}
 	tkhd := box("tkhd", fullBox(0, encodeTkhd(1)))
-	trak := box("trak", concat(tkhd, mdia))
+	trak := box("trak", concat(tkhd, edts, mdia))
 	mvhd := box("mvhd", fullBox(0, encodeMvhd(spec.Timescale, deltas)))
 	moov := box("moov", concat(mvhd, trak))
 	ftyp := box("ftyp", []byte("isom"+"\x00\x00\x02\x00"+"isomiso4"))
 
-	// 4. Layout: ftyp, moov, then mdat; patch stco with real offsets.
-	mdatPayload := bytes.NewBuffer(nil)
-	for _, p := range payloads {
-		mdatPayload.Write(p)
+	// 4. Layout: ftyp, moov, then mdat; patch stco with real offsets. One
+	// iteration is required because the edit list changes moov's size.
+	for {
+		mdatPayload := bytes.NewBuffer(nil)
+		for _, p := range payloads {
+			mdatPayload.Write(p)
+		}
+		mdat := box("mdat", mdatPayload.Bytes())
+		mdatDataOffset := int64(len(ftyp) + len(moov) + 8)
+		for i := range co {
+			co[i] = uint64(mdatDataOffset)
+			mdatDataOffset += int64(sizes[i])
+		}
+		patchedStco := encodeStcoBox(co)
+		next := bytesReplaceBox(moov, "stco", patchedStco)
+		if len(next) == len(moov) {
+			moov = next
+			out := bytes.NewBuffer(nil)
+			out.Write(ftyp)
+			out.Write(moov)
+			out.Write(mdat)
+			return out.Bytes(), nil
+		}
+		moov = next
 	}
-	mdat := box("mdat", mdatPayload.Bytes())
-	mdatDataOffset := int64(len(ftyp) + len(moov) + 8)
-	for i := range co {
-		co[i] = uint64(mdatDataOffset)
-		mdatDataOffset += int64(sizes[i])
-	}
-	patchedStco := box("stco", fullBox(0, encodeStco(co)))
-	moov = bytesReplaceBox(moov, "stco", patchedStco)
+}
 
-	out := bytes.NewBuffer(nil)
-	out.Write(ftyp)
-	out.Write(moov)
-	out.Write(mdat)
-	return out.Bytes(), nil
+// encodeStcoBox renders a complete stco box; encodeStco emits only the payload.
+func encodeStcoBox(offsets []uint64) []byte {
+	return box("stco", fullBox(0, encodeStco(offsets)))
+}
+
+// encodeElst emits a single-entry version-1 edit list (64-bit media_time)
+// whose media_time sets the absolute start of media presentation; the movie
+// duration remains 0 (unknown for an ingest segment).
+func encodeElst(mediaTime uint64) []byte {
+	b := bytes.NewBuffer(nil)
+	put32(b, 1)         // entry_count
+	put64(b, 0)         // segment_duration: 0 means unknown
+	put64(b, mediaTime) // media_time (v1: signed 64-bit)
+	put16(b, 1)         // media_rate_integer (1.0)
+	put16(b, 0)         // media_rate_fraction
+	return b.Bytes()
 }
 
 // bytesReplaceBox swaps the first occurrence of a child box type inside a

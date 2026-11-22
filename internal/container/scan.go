@@ -74,6 +74,7 @@ func (s *Scanner) scanTrak(trak *mp4.BoxInfo, fileSize int64) (TrackTable, error
 		boxPath(mp4.BoxTypeMdia(), mp4.BoxTypeMdhd()),
 		boxPath(mp4.BoxTypeMdia(), mp4.BoxTypeHdlr()),
 		boxPath(mp4.BoxTypeMdia(), mp4.BoxTypeMinf(), mp4.BoxTypeStbl()),
+		boxPath(mp4.BoxTypeEdts(), mp4.BoxTypeElst()),
 	}
 	boxes, err := mp4.ExtractBoxesWithPayload(s.f, trak, paths)
 	if err != nil {
@@ -84,6 +85,7 @@ func (s *Scanner) scanTrak(trak *mp4.BoxInfo, fileSize int64) (TrackTable, error
 		timescale uint32
 		handler   string
 		stblInfo  *mp4.BoxInfo
+		mediaTime int64 // elst media_time, track ticks
 	)
 	for _, b := range boxes {
 		switch p := b.Payload.(type) {
@@ -95,6 +97,17 @@ func (s *Scanner) scanTrak(trak *mp4.BoxInfo, fileSize int64) (TrackTable, error
 			handler = string(p.HandlerType[:])
 		case *mp4.Stbl:
 			stblInfo = &b.Info
+		case *mp4.Elst:
+			// A non-empty edit list offsets the raw sample timeline; this is
+			// how a node's absolute clock (possibly near the 32-bit boundary)
+			// is carried in the container.
+			if len(p.Entries) > 0 {
+				if p.Version == 1 {
+					mediaTime = p.Entries[0].MediaTimeV1
+				} else {
+					mediaTime = int64(p.Entries[0].MediaTimeV0)
+				}
+			}
 		}
 	}
 	if timescale == 0 || stblInfo == nil {
@@ -105,11 +118,36 @@ func (s *Scanner) scanTrak(trak *mp4.BoxInfo, fileSize int64) (TrackTable, error
 	if err != nil {
 		return TrackTable{}, err
 	}
-	entries, err := s.buildSamples(stblInfo, trackID, timescale, mc, fileSize)
+	entries, err := s.buildSamples(stblInfo, trackID, timescale, mc, fileSize, mediaTime)
 	if err != nil {
 		return TrackTable{}, err
 	}
 	return TrackTable{TrackID: trackID, Timescale: timescale, Handler: handler, Entries: entries}, nil
+}
+
+// channelsFor reads channel_count from the first audio sample entry inside the
+// stbl's stsd. Payloads are raw PCM here, so the decoder never inspects the
+// entry; only the frame width is needed for content accounting. A missing or
+// malformed entry falls back to stereo, matching the fixture generator.
+func (s *Scanner) channelsFor(stbl *mp4.BoxInfo) uint16 {
+	var n uint16 = 2
+	_, _ = mp4.ReadBoxStructureFromInternal(s.f, stbl, func(h *mp4.ReadHandle) (interface{}, error) {
+		if h.BoxInfo.Type == mp4.BoxTypeStsd() && len(h.Path) == 2 {
+			// stsd payload: FullBox(4) + entry_count(4) + sample entry. Inside
+			// an audio sample entry channel_count sits 16 bytes into the entry.
+			buf := make([]byte, 24)
+			if _, err := s.f.ReadAt(buf, int64(h.BoxInfo.Offset+h.BoxInfo.HeaderSize)); err == nil {
+				if c := binary.BigEndian.Uint16(buf[8+8:]); c > 0 {
+					n = c
+				}
+			}
+		}
+		if h.BoxInfo.Type == mp4.BoxTypeStbl() {
+			_, _ = h.Expand()
+		}
+		return nil, nil
+	})
+	return n
 }
 
 // rawTable holds the decoded stbl children.
@@ -177,7 +215,7 @@ func (s *Scanner) readStbl(stbl *mp4.BoxInfo) (rawTable, int, error) {
 // buildSamples materializes every sample with offset, timing and CRC, enforcing
 // all structural validation at the point each sample is touched.
 func (s *Scanner) buildSamples(stbl *mp4.BoxInfo, trackID, timescale uint32,
-	mc *clock.MediaClock, fileSize int64) ([]SampleEvent, error) {
+	mc *clock.MediaClock, fileSize int64, mediaTime int64) ([]SampleEvent, error) {
 	raw, count, err := s.readStbl(stbl)
 	if err != nil {
 		return nil, err
@@ -193,6 +231,8 @@ func (s *Scanner) buildSamples(stbl *mp4.BoxInfo, trackID, timescale uint32,
 
 	entries := make([]SampleEvent, 0, count)
 	sampleIdx := 0
+	var contentFrames uint64
+	channels := int(s.channelsFor(stbl))
 	crcTable := crc32.MakeTable(crc32.IEEE)
 	buf := make([]byte, 0, 4096)
 	for _, run := range runs {
@@ -223,20 +263,26 @@ func (s *Scanner) buildSamples(stbl *mp4.BoxInfo, trackID, timescale uint32,
 					return nil, clock.NewError(clock.ErrIllegalOffset, err.Error()).
 						WithPosition(offset, trackID, int64(sampleIdx))
 				}
-				dtsRaw := dts[sampleIdx]
+				// Presentation time excludes the edit-list offset; raw ticks
+				// retain the absolute node-clock value for source location.
+				posTicks := dts[sampleIdx]
+				rawTicks := posTicks + uint64(mediaTime)
+				frames := uint64(size) / (2 * uint64(channels))
 				entries = append(entries, SampleEvent{
 					TrackID:      trackID,
 					SampleIndex:  int64(sampleIdx),
-					DTSNanos:     mc.ToNanos(dtsRaw),
-					PTSNanos:     mc.ToNanos(dtsRaw), // CTTS added later when ctts exists
-					DTSRaw:       dtsRaw,
-					PTSRaw:       dtsRaw,
+					DTSNanos:     mc.ToNanos(posTicks),
+					PTSNanos:     mc.ToNanos(posTicks), // CTTS added later when ctts exists
+					DTSRaw:       rawTicks,
+					PTSRaw:       rawTicks,
 					DurationRaw:  dur[sampleIdx],
+					ContentFrame: contentFrames,
 					Timescale:    timescale,
 					FileOffset:   offset,
 					PayloadSize:  size,
 					PayloadCRC32: crc32.Checksum(buf, crcTable),
 				})
+				contentFrames += frames
 				offset += size
 				sampleIdx++
 			}

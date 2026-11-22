@@ -12,13 +12,17 @@ import (
 // are retained alongside canonical nanoseconds so downstream stages can locate
 // the source position without inverting the rational scaling.
 type SampleEvent struct {
-	TrackID      uint32
-	SampleIndex  int64 // zero-based, in track sample-table order
-	DTSNanos     uint64
-	PTSNanos     uint64
-	DTSRaw       uint64 // original DTS in track timescale ticks
-	PTSRaw       uint64 // original PTS (CTTS shift applied), track ticks
-	DurationRaw  uint64 // sample duration in track ticks
+	TrackID     uint32
+	SampleIndex int64 // zero-based, in track sample-table order
+	DTSNanos    uint64
+	PTSNanos    uint64
+	DTSRaw      uint64 // original DTS in track timescale ticks
+	PTSRaw      uint64 // original PTS (CTTS shift applied), track ticks
+	DurationRaw uint64 // sample duration in track ticks
+	// ContentFrame is the cumulative PCM frame count preceding this sample in
+	// track order. It is a delivery-order-independent content clock: the drift
+	// fit can compare it with DTSRaw no matter how samples are replayed.
+	ContentFrame uint64
 	Timescale    uint32
 	FileOffset   int64 // absolute byte offset of the sample payload
 	PayloadSize  int64
