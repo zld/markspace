@@ -23,6 +23,7 @@ type EngineSnapshot struct {
 	BadPackets       int64
 	DuplicatePackets int64
 	LatePackets      int64
+	VideoEvents      int64
 	PCM              []int16
 	Correction       int64
 	AnchorSeq        int64
@@ -48,7 +49,7 @@ func (e *Engine) Checkpoint() (EngineSnapshot, error) {
 		Session: e.session.Checkpoint(), Meter: e.meter.Snapshot(),
 		LostAudio: e.lostAudio, RecoveredAudio: e.recoveredAudio,
 		BadPackets: e.badPackets, DuplicatePackets: e.duplicatePackets,
-		LatePackets: e.latePackets, PCM: append([]int16(nil), e.pcm...),
+		LatePackets: e.latePackets, VideoEvents: e.videoEvents, PCM: append([]int16(nil), e.pcm...),
 		Correction: e.correction, AnchorSeq: e.anchorSeq, AnchorRef: e.anchorRef,
 		Anchored: e.anchored, ObservedOrigin: e.observedOrigin, OriginSet: e.originSet,
 	}, nil
@@ -76,7 +77,7 @@ func RestoreEngine(snap EngineSnapshot) (*Engine, error) {
 		meter:     audio.RestoreLoudness(snap.Meter),
 		lostAudio: snap.LostAudio, recoveredAudio: snap.RecoveredAudio,
 		badPackets: snap.BadPackets, duplicatePackets: snap.DuplicatePackets,
-		latePackets: snap.LatePackets, pcm: append([]int16(nil), snap.PCM...),
+		latePackets: snap.LatePackets, videoEvents: snap.VideoEvents, pcm: append([]int16(nil), snap.PCM...),
 		correction: snap.Correction,
 		anchorSeq:  snap.AnchorSeq, anchorRef: snap.AnchorRef, anchored: snap.Anchored,
 		observedOrigin: snap.ObservedOrigin, originSet: snap.OriginSet,

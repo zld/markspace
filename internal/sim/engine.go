@@ -27,6 +27,7 @@ type Engine struct {
 	badPackets                int64
 	duplicatePackets          int64
 	latePackets               int64
+	videoEvents               int64
 	pcm                       []int16
 	correction                int64
 
@@ -169,8 +170,13 @@ func (e *Engine) emitAudio(evs []adapter.RTPEvent) {
 }
 
 func (e *Engine) emitVideo(evs []adapter.RTPEvent) {
+	before := e.session.Snapshot().EventCount
 	emitVideo(evs, e.videoRec, e.session)
+	e.videoEvents += e.session.Snapshot().EventCount - before
 }
+
+// VideoEventCount reports how many video frames were actually submitted.
+func (e *Engine) VideoEventCount() int64 { return e.videoEvents }
 
 func (e *Engine) recoveryEvent(fe *pipeline.RecoveryEvent) {
 	// recoveryEvent increments the recovered counter itself.

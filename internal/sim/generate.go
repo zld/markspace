@@ -187,6 +187,55 @@ func (s *Sender) makeVideo(i int) RawPacket {
 	}
 }
 
+// vfrVideoTicks returns a per-frame 90 kHz duration alternating between
+// 3000 (1/30 s) and 6000 (1/15 s), a genuine variable frame rate.
+func vfrVideoTicks(frame int) uint32 {
+	if frame%2 == 0 {
+		return 3000
+	}
+	return 6000
+}
+
+// GenerateVFR builds a time-interleaved stream whose video track uses
+// per-frame PTS scheduling with alternating frame durations, while audio stays
+// on its fixed 10 ms cadence.
+func (s *Sender) GenerateVFR() []RawPacket {
+	audioPkts := int(s.cfg.DurationS * 100)
+	videoTicksTotal := uint32(s.cfg.DurationS) * VideoClockRate
+
+	dropped := s.planAudioLoss(audioPkts)
+	var pkts []RawPacket
+
+	var vTicks uint32
+	vi := 0
+	for ai := 0; ai < audioPkts; {
+		audioPTS := int64(ai) * 10_000_000
+		videoPTS := int64(vTicks) * 1_000_000_000 / VideoClockRate
+		if vTicks < videoTicksTotal && videoPTS <= audioPTS {
+			pkts = append(pkts, s.makeVFRVideo(vi, vTicks, vfrVideoTicks(vi)))
+			vTicks += vfrVideoTicks(vi)
+			vi++
+		} else {
+			pkts = append(pkts, s.makeAudio(ai, dropped[ai]))
+			ai++
+		}
+	}
+	s.impair(&pkts)
+	return pkts
+}
+
+func (s *Sender) makeVFRVideo(i int, startTicks, durTicks uint32) RawPacket {
+	isKey := i%15 == 0
+	s.vSeq++
+	return RawPacket{
+		Data: marshal(VideoSSRC, 97, s.vSeq, startTicks, isKey,
+			[]byte{byte(i), byte(i >> 8)}),
+		IsVideo: true,
+		RefPTS:  int64(startTicks) * 1_000_000_000 / VideoClockRate,
+		IsKey:   isKey, Seq: s.vSeq,
+	}
+}
+
 // tonePayload synthesises a deterministic 10 ms PCM16 mono frame. The values
 // depend only on the packet index and seed, so two runs match byte-for-byte.
 func (s *Sender) tonePayload(i int) []byte {
