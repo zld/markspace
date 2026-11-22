@@ -1,0 +1,6 @@
+# Build artifacts
+/mediacore
+/bin/
+# Local demo output
+/tmp/
+*.test
