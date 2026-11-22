@@ -1,0 +1,11 @@
+# Generated demo fixtures and local caches (synthesized at runtime).
+/generated/
+/generated-*/
+
+# Build artifacts
+/mediacore
+*.out
+
+# OS/editor noise
+.DS_Store
+*.swp
