@@ -24,7 +24,8 @@ Exit codes: `0` all invariants hold, `1` processing/verification failure,
 Useful variations:
 
 ```sh
-# verify the cache is reused on a warm run (cache_hits=6)
+# verify the cache is reused on a warm run (segment_cache_hits=6, cache_hits=24:
+# each segment has independent transport, container, sync and index entries)
 go run ./cmd/mediapipe demo --checkpoint-dir ./tmp/checkpoints
 
 # simulate a crash after three committed segments, then resume the rest
@@ -83,7 +84,8 @@ segment_hashes[1]=<64 hex chars>
 reordered_packets=…
 recovered_packets=…
 unrecovered_gaps=…
-cache_hits=…
+cache_hits=…           # every verified stage and index entry served
+segment_cache_hits=…   # only whole-segment index entries served
 cache_rejected=…
 checkpoint_resumes=…
 ```
