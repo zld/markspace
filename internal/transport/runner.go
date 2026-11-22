@@ -43,15 +43,18 @@ type Config struct {
 }
 
 // Result is everything observed during one session, including the
-// partial data available after a failure.
+// partial data available after a failure. Accessor methods implement
+// report.ResultView; fields are unexported where a method shares the
+// name to avoid field/method collisions.
 type Result struct {
-	Transport     Mode
-	Machine       *session.Machine
-	Assembler     *rtpx.Assembler
-	PacketsSeen   int
-	Failure       error
-	FailureStage  session.State
-	FailureMethod session.Method
+	Transport   Mode
+	Machine     *session.Machine
+	Assembler   *rtpx.Assembler
+	packetsSeen int
+	// Err is nil on a fully successful session.
+	Err    error
+	Stage  session.State
+	Method session.Method
 }
 
 // Runner executes the OPTIONS/DESCRIBE/SETUP/PLAY/TEARDOWN sequence
@@ -195,7 +198,7 @@ func (r *Runner) Run() *Result {
 		r.recordFailure(res, err)
 		return res
 	}
-	res.PacketsSeen = r.packetsSeen()
+	res.packetsSeen = r.packetsSeen()
 	return res
 }
 
@@ -220,16 +223,16 @@ func (r *Runner) fail(res *Result, method session.Method, err error) {
 		OK:           false,
 		TransportErr: true,
 	})
-	res.Failure = err
-	res.FailureStage = r.sm.FailedStage()
-	res.FailureMethod = r.sm.FailedMethod()
-	res.PacketsSeen = r.packetsSeen()
+	res.Err = err
+	res.Stage = r.sm.FailedStage()
+	res.Method = r.sm.FailedMethod()
+	res.packetsSeen = r.packetsSeen()
 }
 
 // recordFailure is used when the machine itself rejected a transition.
 func (r *Runner) recordFailure(res *Result, err error) {
-	res.Failure = err
-	res.FailureStage = r.sm.FailedStage()
-	res.FailureMethod = r.sm.FailedMethod()
-	res.PacketsSeen = r.packetsSeen()
+	res.Err = err
+	res.Stage = r.sm.FailedStage()
+	res.Method = r.sm.FailedMethod()
+	res.packetsSeen = r.packetsSeen()
 }
