@@ -46,9 +46,11 @@ func NewTracker() *Tracker {
 }
 
 // Observe classifies one packet and updates the PID's state. Packets
-// flagged with a transport error are counted but never update counter
-// state; adaptation-field-only packets do not advance the counter and
-// are skipped, as required by the spec.
+// flagged with a transport error are counted as their own category and
+// their counter is still tracked (so one corrupt packet is not also
+// reported as a gap), but they are never classified as gap or
+// duplicate themselves. Adaptation-field-only packets do not advance
+// the counter and are skipped, as required by the spec.
 func (t *Tracker) Observe(pid uint16, cc uint8, hasPayload, transportError bool) Event {
 	s := t.stats[pid]
 	if s == nil {
@@ -57,6 +59,9 @@ func (t *Tracker) Observe(pid uint16, cc uint8, hasPayload, transportError bool)
 	}
 	if transportError {
 		s.TransportErrors++
+		if hasPayload {
+			t.seen[pid], t.last[pid] = true, cc
+		}
 		return Event{Kind: EventTransportError}
 	}
 	if !hasPayload {
