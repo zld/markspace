@@ -150,13 +150,13 @@ func (r *Reorder) Add(p *Packet) []*Packet {
 		st.extRef = 0
 		st.highest = 0
 		st.pending[0] = p
-		return st.flush()
+		return st.flush(false)
 	}
 	ext := st.extRef + int64(int16(p.Seq-st.rawRef))
 	if ext < 0 {
 		if st.next == 0 {
 			st.absorbEarlier(p, ext)
-			return st.flush()
+			return st.flush(false)
 		}
 		st.classifyPast(ext)
 		return nil
@@ -179,7 +179,7 @@ func (r *Reorder) Add(p *Packet) []*Packet {
 		st.extRef = ext
 		st.rawRef = p.Seq
 	}
-	return st.flush()
+	return st.flush(false)
 }
 
 // absorbEarlier accepts a packet that arrived before anything has been
@@ -192,8 +192,11 @@ func (st *streamState) absorbEarlier(p *Packet, ext int64) {
 	if st.highest < 0 {
 		st.highest = 0
 	}
-	st.extRef += shift
+	// rawRef and extRef must always name the same packet. Re-anchoring makes
+	// the newly absorbed packet the reference at index 0; anything else would
+	// desynchronize future 16-bit extensions and alias sequence numbers.
 	st.rawRef = p.Seq
+	st.extRef = 0
 	st.pending[0] = p
 }
 
@@ -216,17 +219,30 @@ func shiftPending(in map[int64]*Packet, shift int64) map[int64]*Packet {
 	return out
 }
 
-func (st *streamState) flush() []*Packet {
+// flush releases contiguous packets. While the window is not yet satisfied it
+// holds the leading run so a late-arriving earlier packet can still be
+// absorbed in order. When force is set (end of stream) everything pending is
+// released and every remaining hole becomes an explicit gap.
+func (st *streamState) flush(force bool) []*Packet {
 	var out []*Packet
 	for {
 		if p, ok := st.pending[st.next]; ok {
+			// At the very front of the stream we cannot know whether an
+			// earlier packet will still arrive, so hold the head until the
+			// window fills or the stream ends.
+			if !force && st.next == 0 && st.highest-st.next < int64(st.window) {
+				break
+			}
 			delete(st.pending, st.next)
 			st.next++
 			st.ordered = append(st.ordered, p)
 			out = append(out, p)
 			continue
 		}
-		if len(st.pending) == 0 || st.highest-st.next < int64(st.window) {
+		if len(st.pending) == 0 {
+			break
+		}
+		if !force && st.highest-st.next < int64(st.window) {
 			break
 		}
 		next := st.minPending()
@@ -281,20 +297,7 @@ func (r *Reorder) Finalize() (Result, error) {
 	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
 	for _, id := range ids {
 		st := r.streams[id]
-		for len(st.pending) > 0 {
-			next := st.minPending()
-			st.recordGap(next)
-			st.next = next
-			for {
-				p, ok := st.pending[st.next]
-				if !ok {
-					break
-				}
-				delete(st.pending, st.next)
-				st.next++
-				st.ordered = append(st.ordered, p)
-			}
-		}
+		st.flush(true)
 		res.Packets = append(res.Packets, st.ordered...)
 		res.Gaps = append(res.Gaps, st.gaps...)
 		res.Duplicates += st.dups

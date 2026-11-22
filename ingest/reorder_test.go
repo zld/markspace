@@ -213,3 +213,44 @@ func TestBandwidthReportDeterministic(t *testing.T) {
 		t.Fatalf("report not deterministic: %+v vs %+v", a, b)
 	}
 }
+
+// TestReorderOutOfOrderStartKeepsDistinctSequences exercises the re-anchor path:
+// the first arriving packet is ahead of a later, earlier packet, and the two
+// must both be delivered once without aliasing.
+func TestReorderOutOfOrderStartKeepsDistinctSequences(t *testing.T) {
+	r := NewReorder(ReorderConfig{Window: 8})
+	r.Add(mkPacket(10, 0, 10))
+	r.Add(mkPacket(9, 0, 10))
+	res, err := r.Finalize()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := seqs(res.Packets); !equalSeqs(got, []uint16{9, 10}) {
+		t.Fatalf("packets=%v want [9 10]", got)
+	}
+	if res.Duplicates != 0 || res.Late != 0 || len(res.Gaps) != 0 {
+		t.Fatalf("unexpected dups=%d late=%d gaps=%+v", res.Duplicates, res.Late, res.Gaps)
+	}
+}
+
+// TestReorderWrapAfterReorder ensures reference extension survives a wrap
+// while packets are reordered.
+func TestReorderWrapAfterReorder(t *testing.T) {
+	r := NewReorder(ReorderConfig{Window: 8})
+	start := uint16(0xFFFE)
+	order := []uint16{0, 2, 1, 3, 5, 4, 6, 7}
+	for _, i := range order {
+		r.Add(mkPacket(start+i, uint32(int32(start)+int32(i)), 10))
+	}
+	res, err := r.Finalize()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []uint16{0xFFFE, 0xFFFF, 0, 1, 2, 3, 4, 5}
+	if got := seqs(res.Packets); !equalSeqs(got, want) {
+		t.Fatalf("packets=%v want %v", got, want)
+	}
+	if len(res.Gaps) != 0 {
+		t.Fatalf("unexpected gaps %+v", res.Gaps)
+	}
+}
