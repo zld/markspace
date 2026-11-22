@@ -127,6 +127,11 @@ func (r *Runner) Run() *Result {
 		ReadTimeout:           5 * time.Second,
 		WriteTimeout:          5 * time.Second,
 		InitialUDPReadTimeout: 3 * time.Second,
+		// Losses are measured by our own SequenceChecker; swallow the
+		// library's default log output so the JSON report stays clean.
+		OnPacketsLost: func(uint64) {},
+		OnPacketLost:  func(error) {},
+		OnDecodeError: func(error) {},
 	}
 
 	u, err := base.ParseURL(r.cfg.ServerURL)
