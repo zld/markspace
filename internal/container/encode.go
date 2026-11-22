@@ -208,6 +208,12 @@ func sampleExtent(mp4Bytes []byte, sampleIndex int) (int64, int64, error) {
 	return off, size, nil
 }
 
+// FindBoxForTest exposes the recursive box locator for external tooling such
+// as the corruption demonstration. It returns the box header offset and size.
+func FindBoxForTest(data []byte, typ string) (int, int, error) {
+	return findBox(data, typ)
+}
+
 // findBox performs a recursive pre-order search for a box type, returning the
 // absolute offset of its header and its declared total size.
 func findBox(data []byte, typ string) (int, int, error) {

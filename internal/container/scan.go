@@ -51,9 +51,15 @@ func (s *Scanner) ScanTracks() ([]TrackTable, error) {
 	}
 
 	var out []TrackTable
-	for _, trak := range traks {
+	for ti, trak := range traks {
 		tbl, err := s.scanTrak(&trak.Info, fileSize)
 		if err != nil {
+			// Attach a one-based track ordinal so structural damage is still
+			// localizable even when the underlying box parser has no sample
+			// context. Sample index remains -1 for whole-table failures.
+			if ce, ok := err.(*clock.Error); ok && ce.TrackID == 0 {
+				return nil, ce.WithPosition(ce.FileOffset, uint32(ti+1), ce.SampleIndex)
+			}
 			return nil, err
 		}
 		out = append(out, tbl)
