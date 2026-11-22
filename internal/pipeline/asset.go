@@ -70,7 +70,7 @@ func analyzeAsset(ctx context.Context, a AssetInput, opts Options) (*assetResult
 		}
 	}
 	if a.Subtitle != "" {
-		if err := analyzeSubtitlePart(ctx, a, r, opts, fps); err != nil {
+		if err := analyzeSubtitlePart(ctx, a, r, fps); err != nil {
 			return nil, err
 		}
 	}
@@ -238,7 +238,7 @@ func maxFloat(a, b float64) float64 {
 	return b
 }
 
-func analyzeSubtitlePart(ctx context.Context, a AssetInput, r *assetResult, opts Options, fps string) error {
+func analyzeSubtitlePart(ctx context.Context, a AssetInput, r *assetResult, fps string) error {
 	res, err := subtitle.ReadFile(a.Subtitle)
 	if err != nil {
 		f := diag.New(diag.CodeTruncated, 0, "open %s: %v", a.Subtitle, err)
