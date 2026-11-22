@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"mediacore/internal/core"
@@ -52,7 +53,7 @@ demo flags:
   --loudness LUFS     loudness target (default -16)
   --peak DBFS         true-peak ceiling (default -1)
   --out PATH          manifest output path
-  --dir DIR           fixture cache directory (default: temp dir)
+  --dir DIR           fixture cache directory (default: $TMPDIR/mediacore-fixtures)
 `)
 }
 
@@ -163,12 +164,11 @@ func fixturePath(dir string, kind fixture.Kind) (string, error) {
 			fmt.Sprintf("unknown fixture %q", kind))
 	}
 	if dir == "" {
-		d, err := os.MkdirTemp("", "mediacore-"+string(kind)+"-")
-		if err != nil {
-			return "", core.Wrap(core.CodeIO, core.StageScan, false, "create fixture dir", err)
-		}
-		dir = d
-	} else {
+		// A stable path keeps the manifest's file field identical across
+		// repeated runs of the same fixture.
+		dir = filepath.Join(os.TempDir(), "mediacore-fixtures")
+	}
+	{
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return "", core.Wrap(core.CodeIO, core.StageScan, false, "create fixture dir", err)
 		}

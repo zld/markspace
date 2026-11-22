@@ -32,11 +32,14 @@ func alignmentError(packets []Packet, rate int) float64 {
 	return worst
 }
 
-// digest hashes everything except its own field.
+// digest covers the run's results. The file path is excluded because it is
+// not part of the produced distribution; two runs over identical media bytes
+// therefore share a digest even if the file lives at a different path.
 func digest(m *Manifest) string {
 	type alias Manifest
 	c := *m
 	c.Summary = ""
+	c.File = ""
 	cp := alias(c)
 	// json.Marshal cannot error for this shape.
 	data, _ := marshalStable(cp)
