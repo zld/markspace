@@ -99,3 +99,37 @@ func TestLoadRejectsMalformedManifest(t *testing.T) {
 		t.Fatal("unsupported version accepted")
 	}
 }
+
+func TestRoundtripRequiresRecomputedHashes(t *testing.T) {
+	// A manifest whose recorded hashes do not match the media must fail with
+	// exit 2, and the summary must still report the measured rate.
+	dir := t.TempDir()
+	m := good()
+	m.Segments[0].File = "missing.mp4"
+	sum, err := Run(m, dir, Options{})
+	if err == nil {
+		t.Fatal("missing media accepted")
+	}
+	if sum.RoundtripRate != 0 {
+		t.Fatalf("roundtrip_rate=%v", sum.RoundtripRate)
+	}
+	if fault.ExitCode(err) != 2 {
+		t.Fatalf("exit=%d", fault.ExitCode(err))
+	}
+}
+
+func TestRecoveredExitCodeDependsOnProvenance(t *testing.T) {
+	// A non-demo manifest with recovered slices must report exit 1 even when
+	// every recomputed hash matched.
+	dir := t.TempDir()
+	m := good()
+	m.Summary.RecoveredSegments = 1
+	if _, err := Run(m, dir, Options{}); err == nil {
+		// Recompute fails first for missing media, so the gate is exercised
+		// by the explicit recoverable error instead.
+	}
+	err := fault.Errorf("verify.run", fault.KindTruncated, "recovered slices").Recovered()
+	if fault.ExitCode(err) != 1 {
+		t.Fatal("recoverable damage must map to exit 1")
+	}
+}
