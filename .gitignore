@@ -1,0 +1,5 @@
+.venv/
+.demo*/
+.fixtures/
+__pycache__/
+*.egg-info/
