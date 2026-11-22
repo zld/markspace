@@ -24,7 +24,7 @@ def decode_sidx(payload: bytes, box_start: int, box_size: int) -> Sidx:
         raise SidxError("sidx payload too short for version/flags")
     version = payload[0]
     if version == 0:
-        fmt = ">IIIIIHH"  # ref_id, timescale, ept(32), first_offset(32), reserved, count
+        fmt = ">IIIIHH"  # ref_id, timescale, ept(32), first_offset(32), reserved, count
     elif version == 1:
         fmt = ">IIIQQHH"  # ref_id, timescale, ept(64), first_offset(64), reserved, count
     else:
@@ -88,7 +88,7 @@ def encode_sidx(
     )
     payload = struct.pack(">I", 0)  # version 0, flags 0
     payload += struct.pack(
-        ">IIIIIHH",
+        ">IIIIHH",
         1,  # reference_ID
         timescale,
         earliest_presentation_time,
