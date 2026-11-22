@@ -274,3 +274,88 @@ func TestEveryRunHasStageRecords(t *testing.T) {
 		t.Fatal("validated graph order not recorded")
 	}
 }
+
+func TestRescanMatchesTablesAcrossRates(t *testing.T) {
+	// A no-index file and its intact twin must describe the same media at any
+	// output rate, which proves the rebuilt grid agrees with the tables.
+	for _, rate := range []int{32000, 44100, 48000, 96000} {
+		a := options(fixture.KindClean)
+		a.SampleRate = rate
+		b := options(fixture.KindNoIndex)
+		b.SampleRate = rate
+		ra, rb := Run(a), Run(b)
+		if ra.Err != nil || rb.Err != nil {
+			t.Fatalf("%d Hz: %v %v", rate, ra.Err, rb.Err)
+		}
+		if ra.Manifest.ValidMs != rb.Manifest.ValidMs {
+			t.Fatalf("%d Hz: valid ms %d vs %d", rate, ra.Manifest.ValidMs, rb.Manifest.ValidMs)
+		}
+		if ra.Manifest.PacketCount != rb.Manifest.PacketCount {
+			t.Fatalf("%d Hz: packets %d vs %d", rate, ra.Manifest.PacketCount, rb.Manifest.PacketCount)
+		}
+		if math.Abs(rb.Manifest.OutputLUFS-ra.Manifest.OutputLUFS) > 0.5 {
+			t.Fatalf("%d Hz: output loudness %0.2f vs %0.2f", rate, rb.Manifest.OutputLUFS, ra.Manifest.OutputLUFS)
+		}
+	}
+}
+
+func TestRecoveredBitrateStaysWithinBudget(t *testing.T) {
+	for _, kind := range []fixture.Kind{fixture.KindTruncated, fixture.KindBadRange, fixture.KindNoIndex, fixture.KindNoMoov} {
+		res := Run(options(kind))
+		if res.Err != nil {
+			t.Fatalf("%s: %v", kind, res.Err)
+		}
+		if math.Abs(res.Manifest.BitrateErrorPct) > 5 {
+			t.Fatalf("%s: bitrate error %.2f%%", kind, res.Manifest.BitrateErrorPct)
+		}
+		if math.Abs(res.Manifest.OutputLUFS-(-16)) > 1.5 {
+			t.Fatalf("%s: loudness %.2f off target", kind, res.Manifest.OutputLUFS)
+		}
+	}
+}
+
+func TestMonophonicOutputAcrossSources(t *testing.T) {
+	opt := options(fixture.KindClean)
+	opt.Channels = "mono"
+	res := Run(opt)
+	if res.Err != nil {
+		t.Fatal(res.Err)
+	}
+	if res.Manifest.Channels != 1 || res.Manifest.Layout != "mono" {
+		t.Fatalf("manifest layout = %s/%d", res.Manifest.Layout, res.Manifest.Channels)
+	}
+	if math.Abs(res.Manifest.BitrateErrorPct) > 5 {
+		t.Fatalf("mono bitrate error %.2f%%", res.Manifest.BitrateErrorPct)
+	}
+}
+
+func TestUnknownLayoutFailsWithExit1(t *testing.T) {
+	opt := options(fixture.KindClean)
+	opt.Channels = "7.1-quadraphonic"
+	res := Run(opt)
+	if res.Err == nil {
+		t.Fatal("unknown layout accepted")
+	}
+	if res.ExitCode != 1 {
+		t.Fatalf("exit = %d, want 1", res.ExitCode)
+	}
+	if !core.IsCode(res.Err, core.CodeParamConflict) {
+		t.Fatalf("want parameter_conflict, got %v", res.Err)
+	}
+}
+
+func TestGapOffsetsAreMonotonic(t *testing.T) {
+	res := Run(options(fixture.KindBadRange))
+	if res.Err != nil {
+		t.Fatal(res.Err)
+	}
+	gaps := res.Manifest.Gaps
+	for i := 1; i < len(gaps); i++ {
+		if gaps[i].StartMs < gaps[i-1].StartMs {
+			t.Fatalf("gap start times not monotonic: %+v", gaps)
+		}
+		if gaps[i].Offset <= gaps[i-1].Offset {
+			t.Fatalf("gap offsets not increasing: %+v", gaps)
+		}
+	}
+}
