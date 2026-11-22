@@ -112,7 +112,8 @@ func (r *Reader) Next() (*Packet, error) {
 // parsePacket decodes transport-layer fields of one aligned 188-byte
 // packet using go-astits.
 func parsePacket(chunk []byte) (*Packet, error) {
-	dmx := astits.NewDemuxer(context.Background(), bytes.NewReader(chunk))
+	dmx := astits.NewDemuxer(context.Background(), bytes.NewReader(chunk),
+		astits.DemuxerOptPacketSize(PacketSize))
 	ap, err := dmx.NextPacket()
 	if err != nil {
 		return nil, err

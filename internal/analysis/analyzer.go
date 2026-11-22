@@ -104,7 +104,12 @@ func buildReport(st transport.Stats, ct *transport.ContinuityTracker,
 			TruncatedTailBytes: st.TruncatedTailBytes,
 			TransportErrorPkts: st.TransportErrors,
 		},
-		PSI: report.PSIReport{CRCErrors: crcErrors},
+		PSI:               report.PSIReport{CRCErrors: crcErrors},
+		Intervals:         []report.IntervalReport{},
+		ElementaryStreams: []report.StreamCount{},
+		StreamTotals:      []report.TypeTotal{},
+		Unmapped:          report.UnmappedReport{PIDs: []report.PIDPackets{}},
+		Continuity:        report.ContinuityReport{PerPID: []report.PIDContinuity{}},
 	}
 	// Final PAT mapping and version tracking.
 	snap := cat.Current()
