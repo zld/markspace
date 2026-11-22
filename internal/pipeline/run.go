@@ -7,6 +7,7 @@ import (
 	"sort"
 
 	"mediad/internal/clock"
+	"mediad/internal/diagnose"
 
 	"mediad/internal/core"
 	"mediad/internal/index"
@@ -263,7 +264,14 @@ func ValidateOutput(out *Output, sizes map[string]int64, formats map[string]stri
 	in := validate.Input{Sizes: sizes, AssetFormats: formats}
 	if out.Normalize != nil {
 		tl, err := rebuildTimeline(out.Normalize)
-		if err == nil {
+		if err != nil {
+			// A normalize payload that cannot be rebuilt is itself a
+			// validation failure, not a reason to skip the timeline checks.
+			in.Issues = append(in.Issues, diagnose.Issue{
+				Category: diagnose.CatInvariant, Stage: diagnose.StageValidate,
+				Format: "report", Asset: "", Detail: "timeline rebuild failed: " + err.Error(),
+			})
+		} else {
 			in.Timeline = tl
 		}
 	}

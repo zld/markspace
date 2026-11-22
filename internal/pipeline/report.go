@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -321,10 +322,22 @@ func bodyDigest(recs []Record) (string, error) {
 	return core.HashParts(parts...), nil
 }
 
-// WriteReport writes the JSONL report atomically to path.
+// WriteReport writes the JSONL report atomically to path. When root is set,
+// path must resolve inside it so a damaged or misconfigured run cannot write
+// outside the designated output area.
 func WriteReport(path string, out *Output, params Parameters, inputDigest, paramsDigest string) error {
+	return WriteReportIn("", path, out, params, inputDigest, paramsDigest)
+}
+
+// WriteReportIn is WriteReport with an explicit output root.
+func WriteReportIn(root, path string, out *Output, params Parameters, inputDigest, paramsDigest string) error {
 	if path == "" {
 		return errors.New("pipeline: empty report path")
+	}
+	if root != "" {
+		if err := containPath(root, path); err != nil {
+			return err
+		}
 	}
 	tmp := path + ".tmp"
 	f, err := os.Create(tmp)
@@ -346,6 +359,26 @@ func WriteReport(path string, out *Output, params Parameters, inputDigest, param
 		return err
 	}
 	return os.Rename(tmp, path)
+}
+
+// containPath rejects a path that resolves outside root.
+func containPath(root, path string) error {
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return err
+	}
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return err
+	}
+	rel, err := filepath.Rel(absRoot, absPath)
+	if err != nil {
+		return err
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("pipeline: report path %q escapes %q", path, root)
+	}
+	return nil
 }
 
 // ParsedReport is the reconstruction of a report used by `verify`.
