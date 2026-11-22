@@ -86,6 +86,19 @@ type Input struct {
 	Indexes      []IndexRef
 	Issues       diagnose.Issues
 	Ranges       []RangeRef
+	Drifts       []DriftRef
+}
+
+// DriftRef is the validation view of one audited node drift fit.
+type DriftRef struct {
+	Asset     string
+	Node      string
+	Samples   int
+	Slope     core.Rational
+	Intercept core.Rational
+	RatePPB   int64
+	Applied   bool
+	Span      core.Span
 }
 
 // IndexRef is a minimal view of an index for validation.
@@ -126,6 +139,7 @@ func All(in Input) *Result {
 	checkIndexes(res, in)
 	checkRanges(res, in)
 	checkIssues(res, in)
+	checkDrifts(res, in)
 	checkAssetFormats(res, in)
 	res.Finish()
 	return res
@@ -190,14 +204,50 @@ func checkTimeline(res *Result, in Input) {
 		if tr.Drift == nil {
 			continue
 		}
-		ok := tr.Drift.Slope.Num != 0 && tr.Drift.Slope.Num > -1
-		res.Add(Check{
-			Name: "drift_correction_auditable", Stage: diagnose.StageValidate, Asset: tr.Asset,
-			Passed: ok,
-			Detail: fmt.Sprintf("node=%s slope=%s intercept=%s ppb=%d",
-				tr.Drift.Node, tr.Drift.Slope, tr.Drift.Intercept, tr.Drift.RatePPB),
-		})
+		res.Add(driftCheck(DriftRef{
+			Asset: tr.Asset, Node: tr.Drift.Node, Samples: tr.Drift.Samples,
+			Slope: tr.Drift.Slope, Intercept: tr.Drift.Intercept,
+			RatePPB: tr.Drift.RatePPB, Applied: tr.Drift.Applied,
+		}))
 	}
+}
+
+// driftCheck accepts a correction only when all of its audit fields are
+// present and mutually consistent: a positive slope, a bounded intercept, and
+// a ppb value that matches the slope it was derived from.
+func driftCheck(d DriftRef) Check {
+	why := ""
+	switch {
+	case d.Samples < 2:
+		why = fmt.Sprintf("only %d samples", d.Samples)
+	case d.Slope.Num <= 0 || d.Slope.Den <= 0:
+		why = fmt.Sprintf("non-positive slope %s", d.Slope)
+	case d.Intercept.Abs().Cmp(core.Rat(3600, 1)) > 0:
+		why = fmt.Sprintf("implausible intercept %s", d.Intercept)
+	default:
+		want := roundPPB(d.Slope)
+		delta := d.RatePPB - want
+		if delta < 0 {
+			delta = -delta
+		}
+		if delta > 1 {
+			why = fmt.Sprintf("ppb %d disagrees with slope %s (%d)", d.RatePPB, d.Slope, want)
+		}
+	}
+	return Check{
+		Name: "drift_correction_auditable", Stage: diagnose.StageValidate, Asset: d.Asset,
+		Passed: why == "", Span: d.Span,
+		Detail: fmt.Sprintf("node=%s samples=%d slope=%s intercept=%s ppb=%d applied=%v %s",
+			d.Node, d.Samples, d.Slope, d.Intercept, d.RatePPB, d.Applied, why),
+	}
+}
+
+func roundPPB(slope core.Rational) int64 {
+	num := (slope.Num - slope.Den) * 1_000_000_000
+	if num >= 0 {
+		return (num + slope.Den/2) / slope.Den
+	}
+	return -((-num + slope.Den/2) / slope.Den)
 }
 
 func checkIndexes(res *Result, in Input) {
@@ -271,6 +321,12 @@ func checkIssues(res *Result, in Input) {
 			Passed: pass, Span: is.Span,
 			Detail: fmt.Sprintf("%s at [%d,%d) of %d", is.Category, is.Span.Start, is.Span.End, size),
 		})
+	}
+}
+
+func checkDrifts(res *Result, in Input) {
+	for _, d := range in.Drifts {
+		res.Add(driftCheck(d))
 	}
 }
 

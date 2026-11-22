@@ -292,6 +292,12 @@ func ValidateOutput(out *Output, sizes map[string]int64, formats map[string]stri
 	}
 	if out.Ingest != nil {
 		in.Issues = append(in.Issues, out.Ingest.Issues...)
+		for _, d := range out.Ingest.Drifts {
+			in.Drifts = append(in.Drifts, validate.DriftRef{
+				Asset: d.Asset, Node: d.Node, Samples: d.Samples, Slope: d.Slope,
+				Intercept: d.Intercept, RatePPB: d.RatePPB, Applied: d.Applied, Span: d.Span,
+			})
+		}
 	}
 	if out.Normalize != nil {
 		in.Issues = append(in.Issues, out.Normalize.Issues...)

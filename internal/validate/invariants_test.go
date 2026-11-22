@@ -136,3 +136,31 @@ func TestResultIsDeterministic(t *testing.T) {
 		}
 	}
 }
+
+func TestDriftAuditRejectsInconsistentPPB(t *testing.T) {
+	d := DriftRef{
+		Asset: "a.drift", Node: "n", Samples: 10,
+		Slope: core.Rat(1001, 1000), Intercept: core.Rat(1, 100), RatePPB: 5000,
+		Applied: true,
+	}
+	res := driftCheck(d)
+	if res.Passed {
+		t.Fatalf("inconsistent ppb accepted: %+v", res)
+	}
+	d.RatePPB = 1_000_000
+	if !driftCheck(d).Passed {
+		t.Fatal("consistent ppb rejected")
+	}
+}
+
+func TestDriftAuditRejectsDegenerateFit(t *testing.T) {
+	for _, d := range []DriftRef{
+		{Samples: 1, Slope: core.Rat(1, 1), RatePPB: 0},
+		{Samples: 5, Slope: core.Rat(0, 1), RatePPB: 0},
+		{Samples: 5, Slope: core.Rat(1, 1), Intercept: core.Rat(100000, 1), RatePPB: 0},
+	} {
+		if driftCheck(d).Passed {
+			t.Fatalf("degenerate drift accepted: %+v", d)
+		}
+	}
+}

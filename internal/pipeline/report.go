@@ -389,6 +389,7 @@ type ParsedReport struct {
 	Tracks      []TrackRecord
 	Keyframes   []KeyframeRecord
 	Ranges      []RangeRecord
+	Drifts      []DriftRecord
 	Issues      []IssueRecord
 	Stages      []StageRecordOut
 	GatesFailed int
@@ -481,7 +482,12 @@ func ParseReport(r io.Reader) (*ParsedReport, error) {
 			if rec.Gate.Failed > 0 {
 				out.GatesFailed += rec.Gate.Failed
 			}
-		case KindCue, KindRTP, KindTimecode, KindDrift:
+		case KindDrift:
+			if rec.Drift == nil {
+				return nil, errors.New("pipeline: empty drift record")
+			}
+			out.Drifts = append(out.Drifts, *rec.Drift)
+		case KindCue, KindRTP, KindTimecode:
 			// Informational records; verify does not need to re-check them.
 		default:
 			return nil, fmt.Errorf("pipeline: report line %d: unknown kind %q", out.Records, rec.Kind)
@@ -552,6 +558,12 @@ func VerifyReport(p *ParsedReport) (*validate.Result, string, bool) {
 	}
 	for _, r := range p.Ranges {
 		in.Ranges = append(in.Ranges, validate.RangeRef{Asset: r.Asset, Format: r.Format, Span: r.Span})
+	}
+	for _, d := range p.Drifts {
+		in.Drifts = append(in.Drifts, validate.DriftRef{
+			Asset: d.Asset, Node: d.Node, Samples: d.Samples, Slope: d.Slope,
+			Intercept: d.Intercept, RatePPB: d.RatePPB, Applied: d.Applied, Span: d.Span,
+		})
 	}
 	for _, is := range p.Issues {
 		in.Issues = append(in.Issues, diagnose.Issue{
