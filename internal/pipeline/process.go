@@ -8,7 +8,6 @@ import (
 	"math"
 	"math/bits"
 	"os"
-	"path/filepath"
 
 	"mediatimeline/internal/checkpoint"
 	"mediatimeline/internal/clock"
@@ -294,13 +293,3 @@ func (p *Pipeline) Validate() error {
 // TotalIn/TotalOut expose the conservation counters for tests.
 func (p *Pipeline) TotalIn() uint64  { return p.totalIn }
 func (p *Pipeline) TotalOut() uint64 { return p.totalOut }
-
-// Ensure the temp-file + rename discipline for outputs lives in one place.
-func atomicWritePCM(dir string, data []byte) (string, error) {
-	final := filepath.Join(dir, "output.pcm")
-	tmp := final + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return "", err
-	}
-	return final, os.Rename(tmp, final)
-}
