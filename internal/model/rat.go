@@ -178,8 +178,9 @@ func (r Rat) DecimalString(maxDigits int) string {
 			if !ok {
 				return r.String()
 			}
-			whole := scaled / r.den
-			frac := scaled % r.den
+			q := scaled / r.den
+			whole := q / int64(pow)
+			frac := q % int64(pow)
 			s := strconv.FormatInt(whole, 10) + "." +
 				padLeft(strconv.FormatInt(frac, 10), k)
 			if neg {
@@ -230,7 +231,7 @@ func (r Rat) DecimalFixed(digits int) string {
 		return abs
 	}
 	if len(abs) <= digits {
-		abs = strings.Repeat("0", digits+1-len(abs)) + abs
+		abs = strings.Repeat("0", digits-len(abs)+1) + abs
 	}
 	whole, frac := abs[:len(abs)-digits], abs[len(abs)-digits:]
 	frac = strings.TrimRight(frac, "0")
