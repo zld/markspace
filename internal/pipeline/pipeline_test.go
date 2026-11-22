@@ -106,32 +106,19 @@ func TestOffsetsMatchGroundTruth(t *testing.T) {
 	if err != nil && !errors.Is(err, ErrDamaged) {
 		t.Fatal(err)
 	}
-	score := 0
+	// Every injected fault must be localized to its exact start byte by an
+	// issue of the same class, before range merging can widen the interval.
 	for _, want := range stream.Expected {
-		best := int64(1 << 40)
-		for _, rg := range out.Diagnose.Ranges {
-			if rg.Asset != want.Asset {
-				continue
-			}
-			has := false
-			for _, c := range rg.Categories {
-				if c == want.Category {
-					has = true
-				}
-			}
-			if !has {
-				continue
-			}
-			for _, cand := range []int64{rg.Span.Start, rg.Span.End} {
-				if d := cand - want.Span.Start; d >= 0 && d < best || d < 0 && -d < best {
-					best = abs64(d)
-				}
+		found := false
+		for _, is := range out.Diagnose.Issues {
+			if is.Asset == want.Asset && string(is.Category) == want.Category && is.Span.Start == want.Span.Start {
+				found = true
+				break
 			}
 		}
-		score += int(best)
-	}
-	if score != 0 {
-		t.Fatalf("offset error=%d want 0", score)
+		if !found {
+			t.Errorf("fault %s/%s at %d was not localized exactly", want.Asset, want.Category, want.Span.Start)
+		}
 	}
 }
 

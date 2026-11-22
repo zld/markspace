@@ -127,10 +127,12 @@ type StageDigest struct {
 	RecordsThrough int    `json:"records_through"`
 }
 
-// OffsetCheck compares one reported offset with fixture ground truth.
+// OffsetCheck compares one reported offset with fixture ground truth. Err is
+// the absolute distance in bytes; a match records zero.
 type OffsetCheck struct {
 	Reported int64
 	Expected int64
+	Err      int64
 }
 
 // Summary carries the demo counters and the report checksum.

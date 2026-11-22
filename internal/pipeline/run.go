@@ -252,11 +252,7 @@ func summarize(out *Output) Summary {
 func offsetError(out *Output) int64 {
 	var total int64
 	for _, pair := range out.OffsetChecks {
-		d := pair.Reported - pair.Expected
-		if d < 0 {
-			d = -d
-		}
-		total += d
+		total += pair.Err
 	}
 	return total
 }
