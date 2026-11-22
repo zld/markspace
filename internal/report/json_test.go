@@ -15,7 +15,7 @@ import (
 func buildTimeline(t *testing.T) *program.Timeline {
 	t.Helper()
 	tl := program.NewTimeline(7)
-	tl.ApplyPAT(&psi.PAT{TransportStreamID: 7, Version: 0, Programs: []psi.PATProgram{{1, 100}}})
+	tl.ApplyPAT(&psi.PAT{TransportStreamID: 7, Version: 0, Programs: []psi.PATProgram{{ProgramNumber: 1, PMTPID: 100}}})
 	pmt0 := &psi.PMT{ProgramNumber: 1, PCRPID: 256, Version: 0, Streams: []psi.ElementaryStream{
 		{PID: 256, StreamType: 0x1b, Kind: psi.StreamVideo},
 		{PID: 257, StreamType: 0x0f, Kind: psi.StreamAudio},
@@ -23,7 +23,7 @@ func buildTimeline(t *testing.T) *program.Timeline {
 	if _, err := tl.ApplyMapping(1, 100, 0, 0, pmt0, 10); err != nil {
 		t.Fatal(err)
 	}
-	tl.ApplyPAT(&psi.PAT{TransportStreamID: 7, Version: 1, Programs: []psi.PATProgram{{1, 100}}})
+	tl.ApplyPAT(&psi.PAT{TransportStreamID: 7, Version: 1, Programs: []psi.PATProgram{{ProgramNumber: 1, PMTPID: 100}}})
 	pmt1 := &psi.PMT{ProgramNumber: 1, PCRPID: 300, Version: 1, Streams: []psi.ElementaryStream{
 		{PID: 300, StreamType: 0x1b, Kind: psi.StreamVideo},
 		{PID: 257, StreamType: 0x0f, Kind: psi.StreamAudio},

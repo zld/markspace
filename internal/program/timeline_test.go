@@ -23,7 +23,7 @@ func audio(pid uint16) psi.ElementaryStream {
 
 func TestTimelinePATVersionChanges(t *testing.T) {
 	tl := NewTimeline(9)
-	progs := []psi.PATProgram{{1, 100}}
+	progs := []psi.PATProgram{{ProgramNumber: 1, PMTPID: 100}}
 
 	tl.ApplyPAT(pat(0, progs))
 	if tl.PATVersionChanges() != 0 {
@@ -45,7 +45,7 @@ func TestTimelinePATVersionChanges(t *testing.T) {
 
 func TestTimelineIntervalsOnRemap(t *testing.T) {
 	tl := NewTimeline(9)
-	tl.ApplyPAT(pat(0, []psi.PATProgram{{1, 100}}))
+	tl.ApplyPAT(pat(0, []psi.PATProgram{{ProgramNumber: 1, PMTPID: 100}}))
 
 	iv0, err := tl.ApplyMapping(1, 100, 0, 0, pmt(1, 256, 0, []psi.ElementaryStream{video(256), audio(257)}), 10)
 	if err != nil {
@@ -63,7 +63,7 @@ func TestTimelineIntervalsOnRemap(t *testing.T) {
 		t.Fatal("duplicate mapping must return the existing interval")
 	}
 
-	tl.ApplyPAT(pat(1, []psi.PATProgram{{1, 100}}))
+	tl.ApplyPAT(pat(1, []psi.PATProgram{{ProgramNumber: 1, PMTPID: 100}}))
 	iv1, err := tl.ApplyMapping(1, 100, 1, 1, pmt(1, 300, 1, []psi.ElementaryStream{video(300), audio(257)}), 40)
 	if err != nil {
 		t.Fatal(err)
@@ -83,9 +83,9 @@ func TestTimelineIntervalsOnRemap(t *testing.T) {
 
 func TestTimelineAtPacketAndLookup(t *testing.T) {
 	tl := NewTimeline(9)
-	tl.ApplyPAT(pat(0, []psi.PATProgram{{1, 100}}))
+	tl.ApplyPAT(pat(0, []psi.PATProgram{{ProgramNumber: 1, PMTPID: 100}}))
 	_, _ = tl.ApplyMapping(1, 100, 0, 0, pmt(1, 256, 0, []psi.ElementaryStream{video(256), audio(257)}), 10)
-	tl.ApplyPAT(pat(1, []psi.PATProgram{{1, 100}}))
+	tl.ApplyPAT(pat(1, []psi.PATProgram{{ProgramNumber: 1, PMTPID: 100}}))
 	_, _ = tl.ApplyMapping(1, 100, 1, 1, pmt(1, 300, 1, []psi.ElementaryStream{video(300), audio(257)}), 40)
 
 	if _, err := tl.AtPacket(1, 9); err == nil {
@@ -120,7 +120,7 @@ func TestTimelineAtPacketAndLookup(t *testing.T) {
 
 func TestTimelineMultiplePrograms(t *testing.T) {
 	tl := NewTimeline(9)
-	tl.ApplyPAT(pat(0, []psi.PATProgram{{1, 100}, {2, 101}}))
+	tl.ApplyPAT(pat(0, []psi.PATProgram{{ProgramNumber: 1, PMTPID: 100}, {ProgramNumber: 2, PMTPID: 101}}))
 	if _, err := tl.ApplyMapping(1, 100, 0, 0, pmt(1, 256, 0, []psi.ElementaryStream{video(256)}), 5); err != nil {
 		t.Fatal(err)
 	}
