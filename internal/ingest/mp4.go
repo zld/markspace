@@ -593,6 +593,7 @@ func (f *MP4File) expandSamples(asset *Asset, trak BoxHeader, timescale uint32, 
 				s.Span = core.Span{Start: off, End: assetSize}
 			}
 		} else {
+			// The run ends at the previous sample, whose number is i.
 			flushRun(i)
 		}
 		dts += int64(durs[i])
