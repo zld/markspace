@@ -132,6 +132,30 @@ func TestAssemblerTruncatedSectionIsReplaced(t *testing.T) {
 	}
 }
 
+func TestAssemblerIgnoresSectionStuffing(t *testing.T) {
+	// A real PSI packet payload is padded to the packet boundary with 0xFF.
+	section := []byte{0x00, 0xB0, 0x03, 0xaa, 0xbb, 0xcc} // 6 bytes total
+	payload := append([]byte{0x00}, section...)
+	for len(payload) < 184 {
+		payload = append(payload, 0xFF)
+	}
+	a := NewAssembler()
+	secs, err := a.Push(&tsreader.Packet{
+		PID: 0, Index: 0, HasPayload: true, PayloadUnitStart: true, Payload: payload,
+	})
+	if err != nil || len(secs) != 1 || string(secs[0].Data) != string(section) {
+		t.Fatalf("stuffing should be ignored, got err=%v secs=%d", err, len(secs))
+	}
+	// A following PUSI packet must start cleanly rather than see residue.
+	secs, err = a.Push(&tsreader.Packet{
+		PID: 0, Index: 1, HasPayload: true, PayloadUnitStart: true,
+		Payload: append([]byte{0x00}, section...),
+	})
+	if err != nil || len(secs) != 1 {
+		t.Fatalf("next section after stuffing failed: err=%v secs=%d", err, len(secs))
+	}
+}
+
 func TestCRCTableSelfConsistent(t *testing.T) {
 	// Standard CRC-32/MPEG-2 check value for the ASCII string "123456789".
 	got := crc32MPEG2([]byte("123456789"))

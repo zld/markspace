@@ -102,7 +102,15 @@ func (a *Assembler) Push(pkt *tsreader.Packet) ([]*Section, error) {
 	}
 
 	// One PUSI packet may contain several back-to-back sections.
+	completedAny := false
 	for len(st.buf) >= 3 {
+		// After a completed section, remaining 0xFF bytes are section stuffing
+		// (the padding at the end of a section-carrying packet). A section that
+		// spans packets can never have 0xFF bytes before its continuation.
+		if completedAny && st.buf[0] == 0xFF {
+			st.buf = nil
+			break
+		}
 		sectionLen := int(st.buf[1]&0x0f)<<8 | int(st.buf[2])
 		total := 3 + sectionLen
 		if total > maxSectionLength {
@@ -122,6 +130,7 @@ func (a *Assembler) Push(pkt *tsreader.Packet) ([]*Section, error) {
 			EndPacket:   pkt.Index,
 		})
 		st.buf = st.buf[total:]
+		completedAny = true
 		if len(st.buf) > 0 {
 			st.startPacket = pkt.Index // further section starts inside this packet
 		}
