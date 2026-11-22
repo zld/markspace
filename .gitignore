@@ -1,0 +1,8 @@
+# build artifacts
+/mediapipeline
+*.test
+*.out
+
+# demo/verify working data
+/.mediapipeline/
+/artifacts/
