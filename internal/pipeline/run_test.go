@@ -190,6 +190,30 @@ func TestLossChangesSegmentHashAndMedia(t *testing.T) {
 	}
 }
 
+func TestCycleIsRejectedWithoutOutput(t *testing.T) {
+	in := buildInput(t, fixture.DefaultSpec())
+	// Make the H.264 track depend on the AV1 track, while AV1 already depends
+	// on track 1: a two-track cycle.
+	in.CycleForTest = true
+	dir := t.TempDir()
+	opts := DefaultOptions()
+	opts.OutputDir = dir
+	res := Run(in, opts)
+	if res.Fatal == nil {
+		t.Fatal("a dependency cycle must be rejected")
+	}
+	e := merr.AsError(res.Fatal)
+	if e == nil || e.Code != "dependency_cycle" {
+		t.Fatalf("unexpected error: %v", res.Fatal)
+	}
+	if !strings.Contains(e.Message, "[1 3 1]") {
+		t.Fatalf("cycle tracks not listed: %q", e.Message)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Fatalf("cyclic run left output: %v", entries)
+	}
+}
+
 func TestReportIsWrittenAndParses(t *testing.T) {
 	res := runForTest(t, fixture.DefaultSpec(), nil)
 	body, err := os.ReadFile(filepath.Join(res.Options.OutputDir, "report.json"))

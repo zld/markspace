@@ -113,6 +113,9 @@ type Input struct {
 	// stream outside the manifest is an unknown track and is handled by the
 	// UnknownTracks policy. A nil manifest means "forward every track".
 	Manifest []uint32
+	// CycleForTest declares the primary stream dependent on its successor,
+	// which lets tests exercise cycle rejection through the normal graph code.
+	CycleForTest bool
 }
 
 // InputStream is one input stream. CleanSamples is the ground truth used for
@@ -542,6 +545,10 @@ func buildTracks(in *Input, dm *demux.Result,
 		// the topological order observable and non-trivial.
 		if src.Codec == "av1" && src.TrackID != 1 {
 			t.Dependencies = []uint32{1}
+		}
+		if in.CycleForTest && src.TrackID == 1 {
+			// Close the loop 1 -> 3 -> 1 when a test asks for it.
+			t.Dependencies = []uint32{3}
 		}
 		if err := g.Add(t); err != nil {
 			return nil, nil, nil, err
