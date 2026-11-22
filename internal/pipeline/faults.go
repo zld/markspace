@@ -3,7 +3,6 @@ package pipeline
 import (
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"mediapipe/internal/cache"
@@ -172,7 +171,7 @@ func runReorderFault(seed int64) (FaultReport, error) {
 	if err != nil {
 		return rep, err
 	}
-	defer os.RemoveAll(dir)
+	defer CleanupTempDir(dir)
 	cfg := DefaultConfig()
 	cfg.Seed = seed
 	cfg.ReorderPermille = 400
@@ -235,6 +234,7 @@ func runBurstFault(seed int64) (FaultReport, error) {
 	if err != nil {
 		return rep, err
 	}
+	defer CleanupTempDir(dir)
 	cfg := DefaultConfig()
 	cfg.Seed = seed
 	cfg.LossBurst = 4
@@ -340,6 +340,7 @@ func runCacheFault(seed int64) (FaultReport, error) {
 	if err != nil {
 		return rep, err
 	}
+	defer CleanupTempDir(dir)
 	cfg := DefaultConfig()
 	cfg.Seed = seed
 	cfg.CheckpointDir = filepath.Join(dir, "cp")
