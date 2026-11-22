@@ -112,6 +112,11 @@ func runDemo(args []string, stdout, stderr io.Writer) int {
 		return exitInput
 	}
 	in := toInput(fx)
+	// The manifest is what the operator asked to forward. The AV1 track is
+	// deliberately left out so the unknown-track policy has a real subject.
+	if *unknown == "drop" {
+		in.Manifest = []uint32{1, 2}
+	}
 	opts := pipeline.DefaultOptions()
 	opts.Seed = *seed
 	opts.LossBurst = *lossBurst

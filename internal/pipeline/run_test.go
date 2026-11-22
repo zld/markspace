@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"mediadist/internal/fixture"
+	"mediadist/internal/merr"
 	"mediadist/internal/track"
 )
 
@@ -255,9 +256,8 @@ func TestDamagedAndRecoveredEvidence(t *testing.T) {
 
 func TestUnknownTrackPolicyDrop(t *testing.T) {
 	in := buildInput(t, fixture.DefaultSpec())
-	// Remove one mapping entry by dropping a stream's track from the graph
-	// expectations: simulate an input the manifest does not describe by
-	// remapping only two of the three streams.
+	// The manifest names only the first two tracks; the AV1 track is unknown.
+	in.Manifest = []uint32{1, 2}
 	opts := DefaultOptions()
 	opts.OutputDir = t.TempDir()
 	opts.UnknownTracks = track.UnknownDrop
@@ -265,11 +265,42 @@ func TestUnknownTrackPolicyDrop(t *testing.T) {
 	if res.Fatal != nil {
 		t.Fatalf("drop policy failed: %v", res.Fatal)
 	}
-	res2 := runForTest(t, fixture.DefaultSpec(), func(o *Options) {
-		o.UnknownTracks = track.UnknownDrop
-	})
-	if res2.Fatal != nil {
-		t.Fatalf("drop policy failed: %v", res2.Fatal)
+	if len(res.Tracks) != 2 {
+		t.Fatalf("dropped run wrote %d tracks want 2", len(res.Tracks))
+	}
+	for _, tr := range res.Tracks {
+		if tr.TrackID == 3 {
+			t.Fatal("unknown track 3 was forwarded despite the drop policy")
+		}
+	}
+	if !strings.Contains(res.Mapping, "dropped=[3]") {
+		t.Fatalf("drop is not recorded in the mapping: %s", res.Mapping)
+	}
+	// The MP4 only carries the manifest tracks.
+	if res.Remux.SampleCount != 200 {
+		t.Fatalf("mp4 has %d samples want 200", res.Remux.SampleCount)
+	}
+}
+
+func TestUnknownTrackPolicyErrorRejects(t *testing.T) {
+	in := buildInput(t, fixture.DefaultSpec())
+	in.Manifest = []uint32{1, 2}
+	opts := DefaultOptions()
+	opts.OutputDir = t.TempDir()
+	opts.UnknownTracks = track.UnknownError
+	res := Run(in, opts)
+	if res.Fatal == nil {
+		t.Fatal("error policy must reject an unknown track")
+	}
+	e := merr.AsError(res.Fatal)
+	if e == nil || e.Code != "unmapped_track" {
+		t.Fatalf("unexpected error: %v", res.Fatal)
+	}
+	if e.Span.TrackID != 3 {
+		t.Fatalf("error should name track 3: %+v", e.Span)
+	}
+	if entries, _ := os.ReadDir(opts.OutputDir); len(entries) != 0 {
+		t.Fatalf("rejected run left files: %v", entries)
 	}
 }
 

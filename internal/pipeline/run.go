@@ -109,6 +109,10 @@ func (m Metrics) Pass(t Thresholds) bool {
 type Input struct {
 	Streams   []*InputStream
 	IndexJSON []byte
+	// Manifest lists the input track IDs the operator asked to forward. A
+	// stream outside the manifest is an unknown track and is handled by the
+	// UnknownTracks policy. A nil manifest means "forward every track".
+	Manifest []uint32
 }
 
 // InputStream is one input stream. CleanSamples is the ground truth used for
@@ -526,9 +530,11 @@ func buildTracks(in *Input, dm *demux.Result,
 			return nil, nil, nil, err
 		}
 	}
+	// Only manifest tracks are mapped explicitly. Everything else is left to
+	// the unknown-track policy, which either drops it (recorded) or fails.
 	entries := make([]track.MapEntry, 0, len(in.Streams))
-	for _, src := range in.Streams {
-		entries = append(entries, track.MapEntry{InputID: src.TrackID, OutputID: src.TrackID})
+	for _, id := range manifestIDs(in) {
+		entries = append(entries, track.MapEntry{InputID: id, OutputID: id})
 	}
 	m, err := track.BuildMapping(g, entries, opts.UnknownTracks)
 	if err != nil {
@@ -553,6 +559,19 @@ func buildTracks(in *Input, dm *demux.Result,
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].TrackID < rows[j].TrackID })
 	return g, m, rows, nil
+}
+
+// manifestIDs returns the configured manifest, or every input track when none
+// was declared.
+func manifestIDs(in *Input) []uint32 {
+	if len(in.Manifest) > 0 {
+		return in.Manifest
+	}
+	ids := make([]uint32, 0, len(in.Streams))
+	for _, src := range in.Streams {
+		ids = append(ids, src.TrackID)
+	}
+	return ids
 }
 
 // buildPlans converts demuxed samples into remux plans, honoring the mapping.
@@ -720,6 +739,10 @@ const comparisonSlots = 100
 func computeMetrics(dm *demux.Result, v index.Verification, segments []SegmentReport,
 	rep *remux.Report, in *Input) Metrics {
 	m := Metrics{KeyframeTotal: v.Total, KeyframeHit: v.Matched}
+	outputTracks := make(map[uint32]struct{}, len(rep.Evidence))
+	for _, ev := range rep.Evidence {
+		outputTracks[ev.TrackID] = struct{}{}
+	}
 	// Round-trip walks the comparison slots in stream order and compares each
 	// clean sample's canonical bytes against the demuxed sample carrying the
 	// same timestamp. A sample lost entirely counts as a mismatch, so the
@@ -727,13 +750,27 @@ func computeMetrics(dm *demux.Result, v index.Verification, segments []SegmentRe
 	// Slots are allocated deterministically across streams: the first streams
 	// take one extra slot when the total does not divide evenly. This keeps
 	// the ratio comparable while still sampling every codec.
-	slots := make([]int, len(in.Streams))
-	for i := range slots {
-		slots[i] = comparisonSlots / len(in.Streams)
+	// Slots are split evenly across streams that actually reached the output.
+	keptCount := 0
+	for _, src := range in.Streams {
+		if _, kept := outputTracks[src.TrackID]; kept {
+			keptCount++
+		}
 	}
-	rem := comparisonSlots % len(in.Streams)
-	for i := 0; i < rem; i++ {
-		slots[i]++
+	if keptCount == 0 {
+		return m
+	}
+	slots := make([]int, len(in.Streams))
+	assigned := 0
+	for i, src := range in.Streams {
+		if _, kept := outputTracks[src.TrackID]; !kept {
+			continue
+		}
+		slots[i] = comparisonSlots / keptCount
+		if assigned < comparisonSlots%keptCount {
+			slots[i]++
+		}
+		assigned++
 	}
 	for si, src := range in.Streams {
 		var st *demux.Stream

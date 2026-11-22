@@ -20,6 +20,10 @@ go run ./cmd/mediadist demo --seed 41 --loss-burst 3 --bandwidth-kbps 1800 --seg
 `media.mp4` 与 `report.json`（完整证据）。默认参数下 `media.mp4` 的 SHA-256
 在重复运行之间保持一致。
 
+`--unknown-tracks drop` 会把清单外的 AV1 轨道按参数丢弃并在 `mapping` 中记录
+（`dropped=[3]`），输出 MP4 只含清单内两条轨道；`error`（默认）则直接拒绝。
+被丢弃轨道不参与往返比较，因此该模式下比较槽位为 99 个。
+
 ## 输出示例（默认参数）
 
 ```

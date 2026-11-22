@@ -58,6 +58,28 @@ func TestDemoExitsZeroAndPrintsAcceptanceLines(t *testing.T) {
 	}
 }
 
+func TestDemoUnknownTrackPolicy(t *testing.T) {
+	dir := t.TempDir()
+	var out, errBuf bytes.Buffer
+	code := run([]string{"demo", "--unknown-tracks", "drop", "--out", dir}, &out, &errBuf)
+	if code != exitOK {
+		t.Fatalf("drop run exit %d: %s", code, errBuf.String())
+	}
+	text := out.String()
+	if !strings.Contains(text, "dropped=[3]") {
+		t.Fatalf("drop not reported:\n%s", text)
+	}
+	if !strings.Contains(text, "roundtrip_match=99/100") {
+		t.Fatalf("dropped track should leave 99/100 slots:\n%s", text)
+	}
+	// The AV1 track must not appear as an output track.
+	for _, line := range strings.Split(text, "\n") {
+		if strings.HasPrefix(line, "track=3 ") {
+			t.Fatalf("AV1 track was forwarded under the drop policy: %s", line)
+		}
+	}
+}
+
 func TestDemoIsReproducible(t *testing.T) {
 	dirA, dirB := t.TempDir(), t.TempDir()
 	args := []string{"demo", "--seed", "7", "--loss-burst", "3",
