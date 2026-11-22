@@ -33,8 +33,9 @@ def frames_from_seconds(seconds: Fraction | int | float | str, fps: FrameRate) -
 
     * exact rational arithmetic throughout (floats are first promoted to
       :class:`~fractions.Fraction`, never accumulated);
-    * nearest frame; on an exact half-frame tie the *earlier* frame wins
-      (floor of ``(2*seconds*fps + 1) // 2`` style rounding toward -inf).
+    * nearest frame; on an exact half-frame tie the *earlier* frame wins,
+      i.e. round-half-toward-negative-infinity for positive and negative
+      values alike (0.5 -> 0, 1.5 -> 1, -0.5 -> -1).
     """
     if not isinstance(fps, int) or fps <= 0:
         raise ResolutionError(f"frame rate must be a positive integer, got {fps!r}")
@@ -43,9 +44,15 @@ def frames_from_seconds(seconds: Fraction | int | float | str, fps: FrameRate) -
     except (TypeError, ValueError, ZeroDivisionError) as exc:
         raise ResolutionError(f"invalid time value {seconds!r}: {exc}") from exc
     scaled = value * fps
-    # Floor division on Fraction gives nearest-with-ties-toward-earlier:
-    # scaled = k + 1/2 rounds down to k; negatives likewise go earlier (-inf).
-    return scaled.numerator // scaled.denominator
+    # Nearest frame with half-frame ties toward the *earlier* frame, i.e.
+    # round-half-toward-negative-infinity for both signs:
+    #   x >= 0: floor(x + 1/2)  -> 0.5 -> 0, 1.5 -> 1
+    #   x <  0: ceil(x - 1/2)   -> -0.5 -> -1, -1.5 -> -2
+    numerator = scaled.numerator
+    denominator = scaled.denominator
+    if numerator >= 0:
+        return (2 * numerator + denominator - 1) // (2 * denominator)
+    return -((denominator - 2 * numerator) // (2 * denominator))
 
 
 @dataclass(frozen=True, slots=True)
