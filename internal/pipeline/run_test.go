@@ -231,6 +231,46 @@ func TestVFRAndConstantRateBothValid(t *testing.T) {
 	}
 }
 
+// TestReorderedPacketsKeepTrueTimelinePosition guards against clamping a
+// reordered packet to the committed high-water mark: every delivered packet's
+// extended position must stay consistent with its raw timestamp ordering.
+func TestReorderedPacketsKeepTrueTimelinePosition(t *testing.T) {
+	cfg := DefaultScenarioConfig()
+	sc, err := Generate(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rep := &Report{}
+	res, err := processTrack(sc.Input.Tracks[0], sc.Input, rep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := make(map[uint16]uint32)
+	for _, p := range sc.Input.Tracks[0].Packets {
+		r, perr := rtp.Parse(p.Bytes, int64(p.Arrival))
+		if perr != nil || r.PayloadType == ParityPayloadType {
+			continue
+		}
+		raw[r.Seq] = r.Timestamp
+	}
+	for seq := videoSeqStart; seq < videoSeqStart+uint16(cfg.VideoPackets)-1; seq++ {
+		a, oka := raw[seq]
+		b, okb := raw[seq+1]
+		ea, eoka := res.ext[seq]
+		eb, eokb := res.ext[seq+1]
+		if !oka || !okb || !eoka || !eokb {
+			continue
+		}
+		// Consecutive raw timestamps increase before the wrap. Their
+		// extended positions must increase too; equality means one was
+		// wrongly clamped.
+		if b > a && b-a < 200_000 && eb <= ea {
+			t.Fatalf("seq %d ext %d, seq %d ext %d: extended order contradicts raw order",
+				seq, ea, seq+1, eb)
+		}
+	}
+}
+
 // TestRepairFailureAffectsOnlyOneSegment proves the damage-isolation
 // guarantee end to end: withholding the parity that repairs one lost packet
 // changes exactly the hash of the segment containing that packet.
