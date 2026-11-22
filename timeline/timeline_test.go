@@ -4,8 +4,8 @@ import (
 	"testing"
 
 	"mediacore"
-	"mediacore/timeline"
 	"mediacore/audit"
+	"mediacore/timeline"
 )
 
 func TestClockRTPWrapAndMapping(t *testing.T) {

@@ -42,13 +42,13 @@ const (
 type EventKind uint8
 
 const (
-	KindUnknown EventKind = iota
-	KindRTP               // RTP packet as received (pre-buffer)
-	KindPCM               // reordered PCM block emitted by the jitter buffer
-	KindVideo             // video frame sample
-	KindGap               // deterministic missing-block gap record
-	KindSenderReport      // clock anchor (RTP timestamp paired with master time)
-	KindLate              // packet that arrived after the buffer window
+	KindUnknown      EventKind = iota
+	KindRTP                    // RTP packet as received (pre-buffer)
+	KindPCM                    // reordered PCM block emitted by the jitter buffer
+	KindVideo                  // video frame sample
+	KindGap                    // deterministic missing-block gap record
+	KindSenderReport           // clock anchor (RTP timestamp paired with master time)
+	KindLate                   // packet that arrived after the buffer window
 )
 
 // Event is the unit exchanged between subsystems. Times are integer

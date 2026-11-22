@@ -29,7 +29,7 @@ func TestRTPWrapAndDuplicate(t *testing.T) {
 	}
 	ev2, _, _ := p.Parse(mk(0), 20)
 	ev3, _, _ := p.Parse(mk(65535), 30) // reordered before wrap completion
-	ev4, dup4, _ := p.Parse(mk(0), 40) // exact duplicate
+	ev4, dup4, _ := p.Parse(mk(0), 40)  // exact duplicate
 	if p.Duplicates != 1 || !dup4 {
 		t.Fatalf("duplicate accounting wrong: count=%d dup4=%v", p.Duplicates, dup4)
 	}

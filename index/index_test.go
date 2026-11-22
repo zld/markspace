@@ -22,9 +22,9 @@ func buildMP4(t *testing.T) []byte {
 	tracks := []index.WriteTrack{
 		{
 			TrackID: 1, Timescale: 90000, IsVideo: true, Width: 320, Height: 240,
-			Deltas:    []uint32{3000, 3000, 6000, 3000, 3000, 6000},
-			Sizes:     []uint32{10, 10, 10, 10, 10, 10},
-			Keyframes: []bool{true, false, false, true, false, false},
+			Deltas:     []uint32{3000, 3000, 6000, 3000, 3000, 6000},
+			Sizes:      []uint32{10, 10, 10, 10, 10, 10},
+			Keyframes:  []bool{true, false, false, true, false, false},
 			SampleData: videoData,
 		},
 		{

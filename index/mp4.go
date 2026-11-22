@@ -13,7 +13,7 @@ import (
 type SampleEntry struct {
 	Index        int
 	Track        mediacore.TrackID
-	Presentation int64 // integer nanoseconds on the master time base
+	Presentation int64  // integer nanoseconds on the master time base
 	ScaleDelta   uint32 // raw stts delta in the track's timescale units
 	Size         int
 	ChunkOffset  int64
@@ -22,12 +22,12 @@ type SampleEntry struct {
 
 // TrackInfo is the parsed, validated view of one MP4 track.
 type TrackInfo struct {
-	Track       mediacore.TrackID
-	Timescale   uint32
-	TrackID     uint32
-	StartOffset int64 // nanoseconds on the master time base
-	DurationNS  int64
-	Samples     []SampleEntry
+	Track        mediacore.TrackID
+	Timescale    uint32
+	TrackID      uint32
+	StartOffset  int64 // nanoseconds on the master time base
+	DurationNS   int64
+	Samples      []SampleEntry
 	HasKeyframes bool
 }
 

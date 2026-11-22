@@ -236,8 +236,8 @@ func ingestAndReplay(engine *timeline.Engine, audio, video []mediacore.Event,
 		late := mediacore.Event{
 			Track: mediacore.TrackAudio1, Kind: mediacore.KindPCM,
 			Time: int64(lateIdx) * fixBlockNS(fix), OrigTime: int64(lateIdx) * fixBlockNS(fix),
-			Recv: int64(lateIdx) * fixBlockNS(fix) + fix.Cfg.LateMS*mediacore.Millisecond,
-			Seq: uint64(lateIdx), Samples: fix.Cfg.BlockSamps,
+			Recv: int64(lateIdx)*fixBlockNS(fix) + fix.Cfg.LateMS*mediacore.Millisecond,
+			Seq:  uint64(lateIdx), Samples: fix.Cfg.BlockSamps,
 			Channels: fix.Cfg.Channels, Rate: fix.Cfg.Rate,
 			Payload: append([]byte(nil), fix.PCM[lateIdx]...),
 		}

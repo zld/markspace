@@ -28,7 +28,7 @@ func (w *Watermark) Observe(ev mediacore.Event) (advanced bool, previous int64) 
 	}
 	// Merged watermark is the minimum of per-track high-water marks, so a
 	// lagging track holds back shared commitment correctly.
-	m := int64(1<<62)
+	m := int64(1 << 62)
 	for _, t := range w.perTrack {
 		if t < m {
 			m = t

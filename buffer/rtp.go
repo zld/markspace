@@ -36,7 +36,7 @@ func NewRTPParser(track mediacore.TrackID) *RTPParser {
 func (p *RTPParser) extend(seq uint16) uint64 {
 	high := p.maxSeq &^ uint64(0xffff)
 	candidate := high | uint64(seq)
-	if d := int64(candidate - p.maxSeq); d > (1<<15) {
+	if d := int64(candidate - p.maxSeq); d > (1 << 15) {
 		candidate -= 1 << 16 // backwards across the wrap point (reorder)
 	} else if d < -(1 << 15) {
 		candidate += 1 << 16 // forwards across the wrap point

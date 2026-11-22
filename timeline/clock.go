@@ -145,7 +145,7 @@ func unwrap32(tc *trackClock, raw uint32) uint64 {
 	}
 	high := tc.lastTS &^ uint64(0xffffffff)
 	cand := high | uint64(raw)
-	if d := int64(cand - tc.lastTS); d > (1<<31) {
+	if d := int64(cand - tc.lastTS); d > (1 << 31) {
 		cand -= 1 << 32
 	} else if d < -(1 << 31) {
 		cand += 1 << 32

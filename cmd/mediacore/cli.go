@@ -74,7 +74,9 @@ func wavWithBadChannels() []byte {
 	return raw
 }
 
-func putLE32(b []byte, v uint32) { b[0], b[1], b[2], b[3] = byte(v), byte(v>>8), byte(v>>16), byte(v>>24) }
+func putLE32(b []byte, v uint32) {
+	b[0], b[1], b[2], b[3] = byte(v), byte(v>>8), byte(v>>16), byte(v>>24)
+}
 func putLE16(b []byte, v uint16) { b[0], b[1] = byte(v), byte(v>>8) }
 
 func bytesReader(b []byte) *bytes.Reader { return bytes.NewReader(b) }

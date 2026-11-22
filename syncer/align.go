@@ -10,10 +10,10 @@ import (
 type AlignStatus uint8
 
 const (
-	AlignOK      AlignStatus = iota // inside tolerance
-	AlignSkew                       // nearest frame is farther than tolerance
-	AlignBeforeFirst                // audio precedes the first video frame
-	AlignAfterLast                  // audio outlasts the last video frame
+	AlignOK          AlignStatus = iota // inside tolerance
+	AlignSkew                           // nearest frame is farther than tolerance
+	AlignBeforeFirst                    // audio precedes the first video frame
+	AlignAfterLast                      // audio outlasts the last video frame
 )
 
 // AlignResult binds one audio block to its nearest video frame and records
