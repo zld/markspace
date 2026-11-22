@@ -122,22 +122,3 @@ func ValidateMonotone(rows []Record) (violations int, firstAt int) {
 	}
 	return 0, -1
 }
-
-// Manifest ordering invariant checks are shared with the pipeline.
-type Manifest struct {
-	Asset    string
-	Rows     []Record
-	Segments []SegmentRef
-	Digest   string
-}
-
-// SegmentRef is the merge package's view of a damage segment, avoiding an
-// import cycle with internal/stream.
-type SegmentRef struct {
-	Source      string
-	Code        string
-	StartMs     float64
-	EndMs       float64
-	StartOffset int64
-	EndOffset   int64
-}
