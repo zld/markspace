@@ -102,10 +102,16 @@ func (w *Window) Push(p *rtp.Packet, timelineUS int64) ([]OrderedPacket, error) 
 		w.stats.Late++
 		return nil, nil
 	case dist == 0:
-		// base itself: buffered means duplicate delivery, released means an
-		// in-window retransmission. Either way it is a duplicate.
-		w.stats.Duplicate++
-		return nil, nil
+		// base itself: buffered means duplicate delivery; an unfilled base
+		// position means this packet closes the current hole and must be
+		// stored so the contiguous drain can release it.
+		if _, known := w.buf[seq]; known {
+			w.stats.Duplicate++
+			return nil, nil
+		}
+		w.buf[seq] = OrderedPacket{Packet: p, TimelineUS: timelineUS}
+		w.arrival = append(w.arrival, seq)
+		return w.drain(), nil
 	default:
 		if _, known := w.buf[seq]; known {
 			w.stats.Duplicate++
