@@ -243,6 +243,22 @@ func (s *Scanner) buildSamples(stbl *mp4.BoxInfo, trackID, timescale uint32,
 	return entries, nil
 }
 
+// AttachTrustedCRC annotates events with authoritative CRCs from a known-good
+// copy of the same media, keyed by (track, sample index). This models an ingest
+// manifest and lets the pipeline detect corruption introduced after delivery.
+func AttachTrustedCRC(events []SampleEvent, trusted []SampleEvent) {
+	key := func(e SampleEvent) uint64 { return uint64(e.TrackID)<<32 | uint64(uint32(e.SampleIndex)) }
+	ref := make(map[uint64]uint32, len(trusted))
+	for _, e := range trusted {
+		ref[key(e)] = e.PayloadCRC32
+	}
+	for i := range events {
+		if c, ok := ref[key(events[i])]; ok {
+			events[i].TrustedCRC32 = c
+		}
+	}
+}
+
 // u32/u64 big-endian helpers used by the fixture generator and corruption tool.
 func u32(b []byte) uint32 { return binary.BigEndian.Uint32(b) }
 func u64(b []byte) uint64 { return binary.BigEndian.Uint64(b) }

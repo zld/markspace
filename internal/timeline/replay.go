@@ -15,8 +15,8 @@ type ReplayLog struct {
 }
 
 type identity struct {
-	trackID uint32
-	sample  int64
+	TrackID uint32 `json:"track_id"`
+	Sample  int64  `json:"sample"`
 }
 
 // NewReplayLog creates an empty replay log.
@@ -27,7 +27,7 @@ func NewReplayLog() *ReplayLog {
 // Admit registers an event the first time its identity is seen. It returns
 // false for duplicates, which must never re-enter the output.
 func (r *ReplayLog) Admit(e container.SampleEvent) bool {
-	id := identity{e.TrackID, e.SampleIndex}
+	id := identity{TrackID: e.TrackID, Sample: e.SampleIndex}
 	if _, ok := r.seen[id]; ok {
 		r.skipped++
 		return false
@@ -36,13 +36,20 @@ func (r *ReplayLog) Admit(e container.SampleEvent) bool {
 	return true
 }
 
-// AddLate stores a late event for later replay. Duplicates are rejected.
+// AddLate stores a late event for later replay, admitting its identity first.
+// Duplicates are rejected.
 func (r *ReplayLog) AddLate(e container.SampleEvent) bool {
 	if !r.Admit(e) {
 		return false
 	}
 	r.late = append(r.late, e)
 	return true
+}
+
+// StoreLate buffers an event whose identity was already admitted by an earlier
+// Admit call. It never touches the identity set again.
+func (r *ReplayLog) StoreLate(e container.SampleEvent) {
+	r.late = append(r.late, e)
 }
 
 // Drain returns all buffered late events in stable replay order and clears the

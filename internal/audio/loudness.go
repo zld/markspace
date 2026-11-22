@@ -124,6 +124,39 @@ func (l *Loudness) RestoreGain(gain, peak, squares float64, count, limited uint6
 	l.gain, l.outPeak, l.outSquares, l.outCount, l.limited = gain, peak, squares, count, limited
 }
 
+// Snapshot returns the full restartable loudness state, including the partial
+// window buffer so a resumed run computes identical window gains.
+func (l *Loudness) Snapshot() LoudnessState {
+	return LoudnessState{
+		Buf:        append([]float64(nil), l.buf...),
+		WindowSums: append([]float64(nil), l.windowSums...),
+		Gain:       l.gain,
+		OutPeak:    l.outPeak,
+		OutSquares: l.outSquares,
+		OutCount:   l.outCount,
+		Limited:    l.limited,
+	}
+}
+
+// LoudnessState is the serializable controller state.
+type LoudnessState struct {
+	Buf        []float64 `json:"buf"`
+	WindowSums []float64 `json:"window_sums"`
+	Gain       float64   `json:"gain"`
+	OutPeak    float64   `json:"out_peak"`
+	OutSquares float64   `json:"out_squares"`
+	OutCount   uint64    `json:"out_count"`
+	Limited    uint64    `json:"limited"`
+}
+
+// Restore rehydrates the complete controller state from a snapshot.
+func (l *Loudness) Restore(s LoudnessState) {
+	l.buf = append([]float64(nil), s.Buf...)
+	l.windowSums = append([]float64(nil), s.WindowSums...)
+	l.gain, l.outPeak, l.outSquares, l.outCount, l.limited =
+		s.Gain, s.OutPeak, s.OutSquares, s.OutCount, s.Limited
+}
+
 func sumSlice(s []float64) float64 {
 	var n float64
 	for _, v := range s {

@@ -128,6 +128,14 @@ func (r *Resampler) Phase() (num, den uint64) { return r.phaseNum, r.den() }
 // Consumed reports total input frames presented across blocks.
 func (r *Resampler) Consumed() uint64 { return r.consumed }
 
+// TotalInput reports the known total input frame count (0 when open-ended).
+func (r *Resampler) TotalInput() uint64 { return r.totalInput }
+
+// SetTotalInput declares the total input frame count. The pipeline calls it
+// once the container's sample table is known, so interior block boundaries
+// interpolate instead of applying end-of-stream hold.
+func (r *Resampler) SetTotalInput(n uint64) { r.totalInput = n }
+
 // PrevFrame returns the carried last frame for checkpointing.
 func (r *Resampler) PrevFrame() []float64 { return append([]float64(nil), r.prevFrame...) }
 

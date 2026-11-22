@@ -22,7 +22,12 @@ type SampleEvent struct {
 	Timescale    uint32
 	FileOffset   int64 // absolute byte offset of the sample payload
 	PayloadSize  int64
-	PayloadCRC32 uint32 // CRC over the payload bytes, checked by the pipeline
+	PayloadCRC32 uint32 // CRC over the payload bytes as currently stored
+	// TrustedCRC32, when non-zero, is the authoritative CRC supplied by a
+	// trusted ingest manifest (or by the fixture generator). The pipeline
+	// validates against this value rather than the recomputed one, which is
+	// what makes a post-hoc bit flip detectable as an error.
+	TrustedCRC32 uint32
 }
 
 // EventOrder is the stable replay sort key: time first, then track, then the
