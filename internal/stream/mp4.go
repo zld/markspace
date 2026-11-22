@@ -126,6 +126,14 @@ func AnalyzeMP4(path string) (*MP4Analysis, error) {
 	}
 	handler := func(h *mp4.ReadHandle) (any, error) {
 		bi := h.BoxInfo
+		// A box header that claims bytes past EOF is the signature of a
+		// stopped capture or a non-MP4 file. Record it once per bad box; the
+		// walk itself cannot detect this because seeking past EOF is legal.
+		if bi.Type != mp4.BoxTypeMdat() && bi.Offset+bi.Size > uint64(a.Size) {
+			a.Truncated = true
+			a.Faults = append(a.Faults, diag.New(diag.CodeMP4Truncated, int64(bi.Offset),
+				"box %s declares %d bytes past end of file (%d)", bi.Type, bi.Offset+bi.Size-uint64(a.Size), a.Size))
+		}
 		switch bi.Type {
 		case mp4.BoxTypeMoov(), mp4.BoxTypeMdia(), mp4.BoxTypeMinf(), mp4.BoxTypeStbl():
 			return h.Expand()
@@ -229,7 +237,9 @@ func expandSamples(tr *Track, tab sampleTables) ([]Sample, []*diag.Fault) {
 	samples := make([]Sample, 0, len(tab.sizes))
 	var dts int64
 	si := 0
+	var declared int64
 	for _, e := range tab.stts {
+		declared += int64(e.SampleCount)
 		if e.SampleDelta == 0 {
 			faults = append(faults, diag.New(diag.CodeMP4Structure, int64(si),
 				"stts entry with zero sample delta"))
@@ -243,9 +253,9 @@ func expandSamples(tr *Track, tab sampleTables) ([]Sample, []*diag.Fault) {
 			si++
 		}
 	}
-	if si != len(tab.sizes) {
+	if declared != int64(len(tab.sizes)) {
 		faults = append(faults, diag.New(diag.CodeMP4Structure, int64(si),
-			"sample count mismatch: stts expands to %d, stsz has %d", si, len(tab.sizes)))
+			"sample count mismatch: stts declares %d, stsz has %d", declared, len(tab.sizes)))
 	}
 	if len(tab.stsc) > 0 && len(tab.chunks) > 0 {
 		sample := 0
