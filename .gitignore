@@ -1,0 +1,17 @@
+# Python virtual environment (created locally, never committed)
+.venv/
+
+# Build artifacts and caches
+build/
+dist/
+*.egg-info/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# OS/editor noise
+.DS_Store
+.idea/
+.vscode/
