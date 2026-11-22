@@ -156,6 +156,8 @@ type Output struct {
 	Diagnose  *DiagnoseStage
 	Validate  *ValidateStage
 	Summary   Summary
+	// Params is the effective parameter set after defaults were applied.
+	Params    Parameters
 	Stages    []StageDigest
 	Resumed   []string
 	ReusedAll bool

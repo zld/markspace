@@ -119,6 +119,7 @@ func (r *Runner) Run(names []string) (*Output, error) {
 		}
 	}
 	out.ReusedAll = len(out.Resumed) == len(StageOrder())
+	out.Params = r.Params
 	out.Stages, err = stageDigests(store)
 	if err != nil {
 		return nil, err
@@ -133,14 +134,17 @@ func (r *Runner) Run(names []string) (*Output, error) {
 		return nil, err
 	}
 	out.Summary.SHA256 = digest
-	out.Damaged = out.Summary.CorruptRanges > 0 || out.Summary.Issues > 0
-	if !out.Damaged {
-		return out, nil
-	}
+	// Damage means a reported corrupt range, not merely any finding: a bare
+	// timestamp rollover is a normal event that produces an audited issue but
+	// no damaged bytes. A failed invariant always fails the run.
+	out.Damaged = out.Summary.CorruptRanges > 0
 	if out.Summary.InvariantsFailed > 0 {
 		return out, fmt.Errorf("%w: %d invariant failures", ErrDamaged, out.Summary.InvariantsFailed)
 	}
-	return out, ErrDamaged
+	if out.Damaged {
+		return out, ErrDamaged
+	}
+	return out, nil
 }
 
 func paramsDigest(p Parameters) (string, error) {

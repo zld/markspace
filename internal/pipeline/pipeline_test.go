@@ -418,3 +418,85 @@ func TestEachStageCommitsAndCanBeResumedFromAnyPoint(t *testing.T) {
 		}
 	}
 }
+
+// TestCleanCorpusReturnsNoDamage runs the pipeline over a corpus with no
+// injected faults and expects a nil error and no corrupt ranges.
+func TestCleanCorpusReturnsNoDamage(t *testing.T) {
+	root := t.TempDir()
+	write := func(name string, data []byte) {
+		p := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	stream, err := fixture.Generate(fixture.DemoDefaults())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, f := range stream.Files {
+		if f.Kind == fixture.KindMP4 {
+			write(f.Name, f.Data)
+			names = append(names, f.Name)
+		}
+	}
+	write("subs/clean.srt", []byte("1\n00:00:01,000 --> 00:00:02,000\nhello\n\n2\n00:00:03,000 --> 00:00:04,000\nworld\n"))
+	names = append(names, "subs/clean.srt")
+	out, err := runner(root, "").Run(names)
+	if err != nil {
+		t.Fatalf("clean corpus returned %v", err)
+	}
+	if out.Summary.CorruptRanges != 0 {
+		t.Fatalf("clean corpus reported %d corrupt ranges: %v", out.Summary.CorruptRanges, out.Diagnose.Ranges)
+	}
+	if out.Summary.InvariantsFailed != 0 {
+		t.Fatalf("invariants failed: %v", out.Validate.Result.FailedChecks())
+	}
+	if out.Damaged {
+		t.Fatal("clean corpus flagged as damaged")
+	}
+}
+
+// TestBareRolloverIsNotDamage keeps a normal 32-bit rollover out of the
+// damaged-range set while still reporting it.
+func TestBareRolloverIsNotDamage(t *testing.T) {
+	root := t.TempDir()
+	stream, err := fixture.Generate(fixture.DemoDefaults())
+	if err != nil {
+		t.Fatal(err)
+	}
+	importData := []byte(nil)
+	for _, f := range stream.Files {
+		if f.Name == "net/stream.rtp" {
+			importData = f.Data
+		}
+	}
+	if importData == nil {
+		t.Fatal("fixture has no clean RTP capture")
+	}
+	if err := os.MkdirAll(filepath.Join(root, "net"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "net", "stream.rtp"), importData, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := runner(root, "").Run([]string{"net/stream.rtp"})
+	if err != nil {
+		t.Fatalf("bare capture returned %v", err)
+	}
+	if out.Summary.CorruptRanges != 0 {
+		t.Fatalf("rollover created a damaged range: %v", out.Diagnose.Ranges)
+	}
+	found := false
+	for _, is := range out.Diagnose.Issues {
+		if is.Category == "rtp_wrap" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("rollover was not reported")
+	}
+}
