@@ -184,12 +184,6 @@ func (p *Parser) readMoov(r io.ReadSeeker, movie *Movie, moov *mp4.BoxInfo) erro
 	return nil
 }
 
-type trakBoxes struct {
-	tkhd, mdhd, hdlr, stsd *mp4.BoxInfo
-	stts, ctts, stss, stsc *mp4.BoxInfo
-	stsz, stco, co64       *mp4.BoxInfo
-}
-
 func (p *Parser) readTrak(r io.ReadSeeker, trak *mp4.BoxInfo) (*Track, error) {
 	// Peek at tkhd first so every later diagnostic can carry the track id.
 	tkhdPeek, err := mp4.ExtractBoxesWithPayload(r, trak, []mp4.BoxPath{{mp4.BoxTypeTkhd()}})

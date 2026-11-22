@@ -72,7 +72,8 @@ type Receiver struct {
 	minExt   int64
 	base     int64
 	seen     map[int64]ExtPacket
-	order    []int64 // arrival order of accepted extended sequences
+	order    []int64     // extended sequences, ascending after Close
+	ordered  []ExtPacket // delivery-order packets, filled by Close
 	arrivals uint64
 
 	dups             int
@@ -219,6 +220,10 @@ func (r *Receiver) Close() []Gap {
 	}
 	sort.Slice(exts, func(i, j int) bool { return exts[i] < exts[j] })
 	r.order = exts
+	r.ordered = make([]ExtPacket, 0, len(exts))
+	for _, ext := range exts {
+		r.ordered = append(r.ordered, r.seen[ext])
+	}
 	r.gaps = r.gaps[:0]
 	r.lost = 0
 	prev := r.minExt - 1
@@ -244,17 +249,10 @@ func (r *Receiver) recordGap(start uint16, count int) {
 	r.gaps = append(r.gaps, Gap{Start: start, Count: count})
 }
 
-// Delivered returns packets in extended sequence order. Close must have been
-// called for the order to be final.
-func (r *Receiver) Delivered() []ExtPacket {
-	out := make([]ExtPacket, 0, len(r.order))
-	for _, ext := range r.order {
-		if ep, ok := r.seen[ext]; ok {
-			out = append(out, ep)
-		}
-	}
-	return out
-}
+// Delivered returns packets in extended sequence order; the slice is owned by
+// the Receiver and must not be modified. Close must have been called for the
+// order to be final.
+func (r *Receiver) Delivered() []ExtPacket { return r.ordered }
 
 // Gaps returns unrecoverable gaps (valid after Close).
 func (r *Receiver) Gaps() []Gap { return r.gaps }
