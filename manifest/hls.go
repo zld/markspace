@@ -61,7 +61,7 @@ func ParseM3U8(data []byte) (*Playlist, error) {
 		seqKnown    bool
 		pendingInf  bool
 		pendingDur  int64
-		cursor      timeline.Rat
+		cursor      = timeline.MustNewRat(0, 1)
 	)
 	for scanner.Scan() {
 		lineNo++
