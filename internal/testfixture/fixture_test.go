@@ -25,18 +25,21 @@ func TestGenerateMP4IsProbeableWithKeyframes(t *testing.T) {
 		t.Fatalf("tracks = %d, want 1", len(info.Tracks))
 	}
 	tr := info.Tracks[0]
-	if tr.Timescale != 48000 || len(tr.Samples) != 12 {
+	if tr.Timescale != 48000 || len(tr.Samples) != 13 { // 12 real + 1 offset placeholder
 		t.Fatalf("track ts=%d samples=%d", tr.Timescale, len(tr.Samples))
 	}
-	if tr.Samples[0].Size != 200 {
-		t.Fatalf("sample size = %d, want 200", tr.Samples[0].Size)
+	if tr.Samples[1].Size != 200 {
+		t.Fatalf("real sample size = %d, want 200", tr.Samples[1].Size)
+	}
+	if tr.Samples[0].Size != 0 {
+		t.Fatalf("offset placeholder size = %d, want 0", tr.Samples[0].Size)
 	}
 	// stss keyframes must be recoverable independently of Probe.
 	keys, err := extractKeyframes(data)
 	if err != nil {
 		t.Fatalf("extractKeyframes: %v", err)
 	}
-	wantKeys := []uint32{1, 5, 9}
+	wantKeys := []uint32{2, 6, 10} // 1-based, shifted past the offset placeholder
 	if len(keys) != len(wantKeys) {
 		t.Fatalf("keyframes = %v, want %v", keys, wantKeys)
 	}

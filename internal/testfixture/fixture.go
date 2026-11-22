@@ -143,18 +143,46 @@ func GenerateMP4(spec MP4Spec) ([]byte, error) {
 	// stbl
 	boxStart(mp4.BoxTypeStbl())
 	boxStart(mp4.BoxTypeStsd())
-	_, err = mp4.Marshal(w, &mp4.Stsd{EntryCount: 0}, mp4.Context{})
+	_, err = mp4.Marshal(w, &mp4.Stsd{EntryCount: 1}, mp4.Context{})
+	must(err)
+	// Nested mp4a audio sample entry so Probe classifies the track as audio.
+	boxStart(mp4.BoxTypeMp4a())
+	_, err = mp4.Marshal(w, &mp4.AudioSampleEntry{
+		SampleEntry: mp4.SampleEntry{
+			AnyTypeBox:         mp4.AnyTypeBox{Type: mp4.BoxTypeMp4a()},
+			DataReferenceIndex: 1,
+		},
+		ChannelCount: 1,
+		SampleSize:   16,
+		SampleRate:   spec.Timescale << 16, // fixed-point 16.16
+	}, mp4.Context{})
 	must(err)
 	boxEnd()
+	boxEnd()
+	// totalSamples accounts for the leading offset sample used to model a
+	// non-zero first-sample media timestamp.
+	offsetSamples := 0
+	if spec.StartOffset > 0 {
+		offsetSamples = 1
+	}
+	totalSamples := spec.SampleCount + offsetSamples
+
 	boxStart(mp4.BoxTypeStts())
-	_, err = mp4.Marshal(w, &mp4.Stts{EntryCount: 1,
-		Entries: []mp4.SttsEntry{{SampleCount: uint32(spec.SampleCount), SampleDelta: spec.SampleDelta}}}, mp4.Context{})
+	sttsEntries := []mp4.SttsEntry{{SampleCount: uint32(spec.SampleCount), SampleDelta: spec.SampleDelta}}
+	if spec.StartOffset > 0 {
+		sttsEntries = []mp4.SttsEntry{
+			{SampleCount: 1, SampleDelta: spec.StartOffset},
+			{SampleCount: uint32(spec.SampleCount), SampleDelta: spec.SampleDelta},
+		}
+	}
+	_, err = mp4.Marshal(w, &mp4.Stts{EntryCount: uint32(len(sttsEntries)), Entries: sttsEntries}, mp4.Context{})
 	must(err)
 	boxEnd()
 	if spec.KeyframeEvery > 0 {
 		var keys []uint32
+		// stss is 1-based; real samples follow the leading offset sample.
 		for i := 1; i <= spec.SampleCount; i += spec.KeyframeEvery {
-			keys = append(keys, uint32(i)) // stss numbers samples from 1
+			keys = append(keys, uint32(i+offsetSamples))
 		}
 		boxStart(mp4.BoxTypeStss())
 		_, err = mp4.Marshal(w, &mp4.Stss{EntryCount: uint32(len(keys)), SampleNumber: keys}, mp4.Context{})
@@ -163,15 +191,16 @@ func GenerateMP4(spec MP4Spec) ([]byte, error) {
 	}
 	boxStart(mp4.BoxTypeStsc())
 	_, err = mp4.Marshal(w, &mp4.Stsc{EntryCount: 1,
-		Entries: []mp4.StscEntry{{FirstChunk: 1, SamplesPerChunk: uint32(spec.SampleCount)}}}, mp4.Context{})
+		Entries: []mp4.StscEntry{{FirstChunk: 1, SamplesPerChunk: uint32(totalSamples)}}}, mp4.Context{})
 	must(err)
 	boxEnd()
-	sizes := make([]uint32, spec.SampleCount)
-	for i := range sizes {
+	// The leading offset sample carries no payload (size 0); real samples follow.
+	sizes := make([]uint32, totalSamples)
+	for i := offsetSamples; i < totalSamples; i++ {
 		sizes[i] = spec.SampleSize
 	}
 	boxStart(mp4.BoxTypeStsz())
-	_, err = mp4.Marshal(w, &mp4.Stsz{SampleCount: uint32(spec.SampleCount), EntrySize: sizes}, mp4.Context{})
+	_, err = mp4.Marshal(w, &mp4.Stsz{SampleCount: uint32(totalSamples), EntrySize: sizes}, mp4.Context{})
 	must(err)
 	boxEnd()
 	// stco placeholder offset 0; patched after mdat is written.
