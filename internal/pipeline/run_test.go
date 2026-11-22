@@ -268,3 +268,16 @@ func TestMalformedCheckpointIsClassified(t *testing.T) {
 		t.Fatalf("malformed checkpoint: got %v, want KindCorrupt", err)
 	}
 }
+
+// TestScanDurationLimitEnforced proves the scan-time budget rejects material
+// longer than configured rather than processing it unbounded.
+func TestScanDurationLimitEnforced(t *testing.T) {
+	work := t.TempDir()
+	in, _ := buildInput(t, 73)
+	cfg := testCfg(work)
+	// Fixture spans well over one second; a one-second budget must trip KindLimit.
+	cfg.MaxScanSeconds = 1
+	if _, _, err := Run(in, cfg); timeline.Classify(err) != timeline.KindLimit {
+		t.Fatalf("scan limit: got %v, want KindLimit", err)
+	}
+}

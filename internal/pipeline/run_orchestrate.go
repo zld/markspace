@@ -45,11 +45,17 @@ func Run(in *Input, cfg Config) (*manifest.ResultManifest, *Stats, error) {
 		if err != nil {
 			return nil, nil, err
 		}
+		if err := enforceScanLimit(idx, cfg); err != nil {
+			return nil, nil, err
+		}
 		if err := saveIndex(cfg.WorkDir, &IndexRecord{InputDigest: digest, Index: idx}); err != nil {
 			return nil, nil, err
 		}
 	} else {
 		idx = stored.Index
+		if err := enforceScanLimit(idx, cfg); err != nil {
+			return nil, nil, err
+		}
 	}
 	if cfg.CorruptIndex {
 		// Simulate on-disk index damage discovered after load: the stored
@@ -57,6 +63,9 @@ func Run(in *Input, cfg Config) (*manifest.ResultManifest, *Stats, error) {
 		rebuilt = true
 		idx, err = media.ScanBytes(in.MP4)
 		if err != nil {
+			return nil, nil, err
+		}
+		if err := enforceScanLimit(idx, cfg); err != nil {
 			return nil, nil, err
 		}
 		if err := saveIndex(cfg.WorkDir, &IndexRecord{InputDigest: digest, Index: idx}); err != nil {
@@ -241,4 +250,17 @@ func payloadToPCM(payload []byte) []byte {
 		pcm[2*i+1] = byte(v >> 8)
 	}
 	return pcm
+}
+
+// enforceScanLimit rejects material whose longest track exceeds the configured
+// scan-duration budget, so an unbounded recording cannot exhaust the run.
+func enforceScanLimit(idx *media.Index, cfg Config) error {
+	limitUS := int64(cfg.MaxScanSeconds) * int64(timeline.Second)
+	for _, tr := range idx.Tracks {
+		if tr.MediaEndUS > limitUS {
+			return timeline.NewError(timeline.KindLimit,
+				"track %d duration %d us exceeds scan budget %d us", tr.TrackID, tr.MediaEndUS, limitUS)
+		}
+	}
+	return nil
 }

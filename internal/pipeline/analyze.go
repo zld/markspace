@@ -15,10 +15,7 @@ func analyze(frames []recoveredFrame, gaps []manifest.LossGap, idx *media.Index,
 	axis *timeline.Axis, in *Input, cfg Config, digest string, rebuilt bool,
 	cp *manifest.Checkpoint) (*manifest.ResultManifest, *Stats, error) {
 
-	audioTrack := -1
-	if len(idx.Tracks) > 0 {
-		audioTrack = 0 // fixtures are single audio track
-	}
+	audioTrack := idx.AudioTrack()
 	var tr *media.TrackIndex
 	if audioTrack >= 0 {
 		tr = idx.Tracks[audioTrack]

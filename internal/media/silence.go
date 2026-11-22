@@ -4,6 +4,7 @@ import (
 	"math"
 
 	"github.com/archive/mediakernel/internal/manifest"
+	"github.com/archive/mediakernel/internal/rtprecover"
 	"github.com/archive/mediakernel/internal/timeline"
 )
 
@@ -75,7 +76,7 @@ func DetectSilence(frames []AudioFrame, gaps []manifest.LossGap, cfg SilenceConf
 		}
 		// Gap coverage: any overlap with a confirmed gap makes the frame
 		// unknown, not silent.
-		if rtprecoverCovers(gaps, f.StartUS, f.EndUS) {
+		if rtprecover.Covers(gaps, f.StartUS, f.EndUS) {
 			flush(runEnd)
 			out = append(out, manifest.Silence{
 				StartUS: f.StartUS, EndUS: f.EndUS, Status: manifest.StatusGapCovered,
@@ -124,22 +125,4 @@ func rms16(pcm []byte) float64 {
 		sumSq += v * v
 	}
 	return math.Sqrt(sumSq / float64(n))
-}
-
-// rtprecoverCovers is injected via a package-level variable to avoid an import
-// cycle: the pipeline supplies rtprecover.Covers at construction time.
-var rtprecoverCovers = func(gaps []manifest.LossGap, startUS, endUS int64) bool {
-	for _, g := range gaps {
-		if startUS < g.EndUS && g.StartUS < endUS {
-			return true
-		}
-	}
-	return false
-}
-
-// SetGapCoverage overrides the gap-overlap predicate (used for wiring).
-func SetGapCoverage(fn func([]manifest.LossGap, int64, int64) bool) {
-	if fn != nil {
-		rtprecoverCovers = fn
-	}
 }
