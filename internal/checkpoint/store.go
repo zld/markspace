@@ -97,6 +97,19 @@ func (s *Store) Close() error {
 	return nil
 }
 
+func identLess(a, b Record) bool {
+	if a.TrackID != b.TrackID {
+		return a.TrackID < b.TrackID
+	}
+	if a.StartNS != b.StartNS {
+		return a.StartNS < b.StartNS
+	}
+	if a.EndNS != b.EndNS {
+		return a.EndNS < b.EndNS
+	}
+	return a.FirstSample < b.FirstSample
+}
+
 func identOf(r Record) identity {
 	return identity{r.TrackID, r.StartNS, r.EndNS, r.FirstSample}
 }
@@ -144,14 +157,23 @@ func (s *Store) load() (State, error) {
 	}
 	sort.Ints(blocks)
 	for _, b := range blocks {
+		// Map iteration order is random; sort within a block so replay is
+		// byte-for-byte reproducible across opens.
+		batch := make([]Record, 0, len(merged[b]))
 		for _, r := range merged[b] {
+			batch = append(batch, r)
+		}
+		sort.Slice(batch, func(i, j int) bool { return identLess(batch[i], batch[j]) })
+		for _, r := range batch {
 			st.Records = append(st.Records, r)
 			st.Blocks[b] = append(st.Blocks[b], r)
 			st.Index[identOf(r)] = r
 		}
 	}
 	st.TornTail = torn
-	st.NextBlock = len(blocks)
+	if n := len(blocks); n > 0 {
+		st.NextBlock = blocks[n-1] + 1
+	}
 	if ckpt.NextBlock > st.NextBlock {
 		st.NextBlock = ckpt.NextBlock
 	}

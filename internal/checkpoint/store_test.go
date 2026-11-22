@@ -145,3 +145,39 @@ func TestCommitIsAtomicReplace(t *testing.T) {
 		t.Fatal("temporary checkpoint file left behind")
 	}
 }
+
+func TestReplayOrderIsDeterministic(t *testing.T) {
+	dir := t.TempDir()
+	st, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Same block, interleaved identities: map iteration used to randomise
+	// this ordering between opens.
+	for _, first := range []int{30, 10, 20} {
+		if err := st.Append(rec(0, first)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := st.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	st.Close()
+	want := []int{10, 20, 30}
+	for attempt := 0; attempt < 5; attempt++ {
+		s, err := Open(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		recs := s.Records()
+		s.Close()
+		if len(recs) != len(want) {
+			t.Fatalf("records=%d", len(recs))
+		}
+		for i, w := range want {
+			if recs[i].FirstSample != w {
+				t.Fatalf("attempt %d order=%v", attempt, recs)
+			}
+		}
+	}
+}
