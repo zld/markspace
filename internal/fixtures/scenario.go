@@ -143,8 +143,9 @@ func Build(seed int64) (*Scenario, error) {
 			}
 			sc.Groups = append(sc.Groups, g)
 		}
+		metaStart := (segStart + 89) / 90 * 90
 		spec.Emsg = []meta.Emsg{{SchemeIDURI: "urn:mediapipe:chapter", Value: fmt.Sprintf("seg-%d", seg+1),
-			Timescale: clock.UnifiedTimescale, Presentation: segStart, EventDuration: VideoFrameDur * VideoFrames,
+			Timescale: clock.UnifiedTimescale, Presentation: metaStart, EventDuration: VideoFrameDur * VideoFrames,
 			ID: uint32(seg + 1), Message: []byte(fmt.Sprintf("segment %d", seg+1))}}
 		recs, err := segmentRecords(seed, seg, segStart)
 		if err != nil {
@@ -223,8 +224,11 @@ func Build(seed int64) (*Scenario, error) {
 }
 
 func segmentRecords(seed int64, seg int, segStart uint64) ([]meta.Record, error) {
-	startMS := segStart / 90
-	endMS := (segStart + VideoFrameDur*VideoFrames) / 90
+	// The metadata track runs at 1 kHz while the segment boundary is derived
+	// from 90 kHz video ticks. Round up so a segment never starts before the
+	// previous one ends; truncation here would make metadata time regress.
+	startMS := (segStart + 89) / 90
+	endMS := (segStart + VideoFrameDur*VideoFrames + 89) / 90
 	var out []meta.Record
 	sub, err := meta.NewSubtitleRecord(3, meta.Cue{Seq: uint32(seg + 1), StartMS: startMS, EndMS: startMS + 100,
 		Text: fmt.Sprintf("segment %d active", seg+1)})
@@ -249,7 +253,7 @@ func segmentRecords(seed int64, seg int, segStart uint64) ([]meta.Record, error)
 	}
 	out = append(out, id3)
 	emsg, err := meta.NewEmsgRecord(3, meta.Emsg{SchemeIDURI: "urn:mediapipe:chapter", Value: fmt.Sprintf("seg-%d", seg+1),
-		Timescale: clock.UnifiedTimescale, Presentation: segStart, EventDuration: VideoFrameDur * VideoFrames,
+		Timescale: clock.UnifiedTimescale, Presentation: startMS * 90, EventDuration: VideoFrameDur * VideoFrames,
 		ID: uint32(seg + 1), Message: []byte(fmt.Sprintf("segment %d chapter", seg+1))})
 	if err != nil {
 		return nil, err

@@ -134,6 +134,9 @@ func execute(cfg pipeline.Config, o options, stdout, stderr *os.File) (*pipeline
 	runner, err := pipeline.New(cfg)
 	if err != nil {
 		fmt.Fprintf(stderr, "mediapipe: setup: %v\n", err)
+		if errors.Is(err, pipeline.ErrInvalidConfig) {
+			return nil, exitUsage
+		}
 		return nil, exitFailure
 	}
 	summary, err := runner.Run()

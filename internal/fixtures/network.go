@@ -2,6 +2,7 @@ package fixtures
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
 	"sort"
 
@@ -121,4 +122,12 @@ func UnifiedFromRTP(ts uint64, timescale uint32) int64 {
 		return 0
 	}
 	return v
+}
+
+// UnifiedFromRTPChecked is UnifiedFromRTP with overflow reporting.
+func UnifiedFromRTPChecked(ts uint64, timescale uint32) (int64, error) {
+	if ts > math.MaxInt64 {
+		return 0, fmt.Errorf("fixtures: timestamp %d exceeds int64", ts)
+	}
+	return clock.Convert(int64(ts), timescale, clock.UnifiedTimescale)
 }

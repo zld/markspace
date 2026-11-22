@@ -33,6 +33,8 @@ const (
 )
 
 var (
+	// ErrInvalidConfig reports a run parameter outside its accepted range.
+	ErrInvalidConfig = errors.New("pipeline: invalid configuration")
 	// ErrInterrupted simulates process death after a complete commit point.
 	ErrInterrupted = errors.New("pipeline: simulated interruption")
 	// ErrInvariant reports a violated cross-stage invariant.
@@ -69,6 +71,13 @@ func DefaultConfig() Config {
 }
 
 func (c Config) validate() error {
+	if err := c.validateFields(); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidConfig, err)
+	}
+	return nil
+}
+
+func (c Config) validateFields() error {
 	if c.Seed < 0 {
 		return fmt.Errorf("pipeline: seed must be non-negative")
 	}
@@ -379,6 +388,18 @@ func (r *Runner) resume() error {
 	for _, seq := range seqs {
 		r.results = append(r.results, bySequence[seq])
 	}
+	// Only a gap-free prefix may be skipped. If a committed segment fails
+	// verification, every later segment is recomputed so no hole is left in
+	// the output and no stale state slips downstream.
+	prefix := uint64(0)
+	for prefix < last.Generation {
+		if _, ok := bySequence[uint32(prefix+1)]; !ok {
+			break
+		}
+		prefix++
+	}
+	r.start = int(prefix)
+	r.gen = prefix
 	return nil
 }
 
