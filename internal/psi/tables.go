@@ -197,6 +197,24 @@ func (a *Assembler) Corrupted() int { return a.corrupted }
 // have been published.
 func (a *Assembler) HasTables() bool { return a.pat != nil && len(a.pmts) > 0 }
 
+// IsCurrentVersion reports whether version is the published version of
+// the table arriving on pid, so truncated retransmissions of the
+// current table are not flagged as incomplete updates.
+func (a *Assembler) IsCurrentVersion(pid uint16, tableID uint8, version int) bool {
+	switch tableID {
+	case TableIDPAT:
+		return a.pat != nil && version == a.pat.Version
+	case TableIDPMT:
+		program, ok := a.pmtByPID[pid]
+		if !ok {
+			return false
+		}
+		pmt, ok := a.pmts[program]
+		return ok && version == pmt.Version
+	}
+	return false
+}
+
 // FeedSection processes one complete section received on pid at packet
 // index packetIndex. It returns a new mapping snapshot when the
 // section completes a table version that changes the PID mapping.

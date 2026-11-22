@@ -91,6 +91,15 @@ func (r *Reassembler) Reset() { r.buf = nil }
 // Pending reports whether a partial section is buffered.
 func (r *Reassembler) Pending() bool { return len(r.buf) > 0 }
 
+// PendingHeader parses the header of the buffered partial section, if
+// enough bytes have arrived.
+func (r *Reassembler) PendingHeader() (Header, error) {
+	if len(r.buf) < 8 {
+		return Header{}, fmt.Errorf("partial section header: %d of 8 bytes", len(r.buf))
+	}
+	return ParseHeader(r.buf)
+}
+
 // PendingMissing returns how many bytes the buffered partial section
 // still needs, or 0 when no partial section is buffered or its header
 // is not complete yet.

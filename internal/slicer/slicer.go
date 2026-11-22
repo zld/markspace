@@ -82,6 +82,36 @@ func Run(r io.Reader) (*Result, error) {
 	for pid, re := range p.reass {
 		pending[pid] = re.PendingMissing()
 	}
+	incomplete := p.asm.Incomplete(pending)
+	// Sections that never completed a single section are invisible to
+	// the assembler; flag them from the reassembly state instead.
+	covered := map[uint16]bool{}
+	for _, inc := range incomplete {
+		covered[inc.PID] = true
+	}
+	for pid, re := range p.reass {
+		if covered[pid] || !re.Pending() {
+			continue
+		}
+		inc := psi.IncompleteUpdate{
+			Table: "PSI", PID: pid, Version: -1,
+			MissingPackets: (pending[pid] + 183) / 184,
+		}
+		if h, err := re.PendingHeader(); err == nil {
+			inc.Version = h.Version
+			inc.SectionsWant = h.LastSectionNumber + 1
+			switch h.TableID {
+			case psi.TableIDPAT:
+				inc.Table = "PAT"
+			case psi.TableIDPMT:
+				inc.Table = "PMT"
+			}
+			if p.asm.IsCurrentVersion(pid, h.TableID, h.Version) {
+				continue // truncated retransmission of the current table
+			}
+		}
+		incomplete = append(incomplete, inc)
+	}
 	return &Result{
 		TotalPackets:      p.total,
 		PSIPackets:        p.psiPackets,
@@ -90,7 +120,7 @@ func Run(r io.Reader) (*Result, error) {
 		PATChanges:        p.asm.PATChanges(),
 		PMTChanges:        p.asm.PMTChanges(),
 		CorruptedSections: p.asm.Corrupted(),
-		Incomplete:        p.asm.Incomplete(pending),
+		Incomplete:        incomplete,
 		Continuity:        p.tracker.Stats(),
 		HasTables:         p.asm.HasTables(),
 	}, nil
