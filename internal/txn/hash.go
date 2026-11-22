@@ -24,6 +24,13 @@ func (r *rollingHash) Write(b []byte) {
 
 func (r *rollingHash) Sum() string { return hex.EncodeToString(r.h[:]) }
 
+// HashDirExport exposes the canonical directory hash used by the prepare and
+// recovery protocol so external callers (the crash simulator) can produce a
+// matching prepared marker.
+func HashDirExported(dir string) (string, error) {
+	return hashDir(dir)
+}
+
 // hashDir is the single canonical artifact hash used at prepare, commit and
 // recovery time: every regular file under dir, in lexical relative-path
 // order, contributes its relative path then its content hash.

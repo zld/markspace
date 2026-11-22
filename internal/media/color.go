@@ -118,6 +118,11 @@ func (t *ColorTable) Snapshot() map[string]ColorMetadata {
 	return out
 }
 
+// String renders the compact nclx triple used in artifacts and reports.
+func (m ColorMetadata) String() string {
+	return fmt.Sprintf("nclx/%d/%d/%d/full=%t", m.Primaries, m.Transfer, m.Matrix, m.FullRange)
+}
+
 // Blocked reports whether a conflict prevents commit of the package.
 func (t *ColorTable) Blocked() bool { return t.conflict != nil }
 
