@@ -153,16 +153,16 @@ func TestReorderGapCommitAndRepairBeforeCommit(t *testing.T) {
 	// 1..6 commit; 7 and 8 are missing; 9 bounds the uncommitted tail. A
 	// three-packet window keeps the tail repairable until flush.
 	var order []uint16
-	recordGap := func() {
-		if lo, hi := buf.CommittedGap(); lo >= 0 && hi >= lo {
-			rec.RecordLost(lo, hi)
+	recordGaps := func() {
+		for _, g := range buf.CommittedGaps() {
+			rec.RecordLost(g.First, g.Last)
 		}
 	}
 	for _, seq := range []uint16{1, 2, 3, 4, 5, 6, 9} {
 		for _, p := range buf.Push(mkPacket(1, seq, uint32(seq), 4)) {
 			order = append(order, p.Seq)
 		}
-		recordGap()
+		recordGaps()
 	}
 	if len(rec.Intervals()) != 0 {
 		t.Fatalf("no committed gaps yet, got %+v", rec.Intervals())
@@ -179,12 +179,12 @@ func TestReorderGapCommitAndRepairBeforeCommit(t *testing.T) {
 		for _, p := range buf.PushRecovered(mkPacket(1, seq, uint32(seq), 4)) {
 			order = append(order, p.Seq)
 		}
-		recordGap()
+		recordGaps()
 	}
 	for _, p := range buf.Flush() {
 		order = append(order, p.Seq)
 	}
-	recordGap()
+	recordGaps()
 	lost, recovered := rec.Counts()
 	if lost != 0 || recovered != 2 {
 		t.Fatalf("lost=%d recovered=%d", lost, recovered)
@@ -198,6 +198,42 @@ func TestReorderGapCommitAndRepairBeforeCommit(t *testing.T) {
 	for i, seq := range order {
 		if seq != uint16(i+1) {
 			t.Fatalf("order %v", order)
+		}
+	}
+}
+
+func TestReorderReportsEveryHoleInOneRelease(t *testing.T) {
+	// A single flush can cross several disjoint holes; each must be reported
+	// separately so committed packets between them are never counted as lost.
+	buf, _ := NewReorderBuffer(ReorderConfig{Stream: 0, Window: 1}, DefaultLimits())
+	rec := NewLossRecorder(0, 16)
+	for _, seq := range []uint16{1, 2, 5, 8} {
+		buf.Push(mkPacket(0, seq, uint32(seq), 4))
+		for _, g := range buf.CommittedGaps() {
+			rec.RecordLost(g.First, g.Last)
+		}
+	}
+	for range buf.Flush() {
+	}
+	for _, g := range buf.CommittedGaps() {
+		rec.RecordLost(g.First, g.Last)
+	}
+	lost, _ := rec.Counts()
+	// Missing: 3, 4, 6, 7 => four sequences in two bursts.
+	if lost != 4 {
+		t.Fatalf("lost %d want 4", lost)
+	}
+	if rec.LostBursts() != 2 {
+		t.Fatalf("bursts %d want 2: %+v", rec.LostBursts(), rec.Intervals())
+	}
+	want := []LossInterval{
+		{Stream: 0, First: 3, Last: 4, State: LossLost},
+		{Stream: 0, First: 6, Last: 7, State: LossLost},
+	}
+	got := rec.Intervals()
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("interval %d = %+v want %+v", i, got[i], want[i])
 		}
 	}
 }

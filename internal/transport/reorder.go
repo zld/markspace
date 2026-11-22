@@ -63,8 +63,10 @@ type ReorderBuffer struct {
 	stats Stats
 	errs  []*merr.Error
 	gaps  []SeqSpan
-
-	gapLo, gapHi int64
+	// newGaps holds the holes this release pass committed, in ascending
+	// order. A single pass can cross several disjoint holes, so a single
+	// range would conflate committed packets with loss.
+	newGaps []SeqSpan
 }
 
 // SeqSpan is an extended sequence interval, inclusive at both ends.
@@ -104,10 +106,8 @@ func NewReorderBuffer(cfg ReorderConfig, lim Limits) (*ReorderBuffer, error) {
 	return &ReorderBuffer{
 		cfg:   cfg,
 		lim:   lim,
-		held:  make(map[int64]*Packet, cfg.Window),
-		seen:  make(map[int64]struct{}, cfg.MaxSeen),
-		gapLo: -1,
-		gapHi: -1,
+		held: make(map[int64]*Packet, cfg.Window),
+		seen: make(map[int64]struct{}, cfg.MaxSeen),
 	}, nil
 }
 
@@ -255,10 +255,7 @@ func (r *ReorderBuffer) release(force bool) []*Packet {
 		}
 		r.gaps = append(r.gaps, SeqSpan{Stream: r.cfg.Stream, First: first, Last: last})
 		r.stats.Gaps++
-		if r.gapLo < 0 {
-			r.gapLo = first
-		}
-		r.gapHi = last
+		r.newGaps = append(r.newGaps, SeqSpan{Stream: r.cfg.Stream, First: first, Last: last})
 		r.noteError(merr.New(merr.StageLoss, "sequence_gap",
 			merr.Span{Stream: r.cfg.Stream, Seq: first, Offset: -1, Length: last - first + 1}, true,
 			"missing %d sequence(s) %d..%d", last-first+1, first, last))
@@ -302,16 +299,12 @@ func (r *ReorderBuffer) PendingGaps() []SeqSpan {
 // CommittedThrough is the highest extended sequence number already emitted.
 func (r *ReorderBuffer) CommittedThrough() int64 { return r.next - 1 }
 
-// CommittedGap returns the sequence range that release has newly skipped
-// because it was missing, or (-1,-1) when the last release skipped nothing.
-// The range is consumed once so a caller records each hole exactly once.
-func (r *ReorderBuffer) CommittedGap() (int64, int64) {
-	lo, hi := r.gapLo, r.gapHi
-	r.gapLo, r.gapHi = -1, -1
-	if hi < lo {
-		return -1, -1
-	}
-	return lo, hi
+// CommittedGaps returns the holes the most recent release pass committed, in
+// ascending order, and clears them. Each hole is returned exactly once.
+func (r *ReorderBuffer) CommittedGaps() []SeqSpan {
+	out := r.newGaps
+	r.newGaps = nil
+	return out
 }
 
 // Gaps returns the loss spans recorded so far, sorted by first sequence.

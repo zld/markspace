@@ -368,10 +368,7 @@ func prepareTransport(in *Input, opts Options) (
 				return
 			}
 			committed = append(committed, out...)
-			lo, hi := buf.CommittedGap()
-			if lo >= 0 && hi >= lo {
-				rec.RecordLost(lo, hi)
-			}
+			recordCommittedGaps(buf, rec)
 		}
 		// Retransmissions are delivered as soon as the reorder buffer has
 		// declared the hole but before it commits past it. The window bounds
@@ -418,10 +415,7 @@ func prepareTransport(in *Input, opts Options) (
 		notePending()
 		deliverRepairs()
 		committed = append(committed, buf.Flush()...)
-		lo, hi := buf.CommittedGap()
-		if lo >= 0 && hi >= lo {
-			rec.RecordLost(lo, hi)
-		}
+		recordCommittedGaps(buf, rec)
 
 		lost, recovered := rec.Counts()
 		st := buf.Stats()
@@ -484,6 +478,26 @@ func rawOrigin(packets []*transport.Packet) int64 {
 		return 0
 	}
 	return int64(packets[0].Timestamp)
+}
+
+// recordCommittedGaps forwards this pass's committed holes to the loss
+// recorder, merging adjacent ones so one contiguous burst is reported as one
+// interval rather than one interval per released packet.
+func recordCommittedGaps(buf *transport.ReorderBuffer, rec *transport.LossRecorder) {
+	gaps := buf.CommittedGaps()
+	if len(gaps) == 0 {
+		return
+	}
+	first, last := gaps[0].First, gaps[0].Last
+	for _, g := range gaps[1:] {
+		if g.First == last+1 {
+			last = g.Last
+			continue
+		}
+		rec.RecordLost(first, last)
+		first, last = g.First, g.Last
+	}
+	rec.RecordLost(first, last)
 }
 
 // finishStreamStats fills in per-stream demux counters.
