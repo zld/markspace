@@ -2,6 +2,18 @@ package testmedia
 
 import "mediasync/internal/ebml"
 
+func bytesEqual(a, b []byte) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 // Damage labels every mutation the fixture factory can apply. Tests assert
 // the specific failure class each label must produce.
 type Damage string
@@ -62,23 +74,37 @@ func flipSegmentUnknown(data []byte) []byte {
 	return out
 }
 
-// flipClustersUnknown rewrites every Cluster header the same way.
+// flipClustersUnknown rewrites every Cluster header. All header offsets are
+// collected against the original bytes first, then flips are applied from the
+// last offset backwards so earlier offsets stay valid as the slice shrinks.
 func flipClustersUnknown(data []byte) []byte {
-	out := append([]byte(nil), data...)
-	for off := 0; ; {
-		idx := locateClusterAt(out, off)
-		if idx < 0 {
-			return out
+	id := ebml.EncodeID(ebml.IDCluster)
+	idLen := len(id)
+	var sizeStarts []int
+	for i := 0; i+idLen < len(data); i++ {
+		if !bytesEqual(data[i:i+idLen], id) {
+			continue
 		}
-		sizeStart := idx + len(ebml.EncodeID(ebml.IDCluster))
+		// A real Cluster header is followed by a valid size VINT whose marker
+		// bit is set; codec payload may contain the same four bytes but will
+		// not be followed by a well-formed size VINT.
+		sizeStart := i + idLen
+		if sizeStart >= len(data) || data[sizeStart]&0x80 == 0 {
+			continue
+		}
+		sizeStarts = append(sizeStarts, sizeStart)
+	}
+	out := append([]byte(nil), data...)
+	for k := len(sizeStarts) - 1; k >= 0; k-- {
+		sizeStart := sizeStarts[k]
 		width := vintWidth(out[sizeStart])
 		rewritten := make([]byte, 0, len(out)-width+1)
 		rewritten = append(rewritten, out[:sizeStart]...)
 		rewritten = append(rewritten, ebml.EncodeUnknownSize()...)
 		rewritten = append(rewritten, out[sizeStart+width:]...)
 		out = rewritten
-		off = sizeStart + 1
 	}
+	return out
 }
 
 func locateSegment(data []byte) int {
@@ -87,10 +113,6 @@ func locateSegment(data []byte) int {
 
 func locateFirstCluster(data []byte) int {
 	return locateID(data, ebml.EncodeID(ebml.IDCluster), 0)
-}
-
-func locateClusterAt(data []byte, from int) int {
-	return locateID(data, ebml.EncodeID(ebml.IDCluster), from)
 }
 
 // locateID finds the first occurrence of an EBML element ID's exact byte
