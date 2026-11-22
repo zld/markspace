@@ -79,6 +79,9 @@ func SamplePayload(trackID uint32, idx, size int) []byte {
 type MP4Options struct {
 	VideoSamples int
 	AudioSamples int
+	// ConstantRate gives every video frame the same duration. When false the
+	// frames use an irregular VFR pattern.
+	ConstantRate bool
 	// TruncateLast cuts bytes off the final video sample's data while leaving
 	// the sample table intact, so the adapter must report a truncated sample.
 	TruncateLast int
@@ -103,6 +106,11 @@ func BuildMP4(opt MP4Options) ([]byte, error) {
 	moov.AddChild(mp4.CreateMvhd())
 
 	vdurs := VideoDurations(opt.VideoSamples)
+	if opt.ConstantRate {
+		for i := range vdurs {
+			vdurs[i] = VideoDur
+		}
+	}
 	keys := Keyframes(opt.VideoSamples)
 	videoTrak, err := buildTrak(VideoTrackID, VideoTimescale, "video", opt.UnsupportedCodec,
 		vdurs, keys, func(i int) []byte { return SamplePayload(VideoTrackID, i, 40+i%7) })

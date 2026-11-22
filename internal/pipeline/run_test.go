@@ -194,6 +194,42 @@ func TestPlaceRepairedUsesNearestNeighbour(t *testing.T) {
 	}
 }
 
+func TestVFRAndConstantRateBothValid(t *testing.T) {
+	vfr := DefaultScenarioConfig()
+	vfr.VFR = true
+	cfr := DefaultScenarioConfig()
+	cfr.VFR = false
+
+	vsc, err := Generate(vfr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	csc, err := Generate(cfr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Constant-rate and VFR containers must differ: durations are the only
+	// intended difference in sample metadata.
+	if len(vsc.Input.MP4) == len(csc.Input.MP4) && string(vsc.Input.MP4) == string(csc.Input.MP4) {
+		t.Fatal("VFR and constant-rate fixtures are identical")
+	}
+	for name, sc := range map[string]*Scenario{"vfr": vsc, "cfr": csc} {
+		rep, err := Process(sc.Input)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if rep.SegmentCount != sc.Config.Segments {
+			t.Fatalf("%s: segments %d", name, rep.SegmentCount)
+		}
+		if rep.KeyframeHitRate < 0.95 {
+			t.Fatalf("%s: keyframe hit rate %v", name, rep.KeyframeHitRate)
+		}
+		if rep.Recovered != 1 {
+			t.Fatalf("%s: recovered %d", name, rep.Recovered)
+		}
+	}
+}
+
 func TestProcessRejectsBadInput(t *testing.T) {
 	sc, err := Generate(DefaultScenarioConfig())
 	if err != nil {

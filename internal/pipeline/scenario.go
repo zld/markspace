@@ -111,6 +111,7 @@ func Generate(cfg ScenarioConfig) (*Scenario, error) {
 	mp4, err := fixture.BuildMP4(fixture.MP4Options{
 		VideoSamples: cfg.VideoPackets,
 		AudioSamples: cfg.AudioPackets,
+		ConstantRate: !cfg.VFR,
 	})
 	if err != nil {
 		return nil, err
@@ -119,6 +120,7 @@ func Generate(cfg ScenarioConfig) (*Scenario, error) {
 		VideoSamples: cfg.VideoPackets,
 		AudioSamples: cfg.AudioPackets,
 		TruncateLast: 25,
+		ConstantRate: !cfg.VFR,
 	})
 	if err != nil {
 		return nil, err
@@ -158,8 +160,28 @@ func Generate(cfg ScenarioConfig) (*Scenario, error) {
 	// Start five packets before the wrap so the wrap happens after the
 	// timeline is seeded with several packets: reordered packets then still
 	// extend forward and land correctly.
+	// Durations match the container fixture so packet timestamps, sample
+	// durations, and the keyframe index agree.
+	durs := fixture.VideoDurations(cfg.VideoPackets)
+	if !cfg.VFR {
+		for i := range durs {
+			durs[i] = fixture.VideoDur
+		}
+	}
+	var cumVideo []uint64
+	{
+		var acc uint64
+		cumVideo = make([]uint64, len(durs))
+		for i, d := range durs {
+			cumVideo[i] = acc
+			acc += uint64(d)
+		}
+	}
 	videoBase := uint64(cfg.WrapAt) - 5*3000
-	videoTS := func(i int) uint32 { return tickAt(videoBase, i, 3000) }
+	videoTS := func(i int) uint32 {
+		adv := cumVideo[i] * uint64(1_000_000+cfg.DriftPPM) / 1_000_000
+		return uint32(videoBase + adv)
+	}
 	audioTS := func(i int) uint32 { return tickAt(1024, i, 1024) }
 
 	// Arrival times in 90 kHz network ticks. Video and audio interleave.

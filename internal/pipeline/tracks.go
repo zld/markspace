@@ -78,7 +78,6 @@ func processTrack(tr TrackInput, in Input, rep *Report) (*trackResult, error) {
 	sort.SliceStable(arrivals, func(i, j int) bool { return arrivals[i].Arrival < arrivals[j].Arrival })
 
 	ordered := make([]rtp.Packet, 0, mediaCount)
-	var paritySeqs []uint16
 	record := func(err error) {
 		switch {
 		case merrors.IsCategory(err, merrors.Late):
@@ -99,7 +98,6 @@ func processTrack(tr TrackInput, in Input, rep *Report) (*trackResult, error) {
 		// Parity packets are not media: they carry no meaningful RTP
 		// timestamp of their own and must never advance the media clock.
 		if pkt.PayloadType == ParityPayloadType {
-			paritySeqs = append(paritySeqs, pkt.Seq)
 			if err := cache.AddParity(tr.SSRC, pkt.Seq, pkt.Payload); err != nil {
 				rep.Record(err)
 			}
@@ -120,12 +118,10 @@ func processTrack(tr TrackInput, in Input, rep *Report) (*trackResult, error) {
 		// parity members are equal length. The delivered payload is the
 		// unframed media, recovered below.
 		payload := pkt.Payload
-		framed := true
-		if t, p, uerr := Unframe(pkt.Payload); uerr == nil {
-			_ = t
+		framed := false
+		if _, p, uerr := Unframe(pkt.Payload); uerr == nil {
 			payload = p
-		} else {
-			framed = false
+			framed = true
 		}
 		if framed {
 			if err := cache.AddMedia(tr.SSRC, pkt.Seq, pkt.Payload); err != nil {
@@ -214,7 +210,6 @@ func processTrack(tr TrackInput, in Input, rep *Report) (*trackResult, error) {
 		}
 		cache.Retire(seq)
 	}
-	_ = paritySeqs
 
 	// Phase 3: release in sequence order through the jitter buffer.
 	all := make([]rtp.Packet, 0, len(present))
