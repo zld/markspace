@@ -48,7 +48,7 @@ func demo(out string, fresh bool) (verify.Summary, error) {
 // buildManifest analyses every file, executes the continuous and resumed
 // batch runs, and folds the results into the manifest document.
 func buildManifest(mediaDir string, files []fixtures.DemoFile, out string) (*verify.Manifest, error) {
-	m := &verify.Manifest{Version: 1}
+	m := &verify.Manifest{Version: 1, Demo: true}
 	byName := map[string]fixtures.DemoFile{}
 	for _, f := range files {
 		byName[f.Name] = f

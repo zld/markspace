@@ -123,3 +123,57 @@ func TestTrackClockRejectsPresentationBeforeOrigin(t *testing.T) {
 		t.Fatalf("err=%v", err)
 	}
 }
+
+func TestForwardJumpDetectionUsesConfiguredBound(t *testing.T) {
+	clk, _ := NewTrackClock("j.mp4", 1, 1000, NanosecondTimeline(), nil, 0)
+	if _, err := clk.Presentation(0, 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := clk.Presentation(1000, 0); err != nil {
+		t.Fatal(err)
+	}
+	// A jump past the continuity bound means the low 32 bits alone cannot be
+	// trusted; it is reported as a wrap at the offending sample.
+	// Ticks are in ms here, so jump just past the 300 s bound.
+	_, err := clk.Presentation(1000+uint64(MaxForwardGapNS/1e6)+2, 0)
+	if !errors.Is(err, fault.ErrTimeWrap) {
+		t.Fatalf("err=%v", err)
+	}
+	_ = err
+	if !clk.WrapDetected() {
+		t.Fatal("wrap flag not set")
+	}
+	e, _ := fault.As(err)
+	if e.Sample != 3 || e.TrackID != 1 || e.Kind != fault.KindTimeline {
+		t.Fatalf("location=%+v", e)
+	}
+}
+
+func TestJumpWithinBoundIsAccepted(t *testing.T) {
+	clk, _ := NewTrackClock("k.mp4", 1, 1000, NanosecondTimeline(), nil, 0)
+	if _, err := clk.Presentation(0, 0); err != nil {
+		t.Fatal(err)
+	}
+	// Four minutes of media without intermediate timestamps is unusual but
+	// legal for a sparse track.
+	if _, err := clk.Presentation(240*1000, 0); err != nil {
+		t.Fatalf("legal gap rejected: %v", err)
+	}
+}
+
+func TestEditListEmptySegmentShiftsPresentation(t *testing.T) {
+	// An empty 2 s edit followed by media starting at tick 0: the first
+	// frame must present at 2 s, exactly as an editor would see it.
+	edits := []Edit{
+		{SegmentDuration: uint64(2 * NanosPerSecond), MediaTime: -1},
+		{SegmentDuration: uint64(NanosPerSecond), MediaTime: 0},
+	}
+	clk, _ := NewTrackClock("e.mp4", 1, 1000, NanosecondTimeline(), edits, 0)
+	got, err := clk.Presentation(0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != 2*int64(NanosPerSecond) {
+		t.Fatalf("empty edit not applied: %d", got)
+	}
+}

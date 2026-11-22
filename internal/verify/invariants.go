@@ -68,7 +68,11 @@ type Summary struct {
 
 // Manifest is the demo/verify interchange document.
 type Manifest struct {
-	Version  int            `json:"version"`
+	Version int `json:"version"`
+	// Demo marks a self-generated corpus whose damage is intentional. Only a
+	// demo manifest may exit 0 with recovered slices; an operator directory
+	// with the same damage reports it as partially recovered (exit 1).
+	Demo     bool           `json:"demo"`
 	Files    []FileEntry    `json:"files"`
 	Segments []SegmentEntry `json:"segments"`
 	Summary  Summary        `json:"summary"`
@@ -254,9 +258,8 @@ func SegmentDigest(segs []SegmentEntry) string {
 // distinguishes recoverable damage (1) from failed verification (2).
 func Run(m *Manifest, mediaDir string, opts Options) (Summary, error) {
 	sum := m.Summary
-	sum.Segments = len(m.Segments) - sum.DuplicateSegments
-	if sum.Segments < 0 {
-		sum.Segments = 0
+	if computed := len(m.Segments) - sum.DuplicateSegments; computed >= 0 {
+		sum.Segments = computed
 	}
 	sum.KeyframeHitRate = KeyframeHitRate(m.Segments)
 	rate, errs := Recompute(m, mediaDir)

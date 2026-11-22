@@ -20,7 +20,7 @@ func verifyDir(dir string) (verify.Summary, error) {
 	if err != nil {
 		return verify.Summary{}, err
 	}
-	sum, err := verify.Run(m, filepath.Join(dir, "media"), verify.Options{AcceptRecovered: true})
+	sum, err := verify.Run(m, filepath.Join(dir, "media"), verify.Options{AcceptRecovered: m.Demo})
 	if err != nil {
 		return sum, err
 	}

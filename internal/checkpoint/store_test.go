@@ -29,6 +29,9 @@ func TestAppendReplayAndCompleted(t *testing.T) {
 	if !st.Completed(0) || !st.Completed(1) || st.Completed(2) {
 		t.Fatal("Completed disagreed")
 	}
+	if st.NextBlock() != 2 {
+		t.Fatalf("next block=%d", st.NextBlock())
+	}
 	st.Close()
 
 	st2, err := Open(dir)
@@ -39,8 +42,8 @@ func TestAppendReplayAndCompleted(t *testing.T) {
 	if len(st2.Records()) != 3 || st2.NextBlock() != 2 || st2.Recovered() {
 		t.Fatalf("replay: records=%d next=%d torn=%v", len(st2.Records()), st2.NextBlock(), st2.Recovered())
 	}
-	if !st2.Completed(1) {
-		t.Fatal("block 1 should be committed after replay")
+	if !st2.Completed(1) || len(st2.BlockRecords(0)) != 2 {
+		t.Fatal("block contents lost across reopen")
 	}
 }
 
@@ -54,12 +57,12 @@ func TestTornCheckpointTailIsDiscarded(t *testing.T) {
 		t.Fatal(err)
 	}
 	st.Close()
-	// Simulate a half-written record: header claims 200 bytes, only 5 exist.
+	// A half-written record: header claims 200 bytes, only 10 exist.
 	f, err := os.OpenFile(filepath.Join(dir, "journal.jsonl"), os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.Write([]byte{0, 0, 0, 200, 0xde, 0xad, 0xbe, 0xef, '{', '"'})
+	f.Write([]byte{0, 0, 0, 200, 0xde, 0xad, 0xbe, 0xef, '{', '"', 'b'})
 	f.Close()
 
 	st2, err := Open(dir)
@@ -71,9 +74,10 @@ func TestTornCheckpointTailIsDiscarded(t *testing.T) {
 		t.Fatal("torn tail not reported")
 	}
 	if len(st2.Records()) != 1 || !st2.Completed(0) {
-		t.Fatalf("torn tail corrupted replayed records: %+v", st2.Records())
+		t.Fatalf("torn tail damaged replayed records: %+v", st2.Records())
 	}
-	// Appending after a torn tail must remain durable and replayable.
+	// The unparseable suffix must be gone, or later appends would be invisible.
+	assertJournalClean(t, filepath.Join(dir, "journal.jsonl"))
 	if err := st2.Append(rec(1, 10)); err != nil {
 		t.Fatal(err)
 	}
@@ -81,13 +85,30 @@ func TestTornCheckpointTailIsDiscarded(t *testing.T) {
 		t.Fatal(err)
 	}
 	st2.Close()
-	st3, _ := Open(dir)
+	st3, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer st3.Close()
 	if st3.Recovered() {
-		t.Fatal("second open should treat the torn record as isolated")
+		t.Fatal("second open still sees a torn record")
 	}
 	if len(st3.Records()) != 2 || !st3.Completed(1) {
 		t.Fatalf("second replay: %+v", st3.Records())
+	}
+}
+
+func assertJournalClean(t *testing.T, path string) {
+	t.Helper()
+	recs, torn, _, err := readJournal(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if torn {
+		t.Fatal("journal still has a torn tail after repair")
+	}
+	if len(recs) != 1 {
+		t.Fatalf("journal records=%d", len(recs))
 	}
 }
 
@@ -96,8 +117,12 @@ func TestCheckpointFileCorruptionIsFatal(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "checkpoint.json"), []byte("{not json"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Open(dir); err == nil {
+	_, err := Open(dir)
+	if err == nil {
 		t.Fatal("corrupt checkpoint accepted")
+	}
+	if code := exitOf(err); code != 2 {
+		t.Fatalf("exit=%d want 2", code)
 	}
 }
 
