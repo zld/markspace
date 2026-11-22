@@ -3,6 +3,7 @@
 package pipeline
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -28,6 +29,16 @@ type Checkpoint struct {
 	Digest       string          `json:"digest"`
 }
 
+// canonicalJSON compacts a payload so digests are independent of the
+// whitespace introduced by re-serializing a checkpoint file.
+func canonicalJSON(raw json.RawMessage) []byte {
+	var buf bytes.Buffer
+	if err := json.Compact(&buf, raw); err != nil {
+		return raw
+	}
+	return buf.Bytes()
+}
+
 // ComputeDigest derives the checkpoint digest over every field that
 // guards reuse. Deterministic: identical inputs and parameters reproduce
 // identical digests.
@@ -37,13 +48,13 @@ func (c *Checkpoint) ComputeDigest() string {
 		h.Write([]byte(s))
 		h.Write([]byte{0})
 	}
-	h.Write(c.Payload)
+	h.Write(canonicalJSON(c.Payload))
 	return hex.EncodeToString(h.Sum(nil))
 }
 
 // ResultDigestOf hashes a stage payload.
 func ResultDigestOf(payload json.RawMessage) string {
-	sum := sha256.Sum256(payload)
+	sum := sha256.Sum256(canonicalJSON(payload))
 	return hex.EncodeToString(sum[:])
 }
 
