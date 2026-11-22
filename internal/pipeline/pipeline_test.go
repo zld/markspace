@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"mediad/internal/fixture"
+	"mediad/internal/index"
 	"mediad/internal/ingest"
 )
 
@@ -255,5 +256,99 @@ func TestReportRejectsUnknownRecords(t *testing.T) {
 	}
 	if _, err := ParseReport(bytes.NewReader([]byte(`{"kind":"run","version":1,"bogus":true}` + "\n"))); err == nil {
 		t.Fatal("want unknown field error")
+	}
+}
+
+func TestEveryFaultClassIsReported(t *testing.T) {
+	root, names, _ := setup(t)
+	out, err := runner(root, "").Run(names)
+	if err != nil && !errors.Is(err, ErrDamaged) {
+		t.Fatal(err)
+	}
+	want := []string{
+		"truncated_box",    // cut mdat
+		"mp4_length",       // impossible box size
+		"srt_time",         // unparsable SRT cue
+		"vtt_time",         // backwards VTT cue
+		"truncated_cue",    // unterminated subtitle body
+		"rtp_sequence_gap", // lost packets
+		"rtp_wrap",         // 32-bit rollover
+		"clock_alignment",  // loss breaks interpolation
+		"node_drift",       // measured node skew
+		"timecode_label",   // impossible drop-frame label
+	}
+	seen := make(map[string]int)
+	for _, is := range out.Diagnose.Issues {
+		seen[string(is.Category)]++
+	}
+	for _, cat := range want {
+		if seen[cat] == 0 {
+			t.Errorf("fault class %q was not reported (seen: %v)", cat, seen)
+		}
+	}
+}
+
+func TestTruncatedBoxInvalidatesKeyframes(t *testing.T) {
+	root, names, _ := setup(t)
+	out, err := runner(root, "").Run(names)
+	if err != nil && !errors.Is(err, ErrDamaged) {
+		t.Fatal(err)
+	}
+	var corrupt *index.Index
+	for i := range out.Index.Indexes {
+		if out.Index.Indexes[i].Asset == "video/corrupt.mp4" {
+			corrupt = &out.Index.Indexes[i]
+		}
+	}
+	if corrupt == nil {
+		t.Fatal("no index for the truncated asset")
+	}
+	if corrupt.Untrusted == 0 {
+		t.Fatal("truncation did not invalidate any keyframe")
+	}
+	for _, kf := range corrupt.Keyframes {
+		if !kf.Trusted && kf.Span.Start < 2667 {
+			t.Fatalf("keyframe %d marked untrusted but its bytes are intact", kf.Number)
+		}
+	}
+}
+
+func TestIllegalCueDoesNotPolluteFollowingCue(t *testing.T) {
+	root, names, _ := setup(t)
+	out, err := runner(root, "").Run(names)
+	if err != nil && !errors.Is(err, ErrDamaged) {
+		t.Fatal(err)
+	}
+	// broken.vtt rejects its second cue (end before start). The rejected cue
+	// must not appear in the results and the next one must keep its own text.
+	got := map[int][]string{}
+	for _, c := range out.Ingest.Cues {
+		if c.Asset != "subs/broken.vtt" {
+			continue
+		}
+		got[c.Index] = c.Lines
+		if c.End.Cmp(c.Start) <= 0 {
+			t.Fatalf("rejected cue leaked into results: %+v", c)
+		}
+	}
+	// The generator writes seven valid cues and injects one backwards cue
+	// between cues 2 and 3.
+	if len(got) != 7 {
+		t.Fatalf("kept %d cues from broken.vtt, want 7: %v", len(got), got)
+	}
+	// The rejected block sits between cue-2 and cue-3. Its "backwards" text
+	// must be swallowed with it, and cue-3 must keep only its own two lines.
+	if lines := got[3]; len(lines) != 2 || lines[0] != "line one" || lines[1] != "line two" {
+		t.Fatalf("cue following the rejected one was polluted: %v", lines)
+	}
+	for idx, lines := range got {
+		for _, l := range lines {
+			if l == "backwards" {
+				t.Fatalf("cue %d absorbed the rejected cue's text", idx)
+			}
+		}
+	}
+	if lines := got[4]; len(lines) != 1 || lines[0] != "vtt cue 4" {
+		t.Fatalf("cue after the rejected block absorbed text: %v", lines)
 	}
 }
