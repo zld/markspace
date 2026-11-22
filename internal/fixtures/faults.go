@@ -162,3 +162,13 @@ func WriteAll(dir string) ([]string, error) {
 
 func mustTruncated() []byte { b, _ := TruncatedMP4(); return b }
 func mustOverrun() []byte   { b, _ := MXFOverrun(); return b }
+
+// MXFMissingEditRate 生成缺失必需编辑率字段的故障样例。
+func MXFMissingEditRate() []byte {
+	header := klv(ulHeaderPartition, make([]byte, 16))
+	var v []byte
+	v = append(v, fieldU32(0x01, 1)...)
+	v = append(v, field(0x02, []byte{1})...)
+	v = append(v, field(0x09, []byte("no-rate"))...)
+	return append(header, klv(ulTrackMeta, v)...)
+}
