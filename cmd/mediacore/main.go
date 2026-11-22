@@ -75,9 +75,7 @@ func demo(args []string) int {
 	path, err := fixturePath(*dir, fixture.Kind(*kind))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "mediacore: %v\n", err)
-		if core.IsCode(err, core.CodeMissingTrack) || core.IsCode(err, core.CodeParamConflict) {
-			return 3
-		}
+		// A bad flag value is a caller error, not an unrecoverable input.
 		return 1
 	}
 
