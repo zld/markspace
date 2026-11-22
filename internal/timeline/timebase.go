@@ -52,6 +52,14 @@ func (r Rat) Sub(o Rat) Rat { return NewRat(r.Num*o.Den-o.Num*r.Den, r.Den*o.Den
 // Mul 返回两有理数之积。
 func (r Rat) Mul(o Rat) Rat { return NewRat(r.Num*o.Num, r.Den*o.Den) }
 
+// Div 返回两有理数之商；除数为零时返回零值。
+func (r Rat) Div(o Rat) Rat {
+	if o.Num == 0 {
+		return Rat{}
+	}
+	return NewRat(r.Num*o.Den, r.Den*o.Num)
+}
+
 // Cmp 比较大小：-1 小于，0 相等，1 大于。
 func (r Rat) Cmp(o Rat) int {
 	l, rr := r.Num*o.Den, o.Num*r.Den
