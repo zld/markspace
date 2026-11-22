@@ -1,13 +1,16 @@
-// Package rtp implements sequence-number continuity checking and
-// frame reassembly for RTP packets. Both transport adapters feed the
-// same types, so UDP and TCP-interleaved sessions are validated with
-// identical logic.
 package rtp
 
 import "fmt"
 
 // seqMod is the RTP sequence-number modulus (RFC 3550, 16-bit field).
 const seqMod = 1 << 16
+
+// reorderWindow bounds how far ahead of the contiguous head a packet
+// may arrive while still being treated as a reordered (late) packet.
+// It is larger than any realistic reorder distance and far smaller
+// than half the 16-bit space, so genuinely large losses are charged
+// promptly instead of being buffered forever.
+const reorderWindow = 256
 
 // Gap records a detected sequence-number gap.
 type Gap struct {
@@ -23,30 +26,43 @@ type Gap struct {
 	BeforeNext uint16
 }
 
+// seqState holds the per-SSRC continuity bookkeeping.
+type seqState struct {
+	initialized bool
+	// head is the highest sequence number whose entire run from the
+	// baseline up to itself has been observed (modulo-65536 math).
+	head uint16
+	// received holds sequence numbers strictly beyond head that have
+	// already arrived (early/reordered packets), keyed by absolute seq.
+	received map[uint16]struct{}
+	// frontier is the highest buffered sequence beyond head. It lets a
+	// late packet (arriving after the frontier) be recognized as a fill
+	// rather than an obsolete duplicate.
+	frontier uint16
+	hasFront bool
+}
+
 // SequenceChecker tracks RTP sequence numbers per SSRC with proper
 // modulo-65536 arithmetic, including the 65535 -> 0 wraparound.
 //
 // The first packet on each SSRC establishes the baseline and never
-// produces a gap. Every later packet is compared against the expected
-// successor of the highest contiguous sequence seen; missing numbers
-// are reported as a gap and the running count is updated. Reordered
-// (late) packets that fall inside an already-seen range are accepted
-// without creating new gaps.
+// produces a gap. A later packet is one of: the expected successor
+// (advances the head, possibly through buffered packets), an early
+// packet (buffered until the head catches up), a late duplicate
+// (older than the head, ignored) or a large forward jump (the skipped
+// range is charged as a gap immediately). When the stream ends,
+// Finalize charges buffered packets whose predecessors never arrived.
+// Gap statistics thus depend solely on the set of observed sequence
+// numbers, never on packet arrival ordering or scheduling.
 type SequenceChecker struct {
-	initialized map[uint32]bool
-	// maxContig is the highest sequence number whose full run from
-	// the baseline has been observed (modulo arithmetic via head index).
-	head     map[uint32]uint16
+	states   map[uint32]*seqState
 	gaps     []Gap
 	gapCount int
 }
 
 // NewSequenceChecker creates an empty checker.
 func NewSequenceChecker() *SequenceChecker {
-	return &SequenceChecker{
-		initialized: map[uint32]bool{},
-		head:        map[uint32]uint16{},
-	}
+	return &SequenceChecker{states: map[uint32]*seqState{}}
 }
 
 // delta returns b-a modulo 65536 as an unsigned 16-bit value, so the
@@ -56,54 +72,163 @@ func delta(a, b uint16) uint16 {
 }
 
 // Observe feeds one (SSRC, sequence number) pair into the checker.
-// It returns the gap recorded for this packet, or nil if the packet
-// was the expected successor, a baseline packet or a late reorder.
+// It returns a gap only when a large out-of-window jump is detected;
+// ordinary losses surface through Finalize once proven unfillable.
 func (c *SequenceChecker) Observe(ssrc uint32, seq uint16) *Gap {
-	if !c.initialized[ssrc] {
-		c.initialized[ssrc] = true
-		c.head[ssrc] = seq
+	st, ok := c.states[ssrc]
+	if !ok {
+		c.states[ssrc] = &seqState{
+			initialized: true,
+			head:        seq,
+			received:    map[uint16]struct{}{},
+		}
 		return nil
 	}
 
-	head := c.head[ssrc]
-	d := delta(head, seq)
-
+	d := delta(st.head, seq)
 	switch {
 	case d == 0:
-		// Duplicate of the current head: nothing to report.
+		return nil // exact duplicate of the head
+	case d >= seqMod/2:
+		// Older than the head in circular terms. It is either a true
+		// late duplicate (already behind the head) or a fill arriving
+		// after the buffered frontier advanced past it.
+		if st.hasFront {
+			offToFront := delta(seq, st.frontier)
+			if offToFront < seqMod/2 {
+				// seq lies between head and frontier: buffer it so
+				// Finalize sees the hole as filled.
+				st.received[seq] = struct{}{}
+			}
+		}
 		return nil
-	case d < seqMod/2:
-		// Forward progression. d==1 is the expected successor.
-		if d == 1 {
-			c.head[ssrc] = seq
-			return nil
+	case d > reorderWindow:
+		// Large jump: the skipped range cannot be filled by reordering.
+		g := c.recordGap(ssrc, st.head, seq, int(d)-1)
+		st.head = seq
+		st.received = map[uint16]struct{}{}
+		st.hasFront = false
+		return g
+	case d > 1:
+		// Early packet within the window: buffer by absolute sequence.
+		st.received[seq] = struct{}{}
+		if !st.hasFront || delta(st.frontier, seq) < seqMod/2 {
+			st.frontier = seq
+			st.hasFront = true
 		}
-		g := Gap{
-			SSRC:         ssrc,
-			FirstMissing: head + 1,
-			MissingCount: int(d) - 1,
-			AfterPrev:    head,
-			BeforeNext:   seq,
-		}
-		c.gaps = append(c.gaps, g)
-		c.gapCount += g.MissingCount
-		c.head[ssrc] = seq
-		return &g
-	default:
-		// Backward jump (or a forward jump of more than half the
-		// space, treated as late/reordered data). The contiguous
-		// head is not moved and no new gap is charged: either the
-		// missing range was already counted when the head advanced,
-		// or the packet arrived out of order.
 		return nil
 	}
+
+	// d == 1: expected successor. Walk the head across any buffered
+	// consecutive run; holes inside the run are left for Finalize.
+	st.head = seq
+	for {
+		next := st.head + 1
+		if _, ok := st.received[next]; !ok {
+			return nil
+		}
+		delete(st.received, next)
+		st.head = next
+	}
+}
+
+// recordGap appends a gap of missingCount missing sequences ending
+// immediately before beforeNext, given the last contiguous sequence.
+func (c *SequenceChecker) recordGap(ssrc uint32, prevHead, beforeNext uint16,
+	missingCount int,
+) *Gap {
+	g := Gap{
+		SSRC:         ssrc,
+		FirstMissing: prevHead + 1,
+		MissingCount: missingCount,
+		AfterPrev:    prevHead,
+		BeforeNext:   beforeNext,
+	}
+	c.gaps = append(c.gaps, g)
+	c.gapCount += missingCount
+	return &g
+}
+
+// Finalize charges holes that remain open at end of stream: a buffered
+// packet whose predecessors never arrived means those predecessors are
+// permanently missing. Call after the last packet has been observed.
+// It is safe to call more than once; subsequent calls report nothing.
+func (c *SequenceChecker) Finalize() []Gap {
+	var out []Gap
+
+	// Deterministic SSRC iteration.
+	ssrcs := make([]uint32, 0, len(c.states))
+	for ssrc := range c.states {
+		ssrcs = append(ssrcs, ssrc)
+	}
+	for i := 1; i < len(ssrcs); i++ {
+		for j := i; j > 0 && ssrcs[j-1] > ssrcs[j]; j-- {
+			ssrcs[j-1], ssrcs[j] = ssrcs[j], ssrcs[j-1]
+		}
+	}
+
+	for _, ssrc := range ssrcs {
+		st := c.states[ssrc]
+		if len(st.received) == 0 {
+			continue
+		}
+		// Smallest buffered sequence marks the first unfillable hole.
+		var minSeq uint16
+		first := true
+		for seq := range st.received {
+			if first || delta(st.head, seq) < delta(st.head, minSeq) {
+				minSeq, first = seq, false
+			}
+		}
+		missing := int(delta(st.head, minSeq)) - 1
+		if missing <= 0 {
+			continue
+		}
+		g := c.recordGap(ssrc, st.head, minSeq, missing)
+		out = append(out, *g)
+		// The hole is reported; drop the buffer so a repeat Finalize
+		// cannot double-count.
+		st.received = map[uint16]struct{}{}
+	}
+	return out
+}
+
+// EndStream declares that the stream on ssrc was supposed to end at
+// expectedLastSeq. If the highest delivered sequence is behind it, the
+// missing tail is charged as a gap. This covers transports (notably
+// UDP with an internal reorder buffer) that withhold packets behind an
+// unfillable end-of-stream gap: the scenario knows the true tail even
+// though the checker never observed it. Calling it is optional; when
+// the observed head already reaches expectedLastSeq it is a no-op.
+func (c *SequenceChecker) EndStream(ssrc uint32, expectedLastSeq uint16) *Gap {
+	st, ok := c.states[ssrc]
+	if !ok {
+		return nil
+	}
+	// Account for any early packets already buffered.
+	frontier := st.head
+	for seq := range st.received {
+		if delta(frontier, seq) < seqMod/2 && delta(st.head, seq) > 0 {
+			frontier = seq
+		}
+	}
+	d := delta(frontier, expectedLastSeq)
+	if d == 0 || d >= seqMod/2 {
+		return nil // observed the tail, or expectation is in the past
+	}
+	missing := int(d)
+	g := c.recordGap(ssrc, frontier, expectedLastSeq+1, missing)
+	// Mark the expectation consumed so Finalize/EndStream cannot
+	// double-count the same tail.
+	st.received = map[uint16]struct{}{}
+	return g
 }
 
 // GapCount returns the total number of missing sequence numbers across
 // all SSRCs and gaps.
 func (c *SequenceChecker) GapCount() int { return c.gapCount }
 
-// Gaps returns a copy of every recorded gap.
+// Gaps returns a copy of every recorded gap, ordered by detection.
 func (c *SequenceChecker) Gaps() []Gap {
 	out := make([]Gap, len(c.gaps))
 	copy(out, c.gaps)

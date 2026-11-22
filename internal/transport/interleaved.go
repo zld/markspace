@@ -10,6 +10,14 @@ type InterleavedConfig struct {
 	ExpectedPackets int
 	// RTPTimeout bounds packet draining; zero uses the runner default.
 	RTPTimeout time.Duration
+	// DrainQuietPeriod ends draining after a packet-arrival pause;
+	// zero uses the runner default.
+	DrainQuietPeriod time.Duration
+	// ExpectedLastSeq / HasExpectedLastSeq / SSRC describe the
+	// scenario's true stream tail for deterministic gap accounting.
+	ExpectedLastSeq    uint16
+	HasExpectedLastSeq bool
+	SSRC               uint32
 }
 
 // RunInterleaved runs the full RTSP session with RTP/RTCP multiplexed
@@ -20,10 +28,14 @@ type InterleavedConfig struct {
 // transports produce directly comparable statistics.
 func RunInterleaved(cfg InterleavedConfig) (*Result, error) {
 	r, err := NewRunner(Config{
-		Mode:            ModeInterleaved,
-		ServerURL:       cfg.ServerURL,
-		ExpectedPackets: cfg.ExpectedPackets,
-		RTPTimeout:      cfg.RTPTimeout,
+		Mode:               ModeInterleaved,
+		ServerURL:          cfg.ServerURL,
+		ExpectedPackets:    cfg.ExpectedPackets,
+		RTPTimeout:         cfg.RTPTimeout,
+		DrainQuietPeriod:   cfg.DrainQuietPeriod,
+		ExpectedLastSeq:    cfg.ExpectedLastSeq,
+		HasExpectedLastSeq: cfg.HasExpectedLastSeq,
+		SSRC:               cfg.SSRC,
 	})
 	if err != nil {
 		return nil, err

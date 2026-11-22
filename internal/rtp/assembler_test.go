@@ -32,6 +32,7 @@ func TestAssemblerWraparoundCompleteFrame(t *testing.T) {
 	} {
 		a.Push(p)
 	}
+	a.Finalize()
 	complete, incomplete := a.Stats()
 	if complete != 1 || incomplete != 0 {
 		t.Fatalf("complete=%d incomplete=%d, want 1/0", complete, incomplete)
@@ -58,6 +59,7 @@ func TestAssemblerReorderedCompleteFrame(t *testing.T) {
 	} {
 		a.Push(p)
 	}
+	a.Finalize()
 	complete, incomplete := a.Stats()
 	if complete != 1 || incomplete != 0 {
 		t.Fatalf("complete=%d incomplete=%d, want 1/0", complete, incomplete)
@@ -93,6 +95,9 @@ func TestAssemblerCrossFrameGapAndRecovery(t *testing.T) {
 	a.Push(pkt(1, 25, 300, false, 0x5))
 	// Frame C completes normally.
 	a.Push(pkt(1, 26, 300, true, 0x6))
+
+	// The real loss (seq 24) is charged at stream finalization.
+	a.Finalize()
 
 	complete, incomplete := a.Stats()
 	if complete != 2 || incomplete != 1 {
@@ -130,6 +135,7 @@ func TestAssemblerSSRCIsolation(t *testing.T) {
 	a.Push(pkt(200, 0, 10, false, 0x9))
 	a.Push(pkt(100, 1, 10, true, 0x2))
 	a.Push(pkt(200, 1, 10, true, 0xa))
+	a.Finalize()
 
 	complete, incomplete := a.Stats()
 	if complete != 2 || incomplete != 0 {
@@ -156,5 +162,27 @@ func TestAssemblerFlushOpenAtEndOfStream(t *testing.T) {
 	complete, incomplete := a.Stats()
 	if complete != 0 || incomplete != 1 {
 		t.Fatalf("complete=%d incomplete=%d, want 0/1", complete, incomplete)
+	}
+}
+
+func TestAssemblerEndStreamTailGap(t *testing.T) {
+	// A complete frame, then a last frame whose single observed packet
+	// is seq 5 while the true tail is seq 6 (one lost packet).
+	a := NewAssembler()
+	a.Push(pkt(1, 3, 100, false, 0x1))
+	a.Push(pkt(1, 4, 100, true, 0x2)) // complete frame
+	a.Push(pkt(1, 5, 200, false, 0x3)) // last frame, no marker
+	a.EndStream(1, 6)
+
+	complete, incomplete := a.Stats()
+	if complete != 1 || incomplete != 1 {
+		t.Fatalf("complete=%d incomplete=%d, want 1/1", complete, incomplete)
+	}
+	if a.GapCount() != 1 {
+		t.Fatalf("gap count = %d, want 1", a.GapCount())
+	}
+	frames := a.Frames()
+	if frames[1].Complete || frames[1].GapCount != 1 || frames[1].Timestamp != 200 {
+		t.Fatalf("tail gap not attributed to last frame: %+v", frames[1])
 	}
 }

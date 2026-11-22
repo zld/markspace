@@ -10,6 +10,14 @@ type UDPConfig struct {
 	ExpectedPackets int
 	// RTPTimeout bounds packet draining; zero uses the runner default.
 	RTPTimeout time.Duration
+	// DrainQuietPeriod ends draining after a packet-arrival pause;
+	// zero uses the runner default.
+	DrainQuietPeriod time.Duration
+	// ExpectedLastSeq / HasExpectedLastSeq / SSRC describe the
+	// scenario's true stream tail for deterministic gap accounting.
+	ExpectedLastSeq    uint16
+	HasExpectedLastSeq bool
+	SSRC               uint32
 }
 
 // RunUDP runs the full RTSP session with RTP/RTCP carried over UDP.
@@ -19,10 +27,14 @@ type UDPConfig struct {
 // shared Runner logic, identical to the interleaved mode.
 func RunUDP(cfg UDPConfig) (*Result, error) {
 	r, err := NewRunner(Config{
-		Mode:            ModeUDP,
-		ServerURL:       cfg.ServerURL,
-		ExpectedPackets: cfg.ExpectedPackets,
-		RTPTimeout:      cfg.RTPTimeout,
+		Mode:               ModeUDP,
+		ServerURL:          cfg.ServerURL,
+		ExpectedPackets:    cfg.ExpectedPackets,
+		RTPTimeout:         cfg.RTPTimeout,
+		DrainQuietPeriod:   cfg.DrainQuietPeriod,
+		ExpectedLastSeq:    cfg.ExpectedLastSeq,
+		HasExpectedLastSeq: cfg.HasExpectedLastSeq,
+		SSRC:               cfg.SSRC,
 	})
 	if err != nil {
 		return nil, err

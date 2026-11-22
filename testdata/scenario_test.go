@@ -7,8 +7,8 @@ func TestGeneratedScenarioStructure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(s.Packets) != 10 {
-		t.Fatalf("packet count = %d, want 10", len(s.Packets))
+	if len(s.Packets) != 8 {
+		t.Fatalf("packet count = %d, want 8", len(s.Packets))
 	}
 
 	// Deterministic sequence/timestamp layout shared by both transports.
@@ -19,15 +19,19 @@ func TestGeneratedScenarioStructure(t *testing.T) {
 	}
 	want := []pkt{
 		{65534, 1000, false},
-		{65532, 1000, false}, // reordered
-		{65533, 1000, false},
-		{65535, 1000, true}, // frame A marker
-		{0, 2000, false},    // 65535 -> 0 wraparound
-		{1, 2000, false},
-		{2, 2000, true}, // frame B marker
-		{3, 3000, false}, // frame C: seq 4 dropped, no marker
-		{5, 4000, false}, // timestamp switch flushes C incomplete
-		{6, 4000, true}, // frame D marker
+		{65535, 1000, false},
+		{0, 1000, false},
+		{1, 1000, true}, // frame A marker; 65535 -> 0 wraparound
+		{3, 2000, false}, // frame B out of order: 3 before 2
+		{2, 2000, false}, // late fill
+		{4, 2000, true}, // frame B marker, complete
+		{5, 3000, false}, // frame C last: seq 6 is the lost tail
+	}
+	if s.ExpectedTailSeq != 6 {
+		t.Fatalf("expected tail seq = %d, want 6", s.ExpectedTailSeq)
+	}
+	if len(s.Packets) != len(want) {
+		t.Fatalf("packet count = %d, want %d", len(s.Packets), len(want))
 	}
 	for i, p := range s.Packets {
 		if p.SSRC != FixedSSRC {

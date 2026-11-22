@@ -62,6 +62,30 @@ func freeLoopbackPort() (int, error) {
 	return l.Addr().(*net.TCPAddr).Port, nil
 }
 
+// freeUDPPortPair reserves two consecutive UDP ports on 127.0.0.1,
+// which gortsplib requires for the RTP/RTCP server listeners. Both
+// sockets are closed before returning so the server can rebind them.
+func freeUDPPortPair() (int, int, error) {
+	for attempt := 0; attempt < 50; attempt++ {
+		rtpConn, err := net.ListenPacket("udp", "127.0.0.1:0")
+		if err != nil {
+			return 0, 0, err
+		}
+		rtpPort := rtpConn.LocalAddr().(*net.UDPAddr).Port
+		rtpConn.Close()
+		if rtpPort%2 != 0 {
+			continue // RTP port must be even so RTCP can be rtp+1
+		}
+		rtcpConn, err := net.ListenPacket("udp", fmt.Sprintf("127.0.0.1:%d", rtpPort+1))
+		if err != nil {
+			continue // pair taken between the two probes; retry
+		}
+		rtcpConn.Close()
+		return rtpPort, rtpPort + 1, nil
+	}
+	return 0, 0, fmt.Errorf("could not reserve consecutive UDP ports")
+}
+
 // New creates a server bound to an ephemeral port on 127.0.0.1.
 // Call Start to begin accepting connections and Close to release it.
 func New(cfg Config) (*Server, error) {
@@ -71,6 +95,10 @@ func New(cfg Config) (*Server, error) {
 	port, err := freeLoopbackPort()
 	if err != nil {
 		return nil, fmt.Errorf("reserve loopback port: %w", err)
+	}
+	rtpPort, rtcpPort, err := freeUDPPortPair()
+	if err != nil {
+		return nil, fmt.Errorf("reserve UDP port pair: %w", err)
 	}
 	s := &Server{
 		cfg:       cfg,
@@ -90,8 +118,8 @@ func New(cfg Config) (*Server, error) {
 	s.server = &gortsplib.Server{
 		Handler:        s.h,
 		RTSPAddress:    s.rtspAddr,
-		UDPRTPAddress:  "127.0.0.1:0",
-		UDPRTCPAddress: "127.0.0.1:0",
+		UDPRTPAddress:  fmt.Sprintf("127.0.0.1:%d", rtpPort),
+		UDPRTCPAddress: fmt.Sprintf("127.0.0.1:%d", rtcpPort),
 		ReadTimeout:    5 * time.Second,
 		WriteTimeout:   5 * time.Second,
 		// RTCP sender reports are irrelevant to the validation and

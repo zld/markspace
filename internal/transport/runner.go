@@ -12,6 +12,7 @@ import (
 
 	"github.com/bluenviron/gortsplib/v4"
 	"github.com/bluenviron/gortsplib/v4/pkg/base"
+	"github.com/bluenviron/gortsplib/v4/pkg/liberrors"
 	"github.com/pion/rtp"
 
 	rtpx "rtspcheck/internal/rtp"
@@ -40,6 +41,22 @@ type Config struct {
 	// ExpectedPackets is the number of RTP packets the server sends
 	// on a healthy run; draining stops as soon as all are seen.
 	ExpectedPackets int
+	// DrainQuietPeriod, when positive, lets draining finish once no
+	// new packet has arrived for this duration even if ExpectedPackets
+	// was not reached. This is required for UDP, where gortsplib's
+	// reorder buffer can legitimately hold packets past an end-of-stream
+	// sequence gap that will never be filled.
+	DrainQuietPeriod time.Duration
+	// ExpectedLastSeq, when set, is the sequence number of the last
+	// packet the scenario actually sent. It is reported to the
+	// assembler at end of stream so a transport-withheld tail gap is
+	// still charged deterministically.
+	ExpectedLastSeq uint16
+	// HasExpectedLastSeq enables ExpectedLastSeq (uint16 has no sentinel).
+	HasExpectedLastSeq bool
+	// SSRC is the stream SSRC, used when reporting the end-of-stream
+	// tail. Defaults to the scenario's single SSRC.
+	SSRC uint32
 }
 
 // Result is everything observed during one session, including the
@@ -145,9 +162,9 @@ func (r *Runner) Run() *Result {
 		return res
 	}
 	media := desc.Medias[0]
-	client.OnPacketRTP(media, media.Formats[0], r.handlePacket)
 
-	// SETUP
+	// SETUP. OnPacketRTP can only be registered afterwards, because
+	// Setup populates the client's setupped-medias table.
 	if _, err = client.Setup(u, media, 0, 0); err != nil {
 		r.fail(res, session.MethodSetup, err)
 		return res
@@ -156,6 +173,7 @@ func (r *Runner) Run() *Result {
 		r.recordFailure(res, err)
 		return res
 	}
+	client.OnPacketRTP(media, media.Formats[0], r.handlePacket)
 
 	// PLAY
 	if _, err = client.Play(nil); err != nil {
@@ -167,12 +185,21 @@ func (r *Runner) Run() *Result {
 		return res
 	}
 
-	// Drain the deterministic stream. Seeing every expected packet is
-	// the success path; the timeout covers interrupted sessions whose
-	// server severed the connection mid-stream.
+	// Drain the deterministic stream. Normal completion is seeing every
+	// expected packet, or — for UDP whose reorder buffer can hold
+	// end-of-stream packets behind an unfillable gap — a quiet period
+	// with no new arrivals. The hard deadline covers interrupted
+	// sessions whose server severed the connection mid-stream.
 	deadline := time.Now().Add(r.cfg.RTPTimeout)
+	quiet := r.cfg.DrainQuietPeriod
+	if quiet <= 0 {
+		quiet = 300 * time.Millisecond
+	}
+	lastSeen := r.packetsSeen()
+	lastChange := time.Now()
 	for r.packetsSeen() < r.cfg.ExpectedPackets {
-		if time.Now().After(deadline) {
+		now := time.Now()
+		if now.After(deadline) {
 			r.fail(res, session.MethodTeardown, fmt.Errorf(
 				"stream interrupted: received %d/%d packets",
 				r.packetsSeen(), r.cfg.ExpectedPackets))
@@ -180,15 +207,37 @@ func (r *Runner) Run() *Result {
 			client.Close()
 			return res
 		}
+		if n := r.packetsSeen(); n != lastSeen {
+			lastSeen, lastChange = n, now
+		} else if now.Sub(lastChange) >= quiet {
+			// The transport is holding the remainder behind an
+			// end-of-stream gap; everything deliverable has arrived.
+			break
+		}
 		time.Sleep(2 * time.Millisecond)
 	}
 
-	// TEARDOWN is issued by client.Close(). A broken control
-	// connection surfaces through Wait().
+	// Resolve any pending sequence holes (the deterministic scenario
+	// contains a real loss whose gap is finalized here) and flush any
+	// frame that never received its marker. When the scenario declares
+	// its true tail sequence, use it so transport-withheld tail packets
+	// are still recognized as missing.
+	if r.cfg.HasExpectedLastSeq {
+		r.asm.EndStream(r.cfg.SSRC, r.cfg.ExpectedLastSeq)
+	} else {
+		r.asm.Finalize()
+	}
+
+	// TEARDOWN is issued by client.Close(). Wait() then returns
+	// ErrClientTerminated, which is the normal result of closing the
+	// client ourselves; any other error means TEARDOWN could not
+	// complete and must fail the session.
 	client.Close()
 	if waitErr := client.Wait(); waitErr != nil {
-		r.fail(res, session.MethodTeardown, waitErr)
-		return res
+		if _, ok := waitErr.(liberrors.ErrClientTerminated); !ok {
+			r.fail(res, session.MethodTeardown, waitErr)
+			return res
+		}
 	}
 	if err = r.sm.Apply(session.Event{Method: session.MethodTeardown, OK: true}); err != nil {
 		r.recordFailure(res, err)
