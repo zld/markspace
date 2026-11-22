@@ -201,6 +201,7 @@ func h264AccessUnit(index int, key bool, salt int64) []byte {
 func h265AccessUnit(index int, key bool, salt int64) []byte {
 	vps := []byte{0x40, 0x01, 0x0C, 0x01, 0xFF, 0xFF, 0x01, 0x60}
 	sps := []byte{0x42, 0x01, 0x01, 0x01, 0x60, 0x00, 0x00, 0x03, 0x00}
+	pps := []byte{0x44, 0x01, 0xC1, 0x72, 0xB4, 0x62, 0x40}
 	slice := make([]byte, 36+int(salt%13))
 	for i := range slice {
 		slice[i] = byte((index*17 + i*5 + int(salt)) & 0xFF)
@@ -211,7 +212,7 @@ func h265AccessUnit(index int, key bool, salt int64) []byte {
 		slice[0], slice[1] = 0x02, 0x01
 	}
 	var out []byte
-	for _, n := range [][]byte{vps, sps, slice} {
+	for _, n := range [][]byte{vps, sps, pps, slice} {
 		out = append(out, 0, 0, 0, 1)
 		out = append(out, n...)
 	}
