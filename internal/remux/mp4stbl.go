@@ -6,7 +6,7 @@ import (
 	"mediasync/internal/demux"
 )
 
-func writeStbl(mw *mp4.Writer, track *demux.Track, samples []mergedSample) error {
+func writeStbl(mw *mp4.Writer, track *demux.Track, samples []Sample) error {
 	// Sample table with the structural boxes a reader expects. Payload sizes
 	// and offsets are derived from the verbatim samples; no decoding occurs.
 	if _, err := mw.StartBox(&mp4.BoxInfo{Type: mp4.BoxTypeStbl()}); err != nil {
@@ -77,7 +77,7 @@ func writeStbl(mw *mp4.Writer, track *demux.Track, samples []mergedSample) error
 	return nil
 }
 
-func writeStts(mw *mp4.Writer, n int, samples []mergedSample, track *demux.Track) error {
+func writeStts(mw *mp4.Writer, n int, samples []Sample, track *demux.Track) error {
 	if _, err := mw.StartBox(&mp4.BoxInfo{Type: mp4.BoxTypeStts()}); err != nil {
 		return err
 	}

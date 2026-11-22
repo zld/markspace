@@ -79,6 +79,13 @@ type Binding struct {
 	Role   Role
 }
 
+// RoleForCodec returns the output role a Matroska CodecID may serve and
+// whether the codec is supported for lossless remux at all.
+func RoleForCodec(codec string) (Role, bool) {
+	role, ok := supportedCodec[codec]
+	return role, ok
+}
+
 // Mapping is the resolved, validated binding table handed to the writer.
 type Mapping struct {
 	bindings map[uint32]Binding

@@ -58,8 +58,8 @@ func NewWriter(mapping *demux.Mapping, tracks []*demux.Track, scaleNS int64) (*W
 	return &Writer{tracks: tracks, mapping: mapping, scaleNS: scaleNS}, nil
 }
 
-// mergedSample is the writer's view of one pipeline result.
-type mergedSample struct {
+// Sample is the writer's view of one pipeline result.
+type Sample struct {
 	Track   uint32
 	Seq     uint64
 	NS      int64
@@ -69,7 +69,7 @@ type mergedSample struct {
 // render serializes the full container to a byte slice. Keeping rendering
 // separate from file publication lets the caller verify size and hashing
 // before the atomic rename, so a failure never leaves a partial package.
-func (w *Writer) render(samples []mergedSample) ([]byte, [32]byte, int, error) {
+func (w *Writer) render(samples []Sample) ([]byte, [32]byte, int, error) {
 	var out []byte
 	out = append(out, buildEBMLHeader()...)
 	segBody := buildInfo(w.scaleNS)
@@ -90,7 +90,7 @@ func (w *Writer) render(samples []mergedSample) ([]byte, [32]byte, int, error) {
 // Publish atomically writes the rendered package: bytes go to a temp file in
 // the target directory and are renamed into place only after a complete,
 // verified write. A crash mid-write therefore leaves no half-finished output.
-func (w *Writer) Publish(filePath string, samples []mergedSample) (Outcome, error) {
+func (w *Writer) Publish(filePath string, samples []Sample) (Outcome, error) {
 	data, hash, n, err := w.render(samples)
 	if err != nil {
 		return Outcome{Published: false}, err
@@ -128,7 +128,7 @@ func (w *Writer) Publish(filePath string, samples []mergedSample) (Outcome, erro
 
 // WriteTo renders and streams the package without atomic publication, used by
 // tests that want to inspect bytes directly.
-func (w *Writer) WriteTo(out io.Writer, samples []mergedSample) (Outcome, error) {
+func (w *Writer) WriteTo(out io.Writer, samples []Sample) (Outcome, error) {
 	data, hash, n, err := w.render(samples)
 	if err != nil {
 		return Outcome{Published: false}, err
@@ -174,12 +174,12 @@ func (w *Writer) buildTracks() []byte {
 
 // buildClusters groups merged samples into clusters by whole 500 ms windows,
 // keeping each cluster's signed 16-bit relative timecode safely in range.
-func (w *Writer) buildClusters(samples []mergedSample) ([]byte, int, [32]byte, error) {
+func (w *Writer) buildClusters(samples []Sample) ([]byte, int, [32]byte, error) {
 	hasher := newPayloadHasher()
 	const windowNS = int64(500_000_000)
 	var out []byte
 	clusterCount := 0
-	var window []mergedSample
+	var window []Sample
 
 	flush := func() error {
 		if len(window) == 0 {

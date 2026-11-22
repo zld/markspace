@@ -13,7 +13,7 @@ import (
 // mapped track using abema/go-mp4 for the box structure. Codec payloads are
 // copied verbatim into mdat; the file exists to prove the same lossless
 // samples can be carried by a second container, not to re-encode anything.
-func WriteMP4Sidecar(w io.WriteSeeker, track *demux.Track, samples []mergedSample) error {
+func WriteMP4Sidecar(w io.WriteSeeker, track *demux.Track, samples []Sample) error {
 	if track == nil {
 		return fmt.Errorf("remux: nil track for mp4 sidecar")
 	}
@@ -68,7 +68,7 @@ func WriteMP4Sidecar(w io.WriteSeeker, track *demux.Track, samples []mergedSampl
 	return nil
 }
 
-func writeMvhd(mw *mp4.Writer, samples []mergedSample) error {
+func writeMvhd(mw *mp4.Writer, samples []Sample) error {
 	if _, err := mw.StartBox(&mp4.BoxInfo{Type: mp4.BoxTypeMvhd()}); err != nil {
 		return err
 	}
@@ -87,7 +87,7 @@ func writeMvhd(mw *mp4.Writer, samples []mergedSample) error {
 	return err
 }
 
-func writeTrak(mw *mp4.Writer, track *demux.Track, samples []mergedSample) error {
+func writeTrak(mw *mp4.Writer, track *demux.Track, samples []Sample) error {
 	if _, err := mw.StartBox(&mp4.BoxInfo{Type: mp4.BoxTypeTrak()}); err != nil {
 		return err
 	}
@@ -125,7 +125,7 @@ func writeTrak(mw *mp4.Writer, track *demux.Track, samples []mergedSample) error
 	return nil
 }
 
-func writeMdhd(mw *mp4.Writer, track *demux.Track, samples []mergedSample) error {
+func writeMdhd(mw *mp4.Writer, track *demux.Track, samples []Sample) error {
 	if _, err := mw.StartBox(&mp4.BoxInfo{Type: mp4.BoxTypeMdhd()}); err != nil {
 		return err
 	}
@@ -143,7 +143,7 @@ func writeMdhd(mw *mp4.Writer, track *demux.Track, samples []mergedSample) error
 	return err
 }
 
-func writeHdlrMinf(mw *mp4.Writer, track *demux.Track, samples []mergedSample) error {
+func writeHdlrMinf(mw *mp4.Writer, track *demux.Track, samples []Sample) error {
 	if _, err := mw.StartBox(&mp4.BoxInfo{Type: mp4.BoxTypeHdlr()}); err != nil {
 		return err
 	}
@@ -173,7 +173,7 @@ func writeHdlrMinf(mw *mp4.Writer, track *demux.Track, samples []mergedSample) e
 	return nil
 }
 
-func firstLast(samples []mergedSample, track *demux.Track) (int64, int64) {
+func firstLast(samples []Sample, track *demux.Track) (int64, int64) {
 	var first, last int64
 	seen := false
 	for _, s := range samples {
@@ -188,7 +188,7 @@ func firstLast(samples []mergedSample, track *demux.Track) (int64, int64) {
 	return first, last
 }
 
-func trackDurationMS(samples []mergedSample) uint64 {
+func trackDurationMS(samples []Sample) uint64 {
 	if len(samples) == 0 {
 		return 0
 	}

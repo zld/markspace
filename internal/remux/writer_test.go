@@ -12,7 +12,7 @@ import (
 	"mediasync/internal/testmedia"
 )
 
-func buildMapped(t *testing.T) (*demux.Mapping, []*demux.Track, int64, []mergedSample) {
+func buildMapped(t *testing.T) (*demux.Mapping, []*demux.Track, int64, []Sample) {
 	t.Helper()
 	data, truth := testmedia.BuildWebM(testmedia.Spec{
 		Seed: 41, Tracks: []string{"video", "audio", "subtitle"},
@@ -31,7 +31,7 @@ func buildMapped(t *testing.T) (*demux.Mapping, []*demux.Track, int64, []mergedS
 	if err != nil {
 		t.Fatal(err)
 	}
-	var samples []mergedSample
+	var samples []Sample
 	for {
 		s, err := d.Next()
 		if errors.Is(err, io.EOF) {
@@ -40,7 +40,7 @@ func buildMapped(t *testing.T) (*demux.Mapping, []*demux.Track, int64, []mergedS
 		if err != nil {
 			t.Fatal(err)
 		}
-		samples = append(samples, mergedSample{
+		samples = append(samples, Sample{
 			Track: s.Track, Seq: s.Seq, NS: s.TimeTicks * 1_000_000, Payload: s.Payload,
 		})
 	}
@@ -135,8 +135,8 @@ func TestRejectsOversizeOutput(t *testing.T) {
 	mapping, tracks, scale, samples := buildMapped(t)
 	w, _ := NewWriter(mapping, tracks, scale)
 	big := make([]byte, MaxOutputBytes+1)
-	huge := append([]mergedSample(nil), samples...)
-	huge[0] = mergedSample{Track: 1, NS: 0, Payload: big}
+	huge := append([]Sample(nil), samples...)
+	huge[0] = Sample{Track: 1, NS: 0, Payload: big}
 	var buf bytes.Buffer
 	if _, err := w.WriteTo(&buf, huge); err == nil {
 		t.Fatal("oversize output must be rejected before publication")
