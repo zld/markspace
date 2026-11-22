@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"time"
 
 	"mediadist/internal/codec"
 	"mediadist/internal/demux"
@@ -613,7 +614,9 @@ func configRecord(c demux.Codec, samples []demux.Sample) []byte {
 	return nil
 }
 
-// buildSegments aggregates unified-timeline segments across all streams.
+// buildSegments aggregates unified-timeline segments across all streams. Each
+// stream contributes its own sliding-window bandwidth estimate; the estimate
+// only sets buffer capacity and never touches media timestamps.
 func buildSegments(dm *demux.Result, opts Options) []SegmentReport {
 	segmentNS := int64(opts.SegmentMS) * 1e6
 	// Segment zero starts at the earliest stream origin, so reported wall
@@ -630,9 +633,18 @@ func buildSegments(dm *demux.Result, opts Options) []SegmentReport {
 		lost      int64
 		keyframes int
 		digests   []string
+		observed  int64
+		estimates int
 	}
 	bySeg := map[int]*acc{}
+	nominalBps := int64(opts.BandwidthKbps) * 1000
+
 	for _, st := range dm.Streams {
+		est, err := transport.NewEstimator(st.Clock, transport.DefaultEstimatorConfig())
+		if err != nil {
+			continue
+		}
+		var inputs []transport.FragmentSample
 		for _, s := range st.Samples {
 			a, ok := bySeg[s.Segment]
 			if !ok {
@@ -645,10 +657,24 @@ func buildSegments(dm *demux.Result, opts Options) []SegmentReport {
 			if s.Keyframe {
 				a.keyframes++
 			}
-			dig := canonicalDigest(s)
-			a.digests = append(a.digests, fmt.Sprintf("%d:%s", s.Stream, dig))
+			a.digests = append(a.digests, fmt.Sprintf("%d:%s", s.Stream, canonicalDigest(s)))
+			inputs = append(inputs, transport.FragmentSample{
+				Segment: s.Segment, Bytes: int64(len(s.Data)),
+				Missing: int64(s.MissingPackets), Tick: s.PTS, Keyframe: s.Keyframe,
+			})
+		}
+		for _, fr := range transport.AggregateFragments(inputs, est, 2*time.Second) {
+			a, ok := bySeg[fr.Index]
+			if !ok {
+				continue
+			}
+			if fr.RateBps > 0 {
+				a.observed += fr.RateBps
+				a.estimates++
+			}
 		}
 	}
+
 	idx := make([]int, 0, len(bySeg))
 	for k := range bySeg {
 		idx = append(idx, k)
@@ -669,12 +695,17 @@ func buildSegments(dm *demux.Result, opts Options) []SegmentReport {
 			Samples: a.samples, Bytes: a.bytes, Lost: a.lost, Keyframes: a.keyframes,
 			SHA256: hex.EncodeToString(h.Sum(nil)),
 		}
-		// The estimate is presented per segment for capacity planning; it is
-		// derived from received bytes and never feeds back into timestamps.
-		if segmentNS > 0 {
-			seg.RateBps = a.bytes * 8 * int64(1e9) / segmentNS
-			seg.BufferCap = seg.RateBps / 8 * 2
+		if a.estimates > 0 {
+			seg.RateBps = a.observed / int64(a.estimates)
 		}
+		// The declared bandwidth caps the estimate so a bursty segment cannot
+		// inflate the buffering budget past what the operator provisioned.
+		if nominalBps > 0 && seg.RateBps > nominalBps {
+			seg.RateBps = nominalBps
+		}
+		// Capacity is two seconds at the estimated rate. It is derived only
+		// from received bytes over the segment's own tick span.
+		seg.BufferCap = seg.RateBps / 8 * 2
 		out = append(out, seg)
 	}
 	return out

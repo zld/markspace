@@ -123,6 +123,68 @@ func TestFatalLeavesNoPartialOutput(t *testing.T) {
 	}
 }
 
+func TestBandwidthOnlyAffectsBufferCapacity(t *testing.T) {
+	spec := fixture.DefaultSpec()
+	low := runForTest(t, spec, func(o *Options) { o.BandwidthKbps = 20 })
+	high := runForTest(t, spec, func(o *Options) { o.BandwidthKbps = 5000 })
+	if low.Metrics.SegmentSHA256 != high.Metrics.SegmentSHA256 {
+		t.Fatalf("bandwidth changed the segment hash: %s vs %s",
+			low.Metrics.SegmentSHA256, high.Metrics.SegmentSHA256)
+	}
+	for i := range low.Segments {
+		if low.Segments[i].SHA256 != high.Segments[i].SHA256 {
+			t.Fatalf("segment %d media hash depends on bandwidth", i)
+		}
+		if low.Segments[i].StartNS != high.Segments[i].StartNS {
+			t.Fatalf("segment %d start time depends on bandwidth", i)
+		}
+	}
+	// The cap must actually bind at the low setting.
+	capped := false
+	for _, seg := range low.Segments {
+		if seg.RateBps <= 20*1000 {
+			capped = true
+		}
+	}
+	if !capped {
+		t.Fatalf("low bandwidth did not cap any segment: %+v", low.Segments)
+	}
+	if low.Remux.SHA256 != high.Remux.SHA256 {
+		t.Fatal("bandwidth must not change the MP4 bytes")
+	}
+}
+
+func TestLossChangesSegmentHashAndMedia(t *testing.T) {
+	// The fixture spec drives fault injection; Options.LossBurst is echoed into
+	// the report and must match it.
+	cleanSpec := fixture.DefaultSpec()
+	lostSpec := fixture.DefaultSpec()
+	lostSpec.LossBurst = lostSpec.PacketsPerSample // erase whole access units
+	clean := runForTest(t, cleanSpec, nil)
+	lost := runForTest(t, lostSpec, func(o *Options) { o.LossBurst = lostSpec.LossBurst })
+	// The top-level hash is the last segment, which is unaffected here. The
+	// damaged segment is the first one: fewer samples and a different digest
+	// prove the loss reached the report instead of being smoothed away.
+	changed := false
+	for i := range clean.Segments {
+		if i >= len(lost.Segments) {
+			changed = true
+			break
+		}
+		if clean.Segments[i].SHA256 != lost.Segments[i].SHA256 ||
+			clean.Segments[i].Samples != lost.Segments[i].Samples {
+			changed = true
+		}
+	}
+	if !changed {
+		t.Fatal("whole-sample loss must change the affected segment")
+	}
+	if lost.Metrics.RoundtripMatch >= clean.Metrics.RoundtripMatch {
+		t.Fatalf("loss did not reduce roundtrip: %d vs %d",
+			lost.Metrics.RoundtripMatch, clean.Metrics.RoundtripMatch)
+	}
+}
+
 func TestReportIsWrittenAndParses(t *testing.T) {
 	res := runForTest(t, fixture.DefaultSpec(), nil)
 	body, err := os.ReadFile(filepath.Join(res.Options.OutputDir, "report.json"))
