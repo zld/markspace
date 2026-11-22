@@ -14,6 +14,7 @@ import (
 
 // assetResult is the per-asset contribution to the manifest.
 type assetResult struct {
+	Asset             string
 	Rows              []Row
 	Segments          []Segment
 	Faults            []*diag.Fault
@@ -31,6 +32,7 @@ type assetResult struct {
 	HasTruncation     bool
 	TruncationStartMs float64
 	FileSize          int64
+	SourceSize        int64
 }
 
 // analyzeAsset processes one asset: MP4 structure, subtitles, RTP continuity,
@@ -40,7 +42,7 @@ func analyzeAsset(ctx context.Context, a AssetInput, opts Options) (*assetResult
 	if err := ctx.Err(); err != nil {
 		return nil, ErrCanceled(0)
 	}
-	r := &assetResult{TargetBps: a.TargetBps}
+	r := &assetResult{Asset: a.Asset, TargetBps: a.TargetBps}
 	// Per-asset rate wins over the run-wide rate so one invocation can cover
 	// mixed 25/29.97/50 holdings.
 	fps := a.FPS
@@ -74,6 +76,9 @@ func analyzeAsset(ctx context.Context, a AssetInput, opts Options) (*assetResult
 		if err := analyzeRTPPart(ctx, a, r); err != nil {
 			return nil, err
 		}
+	}
+	if r.SourceSize == 0 {
+		r.SourceSize = r.FileSize
 	}
 	r.Segments = toSegments(stream.Classify(r.Faults, stream.ClassifyOptions{
 		Source: a.Asset, TimeKnown: r.MediaDurationMs > 0,
@@ -110,6 +115,7 @@ func analyzeMP4Part(ctx context.Context, a AssetInput, r *assetResult, fps strin
 	r.SampleBytes = an.MdatBytes
 	r.HasTruncation, r.TruncationStartMs = an.HasTruncation, an.TruncationStartMs
 	r.FileSize = an.Size
+	r.SourceSize = an.Size
 	if an.Video == nil {
 		return nil
 	}
@@ -238,6 +244,9 @@ func analyzeSubtitlePart(ctx context.Context, a AssetInput, r *assetResult, opts
 	}
 	r.Faults = append(r.Faults, res.Faults...)
 	r.Cues = len(res.Cues)
+	if r.SourceSize == 0 {
+		r.SourceSize = res.Bytes
+	}
 	for i, c := range res.Cues {
 		if err := ctx.Err(); err != nil {
 			return ErrCanceled(c.Offset)
@@ -287,7 +296,15 @@ func analyzeRTPPart(ctx context.Context, a AssetInput, r *assetResult) error {
 	ra := res.Analysis
 	r.Faults = append(r.Faults, ra.Faults...)
 	dur := ra.DurationMs()
-	for _, f := range ra.Faults {
+	if dur > r.MediaDurationMs {
+		r.MediaDurationMs = dur
+	}
+	// Map RTP timestamps onto the unified base by unfolding 32-bit wraps and
+	// dividing by the RTP clock rate, not by interpolating packet indices.
+	// Packet index is only a fallback when a fault has no timestamp.
+	times := RTPMediaTimes(res.Samples)
+	for i := range ra.Faults {
+		f := ra.Faults[i]
 		if f.HasMedia || ra.Packets == 0 {
 			continue
 		}
@@ -295,17 +312,44 @@ func analyzeRTPPart(ctx context.Context, a AssetInput, r *assetResult) error {
 	}
 	// One manifest row per retained sample, plus a terminal row so the
 	// timeline closes at the true final packet.
-	for _, p := range res.Samples {
+	for i, p := range res.Samples {
 		if err := ctx.Err(); err != nil {
 			return ErrCanceled(p.Offset)
 		}
-		tsMs := float64(p.Offset) / math.Max(1, float64(res.Total)) * dur
+		tsMs := times[i]
 		r.Rows = append(r.Rows, Row{
 			Asset: a.Asset, StartMs: tsMs, StartUs: int64(tsMs*1000 + 0.5),
 			Seq: p.Offset, Stage: "rtp", Kind: "packet", Payload: fmt.Sprintf("seq=%d", p.Seq),
 		})
 	}
 	return nil
+}
+
+// RTPMediaTimes converts a packet sequence's raw 32-bit timestamps into
+// milliseconds on the unified base. Wraps add 2^32 ticks; a backwards step
+// that is not a wrap is clamped to keep the row timeline monotone, and the
+// analyzer has already recorded the rollback as a fault.
+func RTPMediaTimes(packets []stream.Packet) []float64 {
+	out := make([]float64, len(packets))
+	if len(packets) == 0 {
+		return out
+	}
+	const clockRate = 90000.0
+	var high uint64
+	prev := packets[0].Timestamp
+	base := uint64(prev)
+	for i, p := range packets {
+		if i > 0 && p.Timestamp < prev && uint64(prev)-uint64(p.Timestamp) > 1<<31 {
+			high += 1 << 32
+		}
+		prev = p.Timestamp
+		unwrapped := high + uint64(p.Timestamp)
+		if unwrapped < base {
+			unwrapped = base
+		}
+		out[i] = float64(unwrapped-base) * 1000 / clockRate
+	}
+	return out
 }
 
 func mustFault(err error, fallback string) *diag.Fault {

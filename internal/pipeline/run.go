@@ -83,15 +83,19 @@ type Metrics struct {
 
 // Manifest is the final, auditable archive index.
 type Manifest struct {
-	Mode       Mode
-	Assets     int
-	Rows       []Row
-	Segments   []Segment
-	Faults     []*diag.Fault
-	Metrics    Metrics
-	Duplicates int64
-	Skipped    int64
-	Digest     string
+	Mode     Mode
+	Assets   int
+	Rows     []Row
+	Segments []Segment
+	Faults   []*diag.Fault
+	Metrics  Metrics
+	// AssetIDs and SourceSizes let validation prove that every row and damage
+	// segment names a known source and stays inside its byte extent.
+	AssetIDs    []string
+	SourceSizes map[string]int64
+	Duplicates  int64
+	Skipped     int64
+	Digest      string
 }
 
 // Options bounds the run.
@@ -136,16 +140,21 @@ func Run(ctx context.Context, opts Options, assets []AssetInput) (*Manifest, err
 		return nil
 	})
 
-	m := &Manifest{Mode: opts.Mode, Assets: len(assets)}
+	m := &Manifest{Mode: opts.Mode, Assets: len(assets), SourceSizes: map[string]int64{}}
 	if res.Err != nil {
 		return finishFailed(m, res.Err)
 	}
 	var rows []Row
 	var segs []Segment
+	for _, a := range assets {
+		m.AssetIDs = append(m.AssetIDs, a.Asset)
+	}
+	sort.Strings(m.AssetIDs)
 	for _, r := range results {
 		rows = append(rows, r.Rows...)
 		segs = append(segs, r.Segments...)
 		m.Faults = append(m.Faults, r.Faults...)
+		m.SourceSizes[r.Asset] = r.SourceSize
 		m.Metrics.KeyframeCount += r.Keyframes
 		m.Metrics.SampleCount += r.Samples
 		m.Metrics.MediaDurationMs += r.MediaDurationMs
@@ -292,8 +301,32 @@ func ValidateManifest(m *Manifest) error {
 		bySource[s.Source] = append(bySource[s.Source], s)
 	}
 	assetSet := map[string]bool{}
-	for _, r := range m.Rows {
-		assetSet[r.Asset] = true
+	for _, id := range m.AssetIDs {
+		assetSet[id] = true
+	}
+	// Every row must reference a declared asset; a dangling reference would
+	// make the manifest un-auditable even if the rows look monotone.
+	for i, r := range m.Rows {
+		if !assetSet[r.Asset] {
+			return diag.New(diag.CodeMissingBase, int64(i),
+				"row %d references unknown asset %q", i, r.Asset)
+		}
+		if r.StartUs < 0 || r.StartMs < 0 {
+			return diag.New(diag.CodeTimestampRollback, int64(i),
+				"row %d has negative start time", i)
+		}
+	}
+	// Every damage segment must likewise reference a declared asset and stay
+	// within the source's byte extent when that extent is known.
+	for _, s := range m.Segments {
+		if len(assetSet) > 0 && !assetSet[s.Source] {
+			return diag.New(diag.CodeMissingBase, s.StartOffset,
+				"damage segment references unknown source %q", s.Source)
+		}
+		if size, ok := m.SourceSizes[s.Source]; ok && size > 0 && s.EndOffset >= size {
+			return diag.New(diag.CodeMP4Structure, s.EndOffset,
+				"damage segment on %s ends at %d, beyond source size %d", s.Source, s.EndOffset, size)
+		}
 	}
 	for _, s := range m.Segments {
 		if s.Source == "" {
@@ -311,6 +344,5 @@ func ValidateManifest(m *Manifest) error {
 			}
 		}
 	}
-	_ = assetSet
 	return nil
 }
