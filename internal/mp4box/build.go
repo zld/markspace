@@ -31,12 +31,13 @@ func ftypBox() *Box {
 
 func mvhdBox() *Box {
 	fields := make([]byte, 96) // version-0 mvhd fixed layout
+	copy(fields[8:12], U32(1000))
 	return NewLeaf("mvhd", FullHeader(0, 0, fields))
 }
 
 func mdhdBox(timescale uint32, duration uint32) *Box {
 	fields := Concat(
-		U32(0), U32(0),          // creation/modification
+		U32(0), U32(0), // creation/modification
 		U32(timescale), U32(duration),
 		make([]byte, 4), // language + pre_defined
 	)
@@ -55,7 +56,7 @@ func hdlrBox(video bool) *Box {
 
 func tkhdBox(id uint32) *Box {
 	fields := make([]byte, 80)
-	copy(fields[12:16], U32(id)) // track_ID sits after two 32-bit times
+	copy(fields[8:12], U32(id)) // v0: creation, modification, then track_ID
 	return NewLeaf("tkhd", FullHeader(0, 0x7, fields))
 }
 
@@ -77,10 +78,16 @@ func sttsBox(durs []uint32) *Box {
 	return NewLeaf("stts", FullHeader(0, 0, fields))
 }
 
-func stsdBox() *Box {
-	// One opaque sample entry: type + 78 reserved bytes is enough for framing.
-	entry := Concat([]byte("raw "), make([]byte, 78))
-	return NewLeaf("stsd", FullHeader(0, 0, Concat(U32(1), entry)))
+// stsdBox emits a full box containing one sample-entry child box. The entry
+// is opaque to the kernel but must be structurally valid for parsers.
+func stsdBox(video bool) *Box {
+	entryType := []byte("sowt")
+	if video {
+		entryType = []byte("raw ")
+	}
+	entryPayload := Concat(make([]byte, 6), U16(1), make([]byte, 70))
+	entryBox := Concat(U32(uint32(8+len(entryPayload))), entryType, entryPayload)
+	return NewLeaf("stsd", FullHeader(0, 0, Concat(U32(1), entryBox)))
 }
 
 func stszBox(sizes []uint32) *Box {
@@ -114,7 +121,10 @@ func stssBox(keys []uint32) *Box {
 	return NewLeaf("stss", FullHeader(0, 0, fields))
 }
 
-func elstBox(spec TrackSpec, mediaDuration uint32, movieDuration uint32) *Box {
+// elstBox builds the edit list. All segment durations are expressed in the
+// movie time scale (1000 ticks/s); mediaTime stays in the track time scale.
+func elstBox(spec TrackSpec, mediaDurationTrackTicks uint32, timescale uint32) *Box {
+	presentMovieTicks := mediaDurationTrackTicks * 1000 / timescale
 	type e struct {
 		segDur  uint32
 		mediaTm int32
@@ -123,22 +133,24 @@ func elstBox(spec TrackSpec, mediaDuration uint32, movieDuration uint32) *Box {
 	if spec.EmptyHead > 0 {
 		entries = append(entries, e{segDur: spec.EmptyHead, mediaTm: -1})
 	}
-	entries = append(entries, e{segDur: movieDuration, mediaTm: int32(spec.StartPTS)})
+	entries = append(entries, e{segDur: presentMovieTicks, mediaTm: int32(spec.StartPTS)})
 	fields := U32(uint32(len(entries)))
 	for _, en := range entries {
 		fields = Concat(fields, U32(en.segDur), I32(en.mediaTm), U16(1), U16(0))
 	}
-	_ = mediaDuration
 	return NewLeaf("elst", FullHeader(0, 0, fields))
 }
 
-// Build assembles the file. Chunk offsets are patched once mdat's position is
-// known by serialising twice.
+// Build assembles the file. It first measures the moov size with placeholder
+// stco boxes of the final length, then patches the real chunk offsets and
+// serialises once.
 func Build(tracks []TrackSpec) *BuiltFile {
-	moov := buildMoov(tracks, nil)
-	sizeFtyp := ftypBox().Size()
-	mdatPayload := mdatPayloadSize(tracks)
-	mdatOffset := int64(sizeFtyp + moov.Size() + 8)
+	placeholders := make([][]uint32, len(tracks))
+	for i, tr := range tracks {
+		placeholders[i] = make([]uint32, len(tr.SampleSize))
+	}
+	probe := buildMoov(tracks, placeholders)
+	mdatOffset := int64(ftypBox().Size() + probe.Size() + 8)
 	offsets := make([][]uint32, len(tracks))
 	cursor := uint32(mdatOffset)
 	for i, tr := range tracks {
@@ -149,11 +161,14 @@ func Build(tracks []TrackSpec) *BuiltFile {
 		}
 		offsets[i] = off
 	}
-	moov = buildMoov(tracks, offsets)
+	moov := buildMoov(tracks, offsets)
+	if moov.Size() != probe.Size() {
+		panic("mp4box: moov size changed between probe and final build")
+	}
 	var w sliceWriter
 	_, _ = ftypBox().WriteTo(&w)
 	_, _ = moov.WriteTo(&w)
-	mdat := NewLeaf("mdat", make([]byte, mdatPayload))
+	mdat := NewLeaf("mdat", make([]byte, mdatPayloadSize(tracks)))
 	_, _ = mdat.WriteTo(&w)
 	return &BuiltFile{Data: []byte(w), MdatOffset: mdatOffset, Tracks: tracks}
 }
@@ -175,7 +190,7 @@ func buildMoov(tracks []TrackSpec, offsets [][]uint32) *Box {
 		for _, d := range tr.SampleDur {
 			duration += d
 		}
-		stblChildren := []*Box{stsdBox(), sttsBox(tr.SampleDur), stscBox(uint32(len(tr.SampleSize))), stszBox(tr.SampleSize)}
+		stblChildren := []*Box{stsdBox(tr.Video), sttsBox(tr.SampleDur), stscBox(uint32(len(tr.SampleSize))), stszBox(tr.SampleSize)}
 		if offsets != nil {
 			stblChildren = append(stblChildren, stcoBox(offsets[i]))
 		}
@@ -183,14 +198,15 @@ func buildMoov(tracks []TrackSpec, offsets [][]uint32) *Box {
 			stblChildren = append(stblChildren, stssBox(tr.Keyframes))
 		}
 		stbl := NewContainer("stbl", stblChildren...)
-		minf := NewContainer("minf", NewContainer("dinf"), stbl)
+		dref := NewLeaf("dref", FullHeader(0, 0, U32(0)))
+		minf := NewContainer("minf", NewContainer("dinf", dref), stbl)
 		mdia := NewContainer("mdia", mdhdBox(tr.Timescale, duration), hdlrBox(tr.Video), minf)
-		children := []*Box{tkhdBox(tr.TrackID), mdia}
+		trakChildren := []*Box{tkhdBox(tr.TrackID), mdia}
 		if tr.StartPTS != 0 || tr.EmptyHead > 0 {
-			children = append(children, NewContainer("edts",
-				elstBox(tr, duration, duration)))
+			trakChildren = append(trakChildren,
+				NewContainer("edts", elstBox(tr, duration, tr.Timescale)))
 		}
-		trakBoxes = append(trakBoxes, NewContainer("trak", children...))
+		trakBoxes = append(trakBoxes, NewContainer("trak", trakChildren...))
 	}
 	return NewContainer("moov", append([]*Box{mvhdBox()}, trakBoxes...)...)
 }
