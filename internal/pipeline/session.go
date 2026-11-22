@@ -263,16 +263,18 @@ func convertEdits(tr *mp4.Track, movieScale uint32) ([]clock.Edit, error) {
 	}
 	tl := clock.NanosecondTimeline()
 	out := make([]clock.Edit, 0, len(tr.Edits))
-	for _, e := range tr.Edits {
+	for i, e := range tr.Edits {
 		seg, err := tl.Convert(e.SegmentTicks, movieScale)
 		if err != nil {
-			return nil, fault.New("pipeline.edits", fault.KindTimeline, err).WithTrack(tr.ID)
+			return nil, fault.New("pipeline.edits", fault.KindTimeline, err).
+				WithTrack(tr.ID).WithDetail("edit %d segment duration", i)
 		}
 		media := e.MediaTicks
 		if media >= 0 {
 			media, err = tl.Convert(uint64(e.MediaTicks), tr.Timescale)
 			if err != nil {
-				return nil, fault.New("pipeline.edits", fault.KindTimeline, err).WithTrack(tr.ID)
+				return nil, fault.New("pipeline.edits", fault.KindTimeline, err).
+					WithTrack(tr.ID).WithDetail("edit %d media time", i)
 			}
 		}
 		out = append(out, clock.Edit{SegmentDuration: uint64(seg), MediaTime: media, RateFixed: e.RateFixed})
