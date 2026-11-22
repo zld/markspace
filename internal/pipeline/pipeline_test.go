@@ -1,8 +1,11 @@
 package pipeline
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
+	"mediapipeline/internal/checkpoint"
 	"mediapipeline/internal/container"
 	"mediapipeline/internal/media"
 	"mediapipeline/internal/timeline"
@@ -130,6 +133,72 @@ func TestCheckTimelineDetectsUnsortedEvents(t *testing.T) {
 	vs := CheckTimeline(tl, nil)
 	if len(vs) == 0 {
 		t.Fatal("expected ordering violation")
+	}
+}
+
+func TestRunResumesFromCorruptCheckpoint(t *testing.T) {
+	// A truncated checkpoint is a recoverable condition: the run must rebuild
+	// from zero rather than trust partial state, and still succeed.
+	opts := demoOptions(t)
+	if err := os.MkdirAll(filepath.Join(opts.WorkDir, "checkpoint"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(opts.WorkDir, "checkpoint", "state.json")
+	if err := os.WriteFile(path, []byte(`{"schema":1,"input_sha`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res, err := Run(opts)
+	if err != nil {
+		t.Fatalf("Run with corrupt checkpoint: %v", err)
+	}
+	if len(res.ManifestSHA256) != 64 {
+		t.Fatalf("manifest hash = %q", res.ManifestSHA256)
+	}
+	// The checkpoint must be valid again afterwards.
+	st, err := checkpoint.Open(filepath.Join(opts.WorkDir, "checkpoint"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := st.Load()
+	if err != nil {
+		t.Fatalf("checkpoint not repaired: %v", err)
+	}
+	if loaded == nil || loaded.ManifestSHA256 != res.ManifestSHA256 {
+		t.Fatalf("checkpoint = %+v", loaded)
+	}
+	if err := st.VerifyOrdering(loaded); err != nil {
+		t.Fatalf("repaired checkpoint is ahead of outputs: %v", err)
+	}
+}
+
+func TestRunDetectsConflictingDurableOutput(t *testing.T) {
+	// A durable segment whose content disagrees with what this run would
+	// produce is an idempotency conflict, never a silent overwrite.
+	opts := demoOptions(t)
+	opts.InterruptAfter = 1
+	if _, err := Run(opts); err != nil {
+		t.Fatalf("first run: %v", err)
+	}
+	st, err := checkpoint.Open(filepath.Join(opts.WorkDir, "checkpoint"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := st.Load()
+	if err != nil || loaded == nil {
+		t.Fatalf("load: %v", err)
+	}
+	// Forge a prior output claiming different content for a key this run uses.
+	first := loaded.Outputs[0]
+	loaded.Outputs[0].ContentSHA256 = "forged"
+	if err := st.Save(loaded); err != nil {
+		t.Fatal(err)
+	}
+	_, err = Run(opts)
+	if err == nil {
+		t.Fatalf("forged output %q was accepted", first.Key)
+	}
+	if media.CategoryOf(err) != media.IdempotencyConflict {
+		t.Fatalf("category = %v (%v)", media.CategoryOf(err), err)
 	}
 }
 
