@@ -123,6 +123,41 @@ func (s *Session) Planner() (*Planner, error) {
 	return p, nil
 }
 
+// ChapterRequests slices each video track at every step-th declared sync
+// frame. Cut times therefore coincide with real keyframes by construction,
+// which is what an editor means by "chapters on camera sync points"; the
+// measured keyframe hit rate then reports how many cuts actually landed there
+// rather than how lucky the request grid was.
+func (s *Session) ChapterRequests(step int) []Request {
+	if step < 1 {
+		step = 1
+	}
+	var out []Request
+	for _, ti := range s.Index.Tracks {
+		n := len(ti.Entries)
+		if n == 0 {
+			continue
+		}
+		for i := 0; i < n; i += step {
+			start := ti.Entries[i].Presented
+			end := int64(0)
+			if i+step < n {
+				end = ti.Entries[i+step].Presented
+			} else {
+				end = ti.Entries[n-1].Presented + 1
+			}
+			if end <= start {
+				continue
+			}
+			out = append(out, Request{TrackID: ti.TrackID, StartNS: start, EndNS: end})
+		}
+	}
+	if len(out) > 0 {
+		return out
+	}
+	return s.Requests()
+}
+
 // Requests returns one full-range request per video track. When no video
 // track survives, audio tracks are used so damaged files still yield slices.
 func (s *Session) Requests() []Request {

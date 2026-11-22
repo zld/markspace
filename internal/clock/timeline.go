@@ -143,16 +143,17 @@ const MaxForwardGapNS int64 = 5 * 60 * 1_000_000_000
 // enforces monotonicity. Any wrap, regression or overflow yields a located
 // error naming the track and sample.
 type TrackClock struct {
-	group     string
-	track     uint32
-	scale     uint32
-	tl        *Timeline
-	edits     *EditMap
-	prev      uint64
-	prevMedia int64
-	seen      int
-	offset    int64 // first mapped DTS, used to anchor tracks at zero
-	broke     bool  // a wrap, regression or overflow was observed
+	group         string
+	track         uint32
+	scale         uint32
+	tl            *Timeline
+	edits         *EditMap
+	prev          uint64
+	prevMedia     int64
+	seen          int
+	offset        int64 // first mapped DTS, used to anchor tracks at zero
+	broke         bool  // a wrap, regression or overflow was observed
+	prevPresented int64 // last accepted presentation tick
 }
 
 // NewTrackClock builds a clock for a track. The offset anchors the earliest
@@ -220,6 +221,11 @@ func (c *TrackClock) Presentation(dts uint64, compositionOffset int64) (int64, e
 		return 0, c.err(fault.ErrTimeWrap, c.seen,
 			"presentation ticks %d resolve before the track origin at %d", presented+c.offset, c.offset)
 	}
+	if c.seen > 1 && presented < c.prevPresented {
+		return 0, c.err(fault.ErrTimeBackwards, c.seen,
+			"presentation tick %d precedes the previous %d", presented, c.prevPresented)
+	}
+	c.prevPresented = presented
 	return presented, nil
 }
 

@@ -56,18 +56,18 @@ func RunBatch(planner *Planner, reqs []Request, store *checkpoint.Store, opt Bat
 	blocks := planBlocks(planned, opt.SamplesPerBlock)
 	done := 0
 	for bi, block := range blocks {
-		if store.Completed(bi) {
+		// Completion is decided per segment, not per block index: a resumed
+		// run may group work differently and must still skip committed chunks.
+		replayed, pending := splitCommitted(store, block)
+		if len(pending) == 0 {
 			res.SkippedBlocks++
 			res.Recovered = true
-			segs, err := segmentsFromRecords(store, bi, block)
-			if err != nil {
-				return res, err
-			}
-			res.Segments = append(res.Segments, segs...)
+			res.Segments = append(res.Segments, replayed...)
 			continue
 		}
-		recs := make([]checkpoint.Record, 0, len(block))
-		for _, s := range block {
+		recs := make([]checkpoint.Record, 0, len(pending))
+		res.Segments = append(res.Segments, replayed...)
+		for _, s := range pending {
 			seg, err := planner.Materialize(s)
 			if err != nil {
 				problems = append(problems, err)
@@ -117,36 +117,48 @@ func recordOf(s Segment) checkpoint.Record {
 		SilentNS: s.SilentNS, KeyExact: s.KeyExact, Recovered: s.Recovered}
 }
 
-func segmentsFromRecords(store *checkpoint.Store, block int, plan []SegmentPlan) ([]Segment, error) {
-	recs := store.BlockRecords(block)
-	if len(recs) == 0 {
-		return nil, fault.Errorf("pipeline.batch", fault.KindCheckpoint, "block %d marked complete but empty", block).Fatal()
-	}
-	byKey := map[string]SegmentPlan{}
+// splitCommitted separates planned segments with durable records from those
+// still to be hashed. Replayed segments are rebuilt from the journal so their
+// content hashes are exactly what was committed earlier.
+func splitCommitted(store *checkpoint.Store, plan []SegmentPlan) ([]Segment, []SegmentPlan) {
+	var done []Segment
+	var pending []SegmentPlan
 	for _, s := range plan {
-		byKey[planKey(s)] = s
+		if !store.Has(s.TrackID, s.StartNS, s.EndNS, s.FirstSample) {
+			pending = append(pending, s)
+			continue
+		}
+		recs := store.Lookup(s.TrackID, s.StartNS, s.EndNS, s.FirstSample)
+		seg, err := segmentFromRecord(recs, s)
+		if err != nil {
+			pending = append(pending, s)
+			continue
+		}
+		done = append(done, seg)
 	}
-	out := make([]Segment, 0, len(recs))
-	for _, r := range recs {
-		seg := Segment{
-			ID: segmentID(r.TrackID, r.FirstSample, r.Samples, r.StartNS), TrackID: r.TrackID,
-			StartNS: r.StartNS, EndNS: r.EndNS, FirstSample: r.FirstSample,
-			SampleCount: r.Samples, ContentHex: r.Content, SHA256: r.Content,
-			SilentNS: r.SilentNS, KeyExact: r.KeyExact, Recovered: r.Recovered,
-		}
-		if raw, err := hex.DecodeString(r.Content); err == nil && len(raw) == 32 {
-			copy(seg.Content[:], raw)
-		} else {
-			return nil, fault.Errorf("pipeline.batch", fault.KindCheckpoint,
-				"committed record for %s has malformed content hash %q", seg.ID, r.Content).
-				WithTrack(r.TrackID).Fatal()
-		}
-		if s, ok := byKey[recordKey(r)]; ok {
-			seg.KeyOffset, seg.KeyPresented = s.KeyOffset, s.KeyPresented
-		}
-		out = append(out, seg)
+	return done, pending
+}
+
+func segmentFromRecord(recs []checkpoint.Record, plan SegmentPlan) (Segment, error) {
+	if len(recs) == 0 {
+		return Segment{}, fault.Errorf("pipeline.batch", fault.KindCheckpoint, "record disappeared during replay")
 	}
-	return out, nil
+	r := recs[0]
+	seg := Segment{
+		ID: segmentID(r.TrackID, r.FirstSample, r.Samples, r.StartNS), TrackID: r.TrackID,
+		StartNS: r.StartNS, EndNS: r.EndNS, FirstSample: r.FirstSample,
+		SampleCount: r.Samples, ContentHex: r.Content, SHA256: r.Content,
+		SilentNS: r.SilentNS, KeyExact: r.KeyExact, Recovered: r.Recovered,
+		KeyOffset: plan.KeyOffset, KeyPresented: plan.KeyPresented,
+	}
+	raw, err := hex.DecodeString(r.Content)
+	if err != nil || len(raw) != 32 {
+		return Segment{}, fault.Errorf("pipeline.batch", fault.KindCheckpoint,
+			"committed record for %s has malformed content hash %q", seg.ID, r.Content).
+			WithTrack(r.TrackID).Fatal()
+	}
+	copy(seg.Content[:], raw)
+	return seg, nil
 }
 
 // segmentID names a slice by track, its sample span and requested window.
@@ -154,14 +166,6 @@ func segmentsFromRecords(store *checkpoint.Store, block int, plan []SegmentPlan)
 // window is part of the identity.
 func segmentID(track uint32, first, count int, startNS int64) string {
 	return fmt.Sprintf("t%02d-s%d-e%d@%d", track, first, first+count, startNS)
-}
-
-func planKey(p SegmentPlan) string {
-	return fmt.Sprintf("%d|%d|%d|%d", p.TrackID, p.StartNS, p.EndNS, p.FirstSample)
-}
-
-func recordKey(r checkpoint.Record) string {
-	return fmt.Sprintf("%d|%d|%d|%d", r.TrackID, r.StartNS, r.EndNS, r.FirstSample)
 }
 
 // planBlocks groups consecutive segments until the accumulated sample count

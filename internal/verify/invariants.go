@@ -157,9 +157,12 @@ func Check(m *Manifest) error {
 				errs = append(errs, fault.Errorf("verify.check", fault.KindVerify,
 					"segment %q cites unknown original %q", s.ID, s.DuplicateOf).Fatal())
 			} else if original.SHA256 != s.SHA256 || original.TrackID != s.TrackID ||
-				original.StartNS != s.StartNS || original.EndNS != s.EndNS {
+				original.SampleCount != s.SampleCount {
 				errs = append(errs, fault.Errorf("verify.check", fault.KindVerify,
-					"segment %q is marked duplicate of %q but extent or hash differs", s.ID, s.DuplicateOf).Fatal())
+					"segment %q is marked duplicate of %q but payload differs", s.ID, s.DuplicateOf).Fatal())
+			} else if original.StartNS != s.StartNS && original.EndNS != s.EndNS {
+				errs = append(errs, fault.Errorf("verify.check", fault.KindVerify,
+					"segment %q is marked duplicate of %q but extents do not overlap", s.ID, s.DuplicateOf).Fatal())
 			}
 			continue
 		}

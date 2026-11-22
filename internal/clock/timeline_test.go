@@ -177,3 +177,19 @@ func TestEditListEmptySegmentShiftsPresentation(t *testing.T) {
 		t.Fatalf("empty edit not applied: %d", got)
 	}
 }
+
+func TestCompositionOffsetCannotReorderPresentation(t *testing.T) {
+	// Negative composition offsets are legal, but presentation times must not
+	// move backwards: a B-frame pattern that does is a broken edit.
+	clk, _ := NewTrackClock("p.mp4", 1, 1000, NanosecondTimeline(), nil, 0)
+	if _, err := clk.Presentation(100, -100); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := clk.Presentation(110, -50); err != nil {
+		t.Fatal(err)
+	}
+	_, err := clk.Presentation(120, -100)
+	if !errors.Is(err, fault.ErrTimeBackwards) {
+		t.Fatalf("err=%v", err)
+	}
+}

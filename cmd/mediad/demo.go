@@ -34,13 +34,17 @@ func demo(out string, fresh bool) (verify.Summary, error) {
 	if err != nil {
 		return manifest.Summary, err
 	}
-	if err := verify.Save(filepath.Join(out, "manifest.json"), manifest); err != nil {
-		return manifest.Summary, err
-	}
-	fmt.Printf("manifest: %s\n", filepath.Join(out, "manifest.json"))
-	sum, err := verify.Run(manifest, mediaDir, verify.Options{AcceptRecovered: true})
-	if err != nil {
+	// Verify before publishing so the stored summary carries the measured
+	// round-trip and keyframe rates, not placeholder zeroes.
+	sum, runErr := verify.Run(manifest, mediaDir, verify.Options{AcceptRecovered: true})
+	manifest.Summary = sum
+	manifestPath := filepath.Join(out, "manifest.json")
+	if err := verify.Save(manifestPath, manifest); err != nil {
 		return sum, err
+	}
+	fmt.Printf("manifest: %s\n", manifestPath)
+	if runErr != nil {
+		return sum, runErr
 	}
 	return sum, nil
 }
@@ -116,7 +120,7 @@ func analyseFile(sess *pipeline.Session, path, name string) ([]verify.SegmentEnt
 	if err != nil {
 		return nil, err
 	}
-	reqs := sess.Requests()
+	reqs := sess.ChapterRequests(3)
 	res, runErr := planner.Run(reqs)
 	out := make([]verify.SegmentEntry, 0, len(res.Segments))
 	for _, s := range res.Segments {
@@ -131,19 +135,37 @@ func analyseFile(sess *pipeline.Session, path, name string) ([]verify.SegmentEnt
 	return out, runErr
 }
 
-// markDuplicates flags segments whose extent and content match an earlier
-// file, which is how a duplicated camera feed is reported.
+// markDuplicates reports repeated camera content. Identical extents plus
+// identical payload are the primary evidence; when two files were recorded
+// with a different edit anchor, the same payload appears at a shifted extent,
+// and that is flagged only after the per-sample digests agree.
 func markDuplicates(segs []verify.SegmentEntry, count *int) {
-	seen := map[string]string{}
+	byExtent := map[string]string{}
+	byContent := map[string]string{}
 	for i := range segs {
-		key := fmt.Sprintf("%d|%d|%d|%s", segs[i].TrackID, segs[i].StartNS, segs[i].EndNS, segs[i].SHA256)
-		if owner, ok := seen[key]; ok && owner != segs[i].ID {
+		if segs[i].Recovered {
+			// Damaged sources are excluded: two cameras whose prefixes were
+			// salvaged can share bytes coincidentally, and a duplicate claim
+			// must never be made from partial data.
+			continue
+		}
+		extentKey := fmt.Sprintf("%d|%d|%d|%s", segs[i].TrackID, segs[i].StartNS, segs[i].EndNS, segs[i].SHA256)
+		if owner, ok := byExtent[extentKey]; ok && owner != segs[i].ID {
 			segs[i].DuplicateOf = owner
 			*count++
 			continue
 		}
-		if _, ok := seen[key]; !ok {
-			seen[key] = segs[i].ID
+		contentKey := fmt.Sprintf("%d|%d|%s", segs[i].TrackID, segs[i].SampleCount, segs[i].SHA256)
+		if owner, ok := byContent[contentKey]; ok && owner != segs[i].ID {
+			segs[i].DuplicateOf = owner
+			*count++
+			continue
+		}
+		if _, ok := byExtent[extentKey]; !ok {
+			byExtent[extentKey] = segs[i].ID
+		}
+		if _, ok := byContent[contentKey]; !ok {
+			byContent[contentKey] = segs[i].ID
 		}
 	}
 }
@@ -174,7 +196,7 @@ func runBatchComparison(mediaDir string, names []string, m *verify.Manifest, out
 	if err != nil {
 		return err
 	}
-	reqs := sess.Requests()
+	reqs := sess.ChapterRequests(3)
 	if len(reqs) == 0 {
 		return nil
 	}

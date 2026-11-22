@@ -42,6 +42,7 @@ type Record struct {
 type State struct {
 	Records   []Record
 	Blocks    map[int][]Record
+	Index     map[identity]Record
 	TornTail  bool
 	NextBlock int
 }
@@ -54,6 +55,15 @@ type Store struct {
 	mu       sync.Mutex
 	log      *os.File
 	state    State
+}
+
+// identity keys a committed segment independently of block grouping, so a
+// resumed run can skip work even if its block budget differs.
+type identity struct {
+	trackID uint32
+	startNS int64
+	endNS   int64
+	first   int
 }
 
 // Open loads existing progress (if any) and opens the append log.
@@ -87,8 +97,12 @@ func (s *Store) Close() error {
 	return nil
 }
 
+func identOf(r Record) identity {
+	return identity{r.TrackID, r.StartNS, r.EndNS, r.FirstSample}
+}
+
 func (s *Store) load() (State, error) {
-	st := State{Blocks: map[int][]Record{}}
+	st := State{Blocks: map[int][]Record{}, Index: map[identity]Record{}}
 	var ckpt struct {
 		NextBlock int      `json:"next_block"`
 		Records   []Record `json:"records"`
@@ -133,6 +147,7 @@ func (s *Store) load() (State, error) {
 		for _, r := range merged[b] {
 			st.Records = append(st.Records, r)
 			st.Blocks[b] = append(st.Blocks[b], r)
+			st.Index[identOf(r)] = r
 		}
 	}
 	st.TornTail = torn
@@ -194,11 +209,30 @@ func (s *Store) NextBlock() int { return s.state.NextBlock }
 // Completed reports whether operations for block were already committed.
 func (s *Store) Completed(block int) bool { return len(s.state.Blocks[block]) > 0 }
 
+// Has reports whether a record with this identity was already committed.
+func (s *Store) Has(trackID uint32, startNS, endNS int64, firstSample int) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, ok := s.state.Index[identity{trackID, startNS, endNS, firstSample}]
+	return ok
+}
+
 // BlockRecords returns a copy of the committed records for one block.
 func (s *Store) BlockRecords(block int) []Record {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]Record(nil), s.state.Blocks[block]...)
+}
+
+// Lookup returns committed records matching a segment identity.
+func (s *Store) Lookup(trackID uint32, startNS, endNS int64, firstSample int) []Record {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	r, ok := s.state.Index[identity{trackID, startNS, endNS, firstSample}]
+	if !ok {
+		return nil
+	}
+	return []Record{r}
 }
 
 // Records returns a copy of committed records in block order.
@@ -215,7 +249,6 @@ func (s *Store) Append(recs ...Record) error {
 	if s.log == nil {
 		return fault.Errorf("checkpoint.append", fault.KindCheckpoint, "store closed")
 	}
-	block := -1
 	for _, r := range recs {
 		body, err := json.Marshal(r)
 		if err != nil {
@@ -230,7 +263,6 @@ func (s *Store) Append(recs ...Record) error {
 		if _, err := s.log.Write(body); err != nil {
 			return fault.New("checkpoint.append", fault.KindCheckpoint, err).WithPath(s.logPath)
 		}
-		block = r.Block
 	}
 	if err := s.log.Sync(); err != nil {
 		return fault.New("checkpoint.sync", fault.KindCheckpoint, err).WithPath(s.logPath)
@@ -238,11 +270,11 @@ func (s *Store) Append(recs ...Record) error {
 	for _, r := range recs {
 		s.state.Blocks[r.Block] = append(s.state.Blocks[r.Block], r)
 		s.state.Records = append(s.state.Records, r)
+		s.state.Index[identOf(r)] = r
 		if r.Block+1 > s.state.NextBlock {
 			s.state.NextBlock = r.Block + 1
 		}
 	}
-	_ = block
 	return nil
 }
 

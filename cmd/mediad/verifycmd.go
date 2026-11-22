@@ -71,7 +71,7 @@ func recheckResume(dir string, m *verify.Manifest) error {
 	if err != nil {
 		return fault.New("verify.resume", fault.KindVerify, err).WithPath(video)
 	}
-	reqs := sess.Requests()
+	reqs := sess.ChapterRequests(3)
 	if len(reqs) == 0 {
 		return fault.Errorf("verify.resume", fault.KindVerify, "resumed run has no requests").Fatal()
 	}
