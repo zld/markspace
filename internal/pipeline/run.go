@@ -109,7 +109,6 @@ func Run(cfg Config) (Result, error) {
 			startCursor = rec.FromCursor
 			res.RecoveryCheckpoint = rec.Checkpoint.ChunkSeq
 		}
-		res.ReplayedChunks = replayCount(cfg, startCursor)
 	} else if !cfg.DryRun {
 		if err := store.Clear(); err != nil {
 			return res, indexError("clear store: %v", err)
@@ -138,12 +137,16 @@ func Run(cfg Config) (Result, error) {
 		return res, materialError(ebml.ErrBadElement, -1, "alignment rejected: %v", err)
 	}
 	res.SegmentsEach = len(boundaries)
-	res.BoundarySkewMS = maxBoundarySkewMS(boundaries)
+	res.BoundarySkewMS = maxBoundarySkewMS(boundaries, reps)
 
 	// 6. Stream chunks through the write-ahead checkpoint index.
 	if !cfg.DryRun {
-		if err := commitCheckpoints(cfg, store, ckKey, startCursor); err != nil {
-			return res, err
+		committed, cerr := commitCheckpoints(cfg, store, ckKey, startCursor)
+		if cerr != nil {
+			return res, cerr
+		}
+		if cfg.Resume {
+			res.ReplayedChunks = committed
 		}
 	}
 
@@ -307,31 +310,45 @@ func repIDs(reps []parsedRep) []string {
 	return out
 }
 
-func maxBoundarySkewMS(boundaries []align.Boundary) int64 {
-	var maxSkew int64
-	for _, b := range boundaries {
-		var min, max int64 = 1<<62, 0
-		for _, idx := range b.FrameIndex {
-			_ = idx
-		}
-		// Boundary T0 is already the reconciled common time; skew is reported
-		// against the target grid spacing deviation (0 for perfectly aligned).
-		_ = min
-		_ = max
+// maxBoundarySkewMS measures, at every boundary, the largest difference
+// between each representation's actual keyframe T0 (resolved through the
+// boundary frame indices) and the reconciled common boundary time.
+func maxBoundarySkewMS(boundaries []align.Boundary, reps []parsedRep) int64 {
+	byID := make(map[string][]timeline.Frame, len(reps))
+	for _, r := range reps {
+		byID[r.ID] = r.Frames
 	}
-	return maxSkew
+	var maxSkewNS int64
+	for _, b := range boundaries {
+		for id, idx := range b.FrameIndex {
+			frames := byID[id]
+			if idx < 0 || idx >= len(frames) {
+				continue
+			}
+			d := frames[idx].T0 - b.T0
+			if d < 0 {
+				d = -d
+			}
+			if d > maxSkewNS {
+				maxSkewNS = d
+			}
+		}
+	}
+	return (maxSkewNS + 999_999) / 1_000_000 // round up to whole ms
 }
 
 // commitCheckpoints emulates chunked write-ahead processing. A simulated
-// interrupt skips the commit of the interrupted chunk itself.
-func commitCheckpoints(cfg Config, store *index.Store, key string, startCursor uint64) *Error {
+// interrupt skips the commit of the interrupted chunk itself. It returns the
+// number of checkpoint chunks written during this invocation.
+func commitCheckpoints(cfg Config, store *index.Store, key string, startCursor uint64) (uint64, *Error) {
+	var committed uint64
 	for chunk := uint64(1); chunk <= uint64(cfg.Clusters); chunk++ {
 		if chunk <= startCursor {
 			continue // already committed before the resume point
 		}
 		if cfg.InterruptAfter > 0 && chunk == uint64(cfg.InterruptAfter) && !cfg.Resume {
 			// Crash before the write-ahead record lands.
-			return indexError("simulated interrupt while processing chunk %d", chunk)
+			return committed, indexError("simulated interrupt while processing chunk %d", chunk)
 		}
 		if chunk%uint64(cfg.CheckpointEvery) == 0 || chunk == uint64(cfg.Clusters) {
 			rec := index.Record{
@@ -339,22 +356,12 @@ func commitCheckpoints(cfg Config, store *index.Store, key string, startCursor u
 				Cursor: chunk, Stage: "segments",
 			}
 			if _, err := store.Write(rec); err != nil {
-				return indexError("checkpoint write: %v", err)
+				return committed, indexError("checkpoint write: %v", err)
 			}
+			committed++
 		}
 	}
-	return nil
-}
-
-func replayCount(cfg Config, startCursor uint64) uint64 {
-	if cfg.InterruptAfter == 0 {
-		return 0
-	}
-	cut := uint64(cfg.InterruptAfter)
-	if cut > startCursor {
-		return cut - startCursor
-	}
-	return 0
+	return committed, nil
 }
 
 func digestableConfig(cfg Config) map[string]any {
