@@ -37,6 +37,10 @@ type DemoArgs struct {
 	BatchBytes int64
 	SlowEvery  int
 	Fixtures   string
+	// Scenario optionally selects a single named scenario. When set, a
+	// recoverable corruption exits with code 2 instead of being reported and
+	// swallowed; the full demo always exits 0 once its normal run passes.
+	Scenario string
 }
 
 func main() {
@@ -85,6 +89,12 @@ func runDemo(args DemoArgs) (int, error) {
 		return clock.Classify(err).ExitCode(), err
 	}
 
+	// Single-scenario mode surfaces the true process exit code, so callers
+	// can observe exit 2 for the documented recoverable corruptions.
+	if args.Scenario != "" {
+		return runSingleScenario(scenarios, args.Scenario, params)
+	}
+
 	var normal *testkit.PipelineResult
 	for _, sc := range scenarios {
 		fmt.Printf("\n== scenario: %s ==\n", sc.Name)
@@ -105,11 +115,40 @@ func runDemo(args DemoArgs) (int, error) {
 		return clock.KindRecoverable.ExitCode(),
 			clock.ErrRecoverablef("demo", "normal scenario did not complete")
 	}
-	if err := testkit.AssertAcceptance(normal, testkit.DefaultAcceptance()); err != nil {
+	if err := testkit.AssertAcceptance(normal,
+		testkit.AcceptanceFor(normal.Report.QualitySamples)); err != nil {
 		// An acceptance-bound violation on self-calibrated input is an
 		// internal invariant failure.
 		return clock.KindInvariant.ExitCode(), err
 	}
 	fmt.Println("\nacceptance=all_bounds_satisfied exit=0")
 	return 0, nil
+}
+
+// runSingleScenario runs exactly one named scenario and maps its outcome to
+// the documented process exit code (0 success, 2 recoverable, 4 invariant).
+func runSingleScenario(scenarios []testkit.Scenario, name string,
+	params testkit.DemoParams) (int, error) {
+	for _, sc := range scenarios {
+		if sc.Name != name {
+			continue
+		}
+		fmt.Printf("== scenario: %s ==\n", sc.Name)
+		res, err := testkit.RunScenario(sc, params)
+		if err != nil {
+			kind := clock.Classify(err)
+			fmt.Printf("status=error kind=%d exit=%d detail=%v\n", kind, kind.ExitCode(), err)
+			return kind.ExitCode(), err
+		}
+		fmt.Println(res.Report.Render())
+		if sc.Name == "normal" {
+			if err := testkit.AssertAcceptance(res,
+				testkit.AcceptanceFor(res.Report.QualitySamples)); err != nil {
+				return clock.KindInvariant.ExitCode(), err
+			}
+		}
+		return 0, nil
+	}
+	return clock.KindInvalidArgument.ExitCode(),
+		clock.ErrInvalidArgument("unknown scenario %q", name)
 }

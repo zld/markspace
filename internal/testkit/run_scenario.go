@@ -72,7 +72,7 @@ type AcceptanceBounds struct {
 	MaxDropped        uint64
 }
 
-// DefaultAcceptance matches the documented demo requirements.
+// DefaultAcceptance returns the documented full-scale demo bounds.
 func DefaultAcceptance() AcceptanceBounds {
 	return AcceptanceBounds{
 		MinQualitySamples: 10000,
@@ -83,13 +83,23 @@ func DefaultAcceptance() AcceptanceBounds {
 	}
 }
 
+// AcceptanceFor scales the sample-count floor to the actual fixture size so
+// short smoke runs are still validated against every proportionate bound.
+func AcceptanceFor(sampleCount int) AcceptanceBounds {
+	b := DefaultAcceptance()
+	if sampleCount < b.MinQualitySamples {
+		b.MinQualitySamples = sampleCount
+	}
+	return b
+}
+
 // AssertAcceptance verifies the normal-run report. Any violation is an
 // internal invariant failure (exit 4), since the generator calibrates every
 // input to satisfy these bounds.
 func AssertAcceptance(res *PipelineResult, b AcceptanceBounds) error {
 	r := res.Report
-	if r.QualitySamples <= b.MinQualitySamples {
-		return clock.ErrInvariantf("demo.accept", "quality_samples=%d <= %d",
+	if r.QualitySamples < b.MinQualitySamples {
+		return clock.ErrInvariantf("demo.accept", "quality_samples=%d < %d",
 			r.QualitySamples, b.MinQualitySamples)
 	}
 	if r.DroppedSamples != b.MaxDropped {

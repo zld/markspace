@@ -15,6 +15,7 @@ func parseDemoArgs(argv []string) (DemoArgs, error) {
 		batchBytes = fs.Int64("batch-bytes", 1<<20, "per-batch physical byte cap")
 		slowEvery  = fs.Int("slow-every", 7, "slow consumer stall period (0=off)")
 		fixtures   = fs.String("fixtures", "generated", "fixture output directory")
+		scenario   = fs.String("scenario", "", "run only one named scenario (default: all)")
 	)
 	if err := fs.Parse(argv); err != nil {
 		return DemoArgs{}, clock.ErrInvalidArgument("%v", err)
@@ -40,5 +41,6 @@ func parseDemoArgs(argv []string) (DemoArgs, error) {
 		BatchBytes: *batchBytes,
 		SlowEvery:  *slowEvery,
 		Fixtures:   *fixtures,
+		Scenario:   *scenario,
 	}, nil
 }
