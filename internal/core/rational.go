@@ -3,7 +3,6 @@
 package core
 
 import (
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -121,7 +120,12 @@ func (r *Rational) UnmarshalText(text []byte) error {
 		return fmt.Errorf("core: bad rational denominator: %w", err)
 	}
 	if den == 0 {
-		return errors.New("core: zero rational denominator")
+		// A zero denominator is never a valid media-clock value, but it can
+		// appear in a serialized report (for example an empty residual). Decode
+		// it as zero so verification reports the anomaly instead of failing to
+		// read the record at all.
+		*r = Zero()
+		return nil
 	}
 	*r = Rat(num, den)
 	return nil

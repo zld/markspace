@@ -531,6 +531,7 @@ func (f *MP4File) expandSamples(asset *Asset, trak BoxHeader, timescale uint32, 
 	// Consecutive out-of-range samples are reported once per run so a single
 	// cut in mdat does not produce thousands of near-identical findings.
 	runStart, runCount := 0, 0
+	runSpan := core.Span{Start: trak.Start, End: trak.End}
 	flushRun := func(endSample int) {
 		if runCount == 0 {
 			return
@@ -538,11 +539,12 @@ func (f *MP4File) expandSamples(asset *Asset, trak BoxHeader, timescale uint32, 
 		f.Issues.Add(diagnose.Issue{
 			Category: diagnose.CatIndexOutOfRange, Stage: diagnose.StageIngest,
 			Format: "mp4", Asset: asset.Name,
-			Span:   core.Span{Start: trak.Start, End: trak.End},
+			Span:   runSpan,
 			Detail: fmt.Sprintf("samples %d..%d reference bytes past the end of the asset", runStart, endSample),
 		})
 		f.Partial = true
 		runStart, runCount = 0, 0
+		runSpan = core.Span{Start: trak.Start, End: trak.End}
 	}
 	for i := 0; i < total; i++ {
 		size := stsz.SampleSize
@@ -568,6 +570,13 @@ func (f *MP4File) expandSamples(asset *Asset, trak BoxHeader, timescale uint32, 
 		if off < 0 || off > assetSize || span.End > assetSize {
 			if runCount == 0 {
 				runStart = i + 1
+				// Anchor the finding at the exact cut: the first byte the
+				// sample table expects but the asset no longer has.
+				if off >= 0 && off <= assetSize {
+					runSpan = core.Span{Start: off, End: assetSize}
+				} else {
+					runSpan = core.Span{Start: assetSize, End: assetSize}
+				}
 			}
 			runCount++
 			s.Truncated = true

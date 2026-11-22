@@ -177,9 +177,9 @@ func Generate(opt Options) (*Stream, error) {
 		File{Name: "net/stream.rtp", Kind: KindRTP, Data: buildRTP(opt.RTPPackets, false)},
 		File{Name: "net/gapped.rtp", Kind: KindRTP, Data: gapped},
 	)
-	// The sixth packet header starts after five length-prefixed packets and
-	// carries the first out-of-sequence number after the injected loss.
-	if off := rtpRecordOffset(gapped, 5); off >= 0 {
+	// The gap is observed on the packet that follows the injected loss: its
+	// sequence number jumps past the three that were dropped.
+	if off := rtpRecordOffset(gapped, 6); off >= 0 {
 		st.Expected = append(st.Expected, Expectation{
 			Asset: "net/gapped.rtp", Format: "rtp", Category: "rtp_sequence_gap",
 			Span: core.Span{Start: off, End: off + 20},
@@ -189,10 +189,12 @@ func Generate(opt Options) (*Stream, error) {
 
 	driftData := buildDrift()
 	st.Files = append(st.Files, File{Name: "net/edge-b.drift", Kind: KindDrift, Data: driftData})
-	if off := bytes.Index(driftData, []byte("1000,1006")); off >= 0 {
+	// Drift is a fit over the sample list; the span runs from the first sample
+	// line through the last one, so the first sample is the anchor.
+	if off := bytes.Index(driftData, []byte("0,5\n")); off >= 0 {
 		st.Expected = append(st.Expected, Expectation{
 			Asset: "net/edge-b.drift", Format: "drift", Category: "node_drift",
-			Span: core.Span{Start: int64(off), End: int64(off) + 10},
+			Span: core.Span{Start: int64(off), End: int64(off) + 4},
 		})
 		st.CorruptOffset = append(st.CorruptOffset, int64(off))
 	}

@@ -105,10 +105,11 @@ func FitDrift(node string, samples []DriftSample) (DriftModel, error) {
 	slope := nr.Mul(sumXY).Sub(sumX.Mul(sumY)).Div(den)
 	intercept := sumY.Sub(slope.Mul(sumX)).Div(nr)
 	model := DriftModel{
-		Samples:   len(sorted),
-		Slope:     slope,
-		Intercept: intercept,
-		Node:      node,
+		Samples:     len(sorted),
+		Slope:       slope,
+		Intercept:   intercept,
+		MaxResidual: core.Zero(),
+		Node:        node,
 	}
 	model.RatePPB = roundDiv((slope.Num-slope.Den)*1_000_000_000, slope.Den)
 	for _, s := range sorted {
