@@ -117,11 +117,73 @@ func Parse(data []byte) (*ParseResult, error) {
 			fmt.Sprintf("file %d bytes exceeds %d", len(data), model.MaxFileBytes))
 	}
 	br := &boundedReader{r: bytes.NewReader(data), size: uint64(len(data))}
-	boxes, err := parseBoxList(br, 0)
+	boxes, err := parseBoxList(br, 0, 0)
 	if err != nil {
 		return nil, err
 	}
 	return &ParseResult{Boxes: boxes, FileLength: uint64(len(data))}, nil
+}
+
+// ParseLenient tolerates a final top-level box whose declared size extends
+// beyond EOF (the classic truncated-mdat archive case): it rewrites the
+// header to the actually readable length and parses everything reachable.
+// Structural boxes (moov and its descendants) are never trimmed here.
+func ParseLenient(data []byte) (*ParseResult, error) {
+	if uint64(len(data)) > model.MaxFileBytes {
+		return nil, model.AtTrack(model.StageContainer, model.ErrLimitExceeded, 0,
+			fmt.Sprintf("file %d bytes exceeds %d", len(data), model.MaxFileBytes))
+	}
+	fixed, repaired := repairTrailingBox(append([]byte(nil), data...))
+	if !repaired {
+		return Parse(data)
+	}
+	br := &boundedReader{r: bytes.NewReader(fixed), size: uint64(len(fixed))}
+	boxes, err := parseBoxList(br, 0, 0)
+	if err != nil {
+		return nil, err
+	}
+	return &ParseResult{Boxes: boxes, FileLength: uint64(len(fixed))}, nil
+}
+
+// repairTrailingBox rewrites an over-long final top-level box header to span
+// exactly the remaining bytes. It returns the (possibly modified) bytes and
+// whether a repair was applied.
+func repairTrailingBox(data []byte) ([]byte, bool) {
+	pos := 0
+	var starts []int
+	for pos+8 <= len(data) {
+		starts = append(starts, pos)
+		size32 := binary.BigEndian.Uint32(data[pos : pos+4])
+		header := 8
+		var size uint64
+		if size32 == 1 {
+			if pos+16 > len(data) {
+				return data, false
+			}
+			size = binary.BigEndian.Uint64(data[pos+8 : pos+16])
+			header = 16
+		} else if size32 == 0 {
+			return data, false
+		} else {
+			size = uint64(size32)
+		}
+		end := pos + int(size)
+		if end > len(data) {
+			// Only the final box in the file is eligible for trimming.
+			if pos != starts[len(starts)-1] {
+				return data, false
+			}
+			newSize := uint64(len(data) - pos)
+			if header == 16 {
+				binary.BigEndian.PutUint64(data[pos+8:pos+16], newSize)
+			} else {
+				binary.BigEndian.PutUint32(data[pos:pos+4], uint32(newSize))
+			}
+			return data, true
+		}
+		pos = end
+	}
+	return data, false
 }
 
 // ParseFrom is the streaming variant: it reads exactly length bytes through a
@@ -143,14 +205,14 @@ func ParseFrom(r io.Reader, length uint64) (*ParseResult, error) {
 	return Parse(data)
 }
 
-func parseBoxList(br *boundedReader, depth int) ([]*Box, error) {
+func parseBoxList(br *boundedReader, depth int, base uint64) ([]*Box, error) {
 	if depth > model.MaxBoxNesting {
 		return nil, model.AtTrack(model.StageContainer, model.ErrUnsupportedBox, 0,
 			fmt.Sprintf("nesting deeper than %d", model.MaxBoxNesting))
 	}
 	var out []*Box
 	for br.pos < br.size {
-		b, err := parseOneBox(br, depth)
+		b, err := parseOneBox(br, depth, base)
 		if err != nil {
 			return out, err
 		}
@@ -159,7 +221,7 @@ func parseBoxList(br *boundedReader, depth int) ([]*Box, error) {
 	return out, nil
 }
 
-func parseOneBox(br *boundedReader, depth int) (*Box, error) {
+func parseOneBox(br *boundedReader, depth int, base uint64) (*Box, error) {
 	start := br.pos
 	hdr := make([]byte, 8)
 	if err := br.read(hdr); err != nil {
@@ -167,7 +229,7 @@ func parseOneBox(br *boundedReader, depth int) (*Box, error) {
 	}
 	size32 := binary.BigEndian.Uint32(hdr[0:4])
 	cc := FourCC{hdr[4], hdr[5], hdr[6], hdr[7]}
-	b := &Box{Type: cc, Offset: start, Size32: size32, Header: 8}
+	b := &Box{Type: cc, Offset: base + start, Size32: size32, Header: 8}
 	headerLen := uint64(8)
 	if size32 == 1 {
 		large := make([]byte, 8)
@@ -205,7 +267,8 @@ func parseOneBox(br *boundedReader, depth int) (*Box, error) {
 	}
 	if containerTypes[cc] {
 		pbr := &boundedReader{r: bytes.NewReader(payload), size: payloadLen}
-		children, err := parseBoxList(pbr, depth+1)
+		// children's absolute offsets start after this box's header.
+		children, err := parseBoxList(pbr, depth+1, base+start+headerLen)
 		if err != nil {
 			return nil, err
 		}
