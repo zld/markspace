@@ -69,7 +69,9 @@ func decodeValidate(ctx context.Context, in *pipeline.Queue[wirePacket],
 	reorders := make([]*transport.Reorderer, cfg.Tracks)
 	validators := make([]*ingest.Validator, cfg.Tracks)
 	estimators := make([]*transport.Estimator, cfg.Tracks)
+	recMarks := make([]*recoveredSet, cfg.Tracks)
 	for i := range reorders {
+		recMarks[i] = newRecoveredSet(cfg.ReorderWindow)
 		reorders[i] = transport.NewReorderer(uint32(i+1), cfg.ReorderWindow, cfg.BurstThresh)
 		validators[i] = ingest.NewValidator(cfg.Policy)
 		// The estimator only retunes the reorder window; queue capacity stays
@@ -117,6 +119,9 @@ func decodeValidate(ctx context.Context, in *pipeline.Queue[wirePacket],
 		estimators[wp.track].Observe(len(wp.raw), epoch.Add(time.Duration(wp.at)))
 		r.Window = estimators[wp.track].WindowHint()
 		outs, recovered, gaps := r.PushEx(pkt)
+		for _, seq := range recovered {
+			recMarks[wp.track].add(seq)
+		}
 		st := &stats[wp.track]
 		for _, g := range gaps {
 			st.GapEvents++
@@ -137,7 +142,7 @@ func decodeValidate(ctx context.Context, in *pipeline.Queue[wirePacket],
 				continue
 			}
 			f := om.Frame(op.Payload)
-			if len(recovered) > 0 {
+			if recMarks[wp.track].take(op.SequenceNumber) {
 				f.State = media.StateRecovered
 			}
 			if err := validators[wp.track].Check(f); err != nil {

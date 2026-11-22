@@ -296,3 +296,60 @@ func TestRTPSequenceWrapEndToEnd(t *testing.T) {
 		t.Fatalf("hit rate %v", r.KeyframeHitRate())
 	}
 }
+
+// TestRecoveredFramesMarked: packets that arrived out of order are recorded
+// as recovered in the manifest, and a clean run records none.
+func TestRecoveredFramesMarked(t *testing.T) {
+	cfg := smallConfig(t)
+	cfg.Frames = 200
+	cfg.Tracks = 1
+	cfg.OutDir = t.TempDir()
+	r, err := Run(context.Background(), cfg, mustFaults(t, "reorder"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var recovered int
+	for _, s := range r.Manifest.Segments {
+		recovered += s.Recovered
+	}
+	if recovered == 0 {
+		t.Fatal("reordered frames must be marked recovered")
+	}
+	// A run without faults marks no frames recovered.
+	clean := cfg
+	clean.OutDir = t.TempDir()
+	cr, err := Run(context.Background(), clean, Faults{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range cr.Manifest.Segments {
+		if s.Recovered != 0 {
+			t.Fatalf("clean run reported %d recovered", s.Recovered)
+		}
+	}
+}
+
+// TestDegradedStateInManifest: frames that follow a committed transport gap
+// are marked degraded, and the mark reaches the manifest.
+func TestDegradedStateInManifest(t *testing.T) {
+	cfg := smallConfig(t)
+	cfg.Frames = 400
+	cfg.Tracks = 1
+	cfg.OutDir = t.TempDir()
+	r, err := Run(context.Background(), cfg, mustFaults(t, "burst-loss"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var degraded int
+	for _, rec := range r.Manifest.Records {
+		if rec.States["1"] == "degraded" {
+			degraded++
+		}
+	}
+	if degraded == 0 {
+		t.Fatal("frames after a gap must be marked degraded")
+	}
+	if r.Faults.Lost == 0 {
+		t.Fatal("expected burst loss to commit gaps")
+	}
+}
