@@ -4,7 +4,6 @@ package ingest
 
 import (
 	"encoding/binary"
-	"fmt"
 
 	"github.com/pion/rtp"
 
@@ -142,9 +141,4 @@ func (r *PacketReader) Next() (*Packet, bool, error) {
 	}
 	r.offset += int64(total)
 	return p, true, nil
-}
-
-// DescribePacket is a short deterministic label for logs.
-func DescribePacket(p *Packet) string {
-	return fmt.Sprintf("stream=%d seq=%d ts=%d bytes=%d", p.StreamID, p.Seq, p.Timestamp, p.PayloadSize)
 }

@@ -84,12 +84,10 @@ func runDemo(args []string) int {
 		fmt.Fprintln(os.Stderr, "mediacore demo: --out is required")
 		return 2
 	}
-	printFn := func(format string, a ...any) { fmt.Printf(format+"\n", a...) }
 	rep, code, err := demo.Run(demo.Options{
 		Case:   *caseName,
 		OutDir: *outDir,
 		Frames: *frames,
-		Print:  printFn,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "mediacore demo: %s\n", media.DescribeError(err))

@@ -1,8 +1,6 @@
 package fixture
 
 import (
-	"fmt"
-
 	"mediacore/ingest"
 	"mediacore/media"
 )
@@ -170,10 +168,4 @@ func RebuildStream(plan Plan, opts Options) ([]byte, []*media.Frame, error) {
 func RecordSizeFor(opts Options) int {
 	o := opts.normalized()
 	return media.FrameHeaderSize + int(o.Width)*int(o.Height) + MetaSize
-}
-
-// DescribeFaults renders a deterministic fault description for logs.
-func DescribeFaults(f PacketFaults) string {
-	return fmt.Sprintf("duplicate_every=%d swap_every=%d burst_loss=%d+%d late=%d",
-		f.DuplicateEvery, f.SwapEvery, f.BurstLossStart, f.BurstLossCount, f.LateCount)
 }

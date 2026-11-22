@@ -1,9 +1,5 @@
 package media
 
-import (
-	"fmt"
-)
-
 // DefaultTimescale is the RTP video clock rate, in ticks per second.
 const DefaultTimescale uint32 = 90000
 
@@ -162,14 +158,6 @@ func CompareTicks(a, b, tol int64) int {
 	default:
 		return 0
 	}
-}
-
-// MustTimescale validates a timescale supplied by configuration.
-func MustTimescale(timescale uint32) (uint32, error) {
-	if timescale == 0 {
-		return 0, fmt.Errorf("timescale must be positive")
-	}
-	return timescale, nil
 }
 
 func divRound(n, d int64) int64 {

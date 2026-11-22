@@ -3,7 +3,6 @@ package demo
 import (
 	"bytes"
 	"fmt"
-	"math"
 
 	"mediacore/index"
 	"mediacore/ingest"
@@ -28,7 +27,7 @@ func (r *Runner) finish(dir string, m *manifest.Manifest, rep *Report) (*Report,
 	rep.DuplicateGroups = m.Stats.DuplicateGroups
 	rep.TargetKBPS = m.Stats.TargetKBPS
 	rep.ActualKBPS = m.Stats.ActualKBPS
-	rep.DeviationPct = math.Abs(m.Stats.DeviationPct)
+	rep.DeviationPct = m.Stats.DeviationPct
 	rep.AlignmentMS = m.Timing.AlignmentErrorMS
 	rep.ManifestDigest = m.ManifestDigest
 	rep.IndexDigest = m.IndexDigest
@@ -196,8 +195,13 @@ func (r *Runner) corrupt(dir string, rep *Report) (*Report, int, error) {
 			})
 			rep.DamageOffset = e.FrameOffset
 		}
+		locate := "unknown"
+		if _, ok := idx.Resolve(rep.DamageOffset); ok {
+			locate = "indexed"
+		}
 		rep.Notes = append(rep.Notes,
-			fmt.Sprintf("corrupt_offset=%d valid_frames_before_damage=%d", rep.DamageOffset, idx.EntryCount),
+			fmt.Sprintf("corrupt_offset=%d valid_frames_before_damage=%d damaged_slot=%s",
+				rep.DamageOffset, idx.EntryCount, locate),
 			"index_rebuild_reason=checksum_mismatch")
 		// Keep the damaged material under damaged/ so it can still be
 		// inspected and (correctly) fails verification, then repair and rerun.

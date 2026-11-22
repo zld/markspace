@@ -10,8 +10,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
-	"strings"
 
 	"mediacore/index"
 	"mediacore/ingest"
@@ -98,9 +96,6 @@ type Runner struct {
 func Run(opts Options) (*Report, int, error) {
 	if !Known(opts.Case) {
 		return nil, 2, media.New(media.CatInvalidParams, media.StageCLI, "unknown demo case %q", opts.Case)
-	}
-	if opts.Print == nil {
-		opts.Print = func(string, ...any) {}
 	}
 	abs, err := filepath.Abs(opts.OutDir)
 	if err != nil {
@@ -264,17 +259,6 @@ func writeIndexBestEffort(path string, idx *index.Index) error {
 	}
 	return index.WriteCache(path, idx.InputDigest, idx)
 }
-
-func sortedKeys(m map[string]string) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-func join(parts ...string) string { return strings.Join(parts, " ") }
 
 // fail builds a failure report with the required terminal lines.
 func (r *Runner) fail(rep *Report, err error) (*Report, int, error) {

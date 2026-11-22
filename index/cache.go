@@ -127,20 +127,24 @@ func WriteCache(path, inputDigest string, idx *Index) error {
 func LoadCache(path, inputDigest string) (*Index, CacheReport) {
 	rep := CacheReport{Path: path}
 	tmp := TempPath(path)
+	residue := ""
 	if _, err := os.Stat(tmp); err == nil {
-		rep.State = CacheResidue
-		rep.Reason = "temporary cache from an interrupted write was discarded"
+		// A crash left a partial temp file. Remove it unconditionally so it can
+		// never be mistaken for the canonical index, and remember that it
+		// happened even if the real cache turns out to be valid.
+		residue = "temporary cache from an interrupted write was discarded"
 		rep.Temp = tmp
 		_ = os.Remove(tmp)
-		rep.Error = media.New(media.CatIndexTemp, media.StageIndex, rep.Reason)
-		if _, statErr := os.Stat(path); statErr != nil {
-			return nil, rep
-		}
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		rep.State = CacheMiss
 		rep.Reason = "no cached index"
+		if residue != "" {
+			rep.State = CacheResidue
+			rep.Reason = residue
+			rep.Error = media.New(media.CatIndexTemp, media.StageIndex, residue)
+		}
 		return nil, rep
 	}
 	var env cacheEnvelope
@@ -183,6 +187,9 @@ func LoadCache(path, inputDigest string) (*Index, CacheReport) {
 		return nil, rep
 	}
 	rep.State = CacheHit
+	if residue != "" {
+		rep.Reason = residue + "; the existing cache was still valid"
+	}
 	return env.Index, rep
 }
 
@@ -190,27 +197,27 @@ func LoadCache(path, inputDigest string) (*Index, CacheReport) {
 // it is valid and rebuilding (then atomically caching) otherwise. The returned
 // report always says which path was taken and why.
 func EnsureCache(path, inputDigest string, build func() (*Index, error)) (*Index, CacheReport) {
-	if idx, rep := LoadCache(path, inputDigest); idx != nil {
-		return idx, rep
-	} else {
-		idx, err := build()
-		if err != nil {
-			rep.Rebuilt = false
-			rep.Reason = strings.TrimSpace(rep.Reason + "; rebuild failed")
-			if e, ok := media.AsError(err); ok {
-				rep.Error = e
-			}
-			return idx, rep
-		}
-		if cerr := WriteCache(path, inputDigest, idx); cerr != nil {
-			rep.Rebuilt = true
-			rep.Reason = strings.TrimSpace(rep.Reason + "; rebuilt but cache write failed")
-			if e, ok := media.AsError(cerr); ok {
-				rep.Error = e
-			}
-			return idx, rep
-		}
-		rep.Rebuilt = true
+	idx, rep := LoadCache(path, inputDigest)
+	if idx != nil {
 		return idx, rep
 	}
+	idx, err := build()
+	if err != nil {
+		rep.Rebuilt = false
+		rep.Reason = strings.TrimSpace(rep.Reason + "; rebuild failed")
+		if e, ok := media.AsError(err); ok {
+			rep.Error = e
+		}
+		return idx, rep
+	}
+	if cerr := WriteCache(path, inputDigest, idx); cerr != nil {
+		rep.Rebuilt = true
+		rep.Reason = strings.TrimSpace(rep.Reason + "; rebuilt but cache write failed")
+		if e, ok := media.AsError(cerr); ok {
+			rep.Error = e
+		}
+		return idx, rep
+	}
+	rep.Rebuilt = true
+	return idx, rep
 }

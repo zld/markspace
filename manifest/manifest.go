@@ -222,7 +222,9 @@ func (m *Manifest) computeStats(res *pipeline.Result) {
 }
 
 // rates converts bytes over a duration to kbps and the percent deviation from
-// the target. A zero target yields zero deviation.
+// the target. Deviation is stored as a magnitude so the manifest and the
+// terminal summary agree on the documented `deviation_pct=3.33` convention; a
+// zero target yields zero deviation.
 func rates(totalBytes, durationMS int64, targetKBPS int) (int, float64) {
 	if durationMS <= 0 {
 		return 0, 0
@@ -232,6 +234,9 @@ func rates(totalBytes, durationMS int64, targetKBPS int) (int, float64) {
 	dev := 0.0
 	if targetKBPS > 0 {
 		dev = (actual - float64(targetKBPS)) / float64(targetKBPS) * 100
+		if dev < 0 {
+			dev = -dev
+		}
 	}
 	return actualKBPS, round2(dev)
 }

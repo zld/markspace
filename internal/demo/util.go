@@ -2,7 +2,6 @@ package demo
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -53,11 +52,6 @@ func reshapeFrame(stream []byte, recordSize, n int) ([]byte, int64, error) {
 		return nil, -1, err
 	}
 	return out, int64(off), nil
-}
-
-// JSONCheckpoint renders a report as JSON (used by tests and --json).
-func JSONCheckpoint(rep *Report) ([]byte, error) {
-	return json.MarshalIndent(rep, "", "  ")
 }
 
 // publishDamaged writes the damaged frame stream and its partial index into a
