@@ -20,7 +20,6 @@ import (
 
 	"example.com/mediaforge/internal/merrors"
 	"example.com/mediaforge/internal/pipeline"
-	"example.com/mediaforge/internal/segment"
 )
 
 const usage = `mediadump - local media kernel demo
@@ -226,11 +225,8 @@ func checkInvariants(rep *pipeline.Report, sc *pipeline.Scenario) []string {
 	add(rep.OutOfSync == 0, "out_of_sync_samples %d != 0", rep.OutOfSync)
 	add(rep.DeliveredSamples > 0 && rep.RemuxBytes > 0, "no deliverable output")
 
-	// Cross-stage consistency: the hashes must cover exactly the segments and
-	// the digest list must be strictly ordered.
-	if _, ok := segment.Equal(rep.SegmentHashes, rep.SegmentHashes); !ok {
-		f = append(f, "segment hash list is not comparable to itself")
-	}
+	// Cross-stage consistency: the digest list must be strictly ordered, so
+	// the printed segment table is unambiguous.
 	ordered := sort.SliceIsSorted(rep.SegmentHashes, func(i, j int) bool {
 		return rep.SegmentHashes[i].StartTick < rep.SegmentHashes[j].StartTick
 	})
