@@ -1,0 +1,7 @@
+# Build products — never committed
+/mediasync
+/cmd/mediasync/mediasync
+*.test
+*.out
+# Runtime work directories created by demo/verify runs
+/work/
