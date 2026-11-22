@@ -138,6 +138,11 @@ type Policy uint8
 const (
 	PolicySkip      Policy = iota // reject the frame, keep the track alive
 	PolicyFailTrack               // reject the frame and fail the whole track
+
+	// Short aliases used by callers that would otherwise import this package
+	// only to name a policy.
+	Skip      = PolicySkip
+	FailTrack = PolicyFailTrack
 )
 
 // Validator checks frame length, metadata version and SHA-256.

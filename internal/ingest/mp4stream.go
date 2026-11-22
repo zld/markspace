@@ -215,3 +215,14 @@ func (b *MP4Builder) writeHeader(timescale uint32) (err error) {
 	}
 	return out.Close()
 }
+
+// Abort closes the temp payload file and removes it without writing an MP4.
+func (b *MP4Builder) Abort() {
+	if b == nil {
+		return
+	}
+	if b.data != nil {
+		b.data.Close()
+	}
+	os.Remove(b.tmpPath)
+}

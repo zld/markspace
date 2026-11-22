@@ -2,10 +2,12 @@ package render
 
 import (
 	"bytes"
+	"compress/zlib"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"image"
-	"image/color"
+	"image/draw"
 	"image/png"
 	"os"
 	"path/filepath"
@@ -78,8 +80,9 @@ type Manifest struct {
 	Records   []FrameRecord   `json:"records"`
 	TrackInfo []TrackInfo     `json:"track_info,omitempty"`
 	Inputs    InputStats      `json:"inputs"`
-	Summary   string          `json:"summary"` // sha256 over segment hashes
-	Digest    string          `json:"digest"`  // sha256 over the manifest body
+	FrameDir  string          `json:"frame_dir"` // relative to the manifest directory
+	Summary   string          `json:"summary"`   // sha256 over segment hashes
+	Digest    string          `json:"digest"`    // sha256 over the manifest body
 }
 
 // Renderer turns an output frame into an image.
@@ -102,10 +105,12 @@ type Writer struct {
 	segFrames int
 	render    Renderer
 
-	m       *Manifest
-	cur     *SegmentRecord
-	curPix  [][]byte
-	frameNo int
+	pngLevel int
+	mirror   string
+	m        *Manifest
+	cur      *SegmentRecord
+	curPix   [][]byte
+	frameNo  int
 
 	RoundtripOK  int
 	RoundtripBad int
@@ -127,8 +132,10 @@ func NewWriter(dir string, tracks int, opt Options, r Renderer) (*Writer, error)
 	}
 	return &Writer{
 		dir: dir, opt: opt, tracks: tracks, segFrames: opt.SegFrames, render: r,
+		pngLevel: zlib.BestSpeed,
 		m: &Manifest{Version: 2, Tracks: tracks, Records: []FrameRecord{},
-			Segments: []SegmentRecord{}, TrackInfo: opt.Tracks, Inputs: opt.Inputs},
+			Segments: []SegmentRecord{}, TrackInfo: opt.Tracks, Inputs: opt.Inputs,
+			FrameDir: "."},
 	}, nil
 }
 
@@ -138,14 +145,13 @@ func (w *Writer) Add(of timeline.OutputFrame) error {
 	if img == nil {
 		return media.NewError(media.KindState, 0, of.Index, -1, "renderer returned nil image")
 	}
-	var buf bytes.Buffer
-	if err := png.Encode(&buf, img); err != nil {
+	raw, err := EncodePNG(img, w.pngLevel)
+	if err != nil {
 		return media.NewError(media.KindCorrupt, 0, of.Index, -1, "png encode: %v", err)
 	}
-	if err := w.checkRoundtrip(&buf, img, of.Index); err != nil {
+	if err := w.checkRoundtrip(raw, img, of.Index); err != nil {
 		return err
 	}
-	raw := buf.Bytes()
 	name := fmt.Sprintf("frame_%05d.png", w.frameNo)
 	if err := os.WriteFile(filepath.Join(w.dir, name), raw, 0o644); err != nil {
 		return err
@@ -194,10 +200,11 @@ func (w *Writer) Add(of timeline.OutputFrame) error {
 }
 
 // checkRoundtrip decodes the just-encoded PNG and compares pixels with the
-// rendered image, proving the export is lossless and reproducible. Opaque
-// frames take the fast path where premultiplied and straight alpha agree.
-func (w *Writer) checkRoundtrip(buf *bytes.Buffer, img *image.RGBA, index uint64) error {
-	dec, err := png.Decode(bytes.NewReader(buf.Bytes()))
+// image that was encoded, proving the export is lossless and reproducible.
+// PNG stores straight alpha, so a non-opaque source is first converted to the
+// exact byte layout the encoder wrote.
+func (w *Writer) checkRoundtrip(raw []byte, img *image.RGBA, index uint64) error {
+	dec, err := png.Decode(bytes.NewReader(raw))
 	if err != nil {
 		w.RoundtripBad++
 		return media.NewError(media.KindCorrupt, 0, index, -1, "png decode: %v", err)
@@ -207,17 +214,17 @@ func (w *Writer) checkRoundtrip(buf *bytes.Buffer, img *image.RGBA, index uint64
 		return media.NewError(media.KindCorrupt, 0, index, -1,
 			"png bounds %v != %v", dec.Bounds(), img.Bounds())
 	}
-	if img.Opaque() {
-		if !samePix(img, dec) {
-			w.RoundtripBad++
-			return media.NewError(media.KindCorrupt, 0, index, -1, "png pixels differ after roundtrip")
-		}
-		w.RoundtripOK++
-		return nil
+	want := img
+	if !img.Opaque() {
+		want = toNRGBA(img)
 	}
-	// PNG stores straight alpha; compare against the same conversion the
-	// encoder applies instead of raw premultiplied bytes.
-	if !sameNRGBA(img, dec) {
+	back, ok := dec.(*image.NRGBA)
+	if !ok {
+		converted := image.NewNRGBA(dec.Bounds())
+		draw.Draw(converted, converted.Bounds(), dec, dec.Bounds().Min, draw.Src)
+		back = converted
+	}
+	if !bytes.Equal(want.Pix, back.Pix) {
 		w.RoundtripBad++
 		return media.NewError(media.KindCorrupt, 0, index, -1, "png pixels differ after roundtrip")
 	}
@@ -225,31 +232,24 @@ func (w *Writer) checkRoundtrip(buf *bytes.Buffer, img *image.RGBA, index uint64
 	return nil
 }
 
-func samePix(want *image.RGBA, got image.Image) bool {
-	switch g := got.(type) {
-	case *image.RGBA:
-		return bytes.Equal(want.Pix, g.Pix)
-	case *image.NRGBA:
-		// cbTC8 decodes to RGBA and cbTCA8 to NRGBA; alpha 255 makes them
-		// byte-identical, so compare the straight-alpha result directly.
-		return bytes.Equal(want.Pix, g.Pix)
+// Rewrite persists the manifest again after fields were filled in late.
+func (w *Writer) Rewrite() error { return w.persist() }
+
+// Mirror makes every manifest write also update path, so the summary is
+// reachable from the export root as well as from the frame directory. The
+// frame directory is recorded relative to the mirrored manifest.
+func (w *Writer) Mirror(path string) { w.mirror = path }
+
+// Frames resolves the directory holding the PNG frames for a manifest that
+// was loaded from dir.
+func Frames(dir string, m *Manifest) string {
+	if m.FrameDir == "" || m.FrameDir == "." {
+		return dir
 	}
-	return false
+	return filepath.Join(dir, filepath.FromSlash(m.FrameDir))
 }
 
-func sameNRGBA(want *image.RGBA, got image.Image) bool {
-	b := want.Bounds()
-	nb := got.Bounds()
-	for y := b.Min.Y; y < b.Max.Y; y++ {
-		for x := b.Min.X; x < b.Max.X; x++ {
-			if color.NRGBAModel.Convert(want.At(x, y)) != color.NRGBAModel.Convert(got.At(nb.Min.X+x-b.Min.X, nb.Min.Y+y-b.Min.Y)) {
-				return false
-			}
-		}
-	}
-	return true
-}
-
+// closeSegment finalizes the in-progress segment and releases its bytes.
 func (w *Writer) closeSegment() {
 	if w.cur == nil {
 		return
@@ -261,24 +261,59 @@ func (w *Writer) closeSegment() {
 	w.curPix = nil
 }
 
-// Finish closes the last segment and writes manifest.json.
+// Finish closes the last segment and writes the manifest.
 func (w *Writer) Finish() (*Manifest, error) {
 	w.closeSegment()
 	var summary [][]byte
-	for _, s := range w.m.Segments {
-		var sum [32]byte
-		if _, err := fmt.Sscanf(s.SHA256, "%64x", &sum); err == nil {
-			summary = append(summary, sum[:])
+	for i := range w.m.Segments {
+		raw, err := hex.DecodeString(w.m.Segments[i].SHA256)
+		if err != nil || len(raw) != 32 {
+			return nil, media.NewError(media.KindState, 0, uint64(i), -1,
+				"segment %d has malformed hash %q", i, w.m.Segments[i].SHA256)
 		}
+		summary = append(summary, raw)
 	}
 	w.m.Summary = Hex(SumSegment(summary))
-	return w.m, saveManifest(w.dir, w.m)
+	if err := w.persist(); err != nil {
+		return nil, err
+	}
+	return w.m, nil
 }
 
-// saveManifest fills the digest and writes manifest.json atomically.
+// persist writes the manifest, and its mirror, with a digest recomputed from
+// the current content. FrameDir differs per location but is excluded from the
+// digest, so both copies describe the same run.
+func (w *Writer) persist() error {
+	w.m.FrameDir = "."
+	if err := saveManifest(w.dir, w.m); err != nil {
+		return err
+	}
+	if w.mirror == "" {
+		return nil
+	}
+	rel, err := filepath.Rel(filepath.Dir(w.mirror), w.dir)
+	if err != nil {
+		return err
+	}
+	w.m.FrameDir = filepath.ToSlash(rel)
+	if err := saveManifest(filepath.Dir(w.mirror), w.m); err != nil {
+		return err
+	}
+	return nil
+}
+
+// Manifest returns the in-memory manifest, including fields filled in after
+// Finish (such as the input tally).
+func (w *Writer) Manifest() *Manifest { return w.m }
+
+// saveManifest fills the digest and writes manifest.json atomically. The
+// digest excludes FrameDir so the same run mirrored elsewhere compares equal.
 func saveManifest(dir string, m *Manifest) error {
+	frameDir := m.FrameDir
+	m.FrameDir = ""
 	m.Digest = ""
 	body, err := json.Marshal(m)
+	m.FrameDir = frameDir
 	if err != nil {
 		return err
 	}
@@ -334,6 +369,7 @@ func LoadManifest(dir string) (*Manifest, error) {
 func ManifestDigest(m *Manifest) string {
 	c := *m
 	c.Digest = ""
+	c.FrameDir = ""
 	body, err := json.Marshal(&c)
 	if err != nil {
 		return ""
@@ -365,6 +401,7 @@ func (m *Manifest) Validate() error {
 
 // VerifySegments recomputes per-segment hashes from the PNGs on disk.
 func VerifySegments(dir string, m *Manifest) (matched int, err error) {
+	dir = Frames(dir, m)
 	frameAt := 0
 	for si := range m.Segments {
 		rec := &m.Segments[si]
@@ -384,8 +421,9 @@ func VerifySegments(dir string, m *Manifest) (matched int, err error) {
 	return matched, nil
 }
 
-// VerifyFrames recomputes every per-frame hash and returns the match ratio.
+// VerifyFrames recomputes every per-frame hash and returns the match count.
 func VerifyFrames(dir string, m *Manifest) (matched int, err error) {
+	dir = Frames(dir, m)
 	for i := range m.Records {
 		r := &m.Records[i]
 		sum, err := SumFiles([]string{filepath.Join(dir, r.File)})
