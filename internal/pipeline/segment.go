@@ -370,16 +370,23 @@ func (p *Planner) lastSampleAtOrBefore(tr *mp4.Track, t int64) int {
 	if n == 0 {
 		return -1
 	}
-	any := false
-	best := 0
-	for i := 0; i < n; i++ {
-		pt, ok := p.Pres.At(tr.ID, i)
+	// Presentation times are monotonic, so a binary search over the usable
+	// prefix suffices; the first unusable sample ends the searchable range.
+	lo, hi := 0, n-1
+	best, any := -1, false
+	for lo <= hi {
+		mid := (lo + hi) / 2
+		pt, ok := p.Pres.At(tr.ID, mid)
 		if !ok {
+			hi = mid - 1
 			continue
 		}
 		any = true
 		if pt <= t {
-			best = i
+			best = mid
+			lo = mid + 1
+		} else {
+			hi = mid - 1
 		}
 	}
 	if !any {

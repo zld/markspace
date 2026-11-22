@@ -121,3 +121,31 @@ func TestSilenceFromAudioTrackAnnotatesVideoSegment(t *testing.T) {
 		t.Fatalf("overlap double counted: %d", seg.SilentNS)
 	}
 }
+
+func TestLastSampleLookupMatchesLinearScan(t *testing.T) {
+	sess, err := OpenSession(writeFile(t, t.TempDir(), "seg.mp4", fixtures.FileSpec{
+		Timescale: 1000, Brands: []string{"isom"}, BreakStszAt: -1, BreakSizeOf: -1,
+		Tracks: []fixtures.TrackSpec{{
+			ID: 1, Codec: fixtures.CodecAVC, Timescale: 90000, SampleDur: 3000,
+			Samples: 60, KeyEvery: 6, SampleSize: 16, SampleSeed: 2,
+		}},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sess.Close()
+	planner, _ := sess.Planner()
+	tr := sess.Movie.Tracks[0]
+	for _, probe := range []int64{-1, 0, 1, 33_000_000, 100_000_000, 200_000_000} {
+		want := -1
+		for i := 0; i < len(tr.Samples); i++ {
+			pt, ok := sess.Pres.At(tr.ID, i)
+			if ok && pt <= probe {
+				want = i
+			}
+		}
+		if got := planner.lastSampleAtOrBefore(tr, probe); got != want {
+			t.Fatalf("probe %d: got %d want %d", probe, got, want)
+		}
+	}
+}
