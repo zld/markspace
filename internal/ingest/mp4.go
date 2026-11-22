@@ -31,7 +31,13 @@ func marshalBox(box mp4.IImmutableBox) ([]byte, error) {
 	if _, err := mp4.Marshal(&buf, box, mp4.Context{}); err != nil {
 		return nil, err
 	}
-	return buf.Bytes(), nil
+	payload := buf.Bytes()
+	typ := box.GetType()
+	out := make([]byte, 8+len(payload))
+	binary.BigEndian.PutUint32(out, uint32(len(out)))
+	copy(out[4:], typ[:])
+	copy(out[8:], payload)
+	return out, nil
 }
 
 func container(typ string, children ...[]byte) []byte {
@@ -130,7 +136,7 @@ func WriteMP4(path string, timescale uint32, frames []media.Frame) (err error) {
 	for _, parts := range [][]byte{mvhd, tkhd, mdhd, hdlr, vmhd, dinf, stsd, sttsB, stscB, stszB, stco, stssB} {
 		moovLen += len(parts)
 	}
-	moovLen += 8 * 6 // moov, trak, mdia, minf, stbl headers + stco placeholder already counted
+	moovLen += 8 * 5 // moov, trak, mdia, minf, stbl container headers
 	mdatStart := uint64(len(ftyp)) + uint64(moovLen) + 8
 	if mdatStart > uint64(^uint32(0)) {
 		return media.NewError(media.KindOverflow, 0, 0, -1, "mdat offset overflow")
@@ -188,6 +194,11 @@ func ReadSampleTable(path string) (*SampleTable, error) {
 	var stss *mp4.Stss
 	var stco *mp4.Stco
 	_, err = mp4.ReadBoxStructure(f, func(h *mp4.ReadHandle) (interface{}, error) {
+		switch h.Path[len(h.Path)-1] {
+		case mp4.BoxTypeMoov(), mp4.BoxTypeTrak(), mp4.BoxTypeMdia(),
+			mp4.BoxTypeMinf(), mp4.BoxTypeStbl():
+			return h.Expand()
+		}
 		if len(h.Path) < 2 || h.Path[0] != mp4.BoxTypeMoov() {
 			return nil, nil
 		}
