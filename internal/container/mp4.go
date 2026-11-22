@@ -576,6 +576,7 @@ func validateSamples(tr *Track, size int64) error {
 			"track has zero samples").AtTrack(trackID)
 	}
 	var prevDTS int64
+	var prevOffset uint64
 	var prevEnd uint64
 	for i := range tr.Samples {
 		s := &tr.Samples[i]
@@ -584,6 +585,13 @@ func validateSamples(tr *Track, size int64) error {
 				"sample %d DTS %d is before previous DTS %d", i, s.DTS, prevDTS).AtTrack(trackID)
 		}
 		prevDTS = s.DTS
+		if i > 0 && s.Offset < prevOffset {
+			// Decode order and byte layout disagree: the chunk table points
+			// backwards. This is a timestamp/ordering fault, not mere overlap.
+			return media.NewError(media.OutOfOrderTimestamp,
+				"sample %d starts at %d, before previous sample at %d",
+				i, s.Offset, prevOffset).AtTrack(trackID).AtOffset(int64(s.Offset))
+		}
 		if i > 0 && s.Offset < prevEnd {
 			return media.NewError(media.CorruptSampleTable,
 				"sample %d starts at %d, overlapping previous sample ending at %d",
@@ -599,6 +607,7 @@ func validateSamples(tr *Track, size int64) error {
 				"sample %d spans [%d,%d) beyond file size %d", i, s.Offset, end, size).
 				AtTrack(trackID).AtOffset(int64(s.Offset))
 		}
+		prevOffset = s.Offset
 		prevEnd = end
 	}
 	return nil

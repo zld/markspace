@@ -360,13 +360,20 @@ func Run(opts Options) (*Result, error) {
 			Category: string(media.LateEvent), Detail: "late event replay",
 			Count: len(tl.LateRecords())},
 	}
+	runRange, err := checkpoint.FromTicks(0, int64(opts.Duration)/int64(time.Millisecond), 1000)
+	if err != nil {
+		return nil, err
+	}
 	record, err := checkpoint.NewProvenance(
 		fmt.Sprintf("seed-%d", opts.Seed), "segment",
 		in.SourceSHA256, in.SourceBytes,
-		checkpoint.TimeRange{StartNanos: 0, EndNanos: int64(opts.Duration), Timescale: 1000},
-		decisions, in.ManifestJS, pass2.keys,
+		runRange, decisions, in.ManifestJS, pass2.keys,
 	)
 	if err != nil {
+		return nil, err
+	}
+	// The record's own time range must reproduce the source tick values.
+	if err := record.TimeRange.Validate(); err != nil {
 		return nil, err
 	}
 	recordHash, err := record.Hash()

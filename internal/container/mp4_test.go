@@ -209,8 +209,12 @@ func TestParseRejectsOutOfOrderSampleOffsets(t *testing.T) {
 		t.Fatal("expected error for overlapping chunks")
 	}
 	cat := media.CategoryOf(err)
-	if cat != media.CorruptSampleTable && cat != media.TruncatedContainer {
+	if cat != media.CorruptSampleTable && cat != media.TruncatedContainer &&
+		cat != media.OutOfOrderTimestamp {
 		t.Fatalf("category = %v (%v)", cat, err)
+	}
+	if e := media.AsError(err); !e.HasTrack || !e.HasOff {
+		t.Fatalf("overlap error lacks location: %v", err)
 	}
 }
 

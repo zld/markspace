@@ -19,7 +19,7 @@ const (
 	FaultSequenceWrap       FaultKind = "sequence-wrap"
 	FaultBurstLoss          FaultKind = "burst-loss"
 	FaultCorruptSampleTable FaultKind = "corrupt-sample-table"
-	FaultOutOfOrder         FaultKind = "out-of-order-pts"
+	FaultOutOfOrder         FaultKind = "out-of-order-timestamps"
 )
 
 // AllFaults lists every case the verify command supports.
@@ -449,8 +449,8 @@ func verifyCorruptSampleTable(seed int64, res *FaultResult) {
 	res.Detail = fmt.Sprintf("track %d sample table rejected", e.Track)
 }
 
-// verifyOutOfOrderPTS rewrites the chunk table so sample payloads overlap,
-// making decode times inconsistent, and requires a located rejection.
+// verifyOutOfOrderPTS reverses the chunk table so sample data is laid out
+// backwards relative to decode order, and requires a located ordering error.
 func verifyOutOfOrderPTS(seed int64, res *FaultResult) {
 	data, err := fixture.BuildMovie(fixture.MovieSpec{
 		Timescale: 1000,
@@ -460,27 +460,29 @@ func verifyOutOfOrderPTS(seed int64, res *FaultResult) {
 		res.Err = err
 		return
 	}
-	// Force every chunk to start at the same offset: samples then overlap and
-	// the stream is no longer decodable in order.
-	patched, err := fixture.PatchChunkOffsets(data, 1)
+	patched, err := fixture.PatchChunkOffsetsReversed(data)
 	if err != nil {
 		res.Err = err
 		return
 	}
 	_, err = containerParse(patched)
 	if err == nil {
-		res.Err = media.NewError(media.InvariantViolation, "overlapping chunk offsets accepted")
+		res.Err = media.NewError(media.InvariantViolation, "reversed chunk layout accepted")
 		return
 	}
-	cat := media.CategoryOf(err)
-	if cat != media.CorruptSampleTable && cat != media.OutOfOrderTimestamp {
+	if media.CategoryOf(err) != media.OutOfOrderTimestamp {
 		res.Err = media.NewError(media.InvariantViolation,
-			"overlapping samples reported as %s", cat)
+			"reversed chunk layout reported as %s", media.CategoryOf(err))
+		return
+	}
+	if e := media.AsError(err); !e.HasTrack || !e.HasOff {
+		res.Err = media.NewError(media.InvariantViolation,
+			"ordering error lacks location: %v", err)
 		return
 	}
 	res.Detected = 1
-	res.Category = cat
-	res.Detail = "overlapping chunk layout rejected"
+	res.Category = media.OutOfOrderTimestamp
+	res.Detail = "reversed chunk layout rejected"
 }
 
 func verifyTrack(id uint32, seed int64) fixture.TrackSpec {

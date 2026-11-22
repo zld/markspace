@@ -54,13 +54,68 @@ type ProvenanceRecord struct {
 
 // TimeRange is a half-open media-time interval in nanoseconds plus the
 // original timescale values it was derived from, so the record is checkable
-// against the source container.
+// against the source container without re-deriving the conversion.
 type TimeRange struct {
 	StartNanos int64  `json:"start_nanos"`
 	EndNanos   int64  `json:"end_nanos"`
 	Timescale  uint32 `json:"timescale,omitempty"`
 	StartTicks *int64 `json:"start_ticks,omitempty"`
 	EndTicks   *int64 `json:"end_ticks,omitempty"`
+}
+
+// FromTicks builds a range from original (timescale) tick values, recording
+// both the converted nanoseconds and the raw ticks.
+func FromTicks(start, end int64, timescale uint32) (TimeRange, error) {
+	startNs, err := media.ToNanos(start, timescale)
+	if err != nil {
+		return TimeRange{}, err
+	}
+	endNs, err := media.ToNanos(end, timescale)
+	if err != nil {
+		return TimeRange{}, err
+	}
+	if endNs <= startNs {
+		return TimeRange{}, media.NewError(media.InvalidInput,
+			"time range [%d,%d) does not advance", start, end)
+	}
+	s, e := start, end
+	return TimeRange{
+		StartNanos: int64(startNs),
+		EndNanos:   int64(endNs),
+		Timescale:  timescale,
+		StartTicks: &s,
+		EndTicks:   &e,
+	}, nil
+}
+
+// Validate checks the range is well formed and, when tick values are present,
+// that they convert back to the recorded nanosecond bounds.
+func (r TimeRange) Validate() error {
+	if r.EndNanos <= r.StartNanos {
+		return media.NewError(media.InvalidInput,
+			"time range [%d,%d) does not advance", r.StartNanos, r.EndNanos)
+	}
+	if r.StartTicks == nil || r.EndTicks == nil {
+		return nil
+	}
+	if r.Timescale == 0 {
+		return media.NewError(media.ZeroTimescale,
+			"time range records ticks but no timescale")
+	}
+	startNs, err := media.ToNanos(*r.StartTicks, r.Timescale)
+	if err != nil {
+		return err
+	}
+	endNs, err := media.ToNanos(*r.EndTicks, r.Timescale)
+	if err != nil {
+		return err
+	}
+	if int64(startNs) != r.StartNanos || int64(endNs) != r.EndNanos {
+		return media.NewError(media.InvariantViolation,
+			"time range ticks [%d,%d)@%d convert to [%d,%d), not [%d,%d)",
+			*r.StartTicks, *r.EndTicks, r.Timescale, startNs, endNs, r.StartNanos, r.EndNanos)
+	}
+	return nil
 }
 
 // ProvenanceSchema versions the provenance format.

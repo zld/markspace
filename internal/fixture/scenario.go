@@ -183,6 +183,36 @@ func PatchChunkOffsets(data []byte, chunkSize int) ([]byte, error) {
 	return out, nil
 }
 
+// PatchChunkOffsetsReversed reverses the stco chunk offsets, so later samples
+// point earlier in the file than earlier ones: the byte layout contradicts
+// decode order.
+func PatchChunkOffsetsReversed(data []byte) ([]byte, error) {
+	idx := bytes.Index(data, []byte("stco"))
+	if idx < 0 {
+		return nil, fmt.Errorf("fixture: stco not found")
+	}
+	out := append([]byte(nil), data...)
+	base := idx + 8 // type(4) + version/flags(4)
+	if base+8 > len(out) {
+		return nil, fmt.Errorf("fixture: stco truncated")
+	}
+	count := int(binary.BigEndian.Uint32(out[base:]))
+	start := base + 4
+	if start+count*4 > len(out) {
+		return nil, fmt.Errorf("fixture: stco declares %d offsets beyond file", count)
+	}
+	for i := 0; i < count/2; i++ {
+		a := start + i*4
+		b := start + (count-1-i)*4
+		var va, vb [4]byte
+		copy(va[:], out[a:a+4])
+		copy(vb[:], out[b:b+4])
+		copy(out[a:a+4], vb[:])
+		copy(out[b:b+4], va[:])
+	}
+	return out, nil
+}
+
 // NetworkTrace is the outcome of simulating a channel.
 type NetworkTrace struct {
 	Packets  []*rtp.Packet

@@ -263,3 +263,36 @@ func TestDecisionExplain(t *testing.T) {
 		}
 	}
 }
+
+func TestFromTicksRecordsBothScales(t *testing.T) {
+	r, err := FromTicks(0, 180000, 90000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.StartNanos != 0 || r.EndNanos != 2_000_000_000 {
+		t.Fatalf("range = %+v", r)
+	}
+	if r.StartTicks == nil || *r.StartTicks != 0 || *r.EndTicks != 180000 {
+		t.Fatalf("ticks not preserved: %+v", r)
+	}
+	if err := r.Validate(); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+}
+
+func TestFromTicksRejectsDegenerateRange(t *testing.T) {
+	if _, err := FromTicks(100, 100, 1000); err == nil {
+		t.Fatal("empty range accepted")
+	}
+	if _, err := FromTicks(0, 10, 0); err == nil {
+		t.Fatal("zero timescale accepted")
+	}
+}
+
+func TestTimeRangeValidateDetectsInconsistentTicks(t *testing.T) {
+	s, e := int64(0), int64(90000)
+	r := TimeRange{StartNanos: 0, EndNanos: 500_000_000, Timescale: 90000, StartTicks: &s, EndTicks: &e}
+	if err := r.Validate(); err == nil {
+		t.Fatal("inconsistent tick conversion accepted")
+	}
+}
