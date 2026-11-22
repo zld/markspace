@@ -140,6 +140,18 @@ func (e *Error) Fatal() *Error { c := *e; c.Recoverable = false; return &c }
 // Wrapped returns a copy whose cause is err, preserving location fields.
 func (e *Error) Wrapped(err error) *Error { c := *e; c.Err = err; return &c }
 
+// AsRecovered converts any error into a recoverable located error, keeping
+// the location fields already present in the chain.
+func AsRecovered(err error, offset int64) *Error {
+	if err == nil {
+		return nil
+	}
+	if e, ok := As(err); ok {
+		return e.Recovered()
+	}
+	return New("mp4", KindParse, err).At(offset).Recovered()
+}
+
 // As extracts the located error from an error chain.
 func As(err error) (*Error, bool) {
 	var e *Error
