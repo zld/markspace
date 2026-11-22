@@ -134,12 +134,17 @@ func runPipeline(cfg config, workDir string, stopAfter string) (*report, error) 
 		rep.faults = append(rep.faults, faultCount{Stage: "container", Kind: bad.kind, Count: 1})
 		prov.AddDecision("container", "reject-input", fmt.Sprintf("%s: %s", bad.kind, be))
 	}
-	if done, err := coord.Done("container", stageInputs(fs.NormalMP4)); err != nil {
-		prov.InputChanges = append(prov.InputChanges, "container")
-	} else if !done {
+	containerDigest := digestOf(fi.Tracks)
+	if done, err := stageDone(coord, prov, "container", stageInputs(fs.NormalMP4)); err != nil {
+		return nil, err
+	} else if done {
+		if err := checkRecovered(coord, "container", containerDigest); err != nil {
+			return nil, err
+		}
+	} else {
 		coord.RecordInputs("container", stageInputs(fs.NormalMP4))
 		coord.Begin("container")
-		if err := coord.Commit("container", stageInputs(fs.NormalMP4), digestOf(fi.Tracks), nil,
+		if err := coord.Commit("container", stageInputs(fs.NormalMP4), containerDigest, nil,
 			func() error { return nil }); err != nil {
 			return nil, err
 		}
@@ -170,12 +175,17 @@ func runPipeline(cfg config, workDir string, stopAfter string) (*report, error) 
 	if tstats.Recovered > 0 {
 		prov.AddDecision("transport", "recover-reordered", fmt.Sprintf("%d packets", tstats.Recovered))
 	}
-	if done, err := coord.Done("transport", stageInputs(rtpFile)); err != nil {
-		prov.InputChanges = append(prov.InputChanges, "transport")
-	} else if !done {
+	transportDigest := digestOf(tstats)
+	if done, err := stageDone(coord, prov, "transport", stageInputs(rtpFile)); err != nil {
+		return nil, err
+	} else if done {
+		if err := checkRecovered(coord, "transport", transportDigest); err != nil {
+			return nil, err
+		}
+	} else {
 		coord.RecordInputs("transport", stageInputs(rtpFile))
 		coord.Begin("transport")
-		if err := coord.Commit("transport", stageInputs(rtpFile), digestOf(tstats), nil,
+		if err := coord.Commit("transport", stageInputs(rtpFile), transportDigest, nil,
 			func() error { return nil }); err != nil {
 			return nil, err
 		}
@@ -232,12 +242,17 @@ func runPipeline(cfg config, workDir string, stopAfter string) (*report, error) 
 	if err != nil {
 		return nil, fmt.Errorf("media: %w", err)
 	}
-	if done, err := coord.Done("sync", stageInputs(fs.NormalMP4, rtpFile)); err != nil {
-		prov.InputChanges = append(prov.InputChanges, "sync")
-	} else if !done {
+	syncDigest := digestOf(corr)
+	if done, err := stageDone(coord, prov, "sync", stageInputs(fs.NormalMP4, rtpFile)); err != nil {
+		return nil, err
+	} else if done {
+		if err := checkRecovered(coord, "sync", syncDigest); err != nil {
+			return nil, err
+		}
+	} else {
 		coord.RecordInputs("sync", stageInputs(fs.NormalMP4, rtpFile))
 		coord.Begin("sync")
-		if err := coord.Commit("sync", stageInputs(fs.NormalMP4, rtpFile), digestOf(corr), nil,
+		if err := coord.Commit("sync", stageInputs(fs.NormalMP4, rtpFile), syncDigest, nil,
 			func() error { return nil }); err != nil {
 			return nil, err
 		}

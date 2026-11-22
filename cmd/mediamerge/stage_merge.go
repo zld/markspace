@@ -47,9 +47,13 @@ func finishPipeline(c *mergeCtx) (*report, error) {
 	tmpSeg := filepath.Join(c.workDir, "tmp", "segments.bin.tmp")
 	segDigest := digestOf(segs)
 	mergeInputs := c.stageInputs(c.fs.NormalMP4, c.rtpFile)
-	if done, err := coord.Done("merge", mergeInputs); err != nil {
-		prov.InputChanges = append(prov.InputChanges, "merge")
-	} else if !done {
+	if done, err := stageDone(coord, prov, "merge", mergeInputs); err != nil {
+		return nil, err
+	} else if done {
+		if err := checkRecovered(coord, "merge", segDigest); err != nil {
+			return nil, err
+		}
+	} else {
 		coord.RecordInputs("merge", mergeInputs)
 		coord.Begin("merge")
 		raw, _ := json.Marshal(segs)
@@ -100,25 +104,26 @@ func finishPipeline(c *mergeCtx) (*report, error) {
 	}
 	m.Hashes["segments.bin"] = segDigest
 	m.Hashes["normal.mp4"] = c.digests[c.fs.NormalMP4]
-	prov.InputChanges = append(prov.InputChanges, coord.InputChanges...)
 	prov.AddDecision("manifest", "seal", fmt.Sprintf("%d segments, actual %d bps", len(segs), actualBps))
-	m.ProvenanceSHA256 = prov.Digest()
 	manPath := filepath.Join(c.workDir, "out", "manifest.json")
 	manInputs := mergeInputs
-	if done, err := coord.Done("manifest", manInputs); err != nil {
-		prov.InputChanges = append(prov.InputChanges, "manifest")
-	} else if !done {
+	injectFault := cfg.faultSet == "all" || cfg.faultSet == "manifest"
+	done, err := stageDone(coord, prov, "manifest", manInputs)
+	if err != nil {
+		return nil, err
+	}
+	if !done {
 		coord.RecordInputs("manifest", manInputs)
 		coord.Begin("manifest")
-		if err := m.Write(manPath); err != nil {
-			return nil, err
-		}
-		if err := coord.Commit("manifest", manInputs, m.ContentSHA256, nil,
-			func() error { return m.Validate() }); err != nil {
-			return nil, fmt.Errorf("commit: %w", err)
-		}
-		// Fault 5: post-commit manifest corruption, detected and rolled back.
-		if cfg.faultSet == "all" || cfg.faultSet == "manifest" {
+		if injectFault {
+			// Provisional commit, then fault 5: post-commit corruption.
+			if err := m.Write(manPath); err != nil {
+				return nil, err
+			}
+			if err := coord.Commit("manifest", manInputs, m.ContentSHA256, nil,
+				func() error { return m.Validate() }); err != nil {
+				return nil, fmt.Errorf("commit: %w", err)
+			}
 			if err := corruptFile(manPath); err != nil {
 				return nil, err
 			}
@@ -131,13 +136,27 @@ func finishPipeline(c *mergeCtx) (*report, error) {
 				func() error { return fmt.Errorf("manifest content hash mismatch") }); rbErr == nil {
 				return nil, fmt.Errorf("invariant: rollback commit unexpectedly succeeded")
 			}
-			if err := m.Write(manPath); err != nil {
-				return nil, err
-			}
-			if err := coord.Commit("manifest", manInputs, m.ContentSHA256, nil,
-				func() error { return m.Validate() }); err != nil {
-				return nil, fmt.Errorf("commit: %w", err)
-			}
+		}
+	} else if injectFault && coord.StageRollbacks["manifest"] > 0 {
+		// Re-derive the corruption fault and rollback decision from the
+		// recovered WAL so a resumed run reports identically.
+		rep.faults = append(rep.faults, faultCount{Stage: "manifest", Kind: "manifest-corruption", Count: 1})
+		prov.AddDecision("manifest", "rollback", "post-commit corruption detected; rebuilding")
+	}
+	// Final seal: provenance is complete only after every decision above.
+	m.ProvenanceSHA256 = prov.Digest()
+	if !done {
+		if err := m.Write(manPath); err != nil {
+			return nil, err
+		}
+		if err := coord.Commit("manifest", manInputs, m.ContentSHA256, nil,
+			func() error { return m.Validate() }); err != nil {
+			return nil, fmt.Errorf("commit: %w", err)
+		}
+	} else {
+		m.Seal()
+		if err := checkRecovered(coord, "manifest", m.ContentSHA256); err != nil {
+			return nil, err
 		}
 	}
 	if _, err := manifest.Read(manPath); err != nil {

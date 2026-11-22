@@ -5,12 +5,14 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 
 	"mediamerge/internal/container"
 	"mediamerge/internal/manifest"
 	"mediamerge/internal/transport"
+	"mediamerge/internal/txn"
 )
 
 const manifestTimescale = 90000
@@ -123,4 +125,29 @@ func corruptFile(path string) error {
 	}
 	raw[16] ^= 0xFF
 	return os.WriteFile(path, raw, 0o644)
+}
+
+// stageDone wraps coord.Done: changed inputs are marked in provenance and
+// force re-execution instead of silently reusing stale stage results.
+func stageDone(coord *txn.Coordinator, prov *txn.Provenance, stage string, inputs []txn.InputDigest) (bool, error) {
+	done, err := coord.Done(stage, inputs)
+	if errors.Is(err, txn.ErrInputChanged) {
+		prov.InputChanges = append(prov.InputChanges, stage)
+		return false, nil
+	}
+	return done, err
+}
+
+// checkRecovered enforces the invariant that after recovery the WAL commit
+// digest matches the deterministically recomputed artifact digest.
+func checkRecovered(coord *txn.Coordinator, stage, want string) error {
+	cp, ok := coord.Committed(stage)
+	if !ok {
+		return fmt.Errorf("invariant: stage %s skipped without commit record", stage)
+	}
+	if cp.Output != want {
+		return fmt.Errorf("invariant: stage %s WAL digest %s != artifact digest %s",
+			stage, cp.Output, want)
+	}
+	return nil
 }

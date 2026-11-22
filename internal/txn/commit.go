@@ -40,6 +40,9 @@ type Coordinator struct {
 	Rollbacks int
 	// InputChanges lists stages whose inputs changed vs. the committed WAL.
 	InputChanges []string
+	// StageRollbacks counts rollback records per stage, including those
+	// recovered from the WAL on replay.
+	StageRollbacks map[string]int
 }
 
 // NewCoordinator opens the WAL in dir, replays it and rebuilds the set of
@@ -49,7 +52,8 @@ func NewCoordinator(dir string) (*Coordinator, error) {
 	if err != nil {
 		return nil, err
 	}
-	c := &Coordinator{wal: w, dir: dir, stages: map[string]*StageState{}}
+	c := &Coordinator{wal: w, dir: dir, stages: map[string]*StageState{},
+		StageRollbacks: map[string]int{}}
 	recs, err := w.Replay()
 	if err != nil {
 		w.Close()
@@ -66,6 +70,7 @@ func NewCoordinator(dir string) (*Coordinator, error) {
 		case KindRollback:
 			delete(c.stages, r.Stage)
 			c.Rollbacks++
+			c.StageRollbacks[r.Stage]++
 		}
 	}
 	return c, nil
@@ -119,6 +124,7 @@ func (c *Coordinator) Commit(stage string, inputs []InputDigest, outputDigest st
 			}
 		}
 		c.Rollbacks++
+		c.StageRollbacks[stage]++
 		delete(c.stages, stage) // uncommitted in memory as well as in the WAL
 		if werr := c.wal.Append(KindRollback, stage, map[string]string{"reason": err.Error()}); werr != nil {
 			return werr
