@@ -15,6 +15,7 @@ type Scan struct {
 	Root     Box
 	BoxCount int
 	Mdat     []Box
+	Tracks   []TrackScan
 	Warnings []*core.Error
 	FTyp     string
 	Limits   Limits
@@ -89,7 +90,9 @@ func ScanFile(path string, lim Limits) (*Scan, error) {
 			"moov not readable; audio index cannot be trusted"))
 		return s, nil
 	}
-	_ = moov
+	if err := s.readTracks(moov); err != nil {
+		s.warn(err)
+	}
 	return s, nil
 }
 
