@@ -259,7 +259,7 @@ func isContainer(t string) bool {
 
 func (f *MP4File) parseMoov(asset *Asset, moov BoxHeader) {
 	data := asset.Data
-	children := boxesIn(data, moov, "moov", &f.Issues, f.Asset, &f.Partial)
+	children := boxesIn(data, moov)
 	for _, b := range children {
 		if b.Type != "mvhd" {
 			continue
@@ -279,26 +279,12 @@ func (f *MP4File) parseMoov(asset *Asset, moov BoxHeader) {
 	}
 }
 
-// boxesIn returns the direct children of a container box.
-func boxesIn(data []byte, parent BoxHeader, parentType string, issues *diagnose.Issues, asset string, partial *bool) []BoxHeader {
-	all, is, p, err := walkChildren(data, parent)
-	*issues = append(*issues, is...)
-	*partial = *partial || p
-	if err != nil {
-		issues.Add(diagnose.Issue{
-			Category: diagnose.CatTruncatedBox, Stage: diagnose.StageIngest,
-			Format: "mp4", Asset: asset,
-			Span:   core.Span{Start: parent.Payload, End: parent.End},
-			Detail: err.Error(),
-		})
-		*partial = true
-	}
-	return all
-}
-
-// walkChildren reuses the length logic but returns only direct children.
-func walkChildren(data []byte, parent BoxHeader) ([]BoxHeader, diagnose.Issues, bool, error) {
-	all, issues, partial := scanBoxes(data, parent.Payload, parent.End, parent.Type, "", "mp4")
+// boxesIn returns the direct children of a container box. Header-level
+// findings are not collected here: the initial full-tree scan in ParseMP4 has
+// already reported each one exactly once, and re-reporting them on every
+// structural walk would duplicate issues for a single damaged box.
+func boxesIn(data []byte, parent BoxHeader) []BoxHeader {
+	all, _, _ := scanBoxes(data, parent.Payload, parent.End, parent.Type, "", "mp4")
 	direct := make([]BoxHeader, 0, len(all))
 	// scanBoxes returns a pre-order flattening: a box is a direct child when
 	// it is not nested inside another box that starts later than the parent.
@@ -318,7 +304,7 @@ func walkChildren(data []byte, parent BoxHeader) ([]BoxHeader, diagnose.Issues, 
 		}
 	}
 	sort.SliceStable(direct, func(i, j int) bool { return direct[i].Start < direct[j].Start })
-	return direct, issues, partial, nil
+	return direct
 }
 
 func (f *MP4File) unmarshal(asset *Asset, b BoxHeader, dst mp4.IBox) bool {
@@ -411,7 +397,7 @@ func (f *MP4File) parseTrak(asset *Asset, trak BoxHeader) (MP4Track, bool) {
 			codec = f.sampleEntryType(asset, b)
 		}
 		if isContainer(b.Type) {
-			for _, c := range directChildren(asset, b, &f.Issues, f.Asset, &f.Partial) {
+			for _, c := range boxesIn(asset.Data, b) {
 				walk(c)
 			}
 		}
@@ -445,10 +431,6 @@ func (f *MP4File) parseTrak(asset *Asset, trak BoxHeader) (MP4Track, bool) {
 	}
 	tr.Samples, tr.SyncCount = f.expandSamples(asset, trak, tr.Timescale, stts, ctts, stss, stsz, stsc, chunkOffsets)
 	return tr, len(tr.Samples) > 0
-}
-
-func directChildren(asset *Asset, b BoxHeader, issues *diagnose.Issues, name string, partial *bool) []BoxHeader {
-	return boxesIn(asset.Data, b, b.Type, issues, name, partial)
 }
 
 func (f *MP4File) sampleEntryType(asset *Asset, stsd BoxHeader) string {
