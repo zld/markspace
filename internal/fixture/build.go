@@ -124,6 +124,7 @@ func writeMatrix(w *writer) {
 func writeTrak(w *writer, m *Media, lay *layout, sizes []uint32, offsets []int) {
 	w.box("trak", func() {
 		writeTkhd(w, m)
+		writeEdts(w, m)
 		w.box("mdia", func() {
 			writeMdhd(w, m)
 			writeHdlr(w)
@@ -157,6 +158,27 @@ func writeTkhd(w *writer, m *Media) {
 		writeMatrix(w)
 		w.u32(0)
 		w.u32(0)
+	})
+}
+
+// writeEdts records a non-zero media start time. Version 1 is used so the
+// origin can exceed 2^31, which is exactly what the wrap fixture needs.
+func writeEdts(w *writer, m *Media) {
+	if m.StartTS == 0 {
+		return
+	}
+	w.box("edts", func() {
+		w.fullBox("elst", 1, 0, func() {
+			w.u32(1)
+			var dur [8]byte
+			binary.BigEndian.PutUint64(dur[:], uint64(m.Frames))
+			w.buf.Write(dur[:])
+			var mt [8]byte
+			binary.BigEndian.PutUint64(mt[:], uint64(m.StartTS))
+			w.buf.Write(mt[:])
+			w.u16(1)
+			w.u16(0)
+		})
 	})
 }
 
