@@ -44,6 +44,8 @@ repeat_run_match=true
 - `recovered_gaps`：在提交前被重传包修复的连续缺口段数。
 - `damaged_spans`：扫描发现的截断 NAL/OBU 字节区间数。
 - `repeat_run_match`：同一输入与参数再跑一遍，统计、索引与逐片段哈希完全一致。
+- `readback_match`：重新解析写出的 `media.mp4`，逐样本比对规范化内容摘要的命中数；
+  这是对磁盘字节的校验，而非写入器自报。
 
 ## 五类故障（默认种子）
 

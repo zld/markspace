@@ -49,8 +49,10 @@ func writeMoov(w *mp4.Writer, layouts []*layout, opts Options) ([]stcoPatch, err
 		return nil, err
 	}
 	var patches []stcoPatch
-	for i, l := range layouts {
-		p, err := writeTrak(w, l, uint32(i+1))
+	for _, l := range layouts {
+		// The container track ID is the mapped output ID, not a positional
+		// index, so a reader can join MP4 tracks back to the mapping.
+		p, err := writeTrak(w, l, l.plan.TrackID)
 		if err != nil {
 			return nil, err
 		}

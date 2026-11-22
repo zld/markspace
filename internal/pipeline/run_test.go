@@ -82,6 +82,10 @@ func TestRunMeetsAcceptanceThresholds(t *testing.T) {
 	if !res.Metrics.RepeatRunMatch {
 		t.Fatal("repeat run hash mismatch")
 	}
+	// Every sample must survive a re-parse of the written file.
+	if res.ReadBackMatch != res.ReadBackTotal || res.ReadBackTotal != 300 {
+		t.Fatalf("read-back %d/%d want 300/300", res.ReadBackMatch, res.ReadBackTotal)
+	}
 	if !res.Metrics.Pass(DefaultThresholds()) {
 		t.Fatalf("thresholds not met: %+v", res.Metrics)
 	}

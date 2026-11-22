@@ -228,5 +228,6 @@ func printResult(w io.Writer, res *pipeline.RunResult, fx *fixture.Fixture, dir 
 	fmt.Fprintf(w, "recovered_gaps=%d\n", m.RecoveredGaps)
 	fmt.Fprintf(w, "damaged_spans=%d\n", m.DamagedSpans)
 	fmt.Fprintf(w, "repeat_run_match=%t\n", m.RepeatRunMatch)
+	fmt.Fprintf(w, "readback_match=%d/%d\n", res.ReadBackMatch, res.ReadBackTotal)
 }
 

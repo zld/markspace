@@ -26,6 +26,7 @@ func TestDemoExitsZeroAndPrintsAcceptanceLines(t *testing.T) {
 		"recovered_gaps=1",
 		"damaged_spans=1",
 		"repeat_run_match=true",
+		"readback_match=300/300",
 		"thresholds_met=true",
 		"segment_sha256=",
 	}

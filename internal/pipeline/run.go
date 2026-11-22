@@ -189,7 +189,11 @@ type RunResult struct {
 	Options  Options
 	Metrics  Metrics
 	Remux    *remux.Report
-	Streams  []StreamReport
+	// ReadBackMatch/Total are the sample counts re-parsed from the written
+	// MP4 and compared against the input media.
+	ReadBackMatch int
+	ReadBackTotal int
+	Streams       []StreamReport
 	Segments []SegmentReport
 	Tracks   []TrackReport
 	Mapping  string
@@ -284,6 +288,19 @@ func Run(in *Input, opts Options) *RunResult {
 
 	if err := checkContentInvariant(plans, rep); err != nil {
 		res.Fatal = err
+		return res
+	}
+	// Re-parse the file we just wrote and compare canonical media per sample.
+	// This proves the bytes on disk, not just the writer's bookkeeping.
+	matched, total, err := remux.VerifyReadBack(rep.Path, plans)
+	if err != nil {
+		res.Fatal = err
+		return res
+	}
+	res.ReadBackMatch, res.ReadBackTotal = matched, total
+	if matched != total {
+		res.Fatal = merr.New(merr.StagePipeline, "readback_mismatch", merr.NoSpan(0), false,
+			"read-back matched %d of %d samples", matched, total)
 		return res
 	}
 	if err := checkTimelineInvariant(dm); err != nil {

@@ -43,6 +43,8 @@ type reportMetrics struct {
 	DamagedSpans     int     `json:"damaged_spans"`
 	RepeatRunMatch   bool    `json:"repeat_run_match"`
 	SegmentSHA256    string  `json:"segment_sha256"`
+	ReadBackMatch    int     `json:"readback_match"`
+	ReadBackTotal    int     `json:"readback_total"`
 }
 
 type reportRemux struct {
@@ -82,6 +84,7 @@ func MarshalReport(res *RunResult) ([]byte, error) {
 			DuplicatePackets: res.Metrics.DuplicatePackets, ReorderedPackets: res.Metrics.ReorderedPackets,
 			RecoveredGaps: res.Metrics.RecoveredGaps, DamagedSpans: res.Metrics.DamagedSpans,
 			RepeatRunMatch: res.Metrics.RepeatRunMatch, SegmentSHA256: res.Metrics.SegmentSHA256,
+			ReadBackMatch: res.ReadBackMatch, ReadBackTotal: res.ReadBackTotal,
 		},
 		Index:    res.Index,
 		Mapping:  res.Mapping,

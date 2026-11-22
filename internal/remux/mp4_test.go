@@ -178,6 +178,73 @@ func TestWriteFileRoundTrip(t *testing.T) {
 	}
 }
 
+func TestReadBackMatchesWrittenMedia(t *testing.T) {
+	dir := t.TempDir()
+	var samples []demux.Sample
+	for i := 0; i < 5; i++ {
+		key := i == 0 || i == 3
+		samples = append(samples, demux.Sample{
+			Index: i, TrackID: 1, Codec: demux.CodecH264,
+			PTS: int64(i) * 3000, Dur: 3000,
+			Data: makeH264Sample(key, i*11+3), Keyframe: key,
+		})
+	}
+	plans := []TrackPlan{{
+		TrackID: 1, Codec: demux.CodecH264, Samples: samples, Timescale: 90000,
+		Width: 320, Height: 240, Handler: [4]byte{'v', 'i', 'd', 'e'},
+		ConfigRecord: []byte{1, 0x42, 0x00, 0x1E, 0xFF, 0xE1, 0x00, 0x04, 0x67, 0x42, 0x00, 0x1E, 0x01, 0x00, 0x02, 0x68, 0xCE},
+	}}
+	rep, err := WriteFile(dir, "rb.mp4", plans, DefaultOptions())
+	if err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	matched, total, err := VerifyReadBack(rep.Path, plans)
+	if err != nil {
+		t.Fatalf("VerifyReadBack: %v", err)
+	}
+	if matched != total || total != len(samples) {
+		t.Fatalf("read back %d/%d want %d/%d", matched, total, len(samples), len(samples))
+	}
+	got, err := ReadBack(rep.Path)
+	if err != nil {
+		t.Fatalf("ReadBack: %v", err)
+	}
+	for i, s := range got {
+		if s.TrackID != 1 || s.Index != i {
+			t.Fatalf("sample %d identity: track=%d index=%d", i, s.TrackID, s.Index)
+		}
+		if s.DTS != uint64(i*3000) {
+			t.Fatalf("sample %d dts %d", i, s.DTS)
+		}
+	}
+}
+
+func TestReadBackRejectsTruncatedFile(t *testing.T) {
+	dir := t.TempDir()
+	samples := []demux.Sample{
+		{Index: 0, TrackID: 1, Codec: demux.CodecAV1, PTS: 0, Dur: 10, Data: []byte{0x12, 0x00, 0x32, 0x02, 0x00, 0x01}},
+	}
+	plans := []TrackPlan{{TrackID: 1, Codec: demux.CodecAV1, Samples: samples,
+		Timescale: 1000, Handler: [4]byte{'v', 'i', 'd', 'e'}}}
+	rep, err := WriteFile(dir, "tr.mp4", plans, DefaultOptions())
+	if err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	raw, err := os.ReadFile(rep.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Cut the last few payload bytes; stco points past the shortened mdat.
+	cut := raw[:len(raw)-4]
+	bad := rep.Path + ".cut"
+	if err := os.WriteFile(bad, cut, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := VerifyReadBack(bad, plans); err == nil {
+		t.Fatal("truncated output must fail read-back")
+	}
+}
+
 func TestWriteFileRejectsNonMonotonic(t *testing.T) {
 	dir := t.TempDir()
 	samples := []demux.Sample{
