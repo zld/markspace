@@ -616,6 +616,14 @@ func configRecord(c demux.Codec, samples []demux.Sample) []byte {
 // buildSegments aggregates unified-timeline segments across all streams.
 func buildSegments(dm *demux.Result, opts Options) []SegmentReport {
 	segmentNS := int64(opts.SegmentMS) * 1e6
+	// Segment zero starts at the earliest stream origin, so reported wall
+	// times line up with each stream's declared first timestamp.
+	originNS := int64(0)
+	for i, st := range dm.Streams {
+		if i == 0 || st.Spec.OriginNS < originNS {
+			originNS = st.Spec.OriginNS
+		}
+	}
 	type acc struct {
 		samples   int
 		bytes     int64
@@ -655,9 +663,9 @@ func buildSegments(dm *demux.Result, opts Options) []SegmentReport {
 			io.WriteString(h, d)
 		}
 		seg := SegmentReport{
-			Index: k,
-			StartNS: int64(k) * segmentNS,
-			EndNS:   int64(k+1) * segmentNS,
+			Index:   k,
+			StartNS: originNS + int64(k)*segmentNS,
+			EndNS:   originNS + int64(k+1)*segmentNS,
 			Samples: a.samples, Bytes: a.bytes, Lost: a.lost, Keyframes: a.keyframes,
 			SHA256: hex.EncodeToString(h.Sum(nil)),
 		}
