@@ -71,12 +71,12 @@ func VerifyWorkspace(workDir string) (*VerifyOutcome, error) {
 
 // VerifyOutcome summarizes a verify run.
 type VerifyOutcome struct {
-	Manifest     *manifest.Manifest
-	Total        int
-	Matched      int
-	Mismatches   []string
+	Manifest       *manifest.Manifest
+	Total          int
+	Matched        int
+	Mismatches     []string
 	SHA256MatchPct float64
-	Recover      *journal.Report
+	Recover        *journal.Report
 }
 
 func segmentDir(quarantined bool) string {

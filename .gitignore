@@ -1,0 +1,12 @@
+# Local demo and scratch workspaces produced by the mediq CLI.
+/tmp/
+tmp/
+
+# Compiled binaries.
+/mediq
+*.test
+*.out
+
+# OS/editor noise.
+.DS_Store
+*.swp

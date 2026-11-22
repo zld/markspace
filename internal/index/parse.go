@@ -45,11 +45,11 @@ type File struct {
 type Status string
 
 const (
-	StatusValid     Status = "valid"      // points at a real keyframe
-	StatusRecovered Status = "recovered"  // missing in index, proven from stream
-	StatusDuplicate Status = "duplicate"  // same offset/seq as another entry
+	StatusValid      Status = "valid"     // points at a real keyframe
+	StatusRecovered  Status = "recovered" // missing in index, proven from stream
+	StatusDuplicate  Status = "duplicate" // same offset/seq as another entry
 	StatusOutOfRange Status = "out_of_range"
-	StatusMispoint  Status = "mispoint"   // parseable but no keyframe at offset
+	StatusMispoint   Status = "mispoint" // parseable but no keyframe at offset
 )
 
 // Finding is one validated index row or one stream-proven keyframe.

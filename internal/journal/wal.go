@@ -23,11 +23,11 @@ const WALName = "wal.log"
 
 // Record kinds.
 const (
-	KindBegin    = "begin"    // stage started; payload describes planned work
-	KindPrepared = "prepared" // temp outputs written and hash-verified
-	KindCommitted = "committed" // atomic replace completed
+	KindBegin      = "begin"       // stage started; payload describes planned work
+	KindPrepared   = "prepared"    // temp outputs written and hash-verified
+	KindCommitted  = "committed"   // atomic replace completed
 	KindRolledBack = "rolled_back" // temp outputs discarded
-	KindAborted  = "aborted"  // stage failed before any visible output
+	KindAborted    = "aborted"     // stage failed before any visible output
 )
 
 // Record is one WAL entry. InputHash anchors the stage to its input;

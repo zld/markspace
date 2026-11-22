@@ -40,29 +40,29 @@ type InjectionCounts struct {
 
 // Report is the machine-readable run summary.
 type Report struct {
-	SchemaVersion      int                    `json:"schema_version"`
-	GeneratedAt        string                 `json:"generated_at_utc"`
-	Segments           int                    `json:"segments"`
-	Quarantined        int                    `json:"quarantined_segments"`
-	KeyframeIndexHit   float64                `json:"keyframe_index_hit_rate"`
-	RoundtripPct       float64                `json:"roundtrip_consistency"`
-	SHA256MatchPct     float64                `json:"segment_sha256_match"`
-	CrossRepSkewMs     float64                `json:"cross_representation_skew_ms"`
-	Replayed           int                    `json:"wal_replayed"`
-	RolledBack         int                    `json:"rolled_back"`
-	Injections         InjectionCounts        `json:"injected_faults"`
-	Hashes             []SegmentHash          `json:"segment_hashes"`
-	QuarantineRecords  []QuarantineRecord     `json:"quarantine"`
-	Errors             []*timeline.Error      `json:"errors"`
+	SchemaVersion     int                `json:"schema_version"`
+	GeneratedAt       string             `json:"generated_at_utc"`
+	Segments          int                `json:"segments"`
+	Quarantined       int                `json:"quarantined_segments"`
+	KeyframeIndexHit  float64            `json:"keyframe_index_hit_rate"`
+	RoundtripPct      float64            `json:"roundtrip_consistency"`
+	SHA256MatchPct    float64            `json:"segment_sha256_match"`
+	CrossRepSkewMs    float64            `json:"cross_representation_skew_ms"`
+	Replayed          int                `json:"wal_replayed"`
+	RolledBack        int                `json:"rolled_back"`
+	Injections        InjectionCounts    `json:"injected_faults"`
+	Hashes            []SegmentHash      `json:"segment_hashes"`
+	QuarantineRecords []QuarantineRecord `json:"quarantine"`
+	Errors            []*timeline.Error  `json:"errors"`
 }
 
 // QuarantineRecord describes one isolated, uncommittable item.
 type QuarantineRecord struct {
-	Kind    string `json:"kind"`
-	RepID   string `json:"representation,omitempty"`
-	Offset  int64  `json:"offset"`
-	Detail  string `json:"detail"`
-	Action  string `json:"recovery_action"`
+	Kind   string `json:"kind"`
+	RepID  string `json:"representation,omitempty"`
+	Offset int64  `json:"offset"`
+	Detail string `json:"detail"`
+	Action string `json:"recovery_action"`
 }
 
 // Builder accumulates evidence during a pipeline run.
@@ -187,7 +187,7 @@ func Marshal(r *Report) ([]byte, error) {
 
 // CodecSummary is used by demo output for operator-facing summaries.
 type CodecSummary struct {
-	Codec bitstream.Codec
-	Units int
+	Codec     bitstream.Codec
+	Units     int
 	Keyframes int
 }

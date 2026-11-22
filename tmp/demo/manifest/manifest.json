@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_at_utc": "2026-11-22T19:16:29Z",
+  "generated_at_utc": "2026-11-22T19:40:07Z",
   "timescale_hz": 90000,
   "tolerance_ms": 40,
   "cross_representation_skew_ms": 5,

@@ -12,12 +12,12 @@ import (
 // Proven keyframes are sorted by offset; quarantine holds index rows
 // that could not be confirmed and must never reach a committed plan.
 type Result struct {
-	Stream      string
-	Proven      []Finding // status valid or recovered, offset-ordered
-	Quarantine  []Finding // duplicate / out-of-range / mispoint rows
-	Errors      []*timeline.Error
-	IndexRows   int // entries supplied by the delivered index
-	ValidHits   int // index entries proven against the bitstream
+	Stream     string
+	Proven     []Finding // status valid or recovered, offset-ordered
+	Quarantine []Finding // duplicate / out-of-range / mispoint rows
+	Errors     []*timeline.Error
+	IndexRows  int // entries supplied by the delivered index
+	ValidHits  int // index entries proven against the bitstream
 }
 
 // HitRate returns valid entries divided by delivered rows, 1 for an

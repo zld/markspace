@@ -27,10 +27,10 @@ func Unmarshal(data []byte) (*Manifest, error) {
 
 // VerifyResult collects the round-trip verification outcome.
 type VerifyResult struct {
-	TotalRows     int
-	MatchedRows   int
+	TotalRows      int
+	MatchedRows    int
 	ConsistencyPct float64
-	Errors        []*timeline.Error
+	Errors         []*timeline.Error
 }
 
 // RoundTrip re-parses rendered bytes and checks that every segment row

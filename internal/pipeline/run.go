@@ -17,9 +17,9 @@ import (
 type FailPoint string
 
 const (
-	FailNone     FailPoint = ""
-	FailAfterScan FailPoint = "scan"
-	FailAfterPlan FailPoint = "plan"
+	FailNone         FailPoint = ""
+	FailAfterScan    FailPoint = "scan"
+	FailAfterPlan    FailPoint = "plan"
 	FailBeforeCommit FailPoint = "commit"
 )
 
@@ -73,12 +73,12 @@ type Outcome struct {
 
 // Stage directory names.
 const (
-	dirStreams   = "streams"
-	dirIndexes   = "indexes"
-	dirSegments  = "segments"
+	dirStreams    = "streams"
+	dirIndexes    = "indexes"
+	dirSegments   = "segments"
 	dirQuarantine = "quarantine"
-	dirManifest  = "manifest"
-	dirReport    = "report"
+	dirManifest   = "manifest"
+	dirReport     = "report"
 )
 
 // Run executes the full pipeline end to end. Recoverable input damage
