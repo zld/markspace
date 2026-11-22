@@ -79,6 +79,11 @@ type MP4Analysis struct {
 	DurationMs float64
 	// Truncated reports that declared byte ranges exceed the file.
 	Truncated bool
+	// TruncationStartMs is the first media time whose payload is missing.
+	// Everything from here to DurationMs is untrustworthy for a capture that
+	// stopped mid-write; the pipeline widens the damage window to cover it.
+	TruncationStartMs float64
+	HasTruncation     bool
 }
 
 // sampleTables accumulates raw stbl tables for one trak.
@@ -207,6 +212,7 @@ func AnalyzeMP4(path string) (*MP4Analysis, error) {
 		a.Faults = append(a.Faults, f)
 	}
 	flush()
+	markTruncatedSamples(a)
 	finalizeMP4(a)
 	return a, nil
 }
@@ -291,13 +297,20 @@ func sampleDeltas(tr *Track) []float64 {
 // markTruncatedSamples flags samples whose payload is not fully present. A
 // truncated last GOP is the normal failure mode of a stopped tape capture.
 func markTruncatedSamples(a *MP4Analysis) {
+	first := -1.0
 	for _, tr := range a.Tracks {
 		for i := range tr.Samples {
 			s := &tr.Samples[i]
 			if s.Offset+int64(s.Size) > a.Size && s.Size > 0 {
 				s.Truncated = true
+				if tr.Timescale > 0 && (first < 0 || float64(s.DTS)*1000/float64(tr.Timescale) < first) {
+					first = float64(s.DTS) * 1000 / float64(tr.Timescale)
+				}
 			}
 		}
+	}
+	if first >= 0 {
+		a.HasTruncation, a.TruncationStartMs = true, first
 	}
 }
 

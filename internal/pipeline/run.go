@@ -157,6 +157,11 @@ func Run(ctx context.Context, opts Options, assets []AssetInput) (*Manifest, err
 	m.Duplicates = merged.Duplicates
 	m.Segments = segs
 	m.Metrics.DamageCount = len(segs)
+	// Recovery skips rows inside unrecoverable damage; report how many, so the
+	// audit trail distinguishes "no row existed" from "row was withheld".
+	for _, r := range results {
+		m.Skipped += r.Skipped
+	}
 
 	if opts.Mode == ModeStrict && len(m.Faults) > 0 {
 		return m, firstFault(m.Faults)
@@ -170,15 +175,15 @@ func Run(ctx context.Context, opts Options, assets []AssetInput) (*Manifest, err
 }
 
 func finishFailed(m *Manifest, err error) (*Manifest, error) {
+	// Preserve the original error identity so callers can test for
+	// context.Canceled while still exposing a structured fault code.
 	f, ok := diag.As(err)
 	if !ok {
-		if ctxErr := err; ctxErr != nil {
-			f = diag.New(diag.CodeCanceled, 0, "%v", err)
-		}
-	}
-	if f != nil {
+		f = diag.New(diag.CodeCanceled, 0, "%v", err)
 		m.Faults = append(m.Faults, f)
+		return m, err
 	}
+	m.Faults = append(m.Faults, f)
 	return m, err
 }
 

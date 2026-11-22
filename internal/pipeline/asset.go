@@ -14,19 +14,22 @@ import (
 
 // assetResult is the per-asset contribution to the manifest.
 type assetResult struct {
-	Rows             []Row
-	Segments         []Segment
-	Faults           []*diag.Fault
-	Keyframes        int
-	Samples          int64
-	SampleBytes      int64
-	Cues             int
-	TargetBps        int64
-	MediaDurationMs  float64
-	MaxGapMs         float64
-	AlignmentErrorMs float64
-	DriftPPM         float64
-	HasDrift         bool
+	Rows              []Row
+	Segments          []Segment
+	Faults            []*diag.Fault
+	Keyframes         int
+	Samples           int64
+	SampleBytes       int64
+	Cues              int
+	TargetBps         int64
+	MediaDurationMs   float64
+	MaxGapMs          float64
+	AlignmentErrorMs  float64
+	DriftPPM          float64
+	HasDrift          bool
+	Skipped           int64
+	HasTruncation     bool
+	TruncationStartMs float64
 }
 
 // analyzeAsset processes one asset: MP4 structure, subtitles, RTP continuity,
@@ -74,10 +77,25 @@ func analyzeAsset(ctx context.Context, a AssetInput, opts Options) (*assetResult
 	r.Segments = toSegments(stream.Classify(r.Faults, stream.ClassifyOptions{
 		Source: a.Asset, TimeKnown: r.MediaDurationMs > 0,
 	}))
+	// A truncated capture is unreliable from the cut to the declared end, so
+	// widen the MP4 damage window rather than citing a single instant.
+	for i := range r.Segments {
+		if r.Segments[i].Code != "mp4" || !r.HasTruncation {
+			continue
+		}
+		if r.Segments[i].StartMs < r.TruncationStartMs {
+			r.Segments[i].StartMs = r.TruncationStartMs
+		}
+		if r.Segments[i].EndMs < r.MediaDurationMs {
+			r.Segments[i].EndMs = r.MediaDurationMs
+		}
+	}
 	if opts.Mode == ModeStrict && len(r.Faults) > 0 {
 		return r, firstFault(r.Faults)
 	}
-	r.Rows = filterRows(r.Rows, r.Segments, opts.Mode)
+	kept := filterRows(r.Rows, r.Segments, opts.Mode)
+	r.Skipped += int64(len(r.Rows) - len(kept))
+	r.Rows = kept
 	return r, nil
 }
 
@@ -88,9 +106,17 @@ func analyzeMP4Part(ctx context.Context, a AssetInput, r *assetResult, fps strin
 		r.Faults = append(r.Faults, f)
 		return nil
 	}
+	for _, f := range an.Faults {
+		// Structural MP4 faults carry byte offsets; give the tail damage a
+		// media window so row filtering and alignment stay meaningful.
+		if !f.HasMedia && an.HasTruncation {
+			f.WithMedia(an.TruncationStartMs)
+		}
+	}
 	r.Faults = append(r.Faults, an.Faults...)
 	r.MediaDurationMs = an.DurationMs
 	r.SampleBytes = an.MdatBytes
+	r.HasTruncation, r.TruncationStartMs = an.HasTruncation, an.TruncationStartMs
 	if an.Video == nil {
 		return nil
 	}

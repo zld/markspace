@@ -160,9 +160,12 @@ func family(code string) string {
 	}
 }
 
+// recoverable distinguishes damage whose remaining bytes can still be cited
+// (late RTP fills, resynchronised subtitles, isolated VFR holds) from damage
+// where no row may be written from that range at all (truncated media).
 func recoverable(code string) bool {
 	switch code {
-	case diag.CodeQueueFull, diag.CodeCanceled:
+	case diag.CodeQueueFull, diag.CodeCanceled, diag.CodeMP4Truncated, diag.CodeMP4Structure:
 		return false
 	default:
 		return true
