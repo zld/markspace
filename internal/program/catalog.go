@@ -93,6 +93,10 @@ func (c *Catalog) ApplyPMT(pmtPID uint16, version uint8, streams []psi.PMTStream
 	c.pmts[pmtPID] = &pmtTable{version: int(version), streams: si}
 }
 
+// Current returns the currently effective snapshot, or nil before the
+// first PAT is published.
+func (c *Catalog) Current() *Snapshot { return c.effective }
+
 // PMTPIDs returns the PMT PIDs referenced by the current PAT.
 func (c *Catalog) PMTPIDs() []uint16 {
 	out := make([]uint16, 0, len(c.pmtPIDOf))
