@@ -24,16 +24,16 @@ const PIDPAT uint16 = 0x0000
 // Packet is one transport packet together with the fields the pipeline needs.
 // Raw is a freshly allocated 188-byte slice so callers may retain it.
 type Packet struct {
-	Index                     int64 // zero-based packet index in the input stream
-	Raw                       []byte
-	PID                       uint16
-	ContinuityCounter         uint8
-	TransportError            bool
-	PayloadUnitStart          bool
-	HasPayload                bool
-	HasAdaptationField        bool
-	AdaptationDiscontinuity   bool
-	Payload                   []byte
+	Index                   int64 // zero-based packet index in the input stream
+	Raw                     []byte
+	PID                     uint16
+	ContinuityCounter       uint8
+	TransportError          bool
+	PayloadUnitStart        bool
+	HasPayload              bool
+	HasAdaptationField      bool
+	AdaptationDiscontinuity bool
+	Payload                 []byte
 }
 
 // Reader produces packets from an underlying io.Reader. It never buffers more
@@ -86,15 +86,15 @@ func (r *Reader) Next() (*Packet, error) {
 	}
 
 	pkt := &Packet{
-		Index:            r.index,
-		Raw:              raw,
-		PID:              parsed.Header.PID,
-		ContinuityCounter: parsed.Header.ContinuityCounter,
-		TransportError:   parsed.Header.TransportErrorIndicator,
-		PayloadUnitStart: parsed.Header.PayloadUnitStartIndicator,
-		HasPayload:       parsed.Header.HasPayload,
+		Index:              r.index,
+		Raw:                raw,
+		PID:                parsed.Header.PID,
+		ContinuityCounter:  parsed.Header.ContinuityCounter,
+		TransportError:     parsed.Header.TransportErrorIndicator,
+		PayloadUnitStart:   parsed.Header.PayloadUnitStartIndicator,
+		HasPayload:         parsed.Header.HasPayload,
 		HasAdaptationField: parsed.Header.HasAdaptationField,
-		Payload:          parsed.Payload,
+		Payload:            parsed.Payload,
 	}
 	if parsed.AdaptationField != nil {
 		pkt.AdaptationDiscontinuity = parsed.AdaptationField.DiscontinuityIndicator

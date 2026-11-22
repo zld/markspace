@@ -34,7 +34,7 @@ func makePacket(pid uint16, cc uint8, pusi, tei bool, payload []byte) []byte {
 		copy(p[off:], payload)
 		off += len(payload)
 	} else {
-		p[off] = 0x01 // adaptation_field_length
+		p[off] = 0x01   // adaptation_field_length
 		p[off+1] = 0x00 // flags: no PCR/discontinuity, rest is stuffing
 		off += 2
 	}
