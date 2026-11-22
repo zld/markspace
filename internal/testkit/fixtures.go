@@ -156,13 +156,13 @@ func WriteRTPSidecar(path string, trackID, clockRate, count uint32, deltaTS uint
 
 // FixtureSet groups the on-disk paths produced for one scenario.
 type FixtureSet struct {
-	Dir      string
-	MP4      string
-	Manifest string
-	RTP      string
-	Index    string
+	Dir        string
+	MP4        string
+	Manifest   string
+	RTP        string
+	Index      string
 	Checkpoint string
-	Output   string
+	Output     string
 }
 
 // PrepareDirs creates the fixture layout under root and returns path helpers.

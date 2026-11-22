@@ -47,11 +47,11 @@ type Point struct {
 // Engine is the per-track streaming repair state. It never buffers more than
 // ReorderWindow points; everything beyond the window is finalized in order.
 type Engine struct {
-	cfg    Config
-	stats  Stats
-	roll   int64  // accumulated wrap count * WrapMod
-	lastTS int64  // last emitted extended timestamp
-	hiSeq  uint64 // highest extended sequence observed
+	cfg     Config
+	stats   Stats
+	roll    int64  // accumulated wrap count * WrapMod
+	lastTS  int64  // last emitted extended timestamp
+	hiSeq   uint64 // highest extended sequence observed
 	started bool
 }
 

@@ -103,9 +103,9 @@ func Run(ctx context.Context, cfg Config, src Sources, cpPath, outputPath, mp4Pa
 func readBatch(ctx context.Context, sem *Semaphore, cfg Config, src Sources,
 	start uint32) (Batch, int64, error) {
 	var (
-		batch      Batch
-		physBytes  int64
-		wireBytes  int64
+		batch     Batch
+		physBytes int64
+		wireBytes int64
 	)
 	batch.FirstSample = start
 	i := start

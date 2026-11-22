@@ -193,7 +193,7 @@ func (t *TrackScan) ScanBatches(cfg Config, fn func([]Sample) error) error {
 		batch = append(batch, Sample{
 			Index: i, Number: number, Size: size,
 			WireSize: t.manifest.WireSizes[i],
-			Offset: off, DTS: dtsTicks,
+			Offset:   off, DTS: dtsTicks,
 			DTSNanos: dtsNanos, CTSNanos: ctNanos,
 			Sync: isSync, ChunkIndex: chunkCursor, DescIndex: ch.descIndex,
 		})

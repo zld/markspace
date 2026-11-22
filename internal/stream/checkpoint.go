@@ -18,14 +18,14 @@ const CheckpointVersion uint32 = 2
 
 // Checkpoint is the resumable state persisted atomically after every batch.
 type Checkpoint struct {
-	Version       uint32 `json:"version"`
-	InputDigest   string `json:"input_digest"`
-	NextSample    uint32 `json:"next_sample"`
-	SamplesDone   uint64 `json:"samples_done"`
-	BytesRead     int64  `json:"bytes_read"`
-	LogicalBytes  int64  `json:"logical_bytes"`
-	BatchesDone   int    `json:"batches_done"`
-	OutputDigest  string `json:"output_digest"`
+	Version      uint32 `json:"version"`
+	InputDigest  string `json:"input_digest"`
+	NextSample   uint32 `json:"next_sample"`
+	SamplesDone  uint64 `json:"samples_done"`
+	BytesRead    int64  `json:"bytes_read"`
+	LogicalBytes int64  `json:"logical_bytes"`
+	BatchesDone  int    `json:"batches_done"`
+	OutputDigest string `json:"output_digest"`
 	// HashState is the serialized running output hash, enabling a resumed run
 	// to continue the canonical digest instead of restarting it.
 	HashState []byte `json:"hash_state,omitempty"`

@@ -60,8 +60,8 @@ func WriteMP4(spec MP4Spec) error {
 		return err
 	}
 	if _, err := mp4.Marshal(w, &mp4.Ftyp{
-		MajorBrand:     [4]byte{'i', 's', 'o', 'm'},
-		MinorVersion:   0,
+		MajorBrand:   [4]byte{'i', 's', 'o', 'm'},
+		MinorVersion: 0,
 		CompatibleBrands: []mp4.CompatibleBrandElem{
 			{CompatibleBrand: [4]byte{'i', 's', 'o', 'm'}},
 			{CompatibleBrand: [4]byte{'m', 'p', '4', '2'}},
@@ -111,11 +111,11 @@ func writeMoov(w *mp4.Writer, spec MP4Spec, duration uint64) error {
 		return err
 	}
 	if err := leafBox(w, mp4.BoxTypeTkhd(), &mp4.Tkhd{
-		FullBox:      mp4.FullBox{Version: 0},
-		TrackID:      spec.TrackID,
-		DurationV0:   uint32(duration),
-		Width:        320 << 16,
-		Height:       240 << 16,
+		FullBox:    mp4.FullBox{Version: 0},
+		TrackID:    spec.TrackID,
+		DurationV0: uint32(duration),
+		Width:      320 << 16,
+		Height:     240 << 16,
 	}); err != nil {
 		return err
 	}

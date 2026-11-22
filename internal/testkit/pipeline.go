@@ -28,13 +28,13 @@ type PipelineConfig struct {
 
 // PipelineResult carries every value the report and tests assert on.
 type PipelineResult struct {
-	Report        metrics.Report
-	CacheState    string
-	RepairDigest  string
-	OutputDigest  string
-	Records       uint32
-	RepairStats   repair.Stats
-	Seek          scan.SeekResult
+	Report       metrics.Report
+	CacheState   string
+	RepairDigest string
+	OutputDigest string
+	Records      uint32
+	RepairStats  repair.Stats
+	Seek         scan.SeekResult
 }
 
 // fileConsumer writes payloads to an output file (never the source) and

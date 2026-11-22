@@ -72,4 +72,3 @@ func TestExitCodes(t *testing.T) {
 		t.Fatal("exit code mapping changed")
 	}
 }
-

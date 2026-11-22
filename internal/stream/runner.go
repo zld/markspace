@@ -68,10 +68,10 @@ type Consumer interface {
 
 // Counters are updated as the pipeline makes progress.
 type Counters struct {
-	BatchesEmitted   int
-	SamplesEmitted   uint64
-	BytesRead        int64 // physical mdat bytes actually read
-	LogicalBytes     int64 // wire-size accounting used by metrics
-	PeakInFlight     int64
-	DroppedSamples   uint64
+	BatchesEmitted int
+	SamplesEmitted uint64
+	BytesRead      int64 // physical mdat bytes actually read
+	LogicalBytes   int64 // wire-size accounting used by metrics
+	PeakInFlight   int64
+	DroppedSamples uint64
 }

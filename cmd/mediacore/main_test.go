@@ -21,8 +21,7 @@ func TestParseDemoArgsValidates(t *testing.T) {
 		t.Fatalf("oversized batch: %v", err)
 	}
 	if _, err := parseDemoArgs([]string{"--duration", "10s", "--target-bps", "100",
-		"--batch-bytes", "1024", "--slow-every", "-1", "--fixtures", "x"});
-		clock.Classify(err) != clock.KindInvalidArgument {
+		"--batch-bytes", "1024", "--slow-every", "-1", "--fixtures", "x"}); clock.Classify(err) != clock.KindInvalidArgument {
 		t.Fatalf("negative slow: %v", err)
 	}
 }

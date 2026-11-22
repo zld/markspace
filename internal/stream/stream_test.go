@@ -61,8 +61,7 @@ func TestSemaphoreCancellationUnblocks(t *testing.T) {
 }
 
 func TestConfigValidation(t *testing.T) {
-	if err := (Config{MaxBatchSamples: 1, MaxBatchBytes: 10, MaxInFlightBytes: 5}).Validate();
-		clock.Classify(err) != clock.KindInvalidArgument {
+	if err := (Config{MaxBatchSamples: 1, MaxBatchBytes: 10, MaxInFlightBytes: 5}).Validate(); clock.Classify(err) != clock.KindInvalidArgument {
 		t.Fatalf("batch>inflight not rejected: %v", err)
 	}
 	if err := (Config{MaxBatchSamples: 1, MaxBatchBytes: 10, MaxInFlightBytes: 10}).Validate(); err != nil {

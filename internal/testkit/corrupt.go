@@ -12,8 +12,8 @@ import (
 type Corruption string
 
 const (
-	CorruptTruncated    Corruption = "truncated"
-	CorruptEditOOB      Corruption = "edit_oob"
+	CorruptTruncated   Corruption = "truncated"
+	CorruptEditOOB     Corruption = "edit_oob"
 	CorruptWrap        Corruption = "wrap"
 	CorruptIndexBroken Corruption = "index_broken"
 	CorruptNoKeyframe  Corruption = "no_keyframe"

@@ -62,15 +62,15 @@ func parseTracks(r io.ReadSeeker, fileSize uint64, m *Manifest, cfg Config) ([]*
 		return nil, err
 	}
 	ts := &TrackScan{
-		TrackID:  m.TrackID,
-		Basis:    basis,
-		Edits:    edits,
-		MediaDur: mediaDur,
+		TrackID:   m.TrackID,
+		Basis:     basis,
+		Edits:     edits,
+		MediaDur:  mediaDur,
 		SyncCount: uint32(len(tab.sync)),
-		Count:    count,
-		tables:   tab,
-		mdatEnd:  mdatEnd,
-		manifest: m,
+		Count:     count,
+		tables:    tab,
+		mdatEnd:   mdatEnd,
+		manifest:  m,
 	}
 	return []*TrackScan{ts}, nil
 }

@@ -26,12 +26,12 @@ const ManifestVersion uint32 = 1
 //   - ForceNonSync: sample numbers (1-based) whose sync flag must be
 //     suppressed, used by the missing-keyframe recovery fixture.
 type Manifest struct {
-	ManifestVersion uint32   `json:"manifest_version"`
-	TrackID         uint32   `json:"track_id"`
-	Timescale       uint32   `json:"timescale"`
-	SampleCount     uint32   `json:"sample_count"`
-	StartNanos      int64    `json:"start_nanos"`
-	EndNanos        int64    `json:"end_nanos"`
+	ManifestVersion uint32 `json:"manifest_version"`
+	TrackID         uint32 `json:"track_id"`
+	Timescale       uint32 `json:"timescale"`
+	SampleCount     uint32 `json:"sample_count"`
+	StartNanos      int64  `json:"start_nanos"`
+	EndNanos        int64  `json:"end_nanos"`
 	// MediaStartTicks is the non-zero first-sample decode time (edit-list
 	// media_time origin). Zero means samples begin at timeline zero.
 	MediaStartTicks int64    `json:"media_start_ticks,omitempty"`

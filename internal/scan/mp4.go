@@ -13,17 +13,17 @@ import (
 // positions in the MP4 file and are validated against the file size before
 // the stream stage is allowed to read them.
 type Sample struct {
-	Index        uint32       // 0-based
-	Number       uint32       // 1-based (ISO numbering used by stss)
-	Size         uint32       // physical bytes inside mdat
-	WireSize     uint32       // logical network payload bytes (from manifest)
-	Offset       uint64       // absolute file offset of the payload
-	DTS          int64        // decode time in track ticks
-	DTSNanos     clock.Nanos  // decode time on unified timeline
-	CTSNanos     clock.Nanos  // composition time (DTS + ctts)
-	Sync         bool         // independently decodable key frame
-	ChunkIndex   uint32       // 0-based owning chunk
-	DescIndex    uint32       // sample description index (must be 1)
+	Index      uint32      // 0-based
+	Number     uint32      // 1-based (ISO numbering used by stss)
+	Size       uint32      // physical bytes inside mdat
+	WireSize   uint32      // logical network payload bytes (from manifest)
+	Offset     uint64      // absolute file offset of the payload
+	DTS        int64       // decode time in track ticks
+	DTSNanos   clock.Nanos // decode time on unified timeline
+	CTSNanos   clock.Nanos // composition time (DTS + ctts)
+	Sync       bool        // independently decodable key frame
+	ChunkIndex uint32      // 0-based owning chunk
+	DescIndex  uint32      // sample description index (must be 1)
 }
 
 // TrackScan holds validated per-track metadata. Samples are not materialized
@@ -36,9 +36,9 @@ type TrackScan struct {
 	SyncCount uint32
 	Count     uint32
 	// Table state retained for bounded batch walks.
-	tables    *sampleTables
-	mdatEnd   uint64
-	manifest  *Manifest
+	tables   *sampleTables
+	mdatEnd  uint64
+	manifest *Manifest
 }
 
 // Config controls scan-time bounds.
