@@ -102,7 +102,7 @@ func (r *ScanResult) checkQuota(lim Limits) error {
 }
 
 // scanAnnexB parses H.264/H.265 Annex B byte stream. NAL unit bodies
-// are emulation-prevention escaped on disk (see escapeEPB), so start
+// are emulation-prevention escaped on disk (see EscapeEPB), so start
 // code scanning never sees false boundaries; bodies are unescaped
 // before meta and CRC validation.
 func scanAnnexB(codec Codec, data []byte, lim Limits) (*ScanResult, error) {
@@ -120,7 +120,7 @@ func scanAnnexB(codec Codec, data []byte, lim Limits) (*ScanResult, error) {
 		}
 		span := data[off:end]
 		u := Unit{Codec: codec, Offset: int64(off), Length: int64(len(span))}
-		inner := unescapeEPB(span[4+hdrLen:]) // meta + payload, EPB removed
+		inner := UnescapeEPB(span[4+hdrLen:]) // meta + payload, EPB removed
 		if len(inner) < MetaLen {
 			return res.truncated(int64(off), lim) // incomplete meta header
 		}

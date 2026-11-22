@@ -140,7 +140,7 @@ func rtpPacketCount(codec Codec, payload []byte, mtu uint16) int {
 // inserted after 00 00 and after 00 00 01/02/03 patterns so that no
 // Annex B start code can occur inside a NAL unit. It is the inverse of
 // unescapeEPB and makes synthetic streams codec-faithful.
-func escapeEPB(b []byte) []byte {
+func EscapeEPB(b []byte) []byte {
 	out := make([]byte, 0, len(b)+len(b)/32)
 	zeros := 0
 	for _, c := range b {
@@ -161,7 +161,7 @@ func escapeEPB(b []byte) []byte {
 // unescapeEPB removes emulation prevention bytes. A standalone 0x03
 // not part of an escape sequence is left untouched (malformed input
 // surfaces later as a CRC or length failure).
-func unescapeEPB(b []byte) []byte {
+func UnescapeEPB(b []byte) []byte {
 	out := make([]byte, 0, len(b))
 	zeros := 0
 	for i := 0; i < len(b); i++ {

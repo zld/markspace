@@ -25,7 +25,7 @@ func annexBUnit(codec Codec, typ, seq uint32, pts timeline.Ticks, key bool, body
 	meta := EncodeMeta(seq, pts, uint32(len(body)), CRC32(body))
 	inner := append(append([]byte{}, meta[:]...), body...)
 	out := append([]byte{0, 0, 0, 1}, hdr...)
-	return append(out, escapeEPB(inner)...)
+	return append(out, EscapeEPB(inner)...)
 }
 
 // av1OBU builds one synthetic AV1 OBU: header (with obu_has_size set),
@@ -180,11 +180,11 @@ func TestFindStartCodesAndLEB128(t *testing.T) {
 
 func TestEmulationPreventionRoundTrip(t *testing.T) {
 	raw := []byte{0, 0, 0, 1, 9, 0, 0, 2, 0, 0, 3, 0, 0, 0, 0, 1, 7}
-	esc := escapeEPB(raw)
+	esc := EscapeEPB(raw)
 	if got := findStartCodes(esc); len(got) != 0 {
 		t.Fatalf("escaped body must contain no start codes, got %v in %x", got, esc)
 	}
-	if got := unescapeEPB(esc); string(got) != string(raw) {
+	if got := UnescapeEPB(esc); string(got) != string(raw) {
 		t.Fatalf("EPB round trip mismatch: %x != %x", got, raw)
 	}
 	// A NAL whose seq value contains 00 00 00 01 must stay one unit.
