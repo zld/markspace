@@ -56,17 +56,22 @@ func (t *Timeline) Wraps() int { return t.wraps }
 // exists.
 func (t *Timeline) LastExtended() (uint64, bool) { return t.lastExt, t.hasLast }
 
-// SignExtend interprets a raw 32-bit timestamp as the signed delta from a
-// reference extended timestamp. It is exact for deltas within +-2^31.
+// maxForwardStep bounds a single accepted forward advance of the raw clock.
+// At 90 kHz this is roughly three hours between consecutive packets, so a
+// legitimate stream never reaches it but a corrupt timestamp does.
+const maxForwardStep = int64(1) << 30
+
+// SignExtend maps raw onto the 32-bit epoch closest to refExt, using a
+// signed 32-bit delta. It is exact for deltas within +-2^31.
 func SignExtend(raw uint32, refExt uint64) uint64 {
-	d := (int64(raw) - int64(uint32(refExt%Modulus)))
+	d := int64(int32(raw - uint32(refExt%Modulus)))
 	return uint64(int64(refExt) + d)
 }
 
 // Extend maps a raw RTP timestamp onto the monotonic timeline. The first
 // timestamp seeds the origin. Later timestamps are sign-extended relative to
-// the last accepted value; a direct backward step of up to half the modulus
-// is treated as reordering and does not move the committed clock.
+// the last accepted value; a backward step of up to half the modulus is
+// treated as reordering and does not move the committed clock.
 //
 // refTicks, when non-zero, is the arrival time on the shared reference clock
 // and feeds device drift estimation. Pass 0 when no reference is available.
@@ -82,21 +87,16 @@ func (t *Timeline) Extend(raw uint32, refTicks uint64) (uint64, error) {
 		return t.lastExt, nil
 	}
 
-	// Candidate extension assuming no wrap, then handle raw wrap-around.
-	var ext uint64
-	if raw >= t.lastRaw {
-		ext = t.lastExt + uint64(raw-t.lastRaw)
-	} else {
-		t.wraps++
-		ext = t.lastExt + uint64(Modulus-uint64(t.lastRaw)+uint64(raw))
-	}
+	// Signed 32-bit delta handles ordinary advancement, reordering, and
+	// wrap-around in one operation.
+	delta := int64(int32(raw - t.lastRaw))
+	forwardWrap := raw < t.lastRaw && delta > 0
+	backwardWrap := raw > t.lastRaw && delta < 0
 
-	if ext > t.lastExt {
-		delta := ext - t.lastExt
-		if delta > maxWrapJump {
-			t.wraps-- // reject the wrap we speculatively counted
+	if delta > 0 {
+		if delta > maxForwardStep {
 			return 0, merrors.New(merrors.StageTimeline, merrors.OutOfRange,
-				"timestamp jump of %d ticks exceeds limit", delta)
+				"forward step of %d ticks exceeds limit", delta)
 		}
 		if t.hasRef && refTicks >= t.refAtLast {
 			refDelta := refTicks - t.refAtLast
@@ -104,19 +104,21 @@ func (t *Timeline) Extend(raw uint32, refTicks uint64) (uint64, error) {
 			if t.driftPPM != 0 {
 				expected = refDelta + uint64(int64(refDelta)*t.driftPPM/1_000_000)
 			}
-			if expected > 0 && delta > expected+expected/4+uint64(t.clockRate)/50 {
+			tolerance := expected/4 + uint64(t.clockRate)/50 + 1
+			if uint64(delta) > expected+tolerance {
 				// A forward jump far beyond what the arrival clock supports
 				// is a clock glitch: do not advance the committed timeline.
-				t.wraps--
 				return 0, merrors.New(merrors.StageTimeline, merrors.OutOfRange,
 					"forward jump of %d ticks exceeds expected %d", delta, expected)
 			}
 		}
-		t.lastExt = ext
-	} else {
-		// Reordered or duplicate timestamp; keep the committed clock, but
-		// remember how far behind the stream is running.
-		back := t.lastExt - ext
+		t.lastExt = uint64(int64(t.lastExt) + delta)
+		t.lastRaw = raw
+		if forwardWrap {
+			t.wraps++
+		}
+	} else if delta < 0 {
+		back := uint64(-delta)
 		if back > maxWrapJump {
 			return 0, merrors.New(merrors.StageTimeline, merrors.OutOfRange,
 				"timestamp rewind of %d ticks exceeds limit", back)
@@ -124,9 +126,13 @@ func (t *Timeline) Extend(raw uint32, refTicks uint64) (uint64, error) {
 		if back > t.backStep {
 			t.backStep = back
 		}
+		if backwardWrap {
+			t.wraps++
+		}
+		// lastRaw stays at the high-water mark so that a reordered packet
+		// cannot shift the mapping of later packets.
 	}
 
-	t.lastRaw = raw
 	if refTicks != 0 {
 		t.refAtLast = refTicks
 		t.hasRef = true

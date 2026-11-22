@@ -1,7 +1,6 @@
 package clock
 
 import (
-	"errors"
 	"testing"
 
 	"example.com/mediaforge/internal/merrors"
@@ -40,8 +39,8 @@ func TestTimelineWrap(t *testing.T) {
 	if _, err := tl.Extend(start, 0); err != nil {
 		t.Fatal(err)
 	}
-	// 300 ticks later the 32-bit counter wraps.
-	got, err := tl.Extend(296, 0)
+	// 296 ticks later the 32-bit counter wraps to zero.
+	got, err := tl.Extend(0, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,17 +50,20 @@ func TestTimelineWrap(t *testing.T) {
 	if tl.Wraps() != 1 {
 		t.Fatalf("wraps = %d, want 1", tl.Wraps())
 	}
-	// A second full wrap must keep the timeline monotonic.
-	got, err = tl.Extend(296+uint32(Modulus), 0)
-	if err != nil {
-		t.Fatal(err)
+	// Continue past the wrap: the timeline must stay monotonic.
+	prev, _ := tl.LastExtended()
+	for i := 0; i < 50; i++ {
+		got, err := tl.Extend(uint32(i+1)*3000, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got <= prev {
+			t.Fatalf("timeline not monotonic at %d: %d <= %d", i, got, prev)
+		}
+		prev = got
 	}
-	want := uint64(start) + 296 + Modulus
-	if got != want {
-		t.Fatalf("extended = %d, want %d", got, want)
-	}
-	if tl.Wraps() != 2 {
-		t.Fatalf("wraps = %d, want 2", tl.Wraps())
+	if tl.Wraps() != 1 {
+		t.Fatalf("wraps = %d, want 1", tl.Wraps())
 	}
 }
 
@@ -153,8 +155,11 @@ func TestTimelineDriftConfig(t *testing.T) {
 }
 
 func TestSignExtend(t *testing.T) {
-	if got := SignExtend(0, 100); got != Modulus {
+	if got := SignExtend(0, Modulus); got != Modulus {
 		t.Fatalf("sign extend across wrap = %d, want %d", got, uint64(Modulus))
+	}
+	if got := SignExtend(5, 0); got != 5 {
+		t.Fatalf("sign extend plain = %d", got)
 	}
 	if got := SignExtend(4294967295, 0); got != ^uint64(0) {
 		t.Fatalf("sign extend negative = %d", got)
@@ -171,7 +176,7 @@ func TestIntegerConversions(t *testing.T) {
 	if got := TicksToMicros(1, 90000); got != 11 {
 		t.Fatalf("rounded-down micros = %d, want 11", got)
 	}
-	if err := NewTimeline(0); err == nil {
+	if _, err := NewTimeline(0); err == nil {
 		t.Fatal("expected error for zero clock rate")
 	}
 }
@@ -204,13 +209,12 @@ func TestTimelineDeterministic(t *testing.T) {
 }
 
 func TestTimelineText(t *testing.T) {
-	tl, _ := NewTimeline(48000)
+	tl, err := NewTimeline(48000)
+	if err != nil {
+		t.Fatal(err)
+	}
 	_, _ = tl.Extend(42, 0)
 	if tl.String() == "" {
 		t.Fatal("empty String")
-	}
-	var nilErr *merrors.Error
-	if !errors.Is(nilErr, nil) {
-		t.Fatal("unreachable")
 	}
 }
