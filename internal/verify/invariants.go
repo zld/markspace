@@ -144,6 +144,11 @@ func Check(m *Manifest) error {
 			errs = append(errs, fault.Errorf("verify.check", fault.KindVerify,
 				"segment %q claims silence on an undetectable track", s.ID).Fatal())
 		}
+		if s.Recovered && s.DuplicateOf != "" {
+			errs = append(errs, fault.Errorf("verify.check", fault.KindVerify,
+				"segment %q is both recovered and a duplicate of %q; a duplicate claim needs complete evidence",
+				s.ID, s.DuplicateOf).Fatal())
+		}
 		if prev, ok := byID[s.ID]; ok {
 			errs = append(errs, fault.Errorf("verify.check", fault.KindVerify,
 				"duplicate segment id %q ([%d,%d) and [%d,%d))", s.ID, prev.StartNS, prev.EndNS, s.StartNS, s.EndNS).Fatal())

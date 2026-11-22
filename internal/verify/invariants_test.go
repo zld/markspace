@@ -161,3 +161,12 @@ func TestDuplicateClaimsRequirePayloadEvidence(t *testing.T) {
 		t.Fatalf("shifted duplicate rejected: %v", err)
 	}
 }
+
+func TestRecoveredSegmentCannotClaimDuplicate(t *testing.T) {
+	m := good()
+	m.Segments[1].Recovered = true
+	m.Segments[1].DuplicateOf = m.Segments[0].ID
+	if err := Check(m); err == nil {
+		t.Fatal("recovered slice claimed duplicate status")
+	}
+}
