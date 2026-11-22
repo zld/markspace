@@ -92,8 +92,9 @@ func analyze(data []byte, opts Options) (*Report, error) {
 		return nil, err
 	}
 	windowSize := max(lag, genTicksPerPacket)
-	reo := packet.NewReorderer(packet.ReordererConfig{Window: 16})
+	reo := packet.NewReorderer(packet.ReordererConfig{Window: 4})
 	ext := clock.NewExtender(1 << 20)
+	arrivalExt := clock.NewExtender(1 << 20)
 	wm := clock.NewWatermark(lag)
 	replay := clock.NewReplayer(windowSize, 64)
 
@@ -104,6 +105,7 @@ func analyze(data []byte, opts Options) (*Report, error) {
 	var losses [][2]int64
 	lastTick := int64(-1)
 	monotonic := true
+	inputTruncated := false
 	var roundtripOK, rtpRecords int
 
 	handle := func(ev packet.Event) {
@@ -113,6 +115,24 @@ func analyze(data []byte, opts Options) (*Report, error) {
 			return
 		}
 		info := ev.Info
+		if ev.Resurrected {
+			// Late repair of a declared-lost packet: recompute the
+			// affected window only. The media buffer keeps on-time
+			// payloads, so buffer offsets stay stable.
+			tick, terr := ext.ExtendLate(info.Timestamp)
+			if terr != nil {
+				rep.ParseErrors++
+				damages = append(damages, damage.Range{
+					ByteStart: info.Offset, ByteEnd: info.Offset + int64(info.RawLen),
+					Class: damage.ClassParseError, Detail: terr.Error()})
+				return
+			}
+			rec := clock.EventRecord{Time: tick, ExtSeq: ev.ExtSeq, Hash: sha256.Sum256(info.Payload)}
+			if _, ok := replay.AddLate(rec); ok {
+				rep.Late++
+			}
+			return
+		}
 		tick, terr := ext.Extend(info.Timestamp)
 		if terr != nil {
 			rep.ParseErrors++
@@ -149,13 +169,18 @@ func analyze(data []byte, opts Options) (*Report, error) {
 		remaining := data[off:]
 		if len(remaining) < recHdrLen {
 			rep.ParseErrors++
+			inputTruncated = true
 			damages = append(damages, damage.Range{ByteStart: off, ByteEnd: int64(len(data)),
-				Class: damage.ClassParseError, Detail: "truncated record header"})
+				TickStart: max(lastTick, 0), TickEnd: max(lastTick, 0),
+				Class:     damage.ClassParseError, Detail: "truncated record header"})
 			break
 		}
 		typ := remaining[0]
 		ln := int(binary.BigEndian.Uint16(remaining[1:3]))
 		end := min(off+recHdrLen+int64(ln), int64(len(data)))
+		if end < off+recHdrLen+int64(ln) {
+			inputTruncated = true
+		}
 		raw := data[off+recHdrLen : end]
 		switch typ {
 		case recTypeRTP:
@@ -163,12 +188,18 @@ func analyze(data []byte, opts Options) (*Report, error) {
 			if perr != nil {
 				rep.ParseErrors++
 				damages = append(damages, damage.Range{ByteStart: off, ByteEnd: end,
-					Class: damage.ClassParseError, Detail: perr.Error()})
+					TickStart: max(lastTick, 0), TickEnd: max(lastTick, 0),
+					Class:     damage.ClassParseError, Detail: perr.Error()})
 				break
 			}
 			rep.ParsedOK++
 			rtpRecords++
 			info.Offset = off
+			// The watermark tracks arrival: windows close lag ticks
+			// behind the newest observed event time.
+			if atick, aerr := arrivalExt.Extend(info.Timestamp); aerr == nil {
+				wm.Observe(atick)
+			}
 			var p rtp.Packet
 			if uerr := p.Unmarshal(raw); uerr == nil {
 				if b, merr := p.Marshal(); merr == nil && bytes.Equal(b, raw) {
@@ -183,7 +214,8 @@ func analyze(data []byte, opts Options) (*Report, error) {
 			if perr != nil {
 				rep.ParseErrors++
 				damages = append(damages, damage.Range{ByteStart: off, ByteEnd: end,
-					Class: damage.ClassParseError, Detail: perr.Error()})
+					TickStart: max(lastTick, 0), TickEnd: max(lastTick, 0),
+					Class:     damage.ClassParseError, Detail: perr.Error()})
 				break
 			}
 			rep.ParsedOK++
@@ -191,7 +223,8 @@ func analyze(data []byte, opts Options) (*Report, error) {
 		default:
 			rep.ParseErrors++
 			damages = append(damages, damage.Range{ByteStart: off, ByteEnd: end,
-				Class: damage.ClassParseError, Detail: fmt.Sprintf("unknown record type %d", typ)})
+				TickStart: max(lastTick, 0), TickEnd: max(lastTick, 0),
+				Class:     damage.ClassParseError, Detail: fmt.Sprintf("unknown record type %d", typ)})
 		}
 		off = end
 	}
@@ -201,8 +234,17 @@ func analyze(data []byte, opts Options) (*Report, error) {
 	rep.Reordered = reo.Reordered
 	rep.Duplicates = reo.Dups
 
-	// Resolve sequence-gap losses to byte/tick ranges between neighbours.
+	// Resolve sequence-gap losses to byte/tick ranges between
+	// neighbours, coalescing adjacent loss events first.
+	var mergedLosses [][2]int64
 	for _, l := range losses {
+		if n := len(mergedLosses); n > 0 && mergedLosses[n-1][1]+1 == l[0] {
+			mergedLosses[n-1][1] = l[1]
+			continue
+		}
+		mergedLosses = append(mergedLosses, l)
+	}
+	for _, l := range mergedLosses {
 		r := damage.Range{Class: damage.ClassSeqGap,
 			Detail: fmt.Sprintf("lost extended seq %d..%d", l[0], l[1])}
 		pi := sort.Search(len(spans), func(i int) bool { return spans[i].extSeq >= l[0] })
@@ -218,7 +260,7 @@ func analyze(data []byte, opts Options) (*Report, error) {
 	}
 
 	// Bitstream scan over the reassembled payload, mapped to input bytes.
-	scan := bitstream.Scan(buf, 0)
+	scan := bitstream.Scan(buf, 0, !inputTruncated)
 	spanAt := func(boff int64) *span {
 		i := sort.Search(len(spans), func(i int) bool { return spans[i].bufEnd > boff })
 		if i == len(spans) {

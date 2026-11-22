@@ -32,7 +32,10 @@ func IsMP4(data []byte) bool {
 // Scan walks an Annex B buffer, locating every NAL unit, flagging IDR
 // keyframes, and reporting structural issues. base is added to all
 // reported offsets so results can be expressed in input-stream bytes.
-func Scan(data []byte, base int64) *ScanResult {
+// tailComplete tells the scanner whether the buffer ends cleanly: when
+// false, the final NAL (which has no following start code) is reported
+// as truncated.
+func Scan(data []byte, base int64, tailComplete bool) *ScanResult {
 	res := &ScanResult{}
 	pos := 0
 	for pos < len(data) {
@@ -46,9 +49,9 @@ func Scan(data []byte, base int64) *ScanResult {
 				Reason: "start code without NAL header"})
 			break
 		}
-		next, _ := FindStartCode(data, hdr+1)
+		next, _ := FindStartCode(data, hdr)
 		end := len(data)
-		truncated := true
+		truncated := !tailComplete
 		if next >= 0 {
 			end = next
 			truncated = false
@@ -56,7 +59,7 @@ func Scan(data []byte, base int64) *ScanResult {
 		if end == hdr {
 			res.Issues = append(res.Issues, Issue{Offset: base + int64(idx),
 				Reason: "empty NAL unit (invalid length)"})
-			pos = hdr + 1
+			pos = hdr
 			continue
 		}
 		nalType, refIDC, forbidden := ParseHeader(data[hdr])

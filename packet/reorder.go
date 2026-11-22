@@ -17,6 +17,9 @@ type Event struct {
 	Info     RTPInfo
 	LossFrom int64 // KindLoss: first lost extended sequence (inclusive)
 	LossTo   int64 // KindLoss: last lost extended sequence (inclusive)
+	// Resurrected marks a KindRTP packet that had been declared lost and
+	// arrived late; it is emitted out of order for timeline repair.
+	Resurrected bool
 }
 
 // ReordererConfig tunes gap and duplicate handling.
@@ -38,6 +41,8 @@ type Reorderer struct {
 	maxExt   int64 // extended value of the highest forward sequence seen
 	nextEmit int64 // next extended sequence to emit
 	pending  map[int64]RTPInfo
+	lost     map[int64]struct{} // recently declared-lost sequences
+	lostQueue []int64           // FIFO of lost sequences, for eviction
 
 	// Dups counts dropped duplicate packets.
 	Dups int
@@ -48,7 +53,23 @@ type Reorderer struct {
 // NewReorderer creates a Reorderer. A zero Window declares losses as
 // soon as any higher sequence arrives.
 func NewReorderer(cfg ReordererConfig) *Reorderer {
-	return &Reorderer{cfg: cfg, pending: make(map[int64]RTPInfo)}
+	return &Reorderer{cfg: cfg, pending: make(map[int64]RTPInfo), lost: make(map[int64]struct{})}
+}
+
+// maxLostTracked bounds how many declared-lost sequences are remembered
+// for resurrection.
+const maxLostTracked = 256
+
+// markLost records a declared-lost run for later resurrection.
+func (r *Reorderer) markLost(from, to int64) {
+	for s := from; s <= to; s++ {
+		if len(r.lostQueue) >= maxLostTracked {
+			delete(r.lost, r.lostQueue[0])
+			r.lostQueue = r.lostQueue[1:]
+		}
+		r.lost[s] = struct{}{}
+		r.lostQueue = append(r.lostQueue, s)
+	}
 }
 
 // extend maps a 16-bit sequence number onto the wrap-free int64 line.
@@ -83,7 +104,13 @@ func (r *Reorderer) extend(seq uint16) int64 {
 func (r *Reorderer) Push(info RTPInfo) []Event {
 	ext := r.extend(info.Seq)
 	if ext < r.nextEmit {
-		r.Dups++ // already emitted: duplicate or too-late straggler
+		if _, ok := r.lost[ext]; ok {
+			// Declared lost but finally here: emit out of order so the
+			// timeline can repair the affected window.
+			delete(r.lost, ext)
+			return []Event{{Kind: KindRTP, ExtSeq: ext, Info: info, Resurrected: true}}
+		}
+		r.Dups++ // already emitted: duplicate
 		return nil
 	}
 	if _, ok := r.pending[ext]; ok {
@@ -117,6 +144,7 @@ func (r *Reorderer) drain() []Event {
 				r.nextEmit++
 			}
 			out = append(out, Event{Kind: KindLoss, LossFrom: from, LossTo: r.nextEmit - 1})
+			r.markLost(from, r.nextEmit-1)
 			continue
 		}
 		return out

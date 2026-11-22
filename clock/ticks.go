@@ -60,6 +60,21 @@ func (e *Extender) Extend(ts uint32) (int64, error) {
 	return e.lastExt, nil
 }
 
+// ExtendLate maps a timestamp belonging to an already-declared-lost
+// packet that arrived late onto its historical tick, without clamping
+// and without disturbing the extender state. It rejects jumps beyond
+// the backward tolerance.
+func (e *Extender) ExtendLate(ts uint32) (int64, error) {
+	if !e.init {
+		return 0, errors.New("clock: no reference timestamp")
+	}
+	d := int32(ts - e.last)
+	if d < 0 && uint32(-d) > e.BackwardTolerance {
+		return 0, fmt.Errorf("%w: -%d ticks", ErrNegativeAdvance, uint32(-d))
+	}
+	return e.lastExt + int64(d), nil
+}
+
 // TicksToMillis converts ticks to milliseconds at the given media clock
 // rate, detecting arithmetic overflow.
 func TicksToMillis(ticks int64, clockRate uint32) (int64, error) {
