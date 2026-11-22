@@ -302,3 +302,46 @@ func (u *Unwrapper) Step(ts int64) (int64, error) {
 	u.last = ts
 	return u.high + ts, nil
 }
+
+// LabelFromFrame is the exact inverse of Timecode.FrameNumber. It is used by
+// fixture generation and lets tests prove DF label arithmetic round-trips
+// without special-casing skipped labels.
+func LabelFromFrame(frame int64, f Format) (Timecode, error) {
+	nominal := int64(f.NominalFPS())
+	if nominal == 0 {
+		return Timecode{}, diag.New(diag.CodeInvalidTime, 0, "unknown timecode format")
+	}
+	if frame < 0 {
+		return Timecode{}, diag.New(diag.CodeInvalidTime, 0, "negative frame number %d", frame)
+	}
+	n := frame
+	if f.IsDropFrame() {
+		framesPer10Min := nominal*600 - 2*9
+		framesPerMin := nominal*60 - 2
+		d := n / framesPer10Min
+		m := n % framesPer10Min
+		if m < 2 {
+			n += 18 * d
+		} else {
+			n += 18*d + 2*((m-2)/framesPerMin)
+		}
+	}
+	tc := Timecode{
+		Frames:  int(n % nominal),
+		Seconds: int((n / nominal) % 60),
+		Minutes: int((n / (nominal * 60)) % 60),
+		Hours:   int(n / (nominal * 3600)),
+		Format:  f,
+	}
+	if _, err := tc.FrameNumber(); err != nil {
+		return Timecode{}, err
+	}
+	return tc, nil
+}
+
+// FormatForTimecodes resolves the label family required to interpret SMPTE
+// labels. A bare 30000/1001 rate carries no drop-frame decision, so the
+// caller gets a structured fault instead of a silent NDF assumption.
+func FormatForTimecodes(rate string, offset int64) (Format, error) {
+	return FormatFromRate(rate, offset)
+}

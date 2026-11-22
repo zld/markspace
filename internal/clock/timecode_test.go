@@ -175,3 +175,58 @@ func TestFormatResolution(t *testing.T) {
 		t.Fatalf("29.97 token: %v %v", f, err)
 	}
 }
+
+func TestLabelFrameRoundTrip(t *testing.T) {
+	for _, f := range []Format{Format24, Format25, Format2997DF, Format2997NDF, Format50} {
+		day := f.DayFrames()
+		if f.IsDropFrame() {
+			day = 10 * 60 * 30 * 60 // one hour of labels for a tighter sweep
+		}
+		step := int64(1)
+		if day > 50000 {
+			step = 97
+		}
+		for frame := int64(0); frame < day; frame += step {
+			tc, err := LabelFromFrame(frame, f)
+			if err != nil {
+				t.Fatalf("%v frame %d: %v", f, frame, err)
+			}
+			back, err := tc.FrameNumber()
+			if err != nil {
+				t.Fatalf("%v %s: %v", f, tc, err)
+			}
+			if back != frame {
+				t.Fatalf("%v round trip %d -> %s -> %d", f, frame, tc, back)
+			}
+		}
+	}
+}
+
+func TestLabelFromFrameDFKnownValues(t *testing.T) {
+	cases := map[int64]string{
+		0:      "00:00:00;00",
+		1799:   "00:00:59;29",
+		1800:   "00:01:00;02",
+		17982:  "00:10:00;00",
+		107892: "01:00:00;00",
+	}
+	for frame, want := range cases {
+		tc, err := LabelFromFrame(frame, Format2997DF)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if tc.String() != want {
+			t.Fatalf("frame %d = %s, want %s", frame, tc, want)
+		}
+	}
+}
+
+func TestFormatForTimecodesRejectsAmbiguousRate(t *testing.T) {
+	if _, err := FormatForTimecodes("30000/1001", 42); !diag.IsCode(err, diag.CodeAmbiguousDF) {
+		t.Fatalf("expected ambiguous df fault, got %v", err)
+	}
+	f, err := FormatForTimecodes("30000/1001df", 42)
+	if err != nil || f != Format2997DF {
+		t.Fatalf("df rate: %v %v", f, err)
+	}
+}
