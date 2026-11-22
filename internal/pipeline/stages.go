@@ -179,19 +179,21 @@ func (r *Runner) runNormalize(out *Output, cache *parseCache) error {
 				if tr.Timescale == 0 {
 					continue
 				}
-				name := trackName(name, tr)
+				track := trackName(name, tr)
 				if err := b.AddTrack(clock.Track{
-					Name: name, Kind: kindOf(tr.Handler), Asset: nameAsset(name),
+					Name: track, Kind: kindOf(tr.Handler), Asset: name,
 					Scale:  core.Rat(1, int64(tr.Timescale)),
 					Origin: core.Zero(),
 				}); err != nil {
 					return fmt.Errorf("pipeline: %w", err)
 				}
 				for _, s := range tr.Samples {
+					// A sample whose bytes are missing cannot anchor a clock
+					// point; the index stage records it as untrusted instead.
 					if s.Truncated {
 						continue
 					}
-					if _, err := b.AddPoint(name, core.Rat(s.DTS, 1), false, s.Span); err != nil {
+					if _, err := b.AddPoint(track, core.Rat(s.DTS, 1), false, s.Span); err != nil {
 						return fmt.Errorf("pipeline: %w", err)
 					}
 				}
