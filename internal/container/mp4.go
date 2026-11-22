@@ -2,6 +2,7 @@ package container
 
 import (
 	"bytes"
+	"strconv"
 
 	mp4 "github.com/abema/go-mp4"
 
@@ -146,6 +147,9 @@ func parseTrak(payload []byte, base int64) (*TrackMeta, error) {
 	if tm.EditRate.Num <= 0 {
 		return nil, timeline.NewErr(timeline.StageParse, tm.Name,
 			tm.OffsetOf("edit_rate"), "missing required mdhd timescale")
+	}
+	if tm.Name == "" {
+		tm.Name = "mp4-track-" + strconv.Itoa(tm.ID)
 	}
 	if len(tm.Samples) == 0 && (tm.Kind == KindVideo || tm.Kind == KindAudio) {
 		return nil, timeline.NewErr(timeline.StageParse, tm.Name,

@@ -82,7 +82,7 @@ func ParseMXF(buf []byte) (*Asset, error) {
 			"unrecognized MXF signature")
 	}
 	asset := &Asset{Format: "mxf", Raw: buf}
-	byID := map[uint32]*TrackMeta{}
+	byID := map[uint32]int{} // trackID -> Tracks 下标（避免切片扩容指针失效）
 	durByID := map[uint32]int64{}
 	c := NewCursor(buf)
 	for !c.Done() {
@@ -111,14 +111,14 @@ func ParseMXF(buf []byte) (*Asset, error) {
 				return nil, err
 			}
 			asset.Tracks = append(asset.Tracks, *tm)
-			byID[uint32(tm.ID)] = &asset.Tracks[len(asset.Tracks)-1]
+			byID[uint32(tm.ID)] = len(asset.Tracks) - 1
 			durByID[uint32(tm.ID)] = sampleDur
 		case bytes.Equal(key, ulColorDescriptor):
-			if err := parseMXFColor(payload, payloadOff, byID); err != nil {
+			if err := parseMXFColor(payload, payloadOff, asset, byID); err != nil {
 				return nil, err
 			}
 		case bytes.Equal(key, ulEssence):
-			if err := parseMXFEssence(payload, payloadOff, byID, durByID); err != nil {
+			if err := parseMXFEssence(payload, payloadOff, asset, byID, durByID); err != nil {
 				return nil, err
 			}
 		default:
@@ -237,17 +237,18 @@ func parseMXFTrackMeta(payload []byte, klvOff, payloadOff int64) (*TrackMeta, in
 }
 
 // parseMXFColor 解析色彩描述符 KLV：trackID + primaries/transfer/matrix/fullrange。
-func parseMXFColor(payload []byte, payloadOff int64, byID map[uint32]*TrackMeta) error {
+func parseMXFColor(payload []byte, payloadOff int64, asset *Asset, byID map[uint32]int) error {
 	if len(payload) < 11 {
 		return timeline.NewErr(timeline.StageParse, "", payloadOff,
 			"color descriptor too short: %d bytes", len(payload))
 	}
 	id := binary.BigEndian.Uint32(payload)
-	tm, ok := byID[id]
+	idx, ok := byID[id]
 	if !ok {
 		return timeline.NewErr(timeline.StageParse, "", payloadOff,
 			"color descriptor references unknown track %d", id)
 	}
+	tm := &asset.Tracks[idx]
 	tm.AltColor = ColorInfo{
 		Primaries: binary.BigEndian.Uint16(payload[4:]),
 		Transfer:  binary.BigEndian.Uint16(payload[6:]),
@@ -260,17 +261,18 @@ func parseMXFColor(payload []byte, payloadOff int64, byID map[uint32]*TrackMeta)
 }
 
 // parseMXFEssence 解析 essence KLV：trackID + index + 样本载荷。
-func parseMXFEssence(payload []byte, payloadOff int64, byID map[uint32]*TrackMeta, durByID map[uint32]int64) error {
+func parseMXFEssence(payload []byte, payloadOff int64, asset *Asset, byID map[uint32]int, durByID map[uint32]int64) error {
 	if len(payload) < 8 {
 		return timeline.NewErr(timeline.StageParse, "", payloadOff,
 			"essence item too short: %d bytes", len(payload))
 	}
 	id := binary.BigEndian.Uint32(payload)
-	tm, ok := byID[id]
+	idx, ok := byID[id]
 	if !ok {
 		return timeline.NewErr(timeline.StageParse, "", payloadOff,
 			"essence references unknown track %d", id)
 	}
+	tm := &asset.Tracks[idx]
 	dur := durByID[id]
 	if dur <= 0 {
 		dur = 1

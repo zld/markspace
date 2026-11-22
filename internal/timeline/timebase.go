@@ -43,17 +43,35 @@ func NewRat(num, den int64) Rat {
 	return Rat{Num: num / g, Den: den / g}
 }
 
+// norm 将零值分母归一为 1，使零值 Rat 可安全参与运算。
+func (r Rat) norm() Rat {
+	if r.Den == 0 {
+		return Rat{Num: r.Num, Den: 1}
+	}
+	return r
+}
+
 // Add 返回两有理数之和。
-func (r Rat) Add(o Rat) Rat { return NewRat(r.Num*o.Den+o.Num*r.Den, r.Den*o.Den) }
+func (r Rat) Add(o Rat) Rat {
+	r, o = r.norm(), o.norm()
+	return NewRat(r.Num*o.Den+o.Num*r.Den, r.Den*o.Den)
+}
 
 // Sub 返回两有理数之差。
-func (r Rat) Sub(o Rat) Rat { return NewRat(r.Num*o.Den-o.Num*r.Den, r.Den*o.Den) }
+func (r Rat) Sub(o Rat) Rat {
+	r, o = r.norm(), o.norm()
+	return NewRat(r.Num*o.Den-o.Num*r.Den, r.Den*o.Den)
+}
 
 // Mul 返回两有理数之积。
-func (r Rat) Mul(o Rat) Rat { return NewRat(r.Num*o.Num, r.Den*o.Den) }
+func (r Rat) Mul(o Rat) Rat {
+	r, o = r.norm(), o.norm()
+	return NewRat(r.Num*o.Num, r.Den*o.Den)
+}
 
 // Div 返回两有理数之商；除数为零时返回零值。
 func (r Rat) Div(o Rat) Rat {
+	r, o = r.norm(), o.norm()
 	if o.Num == 0 {
 		return Rat{}
 	}
@@ -62,6 +80,7 @@ func (r Rat) Div(o Rat) Rat {
 
 // Cmp 比较大小：-1 小于，0 相等，1 大于。
 func (r Rat) Cmp(o Rat) int {
+	r, o = r.norm(), o.norm()
 	l, rr := r.Num*o.Den, o.Num*r.Den
 	switch {
 	case l < rr:
@@ -74,7 +93,10 @@ func (r Rat) Cmp(o Rat) int {
 }
 
 // Float64 返回浮点近似值，仅用于统计与展示。
-func (r Rat) Float64() float64 { return float64(r.Num) / float64(r.Den) }
+func (r Rat) Float64() float64 {
+	r = r.norm()
+	return float64(r.Num) / float64(r.Den)
+}
 
 // Milli 返回毫秒浮点值，仅用于展示与误差统计。
 func (r Rat) Milli() float64 { return r.Float64() * 1000 }

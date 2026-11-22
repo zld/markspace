@@ -74,6 +74,9 @@ func CheckFrames(frames []FrameSummary) error {
 func CheckTransform(tl *timeline.Timeline) error {
 	for ti := range tl.Tracks {
 		tr := &tl.Tracks[ti]
+		if tr.Meta.Kind != timeline.KindVideo {
+			continue
+		}
 		t := tr.Transform
 		if t.Width <= 0 || t.Height <= 0 {
 			return timeline.NewErr(timeline.StageValidate, tr.Meta.Name, -1,
@@ -82,11 +85,11 @@ func CheckTransform(tl *timeline.Timeline) error {
 		if t.Crop != nil {
 			c := t.Crop
 			if c.X < 0 || c.Y < 0 || c.W <= 0 || c.H <= 0 ||
-				c.X+c.W > tr.Meta.Width || c.Y+c.H > tr.Meta.Height {
+				c.X+c.W > t.RotWidth || c.Y+c.H > t.RotHeight {
 				return timeline.NewErr(timeline.StageValidate, tr.Meta.Name,
 					tr.Meta.OffsetOf("crop"),
 					"crop %dx%d+%d+%d out of bounds %dx%d",
-					c.W, c.H, c.X, c.Y, tr.Meta.Width, tr.Meta.Height)
+					c.W, c.H, c.X, c.Y, t.RotWidth, t.RotHeight)
 			}
 		}
 	}

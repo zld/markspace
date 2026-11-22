@@ -6,10 +6,12 @@ import (
 
 // Transform 为归一化后的几何变换：固定先旋转、后裁剪。
 type Transform struct {
-	Rotation int
-	Crop     *CropRect
-	Width    int64 // 归一化后的画幅
-	Height   int64
+	Rotation  int
+	Crop      *CropRect
+	RotWidth  int64 // 旋转后、裁剪前的画幅
+	RotHeight int64
+	Width     int64 // 归一化后的画幅
+	Height    int64
 }
 
 // ComposedSample 为主时基下的输出样本，保留源轨道时间与偏移。
@@ -82,6 +84,7 @@ func composeTrack(src *TrackMeta, opts ComposeOptions) (*ComposedTrack, []Decisi
 		w, h = h, w
 	}
 	ct.Transform.Rotation = rot
+	ct.Transform.RotWidth, ct.Transform.RotHeight = w, h
 
 	// 2) 裁剪在旋转后的坐标系内校验。
 	if src.Crop != nil {
