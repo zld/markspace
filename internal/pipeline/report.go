@@ -59,15 +59,16 @@ type Record struct {
 	Summary   *SummaryRecord   `json:"summary,omitempty"`
 }
 
-// RunRecord identifies the run and its parameters.
+// RunRecord identifies the run and its parameters. It deliberately carries no
+// provenance about which stages were resumed: the report for the same input
+// and parameters must be byte-identical whether it came from a full run or a
+// resumed one. Resume state is reported on stderr by the CLI instead.
 type RunRecord struct {
-	Seed         int64    `json:"seed"`
-	ClockRate    int64    `json:"clock_rate"`
-	MasterTrack  string   `json:"master_track"`
-	InputDigest  string   `json:"input_digest"`
-	ParamsDigest string   `json:"params_digest"`
-	Resumed      bool     `json:"resumed"`
-	ReusedStages []string `json:"reused_stages,omitempty"`
+	Seed         int64  `json:"seed"`
+	ClockRate    int64  `json:"clock_rate"`
+	MasterTrack  string `json:"master_track"`
+	InputDigest  string `json:"input_digest"`
+	ParamsDigest string `json:"params_digest"`
 }
 
 // AssetRecord carries the identity verify needs to re-check offsets.
@@ -183,7 +184,6 @@ func WriteJSONL(w io.Writer, out *Output, params Parameters, inputDigest, params
 	header := Record{Kind: KindHeader, Version: 1, Run: &RunRecord{
 		Seed: params.Seed, ClockRate: params.ClockRate, MasterTrack: params.MasterTrack,
 		InputDigest: inputDigest, ParamsDigest: paramsDigest,
-		Resumed: len(out.Resumed) > 0, ReusedStages: append([]string(nil), out.Resumed...),
 	}}
 	if err := enc.Encode(header); err != nil {
 		return err

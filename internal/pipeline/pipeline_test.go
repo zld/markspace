@@ -186,11 +186,8 @@ func TestResumeProducesIdenticalResult(t *testing.T) {
 	var a, b bytes.Buffer
 	_ = WriteJSONL(&a, full, params, full.InputDigest, full.ParamsDigest)
 	_ = WriteJSONL(&b, resumed, params, resumed.InputDigest, resumed.ParamsDigest)
-	stripHeader := func(buf *bytes.Buffer) []byte {
-		lines := bytes.Split(bytes.TrimSpace(buf.Bytes()), []byte("\n"))
-		return bytes.Join(lines[1:], []byte("\n"))
-	}
-	if !bytes.Equal(stripHeader(&a), stripHeader(&b)) {
+	// The report carries no resume provenance, so it must be byte-identical.
+	if !bytes.Equal(a.Bytes(), b.Bytes()) {
 		t.Fatal("resumed report differs from a full run")
 	}
 	if full.Summary.SHA256 != resumed.Summary.SHA256 {
