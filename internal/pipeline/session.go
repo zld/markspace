@@ -87,6 +87,11 @@ func OpenSession(path string) (*Session, error) {
 	if ierr != nil {
 		problems = append(problems, ierr)
 	}
+	// A track whose media is entirely trimmed presents nothing; that is an
+	// editorial choice, not an index failure.
+	for _, ti := range s.IndexProblems(ix) {
+		problems = append(problems, ti)
+	}
 	// An incomplete or incomplete-after-truncation sync table is repaired
 	// from verified samples; repaired landings are marked inferred.
 	if rep := index.Repair(ix, movie, s.Pres); rep != nil {
@@ -171,6 +176,30 @@ func (s *Session) ChapterRequests(step int) []Request {
 		return out
 	}
 	return s.Requests()
+}
+
+// IndexProblems downgrades "no sync frames" for a track whose samples were
+// all excluded by an edit list. Such a track is present but unpresented.
+func (s *Session) IndexProblems(ix *index.Index) []error {
+	byID := map[uint32]*mp4.Track{}
+	for _, tr := range s.Movie.Tracks {
+		byID[tr.ID] = tr
+	}
+	var out []error
+	for _, ti := range ix.Tracks {
+		if len(ti.Entries) > 0 || ti.Unpresented == 0 {
+			continue
+		}
+		tr := byID[ti.TrackID]
+		if tr == nil || len(tr.Edits) == 0 {
+			continue
+		}
+		out = append(out, fault.Errorf("pipeline.session", fault.KindIndex,
+			"track %d presents none of its %d samples: the edit list trims all of them",
+			ti.TrackID, ti.Unpresented).
+			WithPath(s.Path).WithTrack(ti.TrackID).Recovered().Wrapped(fault.ErrTrimmed))
+	}
+	return out
 }
 
 // usableEnd reports the last presentation time this track can reach.
