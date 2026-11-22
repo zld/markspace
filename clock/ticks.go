@@ -49,14 +49,17 @@ func (e *Extender) Extend(ts uint32) (int64, error) {
 			e.Wraps++
 		}
 		e.lastExt += int64(d)
+		e.last = ts
 	} else {
 		back := uint32(-d)
 		if back > e.BackwardTolerance {
 			return 0, fmt.Errorf("%w: -%d ticks", ErrNegativeAdvance, back)
 		}
-		e.Clamped++ // hold lastExt: output stays monotonic
+		// Hold both lastExt and last: the reference stays at the last
+		// accepted forward position so later deltas are not double
+		// counted. Output stays monotonic.
+		e.Clamped++
 	}
-	e.last = ts
 	return e.lastExt, nil
 }
 
