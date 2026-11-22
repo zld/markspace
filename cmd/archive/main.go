@@ -337,6 +337,14 @@ func printSummary(w io.Writer, m *pipeline.Manifest) {
 	}
 	fmt.Fprintf(w, "assets=%d rows=%d keyframes=%d samples=%d media_duration_ms=%.3f\n",
 		m.Assets, len(m.Rows), m.Metrics.KeyframeCount, m.Metrics.SampleCount, m.Metrics.MediaDurationMs)
+	for _, a := range m.AssetDump {
+		drift := "n/a"
+		if a.HasDrift {
+			drift = fmt.Sprintf("%.3f", a.DriftPPM)
+		}
+		fmt.Fprintf(w, "asset=%s fps=%s keyframes=%d samples=%d cues=%d duration_ms=%.3f drift_ppm=%s damage=%d alignment_error_ms=%.6f\n",
+			a.Asset, a.FPS, a.Keyframes, a.Samples, a.Cues, a.DurationMs, drift, a.Damage, a.AlignmentError)
+	}
 	for _, f := range m.Faults {
 		fmt.Fprintf(w, "fault code=%s offset=%d detail=%s\n", f.Code, f.Offset, f.Detail)
 	}

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"sync"
@@ -93,9 +94,25 @@ type Manifest struct {
 	// segment names a known source and stays inside its byte extent.
 	AssetIDs    []string
 	SourceSizes map[string]int64
+	AssetDump   []AssetLine
 	Duplicates  int64
 	Skipped     int64
 	Digest      string
+}
+
+// AssetLine is a per-asset audit line printed after the aggregate summary so a
+// mixed-format run can be checked asset by asset.
+type AssetLine struct {
+	Asset          string
+	FPS            string
+	Keyframes      int
+	Samples        int64
+	Cues           int
+	DurationMs     float64
+	DriftPPM       float64
+	HasDrift       bool
+	Damage         int
+	AlignmentError float64
 }
 
 // Options bounds the run.
@@ -158,7 +175,14 @@ func Run(ctx context.Context, opts Options, assets []AssetInput) (*Manifest, err
 		m.Metrics.KeyframeCount += r.Keyframes
 		m.Metrics.SampleCount += r.Samples
 		m.Metrics.MediaDurationMs += r.MediaDurationMs
+		m.AssetDump = append(m.AssetDump, AssetLine{
+			Asset: r.Asset, FPS: r.FPS, Keyframes: r.Keyframes, Samples: r.Samples,
+			Cues: r.Cues, DurationMs: r.MediaDurationMs, DriftPPM: r.DriftPPM,
+			HasDrift: r.HasDrift, Damage: len(r.Segments),
+			AlignmentError: r.AlignmentErrorMs,
+		})
 	}
+	sort.SliceStable(m.AssetDump, func(i, j int) bool { return m.AssetDump[i].Asset < m.AssetDump[j].Asset })
 	sortFaults(m.Faults)
 	sortSegments(segs)
 	merged := merge.Merge(rows)
@@ -229,20 +253,29 @@ func fillMetrics(m *Manifest, results []*assetResult) {
 	var bytes int64
 	var durMs, weightedTarget float64
 	m.Metrics.CueCount, m.Metrics.DriftPPM = 0, 0
-	var driftSum float64
+	var driftWorst float64
 	driftN := 0
 	for _, r := range results {
-		bytes += r.SampleBytes
-		durMs += r.MediaDurationMs
-		// Targets are per-second rates, so aggregate them weighted by each
-		// asset's media duration rather than summing raw rates.
-		if r.TargetBps > 0 && r.MediaDurationMs > 0 {
-			weightedTarget += float64(r.TargetBps) * r.MediaDurationMs
+		// Bitrate describes encoded video payloads. Subtitle-only and RTP-only
+		// assets have no mdat, so folding their durations in would dilute the
+		// rate with media that was never part of the mdat accounting.
+		if r.SampleBytes > 0 && r.MediaDurationMs > 0 {
+			bytes += r.SampleBytes
+			durMs += r.MediaDurationMs
+			// Targets are per-second rates, so aggregate them weighted by each
+			// asset's media duration rather than summing raw rates.
+			if r.TargetBps > 0 {
+				weightedTarget += float64(r.TargetBps) * r.MediaDurationMs
+			}
 		}
 		m.Metrics.CueCount += r.Cues
 		m.Metrics.AlignmentErrorMs = mathMax(m.Metrics.AlignmentErrorMs, r.AlignmentErrorMs)
 		if r.HasDrift {
-			driftSum += r.DriftPPM
+			// Report the largest-magnitude drift: averaging would let one
+			// healthy asset hide a drifting reel.
+			if math.Abs(r.DriftPPM) > math.Abs(driftWorst) {
+				driftWorst = r.DriftPPM
+			}
 			driftN++
 		}
 		if r.MaxGapMs > m.Metrics.KeyframeGapMaxMs {
@@ -258,7 +291,7 @@ func fillMetrics(m *Manifest, results []*assetResult) {
 			float64(m.Metrics.TargetBitrateBps) * 100
 	}
 	if driftN > 0 {
-		m.Metrics.DriftPPM = driftSum / float64(driftN)
+		m.Metrics.DriftPPM = driftWorst
 	}
 }
 

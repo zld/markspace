@@ -92,7 +92,8 @@ func BadSRT() string {
 func NormalVTT() string {
 	var b strings.Builder
 	b.WriteString("WEBVTT - VFR reel\nKind: captions\n\nNOTE generated fixture\n\n")
-	for i := 0; i < 10; i++ {
+	// Cues stay inside the 8.05 s VFR media extent: 8 cues end at 7.4 s.
+	for i := 0; i < 8; i++ {
 		start := 500 + i*900
 		end := start + 600
 		if i%3 == 0 {

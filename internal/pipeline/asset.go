@@ -15,6 +15,7 @@ import (
 // assetResult is the per-asset contribution to the manifest.
 type assetResult struct {
 	Asset             string
+	FPS               string
 	Rows              []Row
 	Segments          []Segment
 	Faults            []*diag.Fault
@@ -52,6 +53,7 @@ func analyzeAsset(ctx context.Context, a AssetInput, opts Options) (*assetResult
 	if fps == "" {
 		fps = "25"
 	}
+	r.FPS = fps
 	if _, err := clock.ParseRate(fps); err != nil {
 		f := mustFault(err, diag.CodeAmbiguousDF)
 		r.Faults = append(r.Faults, f)
