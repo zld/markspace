@@ -213,3 +213,26 @@ func TestMP4BadEditSegmentRejected(t *testing.T) {
 		t.Fatal("error detail should mention elst")
 	}
 }
+
+// TestMP4OversizedTableDeclarationRejected forges an stco entry count far
+// beyond the payload, which must surface as a located, rejectable media error
+// rather than an unbounded allocation.
+func TestMP4OversizedTableDeclarationRejected(t *testing.T) {
+	built := mp4box.Build(validTracks())
+	tampered := append([]byte(nil), built.Data...)
+	idx := bytes.Index(tampered, []byte("stco"))
+	if idx < 0 {
+		t.Fatal("stco not found")
+	}
+	countPos := idx + 8 // full-box header + box type
+	// claim 2^31-1 entries while only a handful exist in the payload
+	putU32(tampered[countPos:], 0x7FFFFFFF)
+	_, err := NewMP4AdapterV1().ParseMP4(bytes.NewReader(tampered), int64(len(tampered)))
+	me, ok := media.AsError(err)
+	if !ok || !me.Rejectable() {
+		t.Fatalf("oversized table not rejectable: %v", err)
+	}
+	if me.ByteOffset < 0 {
+		t.Fatal("oversized-table error must carry a byte offset")
+	}
+}
