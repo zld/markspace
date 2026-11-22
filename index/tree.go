@@ -2,8 +2,6 @@ package index
 
 import (
 	"github.com/abema/go-mp4"
-
-	"mediacore"
 )
 
 // node is the uniform return value of the structure handler: a box's info,
@@ -102,15 +100,4 @@ func tkhdDuration(b mp4.IBox) uint64 {
 		return 0
 	}
 	return versionedDuration(t.DurationV0, t.DurationV1, t.Version)
-}
-
-// assertClassified wraps any helper error so callers always get *mediacore.Error.
-func assertClassified(err error) error {
-	if err == nil {
-		return nil
-	}
-	if _, ok := mediacore.AsError(err); ok {
-		return err
-	}
-	return mediacore.WrapError(mediacore.CatCorrupt, "", "mp4.internal", 0, "unclassified parse failure", err)
 }
