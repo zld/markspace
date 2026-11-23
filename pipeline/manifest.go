@@ -122,23 +122,57 @@ func manifestDigest(m *Manifest) (string, error) {
 		ArtifactSHA string      `json:"artifact_sha256"`
 		ErrClass    media.Class `json:"error_class,omitempty"`
 	}
+	// rtpEvidence is the content portion of the transport report. Receive
+	// counters, gaps and loss status describe the input; bandwidth samples and
+	// the derived concurrency limits describe this execution and are omitted so
+	// the digest stays stable across worker counts and machine speeds.
+	type rtpEvidence struct {
+		Received    int         `json:"received"`
+		Duplicates  int         `json:"duplicates"`
+		Reordered   int         `json:"reordered"`
+		LateArrived int         `json:"late_arrived"`
+		Lost        int         `json:"lost"`
+		Recovered   int         `json:"recovered"`
+		Gaps        []GapRecord `json:"gaps,omitempty"`
+		LossFree    bool        `json:"loss_free"`
+	}
+	type indexEvidence struct {
+		SHA       string  `json:"sha256"`
+		Keyframes int     `json:"keyframes"`
+		HitRatio  float64 `json:"hit_ratio"`
+		Checks    int     `json:"checks"`
+	}
 	type canon struct {
-		Version   int          `json:"version"`
-		Seed      int64        `json:"seed"`
-		SourceSHA string       `json:"source_sha256"`
-		Tracks    int          `json:"tracks"`
-		Segments  int          `json:"segments"`
-		Cancelled int          `json:"cancelled_tasks"`
-		Failed    int          `json:"failed_tasks"`
-		Complete  bool         `json:"complete"`
-		RTP       *RTPReport   `json:"rtp,omitempty"`
-		Index     *IndexReport `json:"index,omitempty"`
-		Entries   []canonEntry `json:"entries"`
+		Version   int            `json:"version"`
+		Seed      int64          `json:"seed"`
+		SourceSHA string         `json:"source_sha256"`
+		Tracks    int            `json:"tracks"`
+		Segments  int            `json:"segments"`
+		Cancelled int            `json:"cancelled_tasks"`
+		Failed    int            `json:"failed_tasks"`
+		Complete  bool           `json:"complete"`
+		RTP       *rtpEvidence   `json:"rtp,omitempty"`
+		Index     *indexEvidence `json:"index,omitempty"`
+		Entries   []canonEntry   `json:"entries"`
 	}
 	c := canon{
 		Version: m.Version, Seed: m.Seed, SourceSHA: m.SourceSHA,
 		Tracks: m.Tracks, Segments: m.Segments, Cancelled: m.Cancelled,
-		Failed: m.Failed, Complete: m.Complete, RTP: m.RTP, Index: m.Index,
+		Failed: m.Failed, Complete: m.Complete,
+	}
+	if m.RTP != nil {
+		c.RTP = &rtpEvidence{
+			Received: m.RTP.Received, Duplicates: m.RTP.Duplicates,
+			Reordered: m.RTP.Reordered, LateArrived: m.RTP.LateArrived,
+			Lost: m.RTP.Lost, Recovered: m.RTP.Recovered,
+			Gaps: m.RTP.Gaps, LossFree: m.RTP.LossFree,
+		}
+	}
+	if m.Index != nil {
+		c.Index = &indexEvidence{
+			SHA: m.Index.SHA, Keyframes: m.Index.Keyframes,
+			HitRatio: m.Index.HitRatio, Checks: m.Index.Checks,
+		}
 	}
 	for _, e := range m.Entries {
 		c.Entries = append(c.Entries, canonEntry{
