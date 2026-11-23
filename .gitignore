@@ -1,0 +1,12 @@
+# Build artifacts
+/mediad
+/bin/
+*.exe
+*.test
+*.out
+coverage.*
+
+# Local scratch
+.DS_Store
+*.log
+tmp/
