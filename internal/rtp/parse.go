@@ -1,7 +1,11 @@
 // Package rtp incrementally parses a length-framed RTP/RTCP byte stream.
 // Frames are prefixed with a two-byte big-endian length (RFC 4571 style).
-// Corrupt frames are classified, recorded with their byte offset, and the
-// scanner resynchronizes on the next plausible frame boundary.
+// Corrupt frames are classified, recorded with their byte offset and, when
+// the fixed header survived, their sequence number, then the scanner
+// resynchronizes on the next plausible frame boundary.
+//
+// Only the payload types declared below are accepted for resynchronization;
+// the kernel is not a general-purpose RTP demultiplexer.
 package rtp
 
 import (
@@ -26,21 +30,17 @@ const (
 	maxFrame = 9000
 )
 
-// Parser consumes chunks of the stream and emits events. Arrival time of
-// a packet is the arrival time of the chunk that completed its frame.
+// Parser consumes chunks of the stream and emits events. Arrival time of a
+// packet is the arrival time of the chunk that completed its frame.
 type Parser struct {
-	buf     []byte
-	offset  int64 // absolute stream offset of buf[0]
-	arrival int64 // arrival ms of the oldest buffered chunk
-	now     int64 // arrival ms of the newest chunk
+	buf    []byte
+	offset int64 // absolute stream offset of buf[0]
+	now    int64 // arrival ms of the newest chunk
 }
 
 // Feed appends a chunk that surfaced at arrivalMs on the reference clock
 // and returns the events completed by it.
 func (p *Parser) Feed(data []byte, arrivalMs int64) []model.Event {
-	if len(p.buf) == 0 {
-		p.arrival = arrivalMs
-	}
 	p.now = arrivalMs
 	p.buf = append(p.buf, data...)
 	return p.scan(false)
@@ -63,16 +63,19 @@ func (p *Parser) malformed(class model.ErrClass, size int) model.Event {
 
 func (p *Parser) scan(final bool) []model.Event {
 	var out []model.Event
-	for {
-		if len(p.buf) < 2 {
-			break
-		}
+	for len(p.buf) >= 2 {
 		length := int(binary.BigEndian.Uint16(p.buf))
 		if length < 4 || length > maxFrame {
-			// Implausible framing: record and resync byte-by-byte.
-			out = append(out, p.malformed(model.ErrBadLength, 1))
-			p.drop(1)
-			continue
+			if skipped := p.resync(final); skipped > 0 {
+				out = append(out, p.malformed(model.ErrBadLength, skipped))
+				p.drop(skipped)
+				continue
+			}
+			if final {
+				out = append(out, p.malformed(model.ErrBadLength, len(p.buf)))
+				p.drop(len(p.buf))
+			}
+			break
 		}
 		if len(p.buf) < 2+length {
 			if final {
@@ -82,10 +85,18 @@ func (p *Parser) scan(final bool) []model.Event {
 			break
 		}
 		frame := p.buf[2 : 2+length]
-		ev := p.parseFrame(frame, length)
-		if ev.Kind == model.KindMalformed && ev.Err == model.ErrBadLength {
-			// Not a packet at all: resync instead of skipping the frame.
+		if !plausible(frame) {
+			// The framing is plausible but the frame header is not a
+			// declared packet type: treat the length bytes as junk and
+			// advance one byte so a real boundary can be found.
 			out = append(out, p.malformed(model.ErrBadLength, 1))
+			p.drop(1)
+			continue
+		}
+		ev := p.parseFrame(frame, length)
+		if ev.Err == model.ErrBadLength || ev.Err == model.ErrBadVersion {
+			// Not a frame after all; rescan from the next byte.
+			out = append(out, p.malformed(ev.Err, 1))
 			p.drop(1)
 			continue
 		}
@@ -95,38 +106,93 @@ func (p *Parser) scan(final bool) []model.Event {
 	return out
 }
 
+// resync returns how many junk bytes precede the next plausible framed
+// boundary, or 0 when no boundary is visible yet (or at all).
+func (p *Parser) resync(final bool) int {
+	for k := 1; k+2 <= len(p.buf); k++ {
+		length := int(binary.BigEndian.Uint16(p.buf[k:]))
+		if length < 4 || length > maxFrame {
+			continue
+		}
+		rest := p.buf[k+2:]
+		if len(rest) < 2 {
+			return k // header not here yet; keep the candidate and wait
+		}
+		if !plausible(rest) {
+			continue
+		}
+		if len(rest) < length && !final {
+			return k // wait for the rest of the candidate frame
+		}
+		return k
+	}
+	return 0
+}
+
+// plausible reports whether the first bytes of frame identify one of the
+// declared RTP payload types or an RTCP packet type. RTCP uses the full
+// second byte (200..223), while RTP masks off the marker bit.
+func plausible(frame []byte) bool {
+	if len(frame) < 2 || frame[0]>>6 != 2 {
+		return false
+	}
+	raw := frame[1]
+	if pt := raw & 0x7F; pt == PTVideo || pt == PTAudio {
+		return true
+	}
+	return raw >= rtcpSR && raw <= 223
+}
+
 func (p *Parser) drop(n int) {
 	p.buf = p.buf[n:]
 	p.offset += int64(n)
-	if len(p.buf) == 0 {
-		p.arrival = p.now
-	}
 }
 
 // parseFrame validates one frame. Manual header checks classify errors
 // precisely; pion/rtp performs the final unmarshal of valid RTP packets.
 func (p *Parser) parseFrame(frame []byte, length int) model.Event {
-	base := model.Event{ByteOffset: p.offset + 2, Size: length, ArrivalMs: p.arrival}
-	if length < 4 {
-		base.Kind, base.Err = model.KindMalformed, model.ErrTruncated
-		return base
-	}
+	base := model.Event{ByteOffset: p.offset + 2, Size: length, ArrivalMs: p.now}
 	if frame[0]>>6 != 2 {
 		base.Kind, base.Err = model.KindMalformed, model.ErrBadVersion
 		return base
 	}
-	pt := frame[1] & 0x7F
-	if pt >= rtcpSR && pt <= rtcpNACK {
+	// RTCP packet types occupy 200..223 as the full second byte; declared
+	// RTP payload types are 96/97, so there is no ambiguity here.
+	if raw := frame[1]; raw >= rtcpSR && raw <= 223 {
 		return parseRTCP(frame, base)
 	}
 	return parseRTP(frame, base)
 }
 
+// rtpMeta fills the fixed-header fields that survived validation so that
+// malformed packets can still be attributed to a sequence gap. It reports
+// whether a declared media type was recovered.
+func rtpMeta(frame []byte, ev *model.Event) bool {
+	if len(frame) < 12 {
+		return false
+	}
+	ev.Seq16 = binary.BigEndian.Uint16(frame[2:])
+	ev.RTPTs = binary.BigEndian.Uint32(frame[4:])
+	ev.SSRC = binary.BigEndian.Uint32(frame[8:])
+	switch frame[1] & 0x7F {
+	case PTVideo:
+		ev.Media = model.MediaVideo
+		ev.EventMs = clock.RTPClockVideo.ToMillis(uint64(ev.RTPTs))
+	case PTAudio:
+		ev.Media = model.MediaAudio
+		ev.EventMs = clock.RTPClockAudio.ToMillis(uint64(ev.RTPTs))
+	default:
+		ev.Media = model.MediaUnknown
+	}
+	return ev.Media != model.MediaUnknown
+}
+
 func parseRTP(frame []byte, ev model.Event) model.Event {
 	ev.Kind = model.KindMalformed
+	rtpMeta(frame, &ev)
 	cc := int(frame[0] & 0x0F)
 	hdrLen := 12 + 4*cc
-	if len(frame) < 12 || len(frame) < hdrLen {
+	if len(frame) < hdrLen {
 		ev.Err = model.ErrTruncated
 		return ev
 	}
@@ -204,7 +270,7 @@ func parseRTCP(frame []byte, ev model.Event) model.Event {
 		ntpSec := binary.BigEndian.Uint32(frame[8:])
 		ntpFrac := binary.BigEndian.Uint32(frame[12:])
 		// NTP epoch (1900) to Unix epoch offset, in milliseconds.
-		ev.NTPMs = (int64(ntpSec)-2208988800)*1000 + int64(ntpFrac)*1000/1<<32
+		ev.NTPMs = (int64(ntpSec)-2208988800)*1000 + int64(ntpFrac)*1000/(1<<32)
 		ev.RTPTs = binary.BigEndian.Uint32(frame[16:])
 	case rtcpRR:
 		ev.Kind = model.KindReceiverReport

@@ -4,11 +4,11 @@ package rtp
 type SeqClass int
 
 const (
-	SeqInOrder SeqClass = iota
-	SeqReorder             // arrived behind the current maximum
-	SeqDuplicate           // extended number already emitted a sample
-	SeqWrap                // legitimate 16-bit rollover
-	SeqAmbiguous           // jump too large to assign a cycle safely
+	SeqInOrder   SeqClass = iota
+	SeqReorder            // arrived behind the current maximum
+	SeqDuplicate          // extended number already emitted a sample
+	SeqWrap               // legitimate 16-bit rollover
+	SeqAmbiguous          // jump too large to assign a cycle safely
 )
 
 const (
@@ -71,10 +71,22 @@ func (e *Extender) Extend(seq uint16) (uint64, SeqClass) {
 	}
 }
 
+// MaxExt returns the highest extended sequence number assigned so far.
+// It is exposed for diagnostics only; callers must not mutate state.
+func (e *Extender) MaxExt() uint64 { return e.maxExt }
+
 func (e *Extender) remember(ext uint64) {
 	e.seen[ext] = struct{}{}
-	if floor := e.maxExt - seenWindow; ext < floor {
-		delete(e.seen, ext)
+	// Keep the duplicate history a little wider than the reorder horizon.
+	// Packets further back than maxReorder are already unresolvable, so
+	// pruning below that floor cannot change any classification.
+	if len(e.seen) > 2*seenWindow {
+		floor := e.maxExt - seenWindow
+		for k := range e.seen {
+			if k < floor {
+				delete(e.seen, k)
+			}
+		}
 	}
 }
 
@@ -90,4 +102,30 @@ func (e *Extender) Lookup(seq uint16) (uint64, bool) {
 		return 0, false
 	}
 	return e.maxExt - uint64(-diff), true
+}
+
+// maxFeedbackAhead bounds how far beyond the highest received sequence a
+// NACK may name a packet and still be assigned a cycle. A receiver can
+// learn about a tail loss before the next packet arrives, so feedback is
+// allowed to lead the observed maximum by a modest horizon.
+const maxFeedbackAhead = 2048
+
+// ResolveFeedback maps a feedback sequence number to an extended number,
+// accepting both the reorder horizon behind the maximum (where most
+// feedback lands) and a bounded horizon ahead of it (tail loss). It never
+// mutates the stream state; a caller that later accepts the recovered
+// packet deduplicates against the ordinary path.
+func (e *Extender) ResolveFeedback(seq uint16) (uint64, bool) {
+	if !e.init {
+		return 0, false
+	}
+	diff := int32(int16(seq - uint16(e.maxExt)))
+	switch {
+	case diff >= 0 && diff <= maxFeedbackAhead:
+		return e.maxExt + uint64(diff), true
+	case diff < 0 && -diff <= maxReorder:
+		return e.maxExt - uint64(-diff), true
+	default:
+		return 0, false
+	}
 }

@@ -26,16 +26,16 @@ func (m MediaType) String() string {
 type ErrClass int
 
 const (
-	ErrNone ErrClass = iota
-	ErrTruncated        // frame shorter than the parsed structure requires
-	ErrBadLength        // framing length field implausible; resync performed
-	ErrBadVersion       // RTP version field != 2
-	ErrBadHeader        // header failed validation after length checks
-	ErrBadExtension     // extension header length exceeds the packet
-	ErrBadPadding       // padding length invalid for the packet size
-	ErrAmbiguousRollover// sequence number cannot be assigned to a cycle
-	ErrDuplicate        // extended sequence number already produced a sample
-	ErrLate             // arrived outside the late window
+	ErrNone              ErrClass = iota
+	ErrTruncated                  // frame shorter than the parsed structure requires
+	ErrBadLength                  // framing length field implausible; resync performed
+	ErrBadVersion                 // RTP version field != 2
+	ErrBadHeader                  // header failed validation after length checks
+	ErrBadExtension               // extension header length exceeds the packet
+	ErrBadPadding                 // padding length invalid for the packet size
+	ErrAmbiguousRollover          // sequence number cannot be assigned to a cycle
+	ErrDuplicate                  // extended sequence number already produced a sample
+	ErrLate                       // arrived outside the late window
 )
 
 func (e ErrClass) String() string {
@@ -69,12 +69,12 @@ func (e ErrClass) String() string {
 type Kind int
 
 const (
-	KindPacket    Kind = iota // media packet (RTP)
-	KindSenderReport          // RTCP SR: cross-clock mapping
-	KindReceiverReport        // RTCP RR
-	KindNACK                  // RTCP feedback requesting retransmission
-	KindRecovered             // packet restored from the retransmit cache
-	KindMalformed             // unparseable bytes, Err field classifies
+	KindPacket         Kind = iota // media packet (RTP)
+	KindSenderReport               // RTCP SR: cross-clock mapping
+	KindReceiverReport             // RTCP RR
+	KindNACK                       // RTCP feedback requesting retransmission
+	KindRecovered                  // packet restored from the retransmit cache
+	KindMalformed                  // unparseable bytes, Err field classifies
 )
 
 // Event is the single currency of the kernel. All times are on the
@@ -95,34 +95,45 @@ type Event struct {
 	Err        ErrClass
 
 	// RTCP payloads (zero for media packets).
-	NTPMs     int64    // SR: NTP wall-clock in milliseconds
-	NACKSeqs  []uint16 // NACK: packet IDs expanded from PID+BLP
-	Payload   []byte   // declared payload, nil for malformed events
+	NTPMs    int64    // SR: NTP wall-clock in milliseconds
+	NACKSeqs []uint16 // NACK: packet IDs expanded from PID+BLP
+	Payload  []byte   // declared payload, nil for malformed events
 }
 
 // Summary is the deterministic result of a pipeline run. Field order is
 // fixed so the canonical JSON encoding doubles as the digest input.
 type Summary struct {
-	Fixture             string  `json:"fixture"`
-	ParsedPackets       int     `json:"parsed_packets"`
-	MalformedPackets    int     `json:"malformed_packets"`
-	DuplicatePackets    int     `json:"duplicate_packets"`
-	QuarantinedPackets  int     `json:"quarantined_packets"`
-	EmittedSamples      int     `json:"emitted_samples"`
-	LostPackets         int     `json:"lost_packets"`
-	RecoveredPackets    int     `json:"recovered_packets"`
-	RecoveryRate        float64 `json:"recovery_rate"`
-	CacheMiss           int     `json:"cache_miss"`
-	DupNACK             int     `json:"dup_nack"`
-	LateFeedback        int     `json:"late_feedback"`
-	LateReplayed        int     `json:"late_replayed"`
-	LateDropped         int     `json:"late_dropped"`
-	AVSyncErrorMs       int64   `json:"av_sync_error_ms"`
-	AVSyncConfidence    string  `json:"av_sync_confidence"`
-	OutOfSyncSegments   int     `json:"out_of_sync_segments"`
-	P95LatencyMs        int64   `json:"p95_latency_ms"`
-	IndexRebuilt        int     `json:"index_rebuilt"`
-	RecoverableSegments int     `json:"recoverable_segments"`
-	UnrecoverableSegs   int     `json:"unrecoverable_segments"`
-	ResultSHA256        string  `json:"result_sha256"`
+	Fixture             string         `json:"fixture"`
+	ParsedPackets       int            `json:"parsed_packets"`
+	MalformedPackets    int            `json:"malformed_packets"`
+	TruncatedTail       int            `json:"truncated_tail_packets"`
+	DuplicatePackets    int            `json:"duplicate_packets"`
+	QuarantinedPackets  int            `json:"quarantined_packets"`
+	EmittedSamples      int            `json:"emitted_samples"`
+	LostPackets         int            `json:"lost_packets"`
+	RecoveredPackets    int            `json:"recovered_packets"`
+	RecoveryRate        float64        `json:"recovery_rate"`
+	CacheMiss           int            `json:"cache_miss"`
+	DupNACK             int            `json:"dup_nack"`
+	LateFeedback        int            `json:"late_feedback"`
+	LateReplayed        int            `json:"late_replayed"`
+	LateDropped         int            `json:"late_dropped"`
+	NACKReceived        int            `json:"nack_received"`
+	ReceiverReports     int            `json:"receiver_reports"`
+	AVSyncErrorMs       int64          `json:"av_sync_error_ms"`
+	AVSyncConfidence    string         `json:"av_sync_confidence"`
+	AVSyncSamples       int            `json:"av_sync_samples"`
+	ClockBiasMs         int64          `json:"clock_bias_ms"`
+	ClockDriftPPM       int64          `json:"clock_drift_ppm"`
+	OutOfSyncSegments   int            `json:"out_of_sync_segments"`
+	P95LatencyMs        int64          `json:"p95_latency_ms"`
+	IndexRebuilt        int            `json:"index_rebuilt"`
+	IndexComplete       bool           `json:"index_complete"`
+	RecoverableSegments int            `json:"recoverable_segments"`
+	UnrecoverableSegs   int            `json:"unrecoverable_segments"`
+	BufferMalformed     int            `json:"buffer_malformed"`
+	SyncMalformed       int            `json:"sync_malformed"`
+	MalformedByClass    map[string]int `json:"malformed_by_class"`
+	QuarantineReasons   map[string]int `json:"quarantine_reasons"`
+	ResultSHA256        string         `json:"result_sha256"`
 }
