@@ -8,15 +8,24 @@ import (
 	"avbatch/internal/mediaerr"
 )
 
+// entryAt builds a one-sample entry, so the block budget equals the entry
+// count and block boundaries are easy to reason about.
 func entryAt(i int) Entry {
 	return Entry{
 		Kind:        "segment",
 		StartNanos:  int64(i) * 1_000_000_000,
 		EndNanos:    int64(i+1) * 1_000_000_000,
-		SampleCount: 30,
+		SampleCount: 1,
 		Bytes:       int64(1000 + i),
 		Source:      []int{0, 1},
 	}
+}
+
+// entryWithSamples builds an entry carrying many media samples.
+func entryWithSamples(i, samples int) Entry {
+	e := entryAt(i)
+	e.SampleCount = samples
+	return e
 }
 
 func digest(b byte) [32]byte {
@@ -258,6 +267,36 @@ func TestBlockSizeValidation(t *testing.T) {
 	}
 	if _, err := NewWriter(Config{BlockSamples: 10, MaxBlockSamples: 5}); err == nil {
 		t.Fatal("oversized block accepted")
+	}
+}
+
+func TestBlockBudgetUsesMediaSamples(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "idx.bin")
+	w, err := NewWriter(Config{Path: path, BlockSamples: 10, InputDigest: digest(1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Two six-sample entries: the second crosses the budget, so the block
+	// closes after it rather than splitting it.
+	w.Add(entryWithSamples(0, 6))
+	w.Add(entryWithSamples(1, 6))
+	if _, err := w.Add(entryWithSamples(2, 1)); err != nil {
+		t.Fatal(err)
+	}
+	hdr, err := w.Commit()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hdr.Blocks != 2 {
+		t.Fatalf("blocks = %d, want 2", hdr.Blocks)
+	}
+	r, err := Open(path, digest(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Recovery.BlocksValid != 2 || len(r.Entries) != 3 {
+		t.Fatalf("recovery = %+v entries=%d", r.Recovery, len(r.Entries))
 	}
 }
 

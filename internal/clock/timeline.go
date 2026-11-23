@@ -101,6 +101,7 @@ type Timeline struct {
 	tol                time.Duration
 	m                  DriftModel
 	maxCumulativeDrift int64
+	tickNanos          int64
 }
 
 // NewTimeline creates an identity (no-drift) timeline for tb. tol is the
@@ -110,7 +111,13 @@ func NewTimeline(tb Timebase, tol time.Duration) *Timeline {
 	if tol < 0 {
 		tol = 0
 	}
-	return &Timeline{tb: tb, tol: tol, maxCumulativeDrift: 1 << 62}
+	tick := int64(1)
+	if tb.Valid() {
+		if n, err := tb.TicksToNanos(1); err == nil && n > 0 {
+			tick = n
+		}
+	}
+	return &Timeline{tb: tb, tol: tol, maxCumulativeDrift: 1 << 62, tickNanos: tick}
 }
 
 // WithDriftLimit sets how far (in nanoseconds) the model may move a sample
@@ -292,13 +299,10 @@ func (tl *Timeline) Correct(ticks uint64, quant uint64) (Corrected, error) {
 		return Corrected{}, mediaerr.New(mediaerr.KindDriftOutOfRange, -1, "", raw,
 			fmt.Sprintf("drift correction %d ns exceeds limit %d ns", drift, tl.maxCumulativeDrift))
 	}
-	half := int64(0)
-	if quant > 0 {
-		if qn, err := tl.tb.TicksToNanos(quant); err == nil {
-			half = qn / 2
-		}
-	}
-	unc := half + tl.m.ResidualNano
+	// A sample's timestamp is exact to one tick; its duration does not make
+	// the timestamp itself uncertain. Uncertainty therefore comes from clock
+	// resolution, the fit residual and projection distance only.
+	unc := tl.tickNanos + tl.m.ResidualNano
 	if tl.m.Valid() {
 		// Projection error grows with distance from the fitted window.
 		unc += int64(roundFloat(absFloat(tl.m.PPM/1e6) * absFloat(float64(raw-tl.m.AnchorMedia))))
@@ -344,9 +348,13 @@ func (tl *Timeline) Order(points []Corrected) ([]Corrected, error) {
 			continue
 		}
 		if gap := b.Nanos - a.Nanos; gap < a.UncertaintyNanos+b.UncertaintyNanos {
+			// Ambiguity is an interval property, not a per-pair event: report
+			// the first ambiguous pair and stop, so a long run of ambiguous
+			// samples yields one actionable error instead of thousands.
 			errs = append(errs, mediaerr.New(mediaerr.KindUnsorted, -1, "", b.Nanos,
 				fmt.Sprintf("sample spacing %d ns inside combined uncertainty %d ns",
 					gap, a.UncertaintyNanos+b.UncertaintyNanos)))
+			break
 		}
 	}
 	if len(errs) > 0 {

@@ -203,7 +203,8 @@ func TestCutDeterministic(t *testing.T) {
 }
 
 func TestCutPrefersKeyframe(t *testing.T) {
-	c, _ := New(Config{SegmentNanos: 1000 * ms, BoundarySearchNanos: 400 * ms, PreferKeyframes: true})
+	c, _ := New(Config{SegmentNanos: 1000 * ms, BoundarySearchNanos: 400 * ms,
+		PreferKeyframes: true, KeyframeSlackNanos: 100 * ms})
 	var samples []Sample
 	tm := int64(0)
 	for i := 0; i < 40; i++ {
@@ -227,18 +228,29 @@ func TestCutPrefersKeyframe(t *testing.T) {
 	}
 }
 
-func TestCutNoLegalBoundaryReported(t *testing.T) {
-	// Two-second frames against a one-second target: the only candidate for
-	// the second boundary is the sample already used for the first, so the
-	// target cannot be honoured. That must be reported, not skipped.
+func TestCutCoarseCadencePostponesBoundary(t *testing.T) {
+	// Two-second frames against a one-second target: the second target can
+	// only resolve to the sample already used by the first boundary. The
+	// boundary is postponed to the next legal sample, the long segment is
+	// kept, and the deviation is reported as alignment error.
 	c, _ := New(Config{SegmentNanos: 1000 * ms, BoundarySearchNanos: 100 * ms})
 	samples := []Sample{
 		{Nanos: 0, Duration: 2000 * ms, Size: 10},
 		{Nanos: 2000 * ms, Duration: 2000 * ms, Size: 10},
+		{Nanos: 4000 * ms, Duration: 2000 * ms, Size: 10},
 	}
-	_, err := c.Cut(samples)
-	if !mediaerr.Is(err, mediaerr.KindNoLegalBoundary) {
-		t.Fatalf("err = %v, want no_legal_boundary", err)
+	man, err := c.Cut(samples)
+	if err != nil {
+		t.Fatalf("cut: %v", err)
+	}
+	if err := ValidateManifest(man); err != nil {
+		t.Fatalf("manifest invalid: %v", err)
+	}
+	if man.Stats.Segments < 2 {
+		t.Fatalf("segments = %d", man.Stats.Segments)
+	}
+	if man.Stats.AlignmentErrorNanos == 0 {
+		t.Fatal("coarse cadence must be reported as alignment error")
 	}
 	if _, err := c.Cut(nil); !mediaerr.Is(err, mediaerr.KindNoLegalBoundary) {
 		t.Fatalf("empty input err = %v, want no_legal_boundary", err)

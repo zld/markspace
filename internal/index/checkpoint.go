@@ -79,7 +79,9 @@ func (h Header) DigestString() string {
 
 // Config controls block sizing and the on-disk path.
 type Config struct {
-	// BlockSamples is the maximum number of entries per block.
+	// BlockSamples is the media sample budget of one block. Entries are never
+	// split across blocks, so a block may slightly exceed the budget when the
+	// last entry is large.
 	BlockSamples int
 	// Path is the index file. Empty disables persistence (memory only).
 	Path string
@@ -89,7 +91,7 @@ type Config struct {
 	MaxBlockSamples int
 }
 
-// DefaultConfig returns a config with 128-entry blocks and a 1e6 cap.
+// DefaultConfig returns a config with a 128-sample block budget and a 1e6 cap.
 func DefaultConfig() Config {
 	return Config{BlockSamples: 128, MaxBlockSamples: 1 << 20}
 }
@@ -109,12 +111,14 @@ func (c Config) validated() (Config, error) {
 
 // Writer commits blocks.
 type Writer struct {
-	cfg    Config
-	file   *os.File
-	buf    bytes.Buffer
-	hdr    Header
-	block  Block
-	closed bool
+	cfg   Config
+	file  *os.File
+	buf   bytes.Buffer
+	hdr   Header
+	block Block
+	// pendingSamples is the sample budget consumed by the current block.
+	pendingSamples int
+	closed         bool
 }
 
 // NewWriter creates (or truncates) the index and writes the header durably.
@@ -157,8 +161,9 @@ func (w *Writer) writeHeader() error {
 	return nil
 }
 
-// Add appends one entry, flushing a full block. It returns the seq of the
-// block that was just committed, or zero when nothing was flushed.
+// Add appends one entry, flushing when the block's sample budget is reached.
+// It returns the seq of the block that was just committed, or zero when
+// nothing was flushed.
 func (w *Writer) Add(e Entry) (uint64, error) {
 	if w.closed {
 		return 0, errors.New("index: writer is closed")
@@ -169,7 +174,8 @@ func (w *Writer) Add(e Entry) (uint64, error) {
 	e.Index = w.hdr.EntryCount
 	w.block.Entries = append(w.block.Entries, e)
 	w.hdr.EntryCount++
-	if len(w.block.Entries) >= w.cfg.BlockSamples {
+	w.pendingSamples += e.SampleCount
+	if w.pendingSamples >= w.cfg.BlockSamples {
 		return w.Flush()
 	}
 	return 0, nil
@@ -180,6 +186,7 @@ func (w *Writer) Flush() (uint64, error) {
 	if len(w.block.Entries) == 0 {
 		return 0, nil
 	}
+	w.pendingSamples = 0
 	if w.file == nil {
 		w.hdr.Blocks++
 		w.block = Block{}

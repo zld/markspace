@@ -37,12 +37,16 @@ func (s Sample) End() int64 { return s.Nanos + s.Duration }
 type Config struct {
 	// SegmentNanos is the nominal segment duration.
 	SegmentNanos int64
-	// BoundarySearchNanos is how far before/after a target boundary a legal
-	// sample start may be chosen.
+	// BoundarySearchNanos is how far before/after a target boundary a keyframe
+	// may be chosen when keyframe preference is on. Without keyframe
+	// preference the nearest sample always wins, however far it is, and the
+	// distance is reported as alignment error.
 	BoundarySearchNanos int64
-	// PreferKeyframes biases selection toward keyframes inside the search
-	// window.
+	// PreferKeyframes lets a keyframe win when it is at most
+	// KeyframeSlackNanos further from the target than the nearest sample.
 	PreferKeyframes bool
+	// KeyframeSlackNanos bounds the alignment error the preference may cost.
+	KeyframeSlackNanos int64
 	// MinSegmentNanos suppresses a trailing segment shorter than this by
 	// merging it into the previous one. Zero keeps all segments.
 	MinSegmentNanos int64
@@ -116,6 +120,12 @@ func New(cfg Config) (*Cutter, error) {
 	if cfg.MinSegmentNanos < 0 {
 		return nil, errors.New("segment: MinSegmentNanos must not be negative")
 	}
+	if cfg.KeyframeSlackNanos < 0 {
+		return nil, errors.New("segment: KeyframeSlackNanos must not be negative")
+	}
+	if !cfg.PreferKeyframes {
+		cfg.KeyframeSlackNanos = 0
+	}
 	return &Cutter{cfg: cfg}, nil
 }
 
@@ -159,60 +169,88 @@ func (c *Cutter) Cut(samples []Sample) (Manifest, error) {
 			maxAlignment = d
 		}
 		if chosen <= boundaries[len(boundaries)-1] {
-			// No distinct legal start exists for this target: sample cadence
-			// is coarser than the segment duration, or a long hold frame sits
-			// on the boundary. Report it instead of silently skipping.
-			segErrs = append(segErrs, mediaerr.New(mediaerr.KindNoLegalBoundary, -1, "", target,
-				"target boundary resolves to the previous boundary; segment target skipped"))
+			// A coarser-than-target cadence or a long hold frame can resolve
+			// several targets to the same sample. The boundary is postponed,
+			// not dropped: the next target will land on the following sample,
+			// and the resulting long segment is visible in the manifest. The
+			// alignment error above records the deviation.
 			continue
 		}
 		boundaries = append(boundaries, chosen)
 	}
-	boundaries = append(boundaries, lastEnd)
+	if lastEnd > boundaries[len(boundaries)-1] {
+		boundaries = append(boundaries, lastEnd)
+	}
 
-	// Single sweep: samples are sorted, boundaries are sorted.
+	// Single sweep: samples are sorted, boundaries are sorted. Each boundary
+	// interval is tiled by segments; any span inside it that no sample covers
+	// becomes an explicit gap, so entries never overlap and missing media is
+	// always named.
 	si := 0
+	emit := func(kind Kind, start, end int64, reason string, seg Segment) {
+		seg.Kind = kind
+		seg.Start = start
+		seg.End = end
+		seg.Index = len(man.Segments)
+		if reason != "" {
+			seg.Reason = reason
+		}
+		man.Segments = append(man.Segments, seg)
+		if kind == KindGap {
+			man.Gaps++
+		}
+	}
 	for bi := 0; bi+1 < len(boundaries); bi++ {
 		start, end := boundaries[bi], boundaries[bi+1]
-		seg := Segment{Index: len(man.Segments), Kind: KindSegment, Start: start, End: end}
-		seen := map[int]bool{}
-		var coveredEnd int64 = -1
 		for si < len(ordered) && ordered[si].Nanos < start {
 			si++
 		}
-		next := si
-		for next < len(ordered) && ordered[next].Nanos < end {
-			s := ordered[next]
-			seg.SampleCount++
-			seg.Bytes += int64(s.Size)
-			if !seen[s.Ordinal] {
-				seen[s.Ordinal] = true
-				seg.SourceOrdinals = append(seg.SourceOrdinals, s.Ordinal)
+		first := si
+		for si < len(ordered) && ordered[si].Nanos < end {
+			si++
+		}
+		if first == si {
+			emit(KindGap, start, end, "no sample lands inside the interval", Segment{})
+			continue
+		}
+		// Walk the covered samples, splitting at genuine holes.
+		cur := Segment{Keyframe: ordered[first].Keyframe}
+		curStart := start
+		coveredEnd := int64(-1)
+		seen := map[int]bool{}
+		flush := func() int64 {
+			if cur.SampleCount == 0 || coveredEnd <= curStart {
+				return coveredEnd
 			}
-			if s.Nanos == start {
-				seg.Keyframe = s.Keyframe
+			cur.Start, cur.End = curStart, coveredEnd
+			cur.Kind = KindSegment
+			sort.Ints(cur.SourceOrdinals)
+			cur.Index = len(man.Segments)
+			man.Segments = append(man.Segments, cur)
+			return coveredEnd
+		}
+		for _, sm := range ordered[first:si] {
+			if coveredEnd >= 0 && sm.Nanos > coveredEnd {
+				holeStart := flush()
+				emit(KindGap, holeStart, sm.Nanos, "missing media between samples", Segment{})
+				cur = Segment{Keyframe: sm.Keyframe}
+				curStart = sm.Nanos
+				coveredEnd = -1
+				seen = map[int]bool{}
 			}
-			if e := s.End(); e > coveredEnd {
+			cur.SampleCount++
+			cur.Bytes += int64(sm.Size)
+			if !seen[sm.Ordinal] {
+				seen[sm.Ordinal] = true
+				cur.SourceOrdinals = append(cur.SourceOrdinals, sm.Ordinal)
+			}
+			if e := sm.End(); e > coveredEnd {
 				coveredEnd = e
 			}
-			next++
 		}
-		si = next
-		sort.Ints(seg.SourceOrdinals)
-		if seg.SampleCount == 0 {
-			seg.Kind = KindGap
-			seg.Reason = "no sample lands inside the interval"
-			man.Gaps++
-		}
-		man.Segments = append(man.Segments, seg)
-		if coveredEnd > 0 && coveredEnd < end {
-			man.Gaps++
-			man.Segments = append(man.Segments, Segment{
-				Kind:   KindGap,
-				Start:  coveredEnd,
-				End:    end,
-				Reason: "missing media between samples",
-			})
+		tail := flush()
+		if tail > 0 && tail < end {
+			emit(KindGap, tail, end, "missing media at the end of the interval", Segment{})
 		}
 	}
 	sortSegments(man.Segments)
@@ -248,6 +286,16 @@ func countSegments(segs []Segment) int {
 		}
 	}
 	return n
+}
+
+// firstSegmentIndex returns the manifest position of the first media segment.
+func firstSegmentIndex(segs []Segment) int {
+	for i, s := range segs {
+		if s.Kind == KindSegment {
+			return i
+		}
+	}
+	return -1
 }
 
 func sortSegments(segs []Segment) {
@@ -335,49 +383,56 @@ func (c *Cutter) nearestStart(starts []legalStart, target int64) int {
 	if !c.cfg.PreferKeyframes || window <= 0 {
 		return best
 	}
-	bias := window / 2
+	slack := c.cfg.KeyframeSlackNanos
+	nearest := bestDist
 	for i := lo - 1; i >= 0 && target-starts[i].nanos <= window; i-- {
-		if starts[i].keyframe && abs(starts[i].nanos-target)-bias < bestDist {
-			best, bestDist = i, abs(starts[i].nanos-target)
+		if d := abs(starts[i].nanos - target); starts[i].keyframe && d <= nearest+slack {
+			if d < bestDist || !starts[best].keyframe {
+				best, bestDist = i, d
+			}
 		}
 	}
 	for i := lo; i < len(starts) && starts[i].nanos-target <= window; i++ {
-		if starts[i].keyframe && abs(starts[i].nanos-target)-bias < bestDist {
-			best, bestDist = i, abs(starts[i].nanos-target)
+		if d := abs(starts[i].nanos - target); starts[i].keyframe && d <= nearest+slack {
+			if d < bestDist || !starts[best].keyframe {
+				best, bestDist = i, d
+			}
 		}
 	}
 	return best
 }
 
 func (c *Cutter) mergeTail(man Manifest) Manifest {
-	if len(man.Segments) < 2 {
+	last := -1
+	for i := len(man.Segments) - 1; i >= 0; i-- {
+		if man.Segments[i].Kind == KindSegment {
+			last = i
+			break
+		}
+	}
+	if last < 0 || man.Segments[last].Duration() >= c.cfg.MinSegmentNanos {
 		return man
 	}
-	last := man.Segments[len(man.Segments)-1]
-	if last.Kind != KindSegment || last.Duration() >= c.cfg.MinSegmentNanos {
-		return man
-	}
-	lastIdx := len(man.Segments) - 1
-	// Find the preceding segment entry.
-	for i := lastIdx - 1; i >= 0; i-- {
+	for i := last - 1; i >= 0; i-- {
 		if man.Segments[i].Kind != KindSegment {
 			continue
 		}
 		prev := &man.Segments[i]
-		prev.End = last.End
-		prev.SampleCount += last.SampleCount
-		prev.Bytes += last.Bytes
+		short := man.Segments[last]
+		prev.End = short.End
+		prev.SampleCount += short.SampleCount
+		prev.Bytes += short.Bytes
 		seen := map[int]bool{}
 		for _, o := range prev.SourceOrdinals {
 			seen[o] = true
 		}
-		for _, o := range last.SourceOrdinals {
+		for _, o := range short.SourceOrdinals {
 			if !seen[o] {
 				prev.SourceOrdinals = append(prev.SourceOrdinals, o)
 			}
 		}
 		sort.Ints(prev.SourceOrdinals)
-		man.Segments = append(man.Segments[:lastIdx], man.Segments[lastIdx+1:]...)
+		man.Segments = append(man.Segments[:last], man.Segments[last+1:]...)
 		for j := range man.Segments {
 			man.Segments[j].Index = j
 		}
