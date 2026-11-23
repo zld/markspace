@@ -60,6 +60,7 @@ type demoFlags struct {
 	injectTruncatedBox    bool
 	injectCheckpointCrash bool
 	durationSeconds       int
+	resume                bool
 }
 
 func parseDemoFlags(args []string, stderr io.Writer) (demoFlags, error) {
@@ -78,6 +79,7 @@ func parseDemoFlags(args []string, stderr io.Writer) (demoFlags, error) {
 	fs.BoolVar(&f.injectTruncatedBox, "inject-truncated-box", false, "truncate the final fragment")
 	fs.BoolVar(&f.injectCheckpointCrash, "inject-checkpoint-crash", false, "simulate a crash mid-index")
 	fs.IntVar(&f.durationSeconds, "duration-seconds", 10, "generated media duration")
+	fs.BoolVar(&f.resume, "resume", false, "continue from an existing index after validating its digest")
 	if err := fs.Parse(args); err != nil {
 		return f, err
 	}
@@ -119,6 +121,7 @@ func runDemo(args []string, stdout, stderr io.Writer) int {
 	cfg := pipeline.DefaultConfig()
 	cfg.BlockSamples = f.blockSamples
 	cfg.IndexPath = filepath.Join(f.indexDir, "manifest.idx")
+	cfg.ResumeIndex = f.resume
 	if f.injectCheckpointCrash {
 		cfg.CrashAtBlocks = 2
 	}

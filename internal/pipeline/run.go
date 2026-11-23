@@ -34,6 +34,11 @@ type Config struct {
 	RTPClockRate      uint32
 	RTPToleranceTicks uint32
 	IndexPath         string
+	// ResumeIndex makes the run validate an existing index at IndexPath and
+	// continue from it. When false the index is written fresh: a stale file
+	// from an unrelated run is replaced atomically rather than mistaken for
+	// something to append to.
+	ResumeIndex bool
 	// CrashAtBlocks makes the run simulate a crash after this many blocks.
 	CrashAtBlocks int
 }
@@ -664,11 +669,11 @@ func buildEntries(man segment.Manifest, dd dedupOutcome, fps []fingerprint.Finge
 // recovering the verified prefix. The returned recovery describes the
 // checkpoint state that was used to resume.
 func writeIndex(cfg index.Config, entries []index.Entry, runCfg Config, publish bool) (index.Recovery, error) {
-	// An existing index at this path belongs to a previous run. Validate it
-	// before writing anything: continuing would either mix two captures in one
-	// manifest or build on a damaged tail, and neither may happen silently.
-	// Verified blocks and the recoverable offset are returned either way.
-	if cfg.Path != "" {
+	// A resume is a promise that the existing index belongs to this input.
+	// Validate that promise before writing anything: continuing would either
+	// mix two captures in one manifest or build on a damaged tail. Verified
+	// blocks and the recoverable offset are returned either way.
+	if cfg.Path != "" && runCfg.ResumeIndex {
 		if _, statErr := os.Stat(cfg.Path); statErr == nil {
 			existing, openErr := index.Open(cfg.Path, cfg.InputDigest)
 			if existing != nil {

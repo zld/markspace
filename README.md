@@ -46,6 +46,11 @@ go build -o avbatch ./cmd/avbatch
 Exit codes: `0` complete, `2` usable output recovered from damaged input,
 anything else failed.
 
+Re-running the same command is safe: the index is replaced atomically. Add
+`--resume` to validate an existing index and continue from its last verified
+block instead; a changed input, a corrupt header or a torn tail is then
+refused with the recoverable offset reported.
+
 ## Output fields
 
 | field | meaning |

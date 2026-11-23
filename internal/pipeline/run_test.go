@@ -210,6 +210,7 @@ func TestRunResumeRefusesChangedInput(t *testing.T) {
 	// checkpoint: the stored digest must stop the resume rather than appending
 	// entries from another capture.
 	changed := buildGroup(t, synth.Options{Seed: 42})
+	cfg.ResumeIndex = true
 	res, err := Run(changed, cfg)
 	if !mediaerr.Is(err, mediaerr.KindResumeMismatch) {
 		t.Fatalf("err = %v, want resume_mismatch", err)
@@ -286,6 +287,7 @@ func TestRunRefusesTruncatedIndexTail(t *testing.T) {
 	if err := os.WriteFile(cfg.IndexPath, data[:len(data)-8], 0o644); err != nil {
 		t.Fatal(err)
 	}
+	cfg.ResumeIndex = true
 	res, err := Run(in, cfg)
 	if !mediaerr.Is(err, mediaerr.KindTruncatedIndex) {
 		t.Fatalf("err = %v, want truncated_index", err)
@@ -308,9 +310,24 @@ func TestRunRefusesCorruptIndex(t *testing.T) {
 	data, _ := os.ReadFile(cfg.IndexPath)
 	copy(data, "XXXX")
 	os.WriteFile(cfg.IndexPath, data, 0o644)
+	cfg.ResumeIndex = true
 	_, err := Run(in, cfg)
 	if !mediaerr.Is(err, mediaerr.KindCorruptCheckpoint) {
 		t.Fatalf("err = %v, want corrupt_checkpoint", err)
+	}
+}
+
+func TestRunReplacesStaleIndexWithoutResume(t *testing.T) {
+	// Re-running the same command twice must succeed: the previous index is
+	// replaced atomically, not treated as a resume attempt.
+	dir := t.TempDir()
+	in := buildGroup(t, synth.Options{Seed: 41})
+	cfg := cleanCfg(dir)
+	if _, err := Run(in, cfg); err != nil {
+		t.Fatalf("first run: %v", err)
+	}
+	if _, err := Run(in, cfg); err != nil {
+		t.Fatalf("second run over the same index: %v", err)
 	}
 }
 
