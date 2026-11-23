@@ -174,3 +174,45 @@ func TestAllFixturesRun(t *testing.T) {
 		t.Fatalf("fixture order changed: %v", FixtureNames())
 	}
 }
+
+func TestCorruptionDoesNotSwallowLaterSamples(t *testing.T) {
+	// The corrupt fixture damages one frame in the middle of the stream;
+	// every good sample after it must still be emitted, and the run must
+	// stay deterministic.
+	cfg := Config{Seed: 42, Fixture: "corrupt", Loss: -1, ReorderMs: -1, LateWindowMs: 250}
+	a := run(t, cfg)
+	b := run(t, cfg)
+	if a.EmittedSamples < 200 {
+		t.Fatalf("only %d samples survived corruption", a.EmittedSamples)
+	}
+	if a.ResultSHA256 != b.ResultSHA256 {
+		t.Fatal("corrupt run is not deterministic")
+	}
+	if a.MalformedByClass["bad_extension"] == 0 {
+		t.Errorf("corrupt extension not classified: %v", a.MalformedByClass)
+	}
+}
+
+func TestLateWindowControlsReplayVersusDrop(t *testing.T) {
+	// The same delayed arrivals are replayed in a wide window but largely
+	// dropped in a narrow one. The window must change the counters, not
+	// the input.
+	wide := run(t, Config{Seed: 42, Fixture: "late-rtcp", Loss: -1, ReorderMs: -1, LateWindowMs: 250})
+	narrow := run(t, Config{Seed: 42, Fixture: "late-rtcp", Loss: -1, ReorderMs: -1, LateWindowMs: 40})
+	if wide.LateReplayed <= narrow.LateReplayed {
+		t.Fatalf("wide window replayed %d, narrow %d; expected more with a wider window",
+			wide.LateReplayed, narrow.LateReplayed)
+	}
+	// Media delayed beyond even the wide window is dropped in both runs;
+	// the narrow window must additionally reject more feedback as final.
+	if narrow.LateDropped == 0 {
+		t.Fatal("narrow window dropped nothing")
+	}
+	if narrow.LateFeedback <= wide.LateFeedback {
+		t.Fatalf("narrow window counted %d late feedbacks, wide %d; expected more when narrow",
+			narrow.LateFeedback, wide.LateFeedback)
+	}
+	if len(wide.ResultSHA256) != 64 || len(narrow.ResultSHA256) != 64 {
+		t.Fatal("digest missing")
+	}
+}
