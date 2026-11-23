@@ -40,9 +40,9 @@ type Entry struct {
 // which keeps a single dynamic-length array (the layout go-mp4 supports).
 type KidxBox struct {
 	mp4.Box
-	Magic      [4]byte `mp4:"0,size=8"`
-	Version    uint8   `mp4:"1,size=8"`
-	EntryCount uint32  `mp4:"2,size=32"`
+	Magic      [4]byte  `mp4:"0,size=8"`
+	Version    uint8    `mp4:"1,size=8"`
+	EntryCount uint32   `mp4:"2,size=32"`
 	Entries    []uint64 `mp4:"3,len=dynamic,size=64"`
 }
 

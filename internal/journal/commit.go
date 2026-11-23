@@ -141,10 +141,10 @@ func (c *Coordinator) CommittedStages() ([]string, error) {
 
 // RecoveryReport describes what restart found on disk.
 type RecoveryReport struct {
-	Replayed   []string           // stages whose COMMIT record was durable
-	Isolated   bool               // an uncommitted/corrupt tail was cut off
-	TailOffset int64              // byte offset the WAL was truncated to
-	Artifacts  map[string][]byte  // replayed stage -> key -> payload
+	Replayed   []string          // stages whose COMMIT record was durable
+	Isolated   bool              // an uncommitted/corrupt tail was cut off
+	TailOffset int64             // byte offset the WAL was truncated to
+	Artifacts  map[string][]byte // replayed stage -> key -> payload
 }
 
 // Recover restores committed state from a journal directory after restart.
