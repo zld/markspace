@@ -36,9 +36,16 @@ go run ./cmd/mediacore verify \
 ```
 
 `demo` prints `fragments`, `tracks`, `faults`, `first_error_offset`,
-`offset_error_bytes`, `recovered`, `resume_ms`, `frames` and `sha256`.
-Repeating the same invocation reproduces the same `sha256`, and the second
-run resumes from the checkpoint.
+`offset_error_bytes`, `faults_reached`, `recovered`, `resume_ms`, `frames`
+and `sha256`. Repeating the same invocation reproduces the same `sha256`, and
+the second run resumes from the checkpoint.
+
+`faults` is how many faults were injected; `faults_reached` is how many were
+matched byte-exactly by a reported error. A structural fault (an impossible
+box size or sample range) stops parsing at its own byte by design, so faults
+placed after it are unreachable. `offset_error_bytes` is the distance between
+the first reported error and the nearest injected byte, and is `0` whenever
+the first error is one of the damaged positions.
 
 `scripts/acceptance.sh` runs both commands and asserts the acceptance
 properties.

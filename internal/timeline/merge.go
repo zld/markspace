@@ -127,24 +127,3 @@ func coverageEnd(samples []Sample) int64 {
 	}
 	return end
 }
-
-// GlobalGaps returns holes not covered by any merged sample. Tracks may
-// legitimately interleave, so a hole only exists where no sample is active.
-func GlobalGaps(samples []Sample) []Gap {
-	if len(samples) == 0 {
-		return nil
-	}
-	sorted := append([]Sample(nil), samples...)
-	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].TimelineTime < sorted[j].TimelineTime })
-	var gaps []Gap
-	covered := sorted[0].End()
-	for _, s := range sorted[1:] {
-		if s.TimelineTime > covered {
-			gaps = append(gaps, Gap{Start: covered, End: s.TimelineTime, Duration: s.TimelineTime - covered, Kind: "global"})
-		}
-		if s.End() > covered {
-			covered = s.End()
-		}
-	}
-	return gaps
-}

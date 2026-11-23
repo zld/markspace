@@ -156,27 +156,6 @@ func (r *Reader) Payload(h Header) ([]byte, *fault.Error) {
 	return r.Data[h.PayloadStart():h.End()], nil
 }
 
-// Walk returns consecutive headers in [start,end). It stops at the first
-// malformed box and reports it; the returned slice holds only valid headers.
-func (r *Reader) Walk(start, end int64) ([]Header, *fault.Error) {
-	if end > r.Len() {
-		end = r.Len()
-	}
-	var out []Header
-	for off := start; off < end; {
-		h, ok, f := r.Next(off)
-		if !ok {
-			if f != nil {
-				return out, f
-			}
-			break
-		}
-		out = append(out, h)
-		off = h.End()
-	}
-	return out, nil
-}
-
 // Unmarshal decodes the payload of h with go-mp4. The payload is passed as a
 // bounded reader so go-mp4 cannot read past the declared box.
 func (r *Reader) Unmarshal(h Header, dst mp4.IBox) *fault.Error {
@@ -197,12 +176,4 @@ func (r *Reader) Unmarshal(h Header, dst mp4.IBox) *fault.Error {
 			fmt.Sprintf("decoded %d of %d payload bytes", n, h.PayloadSize()))
 	}
 	return nil
-}
-
-// ChildAt resolves the child header at off inside parent's payload.
-func (r *Reader) ChildAt(parent Header, off int64) (Header, bool, *fault.Error) {
-	if off < parent.PayloadStart() || off > parent.End() {
-		return Header{}, false, fault.New(fault.CodeBadPayload, r.File, off, parent.Type, "child offset outside parent")
-	}
-	return r.Next(off)
 }

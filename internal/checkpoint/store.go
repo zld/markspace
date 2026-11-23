@@ -134,15 +134,6 @@ func (s *Store) Exists() bool {
 	return err == nil
 }
 
-// Remove deletes the checkpoint after a fully verified run.
-func (s *Store) Remove() error {
-	err := os.Remove(s.Path)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	return err
-}
-
 // DigestInputs hashes the exact input bytes a checkpoint was computed from.
 func DigestInputs(parts ...[]byte) string {
 	h := sha256.New()

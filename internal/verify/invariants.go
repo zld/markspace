@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"sort"
 
-	"mediacore/internal/fault"
 	"mediacore/internal/timeline"
 	"mediacore/internal/transform"
 )
@@ -182,13 +181,4 @@ func short(s string) string {
 		return s
 	}
 	return s[:12]
-}
-
-// FaultCounts aggregates distinct fault codes for reporting.
-func FaultCounts(errs []*fault.Error) map[fault.Code]int {
-	counts := make(map[fault.Code]int, len(errs))
-	for _, e := range errs {
-		counts[e.Code]++
-	}
-	return counts
 }

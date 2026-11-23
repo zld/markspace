@@ -29,16 +29,6 @@ type InitInfo struct {
 	MoovSize       int64       `json:"moov_size"`
 }
 
-// TrackByID returns the declared track.
-func (i *InitInfo) TrackByID(id uint32) (InitTrack, bool) {
-	for _, t := range i.Tracks {
-		if t.TrackID == id {
-			return t, true
-		}
-	}
-	return InitTrack{}, false
-}
-
 // ParseInit reads ftyp and moov from the start of the input. All reads are
 // bounded by declared box sizes; a malformed tree is reported with the raw
 // offset of the offending box.

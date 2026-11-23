@@ -4,15 +4,12 @@
 package main
 
 import (
-	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"strings"
 
 	"mediacore/internal/fault"
-	"mediacore/internal/fixture"
 	"mediacore/internal/pipeline"
 	"mediacore/internal/verify"
 )
@@ -150,7 +147,8 @@ func printDemo(r *pipeline.Result, verbose bool) {
 	fmt.Printf("faults=%d\n", r.Faults)
 	fmt.Printf("first_error_offset=%d\n", r.FirstErrorOffset)
 	fmt.Printf("first_error_code=%s\n", r.FirstErrorCode)
-	fmt.Printf("offset_error_bytes=%d\n", ClosestOffsetDelta(r))
+	fmt.Printf("offset_error_bytes=%d\n", OffsetErrorBytes(r))
+	fmt.Printf("faults_reached=%d\n", FaultsReached(r))
 	fmt.Printf("recovered=%v\n", r.Recovered)
 	fmt.Printf("resumed=%v\n", r.Resumed)
 	fmt.Printf("resume_ms=%.3f\n", r.ResumeMS)
@@ -178,23 +176,50 @@ func printDemo(r *pipeline.Result, verbose bool) {
 	}
 }
 
-// ClosestOffsetDelta compares every recorded fault offset with every declared
-// injection position and returns the smallest absolute distance. Zero means a
-// reported error landed exactly on an injected byte.
-func ClosestOffsetDelta(r *pipeline.Result) int64 {
+// OffsetErrorBytes is the distance between the reported first error and the
+// nearest byte that was actually damaged. Zero means the first reported error
+// landed exactly on an injected fault position.
+//
+// Several faults can be combined in one input, and a structural defect stops
+// parsing at its own byte: a fault placed after that point is unreachable by
+// design, not misreported. FaultsReached reports how many injections were
+// matched exactly, so an unreachable tail is visible rather than hidden.
+func OffsetErrorBytes(r *pipeline.Result) int64 {
 	if len(r.InjectedOffsets) == 0 || len(r.Errors) == 0 {
 		return 0
 	}
-	best := int64(-1)
+	return nearestDistance(r.FirstErrorOffset, r.InjectedOffsets)
+}
+
+// FaultsReached counts injections that at least one reported error matched
+// byte-exactly.
+func FaultsReached(r *pipeline.Result) int {
+	n := 0
 	for _, injected := range r.InjectedOffsets {
-		for _, err := range r.Errors {
-			d := err.Offset - injected
-			if d < 0 {
-				d = -d
-			}
-			if best < 0 || d < best {
-				best = d
-			}
+		if nearestDistance(injected, offsetsOf(r.Errors)) == 0 {
+			n++
+		}
+	}
+	return n
+}
+
+func offsetsOf(errs []*fault.Error) []int64 {
+	out := make([]int64, len(errs))
+	for i, e := range errs {
+		out[i] = e.Offset
+	}
+	return out
+}
+
+func nearestDistance(off int64, targets []int64) int64 {
+	best := int64(-1)
+	for _, t := range targets {
+		d := off - t
+		if d < 0 {
+			d = -d
+		}
+		if best < 0 || d < best {
+			best = d
 		}
 	}
 	if best < 0 {
@@ -240,9 +265,3 @@ func splitList(raw string) []string {
 	}
 	return strings.Split(raw, ",")
 }
-
-// ensure fault and verify stay referenced for documentation values.
-var _ = errors.Is
-var _ fault.Code
-var _ = fixture.AllFaults
-var _ = json.Marshal
