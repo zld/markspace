@@ -155,7 +155,6 @@ type HitReport struct {
 // miss; the worst observed delta is reported either way.
 func (ix *Index) Hits(track uint64, cuts []int64, tolerance int64) HitReport {
 	rep := HitReport{VideoTrack: track, Cuts: len(cuts)}
-	entries := ix.byTrack[track]
 	for _, cut := range cuts {
 		e, delta, ok := ix.Nearest(track, cut)
 		if !ok {
@@ -173,7 +172,6 @@ func (ix *Index) Hits(track uint64, cuts []int64, tolerance int64) HitReport {
 	if rep.Cuts > 0 {
 		rep.HitRate = float64(rep.Hits) / float64(rep.Cuts)
 	}
-	_ = entries
 	return rep
 }
 
