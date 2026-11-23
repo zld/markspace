@@ -55,6 +55,9 @@ type Options struct {
 	InjectVFR             bool
 	InjectTruncatedBox    bool
 	InjectCheckpointCrash bool
+	// DurationSeconds overrides the generated media duration. Zero uses the
+	// demo default of 10 s.
+	DurationSeconds int
 	// SkipDuplicate suppresses the retransmitted fragment that every capture
 	// group contains by default. Re-delivery is normal network behaviour, so
 	// the demo always exercises it; only tests that need a pristine capture
@@ -74,7 +77,7 @@ const (
 	movieTimescale = 1000
 	videoTrackID   = 1
 	audioTrackID   = 2
-	// demoSeconds is the media duration of the generated group.
+	// demoSeconds is the default media duration of the generated group.
 	demoSeconds = 10
 	// fragmentSeconds is the mdat span of one fragment.
 	fragmentSeconds = 1
@@ -102,22 +105,29 @@ func BuildDemoGroup(opt Options) (*Group, error) {
 		return nil, err
 	}
 	g := &Group{Init: initBytes, TargetKbps: targetKbps}
+	durationSeconds := opt.DurationSeconds
+	if durationSeconds <= 0 {
+		durationSeconds = demoSeconds
+	}
 	if opt.InjectVFR {
 		g.Faults = append(g.Faults, FaultVFR)
 	}
 
-	durs := make([]int64, 0, len(frameDurs30)*400)
-	for len(durs) < 300 {
+	// Frame durations are needed for the whole requested duration: 30 fps ×
+	// 7200 s is the largest accepted run, about 216k frames.
+	wantFrames := durationSeconds * 60
+	durs := make([]int64, 0, wantFrames+len(frameDursVFR))
+	for len(durs) < wantFrames {
 		if opt.InjectVFR {
 			durs = append(durs, frameDursVFR...)
 		} else {
 			durs = append(durs, frameDurs30...)
 		}
 	}
-	// Trim to demoSeconds of media.
+	// Trim to the requested media duration.
 	total := int64(0)
 	keep := 0
-	for keep < len(durs) && total < demoSeconds*1000 {
+	for keep < len(durs) && total < int64(durationSeconds)*1000 {
 		total += durs[keep]
 		keep++
 	}
@@ -224,11 +234,12 @@ func BuildDemoGroup(opt Options) (*Group, error) {
 		g.Fragments = append(g.Fragments, CapturedFragment{
 			Ordinal: pi,
 			Data:    frag,
-			// Arrival follows media time plus a small deterministic jitter,
-			// so the drift fit sees a real sender clock rather than a
-			// perfectly synthetic one. Jitter is bounded well below one
-			// fragment so it cannot reorder fragments.
-			WallNanos: plan.wallNanos + int64(next()%8_000_000) +
+			// The capture timestamp follows media time plus sender-side
+			// granularity, so the drift fit sees a real clock rather than a
+			// perfectly synthetic one. Granularity is tens of microseconds:
+			// network arrival jitter is milliseconds, which no estimator can
+			// separate from drift using one timestamp per second.
+			WallNanos: plan.wallNanos + int64(next()%40_000) +
 				int64(float64(plan.wallNanos)*driftPPM/1e6),
 		})
 		wall = plan.wallNanos

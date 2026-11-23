@@ -138,13 +138,14 @@ func Digest(in Input, cfg Config) [32]byte {
 
 // trackSample is one video sample on the corrected timeline, before cutting.
 type trackSample struct {
-	ordinal  int
-	index    int
-	start    int64
-	dur      int64
-	size     int
-	digest   [32]byte
-	keyframe bool
+	ordinal    int
+	index      int
+	start      int64
+	dur        int64
+	size       int
+	digest     [32]byte
+	keyframe   bool
+	resolution int64
 }
 
 // Run executes the pipeline. A non-nil error always comes with a Result; when
@@ -427,12 +428,13 @@ func buildTrackSamples(frags []*cmaf.Fragment, oi orderInfo, wall map[int]int64,
 	// Pass 3: correct each sample and order the result.
 	var points []clock.Corrected
 	type meta struct {
-		ordinal  int
-		index    int
-		dur      int64
-		size     int
-		digest   [32]byte
-		keyframe bool
+		ordinal    int
+		index      int
+		dur        int64
+		size       int
+		digest     [32]byte
+		keyframe   bool
+		resolution int64
 	}
 	var metas []meta
 	for _, p := range plans {
@@ -469,12 +471,13 @@ func buildTrackSamples(frags []*cmaf.Fragment, oi orderInfo, wall map[int]int64,
 			}
 			points = append(points, c)
 			metas = append(metas, meta{
-				ordinal:  p.frag.Ordinal,
-				index:    i,
-				dur:      durNanos,
-				size:     int(s.Size),
-				digest:   digest,
-				keyframe: i == 0,
+				ordinal:    p.frag.Ordinal,
+				index:      i,
+				dur:        durNanos,
+				size:       int(s.Size),
+				digest:     digest,
+				keyframe:   i == 0,
+				resolution: c.ResolutionNanos,
 			})
 			cursor += int64(s.Duration)
 		}
@@ -510,13 +513,14 @@ func buildTrackSamples(frags []*cmaf.Fragment, oi orderInfo, wall map[int]int64,
 		used[mi] = true
 		m := metas[mi]
 		out = append(out, trackSample{
-			ordinal:  m.ordinal,
-			index:    m.index,
-			start:    p.Nanos,
-			dur:      m.dur,
-			size:     m.size,
-			digest:   m.digest,
-			keyframe: m.keyframe,
+			ordinal:    m.ordinal,
+			index:      m.index,
+			start:      p.Nanos,
+			dur:        m.dur,
+			size:       m.size,
+			digest:     m.digest,
+			keyframe:   m.keyframe,
+			resolution: m.resolution,
 		})
 	}
 	return out, timeline, errs
@@ -683,7 +687,7 @@ func writeIndex(cfg index.Config, entries []index.Entry, runCfg Config, publish 
 		if !publish {
 			// Keep the verified blocks available under the staging name so
 			// recovery can reuse them, but never publish a damaged run.
-			if err := os.Rename(cfg.Path, cfg.Path+".partial"); err != nil {
+			if err := os.Rename(cfg.Path, cfg.Path+".partial"); err != nil && !os.IsNotExist(err) {
 				return index.Recovery{}, err
 			}
 		}

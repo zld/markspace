@@ -69,7 +69,14 @@ type Corrected struct {
 	// Nanos is the drift-corrected position used by all downstream stages.
 	Nanos int64
 	// UncertaintyNanos is the half-width of the confidence bound around Nanos.
+	// It includes the drift fit residual, so it describes how well the sample is
+	// placed absolutely; it is reported, not used for ordering.
 	UncertaintyNanos int64
+	// ResolutionNanos is the timestamp quantisation: the smallest spacing at
+	// which two samples are still distinguishable. Ordering compares against
+	// this, because two media timestamps one tick apart really are ordered,
+	// however noisy the sender clock turned out to be.
+	ResolutionNanos int64
 	// DriftNanos is Nanos-RawNanos, exposed for diagnostics.
 	DriftNanos int64
 }
@@ -268,6 +275,13 @@ func medianAbsResidual(pts []obsPoint, m0, w0 int64, ppm float64) float64 {
 	return vals[len(vals)/2]
 }
 
+func maxInt64(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
 func absFloat(f float64) float64 {
 	if f < 0 {
 		return -f
@@ -315,6 +329,7 @@ func (tl *Timeline) Correct(ticks uint64, quant uint64) (Corrected, error) {
 		RawNanos:         raw,
 		Nanos:            nanos,
 		UncertaintyNanos: unc,
+		ResolutionNanos:  tl.tickNanos,
 		DriftNanos:       drift,
 	}, nil
 }
@@ -347,13 +362,18 @@ func (tl *Timeline) Order(points []Corrected) ([]Corrected, error) {
 				fmt.Sprintf("corrected time moved backwards: %d -> %d ns", a.Nanos, b.Nanos)))
 			continue
 		}
-		if gap := b.Nanos - a.Nanos; gap < a.UncertaintyNanos+b.UncertaintyNanos {
-			// Ambiguity is an interval property, not a per-pair event: report
-			// the first ambiguous pair and stop, so a long run of ambiguous
-			// samples yields one actionable error instead of thousands.
+		// Two samples are unorderable only when their separation is below the
+		// timestamp resolution: they are then the same instant as far as the
+		// container can express. Drift residual does not enter here — it is
+		// uncertainty about absolute placement, and treating it as ordering
+		// ambiguity would call correctly ordered adjacent frames ambiguous
+		// whenever the network was noisy.
+		// Two samples are indistinguishable only when they occupy the same
+		// media tick; a separation of exactly one tick is the finest step the
+		// container can express and is perfectly orderable.
+		if sep, quantum := b.RawNanos-a.RawNanos, maxInt64(a.ResolutionNanos, b.ResolutionNanos); sep < quantum {
 			errs = append(errs, mediaerr.New(mediaerr.KindUnsorted, -1, "", b.Nanos,
-				fmt.Sprintf("sample spacing %d ns inside combined uncertainty %d ns",
-					gap, a.UncertaintyNanos+b.UncertaintyNanos)))
+				fmt.Sprintf("media-time separation %d ns is below one %d ns tick", sep, quantum)))
 			break
 		}
 	}

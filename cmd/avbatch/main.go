@@ -58,7 +58,7 @@ type demoFlags struct {
 	injectVFR             bool
 	injectTruncatedBox    bool
 	injectCheckpointCrash bool
-	injectDuplicate       bool
+	durationSeconds       int
 }
 
 func parseDemoFlags(args []string, stderr *os.File) (demoFlags, error) {
@@ -76,6 +76,7 @@ func parseDemoFlags(args []string, stderr *os.File) (demoFlags, error) {
 	fs.BoolVar(&f.injectVFR, "inject-vfr", false, "use a variable frame rate")
 	fs.BoolVar(&f.injectTruncatedBox, "inject-truncated-box", false, "truncate the final fragment")
 	fs.BoolVar(&f.injectCheckpointCrash, "inject-checkpoint-crash", false, "simulate a crash mid-index")
+	fs.IntVar(&f.durationSeconds, "duration-seconds", 10, "generated media duration")
 	if err := fs.Parse(args); err != nil {
 		return f, err
 	}
@@ -84,6 +85,9 @@ func parseDemoFlags(args []string, stderr *os.File) (demoFlags, error) {
 	}
 	if f.blockSamples <= 0 {
 		return f, errors.New("--block-samples must be positive")
+	}
+	if f.durationSeconds <= 0 || f.durationSeconds > 7200 {
+		return f, errors.New("--duration-seconds must be between 1 and 7200")
 	}
 	if !f.generate {
 		return f, errors.New("--generate is required: this build never reads external media")
@@ -105,6 +109,7 @@ func runDemo(args []string, stdout, stderr *os.File) int {
 		InjectVFR:             f.injectVFR,
 		InjectTruncatedBox:    f.injectTruncatedBox,
 		InjectCheckpointCrash: f.injectCheckpointCrash,
+		DurationSeconds:       f.durationSeconds,
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "avbatch demo: generate: %v\n", err)

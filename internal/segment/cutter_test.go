@@ -161,15 +161,25 @@ func TestCutRefusesOverlap(t *testing.T) {
 	}
 }
 
-func TestCutRefusesAmbiguousSamples(t *testing.T) {
+func TestCutRefusesSubResolutionSamples(t *testing.T) {
 	c, _ := New(Config{SegmentNanos: 1000 * ms})
 	samples := []Sample{
-		{Nanos: 0, Duration: 10 * ms, UncertaintyNanos: 6 * ms, Size: 10},
-		{Nanos: 8 * ms, Duration: 10 * ms, UncertaintyNanos: 6 * ms, Size: 10},
+		{Nanos: 0, Duration: 1 * ms, ResolutionNanos: 6 * ms, Size: 10},
+		{Nanos: 1 * ms, Duration: 1 * ms, ResolutionNanos: 6 * ms, Size: 10},
 	}
 	_, err := c.Cut(samples)
 	if !mediaerr.Is(err, mediaerr.KindUnsorted) {
 		t.Fatalf("err = %v, want unsorted", err)
+	}
+	// A large placement uncertainty with fine resolution is fine: VFR
+	// adjacent frames must not be rejected, and non-overlapping ones survive
+	// the overlap check too.
+	ok := []Sample{
+		{Nanos: 0, Duration: 6 * ms, UncertaintyNanos: 40 * ms, ResolutionNanos: 1, Size: 10},
+		{Nanos: 8 * ms, Duration: 6 * ms, UncertaintyNanos: 40 * ms, ResolutionNanos: 1, Size: 10},
+	}
+	if _, err := c.Cut(ok); err != nil {
+		t.Fatalf("adjacent frames rejected: %v", err)
 	}
 }
 

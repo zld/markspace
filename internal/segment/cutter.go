@@ -23,9 +23,12 @@ type Sample struct {
 	Nanos    int64
 	Duration int64
 	Size     int
-	// UncertaintyNanos comes from the clock subsystem and widens the window
-	// in which a boundary may legally land.
+	// UncertaintyNanos is the clock subsystem's absolute placement bound; it
+	// is reported with the segment, not used to reject adjacent samples.
 	UncertaintyNanos int64
+	// ResolutionNanos is the timestamp quantum. Samples closer than the
+	// combined resolution cannot be ordered and are rejected.
+	ResolutionNanos int64
 	// Keyframe marks an independently decodable sample; cutters prefer them.
 	Keyframe bool
 }
@@ -327,10 +330,9 @@ func (c *Cutter) validate(samples []Sample) ([]Sample, error) {
 				fmt.Sprintf("two samples share start time %d ns", s.Nanos)))
 			continue
 		}
-		if gap := s.Nanos - prev.Nanos; gap < prev.UncertaintyNanos+s.UncertaintyNanos {
+		if gap, quantum := s.Nanos-prev.Nanos, maxOf(prev.ResolutionNanos, s.ResolutionNanos); gap < quantum {
 			errs = append(errs, mediaerr.New(mediaerr.KindUnsorted, s.Ordinal, "", s.Nanos,
-				fmt.Sprintf("sample spacing %d ns is inside the combined uncertainty %d ns",
-					gap, prev.UncertaintyNanos+s.UncertaintyNanos)))
+				fmt.Sprintf("sample spacing %d ns is below one %d ns tick", gap, quantum)))
 		}
 	}
 	return out, errors.Join(errs...)
@@ -439,6 +441,13 @@ func (c *Cutter) mergeTail(man Manifest) Manifest {
 		return man
 	}
 	return man
+}
+
+func maxOf(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func abs(v int64) int64 {

@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -229,6 +230,45 @@ func TestDigestChangesWithMediaAndConfig(t *testing.T) {
 	c.SegmentMillis = 500
 	if Digest(a, cfg) == Digest(a, c) {
 		t.Fatal("config change did not affect the digest")
+	}
+}
+
+func TestRunSameInputRepeatsExactly(t *testing.T) {
+	// The acceptance contract: identical input, identical manifest and
+	// statistics, regardless of index path or block layout.
+	in := buildGroup(t, synth.Options{Seed: 41, InjectVFR: true, InjectSeqGap: true})
+	dir := t.TempDir()
+	// The injected gap is reported but does not change the output, so compare
+	// the results rather than the error values.
+	a, _ := Run(in, cleanCfg(dir))
+	cfg := cleanCfg(dir)
+	cfg.BlockSamples = 16
+	cfg.IndexPath = filepath.Join(dir, "small-blocks.idx")
+	b, _ := Run(in, cfg)
+	if a.ManifestSHA256 != b.ManifestSHA256 {
+		t.Fatalf("manifest digest changed with block size: %s vs %s", a.ManifestSHA256, b.ManifestSHA256)
+	}
+	if a.Segments != b.Segments || a.QualitySamples != b.QualitySamples ||
+		a.SilenceMillis != b.SilenceMillis || a.Duplicates != b.Duplicates {
+		t.Fatalf("statistics differ between runs:\n%+v\n%+v", a, b)
+	}
+}
+
+func TestRunOverlappingManifestNeverPublished(t *testing.T) {
+	// A damaged capture still produces entries, but the published path must
+	// only appear when the run is clean. This is the "no partial index commit"
+	// requirement, expressed as a filesystem fact.
+	in := buildGroup(t, synth.Options{Seed: 41, InjectTruncatedBox: true})
+	dir := t.TempDir()
+	cfg := cleanCfg(dir)
+	if _, err := Run(in, cfg); err == nil {
+		t.Fatal("truncated input reported no error")
+	}
+	if _, err := os.Stat(cfg.IndexPath); err == nil {
+		t.Fatal("damaged run published an index")
+	}
+	if _, err := os.Stat(cfg.IndexPath + ".partial"); err != nil {
+		t.Fatalf("verified blocks were discarded: %v", err)
 	}
 }
 

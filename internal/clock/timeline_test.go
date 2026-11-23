@@ -83,20 +83,41 @@ func TestFitRejectsAbsurdDrift(t *testing.T) {
 	}
 }
 
-func TestOrderRefusesAmbiguousSamples(t *testing.T) {
+func TestOrderUsesResolutionNotDriftResidual(t *testing.T) {
 	tl := NewTimeline(Timebase{Timescale: 1000}, 0)
-	pts := []Corrected{
-		{Nanos: 1000, UncertaintyNanos: 400},
-		{Nanos: 1100, UncertaintyNanos: 400},
+	// Adjacent frames 1 ms apart with a large absolute uncertainty are still
+	// correctly ordered: the residual describes placement, not separation.
+	// One nanosecond quantum and a 1 ms frame: adjacent frames are distinct.
+	adjacent := []Corrected{
+		{Nanos: 0, RawNanos: 0, ResolutionNanos: 1, UncertaintyNanos: 40_000_000},
+		{Nanos: 1_000_000, RawNanos: 1_000_000, ResolutionNanos: 1, UncertaintyNanos: 40_000_000},
 	}
-	_, err := tl.Order(pts)
-	if !mediaerr.Is(err, mediaerr.KindUnsorted) {
-		t.Fatalf("err = %v, want unsorted", err)
+	// A 1 ms quantum (a 1 kHz timescale) also orders 1 ms frames.
+	coarse := []Corrected{
+		{Nanos: 0, RawNanos: 0, ResolutionNanos: 1_000_000},
+		{Nanos: 1_000_000, RawNanos: 1_000_000, ResolutionNanos: 1_000_000},
 	}
-	same := []Corrected{{Nanos: 5, UncertaintyNanos: 1}, {Nanos: 5, UncertaintyNanos: 1}}
-	_, err = tl.Order(same)
-	if !mediaerr.Is(err, mediaerr.KindUnsorted) {
+	if _, err := tl.Order(coarse); err != nil {
+		t.Fatalf("coarse-quantum adjacent frames rejected: %v", err)
+	}
+	if _, err := tl.Order(adjacent); err != nil {
+		t.Fatalf("adjacent samples rejected: %v", err)
+	}
+	// Same instant expressed twice cannot be ordered.
+	same := []Corrected{
+		{Nanos: 5, RawNanos: 5, ResolutionNanos: 10},
+		{Nanos: 5, RawNanos: 5, ResolutionNanos: 10},
+	}
+	if _, err := tl.Order(same); !mediaerr.Is(err, mediaerr.KindUnsorted) {
 		t.Fatalf("equal times err = %v, want unsorted", err)
+	}
+	// Separation below the quantum is also unorderable.
+	tooClose := []Corrected{
+		{Nanos: 0, RawNanos: 0, ResolutionNanos: 1_000_000},
+		{Nanos: 500, RawNanos: 500, ResolutionNanos: 1_000_000},
+	}
+	if _, err := tl.Order(tooClose); !mediaerr.Is(err, mediaerr.KindUnsorted) {
+		t.Fatalf("sub-resolution err = %v, want unsorted", err)
 	}
 }
 
