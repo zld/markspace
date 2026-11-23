@@ -16,6 +16,7 @@ type TrackRun struct {
 	TrackID         uint32
 	BaseMediaDecode uint64 // tfdt, track timescale units
 	TfdtPresent     bool
+	TfdtVersion     uint8 // 0 for 32-bit, 1 for 64-bit; 0xff when absent
 	SampleDurations []uint32
 	SampleSizes     []uint32
 	SampleFlags     []uint32
@@ -178,7 +179,7 @@ func parseMfhd(body []byte, abs int64) (int, *timeline.MediaError) {
 }
 
 func parseTraf(body []byte, base int64) (*TrackRun, *timeline.MediaError) {
-	run := &TrackRun{}
+	run := &TrackRun{TfdtVersion: 0xff}
 	var trunBodies [][]byte
 	var trunOffsets []int64
 	err := ScanBoxes(bytes.NewReader(body), base, MaxFragmentSize,
@@ -199,6 +200,7 @@ func parseTraf(body []byte, base int64) (*TrackRun, *timeline.MediaError) {
 				} else {
 					run.BaseMediaDecode = v
 					run.TfdtPresent = true
+					run.TfdtVersion = b[0]
 				}
 			case "trun":
 				trunBodies = append(trunBodies, b)

@@ -49,7 +49,7 @@ func u32(v uint32) []byte {
 }
 
 // buildFragment wraps moof(mfhd, trafs...) + mdat(payload).
-func buildFragment(seq int, trafs [][]byte, mdat []byte) []byte {
+func buildRawFragment(seq int, trafs [][]byte, mdat []byte) []byte {
 	mfhd := full("mfhd", fullBox(0, 0, u32(uint32(seq))))
 	moofInner := mfhd
 	for _, tr := range trafs {
@@ -64,7 +64,7 @@ func TestParseFragmentHappyPath(t *testing.T) {
 	sizes := []uint32{10, 7}
 	durations := []uint32{3003, 3003}
 	traf := buildTraf(1, 90000, sizes, durations)
-	data := buildFragment(3, [][]byte{traf}, mdat)
+	data := buildRawFragment(3, [][]byte{traf}, mdat)
 
 	frag, err := ParseFragment(bytes.NewReader(data), 0)
 	if err != nil {
@@ -127,7 +127,7 @@ func TestParseFragmentMissingMfhd(t *testing.T) {
 
 func TestParseFragmentTruncatedBox(t *testing.T) {
 	// Valid start, then a header claiming 64 bytes with only 4 payload bytes.
-	data := buildFragment(1,
+	data := buildRawFragment(1,
 		[][]byte{buildTraf(1, 0, []uint32{2}, []uint32{100})},
 		[]byte("ab"))
 	data = append(data, 0x00, 0x00, 0x00, 0x40, 't', 'r', 'u', 'n', 1, 2, 3, 4)
@@ -160,7 +160,7 @@ func TestParseFragmentTrunEntryTruncated(t *testing.T) {
 	trunBody = append(trunBody, u32(100)...)
 	trunBody = append(trunBody, u32(4)...)
 	traf := box("traf", append(tfhd, full("trun", trunBody)...))
-	data := buildFragment(9, [][]byte{traf}, []byte("abcd"))
+	data := buildRawFragment(9, [][]byte{traf}, []byte("abcd"))
 	frag, err := ParseFragment(bytes.NewReader(data), 0)
 	if err != nil {
 		t.Fatalf("trun truncation should be recorded, not fatal: %v", err)
@@ -182,7 +182,7 @@ func TestParseFragmentTrunEntryTruncated(t *testing.T) {
 func TestParseFragmentMultiTraf(t *testing.T) {
 	video := buildTraf(1, 0, []uint32{5}, []uint32{3003})
 	audio := buildTraf(2, 0, []uint32{3, 2}, []uint32{1024, 1024})
-	data := buildFragment(4, [][]byte{video, audio}, []byte("videoxaud"))
+	data := buildRawFragment(4, [][]byte{video, audio}, []byte("videoxaud"))
 	frag, err := ParseFragment(bytes.NewReader(data), 0)
 	if err != nil || frag.Rejected {
 		t.Fatalf("multi-traf parse failed: %v errs=%+v", err, frag.Errors)
@@ -194,7 +194,7 @@ func TestParseFragmentMultiTraf(t *testing.T) {
 
 func TestSampleSliceBeyondMdat(t *testing.T) {
 	traf := buildTraf(1, 0, []uint32{100}, []uint32{1})
-	data := buildFragment(1, [][]byte{traf}, []byte("short"))
+	data := buildRawFragment(1, [][]byte{traf}, []byte("short"))
 	frag, err := ParseFragment(bytes.NewReader(data), 0)
 	if err != nil {
 		t.Fatal(err)
