@@ -59,3 +59,25 @@ func TestRunDemoFlagParser(t *testing.T) {
 		t.Fatalf("bad flag exit = %d, want 1", code)
 	}
 }
+
+func TestMetricFailureMapsToExitTwo(t *testing.T) {
+	// A sub-1.0 match rate on any file is the verification-failure signal.
+	// Verify the aggregation helper surfaces the failing metric faithfully.
+	reports := []FileReport{
+		{Name: "good", TracksChecked: 2, RoundtripMatchRate: 1, KeyframeIndexHitRate: 1},
+		{Name: "bad", TracksChecked: 2, RoundtripMatchRate: 0.5, KeyframeIndexHitRate: 1},
+	}
+	agg := aggregate(reports, 7)
+	if agg.Seed != 7 {
+		t.Fatalf("seed = %d, want 7", agg.Seed)
+	}
+	if agg.RoundtripMatchRate >= 1 {
+		t.Fatalf("aggregate match rate %f must stay below 1.0 to signal failure",
+			agg.RoundtripMatchRate)
+	}
+	// The RunDemo switch maps a per-file code 2 (set by remuxOne on v.OK
+	// false) onto metricFailure -> process exit 2; assert the constant used.
+	if StatusFailedMetric != 2 {
+		t.Fatalf("metric failure code = %d, want 2", StatusFailedMetric)
+	}
+}

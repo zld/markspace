@@ -13,6 +13,13 @@ import (
 	"github.com/broadcast/mediad/internal/remux"
 )
 
+// Process exit codes mandated by the delivery contract.
+const (
+	StatusOK             = 0 // all in-policy checks passed
+	StatusProcessingFail = 1 // input or processing failure
+	StatusFailedMetric   = 2 // verification metrics below threshold
+)
+
 // DemoOptions mirrors the terminal flags of `mediad demo`.
 type DemoOptions struct {
 	Seed      int64
