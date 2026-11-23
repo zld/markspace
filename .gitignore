@@ -1,0 +1,18 @@
+# build artifacts
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+coverage.txt
+profile.out
+
+# generated fixtures and demo output (never committed)
+/generated/
+/out/
+/tmp/
+
+# local tooling
+.DS_Store
+.idea/
+.vscode/
