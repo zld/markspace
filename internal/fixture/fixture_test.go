@@ -1,4 +1,4 @@
-package testdata_test
+package fixture_test
 
 import (
 	"testing"
