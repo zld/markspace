@@ -113,6 +113,7 @@ func Build(in BuildInput) (*Manifest, error) {
 	for i := 0; i+1 < len(in.Cuts); i++ {
 		start, end := in.Cuts[i], in.Cuts[i+1]
 		seg := Segment{Index: i, StartNS: start, EndNS: end, VideoTrack: videoTrack}
+		haveSource := false
 		if end != maxInt64 {
 			seg.DurationNS = end - start
 		}
@@ -126,7 +127,12 @@ func Build(in BuildInput) (*Manifest, error) {
 		for _, e := range video {
 			if e.TimeNS >= start && e.TimeNS < end {
 				seg.VideoBlocks++
-				seg.SourceStart, seg.SourceEnd = extend(seg.SourceStart, seg.SourceEnd, e.Source)
+				if !haveSource {
+					seg.SourceStart, seg.SourceEnd = e.Source.Offset, e.Source.End()
+					haveSource = true
+				} else {
+					seg.SourceStart, seg.SourceEnd = extend(seg.SourceStart, seg.SourceEnd, e.Source)
+				}
 			}
 		}
 		for _, at := range in.AudioTracks {
@@ -135,7 +141,12 @@ func Build(in BuildInput) (*Manifest, error) {
 				if e.TimeNS >= start && e.TimeNS < end {
 					sp.Blocks++
 					seg.AudioBlocks++
-					seg.SourceStart, seg.SourceEnd = extend(seg.SourceStart, seg.SourceEnd, e.Source)
+					if !haveSource {
+						seg.SourceStart, seg.SourceEnd = e.Source.Offset, e.Source.End()
+						haveSource = true
+					} else {
+						seg.SourceStart, seg.SourceEnd = extend(seg.SourceStart, seg.SourceEnd, e.Source)
+					}
 				}
 			}
 			if sp.Blocks > 0 {
@@ -161,12 +172,10 @@ func Build(in BuildInput) (*Manifest, error) {
 	return m, nil
 }
 
+// extend widens [start,end) to include s. s must be non-empty.
 func extend(start, end int64, s ebml.Span) (int64, int64) {
 	if s.Length == 0 {
 		return start, end
-	}
-	if start == 0 && end == 0 {
-		return s.Offset, s.End()
 	}
 	if s.Offset < start {
 		start = s.Offset
