@@ -31,11 +31,17 @@ func VerifyFiles(manifestPath, inputPath, provPath string) error {
 	if len(rec.Inputs) == 0 {
 		return provErr("provenance", errNoInputs)
 	}
+	// Recompute the config digest from the manifest's own config block rather
+	// than trusting its stored ConfigDigest, which would be circular.
+	recomputedConfig := m.Config.Digest()
+	if recomputedConfig != m.ConfigDigest {
+		return provErr("config", errConfigDigestMismatch)
+	}
 	exp := provenance.Expected{
 		ArtifactPath:   manifestPath,
 		ArtifactSHA256: digestBytes(manifestBytes),
 		ManifestSHA256: digestBytes(manifestBytes),
-		ConfigDigest:   m.ConfigDigest,
+		ConfigDigest:   recomputedConfig,
 		SegmentHashes:  sums,
 		InputPaths: map[string]func() (io.ReadCloser, error){
 			rec.Inputs[0].Path: func() (io.ReadCloser, error) { return os.Open(inputPath) },
