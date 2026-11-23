@@ -110,6 +110,8 @@ func parseTrack(r io.ReadSeeker, trak *mp4.BoxInfo, cfg ProbeConfig, errs *model
 	if len(t.Samples) == 0 {
 		return nil, fmt.Errorf("track %d has no samples", t.ID)
 	}
+	// Audit 16-bit sample numbering (RTP-style) for gap-free sequencing.
+	AuditSampleNumbers(t, errs)
 	t.StartTime = t.Samples[0].DecodeTime
 	t.EndTime = t.Samples[len(t.Samples)-1].DecodeTime.Add(t.Samples[len(t.Samples)-1].Duration)
 

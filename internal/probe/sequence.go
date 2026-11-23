@@ -65,7 +65,11 @@ func AuditSampleNumbers(t *model.Track, errs *model.ErrorSet) *SequenceAudit {
 	if len(t.Samples) == 0 {
 		return NewSequenceAudit(0)
 	}
-	audit := NewSequenceAudit(uint16(t.Samples[0].Index))
+	// pion's fixed sequencer returns the seed on its first
+	// NextSequenceNumber call, so seed it with the first observed 16-bit
+	// sample number; subsequent calls increment (with 16-bit wraparound).
+	first := uint16(t.Samples[0].Index + 1)
+	audit := NewSequenceAudit(first)
 	for _, s := range t.Samples {
 		audit.CheckOne(t.ID, uint32(s.Index+1), errs)
 	}

@@ -37,6 +37,33 @@ func TestRatOverflowDetected(t *testing.T) {
 	big.Cmp(Rat{Num: 1, Den: 1 << 62})
 }
 
+func TestAddRatOverflowDetected(t *testing.T) {
+	// Two maximally large rationals cannot be summed within int64.
+	big := Rat{Num: 1<<62, Den: 1}
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected overflow panic on addition")
+		}
+	}()
+	big.Add(big)
+}
+
+func TestAddRatLCMKeepsDenominatorBounded(t *testing.T) {
+	// Repeated additions of 1/48000 must keep the denominator bounded rather
+	// than growing on every step.
+	step := MustRat(1, 48000)
+	acc := Zero()
+	for i := 0; i < 100000; i++ {
+		acc = acc.Add(step)
+	}
+	if acc.Den > 48000 {
+		t.Fatalf("denominator grew to %d, expected bounded reduction", acc.Den)
+	}
+	if acc.Cmp(MustRat(100000, 48000)) != 0 {
+		t.Fatalf("accumulated timeline = %s, want 100000/48000", acc)
+	}
+}
+
 func TestJoinRangesMerges(t *testing.T) {
 	r1 := Range{Start: MustRat(0, 1), End: MustRat(2, 1)}
 	r2 := Range{Start: MustRat(1, 1), End: MustRat(3, 1)}
