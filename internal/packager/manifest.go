@@ -16,11 +16,12 @@ import (
 
 // Segment is one output manifest entry.
 type Segment struct {
-	Sequence uint64
-	URI      string
-	StartMs  int64
+	Sequence   uint64
+	URI        string
+	StartMs    int64
 	DurationMs float64
-	Recovered bool
+	Recovered  bool
+	PayloadSHA string
 }
 
 // Manifest is the re-packaged, deterministic output for one material.
@@ -56,12 +57,14 @@ func (b *Builder) FromEvents(evs []model.Event, gaps []model.Gap) (Manifest, err
 		}
 		startMs := ev.Start.Convert(millisTB()).Ticks()
 		durMs := ev.Duration.Convert(millisTB()).Ticks()
+		sum := sha256.Sum256(ev.Payload)
 		m.Segments = append(m.Segments, Segment{
 			Sequence:   ev.Sequence,
 			URI:        fmt.Sprintf("%s-seg-%d.m4s", b.materialID, ev.Sequence),
 			StartMs:    startMs,
 			DurationMs: float64(durMs),
 			Recovered:  ev.Recovered,
+			PayloadSHA: hex.EncodeToString(sum[:]),
 		})
 	}
 	return m, nil
@@ -77,6 +80,7 @@ func (m Manifest) RenderHLS() string {
 		if s.Recovered {
 			sb.WriteString("#EXT-X-DISCONTINUITY\n")
 		}
+		fmt.Fprintf(&sb, "#EXT-X-COMMENT:sha256=%s\n", s.PayloadSHA)
 		fmt.Fprintf(&sb, "#EXTINF:%.3f,\n%s\n", s.DurationMs/1000.0, s.URI)
 	}
 	if len(m.UnrecoveredGaps) > 0 {
