@@ -2,6 +2,7 @@ package fixture
 
 import (
 	"encoding/binary"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -97,34 +98,93 @@ func InjectTruncatedBox(src, dst string) (*Fault, error) {
 	return &Fault{Name: "truncated_box", Path: dst, Offset: off, WantCode: model.CodeTruncatedBox}, nil
 }
 
-// InjectIllegalLength writes a box header whose size is smaller than itself.
+// InjectIllegalLength corrupts the second top-level box header (moov) so its
+// declared size is smaller than the header itself. The returned offset is the
+// exact header byte the scanner must flag.
 func InjectIllegalLength(src, dst string) (*Fault, error) {
 	raw, err := os.ReadFile(src)
 	if err != nil {
 		return nil, err
 	}
+	// Skip the first top-level box (ftyp) to reach the target box header.
+	off := int64(binary.BigEndian.Uint32(raw[0:4]))
+	if off <= 0 || int(off)+8 > len(raw) {
+		return nil, fmt.Errorf("inject: cannot locate second top-level box")
+	}
 	out := append([]byte{}, raw...)
-	binary.BigEndian.PutUint32(out[0:], 4)
+	binary.BigEndian.PutUint32(out[off:], 4) // size smaller than the 8-byte header
 	if err := os.WriteFile(dst, out, 0o600); err != nil {
 		return nil, err
 	}
-	return &Fault{Name: "illegal_length", Path: dst, Offset: 0, WantCode: model.CodeIllegalLength}, nil
+	return &Fault{Name: "illegal_length", Path: dst, Offset: off, WantCode: model.CodeIllegalLength}, nil
 }
 
-// InjectTruncatedMXF truncates a KLV key mid-stream.
+// InjectTruncatedMXF cuts a KLV item mid-stream. The returned offset is the
+// header start of the KLV item whose value is truncated, matching the
+// scanner's convention of anchoring truncation errors at the item header
+// (the same convention the MP4 truncated-box injector uses).
 func InjectTruncatedMXF(src, dst string) (*Fault, error) {
 	raw, err := os.ReadFile(src)
 	if err != nil {
 		return nil, err
 	}
+	// Walk well-formed KLV items to locate the final item's header offset;
+	// that item is the one the cut will truncate.
+	itemStart, err := lastKLVItemStart(raw)
+	if err != nil {
+		return nil, err
+	}
 	cut := len(raw) - 8
-	if cut < 0 {
-		cut = 0
+	if cut <= int(itemStart) {
+		cut = int(itemStart) + 1
 	}
 	if err := os.WriteFile(dst, raw[:cut], 0o600); err != nil {
 		return nil, err
 	}
-	return &Fault{Name: "truncated_mxf", Path: dst, Offset: int64(cut), WantCode: model.CodeTruncatedBox}, nil
+	return &Fault{Name: "truncated_mxf", Path: dst, Offset: itemStart, WantCode: model.CodeTruncatedBox}, nil
+}
+
+// lastKLVItemStart returns the byte offset of the final KLV item in a
+// well-formed fixture stream.
+func lastKLVItemStart(raw []byte) (int64, error) {
+	off := 0
+	last := int64(-1)
+	for off < len(raw) {
+		if off+16 > len(raw) {
+			return 0, fmt.Errorf("inject: malformed KLV key at %d", off)
+		}
+		last = int64(off)
+		lsz, length, err := berLenAt(raw, off+16)
+		if err != nil {
+			return 0, err
+		}
+		off += 16 + lsz + int(length)
+	}
+	if last < 0 {
+		return 0, fmt.Errorf("inject: no KLV items found")
+	}
+	return last, nil
+}
+
+// berLenAt decodes a BER length at the given byte offset (fixture streams use
+// short form, with minimal long-form support).
+func berLenAt(raw []byte, off int) (size int, length uint64, err error) {
+	if off >= len(raw) {
+		return 0, 0, fmt.Errorf("inject: BER length out of range")
+	}
+	b0 := raw[off]
+	if b0&0x80 == 0 {
+		return 1, uint64(b0), nil
+	}
+	n := int(b0 & 0x7f)
+	if n == 0 || n > 8 || off+1+n > len(raw) {
+		return 0, 0, fmt.Errorf("inject: unsupported BER width %d", n)
+	}
+	var v uint64
+	for i := 1; i <= n; i++ {
+		v = v<<8 | uint64(raw[off+i])
+	}
+	return n + 1, v, nil
 }
 
 // InjectCorruptIndex writes non-JSON bytes at the start of an index file.

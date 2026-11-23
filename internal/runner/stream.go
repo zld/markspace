@@ -211,10 +211,13 @@ func leftPad(i int) string {
 	return string(s)
 }
 
+// digestInputs is a path-independent fingerprint: only the stable base name
+// and each input's content digest contribute, so identical inputs and
+// parameters yield byte-identical outputs regardless of the work directory.
 func digestInputs(inputs []InputRef) string {
 	h := sha256.New()
 	for _, in := range inputs {
-		h.Write([]byte(in.Path))
+		h.Write([]byte(filepath.Base(in.Path)))
 		h.Write([]byte{0})
 		h.Write([]byte(in.SHA256))
 		h.Write([]byte{'\n'})

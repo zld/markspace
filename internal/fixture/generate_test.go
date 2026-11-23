@@ -116,9 +116,12 @@ func TestFaultInjectionOffsets(t *testing.T) {
 
 	badLen, _ := InjectIllegalLength(mp4, filepath.Join(dir, "badlen.mp4"))
 	_, serr = probe.Scan(badLen.Path, probe.DefaultLimits())
-	if pe, ok := model.AsPipeline(serr); !ok ||
-		(pe.Code != model.CodeIllegalLength && pe.Code != model.CodeTruncatedBox) {
+	pe2, ok2 := model.AsPipeline(serr)
+	if !ok2 || (pe2.Code != model.CodeIllegalLength && pe2.Code != model.CodeTruncatedBox) {
 		t.Fatalf("want illegal/truncated, got %v", serr)
+	}
+	if d := absDiff(pe2.ByteRange.Offset, badLen.Offset); d > 16 {
+		t.Fatalf("illegal-length offset %d far from injected %d", pe2.ByteRange.Offset, badLen.Offset)
 	}
 
 	badMXF, _ := InjectTruncatedMXF(mxf, filepath.Join(dir, "trunc.mxf"))
@@ -140,4 +143,11 @@ func TestChangedInputSummary(t *testing.T) {
 	if len(changed) != len(orig)+1 {
 		t.Fatal("changed input must grow by exactly one byte")
 	}
+}
+
+func absDiff(a, b int64) int64 {
+	if a > b {
+		return a - b
+	}
+	return b - a
 }
