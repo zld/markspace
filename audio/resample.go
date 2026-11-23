@@ -8,8 +8,6 @@ import "mediacore/media"
 // extending the final sample rather than dropping it.
 type Resampler struct {
 	inRate, outRate, ch int
-	step                float64 // input frames per output frame
-	pos                 float64 // absolute fractional input position of next output
 	prev, cur           []float32
 	base                int64 // input frame index of prev
 	fed                 int64 // total input frames consumed
@@ -25,7 +23,6 @@ func NewResampler(inRate, outRate, channels int) (*Resampler, error) {
 	}
 	return &Resampler{
 		inRate: inRate, outRate: outRate, ch: channels,
-		step: float64(inRate) / float64(outRate),
 		prev: make([]float32, channels),
 		cur:  make([]float32, channels),
 	}, nil
@@ -64,13 +61,18 @@ func (r *Resampler) Process(in []float32) ([]float32, error) {
 }
 
 // emit produces every output whose position falls in [base, base+1).
+// Positions are compared in exact rational arithmetic (n*inRate vs
+// (base+1)*outRate) so the output count never drifts with float error.
 func (r *Resampler) emit(out []float32) []float32 {
-	for r.pos < float64(r.base+1) {
-		frac := float32(r.pos - float64(r.base))
+	for r.out*int64(r.inRate) < (r.base+1)*int64(r.outRate) {
+		pos := float64(r.out*int64(r.inRate)) / float64(r.outRate)
+		frac := float32(pos - float64(r.base))
+		if frac > 1 {
+			frac = 1
+		}
 		for c := 0; c < r.ch; c++ {
 			out = append(out, r.prev[c]+frac*(r.cur[c]-r.prev[c]))
 		}
-		r.pos += r.step
 		r.out++
 	}
 	return out
@@ -87,8 +89,9 @@ func (r *Resampler) Flush() []float32 {
 	want := (r.fed*int64(r.outRate) + int64(r.inRate)/2) / int64(r.inRate)
 	var out []float32
 	copy(r.cur, r.prev) // hold last sample across the tail interval
-	for r.out < want && r.pos < float64(r.base+1) {
+	for r.out < want {
 		out = r.emit(out)
+		r.base++ // advance the held interval until the quota is met
 	}
 	return out
 }
