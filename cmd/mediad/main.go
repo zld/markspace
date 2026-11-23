@@ -282,7 +282,8 @@ func checkFixture(name string, s model.Summary) []string {
 		require(s.AVSyncConfidence == "low", "no-sr sample should report low confidence, got %q", s.AVSyncConfidence)
 	case "wrap":
 		require(s.QuarantinedPackets > 0, "wrap sample did not quarantine the ambiguous packet")
-		require(s.DuplicatePackets >= 0, "duplicate accounting failed")
+		require(s.EmittedSamples > 0, "wrap sample emitted nothing after the rollover")
+		require(s.AVSyncConfidence == "high", "wrap sample lost SR confidence")
 	case "clock-drift":
 		require(s.AVSyncConfidence == "high", "clock-drift sample should keep high confidence")
 		require(s.ClockDriftPPM != 0, "clock-drift sample reported no drift")

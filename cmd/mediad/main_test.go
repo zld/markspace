@@ -80,7 +80,7 @@ func TestCheckFixtureSignals(t *testing.T) {
 		{"late-rtcp", model.Summary{}, 2},
 		{"truncated", model.Summary{TruncatedTail: 1, MalformedPackets: 1}, 0},
 		{"no-sr", model.Summary{AVSyncConfidence: "low"}, 0},
-		{"wrap", model.Summary{QuarantinedPackets: 1}, 0},
+		{"wrap", model.Summary{QuarantinedPackets: 1, EmittedSamples: 10, AVSyncConfidence: "high"}, 0},
 		{"clock-drift", model.Summary{AVSyncConfidence: "high", ClockDriftPPM: 2000}, 0},
 		{"clock-drift", model.Summary{AVSyncConfidence: "high"}, 1},
 	}
