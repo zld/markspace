@@ -4,7 +4,6 @@
 package verify
 
 import (
-	"fmt"
 	"sort"
 
 	"mediasync/internal/index"
@@ -133,19 +132,21 @@ func Compute(frames []*repair.Frame, rep recovery.Report,
 // structured error naming the first violation (track, offset, interval).
 func CheckInvariants(frames []*repair.Frame, records []index.Record,
 	inputSizes map[string]int64) error {
-	// 1. Per-track timestamps are monotonic except where the frame carries
-	// an explicit discontinuity annotation.
-	byTrack := map[string][]*repair.Frame{}
+	// 1. Per-representation timestamps are monotonic except where the frame
+	// carries an explicit discontinuity annotation. Two representations of
+	// one track legitimately restart their local counters.
+	byGroup := map[string][]*repair.Frame{}
 	for _, f := range frames {
-		byTrack[f.Track] = append(byTrack[f.Track], f)
+		key := f.Track + "|" + f.Representation
+		byGroup[key] = append(byGroup[key], f)
 	}
-	for track, fs := range byTrack {
+	for group, fs := range byGroup {
 		for i := 1; i < len(fs); i++ {
 			if fs[i].CorrectedNS < fs[i-1].CorrectedNS &&
 				!hasAnomaly(fs[i], repair.AnomalyDiscontinuity) {
 				return mederr.New(mederr.CodeInternal,
-					fmt.Sprintf("non-monotonic timestamp on track %s", track),
-					mederr.WithTrack(track),
+					"non-monotonic timestamp in group "+group,
+					mederr.WithTrack(group),
 					mederr.WithInterval(fs[i-1].CorrectedNS, fs[i].CorrectedNS))
 			}
 		}
