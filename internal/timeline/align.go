@@ -11,22 +11,22 @@ import (
 // de-duplicates repeated events by (source offset, content hash) and marks
 // cross-track conflicts that exceed the configured tolerance.
 type Aligner struct {
-	cfg     Config
-	tracks  map[string]Track
-	byTrack map[string][]Event
-	rules   map[string][]RepairRule
-	baseTS  map[string]int64 // first accepted raw timestamp per track
-	scales  map[string]uint32
-	seen    map[string]bool // dedup key: track|offset|hash
+	cfg       Config
+	tracks    map[string]Track
+	byTrack   map[string][]Event
+	rules     map[string][]RepairRule
+	baseTS    map[string]int64 // first accepted raw timestamp per track
+	scales    map[string]uint32
+	seen      map[string]bool // dedup key: track|offset|hash
 	conflicts []Error
 }
 
 // AlignmentResult is the repaired timeline handed to the index subsystem.
 type AlignmentResult struct {
-	Events   []Event
-	Tracks   []Track
-	Rules    []RepairRule
-	Conflicts []Error
+	Events           []Event
+	Tracks           []Track
+	Rules            []RepairRule
+	Conflicts        []Error
 	NoKeyframeTracks []string
 }
 
@@ -151,6 +151,12 @@ func (a *Aligner) Align() (*AlignmentResult, error) {
 		res.Rules = append(res.Rules, a.rules[id]...)
 	}
 	res.Conflicts = a.conflicts
+	sort.SliceStable(res.Conflicts, func(i, j int) bool {
+		if res.Conflicts[i].TrackID != res.Conflicts[j].TrackID {
+			return res.Conflicts[i].TrackID < res.Conflicts[j].TrackID
+		}
+		return res.Conflicts[i].Offset < res.Conflicts[j].Offset
+	})
 	if len(res.Conflicts) > 0 {
 		return res, ErrConflict
 	}
@@ -167,73 +173,6 @@ func (a *Aligner) repairTick(ev Event, base int64, scale uint32, slope clock.Rat
 		ticks = scaled.Round().Int64()
 	}
 	return ticks + rule.OffsetTick
-}
-
-// markCrossTrackConflicts pairs metadata events of the same kind across
-// tracks whose content hashes agree; pairs farther apart than tolerance are
-// marked conflicting.
-func (a *Aligner) markCrossTrackConflicts() {
-	type slot struct {
-		track string
-		evs   []Event
-	}
-	byHash := map[string][]slot{}
-	for id, evs := range a.byTrack {
-		groups := map[string][]Event{}
-		for _, ev := range evs {
-			if ev.Kind == KindSample {
-				continue
-			}
-			groups[ev.ContentHash] = append(groups[ev.ContentHash], ev)
-		}
-		for h, g := range groups {
-			byHash[h] = append(byHash[h], slot{track: id, evs: g})
-		}
-	}
-	// Conflict identities: trackID -> set of event Seqs to mark.
-	mark := map[string]map[int]bool{}
-	for _, slots := range byHash {
-		if len(slots) < 2 {
-			continue
-		}
-		for i := 0; i < len(slots); i++ {
-			for j := i + 1; j < len(slots); j++ {
-				// Compare in the original timescale units: anchor offsets
-				// are applied per track and must not hide real divergence.
-				ri := slots[i].evs[0].RawTS
-				rj := slots[j].evs[0].RawTS
-				d := ri - rj
-				if d < 0 {
-					d = -d
-				}
-				// Convert the larger track's raw distance into ticks.
-				tickDist := clock.ToTicks(d, a.scales[slots[i].track])
-				if tickDist > a.cfg.ToleranceTicks {
-					for _, s := range []slot{slots[i], slots[j]} {
-						if mark[s.track] == nil {
-							mark[s.track] = map[int]bool{}
-						}
-						for _, ev := range s.evs {
-							mark[s.track][ev.Seq] = true
-						}
-					}
-					a.conflicts = append(a.conflicts, *NewError(
-						CodeTimescaleConflict, "transform",
-						slots[i].track, slots[i].evs[0].Offset.Begin,
-						"cross-track event beyond tolerance", nil))
-				}
-			}
-		}
-	}
-	for trackID, seqs := range mark {
-		evs := a.byTrack[trackID]
-		for i := range evs {
-			if seqs[evs[i].Seq] {
-				evs[i].Conflict = true
-			}
-		}
-		a.byTrack[trackID] = evs
-	}
 }
 
 func (a *Aligner) makeAnchorRule(trackID string, base int64) RepairRule {
