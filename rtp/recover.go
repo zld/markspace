@@ -51,12 +51,15 @@ func NewRecover(window, maxConceal int) *Recover {
 	return &Recover{window: window, maxConceal: maxConceal, pending: make(map[int64]*rtp.Packet)}
 }
 
-// Seed primes concealment state with the last emitted packet, so a
-// pipeline resuming mid-stream conceals an immediate gap with the same
-// payload an uninterrupted run would have used.
-func (r *Recover) Seed(last *rtp.Packet, ts int64) {
+// Seed primes concealment state with the last emitted packet and the
+// next expected extended sequence number, so a pipeline resuming
+// mid-stream emits exactly what an uninterrupted run would have.
+func (r *Recover) Seed(last *rtp.Packet, lastTS, nextSeq int64) {
 	r.last = last
-	r.lastTS = ts
+	r.lastTS = lastTS
+	r.head = nextSeq
+	r.maxSeen = nextSeq
+	r.started = true
 }
 
 // Push feeds one packet (wire order, possibly lossy/reordered/duplicated)
