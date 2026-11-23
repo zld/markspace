@@ -62,7 +62,7 @@ func TestAlignDedupByOffsetAndHash(t *testing.T) {
 	a := timeline.NewAligner(timeline.DefaultConfig())
 	a.AddTrack(timeline.Track{ID: "v", Timescale: 1000, IsKeyframe: true})
 	_ = a.AddEvent(ev(timeline.KindSample, "v", 0, 0, "same", 10))
-	_ = a.AddEvent(ev(timeline.KindSample, "v", 1, 10, "same", 10))   // duplicate
+	_ = a.AddEvent(ev(timeline.KindSample, "v", 1, 10, "same", 10)) // duplicate
 	_ = a.AddEvent(ev(timeline.KindSample, "v", 2, 20, "different", 20))
 	res, err := a.Align()
 	if err != nil {
@@ -101,9 +101,18 @@ func TestAlignCrossTrackConflictBlocks(t *testing.T) {
 	if len(res.Conflicts) == 0 || res.Conflicts[0].Code != timeline.CodeTimescaleConflict {
 		t.Fatalf("conflict not recorded: %+v", res.Conflicts)
 	}
-	// The fault must still locate the raw source offset.
-	if res.Conflicts[0].Offset != 10 {
-		t.Fatalf("conflict offset=%d", res.Conflicts[0].Offset)
+	// The fault must still locate a raw source offset; deterministic order
+	// (track ID then offset) selects track "s" first.
+	if res.Conflicts[0].Offset != 20 || res.Conflicts[0].TrackID != "s" {
+		t.Fatalf("conflict offset=%d track=%s", res.Conflicts[0].Offset, res.Conflicts[0].TrackID)
+	}
+	// Both offending offsets must appear somewhere in the conflict list.
+	offSet := map[int64]bool{}
+	for _, c := range res.Conflicts {
+		offSet[c.Offset] = true
+	}
+	if !offSet[10] || !offSet[20] {
+		t.Fatalf("both source offsets must be reported: %v", offSet)
 	}
 	var marked int
 	for _, e := range res.Events {
