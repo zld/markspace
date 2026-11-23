@@ -11,12 +11,17 @@ import (
 )
 
 // CacheEntry is the metadata stored beside a cached manifest. It records the
-// three facts that must all match for a hit: input provenance, config digest
-// and the cached content hash.
+// facts that must all match for a hit: input provenance, config digest, the
+// cached content hash and the authoritative work digest the checkpoint uses.
 type CacheEntry struct {
 	InputDigest  string `json:"input_digest"`
 	ConfigDigest string `json:"config_digest"`
 	ContentHash  string `json:"content_hash"`
+	// Digest is the work-provided digest committed to the checkpoint for this
+	// segment. It may differ from ContentHash (e.g. a source-span hash versus
+	// the hash of the serialized JSON); keeping both lets a hit reproduce the
+	// exact checkpoint entry while the content bytes are still verified.
+	Digest string `json:"digest"`
 }
 
 // CacheHit reports whether a lookup resolved to verified content.
@@ -24,7 +29,10 @@ type CacheHit struct {
 	Found       bool
 	Quarantined bool
 	Content     []byte
-	Reason      string
+	// Digest is the authoritative work digest the runner commits when this hit
+	// is accepted. It is empty for misses.
+	Digest string
+	Reason string
 }
 
 // Cache is a content-addressed store keyed by input+config digest.
@@ -74,17 +82,30 @@ func (c Cache) Get(inputDigest, configDigest string) (CacheHit, error) {
 	if got := hex.EncodeToString(sum[:]); got != entry.ContentHash {
 		return c.quarantine(key, "content hash mismatch")
 	}
-	return CacheHit{Found: true, Content: content}, nil
+	if len(entry.Digest) != 64 {
+		return c.quarantine(key, "missing work digest")
+	}
+	return CacheHit{Found: true, Content: content, Digest: entry.Digest}, nil
 }
 
-// Put stores content and its provenance metadata atomically.
+// Put stores content and its provenance metadata atomically. The checkpoint
+// digest is derived from the content bytes; callers whose work digest is a hash
+// of different bytes use PutWithDigest.
 func (c Cache) Put(inputDigest, configDigest string, content []byte) error {
+	return c.PutWithDigest(inputDigest, configDigest, content, DigestBytes(content))
+}
+
+// PutWithDigest stores content together with the authoritative digest the
+// runner commits to its checkpoint. The content is still independently hashed
+// so tampering of the blob itself is always detected.
+func (c Cache) PutWithDigest(inputDigest, configDigest string, content []byte, digest string) error {
 	key := c.Key(inputDigest, configDigest)
 	sum := sha256.Sum256(content)
 	entry := CacheEntry{
 		InputDigest:  inputDigest,
 		ConfigDigest: configDigest,
 		ContentHash:  hex.EncodeToString(sum[:]),
+		Digest:       digest,
 	}
 	b, err := json.Marshal(entry)
 	if err != nil {

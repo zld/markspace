@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"sync"
 )
 
@@ -30,17 +31,25 @@ type RunConfig struct {
 	// before resuming. If it returns a digest that differs, the run fails with
 	// ErrCorruptCheckpoint rather than trusting the checkpoint.
 	Recompute func(index int) (string, error)
+	// Cache, when non-nil, is the content-addressed store consulted before
+	// computing a pending segment. A hit is accepted only after the Cache has
+	// re-verified the input provenance, config digest and content hash; a miss
+	// (including a quarantined entry) falls back to normal computation.
+	Cache *Cache
 }
 
 // RunResult summarizes a run.
 type RunResult struct {
-	Total      int            `json:"total"`
-	Completed  int            `json:"completed"`
-	Recomputed int            `json:"recomputed"`
-	Reused     int            `json:"reused"`
-	Rejected   int            `json:"rejected"`
-	Rejections []Rejection    `json:"rejections,omitempty"`
-	Digests    map[int]string `json:"-"`
+	Total       int            `json:"total"`
+	Completed   int            `json:"completed"`
+	Recomputed  int            `json:"recomputed"`
+	Reused      int            `json:"reused"`
+	CacheHits   int            `json:"cache_hits"`
+	CacheMisses int            `json:"cache_misses"`
+	Quarantined int            `json:"cache_quarantined"`
+	Rejected    int            `json:"rejected"`
+	Rejections  []Rejection    `json:"rejections,omitempty"`
+	Digests     map[int]string `json:"-"`
 }
 
 // Runner executes segments with checkpointing and idempotent commits.
@@ -106,6 +115,22 @@ func (r *Runner) Run(cfg RunConfig, work SegmentWork) (*RunResult, error) {
 	res.Completed = len(r.cp.Completed)
 	newlyDone := 0
 	for _, index := range pending {
+		// Content-addressed fast path: the Cache re-verifies input provenance,
+		// config digest and content hash before reporting a hit carrying the
+		// authoritative work digest, so the checkpoint entry matches a fresh
+		// computation exactly.
+		if digest, ok, quarantined := r.cacheLookup(cfg.Cache, index); quarantined {
+			res.Quarantined++
+		} else if ok {
+			if err := r.cp.MarkCompleted(index, digest); err != nil {
+				return res, err
+			}
+			res.Digests[index] = digest
+			res.CacheHits++
+			res.Completed++
+			newlyDone++
+			continue
+		}
 		content, digest, err := work(index)
 		if err != nil {
 			var rej *RejectError
@@ -123,6 +148,14 @@ func (r *Runner) Run(cfg RunConfig, work SegmentWork) (*RunResult, error) {
 		if digest == "" {
 			digest = DigestBytes(content)
 		}
+		if cfg.Cache != nil {
+			// Store for future runs. A put failure does not lose the result: the
+			// checkpoint still commits it and a later run recomputes.
+			if putErr := cfg.Cache.PutWithDigest(SegmentCacheKey(r.cp.InputDigest, index), r.cp.ConfigDigest, content, digest); putErr != nil {
+				return res, fmt.Errorf("pipeline: cache store segment %d: %w", index, putErr)
+			}
+		}
+		res.CacheMisses++
 		if err := r.cp.MarkCompleted(index, digest); err != nil {
 			return res, err
 		}
@@ -153,6 +186,34 @@ func (r *Runner) addRejection(index int, reason string) {
 		}
 	}
 	r.cp.Rejections = append(r.cp.Rejections, Rejection{Index: index, Reason: reason})
+}
+
+// SegmentCacheKey returns the content-address key for one segment of an input.
+// It is exported so callers replaying previously delivered work can warm the
+// cache with exactly the keys a later runner will look up.
+func SegmentCacheKey(inputDigest string, index int) string {
+	return DigestBytes([]byte(inputDigest + "|segment|" + strconv.Itoa(index)))
+}
+
+// cacheLookup consults the content-addressed store for one pending segment.
+// ok means the stored content passed the Cache's input/config/content-hash
+// verification; quarantined means a stale or tampered entry was set aside and
+// the segment must be recomputed.
+func (r *Runner) cacheLookup(c *Cache, index int) (digest string, ok, quarantined bool) {
+	if c == nil {
+		return "", false, false
+	}
+	hit, err := c.Get(SegmentCacheKey(r.cp.InputDigest, index), r.cp.ConfigDigest)
+	if err != nil {
+		return "", false, false
+	}
+	if hit.Quarantined {
+		return "", false, true
+	}
+	if !hit.Found {
+		return "", false, false
+	}
+	return hit.Digest, true, false
 }
 
 func asReject(err error, out **RejectError) bool {
