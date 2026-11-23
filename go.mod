@@ -1,0 +1,8 @@
+module mediatool
+
+go 1.23.0
+
+require (
+	github.com/Eyevinn/mp4ff v0.47.0
+	github.com/pion/rtp v1.8.11
+)
