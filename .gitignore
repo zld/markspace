@@ -1,0 +1,6 @@
+# Generated demo output (manifests and DAG state)
+.archivist-out/
+
+# Compiled binaries
+/archivist
+*.test
