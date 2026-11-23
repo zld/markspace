@@ -166,16 +166,16 @@ func writeTkhd(w *mp4.Writer, l *layout, trackID uint32) error {
 	return wrapWrite("tkhd_end", err)
 }
 
-// writeEdts expresses a non-zero first presentation time. The sample table
-// starts at zero, so the correct construction is an empty edit of the initial
-// delay followed by a normal edit covering the media. Pointing media_time at
-// the original PTS would address beyond the track's duration and play nothing.
+// writeEdts expresses an explicit playback delay as an empty edit followed by
+// a normal edit. The sample table starts at 0, so a media_time equal to the
+// original timestamp would address past the track and play nothing. Only an
+// explicitly declared StartOffset is used: raw RTP timestamps are arbitrary
+// counters, and treating them as wall-clock delay produces absurd durations.
 func writeEdts(w *mp4.Writer, l *layout) error {
-	first := l.samples[0].PTS
-	if first == 0 {
+	if l.plan.StartOffset <= 0 {
 		return nil
 	}
-	delay := scaleDuration(uint64(first), l.plan.Timescale, l.movieScale)
+	delay := scaleDuration(uint64(l.plan.StartOffset), l.plan.Timescale, l.movieScale)
 	media := scaleDuration(l.duration, l.plan.Timescale, l.movieScale)
 	if _, err := w.StartBox(&mp4.BoxInfo{Type: mp4.BoxTypeEdts()}); err != nil {
 		return wrapWrite("edts_start", err)
@@ -577,11 +577,16 @@ func collectEvidence(layouts []*layout) []SampleEvidence {
 				srcIndex = l.source[i]
 			}
 			s := l.samples[srcIndex]
+			var containerPTS int64
+			if len(l.source) > 0 {
+				containerPTS = s.PTS - l.samples[l.source[0]].PTS
+			}
 			ev := SampleEvidence{
-				TrackID:   l.plan.TrackID,
-				Index:     srcIndex,
-				PTS:       s.PTS,
-				Dur:       s.Dur,
+				TrackID:      l.plan.TrackID,
+				Index:        srcIndex,
+				PTS:          s.PTS,
+				Dur:          s.Dur,
+				ContainerPTS: containerPTS,
 				Size:      int(l.sizes[i]),
 				SHA256:    hashOf(s.Data),
 				CanonHash: l.canon[i],

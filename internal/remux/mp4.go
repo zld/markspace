@@ -33,6 +33,11 @@ type TrackPlan struct {
 	ConfigEntry [4]byte
 	// ConfigRecord is the decoder configuration payload copied verbatim.
 	ConfigRecord []byte
+	// StartOffset is an explicit playback delay in track ticks, expressed as
+	// an empty edit. RTP timestamps are arbitrary counters with no wall-clock
+	// meaning, so this is 0 unless the caller knows the stream really starts
+	// late. The original timestamp is always preserved in sample evidence.
+	StartOffset int64
 }
 
 // Options controls layout and limits.
@@ -71,6 +76,8 @@ type SampleEvidence struct {
 	Index     int    `json:"index"`
 	PTS       int64  `json:"pts"`
 	Dur       int64  `json:"dur"`
+	// ContainerPTS is the decode position inside the track, rebased to 0.
+	ContainerPTS int64 `json:"container_pts"`
 	Size      int    `json:"size"`
 	SHA256    string `json:"sha256"`
 	CanonHash string `json:"canon_sha256"`

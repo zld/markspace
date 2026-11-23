@@ -279,21 +279,21 @@ func TestReadBackRejectsTruncatedFile(t *testing.T) {
 	}
 }
 
-func TestEditListDelayIsAnEmptyEdit(t *testing.T) {
+func TestEditListOnlyForExplicitStartOffset(t *testing.T) {
 	dir := t.TempDir()
-	// The first sample starts at 30000 ticks (1/3 s at 90 kHz). The sample
-	// table is rebased to 0, so the delay must be expressed as an empty edit,
-	// not as a media_time pointing past the track.
+	// Raw RTP timestamps are arbitrary counters; a non-zero first PTS must
+	// not become a container delay.
 	samples := []demux.Sample{
 		{Index: 0, TrackID: 1, Codec: demux.CodecH264, PTS: 30000, Dur: 3000,
 			Data: makeH264Sample(true, 1), Keyframe: true},
 		{Index: 1, TrackID: 1, Codec: demux.CodecH264, PTS: 33000, Dur: 3000,
 			Data: makeH264Sample(false, 2)},
 	}
-	plans := []TrackPlan{{TrackID: 1, Codec: demux.CodecH264, Samples: samples,
+	base := TrackPlan{TrackID: 1, Codec: demux.CodecH264, Samples: samples,
 		Timescale: 90000, Handler: [4]byte{'v', 'i', 'd', 'e'},
-		ConfigRecord: []byte{1, 0x42, 0x00, 0x1E, 0xFF, 0xE1, 0x00, 0x04, 0x67, 0x42, 0x00, 0x1E, 0x01, 0x00, 0x02, 0x68, 0xCE}}}
-	rep, err := WriteFile(dir, "elst.mp4", plans, DefaultOptions())
+		ConfigRecord: []byte{1, 0x42, 0x00, 0x1E, 0xFF, 0xE1, 0x00, 0x04, 0x67, 0x42, 0x00, 0x1E, 0x01, 0x00, 0x02, 0x68, 0xCE}}
+
+	rep, err := WriteFile(dir, "noelst.mp4", []TrackPlan{base}, DefaultOptions())
 	if err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
@@ -301,30 +301,67 @@ func TestEditListDelayIsAnEmptyEdit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
-	boxes, err := mp4.ExtractBoxWithPayload(f, nil, mp4.BoxPath{
+	boxes, err := mp4.ExtractBox(f, nil, mp4.BoxPath{
 		mp4.BoxTypeMoov(), mp4.BoxTypeTrak(), mp4.BoxTypeEdts(), mp4.BoxTypeElst(),
 	})
-	if err != nil || len(boxes) != 1 {
-		t.Fatalf("elst: %v n=%d", err, len(boxes))
+	f.Close()
+	if err != nil {
+		t.Fatalf("elst probe: %v", err)
 	}
-	elst := boxes[0].Payload.(*mp4.Elst)
-	if elst.Version != 1 {
-		t.Fatalf("elst version %d", elst.Version)
+	if len(boxes) != 0 {
+		t.Fatalf("arbitrary RTP origin must not create an edit list")
 	}
-	if len(elst.Entries) != 2 {
-		t.Fatalf("elst entries %+v", elst.Entries)
+
+	// An explicit offset does create one, expressed as an empty edit.
+	delayed := base
+	delayed.StartOffset = 9000 // 100 ms at 90 kHz
+	rep2, err := WriteFile(dir, "elst.mp4", []TrackPlan{delayed}, DefaultOptions())
+	if err != nil {
+		t.Fatalf("WriteFile: %v", err)
 	}
-	empty, media := elst.Entries[0], elst.Entries[1]
-	if empty.MediaTimeV1 != -1 {
-		t.Fatalf("first edit should be empty, media time %d", empty.MediaTimeV1)
+	f2, err := os.Open(rep2.Path)
+	if err != nil {
+		t.Fatal(err)
 	}
-	// 30000 ticks at 90 kHz is 333 ms, in the 1000 movie timescale.
-	if empty.SegmentDurationV1 != 333 {
-		t.Fatalf("empty edit duration %d want 333", empty.SegmentDurationV1)
+	defer f2.Close()
+	payloads, err := mp4.ExtractBoxWithPayload(f2, nil, mp4.BoxPath{
+		mp4.BoxTypeMoov(), mp4.BoxTypeTrak(), mp4.BoxTypeEdts(), mp4.BoxTypeElst(),
+	})
+	if err != nil || len(payloads) != 1 {
+		t.Fatalf("elst: %v n=%d", err, len(payloads))
 	}
-	if media.MediaTimeV1 != 0 || media.SegmentDurationV1 != 66 {
-		t.Fatalf("media edit %+v want duration 66", media)
+	elst := payloads[0].Payload.(*mp4.Elst)
+	if elst.Version != 1 || len(elst.Entries) != 2 {
+		t.Fatalf("elst %+v", elst)
+	}
+	if elst.Entries[0].MediaTimeV1 != -1 || elst.Entries[0].SegmentDurationV1 != 100 {
+		t.Fatalf("empty edit %+v", elst.Entries[0])
+	}
+	if elst.Entries[1].MediaTimeV1 != 0 || elst.Entries[1].SegmentDurationV1 != 66 {
+		t.Fatalf("media edit %+v", elst.Entries[1])
+	}
+}
+
+func TestEvidencePreservesOriginalTimestamp(t *testing.T) {
+	dir := t.TempDir()
+	samples := []demux.Sample{
+		{Index: 0, TrackID: 1, Codec: demux.CodecH264, PTS: 900000, Dur: 3000,
+			Data: makeH264Sample(true, 1), Keyframe: true},
+		{Index: 1, TrackID: 1, Codec: demux.CodecH264, PTS: 903000, Dur: 3000,
+			Data: makeH264Sample(false, 2)},
+	}
+	plans := []TrackPlan{{TrackID: 1, Codec: demux.CodecH264, Samples: samples,
+		Timescale: 90000, Handler: [4]byte{'v', 'i', 'd', 'e'},
+		ConfigRecord: []byte{1, 0x42, 0x00, 0x1E, 0xFF, 0xE1, 0x00, 0x04, 0x67, 0x42, 0x00, 0x1E, 0x01, 0x00, 0x02, 0x68, 0xCE}}}
+	rep, err := WriteFile(dir, "ev.mp4", plans, DefaultOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Evidence[0].PTS != 900000 || rep.Evidence[1].PTS != 903000 {
+		t.Fatalf("original pts not preserved: %+v", rep.Evidence)
+	}
+	if rep.Evidence[0].ContainerPTS != 0 || rep.Evidence[1].ContainerPTS != 3000 {
+		t.Fatalf("container pts not rebased: %+v", rep.Evidence)
 	}
 }
 
