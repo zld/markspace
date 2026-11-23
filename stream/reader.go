@@ -49,7 +49,17 @@ func NewChunkReader(ctx context.Context, src io.ReadCloser, limit int64) (*Chunk
 	if chunk > 64<<10 {
 		chunk = 64 << 10
 	}
-	return &ChunkReader{ctx: ctx, src: src, buf: make([]byte, chunk), chunk: chunk, limit: limit}, nil
+	r := &ChunkReader{ctx: ctx, src: src, buf: make([]byte, chunk), chunk: chunk, limit: limit}
+	// A read already in flight cannot observe cancellation until it returns,
+	// so a watcher closes the source the moment the context ends. That is what
+	// unblocks a stalled Read instead of leaking the goroutine.
+	if ctx.Done() != nil {
+		go func() {
+			<-ctx.Done()
+			_ = r.Close()
+		}()
+	}
+	return r, nil
 }
 
 // ChunkSize is the size of each read buffer.

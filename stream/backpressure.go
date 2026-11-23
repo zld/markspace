@@ -15,9 +15,10 @@ import (
 // found the queue at capacity.
 var ErrQueueFull = errors.New("stream: queue full")
 
-// ErrSlowConsumer is returned when a consumer waits longer than the configured
-// timeout. The stage stops, but the last fully committed checkpoint stays
-// valid: nothing past it was acknowledged.
+// ErrSlowConsumer is returned when a producer is blocked by a full queue for
+// longer than the configured timeout. That is the observable symptom of a slow
+// consumer: the branch stops, and everything acknowledged before the block
+// stays committed.
 var ErrSlowConsumer = errors.New("stream: slow consumer")
 
 // errDrained signals a closed, empty queue.
@@ -41,8 +42,8 @@ type QueueStats struct {
 }
 
 // Queue is a fixed-capacity FIFO. Producers block when it is full, which is
-// the back pressure that keeps memory bounded; consumers may apply an idle
-// timeout; and closing or canceling wakes every blocked operation.
+// the back pressure that keeps memory bounded. If a producer stays blocked
+// longer than slowTimeout, the branch is stopped with ErrSlowConsumer.
 type Queue[T any] struct {
 	ch      chan T
 	done    chan struct{}
@@ -55,19 +56,19 @@ type Queue[T any] struct {
 	timed   atomic.Int64
 }
 
-// NewQueue builds a bounded queue. capacity must be positive; timeout zero
-// means a consumer waits indefinitely for the next item.
-func NewQueue[T any](capacity int, consumerTimeout time.Duration) (*Queue[T], error) {
+// NewQueue builds a bounded queue. capacity must be positive; slowTimeout
+// zero means a blocked producer waits indefinitely.
+func NewQueue[T any](capacity int, slowTimeout time.Duration) (*Queue[T], error) {
 	if capacity <= 0 {
 		return nil, media.NewError(media.CodeInput, media.PhasePipeline, "queue capacity must be positive").AtOffset(0)
 	}
-	if consumerTimeout < 0 {
-		return nil, media.NewError(media.CodeInput, media.PhasePipeline, "consumer timeout must not be negative").AtOffset(0)
+	if slowTimeout < 0 {
+		return nil, media.NewError(media.CodeInput, media.PhasePipeline, "slow-consumer timeout must not be negative").AtOffset(0)
 	}
 	return &Queue[T]{
 		ch:      make(chan T, capacity),
 		done:    make(chan struct{}),
-		timeout: consumerTimeout,
+		timeout: slowTimeout,
 	}, nil
 }
 
@@ -75,6 +76,13 @@ func NewQueue[T any](capacity int, consumerTimeout time.Duration) (*Queue[T], er
 // blocked is accumulated as back-pressure evidence.
 func (q *Queue[T]) Push(ctx context.Context, item T) error {
 	start := time.Now()
+	var timeout <-chan time.Time
+	var timer *time.Timer
+	if q.timeout > 0 {
+		timer = time.NewTimer(q.timeout)
+		defer timer.Stop()
+		timeout = timer.C
+	}
 	select {
 	case q.ch <- item:
 	case <-ctx.Done():
@@ -83,6 +91,11 @@ func (q *Queue[T]) Push(ctx context.Context, item T) error {
 	case <-q.done:
 		q.Drop()
 		return media.NewError(media.CodeCanceled, media.PhasePipeline, "queue closed")
+	case <-timeout:
+		q.timed.Add(1)
+		q.Drop()
+		q.Close()
+		return fmt.Errorf("%w: producer blocked for %s with a full queue", ErrSlowConsumer, q.timeout)
 	}
 	q.blocked.Add(time.Since(start).Nanoseconds())
 	q.enq.Add(1)
@@ -107,32 +120,9 @@ func (q *Queue[T]) TryPush(item T) error {
 }
 
 // Pop waits for the next item. It drains buffered items after Close before
-// reporting IsDrained. An idle timeout yields ErrSlowConsumer and closes the
-// queue so producers stop rather than piling up unbounded work.
+// reporting IsDrained.
 func (q *Queue[T]) Pop(ctx context.Context) (T, error) {
 	var zero T
-	select {
-	case item := <-q.ch:
-		q.deq.Add(1)
-		return item, nil
-	case <-q.done:
-		// Drain anything already committed.
-		select {
-		case item := <-q.ch:
-			q.deq.Add(1)
-			return item, nil
-		default:
-			return zero, errDrained
-		}
-	default:
-	}
-	var timeout <-chan time.Time
-	var timer *time.Timer
-	if q.timeout > 0 {
-		timer = time.NewTimer(q.timeout)
-		defer timer.Stop()
-		timeout = timer.C
-	}
 	select {
 	case item := <-q.ch:
 		q.deq.Add(1)
@@ -147,10 +137,6 @@ func (q *Queue[T]) Pop(ctx context.Context) (T, error) {
 		}
 	case <-ctx.Done():
 		return zero, media.NewError(media.CodeCanceled, media.PhasePipeline, "consumer canceled").Because(ctx.Err())
-	case <-timeout:
-		q.timed.Add(1)
-		q.Close()
-		return zero, fmt.Errorf("%w: no item within %s", ErrSlowConsumer, q.timeout)
 	}
 }
 

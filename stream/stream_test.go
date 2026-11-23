@@ -152,20 +152,37 @@ func TestQueueBackpressureBlocksProducer(t *testing.T) {
 }
 
 func TestQueueSlowConsumerStopsBranch(t *testing.T) {
+	// A tiny queue plus a producer timeout: with nobody consuming, the
+	// producer must stop the branch instead of blocking forever.
 	q, err := NewQueue[int](1, 20*time.Millisecond)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = q.Pop(context.Background())
+	ctx := context.Background()
+	if err := q.Push(ctx, 1); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	err = q.Push(ctx, 2)
 	if !IsSlowConsumer(err) {
 		t.Fatalf("want slow consumer, got %v", err)
 	}
-	// The queue is now closed, so a producer cannot enqueue more work.
-	if err := q.Push(context.Background(), 1); err == nil {
-		t.Fatal("push after slow-consumer stop must fail")
+	if elapsed := time.Since(start); elapsed < 15*time.Millisecond {
+		t.Fatalf("producer returned before the timeout: %s", elapsed)
 	}
 	if q.Stats().TimedOut != 1 {
 		t.Fatalf("stats=%+v", q.Stats())
+	}
+	// The queue is closed: further pushes fail and the consumer drains what
+	// was committed before the stop.
+	if err := q.TryPush(3); err == nil {
+		t.Fatal("push after slow-consumer stop must fail")
+	}
+	if v, err := q.Pop(ctx); err != nil || v != 1 {
+		t.Fatalf("v=%d err=%v", v, err)
+	}
+	if _, err := q.Pop(ctx); !IsDrained(err) {
+		t.Fatalf("want drained, got %v", err)
 	}
 }
 
