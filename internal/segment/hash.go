@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"sort"
 
 	"mediad/internal/ebml"
@@ -99,4 +100,32 @@ func EqualReports(a, b *Manifest) error {
 		}
 	}
 	return nil
+}
+
+// LoadManifest reads a manifest written by MarshalCanonical and validates its
+// structural invariants without trusting the producer.
+func LoadManifest(path string) (*Manifest, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var m Manifest
+	if err := json.Unmarshal(b, &m); err != nil {
+		return nil, fmt.Errorf("segment: decode manifest: %w", err)
+	}
+	if m.Version != 1 {
+		return nil, fmt.Errorf("segment: unsupported manifest version %d", m.Version)
+	}
+	if len(m.Segments) == 0 {
+		return nil, errors.New("segment: manifest has no segments")
+	}
+	for i, s := range m.Segments {
+		if s.Index != i {
+			return nil, fmt.Errorf("segment: segment %d has index %d", i, s.Index)
+		}
+		if len(s.Hash) != 64 {
+			return nil, fmt.Errorf("segment: segment %d has invalid hash", i)
+		}
+	}
+	return &m, nil
 }
