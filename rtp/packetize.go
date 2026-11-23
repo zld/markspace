@@ -39,6 +39,14 @@ func (p *Packetizer) SetNextSeq(seq uint16) { p.seq = seq }
 // with ts (ticks at the packetizer's scale, already unwrapped to int64;
 // the wire carries the low 32 bits). The last packet gets the marker bit.
 func (p *Packetizer) Packetize(payload []byte, ts media.Ticks) ([]*rtp.Packet, error) {
+	return p.PacketizeStride(payload, ts, 0)
+}
+
+// PacketizeStride is Packetize with a per-fragment timestamp stride:
+// fragment j is stamped ts + j*stride. Constant-stride streams (PCM
+// chunks) let the recovery side extrapolate concealed timestamps
+// accurately; frame-based streams use stride 0.
+func (p *Packetizer) PacketizeStride(payload []byte, ts media.Ticks, stride uint32) ([]*rtp.Packet, error) {
 	if len(payload) == 0 {
 		return nil, media.Fault(media.CodeInternal, "rtp.Packetize", -1, "empty access unit")
 	}
@@ -57,7 +65,7 @@ func (p *Packetizer) Packetize(payload []byte, ts media.Ticks) ([]*rtp.Packet, e
 			Header: rtp.Header{
 				Version:        2,
 				SequenceNumber: p.seq,
-				Timestamp:      stamp,
+				Timestamp:      stamp + uint32(off/MaxPayload)*stride,
 				SSRC:           p.ssrc,
 				PayloadType:    p.pt,
 				Marker:         end == len(payload),

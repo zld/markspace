@@ -20,11 +20,11 @@ import (
 )
 
 const (
-	videoSSRC     = 0x01020304
-	audioSSRC     = 0x05060708
-	fragsPerFrame = 16 // sequence numbers are derived as frame*16+frag
-	maxConceal    = 16 // loss bursts up to this many packets are concealed
-	videoTicks    = 3000 // 90000 Hz / 30 fps
+	videoSSRC  = 0x01020304
+	audioSSRC  = 0x05060708
+	maxFrags   = 64   // sanity cap on fragments per access unit
+	maxConceal = 16   // loss bursts up to this many packets are concealed
+	videoTicks = 3000 // 90000 Hz / 30 fps
 )
 
 type vframe struct{ off, end, vcl int64 }
@@ -154,6 +154,7 @@ func (r *Runner) run() (Result, error) {
 	}
 	limiter := audio.NewLimiter(tch, cfg.TargetRate/10, 0.2, 0.95)
 	audioTicks := int64(cfg.TargetRate / FPS)
+	audioStride := uint32(rtp.MaxPayload / (4 * tch)) // PCM frames per full fragment
 
 	// ---- resume or fresh start ----
 	file, hasher, outBytes, start, seqNo, err := r.openOutput()
@@ -210,7 +211,11 @@ func (r *Runner) run() (Result, error) {
 	}
 
 	// On resume, rebuild DSP/color/recovery state by replaying input
-	// (without emitting output) up to the checkpoint boundary.
+	// (without emitting output) up to the checkpoint boundary. Sequence
+	// numbers are contiguous per track, so the cumulative counts are
+	// rebuilt here exactly as the uninterrupted run produced them.
+	fragsOf := func(n int) int { return (n + rtp.MaxPayload - 1) / rtp.MaxPayload }
+	seqV, seqA := 0, 0
 	if start > 0 {
 		var lastPCM []byte
 		for i := 0; i < start; i++ {
@@ -223,21 +228,21 @@ func (r *Runner) run() (Result, error) {
 				return res, err
 			}
 			lastPCM = pcm
+			seqA += fragsOf(len(pcm))
+			seqV += fragsOf(int(frames[i].end - frames[i].off))
 		}
-		pktV.SetNextSeq(uint16((start - 1) * fragsPerFrame))
 		vts := media.Ticks(int64(start-1) * videoTicks)
 		vlast, err := pktV.Packetize(cfg.Video[frames[start-1].off:frames[start-1].end], vts)
 		if err != nil {
 			return res, err
 		}
-		recV.Seed(vlast[len(vlast)-1], int64(vts)-videoTicks, int64(vts), int64(start*fragsPerFrame))
-		pktA.SetNextSeq(uint16((start - 1) * fragsPerFrame))
+		recV.Seed(vlast[len(vlast)-1], int64(vts)-videoTicks, int64(vts), int64(seqV))
 		ats := media.Ticks(int64(start-1) * audioTicks)
 		alast, err := pktA.Packetize(lastPCM, ats)
 		if err != nil {
 			return res, err
 		}
-		recA.Seed(alast[len(alast)-1], int64(ats)-audioTicks, int64(ats), int64(start*fragsPerFrame))
+		recA.Seed(alast[len(alast)-1], int64(ats)-audioTicks, int64(ats), int64(seqA))
 	}
 
 	vPTS := make([]int64, len(frames)+1)
@@ -259,7 +264,12 @@ func (r *Runner) run() (Result, error) {
 				return media.Wrap(media.CodeInternal, "pipeline.emit", -1, err, "record payload")
 			}
 			outBytes += int64(5 + len(payload))
-			f := int(it.Seq) / fragsPerFrame
+			// attribute by (extrapolated) timestamp, not sequence:
+			// concealed items land on their true frame
+			f := int(it.TS / videoTicks)
+			if kind == 'A' {
+				f = int(it.TS / audioTicks)
+			}
 			if kind == 'V' && f < len(vPTS) && vPTS[f] < 0 {
 				vPTS[f] = it.TS
 			}
@@ -273,16 +283,17 @@ func (r *Runner) run() (Result, error) {
 	// ---- stage: per-frame rtp/output ----
 	for i := start; i < len(frames); i++ {
 		t0 := time.Now()
-		pktV.SetNextSeq(uint16(i * fragsPerFrame))
+		pktV.SetNextSeq(uint16(seqV))
 		vts := media.Ticks(int64(i) * videoTicks)
 		pkts, err := pktV.Packetize(cfg.Video[frames[i].off:frames[i].end], vts)
 		if err != nil {
 			return res, err
 		}
-		if len(pkts) > fragsPerFrame {
+		if len(pkts) > maxFrags {
 			return res, media.Fault(media.CodeLimitExceeded, "pipeline.run", -1,
-				"frame %d needs %d fragments > %d", i, len(pkts), fragsPerFrame)
+				"frame %d needs %d fragments > %d", i, len(pkts), maxFrags)
 		}
+		seqV += len(pkts)
 		if cfg.Wire != nil {
 			pkts = cfg.Wire(i, pkts)
 		}
@@ -295,15 +306,16 @@ func (r *Runner) run() (Result, error) {
 		if err != nil {
 			return res, err
 		}
-		pktA.SetNextSeq(uint16(i * fragsPerFrame))
-		apkts, err := pktA.Packetize(pcm, media.Ticks(int64(i)*audioTicks))
+		pktA.SetNextSeq(uint16(seqA))
+		apkts, err := pktA.PacketizeStride(pcm, media.Ticks(int64(i)*audioTicks), audioStride)
 		if err != nil {
 			return res, err
 		}
-		if len(apkts) > fragsPerFrame {
+		if len(apkts) > maxFrags {
 			return res, media.Fault(media.CodeLimitExceeded, "pipeline.run", -1,
-				"audio chunk %d needs %d fragments > %d", i, len(apkts), fragsPerFrame)
+				"audio chunk %d needs %d fragments > %d", i, len(apkts), maxFrags)
 		}
+		seqA += len(apkts)
 		if cfg.Wire != nil {
 			apkts = cfg.Wire(i, apkts)
 		}
@@ -335,8 +347,8 @@ func (r *Runner) run() (Result, error) {
 	// ---- tail: resampler flush, recovery flush, trailer ----
 	if tail := resampler.Flush(); len(tail) > 0 {
 		pcm := f32bytes(limiter.Process(tail))
-		pktA.SetNextSeq(uint16(len(frames) * fragsPerFrame))
-		apkts, err := pktA.Packetize(pcm, media.Ticks(int64(len(frames))*audioTicks))
+		pktA.SetNextSeq(uint16(seqA))
+		apkts, err := pktA.PacketizeStride(pcm, media.Ticks(int64(len(frames))*audioTicks), audioStride)
 		if err != nil {
 			return res, err
 		}
