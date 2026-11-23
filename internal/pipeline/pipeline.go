@@ -42,6 +42,14 @@ type Output struct {
 	PeakBuffered int64
 	QueueBound   int64
 	Drained      bool
+	// MP4Bytes is the generated ISO-BMFF metadata document, MP4SHA256 its
+	// digest, and MP4Tracks the number of tracks read back from it.
+	MP4Bytes  int
+	MP4SHA256 string
+	MP4Tracks int
+	// MetadataMismatches counts recovered anchors absent from the MP4
+	// metadata timeline.
+	MetadataMismatches int
 }
 
 // Run executes the full demonstration pipeline for one fixture.
@@ -135,6 +143,13 @@ func Run(ctx context.Context, cfg Config) (Output, error) {
 	for _, f := range merge.Faults {
 		faults = append(faults, f.String())
 	}
+	meta, err := buildMetadata(archive, results)
+	if err != nil {
+		return Output{}, err
+	}
+	for _, m := range meta.Mismatches {
+		faults = append(faults, "mp4_metadata_mismatch "+m)
+	}
 	sort.Strings(faults)
 
 	var layerInputs []manifest.LayerInput
@@ -161,8 +176,10 @@ func Run(ctx context.Context, cfg Config) (Output, error) {
 	}
 
 	vr := verify.Verify(results, merge, doc)
-	out := Output{Manifest: doc, Verify: vr, PeakBuffered: peak, QueueBound: bound, Drained: true}
-	out.Damaged = damaged(analyzers, results, merge)
+	out := Output{Manifest: doc, Verify: vr, PeakBuffered: peak, QueueBound: bound, Drained: true,
+		MP4Bytes: meta.Bytes, MP4SHA256: meta.SHA256, MP4Tracks: meta.Tracks,
+		MetadataMismatches: len(meta.Mismatches)}
+	out.Damaged = damaged(analyzers, results, merge) || len(meta.Mismatches) > 0
 	return out, nil
 }
 

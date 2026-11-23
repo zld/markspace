@@ -285,3 +285,37 @@ func hasFault(faults []string, kind string) bool {
 	}
 	return false
 }
+
+func TestRunMetadataTimeline(t *testing.T) {
+	out, err := Run(context.Background(), cfg("ok"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.MP4Tracks != 3 || out.MP4Bytes == 0 || out.MP4SHA256 == "" {
+		t.Fatalf("metadata=%+v", out)
+	}
+	if out.MetadataMismatches != 0 {
+		t.Fatalf("healthy metadata mismatches=%d", out.MetadataMismatches)
+	}
+	// The metadata document is deterministic across runs.
+	again, err := Run(context.Background(), cfg("ok"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.MP4SHA256 != out.MP4SHA256 {
+		t.Fatalf("metadata digest differs: %s vs %s", out.MP4SHA256, again.MP4SHA256)
+	}
+}
+
+func TestRunBoundarySkewBreaksMetadataTimeline(t *testing.T) {
+	out, err := Run(context.Background(), cfg("boundary-skew"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.MetadataMismatches == 0 {
+		t.Fatal("skewed layer should not match the metadata timeline")
+	}
+	if !hasFault(out.Manifest.Faults, "mp4_metadata_mismatch") {
+		t.Fatalf("faults=%+v", out.Manifest.Faults)
+	}
+}

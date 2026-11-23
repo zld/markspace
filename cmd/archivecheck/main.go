@@ -128,6 +128,8 @@ func runDemo(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stdout, string(b))
 	}
 	fmt.Fprint(stdout, out.Verify.Text())
+	fmt.Fprintf(stdout, "mp4 tracks=%d bytes=%d anchor_mismatches=%d sha256=%s\n",
+		out.MP4Tracks, out.MP4Bytes, out.MetadataMismatches, out.MP4SHA256)
 	fmt.Fprintf(stdout, "flow peak_buffered_chunks=%d queue_bound=%d goroutines_drained=%t\n",
 		out.PeakBuffered, out.QueueBound, out.Drained)
 

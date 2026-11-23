@@ -34,9 +34,36 @@ type Layer struct {
 	DurationMs int64
 	Stream     []byte
 	Index      index.Index
+	// FrameTimes and FrameBytes describe every coded frame, keyframe or not,
+	// in presentation order. They are the source for the MP4 metadata document.
+	FrameTimes []int64
+	FrameBytes []int64
+	// KeyframeFrames lists the 0-based frame indices that begin at a keyframe.
+	KeyframeFrames []int
 
 	frameOffsets []int64
-	frameLengths []int64
+}
+
+// Frame describes one coded frame in the generated layer.
+type Frame struct {
+	Offset int64
+	Length int64
+	Time   int64 // ticks on the layer timescale
+	Key    bool
+}
+
+// Frames returns every coded frame in presentation order.
+func (l Layer) Frames() []Frame {
+	out := make([]Frame, 0, len(l.FrameBytes))
+	keyIdx := 0
+	for i := range l.FrameBytes {
+		key := keyIdx < len(l.KeyframeFrames) && l.KeyframeFrames[keyIdx] == i
+		if key {
+			keyIdx++
+		}
+		out = append(out, Frame{Offset: l.frameOffsets[i], Length: l.FrameBytes[i], Time: l.FrameTimes[i], Key: key})
+	}
+	return out
 }
 
 // Archive is a complete generated fixture.
@@ -118,9 +145,9 @@ func Generate(c string, seed int64, chunkBytes int, targets []float64) (Archive,
 			return Archive{}, err
 		}
 		a.Layers = append(a.Layers, layer)
-		ext := make([]frameExtent, len(layer.frameOffsets))
-		for j := range layer.frameOffsets {
-			ext[j] = frameExtent{offset: layer.frameOffsets[j], length: layer.frameLengths[j]}
+		ext := make([]frameExtent, len(layer.FrameBytes))
+		for j := range layer.FrameBytes {
+			ext[j] = frameExtent{offset: layer.frameOffsets[j], length: layer.FrameBytes[j]}
 		}
 		a.frameLayout[spec.Name] = ext
 	}
@@ -157,9 +184,17 @@ func buildLayer(spec LayerSpec, seed int64, layerIndex, chunkBytes int, duration
 		}
 		ix.Entries = append(ix.Entries, index.Entry{PTS: msToTicks(res.times[i], spec.Timescale), Offset: res.offsets[i], Line: len(ix.Entries) + 1})
 	}
-	return Layer{Name: spec.Name, Codec: spec.Codec, TargetKbps: spec.TargetKbps, Timescale: spec.Timescale,
-		DurationMs: durationMs, Stream: res.stream, Index: ix,
-		frameOffsets: append([]int64(nil), res.offsets...), frameLengths: append([]int64(nil), res.lengths...)}, nil
+	layer := Layer{Name: spec.Name, Codec: spec.Codec, TargetKbps: spec.TargetKbps, Timescale: spec.Timescale,
+		DurationMs: durationMs, Stream: res.stream, Index: ix}
+	for i := range res.offsets {
+		layer.FrameTimes = append(layer.FrameTimes, msToTicks(res.times[i], spec.Timescale))
+		layer.FrameBytes = append(layer.FrameBytes, res.lengths[i])
+		layer.frameOffsets = append(layer.frameOffsets, res.offsets[i])
+		if res.keys[i] {
+			layer.KeyframeFrames = append(layer.KeyframeFrames, i)
+		}
+	}
+	return layer, nil
 }
 
 // msToTicks converts whole milliseconds to exact ticks for the given
