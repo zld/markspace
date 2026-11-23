@@ -64,12 +64,14 @@ func ParseMP4(r io.ReadSeeker, sourceID string, sink MP4Sink) error {
 }
 
 type mp4Parser struct {
-	r        io.ReadSeeker
-	sourceID string
-	sink     MP4Sink
-	tracks   map[uint32]*stblContext
-	curTrack uint32
-	seq      int
+	r            io.ReadSeeker
+	sourceID     string
+	sink         MP4Sink
+	tracks       map[uint32]*stblContext
+	curTrack     uint32
+	seq          int
+	emsgTrack    bool
+	emsgScale    uint32
 }
 
 func (p *mp4Parser) handle(h *mp4.ReadHandle) (interface{}, error) {
@@ -180,6 +182,14 @@ func (p *mp4Parser) readEmsg(h *mp4.ReadHandle) (interface{}, error) {
 		return nil, p.truncErr(h, "emsg payload", err)
 	}
 	emsg := box.(*mp4.Emsg)
+	if !p.emsgTrack {
+		p.emsgTrack = true
+		p.emsgScale = emsg.Timescale
+		p.sink.OnTrack(timeline.Track{
+			ID: p.sourceID + "/emsg", SourceID: p.sourceID,
+			Timescale: emsg.Timescale,
+		})
+	}
 	raw := bytes.Clone(emsg.MessageData)
 	off := int64(h.BoxInfo.Offset)
 	p.seq++
