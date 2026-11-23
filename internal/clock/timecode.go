@@ -19,10 +19,10 @@ type FrameRate struct {
 }
 
 // Standard frame rates: 24, 25, 30, 50, 59.94 and 29.97 (DF/NDF).
-func FrameRate24() FrameRate    { return FrameRate{1, 24, 24, false, "24"} }
-func FrameRate25() FrameRate    { return FrameRate{1, 25, 25, false, "25"} }
-func FrameRate30() FrameRate    { return FrameRate{1, 30, 30, false, "30"} }
-func FrameRate50() FrameRate    { return FrameRate{1, 50, 50, false, "50"} }
+func FrameRate24() FrameRate { return FrameRate{1, 24, 24, false, "24"} }
+func FrameRate25() FrameRate { return FrameRate{1, 25, 25, false, "25"} }
+func FrameRate30() FrameRate { return FrameRate{1, 30, 30, false, "30"} }
+func FrameRate50() FrameRate { return FrameRate{1, 50, 50, false, "50"} }
 func FrameRate2997(drop bool) FrameRate {
 	return FrameRate{1001, 30000, 30, drop, map[bool]string{true: "29.97DF", false: "29.97NDF"}[drop]}
 }
@@ -113,6 +113,9 @@ func (tc Timecode) TotalFrames(fr FrameRate) (int64, error) {
 	totalMinutes := int64(tc.Hour)*60 + int64(tc.Min)
 	frames := ((totalMinutes*60 + int64(tc.Sec)) * n) + int64(tc.Frame)
 	if fr.Drop {
+		// Standard SMPTE: subtract dropped numbers for every elapsed
+		// minute except multiples of ten. Illegal codes (the dropped
+		// numbers themselves) are rejected by ParseTimecode.
 		frames -= fr.dropCount() * (totalMinutes - totalMinutes/10)
 	}
 	return frames, nil
@@ -136,16 +139,25 @@ func FromTotalFrames(frames int64, fr FrameRate) (Timecode, error) {
 	drop := fr.dropCount()
 	framesPerMin := 60 * n
 	framesPer10 := 10*framesPerMin - 9*drop
-	d := frames / framesPer10
+	block := frames / framesPer10
 	r := frames % framesPer10
-	if r > drop {
-		r = r + drop*((r-drop)/framesPerMin)
-	} else {
-		r += drop
+	// Minute 0 of the block is full length; the other nine minutes each
+	// contain framesPerMin-drop real frames. k is the 0-based minute.
+	minute := int64(0)
+	if r >= framesPerMin {
+		minute = 1 + (r-framesPerMin)/(framesPerMin-drop)
 	}
-	hour := d / 6
-	d %= 6
-	return Timecode{int(hour), int(d), int(r / n), int(r % n), true}, nil
+	// Nominal block position restores the numbers skipped at the head of
+	// each short minute; decompose that into minute/second/frame.
+	nominal := r + minute*drop
+	minutes := block*10 + nominal/framesPerMin
+	return Timecode{
+		Hour:  int(minutes / 60),
+		Min:   int(minutes % 60),
+		Sec:   int((nominal % framesPerMin) / n),
+		Frame: int(nominal % n),
+		Drop:  true,
+	}, nil
 }
 
 // ToTicks places a timecode on the shared nanosecond scale.

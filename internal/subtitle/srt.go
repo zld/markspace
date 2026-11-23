@@ -25,37 +25,37 @@ func ParseSRT(r io.Reader, cfg Config) ([]Cue, error) {
 			i++
 			continue
 		}
-		firstRow := lines[i].line
+		blockRow := lines[i].line
 		timing := lines[i].text
 		// Optional sequence number line.
 		if !strings.Contains(timing, "-->") {
 			n, perr := strconv.Atoi(timing)
 			if perr != nil {
 				return nil, errs.New(errs.KindInvalidInput, "subtitle",
-					"line %d: expected sequence number or timing, got %q", firstRow, timing)
+					"line %d: expected sequence number or timing, got %q", blockRow, timing)
 			}
 			idx++
 			if n != idx {
 				return nil, errs.New(errs.KindInvalidInput, "subtitle",
-					"line %d: sequence number %d, want %d", firstRow, n, idx)
+					"line %d: sequence number %d, want %d", blockRow, n, idx)
 			}
 			i++
 			if i >= len(lines) || lines[i].text == "" {
 				return nil, errs.New(errs.KindInvalidInput, "subtitle",
-					"line %d: cue %d missing timing line", firstRow, idx)
+					"line %d: cue %d missing timing line", blockRow, idx)
 			}
 			timing = lines[i].text
-			firstRow = lines[i].line
 		} else {
 			idx++
 		}
+		timingRow := lines[i].line
 		if !strings.Contains(timing, "-->") {
 			return nil, errs.New(errs.KindInvalidInput, "subtitle",
-				"line %d: missing timing arrow", lines[i].line)
+				"line %d: missing timing arrow", timingRow)
 		}
 		start, end, terr := splitTimestamps(timing, "-->")
 		if terr != nil {
-			return nil, errs.New(errs.Class(terr), "subtitle", "line %d: %v", lines[i].line, terr)
+			return nil, errs.New(errs.KindInvalidInput, "subtitle", "line %d: %v", timingRow, terr)
 		}
 		i++
 		var body []string
@@ -63,7 +63,7 @@ func ParseSRT(r io.Reader, cfg Config) ([]Cue, error) {
 			body = append(body, lines[i].text)
 			i++
 		}
-		if err := finalize(&cues, idx, firstRow, start, end, body, c); err != nil {
+		if err := finalize(&cues, idx, blockRow, timingRow, start, end, body, c); err != nil {
 			return nil, err
 		}
 	}

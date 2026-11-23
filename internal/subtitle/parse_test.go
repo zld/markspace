@@ -24,7 +24,7 @@ func TestParseSRTValid(t *testing.T) {
 		t.Fatalf("bad body: %+v", cues[0].Lines)
 	}
 	if cues[1].FirstRow != 6 {
-		t.Fatalf("want first row 6, got %d", cues[1].FirstRow)
+		t.Fatalf("want cue block first row 6, got %d", cues[1].FirstRow)
 	}
 }
 

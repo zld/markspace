@@ -41,20 +41,21 @@ func ParseWebVTT(r io.Reader, cfg Config) ([]Cue, error) {
 			}
 			continue
 		}
-		firstRow := lines[i].line
+		blockRow := lines[i].line
 		timing := lines[i].text
 		if !strings.Contains(timing, "-->") {
 			// Cue identifier line: the next non-blank line must be timing.
 			i++
 			if i >= len(lines) || !strings.Contains(lines[i].text, "-->") {
 				return nil, errs.New(errs.KindInvalidInput, "subtitle",
-					"line %d: cue identifier not followed by timing", firstRow)
+					"line %d: cue identifier not followed by timing", blockRow)
 			}
 			timing = lines[i].text
 		}
+		timingRow := lines[i].line
 		start, end, terr := splitTimestamps(timing, "-->")
 		if terr != nil {
-			return nil, errs.New(errs.Class(terr), "subtitle", "line %d: %v", lines[i].line, terr)
+			return nil, errs.New(errs.KindInvalidInput, "subtitle", "line %d: %v", timingRow, terr)
 		}
 		idx++
 		i++
@@ -66,7 +67,7 @@ func ParseWebVTT(r io.Reader, cfg Config) ([]Cue, error) {
 			body = append(body, lines[i].text)
 			i++
 		}
-		if err := finalize(&cues, idx, firstRow, start, end, body, c); err != nil {
+		if err := finalize(&cues, idx, blockRow, timingRow, start, end, body, c); err != nil {
 			return nil, err
 		}
 	}

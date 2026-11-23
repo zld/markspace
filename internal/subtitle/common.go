@@ -145,14 +145,15 @@ type numbered struct {
 	text string
 }
 
-// finalize validates one assembled cue and appends it.
-func finalize(cues *[]Cue, idx int, firstRow int, start, end clock.Ticks, lines []string, c *counter) error {
+// finalize validates one assembled cue and appends it. blockRow is the
+// first line of the cue, timingRow is the timestamp line.
+func finalize(cues *[]Cue, idx int, blockRow, timingRow int, start, end clock.Ticks, lines []string, c *counter) error {
 	if len(lines) == 0 {
-		return errs.New(errs.KindInvalidInput, "subtitle", "line %d: empty cue body", firstRow)
+		return errs.New(errs.KindInvalidInput, "subtitle", "line %d: empty cue body", timingRow)
 	}
 	if end <= start {
 		return errs.New(errs.KindInvalidInput, "subtitle",
-			"line %d: non-positive duration %d..%d", firstRow, start.Ns(), end.Ns())
+			"line %d: non-positive duration %d..%d", timingRow, start.Ns(), end.Ns())
 	}
 	size := 0
 	for _, l := range lines {
@@ -160,13 +161,13 @@ func finalize(cues *[]Cue, idx int, firstRow int, start, end clock.Ticks, lines 
 	}
 	if size > c.cfg.MaxTextBytes {
 		return errs.New(errs.KindLimitExceeded, "subtitle",
-			"line %d: cue text %d bytes exceeds %d", firstRow, size, c.cfg.MaxTextBytes)
+			"line %d: cue text %d bytes exceeds %d", timingRow, size, c.cfg.MaxTextBytes)
 	}
 	for _, l := range lines {
 		if err := c.add(l); err != nil {
 			return err
 		}
 	}
-	*cues = append(*cues, Cue{Index: idx, Start: start, End: end, Lines: lines, FirstRow: firstRow})
+	*cues = append(*cues, Cue{Index: idx, Start: start, End: end, Lines: lines, FirstRow: blockRow})
 	return nil
 }
