@@ -30,6 +30,11 @@ func NewPacketizer(ssrc uint32, payloadType uint8, scale media.TimeScale) *Packe
 	return &Packetizer{ssrc: ssrc, pt: payloadType, scale: scale}
 }
 
+// SetNextSeq pins the next sequence number. Pipelines that derive
+// sequence numbers statelessly (so a resumed run reproduces the same
+// wire format) set it before each Packetize call.
+func (p *Packetizer) SetNextSeq(seq uint16) { p.seq = seq }
+
 // Packetize splits payload (one access unit) into RTP packets stamped
 // with ts (ticks at the packetizer's scale, already unwrapped to int64;
 // the wire carries the low 32 bits). The last packet gets the marker bit.
