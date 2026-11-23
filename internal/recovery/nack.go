@@ -40,6 +40,15 @@ func (c *Cache) Get(seq uint64) (*model.Event, bool) {
 	return ev, ok
 }
 
+// LossState is the pipeline's view of a missing sequence number.
+type LossState int
+
+const (
+	StatePending   LossState = iota // gap seen, declaration not yet due
+	StateDeclared                   // loss declared, still inside late window
+	StateFinalized                  // beyond the late window, permanent
+)
+
 // Stats are the recovery counters surfaced in the run summary.
 type Stats struct {
 	Recovered    int
@@ -50,9 +59,9 @@ type Stats struct {
 
 // Recoverer processes NACK events against the cache.
 type Recoverer struct {
-	cache *Cache
+	cache  *Cache
 	nacked map[uint64]bool
-	Stats Stats
+	Stats  Stats
 }
 
 // NewRecoverer creates a Recoverer backed by cache.
@@ -60,23 +69,21 @@ func NewRecoverer(cache *Cache) *Recoverer {
 	return &Recoverer{cache: cache, nacked: make(map[uint64]bool)}
 }
 
-// OnNACK resolves one NACK event. extSeqs are the requested extended
-// sequence numbers; finalized reports whether the watermark has already
-// finalized each sequence as lost (feedback arrived too late to act on
-// the normal path and must go through replay instead — it is counted
-// here and skipped).
-//
-// Returned events are copies reclassified as KindRecovered, in the order
-// of extSeqs, so recovery is deterministic.
-func (r *Recoverer) OnNACK(extSeqs []uint64, finalized func(seq uint64) bool) []*model.Event {
-	var out []*model.Event
+// OnNACK resolves one NACK event. state reports the LossState of each
+// requested extended sequence number. Sequences whose loss is finalized
+// are counted as late feedback and skipped; declared losses are
+// recovered into the late return value (the caller replays them);
+// pending losses are recovered into the normal return value. A cache
+// miss never fabricates a sample.
+func (r *Recoverer) OnNACK(extSeqs []uint64, state func(seq uint64) LossState) (normal, late []*model.Event) {
 	for _, seq := range extSeqs {
 		if r.nacked[seq] {
 			r.Stats.DupNACK++
 			continue
 		}
 		r.nacked[seq] = true
-		if finalized(seq) {
+		st := state(seq)
+		if st == StateFinalized {
 			r.Stats.LateFeedback++
 			continue
 		}
@@ -88,7 +95,11 @@ func (r *Recoverer) OnNACK(extSeqs []uint64, finalized func(seq uint64) bool) []
 		r.Stats.Recovered++
 		cp := *ev
 		cp.Kind = model.KindRecovered
-		out = append(out, &cp)
+		if st == StateDeclared {
+			late = append(late, &cp)
+		} else {
+			normal = append(normal, &cp)
+		}
 	}
-	return out
+	return normal, late
 }

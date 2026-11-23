@@ -77,3 +77,17 @@ func (e *Extender) remember(ext uint64) {
 		delete(e.seen, ext)
 	}
 }
+
+// Lookup maps a wire sequence number from feedback (e.g. a NACK PID) to
+// its extended number without mutating state. Only sequence numbers at
+// or behind the current maximum within the reorder horizon resolve.
+func (e *Extender) Lookup(seq uint16) (uint64, bool) {
+	if !e.init {
+		return 0, false
+	}
+	diff := int32(int16(seq - uint16(e.maxExt)))
+	if diff > 0 || -diff > maxReorder {
+		return 0, false
+	}
+	return e.maxExt - uint64(-diff), true
+}

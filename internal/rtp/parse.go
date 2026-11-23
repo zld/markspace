@@ -213,8 +213,13 @@ func parseRTCP(frame []byte, ev model.Event) model.Event {
 			ev.Err = model.ErrBadHeader
 			return ev
 		}
+		if len(frame) < 12 {
+			ev.Err = model.ErrTruncated
+			return ev
+		}
 		ev.Kind = model.KindNACK
-		for off := 8; off+4 <= len(frame); off += 4 {
+		ev.SSRC = binary.BigEndian.Uint32(frame[8:]) // media source
+		for off := 12; off+4 <= len(frame); off += 4 {
 			pid := binary.BigEndian.Uint16(frame[off:])
 			blp := binary.BigEndian.Uint16(frame[off+2:])
 			ev.NACKSeqs = append(ev.NACKSeqs, pid)
