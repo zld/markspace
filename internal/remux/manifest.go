@@ -69,6 +69,10 @@ func (m *Manifest) canonicalJSON() ([]byte, error) {
 	return json.MarshalIndent(&cp, "", "  ")
 }
 
+// CanonicalJSON exposes the stable serialization used for the summary
+// hash, allowing external verifiers to recompute it byte-identically.
+func (m *Manifest) CanonicalJSON() ([]byte, error) { return m.canonicalJSON() }
+
 // computeSummaryHash hashes the canonical content; identical inputs always
 // produce an identical hash, including across repeated pipeline runs.
 func (m *Manifest) computeSummaryHash() string {

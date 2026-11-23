@@ -105,6 +105,15 @@ func (p *Pipeline) Ingest(in Input) {
 		p.cnt.RejectedFragments++
 		return
 	}
+	// Independent cross-check with the go-mp4 structural reader. A
+	// disagreement means our hand-written scanner accepted something the
+	// reference parser rejects; treat it as a rejected box.
+	if _, verr := mp4.AbemaValidate(in.Data); verr != nil {
+		p.cnt.RejectedBoxes++
+		p.errs = append(p.errs, timeline.NewError(timeline.ClassBoxTruncated,
+			"go-mp4 cross-validation failed: "+verr.Error()))
+		return
+	}
 	for _, run := range frag.Runs {
 		p.ingestRun(inputOrder, frag, run, in)
 	}
