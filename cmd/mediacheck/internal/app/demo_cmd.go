@@ -29,5 +29,10 @@ func RunDemo(ctx context.Context, args []string) int {
 		return ExitCode(err)
 	}
 	printDemoReport(rep, d.verbose)
+	// A signal that arrived while the run was completing still means the
+	// operator interrupted us; report that rather than claiming success.
+	if ctx.Err() != nil {
+		return ExitCancelled
+	}
 	return ExitOK
 }
