@@ -17,11 +17,13 @@ const (
 	CorruptVFRDupPTS    Corruption = "vfr-dup-pts"
 )
 
-// AllCorruptions is the five-class anomaly catalog.
+// AllCorruptions is the anomaly catalog. The five required classes map to
+// six concrete variants because the truncation class has an MP4 box form and
+// an MXF KLV form.
 func AllCorruptions() []Corruption {
 	return []Corruption{
-		CorruptTruncatedBox, CorruptConflictMeta, CorruptRTPWrap,
-		CorruptDrift, CorruptVFRDupPTS,
+		CorruptTruncatedBox, CorruptTruncatedKLV, CorruptConflictMeta,
+		CorruptRTPWrap, CorruptDrift, CorruptVFRDupPTS,
 	}
 }
 

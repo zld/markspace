@@ -89,6 +89,40 @@ func NewFrames(seed int64, n, width, height, keyEvery int) []FrameContent {
 	return out
 }
 
+// NewBitrateFrames generates n frames whose per-frame payload size is derived
+// from a target bitrate so the measured clip bitrate converges to the policy
+// target. Content stays deterministic and seed-derived. durationSeconds and
+// fps define the timing; keyEvery sets the GOP.
+func NewBitrateFrames(seed int64, n, width, height, keyEvery,
+	targetKbps, fps int) []FrameContent {
+	if keyEvery <= 0 {
+		keyEvery = 12
+	}
+	if fps <= 0 {
+		fps = 30
+	}
+	// Total payload bytes needed to hit the target, spread evenly per frame.
+	bytesPerSecond := targetKbps * 1000 / 8
+	perFrame := bytesPerSecond / fps
+	if perFrame < 1 {
+		perFrame = 1
+	}
+	out := make([]FrameContent, n)
+	for f := 0; f < n; f++ {
+		r := rand.New(rand.NewSource(seed*1_000_003 + int64(f)*7919))
+		luma := make([]byte, perFrame)
+		base := byte(f * 17)
+		for i := range luma {
+			luma[i] = base + byte(i%47) + byte(r.Intn(1<<12)%31)
+		}
+		out[f] = FrameContent{
+			Index: f, Key: f%keyEvery == 0,
+			Width: width, Height: height, Luma: luma,
+		}
+	}
+	return out
+}
+
 // VFRTiming builds variable frame-rate presentation durations in nanoseconds.
 // When dupPTSIndex >= 0 that frame repeats its predecessor's PTS. The clip
 // always starts at startNanos (which may be non-zero).

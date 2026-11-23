@@ -48,6 +48,12 @@ func BuildRTPPackets(s RTPWrapSpec) ([]RTPPacketSpec, *RTPPacketSpec) {
 		// happens naturally with no backwards jump in the packet sequence.
 		ts = uint32((1 << 32) - int64(s.Packets/2)*int64(s.PacketSteps) -
 			int64(s.PacketSteps)/2)
+	} else {
+		// Keep the whole sequence comfortably below the 32-bit ceiling so no
+		// rollover occurs unless wrap generation was explicitly requested.
+		if int64(ts)+int64(s.Packets)*int64(s.PacketSteps) >= (1<<32) {
+			ts = uint32((1 << 31) - int64(s.Packets)*int64(s.PacketSteps))
+		}
 	}
 	// Accumulated fractional drift in timestamp units. Real device drift is
 	// sub-step per packet but accumulates, producing periodic +1 corrections;
