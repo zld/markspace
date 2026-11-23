@@ -214,6 +214,77 @@ func TestCycleIsRejectedWithoutOutput(t *testing.T) {
 	}
 }
 
+func TestLatePacketBecomesLossEvidence(t *testing.T) {
+	in := buildInput(t, fixture.DefaultSpec())
+	// Append an old H.264 packet (sequence 1000, already committed) to the
+	// arrival stream. It must not change media, but must appear as a late
+	// arrival in the loss evidence.
+	late := append([]byte(nil), in.Streams[0].Datagrams[0]...)
+	// Reuse the first datagram verbatim: same sequence, same timestamp.
+	in.Streams[0].Datagrams = append(in.Streams[0].Datagrams, late)
+
+	opts := DefaultOptions()
+	opts.OutputDir = t.TempDir()
+	res := Run(in, opts)
+	if res.Fatal != nil {
+		t.Fatalf("run failed: %v", res.Fatal)
+	}
+	if res.Streams[0].Late != 1 {
+		t.Fatalf("late count %d want 1", res.Streams[0].Late)
+	}
+	found := false
+	for _, e := range res.Errors {
+		if e.Code == "late_arrival" && e.Stage == merr.StageLoss {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("late arrival is missing from the evidence trail")
+	}
+	// Media must be unaffected: the round-trip ratio and hashes stay put.
+	base := runForTest(t, fixture.DefaultSpec(), nil)
+	if res.Metrics.RoundtripMatch != base.Metrics.RoundtripMatch {
+		t.Fatalf("late packet changed media: %d vs %d",
+			res.Metrics.RoundtripMatch, base.Metrics.RoundtripMatch)
+	}
+	if res.Metrics.SegmentSHA256 != base.Metrics.SegmentSHA256 {
+		t.Fatal("late packet changed the segment hash")
+	}
+}
+
+func TestPlansFollowTopologicalOrder(t *testing.T) {
+	res := runForTest(t, fixture.DefaultSpec(), nil)
+	// AV1 (track 3) depends on H.264 (track 1), so track 1 must be written
+	// before track 3 regardless of input order.
+	pos := map[uint32]int{}
+	for i, tr := range res.Tracks {
+		pos[tr.TrackID] = i
+	}
+	_ = pos
+	// The remux evidence is grouped by track in write order.
+	order := []uint32{}
+	for _, ev := range res.Remux.Evidence {
+		if len(order) == 0 || order[len(order)-1] != ev.TrackID {
+			order = append(order, ev.TrackID)
+		}
+	}
+	i1, i3 := -1, -1
+	for i, id := range order {
+		if id == 1 {
+			i1 = i
+		}
+		if id == 3 {
+			i3 = i
+		}
+	}
+	if i1 < 0 || i3 < 0 {
+		t.Fatalf("tracks missing from output order %v", order)
+	}
+	if i1 > i3 {
+		t.Fatalf("track 3 written before its dependency: %v", order)
+	}
+}
+
 func TestReportIsWrittenAndParses(t *testing.T) {
 	res := runForTest(t, fixture.DefaultSpec(), nil)
 	body, err := os.ReadFile(filepath.Join(res.Options.OutputDir, "report.json"))

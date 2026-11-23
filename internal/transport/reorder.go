@@ -63,6 +63,9 @@ type ReorderBuffer struct {
 	stats Stats
 	errs  []*merr.Error
 	gaps  []SeqSpan
+	// late holds sequences that arrived below the commit watermark, in
+	// arrival order, so the caller can attach them to loss evidence.
+	late []int64
 	// newGaps holds the holes this release pass committed, in ascending
 	// order. A single pass can cross several disjoint holes, so a single
 	// range would conflate committed packets with loss.
@@ -171,6 +174,7 @@ func (r *ReorderBuffer) push(p *Packet, repair bool) []*Packet {
 		// committed sequence is a late arrival, not a duplicate in flight.
 		r.stats.Late++
 		r.stats.Rejected++
+		r.late = append(r.late, ext)
 		r.markSeen(ext)
 		r.noteError(merr.New(merr.StageReorder, "late_packet",
 			merr.SeqSpan(r.cfg.Stream, p.Seq), true,
@@ -298,6 +302,12 @@ func (r *ReorderBuffer) PendingGaps() []SeqSpan {
 
 // CommittedThrough is the highest extended sequence number already emitted.
 func (r *ReorderBuffer) CommittedThrough() int64 { return r.next - 1 }
+
+// LateArrivals returns the extended sequences that arrived after their
+// fragment committed, in arrival order.
+func (r *ReorderBuffer) LateArrivals() []int64 {
+	return append([]int64(nil), r.late...)
+}
 
 // CommittedGaps returns the holes the most recent release pass committed, in
 // ascending order, and clears them. Each hole is returned exactly once.

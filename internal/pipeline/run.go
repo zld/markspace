@@ -417,6 +417,11 @@ func prepareTransport(in *Input, opts Options) (
 		committed = append(committed, buf.Flush()...)
 		recordCommittedGaps(buf, rec)
 
+		// Late arrivals are evidence outside committed fragments; record them
+		// so the loss report shows exactly which sequences could not be used.
+		for _, seq := range buf.LateArrivals() {
+			rec.RecordLateSeq(seq)
+		}
 		lost, recovered := rec.Counts()
 		st := buf.Stats()
 		stats = append(stats, StreamReport{
@@ -614,9 +619,19 @@ func manifestIDs(in *Input) []uint32 {
 
 // buildPlans converts demuxed samples into remux plans, honoring the mapping.
 func buildPlans(dm *demux.Result, m *track.Mapping) []remux.TrackPlan {
-	var plans []remux.TrackPlan
+	byTrack := map[uint32]*demux.Stream{}
 	for _, st := range dm.Streams {
-		outID, ok := m.OutputFor(st.Spec.TrackID)
+		byTrack[st.Spec.TrackID] = st
+	}
+	var plans []remux.TrackPlan
+	// Plans follow the mapping order, which is the graph's topological order,
+	// so packaging proceeds dependencies-first as the track graph requires.
+	for _, outID := range m.Order {
+		inID, ok := m.ToInput[outID]
+		if !ok {
+			continue
+		}
+		st, ok := byTrack[inID]
 		if !ok {
 			continue
 		}
@@ -631,7 +646,6 @@ func buildPlans(dm *demux.Result, m *track.Mapping) []remux.TrackPlan {
 			ConfigRecord: configRecord(st.Spec.Codec, st.Samples),
 		})
 	}
-	sort.Slice(plans, func(i, j int) bool { return plans[i].TrackID < plans[j].TrackID })
 	return plans
 }
 
