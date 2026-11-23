@@ -67,12 +67,13 @@ func runDemo(args []string) int {
 	cfg.Representations = *reps
 	cfg.ResumeAfter = *resumeAfter
 	cfg.WorkDir = *workDir
+	cfg.Verify = *verify
 	res, err := kernel.Demo(cfg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "mediad: %v\n", err)
 		return int(kernel.CodeOf(err))
 	}
-	printResult(res, *verify)
+	printResult(res)
 	if res.WorkDir != "" && *workDir != "" {
 		fmt.Printf("work_dir=%s\n", res.WorkDir)
 	}
@@ -85,7 +86,7 @@ func runDemo(args []string) int {
 	return int(res.FailureCode)
 }
 
-func printResult(res *kernel.Result, verify bool) {
+func printResult(res *kernel.Result) {
 	fmt.Printf("representations=%d\n", res.Reps)
 	fmt.Printf("ebml_elements=%d\n", res.Elements)
 	fmt.Printf("roundtrip_consistency=%.2f%%\n", res.Metrics.RoundtripConsistency*100)
@@ -93,7 +94,7 @@ func printResult(res *kernel.Result, verify bool) {
 	fmt.Printf("segments=%d\n", res.Metrics.Segments)
 	fmt.Printf("segment_hashes_verified=%d\n", res.SegmentHashesVerified)
 	fmt.Printf("resume_recomputed=%d\n", res.Metrics.Recomputed)
-	fmt.Printf("provenance_verified=%t\n", res.ProvenanceVerified && verify)
+	fmt.Printf("provenance_verified=%t\n", res.ProvenanceVerified)
 	fmt.Printf("corrupt_cases=%d rejected=%d partial_outputs=%d\n",
 		res.Corrupt.Cases, res.Corrupt.Rejected, res.Corrupt.PartialOutputs)
 }

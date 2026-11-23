@@ -70,6 +70,9 @@ type Config struct {
 	Tolerance       int64
 	FrameNanos      int64
 	WorkDir         string
+	// Verify enables independent artifact verification. When false the demo
+	// still processes and persists artifacts but does not claim they verified.
+	Verify bool
 }
 
 // DefaultConfig returns the demo defaults.
@@ -82,6 +85,7 @@ func DefaultConfig() Config {
 		TargetDuration:  1_000_000_000,
 		Tolerance:       33_333_333,
 		FrameNanos:      33_333_333,
+		Verify:          true,
 	}
 }
 

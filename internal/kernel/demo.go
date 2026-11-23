@@ -98,10 +98,16 @@ func Demo(cfg Config) (*Result, error) {
 	if err := rec.WriteFile(provPath); err != nil {
 		return nil, provErr("provenance", err)
 	}
-	verifyErr := VerifyArtifacts(manifestPath, inputPath, provPath, plan, primary, base.Data)
-	rtpFramed, rtpErr := checkSegmentFraming(plan.Manifests[primary], base.Data)
-	if rtpErr != nil && verifyErr == nil {
-		verifyErr = inputErr("rtp", rtpErr)
+	var verifyErr error
+	if cfg.Verify {
+		verifyErr = VerifyArtifacts(manifestPath, inputPath, provPath, plan, primary, base.Data)
+		if framed, ferr := checkSegmentFraming(plan.Manifests[primary], base.Data); ferr == nil {
+			if framed != len(plan.Manifests[primary].Segments) && verifyErr == nil {
+				verifyErr = inputErr("rtp", fmt.Errorf("framed %d of %d segments", framed, len(plan.Manifests[primary].Segments)))
+			}
+		} else if verifyErr == nil {
+			verifyErr = inputErr("rtp", ferr)
+		}
 	}
 	corrupt := runCorruptions(base, cfg.Seed)
 	res := &Result{
@@ -111,27 +117,27 @@ func Demo(cfg Config) (*Result, error) {
 		// Segment hashes count as verified only when independent verification
 		// re-hashed every one of them successfully.
 		SegmentHashesVerified: 0,
-		ProvenanceVerified:    verifyErr == nil,
+		ProvenanceVerified:    cfg.Verify && verifyErr == nil,
 		Corrupt:               corrupt,
 		WorkDir:               work,
 		ManifestPath:          manifestPath,
 		ProvenancePath:        provPath,
 		InputPath:             inputPath,
 	}
-	if verifyErr == nil && rtpFramed == len(plan.Manifests[primary].Segments) {
+	if !cfg.Verify {
+		res.ProvenanceVerified = false
+		res.SegmentHashesVerified = 0
+	} else if verifyErr == nil {
 		res.SegmentHashesVerified = len(plan.Manifests[primary].Segments)
-	} else if verifyErr != nil {
+	} else {
 		res.Failure = verifyErr.Error()
 		res.FailureCode = CodeOf(verifyErr)
-	} else {
-		res.Failure = "RTP boundary framing failed"
-		res.FailureCode = ExitInput
 	}
-	if !acceptanceMet(res) && res.FailureCode == ExitOK {
+	if !acceptanceMet(res, cfg.Verify) && res.FailureCode == ExitOK {
 		res.FailureCode = ExitInput
 		res.Failure = "acceptance thresholds not met"
 	}
-	res.OK = acceptanceMet(res)
+	res.OK = acceptanceMet(res, cfg.Verify)
 	return res, nil
 }
 
@@ -243,13 +249,13 @@ func sumElements(reps []*Representation) int {
 	return total
 }
 
-func acceptanceMet(res *Result) bool {
+func acceptanceMet(res *Result, requireVerify bool) bool {
+	verifyOK := !requireVerify || (res.ProvenanceVerified && res.SegmentHashesVerified == res.Metrics.Segments)
 	return res.Metrics.RoundtripConsistency >= 0.9999 &&
 		res.Metrics.KeyframeHitRate >= 0.99 &&
 		res.Metrics.Segments >= 12 &&
-		res.SegmentHashesVerified == res.Metrics.Segments &&
+		verifyOK &&
 		res.Metrics.Recomputed <= 1 &&
-		res.ProvenanceVerified &&
 		res.Corrupt.Cases == 5 && res.Corrupt.Rejected == 5 && res.Corrupt.PartialOutputs == 0
 }
 
