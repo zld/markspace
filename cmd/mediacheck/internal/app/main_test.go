@@ -110,3 +110,16 @@ func runCaptured(t *testing.T, ctx context.Context, args []string, stdout, stder
 	os.Stdout, os.Stderr = origOut, origErr
 	return code, <-done
 }
+
+// TestCancelledContextDuringDemoExits130 covers a cancellation that arrives
+// after the pipeline completes: the run still prints evidence, but the process
+// reports interruption instead of success.
+func TestCancelledContextDuringDemoExits130(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	var out, errOut bytes.Buffer
+	code, _ := runCaptured(t, ctx, []string{"demo", "--out", t.TempDir()}, &out, &errOut)
+	if code != ExitCancelled {
+		t.Errorf("exit = %d, want %d", code, ExitCancelled)
+	}
+}
