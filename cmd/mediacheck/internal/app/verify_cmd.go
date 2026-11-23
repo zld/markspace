@@ -22,7 +22,6 @@ func RunVerify(ctx context.Context, args []string) int {
 		fmt.Fprintf(os.Stderr, "verify: --input and --output are required\n%s", Usage())
 		return ExitUsage
 	}
-	_ = ctx
 	if err := ctx.Err(); err != nil {
 		return ExitCancelled
 	}

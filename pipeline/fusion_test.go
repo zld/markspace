@@ -165,7 +165,7 @@ func TestResumeRejectsChangedSourceEvenWithLedger(t *testing.T) {
 	dir := t.TempDir()
 	src := writeFixture(t, dir)
 	out := filepath.Join(dir, "run")
-	first, err := Run(context.Background(), runOpts(src, out))
+	_, err := Run(context.Background(), runOpts(src, out))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,7 +188,6 @@ func TestResumeRejectsChangedSourceEvenWithLedger(t *testing.T) {
 			t.Errorf("entry %d resumed despite changed source", e.Index)
 		}
 	}
-	_ = first
 }
 
 func decodeManifest(raw []byte, m *Manifest) error { return json.Unmarshal(raw, m) }

@@ -29,7 +29,6 @@ func RunRTP(ctx context.Context, args []string) int {
 		fmt.Fprintf(os.Stderr, "rtp: %v\n", err)
 		return ExitCode(err)
 	}
-	_ = ctx
 	fmt.Printf("received=%d duplicates=%d reordered=%d lost=%d dispatched=%d\n",
 		stats.Received, stats.Duplicates, stats.Reordered, stats.Lost, len(ordered))
 	for _, g := range gaps {

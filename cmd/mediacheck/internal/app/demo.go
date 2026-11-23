@@ -107,7 +107,6 @@ func demo(ctx context.Context, d *demoFlags) (*demoReport, error) {
 		runCtx, cancel = context.WithTimeout(ctx, d.cancelAfter)
 	}
 	defer cancel()
-	_ = runCtx
 	report, err := pipeline.RunFused(runCtx, pipeline.RunOptions{
 		Source: srcPath, OutDir: absOut, Workers: d.workers, Queue: d.queue,
 		SamplesPer: d.samplesPer, Targets: demoTargets(), Seed: d.seed, Resume: true,

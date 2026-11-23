@@ -79,14 +79,12 @@ func Corrupt(raw []byte, kind FaultKind) ([]byte, int64, error) {
 		if err != nil {
 			return nil, 0, err
 		}
-		countAt := off + 12
 		firstAt := off + 16
 		if firstAt+8 > int64(len(out)) {
 			return nil, 0, fmt.Errorf("stss too small")
 		}
 		first := binary.BigEndian.Uint32(out[firstAt:])
 		binary.BigEndian.PutUint32(out[firstAt+4:], first)
-		_ = countAt
 		return out, firstAt + 4, nil
 	case FaultBadChunkCount:
 		// Inflate the stsc samples-per-chunk so chunks describe too many samples.
