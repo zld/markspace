@@ -103,14 +103,24 @@ func Align(reps []Representation, cfg Config) (*Plan, error) {
 	return plan, nil
 }
 
-// makeGrid returns boundary times 0, step, 2*step, ... ending at end.
+// makeGrid returns boundary times 0, step, 2*step, ... ending exactly at end.
+// The last interior boundary snaps to end when the remaining span is shorter
+// than one nominal segment, absorbing the remainder into the final segment
+// instead of emitting a near-empty sliver that distorts bitrate statistics.
 func makeGrid(end, step uint64) []uint64 {
 	if step == 0 {
 		return []uint64{0, end}
 	}
 	var out []uint64
-	for at := uint64(0); at < end; at += step {
+	for at := uint64(0); at+step <= end; at += step {
 		out = append(out, at)
+	}
+	if len(out) == 0 {
+		return []uint64{0, end}
+	}
+	last := out[len(out)-1]
+	if last == end {
+		return out
 	}
 	out = append(out, end)
 	return out

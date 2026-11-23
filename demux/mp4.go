@@ -33,12 +33,24 @@ func isTruncationError(err error) bool {
 	if err == nil {
 		return false
 	}
+	// Already classified: do not re-wrap at each nesting level.
+	if errors.Is(err, errIndexTruncated) {
+		return true
+	}
 	msg := err.Error()
 	return strings.Contains(msg, "failed to read array completely") ||
 		strings.Contains(msg, "unexpected EOF") ||
 		strings.Contains(msg, "too large box size") ||
 		errors.Is(err, io.ErrUnexpectedEOF) ||
 		errors.Is(err, io.EOF)
+}
+
+// markTruncated tags an error exactly once, preserving its original message.
+func markTruncated(err error) error {
+	if errors.Is(err, errIndexTruncated) {
+		return err
+	}
+	return fmt.Errorf("%w: %v", errIndexTruncated, err)
 }
 
 // limitedReadSeeker rejects reads and seeks past MaxInputBytes so a corrupt
@@ -119,7 +131,7 @@ func walk(r io.ReadSeeker) ([]rawBox, error) {
 			box, _, err := h.ReadPayload()
 			if err != nil {
 				if isTruncationError(err) {
-					return nil, fmt.Errorf("%w: %v", errIndexTruncated, err)
+					return nil, markTruncated(err)
 				}
 				return nil, err
 			}
@@ -128,7 +140,7 @@ func walk(r io.ReadSeeker) ([]rawBox, error) {
 			// boxes (mdst) carry raw payload; SeekToEnd restores the position.
 			if _, err := h.Expand(); err != nil {
 				if isTruncationError(err) {
-					return nil, fmt.Errorf("%w: %v", errIndexTruncated, err)
+					return nil, markTruncated(err)
 				}
 				return nil, err
 			}

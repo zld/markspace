@@ -63,7 +63,16 @@ func (e *RunError) Error() string {
 	if e.TrackID != 0 {
 		loc = fmt.Sprintf("track=%d", e.TrackID)
 	}
-	return fmt.Sprintf("%s: stage=%s %s: %s", e.Code, e.Stage, loc, e.Err)
+	// When the cause is itself a LocError, render its operation and cause
+	// rather than re-printing its code/stage, so the message is not doubled.
+	var le *timeline.LocError
+	if asLoc(e.Err, &le) {
+		if le.Err != nil {
+			return fmt.Sprintf("%s: stage=%s %s op=%s: %v", e.Code, e.Stage, loc, le.Op, le.Err)
+		}
+		return fmt.Sprintf("%s: stage=%s %s op=%s", e.Code, e.Stage, loc, le.Op)
+	}
+	return fmt.Sprintf("%s: stage=%s %s: %v", e.Code, e.Stage, loc, e.Err)
 }
 
 func (e *RunError) Unwrap() error { return e.Err }
@@ -81,6 +90,12 @@ func asRunError(stage string, err error) *RunError {
 		}
 	}
 	return re
+}
+
+// NewRunErrorForTest builds a RunError with an explicit code. It is used by the
+// CLI to classify usage and I/O errors under the same exit-code contract.
+func NewRunErrorForTest(code string, err error) *RunError {
+	return &RunError{Stage: StageManifest, Code: code, Err: err}
 }
 
 // asLoc walks the error chain for a *timeline.LocError without importing

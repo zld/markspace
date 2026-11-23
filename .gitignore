@@ -1,0 +1,5 @@
+
+# Build and demo artifacts
+/tmp/
+/mediadist
+*.tmp
