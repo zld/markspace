@@ -163,8 +163,10 @@ func parseLadder(s string) ([]int64, error) {
 }
 
 func parseFPS(s string) (clock.FrameRate, error) {
-	drop := strings.HasSuffix(s, "df")
-	s = strings.TrimSuffix(strings.TrimSuffix(s, "df"), "ndf")
+	s = strings.TrimSpace(s)
+	drop := strings.HasSuffix(s, "df") && !strings.HasSuffix(s, "ndf")
+	s = strings.TrimSuffix(s, "ndf")
+	s = strings.TrimSuffix(s, "df")
 	switch strings.TrimSpace(s) {
 	case "24":
 		return clock.FrameRate24(), nil
