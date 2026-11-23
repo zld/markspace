@@ -33,8 +33,10 @@ type Result struct {
 
 // Rebuild walks the final video sample stream (emission order, gaps
 // already resolved as far as recovery allowed) and produces the sync
-// sample index. A GOP starting at a sequence discontinuity is
-// unrecoverable, as is a GOP with no decodable keyframe.
+// sample index. A GOP with no decodable keyframe is unrecoverable, as is
+// a GOP that contains a sequence discontinuity. A discontinuity landing
+// on a keyframe belongs to the GOP that just ended: the new GOP restarts
+// at the keyframe and does not depend on the missing tail.
 func Rebuild(samples []*model.Event) Result {
 	var res Result
 	type gop struct {
@@ -47,7 +49,10 @@ func Rebuild(samples []*model.Event) Result {
 	for i, ev := range samples {
 		discontinuous := i > 0 && ev.Seq != prevSeq+1
 		if ev.Keyframe || len(gops) == 0 {
-			gops = append(gops, gop{start: i, key: ev.Keyframe, holed: discontinuous})
+			gops = append(gops, gop{start: i, key: ev.Keyframe})
+			if discontinuous && len(gops) > 1 {
+				gops[len(gops)-2].holed = true
+			}
 		} else if discontinuous {
 			gops[len(gops)-1].holed = true
 		}

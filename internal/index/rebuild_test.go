@@ -46,18 +46,34 @@ func TestRebuildCountsGOPs(t *testing.T) {
 func TestRebuildMarksHoledGOPUnrecoverable(t *testing.T) {
 	samples := []*model.Event{
 		vid(1, true), vid(2, false),
-		// Gap: seq 3 is missing, so GOP 2 starts at a discontinuity.
+		// Gap: seq 3 is missing, so the first GOP is holed. The keyframe
+		// at 4 restarts decoding, so the second GOP is still recoverable.
 		vid(4, true), vid(5, false),
 	}
 	res := Rebuild(samples)
 	if res.Recoverable != 1 {
-		t.Fatalf("recoverable = %d, want 1 (second GOP is holed)", res.Recoverable)
+		t.Fatalf("recoverable = %d, want 1 (second GOP restarts at a keyframe)", res.Recoverable)
 	}
 	if res.Unrecoverable != 1 {
 		t.Fatalf("unrecoverable = %d, want 1", res.Unrecoverable)
 	}
-	if len(res.Keyframes) != 1 || res.Keyframes[0] != 1 {
-		t.Fatalf("keyframes = %v, want [1]", res.Keyframes)
+	if len(res.Keyframes) != 1 || res.Keyframes[0] != 3 {
+		t.Fatalf("keyframes = %v, want [3] (1-based sample of the second keyframe)", res.Keyframes)
+	}
+}
+
+func TestRebuildHoleInsideGOPIsUnrecoverable(t *testing.T) {
+	// A gap in the middle of a GOP corrupts that GOP; the following
+	// keyframe still starts a healthy GOP.
+	samples := []*model.Event{
+		vid(1, true), vid(2, false), vid(3, false),
+		// seq 4 missing.
+		vid(5, false), vid(6, false),
+		vid(7, true), vid(8, false),
+	}
+	res := Rebuild(samples)
+	if res.Recoverable != 1 || res.Unrecoverable != 1 {
+		t.Fatalf("recoverable=%d unrecoverable=%d", res.Recoverable, res.Unrecoverable)
 	}
 }
 
