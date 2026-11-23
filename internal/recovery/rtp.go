@@ -51,7 +51,8 @@ type Report struct {
 	Wraps         int
 }
 
-// RecoveryRate is Recovered / (Recovered + Unrecoverable).
+// RecoveryRate is Recovered / (Recovered + Unrecoverable), i.e. the share
+// of missing packets that were filled before their window aged out.
 func (r *Report) RecoveryRate() float64 {
 	denom := r.Recovered + r.Unrecoverable
 	if denom == 0 {
@@ -69,6 +70,7 @@ type Receiver struct {
 	highest     int64 // highest unwrapped seq ever accepted
 	buffer      map[int64]*rtp.Packet
 	filled      map[int64]bool
+	pending     map[int64]bool // holes observed, awaiting fill or ageing
 	declared    map[int64]bool // holes already reported as unrecoverable
 	rawHash     map[int64]string
 	report      Report
@@ -89,6 +91,7 @@ func NewReceiver(maxRTX uint16) (*Receiver, error) {
 		unwrap:   u,
 		buffer:   map[int64]*rtp.Packet{},
 		filled:   map[int64]bool{},
+		pending:  map[int64]bool{},
 		declared: map[int64]bool{},
 		rawHash:  map[int64]string{},
 	}, nil
@@ -127,18 +130,25 @@ func (rcv *Receiver) Handle(raw []byte) error {
 			ev.Disposition = DispRTXConflict
 		}
 	case unwrapped > rcv.highest:
+		// Register every sequence skipped by this jump as a pending hole.
+		for hole := rcv.highest + 1; hole < unwrapped; hole++ {
+			if !rcv.filled[hole] && !rcv.declared[hole] {
+				rcv.pending[hole] = true
+			}
+		}
 		ev.Disposition, ev.Recoverable = DispAccepted, true
 		rcv.highest = unwrapped
 	default:
 		// A late packet fills a hole inside the reorder window.
 		// Reordering = the original transmission arriving late; an
 		// explicit retransmission carries new (replacement) bytes.
-		if rcv.rawHash[unwrapped] == fp {
-			ev.Disposition = DispReordered
-		} else {
+		if rcv.pending[unwrapped] {
 			ev.Disposition = DispRetransmit
 			ev.Recoverable = true
 			rcv.report.Recovered++
+			delete(rcv.pending, unwrapped)
+		} else {
+			ev.Disposition = DispReordered
 		}
 	}
 	rcv.buffer[unwrapped] = pkt
@@ -196,6 +206,7 @@ func (rcv *Receiver) finalizeBehind(justSeen int64) {
 			continue // already part of a flushed loss window
 		}
 		rcv.declared[s] = true
+		delete(rcv.pending, s)
 		if runEnd >= runStart && runEnd+1 == s {
 			runEnd = s // extend the current contiguous run
 		} else {
