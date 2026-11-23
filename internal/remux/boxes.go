@@ -166,29 +166,33 @@ func writeTkhd(w *mp4.Writer, l *layout, trackID uint32) error {
 	return wrapWrite("tkhd_end", err)
 }
 
-// writeEdts preserves a non-zero first presentation time with an edit list.
-// Without it the container would silently shift the track to zero.
+// writeEdts expresses a non-zero first presentation time. The sample table
+// starts at zero, so the correct construction is an empty edit of the initial
+// delay followed by a normal edit covering the media. Pointing media_time at
+// the original PTS would address beyond the track's duration and play nothing.
 func writeEdts(w *mp4.Writer, l *layout) error {
 	first := l.samples[0].PTS
 	if first == 0 {
 		return nil
 	}
+	delay := scaleDuration(uint64(first), l.plan.Timescale, l.movieScale)
+	media := scaleDuration(l.duration, l.plan.Timescale, l.movieScale)
 	if _, err := w.StartBox(&mp4.BoxInfo{Type: mp4.BoxTypeEdts()}); err != nil {
 		return wrapWrite("edts_start", err)
 	}
 	if _, err := w.StartBox(&mp4.BoxInfo{Type: mp4.BoxTypeElst()}); err != nil {
 		return wrapWrite("elst_start", err)
 	}
-	// Version 1 carries a 64-bit media time, which non-zero RTP origins can
-	// exceed (a 32-bit timestamp near wrap is ~4.29e9 ticks). Segment duration
-	// is in movie timescale; media time stays in the track timescale.
+	// Version 1 carries 64-bit fields: a 32-bit RTP timestamp near wrap is
+	// ~4.29e9 ticks, which does not fit the version 0 32-bit segment time.
 	elst := &mp4.Elst{
-		EntryCount: 1,
-		Entries: []mp4.ElstEntry{{
-			SegmentDurationV1: scaleDuration(l.duration, l.plan.Timescale, l.movieScale),
-			MediaTimeV1:       first,
-			MediaRateInteger:  1,
-		}},
+		EntryCount: 2,
+		Entries: []mp4.ElstEntry{
+			// Empty edit: delay the track start. media_time -1 means "no media".
+			{SegmentDurationV1: delay, MediaTimeV1: -1, MediaRateInteger: 1},
+			// Normal edit: play the whole track from its first sample.
+			{SegmentDurationV1: media, MediaTimeV1: 0, MediaRateInteger: 1},
+		},
 	}
 	elst.Version = 1
 	if _, err := mp4.Marshal(w, elst, mp4.Context{}); err != nil {

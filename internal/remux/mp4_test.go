@@ -245,6 +245,55 @@ func TestReadBackRejectsTruncatedFile(t *testing.T) {
 	}
 }
 
+func TestEditListDelayIsAnEmptyEdit(t *testing.T) {
+	dir := t.TempDir()
+	// The first sample starts at 30000 ticks (1/3 s at 90 kHz). The sample
+	// table is rebased to 0, so the delay must be expressed as an empty edit,
+	// not as a media_time pointing past the track.
+	samples := []demux.Sample{
+		{Index: 0, TrackID: 1, Codec: demux.CodecH264, PTS: 30000, Dur: 3000,
+			Data: makeH264Sample(true, 1), Keyframe: true},
+		{Index: 1, TrackID: 1, Codec: demux.CodecH264, PTS: 33000, Dur: 3000,
+			Data: makeH264Sample(false, 2)},
+	}
+	plans := []TrackPlan{{TrackID: 1, Codec: demux.CodecH264, Samples: samples,
+		Timescale: 90000, Handler: [4]byte{'v', 'i', 'd', 'e'},
+		ConfigRecord: []byte{1, 0x42, 0x00, 0x1E, 0xFF, 0xE1, 0x00, 0x04, 0x67, 0x42, 0x00, 0x1E, 0x01, 0x00, 0x02, 0x68, 0xCE}}}
+	rep, err := WriteFile(dir, "elst.mp4", plans, DefaultOptions())
+	if err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	f, err := os.Open(rep.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	boxes, err := mp4.ExtractBoxWithPayload(f, nil, mp4.BoxPath{
+		mp4.BoxTypeMoov(), mp4.BoxTypeTrak(), mp4.BoxTypeEdts(), mp4.BoxTypeElst(),
+	})
+	if err != nil || len(boxes) != 1 {
+		t.Fatalf("elst: %v n=%d", err, len(boxes))
+	}
+	elst := boxes[0].Payload.(*mp4.Elst)
+	if elst.Version != 1 {
+		t.Fatalf("elst version %d", elst.Version)
+	}
+	if len(elst.Entries) != 2 {
+		t.Fatalf("elst entries %+v", elst.Entries)
+	}
+	empty, media := elst.Entries[0], elst.Entries[1]
+	if empty.MediaTimeV1 != -1 {
+		t.Fatalf("first edit should be empty, media time %d", empty.MediaTimeV1)
+	}
+	// 30000 ticks at 90 kHz is 333 ms, in the 1000 movie timescale.
+	if empty.SegmentDurationV1 != 333 {
+		t.Fatalf("empty edit duration %d want 333", empty.SegmentDurationV1)
+	}
+	if media.MediaTimeV1 != 0 || media.SegmentDurationV1 != 66 {
+		t.Fatalf("media edit %+v want duration 66", media)
+	}
+}
+
 func TestWriteFileRejectsNonMonotonic(t *testing.T) {
 	dir := t.TempDir()
 	samples := []demux.Sample{
