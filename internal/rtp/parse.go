@@ -63,7 +63,14 @@ func (p *Parser) malformed(class model.ErrClass, size int) model.Event {
 
 func (p *Parser) scan(final bool) []model.Event {
 	var out []model.Event
-	for len(p.buf) >= 2 {
+	for len(p.buf) > 0 {
+		if len(p.buf) < 2 {
+			if final {
+				out = append(out, p.malformed(model.ErrTruncated, len(p.buf)))
+				p.drop(len(p.buf))
+			}
+			break
+		}
 		length := int(binary.BigEndian.Uint16(p.buf))
 		if length < 4 || length > maxFrame {
 			if skipped := p.resync(final); skipped > 0 {
@@ -78,6 +85,19 @@ func (p *Parser) scan(final bool) []model.Event {
 			break
 		}
 		if len(p.buf) < 2+length {
+			// The claimed length is plausible but the bytes are not here.
+			// If the header already visible at this boundary is not a
+			// declared packet, the prefix is junk: resync instead of
+			// waiting for a frame that will never be complete.
+			if len(p.buf) >= 4 && !plausible(p.buf[2:]) {
+				skipped := p.resync(final)
+				if skipped <= 0 {
+					skipped = 1
+				}
+				out = append(out, p.malformed(model.ErrBadLength, skipped))
+				p.drop(skipped)
+				continue
+			}
 			if final {
 				out = append(out, p.malformed(model.ErrTruncated, len(p.buf)))
 				p.drop(len(p.buf))
@@ -85,21 +105,26 @@ func (p *Parser) scan(final bool) []model.Event {
 			break
 		}
 		frame := p.buf[2 : 2+length]
+		// A wrong version at the claimed boundary means the length prefix
+		// is junk, not that a real packet is malformed: resync past it.
+		if frame[0]>>6 != 2 {
+			skipped := p.resync(final)
+			if skipped <= 0 {
+				skipped = 1
+			}
+			out = append(out, p.malformed(model.ErrBadLength, skipped))
+			p.drop(skipped)
+			continue
+		}
 		if !plausible(frame) {
-			// The framing is plausible but the frame header is not a
-			// declared packet type: treat the length bytes as junk and
-			// advance one byte so a real boundary can be found.
+			// The framing is plausible but the header names no declared
+			// packet type: treat the length bytes as junk and advance one
+			// byte so a real boundary can be found.
 			out = append(out, p.malformed(model.ErrBadLength, 1))
 			p.drop(1)
 			continue
 		}
 		ev := p.parseFrame(frame, length)
-		if ev.Err == model.ErrBadLength || ev.Err == model.ErrBadVersion {
-			// Not a frame after all; rescan from the next byte.
-			out = append(out, p.malformed(ev.Err, 1))
-			p.drop(1)
-			continue
-		}
 		out = append(out, ev)
 		p.drop(2 + length)
 	}

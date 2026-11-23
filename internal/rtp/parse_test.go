@@ -98,7 +98,29 @@ func TestTruncatedTailReportsOffset(t *testing.T) {
 	}
 }
 
-func TestCorruptExtensionThenValidPacket(t *testing.T) {
+func TestBadVersionAtBoundaryResyncs(t *testing.T) {
+	// A frame whose length is plausible but whose version is wrong is not
+	// a declared packet; the scanner must slide forward and still find
+	// the following good frame without losing it.
+	body := make([]byte, 20)
+	body[0] = 0x00 // version 0
+	body[1] = PTVideo
+	bad := append([]byte{0x00, byte(len(body))}, body...)
+	good := frame(t, mediaPacket(30, 0, PTVideo, false))
+	var p Parser
+	evs := p.Feed(append(bad, good...), 1)
+	var ok int
+	for _, ev := range evs {
+		if ev.Kind == model.KindPacket && ev.Seq16 == 30 {
+			ok++
+		}
+	}
+	if ok != 1 {
+		t.Fatalf("good frame after bad version was lost: %+v", evs)
+	}
+}
+
+func TestExtensionThenValidPacket(t *testing.T) {
 	good := frame(t, mediaPacket(10, 0, PTVideo, false))
 	bad := append([]byte(nil), good...)
 	badBody := bad[2:]
