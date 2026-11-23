@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -73,11 +74,39 @@ type FragOpts struct {
 	Seed      []byte
 }
 
-func boxHeader(typ string, size int) []byte {
-	b := make([]byte, 8)
-	binary.BigEndian.PutUint32(b, uint32(size))
-	copy(b[4:], typ)
-	return b
+// memWS is an in-memory io.WriteSeeker for mp4.Writer.
+type memWS struct {
+	buf []byte
+	pos int64
+}
+
+func (m *memWS) Write(p []byte) (int, error) {
+	end := m.pos + int64(len(p))
+	if end > int64(len(m.buf)) {
+		nb := make([]byte, end)
+		copy(nb, m.buf)
+		m.buf = nb
+	}
+	copy(m.buf[m.pos:], p)
+	m.pos = end
+	return len(p), nil
+}
+
+func (m *memWS) Seek(offset int64, whence int) (int64, error) {
+	var abs int64
+	switch whence {
+	case io.SeekStart:
+		abs = offset
+	case io.SeekCurrent:
+		abs = m.pos + offset
+	case io.SeekEnd:
+		abs = int64(len(m.buf)) + offset
+	}
+	if abs < 0 {
+		return 0, fmt.Errorf("negative seek")
+	}
+	m.pos = abs
+	return abs, nil
 }
 
 // BuildFragment serializes one deterministic moof+mdat fragment.
@@ -103,42 +132,62 @@ func BuildFragment(track model.TrackDesc, o FragOpts) ([]byte, error) {
 	tfhd.SetFlags(0)
 	mfhd := &mp4.Mfhd{SequenceNumber: o.Mfhd}
 
-	var traf bytes.Buffer
-	for _, box := range []mp4.IImmutableBox{tfhd} {
-		if _, err := mp4.Marshal(&traf, box, mp4.Context{}); err != nil {
-			return nil, err
+	ws := &memWS{}
+	w := mp4.NewWriter(ws)
+	writeBox := func(typ mp4.BoxType, box mp4.IImmutableBox) error {
+		if _, err := w.StartBox(&mp4.BoxInfo{Type: typ}); err != nil {
+			return err
 		}
+		if _, err := mp4.Marshal(w, box, mp4.Context{}); err != nil {
+			return err
+		}
+		_, err := w.EndBox()
+		return err
+	}
+	if _, err := w.StartBox(&mp4.BoxInfo{Type: mp4.BoxTypeMoof()}); err != nil {
+		return nil, err
+	}
+	if err := writeBox(mp4.BoxTypeMfhd(), mfhd); err != nil {
+		return nil, err
+	}
+	if _, err := w.StartBox(&mp4.BoxInfo{Type: mp4.BoxTypeTraf()}); err != nil {
+		return nil, err
+	}
+	if err := writeBox(mp4.BoxTypeTfhd(), tfhd); err != nil {
+		return nil, err
 	}
 	if o.HasTfdt {
 		tfdt := &mp4.Tfdt{BaseMediaDecodeTimeV1: o.Tfdt}
 		tfdt.SetVersion(1)
-		if _, err := mp4.Marshal(&traf, tfdt, mp4.Context{}); err != nil {
+		if err := writeBox(mp4.BoxTypeTfdt(), tfdt); err != nil {
 			return nil, err
 		}
 	}
-	if _, err := mp4.Marshal(&traf, trun, mp4.Context{}); err != nil {
+	if err := writeBox(mp4.BoxTypeTrun(), trun); err != nil {
 		return nil, err
 	}
-	var mfhdBuf bytes.Buffer
-	if _, err := mp4.Marshal(&mfhdBuf, mfhd, mp4.Context{}); err != nil {
+	if _, err := w.EndBox(); err != nil { // traf
 		return nil, err
 	}
-
-	var out bytes.Buffer
-	moofSize := 8 + mfhdBuf.Len() + 8 + traf.Len()
-	out.Write(boxHeader("moof", moofSize))
-	out.Write(mfhdBuf.Bytes())
-	out.Write(boxHeader("traf", 8+traf.Len()))
-	out.Write(traf.Bytes())
+	if _, err := w.EndBox(); err != nil { // moof
+		return nil, err
+	}
 	payload := make([]byte, size)
 	for i := range payload {
 		if len(o.Seed) > 0 {
 			payload[i] = o.Seed[i%len(o.Seed)]
 		}
 	}
-	out.Write(boxHeader("mdat", 8+len(payload)))
-	out.Write(payload)
-	return out.Bytes(), nil
+	if _, err := w.StartBox(&mp4.BoxInfo{Type: mp4.BoxTypeMdat()}); err != nil {
+		return nil, err
+	}
+	if _, err := w.Write(payload); err != nil {
+		return nil, err
+	}
+	if _, err := w.EndBox(); err != nil { // mdat
+		return nil, err
+	}
+	return ws.buf, nil
 }
 
 // Generate creates the synthetic fragment group described by cfg.
