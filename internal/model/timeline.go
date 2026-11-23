@@ -150,6 +150,16 @@ func NewRange(start, end Rat) (Range, error) {
 	return Range{Start: start, End: end}, nil
 }
 
+// SafeRange never returns an invalid range: an inverted interval collapses
+// to a zero-width point. Use it at boundaries where defect handling must
+// continue rather than fail.
+func SafeRange(start, end Rat) Range {
+	if start.Cmp(end) > 0 {
+		return Range{Start: start, End: start}
+	}
+	return Range{Start: start, End: end}
+}
+
 // Overlaps reports whether two ranges share any timeline coverage.
 func (r Range) Overlaps(o Range) bool {
 	return r.Start.Cmp(o.End) < 0 && o.Start.Cmp(r.End) < 0

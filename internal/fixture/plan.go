@@ -51,7 +51,7 @@ func planTables(s Spec, ts TrackSpec) trackLayout {
 		}
 	case CorruptSparseKeyframes:
 		// Keyframes only at the head and tail: with a 24k timescale and 48
-		// samples this produces a ~1.96s gap, so shrink the delta to force a
+		// samples this produces a ~1.96s gap, so widen the delta to force a
 		// >2s gap that the delivery threshold must reject.
 		if ts.Kind == model.KindVideo {
 			l.deltas = make([]uint32, ts.SampleCount)
@@ -60,14 +60,15 @@ func planTables(s Spec, ts TrackSpec) trackLayout {
 			}
 			l.keyframes = []uint32{1, uint32(ts.SampleCount)}
 		}
-	default:
-		if ts.Kind == model.KindVideo && ts.KeyframeEvery > 0 {
-			for i := 1; i <= ts.SampleCount; i += ts.KeyframeEvery {
-				l.keyframes = append(l.keyframes, uint32(i))
-			}
-			if l.keyframes[len(l.keyframes)-1] != uint32(ts.SampleCount) {
-				l.keyframes = append(l.keyframes, uint32(ts.SampleCount))
-			}
+	}
+	// Every non-sparse video fixture keeps a regular keyframe index so
+	// boundary recovery stays provable even when timestamps are damaged.
+	if ts.Kind == model.KindVideo && len(l.keyframes) == 0 && ts.KeyframeEvery > 0 {
+		for i := 1; i <= ts.SampleCount; i += ts.KeyframeEvery {
+			l.keyframes = append(l.keyframes, uint32(i))
+		}
+		if l.keyframes[len(l.keyframes)-1] != uint32(ts.SampleCount) {
+			l.keyframes = append(l.keyframes, uint32(ts.SampleCount))
 		}
 	}
 	if s.Corruption == CorruptSparseKeyframes && ts.Kind != model.KindVideo {

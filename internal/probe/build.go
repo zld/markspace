@@ -40,7 +40,7 @@ func buildSamplesAt(sizes []uint32, deltas, compOffsets []model.Rat, offsets []u
 			case -1:
 				errs.Add(anomaly(model.KindTimestampBackward, t.ID, i, cursor, deltas[i]))
 			default:
-				rg, _ := model.NewRange(*prevEnd, cursor)
+				rg := model.SafeRange(*prevEnd, cursor)
 				errs.Add(model.MediaError{
 					Kind: model.KindTimestampGap, TrackID: t.ID, SampleIndex: i,
 					Severity: model.SeverityWarning, Ranges: []model.Range{rg},
@@ -96,9 +96,12 @@ func keyframeSet(stss *mp4.Stss, n int, errs *model.ErrorSet, t *model.Track) ma
 func anomaly(kind model.ErrorKind, trackID uint32, idx int, at, delta model.Rat) model.MediaError {
 	end := at.Add(delta)
 	if end.Cmp(at) < 0 {
+		// A backward/zero delta cannot define a forward range; record the
+		// defect as a zero-width point at the affected sample instead of an
+		// invalid interval.
 		end = at
 	}
-	rg, _ := model.NewRange(at, end)
+	rg := model.SafeRange(at, end)
 	return model.MediaError{
 		Kind: kind, TrackID: trackID, SampleIndex: idx,
 		Severity: model.SeverityError, Ranges: []model.Range{rg},
@@ -131,7 +134,7 @@ func analyzeKeyframes(t *model.Track, cfg ProbeConfig, errs *model.ErrorSet) {
 	for i := 1; i < len(keys); i++ {
 		gap := keys[i].DecodeTime.Sub(keys[i-1].DecodeTime)
 		if gap.Cmp(cfg.MaxKeyframeGap) > 0 {
-			rg, _ := model.NewRange(keys[i-1].DecodeTime, keys[i].DecodeTime)
+			rg := model.SafeRange(keys[i-1].DecodeTime, keys[i].DecodeTime)
 			errs.Add(model.MediaError{
 				Kind: model.KindSparseKeyframe, TrackID: t.ID,
 				SampleIndex: keys[i].Index, Severity: model.SeverityWarning,
