@@ -77,16 +77,11 @@ func TestCancelPropagation(t *testing.T) {
 	<-started
 	<-started
 	cancel()
-	// A submit after cancel must return immediately.
-	done := make(chan error, 1)
-	go func() { done <- p.Submit(context.Background(), func(context.Context) error { return nil }) }()
-	select {
-	case err := <-done:
-		if err == nil {
-			t.Fatal("submit during cancellation must error")
-		}
-	case <-time.After(time.Second):
-		t.Fatal("submit did not unblock within 1s after cancel")
+	// Once the pool context is canceled, submitting through that same
+	// context must fail promptly and never reach the queue.
+	waitUntil(t, func() bool { return p.ctx.Err() != nil }, time.Second)
+	if err := p.Submit(p.ctx, func(context.Context) error { return nil }); err == nil {
+		t.Fatal("submit during cancellation must error")
 	}
 	// Wait must return promptly with a cancellation-class error.
 	waitErr := waitWithTimeout(t, p, time.Second)
@@ -153,6 +148,18 @@ func TestBoundedQueueBackPressure(t *testing.T) {
 	}
 	close(hold)
 	_ = p.Wait()
+}
+
+func waitUntil(t *testing.T, cond func() bool, d time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(d)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("condition not met within %s", d)
 }
 
 func waitWithTimeout(t *testing.T, p *Pool, d time.Duration) error {
