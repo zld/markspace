@@ -35,10 +35,10 @@ func (c ColorMeta) Equal(o ColorMeta) bool {
 type ColorState int
 
 const (
-	ColorMissing ColorState = iota // never observed; consumers must not assume
-	ColorStable                    // observed, consistent
-	ColorChanged                   // changed exactly once, consistently since
-	ColorConflict                  // contradictory values at the same position
+	ColorMissing  ColorState = iota // never observed; consumers must not assume
+	ColorStable                     // observed, consistent
+	ColorChanged                    // changed exactly once, consistently since
+	ColorConflict                   // contradictory values at the same position
 )
 
 func (s ColorState) String() string {

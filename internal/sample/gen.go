@@ -79,7 +79,7 @@ func AV1(seed int64, gops, gop int) ([]byte, ingest.KeyframeIndex) {
 		for i := 1; i < n; i++ {
 			payload[i] = byte(r.Intn(256))
 		}
-		hdr := (obuType << 3) | 0x02 // has_size_field
+		hdr := (obuType << 3) | 0x02               // has_size_field
 		buf = append(buf, hdr, byte(len(payload))) // sizes stay < 128
 		buf = append(buf, payload...)
 	}

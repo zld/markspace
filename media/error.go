@@ -8,14 +8,14 @@ type Code string
 
 const (
 	// Input faults (exit class 2: corrupt input, quarantined).
-	CodeIndexInvalid      Code = "index_invalid"       // keyframe index out of bounds / overlapping / digest mismatch
-	CodeNALCorrupt        Code = "nal_corrupt"         // malformed NAL unit in raw bitstream
-	CodeLayoutUnknown     Code = "layout_unknown"      // undeclared channel layout, no silent remix
-	CodeColorConflict     Code = "color_conflict"      // conflicting color metadata
+	CodeIndexInvalid      Code = "index_invalid"         // keyframe index out of bounds / overlapping / digest mismatch
+	CodeNALCorrupt        Code = "nal_corrupt"           // malformed NAL unit in raw bitstream
+	CodeLayoutUnknown     Code = "layout_unknown"        // undeclared channel layout, no silent remix
+	CodeColorConflict     Code = "color_conflict"        // conflicting color metadata
 	CodeCacheSource       Code = "cache_source_mismatch" // cache hit with wrong source identity
 	CodeCacheDigest       Code = "cache_digest_mismatch" // cache hit with wrong content digest
-	CodeCheckpointCorrupt Code = "checkpoint_corrupt"  // checkpoint failed integrity check
-	CodeLimitExceeded     Code = "limit_exceeded"      // index/packet length beyond hard bound
+	CodeCheckpointCorrupt Code = "checkpoint_corrupt"    // checkpoint failed integrity check
+	CodeLimitExceeded     Code = "limit_exceeded"        // index/packet length beyond hard bound
 
 	// Internal faults (exit class 1).
 	CodeInternal Code = "internal"
