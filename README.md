@@ -55,7 +55,11 @@ Exit codes: `0` processed and verified, `1` input or verification failure,
 
 The manifest records every segment with `ok`, `missing`, `truncated`,
 `corrupt` or `replayed` status plus `missing_ranges`, all on the same output
-sample clock as the MP4.
+sample clock as the MP4. `stats.json` also carries `bad_details`, listing each
+rejected record's byte offset, recoverable sequence number, error code and
+message. The 5 % bitrate tolerance is enforced for clean streams; loss and
+corruption inherently lower the received rate, but alignment is always
+checked.
 
 ## Architecture
 
