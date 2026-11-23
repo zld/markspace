@@ -38,3 +38,27 @@ func (w *Writer) WriteRecord(kind RecordKind, body []byte) error {
 	}
 	return nil
 }
+
+// WriteRecordTruncated writes a framing header that declares the full body
+// length but emits only the first keep bytes. Readers treat this as a
+// truncated record and recover whatever prefix is usable.
+func (w *Writer) WriteRecordTruncated(kind RecordKind, body []byte, keep int) error {
+	if len(body) == 0 || len(body) > MaxPacketSize {
+		return mediaerr.New(mediaerr.CodeParam, "record size %d outside 1..%d", len(body), MaxPacketSize)
+	}
+	switch {
+	case keep < 0:
+		keep = 0
+	case keep > len(body):
+		keep = len(body)
+	}
+	buf := make([]byte, 9+keep)
+	binary.BigEndian.PutUint32(buf[:4], uint32(keep))
+	buf[4] = byte(KindRTPTruncated)
+	binary.BigEndian.PutUint32(buf[5:], uint32(len(body)))
+	copy(buf[9:], body[:keep])
+	if _, err := w.w.Write(buf); err != nil {
+		return mediaerr.New(mediaerr.CodeIO, "write truncated record: %v", err)
+	}
+	return nil
+}

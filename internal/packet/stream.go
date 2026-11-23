@@ -39,11 +39,26 @@ func ReadStream(r io.Reader, sizeLimit int64) (*Stream, error) {
 		length := int(binary.BigEndian.Uint32(hdr[:4]))
 		kind := RecordKind(hdr[4])
 		recOffset := s.Bytes
+		var declared int
+		if kind == KindRTPTruncated {
+			var extra [4]byte
+			n, err := io.ReadFull(lr, extra[:])
+			s.Bytes += int64(n)
+			if err != nil {
+				return s, mediaerr.At(mediaerr.CodeTruncated, recOffset, 0, false,
+					"truncated record header")
+			}
+			declared = int(binary.BigEndian.Uint32(extra[:]))
+			if declared <= 0 || declared > MaxPacketSize || length > declared {
+				return s, mediaerr.At(mediaerr.CodeBadPacket, recOffset, 0, false,
+					"truncated record declares %d bytes, captured %d", declared, length)
+			}
+		}
 		if length <= 0 || length > MaxPacketSize {
 			return s, mediaerr.At(mediaerr.CodeBadPacket, recOffset, 0, false,
 				"record length %d outside 1..%d", length, MaxPacketSize)
 		}
-		if kind != KindRTP && kind != KindRTCP {
+		if kind != KindRTP && kind != KindRTCP && kind != KindRTPTruncated {
 			return s, mediaerr.At(mediaerr.CodeBadPacket, recOffset, 0, false,
 				"unknown record kind %d", kind)
 		}
@@ -65,10 +80,20 @@ func ReadStream(r io.Reader, sizeLimit int64) (*Stream, error) {
 			return s, nil
 		}
 		rec := Record{Kind: kind, Offset: recOffset}
-		if kind == KindRTP {
+		switch kind {
+		case KindRTP:
 			p, perr := ParsePacket(body, recOffset)
 			rec.Packet, rec.Err = p, perr
-		} else {
+		case KindRTPTruncated:
+			rec.DeclaredLen = declared
+			p, perr := ParsePacket(body, recOffset)
+			rec.Packet = p
+			rec.Err = mediaerr.At(mediaerr.CodeTruncated, recOffset, pSeq(p), p != nil,
+				"packet declares %d bytes, %d captured", declared, length)
+			if perr != nil && mediaerr.CodeOf(perr) == mediaerr.CodeBadPacket {
+				rec.Err = perr
+			}
+		default:
 			b, perr := ParseRTCP(body, recOffset)
 			rec.RTCP, rec.Err = b, perr
 		}
@@ -78,4 +103,11 @@ func ReadStream(r io.Reader, sizeLimit int64) (*Stream, error) {
 		return s, mediaerr.New(mediaerr.CodeBadPacket, "capture exceeds %d byte limit", sizeLimit)
 	}
 	return s, nil
+}
+
+func pSeq(p *Packet) uint16 {
+	if p == nil {
+		return 0
+	}
+	return p.Seq
 }

@@ -31,6 +31,10 @@ const (
 	KindRTP RecordKind = 1
 	// KindRTCP marks an RTCP compound datagram.
 	KindRTCP RecordKind = 2
+	// KindRTPTruncated marks an RTP record whose sender-declared length is
+	// longer than the bytes actually captured. The framing stays valid so
+	// parsing can resynchronise on the following record.
+	KindRTPTruncated RecordKind = 0x81
 )
 
 // Packet is a validated RTP packet. Payload aliases the capture buffer.
