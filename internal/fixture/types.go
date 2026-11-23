@@ -12,6 +12,35 @@ type stblOption struct {
 // DefaultStblOption returns the intact-table configuration.
 func DefaultStblOption() stblOption { return stblOption{} }
 
+func chunksFor(ts TrackSpec, perChunk int) int {
+	if ts.Kind == "soun" {
+		return ts.SampleCount
+	}
+	n := ts.SampleCount / perChunk
+	if ts.SampleCount%perChunk != 0 {
+		n++
+	}
+	if n == 0 {
+		n = 1
+	}
+	return n
+}
+
+func chunkRange(ts TrackSpec, chunk, perChunk int) (int, int) {
+	if ts.Kind == "soun" {
+		if chunk >= ts.SampleCount {
+			return 0, 0
+		}
+		return chunk, chunk + 1
+	}
+	from := chunk * perChunk
+	to := from + perChunk
+	if to > ts.SampleCount {
+		to = ts.SampleCount
+	}
+	return from, to
+}
+
 // TrackSpec describes one synthetic track to generate.
 type TrackSpec struct {
 	ID           int
