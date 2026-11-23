@@ -18,6 +18,11 @@ type RTPSpec struct {
 	ID3Every    int    // >0: every nth packet carries an ID3 payload
 	LossSeq     []uint16 // sequence numbers to omit (packet loss injection)
 	Shuffle     bool     // swap one adjacent pair (reordering injection)
+	// SharedID3, when non-nil, is used verbatim as every ID3 payload so a
+	// capture can carry metadata whose content hash matches another source.
+	SharedID3 []byte
+	// SharedID3Tag wraps SharedID3 in a valid ID3v2.4 header when true.
+	SharedID3Tag bool
 }
 
 // RTPInput is a generated capture with ground truth.
@@ -51,14 +56,21 @@ func GenerateRTP(seed int64, spec RTPSpec) RTPInput {
 		payload := []byte{byte(0xA0 + (i % 40)), byte(i), byte(seq), byte(ts)}
 		payload = append(payload, make([]byte, 8+rng.Intn(8))...)
 		if spec.ID3Every > 0 && i%spec.ID3Every == 0 {
-			payload = buildID3(i)
+			if spec.SharedID3 != nil {
+				payload = append([]byte(nil), spec.SharedID3...)
+				if spec.SharedID3Tag {
+					payload = WrapID3v2(payload)
+				}
+			} else {
+				payload = buildID3(i)
+			}
 			out.ID3Indices = append(out.ID3Indices, len(frames))
 		}
 		pkt := rtp.Packet{
 			Header: rtp.Header{
 				Version: 2, PayloadType: 96,
 				SequenceNumber: seq, Timestamp: ts, SSRC: 0xC0FFEE,
-				Marker: i%10 == 9,
+				Marker: true,
 			},
 			Payload: payload,
 		}
@@ -89,6 +101,13 @@ func buildID3(idx int) []byte {
 	for len(body) < 16 {
 		body = append(body, 0)
 	}
+	hdr := []byte{'I', 'D', '3', 4, 0, 0}
+	hdr = append(hdr, syncSafe(uint32(len(body)))...)
+	return append(hdr, body...)
+}
+
+// WrapID3v2 prepends a valid ID3v2.4 header (syncsafe size) to a body.
+func WrapID3v2(body []byte) []byte {
 	hdr := []byte{'I', 'D', '3', 4, 0, 0}
 	hdr = append(hdr, syncSafe(uint32(len(body)))...)
 	return append(hdr, body...)

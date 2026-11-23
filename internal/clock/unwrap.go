@@ -108,7 +108,12 @@ func (u *Unwrapper) Push(seq uint16, raw uint32, offset int64) (int64, error) {
 		return ext, nil
 	}
 
-	// Raw timestamp went backwards while sequence advanced: candidate wrap.
+	// Raw timestamp went backwards while sequence advanced. A small
+	// backward move (within AmbiguityWindow) is indistinguishable from
+	// jitter or reordering and must be reported as ambiguous. A large
+	// backward distance, with sequence evidence still tight, is a
+	// conclusive wrap-around. Either way an excessive sequence gap makes
+	// the decision unsafe.
 	back := int64(u.lastRaw) - int64(raw)
 	if gap > MaxSeqGap || back < AmbiguityWindow {
 		return 0, &AmbiguityError{

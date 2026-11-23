@@ -124,21 +124,31 @@ func (a *Aligner) Align() (*AlignmentResult, error) {
 
 	a.markCrossTrackConflicts()
 
-	for _, tr := range a.tracks {
-		res.Tracks = append(res.Tracks, tr)
+	trackIDs := make([]string, 0, len(a.tracks))
+	for id := range a.tracks {
+		trackIDs = append(trackIDs, id)
 	}
-	sort.Slice(res.Tracks, func(i, j int) bool { return res.Tracks[i].ID < res.Tracks[j].ID })
-	for _, evs := range a.byTrack {
-		res.Events = append(res.Events, evs...)
+	sort.Strings(trackIDs)
+	for _, id := range trackIDs {
+		res.Tracks = append(res.Tracks, a.tracks[id])
+	}
+	// Merge per-track events in deterministic track order; the final stable
+	// sort below then orders by tick, with fully deterministic tie-breakers,
+	// so the serialized index hash is identical across reruns.
+	for _, id := range trackIDs {
+		res.Events = append(res.Events, a.byTrack[id]...)
 	}
 	sort.SliceStable(res.Events, func(i, j int) bool {
-		if res.Events[i].Ticks == res.Events[j].Ticks {
-			return res.Events[i].Seq < res.Events[j].Seq
+		if res.Events[i].Ticks != res.Events[j].Ticks {
+			return res.Events[i].Ticks < res.Events[j].Ticks
 		}
-		return res.Events[i].Ticks < res.Events[j].Ticks
+		if res.Events[i].TrackID != res.Events[j].TrackID {
+			return res.Events[i].TrackID < res.Events[j].TrackID
+		}
+		return res.Events[i].Seq < res.Events[j].Seq
 	})
-	for _, rs := range a.rules {
-		res.Rules = append(res.Rules, rs...)
+	for _, id := range trackIDs {
+		res.Rules = append(res.Rules, a.rules[id]...)
 	}
 	res.Conflicts = a.conflicts
 	if len(res.Conflicts) > 0 {

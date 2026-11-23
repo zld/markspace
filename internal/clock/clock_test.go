@@ -183,7 +183,7 @@ func TestUnwrapperMultipleRolloversStayMonotonic(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		for j := 0; j < 300; j++ {
 			seq++
-			raw += 10_000_000 // ~429 packets per wrap cycle
+			raw += 10_000_000 // ~429 packets per wrap cycle, conclusive wrap
 			ext, err := u.Push(seq, raw, int64(i*300+j))
 			if err != nil {
 				t.Fatalf("step %d/%d: %v", i, j, err)

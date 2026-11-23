@@ -25,6 +25,8 @@ type MP4Input struct {
 	Bytes        []byte
 	Tracks       []MP4TrackSpec
 	EmsgCount    int
+	// EmsgMessage overrides the emsg message payload; empty means default.
+	EmsgMessage  string
 	// SampleOffset[i] is the mdat payload offset of sample i in track order.
 	SampleOffset map[uint32][]int64
 }
@@ -56,8 +58,14 @@ type chunkPatch struct {
 
 // GenerateMP4 builds a deterministic multi-track MP4 with one emsg box.
 func GenerateMP4(seed int64, tracks []MP4TrackSpec) MP4Input {
+	return GenerateMP4WithEmsg(seed, tracks, "event-payload", 250)
+}
+
+// GenerateMP4WithEmsg builds an MP4 whose emsg message and presentation-time
+// delta are caller-controlled, enabling cross-source conflict fixtures.
+func GenerateMP4WithEmsg(seed int64, tracks []MP4TrackSpec, emsgMessage string, emsgDelta uint32) MP4Input {
 	rng := rand.New(rand.NewSource(seed))
-	out := &MP4Input{Tracks: tracks, SampleOffset: map[uint32][]int64{}}
+	out := &MP4Input{Tracks: tracks, SampleOffset: map[uint32][]int64{}, EmsgMessage: emsgMessage}
 
 	var ftyp bytes.Buffer
 	boxHeader(&ftyp, "ftyp", 8+8)
@@ -100,10 +108,10 @@ func GenerateMP4(seed int64, tracks []MP4TrackSpec) MP4Input {
 	emsg.WriteString("v0")
 	emsg.WriteByte(0)
 	binary.Write(&emsg, binary.BigEndian, uint32(1000)) // timescale
-	binary.Write(&emsg, binary.BigEndian, uint32(250))  // presentation-time delta
+	binary.Write(&emsg, binary.BigEndian, emsgDelta)    // presentation-time delta
 	binary.Write(&emsg, binary.BigEndian, uint32(0))    // duration
 	binary.Write(&emsg, binary.BigEndian, uint32(7))    // id
-	emsg.WriteString("event-payload")
+	emsg.WriteString(emsgMessage)
 	moov.Write(fullBox("emsg", 0, 0, emsg.Bytes()))
 	out.EmsgCount = 1
 
