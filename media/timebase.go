@@ -162,10 +162,10 @@ func (r Ratio) IsZero() bool { return r.Num == 0 }
 // Cmp compares r and o: -1, 0 or 1.
 func (r Ratio) Cmp(o Ratio) int {
 	if r.Den == 0 {
-		r = Ratio{}
+		r = Ratio{Num: 0, Den: 1}
 	}
 	if o.Den == 0 {
-		o = Ratio{}
+		o = Ratio{Num: 0, Den: 1}
 	}
 	l, rr := r.Num*o.Den, o.Num*r.Den
 	switch {

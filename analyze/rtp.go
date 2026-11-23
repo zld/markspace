@@ -42,19 +42,21 @@ type RTPGap struct {
 
 // RTPResult is the transport analysis of one packet stream.
 type RTPResult struct {
-	Packets       []RTPPacket `json:"packets,omitempty"`
-	Gaps          []RTPGap    `json:"gaps,omitempty"`
-	Duplicates    int         `json:"duplicates"`
-	Malformed     int         `json:"malformed"`
-	Missing       int         `json:"missing"`
-	PayloadBytes  int64       `json:"payload_bytes"`
-	UniquePackets int         `json:"unique_packets"`
-	FirstSeq      uint16      `json:"first_seq"`
-	LastSeq       uint16      `json:"last_seq"`
-	Wraps         int         `json:"wraps"`
-	TimestampMS   int64       `json:"timestamp_ms"`
-	Duration      media.Time  `json:"duration"`
-	Corrupt       bool        `json:"corrupt"`
+	Packets        []RTPPacket `json:"packets,omitempty"`
+	Gaps           []RTPGap    `json:"gaps,omitempty"`
+	Duplicates     int         `json:"duplicates"`
+	DuplicateBytes int64       `json:"duplicate_payload_bytes"`
+	Malformed      int         `json:"malformed"`
+	Missing        int         `json:"missing"`
+	PayloadBytes   int64       `json:"payload_bytes"`
+	UniquePackets  int         `json:"unique_packets"`
+	FirstSeq       uint16      `json:"first_seq"`
+	LastSeq        uint16      `json:"last_seq"`
+	Wraps          int         `json:"wraps"`
+	TimestampMS    int64       `json:"timestamp_ms"`
+	MissingMS      int64       `json:"missing_ms"`
+	Duration       media.Time  `json:"duration"`
+	Corrupt        bool        `json:"corrupt"`
 }
 
 // AnalyzeRTP validates packet sequence numbers, timestamps and payload bounds
@@ -109,6 +111,9 @@ func AnalyzeRTP(raw [][]byte, opts RTPOptions) *RTPResult {
 		if seen[p.SequenceNumber] {
 			pkt.Duplicate = true
 			res.Duplicates++
+			// Duplicate payload is recorded as evidence but excluded from
+			// the unique byte total used for bitrate.
+			res.DuplicateBytes += int64(len(p.Payload))
 			res.Packets = append(res.Packets, pkt)
 			continue
 		}
@@ -164,7 +169,16 @@ func AnalyzeRTP(raw [][]byte, opts RTPOptions) *RTPResult {
 	if haveTS {
 		deltaTS := lastTS - firstTS // unsigned: correct across rollover
 		res.TimestampMS = int64(deltaTS) * 1000 / int64(opts.ClockRate)
+
 		res.Duration = media.NewTime(int64(deltaTS), media.Timescale(opts.ClockRate))
+	}
+	// Convert missed packets into missed media time from the average spacing
+	// of the received packets. This is exact in ticks and only rounded once,
+	// at the end.
+	if res.Missing > 0 && res.UniquePackets > 1 && haveTS {
+		span := int64(lastTS - firstTS)
+		missingTicks := span * int64(res.Missing) / int64(res.UniquePackets-1)
+		res.MissingMS = missingTicks * 1000 / int64(opts.ClockRate)
 	}
 	res.Corrupt = res.Missing > 0 || res.Malformed > 0
 	return res
