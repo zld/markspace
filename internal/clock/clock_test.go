@@ -46,10 +46,10 @@ func TestTickConversionCommonTimescales(t *testing.T) {
 		scale    uint32
 		wantTick int64
 	}{
-		{1, 90000, TickRate / 90000},            // RTP video clock
-		{1, 48000, TickRate / 48000},            // audio
-		{1, 1000, TickRate / 1000},              // millisecond timescale
-		{3003, 30000, 100100000},                // 29.97fps style value
+		{1, 90000, TickRate / 90000}, // RTP video clock
+		{1, 48000, TickRate / 48000}, // audio
+		{1, 1000, TickRate / 1000},   // millisecond timescale
+		{3003, 30000, 100100000},     // 29.97fps style value
 		{0, 44100, 0},
 		{1 << 32, 90000, (1 << 32) * TickRate / 90000},
 	}
