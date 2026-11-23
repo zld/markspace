@@ -230,14 +230,14 @@ func (r *Runner) run() (Result, error) {
 		if err != nil {
 			return res, err
 		}
-		recV.Seed(vlast[len(vlast)-1], int64(vts), int64(start*fragsPerFrame))
+		recV.Seed(vlast[len(vlast)-1], int64(vts)-videoTicks, int64(vts), int64(start*fragsPerFrame))
 		pktA.SetNextSeq(uint16((start - 1) * fragsPerFrame))
 		ats := media.Ticks(int64(start-1) * audioTicks)
 		alast, err := pktA.Packetize(lastPCM, ats)
 		if err != nil {
 			return res, err
 		}
-		recA.Seed(alast[len(alast)-1], int64(ats), int64(start*fragsPerFrame))
+		recA.Seed(alast[len(alast)-1], int64(ats)-audioTicks, int64(ats), int64(start*fragsPerFrame))
 	}
 
 	vPTS := make([]int64, len(frames)+1)

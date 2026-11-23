@@ -41,6 +41,8 @@ type Recover struct {
 	started    bool
 	last       *rtp.Packet
 	lastTS     int64
+	prevTS     int64
+	lastSeq    int64
 	burst      int
 	Stats      Stats
 }
@@ -51,12 +53,15 @@ func NewRecover(window, maxConceal int) *Recover {
 	return &Recover{window: window, maxConceal: maxConceal, pending: make(map[int64]*rtp.Packet)}
 }
 
-// Seed primes concealment state with the last emitted packet and the
+// Seed primes concealment state with the last emitted packet, its
+// timestamp and its predecessor's (for stride extrapolation), and the
 // next expected extended sequence number, so a pipeline resuming
 // mid-stream emits exactly what an uninterrupted run would have.
-func (r *Recover) Seed(last *rtp.Packet, lastTS, nextSeq int64) {
+func (r *Recover) Seed(last *rtp.Packet, prevTS, lastTS, nextSeq int64) {
 	r.last = last
+	r.prevTS = prevTS
 	r.lastTS = lastTS
+	r.lastSeq = nextSeq - 1
 	r.head = nextSeq
 	r.maxSeen = nextSeq
 	r.started = true
@@ -99,8 +104,10 @@ func (r *Recover) drain(flush bool) []Recovered {
 	for {
 		if pkt, ok := r.pending[r.head]; ok {
 			delete(r.pending, r.head)
+			r.prevTS = r.lastTS
 			r.lastTS = r.tsU.Unwrap(pkt.Timestamp)
 			r.last = pkt
+			r.lastSeq = r.head
 			out = append(out, Recovered{Packet: pkt, Seq: r.head, TS: r.lastTS})
 			r.head++
 			r.burst = 0
@@ -130,7 +137,10 @@ func (r *Recover) bridge(n int64) []Recovered {
 		if n <= int64(r.maxConceal) && r.last != nil {
 			cp := *r.last
 			cp.SequenceNumber = uint16(r.head)
-			out = append(out, Recovered{Packet: &cp, Seq: r.head, TS: r.lastTS, Concealed: true})
+			// extrapolate the timestamp along the observed stride so
+			// concealed packets stay on the unified timeline
+			ts := r.lastTS + (r.lastTS-r.prevTS)*(r.head-r.lastSeq)
+			out = append(out, Recovered{Packet: &cp, Seq: r.head, TS: ts, Concealed: true})
 			r.Stats.Recovered++
 		} else {
 			r.Stats.Lost++
