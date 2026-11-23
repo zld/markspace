@@ -191,8 +191,7 @@ func writeDamaged(w *packet.Writer) error {
 		if i >= 90 && i < 96 {
 			continue // six-packet hole: 120 ms missing
 		}
-		payload := tone(i)
-		raw, err := makePacket(uint16(i), uint32(i*FrameTicks), payload, true)
+		raw, err := makePacket(uint16(i), uint32(i*FrameTicks), tone(i), true)
 		if err != nil {
 			return err
 		}
@@ -203,6 +202,14 @@ func writeDamaged(w *packet.Writer) error {
 		}
 		if i == 60 {
 			raw[0] = (raw[0] &^ 0xC0) | (3 << 6) // bad RTP version
+		}
+		if i == 200 {
+			// Declare the full record but deliver only its first quarter; the
+			// timeline keeps the sender's duration while the gap is flagged.
+			if err := w.WriteRecordTruncated(packet.KindRTP, raw, len(raw)/4); err != nil {
+				return err
+			}
+			continue
 		}
 		if err := w.WriteRecord(packet.KindRTP, raw); err != nil {
 			return err

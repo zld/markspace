@@ -95,7 +95,9 @@ func TestDamagedContainsEveryFault(t *testing.T) {
 			seen[r.Packet.Seq] = true
 		}
 	}
-	if badVersion != 1 || corrupt != 1 || truncated != 1 {
+	// One bad-version packet, one CRC-corrupt packet and two truncated records
+	// (the mid-stream partial packet and the trailing fragment).
+	if badVersion != 1 || corrupt != 1 || truncated != 2 {
 		t.Fatalf("badVersion=%d corrupt=%d truncated=%d", badVersion, corrupt, truncated)
 	}
 	for i := 90; i < 96; i++ {
