@@ -60,10 +60,14 @@ type Track struct {
 }
 
 // Fragment is the parsed structure of one media segment.
+//
+// The raw bytes are released as soon as the sample tables are decoded: audio
+// and video payloads never need to be retained to audit structure, cadence or
+// damage, so memory stays proportional to the number of samples, not bytes.
 type Fragment struct {
 	// File is the segment file name.
 	File string `json:"file"`
-	// data is the raw fragment bytes, held only while decoding.
+	// data is the raw fragment bytes, released by LoadSamples.
 	data []byte
 	// Size is the total number of bytes read.
 	Size int64 `json:"size"`
@@ -134,6 +138,12 @@ func ParseFragment(name string, data []byte, init *Init, opts Options) (*Fragmen
 	}
 	return f, nil
 }
+
+// release drops the raw fragment bytes once sample metadata is extracted.
+func (f *Fragment) release() { f.data = nil }
+
+// BytesHeld reports whether the raw fragment bytes are still in memory.
+func (f *Fragment) BytesHeld() bool { return f.data != nil }
 
 func (f *Fragment) add(fault *model.Fault) {
 	if fault == nil {

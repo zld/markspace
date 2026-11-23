@@ -57,6 +57,19 @@ func applyFault(seed int64, fault Fault, rep string, pkts []transport.Packet, se
 	switch fault {
 	case FaultDuplicateReorder:
 		return duplicateReorder(pkts, rng)
+	case FaultRTPCollision:
+		if rep != "v-low" || segIndex != 2 {
+			return pkts
+		}
+		// Re-deliver an already-seen sequence number with a mutated payload.
+		// The original slice is copied first so the in-order packet keeps its
+		// bytes; only the retransmission differs.
+		out := append([]transport.Packet(nil), pkts...)
+		idx := len(pkts) / 2
+		evil := out[idx]
+		evil.Payload = append([]byte(nil), pkts[idx].Payload...)
+		evil.Payload[0] ^= 0xff
+		return append(out, evil)
 	case FaultBurstLoss:
 		// Only the low representation loses packets, and only around the
 		// boundary at the end of segment 4.

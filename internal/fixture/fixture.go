@@ -33,6 +33,12 @@ const (
 	// FaultDigestConflict rewrites one low-representation segment so its
 	// digest no longer matches the recorded manifest.
 	FaultDigestConflict Fault = "digest-conflict"
+	// FaultDurationSkew regenerates the low layer with a slightly different
+	// segment duration so the layers drift beyond one target frame.
+	FaultDurationSkew Fault = "duration-skew"
+	// FaultRTPCollision delivers one sequence number twice with different
+	// payloads, which is a stream-integrity failure rather than mere loss.
+	FaultRTPCollision Fault = "rtp-collision"
 )
 
 // KnownFaults lists every supported fault name.
@@ -40,6 +46,7 @@ func KnownFaults() []Fault {
 	return []Fault{
 		FaultNone, FaultDuplicateReorder, FaultBurstLoss, FaultTruncatedBox,
 		FaultInexactTimebase, FaultManifestBoundary, FaultKeyframeSkew, FaultDigestConflict,
+		FaultDurationSkew, FaultRTPCollision,
 	}
 }
 

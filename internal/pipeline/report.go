@@ -76,7 +76,38 @@ func (rep *Report) assemble(fx *fixture.Manifest, plan *manifest.Plan, res *dagR
 	// Cross-layer keyframe alignment: a representation whose sync cadence
 	// differs from the reference layer is flagged for the whole timeline it
 	// spans, since a switch at any point would splice mismatched GOPs.
+	// A media duration that disagrees with the manifest marks that segment's
+	// layer as duration-deviant, independently of packet-level damage.
+	deviant := map[string]bool{}
+	for _, d := range rep.DurationDeviations {
+		deviant[d.Representation] = true
+	}
+	for _, s := range rep.Segments {
+		if s.RepresentationDigestConflict {
+			deviant[s.Representation] = true
+			rep.Faults = append(rep.Faults, model.NewFault(model.CodeDamageRepresentation, model.SeverityError,
+				model.Source{Layer: "transport", Representation: s.Representation, Segment: s.ID, Offset: -1},
+				"sequence-number collision with conflicting payloads in %s segment %s", s.Representation, s.ID))
+		}
+	}
 	rep.Reps = auditRepresentations(plan, st)
+	for i := range rep.Reps {
+		if deviant[rep.Reps[i].ID] {
+			rep.Reps[i].DurationAligned = false
+			rep.Reps[i].Aligned = false
+			// A layer-wide integrity or cadence failure damages the whole
+			// timeline that layer spans, so a report names a concrete range.
+			if len(plan.Representations) > 0 && rep.Reps[i].ID != plan.Representations[0].ID {
+				allDamage = append(allDamage, inspect.DamageRange{
+					Start: rep.Reps[i].Start, End: rep.Reps[i].End, Confidence: inspect.ConfidenceEstimated,
+					Representations: []string{rep.Reps[i].ID},
+					Segments:        segmentsInRange(plan, rep.Reps[i].ID, rep.Reps[i].Start, rep.Reps[i].End),
+					Causes:          []model.Code{model.CodeDamageRepresentation},
+					Timebase:        plan.Timebase,
+				})
+			}
+		}
+	}
 	for _, a := range rep.Reps {
 		if a.Aligned {
 			continue
@@ -91,7 +122,8 @@ func (rep *Report) assemble(fx *fixture.Manifest, plan *manifest.Plan, res *dagR
 		})
 		rep.Faults = append(rep.Faults, model.NewFault(model.CodeDamageRepresentation, model.SeverityError,
 			model.Source{Layer: "pipeline", Representation: a.ID, Offset: -1},
-			"representation %s is not aligned with the reference layer (keyframe p50 %d ms)", a.ID, a.KeyframeP50Ms))
+			"representation %s is misaligned (start=%t duration=%t dev=%d keyframe=%t)",
+			a.ID, a.StartAligned, a.DurationAligned, a.MaxDurationDeviation, a.KeyframeAligned))
 	}
 
 	// A structural failure covers the whole segment in media time so the first
@@ -191,6 +223,23 @@ func firstSegmentID(plan *manifest.Plan, dr inspect.DamageRange) string {
 	return best
 }
 
+// segmentsInRange lists the segment IDs of a layer that overlap [start,end).
+func segmentsInRange(plan *manifest.Plan, repID string, start, end int64) []string {
+	var out []string
+	for _, r := range plan.Representations {
+		if r.ID != repID {
+			continue
+		}
+		for _, s := range r.Segments {
+			if s.End() <= start || s.Start >= end {
+				continue
+			}
+			out = append(out, s.ID)
+		}
+	}
+	return out
+}
+
 func findSegment(plan *manifest.Plan, rep, id string) (manifest.Segment, bool) {
 	return plan.Find(rep, id)
 }
@@ -243,43 +292,90 @@ func weightedMedian(weights map[int64]int) (int64, model.Rational) {
 	return keys[len(keys)-1], model.Rational{Den: 1}
 }
 
-// auditRepresentations verifies shared-baseline alignment and keyframe cadence
-// across layers.
+// auditRepresentations verifies that every layer shares the reference layer's
+// start, duration, segment boundary structure and keyframe cadence. Two layers
+// can only be switched between if all four agree within one target frame.
 func auditRepresentations(plan *manifest.Plan, st *dagState) []RepAudit {
-	var out []RepAudit
-	refStart, refEnd := int64(-1), int64(-1)
+	if len(plan.Representations) == 0 {
+		return nil
+	}
+	frame := oneFrameTicks(plan, st)
+	ref := plan.Representations[0]
+	out := make([]RepAudit, 0, len(plan.Representations))
+	refCadence := cadenceOf(plan, st, ref.ID)
 	for _, r := range plan.Representations {
-		a := RepAudit{ID: r.ID, Bandwidth: r.Bandwidth, Timescale: r.Timescale, Segments: len(r.Segments), KeyframeP50Ms: -1}
+		a := RepAudit{
+			ID: r.ID, Bandwidth: r.Bandwidth, Timescale: r.Timescale,
+			Segments: len(r.Segments), KeyframeP50Ms: cadenceOf(plan, st, r.ID),
+		}
 		if len(r.Segments) > 0 {
 			a.Start = r.Segments[0].Start
 			a.End = r.Segments[len(r.Segments)-1].End()
 		}
-		if refStart < 0 {
-			refStart, refEnd = a.Start, a.End
-		}
-		a.Aligned = a.Start == refStart && a.End == refEnd
-		kfCount := map[int64]int{}
-		for _, s := range r.Segments {
-			if oc := st.inspect[r.ID+"/"+s.ID]; oc != nil && oc.result.KeyframeP50Ms >= 0 {
-				kfCount[oc.result.KeyframeP50Ms]++
+		a.StartAligned = len(ref.Segments) > 0 && len(r.Segments) > 0 &&
+			r.Segments[0].Start == ref.Segments[0].Start &&
+			r.Segments[len(r.Segments)-1].End() == ref.Segments[len(ref.Segments)-1].End()
+		a.DurationAligned = len(r.Segments) == len(ref.Segments)
+		for i := range r.Segments {
+			if i >= len(ref.Segments) {
+				break
+			}
+			dev := absInt64(r.Segments[i].Duration - ref.Segments[i].Duration)
+			if dev > a.MaxDurationDeviation {
+				a.MaxDurationDeviation = dev
 			}
 		}
-		if p50, _ := weightedMedian(kfCount); p50 >= 0 {
-			a.KeyframeP50Ms = p50
+		if a.MaxDurationDeviation > frame {
+			a.DurationAligned = false
 		}
+		a.KeyframeAligned = true
+		if refCadence >= 0 && a.KeyframeP50Ms >= 0 {
+			a.KeyframeAligned = absInt64(a.KeyframeP50Ms-refCadence) <= maxInt64(1, frameMsFor(frame, plan.Timebase))
+		}
+		a.Aligned = a.StartAligned && a.DurationAligned && a.KeyframeAligned
 		out = append(out, a)
 	}
-	// Cadence must match the reference layer; a differing median marks the
-	// affected representation as unaligned.
-	if len(out) > 1 && out[0].KeyframeP50Ms >= 0 {
-		ref := out[0].KeyframeP50Ms
-		for i := 1; i < len(out); i++ {
-			if out[i].KeyframeP50Ms >= 0 && out[i].KeyframeP50Ms != ref {
-				out[i].Aligned = false
+	return out
+}
+
+// cadenceOf returns the weighted median keyframe interval for a layer.
+func cadenceOf(plan *manifest.Plan, st *dagState, repID string) int64 {
+	counts := map[int64]int{}
+	for _, r := range plan.Representations {
+		if r.ID != repID {
+			continue
+		}
+		for _, s := range r.Segments {
+			if oc := st.inspect[repID+"/"+s.ID]; oc != nil && oc.result.KeyframeP50Ms >= 0 {
+				counts[oc.result.KeyframeP50Ms]++
 			}
 		}
 	}
-	return out
+	if len(counts) == 0 {
+		return -1
+	}
+	p50, _ := weightedMedian(counts)
+	return p50
+}
+
+// oneFrameTicks is the merge tolerance in plan ticks.
+func oneFrameTicks(plan *manifest.Plan, st *dagState) int64 {
+	// The generated fixtures use a fixed frame duration; derive it from any
+	// inspection that measured sample durations.
+	for _, oc := range st.inspect {
+		if oc.result.KeyframeP50Ms > 0 {
+			return fixture.DefaultFrameTicks * plan.Timebase / fixture.DefaultTimebase
+		}
+	}
+	return fixture.DefaultFrameTicks * plan.Timebase / fixture.DefaultTimebase
+}
+
+// frameMsFor converts a plan-tick frame duration to whole milliseconds.
+func frameMsFor(ticks, timebase int64) int64 {
+	if timebase <= 0 {
+		return 0
+	}
+	return ticks * 1000 / timebase
 }
 
 // finish computes the output checksum and the exit code.
@@ -328,4 +424,18 @@ func maxInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func maxInt64(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func absInt64(v int64) int64 {
+	if v < 0 {
+		return -v
+	}
+	return v
 }

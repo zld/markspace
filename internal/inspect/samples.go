@@ -46,6 +46,7 @@ func (f *Fragment) LoadSamples(init *Init, opts Options) {
 	}
 	sortTracks(f.Tracks)
 	detectNonMonotonic(f)
+	f.release()
 }
 
 // decodeMoofSamples decodes one moof/mdat pair. A damaged trun stops that

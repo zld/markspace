@@ -69,13 +69,20 @@ func (t segmentTask) runReorder(cfg Config) *reorderOutcome {
 	}
 	for _, f := range reorder.Faults() {
 		oc.result.FaultCodes = appendUnique(oc.result.FaultCodes, string(f.Code))
-		if oc.fault == nil {
-			oc.fault = f.WithSegment(t.seg.ID)
+		oc.fault = f.WithSegment(t.seg.ID)
+		// A repeated sequence number with a different payload is a
+		// representation-integrity failure: the bytes that arrived are not the
+		// bytes the catalog recorded, so the whole layer must be flagged.
+		if f.Code == model.CodeTransportDuplicate {
+			oc.result.RepresentationDigestConflict = true
 		}
 	}
 	oc.result.Status = "ok"
 	if tr.Missing > 0 || tr.DuplicateCount > 0 || len(reorder.Faults()) > 0 {
 		oc.result.Status = "damaged"
+	}
+	if oc.result.RepresentationDigestConflict {
+		oc.result.Status = "error"
 	}
 	// The reorder node's digest covers the stream it accepted: sequence range,
 	// counts and the sorted payload digests.
@@ -159,7 +166,16 @@ func (t segmentTask) runInspect(cfg Config, prev *reorderOutcome) *taskOutcome {
 		oc.result.Duplicates = prev.result.Duplicates
 		oc.result.Reordered = prev.result.Reordered
 		oc.result.FaultCodes = append([]string(nil), prev.result.FaultCodes...)
+		oc.result.RepresentationDigestConflict = prev.result.RepresentationDigestConflict
 		oc.fault = prev.fault
+		if prev.result.RepresentationDigestConflict {
+			oc.structural = model.NewFault(model.CodeDamageRepresentation, model.SeverityError,
+				model.Source{Layer: "transport", Segment: t.seg.ID, Representation: t.representation,
+					File: t.seg.URI, Offset: -1},
+				"sequence-number collision with conflicting payloads in %s segment %s",
+				t.representation, t.seg.ID)
+			oc.result.FaultCodes = appendUnique(oc.result.FaultCodes, string(model.CodeDamageRepresentation))
+		}
 	}
 	segPath := path.Join(cfg.Root, t.info.URI)
 	fd, err := os.Open(segPath)
@@ -299,4 +315,86 @@ func (oc *taskOutcome) blockingFault() *model.Fault {
 		}, "segment %s/%s is missing %d packets", oc.result.Representation, oc.result.ID, oc.result.Missing)
 	}
 	return nil
+}
+
+// DurationDeviation records a segment whose decoded media duration differs
+// from the manifest declaration.
+type DurationDeviation struct {
+	Representation string `json:"representation"`
+	Segment        string `json:"segment"`
+	ManifestTicks  int64  `json:"manifest_ticks"`
+	MediaTicks     int64  `json:"media_ticks"`
+	DeviationTicks int64  `json:"deviation_ticks"`
+}
+
+// detectDurationDeviations compares each segment's declared interval with the
+// duration actually covered by its init/fragment sample tables. This catches a
+// manifest that claims 4 s while the media holds 3.92 s, which no packet loss
+// would explain.
+func detectDurationDeviations(cfg Config, tasks []segmentTask) []DurationDeviation {
+	var out []DurationDeviation
+	cache := map[string]*inspect.Init{}
+	for _, t := range tasks {
+		init, ok := cache[t.info.Init]
+		if !ok {
+			raw, err := os.ReadFile(path.Join(cfg.Root, t.info.Init))
+			if err != nil {
+				cache[t.info.Init] = nil
+				continue
+			}
+			init, _ = inspect.ParseInit(t.info.Init, raw)
+			cache[t.info.Init] = init
+		}
+		if init == nil {
+			continue
+		}
+		raw, err := os.ReadFile(path.Join(cfg.Root, t.info.URI))
+		if err != nil {
+			continue
+		}
+		frag, _ := inspect.ParseFragment(t.info.URI, raw, nil, inspect.Options{})
+		if frag == nil {
+			continue
+		}
+		frag.LoadSamples(init, inspect.Options{})
+		var mediaTicks int64
+		frame := t.frameTicks
+		if frame <= 0 {
+			frame = fixture.DefaultFrameTicks * t.timebase / fixture.DefaultTimebase
+		}
+		for _, tr := range frag.Tracks {
+			var first, end uint64
+			have := false
+			for _, s := range tr.Samples {
+				if !have {
+					first, have = s.DecodeTime, true
+				}
+				end = s.DecodeTime + uint64(s.Duration)
+			}
+			if !have {
+				continue
+			}
+			conv, err := model.ConvertTicks(int64(end-first), int64(tr.Timescale), t.timebase)
+			if err != nil {
+				continue
+			}
+			if conv.Ticks > mediaTicks {
+				mediaTicks = conv.Ticks
+			}
+		}
+		if mediaTicks == 0 {
+			continue
+		}
+		dev := t.seg.Duration - mediaTicks
+		if dev < 0 {
+			dev = -dev
+		}
+		if dev > frame {
+			out = append(out, DurationDeviation{
+				Representation: t.representation, Segment: t.seg.ID,
+				ManifestTicks: t.seg.Duration, MediaTicks: mediaTicks, DeviationTicks: dev,
+			})
+		}
+	}
+	return out
 }

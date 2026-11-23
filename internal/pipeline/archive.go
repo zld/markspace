@@ -72,6 +72,10 @@ type SegmentResult struct {
 	KeyframeP50Ms  int64    `json:"keyframe_p50_ms"`
 	OutputSHA256   string   `json:"output_sha256"`
 	FaultCodes     []string `json:"fault_codes,omitempty"`
+	// RepresentationDigestConflict is set when the same RTP sequence number
+	// arrived with two different payload digests, which means the retained
+	// bytes no longer match the catalog for this layer.
+	RepresentationDigestConflict bool `json:"representation_digest_conflict,omitempty"`
 }
 
 // Report is the whole run's auditable outcome.
@@ -108,19 +112,33 @@ type Report struct {
 	// CheckpointMismatch is true when a resume was requested but the
 	// checkpoint could not be trusted.
 	CheckpointMismatch bool `json:"checkpoint_mismatch,omitempty"`
-	ExitCode           int  `json:"exit_code"`
+	// DurationDeviations lists segments whose media duration differs from the
+	// manifest declaration by more than one target frame.
+	DurationDeviations []DurationDeviation `json:"duration_deviations,omitempty"`
+	ExitCode           int                 `json:"exit_code"`
 }
 
-// RepAudit reports representation alignment.
+// RepAudit reports representation alignment against the reference layer.
 type RepAudit struct {
-	ID            string `json:"id"`
-	Bandwidth     int64  `json:"bandwidth"`
-	Timescale     int64  `json:"timescale"`
-	Segments      int    `json:"segments"`
-	Start         int64  `json:"start"`
-	End           int64  `json:"end"`
-	Aligned       bool   `json:"aligned"`
-	KeyframeP50Ms int64  `json:"keyframe_p50_ms"`
+	ID        string `json:"id"`
+	Bandwidth int64  `json:"bandwidth"`
+	Timescale int64  `json:"timescale"`
+	Segments  int    `json:"segments"`
+	Start     int64  `json:"start"`
+	End       int64  `json:"end"`
+	// Aligned is true when the start, end, segment count, per-segment
+	// durations and keyframe cadence all match the reference layer within one
+	// target frame.
+	Aligned bool `json:"aligned"`
+	// StartAligned, DurationAligned and KeyframeAligned break out the three
+	// alignment dimensions so a report can name which one failed.
+	StartAligned    bool  `json:"start_aligned"`
+	DurationAligned bool  `json:"duration_aligned"`
+	KeyframeAligned bool  `json:"keyframe_aligned"`
+	KeyframeP50Ms   int64 `json:"keyframe_p50_ms"`
+	// MaxDurationDeviation is the largest per-segment duration difference from
+	// the reference layer, in plan ticks.
+	MaxDurationDeviation int64 `json:"max_duration_deviation"`
 }
 
 // BlockedNode names a node blocked by a failed dependency.
@@ -230,6 +248,9 @@ func Run(ctx context.Context, cfg Config) (*Report, error) {
 
 	// Build a task per segment.
 	tasks := buildSegmentTasks(cfg, fx, plan, mf)
+	// A segment whose media covers a shorter interval than the manifest
+	// declares is a duration deviation even if its bytes are intact.
+	rep.DurationDeviations = detectDurationDeviations(cfg, tasks)
 	runResult, err := runDAG(ctx, cfg, fx, plan, tasks, entries)
 	if err != nil {
 		return nil, err

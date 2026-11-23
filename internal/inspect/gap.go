@@ -2,6 +2,7 @@ package inspect
 
 import (
 	"sort"
+	"strconv"
 
 	"archivecheck/internal/manifest"
 	"archivecheck/internal/model"
@@ -230,8 +231,28 @@ func unionStrings(a, b []string) []string {
 			out = append(out, s)
 		}
 	}
-	sort.Strings(out)
+	sortByNumber(out)
 	return out
+}
+
+// sortByNumber orders identifiers numerically when they are integers, so a
+// report reads "1,2,10" rather than "1,10,2". Non-numeric IDs sort after, by
+// their text form.
+func sortByNumber(ids []string) {
+	sort.SliceStable(ids, func(i, j int) bool {
+		ai, aerr := strconv.ParseInt(ids[i], 10, 64)
+		bi, berr := strconv.ParseInt(ids[j], 10, 64)
+		switch {
+		case aerr == nil && berr == nil:
+			return ai < bi
+		case aerr == nil:
+			return true
+		case berr == nil:
+			return false
+		default:
+			return ids[i] < ids[j]
+		}
+	})
 }
 
 func unionCodes(a, b []model.Code) []model.Code {

@@ -126,10 +126,12 @@ func applyContentFault(cfg Config, m *Manifest) error {
 	case FaultKeyframeSkew:
 		rep := cfg.Reps[len(cfg.Reps)-1]
 		rep.KeyframeGap += 7
-		// Regenerate only the low layer's media and captures.
-		saved := m.SegmentsByRep[rep.ID]
-		_ = saved
 		return generateRep(cfg, m, rep)
+	case FaultDurationSkew:
+		// Regenerate the low layer so its segments are shorter than declared
+		// in the manifest; a resumed plan then shows a duration deviation.
+		rep := cfg.Reps[len(cfg.Reps)-1]
+		return skewSegmentDurations(cfg, m, rep.ID)
 	}
 	return nil
 }
@@ -176,6 +178,39 @@ func replaceSegment(cfg Config, m *Manifest, rep string, seg int) error {
 	}
 	m.Files[infos[seg].URI] = sum
 	m.SegmentsByRep[rep][seg].SHA256 = sum
+	return nil
+}
+
+// skewSegmentDurations shortens the low layer's later segments by a few frames
+// while leaving the manifest untouched, simulating a cadence drift.
+func skewSegmentDurations(cfg Config, m *Manifest, rep string) error {
+	infos := m.SegmentsByRep[rep]
+	for i := len(infos) / 2; i < len(infos); i++ {
+		info := infos[i]
+		// Rebuild the segment with fewer frames so its media duration shrinks.
+		frames := make([]frame, 0, DefaultFramesPerSeg-2)
+		for j := 0; j < DefaultFramesPerSeg-2; j++ {
+			idx := i*DefaultFramesPerSeg + j
+			frames = append(frames, frame{
+				index: idx, decode: uint64(idx) * uint64(cfg.FrameTicks),
+				duration: uint32(cfg.FrameTicks), key: j%cfg.Keyframe == 0,
+				payload: payloadFor(cfg.Seed, rep, idx),
+			})
+		}
+		rebuilt, err := buildSegment(uint32(i+1), frames)
+		if err != nil {
+			return err
+		}
+		sum, err := writeFile(cfg.Root, info.URI, rebuilt)
+		if err != nil {
+			return err
+		}
+		m.Files[info.URI] = sum
+		infos[i].Size = int64(len(rebuilt))
+		infos[i].SHA256 = sum
+		infos[i].DeclaredSHA256 = sum
+	}
+	m.SegmentsByRep[rep] = infos
 	return nil
 }
 
