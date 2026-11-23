@@ -36,16 +36,27 @@ func TestReassembleGapTruncates(t *testing.T) {
 	if string(f.Bytes) != "\xAA\xBB" || f.Timestamp != 900 {
 		t.Fatalf("partial bytes not preserved: %+v", f)
 	}
-	// A fresh frame after the gap starts clean.
+	// The frame assembled right after the gap may have lost its head, so it
+	// is emitted incomplete even though its marker is present.
 	f2, err := g.Push(frag(5, 15, 1800, []byte{0xCC}, true))
-	if err != nil || f2 == nil || !f2.Complete || f2.FirstSeq != 15 {
-		t.Fatalf("post-gap frame broken: %+v err=%v", f2, err)
+	if err != nil || f2 == nil || f2.Complete || f2.FirstSeq != 15 {
+		t.Fatalf("post-gap frame must be incomplete: %+v err=%v", f2, err)
+	}
+	// The following frame, with no further gap, is complete again.
+	f3, err := g.Push(frag(5, 16, 2700, []byte{0xDD}, false))
+	if err != nil || f3 != nil {
+		t.Fatalf("fragment should buffer: %v %v", f3, err)
+	}
+	f3, err = g.Push(frag(5, 17, 2700, []byte{0xEE}, true))
+	if err != nil || f3 == nil || !f3.Complete {
+		t.Fatalf("clean frame after recovery broken: %+v err=%v", f3, err)
 	}
 }
 
 func TestReassembleFlushAtEnd(t *testing.T) {
 	g := NewReassembler(5)
 	g.Push(frag(5, 0, 100, []byte{1}, false))
+	// No marker ever arrived: the unterminated frame flushes incomplete.
 	f := g.Flush()
 	if f == nil || f.Complete {
 		t.Fatalf("unterminated stream end must flush incomplete frame: %+v", f)
