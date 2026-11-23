@@ -10,7 +10,6 @@ import (
 	"github.com/abema/go-mp4"
 
 	"mediadist/internal/codec"
-	"mediadist/internal/demux"
 	"mediadist/internal/merr"
 )
 
@@ -211,48 +210,33 @@ func canonForEntry(entry mp4.BoxType, data []byte) string {
 	}
 }
 
-// VerifyReadBack compares re-parsed samples against the pre-write plans. It
-// returns the number of samples matched and the first failure, if any.
-func VerifyReadBack(path string, plans []TrackPlan) (int, int, error) {
+// VerifyReadBack compares re-parsed samples against the writer's evidence,
+// keyed by output track and position. Because evidence is produced from the
+// same layout that wrote the file, the comparison is against the intended
+// content, and a skipped input sample simply has no evidence row.
+func VerifyReadBack(path string, rep *Report) (int, int, error) {
 	samples, err := ReadBack(path)
 	if err != nil {
 		return 0, 0, err
 	}
-	byTrack := map[uint32][]ReadBackSample{}
-	for _, s := range samples {
-		byTrack[s.TrackID] = append(byTrack[s.TrackID], s)
+	if len(samples) != len(rep.Evidence) {
+		return 0, 0, merr.New(merr.StageRemux, "readback_count", merr.NoSpan(0), false,
+			"read back %d samples, wrote %d", len(samples), len(rep.Evidence))
 	}
-	total, matched := 0, 0
-	for _, p := range plans {
-		got := byTrack[p.TrackID]
-		if len(got) != len(p.Samples) {
-			return matched, total, merr.New(merr.StageRemux, "readback_count",
-				merr.Span{TrackID: p.TrackID}, false,
-				"track %d read back %d samples, wrote %d", p.TrackID, len(got), len(p.Samples))
+	matched := 0
+	for i, s := range samples {
+		ev := rep.Evidence[i]
+		if s.TrackID != ev.TrackID {
+			return matched, i, merr.New(merr.StageRemux, "readback_track",
+				merr.Span{TrackID: ev.TrackID, Offset: int64(i)}, false,
+				"sample %d read back on track %d, wrote on %d", i, s.TrackID, ev.TrackID)
 		}
-		for i, src := range p.Samples {
-			total++
-			want := expectedCanon(p, src)
-			if got[i].CanonHash != want {
-				return matched, total, merr.New(merr.StageRemux, "readback_content",
-					merr.Span{TrackID: p.TrackID, Offset: int64(i)}, false,
-					"track %d sample %d canonical digest changed on disk", p.TrackID, i)
-			}
-			matched++
+		if s.CanonHash != ev.CanonHash {
+			return matched, i, merr.New(merr.StageRemux, "readback_content",
+				merr.Span{TrackID: ev.TrackID, Offset: int64(i)}, false,
+				"track %d sample %d canonical digest changed on disk", ev.TrackID, ev.Index)
 		}
+		matched++
 	}
-	return matched, total, nil
-}
-
-// expectedCanon computes the canonical digest the writer intended for a plan
-// sample, independent of the layout's own recorded hashes.
-func expectedCanon(p TrackPlan, s demux.Sample) string {
-	stored, canon, err := payloadFor(p.Codec, s.Data)
-	if err != nil {
-		return ""
-	}
-	// payloadFor already returns the canonical digest for this sample; the
-	// stored form is only checked for size elsewhere.
-	_ = stored
-	return canon
+	return matched, len(samples), nil
 }

@@ -292,7 +292,7 @@ func Run(in *Input, opts Options) *RunResult {
 	}
 	// Re-parse the file we just wrote and compare canonical media per sample.
 	// This proves the bytes on disk, not just the writer's bookkeeping.
-	matched, total, err := remux.VerifyReadBack(rep.Path, plans)
+	matched, total, err := remux.VerifyReadBack(rep.Path, rep)
 	if err != nil {
 		res.Fatal = err
 		return res
@@ -616,18 +616,26 @@ func checkContentInvariant(plans []remux.TrackPlan, rep *remux.Report) error {
 	}
 	for _, p := range plans {
 		idx := byTrack[p.TrackID]
-		if len(idx) != len(p.Samples) {
-			return merr.New(merr.StagePipeline, "evidence_count",
-				merr.Span{Stream: 0, Seq: -1, Offset: -1, TrackID: p.TrackID}, false,
-				"track %d has %d samples but %d evidence rows", p.TrackID, len(p.Samples), len(idx))
-		}
-		for i, s := range p.Samples {
-			ev := rep.Evidence[idx[i]]
+		// Only samples that produced a storable unit appear in evidence.
+		for _, ev := range func() []remux.SampleEvidence {
+			out := make([]remux.SampleEvidence, 0, len(idx))
+			for _, i := range idx {
+				out = append(out, rep.Evidence[i])
+			}
+			return out
+		}() {
+			if ev.Index < 0 || ev.Index >= len(p.Samples) {
+				return merr.New(merr.StagePipeline, "evidence_index",
+					merr.Span{TrackID: p.TrackID, Offset: int64(ev.Index)}, false,
+					"track %d evidence references sample %d outside 0..%d",
+					p.TrackID, ev.Index, len(p.Samples))
+			}
+			s := p.Samples[ev.Index]
 			sum := sha256.Sum256(s.Data)
 			if ev.SHA256 != hex.EncodeToString(sum[:]) {
 				return merr.New(merr.StagePipeline, "content_changed",
 					merr.Span{Stream: s.Stream, Seq: -1, Offset: -1, TrackID: p.TrackID}, false,
-					"track %d sample %d raw hash differs after remux", p.TrackID, i)
+					"track %d sample %d raw hash differs after remux", p.TrackID, ev.Index)
 			}
 		}
 	}

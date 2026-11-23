@@ -78,6 +78,9 @@ type SampleEvidence struct {
 	Damaged   bool   `json:"damaged"`
 	Segment   int    `json:"segment"`
 	MP4Offset int64  `json:"mp4_offset"`
+	// Skipped is always false for written samples; retained for report
+	// compatibility with readers that expect the field.
+	Skipped bool `json:"skipped,omitempty"`
 }
 
 // Report is the remux result.
@@ -104,6 +107,13 @@ type layout struct {
 	bytes       []byte // concatenated mdat payload for this track
 	duration    uint64
 	canon       []string
+	// source holds the input sample each output slot came from, so evidence
+	// and read-back can map output indices to input indices even when a
+	// damaged sample was skipped.
+	source []int
+	// skipped records input samples dropped because they had no parsable
+	// unit. They are reported, not silently lost.
+	skipped []merr.Span
 }
 
 // Build validates sample counts and byte totals before writing.
@@ -207,22 +217,36 @@ func newLayout(p TrackPlan) (*layout, error) {
 		prev = s.PTS
 		payload, canon, err := payloadFor(p.Codec, s.Data)
 		if err != nil {
+			// A sample with no parsable unit cannot be stored in a length-
+			// prefixed MP4 entry. Skip it, keep its evidence span, and keep
+			// processing the remaining independent samples.
 			e := merr.AsError(err)
-			e.Span.TrackID = p.TrackID
-			return nil, e
+			span := e.Span
+			span.TrackID = p.TrackID
+			span.Seq = int64(s.Index)
+			l.skipped = append(l.skipped, span)
+			continue
 		}
 		l.bytes = append(l.bytes, payload...)
 		l.sizes = append(l.sizes, uint32(len(payload)))
 		l.canon = append(l.canon, canon)
+		l.source = append(l.source, s.Index)
 		if s.Keyframe {
-			l.stss = append(l.stss, uint32(i+1))
+			l.stss = append(l.stss, uint32(len(l.sizes)))
 		}
 	}
+	// Durations are computed across stored samples only. A skipped sample
+	// would otherwise leave stts with more entries than stsz, which readers
+	// reject; the gap it leaves is absorbed into its predecessor's duration.
+	stored := make([]demux.Sample, 0, len(l.source))
+	for _, src := range l.source {
+		stored = append(stored, l.samples[src])
+	}
 	var runCount, runDelta uint32
-	for i, s := range l.samples {
+	for i, s := range stored {
 		var dur int64
-		if i+1 < len(l.samples) {
-			dur = l.samples[i+1].PTS - s.PTS
+		if i+1 < len(stored) {
+			dur = stored[i+1].PTS - s.PTS
 		} else if s.Dur > 0 {
 			dur = s.Dur
 		}
@@ -320,6 +344,7 @@ func WriteFile(dir, name string, plans []TrackPlan, opts Options) (*Report, erro
 	rep.SHA256 = sum
 	rep.Evidence = collectEvidence(layouts)
 	rep.SampleCount = len(rep.Evidence)
+	rep.Errors = append(rep.Errors, skippedSpans(layouts)...)
 	return rep, nil
 }
 

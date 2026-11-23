@@ -571,10 +571,15 @@ func writeMdat(f io.WriteSeeker, w *mp4.Writer, layouts []*layout, patches []stc
 func collectEvidence(layouts []*layout) []SampleEvidence {
 	var out []SampleEvidence
 	for _, l := range layouts {
-		for i, s := range l.samples {
+		for i := range l.sizes {
+			srcIndex := i
+			if i < len(l.source) {
+				srcIndex = l.source[i]
+			}
+			s := l.samples[srcIndex]
 			ev := SampleEvidence{
 				TrackID:   l.plan.TrackID,
-				Index:     i,
+				Index:     srcIndex,
 				PTS:       s.PTS,
 				Dur:       s.Dur,
 				Size:      int(l.sizes[i]),
@@ -583,11 +588,25 @@ func collectEvidence(layouts []*layout) []SampleEvidence {
 				Keyframe:  s.Keyframe,
 				Damaged:   s.Damaged,
 				Segment:   s.Segment,
+				Skipped:   false,
 			}
 			if i < len(l.offsets) {
 				ev.MP4Offset = int64(l.offsets[i])
 			}
 			out = append(out, ev)
+		}
+	}
+	return out
+}
+
+// skippedSpans returns the input samples that could not be stored, per track.
+func skippedSpans(layouts []*layout) []*merr.Error {
+	var out []*merr.Error
+	for _, l := range layouts {
+		for _, span := range l.skipped {
+			out = append(out, merr.New(merr.StageRemux, "sample_skipped", span, true,
+				"track %d sample %d has no parsable coded unit and was not stored",
+				l.plan.TrackID, span.Seq))
 		}
 	}
 	return out

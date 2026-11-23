@@ -198,7 +198,7 @@ func TestReadBackMatchesWrittenMedia(t *testing.T) {
 	if err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	matched, total, err := VerifyReadBack(rep.Path, plans)
+	matched, total, err := VerifyReadBack(rep.Path, rep)
 	if err != nil {
 		t.Fatalf("VerifyReadBack: %v", err)
 	}
@@ -216,6 +216,40 @@ func TestReadBackMatchesWrittenMedia(t *testing.T) {
 		if s.DTS != uint64(i*3000) {
 			t.Fatalf("sample %d dts %d", i, s.DTS)
 		}
+	}
+}
+
+func TestUnparsableSampleIsSkippedNotFatal(t *testing.T) {
+	dir := t.TempDir()
+	good := demux.Sample{Index: 0, TrackID: 1, Codec: demux.CodecH264, PTS: 0, Dur: 3000,
+		Data: makeH264Sample(true, 1), Keyframe: true}
+	// A sample with no start code has no NAL unit and cannot be length
+	// prefixed; it must be skipped while the healthy sample still lands.
+	bad := demux.Sample{Index: 1, TrackID: 1, Codec: demux.CodecH264, PTS: 3000, Dur: 3000,
+		Data: []byte{0xDE, 0xAD, 0xBE, 0xEF}}
+	good2 := demux.Sample{Index: 2, TrackID: 1, Codec: demux.CodecH264, PTS: 6000, Dur: 3000,
+		Data: makeH264Sample(false, 2)}
+	plans := []TrackPlan{{TrackID: 1, Codec: demux.CodecH264,
+		Samples: []demux.Sample{good, bad, good2}, Timescale: 90000,
+		Handler:      [4]byte{'v', 'i', 'd', 'e'},
+		ConfigRecord: []byte{1, 0x42, 0x00, 0x1E, 0xFF, 0xE1, 0x00, 0x04, 0x67, 0x42, 0x00, 0x1E, 0x01, 0x00, 0x02, 0x68, 0xCE}}}
+	rep, err := WriteFile(dir, "skip.mp4", plans, DefaultOptions())
+	if err != nil {
+		t.Fatalf("WriteFile should not abort: %v", err)
+	}
+	if rep.SampleCount != 2 {
+		t.Fatalf("wrote %d samples want 2", rep.SampleCount)
+	}
+	if len(rep.Errors) != 1 || rep.Errors[0].Code != "sample_skipped" {
+		t.Fatalf("skip not reported: %+v", rep.Errors)
+	}
+	// Evidence keeps the source indices, so a reader can tell which sample
+	// is missing.
+	if rep.Evidence[0].Index != 0 || rep.Evidence[1].Index != 2 {
+		t.Fatalf("evidence indices %d %d", rep.Evidence[0].Index, rep.Evidence[1].Index)
+	}
+	if matched, total, err := VerifyReadBack(rep.Path, rep); err != nil || matched != total || total != 2 {
+		t.Fatalf("read back %d/%d err=%v", matched, total, err)
 	}
 }
 
@@ -240,7 +274,7 @@ func TestReadBackRejectsTruncatedFile(t *testing.T) {
 	if err := os.WriteFile(bad, cut, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := VerifyReadBack(bad, plans); err == nil {
+	if _, _, err := VerifyReadBack(bad, rep); err == nil {
 		t.Fatal("truncated output must fail read-back")
 	}
 }
