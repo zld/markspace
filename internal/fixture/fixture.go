@@ -156,6 +156,13 @@ func BuildRTPCapture(rng *rand.Rand, window int) ([]byte, int) {
 	for i := 0; i+1 < len(seq); i += 7 {
 		seq[i], seq[i+1] = seq[i+1], seq[i]
 	}
+	// Inject a duplicate delivery of an early surviving packet.
+	dupAt := 0
+	if len(seq) > 3 {
+		dupAt = 3
+	}
+	seq = append(seq[:dupAt+1],
+		append([]uint16{seq[dupAt]}, seq[dupAt+1:]...)...)
 	var buf []byte
 	for _, sn := range seq {
 		p := &rtp.Packet{Header: rtp.Header{SequenceNumber: sn, PayloadType: 96}}

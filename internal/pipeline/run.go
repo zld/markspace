@@ -35,6 +35,8 @@ type Result struct {
 	Frames        []render.Frame
 	FrameHashes   []render.FrameHash
 	ManifestSHA   string
+	ManifestBox   []byte
+	ManifestBoxes []render.BoxSummary
 	Index         *recover.Index
 	Merged        *timeline.Merged
 	Graph         *timeline.Graph
@@ -137,6 +139,13 @@ func Run(set *fixture.Set, opts Options) (*Result, error) {
 	res.Frames = frames
 	res.FrameHashes = render.HashFrames(frames)
 	res.ManifestSHA = render.ManifestDigest(res.FrameHashes)
+	box, boxes, err := render.BuildManifestBoxes(res.FrameHashes)
+	if err != nil {
+		return nil, StageError{Stage: "render", Category: "manifest_box",
+			Message: err.Error()}
+	}
+	res.ManifestBox = box
+	res.ManifestBoxes = boxes
 	res.Audio = render.SummarizeAudio(audioPoints(merged))
 	return res, nil
 }
