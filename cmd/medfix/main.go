@@ -18,9 +18,9 @@ import (
 )
 
 const (
-	exitOK       = 0
-	exitMetrics  = 1 // acceptance thresholds or invariants failed
-	exitUsage    = 2 // bad arguments or input format
+	exitOK      = 0
+	exitMetrics = 1 // acceptance thresholds or invariants failed
+	exitUsage   = 2 // bad arguments or input format
 )
 
 func main() {
@@ -158,12 +158,19 @@ func runDemo(args []string) int {
 		fmt.Fprintf(os.Stderr, "medfix demo: %v\n", err)
 		return exitUsage
 	}
-	dir := filepath.Join(f.workdir, "demo-"+strconv.FormatInt(f.seed, 10))
-	_ = os.RemoveAll(dir)
+	base := filepath.Join(f.workdir, "demo-"+strconv.FormatInt(f.seed, 10))
+	// The run uses base+"-normal"; remove it directly so an interrupted run
+	// always starts from an empty stage set and the interrupt fires.
+	_ = os.RemoveAll(base + "-normal")
+	// Also clear the fixed corrupt-sample scratch dirs so stale checkpoints
+	// from a previous invocation cannot affect this run.
+	_ = os.RemoveAll(tempPath("medfix-corrupt-mp4"))
+	_ = os.RemoveAll(tempPath("medfix-corrupt-rtp"))
 
 	// 1. Normal run, optionally interrupted after a chosen stage.
 	fmt.Println("sample=normal")
-	rep, err := execute(dir+"-normal", f.seed, pipeline.Options{
+	dir := base + "-normal"
+	rep, err := execute(dir, f.seed, pipeline.Options{
 		Config: timeline.DefaultConfig(), Interrupt: f.interruptStage,
 	})
 	if f.interruptStage != "" {
@@ -173,7 +180,7 @@ func runDemo(args []string) int {
 		}
 		fmt.Printf("interrupted_after=%s\n", f.interruptStage)
 		// Resume from the most recent valid checkpoint.
-		rep, err = execute(dir+"-normal", f.seed, pipeline.Options{
+		rep, err = execute(dir, f.seed, pipeline.Options{
 			Config: timeline.DefaultConfig(),
 		})
 		if err != nil {
@@ -205,7 +212,6 @@ func execute(dir string, seed int64, opts pipeline.Options) (*pipeline.Report, e
 	}
 	return r.Execute()
 }
-
 
 func acceptanceOK(rep *pipeline.Report) bool {
 	return rep.RoundtripMatchRate == 1.0 &&
