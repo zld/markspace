@@ -129,7 +129,8 @@ func TestEveryInjectedFaultHasExactOffset(t *testing.T) {
 			_ = frags
 			want := injected.Injections[0].ByteOffset
 			if kind == fixture.FaultTfdtRegression || kind == fixture.FaultSequenceGap ||
-				kind == fixture.FaultDuplicate || kind == fixture.FaultIndexGap {
+				kind == fixture.FaultDuplicate || kind == fixture.FaultIndexGap ||
+				kind == fixture.FaultRTPSequenceGap {
 				// These are semantic faults: the bytes parse cleanly and the
 				// transform stage reports them at the recorded offset.
 				if len(errs) != 0 {

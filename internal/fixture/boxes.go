@@ -19,6 +19,11 @@ type TrackPlan struct {
 }
 
 // PlanSample is one logical sample before serialization.
+//
+// The first bytes of every payload carry a real RTP v2 header, so sequence and
+// timestamp continuity can be checked with pion/rtp. The SSRC is derived from
+// the track id and the sequence advances per sample, which models a track
+// carried over RTP without adding any network dependency.
 type PlanSample struct {
 	Start    int64
 	Duration int64

@@ -19,9 +19,14 @@ go test ./...
 ```
 
 Dependencies are pinned in `go.mod`: `github.com/abema/go-mp4` for ISO BMFF
-box parsing and `github.com/pion/rtp` for RTP sequence number handling. The
-requested `go-mp4 v1.30.0` does not exist upstream; `v1.7.4` is the newest
+box parsing and `github.com/pion/rtp` for RTP header and sequence handling.
+The requested `go-mp4 v1.30.0` does not exist upstream; `v1.7.4` is the newest
 release and is what is pinned.
+
+Synthetic sample payloads start with a real RTP v2 header, so RTP sequence
+continuity is checked with `pion/rtp` alongside container-level continuity.
+The `rtp-sequence-gap` fault exercises that path: it reports a loss at the
+sample byte that carries the packet, using the same error model as box faults.
 
 ## Demo
 
@@ -65,7 +70,7 @@ properties.
 | `internal/clock` | exact integer rational timebase conversion |
 | `internal/fault` | error codes with file, fragment, box and raw offset |
 | `internal/fixture` | seeded sample streams and fault injection |
-| `internal/ingest` | boundary-safe box, init, fragment and index parsing |
+| `internal/ingest` | boundary-safe box, init, fragment and index parsing, plus RTP sequence continuity |
 | `internal/timeline` | per-track mapping and multi-track merge |
 | `internal/transform` | duplicate/gap/regression repair and frame export |
 | `internal/checkpoint` | atomic checkpoint store and resume validation |

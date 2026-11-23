@@ -163,6 +163,11 @@ func printDemo(r *pipeline.Result, verbose bool) {
 		fmt.Printf("repair_regressions=%d\n", r.Repair.Regressions)
 		fmt.Printf("repair_sequence_gaps=%d\n", r.Repair.SequenceGaps)
 	}
+	if r.RTP != nil {
+		fmt.Printf("rtp_packets=%d\n", len(r.RTP.Packets))
+		fmt.Printf("rtp_sequence_gaps=%d\n", r.RTP.SequenceGaps)
+		fmt.Printf("rtp_malformed=%d\n", r.RTP.Malformed)
+	}
 	if verbose {
 		for _, e := range r.Errors {
 			fmt.Printf("fault code=%s file=%s fragment=%d box=%s offset=%d\n", e.Code, e.File, e.FragmentSeq, e.BoxType, e.Offset)

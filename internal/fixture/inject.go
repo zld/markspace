@@ -3,6 +3,8 @@ package fixture
 import (
 	"encoding/binary"
 	"fmt"
+
+	"github.com/pion/rtp"
 )
 
 // FaultKind names a supported injection.
@@ -16,6 +18,7 @@ const (
 	FaultSequenceGap    FaultKind = "mfhd-gap"
 	FaultDuplicate      FaultKind = "duplicate-fragment"
 	FaultCorruptMdat    FaultKind = "corrupt-mdat"
+	FaultRTPSequenceGap FaultKind = "rtp-sequence-gap"
 )
 
 // AllFaults lists every injection kind in presentation order.
@@ -28,6 +31,7 @@ func AllFaults() []FaultKind {
 		FaultSequenceGap,
 		FaultDuplicate,
 		FaultCorruptMdat,
+		FaultRTPSequenceGap,
 	}
 }
 
@@ -79,6 +83,7 @@ const (
 	anchorMdat
 	anchorTfdt
 	anchorTrunSizeField
+	anchorSamplePayload
 	anchorTruncation
 )
 
@@ -208,6 +213,13 @@ func resolveAnchor(s *Stream, inj *Injection) {
 		inj.ByteOffset = f.TfdtOffset
 	case anchorTrunSizeField:
 		inj.ByteOffset = f.TrunOffset + 8 + 4 + 4 + 4 + int64(8*(len(f.Samples)-1)) + 4
+	case anchorSamplePayload:
+		// A consumer observes the gap when it reaches the sample, so the
+		// reported position is where that RTP packet begins. The detail names
+		// the sequence field inside it.
+		if len(f.Samples) > 0 {
+			inj.ByteOffset = f.Samples[len(f.Samples)-1].Offset
+		}
 	}
 }
 
@@ -232,6 +244,8 @@ func applyFault(base *Stream, plans []TrackPlan, kind FaultKind) (Injection, *St
 		return injectDuplicate(base, plans)
 	case FaultCorruptMdat:
 		return injectCorruptMdat(base)
+	case FaultRTPSequenceGap:
+		return injectRTPSequenceGap(base, plans)
 	default:
 		return Injection{}, nil, fmt.Errorf("fixture: unsupported fault %q", kind)
 	}
@@ -409,6 +423,52 @@ func injectCorruptMdat(base *Stream) (Injection, *Stream, error) {
 		anchor:   anchorTrunSizeField,
 		Detail:   fmt.Sprintf("sample size field inflated to %d; forged moof header at %d", declared, sample.Offset+int64(sample.Size)),
 	}, trap, nil
+}
+
+// injectRTPSequenceGap advances the RTP sequence and timestamp of one sample so
+// the RTP-level continuity check reports a gap that the container-level mfhd
+// numbers and tfdt do not show. This keeps two independent continuity models
+// on the shared error path.
+func injectRTPSequenceGap(base *Stream, plans []TrackPlan) (Injection, *Stream, error) {
+	if len(plans) == 0 || len(plans[0].Samples) == 0 {
+		return Injection{anchor: anchorNone, Detail: "no samples"}, base, nil
+	}
+	idx := len(plans) / 2
+	first := len(plans[idx].Samples) - 1
+	// Advance the sequence of this sample and every later sample on the same
+	// track. Continuity resumes after the gap, so exactly one loss is
+	// reported rather than a gap followed by a phantom reordering.
+	for i := idx; i < len(plans); i++ {
+		if plans[i].Track.ID != plans[idx].Track.ID {
+			continue
+		}
+		start := 0
+		if i == idx {
+			start = first
+		}
+		for k := start; k < len(plans[i].Samples); k++ {
+			smp := &plans[i].Samples[k]
+			var h rtp.Header
+			if n, err := h.Unmarshal(smp.Payload); err != nil || n < 12 {
+				return Injection{anchor: anchorNone, Detail: "sample has no RTP header"}, base, nil
+			}
+			h.SequenceNumber += 3
+			h.Timestamp += uint32(smp.Duration) * 3
+			if _, err := h.MarshalTo(smp.Payload); err != nil {
+				return Injection{}, nil, err
+			}
+		}
+	}
+	var last = first
+	next, err := base.Reassemble(plans)
+	if err != nil {
+		return Injection{}, nil, err
+	}
+	return Injection{
+		Fragment: idx,
+		anchor:   anchorSamplePayload,
+		Detail:   fmt.Sprintf("rtp sequence advanced by 3 at sample %d (sequence field at payload+2)", last),
+	}, next, nil
 }
 
 func cloneStream(base *Stream, data []byte) *Stream {

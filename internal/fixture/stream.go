@@ -3,7 +3,46 @@ package fixture
 import (
 	"fmt"
 	"math/rand"
+
+	"github.com/pion/rtp"
 )
+
+// sampleSequence returns the RTP sequence number for the n-th sample of a
+// track. Sequence arithmetic wraps modulo 2^16 exactly like the wire format.
+func sampleSequence(spec Spec, trackIndex, fragmentIndex, sampleIndex int) uint16 {
+	if spec.SamplesPerFragment <= 0 {
+		spec.SamplesPerFragment = 1
+	}
+	n := (fragmentIndex/len(spec.Tracks))*spec.SamplesPerFragment + sampleIndex
+	return uint16(1000 + n)
+}
+
+// ssrcFor gives each track a distinct synchronization source.
+func ssrcFor(trackID uint32) uint32 {
+	return 0x4d430000 | trackID
+}
+
+// stampRTP writes a valid RTP v2 header into the sample payload. The payload
+// buffer is at least 64 bytes, so the 12 byte header always fits.
+func stampRTP(payload []byte, seq uint16, ts uint32, ssrc uint32, marker bool) []byte {
+	if len(payload) < 12 {
+		grown := make([]byte, 12)
+		copy(grown, payload)
+		payload = grown
+	}
+	h := rtp.Header{
+		Version:        2,
+		PayloadType:    96,
+		SequenceNumber: seq,
+		Timestamp:      ts,
+		SSRC:           ssrc,
+		Marker:         marker,
+	}
+	if _, err := h.MarshalTo(payload); err != nil {
+		panic(fmt.Sprintf("fixture: stamp rtp: %v", err))
+	}
+	return payload
+}
 
 // MakePlans builds the baseline fragment plan for a spec.
 func MakePlans(spec Spec) ([]TrackPlan, error) {
@@ -23,12 +62,15 @@ func MakePlans(spec Spec) ([]TrackPlan, error) {
 		seqs[ti]++
 		p := TrackPlan{Track: t, Seq: seqs[ti], Tfdt: cursors[ti]}
 		for s := 0; s < spec.SamplesPerFragment; s++ {
-			buf := make([]byte, 48+rng.Intn(180))
+			// Keep every payload above the fixed RTP header length.
+			buf := make([]byte, 64+rng.Intn(180))
 			rng.Read(buf)
+			start := cursors[ti] + int64(s)*int64(t.SampleDuration)
+			globalSeq := sampleSequence(spec, ti, i, s)
 			p.Samples = append(p.Samples, PlanSample{
-				Start:    cursors[ti] + int64(s)*int64(t.SampleDuration),
+				Start:    start,
 				Duration: int64(t.SampleDuration),
-				Payload:  buf,
+				Payload:  stampRTP(buf, globalSeq, uint32(start), ssrcFor(t.ID), s == spec.SamplesPerFragment-1),
 			})
 		}
 		cursors[ti] += int64(spec.SamplesPerFragment) * int64(t.SampleDuration)

@@ -53,6 +53,7 @@ type Result struct {
 	TrackCount       int                        `json:"tracks"`
 	Merged           []timeline.Sample          `json:"samples"`
 	Gaps             []timeline.Gap             `json:"gaps"`
+	RTP              *ingest.RTPReport          `json:"rtp"`
 	Repair           *transform.RepairReport    `json:"repair"`
 	Repaired         []*transform.RepairedTrack `json:"repaired_tracks"`
 	Frames           *transform.FrameSet        `json:"frames"`
@@ -198,6 +199,19 @@ func Run(cfg Config, injected *fixture.InjectedStream, inputs []Input) (*Result,
 	st = checkpoint.Advance(st, checkpoint.StageIngest, parsed.resumeAt)
 	if err := saveStage(store, st, res, parsed); err != nil {
 		return nil, err
+	}
+
+	// Independently check RTP sequence continuity for samples that carry an
+	// RTP header. This runs on the same error model as the container checks,
+	// so an RTP-level loss is reported at the sample byte that carries it.
+	rtpData := make(map[string][]byte, len(inputs))
+	for _, in := range inputs {
+		rtpData[in.Name] = in.Data
+	}
+	rtpReport := ingest.AnalyzeRTP(parsed.fragments, rtpData)
+	res.RTP = rtpReport
+	for _, e := range rtpReport.Errors {
+		res.Errors = append(res.Errors, e)
 	}
 
 	tracks, mapFaults := timeline.BuildTracks(parsed.inits, parsed.fragments, cfg.Timescale)
