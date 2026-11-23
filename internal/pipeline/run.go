@@ -95,6 +95,7 @@ type Result struct {
 	WrapCount        int
 	RTPPackets       int
 	RTPAnomalies     int
+	Notes            []string
 	TruncatedInput   bool
 	ResumeRefused    bool
 }
@@ -269,6 +270,7 @@ func Run(in Input, cfg Config) (Result, error) {
 		res.ManifestSHA256 = fmt.Sprintf("%x", md[:])
 	}
 	res.DriftPPM = timeline.Model().PPM
+	res.Notes = append(res.Notes, order.notes...)
 	// Silence is measured on the audio track and reported in full: the cut
 	// bounds video, while the audio clip is the authoritative silence source.
 	res.SilenceMillis = silenceRes.TotalSilenceNanos / int64(time.Millisecond)
@@ -298,6 +300,7 @@ type orderInfo struct {
 	repaired   map[int]bool
 	wraps      int
 	duplicates int
+	notes      []string
 	// rtpAnomalies counts backwards RTP steps beyond tolerance.
 	rtpAnomalies int
 }
@@ -313,10 +316,14 @@ func classifyOrder(frags []*cmaf.Fragment) orderInfo {
 	_ = lastTrackID
 	for _, f := range frags {
 		if prev, isDup := seen[f.Digest]; isDup {
+			// A re-delivered fragment is expected on mobile networks and is
+			// handled deterministically, so it is recorded as an observation
+			// rather than treated as damage to the capture.
 			oi.skip[f.Ordinal] = true
 			oi.duplicates++
-			oi.errs = append(oi.errs, mediaerr.New(mediaerr.KindDuplicate, f.Ordinal, "moof", f.MoofOffset,
-				fmt.Sprintf("fragment is byte-identical to ordinal %d", prev)))
+			oi.notes = append(oi.notes, fmt.Sprintf(
+				"duplicate_fragment: segment=%d box=moof offset=%d: byte-identical to ordinal %d",
+				f.Ordinal, f.MoofOffset, prev))
 			continue
 		}
 		seen[f.Digest] = f.Ordinal

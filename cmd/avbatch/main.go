@@ -76,7 +76,6 @@ func parseDemoFlags(args []string, stderr *os.File) (demoFlags, error) {
 	fs.BoolVar(&f.injectVFR, "inject-vfr", false, "use a variable frame rate")
 	fs.BoolVar(&f.injectTruncatedBox, "inject-truncated-box", false, "truncate the final fragment")
 	fs.BoolVar(&f.injectCheckpointCrash, "inject-checkpoint-crash", false, "simulate a crash mid-index")
-	fs.BoolVar(&f.injectDuplicate, "inject-duplicate", false, "re-deliver one fragment byte-identically")
 	if err := fs.Parse(args); err != nil {
 		return f, err
 	}
@@ -106,7 +105,6 @@ func runDemo(args []string, stdout, stderr *os.File) int {
 		InjectVFR:             f.injectVFR,
 		InjectTruncatedBox:    f.injectTruncatedBox,
 		InjectCheckpointCrash: f.injectCheckpointCrash,
-		InjectDuplicate:       f.injectDuplicate,
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "avbatch demo: generate: %v\n", err)
@@ -177,6 +175,12 @@ func printReport(stdout *os.File, res pipeline.Result, runErr error) {
 			kinds = append(kinds, string(k))
 		}
 		fmt.Fprintf(stdout, "faults=%s\n", strings.Join(kinds, ","))
+	}
+	if len(res.Notes) > 0 {
+		fmt.Fprintf(stdout, "notes=%d\n", len(res.Notes))
+	}
+	for _, note := range res.Notes {
+		fmt.Fprintf(stdout, "note=%s\n", note)
 	}
 	if runErr != nil {
 		fmt.Fprintf(stdout, "recovered=%t\n", res.Recovered)

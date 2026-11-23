@@ -49,8 +49,10 @@ func TestRunCleanInput(t *testing.T) {
 	if res.ManifestSHA256 == "" {
 		t.Fatal("manifest digest missing")
 	}
-	if res.Duplicates != 0 || res.Collisions != 0 {
-		t.Fatalf("clean input reported duplicates=%d collisions=%d", res.Duplicates, res.Collisions)
+	// Every generated group re-delivers one fragment, so the dedup path is
+	// always exercised; collisions must not appear on identical content.
+	if res.Duplicates != 1 || res.Collisions != 0 {
+		t.Fatalf("duplicates=%d collisions=%d, want 1 and 0", res.Duplicates, res.Collisions)
 	}
 	if res.RTPPackets == 0 {
 		t.Fatal("no RTP packets were delivered")
@@ -118,11 +120,14 @@ func TestRunDuplicateFragmentIsDetected(t *testing.T) {
 	// The generator re-delivers one fragment byte-identically; the pipeline
 	// must classify it as a duplicate, drop it before cutting, and still
 	// produce a complete manifest.
-	in := buildGroup(t, synth.Options{Seed: 41, InjectDuplicate: true})
+	in := buildGroup(t, synth.Options{Seed: 41})
 	dir := t.TempDir()
 	res, err := Run(in, cleanCfg(dir))
-	if !mediaerr.Is(err, mediaerr.KindDuplicate) {
-		t.Fatalf("err = %v, want duplicate_fragment", err)
+	if err != nil {
+		t.Fatalf("a re-delivered fragment is not damage: %v", err)
+	}
+	if len(res.Notes) == 0 {
+		t.Fatal("duplicate was not reported")
 	}
 	if res.Duplicates != 1 {
 		t.Fatalf("duplicates = %d, want 1", res.Duplicates)

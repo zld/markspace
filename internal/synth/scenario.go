@@ -55,7 +55,11 @@ type Options struct {
 	InjectVFR             bool
 	InjectTruncatedBox    bool
 	InjectCheckpointCrash bool
-	InjectDuplicate       bool
+	// SkipDuplicate suppresses the retransmitted fragment that every capture
+	// group contains by default. Re-delivery is normal network behaviour, so
+	// the demo always exercises it; only tests that need a pristine capture
+	// switch it off.
+	SkipDuplicate bool
 }
 
 // Frame durations in milliseconds: 30 fps nominal, with a small VFR set.
@@ -277,7 +281,7 @@ func BuildDemoGroup(opt Options) (*Group, error) {
 	// Duplicate fragment: an intact earlier fragment is re-delivered
 	// byte-identically, as a retransmitted capture chunk would be. It is
 	// inserted mid-stream so the repeat is exercised before the damaged tail.
-	if opt.InjectDuplicate && len(g.Fragments) >= 4 {
+	if !opt.SkipDuplicate && len(g.Fragments) >= 4 {
 		dup := g.Fragments[2]
 		dup.Data = append([]byte(nil), dup.Data...)
 		g.Fragments = append(g.Fragments[:3], append([]CapturedFragment{dup}, g.Fragments[3:]...)...)
@@ -287,7 +291,7 @@ func BuildDemoGroup(opt Options) (*Group, error) {
 	for i := range g.Fragments {
 		g.Fragments[i].Ordinal = i
 	}
-	if opt.InjectDuplicate {
+	if !opt.SkipDuplicate {
 		g.Faults = append(g.Faults, FaultDuplicate)
 	}
 	if opt.InjectCheckpointCrash {
