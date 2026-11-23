@@ -161,10 +161,15 @@ func (s *sim) onNACK(ev *model.Event) {
 	normal, late := s.rec.OnNACK(reqs, func(seq uint64) recovery.LossState {
 		return s.lossState(ev.SSRC, seq)
 	})
+	// A recovered packet reaches the timeline now, not when the sender
+	// originally transmitted it; stamping the current arrival keeps both
+	// late-window decisions and latency accounting honest.
 	for _, r := range normal {
+		r.ArrivalMs = ev.ArrivalMs
 		s.acceptRecovered(r)
 	}
 	for _, r := range late {
+		r.ArrivalMs = ev.ArrivalMs
 		if s.replay.InsertLate(r, s.wm) {
 			key := seqKey{r.SSRC, r.Seq}
 			delete(s.missing, key)
