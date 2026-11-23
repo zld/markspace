@@ -25,7 +25,8 @@ func walkChildren(body []byte, base int64, owner string, fn childFn) error {
 			return parseError(ErrKindInvalidVINT, off+int64(idw), id, 0, "invalid "+owner+" child size", err)
 		}
 		need := int64(idw + sz.Width)
-		if sz.Unknown || uint64(len(body)) < uint64(need)+sz.Value {
+		// Compare without overflow: a child cannot exceed the remaining body.
+		if sz.Unknown || sz.Value > uint64(len(body))-uint64(need) {
 			return parseError(ErrKindTruncated, off, id, 0, owner+" child exceeds parent", io.ErrUnexpectedEOF)
 		}
 		payloadLen := int64(sz.Value)
