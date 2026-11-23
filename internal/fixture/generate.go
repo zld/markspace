@@ -239,22 +239,23 @@ func Generate(opts Options) (*Capture, error) {
 	// sequence number is delivered first. Sender reports keep their position.
 	live := liveEvents(events)
 	swapped := 0
-	for i := 0; i+1 < len(live) && swapped < opts.InjectReorder; i++ {
-		j := i + 1
-		for j < len(live) && live[j].sr {
-			j++
-		}
-		if j >= len(live) {
-			break
-		}
-		a, b := live[i], live[j]
-		if a.loss || b.loss || a.sr || a.trackID != b.trackID || a.seq+1 != b.seq {
+	for i := 0; i < len(live) && swapped < opts.InjectReorder; i++ {
+		a := live[i]
+		if a.loss || a.sr {
 			continue
 		}
-		live[i], live[j] = b, a
-		cap.Reorders++
-		swapped++
-		i = j
+		// Find the next live media packet of the same track carrying the
+		// following sequence number and move it ahead of a.
+		for j := i + 1; j < len(live); j++ {
+			b := live[j]
+			if b.sr || b.trackID != a.trackID || b.seq != a.seq+1 || b.loss {
+				continue
+			}
+			live[i], live[j] = live[j], live[i]
+			cap.Reorders++
+			swapped++
+			break
+		}
 	}
 	// Duplicate: insert a copy after a surviving packet.
 	dupCount := 0
@@ -397,4 +398,11 @@ func expand(seed []byte, n int) []byte {
 		out = append(out, h.Sum(nil)...)
 	}
 	return out[:n]
+}
+
+// DigestOf returns the SHA-256 of a generated capture, matching the index's
+// input-binding digest.
+func DigestOf(b []byte) string {
+	sum := sha256.Sum256(b)
+	return fmt.Sprintf("%x", sum[:])
 }
