@@ -1,7 +1,7 @@
 // Package index rebuilds a keyframe (sync sample) index from the samples
 // that survived parsing, loss and recovery, and reports which GOP
-// segments are recoverable. The index is materialized as an MP4 stss
-// box on the MP4 timescale so downstream packagers can consume it.
+// segments are recoverable. The index is materialized as an MP4 stss box
+// on the MP4 timescale so downstream packagers can consume it.
 package index
 
 import (
@@ -22,36 +22,36 @@ type Segment struct {
 
 // Result is the rebuilt index plus segment classification.
 type Result struct {
-	Keyframes     []uint32  // 1-based sample numbers, stss convention
+	Keyframes     []uint32 // 1-based sample numbers, stss convention
 	Segments      []Segment
 	Recoverable   int
 	Unrecoverable int
 	StssSHA256    [32]byte // digest of the marshaled stss box
 	StssSize      int
+	Stss          []byte
 }
 
 // Rebuild walks the final video sample stream (emission order, gaps
 // already resolved as far as recovery allowed) and produces the sync
-// sample index. lost reports whether an extended sequence number left a
-// permanent hole; a GOP containing any hole is unrecoverable, as is a
-// trailing GOP with no decodable keyframe.
-func Rebuild(samples []*model.Event, lost func(seq uint64) bool) Result {
+// sample index. A GOP starting at a sequence discontinuity is
+// unrecoverable, as is a GOP with no decodable keyframe.
+func Rebuild(samples []*model.Event) Result {
 	var res Result
-	// sampleHasHole[i] is true when the GOP containing sample i saw an
-	// unrecovered loss; tracked per GOP below.
 	type gop struct {
-		start  int
-		key    bool
-		holed  bool
+		start int
+		key   bool
+		holed bool
 	}
 	var gops []gop
+	var prevSeq uint64
 	for i, ev := range samples {
+		discontinuous := i > 0 && ev.Seq != prevSeq+1
 		if ev.Keyframe || len(gops) == 0 {
-			gops = append(gops, gop{start: i, key: ev.Keyframe})
-		}
-		if lost(ev.Seq) {
+			gops = append(gops, gop{start: i, key: ev.Keyframe, holed: discontinuous})
+		} else if discontinuous {
 			gops[len(gops)-1].holed = true
 		}
+		prevSeq = ev.Seq
 	}
 	for gi, g := range gops {
 		end := len(samples)
@@ -77,7 +77,8 @@ func Rebuild(samples []*model.Event, lost func(seq uint64) bool) Result {
 	var buf bytes.Buffer
 	if n, err := mp4.Marshal(&buf, &stss, mp4.Context{}); err == nil {
 		res.StssSize = int(n)
-		res.StssSHA256 = sha256.Sum256(buf.Bytes())
+		res.Stss = buf.Bytes()
+		res.StssSHA256 = sha256.Sum256(res.Stss)
 	}
 	return res
 }
