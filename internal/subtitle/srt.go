@@ -45,6 +45,7 @@ func ParseSRT(r io.Reader, cfg Config) ([]Cue, error) {
 					"line %d: cue %d missing timing line", firstRow, idx)
 			}
 			timing = lines[i].text
+			firstRow = lines[i].line
 		} else {
 			idx++
 		}
