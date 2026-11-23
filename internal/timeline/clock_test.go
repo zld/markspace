@@ -38,13 +38,18 @@ func TestWrapClock32Rollover(t *testing.T) {
 	}
 }
 
-func TestWrapClockReorderDoesNotRegress(t *testing.T) {
+func TestWrapClockReorderPreservesLowerValue(t *testing.T) {
 	w := NewWrapClock(16)
 	w.Unwrap(1000)
 	w.Unwrap(1005)
-	// Late packet with a lower raw sequence number.
-	if got := w.Unwrap(1002); got != 1005 {
-		t.Fatalf("reordered unwrap=%d want 1005", got)
+	// A late packet with a lower raw sequence is a reorder: its unwrapped
+	// value must stay below 1005, not be clamped up.
+	if got := w.Unwrap(1002); got != 1002 {
+		t.Fatalf("reordered unwrap=%d want 1002", got)
+	}
+	// A later packet resumes the forward axis without an artificial jump.
+	if got := w.Unwrap(1006); got != 1006 {
+		t.Fatalf("forward unwrap=%d want 1006", got)
 	}
 }
 

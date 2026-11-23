@@ -141,9 +141,11 @@ func NewWrapClock(bits uint) *WrapClock {
 	return &WrapClock{modulus: m, half: m / 2}
 }
 
-// Unwrap maps the next raw counter value to a monotonically non-decreasing
-// uint64, assuming forward drift never exceeds half the modulus between
-// samples. The first observed value establishes the origin.
+// Unwrap maps the next raw counter value to an unwrapped uint64 stream. A
+// jump within half the modulus is interpreted as ordinary forward drift or,
+// when negative, as reordered arrival rather than a wraparound; only a jump
+// larger than half the modulus crosses the modulus boundary. The first
+// observed value establishes the origin.
 func (w *WrapClock) Unwrap(raw uint64) uint64 {
 	raw %= w.modulus
 	if !w.initialized {
@@ -156,12 +158,9 @@ func (w *WrapClock) Unwrap(raw uint64) uint64 {
 	diff := int64(raw - (w.last % w.modulus))
 	switch {
 	case diff < -int64(w.half):
-		cand += w.modulus // wrapped forward
+		cand += w.modulus // wrapped forward across the modulus
 	case diff > int64(w.half):
 		cand -= w.modulus // large backward jump, treat as reorder
-	}
-	if cand < w.last {
-		cand = w.last // never move backwards on the unwrapped axis
 	}
 	w.last = cand
 	return cand

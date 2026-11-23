@@ -264,7 +264,7 @@ func (r *Reader) parseBlock(el Element, end int64, clusterTC int64) (BlockEvent,
 	r.seq++
 	ev := BlockEvent{
 		Track: uint32(track), TimeNanos: nanos, Flags: flags,
-		Keyframe:  flags&0x80 != 0,
+		Keyframe:   flags&0x80 != 0,
 		Payload:    buf[n1+3:],
 		SourceSeq:  r.seq,
 		FileOffset: el.Offset,

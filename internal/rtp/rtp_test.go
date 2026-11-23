@@ -155,7 +155,7 @@ func TestGapPolicyKeepsUnrecoveredCount(t *testing.T) {
 
 func TestRecoverEndToEndAndNanos(t *testing.T) {
 	pkts := []*rtp.Packet{pkt(0, 0), pkt(2, 180), pkt(1, 90)}
-	stream, err := Recover(pkts, Config{Window: 4, Policy: PolicyPLC}, 9000)
+	stream, err := Recover(pkts, Config{Window: 4, Policy: PolicyPLC}, 9000, 0, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,7 +176,7 @@ func TestRecoverEndToEndAndNanos(t *testing.T) {
 
 func TestIntegrityErrorOnGap(t *testing.T) {
 	pkts := []*rtp.Packet{pkt(0, 0), pkt(3, 270)} // 1,2 gap
-	stream, err := Recover(pkts, Config{Window: 1, Policy: PolicyGap}, 9000)
+	stream, err := Recover(pkts, Config{Window: 1, Policy: PolicyGap}, 9000, 0, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

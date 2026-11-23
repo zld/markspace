@@ -121,13 +121,13 @@ func Segment(body []byte, unknownSize bool) []byte {
 // MinimalHeader returns a fixed EBML header declaring Matroska doctype.
 func MinimalHeader() []byte {
 	var payload bytes.Buffer
-	payload.Write(UintElement([]byte{0x42, 0x86}, 1)) // EBMLVersion
-	payload.Write(UintElement([]byte{0x42, 0xF7}, 1)) // EBMLReadVersion
-	payload.Write(UintElement([]byte{0x42, 0xF2}, 4)) // MaxIDLength
-	payload.Write(UintElement([]byte{0x42, 0xF3}, 8)) // MaxSizeLength
+	payload.Write(UintElement([]byte{0x42, 0x86}, 1))                   // EBMLVersion
+	payload.Write(UintElement([]byte{0x42, 0xF7}, 1))                   // EBMLReadVersion
+	payload.Write(UintElement([]byte{0x42, 0xF2}, 4))                   // MaxIDLength
+	payload.Write(UintElement([]byte{0x42, 0xF3}, 8))                   // MaxSizeLength
 	payload.Write(ElementBytes([]byte{0x42, 0x82}, []byte("matroska"))) // DocType
-	payload.Write(UintElement([]byte{0x42, 0x87}, 4)) // DocTypeVersion
-	payload.Write(UintElement([]byte{0x42, 0x85}, 2)) // DocTypeReadVersion
+	payload.Write(UintElement([]byte{0x42, 0x87}, 4))                   // DocTypeVersion
+	payload.Write(UintElement([]byte{0x42, 0x85}, 2))                   // DocTypeReadVersion
 	return ElementBytes(IDEBML, payload.Bytes())
 }
 

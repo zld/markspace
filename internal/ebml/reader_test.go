@@ -137,7 +137,7 @@ func TestSuperLongEBMLLengthRejected(t *testing.T) {
 	// EBML header followed by a segment whose declared size exceeds input.
 	data := append(MinimalHeader(), IDSegment...)
 	data = append(data, 0x01, 0x00, 0x00, 0x00, 0x00) // 5-byte size header
-	data = append(data, 0x1F)                          // start of payload bytes
+	data = append(data, 0x1F)                         // start of payload bytes
 	r, _ := NewReader(data, DefaultLimits())
 	_, err := r.Parse()
 	if err == nil || !errors.Is(err, timeline.ErrTruncated) {

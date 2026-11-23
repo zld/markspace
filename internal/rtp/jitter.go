@@ -107,15 +107,16 @@ type entry struct {
 
 // JitterBuffer reorders a stream with 16-bit sequence-number wraparound.
 type JitterBuffer struct {
-	mu      sync.Mutex
-	cfg     Config
-	clock   *timeline.WrapClock
-	held    map[uint64]entry
-	nextOut uint64 // next sequence number to emit
-	arrival int64
-	started bool
-	last    *rtp.Packet // most recent in-order packet, for PolicyRepeat
-	stats   Stats
+	mu        sync.Mutex
+	cfg       Config
+	clock     *timeline.WrapClock
+	held      map[uint64]entry
+	nextOut   uint64 // next sequence number to emit
+	highWater uint64 // highest sequence number ever observed
+	arrival   int64
+	started   bool
+	last      *rtp.Packet // most recent in-order packet, for PolicyRepeat
+	stats     Stats
 }
 
 // NewJitterBuffer constructs a buffer from config.
@@ -151,6 +152,7 @@ func (b *JitterBuffer) Push(pkt *rtp.Packet) error {
 	if !b.started {
 		b.started = true
 		b.nextOut = seq
+		b.highWater = seq
 	}
 	// Already delivered: duplicate.
 	if seq < b.nextOut {
@@ -165,11 +167,14 @@ func (b *JitterBuffer) Push(pkt *rtp.Packet) error {
 		return timeline.NewError("rtp", "push", int64(seq), timeline.RecoverNone,
 			"jitter buffer capacity exceeded", timeline.ErrLimitExceeded)
 	}
-	// A sequence above the current emission frontier that arrives while a
-	// higher sequence is already buffered is a reorder.
-	reordered := seq != b.nextOut
+	// A packet whose sequence sits below the observed high-water mark but
+	// has not been emitted yet arrived out of order (a late, valid packet).
+	reordered := b.started && seq < b.highWater
 	if reordered {
 		b.stats.Reordered++
+	}
+	if seq > b.highWater {
+		b.highWater = seq
 	}
 	b.held[seq] = entry{pkt: pkt, seq: seq, arrival: b.arrival, reordered: reordered}
 	if len(b.held) > b.stats.MaxHeld {
@@ -240,8 +245,11 @@ func (b *JitterBuffer) resolveGap(seq uint64) Slot {
 	}
 }
 
-// Flush drains the buffer at stream end. Remaining missing slots below the
-// highest ever seen are resolved; any held packets are then emitted.
+// Flush drains the buffer at stream end. Missing slots at or below the
+// highest sequence ever observed are resolved through the configured policy
+// (they lived inside the jitter window). Terminal losses above the observed
+// high-water mark are not emitted here; callers use FlushTerminal to record
+// the count of packets that never arrived before the stream ended.
 func (b *JitterBuffer) Flush() []Slot {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -262,6 +270,28 @@ func (b *JitterBuffer) Flush() []Slot {
 		b.nextOut++
 	}
 	return out
+}
+
+// FlushTerminal records count unrecovered gaps immediately following the
+// observed high-water mark and returns their placeholder slots.
+func (b *JitterBuffer) FlushTerminal(count int) []Slot {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	out := make([]Slot, 0, count)
+	for i := 0; i < count; i++ {
+		out = append(out, b.resolveTerminalGap(b.nextOut))
+		b.nextOut++
+	}
+	return out
+}
+
+// resolveTerminalGap records an end-of-stream loss that the window could
+// never have concealed.
+func (b *JitterBuffer) resolveTerminalGap(seq uint64) Slot {
+	b.stats.WindowGaps++
+	b.stats.UnrecoveredPackets++
+	return Slot{Sequence: seq, Class: SlotGap}
 }
 
 // Stats returns a snapshot of buffer counters.
