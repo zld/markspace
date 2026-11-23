@@ -16,7 +16,7 @@ const (
 // healthyLayer builds nPackets packets with a keyframe every keyEvery master
 // ticks starting at each segment boundary.
 func healthyLayer(idx int, name string, targetBPS, nPackets int, keyEvery int64, size int) LayerInput {
-	pkts := make([]clockedPacket, nPackets)
+	pkts := make([]ClockedPacket, nPackets)
 	step := testDuration / int64(nPackets)
 	for i := 0; i < nPackets; i++ {
 		ts := int64(i) * step

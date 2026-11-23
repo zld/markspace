@@ -60,12 +60,15 @@ func (d Decision) String() string {
 type TrackDescription struct {
 	Container string // KindMP4 or KindMXF
 	TrackID   uint32
-	Timescale uint32 // MP4 mdhd timescale; 0 for MXF (uses edit-rate ticks)
-	Width     uint32 // coded width/height in pixels
-	Height    uint32
-	Rotation  *Rotation
-	Crop      *Crop
-	Colour    *Colour
+	Timescale uint32 // MP4 mdhd timescale; MXF edit-rate numerator
+	// EditRateDen is the MXF edit-rate denominator (seconds per rate unit);
+	// zero means 1, i.e. the timescale is ticks-per-second like MP4.
+	EditRateDen uint32
+	Width       uint32 // coded width/height in pixels
+	Height      uint32
+	Rotation    *Rotation
+	Crop        *Crop
+	Colour      *Colour
 }
 
 // Resolved is the merged, conflict-free description consumed downstream.

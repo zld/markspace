@@ -48,21 +48,31 @@ func Verify(m *Manifest, expectedReps int) error {
 		}
 	}
 
+	// Thresholds apply to healthy representations only. A layer that was
+	// damaged and recovered is still listed (failure isolation succeeded),
+	// but its degraded bitrate/quality are expected fault symptoms rather
+	// than invariant violations.
 	var qualitySum float64
+	healthy := 0
 	for _, r := range m.Representations {
+		if r.Quality < 0 || r.Quality > 1 {
+			add("rep %d quality %.4f outside [0,1]", r.Index, r.Quality)
+		}
+		if r.Isolated {
+			continue
+		}
+		healthy++
 		qualitySum += r.Quality
 		if r.BitrateErrPct > MaxBitrateErrPct {
 			add("rep %d bitrate error %.2f%% exceeds %.0f%%",
 				r.Index, r.BitrateErrPct, MaxBitrateErrPct)
 		}
-		if r.Quality < 0 || r.Quality > 1 {
-			add("rep %d quality %.4f outside [0,1]", r.Index, r.Quality)
-		}
 	}
-	if len(m.Representations) > 0 {
-		mean := qualitySum / float64(len(m.Representations))
+	if healthy > 0 {
+		mean := qualitySum / float64(healthy)
 		if mean < MinQualityMean {
-			add("quality_mean %.4f below %.2f", mean, MinQualityMean)
+			add("quality_mean %.4f below %.2f over %d healthy layers",
+				mean, MinQualityMean, healthy)
 		}
 	}
 	if m.AlignmentErrorMS > MaxAlignmentErrorMS {
@@ -71,16 +81,25 @@ func Verify(m *Manifest, expectedReps int) error {
 	return errs
 }
 
-// QualityMean returns the mean representation quality.
+// QualityMean returns the mean quality over healthy (non-isolated)
+// representations; it reports 0 when no healthy representation exists.
 func QualityMean(m *Manifest) float64 {
 	if m == nil || len(m.Representations) == 0 {
 		return 0
 	}
 	var sum float64
+	n := 0
 	for _, r := range m.Representations {
+		if r.Isolated {
+			continue
+		}
 		sum += r.Quality
+		n++
 	}
-	return sum / float64(len(m.Representations))
+	if n == 0 {
+		return 0
+	}
+	return sum / float64(n)
 }
 
 // TotalMissingSegments counts missing (layer, segment) pairs.

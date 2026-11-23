@@ -22,7 +22,11 @@ type RepInfo struct {
 	Dropped       int64
 	Lost          int64
 	Recovered     int
-	MissingSegs   []int
+	// Isolated marks a representation that survived a single-layer fault and
+	// was recovered; it stays in the usable list but is exempt from the strict
+	// healthy-layer thresholds during verification.
+	Isolated    bool
+	MissingSegs []int
 }
 
 // SegmentReport is one aligned segment across every representation.
@@ -52,17 +56,19 @@ type LayerInput struct {
 	Index     int
 	Name      string
 	TargetBPS int
-	Packets   []clockedPacket
+	Packets   []ClockedPacket
 	Dropped   int64
 	Lost      int64
 	Recovered int
+	// Isolated marks a layer that was damaged and recovered independently.
+	Isolated bool
 	// LateKeys are packet indexes (into Packets) whose keyframe arrives after
 	// the configured wait budget, forcing a missing-segment mark.
 	LateKeys map[int]bool
 }
 
-// clockedPacket is the manifest-stage view of a stream Envelope.
-type clockedPacket struct {
+// ClockedPacket is the manifest-stage view of a stream Envelope.
+type ClockedPacket struct {
 	Seq   uint16
 	TS    int64
 	Key   bool
@@ -70,8 +76,8 @@ type clockedPacket struct {
 }
 
 // NewPacket builds a master-clock packet for a layer input.
-func NewPacket(seq uint16, ts int64, key bool, size int) clockedPacket {
-	return clockedPacket{Seq: seq, TS: ts, Key: key, Bytes: size}
+func NewPacket(seq uint16, ts int64, key bool, size int) ClockedPacket {
+	return ClockedPacket{Seq: seq, TS: ts, Key: key, Bytes: size}
 }
 
 // Builder holds fan-in parameters.
@@ -172,7 +178,7 @@ func (b *Builder) layerHasSegment(in LayerInput, cursor int, start, end int64) (
 // repStats computes deterministic bitrate and quality for one representation.
 func (b *Builder) repStats(in LayerInput, present []bool, nSeg int) RepInfo {
 	rep := RepInfo{Index: in.Index, Name: in.Name, TargetBPS: in.TargetBPS,
-		Dropped: in.Dropped, Lost: in.Lost, Recovered: in.Recovered}
+		Dropped: in.Dropped, Lost: in.Lost, Recovered: in.Recovered, Isolated: in.Isolated}
 	var deliveredBytes int64
 	var delivered int64
 	for _, p := range in.Packets {
@@ -211,23 +217,32 @@ func (b *Builder) repStats(in LayerInput, present []bool, nSeg int) RepInfo {
 	return rep
 }
 
-// worstAlignment measures the largest integer-ms gap between a layer's first
-// segment-start keyframe and the ideal boundary.
+// worstAlignment measures, for each shared segment boundary, the integer-ms
+// offset of the layer's first keyframe at or after that boundary (and within
+// the wait budget). Interior keyframes are not segment anchors and are
+// excluded so the metric reflects real boundary alignment.
 func (b *Builder) worstAlignment(inputs []LayerInput) int64 {
+	nSeg := int((b.durationTicks + b.segmentTicks - 1) / b.segmentTicks)
 	var worst int64
-	for _, in := range inputs {
-		for _, p := range in.Packets {
-			if !p.Key {
-				continue
-			}
-			ideal := clock.AlignDown(p.TS, b.segmentTicks)
-			errTicks := p.TS - ideal
-			if errTicks < 0 {
-				errTicks = -errTicks
-			}
-			errMS := errTicks * 1000 / int64(b.timescale)
-			if errMS > worst {
-				worst = errMS
+	for seg := 0; seg < nSeg; seg++ {
+		start := int64(seg) * b.segmentTicks
+		for _, in := range inputs {
+			for pi, p := range in.Packets {
+				if !p.Key || p.TS < start || in.LateKeys[pi] {
+					continue
+				}
+				if p.TS > start+b.waitTicks {
+					break
+				}
+				errTicks := p.TS - start
+				if errTicks < 0 {
+					errTicks = -errTicks
+				}
+				errMS := errTicks * 1000 / int64(b.timescale)
+				if errMS > worst {
+					worst = errMS
+				}
+				break
 			}
 		}
 	}

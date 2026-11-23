@@ -64,6 +64,14 @@ func NewFanout(cfgs []LayerConfig) (*Fanout, error) {
 // Layers returns the number of representation layers.
 func (f *Fanout) Layers() int { return len(f.layers) }
 
+// Queue exposes a layer's bounded queue, mainly for final draining.
+func (f *Fanout) Queue(layer int) *Queue {
+	if layer < 0 || layer >= len(f.layers) {
+		return nil
+	}
+	return f.layers[layer].queue
+}
+
 // MarkDamaged isolates one layer; its Publish calls then fail with a
 // recoverable error while other layers keep running.
 func (f *Fanout) MarkDamaged(layer int) {
