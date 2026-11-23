@@ -152,4 +152,3 @@ func runMissingIndexCase(root string, seed int64, frames int, loss float64) (cas
 	stats := runRTP(seed, frames, loss)
 	return finishPipeline(w, res, fixture.CaseMissingIndex, rebuiltOffset, seed, frames, stats)
 }
-

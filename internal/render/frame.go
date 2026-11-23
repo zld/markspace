@@ -25,19 +25,19 @@ const (
 
 // Provenance records exactly which source bytes produced one output frame.
 type Provenance struct {
-	Frame          int      `json:"frame"`
-	OutputTime     string   `json:"output_time"` // rational seconds
-	PrimaryTrack   int      `json:"primary_track"`
-	PrimarySample  int      `json:"primary_sample"`
-	PrimaryOffset  int64    `json:"primary_offset"`
-	SecondaryTrack int      `json:"secondary_track"`
-	SecondarySample int     `json:"secondary_sample"`
-	SecondaryOffset int64   `json:"secondary_offset"`
-	Transition     bool     `json:"transition"`
-	BlendWeightA   int      `json:"blend_weight_a"` // 0..256
-	Gap            bool     `json:"gap"`
-	GapReason      string   `json:"gap_reason,omitempty"`
-	SHA256         string   `json:"sha256"`
+	Frame           int    `json:"frame"`
+	OutputTime      string `json:"output_time"` // rational seconds
+	PrimaryTrack    int    `json:"primary_track"`
+	PrimarySample   int    `json:"primary_sample"`
+	PrimaryOffset   int64  `json:"primary_offset"`
+	SecondaryTrack  int    `json:"secondary_track"`
+	SecondarySample int    `json:"secondary_sample"`
+	SecondaryOffset int64  `json:"secondary_offset"`
+	Transition      bool   `json:"transition"`
+	BlendWeightA    int    `json:"blend_weight_a"` // 0..256
+	Gap             bool   `json:"gap"`
+	GapReason       string `json:"gap_reason,omitempty"`
+	SHA256          string `json:"sha256"`
 }
 
 // FrameManifest is the on-disk checksum document for one render pass.
@@ -61,9 +61,9 @@ type Config struct {
 
 // Renderer consumes the timeline and emits frames plus the manifest.
 type Renderer struct {
-	cfg      Config
-	placed   map[int][]model.ScheduledSample // track ID -> schedule
-	tracks   map[int]*model.Track
+	cfg    Config
+	placed map[int][]model.ScheduledSample // track ID -> schedule
+	tracks map[int]*model.Track
 }
 
 // NewRenderer precomputes each track's scheduled placements.

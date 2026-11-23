@@ -24,7 +24,7 @@ type Stats = rtpstats.Stats
 
 // Recoverer ingests RTP wire packets in arrival order.
 type Recoverer struct {
-	windowSize int
+	windowSize  int
 	frameStepMs float64
 
 	received  map[uint16]bool

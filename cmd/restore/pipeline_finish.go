@@ -109,8 +109,8 @@ func finishPipeline(w *manifest.Writer, res *parse.Result, name string, dmgOffse
 	}
 	rm := manifest.RunManifest{
 		Seed: seed, Case: name,
-		Stages:      []manifest.StageRecord{transform, renderStage, validateStage},
-		FrameCount:  fm.FrameCount, GapCount: fm.GapCount,
+		Stages:     []manifest.StageRecord{transform, renderStage, validateStage},
+		FrameCount: fm.FrameCount, GapCount: fm.GapCount,
 		SyncErrorMs: report.MaxSyncErrorMs, RecoveredRate: report.RecoveredRate,
 		P95LatencyMs: report.P95LatencyMs, ErrorSummary: manifest.ErrorDigest(allErrs),
 		ExitCode: exit,

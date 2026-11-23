@@ -7,14 +7,14 @@ import "fmt"
 
 // Processing stages used in ForensicError.Stage and in stage manifests.
 const (
-	StageParseBox    = "parse_box"
-	StageIndex       = "index_rebuild"
-	StageRepair      = "repair"
-	StageClock       = "clock"
-	StageRTPRecover  = "rtp_recover"
-	StageRender      = "render"
-	StageValidate    = "validate"
-	StageManifest    = "manifest"
+	StageParseBox   = "parse_box"
+	StageIndex      = "index_rebuild"
+	StageRepair     = "repair"
+	StageClock      = "clock"
+	StageRTPRecover = "rtp_recover"
+	StageRender     = "render"
+	StageValidate   = "validate"
+	StageManifest   = "manifest"
 )
 
 // Confidence grades attached to rebuilt samples and intervals.

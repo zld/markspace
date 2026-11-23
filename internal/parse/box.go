@@ -15,8 +15,8 @@ import (
 
 // Hard limits mandated by the forensic kernel constraints.
 const (
-	MaxInputSize  = 256 * 1024 * 1024 // 256 MiB
-	MaxBoxDepth   = 16
+	MaxInputSize = 256 * 1024 * 1024 // 256 MiB
+	MaxBoxDepth  = 16
 )
 
 // BoxRecord is one node of the validated box tree with its source offset.

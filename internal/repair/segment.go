@@ -27,9 +27,9 @@ type Region struct {
 
 // Report is the deterministic output of one repair pass.
 type Report struct {
-	Regions       []Region             `json:"regions"`
-	Excluded      int                  `json:"excluded_samples"`
-	Salvaged      int                  `json:"salvaged_samples"`
+	Regions       []Region               `json:"regions"`
+	Excluded      int                    `json:"excluded_samples"`
+	Salvaged      int                    `json:"salvaged_samples"`
 	TrackCoverage map[int]Coverage       `json:"track_coverage"`
 	Errors        []*model.ForensicError `json:"errors"`
 }
@@ -40,6 +40,7 @@ type Coverage struct {
 	Valid    int `json:"valid"`
 	Excluded int `json:"excluded"`
 }
+
 // Segment walks every track's samples in index order, detecting corrupt
 // payloads, missing offsets and boundary overshoots. Adjacent damaged samples
 // coalesce into one Region. A one-sample safety margin on each side of a

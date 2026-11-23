@@ -48,7 +48,7 @@ func entryType(ts TrackSpec) string {
 }
 
 func buildVisualEntry(ts TrackSpec) []byte {
-	p := make([]byte, 6) // reserved
+	p := make([]byte, 6)     // reserved
 	p = append(p, u16(1)...) // data_reference_index
 	p = append(p, u16(0)...) // pre_defined
 	p = append(p, u16(0)...) // reserved
@@ -75,7 +75,7 @@ func buildAudioEntry(ts TrackSpec) []byte {
 	p = append(p, u16(1)...)
 	p = append(p, u32(0)...)
 	p = append(p, u32(0)...)
-	p = append(p, u16(2)...) // channels
+	p = append(p, u16(2)...)  // channels
 	p = append(p, u16(16)...) // sample size
 	p = append(p, u16(0)...)
 	p = append(p, u16(0)...)

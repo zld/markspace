@@ -17,9 +17,9 @@ import (
 // Thresholds are the acceptance limits; zero values fall back to the defaults
 // used by the command line acceptance demo.
 type Thresholds struct {
-	SyncErrorMs    float64
-	RecoveredRate  float64
-	P95LatencyMs   float64
+	SyncErrorMs   float64
+	RecoveredRate float64
+	P95LatencyMs  float64
 }
 
 // DefaultThresholds matches the acceptance contract.
@@ -39,15 +39,15 @@ type SyncFailure struct {
 
 // Report is the deterministic validator output.
 type Report struct {
-	MaxSyncErrorMs  float64        `json:"max_sync_error_ms"`
-	SyncFailures    []SyncFailure  `json:"sync_failures"`
-	GapFrames       int            `json:"gap_frames"`
-	RepairRegions   int            `json:"repair_regions"`
-	BlockedTracks   []int          `json:"blocked_tracks"`
-	RecoveredRate   float64        `json:"recovered_rate"`
-	P95LatencyMs    float64        `json:"p95_latency_ms"`
-	Threshold       Thresholds     `json:"thresholds"`
-	Errors          []*model.ForensicError `json:"errors"`
+	MaxSyncErrorMs float64                `json:"max_sync_error_ms"`
+	SyncFailures   []SyncFailure          `json:"sync_failures"`
+	GapFrames      int                    `json:"gap_frames"`
+	RepairRegions  int                    `json:"repair_regions"`
+	BlockedTracks  []int                  `json:"blocked_tracks"`
+	RecoveredRate  float64                `json:"recovered_rate"`
+	P95LatencyMs   float64                `json:"p95_latency_ms"`
+	Threshold      Thresholds             `json:"thresholds"`
+	Errors         []*model.ForensicError `json:"errors"`
 }
 
 // Check runs every invariant. It never aborts on the first failure so the

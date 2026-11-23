@@ -41,14 +41,14 @@ type Clip struct {
 
 // Track groups samples and the clips that schedule them.
 type Track struct {
-	ID            int      `json:"id"`
-	Kind          string   `json:"kind"`
-	Timescale     int64    `json:"timescale"`
-	EarliestOffset int64   `json:"earliest_offset"` // first source offset, kept on overflow
-	Samples       []Sample `json:"samples"`
-	Clips         []Clip   `json:"clips"`
-	Blocked       bool     `json:"blocked"`     // overflow / fatal defect
-	BlockReason   string   `json:"block_reason"`
+	ID             int      `json:"id"`
+	Kind           string   `json:"kind"`
+	Timescale      int64    `json:"timescale"`
+	EarliestOffset int64    `json:"earliest_offset"` // first source offset, kept on overflow
+	Samples        []Sample `json:"samples"`
+	Clips          []Clip   `json:"clips"`
+	Blocked        bool     `json:"blocked"` // overflow / fatal defect
+	BlockReason    string   `json:"block_reason"`
 }
 
 // ValidSamples returns the samples allowed onto the timeline: not corrupt and
@@ -67,11 +67,11 @@ func (t *Track) ValidSamples() []Sample {
 // Timeline is the unified, clock-normalized representation consumed by the
 // RTP, render and validate subsystems.
 type Timeline struct {
-	Tracks       []*Track       `json:"tracks"`
-	Errors       []*ForensicError `json:"errors"`
-	VideoTracks  []int          `json:"video_tracks"`
-	AudioTracks  []int          `json:"audio_tracks"`
-	Duration     clock.Rational `json:"duration"`
+	Tracks      []*Track         `json:"tracks"`
+	Errors      []*ForensicError `json:"errors"`
+	VideoTracks []int            `json:"video_tracks"`
+	AudioTracks []int            `json:"audio_tracks"`
+	Duration    clock.Rational   `json:"duration"`
 }
 
 // Track finds a track by ID.
@@ -94,16 +94,16 @@ func (tl *Timeline) AddError(e *ForensicError) {
 
 // ScheduledSample is a sample placed at an absolute unified-timeline time.
 type ScheduledSample struct {
-	Sample Sample           `json:"sample"`
-	At     clock.Rational   `json:"at"`
-	Clip   Clip             `json:"clip"`
+	Sample Sample         `json:"sample"`
+	At     clock.Rational `json:"at"`
+	Clip   Clip           `json:"clip"`
 }
 
 // Interval marks a usable sample range rebuilt by the index layer.
 type Interval struct {
-	TrackID    int    `json:"track_id"`
-	FirstSample int   `json:"first_sample"`
-	LastSample  int   `json:"last_sample"` // inclusive
-	Confidence string `json:"confidence"`
-	Basis      string `json:"basis"`
+	TrackID     int    `json:"track_id"`
+	FirstSample int    `json:"first_sample"`
+	LastSample  int    `json:"last_sample"` // inclusive
+	Confidence  string `json:"confidence"`
+	Basis       string `json:"basis"`
 }

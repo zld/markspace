@@ -4,13 +4,13 @@ import "encoding/binary"
 
 // Case names emitted in fixtures and manifests.
 const (
-	CaseNormal       = "normal"
-	CaseTruncated    = "truncated_box"
-	CaseOutOfRange   = "out_of_range_index"
-	CaseCorrupt      = "corrupt_sample"
-	CaseMissingIndex = "missing_index"
+	CaseNormal        = "normal"
+	CaseTruncated     = "truncated_box"
+	CaseOutOfRange    = "out_of_range_index"
+	CaseCorrupt       = "corrupt_sample"
+	CaseMissingIndex  = "missing_index"
 	CaseClockOverflow = "clock_overflow"
-	CaseRTPWindow    = "rtp_window_loss"
+	CaseRTPWindow     = "rtp_window_loss"
 )
 
 // Damage describes one applied mutation and the byte offset that forensic

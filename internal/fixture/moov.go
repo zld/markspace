@@ -17,12 +17,12 @@ func buildMoov(spec MediaSpec, plans []trackPlan, layout *Layout) ([]byte, error
 
 func buildMvhd(spec MediaSpec) []byte {
 	p := fullBoxPrefix(0, 0)
-	p = append(p, u32(0)...)       // creation_time
-	p = append(p, u32(0)...)       // modification_time
-	p = append(p, u32(1000)...)    // timescale
+	p = append(p, u32(0)...)    // creation_time
+	p = append(p, u32(0)...)    // modification_time
+	p = append(p, u32(1000)...) // timescale
 	p = append(p, u32(uint32(spec.Tracks[0].SampleCount)*1000)...)
 	p = append(p, u32(0x00010000)...) // rate 1.0
-	p = append(p, u16(0x0100)...)       // volume 1.0
+	p = append(p, u16(0x0100)...)     // volume 1.0
 	p = append(p, make([]byte, 10)...)
 	p = append(p, identityMatrix()...)
 	p = append(p, make([]byte, 24)...) // pre_defined

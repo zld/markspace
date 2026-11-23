@@ -40,7 +40,7 @@ func DefaultRTPConfig(seed int64, packets int, loss float64) RTPConfig {
 
 // RTPStream is the generated wire stream plus the ground-truth delivery map.
 type RTPStream struct {
-	Packets   []*rtp.Packet
+	Packets []*rtp.Packet
 	// PermanentLost lists sequence numbers that never appear.
 	PermanentLost []uint16
 	// Late lists sequence numbers delivered out of order but in-window.
@@ -54,10 +54,10 @@ func GenerateRTP(cfg RTPConfig) *RTPStream {
 	rng := rand.New(rand.NewSource(cfg.Seed))
 	stream := &RTPStream{}
 	type event struct {
-		pkt    *rtp.Packet
-		seq    uint16
-		late   bool
-		dup    bool
+		pkt  *rtp.Packet
+		seq  uint16
+		late bool
+		dup  bool
 	}
 	var events []event
 	seq := cfg.StartSeq
