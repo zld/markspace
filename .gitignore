@@ -1,0 +1,11 @@
+# Generated workspace material and pipeline output
+/out/
+/.work/
+*.mp4
+*.mxf
+*.rtp
+*.log
+
+# Build artifacts
+/mediapipe
+/bin/
