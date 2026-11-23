@@ -106,19 +106,25 @@ func reverseTimestamp(base *Result, rng *rand.Rand) CorruptCase {
 	if len(data) < 200 {
 		return CorruptCase{Kind: CorruptTimestampReverse, Data: data, Explain: "document too small"}
 	}
-	// Corrupt the two-byte relative timecode of a block after the first frame.
-	pos := 1
-	for i := 0; i < 3; i++ {
-		next := bytes.Index(data[pos:], []byte{0xA3})
+	// Find a SimpleBlock in a later cluster. Layout is A3 | size | track VINT |
+	// int16 timecode | flags. Track 1 uses a one-byte VINT, so the timecode
+	// sits at idx+3..idx+4.
+	searchFrom := 0
+	idx := -1
+	for i := 0; i < 4; i++ {
+		next := bytes.Index(data[searchFrom:], []byte{0xA3})
 		if next < 0 {
 			break
 		}
-		pos += next + 4 // skip ID + size, land on track VINT
+		idx = searchFrom + next
+		searchFrom = idx + 1
 	}
-	if pos+4 >= len(data) {
+	if idx < 0 || idx+5 > len(data) {
 		return CorruptCase{Kind: CorruptTimestampReverse, Data: data, Explain: "no mutable block"}
 	}
-	binary.BigEndian.PutUint16(data[pos+2:pos+4], 0xFFFF) // -1 tick
+	// Rewrite the two-byte signed timecode to -1 so this block moves backwards
+	// relative to its predecessor.
+	binary.BigEndian.PutUint16(data[idx+3:idx+5], 0xFFFF)
 	return CorruptCase{
 		Kind:             CorruptTimestampReverse,
 		Data:             data,
