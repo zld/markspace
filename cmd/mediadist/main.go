@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"mediadist/internal/fixture"
 	"mediadist/internal/pipeline"
@@ -88,17 +89,14 @@ func runDemo(args []string, stdout, stderr io.Writer) int {
 		return exitInput
 	}
 
-	// Without --out the run still needs a writable directory. It is kept so a
-	// reviewer can inspect the MP4 and JSON report; the path is printed.
+	// Without --out the run still needs a writable directory, and it is kept
+	// so a reviewer can inspect the MP4 and JSON report. A fixed path is used
+	// so repeated demos overwrite instead of accumulating directories.
 	dir := *outDir
 	if dir == "" {
-		tmp, err := os.MkdirTemp("", "mediadist-demo-")
-		if err != nil {
-			fmt.Fprintf(stderr, "cannot create output directory: %v\n", err)
-			return exitInput
-		}
-		dir = tmp
-	} else if err := os.MkdirAll(dir, 0o755); err != nil {
+		dir = filepath.Join(os.TempDir(), "mediadist-demo")
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		fmt.Fprintf(stderr, "cannot create output directory: %v\n", err)
 		return exitInput
 	}

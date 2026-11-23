@@ -119,6 +119,26 @@ func TestDemoIsReproducible(t *testing.T) {
 	}
 }
 
+func TestDemoDefaultOutputDirIsStable(t *testing.T) {
+	// Two runs without --out must land in the same directory and overwrite,
+	// not accumulate temporary directories.
+	var a, b, errBuf bytes.Buffer
+	if code := run([]string{"demo", "--seed", "3"}, &a, &errBuf); code != exitOK {
+		t.Fatalf("first run exit %d: %s", code, errBuf.String())
+	}
+	if code := run([]string{"demo", "--seed", "3"}, &b, &errBuf); code != exitOK {
+		t.Fatalf("second run exit %d: %s", code, errBuf.String())
+	}
+	first := strings.SplitN(a.String(), "\n", 2)[0]
+	second := strings.SplitN(b.String(), "\n", 2)[0]
+	if first != second {
+		t.Fatalf("default output directory changed: %q vs %q", first, second)
+	}
+	if !strings.HasSuffix(first, "mediadist-demo") {
+		t.Fatalf("unexpected default directory %q", first)
+	}
+}
+
 func TestDemoRejectsBadInput(t *testing.T) {
 	cases := [][]string{
 		{},

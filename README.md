@@ -16,7 +16,8 @@ go run ./cmd/mediadist demo --seed 41 --loss-burst 3 --bandwidth-kbps 1800 --seg
 
 退出码：`0` 处理完成且指标达标，`1` 输入或参数错误，`2` 处理完成但指标未达标。
 
-`--out DIR` 可指定输出目录；否则写入新建临时目录，并在首行打印路径。目录内含
+`--out DIR` 可指定输出目录；否则写入 `$TMPDIR/mediadist-demo`（重复运行覆盖，
+不再堆积临时目录），并在首行打印路径。目录内含
 `media.mp4` 与 `report.json`（完整证据）。默认参数下 `media.mp4` 的 SHA-256
 在重复运行之间保持一致。
 
