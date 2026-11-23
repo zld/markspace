@@ -1,4 +1,3 @@
 tmp/
-/mediacore
+/build/
 *.test
-
