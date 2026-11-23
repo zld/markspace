@@ -115,6 +115,12 @@ func TestCancellationPropagatesAndExits(t *testing.T) {
 		if r.code != ExitFailure {
 			t.Fatalf("canceled run code=%d, want %d", r.code, ExitFailure)
 		}
+		if r.err == nil {
+			t.Fatal("canceled run must return a cancellation error")
+		}
+		if me, ok := mediaerr.As(r.err); !ok || me.Category != mediaerr.CatCanceled {
+			t.Fatalf("err=%v, want canceled category", r.err)
+		}
 	case <-time.After(time.Second):
 		t.Fatal("canceled pipeline did not exit within 1s")
 	}

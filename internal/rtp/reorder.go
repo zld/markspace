@@ -149,10 +149,26 @@ func (sb *streamBuffer) push(pkt *rtp.Packet) ([]Ordered, []*mediaerr.Error) {
 				return nil, nil
 			}
 		case dist > int(sb.cfg.Window):
-			// Frontier jumps beyond the window: every missing slot in between
-			// becomes an unrecoverable burst loss.
-			missing := dist - len(sb.bufferedWithin(seq))
-			sb.abandon(seq)
+			// Frontier jumps beyond the window. Enumerate every slot in
+			// (nextSeq, seq): buffered packets were received and are
+			// accounted as delivered; only genuinely absent slots are
+			// unrecoverable. This makes the loss count exact rather than
+			// deriving it from a depth that later re-counts the same hole.
+			prev := sb.nextSeq
+			missing := 0
+			// Candidate absent slots are [nextSeq, seq): exactly dist slots.
+			for d := 0; d < dist; d++ {
+				cand := prev + uint16(d)
+				if p, ok := sb.slots[cand]; ok {
+					// Already received out of order: count it, release it.
+					sb.delivered[cand] = struct{}{}
+					delete(sb.slots, cand)
+					_ = p
+				} else if _, done := sb.delivered[cand]; !done {
+					missing++
+				}
+			}
+			sb.nextSeq = seq
 			if missing > 0 {
 				sb.stats.UnrecoveredPackets += missing
 			}
@@ -242,28 +258,6 @@ func (sb *streamBuffer) frontierHoleDepth() int {
 	return depth
 }
 
-// bufferedWithin returns buffered slots that lie before the given sequence
-// (i.e. already received packets inside the gap leading up to seq).
-func (sb *streamBuffer) bufferedWithin(seq uint16) map[uint16]*rtp.Packet {
-	out := map[uint16]*rtp.Packet{}
-	for s, p := range sb.slots {
-		if clock.SeqDistance(s, seq) < 0 {
-			out[s] = p
-		}
-	}
-	return out
-}
-
-// abandon drops buffered slots older than seq when the frontier jumps.
-func (sb *streamBuffer) abandon(seq uint16) {
-	for s := range sb.slots {
-		if clock.SeqDistance(s, seq) < 0 {
-			delete(sb.slots, s)
-		}
-	}
-	sb.nextSeq = seq
-}
-
 // Flush marks the stream end: remaining gaps become unrecoverable and the
 // buffered packets are released in order.
 func (r *Reorderer) Flush(streamID string) ([]Ordered, Stats, []*mediaerr.Error) {
@@ -274,20 +268,33 @@ func (r *Reorderer) Flush(streamID string) ([]Ordered, Stats, []*mediaerr.Error)
 		return nil, Stats{}, nil
 	}
 	var errs []*mediaerr.Error
-	lost := 0
-	for len(sb.slots) > 0 {
-		if _, ok := sb.slots[sb.nextSeq]; !ok {
-			lost++
-			sb.nextSeq++
-			continue
+	// At end of stream the contiguous hole at the frontier can no longer be
+	// filled, so every missing slot up to the next buffered packet is
+	// unrecoverable. With no buffered packets remaining there is no tail gap.
+	if len(sb.slots) > 0 {
+		// Find the nearest buffered sequence ahead of the frontier.
+		var nearest uint16
+		have := false
+		for s := range sb.slots {
+			if !have || clock.SeqDistance(sb.nextSeq, s) < clock.SeqDistance(sb.nextSeq, nearest) {
+				nearest, have = s, true
+			}
 		}
-		break
-	}
-	if lost > 0 {
-		sb.stats.UnrecoveredPackets += lost
-		errs = append(errs, mediaerr.New(mediaerr.CatTransport, "tail_gap",
-			"stream ended with an unfilled sequence gap").
-			With(streamID, sb.lastTS, false))
+		if have {
+			gap := clock.SeqDistance(sb.nextSeq, nearest) // slots strictly between
+			for d := 0; d < gap; d++ {
+				miss := sb.nextSeq + uint16(d)
+				if _, done := sb.delivered[miss]; !done {
+					sb.stats.UnrecoveredPackets++
+				}
+			}
+			if gap > 0 {
+				errs = append(errs, mediaerr.New(mediaerr.CatTransport, "tail_gap",
+					"stream ended with an unfilled sequence gap").
+					With(streamID, sb.lastTS, false))
+			}
+			sb.nextSeq = nearest
+		}
 	}
 	out := sb.drain()
 	return out, sb.stats, errs

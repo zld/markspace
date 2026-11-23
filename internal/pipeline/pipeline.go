@@ -106,6 +106,10 @@ func Run(ctx context.Context, cfg Config, fixture *fx.Fixture) (*Manifest, int, 
 	// Stage 3+4: RTP reorder through the bounded, cancellable worker pool.
 	stats, code := stageTransport(ctx, cfg, fixture, report)
 	if code != ExitOK {
+		if ctx.Err() != nil {
+			return man, ExitFailure, mediaerr.New(mediaerr.CatCanceled, "pipeline",
+				"audit canceled").Wrap(ctx.Err())
+		}
 		return man, code, nil
 	}
 	man.Recovery = stats
