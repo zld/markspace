@@ -1,0 +1,8 @@
+# Build artifacts (not part of delivery)
+/medfix
+/cmd/medfix/medfix
+*.test
+*.out
+
+# Local working data produced by demo/verify runs
+medfix-demo/
