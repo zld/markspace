@@ -134,7 +134,9 @@ func (e *Executor) process(f *media.Frame) OutputFrame {
 		e.damage.Begin("truncation", f.Seq, ms)
 		damaging = true
 	}
-	if e.started && ext-e.lastKeyframeSeq > int64(e.keyframeInterval*3/2) {
+	// A long run without any keyframe means one was lost; the check skips
+	// keyframes themselves so a valid arriving keyframe always recovers.
+	if e.started && !f.Keyframe && ext-e.lastKeyframeSeq > int64(e.keyframeInterval*3/2) {
 		e.damage.Begin("missing_keyframe", f.Seq, ms)
 		damaging = true
 	}

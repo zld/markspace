@@ -35,7 +35,7 @@ type GenConfig struct {
 	Wrap             bool // start seq/timestamp near wrap boundaries
 }
 
-func (c GenConfig) withDefaults() GenConfig {
+func (c GenConfig) WithDefaults() GenConfig {
 	if c.Frames <= 0 {
 		c.Frames = 3000
 	}
@@ -67,7 +67,7 @@ type Generator struct {
 
 // NewGenerator builds the full deterministic emission plan for cfg.
 func NewGenerator(cfg GenConfig) *Generator {
-	cfg = cfg.withDefaults()
+	cfg = cfg.WithDefaults()
 	rng := rand.New(rand.NewSource(cfg.Seed))
 	n, ki := cfg.Frames, cfg.KeyframeInterval
 
