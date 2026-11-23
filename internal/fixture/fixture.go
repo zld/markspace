@@ -132,15 +132,19 @@ type Manifest struct {
 
 // SegmentInfo is one generated segment's identity and digest.
 type SegmentInfo struct {
-	ID         string `json:"id"`
-	URI        string `json:"uri"`
-	Init       string `json:"init"`
-	Capture    string `json:"capture"`
-	Start      int64  `json:"start"`
-	Duration   int64  `json:"duration"`
-	Size       int64  `json:"size"`
-	SHA256     string `json:"sha256"`
-	CaptureSHA string `json:"capture_sha256"`
+	ID       string `json:"id"`
+	URI      string `json:"uri"`
+	Init     string `json:"init"`
+	Capture  string `json:"capture"`
+	Start    int64  `json:"start"`
+	Duration int64  `json:"duration"`
+	Size     int64  `json:"size"`
+	SHA256   string `json:"sha256"`
+	// DeclaredSHA256 is the digest the archive catalog recorded for this
+	// segment when it was first written. It is never updated by fault
+	// injection, so a later content change is detectable.
+	DeclaredSHA256 string `json:"declared_sha256"`
+	CaptureSHA     string `json:"capture_sha256"`
 }
 
 // Result reports what was written.

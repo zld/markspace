@@ -16,6 +16,10 @@ func testKey(id string) scheduler.Key {
 	return scheduler.Key{NodeID: id, InputDigest: "in-" + id, ParamsDigest: "p"}
 }
 
+func okResult(art scheduler.Artifact) scheduler.NodeResult {
+	return scheduler.NodeResult{Status: scheduler.StatusOK, Attempts: 1, Artifact: art}
+}
+
 func TestLoadMissingIsEmpty(t *testing.T) {
 	s := New(t.TempDir())
 	st, err := s.Load()
@@ -31,8 +35,8 @@ func TestSaveLoadRoundTripIsDeterministic(t *testing.T) {
 	dir := t.TempDir()
 	s := New(dir)
 	fixed := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
-	entries := Add(nil, testKey("b"), scheduler.Artifact{Digest: "db", Size: 20}, fixed)
-	entries = Add(entries, testKey("a"), scheduler.Artifact{Digest: "da", Size: 10}, fixed)
+	entries := Add(nil, testKey("b"), okResult(scheduler.Artifact{Digest: "db", Size: 20}), fixed)
+	entries = Add(entries, testKey("a"), okResult(scheduler.Artifact{Digest: "da", Size: 10}), fixed)
 	if err := s.Save(entries); err != nil {
 		t.Fatal(err)
 	}
@@ -64,17 +68,17 @@ func TestSaveLoadRoundTripIsDeterministic(t *testing.T) {
 }
 
 func TestCompletedMapFeedsScheduler(t *testing.T) {
-	entries := Add(nil, testKey("a"), scheduler.Artifact{Digest: "da", Size: 1}, time.Now())
+	entries := Add(nil, testKey("a"), okResult(scheduler.Artifact{Digest: "da", Size: 1}), time.Now())
 	m := Completed(entries)
-	if m[testKey("a").Digest()].Digest != "da" {
+	if m[testKey("a").Digest()].Artifact.Digest != "da" {
 		t.Fatalf("completed %+v", m)
 	}
 }
 
 func TestAddReplacesSameKey(t *testing.T) {
 	k := testKey("a")
-	entries := Add(nil, k, scheduler.Artifact{Digest: "v1", Size: 1}, time.Now())
-	entries = Add(entries, k, scheduler.Artifact{Digest: "v2", Size: 2}, time.Now())
+	entries := Add(nil, k, okResult(scheduler.Artifact{Digest: "v1", Size: 1}), time.Now())
+	entries = Add(entries, k, okResult(scheduler.Artifact{Digest: "v2", Size: 2}), time.Now())
 	if len(entries) != 1 || entries[0].Artifact.Digest != "v2" {
 		t.Fatalf("entries %+v", entries)
 	}
@@ -115,7 +119,7 @@ func TestCorruptCheckpointIsDetected(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()
 			s := New(dir)
-			entries := Add(nil, testKey("a"), scheduler.Artifact{Digest: "da", Size: 1}, time.Now())
+			entries := Add(nil, testKey("a"), okResult(scheduler.Artifact{Digest: "da", Size: 1}), time.Now())
 			if err := s.Save(entries); err != nil {
 				t.Fatal(err)
 			}
@@ -152,8 +156,8 @@ func TestResumeOnlyRerunsUnconfirmedNodes(t *testing.T) {
 	dir := t.TempDir()
 	s := New(dir)
 	// Simulate an interrupted run: two nodes confirmed, a third never saved.
-	entries := Add(nil, testKey("probe"), scheduler.Artifact{Digest: "dp", Size: 1}, time.Now())
-	entries = Add(entries, testKey("inspect-1"), scheduler.Artifact{Digest: "d1", Size: 2}, time.Now())
+	entries := Add(nil, testKey("probe"), okResult(scheduler.Artifact{Digest: "dp", Size: 1}), time.Now())
+	entries = Add(entries, testKey("inspect-1"), okResult(scheduler.Artifact{Digest: "d1", Size: 2}), time.Now())
 	if err := s.Save(entries); err != nil {
 		t.Fatal(err)
 	}
@@ -182,7 +186,7 @@ func TestAtomicWriteLeavesNoTempFiles(t *testing.T) {
 	dir := t.TempDir()
 	s := New(dir)
 	for i := 0; i < 5; i++ {
-		entries := Add(nil, testKey("a"), scheduler.Artifact{Digest: "d", Size: int64(i)}, time.Now())
+		entries := Add(nil, testKey("a"), okResult(scheduler.Artifact{Digest: "d", Size: int64(i)}), time.Now())
 		if err := s.Save(entries); err != nil {
 			t.Fatal(err)
 		}
@@ -198,5 +202,36 @@ func TestAtomicWriteLeavesNoTempFiles(t *testing.T) {
 		if filepath.Ext(de.Name()) == ".tmp" {
 			t.Fatalf("leftover temp file %s", de.Name())
 		}
+	}
+}
+
+func TestRunRecordRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	s := New(dir)
+	run := &RunRecord{Seed: 42, Fault: "burst-loss", Manifest: "manifest.mpd", Timebase: 90000}
+	entries := Add(nil, testKey("a"), okResult(scheduler.Artifact{Digest: "da", Size: 1}), time.Now())
+	if err := s.SaveRun(run, entries); err != nil {
+		t.Fatal(err)
+	}
+	st, err := s.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Run == nil || *st.Run != *run {
+		t.Fatalf("run record %+v", st.Run)
+	}
+	// Tampering with the run record invalidates the checkpoint digest.
+	raw, _ := os.ReadFile(s.Path())
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	doc["run"].(map[string]any)["fault"] = "none"
+	out, _ := json.Marshal(doc)
+	if err := os.WriteFile(s.Path(), out, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Load(); err == nil {
+		t.Fatal("tampered run record must be rejected")
 	}
 }

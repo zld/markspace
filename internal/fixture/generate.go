@@ -1,7 +1,6 @@
 package fixture
 
 import (
-	"encoding/hex"
 	"fmt"
 	"os"
 	"path"
@@ -100,15 +99,16 @@ func generateRep(cfg Config, m *Manifest, rep RepConfig) error {
 		}
 		m.Files[capRel] = capSum
 		infos = append(infos, SegmentInfo{
-			ID:         fmt.Sprintf("%d", seg+1),
-			URI:        uri,
-			Init:       initRel,
-			Capture:    capRel,
-			Start:      int64(seg) * DefaultSegmentTicks,
-			Duration:   DefaultSegmentTicks,
-			Size:       int64(len(data)),
-			SHA256:     sum,
-			CaptureSHA: capSum,
+			ID:             fmt.Sprintf("%d", seg+1),
+			URI:            uri,
+			Init:           initRel,
+			Capture:        capRel,
+			Start:          int64(seg) * DefaultSegmentTicks,
+			Duration:       DefaultSegmentTicks,
+			Size:           int64(len(data)),
+			SHA256:         sum,
+			DeclaredSHA256: sum,
+			CaptureSHA:     capSum,
 		})
 	}
 	m.SegmentsByRep[rep.ID] = infos
@@ -232,7 +232,27 @@ func writeManifestFiles(cfg Config, m *Manifest) error {
 		return err
 	}
 	m.Files[m.DashFile] = sum
-	if cfg.Fault == FaultInexactTimebase || cfg.Fault == FaultManifestBoundary {
+	if cfg.Fault == FaultInexactTimebase {
+		// Only an HLS playlist is written: the pipeline selects the HLS
+		// manifest by default for this fault so the inexact duration is what
+		// the run actually parses.
+		mpd := "#EXTM3U\n#EXT-X-TARGETDURATION:1\n#EXT-X-MEDIA-SEQUENCE:1\n" +
+			"#EXTINF:0.033333333,\nseg/0.m4s\n#EXT-X-ENDLIST\n"
+		sum, err := writeFile(cfg.Root, m.HLSFile, []byte(mpd))
+		if err != nil {
+			return err
+		}
+		m.Files[m.HLSFile] = sum
+		return nil
+	}
+	if cfg.Fault == FaultManifestBoundary {
+		mpd := "#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXT-X-MEDIA-SEQUENCE:1\n" +
+			"#EXTINF:4.000,\n#EXT-X-BYTERANGE:1000\nseg/0.m4s\n#EXT-X-ENDLIST\n"
+		sum, err := writeFile(cfg.Root, m.HLSFile, []byte(mpd))
+		if err != nil {
+			return err
+		}
+		m.Files[m.HLSFile] = sum
 		return nil
 	}
 	hls := renderHLS(cfg, m)
@@ -296,11 +316,4 @@ func isoDuration(ticks, base int64) string {
 		n %= base
 	}
 	return fmt.Sprintf("PT%d.%sS", whole, strings.TrimRight(string(digits), "0"))
-}
-
-func decodeHex(s string) ([]byte, error) {
-	if s == "" {
-		return nil, nil
-	}
-	return hex.DecodeString(s)
 }

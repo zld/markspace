@@ -218,11 +218,17 @@ type Runner struct {
 	// Concurrency bounds parallel node execution. Zero runs at the number of
 	// ready nodes; use it for deterministic tests.
 	Concurrency int
-	// Completed maps idempotency-key digests to artifacts from previous runs.
-	Completed map[string]Artifact
+	// Completed maps idempotency-key digests to terminal results from previous
+	// runs. A failed or blocked node is replayed as-is: analysis that already
+	// concluded is not repeated, and a damaged archive resumes to the same
+	// report.
+	Completed map[string]NodeResult
 	// OnComplete is called once per node that actually executed (not cached)
 	// so the caller can persist it atomically.
 	OnComplete func(key Key, art Artifact) error
+	// OnTerminal is called for every node after its final state is known,
+	// including cached and failed nodes, so a caller can persist the outcome.
+	OnTerminal func(res NodeResult) error
 }
 
 // Run executes the graph. Independent nodes may run concurrently up to
@@ -262,10 +268,7 @@ func (r *Runner) Run(ctx context.Context, g *Graph) (*Report, error) {
 			running++
 			go func(id string, blockedBy string) {
 				if blockedBy != "" {
-					done <- completion{id, &NodeResult{
-						ID: id, Status: StatusBlocked, FaultCode: model.CodeDependencyBlocked,
-						Error: "blocked by " + blockedBy,
-					}}
+					done <- completion{id, r.blockedNode(g.nodes[id], blockedBy)}
 					return
 				}
 				done <- completion{id, r.runNode(ctx, g.nodes[id])}
@@ -355,13 +358,15 @@ func (r *Runner) runNode(ctx context.Context, n *Node) *NodeResult {
 	key := Key{NodeID: n.ID, InputDigest: n.InputDigest, ParamsDigest: n.ParamsDigest}
 	res := &NodeResult{ID: n.ID, Key: key.Digest()}
 	if r.Completed != nil {
-		if art, ok := r.Completed[key.Digest()]; ok {
-			// Same key already succeeded: reuse the recorded artifact instead
-			// of producing it again.
-			res.Status = StatusOK
-			res.Cached = true
-			res.Artifact = art
-			return res
+		if prev, ok := r.Completed[key.Digest()]; ok {
+			// Same key already reached a terminal state: replay it instead of
+			// doing the work again.
+			prev.ID = n.ID
+			prev.Key = key.Digest()
+			prev.Cached = true
+			prev.Attempts = 0
+			r.terminal(&prev)
+			return &prev
 		}
 	}
 	attempts := n.MaxAttempts
@@ -384,12 +389,20 @@ func (r *Runner) runNode(ctx context.Context, n *Node) *NodeResult {
 					res.Status = StatusFailed
 					res.Error = perr.Error()
 					res.FaultCode = codeOf(perr)
+					r.terminal(res)
 					return res
 				}
 			}
+			r.terminal(res)
 			return res
 		}
 		lastErr = err
+		// Keep the artifact a failing node produced: it carries the analysed
+		// payload (damage ranges, fault location) that a resume replays, even
+		// though the node's own status is failed.
+		if art.Detail != "" || art.Digest != "" {
+			res.Artifact = art
+		}
 		var f *model.Fault
 		if errors.As(err, &f) && f.Severity == model.SeverityError && !retryable(f.Code) {
 			break
@@ -398,7 +411,33 @@ func (r *Runner) runNode(ctx context.Context, n *Node) *NodeResult {
 	res.Status = StatusFailed
 	res.Error = lastErr.Error()
 	res.FaultCode = codeOf(lastErr)
+	r.terminal(res)
 	return res
+}
+
+// blockedNode records a node skipped because a dependency did not succeed. Its
+// key can still be checkpointed when a previous run recorded the same block.
+func (r *Runner) blockedNode(n *Node, dep string) *NodeResult {
+	key := Key{NodeID: n.ID, InputDigest: n.InputDigest, ParamsDigest: n.ParamsDigest}
+	res := &NodeResult{
+		ID: n.ID, Status: StatusBlocked, FaultCode: model.CodeDependencyBlocked,
+		Error: "blocked by " + dep, Key: key.Digest(),
+	}
+	if r.Completed != nil {
+		if prev, ok := r.Completed[res.Key]; ok && prev.Status == StatusBlocked {
+			res.Cached = true
+		}
+	}
+	r.terminal(res)
+	return res
+}
+
+// terminal notifies OnTerminal, ignoring hook errors so a persistence problem
+// surfaces through the checkpoint layer rather than silently changing status.
+func (r *Runner) terminal(res *NodeResult) {
+	if r.OnTerminal != nil {
+		_ = r.OnTerminal(*res)
+	}
 }
 
 // retryable reports whether a fault code may be transient. Structural input

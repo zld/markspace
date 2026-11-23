@@ -79,6 +79,18 @@ type Result struct {
 	LastExtended  uint64 `json:"last_extended"`
 }
 
+// Expected describes the sequence range the sender should have delivered for
+// the stream. Supplying it lets the reorderer detect loss at the head and tail
+// of a capture, which otherwise looks like a clean start and end.
+type Expected struct {
+	// FirstSeq and LastSeq are inclusive extended sequence numbers.
+	FirstSeq uint64
+	LastSeq  uint64
+	// FirstTimestamp and LastTimestamp are the corresponding RTP timestamps.
+	FirstTimestamp uint32
+	LastTimestamp  uint32
+}
+
 // Options tunes the reorder window.
 type Options struct {
 	// Window is how far ahead of the emission cursor the reorderer waits
@@ -87,6 +99,9 @@ type Options struct {
 	// MaxPackets bounds distinct buffered sequence numbers, enforcing the
 	// bounded-memory contract. Zero uses DefaultMaxBuffered.
 	MaxPackets int
+	// Expected, when non-nil, declares the sender's full sequence range so
+	// head and tail loss become gap events.
+	Expected *Expected
 }
 
 // DefaultWindow is the reorder window in packets.
@@ -217,10 +232,58 @@ func (r *Reorder) Push(p Packet) error {
 	return r.drain(false)
 }
 
-// Close flushes the buffer and declares any trailing gap.
+// Close flushes the buffer, declares any trailing gap, and accounts for
+// expected packets that never arrived at either edge of the stream.
 func (r *Reorder) Close() *Result {
 	_ = r.drain(true)
+	r.edgeGaps()
 	return r.Result()
+}
+
+// edgeGaps reports head and tail loss against the declared expected range.
+func (r *Reorder) edgeGaps() {
+	exp := r.opts.Expected
+	if exp == nil || exp.LastSeq < exp.FirstSeq {
+		return
+	}
+	if len(r.out) == 0 {
+		g := Gap{
+			After:          exp.LastSeq + 1,
+			Count:          exp.LastSeq - exp.FirstSeq + 1,
+			FirstTimestamp: exp.FirstTimestamp,
+			LastTimestamp:  exp.LastTimestamp,
+			DetectedAt:     r.arrival,
+		}
+		if exp.FirstSeq > 0 {
+			g.Before = exp.FirstSeq - 1
+		}
+		r.gaps = append(r.gaps, g)
+		return
+	}
+	first, last := r.out[0], r.out[len(r.out)-1]
+	if first.Extended > exp.FirstSeq {
+		g := Gap{
+			Before:         first.Extended - 1,
+			After:          first.Extended,
+			Count:          first.Extended - exp.FirstSeq,
+			FirstTimestamp: exp.FirstTimestamp,
+			LastTimestamp:  first.Timestamp,
+			DetectedAt:     r.arrival,
+		}
+		r.gaps = append(r.gaps, g)
+	}
+	if last.Extended < exp.LastSeq {
+		g := Gap{
+			Before:         last.Extended,
+			After:          last.Extended + 1,
+			Count:          exp.LastSeq - last.Extended,
+			FirstTimestamp: last.Timestamp,
+			LastTimestamp:  exp.LastTimestamp,
+			DetectedAt:     r.arrival,
+		}
+		r.gaps = append(r.gaps, g)
+	}
+	sort.SliceStable(r.gaps, func(i, j int) bool { return r.gaps[i].Before < r.gaps[j].Before })
 }
 
 // drain emits contiguous packets and declares a gap only once the reorder

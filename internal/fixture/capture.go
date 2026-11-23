@@ -1,6 +1,7 @@
 package fixture
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"math/rand"
@@ -28,11 +29,10 @@ type captureWire struct {
 	Packets         []packetWire `json:"packets"`
 }
 
+// packetWire stores each packet as base64-encoded RTP wire bytes so the
+// pipeline exercises the real pion/rtp decoder rather than a bespoke format.
 type packetWire struct {
-	Sequence  uint16 `json:"seq"`
-	Timestamp uint32 `json:"ts"`
-	Marker    bool   `json:"marker"`
-	Payload   string `json:"payload_hex"`
+	RTP string `json:"rtp"`
 }
 
 // makePackets builds the in-order RTP stream for a run of frames.
@@ -86,17 +86,22 @@ func duplicateReorder(pkts []transport.Packet, rng *rand.Rand) []transport.Packe
 	return out
 }
 
-// dropBurst removes a contiguous run that crosses the end of segment 3 and the
-// start of segment 4, so damaged ranges must merge across the boundary.
+// dropBurst removes contiguous runs near the end of segment 3 and the start of
+// segment 4. The first run ends just before the last frame of segment 3 and the
+// second begins at frame 0 of segment 4, so the two damaged ranges are within
+// one target frame of each other and must merge across the segment boundary.
 func dropBurst(pkts []transport.Packet, segIndex int) []transport.Packet {
 	if len(pkts) < 20 {
 		return pkts
 	}
 	var from, to int
-	if segIndex == 3 {
-		from, to = len(pkts)-6, len(pkts)
-	} else {
-		from, to = 0, 6
+	switch segIndex {
+	case 3:
+		from, to = len(pkts)-8, len(pkts)-1 // keep the last frame so the gap is interior
+	case 4:
+		from, to = 1, 9 // keep the first frame so the gap is interior
+	default:
+		return pkts
 	}
 	out := make([]transport.Packet, 0, len(pkts))
 	out = append(out, pkts[:from]...)
@@ -111,10 +116,11 @@ func writeCapture(root, rel string, c *Capture) (string, error) {
 		RTPTimebase: c.RTPTimebase, AnchorTimestamp: c.AnchorTimestamp,
 	}
 	for _, p := range c.Packets {
-		w.Packets = append(w.Packets, packetWire{
-			Sequence: p.Sequence, Timestamp: p.Timestamp, Marker: p.Marker,
-			Payload: fmt.Sprintf("%x", p.Payload),
-		})
+		raw, err := transport.MarshalRTP(p, transport.RTPSSRC)
+		if err != nil {
+			return "", err
+		}
+		w.Packets = append(w.Packets, packetWire{RTP: base64.StdEncoding.EncodeToString(raw)})
 	}
 	return writeJSON(root, rel, w)
 }
@@ -129,14 +135,18 @@ func DecodeCapture(raw []byte) (*Capture, error) {
 		Segment: w.Segment, Representation: w.Representation,
 		RTPTimebase: w.RTPTimebase, AnchorTimestamp: w.AnchorTimestamp,
 	}
-	for _, p := range w.Packets {
-		payload, err := decodeHex(p.Payload)
+	for i, p := range w.Packets {
+		raw, err := base64.StdEncoding.DecodeString(p.RTP)
 		if err != nil {
-			return nil, fmt.Errorf("capture packet %d payload: %w", p.Sequence, err)
+			return nil, fmt.Errorf("capture packet %d: %w", i, err)
 		}
-		c.Packets = append(c.Packets, transport.Packet{
-			Sequence: p.Sequence, Timestamp: p.Timestamp, Marker: p.Marker, Payload: payload,
+		pkt, fault := transport.ParseRTP(raw, transport.Source{
+			Segment: w.Segment, Representation: w.Representation,
 		})
+		if fault != nil {
+			return nil, fmt.Errorf("capture packet %d: %w", i, fault)
+		}
+		c.Packets = append(c.Packets, pkt)
 	}
 	return c, nil
 }

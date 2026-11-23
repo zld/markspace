@@ -228,7 +228,7 @@ func TestCompletedKeysAreReusedNotReexecuted(t *testing.T) {
 		t.Fatalf("first run executed=%d cached=%v", runCount, first.Nodes[0].Cached)
 	}
 	// Second run with the completed key recorded: no execution.
-	completed := map[string]Artifact{first.Nodes[0].Key: first.Nodes[0].Artifact}
+	completed := map[string]NodeResult{first.Nodes[0].Key: first.Nodes[0]}
 	second, _ := (&Runner{Completed: completed}).Run(context.Background(), g)
 	if runCount != 1 {
 		t.Fatalf("cached run re-executed: %d", runCount)
@@ -247,7 +247,7 @@ func TestChangedInputDoesNotReuseCompleted(t *testing.T) {
 	base := Node{ID: "probe", InputDigest: "in-1", ParamsDigest: "p", Run: run}
 	g, _ := NewGraph([]Node{base})
 	first, _ := (&Runner{}).Run(context.Background(), g)
-	completed := map[string]Artifact{first.Nodes[0].Key: first.Nodes[0].Artifact}
+	completed := map[string]NodeResult{first.Nodes[0].Key: first.Nodes[0]}
 
 	base.InputDigest = "in-2"
 	g2, _ := NewGraph([]Node{base})
