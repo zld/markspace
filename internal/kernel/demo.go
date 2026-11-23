@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"mediad/internal/fixture"
+	"mediad/internal/mp4index"
 	"mediad/internal/provenance"
 	"mediad/internal/rtpcheck"
 	"mediad/internal/segment"
@@ -27,6 +28,8 @@ type Result struct {
 	ManifestPath          string
 	ProvenancePath        string
 	InputPath             string
+	// InitSegments maps representation ID to the written ISO-BMFF init file.
+	InitSegments map[string]string
 }
 
 // Metrics are the acceptance numbers.
@@ -77,6 +80,13 @@ func Demo(cfg Config) (*Result, error) {
 		return nil, err
 	}
 	primary := reps[0].ID
+	// Emit one init segment per rendition with go-mp4 and re-parse it to prove
+	// the time base matches the manifest's cut grid. This is the MP4 manifest
+	// helper the task calls for; no media is re-encoded.
+	initSegments, err := buildInitSegments(work, reps, cfg)
+	if err != nil {
+		return nil, err
+	}
 	manifestJSON, err := segment.MarshalCanonical(plan.Manifests[primary])
 	if err != nil {
 		return nil, internalErr("manifest", err)
@@ -123,6 +133,7 @@ func Demo(cfg Config) (*Result, error) {
 		ManifestPath:          manifestPath,
 		ProvenancePath:        provPath,
 		InputPath:             inputPath,
+		InitSegments:          initSegments,
 	}
 	if !cfg.Verify {
 		res.ProvenanceVerified = false
@@ -139,6 +150,36 @@ func Demo(cfg Config) (*Result, error) {
 	}
 	res.OK = acceptanceMet(res, cfg.Verify)
 	return res, nil
+}
+
+// buildInitSegments writes an ISO-BMFF init segment per rendition and verifies
+// with go-mp4 that each describes the expected millisecond time base.
+func buildInitSegments(work string, reps []*Representation, cfg Config) (map[string]string, error) {
+	out := make(map[string]string, len(reps))
+	durationMS := uint64(reps[0].Duration / 1_000_000)
+	for i, r := range reps {
+		tracks := []mp4index.TrackInfo{
+			{TrackID: 1, Timescale: 90000, DurationMS: durationMS, Handler: "vide", Width: 640, Height: 360, Codec: "V_VP9"},
+			{TrackID: 2, Timescale: 48000, DurationMS: durationMS, Handler: "soun", Codec: "A_OPUS"},
+		}
+		data, err := mp4index.BuildInitSegment(tracks)
+		if err != nil {
+			return nil, internalErr("mp4index", err)
+		}
+		movieScale, trackScales, err := mp4index.ParseInitSegment(data)
+		if err != nil {
+			return nil, internalErr("mp4index", err)
+		}
+		if movieScale != 1000 || trackScales[90000] != 1 || trackScales[48000] != 1 {
+			return nil, internalErr("mp4index", fmt.Errorf("rendition %s time base %d %v", r.ID, movieScale, trackScales))
+		}
+		path := filepath.Join(work, fmt.Sprintf("init-%d.mp4", i))
+		if err := os.WriteFile(path, data, 0o644); err != nil {
+			return nil, internalErr("write", err)
+		}
+		out[r.ID] = path
+	}
+	return out, nil
 }
 
 func ensureWorkDir(dir string) (string, error) {
