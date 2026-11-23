@@ -14,8 +14,8 @@ type RTPSpec struct {
 	Packets     int
 	StartSeq    uint16
 	StartTS     uint32
-	TSIncrement uint32 // timestamp delta per packet (before wrap effects)
-	ID3Every    int    // >0: every nth packet carries an ID3 payload
+	TSIncrement uint32   // timestamp delta per packet (before wrap effects)
+	ID3Every    int      // >0: every nth packet carries an ID3 payload
 	LossSeq     []uint16 // sequence numbers to omit (packet loss injection)
 	Shuffle     bool     // swap one adjacent pair (reordering injection)
 	// SharedID3, when non-nil, is used verbatim as every ID3 payload so a
@@ -27,9 +27,9 @@ type RTPSpec struct {
 
 // RTPInput is a generated capture with ground truth.
 type RTPInput struct {
-	Bytes       []byte
-	WrittenSeq  []uint16
-	ID3Indices  []int
+	Bytes      []byte
+	WrittenSeq []uint16
+	ID3Indices []int
 }
 
 // GenerateRTP builds a deterministic RTP capture stream.

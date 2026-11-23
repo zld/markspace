@@ -11,22 +11,22 @@ import (
 
 // MP4TrackSpec describes one generated MP4 track.
 type MP4TrackSpec struct {
-	TrackID    uint32
-	Timescale  uint32
-	Samples    int
-	Delta      uint32 // per-sample duration in track timescale
-	KeyEvery   int    // >0: every nth sample is a sync sample
+	TrackID     uint32
+	Timescale   uint32
+	Samples     int
+	Delta       uint32 // per-sample duration in track timescale
+	KeyEvery    int    // >0: every nth sample is a sync sample
 	PayloadBase byte
 }
 
 // MP4Input is a generated MP4 byte stream plus the ground truth used by
 // tests to validate the parser.
 type MP4Input struct {
-	Bytes        []byte
-	Tracks       []MP4TrackSpec
-	EmsgCount    int
+	Bytes     []byte
+	Tracks    []MP4TrackSpec
+	EmsgCount int
 	// EmsgMessage overrides the emsg message payload; empty means default.
-	EmsgMessage  string
+	EmsgMessage string
 	// SampleOffset[i] is the mdat payload offset of sample i in track order.
 	SampleOffset map[uint32][]int64
 }

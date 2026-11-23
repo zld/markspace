@@ -64,14 +64,14 @@ func ParseMP4(r io.ReadSeeker, sourceID string, sink MP4Sink) error {
 }
 
 type mp4Parser struct {
-	r            io.ReadSeeker
-	sourceID     string
-	sink         MP4Sink
-	tracks       map[uint32]*stblContext
-	curTrack     uint32
-	seq          int
-	emsgTrack    bool
-	emsgScale    uint32
+	r         io.ReadSeeker
+	sourceID  string
+	sink      MP4Sink
+	tracks    map[uint32]*stblContext
+	curTrack  uint32
+	seq       int
+	emsgTrack bool
+	emsgScale uint32
 }
 
 func (p *mp4Parser) handle(h *mp4.ReadHandle) (interface{}, error) {

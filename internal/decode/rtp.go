@@ -152,7 +152,7 @@ func (p *RTPParser) handlePacket(frame []byte, offset int64, sink RTPSink) error
 		RTPSeq: pkt.SequenceNumber, RawTS: int64(pkt.Timestamp), ExtendedTS: ext,
 		// The marker bit conventionally flags frame boundaries; generated
 		// fixtures set it on every packet so RTP tracks stay seekable.
-		Keyframe: pkt.Marker && kind == timeline.KindSample,
+		Keyframe:   pkt.Marker && kind == timeline.KindSample,
 		RawPayload: payload, ContentHash: hashBytes(payload),
 		Offset: timeline.OffsetRange{Begin: offset, End: offset + int64(len(frame))},
 	})
