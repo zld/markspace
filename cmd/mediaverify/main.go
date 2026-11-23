@@ -142,6 +142,8 @@ func parseFlags(flags []string) (pipeline.Config, error) {
 				return cfg, err
 			}
 			cfg.OutPath = v
+		case "--strict-checksum":
+			cfg.StrictChecksum = true
 		default:
 			return cfg, fmt.Errorf("unknown flag %q", f)
 		}

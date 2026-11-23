@@ -27,6 +27,8 @@ type Config struct {
 	Fault      string
 	FrameRate  clock.FrameRate
 	OutPath    string
+	// StrictChecksum fails the run (exit 2) on any payload checksum error.
+	StrictChecksum bool
 }
 
 // Result is everything the command adapter prints and writes.
@@ -64,6 +66,9 @@ func Run(cfg Config) (Result, error) {
 	ingest, err := ingestRTP(cfg, stream)
 	if err != nil {
 		return Result{}, err
+	}
+	if cfg.StrictChecksum && ingest.checksumErr != nil {
+		return Result{}, ingest.checksumErr
 	}
 	cues, err := parseSubtitles(stream, cfg.Fault)
 	if err != nil {

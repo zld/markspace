@@ -17,6 +17,7 @@ type ingestState struct {
 	reordered   int
 	lost        int
 	checksumBad int
+	checksumErr error // first classified KindChecksum failure (for strict mode)
 	firstTS     uint32
 	haveFirst   bool
 	frameRate   clock.FrameRate
@@ -41,8 +42,11 @@ func ingestRTP(cfg Config, stream *fixture.Stream) (*ingestState, error) {
 		if err != nil {
 			return nil, err
 		}
-		if _, _, ok := fixture.ChecksumCRC(pkt.Payload); !ok {
+		if cerr := rtp.VerifyChecksum(pkt); cerr != nil {
 			st.checksumBad++
+			if st.checksumErr == nil {
+				st.checksumErr = cerr
+			}
 		}
 		if !st.haveFirst {
 			st.haveFirst = true
@@ -81,8 +85,11 @@ func (s *ingestState) ingestWithLateEvent(cfg Config, stream *fixture.Stream, fr
 		if err != nil {
 			return nil, err
 		}
-		if _, _, ok := fixture.ChecksumCRC(pkt.Payload); !ok {
+		if cerr := rtp.VerifyChecksum(pkt); cerr != nil {
 			s.checksumBad++
+			if s.checksumErr == nil {
+				s.checksumErr = cerr
+			}
 		}
 		if !s.haveFirst {
 			s.haveFirst = true
