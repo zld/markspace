@@ -1,0 +1,8 @@
+# build and test artifacts
+/bin/
+/dist/
+*.test
+*.out
+/media-check
+/tmp/
+.DS_Store
