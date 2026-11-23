@@ -2,11 +2,14 @@ package mp4
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"io"
 	"testing"
 
 	"mediatool/internal/timeline"
 )
+
+func sha256Of(b []byte) [32]byte { return sha256.Sum256(b) }
 
 func box(typ string, payload []byte) []byte {
 	var b bytes.Buffer
