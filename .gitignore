@@ -1,0 +1,6 @@
+# Go build and test artifacts
+/bin/
+/dist/
+*.test
+*.out
+coverage.txt
