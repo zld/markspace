@@ -27,14 +27,14 @@ var Stages = []string{StageParse, StageTransform, StageValidate, StageCommit}
 
 // Checkpoint is one durable stage marker.
 type Checkpoint struct {
-	RunID        string `json:"run_id"`
-	Stage        string `json:"stage"`
-	StageIndex   int    `json:"stage_index"`
-	InputSHA256  string `json:"input_sha256"`
-	ConfigHash   string `json:"config_hash"`
-	PrevHash     string `json:"prev_hash"` // hash chain: prior checkpoint hash
-	PayloadPath  string `json:"payload_path"` // stage output artifact (if any)
-	BodyHash     string `json:"body_hash"`
+	RunID       string `json:"run_id"`
+	Stage       string `json:"stage"`
+	StageIndex  int    `json:"stage_index"`
+	InputSHA256 string `json:"input_sha256"`
+	ConfigHash  string `json:"config_hash"`
+	PrevHash    string `json:"prev_hash"`    // hash chain: prior checkpoint hash
+	PayloadPath string `json:"payload_path"` // stage output artifact (if any)
+	BodyHash    string `json:"body_hash"`
 }
 
 // CheckpointStore is the storage interface used by the pipeline; the real
@@ -114,8 +114,8 @@ func (s *Store) Read(stage string) (*Checkpoint, error) {
 
 // Sentinel errors.
 var (
-	ErrCheckpointMissing = errors.New("journal: checkpoint missing")
-	ErrCheckpointCorrupt = errors.New("journal: checkpoint corrupt")
+	ErrCheckpointMissing   = errors.New("journal: checkpoint missing")
+	ErrCheckpointCorrupt   = errors.New("journal: checkpoint corrupt")
 	ErrFingerprintMismatch = errors.New("journal: input fingerprint mismatch")
 	ErrConfigMismatch      = errors.New("journal: config hash mismatch")
 )

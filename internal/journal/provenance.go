@@ -15,15 +15,15 @@ import (
 // ranges and repair rules that produced it, enabling segment-by-segment
 // re-verification after a node restart.
 type ProvenanceRecord struct {
-	SegmentID     int      `json:"segment_id"`
-	SegmentSHA256 string   `json:"segment_sha256"`
-	SourceID      string   `json:"source_id"`
-	InputSHA256   string   `json:"input_sha256"`
-	InputOffsets  []int64  `json:"input_offsets"` // Begin offsets of source events
+	SegmentID     int        `json:"segment_id"`
+	SegmentSHA256 string     `json:"segment_sha256"`
+	SourceID      string     `json:"source_id"`
+	InputSHA256   string     `json:"input_sha256"`
+	InputOffsets  []int64    `json:"input_offsets"` // Begin offsets of source events
 	OffsetRanges  [][2]int64 `json:"offset_ranges"`
-	RuleIDs       []string `json:"rule_ids"`
-	EventSeqs     []int    `json:"event_seqs"`
-	IndexVersion  int      `json:"index_version"`
+	RuleIDs       []string   `json:"rule_ids"`
+	EventSeqs     []int      `json:"event_seqs"`
+	IndexVersion  int        `json:"index_version"`
 }
 
 // ProvenanceLog is the append-only mapping for one pipeline run.
