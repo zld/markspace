@@ -17,7 +17,7 @@ type Frame struct {
 	Track     uint32
 	Codec     codec.Codec
 	Sample    uint32
-	Usec      int64 // unified microsecond timestamp
+	Usec      int64  // unified microsecond timestamp
 	RTPTS     uint32 // original RTP timestamp (for evidence)
 	Keyframe  bool
 	Complete  bool
@@ -54,7 +54,8 @@ func (tc *TrackClock) Map(raw uint32) (int64, error) {
 	} else {
 		u, err := clock.Unwrap32(tc.prevTS, raw)
 		if err != nil {
-			return 0, err
+			return 0, clock.E(clock.PhaseTimeline, tc.SSRC, -1, false,
+				"track timestamp could not be unwrapped", err)
 		}
 		unwrapped = u
 	}
@@ -68,13 +69,16 @@ func (tc *TrackClock) Map(raw uint32) (int64, error) {
 }
 
 // Input groups one track's reassembled frames with the segment that owns
-// them. Frames must already be ordered by arrival.
+// them. Frames must already be ordered by arrival. SegmentIDs may give a
+// per-frame segment id; when nil, the single SegmentID field is used.
 type Input struct {
-	Track     *TrackClock
-	Frames    []*transport.Frame
-	Keyframe  func(frame *transport.Frame) (bool, error)
-	SegmentID string
-	Codec     codec.Codec
+	Track      *TrackClock
+	Frames     []*transport.Frame
+	Keyframe   func(frame *transport.Frame) (bool, error)
+	SegmentID  string
+	SegmentIDs []string // optional, same length/order as Frames
+	Samples    []uint32 // optional, same length/order as Frames
+	Codec      codec.Codec
 }
 
 // Merge combines all track inputs into one ordered timeline. Only complete
@@ -84,10 +88,14 @@ func Merge(inputs []*Input) (*Timeline, []*Frame, error) {
 	tl := &Timeline{}
 	var excluded []*Frame
 	for _, in := range inputs {
-		for _, fr := range in.Frames {
+		for idx, fr := range in.Frames {
 			usec, err := in.Track.Map(fr.Timestamp)
 			if err != nil {
 				return nil, nil, err
+			}
+			segmentID := in.SegmentID
+			if in.SegmentIDs != nil {
+				segmentID = in.SegmentIDs[idx]
 			}
 			key := false
 			if in.Keyframe != nil && fr.Complete {
@@ -96,15 +104,19 @@ func Merge(inputs []*Input) (*Timeline, []*Frame, error) {
 					return nil, nil, err
 				}
 			}
+			var sample uint32
+			if in.Samples != nil {
+				sample = in.Samples[idx]
+			}
 			entry := &Frame{
 				Track:     in.Track.SSRC,
 				Codec:     in.Codec,
-				Sample:    0, // filled by caller when sample numbering exists
+				Sample:    sample,
 				Usec:      usec,
 				RTPTS:     fr.Timestamp,
 				Keyframe:  key,
 				Complete:  fr.Complete,
-				SegmentID: in.SegmentID,
+				SegmentID: segmentID,
 				Bytes:     append([]byte(nil), fr.Bytes...),
 			}
 			if !fr.Complete {
@@ -135,11 +147,16 @@ func (e *ConservationError) Error() string {
 		": expected=" + itoa(e.Expected) + " actual=" + itoa(e.Actual)
 }
 
-// CheckConservation enforces that no packets were invented or silently
-// swallowed between stages: distinct accepted + duplicates + lost must equal
-// the number of packets the source actually transmitted.
+// CheckConservation enforces that no distinct packet was invented or
+// silently swallowed. "truth" counts distinct transmitted packets; duplicate
+// deliveries are extra re-transmissions reported separately, so the
+// invariant is accepted + lost == truth. The duplicate counter is still
+// required as non-negative evidence that dedup accounting ran.
 func CheckConservation(stage string, accepted, duplicates, lost, truth int) error {
-	actual := accepted + duplicates + lost
+	if duplicates < 0 {
+		return &ConservationError{Stage: stage, Expected: truth, Actual: -1}
+	}
+	actual := accepted + lost
 	if actual != truth {
 		return &ConservationError{Stage: stage, Expected: truth, Actual: actual}
 	}

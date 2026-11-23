@@ -86,21 +86,21 @@ func Build(frames []*timeline.Frame) (*Manifest, error) {
 	for _, seg := range segOrder {
 		segFrames := bySegment[seg]
 		digest := SegmentDigest{SegmentID: seg, FrameCount: len(segFrames)}
-		h := sha256.New()
 		// Hash in timeline order so the same input always hashes the same.
+		var segRecords []FrameRecord
 		for _, rec := range records {
 			if rec.SegmentID != seg {
 				continue
 			}
 			digest.Frames = append(digest.Frames, rec.FrameSHA)
-			raw, err := canonicalRecord(rec)
-			if err != nil {
-				return nil, clock.E(clock.PhaseExport, 0, -1, false,
-					"manifest record encoding failed", err)
-			}
-			h.Write(raw)
+			segRecords = append(segRecords, rec)
 		}
-		digest.SHA256 = hex.EncodeToString(h.Sum(nil))
+		sum, err := hashSegment(segRecords)
+		if err != nil {
+			return nil, clock.E(clock.PhaseExport, 0, -1, false,
+				"manifest record encoding failed", err)
+		}
+		digest.SHA256 = sum
 		manifest.Segments = append(manifest.Segments, digest)
 	}
 	return manifest, nil
@@ -124,6 +124,42 @@ func (m *Manifest) ContentHash() (string, error) {
 		return "", clock.E(clock.PhaseExport, 0, -1, false, "manifest hash failed", err)
 	}
 	return hashBytes(raw), nil
+}
+
+// hashSegment digests one segment's ordered frame records with the exact
+// rule Build uses. RecomputeSegmentHashes exposes it so a caller can verify
+// published digests without duplicating the rule.
+func hashSegment(records []FrameRecord) (string, error) {
+	h := sha256.New()
+	for _, rec := range records {
+		raw, err := canonicalRecord(rec)
+		if err != nil {
+			return "", err
+		}
+		h.Write(raw)
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// RecomputeSegmentHashes rebuilds every segment digest from the manifest's
+// own records. A caller that has independently re-validated each frame's
+// bytes can compare the result with SegmentDigest.SHA256 to prove the
+// published digest still describes the committed content.
+func (m *Manifest) RecomputeSegmentHashes() (map[string]string, error) {
+	bySegment := map[string][]FrameRecord{}
+	for _, rec := range m.Records {
+		bySegment[rec.SegmentID] = append(bySegment[rec.SegmentID], rec)
+	}
+	out := make(map[string]string, len(bySegment))
+	for seg, recs := range bySegment {
+		h, err := hashSegment(recs)
+		if err != nil {
+			return nil, clock.E(clock.PhaseExport, 0, -1, false,
+				"manifest record encoding failed", err)
+		}
+		out[seg] = h
+	}
+	return out, nil
 }
 
 // SegmentHashes returns segment id -> sha256 in manifest order.
