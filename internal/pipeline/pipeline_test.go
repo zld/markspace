@@ -91,6 +91,20 @@ func TestRunDamagedIsBoundedAndContinues(t *testing.T) {
 	if res.Stats.TruncatedPackets != 2 {
 		t.Fatalf("truncated = %d", res.Stats.TruncatedPackets)
 	}
+	// Every rejected record is locatable by byte offset, and the illegal
+	// version packet still reports its sequence number.
+	if len(res.Stats.BadDetails) != 4 {
+		t.Fatalf("bad details = %+v", res.Stats.BadDetails)
+	}
+	found := false
+	for _, b := range res.Stats.BadDetails {
+		if b.Code == "bad_packet" && b.Seq == 60 && b.Offset > 0 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("missing located bad-version record: %+v", res.Stats.BadDetails)
+	}
 	// The dropped run plus the corrupt packet leave gaps, but later audio is
 	// still present and the alignment must not drift.
 	if res.Stats.OutputSamples != 240000 {

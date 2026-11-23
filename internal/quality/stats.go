@@ -18,6 +18,14 @@ type Range struct {
 	End   int64 `json:"end_sample"`
 }
 
+// BadRecord documents one rejected record so an operator can locate it.
+type BadRecord struct {
+	Offset  int64  `json:"byte_offset"`
+	Seq     uint16 `json:"seq"`
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
 // Stats is the result document emitted by `mediacheck run`.
 type Stats struct {
 	Packets                 int64   `json:"packets"`
@@ -36,15 +44,16 @@ type Stats struct {
 	OutputSHA256            string  `json:"output_sha256"`
 	// Extra diagnostics that are useful to verify but not part of the
 	// required output contract.
-	UniquePackets      int64   `json:"unique_packets"`
-	TruncatedPackets   int64   `json:"truncated_packets"`
-	CorruptPayloads    int64   `json:"corrupt_payloads"`
-	InputBytes         int64   `json:"input_bytes"`
-	OutputBytes        int64   `json:"output_bytes"`
-	OutputSamples      int64   `json:"output_samples"`
-	ManifestSamples    int64   `json:"manifest_samples"`
-	OutputDurationSecs float64 `json:"output_duration_seconds"`
-	IndexComplete      bool    `json:"index_complete"`
+	UniquePackets      int64       `json:"unique_packets"`
+	TruncatedPackets   int64       `json:"truncated_packets"`
+	CorruptPayloads    int64       `json:"corrupt_payloads"`
+	InputBytes         int64       `json:"input_bytes"`
+	OutputBytes        int64       `json:"output_bytes"`
+	OutputSamples      int64       `json:"output_samples"`
+	ManifestSamples    int64       `json:"manifest_samples"`
+	OutputDurationSecs float64     `json:"output_duration_seconds"`
+	IndexComplete      bool        `json:"index_complete"`
+	BadDetails         []BadRecord `json:"bad_details,omitempty"`
 }
 
 // BitrateError computes the signed percentage difference from target.

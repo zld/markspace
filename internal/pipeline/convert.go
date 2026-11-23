@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"encoding/json"
+	"errors"
 	"math"
 	"os"
 	"sort"
@@ -57,21 +58,25 @@ func (c *converter) collect(stats *quality.Stats) {
 		if rec.Kind == packet.KindRTCP {
 			if rec.RTCP == nil {
 				stats.BadPackets++
+				stats.BadDetails = append(stats.BadDetails, badRecord(rec, "bad_rtcp"))
 				continue
 			}
 			if _, err := packet.ParseReports(rec.RTCP, rec.Offset); err != nil {
 				stats.BadPackets++
+				stats.BadDetails = append(stats.BadDetails, badRecord(rec, mediaerr.CodeOf(err)))
 			}
 			continue
 		}
 		if rec.Packet == nil {
 			stats.BadPackets++
-			switch mediaerr.CodeOf(rec.Err) {
+			code := mediaerr.CodeOf(rec.Err)
+			switch code {
 			case mediaerr.CodeTruncated:
 				stats.TruncatedPackets++
 			case mediaerr.CodeCorrupt:
 				stats.CorruptPayloads++
 			}
+			stats.BadDetails = append(stats.BadDetails, badRecord(rec, code))
 			continue
 		}
 		p := rec.Packet
@@ -82,10 +87,12 @@ func (c *converter) collect(stats *quality.Stats) {
 		case mediaerr.CodeCorrupt:
 			stats.CorruptPayloads++
 			stats.BadPackets++
+			stats.BadDetails = append(stats.BadDetails, badRecord(rec, mediaerr.CodeCorrupt))
 			status = manifest.StatusCorrupt
 		case mediaerr.CodeTruncated:
 			stats.TruncatedPackets++
 			stats.BadPackets++
+			stats.BadDetails = append(stats.BadDetails, badRecord(rec, mediaerr.CodeTruncated))
 			status = manifest.StatusTruncated
 		}
 		declared := int64(len(p.Payload))
@@ -364,6 +371,24 @@ func (c *converter) finish(res Result, stats quality.Stats) (quality.Stats, erro
 		return stats, err
 	}
 	return stats, nil
+}
+
+// badRecord captures the locating context of a rejected record.
+func badRecord(rec packet.Record, code mediaerr.Code) quality.BadRecord {
+	out := quality.BadRecord{Offset: rec.Offset, Code: string(code)}
+	if rec.Packet != nil {
+		out.Seq = rec.Packet.Seq
+	}
+	var me *mediaerr.Error
+	if errors.As(rec.Err, &me) {
+		if me.HasSeq {
+			out.Seq = me.Seq
+		}
+		out.Message = me.Error()
+	} else if rec.Err != nil {
+		out.Message = rec.Err.Error()
+	}
+	return out
 }
 
 func baseName(path string) string {

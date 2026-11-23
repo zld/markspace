@@ -85,6 +85,8 @@ func ParsePacket(buf []byte, offset int64) (*Packet, error) {
 	version := buf[0] >> 6
 	seq := binary.BigEndian.Uint16(buf[2:4])
 	if version != 2 {
+		// The sequence number is structurally readable even when the version
+		// is illegal, so the report can locate the packet precisely.
 		return nil, mediaerr.At(mediaerr.CodeBadPacket, offset, seq, true,
 			"unsupported RTP version %d", version)
 	}
