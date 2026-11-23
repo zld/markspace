@@ -20,11 +20,11 @@ const (
 // NALUnit is one Annex B network abstraction layer unit without its start
 // code prefix.
 type NALUnit struct {
-	Header    byte   // first byte (nal_unit_header / nal_unit_header_word0)
-	Payload   []byte // full unit bytes including the header
-	Offset    int    // byte offset of the start code in the source
-	StartLen  int    // 3 or 4 byte start code
-	Complete  bool   // false for a truncated trailing unit
+	Header   byte   // first byte (nal_unit_header / nal_unit_header_word0)
+	Payload  []byte // full unit bytes including the header
+	Offset   int    // byte offset of the start code in the source
+	StartLen int    // 3 or 4 byte start code
+	Complete bool   // false for a truncated trailing unit
 }
 
 // startCode returns the length and position of the next Annex B start code at
@@ -124,7 +124,8 @@ func IsKeyframeNAL(c Codec, u NALUnit) (bool, error) {
 
 // FrameKey reports whether a reassembled frame buffer contains a keyframe
 // NAL unit. Every inspected unit must be complete; a truncated frame cannot
-// produce a keyframe hit.
+// produce a keyframe hit. A NAL header with the forbidden_zero_bit set is a
+// hard, non-recoverable corruption error.
 func FrameKey(c Codec, frame []byte) (bool, error) {
 	switch c {
 	case H264, H265:
@@ -140,6 +141,10 @@ func FrameKey(c Codec, frame []byte) (bool, error) {
 	for _, u := range units {
 		if !u.Complete {
 			return false, nil
+		}
+		if u.Header&0x80 != 0 {
+			return false, clock.E(clock.PhaseCodec, 0, -1, false,
+				"NAL forbidden_zero_bit set: corrupted stream", nil)
 		}
 		ok, err := IsKeyframeNAL(c, u)
 		if err != nil {

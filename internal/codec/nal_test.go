@@ -16,9 +16,9 @@ func annexB(units ...[]byte) []byte {
 }
 
 func TestSplitAnnexBAndTypes(t *testing.T) {
-	sps := []byte{0x67, 0xAA} // H.264 SPS header (type 7)
+	sps := []byte{0x67, 0xAA}        // H.264 SPS header (type 7)
 	idrp := []byte{0x65, 0xBB, 0xCC} // H.264 IDR (type 5)
-	nonIDR := []byte{0x41, 0xDD} // H.264 non-IDR slice (type 1)
+	nonIDR := []byte{0x41, 0xDD}     // H.264 non-IDR slice (type 1)
 	buf := annexB(sps, idrp, nonIDR)
 	// Reassembler appends a trailing start code to mark the frame complete.
 	buf = append(buf, 0, 0, 1)
@@ -83,5 +83,31 @@ func TestUnsupportedCodec(t *testing.T) {
 func TestNoStartCodes(t *testing.T) {
 	if units := SplitAnnexB([]byte{1, 2, 3, 4}); units != nil {
 		t.Fatalf("random bytes parsed as NAL: %+v", units)
+	}
+}
+
+// TestTruncatedInputsNeverPanic enumerates every prefix of representative
+// Annex B / AV1 buffers. Neither parser may index past the buffer it was
+// given, so any slice must be handled without a panic.
+func TestTruncatedInputsNeverPanic(t *testing.T) {
+	seeds := [][]byte{
+		{0, 0, 0, 1, 0x65, 0x11, 0, 0, 1},
+		{0, 0, 1, 0x67, 0xAA, 0, 0, 0, 1, 0x41},
+		{0x12, 0x02, 0x80, 0x00},
+		{0x0A, 0x02, 0xAC, 0x02},
+		{0x80, 0x01, 0x00},
+	}
+	for _, seed := range seeds {
+		for i := 0; i <= len(seed); i++ {
+			for j := i; j <= len(seed); j++ {
+				sub := seed[i:j]
+				_ = SplitAnnexB(sub)
+				_, _ = FrameKey(H264, sub)
+				_, _ = FrameKey(H265, sub)
+				_, _ = SplitOBU(sub)
+				_, _ = FrameKeyAV1(sub)
+				_ = TruncateAV1(sub)
+			}
+		}
 	}
 }

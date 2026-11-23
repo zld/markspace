@@ -18,11 +18,11 @@ const (
 
 // OBU is one parsed AV1 open bitstream unit.
 type OBU struct {
-	Type      byte
-	HasSize   bool
-	Header    byte
-	Payload   []byte // size-field payload (without header and leb128 size)
-	Complete  bool   // false when declared size runs past the buffer
+	Type     byte
+	HasSize  bool
+	Header   byte
+	Payload  []byte // size-field payload (without header and leb128 size)
+	Complete bool   // false when declared size runs past the buffer
 }
 
 // readLEB128 decodes an unsigned LEB128 value and returns it with the number
@@ -125,4 +125,25 @@ func AV1Keyframe(frame []byte) (bool, error) {
 // FrameKeyAV1 is the AV1 entry point matching the NAL-style FrameKey helper.
 func FrameKeyAV1(frame []byte) (bool, error) {
 	return AV1Keyframe(frame)
+}
+
+// TruncateAV1 simulates a burst loss that cuts the frame mid-stream: it keeps
+// only whole OBUs whose declared payloads are fully present. A partial final
+// OBU is dropped, so the result parses cleanly but contains no keyframe hit
+// when the keyframe carrier was the truncated unit.
+func TruncateAV1(frame []byte) []byte {
+	obus, err := SplitOBU(frame)
+	if err != nil {
+		return frame[:0]
+	}
+	out := make([]byte, 0, len(frame))
+	for _, obu := range obus {
+		if !obu.Complete {
+			break
+		}
+		out = append(out, obu.Header)
+		out = append(out, byte(len(obu.Payload)))
+		out = append(out, obu.Payload...)
+	}
+	return out
 }
