@@ -1,0 +1,4 @@
+archivecheck
+*.test
+*.out
+.DS_Store
