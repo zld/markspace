@@ -115,12 +115,12 @@ func generateOne(dir string, seed int64, sc Scenario) (Generated, error) {
 	switch sc {
 	case ScenarioNormal:
 		g.SampleRate, g.Channels, g.Layout = 48000, 2, "stereo"
-		g.Frames = 48000 * 3 // 3 seconds
+		g.Frames = 48000 * 3 // 3 seconds; padded below to whole samples
 		signal = Signal{Freq: 440, Amplitude: 0.18, Noise: 0.004}
 		spec.opts.movieBeforeMedia = true
 	case ScenarioTruncated:
 		g.SampleRate, g.Channels, g.Layout = 48000, 2, "stereo"
-		g.Frames = 48000 * 2
+		g.Frames = 48000 * 2 // padded below to whole samples
 		signal = Signal{Freq: 523, Amplitude: 0.2, Noise: 0.004}
 		g.ExpectTruncated = true
 		g.ExpectMissing = true
@@ -130,7 +130,7 @@ func generateOne(dir string, seed int64, sc Scenario) (Generated, error) {
 		spec.opts.truncateFraction = 0.6
 	case ScenarioCorrupt:
 		g.SampleRate, g.Channels, g.Layout = 48000, 2, "stereo"
-		g.Frames = 48000 * 2
+		g.Frames = 48000 * 2 // padded below to whole samples
 		signal = Signal{Freq: 330, Amplitude: 0.2, Noise: 0.004}
 		spec.samplesPerChunk = 10
 		spec.opts.corruptChunkIndex = 3
@@ -138,7 +138,7 @@ func generateOne(dir string, seed int64, sc Scenario) (Generated, error) {
 		g.ExpectIndexGap = true
 	case ScenarioSparse:
 		g.SampleRate, g.Channels, g.Layout = 44100, 1, "mono"
-		g.Frames = 44100 * 3
+		g.Frames = 44100 * 3 // padded below to whole samples
 		signal = Signal{Freq: 660, Amplitude: 0.22, Noise: 0.003}
 		spec.movieTimescale = 44100
 		spec.mediaTimescale = 44100
@@ -164,6 +164,11 @@ func generateOne(dir string, seed int64, sc Scenario) (Generated, error) {
 		signal = Signal{Freq: 1000, Amplitude: 0.3, Noise: 0.002, ClippingAfterGain: 3}
 	}
 
+	// Pad the generated PCM up to a whole number of MP4 samples so a clean
+	// container has no partial tail; frame count reported stays exact.
+	samples := (g.Frames + spec.sampleFrames - 1) / spec.sampleFrames
+	padded := samples * spec.sampleFrames
+
 	spec.sampleRate = g.SampleRate
 	spec.channels = g.Channels
 	spec.bitDepth = 16
@@ -176,7 +181,7 @@ func generateOne(dir string, seed int64, sc Scenario) (Generated, error) {
 	}
 	// 5.1 needs 6 channels which is not a valid "stereo" file; the layout
 	// string above already matches the channel count.
-	spec.pcm = signal.render(g.Frames, g.Channels, g.SampleRate, g.Layout, rng)
+	spec.pcm = signal.render(padded, g.Channels, g.SampleRate, g.Layout, rng)
 
 	raw, err := buildAudioBytes(spec)
 	if err != nil {

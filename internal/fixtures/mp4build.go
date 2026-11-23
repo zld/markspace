@@ -169,14 +169,16 @@ func buildAudioBytes(s audioFileSpec) ([]byte, error) {
 		sizes[s.opts.corruptSampleIndex] = 4095
 	}
 
+	// moovSize measures the exact serialized size using a real random-access
+	// buffer, because EndBox patches its own header in place.
 	moovSize := func(mdatOffset uint64, chunkOffsets []uint32) uint64 {
-		var buf byteCounter
-		b := newBuilder(&buf)
+		buf := &byteBuffer{}
+		b := newBuilder(buf)
 		writeMoov(b, s, sizes, chunkOffsets, mdatOffset, chunks)
 		if b.err != nil {
 			return ^uint64(0)
 		}
-		return uint64(len(buf))
+		return uint64(buf.Len())
 	}
 
 	// Two-pass layout: build ftyp and mdat position first, then finalize
@@ -415,8 +417,8 @@ func identityMatrix() [9]int32 {
 }
 
 func ftypLen() int {
-	var buf byteCounter
-	b := newBuilder(&buf)
+	buf := &byteBuffer{}
+	b := newBuilder(buf)
 	b.start(mp4.BoxTypeFtyp())
 	b.payload(&mp4.Ftyp{
 		MajorBrand:   [4]byte{'i', 's', 'o', 'm'},
@@ -427,5 +429,5 @@ func ftypLen() int {
 		},
 	})
 	b.end()
-	return len(buf)
+	return buf.Len()
 }

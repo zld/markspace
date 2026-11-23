@@ -58,27 +58,3 @@ func (b *byteBuffer) Bytes() []byte {
 	}
 	return b.buf.Bytes()
 }
-
-// byteCounter only measures writes; it discards payloads (its seek position
-// tracking is enough for the box-size computation pass).
-type byteCounter []byte
-
-func (c *byteCounter) Write(p []byte) (int, error) {
-	*c = append(*c, p...)
-	return len(p), nil
-}
-
-func (c *byteCounter) Seek(offset int64, whence int) (int64, error) {
-	switch whence {
-	case 0:
-		if int64(len(*c)) < offset {
-			grow := offset - int64(len(*c))
-			*c = append(*c, make([]byte, grow)...)
-		}
-		return offset, nil
-	case 1:
-		return int64(len(*c)) + offset, nil
-	default:
-		return int64(len(*c)) + offset, nil
-	}
-}
