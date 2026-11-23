@@ -109,7 +109,7 @@ func TestTimestampWrapBoundary(t *testing.T) {
 	}
 	// Raw timestamps wrap past 2^32; the recorded range must reflect the
 	// wrapped wire values, not a monotonic interpretation.
-	if idx.MinTimestamp >= idx.MaxTimestamp {
+	if idx.MinTimestamp <= idx.MaxTimestamp {
 		t.Fatalf("expected wrapped range, got min=%d max=%d", idx.MinTimestamp, idx.MaxTimestamp)
 	}
 }
