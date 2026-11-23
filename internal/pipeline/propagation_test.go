@@ -128,3 +128,32 @@ func TestResumeAfterBlockedCheckpointReplaysBlockedNodes(t *testing.T) {
 		t.Fatalf("blocked dependency changed: %q vs %q", second.FirstBlocked, first.FirstBlocked)
 	}
 }
+
+// TestByteRangePlaylistLocatesCrossBoundaryDamage confirms the same transport
+// fault is located when the media is addressed through a byte-range playlist
+// rather than through DASH per-segment files.
+func TestByteRangePlaylistLocatesCrossBoundaryDamage(t *testing.T) {
+	root := t.TempDir()
+	res, err := fixture.Generate(fixture.Config{Seed: 42, Root: root, Fault: fixture.FaultBurstLoss})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rep, err := Run(context.Background(), Config{
+		Root: root, ManifestFile: res.Manifest.RangeFile, Concurrency: 2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Format != "hls" {
+		t.Fatalf("format=%s", rep.Format)
+	}
+	if rep.ExitCode != ExitDamage {
+		t.Fatalf("exit=%d", rep.ExitCode)
+	}
+	if len(rep.DamageRanges) != 1 {
+		t.Fatalf("ranges=%+v", rep.DamageRanges)
+	}
+	if len(rep.DamageRanges[0].Segments) != 2 {
+		t.Fatalf("damage should span the boundary: %v", rep.DamageRanges[0].Segments)
+	}
+}

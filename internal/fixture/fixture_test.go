@@ -116,13 +116,18 @@ func TestBurstLossStraddlesBoundary(t *testing.T) {
 	if long != 2 {
 		t.Fatalf("%d captures lost packets, want 2", long)
 	}
-	// High layer is untouched.
+	// The same timeline is damaged on both video layers, so a playlist that
+	// addresses either layer observes the loss.
+	shortHigh := 0
 	for _, info := range res.Manifest.SegmentsByRep["v-high"] {
 		raw, _ := os.ReadFile(filepath.Join(root, filepath.FromSlash(info.Capture)))
 		c, _ := DecodeCapture(raw)
 		if len(c.Packets) != DefaultFramesPerSeg {
-			t.Fatalf("high layer lost packets in %s", info.ID)
+			shortHigh++
 		}
+	}
+	if shortHigh != 2 {
+		t.Fatalf("high layer lost packets in %d segments, want 2", shortHigh)
 	}
 }
 

@@ -253,3 +253,67 @@ func TestFragmentSizeLimitIsEnforced(t *testing.T) {
 		t.Fatal("segment above the limit must be refused")
 	}
 }
+
+func TestParseRangeRebasesByteOffsets(t *testing.T) {
+	root, m := genArchive(t, fixture.FaultNone)
+	info, _ := m.SegmentInfoFor("v-high", "2")
+	data, err := os.ReadFile(filepath.Join(root, info.URI))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const shift = 4096
+	frag, err := ParseRange("media.bin", data, shift, int64(len(data)), nil, Options{})
+	if err != nil {
+		t.Fatalf("ParseRange: %v", err)
+	}
+	if !frag.BytesHeld() {
+		t.Fatal("samples not loaded yet should still hold bytes")
+	}
+	if frag.RangeStart != shift {
+		t.Fatalf("range start=%d want %d", frag.RangeStart, shift)
+	}
+	// Box offsets remain fragment-local so payloads can be sliced.
+	if frag.Boxes[1].Offset != 24 {
+		t.Fatalf("moof offset=%d want 24", frag.Boxes[1].Offset)
+	}
+}
+
+func TestParseRangeRejectsShortRead(t *testing.T) {
+	_, err := ParseRange("media.bin", make([]byte, 10), 100, 50, nil, Options{})
+	f, ok := model.AsFault(err)
+	if !ok || f.Code != model.CodeMP4BoxTruncated {
+		t.Fatalf("err=%v", err)
+	}
+	if !f.Location.ByteSet || f.Location.ByteStart != 100 {
+		t.Fatalf("location %+v", f.Location)
+	}
+}
+
+func TestLoadSamplesReleasesBytes(t *testing.T) {
+	root, m := genArchive(t, fixture.FaultNone)
+	info, _ := m.SegmentInfoFor("v-high", "1")
+	_, frag := loadFragment(t, root, "v-high/init.mp4", info.URI)
+	if frag.BytesHeld() {
+		t.Fatal("raw fragment bytes should be released after sample extraction")
+	}
+	if len(frag.Tracks) != 1 || len(frag.Tracks[0].Samples) == 0 {
+		t.Fatal("sample metadata must survive the release")
+	}
+}
+
+func TestTrunDefaultsResolvedFromTfhd(t *testing.T) {
+	// The generated segments omit per-sample flags inside trun and rely on the
+	// tfhd/trex defaults; sync detection must still work.
+	root, m := genArchive(t, fixture.FaultNone)
+	info, _ := m.SegmentInfoFor("v-low", "1")
+	_, frag := loadFragment(t, root, "v-low/init.mp4", info.URI)
+	tr := frag.Tracks[0]
+	if len(tr.SyncSamples) != 4 {
+		t.Fatalf("sync samples=%v", tr.SyncSamples)
+	}
+	for _, s := range tr.Samples {
+		if s.Duration != uint32(fixture.DefaultFrameTicks) {
+			t.Fatalf("sample duration=%d want %d", s.Duration, fixture.DefaultFrameTicks)
+		}
+	}
+}

@@ -3,6 +3,7 @@ package pipeline
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"io"
 	"os"
 	"path"
 
@@ -186,16 +187,37 @@ func (t segmentTask) runInspect(cfg Config, prev *reorderOutcome) *taskOutcome {
 		oc.result.Status = "error"
 		return oc
 	}
-	data, err := inspect.SizeReader{R: fd, Limit: t.maxBytes}.ReadAll()
+	// A byte-range segment reads exactly its declared range, so a resource
+	// shared by many segments is never loaded whole.
+	var data []byte
+	if t.seg.Range != nil {
+		if _, err := fd.Seek(t.seg.Range.Start, io.SeekStart); err != nil {
+			fd.Close()
+			oc.structural = model.NewFault(model.CodeInputMissing, model.SeverityError,
+				model.Source{Layer: "inspect", Segment: t.seg.ID, Representation: t.representation,
+					File: t.info.URI, Offset: t.seg.Range.Start}, "cannot seek to byte range: %v", err).WithCause(err)
+			oc.result.Status = "error"
+			return oc
+		}
+		data, err = inspect.SizeReader{R: fd, Limit: t.seg.Range.Len(), Exact: true}.ReadAll()
+	} else {
+		data, err = inspect.SizeReader{R: fd, Limit: t.maxBytes}.ReadAll()
+	}
 	fd.Close()
 	if err != nil {
 		oc.structural = model.NewFault(model.CodeInputBadArgs, model.SeverityError,
 			model.Source{Layer: "inspect", Segment: t.seg.ID, Representation: t.representation,
-				File: t.info.URI, Offset: -1}, "segment exceeds the fragment memory bound: %v", err).WithCause(err)
+				File: t.info.URI, Offset: t.rangeStart}, "segment exceeds the fragment memory bound: %v", err).WithCause(err)
 		oc.result.Status = "error"
 		return oc
 	}
-	frag, perr := inspect.ParseFragment(t.info.URI, data, nil, inspect.Options{})
+	var frag *inspect.Fragment
+	var perr error
+	if t.seg.Range != nil {
+		frag, perr = inspect.ParseRange(t.info.URI, data, t.seg.Range.Start, t.seg.Range.Len(), nil, inspect.Options{})
+	} else {
+		frag, perr = inspect.ParseFragment(t.info.URI, data, nil, inspect.Options{})
+	}
 	if initData, ierr := os.ReadFile(path.Join(cfg.Root, t.info.Init)); ierr == nil {
 		if init, ierr := inspect.ParseInit(t.info.Init, initData); ierr == nil {
 			frag.LoadSamples(init, inspect.Options{})
@@ -317,6 +339,23 @@ func (oc *taskOutcome) blockingFault() *model.Fault {
 	return nil
 }
 
+// readSegmentBytes returns the bytes a segment covers, honouring a byte range
+// inside a shared resource.
+func readSegmentBytes(cfg Config, t segmentTask, limit int64) ([]byte, error) {
+	fd, err := os.Open(path.Join(cfg.Root, t.info.URI))
+	if err != nil {
+		return nil, err
+	}
+	defer fd.Close()
+	if t.seg.Range != nil {
+		if _, err := fd.Seek(t.seg.Range.Start, io.SeekStart); err != nil {
+			return nil, err
+		}
+		return inspect.SizeReader{R: fd, Limit: t.seg.Range.Len(), Exact: true}.ReadAll()
+	}
+	return inspect.SizeReader{R: fd, Limit: limit}.ReadAll()
+}
+
 // DurationDeviation records a segment whose decoded media duration differs
 // from the manifest declaration.
 type DurationDeviation struct {
@@ -348,11 +387,16 @@ func detectDurationDeviations(cfg Config, tasks []segmentTask) []DurationDeviati
 		if init == nil {
 			continue
 		}
-		raw, err := os.ReadFile(path.Join(cfg.Root, t.info.URI))
+		raw, err := readSegmentBytes(cfg, t, t.maxBytes)
 		if err != nil {
 			continue
 		}
-		frag, _ := inspect.ParseFragment(t.info.URI, raw, nil, inspect.Options{})
+		var frag *inspect.Fragment
+		if t.seg.Range != nil {
+			frag, _ = inspect.ParseRange(t.info.URI, raw, t.seg.Range.Start, t.seg.Range.Len(), nil, inspect.Options{})
+		} else {
+			frag, _ = inspect.ParseFragment(t.info.URI, raw, nil, inspect.Options{})
+		}
 		if frag == nil {
 			continue
 		}

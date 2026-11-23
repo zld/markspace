@@ -81,6 +81,10 @@ func (f *Fragment) decodeMoofSamples(moofBox, mdatBox Box, init *Init, opts Opti
 		baseTime := traf.Tfdt.BaseMediaDecodeTime()
 		trex := trexFor(init, id)
 		for ti, trun := range traf.Truns {
+			// Let mp4ff resolve tfhd/trex defaults using the presence flags,
+			// so a sample field that is legitimately zero is not mistaken for
+			// an absent one.
+			trun.AddSampleDefaultValues(traf.Tfhd, trex)
 			dataStart, ok := trunDataStart(traf, trun, moofBox, mdatBox)
 			if !ok {
 				f.add(model.NewFault(model.CodeMP4SampleTable, model.SeverityError,
@@ -153,17 +157,6 @@ func decodeTrun(name string, trun *mp4.TrunBox, dataStart int64, baseTime uint64
 				src(name, mdat.Offset), "sample count exceeds %d", opts.maxSamples())
 		}
 		dur, size, flags := s.Dur, s.Size, s.Flags
-		if trex != nil {
-			if dur == 0 {
-				dur = trex.DefaultSampleDuration
-			}
-			if size == 0 {
-				size = trex.DefaultSampleSize
-			}
-			if flags == 0 {
-				flags = trex.DefaultSampleFlags
-			}
-		}
 		// The mdat may declare more bytes than the file holds; both the mdat's
 		// declared end and the actually-available bytes bound a sample.
 		available := int64(mdat.Size)

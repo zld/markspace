@@ -332,6 +332,10 @@ func auditRepresentations(plan *manifest.Plan, st *dagState) []RepAudit {
 		if refCadence >= 0 && a.KeyframeP50Ms >= 0 {
 			a.KeyframeAligned = absInt64(a.KeyframeP50Ms-refCadence) <= maxInt64(1, frameMsFor(frame, plan.Timebase))
 		}
+		// A single-representation playlist has nothing to align against.
+		if len(plan.Representations) == 1 {
+			a.StartAligned, a.DurationAligned, a.KeyframeAligned = true, true, true
+		}
 		a.Aligned = a.StartAligned && a.DurationAligned && a.KeyframeAligned
 		out = append(out, a)
 	}
@@ -400,7 +404,7 @@ func (rep *Report) finish(cfg Config, started time.Time) {
 	// its certification path is also blocked; exit 4 is reserved for runs where
 	// blocking is the only outcome (for example a corrupt checkpoint).
 	switch {
-	case rep.CheckpointMismatch:
+	case rep.CheckpointMismatch && !rep.CheckpointDiscarded:
 		rep.ExitCode = ExitBlocked
 	case len(rep.DamageRanges) > 0 || rep.FirstBadSegment != "":
 		rep.ExitCode = ExitDamage

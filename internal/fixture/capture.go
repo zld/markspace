@@ -71,9 +71,10 @@ func applyFault(seed int64, fault Fault, rep string, pkts []transport.Packet, se
 		evil.Payload[0] ^= 0xff
 		return append(out, evil)
 	case FaultBurstLoss:
-		// Only the low representation loses packets, and only around the
-		// boundary at the end of segment 4.
-		if rep != "v-low" || (segIndex != 3 && segIndex != 4) {
+		// The video representations lose packets around the boundary at the end
+		// of segment 3 and the start of segment 4. HLS analysis of the same
+		// timeline therefore observes the same loss.
+		if (rep != "v-low" && rep != "v-high") || (segIndex != 3 && segIndex != 4) {
 			return pkts
 		}
 		return dropBurst(pkts, segIndex)

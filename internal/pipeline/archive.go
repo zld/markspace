@@ -112,6 +112,9 @@ type Report struct {
 	// CheckpointMismatch is true when a resume was requested but the
 	// checkpoint could not be trusted.
 	CheckpointMismatch bool `json:"checkpoint_mismatch,omitempty"`
+	// CheckpointDiscarded is true when a corrupt checkpoint was dropped and
+	// the run continued from scratch instead of aborting.
+	CheckpointDiscarded bool `json:"checkpoint_discarded,omitempty"`
 	// DurationDeviations lists segments whose media duration differs from the
 	// manifest declaration by more than one target frame.
 	DurationDeviations []DurationDeviation `json:"duration_deviations,omitempty"`
@@ -234,16 +237,28 @@ func Run(ctx context.Context, cfg Config) (*Report, error) {
 	if store != nil {
 		state, err := store.Load()
 		if err != nil {
-			if f, ok := model.AsFault(err); ok {
+			f, ok := model.AsFault(err)
+			if !ok {
+				return nil, err
+			}
+			// A damaged checkpoint cannot be trusted to confirm anything, so
+			// recovery proceeds from scratch: only unconfirmed (which is now
+			// all) nodes rerun. The fault stays in the report so the audit
+			// shows why resume could not be honoured.
+			if !cfg.Resume {
 				rep.Faults = append(rep.Faults, f)
 				rep.CheckpointMismatch = true
 				rep.ExitCode = ExitBlocked
 				rep.finish(cfg, started)
 				return rep, nil
 			}
-			return nil, err
+			rep.Faults = append(rep.Faults, f)
+			rep.CheckpointMismatch = true
+			rep.CheckpointDiscarded = true
+			entries = nil
+		} else {
+			entries = state.Entries
 		}
-		entries = state.Entries
 	}
 
 	// Build a task per segment.
@@ -346,6 +361,9 @@ type segmentTask struct {
 	anchorTS    uint32
 	// catalogCheck enables the catalog-digest comparison for this run.
 	catalogCheck bool
+	// rangeStart is the absolute offset of the segment inside its resource
+	// when the segment came from a byte-range playlist.
+	rangeStart int64
 }
 
 // buildSegmentTasks returns tasks in deterministic order.
@@ -359,11 +377,19 @@ func buildSegmentTasks(cfg Config, fx *fixture.Manifest, plan *manifest.Plan, ma
 				continue
 			}
 			anchor, rtpBase := captureAnchor(cfg, fx, info)
+			// A segment carrying a byte range is read from that range of the
+			// shared resource instead of the standalone file, so the report's
+			// offsets match what the playlist actually addresses.
+			info, rangeStart := applyByteRange(cfg, seg, info)
+			if seg.Range != nil {
+				info.Init = initRelFor(fx)
+			}
 			out = append(out, segmentTask{
 				representation: rep.ID,
 				file:           manifestFile,
 				seg:            seg,
 				info:           info,
+				rangeStart:     rangeStart,
 				opts:           opts,
 				timebase:       plan.Timebase,
 				maxBytes:       cfg.MaxFragmentBytes,
@@ -435,6 +461,26 @@ func resolveSegmentInfo(fx *fixture.Manifest, rep manifest.Representation, seg m
 		}
 	}
 	return fixture.SegmentInfo{}, false
+}
+
+// applyByteRange rewrites a segment's media path to the range's resource and
+// returns the resource-relative start offset.
+func applyByteRange(cfg Config, seg manifest.Segment, info fixture.SegmentInfo) (fixture.SegmentInfo, int64) {
+	if seg.Range == nil {
+		return info, 0
+	}
+	info.URI = seg.URI
+	info.Size = seg.Range.Len()
+	return info, seg.Range.Start
+}
+
+// initRelFor returns the reference representation's init file, which describes
+// the media shared by a byte-range playlist.
+func initRelFor(fx *fixture.Manifest) string {
+	if len(fx.Reps) == 0 {
+		return ""
+	}
+	return path.Join(fx.Reps[0].ID, "init.mp4")
 }
 
 // captureAnchor reads a capture's declared RTP anchor without decoding the

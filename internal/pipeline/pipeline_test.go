@@ -190,8 +190,24 @@ func TestCorruptCheckpointRefusesResume(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rep.ExitCode != ExitBlocked || !rep.CheckpointMismatch {
-		t.Fatalf("exit=%d mismatch=%v", rep.ExitCode, rep.CheckpointMismatch)
+	if rep.ExitCode != ExitOK {
+		t.Fatalf("corrupt checkpoint should recover from scratch, exit=%d", rep.ExitCode)
+	}
+	if !rep.CheckpointMismatch || !rep.CheckpointDiscarded {
+		t.Fatalf("mismatch=%v discarded=%v", rep.CheckpointMismatch, rep.CheckpointDiscarded)
+	}
+	// Every node reran because nothing could be confirmed.
+	if rep.ResumedNodes != rep.DAGNodes {
+		t.Fatalf("resumed=%d dag=%d", rep.ResumedNodes, rep.DAGNodes)
+	}
+	sawCorrupt := false
+	for _, f := range rep.Faults {
+		if f.Code == model.CodeCheckpointCorrupt {
+			sawCorrupt = true
+		}
+	}
+	if !sawCorrupt {
+		t.Fatalf("corrupt checkpoint fault missing: %v", rep.Faults)
 	}
 }
 

@@ -71,6 +71,10 @@ type Fragment struct {
 	data []byte
 	// Size is the total number of bytes read.
 	Size int64 `json:"size"`
+	// RangeStart is the resource offset the fragment was extracted from, or 0
+	// for a standalone file. Box offsets stay fragment-local; this value is
+	// added when reporting absolute resource positions.
+	RangeStart int64 `json:"range_start,omitempty"`
 	// Boxes are the top-level boxes in file order.
 	Boxes []Box `json:"boxes"`
 	// Tracks are the tracks found, ordered by track ID.
@@ -114,11 +118,19 @@ func (o Options) maxSamples() int {
 type SizeReader struct {
 	R     io.Reader
 	Limit int64
+	// Exact declares that the reader is expected to yield exactly Limit bytes,
+	// as with a byte range, so reaching the limit is success rather than an
+	// overflow.
+	Exact bool
 }
 
-// ReadAll reads at most Limit bytes and reports ErrTooLarge if more remain.
+// ReadAll reads at most Limit bytes and reports an error if more remain.
 func (s SizeReader) ReadAll() ([]byte, error) {
-	lr := io.LimitReader(s.R, s.Limit+1)
+	probe := s.Limit + 1
+	if s.Exact {
+		probe = s.Limit
+	}
+	lr := io.LimitReader(s.R, probe)
 	data, err := io.ReadAll(lr)
 	if err != nil {
 		return nil, err
@@ -129,8 +141,9 @@ func (s SizeReader) ReadAll() ([]byte, error) {
 	return data, nil
 }
 
-// ParseFragment decodes the top-level structure of an fMP4 fragment and, when
-// an init segment is supplied, the sample tables of each moof/mdat pair.
+// ParseFragment decodes the top-level structure of an fMP4 fragment. Sample
+// tables are loaded separately by LoadSamples so structural faults can be
+// localised before any payload interpretation.
 func ParseFragment(name string, data []byte, init *Init, opts Options) (*Fragment, error) {
 	f := &Fragment{File: name, Size: int64(len(data)), data: data}
 	if err := walkBoxes(f, data, opts); err != nil {
@@ -148,6 +161,11 @@ func (f *Fragment) BytesHeld() bool { return f.data != nil }
 func (f *Fragment) add(fault *model.Fault) {
 	if fault == nil {
 		return
+	}
+	// Faults found during sample loading are still fragment-local; shift them
+	// onto the resource the fragment was extracted from.
+	if f.RangeStart > 0 {
+		rebaseFault(fault, f.RangeStart)
 	}
 	f.Faults = append(f.Faults, fault)
 	if f.Truncated == nil {
@@ -242,4 +260,52 @@ func (f *Fragment) BoxCount(typ string) int {
 		}
 	}
 	return n
+}
+
+// ParseRange decodes a fragment that was extracted from a byte range of a
+// larger resource. start is the range's offset in the resource; every reported
+// byte offset is rebased onto the resource so a report points at the same byte
+// an archivist would open. The fragment is otherwise treated exactly like a
+// standalone file.
+func ParseRange(name string, data []byte, start, length int64, init *Init, opts Options) (*Fragment, error) {
+	if start < 0 || length < 0 {
+		return nil, model.NewFault(model.CodeMP4BadLength, model.SeverityError,
+			model.Source{Layer: "inspect", File: name, Offset: start, Bytes: length},
+			"range [%d,%d) is invalid", start, start+length)
+	}
+	if int64(len(data)) < length {
+		return nil, model.NewFault(model.CodeMP4BoxTruncated, model.SeverityError,
+			model.Source{Layer: "inspect", File: name, Offset: start + int64(len(data)), Bytes: length},
+			"range declares %d bytes but only %d were read", length, len(data)).
+			WithBytes(start, start+int64(len(data)))
+	}
+	f, err := ParseFragment(name, data, init, opts)
+	if f != nil {
+		// Box offsets stay fragment-local so the payload can still be sliced;
+		// reported faults are rebased onto the resource. LoadSamples adds more
+		// faults later, so it rebases them using RangeStart.
+		f.RangeStart = start
+		rebaseFault(f.Truncated, start)
+		for _, flt := range f.Faults {
+			rebaseFault(flt, start)
+		}
+	}
+	return f, err
+}
+
+// rebaseFault shifts a fault's byte offsets from fragment-local to
+// resource-relative coordinates.
+func rebaseFault(f *model.Fault, base int64) {
+	if f == nil || base == 0 {
+		return
+	}
+	if f.Location.ByteSet {
+		f.Location.ByteStart += base
+		f.Location.ByteEnd += base
+	}
+	// Source.Offset is -1 for "not applicable"; -1+base would be a bogus
+	// absolute position, so only real offsets are rebased.
+	if f.Source.Offset >= 0 {
+		f.Source.Offset += base
+	}
 }
