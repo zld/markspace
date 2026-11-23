@@ -43,6 +43,9 @@ func ParseFaults(list []string) ([]FaultKind, error) {
 	var out []FaultKind
 	for _, raw := range list {
 		for _, name := range splitComma(raw) {
+			if name == "" {
+				continue
+			}
 			f := FaultKind(name)
 			if !known[f] {
 				return nil, fmt.Errorf("fixture: unknown fault %q", name)
@@ -58,16 +61,29 @@ func splitComma(s string) []string {
 	start := 0
 	for i := 0; i <= len(s); i++ {
 		if i == len(s) || s[i] == ',' {
-			if i > start {
-				out = append(out, s[start:i])
-			}
+			out = append(out, s[start:i])
 			start = i + 1
 		}
 	}
 	return out
 }
 
+// anchor identifies which field of which final fragment a fault offset refers
+// to. Offsets are resolved only after every fault has been applied, so a later
+// rebuild cannot leave a stale byte position behind.
+type anchor int
+
+const (
+	anchorNone anchor = iota
+	anchorMoof
+	anchorMdat
+	anchorTfdt
+	anchorTrunSizeField
+	anchorTruncation
+)
+
 // Injection records where a fault was applied, in logical and byte terms.
+// ByteOffset is always the offset of the byte a correct parser must report.
 type Injection struct {
 	Kind       FaultKind `json:"kind"`
 	TrackID    uint32    `json:"track_id,omitempty"`
@@ -75,33 +91,41 @@ type Injection struct {
 	Sequence   uint32    `json:"sequence,omitempty"`
 	ByteOffset int64     `json:"byte_offset"`
 	Detail     string    `json:"detail,omitempty"`
+
+	anchor anchor
+	cutAt  int64
 }
 
+// Anchor reports whether the injection offset was resolved against a field.
+func (i Injection) Anchor() anchor { return i.anchor }
+
 // InjectedStream is the damaged stream plus an exact description of the
-// damage. ByteOffset is the raw input offset a parser must report.
+// damage.
 type InjectedStream struct {
 	*Stream
 	Injections []Injection `json:"injections"`
+	// LogicalFragments is the fragment count before truncation removed the
+	// tail of the file, i.e. what the input intended to carry.
+	LogicalFragments int `json:"logical_fragments"`
+	// TruncatedTo is the final file size when a truncation was applied.
+	TruncatedTo int64 `json:"truncated_to,omitempty"`
 }
 
-// Inject applies the requested faults to a fresh baseline stream. Each fault
-// is applied to an independent rebuild of the baseline plans so offsets stay
-// deterministic for a fixed seed.
+// Inject applies the requested faults. Every fault is a pure transform of the
+// baseline plan, applied in the order given; truncation is always last because
+// it changes the file end. All recorded offsets are resolved against the final
+// stream, so they equal the byte positions actually damaged.
 func Inject(seed int64, tracks, fragments int, kinds []FaultKind) (*InjectedStream, error) {
 	spec := DefaultSpec(seed, tracks, fragments)
 	base, err := Build(spec)
 	if err != nil {
 		return nil, err
 	}
-	result := &InjectedStream{Stream: base}
-	// Every fault is a pure transform of the baseline plan, applied in the
-	// order given. Truncation is always last because it changes the file end.
-	var truncateAt, truncateBox int64 = -1, -1
+	result := &InjectedStream{Stream: base, LogicalFragments: len(base.Fragments)}
+	var truncate bool
 	for _, kind := range kinds {
 		if kind == FaultTruncation {
-			if truncateAt < 0 {
-				truncateAt, truncateBox = truncationPoint(base)
-			}
+			truncate = true
 			continue
 		}
 		plans, err := result.Plan()
@@ -112,41 +136,83 @@ func Inject(seed int64, tracks, fragments int, kinds []FaultKind) (*InjectedStre
 		if err != nil {
 			return nil, err
 		}
-		if next == nil {
-			// Kind has no effect for this stream shape (e.g. too few
-			// fragments); record it with the baseline offset so the count
-			// still reflects the request.
-			result.Injections = append(result.Injections, inj)
+		inj.Kind = kind
+		result.Injections = append(result.Injections, inj)
+		if next != nil {
+			result.Stream = next
+		}
+	}
+	if truncate {
+		cut, idx := truncationPoint(result.Stream)
+		inj := Injection{Kind: FaultTruncation, anchor: anchorTruncation, cutAt: cut, Fragment: idx}
+		result.Data = result.Data[:cut]
+		result.Digest = digest(result.Data)
+		result.TruncatedTo = cut
+		result.Injections = append(result.Injections, inj)
+	}
+	// Resolve every anchor against the final layout. A truncation that removes
+	// the bytes a fault was anchored to also removes that fault's observable
+	// position, so the record is dropped rather than left pointing past EOF.
+	kept := result.Injections[:0]
+	for i := range result.Injections {
+		inj := result.Injections[i]
+		resolveAnchor(result.Stream, &inj)
+		if inj.Kind != FaultTruncation && truncate && inj.ByteOffset >= int64(len(result.Data)) {
 			continue
 		}
-		result.Stream = next
-		result.Injections = append(result.Injections, inj)
+		kept = append(kept, inj)
 	}
-	if truncateAt >= 0 {
-		if truncateAt > int64(len(result.Data)) {
-			truncateAt = int64(len(result.Data))
-		}
-		inj := Injection{
-			Kind:       FaultTruncation,
-			ByteOffset: truncateBox,
-			Detail:     fmt.Sprintf("file truncated to %d bytes inside box at %d", truncateAt, truncateBox),
-		}
-		result.Data = result.Data[:truncateAt]
-		result.Digest = digest(result.Data)
-		result.Injections = append(result.Injections, inj)
-	}
+	result.Injections = kept
 	return result, nil
 }
 
-// truncationPoint picks a mid-file cut inside a moof body. The moof header
-// stays complete and declares more bytes than remain, so a parser must report
-// a truncated box anchored at that moof header offset.
-func truncationPoint(s *Stream) (cut, boxOffset int64) {
+// truncationPoint cuts inside a moof body so its header stays complete and
+// declares more bytes than remain. The returned index is the cut fragment.
+func truncationPoint(s *Stream) (cut int64, fragment int) {
 	if len(s.Fragments) == 0 {
-		return int64(len(s.Data)), int64(len(s.Data))
+		return int64(len(s.Data)), 0
 	}
-	f := s.Fragments[len(s.Fragments)/2]
-	return f.MoofOffset + 40, f.MoofOffset
+	// Cut two thirds of the way in so faults injected near the middle remain
+	// observable in the surviving prefix.
+	f := s.Fragments[(len(s.Fragments)*2)/3]
+	return f.MoofOffset + 40, f.Index
+}
+
+func resolveAnchor(s *Stream, inj *Injection) {
+	if inj.anchor == anchorNone {
+		return
+	}
+	if inj.anchor == anchorTruncation {
+		// The damaged bytes begin at the moof header whose declared size is
+		// no longer backed by input. That header, not the cut position, is
+		// what a parser must report.
+		inj.ByteOffset = inj.cutAt
+		f := fragmentAt(s, inj.Fragment)
+		if f.MoofOffset > 0 {
+			inj.ByteOffset = f.MoofOffset
+		}
+		inj.Detail = fmt.Sprintf("file truncated to %d bytes inside moof at %d", inj.cutAt, f.MoofOffset)
+		return
+	}
+	f := fragmentAt(s, inj.Fragment)
+	inj.TrackID, inj.Sequence = f.TrackID, f.Sequence
+	switch inj.anchor {
+	case anchorMoof:
+		inj.ByteOffset = f.MoofOffset
+	case anchorMdat:
+		inj.ByteOffset = f.MdatOffset
+	case anchorTfdt:
+		inj.ByteOffset = f.TfdtOffset
+	case anchorTrunSizeField:
+		inj.ByteOffset = f.TrunOffset + 8 + 4 + 4 + 4 + int64(8*(len(f.Samples)-1)) + 4
+	}
+}
+
+func fragmentAt(s *Stream, idx int) FragmentInfo {
+	if idx < 0 || idx >= len(s.Fragments) {
+		return FragmentInfo{}
+	}
+	return s.Fragments[idx]
 }
 
 func applyFault(base *Stream, plans []TrackPlan, kind FaultKind) (Injection, *Stream, error) {
@@ -168,18 +234,20 @@ func applyFault(base *Stream, plans []TrackPlan, kind FaultKind) (Injection, *St
 	}
 }
 
-// injectTfdtRegression rewinds the tfdt of the last fragment of each track so
-// later fragments appear earlier than their predecessor.
+// injectTfdtRegression rewinds the tfdt of one late fragment so it maps before
+// its predecessor's end.
 func injectTfdtRegression(base *Stream, plans []TrackPlan) (Injection, *Stream, error) {
+	// Pick a fragment in the middle of the stream: late enough that a real
+	// decode time exists, early enough to survive a truncation of the tail.
 	victim := -1
-	for i := len(plans) - 1; i >= 0; i-- {
-		if i >= len(plans)/2 {
+	for i := len(plans) / 2; i < len(plans); i++ {
+		if plans[i].Tfdt > 0 {
 			victim = i
 			break
 		}
 	}
-	if victim < 0 || plans[victim].Tfdt == 0 {
-		return Injection{Kind: FaultTfdtRegression, Detail: "no stepping tfdt available"}, base, nil
+	if victim < 0 {
+		return Injection{anchor: anchorNone, Detail: "no stepping tfdt available"}, base, nil
 	}
 	regressed := plans[victim].Tfdt / 2
 	plans[victim].Tfdt = regressed
@@ -187,22 +255,19 @@ func injectTfdtRegression(base *Stream, plans []TrackPlan) (Injection, *Stream, 
 	if err != nil {
 		return Injection{}, nil, err
 	}
-	f := next.Fragments[victim]
-	return Injection{
-		Kind:       FaultTfdtRegression,
-		TrackID:    f.TrackID,
-		Fragment:   victim,
-		Sequence:   f.Sequence,
-		ByteOffset: f.TfdtOffset,
-		Detail:     fmt.Sprintf("tfdt regressed to %d", regressed),
-	}, next, nil
+	inj := Injection{
+		Fragment: victim,
+		anchor:   anchorTfdt,
+		Detail:   fmt.Sprintf("tfdt regressed to %d", regressed),
+	}
+	return inj, next, nil
 }
 
-// injectIndexGap rewrites the sidx so it references only the first half of the
-// fragments; the remaining moofs still exist in the file.
+// injectIndexGap shortens the sidx so later fragments are absent from the
+// index but still present in the file.
 func injectIndexGap(base *Stream) (Injection, *Stream, error) {
 	if len(base.Fragments) < 2 {
-		return Injection{Kind: FaultIndexGap, Detail: "too few fragments"}, base, nil
+		return Injection{anchor: anchorNone, Detail: "too few fragments"}, base, nil
 	}
 	covered := len(base.Fragments) / 2
 	plans, err := base.Plan()
@@ -213,44 +278,36 @@ func injectIndexGap(base *Stream) (Injection, *Stream, error) {
 	if err != nil {
 		return Injection{}, nil, err
 	}
-	// The first uncovered fragment begins right after the last covered one.
-	firstUncovered := next.Fragments[covered].MoofOffset
 	return Injection{
-		Kind:       FaultIndexGap,
-		Fragment:   covered,
-		ByteOffset: firstUncovered,
-		Detail:     fmt.Sprintf("sidx covers %d of %d fragments", covered, len(next.Fragments)),
+		Fragment: covered,
+		anchor:   anchorMoof,
+		Detail:   fmt.Sprintf("sidx covers %d of %d fragments", covered, len(next.Fragments)),
 	}, next, nil
 }
 
 // injectOversizeBox rewrites one mdat size to run past the end of the file.
 func injectOversizeBox(base *Stream) (Injection, *Stream, error) {
 	if len(base.Fragments) == 0 {
-		return Injection{Kind: FaultOversizeBox, Detail: "no fragments"}, base, nil
+		return Injection{anchor: anchorNone, Detail: "no fragments"}, base, nil
 	}
 	idx := len(base.Fragments) / 3
 	f := base.Fragments[idx]
 	data := append([]byte(nil), base.Data...)
-	// Declare a length that runs well past the real end of file.
 	declared := int64(len(data)) - f.MdatOffset + 4096
 	binary.BigEndian.PutUint32(data[f.MdatOffset:], uint32(declared))
 	next := cloneStream(base, data)
 	return Injection{
-		Kind:       FaultOversizeBox,
-		TrackID:    f.TrackID,
-		Fragment:   idx,
-		Sequence:   f.Sequence,
-		ByteOffset: f.MdatOffset,
-		Detail:     fmt.Sprintf("mdat declares %d bytes, %d available", declared, int64(len(data))-f.MdatOffset),
+		Fragment: idx,
+		anchor:   anchorMdat,
+		Detail:   fmt.Sprintf("mdat declares %d bytes, %d available", declared, int64(len(data))-f.MdatOffset),
 	}, next, nil
 }
 
-// injectSequenceGap drops one fragment from the middle of the stream. Later
-// fragments of the same track keep their mfhd numbers, so a gap appears in the
-// sequence and in decode time, exactly as if the capture lost a fragment.
+// injectSequenceGap drops one fragment so its mfhd number and decode time are
+// missing from the stream.
 func injectSequenceGap(base *Stream, plans []TrackPlan) (Injection, *Stream, error) {
 	if len(plans) < 4 {
-		return Injection{Kind: FaultSequenceGap, Detail: "too few fragments"}, base, nil
+		return Injection{anchor: anchorNone, Detail: "too few fragments"}, base, nil
 	}
 	trackID := plans[0].Track.ID
 	idx := -1
@@ -261,7 +318,7 @@ func injectSequenceGap(base *Stream, plans []TrackPlan) (Injection, *Stream, err
 		}
 	}
 	if idx < 0 {
-		return Injection{Kind: FaultSequenceGap, Detail: "no mid-track fragment"}, base, nil
+		return Injection{anchor: anchorNone, Detail: "no mid-track fragment"}, base, nil
 	}
 	dropped := plans[idx]
 	plans = append(plans[:idx], plans[idx+1:]...)
@@ -269,39 +326,32 @@ func injectSequenceGap(base *Stream, plans []TrackPlan) (Injection, *Stream, err
 	if err != nil {
 		return Injection{}, nil, err
 	}
-	// The gap becomes observable at the next fragment of the same track: its
-	// mfhd skips a number and its tfdt skips the dropped decode time. That
-	// tfdt is the exact byte a consumer can correlate with the input.
-	observedIdx := -1
+	observed := -1
 	for i := idx; i < len(next.Fragments); i++ {
 		if next.Fragments[i].TrackID == dropped.Track.ID {
-			observedIdx = i
+			observed = i
 			break
 		}
 	}
-	if observedIdx < 0 {
-		return Injection{Kind: FaultSequenceGap, Detail: "no later fragment on the track"}, base, nil
+	if observed < 0 {
+		return Injection{anchor: anchorNone, Detail: "no later fragment on the track"}, next, nil
 	}
-	observed := next.Fragments[observedIdx]
 	return Injection{
-		Kind:       FaultSequenceGap,
-		TrackID:    observed.TrackID,
-		Fragment:   observedIdx,
-		Sequence:   observed.Sequence,
-		ByteOffset: observed.TfdtOffset,
-		Detail:     fmt.Sprintf("dropped fragment sequence %d; next is %d", dropped.Seq, observed.Sequence),
+		Fragment: observed,
+		anchor:   anchorTfdt,
+		Detail:   fmt.Sprintf("dropped fragment sequence %d; next is %d", dropped.Seq, next.Fragments[observed].Sequence),
 	}, next, nil
 }
 
 // injectDuplicate re-emits one fragment immediately after itself, keeping the
-// original mfhd sequence and tfdt.
+// original mfhd sequence, tfdt and sample declarations.
 func injectDuplicate(base *Stream, plans []TrackPlan) (Injection, *Stream, error) {
 	if len(plans) < 2 {
-		return Injection{Kind: FaultDuplicate, Detail: "too few fragments"}, base, nil
+		return Injection{anchor: anchorNone, Detail: "too few fragments"}, base, nil
 	}
 	idx := len(plans) / 2
 	if idx%len(base.Spec.Tracks) != 0 {
-		idx-- // land on the first track so duplicates are unambiguous
+		idx--
 	}
 	dup := plans[idx]
 	dup.Samples = append([]PlanSample(nil), plans[idx].Samples...)
@@ -310,38 +360,31 @@ func injectDuplicate(base *Stream, plans []TrackPlan) (Injection, *Stream, error
 	if err != nil {
 		return Injection{}, nil, err
 	}
-	f := next.Fragments[idx+1]
 	return Injection{
-		Kind:       FaultDuplicate,
-		TrackID:    f.TrackID,
-		Fragment:   idx + 1,
-		Sequence:   f.Sequence,
-		ByteOffset: f.MoofOffset,
-		Detail:     fmt.Sprintf("fragment %d repeated", idx),
+		Fragment: idx + 1,
+		anchor:   anchorMoof,
+		Detail:   fmt.Sprintf("fragment %d repeated", idx),
 	}, next, nil
 }
 
-// injectCorruptMdat forges a moof header at the start of an mdat payload and
-// inflates the trun sample size that covers it. A scanner that resynchronises
-// on box magic instead of following declared sizes would report a phantom
-// fragment; a size-driven parser reports the sample range violation at the
-// forged offset instead.
+// injectCorruptMdat forges a moof header at the end of the last sample's
+// payload and inflates that sample's declared size past the mdat. A parser
+// that resynchronises on box magic would report a phantom fragment; a
+// size-driven parser reports the impossible sample range at the trun field.
 func injectCorruptMdat(base *Stream) (Injection, *Stream, error) {
 	if len(base.Fragments) == 0 {
-		return Injection{Kind: FaultCorruptMdat, Detail: "no fragments"}, base, nil
+		return Injection{anchor: anchorNone, Detail: "no fragments"}, base, nil
 	}
 	idx := len(base.Fragments) / 2
 	f := base.Fragments[idx]
 	if len(f.Samples) == 0 {
-		return Injection{Kind: FaultCorruptMdat, Detail: "no samples"}, base, nil
+		return Injection{anchor: anchorNone, Detail: "no samples"}, base, nil
 	}
 	plans, err := base.Plan()
 	if err != nil {
 		return Injection{}, nil, err
 	}
 	last := len(plans[idx].Samples) - 1
-	// Point the trun sample size at the last four bytes of the fragment, which
-	// hold a forged moof header whose declared size runs past the mdat.
 	forged := make([]byte, 4)
 	binary.BigEndian.PutUint32(forged, 32)
 	copy(forged, "moof")
@@ -352,9 +395,6 @@ func injectCorruptMdat(base *Stream) (Injection, *Stream, error) {
 	}
 	nf := next.Fragments[idx]
 	sample := nf.Samples[len(nf.Samples)-1]
-	// Inflate the trun sample size so only the last sample runs past the
-	// mdat; the sample-size field is the byte actually damaged and therefore
-	// the offset a parser must report.
 	data := append([]byte(nil), next.Data...)
 	entrySize := nf.TrunOffset + 8 + 4 + 4 + 4 + int64(8*(len(nf.Samples)-1)) + 4
 	overshoot := int64(nf.MdatOffset+nf.MdatSize) - sample.Offset + 8
@@ -362,12 +402,9 @@ func injectCorruptMdat(base *Stream) (Injection, *Stream, error) {
 	binary.BigEndian.PutUint32(data[entrySize:], uint32(declared))
 	trap := cloneStream(next, data)
 	return Injection{
-		Kind:       FaultCorruptMdat,
-		TrackID:    nf.TrackID,
-		Fragment:   idx,
-		Sequence:   nf.Sequence,
-		ByteOffset: entrySize,
-		Detail:     fmt.Sprintf("sample size field inflated to %d; forged moof header at %d", declared, sample.Offset+int64(sample.Size)-4),
+		Fragment: idx,
+		anchor:   anchorTrunSizeField,
+		Detail:   fmt.Sprintf("sample size field inflated to %d; forged moof header at %d", declared, sample.Offset+int64(sample.Size)),
 	}, trap, nil
 }
 

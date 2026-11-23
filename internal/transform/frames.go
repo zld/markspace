@@ -108,6 +108,17 @@ func BuildFrames(samples []timeline.Sample, payloads PayloadSource, opts FrameOp
 	return set, nil
 }
 
+// DigestFrames recomputes the frame-set root digest from exported frames. It
+// is the inverse of the digest written by BuildFrames, so an exported file can
+// be verified without the producing process.
+func DigestFrames(frames []Frame) string {
+	h := sha256.New()
+	for _, f := range frames {
+		writeFrameDigest(h, f)
+	}
+	return fmt.Sprintf("%x", h.Sum(nil))
+}
+
 // PayloadSource resolves the bytes of a sample from its source file.
 type PayloadSource interface {
 	SampleBytes(timeline.Sample) ([]byte, error)

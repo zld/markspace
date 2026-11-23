@@ -119,6 +119,15 @@ func (m *Manifest) AddFaults(errs interface{ Codes() []string }) {
 	sort.Strings(m.FaultCodes)
 }
 
+// SHA256Digest returns the manifest self digest, computing it if the manifest
+// has not been written yet.
+func (m *Manifest) SHA256Digest() string {
+	if m.SHA256 != "" {
+		return m.SHA256
+	}
+	return m.Digest()
+}
+
 // Digest hashes the manifest body excluding the SHA256 field.
 func (m *Manifest) Digest() string {
 	clone := *m
