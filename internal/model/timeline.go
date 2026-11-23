@@ -78,6 +78,10 @@ type Sample struct {
 	DupPTS bool `json:"dup_pts,omitempty"`
 	// Missing marks a gap before this sample detected at ingest.
 	Missing bool `json:"missing,omitempty"`
+	// ContentKey is the SHA-256 of the sample's actual payload bytes. It is
+	// computed at ingest so duplicate content can be found even when the
+	// surrounding container metadata differs. Empty when no payload exists.
+	ContentKey string `json:"content_key,omitempty"`
 }
 
 // Track is one normalized media track.
