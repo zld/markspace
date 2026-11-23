@@ -130,8 +130,8 @@ func runDemo(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprint(stdout, out.Verify.Text())
 	fmt.Fprintf(stdout, "mp4 tracks=%d bytes=%d anchor_mismatches=%d sha256=%s\n",
 		out.MP4Tracks, out.MP4Bytes, out.MetadataMismatches, out.MP4SHA256)
-	fmt.Fprintf(stdout, "flow peak_buffered_chunks=%d queue_bound=%d goroutines_drained=%t\n",
-		out.PeakBuffered, out.QueueBound, out.Drained)
+	fmt.Fprintf(stdout, "flow peak_buffered_chunks=%d queue_bound=%d peak_buffered_bytes=%d buffer_bound_bytes=%d goroutines_drained=%t\n",
+		out.PeakBuffered, out.QueueBound, out.PeakBufferedBytes, out.BufferBoundBytes, out.Drained)
 
 	switch {
 	case !out.Verify.OK():

@@ -50,6 +50,10 @@ type Output struct {
 	// MetadataMismatches counts recovered anchors absent from the MP4
 	// metadata timeline.
 	MetadataMismatches int
+	// PeakBufferedBytes is the largest number of chunk bytes live in the
+	// bounded reader; BufferBoundBytes is its configured bound.
+	PeakBufferedBytes int64
+	BufferBoundBytes  int64
 }
 
 // Run executes the full demonstration pipeline for one fixture.
@@ -109,6 +113,7 @@ func Run(ctx context.Context, cfg Config) (Output, error) {
 	}
 	fan.Wait()
 	peak, bound := fan.PeakQueued(), fan.Bound()
+	readStats := reader.Stats()
 	closeErr := fan.Close()
 	if err := ctx.Err(); err != nil {
 		return Output{}, fmt.Errorf("pipeline: fan-out canceled: %w", err)
@@ -160,10 +165,15 @@ func Run(ctx context.Context, cfg Config) (Output, error) {
 			obs = append(obs, bitrate.Observation{StartMs: s.StartMs, EndMs: s.EndMs, Bytes: s.ByteEnd - s.ByteStart})
 		}
 		br := bitrate.Measure(l.TargetKbps, l.DurationMs, cfg.WindowMs, obs)
+		firstDamage := int64(-1)
+		if analyzers[i].truncation != nil {
+			firstDamage = analyzers[i].truncation.Offset
+		}
 		layerInputs = append(layerInputs, manifest.LayerInput{
 			Result: r, Codec: analyzers[i].codecName, Units: analyzers[i].unitCount,
-			Keyframes:  analyzers[i].keyframes,
-			TargetKbps: l.TargetKbps, ActualKbps: br.ActualKbps, ErrorPct: br.ErrorPct,
+			Keyframes:   analyzers[i].keyframes,
+			FirstDamage: firstDamage,
+			TargetKbps:  l.TargetKbps, ActualKbps: br.ActualKbps, ErrorPct: br.ErrorPct,
 		})
 	}
 
@@ -178,7 +188,8 @@ func Run(ctx context.Context, cfg Config) (Output, error) {
 	vr := verify.Verify(results, merge, doc)
 	out := Output{Manifest: doc, Verify: vr, PeakBuffered: peak, QueueBound: bound, Drained: true,
 		MP4Bytes: meta.Bytes, MP4SHA256: meta.SHA256, MP4Tracks: meta.Tracks,
-		MetadataMismatches: len(meta.Mismatches)}
+		MetadataMismatches: len(meta.Mismatches),
+		PeakBufferedBytes:  readStats.PeakBytes, BufferBoundBytes: reader.Bounds()}
 	out.Damaged = damaged(analyzers, results, merge) || len(meta.Mismatches) > 0
 	return out, nil
 }

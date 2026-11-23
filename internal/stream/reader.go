@@ -68,6 +68,11 @@ type Reader struct {
 	closeErr  error
 	producer  sync.WaitGroup
 
+	// tokens bound the number of live chunks to exactly Queue+1. The producer
+	// acquires one before its next read and the consumer returns it when the
+	// chunk is handed off, so the reader never holds more than that.
+	tokens chan struct{}
+
 	peakQueue atomic.Int64
 	produced  atomic.Int64
 	bytesRead atomic.Int64
@@ -92,6 +97,10 @@ func Open(src io.Reader, opts Options) (*Reader, error) {
 		opts:   opts,
 		chunks: make(chan Chunk, opts.Queue),
 		done:   make(chan struct{}),
+		tokens: make(chan struct{}, opts.Queue+1),
+	}
+	for i := 0; i < opts.Queue+1; i++ {
+		r.tokens <- struct{}{}
 	}
 	r.producer.Add(1)
 	go r.run()
@@ -105,6 +114,12 @@ func (r *Reader) run() {
 	index := 0
 	var offset int64
 	for {
+		select {
+		case <-r.tokens:
+		case <-r.done:
+			r.setReadErr(ErrClosed)
+			return
+		}
 		n, err := io.ReadFull(r.src, buf)
 		if n > 0 {
 			data := make([]byte, n)
@@ -116,6 +131,7 @@ func (r *Reader) run() {
 			case r.chunks <- ch:
 			case <-r.done:
 				r.setReadErr(ErrClosed)
+				r.release(int64(n), false)
 				return
 			}
 			offset += int64(n)
@@ -124,6 +140,7 @@ func (r *Reader) run() {
 			r.bytesRead.Add(int64(n))
 		}
 		if err != nil {
+			r.release(0, true)
 			if errors.Is(err, io.ErrUnexpectedEOF) {
 				// A short final read is normal for non-aligned sources.
 				r.exhausted.Store(true)
@@ -181,13 +198,21 @@ func (r *Reader) Next(ctx context.Context) (Chunk, error) {
 			}
 			return Chunk{}, io.EOF
 		}
-		r.release(int64(len(ch.Data)))
+		r.release(int64(len(ch.Data)), true)
 		return ch, nil
 	}
 }
 
-// release accounts for a chunk leaving the reader's buffer.
-func (r *Reader) release(n int64) { r.liveBytes.Add(-n) }
+// release returns one live-chunk token and subtracts the chunk's bytes.
+func (r *Reader) release(n int64, returnToken bool) {
+	r.liveBytes.Add(-n)
+	if returnToken {
+		select {
+		case r.tokens <- struct{}{}:
+		default:
+		}
+	}
+}
 
 func (r *Reader) noteBytes(v int64) {
 	for {

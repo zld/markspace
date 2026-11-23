@@ -345,3 +345,36 @@ func TestChunkLen(t *testing.T) {
 		t.Fatal("unexpected empty")
 	}
 }
+
+// TestReaderLiveTokensBound proves the reader never has more than queue+1
+// chunk payloads live, measured in bytes rather than only queue slots.
+func TestReaderLiveTokensBound(t *testing.T) {
+	const chunk, queue = 6, 2
+	pr, pw := io.Pipe()
+	r, err := Open(pr, Options{ChunkBytes: chunk, Queue: queue})
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		for i := 0; i < 50; i++ {
+			if _, err := pw.Write(make([]byte, chunk)); err != nil {
+				return
+			}
+		}
+		_ = pw.Close()
+	}()
+	for i := 0; i < 12; i++ {
+		if _, err := r.Next(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	st := r.Stats()
+	if st.PeakBytes > int64((queue+1)*chunk) {
+		t.Fatalf("peak bytes %d exceeds bound %d", st.PeakBytes, (queue+1)*chunk)
+	}
+	if st.PeakQueued > int64(queue+1) {
+		t.Fatalf("peak queued %d exceeds %d", st.PeakQueued, queue+1)
+	}
+	_ = pw.CloseWithError(io.ErrClosedPipe)
+	_ = r.Close()
+}

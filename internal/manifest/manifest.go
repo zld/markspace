@@ -47,6 +47,7 @@ type Layer struct {
 	TargetKbps             float64   `json:"target_kbps"`
 	ActualKbps             float64   `json:"actual_kbps"`
 	BitrateErrorPct        float64   `json:"bitrate_error_pct"`
+	FirstDamageOffset      int64     `json:"first_damage_offset"`
 	ParseRatio             float64   `json:"parse_ratio"`
 	MeanKeyframeIntervalMs float64   `json:"mean_keyframe_interval_ms"`
 	MaxKeyframeIntervalMs  int64     `json:"max_keyframe_interval_ms"`
@@ -85,13 +86,14 @@ type Quality struct {
 
 // LayerInput is the evidence needed to render one layer row.
 type LayerInput struct {
-	Result     recovery.Result
-	Codec      string
-	Units      int
-	Keyframes  int
-	TargetKbps float64
-	ActualKbps float64
-	ErrorPct   float64
+	Result      recovery.Result
+	Codec       string
+	Units       int
+	Keyframes   int
+	FirstDamage int64
+	TargetKbps  float64
+	ActualKbps  float64
+	ErrorPct    float64
 }
 
 // Build assembles a manifest document. The SHA-256 covers the canonical JSON of
@@ -106,6 +108,7 @@ func Build(doc Document, inputs []LayerInput, merge recovery.Merge) (Document, e
 			RecoveredSegments: len(in.Result.Segments),
 			StartMs:           in.Result.StartMs, EndMs: in.Result.EndMs,
 			TargetKbps: in.TargetKbps, ActualKbps: in.ActualKbps, BitrateErrorPct: in.ErrorPct,
+			FirstDamageOffset:      in.FirstDamage,
 			ParseRatio:             in.Result.ParseRatio,
 			MeanKeyframeIntervalMs: in.Result.MeanKFMs,
 			MaxKeyframeIntervalMs:  in.Result.MaxKFMs,
@@ -184,8 +187,8 @@ func (doc Document) Text() string {
 	for _, l := range doc.Layers {
 		fmt.Fprintf(&b, "layer=%s codec=%s units=%d keyframes=%d recovered_segments=%d recoverable_gaps=%d unrecoverable_gaps=%d\n",
 			l.Layer, l.Codec, l.Units, l.Keyframes, l.RecoveredSegments, l.RecoverableGaps, l.UnrecoverableGaps)
-		fmt.Fprintf(&b, "  window_ms=%d-%d target_kbps=%.2f actual_kbps=%.2f bitrate_error_pct=%+.2f parse_ratio=%.4f mean_keyframe_interval_ms=%.2f max_keyframe_interval_ms=%d\n",
-			l.StartMs, l.EndMs, l.TargetKbps, l.ActualKbps, l.BitrateErrorPct, l.ParseRatio, l.MeanKeyframeIntervalMs, l.MaxKeyframeIntervalMs)
+		fmt.Fprintf(&b, "  window_ms=%d-%d target_kbps=%.2f actual_kbps=%.2f bitrate_error_pct=%+.2f parse_ratio=%.4f mean_keyframe_interval_ms=%.2f max_keyframe_interval_ms=%d first_damage_offset=%d\n",
+			l.StartMs, l.EndMs, l.TargetKbps, l.ActualKbps, l.BitrateErrorPct, l.ParseRatio, l.MeanKeyframeIntervalMs, l.MaxKeyframeIntervalMs, l.FirstDamageOffset)
 		for _, s := range l.Segments {
 			fmt.Fprintf(&b, "  segment ms=%d-%d bytes=%d-%d\n", s.StartMs, s.EndMs, s.ByteStart, s.ByteEnd)
 		}

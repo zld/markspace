@@ -145,7 +145,9 @@ func Recover(in Input) Result {
 			continue
 		}
 		verified[a.Boundary] = true
-		res.Anchors = append(res.Anchors, Anchor{TimeMs: in.Clock.Millis(a.Entry.PTS), Offset: a.Boundary})
+		// Normalize through the exact rational time base first, then round to
+		// the shared millisecond grid used by every layer.
+		res.Anchors = append(res.Anchors, Anchor{TimeMs: in.Clock.At(a.Entry.PTS).Millis(), Offset: a.Boundary})
 	}
 	sort.SliceStable(res.Anchors, func(i, j int) bool { return res.Anchors[i].Offset < res.Anchors[j].Offset })
 
