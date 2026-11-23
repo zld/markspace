@@ -72,19 +72,19 @@ func (o Options) normalize() Options {
 
 // SampleEvidence proves one output sample's content.
 type SampleEvidence struct {
-	TrackID   uint32 `json:"track_id"`
-	Index     int    `json:"index"`
-	PTS       int64  `json:"pts"`
-	Dur       int64  `json:"dur"`
+	TrackID uint32 `json:"track_id"`
+	Index   int    `json:"index"`
+	PTS     int64  `json:"pts"`
+	Dur     int64  `json:"dur"`
 	// ContainerPTS is the decode position inside the track, rebased to 0.
-	ContainerPTS int64 `json:"container_pts"`
-	Size      int    `json:"size"`
-	SHA256    string `json:"sha256"`
-	CanonHash string `json:"canon_sha256"`
-	Keyframe  bool   `json:"keyframe"`
-	Damaged   bool   `json:"damaged"`
-	Segment   int    `json:"segment"`
-	MP4Offset int64  `json:"mp4_offset"`
+	ContainerPTS int64  `json:"container_pts"`
+	Size         int    `json:"size"`
+	SHA256       string `json:"sha256"`
+	CanonHash    string `json:"canon_sha256"`
+	Keyframe     bool   `json:"keyframe"`
+	Damaged      bool   `json:"damaged"`
+	Segment      int    `json:"segment"`
+	MP4Offset    int64  `json:"mp4_offset"`
 	// Skipped is always false for written samples; retained for report
 	// compatibility with readers that expect the field.
 	Skipped bool `json:"skipped,omitempty"`

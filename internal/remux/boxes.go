@@ -587,13 +587,13 @@ func collectEvidence(layouts []*layout) []SampleEvidence {
 				PTS:          s.PTS,
 				Dur:          s.Dur,
 				ContainerPTS: containerPTS,
-				Size:      int(l.sizes[i]),
-				SHA256:    hashOf(s.Data),
-				CanonHash: l.canon[i],
-				Keyframe:  s.Keyframe,
-				Damaged:   s.Damaged,
-				Segment:   s.Segment,
-				Skipped:   false,
+				Size:         int(l.sizes[i]),
+				SHA256:       hashOf(s.Data),
+				CanonHash:    l.canon[i],
+				Keyframe:     s.Keyframe,
+				Damaged:      s.Damaged,
+				Segment:      s.Segment,
+				Skipped:      false,
 			}
 			if i < len(l.offsets) {
 				ev.MP4Offset = int64(l.offsets[i])
