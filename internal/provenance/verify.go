@@ -21,6 +21,7 @@ const (
 	FailSegmentHash    FailureKind = "segment_hash_mismatch"
 	FailCheckpoint     FailureKind = "checkpoint_mismatch"
 	FailMissing        FailureKind = "missing_provenance"
+	FailManifestDigest FailureKind = "manifest_digest_mismatch"
 )
 
 // Failure is one verification failure with the field that diverged.
@@ -54,7 +55,7 @@ func Verify(rec *Record, exp Expected) []Failure {
 	}
 	var failures []Failure
 	if exp.ManifestSHA256 != "" && rec.ManifestSHA256 != exp.ManifestSHA256 {
-		failures = append(failures, Failure{Kind: FailConfigDigest, Subject: "manifest", Detail: "manifest digest differs"})
+		failures = append(failures, Failure{Kind: FailManifestDigest, Subject: "manifest", Detail: "manifest digest differs"})
 	}
 	if exp.ConfigDigest != "" && rec.ConfigDigest != exp.ConfigDigest {
 		failures = append(failures, Failure{Kind: FailConfigDigest, Subject: "config", Detail: "config digest differs"})
