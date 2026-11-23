@@ -65,6 +65,10 @@ func (p *Planner) Plan(events []timeline.Event, intervals []timeline.Interval, d
 	frame := p.fr.FrameDurationNS()
 	var cuts []clock.Ticks
 	var alignFrames []int
+	// untrustedCut[i] marks the cut at index i as lacking a keyframe within
+	// one frame; the segments on both sides become untrusted rather than
+	// fabricating content across the loss.
+	untrustedCut := map[int]bool{}
 	maxAlign := 0
 	for grid := clock.Ticks(0); grid < duration; grid += p.target {
 		if grid == 0 {
@@ -74,14 +78,19 @@ func (p *Planner) Plan(events []timeline.Event, intervals []timeline.Interval, d
 		}
 		kf, dist, ok := nearestKeyframe(keyframes, grid)
 		if !ok {
-			return Plan{}, errs.New(errs.KindInvalidInput, "segment",
-				"no keyframe available for cut near %d ns", grid.Ns())
+			cuts = append(cuts, grid)
+			alignFrames = append(alignFrames, 0)
+			untrustedCut[len(cuts)-1] = true
+			continue
 		}
 		framesOff := int((clock.Abs(dist) + frame/2) / frame)
 		if framesOff > 1 {
-			return Plan{}, errs.New(errs.KindInvalidInput, "segment",
-				"cut at %d would be %d frames from keyframe %d, limit is 1",
-				grid.Ns(), framesOff, kf.Ns())
+			// No trustworthy keyframe near the grid: cut on the grid and
+			// flag the boundary instead of forcing a distant keyframe.
+			cuts = append(cuts, grid)
+			alignFrames = append(alignFrames, 0)
+			untrustedCut[len(cuts)-1] = true
+			continue
 		}
 		cuts = append(cuts, kf)
 		alignFrames = append(alignFrames, framesOff)
@@ -99,6 +108,12 @@ func (p *Planner) Plan(events []timeline.Event, intervals []timeline.Interval, d
 				seg.Untrusted = true
 				seg.Reasons = append(seg.Reasons, in.Reason)
 			}
+		}
+		// A cut without a nearby keyframe makes the touching segments
+		// untrusted; slicing resumes at the next valid keyframe.
+		if untrustedCut[i] || untrustedCut[i+1] {
+			seg.Untrusted = true
+			seg.Reasons = append(seg.Reasons, "cut-without-keyframe")
 		}
 		segs = append(segs, seg)
 	}

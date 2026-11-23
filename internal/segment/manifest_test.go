@@ -126,7 +126,7 @@ func TestManifestAtomicWrite(t *testing.T) {
 	}
 }
 
-func TestPlanRejectsCutBeyondOneFrame(t *testing.T) {
+func TestPlanFlagsCutBeyondOneFrame(t *testing.T) {
 	fr := clock.FrameRate25()
 	planner, _ := NewPlanner(fr, clock.Nanoseconds(2_000_000_000))
 	// Keyframe 5 frames (200ms) away from the 2s grid cut.
@@ -134,8 +134,15 @@ func TestPlanRejectsCutBeyondOneFrame(t *testing.T) {
 		{Seq: 1, Time: 0, Keyframe: true},
 		{Seq: 2, Time: clock.Nanoseconds(2_200_000_000), Keyframe: true},
 	}
-	_, err := planner.Plan(events, nil, clock.Nanoseconds(4_000_000_000))
-	if err == nil {
-		t.Fatal("cut more than one frame from keyframe must fail")
+	plan, err := planner.Plan(events, nil, clock.Nanoseconds(4_000_000_000))
+	if err != nil {
+		t.Fatalf("distant keyframe must degrade, not error: %v", err)
+	}
+	if !plan.Segments[0].Untrusted || !plan.Segments[1].Untrusted {
+		t.Fatal("segments touching a keyless cut must be untrusted")
+	}
+	// Trusted cuts still respect the one-frame alignment bound.
+	if plan.AlignmentMaxFrame > 1 {
+		t.Fatalf("trusted alignment %d exceeds one frame", plan.AlignmentMaxFrame)
 	}
 }
