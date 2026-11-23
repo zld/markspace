@@ -21,6 +21,10 @@ type TrackSpec struct {
 	TSStart  uint32 // non-zero RTP timestamp origin
 	TSIncr   uint32 // timestamp ticks per frame
 	TSWrap   bool   // force a 32-bit timestamp wraparound mid-stream
+	// BurstEnabled selects which single track carries the loss burst, so the
+	// global loss stays exactly LossBurst packets while every track still
+	// exercises reorder and duplicate handling.
+	BurstEnabled bool
 }
 
 // Config controls the injected transmission impairments.
@@ -31,6 +35,16 @@ type Config struct {
 	ReorderWindow int
 	Duplicates    int // number of duplicate packets injected
 	Reorders      int // number of in-window swaps injected
+	// Bandwidth enables the continuously varying link model. Arrival order is
+	// perturbed by a deterministic saw-tooth congestion wave plus bursty extra
+	// reordering, so the reorderer sees a shifting window instead of a fixed
+	// one. Loss remains owned by LossBurst so conservation stays exact.
+	Bandwidth bool
+	// BandwidthDepth caps how far the congestion wave may delay a packet. It
+	// must stay inside the reorder window so delayed packets are repairable
+	// rather than becoming loss; zero disables the wave, leaving plain
+	// duplicate/reorder/loss injection if Bandwidth is still true.
+	BandwidthDepth int
 }
 
 // Frame is one generated codec frame before packetization.
@@ -56,6 +70,9 @@ type Fixture struct {
 	TruthPackets int
 	// BurstSeq records the lost burst per track as [first,last] sequence.
 	BurstSeq map[uint32][2]uint16
+	// CongestionPeak is the deepest congestion wave the link model reached;
+	// zero when the bandwidth model is disabled.
+	CongestionPeak int
 }
 
 // Build generates every track, packetizes and injects impairments
@@ -72,8 +89,11 @@ func Build(cfg Config) *Fixture {
 		fx.TruthPackets += total
 		fx.Packets = append(fx.Packets, pkts...)
 	}
-	injectDuplicates(rng, fx, cfg.Duplicates)
-	injectReorders(rng, fx, cfg.Reorders)
+	if cfg.Bandwidth {
+		applyBandwidthModel(cfg.Seed, fx, cfg.BandwidthDepth)
+	}
+	injectReorders(cfg.Seed, fx, cfg.Reorders)
+	injectDuplicates(cfg.Seed, fx, cfg.Duplicates)
 	return fx
 }
 
@@ -83,15 +103,12 @@ func buildTrack(rng *rand.Rand, fx *Fixture, spec TrackSpec,
 	keys := map[uint32]bool{}
 	seq := spec.SeqStart
 	ts := spec.TSStart
-	wrapDone := false
 	for i := 0; i < spec.Frames; i++ {
 		sample := uint32(i + 1)
 		isKey := i%spec.KeyEvery == 0
-		if spec.TSWrap && !wrapDone && i == spec.Frames/2 {
-			// Jump close to the 32-bit ceiling so the next increment wraps.
-			ts = ^uint32(0) - spec.TSIncr + 1
-			wrapDone = true
-		}
+		// TSStart sits close enough to 2^32 that the increments cross zero
+		// mid-stream. The wrap is therefore a genuine forward wrap; no
+		// backward jump (which would model a node restart) is injected.
 		ts += spec.TSIncr
 		data := synthFrame(spec.Codec, sample, isKey, true)
 		fr := &Frame{Track: spec.SSRC, Sample: sample, Timestamp: ts,
@@ -100,22 +117,26 @@ func buildTrack(rng *rand.Rand, fx *Fixture, spec TrackSpec,
 		if isKey {
 			keys[sample] = true
 		}
-		// Two fragments per frame; marker on the last.
-		mid := len(data) / 2
-		chunks := [2][]byte{data[:mid], data[mid:]}
+		// Packetize along codec unit boundaries so any surviving fragment is
+		// itself a parseable unit. NAL frames split at their midpoint (Annex B
+		// start codes stay self-resynchronizing) and AV1 frames split at the
+		// OBU boundary; the marker bit closes the final fragment.
+		chunks := fragment(spec.Codec, data)
 		for j, chunk := range chunks {
 			pkts = append(pkts, &transport.Packet{
 				SSRC:      spec.SSRC,
 				Seq:       seq,
 				Timestamp: ts,
-				Marker:    j == 1,
+				Marker:    j == len(chunks)-1,
 				Payload:   append([]byte(nil), chunk...),
 			})
 			seq++
 		}
 	}
 	total = len(pkts)
-	pkts = removeBurst(rng, pkts, frames, spec, cfg.LossBurst, fx)
+	if spec.BurstEnabled {
+		pkts = removeBurst(rng, pkts, frames, spec, cfg.LossBurst, fx)
+	}
 	fx.Frames[spec.SSRC] = frames
 	// Only surviving, complete keyframes may be referenced by an index.
 	completeKeys := map[uint32]bool{}
@@ -128,47 +149,48 @@ func buildTrack(rng *rand.Rand, fx *Fixture, spec TrackSpec,
 	return pkts, total
 }
 
-// removeBurst removes cfg.LossBurst consecutive packets at a deterministic
-// position chosen to intersect a keyframe, marking that frame incomplete.
+// removeBurst removes cfg.LossBurst consecutive packets positioned so the
+// range always includes a keyframe's two fragments. It picks the second
+// keyframe that leaves at least one surviving packet after the burst, so the
+// reorderer always observes the hole. Only that keyframe is flagged
+// incomplete; fixture truth data stays intact and the truncated bytes are
+// reconstructed downstream from surviving packets.
 func removeBurst(rng *rand.Rand, pkts []*transport.Packet, frames []*Frame,
 	spec TrackSpec, burst int, fx *Fixture) []*transport.Packet {
 	if burst <= 0 {
 		return pkts
 	}
-	// Aim at the second keyframe (sample index >=1) so the first keyframe
-	// remains intact and hit rates stay measurable.
-	keyIdx := secondKeyframeIndex(frames)
-	targetPkt := (keyIdx + 1) * 2 // last fragment packet of that frame
-	start := targetPkt - burst + 1
+	// Locate a keyframe whose full packet range fits with a packet to spare.
+	keyIdx := -1
+	keysSeen := 0
+	for i, fr := range frames {
+		if !fr.Keyframe {
+			continue
+		}
+		keysSeen++
+		markerPkt := (i + 1) * 2 // packet index of this frame's marker fragment
+		if keysSeen >= 2 && markerPkt+1 < len(pkts) {
+			keyIdx = i
+			break
+		}
+		keyIdx = i // fall back to the last eligible keyframe if needed
+	}
+	if keyIdx < 0 {
+		return pkts
+	}
+	firstFrag := keyIdx * 2 // first fragment packet of the target keyframe
+	start := firstFrag
+	if start+burst >= len(pkts) {
+		start = len(pkts) - burst - 1
+	}
 	if start < 0 {
 		start = 0
 	}
-	if start+burst > len(pkts) {
-		start = len(pkts) - burst
-	}
 	fx.BurstSeq[spec.SSRC] = [2]uint16{pkts[start].Seq, pkts[start+burst-1].Seq}
-	for i := start; i < start+burst; i++ {
-		fr := frames[i/2]
-		fr.Complete = false
-		delete(fx.KeySamples[spec.SSRC], fr.Sample)
-		if i == start && i%2 == 0 {
-			// First fragment lost: nothing of the frame can be trusted.
-			fr.Data = fr.Data[:len(fr.Data)/2]
-		}
-	}
+	// Flag exactly the target keyframe incomplete and drop it from the
+	// complete-keyframe index set.
+	frames[keyIdx].Complete = false
+	delete(fx.KeySamples[spec.SSRC], frames[keyIdx].Sample)
 	copy(pkts[start:], pkts[start+burst:])
 	return pkts[:len(pkts)-burst]
-}
-
-func secondKeyframeIndex(frames []*Frame) int {
-	seen := 0
-	for i, fr := range frames {
-		if fr.Keyframe {
-			seen++
-			if seen == 2 {
-				return i
-			}
-		}
-	}
-	return len(frames) - 1
 }

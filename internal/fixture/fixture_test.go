@@ -1,9 +1,11 @@
 package fixture
 
 import (
+	"strconv"
 	"testing"
 
 	"mediaroute/internal/codec"
+	"mediaroute/internal/transport"
 )
 
 func demoConfig() Config {
@@ -14,12 +16,13 @@ func demoConfig() Config {
 		Duplicates:    4,
 		Reorders:      6,
 		Tracks: []TrackSpec{
-			{SSRC: 10, Codec: codec.H264, Frames: 10, KeyEvery: 2,
-				SeqStart: 65000, TSStart: 4_000_000_000, TSIncr: 3003},
-			{SSRC: 20, Codec: codec.H265, Frames: 10, KeyEvery: 3,
+			{SSRC: 10, Codec: codec.H264, Frames: 50, KeyEvery: 10,
+				SeqStart: 65000, TSStart: 4_000_000_000, TSIncr: 3003,
+				BurstEnabled: true},
+			{SSRC: 20, Codec: codec.H265, Frames: 50, KeyEvery: 8,
 				SeqStart: 1000, TSStart: 12345, TSIncr: 3003},
-			{SSRC: 30, Codec: codec.AV1, Frames: 10, KeyEvery: 4,
-				SeqStart: 500, TSStart: 0xFFFFFF00, TSIncr: 3003, TSWrap: true},
+			{SSRC: 30, Codec: codec.AV1, Frames: 50, KeyEvery: 8,
+				SeqStart: 500, TSStart: 0xFFFF0000, TSIncr: 3003, TSWrap: true},
 		},
 	}
 }
@@ -41,33 +44,37 @@ func TestDeterministicSameSeed(t *testing.T) {
 
 func TestBurstLossAndTruncation(t *testing.T) {
 	fx := Build(demoConfig())
-	if len(fx.BurstSeq) != 3 {
-		t.Fatalf("each track needs one burst: %+v", fx.BurstSeq)
+	// Only the BurstEnabled track (SSRC 10) carries the single loss burst.
+	if len(fx.BurstSeq) != 1 {
+		t.Fatalf("exactly one track should carry the burst: %+v", fx.BurstSeq)
 	}
-	for ssrc, span := range fx.BurstSeq {
-		if int(span[1]-span[0])+1 != 3 {
-			t.Fatalf("track %d burst span wrong: %v", ssrc, span)
-		}
+	span, ok := fx.BurstSeq[10]
+	if !ok || int(span[1]-span[0])+1 != 3 {
+		t.Fatalf("burst span on track 10 wrong: %+v", fx.BurstSeq)
 	}
-	// Truth = 3 tracks * 10 frames * 2 packets = 60; loss removes 9;
-	// duplicates re-add 4 -> on-wire = 55.
-	if fx.TruthPackets != 60 {
-		t.Fatalf("truth packet count = %d want 60", fx.TruthPackets)
+	// Truth = 3 tracks * 50 frames * 2 packets = 300; loss removes 3;
+	// duplicates re-add 4 -> on-wire = 301.
+	if fx.TruthPackets != 300 {
+		t.Fatalf("truth packet count = %d want 300", fx.TruthPackets)
 	}
-	want := fx.TruthPackets - 3*3 + 4
+	want := fx.TruthPackets - 3 + 4
 	if len(fx.Packets) != want {
 		t.Fatalf("on-wire packets = %d want %d", len(fx.Packets), want)
 	}
-	// Every track must have at least one incomplete (truncated) frame.
+	// The burst-enabled track must have at least one incomplete frame while
+	// the other tracks remain fully complete.
 	for ssrc, frames := range fx.Frames {
-		complete := 0
+		var incomplete int
 		for _, fr := range frames {
-			if fr.Complete {
-				complete++
+			if !fr.Complete {
+				incomplete++
 			}
 		}
-		if complete == len(frames) {
-			t.Fatalf("track %d shows no truncated frame", ssrc)
+		if ssrc == 10 && incomplete == 0 {
+			t.Fatalf("burst track %d shows no truncated frame", ssrc)
+		}
+		if ssrc != 10 && incomplete != 0 {
+			t.Fatalf("clean track %d unexpectedly truncated", ssrc)
 		}
 	}
 }
@@ -115,5 +122,77 @@ func TestNoImpairmentBaseline(t *testing.T) {
 				t.Fatal("clean build must produce only complete frames")
 			}
 		}
+	}
+}
+
+func TestBandwidthModelReordersWithoutLosing(t *testing.T) {
+	// Isolate the link model: duplicate/reorder injection draws its targets
+	// from arrival positions, so it must be off for a multiset comparison.
+	base := demoConfig()
+	base.Duplicates, base.Reorders = 0, 0
+	cfg := base
+	cfg.Bandwidth = true
+	cfg.BandwidthDepth = 6
+	fx := Build(cfg)
+	if fx.CongestionPeak < 1 || fx.CongestionPeak > 6 {
+		t.Fatalf("congestion peak = %d want 1..6", fx.CongestionPeak)
+	}
+	// The link model only re-sequences arrival; it never drops or duplicates,
+	// so the on-wire multiset must match a plain build exactly.
+	plain := Build(base)
+	if len(fx.Packets) != len(plain.Packets) {
+		t.Fatalf("bandwidth model changed packet count: %d != %d",
+			len(fx.Packets), len(plain.Packets))
+	}
+	if fx.TruthPackets != plain.TruthPackets {
+		t.Fatalf("bandwidth model changed truth count")
+	}
+	key := func(p *transport.Packet) string {
+		return strconv.FormatUint(uint64(p.SSRC), 10) + ":" +
+			strconv.FormatUint(uint64(p.Seq), 10)
+	}
+	multiset := func(pkts []*transport.Packet) map[string]int {
+		m := map[string]int{}
+		for _, p := range pkts {
+			m[key(p)]++
+		}
+		return m
+	}
+	a, b := multiset(fx.Packets), multiset(plain.Packets)
+	if len(a) != len(b) {
+		t.Fatalf("distinct packet sets differ: %d != %d", len(a), len(b))
+	}
+	for k, n := range b {
+		if a[k] != n {
+			t.Fatalf("packet %s multiplicity %d != %d", k, a[k], n)
+		}
+	}
+	// Arrival order must actually have changed.
+	same := true
+	for i := range fx.Packets {
+		if key(fx.Packets[i]) != key(plain.Packets[i]) {
+			same = false
+			break
+		}
+	}
+	if same {
+		t.Fatal("bandwidth model left arrival order untouched")
+	}
+}
+
+func TestBandwidthModelDeterministic(t *testing.T) {
+	cfg := demoConfig()
+	cfg.Bandwidth = true
+	cfg.BandwidthDepth = 4
+	a := Build(cfg)
+	b := Build(cfg)
+	for i := range a.Packets {
+		if a.Packets[i].Seq != b.Packets[i].Seq ||
+			a.Packets[i].SSRC != b.Packets[i].SSRC {
+			t.Fatalf("bandwidth model not deterministic at packet %d", i)
+		}
+	}
+	if a.CongestionPeak != b.CongestionPeak {
+		t.Fatal("congestion peak not deterministic")
 	}
 }

@@ -2,6 +2,8 @@ package fixture
 
 import (
 	"math/rand"
+	"sort"
+	"strconv"
 
 	"mediaroute/internal/codec"
 	"mediaroute/internal/transport"
@@ -81,44 +83,211 @@ func appendOBU(dst []byte, typ byte, payload []byte) []byte {
 	return append(dst, payload...)
 }
 
-// injectDuplicates re-sends existing packets at later positions. Each
-// duplicate keeps the original SSRC/seq so the reorderer counts it once.
-func injectDuplicates(rng *rand.Rand, fx *Fixture, n int) {
+// fragment splits a synthesized frame into RTP payloads along codec unit
+// boundaries. Every returned chunk is independently parseable, so a frame
+// whose other fragment was lost still yields a clean (but non-keyframe)
+// prefix rather than a half-unit the parser must reject.
+func fragment(c codec.Codec, data []byte) [][]byte {
+	if c == codec.AV1 {
+		// Exactly two OBUs per synthetic AV1 frame: split at the boundary.
+		if split := av1Boundary(data); split > 0 {
+			return [][]byte{data[:split], data[split:]}
+		}
+	}
+	// Annex B NAL frames: two NAL units; split at the second start code.
+	if split := nalBoundary(data); split > 0 {
+		return [][]byte{data[:split], data[split:]}
+	}
+	mid := len(data) / 2
+	return [][]byte{data[:mid], data[mid:]}
+}
+
+// av1Boundary returns the byte offset where the second OBU starts, or -1.
+func av1Boundary(data []byte) int {
+	pos := 0
+	for obu := 0; obu < 2; obu++ {
+		if pos+2 > len(data) {
+			return -1
+		}
+		size := int(data[pos+1])
+		next := pos + 2 + size
+		if obu == 0 {
+			if next <= 0 || next >= len(data) {
+				return -1
+			}
+			return next
+		}
+		pos = next
+	}
+	return -1
+}
+
+// nalBoundary returns the offset of the second Annex B start code, or -1.
+func nalBoundary(data []byte) int {
+	for i := 3; i+3 <= len(data); i++ {
+		if data[i] == 0 && data[i+1] == 0 &&
+			(data[i+2] == 1 || (i+3 < len(data) && data[i+2] == 0 && data[i+3] == 1)) {
+			return i
+		}
+	}
+	return -1
+}
+
+// applyBandwidthModel reorders arrival positions to mimic a link whose
+// available bandwidth keeps changing. Each packet gets a deterministic delay
+// from a saw-tooth congestion wave plus occasional micro-bursts, and packets
+// are re-emitted in increasing arrival-time order (stable, so equal times keep
+// transmission order). A packet can therefore be overtaken by at most `wave`
+// successors, keeping every swap inside a reorder window of wave+1. The
+// packet multiset is untouched, so conservation holds.
+func applyBandwidthModel(seed int64, fx *Fixture, wave int) {
+	if wave <= 0 || wave > CongestionWave || len(fx.Packets) < wave {
+		return
+	}
+	rng := rand.New(rand.NewSource(seed ^ 0x5EED_B00))
+	type arrival struct {
+		pkt   *transport.Packet
+		order int // transmission index
+		at    int // effective arrival position
+	}
+	planned := make([]arrival, len(fx.Packets))
+	peak := 0
+	for i, p := range fx.Packets {
+		// Saw-tooth: 0..wave-1, then back down to 0.
+		delay := i % wave
+		if delay > wave-delay {
+			delay = wave - delay
+		}
+		// Micro-burst: a small deterministic fraction of packets stall longer.
+		if rng.Intn(7) == 0 {
+			delay += rng.Intn(wave) + 1
+		}
+		if delay > wave {
+			delay = wave
+		}
+		if delay > peak {
+			peak = delay
+		}
+		planned[i] = arrival{pkt: p, order: i, at: i + delay}
+	}
+	sort.SliceStable(planned, func(a, b int) bool { return planned[a].at < planned[b].at })
+	out := make([]*transport.Packet, len(planned))
+	for i, a := range planned {
+		out[i] = a.pkt
+	}
+	fx.Packets = out
+	fx.CongestionPeak = peak
+}
+
+// CongestionWave bounds how far the bandwidth model may delay a packet. It
+// is kept inside the default reorder window so delayed packets stay
+// repairable rather than becoming loss.
+const CongestionWave = 6
+
+// injectDuplicates re-sends existing packets immediately after their
+// originals. Each SSRC draws from its own seed-derived RNG (keyed by SSRC) so
+// the result is independent of map iteration and repeatable across builds.
+func injectDuplicates(base int64, fx *Fixture, n int) {
 	if n <= 0 || len(fx.Packets) == 0 {
 		return
 	}
-	for i := 0; i < n; i++ {
-		idx := rng.Intn(len(fx.Packets))
-		src := fx.Packets[idx]
-		dup := &transport.Packet{
-			SSRC: src.SSRC, Seq: src.Seq, Timestamp: src.Timestamp,
-			Marker: src.Marker, Payload: append([]byte(nil), src.Payload...),
+	ssrcs := sortedPacketSSRCs(fx)
+	remaining := n
+	for ti, ssrc := range ssrcs {
+		// Distribute the global duplicate budget round-robin across tracks.
+		quota := remaining / (len(ssrcs) - ti)
+		if quota == 0 {
+			break
 		}
-		// Insert within the reorder window of a later position.
-		at := idx + 1
-		if at >= len(fx.Packets) {
-			at = len(fx.Packets)
+		rng := rand.New(rand.NewSource(base*1_000_003 + int64(ssrc)))
+		used := map[string]bool{}
+		var idxs []int
+		for i, p := range fx.Packets {
+			if p.SSRC == ssrc {
+				idxs = append(idxs, i)
+			}
 		}
-		fx.Packets = insertAt(fx.Packets, at, dup)
+		type target struct {
+			idx int
+			pkt *transport.Packet
+		}
+		var targets []target
+		for tries := 0; tries < quota*20 && len(targets) < quota; tries++ {
+			idx := idxs[rng.Intn(len(idxs))]
+			src := fx.Packets[idx]
+			key := duplicateKey(src.SSRC, src.Seq)
+			if used[key] {
+				continue
+			}
+			used[key] = true
+			targets = append(targets, target{idx: idx, pkt: &transport.Packet{
+				SSRC: src.SSRC, Seq: src.Seq, Timestamp: src.Timestamp,
+				Marker: src.Marker, Payload: append([]byte(nil), src.Payload...),
+			}})
+		}
+		remaining -= len(targets)
+		sort.Slice(targets, func(i, j int) bool { return targets[i].idx > targets[j].idx })
+		for _, tg := range targets {
+			fx.Packets = insertAt(fx.Packets, tg.idx+1, tg.pkt)
+		}
 	}
 }
 
-// injectReorders swaps neighboring packets belonging to the same SSRC while
-// staying inside the reorder window, so the reorderer repairs them.
-func injectReorders(rng *rand.Rand, fx *Fixture, n int) {
+func sortedPacketSSRCs(fx *Fixture) []uint32 {
+	seen := map[uint32]bool{}
+	var out []uint32
+	for _, p := range fx.Packets {
+		if !seen[p.SSRC] {
+			seen[p.SSRC] = true
+			out = append(out, p.SSRC)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
+}
+
+func duplicateKey(ssrc uint32, seq uint16) string {
+	return strconv.FormatUint(uint64(ssrc), 16) + ":" +
+		strconv.FormatUint(uint64(seq), 16)
+}
+
+// injectReorders performs in-stream adjacent swaps using a per-SSRC derived
+// RNG so ordering is deterministic and independent of map iteration. Each
+// swap moves a packet by one arrival position, inside any reorder window
+// >= 2, and is therefore fully repairable.
+func injectReorders(base int64, fx *Fixture, n int) {
 	if n <= 0 || len(fx.Packets) < 4 {
 		return
 	}
-	done := 0
-	for tries := 0; tries < n*10 && done < n; tries++ {
-		i := rng.Intn(len(fx.Packets) - 2)
-		a, b := fx.Packets[i], fx.Packets[i+1]
-		// Only swap same-SSRC neighbors that are currently in sequence.
-		if a.SSRC != b.SSRC || int16(b.Seq-a.Seq) != 1 {
-			continue
+	ssrcs := sortedPacketSSRCs(fx)
+	remaining := n
+	for ti, ssrc := range ssrcs {
+		quota := remaining / (len(ssrcs) - ti)
+		if quota == 0 {
+			break
 		}
-		fx.Packets[i], fx.Packets[i+1] = b, a
-		done++
+		rng := rand.New(rand.NewSource(base*1_000_007 + int64(ssrc)))
+		var idxs []int
+		for i, p := range fx.Packets {
+			if p.SSRC == ssrc {
+				idxs = append(idxs, i)
+			}
+		}
+		done := 0
+		for tries := 0; tries < quota*20 && done < quota; tries++ {
+			if len(idxs) < 2 {
+				break
+			}
+			j := rng.Intn(len(idxs) - 1)
+			a, b := idxs[j], idxs[j+1]
+			if fx.Packets[a].SSRC != ssrc || fx.Packets[b].SSRC != ssrc ||
+				int16(fx.Packets[b].Seq-fx.Packets[a].Seq) != 1 {
+				continue
+			}
+			fx.Packets[a], fx.Packets[b] = fx.Packets[b], fx.Packets[a]
+			done++
+		}
+		remaining -= done
 	}
 }
 
