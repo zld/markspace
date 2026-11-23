@@ -294,18 +294,3 @@ func maxInt64(a, b int64) int64 {
 	}
 	return b
 }
-
-// PCMFromFloat converts a float slice in [-1,1] to int16, for fixtures.
-func PCMFromFloat(samples []float64) []int16 {
-	out := make([]int16, len(samples))
-	for i, v := range samples {
-		if v > 1 {
-			v = 1
-		}
-		if v < -1 {
-			v = -1
-		}
-		out[i] = int16(math.Round(v * 32767))
-	}
-	return out
-}

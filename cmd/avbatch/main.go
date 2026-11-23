@@ -9,6 +9,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -28,7 +29,7 @@ func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
 
-func run(args []string, stdout, stderr *os.File) int {
+func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		fmt.Fprintln(stderr, "usage: avbatch demo [flags]")
 		return exitFailure
@@ -61,7 +62,7 @@ type demoFlags struct {
 	durationSeconds       int
 }
 
-func parseDemoFlags(args []string, stderr *os.File) (demoFlags, error) {
+func parseDemoFlags(args []string, stderr io.Writer) (demoFlags, error) {
 	var f demoFlags
 	fs := flag.NewFlagSet("demo", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -95,7 +96,7 @@ func parseDemoFlags(args []string, stderr *os.File) (demoFlags, error) {
 	return f, nil
 }
 
-func runDemo(args []string, stdout, stderr *os.File) int {
+func runDemo(args []string, stdout, stderr io.Writer) int {
 	f, err := parseDemoFlags(args, stderr)
 	if err != nil {
 		fmt.Fprintf(stderr, "avbatch demo: %v\n", err)
@@ -157,7 +158,7 @@ func runDemo(args []string, stdout, stderr *os.File) int {
 	}
 }
 
-func printReport(stdout *os.File, res pipeline.Result, runErr error) {
+func printReport(stdout io.Writer, res pipeline.Result, runErr error) {
 	fmt.Fprintf(stdout, "segments=%d\n", res.Segments)
 	fmt.Fprintf(stdout, "silence_ms=%d\n", res.SilenceMillis)
 	fmt.Fprintf(stdout, "duplicates=%d\n", res.Duplicates)

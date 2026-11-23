@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"sort"
 	"time"
 
 	"avbatch/internal/audio"
@@ -313,8 +312,6 @@ func classifyOrder(frags []*cmaf.Fragment) orderInfo {
 	seen := map[[32]byte]int{}
 	var lastSeq uint32
 	haveSeq := false
-	lastTrackID := uint32(0)
-	_ = lastTrackID
 	for _, f := range frags {
 		if prev, isDup := seen[f.Digest]; isDup {
 			// A re-delivered fragment is expected on mobile networks and is
@@ -657,16 +654,31 @@ func buildEntries(man segment.Manifest, dd dedupOutcome, fps []fingerprint.Finge
 // checkpoint state that was used to resume.
 func writeIndex(cfg index.Config, entries []index.Entry, runCfg Config, publish bool) (index.Recovery, error) {
 	// An existing index at this path belongs to a previous run. Validate it
-	// before writing anything: if the input changed, appending would silently
-	// mix two captures in one manifest.
+	// before writing anything: continuing would either mix two captures in one
+	// manifest or build on a damaged tail, and neither may happen silently.
+	// Verified blocks and the recoverable offset are returned either way.
 	if cfg.Path != "" {
 		if _, statErr := os.Stat(cfg.Path); statErr == nil {
 			existing, openErr := index.Open(cfg.Path, cfg.InputDigest)
-			if existing != nil && existing.Recovery.DigestMismatch {
-				return existing.Recovery, mediaerr.New(mediaerr.KindResumeMismatch, -1, "index", 0,
-					"input digest changed since the index was written; refusing to overwrite")
+			if existing != nil {
+				// Corrupt headers also poison the digest field, so structural
+				// damage is classified before identity.
+				switch {
+				case existing.Recovery.Corrupt:
+					return existing.Recovery, mediaerr.New(mediaerr.KindCorruptCheckpoint, -1, "index",
+						existing.Recovery.ResumeOffset,
+						"checkpoint is corrupt; verified blocks are preserved at the reported offset")
+				case existing.Recovery.DigestMismatch:
+					return existing.Recovery, mediaerr.New(mediaerr.KindResumeMismatch, -1, "index", 0,
+						"input digest changed since the index was written; refusing to continue")
+				case existing.Recovery.Truncated:
+					return existing.Recovery, mediaerr.New(mediaerr.KindTruncatedIndex, -1, "index",
+						existing.Recovery.ResumeOffset,
+						fmt.Sprintf("index tail is truncated at offset %d; verified blocks are reusable",
+							existing.Recovery.ResumeOffset))
+				}
 			}
-			if openErr != nil && mediaerr.Is(openErr, mediaerr.KindCorruptCheckpoint) {
+			if openErr != nil {
 				return index.Recovery{}, openErr
 			}
 		}
@@ -835,9 +847,4 @@ func unwrapRTP(in Input, cfg Config, skip map[int]bool) (rtpStats, []error) {
 		errs = append(errs, err)
 	}
 	return st, errs
-}
-
-// SortEntries is a helper for reporting; entries are already in manifest order.
-func SortEntries(entries []index.Entry) {
-	sort.SliceStable(entries, func(i, j int) bool { return entries[i].StartNanos < entries[j].StartNanos })
 }

@@ -1,7 +1,6 @@
 package synth
 
 import (
-	"encoding/binary"
 	"fmt"
 
 	"github.com/pion/rtp"
@@ -392,11 +391,4 @@ func buildAudioRTP(opt Options) ([][]byte, uint32) {
 		ts += packetFrames
 	}
 	return out, startTS
-}
-
-// EncodeU32 is a small helper used by tests.
-func EncodeU32(v uint32) []byte {
-	var b [4]byte
-	binary.BigEndian.PutUint32(b[:], v)
-	return b[:]
 }

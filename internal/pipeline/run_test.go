@@ -272,6 +272,48 @@ func TestRunOverlappingManifestNeverPublished(t *testing.T) {
 	}
 }
 
+func TestRunRefusesTruncatedIndexTail(t *testing.T) {
+	dir := t.TempDir()
+	in := buildGroup(t, synth.Options{Seed: 41})
+	cfg := cleanCfg(dir)
+	if _, err := Run(in, cfg); err != nil {
+		t.Fatalf("baseline: %v", err)
+	}
+	data, err := os.ReadFile(cfg.IndexPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfg.IndexPath, data[:len(data)-8], 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res, err := Run(in, cfg)
+	if !mediaerr.Is(err, mediaerr.KindTruncatedIndex) {
+		t.Fatalf("err = %v, want truncated_index", err)
+	}
+	if res.RecoveredBlocks == 0 {
+		t.Fatal("no verified blocks were preserved")
+	}
+	if res.ResumeOffset <= 0 {
+		t.Fatalf("resume offset = %d", res.ResumeOffset)
+	}
+}
+
+func TestRunRefusesCorruptIndex(t *testing.T) {
+	dir := t.TempDir()
+	in := buildGroup(t, synth.Options{Seed: 41})
+	cfg := cleanCfg(dir)
+	if _, err := Run(in, cfg); err != nil {
+		t.Fatalf("baseline: %v", err)
+	}
+	data, _ := os.ReadFile(cfg.IndexPath)
+	copy(data, "XXXX")
+	os.WriteFile(cfg.IndexPath, data, 0o644)
+	_, err := Run(in, cfg)
+	if !mediaerr.Is(err, mediaerr.KindCorruptCheckpoint) {
+		t.Fatalf("err = %v, want corrupt_checkpoint", err)
+	}
+}
+
 func TestRunEmptyInputFailsCleanly(t *testing.T) {
 	_, err := Run(Input{}, cleanCfg(t.TempDir()))
 	if err == nil {
