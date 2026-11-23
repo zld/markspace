@@ -156,7 +156,7 @@ func validateStsc(b rawBox, file string, errs *fault.Batch) {
 // Non-zero start, duplicate PTS and missing frames are handled without ever
 // producing a negative duration.
 func buildSamples(t stblTables, timescale uint32, file string,
-	errs *fault.Batch, kind model.Kind) []model.Sample {
+	data []byte, errs *fault.Batch, kind model.Kind) []model.Sample {
 	n := len(t.sizes)
 	if n == 0 || timescale == 0 {
 		return nil
@@ -197,6 +197,7 @@ func buildSamples(t stblTables, timescale uint32, file string,
 		s := model.Sample{
 			DTS: dtsU, PTS: pts, DurationNanos: dur,
 			PayloadLen: plen, PayloadOff: off,
+			ContentKey: payloadHash(data, off, plen),
 		}
 		if kind == model.KindVideo {
 			if t.keys == nil {

@@ -36,6 +36,7 @@ func ParseMXF(path string, errs *fault.Batch) ([]*model.Track, error) {
 	var indexItem *klvItem
 	essenceOffsets := map[int]int64{}
 	essenceSize := map[int]int64{}
+	essenceHash := map[int]string{}
 	frame := 0
 	for i := range items {
 		it := &items[i]
@@ -55,6 +56,7 @@ func ParseMXF(path string, errs *fault.Batch) ([]*model.Track, error) {
 			if frame < limits.MaxSamplesPerTrack {
 				essenceOffsets[frame] = it.offset
 				essenceSize[frame] = int64(len(it.value))
+				essenceHash[frame] = sha256Hex(it.value)
 			}
 			frame++
 		default:
@@ -69,7 +71,7 @@ func ParseMXF(path string, errs *fault.Batch) ([]*model.Track, error) {
 		return []*model.Track{tr}, nil
 	}
 	tr.Samples = parseTimelineIndex(indexItem, tr.Timescale, path, errs,
-		essenceOffsets, essenceSize)
+		essenceOffsets, essenceSize, essenceHash)
 	if frame > limits.MaxSamplesPerTrack {
 		errs.Add(limits.Exceeded(path, "essence item count",
 			indexItem.offset, frame, limits.MaxSamplesPerTrack))
@@ -136,7 +138,8 @@ func applyTrackSet(tr *model.Track, it *klvItem, path string, errs *fault.Batch)
 
 // parseTimelineIndex decodes start time and one fixed-size record per frame.
 func parseTimelineIndex(it *klvItem, timescale uint32, path string,
-	errs *fault.Batch, offs, sizes map[int]int64) []model.Sample {
+	errs *fault.Batch, offs, sizes map[int]int64,
+	hashes map[int]string) []model.Sample {
 	if len(it.value) < 12 {
 		errs.Add(fault.New(fault.KindTruncated,
 			"timeline index header truncated", path, it.offset, true))
@@ -186,6 +189,7 @@ func parseTimelineIndex(it *klvItem, timescale uint32, path string,
 			DTS: pts, PTS: pts, DurationNanos: dur,
 			PayloadLen: plen, PayloadOff: offs[int(f)],
 			Keyframe:    key,
+			ContentKey:  hashes[int(f)],
 		}
 		if pts > prevEnd {
 			s.Missing = true

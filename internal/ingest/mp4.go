@@ -35,7 +35,7 @@ func ParseMP4(path string, errs *fault.Batch) ([]*model.Track, error) {
 	}
 	var tracks []*model.Track
 	for ti := range traks {
-		tr, ok := parseTrak(traks[ti], path, ti, errs)
+		tr, ok := parseTrak(traks[ti], path, data, ti, errs)
 		if ok {
 			tracks = append(tracks, tr)
 		}
@@ -43,7 +43,8 @@ func ParseMP4(path string, errs *fault.Batch) ([]*model.Track, error) {
 	return tracks, nil
 }
 
-func parseTrak(trak rawBox, path string, idx int, errs *fault.Batch) (*model.Track, bool) {
+func parseTrak(trak rawBox, path string, data []byte, idx int,
+	errs *fault.Batch) (*model.Track, bool) {
 	tkhdBoxes := findChildren(trak, "tkhd", path, errs)
 	mdhdBoxes := findChildren(trak, "mdhd", path, errs)
 	hdlrBoxes := findChildren(trak, "hdlr", path, errs)
@@ -85,7 +86,7 @@ func parseTrak(trak rawBox, path string, idx int, errs *fault.Batch) (*model.Tra
 	}
 
 	tables := readStbl(stblBoxes[0], path, errs)
-	tr.Samples = buildSamples(tables, timescale, path, errs, kind)
+	tr.Samples = buildSamples(tables, timescale, path, data, errs, kind)
 	if len(tr.Samples) > limits.MaxSamplesPerTrack {
 		errs.Add(limits.Exceeded(path, "sample count", trak.offset,
 			len(tr.Samples), limits.MaxSamplesPerTrack))
