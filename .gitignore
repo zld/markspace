@@ -1,0 +1,6 @@
+# Go build artifacts and local forensic output
+/restore
+/cmd/restore/restore
+*.test
+*.out
+/output
