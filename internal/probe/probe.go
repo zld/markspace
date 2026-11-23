@@ -37,15 +37,20 @@ func Probe(r io.ReadSeeker, fileSize int64, cfg ProbeConfig, errs *model.ErrorSe
 	if err != nil {
 		return nil, nil, err
 	}
-	if _, ok := scan.FindBox("moov"); !ok {
+	moovBox, ok := scan.FindBox("moov")
+	if !ok {
 		return nil, nil, errors.New("no moov box found: not an ISO BMFF/MOV file")
 	}
+	// Restrict generic box traversal to the moov window so a truncated mdat
+	// later in the file cannot fail metadata parsing. Payload truncation is
+	// independently surfaced through the evidence layer.
+	moovReader := newBoundedReader(r, moovBox.Offset, moovBox.Size)
 
 	var (
 		moovInfo *mp4.BoxInfo
 		traks    []*mp4.BoxInfo
 	)
-	if _, err := mp4.ReadBoxStructure(r, func(h *mp4.ReadHandle) (interface{}, error) {
+	if _, err := mp4.ReadBoxStructure(moovReader, func(h *mp4.ReadHandle) (interface{}, error) {
 		switch {
 		case h.BoxInfo.Type == mp4.BoxTypeMoov() && len(h.Path) == 1:
 			info := h.BoxInfo
@@ -69,6 +74,13 @@ func Probe(r io.ReadSeeker, fileSize int64, cfg ProbeConfig, errs *model.ErrorSe
 	if len(traks) > model.MaxTracks {
 		return nil, nil, &model.LimitError{What: "tracks", Got: len(traks), Max: model.MaxTracks}
 	}
+	// Re-base the captured moov-relative offsets back to absolute file
+	// offsets for all subsequent payload extraction on the original reader.
+	base := uint64(moovBox.Offset)
+	for _, bi := range traks {
+		bi.Offset += base
+	}
+	moovInfo.Offset = base
 
 	meta := &ContainerMeta{}
 	if mv, err := extractOne(r, moovInfo, mp4.BoxTypeMvhd()); err == nil {

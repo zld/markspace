@@ -68,6 +68,21 @@ func TestTruncatedMdatIsReportedNotPanicked(t *testing.T) {
 	if !errs.Has(model.KindTruncatedBox) {
 		t.Fatalf("expected truncated_box, got %v", errs.All())
 	}
+	// The full Probe must still recover the moov graph and timeline instead
+	// of hard-failing on the trailing truncated payload box.
+	probeErrs := &model.ErrorSet{}
+	g, _, err := Probe(bytes.NewReader(raw), int64(len(raw)), DefaultConfig(), probeErrs)
+	if err != nil {
+		t.Fatalf("probe must survive truncated mdat: %v", err)
+	}
+	if len(g.IDs()) != 2 {
+		t.Fatalf("tracks = %d, want 2 even after truncation", len(g.IDs()))
+	}
+	for _, id := range g.IDs() {
+		if g.Tracks[id].SampleCount() == 0 {
+			t.Fatalf("track %d lost its sample table", id)
+		}
+	}
 }
 
 func TestBackwardTimestampsDetected(t *testing.T) {
