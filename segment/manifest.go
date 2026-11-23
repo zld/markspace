@@ -201,11 +201,18 @@ func Build(in BuildInput, cfg Config) (*Manifest, error) {
 	return m, nil
 }
 
-// hashCanonical serializes without the hash field and returns its SHA-256.
-func hashCanonical(m *Manifest) (string, error) {
+// CanonicalJSON serializes the manifest without its content hash field and
+// returns the canonical bytes used to compute SHA256. Shared by the builder
+// and the checkpoint store so verification always uses identical logic.
+func (m *Manifest) CanonicalJSON() ([]byte, error) {
 	copy := *m
 	copy.SHA256 = ""
-	raw, err := json.MarshalIndent(&copy, "", "  ")
+	return json.MarshalIndent(&copy, "", "  ")
+}
+
+// hashCanonical serializes without the hash field and returns its SHA-256.
+func hashCanonical(m *Manifest) (string, error) {
+	raw, err := m.CanonicalJSON()
 	if err != nil {
 		return "", timeline.NewLocError("MANIFEST_ENCODE", timeline.StageManifest, 0, -1, "json", err)
 	}

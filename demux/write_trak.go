@@ -46,7 +46,7 @@ func writeVideoTrak(w *mp4.Writer, ctx mp4.Context, spec FixtureSpec, dataBytes 
 	if err := writeVideoStsd(w, stbl, spec); err != nil {
 		return err
 	}
-	if err := writeCommonTables(w, stbl, s.FrameCount, s.FrameDelta, dataBytes, 64); err != nil {
+	if err := writeCommonTables(w, stbl, s.FrameCount, s.FrameDelta, dataBytes, videoFrameSize(spec)); err != nil {
 		return err
 	}
 	if err := writeStss(w, stbl, s.FrameCount, s.KeyframeEvery, spec.Fault); err != nil {

@@ -102,10 +102,19 @@ func writeMdat(w *mp4.Writer, videoData, audioData []byte) error {
 	return err
 }
 
+// videoFrameSize returns the per-frame coded size, applying a safe default.
+func videoFrameSize(spec FixtureSpec) uint32 {
+	if spec.Video.FrameSizeBytes > 0 {
+		return spec.Video.FrameSizeBytes
+	}
+	return 64
+}
+
 // buildMdatPayload creates one fixed-fill byte block per sample. Sizes are
 // deterministic functions of seed and sample index.
 func buildMdatPayload(spec FixtureSpec) (video []byte, audio []byte) {
-	video = make([]byte, int(spec.Video.FrameCount)*64)
+	frameSize := videoFrameSize(spec)
+	video = make([]byte, int(spec.Video.FrameCount)*int(frameSize))
 	for i := range video {
 		video[i] = byte((spec.Seed + int64(i)) % 251)
 	}
