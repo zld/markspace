@@ -190,3 +190,10 @@ func SortedSegments(segs []Segment) []Segment {
 	sort.Slice(out, func(i, j int) bool { return out[i].Index < out[j].Index })
 	return out
 }
+
+func putU64(b []byte, v uint64) {
+	for i := 7; i >= 0; i-- {
+		b[i] = byte(v)
+		v >>= 8
+	}
+}

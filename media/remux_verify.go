@@ -1,8 +1,6 @@
 package media
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"io"
 	"os"
 )
@@ -93,35 +91,4 @@ func equalBool(a, b []bool) bool {
 		}
 	}
 	return true
-}
-
-// SampleHash computes a stable hash over ordered (dts,size,cts,sync) tuples.
-// The resume logic uses it to detect when previously checked content changed.
-func SampleHash(st *SampleTable) string {
-	h := sha256.New()
-	var b [24]byte
-	for i := range st.Samples {
-		s := st.Samples[i]
-		putU64(b[0:8], s.DTS)
-		putU64(b[8:16], uint64(s.Size))
-		putI64(b[16:24], s.CTS)
-		h.Write(b[:])
-		if s.Sync {
-			h.Write([]byte{1})
-		} else {
-			h.Write([]byte{0})
-		}
-	}
-	return hex.EncodeToString(h.Sum(nil))
-}
-
-func putU64(b []byte, v uint64) {
-	for i := 7; i >= 0; i-- {
-		b[i] = byte(v)
-		v >>= 8
-	}
-}
-
-func putI64(b []byte, v int64) {
-	putU64(b, uint64(v))
 }
