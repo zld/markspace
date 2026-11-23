@@ -246,8 +246,9 @@ func Run(in Input, cfg Config) (Result, error) {
 		collected = append(collected, mediaerr.New(mediaerr.KindInvalidBox, -1, "", 0, "dedup removed every segment"))
 	}
 
-	// A damaged capture still produces a report and verified blocks, but the
-	// staged index is not promoted: publishing it would claim completeness.
+	// The published index only exists when the input was clean: a damaged
+	// capture still produces a report and verified blocks, but a published
+	// manifest would claim completeness it does not have.
 	publish := errors.Join(collected...) == nil
 	ictx := index.Config{BlockSamples: cfg.BlockSamples, Path: cfg.IndexPath, InputDigest: digest}
 	rec, idxErr := writeIndex(ictx, entries, cfg, publish)
