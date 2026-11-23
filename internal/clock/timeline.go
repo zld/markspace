@@ -301,3 +301,11 @@ func addChecked(a, b int64) (int64, bool) {
 	}
 	return s, true
 }
+
+// ScaleTicks converts a duration between two tick domains, rounding to nearest.
+func ScaleTicks(value int64, from, to uint32) int64 {
+	if from == 0 || to == 0 {
+		return 0
+	}
+	return mulDivRound(value, int64(to), int64(from))
+}
