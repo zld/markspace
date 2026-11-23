@@ -4,6 +4,9 @@
 package rtp
 
 import (
+	"encoding/binary"
+	"hash/crc32"
+
 	"github.com/pion/rtp"
 
 	"mediaverify/internal/errs"
@@ -114,4 +117,20 @@ func (e *Extender) Parse(raw []byte) (Packet, error) {
 		return Packet{}, errs.New(errs.KindInvalidInput, "rtp", "unmarshal: %v", err)
 	}
 	return e.Extend(p)
+}
+
+// VerifyChecksum validates the CRC32 carried in the final four payload
+// bytes. A mismatch is a classified KindChecksum integrity failure.
+func VerifyChecksum(p Packet) error {
+	if len(p.Payload) < 5 {
+		return errs.New(errs.KindChecksum, "rtp",
+			"ssrc=%d seq=%d payload too short for checksum", p.SSRC, p.Seq16)
+	}
+	stored := binary.BigEndian.Uint32(p.Payload[len(p.Payload)-4:])
+	computed := crc32.ChecksumIEEE(p.Payload[:len(p.Payload)-4])
+	if stored != computed {
+		return errs.New(errs.KindChecksum, "rtp",
+			"ssrc=%d seq=%d payload checksum mismatch", p.SSRC, p.Seq16)
+	}
+	return nil
 }

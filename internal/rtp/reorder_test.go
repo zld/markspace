@@ -171,3 +171,21 @@ func TestParseBadPacket(t *testing.T) {
 		t.Fatalf("want invalid_input for corrupt packet, got %v", err)
 	}
 }
+
+func TestVerifyChecksumClass(t *testing.T) {
+	e := NewExtender()
+	good, err := e.Extend(mkPacket(1, 0, 0, 7))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// mkPacket payload has no CRC, so the final bytes are content; this is
+	// itself a checksum failure under the verified layout.
+	if err := VerifyChecksum(good); errs.Class(err) != errs.KindChecksum {
+		t.Fatalf("want KindChecksum, got %v", err)
+	}
+	short := good
+	short.Payload = []byte{1}
+	if err := VerifyChecksum(short); errs.Class(err) != errs.KindChecksum {
+		t.Fatalf("short payload want KindChecksum, got %v", err)
+	}
+}
