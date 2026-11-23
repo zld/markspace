@@ -132,22 +132,22 @@ func NewGenerator(cfg GenConfig) *Generator {
 	for i := 0; i < cfg.LossBurst; i++ {
 		lost[burstStart+i] = true
 	}
-	order := make([]int, 0, n)
-	for i := 0; i < n; i++ {
-		if !lost[i] {
-			order = append(order, i)
-		}
+	// Shuffle within chunks of the original sequence space so the span of a
+	// chunk never exceeds the reorder window, then drop lost frames.
+	w := cfg.ReorderWindow
+	if w < 1 {
+		w = 1
 	}
-	if w := cfg.ReorderWindow; w > 1 {
-		for lo := 0; lo < len(order); lo += w {
-			hi := lo + w
-			if hi > len(order) {
-				hi = len(order)
-			}
-			perm := rng.Perm(hi - lo)
-			chunk := append([]int(nil), order[lo:hi]...)
-			for j, p := range perm {
-				order[lo+j] = chunk[p]
+	order := make([]int, 0, n)
+	for lo := 0; lo < n; lo += w {
+		hi := lo + w
+		if hi > n {
+			hi = n
+		}
+		perm := rng.Perm(hi - lo)
+		for _, p := range perm {
+			if idx := lo + p; !lost[idx] {
+				order = append(order, idx)
 			}
 		}
 	}
