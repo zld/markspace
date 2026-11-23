@@ -239,12 +239,19 @@ func (w *Writer) finalizeSlot(plan FinalizePlan, manifest *Manifest) error {
 		if err := os.WriteFile(chunkPath, chunk, 0o644); err != nil {
 			return err
 		}
+		var totalDuration uint64
+		for _, d := range meta.SampleDurations {
+			totalDuration += uint64(d)
+		}
 		slotEntry.Fragments = append(slotEntry.Fragments, FragmentManifest{
 			OutputSeq:      outSeq,
 			OriginSeq:      meta.Seq,
 			InputOrder:     meta.InputOrder,
 			File:           filepath.Join(sanitize(plan.Slot), chunkName),
 			CorrectedDTS:   meta.CorrectedDTS,
+			Duration:       totalDuration,
+			PayloadBytes:   len(payload),
+			Timescale:      plan.Track.Timescale,
 			SampleCount:    len(meta.SampleSizes),
 			Bytes:          len(chunk),
 			Repeated:       meta.Repeated,

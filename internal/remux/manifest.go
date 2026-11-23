@@ -12,11 +12,16 @@ import (
 
 // FragmentManifest describes one output chunk inside a slot stream.
 type FragmentManifest struct {
-	OutputSeq      int    `json:"output_seq"`
-	OriginSeq      int    `json:"origin_seq"`
-	InputOrder     int    `json:"input_order"`
-	File           string `json:"file"`
-	CorrectedDTS   uint64 `json:"corrected_dts"`
+	OutputSeq    int    `json:"output_seq"`
+	OriginSeq    int    `json:"origin_seq"`
+	InputOrder   int    `json:"input_order"`
+	File         string `json:"file"`
+	CorrectedDTS uint64 `json:"corrected_dts"`
+	// Duration is the total sample duration in the track's timescale.
+	Duration uint64 `json:"duration"`
+	// PayloadBytes is the number of compressed (mdat payload) bytes.
+	PayloadBytes int `json:"payload_bytes"`
+	Timescale    uint32 `json:"timescale"`
 	SampleCount    int    `json:"sample_count"`
 	Bytes          int    `json:"bytes"`
 	Repeated       bool   `json:"repeated"`

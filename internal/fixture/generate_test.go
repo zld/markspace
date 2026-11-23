@@ -49,26 +49,70 @@ func TestGeneratedFragmentsParse(t *testing.T) {
 func TestVariableFrameRatePreserved(t *testing.T) {
 	g := Generate(1, 10, -1)
 	seenDifferent := false
-	nominal := uint32(3003)
+	// Every video window must total the exact 90 kHz grid duration, while
+	// individual sample durations vary (VFR) and never hit zero.
+	window90k := uint64(90000) * GridMS / 1000
 	for _, f := range g.VideoFrags {
+		var sum uint64
 		for _, d := range f.Durations {
-			if d != nominal {
-				seenDifferent = true
-			}
 			if d == 0 {
 				t.Fatal("VFR duration must never be zero")
 			}
+			sum += uint64(d)
+			if d != uint32(window90k/uint64(len(f.Durations))) {
+				seenDifferent = true
+			}
+		}
+		if sum != window90k {
+			t.Fatalf("video window total %d != grid %d", sum, window90k)
 		}
 	}
 	if !seenDifferent {
 		t.Fatal("video generator must produce variable sample durations")
 	}
-	// Audio durations stay constant.
+	// Audio uses fixed 1024-unit frames, three per 64 ms window.
+	window48k := uint64(48000) * GridMS / 1000
 	for _, f := range g.AudioFrags {
+		var sum uint64
 		for _, d := range f.Durations {
 			if d != 1024 {
-				t.Fatalf("audio duration must be fixed, got %d", d)
+				t.Fatalf("audio frame duration must be fixed, got %d", d)
 			}
+			sum += uint64(d)
+		}
+		if sum != window48k {
+			t.Fatalf("audio window total %d != grid %d", sum, window48k)
+		}
+	}
+}
+
+func TestTracksAlignedOnCommonGrid(t *testing.T) {
+	g := Generate(2, 5, -1)
+	if len(g.VideoFrags) != len(g.AudioFrags) {
+		t.Fatal("paired tracks must have the same fragment count")
+	}
+	for i := range g.VideoFrags {
+		vMS := int64(g.VideoFrags[i].DTS) * 1000 / 90000
+		aMS := int64(g.AudioFrags[i].DTS) * 1000 / 48000
+		if vMS != aMS || vMS != int64(i)*GridMS {
+			t.Fatalf("frag %d not grid-aligned: video=%dms audio=%dms", i, vMS, aMS)
+		}
+	}
+}
+
+func TestPayloadHitsTargetBitrate(t *testing.T) {
+	g := Generate(4, 8, -1)
+	// Each window carries exactly the bytes implied by its target bitrate.
+	videoWant := g.VideoTargetBPS / 8 * GridMS / 1000
+	audioWant := g.AudioTargetBPS / 8 * GridMS / 1000
+	for _, f := range g.VideoFrags {
+		if len(f.Payload) != videoWant {
+			t.Fatalf("video payload %d != target window bytes %d", len(f.Payload), videoWant)
+		}
+	}
+	for _, f := range g.AudioFrags {
+		if len(f.Payload) != audioWant {
+			t.Fatalf("audio payload %d != target window bytes %d", len(f.Payload), audioWant)
 		}
 	}
 }
