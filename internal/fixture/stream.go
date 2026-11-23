@@ -12,6 +12,9 @@ func MakePlans(spec Spec) ([]TrackPlan, error) {
 	}
 	plans := make([]TrackPlan, 0, spec.Fragments)
 	cursors := make([]int64, len(spec.Tracks))
+	for i, t := range spec.Tracks {
+		cursors[i] = t.SourceStart
+	}
 	seqs := make([]uint32, len(spec.Tracks))
 	rng := rand.New(rand.NewSource(spec.Seed))
 	for i := 0; i < spec.Fragments; i++ {

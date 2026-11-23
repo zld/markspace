@@ -245,29 +245,40 @@ func injectOversizeBox(base *Stream) (Injection, *Stream, error) {
 	}, next, nil
 }
 
-// injectSequenceGap advances one mfhd sequence so a gap appears mid-track.
+// injectSequenceGap drops one fragment from the middle of the stream. Later
+// fragments of the same track keep their mfhd numbers, so a gap appears in the
+// sequence and in decode time, exactly as if the capture lost a fragment.
 func injectSequenceGap(base *Stream, plans []TrackPlan) (Injection, *Stream, error) {
-	idx := -1
-	for i := 1; i < len(plans)-1; i++ {
-		idx = i
-		break
-	}
-	if idx < 0 {
+	if len(plans) < 4 {
 		return Injection{Kind: FaultSequenceGap, Detail: "too few fragments"}, base, nil
 	}
-	plans[idx].Seq += 2
+	trackID := plans[0].Track.ID
+	idx := -1
+	for i := len(plans) / 2; i < len(plans); i++ {
+		if plans[i].Track.ID == trackID {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return Injection{Kind: FaultSequenceGap, Detail: "no mid-track fragment"}, base, nil
+	}
+	dropped := plans[idx]
+	plans = append(plans[:idx], plans[idx+1:]...)
 	next, err := base.Reassemble(plans)
 	if err != nil {
 		return Injection{}, nil, err
 	}
-	f := next.Fragments[idx]
+	// The next fragment of the same track is where the missing sequence
+	// number becomes observable.
+	observed := next.Fragments[idx]
 	return Injection{
 		Kind:       FaultSequenceGap,
-		TrackID:    f.TrackID,
+		TrackID:    observed.TrackID,
 		Fragment:   idx,
-		Sequence:   f.Sequence,
-		ByteOffset: f.MoofOffset,
-		Detail:     fmt.Sprintf("mfhd sequence jumps to %d", f.Sequence),
+		Sequence:   observed.Sequence,
+		ByteOffset: observed.MoofOffset,
+		Detail:     fmt.Sprintf("dropped fragment sequence %d; next is %d", dropped.Seq, observed.Sequence),
 	}, next, nil
 }
 

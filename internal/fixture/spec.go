@@ -9,8 +9,11 @@ type TrackSpec struct {
 	Kind           string `json:"kind"` // "video" or "audio"
 	Timescale      uint32 `json:"timescale"`
 	SampleDuration uint32 `json:"sample_duration"`
-	Width          uint32 `json:"width,omitempty"`
-	Height         uint32 `json:"height,omitempty"`
+	// SourceStart offsets the first declared decode time, modelling a track
+	// whose media timeline does not begin at zero.
+	SourceStart int64  `json:"source_start,omitempty"`
+	Width       uint32 `json:"width,omitempty"`
+	Height      uint32 `json:"height,omitempty"`
 }
 
 // Spec describes a complete stream.
