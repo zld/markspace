@@ -110,7 +110,9 @@ func (p *parser) readBlock(h Header, clusterTC, clusterOff int64, simple bool) e
 	if err := p.rd.readFull(head[:n]); err != nil {
 		return p.wrapErr(h, err)
 	}
-	track, tw, err := ParseUintVINT(head)
+	// Parse only the bytes actually read; passing zero padding would let a
+	// truncated track VINT appear valid.
+	track, tw, err := ParseUintVINT(head[:n])
 	if err != nil {
 		return parseError(ErrKindInvalidVINT, h.Offset, h.ID, 0, "invalid block track number", err)
 	}
