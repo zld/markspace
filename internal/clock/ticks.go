@@ -58,10 +58,10 @@ type Rate struct {
 
 // Common rate domains.
 var (
-	Usec       = Rate{Num: 1_000_000, Den: 1}
-	RTPVideo   = Rate{Num: 90_000, Den: 1}
-	Msec       = Rate{Num: 1_000, Den: 1}
-	Seconds    = Rate{Num: 1, Den: 1}
+	Usec     = Rate{Num: 1_000_000, Den: 1}
+	RTPVideo = Rate{Num: 90_000, Den: 1}
+	Msec     = Rate{Num: 1_000, Den: 1}
+	Seconds  = Rate{Num: 1, Den: 1}
 )
 
 // Validate rejects zero/negative denominators and non-positive numerators.
@@ -124,9 +124,18 @@ func Begin32(first uint32) int64 { return int64(first) }
 
 // Unwrap32 advances the unwrapped stream; prev is the previous unwrapped
 // value, raw the next on-wire timestamp.
+//
+// The step is interpreted as a signed 32-bit forward step, so crossing
+// 0xFFFFFFFF -> 0 advances by one instead of reading as a huge backward
+// jump. A step that is negative at that scale is a genuine regression (for
+// example a node restart reusing a smaller clock base); absorbing it would
+// silently shift the entire remaining timeline, so it is a context error.
 func Unwrap32(prev int64, raw uint32) (int64, error) {
-	base := uint32(prev)
-	delta := int64(int32(raw - base))
+	delta := int64(int32(raw - uint32(prev)))
+	if delta < 0 {
+		return 0, E(PhaseTimeline, 0, -1, false,
+			"timestamp moved backwards: clock regression is not a wraparound", nil)
+	}
 	next := prev + delta
 	if next < 0 {
 		return 0, E(PhaseTimeline, 0, -1, false, "unwrapped timestamp is negative", nil)

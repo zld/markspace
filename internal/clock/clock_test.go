@@ -69,10 +69,24 @@ func TestUnwrap32(t *testing.T) {
 	if err != nil || prev != 0x100000028 {
 		t.Fatalf("wrap = %d, %v", prev, err)
 	}
-	// Backward jump that would land before zero is an error.
-	prev = Begin32(10)
-	if _, err = Unwrap32(prev, 0xFFFFFFF6); err == nil { // delta = -20 -> -10
-		t.Fatal("negative unwrap accepted")
+	// A genuine backward clock regression is an explicit error: absorbing it
+	// as a wrap would shift the whole remaining timeline.
+	prev = Begin32(900_000)
+	if _, err = Unwrap32(prev, 10); err == nil {
+		t.Fatal("backward clock regression accepted")
+	}
+	if pe, ok := AsError(err); !ok || pe.Recoverable || pe.Phase != PhaseTimeline {
+		t.Fatalf("regression error model wrong: %v", err)
+	}
+	// Forward wraps chain correctly even when the origin is non-zero.
+	prev = Begin32(0xFFFFFF00)
+	prev, err = Unwrap32(prev, 0x00000010)
+	if err != nil || prev != 0x100000010 {
+		t.Fatalf("chained wrap = %#x, %v", prev, err)
+	}
+	prev, err = Unwrap32(prev, 0x00000120)
+	if err != nil || prev != 0x100000120 {
+		t.Fatalf("post-wrap advance = %#x, %v", prev, err)
 	}
 }
 
