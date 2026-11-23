@@ -32,6 +32,9 @@ type Segment struct {
 	Discontinuity   bool            `json:"discontinuity,omitempty"`
 	SourceTicks     int64           `json:"source_ticks"`
 	SourceTimescale media.Timescale `json:"source_timescale"`
+	// DeclaredOffset is the byte offset of the declaration that carried this
+	// duration, so a duration mismatch can be traced to the manifest line.
+	DeclaredOffset int64 `json:"declared_offset"`
 }
 
 // End returns the segment end on the unified timeline.
@@ -87,7 +90,7 @@ func newBuilder(kind Kind, seq int64) *builder {
 // add places a segment at the current exact cursor. start is the floor of the
 // cursor on the output timescale; the sub-tick residual is recorded as
 // alignment evidence rather than silently dropped.
-func (b *builder) add(id, init string, declared media.Ratio, disc bool, srcTicks int64, srcTS media.Timescale) error {
+func (b *builder) add(id, init string, declared media.Ratio, disc bool, srcTicks int64, srcTS media.Timescale, declOffset int64) error {
 	if declared.Num < 0 {
 		return media.NewError(media.CodeManifestDrift, media.PhaseManifest,
 			fmt.Sprintf("negative duration for %q", id)).OnSegment(len(b.segments), id)
@@ -119,6 +122,7 @@ func (b *builder) add(id, init string, declared media.Ratio, disc bool, srcTicks
 		Discontinuity:   disc,
 		SourceTicks:     srcTicks,
 		SourceTimescale: srcTS,
+		DeclaredOffset:  declOffset,
 	})
 	b.seq++
 	return nil

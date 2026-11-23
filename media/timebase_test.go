@@ -64,10 +64,10 @@ func TestAlignAccumulatorSumsExactly(t *testing.T) {
 
 func TestParseDecimalSeconds(t *testing.T) {
 	cases := []struct {
-		in   string
-		num  int64
-		den  int64
-		ok   bool
+		in  string
+		num int64
+		den int64
+		ok  bool
 	}{
 		{"6", 6, 1, true},
 		{"6.006", 3003, 500, true},

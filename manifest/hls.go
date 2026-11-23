@@ -90,7 +90,7 @@ func ParseHLS(src string) (*Document, error) {
 		if err != nil {
 			return nil, ErrLine(media.CodeManifestDrift, durOffset, err.Error())
 		}
-		if err := b.add(line, initURI, dur, disc, srcTicks, OutputTimescale); err != nil {
+		if err := b.add(line, initURI, dur, disc, srcTicks, OutputTimescale, durOffset); err != nil {
 			return nil, err
 		}
 		haveDur, disc = false, false

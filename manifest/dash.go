@@ -106,7 +106,7 @@ func ParseDASH(src string) (*Document, error) {
 	for _, d := range durations {
 		declared := media.NewRatio(d.duration, ts)
 		if err := b.add(fmt.Sprintf("%s-%d", repID(rep), len(b.segments)),
-			tmpl.Initialization, declared, disc, d.start, media.Timescale(ts)); err != nil {
+			tmpl.Initialization, declared, disc, d.start, media.Timescale(ts), 0); err != nil {
 			return nil, err
 		}
 		disc = false

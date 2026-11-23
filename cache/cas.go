@@ -25,12 +25,14 @@ type Provenance struct {
 	ManifestVer string `json:"manifest_version"`
 	Bytes       int64  `json:"bytes"`
 	Epoch       int64  `json:"epoch"`
+	MetaDigest  string `json:"meta_digest,omitempty"`
 }
 
 // Entry is a cached segment plus its provenance record.
 type Entry struct {
 	Key         string     `json:"key"`
 	Data        []byte     `json:"-"`
+	Meta        []byte     `json:"-"`
 	Provenance  Provenance `json:"provenance"`
 	Quarantined bool       `json:"quarantined"`
 }
@@ -41,6 +43,7 @@ type LookupResult struct {
 	Source    string     `json:"source"` // "cache", "rebuilt", "quarantine"
 	Reason    string     `json:"reason,omitempty"`
 	Entry     *Entry     `json:"entry,omitempty"`
+	Data      []byte     `json:"-"`
 	Rejection *Rejection `json:"rejection,omitempty"`
 }
 
@@ -90,6 +93,12 @@ func Key(data []byte) string {
 // Put stores data under its digest together with its provenance. Re-putting
 // identical content with identical provenance is idempotent.
 func (s *Store) Put(data []byte, prov Provenance) (*Entry, error) {
+	return s.PutWithMeta(data, prov, nil)
+}
+
+// PutWithMeta stores data and a small analysis record under the data digest.
+// The meta digest is recorded so a hit can prove the record was not swapped.
+func (s *Store) PutWithMeta(data []byte, prov Provenance, meta []byte) (*Entry, error) {
 	key := Key(data)
 	if prov.Digest != "" && prov.Digest != key {
 		return nil, media.NewError(media.CodeCachePoison, media.PhaseCache,
@@ -97,16 +106,25 @@ func (s *Store) Put(data []byte, prov Provenance) (*Entry, error) {
 	}
 	prov.Digest = key
 	prov.Bytes = int64(len(data))
+	if len(meta) > 0 {
+		prov.MetaDigest = Key(meta)
+	} else {
+		prov.MetaDigest = ""
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if existing, ok := s.entries[key]; ok {
+		if len(meta) > 0 && len(existing.Meta) == 0 {
+			existing.Meta = append([]byte(nil), meta...)
+			existing.Provenance.MetaDigest = prov.MetaDigest
+		}
 		return existing, nil
 	}
 	if s.used+int64(len(data)) > s.capacity {
 		return nil, media.NewError(media.CodeInput, media.PhaseCache,
 			"cache capacity exceeded").AtOffset(0)
 	}
-	e := &Entry{Key: key, Data: append([]byte(nil), data...), Provenance: prov}
+	e := &Entry{Key: key, Data: append([]byte(nil), data...), Meta: append([]byte(nil), meta...), Provenance: prov}
 	s.entries[key] = e
 	s.used += int64(len(data))
 	return e, nil
@@ -131,7 +149,11 @@ func (s *Store) Lookup(key string, expect Provenance) LookupResult {
 	}
 	actualDigest := Key(e.Data)
 	digestOK := actualDigest == expectedDigest && e.Provenance.Digest == expectedDigest
-	if e.Provenance.Node != expect.Node || e.Provenance.InputLength != expect.InputLength || !digestOK {
+	metaOK := true
+	if expect.MetaDigest != "" {
+		metaOK = e.Provenance.MetaDigest == expect.MetaDigest && Key(e.Meta) == expect.MetaDigest
+	}
+	if e.Provenance.Node != expect.Node || e.Provenance.InputLength != expect.InputLength || !digestOK || !metaOK {
 		s.rejects++
 		s.rebuilt++
 		delete(s.entries, key)
@@ -144,6 +166,8 @@ func (s *Store) Lookup(key string, expect Provenance) LookupResult {
 			reason += fmt.Sprintf("source node %q != expected %q", e.Provenance.Node, expect.Node)
 		case e.Provenance.InputLength != expect.InputLength:
 			reason += fmt.Sprintf("input length %d != expected %d", e.Provenance.InputLength, expect.InputLength)
+		case !metaOK:
+			reason += "analysis record digest mismatch"
 		default:
 			reason += "digest mismatch"
 		}
@@ -153,12 +177,12 @@ func (s *Store) Lookup(key string, expect Provenance) LookupResult {
 			Rejection: &Rejection{
 				Key: key, ExpectedNode: expect.Node, RecordedNode: e.Provenance.Node,
 				ExpectedLength: expect.InputLength, RecordedLength: e.Provenance.InputLength,
-				DigestMatches: digestOK, Reason: reason,
+				DigestMatches: digestOK && metaOK, Reason: reason,
 			},
 		}
 	}
 	s.hits++
-	return LookupResult{Hit: true, Source: "cache", Entry: e}
+	return LookupResult{Hit: true, Source: "cache", Entry: e, Data: e.Data}
 }
 
 // Rebuild stores freshly read bytes and records the rebuild event.
@@ -167,6 +191,15 @@ func (s *Store) Rebuild(data []byte, prov Provenance) (*Entry, error) {
 	s.rebuilt++
 	s.mu.Unlock()
 	return s.Put(data, prov)
+}
+
+// Fetch returns an entry by address without treating it as a cache hit for
+// analysis. It is used to rehydrate committed checkpoint state.
+func (s *Store) Fetch(key string) (*Entry, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e, ok := s.entries[key]
+	return e, ok
 }
 
 // Quarantine removes an entry without deleting its evidence.

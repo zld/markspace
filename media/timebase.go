@@ -161,6 +161,12 @@ func (r Ratio) IsZero() bool { return r.Num == 0 }
 
 // Cmp compares r and o: -1, 0 or 1.
 func (r Ratio) Cmp(o Ratio) int {
+	if r.Den == 0 {
+		r = Ratio{}
+	}
+	if o.Den == 0 {
+		o = Ratio{}
+	}
 	l, rr := r.Num*o.Den, o.Num*r.Den
 	switch {
 	case l < rr:
@@ -177,7 +183,11 @@ func (r Ratio) MS() Ratio { return r.MulInt(1000) }
 
 // CeilMS returns the value in milliseconds rounded away from zero. It is used
 // for comparison thresholds so a nonzero exact remainder never reports zero.
+// The zero Ratio reports zero.
 func (r Ratio) CeilMS() int64 {
+	if r.Den == 0 {
+		return 0
+	}
 	ms := r.MS()
 	q := ms.Num / ms.Den
 	if ms.Num%ms.Den != 0 {
