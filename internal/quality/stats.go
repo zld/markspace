@@ -40,6 +40,8 @@ type Stats struct {
 	OutputLUFS              float64 `json:"output_lufs"`
 	PeakDBFS                float64 `json:"peak_dbfs"`
 	ClippedSamples          int64   `json:"clipped_samples"`
+	InputPeakDBFS           float64 `json:"input_peak_dbfs"`
+	InputClippedSamples     int64   `json:"input_clipped_samples"`
 	ManifestAlignmentSample int64   `json:"manifest_alignment_samples"`
 	OutputSHA256            string  `json:"output_sha256"`
 	// Extra diagnostics that are useful to verify but not part of the
@@ -122,9 +124,11 @@ func (s Stats) Summary() string {
 		"packets=%d unique=%d loss=%d duplicates=%d late_replays=%d bad_packets=%d\n"+
 			"input_bitrate_bps=%.0f target_bitrate_bps=%.0f bitrate_error_pct=%.2f\n"+
 			"input_lufs=%s output_lufs=%s peak_dbfs=%.2f clipped_samples=%d\n"+
+			"input_peak_dbfs=%.2f input_clipped_samples=%d\n"+
 			"manifest_alignment_samples=%d output_sha256=%s",
 		s.Packets, s.UniquePackets, s.Loss, s.Duplicates, s.LateReplays, s.BadPackets,
 		s.InputBitrateBps, s.TargetBitrateBps, s.BitrateErrorPct,
 		lufs(s.InputLUFS), lufs(s.OutputLUFS), s.PeakDBFS, s.ClippedSamples,
+		s.InputPeakDBFS, s.InputClippedSamples,
 		s.ManifestAlignmentSample, s.OutputSHA256)
 }

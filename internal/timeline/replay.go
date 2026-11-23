@@ -82,17 +82,6 @@ func NewManager(rate int64, delaySamples int64) *Manager {
 	}
 }
 
-// Seed fixes the unwrapping origin so callers can expand timestamps from the
-// first packet in sequence order rather than the first in arrival order.
-func (m *Manager) Seed(baseSeq uint16, baseTS uint32) {
-	if m.haveBase {
-		return
-	}
-	m.baseSeq, m.baseTS, m.haveBase = baseSeq, baseTS, true
-	m.lastSeq, m.lastExtSeq = baseSeq, 0
-	m.lastTS, m.lastExtTS = baseTS, 0
-}
-
 // Push adds one packet. Duplicate sequence numbers are counted and ignored.
 // A packet whose event time precedes the watermark is marked late and its
 // affected sample interval is reported, without changing earlier events.

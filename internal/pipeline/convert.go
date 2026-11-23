@@ -341,8 +341,9 @@ func (c *converter) finish(res Result, stats quality.Stats) (quality.Stats, erro
 		SampleRate: int(c.opts.SampleRate), Channels: int(c.opts.Channels),
 		RTPClockRate: c.opts.ClockRate, DurationSample: outFrames,
 		MediaFile: baseName(res.MP4Path), MediaSHA256: hash,
-		Segments: manifest.MakeSegments(int(c.opts.SampleRate), events),
-		Missing:  manifestMissing,
+		Segments:         manifest.MakeSegments(int(c.opts.SampleRate), events),
+		Missing:          manifestMissing,
+		AlignmentSamples: quality.AlignmentSamples(outFrames, info.Frames),
 	}
 	if err := manifest.Write(res.ManifestPath, tl); err != nil {
 		return stats, err
@@ -352,6 +353,8 @@ func (c *converter) finish(res Result, stats quality.Stats) (quality.Stats, erro
 	stats.OutputLUFS = gain.After.IntegratedLUFS
 	stats.PeakDBFS = gain.After.PeakDBFS
 	stats.ClippedSamples = int64(gain.ClippedAfter)
+	stats.InputPeakDBFS = before.PeakDBFS
+	stats.InputClippedSamples = int64(before.Clipped)
 	stats.OutputSamples = outFrames
 	stats.ManifestSamples = tl.DurationSample
 	stats.ManifestAlignmentSample = quality.AlignmentSamples(tl.DurationSample, info.Frames)
