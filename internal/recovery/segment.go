@@ -37,6 +37,9 @@ type Input struct {
 	Units      []Unit
 	Truncation *Truncation
 	Index      index.Validation
+	// MaxKeyframeIntervalMs is the archive cadence limit. Zero disables the
+	// check; exceeding it always produces a structured fault.
+	MaxKeyframeIntervalMs int64
 }
 
 // Anchor is a keyframe position whose time and byte boundary both verified.
@@ -157,6 +160,12 @@ func Recover(in Input) Result {
 	res.StartMs = res.Anchors[0].TimeMs
 	res.EndMs = in.DurationMs
 	res.MeanKFMs, res.MaxKFMs = intervals(res.Anchors)
+	if limit := in.MaxKeyframeIntervalMs; limit > 0 && res.MaxKFMs > limit {
+		res.Faults = append(res.Faults, media.NewFault(media.KindIntervalExceeded, in.Layer,
+			fmt.Sprintf("largest verified keyframe interval %d ms exceeds the %d ms archive limit", res.MaxKFMs, limit),
+			-1, media.Recoverable).
+			WithSpan(in.span(res.Anchors[0].TimeMs, res.Anchors[len(res.Anchors)-1].TimeMs)))
+	}
 
 	// Unverified keyframe units mark time regions that cannot be certified,
 	// because no index entry ties them to the shared clock. Each hole keeps the

@@ -146,3 +146,33 @@ func TestRecoverParseRatioCountsTruncatedUnits(t *testing.T) {
 		t.Fatalf("ratio=%f", r.ParseRatio)
 	}
 }
+
+func TestRecoverCadenceLimit(t *testing.T) {
+	in := linearInput()
+	in.MaxKeyframeIntervalMs = 200
+	r := Recover(in)
+	found := false
+	for _, f := range r.Faults {
+		if f.Kind == media.KindIntervalExceeded {
+			found = true
+			if f.Class != media.Recoverable {
+				t.Fatalf("class=%v", f.Class)
+			}
+			if !f.HasSpan || f.Span.StartMillis() != 0 || f.Span.EndMillis() != 500 {
+				t.Fatalf("span=%+v", f.Span)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("cadence limit not enforced: %+v", r.Faults)
+	}
+
+	// A limit at or above the observed maximum is silent.
+	in = linearInput()
+	in.MaxKeyframeIntervalMs = 250
+	for _, f := range Recover(in).Faults {
+		if f.Kind == media.KindIntervalExceeded {
+			t.Fatalf("limit at the observed maximum fired: %+v", f)
+		}
+	}
+}

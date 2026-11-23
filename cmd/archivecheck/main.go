@@ -58,6 +58,7 @@ flags:
   --consumer-delay-ms N  artificial consumer delay for backpressure (default 15)
   --tolerance-ms N       shared-clock boundary tolerance (default 2)
   --window-ms N          bitrate sliding window (default 250)
+  --max-keyframe-interval-ms N  keyframe cadence limit (default 300, 0 disables)
   --json                 emit the manifest as JSON after the text summary
 `)
 }
@@ -71,6 +72,7 @@ type demoFlags struct {
 	delayMs    int
 	tolerance  int64
 	windowMs   int64
+	maxKFMs    int64
 	json       bool
 }
 
@@ -87,6 +89,7 @@ func runDemo(args []string, stdout, stderr io.Writer) int {
 	fs.IntVar(&f.delayMs, "consumer-delay-ms", 15, "consumer delay in milliseconds")
 	fs.Int64Var(&f.tolerance, "tolerance-ms", 2, "boundary tolerance in milliseconds")
 	fs.Int64Var(&f.windowMs, "window-ms", 250, "bitrate window in milliseconds")
+	fs.Int64Var(&f.maxKFMs, "max-keyframe-interval-ms", 300, "keyframe cadence limit; 0 disables")
 	fs.BoolVar(&f.json, "json", false, "emit manifest JSON")
 	if err := fs.Parse(args); err != nil {
 		return exitError
@@ -100,7 +103,7 @@ func runDemo(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "archivecheck: %v\n", err)
 		return exitError
 	}
-	if f.chunkBytes <= 0 || f.queue <= 0 || f.delayMs < 0 || f.tolerance <= 0 || f.windowMs <= 0 {
+	if f.chunkBytes <= 0 || f.queue <= 0 || f.delayMs < 0 || f.tolerance <= 0 || f.windowMs <= 0 || f.maxKFMs < 0 {
 		fmt.Fprintf(stderr, "archivecheck: chunk-bytes, queue, tolerance-ms and window-ms must be positive; delay must be non-negative\n")
 		return exitError
 	}
@@ -108,7 +111,7 @@ func runDemo(args []string, stdout, stderr io.Writer) int {
 	cfg := pipeline.Config{
 		Case: f.caseName, Seed: f.seed, ChunkBytes: f.chunkBytes, Queue: f.queue,
 		Targets: f.targets, ConsumerDelayMs: f.delayMs, ToleranceMs: f.tolerance,
-		WindowMs: f.windowMs,
+		WindowMs: f.windowMs, MaxKeyframeIntervalMs: f.maxKFMs,
 	}
 	out, err := pipeline.Run(context.Background(), cfg)
 	if err != nil {

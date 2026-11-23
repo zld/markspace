@@ -116,9 +116,15 @@ func MergeResult(results []Result, opts MergeOptions) (Merge, error) {
 	all := make([]anchorObs, 0, len(layers)*8)
 	for _, r := range results {
 		prev := int64(-1 << 62)
-		for _, a := range r.Anchors {
+		for i, a := range r.Anchors {
 			if a.TimeMs < prev {
-				return Merge{}, fmt.Errorf("recovery: layer %s anchors are not monotonic across the shared clock", r.Layer)
+				// Report the regression as evidence instead of aborting: the
+				// offending anchor is excluded from alignment, and every other
+				// layer's timeline remains intact.
+				m.Faults = append(m.Faults, media.NewFault(media.KindNonMonotonic, r.Layer,
+					fmt.Sprintf("anchor %d at %d ms precedes %d ms on the shared clock; excluded from alignment", i, a.TimeMs, prev),
+					a.Offset, media.Recoverable))
+				continue
 			}
 			prev = a.TimeMs
 			all = append(all, anchorObs{layer: r.Layer, timeMs: a.TimeMs, offset: a.Offset})

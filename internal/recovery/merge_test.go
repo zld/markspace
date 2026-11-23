@@ -135,16 +135,42 @@ func TestMergeValidation(t *testing.T) {
 	}
 }
 
-func TestMergeRejectsNonMonotonicAnchors(t *testing.T) {
-	results := threeLayerResults(0)
-	results[0].Anchors = []Anchor{{TimeMs: 250, Offset: 700}, {TimeMs: 100, Offset: 100}}
-	if _, err := MergeResult(results, MergeOptions{ToleranceMs: 2}); err == nil {
-		t.Fatal("non-monotonic anchors accepted")
+func TestMergeRejectsUnusableOptions(t *testing.T) {
+	if _, err := MergeResult(threeLayerResults(0), MergeOptions{ToleranceMs: 2, AlignWindowMs: 1}); err == nil {
+		t.Fatal("align window below tolerance accepted")
 	}
 }
 
 func TestSegmentCount(t *testing.T) {
 	if got := SegmentCount(threeLayerResults(0)); got != 9 {
 		t.Fatalf("count=%d", got)
+	}
+}
+
+func TestMergeNonMonotonicAnchorReported(t *testing.T) {
+	results := threeLayerResults(0)
+	// The low layer reports a regressing anchor. Merge must keep going, drop
+	// that anchor from alignment and surface a structured fault.
+	results[0].Anchors = []Anchor{{TimeMs: 250, Offset: 700}, {TimeMs: 100, Offset: 300}, {TimeMs: 500, Offset: 1500}}
+	m, err := MergeResult(results, MergeOptions{ToleranceMs: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, f := range m.Faults {
+		if f.Kind == media.KindNonMonotonic && f.Layer == "low" {
+			found = true
+			if f.ByteOffset != 300 {
+				t.Fatalf("fault=%+v", f)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("faults=%+v", m.Faults)
+	}
+	for _, b := range m.Boundaries {
+		if b.Times["low"] == 100 {
+			t.Fatalf("regressing anchor was aligned: %+v", b)
+		}
 	}
 }

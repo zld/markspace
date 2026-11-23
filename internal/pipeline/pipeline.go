@@ -30,6 +30,8 @@ type Config struct {
 	ConsumerDelayMs int
 	ToleranceMs     int64
 	WindowMs        int64
+	// MaxKeyframeIntervalMs is the archive cadence limit; zero disables it.
+	MaxKeyframeIntervalMs int64
 }
 
 // Output is everything the CLI renders.
@@ -115,6 +117,7 @@ func Run(ctx context.Context, cfg Config) (Output, error) {
 		r := recovery.Recover(recovery.Input{
 			Layer: l.Name, Clock: media.MustClock(l.Timescale), StreamLen: int64(len(l.Stream)),
 			DurationMs: l.DurationMs, Units: a.units, Truncation: a.truncation, Index: val,
+			MaxKeyframeIntervalMs: cfg.MaxKeyframeIntervalMs,
 		})
 		r.Faults = append(r.Faults, val.Faults...)
 		r.Faults = append(r.Faults, a.faults...)
