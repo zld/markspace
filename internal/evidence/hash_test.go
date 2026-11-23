@@ -18,7 +18,7 @@ func TestHashStableAndMatchesOnRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dmg := repair.Locate(g, errs)
+	dmg := repair.Locate(g, errs, int64(len(raw)))
 	dec, err := repair.Adjudicate(g, dmg, errs, repair.DefaultPolicy())
 	if err != nil {
 		t.Fatal(err)
@@ -53,7 +53,7 @@ func TestTruncatedPayloadIsReportedNotZeroFilled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dmg := repair.Locate(g, errs)
+	dmg := repair.Locate(g, errs, int64(len(raw)))
 	dec, err := repair.Adjudicate(g, dmg, errs, repair.DefaultPolicy())
 	if err != nil {
 		t.Fatal(err)

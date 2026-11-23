@@ -7,13 +7,13 @@ import (
 	"github.com/broadcast/mediad/internal/model"
 )
 
-func (w *writer) writeMoov(g *model.Graph, p *Plan, src io.ReaderAt, mdatOffset uint32) error {
+func (w *writer) writeMoov(g *model.Graph, p *Plan, src io.ReaderAt, base map[uint32]uint64) error {
 	closeMoov := w.box("moov")
 	if err := w.writeMvhd(g, p); err != nil {
 		return err
 	}
 	for _, id := range p.Order {
-		if err := w.writeTrak(g, p, p.Tracks[id], src, mdatOffset); err != nil {
+		if err := w.writeTrak(g, p, p.Tracks[id], src, base); err != nil {
 			return err
 		}
 	}
@@ -46,10 +46,10 @@ func (w *writer) writeMvhd(g *model.Graph, p *Plan) error {
 	return nil
 }
 
-func (w *writer) writeTrak(g *model.Graph, p *Plan, tp *TrackPlan, src io.ReaderAt, mdatOffset uint32) error {
+func (w *writer) writeTrak(g *model.Graph, p *Plan, tp *TrackPlan, src io.ReaderAt, base map[uint32]uint64) error {
 	closeTrak := w.box("trak")
 	w.writeTkhd(g, tp)
-	if err := w.writeMdia(g, p, tp, src, mdatOffset); err != nil {
+	if err := w.writeMdia(g, p, tp, src, base); err != nil {
 		return err
 	}
 	closeTrak()
@@ -83,11 +83,11 @@ func (w *writer) writeTkhd(g *model.Graph, tp *TrackPlan) {
 	closeBox()
 }
 
-func (w *writer) writeMdia(g *model.Graph, p *Plan, tp *TrackPlan, src io.ReaderAt, mdatOffset uint32) error {
+func (w *writer) writeMdia(g *model.Graph, p *Plan, tp *TrackPlan, src io.ReaderAt, base map[uint32]uint64) error {
 	closeMdia := w.box("mdia")
 	w.writeMdhd(g, tp)
 	w.writeHdlr(tp)
-	if err := w.writeMinf(g, p, tp, src, mdatOffset); err != nil {
+	if err := w.writeMinf(g, p, tp, src, base); err != nil {
 		return err
 	}
 	closeMdia()
@@ -123,7 +123,7 @@ func (w *writer) writeHdlr(tp *TrackPlan) {
 	closeBox()
 }
 
-func (w *writer) writeMinf(g *model.Graph, p *Plan, tp *TrackPlan, src io.ReaderAt, mdatOffset uint32) error {
+func (w *writer) writeMinf(g *model.Graph, p *Plan, tp *TrackPlan, src io.ReaderAt, base map[uint32]uint64) error {
 	closeMinf := w.box("minf")
 	if tp.Kind == model.KindVideo {
 		closeVmhd := w.box("vmhd")
@@ -145,14 +145,14 @@ func (w *writer) writeMinf(g *model.Graph, p *Plan, tp *TrackPlan, src io.Reader
 	closeUrl()
 	closeDref()
 	closeDinf()
-	if err := w.writeStbl(g, tp, mdatOffset); err != nil {
+	if err := w.writeStbl(g, tp, base[tp.TrackID]); err != nil {
 		return err
 	}
 	closeMinf()
 	return nil
 }
 
-func (w *writer) writeStbl(g *model.Graph, tp *TrackPlan, mdatOffset uint32) error {
+func (w *writer) writeStbl(g *model.Graph, tp *TrackPlan, firstOffset uint64) error {
 	closeStbl := w.box("stbl")
 	if err := w.writeStsd(tp); err != nil {
 		return err
@@ -160,7 +160,7 @@ func (w *writer) writeStbl(g *model.Graph, tp *TrackPlan, mdatOffset uint32) err
 	if err := w.writeSttsStscStsz(g, tp); err != nil {
 		return err
 	}
-	if err := w.writeStco(g, tp, mdatOffset); err != nil {
+	if err := w.writeStco(g, tp, firstOffset); err != nil {
 		return err
 	}
 	if tp.HasStss && len(tp.Keyframes) > 0 {
@@ -178,7 +178,7 @@ func (w *writer) writeStbl(g *model.Graph, tp *TrackPlan, mdatOffset uint32) err
 
 // writeStco emits one chunk (one sample) per kept sample. Offsets walk mdat
 // sequentially across tracks in plan order, matching Write's payload order.
-func (w *writer) writeStco(g *model.Graph, tp *TrackPlan, firstOffset uint32) error {
+func (w *writer) writeStco(g *model.Graph, tp *TrackPlan, firstOffset uint64) error {
 	closeBox := w.box("stco")
 	w.fullBox(0, 0)
 	w.u32(uint32(len(tp.Kept)))

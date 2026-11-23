@@ -23,7 +23,7 @@ func runAdjudicate(t *testing.T, spec fixture.Spec, linkAudio bool) (*model.Grap
 			a.DependsOn = []uint32{1}
 		}
 	}
-	dmg := Locate(g, errs)
+	dmg := Locate(g, errs, 1<<40)
 	dec, err := Adjudicate(g, dmg, errs, DefaultPolicy())
 	if err != nil {
 		t.Fatalf("adjudicate: %v", err)
@@ -94,7 +94,7 @@ func TestFailedVideoPrerequisiteBlocksAudioRecovery(t *testing.T) {
 	// audio explicitly depends on it. Audio must never claim recovery.
 	g := handGraph()
 	errs := &model.ErrorSet{}
-	dmg := Locate(g, errs)
+	dmg := Locate(g, errs, 1<<40)
 	// Force the video track into a no-keyframe state.
 	for _, s := range g.Tracks[1].Samples {
 		s.IsKeyframe = false
@@ -121,7 +121,7 @@ func TestCycleIsRejectedWithLocatableError(t *testing.T) {
 		t.Fatal(err)
 	}
 	errs := &model.ErrorSet{}
-	if _, err := Adjudicate(g, Locate(g, errs), errs, DefaultPolicy()); err == nil {
+	if _, err := Adjudicate(g, Locate(g, errs, 1<<40), errs, DefaultPolicy()); err == nil {
 		t.Fatal("cycle must return an error")
 	}
 	if !errs.Has(model.KindCyclicDependency) {

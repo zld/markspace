@@ -154,7 +154,7 @@ func (b *builder) writeStco(l trackLayout, mdatOffset uint32) {
 	closeBox := b.box("stco")
 	b.fullBox(0, 0)
 	b.u32(uint32(len(l.chunks)))
-	cursor := uint64(mdatOffset)
+	cursor := l.mdatBase
 	for _, ch := range l.chunks {
 		b.u32(uint32(cursor))
 		for i := 0; i < ch.count; i++ {

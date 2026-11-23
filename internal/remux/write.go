@@ -66,17 +66,37 @@ func trackUnits(g *model.Graph, tp *TrackPlan) uint32 {
 // copied verbatim from src; isolated samples never appear in the output.
 func Write(p *Plan, src io.ReaderAt) ([]byte, error) {
 	g := p.graph
-	// Pass 1: measure moov with placeholder payloads so mdat offsets are known.
+	ftyp := ftypBytes()
+
+	// Pre-compute each track's distinct mdat base. Offsets are independent of
+	// moov byte layout because mdat follows moov at a fixed position.
+	base := make(map[uint32]uint64, len(p.Order))
+	cursor := uint64(0)
+	for _, id := range p.Order {
+		base[id] = cursor
+		var n uint64
+		for _, srcIdx := range p.Tracks[id].Kept {
+			n += uint64(g.Tracks[id].Samples[srcIdx].Size)
+		}
+		cursor += n
+	}
+
+	// Pass 1: measure moov; relative bases are placeholders sized correctly.
 	probe := &writer{}
-	if err := probe.writeMoov(g, p, nil, 0); err != nil {
+	if err := probe.writeMoov(g, p, nil, base); err != nil {
 		return nil, err
 	}
-	ftyp := ftypBytes()
-	mdatOffset := uint32(len(ftyp) + len(probe.buf) + 8)
+	mdatOffset := uint64(len(ftyp) + len(probe.buf) + 8)
+
+	// Shift relative bases to absolute file offsets for the real write.
+	absBase := make(map[uint32]uint64, len(base))
+	for id, rel := range base {
+		absBase[id] = mdatOffset + rel
+	}
 
 	out := &writer{}
 	out.raw(ftyp)
-	if err := out.writeMoov(g, p, src, mdatOffset); err != nil {
+	if err := out.writeMoov(g, p, src, absBase); err != nil {
 		return nil, err
 	}
 	// mdat: append every kept sample's payload in track/sample order.

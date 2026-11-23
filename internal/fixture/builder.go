@@ -48,8 +48,10 @@ func (b *builder) payloadBox(typ string, payload []byte) {
 	b.raw(payload)
 }
 
-// payload derives deterministic sample bytes from seed, track id and index.
-// Bytes never leave the process; they stand in for encoded media.
+// payloadBytes derives deterministic sample bytes from seed, track id and
+// index. All three are fed into one FNV-1a input so distinct tracks can never
+// collide, then an xorshift-style mixer fills the full sample length. Bytes
+// never leave the process; they stand in for encoded media.
 func payloadBytes(seed int64, trackID uint32, index, size int) []byte {
 	out := make([]byte, size)
 	h := fnv.New64a()
@@ -62,10 +64,15 @@ func payloadBytes(seed int64, trackID uint32, index, size int) []byte {
 	h.Write(tmp[:])
 	stream := h.Sum64()
 	for i := range out {
-		out[i] = byte(stream >> ((i % 8) * 8))
-		if i%8 == 7 {
-			stream = stream*6364136223846793005 + 1442695040888963407
-		}
+		// One full SplitMix64 step per byte so every position — including the
+		// first — depends on seed, track id and sample index, not just on the
+		// low bits of a shared state.
+		stream += 0x9e3779b97f4a7c15
+		z := stream
+		z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9
+		z = (z ^ (z >> 27)) * 0x94d049bb133111eb
+		z = z ^ (z >> 31)
+		out[i] = byte(z)
 	}
 	return out
 }

@@ -30,7 +30,7 @@ func runPipeline(t *testing.T, spec fixture.Spec) *pipeline {
 	if a := g.Tracks[2]; a != nil {
 		a.DependsOn = []uint32{1}
 	}
-	dmg := repair.Locate(g, errs)
+	dmg := repair.Locate(g, errs, int64(len(raw)))
 	dec, err := repair.Adjudicate(g, dmg, errs, repair.DefaultPolicy())
 	if err != nil {
 		t.Fatalf("adjudicate: %v", err)

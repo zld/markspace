@@ -32,18 +32,23 @@ const (
 
 // TrackDamage summarizes one track's defective samples and ranges.
 type TrackDamage struct {
-	TrackID         uint32
-	DefectSamples   map[int][]model.ErrorKind
-	DamagedRanges   []model.Range
-	ValidBefore     *model.Range
-	ValidAfter      *model.Range
+	TrackID       uint32
+	DefectSamples map[int][]model.ErrorKind
+	DamagedRanges []model.Range
+	ValidBefore   *model.Range
+	ValidAfter    *model.Range
+	// tailRanges holds container-level truncation spans before merging.
+	tailRanges []model.Range
 }
 
 // Locate walks every track's samples and the shared ErrorSet to produce
 // per-track damage maps. Samples adjacent in time to a backward/duplicate
 // defect inherit isolation, because their decode order cannot be proven.
-func Locate(g *model.Graph, errs *model.ErrorSet) map[uint32]*TrackDamage {
+// fileSize lets a container-level truncated box be mapped onto the concrete
+// samples whose payload bytes (offset+size) reach past readable data.
+func Locate(g *model.Graph, errs *model.ErrorSet, fileSize int64) map[uint32]*TrackDamage {
 	out := make(map[uint32]*TrackDamage, len(g.IDs()))
+	truncated := errs.Has(model.KindTruncatedBox)
 	for _, id := range g.IDs() {
 		t := g.Tracks[id]
 		d := &TrackDamage{
@@ -51,9 +56,38 @@ func Locate(g *model.Graph, errs *model.ErrorSet) map[uint32]*TrackDamage {
 			DefectSamples: make(map[int][]model.ErrorKind),
 		}
 		collectErrorRanges(d, errs.ByTrack(id), t)
+		if truncated {
+			mapTruncatedTail(d, t, fileSize)
+		}
+		d.DamagedRanges = model.JoinRanges(appendDamaged(d))
+		d.ValidBefore, d.ValidAfter = validFlanks(t, d.DamagedRanges)
 		out[id] = d
 	}
 	return out
+}
+
+// mapTruncatedTail marks every sample whose declared payload (offset+size)
+// extends beyond the actual file. This is provable from the sample table
+// alone, so no decoder or guesswork is involved; samples fully inside the
+// readable region remain valid and keep their verifiable flanks.
+func mapTruncatedTail(d *TrackDamage, t *model.Track, fileSize int64) {
+	if len(t.Samples) == 0 {
+		return
+	}
+	for i, s := range t.Samples {
+		end := int64(s.Offset) + int64(s.Size)
+		if end > fileSize {
+			d.DefectSamples[i] = append(d.DefectSamples[i], model.KindTruncatedBox)
+			d.tailRanges = append(d.tailRanges,
+				model.SafeRange(s.DecodeTime, s.DecodeTime.Add(s.Duration)))
+		}
+	}
+}
+
+func appendDamaged(d *TrackDamage) []model.Range {
+	rs := append([]model.Range{}, d.tailRanges...)
+	rs = append(rs, d.DamagedRanges...)
+	return rs
 }
 
 // collectErrorRanges folds the ErrorSet for one track into sample-level
@@ -83,7 +117,6 @@ func collectErrorRanges(d *TrackDamage, trackErrs []model.MediaError, t *model.T
 		}
 	}
 	d.DamagedRanges = model.JoinRanges(damaged)
-	d.ValidBefore, d.ValidAfter = validFlanks(t, d.DamagedRanges)
 }
 
 // validFlanks returns the provably clean coverage before the first damaged

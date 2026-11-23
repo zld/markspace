@@ -4,12 +4,14 @@ import "github.com/broadcast/mediad/internal/model"
 
 // trackLayout holds the computed per-track tables shared between moov and mdat.
 type trackLayout struct {
-	spec        TrackSpec
-	deltas      []uint32 // stts deltas in mdhd units
-	sizes       []uint32
-	keyframes   []uint32 // 1-based sample numbers, empty = no stss
-	chunks      []chunkLayout
-	totalUnits  uint32
+	spec       TrackSpec
+	deltas     []uint32 // stts deltas in mdhd units
+	sizes      []uint32
+	keyframes  []uint32 // 1-based sample numbers, empty = no stss
+	chunks     []chunkLayout
+	totalUnits uint32
+	// mdatBase is this track's first payload offset inside the global mdat.
+	mdatBase uint64
 }
 
 type chunkLayout struct {

@@ -30,6 +30,18 @@ func Generate(s Spec) ([]byte, error) {
 	mdatHeader := 8
 	mdatOffset := uint32(len(pre.buf) + moovSize + mdatHeader)
 
+	// Assign each track a distinct base offset inside mdat so tracks never
+	// alias the same payload bytes.
+	payloadCursor := uint64(mdatOffset)
+	for i := range layouts {
+		layouts[i].mdatBase = payloadCursor
+		var trackBytes uint64
+		for _, sz := range layouts[i].sizes {
+			trackBytes += uint64(sz)
+		}
+		payloadCursor += trackBytes
+	}
+
 	var b builder
 	b.writeFtyp()
 	b.writeMoov(s, layouts, mdatOffset)
