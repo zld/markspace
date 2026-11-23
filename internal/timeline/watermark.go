@@ -69,6 +69,9 @@ func New(cfg Config) *Watermark {
 // Level is the current high-water mark (newest committed event time).
 func (w *Watermark) Level() clock.Ticks { return w.level }
 
+// LateWindow returns the configured maximum acceptable late-event age.
+func (w *Watermark) LateWindow() clock.Ticks { return w.cfg.LateWindow }
+
 // SealedUntil is the end of the archived prefix.
 func (w *Watermark) SealedUntil() clock.Ticks { return w.sealedUntil }
 
