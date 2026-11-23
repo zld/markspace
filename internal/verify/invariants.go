@@ -81,8 +81,33 @@ func Verify(results []recovery.Result, merge recovery.Merge, doc manifest.Docume
 		rep.Faults = append(rep.Faults, f.String())
 	}
 	sort.Strings(rep.Faults)
-	rep.SHA256 = digest(rep.Violations, doc.SHA256)
+	rep.SHA256 = digest(rep.Violations, doc.SHA256, evidence(results, merge))
 	return rep
+}
+
+// evidence renders the audited coverage in a canonical order so the digest
+// changes whenever recovered spans, anchors, gaps or alignment change.
+func evidence(results []recovery.Result, merge recovery.Merge) []string {
+	layers := make([]recovery.Result, len(results))
+	copy(layers, results)
+	sort.SliceStable(layers, func(i, j int) bool { return layers[i].Layer < layers[j].Layer })
+	var out []string
+	for _, r := range layers {
+		out = append(out, fmt.Sprintf("layer=%s start=%d end=%d ratio=%.6f mean=%.6f max=%d", r.Layer, r.StartMs, r.EndMs, r.ParseRatio, r.MeanKFMs, r.MaxKFMs))
+		for _, a := range r.Anchors {
+			out = append(out, fmt.Sprintf("anchor %s %d %d", r.Layer, a.TimeMs, a.Offset))
+		}
+		for _, s := range r.Segments {
+			out = append(out, fmt.Sprintf("segment %s %d %d %d %d", r.Layer, s.StartMs, s.EndMs, s.ByteStart, s.ByteEnd))
+		}
+		for _, g := range r.Gaps {
+			out = append(out, fmt.Sprintf("gap %s %d %d %s %s", r.Layer, g.StartMs, g.EndMs, g.Reason, g.Detail))
+		}
+	}
+	for _, b := range merge.Boundaries {
+		out = append(out, fmt.Sprintf("boundary %d spread=%d %s", b.RefMs, b.Spread, formatTimes(b.Times)))
+	}
+	return out
 }
 
 // checkTime requires anchors and segments to be non-decreasing in time.
@@ -159,16 +184,35 @@ func checkBoundaries(m recovery.Merge) []Violation {
 	return out
 }
 
-// Digest hashes the canonical violation and fault evidence.
+// Digest hashes the canonical violation evidence against a manifest digest.
 func Digest(rep Report, manifestSHA string) (string, error) {
-	return digest(rep.Violations, manifestSHA), nil
+	return digest(rep.Violations, manifestSHA, nil), nil
 }
 
-func digest(vs []Violation, manifestSHA string) string {
+func digest(vs []Violation, manifestSHA string, ev []string) string {
 	h := sha256.New()
 	fmt.Fprintf(h, "manifest=%s\n", manifestSHA)
 	for _, v := range vs {
 		fmt.Fprintf(h, "%s|%s|%s\n", v.Invariant, v.Layer, v.Detail)
 	}
+	for _, e := range ev {
+		fmt.Fprintf(h, "evidence|%s\n", e)
+	}
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+func formatTimes(times map[string]int64) string {
+	keys := make([]string, 0, len(times))
+	for k := range times {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var b strings.Builder
+	for i, k := range keys {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		fmt.Fprintf(&b, "%s=%d", k, times[k])
+	}
+	return b.String()
 }

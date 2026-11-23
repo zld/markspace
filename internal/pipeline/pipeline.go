@@ -72,20 +72,39 @@ func Run(ctx context.Context, cfg Config) (Output, error) {
 		consumers = append(consumers, a)
 	}
 
-	feed := newRouter(archive.Layers, cfg.ChunkBytes)
-	fan, err := stream.NewFanout(ctx, feed, cfg.Queue, consumers...)
+	// One bounded reader owns all buffering. Layers are multiplexed into it,
+	// the incremental demux splits them back out, and the fan-out applies the
+	// per-layer queue bound with backpressure.
+	layerNames := make([]string, 0, len(archive.Layers))
+	for _, l := range archive.Layers {
+		layerNames = append(layerNames, l.Name)
+	}
+	mux, err := stream.NewMuxSource(newRouter(archive.Layers, cfg.ChunkBytes), layerNames)
 	if err != nil {
+		return Output{}, err
+	}
+	reader, err := stream.Open(mux, stream.Options{ChunkBytes: cfg.ChunkBytes, Queue: cfg.Queue})
+	if err != nil {
+		return Output{}, err
+	}
+	demux, err := stream.NewDemux(reader, layerNames)
+	if err != nil {
+		_ = reader.Close()
+		return Output{}, err
+	}
+	fan, err := stream.NewFanout(ctx, demux, cfg.Queue, consumers...)
+	if err != nil {
+		_ = reader.Close()
 		return Output{}, err
 	}
 	fan.Wait()
 	peak, bound := fan.PeakQueued(), fan.Bound()
-	if err := fan.Close(); err != nil {
-		return Output{}, fmt.Errorf("pipeline: fan-out: %w", err)
+	closeErr := fan.Close()
+	if err := ctx.Err(); err != nil {
+		return Output{}, fmt.Errorf("pipeline: fan-out canceled: %w", err)
 	}
-	for _, a := range analyzers {
-		if a.feedErr != nil {
-			return Output{}, a.feedErr
-		}
+	if closeErr != nil {
+		return Output{}, fmt.Errorf("pipeline: fan-out: %w", closeErr)
 	}
 
 	var results []recovery.Result

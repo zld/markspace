@@ -84,6 +84,18 @@ type Result struct {
 	Faults         []media.Fault
 }
 
+// RejectedFaults returns the faults caused by index claims that did not match
+// an intact keyframe.
+func (r Result) RejectedFaults() []media.Fault {
+	var out []media.Fault
+	for _, f := range r.Faults {
+		if f.Kind == media.KindBoundaryDrift {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
 // Recover builds coverage for one layer.
 func Recover(in Input) Result {
 	res := Result{Layer: in.Layer, Clock: in.Clock, StreamLen: in.StreamLen, DurationMs: in.DurationMs}

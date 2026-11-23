@@ -29,10 +29,9 @@ type analyzer struct {
 	nal *codec.NALParser
 	av1 *codec.AV1Parser
 
-	delay   time.Duration
-	every   int
-	seen    int
-	delayed int
+	delay time.Duration
+	every int
+	seen  int
 
 	units      []recovery.Unit
 	boundaries []int64
@@ -44,7 +43,6 @@ type analyzer struct {
 
 	faults     []media.Fault
 	truncation *recovery.Truncation
-	feedErr    error
 }
 
 // newAnalyzer builds a fixed-state consumer for one layer.
@@ -85,7 +83,6 @@ func (a *analyzer) Name() string { return a.name }
 // Offer implements stream.Consumer and parses the delivered chunk in place.
 func (a *analyzer) Offer(ctx context.Context, ch stream.Chunk) error {
 	if a.delay > 0 && a.every > 0 && a.seen%a.every == 0 {
-		a.delayed++
 		t := time.NewTimer(a.delay)
 		select {
 		case <-t.C:

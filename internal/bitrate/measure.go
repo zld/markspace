@@ -91,11 +91,34 @@ func Measure(targetKbps float64, durationMs, windowMs int64, obs []Observation) 
 	}
 
 	// The actual rate is measured over the recovered interval only. Bytes in a
-	// retained gap were never recovered, so counting them (or charging the gap
-	// against the repaired span) would misreport the asset's real rate.
+	// retained gap were never recovered, so charging the gap against the
+	// repaired span would misreport the asset's real rate. Overlapping spans
+	// are unioned so shared time is never counted twice.
 	var coveredMs int64
-	for _, o := range clipped {
-		coveredMs += o.EndMs - o.StartMs
+	curStart, curEnd := int64(-1), int64(-1)
+	spans := append([]Observation(nil), clipped...)
+	sort.SliceStable(spans, func(i, j int) bool {
+		if spans[i].StartMs != spans[j].StartMs {
+			return spans[i].StartMs < spans[j].StartMs
+		}
+		return spans[i].EndMs < spans[j].EndMs
+	})
+	for _, o := range spans {
+		if curStart < 0 {
+			curStart, curEnd = o.StartMs, o.EndMs
+			continue
+		}
+		if o.StartMs > curEnd {
+			coveredMs += curEnd - curStart
+			curStart, curEnd = o.StartMs, o.EndMs
+			continue
+		}
+		if o.EndMs > curEnd {
+			curEnd = o.EndMs
+		}
+	}
+	if curStart >= 0 {
+		coveredMs += curEnd - curStart
 	}
 	if coveredMs <= 0 {
 		coveredMs = durationMs
@@ -112,7 +135,6 @@ func Measure(targetKbps float64, durationMs, windowMs int64, obs []Observation) 
 			r.WindowMax = math.Max(r.WindowMax, w.Kbps)
 		}
 	}
-	r.MeasuredMs = durationMs
 	return r
 }
 
