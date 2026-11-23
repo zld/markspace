@@ -94,6 +94,10 @@ func NewWindow(capacity int) *Window {
 // in because they are behind the head or farther away than the window.
 func (w *Window) Push(pkt *rtp.Packet) (dropped bool, kind DropKind) {
 	w.stats.Received++
+	return w.push(pkt)
+}
+
+func (w *Window) push(pkt *rtp.Packet) (dropped bool, kind DropKind) {
 	if !w.started {
 		w.base = pkt.SequenceNumber
 		w.started = true
@@ -214,6 +218,21 @@ func (w *Window) FirstFilled() int {
 		}
 	}
 	return -1
+}
+
+// EvictConfirmedHoles rotates over a hole run at the head when a buffered
+// packet already sits beyond it. It returns the number of missing sequence
+// numbers skipped. The caller decides whether the run meets its burst
+// threshold; this method performs no thresholding itself.
+func (w *Window) EvictConfirmedHoles(run int) int {
+	first := w.FirstFilled()
+	if first <= 0 || run > first {
+		return 0
+	}
+	for i := 0; i < run; i++ {
+		w.SkipHead()
+	}
+	return run
 }
 
 // Stats returns a snapshot of the window counters.
