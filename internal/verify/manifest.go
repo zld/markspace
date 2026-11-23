@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"sort"
 
 	"mediacore/internal/timeline"
 	"mediacore/internal/transform"
@@ -111,12 +110,6 @@ func (m *Manifest) SetTimelineDigest(samples []timeline.Sample) {
 		fmt.Fprintf(h, "%d|%d|%d|%d|%s|%d|%d\n", s.TrackID, s.TimelineTime, s.TimelineDuration, s.SourceTime, s.File, s.FileOffset, s.ByteLength)
 	}
 	m.TimelineDigest = fmt.Sprintf("%x", h.Sum(nil))
-}
-
-// AddFaults records the distinct fault codes seen.
-func (m *Manifest) AddFaults(errs interface{ Codes() []string }) {
-	m.FaultCodes = append(m.FaultCodes, errs.Codes()...)
-	sort.Strings(m.FaultCodes)
 }
 
 // SHA256Digest returns the manifest self digest, computing it if the manifest

@@ -179,11 +179,10 @@ func Run(cfg Config, injected *fixture.InjectedStream, inputs []Input) (*Result,
 	}
 	res.Init = parsed.inits
 	res.Fragments = parsed.fragments
-	// fragments= reports the input's intended fragment count, so a truncated
-	// tail does not masquerade as a smaller input. fragments_seen reports how
-	// many fragments were actually parsed.
+	// FragmentTotal (printed as fragments=) is the input's intended count, set
+	// after generation so a truncated tail does not masquerade as a smaller
+	// input. FragmentsSeen reports how many were actually parsed.
 	res.FragmentsSeen = len(parsed.fragments)
-	res.FragmentTotal = len(parsed.fragments)
 	res.ReusedFragments = parsed.reused
 	res.ParseErrors = len(parseFaults)
 	res.ingestErrors = append(res.ingestErrors, parseFaults...)
@@ -214,6 +213,14 @@ func Run(cfg Config, injected *fixture.InjectedStream, inputs []Input) (*Result,
 	report, repaired := transform.Repair(tracks, transform.RepairOptions{TimelineTimescale: cfg.Timescale})
 	res.Repair = report
 	res.Repaired = repaired
+	// Repair decisions are faults too: a duplicate or a regression parses
+	// cleanly, so this is the only stage that can report it.
+	for _, e := range report.Errors {
+		res.Errors = append(res.Errors, e)
+	}
+	for _, d := range report.Discontinuities {
+		res.Errors = append(res.Errors, fault.New(repairCode(d.Kind), d.File, d.Offset, "", d.Detail).WithFragment(d.Sequence))
+	}
 	// The synthesized timeline is the repaired, ordered sample sequence: that
 	// is what frames are derived from and what verification checks. A track
 	// that could not be ordered is reported but its already-ordered prefix is
@@ -234,9 +241,6 @@ func Run(cfg Config, injected *fixture.InjectedStream, inputs []Input) (*Result,
 		}
 		return a.SampleIndex < b.SampleIndex
 	})
-	for _, e := range report.Errors {
-		res.Errors = append(res.Errors, e)
-	}
 	st = checkpoint.Advance(st, checkpoint.StageRepair, parsed.resumeAt)
 	if err := saveStage(store, st, res, parsed); err != nil {
 		return nil, err
@@ -286,13 +290,6 @@ func Run(cfg Config, injected *fixture.InjectedStream, inputs []Input) (*Result,
 	}
 	res.Faults = len(injected.Injections)
 	res.FragmentTotal = injected.LogicalFragments
-	// The first error is the smallest offset at which the input proved bad,
-	// whichever stage noticed it. This makes the reported position a property
-	// of the input rather than of stage order.
-	if first, ok := faultFirst(res.Errors); ok {
-		res.FirstErrorOffset = first.Offset
-		res.FirstErrorCode = first.Code
-	}
 	for _, inj := range injected.Injections {
 		res.InjectedOffsets = append(res.InjectedOffsets, inj.ByteOffset)
 	}
@@ -305,11 +302,9 @@ func Run(cfg Config, injected *fixture.InjectedStream, inputs []Input) (*Result,
 	if err := saveStage(store, st, res, parsed); err != nil {
 		return nil, err
 	}
-	// Include repair decisions so a semantic fault (which parses cleanly) is
-	// reported at the byte it damaged.
-	for _, d := range res.Repair.Discontinuities {
-		res.Errors = append(res.Errors, fault.New(repairCode(d.Kind), d.File, d.Offset, "", d.Detail).WithFragment(d.Sequence))
-	}
+	// The first error is the smallest offset at which the input proved bad,
+	// whichever stage noticed it. This makes the reported position a property
+	// of the input rather than of stage order.
 	if first, ok := faultFirst(res.Errors); ok {
 		res.FirstErrorOffset = first.Offset
 		res.FirstErrorCode = first.Code
