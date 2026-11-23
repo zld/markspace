@@ -1,0 +1,12 @@
+# Build artifacts (never delivered)
+/audit
+/cmd/audit/audit
+*.mp4
+!testdata/**
+
+# Local generated fixture output
+/generated/
+
+# OS/editor noise
+.DS_Store
+*.swp
