@@ -30,6 +30,7 @@ type Checkpoint struct {
 	Version         int                   `json:"version"`
 	ManifestDigest  string                `json:"manifest_digest"`
 	ManifestKind    string                `json:"manifest_kind"`
+	ManifestVersion int                   `json:"manifest_version"`
 	InputDigest     string                `json:"input_digest"`
 	Cursor          int                   `json:"cursor"` // next segment index to process
 	LastCompleteIdx int                   `json:"last_complete_index"`
@@ -44,10 +45,11 @@ type Checkpoint struct {
 const CheckpointVersion = 1
 
 // NewCheckpoint starts a checkpoint for a fresh run.
-func NewCheckpoint(kind, manifestDigest, inputDigest string, epoch int64) *Checkpoint {
+func NewCheckpoint(kind string, manifestVersion int, manifestDigest, inputDigest string, epoch int64) *Checkpoint {
 	return &Checkpoint{
 		Version:         CheckpointVersion,
 		ManifestKind:    kind,
+		ManifestVersion: manifestVersion,
 		ManifestDigest:  manifestDigest,
 		InputDigest:     inputDigest,
 		Cursor:          0,
@@ -102,6 +104,10 @@ type ResumeRequest struct {
 	// MaxSegments is the segment count of the freshly parsed manifest; a
 	// checkpoint that claims to be past the end is rejected.
 	MaxSegments int
+	// ManifestVersion is the freshly parsed document's format version. It is
+	// only compared when the checkpoint recorded one, so older checkpoints
+	// stay readable.
+	ManifestVersion int
 }
 
 // ResumeDecision explains whether and where a run may resume.
@@ -121,6 +127,10 @@ func ValidateResume(cp *Checkpoint, req ResumeRequest) (ResumeDecision, error) {
 	if cp.Version != CheckpointVersion {
 		return ResumeDecision{}, media.NewError(media.CodeManifestChg, media.PhaseCheckpoint,
 			fmt.Sprintf("checkpoint schema %d != %d", cp.Version, CheckpointVersion)).AtOffset(0)
+	}
+	if cp.ManifestVersion != 0 && req.ManifestVersion != 0 && cp.ManifestVersion != req.ManifestVersion {
+		return ResumeDecision{}, media.NewError(media.CodeManifestChg, media.PhaseCheckpoint,
+			"manifest format version changed since checkpoint").AtOffset(0)
 	}
 	if cp.ManifestDigest != req.ManifestDigest {
 		return ResumeDecision{}, media.NewError(media.CodeManifestChg, media.PhaseCheckpoint,

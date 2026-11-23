@@ -44,7 +44,10 @@ func (s Segment) End() media.Time {
 
 // Document is the parsed, unified manifest.
 type Document struct {
-	Kind            Kind                   `json:"kind"`
+	Kind Kind `json:"kind"`
+	// Version is the playlist/MPD format version declared by the document
+	// (HLS EXT-X-VERSION), not this library's schema version.
+	Version         int                    `json:"version"`
 	TargetDuration  media.Ratio            `json:"target_duration"`
 	MediaSequence   int64                  `json:"media_sequence"`
 	Timescale       media.Timescale        `json:"timescale"`

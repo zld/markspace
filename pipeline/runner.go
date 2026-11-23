@@ -106,6 +106,7 @@ func (r *Runner) Run(ctx context.Context, in *Input) (*Result, error) {
 	}
 	decision, err := ValidateResume(cp, ResumeRequest{
 		ManifestDigest: manifestDigest, InputDigest: inputDigest, MaxSegments: segCount,
+		ManifestVersion: in.Manifest.Version,
 	})
 	if err != nil {
 		if media.HasCode(err, media.CodeManifestChg) {
@@ -117,7 +118,7 @@ func (r *Runner) Run(ctx context.Context, in *Input) (*Result, error) {
 		}
 	}
 	if cp == nil {
-		cp = NewCheckpoint(string(in.Manifest.Kind), manifestDigest, inputDigest, r.opts.Epoch)
+		cp = NewCheckpoint(string(in.Manifest.Kind), in.Manifest.Version, manifestDigest, inputDigest, r.opts.Epoch)
 	} else {
 		cp.Epoch = r.opts.Epoch
 	}

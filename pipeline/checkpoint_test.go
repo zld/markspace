@@ -8,7 +8,7 @@ import (
 )
 
 func newCP() *Checkpoint {
-	return NewCheckpoint("hls", "md-1", "in-1", 7)
+	return NewCheckpoint("hls", 7, "md-1", "in-1", 7)
 }
 
 func TestCommitAdvancesCursorMonotonically(t *testing.T) {
@@ -69,6 +69,24 @@ func TestValidateResumeAcceptsLastComplete(t *testing.T) {
 	}
 	if !strings.Contains(dec.Reason, "last complete segment 1") {
 		t.Fatalf("reason=%q", dec.Reason)
+	}
+}
+
+func TestValidateResumeRejectsManifestVersionChange(t *testing.T) {
+	cp := newCP()
+	_ = cp.CommitSegment(0, "d0", 10)
+	_, err := ValidateResume(cp, ResumeRequest{
+		ManifestDigest: "md-1", InputDigest: "in-1", MaxSegments: 5, ManifestVersion: 6,
+	})
+	if err == nil || !media.HasCode(err, media.CodeManifestChg) {
+		t.Fatalf("err=%v", err)
+	}
+	// A checkpoint that recorded no version stays compatible.
+	cp.ManifestVersion = 0
+	if _, err := ValidateResume(cp, ResumeRequest{
+		ManifestDigest: "md-1", InputDigest: "in-1", MaxSegments: 5, ManifestVersion: 6,
+	}); err != nil {
+		t.Fatalf("legacy checkpoint rejected: %v", err)
 	}
 }
 

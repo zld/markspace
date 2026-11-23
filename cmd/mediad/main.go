@@ -122,6 +122,10 @@ func executeDemo(ctx context.Context, f *demoFlags, out *strings.Builder) (int, 
 	fmt.Fprintf(out, "target_bps=%d\n", demo.TargetBPS)
 	fmt.Fprintf(out, "memory_limit_bytes=%d\n", f.memoryLimit)
 	fmt.Fprintf(out, "slow_consumer_budget_ms=%d\n", f.slowConsumer)
+	fmt.Fprintf(out, "hls_version=%d\n", demo.HLSDoc.Version)
+	fmt.Fprintf(out, "hls_segments=%d\n", len(demo.HLSDoc.Segments))
+	fmt.Fprintf(out, "dash_segments=%d\n", len(demo.DASHDoc.Segments))
+	fmt.Fprintf(out, "dash_timescale=%d\n", demo.DASHDoc.Timescale)
 
 	tmp, err := os.MkdirTemp("", "mediad-demo-")
 	if err != nil {
@@ -194,6 +198,7 @@ func executeDemo(ctx context.Context, f *demoFlags, out *strings.Builder) (int, 
 	fmt.Fprintf(out, "manifest_alignment_error_ms=%d\n", q.AlignmentErrorMS)
 	fmt.Fprintf(out, "manifest_alignment_max_ms=%d\n", q.AlignmentMaxMS)
 	fmt.Fprintf(out, "manifest_quantised_ms=%d\n", clean.Alignment.QuantisedMS())
+	fmt.Fprintf(out, "manifest_dash_alignment_ms=%d\n", demo.DASHDoc.Alignment.ErrorMS())
 	fmt.Fprintf(out, "manifest_drift_segments=%d\n", len(drift.Report.Mismatches))
 	fmt.Fprintf(out, "manifest_drift_error_ms=%d\n", drift.Report.TotalDeltaMS)
 	if len(drift.Report.Mismatches) > 0 {

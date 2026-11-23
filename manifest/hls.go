@@ -26,6 +26,7 @@ func ParseHLS(src string) (*Document, error) {
 		disc       bool
 		initURI    string
 		bps        int64
+		version    int
 	)
 	lineNo := 0
 	offset := int64(0)
@@ -70,6 +71,12 @@ func ParseHLS(src string) (*Document, error) {
 				if uri, ok := attrValue(value, "URI"); ok {
 					initURI = uri
 				}
+			case "EXT-X-VERSION":
+				v, err := strconv.Atoi(strings.TrimSpace(value))
+				if err != nil || v < 0 {
+					return nil, ErrLine(media.CodeManifestDrift, lineStart, "invalid playlist version")
+				}
+				version = v
 			case "EXT-X-BITRATE":
 				kb, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
 				if err != nil || kb < 0 {
@@ -104,7 +111,9 @@ func ParseHLS(src string) (*Document, error) {
 	if !targetSeen {
 		return nil, ErrLine(media.CodeManifestDrift, 0, "HLS playlist missing #EXT-X-TARGETDURATION")
 	}
-	return b.finish(target, bps), nil
+	doc := b.finish(target, bps)
+	doc.Version = version
+	return doc, nil
 }
 
 // parsePositiveDecimal parses a plain non-negative decimal duration.
