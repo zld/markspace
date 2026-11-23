@@ -269,15 +269,26 @@ func injectSequenceGap(base *Stream, plans []TrackPlan) (Injection, *Stream, err
 	if err != nil {
 		return Injection{}, nil, err
 	}
-	// The next fragment of the same track is where the missing sequence
-	// number becomes observable.
-	observed := next.Fragments[idx]
+	// The gap becomes observable at the next fragment of the same track: its
+	// mfhd skips a number and its tfdt skips the dropped decode time. That
+	// tfdt is the exact byte a consumer can correlate with the input.
+	observedIdx := -1
+	for i := idx; i < len(next.Fragments); i++ {
+		if next.Fragments[i].TrackID == dropped.Track.ID {
+			observedIdx = i
+			break
+		}
+	}
+	if observedIdx < 0 {
+		return Injection{Kind: FaultSequenceGap, Detail: "no later fragment on the track"}, base, nil
+	}
+	observed := next.Fragments[observedIdx]
 	return Injection{
 		Kind:       FaultSequenceGap,
 		TrackID:    observed.TrackID,
-		Fragment:   idx,
+		Fragment:   observedIdx,
 		Sequence:   observed.Sequence,
-		ByteOffset: observed.MoofOffset,
+		ByteOffset: observed.TfdtOffset,
 		Detail:     fmt.Sprintf("dropped fragment sequence %d; next is %d", dropped.Seq, observed.Sequence),
 	}, next, nil
 }

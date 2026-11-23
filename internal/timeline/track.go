@@ -12,18 +12,23 @@ import (
 
 // Sample is one sample with both its original and synthesized time.
 type Sample struct {
-	TrackID          uint32 `json:"track_id"`
-	TrackKind        string `json:"track_kind"`
-	FragmentIndex    int    `json:"fragment_index"`
-	FragmentSeq      uint32 `json:"fragment_seq"`
-	SampleIndex      int    `json:"sample_index"`
-	File             string `json:"file"`
-	FileOffset       int64  `json:"file_offset"`
-	ByteLength       int64  `json:"byte_length"`
-	SourceTime       int64  `json:"source_time"`
-	SourceDuration   int64  `json:"source_duration"`
-	TimelineTime     int64  `json:"timeline_time"`
-	TimelineDuration int64  `json:"timeline_duration"`
+	TrackID       uint32 `json:"track_id"`
+	TrackKind     string `json:"track_kind"`
+	FragmentIndex int    `json:"fragment_index"`
+	FragmentSeq   uint32 `json:"fragment_seq"`
+	SampleIndex   int    `json:"sample_index"`
+	File          string `json:"file"`
+	FileOffset    int64  `json:"file_offset"`
+	ByteLength    int64  `json:"byte_length"`
+	// FragmentOffset and TfdtOffset are the raw input positions of the
+	// fragment header and its decode-time field, so repairs can be reported
+	// at the exact byte they corrected.
+	FragmentOffset   int64 `json:"fragment_offset"`
+	TfdtOffset       int64 `json:"tfdt_offset"`
+	SourceTime       int64 `json:"source_time"`
+	SourceDuration   int64 `json:"source_duration"`
+	TimelineTime     int64 `json:"timeline_time"`
+	TimelineDuration int64 `json:"timeline_duration"`
 	// Repaired marks samples whose synthesized time differs from the plain
 	// linear mapping because a fault was repaired.
 	Repaired bool   `json:"repaired,omitempty"`
@@ -141,6 +146,8 @@ func mapFragment(tr *Track, frag ingest.Fragment, timelineTimescale uint32) ([]S
 			File:             frag.File,
 			FileOffset:       s.Offset,
 			ByteLength:       s.Size,
+			FragmentOffset:   frag.MoofOffset,
+			TfdtOffset:       frag.TfdtOffset,
 			SourceTime:       sourceCursor,
 			SourceDuration:   s.Duration,
 			TimelineTime:     timelineTime,

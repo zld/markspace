@@ -82,12 +82,12 @@ func Repair(tracks []*timeline.Track, opts RepairOptions) (*RepairReport, []*Rep
 
 // fragmentGroup holds the samples of one fragment in input order.
 type fragmentGroup struct {
-	index   int
-	seq     uint32
-	file    string
-	offset  int64
-	tfdt    int64
-	samples []timeline.Sample
+	index      int
+	seq        uint32
+	file       string
+	offset     int64
+	tfdtOffset int64
+	samples    []timeline.Sample
 }
 
 func groupFragments(samples []timeline.Sample) []fragmentGroup {
@@ -98,11 +98,12 @@ func groupFragments(samples []timeline.Sample) []fragmentGroup {
 			continue
 		}
 		groups = append(groups, fragmentGroup{
-			index:   s.FragmentIndex,
-			seq:     s.FragmentSeq,
-			file:    s.File,
-			offset:  s.FileOffset,
-			samples: []timeline.Sample{s},
+			index:      s.FragmentIndex,
+			seq:        s.FragmentSeq,
+			file:       s.File,
+			offset:     s.FragmentOffset,
+			tfdtOffset: s.TfdtOffset,
+			samples:    []timeline.Sample{s},
 		})
 	}
 	return groups
@@ -148,19 +149,21 @@ func repairTrack(tr *timeline.Track, report *RepairReport) *RepairedTrack {
 		}
 		if !first && g.seq <= prevSeq {
 			// Cannot order this fragment without guessing.
-			f := fault.New(fault.CodeUnmergeableTrack, g.file, g.offset, "mfhd",
+			f := fault.New(fault.CodeUnmergeableTrack, g.file, g.tfdtOffset, "mfhd",
 				fmt.Sprintf("fragment %d has sequence %d after %d with a different declaration", g.index, g.seq, prevSeq)).WithFragment(g.seq)
 			rt.Mergeable = false
 			rt.Reason = f.Error()
 			rt.Errors = append(rt.Errors, f)
 			report.Errors = append(report.Errors, f)
 			report.UnmergeableTracks = append(report.UnmergeableTracks, tr.ID)
-			rt.Discontinuities = append(rt.Discontinuities, Discontinuity{
+			d := Discontinuity{
 				Kind: "unorderable", TrackID: tr.ID, FragmentIndex: g.index, Sequence: g.seq,
-				PreviousSeq: prevSeq, File: g.file, Offset: g.offset,
+				PreviousSeq: prevSeq, File: g.file, Offset: g.tfdtOffset,
 				MappedTime: g.samples[0].TimelineTime, PreviousEnd: prevEnd, Repaired: false,
 				Detail: f.Error(),
-			})
+			}
+			rt.Discontinuities = append(rt.Discontinuities, d)
+			report.Discontinuities = append(report.Discontinuities, d)
 			return rt
 		}
 		mappedStart := g.samples[0].TimelineTime
@@ -170,10 +173,13 @@ func repairTrack(tr *timeline.Track, report *RepairReport) *RepairedTrack {
 		case g.seq > prevSeq+1:
 			// mfhd gap. tfdt is still authoritative, so only record it.
 			report.SequenceGaps++
+			// The first byte that reveals a skipped decode time is the tfdt
+			// of the fragment following the missing one; that is what a
+			// caller can correlate with the input.
 			d := Discontinuity{
 				Kind: "sequence_gap", TrackID: tr.ID, FragmentIndex: g.index, Sequence: g.seq,
-				PreviousSeq: prevSeq, File: g.file, Offset: g.offset,
-				MappedTime: mappedStart, PreviousEnd: prevEnd, Repaired: true,
+				PreviousSeq: prevSeq, File: g.file, Offset: g.tfdtOffset,
+				MappedTime: mappedStart, PreviousEnd: prevEnd, Repaired: false,
 				Detail: fmt.Sprintf("mfhd jumped from %d to %d", prevSeq, g.seq),
 			}
 			rt.Discontinuities = append(rt.Discontinuities, d)
@@ -186,7 +192,7 @@ func repairTrack(tr *timeline.Track, report *RepairReport) *RepairedTrack {
 			report.Regressions++
 			d := Discontinuity{
 				Kind: "tfdt_regression", TrackID: tr.ID, FragmentIndex: g.index, Sequence: g.seq,
-				PreviousSeq: prevSeq, File: g.file, Offset: g.offset,
+				PreviousSeq: prevSeq, File: g.file, Offset: g.tfdtOffset,
 				MappedTime: mappedStart, PreviousEnd: prevEnd, Repaired: true,
 				Detail: fmt.Sprintf("tfdt mapped to %d before previous end %d; continued at end", mappedStart, prevEnd),
 			}
