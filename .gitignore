@@ -1,0 +1,16 @@
+# Build output
+/bin/
+/mediad
+*.test
+*.out
+coverage.txt
+
+# Local demo and cache state
+/mediad-demo-*/
+/.cache/
+/tmp/
+
+# Editor and OS noise
+.DS_Store
+.idea/
+.vscode/
