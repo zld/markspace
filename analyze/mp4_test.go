@@ -177,3 +177,20 @@ func TestBadBoxLengthRecoversAtNextBoundary(t *testing.T) {
 		t.Fatalf("offset=%d want %d", res.Damaged[0].Offset, moovAt)
 	}
 }
+
+func TestBadBoxLengthDamagedSpanStopsAtRecovery(t *testing.T) {
+	data := syntheticSegment(10)
+	moovAt := bytes.Index(data, []byte("moov")) - 4
+	res := AnalyzeMP4(0, "s", "n", corruptBoxLength(data, moovAt), 0, MP4Options{})
+	if len(res.Damaged) == 0 {
+		t.Fatal("no damage recorded")
+	}
+	// The corrupted moov header is 8 bytes; scanning resumes at the next
+	// aligned box (trak) and the reported span covers only those 8 bytes.
+	if got := res.Damaged[0].Length; got != 8 {
+		t.Fatalf("damaged length=%d want 8", got)
+	}
+	if len(res.Samples) != 10 {
+		t.Fatalf("recovery did not find the sample table: samples=%d", len(res.Samples))
+	}
+}

@@ -148,12 +148,18 @@ func (st *scanState) scan(data []byte, base, start, end int64, depth int, track 
 		}
 		bi, err := readBoxAt(data, off, end)
 		if err != nil {
+			next, recovered := recoverBoundary(data, off, end)
+			// The damaged span is exactly the bytes we had to skip: up to the
+			// recovered boundary, or the rest of the container if none exists.
+			regionEnd := end
+			if recovered {
+				regionEnd = next
+			}
 			st.res.Damaged = append(st.res.Damaged, DamagedRegion{
-				Offset: base + off, Length: end - off,
+				Offset: base + off, Length: regionEnd - off,
 				Reason: err.Error(), Code: media.CodeBoxOverflow,
 			})
-			next, ok := recoverBoundary(data, off, end)
-			if !ok {
+			if !recovered {
 				return
 			}
 			off = next
