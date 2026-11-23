@@ -1,0 +1,10 @@
+# build artifacts
+/mediatool
+*.test
+*.out
+# demo output (local only)
+/media-demo/
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
