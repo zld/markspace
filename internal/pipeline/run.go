@@ -11,6 +11,7 @@ import (
 	"mediaverify/internal/clock"
 	"mediaverify/internal/errs"
 	"mediaverify/internal/fixture"
+	"mediaverify/internal/media"
 	"mediaverify/internal/quality"
 	"mediaverify/internal/segment"
 	"mediaverify/internal/subtitle"
@@ -83,6 +84,13 @@ func Run(cfg Config) (Result, error) {
 	}
 
 	rungs := rungInputs(decisions)
+	// Re-packaging step: synthesize an MP4 container on the 90kHz movie time
+	// base and probe it back, proving the container time base is recorded
+	// deterministically alongside the nanosecond tick scale.
+	container, err := probeContainer(stream)
+	if err != nil {
+		return Result{}, err
+	}
 	stats := segment.Stats{
 		PacketsReceived:   ingest.received,
 		PacketsDuplicate:  ingest.duplicate,
@@ -91,7 +99,7 @@ func Run(cfg Config) (Result, error) {
 		DegradedIntervals: len(plan.DegradedIntervals()),
 		ReplayCount:       ingest.wm.ReplayCount(),
 	}
-	manifest, err := segment.BuildManifest(cfg.FrameRate, stream.InputDigest, plan, rungs, cues, stats)
+	manifest, err := segment.BuildManifest(cfg.FrameRate, stream.InputDigest, container, plan, rungs, cues, stats)
 	if err != nil {
 		return Result{}, err
 	}
@@ -134,6 +142,27 @@ func Run(cfg Config) (Result, error) {
 	}
 	_ = estDegraded
 	return res, nil
+}
+
+// probeContainer synthesizes a minimal MP4 on the 90kHz movie time base and
+// reads its header back to obtain the container time base and digest.
+func probeContainer(stream *fixture.Stream) (segment.ContainerInfo, error) {
+	const timescale uint32 = 90_000
+	// Total duration in 90kHz units equals frame count times ticks/frame.
+	units := uint64(stream.Frames) * uint64(stream.TicksPerFrame)
+	raw, err := media.Synthesize(timescale, units)
+	if err != nil {
+		return segment.ContainerInfo{}, err
+	}
+	summary, err := media.Probe(raw)
+	if err != nil {
+		return segment.ContainerInfo{}, err
+	}
+	return segment.ContainerInfo{
+		Brand:     summary.Brand,
+		Timescale: int64(summary.Timescale),
+		SHA256:    summary.SHA256,
+	}, nil
 }
 
 func validateConfig(cfg Config) error {
