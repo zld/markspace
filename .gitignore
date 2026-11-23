@@ -1,0 +1,12 @@
+# build artifacts
+/mediad
+*.test
+*.out
+
+# local demo output
+/tmp/mediad-*
+.demo-out/
+
+# editor/OS noise
+.DS_Store
+*.swp
