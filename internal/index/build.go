@@ -42,13 +42,13 @@ type Entry struct {
 
 // Index is the serialized, versioned random-access structure.
 type Index struct {
-	Version          int                    `json:"version"`
-	Fingerprint      string                 `json:"fingerprint"` // joint fingerprint of all inputs
-	ConfigHash       string                 `json:"config_hash"`
-	Entries          []Entry                `json:"entries"`
-	Rules            []timeline.RepairRule  `json:"rules"`
-	NoKeyframeTracks []string               `json:"no_keyframe_tracks"`
-	SHA256           string                 `json:"sha256"` // hash of body without this field
+	Version          int                   `json:"version"`
+	Fingerprint      string                `json:"fingerprint"` // joint fingerprint of all inputs
+	ConfigHash       string                `json:"config_hash"`
+	Entries          []Entry               `json:"entries"`
+	Rules            []timeline.RepairRule `json:"rules"`
+	NoKeyframeTracks []string              `json:"no_keyframe_tracks"`
+	SHA256           string                `json:"sha256"` // hash of body without this field
 }
 
 // Build constructs an index from an aligned timeline. A timeline carrying

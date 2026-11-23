@@ -47,22 +47,22 @@ type OffsetRange struct {
 // Event is one timed unit. RawPayload keeps the original bytes; payloads are
 // never fully aggregated by the pipeline (samples stream one at a time).
 type Event struct {
-	Kind       EventKind
-	TrackID    string
-	SourceID   string
-	Seq        int       // decoder-assigned monotonic ordinal
-	RTPSeq     uint16    // RTP sequence number (RTP sources)
-	RawTS      int64     // timestamp in the track's original timescale
-	ExtendedTS int64     // unwrapped RTP timestamp (RTP sources only)
-	Ticks      int64     // unified-tick timestamp after repair
-	EndTicks   int64     // unified-tick end (samples with duration)
-	Keyframe   bool      // sync sample flag
-	RawPayload []byte    // original bytes, retained for hashing/provenance
-	Offset     OffsetRange
-	ContentHash string   // SHA-256 hex of RawPayload, filled by decoder
-	Deduped    bool      // true when a later equal event was dropped
-	Conflict   bool      // cross-track conflict marker
-	RuleID     string    // repair rule that last touched this event
+	Kind        EventKind
+	TrackID     string
+	SourceID    string
+	Seq         int    // decoder-assigned monotonic ordinal
+	RTPSeq      uint16 // RTP sequence number (RTP sources)
+	RawTS       int64  // timestamp in the track's original timescale
+	ExtendedTS  int64  // unwrapped RTP timestamp (RTP sources only)
+	Ticks       int64  // unified-tick timestamp after repair
+	EndTicks    int64  // unified-tick end (samples with duration)
+	Keyframe    bool   // sync sample flag
+	RawPayload  []byte // original bytes, retained for hashing/provenance
+	Offset      OffsetRange
+	ContentHash string // SHA-256 hex of RawPayload, filled by decoder
+	Deduped     bool   // true when a later equal event was dropped
+	Conflict    bool   // cross-track conflict marker
+	RuleID      string // repair rule that last touched this event
 }
 
 // RepairRule records one deterministic repair decision so every output tick

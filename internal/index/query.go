@@ -8,22 +8,22 @@ import (
 
 // Query describes an index lookup. Zero fields mean "no constraint".
 type Query struct {
-	FromTick int64
-	ToTick   int64 // inclusive; 0 with FromTick 0 means whole index
-	TrackID  string
-	Kind     string
+	FromTick     int64
+	ToTick       int64 // inclusive; 0 with FromTick 0 means whole index
+	TrackID      string
+	Kind         string
 	KeyframeOnly bool
 }
 
 // Provenance is the reverse-lookup chain attached to every hit.
 type Provenance struct {
-	Fingerprint   string
-	SourceID      string
-	OffsetBegin   int64
-	OffsetEnd     int64
-	ContentHash   string
-	RepairRuleID  string
-	IndexVersion  int
+	Fingerprint  string
+	SourceID     string
+	OffsetBegin  int64
+	OffsetEnd    int64
+	ContentHash  string
+	RepairRuleID string
+	IndexVersion int
 }
 
 // Hit is one query result with its full provenance chain.
