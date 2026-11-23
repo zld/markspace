@@ -168,6 +168,7 @@ func printReport(stdout io.Writer, res pipeline.Result, runErr error) {
 	fmt.Fprintf(stdout, "quality_samples=%d\n", res.QualitySamples)
 	fmt.Fprintf(stdout, "manifest_alignment_error_ms=%.2f\n", res.AlignmentErrorMS)
 	fmt.Fprintf(stdout, "recovered_blocks=%d\n", res.RecoveredBlocks)
+	fmt.Fprintf(stdout, "reused_blocks=%d\n", res.BlocksReused)
 	fmt.Fprintf(stdout, "resume_offset=%d\n", res.ResumeOffset)
 	fmt.Fprintf(stdout, "manifest_sha256=%s\n", res.ManifestSHA256)
 	fmt.Fprintf(stdout, "rtp_packets=%d\n", res.RTPPackets)

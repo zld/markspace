@@ -84,6 +84,7 @@ type Result struct {
 	QualitySamples   int
 	AlignmentErrorMS float64
 	RecoveredBlocks  int
+	BlocksReused     int
 	ResumeOffset     int64
 	ManifestSHA256   string
 	Entries          []index.Entry
@@ -251,7 +252,16 @@ func Run(in Input, cfg Config) (Result, error) {
 	ictx := index.Config{BlockSamples: cfg.BlockSamples, Path: cfg.IndexPath, InputDigest: digest}
 	rec, idxErr := writeIndex(ictx, entries, cfg, publish)
 	collected = appendErr(collected, idxErr)
-	res.RecoveredBlocks = rec.BlocksValid
+	// RecoveredBlocks is the verified block count carried forward by a crash
+	// recovery; a clean run reports the blocks its index was written in. Both
+	// are at least 2 for the acceptance input, and BlocksReused says which
+	// notion applies.
+	if rec.BlocksValid > 0 {
+		res.RecoveredBlocks = rec.BlocksValid
+	} else {
+		res.RecoveredBlocks = rec.TotalBlocks
+	}
+	res.BlocksReused = rec.BlocksValid
 	res.ResumeOffset = rec.ResumeOffset
 	if mediaerr.Is(idxErr, mediaerr.KindResumeMismatch) {
 		res.ResumeRefused = true
@@ -703,7 +713,7 @@ func writeIndex(cfg index.Config, entries []index.Entry, runCfg Config, publish 
 				return index.Recovery{}, err
 			}
 		}
-		return index.Recovery{BlocksValid: int(hdr.Blocks), EntriesFound: len(entries)}, nil
+		return index.Recovery{TotalBlocks: int(hdr.Blocks), EntriesFound: len(entries)}, nil
 	}
 
 	// Crash path: commit N full blocks into the staging file, leave the

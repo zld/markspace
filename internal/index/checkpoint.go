@@ -293,8 +293,11 @@ type Reader struct {
 
 // Recovery reports resume state for the CLI.
 type Recovery struct {
-	BlocksFound    int
+	BlocksFound int
+	// BlocksValid counts blocks that passed their checksums and were reused
+	// or retained. TotalBlocks is how many blocks the index holds afterwards.
 	BlocksValid    int
+	TotalBlocks    int
 	EntriesFound   int
 	ResumeOffset   int64
 	Corrupt        bool
@@ -416,6 +419,7 @@ func (r *Reader) parse(data []byte, wantDigest [32]byte) error {
 		r.Recovery.BlocksValid++
 	}
 	r.Recovery.BlocksFound = len(r.blocks)
+	r.Recovery.TotalBlocks = len(r.blocks)
 	r.Recovery.EntriesFound = len(r.Entries)
 	r.Recovery.ResumeOffset = r.hdr.OffsetBytes
 	if len(errs) > 0 {
