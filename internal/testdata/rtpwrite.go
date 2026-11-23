@@ -42,19 +42,26 @@ func BuildRTPPackets(s RTPWrapSpec) ([]RTPPacketSpec, *RTPPacketSpec) {
 	}
 	pkts := make([]RTPPacketSpec, 0, s.Packets)
 	ts := s.StartTS
+	if s.Wrap {
+		// Choose a start timestamp so the undisturbed step sequence crosses
+		// the 32-bit ceiling halfway through the stream. The rollover then
+		// happens naturally with no backwards jump in the packet sequence.
+		ts = uint32((1 << 32) - int64(s.Packets/2)*int64(s.PacketSteps) -
+			int64(s.PacketSteps)/2)
+	}
+	// Accumulated fractional drift in timestamp units. Real device drift is
+	// sub-step per packet but accumulates, producing periodic +1 corrections;
+	// carrying the remainder reproduces that instead of truncating to zero.
+	var driftAccum float64
 	for i := 0; i < s.Packets; i++ {
-		// Drift slightly shortens/lengthens each step in integer units.
-		drift := int64(float64(s.PacketSteps) * s.DriftPPM / 1_000_000.0)
-		step := int64(s.PacketSteps) + drift
+		driftAccum += float64(s.PacketSteps) * s.DriftPPM / 1_000_000.0
+		corr := int64(driftAccum)
+		driftAccum -= float64(corr)
+		step := int64(s.PacketSteps) + corr
 		if step <= 0 {
 			step = int64(s.PacketSteps)
 		}
 		raw := ts
-		if s.Wrap && i == s.Packets/2 {
-			// Jump close to the 32-bit boundary so the next packets roll over.
-			ts = 0xFFFFF000
-			raw = ts
-		}
 		payload := make([]byte, 4)
 		binary.BigEndian.PutUint32(payload, uint32(i))
 		pkts = append(pkts, RTPPacketSpec{

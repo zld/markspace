@@ -30,6 +30,7 @@ func fullbox(ver byte, flags uint32, payload []byte) []byte {
 func fixed1616(v float64) uint32 { return uint32(math.Round(v * 65536.0)) }
 
 // rotationMatrix returns the tkhd 9x int32 matrix for the given degrees.
+// Layout is the standard a,b,u,c,d,v,x,y,w row-major 3x3 transform.
 func rotationMatrix(deg int) [9]int32 {
 	one := int32(0x00010000)
 	switch deg {
@@ -43,7 +44,6 @@ func rotationMatrix(deg int) [9]int32 {
 		return [9]int32{one, 0, 0, 0, one, 0, 0, 0, 0x40000000}
 	}
 }
-
 func tkhd(trackID uint32, timescale uint32, durationUnits uint64, w, h int, deg int) []byte {
 	p := make([]byte, 0, 84)
 	p = append(p, 0, 0, 0, 0) // version/flags

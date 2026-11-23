@@ -40,7 +40,9 @@ func cttsBox(offsets []int64) []byte {
 	putU32(tmp, uint32(len(offsets)))
 	p = append(p, tmp...)
 	for _, o := range offsets {
-		putI32(tmp, int32(o))
+		putU32(tmp, 1) // sample_count: one sample per entry
+		p = append(p, tmp...)
+		putI32(tmp, int32(o)) // sample_offset (signed, version 1)
 		p = append(p, tmp...)
 	}
 	return box("ctts", p)

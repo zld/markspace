@@ -31,39 +31,40 @@ type ColorSpec struct {
 }
 
 // WriteMP4 writes the synthetic MP4 with one video and one audio track.
-// Layout: ftyp, video mdat, audio mdat, moov — sample offsets are known
-// before moov is emitted, so stco entries point at real payload bytes.
+// Layout: ftyp, moov, video mdat, audio mdat (faststart). Sample offsets are
+// computed for the pre-moov layout, then shifted by the moov byte length.
 func WriteMP4(path string, spec MP4Spec) error {
-	var file []byte
 	ftypPayload := append([]byte("isom"), 0, 0, 0, 0)
 	ftypPayload = append(ftypPayload, []byte("isom")...)
 	ftypPayload = append(ftypPayload, []byte("iso2")...)
 	ftypPayload = append(ftypPayload, []byte("mp41")...)
-	file = append(file, box("ftyp", ftypPayload)...)
+	ftyp := box("ftyp", ftypPayload)
 
-	// Video mdat: one sample per frame, payload is the luma bytes.
+	// First pass: offsets assume the old ftyp,mdat,mdat layout.
+	var preLen int
 	vSizes := make([]uint32, len(spec.Frames))
 	vOff := make([]uint32, len(spec.Frames))
 	var vPayload []byte
+	preLen = len(ftyp)
 	for i, f := range spec.Frames {
-		vOff[i] = uint32(len(file) + 8 + len(vPayload))
+		vOff[i] = uint32(preLen + 8 + len(vPayload))
 		vSizes[i] = uint32(len(f.Luma))
 		vPayload = append(vPayload, f.Luma...)
 	}
-	file = append(file, box("mdat", vPayload)...)
+	vMdat := box("mdat", vPayload)
 
-	// Audio mdat: samples of 1024 PCM frames (2048 bytes each).
 	const group = 1024
 	groups := len(spec.Audio.PCM) / group
 	aSizes := make([]uint32, groups)
 	aOff := make([]uint32, groups)
 	var aPayload []byte
+	aBase := preLen + len(vMdat)
 	for g := 0; g < groups; g++ {
-		aOff[g] = uint32(len(file) + 8 + len(aPayload))
+		aOff[g] = uint32(aBase + 8 + len(aPayload))
 		aSizes[g] = group * 2
 		aPayload = append(aPayload, pcmBytes(spec.Audio.PCM[g*group:(g+1)*group])...)
 	}
-	file = append(file, box("mdat", aPayload)...)
+	aMdat := box("mdat", aPayload)
 
 	vTrak := buildVideoTrak(spec, vSizes, vOff)
 	aTrak := buildAudioTrak(spec.Audio, groups, aSizes, aOff)
@@ -75,8 +76,23 @@ func WriteMP4(path string, spec MP4Spec) error {
 	moov := box("moov", concat([][]byte{
 		box("mvhd", fullbox(0, 0, mvhdPayload)), vTrak, aTrak,
 	}))
-	file = append(file, moov...)
 
+	// Second pass: moov now sits between ftyp and the mdats, so every chunk
+	// offset shifts forward by len(moov).
+	shift := uint32(len(moov))
+	for i := range vOff {
+		vOff[i] += shift
+	}
+	for i := range aOff {
+		aOff[i] += shift
+	}
+	vTrak = buildVideoTrak(spec, vSizes, vOff)
+	aTrak = buildAudioTrak(spec.Audio, groups, aSizes, aOff)
+	moov = box("moov", concat([][]byte{
+		box("mvhd", fullbox(0, 0, mvhdPayload)), vTrak, aTrak,
+	}))
+
+	file := concat([][]byte{ftyp, moov, vMdat, aMdat})
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -95,8 +111,9 @@ func buildVideoTrak(spec MP4Spec, sizes, off []uint32) []byte {
 	}
 	cttsOff := make([]int64, len(spec.Frames))
 	for i := range cttsOff {
-		cttsOff[i] = int64(float64(spec.VideoPTS[i]-spec.VideoDTS[i]) *
-			float64(spec.Timescale) / 1e9)
+		// Composition offset is expressed in track timescale units.
+		cttsOff[i] = (spec.VideoPTS[i] - spec.VideoDTS[i]) *
+			int64(spec.Timescale) / 1_000_000_000
 	}
 	var keys []uint32
 	for i, f := range spec.Frames {
