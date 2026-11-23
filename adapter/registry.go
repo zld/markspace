@@ -89,3 +89,11 @@ func (r *Registry) Names() []string {
 	return names
 }
 
+// Default builds a registry containing all built-in adapters.
+func Default() *Registry {
+	r := NewRegistry()
+	r.MustRegister(MetadataAdapter{})
+	r.MustRegister(MP4Adapter{})
+	r.MustRegister(RTPAdapter{})
+	return r
+}
