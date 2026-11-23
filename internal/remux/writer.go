@@ -54,9 +54,9 @@ func SafePath(root, name string) (string, error) {
 // SpoolMeta is the bounded, payload-free metadata kept per fragment.
 type SpoolMeta struct {
 	Slot            string
-	OrderKey        int     // deterministic ordering (recomputed InputOrder)
-	InputOrder      int     // original arrival position
-	Seq             int     // original mfhd seq, -1 if missing
+	OrderKey        int // deterministic ordering (recomputed InputOrder)
+	InputOrder      int // original arrival position
+	Seq             int // original mfhd seq, -1 if missing
 	TrackID         uint32
 	CorrectedDTS    uint64
 	BaseMediaDecode uint64
@@ -148,9 +148,9 @@ func (w *Writer) Spool(meta SpoolMeta, payload io.Reader, payloadLen int) error 
 
 // FinalizePlan groups spool metadata by slot in deterministic order.
 type FinalizePlan struct {
-	Slot   string
-	Track  mp4.TrackInfo
-	Metas  []SpoolMeta
+	Slot  string
+	Track mp4.TrackInfo
+	Metas []SpoolMeta
 }
 
 // Finalize rewrites one init segment and one numbered chunk stream per

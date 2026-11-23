@@ -9,9 +9,9 @@ import (
 // repeatingReader emits the same fragment n times without ever holding
 // more than one copy, mirroring a chunked network or file read stream.
 type repeatingReader struct {
-	one     []byte
-	remain  int
-	pos     int
+	one    []byte
+	remain int
+	pos    int
 }
 
 func (r *repeatingReader) Read(p []byte) (int, error) {

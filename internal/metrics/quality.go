@@ -22,12 +22,12 @@ type SlotTarget struct {
 
 // Report is the deterministic metrics result for one run.
 type Report struct {
-	TargetBitrateBPS    int        `json:"target_bitrate_bps"`
-	ActualBitrateBPS    int        `json:"actual_bitrate_bps"`
-	BitrateDeviationPct float64    `json:"bitrate_deviation_pct"`
-	SampleHashMatch     bool       `json:"sample_hash_match"`
-	QualitySamples      int        `json:"quality_samples"`
-	ManifestAlignmentMS float64    `json:"manifest_alignment_ms"`
+	TargetBitrateBPS    int          `json:"target_bitrate_bps"`
+	ActualBitrateBPS    int          `json:"actual_bitrate_bps"`
+	BitrateDeviationPct float64      `json:"bitrate_deviation_pct"`
+	SampleHashMatch     bool         `json:"sample_hash_match"`
+	QualitySamples      int          `json:"quality_samples"`
+	ManifestAlignmentMS float64      `json:"manifest_alignment_ms"`
 	SlotReports         []SlotReport `json:"slot_reports"`
 }
 

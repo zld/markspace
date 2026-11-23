@@ -40,9 +40,9 @@ func (w *Watermark) Reset() { *w = Watermark{} }
 // LateDecision describes why an event was classified late and which
 // previously accepted time range must be recomputed.
 type LateDecision struct {
-	TrackID    uint32
-	EventTime  uint64
-	Watermark  uint64
+	TrackID   uint32
+	EventTime uint64
+	Watermark uint64
 	// AffectedStart is the earliest accepted event time at or after the
 	// late event's time; recomputation covers [AffectedStart, Watermark].
 	AffectedStart uint64

@@ -19,9 +19,9 @@ const halfWrap uint64 = 1 << 31
 // Unwrapper expands 32-bit timestamps into a monotonically non-decreasing
 // 64-bit series. It is safe for concurrent-free, per-stream use only.
 type Unwrapper struct {
-	last       uint64
-	hasLast    bool
-	wrapCount  uint64
+	last        uint64
+	hasLast     bool
+	wrapCount   uint64
 	Wraparounds int // number of legal 2^32 wraps observed
 }
 

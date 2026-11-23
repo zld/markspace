@@ -10,7 +10,6 @@ import (
 	"mediatool/internal/timeline"
 )
 
-
 // TrackRun holds the parsed sample table of one traf box.
 type TrackRun struct {
 	TrackID         uint32
@@ -20,7 +19,7 @@ type TrackRun struct {
 	SampleDurations []uint32
 	SampleSizes     []uint32
 	SampleFlags     []uint32
-	DataOffset      int32  // relative to first byte of mdat payload
+	DataOffset      int32 // relative to first byte of mdat payload
 	HasDataOffset   bool
 	ParseErrors     []*timeline.MediaError
 }
@@ -225,4 +224,3 @@ func parseTraf(body []byte, base int64) (*TrackRun, *timeline.MediaError) {
 	}
 	return run, nil
 }
-

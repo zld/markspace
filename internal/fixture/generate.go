@@ -154,7 +154,7 @@ func genAlignedTrack(rng *rand.Rand, spec TrackSpec, n, targetBPS int) []Fragmen
 		}
 		out = append(out, Fragment{
 			Seq: i, TrackID: spec.TrackID, DTS: dts,
-			Bytes: mp4.BuildFragment(fragSpec),
+			Bytes:     mp4.BuildFragment(fragSpec),
 			Durations: durations, Sizes: sizes, Payload: payload,
 		})
 		dts += windowTotal

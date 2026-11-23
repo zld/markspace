@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"os"
 
-	clockrtp "mediatool/internal/rtp"
 	"mediatool/internal/remux"
+	clockrtp "mediatool/internal/rtp"
 )
 
 // runVerify reloads a previously written output directory and prints its

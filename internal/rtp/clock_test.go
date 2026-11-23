@@ -82,7 +82,7 @@ func TestUnwrapNearHalfBoundary(t *testing.T) {
 	u := &Unwrapper{}
 	_, _ = u.Unwrap(100000)
 	// Exactly 2^31 forward distance is still a legal wrap.
-	got, err := u.Unwrap(100000 + (1<<31))
+	got, err := u.Unwrap(100000 + (1 << 31))
 	if err != nil {
 		t.Fatalf("half-boundary wrap must be legal: %v", err)
 	}

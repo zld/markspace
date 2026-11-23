@@ -20,8 +20,8 @@ type FragmentManifest struct {
 	// Duration is the total sample duration in the track's timescale.
 	Duration uint64 `json:"duration"`
 	// PayloadBytes is the number of compressed (mdat payload) bytes.
-	PayloadBytes int `json:"payload_bytes"`
-	Timescale    uint32 `json:"timescale"`
+	PayloadBytes   int    `json:"payload_bytes"`
+	Timescale      uint32 `json:"timescale"`
 	SampleCount    int    `json:"sample_count"`
 	Bytes          int    `json:"bytes"`
 	Repeated       bool   `json:"repeated"`

@@ -21,17 +21,17 @@ type Input struct {
 
 // Counters aggregates pipeline statistics for the summary and metrics.
 type Counters struct {
-	TotalInputs      int
-	RejectedBoxes    int
+	TotalInputs       int
+	RejectedBoxes     int
 	RejectedFragments int
-	DuplicateSeq     int
-	MissingMfhd      int
-	LateFragments    int
-	LateRecomputed   int
-	Wraparounds      int
-	Restarts         int
-	SampleCount      int
-	PayloadBytes     int
+	DuplicateSeq      int
+	MissingMfhd       int
+	LateFragments     int
+	LateRecomputed    int
+	Wraparounds       int
+	Restarts          int
+	SampleCount       int
+	PayloadBytes      int
 }
 
 // Result is the deterministic output of one pipeline run.
@@ -206,7 +206,7 @@ func (p *Pipeline) ingestRun(inputOrder int, frag *mp4.Fragment,
 		SampleSizes:     append([]uint32(nil), run.SampleSizes...),
 		SampleHashes:    hashes, PayloadHash: payloadHash,
 		Repeated: repeated, Late: late,
-		CorrectedDTS: report.CorrectedDTS,
+		CorrectedDTS:      report.CorrectedDTS,
 		CorrectionApplied: report.Correction,
 		ClockConfidence:   report.Confidence,
 	}

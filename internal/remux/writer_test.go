@@ -71,7 +71,7 @@ func TestRemuxLosslessAndDeterministic(t *testing.T) {
 			meta := SpoolMeta{
 				Slot: "video-main", OrderKey: s.order, InputOrder: s.order,
 				Seq: s.order, TrackID: 1, CorrectedDTS: s.dts, BaseMediaDecode: s.dts,
-				Timescale: 90000,
+				Timescale:       90000,
 				SampleDurations: []uint32{3003},
 				SampleSizes:     []uint32{uint32(s.n)},
 			}
@@ -202,5 +202,67 @@ func TestSpoolTruncatedPayloadRejected(t *testing.T) {
 	err = w.Spool(meta, bytes.NewReader([]byte("short")), 10)
 	if me := timeline.AsMediaError(err); me == nil || me.Class != timeline.ClassBoxTruncated {
 		t.Fatalf("want truncated spool error, got %v", err)
+	}
+}
+
+func TestSpoolSliceRangeRejected(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "out")
+	w, err := NewWriter(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := payloadFor(3, 16)
+	// End beyond the spooled length must be rejected (overflow guard).
+	meta := SpoolMeta{
+		Slot: "x", OrderKey: 0, TrackID: 1,
+		SampleSizes: []uint32{16}, PayloadStart: 0, PayloadEnd: 999,
+	}
+	err = w.Spool(meta, bytes.NewReader(payload), len(payload))
+	if me := timeline.AsMediaError(err); me == nil || me.Class != timeline.ClassOverflow {
+		t.Fatalf("want overflow for out-of-range slice, got %v", err)
+	}
+	// Start greater than end must also be rejected.
+	meta2 := SpoolMeta{
+		Slot: "x", OrderKey: 1, TrackID: 1,
+		SampleSizes: []uint32{16}, PayloadStart: 10, PayloadEnd: 4,
+	}
+	err = w.Spool(meta2, bytes.NewReader(payload), len(payload))
+	if me := timeline.AsMediaError(err); me == nil || me.Class != timeline.ClassOverflow {
+		t.Fatalf("want overflow for inverted slice, got %v", err)
+	}
+}
+
+func TestSpoolSubSliceRemuxedLosslessly(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "out")
+	w, err := NewWriter(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A shared spool holding 16 bytes; the slot owns only bytes [4:12].
+	full := payloadFor(5, 16)
+	meta := SpoolMeta{
+		Slot: "sub", OrderKey: 0, InputOrder: 0, Seq: 0, TrackID: 8,
+		CorrectedDTS: 0, Timescale: 48000,
+		SampleDurations: []uint32{1024}, SampleSizes: []uint32{8},
+		PayloadStart: 4, PayloadEnd: 12,
+	}
+	if err := w.Spool(meta, bytes.NewReader(full), len(full)); err != nil {
+		t.Fatal(err)
+	}
+	track := mp4.TrackInfo{TrackID: 8, Timescale: 48000, MediaType: "audio", CodecKey: "mp4a"}
+	m, err := w.Finalize([]FinalizePlan{{Slot: "sub", Track: track, Metas: w.Metas()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(root, m.Slots[0].Fragments[0].File))
+	if err != nil {
+		t.Fatal(err)
+	}
+	frag, err := mp4.ParseFragment(bytes.NewReader(raw), 0)
+	if err != nil || frag.Rejected {
+		t.Fatalf("sub-slice chunk invalid: %v", err)
+	}
+	if !bytes.Equal(frag.MdatPayload, full[4:12]) {
+		t.Fatal("sub-slice payload not remuxed byte-identically")
 	}
 }

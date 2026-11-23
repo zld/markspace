@@ -27,7 +27,7 @@ func hexEncode(b []byte) string {
 // payload hashes so every metric can be checked exactly.
 func buildManifestAndEvents(t *testing.T) (*remux.Manifest, []*timeline.SampleEvent) {
 	vPayload := []byte("video-payload-bytes-0001") // 24 bytes
-	aPayload := []byte("audio-payload")             // 13 bytes
+	aPayload := []byte("audio-payload")            // 13 bytes
 	vHash := sha256.Sum256(vPayload)
 	aHash := sha256.Sum256(aPayload)
 
