@@ -106,6 +106,7 @@ func runDemo(args []string) int {
 		FrameWidth:     f.width,
 		FrameHeight:    f.height,
 		Timescale:      uint32(f.timescale),
+		FramesOutput:   f.frames,
 	}
 	if err := cfg.Validate(); err != nil {
 		fmt.Fprintln(os.Stderr, "invalid configuration:", err)

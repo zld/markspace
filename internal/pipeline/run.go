@@ -30,6 +30,10 @@ type Config struct {
 	FrameWidth     int      `json:"frame_width"`
 	FrameHeight    int      `json:"frame_height"`
 	Timescale      uint32   `json:"timescale"`
+	// FramesOutput is the previously exported frame file. It is never part of
+	// the configuration digest; it is only used to name the artifact that a
+	// refused resume must leave untouched.
+	FramesOutput string `json:"-"`
 }
 
 // Input is one named input file held in memory.
@@ -138,8 +142,9 @@ func Run(cfg Config, injected *fixture.InjectedStream, inputs []Input) (*Result,
 	resumeStart := time.Now()
 	if cfg.CheckpointPath != "" && store.Exists() && cfg.Resume {
 		decision, err := checkpoint.Recover(store, checkpoint.Expect{
-			InputDigest:  res.InputDigest,
-			ConfigDigest: res.ConfigDigest,
+			InputDigest:    res.InputDigest,
+			ConfigDigest:   res.ConfigDigest,
+			VerifiedOutput: cfg.FramesOutput,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("resume refused: %w", err)

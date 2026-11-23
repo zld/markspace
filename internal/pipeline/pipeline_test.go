@@ -172,6 +172,30 @@ func TestResumeRefusesChangedConfig(t *testing.T) {
 	}
 }
 
+func TestResumeRefusalLeavesVerifiedOutputIntact(t *testing.T) {
+	dir := t.TempDir()
+	cfg := baseConfig(dir)
+	runPipeline(t, cfg)
+	verified := filepath.Join(dir, "frames.jsonl")
+	if err := os.WriteFile(verified, []byte("verified-output\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg.Resume = true
+	cfg.Seed = 42
+	cfg.FramesOutput = verified
+	injected, inputs, err := pipeline.Generate(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pipeline.Run(cfg, injected, inputs); err == nil {
+		t.Fatal("resumed with different input bytes")
+	}
+	got, err := os.ReadFile(verified)
+	if err != nil || string(got) != "verified-output\n" {
+		t.Fatalf("verified output was touched: %q %v", got, err)
+	}
+}
+
 func TestResumeRefusesChangedInput(t *testing.T) {
 	dir := t.TempDir()
 	cfg := baseConfig(dir)
