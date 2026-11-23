@@ -27,10 +27,10 @@ type Input struct {
 
 // Options configures a run.
 type Options struct {
-	WorkDir       string
-	Config        timeline.Config
-	Interrupt     string // stage after which to simulate a process exit
-	Fault         *journal.Fault
+	WorkDir   string
+	Config    timeline.Config
+	Interrupt string // stage after which to simulate a process exit
+	Fault     *journal.Fault
 }
 
 // Run executes (or resumes) one pipeline execution.
