@@ -80,8 +80,8 @@ func (m Metrics) KeyframeRate() float64 {
 
 // Thresholds are the acceptance gates.
 type Thresholds struct {
-	MinRoundtrip float64
-	MinKeyframe  float64
+	MinRoundtrip  float64
+	MinKeyframe   float64
 	RequireRepeat bool
 }
 
@@ -189,23 +189,23 @@ type TrackReport struct {
 
 // RunResult is the full evidence for one execution.
 type RunResult struct {
-	Options  Options
-	Metrics  Metrics
-	Remux    *remux.Report
+	Options Options
+	Metrics Metrics
+	Remux   *remux.Report
 	// ReadBackMatch/Total are the sample counts re-parsed from the written
 	// MP4 and compared against the input media.
 	ReadBackMatch int
 	ReadBackTotal int
 	Streams       []StreamReport
-	Segments []SegmentReport
-	Tracks   []TrackReport
-	Mapping  string
-	Index    IndexReport
+	Segments      []SegmentReport
+	Tracks        []TrackReport
+	Mapping       string
+	Index         IndexReport
 	// demuxDigest is the digest of the evidence this run was built from.
 	demuxDigest string
 	Errors      []*merr.Error
-	Fatal    error
-	Outputs  []string
+	Fatal       error
+	Outputs     []string
 }
 
 // IndexReport summarizes external-index verification.
@@ -1150,4 +1150,3 @@ func writeReport(opts Options, res *RunResult) ([]string, error) {
 	sort.Strings(files)
 	return files, nil
 }
-

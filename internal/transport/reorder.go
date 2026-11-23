@@ -56,9 +56,9 @@ type ReorderBuffer struct {
 	next    int64 // next sequence number to emit
 	maxSeen int64
 
-	held   map[int64]*Packet
-	seen   map[int64]struct{}
-	seenQ  []int64
+	held  map[int64]*Packet
+	seen  map[int64]struct{}
+	seenQ []int64
 
 	stats Stats
 	errs  []*merr.Error
@@ -107,8 +107,8 @@ func NewReorderBuffer(cfg ReorderConfig, lim Limits) (*ReorderBuffer, error) {
 		cfg.MaxSeen = cfg.Window * 2
 	}
 	return &ReorderBuffer{
-		cfg:   cfg,
-		lim:   lim,
+		cfg:  cfg,
+		lim:  lim,
 		held: make(map[int64]*Packet, cfg.Window),
 		seen: make(map[int64]struct{}, cfg.MaxSeen),
 	}, nil

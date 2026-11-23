@@ -34,9 +34,9 @@ func ParseUnknownPolicy(s string) (UnknownPolicy, error) {
 // MapEntry is one explicit input-to-output track mapping. OutputID 0 means the
 // track is intentionally dropped even when the unknown policy is error.
 type MapEntry struct {
-	InputID   uint32
-	OutputID  uint32
-	Drop      bool
+	InputID    uint32
+	OutputID   uint32
+	Drop       bool
 	OutputKind Kind
 }
 

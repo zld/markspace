@@ -19,13 +19,13 @@ func TestNewRationalNormalizes(t *testing.T) {
 
 func TestScaleIsExactAndFloors(t *testing.T) {
 	cases := []struct {
-		ticks      int64
-		from, to   uint32
-		want       int64
+		ticks    int64
+		from, to uint32
+		want     int64
 	}{
 		{90000, 90000, 1000, 1000},
-		{1, 90000, 1000, 0},          // floor
-		{89999, 90000, 1000, 999},    // floor at the boundary
+		{1, 90000, 1000, 0},       // floor
+		{89999, 90000, 1000, 999}, // floor at the boundary
 		{9000, 90000, 48000, 4800},
 		{1 << 40, 1 << 30, 1000, 1 << 10 * 1000}, // large but exact
 	}

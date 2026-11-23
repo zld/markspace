@@ -143,9 +143,9 @@ type Mismatch struct {
 
 // Verification is the outcome of checking an index against scans.
 type Verification struct {
-	Total       int        `json:"total"`
-	Matched     int        `json:"matched"`
-	Mismatches  []Mismatch `json:"mismatches"`
+	Total      int        `json:"total"`
+	Matched    int        `json:"matched"`
+	Mismatches []Mismatch `json:"mismatches"`
 	// Rebuilt holds a scan-derived index that replaces the external one when
 	// any mismatch occurred.
 	Rebuilt *Index `json:"rebuilt,omitempty"`
@@ -305,13 +305,13 @@ func Rebuild(scans []SampleScan) *Index {
 		for _, ui := range s.Result.Keyframes {
 			u := s.Result.Units[ui]
 			idx.Entries = append(idx.Entries, Entry{
-				Stream:   s.Stream,
-				Sample:   s.Sample,
+				Stream:    s.Stream,
+				Sample:    s.Sample,
 				Timestamp: s.Timestamp,
-				Offset:   u.Offset,
-				Size:     u.HeaderLen + u.Size,
-				Keyframe: true,
-				Sync:     true,
+				Offset:    u.Offset,
+				Size:      u.HeaderLen + u.Size,
+				Keyframe:  true,
+				Sync:      true,
 			})
 		}
 	}

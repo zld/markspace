@@ -161,7 +161,7 @@ func TestWrapLengthPrefixedToAnnexB(t *testing.T) {
 
 // av1OBU builds one length-delimited OBU.
 func av1OBU(typ byte, payload []byte) []byte {
-	out := []byte{typ << 3 | 0x02, byte(len(payload))}
+	out := []byte{typ<<3 | 0x02, byte(len(payload))}
 	return append(out, payload...)
 }
 

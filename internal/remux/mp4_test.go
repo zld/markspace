@@ -77,13 +77,13 @@ func TestWriteFileRoundTrip(t *testing.T) {
 		})
 	}
 	plans := []TrackPlan{{
-		TrackID:     1,
-		Codec:       demux.CodecH264,
-		Samples:     samples,
-		Timescale:   90000,
-		Width:       640,
-		Height:      360,
-		Handler:     [4]byte{'v', 'i', 'd', 'e'},
+		TrackID:      1,
+		Codec:        demux.CodecH264,
+		Samples:      samples,
+		Timescale:    90000,
+		Width:        640,
+		Height:       360,
+		Handler:      [4]byte{'v', 'i', 'd', 'e'},
 		ConfigRecord: []byte{1, 0x42, 0x00, 0x1E, 0xFF, 0xE1, 0x00, 0x04, 0x67, 0x42, 0x00, 0x1E, 0x01, 0x00, 0x02, 0x68, 0xCE},
 	}}
 	rep, err := WriteFile(dir, "out.mp4", plans, DefaultOptions())

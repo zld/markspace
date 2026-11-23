@@ -50,19 +50,19 @@ func (l Limits) Validate() (Limits, error) {
 // Packet is a parsed RTP packet plus the fields the pipeline needs. Raw holds
 // a copy of the original datagram so hashes are computed over received bytes.
 type Packet struct {
-	Stream    int
-	Seq       uint16
-	Timestamp uint32
-	SSRC      uint32
-	PayloadType uint8
-	Marker    bool
-	CSRC      []uint32
-	Extensions []rtp.Extension
+	Stream           int
+	Seq              uint16
+	Timestamp        uint32
+	SSRC             uint32
+	PayloadType      uint8
+	Marker           bool
+	CSRC             []uint32
+	Extensions       []rtp.Extension
 	ExtensionProfile uint16
-	PaddingSize int
-	Payload   []byte
-	Raw       []byte
-	RecvIndex int
+	PaddingSize      int
+	Payload          []byte
+	Raw              []byte
+	RecvIndex        int
 }
 
 // ParseOptions controls parsing leniency.

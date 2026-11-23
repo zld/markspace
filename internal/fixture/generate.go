@@ -230,7 +230,7 @@ func av1AccessUnit(index int, key bool, salt int64) []byte {
 	seq := []byte{0x00, 0x00, 0x00, byte(0x20 + index%4)}
 	out = append(out, 0x0A, byte(len(seq))) // sequence header, type 1, has size
 	out = append(out, seq...)
-	fh := []byte{0x00, 0x01, 0x02, 0x03} // frame header OBU payload
+	fh := []byte{0x00, 0x01, 0x02, 0x03}   // frame header OBU payload
 	out = append(out, 0x1A, byte(len(fh))) // frame header, type 3, has size
 	out = append(out, fh...)
 	payload := make([]byte, 20+int(salt%11))

@@ -38,12 +38,12 @@ func ReadBack(path string) ([]ReadBackSample, error) {
 	defer f.Close()
 
 	type trackInfo struct {
-		id       uint32
+		id        uint32
 		timescale uint32
-		entry    mp4.BoxType
-		sizes    []uint32
-		offsets  []uint64
-		dts      []uint64
+		entry     mp4.BoxType
+		sizes     []uint32
+		offsets   []uint64
+		dts       []uint64
 	}
 	infos := map[int]*trackInfo{}
 	var order []int
@@ -177,11 +177,11 @@ func ReadBack(path string) ([]ReadBackSample, error) {
 					"reading sample %d", i)
 			}
 			out = append(out, ReadBackSample{
-				TrackID: cur.id,
-				Index:   i,
-				DTS:     cur.dts[i],
-				Size:    size,
-				Data:    buf,
+				TrackID:   cur.id,
+				Index:     i,
+				DTS:       cur.dts[i],
+				Size:      size,
+				Data:      buf,
 				CanonHash: canonForEntry(cur.entry, buf),
 			})
 			pos += uint64(size)
@@ -256,4 +256,3 @@ func expectedCanon(p TrackPlan, s demux.Sample) string {
 	_ = stored
 	return canon
 }
-

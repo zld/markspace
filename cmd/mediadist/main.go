@@ -230,4 +230,3 @@ func printResult(w io.Writer, res *pipeline.RunResult, fx *fixture.Fixture, dir 
 	fmt.Fprintf(w, "repeat_run_match=%t\n", m.RepeatRunMatch)
 	fmt.Fprintf(w, "readback_match=%d/%d\n", res.ReadBackMatch, res.ReadBackTotal)
 }
-

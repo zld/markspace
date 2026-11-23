@@ -10,15 +10,15 @@ import (
 // reportDoc is the on-disk evidence format. Fields are ordered for readable
 // diffs and every hash is hex so two runs can be compared byte for byte.
 type reportDoc struct {
-	Options  reportOptions  `json:"options"`
-	Metrics  reportMetrics  `json:"metrics"`
-	Index    IndexReport    `json:"index"`
-	Mapping  string         `json:"mapping"`
-	Tracks   []TrackReport  `json:"tracks"`
-	Streams  []StreamReport `json:"streams"`
+	Options  reportOptions   `json:"options"`
+	Metrics  reportMetrics   `json:"metrics"`
+	Index    IndexReport     `json:"index"`
+	Mapping  string          `json:"mapping"`
+	Tracks   []TrackReport   `json:"tracks"`
+	Streams  []StreamReport  `json:"streams"`
 	Segments []SegmentReport `json:"segments"`
-	Remux    reportRemux    `json:"remux"`
-	Errors   []reportError  `json:"errors"`
+	Remux    reportRemux     `json:"remux"`
+	Errors   []reportError   `json:"errors"`
 }
 
 type reportOptions struct {

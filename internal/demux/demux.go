@@ -30,7 +30,7 @@ func (c Codec) IsVideo() bool {
 
 // StreamSpec describes one input stream and its clock.
 type StreamSpec struct {
-	Stream int
+	Stream  int
 	TrackID uint32
 	Codec   Codec
 	// Timescale is the RTP clock rate in ticks per second.
@@ -50,17 +50,17 @@ type StreamSpec struct {
 
 // Sample is one reassembled access unit.
 type Sample struct {
-	Index   int
-	Stream  int
-	TrackID uint32
-	Codec   Codec
-	PTS     int64 // ticks in the stream timescale
-	PTSNS   int64 // unified nanoseconds, exact conversion
-	Dur     int64 // ticks
-	DurNS   int64
-	Data    []byte
+	Index    int
+	Stream   int
+	TrackID  uint32
+	Codec    Codec
+	PTS      int64 // ticks in the stream timescale
+	PTSNS    int64 // unified nanoseconds, exact conversion
+	Dur      int64 // ticks
+	DurNS    int64
+	Data     []byte
 	Keyframe bool
-	Damaged bool
+	Damaged  bool
 	// MissingPackets counts sequence gaps observed inside this sample.
 	MissingPackets int
 	// Incomplete is true when the marker/last packet was absent.
@@ -71,8 +71,8 @@ type Sample struct {
 	RawTimestamp uint32
 	SeqFirst     uint16
 	SeqLast      uint16
-	Segment    int
-	Scan       codec.ScanResult
+	Segment      int
+	Scan         codec.ScanResult
 }
 
 // Hashable reports whether the sample can participate in a byte comparison.

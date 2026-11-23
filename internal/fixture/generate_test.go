@@ -147,11 +147,11 @@ func TestIndexPointsAtKeyframeUnits(t *testing.T) {
 	}
 	var rows struct {
 		Entries []struct {
-			Stream   int    `json:"stream"`
-			Sample   int    `json:"sample"`
+			Stream    int    `json:"stream"`
+			Sample    int    `json:"sample"`
 			Timestamp uint32 `json:"timestamp"`
-			Offset   int64  `json:"offset"`
-			Keyframe bool   `json:"keyframe"`
+			Offset    int64  `json:"offset"`
+			Keyframe  bool   `json:"keyframe"`
 		} `json:"entries"`
 	}
 	if err := json.Unmarshal(fx.IndexJSON, &rows); err != nil {
