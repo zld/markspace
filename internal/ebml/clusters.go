@@ -3,6 +3,7 @@ package ebml
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 )
 
@@ -121,7 +122,14 @@ func (p *parser) readBlock(h Header, clusterTC, clusterOff int64, simple bool) e
 	payloadLen := int64(h.Size) - int64(tw) - 3
 	payloadOff := h.DataOffset + int64(tw) + 3
 	if err := p.rd.skip(int64(h.Size) - n); err != nil {
-		return p.wrapErr(h, err)
+		// A block cut mid-payload must name the track and byte offset it
+		// belonged to; callers rely on this to report which block was lost.
+		kind := ErrKindIO
+		if errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.EOF) {
+			kind = ErrKindTruncated
+		}
+		return parseError(kind, h.Offset, h.ID, track,
+			fmt.Sprintf("block payload truncated after %d of %d bytes", n, h.Size), err)
 	}
 	b := Block{
 		Track:       track,
