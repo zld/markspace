@@ -1,0 +1,174 @@
+// Package verify checks the invariants that must hold across every stage and
+// produces a deterministic digest of the audited result.
+package verify
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"sort"
+	"strings"
+
+	"archivecheck/internal/manifest"
+	"archivecheck/internal/recovery"
+)
+
+// Invariant names are stable identifiers used in audit output.
+const (
+	TimeMonotonic   = "time_monotonic"
+	OffsetBounded   = "offset_bounded"
+	GapsExplained   = "gaps_explained"
+	BoundaryAligned = "boundary_aligned"
+)
+
+// Violation is one failed invariant with machine-readable evidence.
+type Violation struct {
+	Invariant string
+	Layer     string
+	Detail    string
+}
+
+func (v Violation) String() string {
+	return fmt.Sprintf("%s layer=%s detail=%s", v.Invariant, v.Layer, v.Detail)
+}
+
+// Report is the verifier outcome.
+type Report struct {
+	Checked    []string
+	Violations []Violation
+	Faults     []string
+	SHA256     string
+}
+
+// OK reports whether every invariant held.
+func (r Report) OK() bool { return len(r.Violations) == 0 }
+
+// Text renders a stable terminal summary.
+func (r Report) Text() string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "verify checked=%s violations=%d\n", strings.Join(r.Checked, ","), len(r.Violations))
+	for _, v := range r.Violations {
+		fmt.Fprintf(&b, "  violation %s\n", v)
+	}
+	fmt.Fprintf(&b, "verify_sha256=%s\n", r.SHA256)
+	return b.String()
+}
+
+// Verify checks per-layer and merged results against the three required
+// invariants plus boundary alignment. The digest covers the canonical
+// violation list and manifest digest so identical runs must produce identical
+// digests.
+func Verify(results []recovery.Result, merge recovery.Merge, doc manifest.Document) Report {
+	rep := Report{Checked: []string{TimeMonotonic, OffsetBounded, GapsExplained, BoundaryAligned}}
+	for _, r := range results {
+		rep.Violations = append(rep.Violations, checkTime(r)...)
+		rep.Violations = append(rep.Violations, checkOffsets(r)...)
+		rep.Violations = append(rep.Violations, checkGaps(r)...)
+	}
+	rep.Violations = append(rep.Violations, checkBoundaries(merge)...)
+	sort.SliceStable(rep.Violations, func(i, j int) bool {
+		a, b := rep.Violations[i], rep.Violations[j]
+		if a.Invariant != b.Invariant {
+			return a.Invariant < b.Invariant
+		}
+		if a.Layer != b.Layer {
+			return a.Layer < b.Layer
+		}
+		return a.Detail < b.Detail
+	})
+	rep.Faults = append(rep.Faults, doc.Faults...)
+	for _, f := range merge.Faults {
+		rep.Faults = append(rep.Faults, f.String())
+	}
+	sort.Strings(rep.Faults)
+	rep.SHA256 = digest(rep.Violations, doc.SHA256)
+	return rep
+}
+
+// checkTime requires anchors and segments to be non-decreasing in time.
+func checkTime(r recovery.Result) []Violation {
+	var out []Violation
+	for i := 1; i < len(r.Anchors); i++ {
+		if r.Anchors[i].TimeMs < r.Anchors[i-1].TimeMs {
+			out = append(out, Violation{TimeMonotonic, r.Layer,
+				fmt.Sprintf("anchor %d at %d ms precedes %d ms", i, r.Anchors[i].TimeMs, r.Anchors[i-1].TimeMs)})
+		}
+		if r.Anchors[i].Offset < r.Anchors[i-1].Offset {
+			out = append(out, Violation{TimeMonotonic, r.Layer,
+				fmt.Sprintf("anchor %d byte offset %d precedes %d", i, r.Anchors[i].Offset, r.Anchors[i-1].Offset)})
+		}
+	}
+	for i := 1; i < len(r.Segments); i++ {
+		if r.Segments[i].StartMs < r.Segments[i-1].EndMs {
+			out = append(out, Violation{TimeMonotonic, r.Layer,
+				fmt.Sprintf("segment %d starts at %d ms before segment %d ends at %d ms", i, r.Segments[i].StartMs, i-1, r.Segments[i-1].EndMs)})
+		}
+	}
+	return out
+}
+
+// checkOffsets requires every segment and gap to stay inside the stream.
+func checkOffsets(r recovery.Result) []Violation {
+	var out []Violation
+	check := func(kind string, start, end int64) {
+		if start < 0 || end > r.StreamLen || end < start {
+			out = append(out, Violation{OffsetBounded, r.Layer,
+				fmt.Sprintf("%s bytes [%d,%d) outside stream bounds [0,%d]", kind, start, end, r.StreamLen)})
+		}
+	}
+	for _, s := range r.Segments {
+		check("segment", s.ByteStart, s.ByteEnd)
+	}
+	for _, g := range r.Gaps {
+		check("gap", g.ByteStart, g.ByteEnd)
+	}
+	return out
+}
+
+// checkGaps requires every retained hole to carry a non-empty, attributable
+// reason. An unexplained gap is a hard failure.
+func checkGaps(r recovery.Result) []Violation {
+	var out []Violation
+	for i, g := range r.Gaps {
+		if g.EndMs <= g.StartMs {
+			out = append(out, Violation{GapsExplained, r.Layer,
+				fmt.Sprintf("gap %d has non-positive duration [%d,%d)", i, g.StartMs, g.EndMs)})
+		}
+		if g.Reason == "" || g.Detail == "" {
+			out = append(out, Violation{GapsExplained, r.Layer,
+				fmt.Sprintf("gap %d at %d ms lacks an attributable reason", i, g.StartMs)})
+		}
+	}
+	if r.ParseRatio < 0 || r.ParseRatio > 1 {
+		out = append(out, Violation{GapsExplained, r.Layer, fmt.Sprintf("parse ratio %.4f outside [0,1]", r.ParseRatio)})
+	}
+	return out
+}
+
+func checkBoundaries(m recovery.Merge) []Violation {
+	var out []Violation
+	for _, c := range m.Conflicts {
+		if c.Spread <= c.Tolerance {
+			out = append(out, Violation{BoundaryAligned, "",
+				fmt.Sprintf("conflict at %d ms reported with spread %d inside tolerance %d", c.RefMs, c.Spread, c.Tolerance)})
+		}
+	}
+	if m.ToleranceMs <= 0 {
+		out = append(out, Violation{BoundaryAligned, "", "merge tolerance is not positive"})
+	}
+	return out
+}
+
+// Digest hashes the canonical violation and fault evidence.
+func Digest(rep Report, manifestSHA string) (string, error) {
+	return digest(rep.Violations, manifestSHA), nil
+}
+
+func digest(vs []Violation, manifestSHA string) string {
+	h := sha256.New()
+	fmt.Fprintf(h, "manifest=%s\n", manifestSHA)
+	for _, v := range vs {
+		fmt.Fprintf(h, "%s|%s|%s\n", v.Invariant, v.Layer, v.Detail)
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}

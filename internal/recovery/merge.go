@@ -13,6 +13,7 @@ import (
 // vote that discards the outlier.
 type Merge struct {
 	ToleranceMs      int64
+	AlignWindowMs    int64
 	Layers           []string
 	Boundaries       []SharedBoundary
 	Conflicts        []Conflict
@@ -27,6 +28,17 @@ type SharedBoundary struct {
 	Times   map[string]int64
 	Offsets map[string]int64
 	Spread  int64
+}
+
+// DefaultAlignWindowMs is how far apart two layer boundaries may be while
+// still describing the same nominal boundary. An observation inside this
+// window joins the cluster; the cluster is then judged against ToleranceMs.
+const DefaultAlignWindowMs = 100
+
+// MergeOptions tunes shared-clock alignment.
+type MergeOptions struct {
+	ToleranceMs   int64
+	AlignWindowMs int64
 }
 
 // Conflict is a boundary whose layer spread exceeds tolerance.
@@ -72,10 +84,17 @@ type anchorObs struct {
 }
 
 // MergeResult aligns layer anchors and retained gaps on the shared clock.
-func MergeResult(results []Result, toleranceMs int64) (Merge, error) {
-	if toleranceMs <= 0 {
+func MergeResult(results []Result, opts MergeOptions) (Merge, error) {
+	if opts.ToleranceMs <= 0 {
 		return Merge{}, fmt.Errorf("recovery: tolerance must be positive")
 	}
+	if opts.AlignWindowMs <= 0 {
+		opts.AlignWindowMs = DefaultAlignWindowMs
+	}
+	if opts.AlignWindowMs < opts.ToleranceMs {
+		return Merge{}, fmt.Errorf("recovery: align window %d is smaller than tolerance %d", opts.AlignWindowMs, opts.ToleranceMs)
+	}
+	toleranceMs := opts.ToleranceMs
 	if len(results) == 0 {
 		return Merge{}, fmt.Errorf("recovery: no layers to merge")
 	}
@@ -92,7 +111,7 @@ func MergeResult(results []Result, toleranceMs int64) (Merge, error) {
 		layers = append(layers, r.Layer)
 	}
 	sort.Strings(layers)
-	m := Merge{ToleranceMs: toleranceMs, Layers: layers}
+	m := Merge{ToleranceMs: toleranceMs, AlignWindowMs: opts.AlignWindowMs, Layers: layers}
 
 	all := make([]anchorObs, 0, len(layers)*8)
 	for _, r := range results {
@@ -147,7 +166,7 @@ func MergeResult(results []Result, toleranceMs int64) (Merge, error) {
 		cluster = cluster[:0]
 	}
 	for _, o := range all {
-		if len(cluster) > 0 && o.timeMs-cluster[0].timeMs > toleranceMs {
+		if len(cluster) > 0 && o.timeMs-cluster[0].timeMs > opts.AlignWindowMs {
 			flush()
 		}
 		cluster = append(cluster, o)
