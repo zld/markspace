@@ -76,33 +76,48 @@ type SegmentResult struct {
 	// arrived with two different payload digests, which means the retained
 	// bytes no longer match the catalog for this layer.
 	RepresentationDigestConflict bool `json:"representation_digest_conflict,omitempty"`
+	// KeyframeIntervalMs is the sync-sample interval distribution: whole
+	// milliseconds to the number of intervals with that value.
+	KeyframeIntervalMs map[int64]int `json:"keyframe_interval_ms,omitempty"`
+}
+
+// KeyframeBucket is one bin of the aggregated interval distribution.
+type KeyframeBucket struct {
+	Milliseconds int64 `json:"ms"`
+	Count        int   `json:"count"`
 }
 
 // Report is the whole run's auditable outcome.
 type Report struct {
-	Seed             int64                 `json:"seed"`
-	Fault            string                `json:"fault"`
-	Manifest         string                `json:"manifest"`
-	Format           string                `json:"format"`
-	Timebase         int64                 `json:"timebase"`
-	ManifestSegments int                   `json:"manifest_segments"`
-	Representations  int                   `json:"representations"`
-	Tracks           int                   `json:"tracks"`
-	KeyframeP50Ms    int64                 `json:"keyframe_interval_ms_p50"`
-	KeyframeRem      model.Rational        `json:"keyframe_interval_ms_p50_remainder"`
-	DamageRanges     []inspect.DamageRange `json:"damage_ranges"`
-	MissingPackets   uint64                `json:"missing_packets"`
-	DuplicatePackets int                   `json:"duplicate_packets"`
-	ReorderedPackets int                   `json:"reordered_packets"`
-	FirstBadSegment  string                `json:"first_bad_segment"`
-	FirstBadAt       int64                 `json:"first_bad_media_tick,omitempty"`
-	Blocked          []BlockedNode         `json:"blocked,omitempty"`
-	FirstBlocked     string                `json:"first_blocked_dependency,omitempty"`
-	Reps             []RepAudit            `json:"representations_audit"`
-	Segments         []SegmentResult       `json:"segments"`
-	DAGNodes         int                   `json:"dag_nodes"`
-	ExecutedNodes    int                   `json:"executed_nodes"`
-	CachedNodes      int                   `json:"cached_nodes"`
+	Seed             int64          `json:"seed"`
+	Fault            string         `json:"fault"`
+	Manifest         string         `json:"manifest"`
+	Format           string         `json:"format"`
+	Timebase         int64          `json:"timebase"`
+	ManifestSegments int            `json:"manifest_segments"`
+	Representations  int            `json:"representations"`
+	Tracks           int            `json:"tracks"`
+	KeyframeP50Ms    int64          `json:"keyframe_interval_ms_p50"`
+	KeyframeRem      model.Rational `json:"keyframe_interval_ms_p50_remainder"`
+	// KeyframeDistribution is the sync-sample interval histogram across every
+	// layer and segment, sorted by interval.
+	KeyframeDistribution []KeyframeBucket      `json:"keyframe_interval_ms_distribution,omitempty"`
+	DamageRanges         []inspect.DamageRange `json:"damage_ranges"`
+	MissingPackets       uint64                `json:"missing_packets"`
+	DuplicatePackets     int                   `json:"duplicate_packets"`
+	ReorderedPackets     int                   `json:"reordered_packets"`
+	FirstBadSegment      string                `json:"first_bad_segment"`
+	FirstBadAt           int64                 `json:"first_bad_media_tick,omitempty"`
+	Blocked              []BlockedNode         `json:"blocked,omitempty"`
+	// FirstBlockedNode is the first node in topological order left unrun by a
+	// failed dependency; FirstBlocked is that dependency.
+	FirstBlockedNode string          `json:"first_blocked_node,omitempty"`
+	FirstBlocked     string          `json:"first_blocked_dependency,omitempty"`
+	Reps             []RepAudit      `json:"representations_audit"`
+	Segments         []SegmentResult `json:"segments"`
+	DAGNodes         int             `json:"dag_nodes"`
+	ExecutedNodes    int             `json:"executed_nodes"`
+	CachedNodes      int             `json:"cached_nodes"`
 	// ResumedNodes counts nodes re-executed because a resume found no
 	// confirmation for them; a fully confirmed resume reports 0.
 	ResumedNodes int            `json:"resumed_nodes"`

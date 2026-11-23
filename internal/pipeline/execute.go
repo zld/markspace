@@ -120,14 +120,12 @@ func (t segmentTask) expectedRange(c *fixture.Capture) *transport.Expected {
 	if frames <= 0 {
 		return &transport.Expected{FirstSeq: uint64(lo), LastSeq: uint64(hi), FirstTimestamp: byLo, LastTimestamp: byHi}
 	}
-	next := uint64(hi) + 1
 	// Only extend the range when the capture begins at the sender's first
 	// packet; otherwise sequence numbers are segment-local and edges are
 	// unknown.
 	if lo != 0 {
 		return nil
 	}
-	_ = next
 	return &transport.Expected{
 		FirstSeq:       0,
 		LastSeq:        uint64(frames - 1),
@@ -229,6 +227,7 @@ func (t segmentTask) runInspect(cfg Config, prev *reorderOutcome) *taskOutcome {
 	}
 	kf := inspect.KeyframeIntervals(frag, t.timebase)
 	oc.result.KeyframeP50Ms = kf.P50Ms
+	oc.result.KeyframeIntervalMs = intervalHistogram(kf, frag)
 
 	for _, f := range frag.Faults {
 		f.Source.Segment = t.seg.ID
@@ -337,6 +336,31 @@ func (oc *taskOutcome) blockingFault() *model.Fault {
 		}, "segment %s/%s is missing %d packets", oc.result.Representation, oc.result.ID, oc.result.Missing)
 	}
 	return nil
+}
+
+// intervalHistogram groups a fragment's keyframe intervals by whole
+// millisecond. The remainder is discarded for the histogram only; the median
+// keeps the exact value.
+func intervalHistogram(kf inspect.KeyframeReport, frag *inspect.Fragment) map[int64]int {
+	out := map[int64]int{}
+	for _, iv := range kf.Intervals {
+		var timescale uint32
+		for _, tr := range frag.Tracks {
+			if tr.TrackID == iv.TrackID {
+				timescale = tr.Timescale
+				break
+			}
+		}
+		if timescale == 0 {
+			continue
+		}
+		ms, err := model.ConvertTicks(int64(iv.Ticks), int64(timescale), 1000)
+		if err != nil {
+			continue
+		}
+		out[ms.Ticks]++
+	}
+	return out
 }
 
 // readSegmentBytes returns the bytes a segment covers, honouring a byte range

@@ -299,3 +299,23 @@ func TestDeterministicAcrossConcurrency(t *testing.T) {
 		}
 	}
 }
+
+func TestKeyframeDistributionAndBlockedNode(t *testing.T) {
+	rep := runFault(t, fixture.FaultNone, nil)
+	if len(rep.KeyframeDistribution) == 0 {
+		t.Fatal("keyframe distribution missing")
+	}
+	for _, b := range rep.KeyframeDistribution {
+		if b.Milliseconds <= 0 || b.Count <= 0 {
+			t.Fatalf("bad bucket %+v", b)
+		}
+	}
+	damaged := runFault(t, fixture.FaultBurstLoss, nil)
+	if damaged.FirstBlockedNode == "" {
+		t.Fatal("first blocked node missing on a damaged run")
+	}
+	// The merge node cannot run once a segment inspection fails.
+	if damaged.FirstBlockedNode != "merge" {
+		t.Fatalf("first blocked node=%q", damaged.FirstBlockedNode)
+	}
+}

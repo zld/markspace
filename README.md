@@ -47,6 +47,7 @@ existing one.
 | `manifest_segments` | distinct segments on the shared timeline |
 | `representations` / `tracks` | DASH layers / fMP4 tracks |
 | `keyframe_interval_ms_p50` | median sync-sample interval |
+| `keyframe_interval_ms_distribution` | interval histogram (JSON) |
 | `damage_ranges` | number of merged damaged intervals |
 | `damage_range=...` | interval bounds, confidence and affected segments |
 | `missing_packets` / `duplicate_packets` | transport-level counts |

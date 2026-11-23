@@ -72,6 +72,15 @@ func (rep *Report) assemble(fx *fixture.Manifest, plan *manifest.Plan, res *dagR
 	if rep.KeyframeP50Ms < 0 {
 		rep.KeyframeP50Ms = -1
 	}
+	// Aggregate the exact per-segment distributions into one histogram so a
+	// reviewer sees the cadence spread, not just its median.
+	dist := map[int64]int{}
+	for _, s := range rep.Segments {
+		for ms, n := range s.KeyframeIntervalMs {
+			dist[ms] += n
+		}
+	}
+	rep.KeyframeDistribution = histogram(dist)
 
 	// Cross-layer keyframe alignment: a representation whose sync cadence
 	// differs from the reference layer is flagged for the whole timeline it
@@ -129,7 +138,6 @@ func (rep *Report) assemble(fx *fixture.Manifest, plan *manifest.Plan, res *dagR
 	// A structural failure covers the whole segment in media time so the first
 	// bad segment is well defined even without a packet gap.
 	for _, f := range structural {
-		_ = f
 		// Segment identifiers may be prefixed by a phase ("inspect/v-low/4");
 		// the trailing two components are representation and segment.
 		repID, segID := splitNodeSegment(f.Source)
@@ -195,6 +203,7 @@ func (rep *Report) assemble(fx *fixture.Manifest, plan *manifest.Plan, res *dagR
 		if rep.FirstBlocked == "" {
 			rep.FirstBlocked = res.report.FirstBlocked
 		}
+		rep.FirstBlockedNode = res.report.FirstBlocked
 	}
 	for _, nr := range res.report.Nodes {
 		if nr.Status == scheduler.StatusFailed && nr.FaultCode != "" {
@@ -267,6 +276,19 @@ func ocSegmentID(src model.Source) string {
 		return parts[len(parts)-1]
 	}
 	return ""
+}
+
+// histogram renders a millisecond-to-count map as a sorted slice.
+func histogram(dist map[int64]int) []KeyframeBucket {
+	if len(dist) == 0 {
+		return nil
+	}
+	out := make([]KeyframeBucket, 0, len(dist))
+	for ms, n := range dist {
+		out = append(out, KeyframeBucket{Milliseconds: ms, Count: n})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Milliseconds < out[j].Milliseconds })
+	return out
 }
 
 // weightedMedian returns the exact lower median of the weighted keys.
