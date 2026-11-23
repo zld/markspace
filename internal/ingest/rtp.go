@@ -3,6 +3,7 @@ package ingest
 import (
 	"encoding/binary"
 	"fmt"
+	"sort"
 
 	"github.com/pion/rtp"
 
@@ -76,20 +77,28 @@ func readRecords(path string, data []byte, errs *fault.Batch) ([]rtpRecord, *fau
 }
 
 // unwrapTS expands a 32-bit timestamp to 64 bits given the previous fully
-// expanded value. A small negative modular delta is a forward 32-bit wrap;
-// a large negative delta is a genuine backwards jump reported separately.
+// expanded value. A raw value that decreases while the modular step stays
+// within the normal per-packet range is a forward 32-bit wrap; a large
+// backwards move is a genuine jump reported separately.
 func unwrapTS(prev64 int64, raw uint32, maxStep uint32) (int64, bool, bool) {
 	prevLow := uint32(prev64)
 	delta := int32(raw - prevLow)
-	if delta >= 0 {
+	switch {
+	case delta >= 0:
+		// Monotonic in the 32-bit domain: either an ordinary step, or — when
+		// the raw value wrapped down but the modular subtraction yields a
+		// small positive delta — a forward rollover.
+		if raw < prevLow && int64(delta) <= int64(maxStep)*2 {
+			return prev64 + int64(delta) + (1 << 32), true, false
+		}
 		return prev64 + int64(delta), false, false
-	}
-	// Negative modular delta: small magnitude means the step crossed the
-	// 32-bit ceiling; a large magnitude is a genuine backwards jump.
-	if int64(-delta) <= int64(maxStep)*2 {
+	case int64(-delta) <= int64(maxStep) * 2:
+		// Small negative modular delta crossing the ceiling.
 		return prev64 + int64(delta) + (1 << 32), true, false
+	default:
+		// Large backwards move with no plausible rollover explanation.
+		return prev64 + int64(delta), false, true
 	}
-	return prev64 + int64(delta), false, true
 }
 
 // rtpCommitted is a packet accepted onto the committed timeline.
@@ -111,14 +120,36 @@ func buildRTPTrack(path, trackID string, clockRate uint32,
 	if len(records) == 0 {
 		return &RTPResult{Track: tr}
 	}
+	var accepted []rtpRecord
+	seenSeq := map[uint16]bool{}
+	var quarantined int
+	for _, rec := range records {
+		// A sequence number already observed is a duplicate or a late
+		// retransmission: quarantine it and never let it touch the clock.
+		if seenSeq[rec.pkt.SequenceNumber] {
+			quarantined++
+			errs.Add(fault.New(fault.KindLatePacket,
+				fmt.Sprintf("late/duplicate seq=%d quarantined",
+					rec.pkt.SequenceNumber),
+				path, rec.offset, true))
+			continue
+		}
+		seenSeq[rec.pkt.SequenceNumber] = true
+		accepted = append(accepted, rec)
+	}
+	// First-seen out-of-order packets are retained. Sorting by sequence number
+	// restores the sender's packet order before clock expansion, so a delivery
+	// reordering can never masquerade as a timestamp wrap or backwards jump.
+	sort.SliceStable(accepted, func(i, j int) bool {
+		return accepted[i].pkt.SequenceNumber < accepted[j].pkt.SequenceNumber
+	})
+
 	var done []rtpCommitted
-	committedSeq := map[uint16]bool{}
-	maxSeq := uint16(0)
 	var wraps int
 	var prev64 int64
 	// Bounded per-packet step used to distinguish wraps from backwards jumps.
 	const maxStep = 960 * 2
-	for i, rec := range records {
+	for i, rec := range accepted {
 		p := rec.pkt
 		if i == 0 {
 			prev64 = int64(p.Timestamp)
@@ -136,20 +167,6 @@ func buildRTPTrack(path, trackID string, clockRate uint32,
 				path, rec.offset, true))
 		}
 		prev64 = expanded
-		// Late or duplicate after the timeline advanced: quarantine, do not
-		// rewrite any already committed ordering.
-		if committedSeq[p.SequenceNumber] ||
-			(len(done) > 0 && p.SequenceNumber < maxSeq) {
-			errs.Add(fault.New(fault.KindLatePacket,
-				fmt.Sprintf("late/out-of-order seq=%d quarantined",
-					p.SequenceNumber),
-				path, rec.offset, true))
-			continue
-		}
-		committedSeq[p.SequenceNumber] = true
-		if len(done) == 0 || p.SequenceNumber >= maxSeq {
-			maxSeq = p.SequenceNumber
-		}
 		done = append(done, rtpCommitted{
 			seq: p.SequenceNumber, ts64: expanded,
 			offset: rec.offset, payload: p.Payload,
@@ -177,7 +194,7 @@ func buildRTPTrack(path, trackID string, clockRate uint32,
 	}
 	return &RTPResult{
 		Track: tr, Wraps: wraps,
-		Quarantined: len(records) - len(done), DriftPPM: driftPPM,
+		Quarantined: quarantined, DriftPPM: driftPPM,
 	}
 }
 
