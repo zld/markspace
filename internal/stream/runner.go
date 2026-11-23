@@ -258,33 +258,38 @@ type runner struct {
 }
 
 // emit renders boundaries in order and returns the committed ones.
+//
+// On resume, the checkpoint's committed refs are revalidated against the
+// current alignment. If any ref points at a boundary or representation that no
+// longer exists, or a committed ref's digest no longer matches the boundary's
+// media span, the runner falls back to the previous valid boundary and
+// re-renders from there instead of trusting stale state.
 func (r *runner) emit() ([]manifest.Segment, []*fault.Fault, bool, error) {
 	faults := append([]*fault.Fault(nil), r.align.Faults...)
 	var committed []manifest.Segment
-	start := 0
+	next := 0
 
 	if r.resumed != nil {
 		faults = append(faults, faultRefsToFaults(r.resumed.Faults)...)
-		// Rebuild committed segments from the checkpoint. If the checkpoint
-		// references a boundary the current alignment no longer has, fall back
-		// to the previous valid boundary and re-render from there.
-		var ok bool
-		committed, ok = rebuildCommitted(r.resumed, r.align.Segments)
-		if !ok {
+		rebuilt, valid := r.revalidate(r.resumed)
+		if valid {
+			committed = rebuilt
+			next = r.resumed.BoundaryIndex + 1
+		} else {
 			r.fallbacks++
-			// Drop to the last boundary whose index exists and is aligned.
-			start = fallbackStart(r.resumed, r.align.Segments)
-			committed = filterBefore(committed, start)
-		}
-		if len(committed) > 0 {
-			start = committed[len(committed)-1].Index + 1
+			committed = nil
+			next = 0
+			faults = append(faults, (&fault.Fault{Kind: fault.KindCheckpoint,
+				Recovery: fault.RecoverRestart, Severity: fault.SeverityDamaged}).
+				WithDetail("checkpoint boundary %d is not valid against the current alignment; falling back to the start",
+					r.resumed.BoundaryIndex))
 		}
 	}
 
 	done := 0
 	for i := range r.align.Segments {
 		seg := r.align.Segments[i]
-		if seg.Index < start {
+		if seg.Index < next {
 			continue
 		}
 		if r.cfg.StopAfterSegments > 0 && done >= r.cfg.StopAfterSegments {
@@ -292,13 +297,13 @@ func (r *runner) emit() ([]manifest.Segment, []*fault.Fault, bool, error) {
 		}
 		if r.overlapsDamage(seg) {
 			// A truncation inside this boundary makes at least one
-			// representation unusable; record it and roll back to the previous
-			// committed boundary rather than emitting a half-valid segment.
+			// representation unusable. Do not advance the checkpoint past it;
+			// the last committed boundary remains the resume point.
 			r.fallbacks++
 			faults = append(faults, (&fault.Fault{Kind: fault.KindTruncated, Offset: r.damageOffset(seg),
 				Recovery: fault.RecoverRestart, Severity: fault.SeverityDamaged}).
 				WithDetail("segment %d [%d,%d] overlaps a truncated datagram; checkpoint stays at %d",
-					seg.Index, seg.StartMs, seg.EndMs, seg.Index-1))
+					seg.Index, seg.StartMs, seg.EndMs, r.lastCommittedIndex(committed)))
 			continue
 		}
 		refs := make([]manifest.SegmentRef, 0, len(seg.Representations))
@@ -307,7 +312,6 @@ func (r *runner) emit() ([]manifest.Segment, []*fault.Fault, bool, error) {
 			ref, err := r.renderOne(seg, sr)
 			if err != nil {
 				if f, ok := fault.As(err); ok && f.Severity < fault.SeverityFatal {
-					// Recoverable damage: roll back this boundary and continue.
 					r.fallbacks++
 					faults = append(faults, f)
 					failed = true
@@ -332,57 +336,69 @@ func (r *runner) emit() ([]manifest.Segment, []*fault.Fault, bool, error) {
 	return committed, faults, false, nil
 }
 
-// rebuildCommitted reconstructs segment groups from a checkpoint by matching
-// each stored ref to the current alignment boundaries.
-func rebuildCommitted(cp *Checkpoint, segs []segment.Segment) ([]manifest.Segment, bool) {
+// revalidate checks a checkpoint against the current alignment and rebuilds its
+// committed segment groups. A ref whose boundary is missing, whose track is not
+// in that boundary, or whose digest no longer matches the media span makes the
+// whole checkpoint invalid.
+func (r *runner) revalidate(cp *Checkpoint) ([]manifest.Segment, bool) {
 	if len(cp.Segments) == 0 {
-		return nil, true
+		return nil, cp.BoundaryIndex < 0
 	}
-	byIndex := make(map[int]*manifest.Segment, len(segs))
-	for _, s := range segs {
-		s := s
-		byIndex[s.Index] = &manifest.Segment{Index: s.Index, StartMs: s.StartMs, DurationMs: s.EndMs - s.StartMs}
+	byIndex := make(map[int]segment.Segment, len(r.align.Segments))
+	for _, s := range r.align.Segments {
+		byIndex[s.Index] = s
 	}
+	groups := make(map[int]*manifest.Segment)
 	for _, ref := range cp.Segments {
-		g, ok := byIndex[ref.Index]
+		seg, ok := byIndex[ref.Index]
 		if !ok {
 			return nil, false
 		}
+		present := false
+		var sr segment.Representation
+		for _, cand := range seg.Representations {
+			// Refs carry the rung ID; coverage IDs are "<rung>/t<track>".
+			if cand.TrackID == ref.TrackID && coverageID(ref.RepresentationID, ref.TrackID) == cand.RepresentationID {
+				present = true
+				sr = cand
+				break
+			}
+		}
+		if !present {
+			return nil, false
+		}
+		// Re-render the segment and compare digests. A mismatch means the
+		// checkpoint describes bytes this input can no longer produce.
+		rep, track := r.repAndTrack(sr)
+		data, err := r.render(seg, sr, rep, track)
+		if err != nil {
+			return nil, false
+		}
+		digest := index.DigestBytes(data)
+		if digest != ref.SHA256 {
+			return nil, false
+		}
+		g := groups[ref.Index]
+		if g == nil {
+			g = &manifest.Segment{Index: seg.Index, StartMs: seg.StartMs, DurationMs: seg.EndMs - seg.StartMs}
+			groups[ref.Index] = g
+		}
 		g.Refs = append(g.Refs, ref)
 	}
-	var out []manifest.Segment
-	for _, s := range segs {
-		g, ok := byIndex[s.Index]
-		if !ok {
-			continue
-		}
-		if len(g.Refs) > 0 {
+	out := make([]manifest.Segment, 0, len(groups))
+	for _, s := range r.align.Segments {
+		if g, ok := groups[s.Index]; ok {
 			out = append(out, *g)
 		}
 	}
 	return out, true
 }
 
-func fallbackStart(cp *Checkpoint, segs []segment.Segment) int {
-	if cp.BoundaryIndex <= 0 {
-		return 0
+func (r *runner) lastCommittedIndex(committed []manifest.Segment) int {
+	if len(committed) == 0 {
+		return -1
 	}
-	for _, s := range segs {
-		if s.Index == cp.BoundaryIndex {
-			return s.Index
-		}
-	}
-	return 0
-}
-
-func filterBefore(segs []manifest.Segment, start int) []manifest.Segment {
-	var out []manifest.Segment
-	for _, s := range segs {
-		if s.Index < start {
-			out = append(out, s)
-		}
-	}
-	return out
+	return committed[len(committed)-1].Index
 }
 
 // overlapsDamage reports whether a boundary's media window contains a

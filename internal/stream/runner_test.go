@@ -259,3 +259,56 @@ func pad5(n int) string {
 	}
 	return s
 }
+
+func TestCheckpointFallsBackWhenBoundaryVanishes(t *testing.T) {
+	h := newHarness(t, 0, 0)
+	interrupted := h.cfg
+	interrupted.StopAfterSegments = 2
+	if _, err := Execute(h.in, interrupted); err != nil {
+		t.Fatalf("interrupted run: %v", err)
+	}
+	// Tamper with the checkpoint so it references a boundary that does not
+	// exist in the current alignment but still passes its own checksum.
+	var cp Checkpoint
+	data, err := os.ReadFile(h.cfg.CheckpointPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &cp); err != nil {
+		t.Fatal(err)
+	}
+	for i := range cp.Segments {
+		cp.Segments[i].Index = 999
+	}
+	cp.BoundaryIndex = 999
+	if err := SaveCheckpoint(h.cfg.CheckpointPath, &cp); err != nil {
+		t.Fatal(err)
+	}
+
+	// The resume must not fail: it detects the stale boundary, falls back to
+	// the start, and re-renders everything.
+	resumeCfg := h.cfg
+	resumeCfg.ResumeFrom = h.cfg.CheckpointPath
+	res, err := Execute(h.in, resumeCfg)
+	if err != nil {
+		t.Fatalf("resume after fallback: %v", err)
+	}
+	if !res.Resumed {
+		t.Fatal("expected resumed flag")
+	}
+	if res.Fallbacks == 0 {
+		t.Fatal("expected a recorded fallback")
+	}
+	if len(res.Manifest.Segments) == 0 {
+		t.Fatal("fallback run produced no segments")
+	}
+	var sawFallback bool
+	for _, f := range res.Faults {
+		if f.Kind == fault.KindCheckpoint && f.Recovery == fault.RecoverRestart {
+			sawFallback = true
+		}
+	}
+	if !sawFallback {
+		t.Fatalf("no checkpoint fallback fault: %v", res.Faults)
+	}
+}
