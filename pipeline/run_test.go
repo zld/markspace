@@ -46,6 +46,49 @@ func TestRunProducesDeterministicManifest(t *testing.T) {
 	if !rep2.Map.Complete {
 		t.Error("second run incomplete")
 	}
+	if rep2.Map.Stats.Workers != 1 {
+		t.Errorf("second run workers = %d, want 1", rep2.Map.Stats.Workers)
+	}
+}
+
+// TestRunDigestStableWithFusedTransport pins the property that transport
+// evidence (counters and gaps) is part of the digest while measured bandwidth
+// and derived limits are not.
+func TestRunDigestStableWithFusedTransport(t *testing.T) {
+	dir := t.TempDir()
+	src := writeFixture(t, dir)
+	drill, err := transport.DefaultRTPDrill(41)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := func(out string, workers int) *Manifest {
+		ctl, err := transport.NewController(transport.AdaptOptions{
+			Window: 4, MinParallel: 1, MaxParallel: workers, MinQueue: 1, MaxQueue: 8,
+			TargetBps: 300_000, SampleEvery: time.Millisecond,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		drill.FeedController(ctl, []time.Duration{
+			400 * time.Millisecond, 200 * time.Millisecond, 120 * time.Millisecond,
+		})
+		rep, err := RunFused(context.Background(), RunOptions{
+			Source: src, OutDir: out, Workers: workers, Queue: 8,
+			SamplesPer: 6, Targets: testTargets, Seed: 41, Resume: true,
+		}, FusionOptions{RTP: drill, MaxGaps: 4, Bandwidth: ctl})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return rep.Map
+	}
+	a := run(filepath.Join(dir, "a"), 4)
+	b := run(filepath.Join(dir, "b"), 2)
+	if a.SHA256 != b.SHA256 {
+		t.Fatalf("digest depends on pool sizing: %s != %s", a.SHA256, b.SHA256)
+	}
+	if a.RTP == nil || a.RTP.Duplicates != 3 {
+		t.Fatalf("transport evidence missing from manifest: %+v", a.RTP)
+	}
 }
 
 func TestRunCancellationRecordsTasks(t *testing.T) {
