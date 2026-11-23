@@ -4,6 +4,7 @@
 package pipeline
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -47,7 +48,9 @@ func (o *Options) Defaults() error {
 		o.Channels = 2
 	}
 	if o.ClockRate == 0 {
-		o.ClockRate = o.SampleRate
+		// Audio RTP almost always uses a 48 kHz clock; the output rate may be
+		// resampled from it. Override with --clock-rate for 44.1 kHz sources.
+		o.ClockRate = 48000
 	}
 	if o.PayloadLayout == 0 {
 		o.PayloadLayout = o.Channels
@@ -61,6 +64,7 @@ func (o *Options) Defaults() error {
 	if o.CeilingDBFS == 0 {
 		o.CeilingDBFS = -1
 	}
+	o.CeilingDBFS = math.Min(o.CeilingDBFS, -0.1)
 	if o.TargetLUFS == 0 {
 		o.TargetLUFS = -23
 	}

@@ -34,12 +34,20 @@ type converter struct {
 	opts   Options
 	stream *packet.Stream
 	mgr    *timeline.Manager
+	// statuses keeps the classification of each unique packet keyed by its
+	// extended sequence number so decode/replay errors survive into the
+	// manifest.
+	statuses map[int64]manifest.SegmentStatus
+	// payloadBytes is the total RTP payload actually received, the basis for
+	// the input bitrate.
+	payloadBytes int64
 }
 
 func newConverter(opts Options, stream *packet.Stream) *converter {
 	return &converter{opts: opts, stream: stream,
 		// Watermark delay is expressed in RTP clock ticks.
-		mgr: timeline.NewManager(opts.ClockRate, int64(opts.DelayMs)*opts.ClockRate/1000)}
+		mgr:      timeline.NewManager(opts.ClockRate, int64(opts.DelayMs)*opts.ClockRate/1000),
+		statuses: make(map[int64]manifest.SegmentStatus)}
 }
 
 // collect feeds every RTP record to the replay manager and validates RTCP.
@@ -68,13 +76,16 @@ func (c *converter) collect(stats *quality.Stats) {
 		}
 		p := rec.Packet
 		stats.Packets++
+		c.payloadBytes += int64(len(p.Payload))
 		status := manifest.StatusOK
 		switch mediaerr.CodeOf(rec.Err) {
 		case mediaerr.CodeCorrupt:
 			stats.CorruptPayloads++
+			stats.BadPackets++
 			status = manifest.StatusCorrupt
 		case mediaerr.CodeTruncated:
 			stats.TruncatedPackets++
+			stats.BadPackets++
 			status = manifest.StatusTruncated
 		}
 		declared := int64(len(p.Payload))
@@ -89,6 +100,7 @@ func (c *converter) collect(stats *quality.Stats) {
 		if ev.Duplicate {
 			continue
 		}
+		c.statuses[ev.ExtSeq] = status
 		if ev.Late {
 			stats.LateReplays++
 		}
@@ -113,6 +125,9 @@ func (c *converter) layout(sum timeline.Summary) []packetData {
 			base = tick
 		}
 		status := manifest.StatusOK
+		if s, ok := c.statuses[ev.ExtSeq]; ok {
+			status = s
+		}
 		if ev.Late {
 			status = manifest.StatusReplayed
 		}
@@ -290,9 +305,18 @@ func (c *converter) finish(res Result, stats quality.Stats) (quality.Stats, erro
 		events[i].StartSample = scale(events[i].StartSample)
 		events[i].EndSample = scale(events[i].EndSample)
 	}
-	missing := make([]mux.Range, 0, len(replayRanges))
+	missing := make([]mux.Range, 0, len(replayRanges)+len(events))
 	for _, r := range replayRanges {
 		missing = append(missing, mux.Range{Start: scale(r.Start), End: scale(r.End)})
+	}
+	var manifestMissing []manifest.Range
+	for _, ev := range events {
+		if ev.Status == manifest.StatusOK {
+			continue
+		}
+		r := mux.Range{Start: ev.StartSample, End: ev.EndSample}
+		missing = append(missing, r)
+		manifestMissing = append(manifestMissing, manifest.Range{StartSample: ev.StartSample, EndSample: ev.EndSample})
 	}
 	info, err := mux.Write(mux.Spec{
 		Path: res.MP4Path, Rate: int(c.opts.SampleRate), Channels: int(c.opts.Channels),
@@ -311,6 +335,7 @@ func (c *converter) finish(res Result, stats quality.Stats) (quality.Stats, erro
 		RTPClockRate: c.opts.ClockRate, DurationSample: outFrames,
 		MediaFile: baseName(res.MP4Path), MediaSHA256: hash,
 		Segments: manifest.MakeSegments(int(c.opts.SampleRate), events),
+		Missing:  manifestMissing,
 	}
 	if err := manifest.Write(res.ManifestPath, tl); err != nil {
 		return stats, err
@@ -326,11 +351,13 @@ func (c *converter) finish(res Result, stats quality.Stats) (quality.Stats, erro
 	stats.OutputBytes = info.DataBytes
 	stats.OutputDurationSecs = info.DurationS
 	stats.IndexComplete = info.IndexComplete
-	// Target bitrate is what a lossless 16-bit stream at the delivered
-	// format occupies; input bitrate is the delivered payload rate.
-	stats.TargetBitrateBps = float64(c.opts.SampleRate * int64(c.opts.Channels) * int64(c.opts.BitsPerSample))
+	stats.OutputSHA256 = hash
+	// Target bitrate is the source format's lossless payload rate; the input
+	// bitrate is the payload bytes actually received over the same duration,
+	// so framing overhead and lost packets are reflected honestly.
+	stats.TargetBitrateBps = float64(c.opts.ClockRate * int64(c.opts.PayloadLayout) * int64(c.opts.BitsPerSample))
 	if info.DurationS > 0 {
-		stats.InputBitrateBps = float64(stats.InputBytes*8) / info.DurationS
+		stats.InputBitrateBps = float64(c.payloadBytes*8) / info.DurationS
 	}
 	stats.BitrateErrorPct = quality.BitrateError(stats.InputBitrateBps, stats.TargetBitrateBps)
 	if err := writeStats(res.StatsPath, stats); err != nil {
