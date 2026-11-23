@@ -110,17 +110,35 @@ func (es *Errors) Sorted() []*PipelineError {
 	return out
 }
 
-// Err converts the collection into a standard error, or nil when empty.
+// Err converts the collection into a standard error, or nil when empty. The
+// returned value implements Unwrap() []error so errors.As/Is reach every
+// contained PipelineError.
 func (es *Errors) Err() error {
 	if len(es.items) == 0 {
 		return nil
 	}
-	sorted := es.Sorted()
-	parts := make([]string, len(sorted))
-	for i, e := range sorted {
+	return &multiError{items: es.Sorted()}
+}
+
+type multiError struct {
+	items []*PipelineError
+}
+
+func (m *multiError) Error() string {
+	parts := make([]string, len(m.items))
+	for i, e := range m.items {
 		parts[i] = e.Error()
 	}
-	return fmt.Errorf("%d pipeline error(s): %s", len(sorted), strings.Join(parts, "; "))
+	return fmt.Sprintf("%d pipeline error(s): %s", len(m.items), strings.Join(parts, "; "))
+}
+
+// Unwrap exposes every contained error to errors.As/errors.Is.
+func (m *multiError) Unwrap() []error {
+	out := make([]error, len(m.items))
+	for i, e := range m.items {
+		out[i] = e
+	}
+	return out
 }
 
 // First returns the earliest error by input offset, or nil.
