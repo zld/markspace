@@ -3,6 +3,7 @@ package subtitle
 
 import (
 	"fmt"
+	"io"
 
 	"mediqc/internal/clock"
 	"mediqc/internal/fault"
@@ -23,6 +24,18 @@ func (c Cue) Duration() int64 { return c.End - c.Start }
 type Timeline struct {
 	Format string // "srt" or "vtt"
 	Cues   []Cue
+}
+
+// Parse dispatches on format ("srt" or "vtt").
+func Parse(format string, r io.Reader) (*Timeline, error) {
+	switch format {
+	case "srt":
+		return ParseSRT(r)
+	case "vtt":
+		return ParseVTT(r)
+	}
+	return nil, fault.New(fault.CodeBadTimecode, 0, -1,
+		"unknown subtitle format "+format, "supported: srt, vtt")
 }
 
 // dayTicks is the number of ticks in 24 hours; timestamps at or beyond
