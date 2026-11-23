@@ -1,0 +1,4 @@
+# local work area for generated fixtures and remux outputs (never delivered)
+.mediad-work/
+*.test
+*.out
