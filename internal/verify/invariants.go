@@ -19,7 +19,19 @@ const (
 	OffsetBounded   = "offset_bounded"
 	GapsExplained   = "gaps_explained"
 	BoundaryAligned = "boundary_aligned"
+	// SourceMonotonic and SourceBounded are the same invariants applied to the
+	// pre-recovery evidence, so damage cannot be introduced by recovery itself.
+	SourceMonotonic = "source_time_monotonic"
+	SourceBounded   = "source_offset_bounded"
 )
+
+// Source is the pre-recovery evidence of one layer: the units the parser saw
+// and the stream length they must fit inside.
+type Source struct {
+	Layer     string
+	StreamLen int64
+	Units     []recovery.Unit
+}
 
 // Violation is one failed invariant with machine-readable evidence.
 type Violation struct {
@@ -59,7 +71,20 @@ func (r Report) Text() string {
 // violation list and manifest digest so identical runs must produce identical
 // digests.
 func Verify(results []recovery.Result, merge recovery.Merge, doc manifest.Document) Report {
-	rep := Report{Checked: []string{TimeMonotonic, OffsetBounded, GapsExplained, BoundaryAligned}}
+	return VerifySources(results, merge, doc, nil)
+}
+
+// VerifySources checks both the pre-recovery evidence and the recovered
+// result. Passing no sources checks only the recovered result.
+func VerifySources(results []recovery.Result, merge recovery.Merge, doc manifest.Document, sources []Source) Report {
+	checked := []string{TimeMonotonic, OffsetBounded, GapsExplained, BoundaryAligned}
+	if len(sources) > 0 {
+		checked = append(checked, SourceMonotonic, SourceBounded)
+	}
+	rep := Report{Checked: checked}
+	for _, src := range sources {
+		rep.Violations = append(rep.Violations, checkSource(src)...)
+	}
 	for _, r := range results {
 		rep.Violations = append(rep.Violations, checkTime(r)...)
 		rep.Violations = append(rep.Violations, checkOffsets(r)...)
@@ -166,6 +191,42 @@ func checkGaps(r recovery.Result) []Violation {
 	}
 	if r.ParseRatio < 0 || r.ParseRatio > 1 {
 		out = append(out, Violation{GapsExplained, r.Layer, fmt.Sprintf("parse ratio %.4f outside [0,1]", r.ParseRatio)})
+	}
+	return out
+}
+
+// checkSource requires parsed units to lie inside the stream and to advance in
+// both byte offset and (implicitly) discovery order before recovery runs.
+func checkSource(src Source) []Violation {
+	var out []Violation
+	var prevOff, prevEnd int64 = -1, -1
+	for i, u := range src.Units {
+		if u.Truncated {
+			// A truncated unit's declared end may point past the surviving
+			// bytes; only its start must be inside the stream.
+			if u.Offset < 0 || u.Offset >= src.StreamLen {
+				out = append(out, Violation{SourceBounded, src.Layer,
+					fmt.Sprintf("truncated unit %d starts at %d outside stream [0,%d)", i, u.Offset, src.StreamLen)})
+			}
+			prevOff, prevEnd = u.Offset, u.End
+			continue
+		}
+		if u.Offset < 0 || u.End < u.Offset || u.End > src.StreamLen {
+			out = append(out, Violation{SourceBounded, src.Layer,
+				fmt.Sprintf("unit %d bytes [%d,%d) outside stream bounds [0,%d]", i, u.Offset, u.End, src.StreamLen)})
+		}
+		if u.Offset < prevOff {
+			out = append(out, Violation{SourceMonotonic, src.Layer,
+				fmt.Sprintf("unit %d offset %d precedes prior unit offset %d", i, u.Offset, prevOff)})
+		} else if prevOff >= 0 && u.Offset < prevEnd {
+			out = append(out, Violation{SourceMonotonic, src.Layer,
+				fmt.Sprintf("unit %d starts at %d inside prior unit ending at %d", i, u.Offset, prevEnd)})
+		}
+		if u.End < prevEnd && u.Offset >= prevOff {
+			out = append(out, Violation{SourceMonotonic, src.Layer,
+				fmt.Sprintf("unit %d ends at %d before prior unit end %d", i, u.End, prevEnd)})
+		}
+		prevOff, prevEnd = u.Offset, u.End
 	}
 	return out
 }

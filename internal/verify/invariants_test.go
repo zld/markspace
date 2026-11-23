@@ -133,3 +133,31 @@ func hasInvariant(r Report, name string) bool {
 	}
 	return false
 }
+
+func TestVerifySources(t *testing.T) {
+	src := Source{Layer: "low", StreamLen: 100, Units: []recovery.Unit{
+		{Offset: 0, End: 30}, {Offset: 30, End: 70}, {Offset: 70, End: 100},
+	}}
+	r := VerifySources(baseResults(), baseMerge(), baseDoc(), []Source{src})
+	if !r.OK() {
+		t.Fatalf("violations=%+v", r.Violations)
+	}
+	if len(r.Checked) != 6 {
+		t.Fatalf("checked=%+v", r.Checked)
+	}
+
+	bad := Source{Layer: "low", StreamLen: 100, Units: []recovery.Unit{
+		{Offset: 0, End: 50}, {Offset: 40, End: 60}, {Offset: 60, End: 140},
+	}}
+	r = VerifySources(baseResults(), baseMerge(), baseDoc(), []Source{bad})
+	if !hasInvariant(r, SourceMonotonic) || !hasInvariant(r, SourceBounded) {
+		t.Fatalf("violations=%+v", r.Violations)
+	}
+
+	truncated := Source{Layer: "high", StreamLen: 100, Units: []recovery.Unit{
+		{Offset: 0, End: 60}, {Offset: 60, End: 180, Truncated: true},
+	}}
+	if r := VerifySources(baseResults(), baseMerge(), baseDoc(), []Source{truncated}); !r.OK() {
+		t.Fatalf("truncated unit rejected a declared overshoot: %+v", r.Violations)
+	}
+}

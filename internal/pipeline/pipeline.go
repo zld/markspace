@@ -123,6 +123,7 @@ func Run(ctx context.Context, cfg Config) (Output, error) {
 	}
 
 	var results []recovery.Result
+	var sources []verify.Source
 	var faults []string
 	for i, l := range archive.Layers {
 		a := analyzers[i]
@@ -139,6 +140,7 @@ func Run(ctx context.Context, cfg Config) (Output, error) {
 			faults = append(faults, f.String())
 		}
 		results = append(results, r)
+		sources = append(sources, verify.Source{Layer: l.Name, StreamLen: int64(len(l.Stream)), Units: a.units})
 	}
 
 	merge, err := recovery.MergeResult(results, recovery.MergeOptions{ToleranceMs: cfg.ToleranceMs, AlignWindowMs: 100})
@@ -185,7 +187,7 @@ func Run(ctx context.Context, cfg Config) (Output, error) {
 		return Output{}, err
 	}
 
-	vr := verify.Verify(results, merge, doc)
+	vr := verify.VerifySources(results, merge, doc, sources)
 	out := Output{Manifest: doc, Verify: vr, PeakBuffered: peak, QueueBound: bound, Drained: true,
 		MP4Bytes: meta.Bytes, MP4SHA256: meta.SHA256, MP4Tracks: meta.Tracks,
 		MetadataMismatches: len(meta.Mismatches),
