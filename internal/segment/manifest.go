@@ -40,27 +40,40 @@ type RenditionManifest struct {
 
 // Manifest is the deterministic, hashable delivery document.
 type Manifest struct {
-	TimeBasis     string              `json:"time_basis"`
-	TickRateNS    int64               `json:"tick_rate_ns"`
-	FrameStandard string              `json:"frame_standard"`
-	InputDigest   string              `json:"input_digest"`
-	Stats         Stats               `json:"stats"`
-	Renditions    []RenditionManifest `json:"renditions"`
-	SubtitleSpans []SubtitleSpan      `json:"subtitle_spans"`
+	TimeBasis         string              `json:"time_basis"`
+	TickRateNS        int64               `json:"tick_rate_ns"`
+	FrameStandard     string              `json:"frame_standard"`
+	InputDigest       string              `json:"input_digest"`
+	ContainerBrand    string              `json:"container_brand"`
+	ContainerTimebase int64               `json:"container_timescale_hz"`
+	ContainerDigest   string              `json:"container_sha256"`
+	Stats             Stats               `json:"stats"`
+	Renditions        []RenditionManifest `json:"renditions"`
+	SubtitleSpans     []SubtitleSpan      `json:"subtitle_spans"`
+}
+
+// ContainerInfo carries the probed MP4 container metadata into the manifest.
+type ContainerInfo struct {
+	Brand     string
+	Timescale int64
+	SHA256    string
 }
 
 // BuildManifest assembles the shared document. The cut times come from the
 // single plan, so rendition alignment can never drift beyond one frame.
-func BuildManifest(fr clock.FrameRate, inputDigest string, plan Plan, rungs []RenditionInput, cues []subtitle.Cue, stats Stats) (Manifest, error) {
+func BuildManifest(fr clock.FrameRate, inputDigest string, container ContainerInfo, plan Plan, rungs []RenditionInput, cues []subtitle.Cue, stats Stats) (Manifest, error) {
 	if len(rungs) < 2 {
 		return Manifest{}, errs.New(errs.KindInvalidInput, "manifest", "need at least two renditions")
 	}
 	m := Manifest{
-		TimeBasis:     "nanoseconds-since-first-rtp",
-		TickRateNS:    1_000_000_000,
-		FrameStandard: fr.Name,
-		InputDigest:   inputDigest,
-		Stats:         stats,
+		TimeBasis:         "nanoseconds-since-first-rtp",
+		TickRateNS:        1_000_000_000,
+		FrameStandard:     fr.Name,
+		InputDigest:       inputDigest,
+		ContainerBrand:    container.Brand,
+		ContainerTimebase: container.Timescale,
+		ContainerDigest:   container.SHA256,
+		Stats:             stats,
 	}
 	cuts := make([][]int64, len(plan.Segments))
 	for i, s := range plan.Segments {

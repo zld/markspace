@@ -65,7 +65,7 @@ func TestManifestSharedCutsAndSubtitleSpans(t *testing.T) {
 		{TargetBPS: 400_000, ActualBPS: 400_000},
 		{TargetBPS: 900_000, ActualBPS: 950_000},
 	}
-	m, err := BuildManifest(clock.FrameRate25(), "deadbeef", plan, rungs, cues, Stats{})
+	m, err := BuildManifest(clock.FrameRate25(), "deadbeef", ContainerInfo{Brand: "isom", Timescale: 90000, SHA256: "c1"}, plan, rungs, cues, Stats{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,8 +95,8 @@ func TestManifestSharedCutsAndSubtitleSpans(t *testing.T) {
 func TestManifestHashStableAcrossRuns(t *testing.T) {
 	plan := buildPlan(t)
 	rungs := []RenditionInput{{400_000, 400_000}, {900_000, 900_000}}
-	m1, _ := BuildManifest(clock.FrameRate25(), "abc", plan, rungs, nil, Stats{PacketsLost: 2})
-	m2, _ := BuildManifest(clock.FrameRate25(), "abc", plan, rungs, nil, Stats{PacketsLost: 2})
+	m1, _ := BuildManifest(clock.FrameRate25(), "abc", ContainerInfo{Brand: "isom", Timescale: 90000, SHA256: "c2"}, plan, rungs, nil, Stats{PacketsLost: 2})
+	m2, _ := BuildManifest(clock.FrameRate25(), "abc", ContainerInfo{Brand: "isom", Timescale: 90000, SHA256: "c2"}, plan, rungs, nil, Stats{PacketsLost: 2})
 	h1, err := m1.Hash()
 	if err != nil {
 		t.Fatal(err)
@@ -110,7 +110,7 @@ func TestManifestHashStableAcrossRuns(t *testing.T) {
 func TestManifestAtomicWrite(t *testing.T) {
 	plan := buildPlan(t)
 	rungs := []RenditionInput{{400_000, 400_000}, {900_000, 900_000}}
-	m, _ := BuildManifest(clock.FrameRate25(), "abc", plan, rungs, nil, Stats{})
+	m, _ := BuildManifest(clock.FrameRate25(), "abc", ContainerInfo{Brand: "isom", Timescale: 90000, SHA256: "c2"}, plan, rungs, nil, Stats{})
 	dir := t.TempDir()
 	path := filepath.Join(dir, "nested", "manifest.json")
 	if err := m.WriteAtomic(path); err != nil {
