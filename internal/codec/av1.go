@@ -18,99 +18,132 @@ const (
 	OBUPadding        = 15
 )
 
+// OBU is one AV1 Open Bitstream Unit located by absolute offset.
+type OBU struct {
+	Offset    int64 // first byte of the OBU header
+	HeaderLen int64 // header byte, optional extension, and leb128 size field
+	Payload   int64 // declared payload length
+	Type      uint8
+	Frame     bool // carries coded frame data or its frame header
+	Keyframe  bool // a complete frame OBU (type 6)
+	Truncated bool // declared payload extends past end of stream
+}
+
+// End reports the declared end of the OBU.
+func (o OBU) End() int64 { return o.Offset + o.HeaderLen + o.Payload }
+
 // AV1Report summarises a parsed OBU stream.
 type AV1Report struct {
 	Units        int
 	Keyframes    int
+	Frames       int
 	Truncated    int
 	HeaderDamage int
 	FirstDamage  int64
 	Bytes        int64
 }
 
-// OBU is one AV1 Open Bitstream Unit located by absolute offset.
-type OBU struct {
-	Offset    int64 // first byte of the OBU header
-	HeaderLen int64 // header byte plus leb128 size field
-	Payload   int64 // declared payload length
-	Type      uint8
-	Keyframe  bool
-	Truncated bool // declared payload extends past the stream end
-	HasSize   bool
-}
-
-// End reports the declared end of the OBU.
-func (o OBU) End() int64 { return o.Offset + o.HeaderLen + o.Payload }
-
-// AV1Parser incrementally walks OBUs using their leb128 size fields. It keeps
-// only the bytes of the OBU currently under construction.
+// AV1Parser walks OBUs using their leb128 size fields. State is a fixed-size
+// header accumulator plus a skip counter: payload bytes are counted, never
+// buffered, so memory does not scale with the source or OBU size.
 type AV1Parser struct {
-	buf       []byte
-	bufBase   int64
+	pos   int64 // absolute offset of the next unread byte
+	bytes int64
+
+	hdr      [10]byte // pending header bytes
+	hdrLen   int
+	hdrStart int64
+	inHeader bool
+
+	skip      int64 // payload bytes still to skip
+	cur       OBU
+	seenFrame bool
+
 	units     int
 	keyframes int
+	frames    int
 	truncated int
 	hdrDamage int
 	firstBad  int64
-	bytes     int64
 	out       []OBU
 }
 
 // NewAV1Parser builds an incremental AV1 OBU parser.
 func NewAV1Parser() *AV1Parser { return &AV1Parser{firstBad: -1} }
 
-// Feed appends one chunk and emits every OBU fully contained in the buffer.
+// Feed appends one chunk and emits every OBU whose header and payload both
+// completed within the stream so far.
 func (p *AV1Parser) Feed(data []byte) []OBU {
-	if len(data) == 0 {
-		return nil
-	}
 	p.bytes += int64(len(data))
-	p.buf = append(p.buf, data...)
-	for len(p.buf) >= 2 {
-		obu, need := p.inspect(p.buf)
-		if need > 0 {
-			break
-		}
-		if obu == nil {
-			// Unparseable byte: report and resynchronize by dropping it.
-			p.hdrDamage++
-			p.noteDamage(p.bufBase)
-			p.buf = p.buf[1:]
-			p.bufBase++
+	i := 0
+	for i < len(data) {
+		if p.skip > 0 {
+			n := int64(len(data) - i)
+			if n > p.skip {
+				n = p.skip
+			}
+			p.skip -= n
+			p.pos += n
+			i += int(n)
+			if p.skip == 0 {
+				p.complete(p.cur)
+			}
 			continue
 		}
-		if obu.Truncated {
-			break
+		if !p.inHeader {
+			p.inHeader = true
+			p.hdrLen = 0
+			p.hdrStart = p.pos
 		}
-		n := int(obu.End() - p.bufBase)
-		if n > len(p.buf) {
-			break
+		p.hdr[p.hdrLen] = data[i]
+		p.hdrLen++
+		i++
+		p.pos++
+		obu, need := p.tryHeader()
+		if need {
+			continue
 		}
-		p.emit(*obu)
-		p.buf = p.buf[n:]
-		p.bufBase += int64(n)
+		p.inHeader = false
+		if obu == nil {
+			// Invalid header byte: report and resynchronize past it.
+			p.hdrDamage++
+			p.noteDamage(p.hdrStart)
+			// Re-scan bytes already accumulated after the bad first byte.
+			rest := append([]byte(nil), p.hdr[1:p.hdrLen]...)
+			p.hdrLen = 0
+			p.pos = p.hdrStart + 1
+			if len(rest) > 0 {
+				p.Feed(rest)
+			}
+			return p.takeOut()
+		}
+		p.cur = *obu
+		p.skip = obu.Payload
+		if p.skip == 0 {
+			p.complete(p.cur)
+		}
 	}
 	return p.takeOut()
 }
 
-// inspect decodes the header at the front of buf. need>0 means more bytes are
-// required before the OBU is decidable; nil with need==0 means the header is
-// invalid.
-func (p *AV1Parser) inspect(b []byte) (*OBU, int) {
+// tryHeader decodes the pending header. need=true means more bytes are
+// required; nil with need=false means the header is invalid.
+func (p *AV1Parser) tryHeader() (*OBU, bool) {
+	b := p.hdr[:p.hdrLen]
 	hdr := b[0]
 	if hdr&0x80 != 0 {
-		return nil, 0
+		return nil, false
+	}
+	if hdr&0x02 == 0 {
+		// Without a size field OBUs are only delimited by temporal units,
+		// which this archive format does not use.
+		return nil, false
 	}
 	typ := (hdr >> 3) & 0x0F
-	ext := hdr&0x04 != 0
-	hasSize := hdr&0x02 != 0
-	if !hasSize {
-		return nil, 0
-	}
 	pos := 1
-	if ext {
+	if hdr&0x04 != 0 {
 		if pos >= len(b) {
-			return nil, 1
+			return nil, true
 		}
 		pos++
 	}
@@ -118,7 +151,7 @@ func (p *AV1Parser) inspect(b []byte) (*OBU, int) {
 	shift := uint(0)
 	for {
 		if pos >= len(b) {
-			return nil, 1
+			return nil, true
 		}
 		c := b[pos]
 		pos++
@@ -128,21 +161,25 @@ func (p *AV1Parser) inspect(b []byte) (*OBU, int) {
 		}
 		shift += 7
 		if shift > 56 {
-			return nil, 0
+			return nil, false
 		}
 	}
-	o := &OBU{Offset: p.bufBase, HeaderLen: int64(pos), Payload: int64(size), Type: typ, HasSize: true}
-	o.Keyframe = typ == OBUFrame || typ == OBUFrameHeader || typ == OBUSequenceHeader
-	o.Truncated = o.End() > p.bufBase+int64(len(b))
-	return o, 0
+	o := &OBU{Offset: p.hdrStart, HeaderLen: int64(pos), Payload: int64(size), Type: typ}
+	o.Frame = typ == OBUFrameHeader || typ == OBUTileGroup || typ == OBUFrame || typ == OBURedundantFrame
+	o.Keyframe = typ == OBUFrame
+	return o, false
 }
 
-func (p *AV1Parser) emit(o OBU) {
+func (p *AV1Parser) complete(o OBU) {
 	p.units++
+	if o.Frame {
+		p.frames++
+	}
 	if o.Keyframe {
 		p.keyframes++
 	}
 	p.out = append(p.out, o)
+	p.skip = 0
 }
 
 func (p *AV1Parser) noteDamage(off int64) {
@@ -157,40 +194,37 @@ func (p *AV1Parser) takeOut() []OBU {
 	return out
 }
 
-// Flush reports a final OBU whose declared size exceeds the available bytes as
-// an unrecoverable truncation, and returns it.
+// Flush reports a final OBU whose declared payload exceeds the bytes received.
+// The OBU is returned with Truncated set so callers can prove the loss.
 func (p *AV1Parser) Flush() []OBU {
-	if len(p.buf) == 0 {
-		return nil
-	}
-	obu, need := p.inspect(p.buf)
-	if need > 0 || obu == nil {
+	if p.skip > 0 {
+		o := p.cur
+		o.Truncated = true
 		p.truncated++
-		p.noteDamage(p.bufBase)
-		o := OBU{Offset: p.bufBase, HeaderLen: int64(len(p.buf)), Type: 0xFF, Truncated: true}
+		p.noteDamage(o.Offset)
 		p.units++
-		p.out = append(p.out, o)
-		p.buf = nil
-		return p.takeOut()
-	}
-	if obu.Truncated || obu.End() > p.bufBase+int64(len(p.buf)) {
-		obu.Truncated = true
-		p.truncated++
-		p.noteDamage(obu.Offset)
-		p.units++
-		if obu.Keyframe {
+		if o.Frame {
+			p.frames++
+		}
+		if o.Keyframe {
 			p.keyframes++
 		}
-		p.out = append(p.out, *obu)
-	} else {
-		p.emit(*obu)
+		p.out = append(p.out, o)
+		p.skip = 0
+	} else if p.inHeader && p.hdrLen > 0 {
+		// A dangling header with no payload is a truncated header.
+		o := OBU{Offset: p.hdrStart, HeaderLen: int64(p.hdrLen), Type: 0xFF, Truncated: true}
+		p.truncated++
+		p.noteDamage(o.Offset)
+		p.units++
+		p.out = append(p.out, o)
+		p.inHeader = false
 	}
-	p.buf = nil
 	return p.takeOut()
 }
 
-// Counts returns cumulative OBU and keyframe totals.
-func (p *AV1Parser) Counts() (units, keyframes int) { return p.units, p.keyframes }
+// Counts returns cumulative OBU, frame and keyframe totals.
+func (p *AV1Parser) Counts() (units, frames, keyframes int) { return p.units, p.frames, p.keyframes }
 
 // Report returns the cumulative parse report.
 func (p *AV1Parser) Report() AV1Report {
@@ -198,7 +232,8 @@ func (p *AV1Parser) Report() AV1Report {
 	if p.truncated > 0 || p.hdrDamage > 0 {
 		bad = p.firstBad
 	}
-	return AV1Report{Units: p.units, Keyframes: p.keyframes, Truncated: p.truncated, HeaderDamage: p.hdrDamage, FirstDamage: bad, Bytes: p.bytes}
+	return AV1Report{Units: p.units, Keyframes: p.keyframes, Frames: p.frames,
+		Truncated: p.truncated, HeaderDamage: p.hdrDamage, FirstDamage: bad, Bytes: p.bytes}
 }
 
 // Faults converts structural defects into the shared fault model.
@@ -220,8 +255,7 @@ func (p *AV1Parser) Faults(layer string) []media.Fault {
 // EncodeOBU builds one OBU with a leb128 size field. It is used by the sample
 // generator and tests.
 func EncodeOBU(typ uint8, payload []byte) []byte {
-	hdr := byte(typ<<3) | 0x02 // has_size_field=1
-	out := []byte{hdr}
+	out := []byte{typ<<3 | 0x02} // has_size_field=1
 	n := uint64(len(payload))
 	for {
 		b := byte(n & 0x7F)

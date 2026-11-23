@@ -51,8 +51,10 @@ func (p *prng) fraction() float64 { return float64(p.next()>>11) / float64(1<<53
 // built is the encoded result of one generated layer.
 type built struct {
 	stream  []byte
-	offsets []int64
-	times   []int64
+	offsets []int64 // every frame
+	lengths []int64 // every frame
+	times   []int64 // every frame
+	keys    []bool  // every frame
 }
 
 type builder struct {
@@ -222,7 +224,10 @@ func (b *builder) build(durationMs, kfIntervalMs int64, leading []byte) (built, 
 		allocated += payload
 		res.offsets = append(res.offsets, int64(len(out)))
 		res.times = append(res.times, int64(i)*frameIntervalMs)
-		out = append(out, b.frameUnit(keyFlags[i], payload)...)
+		res.keys = append(res.keys, keyFlags[i])
+		unit := b.frameUnit(keyFlags[i], payload)
+		res.lengths = append(res.lengths, int64(len(unit)))
+		out = append(out, unit...)
 	}
 
 	// Pad to the exact target size; shrink the final frame if the remainder

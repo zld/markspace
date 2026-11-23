@@ -34,6 +34,9 @@ type Layer struct {
 	DurationMs int64
 	Stream     []byte
 	Index      index.Index
+
+	frameOffsets []int64
+	frameLengths []int64
 }
 
 // Archive is a complete generated fixture.
@@ -43,6 +46,15 @@ type Archive struct {
 	ChunkBytes int
 	DurationMs int64
 	Layers     []Layer
+
+	// frameLayout records generated frame extents per layer for fixtures that
+	// need a precise damage location.
+	frameLayout map[string][]frameExtent
+}
+
+type frameExtent struct {
+	offset int64
+	length int64
 }
 
 // LayerSpec describes one representation to build.
@@ -99,13 +111,18 @@ func Generate(c string, seed int64, chunkBytes int, targets []float64) (Archive,
 		return Archive{}, err
 	}
 	const durationMs = 1000
-	a := Archive{Case: c, Seed: seed, ChunkBytes: chunkBytes, DurationMs: durationMs}
+	a := Archive{Case: c, Seed: seed, ChunkBytes: chunkBytes, DurationMs: durationMs, frameLayout: map[string][]frameExtent{}}
 	for i, spec := range specs {
 		layer, err := buildLayer(spec, seed, i, chunkBytes, durationMs, c == CaseSplitStartCode && spec.Codec != codec.AV1)
 		if err != nil {
 			return Archive{}, err
 		}
 		a.Layers = append(a.Layers, layer)
+		ext := make([]frameExtent, len(layer.frameOffsets))
+		for j := range layer.frameOffsets {
+			ext[j] = frameExtent{offset: layer.frameOffsets[j], length: layer.frameLengths[j]}
+		}
+		a.frameLayout[spec.Name] = ext
 	}
 	if err := applyCase(&a); err != nil {
 		return Archive{}, err
@@ -135,10 +152,14 @@ func buildLayer(spec LayerSpec, seed int64, layerIndex, chunkBytes int, duration
 	}
 	ix := index.Index{Layer: spec.Name, Timescale: spec.Timescale}
 	for i := range res.offsets {
-		ix.Entries = append(ix.Entries, index.Entry{PTS: msToTicks(res.times[i], spec.Timescale), Offset: res.offsets[i]})
+		if !res.keys[i] {
+			continue
+		}
+		ix.Entries = append(ix.Entries, index.Entry{PTS: msToTicks(res.times[i], spec.Timescale), Offset: res.offsets[i], Line: len(ix.Entries) + 1})
 	}
 	return Layer{Name: spec.Name, Codec: spec.Codec, TargetKbps: spec.TargetKbps, Timescale: spec.Timescale,
-		DurationMs: durationMs, Stream: res.stream, Index: ix}, nil
+		DurationMs: durationMs, Stream: res.stream, Index: ix,
+		frameOffsets: append([]int64(nil), res.offsets...), frameLengths: append([]int64(nil), res.lengths...)}, nil
 }
 
 // msToTicks converts whole milliseconds to exact ticks for the given
@@ -158,13 +179,26 @@ func applyCase(a *Archive) error {
 		if l == nil {
 			return errors.New("sample: missing mid layer")
 		}
+		if len(l.Index.Entries) < 3 {
+			return errors.New("sample: corrupt-index needs three keyframe entries")
+		}
 		l.Index.Entries[2].Offset = int64(len(l.Stream)) + 64
 	case CaseKeyframeRegress:
 		l := layerByName(a, "low")
 		if l == nil {
 			return errors.New("sample: missing low layer")
 		}
-		l.Index.Entries[2].PTS = msToTicks(100, l.Timescale)
+		if len(l.Index.Entries) < 3 {
+			return errors.New("sample: keyframe-regress needs three keyframe entries")
+		}
+		// Move the third anchor back before the second, so the index time
+		// order contradicts the stream order.
+		regressed := msToTicks(100, l.Timescale)
+		prev := l.Index.Entries[1].PTS
+		if regressed >= prev {
+			regressed = prev - msToTicks(50, l.Timescale)
+		}
+		l.Index.Entries[2].PTS = regressed
 	case CaseBoundarySkew:
 		l := layerByName(a, "mid")
 		if l == nil {
@@ -179,18 +213,20 @@ func applyCase(a *Archive) error {
 		if l == nil {
 			return errors.New("sample: missing high layer")
 		}
-		// Cut the tail inside the final keyframe interval, after the last
-		// verified anchor, so the archive loses real content rather than
-		// trailing padding. The cut lands inside an OBU payload, leaving its
-		// declared size larger than the bytes that survive.
-		lastAnchor := l.Index.Entries[len(l.Index.Entries)-1].Offset
-		cut := int64(len(l.Stream)) / 10
-		if min := int64(4096); cut < min {
-			cut = min
+		// Cut through the middle of the last coded frame. The frame's OBU
+		// header and size field survive the cut, so the parser can prove the
+		// declared payload extends past the available bytes.
+		frames := a.frameLayout["high"]
+		if len(frames) == 0 {
+			return errors.New("sample: missing AV1 frame layout")
 		}
-		end := int64(len(l.Stream)) - cut
-		if end <= lastAnchor+8 || end >= int64(len(l.Stream)) {
-			return errors.New("sample: truncation would remove a verified anchor")
+		last := frames[len(frames)-1]
+		if last.length < 64 {
+			return errors.New("sample: final AV1 frame too small to truncate")
+		}
+		end := last.offset + last.length/2
+		if end >= int64(len(l.Stream)) {
+			return errors.New("sample: invalid AV1 truncation point")
 		}
 		l.Stream = l.Stream[:end]
 	default:

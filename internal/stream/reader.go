@@ -71,6 +71,8 @@ type Reader struct {
 	peakQueue atomic.Int64
 	produced  atomic.Int64
 	bytesRead atomic.Int64
+	liveBytes atomic.Int64
+	peakBytes atomic.Int64
 	exhausted atomic.Bool
 	errMu     sync.Mutex
 	readErr   error
@@ -109,6 +111,7 @@ func (r *Reader) run() {
 			copy(data, buf[:n])
 			ch := Chunk{Offset: offset, Index: index, Data: data}
 			r.noteQueue(len(r.chunks) + 1)
+			r.noteBytes(r.liveBytes.Add(int64(n)))
 			select {
 			case r.chunks <- ch:
 			case <-r.done:
@@ -178,7 +181,20 @@ func (r *Reader) Next(ctx context.Context) (Chunk, error) {
 			}
 			return Chunk{}, io.EOF
 		}
+		r.release(int64(len(ch.Data)))
 		return ch, nil
+	}
+}
+
+// release accounts for a chunk leaving the reader's buffer.
+func (r *Reader) release(n int64) { r.liveBytes.Add(-n) }
+
+func (r *Reader) noteBytes(v int64) {
+	for {
+		cur := r.peakBytes.Load()
+		if v <= cur || r.peakBytes.CompareAndSwap(cur, v) {
+			return
+		}
 	}
 }
 
@@ -197,6 +213,7 @@ type Stats struct {
 	Chunks      int64
 	Bytes       int64
 	PeakQueued  int64
+	PeakBytes   int64
 	Exhausted   bool
 	MaxChunkCap int
 }
@@ -208,6 +225,7 @@ func (r *Reader) Stats() Stats {
 		Chunks:      r.produced.Load(),
 		Bytes:       r.bytesRead.Load(),
 		PeakQueued:  r.peakQueue.Load(),
+		PeakBytes:   r.peakBytes.Load(),
 		Exhausted:   r.exhausted.Load(),
 		MaxChunkCap: r.opts.Queue + 1,
 	}

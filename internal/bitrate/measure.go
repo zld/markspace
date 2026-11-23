@@ -90,9 +90,18 @@ func Measure(targetKbps float64, durationMs, windowMs int64, obs []Observation) 
 		r.Windows = append(r.Windows, Window{StartMs: start, EndMs: end, Bytes: bytes, Kbps: kbps})
 	}
 
-	// The actual rate is measured over recovered bytes and the full nominal
-	// duration, matching how archive targets are declared.
-	r.ActualKbps = kbpsOf(r.TotalBytes, durationMs)
+	// The actual rate is measured over the recovered interval only. Bytes in a
+	// retained gap were never recovered, so counting them (or charging the gap
+	// against the repaired span) would misreport the asset's real rate.
+	var coveredMs int64
+	for _, o := range clipped {
+		coveredMs += o.EndMs - o.StartMs
+	}
+	if coveredMs <= 0 {
+		coveredMs = durationMs
+	}
+	r.MeasuredMs = coveredMs
+	r.ActualKbps = kbpsOf(r.TotalBytes, coveredMs)
 	if targetKbps > 0 {
 		r.ErrorPct = (r.ActualKbps - targetKbps) / targetKbps * 100
 	}

@@ -24,6 +24,7 @@ type NALUnit struct {
 	HeaderAt    int64 // first byte of the NAL header
 	Length      int64 // payload length, excluding the start code
 	Type        uint8 // nal_unit_type: H.264 5 bits, H.265 6 bits
+	Frame       bool  // VCL unit that carries one coded picture
 	Keyframe    bool
 	SplitOnRead bool // the start code began in an earlier chunk
 	Truncated   bool // stream ended inside the unit
@@ -144,9 +145,11 @@ func (p *NALParser) Feed(data []byte) []NALUnit {
 func (p *NALParser) applyHeader(b byte) {
 	if p.codec == H264 {
 		p.unit.Type = b & 0x1F
+		p.unit.Frame = p.unit.Type >= 1 && p.unit.Type <= 5
 		p.unit.Keyframe = h264Keyframe(p.unit.Type)
 	} else {
 		p.unit.Type = (b >> 1) & 0x3F
+		p.unit.Frame = p.unit.Type <= 31
 		p.unit.Keyframe = h265Keyframe(p.unit.Type)
 	}
 }

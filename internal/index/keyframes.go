@@ -29,6 +29,18 @@ type Index struct {
 	Entries   []Entry
 }
 
+// ClockMillis converts a PTS on this index's timescale to milliseconds.
+func (ix Index) ClockMillis(pts int64) int64 {
+	if ix.Timescale == 0 {
+		return 0
+	}
+	ts := int64(ix.Timescale)
+	if pts >= 0 {
+		return (pts*1000 + ts/2) / ts
+	}
+	return -((-pts*1000 + ts/2) / ts)
+}
+
 // Parse reads the line-oriented archive index format:
 //
 //	archive-keyframe-index v1
@@ -129,12 +141,21 @@ type Aligned struct {
 	Drift    int64 // signed byte drift from the recorded offset
 }
 
+// Rejected is one index entry that failed validation, kept so downstream
+// stages can attribute the coverage hole to its actual cause.
+type Rejected struct {
+	Entry  Entry
+	Kind   media.FaultKind
+	Detail string
+}
+
 // Validation is the deterministic outcome of index checking.
 type Validation struct {
-	Index   Index
-	Aligned []Aligned
-	Faults  []media.Fault
-	Dropped int
+	Index    Index
+	Aligned  []Aligned
+	Rejected []Rejected
+	Faults   []media.Fault
+	Dropped  int
 }
 
 // Validate compares index entries with the actual stream length and the
@@ -152,23 +173,28 @@ func Validate(ix Index, streamLen int64, boundaries []int64, opts ValidationOpti
 	for _, e := range ix.Entries {
 		if e.Offset < 0 || e.Offset >= streamLen {
 			v.Dropped++
-			v.Faults = append(v.Faults, media.NewFault(media.KindIndexOutOfRange, ix.Layer,
-				fmt.Sprintf("line %d: offset %d outside stream length %d", e.Line, e.Offset, streamLen),
-				e.Offset, media.Unrecoverable))
+			detail := fmt.Sprintf("line %d: offset %d outside stream length %d", e.Line, e.Offset, streamLen)
+			v.Faults = append(v.Faults, media.NewFault(media.KindIndexOutOfRange, ix.Layer, detail, e.Offset, media.Unrecoverable))
+			v.Rejected = append(v.Rejected, Rejected{Entry: e, Kind: media.KindIndexOutOfRange, Detail: detail})
 			continue
 		}
 		if prevLine, dup := seenOffset[e.Offset]; dup {
 			v.Dropped++
-			v.Faults = append(v.Faults, media.NewFault(media.KindIndexDuplicate, ix.Layer,
-				fmt.Sprintf("line %d: offset %d already used on line %d", e.Line, e.Offset, prevLine),
-				e.Offset, media.Recoverable))
+			detail := fmt.Sprintf("line %d: offset %d already used on line %d", e.Line, e.Offset, prevLine)
+			v.Faults = append(v.Faults, media.NewFault(media.KindIndexDuplicate, ix.Layer, detail, e.Offset, media.Recoverable))
+			v.Rejected = append(v.Rejected, Rejected{Entry: e, Kind: media.KindIndexDuplicate, Detail: detail})
 			continue
 		}
 		if havePTS && e.PTS <= lastPTS {
 			v.Dropped++
-			v.Faults = append(v.Faults, media.NewFault(media.KindIndexRegress, ix.Layer,
-				fmt.Sprintf("line %d: pts %d does not advance past %d", e.Line, e.PTS, lastPTS),
-				e.Offset, media.Recoverable).WithSpan(media.NewInterval(e.PTS, lastPTS, media.MustClock(ix.Timescale))))
+			spanStart, spanEnd := e.PTS, lastPTS
+			if spanEnd < spanStart {
+				spanStart, spanEnd = spanEnd, spanStart
+			}
+			detail := fmt.Sprintf("line %d: pts %d does not advance past %d", e.Line, e.PTS, lastPTS)
+			v.Faults = append(v.Faults, media.NewFault(media.KindIndexRegress, ix.Layer, detail,
+				e.Offset, media.Recoverable).WithSpan(media.NewInterval(spanStart, spanEnd, media.MustClock(ix.Timescale))))
+			v.Rejected = append(v.Rejected, Rejected{Entry: e, Kind: media.KindIndexRegress, Detail: detail})
 			continue
 		}
 		boundary, drift, ok := nearest(boundaries, e.Offset)
@@ -180,6 +206,7 @@ func Validate(ix Index, streamLen int64, boundaries []int64, opts ValidationOpti
 				detail = fmt.Sprintf("line %d: offset %d drifts %d bytes from boundary %d", e.Line, e.Offset, drift, boundary)
 			}
 			v.Faults = append(v.Faults, media.NewFault(kind, ix.Layer, detail, e.Offset, media.Recoverable))
+			v.Rejected = append(v.Rejected, Rejected{Entry: e, Kind: kind, Detail: detail})
 			continue
 		}
 		if drift != 0 {

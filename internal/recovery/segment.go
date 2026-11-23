@@ -100,6 +100,28 @@ func Recover(in Input) Result {
 	}
 
 	verified := map[int64]bool{}
+	claim := map[int64]index.Rejected{}
+	for _, rj := range in.Index.Rejected {
+		claim[rj.Entry.Offset] = rj
+	}
+	// Rejected entries whose recorded offset points outside the stream cannot
+	// be matched by byte position. Their timestamp still identifies the
+	// interval they intended to certify, so keep them for attribution.
+	var timeRejects []index.Rejected
+	for _, rj := range in.Index.Rejected {
+		if rj.Kind == media.KindIndexOutOfRange {
+			timeRejects = append(timeRejects, rj)
+		}
+	}
+	rejectInSpan := func(startMs, endMs int64) (media.FaultKind, string, bool) {
+		for _, rj := range timeRejects {
+			ms := in.Index.Index.ClockMillis(rj.Entry.PTS)
+			if ms >= startMs && ms <= endMs {
+				return rj.Kind, rj.Detail, true
+			}
+		}
+		return "", "", false
+	}
 	for _, a := range in.Index.Aligned {
 		if !kfUnits[a.Boundary] {
 			res.Faults = append(res.Faults, media.NewFault(media.KindBoundaryDrift, in.Layer,
@@ -125,11 +147,22 @@ func Recover(in Input) Result {
 	res.MeanKFMs, res.MaxKFMs = intervals(res.Anchors)
 
 	// Unverified keyframe units mark time regions that cannot be certified,
-	// because no index entry ties them to the shared clock.
+	// because no index entry ties them to the shared clock. Each hole keeps the
+	// cause of the claim that failed, so the audit names the real defect.
 	var unverified []int64
+	reason := map[int64]media.FaultKind{}
+	detail := map[int64]string{}
 	for _, u := range in.Units {
-		if u.Keyframe && !u.Truncated && !verified[u.Offset] {
-			unverified = append(unverified, u.Offset)
+		if !u.Keyframe || u.Truncated || verified[u.Offset] {
+			continue
+		}
+		unverified = append(unverified, u.Offset)
+		if rj, ok := claim[u.Offset]; ok {
+			reason[u.Offset] = rj.Kind
+			detail[u.Offset] = rj.Detail
+		} else {
+			reason[u.Offset] = media.KindIndexOutOfRange
+			detail[u.Offset] = fmt.Sprintf("keyframe at byte %d has no index entry", u.Offset)
 		}
 	}
 	sort.Slice(unverified, func(i, j int) bool { return unverified[i] < unverified[j] })
@@ -168,11 +201,19 @@ func Recover(in Input) Result {
 
 		// An unverified keyframe inside this interval defeats certification of
 		// the interval: skip forward to the next verified anchor.
-		if hasBetween(unverified, a.Offset, nextOff) {
+		if off, ok := firstBetween(unverified, a.Offset, nextOff); ok {
+			kind := reason[off]
+			if kind == "" {
+				kind = media.KindIndexOutOfRange
+			}
+			gapDetail := detail[off]
+			if td, text, found := rejectInSpan(a.TimeMs, endMs); found {
+				kind, gapDetail = td, text
+			}
 			res.Gaps = append(res.Gaps, Gap{StartMs: a.TimeMs, EndMs: endMs, ByteStart: a.Offset, ByteEnd: nextOff,
-				Reason: media.KindIndexOutOfRange, Detail: "keyframe boundary present but unverified by the index", Class: media.Recoverable})
+				Reason: kind, Detail: gapDetail, Class: media.Recoverable})
 			res.Faults = append(res.Faults, media.NewFault(media.KindGap, in.Layer,
-				fmt.Sprintf("gap [%d,%d) ms retained while resynchronizing to the next verified keyframe", a.TimeMs, endMs),
+				fmt.Sprintf("gap [%d,%d) ms retained while resynchronizing to the next verified keyframe: %s", a.TimeMs, endMs, gapDetail),
 				a.Offset, media.Recoverable).WithSpan(in.span(a.TimeMs, endMs)))
 			continue
 		}
@@ -182,11 +223,19 @@ func Recover(in Input) Result {
 	}
 
 	// A keyframe before the first verified anchor leaves a leading gap.
-	if first := unverifiedBefore(unverified, res.Anchors[0].Offset); first >= 0 {
+	if first, ok := firstBefore(unverified, res.Anchors[0].Offset); ok {
+		kind := reason[first]
+		if kind == "" {
+			kind = media.KindIndexOutOfRange
+		}
+		gapDetail := detail[first]
+		if td, text, found := rejectInSpan(0, res.Anchors[0].TimeMs); found {
+			kind, gapDetail = td, text
+		}
 		res.Gaps = append([]Gap{{StartMs: 0, EndMs: res.Anchors[0].TimeMs, ByteStart: 0, ByteEnd: res.Anchors[0].Offset,
-			Reason: media.KindIndexOutOfRange, Detail: "leading keyframes are not verified by the index", Class: media.Recoverable}}, res.Gaps...)
+			Reason: kind, Detail: gapDetail, Class: media.Recoverable}}, res.Gaps...)
 		res.Faults = append(res.Faults, media.NewFault(media.KindGap, in.Layer,
-			fmt.Sprintf("leading gap [0,%d) ms retained before the first verified keyframe", res.Anchors[0].TimeMs),
+			fmt.Sprintf("leading gap [0,%d) ms retained before the first verified keyframe: %s", res.Anchors[0].TimeMs, gapDetail),
 			0, media.Recoverable))
 	}
 
@@ -232,20 +281,20 @@ func intervals(anchors []Anchor) (mean float64, max int64) {
 	return float64(sum) / float64(len(anchors)-1), max
 }
 
-func hasBetween(sorted []int64, lo, hi int64) bool {
+func firstBetween(sorted []int64, lo, hi int64) (int64, bool) {
 	for _, v := range sorted {
 		if v > lo && v < hi {
-			return true
+			return v, true
 		}
 	}
-	return false
+	return 0, false
 }
 
-func unverifiedBefore(sorted []int64, off int64) int64 {
+func firstBefore(sorted []int64, off int64) (int64, bool) {
 	for _, v := range sorted {
 		if v < off {
-			return v
+			return v, true
 		}
 	}
-	return -1
+	return 0, false
 }
