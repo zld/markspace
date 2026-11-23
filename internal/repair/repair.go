@@ -148,15 +148,83 @@ func (r *Repairer) RepairFrame(f *Frame, truncated bool, disc bool) error {
 	return nil
 }
 
-// FinalizeTrack enforces monotonic order on a completed frame slice,
-// nudging duplicates, retaining VFR spacing and annotating discontinuities.
+// RepairObserved handles frames whose unified observed instant is already
+// known (the manifest/fixture layer performed the ticks->nanoseconds
+// mapping). The 32-bit raw timestamp still feeds the unwrapper so wrap
+// anomalies are detected and counted, and the drift model is applied to the
+// observed programme instant.
+func (r *Repairer) RepairObserved(f *Frame, wrapped, truncated, disc bool) error {
+	if f.RawTimescale == 0 {
+		return mederr.New(mederr.CodeZeroTimescale,
+			"frame declares zero timescale")
+	}
+	if _, err := r.unwrapTS(f); err != nil {
+		return err
+	}
+	if wrapped {
+		f.Anomalies = append(f.Anomalies, Anomaly{
+			Kind:   AnomalyWrap,
+			Detail: fmt.Sprintf("raw timestamp wrapped at %d", f.RawTS),
+		})
+	}
+	corrected := f.ObservedNS
+	if m, ok := r.drift[f.Track]; ok {
+		c, err := m.Correct(f.ObservedNS)
+		if err != nil {
+			return err
+		}
+		if c != f.ObservedNS {
+			f.Anomalies = append(f.Anomalies, Anomaly{
+				Kind:   AnomalyDrift,
+				Detail: fmt.Sprintf("%d->%d ns", f.ObservedNS, c),
+			})
+		}
+		corrected = c
+	}
+	if disc {
+		f.Anomalies = append(f.Anomalies, Anomaly{
+			Kind: AnomalyDiscontinuity, Detail: "explicit discontinuity",
+		})
+	}
+	if truncated {
+		f.Anomalies = append(f.Anomalies, Anomaly{
+			Kind: AnomalyTruncated, Detail: "source segment truncated",
+		})
+	}
+	f.CorrectedNS = corrected
+	return nil
+}
+
+// FinalizeTrack enforces monotonic order on the full frame slice. Frames
+// are grouped by track+representation first, because two representations
+// of the same track (e.g. v-hi and v-lo) legitimately restart their local
+// counters. Within one group it nudges duplicates, retains VFR spacing and
+// annotates discontinuities.
 func (r *Repairer) FinalizeTrack(frames []*Frame) (Stats, error) {
 	var st Stats
 	if len(frames) == 0 {
 		return st, mederr.New(mederr.CodeInternal, "FinalizeTrack: no frames")
 	}
-	track := frames[0].Track
-	_ = track
+	groups := map[string][]*Frame{}
+	var order []string
+	for _, f := range frames {
+		key := f.Track + "|" + f.Representation
+		if _, ok := groups[key]; !ok {
+			order = append(order, key)
+		}
+		groups[key] = append(groups[key], f)
+	}
+	for _, key := range order {
+		grp := groups[key]
+		if err := r.finalizeGroup(grp, &st); err != nil {
+			return st, err
+		}
+	}
+	return st, nil
+}
+
+// finalizeGroup applies monotonic enforcement to one representation.
+func (r *Repairer) finalizeGroup(frames []*Frame, st *Stats) error {
 	ns := make([]int64, len(frames))
 	for i, f := range frames {
 		ns[i] = f.CorrectedNS
@@ -176,6 +244,9 @@ func (r *Repairer) FinalizeTrack(frames []*Frame) (Stats, error) {
 	}
 	fixed, dups, discs := clock.EnforceMonotonic(ns)
 	var prevGap int64
+	// roundingToleranceNS absorbs sub-nanosecond rational conversion
+	// rounding so a genuinely uniform cadence is not mislabelled as VFR.
+	const roundingToleranceNS int64 = 2
 	for i, f := range frames {
 		f.CorrectedNS = fixed[i]
 		for _, d := range dups {
@@ -189,7 +260,11 @@ func (r *Repairer) FinalizeTrack(frames []*Frame) (Stats, error) {
 		}
 		if i > 0 {
 			gap := f.CorrectedNS - frames[i-1].CorrectedNS
-			if i > 1 && gap != prevGap && !containsDisc(f) {
+			diff := gap - prevGap
+			if diff < 0 {
+				diff = -diff
+			}
+			if i > 1 && diff > roundingToleranceNS && !containsDisc(f) {
 				f.Anomalies = append(f.Anomalies, Anomaly{
 					Kind:   AnomalyVFRShift,
 					Detail: fmt.Sprintf("gap %d->%d ns", prevGap, gap),
@@ -206,7 +281,7 @@ func (r *Repairer) FinalizeTrack(frames []*Frame) (Stats, error) {
 		})
 		st.Discontinuities++
 	}
-	return st, nil
+	return nil
 }
 
 func containsDisc(f *Frame) bool {
