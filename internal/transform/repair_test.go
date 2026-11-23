@@ -180,6 +180,29 @@ func TestRepairMarksUnorderableTrack(t *testing.T) {
 	}
 }
 
+func TestRepairRejectsTrackOnAnotherTimelineTimescale(t *testing.T) {
+	tracks, _, _ := buildTracks(t)
+	if len(tracks) == 0 || len(tracks[0].Samples) == 0 {
+		t.Fatal("no track samples to test")
+	}
+	// Pretend a track was mapped to a different timeline timescale; merging it
+	// without rescaling would mix units.
+	tracks[0].Mapping.TimelineTimescale = 48000
+	report, repaired := transform.Repair(tracks, transform.RepairOptions{TimelineTimescale: 90000})
+	if len(report.UnmergeableTracks) != 1 || report.UnmergeableTracks[0] != tracks[0].ID {
+		t.Fatalf("unmergeable=%v", report.UnmergeableTracks)
+	}
+	if repaired[0].Mergeable {
+		t.Fatal("mismatched timescale was accepted")
+	}
+	if len(repaired[0].Errors) == 0 || repaired[0].Errors[0].Code != fault.CodeUnmergeableTrack {
+		t.Fatalf("errors=%v", repaired[0].Errors)
+	}
+	if repaired[0].Errors[0].Offset != tracks[0].Samples[0].FragmentOffset {
+		t.Fatalf("fault offset %d is not the track's first fragment", repaired[0].Errors[0].Offset)
+	}
+}
+
 func TestRepairIsDeterministic(t *testing.T) {
 	kinds := []fixture.FaultKind{fixture.FaultTfdtRegression, fixture.FaultDuplicate}
 	tracks1, _, _ := buildTracks(t, kinds...)

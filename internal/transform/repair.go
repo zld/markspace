@@ -13,6 +13,9 @@ import (
 // repair is supported: input order is the authority for ordering, and original
 // source times are always preserved.
 type RepairOptions struct {
+	// TimelineTimescale, when non-zero, is enforced as the single timeline
+	// timescale. A track mapped to any other timescale cannot be merged
+	// without rescaling after repair, so it is rejected instead.
 	TimelineTimescale uint32
 }
 
@@ -74,10 +77,24 @@ func Repair(tracks []*timeline.Track, opts RepairOptions) (*RepairReport, []*Rep
 	report := &RepairReport{}
 	out := make([]*RepairedTrack, 0, len(tracks))
 	for _, tr := range tracks {
-		rt := repairTrack(tr, report)
+		rt := repairTrack(tr, opts, report)
 		out = append(out, rt)
 	}
 	return report, out
+}
+
+func firstFragmentFile(tr *timeline.Track) string {
+	if len(tr.Samples) == 0 {
+		return ""
+	}
+	return tr.Samples[0].File
+}
+
+func firstFragmentOffset(tr *timeline.Track) int64 {
+	if len(tr.Samples) == 0 {
+		return 0
+	}
+	return tr.Samples[0].FragmentOffset
 }
 
 // fragmentGroup holds the samples of one fragment in input order.
@@ -117,8 +134,19 @@ func fragmentSignature(g fragmentGroup) string {
 	return sig
 }
 
-func repairTrack(tr *timeline.Track, report *RepairReport) *RepairedTrack {
+func repairTrack(tr *timeline.Track, opts RepairOptions, report *RepairReport) *RepairedTrack {
 	rt := &RepairedTrack{ID: tr.ID, Kind: tr.Kind, Mergeable: tr.Mergeable, Reason: tr.Reason}
+	if opts.TimelineTimescale != 0 && tr.Mapping.TimelineTimescale != opts.TimelineTimescale {
+		f := fault.New(fault.CodeUnmergeableTrack, firstFragmentFile(tr), firstFragmentOffset(tr), "",
+			fmt.Sprintf("track %d is mapped to timescale %d, not the configured %d",
+				tr.ID, tr.Mapping.TimelineTimescale, opts.TimelineTimescale))
+		rt.Mergeable = false
+		rt.Reason = f.Error()
+		rt.Errors = append(rt.Errors, f)
+		report.Errors = append(report.Errors, f)
+		report.UnmergeableTracks = append(report.UnmergeableTracks, tr.ID)
+		return rt
+	}
 	if len(tr.Samples) == 0 {
 		rt.Samples = nil
 		return rt
