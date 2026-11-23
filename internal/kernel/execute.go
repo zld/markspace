@@ -83,6 +83,9 @@ func ExecuteSegments(plan *Plan, cfg Config, primary, cpPath, inputDigest string
 	if err != nil {
 		return nil, nil, inputErr("checkpoint", err)
 	}
+	// Record how far parsing had reached so a future run can resume without
+	// re-reading a prefix it has already consumed.
+	runner.SetParseOffset(plan.ParseOffset)
 	res, err := runner.Run(pipeline.RunConfig{TotalSegments: len(m.Segments), Recompute: recompute}, guarded)
 	if err != nil {
 		return nil, nil, internalErr("execute", err)

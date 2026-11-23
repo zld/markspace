@@ -165,6 +165,9 @@ type Plan struct {
 	Cuts      []int64
 	Config    segment.Config
 	Manifests map[string]*segment.Manifest
+	// ParseOffset is the byte offset the parser reached for the primary
+	// rendition, recorded in checkpoints so runs can resume mid-stream.
+	ParseOffset int64
 }
 
 // BuildPlan aligns renditions and builds one manifest per rendition.
@@ -189,7 +192,7 @@ func BuildPlan(reps []*Representation, cfg Config) (*Plan, error) {
 		return nil, inputErr("align", err)
 	}
 	segCfg := cfg.SegmentConfig(reps[0].Doc.TimecodeScale)
-	plan := &Plan{Alignment: align, Cuts: align.Cuts, Config: segCfg, Manifests: map[string]*segment.Manifest{}}
+	plan := &Plan{Alignment: align, Cuts: align.Cuts, Config: segCfg, Manifests: map[string]*segment.Manifest{}, ParseOffset: reps[0].Doc.Size}
 	hasher := spanHasher(reps[0].Data)
 	for _, r := range reps {
 		video, ok := r.Index.VideoTrack()

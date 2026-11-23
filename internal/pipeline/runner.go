@@ -70,6 +70,14 @@ func NewRunner(path string, inputDigest, configDigest string, cfg RunConfig) (*R
 	return &Runner{CheckpointPath: path, cp: cp}, nil
 }
 
+// SetParseOffset records the parser's progress in the checkpoint. It is only
+// meaningful before the first save; later saves persist it unchanged.
+func (r *Runner) SetParseOffset(offset int64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.cp.ParseOffset = offset
+}
+
 // Checkpoint returns the live checkpoint (read-only for callers).
 func (r *Runner) Checkpoint() *Checkpoint {
 	r.mu.Lock()
