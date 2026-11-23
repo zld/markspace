@@ -158,6 +158,14 @@ func (r *Renderer) Write(f Frame, raster []byte) error {
 // Count returns how many frames have been written.
 func (r *Renderer) Count() int { return r.count }
 
+// SetOpener replaces the file opener, allowing deterministic injection of
+// render-write failures at a chosen frame.
+func (r *Renderer) SetOpener(opener WriterOpener) {
+	if opener != nil {
+		r.open = opener
+	}
+}
+
 // Raster reproduces the exact bytes that Draw hashed, so callers can persist
 // and independently verify them.
 func (r *Renderer) Raster(f Frame) []byte {

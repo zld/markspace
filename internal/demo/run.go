@@ -161,11 +161,17 @@ func recoverAll(ctx context.Context, cfg Config, fx *Fixture,
 		tickOf := func(seq uint16) int64 {
 			return int64(seq)*tickStep + tr.StartMs
 		}
+		// Time is derived from the 32-bit RTP timestamp, which stays linear
+		// across 16-bit sequence-number wraps during multi-hour material.
+		tickOfPacket := func(pkt *rtp.Packet) int64 {
+			return clock.FromRTP(pkt.Timestamp, tr.ClockRate) + tr.StartMs
+		}
 		rec := rtprecover.NewRecover(rtprecover.RecoverConfig{
 			WindowCapacity: cfg.WindowCapacity,
 			BurstThreshold: cfg.LossBurst,
 			TrackID:        tr.ID,
 			IsVideo:        tr.Kind == manifest.KindVideo,
+			TickOfPacket:   tickOfPacket,
 		}, tickOf)
 
 		runner := pipeline.NewRunner[*rtp.Packet](cfg.QueueCapacity)
