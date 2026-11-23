@@ -29,6 +29,7 @@ keyframe_hit_rate=100.00%
 segments=14
 segment_hashes_verified=14
 resume_recomputed=0
+cache_hits=12 cache_misses=0 cache_quarantined=0
 provenance_verified=true
 corrupt_cases=5 rejected=5 partial_outputs=0
 ```
@@ -58,7 +59,7 @@ without trusting the producer.
 | `internal/timeline` | Nanosecond clock, wraparound/reversal/sparse diagnostics, rendition alignment |
 | `internal/index` | Keyframe index with source spans and tolerance-aware hit reports |
 | `internal/segment` | Deterministic manifest builder, per-segment SHA-256, canonical JSON |
-| `internal/pipeline` | Checkpointed idempotent runner, content-addressed cache with quarantine |
+| `internal/pipeline` | Checkpointed idempotent runner, content-addressed cache with quarantine, wired into every segment |
 | `internal/provenance` | Provenance records and the independent verifier |
 | `internal/rtpcheck` | RTP framing boundary validation (pion/rtp) |
 | `internal/mp4index` | ISO-BMFF init segment via go-mp4 (timing metadata only) |
@@ -78,6 +79,14 @@ without trusting the producer.
   sorted and serialized in declaration order, and provenance records sort their
   inputs and checkpoints, so identical input and config yield byte-identical
   artifacts.
+- **Content-addressed cache on the main path.** Each pending segment is looked
+  up in a cache keyed by input digest, segment index and config digest. A hit
+  is accepted only after the entry's input provenance, config digest and
+  content hash all re-verify, and it carries the authoritative work digest so
+  the rebuilt checkpoint matches a fresh computation. Any mismatch quarantines
+  the entry and the segment is recomputed; a clean run therefore reports zero
+  quarantines. The demo replays post-interruption deliveries into the cache to
+  exercise this hit path under `--resume-after`.
 - **Boundary correctness.** Segments are half-open `[start,end)`. RTP framing is
   validated per segment: reassembly equality proves no packet spans two shards.
 - **Verification is independent.** The verifier re-hashes artifact files, input

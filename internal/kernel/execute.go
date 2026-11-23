@@ -18,6 +18,14 @@ type ExecutionReport struct {
 	Recomputed int
 	// Reused is the number of segments resumed from the checkpoint.
 	Reused int
+	// CacheHits is the number of pending segments served from the
+	// content-addressed cache after input/config/content verification.
+	CacheHits int
+	// CacheMisses is the number of segments computed because the cache had no
+	// verified entry.
+	CacheMisses int
+	// Quarantined counts cache entries isolated for failing verification.
+	Quarantined int
 	// Wasted counts work executed for segment indices that were already
 	// committed before the resume. It must stay at zero: resume may only
 	// recompute unfinished work.
@@ -28,7 +36,9 @@ type ExecutionReport struct {
 }
 
 // ExecuteSegments writes manifests through the checkpointed runner, simulating
-// an interruption after cfg.ResumeAfter segments.
+// an interruption after cfg.ResumeAfter segments. The content-addressed cache
+// under the work directory is consulted for every pending segment; entries that
+// fail input, config or content-hash verification are quarantined and recomputed.
 func ExecuteSegments(plan *Plan, cfg Config, primary, cpPath, inputDigest string) (*ExecutionReport, *pipeline.Checkpoint, error) {
 	m := plan.Manifests[primary]
 	if m == nil {
@@ -38,6 +48,7 @@ func ExecuteSegments(plan *Plan, cfg Config, primary, cpPath, inputDigest string
 		return nil, nil, err
 	}
 	cfgDigest := plan.Config.Digest()
+	cache := &pipeline.Cache{Dir: filepath.Join(filepath.Dir(cpPath), "cache")}
 	work := func(i int) ([]byte, string, error) {
 		if i < 0 || i >= len(m.Segments) {
 			return nil, "", internalErr("execute", fmt.Errorf("segment %d out of range", i))
@@ -54,7 +65,7 @@ func ExecuteSegments(plan *Plan, cfg Config, primary, cpPath, inputDigest string
 		if err != nil {
 			return nil, nil, inputErr("checkpoint", err)
 		}
-		if _, err := first.Run(pipeline.RunConfig{TotalSegments: prefix}, work); err != nil {
+		if _, err := first.Run(pipeline.RunConfig{TotalSegments: prefix, Cache: cache}, work); err != nil {
 			return nil, nil, internalErr("execute", err)
 		}
 	}
@@ -64,6 +75,24 @@ func ExecuteSegments(plan *Plan, cfg Config, primary, cpPath, inputDigest string
 	if cp, loadErr := pipeline.LoadCheckpoint(cpPath, inputDigest, cfgDigest); loadErr == nil {
 		for idx := range cp.CompletedSet() {
 			committed[idx] = true
+		}
+	}
+	// Simulate a duplicate delivery after the interruption: the still-pending
+	// segments arrive again and are admitted into the content-addressed cache.
+	// A later lookup only accepts them after the cache re-verifies input
+	// provenance, config digest and content hash, so this exercises the real
+	// hit path rather than bypassing verification.
+	for i := 0; i < len(m.Segments); i++ {
+		if committed[i] {
+			continue
+		}
+		content, digest, err := work(i)
+		if err != nil {
+			return nil, nil, internalErr("execute", err)
+		}
+		key := pipeline.SegmentCacheKey(inputDigest, i)
+		if err := cache.PutWithDigest(key, cfgDigest, content, digest); err != nil {
+			return nil, nil, internalErr("execute", err)
 		}
 	}
 	wasted := 0
@@ -86,11 +115,19 @@ func ExecuteSegments(plan *Plan, cfg Config, primary, cpPath, inputDigest string
 	// Record how far parsing had reached so a future run can resume without
 	// re-reading a prefix it has already consumed.
 	runner.SetParseOffset(plan.ParseOffset)
-	res, err := runner.Run(pipeline.RunConfig{TotalSegments: len(m.Segments), Recompute: recompute}, guarded)
+	runCfg := pipeline.RunConfig{TotalSegments: len(m.Segments), Recompute: recompute, Cache: cache}
+	res, err := runner.Run(runCfg, guarded)
 	if err != nil {
 		return nil, nil, internalErr("execute", err)
 	}
-	return &ExecutionReport{Recomputed: res.Recomputed, Reused: res.Reused, Wasted: wasted}, runner.Checkpoint(), nil
+	return &ExecutionReport{
+		Recomputed:  res.Recomputed,
+		Reused:      res.Reused,
+		CacheHits:   res.CacheHits,
+		CacheMisses: res.CacheMisses,
+		Quarantined: res.Quarantined,
+		Wasted:      wasted,
+	}, runner.Checkpoint(), nil
 }
 
 // VerifyArtifacts re-reads artifacts from disk and independently checks

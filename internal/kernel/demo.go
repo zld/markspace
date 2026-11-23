@@ -38,6 +38,9 @@ type Metrics struct {
 	Segments             int
 	Recomputed           int
 	Reused               int
+	CacheHits            int
+	CacheMisses          int
+	Quarantined          int
 }
 
 // CorruptReport summarizes the corruption suite.
@@ -185,7 +188,14 @@ func parseLadder(data []byte, cfg Config) ([]*Representation, error) {
 
 func computeMetrics(plan *Plan, reps []*Representation, primary string, run *ExecutionReport) Metrics {
 	m := plan.Manifests[primary]
-	mt := Metrics{Segments: len(m.Segments), Recomputed: run.Wasted, Reused: run.Reused}
+	mt := Metrics{
+		Segments:    len(m.Segments),
+		Recomputed:  run.Wasted,
+		Reused:      run.Reused,
+		CacheHits:   run.CacheHits,
+		CacheMisses: run.CacheMisses,
+		Quarantined: run.Quarantined,
+	}
 	// Keyframe hit rate: the minimum across renditions, so one bad rendition
 	// fails the threshold.
 	mt.KeyframeHitRate = 1.0

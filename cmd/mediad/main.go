@@ -94,6 +94,8 @@ func printResult(res *kernel.Result) {
 	fmt.Printf("segments=%d\n", res.Metrics.Segments)
 	fmt.Printf("segment_hashes_verified=%d\n", res.SegmentHashesVerified)
 	fmt.Printf("resume_recomputed=%d\n", res.Metrics.Recomputed)
+	fmt.Printf("cache_hits=%d cache_misses=%d cache_quarantined=%d\n",
+		res.Metrics.CacheHits, res.Metrics.CacheMisses, res.Metrics.Quarantined)
 	fmt.Printf("provenance_verified=%t\n", res.ProvenanceVerified)
 	fmt.Printf("corrupt_cases=%d rejected=%d partial_outputs=%d\n",
 		res.Corrupt.Cases, res.Corrupt.Rejected, res.Corrupt.PartialOutputs)
