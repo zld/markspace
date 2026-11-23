@@ -186,3 +186,27 @@ func TestVerifyNilRecord(t *testing.T) {
 		t.Fatalf("failures = %v", failures)
 	}
 }
+
+func TestVerifyRejectsDuplicateCheckpoint(t *testing.T) {
+	f := newFixture(t)
+	f.rec.Checkpoints = append(f.rec.Checkpoints, f.rec.Checkpoints[0])
+	failures := Verify(f.rec, f.exp)
+	found := false
+	for _, fl := range failures {
+		if fl.Kind == FailCheckpoint {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("duplicate checkpoint not caught: %v", failures)
+	}
+}
+
+func TestVerifyRejectsMalformedCheckpointDigest(t *testing.T) {
+	f := newFixture(t)
+	f.rec.Checkpoints[0].Digest = "short"
+	failures := Verify(f.rec, f.exp)
+	if len(failures) == 0 || failures[0].Kind != FailCheckpoint {
+		t.Fatalf("failures = %v", failures)
+	}
+}
