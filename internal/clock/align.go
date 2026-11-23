@@ -77,73 +77,31 @@ func Align(tl *model.Timeline, errs *fault.Batch) Result {
 	return res
 }
 
-// measureSkew compares the session-time positions of samples across tracks at
-// matched elapsed fractions of their shared coverage. It returns the largest
-// absolute residual in nanoseconds.
+// measureSkew measures the residual cross-track alignment error after the
+// per-track OffsetNanos shift has been applied. Alignment makes every track's
+// first presentation timestamp coincide at session time zero, so the residual
+// is the spread of the shifted start boundaries. Track lengths differ by
+// design (RTP capture vs. a 4 s clip), so end boundaries are intentionally
+// excluded — they describe coverage, not clock alignment.
 func measureSkew(tl *model.Timeline) int64 {
-	type span struct{ start, end int64 }
-	spans := map[string]span{}
 	var tracks []*model.Track
 	for _, tr := range tl.Tracks {
-		if len(tr.Samples) == 0 {
-			continue
+		if len(tr.Samples) > 0 {
+			tracks = append(tracks, tr)
 		}
-		start := tr.Samples[0].PTS + tr.OffsetNanos
-		end := tr.Samples[len(tr.Samples)-1].PTS +
-			tr.Samples[len(tr.Samples)-1].DurationNanos + tr.OffsetNanos
-		spans[tr.ID] = span{start, end}
-		tracks = append(tracks, tr)
 	}
 	if len(tracks) < 2 {
 		return 0
 	}
-	var maxSkew int64
-	// Sample at a fixed set of relative positions within each track and
-	// compare the resulting session timestamps pairwise.
-	const probes = 16
-	for p := 1; p < probes; p++ {
-		frac := float64(p) / probes
-		var times []int64
-		for _, tr := range tracks {
-			sp := spans[tr.ID]
-			target := float64(sp.start) + frac*float64(sp.end-sp.start)
-			if t := nearestSessionTime(tr, int64(target)); t >= 0 {
-				times = append(times, t)
-			}
+	var lo, hi int64
+	for i, tr := range tracks {
+		start := tr.Samples[0].PTS + tr.OffsetNanos
+		if i == 0 || start < lo {
+			lo = start
 		}
-		if len(times) < 2 {
-			continue
-		}
-		lo, hi := times[0], times[0]
-		for _, t := range times[1:] {
-			if t < lo {
-				lo = t
-			}
-			if t > hi {
-				hi = t
-			}
-		}
-		if skew := hi - lo; skew > maxSkew {
-			maxSkew = skew
+		if i == 0 || start > hi {
+			hi = start
 		}
 	}
-	return maxSkew
-}
-
-// nearestSessionTime returns the session timestamp of the sample closest to
-// the requested session time, or -1 when the track has no samples.
-func nearestSessionTime(tr *model.Track, target int64) int64 {
-	best := int64(-1)
-	bestDist := int64(math.MaxInt64)
-	for _, s := range tr.Samples {
-		st := s.PTS + tr.OffsetNanos
-		d := st - target
-		if d < 0 {
-			d = -d
-		}
-		if d < bestDist {
-			bestDist, best = d, st
-		}
-	}
-	return best
+	return hi - lo
 }
