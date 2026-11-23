@@ -1,0 +1,8 @@
+# Compiled binaries
+/archivectl
+*.test
+*.out
+
+# Local demo/fixture output directories
+/tmp/
+testdata/fixtures/

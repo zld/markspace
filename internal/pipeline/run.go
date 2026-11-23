@@ -70,6 +70,9 @@ func Run(set *fixture.Set, opts Options) (*Result, error) {
 	if err := validateOptions(opts); err != nil {
 		return nil, err
 	}
+	if err := checkSizeLimits(set); err != nil {
+		return nil, err
+	}
 	res := &Result{}
 
 	// Stage 1: parse every EBML variant, collecting structured errors.
@@ -155,6 +158,29 @@ func validateOptions(opts Options) error {
 	if opts.LossWindow <= 0 || opts.LossWindow > MaxLossWindow {
 		return StageError{Stage: "config", Category: "invalid_loss_window",
 			Message: "loss window must be in 1..256"}
+	}
+	return nil
+}
+
+// checkSizeLimits rejects any single input larger than the 2 GiB cap so the
+// parser is never asked to map an oversized file into memory.
+func checkSizeLimits(set *fixture.Set) error {
+	for name, b := range map[string][]byte{
+		"normal": set.Normal, "unknown": set.Unknown, "truncated": set.Truncated,
+		"corrupt": set.Corrupt, "incomplete": set.Incomplete, "rtp": set.RTP,
+	} {
+		if err := EnforceFileSize(name, int64(len(b))); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// EnforceFileSize applies the 2 GiB single-file cap to one named input.
+func EnforceFileSize(name string, size int64) error {
+	if size > MaxFileBytes {
+		return StageError{Stage: "config", Category: "file_too_large",
+			Message: name + " exceeds 2 GiB limit"}
 	}
 	return nil
 }

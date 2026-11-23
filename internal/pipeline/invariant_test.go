@@ -163,3 +163,19 @@ func TestInvalidLossWindowRejected(t *testing.T) {
 		t.Fatal("over-cap loss window must be rejected")
 	}
 }
+
+func TestOversizedInputRejected(t *testing.T) {
+	if pipeline.MaxFileBytes != int64(2)<<30 {
+		t.Fatalf("file cap must be 2 GiB, got %d", pipeline.MaxFileBytes)
+	}
+	if err := pipeline.EnforceFileSize("normal", pipeline.MaxFileBytes); err != nil {
+		t.Fatalf("a file exactly at the cap must pass, got %v", err)
+	}
+	err := pipeline.EnforceFileSize("normal", pipeline.MaxFileBytes+1)
+	if err == nil {
+		t.Fatal("a file above the cap must be rejected")
+	}
+	if se, ok := err.(pipeline.StageError); !ok || se.Category != "file_too_large" {
+		t.Fatalf("want file_too_large stage error, got %v", err)
+	}
+}
