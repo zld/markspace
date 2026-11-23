@@ -21,6 +21,7 @@ type Checkpoint struct {
 	Seq        int    `json:"seq"`         // monotonic save counter
 	Stage      string `json:"stage"`       // last completed stage
 	Offset     int64  `json:"offset"`      // input units consumed
+	OutBytes   int64  `json:"out_bytes"`   // output bytes written at this boundary
 	Digest     string `json:"digest"`      // hex sha256 of output so far
 	ColorState string `json:"color_state"` // folded color metadata state
 	Checksum   string `json:"checksum"`    // sha256 of the fields above
@@ -28,8 +29,8 @@ type Checkpoint struct {
 
 // computeChecksum seals the checkpoint's own integrity.
 func (c *Checkpoint) computeChecksum() string {
-	h := sha256.Sum256([]byte(fmt.Sprintf("%d|%s|%d|%s|%s",
-		c.Seq, c.Stage, c.Offset, c.Digest, c.ColorState)))
+	h := sha256.Sum256([]byte(fmt.Sprintf("%d|%s|%d|%d|%s|%s",
+		c.Seq, c.Stage, c.Offset, c.OutBytes, c.Digest, c.ColorState)))
 	return hex.EncodeToString(h[:])
 }
 

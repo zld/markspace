@@ -45,10 +45,17 @@ func New() *Cache {
 // Returns the key.
 func (c *Cache) Put(source SourceID, payload []byte) [sha256.Size]byte {
 	k := Key(payload)
+	c.PutFor(k, source, payload)
+	return k
+}
+
+// PutFor stores payload under an arbitrary key (e.g. the digest of the
+// input a result was computed from). The entry's own digest is always
+// the payload's, so Get still verifies content integrity.
+func (c *Cache) PutFor(key [sha256.Size]byte, source SourceID, payload []byte) {
 	cp := make([]byte, len(payload))
 	copy(cp, payload)
-	c.store[k] = Entry{Source: source, Digest: k, Payload: cp}
-	return k
+	c.store[key] = Entry{Source: source, Digest: Key(payload), Payload: cp}
 }
 
 // Get looks up a payload by content key and verifies both the source
@@ -67,7 +74,7 @@ func (c *Cache) Get(source SourceID, key [sha256.Size]byte) ([]byte, error) {
 		return nil, media.Fault(media.CodeCacheSource, op, -1,
 			"entry source %q does not match %q", e.Source, source)
 	}
-	if Key(e.Payload) != e.Digest || e.Digest != key {
+	if Key(e.Payload) != e.Digest {
 		c.evict(key)
 		return nil, media.Fault(media.CodeCacheDigest, op, -1,
 			"stored payload fails digest verification")
