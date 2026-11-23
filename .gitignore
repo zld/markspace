@@ -1,0 +1,19 @@
+# Build output
+/medialab
+/cmd/medialab/medialab
+
+# Demo run artifacts (generated locally, never checked in)
+/artifacts
+/artifacts-*/
+/artifacts-smoke
+/artifacts-corrupt-smoke
+/tmp/
+
+# Go test/coverage artifacts
+*.out
+*.test
+coverage.txt
+
+# Editor/OS noise
+.DS_Store
+*.swp
