@@ -63,6 +63,19 @@ properties.
 | 2 | input damaged but processed under the documented policy, with faults recorded |
 | 1 | unrecoverable, or verification failed |
 
+These are the exit codes of the `mediacore` binary. `go run` reports any
+non-zero child status as 1 and prints the real status (`exit status 2`) to
+stderr, so use a built binary when the code itself matters:
+
+```sh
+go build -o ./build/mediacore ./cmd/mediacore
+./build/mediacore demo --seed 41 --tracks 2 --fragments 24 \
+  --inject truncation,tfdt-regression,index-gap
+echo $?   # 2
+```
+
+`scripts/acceptance.sh` builds the binary and asserts the codes directly.
+
 ## Layout
 
 | path | role |
