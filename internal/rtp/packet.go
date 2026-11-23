@@ -12,6 +12,7 @@ import (
 // Packet is a parsed RTP packet on the shared, monotonic sequence space.
 type Packet struct {
 	SSRC       uint32
+	Seq16      uint16 // original 16-bit RTP sequence number
 	ExtSeq     uint64 // 64-bit extended sequence number
 	Timestamp  uint32 // raw RTP media timestamp
 	Marker     bool
@@ -89,6 +90,7 @@ func (e *Extender) Extend(p *rtp.Packet) (Packet, error) {
 	}
 	return Packet{
 		SSRC:       ssrc,
+		Seq16:      seq,
 		ExtSeq:     e.cycles[ssrc] | uint64(seq),
 		Timestamp:  p.Timestamp,
 		Marker:     p.Marker,
