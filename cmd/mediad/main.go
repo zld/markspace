@@ -164,6 +164,10 @@ func executeDemo(ctx context.Context, f *demoFlags, out *strings.Builder) (int, 
 	if err != nil {
 		return classify(err), err
 	}
+	changed, err := p.runManifestChange(ctx, demo)
+	if err != nil {
+		return classify(err), err
+	}
 	replay, err := p.runReplay(ctx, demo)
 	if err != nil {
 		return classify(err), err
@@ -176,13 +180,20 @@ func executeDemo(ctx context.Context, f *demoFlags, out *strings.Builder) (int, 
 	// Acceptance metrics. The clean path supplies the normal-sample values;
 	// each fault path contributes its own evidence.
 	q := clean.Quality
+	// Quality evidence for the damaged path: its media span and damage total
+	// show what the corruption cost in time, next to the clean baseline.
 	fmt.Fprintf(out, "actual_bps=%d\n", q.ActualBPS)
 	fmt.Fprintf(out, "bitrate_deviation_pct=%.2f\n", q.BitrateDeviationPct)
 	fmt.Fprintf(out, "quality_samples=%d\n", q.QualitySamples)
+	fmt.Fprintf(out, "bitrate_window_peak_bps=%d\n", q.WindowPeakBPS)
+	fmt.Fprintf(out, "bitrate_window_low_bps=%d\n", q.WindowLowBPS)
 	fmt.Fprintf(out, "keyframe_gap_p50_ms=%d\n", q.KeyframeGapP50MS)
 	fmt.Fprintf(out, "keyframe_gap_p95_ms=%d\n", q.KeyframeGapP95MS)
 	fmt.Fprintf(out, "corrupt_segments=%d\n", damaged.CorruptSegments)
+	fmt.Fprintf(out, "corrupt_duration_ms=%d\n", damaged.Quality.CorruptDurationMS)
 	fmt.Fprintf(out, "manifest_alignment_error_ms=%d\n", q.AlignmentErrorMS)
+	fmt.Fprintf(out, "manifest_alignment_max_ms=%d\n", q.AlignmentMaxMS)
+	fmt.Fprintf(out, "manifest_quantised_ms=%d\n", clean.Alignment.QuantisedMS())
 	fmt.Fprintf(out, "manifest_drift_segments=%d\n", len(drift.Report.Mismatches))
 	fmt.Fprintf(out, "manifest_drift_error_ms=%d\n", drift.Report.TotalDeltaMS)
 	if len(drift.Report.Mismatches) > 0 {
@@ -199,9 +210,13 @@ func executeDemo(ctx context.Context, f *demoFlags, out *strings.Builder) (int, 
 	fmt.Fprintf(out, "cache_hits=%d\n", clean.Cache.Hits+replay.Cache.Hits)
 	fmt.Fprintf(out, "cache_replay_from_cache=%t\n", replayAllFromCache(replay))
 	fmt.Fprintf(out, "cache_source_rejects=%d\n", forged.Cache.SourceRejects)
+	fmt.Fprintf(out, "checkpoint_manifest_resets=%d\n", countEvents(changed, "checkpoint_reset"))
+	fmt.Fprintf(out, "checkpoint_manifest_reset_completed=%t\n", changed.Checkpoint != nil &&
+		changed.Checkpoint.Cursor == len(demo.Segments))
 	fmt.Fprintf(out, "checkpoint_resumes=%d\n", boolToInt(resume.Resume.Resumed && resume.Resume.FromSegment > 0))
 	fmt.Fprintf(out, "checkpoint_resume_from=%d\n", resume.Resume.FromSegment)
 	fmt.Fprintf(out, "resume_digest_matches_full=%t\n", resume.ResultSHA256 == fresh.ResultSHA256)
+	fmt.Fprintf(out, "slow_consumer_enabled=%t\n", f.slowConsumer > 0)
 	fmt.Fprintf(out, "slow_consumer_timed_out=%t\n", slow.SlowConsumer)
 	slowCursor := -1
 	if slow.Checkpoint != nil {
@@ -214,7 +229,7 @@ func executeDemo(ctx context.Context, f *demoFlags, out *strings.Builder) (int, 
 	fmt.Fprintf(out, "peak_buffer_bytes=%d\n", peak)
 	fmt.Fprintf(out, "result_sha256=%s\n", clean.ResultSHA256)
 
-	if err := checkInvariants(f, clean, damaged, drift, resume, fresh, forged, slow, peak); err != nil {
+	if err := checkInvariants(f, clean, damaged, drift, resume, fresh, forged, changed, slow, peak); err != nil {
 		fmt.Fprintf(out, "invariants=FAILED\n")
 		fmt.Fprintf(out, "invariant_detail=%s\n", err)
 		return exitRecovery, nil

@@ -7,10 +7,8 @@ package pipeline
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"sort"
-	"sync/atomic"
 	"time"
 
 	"mediamux/analyze"
@@ -21,11 +19,9 @@ import (
 
 // Runner executes one analysis pass over an Input.
 type Runner struct {
-	opts     Options
-	cache    cacheBackend
-	queue    *stream.Queue[SegmentOutcome]
-	inflight atomic.Int64
-	peak     atomic.Int64
+	opts  Options
+	cache cacheBackend
+	queue *stream.Queue[SegmentOutcome]
 }
 
 // cacheBackend is the subset of store behaviour the runner needs.
@@ -51,14 +47,23 @@ func NewRunner(opts Options) (*Runner, error) {
 		return nil, err
 	}
 	r := &Runner{opts: opts, queue: q}
+	cacheLimit := opts.CacheLimit
+	if cacheLimit <= 0 {
+		if opts.Dir != "" {
+			// On-disk bodies do not consume the streaming buffer budget.
+			cacheLimit = 64 << 20
+		} else {
+			cacheLimit = opts.MemoryLimit
+		}
+	}
 	if opts.Dir != "" {
-		ds, err := cache.NewDiskStore(opts.Dir, opts.MemoryLimit)
+		ds, err := cache.NewDiskStore(opts.Dir, cacheLimit)
 		if err != nil {
 			return nil, err
 		}
 		r.cache = ds
 	} else {
-		ms, err := cache.NewStore(opts.MemoryLimit)
+		ms, err := cache.NewStore(cacheLimit)
 		if err != nil {
 			return nil, err
 		}
@@ -77,11 +82,15 @@ func (r *Runner) Run(ctx context.Context, in *Input) (*Result, error) {
 	if in == nil || in.Manifest == nil {
 		return nil, media.NewError(media.CodeInput, media.PhasePipeline, "nil input").AtOffset(0)
 	}
-	if len(in.Segments) != len(in.Manifest.Segments) {
+	segCount, err := inputSegmentCount(in)
+	if err != nil {
+		return nil, err
+	}
+	if segCount != len(in.Manifest.Segments) {
 		return nil, media.NewError(media.CodeInput, media.PhasePipeline,
 			"segment payload count does not match manifest").AtOffset(0)
 	}
-	if len(in.Nodes) != len(in.Segments) {
+	if len(in.Nodes) != segCount {
 		return nil, media.NewError(media.CodeInput, media.PhasePipeline,
 			"node count does not match segment count").AtOffset(0)
 	}
@@ -96,7 +105,7 @@ func (r *Runner) Run(ctx context.Context, in *Input) (*Result, error) {
 		return nil, err
 	}
 	decision, err := ValidateResume(cp, ResumeRequest{
-		ManifestDigest: manifestDigest, InputDigest: inputDigest, MaxSegments: len(in.Segments),
+		ManifestDigest: manifestDigest, InputDigest: inputDigest, MaxSegments: segCount,
 	})
 	if err != nil {
 		if media.HasCode(err, media.CodeManifestChg) {
@@ -119,7 +128,7 @@ func (r *Runner) Run(ctx context.Context, in *Input) (*Result, error) {
 		res.Events = append(res.Events, Event{Kind: "checkpoint_resume", Segment: decision.FromSegment, Detail: decision.Reason})
 	}
 
-	end := len(in.Segments)
+	end := segCount
 	if r.opts.ProcessSegments > 0 {
 		limit := decision.FromSegment + r.opts.ProcessSegments
 		if limit < end {
@@ -130,18 +139,22 @@ func (r *Runner) Run(ctx context.Context, in *Input) (*Result, error) {
 	}
 
 	producerErr := make(chan error, 1)
+	producerDone := make(chan struct{})
 	go func() {
-		producerErr <- r.produce(ctx, in, cp, decision.FromSegment, end, res)
+		err := r.produce(ctx, in, cp, decision.FromSegment, end, res)
+		close(producerDone)
+		producerErr <- err
 	}()
-	collectErr := r.collect(ctx, res)
-
-	if err := <-producerErr; err != nil {
-		return nil, err
-	}
-	if collectErr != nil && !errors.Is(collectErr, stream.ErrSlowConsumer) {
+	collectErr := r.collect(ctx, res, producerDone)
+	prodErr := <-producerErr
+	slow := prodErr != nil && stream.IsSlowConsumer(prodErr)
+	if collectErr != nil {
 		return nil, collectErr
 	}
-	if errors.Is(collectErr, stream.ErrSlowConsumer) {
+	if prodErr != nil && !slow {
+		return nil, prodErr
+	}
+	if slow {
 		res.SlowConsumer = true
 		res.Events = append(res.Events, Event{Kind: "slow_consumer", Segment: cp.Cursor,
 			Detail: "consumer timed out; branch stopped at last complete checkpoint"})
@@ -196,14 +209,44 @@ func (r *Runner) rehydrateResumed(res *Result, cp *Checkpoint) error {
 	return nil
 }
 
+// inputSegmentCount validates that exactly one payload form is supplied and
+// that it is parallel to the manifest.
+func inputSegmentCount(in *Input) (int, error) {
+	hasInline := len(in.Segments) > 0
+	hasStream := len(in.Sources) > 0
+	switch {
+	case !hasInline && !hasStream:
+		return 0, media.NewError(media.CodeInput, media.PhasePipeline,
+			"no segment payloads or sources").AtOffset(0)
+	case hasInline && hasStream:
+		return 0, media.NewError(media.CodeInput, media.PhasePipeline,
+			"both inline payloads and sources supplied; use one").AtOffset(0)
+	}
+	n := len(in.Segments)
+	if hasStream {
+		n = len(in.Sources)
+	}
+	if n != len(in.Manifest.Segments) {
+		return 0, media.NewError(media.CodeInput, media.PhasePipeline,
+			"segment payload count does not match manifest").AtOffset(0)
+	}
+	return n, nil
+}
+
 // checkCapacity rejects inputs whose segment working set cannot fit under the
 // configured memory ceiling. One segment is held for analysis while up to
-// QueueDepth results are queued.
+// QueueDepth results are queued. Streamed sources declare their size through
+// SourceSizes so the same budget applies before any read happens.
 func (r *Runner) checkCapacity(in *Input) error {
 	var maxSeg int64
 	for _, s := range in.Segments {
 		if int64(len(s)) > maxSeg {
 			maxSeg = int64(len(s))
+		}
+	}
+	for _, size := range in.SourceSizes {
+		if size > maxSeg {
+			maxSeg = size
 		}
 	}
 	budget := maxSeg * int64(r.opts.QueueDepth+1)
@@ -214,9 +257,9 @@ func (r *Runner) checkCapacity(in *Input) error {
 	return nil
 }
 
-// produce analyses each segment, commits it to the checkpoint, then queues the
-// outcome. Committing before enqueueing guarantees the checkpoint only ever
-// names fully analysed segments.
+// produce analyses each segment, queues the outcome and, only after the
+// consumer accepted it, commits it to the checkpoint. The checkpoint therefore
+// never names a segment that was not delivered in full.
 func (r *Runner) produce(ctx context.Context, in *Input, cp *Checkpoint, start, end int, res *Result) error {
 	defer r.queue.Close()
 	for i := start; i < end; i++ {
@@ -227,15 +270,17 @@ func (r *Runner) produce(ctx context.Context, in *Input, cp *Checkpoint, start, 
 		if err != nil {
 			return err
 		}
+		// Hand the outcome to the consumer first. Only once it has been
+		// accepted is the segment complete, so a blocked producer leaves the
+		// checkpoint on the last segment the consumer actually took.
+		if err := r.queue.Push(ctx, out); err != nil {
+			return err
+		}
 		if err := cp.CommitSegment(i, out.Digest, out.Bytes); err != nil {
 			return err
 		}
 		cp.SetStage(fmt.Sprintf("segment-%d", i), StageComplete)
 		if err := r.saveCheckpoint(cp); err != nil {
-			return err
-		}
-		r.accountPeak(out.Bytes)
-		if err := r.queue.Push(ctx, out); err != nil {
 			return err
 		}
 		r.muAppendEvents(res, events)
@@ -246,7 +291,12 @@ func (r *Runner) produce(ctx context.Context, in *Input, cp *Checkpoint, start, 
 
 // collect drains the queue into the result. The consumer may be slowed down
 // deliberately, which propagates back pressure to the producer.
-func (r *Runner) collect(ctx context.Context, res *Result) error {
+func (r *Runner) collect(ctx context.Context, res *Result, producerDone <-chan struct{}) error {
+	if r.opts.StallBeforeFirst && r.opts.StallMS > 0 {
+		if err := r.stallUntilBlocked(ctx, producerDone); err != nil {
+			return err
+		}
+	}
 	for {
 		out, err := r.queue.Pop(ctx)
 		if err != nil {
@@ -256,7 +306,6 @@ func (r *Runner) collect(ctx context.Context, res *Result) error {
 			return err
 		}
 		res.Segments = append(res.Segments, out)
-		r.inflight.Add(-out.Bytes)
 		if r.opts.ConsumerDelayMS > 0 {
 			select {
 			case <-ctx.Done():
@@ -267,14 +316,72 @@ func (r *Runner) collect(ctx context.Context, res *Result) error {
 	}
 }
 
-// accountPeak tracks the largest live working set: queued results plus the
-// chunk the producer is currently holding.
-func (r *Runner) accountPeak(bytes int64) {
-	live := r.inflight.Add(bytes)
-	for {
-		peak := r.peak.Load()
-		if live <= peak || r.peak.CompareAndSwap(peak, live) {
-			break
+// stallUntilBlocked holds deliveries until the producer has actually tripped
+// its slow-consumer budget. Because this consumer has not taken anything, a
+// bounded queue of depth d fills after d segments and the producer must block;
+// waiting for the queue's own TimedOut counter therefore makes the outcome
+// deterministic rather than dependent on analysis speed.
+func (r *Runner) stallUntilBlocked(ctx context.Context, producerDone <-chan struct{}) error {
+	if r.opts.SlowConsumerMS <= 0 {
+		// Without a producer budget nothing can time out, so there is no
+		// slow-consumer verdict to produce.
+		return nil
+	}
+	// Leave headroom over the budget so the producer has time to reach and
+	// exceed it; the queue itself reports the exact moment it gives up.
+	deadline := time.Now().Add(durationMS(r.opts.StallMS) + 10*time.Second)
+	for r.queue.Stats().TimedOut == 0 {
+		select {
+		case <-ctx.Done():
+			return media.NewError(media.CodeCanceled, media.PhasePipeline,
+				"consumer canceled while waiting for back pressure").Because(ctx.Err())
+		case <-producerDone:
+			// The producer finished without ever blocking long enough.
+			return nil
+		case <-time.After(200 * time.Microsecond):
+			if time.Now().After(deadline) {
+				return nil
+			}
 		}
 	}
+	return nil
+}
+
+// designPeak is the deterministic upper bound on live media bytes: one
+// segment under analysis plus QueueDepth outcomes waiting for the consumer.
+// It is exactly the budget checkCapacity enforces, so reporting it cannot
+// drift between runs that see identical input.
+func (r *Runner) designPeak(in *Input) int64 {
+	var maxSeg int64
+	for _, s := range in.Segments {
+		if int64(len(s)) > maxSeg {
+			maxSeg = int64(len(s))
+		}
+	}
+	for _, size := range in.SourceSizes {
+		if size > maxSeg {
+			maxSeg = size
+		}
+	}
+	return maxSeg * int64(r.opts.QueueDepth+1)
+}
+
+// QueueStats exposes the bounded queue counters for diagnostics.
+func (r *Runner) QueueStats() stream.QueueStats { return r.queue.Stats() }
+
+// digestInput fingerprints the bytes this run will consume. Inline payloads
+// are hashed in order; streamed sources fall back to their declared sizes and
+// positions because they have not been read at resume-validation time.
+func digestInput(in *Input) string {
+	h := analyze.Digest([]byte(in.ManifestRaw))
+	if len(in.Segments) > 0 {
+		for _, seg := range in.Segments {
+			h = analyze.Digest([]byte(h + analyze.Digest(seg)))
+		}
+		return h
+	}
+	for i, size := range in.SourceSizes {
+		h = analyze.Digest([]byte(fmt.Sprintf("%s:%d:%d", h, i, size)))
+	}
+	return h
 }

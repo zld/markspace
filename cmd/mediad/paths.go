@@ -142,6 +142,25 @@ func (p *paths) runResume(ctx context.Context, demo *fixture.Demo) (*pipeline.Re
 	return resumed, fresh, nil
 }
 
+// runManifestChange proves a manifest fault propagates into recovery: a
+// partial run's checkpoint is offered a mutated playlist, which must be
+// refused and reset rather than silently resumed.
+func (p *paths) runManifestChange(ctx context.Context, demo *fixture.Demo) (*pipeline.Result, error) {
+	shared := p.opts("manifest-change")
+	partial := shared
+	partial.ProcessSegments = 2
+	if _, err := p.runCleanWith(ctx, partial, demo); err != nil {
+		return nil, err
+	}
+	mutatedRaw := demo.HLSRaw + "#EXT-X-BITRATE:9000\n"
+	mutatedDoc, err := manifest.ParseHLS(mutatedRaw)
+	if err != nil {
+		return nil, fmt.Errorf("parse mutated manifest: %w", err)
+	}
+	in := buildInput(mutatedDoc, mutatedRaw, demo.Segments, demoNodes(len(demo.Segments)), nil)
+	return execute(ctx, shared, in)
+}
+
 // runForged seeds the cache with genuine entries, then replays with an
 // expectation that every entry came from a different node.
 func (p *paths) runForged(ctx context.Context, demo *fixture.Demo) (*pipeline.Result, error) {
@@ -249,6 +268,17 @@ func replayAllFromCache(res *pipeline.Result) bool {
 	return true
 }
 
+// countEvents counts diagnostics of one kind.
+func countEvents(res *pipeline.Result, kind string) int {
+	n := 0
+	for _, e := range res.Events {
+		if e.Kind == kind {
+			n++
+		}
+	}
+	return n
+}
+
 func boolToInt(b bool) int {
 	if b {
 		return 1
@@ -286,7 +316,7 @@ func classify(err error) int {
 
 // checkInvariants asserts the acceptance conditions on the produced evidence.
 func checkInvariants(f *demoFlags, clean, damaged *pipeline.Result, drift *DriftResult,
-	resume, fresh, forged, slow *pipeline.Result, peak int64) error {
+	resume, fresh, forged, changed, slow *pipeline.Result, peak int64) error {
 	if clean.CorruptSegments != 0 {
 		return fmt.Errorf("clean path reported %d corrupt segments", clean.CorruptSegments)
 	}
@@ -305,6 +335,12 @@ func checkInvariants(f *demoFlags, clean, damaged *pipeline.Result, drift *Drift
 	if forged.Cache.SourceRejects < 1 {
 		return errors.New("forged cache source was accepted")
 	}
+	if countEvents(changed, "checkpoint_reset") < 1 {
+		return errors.New("changed manifest was not refused by the checkpoint")
+	}
+	if changed.Checkpoint == nil || changed.Checkpoint.Cursor != len(clean.Segments) {
+		return errors.New("manifest-change recovery did not complete a full rerun")
+	}
 	if resume.ResultSHA256 != fresh.ResultSHA256 {
 		return errors.New("resumed run digest differs from a cold full run")
 	}
@@ -314,14 +350,18 @@ func checkInvariants(f *demoFlags, clean, damaged *pipeline.Result, drift *Drift
 	if peak > f.memoryLimit {
 		return fmt.Errorf("peak buffer %d exceeds memory limit %d", peak, f.memoryLimit)
 	}
-	if !slow.SlowConsumer {
-		return errors.New("slow-consumer path did not stop")
-	}
-	if slow.Checkpoint == nil || slow.Checkpoint.Cursor != slow.Checkpoint.LastCompleteIdx+1 {
-		return errors.New("slow-consumer checkpoint is not at a complete boundary")
-	}
-	if slow.Checkpoint.Cursor >= len(clean.Segments) {
-		return errors.New("slow-consumer path processed every segment despite the stall")
+	// A zero budget disables the slow-consumer verdict by definition, so the
+	// invariant only applies when the operator asked for one.
+	if f.slowConsumer > 0 {
+		if !slow.SlowConsumer {
+			return errors.New("slow-consumer path did not stop")
+		}
+		if slow.Checkpoint == nil || slow.Checkpoint.Cursor != slow.Checkpoint.LastCompleteIdx+1 {
+			return errors.New("slow-consumer checkpoint is not at a complete boundary")
+		}
+		if slow.Checkpoint.Cursor >= len(clean.Segments) {
+			return errors.New("slow-consumer path processed every segment despite the stall")
+		}
 	}
 	return nil
 }

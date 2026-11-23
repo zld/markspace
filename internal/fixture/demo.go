@@ -58,7 +58,9 @@ func BuildDemo(seed int64) (*Demo, error) {
 		})
 		d.Segments = append(d.Segments, seg)
 		d.SegmentIDs = append(d.SegmentIDs, fmt.Sprintf("seg-%d.m4s", i))
-		d.SegmentSecs = append(d.SegmentSecs, "2.002")
+		// 2.00166s is not exactly representable at 90 kHz (180149.4 ticks),
+		// so the parser must keep a rational remainder rather than round.
+		d.SegmentSecs = append(d.SegmentSecs, "2.00166")
 	}
 
 	d.HLSRaw = strings.Replace(HLSManifest("7", d.SegmentSecs, d.SegmentIDs),

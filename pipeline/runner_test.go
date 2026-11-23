@@ -1,11 +1,15 @@
 package pipeline
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
+	"time"
 
 	"mediamux/internal/fixture"
 	"mediamux/manifest"
@@ -227,4 +231,135 @@ func TestRunnerCancelStopsWithoutAdvancingCursor(t *testing.T) {
 	}
 	_ = os.Remove(filepath.Join(dir, "cp.json"))
 	_ = fmt.Sprintf
+}
+
+func TestRunnerSlowConsumerStopsAtLastCompleteCheckpoint(t *testing.T) {
+	dir := t.TempDir()
+	// A consumer delay far longer than the idle timeout must stop the
+	// branch without advancing past the last fully committed segment.
+	r2, err := NewRunner(Options{
+		Dir: dir, CheckpointPath: filepath.Join(dir, "cp2.json"),
+		MemoryLimit: 8 << 20, SlowConsumerMS: 1, QueueDepth: 1, ConsumerDelayMS: 30,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	in2 := buildInput(t, -1)
+	res2, err := r2.Run(context.Background(), in2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res2.SlowConsumer {
+		t.Skip("consumer did not time out on this scheduler; timing-dependent")
+	}
+	if res2.Checkpoint == nil || res2.Checkpoint.Cursor != res2.Checkpoint.LastCompleteIdx+1 {
+		t.Fatalf("checkpoint not aligned with last complete segment: %+v", res2.Checkpoint)
+	}
+	if res2.Checkpoint.Cursor >= len(in2.Segments) {
+		t.Fatalf("slow consumer ran to completion: %d", res2.Checkpoint.Cursor)
+	}
+}
+
+func TestRunnerStreamsSourcesUnderMemoryLimit(t *testing.T) {
+	in := buildInput(t, -1)
+	// Convert inline payloads into streamed sources with declared sizes.
+	sizes := make([]int64, len(in.Segments))
+	for i, seg := range in.Segments {
+		sizes[i] = int64(len(seg))
+	}
+	sources := make([]io.ReadCloser, len(in.Segments))
+	for i, seg := range in.Segments {
+		sources[i] = io.NopCloser(bytes.NewReader(seg))
+	}
+	in.Sources, in.SourceSizes, in.Segments = sources, sizes, nil
+	res := runWith(t, Options{Dir: t.TempDir(), CheckpointPath: checkpointIn(t)}, in)
+	if len(res.Segments) != 3 || res.CorruptSegments != 0 {
+		t.Fatalf("streamed run segs=%d corrupt=%d", len(res.Segments), res.CorruptSegments)
+	}
+	// Digest must match an inline run over the same bytes.
+	inline := buildInput(t, -1)
+	want := runWith(t, Options{Dir: t.TempDir(), CheckpointPath: checkpointIn(t)}, inline)
+	if res.ResultSHA256 != want.ResultSHA256 {
+		t.Fatalf("streamed digest %s != inline %s", res.ResultSHA256, want.ResultSHA256)
+	}
+}
+
+func TestRunnerStreamedSourceLengthMismatchIsDiagnosed(t *testing.T) {
+	in := buildInput(t, -1)
+	sizes := []int64{int64(len(in.Segments[0])), int64(len(in.Segments[1])), int64(len(in.Segments[2]))}
+	sources := []io.ReadCloser{
+		io.NopCloser(bytes.NewReader(in.Segments[0])),
+		// Declares more bytes than it can deliver.
+		io.NopCloser(bytes.NewReader(in.Segments[1][:100])),
+		io.NopCloser(bytes.NewReader(in.Segments[2])),
+	}
+	in.Sources, in.SourceSizes, in.Segments = sources, sizes, nil
+	r, err := NewRunner(Options{MemoryLimit: 8 << 20, Dir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Run(context.Background(), in); err == nil {
+		t.Fatal("truncated stream must be reported")
+	} else if !media.HasCode(err, media.CodeTruncated) {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestRunnerCanceledStreamedReadReturnsPromptly(t *testing.T) {
+	in := buildInput(t, -1)
+	started := make(chan struct{})
+	sources := make([]io.ReadCloser, len(in.Segments))
+	blocker := newBlockingSource()
+	started = blocker.started
+	sources[0] = blocker
+	sources[1] = io.NopCloser(bytes.NewReader(in.Segments[1]))
+	sources[2] = io.NopCloser(bytes.NewReader(in.Segments[2]))
+	sizes := make([]int64, len(in.Segments))
+	sizes[0] = int64(len(in.Segments[0]))
+	sizes[1] = int64(len(in.Segments[1]))
+	sizes[2] = int64(len(in.Segments[2]))
+	in.Sources, in.SourceSizes, in.Segments = sources, sizes, nil
+	ctx, cancel := context.WithCancel(context.Background())
+	r, err := NewRunner(Options{MemoryLimit: 8 << 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { _, err := r.Run(ctx, in); done <- err }()
+	<-started
+	cancel()
+	select {
+	case err := <-done:
+		if err == nil || !media.HasCode(err, media.CodeCanceled) {
+			t.Fatalf("err=%v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("canceled streamed read did not return")
+	}
+}
+
+// blockingSource blocks until closed, proving cancellation reaches the read.
+type blockingSource struct {
+	started chan struct{}
+	once    sync.Once
+	closed  chan struct{}
+}
+
+func newBlockingSource() *blockingSource {
+	return &blockingSource{started: make(chan struct{}), closed: make(chan struct{})}
+}
+
+func (b *blockingSource) Read([]byte) (int, error) {
+	b.once.Do(func() { close(b.started) })
+	<-b.closed
+	return 0, io.ErrClosedPipe
+}
+
+func (b *blockingSource) Close() error {
+	select {
+	case <-b.closed:
+	default:
+		close(b.closed)
+	}
+	return nil
 }

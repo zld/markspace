@@ -27,6 +27,7 @@ func CompareManifestToMedia(doc []SegmentRef, durationsMS []int64, toleranceMS i
 			delta = -delta
 		}
 		rep.Observed++
+		rep.ActualMS = append(rep.ActualMS, actual)
 		if delta > rep.MaxDeltaMS {
 			rep.MaxDeltaMS = delta
 		}
@@ -65,8 +66,18 @@ type AlignmentReport struct {
 	Observed     int                 `json:"observed"`
 	MaxDeltaMS   int64               `json:"max_delta_ms"`
 	TotalDeltaMS int64               `json:"total_delta_ms"`
+	ActualMS     []int64             `json:"actual_ms,omitempty"`
 	Mismatches   []AlignmentMismatch `json:"mismatches,omitempty"`
 }
 
 // Aligned reports whether every observed segment agreed within tolerance.
 func (a *AlignmentReport) Aligned() bool { return len(a.Mismatches) == 0 }
+
+// QuantisedMS is the media span actually covered by the compared segments.
+func (a *AlignmentReport) QuantisedMS() int64 {
+	var total int64
+	for _, d := range a.ActualMS {
+		total += d
+	}
+	return total
+}

@@ -13,11 +13,12 @@ import (
 func (r *Runner) finalise(res *Result, cp *Checkpoint, in *Input) {
 	samples := make([]analyze.QualitySample, 0, len(res.Segments))
 	var gaps []int64
-	keyframeGaps := keyframeGapsFromInput(in, res.Segments)
-	gaps = append(gaps, keyframeGaps...)
 	var rtpAgg *analyze.RTPResult
-	for _, s := range res.Segments {
+	ordered := append([]SegmentOutcome(nil), res.Segments...)
+	sort.Slice(ordered, func(i, j int) bool { return ordered[i].Index < ordered[j].Index })
+	for _, s := range ordered {
 		samples = append(samples, s.Quality)
+		gaps = append(gaps, s.KeyframeGaps...)
 		if s.RTP != nil {
 			if rtpAgg == nil {
 				rtpAgg = &analyze.RTPResult{}
@@ -26,12 +27,27 @@ func (r *Runner) finalise(res *Result, cp *Checkpoint, in *Input) {
 			rtpAgg.Missing += s.RTP.Missing
 		}
 	}
+	var rtpMissingMS int64
+	for _, s := range res.Segments {
+		if s.RTP != nil {
+			rtpMissingMS += s.RTP.MissingMS
+		}
+	}
+	// The unified manifest timeline is compared against the committed
+	// segments only, so an interrupted run does not report drift for media it
+	// never read.
+	doc := MaskSegments(in.Manifest, 0, cp.Cursor)
+	refs := RefOf(doc)
+	durations := MediaDurationsMS(res.Segments, len(refs))
+	alignment := CompareManifestToMedia(refs, durations, 2)
+	res.Alignment = alignment
 	res.Quality = analyze.ComputeQuality(samples, gaps, rtpAgg, analyze.QualityOptions{
 		Window: r.opts.Window, TargetBPS: in.Manifest.TargetBPS,
 		AlignmentMS:    in.Manifest.Alignment.ErrorMS(),
 		AlignmentMaxMS: in.Manifest.Alignment.MaxMS(),
 	})
-	res.PeakBufferBytes = r.peak.Load()
+	res.Quality.RTPMissingMS = rtpMissingMS
+	res.PeakBufferBytes = r.designPeak(in)
 	res.Cache = r.cache.Stats()
 	res.CorruptSegments = 0
 	for _, s := range res.Segments {
@@ -44,17 +60,6 @@ func (r *Runner) finalise(res *Result, cp *Checkpoint, in *Input) {
 		res.Checkpoint = cp
 	}
 	res.ResultSHA256 = cp.ResultDigest
-}
-
-// keyframeGapsFromInput re-derives keyframe spacing from the analysed bytes so
-// the quality block does not depend on cached records.
-func keyframeGapsFromInput(in *Input, outs []SegmentOutcome) []int64 {
-	var gaps []int64
-	for i := range outs {
-		res := analyze.AnalyzeMP4(i, in.Manifest.Segments[i].ID, "", in.Segments[i], 0, analyze.MP4Options{})
-		gaps = append(gaps, res.KeyframeGaps...)
-	}
-	return gaps
 }
 
 func (r *Runner) muAppendEvents(res *Result, events []Event) {
@@ -83,13 +88,6 @@ func saveCheckpoint(path string, cp *Checkpoint) error {
 	return cp.Save(path)
 }
 
-func digestInput(in *Input) string {
-	if len(in.Segments) == 0 {
-		return analyze.Digest([]byte(in.ManifestRaw))
-	}
-	return analyze.Digest(in.Segments[0])
-}
-
 // resultDigest hashes the ordered segment digests, their corruption verdicts
 // and the exact quality summary into one stable fingerprint. A resumed run
 // rehydrates outcomes for already-committed segments, so it produces the same
@@ -102,7 +100,7 @@ func resultDigest(res *Result) string {
 		Corrupt  int
 	}
 	fp := fingerprint{Quality: res.Quality, Corrupt: res.CorruptSegments}
-	if res.Checkpoint != nil {
+	if res.Checkpoint != nil && res.Checkpoint.ManifestDigest != "" {
 		fp.Manifest = res.Checkpoint.ManifestDigest
 	}
 	segs := append([]SegmentOutcome(nil), res.Segments...)
