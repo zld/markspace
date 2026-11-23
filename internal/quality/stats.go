@@ -12,6 +12,12 @@ import (
 	"mediaforge/internal/mediaerr"
 )
 
+// Range is a half-open sample interval.
+type Range struct {
+	Start int64 `json:"start_sample"`
+	End   int64 `json:"end_sample"`
+}
+
 // Stats is the result document emitted by `mediacheck run`.
 type Stats struct {
 	Packets                 int64   `json:"packets"`

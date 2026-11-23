@@ -59,7 +59,10 @@ type Record struct {
 	Offset int64
 	Packet *Packet
 	RTCP   []byte
-	Err    error
+	// DeclaredLen is the record length from the framing header. It lets the
+	// pipeline estimate what a truncated final record would have carried.
+	DeclaredLen int
+	Err         error
 }
 
 // Stream is a fully read capture.

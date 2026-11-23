@@ -14,6 +14,8 @@ type Event struct {
 	ExtTS     int64
 	Arrival   int
 	Late      bool
+	// Duplicate marks an arrival whose sequence number was already seen.
+	Duplicate bool
 	Payload   []byte
 	// Samples is the number of audio frames carried by the payload. It comes
 	// from the payload length, never from an average packet spacing.
@@ -80,6 +82,17 @@ func NewManager(rate int64, delaySamples int64) *Manager {
 	}
 }
 
+// Seed fixes the unwrapping origin so callers can expand timestamps from the
+// first packet in sequence order rather than the first in arrival order.
+func (m *Manager) Seed(baseSeq uint16, baseTS uint32) {
+	if m.haveBase {
+		return
+	}
+	m.baseSeq, m.baseTS, m.haveBase = baseSeq, baseTS, true
+	m.lastSeq, m.lastExtSeq = baseSeq, 0
+	m.lastTS, m.lastExtTS = baseTS, 0
+}
+
 // Push adds one packet. Duplicate sequence numbers are counted and ignored.
 // A packet whose event time precedes the watermark is marked late and its
 // affected sample interval is reported, without changing earlier events.
@@ -109,9 +122,11 @@ func (m *Manager) Push(seq uint16, ts uint32, payload []byte, samples int64) Eve
 		Seq: seq, ExtSeq: extSeq, Timestamp: ts, ExtTS: extTS,
 		Arrival: arrival, Payload: payload, Samples: samples,
 	}
-	if _, dup := m.seen[extSeq]; dup {
+	if prev, dup := m.seen[extSeq]; dup {
 		m.duplicates++
-		return ev
+		return Event{Seq: prev.Seq, ExtSeq: prev.ExtSeq, Timestamp: prev.Timestamp,
+			ExtTS: prev.ExtTS, Arrival: prev.Arrival, Late: prev.Late, Duplicate: true,
+			Samples: prev.Samples, AffectedStart: prev.AffectedStart, AffectedEnd: prev.AffectedEnd}
 	}
 	ev.Late = m.wm.IsLate(clock.NewTime(extTS, m.rate))
 	if ev.Late {

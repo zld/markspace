@@ -51,8 +51,18 @@ func ReadStream(r io.Reader, sizeLimit int64) (*Stream, error) {
 		n, err = io.ReadFull(lr, body)
 		s.Bytes += int64(n)
 		if err != nil {
-			return s, mediaerr.At(mediaerr.CodeTruncated, recOffset, 0, false,
+			// A truncated final record is recoverable: keep every complete
+			// packet before it and report the missing tail to the caller.
+			rec := Record{Kind: kind, Offset: recOffset, DeclaredLen: length}
+			rec.Err = mediaerr.At(mediaerr.CodeTruncated, recOffset, 0, false,
 				"record declares %d bytes, only %d available", length, n)
+			if kind == KindRTP && n >= 12 {
+				if p, _ := ParsePacket(body[:n], recOffset); p != nil {
+					rec.Packet = p
+				}
+			}
+			s.Records = append(s.Records, rec)
+			return s, nil
 		}
 		rec := Record{Kind: kind, Offset: recOffset}
 		if kind == KindRTP {

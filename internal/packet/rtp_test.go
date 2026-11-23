@@ -192,9 +192,15 @@ func TestReadStreamTruncatedRecord(t *testing.T) {
 	hdr[4] = byte(KindRTP)
 	buf.Write(hdr)
 	buf.Write([]byte{1, 2, 3})
-	_, err := ReadStream(&buf, MaxInputSize)
-	if mediaerr.CodeOf(err) != mediaerr.CodeTruncated {
-		t.Fatalf("err=%v", err)
+	s, err := ReadStream(&buf, MaxInputSize)
+	if err != nil {
+		t.Fatalf("truncated tail must be recoverable: %v", err)
+	}
+	if len(s.Records) != 1 || mediaerr.CodeOf(s.Records[0].Err) != mediaerr.CodeTruncated {
+		t.Fatalf("records=%+v", s.Records)
+	}
+	if s.Records[0].DeclaredLen != 100 {
+		t.Fatalf("declared=%d", s.Records[0].DeclaredLen)
 	}
 }
 
