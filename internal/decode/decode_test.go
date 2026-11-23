@@ -33,8 +33,9 @@ func TestParseMP4MultiTrackRoundTrip(t *testing.T) {
 	if err := decode.ParseMP4(bytes.NewReader(in.Bytes), "src", s); err != nil {
 		t.Fatalf("parse failed: %v", err)
 	}
-	if len(s.tracks) != 2 {
-		t.Fatalf("tracks=%d want 2", len(s.tracks))
+	// Two media tracks plus the synthetic emsg metadata track.
+	if len(s.tracks) != 3 {
+		t.Fatalf("tracks=%d want 3", len(s.tracks))
 	}
 	// 24 + 48 samples + 1 emsg.
 	if len(s.events) != 24+48+1 {

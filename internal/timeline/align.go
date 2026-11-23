@@ -188,13 +188,17 @@ func (a *Aligner) markCrossTrackConflicts() {
 		}
 		for i := 0; i < len(slots); i++ {
 			for j := i + 1; j < len(slots); j++ {
-				ti := slots[i].evs[0].Ticks
-				tj := slots[j].evs[0].Ticks
-				d := ti - tj
+				// Compare in the original timescale units: anchor offsets
+				// are applied per track and must not hide real divergence.
+				ri := slots[i].evs[0].RawTS
+				rj := slots[j].evs[0].RawTS
+				d := ri - rj
 				if d < 0 {
 					d = -d
 				}
-				if d > a.cfg.ToleranceTicks {
+				// Convert the larger track's raw distance into ticks.
+				tickDist := clock.ToTicks(d, a.scales[slots[i].track])
+				if tickDist > a.cfg.ToleranceTicks {
 					for _, s := range []slot{slots[i], slots[j]} {
 						if mark[s.track] == nil {
 							mark[s.track] = map[int]bool{}
