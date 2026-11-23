@@ -238,6 +238,41 @@ func TestReorderReportsEveryHoleInOneRelease(t *testing.T) {
 	}
 }
 
+func TestReorderAbsorbsStartupReordering(t *testing.T) {
+	// The first arrival is not necessarily the lowest sequence. Before any
+	// commit, the watermark must slide down so the opening fragment is whole
+	// and nothing is misclassified as late.
+	buf, _ := NewReorderBuffer(ReorderConfig{Stream: 0, Window: 8}, DefaultLimits())
+	var got []uint16
+	for _, seq := range []uint16{20, 21, 22, 18, 19, 23} {
+		for _, p := range buf.Push(mkPacket(0, seq, uint32(seq)*100, 4)) {
+			got = append(got, p.Seq)
+		}
+	}
+	for _, p := range buf.Flush() {
+		got = append(got, p.Seq)
+	}
+	want := []uint16{18, 19, 20, 21, 22, 23}
+	if len(got) != len(want) {
+		t.Fatalf("emitted %v want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("emitted %v want %v", got, want)
+		}
+	}
+	if st := buf.Stats(); st.Late != 0 || st.Duplicate != 0 {
+		t.Fatalf("startup reordering misclassified: %+v", st)
+	}
+	// A sequence older than the window is still late rather than buffered.
+	buf2, _ := NewReorderBuffer(ReorderConfig{Stream: 0, Window: 2}, DefaultLimits())
+	buf2.Push(mkPacket(0, 100, 0, 4))
+	buf2.Push(mkPacket(0, 50, 0, 4))
+	if st := buf2.Stats(); st.Late != 1 {
+		t.Fatalf("out-of-window startup packet should be late: %+v", st)
+	}
+}
+
 func TestReorderSequenceWrap(t *testing.T) {
 	buf, _ := NewReorderBuffer(ReorderConfig{Stream: 2, Window: 2}, DefaultLimits())
 	var emitted []uint16

@@ -55,6 +55,10 @@ type ReorderBuffer struct {
 	ref     int64 // extended sequence of the most recent arrival
 	next    int64 // next sequence number to emit
 	maxSeen int64
+	// started is set once any packet has been committed. Before that the
+	// watermark may move backwards to absorb startup reordering, because no
+	// fragment has been finalized yet.
+	started bool
 
 	held  map[int64]*Packet
 	seen  map[int64]struct{}
@@ -168,6 +172,21 @@ func (r *ReorderBuffer) push(p *Packet, repair bool) []*Packet {
 	}
 
 	if ext < r.next {
+		// Before the first commit, a lower sequence can still be part of the
+		// opening fragment: slide the watermark down instead of calling it
+		// late. The movement is bounded by the reorder window so a wildly
+		// older sequence cannot grow the buffer without limit.
+		if !r.started && r.maxSeen-ext <= int64(r.cfg.Window) && !r.isSeen(ext) {
+			r.next = ext
+			r.stats.Reordered++
+			r.held[ext] = p
+			r.markSeen(ext)
+			r.stats.Accepted++
+			if len(r.held) > r.stats.BufferPeak {
+				r.stats.BufferPeak = len(r.held)
+			}
+			return r.release(false)
+		}
 		// Below the committed watermark: the fragment owning this sequence is
 		// already final, so the packet is late evidence, not new media. This
 		// check precedes duplicate detection because a repeat of an already
@@ -246,6 +265,7 @@ func (r *ReorderBuffer) release(force bool) []*Packet {
 			out = append(out, p)
 			delete(r.held, ext)
 			r.stats.Committed++
+			r.started = true
 			continue
 		}
 		// Collect one contiguous hole so a burst is reported as one span.
