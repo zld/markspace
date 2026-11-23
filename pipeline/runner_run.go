@@ -11,6 +11,7 @@ import (
 	"sort"
 	"time"
 
+	mp4 "github.com/abema/go-mp4"
 
 	"mediacore/audio"
 	"mediacore/ingest"
@@ -414,14 +415,106 @@ func (r *Runner) run() (Result, error) {
 	return res, nil
 }
 
-// openOutput prepares the output file and hash state. Resume support
-// lands in the next patch; for now it always starts fresh.
+// openOutput prepares the output file and hash state, resuming from the
+// latest valid checkpoint when a store is configured. It returns the
+// file positioned at the write offset, the running hasher, bytes
+// written so far, the first frame to process, and the checkpoint seq.
 func (r *Runner) openOutput() (*os.File, hash.Hash, int64, int, int, error) {
-	return nil, nil, 0, 0, 0, media.Fault(media.CodeInternal, "pipeline.openOutput", -1, "not implemented")
+	cfg := r.cfg
+	header := []byte("MCORE1")
+	header = append(header, byte(cfg.Codec), byte(cfg.TargetLayout))
+	var b [4]byte
+	binary.LittleEndian.PutUint32(b[:], uint32(cfg.TargetRate))
+	header = append(header, b[:]...)
+	if cfg.Store != nil {
+		cp, found, err := cfg.Store.Load()
+		if err != nil {
+			return nil, nil, 0, 0, 0, err
+		}
+		if found && cp.Offset > 0 {
+			f, err := os.OpenFile(cfg.OutPath, os.O_RDWR, 0o644)
+			if err != nil {
+				return nil, nil, 0, 0, 0, media.Wrap(media.CodeCheckpointCorrupt, "pipeline.resume", -1, err, "open output")
+			}
+			if err := f.Truncate(cp.OutBytes); err != nil {
+				f.Close()
+				return nil, nil, 0, 0, 0, media.Wrap(media.CodeInternal, "pipeline.resume", -1, err, "truncate")
+			}
+			h := sha256.New()
+			if _, err := f.Seek(0, io.SeekStart); err != nil {
+				f.Close()
+				return nil, nil, 0, 0, 0, media.Wrap(media.CodeInternal, "pipeline.resume", -1, err, "seek")
+			}
+			if _, err := io.Copy(h, f); err != nil {
+				f.Close()
+				return nil, nil, 0, 0, 0, media.Wrap(media.CodeInternal, "pipeline.resume", -1, err, "rehash")
+			}
+			if hex.EncodeToString(h.Sum(nil)) != cp.Digest {
+				f.Close()
+				return nil, nil, 0, 0, 0, media.Fault(media.CodeCheckpointCorrupt, "pipeline.resume", -1,
+					"output prefix does not match checkpoint digest")
+			}
+			if _, err := f.Seek(0, io.SeekEnd); err != nil {
+				f.Close()
+				return nil, nil, 0, 0, 0, media.Wrap(media.CodeInternal, "pipeline.resume", -1, err, "seek end")
+			}
+			return f, h, cp.OutBytes, int(cp.Offset), cp.Seq + 1, nil
+		}
+	}
+	f, err := os.Create(cfg.OutPath)
+	if err != nil {
+		return nil, nil, 0, 0, 0, media.Wrap(media.CodeInternal, "pipeline.run", -1, err, "create output")
+	}
+	h := sha256.New()
+	if _, err := f.Write(header); err != nil {
+		f.Close()
+		return nil, nil, 0, 0, 0, media.Wrap(media.CodeInternal, "pipeline.run", -1, err, "write header")
+	}
+	h.Write(header)
+	if cfg.Store != nil {
+		cp := Checkpoint{Seq: 0, Stage: "ingest", Offset: 0, OutBytes: int64(len(header)),
+			Digest: hex.EncodeToString(h.Sum(nil)), ColorState: "missing"}
+		if err := cfg.Store.Save(cp); err != nil {
+			f.Close()
+			return nil, nil, 0, 0, 0, err
+		}
+	}
+	return f, h, int64(len(header)), 0, 1, nil
 }
 
-// writeContainer wraps the record stream in a minimal MP4 container.
-// Implemented in the next patch.
+// writeContainer wraps the record stream in a minimal MP4 container
+// (ftyp + mdat + free with the color summary) for delivery. The digest
+// is computed over the record stream, not the container.
 func writeContainer(recordsPath, mp4Path string, meta []byte) error {
+	out, err := os.Create(mp4Path)
+	if err != nil {
+		return media.Wrap(media.CodeInternal, "pipeline.container", -1, err, "create mp4")
+	}
+	defer out.Close()
+	w := mp4.NewWriter(out)
+	ftyp := mp4.Ftyp{MajorBrand: mp4.BrandISOM()}
+	ftyp.AddCompatibleBrand(mp4.BrandISOM())
+	ftyp.AddCompatibleBrand(mp4.BrandAVC1())
+	if _, err := mp4.Marshal(w, &ftyp, mp4.Context{}); err != nil {
+		return media.Wrap(media.CodeInternal, "pipeline.container", -1, err, "ftyp")
+	}
+	if _, err := w.StartBox(&mp4.BoxInfo{Type: mp4.BoxTypeMdat()}); err != nil {
+		return media.Wrap(media.CodeInternal, "pipeline.container", -1, err, "mdat start")
+	}
+	src, err := os.Open(recordsPath)
+	if err != nil {
+		return media.Wrap(media.CodeInternal, "pipeline.container", -1, err, "open records")
+	}
+	defer src.Close()
+	if _, err := io.Copy(w, src); err != nil {
+		return media.Wrap(media.CodeInternal, "pipeline.container", -1, err, "mdat copy")
+	}
+	if _, err := w.EndBox(); err != nil {
+		return media.Wrap(media.CodeInternal, "pipeline.container", -1, err, "mdat end")
+	}
+	free := mp4.Free{Data: meta}
+	if _, err := mp4.Marshal(w, &free, mp4.Context{}); err != nil {
+		return media.Wrap(media.CodeInternal, "pipeline.container", -1, err, "free")
+	}
 	return nil
 }
