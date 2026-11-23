@@ -365,3 +365,12 @@ func (t *Timeline) Untrusted() []Untrusted {
 	}
 	return out
 }
+
+// BaseNTPNs returns the absolute NTP instant that media zero is measured from,
+// or 0 when no trusted sender report has been applied.
+func (c *TrackClock) BaseNTPNs() int64 {
+	if !c.haveBase {
+		return 0
+	}
+	return c.baseNTPNs
+}

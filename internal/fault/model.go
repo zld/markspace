@@ -40,9 +40,9 @@ const (
 type Severity int
 
 const (
-	SeverityWarning  Severity = iota // output remains usable
-	SeverityDamaged                  // output is usable only after recovery
-	SeverityFatal                    // no usable output
+	SeverityWarning Severity = iota // output remains usable
+	SeverityDamaged                 // output is usable only after recovery
+	SeverityFatal                   // no usable output
 )
 
 func (s Severity) String() string {
@@ -60,15 +60,15 @@ func (s Severity) String() string {
 
 // Fault is a located problem in the input or in derived metadata.
 type Fault struct {
-	Kind      Kind     `json:"kind"`
-	TrackID   uint32   `json:"track_id,omitempty"`
+	Kind    Kind   `json:"kind"`
+	TrackID uint32 `json:"track_id,omitempty"`
 	// Offset is the first byte of the offending packet or record in the input.
-	Offset    int64    `json:"offset"`
+	Offset int64 `json:"offset"`
 	// Length is the byte span the offset refers to, when known.
-	Length    int    `json:"length,omitempty"`
-	Detail    string   `json:"detail,omitempty"`
-	Recovery  Recovery `json:"recovery"`
-	Severity  Severity `json:"-"`
+	Length   int      `json:"length,omitempty"`
+	Detail   string   `json:"detail,omitempty"`
+	Recovery Recovery `json:"recovery"`
+	Severity Severity `json:"-"`
 }
 
 // Error implements the error interface so a Fault can be returned directly.
