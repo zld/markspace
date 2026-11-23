@@ -19,10 +19,14 @@ type parsedInputs struct {
 	reused int
 }
 
-// resumeState is the ingest prefix restored from a checkpoint.
+// resumeState is the ingest prefix restored from a checkpoint, including the
+// diagnostics already observed, so a resumed run reports exactly the same
+// faults as a fresh one.
 type resumeState struct {
 	Fragments []ingest.Fragment `json:"fragments"`
 	ResumeAt  int64             `json:"resume_at"`
+	Errors    []*fault.Error    `json:"errors,omitempty"`
+	Stopped   bool              `json:"stopped,omitempty"`
 }
 
 // parseInputs walks every input file: the initialization segment is validated
@@ -55,9 +59,12 @@ func parseInputs(inputs []Input, lim ingest.Limits, resume *resumeState) (parsed
 			scanFrom = resume.ResumeAt
 		}
 		var idx *ingest.Index
-		if out.reused == 0 {
-			// The index only describes the region from the start; a resumed
-			// scan continues from an offset the index cannot address.
+		if out.reused > 0 {
+			// Resuming: the index diagnostics are replayed from the checkpoint
+			// rather than re-derived, and the tail is scanned without index
+			// coverage so the already-recorded gap is not reported twice.
+			out.stopped = resume.Stopped
+		} else {
 			var idxFault *fault.Error
 			idx, idxFault = ingest.ScanIndex(r, regionStart)
 			if idxFault != nil {
@@ -73,6 +80,13 @@ func parseInputs(inputs []Input, lim ingest.Limits, resume *resumeState) (parsed
 		if res.Stopped {
 			out.stopped = true
 		}
+		if resume != nil && out.reused > 0 {
+			// Replay the prefix diagnostics, then drop the exact duplicates
+			// the tail scan re-observes at the resume point.
+			replayed := append(append([]*fault.Error(nil), resume.Errors...), errs...)
+			errs = dedupe(replayed)
+			resume = nil
+		}
 		if res.ResumeAt > out.resumeAt {
 			out.resumeAt = res.ResumeAt
 		}
@@ -81,6 +95,28 @@ func parseInputs(inputs []Input, lim ingest.Limits, resume *resumeState) (parsed
 		}
 	}
 	return out, errs, nil
+}
+
+// dedupe removes repeated (code, offset, fragment) diagnostics while
+// preserving first-seen order.
+func dedupe(errs []*fault.Error) []*fault.Error {
+	type key struct {
+		code   fault.Code
+		offset int64
+		seq    uint32
+		hasSeq bool
+	}
+	seen := make(map[key]bool, len(errs))
+	out := errs[:0]
+	for _, e := range errs {
+		k := key{e.Code, e.Offset, e.FragmentSeq, e.HasSeq}
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+		out = append(out, e)
+	}
+	return out
 }
 
 // Validate rejects configurations that cannot produce meaningful output.

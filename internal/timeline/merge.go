@@ -1,7 +1,6 @@
 package timeline
 
 import (
-	"fmt"
 	"sort"
 
 	"mediacore/internal/fault"
@@ -12,10 +11,10 @@ type GapPolicy string
 
 const (
 	// GapRecord leaves the hole in place and records it. No synthetic samples
-	// are invented, so provenance remains exact.
+	// are invented, so provenance remains exact. This is the only supported
+	// policy: a track is marked unmergeable by the repair stage when ordering
+	// cannot be inferred, not because time is missing.
 	GapRecord GapPolicy = "record"
-	// GapReject refuses to merge a track whose own samples are discontinuous.
-	GapReject GapPolicy = "reject"
 )
 
 // Gap is a hole in the synthesized timeline.
@@ -75,16 +74,7 @@ func Merge(tracks []*Track, policy GapPolicy) (*MergeResult, []*fault.Error) {
 		if !tr.Mergeable {
 			continue
 		}
-		gaps := trackGaps(tr)
-		res.Gaps = append(res.Gaps, gaps...)
-		if policy == GapReject && len(gaps) > 0 {
-			for _, g := range gaps {
-				errs = append(errs, fault.New(fault.CodeUnmergeableTrack, firstFile(tr), g.Start, "",
-					fmt.Sprintf("track %d has an internal gap of %d ticks", tr.ID, g.Duration)))
-			}
-			tr.Mergeable = false
-			res.Unmergeable = append(res.Unmergeable, tr.ID)
-		}
+		res.Gaps = append(res.Gaps, trackGaps(tr)...)
 	}
 	sort.SliceStable(res.Gaps, func(i, j int) bool {
 		if res.Gaps[i].Start != res.Gaps[j].Start {
@@ -104,13 +94,6 @@ func tracksTimescale(tracks []*Track) uint32 {
 		}
 	}
 	return 0
-}
-
-func firstFile(tr *Track) string {
-	if len(tr.Samples) > 0 {
-		return tr.Samples[0].File
-	}
-	return ""
 }
 
 func trackGaps(tr *Track) []Gap {

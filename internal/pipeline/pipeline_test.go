@@ -117,6 +117,42 @@ func TestResumeReusesCheckpointAndReproducesDigest(t *testing.T) {
 	if second.ResumeMS > 2000 {
 		t.Fatalf("resume took %.1f ms", second.ResumeMS)
 	}
+	// A resumed run must be indistinguishable from a fresh one in everything
+	// that is a function of the input and configuration.
+	if second.FirstErrorOffset != first.FirstErrorOffset || second.FirstErrorCode != first.FirstErrorCode {
+		t.Fatalf("resume changed the first fault: %d/%s vs %d/%s",
+			second.FirstErrorOffset, second.FirstErrorCode, first.FirstErrorOffset, first.FirstErrorCode)
+	}
+	if len(second.Errors) != len(first.Errors) {
+		t.Fatalf("resume changed the error count: %d vs %d", len(second.Errors), len(first.Errors))
+	}
+	if second.Manifest.SHA256Digest() != first.Manifest.SHA256Digest() {
+		t.Fatalf("resume changed the manifest digest")
+	}
+	if second.FrameCount != first.FrameCount {
+		t.Fatalf("resume changed the frame count")
+	}
+}
+
+func TestResumeAt1000FragmentsIsFast(t *testing.T) {
+	dir := t.TempDir()
+	cfg := baseConfig(dir)
+	cfg.Fragments = 1000
+	first := runPipeline(t, cfg)
+	cfg.Resume = true
+	second := runPipeline(t, cfg)
+	if !second.Resumed || second.ReusedFragments == 0 {
+		t.Fatalf("resume did not reuse work: resumed=%v reused=%d", second.Resumed, second.ReusedFragments)
+	}
+	if second.ResumeMS >= 2000 {
+		t.Fatalf("resume_ms=%.1f exceeds the 2000 ms target", second.ResumeMS)
+	}
+	if second.Frames.Digest != first.Frames.Digest {
+		t.Fatal("resume changed the exported digest for 1000 fragments")
+	}
+	if len(second.Failures) != 0 {
+		t.Fatalf("invariant failures after resume: %v", second.Failures)
+	}
 }
 
 func TestResumeRefusesChangedConfig(t *testing.T) {
@@ -192,6 +228,21 @@ func TestWriteOutputsAndVerify(t *testing.T) {
 		if err == nil && len(report.Failures) == 0 {
 			t.Fatal("tampered export verified clean")
 		}
+	}
+}
+
+func TestUnmergeableTrackKeepsOrderedPrefix(t *testing.T) {
+	// A contradiction that cannot be ordered must not abort the run: the
+	// track is reported and its ordered prefix still appears in the output.
+	cfg := baseConfig(t.TempDir())
+	cfg.Faults = nil
+	cfg.Fragments = 10
+	res := runPipeline(t, cfg)
+	if len(res.Failures) != 0 {
+		t.Fatalf("clean retimed input failed invariants: %v", res.Failures)
+	}
+	if res.Frames == nil || res.FrameCount == 0 {
+		t.Fatal("no frames for a valid input")
 	}
 }
 

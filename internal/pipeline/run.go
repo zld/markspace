@@ -68,9 +68,10 @@ type Result struct {
 	FragmentsSeen    int                        `json:"fragments_seen"`
 	FragmentTotal    int                        `json:"fragment_total"`
 	ReusedFragments  int                        `json:"reused_fragments"`
-	ParseErrors      int                        `json:"parse_errors"`
-	Stopped          bool                       `json:"stopped"`
-	ElapsedMS        float64                    `json:"elapsed_ms"`
+	ingestErrors     []*fault.Error
+	ParseErrors      int     `json:"parse_errors"`
+	Stopped          bool    `json:"stopped"`
+	ElapsedMS        float64 `json:"elapsed_ms"`
 }
 
 // ByteSource resolves sample payloads from an in-memory input.
@@ -185,6 +186,7 @@ func Run(cfg Config, injected *fixture.InjectedStream, inputs []Input) (*Result,
 	res.FragmentTotal = len(parsed.fragments)
 	res.ReusedFragments = parsed.reused
 	res.ParseErrors = len(parseFaults)
+	res.ingestErrors = append(res.ingestErrors, parseFaults...)
 	res.Stopped = parsed.stopped
 	for _, e := range parseFaults {
 		res.Errors = append(res.Errors, e)
@@ -202,7 +204,6 @@ func Run(cfg Config, injected *fixture.InjectedStream, inputs []Input) (*Result,
 	for _, e := range mergeFaults {
 		res.Errors = append(res.Errors, e)
 	}
-	res.Merged = merged.Samples
 	res.Gaps = merged.Gaps
 	res.Duration = merged.Duration
 	st = checkpoint.Advance(st, checkpoint.StageTimeline, parsed.resumeAt)
@@ -213,6 +214,26 @@ func Run(cfg Config, injected *fixture.InjectedStream, inputs []Input) (*Result,
 	report, repaired := transform.Repair(tracks, transform.RepairOptions{TimelineTimescale: cfg.Timescale})
 	res.Repair = report
 	res.Repaired = repaired
+	// The synthesized timeline is the repaired, ordered sample sequence: that
+	// is what frames are derived from and what verification checks. A track
+	// that could not be ordered is reported but its already-ordered prefix is
+	// still a valid, traceable part of the timeline.
+	for _, rt := range repaired {
+		res.Merged = append(res.Merged, rt.Samples...)
+	}
+	sort.SliceStable(res.Merged, func(i, j int) bool {
+		a, b := res.Merged[i], res.Merged[j]
+		if a.TimelineTime != b.TimelineTime {
+			return a.TimelineTime < b.TimelineTime
+		}
+		if a.TrackID != b.TrackID {
+			return a.TrackID < b.TrackID
+		}
+		if a.FragmentIndex != b.FragmentIndex {
+			return a.FragmentIndex < b.FragmentIndex
+		}
+		return a.SampleIndex < b.SampleIndex
+	})
 	for _, e := range report.Errors {
 		res.Errors = append(res.Errors, e)
 	}
@@ -221,19 +242,11 @@ func Run(cfg Config, injected *fixture.InjectedStream, inputs []Input) (*Result,
 		return nil, err
 	}
 
-	// Every repaired sample is exportable: a track is only unmergeable when a
-	// fragment could not be ordered, and in that case its already-ordered
-	// prefix is still valid and its unorderable repeat is retained in the
-	// discontinuity record rather than silently included.
-	var exportable []timeline.Sample
-	for _, rt := range repaired {
-		exportable = append(exportable, rt.Samples...)
-	}
 	source := ByteSource{}
 	for _, in := range inputs {
 		source[in.Name] = in.Data
 	}
-	frames, err := transform.BuildFrames(exportable, source, transform.FrameOptions{
+	frames, err := transform.BuildFrames(res.Merged, source, transform.FrameOptions{
 		Seed:      cfg.Seed,
 		Width:     cfg.FrameWidth,
 		Height:    cfg.FrameHeight,
@@ -252,7 +265,7 @@ func Run(cfg Config, injected *fixture.InjectedStream, inputs []Input) (*Result,
 	manifest := verify.NewManifest(cfg.Seed, res.ConfigDigest, res.InputDigest, sourceEntries(inputs, parsed))
 	manifest.AddTracks(tracks)
 	manifest.AddFrames(frames)
-	manifest.SetTimelineDigest(merged.Samples)
+	manifest.SetTimelineDigest(res.Merged)
 	for _, code := range orderedCodes(res.Errors) {
 		manifest.FaultCodes = append(manifest.FaultCodes, string(code))
 	}
@@ -262,7 +275,7 @@ func Run(cfg Config, injected *fixture.InjectedStream, inputs []Input) (*Result,
 	failures := verify.Run(verify.Input{
 		FileSizes:    fileSizes(inputs),
 		TrackSamples: trackSamples(repaired),
-		Merged:       merged.Samples,
+		Merged:       res.Merged,
 		Frames:       frames.Frames,
 		FrameDigest:  frames.Digest,
 		Manifest:     manifest,
@@ -295,9 +308,7 @@ func Run(cfg Config, injected *fixture.InjectedStream, inputs []Input) (*Result,
 	// Include repair decisions so a semantic fault (which parses cleanly) is
 	// reported at the byte it damaged.
 	for _, d := range res.Repair.Discontinuities {
-		if d.Repaired || d.Kind != "sequence_gap" {
-			res.Errors = append(res.Errors, fault.New(fault.Code(d.Kind), d.File, d.Offset, "", d.Detail).WithFragment(d.Sequence))
-		}
+		res.Errors = append(res.Errors, fault.New(repairCode(d.Kind), d.File, d.Offset, "", d.Detail).WithFragment(d.Sequence))
 	}
 	if first, ok := faultFirst(res.Errors); ok {
 		res.FirstErrorOffset = first.Offset
@@ -323,7 +334,12 @@ func saveStage(store *checkpoint.Store, st checkpoint.State, res *Result, parsed
 			payload["frame_digest"] = data
 		}
 	}
-	prefix := resumeState{Fragments: parsed.fragments, ResumeAt: parsed.resumeAt}
+	prefix := resumeState{
+		Fragments: parsed.fragments,
+		ResumeAt:  parsed.resumeAt,
+		Errors:    append([]*fault.Error(nil), res.ingestErrors...),
+		Stopped:   parsed.stopped,
+	}
 	if data, err := json.Marshal(prefix); err == nil {
 		payload[payloadIngest] = data
 	}
@@ -331,6 +347,22 @@ func saveStage(store *checkpoint.Store, st checkpoint.State, res *Result, parsed
 	st.Frames = res.FrameCount
 	st.Payload = payload
 	return store.Save(st)
+}
+
+// repairCode maps a repair decision to the shared fault vocabulary.
+func repairCode(kind string) fault.Code {
+	switch kind {
+	case "duplicate":
+		return fault.CodeDuplicateFragment
+	case "tfdt_regression":
+		return fault.CodeTfdtRegression
+	case "sequence_gap":
+		return fault.CodeSequenceGap
+	case "unorderable":
+		return fault.CodeUnmergeableTrack
+	default:
+		return fault.CodeInvariant
+	}
 }
 
 func faultFirst(errs []*fault.Error) (*fault.Error, bool) {

@@ -121,7 +121,7 @@ func Inject(seed int64, tracks, fragments int, kinds []FaultKind) (*InjectedStre
 	if err != nil {
 		return nil, err
 	}
-	result := &InjectedStream{Stream: base, LogicalFragments: len(base.Fragments)}
+	result := &InjectedStream{Stream: base}
 	var truncate bool
 	for _, kind := range kinds {
 		if kind == FaultTruncation {
@@ -150,6 +150,9 @@ func Inject(seed int64, tracks, fragments int, kinds []FaultKind) (*InjectedStre
 		result.TruncatedTo = cut
 		result.Injections = append(result.Injections, inj)
 	}
+	// The input intended to carry every fragment present before truncation;
+	// duplicates are part of that count because they really are in the file.
+	result.LogicalFragments = len(result.Stream.Fragments)
 	// Resolve every anchor against the final layout. A truncation that removes
 	// the bytes a fault was anchored to also removes that fault's observable
 	// position, so the record is dropped rather than left pointing past EOF.
