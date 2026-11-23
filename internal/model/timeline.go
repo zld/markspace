@@ -85,8 +85,18 @@ func (r Rat) Cmp(o Rat) int {
 	}
 }
 
+// Zero returns the canonical rational zero. Always prefer it over the Rat
+// struct zero value, whose denominator is invalid.
+func Zero() Rat { return Rat{Num: 0, Den: 1} }
+
 // Add returns r+o without floating point conversion.
 func (r Rat) Add(o Rat) Rat {
+	if err := r.valid(); err != nil {
+		panic(err)
+	}
+	if err := o.valid(); err != nil {
+		panic(err)
+	}
 	num, den, ok := addRat(r.Num, r.Den, o.Num, o.Den)
 	if !ok {
 		panic("integer overflow while adding rationals")
@@ -100,6 +110,12 @@ func (r Rat) Add(o Rat) Rat {
 
 // Sub returns r-o.
 func (r Rat) Sub(o Rat) Rat {
+	if err := r.valid(); err != nil {
+		panic(err)
+	}
+	if err := o.valid(); err != nil {
+		panic(err)
+	}
 	num, den, ok := addRat(r.Num, r.Den, -o.Num, o.Den)
 	if !ok {
 		panic("integer overflow while subtracting rationals")
@@ -173,8 +189,17 @@ func mulNoOverflow(a, b, c, d int64) (int64, int64, bool) {
 	return int64(al), int64(cl), true
 }
 
-// addRat computes a/b + c/d with intermediate-overflow detection.
+// addRat computes a/b + c/d with intermediate-overflow detection. The
+// reduction mirrors math/big.Rat.Add: g1=gcd(a,d), g2=gcd(c,b); the result
+// is (a/g1*d/g2 + c/g2*b/g1) / ((b/g1)*(d/g2)), which keeps the unsigned
+// products minimal for long sample timelines.
 func addRat(an, ad, cn, cd int64) (int64, int64, bool) {
+	g1 := gcd(abs64(an), abs64(cd))
+	g2 := gcd(abs64(cn), abs64(ad))
+	an /= g1
+	cd /= g1
+	cn /= g2
+	ad /= g2
 	hi1, lo1 := mulFull(an, cd)
 	hi2, lo2 := mulFull(cn, ad)
 	numHi, numLo := add128(hi1, lo1, hi2, lo2)
@@ -185,14 +210,23 @@ func addRat(an, ad, cn, cd int64) (int64, int64, bool) {
 	if !fitsInt64(denHi, denLo) || denLo == 0 {
 		return 0, 0, false
 	}
-	return int64(numLo), int64(denLo), true
+	num, den := int64(numLo), int64(denLo)
+	if g := gcd(abs64(num), den); g > 1 {
+		num /= g
+		den /= g
+	}
+	return num, den, true
 }
 
 // mulFull returns the signed 128-bit product of a and b as unsigned
-// high/low words (two's-complement representation).
+// high/low words in two's-complement representation. It multiplies the
+// absolute magnitudes (which always fit the unsigned 128-bit result) and
+// applies sign correction afterwards, so negative inputs cannot create
+// spurious high words.
 func mulFull(a, b int64) (hi, lo uint64) {
-	au := uint64(a)
-	bu := uint64(b)
+	neg := (a < 0) != (b < 0)
+	au := uint64(abs64(a))
+	bu := uint64(abs64(b))
 	al := au & 0xffffffff
 	ah := au >> 32
 	bl := bu & 0xffffffff
@@ -204,6 +238,14 @@ func mulFull(a, b int64) (hi, lo uint64) {
 	mid := (ll >> 32) + (lh & 0xffffffff) + (hl & 0xffffffff)
 	lo = (mid << 32) | (ll & 0xffffffff)
 	hi = hh + (lh >> 32) + (hl >> 32) + (mid >> 32)
+	if neg {
+		// two's-complement negate of the unsigned 128-bit magnitude
+		lo = ^lo + 1
+		hi = ^hi
+		if lo == 0 {
+			hi++
+		}
+	}
 	return hi, lo
 }
 
