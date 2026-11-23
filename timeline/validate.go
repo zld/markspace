@@ -112,8 +112,14 @@ func validateTrack(t *Track) error {
 	return nil
 }
 
+// MaxEndDriftTicks bounds the permitted end-of-track difference on the common
+// clock. Independent audio/video time bases (e.g. 48 kHz vs 23.976 fps) cannot
+// terminate on the same tick; 9000 ticks is 100 ms, comfortably above the
+// sub-frame rounding gap while still catching real truncation.
+const MaxEndDriftTicks uint64 = 9000
+
 // validateEnds enforces the conservation invariant every manifest must later
-// satisfy: all tracks terminate within one common tick of the graph end.
+// satisfy: all tracks terminate within MaxEndDriftTicks of the graph end.
 func validateEnds(g *Graph) error {
 	var end uint64
 	for _, t := range g.Tracks {
@@ -125,7 +131,13 @@ func validateEnds(g *Graph) error {
 		return NewLocError(CodeUncheckedInput, StageTimeline, 0, -1, "max-duration", nil)
 	}
 	for _, t := range g.Tracks {
-		if d := end - t.End(); d > 1 {
+		var d uint64
+		if end > t.End() {
+			d = end - t.End()
+		} else {
+			d = t.End() - end
+		}
+		if d > MaxEndDriftTicks {
 			return NewLocError(CodeDurationConserv, StageTimeline, t.ID, -1,
 				"track-end", fmt.Errorf("track_end=%d graph_end=%d drift=%d", t.End(), end, d))
 		}

@@ -106,7 +106,11 @@ type Track struct {
 	Layout     ChannelLayout // audio only
 	SampleRate uint32        // audio only
 	Color      *ColorDesc    // video only; nil when metadata is absent
-	Samples    []TrackSample
+	// ColorCandidates holds every description keyed by its source. The
+	// normalizer arbitrates conflicts by source priority; an empty map with a
+	// nil Color marks metadata as missing/pending.
+	ColorCandidates map[ColorSource]ColorDesc
+	Samples         []TrackSample
 }
 
 // End returns the common-clock end (last sample end) of the track.
