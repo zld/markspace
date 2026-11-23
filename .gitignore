@@ -1,0 +1,5 @@
+# runtime work directories
+.mediad-demo/
+*.test
+*.out
+dist/
