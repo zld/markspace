@@ -120,6 +120,27 @@ func (b *Batch) HasKind(k Kind) bool {
 	return false
 }
 
+// containerDamageKinds are corruption classes intrinsic to the input
+// containers. They drive the exit-code-2 policy; network and clock anomalies
+// (late packets, wraps, drift) are expected session conditions, not damage.
+var containerDamageKinds = map[Kind]bool{
+	KindTruncated:     true,
+	KindUnknown:       true,
+	KindColorConflict: true,
+	KindVFRDupPTS:     true,
+}
+
+// HasContainerDamage reports whether a container-level corruption fault was
+// collected and recovered around.
+func (b *Batch) HasContainerDamage() bool {
+	for _, e := range b.errs {
+		if containerDamageKinds[e.Kind] {
+			return true
+		}
+	}
+	return false
+}
+
 func (b *Batch) Error() string {
 	parts := make([]string, 0, len(b.errs))
 	for _, e := range b.errs {
