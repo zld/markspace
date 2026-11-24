@@ -26,6 +26,8 @@ func run(args []string) int {
 	switch args[0] {
 	case "demo":
 		return runDemo(args[1:])
+	case "probe":
+		return runProbe(args[1:])
 	case "help", "-h", "--help":
 		usage()
 		return 0
@@ -37,12 +39,19 @@ func run(args []string) int {
 }
 
 func usage() {
-	fmt.Fprint(os.Stderr, `usage: archive demo [flags]
+	fmt.Fprint(os.Stderr, `usage:
+  archive demo [flags]      generate fixtures, recover layers, write evidence
+  archive probe FILE        parse one container and report track metadata
 
-  --generate            generate sample fixtures (always on for demo)
+demo flags:
+  --generate            regenerate sample fixtures instead of reusing them
   --out DIR             output directory for assets, frames, manifest
   --loss-burst N        consecutive packets dropped to simulate burst loss
   --bandwidth-kbps LIST comma-separated bandwidth samples in kbps
+  --frame-limit N       frames rendered per track
+
+probe exits 0 on success, 3 for truncation, 4 for boundary/alignment faults
+and 5 for invalid or unsupported metadata.
 `)
 }
 
@@ -90,6 +99,23 @@ func runDemo(args []string) int {
 		fmt.Fprintf(os.Stderr, "archive demo: recovery incomplete: %v\n", res.Err)
 	}
 	return res.ExitCode
+}
+
+func runProbe(args []string) int {
+	if len(args) != 1 {
+		fmt.Fprintln(os.Stderr, "usage: archive probe FILE")
+		return 2
+	}
+	res, err := pipeline.ProbeFile(args[0])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "probe %s: %v\n", args[0], err)
+		return pipeline.ClassifyExit(err)
+	}
+	if err := pipeline.PrintProbe(os.Stdout, res); err != nil {
+		fmt.Fprintf(os.Stderr, "probe %s: %v\n", args[0], err)
+		return 2
+	}
+	return 0
 }
 
 func parseList(s string) ([]int, error) {
