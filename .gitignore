@@ -1,0 +1,11 @@
+# Local medcheck run artifacts
+.medcheck/
+*.mp4
+*.jsonl
+
+# Go and editor artifacts
+/medcheck
+/cmd/medcheck/medcheck
+*.test
+*.out
+.DS_Store

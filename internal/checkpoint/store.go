@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 
 	"medcheck/internal/clock"
+	"medcheck/internal/jitter"
+	"medcheck/internal/rtp"
 )
 
 // Version is the supported checkpoint envelope version.
@@ -27,15 +29,45 @@ type ClockState struct {
 	MaxExt    int64  `json:"max_ext"`
 }
 
+// Sample is the serializable form of an output media sample.
+type Sample struct {
+	PTSNS      int64  `json:"pts_ns"`
+	DurationNS int64  `json:"duration_ns"`
+	Payload    []byte `json:"payload,omitempty"`
+	Keyframe   bool   `json:"keyframe,omitempty"`
+}
+
 // State is a consistent packet-boundary checkpoint.
 type State struct {
-	Version       int                   `json:"version"`
-	Boundary      int                   `json:"boundary"`
-	ConfigSHA256  string                `json:"config_sha256,omitempty"`
-	NextSequences map[uint32]uint64     `json:"next_sequences,omitempty"`
-	Clocks        map[string]ClockState `json:"clocks,omitempty"`
-	AwaitKeyframe map[uint32]bool       `json:"await_keyframe,omitempty"`
-	Recovered     int                   `json:"recovered"`
+	Version       int                              `json:"version"`
+	Boundary      int                              `json:"boundary"`
+	ConfigSHA256  string                           `json:"config_sha256,omitempty"`
+	InputSHA256   string                           `json:"input_sha256,omitempty"`
+	NextSequences map[uint32]uint64                `json:"next_sequences,omitempty"`
+	RTPMax        map[uint32]uint64                `json:"rtp_max,omitempty"`
+	RTPSeen       map[uint32][]uint64              `json:"rtp_seen,omitempty"`
+	JitterState   map[uint32]jitter.StreamSnapshot `json:"jitter_state,omitempty"`
+	Syncer        SyncerState                      `json:"syncer,omitempty"`
+	Clocks        map[string]ClockState            `json:"clocks,omitempty"`
+	AwaitKeyframe map[uint32]bool                  `json:"await_keyframe,omitempty"`
+	Recovered     int                              `json:"recovered"`
+	IngestStats   rtp.Stats                        `json:"ingest_stats,omitempty"`
+	ErrorCodes    map[string]int                   `json:"error_codes,omitempty"`
+	Counts        map[string]int                   `json:"counts,omitempty"`
+	AudioSamples  []Sample                         `json:"audio_samples,omitempty"`
+	VideoSamples  []Sample                         `json:"video_samples,omitempty"`
+}
+
+// SyncerState is the monotonic AV-sync state needed across resume.
+type SyncerState struct {
+	LatestRaw    map[string]int64 `json:"latest_raw,omitempty"`
+	Offsets      map[string]int64 `json:"offsets,omitempty"`
+	LastAdjusted map[string]int64 `json:"last_adjusted,omitempty"`
+	HaveAdjusted map[string]bool  `json:"have_adjusted,omitempty"`
+	Frames       int              `json:"frames"`
+	Corrections  int              `json:"corrections"`
+	MaxDriftNS   int64            `json:"max_drift_ns"`
+	AvDriftMS    float64          `json:"av_drift_ms"`
 }
 
 // Record is one independently checksummed JSONL checkpoint entry.
