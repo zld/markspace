@@ -311,7 +311,7 @@ func assignOffsets(tr *Track, chunks []chunkRef, mdats []BoxRef, validate bool) 
 		if validate {
 			ok := false
 			for _, m := range mdats {
-				if m.Offset == ch.Offset {
+				if m.Contains(ch.Offset, 1) {
 					ok = true
 					break
 				}
