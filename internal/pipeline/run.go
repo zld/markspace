@@ -268,14 +268,3 @@ func removeStaleTemps(dir string) {
 		}
 	}
 }
-
-func hashIfExists(path string) string {
-	if !fileExists(path) {
-		return ""
-	}
-	sum, _, err := provenance.HashFile(path)
-	if err != nil {
-		return ""
-	}
-	return sum
-}

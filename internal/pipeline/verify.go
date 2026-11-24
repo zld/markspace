@@ -1,7 +1,6 @@
 package pipeline
 
 import (
-	"os"
 	"path/filepath"
 
 	"mediarun/internal/fault"
@@ -118,18 +117,4 @@ func ApplyBaseline(rep *VerifyReport, previous *provenance.Manifest) {
 	prior := previous.SegmentHashes()
 	rep.BaselineHashes = prior
 	rep.Idempotent = len(prior) == len(rep.Hashes) && provenance.EqualHashes(rep.Hashes, prior) && len(rep.Misses) == 0
-}
-
-// verifyCachedManifest loads the manifest written by a previous run so a
-// resumed run can report idempotency even before rewriting the manifest.
-func verifyCachedManifest(dir string) (*provenance.Manifest, bool) {
-	path := filepath.Join(dir, ManifestName)
-	if _, err := os.Stat(path); err != nil {
-		return nil, false
-	}
-	m, err := provenance.Load(path)
-	if err != nil {
-		return nil, false
-	}
-	return m, true
 }
