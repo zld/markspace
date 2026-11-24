@@ -218,8 +218,8 @@ func (w *Writer) WriteSegment(src SegmentSource, outPath string) (*Segment, erro
 			seg.Keyframes++
 		}
 	}
-	seg.VideoTiming = timingOf(vSamples)
-	seg.AudioTiming = timingOf(aSamples)
+	seg.VideoTiming = TimingOf(vSamples)
+	seg.AudioTiming = TimingOf(aSamples)
 
 	// Build the complete file in memory, then commit atomically: a crash
 	// mid-write can never leave a partial segment visible.
@@ -255,7 +255,7 @@ func sourceOffsetsOf(r index.Record) []int64 {
 	return []int64{r.PacketOffset}
 }
 
-func timingOf(samples []Sample) TrackTiming {
+func TimingOf(samples []Sample) TrackTiming {
 	if len(samples) == 0 {
 		return TrackTiming{}
 	}
@@ -441,7 +441,13 @@ func (w *Writer) writeMoov(out *bytes.Buffer, src SegmentSource, seg *Segment,
 	if int64(len(final)) != moovLen {
 		return fmt.Errorf("remux: moov size changed between passes (%d -> %d)", moovLen, len(final))
 	}
-	return appendBox(out, "moov", final)
+	// appendBox re-wraps the already-framed "moov" bytes; the caller expects
+	// bare children, so strip the 8-byte header the container helper added.
+	if len(final) < 8 || string(final[4:8]) != "moov" {
+		return fmt.Errorf("remux: malformed moov container")
+	}
+	out.Write(final[8:])
+	return nil
 }
 
 func writeMvhd(out *bytes.Buffer, seg *Segment, v, a []Sample) error {
@@ -533,10 +539,12 @@ func (w *Writer) writeTrak(out *bytes.Buffer, video bool, seg *Segment, samples 
 			if err := marshalBox(&elstOut, mp4.BoxTypeElst(), elst); err != nil {
 				return err
 			}
-			return container(t, "edts", func(e *bytes.Buffer) error {
+			if err := container(t, "edts", func(e *bytes.Buffer) error {
 				e.Write(elstOut.Bytes())
 				return nil
-			})
+			}); err != nil {
+				return err
+			}
 		}
 		if err := container(t, "mdia", func(m *bytes.Buffer) error {
 			mdhd := &mp4.Mdhd{

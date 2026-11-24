@@ -119,6 +119,12 @@ func NewBuilder(limit int) *Builder {
 	return &Builder{limits: int64(limit)}
 }
 
+// SetTracks declares the video and audio PIDs the index describes.
+func (b *Builder) SetTracks(video, audio uint16) {
+	b.idx.VideoPID = video
+	b.idx.AudioPID = audio
+}
+
 // Add appends a record. The record's SnapshotID must be non-empty; this is
 // the invariant that prevents cross-mapping index entries.
 func (b *Builder) Add(r Record) error {
