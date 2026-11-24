@@ -2,6 +2,8 @@ package pipeline
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"example.com/media-kernel/index"
 	"example.com/media-kernel/media"
@@ -42,7 +44,7 @@ func BuildSegments(mp4Data []byte, report *index.MP4Report) ([]provenance.Segmen
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, provenance.SegmentSummary{
+		summary := provenance.SegmentSummary{
 			ID:         fmt.Sprintf("seg-%03d-kf-%d", i, start.SampleNumber),
 			Index:      i,
 			StartTicks: start.Time.Ticks,
@@ -50,7 +52,14 @@ func BuildSegments(mp4Data []byte, report *index.MP4Report) ([]provenance.Segmen
 			Timebase:   report.Index.Timebase,
 			ByteRange:  br,
 			SHA256:     hash,
-		})
+			Errors:     []*media.Error{},
+		}
+		for _, e := range report.Index.Errors {
+			if e != nil && e.ByteRange != nil && rangesOverlap(br, *e.ByteRange) {
+				summary.Errors = append(summary.Errors, e)
+			}
+		}
+		out = append(out, summary)
 	}
 	return out, nil
 }
@@ -62,4 +71,35 @@ func SegmentHashes(segments []provenance.SegmentSummary) []string {
 		out[i] = s.SHA256
 	}
 	return out
+}
+
+// WriteSegments writes deterministic byte-range fragments to dir and verifies
+// each written range against its recorded SHA-256.
+func WriteSegments(dir string, mp4Data []byte, segments []provenance.SegmentSummary) ([]string, error) {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, media.NewError("pipeline.segment", media.CodeIOError, "cannot create segment directory", err)
+	}
+	paths := make([]string, 0, len(segments))
+	for _, seg := range segments {
+		br := seg.ByteRange
+		if br.Start < 0 || br.End <= br.Start || br.End > int64(len(mp4Data)) {
+			return nil, media.NewError("pipeline.segment", media.CodeInvalidArgument,
+				fmt.Sprintf("segment %d has invalid range %d..%d", seg.Index, br.Start, br.End), nil)
+		}
+		b := mp4Data[br.Start:br.End]
+		if got := provenance.HashBytes(b); got != seg.SHA256 {
+			return nil, media.NewError("pipeline.segment", media.CodeHashMismatch,
+				fmt.Sprintf("segment %d hash changed before write", seg.Index), nil)
+		}
+		path := filepath.Join(dir, seg.ID+".m4s")
+		if err := os.WriteFile(path, b, 0o644); err != nil {
+			return nil, media.NewError("pipeline.segment", media.CodeIOError, "cannot write segment", err)
+		}
+		paths = append(paths, path)
+	}
+	return paths, nil
+}
+
+func rangesOverlap(a, b media.ByteRange) bool {
+	return a.Start < b.End && b.Start < a.End
 }

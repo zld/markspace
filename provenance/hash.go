@@ -37,7 +37,7 @@ type SegmentSummary struct {
 	Timebase   media.Timebase  `json:"timebase"`
 	ByteRange  media.ByteRange `json:"byte_range"`
 	SHA256     string          `json:"sha256"`
-	Errors     []*media.Error  `json:"errors,omitempty"`
+	Errors     []*media.Error  `json:"errors"`
 }
 
 // Manifest is the deterministic result record written by the verifier.

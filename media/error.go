@@ -11,6 +11,7 @@ type Code string
 const (
 	CodeOK                    Code = "OK"
 	CodeInvalidArgument       Code = "INVALID_ARGUMENT"
+	CodeIOError               Code = "IO_ERROR"
 	CodeInvalidTimebase       Code = "INVALID_TIMEBASE"
 	CodeTimestampNegative     Code = "TIMESTAMP_NEGATIVE"
 	CodeTimestampInvalid      Code = "TIMESTAMP_INVALID"

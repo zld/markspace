@@ -71,6 +71,12 @@ func run() error {
 		return fmt.Errorf("AAC self-check returned %+v", aacInfo)
 	}
 
+	segmentDir := filepath.Join(filepath.Dir(*checkpointPath), "segments")
+	segmentPaths, err := pipeline.WriteSegments(segmentDir, fixture.NormalMP4, result.Segments)
+	if err != nil {
+		return fmt.Errorf("write segments: %w", err)
+	}
+
 	paramsHash, err := provenance.HashParameters(params)
 	if err != nil {
 		return err
@@ -90,6 +96,7 @@ func run() error {
 	}
 
 	printReport(fixture, result, recovery, aacInfo, *checkpointPath, manifestPath, limit)
+	fmt.Printf("片段文件输出: %s (%d 个 .m4s)\n", segmentDir, len(segmentPaths))
 	return assertReport(fixture, result, recovery, limit)
 }
 
