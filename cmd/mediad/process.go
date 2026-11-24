@@ -7,6 +7,7 @@ import (
 	"mediad/internal/audio"
 	"mediad/internal/checkpoint"
 	"mediad/internal/fixture"
+	"mediad/internal/manifest"
 	"mediad/internal/pipeline"
 )
 
@@ -38,6 +39,7 @@ func cmdProcess(args []string) error {
 		return badArgs("unknown layout %q", layout)
 	}
 	ckptPath := f.get("--checkpoint", "")
+	manifestPath := f.get("--manifest", "")
 
 	cfg := pipeline.Config{
 		InputPath:    inPath,
@@ -54,13 +56,13 @@ func cmdProcess(args []string) error {
 	// Resume only when a checkpoint already exists and no interrupt is asked.
 	if ckptPath != "" && interrupt == 0 {
 		if _, lerr := checkpoint.Load(ckptPath); lerr == nil {
-			return resumeJob(cfg, inPath, outPath, ckptPath)
+			return resumeJob(cfg, inPath, outPath, ckptPath, manifestPath)
 		}
 	}
-	return freshJob(cfg, inPath, outPath, ckptPath, interrupt)
+	return freshJob(cfg, inPath, outPath, ckptPath, interrupt, manifestPath)
 }
 
-func freshJob(cfg pipeline.Config, inPath, outPath, ckptPath string, interrupt int) error {
+func freshJob(cfg pipeline.Config, inPath, outPath, ckptPath string, interrupt int, manifestPath string) error {
 	in, err := os.Open(inPath)
 	if err != nil {
 		return err
@@ -83,11 +85,12 @@ func freshJob(cfg pipeline.Config, inPath, outPath, ckptPath string, interrupt i
 	printReport(rep)
 	if errors.Is(err, pipeline.ErrInterrupted) {
 		outf("status=INTERRUPTED checkpoint=%s", ckptPath)
+		return nil
 	}
-	return nil
+	return writeManifest(manifestPath, cfg, rep, outPath)
 }
 
-func resumeJob(cfg pipeline.Config, inPath, outPath, ckptPath string) error {
+func resumeJob(cfg pipeline.Config, inPath, outPath, ckptPath, manifestPath string) error {
 	out, err := os.OpenFile(outPath, os.O_RDWR, 0o644)
 	if err != nil {
 		return err
@@ -101,10 +104,31 @@ func resumeJob(cfg pipeline.Config, inPath, outPath, ckptPath string) error {
 	if err != nil {
 		return err
 	}
-	rep.ResumeMS = rep.ResumeMS // populated inside Resume
 	printReport(rep)
 	outf("resume_ms=%d resumed_from_offset=%d", rep.ResumeMS, offset)
-	return nil
+	return writeManifest(manifestPath, cfg, rep, outPath)
+}
+
+// writeManifest optionally packages delivery metadata into an MP4 container.
+func writeManifest(path string, cfg pipeline.Config, rep *pipeline.Report, pcmPath string) error {
+	if path == "" {
+		return nil
+	}
+	payload, err := os.ReadFile(pcmPath)
+	if err != nil {
+		return err
+	}
+	mf, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer mf.Close()
+	return manifest.WriteBoxes(mf, manifest.Metadata{
+		JobID: cfg.InputPath, SourceRate: cfg.SourceRate,
+		TargetRate: cfg.TargetRate, Layout: cfg.TargetLayout,
+		TargetLUFS: cfg.TargetLUFS, Packets: rep.Packets, Gaps: rep.Gaps,
+		SamplesIn: rep.SamplesIn, SamplesOut: rep.SamplesOut, SHA256: rep.SHA256,
+	}, payload)
 }
 
 func printReport(r *pipeline.Report) {
