@@ -20,18 +20,19 @@ brew install go
 ## 一键验收
 
 ```bash
-./scripts/acceptance.sh
+./scripts/build.sh         # go build ./... + ./bin/mediarc
+./scripts/acceptance.sh    # full test and command contract
 ```
-
-脚本会执行 `go mod tidy`、`go build ./...`、`go test ./...`，重建 `./tmp/accept`，
-运行题目给出的 demo / resume 命令，核对关键输出、二次运行 SHA-256 稳定性，并用编译后的
-二进制验证退出码 2、3、10。
 
 也可以使用 Make：
 
 ```bash
 make acceptance
 ```
+
+`acceptance.sh` 会执行 `go mod tidy`、`go build ./...`、`go test ./...`，重建
+`./tmp/accept`，运行题目给出的 demo / resume 命令，核对关键输出、二次运行 SHA-256
+稳定性，并用编译后的二进制验证退出码 2、3、10。
 
 ## 题目给定命令
 

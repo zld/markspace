@@ -3,5 +3,6 @@
 *.test
 *.out
 /mediarc
+/bin/
 /cmd/mediarc/mediarc
 .DS_Store
