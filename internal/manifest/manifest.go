@@ -77,7 +77,7 @@ type Manifest struct {
 	ChunkNs       int64       `json:"chunk_ns"`
 	TotalStartNs  int64       `json:"total_start_ns"`
 	TotalEndNs    int64       `json:"total_end_ns"`
-	Report        Report      `json:"summary"`
+	Report        Report      `json:"-"`
 	Audio         AudioParams `json:"audio"`
 	Segments      []Segment   `json:"segments"`
 	Chunks        []Chunk     `json:"chunks"`
