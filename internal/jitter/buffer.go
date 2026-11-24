@@ -80,6 +80,50 @@ func (b *Buffer) Register(ssrc uint32, stream clock.StreamID) {
 	b.state(ssrc).stream = stream
 }
 
+// StreamSnapshot is the checkpointable state of one SSRC buffer.
+type StreamSnapshot struct {
+	Next      uint64                 `json:"next"`
+	Highest   uint64                 `json:"highest"`
+	WaitSince int64                  `json:"wait_since"`
+	HaveWait  bool                   `json:"have_wait"`
+	Queued    map[uint64]TimedPacket `json:"queued"`
+}
+
+// Snapshot exports all per-SSRC state.
+func (b *Buffer) Snapshot() map[uint32]StreamSnapshot {
+	out := make(map[uint32]StreamSnapshot, len(b.streams))
+	for ssrc, st := range b.streams {
+		queued := make(map[uint64]TimedPacket, len(st.queued))
+		for seq, p := range st.queued {
+			queued[seq] = p
+		}
+		out[ssrc] = StreamSnapshot{
+			Next: st.next, Highest: st.highest, WaitSince: st.waitSince,
+			HaveWait: st.haveWait, Queued: queued,
+		}
+	}
+	return out
+}
+
+// Restore replaces buffer state from a checkpoint snapshot.
+func (b *Buffer) Restore(in map[uint32]StreamSnapshot) {
+	b.streams = make(map[uint32]*streamState, len(in))
+	for ssrc, snap := range in {
+		st := b.state(ssrc)
+		st.next = snap.Next
+		st.highest = snap.Highest
+		st.waitSince = snap.WaitSince
+		st.haveWait = snap.HaveWait
+		st.queued = make(map[uint64]TimedPacket, len(snap.Queued))
+		for seq, p := range snap.Queued {
+			st.queued[seq] = p
+			if st.stream == "" {
+				st.stream = p.Stream
+			}
+		}
+	}
+}
+
 // NextSeq returns the next extended sequence expected for an SSRC.
 func (b *Buffer) NextSeq(ssrc uint32) (uint64, bool) {
 	st := b.streams[ssrc]

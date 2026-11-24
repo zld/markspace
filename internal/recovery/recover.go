@@ -67,6 +67,23 @@ func New(cfg Config) *Recoverer {
 	}
 }
 
+// AwaitingMap returns a copy of video keyframe gates for checkpoints.
+func (r *Recoverer) AwaitingMap() map[uint32]bool {
+	out := make(map[uint32]bool, len(r.await))
+	for k, v := range r.await {
+		out[k] = v
+	}
+	return out
+}
+
+// RestoreAwaiting restores video keyframe gate state.
+func (r *Recoverer) RestoreAwaiting(in map[uint32]bool) {
+	r.await = make(map[uint32]bool, len(in))
+	for k, v := range in {
+		r.await[k] = v
+	}
+}
+
 // AwaitingKeyframe reports video gate state for an SSRC.
 func (r *Recoverer) AwaitingKeyframe(ssrc uint32) bool { return r.await[ssrc] }
 

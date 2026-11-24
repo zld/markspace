@@ -74,6 +74,25 @@ func (t *Tracker) Accept(seq uint16) SequenceReport {
 	return report
 }
 
+// Snapshot returns the maximum sequence and all seen extended sequences.
+func (t *Tracker) Snapshot() (max uint64, seen []uint64) {
+	seen = make([]uint64, 0, len(t.seen))
+	for seq := range t.seen {
+		seen = append(seen, seq)
+	}
+	return t.MaxExt, seen
+}
+
+// Restore replaces checkpointed tracker state.
+func (t *Tracker) Restore(max uint64, seen []uint64) {
+	t.Started = true
+	t.MaxExt = max
+	t.seen = make(map[uint64]struct{}, len(seen))
+	for _, seq := range seen {
+		t.seen[seq] = struct{}{}
+	}
+}
+
 // MarkSeen restores checkpoint state. It does not produce gap reports.
 func (t *Tracker) MarkSeen(ext uint64) {
 	t.Started = true

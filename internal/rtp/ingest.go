@@ -73,6 +73,26 @@ func (in *Ingestor) Tracker(ssrc uint32) *Tracker {
 	return tr
 }
 
+// SnapshotSequences exports per-SSRC sequence state for checkpoints.
+func (in *Ingestor) SnapshotSequences() (map[uint32]uint64, map[uint32][]uint64) {
+	max := make(map[uint32]uint64, len(in.trackers))
+	seen := make(map[uint32][]uint64, len(in.trackers))
+	for ssrc, tr := range in.trackers {
+		m, s := tr.Snapshot()
+		max[ssrc] = m
+		seen[ssrc] = s
+	}
+	return max, seen
+}
+
+// RestoreSequences restores per-SSRC sequence state.
+func (in *Ingestor) RestoreSequences(max map[uint32]uint64, seen map[uint32][]uint64) {
+	for ssrc, m := range max {
+		tr := in.Tracker(ssrc)
+		tr.Restore(m, seen[ssrc])
+	}
+}
+
 // Ingest parses and classifies one raw RTP datagram located at offset.
 func (in *Ingestor) Ingest(raw []byte, offset int64) (Packet, []clock.MediaError) {
 	in.Stats.Packets++
