@@ -105,7 +105,7 @@ with `checkpoint_mismatch` (exit 1) instead of mixing old and new results.
 | `-no-fallback` | off | disable the MP4 keyframe scan fallback |
 | `-timecode-mode M` | from fixtures | override the timecode system (24, 25, 29.97ndf, 29.97df, 50) |
 | `-width N`, `-height N` | 16x16 | audit raster dimensions mixed into every pixel hash |
-| `-verify` | off | verify committed chunks without new work |
+| `-verify` | off | verify committed chunks without new work (implies `-resume`; never resets the checkpoint) |
 | `-quiet` | off | print summary only |
 
 ## Layout
