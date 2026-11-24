@@ -281,6 +281,10 @@ func (r *Runner) buildManifest() (*provenance.Manifest, error) {
 		Faults:     r.faultRecords(),
 		Metrics:    r.metrics,
 	}
+	// Segment-local faults (sync drift, timeline holes) are hoisted to the
+	// manifest so a single fault summary covers the whole run; the segment
+	// records keep their own copy for per-fragment review.
+	m.Faults = append(m.Faults, segmentFaultRecords(r.segments)...)
 	if n := len(r.records); n > 0 {
 		m.TimelineEnd = int64(r.records[n-1].Meta.PTS)
 	}
@@ -288,6 +292,15 @@ func (r *Runner) buildManifest() (*provenance.Manifest, error) {
 		return stageIndex(m.Stages[i].Name) < stageIndex(m.Stages[j].Name)
 	})
 	return m, nil
+}
+
+// segmentFaultRecords flattens per-segment faults for the manifest summary.
+func segmentFaultRecords(segs []provenance.Segment) []provenance.FaultRecord {
+	var out []provenance.FaultRecord
+	for _, seg := range segs {
+		out = append(out, seg.Faults...)
+	}
+	return out
 }
 
 func (r *Runner) faultRecords() []provenance.FaultRecord {

@@ -15,6 +15,7 @@ import (
 	"os"
 	"strings"
 
+	"mediarun/internal/fault"
 	"mediarun/internal/gen"
 	"mediarun/internal/pipeline"
 	"mediarun/internal/provenance"
@@ -83,8 +84,14 @@ func run(args []string, stdout, stderr *os.File) int {
 	}
 	cfg := pipeline.DefaultConfig()
 	cfg.SegmentCount = opts.segments
-	if opts.audioLate != 0 {
-		cfg.SyncOffsetTicks = opts.audioLate * int64(cfg.Timescale) / 1000
+	// `--inject desync` implies a deliberate 100 ms audio lead so the fault
+	// class stands alone; an explicit --audio-late-ms overrides it.
+	lateMs := opts.audioLate
+	if lateMs == 0 && contains(inject, "desync") {
+		lateMs = 100
+	}
+	if lateMs != 0 {
+		cfg.SyncOffsetTicks = lateMs * int64(cfg.Timescale) / 1000
 	}
 	fixture := gen.Options{
 		Dir:           opts.out,
@@ -118,7 +125,14 @@ func run(args []string, stdout, stderr *os.File) int {
 	}
 	m, err := runner.Run()
 	if err != nil {
+		// A fault raised by a stage is an internal failure of this run, but it
+		// is still printed with its stage, kind and offset so it can be traced
+		// to the source bytes.
 		fmt.Fprintf(stderr, "run_error: %v\n", err)
+		if fe, ok := fault.As(err); ok {
+			fmt.Fprintf(stderr, "run_fault stage=%s kind=%s offset=%d track=%d\n",
+				fe.Stage, fe.Kind, fe.Offset, fe.Track)
+		}
 		return exitInternal
 	}
 
@@ -144,6 +158,10 @@ func report(stdout *os.File, opts *options, m *provenance.Manifest, vr *pipeline
 		m.Metrics.Frames, m.Metrics.AudioPackets, m.Metrics.Segments)
 	fmt.Fprintf(stdout, "parse_errors=%d first_error_offset=%d recovered_audio=%d recovered_video=%d dropped_audio=%d\n",
 		m.Metrics.ParseErrors, firstOffset(m), m.Metrics.RecoveredAudio, m.Metrics.RecoveredVideo, m.Metrics.DroppedAudio)
+	if m.Metrics.IncompleteSegments > 0 || m.Metrics.UnsyncedSegments > 0 {
+		fmt.Fprintf(stdout, "incomplete_segments=%d unsynced_segments=%d\n",
+			m.Metrics.IncompleteSegments, m.Metrics.UnsyncedSegments)
+	}
 	if opts.resume && runner.ResumedStage() != "" {
 		fmt.Fprintf(stdout, "resume_stage=%s\n", resumeLabel(runner.ResumedStage()))
 	}
@@ -160,11 +178,16 @@ func report(stdout *os.File, opts *options, m *provenance.Manifest, vr *pipeline
 			}
 		}
 	}
+	// Error categories, original offsets and recovery counts are always
+	// printed: they are the diagnostic the damaged-input invocation exists to
+	// produce. --verbose additionally prints per-record detail strings.
 	for _, f := range m.Faults {
 		if opts.verbose {
 			fmt.Fprintf(stdout, "fault stage=%s kind=%s offset=%d record=%d detail=%q\n",
 				f.Stage, f.Kind, f.Offset, f.Record, f.Detail)
+			continue
 		}
+		fmt.Fprintf(stdout, "fault stage=%s kind=%s offset=%d\n", f.Stage, f.Kind, f.Offset)
 	}
 }
 
@@ -218,6 +241,15 @@ func boolInt(b bool) int {
 		return 1
 	}
 	return 0
+}
+
+func contains(list []string, want string) bool {
+	for _, v := range list {
+		if v == want {
+			return true
+		}
+	}
+	return false
 }
 
 func splitList(s string) []string {

@@ -151,10 +151,15 @@ func CanonicalJSON(v any) ([]byte, error) {
 }
 
 // SortFaults orders fault records by offset, stage and kind for stable output.
+// Records without a source offset sort last so byte-anchored faults lead.
 func SortFaults(fs []FaultRecord) {
 	sort.SliceStable(fs, func(i, j int) bool {
-		if fs[i].Offset != fs[j].Offset {
-			return fs[i].Offset < fs[j].Offset
+		ai, aj := fs[i].Offset, fs[j].Offset
+		if (ai < 0) != (aj < 0) {
+			return ai >= 0
+		}
+		if ai != aj {
+			return ai < aj
 		}
 		if fs[i].Stage != fs[j].Stage {
 			return fs[i].Stage < fs[j].Stage

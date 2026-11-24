@@ -1,0 +1,7 @@
+{
+  "base_rtp": 4294963200,
+  "clock_rate": 48000,
+  "payload_type": 111,
+  "ssrc": 195939070,
+  "packets": 64
+}

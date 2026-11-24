@@ -1,0 +1,227 @@
+{
+  "version": 1,
+  "tool": "mediarun",
+  "config_hash": "f806dd3b970251475138bcc150aba21b5c9b6bfeb91fdbaec9deb909559a1ea0",
+  "timescale": 90000,
+  "inputs": [
+    {
+      "name": "frames",
+      "path": "frames.mfr",
+      "bytes": 4032,
+      "sha256": "a8a25e9752ea44dbdb46b37c93750352b840b6031bafb4c3cb5df360364826ec"
+    },
+    {
+      "name": "audio",
+      "path": "audio.rtp",
+      "bytes": 2360,
+      "sha256": "a3b4d02f1c70e57f066e9f83dfb5dec60c8a95c51973aa2fdc60d43674de6d24"
+    }
+  ],
+  "stages": [
+    {
+      "name": "parse",
+      "input_hash": "a8a25e9752ea44dbdb46b37c93750352b840b6031bafb4c3cb5df360364826ec",
+      "config_hash": "f806dd3b970251475138bcc150aba21b5c9b6bfeb91fdbaec9deb909559a1ea0",
+      "output_hash": "1809802eaf7048d1e6f20213386cdfbe5761bd487767ee7d965ad2bd73c34e52",
+      "detail": "scanned frame records",
+      "counts": {
+        "faults": 0,
+        "records": 32
+      }
+    },
+    {
+      "name": "jitter",
+      "input_hash": "a3b4d02f1c70e57f066e9f83dfb5dec60c8a95c51973aa2fdc60d43674de6d24",
+      "config_hash": "f806dd3b970251475138bcc150aba21b5c9b6bfeb91fdbaec9deb909559a1ea0",
+      "output_hash": "00100a2575b4ca16e3af6826e53f129e880b71cb9a73c2fe0b77f20ea7326b06",
+      "detail": "ordered rtp packets and sealed gaps",
+      "counts": {
+        "committed": 49,
+        "duplicates": 0,
+        "faults": 2,
+        "incomplete": 12,
+        "late": 0,
+        "out_of_order": 0,
+        "overflow": 0,
+        "packets": 49,
+        "recovered": 3
+      },
+      "faults": [
+        {
+          "stage": "recovery",
+          "kind": "fragment_incomplete",
+          "offset": 2120,
+          "record": -1,
+          "detail": "fragment incomplete: 12 packets lost between seq 65547 and 65560",
+          "recoverable": false
+        },
+        {
+          "stage": "recovery",
+          "kind": "loss_gap",
+          "offset": 2120,
+          "record": -1,
+          "detail": "gap of 12 packets between seq 65547 and 65560",
+          "recoverable": false
+        }
+      ]
+    },
+    {
+      "name": "recovery",
+      "input_hash": "a3b4d02f1c70e57f066e9f83dfb5dec60c8a95c51973aa2fdc60d43674de6d24",
+      "config_hash": "f806dd3b970251475138bcc150aba21b5c9b6bfeb91fdbaec9deb909559a1ea0",
+      "output_hash": "00100a2575b4ca16e3af6826e53f129e880b71cb9a73c2fe0b77f20ea7326b06",
+      "detail": "sealed audio gaps",
+      "counts": {
+        "faults": 2,
+        "gap_events": 2,
+        "recovered": 3,
+        "unrecovered": 12
+      },
+      "faults": [
+        {
+          "stage": "recovery",
+          "kind": "fragment_incomplete",
+          "offset": 2120,
+          "record": -1,
+          "detail": "fragment incomplete: 12 packets lost between seq 65547 and 65560",
+          "recoverable": false
+        },
+        {
+          "stage": "recovery",
+          "kind": "loss_gap",
+          "offset": 2120,
+          "record": -1,
+          "detail": "gap of 12 packets between seq 65547 and 65560",
+          "recoverable": false
+        }
+      ]
+    }
+  ],
+  "segments": [
+    {
+      "index": 0,
+      "path": "segments/segment-00.mp4",
+      "bytes": 2174,
+      "sha256": "ef215629dafd50ea2eaee6686c48c3a14872e68786e9dc8648fcd7909e6bc4c3",
+      "samples": 8,
+      "start_pts": 0,
+      "end_pts": 28800,
+      "keyframes": 1,
+      "keyframe_hits": 1,
+      "roundtrip_hit": 8,
+      "synced": true,
+      "incomplete": true,
+      "audio_frames": 16,
+      "audio_bytes": 512
+    },
+    {
+      "index": 1,
+      "path": "segments/segment-01.mp4",
+      "bytes": 2070,
+      "sha256": "87476536c39be07244b6d789dabc2270d4eb561b0451f1f883941d14e108aa43",
+      "samples": 8,
+      "start_pts": 28800,
+      "end_pts": 57600,
+      "keyframes": 2,
+      "keyframe_hits": 2,
+      "roundtrip_hit": 8,
+      "synced": true,
+      "incomplete": true,
+      "audio_frames": 16,
+      "audio_bytes": 416
+    },
+    {
+      "index": 2,
+      "path": "segments/segment-02.mp4",
+      "bytes": 2178,
+      "sha256": "cd7c3cd22758fea5196be72cba696597f3ab5ec1c6db15cf4306bcb358cb5877",
+      "samples": 8,
+      "start_pts": 57600,
+      "end_pts": 86400,
+      "keyframes": 2,
+      "keyframe_hits": 2,
+      "roundtrip_hit": 8,
+      "synced": true,
+      "incomplete": true,
+      "audio_frames": 16,
+      "audio_bytes": 512
+    },
+    {
+      "index": 3,
+      "path": "segments/segment-03.mp4",
+      "bytes": 1746,
+      "sha256": "67a76fb55b06396554a3d1d6e3b6988ec7e6dd00db50f1f2c07d562dad899ff6",
+      "samples": 8,
+      "start_pts": 86400,
+      "end_pts": 115200,
+      "keyframes": 2,
+      "keyframe_hits": 2,
+      "roundtrip_hit": 8,
+      "synced": false,
+      "incomplete": true,
+      "audio_frames": 4,
+      "audio_bytes": 128,
+      "faults": [
+        {
+          "stage": "sync",
+          "kind": "out_of_sync",
+          "track": 2,
+          "offset": -1,
+          "record": -1,
+          "detail": "audio/video drift start=21600 end=0 tolerance=900",
+          "recoverable": true
+        }
+      ]
+    }
+  ],
+  "faults": [
+    {
+      "stage": "recovery",
+      "kind": "fragment_incomplete",
+      "offset": 2120,
+      "record": -1,
+      "detail": "fragment incomplete: 12 packets lost between seq 65547 and 65560",
+      "recoverable": false
+    },
+    {
+      "stage": "recovery",
+      "kind": "fragment_incomplete",
+      "offset": 2120,
+      "record": -1,
+      "detail": "fragment incomplete: 12 packets lost between seq 65547 and 65560",
+      "recoverable": false
+    },
+    {
+      "stage": "recovery",
+      "kind": "loss_gap",
+      "offset": 2120,
+      "record": -1,
+      "detail": "gap of 12 packets between seq 65547 and 65560",
+      "recoverable": false
+    },
+    {
+      "stage": "recovery",
+      "kind": "loss_gap",
+      "offset": 2120,
+      "record": -1,
+      "detail": "gap of 12 packets between seq 65547 and 65560",
+      "recoverable": false
+    }
+  ],
+  "metrics": {
+    "frames": 32,
+    "audio_packets": 49,
+    "parse_errors": 0,
+    "recovered_audio": 3,
+    "recovered_video": 0,
+    "dropped_audio": 0,
+    "segments": 4,
+    "keyframe_total": 7,
+    "keyframe_hits": 7,
+    "roundtrip_total": 32,
+    "roundtrip_hits": 32,
+    "incomplete_segments": 4,
+    "unsynced_segments": 1
+  },
+  "timeline_end": 111600
+}

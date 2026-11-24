@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "config_hash": "f806dd3b970251475138bcc150aba21b5c9b6bfeb91fdbaec9deb909559a1ea0",
+  "input_hash": "305db2f8dd41742acf280cbf7cfbf9bc8a64bb74f4415a081408917e482b394c",
+  "stage": "manifest",
+  "done": [
+    "parse",
+    "jitter",
+    "recovery",
+    "sync",
+    "index",
+    "mux",
+    "manifest"
+  ],
+  "hashes": {
+    "index": "91ceee2dde895c8e3ce6ed681de4dcb1ed2642e68b1b35408812ecb924a0678e",
+    "jitter": "00100a2575b4ca16e3af6826e53f129e880b71cb9a73c2fe0b77f20ea7326b06",
+    "manifest": "2b9f5ac7c8d464b82c4a2db653acabce1637d712260fa9d097ef9ab05384f21e",
+    "mux": "ef7cedc407d5a159eb0bc90ae98e209ae6a4c27118ffb97cad5b85bf99c07983",
+    "parse": "1809802eaf7048d1e6f20213386cdfbe5761bd487767ee7d965ad2bd73c34e52",
+    "recovery": "00100a2575b4ca16e3af6826e53f129e880b71cb9a73c2fe0b77f20ea7326b06",
+    "sync": "2fa0d12fc51db700528c92e90201268ae19685df26061997317be329d97e831b"
+  }
+}

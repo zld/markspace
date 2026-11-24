@@ -175,12 +175,18 @@ func (l List) FirstOffset() (int64, bool) {
 	return best, found
 }
 
-// Sorted returns a copy ordered by offset then stage and kind.
+// Sorted returns a copy ordered by offset then stage and kind. Faults without a
+// source offset sort after those with one, because the offset is the primary
+// navigation key for an operator.
 func (l List) Sorted() List {
 	out := append(List(nil), l...)
 	sort.SliceStable(out, func(i, j int) bool {
-		if out[i].Offset != out[j].Offset {
-			return out[i].Offset < out[j].Offset
+		ai, aj := out[i].Offset, out[j].Offset
+		if (ai < 0) != (aj < 0) {
+			return ai >= 0
+		}
+		if ai != aj {
+			return ai < aj
 		}
 		if out[i].Stage != out[j].Stage {
 			return out[i].Stage < out[j].Stage
