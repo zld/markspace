@@ -97,6 +97,12 @@ func (e *Engine) runFrom(in *Input, start int) (*Result, error) {
 			}
 		}
 	}
+	// End of stream: release every held packet. Release order does not feed
+	// output (materialization sorts by event time), but flushing keeps the
+	// watermark reporting complete and the queue memory bounded between runs.
+	for _, a := range e.flushQueues() {
+		e.wm.Advance(a.Raw)
+	}
 	e.Errors = errs
 	return e.finish(in)
 }
@@ -153,29 +159,38 @@ func (e *Engine) ingestMedia(ev model.PacketEvent, index int, byteOffset int64) 
 	// time is signed and may be slightly negative. That is expected and is
 	// resolved by canonical ordering, not by clamping to a fake zero.
 	media := ts + base
-	late := e.wm.Started() && e.wm.IsLate(media)
+	if ev.Kind != "" && ev.Kind != track.Kind {
+		return model.NewError(model.CodeManifestInvalid, loc,
+			"event kind %q differs from manifest kind %q", ev.Kind, track.Kind)
+	}
+	// Lateness is judged on event time against the highest event time seen,
+	// and release order is established by the per-track bounded queue. A late
+	// packet is still accepted: delivery is re-derived from the accepted log,
+	// so its arrival retroactively changes what the watermark had already
+	// passed, which is exactly one recompute.
+	window := model.Nanos(e.opts.LateWindowMS * float64(model.NanosPerMilli))
+	late := e.hasEvent && media < e.maxEvent-window
+	if !e.hasEvent || media > e.maxEvent {
+		e.maxEvent = media
+		e.hasEvent = true
+	}
 	if late {
 		e.lateRec++
-		// The affected span starts at the late event's own media time: output
-		// at or after that instant must be re-derived. The watermark only says
-		// how far processing had already gone.
 		e.late = append(e.late, LateEvent{
 			TrackID: ev.TrackID, ExtSeq: seq.Ext, Corrected: media,
 			AffectedAt: media, RewindIndex: e.affectedIndex(media),
 		})
 	}
-	// The watermark advances on every accepted event, late or not: a late
-	// event can never pull the watermark backwards.
-	e.wm.Advance(media)
-	if ev.Kind != "" && ev.Kind != track.Kind {
-		return model.NewError(model.CodeManifestInvalid, loc,
-			"event kind %q differs from manifest kind %q", ev.Kind, track.Kind)
-	}
-	e.accepted = append(e.accepted, accepted{
+	a := accepted{
 		Event: int64(index), TrackID: ev.TrackID, Kind: track.Kind,
 		Keyframe: ev.Keyframe, Ext: seq.Ext, Raw: media,
-		Arrival: model.Nanos(ev.Arrival), Size: ev.Size,
-	})
+		Arrival: model.Nanos(ev.Arrival), Size: ev.Size, Late: late,
+	}
+	released := e.enqueue(a, model.Nanos(ev.Arrival))
+	for _, r := range released {
+		e.wm.Advance(r.Raw)
+	}
+	e.accepted = append(e.accepted, a)
 	return nil
 }
 
@@ -286,6 +301,12 @@ func (e *Engine) reset() {
 	e.resumeMS = 0
 	e.fallbackReason = ""
 	e.wm.Restore(0, 0, false)
+	e.queues = map[uint32][]queued{}
+	e.releasedAt = map[uint32]int64{}
+	e.highEvent = map[uint32]model.Nanos{}
+	e.maxEvent = 0
+	e.hasEvent = false
+	e.dropped = 0
 	for _, d := range e.dedupers {
 		d.Reset()
 	}

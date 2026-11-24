@@ -72,6 +72,9 @@ func (o *Options) Defaults() {
 	if o.ReorderPackets == 0 {
 		o.ReorderPackets = DefaultReorder
 	}
+	if o.MaxPackets == 0 {
+		o.MaxPackets = DefaultMaxPackets
+	}
 	if o.MaxReplay == 0 {
 		o.MaxReplay = DefaultMaxReplay
 	}
@@ -218,10 +221,17 @@ type Engine struct {
 	resumedFrom    int64
 	resumeMS       float64
 	fallbackReason string
+	// queues holds accepted packets awaiting deterministic reorder release,
+	// keyed by track id.
+	queues     map[uint32][]queued
+	releasedAt map[uint32]int64
+	highEvent  map[uint32]model.Nanos
+	maxEvent   model.Nanos
+	hasEvent   bool
+	dropped    int64
 	// wm is the live event-time watermark driving lateness detection.
 	wm timeline.Watermark
-	// points is the bounded set of rewind markers, oldest first.
-	points     []*marker
+	// lastRecord is the newest checkpoint written, kept for reporting.
 	lastRecord *checkpoint.Record
 }
 
@@ -235,6 +245,10 @@ type accepted struct {
 	Raw      model.Nanos     `json:"raw_ns"`
 	Arrival  model.Nanos     `json:"arrival_ns"`
 	Size     int             `json:"size"`
+	// Late marks a packet whose event time fell outside the late window when
+	// it arrived. It is still part of the log; the flag only drives the
+	// recompute counter and the rewind report.
+	Late bool `json:"late,omitempty"`
 }
 
 // adminRepair is one out-of-band redundancy record.
@@ -243,18 +257,6 @@ type adminRepair struct {
 	TrackID uint32  `json:"track"`
 	Source  int64   `json:"source"`
 	Targets []int64 `json:"targets"`
-}
-
-// marker is a rewind marker: the accepted-log length, dedupe state and the
-// watermark at the moment it was taken.
-type marker struct {
-	Events    int64                            `json:"events"`
-	Accepted  int                              `json:"accepted"`
-	Repairs   int                              `json:"repairs"`
-	Watermark model.Nanos                      `json:"watermark"`
-	Started   bool                             `json:"started"`
-	Dedup     map[string]rtp.DeduperSnapshot   `json:"dedup"`
-	Ts        map[string]rtp.TimestampSnapshot `json:"ts"`
 }
 
 // New constructs an engine for a manifest.
@@ -267,12 +269,15 @@ func New(opts Options, man *manifest.Manifest) (*Engine, error) {
 		return nil, model.NewError(model.CodeManifestInvalid, model.Loc{}, "manifest is nil")
 	}
 	e := &Engine{
-		opts:     opts,
-		man:      man,
-		tracks:   map[uint32]manifest.Track{},
-		bases:    map[uint32]model.Nanos{},
-		dedupers: map[uint32]*rtp.Deduper{},
-		tsExt:    map[uint32]*rtp.TimestampExtender{},
+		opts:       opts,
+		man:        man,
+		tracks:     map[uint32]manifest.Track{},
+		bases:      map[uint32]model.Nanos{},
+		queues:     map[uint32][]queued{},
+		releasedAt: map[uint32]int64{},
+		highEvent:  map[uint32]model.Nanos{},
+		dedupers:   map[uint32]*rtp.Deduper{},
+		tsExt:      map[uint32]*rtp.TimestampExtender{},
 	}
 	for _, t := range man.Tracks {
 		if _, dup := e.tracks[t.ID]; dup {
