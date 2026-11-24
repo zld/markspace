@@ -26,20 +26,29 @@ type Packet struct {
 	ReceivedAt time.Time
 }
 
+// FromPion adapts a parsed github.com/pion/rtp packet to the kernel type.
+func FromPion(p *rtp.Packet) Packet {
+	if p == nil {
+		return Packet{}
+	}
+	return Packet{
+		Sequence:  p.SequenceNumber,
+		Timestamp: p.Timestamp,
+		SSRC:      p.SSRC,
+		Marker:    p.Marker,
+		Payload:   append([]byte(nil), p.Payload...),
+	}
+}
+
 // Unmarshal parses one RTP wire packet with github.com/pion/rtp.
 func Unmarshal(data []byte, receivedAt time.Time) (Packet, error) {
 	var p rtp.Packet
 	if err := p.Unmarshal(data); err != nil {
 		return Packet{}, fault.Wrap(fault.ErrCorruptSample, "rtp.parse", -1, "invalid RTP packet", err)
 	}
-	return Packet{
-		Sequence:   p.SequenceNumber,
-		Timestamp:  p.Timestamp,
-		SSRC:       p.SSRC,
-		Marker:     p.Marker,
-		Payload:    append([]byte(nil), p.Payload...),
-		ReceivedAt: receivedAt,
-	}, nil
+	out := FromPion(&p)
+	out.ReceivedAt = receivedAt
+	return out, nil
 }
 
 // Marshal re-encodes the packet through pion/rtp. Tests and fixtures use it so
@@ -183,6 +192,11 @@ func (r *Reorderer) Push(p Packet) []Packet {
 		r.buffer[p.Sequence] = p
 	}
 	return r.drain()
+}
+
+// PushRTP adapts and accepts a pion/rtp packet.
+func (r *Reorderer) PushRTP(p *rtp.Packet) []Packet {
+	return r.Push(FromPion(p))
 }
 
 // Flush expires an aged head gap. It returns packets made contiguous after
