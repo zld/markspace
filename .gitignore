@@ -1,0 +1,9 @@
+# Compiled binaries and test/coverage artifacts
+/mediarun
+*.test
+*.out
+coverage.txt
+
+# Local run outputs (acceptance runs target /tmp by convention)
+/media-check/
+/media-checkpoint/
