@@ -146,6 +146,7 @@ func demo(args []string) int {
 		return exitInvalid
 	}
 	printMapping(run)
+	printTimeline(run)
 
 	// The available track count is what recovery could actually yield.
 	available := run.MappedWithPayload()
@@ -328,6 +329,30 @@ func countUnrecoverable(l fault.List) int {
 		}
 	}
 	return n
+}
+
+// printTimeline states the recovery guarantees in input ticks: a complete
+// frame is localized at its own boundary (zero error), and any interval that
+// could not be determined is listed as unrecovered rather than omitted.
+func printTimeline(run *pipeline.Run) {
+	for _, logical := range run.Map.Order {
+		td := run.Selected[logical]
+		if td == nil {
+			continue
+		}
+		var report *model.TrackTimeline
+		for _, key := range run.Members(logical) {
+			if tt := run.Timeline.Tracks[key]; tt != nil {
+				report = tt
+				break
+			}
+		}
+		if report == nil {
+			continue
+		}
+		fmt.Printf("timeline logical=%s source=%s complete=%t rebuilt=%t localization_tick_error=%d unrecovered=%d\n",
+			logical, td.Key, report.Complete, report.Rebuilt, report.LocalizationErr, len(report.UnrecoveredNS))
+	}
 }
 
 func printMapping(run *pipeline.Run) {

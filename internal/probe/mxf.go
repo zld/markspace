@@ -363,7 +363,10 @@ func ProbeMXF(src Source) (*File, error) {
 			t.Index = model.IndexInfo{Present: false, Complete: false, Reason: "no index table segment"}
 			// The descriptor's container duration bounds the track; the range
 			// is determinable even without a per-frame index.
-			fe := fault.New(fault.MissingIndex, 0, "track %d has no index table segment", id).
+			// The partition that should have carried the index is where an
+			// operator would look; report the last structural offset seen so
+			// the fault is not pinned at byte zero.
+			fe := fault.New(fault.MissingIndex, f.Size, "track %d has no index table segment", id).
 				WithTrack(t.Key, id).WithRecoverable(true)
 			if t.DurationTick > 0 {
 				fe.WithRange(t.Timebase.TickToNanos(t.StartTick), t.Timebase.TickToNanos(t.StartTick+t.DurationTick))

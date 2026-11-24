@@ -321,6 +321,16 @@ func Remux(run *Run, opt remux.Options) (*remux.Result, error) {
 	return remux.Write(run.Timeline, tracks, opt)
 }
 
+// Members returns the container track keys that feed a logical mapping.
+func (r *Run) Members(logical string) []string {
+	for _, mt := range r.Map.Tracks {
+		if mt.Logical == logical {
+			return mt.Members
+		}
+	}
+	return nil
+}
+
 func mappedByLogical(m *maptrack.Result, logical string) *maptrack.MappedTrack {
 	for _, t := range m.Tracks {
 		if t.Logical == logical {
