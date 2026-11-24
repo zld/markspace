@@ -46,10 +46,10 @@ func DefaultConfig(seed int64, durationNS int64, bitrates []int) (Config, *clock
 	if durationNS <= 0 || durationNS > clock.MaxDurationMicros*1000 {
 		return Config{}, clock.NewError(clock.ErrInvalidLength, "duration out of bounds")
 	}
+	// Renditions share GOP alignment by default, which is the normal ABR
+	// requirement. Phase skew is injected explicitly to exercise boundary
+	// rejection in tests rather than applied to every generated stream.
 	offsets := make([]int, len(bitrates))
-	for i := range offsets {
-		offsets[i] = i // deterministic per-rendition GOP phase skew
-	}
 	return Config{
 		Seed:           seed,
 		DurationNS:     durationNS,
