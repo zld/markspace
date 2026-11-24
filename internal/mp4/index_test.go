@@ -2,6 +2,7 @@ package mp4
 
 import (
 	"bytes"
+	"encoding/binary"
 	"testing"
 
 	"mediaaudit/internal/fixtures"
@@ -183,4 +184,37 @@ func mustMP4(t *testing.T, s fixtures.MP4Spec) []byte {
 		t.Fatal(err)
 	}
 	return data
+}
+
+func TestCttsShortTablePadsWithZero(t *testing.T) {
+	// Damage a generated ctts box so it declares fewer entries than samples:
+	// the reader must zero-fill rather than fail or panic.
+	s := spec()
+	s.Ctts = []int64{3000, 1500, 0, 0, 0, 0}
+	data := mustMP4(t, s)
+	idx := bytes.Index(data, []byte("ctts"))
+	if idx < 4 {
+		t.Fatal("no ctts box in fixture")
+	}
+	boxStart := idx - 4
+	// version/flags(4) entry_count(4) entries(8 each).
+	binary.BigEndian.PutUint32(data[boxStart+12:], 1)
+	ix, es := Parse(bytes.NewReader(data), "shortctts.mp4", Options{FallbackScan: true})
+	if es.FirstFatal() != nil {
+		t.Fatalf("read must not fail: %v", es)
+	}
+	samples := ix.Samples(1)
+	if len(samples) != 6 {
+		t.Fatalf("samples=%d", len(samples))
+	}
+	// Only the first run (sample 0) carries the 3000-tick offset.
+	if !samples[0].PresentTime.Equal(model.MustRat(1, 10)) {
+		t.Fatalf("sample 0 pts %s", samples[0].PresentTime)
+	}
+	for i := 1; i < len(samples); i++ {
+		if !samples[i].PresentTime.Equal(samples[i].DecodeTime) {
+			t.Fatalf("sample %d should have no offset, got %s vs %s",
+				i, samples[i].PresentTime, samples[i].DecodeTime)
+		}
+	}
 }

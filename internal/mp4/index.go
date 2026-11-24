@@ -379,20 +379,20 @@ func expandCtts(ctts *mp4.Ctts, count int) ([]int64, error) {
 		return nil, nil
 	}
 	out := make([]int64, 0, count)
-	for i, e := range ctts.Entries {
+	for _, e := range ctts.Entries {
 		var off int64
 		if ctts.GetVersion() == 0 {
 			off = int64(e.SampleOffsetV0)
 		} else {
 			off = int64(e.SampleOffsetV1)
 		}
-		for j := uint32(0); j < e.SampleCount; j++ {
+		for j := uint32(0); j < e.SampleCount && len(out) < count; j++ {
 			out = append(out, off)
 		}
-		if i > 1000 && len(out) > count*2 {
-			break
-		}
 	}
+	// A short ctts table is a damaged file: pad with zero offsets so the
+	// remaining presentation times stay usable rather than aborting the
+	// whole track over a recoverable metadata defect.
 	if len(out) < count {
 		out = append(out, make([]int64, count-len(out))...)
 	}
