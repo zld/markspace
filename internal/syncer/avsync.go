@@ -85,7 +85,9 @@ func (s *Syncer) updateDrift(atNS int64) {
 	s.Stats.LastDriftNS = drift
 	if abs > s.Stats.MaxDriftNS {
 		s.Stats.MaxDriftNS = abs
-		s.Stats.AvDriftMS = float64(abs) / 1_000_000
+		// Report to the nearest microsecond? The CLI field is labeled ms;
+		// round to whole milliseconds for stable terminal output.
+		s.Stats.AvDriftMS = float64((abs + 500_000) / 1_000_000)
 	}
 	if abs <= s.ThresholdNS {
 		return
@@ -100,6 +102,40 @@ func (s *Syncer) updateDrift(atNS int64) {
 		AtNS: atNS, AudioPTSNS: a, VideoPTSNS: v,
 		DriftNS: drift, CorrectionNS: newOffset - oldOffset,
 	})
+}
+
+// State is the checkpointable syncer state.
+type State struct {
+	LatestRaw    map[clock.StreamID]int64
+	Offsets      map[clock.StreamID]int64
+	LastAdjusted map[clock.StreamID]int64
+	HaveAdjusted map[clock.StreamID]bool
+	Stats        Stats
+}
+
+// Export returns checkpoint state.
+func (s *Syncer) Export() State {
+	return State{
+		LatestRaw: s.latestRaw, Offsets: s.offsetNS, LastAdjusted: s.lastAdjusted,
+		HaveAdjusted: s.haveAdjusted, Stats: s.Stats,
+	}
+}
+
+// Restore loads checkpoint state.
+func (s *Syncer) Restore(st State) {
+	if st.LatestRaw != nil {
+		s.latestRaw = st.LatestRaw
+	}
+	if st.Offsets != nil {
+		s.offsetNS = st.Offsets
+	}
+	if st.LastAdjusted != nil {
+		s.lastAdjusted = st.LastAdjusted
+	}
+	if st.HaveAdjusted != nil {
+		s.haveAdjusted = st.HaveAdjusted
+	}
+	s.Stats = st.Stats
 }
 
 // Offset returns the current offset for a stream.

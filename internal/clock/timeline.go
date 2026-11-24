@@ -107,6 +107,36 @@ func (t *Timeline) ApplyRTCP(report RTCPReport) (correctionNS int64, err error) 
 	return report.NTPNS - before, nil
 }
 
+// State is the checkpointable timeline mapping state.
+type State struct {
+	Have      bool
+	RateHz    uint32
+	FirstExt  int64
+	MaxExt    int64
+	AnchorExt int64
+	AnchorNS  int64
+}
+
+// Export returns the timeline state for a checkpoint.
+func (t *Timeline) Export() State {
+	return State{
+		Have: t.have, RateHz: uint32(t.rateHz), FirstExt: t.firstExt,
+		MaxExt: t.maxExt, AnchorExt: t.anchorExt, AnchorNS: t.anchorNS,
+	}
+}
+
+// Restore reloads a checkpointed timeline.
+func (t *Timeline) Restore(st State) {
+	t.have = st.Have
+	if st.RateHz != 0 {
+		t.rateHz = uint64(st.RateHz)
+	}
+	t.firstExt = st.FirstExt
+	t.maxExt = st.MaxExt
+	t.anchorExt = st.AnchorExt
+	t.anchorNS = st.AnchorNS
+}
+
 // MaxMapped is useful in tests and checkpoint state.
 func (t *Timeline) MaxMapped() int64 {
 	if !t.have {
