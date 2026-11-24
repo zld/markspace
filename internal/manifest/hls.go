@@ -187,12 +187,14 @@ func parseMaster(lines [][]byte, path string, resolve func(uri string) ([]byte, 
 			return nil, model.NewError(model.KindManifestMissing, loc(path, nextID, -1),
 				"cannot resolve variant "+line+": "+err.Error())
 		}
-		rep, err := ParseHLS(child, filepath.Join(filepath.Dir(path), line), resolve)
+		childPath := filepath.Join(filepath.Dir(path), line)
+		rep, err := ParseHLS(child, childPath, resolve)
 		if err != nil {
 			return nil, err
 		}
 		r := rep.Representations[0]
 		r.ID = nextID
+		r.PlaylistPath = childPath
 		m.Representations = append(m.Representations, r)
 		total := r.Segments[len(r.Segments)-1].Start + r.Segments[len(r.Segments)-1].Duration
 		if total > m.Duration {

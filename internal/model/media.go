@@ -60,6 +60,9 @@ type Representation struct {
 	ID       string       `json:"id"`
 	Kind     TrackKind    `json:"kind"`
 	TimeScale TimeScale  `json:"timescale"`
+	// PlaylistPath is the variant playlist location (HLS only), used to
+	// resolve segment URLs relative to the variant directory.
+	PlaylistPath string       `json:"playlist_path,omitempty"`
 	Segments []SegmentRef `json:"segments"`
 }
 
