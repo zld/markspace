@@ -194,23 +194,27 @@ func (r *Recoverer) expireWindow() {
 		return
 	}
 	var exts []uint64
-	for ext, info := range r.missing {
+	for ext := range r.missing {
 		if int64(ext) <= cutoff {
-			if r.report.Unrecoverable == 0 {
-				r.report.FirstTimestamp = info.timestamp
-				r.report.FirstOffset = info.offset
-			}
 			exts = append(exts, ext)
-			r.report.Unrecoverable++
-			r.report.UnrecoverableSeq = append(r.report.UnrecoverableSeq, info.sequence)
 		}
 	}
+	sort.Slice(exts, func(i, j int) bool { return exts[i] < exts[j] })
 	for _, ext := range exts {
+		info := r.missing[ext]
+		if r.report.Unrecoverable == 0 {
+			r.report.FirstTimestamp = info.timestamp
+			r.report.FirstOffset = info.offset
+		}
+		r.report.Unrecoverable++
+		r.report.UnrecoverableSeq = append(r.report.UnrecoverableSeq, info.sequence)
 		delete(r.missing, ext)
 	}
-	sort.Slice(r.report.UnrecoverableSeq, func(i, j int) bool {
-		return r.report.UnrecoverableSeq[i] < r.report.UnrecoverableSeq[j]
-	})
+	if len(exts) > 0 {
+		sort.Slice(r.report.UnrecoverableSeq, func(i, j int) bool {
+			return r.report.UnrecoverableSeq[i] < r.report.UnrecoverableSeq[j]
+		})
+	}
 }
 
 // Finalize expires every remaining gap and returns a structured error when

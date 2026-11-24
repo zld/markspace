@@ -72,7 +72,7 @@ func TestBurstLossOverWindow(t *testing.T) {
 		t.Fatalf("want structured loss error, got %v", err)
 	}
 	me, _ := model.AsMediaError(err)
-	if me.Unrecoverable != 4 || me.SourceOffset == nil {
-		t.Fatalf("error lacks count/offset: %+v", me)
+	if me.Unrecoverable != 4 || me.SourceOffset == nil || *me.SourceOffset != 102 {
+		t.Fatalf("error lacks count/deterministic first offset: %+v", me)
 	}
 }
