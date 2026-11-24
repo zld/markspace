@@ -35,6 +35,8 @@ const (
 type Frame struct {
 	// ExtSeq is the 64-bit extended sequence number (cycles<<16 | seq).
 	ExtSeq uint64
+	// Duplicate is true when this extended sequence was seen before.
+	Duplicate bool
 	// Seq16 is the original RTP sequence number.
 	Seq16 uint16
 	// Timestamp is the raw RTP timestamp in the sender clock domain.
@@ -136,6 +138,7 @@ type Reader struct {
 	tracker    *Tracker
 	sampleRate uint32
 	count      int
+	duplicates int
 	streamPos  int64
 }
 
@@ -149,6 +152,9 @@ func (rd *Reader) Tracker() *Tracker { return rd.tracker }
 
 // Count returns the number of packets read so far.
 func (rd *Reader) Count() int { return rd.count }
+
+// Duplicates returns how many packets had a repeated extended sequence.
+func (rd *Reader) Duplicates() int { return rd.duplicates }
 
 // Read returns the next verified frame, or io.EOF at a clean end of stream.
 func (rd *Reader) Read() (*Frame, error) {
@@ -186,6 +192,9 @@ func (rd *Reader) Read() (*Frame, error) {
 			"RTP header unmarshal failed").AtOffset(pktStart).Wrap(err)
 	}
 	tr := rd.tracker.Push(pkt.SequenceNumber)
+	if tr.Duplicate {
+		rd.duplicates++
+	}
 	frame, err := parseFrame(pkt.Payload)
 	if err != nil {
 		if me, ok := err.(*mpierr.MediaError); ok {
@@ -198,6 +207,7 @@ func (rd *Reader) Read() (*Frame, error) {
 		return nil, err
 	}
 	frame.ExtSeq = tr.Seq
+	frame.Duplicate = tr.Duplicate
 	frame.Seq16 = pkt.SequenceNumber
 	frame.Timestamp = pkt.Timestamp
 	frame.SSRC = pkt.SSRC

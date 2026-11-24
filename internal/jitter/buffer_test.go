@@ -78,31 +78,95 @@ func TestGapEmittedWhenWindowExhausted(t *testing.T) {
 
 func TestLatePacketOutsideWindow(t *testing.T) {
 	b, _ := New(Config{Window: 2, Node: "jitter"})
+	// Drive the release point forward; window exhausts gaps at seq 1 and 3.
 	_ = b.Push(frame(0, 0))
-	_ = b.Push(frame(1, 10))
-	_, _ = b.Release() // release 0
-	_, _ = b.Release() // release 1; ready is now 2
-	err := b.Push(frame(0, 0))
+	_ = b.Push(frame(2, 20)) // gap at 1 once the window is exhausted
+	_ = b.Push(frame(4, 40)) // forces gap at 1; ready advances toward 3
+	// Drain everything so the release point moves past all known sequences.
+	b.Drain()
+	for {
+		if _, ok := b.Release(); !ok {
+			break
+		}
+	}
+	// A never-seen sequence below the release point is a genuine late packet.
+	err := b.Push(frame(1, 7))
 	var me *mpierr.MediaError
 	if !errors.As(err, &me) || me.Category != mpierr.CatLate {
 		t.Fatalf("err = %v, want CatLate", err)
 	}
-	if me.ByteOffset != 0 {
-		t.Fatalf("late offset = %d, want 0", me.ByteOffset)
+	if me.ByteOffset != 7 {
+		t.Fatalf("late offset = %d, want 7", me.ByteOffset)
+	}
+}
+
+func TestDuplicateAfterReleaseStillDuplicate(t *testing.T) {
+	b, _ := New(Config{Window: 2, Node: "jitter"})
+	_ = b.Push(frame(0, 0))
+	b.Drain()
+	_, _ = b.Release() // seq 0 consumed; release point is now 1
+	err := b.Push(frame(0, 0))
+	var me *mpierr.MediaError
+	if !errors.As(err, &me) || me.Category != mpierr.CatDuplicate {
+		t.Fatalf("err = %v, want CatDuplicate", err)
 	}
 }
 
 func TestDuplicateNotRetimed(t *testing.T) {
 	b, _ := New(Config{Window: 4, Node: "jitter"})
+	// Two contiguous frames are released into the output queue but stay
+	// unconsumed; a repeated in-window sequence is still CatDuplicate.
 	_ = b.Push(frame(5, 0))
+	_ = b.Push(frame(6, 6))
+	// Re-inject seq 5 while the buffer still tracks it as a released-but-known
+	// position. It must be classified as a duplicate, not timed again.
 	err := b.Push(frame(5, 0))
 	var me *mpierr.MediaError
 	if !errors.As(err, &me) || me.Category != mpierr.CatDuplicate {
 		t.Fatalf("err = %v, want CatDuplicate", err)
 	}
+	b.Drain()
 	events := drainAll(b)
-	if len(events) != 1 || events[0].Frame.ExtSeq != 5 {
-		t.Fatalf("duplicate must not be released twice: %+v", events)
+	count5 := 0
+	for _, ev := range events {
+		if ev.Frame != nil && ev.Frame.ExtSeq == 5 {
+			count5++
+		}
+	}
+	if count5 != 1 {
+		t.Fatalf("seq 5 released %d times, want exactly 1: %+v", count5, events)
+	}
+}
+
+func TestStreamStaysBoundedAndEmitsGaps(t *testing.T) {
+	// Window 2: a stream with one missing packet must self-drain so the
+	// in-memory slot count never exceeds the window, even for long streams.
+	b, _ := New(Config{Window: 2, Node: "jitter"})
+	seqs := []uint64{0, 2, 3, 5, 6, 7, 8} // missing 1 and 4
+	for _, s := range seqs {
+		if err := b.Push(frame(s, int64(s))); err != nil {
+			t.Fatalf("push %d: %v", s, err)
+		}
+		if b.Buffered() > 2 {
+			t.Fatalf("buffered %d exceeds window 2", b.Buffered())
+		}
+	}
+	b.Drain()
+	events := drainAll(b)
+	var gotSeqs []uint64
+	var gaps []uint64
+	for _, ev := range events {
+		if ev.Frame != nil {
+			gotSeqs = append(gotSeqs, ev.Frame.ExtSeq)
+		} else {
+			gaps = append(gaps, ev.Gap.Seq)
+		}
+	}
+	if len(gaps) != 2 || gaps[0] != 1 || gaps[1] != 4 {
+		t.Fatalf("gaps = %v, want [1 4]", gaps)
+	}
+	if len(gotSeqs) != len(seqs) {
+		t.Fatalf("frame count = %d, want %d", len(gotSeqs), len(seqs))
 	}
 }
 
@@ -116,17 +180,6 @@ func TestDrainEmitsTrailingGaps(t *testing.T) {
 	}
 	if events[0].Frame == nil || events[1].Gap == nil || events[1].Gap.Seq != 1 || events[2].Frame == nil {
 		t.Fatalf("unexpected event sequence: %+v", events)
-	}
-}
-
-func TestWindowFullRejected(t *testing.T) {
-	b, _ := New(Config{Window: 2, Node: "jitter"})
-	_ = b.Push(frame(0, 0))
-	_ = b.Push(frame(1, 10))
-	err := b.Push(frame(2, 20))
-	var me *mpierr.MediaError
-	if !errors.As(err, &me) || me.Category != mpierr.CatLimit {
-		t.Fatalf("err = %v, want CatLimit", err)
 	}
 }
 

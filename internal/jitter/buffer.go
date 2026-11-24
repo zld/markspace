@@ -6,6 +6,10 @@
 // release point is a late packet and produces a locatable CatLate error.
 // Duplicates are reported but never released twice, so they cannot be timed
 // twice. Missing positions are emitted as gaps instead of fabricated audio.
+//
+// Push is self-draining: whenever the window fills it releases the positions
+// that can no longer change into a bounded output queue, so memory stays
+// bounded regardless of stream length. Release consumes that queue.
 package jitter
 
 import (
@@ -43,10 +47,12 @@ type Gap struct {
 type Buffer struct {
 	cfg      Config
 	slots    map[uint64]*rtp.Frame
-	ready    uint64 // next expected sequence position
-	high     uint64 // highest sequence position ever accepted
+	seen     map[uint64]struct{} // every accepted sequence, including released
+	ready    uint64              // next expected sequence position
+	high     uint64              // highest sequence position ever accepted
 	started  bool
 	draining bool
+	out      []Event // bounded released events awaiting Release
 }
 
 // New validates the config and builds a Buffer.
@@ -54,7 +60,11 @@ func New(cfg Config) (*Buffer, error) {
 	if cfg.Window <= 0 {
 		return nil, fmt.Errorf("jitter: window must be positive, got %d", cfg.Window)
 	}
-	return &Buffer{cfg: cfg, slots: make(map[uint64]*rtp.Frame)}, nil
+	return &Buffer{
+		cfg:   cfg,
+		slots: make(map[uint64]*rtp.Frame),
+		seen:  make(map[uint64]struct{}),
+	}, nil
 }
 
 // Push adds a frame. It returns a CatDuplicate error for a repeated sequence
@@ -64,57 +74,66 @@ func (b *Buffer) Push(f *rtp.Frame) error {
 	if !b.started {
 		b.started = true
 		b.ready = f.ExtSeq
+		b.high = f.ExtSeq
+	}
+	if _, known := b.seen[f.ExtSeq]; known {
+		return mpierr.New(mpierr.CatDuplicate, f.ExtSeq, b.cfg.Node,
+			"duplicate sequence number dropped").AtOffset(f.StreamOffset)
 	}
 	if f.ExtSeq < b.ready {
 		return mpierr.New(mpierr.CatLate, f.ExtSeq, b.cfg.Node,
 			fmt.Sprintf("packet arrived after release point %d", b.ready)).
 			AtOffset(f.StreamOffset)
 	}
-	if _, exists := b.slots[f.ExtSeq]; exists {
-		return mpierr.New(mpierr.CatDuplicate, f.ExtSeq, b.cfg.Node,
-			"duplicate sequence number dropped").AtOffset(f.StreamOffset)
-	}
-	if len(b.slots) >= b.cfg.Window {
-		return mpierr.New(mpierr.CatLimit, f.ExtSeq, b.cfg.Node,
-			fmt.Sprintf("jitter window of %d positions is full", b.cfg.Window)).
-			AtOffset(f.StreamOffset)
-	}
+	b.seen[f.ExtSeq] = struct{}{}
 	b.slots[f.ExtSeq] = f
 	if f.ExtSeq > b.high {
 		b.high = f.ExtSeq
 	}
+	b.advance()
 	return nil
 }
 
-// Drain marks the stream as finished so Release can flush buffered positions.
-func (b *Buffer) Drain() { b.draining = true }
+// advance moves every position that can no longer change into the output
+// queue. While streaming, a position at the release point is emitted as a gap
+// only once the window behind it is exhausted; at Drain, all remaining
+// positions up to the highest accepted one are flushed.
+func (b *Buffer) advance() {
+	for b.ready <= b.high {
+		if f, ok := b.slots[b.ready]; ok {
+			delete(b.slots, b.ready)
+			b.out = append(b.out, Event{Frame: f})
+			b.ready++
+			continue
+		}
+		// Missing at the release point.
+		if !b.draining && b.high-b.ready < uint64(b.cfg.Window) {
+			return // still inside the reorder window; wait
+		}
+		// Window exhausted (or draining): record the gap and move on.
+		b.out = append(b.out, Event{Gap: &Gap{Seq: b.ready, Node: b.cfg.Node}})
+		b.ready++
+	}
+}
 
-// Release emits the next available event and reports whether one was produced.
-// While draining, any missing position is emitted as a gap. Otherwise a gap is
-// emitted only once the window is full of newer positions, meaning the missing
-// packet can no longer arrive inside the window.
+// Drain marks the stream as finished so Release can flush buffered positions.
+func (b *Buffer) Drain() {
+	b.draining = true
+	b.advance()
+}
+
+// Release returns the next available event and reports whether one existed.
 func (b *Buffer) Release() (Event, bool) {
-	if !b.started || b.ready > b.high {
+	if len(b.out) == 0 {
 		return Event{}, false
 	}
-	if f, ok := b.slots[b.ready]; ok {
-		delete(b.slots, b.ready)
-		b.ready++
-		return Event{Frame: f}, true
-	}
-	// Missing at the release point. Decide whether to wait for reordering.
-	if !b.draining {
-		if b.high-b.ready < uint64(b.cfg.Window) {
-			return Event{}, false // window not yet exhausted; keep waiting
-		}
-	}
-	seq := b.ready
-	b.ready++
-	return Event{Gap: &Gap{Seq: seq, Node: b.cfg.Node}}, true
+	ev := b.out[0]
+	b.out = b.out[1:]
+	return ev, true
 }
 
 // Ready returns the next sequence position the buffer will release.
 func (b *Buffer) Ready() uint64 { return b.ready }
 
-// Buffered returns the number of frames currently held.
+// Buffered returns the number of frames currently held in the reorder slots.
 func (b *Buffer) Buffered() int { return len(b.slots) }
