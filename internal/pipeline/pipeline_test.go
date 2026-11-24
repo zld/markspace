@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"mediasync/internal/clock"
 )
 
 func TestHealthyStreamMeetsAcceptanceThresholds(t *testing.T) {
@@ -164,5 +166,62 @@ func TestDependencyFailureExhaustsRetries(t *testing.T) {
 func TestInvalidArgumentExitPath(t *testing.T) {
 	if _, err := Run(Options{Seed: 1, Duration: -1 * time.Second}); err == nil {
 		t.Fatal("negative duration must be rejected before scheduling")
+	}
+}
+
+// TestFaultPropagationChainInvariants asserts that two distinct fault classes
+// propagate across the clock-repair, RTP-recovery and index-build boundaries
+// and that every post-recovery invariant still holds end to end.
+func TestFaultPropagationChainInvariants(t *testing.T) {
+	// Class A: concealable loss + reorder + corrupt index. The fault must be
+	// visible in the repair reasons, concealed in recovery, and sanitized in
+	// the index without breaking timeline monotonicity or bounds.
+	res, err := Run(Options{Seed: 19, Duration: 6 * time.Second, LossBurst: 4,
+		Reorder: 5, CorruptIndex: 3, RetryLimit: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Repair == nil || res.Repair.Counters.Reasons == nil {
+		t.Fatal("repair stage did not surface reason counters across the boundary")
+	}
+	if res.Recover.Stats.Concealed != 4 {
+		t.Errorf("concealed packets=%d want 4", res.Recover.Stats.Concealed)
+	}
+	if res.Index.Dropped.TotalDropped != 3 {
+		t.Errorf("corrupt records dropped=%d want 3", res.Index.Dropped.TotalDropped)
+	}
+	// Invariant 1: rebuilt index is time-sorted and fully inside the input.
+	var prev clock.Tick = -1
+	for _, rec := range res.Index.Records {
+		if rec.TimeTicks < prev {
+			t.Fatal("index not time-sorted after recovery")
+		}
+		if rec.ByteOffset+rec.Length > res.Index.InputLength {
+			t.Fatal("index offset escapes input after recovery")
+		}
+		prev = rec.TimeTicks
+	}
+	// Invariant 2: every interval referenced by the index still exists.
+	if len(res.Index.Records) != len(res.Recover.Intervals) {
+		t.Fatalf("index entries %d != intervals %d",
+			len(res.Index.Records), len(res.Recover.Intervals))
+	}
+
+	// Class B: oversized burst blocks recovery, propagates into the DAG and
+	// prevents the index node from ever running.
+	blocked, err := Run(Options{Seed: 23, Duration: 6 * time.Second, LossBurst: 12,
+		RetryLimit: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if blocked.Summary.BlockedDependency != "recover" {
+		t.Fatalf("blocking did not propagate from recovery: %q",
+			blocked.Summary.BlockedDependency)
+	}
+	if indexNode, ok := blocked.Graph.Node("index"); ok && indexNode.Completed {
+		t.Fatal("index node must not complete while recovery is blocked")
+	}
+	if blocked.Summary.ExitCode != 2 {
+		t.Fatalf("blocked run exit=%d want 2", blocked.Summary.ExitCode)
 	}
 }
