@@ -46,6 +46,16 @@ type TrackInfo struct {
 	// KeyframeOrigin is "index" when stss was usable, "scan" when it was
 	// missing or out of range and the sample table was consulted.
 	KeyframeOrigin Origin
+	// FallbackReason explains why the index was not used. It is empty when the
+	// index was honoured.
+	FallbackReason string
+	// BadIndexEntry is the 1-based stss entry that failed validation, and
+	// BadIndexSample the sample number it named. Both are zero when not
+	// applicable, and let the audit point at the damaged record.
+	BadIndexEntry  int
+	BadIndexSample uint32
+	// BadIndexOffset is the byte offset of the damaged stss entry.
+	BadIndexOffset uint64
 }
 
 // Index is the parse result for one MP4 file.
@@ -143,18 +153,19 @@ func hasFtyp(r io.ReadSeeker) bool {
 
 // trakBoxes holds the boxes of a single trak in extraction order.
 type trakBoxes struct {
-	tkhd *mp4.Tkhd
-	mdhd *mp4.Mdhd
-	hdlr *mp4.Hdlr
-	avc1 *mp4.VisualSampleEntry
-	mp4a *mp4.AudioSampleEntry
-	stts *mp4.Stts
-	ctts *mp4.Ctts
-	stsz *mp4.Stsz
-	stco *mp4.Stco
-	co64 *mp4.Co64
-	stsc *mp4.Stsc
-	stss *mp4.Stss
+	stssOffset uint64 // file offset of the stss payload
+	tkhd       *mp4.Tkhd
+	mdhd       *mp4.Mdhd
+	hdlr       *mp4.Hdlr
+	avc1       *mp4.VisualSampleEntry
+	mp4a       *mp4.AudioSampleEntry
+	stts       *mp4.Stts
+	ctts       *mp4.Ctts
+	stsz       *mp4.Stsz
+	stco       *mp4.Stco
+	co64       *mp4.Co64
+	stsc       *mp4.Stsc
+	stss       *mp4.Stss
 }
 
 // groupByTrak splits the flat extraction list into per-trak groups. Each trak
@@ -194,6 +205,7 @@ func groupByTrak(bips []*mp4.BoxInfoWithPayload) []*trakBoxes {
 			cur.stsc = b
 		case *mp4.Stss:
 			cur.stss = b
+			cur.stssOffset = bip.Info.Offset + bip.Info.HeaderSize
 		}
 	}
 	return out
@@ -281,24 +293,36 @@ func buildTrack(r io.ReadSeeker, tr *trakBoxes, file string, opts Options) (Trac
 
 	// Keyframe resolution: prefer stss, fall back to a scan when it is
 	// missing, malformed or names out-of-range samples.
-	markKeyframes(samples, info.TrackID, tr.stss, file, opts, &info)
+	markKeyframes(samples, info.TrackID, tr.stss, tr.stssOffset, file, opts, &info)
 	info.SampleCount = len(samples)
 	return info, samples, nil
 }
 
-// markKeyframes sets Keyframe/Origin and KeyframeOrigin.
-func markKeyframes(samples []Sample, trackID uint32, stss *mp4.Stss, file string, opts Options, info *TrackInfo) {
-	indexUsable := stss != nil && len(stss.SampleNumber) > 0
-	if indexUsable {
+// markKeyframes sets Keyframe/Origin and KeyframeOrigin, recording exactly
+// why the index was rejected when it was.
+func markKeyframes(samples []Sample, trackID uint32, stss *mp4.Stss, stssPayloadOffset uint64, file string, opts Options, info *TrackInfo) {
+	switch {
+	case stss == nil:
+		info.FallbackReason = "stss_missing"
+	case len(stss.SampleNumber) == 0:
+		info.FallbackReason = "stss_empty"
+	default:
 		seen := make([]bool, len(samples))
-		for _, n := range stss.SampleNumber {
+		bad := false
+		for i, n := range stss.SampleNumber {
 			if n == 0 || int(n) > len(samples) {
-				indexUsable = false
+				info.FallbackReason = "stss_sample_out_of_range"
+				info.BadIndexEntry = i + 1
+				info.BadIndexSample = n
+				// Entries are 4 bytes after the 4-byte version/flags and
+				// the 4-byte entry count.
+				info.BadIndexOffset = stssPayloadOffset + 8 + uint64(i)*4
+				bad = true
 				break
 			}
 			seen[n-1] = true
 		}
-		if indexUsable {
+		if !bad {
 			for i := range samples {
 				if seen[i] {
 					samples[i].Keyframe = true

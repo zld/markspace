@@ -90,6 +90,12 @@ func TestOutOfRangeKeyframeFallsBack(t *testing.T) {
 	if tr.KeyframeOrigin != OriginScan {
 		t.Fatalf("want scan fallback, got %s", tr.KeyframeOrigin)
 	}
+	if tr.FallbackReason != "stss_sample_out_of_range" || tr.BadIndexSample != 9 || tr.BadIndexEntry != 3 {
+		t.Fatalf("fallback reason %q entry %d sample %d", tr.FallbackReason, tr.BadIndexEntry, tr.BadIndexSample)
+	}
+	if tr.BadIndexOffset == 0 {
+		t.Fatal("damaged entry must carry a byte offset")
+	}
 	for _, smp := range ix.Samples(1) {
 		if smp.Keyframe && smp.Origin != OriginScan {
 			t.Fatalf("sample %d origin %s", smp.Index, smp.Origin)
@@ -105,8 +111,8 @@ func TestMissingStssFallsBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	tr, _ := ix.VideoTrack()
-	if tr.KeyframeOrigin != OriginScan {
-		t.Fatalf("want scan, got %s", tr.KeyframeOrigin)
+	if tr.KeyframeOrigin != OriginScan || tr.FallbackReason != "stss_missing" {
+		t.Fatalf("want scan due to missing stss, got %s/%s", tr.KeyframeOrigin, tr.FallbackReason)
 	}
 	// Without a scan the reader must still succeed but report no keyframes.
 	ix2, err := parseSpec(t, s, Options{FallbackScan: false})
@@ -138,11 +144,19 @@ func TestTruncatedSampleIsAddressable(t *testing.T) {
 	}
 }
 
-func TestCorruptTopLevelRejected(t *testing.T) {
-	if _, es := Parse(bytes.NewReader([]byte("not an mp4 at all")), "bad.mp4", Options{}); es.FirstFatal() == nil {
-		t.Fatal("garbage must be classified as corrupt")
-	}
-	if _, es := Parse(bytes.NewReader(nil), "empty.mp4", Options{}); es.FirstFatal() == nil {
-		t.Fatal("empty file must be classified as corrupt")
+func TestCorruptTopLevelReportedNotFatal(t *testing.T) {
+	// Garbage is reported against this file only; the batch continues so
+	// other tracks can still be audited.
+	for _, in := range [][]byte{[]byte("not an mp4 at all"), nil} {
+		ix, es := Parse(bytes.NewReader(in), "bad.mp4", Options{})
+		if len(ix.Tracks) != 0 {
+			t.Fatal("garbage must yield no tracks")
+		}
+		if len(es) != 1 || es[0].Code != model.CodeIndexCorrupt {
+			t.Fatalf("diagnostics %v", es)
+		}
+		if es[0].Code.Fatal() || !es[0].Recoverable() {
+			t.Fatal("damage must be recoverable for the rest of the batch")
+		}
 	}
 }

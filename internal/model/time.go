@@ -199,12 +199,15 @@ const (
 	CodeInternal           ErrorCode = "internal_error"
 )
 
-// Fatal reports whether a code aborts the run (exit code 1). Everything else
-// is a per-segment problem that leaves other tracks running (exit code 2).
+// Fatal reports whether a code aborts the run (exit code 1). Exit code 2 is
+// reserved for recoverable per-segment failures; ordinary I/O errors while
+// reading an input are attributed to that input's segment and stay
+// recoverable, while unusable arguments or an inconsistent checkpoint are
+// process-level failures. IO itself is mapped per call site.
 func (c ErrorCode) Fatal() bool {
 	switch c {
 	case CodeCheckpointMismatch, CodeCheckpointCorrupt,
-		CodeInvalidArgument, CodeIO, CodeInternal, CodeIndexCorrupt:
+		CodeInvalidArgument, CodeInternal:
 		return true
 	default:
 		return false

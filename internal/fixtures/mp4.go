@@ -321,14 +321,27 @@ func buildStss(spec MP4Spec) []byte {
 	return fullBox("stss", 0, 0, p)
 }
 
-// CorruptIndexBytes rewrites the stss fourcc to an unknown type, leaving the
-// box in place but unreadable as a keyframe index.
-func CorruptIndexBytes(data []byte) ([]byte, error) {
+// CorruptIndexBytes damages the keyframe index in place by pointing its first
+// entry at a sample that cannot exist. The box stays readable, so a reader can
+// name the offending entry, the sample it named and the byte offset of the
+// damaged table instead of silently discarding it.
+func CorruptIndexBytes(data []byte) ([]byte, int, error) {
 	idx := bytes.Index(data, []byte("stss"))
 	if idx < 4 {
-		return nil, errors.New("fixtures: no stss box to corrupt")
+		return nil, 0, errors.New("fixtures: no stss box to corrupt")
 	}
+	boxStart := idx - 4
 	out := append([]byte(nil), data...)
-	copy(out[idx:idx+4], []byte("zzzz"))
-	return out, nil
+	// Layout: size(4) type(4) version/flags(4) entry_count(4) entries...
+	entryCountOff := boxStart + 12
+	if entryCountOff+8 > len(out) {
+		return nil, 0, errors.New("fixtures: stss box is truncated")
+	}
+	count := binary.BigEndian.Uint32(out[entryCountOff:])
+	if count == 0 {
+		return nil, 0, errors.New("fixtures: stss has no entries")
+	}
+	firstEntry := entryCountOff + 4
+	binary.BigEndian.PutUint32(out[firstEntry:], 0x00FFFFFF)
+	return out, firstEntry, nil
 }
