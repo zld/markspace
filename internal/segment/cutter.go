@@ -147,11 +147,10 @@ func (c *Cutter) Finish(truncated bool) *ClosedSegment {
 	}
 	endMs := last.MediaMs + frameMs
 	c.recomputeStats(endMs)
-	c.seg.Complete = !truncated && endMs-c.seg.StartMs >= c.TargetMs
+	// A clean end-of-stream makes the tail complete even when it is shorter
+	// than the target duration; only a truncated input leaves it incomplete.
+	c.seg.Complete = !truncated
 	c.seg.Recoverable = c.seg.PacketCount > 0
-	if truncated {
-		c.seg.Complete = false
-	}
 	out := ClosedSegment{Segment: c.seg, Packets: append([]model.Packet(nil), c.packets...)}
 	c.closed = append(c.closed, out.Segment)
 	c.active = false

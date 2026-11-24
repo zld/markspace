@@ -39,6 +39,11 @@ func NewDeduperFromState(
 		bySegment[fp.SegmentIndex] = append(bySegment[fp.SegmentIndex], fp)
 	}
 	for _, seg := range segments {
+		// Merged segments are source mappings only, never canonical candidates
+		// after resume; otherwise a later repeat could map to a merged segment.
+		if seg.MergedInto != nil {
+			continue
+		}
 		d.seen = append(d.seen, seenSegment{
 			Segment:      seg,
 			Fingerprints: append([]model.WindowFingerprint(nil), bySegment[seg.Index]...),

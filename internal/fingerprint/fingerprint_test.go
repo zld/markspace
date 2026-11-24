@@ -71,6 +71,44 @@ func TestDeduperMapsMergedToKept(t *testing.T) {
 	}
 }
 
+func TestDeduperRestoreKeepsCanonicalKeptSegment(t *testing.T) {
+	tol := int64(20)
+	s0 := model.Segment{Index: 0, StartMs: 0, EndMs: 2000}
+	f0 := []model.WindowFingerprint{{SegmentIndex: 0, StartMs: 0, EndMs: 200, Hash: 42, Complete: true}}
+	s1 := model.Segment{Index: 1, StartMs: 6000, EndMs: 8020}
+	f1 := []model.WindowFingerprint{{SegmentIndex: 1, StartMs: 6000, EndMs: 6200, Hash: 42, Complete: true}}
+
+	fresh := NewDeduper(tol)
+	fresh.Add(s0, f0)
+	merged1, mapping1 := fresh.Add(s1, f1)
+	if mapping1 == nil || merged1.MergedInto == nil || *merged1.MergedInto != 0 {
+		t.Fatalf("precondition failed: merged1=%+v mapping=%+v", merged1, mapping1)
+	}
+
+	restored := NewDeduperFromState(
+		[]model.Segment{s0, merged1},
+		[]model.WindowFingerprint{f0[0], f1[0]},
+		[]model.DedupeMapping{*mapping1},
+		tol,
+	)
+	s2 := model.Segment{Index: 2, StartMs: 12000, EndMs: 14040}
+	f2 := []model.WindowFingerprint{{SegmentIndex: 2, StartMs: 12000, EndMs: 12200, Hash: 42, Complete: true}}
+	out2, mapping2 := restored.Add(s2, f2)
+	if mapping2 != nil {
+		t.Fatalf("merged source must not be a resume candidate: mapping=%+v", mapping2)
+	}
+	if out2.MergedInto != nil {
+		t.Fatalf("segment should remain independent of non-canonical merged source: %+v", out2)
+	}
+
+	s3 := model.Segment{Index: 3, StartMs: 18000, EndMs: 20010}
+	f3 := []model.WindowFingerprint{{SegmentIndex: 3, StartMs: 18000, EndMs: 18200, Hash: 42, Complete: true}}
+	out3, mapping3 := restored.Add(s3, f3)
+	if mapping3 == nil || mapping3.KeptSegment != 0 || out3.MergedInto == nil || *out3.MergedInto != 0 {
+		t.Fatalf("canonical root mapping failed: out=%+v mapping=%+v", out3, mapping3)
+	}
+}
+
 func TestDeduperDoesNotMergeIncompleteWindows(t *testing.T) {
 	d := NewDeduper(20)
 	seg := model.Segment{Index: 0, StartMs: 0, EndMs: 40}

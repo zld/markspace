@@ -65,6 +65,23 @@ func TestCutterChoosesNearestPacketBoundary(t *testing.T) {
 	}
 }
 
+func TestCutterCleanShortTailIsComplete(t *testing.T) {
+	c := NewCutter(2000)
+	for i := 0; i < 110; i++ {
+		c.Push(tp(uint64(i), int64(i*20), 160))
+	}
+	tail := c.Finish(false)
+	if tail == nil {
+		t.Fatal("expected tail")
+	}
+	if !tail.Segment.Complete {
+		t.Fatal("clean EOS short tail should be complete")
+	}
+	if !tail.Segment.Recoverable {
+		t.Fatal("tail should remain recoverable")
+	}
+}
+
 func TestCutterMarksTruncatedTailIncompleteAndRecoverable(t *testing.T) {
 	c := NewCutter(2000)
 	c.Push(tp(1, 0, 160))
