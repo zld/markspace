@@ -160,9 +160,10 @@ func buildRep(seed int64, trackID uint32, name string, timescale uint32, bitrate
 }
 
 func lateEvent(seed int64, rep *RepSpec) model.RawEvent {
-	// Insert immediately after the third continuous sample. Its timestamp is
-	// duplicated to make modular unwrapping unambiguous in the self-test.
-	anchor := rep.Samples[2]
+	// Insert immediately after the eleventh continuous sample, so recovery can
+	// use the eight-event checkpoint. Duplicating its timestamp makes modular
+	// unwrapping unambiguous in the self-test.
+	anchor := rep.Samples[10]
 	return model.RawEvent{
 		TrackID:        rep.TrackID,
 		Representation: rep.Name,

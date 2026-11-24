@@ -23,6 +23,14 @@ type InputSummary struct {
 	Size   int64  `json:"size"`
 }
 
+// RecoveryPoint is a bounded prefix checkpoint that can replay a suffix.
+type RecoveryPoint struct {
+	Offset    int                    `json:"offset"`
+	Watermark WatermarkState         `json:"watermark"`
+	Unwrap    map[uint32]UnwrapState `json:"unwrap"`
+	Index     mediaindex.State       `json:"index"`
+}
+
 // Checkpoint contains everything required to validate and resume a run.
 type Checkpoint struct {
 	Version int `json:"version"`
@@ -35,6 +43,7 @@ type Checkpoint struct {
 	Watermark WatermarkState         `json:"watermark"`
 	Unwrap    map[uint32]UnwrapState `json:"unwrap"`
 	Index     mediaindex.State       `json:"index"`
+	Recovery  []RecoveryPoint        `json:"recovery_points,omitempty"`
 
 	// BaseManifestSHA256 is optional but lets the late-event acceptance path
 	// prove reproducibility against the completed ordered run.

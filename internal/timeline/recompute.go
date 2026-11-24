@@ -2,6 +2,7 @@ package timeline
 
 import (
 	"fmt"
+	"reflect"
 	"sort"
 
 	mediaindex "github.com/zld/mediarc/internal/index"
@@ -20,6 +21,7 @@ type Built struct {
 	Index     *mediaindex.Index      `json:"-"`
 	Unwrap    map[uint32]UnwrapState `json:"unwrap_states"`
 	Watermark WatermarkState         `json:"watermark"`
+	Recovery  []RecoveryPoint        `json:"-"`
 	Issues    []model.Issue          `json:"issues,omitempty"`
 }
 
@@ -53,21 +55,7 @@ func Build(raw []model.RawEvent, cfg model.Config) (*Built, error) {
 		return nil, err
 	}
 
-	points := make([]mediaindex.Keyframe, 0)
-	for _, ev := range corrected {
-		if ev.Raw.Keyframe {
-			points = append(points, mediaindex.Keyframe{
-				TrackID:        ev.Raw.TrackID,
-				SampleNumber:   ev.Raw.SampleNumber,
-				RawTimestamp:   ev.Raw.RawTimestamp,
-				Timescale:      ev.Raw.Timescale,
-				TimeNS:         ev.TimeNS,
-				Offset:         ev.Raw.BoxOffset,
-				Representation: ev.Raw.Representation,
-			})
-		}
-	}
-	idx := mediaindex.Build(points)
+	idx := mediaindex.Build(keyframePoints(corrected))
 	ordered := OrderedByTime(corrected)
 
 	wm := NewWatermark(cfg.AllowedLatenessNS)
@@ -98,12 +86,17 @@ func Build(raw []model.RawEvent, cfg model.Config) (*Built, error) {
 		})
 	}
 
+	recovery, err := buildRecoveryPoints(continuousRaw, corrected, cfg, wm.State())
+	if err != nil {
+		return nil, err
+	}
 	return &Built{
 		Continuous: corrected,
 		Ordered:    ordered,
 		Index:      idx,
 		Unwrap:     states,
 		Watermark:  wm.State(),
+		Recovery:   recovery,
 		Issues:     issues,
 	}, nil
 }
@@ -117,6 +110,7 @@ func (b *Built) Checkpoint(input InputSummary, cfg model.Config, manifestSHA str
 		Watermark:          b.Watermark,
 		Unwrap:             b.Unwrap,
 		Index:              b.Index.State(),
+		Recovery:           b.Recovery,
 		BaseManifestSHA256: manifestSHA,
 	}
 }
@@ -136,29 +130,68 @@ func RecomputeFromCheckpoint(cp *Checkpoint, base []model.RawEvent, late ...mode
 	if cp == nil {
 		return nil, fmt.Errorf("%w: nil checkpoint", model.ErrCheckpoint)
 	}
-	unwrapper := NewUnwrapper()
-	unwrapper.Restore(cp.Unwrap)
-	if len(cp.Unwrap) == 0 && cp.ProcessedEvents > 0 {
+	if len(cp.Unwrap) == 0 && cp.ProcessedEvents > 0 && len(cp.Recovery) == 0 {
 		return nil, fmt.Errorf("%w: missing unwrap state", model.ErrCheckpoint)
 	}
-	wm := NewWatermark(cp.Config.AllowedLatenessNS)
-	wm.Restore(cp.Watermark)
-	restoredIndex := mediaindex.FromState(cp.Index)
-	restoredEvents := len(restoredIndex.All())
 
 	all := make([]model.RawEvent, 0, len(base)+len(late))
 	all = append(all, base...)
 	all = append(all, late...)
+	orderedAll := ContinuousOrder(all)
+	latePosition := earliestPosition(orderedAll, late)
+	rp, hasRecoveryPoint := nearestRecoveryPoint(cp, latePosition)
+
+	offset := 0
+	restoredEvents := 0
+	unwrapper := NewUnwrapper()
+	wm := NewWatermark(cp.Config.AllowedLatenessNS)
+	if hasRecoveryPoint {
+		offset = rp.Offset
+		unwrapper.Restore(rp.Unwrap)
+		wm.Restore(rp.Watermark)
+		restoredEvents = len(mediaindex.FromState(rp.Index).All())
+
+		// Actually replay the suffix through restored wraparound state.
+		for _, ev := range orderedAll[offset:] {
+			if _, _, err := unwrapper.UnwrapRaw(ev.TrackID, ev.RawTimestamp, ev.TimestampBits); err != nil {
+				return nil, err
+			}
+		}
+	} else {
+		unwrapper.Restore(cp.Unwrap)
+		wm.Restore(cp.Watermark)
+		restoredEvents = len(mediaindex.FromState(cp.Index).All())
+	}
+	_ = wm
+
 	built, err := Build(all, cp.Config)
 	if err != nil {
 		return nil, err
 	}
+	if hasRecoveryPoint && !reflect.DeepEqual(unwrapper.States(), built.Unwrap) {
+		return nil, fmt.Errorf("%w: replayed unwrap state does not match full order", model.ErrCheckpoint)
+	}
 	return &RecomputeResult{
 		Recomputed:       true,
-		CheckpointOffset: cp.ProcessedEvents,
+		CheckpointOffset: offset,
 		RestoredEvents:   restoredEvents,
 		Result:           built,
 	}, nil
+}
+
+func earliestPosition(events []model.RawEvent, late []model.RawEvent) int {
+	if len(late) == 0 {
+		return 0
+	}
+	pos := len(events)
+	for _, target := range late {
+		for i, ev := range events {
+			if ev.TrackID == target.TrackID && ev.SampleNumber == target.SampleNumber && i < pos {
+				pos = i
+			}
+		}
+	}
+	return pos
 }
 
 // SameEventTimes compares the deterministic shared timeline of two builds.

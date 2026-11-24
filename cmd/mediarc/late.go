@@ -96,6 +96,8 @@ func runLateEvent(checkpointPath string) error {
 	}
 
 	fmt.Printf("recomputed=%t\n", rec.Recomputed)
+	fmt.Printf("checkpoint_offset=%d\n", rec.CheckpointOffset)
+	fmt.Printf("restored_keyframes=%d\n", rec.RestoredEvents)
 	fmt.Printf("late_disposition=%s\n", disposition)
 	fmt.Printf("manifest_sha256=%s\n", recManifest.ManifestSHA256)
 	fmt.Printf("full_manifest_sha256=%s\n", fullManifest.ManifestSHA256)
