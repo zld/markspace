@@ -8,7 +8,7 @@ import (
 )
 
 func tr(start, end int64, keys ...int64) *index.TrackIndex {
-	t := &index.TrackIndex{StartUS: start, EndUS: end, SampleCount: int(end/33_333)+1}
+	t := &index.TrackIndex{StartUS: start, EndUS: end, SampleCount: int(end/33_333) + 1}
 	for i, k := range keys {
 		t.Keyframes = append(t.Keyframes, index.Keyframe{Sample: i + 1, TimeUS: k})
 	}
