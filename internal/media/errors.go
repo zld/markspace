@@ -84,6 +84,15 @@ func IsUnrecoverable(err error) bool {
 	return false
 }
 
+// AsPhase unwraps err into target and reports whether the staged error
+// belongs to the given phase.
+func AsPhase(err error, target **Error, phase Phase) bool {
+	if errors.As(err, target) {
+		return (*target).Phase == phase
+	}
+	return false
+}
+
 // Gap records a recoverable hole in a track: samples [FromSeq, ToSeq) are
 // missing or damaged. Gaps are surfaced in the delivery manifest rather
 // than silently dropped.
