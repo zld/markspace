@@ -1,0 +1,52 @@
+{
+  "version": "provenance/v1",
+  "input": {
+    "path": "tmp/demo/inputs/duplicate.mp4",
+    "size": 840,
+    "sha256": "2c4fc020a49fdd029b93b155ad8378bca998de49809b1b4e0ce8c1c3833a5aa9"
+  },
+  "output": {
+    "path": "tmp/demo/work-interrupted/output/duplicate.mp4",
+    "size": 803,
+    "sha256": "2eaa514f5d210d81a6f9ce32ad78570ed3b39a4ff6655381e1260f56c4977e68"
+  },
+  "params": {
+    "queue_capacity": 4,
+    "chunk_samples": 1,
+    "movie_timescale": 0,
+    "repair_limit": 0,
+    "rules_version": "clock/v1+repair/v1+index/v1"
+  },
+  "params_hash": "9459cd6f9d484c3cd4903ce736ace5d4a4039eaebc5cc154c06d9b2219d72fa7",
+  "rules_version": "clock/v1+repair/v1+index/v1",
+  "repaired_entries": 1,
+  "index_entries": 12,
+  "keyframe_entries": 1,
+  "checkpoint_stage": "verify",
+  "digest": "bb0aee55a25b77042622a384aed2bbdff8a959557f5d8de5a2c3d3eec6fee658",
+  "tracks": [
+    {
+      "track_id": 1,
+      "timescale": 90000,
+      "sample_count": 12,
+      "repaired_count": 1,
+      "keyframe_count": 1,
+      "index_entries": 12,
+      "first_pts": 5000,
+      "last_pts": 38000,
+      "index_offset_base": 5000,
+      "corrections": [
+        {
+          "sample": 5,
+          "original": 14000,
+          "repaired": 17000,
+          "kind": "duplicate"
+        }
+      ]
+    }
+  ],
+  "warnings": [
+    "skipped box free at 799",
+    "skipped box zzzz at 816"
+  ]
+}

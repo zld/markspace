@@ -1,0 +1,124 @@
+{
+  "version": "provenance/v1",
+  "input": {
+    "path": "tmp/demo/inputs/regression.mp4",
+    "size": 900,
+    "sha256": "fc45978f2e2502ab82d8acaa9e6e28cfb70ae07cbe0127e4000da74e04497eec"
+  },
+  "output": {
+    "path": "tmp/demo/work/output/regression.mp4",
+    "size": 903,
+    "sha256": "e66204e488ff69aad2cc6654cddb55f0e3053033c586cc2e26ceb40ba6448f94"
+  },
+  "params": {
+    "queue_capacity": 4,
+    "chunk_samples": 1,
+    "movie_timescale": 0,
+    "repair_limit": 0,
+    "rules_version": "clock/v1+repair/v1+index/v1"
+  },
+  "params_hash": "9459cd6f9d484c3cd4903ce736ace5d4a4039eaebc5cc154c06d9b2219d72fa7",
+  "rules_version": "clock/v1+repair/v1+index/v1",
+  "repaired_entries": 13,
+  "index_entries": 20,
+  "keyframe_entries": 2,
+  "checkpoint_stage": "verify",
+  "digest": "8e746feaab963db760e9674c9c75a2e983e4be220133db7c00c453c9ad376ef5",
+  "tracks": [
+    {
+      "track_id": 1,
+      "timescale": 90000,
+      "sample_count": 20,
+      "repaired_count": 13,
+      "keyframe_count": 2,
+      "index_entries": 20,
+      "first_pts": 89000,
+      "last_pts": 146000,
+      "index_offset_base": 89000,
+      "corrections": [
+        {
+          "sample": 8,
+          "original": 104000,
+          "repaired": 110000,
+          "kind": "backward"
+        },
+        {
+          "sample": 9,
+          "original": 107000,
+          "repaired": 113000,
+          "kind": "backward"
+        },
+        {
+          "sample": 10,
+          "original": 110000,
+          "repaired": 116000,
+          "kind": "backward"
+        },
+        {
+          "sample": 11,
+          "original": 113000,
+          "repaired": 119000,
+          "kind": "backward"
+        },
+        {
+          "sample": 12,
+          "original": 116000,
+          "repaired": 122000,
+          "kind": "backward"
+        },
+        {
+          "sample": 13,
+          "original": 119000,
+          "repaired": 125000,
+          "kind": "backward"
+        },
+        {
+          "sample": 14,
+          "original": 122000,
+          "repaired": 128000,
+          "kind": "backward"
+        },
+        {
+          "sample": 15,
+          "original": 125000,
+          "repaired": 131000,
+          "kind": "backward"
+        },
+        {
+          "sample": 16,
+          "original": 128000,
+          "repaired": 134000,
+          "kind": "backward"
+        },
+        {
+          "sample": 17,
+          "original": 131000,
+          "repaired": 137000,
+          "kind": "backward"
+        },
+        {
+          "sample": 18,
+          "original": 134000,
+          "repaired": 140000,
+          "kind": "backward"
+        },
+        {
+          "sample": 19,
+          "original": 137000,
+          "repaired": 143000,
+          "kind": "backward"
+        },
+        {
+          "sample": 20,
+          "original": 140000,
+          "repaired": 146000,
+          "kind": "backward"
+        }
+      ]
+    }
+  ],
+  "warnings": [
+    "skipped box free at 859",
+    "skipped box zzzz at 876"
+  ]
+}

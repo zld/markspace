@@ -181,6 +181,91 @@ func (ix *Index) Query(trackID uint32, targetTicks int64) (Hit, error) {
 	}, nil
 }
 
+// Locate resolves a target time to the sample that contains it: the last
+// sample whose PTS is at or before target. Because the index covers every
+// sample, not just sync points, the resolved time is never more than one
+// sample step behind the target. The result also names the keyframe a player
+// must start decoding from, which may be earlier than the located sample.
+func (ix *Index) Locate(trackID uint32, targetTicks int64) (Located, error) {
+	t, ok := ix.Track(trackID)
+	if !ok {
+		return Located{}, fault.New(fault.KindInvariant, fault.StageIndex,
+			"query for unknown track %d", trackID).Wrap(ErrUnknownTrack)
+	}
+	if len(t.Entries) == 0 || len(t.keyframes) == 0 {
+		return Located{}, fault.New(fault.KindInvariant, fault.StageIndex,
+			"track %d has no index entries", trackID)
+	}
+	lo, hi := 0, len(t.Entries)
+	for lo < hi {
+		mid := (lo + hi) / 2
+		if t.Entries[mid].PTS <= targetTicks {
+			lo = mid + 1
+		} else {
+			hi = mid
+		}
+	}
+	var sampleEntry Entry
+	sampleIdx := lo - 1
+	available := true
+	if sampleIdx < 0 {
+		sampleIdx = 0
+		available = false
+	}
+	sampleEntry = t.Entries[sampleIdx]
+
+	keyIdx := 0
+	for _, ki := range t.keyframes {
+		if t.Entries[ki].PTS <= sampleEntry.PTS {
+			keyIdx = ki
+		}
+	}
+	kf := t.Entries[keyIdx]
+
+	return Located{
+		TrackID: trackID, Available: available,
+		Sample: sampleEntry.Sample, PTS: sampleEntry.PTS, MovieTime: sampleEntry.MovieTime,
+		Offset: sampleEntry.Offset, Size: sampleEntry.Size,
+		Delta:          targetTicks - sampleEntry.PTS,
+		KeyframeSample: kf.Sample, KeyframePTS: kf.PTS, KeyframeMovieTime: kf.MovieTime,
+		KeyframeOffset: kf.Offset, KeyframeSize: kf.Size,
+		KeyframeDelta: sampleEntry.PTS - kf.PTS,
+	}, nil
+}
+
+// Located is the result of Locate. Sample/PTS/Offset describe the sample that
+// contains the requested time; Keyframe* describe the sync sample decoding
+// must begin at.
+type Located struct {
+	TrackID   uint32 `json:"track_id"`
+	Available bool   `json:"available"`
+	Sample    int    `json:"sample"`
+	PTS       int64  `json:"pts"`
+	MovieTime int64  `json:"movie_time"`
+	Offset    int64  `json:"offset"`
+	Size      uint32 `json:"size"`
+	Delta     int64  `json:"delta"`
+
+	KeyframeSample    int    `json:"keyframe_sample"`
+	KeyframePTS       int64  `json:"keyframe_pts"`
+	KeyframeMovieTime int64  `json:"keyframe_movie_time"`
+	KeyframeOffset    int64  `json:"keyframe_offset"`
+	KeyframeSize      uint32 `json:"keyframe_size"`
+	KeyframeDelta     int64  `json:"keyframe_delta"`
+}
+
+// Step returns the largest gap between consecutive entries, which bounds the
+// error of a Locate query.
+func (t *Track) Step() int64 {
+	var max int64
+	for i := 1; i < len(t.Entries); i++ {
+		if d := t.Entries[i].PTS - t.Entries[i-1].PTS; d > max {
+			max = d
+		}
+	}
+	return max
+}
+
 // QueryMovie resolves a target expressed in the movie timescale.
 func (ix *Index) QueryMovie(trackID uint32, movieTicks int64) (Hit, error) {
 	t, ok := ix.Track(trackID)

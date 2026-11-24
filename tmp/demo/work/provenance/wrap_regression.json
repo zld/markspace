@@ -1,0 +1,232 @@
+{
+  "version": "provenance/v1",
+  "input": {
+    "path": "tmp/demo/inputs/wrap_regression.mp4",
+    "size": 1148,
+    "sha256": "8b676d2c3f136d1d0859449590d06da43cc357433249b9320b36b6ec7eda6395"
+  },
+  "output": {
+    "path": "tmp/demo/work/output/wrap_regression.mp4",
+    "size": 1271,
+    "sha256": "e8dbbcd0060dda64971dbe6ab8d7cbf3897007f01b1a385d0e020a27b9cbc8d9"
+  },
+  "params": {
+    "queue_capacity": 4,
+    "chunk_samples": 1,
+    "movie_timescale": 0,
+    "repair_limit": 0,
+    "rules_version": "clock/v1+repair/v1+index/v1"
+  },
+  "params_hash": "9459cd6f9d484c3cd4903ce736ace5d4a4039eaebc5cc154c06d9b2219d72fa7",
+  "rules_version": "clock/v1+repair/v1+index/v1",
+  "repaired_entries": 31,
+  "index_entries": 50,
+  "keyframe_entries": 4,
+  "checkpoint_stage": "verify",
+  "digest": "24e8bfd86cb0582fe0489fca08657eb71ba5c18d158c81c3551b04a8bf225f04",
+  "tracks": [
+    {
+      "track_id": 1,
+      "timescale": 90000,
+      "sample_count": 50,
+      "repaired_count": 31,
+      "keyframe_count": 4,
+      "index_entries": 50,
+      "first_pts": 4294963200,
+      "last_pts": 4295110200,
+      "index_offset_base": 4294963200,
+      "corrections": [
+        {
+          "sample": 3,
+          "original": 1904,
+          "repaired": 4294969200,
+          "kind": "wrap"
+        },
+        {
+          "sample": 21,
+          "original": 46904,
+          "repaired": 4295023200,
+          "kind": "backward"
+        },
+        {
+          "sample": 22,
+          "original": 49904,
+          "repaired": 4295026200,
+          "kind": "backward"
+        },
+        {
+          "sample": 23,
+          "original": 52904,
+          "repaired": 4295029200,
+          "kind": "backward"
+        },
+        {
+          "sample": 24,
+          "original": 55904,
+          "repaired": 4295032200,
+          "kind": "backward"
+        },
+        {
+          "sample": 25,
+          "original": 58904,
+          "repaired": 4295035200,
+          "kind": "backward"
+        },
+        {
+          "sample": 26,
+          "original": 61904,
+          "repaired": 4295038200,
+          "kind": "backward"
+        },
+        {
+          "sample": 27,
+          "original": 64904,
+          "repaired": 4295041200,
+          "kind": "backward"
+        },
+        {
+          "sample": 28,
+          "original": 67904,
+          "repaired": 4295044200,
+          "kind": "backward"
+        },
+        {
+          "sample": 29,
+          "original": 70904,
+          "repaired": 4295047200,
+          "kind": "backward"
+        },
+        {
+          "sample": 30,
+          "original": 73904,
+          "repaired": 4295050200,
+          "kind": "backward"
+        },
+        {
+          "sample": 31,
+          "original": 76904,
+          "repaired": 4295053200,
+          "kind": "backward"
+        },
+        {
+          "sample": 32,
+          "original": 79904,
+          "repaired": 4295056200,
+          "kind": "backward"
+        },
+        {
+          "sample": 33,
+          "original": 82904,
+          "repaired": 4295059200,
+          "kind": "backward"
+        },
+        {
+          "sample": 34,
+          "original": 85904,
+          "repaired": 4295062200,
+          "kind": "backward"
+        },
+        {
+          "sample": 35,
+          "original": 88904,
+          "repaired": 4295065200,
+          "kind": "backward"
+        },
+        {
+          "sample": 36,
+          "original": 91904,
+          "repaired": 4295068200,
+          "kind": "backward"
+        },
+        {
+          "sample": 37,
+          "original": 94904,
+          "repaired": 4295071200,
+          "kind": "backward"
+        },
+        {
+          "sample": 38,
+          "original": 97904,
+          "repaired": 4295074200,
+          "kind": "backward"
+        },
+        {
+          "sample": 39,
+          "original": 100904,
+          "repaired": 4295077200,
+          "kind": "backward"
+        },
+        {
+          "sample": 40,
+          "original": 103904,
+          "repaired": 4295080200,
+          "kind": "backward"
+        },
+        {
+          "sample": 41,
+          "original": 106904,
+          "repaired": 4295083200,
+          "kind": "backward"
+        },
+        {
+          "sample": 42,
+          "original": 109904,
+          "repaired": 4295086200,
+          "kind": "backward"
+        },
+        {
+          "sample": 43,
+          "original": 112904,
+          "repaired": 4295089200,
+          "kind": "backward"
+        },
+        {
+          "sample": 44,
+          "original": 115904,
+          "repaired": 4295092200,
+          "kind": "backward"
+        },
+        {
+          "sample": 45,
+          "original": 118904,
+          "repaired": 4295095200,
+          "kind": "backward"
+        },
+        {
+          "sample": 46,
+          "original": 121904,
+          "repaired": 4295098200,
+          "kind": "backward"
+        },
+        {
+          "sample": 47,
+          "original": 124904,
+          "repaired": 4295101200,
+          "kind": "backward"
+        },
+        {
+          "sample": 48,
+          "original": 127904,
+          "repaired": 4295104200,
+          "kind": "backward"
+        },
+        {
+          "sample": 49,
+          "original": 130904,
+          "repaired": 4295107200,
+          "kind": "backward"
+        },
+        {
+          "sample": 50,
+          "original": 133904,
+          "repaired": 4295110200,
+          "kind": "backward"
+        }
+      ]
+    }
+  ],
+  "warnings": [
+    "skipped box free at 1107",
+    "skipped box zzzz at 1124"
+  ]
+}

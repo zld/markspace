@@ -17,6 +17,14 @@ import (
 	"archivist/internal/scan"
 )
 
+// ErrInterrupted signals a deliberate stop requested via
+// Options.InterruptAfter. It is not a failure: the checkpoint stays resumable.
+type ErrInterrupted struct{ After int }
+
+func (e *ErrInterrupted) Error() string {
+	return fmt.Sprintf("interrupted deliberately after %d stage(s)", e.After)
+}
+
 // Options configure one pipeline run.
 type Options struct {
 	// QueueCapacity bounds how many inputs may have work in flight. It is the
@@ -38,29 +46,48 @@ type Options struct {
 
 // InputResult is the terminal state of one input.
 type InputResult struct {
-	Name             string  `json:"name"`
-	InputPath        string  `json:"input_path"`
-	Status           string  `json:"status"`
-	Error            string  `json:"error,omitempty"`
-	ErrorOffset      int64   `json:"error_offset"`
-	TrackID          uint32  `json:"track_id"`
-	RepairedEntries  int     `json:"repaired_entries"`
-	IndexEntries     int     `json:"index_entries"`
-	KeyframeEntries  int     `json:"keyframe_entries"`
-	ResumeMs         int64   `json:"resume_ms"`
-	ElapsedMs        int64   `json:"elapsed_ms"`
-	ResumedStages    []Stage `json:"resumed_stages,omitempty"`
-	ExecutedStages   []Stage `json:"executed_stages,omitempty"`
-	OutputSHA256     string  `json:"output_sha256,omitempty"`
-	OutputPath       string  `json:"output_path,omitempty"`
-	ProvenanceSHA256 string  `json:"provenance_sha256,omitempty"`
-	ProvenancePath   string  `json:"provenance_path,omitempty"`
-	IndexSHA256      string  `json:"index_sha256,omitempty"`
-	IndexPath        string  `json:"index_path,omitempty"`
-	CheckpointPath   string  `json:"checkpoint_path,omitempty"`
-	CheckpointStage  Stage   `json:"checkpoint_stage,omitempty"`
-	CheckpointKept   bool    `json:"checkpoint_kept"`
+	Name        string `json:"name"`
+	InputPath   string `json:"input_path"`
+	Status      string `json:"status"`
+	Error       string `json:"error,omitempty"`
+	ErrorOffset int64  `json:"error_offset"`
+	TrackID     uint32 `json:"track_id"`
+	// RepairedPTS lists a bounded sample of changed presentation timestamps,
+	// each with its absolute original and repaired values. The full list is
+	// always in the provenance artifact.
+	RepairedPTS      []RepairedPTS `json:"repaired_pts"`
+	RepairedEntries  int           `json:"repaired_entries"`
+	IndexEntries     int           `json:"index_entries"`
+	KeyframeEntries  int           `json:"keyframe_entries"`
+	ResumeMs         int64         `json:"resume_ms"`
+	ElapsedMs        int64         `json:"elapsed_ms"`
+	ResumedStages    []Stage       `json:"resumed_stages,omitempty"`
+	ExecutedStages   []Stage       `json:"executed_stages,omitempty"`
+	OutputSHA256     string        `json:"output_sha256,omitempty"`
+	OutputPath       string        `json:"output_path,omitempty"`
+	ProvenanceSHA256 string        `json:"provenance_sha256,omitempty"`
+	ProvenancePath   string        `json:"provenance_path,omitempty"`
+	IndexSHA256      string        `json:"index_sha256,omitempty"`
+	IndexPath        string        `json:"index_path,omitempty"`
+	CheckpointPath   string        `json:"checkpoint_path,omitempty"`
+	CheckpointStage  Stage         `json:"checkpoint_stage,omitempty"`
+	CheckpointKept   bool          `json:"checkpoint_kept"`
 }
+
+// RepairedPTS is one changed timestamp: track, sample, stored and repaired
+// value, and the reason it changed.
+type RepairedPTS struct {
+	TrackID  uint32 `json:"track_id"`
+	Sample   int    `json:"sample"`
+	Original int64  `json:"original"`
+	Repaired int64  `json:"repaired"`
+	Delta    int64  `json:"delta"`
+	Kind     string `json:"kind"`
+}
+
+// leaderRepairs caps how many individual corrections are echoed into the
+// per-run report. The full list always lives in the provenance artifact.
+const leaderRepairs = 8
 
 // Runner executes the pipeline. It is safe to reuse across Run calls.
 type Runner struct {
@@ -119,6 +146,8 @@ func (r *Runner) Run(ctx context.Context, inputs []string) ([]*InputResult, erro
 	queue := make(chan *job, r.opts.QueueCapacity)
 	results := make([]*InputResult, len(inputs))
 	failCh := make(chan error, 1)
+	var stopMu sync.Mutex
+	var firstStop *ErrInterrupted
 	cctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -132,14 +161,36 @@ func (r *Runner) Run(ctx context.Context, inputs []string) ([]*InputResult, erro
 			for j := range queue {
 				res, err := r.process(cctx, j)
 				results[j.index] = res
-				if err != nil && !errors.Is(err, context.Canceled) {
-					select {
-					case failCh <- err:
-					default:
+				if err != nil {
+					var stop *ErrInterrupted
+					if errors.As(err, &stop) {
+						// Deliberate interruption: keep going with the other
+						// inputs; it is not a run failure, but the caller is
+						// told that the run stopped short.
+						stopMu.Lock()
+						if firstStop == nil {
+							firstStop = stop
+						}
+						stopMu.Unlock()
+						continue
 					}
-					// A downstream failure cancels upstream work rather than
-					// letting producers fill the queue for a doomed run.
-					cancel()
+					f, isFault := fault.AsFault(err)
+					// Report the first real failure. Cancellation errors are
+					// side effects of another failure, not independent faults.
+					if !isFault || f.Kind != fault.KindCancel {
+						select {
+						case failCh <- err:
+						default:
+						}
+					}
+					// Corrupt input is an expected per-input outcome: the
+					// remaining inputs still get their own diagnosis, so one
+					// bad file does not hide another. Any other failure (IO,
+					// invariant, queue) cancels upstream work instead of
+					// letting the producer fill the queue for a doomed run.
+					if !isFault || (f.Kind != fault.KindCorrupt && f.Kind != fault.KindTimestamp) {
+						cancel()
+					}
 				}
 			}
 		}()
@@ -153,22 +204,49 @@ producer:
 		case <-cctx.Done():
 			break producer
 		}
+		if cctx.Err() != nil {
+			break producer
+		}
 	}
 	close(queue)
 	wg.Wait()
+
+	// Inputs that never started are reported as cancelled rather than being
+	// silently dropped.
+	for i, res := range results {
+		if res != nil {
+			continue
+		}
+		results[i] = &InputResult{
+			Name:        inputName(inputs[i]),
+			InputPath:   inputs[i],
+			Status:      "cancelled",
+			Error:       "not started: an earlier input failed",
+			ErrorOffset: -1,
+		}
+	}
 
 	var firstErr error
 	select {
 	case firstErr = <-failCh:
 	default:
 	}
+	if firstErr == nil {
+		// A typed nil would read as a non-nil error interface, so only
+		// return the interruption when one actually occurred.
+		if firstStop != nil {
+			return results, firstStop
+		}
+		return results, nil
+	}
 	for _, res := range results {
-		if res == nil {
+		if res == nil || res.Status != "error" {
 			continue
 		}
-		if res.Status == "error" && firstErr == nil && res.Error != "" {
+		if firstErr == nil {
 			firstErr = fault.New(fault.KindIO, fault.StagePipeline, "%s", res.Error)
 		}
+		break
 	}
 	return results, firstErr
 }
@@ -243,17 +321,26 @@ func (r *Runner) process(ctx context.Context, j *job) (*InputResult, error) {
 
 	rec := &stageRecord{checkpoint: cp, res: res}
 	if err := r.runStages(ctx, j, rec, inSHA, cpPath); err != nil {
-		// An interrupted run keeps its checkpoint and reports the partial
-		// stage; a corrupt input keeps it too, so a fixed input can resume.
+		var stop *ErrInterrupted
+		if errors.As(err, &stop) {
+			// A deliberate interruption is not a failure: the checkpoint is
+			// intact and the next run continues from it.
+			res.Status = "interrupted"
+			res.Error = err.Error()
+			res.CheckpointStage = cp.LastStage()
+			res.CheckpointKept = true
+			return res, err
+		}
+		// A corrupt input keeps its checkpoint too, so a repaired input can
+		// resume from the stage that failed.
 		out, ferr := r.fail(res, err)
-		// The reported stage is the last one whose artifact is durable. A
-		// cancellation or IO failure carries no durable artifact of its own.
 		out.CheckpointStage = cp.LastStage()
 		return out, ferr
 	}
 	res.ResumeMs = r.now().Sub(resumeStart).Milliseconds()
 	res.Status = "ok"
 	res.CheckpointStage = cp.LastStage()
+	res.RepairedPTS = summarizeRepairs(cp.Repair)
 	res.RepairedEntries = cp.RepairedEntries
 	res.IndexEntries = cp.IndexEntries
 	res.KeyframeEntries = cp.KeyframeEntries
@@ -293,9 +380,8 @@ func (r *Runner) runStages(ctx context.Context, j *job, rec *stageRecord, inSHA,
 			rec.checkpoint.TruncateAfter(prevStage(stage))
 			_ = rec.checkpoint.save(cpPath)
 		}
-		if j.interrupt && rec.executed >= r.opts.InterruptAfter {
-			return fault.New(fault.KindCancel, fault.StagePipeline,
-				"interrupted deliberately after %d stage(s)", rec.executed)
+		if j.interrupt && r.opts.InterruptAfter > 0 && rec.executed >= r.opts.InterruptAfter {
+			return &ErrInterrupted{After: rec.executed}
 		}
 		if err := r.execute(ctx, stage, rec, inSHA, cpPath); err != nil {
 			return err
@@ -309,8 +395,7 @@ func (r *Runner) runStages(ctx context.Context, j *job, rec *stageRecord, inSHA,
 			return err
 		}
 		if j.interrupt && r.opts.InterruptAfter > 0 && rec.executed >= r.opts.InterruptAfter {
-			return fault.New(fault.KindCancel, fault.StagePipeline,
-				"interrupted deliberately after %d stage(s)", rec.executed)
+			return &ErrInterrupted{After: rec.executed}
 		}
 	}
 	rec.checkpoint.Status = "ok"
@@ -584,6 +669,36 @@ func verifyIndexAgainstScan(path string, rep *repair.Result) error {
 		}
 	}
 	return nil
+}
+
+// summarizeRepairs reads the persisted repair artifact and returns a bounded
+// leading sample of the corrections. A missing artifact (for example a run
+// that failed before repair) yields no entries rather than an error.
+func summarizeRepairs(a Artifact) []RepairedPTS {
+	if !artifactExists(a) {
+		return nil
+	}
+	rep, err := loadRepairArtifact(a)
+	if err != nil {
+		return nil
+	}
+	var out []RepairedPTS
+	for _, tr := range rep.Tracks {
+		for _, e := range tr.Entries {
+			if e.Kind == repair.KindUnchanged {
+				continue
+			}
+			out = append(out, RepairedPTS{
+				TrackID: tr.TrackID, Sample: e.Sample,
+				Original: e.Original, Repaired: e.Repaired,
+				Delta: e.Delta, Kind: e.Kind,
+			})
+			if len(out) >= leaderRepairs {
+				return out
+			}
+		}
+	}
+	return out
 }
 
 // stageRankExport exposes stage ranking to tests.

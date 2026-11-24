@@ -1,0 +1,54 @@
+{
+  "version": "checkpoint/v1",
+  "input_name": "truncated",
+  "input_path": "tmp/demo/inputs/truncated.mp4",
+  "input_size": 439,
+  "input_sha256": "f2001f8e7220b95d32f8c082ffb0dd50d24644cce17236286d5ac4a4aceec661",
+  "params": {
+    "queue_capacity": 4,
+    "chunk_samples": 1,
+    "movie_timescale": 0,
+    "repair_limit": 0,
+    "rules_version": "clock/v1+repair/v1+index/v1"
+  },
+  "params_hash": "9459cd6f9d484c3cd4903ce736ace5d4a4039eaebc5cc154c06d9b2219d72fa7",
+  "completed": null,
+  "stage_versions": {
+    "index": "index/v1",
+    "provenance": "provenance/v1",
+    "repair": "repair/v1",
+    "scan": "scan/v1",
+    "verify": "verify/v1",
+    "write": "write/v1"
+  },
+  "scan": {
+    "path": "",
+    "size": 0,
+    "sha256": ""
+  },
+  "repair": {
+    "path": "",
+    "size": 0,
+    "sha256": ""
+  },
+  "output": {
+    "path": "",
+    "size": 0,
+    "sha256": ""
+  },
+  "index": {
+    "path": "",
+    "size": 0,
+    "sha256": ""
+  },
+  "provenance": {
+    "path": "",
+    "size": 0,
+    "sha256": ""
+  },
+  "provenance_digest": "",
+  "repaired_entries": 0,
+  "index_entries": 0,
+  "keyframe_entries": 0,
+  "status": "running"
+}

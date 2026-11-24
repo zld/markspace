@@ -1,0 +1,61 @@
+{
+  "version": "checkpoint/v1",
+  "input_name": "regression",
+  "input_path": "tmp/demo/inputs/regression.mp4",
+  "input_size": 900,
+  "input_sha256": "fc45978f2e2502ab82d8acaa9e6e28cfb70ae07cbe0127e4000da74e04497eec",
+  "params": {
+    "queue_capacity": 4,
+    "chunk_samples": 1,
+    "movie_timescale": 0,
+    "repair_limit": 0,
+    "rules_version": "clock/v1+repair/v1+index/v1"
+  },
+  "params_hash": "9459cd6f9d484c3cd4903ce736ace5d4a4039eaebc5cc154c06d9b2219d72fa7",
+  "completed": [
+    "scan",
+    "repair",
+    "write",
+    "index",
+    "verify",
+    "provenance"
+  ],
+  "stage_versions": {
+    "index": "index/v1",
+    "provenance": "provenance/v1",
+    "repair": "repair/v1",
+    "scan": "scan/v1",
+    "verify": "verify/v1",
+    "write": "write/v1"
+  },
+  "scan": {
+    "path": "tmp/demo/work/stages/regression-9459cd6f9d484c3c.scan.json",
+    "size": 3405,
+    "sha256": "ef7ae16634067dca853bd7bf11a73960b89b39b0406c8c68ea0962eb89e5d18b"
+  },
+  "repair": {
+    "path": "tmp/demo/work/stages/regression-9459cd6f9d484c3c.repair.json",
+    "size": 3167,
+    "sha256": "91d85f409af7f69533035dda1680bd33425158b9eec6111caf493e16a01053c5"
+  },
+  "output": {
+    "path": "tmp/demo/work/output/regression.mp4",
+    "size": 903,
+    "sha256": "e66204e488ff69aad2cc6654cddb55f0e3053033c586cc2e26ceb40ba6448f94"
+  },
+  "index": {
+    "path": "tmp/demo/work/index/regression.json",
+    "size": 4245,
+    "sha256": "b7834324b962139bc619894eb9c3cab2f2b680a1f8676fade8174cc3fa609ff8"
+  },
+  "provenance": {
+    "path": "tmp/demo/work/provenance/regression.json",
+    "size": 2976,
+    "sha256": "47ba98d03def29dff34603069e3248356bf678e7031205b3729b2bc4c38bee3a"
+  },
+  "provenance_digest": "8e746feaab963db760e9674c9c75a2e983e4be220133db7c00c453c9ad376ef5",
+  "repaired_entries": 13,
+  "index_entries": 20,
+  "keyframe_entries": 2,
+  "status": "ok"
+}

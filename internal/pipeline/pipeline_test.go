@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -135,12 +136,13 @@ func TestResumeAfterInterrupt(t *testing.T) {
 	interrupted := newRunner(t, root2, 2, 3)
 	res, err := interrupted.Run(context.Background(), inputs)
 	if err == nil {
-		t.Fatal("expected interruption error")
+		t.Fatal("expected an interruption signal")
 	}
-	if f, ok := fault.AsFault(err); !ok || f.Kind != fault.KindCancel {
+	var stop *ErrInterrupted
+	if !errors.As(err, &stop) {
 		t.Fatalf("err = %v", err)
 	}
-	if res[0].Status != "error" || !res[0].CheckpointKept {
+	if res[0].Status != "interrupted" || !res[0].CheckpointKept {
 		t.Fatalf("interrupted result = %+v", res[0])
 	}
 	if res[0].CheckpointStage != StageWrite {

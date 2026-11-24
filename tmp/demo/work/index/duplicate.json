@@ -1,0 +1,121 @@
+{
+  "version": "index/v1",
+  "tracks": [
+    {
+      "id": 1,
+      "timescale": 90000,
+      "movie_timescale": 1000,
+      "output_base": 5000,
+      "entries": [
+        {
+          "sample": 1,
+          "pts": 5000,
+          "movie_time": 56,
+          "offset": 707,
+          "size": 4,
+          "keyframe": true,
+          "original": 5000
+        },
+        {
+          "sample": 2,
+          "pts": 8000,
+          "movie_time": 89,
+          "offset": 711,
+          "size": 4,
+          "keyframe": false,
+          "original": 8000
+        },
+        {
+          "sample": 3,
+          "pts": 11000,
+          "movie_time": 122,
+          "offset": 715,
+          "size": 4,
+          "keyframe": false,
+          "original": 11000
+        },
+        {
+          "sample": 4,
+          "pts": 14000,
+          "movie_time": 156,
+          "offset": 719,
+          "size": 4,
+          "keyframe": false,
+          "original": 14000
+        },
+        {
+          "sample": 5,
+          "pts": 17000,
+          "movie_time": 189,
+          "offset": 723,
+          "size": 4,
+          "keyframe": false,
+          "original": 14000
+        },
+        {
+          "sample": 6,
+          "pts": 20000,
+          "movie_time": 222,
+          "offset": 727,
+          "size": 4,
+          "keyframe": false,
+          "original": 20000
+        },
+        {
+          "sample": 7,
+          "pts": 23000,
+          "movie_time": 256,
+          "offset": 731,
+          "size": 4,
+          "keyframe": false,
+          "original": 23000
+        },
+        {
+          "sample": 8,
+          "pts": 26000,
+          "movie_time": 289,
+          "offset": 735,
+          "size": 4,
+          "keyframe": false,
+          "original": 26000
+        },
+        {
+          "sample": 9,
+          "pts": 29000,
+          "movie_time": 322,
+          "offset": 739,
+          "size": 4,
+          "keyframe": false,
+          "original": 29000
+        },
+        {
+          "sample": 10,
+          "pts": 32000,
+          "movie_time": 356,
+          "offset": 743,
+          "size": 4,
+          "keyframe": false,
+          "original": 32000
+        },
+        {
+          "sample": 11,
+          "pts": 35000,
+          "movie_time": 389,
+          "offset": 747,
+          "size": 4,
+          "keyframe": false,
+          "original": 35000
+        },
+        {
+          "sample": 12,
+          "pts": 38000,
+          "movie_time": 422,
+          "offset": 751,
+          "size": 4,
+          "keyframe": false,
+          "original": 38000
+        }
+      ]
+    }
+  ]
+}
