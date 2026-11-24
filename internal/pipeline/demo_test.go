@@ -47,6 +47,12 @@ func TestDemoMeetsAcceptanceCriteria(t *testing.T) {
 	if sum.BoundaryErrorNS > 1 {
 		t.Fatalf("boundary error = %d ns", sum.BoundaryErrorNS)
 	}
+	if sum.InvalidMetadata.ExitCode == 0 || sum.InvalidMetadata.Kind == "" {
+		t.Fatalf("invalid metadata sample not classified: %+v", sum.InvalidMetadata)
+	}
+	if sum.FrameSHA256 == "" || sum.ManifestSHA256 == "" || sum.FrameSHA256 == sum.ManifestSHA256 {
+		t.Fatalf("hash reporting incomplete: frame=%q manifest=%q", sum.FrameSHA256, sum.ManifestSHA256)
+	}
 }
 
 func TestDemoRepeatRunsAreDeterministic(t *testing.T) {
