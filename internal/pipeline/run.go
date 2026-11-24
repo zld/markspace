@@ -320,7 +320,6 @@ type videoData struct {
 	trackID string
 	keyHit  int
 	keyAll  int
-	errs    model.Errors
 }
 
 func loadVideo(in Inputs, st *Stats) (*videoData, *model.Error) {
@@ -423,9 +422,7 @@ func buildTimeline(in Inputs, v *videoData, st *Stats) timeline.Result {
 	}
 
 	if in.TimecodePath != "" {
-		marks, errs := loadTimecodes(in, st)
-		b.Timecodes = marks
-		_ = errs
+		b.Timecodes = loadTimecodes(in, st)
 	}
 
 	res := timeline.Build(b)
@@ -434,19 +431,18 @@ func buildTimeline(in Inputs, v *videoData, st *Stats) timeline.Result {
 
 // loadTimecodes parses one timecode label per line. Blank lines and lines
 // starting with '#' are ignored so fixtures can be annotated.
-func loadTimecodes(in Inputs, st *Stats) ([]timeline.TimecodeMark, model.Errors) {
+func loadTimecodes(in Inputs, st *Stats) []timeline.TimecodeMark {
 	var marks []timeline.TimecodeMark
-	var es model.Errors
 	mode, err := timecode.ParseModeName(in.TimecodeMode)
 	if err != nil {
 		st.Errors.Add(err.(*model.Error))
-		return nil, es
+		return nil
 	}
 	data, rerr := os.ReadFile(in.TimecodePath)
 	if rerr != nil {
 		st.Errors.Add(model.NewError(model.CodeIO, "pipeline", "tc1",
 			model.InputPos{File: in.TimecodePath}, "cannot read timecodes: %v", rerr))
-		return nil, es
+		return nil
 	}
 	track := model.Track{ID: "tc1", Kind: model.KindTimecode}
 	lines := bytes.Split(data, []byte("\n"))
@@ -468,7 +464,7 @@ func loadTimecodes(in Inputs, st *Stats) ([]timeline.TimecodeMark, model.Errors)
 		})
 		idx++
 	}
-	return marks, es
+	return marks
 }
 
 // timecodeRoundtrip measures how many valid labels parse -> render -> parse

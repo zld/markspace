@@ -25,7 +25,7 @@ func TestParseAllModes(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s %s: %v", c.mode.Name, c.in, err)
 		}
-		if got := tc.Time.String(); got != "0/" && got != c.want {
+		if got := tc.Time.String(); got != c.want {
 			t.Fatalf("%s %s = %s, want %s", c.mode.Name, c.in, got, c.want)
 		}
 	}

@@ -25,10 +25,8 @@ func TestSplitAtCutsTilesExactly(t *testing.T) {
 	if len(pieces) != 3 {
 		t.Fatalf("pieces=%d", len(pieces))
 	}
-	want := []struct{ s, e int64 }{{0, 0}, {0, 2}, {2, 4}}
 	wantStart := []model.Rat{model.RatFromInt(0), model.MustRat(1, 2), model.RatFromInt(2)}
 	wantEnd := []model.Rat{model.MustRat(1, 2), model.RatFromInt(2), model.RatFromInt(4)}
-	_ = want
 	for i := range pieces {
 		if !pieces[i].Start.Equal(wantStart[i]) || !pieces[i].End.Equal(wantEnd[i]) {
 			t.Fatalf("piece %d = %s..%s", i, pieces[i].Start, pieces[i].End)
