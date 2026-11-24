@@ -28,6 +28,8 @@ type SegmentReport struct {
 	GOPMaxTicks      int64       `json:"gop_max_ticks"`
 	GlobalStartTicks int64       `json:"global_start_ticks"`
 	GlobalEndTicks   int64       `json:"global_end_ticks"`
+	DamageStartTicks int64       `json:"damage_start_ticks"`
+	DamageEndTicks   int64       `json:"damage_end_ticks"`
 	WrapEvents       int         `json:"wrap_events"`
 	DriftPPM         int64       `json:"drift_ppm"`
 	ContentSHA256    string      `json:"content_sha256"`
