@@ -201,7 +201,6 @@ func (a *assembler) feed(p *ts.Packet) error {
 		Mapping:      snap.MappingSignature(),
 		PayloadBytes: len(p.Payload),
 	}
-	_ = st
 	return nil
 }
 

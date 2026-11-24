@@ -76,8 +76,6 @@ func AnalyzeRTP(r io.Reader) (*RTPAnalysis, error) {
 		haveFirst bool
 		prevSeq   uint16
 		prevSSRC  uint32
-		extended  int64 // unwrapped sequence position
-		lastPos   int64
 		packets   int
 	)
 	for {
@@ -121,15 +119,11 @@ func AnalyzeRTP(r io.Reader) (*RTPAnalysis, error) {
 			out.FirstSeq = pkt.SequenceNumber
 			prevSeq = pkt.SequenceNumber
 			prevSSRC = pkt.SSRC
-			extended = int64(pkt.SequenceNumber)
-			lastPos = extended
 		} else if pkt.SSRC != prevSSRC {
 			// An SSRC change starts a new sequence space; reset without
 			// reporting a gap, since the streams are independent.
 			prevSSRC = pkt.SSRC
 			prevSeq = pkt.SequenceNumber
-			extended = int64(pkt.SequenceNumber)
-			lastPos = extended
 		} else {
 			delta := int64(int16(pkt.SequenceNumber - prevSeq))
 			if delta == 0 {
@@ -142,12 +136,9 @@ func AnalyzeRTP(r io.Reader) (*RTPAnalysis, error) {
 					SSRC: pkt.SSRC, PrevSeq: prevSeq, Seq: pkt.SequenceNumber, Reordered: true, Index: packets - 1,
 				})
 			} else if delta > 1 {
-				lastPos += delta
 				out.SequenceGaps = append(out.SequenceGaps, RTPSequenceGap{
 					SSRC: pkt.SSRC, PrevSeq: prevSeq, Seq: pkt.SequenceNumber, Lost: int(delta - 1), Index: packets - 1,
 				})
-			} else {
-				lastPos += delta
 			}
 			prevSeq = pkt.SequenceNumber
 		}
@@ -159,8 +150,6 @@ func AnalyzeRTP(r io.Reader) (*RTPAnalysis, error) {
 	}
 	out.Packets = packets
 	out.LastSeq = prevSeq
-	_ = extended
-	_ = lastPos
 	sort.SliceStable(out.SequenceGaps, func(i, j int) bool {
 		return out.SequenceGaps[i].Index < out.SequenceGaps[j].Index
 	})

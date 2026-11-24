@@ -335,7 +335,6 @@ func (p *PSI) acceptPAT(pkt *Packet, sec []byte) {
 			Detail: fmt.Sprintf("PAT section numbering %d/%d invalid", secNum, last)})
 		return
 	}
-	end := len(sec) - 4
 	// The long-form header is eight bytes: table_id, section_length,
 	// transport_stream_id, version/current_next, section_number,
 	// last_section_number. Program entries follow and are four bytes each.
@@ -345,7 +344,6 @@ func (p *PSI) acceptPAT(pkt *Packet, sec []byte) {
 			Detail: "PAT program entries not a multiple of four bytes"})
 		return
 	}
-	_ = end
 	if p.patCandidate == nil || (p.patCandidate.version != version) {
 		p.patCandidate = &patCandidate{version: version, count: last + 1, have: make(map[int][]byte)}
 	}

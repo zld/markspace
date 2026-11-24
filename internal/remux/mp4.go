@@ -12,7 +12,6 @@ package remux
 import (
 	"bytes"
 	"crypto/sha256"
-	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -883,6 +882,3 @@ func writeAtomic(path string, data []byte) error {
 	}
 	return os.Rename(tmp, path)
 }
-
-var _ = binary.BigEndian
-var _ = Timescale

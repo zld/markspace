@@ -13,14 +13,12 @@ package main
 
 import (
 	"context"
-	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"tsforge/internal/dag"
 
 	"tsforge/internal/clock"
@@ -545,9 +543,3 @@ func verifyManifest(dir string) (*manifestCheck, error) {
 	}
 	return out, nil
 }
-
-var _ = strings.Join
-var _ = hex.EncodeToString
-var _ = ts.MaxFileBytes
-var _ = sort.Strings
-var _ = remux.Timescale
