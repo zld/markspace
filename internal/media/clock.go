@@ -53,12 +53,12 @@ func (c Clock) CmpRational(ticks int64, r *big.Rat) int {
 // FrameEvent is the normalized unit handed by codec adapters to the kernel.
 // PTS values are raw source ticks; repaired ticks are filled later.
 type FrameEvent struct {
-	Index        int    // ordinal among complete units, 0-based
-	Offset       int64  // absolute byte offset of the start code / OBU header
-	Length       int64  // full on-wire length including start code / header
-	IsFrame      bool   // VCL/frame unit rather than parameter set / metadata
-	IsKeyframe   bool   // random-access point
-	RawPTS       int64  // source presentation tick; -1 when absent
+	Index        int   // ordinal among complete units, 0-based
+	Offset       int64 // absolute byte offset of the start code / OBU header
+	Length       int64 // full on-wire length including start code / header
+	IsFrame      bool  // VCL/frame unit rather than parameter set / metadata
+	IsKeyframe   bool  // random-access point
+	RawPTS       int64 // source presentation tick; -1 when absent
 	HasPTS       bool
 	RepairedPTS  int64 // monotonic output ticks
 	RepairReason string
