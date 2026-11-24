@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	mp4 "github.com/abema/go-mp4"
 
@@ -230,14 +231,15 @@ func (w *Writer) WriteSegment(src SegmentSource, outPath string) (*Segment, erro
 	sum := sha256.Sum256(buf.Bytes())
 	seg.SHA256 = hex.EncodeToString(sum[:])
 	// The payload digest covers elementary bytes only, independent of
-	// container options, so a remux with different settings can cite the
-	// same source content.
-	ph := sha256.New()
+	// container options. Each sample's SHA-256 is concatenated and hashed
+	// again, matching the digest the pipeline records per index record.
+	var ph strings.Builder
 	for _, s := range samples {
 		fh := sha256.Sum256(s.Data)
-		ph.Write(fh[:])
+		ph.WriteString(hex.EncodeToString(fh[:]))
 	}
-	seg.PayloadHash = hex.EncodeToString(ph.Sum(nil))
+	psum := sha256.Sum256([]byte(ph.String()))
+	seg.PayloadHash = hex.EncodeToString(psum[:])
 
 	if err := writeAtomic(outPath, buf.Bytes()); err != nil {
 		return nil, err

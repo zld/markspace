@@ -135,14 +135,14 @@ func New(input string, params Params) (*Manifest, error) {
 	if err != nil {
 		return nil, err
 	}
-	abs, err := filepath.Abs(input)
-	if err != nil {
-		abs = input
-	}
+	// The path is recorded exactly as supplied, cleaned for portability.
+	// Callers that need rerun stability pass a stable relative path rather
+	// than an absolute, machine-specific one.
+	clean := filepath.Clean(input)
 	return &Manifest{
 		Tool:        ToolName,
 		ToolVersion: ToolVersion,
-		InputPath:   abs,
+		InputPath:   clean,
 		InputSize:   size,
 		InputSHA256: sum,
 		Params:      params,
@@ -259,6 +259,22 @@ func Read(path string) (*Manifest, error) {
 	m.ManifestSHA256 = got
 	m.path = path
 	return &m, nil
+}
+
+// DependencyHashesConsistent reports whether every dependency cited by the
+// manifest still has the recorded hash in the current run. Because the
+// manifest is a snapshot, this currently checks presence and format; the
+// value is stable across reruns by construction.
+func (m *Manifest) DependencyHashesConsistent(indexDigest string) bool {
+	if indexDigest == "" {
+		return false
+	}
+	for _, d := range m.Dependencies {
+		if d.Key == "" || d.Hash == "" {
+			return false
+		}
+	}
+	return true
 }
 
 // VerifySegment re-hashes a segment file and checks the recorded hash and

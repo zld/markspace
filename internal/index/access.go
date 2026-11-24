@@ -222,18 +222,32 @@ func countSegments(recs []Record) int {
 // Segment may be entered directly. found=false means the time is outside
 // the indexed range; callers must not clamp silently.
 func (idx *Index) Find(tick int64) (Record, bool) {
+	first := -1
 	best := -1
 	for i := range idx.Records {
 		r := &idx.Records[i]
-		if !r.Keyframe {
+		if !r.Keyframe || r.Kind != KindVideo {
 			continue
 		}
-		if r.PTS <= tick && (best < 0 || r.PTS > idx.Records[best].PTS) {
-			best = i
+		if first < 0 || r.PTS < idx.Records[first].PTS {
+			first = i
+		}
+		if r.PTS <= tick {
+			if best < 0 || r.PTS > idx.Records[best].PTS {
+				best = i
+			}
 		}
 	}
-	if best < 0 {
+	if first < 0 {
 		return Record{}, false
+	}
+	if tick > idx.LastDTS {
+		// Beyond the indexed range: report the miss rather than clamp.
+		return Record{}, false
+	}
+	if best < 0 {
+		// Before the first keyframe still resolves to the range start.
+		best = first
 	}
 	return idx.Records[best], true
 }

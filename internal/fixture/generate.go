@@ -230,8 +230,8 @@ const (
 func DefaultSpec(seed int64) Spec {
 	return Spec{
 		Seed:        seed,
-		VideoFrames: 60,
-		AudioFrames: 120,
+		VideoFrames: 300,
+		AudioFrames: 600,
 		VideoBytes:  1400,
 		AudioBytes:  700,
 		PCRInterval: 10,
