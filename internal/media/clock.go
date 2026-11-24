@@ -26,11 +26,13 @@ func NanosToTicks(ns int64, timescale uint32) int64 {
 // timestamp) into a monotonic extended counter. It tolerates moderate
 // reordering around the wrap point: a sample arriving up to half a cycle
 // late is attributed to the previous cycle instead of jumping the epoch.
+// The extension is signed internally so pre-wrap packets seen just after
+// the wrap extend negative instead of underflowing.
 type Unwrapper struct {
 	bits   uint
 	init   bool
-	epoch  uint64
-	maxExt uint64
+	epoch  int64
+	maxExt int64
 }
 
 // NewUnwrapper creates an Unwrapper for a counter of the given bit width.
@@ -38,15 +40,15 @@ func NewUnwrapper(bits uint) *Unwrapper { return &Unwrapper{bits: bits} }
 
 // Unwrap extends raw into the full counter range.
 func (u *Unwrapper) Unwrap(raw uint64) uint64 {
-	mod := uint64(1) << u.bits
+	mod := int64(1) << u.bits
 	half := mod >> 1
-	raw &= mod - 1
+	v := int64(raw) & (mod - 1)
 	if !u.init {
 		u.init = true
-		u.maxExt = raw
-		return raw
+		u.maxExt = v
+		return uint64(v)
 	}
-	ext := u.epoch*mod + raw
+	ext := u.epoch*mod + v
 	switch {
 	case ext+half < u.maxExt:
 		// Forward wrap: raw restarted below us within half a cycle.
@@ -59,7 +61,7 @@ func (u *Unwrapper) Unwrap(raw uint64) uint64 {
 	if ext > u.maxExt {
 		u.maxExt = ext
 	}
-	return ext
+	return uint64(ext)
 }
 
 // DriftPoint pairs a local observation time with the remote media clock,

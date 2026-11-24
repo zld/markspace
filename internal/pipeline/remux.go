@@ -76,12 +76,15 @@ func WriteMP4(w io.Writer, tracks []WriteTrack) error {
 	return nil
 }
 
+// marshalBox serializes a structured box via go-mp4 and wraps the payload
+// in its size+type header (mp4.Marshal emits the payload only).
 func marshalBox(b mp4.IImmutableBox) []byte {
 	var buf bytes.Buffer
 	if _, err := mp4.Marshal(&buf, b, mp4.Context{}); err != nil {
 		panic(err) // static structs: marshal only fails on writer errors
 	}
-	return buf.Bytes()
+	typ := b.GetType()
+	return containerBox(string(typ[:]), buf.Bytes())
 }
 
 func containerBox(typ string, children ...[]byte) []byte {
@@ -129,9 +132,9 @@ func buildMoov(tracks []WriteTrack, chunkOffsets []uint32) []byte {
 var identityMatrix = [9]int32{0x10000, 0, 0, 0, 0x10000, 0, 0, 0, 0x40000000}
 
 func buildTrak(t WriteTrack, chunkOffset uint32, durTicks uint32) []byte {
-	lang := [3]byte{'u', 'n', 'd'}
+	lang := encodeLanguage("und")
 	if len(t.Language) == 3 {
-		copy(lang[:], t.Language)
+		lang = encodeLanguage(t.Language)
 	}
 	tkhd := marshalBox(&mp4.Tkhd{
 		TrackID:    uint32(t.TrackID),
@@ -160,19 +163,20 @@ func buildTrak(t WriteTrack, chunkOffset uint32, durTicks uint32) []byte {
 	dinf := containerBox("dinf", dref)
 
 	stsd := containerBox("stsd", t.CodecParams)
-	stts := marshalBox(&mp4.Stts{Entries: sttsRuns(t.Deltas)})
-	stsc := marshalBox(&mp4.Stsc{Entries: []mp4.StscEntry{
+	runs := sttsRuns(t.Deltas)
+	stts := marshalBox(&mp4.Stts{EntryCount: uint32(len(runs)), Entries: runs})
+	stsc := marshalBox(&mp4.Stsc{EntryCount: 1, Entries: []mp4.StscEntry{
 		{FirstChunk: 1, SamplesPerChunk: uint32(len(t.Samples)), SampleDescriptionIndex: 1},
 	}})
 	stsz := marshalBox(&mp4.Stsz{EntrySize: sampleSizes(t.Samples), SampleCount: uint32(len(t.Samples))})
-	stco := marshalBox(&mp4.Stco{ChunkOffset: []uint32{chunkOffset}})
+	stco := marshalBox(&mp4.Stco{EntryCount: 1, ChunkOffset: []uint32{chunkOffset}})
 	stblChildren := [][]byte{stsd, stts, stsc, stsz, stco}
 	if t.Keyframes != nil {
 		nums := make([]uint32, len(t.Keyframes))
 		for i, k := range t.Keyframes {
 			nums[i] = uint32(k) + 1
 		}
-		stblChildren = append(stblChildren, marshalBox(&mp4.Stss{SampleNumber: nums}))
+		stblChildren = append(stblChildren, marshalBox(&mp4.Stss{EntryCount: uint32(len(nums)), SampleNumber: nums}))
 	}
 	stbl := containerBox("stbl", stblChildren...)
 	minf := containerBox("minf", mediaHead, dinf, stbl)
@@ -201,7 +205,18 @@ func buildElst(edits []media.Edit, timescale uint32) []byte {
 		}
 		elst.Entries = append(elst.Entries, entry)
 	}
+	elst.EntryCount = uint32(len(elst.Entries))
 	return marshalBox(elst)
+}
+
+// encodeLanguage packs an ISO-639-2 code into the 5-bit-per-char form
+// go-mp4 stores in mdhd (it does not apply the 0x60 offset itself).
+func encodeLanguage(s string) [3]byte {
+	var out [3]byte
+	for i := 0; i < 3 && i < len(s); i++ {
+		out[i] = s[i] - 0x60
+	}
+	return out
 }
 
 func fullBox(typ string, version byte, flags uint32, payload []byte) []byte {
@@ -263,13 +278,17 @@ func Remux(w io.Writer, tracks []RemuxTrack) error {
 		for j, ei := range kept {
 			ev := rt.Mapped.Track.Events[ei]
 			wt.Samples = append(wt.Samples, ev.Payload)
+			// stts has no initial-CTS field: sample j's delta is the
+			// distance to sample j+1, so CTS_j accumulates to out_j.
 			delta := uint32(1)
-			if j > 0 {
-				d := media.NanosToTicks(rt.OutTimes[ei]-rt.OutTimes[kept[j-1]], OutputTimescale)
+			if j+1 < len(kept) {
+				d := media.NanosToTicks(rt.OutTimes[kept[j+1]]-rt.OutTimes[ei], OutputTimescale)
 				if d < 1 {
 					d = 1
 				}
 				delta = uint32(d)
+			} else if j > 0 {
+				delta = wt.Deltas[j-1] // last sample repeats the previous duration
 			}
 			wt.Deltas = append(wt.Deltas, delta)
 			if ev.Keyframe || (!rt.Mapped.Track.HasKeyframeTable && payloadKeyframe(ev.Payload)) {

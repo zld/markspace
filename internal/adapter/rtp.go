@@ -69,11 +69,11 @@ func (RTPParser) Parse(r io.ReadSeeker) (*Stream, error) {
 	}
 
 	type src struct {
-		track   *Track
-		unwrap  *media.Unwrapper
-		drift   *media.DriftEstimator
-		lastSeq map[uint16]bool
-		seen    []uint16
+		track     *Track
+		unwrap    *media.Unwrapper
+		drift     *media.DriftEstimator
+		lastFedTS int64 // last media time fed to the drift estimator
+		seen      []uint16
 	}
 	srcs := map[uint32]*src{}
 	st := &Stream{}
@@ -100,7 +100,13 @@ func (RTPParser) Parse(r io.ReadSeeker) (*Stream, error) {
 		}
 		ext := s.unwrap.Unwrap(uint64(pkt.Timestamp))
 		mt := media.TicksToNanos(int64(ext), rtpClockRate)
-		s.drift.Add(rec.arrival, mt)
+		// Reordered packets (e.g. swapped around the wrap) would look like
+		// a backwards clock jump to the estimator; feed it only forward-
+		// moving observations so reordering cannot poison the fit.
+		if s.lastFedTS == 0 || mt >= s.lastFedTS {
+			s.drift.Add(rec.arrival, mt)
+			s.lastFedTS = mt
+		}
 		keyframe := len(pkt.Payload) > 0 && pkt.Payload[0]&1 == 1
 		s.track.Events = append(s.track.Events, media.Event{
 			TrackID:   s.track.ID,

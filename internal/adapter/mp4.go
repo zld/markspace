@@ -68,7 +68,7 @@ func (MP4Parser) Parse(r io.ReadSeeker) (*Stream, error) {
 			}
 			mdhd := box.(*mp4.Mdhd)
 			cur.timescale = mdhd.Timescale
-			cur.language = string(mdhd.Language[:])
+			cur.language = decodeLanguage(mdhd.Language)
 		case mp4.BoxTypeHdlr():
 			box, _, e := h.ReadPayload()
 			if e != nil {
@@ -80,20 +80,15 @@ func (MP4Parser) Parse(r io.ReadSeeker) (*Stream, error) {
 			if e != nil {
 				return nil, e
 			}
+			// edts is walked before mdia/mdhd, so the timescale is not
+			// known yet; keep raw ticks and convert in materializeTrack.
 			elst := box.(*mp4.Elst)
 			for i := range elst.Entries {
-				mt := elst.GetMediaTime(i)
-				// Segment duration is in movie timescale; our fixtures and
-				// outputs use a single timescale per file, so the media
-				// timescale applies to both.
 				cur.edits = append(cur.edits, media.Edit{
-					MediaTime: media.TicksToNanos(mt, mdhdOr(cur)),
-					Duration:  media.TicksToNanos(int64(elst.GetSegmentDuration(i)), mdhdOr(cur)),
+					MediaTime: elst.GetMediaTime(i),
+					Duration:  int64(elst.GetSegmentDuration(i)),
 					Rate:      1,
 				})
-				if mt < 0 {
-					cur.edits[len(cur.edits)-1].MediaTime = -1
-				}
 			}
 		case mp4.BoxTypeStts():
 			box, _, e := h.ReadPayload()
@@ -143,7 +138,7 @@ func (MP4Parser) Parse(r io.ReadSeeker) (*Stream, error) {
 			cur.stsc = box.(*mp4.Stsc).Entries
 		case mp4.BoxTypeStsd():
 			// Kept as raw bytes: unknown fields stay available for audit.
-			buf := make([]byte, h.BoxInfo.Size-h.BoxInfo.HeaderSize)
+			buf := make([]byte, 0, h.BoxInfo.Size-h.BoxInfo.HeaderSize)
 			if _, e := h.ReadData(newWriterTo(&buf)); e != nil {
 				return nil, e
 			}
@@ -164,7 +159,22 @@ func (MP4Parser) Parse(r io.ReadSeeker) (*Stream, error) {
 	return st, nil
 }
 
-func mdhdOr(cur *mp4TrackState) uint32 { return cur.timescale }
+// convertEdits maps raw tick-domain edit entries to nanoseconds once the
+// media timescale is known. Empty edits (media time -1) stay -1.
+func convertEdits(raw []media.Edit, timescale uint32) []media.Edit {
+	if len(raw) == 0 {
+		return nil
+	}
+	out := make([]media.Edit, len(raw))
+	for i, e := range raw {
+		out[i] = e
+		if e.MediaTime >= 0 {
+			out[i].MediaTime = media.TicksToNanos(e.MediaTime, timescale)
+		}
+		out[i].Duration = media.TicksToNanos(e.Duration, timescale)
+	}
+	return out
+}
 
 // writerTo adapts a *[]byte to io.Writer for ReadData.
 type writerTo struct{ p *[]byte }
@@ -187,7 +197,7 @@ func materializeTrack(r io.ReadSeeker, ts *mp4TrackState) (*Track, []media.Gap) 
 		CodecParams:      ts.stsdRaw,
 		Language:         ts.language,
 		Timescale:        ts.timescale,
-		Edits:            ts.edits,
+		Edits:            convertEdits(ts.edits, ts.timescale),
 		HasKeyframeTable: ts.hasStss,
 	}
 	offsets := sampleOffsets(ts.stsc, ts.chunks, ts.stsz)
@@ -281,6 +291,12 @@ func stsdCodec(raw []byte) string {
 		return ""
 	}
 	return string(raw[12:16])
+}
+
+// decodeLanguage unpacks the 5-bit-per-char ISO-639-2 form stored in mdhd.
+func decodeLanguage(l [3]byte) string {
+	b := []byte{l[0] + 0x60, l[1] + 0x60, l[2] + 0x60}
+	return string(b)
 }
 
 func handlerType(h string) media.TrackType {

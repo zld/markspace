@@ -204,7 +204,7 @@ func writeRTPCap(path string, rng *rand.Rand, videoTicks uint64) error {
 		pkt     []byte
 	}
 	var recs []rec
-	baseTS := ^uint32(0) - 999 // start just before the 32-bit wrap
+	baseTS := ^uint32(0) - 899_999 // wrap to 0 roughly 500 packets in
 	const baseSeq = 5000
 	dropAt := count * 2 / 5
 	jumpAt := count * 3 / 5
