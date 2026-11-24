@@ -17,10 +17,13 @@ const (
 )
 
 // Event is one observed packet on the wire. Arrival is a monotonically
-// increasing observation index assigned by the capture/generator.
+// increasing observation index assigned by the capture/generator. Ext is the
+// extended sequence number assigned by the reorderer when the packet is
+// committed; it is zero for RTCP events and for uncommitted packets.
 type Event struct {
 	Kind    Kind
 	Arrival int64
+	Ext     int64
 
 	// RTP fields (KindRTP)
 	Packet *rtp.Packet
@@ -37,11 +40,47 @@ func (e Event) Seq() uint16 {
 	return e.Packet.SequenceNumber
 }
 
+// SeqExtender maps 16-bit RTP sequence numbers onto a signed extended domain.
+// Each new number is placed within half a sequence space of the highest
+// extended value seen so far, so wrap-around, reordering and duplicated
+// numbers all resolve without unsigned underflow. The domain may legitimately
+// contain negative values when a pre-wrap packet arrives after the first
+// post-wrap packet.
+type SeqExtender struct {
+	origin int64
+	last   int64
+	init   bool
+}
+
+// Origin returns the extended value assigned to the first packet, which is
+// the lowest position a reorderer may need to commit from.
+func (e *SeqExtender) Origin() int64 { return e.origin }
+
+// Extend returns the extended sequence number for a raw 16-bit value.
+func (e *SeqExtender) Extend(seq uint16) int64 {
+	if !e.init {
+		e.init = true
+		e.origin = int64(seq)
+		e.last = e.origin
+		return e.origin
+	}
+	// difference in the 16-bit space, reinterpreted as a signed offset
+	diff := int64(int16(seq - uint16(e.last)))
+	cand := e.last + diff
+	if cand > e.last {
+		e.last = cand
+	}
+	return cand
+}
+
+// Max returns the highest extended sequence number observed so far.
+func (e *SeqExtender) Max() int64 { return e.last }
+
 // Gap marks a committed range of missing extended sequence numbers
 // [From, To] inclusive.
 type Gap struct {
-	From uint64
-	To   uint64
+	From int64
+	To   int64
 }
 
 // Stats summarizes reordering outcomes.

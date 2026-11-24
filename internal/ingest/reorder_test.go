@@ -162,3 +162,96 @@ func TestLateArrivingLossBecomesLateNotRewrite(t *testing.T) {
 		}
 	}
 }
+
+// TestLatePacketCountedWhenNoEarlierCommit reproduces a regression where the
+// first commit could not start below the first packet's own extended value,
+// so a missing early sequence number was never recorded and its later
+// arrival was not classified as late.
+func TestLatePacketCountedWhenNoEarlierCommit(t *testing.T) {
+	r := NewReorderer(4)
+	for i, s := range []uint16{1000, 1001, 1003, 1004, 1005, 1006, 1007} {
+		r.Push(rtpEv(s, int64(i)))
+	}
+	_, st := r.Flush()
+	if st.Lost != 1 {
+		t.Fatalf("lost before late arrival = %d, want 1 (1002)", st.Lost)
+	}
+	r.Push(rtpEv(1002, 99))
+	events, st := r.Flush()
+	if st.Late != 1 {
+		t.Fatalf("late = %d, want 1", st.Late)
+	}
+	if len(committedSeqs(events)) != 7 {
+		t.Fatalf("committed %d, want 7", len(committedSeqs(events)))
+	}
+}
+
+// TestReorderAcrossWrapBackward checks that packets from the pre-wrap cycle
+// arriving after post-wrap packets map just below them, so a backward wrap
+// never turns into a huge forward jump. The exact loss set here is the three
+// unobserved pre-wrap odd numbers plus the unobserved even numbers 6..18.
+func TestReorderAcrossWrapBackward(t *testing.T) {
+	r := NewReorderer(64)
+	for i, s := range []uint16{1, 3, 5, 7, 9, 11, 13, 15, 17, 19} {
+		r.Push(rtpEv(s, int64(i)))
+	}
+	for i, s := range []uint16{65530, 65532, 65534, 0, 2, 4} {
+		r.Push(rtpEv(s, int64(100+i)))
+	}
+	events, st := r.Flush()
+	if st.Duplicates != 0 || st.Late != 0 {
+		t.Fatalf("duplicates=%d late=%d, want 0/0", st.Duplicates, st.Late)
+	}
+	// no fabricated jump: the extended span stays within one 16-bit window
+	exts := make([]int64, 0, len(events))
+	for _, e := range events {
+		if e.Kind == KindRTP {
+			exts = append(exts, e.Ext)
+		}
+	}
+	lo, hi := exts[0], exts[0]
+	for _, x := range exts {
+		lo, hi = minI(lo, x), maxI(hi, x)
+	}
+	if hi-lo > 0xFFFF {
+		t.Fatalf("extended span %d exceeds one sequence cycle", hi-lo)
+	}
+	// received 16 of 26 positions in the [65530..65535,0..19] window
+	if want := 26 - 16; st.Lost != want {
+		t.Fatalf("lost = %d, want %d", st.Lost, want)
+	}
+}
+
+func minI(a, b int64) int64 {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func maxI(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+// TestExtenderSignedWrap exercises the signed extension directly.
+func TestExtenderSignedWrap(t *testing.T) {
+	var e SeqExtender
+	if got := e.Extend(65534); got != 65534 {
+		t.Fatalf("first = %d", got)
+	}
+	if got := e.Extend(0); got != 65536 {
+		t.Fatalf("post-wrap = %d, want 65536", got)
+	}
+	if got := e.Extend(65530); got != 65530 {
+		t.Fatalf("pre-wrap reordered = %d, want 65530", got)
+	}
+	if got := e.Extend(2); got != 65538 {
+		t.Fatalf("resume after reordered = %d, want 65538", got)
+	}
+	if e.Max() != 65538 {
+		t.Fatalf("max = %d", e.Max())
+	}
+}

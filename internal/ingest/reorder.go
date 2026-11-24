@@ -1,20 +1,21 @@
 package ingest
 
-import "sort"
+import (
+	"math"
+	"sort"
+)
 
 // Reorderer buffers RTP events and commits them in extended-sequence order.
 // Packets that arrive after their position has been committed are counted
 // as late corruption and never rewrite the committed stream.
 type Reorderer struct {
-	window uint64
+	window int64
 
-	init     bool
-	cycles   uint64 // wrap offset for sequence numbers
-	maxExt   uint64 // highest ext seq seen
-	buffer   map[uint64]Event
-	seen     map[uint64]bool
-	commitTo uint64 // all ext seq <= commitTo are committed
-	hasCmt   bool   // whether any RTP position has been committed
+	ext      SeqExtender
+	buffer   map[int64]Event
+	seen     map[int64]bool
+	commitTo int64 // all ext seq <= commitTo are committed
+	hasCmt   bool  // whether any RTP position has been committed
 	ordered  []Event
 	stats    Stats
 }
@@ -22,34 +23,10 @@ type Reorderer struct {
 // NewReorderer creates a Reorderer with the given reorder window (packets).
 func NewReorderer(window int) *Reorderer {
 	return &Reorderer{
-		window: uint64(window),
-		buffer: make(map[uint64]Event),
-		seen:   make(map[uint64]bool),
+		window: int64(window),
+		buffer: make(map[int64]Event),
+		seen:   make(map[int64]bool),
 	}
-}
-
-// extendSeq maps a 16-bit sequence number to the extended domain, tracking
-// wrap based on the highest sequence observed so far.
-func (r *Reorderer) extendSeq(seq uint16) uint64 {
-	const half = uint64(1) << 15
-	if !r.init {
-		r.init = true
-		r.maxExt = uint64(seq)
-		return uint64(seq)
-	}
-	cand := uint64(seq) + r.cycles
-	// position candidate within +-half of maxExt
-	for cand+half < r.maxExt {
-		r.cycles += 1 << 16
-		cand += 1 << 16
-	}
-	for cand > r.maxExt+half {
-		cand -= 1 << 16
-	}
-	if cand > r.maxExt {
-		r.maxExt = cand
-	}
-	return cand
 }
 
 // Push ingests one RTP event. RTCP events pass straight through to the
@@ -60,7 +37,7 @@ func (r *Reorderer) Push(e Event) {
 		return
 	}
 	r.stats.Received++
-	ext := r.extendSeq(e.Seq())
+	ext := r.ext.Extend(e.Seq())
 	if r.hasCmt && ext <= r.commitTo {
 		// too late: position already committed
 		r.stats.Late++
@@ -71,6 +48,7 @@ func (r *Reorderer) Push(e Event) {
 		return
 	}
 	r.seen[ext] = true
+	e.Ext = ext
 	r.buffer[ext] = e
 	r.commit()
 }
@@ -78,22 +56,27 @@ func (r *Reorderer) Push(e Event) {
 func (r *Reorderer) anyCommitted() bool { return r.hasCmt }
 
 // commit releases buffered packets whose position is finalized: everything
-// at or below maxExt-window is committed in order, recording gaps.
+// at or below maxExt-window is committed in order, recording gaps. Once a
+// position is committed it is never rewritten, even if the missing packet
+// arrives later.
 func (r *Reorderer) commit() {
-	if r.maxExt <= r.window {
+	maxExt := r.ext.Max()
+	if maxExt-r.ext.Origin() < r.window {
 		return
 	}
-	limit := r.maxExt - r.window
+	limit := maxExt - r.window
 	start := r.commitTo + 1
-	if r.commitTo == 0 && !r.anyCommitted() {
-		// first commit begins at the lowest buffered seq
-		start = ^uint64(0)
+	if !r.hasCmt {
+		// First commit begins at the lowest committed-candidate position in
+		// the buffer, which may lie below the first packet's extended seq
+		// after reordering, so the stream origin is not a safe floor.
+		start = math.MaxInt64
 		for ext := range r.buffer {
 			if ext < start {
 				start = ext
 			}
 		}
-		if start == ^uint64(0) {
+		if start == math.MaxInt64 {
 			return
 		}
 	}
@@ -101,7 +84,7 @@ func (r *Reorderer) commit() {
 		if ev, ok := r.buffer[ext]; ok {
 			r.ordered = append(r.ordered, ev)
 			delete(r.buffer, ext)
-		} else if r.anyCommitted() || ext > start {
+		} else if ext > start || r.hasCmt {
 			r.stats.Lost++
 			r.addGap(ext)
 		}
@@ -110,8 +93,7 @@ func (r *Reorderer) commit() {
 	}
 }
 
-
-func (r *Reorderer) addGap(ext uint64) {
+func (r *Reorderer) addGap(ext int64) {
 	if n := len(r.stats.Gaps); n > 0 && r.stats.Gaps[n-1].To+1 == ext {
 		r.stats.Gaps[n-1].To = ext
 		return
@@ -123,14 +105,19 @@ func (r *Reorderer) addGap(ext uint64) {
 // ordered events plus statistics. Unobserved trailing positions are not
 // counted as loss since the stream simply ends.
 func (r *Reorderer) Flush() ([]Event, Stats) {
-	exts := make([]uint64, 0, len(r.buffer))
+	exts := make([]int64, 0, len(r.buffer))
 	for ext := range r.buffer {
 		exts = append(exts, ext)
 	}
 	sort.Slice(exts, func(i, j int) bool { return exts[i] < exts[j] })
 	for _, ext := range exts {
+		if r.hasCmt && ext <= r.commitTo {
+			// position was already committed (stale buffer entry)
+			delete(r.buffer, ext)
+			continue
+		}
 		// gap between commitTo and next buffered packet is real loss
-		if r.anyCommitted() {
+		if r.hasCmt {
 			for missing := r.commitTo + 1; missing < ext; missing++ {
 				r.stats.Lost++
 				r.addGap(missing)
