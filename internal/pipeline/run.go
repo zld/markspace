@@ -236,20 +236,15 @@ func Run(in Inputs) (Stats, error) {
 		}
 	}
 
-	// Collect every committed chunk for the final report and compare the
-	// in-memory result with what the store would replay.
+	// Aggregate the committed chunks one at a time: each payload is decoded,
+	// folded into the running counters and dropped, so peak memory follows
+	// the largest single chunk rather than the whole timeline.
 	manifest := store.Manifest()
 	st.Manifest = manifest
 	st.CommittedChunks = len(manifest.Chunks)
-	if in.Resume {
-		// Only chunks that were missing get rendered; committed ones are
-		// verified and skipped. VerifiedChunks reports the work avoided and
-		// ReplayedChunks counts any committed chunk that had to be redone.
-	}
 	matches := 0
 	frameFailures := 0
-	var itemsAll []timeline.Item
-	var framesAll []render.FrameRecord
+	frameHit, frameTotal := 0, 0
 	for i := range manifest.Chunks {
 		p, err := store.ReadPayload(i)
 		if err != nil {
@@ -261,6 +256,11 @@ func Run(in Inputs) (Stats, error) {
 		for _, fr := range p.Frames {
 			if fr.Error != nil {
 				frameFailures++
+				continue
+			}
+			frameTotal++
+			if fr.Origin == string(mp4.OriginIndex) {
+				frameHit++
 			}
 		}
 		// Recompute the chunk digest exactly as the store does: from the
@@ -270,27 +270,22 @@ func Run(in Inputs) (Stats, error) {
 		if report.InputDigest(itemsDigest, framesDigest, manifest.Chunks[i].InputDigest) == manifest.Chunks[i].Digest {
 			matches++
 		}
-		itemsAll = append(itemsAll, p.Items...)
-		framesAll = append(framesAll, p.Frames...)
+		st.Frames += len(p.Frames)
 		for _, e := range p.Errors {
 			st.Errors.Add(e)
 		}
 	}
 	st.SegmentHashMatch = report.NewRatio(matches, len(manifest.Chunks))
-	st.Frames = len(framesAll)
 	st.FrameFailures = frameFailures
 
-	// Round-trip consistency: every timecode label parsed to an instant must
-	// render back to the identical label and instant.
+	// Round-trip consistency: every valid timecode label parsed to an instant
+	// must render back to the identical label and instant.
 	st.Metrics.RoundtripConsistency = timecodeRoundtrip(in, &st)
 	// Keyframe hit rate: of the sampling points that produced a frame record,
 	// how many resolved their sample through the keyframe index rather than
 	// the scan fallback.
-	st.Metrics.KeyframeIndexHitRate = keyframeHitRate(framesAll)
+	st.Metrics.KeyframeIndexHitRate = report.NewRatio(frameHit, frameTotal)
 	st.Metrics.SegmentHashMatch = st.SegmentHashMatch
-	if len(itemsAll) == 0 && len(pieces) == 0 {
-		st.SegmentHashMatch = report.NewRatio(0, 0)
-	}
 	st.Errors = append(st.Errors, res.Errors...)
 	// RTP clock audits run after the media batch: a drifting stream fails
 	// only its own track and never blocks the committed chunks.
@@ -302,7 +297,6 @@ func Run(in Inputs) (Stats, error) {
 	}
 	st.Recoverable = st.Errors.RecoverableCount()
 	st.Warnings = st.Errors.WarningCount()
-	_ = itemsAll
 	return st, nil
 }
 
