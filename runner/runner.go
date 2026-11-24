@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -394,6 +395,29 @@ func runOne(input string, opts Options, interrupted *bool) FileResult {
 		man.RTP = res
 		rate := res.RecoveryRate()
 		fr.PacketRecoveryRate = &rate
+		// Attribute unrecoverable packet gaps to the segments whose time
+		// range contains them, so a downstream consumer sees which output
+		// fragments are missing media.
+		if gaps := attributeRTPGaps(res, refTrack, plan, seq); len(gaps) > 0 {
+			// Record each distinct gap once at run level; attach it to the
+			// segments whose span contains it so the fragment itself carries
+			// the loss.
+			seen := make(map[int64]bool, len(gaps))
+			for _, g := range gaps {
+				if seen[g.TimeUS] {
+					continue
+				}
+				seen[g.TimeUS] = true
+				man.Issues = append(man.Issues, g)
+			}
+			for i := range fullOuts {
+				for _, g := range gaps {
+					if g.TimeUS >= fullOuts[i].StartUS && g.TimeUS < fullOuts[i].EndUS {
+						fullOuts[i].Issues = append(fullOuts[i].Issues, g)
+					}
+				}
+			}
+		}
 	}
 	man.Issues = append(man.Issues, issuesFromOutputs(fullOuts)...)
 
@@ -427,7 +451,9 @@ func runOne(input string, opts Options, interrupted *bool) FileResult {
 			"audio/video sync error %dus exceeds tolerance", syncRep.MaxErrorUS)
 	}
 	for _, is := range man.Issues {
-		if is.Severity == media.SeverityError {
+		// Unrecoverable RTP loss is recorded on segments and provenance but
+		// does not fail the input: the media container is still trustworthy.
+		if is.Severity == media.SeverityError && is.Kind != media.KindRTPGap {
 			fr.OK = false
 			if fr.Error == nil {
 				fr.Error = media.NewError(media.KindInternal, input, is.Detail)
@@ -509,6 +535,48 @@ func outputLatencies(outs []pipeline.SegmentOutput) []float64 {
 		out = append(out, float64(o.ElapsedUS)/1000.0)
 	}
 	return out
+}
+
+// attributeRTPGaps maps each unrecoverable RTP sequence gap to the media time
+// of the packet that went missing, using the emit order of the sequence and
+// the track frame interval. Gaps with no determinable time are still reported
+// at time zero so they are never dropped silently.
+// rtpIssue returns the classified issue for a packet loss. Unrecoverable
+// RTP loss is attached to segments and provenance; it does not by itself fail
+// the whole input, because the media container can still be valid.
+func rtpIssue(g media.Issue) media.Issue {
+	return media.Issue(g)
+}
+
+func attributeRTPGaps(res *rtp.Result, track *index.TrackIndex, plan []pipeline.PlannedSegment, seq *rtp.Sequence) []media.Issue {
+	if res == nil || len(res.Gaps) == 0 || track == nil {
+		return nil
+	}
+	interval, ok := track.FrameInterval()
+	if !ok {
+		return nil
+	}
+	var issues []media.Issue
+	sentPos := make(map[uint16]int, len(seq.Sent))
+	for i, s := range seq.Sent {
+		sentPos[s] = i
+	}
+	for _, g := range res.Gaps {
+		pos, found := sentPos[g.StartSeq]
+		if !found {
+			continue
+		}
+		// Each emitted packet carries one media sample, so the gap's start
+		// position maps to a media time on the reference track's grid.
+		t := media.Time(track.StartUS*1_000) + media.Time(pos)*interval
+		issues = append(issues, media.Issue{
+			Kind: media.KindRTPGap, Severity: media.SeverityError,
+			Detail: fmt.Sprintf("unrecoverable RTP loss of %d packets at sequence %d",
+				g.Count, g.StartSeq),
+			At: pos, TimeUS: t.Micros(),
+		})
+	}
+	return issues
 }
 
 func findRTPSequence(input string) (string, bool) {

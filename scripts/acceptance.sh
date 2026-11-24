@@ -65,6 +65,33 @@ SPREAD=$(echo "$GOOD_OUT" | python3 -c 'import sys,json;d=json.load(sys.stdin);p
 say "  max layer boundary spread = ${SPREAD}us"
 check "layer boundary spread <= one video frame (33334us)" $([[ "$SPREAD" -le 33334 ]] && echo 0 || echo 1)
 
+say "== rtp burst loss =="
+set +e
+LOSS_OUT="$("$BIN" --input "$SAMPLES/rtp_loss" --report json --work "$WORK/loss")"
+loss_exit=$?
+set -e
+loss_rate=$(echo "$LOSS_OUT" | python3 -c 'import sys,json;print(json.load(sys.stdin)["packet_recovery_rate"])')
+say "  packet_recovery_rate=$loss_rate"
+check "rtp loss run exits 0 (gap recorded, not fatal)" $([[ $loss_exit -eq 0 ]] && echo 0 || echo 1)
+if python3 -c "import sys;v=float('$loss_rate');sys.exit(0 if 0<v<1.0 else 1)"; then
+  check "rtp burst lowers recovery rate below 1.0" 0
+else
+  check "rtp burst lowers recovery rate below 1.0" 1
+fi
+echo "$LOSS_OUT" | python3 -c '
+import sys,json,os
+d=json.load(sys.stdin)
+f=d["files"][0]
+p=os.path.join(sys.argv[1], f["sha256"][:16], "manifest.json")
+if not os.path.exists(p):
+    sys.exit(1)
+m=json.load(open(p))
+gaps=[i for i in m.get("issues",[]) if i["kind"]=="rtp_unrecoverable_gap"]
+print("  rtp gap issues in manifest:", len(gaps))
+sys.exit(0 if gaps else 1)
+' "$WORK/loss"
+check "rtp gap written to manifest segment errors" $?
+
 say "== corrupt input =="
 set +e
 CORRUPT_OUT="$("$BIN" --input "$SAMPLES/corrupt" --report json --work "$WORK/corrupt")"

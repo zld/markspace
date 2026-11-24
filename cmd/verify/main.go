@@ -191,7 +191,6 @@ func generateSamples(dir string) int {
 	}
 	good := filepath.Join(dir, "good")
 	corrupt := filepath.Join(dir, "corrupt")
-	routed := filepath.Join(dir, "rtp")
 
 	// Representation variants share the reference video timing but shift
 	// their keyframe grid by one sample, so cross-bitrate alignment has a
@@ -247,23 +246,32 @@ func generateSamples(dir string) int {
 			failures++
 		}
 	}
-	// RTP fixture with a burst loss, independent of the media fixtures.
-	rtpSpec := fixtures.DefaultSpec("rtp_source.mp4")
-	ts := rtpSpec.Tracks[0]
-	seq := fixtures.BuildRTPBurst(ts, 20, 6)
-	b, err := json.Marshal(seq)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "generate rtp: %v\n", err)
-		return runner.ExitInternal
-	}
-	if err := os.MkdirAll(routed, 0o755); err != nil {
+	// A dedicated RTP-loss fixture: a media file paired with an arrival
+	// sequence that drops a six-packet burst, so the recovery rate is
+	// demonstrably below 1.0 and the gap is attributed to a segment.
+	lossDir := filepath.Join(dir, "rtp_loss")
+	if err := os.MkdirAll(lossDir, 0o755); err != nil {
 		fmt.Fprintf(os.Stderr, "internal error: %v\n", err)
 		return runner.ExitInternal
 	}
-	rtpPath := filepath.Join(routed, "burst.rtp.json")
-	if err := os.WriteFile(rtpPath, b, 0o644); err != nil {
-		fmt.Fprintf(os.Stderr, "generate rtp: %v\n", err)
+	lossSpec := fixtures.DefaultSpec("loss.mp4")
+	lossRes, err := fixtures.Generate(lossSpec, lossDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "generate loss media: %v\n", err)
 		failures++
+	} else {
+		seq := fixtures.BuildRTPBurst(lossSpec.Tracks[0], 20, 6)
+		b, err := json.Marshal(seq)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "generate rtp: %v\n", err)
+			return runner.ExitInternal
+		}
+		rtpPath := filepath.Join(lossDir, "loss.rtp.json")
+		if err := os.WriteFile(rtpPath, b, 0o644); err != nil {
+			fmt.Fprintf(os.Stderr, "generate rtp: %v\n", err)
+			failures++
+		}
+		_ = lossRes
 	}
 
 	fmt.Printf("generated %d good, %d corrupt samples under %s\n",

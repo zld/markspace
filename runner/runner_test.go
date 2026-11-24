@@ -1,6 +1,7 @@
 package runner_test
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -226,5 +227,58 @@ func TestRunRejectsBadArguments(t *testing.T) {
 	}
 	if rep.FailureCount != 1 {
 		t.Fatalf("failures=%d", rep.FailureCount)
+	}
+}
+
+func TestRTPBurstReportsRecoveryRateAndGaps(t *testing.T) {
+	dir := t.TempDir()
+	ts := fixtures.DefaultSpec("x.mp4").Tracks[0]
+	res, err := fixtures.Generate(fixtures.DefaultSpec("rtp.mp4"), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seq := fixtures.BuildRTPBurst(ts, 20, 6)
+	b, err := json.Marshal(seq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "rtp.rtp.json"), b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rep, code := runner.Run(runner.Options{
+		Inputs: []string{res.MainPath}, WorkDir: filepath.Join(dir, "work"),
+		Segment: 2 * media.Time(media.NanoDen), Bitrates: []string{"500k"},
+	})
+	if code != runner.ExitOK {
+		t.Fatalf("exit=%d", code)
+	}
+	f := rep.Files[0]
+	if f.PacketRecoveryRate == nil {
+		t.Fatal("recovery rate missing")
+	}
+	if *f.PacketRecoveryRate >= 1.0 {
+		t.Fatalf("burst loss should lower the rate: %v", *f.PacketRecoveryRate)
+	}
+	// The manifest must carry the gap as a classified issue and provenance
+	// must record the loss.
+	man, err := os.ReadFile(filepath.Join(dir, "work", f.SHA256[:16], "manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(man, &m); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	if issues, ok := m["issues"].([]any); ok {
+		for _, raw := range issues {
+			im := raw.(map[string]any)
+			if im["kind"] == string(media.KindRTPGap) {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Fatal("manifest missing RTP gap issue")
 	}
 }
