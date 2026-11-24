@@ -98,6 +98,19 @@ func (r Rat) Cmp(o Rat) int { return r.r.Cmp(&o.r) }
 // Equal reports exact equality.
 func (r Rat) Equal(o Rat) bool { return r.r.Cmp(&o.r) == 0 }
 
+// Int64 returns the exact integer value and true when the rational has no
+// fractional part; otherwise it returns 0 and false. This is what round-trip
+// checks use to prove a value survives re-encoding.
+func (r Rat) Int64() (int64, bool) {
+	if !r.r.IsInt() {
+		return 0, false
+	}
+	if !r.r.Num().IsInt64() {
+		return 0, false
+	}
+	return r.r.Num().Int64(), true
+}
+
 // Sign returns -1, 0 or 1.
 func (r Rat) Sign() int { return r.r.Sign() }
 

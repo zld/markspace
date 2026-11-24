@@ -470,8 +470,10 @@ func loadTimecodes(in Inputs, st *Stats) []timeline.TimecodeMark {
 	return marks
 }
 
-// timecodeRoundtrip measures how many valid labels parse -> render -> parse
-// to the identical instant and spelling.
+// timecodeRoundtrip measures, over every valid label, the share that parses,
+// re-renders canonically and parses back to the identical frame count and
+// instant. Invalid labels are excluded: they are reported separately and are
+// never silently "fixed" into the ratio.
 func timecodeRoundtrip(in Inputs, st *Stats) report.Ratio {
 	if in.TimecodePath == "" {
 		return report.NewRatio(1, 1)

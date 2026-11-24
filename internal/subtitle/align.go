@@ -1,6 +1,7 @@
 package subtitle
 
 import (
+	"fmt"
 	"sort"
 
 	"mediaaudit/internal/model"
@@ -113,4 +114,25 @@ func CutPointsFromBoundaries(bounds []model.Rat) []model.Rat {
 		out = append(out, b)
 	}
 	return out
+}
+
+// FormatTimestamp renders an exact instant as HH:MM:SS,mmm. It reports false
+// when the instant is not a whole number of milliseconds, because such a value
+// cannot be written in SRT/WebVTT syntax and would not round-trip.
+func FormatTimestamp(t model.Rat) (string, bool) {
+	ms, err := t.Mul(model.RatFromInt(1000)).Quo(model.RatFromInt(1))
+	if err != nil {
+		return "", false
+	}
+	n, ok := ms.Int64()
+	if !ok || n < 0 {
+		return "", false
+	}
+	h := n / 3_600_000
+	n %= 3_600_000
+	m := n / 60_000
+	n %= 60_000
+	s := n / 1000
+	f := n % 1000
+	return fmt.Sprintf("%02d:%02d:%02d,%03d", h, m, s, f), true
 }

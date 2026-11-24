@@ -91,3 +91,44 @@ func TestOverlapNoFalsePositiveForTouchingCues(t *testing.T) {
 		t.Fatalf("touching cues must not overlap: %v %v", ov, errs)
 	}
 }
+
+func TestFormatTimestampRoundTrip(t *testing.T) {
+	cases := []struct {
+		rat  model.Rat
+		want string
+	}{
+		{model.RatFromInt(0), "00:00:00,000"},
+		{model.MustRat(1, 2), "00:00:00,500"},
+		{model.MustRat(1234567, 1000), "00:20:34,567"},
+	}
+	for _, c := range cases {
+		got, ok := FormatTimestamp(c.rat)
+		if !ok || got != c.want {
+			t.Fatalf("%s -> %q ok=%v want %q", c.rat, got, ok, c.want)
+		}
+		doc := Parse([]byte("1\n"+got+" --> "+got+"\nx\n"), "f.srt", FormatSRT, Options{})
+		if len(doc.Errors) != 1 || doc.Errors[0].Code != model.CodeSubtitleZero {
+			// The parse itself must accept the encoding.
+			t.Fatalf("%q did not parse as a timestamp: %v", got, doc.Errors)
+		}
+	}
+	// Sub-millisecond values cannot be represented and must be refused.
+	if _, ok := FormatTimestamp(model.MustRat(1, 3000)); ok {
+		t.Fatal("1/3000 s is not a whole millisecond")
+	}
+	if _, ok := FormatTimestamp(model.RatFromInt(-1)); ok {
+		t.Fatal("negative instants are not SRT-encodable")
+	}
+}
+
+func TestInt64Exactness(t *testing.T) {
+	if n, ok := model.RatFromInt(42).Int64(); !ok || n != 42 {
+		t.Fatal("integer rational")
+	}
+	if _, ok := model.MustRat(1, 2).Int64(); ok {
+		t.Fatal("1/2 has a fractional part")
+	}
+	if _, ok := model.MustRat(6, 3).Int64(); !ok {
+		t.Fatal("6/3 reduces to an integer")
+	}
+}
