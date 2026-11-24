@@ -31,6 +31,7 @@ const (
 	OpIncompleteHeader Operation = "incomplete-header"
 	OpSequence         Operation = "sequence"
 	OpIndexIncomplete  Operation = "index-incomplete"
+	OpDemuxInvalid     Operation = "demux-invalid"
 	OpMapping          Operation = "mapping"
 	OpEvent            Operation = "event"
 	OpWrite            Operation = "write"
