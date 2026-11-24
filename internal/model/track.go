@@ -37,6 +37,7 @@ type Crop struct {
 // ColorField is a single colour property together with the source it was
 // read from, so conflicts remain auditable instead of being flattened.
 type ColorField struct {
+	Field  string `json:"field,omitempty"`
 	Value  string `json:"value"`
 	Source string `json:"source"`
 }
