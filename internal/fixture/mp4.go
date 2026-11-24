@@ -39,6 +39,7 @@ const (
 	KindStartOffset     = "start_offset"
 	KindDuplicate       = "duplicate"
 	KindCombined        = "wrap_regression"
+	KindMultiTrack      = "multitrack"
 )
 
 // Options controls the synthetic media layout.
@@ -53,6 +54,13 @@ type Options struct {
 	Step           uint32
 	Composition    int32
 	Description    string
+	// WithAudio adds a second track running at a different timescale so the
+	// per-track timebase conversion is exercised end to end.
+	WithAudio bool
+	// AudioTimescale is the audio track's timescale (default 48000).
+	AudioTimescale uint32
+	// AudioChannels is the audio channel count (default 2).
+	AudioChannels uint16
 }
 
 // DefaultOptions returns a 30fps video track with a keyframe every 15 samples.
@@ -242,6 +250,15 @@ func BuildAll(dir string) ([]*Sample, error) {
 		return nil, err
 	}
 
+	mt := DefaultOptions("multitrack", KindMultiTrack)
+	mt.SampleCount = 40
+	mt.FirstPTS = 9000
+	mt.WithAudio = true
+	mt.Description = "video at 90kHz plus audio at 48kHz"
+	if err := add(Build(dir, mt)); err != nil {
+		return nil, err
+	}
+
 	comb := DefaultOptions("wrap_regression", KindCombined)
 	comb.SampleCount = 50
 	comb.FirstPTS = 0xFFFFF000
@@ -299,7 +316,7 @@ func encode(opts Options, degrade *Degrade) ([]byte, error) {
 	if opts.Step == 0 {
 		opts.Step = opts.MediaTimescale / 30
 	}
-	layout := buildLayout(opts, degrade)
+	tracks := buildLayouts(opts, degrade)
 
 	ftypLen, err := ftypSize()
 	if err != nil {
@@ -307,15 +324,23 @@ func encode(opts Options, degrade *Degrade) ([]byte, error) {
 	}
 	// stco stores a 4-byte offset, so moov length is independent of the
 	// value we patch into it. Encode once to learn the length, then again
-	// with the true mdat payload offset.
-	layout.ChunkOff = 0
-	moovBuf, err := marshalMoov(layout, opts.Timescale)
+	// with the true mdat payload offsets.
+	for _, t := range tracks {
+		t.ChunkOff = 0
+	}
+	moovBuf, err := marshalMoov(tracks, opts.Timescale)
 	if err != nil {
 		return nil, err
 	}
 	chunkStart := int64(ftypLen) + int64(len(moovBuf)) + int64(mdatHeaderSize)
-	layout.ChunkOff = chunkStart
-	moovBuf, err = marshalMoov(layout, opts.Timescale)
+	pos := chunkStart
+	for _, t := range tracks {
+		t.ChunkOff = pos
+		for _, s := range t.Sizes {
+			pos += int64(s)
+		}
+	}
+	moovBuf, err = marshalMoov(tracks, opts.Timescale)
 	if err != nil {
 		return nil, err
 	}
@@ -329,19 +354,23 @@ func encode(opts Options, degrade *Degrade) ([]byte, error) {
 	}
 	out.Write(moovBuf)
 
-	payloadLen := opts.SampleCount * sampleSize
+	payloadLen := int(pos - chunkStart)
 	hdr, err := mdatHeader(payloadLen)
 	if err != nil {
 		return nil, err
 	}
 	out.Write(hdr)
-	// Payload bytes are keyed on the sample name as well as the index, so two
-	// fixtures with different names never share a digest.
-	seed := nameSeed(opts.Name)
+	// Payload bytes are keyed on the fixture name and track, so two fixtures
+	// with different names never share a digest.
 	payload := make([]byte, payloadLen)
-	for i := 0; i < opts.SampleCount; i++ {
-		for j := 0; j < sampleSize; j++ {
-			payload[i*sampleSize+j] = payloadByte(seed+i, j)
+	off := 0
+	for _, t := range tracks {
+		seed := nameSeed(opts.Name) + int(t.ID)*7919
+		for i := 0; i < len(t.Sizes); i++ {
+			for j := 0; j < int(t.Sizes[i]); j++ {
+				payload[off] = payloadByte(seed+i, j)
+				off++
+			}
 		}
 	}
 	out.Write(payload)
@@ -368,15 +397,69 @@ func nameSeed(name string) int {
 	return int(h & 0x7FFFFFFF)
 }
 
+// buildLayouts derives one layout per track.
+func buildLayouts(opts Options, degrade *Degrade) []*trackLayout {
+	tracks := []*trackLayout{buildLayout(opts, degrade)}
+	if opts.WithAudio {
+		tracks = append(tracks, buildAudioLayout(opts, degrade))
+	}
+	return tracks
+}
+
+// buildAudioLayout produces a second track at its own timescale. It shares
+// the wall-clock presentation timing, so its ticks differ from the video's.
+func buildAudioLayout(opts Options, degrade *Degrade) *trackLayout {
+	ts := opts.AudioTimescale
+	if ts == 0 {
+		ts = 48000
+	}
+	channels := opts.AudioChannels
+	if channels == 0 {
+		channels = 2
+	}
+	// One audio sample per video frame for simplicity; the step follows the
+	// audio timescale.
+	frames := opts.SampleCount
+	step := uint32(ts) / 30
+	if step == 0 {
+		step = 1
+	}
+	layout := &trackLayout{
+		ID:         2,
+		MediaType:  "soun",
+		Channels:   channels,
+		SampleRate: ts,
+		MediaTS:    ts,
+		MovieTS:    opts.Timescale,
+	}
+	// Decode time always starts at zero because stts is delta-coded. The
+	// non-zero starting instant therefore rides in the composition offset,
+	// exactly as it does for video.
+	start := uint64(opts.FirstPTS) * uint64(ts) / uint64(opts.MediaTimescale)
+	for i := 0; i < frames; i++ {
+		layout.DTS = append(layout.DTS, uint64(i)*uint64(step))
+		pts := int64(start) + int64(i)*int64(step)
+		if degrade != nil && degrade.Mode == DegradeBackward && i >= degrade.AtSample {
+			pts -= degrade.Amount * int64(ts) / 90000
+		}
+		layout.PTSRaw = append(layout.PTSRaw, uint32(pts))
+		layout.Sizes = append(layout.Sizes, sampleSize*2)
+		layout.Keyframes = append(layout.Keyframes, uint32(i+1))
+	}
+	layout.MediaType = "soun"
+	return layout
+}
+
 // buildLayout derives DTS/PTS/size tables from options.
 func buildLayout(opts Options, degrade *Degrade) *trackLayout {
 	n := opts.SampleCount
 	layout := &trackLayout{
-		ID:      1,
-		MediaTS: opts.MediaTimescale,
-		MovieTS: opts.Timescale,
-		Width:   640,
-		Height:  360,
+		ID:        1,
+		MediaType: "vide",
+		MediaTS:   opts.MediaTimescale,
+		MovieTS:   opts.Timescale,
+		Width:     640,
+		Height:    360,
 	}
 	// Decode time starts at zero; the non-zero starting presentation time is
 	// carried by the composition offset, exactly as a real edit-free file

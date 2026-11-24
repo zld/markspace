@@ -137,16 +137,19 @@ func payloadByte(idx int, i int) byte {
 
 // trackLayout is the concrete sample table the writer emits.
 type trackLayout struct {
-	ID        uint32
-	MediaTS   uint32
-	MovieTS   uint32
-	Width     uint16
-	Height    uint16
-	DTS       []uint64
-	PTSRaw    []uint32
-	Sizes     []uint32
-	Keyframes []uint32 // 1-based sample numbers
-	ChunkOff  int64
+	ID         uint32
+	MediaType  string // "vide" or "soun"
+	Channels   uint16
+	SampleRate uint32
+	MediaTS    uint32
+	MovieTS    uint32
+	Width      uint16
+	Height     uint16
+	DTS        []uint64
+	PTSRaw     []uint32
+	Sizes      []uint32
+	Keyframes  []uint32 // 1-based sample numbers
+	ChunkOff   int64
 }
 
 func (t *trackLayout) sampleCount() int { return len(t.Sizes) }
@@ -249,17 +252,19 @@ func rleCTTS(offsets []uint32) []mp4.CttsEntry {
 	return out
 }
 
-func marshalMoov(t *trackLayout, movieTS uint32) ([]byte, error) {
+func marshalMoov(tracks []*trackLayout, movieTS uint32) ([]byte, error) {
 	ws := &memWriteSeeker{}
 	bw := newBoxWriter(ws)
 	if err := bw.start("moov"); err != nil {
 		return nil, err
 	}
-	if err := writeMvhd(bw, movieTS, t); err != nil {
+	if err := writeMvhd(bw, movieTS, tracks); err != nil {
 		return nil, err
 	}
-	if err := writeTrak(bw, movieTS, t); err != nil {
-		return nil, err
+	for _, t := range tracks {
+		if err := writeTrak(bw, movieTS, t); err != nil {
+			return nil, err
+		}
 	}
 	if err := bw.end(); err != nil {
 		return nil, err
@@ -267,14 +272,24 @@ func marshalMoov(t *trackLayout, movieTS uint32) ([]byte, error) {
 	return ws.Bytes(), nil
 }
 
-func writeMvhd(bw *boxWriter, movieTS uint32, t *trackLayout) error {
+func writeMvhd(bw *boxWriter, movieTS uint32, tracks []*trackLayout) error {
+	var duration uint64
+	var nextID uint32 = 1
+	for _, t := range tracks {
+		if d := scaleUint(t.duration(), t.MediaTS, movieTS); d > duration {
+			duration = d
+		}
+		if t.ID+1 > nextID {
+			nextID = t.ID + 1
+		}
+	}
 	mvhd := &mp4.Mvhd{
 		Timescale:   movieTS,
-		DurationV1:  scaleUint(t.duration(), t.MediaTS, movieTS),
+		DurationV1:  duration,
 		Rate:        0x00010000,
 		Volume:      0x0100,
 		Matrix:      [9]int32{0x00010000, 0, 0, 0, 0x00010000, 0, 0, 0, 0x40000000},
-		NextTrackID: t.ID + 1,
+		NextTrackID: nextID,
 	}
 	return bw.full("mvhd", 1, 0, mvhd)
 }
@@ -311,7 +326,13 @@ func writeTrakBody(bw *boxWriter, movieTS uint32, t *trackLayout) error {
 	if err := bw.full("mdhd", 1, 0, mdhd); err != nil {
 		return err
 	}
-	hdlr := &mp4.Hdlr{HandlerType: [4]byte{'v', 'i', 'd', 'e'}, Name: "VideoHandler"}
+	handler := [4]byte{'v', 'i', 'd', 'e'}
+	name := "VideoHandler"
+	if t.MediaType == "soun" {
+		handler = [4]byte{'s', 'o', 'u', 'n'}
+		name = "SoundHandler"
+	}
+	hdlr := &mp4.Hdlr{HandlerType: handler, Name: name}
 	if err := bw.full("hdlr", 0, 0, hdlr); err != nil {
 		return err
 	}
@@ -325,7 +346,11 @@ func writeMinf(bw *boxWriter, t *trackLayout) error {
 	if err := bw.start("minf"); err != nil {
 		return err
 	}
-	if err := bw.full("vmhd", 0, 0x000001, &mp4.Vmhd{}); err != nil {
+	if t.MediaType == "soun" {
+		if err := bw.full("smhd", 0, 0, &mp4.Smhd{}); err != nil {
+			return err
+		}
+	} else if err := bw.full("vmhd", 0, 0x000001, &mp4.Vmhd{}); err != nil {
 		return err
 	}
 	if err := bw.start("dinf"); err != nil {
@@ -370,6 +395,15 @@ func writeStbl(bw *boxWriter, t *trackLayout) error {
 	if _, err := mp4.Marshal(bw.w, &mp4.Stsd{EntryCount: 1}, mp4.Context{}); err != nil {
 		return err
 	}
+	if t.MediaType == "soun" {
+		if _, err := bw.w.Write(audioSampleEntry(t.Channels, t.SampleRate)); err != nil {
+			return err
+		}
+		if err := bw.end(); err != nil { // stsd
+			return err
+		}
+		return writeStblTail(bw, t)
+	}
 	if err := bw.start("avc1"); err != nil {
 		return err
 	}
@@ -413,16 +447,18 @@ func writeStbl(bw *boxWriter, t *trackLayout) error {
 	if _, err := mp4.Marshal(bw.w, avcc, mp4.Context{}); err != nil {
 		return err
 	}
-	if err := bw.end(); err != nil {
-		return err
+	// Close avcC, avc1 and stsd.
+	for i := 0; i < 3; i++ {
+		if err := bw.end(); err != nil {
+			return err
+		}
 	}
-	if err := bw.end(); err != nil {
-		return err
-	}
-	if err := bw.end(); err != nil {
-		return err
-	}
+	return writeStblTail(bw, t)
+}
 
+// writeStblTail emits the timing and layout tables after the sample
+// description, then closes stbl.
+func writeStblTail(bw *boxWriter, t *trackLayout) error {
 	stts := &mp4.Stts{Entries: rleSTTS(t.DTS)}
 	stts.EntryCount = uint32(len(stts.Entries))
 	if err := bw.full("stts", 0, 0, stts); err != nil {
@@ -456,6 +492,69 @@ func writeStbl(bw *boxWriter, t *trackLayout) error {
 		return err
 	}
 	return bw.end() // stbl
+}
+
+// audioSpecificConfig encodes AAC LC at the given rate with two channels.
+// Layout is 5 bits object type, 4 bits sample-rate index, 4 bits channel
+// configuration, 3 bits GASpecificConfig.
+func audioSpecificConfig(sampleRate uint32) []byte {
+	rates := []uint32{96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350}
+	index := uint32(15) // explicit frequency escape
+	for i, r := range rates {
+		if r == sampleRate {
+			index = uint32(i)
+			break
+		}
+	}
+	bits := uint32(2)<<11 | (index&0xF)<<7 | uint32(2)<<3
+	if index == 15 {
+		// Escape form appends the explicit 24-bit rate after the 4-bit index.
+		bits = uint32(2)<<11 | uint32(15)<<7 | uint32(2)<<3
+		return []byte{byte(bits >> 8), byte(bits), byte(sampleRate >> 16), byte(sampleRate >> 8), byte(sampleRate)}
+	}
+	return []byte{byte(bits >> 8), byte(bits)}
+}
+
+// audioSampleEntry renders a minimal mp4a sample entry with an esds box so
+// container tools recognise an AAC track.
+func audioSampleEntry(channels uint16, sampleRate uint32) []byte {
+	payload := make([]byte, 0, 64)
+	payload = append(payload, make([]byte, 6)...) // reserved
+	payload = append(payload, 0, 1)               // data reference index
+	payload = append(payload, 0, 0)               // entry version
+	payload = append(payload, make([]byte, 6)...) // reserved
+	payload = append(payload, byte(channels>>8), byte(channels))
+	payload = append(payload, 0, 16) // sample size
+	payload = append(payload, 0, 0)  // pre-defined
+	payload = append(payload, 0, 0)  // reserved
+	// The field is 16.16 fixed point. Shifting a 32-bit rate left by 16
+	// overflows, so build the two halves explicitly.
+	payload = append(payload, byte(sampleRate>>8), byte(sampleRate), 0, 0)
+	// esds with a minimal AAC decoder config. The AudioSpecificConfig must
+	// agree with the sample rate in the sample entry, or tools will report
+	// the wrong rate.
+	decSpecific := audioSpecificConfig(sampleRate)
+	asc := len(decSpecific)
+	es := []byte{0x00, 0x00}                              // ES_ID
+	es = append(es, 0x00)                                 // flags + stream priority
+	decConfig := []byte{0x40, 0x15}                       // AAC LC, stream type 5
+	decConfig = append(decConfig, 0x00, 0x00, 0x00)       // buffer size
+	decConfig = append(decConfig, 0x00, 0x00, 0x00, 0x00) // max bitrate
+	decConfig = append(decConfig, 0x00, 0x00, 0x00, 0x00) // avg bitrate
+	decSpecificDescr := append([]byte{0x05, byte(asc)}, decSpecific...)
+	decConfig = append(decConfig, decSpecificDescr...)
+	sl := []byte{0x06, 0x01, 0x02}
+	esBody := append([]byte{}, es...)
+	esBody = append(esBody, 0x04, byte(len(decConfig)))
+	esBody = append(esBody, decConfig...)
+	esBody = append(esBody, sl...)
+	esds := []byte{0x03, byte(len(esBody))}
+	esds = append(esds, esBody...)
+	var box bytes.Buffer
+	box.Write([]byte{0, 0, 0, 0}) // fullbox version+flags
+	box.Write(esds)
+	payload = append(payload, boxBytes("esds", box.Bytes())...)
+	return boxBytes("mp4a", payload)
 }
 
 func mdatHeader(payloadLen int) ([]byte, error) {

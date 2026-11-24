@@ -108,7 +108,7 @@ func TestDemoProducesReport(t *testing.T) {
 	if err := json.Unmarshal(data, &m); err != nil {
 		t.Fatal(err)
 	}
-	if len(m.Samples) != 9 {
+	if len(m.Samples) != 10 {
 		t.Fatalf("manifest samples = %d", len(m.Samples))
 	}
 }

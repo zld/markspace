@@ -30,7 +30,7 @@ func TestFixturesProbe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(samples) != 9 {
+	if len(samples) != 10 {
 		t.Fatalf("samples = %d", len(samples))
 	}
 	for _, s := range samples {
@@ -50,8 +50,11 @@ func TestFixturesProbe(t *testing.T) {
 		if info.Timescale != s.Timescale {
 			t.Fatalf("%s: movie timescale %d", s.Name, info.Timescale)
 		}
-		if len(info.Tracks) != 1 || info.Tracks[0].Timescale != s.MediaTimescale {
+		if len(info.Tracks) == 0 || info.Tracks[0].Timescale != s.MediaTimescale {
 			t.Fatalf("%s: track layout unexpected", s.Name)
+		}
+		if s.Kind == KindMultiTrack && len(info.Tracks) != 2 {
+			t.Fatalf("%s: expected two tracks, got %d", s.Name, len(info.Tracks))
 		}
 	}
 }
@@ -90,5 +93,31 @@ func TestTruncatedHeaderOffset(t *testing.T) {
 	}
 	if st.Size() != s.CorruptAt+5 {
 		t.Fatalf("size = %d want %d", st.Size(), s.CorruptAt+5)
+	}
+}
+
+func TestMultiTrackProbes(t *testing.T) {
+	dir := t.TempDir()
+	opts := DefaultOptions("mt", KindNormal)
+	opts.WithAudio = true
+	opts.SampleCount = 30
+	s, err := Build(dir, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Open(s.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	info, err := mp4.Probe(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(info.Tracks) != 2 {
+		t.Fatalf("tracks = %d", len(info.Tracks))
+	}
+	if info.Tracks[0].Timescale != 90000 || info.Tracks[1].Timescale != 48000 {
+		t.Fatalf("timescales = %d/%d", info.Tracks[0].Timescale, info.Tracks[1].Timescale)
 	}
 }
