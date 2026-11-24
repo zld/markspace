@@ -184,9 +184,11 @@ func (g *Generator) videoPacket(keyframe, _ bool) []byte {
 }
 
 func (g *Generator) audioPacket(layoutFault bool) []byte {
-	marker := byte(0)
+	// Marker 0x33 cannot occur in 0xFF-stuffed payloads, so the metadata
+	// stage detects the injected layout fault without false positives.
+	marker := byte(0xFF)
 	if layoutFault {
-		marker = 0x7F // unknown layout marker consumed by the metadata stage
+		marker = 0x33
 	}
 	return ts.BuildPacket(ts.BuildOpts{
 		PID: g.audioPID, PUSI: false, AdaptationControl: 1,

@@ -56,16 +56,24 @@ func TestUnknownLayoutMarkerPresent(t *testing.T) {
 	s := NewGenerator(7).Generate(20, []string{FaultAudioLayout})
 	var found bool
 	_, _ = ts.SplitPackets(s.CompleteData, func(p *ts.Packet) error {
-		for _, b := range p.Payload {
-			if b == 0x7F {
-				found = true
-			}
+		if len(p.Payload) > 2 && p.Payload[2] == 0x33 {
+			found = true
 		}
 		return nil
 	})
 	if !found {
-		t.Fatal("audio-layout fault marker not found in any payload")
+		t.Fatal("audio-layout fault marker not found at payload slot 2")
 	}
+}
+
+func TestCleanStreamHasNoLayoutMarker(t *testing.T) {
+	s := NewGenerator(7).Generate(20, nil)
+	_, _ = ts.SplitPackets(s.CompleteData, func(p *ts.Packet) error {
+		if len(p.Payload) > 2 && p.Payload[2] == 0x33 {
+			t.Fatal("clean stream must not contain the fault marker")
+		}
+		return nil
+	})
 }
 
 func TestFaultStreamsStayDeterministic(t *testing.T) {

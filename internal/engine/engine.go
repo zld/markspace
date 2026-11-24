@@ -49,17 +49,19 @@ type Metrics struct {
 // goroutines, so mu serializes every access to the shared mutable state;
 // back-pressure still bounds memory through the pipeline queues.
 type Engine struct {
-	mu        sync.Mutex
-	cfg       Config
-	psi       *ts.PSITracker
-	cc        *repair.ContinuityChecker
-	tsCorr    *repair.TimestampCorrector
-	audio     *metadata.AudioNormalizer
-	video     *metadata.ColorNormalizer
-	builder   *index.Builder
-	hasher    *segment.Hasher
-	stream    *fixture.Stream
-	rawByOrd  map[int64][]byte
+	mu          sync.Mutex
+	cfg         Config
+	psi         *ts.PSITracker
+	cc          *repair.ContinuityChecker
+	tsCorr      *repair.TimestampCorrector
+	audio       *metadata.AudioNormalizer
+	video       *metadata.ColorNormalizer
+	builder     *index.Builder
+	hasher      *segment.Hasher
+	stream      *fixture.Stream
+	rawByOrd    map[int64][]byte
+	eligible    int // non-null packets that must traverse the pipeline
+	audioSeen   map[uint16]bool // PIDs whose descriptor was already validated
 }
 
 // New assembles an engine for one fixture stream.
@@ -79,12 +81,13 @@ func New(cfg Config, stream *fixture.Stream) *Engine {
 		cc:       repair.NewContinuityChecker(),
 		tsCorr:   repair.NewTimestampCorrector(),
 		audio:    metadata.NewAudioNormalizer(metadata.DefaultAudioConfig()),
-		video:    metadata.NewColorNormalizer(metadata.ColorConfig{
+		video: metadata.NewColorNormalizer(metadata.ColorConfig{
 			DefaultPrimaries: 1, DefaultTransfer: 1, DefaultMatrix: 1}),
-		builder:  index.NewBuilder(),
-		hasher:   segment.NewHasher(cfg.SegmentPackets),
-		stream:   stream,
-		rawByOrd: map[int64][]byte{},
+		builder:   index.NewBuilder(),
+		hasher:    segment.NewHasher(cfg.SegmentPackets),
+		stream:    stream,
+		rawByOrd:  map[int64][]byte{},
+		audioSeen: map[uint16]bool{},
 	}
 }
 
@@ -112,6 +115,11 @@ func (e *Engine) Run(ctx context.Context) (*Metrics, error) {
 		defer close(source)
 		var ordinal int64
 		tr, pumpErr = ts.SplitPackets(e.stream.Data, func(p *ts.Packet) error {
+			if !p.IsNull() {
+				e.mu.Lock()
+				e.eligible++
+				e.mu.Unlock()
+			}
 			// The ordinal is the packet's position in the byte stream, so
 			// segment ranges line up with rawByOrd even after duplicates or
 			// recovered drops.
@@ -203,14 +211,21 @@ func (e *Engine) stageMetadata(_ context.Context, in pipeline.Item) (pipeline.It
 	case ts.KindAudio:
 		layout := metadata.LayoutStereo
 		rate := uint32(48000)
-		if hasMarker(w.pkt.Payload, 0x7F) {
+		// The fixture places the layout marker at the fixed payload slot 2;
+		// scanning the whole stuffed payload would collide with data bytes.
+		if len(w.pkt.Payload) > 2 && w.pkt.Payload[2] == audioLayoutFaultMarker {
 			layout = metadata.LayoutUnknown
 		}
-		if _, err := e.audio.Normalize(metadata.AudioDescriptor{
-			PID: w.pkt.PID, Layout: layout, Channels: 2,
-			SampleRate: rate, FrameSizeBytes: 4,
-		}, w.pkt.ByteOffset); err != nil {
-			return in, err
+		// A descriptor-level conflict is reported once per PID; every packet
+		// of that track still flows through the remaining stages.
+		if !e.audioSeen[w.pkt.PID] {
+			e.audioSeen[w.pkt.PID] = true
+			if _, err := e.audio.Normalize(metadata.AudioDescriptor{
+				PID: w.pkt.PID, Layout: layout, Channels: 2,
+				SampleRate: rate, FrameSizeBytes: 4,
+			}, w.pkt.ByteOffset); err != nil {
+				return in, err
+			}
 		}
 		if err := e.audio.CheckDivisible(w.pkt.PID,
 			len(w.pkt.Payload), 4, w.pkt.ByteOffset); err != nil {
@@ -313,23 +328,18 @@ func (e *Engine) verifyKeyframes(ix *index.Index) (hits, seeks int) {
 }
 
 func (e *Engine) roundtripPct(stats *pipeline.Stats) float64 {
-	eligible := e.stream.TotalPackets
+	// Round-trip measures how much of the eligible (non-null) input survived
+	// into confirmed work; null stuffing is never part of the media timeline.
+	eligible := e.eligible
 	if eligible == 0 {
 		return 100
 	}
-	// Accepted plus recovered-dropped packets were all parsed safely; the
-	// round-trip measures how much of the input survived into confirmed work.
 	return pct(stats.Processed, eligible)
 }
 
-func hasMarker(payload []byte, marker byte) bool {
-	for _, b := range payload {
-		if b == marker {
-			return true
-		}
-	}
-	return false
-}
+// audioLayoutFaultMarker is the fixed-slot marker injected by the fixture's
+// audio-layout fault; it is read only at payload index 2, never by scanning.
+const audioLayoutFaultMarker byte = 0x33
 
 func truncatedLen(tr *ts.TruncatedRange) int {
 	if tr == nil {
