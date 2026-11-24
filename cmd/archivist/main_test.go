@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -110,5 +111,35 @@ func TestDemoProducesReport(t *testing.T) {
 	}
 	if len(m.Samples) != 10 {
 		t.Fatalf("manifest samples = %d", len(m.Samples))
+	}
+}
+
+// TestDemoRepeatedSameDirIsStable guards running the documented acceptance
+// command more than once against the same --dir. Products left by the first
+// invocation must not collapse the cold-first vs resume comparison into a
+// spurious timing failure or change any digest.
+func TestDemoRepeatedSameDirIsStable(t *testing.T) {
+	root := t.TempDir()
+	for i := 0; i < 2; i++ {
+		if code := cmdDemo([]string{"--dir", root, "--queue", "2"}); code != exitOK {
+			t.Fatalf("demo run %d exit = %d", i+1, code)
+		}
+	}
+
+	outPath := filepath.Join(root, "work", "output", "normal.mp4")
+	first, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code := cmdDemo([]string{"--dir", root, "--queue", "2"}); code != exitOK {
+		t.Fatalf("demo run 3 exit = %d", code)
+	}
+	third, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Resetting the work trees must still reproduce byte-identical output.
+	if !bytes.Equal(first, third) {
+		t.Fatal("output/normal.mp4 differs across repeated demo runs")
 	}
 }

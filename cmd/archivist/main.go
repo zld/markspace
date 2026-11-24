@@ -118,6 +118,22 @@ func cmdDemo(args []string) int {
 		return exitFailure
 	}
 
+	// The demo is a self-contained acceptance scenario. Products of a previous
+	// invocation would make both timed passes skip all stages, collapsing the
+	// first/resume comparison into scheduler noise and potentially failing the
+	// 80% budget. Reset only the demo-owned work trees; the kernel's own
+	// cross-invocation resume and idempotency guarantees are exercised below
+	// (interrupted pass and the zero-stage rerun) and pinned by tests.
+	for _, stale := range []string{
+		filepath.Join(*dir, "work"),
+		filepath.Join(*dir, "work-interrupted"),
+	} {
+		if err := os.RemoveAll(stale); err != nil {
+			fmt.Fprintf(os.Stderr, "archivist: reset %s: %v\n", stale, err)
+			return exitFailure
+		}
+	}
+
 	inputsDir := filepath.Join(*dir, "inputs")
 	samples, err := fixture.BuildAll(inputsDir)
 	if err != nil {
@@ -148,9 +164,9 @@ func cmdDemo(args []string) int {
 
 	// First pass: healthy inputs only. It establishes the reference output
 	// digests and the wall-clock budget the resumed run must beat.
-	firstStart := nowMs()
+	firstStart := timeNow()
 	first, err := runOnce(opts, healthy)
-	rep.FirstRunMs = nowMs() - firstStart
+	rep.FirstRunMs = timeNow().Sub(firstStart).Milliseconds()
 	if err != nil {
 		rep.Results = append(rep.Results, first...)
 		return finish(rep, err)
@@ -179,13 +195,13 @@ func cmdDemo(args []string) int {
 
 	// Resumed pass: same directory, no interrupt. It must skip the completed
 	// stages and reproduce the uninterruptible digests.
-	resumeStart := nowMs()
+	resumeStart := timeNow()
 	resumed, err := runOnce(pipeline.Options{
 		QueueCapacity: *queue,
 		WorkDir:       interruptedDir,
 		ChunkSamples:  *chunk,
 	}, healthy)
-	rep.ResumeRunMs = nowMs() - resumeStart
+	rep.ResumeRunMs = timeNow().Sub(resumeStart).Milliseconds()
 	rep.ResumeBudgetMs = rep.FirstRunMs * 80 / 100
 	if err != nil {
 		rep.Results = append(rep.Results, resumed...)
@@ -347,10 +363,6 @@ func checkCorruptResults(results []*pipeline.InputResult) error {
 		}
 	}
 	return nil
-}
-
-func nowMs() int64 {
-	return timeNow().UnixMilli()
 }
 
 func cmdRun(args []string) int {
