@@ -199,7 +199,7 @@ func (t *Timeline) Observe(ssrc uint32, seq uint16, ts uint32, arrival time.Time
 // ApplySenderReport corrects the RTP-to-wall-clock mapping. A backwards NTP
 // report is retained as a locatable issue but does not replace the prior good
 // correction.
-func (t *Timeline) ApplySenderReport(r SenderReport, receivedAt time.Time) error {
+func (t *Timeline) ApplySenderReport(r SenderReport, receivedAt time.Time) *Error {
 	extTS := t.ExtendTimestamp(r.SSRC, r.RTPTime)
 	t.mu.Lock()
 	defer t.mu.Unlock()
