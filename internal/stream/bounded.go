@@ -11,7 +11,6 @@ package stream
 import (
 	"context"
 	"sync"
-	"time"
 
 	"mediad/internal/model"
 )
@@ -30,11 +29,12 @@ type Config struct {
 
 // Stats describes the pressure the stream applied over its lifetime.
 type Stats struct {
-	PeakBytes int64 `json:"peak_bytes"`
-	PeakItems int   `json:"peak_items"`
-	Enqueued  int   `json:"enqueued"`
-	BlockedNS int64 `json:"blocked_ns"`
-	Rejected  int   `json:"rejected"`
+	PeakBytes   int64 `json:"peak_bytes"`
+	PeakItems   int   `json:"peak_items"`
+	Enqueued    int   `json:"enqueued"`
+	BlockedNS   int64 `json:"blocked_ns"`
+	BlockedHits int   `json:"blocked_hits"`
+	Rejected    int   `json:"rejected"`
 }
 
 // Stream is a bounded buffer safe for concurrent producers and one consumer.
@@ -47,12 +47,18 @@ type Stream struct {
 	bytes  int
 	closed bool
 
-	peakBytes int64
-	peakItems int
-	enqueued  int
-	blockedNS int64
-	rejected  int
+	peakBytes   int64
+	peakItems   int
+	enqueued    int
+	blockedNS   int64
+	blockedHits int
+	rejected    int
 }
+
+// blockedTickNS is the deterministic duration charged for one blocking wait.
+// Counting waits instead of sampling the wall clock makes blocked-duration
+// accounting reproducible run after run while still expressing pressure.
+const blockedTickNS int64 = 1_000_000
 
 // New validates the config and returns an empty stream.
 func New(cfg Config) (*Stream, error) {
@@ -67,7 +73,8 @@ func New(cfg Config) (*Stream, error) {
 }
 
 // waitWhile runs cond.Wait until condFn is false, the stream closes, or ctx
-// ends. The stop hook is deregistered on every exit so no goroutine leaks.
+// ends. Each blocking wait episode is charged a deterministic tick so the
+// stop hook is deregistered on every exit with no goroutine leaks.
 func (s *Stream) waitWhile(ctx context.Context, condFn func() bool) error {
 	stop := context.AfterFunc(ctx, func() {
 		s.mu.Lock()
@@ -79,6 +86,8 @@ func (s *Stream) waitWhile(ctx context.Context, condFn func() bool) error {
 		if err := ctx.Err(); err != nil {
 			return model.New(model.ErrContextCanceled, "wait released: %v", err)
 		}
+		s.blockedHits++
+		s.blockedNS += blockedTickNS
 		s.cond.Wait()
 	}
 	if s.closed {
@@ -98,13 +107,8 @@ func (s *Stream) Put(ctx context.Context, item Item) error {
 			"item size %d exceeds MaxBytes %d", item.Size, s.cfg.MaxBytes)
 	}
 
-	start := time.Now()
 	s.mu.Lock()
-	waited := s.fullLocked()
 	if err := s.waitWhile(ctx, s.fullLocked); err != nil {
-		if waited {
-			s.blockedNS += time.Since(start).Nanoseconds()
-		}
 		s.mu.Unlock()
 		return err
 	}
@@ -117,9 +121,6 @@ func (s *Stream) Put(ctx context.Context, item Item) error {
 	}
 	if len(s.queue) > s.peakItems {
 		s.peakItems = len(s.queue)
-	}
-	if waited {
-		s.blockedNS += time.Since(start).Nanoseconds()
 	}
 	s.cond.Broadcast()
 	s.mu.Unlock()
@@ -191,7 +192,8 @@ func (s *Stream) Snapshot() Stats {
 	defer s.mu.Unlock()
 	return Stats{
 		PeakBytes: s.peakBytes, PeakItems: s.peakItems,
-		Enqueued: s.enqueued, BlockedNS: s.blockedNS, Rejected: s.rejected,
+		Enqueued: s.enqueued, BlockedNS: s.blockedNS,
+		BlockedHits: s.blockedHits, Rejected: s.rejected,
 	}
 }
 
