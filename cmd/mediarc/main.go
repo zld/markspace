@@ -24,7 +24,7 @@ func run(argv []string, stdout, stderr io.Writer) int {
 		code, err = runDemo(argv[1:], stdout)
 	case "resume":
 		code, err = runResume(argv[1:], stdout)
-	case "validate":
+	case "validate", "verify":
 		code, err = runValidate(argv[1:], stdout)
 	case "-h", "--help", "help":
 		usage(stdout)

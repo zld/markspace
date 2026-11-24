@@ -25,6 +25,25 @@ type chunkBuildConfig struct {
 	Faults       *model.Collector
 }
 
+func reconcileColor(o Options, metas []ingest.FrameMeta, faults *model.Collector) normalize.ColorReport {
+	var sources []model.SourcedColor
+	for _, m := range metas {
+		if m.Color.Primaries != "" {
+			sources = append(sources, model.SourcedColor{
+				Source: "mrc1-frame-header", Color: m.Color, Offset: m.Offset,
+			})
+			break
+		}
+	}
+	if o.HasInject("color-conflict") || o.HasInject("color_conflict") {
+		sources = append(sources, model.SourcedColor{
+			Source: "conflicting-sidecar",
+			Color:  model.ColorMetadata{Primaries: "bt2020", Transfer: "smpte2084", Matrix: "bt2020nc", Range: "full"},
+		})
+	}
+	return normalize.ReconcileColor(sources, faults)
+}
+
 // buildRangeMP4 creates one deterministic MP4 for frames [start,end) and audio
 // blocks whose mapped PTS falls in the same interval.
 func buildRangeMP4(frames []recovery.RestoredFrame, start, end int, audio []recovery.AudioBlock, cfg chunkBuildConfig) ([]byte, int, error) {

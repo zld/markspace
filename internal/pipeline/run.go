@@ -102,6 +102,7 @@ func Run(o Options) (*RunResult, error) {
 		}
 	}
 	audio := recovery.FillAudioGaps(items, gaps, audioSamplesPerPacket(manifest), uint32(len(srcLayout.Channels)))
+	_ = reconcileColor(o, metas, faults)
 
 	sourceRate := uint32(model.AudioClockRate)
 	if manifest.Audio != nil && manifest.Audio.SampleRate != 0 {
@@ -246,6 +247,7 @@ func fillSummary(sum *report.Summary, o Options, idx *checkpoint.Index, rec chec
 	if manifest.Frames != nil {
 		sum.LocationErrorMax = locationError(faults.All(), manifest.Frames)
 	}
+	sum.Locations = report.LocationsFromFaults(faults.All())
 	if manifest.Audio != nil {
 		sum.AudioPackets = manifest.Audio.CanonicalPackets
 		sum.StoredAudioRecords = manifest.Audio.StoredRecords

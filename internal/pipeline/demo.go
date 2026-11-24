@@ -147,6 +147,7 @@ func GenerateDemo(o Options) (*DemoResult, error) {
 		LocationErrorMax: locErr, ChunkSize: o.ChunkSize, ChunkCount: ChunkCount(o.Frames, o.ChunkSize),
 		InputSHA256: inputSHA, ExitCode: model.ExitOK,
 	}
+	sum.Locations = report.LocationsFromFaults(faults.All())
 	return &DemoResult{Summary: sum, FrameFixture: ffx, RTPFixture: afx, Faults: faults}, nil
 }
 
