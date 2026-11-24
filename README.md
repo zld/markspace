@@ -44,6 +44,11 @@ descriptor for each. Select one with `MEDIA_AUDIT_SCENARIO`:
 | `edge` | DF-invalid frame labels, wrapped RTP timestamps, 2000 ppm drifting track, zero-length/reversed/overlapping and cut-spanning cues | exit 2, classified diagnostics, valid tracks still complete |
 | `broken` | truncated sample plus an out-of-range keyframe index entry | exit 2, `index_fallback` with the damaged byte offset and `sample_read` for short reads |
 
+Note: `go run` reports a program exit status of 2 as its own "exit status 2"
+message but still exits 1, because the go tool is the process. Build the
+binary (`go build ./cmd/media-audit`) when you need to observe exit code 2
+directly.
+
 ```sh
 MEDIA_AUDIT_SCENARIO=edge   go run ./cmd/media-audit -out ./tmp/edge   -samples ./tmp/samples -resume
 MEDIA_AUDIT_SCENARIO=broken go run ./cmd/media-audit -out ./tmp/broken -samples ./tmp/samples -resume
