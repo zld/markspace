@@ -21,6 +21,11 @@ const (
 	DefaultWindow = 64
 )
 
+// TSOffset is the fixed media timestamp increment between adjacent sequence
+// numbers. Fixtures and the recovery pipeline use it to translate packet sequence
+// spans into media time.
+const TSOffset uint32 = 1000
+
 // Packet is one decoded RTP packet in arrival order.
 type Packet struct {
 	Seq       uint16
