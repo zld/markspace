@@ -89,8 +89,11 @@ func detectGap(spec TrackInput, cur BlockInput, prevTicks, curTicks, rate, nomin
 		nominalStep = 1
 	}
 	delta := curTicks - prevTicks
-	// Any jump beyond one nominal block cadence means intervening blocks.
-	if delta <= nominalStep {
+	// Rounding between the nanosecond clock and the track tick rate can move
+	// a normal step by a small fraction, so a gap requires the step to exceed
+	// roughly one-and-a-half nominal block cadences. A genuine single missing
+	// block doubles the cadence and still trips this threshold.
+	if delta*2 <= nominalStep*3 {
 		return nil
 	}
 	startNs, ok1 := NsFromUnits(prevTicks+nominalStep, rate)
