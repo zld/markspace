@@ -119,16 +119,18 @@ func TestLoudnessNormalizeAndClip(t *testing.T) {
 		t.Fatalf("in-range block must not clip, got %d", st.Clips)
 	}
 
-	// Scenario 2: over-limit samples are hard-limited and every clip counted.
-	hotN := NewNormalizer(-23, 0.95)
+	// Scenario 2: samples that exceed the peak limit after gain are limited
+	// and every clip is counted. Target -3 LUFS keeps the gain near unity,
+	// while the 0.5 peak ceiling forces limiting on a 0.8-amplitude block.
+	hotN := NewNormalizer(-3, 0.5)
 	hot := Frame{Samples: make([]float32, 1024), Channels: 1, Rate: 48000}
 	for i := range hot.Samples {
-		hot.Samples[i] = 10
+		hot.Samples[i] = 0.8
 	}
 	hotN.Measure(hot)
 	limited := hotN.Normalize(hot)
 	for _, v := range limited.Samples {
-		if v > 0.95+1e-6 || v < -0.95-1e-6 {
+		if v > 0.5+1e-6 || v < -0.5-1e-6 {
 			t.Fatalf("peak limiter violated: %v", v)
 		}
 	}
