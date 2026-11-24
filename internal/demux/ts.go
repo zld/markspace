@@ -7,20 +7,6 @@ import (
 	"mediapipeline/internal/track"
 )
 
-const (
-	tsPacketSize = 188
-	tsSyncByte   = 0x47
-	tsTimescale  = 90000
-)
-
-const (
-	tsStreamH264 = 0x1b
-	tsStreamHEVC = 0x24
-	tsStreamAAC  = 0x0f
-	tsStreamID3  = 0x15
-	tsStreamPriv = 0x06
-)
-
 // ParseTS demuxes an MPEG-TS byte slice.  It works in two passes so the
 // elementary stream map is final before any PES is interpreted: pass one
 // validates packet framing, continuity and PSI; pass two reassembles PES

@@ -1,5 +1,10 @@
 package remux
 
+import (
+	"mediapipeline/internal/demux"
+	"mediapipeline/internal/track"
+)
+
 // synthesizedStsd builds a minimal stsd for inputs whose demuxer did not carry
 // one (MPEG-TS).  The sample entry names the codec so the output re-demuxes to
 // the same track kind; no codec private data is invented.  In particular no
@@ -61,4 +66,21 @@ func synthesizedStsd(handler string) []byte {
 	b.finish(entryOff)
 	b.finish(off)
 	return b.bytes()
+}
+
+func handlerOf(tr demux.Track) string {
+	if tr.Handler != "" {
+		return tr.Handler
+	}
+	switch tr.Kind {
+	case track.KindVideo:
+		return "vide"
+	case track.KindAudio:
+		return "soun"
+	case track.KindSubtitle:
+		return "subt"
+	case track.KindChapter:
+		return "text"
+	}
+	return "meta"
 }

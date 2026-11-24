@@ -146,20 +146,3 @@ func trakBox(tr demux.Track, mapped track.Entry, md *media, movieTS uint32) []by
 		return trak.bytes()
 	}
 }
-
-func handlerOf(tr demux.Track) string {
-	if tr.Handler != "" {
-		return tr.Handler
-	}
-	switch tr.Kind {
-	case track.KindVideo:
-		return "vide"
-	case track.KindAudio:
-		return "soun"
-	case track.KindSubtitle:
-		return "subt"
-	case track.KindChapter:
-		return "text"
-	}
-	return "meta"
-}
