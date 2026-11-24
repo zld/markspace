@@ -69,10 +69,11 @@ func (c *Clock33) Unwrap(raw uint64) uint64 {
 
 // Regression reports whether the pair (prevRaw, raw) moves backwards without
 // qualifying as a wrap. When raw decreases, the forward distance around the
-// modulus is computed: a small forward distance means a genuine 33-bit wrap,
-// while a distance beyond HalfMod33 means interpreting the sample as a wrap
-// would require jumping nearly a full cycle, so the timeline really moved
-// backwards. Repeated values are not regressions.
+// modulus is computed: a small forward distance means the sample crossed the
+// 33-bit boundary (a legitimate wrap), while a distance beyond HalfMod33
+// means the timeline really moved backwards, since interpreting it as a wrap
+// would require the clock to jump nearly a full cycle. Repeated values are
+// not regressions.
 func Regression(prevRaw, raw uint64) bool {
 	prevRaw &= Mask33 - 1
 	raw &= Mask33 - 1
