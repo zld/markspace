@@ -2,7 +2,6 @@ package demux
 
 import (
 	"bytes"
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -28,48 +27,66 @@ type Container struct {
 	GoMP4TrackCount int            `json:"go_mp4_track_count"`
 }
 
-// EncodeContainer writes a deterministic ISO-BMFF-style container. The MRCA
-// box carries the self-describing synthetic archive; ftyp is encoded with
-// go-mp4. Sample bytes are retained exactly in the archive payload.
+// EncodeContainer writes a deterministic ISO-BMFF container. It includes a
+// probe-compatible moov with standard track/sample tables, an mdat holding
+// concatenated sample bytes, and the lossless MRCA manifest used by MediaRC.
 func EncodeContainer(a *model.Archive) ([]byte, error) {
-	var out bytes.Buffer
 	brand := [4]byte{'i', 's', 'o', 'm'}
 	if a.Brand == "MOV" {
 		brand = [4]byte{'q', 't', ' ', ' '}
 	}
-	ftyp := &mp4.Ftyp{
+	ftypPayload, err := fullBoxPayload(&mp4.Ftyp{
 		MajorBrand:   brand,
 		MinorVersion: 0x00000200,
 		CompatibleBrands: []mp4.CompatibleBrandElem{
 			{CompatibleBrand: [4]byte{'i', 's', 'o', 'm'}},
 			{CompatibleBrand: [4]byte{'m', 'p', '4', '2'}},
 		},
-	}
-	var fp bytes.Buffer
-	if _, err := mp4.Marshal(&fp, ftyp, mp4.Context{}); err != nil {
+	})
+	if err != nil {
 		return nil, model.NewError(model.StageDemux, model.CodeUnsupported, "marshal ftyp", err)
 	}
-	if err := writeBox(&out, mp4.BoxTypeFtyp(), fp.Bytes()); err != nil {
+	ftypBox := boxBytes(mp4.BoxTypeFtyp(), ftypPayload)
+
+	zeroOffsets := make([]uint32, len(a.Tracks))
+	moovZero, err := buildMoov(a, zeroOffsets)
+	if err != nil {
 		return nil, err
 	}
+
+	var mdatPayload bytes.Buffer
+	offsets := make([]uint32, len(a.Tracks))
+	mdatStart := len(ftypBox) + len(moovZero) + 8
+	cursor := uint32(mdatStart)
+	for i, tr := range a.Tracks {
+		offsets[i] = cursor
+		for _, s := range a.SamplesFor(tr.ID) {
+			mdatPayload.Write(s.Payload)
+			cursor += uint32(len(s.Payload))
+		}
+	}
+	moovBox, err := buildMoov(a, offsets)
+	if err != nil {
+		return nil, err
+	}
+	if len(moovBox) != len(moovZero) {
+		return nil, model.NewError(model.StageDemux, model.CodeNonLossless,
+			"internal error: moov size changed while filling chunk offsets", nil)
+	}
+	mdatBox := boxBytes(mp4.BoxTypeMdat(), mdatPayload.Bytes())
+
 	raw, err := json.Marshal(a)
 	if err != nil {
 		return nil, model.NewError(model.StageDemux, model.CodeUnsupported, "encode archive manifest", err)
 	}
-	if err := writeBox(&out, mp4.BoxType{'M', 'R', 'C', 'A'}, raw); err != nil {
-		return nil, err
-	}
-	return out.Bytes(), nil
-}
+	mrcaBox := boxBytes(mp4.BoxType{'M', 'R', 'C', 'A'}, raw)
 
-func writeBox(w *bytes.Buffer, typ mp4.BoxType, payload []byte) error {
-	size := uint32(8 + len(payload))
-	if err := binary.Write(w, binary.BigEndian, size); err != nil {
-		return err
-	}
-	w.Write(typ[:])
-	_, err := w.Write(payload)
-	return err
+	var out bytes.Buffer
+	out.Write(ftypBox)
+	out.Write(moovBox)
+	out.Write(mdatBox)
+	out.Write(mrcaBox)
+	return out.Bytes(), nil
 }
 
 // Demux scans box boundaries with go-mp4 and decodes the MRCA archive.
@@ -130,6 +147,9 @@ func Demux(data []byte) (*Container, error) {
 				return nil, model.AtOffset(me, offset)
 			}
 			c.Brand = string(ftyp.MajorBrand[:])
+		case mp4.BoxTypeMoov(), mp4.BoxTypeMdat():
+			// Standard movie/sample boxes are validated by mp4.Probe;
+			// MRCA carries complete payloads for lossless verification.
 		case mp4.BoxType{'M', 'R', 'C', 'A'}:
 			var a model.Archive
 			if err := json.Unmarshal(payload, &a); err != nil {

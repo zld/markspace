@@ -25,8 +25,11 @@ func TestEncodeDemuxSyntheticArchive(t *testing.T) {
 	if len(c.Archive.Samples) != 78 {
 		t.Fatalf("samples = %d, want 78", len(c.Archive.Samples))
 	}
-	if len(c.Boxes) < 2 || c.Boxes[0].Type != "ftyp" {
+	if len(c.Boxes) < 4 || c.Boxes[0].Type != "ftyp" {
 		t.Fatalf("boxes not scanned: %+v", c.Boxes)
+	}
+	if c.GoMP4TrackCount != 5 {
+		t.Fatalf("go-mp4 probe tracks = %d, want 5", c.GoMP4TrackCount)
 	}
 	var sawParsed bool
 	for _, ev := range c.Archive.Events {
