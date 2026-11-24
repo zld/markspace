@@ -16,6 +16,13 @@ type CheckpointStore interface {
 	Store(key string, output any) error
 }
 
+// AnnotatingStore is implemented by stores that also record how a
+// checkpoint was derived, so reopening a journal can verify that every
+// dependency checkpoint is itself present and completed.
+type AnnotatingStore interface {
+	RecordNode(key, node string, depKeys []string) error
+}
+
 // Failure is the terminal outcome for a node that exhausted its retries.
 type Failure struct {
 	Node     string
@@ -101,6 +108,17 @@ func (s *Scheduler) Run() *Result {
 				n.Failed, n.Err = true, perr
 				s.failures[n.Name] = &Failure{Node: n.Name, Attempts: n.Attempts, Err: perr}
 				continue
+			}
+			if as, ok := s.store.(AnnotatingStore); ok {
+				dks := make([]string, 0, len(n.Deps))
+				for _, d := range n.Deps {
+					dks = append(dks, depKeys[d])
+				}
+				if perr := as.RecordNode(key, n.Name, dks); perr != nil {
+					n.Failed, n.Err = true, perr
+					s.failures[n.Name] = &Failure{Node: n.Name, Attempts: n.Attempts, Err: perr}
+					continue
+				}
 			}
 		}
 		n.Completed, n.Output = true, out
