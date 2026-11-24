@@ -43,24 +43,37 @@ func IsLimits(err error) bool {
 	return errors.As(err, &le)
 }
 
+// Kind distinguishes the elementary stream a record belongs to.
+type Kind string
+
+const (
+	KindVideo Kind = "video"
+	KindAudio Kind = "audio"
+	KindOther Kind = "other"
+)
+
 // Record is one random-access entry.
 type Record struct {
 	// Seq is the ordinal in emission order, used as the sample number.
 	Seq int64 `json:"seq"`
-	// Source packet offset in the input file, the authoritative citation.
-	PacketOffset int64 `json:"packet_offset"`
-	PacketIndex  int64 `json:"packet_index"`
+	// PacketOffset is the first source packet of the sample. SourceOffsets
+	// cites every packet that carries the sample, so a remuxer can read the
+	// complete elementary frame instead of only its first fragment.
+	PacketOffset  int64   `json:"packet_offset"`
+	PacketIndex   int64   `json:"packet_index"`
+	SourceOffsets []int64 `json:"source_offsets"`
 	// PID of the elementary stream carrying this sample.
-	PID uint16 `json:"pid"`
-	DTS int64  `json:"dts"`
-	PTS int64  `json:"pts"`
+	PID  uint16 `json:"pid"`
+	Kind Kind   `json:"kind"`
+	DTS  int64  `json:"dts"`
+	PTS  int64  `json:"pts"`
 	// Duration in ticks until the next record's DTS (filled during close).
 	Duration int64 `json:"duration"`
 	// Keyframe marks IDR / random_access_point samples.
 	Keyframe bool `json:"keyframe"`
 	// RandomAccessFlag is the TS adaptation field random_access_indicator.
 	RandomAccessFlag bool `json:"random_access_flag"`
-	// Payload bytes carried by the source packet for this sample.
+	// PayloadBytes is the total elementary byte count of the sample.
 	PayloadBytes int `json:"payload_bytes"`
 	// SnapshotID of the PSI mapping in force when this record was emitted.
 	SnapshotID string `json:"snapshot_id"`
@@ -198,8 +211,8 @@ func countSegments(recs []Record) int {
 	return n
 }
 
-// Find locates, by unwrapped PTS/DTS in ticks, the keyframe sample that
-// covers a presentation time. The returned record is a keyframe whose
+// Find locates, by unwrapped PTS in ticks, the keyframe sample that covers a
+// presentation time. The returned record is a keyframe whose
 // Segment may be entered directly. found=false means the time is outside
 // the indexed range; callers must not clamp silently.
 func (idx *Index) Find(tick int64) (Record, bool) {
