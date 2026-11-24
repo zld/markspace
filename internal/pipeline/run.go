@@ -280,9 +280,10 @@ func Run(in Inputs) (Stats, error) {
 	// Round-trip consistency: every timecode label parsed to an instant must
 	// render back to the identical label and instant.
 	st.Metrics.RoundtripConsistency = timecodeRoundtrip(in, &st)
-	// Keyframe hit rate: sampling points whose sample was resolved through
-	// the keyframe index rather than the scan fallback.
-	st.Metrics.KeyframeIndexHitRate = keyframeHitRate(video)
+	// Keyframe hit rate: of the sampling points that produced a frame record,
+	// how many resolved their sample through the keyframe index rather than
+	// the scan fallback.
+	st.Metrics.KeyframeIndexHitRate = keyframeHitRate(framesAll)
 	st.Metrics.SegmentHashMatch = st.SegmentHashMatch
 	if len(itemsAll) == 0 && len(pieces) == 0 {
 		st.SegmentHashMatch = report.NewRatio(0, 0)
@@ -328,8 +329,6 @@ type videoData struct {
 	data    []byte
 	samples []render.SampleRef
 	trackID string
-	keyHit  int
-	keyAll  int
 }
 
 func loadVideo(in Inputs, st *Stats) (*videoData, *model.Error) {
@@ -372,12 +371,6 @@ func loadVideo(in Inputs, st *Stats) (*videoData, *model.Error) {
 			Index: s.Index, Offset: s.Offset, Size: s.Size,
 			Start: s.PresentTime, Duration: s.Duration, Keyframe: s.Keyframe, Origin: string(s.Origin),
 		})
-	}
-	v.keyAll = len(v.samples)
-	for _, s := range v.samples {
-		if s.Origin == string(mp4.OriginIndex) {
-			v.keyHit++
-		}
 	}
 	return v, nil
 }
@@ -510,13 +503,18 @@ func timecodeRoundtrip(in Inputs, st *Stats) report.Ratio {
 	return report.NewRatio(good, total)
 }
 
-func keyframeHitRate(v *videoData) report.Ratio {
-	if v == nil || v.keyAll == 0 {
-		// No video means there is no index to hit; a perfect score would be
-		// a lie, so both sides are zero and the acceptance check fails open.
-		return report.NewRatio(0, 0)
+func keyframeHitRate(frames []render.FrameRecord) report.Ratio {
+	hit, total := 0, 0
+	for _, fr := range frames {
+		if fr.Error != nil {
+			continue
+		}
+		total++
+		if fr.Origin == string(mp4.OriginIndex) {
+			hit++
+		}
 	}
-	return report.NewRatio(v.keyHit, v.keyAll)
+	return report.NewRatio(hit, total)
 }
 
 // configDigest captures every parameter that can change generated digests.

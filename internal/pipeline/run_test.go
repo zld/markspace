@@ -7,6 +7,8 @@ import (
 
 	"mediaaudit/internal/fixtures"
 	"mediaaudit/internal/model"
+	"mediaaudit/internal/mp4"
+	"mediaaudit/internal/render"
 )
 
 func setup(t *testing.T, scenario string) (fixtures.Manifest, string) {
@@ -279,5 +281,22 @@ func TestBrokenFrameFailureCountSurvivesResume(t *testing.T) {
 	}
 	if st.FrameFailures != st2.FrameFailures {
 		t.Fatalf("resume counted %d, fresh counted %d", st.FrameFailures, st2.FrameFailures)
+	}
+}
+
+func TestKeyframeHitRateCountsSamplingPoints(t *testing.T) {
+	index := string(mp4.OriginIndex)
+	scan := string(mp4.OriginScan)
+	frames := []render.FrameRecord{
+		{Origin: index}, {Origin: index}, {Origin: scan},
+		{Origin: index, Error: model.NewError(model.CodeSampleRead, "render", "v1", model.InputPos{}, "x")},
+	}
+	got := keyframeHitRate(frames)
+	// Failed points are excluded: 2 of 3 successful points hit the index.
+	if got.Num != 2 || got.Den != 3 {
+		t.Fatalf("ratio %d/%d", got.Num, got.Den)
+	}
+	if keyframeHitRate(nil).Den != 0 {
+		t.Fatal("no frames means no denominator")
 	}
 }
