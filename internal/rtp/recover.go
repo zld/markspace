@@ -243,7 +243,7 @@ func (r *Recoverer) AdvanceWindow(progress uint64) {
 
 // UnrecoverableError builds the cross-subsystem error carrying packet count,
 // first timestamp and source offset.
-func (r *Recoverer) UnrecoverableError(rep Report) error {
+func (r *Recoverer) UnrecoverableError(rep Report) *model.MediaError {
 	if rep.Unrecoverable == 0 {
 		return nil
 	}
