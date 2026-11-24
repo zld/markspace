@@ -86,10 +86,13 @@ type Layout struct {
 	MediaEnd   uint64
 }
 
-// DefaultMixed returns the mixed MXF+MP4 fixture used by the demo: a 25fps
-// video track, a 48kHz audio track and a metadata track, with deliberate
-// colour disagreements between the two containers and per-track crop and
-// rotation so the probe's metadata handling is exercised.
+// DefaultMixed returns the mixed MXF+MP4 fixture used by the demo. Both
+// containers describe the same logical asset (video, audio and, in the MXF,
+// data), which is how a legacy archive ends up with several container
+// versions of one reel. The two containers deliberately disagree about the
+// colour description so arbitration has a real conflict to resolve: MXF
+// says BT.709 while MP4 says BT.2020/PQ. Per-track crop and rotation are
+// physical properties and stay with their container.
 func DefaultMixed() []Spec {
 	crop16x9 := &model.Crop{Left: 0, Top: 0, Right: 1920, Bottom: 1080}
 	return []Spec{{
@@ -97,25 +100,25 @@ func DefaultMixed() []Spec {
 		Format: model.ContainerMXF,
 		Tracks: []TrackSpec{
 			{
-				Logical: "reel_a/video", Container: model.ContainerMXF, TrackID: 1,
+				Logical: "video", Container: model.ContainerMXF, TrackID: 1,
 				Kind: model.KindVideo, Codec: "mxf-h264", Timescale: 25000,
 				FrameTicks: 1000, Frames: 8, PayloadLen: 96, SyncEvery: 4,
 				Required: true, Rotation: 90, Crop: crop16x9,
 				Color: ColorClaim{Primaries: "bt709", Transfer: "bt709", Matrix: "bt709", FullRange: false},
 			},
 			{
-				Logical: "reel_a/audio", Container: model.ContainerMXF, TrackID: 2,
+				Logical: "audio", Container: model.ContainerMXF, TrackID: 2,
 				Kind: model.KindAudio, Codec: "mxf-pcm", Timescale: 48000,
 				FrameTicks: 2000, Frames: 10, PayloadLen: 64, SyncEvery: 1,
 				Required: true,
 				Color:    ColorClaim{Primaries: "bt709", Transfer: "bt709", Matrix: "bt709"},
 			},
 			{
-				Logical: "reel_a/meta", Container: model.ContainerMXF, TrackID: 3,
+				Logical: "data", Container: model.ContainerMXF, TrackID: 3,
 				Kind: model.KindData, Codec: "mxf-meta", Timescale: 1000,
 				FrameTicks: 500, Frames: 6, PayloadLen: 32, SyncEvery: 1,
 				Color:     ColorClaim{Primaries: "unspecified", Transfer: "unspecified", Matrix: "unspecified"},
-				DependsOn: []string{"reel_a/video"},
+				DependsOn: []string{"video"},
 			},
 		},
 	}, {
@@ -123,14 +126,18 @@ func DefaultMixed() []Spec {
 		Format: model.ContainerMP4,
 		Tracks: []TrackSpec{
 			{
-				Logical: "clip_b/video", Container: model.ContainerMP4, TrackID: 1,
+				Logical: "video", Container: model.ContainerMP4, TrackID: 1,
 				Kind: model.KindVideo, Codec: "avc1", Timescale: 90000,
 				FrameTicks: 3600, Frames: 8, PayloadLen: 120, SyncEvery: 4,
 				Required: true, Rotation: 270,
+				// The MP4 copy was cropped to 9:16 for a vertical
+				// deliverable; the MXF master still carries 16:9. Crop is
+				// container-local and must not be arbitrated away.
+				Crop:  &model.Crop{Left: 0, Top: 0, Right: 1080, Bottom: 1920},
 				Color: ColorClaim{Primaries: "bt2020", Transfer: "smpte2084", Matrix: "bt2020nc", FullRange: true},
 			},
 			{
-				Logical: "clip_b/audio", Container: model.ContainerMP4, TrackID: 2,
+				Logical: "audio", Container: model.ContainerMP4, TrackID: 2,
 				Kind: model.KindAudio, Codec: "mp4a", Timescale: 48000,
 				FrameTicks: 1024, Frames: 12, PayloadLen: 80, SyncEvery: 1,
 				Required: true,

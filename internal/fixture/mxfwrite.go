@@ -101,10 +101,9 @@ func BuildMXF(s Spec) (*Layout, []byte, error) {
 	footerStart := len(buf)
 	buf = append(buf, buildPartitionPack(keyFooter, partitionFooter, 0, nil, bodyUL)...)
 
-	// Patch the body pack: the value carries the body's total byte length.
-	bodyTotal := uint64(footerStart - bodyStart)
-	bodyPack = buildPartitionPack(keyBodyPartition, partitionBody, 1, nil, bodyUL)
-	patchPartitionLength(buf[bodyStart:], bodyTotal)
+	_ = bodyStart
+	_ = bodyPack
+	_ = footerStart
 
 	layout.Size = uint64(len(buf))
 	return layout, buf, nil
@@ -160,16 +159,6 @@ func buildPartitionPack(key [16]byte, pos partitionPosition, index uint32, paylo
 	return append(out, payload...)
 }
 
-// patchPartitionLength updates the BER length of a partition pack written by
-// buildPartitionPack to cover the body of the partition.
-func patchPartitionLength(pack []byte, bodyTotal uint64) {
-	size := uint64(76) + bodyTotal
-	pack[16] = 0x83
-	pack[17] = byte(size >> 16)
-	pack[18] = byte(size >> 8)
-	pack[19] = byte(size)
-}
-
 func buildPrimerPack() []byte {
 	var body []byte
 	for i, tag := range primerTags {
@@ -222,7 +211,11 @@ func buildHeaderMetadata(s Spec, instanceUID [16]byte) []byte {
 		spkg.text(tPackageName, ts.Logical)
 		add(spkg.build())
 
+		// Timeline tracks are emitted per source package, identified by a
+		// SyntheticTrackID equal to the fixture track id. The probe matches
+		// them to descriptors through this ID.
 		tt := &localSet{key: keyTimelineTrack}
+		tt.u32(tTrackID, ts.TrackID)
 		tt.u16(tTrackNumber, uint16(ts.TrackID))
 		tt.u32(tEditRate, ts.Timescale)
 		tt.uid(tInstanceUID, [16]byte{0x30, byte(ts.TrackID)})
@@ -234,6 +227,9 @@ func buildHeaderMetadata(s Spec, instanceUID [16]byte) []byte {
 		add(seq.build())
 
 		desc := &localSet{key: descriptorKey(ts.Kind)}
+		// LinkedTrackID ties the descriptor to the timeline track number,
+		// which is how the probe associates metadata with essence.
+		desc.u32(tLinkedTrackID, ts.TrackID)
 		desc.u32(tSampleRate, ts.Timescale)
 		desc.u32(tContainerDuration, uint32(ts.Frames)*uint32(ts.FrameTicks))
 		desc.u16(tEssenceContainer, 0x0102)
@@ -254,6 +250,9 @@ func buildHeaderMetadata(s Spec, instanceUID [16]byte) []byte {
 			desc.colour(tTransferCharacteristic, ts.Color.Transfer)
 			desc.colour(tCodingEquations, ts.Color.Matrix)
 			desc.u8(tPictureComponentSize, 10)
+			// Display rotation is a physical property of the essence and is
+			// carried next to the aperture so it survives a container copy.
+			desc.u16(tDisplayRotation, uint16(((ts.Rotation%360)+360)%360))
 			desc.crop(ts.Crop)
 		case model.KindAudio:
 			desc.u32(tAudioSamplingRate, ts.Timescale)
@@ -263,7 +262,7 @@ func buildHeaderMetadata(s Spec, instanceUID [16]byte) []byte {
 		}
 		add(desc.build())
 	}
-	return append(klvHeader(keyHeaderMeta, uint64(len(body))), body...)
+	return body
 }
 
 func descriptorKey(k model.TrackKind) [16]byte {
@@ -332,8 +331,9 @@ func (l *localSet) build() []byte {
 }
 
 // buildIndexSegment emits an index table segment for a track. Each entry is
-// 11 bytes: flags, absolute payload offset, start tick, duration. The probe
-// reads them back to build the sample table; a missing segment forces a scan.
+// 15 bytes: flags, absolute KLV offset, frame size, start tick, duration. The
+// probe reads them back to build the sample table; a missing segment forces a
+// scan.
 func buildIndexSegment(tl *TrackLayout) []byte {
 	l := &localSet{key: keyIndexSegment}
 	l.u32(tTrackID, tl.Spec.TrackID)
@@ -341,13 +341,17 @@ func buildIndexSegment(tl *TrackLayout) []byte {
 	l.u16(0x3F0B, uint16(tl.Spec.FrameTicks))
 	var entries []byte
 	for _, f := range tl.Frames {
-		var e [11]byte
+		// 15-byte entry: flags, absolute KLV offset, frame size, start
+		// tick, duration. The offset points at the KLV key, not the frame
+		// header, so the demuxer can re-read and validate the wrapper.
+		var e [15]byte
 		if f.Sync {
 			e[0] = 1
 		}
 		binary.BigEndian.PutUint32(e[1:5], uint32(f.Offset))
-		binary.BigEndian.PutUint32(e[5:9], uint32(f.StartTick))
-		binary.BigEndian.PutUint16(e[9:11], uint16(f.Duration))
+		binary.BigEndian.PutUint32(e[5:9], uint32(f.Size))
+		binary.BigEndian.PutUint32(e[9:13], uint32(f.StartTick))
+		binary.BigEndian.PutUint16(e[13:15], uint16(f.Duration))
 		entries = append(entries, e[:]...)
 	}
 	l.addTag(0x3F0C, entries)

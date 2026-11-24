@@ -65,11 +65,16 @@ type IndexInfo struct {
 }
 
 // Fragment is one data range of a track in the input file. PayloadOffset is
-// the absolute byte offset of the sample payload in the input.
+// the absolute byte offset of the essence bytes (the same bytes in every
+// container, the unit that remux must copy unchanged). WrapperOffset is the
+// start of the container wrapper around them (an MXF KLV key), or the same as
+// PayloadOffset when the container has no wrapper (MP4 samples).
 type Fragment struct {
 	Seq           int    `json:"seq"`
+	WrapperOffset uint64 `json:"wrapper_offset"`
 	PayloadOffset uint64 `json:"payload_offset"`
-	Size          uint64 `json:"size"`
+	Size          uint64 `json:"size"` // essence size, excluding the wrapper
+	WrapperSize   uint64 `json:"wrapper_size,omitempty"`
 	StartTick     uint64 `json:"start_tick"`
 	Duration      uint64 `json:"duration"`
 	Sync          bool   `json:"sync"`
@@ -80,21 +85,28 @@ func (f Fragment) EndTick() uint64 { return f.StartTick + f.Duration }
 
 // Track is the container-independent description of one elementary stream.
 type Track struct {
-	Key          string           `json:"key"`
-	Container    ContainerKind    `json:"container"`
-	TrackID      uint32           `json:"track_id"`
-	Kind         TrackKind        `json:"kind"`
-	Codec        string           `json:"codec"`
-	Required     bool             `json:"required"`
-	Timebase     Timebase         `json:"timebase"`
-	StartTick    uint64           `json:"start_tick"`
-	DurationTick uint64           `json:"duration_tick"`
-	RotationDeg  int              `json:"rotation_deg"`
-	Crop         *Crop            `json:"crop,omitempty"`
-	Color        ColorDescription `json:"color"`
-	Index        IndexInfo        `json:"index"`
-	Fragments    []Fragment       `json:"fragments,omitempty"`
-	DependsOn    []string         `json:"depends_on,omitempty"`
+	Key string `json:"key"`
+	// Logical is the container-independent identity used to join several
+	// container versions of the same archived reel (for example the MXF and
+	// the MP4 copy of one video stream).
+	Logical       string           `json:"logical"`
+	Source        string           `json:"source"`
+	Container     ContainerKind    `json:"container"`
+	TrackID       uint32           `json:"track_id"`
+	Kind          TrackKind        `json:"kind"`
+	Codec         string           `json:"codec"`
+	Required      bool             `json:"required"`
+	Timebase      Timebase         `json:"timebase"`
+	StartTick     uint64           `json:"start_tick"`
+	DurationTick  uint64           `json:"duration_tick"`
+	RotationDeg   int              `json:"rotation_deg"`
+	EditMediaTime int64            `json:"edit_media_time,omitempty"`
+	Crop          *Crop            `json:"crop,omitempty"`
+	Color         ColorDescription `json:"color"`
+	ColorClaims   []ColorField     `json:"color_claims,omitempty"`
+	Index         IndexInfo        `json:"index"`
+	Fragments     []Fragment       `json:"fragments,omitempty"`
+	DependsOn     []string         `json:"depends_on,omitempty"`
 
 	// MissingOptional records the names of optional metadata that the
 	// container did not carry. Presence does not block mapping.

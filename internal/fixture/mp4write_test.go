@@ -78,11 +78,6 @@ func TestBuildMP4DropsIndex(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The video track's stts must be absent while the audio one remains.
-	if containsBox(data, "stts") {
-		// Count: at least one stts for audio is expected; the video one is
-		// gone. Just assert the file is still well formed here and let the
-		// probe test check index completeness.
-	}
 	if !containsBox(data, "mdat") || !containsBox(data, "moov") {
 		t.Fatal("missing core boxes")
 	}
