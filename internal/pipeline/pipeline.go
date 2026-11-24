@@ -153,8 +153,12 @@ func runPath(fx Fixture, opts Options) (manifest.RunInput, int) {
 	}
 
 	isolated := isolatedTracks(errs, res)
-	// An isolated track's metadata is still noise for downstream mixing:
-	// force it non-mixable so no consumer mistakes it for usable.
+	isoSet := make(map[uint32]bool, len(isolated))
+	for _, id := range isolated {
+		isoSet[id] = true
+	}
+	// An isolated track's metadata is sample-free noise: do not pretend to
+	// have measured quality, and (for audio) do not claim it is mixable.
 	if norm != nil && len(isolated) > 0 {
 		iso := make(map[uint32]bool, len(isolated))
 		for _, id := range isolated {
@@ -164,10 +168,20 @@ func runPath(fx Fixture, opts Options) (manifest.RunInput, int) {
 			if !iso[norm.Tracks[i].ID] {
 				continue
 			}
-			norm.Tracks[i].Mixable = false
-			if norm.Tracks[i].ChannelPlan != nil {
-				norm.Tracks[i].ChannelPlan.Mixable = false
+			if norm.Tracks[i].Handler == "soun" {
+				norm.Tracks[i].Mixable = false
+				if norm.Tracks[i].ChannelPlan != nil {
+					norm.Tracks[i].ChannelPlan.Mixable = false
+				}
 			}
+		}
+		for i := range reports {
+			if !iso[reports[i].TrackID] {
+				continue
+			}
+			// No samples were kept for this track, so every window is
+			// missing data rather than silence.
+			reports[i] = scrambledReport(reports[i])
 		}
 	}
 	recovered := map[uint32]bool{}
@@ -176,6 +190,11 @@ func runPath(fx Fixture, opts Options) (manifest.RunInput, int) {
 		for _, id := range res.RecoveredTracks {
 			recovered[id] = true
 		}
+	}
+	// A track can be repaired and later quarantined; isolation is the
+	// stronger outcome, so do not report it as a successful recovery.
+	for id := range isoSet {
+		delete(recovered, id)
 	}
 	for id := range recovered {
 		recoveredIDs = append(recoveredIDs, id)
@@ -225,6 +244,16 @@ func isolatedTracks(errs *model.Errors, res *ingest.Result) []uint32 {
 		out = []uint32{}
 	}
 	return out
+}
+
+// scrambledReport replaces an isolated track's analysis with an explicit
+// all-missing result so no quality figure is attributed to it.
+func scrambledReport(rep audio.Report) audio.Report {
+	rep.Windows = nil
+	rep.Intervals = nil
+	rep.Stats = audio.Stats{Missing: 1}
+	rep.Missing = []model.Interval{{}}
+	return rep
 }
 
 func payloadFunc(files []*ingest.File) fingerprint.PayloadFunc {

@@ -260,8 +260,12 @@ func buildTracks(run RunInput) []TrackRecord {
 			for _, iv := range rep.Missing {
 				tr.MissingMs += int64(iv.Len()) / 1_000_000
 			}
-			peak, rms := rep.Stats.PeakDBFS, rep.Stats.RMSDBFS
-			tr.PeakDBFS, tr.RMSDBFS = &peak, &rms
+			// Only attach signal figures when bytes were actually analysed;
+			// an isolated or empty track has nothing to report.
+			if rep.Stats.PCMParts > 0 {
+				peak, rms := rep.Stats.PeakDBFS, rep.Stats.RMSDBFS
+				tr.PeakDBFS, tr.RMSDBFS = &peak, &rms
+			}
 		}
 		out = append(out, tr)
 	}
