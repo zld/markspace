@@ -204,7 +204,7 @@ const (
 func (c ErrorCode) Fatal() bool {
 	switch c {
 	case CodeCheckpointMismatch, CodeCheckpointCorrupt,
-		CodeInvalidArgument, CodeIO, CodeInternal:
+		CodeInvalidArgument, CodeIO, CodeInternal, CodeIndexCorrupt:
 		return true
 	default:
 		return false

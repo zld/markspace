@@ -60,6 +60,9 @@ func TestErrorClassification(t *testing.T) {
 		t.Fatalf("position not retained: %q / %q", got, e.Pos.String())
 	}
 	fatal := NewError(CodeCheckpointMismatch, "pipeline", "", InputPos{}, "digest changed")
+	if !NewError(CodeIndexCorrupt, "mp4", "", InputPos{}, "bad").Code.Fatal() {
+		t.Fatal("an unreadable index must be fatal for that input")
+	}
 	if fatal.Recoverable() || !fatal.Code.Fatal() {
 		t.Fatal("checkpoint mismatch must be fatal")
 	}
