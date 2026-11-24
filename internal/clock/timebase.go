@@ -91,16 +91,17 @@ func SignedDelta(raw, prev uint32) int32 {
 	return int32(raw - prev)
 }
 
-// Extend maps raw onto the 64-bit timeline closest to prev. The bool result
-// reports whether a wrap boundary was crossed. The first sample should use
-// Unwrapper, which seeds the timeline without assuming a previous value.
-func Extend(prev int64, raw uint32) (int64, bool) {
+// Extend maps raw onto the 64-bit timeline closest to prev. The first bool
+// reports whether the forward-moving interpretation crossed a wrap boundary,
+// so a sample that continues the cadence across 0xFFFFFFFF is flagged while a
+// backward jump near the boundary is not.
+func Extend(prev int64, raw uint32) (ext int64, wrapped bool) {
 	base := prev &^ (Wrap - 1)
 	cand := base | int64(raw)
 	delta := cand - prev
 	switch {
 	case delta > Wrap/2:
-		return cand - Wrap, true
+		return cand - Wrap, false
 	case delta < -Wrap/2:
 		return cand + Wrap, true
 	default:
@@ -109,8 +110,8 @@ func Extend(prev int64, raw uint32) (int64, bool) {
 }
 
 // Unwrapper expands a sequence of raw 32-bit timestamps. The first Push seeds
-// the extended timeline directly from the raw value; later values are unfolded
-// using the nearest-candidate rule.
+// the timeline directly from the raw value; later values are unfolded using
+// the nearest-candidate rule.
 type Unwrapper struct {
 	prev    int64
 	started bool
@@ -138,3 +139,7 @@ func (u *Unwrapper) Wraps() int { return u.wraps }
 // Rebase returns v relative to base. Values before base are preserved as
 // negative offsets so callers can detect an impossible ordering.
 func Rebase(base, v int64) int64 { return v - base }
+
+// WrapShift reports how many ticks were added to raw to produce ext. It is
+// zero for values on the first revolution and a multiple of 2^32 afterwards.
+func WrapShift(raw uint32, ext int64) int64 { return ext - int64(raw) }

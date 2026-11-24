@@ -50,14 +50,16 @@ func TestExtendAcrossWrap(t *testing.T) {
 	if delta := next - first; delta != 0x110 {
 		t.Fatalf("delta = %#x want %#x", delta, 0x110)
 	}
+	// A value behind the current position but within half the range stays on
+	// the same revolution and is not reported as a wrap.
 	back, wrapped := u.Push(0xFFFFFF00)
-	if !wrapped {
-		t.Fatal("expected backward wrap flag")
+	if wrapped {
+		t.Fatal("backward step must not be reported as a wrap")
 	}
 	if back != 0xFFFFFF00 {
-		t.Fatalf("back = %#x want %#x", back, 0xFFFFFF00)
+		t.Fatalf("back = %#x", back)
 	}
-	if u.Wraps() != 2 {
+	if u.Wraps() != 1 {
 		t.Fatalf("wraps = %d", u.Wraps())
 	}
 }
