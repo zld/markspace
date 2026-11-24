@@ -154,20 +154,14 @@ func itoa(n int) string {
 	return string(buf[i:])
 }
 
-// IsDone reports whether the stage completed under the current config.
-func (c *Checkpoint) IsDone(stage string) bool {
-	for _, s := range c.Done {
-		if s == stage {
-			return true
-		}
-	}
-	return false
-}
-
 // ResumeStage returns the first stage in order that is not done.
 func (c *Checkpoint) ResumeStage() string {
+	done := make(map[string]bool, len(c.Done))
+	for _, s := range c.Done {
+		done[s] = true
+	}
 	for _, s := range stageOrder {
-		if !c.IsDone(s) {
+		if !done[s] {
 			return s
 		}
 	}
