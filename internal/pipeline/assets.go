@@ -17,12 +17,14 @@ import (
 
 // AssetPaths are the generated fixture files.
 type AssetPaths struct {
-	NormalMP4    string
-	NormalMXF    string
-	BoundaryMP4  string
-	CorruptMP4   string
-	CorruptInfo  TruncationInfo
-	BoundaryClip BoundarySpec
+	NormalMP4       string
+	NormalMXF       string
+	BoundaryMP4     string
+	CorruptMP4      string
+	CorruptInfo     TruncationInfo
+	BoundaryMP4Name string
+	InvalidMP4      string
+	BoundaryClip    BoundarySpec
 }
 
 // TruncationInfo describes where a deliberately truncated file stops.
@@ -55,11 +57,13 @@ func Generate(dir string) (*AssetPaths, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("create output directory: %w", err)
 	}
+	_ = dir
 	p := &AssetPaths{
 		NormalMP4:   filepath.Join(dir, "normal.mp4"),
 		NormalMXF:   filepath.Join(dir, "normal.mxf"),
 		BoundaryMP4: filepath.Join(dir, "boundary.mp4"),
 		CorruptMP4:  filepath.Join(dir, "corrupt.mp4"),
+		InvalidMP4:  filepath.Join(dir, "invalid-crop.mp4"),
 	}
 	normal := fixture.MP4Spec{
 		MovieTimescale: MovieTimescale,
@@ -120,6 +124,20 @@ func Generate(dir string) (*AssetPaths, error) {
 		FrameIntervalNS: FrameInterval,
 		StartNS:         FrameInterval, // exactly one frame in
 		EndNS:           FrameInterval * FrameCount,
+	}
+
+	invalid := fixture.MP4Spec{
+		MovieTimescale: MovieTimescale,
+		Tracks: []fixture.MP4TrackSpec{{
+			ID: "bad-crop", Kind: "video",
+			StoredWidth: FrameWidth, StoredHeight: FrameHeight,
+			DisplayWidth: FrameWidth, DisplayHeight: FrameHeight,
+			Timescale: 25, SampleCount: FrameCount, SampleDuration: 1,
+			Clap: &fixture.MP4Clap{Width: FrameWidth * 2, Height: FrameHeight},
+		}},
+	}
+	if err := os.WriteFile(p.InvalidMP4, fixture.BuildMP4(invalid), 0o644); err != nil {
+		return nil, fmt.Errorf("write %s: %w", p.InvalidMP4, err)
 	}
 
 	corrupt := normal

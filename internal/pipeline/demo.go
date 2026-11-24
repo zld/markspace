@@ -76,9 +76,18 @@ type Summary struct {
 	BoundaryErrorNS     int64          `json:"boundary_error_ns"`
 	Corrupt             TruncationInfo `json:"corrupt_sample"`
 	CorruptError        string         `json:"corrupt_error"`
+	InvalidMetadata     InvalidInfo    `json:"invalid_metadata_sample"`
 	RecoveryLog         []string       `json:"recovery_log"`
 	Warnings            []string       `json:"warnings,omitempty"`
 	ExitCode            int            `json:"exit_code"`
+}
+
+// InvalidInfo records a metadata sample that parses but violates normalisation.
+type InvalidInfo struct {
+	File     string `json:"file"`
+	Error    string `json:"error"`
+	Kind     string `json:"kind"`
+	ExitCode int    `json:"exit_code"`
 }
 
 // Result carries the summary and the process exit code. Err is set when the
@@ -105,7 +114,7 @@ func Run(opts Options) (*Result, error) {
 		RecoveredLayers:   []string{},
 		BandwidthSchedule: []string{},
 	}
-	assets, err := Generate(filepath.Join(opts.OutDir, "assets"))
+	assets, err := ensureAssets(opts)
 	if err != nil {
 		return nil, err
 	}
@@ -143,19 +152,19 @@ func Run(opts Options) (*Result, error) {
 		return nil, err
 	}
 
-	refTrack := composed.Timeline.Tracks[0]
-	frameCount := refTrack.FrameCount()
+	refTrack := viewOf(composed.Timeline.Tracks[0])
+	frameCount := composed.Timeline.Tracks[0].FrameCount()
 	schedule, err := bandwidthPlan(opts.Bandwidth)
 	if err != nil {
 		return nil, err
 	}
 	sum.BandwidthSchedule = schedule
 
-	normal, err := runScenario("normal", composed.Timeline, refTrack, frameCount, modeClean, opts.LossBurst)
+	normal, err := runScenario("normal", refTrack, frameCount, modeClean, opts.LossBurst)
 	if err != nil {
 		return nil, err
 	}
-	burst, err := runScenario("burst", composed.Timeline, refTrack, frameCount, modeBurst, opts.LossBurst)
+	burst, err := runScenario("burst", refTrack, frameCount, modeBurst, opts.LossBurst)
 	if err != nil {
 		return nil, err
 	}
@@ -187,6 +196,16 @@ func Run(opts Options) (*Result, error) {
 
 	corruptErr := probeCorrupt(assets.CorruptMP4)
 	sum.CorruptError = corruptErr.Error()
+	invalidErr := probeInvalid(assets.InvalidMP4)
+	if invalidErr == nil {
+		return nil, clock.New(clock.KindInvalidMetadata, "illegal crop sample normalised without error")
+	}
+	sum.InvalidMetadata = InvalidInfo{
+		File:     assets.InvalidMP4,
+		Error:    invalidErr.Error(),
+		Kind:     string(clock.AsKind(invalidErr)),
+		ExitCode: ClassifyExit(invalidErr),
+	}
 	sum.Corrupt.ExitCode = ClassifyExit(corruptErr)
 	sum.ExitCode = 0
 	if burst.ActiveLayers < 1 {
@@ -344,4 +363,50 @@ func probeBoundary(assets *AssetPaths) (int64, error) {
 		return worst, clock.Newf(clock.KindMisaligned, "boundary error %d ns exceeds 1 ns", worst)
 	}
 	return worst, nil
+}
+
+// trackView is the subset of a composed track the transport scenarios need.
+type trackView struct {
+	ID         string
+	Resolution *normalize.Resolution
+}
+
+func viewOf(t *timeline.Track) trackView {
+	return trackView{ID: t.ID, Resolution: t.Resolution}
+}
+
+// ensureAssets reuses an existing deterministic asset directory unless the
+// caller asked for regeneration or a file is missing.
+func ensureAssets(opts Options) (*AssetPaths, error) {
+	dir := filepath.Join(opts.OutDir, "assets")
+	if !opts.Generate {
+		paths, err := Generate(dir)
+		if err == nil && allPresent(paths) {
+			return paths, nil
+		}
+	}
+	return Generate(dir)
+}
+
+func allPresent(p *AssetPaths) bool {
+	for _, f := range []string{p.NormalMP4, p.NormalMXF, p.BoundaryMP4, p.CorruptMP4, p.InvalidMP4} {
+		if _, err := os.Stat(f); err != nil {
+			return false
+		}
+	}
+	return true
+}
+
+// probeInvalid parses and normalises a sample expected to violate a rule.
+func probeInvalid(path string) error {
+	c, err := probeFile(path)
+	if err != nil {
+		return err
+	}
+	for _, t := range c.Tracks {
+		if _, err := normalize.Resolve(t); err != nil {
+			return err
+		}
+	}
+	return nil
 }

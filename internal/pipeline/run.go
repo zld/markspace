@@ -8,7 +8,6 @@ import (
 	"archive/internal/render"
 	"archive/internal/rtp"
 	"archive/internal/segment"
-	"archive/internal/timeline"
 )
 
 // LayerStat is the per-representation view reported in a scenario.
@@ -31,7 +30,7 @@ type LayerStat struct {
 }
 
 // runScenario transports every geometry independently and fans them in.
-func runScenario(mode string, tl *timeline.Timeline, ref *timeline.Track, frameCount int, fm feedMode, lossBurst int) (Scenario, error) {
+func runScenario(mode string, ref trackView, frameCount int, fm feedMode, lossBurst int) (Scenario, error) {
 	geoms := defaultGeometries()
 	sc := Scenario{Mode: mode, LayerCount: len(geoms), RecoveredLayers: []string{}, IsolatedLayers: []string{}}
 	seed := render.Seed(ref.ID)
