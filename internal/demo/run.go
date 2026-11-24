@@ -57,7 +57,7 @@ func Run(cfg Config) *Report {
 		return rep.internal("write clean fixture", err)
 	}
 
-	receivedTS, rtpStats, netStats, rtpEvents := runRTP(cleanTS, cfg.Seed, faultSet)
+	receivedTS, rtpStats, netStats, rtpEvents := runRTP(cleanTS, cfg.Seed, faultSet, false)
 	_ = os.WriteFile(filepath.Join(cfg.OutDir, "normal", "received.rtp-reordered.ts"), receivedTS, 0o644)
 	rep.DroppedDuplicates += rtpStats.Duplicates
 	normal, media, marker, fe := commitHealthy(filepath.Join(cfg.OutDir, "normal"), "normal.mp4", receivedTS, rules)
@@ -124,9 +124,17 @@ func buildCleanTS(seed int64, faults map[string]bool) []byte {
 	return samplegen.BuildTS(samplegen.MediaSpec(seed))
 }
 
-func runRTP(data []byte, seed int64, faults map[string]bool) ([]byte, medrtp.Stats, samplegen.NetworkStats, []fault.Event) {
+func runRTP(data []byte, seed int64, faults map[string]bool, unrecovered bool) ([]byte, medrtp.Stats, samplegen.NetworkStats, []fault.Event) {
 	packets := samplegen.PacketizeTS(data, uint32(seed))
 	arrivals, net := samplegen.Impair(packets, seed, faults)
+	if unrecovered && faults["burst-loss"] && len(packets) > 4 {
+		seq := packets[4].Sequence
+		var removed int
+		arrivals, removed = samplegen.DropSequence(arrivals, seq)
+		if removed > 0 {
+			net.UnrecoveredLosses = 1
+		}
+	}
 	out, stats, events := samplegen.ReassembleRTP(arrivals, 128, 1_500_000)
 	return out, stats, net, events
 }

@@ -91,6 +91,21 @@ func Impair(packets []medrtp.Packet, seed int64, faults map[string]bool) ([]medr
 	return arrivals, stats
 }
 
+// DropSequence removes every arrival carrying seq, including injected
+// duplicates/redundant copies. It models an unrecoverable network loss.
+func DropSequence(packets []medrtp.Packet, seq uint16) ([]medrtp.Packet, int) {
+	out := make([]medrtp.Packet, 0, len(packets))
+	removed := 0
+	for _, p := range packets {
+		if p.Sequence == seq {
+			removed++
+			continue
+		}
+		out = append(out, p)
+	}
+	return out, removed
+}
+
 // ReassembleRTP runs the kernel reorderer and concatenates ordered payloads.
 func ReassembleRTP(packets []medrtp.Packet, window uint16, bandwidthBps int) ([]byte, medrtp.Stats, []fault.Event) {
 	rr := medrtp.NewReorderer(window)

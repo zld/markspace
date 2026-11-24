@@ -120,9 +120,10 @@ func runCorrupt(dir string, seed int64, faults map[string]bool, rules []demux.Ma
 			return sr, nil, 0, fault.Wrap(fault.ErrInternal, "demo.fixture.cc", 0, "apply CC jump", err)
 		}
 	}
-	networkTS, rtpStats, netStats, _ := runRTP(base, seed+101, faults)
+	networkTS, rtpStats, netStats, rtpEvents := runRTP(base, seed+101, faults, true)
 	sr.RTPStats = &rtpStats
 	sr.NetworkStats = &netStats
+	sr.GapEvents += len(rtpEvents)
 	corruptTS := networkTS
 	if faults["truncate"] {
 		corruptTS = samplegen.Truncate(networkTS, 37)
@@ -142,12 +143,13 @@ func runCorrupt(dir string, seed int64, faults map[string]bool, rules []demux.Ma
 	if fe != nil {
 		return sr, nil, 0, fe
 	}
-	_, media, events, perr := pipeline.ProcessTSBytes(corruptTS, tx.TempPath, rules)
+	_, media, tsEvents, perr := pipeline.ProcessTSBytes(corruptTS, tx.TempPath, rules)
+	events := append(append([]fault.Event{}, rtpEvents...), tsEvents...)
 	if media != nil {
 		sr.PSIVersion = media.PSIVersion
 	}
 	sr.EventCount = len(events)
-	sr.GapEvents = countGapEvents(events)
+	sr.GapEvents += countGapEvents(tsEvents)
 	sr.ErrorCodes = uniqueCodes(events)
 	if perr == nil {
 		_ = tx.Rollback("unexpected acceptance")
