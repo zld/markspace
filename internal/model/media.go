@@ -42,15 +42,17 @@ type MediaTrack struct {
 	Source    SourceRef `json:"source"`
 }
 
-// SegmentRef is one playlist/MPD entry before media parsing.
+// SegmentRef is one playlist/MPD entry before media parsing. Tick fields
+// use the owning representation's TimeScale; the ns fields are the values
+// on the unified playout timeline.
 type SegmentRef struct {
-	Index   int      `json:"index"`
-	URL     string   `json:"url"`
-	StartTS TimeScale `json:"-"` // manifest time-scale ticks
-	Start   PlayTime `json:"start_ns"`
-	DurationTS int64  `json:"-"`
-	Duration PlayTime `json:"duration_ns"`
-	Discontinuity bool  `json:"discontinuity,omitempty"`
+	Index        int      `json:"index"`
+	URL          string   `json:"url"`
+	StartTicks   int64    `json:"start_ticks"`
+	Start        PlayTime `json:"start_ns"`
+	DurationTicks int64   `json:"duration_ticks"`
+	Duration     PlayTime `json:"duration_ns"`
+	Discontinuity bool    `json:"discontinuity,omitempty"`
 }
 
 // Representation is one DASH adaptation-set entry or HLS variant rendition.
