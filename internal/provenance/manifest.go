@@ -52,6 +52,7 @@ type Builder struct {
 	m          Manifest
 	chunkBytes int64
 	confirmed  map[int]bool
+	tainted    map[int]bool // chunks touched by an error; never confirmable
 }
 
 // NewBuilder starts a manifest for one input.
@@ -59,6 +60,7 @@ func NewBuilder(codec, adapterVersion, inputSHA string, streamSize, chunkBytes i
 	return &Builder{
 		chunkBytes: chunkBytes,
 		confirmed:  map[int]bool{},
+		tainted:    map[int]bool{},
 		m: Manifest{
 			SchemaVersion:  "manifest-1",
 			Codec:          codec,
@@ -78,17 +80,28 @@ func (b *Builder) AddChunks(chunks []Chunk) {
 	b.m.Chunks = append(b.m.Chunks, chunks...)
 }
 
-// ConfirmUnit marks every chunk overlapped by [off, off+length) as
-// verified. A chunk that hosts a truncated unit is never confirmed through
-// this path, so deferred confirmation cannot fabricate coverage.
-func (b *Builder) ConfirmUnit(off, length int64) {
+// spanChunks returns the chunk indices overlapped by [off, off+length).
+func (b *Builder) spanChunks(off, length int64) []int {
 	if b.chunkBytes <= 0 || length <= 0 {
-		return
+		return nil
 	}
 	first := off / b.chunkBytes
 	last := (off + length - 1) / b.chunkBytes
+	out := make([]int, 0, last-first+1)
 	for i := first; i <= last; i++ {
-		b.confirmed[int(i)] = true
+		out = append(out, int(i))
+	}
+	return out
+}
+
+// ConfirmUnit marks every chunk overlapped by [off, off+length) as
+// verified, unless that chunk was tainted by a parse error. Taint can never
+// be cleared, so deferred confirmation cannot fabricate coverage.
+func (b *Builder) ConfirmUnit(off, length int64) {
+	for _, i := range b.spanChunks(off, length) {
+		if !b.tainted[i] {
+			b.confirmed[i] = true
+		}
 	}
 }
 
@@ -98,13 +111,24 @@ func (b *Builder) AddFrame(f FrameRecord) {
 	b.ConfirmUnit(f.Offset, f.Length)
 }
 
-// AddError records a parse error; error regions stay unconfirmed unless a
-// later complete unit independently covers the same chunks.
+// AddError records a parse error and permanently taints every chunk the
+// damaged region touches, removing any prior confirmation of those chunks.
 func (b *Builder) AddError(e media.UnitError) {
 	b.m.Errors = append(b.m.Errors, ErrorRecord{
 		Offset: e.Offset, Length: e.Length,
 		Class: classString(e.Class), Reason: e.Reason,
 	})
+	for _, i := range b.spanChunks(e.Offset, max64(e.Length, 1)) {
+		b.tainted[i] = true
+		delete(b.confirmed, i)
+	}
+}
+
+func max64(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 // Finalize freezes the confirmed-chunk set in deterministic order.
@@ -117,6 +141,13 @@ func (b *Builder) Finalize() Manifest {
 	b.m.ConfirmedChunks = idx
 	sort.SliceStable(b.m.Frames, func(i, j int) bool { return b.m.Frames[i].Offset < b.m.Frames[j].Offset })
 	return b.m
+}
+
+// ChunkConfirmed reports whether chunk i survived tainting and was verified
+// by at least one complete unit.
+func (m Manifest) ChunkConfirmed(i int) bool {
+	idx := sort.SearchInts(m.ConfirmedChunks, i)
+	return idx < len(m.ConfirmedChunks) && m.ConfirmedChunks[idx] == i
 }
 
 // Marshal renders canonical JSON: indentation fixed and map order irrelevant

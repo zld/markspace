@@ -39,6 +39,12 @@ func (AV1Adapter) MaxUnitSize() int64 { return av1MaxOBUSize }
 // NewSplitter returns a fresh streaming OBU splitter.
 func (AV1Adapter) NewSplitter() Splitter { return &av1Scanner{} }
 
+// OBUTypeSeqHeaderForTest exposes the sequence-header OBU type for fixtures.
+func OBUTypeSeqHeaderForTest() int { return obuSeqHeader }
+
+// OBUTypeFrameForTest exposes the frame OBU type for fixtures.
+func OBUTypeFrameForTest() int { return obuFrame }
+
 type av1Scanner struct {
 	buf    bytes.Buffer
 	absPos int64 // absolute offset of buf[0]
