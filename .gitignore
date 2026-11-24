@@ -1,0 +1,7 @@
+# build output
+/bin/
+*.test
+*.out
+
+# runtime artifacts created by demo/verify
+/tmp/
