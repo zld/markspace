@@ -124,10 +124,11 @@ func (b *Buffer) drain(flush bool) []*rtp.Packet {
 	return out
 }
 
-// evict drops history entries further than window behind next.
+// evict drops history entries further than two windows behind next, so a
+// late packet can still be told apart from a duplicate within that span.
 func (b *Buffer) evict() {
 	for s := range b.recent {
-		if seqLess(s, b.next-uint16(b.window)) {
+		if seqLess(s, b.next-uint16(2*b.window)) {
 			delete(b.recent, s)
 		}
 	}
