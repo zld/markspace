@@ -75,8 +75,6 @@ func (w *Watermark) Advance(et model.Nanos) bool {
 // Value returns the current watermark.
 func (w *Watermark) Value() model.Nanos { return w.value }
 
-// Started reports whether any event has been observed.
-
 // MaxEventTime returns the largest event time observed.
 func (w *Watermark) MaxEventTime() model.Nanos { return w.maxEvent }
 
