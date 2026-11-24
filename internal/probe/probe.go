@@ -54,6 +54,16 @@ func (c ColorDecl) Equal(o ColorDecl) bool {
 		c.Matrix == o.Matrix && c.FullRange == o.FullRange
 }
 
+// ClipRef is one edit interval on the shared timeline. StartNS is relative to
+// the timeline origin; DurationNS is the interval length.
+type ClipRef struct {
+	StartNS    int64
+	DurationNS int64
+}
+
+// EndNS returns the exclusive end of the clip.
+func (c ClipRef) EndNS() int64 { return c.StartNS + c.DurationNS }
+
 // Track is container-independent raw metadata for one media track.
 type Track struct {
 	ID     string
@@ -77,6 +87,7 @@ type Track struct {
 	Rotations []RotationDecl
 	Crops     []CropDecl
 	Colors    []ColorDecl
+	Clips     []ClipRef
 	Warnings  []string
 }
 
