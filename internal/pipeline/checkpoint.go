@@ -76,12 +76,14 @@ func LoadCheckpoint(dir, configHash, inputHash string) (*Checkpoint, bool) {
 	var cp Checkpoint
 	if err := json.Unmarshal(data, &cp); err != nil || cp.Version != checkpointVersion {
 		fresh := newCheckpoint(configHash, inputHash)
+		fresh.Exists = true
 		fresh.Invalidated = true
 		return fresh, false
 	}
 	cp.Exists = true
 	if cp.ConfigHash != configHash || cp.InputHash != inputHash {
 		fresh := newCheckpoint(configHash, inputHash)
+		fresh.Exists = true
 		fresh.Invalidated = true
 		return fresh, false
 	}
