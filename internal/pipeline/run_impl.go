@@ -29,12 +29,18 @@ func (r *Runner) executeSegments() error {
 	}
 	segHash := stageHash("mux", r.cfg.Hash(), r.hashes.frames, r.hashes.audio, recordsDigest(r.records))
 	prev, hadPrev := r.cp.Hashes["mux"]
+	var syncFaults fault.List
+	r.alignments = nil
 
 	for i := range r.plans {
 		plan := &r.plans[i]
 		rep, err := r.alignSegment(plan, r.timeline)
 		if err != nil {
 			return err
+		}
+		r.alignments = append(r.alignments, rep)
+		for _, e := range rep.Faults {
+			syncFaults = append(syncFaults, e)
 		}
 		if err := r.cp.Mark(r.dir, "sync", stageHash("sync", r.cfg.Hash(), r.hashes.frames, alignmentDigest(rep))); err != nil {
 			return err
@@ -70,12 +76,91 @@ func (r *Runner) executeSegments() error {
 			r.metrics.UnsyncedSegments++
 		}
 	}
+	if err := r.recordSegmentStages(segHash, syncFaults); err != nil {
+		return err
+	}
 	if !hadPrev || prev != segHash {
 		if err := r.cp.Mark(r.dir, "mux", segHash); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// recordSegmentStages emits the sync, mux and index summaries once all
+// segments are written, folding in the per-segment faults so the manifest
+// explains every stage of the run.
+func (r *Runner) recordSegmentStages(segHash string, syncFaults fault.List) error {
+	synced, incomplete := 0, 0
+	for _, seg := range r.segments {
+		if seg.Synced {
+			synced++
+		}
+		if seg.Incomplete {
+			incomplete++
+		}
+	}
+	syncSummary := provenance.StageSummary{
+		Name:       "sync",
+		InputHash:  r.hashes.frames,
+		ConfigHash: r.cfg.Hash(),
+		OutputHash: stageHash("sync", r.cfg.Hash(), r.hashes.frames, alignmentDigestOf(r.alignments)),
+		Detail:     "aligned audio and video on the shared timeline",
+		Counts: map[string]int{
+			"segments":   len(r.segments),
+			"synced":     synced,
+			"unsynced":   len(r.segments) - synced,
+			"incomplete": incomplete,
+			"faults":     syncFaults.Len(),
+		},
+	}
+	for _, e := range syncFaults {
+		syncSummary.Faults = append(syncSummary.Faults, provenance.FromFault(e))
+	}
+	if err := r.recordStage(syncSummary); err != nil {
+		return err
+	}
+
+	var keyframes, samples, bytes int64
+	muxFaults := 0
+	for _, seg := range r.segments {
+		keyframes += int64(seg.Keyframes)
+		samples += int64(seg.Samples)
+		bytes += seg.Bytes
+		muxFaults += len(seg.Faults)
+	}
+	muxSummary := provenance.StageSummary{
+		Name:       "mux",
+		InputHash:  recordsDigest(r.records),
+		ConfigHash: r.cfg.Hash(),
+		OutputHash: segHash,
+		Detail:     "repackaged verified frames into ISO-BMFF segments",
+		Counts: map[string]int{
+			"segments":  len(r.segments),
+			"samples":   int(samples),
+			"keyframes": int(keyframes),
+			"bytes":     int(bytes),
+		},
+	}
+	if err := r.recordStage(muxSummary); err != nil {
+		return err
+	}
+
+	indexSummary := provenance.StageSummary{
+		Name:       "index",
+		InputHash:  segHash,
+		ConfigHash: r.cfg.Hash(),
+		OutputHash: stageHash("index", r.cfg.Hash(), r.segHashes...),
+		Detail:     "verified keyframe indexes resolve to their sample bytes",
+		Counts: map[string]int{
+			"keyframes":     r.metrics.KeyframeTotal,
+			"keyframe_hits": r.metrics.KeyframeHits,
+			"roundtrip":     r.metrics.RoundtripHits,
+			"segments":      len(r.segments),
+		},
+	}
+	_ = muxFaults
+	return r.recordStage(indexSummary)
 }
 
 // writeSegment performs the mux and index stages for one segment. The MP4 is
@@ -208,6 +293,16 @@ func samplePayload(s mp4mux.Sample) []byte {
 		return s.Payload
 	}
 	return s.Record.Payload
+}
+
+// alignmentDigestOf folds several segment alignments into one digest without
+// retaining the reports after the stage summary is written.
+func alignmentDigestOf(reps []*syncer.Report) string {
+	h := newDigest()
+	for _, rep := range reps {
+		h.Write([]byte(alignmentDigest(rep)))
+	}
+	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
 func alignmentDigest(rep *syncer.Report) string {

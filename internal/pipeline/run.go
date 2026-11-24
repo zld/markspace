@@ -53,16 +53,17 @@ type Runner struct {
 
 	runtime runtimeState
 
-	stages    []provenance.StageSummary
-	segments  []provenance.Segment
-	faults    fault.List
-	timeline  *clock.Timeline
-	records   []*frames.Record
-	units     []recovery.Unit
-	gaps      []recovery.Gap
-	plans     []SegmentPlan
-	metrics   provenance.Metrics
-	segHashes []string
+	stages     []provenance.StageSummary
+	segments   []provenance.Segment
+	faults     fault.List
+	timeline   *clock.Timeline
+	records    []*frames.Record
+	units      []recovery.Unit
+	gaps       []recovery.Gap
+	plans      []SegmentPlan
+	alignments []*syncer.Report
+	metrics    provenance.Metrics
+	segHashes  []string
 }
 
 type runtimeState struct {
