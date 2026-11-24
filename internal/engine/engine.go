@@ -7,6 +7,7 @@ package engine
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/example/tsrepair/internal/fixture"
 	"github.com/example/tsrepair/internal/index"
@@ -62,6 +63,7 @@ type Engine struct {
 	rawByOrd  map[int64][]byte
 	eligible  int // non-null packets that must traverse the pipeline
 	audioSeen map[uint16]bool // PIDs whose descriptor was already validated
+	guard     *pipeline.MemoryGuard
 }
 
 // New assembles an engine for one fixture stream.
@@ -88,6 +90,7 @@ func New(cfg Config, stream *fixture.Stream) *Engine {
 		stream:    stream,
 		rawByOrd:  map[int64][]byte{},
 		audioSeen: map[uint16]bool{},
+		guard:     pipeline.NewMemoryGuard(cfg.MaxBufferedPackets),
 	}
 }
 
@@ -109,6 +112,9 @@ func (e *Engine) Run(ctx context.Context) (*Metrics, error) {
 		pipeline.Stage{Name: "metadata", Run: e.stageMetadata},
 		pipeline.Stage{Name: "index", Run: e.stageIndex},
 	)
+	// Dropped packets never reach the terminal stage, so release their
+	// reserved buffer slots through the runner's drop callback.
+	runner.SetOnDropped(func(pipeline.Item) { e.guard.Release() })
 	var tr *ts.TruncatedRange
 	var pumpErr error
 	go func() {
@@ -118,6 +124,15 @@ func (e *Engine) Run(ctx context.Context) (*Metrics, error) {
 				e.mu.Lock()
 				e.eligible++
 				e.mu.Unlock()
+			}
+			// Bound total in-flight packets; retry the acquire on failure so
+			// back-pressure propagates to the parser instead of growing memory.
+			for !e.guard.Acquire() {
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-time.After(time.Millisecond):
+				}
 			}
 			// The ordinal is the packet's position in the byte stream, so
 			// segment ranges line up with rawByOrd even after duplicates or

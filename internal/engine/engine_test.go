@@ -2,6 +2,8 @@ package engine
 
 import (
 	"context"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/example/tsrepair/internal/fixture"
@@ -109,5 +111,42 @@ func TestCorruptSyncByteIsFatal(t *testing.T) {
 	se := model.AsStreamError(err)
 	if se == nil || se.Severity != model.SeverityFatal {
 		t.Fatalf("corrupt input must be classified fatal, got %v", err)
+	}
+}
+
+func TestInFlightNeverExceedsBufferBudget(t *testing.T) {
+	stream := fixture.NewGenerator(7).Generate(60, fixture.AllFaults)
+	const budget = 4
+	e := New(Config{
+		QueueCapacity: 1, SegmentPackets: 8, Recover: true,
+		MaxBufferedPackets: budget,
+	}, stream)
+	stop := make(chan struct{})
+	var peak int64
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				if n := int64(e.guard.InFlight()); n > atomic.LoadInt64(&peak) {
+					atomic.StoreInt64(&peak, n)
+				}
+			}
+		}
+	}()
+	if _, err := e.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	close(stop)
+	wg.Wait()
+	if peak > budget {
+		t.Fatalf("peak in-flight %d exceeds budget %d", peak, budget)
+	}
+	if e.guard.InFlight() != 0 {
+		t.Fatalf("guard leaked slots: in-flight=%d", e.guard.InFlight())
 	}
 }

@@ -99,11 +99,14 @@ func (e *Engine) stageMetadata(_ context.Context, in pipeline.Item) (pipeline.It
 	return in, nil
 }
 
-// stageIndex admits verified keyframes and feeds segment hashing.
+// stageIndex admits verified keyframes and feeds segment hashing. It is the
+// terminal stage, so every packet that reaches here releases one buffer slot
+// reserved by the source pump.
 func (e *Engine) stageIndex(_ context.Context, in pipeline.Item) (pipeline.Item, error) {
 	w := in.Payload.(workItem)
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	defer e.guard.Release()
 	res := e.builder.Consider(w.pkt, w.ordinal, w.pts)
 	if res.Admitted {
 		e.hasher.NoteKeyframe(len(e.builder.Build().Frames) - 1)

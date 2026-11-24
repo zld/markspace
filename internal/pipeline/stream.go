@@ -41,12 +41,13 @@ type Stats struct {
 // therefore cascades downstream and cancellation/failure unblocks every
 // stage without leaking goroutines.
 type Runner struct {
-	queues   []*Queue
-	stages   []Stage
-	recover  bool
-	mu       sync.Mutex
-	stats    Stats
-	lastGood int64 // highest confirmed boundary Seq
+	queues    []*Queue
+	stages    []Stage
+	recover   bool
+	onDropped func(Item)
+	mu        sync.Mutex
+	stats     Stats
+	lastGood  int64 // highest confirmed boundary Seq
 }
 
 // NewRunner builds a runner. queueCapacity bounds every inter-stage queue.
@@ -57,6 +58,10 @@ func NewRunner(queueCapacity int, recover bool, stages ...Stage) *Runner {
 	}
 	return r
 }
+
+// SetOnDropped registers a callback invoked for every item dropped in
+// recovery mode, letting callers release resources reserved upstream.
+func (r *Runner) SetOnDropped(fn func(Item)) { r.onDropped = fn }
 
 // Run feeds items from source into the first stage and waits for completion.
 // A recoverable stage fault drops the offending item and resumes at the next
@@ -119,6 +124,9 @@ func (r *Runner) Run(ctx context.Context, source <-chan Item) (*Stats, error) {
 					r.mu.Unlock()
 					if r.recover && se.Severity == model.SeverityRecoverable {
 						r.markDropped()
+						if r.onDropped != nil {
+							r.onDropped(raw.(Item))
+						}
 						continue
 					}
 					setFatal(se)
