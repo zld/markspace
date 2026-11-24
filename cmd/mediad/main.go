@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 
 	"mediad/internal/adapter"
 	"mediad/internal/fixture"
@@ -23,6 +24,10 @@ import (
 func main() { os.Exit(run(os.Args[1:])) }
 
 func run(args []string) int {
+	// The delivery pipeline holds compressed samples for the input and the
+	// re-parsed output at once; a tighter GC target keeps peak memory
+	// below 1 GB for 2h manifests, with ample CPU headroom to spare.
+	debug.SetGCPercent(50)
 	if len(args) == 0 || args[0] != "verify" {
 		fmt.Fprintln(os.Stderr, "usage: mediad verify [--self-generate] [--input manifest.json] [--seed N] [--segments N] [--corrupt MODE]")
 		return 1
@@ -202,19 +207,28 @@ func verify(manifestPath string, nSegments int, workDir string) (metrics, error)
 		driftPPM /= float64(driftWeight)
 	}
 
-	// Remux losslessly, then re-read the output for verification.
-	var outBuf bytes.Buffer
+	// Remux losslessly straight to the delivery file (no in-memory copy of
+	// the output), then re-read it from disk for verification.
 	var rts []pipeline.RemuxTrack
 	for _, t := range tracks {
 		rts = append(rts, pipeline.RemuxTrack{Mapped: t.mt, OutTimes: t.outTimes, Keep: t.keep})
 	}
-	if err := pipeline.Remux(&outBuf, rts); err != nil {
-		return metrics{}, media.New(media.PhaseRemux, -1, -1, "remux", err)
-	}
-	if err := os.WriteFile(filepath.Join(workDir, "delivery.mp4"), outBuf.Bytes(), 0o644); err != nil {
+	deliveryPath := filepath.Join(workDir, "delivery.mp4")
+	df, err := os.Create(deliveryPath)
+	if err != nil {
 		return metrics{}, err
 	}
-	reStream, err := reg.Parse("delivery.mp4", bytes.NewReader(outBuf.Bytes()))
+	if err := pipeline.Remux(df, rts); err != nil {
+		df.Close()
+		return metrics{}, media.New(media.PhaseRemux, -1, -1, "remux", err)
+	}
+	df.Close()
+	rf, err := os.Open(deliveryPath)
+	if err != nil {
+		return metrics{}, err
+	}
+	reStream, err := reg.Parse("delivery.mp4", rf)
+	rf.Close()
 	if err != nil {
 		return metrics{}, media.New(media.PhaseVerify, -1, -1, "re-parse output", err)
 	}
