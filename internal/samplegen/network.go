@@ -108,10 +108,21 @@ func DropSequence(packets []medrtp.Packet, seq uint16) ([]medrtp.Packet, int) {
 
 // ReassembleRTP runs the kernel reorderer and concatenates ordered payloads.
 func ReassembleRTP(packets []medrtp.Packet, window uint16, bandwidthBps int) ([]byte, medrtp.Stats, []fault.Event) {
+	return ReassembleRTPAdaptive(packets, window, bandwidthBps, false)
+}
+
+// ReassembleRTPAdaptive optionally applies deterministic bandwidth steps while
+// packets arrive. Bandwidth changes only the reorder wait estimate; it never
+// rewrites the committed sequence prefix.
+func ReassembleRTPAdaptive(packets []medrtp.Packet, window uint16, bandwidthBps int, bandwidthSteps bool) ([]byte, medrtp.Stats, []fault.Event) {
 	rr := medrtp.NewReorderer(window)
 	rr.SetBandwidth(bandwidthBps, 7*188)
+	bands := []int{128_000, 1_500_000, 20_000_000, 512_000}
 	var ordered []medrtp.Packet
-	for _, p := range packets {
+	for i, p := range packets {
+		if bandwidthSteps && i%2 == 0 {
+			rr.SetBandwidth(bands[(i/2)%len(bands)], 7*188)
+		}
 		ordered = append(ordered, rr.Push(p)...)
 	}
 	ordered = append(ordered, rr.Finish()...)

@@ -55,7 +55,7 @@ func TestAcceptanceDemoContract(t *testing.T) {
 	if rep.Corrupt == nil || rep.Corrupt.ErrorCode != fault.ErrTruncated {
 		t.Fatalf("corrupt sample=%+v", rep.Corrupt)
 	}
-	if rep.Corrupt.GapEvents == 0 || rep.Corrupt.RTPStats == nil || rep.Corrupt.RTPStats.Duplicates == 0 {
+	if rep.Corrupt.GapEvents == 0 || rep.Corrupt.RTPStats == nil || rep.Corrupt.RTPStats.Duplicates == 0 || rep.Corrupt.RTPStats.Gaps == 0 {
 		t.Fatalf("corrupt chain did not carry RTP faults and TS gaps: %+v", rep.Corrupt)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "corrupt", "corrupt.mp4")); err == nil {

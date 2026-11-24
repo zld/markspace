@@ -135,7 +135,7 @@ func runRTP(data []byte, seed int64, faults map[string]bool, unrecovered bool) (
 			net.UnrecoveredLosses = 1
 		}
 	}
-	out, stats, events := samplegen.ReassembleRTP(arrivals, 128, 1_500_000)
+	out, stats, events := samplegen.ReassembleRTPAdaptive(arrivals, 128, 1_500_000, true)
 	return out, stats, net, events
 }
 
