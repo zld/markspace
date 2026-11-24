@@ -72,12 +72,7 @@ func trakBox(tr Track, duration uint32, sizes, deltas, compOffsets []uint32, chu
 }
 
 func tkhdBox(id, duration uint32, width, height uint16) []byte {
-	if width == 0 {
-		width = 16
-	}
-	if height == 0 {
-		height = 9
-	}
+	// Zero width/height is conventional for audio tracks.
 	p := fullHeader(0, 7)
 	p = binary.BigEndian.AppendUint32(p, 0)
 	p = binary.BigEndian.AppendUint32(p, 0)
