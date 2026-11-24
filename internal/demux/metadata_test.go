@@ -14,7 +14,7 @@ func TestAllMetadataBuildersParse(t *testing.T) {
 	}
 	cases := []model.TimedEvent{
 		{Kind: model.MetaSubtitle, TrackID: 3, Payload: fixture.WebVTT(10, "hello")},
-		{Kind: model.MetaChapter, TrackID: 4, Payload: fixture.ChapterBook([]fixture.Chapter{{0, "A"}, {10, "B"}})},
+		{Kind: model.MetaChapter, TrackID: 4, Payload: fixture.ChapterBook([]fixture.Chapter{{PTSMS: 0, Title: "A"}, {PTSMS: 10, Title: "B"}})},
 		{Kind: model.MetaID3, TrackID: 5, Payload: fixture.ID3Tag("Title", "Artist")},
 		{Kind: model.MetaEmsg, TrackID: 5, Payload: emsg},
 		{Kind: model.MetaSEI, TrackID: 1, Payload: fixture.SEIUserdata("sei")},
