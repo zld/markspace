@@ -172,6 +172,7 @@ func (c cutContext) cutInterval(index int, startRef, endRef Boundary, lastPartia
 			EndSample:      endSampleExclusive,
 		}
 		h := mediahash.New()
+		var chunkBytes []byte
 		for sample := startKF.SampleNumber; sample < endSampleExclusive; sample++ {
 			ev, ok := c.event(tr.TrackID, sample)
 			if !ok {
@@ -180,8 +181,10 @@ func (c cutContext) cutInterval(index int, startRef, endRef Boundary, lastPartia
 			payload := c.payloadFor(ev)
 			rs.ChunkCount++
 			rs.ByteCount += len(payload)
+			chunkBytes = append(chunkBytes, payload...)
 			_, _ = h.Write(payload)
 		}
+		rs.ChunkBytes = chunkBytes
 		rs.SHA256 = fmt.Sprintf("%x", h.Sum(nil))
 		seg.Representations = append(seg.Representations, rs)
 		_, _ = fmt.Fprintf(canonical, "%d|%d|%d|%s\n", tr.TrackID, rs.StartSample, rs.EndSample, rs.SHA256)

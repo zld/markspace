@@ -32,6 +32,7 @@ type RepSegment struct {
 	ByteCount   int    `json:"byte_count"`
 	SHA256      string `json:"sha256"`
 	ChunkFile   string `json:"chunk_file,omitempty"`
+	ChunkBytes  []byte `json:"-"`
 }
 
 // Segment is one shared program-time interval across all active renditions.
