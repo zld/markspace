@@ -75,10 +75,10 @@ func SignedToNS(raw int64, timescale uint32) (NS, error) {
 
 // Common typed errors. Exit classification is provided by ExitCode.
 var (
-	ErrZeroTimescale = errors.New("zero timescale")
+	ErrZeroTimescale  = errors.New("zero timescale")
 	ErrDigestMismatch = errors.New("input digest mismatch")
-	ErrCheckpoint    = errors.New("invalid checkpoint")
-	ErrAlignment     = errors.New("representation alignment failed")
+	ErrCheckpoint     = errors.New("invalid checkpoint")
+	ErrAlignment      = errors.New("representation alignment failed")
 )
 
 // ParseError identifies a track and byte offset for an invalid container.
