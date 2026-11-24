@@ -33,6 +33,7 @@ func interrupt(workdir string, man *Manifest, rep *Report, stage media.Stage) (*
 	rep.Status = "interrupted"
 	rep.ErrorCode = me.Code
 	rep.Stage = stage
+	rep.LastStage = string(stage)
 	rep.CorruptOffset = -1
 	return rep, me
 }
@@ -56,6 +57,9 @@ func failManifest(workdir string, man *Manifest, rep *Report, err error) (*Repor
 		rep.Status = "rejected"
 		rep.ErrorCode = me.Code
 		rep.Stage = me.Stage
+		if rep.LastStage == "" {
+			rep.LastStage = string(me.Stage)
+		}
 		rep.CorruptOffset = me.Offset
 	}
 	return rep, me

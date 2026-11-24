@@ -229,6 +229,7 @@ func Run(cfg Config) (*Report, error) {
 	}
 
 	rep.Stats = &stats
+	rep.LastStage = string(media.StageVerify)
 	rep.TargetBitrateBPS = stats.TargetBitrateBPS
 	rep.ActualBitrateBPS = stats.ActualBitrateBPS
 	rep.BitrateDeviationPct = stats.BitrateDeviationPct

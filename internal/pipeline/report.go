@@ -38,6 +38,7 @@ type Report struct {
 	RecomputedStages    []string            `json:"recomputed_stages,omitempty"`
 	CorruptOffset       int64               `json:"corrupt_offset,omitempty"`
 	Stage               media.Stage         `json:"stage,omitempty"`
+	LastStage           string              `json:"last_stage,omitempty"`
 	ErrorCode           media.ErrorCode     `json:"error_code,omitempty"`
 	Stats               *verify.Stats       `json:"stats,omitempty"`
 }
@@ -49,6 +50,11 @@ func (r *Report) PrintKeyValues() {
 	}
 	lines := []string{
 		fmt.Sprintf("status=%s", r.Status),
+	}
+	if r.LastStage != "" {
+		lines = append(lines, "last_stage="+r.LastStage)
+	}
+	lines = append(lines,
 		fmt.Sprintf("target_bitrate_bps=%d", r.TargetBitrateBPS),
 		fmt.Sprintf("actual_bitrate_bps=%.3f", r.ActualBitrateBPS),
 		fmt.Sprintf("bitrate_deviation_pct=%.6f", r.BitrateDeviationPct),
@@ -59,7 +65,7 @@ func (r *Report) PrintKeyValues() {
 		fmt.Sprintf("bad_blocks=%d", r.BadBlocks),
 		fmt.Sprintf("manifest_alignment_ns=%d", r.ManifestAlignmentNS),
 		fmt.Sprintf("index_entries=%d", r.IndexEntries),
-	}
+	)
 	if r.IndexSHA256 != "" {
 		lines = append(lines, "index_sha256="+r.IndexSHA256)
 	}
