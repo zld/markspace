@@ -123,20 +123,44 @@ func inspectRepresentation(rec *dash.RepresentationRecord, fr *fixture.Represent
 }
 
 // packetLoss compares the observed RTP packet count against the count the
-// sender expected before truncation-driven tail loss.
+// sender expected before truncation-driven tail loss. Every observed packet
+// is re-parsed from its wire bytes through pion/rtp so the check exercises
+// the real RTP header parser rather than only the in-memory model.
 func packetLoss(seg *fixture.Segment) int {
 	if seg.ExpectedPackets == 0 {
 		return 0
 	}
 	seen := map[uint16]bool{}
 	for _, p := range seg.Packets {
-		seen[p.SequenceNumber] = true
+		parsed, err := ParseRTP(p)
+		if err != nil {
+			// A packet that fails wire parsing counts as lost/corrupt.
+			continue
+		}
+		seen[parsed.SequenceNumber] = true
 	}
 	loss := seg.ExpectedPackets - len(seen)
 	if loss < 0 {
 		loss = 0
 	}
 	return loss
+}
+
+// ParseRTP serializes a packet and re-parses it through pion/rtp, proving the
+// wire format round-trips and yielding a validated header.
+func ParseRTP(p *rtp.Packet) (*rtp.Packet, error) {
+	wire, err := p.Marshal()
+	if err != nil {
+		return nil, err
+	}
+	var got rtp.Packet
+	if err := got.Unmarshal(wire); err != nil {
+		return nil, err
+	}
+	if got.Version != 2 {
+		return nil, fmt.Errorf("invalid RTP version %d", got.Version)
+	}
+	return &got, nil
 }
 
 // checkCrossRepresentation flags representation boundaries that do not line up

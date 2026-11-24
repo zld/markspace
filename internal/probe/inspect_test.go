@@ -3,6 +3,8 @@ package probe
 import (
 	"testing"
 
+	"github.com/pion/rtp"
+
 	"mediacheck/internal/dash"
 	"mediacheck/internal/fixture"
 	"mediacheck/internal/model"
@@ -118,6 +120,27 @@ func TestCrossRepresentationAligned(t *testing.T) {
 		if is.Kind == model.FaultClockSkew {
 			t.Fatalf("healthy ladder should align, got skew: %+v", is)
 		}
+	}
+}
+
+func TestParseRTPrRoundTrip(t *testing.T) {
+	prog := fixture.Generate(17, nil)
+	if err := fixture.Materialize(prog); err != nil {
+		t.Fatal(err)
+	}
+	pkt := prog.Video[0].Segments[0].Packets[0]
+	got, err := ParseRTP(pkt)
+	if err != nil {
+		t.Fatalf("ParseRTP: %v", err)
+	}
+	if got.SSRC != pkt.SSRC || got.SequenceNumber != pkt.SequenceNumber ||
+		got.Timestamp != pkt.Timestamp {
+		t.Fatal("re-parsed RTP header does not match the source")
+	}
+	before := &rtp.Packet{Header: rtp.Header{Timestamp: 500000}}
+	after := &rtp.Packet{Header: rtp.Header{Timestamp: 1200}}
+	if !RTPTimestampReset(before, after) {
+		t.Fatal("timestamp reset after discontinuity not recognized")
 	}
 }
 
