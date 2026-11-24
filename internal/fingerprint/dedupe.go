@@ -24,6 +24,29 @@ func NewDeduper(timeToleranceMs int64) *Deduper {
 	return &Deduper{TimeToleranceMs: timeToleranceMs, MinWindows: 1}
 }
 
+// NewDeduperFromState reconstructs cross-segment state after a checkpoint.
+func NewDeduperFromState(
+	segments []model.Segment,
+	fingerprints []model.WindowFingerprint,
+	mappings []model.DedupeMapping,
+	timeToleranceMs int64,
+) *Deduper {
+	d := NewDeduper(timeToleranceMs)
+	d.Mappings = append([]model.DedupeMapping(nil), mappings...)
+	d.Duplicate = len(mappings)
+	bySegment := make(map[int][]model.WindowFingerprint)
+	for _, fp := range fingerprints {
+		bySegment[fp.SegmentIndex] = append(bySegment[fp.SegmentIndex], fp)
+	}
+	for _, seg := range segments {
+		d.seen = append(d.seen, seenSegment{
+			Segment:      seg,
+			Fingerprints: append([]model.WindowFingerprint(nil), bySegment[seg.Index]...),
+		})
+	}
+	return d
+}
+
 func abs64(v int64) int64 {
 	if v < 0 {
 		return -v
