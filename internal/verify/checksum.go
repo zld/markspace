@@ -30,10 +30,10 @@ func FSFrameOpener(baseDir string) FrameOpener {
 
 // Report is the verification outcome for one track.
 type Report struct {
-	TrackID    string          `json:"track_id"`
-	FrameCount int             `json:"frame_count"`
-	BytesRead  int64           `json:"bytes_read"`
-	OK         bool            `json:"ok"`
+	TrackID    string            `json:"track_id"`
+	FrameCount int               `json:"frame_count"`
+	BytesRead  int64             `json:"bytes_read"`
+	OK         bool              `json:"ok"`
 	FirstError *model.MediaError `json:"first_error,omitempty"`
 }
 

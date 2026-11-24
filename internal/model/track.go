@@ -67,22 +67,22 @@ type ColorMeta struct {
 // header reuses pion/rtp's SequenceNumber (uint16) and Timestamp (uint32)
 // types so delivery ordering uses the same wire semantics as RTP sources.
 type Frame struct {
-	TrackID   string      `json:"track_id"`
-	Index     int         `json:"index"`
-	Name      string      `json:"name"`
-	Length    int64       `json:"length"`
-	SHA256    Hash        `json:"sha256"`
-	TimeUnits int64       `json:"time_units"`
-	TimeRate  int64       `json:"time_rate"`
-	Color     ColorMeta   `json:"color"`
-	RTP       rtp.Header  `json:"rtp"`
+	TrackID   string     `json:"track_id"`
+	Index     int        `json:"index"`
+	Name      string     `json:"name"`
+	Length    int64      `json:"length"`
+	SHA256    Hash       `json:"sha256"`
+	TimeUnits int64      `json:"time_units"`
+	TimeRate  int64      `json:"time_rate"`
+	Color     ColorMeta  `json:"color"`
+	RTP       rtp.Header `json:"rtp"`
 }
 
 // Track is a single video or audio delivery with its full metadata block.
 type Track struct {
-	ID       string `json:"id"`
-	Kind     Kind   `json:"kind"`
-	Frames   []Frame `json:"frames"`
+	ID     string  `json:"id"`
+	Kind   Kind    `json:"kind"`
+	Frames []Frame `json:"frames"`
 
 	// Video.
 	FPS int64 `json:"fps,omitempty"`

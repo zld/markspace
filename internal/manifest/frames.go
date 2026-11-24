@@ -21,28 +21,28 @@ import (
 
 // frameDTO is the on-disk JSON shape of one delivered frame.
 type frameDTO struct {
-	Index        int            `json:"index"`
-	Name         string         `json:"name"`
-	Length       int64          `json:"length"`
-	SHA256       string         `json:"sha256"`
-	TimeUnits    int64          `json:"time_units"`
-	TimeRate     int64          `json:"time_rate"`
+	Index        int             `json:"index"`
+	Name         string          `json:"name"`
+	Length       int64           `json:"length"`
+	SHA256       string          `json:"sha256"`
+	TimeUnits    int64           `json:"time_units"`
+	TimeRate     int64           `json:"time_rate"`
 	Color        model.ColorMeta `json:"color"`
-	Seq          uint16         `json:"rtp_seq"`
-	RTPTimestamp uint32         `json:"rtp_timestamp"`
+	Seq          uint16          `json:"rtp_seq"`
+	RTPTimestamp uint32          `json:"rtp_timestamp"`
 }
 
 type trackDTO struct {
-	ID               string      `json:"id"`
-	Kind             model.Kind  `json:"kind"`
-	FPS              int64       `json:"fps"`
-	SampleRate       int64       `json:"sample_rate"`
-	Channels         int         `json:"channels"`
-	Layout           string      `json:"layout"`
-	StartOffsetUnits int64       `json:"start_offset_units"`
-	StartOffsetRate  int64       `json:"start_offset_rate"`
-	LoudnessLUFS     float64     `json:"loudness_lufs"`
-	Frames           []frameDTO  `json:"frames"`
+	ID               string     `json:"id"`
+	Kind             model.Kind `json:"kind"`
+	FPS              int64      `json:"fps"`
+	SampleRate       int64      `json:"sample_rate"`
+	Channels         int        `json:"channels"`
+	Layout           string     `json:"layout"`
+	StartOffsetUnits int64      `json:"start_offset_units"`
+	StartOffsetRate  int64      `json:"start_offset_rate"`
+	LoudnessLUFS     float64    `json:"loudness_lufs"`
+	Frames           []frameDTO `json:"frames"`
 }
 
 type fileDTO struct {
@@ -59,9 +59,9 @@ type MappedFrame struct {
 
 // MappedTrack carries a track plus its resolved timeline mapping.
 type MappedTrack struct {
-	Track        *model.Track
-	Start90k     clock.Ticks
-	Frames       []MappedFrame
+	Track    *model.Track
+	Start90k clock.Ticks
+	Frames   []MappedFrame
 }
 
 // Parse reads and validates a manifest JSON stream, mapping every frame onto
