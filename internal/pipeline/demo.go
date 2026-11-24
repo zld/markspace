@@ -68,6 +68,13 @@ func GenerateDemo(o Options) (*DemoResult, error) {
 	if err := os.MkdirAll(p.InputDir, 0o755); err != nil {
 		return nil, err
 	}
+	// `demo` creates a brand-new fixture. Clear stale completion state so the
+	// documented demo -> interrupt -> resume sequence is repeatable in the same
+	// --workdir. `resume` itself never performs this reset.
+	_ = os.RemoveAll(filepath.Join(o.Workdir, "chunks"))
+	_ = os.Remove(filepath.Join(o.Workdir, "index.json"))
+	_ = os.Remove(p.FinalMP4)
+	_ = os.Remove(p.SummaryJSON)
 	badSHA := o.HasInject("bad-sha") || o.HasInject("bad_sha")
 	truncated := o.HasInject("truncated") || o.HasInject("truncate")
 	late := o.HasInject("late")

@@ -14,7 +14,7 @@ go mod tidy
 go build ./...
 go test ./...
 
-rm -rf ./tmp/accept ./tmp/exit-sync ./tmp/exit-channel
+rm -rf ./tmp/accept ./tmp/exit-sync ./tmp/exit-channel ./tmp/exit-interrupt
 mkdir -p ./tmp
 go build -o ./tmp/mediarc ./cmd/mediarc
 
@@ -62,6 +62,17 @@ set +e
 code=$?
 set -e
 [[ $code -eq 2 ]]
+
+echo "== direct binary exit code 10 =="
+./tmp/mediarc demo --seed 17 --frames 32 --audio-packets 128 --chunk 8 \
+  --inject bad-sha,late,duplicate --workdir ./tmp/exit-interrupt >/dev/null
+set +e
+./tmp/mediarc resume --workdir ./tmp/exit-interrupt --interrupt-after 2 \
+  >/tmp/mediarc-interrupt.out 2>&1
+code=$?
+set -e
+[[ $code -eq 10 ]]
+grep -Eq '^exit_code=10$' /tmp/mediarc-interrupt.out
 
 echo "== exit code 3: A/V sync =="
 ./tmp/mediarc demo --seed 17 --frames 24 --audio-packets 64 --chunk 8 \
