@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,7 +10,6 @@ import (
 	"mediatool/internal/fixture"
 	"mediatool/internal/index"
 	"mediatool/internal/segment"
-	"mediatool/internal/stream"
 )
 
 // runVerify exercises each self-generated fault class and asserts the located
@@ -147,6 +145,3 @@ func alignFor(ix *index.Index, opts fixture.Options) (*segment.Result, error) {
 	}
 	return segment.Align(covs, segment.Config{DurationMs: opts.SegmentMs, KeyframeSearchMs: opts.SegmentMs})
 }
-
-var _ = json.Marshal
-var _ = stream.Config{}

@@ -146,5 +146,3 @@ func ColorBox(vi *index.VideoInfo) *mp4.ColrBox {
 		FullRangeFlag:           full,
 	}
 }
-
-var _ = index.AudioInfo{}
