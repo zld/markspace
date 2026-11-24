@@ -119,29 +119,27 @@ func TestLengthOutOfRange(t *testing.T) {
 
 func TestTruncatedPayload(t *testing.T) {
 	raw := []byte{0x1F, 0x43, 0xB6, 0x75, 0x84, 'A', 'B'} // size 4, 2 bytes present
+	// A whole-file (unbounded) reader cannot distinguish a declared overrun
+	// from a truncated tail at header time; ReadPayload pinpoints the byte.
 	r := newReader(t, raw)
 	el, err := r.ReadElement()
-	// The header-stage length check already sees the declared end (9)
-	// overrun the file end (7).
-	if !fault.Is(err, fault.KindLengthOutOfRange) {
-		t.Fatalf("expected length-out-of-range at header stage, got el=%+v err=%v", el, err)
+	if err != nil {
+		t.Fatalf("header stage should defer EOF overruns, got %v", err)
+	}
+	_, err = r.ReadPayload(el)
+	fe := fault.Of(err)
+	if fe == nil || fe.Kind != fault.KindTruncated || fe.Offset != 7 || !fe.Recoverable {
+		t.Fatalf("expected recoverable truncation at byte 7, got %v", err)
 	}
 
-	// A truncated payload inside an explicit larger window (e.g. a cluster
-	// whose own end was declared before truncation was discovered) must
-	// surface a recoverable truncated fault with the failing offset.
-	r2, err := NewReader(bytes.NewReader(raw), 0, 64)
+	// The same bytes inside an explicit bounded window (a known-length
+	// parent) are a structural length-out-of-range fault at the header.
+	r2, err := NewReader(bytes.NewReader(raw), 0, int64(len(raw)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	el2, err := r2.ReadElement()
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = r2.ReadPayload(el2)
-	fe := fault.Of(err)
-	if fe == nil || fe.Kind != fault.KindTruncated || fe.Offset != 7 {
-		t.Fatalf("expected truncation at byte 7, got %v", err)
+	if _, err := r2.ReadElement(); !fault.Is(err, fault.KindLengthOutOfRange) {
+		t.Fatalf("expected length-out-of-range in bounded window, got %v", err)
 	}
 }
 

@@ -43,21 +43,33 @@ type Reader struct {
 	r    io.ReadSeeker
 	base int64 // absolute offset of the window start
 	end  int64 // absolute offset just past the window, -1 for whole file
+	// physicalEnd is the underlying stream's EOF. When end == physicalEnd a
+	// declared overrun cannot be distinguished from a truncated tail until a
+	// payload read actually fails, so header checks defer to ReadPayload.
+	physicalEnd int64
+	// bounded marks a window derived from a known-length parent element:
+	// overruns are structural length-out-of-range faults, not truncation.
+	bounded bool
 }
 
 // NewReader wraps an existing seekable stream. limit < 0 means the window
 // extends to EOF; otherwise reads are constrained to [offset, offset+limit).
 func NewReader(r io.ReadSeeker, offset, limit int64) (*Reader, error) {
+	size, seekErr := r.Seek(0, io.SeekEnd)
 	end := UnknownSize
+	physical := UnknownSize
+	if seekErr == nil {
+		physical = size
+		end = size // whole-file window: exact end enables End on every element
+	}
 	if limit >= 0 {
 		end = offset + limit
-	} else if size, err := r.Seek(0, io.SeekEnd); err == nil {
-		end = size // whole-file window: exact end enables End on every element
 	}
 	if _, err := r.Seek(offset, io.SeekStart); err != nil {
 		return nil, fault.New(fault.KindIO, offset, "seek failed: %v", err)
 	}
-	return &Reader{r: r, base: offset, end: end}, nil
+	return &Reader{r: r, base: offset, end: end,
+		physicalEnd: physical, bounded: limit >= 0}, nil
 }
 
 // Offset returns the reader's current absolute byte position.
@@ -171,13 +183,14 @@ func (r *Reader) ReadElement() (*Element, error) {
 		el.Size = UnknownSize // unknown-length element
 	} else {
 		el.Size = int64(sizeVal & sizeMask[sizeWidth-1])
-		if r.end >= 0 {
-			el.End = el.HeaderEnd + el.Size
-			if el.End > r.end {
-				return nil, fault.New(fault.KindLengthOutOfRange, sizeOff,
-					"element size %d ending at %d exceeds parent end %d",
-					el.Size, el.End, r.end)
-			}
+		el.End = el.HeaderEnd + el.Size
+		// A bounded parent makes overruns structural. An unknown-length
+		// parent ending at physical EOF defers to the payload read so a
+		// truncated tail is reported at the exact failing byte.
+		if r.end >= 0 && el.End > r.end && (r.bounded || r.physicalEnd < 0 || r.end != r.physicalEnd) {
+			return nil, fault.New(fault.KindLengthOutOfRange, sizeOff,
+				"element size %d ending at %d exceeds parent end %d",
+				el.Size, el.End, r.end)
 		}
 	}
 	return el, nil
@@ -189,15 +202,20 @@ func (r *Reader) Child(el *Element) (*Reader, error) {
 	if _, err := r.r.Seek(el.HeaderEnd, io.SeekStart); err != nil {
 		return nil, fault.New(fault.KindIO, el.HeaderEnd, "seek: %v", err)
 	}
-	limit := el.Size
-	if limit < 0 {
-		if r.end < 0 {
-			limit = UnknownSize
-		} else {
-			limit = r.end - el.HeaderEnd
-		}
+	child := &Reader{r: r.r, base: el.HeaderEnd, physicalEnd: r.physicalEnd}
+	if el.Size >= 0 {
+		// Known-length element: a hard structural window.
+		child.end = el.HeaderEnd + el.Size
+		child.bounded = true
+	} else if r.end < 0 {
+		child.end = UnknownSize
+		child.bounded = r.bounded
+	} else {
+		// Unknown-length child inherits the parent's remaining window.
+		child.end = r.end
+		child.bounded = r.bounded
 	}
-	return &Reader{r: r.r, base: el.HeaderEnd, end: el.HeaderEnd + limit}, nil
+	return child, nil
 }
 
 // Skip moves the stream past el's payload. Unknown-length elements cannot be
