@@ -185,6 +185,9 @@ func Build(in Input) *Document {
 	doc.IsolatedTracks = sortedKeys(isoSet)
 	doc.AlignmentErrorMs = round2(float64(maxShift) / 1e6)
 	doc.ActualBitrateBps, doc.BitrateDeviationPct = bitrate(totalBytes, totalNs, in.TargetBps)
+	if h, err := doc.Hash(); err == nil {
+		doc.ManifestSHA256 = h
+	}
 	return doc
 }
 
