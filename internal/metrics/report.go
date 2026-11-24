@@ -14,15 +14,16 @@ import (
 )
 
 type Report struct {
-	Tracks                   int     `json:"tracks"`
-	Samples                  int     `json:"samples"`
-	PayloadHashMismatches    int     `json:"payload_hash_mismatches"`
-	TargetBitrateBps         float64 `json:"target_bitrate_bps"`
-	ActualBitrateBps         float64 `json:"actual_bitrate_bps"`
-	BitrateDeviationPct      float64 `json:"bitrate_deviation_pct"`
-	QualityDroppedSamples    int     `json:"quality_dropped_samples"`
-	ManifestAlignmentErrorMS float64 `json:"manifest_alignment_error_ms"`
-	RecoveredChunks          int     `json:"recovered_chunks"`
+	Tracks                   int                `json:"tracks"`
+	Samples                  int                `json:"samples"`
+	PayloadHashMismatches    int                `json:"payload_hash_mismatches"`
+	TargetBitrateBps         float64            `json:"target_bitrate_bps"`
+	ActualBitrateBps         float64            `json:"actual_bitrate_bps"`
+	BitrateDeviationPct      float64            `json:"bitrate_deviation_pct"`
+	QualityDroppedSamples    int                `json:"quality_dropped_samples"`
+	ManifestAlignmentErrorMS float64            `json:"manifest_alignment_error_ms"`
+	RecoveredChunks          int                `json:"recovered_chunks"`
+	ErrorRanges              []demux.ErrorRange `json:"error_ranges,omitempty"`
 }
 
 // VerifyDirectory loads manifest.json and independently demuxes output.mp4.
@@ -54,6 +55,7 @@ func VerifyDirectory(dir string) (*Report, *index.Manifest, error) {
 		TargetBitrateBps:      m.TargetBitrateBps,
 		QualityDroppedSamples: m.QualityDroppedSamples,
 		RecoveredChunks:       m.RecoveredChunks,
+		ErrorRanges:           m.ErrorRanges,
 	}
 	var totalPayloadBytes int64
 	var maxDurationSec float64
