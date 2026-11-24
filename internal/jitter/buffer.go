@@ -2,6 +2,7 @@ package jitter
 
 import (
 	"fmt"
+	"sort"
 
 	"medcheck/internal/clock"
 )
@@ -188,9 +189,18 @@ func (b *Buffer) Advance(nowNS int64) []Event {
 	}
 	b.nowNS = nowNS
 	var out []Event
-	for ssrc := range b.streams {
+	for _, ssrc := range b.sortedSSRCs() {
 		out = append(out, b.drain(ssrc, false)...)
 	}
+	return out
+}
+
+func (b *Buffer) sortedSSRCs() []uint32 {
+	out := make([]uint32, 0, len(b.streams))
+	for ssrc := range b.streams {
+		out = append(out, ssrc)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
 	return out
 }
 
@@ -206,22 +216,18 @@ func (b *Buffer) SetFinalSeq(ssrc uint32, final uint64) {
 // Flush emits all queued data and every remaining gap through FinalSeq/highest.
 func (b *Buffer) Flush() []Event {
 	var out []Event
-	for ssrc := range b.streams {
+	for _, ssrc := range b.sortedSSRCs() {
 		out = append(out, b.drain(ssrc, true)...)
 	}
 	return out
 }
 
-func (b *Buffer) drain(ssrc uint32, timeExpired bool) []Event {
+func (b *Buffer) drain(ssrc uint32, force bool) []Event {
 	st := b.streams[ssrc]
 	if st == nil {
 		return nil
 	}
 	var out []Event
-	windowExpired := st.highest >= st.next+uint64(b.cfg.WindowPackets-1)
-	deadlineExpired := timeExpired || (st.haveWait && b.cfg.MaxWaitNS > 0 &&
-		b.nowNS-st.waitSince >= b.cfg.MaxWaitNS)
-	forceGap := windowExpired || deadlineExpired
 
 	for st.next <= st.highest {
 		if p, ok := st.queued[st.next]; ok {
@@ -231,7 +237,13 @@ func (b *Buffer) drain(ssrc uint32, timeExpired bool) []Event {
 			st.haveWait = false
 			continue
 		}
-		if !forceGap {
+
+		// Re-evaluate the window for each gap. Expiring an older gap must
+		// not falsely expire a younger reorder in the same drain pass.
+		windowExpired := st.highest >= st.next+uint64(b.cfg.WindowPackets-1)
+		deadlineExpired := (st.haveWait && b.cfg.MaxWaitNS > 0 &&
+			b.nowNS-st.waitSince >= b.cfg.MaxWaitNS)
+		if !force && !windowExpired && !deadlineExpired {
 			if !st.haveWait {
 				st.waitSince = b.nowNS
 				st.haveWait = true
@@ -243,6 +255,7 @@ func (b *Buffer) drain(ssrc uint32, timeExpired bool) []Event {
 			Kind: EventGap, Stream: st.stream, SSRC: ssrc,
 			Seqs: []uint64{seq}, PTSNS: b.gapPTS(st, seq),
 		})
+		st.haveWait = false
 		st.next++
 	}
 	if st.next > st.highest {
