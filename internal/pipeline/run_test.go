@@ -354,3 +354,29 @@ func TestSamplesUsePresentationOrder(t *testing.T) {
 		}
 	}
 }
+
+func TestSubtitleOnlyTimelineStillRenders(t *testing.T) {
+	// The kernel accepts a run with no video; the timeline is subtitles-only
+	// and every sample lookup honestly fails rather than faking frames.
+	dir := t.TempDir()
+	srt := filepath.Join(dir, "c.srt")
+	if err := os.WriteFile(srt, []byte("1\n00:00:00,000 --> 00:00:01,000\nhi\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	interval, _ := model.ParseRat("1/2")
+	in := Inputs{
+		OutDir: filepath.Join(dir, "cp"), Subtitles: []SubtitleInput{{TrackID: "s1", Path: srt}},
+		Width: 8, Height: 8, Interval: interval, ChunkSize: 16, FallbackScan: true,
+	}
+	st, err := Run(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Items == 0 {
+		t.Fatal("subtitle cues must still form a timeline")
+	}
+	if st.Metrics.KeyframeIndexHitRate.Den != 0 {
+		t.Fatalf("no video means no keyframe ratio, got %d/%d",
+			st.Metrics.KeyframeIndexHitRate.Num, st.Metrics.KeyframeIndexHitRate.Den)
+	}
+}
