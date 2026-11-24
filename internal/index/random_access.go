@@ -23,12 +23,12 @@ var (
 
 // Entry is one random-access point.
 type Entry struct {
-	Tick        clock.Ticks `json:"tick"`        // decode time on the master timeline
-	Fragment    string      `json:"fragment"`    // source fragment path
-	MoofOffset  int64       `json:"moofOffset"`  // raw offset of the moof in Fragment
-	SampleIndex int         `json:"sampleIndex"` // sample index within the fragment
-	DataOffset  int64       `json:"dataOffset"`  // raw offset of the sample payload
-	SourceDigest string     `json:"sourceDigest"` // sha256 of the source fragment file
+	Tick         clock.Ticks `json:"tick"`         // decode time on the master timeline
+	Fragment     string      `json:"fragment"`     // source fragment path
+	MoofOffset   int64       `json:"moofOffset"`   // raw offset of the moof in Fragment
+	SampleIndex  int         `json:"sampleIndex"`  // sample index within the fragment
+	DataOffset   int64       `json:"dataOffset"`   // raw offset of the sample payload
+	SourceDigest string      `json:"sourceDigest"` // sha256 of the source fragment file
 }
 
 // Index is an ordered set of random-access entries over one track.
@@ -48,7 +48,8 @@ type Source struct {
 
 // Build collects the sync samples of all sources into one ordered index.
 func Build(srcs []Source) (*Index, error) {
-	ix := &Index{}
+	var entries []Entry
+	var end clock.Ticks
 	for _, src := range srcs {
 		f := src.Fragment
 		if len(src.Repaired) != len(f.Samples) {
@@ -56,7 +57,6 @@ func Build(srcs []Source) (*Index, error) {
 				fmt.Sprintf("repaired/sample count mismatch %d != %d",
 					len(src.Repaired), len(f.Samples))).At(f.Path, f.MoofOffset)
 		}
-		var maxEnd clock.Ticks
 		for i, s := range f.Samples {
 			tick, err := clock.ToMaster(int64(src.Repaired[i]), src.Timescale)
 			if err != nil {
@@ -65,13 +65,13 @@ func Build(srcs []Source) (*Index, error) {
 			}
 			tick += src.TimelineStart
 			dur := clock.MustToMaster(int64(s.Duration), src.Timescale)
-			if tick+dur > maxEnd {
-				maxEnd = tick + dur
+			if tick+dur > end {
+				end = tick + dur
 			}
 			if !s.Sync {
 				continue
 			}
-			ix.Entries = append(ix.Entries, Entry{
+			entries = append(entries, Entry{
 				Tick:         tick,
 				Fragment:     f.Path,
 				MoofOffset:   f.MoofOffset,
@@ -80,10 +80,13 @@ func Build(srcs []Source) (*Index, error) {
 				SourceDigest: src.Digest,
 			})
 		}
-		if maxEnd > ix.End {
-			ix.End = maxEnd
-		}
 	}
+	return Assemble(entries, end)
+}
+
+// Assemble sorts entries and validates the index is usable.
+func Assemble(entries []Entry, end clock.Ticks) (*Index, error) {
+	ix := &Index{Entries: entries, End: end}
 	sort.Slice(ix.Entries, func(i, j int) bool {
 		a, b := ix.Entries[i], ix.Entries[j]
 		if a.Tick != b.Tick {
