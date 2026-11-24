@@ -111,10 +111,11 @@ func (r *Runner) Resume(on bool) error {
 	if ok {
 		r.runtime.skippedStages = append([]string(nil), cp.Done...)
 	}
-	// A complete checkpoint resumes at "complete"; an invalidated one resumes
-	// at the first stage, which is "parse". A directory with no checkpoint is
-	// a fresh run and reports no resume stage.
-	if ok || cp.Invalidated {
+	// Report the resume stage whenever a checkpoint file was present: a
+	// complete run reports "complete", a partly finished one reports its next
+	// stage, and an invalidated one reports the first stage. A directory with
+	// no checkpoint is a fresh run and reports nothing.
+	if cp.Exists {
 		r.runtime.resumedAt = cp.ResumeStage()
 	}
 	return nil

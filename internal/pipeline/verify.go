@@ -27,6 +27,14 @@ type VerifyReport struct {
 	BaselineHashes []string
 }
 
+// VerifiedSegments reports whether every segment hash matched the manifest and
+// every index resolved. It is the strict form of SegmentsEqual, which only
+// compares digests.
+func (v *VerifyReport) VerifiedSegments() bool {
+	return v.SegmentsEqual && len(v.Misses) == 0 &&
+		v.RoundtripTotal > 0 && v.RoundtripHits == v.RoundtripTotal
+}
+
 // RoundtripRatio returns the percentage of samples that round-tripped.
 func (v *VerifyReport) RoundtripRatio() int {
 	if v.RoundtripTotal == 0 {

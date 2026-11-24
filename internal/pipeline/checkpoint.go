@@ -121,6 +121,37 @@ func (c *Checkpoint) Mark(dir, stage, outputHash string) error {
 	return c.write(dir)
 }
 
+// SegmentHash returns the recorded output digest for one segment, if any.
+func (c *Checkpoint) SegmentHash(index int) (string, bool) {
+	h, ok := c.Hashes[segmentKey(index)]
+	return h, ok
+}
+
+// RecordSegment stores a verified segment digest before the next checkpoint
+// write, so a later run can prove a cached file is the one it produced.
+func (c *Checkpoint) RecordSegment(index int, digest string) {
+	if c.Hashes == nil {
+		c.Hashes = map[string]string{}
+	}
+	c.Hashes[segmentKey(index)] = digest
+}
+
+func segmentKey(index int) string { return "segment#" + itoa(index) }
+
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	var buf [20]byte
+	i := len(buf)
+	for n > 0 {
+		i--
+		buf[i] = byte('0' + n%10)
+		n /= 10
+	}
+	return string(buf[i:])
+}
+
 // IsDone reports whether the stage completed under the current config.
 func (c *Checkpoint) IsDone(stage string) bool {
 	for _, s := range c.Done {

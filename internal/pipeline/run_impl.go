@@ -177,6 +177,7 @@ func (r *Runner) writeSegment(plan *SegmentPlan, rep *syncer.Report, seg *proven
 	if err != nil {
 		return fault.Wrap(fault.StagePipeline, fault.KindIO, err, "hash segment")
 	}
+	r.cp.RecordSegment(plan.Index, sum)
 	*seg = provenance.Segment{
 		Index:        plan.Index,
 		Path:         filepath.ToSlash(filepath.Join(SegmentsDir, segmentName(plan.Index))),
@@ -212,21 +213,24 @@ func (r *Runner) loadOrRebuildSegment(plan *SegmentPlan, rep *syncer.Report, seg
 	if err != nil {
 		return fault.Wrap(fault.StagePipeline, fault.KindIO, err, "hash cached segment")
 	}
+	want, ok := r.cp.SegmentHash(plan.Index)
+	if !ok || want != sum {
+		// The file on disk is not the one this checkpoint produced (foreign,
+		// hand-edited, or from a run that did not record a digest). Rebuild it
+		// rather than trusting it.
+		return r.writeSegment(plan, rep, seg)
+	}
 	idxf, err := readIndexFile(r.dir, plan.Index)
 	if err != nil {
-		return err
+		return r.writeSegment(plan, rep, seg)
 	}
 	vr, err := index.Verify(segPath, idxf)
-	if err != nil {
-		return err
+	if err != nil || !vr.Verified() {
+		return r.writeSegment(plan, rep, seg)
 	}
 	sr, err := index.VerifySamples(segPath, idxf)
-	if err != nil {
-		return err
-	}
-	if !sr.Verified() {
-		return fault.New(fault.StageIndex, fault.KindIndex,
-			"cached segment %d failed sample verification: %v", plan.Index, sr.Misses)
+	if err != nil || !sr.Verified() {
+		return r.writeSegment(plan, rep, seg)
 	}
 	frames, audioBytes := audioStats(rep)
 	*seg = provenance.Segment{
