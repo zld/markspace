@@ -15,6 +15,7 @@ import (
 	"mediaaudit/internal/fixtures"
 	"mediaaudit/internal/model"
 	"mediaaudit/internal/pipeline"
+	"mediaaudit/internal/timecode"
 )
 
 // Exit codes are part of the contract.
@@ -143,6 +144,12 @@ func run(args []string, out, errw *os.File) int {
 	}
 	if c.timecodeMode == "" {
 		c.timecodeMode = manifest.TimecodeMode
+	}
+	// An unsupported mode is a parameter error, not a per-segment failure:
+	// refuse it before any work is done so the exit code is 1.
+	if _, ok := timecode.ModeByName(c.timecodeMode); !ok {
+		fmt.Fprintf(errw, "media-audit: unsupported -timecode-mode %q (want 24, 25, 29.97ndf, 29.97df or 50)\n", c.timecodeMode)
+		return exitFatal
 	}
 
 	interval, _ := model.ParseRat(c.interval)

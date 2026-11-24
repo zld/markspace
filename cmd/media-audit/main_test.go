@@ -88,3 +88,14 @@ func TestScenarioEnvRouting(t *testing.T) {
 		t.Fatalf("fallback not reported:\n%s", out)
 	}
 }
+
+func TestUnsupportedTimecodeModeIsFatal(t *testing.T) {
+	root := t.TempDir()
+	samples := filepath.Join(root, "samples")
+	if _, code := runCLI(t, "-generate", samples, "-out", filepath.Join(root, "gen")); code != exitOK {
+		t.Fatal("generation failed")
+	}
+	if _, code := runCLI(t, "-out", filepath.Join(root, "run"), "-samples", samples, "-timecode-mode", "bogus"); code != exitFatal {
+		t.Fatalf("exit=%d want 1", code)
+	}
+}
