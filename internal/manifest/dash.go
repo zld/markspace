@@ -91,8 +91,10 @@ func ParseDASH(data []byte) (*Manifest, *fault.Log) {
 }
 
 type timelineEntry struct {
-	d uint64
-	r int
+	d    uint64
+	r    int
+	n    uint64
+	hasN bool
 }
 
 func readTimelineEntry(se xml.StartElement) timelineEntry {
@@ -103,6 +105,9 @@ func readTimelineEntry(se xml.StartElement) timelineEntry {
 			e.d, _ = strconv.ParseUint(a.Value, 10, 64)
 		case "r":
 			e.r, _ = strconv.Atoi(a.Value)
+		case "n":
+			e.n, _ = strconv.ParseUint(a.Value, 10, 64)
+			e.hasN = true
 		}
 	}
 	return e
@@ -110,14 +115,23 @@ func readTimelineEntry(se xml.StartElement) timelineEntry {
 
 func expandTimeline(m *Manifest, p parser, tpl dashTemplate, entries []timelineEntry, repID string) {
 	var seqIndex uint64
+	// Without explicit n attributes the timeline starts at startNumber.
+	implicitN := tpl.startNumber
 	for _, e := range entries {
 		// Per DASH, r is the repeat count: the element appears r+1 times.
 		repeats := e.r + 1
+		// An explicit n anchors this element's first sequence number;
+		// absent n values continue the implicit timeline counter.
+		n := implicitN
+		if e.hasN {
+			n = e.n
+		}
 		for j := 0; j < repeats; j++ {
-			seq := tpl.startNumber + seqIndex
+			seq := n + uint64(j)
 			appendDASHSegment(m, p, tpl, seq, seqIndex, repID)
 			seqIndex++
 		}
+		implicitN = n + uint64(repeats)
 	}
 }
 
