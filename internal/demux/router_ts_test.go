@@ -3,6 +3,8 @@ package demux
 import (
 	"testing"
 
+	"medpipe/internal/clock"
+	"medpipe/internal/fault"
 	"medpipe/internal/samplegen"
 )
 
@@ -27,5 +29,30 @@ func TestDemuxCleanGeneratedTS(t *testing.T) {
 		if tr.Samples[1].PTSMS <= tr.Samples[0].PTSMS {
 			t.Fatalf("non-monotonic samples: %+v", tr.Samples[:2])
 		}
+	}
+}
+
+func TestPCRAndPTSWrapProduceLocatedEvents(t *testing.T) {
+	spec := samplegen.TSSpec{IncludePCR: true}
+	spec.Video = []samplegen.SampleSpec{
+		{PTS: clock.Mod33 - 3600, Data: []byte{0, 0, 1, 1, 0xaa}},
+		{PTS: 3600, Data: []byte{0, 0, 1, 2, 0xbb}},
+	}
+	m, events, err := DemuxTS(samplegen.BuildTS(spec))
+	if err != nil {
+		t.Fatal(err)
+	}
+	codes := map[fault.Code]bool{}
+	for _, e := range events {
+		codes[e.Code] = true
+		if (e.Code == fault.ErrPCRWrap || e.Code == fault.ErrPTSWrap) && e.PID == 0 {
+			t.Fatalf("wrap event missing PID: %+v", e)
+		}
+	}
+	if !codes[fault.ErrPCRWrap] || !codes[fault.ErrPTSWrap] {
+		t.Fatalf("missing wrap events: %+v", events)
+	}
+	if len(m.Tracks[0].Samples) != 2 || m.Tracks[0].Samples[1].PTSMS <= m.Tracks[0].Samples[0].PTSMS {
+		t.Fatalf("wrapped timestamps not monotonic: %+v", m.Tracks[0].Samples)
 	}
 }
