@@ -50,6 +50,9 @@ func TestCLIDemoRepeatTwoHashesEqual(t *testing.T) {
 	if !strings.Contains(out, "repeat  runs=2 identical=true") {
 		t.Fatalf("repeat verdict missing/incorrect:\n%s", out)
 	}
+	if !strings.Contains(out, "segment_hashes_match=true") {
+		t.Fatalf("segment hash match verdict missing:\n%s", out)
+	}
 	if !strings.Contains(out, "repeat=2 hashes_match=true") {
 		t.Fatalf("summary repeat match missing:\n%s", out)
 	}

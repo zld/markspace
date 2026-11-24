@@ -100,6 +100,7 @@ func runDemo(args []string, stdout, stderr io.Writer) int {
 	// Repeat runs each get an isolated subdirectory so neither a warm cache
 	// nor leftover artefacts can mask a determinism regression.
 	var hashes []string
+	var fingerprints []string
 	var last *mediacore.DemoReport
 	for i := 0; i < f.repeat; i++ {
 		dir := baseDir
@@ -124,15 +125,20 @@ func runDemo(args []string, stdout, stderr io.Writer) int {
 		}
 		last = report
 		hashes = append(hashes, report.SegmentSHA)
+		fingerprints = append(fingerprints, repeatFingerprint(report))
 		if report.ExitCode != 0 {
 			printSummary(stdout, report, f.repeat, hashes)
 			return report.ExitCode
 		}
 	}
 
-	identical := allEqual(hashes)
+	// Full repeat identity covers not just segment hashes but the per-track
+	// summaries/hashes and keyframe hit rate (requirement: repeat runs agree on
+	// track digest, hit rate and segment hash).
+	identical := allEqual(fingerprints)
+	hashesMatch := allEqual(hashes)
 	if f.repeat >= 2 {
-		fmt.Fprintf(stdout, "repeat  runs=%d identical=%t\n", f.repeat, identical)
+		fmt.Fprintf(stdout, "repeat  runs=%d identical=%t segment_hashes_match=%t\n", f.repeat, identical, hashesMatch)
 		for i, h := range hashes {
 			fmt.Fprintf(stdout, "  hash[%d]=%s\n", i, h)
 		}
@@ -197,6 +203,14 @@ func allEqual(xs []string) bool {
 		}
 	}
 	return true
+}
+
+// repeatFingerprint captures every value requirement #8 demands stay identical
+// across repeated runs: combined segment hash, keyframe hit rate and the
+// ordered per-track hashes.
+func repeatFingerprint(r *mediacore.DemoReport) string {
+	return fmt.Sprintf("seg=%s|kf=%.12f|tracks=%s",
+		r.SegmentSHA, r.KeyframeHitRate, strings.Join(r.TrackHashes, ","))
 }
 
 // classifiedExit maps a classified mediacore failure to a stable non-zero
