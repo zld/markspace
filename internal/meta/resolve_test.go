@@ -8,7 +8,7 @@ import (
 
 func mxfFixtureTrack() *TrackMeta {
 	return &TrackMeta{
-		TrackNo: 1, Kind: "video", Clock: clock.Rate{90000, 1}, Width: 1920, Height: 1080,
+		TrackNo: 1, Kind: "video", Clock: clock.Rate{Num: 90000, Den: 1}, Width: 1920, Height: 1080,
 		Rotation: 90, RotSrc: SourceMXF,
 		Crop:  Crop{X: 0, Y: 0, Width: 1280, Height: 720, Source: SourceMXF},
 		Color: Color{"bt2020", "smpte2084", "bt2020nc", SourceMXF},
@@ -17,7 +17,7 @@ func mxfFixtureTrack() *TrackMeta {
 
 func mp4FixtureTrack() *TrackMeta {
 	return &TrackMeta{
-		TrackNo: 1, Kind: "video", Clock: clock.Rate{90000, 1}, Width: 1920, Height: 1080,
+		TrackNo: 1, Kind: "video", Clock: clock.Rate{Num: 90000, Den: 1}, Width: 1920, Height: 1080,
 		Rotation: 270, RotSrc: SourceMP4,
 		Crop:  Crop{X: 8, Y: 8, Width: 100, Height: 100, Source: SourceMP4},
 		Color: Color{"bt709", "bt709", "bt709", SourceMP4},
@@ -70,9 +70,9 @@ func TestResolveMP4OnlyAndDefaults(t *testing.T) {
 	}
 
 	// Neither container authors crop/color: explicit defaults, no conflict.
-	bare := &TrackMeta{TrackNo: 7, Kind: "video", Clock: clock.Rate{90000, 1},
+	bare := &TrackMeta{TrackNo: 7, Kind: "video", Clock: clock.Rate{Num: 90000, Den: 1},
 		Width: 640, Height: 360}
-	out = Resolve(bare, &TrackMeta{TrackNo: 7, Clock: clock.Rate{90000, 1}, Width: 640, Height: 360})
+	out = Resolve(bare, &TrackMeta{TrackNo: 7, Clock: clock.Rate{Num: 90000, Den: 1}, Width: 640, Height: 360})
 	if out.Crop.Source != SourceDefault || out.Crop.Width != 640 || out.Crop.Height != 360 {
 		t.Fatalf("default crop wrong: %+v", out.Crop)
 	}
@@ -90,7 +90,7 @@ func TestResolveMP4OnlyAndDefaults(t *testing.T) {
 func TestResolveAllPairingAndErrors(t *testing.T) {
 	mxfRes := &Result{Tracks: []*TrackMeta{mxfFixtureTrack()}}
 	mp4Res := &Result{
-		Tracks: []*TrackMeta{mp4FixtureTrack(), {TrackNo: 9, Kind: "audio", Clock: clock.Rate{48000, 1}}},
+		Tracks: []*TrackMeta{mp4FixtureTrack(), {TrackNo: 9, Kind: "audio", Clock: clock.Rate{Num: 48000, Den: 1}}},
 	}
 	out := ResolveAll(mxfRes, mp4Res)
 	if len(out.Tracks) != 2 {
