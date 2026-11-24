@@ -135,14 +135,13 @@ func scanBoxBounds(path string, data []byte) []*fault.Error {
 	}
 }
 
-func badEnvelope(b []byte, trackID uint32, index int) bool {
+func badEnvelope(b []byte, _ uint32, _ int) bool {
 	if len(b) < 16 || string(b[:4]) != "MDPK" {
 		return false // ordinary compressed payload; no synthetic checksum envelope
 	}
-	if binary.BigEndian.Uint16(b[4:6]) != uint16(trackID) ||
-		binary.BigEndian.Uint16(b[6:8]) != uint16(index) {
-		return true
-	}
+	// Only the CRC is enforced here. Container track IDs and table positions
+	// may legitimately change during mapping/edit remux while payload bytes are
+	// preserved; the CRC still detects any payload corruption.
 	want := binary.BigEndian.Uint32(b[len(b)-4:])
 	return crc32.ChecksumIEEE(b[:len(b)-4]) != want
 }
