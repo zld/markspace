@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 
 	"mediaaudit/internal/checkpoint"
@@ -226,7 +227,10 @@ func Run(in Inputs) (Stats, error) {
 			return st, err
 		}
 		committedThisRun++
-		if in.InterruptAfter > 0 && committedThisRun >= in.InterruptAfter {
+		// Stop before declaring the batch complete: an interruption must
+		// only trigger while work remains, otherwise the run would report a
+		// finished batch as interrupted.
+		if in.InterruptAfter > 0 && committedThisRun >= in.InterruptAfter && i+1 < len(plans) {
 			st.CommittedChunks = store.Committed()
 			st.Manifest = store.Manifest()
 			return st, &InterruptedError{After: in.InterruptAfter}
@@ -527,13 +531,18 @@ func configDigest(in Inputs) string {
 			parts = append(parts, "mp4="+filepath.Base(in.MP4Path))
 		}
 	}
+	// Subtitles may arrive in any order; sort their descriptors so the
+	// configuration digest depends only on content, not on slice order.
+	subParts := make([]string, 0, len(in.Subtitles))
 	for _, s := range in.Subtitles {
 		if data, err := os.ReadFile(s.Path); err == nil {
-			parts = append(parts, "sub="+s.TrackID+":"+report.Hash(data))
+			subParts = append(subParts, "sub="+s.TrackID+":"+report.Hash(data))
 		} else {
-			parts = append(parts, "sub="+s.TrackID+":"+filepath.Base(s.Path))
+			subParts = append(subParts, "sub="+s.TrackID+":"+filepath.Base(s.Path))
 		}
 	}
+	sort.Strings(subParts)
+	parts = append(parts, subParts...)
 	if in.TimecodePath != "" {
 		if data, err := os.ReadFile(in.TimecodePath); err == nil {
 			parts = append(parts, "tc="+report.Hash(data))

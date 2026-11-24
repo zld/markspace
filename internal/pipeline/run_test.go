@@ -194,3 +194,59 @@ func TestVerifyOnlyRefusesMissingChunks(t *testing.T) {
 		t.Fatal("verify on an empty checkpoint must fail")
 	}
 }
+
+func TestInterruptBeyondLastChunkCompletes(t *testing.T) {
+	// Asking to stop after every chunk must not turn a finished batch into a
+	// reported interruption.
+	m, _ := setup(t, fixtures.ScenarioNormal)
+	in := inputs(t, m, t.TempDir())
+	in.InterruptAfter = 3 // exactly the chunk count
+	st, err := Run(in)
+	if err != nil {
+		t.Fatalf("finished batch reported as interrupted: %v", err)
+	}
+	if st.CommittedChunks != 3 || st.Metrics.SegmentHashMatch.Value() < 1.0 {
+		t.Fatalf("stats %+v", st)
+	}
+}
+
+func TestResumeNeverDecreasesCommittedChunks(t *testing.T) {
+	m, _ := setup(t, fixtures.ScenarioNormal)
+	out := t.TempDir()
+	in := inputs(t, m, out)
+	seen := 0
+	for i := 1; i <= 3; i++ {
+		in.InterruptAfter = i
+		st, err := Run(in)
+		var interrupted *InterruptedError
+		if err != nil && !errors.As(err, &interrupted) {
+			t.Fatal(err)
+		}
+		if st.CommittedChunks < seen {
+			t.Fatalf("committed dropped from %d to %d", seen, st.CommittedChunks)
+		}
+		seen = st.CommittedChunks
+	}
+	in.InterruptAfter = 0
+	st, err := Run(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.CommittedChunks != 3 || st.ReplayedChunks != 0 {
+		t.Fatalf("final committed=%d replayed=%d", st.CommittedChunks, st.ReplayedChunks)
+	}
+}
+
+func TestConfigDigestIgnoresSubtitleOrder(t *testing.T) {
+	m, _ := setup(t, fixtures.ScenarioNormal)
+	a := inputs(t, m, t.TempDir())
+	b := inputs(t, m, t.TempDir())
+	b.OutDir = a.OutDir
+	if len(b.Subtitles) < 2 {
+		t.Skip("fixture has a single subtitle track")
+	}
+	b.Subtitles[0], b.Subtitles[1] = b.Subtitles[1], b.Subtitles[0]
+	if configDigest(a) != configDigest(b) {
+		t.Fatal("subtitle slice order must not change the configuration digest")
+	}
+}
