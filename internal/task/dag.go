@@ -212,7 +212,7 @@ func (s *Scheduler) Run() *Report {
 	}
 	if s.ckpt != nil {
 		for name, st := range states {
-			s.ckpt.Nodes[name] = st
+			s.ckpt.Record(name, st)
 		}
 		_ = s.ckpt.Save()
 	}
@@ -221,16 +221,18 @@ func (s *Scheduler) Run() *Report {
 
 func (s *Scheduler) execOne(n *Node, key string, deps map[string]any, rep *Report) *NodeState {
 	attempts := 1
+	var prev *NodeState
 	if s.ckpt != nil {
-		if prev, ok := s.ckpt.Nodes[n.Name]; ok && prev.Key == key {
-			attempts = prev.Retries + 1
-			if prev.Status == "done" {
-				if res, err := n.Decode(prev.Result); err == nil {
-					rep.Results[n.Name] = res
-					rep.Reused++
-					st := *prev
-					return &st
-				}
+		prev = s.ckpt.Lookup(key)
+	}
+	if prev != nil {
+		attempts = prev.Retries + 1
+		if prev.Status == "done" {
+			if res, err := n.Decode(prev.Result); err == nil {
+				rep.Results[n.Name] = res
+				rep.Reused++
+				st := *prev
+				return &st
 			}
 		}
 	}

@@ -168,3 +168,67 @@ func TestCycleRejected(t *testing.T) {
 		t.Fatal("expected cycle error")
 	}
 }
+
+// TestRevertToEarlierInputReusesHistory proves that after an input change
+// and a later revert, the original key's result is reused from checkpoint
+// history rather than recomputed.
+func TestRevertToEarlierInputReusesHistory(t *testing.T) {
+	ckptPath := filepath.Join(t.TempDir(), "ckpt.json")
+	input := "v1"
+	runs := 0
+	build := func() *Scheduler {
+		ckpt, err := LoadCheckpoint(ckptPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		n := &Node{
+			Name: "a", Version: "v1", Input: []byte(input),
+			Run: func(map[string]any) (any, error) {
+				runs++
+				return input, nil
+			},
+			Decode: decodeString,
+		}
+		s, err := NewScheduler([]*Node{n}, ckpt)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+
+	build().Run() // v1, executes
+	input = "v2"
+	build().Run() // v2, executes
+	input = "v1"
+	rep := build().Run()
+	if rep.Reused != 1 {
+		t.Fatalf("reused = %d, want 1 after reverting to a seen input", rep.Reused)
+	}
+	if runs != 2 {
+		t.Fatalf("runs = %d, want 2 (v1 once, v2 once)", runs)
+	}
+	if got := rep.Results["a"].(string); got != "v1" {
+		t.Fatalf("result = %q, want v1", got)
+	}
+}
+
+// TestCheckpointHistoryPersistsAcrossReload ensures the history archive is
+// serialized and restored by Save/Load.
+func TestCheckpointHistoryPersistsAcrossReload(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ckpt.json")
+	c := &Checkpoint{Path: path}
+	c.Record("a", &NodeState{Key: "k1", Status: "done", Digest: "abc"})
+	if err := c.Save(); err != nil {
+		t.Fatal(err)
+	}
+	got, err := LoadCheckpoint(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st := got.Lookup("k1"); st == nil || st.Digest != "abc" {
+		t.Fatalf("history not restored: %+v", st)
+	}
+	if st := got.Nodes["a"]; st == nil || st.Key != "k1" {
+		t.Fatalf("latest node state not restored: %+v", st)
+	}
+}
