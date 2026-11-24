@@ -428,38 +428,11 @@ func (a *pesAssembler) events(tracks []Track) ([]metadata.Event, error) {
 					Data: s.Data, SourceOffset: s.Offset,
 				})
 			}
-		case tr.Kind == track.KindVideo && tr.Codec == "avc":
-			evs := annexBSEIEvents(tr)
-			out = append(out, evs...)
+		case tr.Kind == track.KindVideo && (tr.Codec == "avc" || tr.Codec == "avc1"):
+			out = append(out, annexBSEIEvents(tr)...)
 		}
 	}
 	return out, nil
-}
-
-// annexBSEIEvents finds user_data_unregistered SEI messages in Annex B video
-// samples.
-func annexBSEIEvents(tr *Track) []metadata.Event {
-	var out []metadata.Event
-	for si := range tr.Samples {
-		s := &tr.Samples[si]
-		for _, nal := range annexBNALUs(s.Data) {
-			if len(nal.data) == 0 || nal.data[0]&0x1f != 6 {
-				continue
-			}
-			for _, m := range seiMessages(nal.data[1:]) {
-				if m.typ != 5 {
-					continue
-				}
-				// TS samples are assembled from several packets, so the only
-				// exact source position is the start of the PES packet.
-				out = append(out, metadata.Event{
-					Kind: metadata.KindSEI, TrackID: tr.ID, Time: s.CTS, Data: m.payload,
-					SourceOffset: s.Offset,
-				})
-			}
-		}
-	}
-	return out
 }
 
 type annexBNAL struct {

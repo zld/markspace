@@ -8,6 +8,31 @@ import (
 	"mediapipeline/internal/track"
 )
 
+// annexBSEIEvents finds user_data_unregistered SEI messages in Annex B video
+// samples.  Source offsets point at the sample start because an Annex B sample
+// assembled from transport packets has no single contiguous source position.
+func annexBSEIEvents(tr *Track) []metadata.Event {
+	var out []metadata.Event
+	for si := range tr.Samples {
+		s := &tr.Samples[si]
+		for _, nal := range annexBNALUs(s.Data) {
+			if len(nal.data) == 0 || nal.data[0]&0x1f != 6 {
+				continue
+			}
+			for _, m := range seiMessages(nal.data[1:]) {
+				if m.typ != 5 {
+					continue
+				}
+				out = append(out, metadata.Event{
+					Kind: metadata.KindSEI, TrackID: tr.ID, Time: s.CTS, Data: m.payload,
+					SourceOffset: s.Offset,
+				})
+			}
+		}
+	}
+	return out
+}
+
 // deriveSampleEvents lifts timed metadata out of media samples: subtitles and
 // chapter text from subtitle tracks, ID3 tags from metadata tracks and
 // user_data_unregistered SEI messages from video samples.
@@ -87,7 +112,7 @@ func id3Size(p []byte) int {
 // length size.
 func seiEvents(tr *Track) ([]metadata.Event, error) {
 	if tr.NALLengthSize == 0 {
-		return nil, nil
+		return annexBSEIEvents(tr), nil
 	}
 	n := int(tr.NALLengthSize)
 	var out []metadata.Event

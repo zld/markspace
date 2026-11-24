@@ -24,15 +24,15 @@ func ParseMP4(data []byte, opts Options) (*Media, error) {
 			media.MajorBrand = string(f.MajorBrand[:])
 		}
 	}
+	moofs := findTops(top, "moof")
+	fragmented := len(moofs) > 0
 	if moov := findTop(top, "moov"); moov != nil {
-		tracks, err := parseMoov(moov)
+		tracks, err := parseMoov(moov, fragmented)
 		if err != nil {
 			return nil, err
 		}
 		media.Tracks = tracks
 	}
-	moofs := findTops(top, "moof")
-	fragmented := len(moofs) > 0
 	if fragmented && !opts.AllowMissingIndex && !hasIndex(top) {
 		return nil, fault.New(fault.StageDemux, "mp4", fault.OpIndexIncomplete, moofs[0].off,
 			"fragmented input has neither sidx nor mfra/tfra index")
@@ -100,10 +100,10 @@ func hasIndex(top []*rawBox) bool {
 	return mfra.find("tfra") != nil
 }
 
-func parseMoov(moov *rawBox) ([]Track, error) {
+func parseMoov(moov *rawBox, fragmented bool) ([]Track, error) {
 	var out []Track
 	for _, trak := range moov.findAll("trak") {
-		tr, err := parseTrak(trak)
+		tr, err := parseTrak(trak, fragmented)
 		if err != nil {
 			return nil, err
 		}
@@ -112,7 +112,7 @@ func parseMoov(moov *rawBox) ([]Track, error) {
 	return out, nil
 }
 
-func parseTrak(trak *rawBox) (Track, error) {
+func parseTrak(trak *rawBox, fragmented bool) (Track, error) {
 	tr := Track{}
 	tkhd := trak.path("tkhd")
 	if tkhd == nil {
@@ -195,8 +195,11 @@ func parseTrak(trak *rawBox) (Track, error) {
 		return tr, nil // fragmented: samples arrive via moof
 	}
 	if stbl.find("stco") == nil && stbl.find("co64") == nil {
-		return tr, fault.New(fault.StageDemux, "mp4", fault.OpIndexIncomplete, stbl.payloadOff(),
-			"stbl without chunk offset table")
+		if !fragmented {
+			return tr, fault.New(fault.StageDemux, "mp4", fault.OpIndexIncomplete, stbl.payloadOff(),
+				"stbl without chunk offset table")
+		}
+		return tr, nil
 	}
 	samples, err := parseSampleTable(stbl, tr.Timescale)
 	if err != nil {
@@ -256,7 +259,9 @@ func sampleEntryInfo(stsd *rawBox) (string, uint8, error) {
 	typ := string(r.b[r.pos+4 : r.pos+8])
 	var nal uint8
 	if typ == "avc1" || typ == "avc3" || typ == "encv" {
-		nal = 4
+		// Length-prefixed samples are only implied by an avcC box.  Without
+		// one the stream must be Annex B, and 0 tells the event extractor to
+		// use start codes instead of a length prefix.
 		for _, c := range stsd.children {
 			if c.typ == "avcC" {
 				if n, ok := avcNALLength(c); ok {
