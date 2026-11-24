@@ -1,0 +1,7 @@
+# Local demo and verification output
+/tmp/
+
+# Go and editor artifacts
+*.test
+*.out
+.DS_Store
