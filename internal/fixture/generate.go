@@ -8,6 +8,7 @@ package fixture
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"math/rand"
 
@@ -156,13 +157,28 @@ func GenerateAudio(s Spec) ([]byte, Meta, error) {
 		pktStart := int64(buf.Len())
 		meta.Offsets[it.idx] = pktStart
 		if off, ok := s.Corrupt[it.idx]; ok {
-			meta.CorruptOffsets[it.idx] = pktStart + 2 + int64(frameOff) + int64(off)
+			// Flip the requested frame-payload byte before writing so the
+			// per-block CRC fails; record its absolute stream offset.
+			target := frameOff + off
+			if target < 0 || target >= len(raw) {
+				return nil, Meta{}, fmt.Errorf("fixture: corrupt offset %d outside packet of %d bytes", off, len(raw))
+			}
+			raw[target] ^= 0xFF
+			meta.CorruptOffsets[it.idx] = pktStart + 2 + int64(target)
 		}
-		if err := mediartp.WriteStreamPacket(&buf, it.pkt); err != nil {
+		var lenBuf [2]byte
+		binary.BigEndian.PutUint16(lenBuf[:], uint16(len(raw)))
+		if _, err := buf.Write(lenBuf[:]); err != nil {
+			return nil, Meta{}, err
+		}
+		if _, err := buf.Write(raw); err != nil {
 			return nil, Meta{}, err
 		}
 		if s.Duplicate[it.idx] {
-			if err := mediartp.WriteStreamPacket(&buf, it.pkt); err != nil {
+			if _, err := buf.Write(lenBuf[:]); err != nil {
+				return nil, Meta{}, err
+			}
+			if _, err := buf.Write(raw); err != nil {
 				return nil, Meta{}, err
 			}
 			meta.Duplicates++

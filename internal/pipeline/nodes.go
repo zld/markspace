@@ -62,16 +62,26 @@ func (e *Engine) runParse(name string) error {
 	}
 	spec := fixture.Spec{Seed: e.cfg.Seed, Packets: demoPackets,
 		SampleRate: fixture.OpusRate, StartSeq: 100}
-	raw, _, err := fixture.GenerateAudio(spec)
+	if e.cfg.AudioSpec != nil {
+		spec = *e.cfg.AudioSpec
+		if spec.SampleRate == 0 {
+			spec.SampleRate = fixture.OpusRate
+		}
+		if spec.Packets == 0 {
+			spec.Packets = demoPackets
+		}
+	}
+	raw, genMeta, err := fixture.GenerateAudio(spec)
 	if err != nil {
 		return mpierr.New(mpierr.CatUnknown, 0, name, "fixture generation failed").Wrap(err)
 	}
+	e.genMeta = genMeta
 	rd := mediartp.NewReader(bytes.NewReader(raw), fixture.OpusRate)
 	var frames []*mediartp.Frame
 	for {
 		f, rerr := rd.Read()
 		if rerr != nil {
-			if rerr.Error() == "EOF" || isEOF(rerr) {
+			if isEOF(rerr) {
 				break
 			}
 			return rerr
@@ -270,19 +280,7 @@ func (e *Engine) runMux(name string) error {
 	if err := e.failIfInterrupted(name); err != nil {
 		return err
 	}
-	var aa audioArtifact
-	if err := readGob(e.artifactPath(NodeRecover), &aa); err != nil {
-		return mpierr.New(mpierr.CatCheckpoint, 0, name, "missing audio artifact").Wrap(err)
-	}
-	var va videoArtifact
-	if err := readGob(e.artifactPath(NodeSync), &va); err != nil {
-		return mpierr.New(mpierr.CatCheckpoint, 0, name, "missing video artifact").Wrap(err)
-	}
-	audio := &output.Track{Kind: clock.KindAudio, TickRate: uint32(clock.DefaultTickRateHz),
-		Timescale: uint32(clock.DefaultTickRateHz), Samples: aa.Samples}
-	video := &output.Track{Kind: clock.KindVideo, TickRate: uint32(clock.DefaultTickRateHz),
-		Timescale: uint32(fixture.VideoRate), Samples: va.Samples}
-	sum, err := output.Write(e.cfg.OutPath, audio, video)
+	sum, err := e.materializeMux()
 	if err != nil {
 		return err
 	}
@@ -293,4 +291,34 @@ func (e *Engine) runMux(name string) error {
 		OutputDigest: sum.SHA256, CheckpointState: "running",
 	})
 	return e.markDone(name, e.inputDigestOf(NodeRecover), e.configKey())
+}
+
+// rebuildMux rewrites the output from durable artifacts without touching the
+// checkpoint, used when the mux node is reused but no file exists yet.
+func (e *Engine) rebuildMux() error {
+	sum, err := e.materializeMux()
+	if err != nil {
+		return err
+	}
+	e.outputDigest = sum.SHA256
+	return nil
+}
+
+// materializeMux renders both tracks from the recover/sync artifacts.
+func (e *Engine) materializeMux() (output.Summary, error) {
+	var aa audioArtifact
+	if err := readGob(e.artifactPath(NodeRecover), &aa); err != nil {
+		return output.Summary{}, mpierr.New(mpierr.CatCheckpoint, 0, NodeMux,
+			"missing audio artifact").Wrap(err)
+	}
+	var va videoArtifact
+	if err := readGob(e.artifactPath(NodeSync), &va); err != nil {
+		return output.Summary{}, mpierr.New(mpierr.CatCheckpoint, 0, NodeMux,
+			"missing video artifact").Wrap(err)
+	}
+	audio := &output.Track{Kind: clock.KindAudio, TickRate: uint32(clock.DefaultTickRateHz),
+		Timescale: uint32(clock.DefaultTickRateHz), Samples: aa.Samples}
+	video := &output.Track{Kind: clock.KindVideo, TickRate: uint32(clock.DefaultTickRateHz),
+		Timescale: uint32(fixture.VideoRate), Samples: va.Samples}
+	return output.Write(e.cfg.OutPath, audio, video)
 }

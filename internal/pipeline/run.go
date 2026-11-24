@@ -55,9 +55,19 @@ func (e *Engine) Run() Report {
 	rep.BlockedDependency = srep.Blocked
 	rep.SyncOffsetTicks = e.syncOffset
 
-	// When the mux node was reused (or rebuilt from durable artifacts), the
-	// in-memory digest is empty; recompute it from the existing output so a
-	// resumed process reports the same checksum as the original.
+	// When the mux node was reused its body never ran, so no output was
+	// written in this process. Rebuild it from durable artifacts, keeping the
+	// node logically reused (its checkpoint is unchanged) while guaranteeing
+	// the requested output path always exists and the digest is populated.
+	muxReused := contains(rep.ReusedNodes, NodeMux)
+	if muxReused && e.outputDigest == "" {
+		if err := e.rebuildMux(); err != nil {
+			rep.FirstError = asMedia(err, NodeMux)
+			return rep
+		}
+	}
+	// Otherwise fall back to hashing an already-written output (e.g. when the
+	// digest was not retained for another reason).
 	if e.outputDigest == "" {
 		e.outputDigest = hashIfExists(e.cfg.OutPath)
 	}
@@ -76,6 +86,25 @@ func (e *Engine) Run() Report {
 	rep.ProvenanceDigest = digest
 	rep.Summary = e.outputDigest
 	return rep
+}
+
+// contains reports whether s includes v.
+func contains(s []string, v string) bool {
+	for _, x := range s {
+		if x == v {
+			return true
+		}
+	}
+	return false
+}
+
+// asMedia coerces an error into the structured media error type.
+func asMedia(err error, node string) *mpierr.MediaError {
+	var me *mpierr.MediaError
+	if errors.As(err, &me) {
+		return me
+	}
+	return mpierr.New(mpierr.CatUnknown, 0, node, err.Error())
 }
 
 // hashIfExists returns the SHA-256 of path, or "" when it does not exist.

@@ -16,6 +16,7 @@ import (
 	"mediapipeline/internal/checkpoint"
 	"mediapipeline/internal/dag"
 	mpierr "mediapipeline/internal/errors"
+	"mediapipeline/internal/fixture"
 	"mediapipeline/internal/provenance"
 )
 
@@ -49,6 +50,9 @@ type Config struct {
 	FailNodeOnce string
 	// StrictRecovery makes any gap fatal instead of recovered.
 	StrictRecovery bool
+	// AudioSpec optionally injects fixture faults (truncation, corruption,
+	// rollover, late packets). When nil a clean stream is generated.
+	AudioSpec *fixture.Spec
 }
 
 // Report is the verifiable result of a run.
@@ -75,7 +79,11 @@ type Engine struct {
 	// Runtime results, populated as nodes complete (also reloaded on resume).
 	syncOffset   int64
 	outputDigest string
+	genMeta      fixture.Meta
 }
+
+// GenMeta returns the audio fixture generation metadata (fault offsets etc.).
+func (e *Engine) GenMeta() fixture.Meta { return e.genMeta }
 
 // NewEngine builds and validates an engine and its DAG.
 func NewEngine(cfg Config) (*Engine, error) {
