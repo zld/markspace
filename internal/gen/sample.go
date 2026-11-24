@@ -17,15 +17,15 @@ import (
 // Params controls sample generation.
 type Params struct {
 	Seed          int64
-	DurationMs    int // stream duration (default 6000)
-	FPS           int // frames per second (default 30)
-	Kbps          int // target bitrate
-	IDREveryMs    int // keyframe interval (default 2000)
-	LossEvery     int // drop every Nth media packet; 0 disables
-	ReorderWindow int // shuffle chunk size; 0 disables
-	DupEvery      int // duplicate every Nth media packet; 0 disables
-	Truncate      bool// drop the last FU-A fragment of one IDR frame
-	NoRTCP        bool// omit all sender reports (no clock anchor)
+	DurationMs    int  // stream duration (default 6000)
+	FPS           int  // frames per second (default 30)
+	Kbps          int  // target bitrate
+	IDREveryMs    int  // keyframe interval (default 2000)
+	LossEvery     int  // drop every Nth media packet; 0 disables
+	ReorderWindow int  // shuffle chunk size; 0 disables
+	DupEvery      int  // duplicate every Nth media packet; 0 disables
+	Truncate      bool // drop the last FU-A fragment of one IDR frame
+	NoRTCP        bool // omit all sender reports (no clock anchor)
 }
 
 // Sample is a generated packet stream plus its input digest.
