@@ -1,0 +1,5 @@
+# build and run artifacts
+/tmp/
+.tmp/
+*.test
+*.out
