@@ -218,3 +218,22 @@ func TestCttsShortTablePadsWithZero(t *testing.T) {
 		}
 	}
 }
+
+func TestCttsVersion1NegativeOffsets(t *testing.T) {
+	// A negative composition offset pulls presentation earlier than decode.
+	// Version 0 would read it as ~4.29e9 ticks; version 1 must stay signed.
+	s := spec()
+	s.Ctts = []int64{-3000, 0, 0, 0, 0, 0}
+	ix, err := parseSpec(t, s, Options{FallbackScan: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	samples := ix.Samples(1)
+	want := samples[0].DecodeTime.Sub(model.MustRat(1, 10))
+	if !samples[0].PresentTime.Equal(want) {
+		t.Fatalf("pts %s want %s", samples[0].PresentTime, want)
+	}
+	if samples[0].PresentTime.Cmp(samples[0].DecodeTime) >= 0 {
+		t.Fatal("negative offset must move presentation earlier")
+	}
+}

@@ -264,21 +264,33 @@ func buildStts(spec MP4Spec) []byte {
 }
 
 func buildCtts(spec MP4Spec) []byte {
-	type run struct{ count, off uint32 }
+	// Negative composition offsets require ctts version 1; version 0 treats
+	// the field as unsigned and would silently wrap.
+	version := byte(0)
+	for _, o := range spec.Ctts {
+		if o < 0 {
+			version = 1
+			break
+		}
+	}
+	type run struct {
+		count uint32
+		off   int64
+	}
 	var runs []run
 	for _, o := range spec.Ctts {
-		if n := len(runs); n > 0 && runs[n-1].off == uint32(o) {
+		if n := len(runs); n > 0 && runs[n-1].off == o {
 			runs[n-1].count++
 			continue
 		}
-		runs = append(runs, run{1, uint32(o)})
+		runs = append(runs, run{1, o})
 	}
 	p := be32(uint32(len(runs)))
 	for _, r := range runs {
 		p = append(p, be32(r.count)...)
-		p = append(p, be32(r.off)...)
+		p = append(p, be32(uint32(int32(r.off)))...)
 	}
-	return fullBox("ctts", 0, 0, p)
+	return fullBox("ctts", version, 0, p)
 }
 
 func buildStsc(spec MP4Spec) []byte {
