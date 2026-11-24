@@ -113,8 +113,12 @@ func runDemo(args []string) error {
 
 	// Injected input damage was located and recovered from: exit 2. Metadata
 	// or alignment failures propagate as 3, a refused checkpoint as 4.
+	kind := fault.KindLoss
+	if res.corruptions > 0 {
+		kind = fault.KindTruncated
+	}
 	if res.corruptions > 0 || res.lossPackets > 0 {
-		return &fault.Fault{Kind: fault.KindLoss, Offset: res.damageOffset,
+		return &fault.Fault{Kind: kind, Offset: res.damageOffset,
 			Recovery: fault.RecoverResync, Severity: fault.SeverityDamaged,
 			Detail: "input contained located damage; output recovered"}
 	}
