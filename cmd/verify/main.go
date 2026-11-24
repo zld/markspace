@@ -62,9 +62,10 @@ func run() error {
 	}
 
 	// Also exercise the AAC duration parser in the terminal acceptance path.
-	aacInfo, err := codec.ParseAAC(codec.BuildADTSFrame(3, 2, 0, 32))
-	if err != nil {
-		return fmt.Errorf("parse AAC sample: %w", err)
+	// Use a fresh concrete error variable to avoid a typed-nil interface trap.
+	aacInfo, aacErr := codec.ParseAAC(codec.BuildADTSFrame(3, 2, 0, 32))
+	if aacErr != nil {
+		return fmt.Errorf("parse AAC sample: %w", aacErr)
 	}
 	if aacInfo.Samples != 1024 || aacInfo.SampleRateHz != 48000 {
 		return fmt.Errorf("AAC self-check returned %+v", aacInfo)
