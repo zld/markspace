@@ -33,11 +33,11 @@ type Spec struct {
 type Corruption string
 
 const (
-	None           Corruption = ""
-	Truncated      Corruption = "truncated"
-	HashMismatch   Corruption = "hash_mismatch"
-	TimestampBack  Corruption = "timestamp_back"
-	UnknownColor   Corruption = "unknown_color"
+	None          Corruption = ""
+	Truncated     Corruption = "truncated"
+	HashMismatch  Corruption = "hash_mismatch"
+	TimestampBack Corruption = "timestamp_back"
+	UnknownColor  Corruption = "unknown_color"
 )
 
 // ManifestDTO types mirror the manifest package's on-disk schema.
@@ -72,9 +72,9 @@ type fileDTO struct {
 
 // Audio is the generated PCM plus its parameters, handed to audio stages.
 type Audio struct {
-	PCM        []float64
-	Rate       int64
-	Channels   int
+	PCM         []float64
+	Rate        int64
+	Channels    int
 	SampleCount int
 }
 
@@ -146,30 +146,40 @@ func Build(dir string, spec Spec) (*Generated, error) {
 		}
 		vid.Frames = append(vid.Frames, frameDTO{
 			Index: i, Name: name, Length: int64(len(payload)), SHA256: declared,
-			TimeUnits: int64(i) * 3000 + jitter, TimeRate: 90000,
+			TimeUnits: int64(i)*3000 + jitter, TimeRate: 90000,
 			Color:        model.ColorMeta{Label: label, Source: "fixture"},
 			Seq:          uint16(i),
 			RTPTimestamp: uint32(i * 3000),
 		})
 	}
 
-	// Audio: one second per frame count fraction, deterministic sine plus
-	// occasional silence so loudness windows exercise both paths.
-	samples := spec.Frames // 1 audio sample per video frame keeps the demo small
+	// Audio: a fixed two-second, deterministic 440 Hz tone split into 10 ms
+	// chunks. Two full seconds guarantee at least two loudness windows, and
+	// the tone never goes fully silent (only dips in amplitude) so the silence
+	// branch is exercised separately by the audio package's own tests.
+	const audioSeconds = 2
+	const chunkMS = 10
+	samples := int(spec.AudioRate) * audioSeconds
+	chunkSamples := int(spec.AudioRate / 100) // 10 ms chunks
 	aud := trackDTO{ID: "aud-1", Kind: model.KindAudio, SampleRate: spec.AudioRate,
 		Channels: spec.Channels, Layout: layoutName(spec.Channels), LoudnessLUFS: -23}
 	pcm := make([]float64, samples*spec.Channels)
 	for n := 0; n < samples; n++ {
 		v := 0.4 * sine(n, spec.AudioRate)
-		if n%29 == 0 {
-			v = 0 // periodic silent instants, not full windows
+		if n%int(spec.AudioRate) == 0 {
+			v *= 0.25 // amplitude dip, not silence, at each second boundary
 		}
 		for c := 0; c < spec.Channels; c++ {
 			pcm[n*spec.Channels+c] = v * (1 - 0.05*float64(c))
 		}
 	}
-	for i := 0; i < samples; i++ {
-		chunk := pcm[i*spec.Channels : (i+1)*spec.Channels]
+	for i := 0; i*chunkSamples < samples; i++ {
+		start := i * chunkSamples
+		end := start + chunkSamples
+		if end > samples {
+			end = samples
+		}
+		chunk := pcm[start*spec.Channels : end*spec.Channels]
 		raw := floatBytes(chunk)
 		sum := sha256.Sum256(raw)
 		name := fmt.Sprintf("a%05d.raw", i)
@@ -179,8 +189,8 @@ func Build(dir string, spec Spec) (*Generated, error) {
 		aud.Frames = append(aud.Frames, frameDTO{
 			Index: i, Name: name,
 			Length: int64(len(raw)), SHA256: hex.EncodeToString(sum[:]),
-			TimeUnits: int64(i) * spec.AudioRate / 30, TimeRate: spec.AudioRate,
-			Seq: uint16(i), RTPTimestamp: uint32(int64(i) * spec.AudioRate / 30),
+			TimeUnits: int64(start), TimeRate: spec.AudioRate,
+			Seq: uint16(i), RTPTimestamp: uint32(start),
 		})
 	}
 
