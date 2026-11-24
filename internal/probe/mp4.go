@@ -57,9 +57,22 @@ func walkBoxes(data []byte, faults *fault.List) []rawBox {
 				return
 			}
 			if off+size > end {
-				// The declared box runs past the available bytes. Record what
-				// was actually present and stop descending.
-				faults.Add(fault.New(fault.TruncatedBox, off, "box %s declares %d bytes but only %d remain", typ, size, end-off).
+				// A box that claims absurdly more than the file could ever
+				// hold (for example because its 32-bit size field was
+				// rewritten) is an invalid length. A box that merely runs past
+				// the remaining bytes is a truncation. The remux-able media is
+				// the same either way; the codes let a report tell an operator
+				// whether to look for a shortened file or a corrupted header.
+				// A declared size far beyond any plausible file (>= 1 MiB
+				// past a file that is itself below that) is a corrupted
+				// length field rather than a shortened file. Genuine
+				// truncation overshoots by the cut amount, not by orders of
+				// magnitude.
+				code := fault.TruncatedBox
+				if size > uint64(len(data)) && size >= 1<<20 {
+					code = fault.InvalidLength
+				}
+				faults.Add(fault.New(code, off, "box %s declares %d bytes but only %d remain", typ, size, end-off).
 					WithRecoverable(true))
 				out = append(out, rawBox{Type: typ, Offset: off, Size: end - off, Header: header, Depth: depth})
 				return
@@ -433,6 +446,14 @@ func probeSampleTable(data []byte, boxes []rawBox, stbl rawBox, t *model.Track, 
 	}
 
 	frags, err := buildSampleFragments(stts, stsz, stsc, offsets, syncSet, t)
+	// A positive edit media time shifts presentation: the sample table itself
+	// always starts at decode time zero, so the explicit timeline must add
+	// the offset back to reproduce the absolute start.
+	if err == nil && t.EditMediaTime > 0 {
+		for i := range frags {
+			frags[i].StartTick += uint64(t.EditMediaTime)
+		}
+	}
 	if err != nil {
 		index.Present = true
 		index.Complete = false

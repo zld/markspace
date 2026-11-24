@@ -177,6 +177,16 @@ func DescribeFaults(l fault.List) []string {
 	return lines
 }
 
+// LogicalOf returns the logical name of a probed track key.
+func (f *File) LogicalOf(key string) string {
+	for _, t := range f.Tracks {
+		if t.Key == key {
+			return t.Logical
+		}
+	}
+	return key
+}
+
 // String is a compact human summary used in tests and logs.
 func (f *File) String() string {
 	var b strings.Builder

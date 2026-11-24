@@ -93,6 +93,7 @@ type Segment struct {
 // TrackTimeline is the explicit timeline for one track.
 type TrackTimeline struct {
 	Key             string       `json:"key"`
+	Logical         string       `json:"logical"`
 	Container       string       `json:"container"`
 	TrackID         uint32       `json:"track_id"`
 	Timebase        Timebase     `json:"timebase"`

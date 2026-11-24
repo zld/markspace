@@ -81,12 +81,17 @@ func readKLV(data []byte, off uint64, faults *fault.List) (*klv, uint64, error) 
 	}
 	valueOff := off + 16 + n
 	if valueOff+length > uint64(len(data)) {
-		// A declared length beyond the available bytes is exactly the
-		// signature of a truncated file or an inflated length field.
-		faults.Add(fault.New(fault.TruncatedBox, off,
+		// A length larger than the whole file is an invalid length field; one
+		// that merely runs past the end of a shorter file is a truncation.
+		// Both leave the remaining bytes to the recovery scanner.
+		code := fault.TruncatedBox
+		if length > uint64(len(data)) {
+			code = fault.InvalidLength
+		}
+		faults.Add(fault.New(code, off,
 			"KLV %x declares %d bytes, only %d remain", key[:4], length, uint64(len(data))-valueOff).
-			WithRecoverable(true).WithRange(0, 0))
-		return &klv{Key: key, Length: length, Offset: off, Value: data[valueOff:]}, uint64(len(data)), fmt.Errorf("klv truncated")
+			WithRecoverable(true))
+		return &klv{Key: key, Length: length, Offset: off, Value: data[valueOff:]}, uint64(len(data)), fmt.Errorf("klv out of range")
 	}
 	return &klv{Key: key, Length: length, Offset: off, Value: data[valueOff : valueOff+length]}, valueOff + length, nil
 }

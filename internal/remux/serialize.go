@@ -135,15 +135,50 @@ func writeTrak(w *mp4.Writer, t *TrackSource, tr *TrackResult, mediaBase uint64)
 	if _, err := w.EndBox(); err != nil {
 		return err
 	}
+	// A nonzero first sample time is expressed as a media-time offset so the
+	// absolute start survives the remux.
+	if t.trFirstStart(tr) > 0 {
+		if _, err := w.StartBox(&mp4.BoxInfo{Type: mp4.BoxTypeEdts()}); err != nil {
+			return err
+		}
+		if _, err := w.StartBox(&mp4.BoxInfo{Type: mp4.BoxTypeElst()}); err != nil {
+			return err
+		}
+		segDuration := uint64(0)
+		if t.Timebase.Timescale > 0 {
+			segDuration = uint64((tr.EndNS - tr.StartNS) / 1_000_000)
+			if segDuration == 0 {
+				segDuration = 1
+			}
+		}
+		elst := &mp4.Elst{EntryCount: 1, Entries: []mp4.ElstEntry{{
+			SegmentDurationV0: uint32(segDuration),
+			MediaTimeV0:       int32(t.trFirstStart(tr)),
+			MediaRateInteger:  1,
+		}}}
+		if _, err := mp4.Marshal(w, elst, mp4.Context{}); err != nil {
+			return err
+		}
+		if _, err := w.EndBox(); err != nil {
+			return err
+		}
+		if _, err := w.EndBox(); err != nil {
+			return err
+		}
+	}
 	if _, err := w.StartBox(&mp4.BoxInfo{Type: mp4.BoxTypeMdia()}); err != nil {
 		return err
 	}
 	if _, err := w.StartBox(&mp4.BoxInfo{Type: mp4.BoxTypeMdhd()}); err != nil {
 		return err
 	}
-	duration := uint64(0)
-	for _, cf := range tr.Committed {
-		duration += cf.Duration
+	// Media duration covers the full committed span, including any gap that
+	// unrecoverable frames left behind.
+	firstStart := tr.Committed[0].StartTick
+	last := tr.Committed[len(tr.Committed)-1]
+	duration := last.StartTick + last.Duration - firstStart
+	if duration == 0 {
+		duration = last.Duration
 	}
 	mdhd := &mp4.Mdhd{
 		Timescale:  t.Timebase.Timescale,
@@ -246,7 +281,11 @@ func writeStbl(w *mp4.Writer, t *TrackSource, tr *TrackResult) error {
 	if err := writeStsd(w, t); err != nil {
 		return err
 	}
-	// stts: one entry per distinct duration run (usually one).
+	// stts encodes each sample's advance on the track clock. When recovery
+	// had to skip unrecoverable frames, the gap between the surviving
+	// neighbours is folded into the preceding sample's delta so the output
+	// preserves the original absolute timing of every later frame instead of
+	// sliding them earlier. The last sample keeps its declared duration.
 	if _, err := w.StartBox(&mp4.BoxInfo{Type: mp4.BoxTypeStts()}); err != nil {
 		return err
 	}
@@ -255,11 +294,18 @@ func writeStbl(w *mp4.Writer, t *TrackSource, tr *TrackResult) error {
 		count uint32
 	}
 	var runs []run
-	for _, cf := range tr.Committed {
-		if len(runs) > 0 && runs[len(runs)-1].dur == cf.Duration {
+	for i, cf := range tr.Committed {
+		delta := cf.Duration
+		if i+1 < len(tr.Committed) {
+			next := tr.Committed[i+1]
+			if next.StartTick > cf.StartTick {
+				delta = next.StartTick - cf.StartTick
+			}
+		}
+		if len(runs) > 0 && runs[len(runs)-1].dur == delta {
 			runs[len(runs)-1].count++
 		} else {
-			runs = append(runs, run{dur: cf.Duration, count: 1})
+			runs = append(runs, run{dur: delta, count: 1})
 		}
 	}
 	stts := &mp4.Stts{EntryCount: uint32(len(runs))}
@@ -467,4 +513,12 @@ func rotationMatrix(deg int) [9]int32 {
 	default:
 		return [9]int32{one, 0, 0, 0, one, 0, 0, 0, 0x40000000}
 	}
+}
+
+// trFirstStart returns the track-clock start of the first committed fragment.
+func (t *TrackSource) trFirstStart(tr *TrackResult) uint64 {
+	if len(tr.Committed) == 0 {
+		return 0
+	}
+	return tr.Committed[0].StartTick
 }
