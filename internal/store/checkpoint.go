@@ -17,15 +17,16 @@ import (
 
 // StageState is the persisted outcome of one scheduled stage.
 type StageState struct {
-	StageID    string `json:"stage_id"`
-	Status     string `json:"status"` // "done"
-	CacheKey   string `json:"cache_key"`
-	InputKey   string `json:"input_key"`
-	ParamsHash string `json:"params_hash"`
-	Version    string `json:"version"`
-	Digest     string `json:"digest"` // stage output summary, feeds dependents
-	StartedAt  string `json:"started_at"`
-	EndedAt    string `json:"ended_at"`
+	StageID    string             `json:"stage_id"`
+	Status     string             `json:"status"` // "done"
+	CacheKey   string             `json:"cache_key"`
+	InputKey   string             `json:"input_key"`
+	ParamsHash string             `json:"params_hash"`
+	Version    string             `json:"version"`
+	Digest     string             `json:"digest"` // stage output summary, feeds dependents
+	Metrics    map[string]float64 `json:"metrics,omitempty"`
+	StartedAt  string             `json:"started_at"`
+	EndedAt    string             `json:"ended_at"`
 }
 
 // Checkpoint is the full resumable state of one pipeline run.
