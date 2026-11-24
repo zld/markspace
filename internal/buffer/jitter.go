@@ -86,6 +86,16 @@ func New(cfg Config) (*JitterBuffer, error) {
 	return &JitterBuffer{cfg: cfg, pending: make(map[int64]Entry)}, nil
 }
 
+// WouldBeLate reports whether an entry would be rejected as late without
+// mutating any buffer state. It lets the caller rewind deterministically
+// before committing to the event.
+func (b *JitterBuffer) WouldBeLate(e Entry) bool {
+	if b.arrInit && e.Arrival < b.maxArr-b.cfg.LateWindow {
+		return true
+	}
+	return false
+}
+
 // Push offers an entry. For Released it returns every entry that is now ready
 // in ascending extended sequence order; for Late it returns the late event and
 // leaves the buffer untouched.
@@ -118,48 +128,67 @@ func (b *JitterBuffer) Push(e Entry) (Status, []Entry, *LateEvent) {
 	return Buffered, b.drain(), nil
 }
 
-// drain releases entries whose gap window has expired, plus any contiguous
-// run starting at the earliest buffered sequence.
+// drain releases entries that can no longer be reordered. Any entry more than
+// ReorderWindow packets behind the highest observed sequence is forced out;
+// after that the contiguous run beginning at the release boundary is emitted.
+// An unfilled hole therefore waits for its lookahead budget before it is
+// treated as loss.
 func (b *JitterBuffer) drain() []Entry {
 	if len(b.pending) == 0 {
 		return nil
 	}
+	limit := b.highExt - int64(b.cfg.ReorderWindow)
 	keys := make([]int64, 0, len(b.pending))
 	for k := range b.pending {
 		keys = append(keys, k)
 	}
 	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
 
-	// Release everything up to (highExt - ReorderWindow), plus any prefix of
-	// contiguous sequences from the earliest pending entry.
-	limit := b.highExt - int64(b.cfg.ReorderWindow)
 	var out []Entry
 	for _, k := range keys {
-		if k <= limit {
-			out = append(out, b.pending[k])
-			delete(b.pending, k)
-		}
-	}
-	// Then release the contiguous prefix of what remains.
-	keys = keys[:0]
-	for k := range b.pending {
-		keys = append(keys, k)
-	}
-	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
-	var prev int64
-	for i, k := range keys {
-		if i > 0 && k != prev+1 {
+		if k > limit {
 			break
 		}
 		out = append(out, b.pending[k])
 		delete(b.pending, k)
-		prev = k
 	}
+	next := int64(-1)
 	if len(out) > 0 {
-		b.released = out[len(out)-1].Ext
-		b.relInit = true
-		sort.Slice(out, func(i, j int) bool { return out[i].Ext < out[j].Ext })
+		next = out[len(out)-1].Ext + 1
+	} else if b.relInit {
+		next = b.released + 1
+	} else {
+		for k := range b.pending {
+			if next == -1 || k < next {
+				next = k
+			}
+		}
 	}
+	for next != -1 {
+		e, ok := b.pending[next]
+		if !ok {
+			break
+		}
+		out = append(out, e)
+		delete(b.pending, next)
+		next++
+	}
+	return b.finish(out)
+}
+
+func (b *JitterBuffer) finish(out []Entry) []Entry {
+	if len(out) == 0 {
+		return nil
+	}
+	maxExt := out[0].Ext
+	for _, e := range out[1:] {
+		if e.Ext > maxExt {
+			maxExt = e.Ext
+		}
+	}
+	b.released = maxExt
+	b.relInit = true
+	sort.Slice(out, func(i, j int) bool { return out[i].Ext < out[j].Ext })
 	return out
 }
 
@@ -184,4 +213,41 @@ func (b *JitterBuffer) Len() int { return len(b.pending) }
 // Stats reports the released boundary for checkpointing.
 func (b *JitterBuffer) Stats() (released int64, ok bool, high int64, maxArr model.Nanos) {
 	return b.released, b.relInit, b.highExt, b.maxArr
+}
+
+// Snapshot serializes the buffer's ordering state.
+type Snapshot struct {
+	Released   int64
+	RelInit    bool
+	HighExt    int64
+	HighInit   bool
+	MaxArrival model.Nanos
+	ArrInit    bool
+	Pending    []Entry
+}
+
+// Snapshot captures state for checkpointing.
+func (b *JitterBuffer) Snapshot() Snapshot {
+	p := make([]Entry, 0, len(b.pending))
+	for _, e := range b.pending {
+		p = append(p, e)
+	}
+	sort.Slice(p, func(i, j int) bool { return p[i].Ext < p[j].Ext })
+	return Snapshot{
+		Released: b.released, RelInit: b.relInit,
+		HighExt: b.highExt, HighInit: b.highInit,
+		MaxArrival: b.maxArr, ArrInit: b.arrInit,
+		Pending: p,
+	}
+}
+
+// Restore replaces buffer state from a snapshot.
+func (b *JitterBuffer) Restore(s Snapshot) {
+	b.pending = make(map[int64]Entry, len(s.Pending))
+	for _, e := range s.Pending {
+		b.pending[e.Ext] = e
+	}
+	b.released, b.relInit = s.Released, s.RelInit
+	b.highExt, b.highInit = s.HighExt, s.HighInit
+	b.maxArr, b.arrInit = s.MaxArrival, s.ArrInit
 }
