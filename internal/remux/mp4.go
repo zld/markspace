@@ -807,7 +807,12 @@ func (w *Writer) writeProvenance(out *bytes.Buffer, src SegmentSource, seg *Segm
 		"index_digest": src.IndexDigest,
 		"snapshots":    seg.SnapshotIDs,
 		"payload_sha":  seg.PayloadHash,
-		"records":      provenanceRecords(src.Records),
+		// The record citations identify the source unambiguously by content.
+		// The absolute source path is intentionally omitted so identical
+		// input content produces byte-identical segments even when the input
+		// file lives at a different path (for example, a demo rerun into a
+		// different --out directory). The sidecar manifest carries the path.
+		"records": provenanceRecords(src.Records),
 	}
 	b, err := stableJSON(meta)
 	if err != nil {

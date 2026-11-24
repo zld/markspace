@@ -3,6 +3,7 @@ package remux
 
 import (
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -68,6 +69,45 @@ func ReadSegmentPayloads(path string) ([]string, error) {
 		}
 	}
 	return out, nil
+}
+
+// findRawBox locates a child box by its four-character type inside a parent
+// box. It exists for box types go-mp4 does not model, such as our provenance
+// uuid. It returns the child's payload (after the 8-byte header).
+func findRawBox(f *os.File, parent mp4.BoxType, child string) ([]byte, error) {
+	// Walk top-level boxes until the parent appears, so this works regardless
+	// of whether ftyp or moov comes first.
+	var bi *mp4.BoxInfo
+	for {
+		info, err := mp4.ReadBoxInfo(f)
+		if err != nil {
+			return nil, err
+		}
+		if info.Type == parent {
+			bi = info
+			break
+		}
+		if _, err := f.Seek(int64(info.Size-info.HeaderSize), io.SeekCurrent); err != nil {
+			return nil, err
+		}
+	}
+	payloadSize := int64(bi.Size - bi.HeaderSize)
+	buf := make([]byte, payloadSize)
+	if _, err := f.ReadAt(buf, int64(bi.Offset+bi.HeaderSize)); err != nil {
+		return nil, err
+	}
+	for off := 0; off+8 <= len(buf); {
+		size := int64(binary.BigEndian.Uint32(buf[off : off+4]))
+		typ := string(buf[off+4 : off+8])
+		if size < 8 || off+int(size) > len(buf) {
+			return nil, fmt.Errorf("remux: malformed child box at %d", off)
+		}
+		if typ == child {
+			return buf[off+8 : off+int(size)], nil
+		}
+		off += int(size)
+	}
+	return nil, fmt.Errorf("remux: box %q not found inside %s", child, parent)
 }
 
 // trackSampleSizes reads stsz of every track in file order.

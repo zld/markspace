@@ -95,11 +95,11 @@ func (e exitCode) Error() string { return e.message }
 // ---- demo ----
 
 type demoConfig struct {
-	seed       int64
-	out        string
-	workers    int
-	cacheDir   string
-	segTicks   int64
+	seed        int64
+	out         string
+	workers     int
+	cacheDir    string
+	segTicks    int64
 	maxSegments int
 }
 
@@ -161,6 +161,10 @@ func runDemo(args []string) error {
 	if _, err := pipeline.Run(context.Background(), damaged, filepath.Join(cfg.out, "damaged"), params, opts); err != nil {
 		return classifyRunError(err)
 	}
+	// A deliberately unrecoverable master proves that an ambiguous timestamp
+	// is reported as blocking rather than fabricated. Its probe result is
+	// printed, but it does not fail the demo: the acceptance run is clean.
+	blockedProbe := probeBlockedFixture(cfg, params)
 
 	roundtrip, keyframeHit, err := acceptance(res)
 	if err != nil {
@@ -180,6 +184,7 @@ func runDemo(args []string) error {
 	fmt.Printf("blocked_by=%s\n", res.BlockedBy)
 	fmt.Printf("fixture_packets=%d\n", gen.Packets)
 	fmt.Printf("fault_classes=%d\n", len(classes))
+	fmt.Printf("blocked_probe=%s\n", blockedProbe)
 	fmt.Printf("exit=0\n")
 
 	if roundtrip < 1.0 || keyframeHit < 1.0 || ver.segmentsOK != ver.segmentsTotal {
@@ -188,6 +193,31 @@ func runDemo(args []string) error {
 				roundtrip, keyframeHit, ver.segmentsOK, ver.segmentsTotal)}
 	}
 	return nil
+}
+
+// probeBlockedFixture builds a master with an out-of-range, unflagged PTS and
+// reports the node a repair would block on. It returns "none" if the probe
+// unexpectedly succeeded; a failure to *build* the probe is non-fatal for the
+// demo as a whole and is reported as "unavailable".
+func probeBlockedFixture(cfg demoConfig, params pipeline.Params) string {
+	dir := filepath.Join(cfg.out, "fixtures")
+	path := filepath.Join(dir, "blocked.ts")
+	if err := fixture.GenerateBlocked(path, cfg.seed); err != nil {
+		return "unavailable"
+	}
+	res, err := pipeline.Run(context.Background(), path, filepath.Join(cfg.out, "blocked"), params,
+		pipeline.Options{Workers: cfg.workers, MaxSegments: cfg.maxSegments})
+	if err == nil {
+		return "none"
+	}
+	var blocked *pipeline.BlockedError
+	if errors.As(err, &blocked) {
+		if res != nil && res.BlockedBy != "" {
+			return res.BlockedBy
+		}
+		return "clock"
+	}
+	return "none"
 }
 
 // classifyRunError maps pipeline failures onto documented exit codes.
@@ -377,6 +407,19 @@ func mergeVerify(dir string) (*verifyReport, error) {
 	}
 	sort.Strings(rep.details)
 	return rep, nil
+}
+
+// readSegments returns the ordered segment hashes from a manifest, for tests.
+func readSegments(manifestPath string) ([]string, error) {
+	m, err := provenance.Read(manifestPath)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, s := range m.Segments {
+		out = append(out, s.SHA256)
+	}
+	return out, nil
 }
 
 // verifyManifest re-checks a single output tree, returning counts.

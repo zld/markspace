@@ -464,6 +464,62 @@ func Generate(path string, spec Spec) (*Generated, error) {
 
 // ---- damage ----
 
+// GenerateBlocked writes a master whose first video PTS is far beyond the
+// clock's plausibility limit and carries no discontinuity flag. Such a stream
+// cannot be repaired without fabricating values, so the pipeline must report
+// it as blocking rather than emit output. It is used to exercise the error
+// paths, not the happy path.
+func GenerateBlocked(path string, seed int64) error {
+	gen, err := Generate(path, DefaultSpec(seed))
+	if err != nil {
+		return err
+	}
+	_ = gen
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	// Shift the very first video PTS by +30 seconds. That is past MaxJump,
+	// so every following PTS looks like a backward jump and the repair
+	// reports blocking conditions with precise locations.
+	off := firstVideoPUSI(b)
+	if off < 0 {
+		return fmt.Errorf("fixture: no leading video PES")
+	}
+	ps := payloadStart(b, off)
+	if ps < 0 || ps+14 >= len(b) {
+		return fmt.Errorf("fixture: leading video PES too short")
+	}
+	if b[ps+6] != 0x80 || b[ps+7] != 0xC0 {
+		return fmt.Errorf("fixture: leading video PES has no PTS/DTS")
+	}
+	v := uint64(b[ps+9]&0x0E)<<28 | uint64(b[ps+10])<<22 |
+		uint64(b[ps+11]&0xFE)<<14 | uint64(b[ps+12])<<7 | uint64(b[ps+13]&0xFE)>>1
+	nv := (v + 30*90000) & (1<<33 - 1)
+	b[ps+9] = 0x30 | byte((nv>>30)&0x07)<<1 | 0x01
+	b[ps+10] = byte(nv >> 22)
+	b[ps+11] = byte((nv>>14)&0xFF)<<1 | 0x01
+	b[ps+12] = byte(nv >> 7)
+	b[ps+13] = byte(nv&0x7F)<<1 | 0x01
+	return os.WriteFile(path, b, 0o644)
+}
+
+// firstVideoPUSI returns the offset of the first video PUSI packet.
+func firstVideoPUSI(b []byte) int {
+	for off := 0; off+PacketSize <= len(b); off += PacketSize {
+		if b[off] != 0x47 {
+			continue
+		}
+		if uint16(b[off+1]&0x1F)<<8|uint16(b[off+2]) != VideoPID {
+			continue
+		}
+		if b[off+1]&0x40 != 0 {
+			return off
+		}
+	}
+	return -1
+}
+
 // Damage enumerates injectable faults and where they were placed.
 type Damage struct {
 	Kind   string
