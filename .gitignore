@@ -1,0 +1,16 @@
+# Generated local fixtures and outputs
+/tmp-fixture/
+/tmp-out/
+/tmp-boundary-out/
+/tmp-*/
+
+# Compiled binaries
+/mediarun
+*.test
+*.out
+
+# Go / editor / OS cruft
+vendor/
+.idea/
+.vscode/
+.DS_Store

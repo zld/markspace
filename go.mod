@@ -1,6 +1,6 @@
 module mediarun
 
-go 1.24.0
+go 1.23.0
 
 require (
 	github.com/Eyevinn/mp4ff v0.47.0
