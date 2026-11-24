@@ -1,0 +1,8 @@
+# Build artifacts
+/bin/
+/dist/
+*.test
+*.out
+
+# Runtime workspace (fixtures, checkpoints, summaries)
+/mediasync-work/
