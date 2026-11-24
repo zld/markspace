@@ -1,0 +1,20 @@
+# Compiled binaries
+/mediacheck
+*.exe
+*.test
+*.out
+
+# Go workspace and coverage
+/vendor/
+coverage.txt
+profile.cov
+
+# Local transient media (never commit generated fixtures from runs)
+*.mp4
+*.mov
+!**/testdata/**
+
+# OS / editor noise
+.DS_Store
+.idea/
+.vscode/
