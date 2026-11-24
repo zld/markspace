@@ -62,11 +62,11 @@ type recoverOutput struct {
 
 // indexOutput is the index node result, including MP4 serialization.
 type indexOutput struct {
-	Records       []index.Record
-	Dropped       index.DropReport
-	MP4           []byte
-	InputLength   int64
-	OutputDigest  string
+	Records      []index.Record
+	Dropped      index.DropReport
+	MP4          []byte
+	InputLength  int64
+	OutputDigest string
 }
 
 // runParse parses the (possibly truncated) generated WAV and fingerprints it.
@@ -75,9 +75,9 @@ func runParse(stream *fixture.Stream) func(*dag.Node, map[string]*dag.Node) (any
 		raw := stream.TruncatedWAV()
 		w, err := media.ParseWAV(raw)
 		out := &parseOutput{
-			WAV:         w,
-			BlockAlign:  stream.Config.BlockAlign(),
-			SampleRate:  stream.Config.SampleRate,
+			WAV:          w,
+			BlockAlign:   stream.Config.BlockAlign(),
+			SampleRate:   stream.Config.SampleRate,
 			FramesPerPkt: stream.Config.PacketSamples,
 		}
 		if w != nil {

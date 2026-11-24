@@ -95,8 +95,8 @@ func TestParseWAVPartialFinalFrame(t *testing.T) {
 
 func TestParseWAVRejectsBadConfig(t *testing.T) {
 	cases := [][]byte{
-		buildWAV(9, 48000, 16, 10, 0),  // too many channels
-		buildWAV(2, 48000, 8, 10, 0),   // 8-bit unsupported
+		buildWAV(9, 48000, 16, 10, 0),   // too many channels
+		buildWAV(2, 48000, 8, 10, 0),    // 8-bit unsupported
 		[]byte("not a wav file at all"), // bad container
 	}
 	for i, c := range cases {

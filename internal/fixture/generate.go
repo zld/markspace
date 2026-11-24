@@ -64,13 +64,13 @@ type Plan struct {
 
 // Stream bundles a generated capture stream and the faults applied to it.
 type Stream struct {
-	Config    AudioConfig
-	Plan      Plan
-	WAV       []byte // intact WAV, before truncation
-	PCM       []byte // intact PCM payload
-	Packets   []*rtp.Packet
-	SentSeqs  []uint16 // wire sequence numbers actually emitted (loss/reorder applied)
-	LostSeqs  []int64  // extended sequence numbers removed
+	Config     AudioConfig
+	Plan       Plan
+	WAV        []byte // intact WAV, before truncation
+	PCM        []byte // intact PCM payload
+	Packets    []*rtp.Packet
+	SentSeqs   []uint16 // wire sequence numbers actually emitted (loss/reorder applied)
+	LostSeqs   []int64  // extended sequence numbers removed
 	FrameCount int
 }
 

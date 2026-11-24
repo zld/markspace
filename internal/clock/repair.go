@@ -6,23 +6,23 @@ import "sort"
 type RepairReason string
 
 const (
-	ReasonOK        RepairReason = "ok"         // original value kept
-	ReasonWrap      RepairReason = "wrap"       // 32-bit timestamp wraparound extended
-	ReasonBackwards RepairReason = "backwards"  // timestamp moved backwards, re-based
-	ReasonJump      RepairReason = "jump"       // discontinuity larger than tolerance, gap kept
-	ReasonDrift     RepairReason = "drift"      // small capture-clock drift corrected to nominal step
-	ReasonDuplicate RepairReason = "duplicate"  // repeated unit, repaired value repeats
+	ReasonOK        RepairReason = "ok"        // original value kept
+	ReasonWrap      RepairReason = "wrap"      // 32-bit timestamp wraparound extended
+	ReasonBackwards RepairReason = "backwards" // timestamp moved backwards, re-based
+	ReasonJump      RepairReason = "jump"      // discontinuity larger than tolerance, gap kept
+	ReasonDrift     RepairReason = "drift"     // small capture-clock drift corrected to nominal step
+	ReasonDuplicate RepairReason = "duplicate" // repeated unit, repaired value repeats
 	ReasonReordered RepairReason = "reordered" // out-of-order arrival re-sequenced
 )
 
 // TimeEntry is one timestamp observation before and after repair.
 // Original values are always retained so the repair decision is auditable.
 type TimeEntry struct {
-	Index       int          // arrival ordinal
-	Seq         int64        // extended 16-bit sequence number
-	Original    Tick         // extended but otherwise raw 90 kHz timestamp
-	Repaired    Tick         // monotonically non-decreasing repaired timestamp
-	NominalStep Tick         // expected per-unit clock step (0 if unknown)
+	Index       int   // arrival ordinal
+	Seq         int64 // extended 16-bit sequence number
+	Original    Tick  // extended but otherwise raw 90 kHz timestamp
+	Repaired    Tick  // monotonically non-decreasing repaired timestamp
+	NominalStep Tick  // expected per-unit clock step (0 if unknown)
 	Reason      RepairReason
 	DriftTicks  int64 // signed observed-minus-nominal delta when ReasonDrift
 }

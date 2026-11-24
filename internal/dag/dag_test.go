@@ -62,7 +62,11 @@ func TestCycleAndMissingDep(t *testing.T) {
 }
 
 // memStore is an in-memory CheckpointStore for scheduler tests.
-type memStore struct{ mu sync.Mutex; m map[string]any; writes int }
+type memStore struct {
+	mu     sync.Mutex
+	m      map[string]any
+	writes int
+}
 
 func (s *memStore) Load(k string) (any, bool) {
 	s.mu.Lock()

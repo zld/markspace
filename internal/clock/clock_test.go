@@ -79,7 +79,7 @@ func TestRepairerWraparound(t *testing.T) {
 func TestRepairerBackwardsAndDrift(t *testing.T) {
 	r, _ := NewRepairer(900, 90)
 	r.Observe(0, 1000)
-	r.Observe(1, 1900) // nominal 1900, exact
+	r.Observe(1, 1900)      // nominal 1900, exact
 	e := r.Observe(2, 2795) // 5 ticks slow -> drift
 	if e.Reason != ReasonDrift || e.Repaired != 2800 {
 		t.Fatalf("drift case: reason=%s repaired=%d", e.Reason, e.Repaired)

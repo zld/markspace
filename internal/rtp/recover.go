@@ -60,7 +60,7 @@ func NewRecoverer(ptStep clock.Tick, maxConceal int64) (*Recoverer, error) {
 			"ptStep=%d maxConceal=%d invalid", ptStep, maxConceal)
 	}
 	return &Recoverer{ptStep: ptStep, maxConceal: maxConceal,
-		buffer: make(map[int64]*Packet), minSeq: 1<<62, maxSeq: -1 << 62}, nil
+		buffer: make(map[int64]*Packet), minSeq: 1 << 62, maxSeq: -1 << 62}, nil
 }
 
 // Push inserts one parsed packet. Duplicates of an already-seen sequence

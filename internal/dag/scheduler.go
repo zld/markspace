@@ -34,10 +34,10 @@ type Failure struct {
 // BlockedDependency names the first upstream node that prevents progress
 // and the full dependency chain from the blocked node down to it.
 type BlockedDependency struct {
-	Node   string
+	Node      string
 	BlockedBy string
-	Chain  []string
-	Reason string
+	Chain     []string
+	Reason    string
 }
 
 func (b *BlockedDependency) Error() string {

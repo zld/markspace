@@ -27,8 +27,8 @@ type Entry struct {
 }
 
 type journalFile struct {
-	InputDigest string             `json:"input_digest"`
-	Entries     map[string]*Entry  `json:"entries"`
+	InputDigest string            `json:"input_digest"`
+	Entries     map[string]*Entry `json:"entries"`
 }
 
 // Journal is a durable, concurrency-safe CheckpointStore.

@@ -10,13 +10,13 @@ type ErrorCode string
 
 const (
 	ErrInvalidArgument ErrorCode = "invalid_argument" // bad parameter / header field
-	ErrTruncated       ErrorCode = "truncated"         // input ends before declared length
-	ErrOverflow        ErrorCode = "overflow"          // integer overflow or size limit breach
-	ErrChecksum        ErrorCode = "checksum"          // checksum / digest mismatch
-	ErrBlocked         ErrorCode = "blocked"           // timeline cannot be inferred
-	ErrCorrupt         ErrorCode = "corrupt"           // unparseable / damaged record
-	ErrDependency      ErrorCode = "dependency"        // upstream DAG dependency failed
-	ErrLimitExceeded   ErrorCode = "limit_exceeded"    // retry / resource limit reached
+	ErrTruncated       ErrorCode = "truncated"        // input ends before declared length
+	ErrOverflow        ErrorCode = "overflow"         // integer overflow or size limit breach
+	ErrChecksum        ErrorCode = "checksum"         // checksum / digest mismatch
+	ErrBlocked         ErrorCode = "blocked"          // timeline cannot be inferred
+	ErrCorrupt         ErrorCode = "corrupt"          // unparseable / damaged record
+	ErrDependency      ErrorCode = "dependency"       // upstream DAG dependency failed
+	ErrLimitExceeded   ErrorCode = "limit_exceeded"   // retry / resource limit reached
 )
 
 // MediaError is the single structured error type shared by all subsystems.

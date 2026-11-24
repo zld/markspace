@@ -11,9 +11,9 @@ import (
 // a byte offset inside the source WAV payload. Records are the unit of
 // on-disk indexing and of corruption recovery.
 type Record struct {
-	ID        int64
-	TimeTicks clock.Tick
-	TimeMs    float64
+	ID         int64
+	TimeTicks  clock.Tick
+	TimeMs     float64
 	ByteOffset int64
 	FrameIndex int64
 	Length     int64 // bytes covered by this entry
@@ -52,9 +52,9 @@ func (rec Record) Validate(inputLength int64, blockAlign int) error {
 
 // DropReport explains why an existing index could not be reused wholesale.
 type DropReport struct {
-	OutOfRange int
-	Duplicate  int
-	Corrupt    int
+	OutOfRange   int
+	Duplicate    int
+	Corrupt      int
 	TotalDropped int
 }
 
