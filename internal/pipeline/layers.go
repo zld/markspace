@@ -3,7 +3,6 @@ package pipeline
 import (
 	"math"
 
-	"archive/internal/clock"
 	"archive/internal/fixture"
 	"archive/internal/normalize"
 	"archive/internal/render"
@@ -339,17 +338,4 @@ func clampByte(v float64) uint8 {
 		return 255
 	}
 	return uint8(v + 0.5)
-}
-
-// layerPSNRFloor documents the acceptance floor; the pipeline reports a
-// failure instead of clamping a genuinely lossy result.
-const layerPSNRFloor = 30.0
-
-// checkPSNR converts a below-floor measurement into a classified error so the
-// caller can isolate the layer rather than emit a misleading quality figure.
-func checkPSNR(name string, psnr float64) error {
-	if psnr < layerPSNRFloor {
-		return clock.Newf(clock.KindMisaligned, "layer %s psnr %.2f dB below floor %.1f dB", name, psnr, layerPSNRFloor)
-	}
-	return nil
 }
