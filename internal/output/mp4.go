@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	gomp4 "github.com/abema/go-mp4"
 
@@ -86,6 +87,11 @@ func WriteFile(path string, doc Document) (string, int, error) {
 	}
 	if _, err := Validate(data); err != nil {
 		return "", 0, err
+	}
+	if dir := filepath.Dir(path); dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return "", 0, err
+		}
 	}
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		return "", 0, err

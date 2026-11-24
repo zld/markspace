@@ -22,6 +22,7 @@ type Result struct {
 	Reordered       int            `json:"reordered"`
 	Recovered       int            `json:"recovered"`
 	AvDriftMS       float64        `json:"av_drift_ms"`
+	AvCorrections   int            `json:"av_corrections,omitempty"`
 	FirstBadOffset  int64          `json:"first_bad_offset"`
 	ResumeMS        int64          `json:"resume_ms"`
 	SHA256          string         `json:"sha256"`
