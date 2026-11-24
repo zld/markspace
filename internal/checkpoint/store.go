@@ -42,11 +42,12 @@ type State struct {
 
 // Store is the directory-backed local index.
 type Store struct {
-	dir      string
-	batch    int
-	path     string
-	input    string
-	inputSum [32]byte
+	dir       string
+	batch     int
+	path      string
+	input     string
+	inputSum  [32]byte
+	inputSize int64 // -1 when unknown; then size is derived via stat
 	// running accumulator over per-block payload hashes.
 	root hash.Hash
 }
@@ -54,6 +55,13 @@ type Store struct {
 // OpenStore prepares an index directory. It does not read any existing state;
 // call Load separately so a fresh run and a resume share one code path.
 func OpenStore(dir string, batchSize int, inputPath string, inputSum [32]byte) (*Store, error) {
+	return OpenStoreWithSize(dir, batchSize, inputPath, inputSum, -1)
+}
+
+// OpenStoreWithSize is OpenStore with an explicit input size, used when the
+// caller holds the bytes in memory rather than a guaranteed on-disk file.
+func OpenStoreWithSize(dir string, batchSize int, inputPath string,
+	inputSum [32]byte, inputSize int64) (*Store, error) {
 	if batchSize <= 0 {
 		return nil, fault.New(fault.KindCheckpointCorrupt, -1,
 			"batch size must be positive, got %d", batchSize)
@@ -62,12 +70,13 @@ func OpenStore(dir string, batchSize int, inputPath string, inputSum [32]byte) (
 		return nil, fault.New(fault.KindIO, -1, "mkdir index: %v", err)
 	}
 	return &Store{
-		dir:      dir,
-		batch:    batchSize,
-		path:     filepath.Join(dir, indexFileName),
-		input:    inputPath,
-		inputSum: inputSum,
-		root:     sha256.New(),
+		dir:       dir,
+		batch:     batchSize,
+		path:      filepath.Join(dir, indexFileName),
+		input:     inputPath,
+		inputSum:  inputSum,
+		inputSize: inputSize,
+		root:      sha256.New(),
 	}, nil
 }
 
@@ -150,6 +159,9 @@ func (s *Store) BatchSize() int { return s.batch }
 func (s *Store) Path() string { return s.path }
 
 func (s *Store) expectedSize() int64 {
+	if s.inputSize >= 0 {
+		return s.inputSize
+	}
 	info, err := os.Stat(s.input)
 	if err != nil {
 		return -1
