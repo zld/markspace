@@ -366,7 +366,17 @@ func loadVideo(in Inputs, st *Stats) (*videoData, *model.Error) {
 			"keyframe index unusable: %s; scanned sample table for %d samples",
 			detail, tr.SampleCount))
 	}
-	for _, s := range ix.Samples(tr.TrackID) {
+	// Presentation order, not decode order: a B-frame clip has ctts offsets
+	// that reorder samples, and both sampling lookup and cut points require
+	// non-decreasing timestamps.
+	raw := ix.Samples(tr.TrackID)
+	sort.SliceStable(raw, func(i, j int) bool {
+		if c := raw[i].PresentTime.Cmp(raw[j].PresentTime); c != 0 {
+			return c < 0
+		}
+		return raw[i].Index < raw[j].Index
+	})
+	for _, s := range raw {
 		v.samples = append(v.samples, render.SampleRef{
 			Index: s.Index, Offset: s.Offset, Size: s.Size,
 			Start: s.PresentTime, Duration: s.Duration, Keyframe: s.Keyframe, Origin: string(s.Origin),

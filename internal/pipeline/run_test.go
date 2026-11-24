@@ -2,13 +2,16 @@ package pipeline
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 
+	"mediaaudit/internal/checkpoint"
 	"mediaaudit/internal/fixtures"
 	"mediaaudit/internal/model"
 	"mediaaudit/internal/mp4"
 	"mediaaudit/internal/render"
+	"mediaaudit/internal/timeline"
 )
 
 func setup(t *testing.T, scenario string) (fixtures.Manifest, string) {
@@ -298,5 +301,56 @@ func TestKeyframeHitRateCountsSamplingPoints(t *testing.T) {
 	}
 	if keyframeHitRate(nil).Den != 0 {
 		t.Fatal("no frames means no denominator")
+	}
+}
+
+func TestSamplesUsePresentationOrder(t *testing.T) {
+	// A B-frame layout: decode order 0,1,2 but presentation order 0,2,1 via
+	// ctts offsets. The timeline and sampling lookup must see presentation
+	// order, otherwise cut points go backwards.
+	interval, _ := model.ParseRat("1/25")
+	spec := fixtures.MP4Spec{
+		TrackID: 1, Timescale: 1000, Width: 8, Height: 8,
+		Sizes: []uint32{10, 10, 10}, Deltas: []uint32{100, 100, 100},
+		Ctts:      []int64{0, 200, 100},
+		Keyframes: []int{1, 3},
+		Label:     "b",
+	}
+	data, err := fixtures.MP4(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	mp4Path := dir + "/b.mp4"
+	if err := os.WriteFile(mp4Path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	in := Inputs{
+		OutDir: dir + "/cp", MP4Path: mp4Path, Width: 8, Height: 8,
+		Interval: interval, ChunkSize: 16, MaxDriftPPM: 500, FallbackScan: true,
+	}
+	st, err := Run(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Items != 3 || st.Frames == 0 {
+		t.Fatalf("items=%d frames=%d", st.Items, st.Frames)
+	}
+	p, err := checkpoint.Open(in.OutDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := p.ReadPayload(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prev := model.RatFromInt(-1)
+	for _, it := range payload.Items {
+		if it.Kind == timeline.ItemVideo {
+			if it.Span.Start.Cmp(prev) < 0 {
+				t.Fatalf("video items out of presentation order: %s after %s", it.Span.Start, prev)
+			}
+			prev = it.Span.Start
+		}
 	}
 }
