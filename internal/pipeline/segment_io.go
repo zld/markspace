@@ -52,7 +52,7 @@ func (r *Runner) loadOrRebuildSegment(plan *SegmentPlan, rep *syncer.Report, seg
 		KeyframeHits: vr.Hits,
 		RoundtripHit: sr.Hits,
 		Synced:       rep.Synced,
-		Incomplete:   rep.Incomplete || r.runtime.audioIncomplete,
+		Incomplete:   rep.Incomplete || plan.Incomplete,
 		AudioFrames:  frames,
 		AudioBytes:   audioBytes,
 		Faults:       segmentFaults(rep),

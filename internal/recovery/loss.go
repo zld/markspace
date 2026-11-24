@@ -50,6 +50,15 @@ type Unit struct {
 	Gap          bool // true when this unit represents a recovered hole
 }
 
+// Gap marks an unrecoverable hole. AfterSeq is the last packet before the
+// hole; NextSeq is the first packet after it, so a consumer can attribute the
+// incompleteness to the segment that contains NextSeq.
+type Gap struct {
+	AfterSeq uint64
+	NextSeq  uint64
+	Missing  int
+}
+
 // Report is the outcome for one fragment.
 type Report struct {
 	Units       []Unit
@@ -57,6 +66,7 @@ type Report struct {
 	GapEvents   int // distinct holes examined
 	Incomplete  bool
 	Unrecovered int // packets that could not be concealed
+	Gaps        []Gap
 	Faults      fault.List
 }
 
@@ -95,6 +105,7 @@ func Recover(ordered []*rtpparse.Packet, policy Policy) (Report, error) {
 				} else {
 					rep.Incomplete = true
 					rep.Unrecovered += gap
+					rep.Gaps = append(rep.Gaps, Gap{AfterSeq: prev.ExtSeq, NextSeq: cur.ExtSeq, Missing: gap})
 					if rep.Faults.Len() < policy.MaxGapEvents {
 						off := prev.Offset
 						if off < 0 {

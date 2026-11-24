@@ -24,6 +24,8 @@ type SegmentPlan struct {
 	Audio     []syncer.Placed
 	StartTick int64
 	EndTick   int64
+	// Incomplete marks a segment that contains an unrecoverable audio hole.
+	Incomplete bool
 }
 
 // runParse scans the frame file in metadata-only mode and records the stage
@@ -174,7 +176,7 @@ func (r *Runner) runAudio() ([]recovery.Unit, jitter.Stats, error) {
 	if err := r.recordStage(summary); err != nil {
 		return nil, jitter.Stats{}, err
 	}
-	r.runtime.audioIncomplete = rep.Incomplete
+	r.gaps = rep.Gaps
 
 	recSummary := provenance.StageSummary{
 		Name:       "recovery",

@@ -187,7 +187,7 @@ func (r *Runner) writeSegment(plan *SegmentPlan, rep *syncer.Report, seg *proven
 		KeyframeHits: vr.Hits,
 		RoundtripHit: rtHits,
 		Synced:       rep.Synced,
-		Incomplete:   rep.Incomplete || r.runtime.audioIncomplete,
+		Incomplete:   rep.Incomplete || plan.Incomplete,
 		AudioFrames:  res.AudioFrames,
 		AudioBytes:   res.AudioBytes,
 		Faults:       segmentFaults(rep),

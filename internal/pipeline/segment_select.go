@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"mediarun/internal/frames"
+	"mediarun/internal/recovery"
 	"mediarun/internal/syncer"
 )
 
@@ -14,7 +15,7 @@ import (
 // order is preserved and no frame is duplicated or dropped. Audio is assigned
 // by the placed timeline tick, so a segment carries the audio that actually
 // sounds over its video span.
-func selectSegments(recs []*frames.Record, audio []syncer.Placed, count int) []SegmentPlan {
+func selectSegments(recs []*frames.Record, audio []syncer.Placed, count int, gaps []recovery.Gap) []SegmentPlan {
 	if len(recs) == 0 || count < 1 {
 		return nil
 	}
@@ -67,6 +68,22 @@ func selectSegments(recs []*frames.Record, audio []syncer.Placed, count int) []S
 			}
 		}
 		plans[idx].Audio = append(plans[idx].Audio, p)
+	}
+	// An unrecoverable audio hole taints only the segment whose audio resumes
+	// after it; the other fragments remain complete.
+	for _, g := range gaps {
+		for i := range plans {
+			found := false
+			for _, p := range plans[i].Audio {
+				if p.Unit.Seq == g.NextSeq {
+					found = true
+					break
+				}
+			}
+			if found {
+				plans[i].Incomplete = true
+			}
+		}
 	}
 	return plans
 }

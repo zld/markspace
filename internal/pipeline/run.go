@@ -59,17 +59,17 @@ type Runner struct {
 	timeline  *clock.Timeline
 	records   []*frames.Record
 	units     []recovery.Unit
+	gaps      []recovery.Gap
 	plans     []SegmentPlan
 	metrics   provenance.Metrics
 	segHashes []string
 }
 
 type runtimeState struct {
-	audioFaults     fault.List
-	placeFaults     fault.List
-	audioIncomplete bool
-	skippedStages   []string
-	resumedAt       string
+	audioFaults   fault.List
+	placeFaults   fault.List
+	skippedStages []string
+	resumedAt     string
 }
 
 // New validates configuration and prepares a runner over dir.
@@ -179,7 +179,7 @@ func (r *Runner) Run() (*provenance.Manifest, error) {
 
 	placed, placeFaults := syncer.Place(r.units, r.timeline, r.syncConfig())
 	r.runtime.placeFaults = placeFaults
-	r.plans = selectSegments(r.records, placed, r.cfg.SegmentCount)
+	r.plans = selectSegments(r.records, placed, r.cfg.SegmentCount, r.gaps)
 	if len(r.plans) == 0 {
 		return nil, fault.New(fault.StagePipeline, fault.KindIncomplete, "no frames available to segment")
 	}
