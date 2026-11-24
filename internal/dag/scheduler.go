@@ -1,6 +1,7 @@
 package dag
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"mediasync/internal/clock"
@@ -89,7 +90,13 @@ func (s *Scheduler) Run() *Result {
 		n.Key = key
 
 		if s.store != nil {
-			if out, ok := s.store.Load(key); ok {
+			if raw, ok := s.store.Load(key); ok {
+				out, err := s.hydrate(n, raw)
+				if err != nil {
+					n.Failed, n.Err = true, err
+					s.failures[n.Name] = &Failure{Node: n.Name, Err: err}
+					continue
+				}
 				n.Completed, n.Output, res.Reused = true, out, res.Reused+1
 				depKeys[n.Name] = key
 				res.Completed[n.Name] = n
@@ -99,7 +106,13 @@ func (s *Scheduler) Run() *Result {
 
 		out, err := s.runWithRetries(n)
 		if err != nil {
+			// Keep any partial output for diagnostics, but the node is not
+			// completed and nothing is checkpointed, so downstream nodes are
+			// blocked rather than consuming an untrusted result.
 			n.Failed, n.Err = true, err
+			if out != nil {
+				n.Output = out
+			}
 			s.failures[n.Name] = &Failure{Node: n.Name, Attempts: n.Attempts, Err: err}
 			continue
 		}
@@ -128,29 +141,54 @@ func (s *Scheduler) Run() *Result {
 	return res
 }
 
+// hydrate turns a checkpoint payload back into the node's typed output. When
+// the node declares an OutputFactory the JSON is unmarshalled into that
+// concrete type; otherwise the raw payload is returned unchanged.
+func (s *Scheduler) hydrate(n *Node, raw any) (any, error) {
+	if n.OutputFactory == nil {
+		return raw, nil
+	}
+	rm, ok := raw.(json.RawMessage)
+	if !ok {
+		return raw, nil // in-memory stores may hand back values directly
+	}
+	out := n.OutputFactory()
+	if err := json.Unmarshal(rm, out); err != nil {
+		return nil, clock.NewError(clock.ErrCorrupt,
+			"checkpoint for node %q is not decodable: %v", n.Name, err)
+	}
+	return out, nil
+}
+
 // runWithRetries executes a node, retrying transient errors up to retryLimit.
 // Retries never produce duplicate outputs: Store happens once, only after a
-// successful Run, and checkpoint writes are idempotent on key.
+// successful Run, and checkpoint writes are idempotent on key. When every
+// attempt fails the last non-nil output (if any) is still returned alongside
+// the terminal error for diagnostic use.
 func (s *Scheduler) runWithRetries(n *Node) (any, error) {
 	deps := make(map[string]*Node, len(n.Deps))
 	for _, d := range n.Deps {
 		deps[d] = s.graph.nodes[d]
 	}
 	var err error
+	var lastOut any
 	for attempt := 0; attempt <= s.retryLimit; attempt++ {
 		n.Attempts = attempt + 1
 		var out any
 		out, err = n.Run(n, deps)
+		if out != nil {
+			lastOut = out
+		}
 		if err == nil {
 			return out, nil
 		}
 		// Structured non-transparent errors (invalid argument etc.) are not
 		// worth retrying: surface immediately.
 		if me, ok := err.(*clock.MediaError); ok && me.Code == clock.ErrInvalidArgument {
-			return nil, err
+			return lastOut, err
 		}
 	}
-	return nil, clock.NewError(clock.ErrLimitExceeded,
+	return lastOut, clock.NewError(clock.ErrLimitExceeded,
 		"node %q exhausted %d attempts: %v", n.Name, n.Attempts, err)
 }
 

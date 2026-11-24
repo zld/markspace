@@ -22,6 +22,11 @@ type Node struct {
 	Params map[string]string // parameters folded into the idempotent key
 	Run    Func
 
+	// OutputFactory returns a fresh value of the node's concrete output type.
+	// When set, checkpoint reuse unmarshals journal JSON into it so a reused
+	// node exposes the same typed output as a freshly executed one.
+	OutputFactory func() any
+
 	// Result state, populated by the scheduler.
 	Key       string
 	Attempts  int
