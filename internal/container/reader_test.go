@@ -73,10 +73,25 @@ func TestTruncatedBoxReportsOffset(t *testing.T) {
 }
 
 func TestZeroTimescaleErrorHasTrackAndOffset(t *testing.T) {
-	// Construct a tiny mdhd through the fixture corruption helper once the
-	// byte-level variant is available. Here the model conversion contract is
-	// checked directly as well.
+	asset, offset, err := fixture.ZeroTimescaleAsset(17)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = container.ReadBytes(asset.MP4, asset.Config)
+	if err == nil {
+		t.Fatal("expected zero timescale error")
+	}
+	var pe *model.ParseError
+	if !errors.As(err, &pe) {
+		t.Fatalf("error type %T: %v", err, err)
+	}
+	if pe.TrackID != 1 || pe.ByteOffset != offset || pe.ByteOffset <= 0 {
+		t.Fatalf("parse error track/offset mismatch: %+v want offset %d", pe, offset)
+	}
+	if !errors.Is(err, model.ErrZeroTimescale) {
+		t.Fatalf("err=%v does not wrap zero timescale", err)
+	}
 	if _, err := model.ToNS(1, 0); err != model.ErrZeroTimescale {
-		t.Fatalf("err=%v", err)
+		t.Fatalf("direct conversion err=%v", err)
 	}
 }

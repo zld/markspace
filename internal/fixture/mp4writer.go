@@ -63,12 +63,12 @@ func (b *boxWriter) end() error {
 	return err
 }
 
-func buildMP4(reps []*RepSpec) ([]byte, map[uint32]int64, error) {
+func buildMP4(reps []*RepSpec) ([]byte, map[uint32]int64, map[uint32]int64, error) {
 	var sb seekBuffer
 	bw := &boxWriter{w: mp4.NewWriter(&sb)}
 
 	if _, err := bw.start(mp4.BoxTypeFtyp()); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if err := bw.marshal(&mp4.Ftyp{
 		MajorBrand:   mp4.BrandISOM(),
@@ -78,28 +78,29 @@ func buildMP4(reps []*RepSpec) ([]byte, map[uint32]int64, error) {
 			{CompatibleBrand: mp4.BrandMP41()},
 		},
 	}); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if err := bw.end(); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	if _, err := bw.start(mp4.BoxTypeMoov()); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	sttsOffsets := map[uint32]int64{}
+	mdhdOffsets := map[uint32]int64{}
 	for _, rep := range reps {
-		if err := writeTrak(bw, rep, sttsOffsets); err != nil {
-			return nil, nil, err
+		if err := writeTrak(bw, rep, sttsOffsets, mdhdOffsets); err != nil {
+			return nil, nil, nil, err
 		}
 	}
 	if err := bw.end(); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	return sb.Bytes(), sttsOffsets, nil
+	return sb.Bytes(), sttsOffsets, mdhdOffsets, nil
 }
 
-func writeTrak(bw *boxWriter, rep *RepSpec, sttsOffsets map[uint32]int64) error {
+func writeTrak(bw *boxWriter, rep *RepSpec, sttsOffsets, mdhdOffsets map[uint32]int64) error {
 	if _, err := bw.start(mp4.BoxTypeTrak()); err != nil {
 		return err
 	}
@@ -124,9 +125,11 @@ func writeTrak(bw *boxWriter, rep *RepSpec, sttsOffsets map[uint32]int64) error 
 	if _, err := bw.start(mp4.BoxTypeMdia()); err != nil {
 		return err
 	}
-	if _, err := bw.start(mp4.BoxTypeMdhd()); err != nil {
+	mdhdInfo, err := bw.start(mp4.BoxTypeMdhd())
+	if err != nil {
 		return err
 	}
+	mdhdOffsets[rep.TrackID] = int64(mdhdInfo.Offset)
 	var duration uint64
 	if n := len(rep.Samples); n > 0 {
 		duration = rep.Samples[n-1].Ticks + uint64(rep.Samples[n-1].Delta)

@@ -37,6 +37,7 @@ type DemoAsset struct {
 	InputName     string
 	MP4           []byte
 	SttsOffsets   map[uint32]int64
+	MdhdOffsets   map[uint32]int64
 	Reps          []*RepSpec
 	Config        model.Config
 	LateEvent     model.RawEvent

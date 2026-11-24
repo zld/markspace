@@ -10,7 +10,7 @@ func GenerateDemo(seed int64) (*DemoAsset, error) {
 	low := buildRep(seed, 2, "video-low", 1_200_000_000, 2500, 1200, times, bounds)
 	reps := []*RepSpec{high, low}
 
-	data, offsets, err := buildMP4(reps)
+	data, sttsOffsets, mdhdOffsets, err := buildMP4(reps)
 	if err != nil {
 		return nil, err
 	}
@@ -22,7 +22,8 @@ func GenerateDemo(seed int64) (*DemoAsset, error) {
 		Seed:        seed,
 		InputName:   "asset.mp4",
 		MP4:         data,
-		SttsOffsets: offsets,
+		SttsOffsets: sttsOffsets,
+		MdhdOffsets: mdhdOffsets,
 		Reps:        reps,
 		Config:      cfg,
 		LateEvent:   lateEvent(seed, high),
@@ -70,17 +71,30 @@ func TruncatedBoxAsset(seed int64) (*DemoAsset, error) {
 	return a, nil
 }
 
-// ZeroTimescaleAsset returns a copy whose mdhd timescale is impossible. The
-// corruption is produced at byte level by the dedicated test helper because
-// normal typed construction validates intent rather than bytes.
+// ZeroTimescaleAsset builds an otherwise valid asset whose first mdhd has a
+// zero timescale. It returns the expected mdhd byte offset.
 func ZeroTimescaleAsset(seed int64) (*DemoAsset, int64, error) {
-	a, err := GenerateDemo(seed)
+	bounds := sharedBoundaries()
+	times := variableFrameTimes(bounds)
+	high := buildRep(seed, 1, "video-high", 1_000_000_000, 8000, 0, times, bounds)
+	low := buildRep(seed, 2, "video-low", 1_200_000_000, 2500, 1200, times, bounds)
+	high.Timescale = 0
+	reps := []*RepSpec{high, low}
+	data, sttsOffsets, mdhdOffsets, err := buildMP4(reps)
 	if err != nil {
 		return nil, 0, err
 	}
-	// The fixture writer uses timescale 1_000_000_000 for track one. Locate
-	// its four-byte big-endian representation inside mdhd's payload by the
-	// known stts offset proximity is unnecessary for tests; callers use the
-	// returned marker only for setup.
-	return a, 0, nil
+	cfg := model.DefaultConfig()
+	cfg.Seed = seed
+	asset := &DemoAsset{
+		Seed:          seed,
+		InputName:     "zero-timescale.mp4",
+		MP4:           data,
+		SttsOffsets:   sttsOffsets,
+		MdhdOffsets:   mdhdOffsets,
+		Reps:          reps,
+		Config:        cfg,
+		CorruptOffset: mdhdOffsets[1],
+	}
+	return asset, mdhdOffsets[1], nil
 }
