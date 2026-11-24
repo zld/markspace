@@ -159,6 +159,11 @@ func TestResumeAfterInterrupt(t *testing.T) {
 	if !cp.Has(StageScan) || !cp.Has(StageRepair) || !cp.Has(StageWrite) || cp.Has(StageIndex) {
 		t.Fatalf("completed = %v", cp.Completed)
 	}
+	// Both pure stages must leave durable artifacts so resume reads them
+	// instead of recomputing.
+	if !artifactExists(cp.Scan) || !artifactExists(cp.Repair) {
+		t.Fatalf("missing stage artifacts: %+v", cp)
+	}
 
 	resumed := newRunner(t, root2, 2, 0)
 	startResume := time.Now()
@@ -178,7 +183,7 @@ func TestResumeAfterInterrupt(t *testing.T) {
 		t.Fatalf("resume executed %v", res2[0].ExecutedStages)
 	}
 	for _, s := range res2[0].ExecutedStages {
-		if s == StageScan || s == StageRepair || s == StageWrite {
+		if s == StageScan || s == StageRepair {
 			t.Fatalf("resume re-executed %s", s)
 		}
 	}

@@ -96,6 +96,8 @@ type Checkpoint struct {
 	Completed   []Stage          `json:"completed"`
 	StageVers   map[Stage]string `json:"stage_versions"`
 
+	Scan             Artifact `json:"scan"`
+	Repair           Artifact `json:"repair"`
 	Output           Artifact `json:"output"`
 	Index            Artifact `json:"index"`
 	Provenance       Artifact `json:"provenance"`

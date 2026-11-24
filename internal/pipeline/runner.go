@@ -329,10 +329,10 @@ func prevStage(s Stage) Stage {
 func (r *Runner) reuse(stage Stage, rec *stageRecord, inSHA string) (bool, error) {
 	cp := rec.checkpoint
 	switch stage {
-	case StageScan, StageRepair:
-		// Pure computations: their identity is the input digest plus the
-		// stage version, both already matched by ValidateAgainst.
-		return true, nil
+	case StageScan:
+		return artifactExists(cp.Scan), nil
+	case StageRepair:
+		return artifactExists(cp.Repair), nil
 	case StageWrite:
 		return artifactExists(cp.Output), nil
 	case StageIndex:
@@ -377,17 +377,22 @@ func (r *Runner) execute(ctx context.Context, stage Stage, rec *stageRecord, inS
 		if err != nil {
 			return err
 		}
+		art, err := writeScanArtifact(c, artifactPath(r.stageDir(), res.Name, cp.ParamsHash, ".scan.json"))
+		if err != nil {
+			return err
+		}
+		cp.Scan = art
 		rec.container = c
 		return nil
 
 	case StageRepair:
 		c := rec.container
 		if c == nil {
-			var err error
-			c, err = r.rescan(res.InputPath)
+			loaded, err := loadScanArtifact(cp.Scan)
 			if err != nil {
 				return err
 			}
+			c = loaded
 			rec.container = c
 		}
 		policy := repair.DefaultPolicy(c.Tracks[0].Timescale)
@@ -401,6 +406,11 @@ func (r *Runner) execute(ctx context.Context, stage Stage, rec *stageRecord, inS
 		if err := repair.VerifyMonotonic(rep); err != nil {
 			return err
 		}
+		art, err := writeRepairArtifact(rep, artifactPath(r.stageDir(), res.Name, cp.ParamsHash, ".repair.json"))
+		if err != nil {
+			return err
+		}
+		cp.Repair = art
 		rec.repaired = rep
 		cp.RepairedEntries = rep.TotalRepaired()
 		return nil
@@ -506,23 +516,26 @@ func (r *Runner) execute(ctx context.Context, stage Stage, rec *stageRecord, inS
 // ensure returns a container and repair result, recomputing them if a resume
 // skipped the in-memory stages.
 func (r *Runner) ensure(rec *stageRecord) (*scan.Container, *repair.Result, error) {
-	if rec.container == nil || rec.repaired == nil {
-		c, err := r.rescan(rec.res.InputPath)
-		if err != nil {
-			return nil, nil, err
-		}
-		policy := repair.DefaultPolicy(c.Tracks[0].Timescale)
-		if r.opts.RepairLimit > 0 {
-			policy.MaxBackwardTicks = r.opts.RepairLimit
-		}
-		rep, err := repair.Repair(c, policy)
+	if rec.container == nil {
+		c, err := loadScanArtifact(rec.checkpoint.Scan)
 		if err != nil {
 			return nil, nil, err
 		}
 		rec.container = c
+	}
+	if rec.repaired == nil {
+		rep, err := loadRepairArtifact(rec.checkpoint.Repair)
+		if err != nil {
+			return nil, nil, err
+		}
 		rec.repaired = rep
 	}
 	return rec.container, rec.repaired, nil
+}
+
+// stageDir holds the durable scan and repair artifacts.
+func (r *Runner) stageDir() string {
+	return filepath.Join(r.opts.WorkDir, "stages")
 }
 
 func (r *Runner) rescan(path string) (*scan.Container, error) {
