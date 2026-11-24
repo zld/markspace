@@ -170,6 +170,19 @@ func runDemo(args []string) error {
 	// printed, but it does not fail the demo: the acceptance run is clean.
 	blockedProbe := probeBlockedFixture(cfg, params)
 
+	// Produce an RTP capture of the damaged master with one dropped packet,
+	// so the de-packetiser and its sequence-gap reporting are exercised in
+	// the demo run, not only in unit tests.
+	// The damaged master may end mid-packet, so re-frame the clean master.
+	rtpPath := filepath.Join(fixDir, "clean.rtp")
+	rtpPackets := 0
+	if n, dropped, err := fixture.WriteRTPCapture(clean, rtpPath, 0x10203040, 0x8000, 0x8004, true); err == nil {
+		rtpPackets = n
+		if dropped {
+			fmt.Printf("rtp_dropped_seq=0x%04x\n", 0x8004)
+		}
+	}
+
 	roundtrip, keyframeHit, err := acceptance(res)
 	if err != nil {
 		return exitCode{code: exitMismatch, message: err.Error()}
@@ -189,6 +202,7 @@ func runDemo(args []string) error {
 	fmt.Printf("fixture_packets=%d\n", gen.Packets)
 	fmt.Printf("fault_classes=%d\n", len(classes))
 	fmt.Printf("blocked_probe=%s\n", blockedProbe)
+	fmt.Printf("rtp_capture_packets=%d\n", rtpPackets)
 	fmt.Printf("exit=0\n")
 
 	if roundtrip < 1.0 || keyframeHit < 1.0 || ver.segmentsOK != ver.segmentsTotal {
@@ -327,6 +341,7 @@ func runProcess(args []string) error {
 	segSecs := fs.Int("segment-seconds", 2, "target segment duration in seconds")
 	cache := fs.String("cache", "", "DAG result cache directory (defaults to OUT/cache)")
 	noRecover := fs.Bool("no-recover", false, "disable reuse of verified cached results")
+	rtpInput := fs.Bool("rtp", false, "treat --input as an RTP capture (payload type 33, MP2T)")
 	if err := fs.Parse(args); err != nil {
 		return exitCode{code: exitDamaged, message: err.Error()}
 	}
@@ -336,6 +351,29 @@ func runProcess(args []string) error {
 	if _, err := os.Stat(*input); err != nil {
 		return exitCode{code: exitDamaged, message: fmt.Sprintf("run: %v", err)}
 	}
+	// An RTP capture is de-packetised into a temporary bare TS, which the
+	// normal pipeline then consumes. Sequence gaps are reported as located
+	// diagnostics but do not themselves block: continuity and timestamp
+	// repair decide whether the stream is usable.
+	effectiveInput := *input
+	if *rtpInput {
+		cap, err := ts.ExtractRTP(*input)
+		if err != nil {
+			return exitCode{code: exitDamaged, message: fmt.Sprintf("run: rtp: %v", err)}
+		}
+		for _, g := range cap.SequenceGaps {
+			fmt.Printf("rtp_gap=%s\n", g.Error())
+		}
+		tsPath := filepath.Join(*out, "depacketised.ts")
+		if err := os.MkdirAll(*out, 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(tsPath, cap.Payload, 0o644); err != nil {
+			return err
+		}
+		effectiveInput = tsPath
+		fmt.Printf("rtp_packets=%d rtp_ssrc=0x%08x\n", cap.Packets, cap.SSRC)
+	}
 	params := pipeline.DefaultParams()
 	params.Seed = *seed
 	params.SegmentTicks = int64(*segSecs) * clock.TimeScale
@@ -344,7 +382,7 @@ func runProcess(args []string) error {
 		cacheDir = filepath.Join(*out, "cache")
 	}
 	opts := pipeline.Options{Workers: *workers, CacheDir: cacheDir, AllowRecovery: !*noRecover}
-	res, err := pipeline.Run(context.Background(), *input, *out, params, opts)
+	res, err := pipeline.Run(context.Background(), effectiveInput, *out, params, opts)
 	if err != nil {
 		var blocked *pipeline.BlockedError
 		if errors.As(err, &blocked) {

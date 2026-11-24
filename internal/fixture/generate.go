@@ -9,7 +9,9 @@ package fixture
 
 import (
 	"bytes"
+
 	"fmt"
+	"github.com/pion/rtp"
 	"os"
 	"sort"
 )
@@ -463,6 +465,47 @@ func Generate(path string, spec Spec) (*Generated, error) {
 }
 
 // ---- damage ----
+
+// WriteRTPCapture re-frames a generated master into an RTP capture with one
+// 188-byte TS packet per RTP packet (payload type 33, MP2T). When dropAt is a
+// positive sequence offset, that RTP packet is omitted so the capture carries
+// a real sequence gap for the de-packetiser to report.
+func WriteRTPCapture(tsPath, rtpPath string, ssrc uint32, seqStart uint16, dropSeq uint16, hasDrop bool) (packets int, dropped bool, err error) {
+	b, err := os.ReadFile(tsPath)
+	if err != nil {
+		return 0, false, err
+	}
+	if len(b)%PacketSize != 0 {
+		return 0, false, fmt.Errorf("fixture: input is not a whole number of %d-byte packets", PacketSize)
+	}
+	var out []byte
+	seq := seqStart
+	for off := 0; off+PacketSize <= len(b); off += PacketSize {
+		if hasDrop && seq == dropSeq {
+			seq++
+			dropped = true
+			continue
+		}
+		pkt := &rtp.Packet{
+			Header: rtp.Header{
+				Version: 2, PayloadType: 33, SequenceNumber: seq,
+				Timestamp: uint32(seq) * 3000, SSRC: ssrc,
+			},
+			Payload: b[off : off+PacketSize],
+		}
+		raw, err := pkt.Marshal()
+		if err != nil {
+			return 0, false, err
+		}
+		out = append(out, raw...)
+		seq++
+		packets++
+	}
+	if err := os.WriteFile(rtpPath, out, 0o644); err != nil {
+		return 0, false, err
+	}
+	return packets, dropped, nil
+}
 
 // GenerateBlocked writes a master whose first video PTS is far beyond the
 // clock's plausibility limit and carries no discontinuity flag. Such a stream
