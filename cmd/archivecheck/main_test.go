@@ -109,6 +109,17 @@ func TestCLIArgumentErrorsExitTwo(t *testing.T) {
 	}
 }
 
+func TestCLIDefaultBandwidthWhenOmitted(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "frames")
+	code := run([]string{
+		"--fixture", "valid", "--tracks", "3",
+		"--window", "4", "--out", out,
+	})
+	if code != exitOK {
+		t.Fatalf("omitted bandwidth must fall back to defaults, exit = %d", code)
+	}
+}
+
 func TestCLITruncatedIsDegradedNotBlocked(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "trunc")
 	code := run([]string{

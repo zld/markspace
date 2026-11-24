@@ -37,12 +37,12 @@ check "valid exit code" 0 "$?"
 
 echo "== burst-loss =="
 "$BIN" --fixture burst-loss --tracks 3 --window 2 \
-  --bandwidth-kbps "$BW" --out "$WORK/bad" > "$WORK/bad.json"
+  --out "$WORK/bad" > "$WORK/bad.json"
 check "burst-loss exit code" 1 "$?"
 
 echo "== repaired resume =="
 "$BIN" --fixture repaired --tracks 3 --window 4 \
-  --bandwidth-kbps "$BW" --resume "$WORK/bad" --out "$WORK/recovered" \
+  --resume "$WORK/bad" --out "$WORK/recovered" \
   > "$WORK/rec.json"
 check "repaired exit code" 0 "$?"
 

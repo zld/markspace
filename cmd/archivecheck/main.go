@@ -49,7 +49,7 @@ func run(argv []string) int {
 		fmt.Fprintln(os.Stderr, "archivecheck: "+err.Error())
 		return exitBadArgs
 	}
-	bw, err := parseBandwidths(args.bandwidthRaw, args.tracks)
+	bw, err := resolveBandwidths(args.bandwidthRaw, args.tracks)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "archivecheck: "+err.Error())
 		return exitBadArgs
@@ -143,10 +143,6 @@ func parseArgs(argv []string) (cliArgs, error) {
 		return a, merr.New(merr.KindArgument, "cli", "--tracks",
 			"tracks must be >= 1")
 	}
-	if a.bandwidthRaw == "" {
-		return a, merr.New(merr.KindArgument, "cli", "--bandwidth-kbps",
-			"--bandwidth-kbps is required")
-	}
 	if a.window < 1 {
 		return a, merr.New(merr.KindArgument, "cli", "--window",
 			"window must be >= 1")
@@ -164,6 +160,24 @@ func parseArgs(argv []string) (cliArgs, error) {
 			"max-attempts must be >= 1")
 	}
 	return a, nil
+}
+
+// defaultBandwidthKbps is used when --bandwidth-kbps is omitted, so the
+// burst-loss/repaired acceptance commands remain self-contained.
+var defaultBandwidthKbps = []int{800, 420, 1100, 600, 300}
+
+// resolveBandwidths returns the explicit per-track bandwidths, or a
+// deterministic default list when the flag is omitted.
+func resolveBandwidths(raw string, tracks int) ([]int, error) {
+	if strings.TrimSpace(raw) == "" {
+		if tracks > len(defaultBandwidthKbps) {
+			return nil, merr.New(merr.KindArgument, "cli", "--bandwidth-kbps",
+				"omit --bandwidth-kbps only for up to "+
+					strconv.Itoa(len(defaultBandwidthKbps))+" tracks")
+		}
+		return append([]int(nil), defaultBandwidthKbps[:tracks]...), nil
+	}
+	return parseBandwidths(raw, tracks)
 }
 
 func parseBandwidths(raw string, tracks int) ([]int, error) {
