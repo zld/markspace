@@ -175,9 +175,10 @@ type Metrics struct {
 	SegmentHashMatch     Ratio `json:"segment_hash_match"`
 }
 
-// AllHeld reports whether every ratio is a perfect score.
+// AllHeld reports whether every ratio is a perfect score over a non-empty
+// denominator. An inapplicable ratio (0/0) does not count as held.
 func (m Metrics) AllHeld() bool {
-	return m.RoundtripConsistency.Num == m.RoundtripConsistency.Den &&
-		m.KeyframeIndexHitRate.Num == m.KeyframeIndexHitRate.Den &&
-		m.SegmentHashMatch.Num == m.SegmentHashMatch.Den
+	return held(m.RoundtripConsistency) && held(m.KeyframeIndexHitRate) && held(m.SegmentHashMatch)
 }
+
+func held(r Ratio) bool { return r.Den > 0 && r.Num == r.Den }

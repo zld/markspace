@@ -486,7 +486,8 @@ func loadTimecodes(in Inputs, st *Stats) []timeline.TimecodeMark {
 // never silently "fixed" into the ratio.
 func timecodeRoundtrip(in Inputs, st *Stats) report.Ratio {
 	if in.TimecodePath == "" {
-		return report.NewRatio(1, 1)
+		// No labels means the ratio is not applicable, not perfect.
+		return report.NewRatio(0, 0)
 	}
 	data, err := os.ReadFile(in.TimecodePath)
 	if err != nil {

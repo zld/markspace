@@ -112,3 +112,11 @@ func TestRatio(t *testing.T) {
 		t.Fatalf("field encoding %q", buf.String())
 	}
 }
+
+func TestMetricsNotHeldWhenInapplicable(t *testing.T) {
+	perfect := NewRatio(1, 1)
+	m := Metrics{RoundtripConsistency: NewRatio(0, 0), KeyframeIndexHitRate: perfect, SegmentHashMatch: perfect}
+	if m.AllHeld() {
+		t.Fatal("an inapplicable ratio must not read as a perfect score")
+	}
+}
