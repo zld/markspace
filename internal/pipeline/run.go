@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
 
 	mpierr "mediapipeline/internal/errors"
 	"mediapipeline/internal/provenance"
@@ -80,12 +81,33 @@ func (e *Engine) Run() Report {
 		rep.FirstError = srep.FailedErr
 	}
 
-	// Finalize provenance: attach output digest and checkpoint state.
+	// Finalize provenance: attach output digest and checkpoint state, then
+	// persist the canonical record so an external reviewer can recompute and
+	// verify its digest without this process.
 	e.finalizeProvenance()
+	canonical, _ := e.rec.CanonicalJSON()
+	if err := e.writeProvenanceFile(canonical); err != nil {
+		rep.FirstError = asMedia(err, "provenance")
+		return rep
+	}
 	digest, _ := e.rec.Digest()
 	rep.ProvenanceDigest = digest
 	rep.Summary = e.outputDigest
 	return rep
+}
+
+// writeProvenanceFile atomically writes the canonical provenance JSON next to
+// the checkpoint, making the processing trail independently re-verifiable.
+func (e *Engine) writeProvenanceFile(canonical []byte) error {
+	path := filepath.Join(e.cfg.WorkDir, "provenance.json")
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, canonical, 0o644); err != nil {
+		return mpierr.New(mpierr.CatCheckpoint, 0, "provenance", "write record").Wrap(err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return mpierr.New(mpierr.CatCheckpoint, 0, "provenance", "rename record").Wrap(err)
+	}
+	return nil
 }
 
 // contains reports whether s includes v.
