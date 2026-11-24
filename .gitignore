@@ -1,0 +1,8 @@
+# binaries
+/medialab
+/bin/
+*.test
+*.out
+
+# local demo workspace
+/.medialab-demo/
