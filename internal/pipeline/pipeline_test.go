@@ -157,6 +157,43 @@ func TestMissingSegmentRecorded(t *testing.T) {
 	}
 }
 
+func TestSegmentsAfterGapStayValid(t *testing.T) {
+	// A missing segment must not poison the time line or JSON of the
+	// independent segments that follow it (regression: NaN propagation).
+	inputs := makeSegments(t, 4, false)
+	inputs[2].Present = false
+	p := New(0)
+	s := p.Run(inputs)
+	if s.DamagedSegments != 1 {
+		t.Fatalf("expected exactly one damaged segment: %+v", s)
+	}
+	for _, r := range p.Results() {
+		if r.Parsed.Damaged {
+			continue
+		}
+		if !r.RoundtripOK {
+			t.Fatalf("clean segment %s failed validation after gap",
+				r.Parsed.Input.Name)
+		}
+		for _, smp := range r.Normalized.Samples {
+			if mathIsNaN(smp.TimeSeconds) || mathIsNaN(smp.CorrectionDelta) {
+				t.Fatalf("NaN leaked into normalized sample: %+v", smp)
+			}
+		}
+	}
+	// Canonicalization of every clean segment must still succeed.
+	for _, r := range p.Results() {
+		if r.Parsed.Damaged {
+			continue
+		}
+		if _, err := Canonicalize(r.Normalized); err != nil {
+			t.Fatalf("canonical JSON failed after gap: %v", err)
+		}
+	}
+}
+
+func mathIsNaN(v float64) bool { return v != v }
+
 func TestCheckpointRoundTrip(t *testing.T) {
 	inputs := makeSegments(t, 3, false)
 	first := New(0)

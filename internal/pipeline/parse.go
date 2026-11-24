@@ -87,6 +87,9 @@ type Pipeline struct {
 	Index        *index.Index
 	Hasher       *report.Hasher
 	results      []*Result
+	// knownMissing holds media sequence numbers already reported as gaps
+	// by the manifest layer, so the parse stage does not double-report.
+	knownMissing map[uint64]bool
 }
 
 // New constructs a pipeline with empty accumulators.
@@ -97,6 +100,18 @@ func New(driftPPM float64) *Pipeline {
 		Log:          fault.NewLog(),
 		Index:        &index.Index{},
 		Hasher:       report.NewHasher(),
+		knownMissing: map[uint64]bool{},
+	}
+}
+
+// MarkManifestMissing registers sequence numbers whose absence the
+// manifest layer has already recorded.
+func (p *Pipeline) MarkManifestMissing(seqs ...uint64) {
+	if p.knownMissing == nil {
+		p.knownMissing = map[uint64]bool{}
+	}
+	for _, s := range seqs {
+		p.knownMissing[s] = true
 	}
 }
 
@@ -114,12 +129,16 @@ func (p *Pipeline) ParseStage(in SegmentInput) *ParsedSegment {
 	ps := &ParsedSegment{Input: in, InputHash: report.Sum256(in.Data)}
 	if !in.Present {
 		ps.Damaged = true
-		p.Log.Add(fault.Record{
-			Stage: fault.StageManifest, Severity: fault.SeverityError,
-			Kind: fault.KindMissingSegment, Segment: in.Name,
-			MediaSeq: in.MediaSeq, SourceOffset: in.ManifestOffset,
-			Message: "segment listed in manifest but absent from inputs",
-		})
+		// The manifest layer already reported this gap with its source
+		// offset; only add the parse-stage record when it did not.
+		if !p.knownMissing[in.MediaSeq] {
+			p.Log.AddUnique(fault.Record{
+				Stage: fault.StageManifest, Severity: fault.SeverityError,
+				Kind: fault.KindMissingSegment, Segment: in.Name,
+				MediaSeq: in.MediaSeq, SourceOffset: in.ManifestOffset,
+				Message: "segment listed in manifest but absent from inputs",
+			})
+		}
 		return ps
 	}
 	res, err := stream.ParseMP4(in.Data)

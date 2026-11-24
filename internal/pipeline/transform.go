@@ -87,13 +87,17 @@ func (p *Pipeline) TransformStage(ps *ParsedSegment, st *TransformState) (*Norma
 // segmentSpan computes corrected duration from actual sample durations
 // (VFR-safe): the final sample DTS plus its duration minus the base.
 func segmentSpan(mp *stream.MP4Result, timescale uint32, tl *clock.Timeline) clock.Rat {
+	zero := clock.NewRat(0, 1)
 	if mp == nil || len(mp.Samples) == 0 {
-		return clock.Rat{}
+		// An explicit zero (rather than the zero-value Rat whose
+		// denominator is 0) keeps every downstream number finite even
+		// after a missing or fully unparseable segment.
+		return zero
 	}
 	last := mp.Samples[len(mp.Samples)-1]
 	endUnits := int64(last.DTS) + int64(last.Duration) - int64(mp.BaseDTS)
 	if endUnits < 0 {
-		endUnits = 0
+		return zero
 	}
 	return tl.Correct(endUnits)
 }

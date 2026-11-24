@@ -161,6 +161,11 @@ func scanOne(f manifest.Format, sc *fixture.Scenario, cfg fixture.ScenarioConfig
 	}
 
 	p := pipeline.New(cfg.DriftPPM)
+	for _, r := range mlog.Records() {
+		if r.Kind == fault.KindMissingSegment {
+			p.MarkManifestMissing(r.MediaSeq)
+		}
+	}
 	mergeManifestFaults(p, mlog)
 	summary := p.Run(inputs)
 
@@ -208,7 +213,7 @@ func parseManifest(f manifest.Format, sc *fixture.Scenario) (*manifest.Manifest,
 func mergeManifestFaults(p *pipeline.Pipeline, log *fault.Log) {
 	for _, r := range log.Records() {
 		if r.Severity == fault.SeverityError {
-			p.Log.Add(r)
+			p.Log.AddUnique(r)
 		}
 	}
 }

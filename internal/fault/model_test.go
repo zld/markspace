@@ -34,3 +34,28 @@ func TestLogCollectsAndFilters(t *testing.T) {
 		t.Fatal("Records() must return a defensive copy")
 	}
 }
+
+func TestAddUniqueDeduplicates(t *testing.T) {
+	log := NewLog()
+	base := Record{
+		Stage: StageManifest, Severity: SeverityError,
+		Kind: KindMissingSegment, Segment: "s2.m4s", MediaSeq: 2,
+		SourceOffset: 40, Message: "first",
+	}
+	if !log.AddUnique(base) {
+		t.Fatal("first AddUnique must insert")
+	}
+	if log.AddUnique(base) {
+		t.Fatal("identical AddUnique must not re-insert")
+	}
+	if log.AddUnique(Record{
+		Stage: StageManifest, Severity: SeverityError,
+		Kind: KindMissingSegment, Segment: "s2.m4s", MediaSeq: 2,
+		SourceOffset: 99, Message: "different offset",
+	}) != true {
+		t.Fatal("a different source offset is a distinct record")
+	}
+	if len(log.Records()) != 2 {
+		t.Fatalf("record count = %d, want 2", len(log.Records()))
+	}
+}

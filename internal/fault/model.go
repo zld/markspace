@@ -82,6 +82,37 @@ func (l *Log) Records() []Record {
 	return out
 }
 
+// identity is the dedup key for the same underlying condition.
+func (r Record) identity() struct {
+	Stage    Stage
+	Kind     Kind
+	Segment  string
+	MediaSeq uint64
+	Offset   int64
+} {
+	return struct {
+		Stage    Stage
+		Kind     Kind
+		Segment  string
+		MediaSeq uint64
+		Offset   int64
+	}{r.Stage, r.Kind, r.Segment, r.MediaSeq, r.SourceOffset}
+}
+
+// AddUnique appends a record only when no record with the same stage,
+// kind, segment, sequence and source offset already exists. It reports
+// whether the record was newly added.
+func (l *Log) AddUnique(r Record) bool {
+	key := r.identity()
+	for _, existing := range l.records {
+		if existing.identity() == key {
+			return false
+		}
+	}
+	l.Add(r)
+	return true
+}
+
 // HasError reports whether any error-severity record exists.
 func (l *Log) HasError() bool {
 	for _, r := range l.records {
