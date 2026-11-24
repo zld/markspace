@@ -137,3 +137,19 @@ func (t *Timeline) WallTime(extTS int64) (time.Time, bool) {
 func (t *Timeline) String() string {
 	return fmt.Sprintf("anchors=%d drift_ppm=%.1f", len(t.anchors), t.driftPPM)
 }
+
+// State is the JSON-serializable form of a Timeline, stored in checkpoints.
+type State struct {
+	Anchors  []Anchor `json:"anchors"`
+	DriftPPM float64  `json:"drift_ppm"`
+}
+
+// Snapshot exports the timeline state for persistence.
+func (t *Timeline) Snapshot() State {
+	return State{Anchors: append([]Anchor(nil), t.anchors...), DriftPPM: t.driftPPM}
+}
+
+// FromSnapshot rebuilds a Timeline from persisted state.
+func FromSnapshot(s State) *Timeline {
+	return &Timeline{anchors: append([]Anchor(nil), s.Anchors...), driftPPM: s.DriftPPM}
+}
