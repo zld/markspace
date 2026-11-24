@@ -65,6 +65,9 @@ func (r *Runner) Run(input io.Reader) (*Report, error) {
 		}
 		r.prefixBuf.Write(frame.Raw)
 		if err := r.handleFrame(frame); err != nil {
+			if errors.Is(err, ErrInterrupted) {
+				return r.report(), ErrInterrupted
+			}
 			return nil, err
 		}
 	}
@@ -223,18 +226,18 @@ func (r *Runner) report() *Report {
 		peak = 0
 	}
 	return &Report{
-		Packets:     r.packets,
-		Duplicates:  st.Duplicates,
-		Reordered:   st.Reordered,
-		LateDropped: st.LateDropped,
-		Gaps:        r.window.Loss().GapCount(),
-		Bursts:      r.window.Loss().Bursts(),
-		SamplesIn:   r.samplesIn,
+		Packets:     r.basePackets + r.packets,
+		Duplicates:  r.baseDup + st.Duplicates,
+		Reordered:   r.baseReorder + st.Reordered,
+		LateDropped: r.baseLate + st.LateDropped,
+		Gaps:        r.baseGaps + r.window.Loss().GapCount(),
+		Bursts:      r.baseBursts + r.window.Loss().Bursts(),
+		SamplesIn:   r.samplesIn, // already seeded from the checkpoint on resume
 		SamplesOut:  r.samplesOut,
 		PeakDBFS:    peak,
 		ClipBefore:  r.clipBefore,
 		ClipAfter:   r.clipAfter,
-		Clipped:      r.clipped,
+		Clipped:     r.clipped,
 		SHA256:      hex.EncodeToString(r.hasher.Sum(nil)),
 		ResumeMS:    r.resumeMS,
 	}

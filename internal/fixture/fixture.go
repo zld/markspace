@@ -24,6 +24,8 @@ type Params struct {
 	DuplicateReorder bool
 	BurstLoss        bool
 	WrapTS           bool
+	IsolatedGaps     int // number of isolated single-packet losses to inject
+	ReorderSwaps     int // number of adjacent packet order swaps
 }
 
 // Default returns the demo parameters used by the acceptance commands.
@@ -31,6 +33,7 @@ func Default() Params {
 	return Params{
 		Packets: 12000, Rate: 48000, Channels: 2, SamplesPkt: 48,
 		Seed: 1, SSRC: 0xa11ce, DuplicateReorder: true,
+		IsolatedGaps: 3, ReorderSwaps: 37,
 	}
 }
 
@@ -52,7 +55,29 @@ func Build(p Params) (stream []byte, seqs []uint16, samples int) {
 	// One sender report near the start: NTP 1.0s paired with RTP tick 0.
 	writeSR(&out, p.SSRC, uint64(1)<<32, 0)
 
+	// Build the logical packet sequence, then decide arrival order and loss.
+	omit := map[int]bool{}
+	for g := 0; g < p.IsolatedGaps; g++ {
+		// Spread isolated losses across the stream, away from the edges.
+		omit[p.Packets*(g+1)/(p.IsolatedGaps+1)] = true
+	}
+	logical := make([]int, 0, p.Packets)
 	for i := 0; i < p.Packets; i++ {
+		if !omit[i] {
+			logical = append(logical, i)
+		}
+	}
+	if p.ReorderSwaps > 0 {
+		// Swap selected adjacent arrivals; each swap is one reorder event.
+		for s := 0; s < p.ReorderSwaps; s++ {
+			idx := (s+1)*len(logical)/(p.ReorderSwaps+1)
+			if idx+1 < len(logical) {
+				logical[idx], logical[idx+1] = logical[idx+1], logical[idx]
+			}
+		}
+	}
+
+	for _, i := range logical {
 		seq := uint16(i)
 		ts := uint32(i) * step
 		if p.WrapTS && i > p.Packets-3 {
@@ -63,7 +88,7 @@ func Build(p Params) (stream []byte, seqs []uint16, samples int) {
 		seqs = append(seqs, seq)
 		samples += p.SamplesPkt * p.Channels
 
-		// Inject a duplicate of an earlier packet and reorder two neighbors.
+		// Inject an occasional duplicate of an earlier, still-in-window packet.
 		if p.DuplicateReorder && i > 10 && i%373 == 0 {
 			writeRTP(&out, uint16(i-3), uint32(i-3)*step, p.SSRC,
 				l16Payload(rng, p.SamplesPkt, p.Channels, i-3))

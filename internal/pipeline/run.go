@@ -31,9 +31,24 @@ type Config struct {
 	BlockFrames  int     `json:"block_frames"`
 }
 
-// ConfigJSON renders the canonical parameter digest input.
+// ConfigJSON renders the canonical parameter digest input. The input path is
+// deliberately excluded: it identifies the job but is not a processing
+// parameter, so a relocated-but-otherwise-identical input stays compatible.
 func (c Config) ConfigJSON() []byte {
-	b, _ := json.Marshal(c)
+	params := struct {
+		SourceRate   int     `json:"source_rate"`
+		SourceChans  int     `json:"source_channels"`
+		TargetRate   int     `json:"target_rate"`
+		TargetLayout string  `json:"target_layout"`
+		TargetLUFS   float64 `json:"target_lufs"`
+		WindowSize   uint64  `json:"window_size"`
+		BurstRun     uint64  `json:"burst_run"`
+		BlockFrames  int     `json:"block_frames"`
+	}{
+		c.SourceRate, c.SourceChans, c.TargetRate, c.TargetLayout,
+		c.TargetLUFS, c.WindowSize, c.BurstRun, c.BlockFrames,
+	}
+	b, _ := json.Marshal(params)
 	return b
 }
 
@@ -95,4 +110,10 @@ type Runner struct {
 	state     *checkpoint.State
 	blocks    int
 	resumeMS  int64
+
+	// Baselines restored from a checkpoint; zero on a fresh run.
+	basePackets, baseDup, baseReorder, baseLate uint64
+	baseGaps, baseBursts, baseClipped            int
+	baseSamplesIn                                int64
+	basePeak, baseClipBefore, baseClipAfter      float64
 }

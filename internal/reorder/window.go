@@ -94,14 +94,14 @@ func (w *Window) Push(p *Packet) []Event {
 
 	var events []Event
 	if ext != w.next {
-		if ext-w.next <= w.size {
-			w.stats.Reordered++
-		}
+		// A packet ahead of the frontier that is not yet buffered fills a hole:
+		// that is a genuine reorder, counted once per such arrival.
+		w.stats.Reordered++
 		// Far-ahead arrivals expire everything more than one window behind.
 		for ext-w.next > w.size {
 			e := w.advance()
 			if e.Kind == KindGap {
-				e.Gap.Offset = p.Offset // locate the hole at the arrival that forced it
+				e.Gap.Offset = p.Offset // locate the hole at the forcing arrival
 			}
 			events = append(events, e)
 		}

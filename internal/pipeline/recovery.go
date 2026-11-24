@@ -17,16 +17,29 @@ func (r *Runner) commit() error {
 		return nil
 	}
 	prefix := r.prefixBuf.Bytes()
+	loss := r.window.Loss()
 	st := &checkpoint.State{
-		JobID:          r.cfg.InputPath,
-		InputPath:      r.cfg.InputPath,
-		ConfigSummary:  checkpoint.SummaryHash(r.cfg.ConfigJSON()),
-		PrefixHash:     checkpoint.PrefixHashOf(prefix),
-		ConsumedOffset: int64(len(prefix)),
+		JobID:           r.cfg.InputPath,
+		InputPath:       r.cfg.InputPath,
+		ConfigSummary:   checkpoint.SummaryHash(r.cfg.ConfigJSON()),
+		PrefixHash:      checkpoint.PrefixHashOf(prefix),
+		CommittedPrefix: append([]byte(nil), prefix...),
+		ConsumedOffset:  int64(len(prefix)),
 		NextSeq:        r.window.NextSeq(),
 		BlocksDone:     r.blocks,
 		OutputSamples:  r.samplesOut,
 		OutputHash:     r.SHA256(),
+		Packets:        r.packets,
+		Duplicates:     r.window.Stats().Duplicates,
+		Reordered:      r.window.Stats().Reordered,
+		LateDropped:    r.window.Stats().LateDropped,
+		Gaps:           loss.GapCount(),
+		Bursts:         loss.Bursts(),
+		SamplesIn:      r.samplesIn,
+		Clipped:        r.clipped,
+		PeakDBFS:       r.peak,
+		ClipBefore:     r.clipBefore,
+		ClipAfter:      r.clipAfter,
 	}
 	r.state = st
 	return checkpoint.Save(r.ckptPath, st)
@@ -59,7 +72,9 @@ func Resume(cfg Config, inPath, ckptPath string, out *os.File) (*Runner, io.Read
 		}
 	}
 	livePrefix := raw[:st.ConsumedOffset]
-	if err := st.Verify(cfg.ConfigJSON(), livePrefix, livePrefix); err != nil {
+	// The stored committed prefix enables a true byte-level diff that reports
+	// the exact divergence offset; the hashes are the tamper proof.
+	if err := st.Verify(cfg.ConfigJSON(), st.CommittedPrefix, livePrefix); err != nil {
 		return nil, nil, 0, err
 	}
 
@@ -92,6 +107,22 @@ func Resume(cfg Config, inPath, ckptPath string, out *os.File) (*Runner, io.Read
 
 	r.blocks = st.BlocksDone
 	r.samplesOut = st.OutputSamples
+	r.basePackets = st.Packets
+	r.baseDup = st.Duplicates
+	r.baseReorder = st.Reordered
+	r.baseLate = st.LateDropped
+	r.baseGaps = st.Gaps
+	r.baseBursts = st.Bursts
+	r.baseClipped = st.Clipped
+	r.baseSamplesIn = st.SamplesIn
+	r.basePeak = st.PeakDBFS
+	r.baseClipBefore = st.ClipBefore
+	r.baseClipAfter = st.ClipAfter
+	r.peak = st.PeakDBFS
+	r.clipBefore = st.ClipBefore
+	r.clipAfter = st.ClipAfter
+	r.clipped = st.Clipped
+	r.samplesIn = st.SamplesIn
 	r.packets = 0
 	// Seed the committed input prefix so later checkpoints stay comparable.
 	r.prefixBuf.Write(raw[:st.ConsumedOffset])

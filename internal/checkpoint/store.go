@@ -35,6 +35,20 @@ type State struct {
 	BlocksDone     int    `json:"blocks_done"`     // validated audio blocks committed
 	OutputSamples  int64  `json:"output_samples"`  // PCM samples already written
 	OutputHash     string `json:"output_hash"`     // running sha256 of the output prefix
+	CommittedPrefix []byte `json:"committed_prefix"` // exact prefix for byte-level diff
+
+	// Cumulative delivery counters carried across an interruption.
+	Packets     uint64 `json:"packets"`
+	Duplicates  uint64 `json:"duplicates"`
+	Reordered   uint64 `json:"reordered"`
+	LateDropped uint64 `json:"late_dropped"`
+	Gaps        int    `json:"gaps"`
+	Bursts      int    `json:"bursts"`
+	SamplesIn   int64  `json:"samples_in"`
+	Clipped     int    `json:"clipped"`
+	PeakDBFS    float64 `json:"peak_dbfs"`
+	ClipBefore  float64 `json:"clip_before"`
+	ClipAfter   float64 `json:"clip_after"`
 }
 
 // MismatchError carries the reason and the byte offset that proved the
