@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"mediarc/internal/checkpoint"
 	"mediarc/internal/media"
 	"mediarc/internal/model"
 )
@@ -37,6 +38,17 @@ func TestDemoInterruptResumeProducesStableMP4(t *testing.T) {
 	}
 	if first.Summary.CommittedChunks != 2 {
 		t.Fatalf("committed=%d want 2", first.Summary.CommittedChunks)
+	}
+	store := checkpoint.New(dir)
+	for i := 0; i < 2; i++ {
+		b, err := os.ReadFile(store.ChunkPath(i))
+		if err != nil {
+			t.Fatalf("chunk %d mp4: %v", i, err)
+		}
+		tracks, err := media.ProbeBytes(b)
+		if err != nil || len(tracks) != 2 {
+			t.Fatalf("chunk %d tracks=%+v err=%v", i, tracks, err)
+		}
 	}
 
 	o.InterruptAfter = 0
