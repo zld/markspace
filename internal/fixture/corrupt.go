@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"archive/internal/essence"
 	"archive/internal/model"
 )
 
@@ -87,9 +88,22 @@ func Plan(layout *Layout, kinds []DamageKind) (patches []DamagePlan, rebuildInde
 				return nil, false, fmt.Errorf("fixture: no track large enough for segment damage")
 			}
 			mid := tl.Frames[len(tl.Frames)/2]
+			// Corrupt the essence payload, not the frame header: the frame
+			// boundary must stay discoverable so the recovery scanner can
+			// report a determinable (and time-exact) damaged interval.
+			// Losing the header is a separate, stronger failure tested by
+			// truncation and header-wipe cases.
+			payloadStart := mid.Offset + essence.HeaderSize
+			if layout.Spec.Format == model.ContainerMXF {
+				payloadStart = mid.Offset + 20 + essence.HeaderSize
+			}
+			payloadLen := mid.Size
+			if layout.Spec.Format == model.ContainerMXF {
+				payloadLen = mid.Size - 20
+			}
 			patches = append(patches, DamagePlan{
 				Kind: DamageSegment, Track: tl.Spec.Logical,
-				At: mid.Offset + 20, Len: mid.Size - 20,
+				At: payloadStart, Len: payloadLen - essence.HeaderSize,
 			})
 		case DamageTruncate:
 			last := uint64(0)
