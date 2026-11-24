@@ -23,6 +23,7 @@ type Summary struct {
 	EndPTS       uint64
 	IndexRange   [2]int // keyframe IDs [first, last) inside the segment
 	PacketCount  int
+	Ordinals     []int64 // stable packet ordinals actually hashed, in order
 	SHA256       string
 }
 
@@ -39,6 +40,7 @@ type Hasher struct {
 	firstKeyframe     int
 	lastKeyframe      int
 	seq               int
+	ordinals          []int64
 }
 
 // NewHasher creates a Hasher. packetsPerSegment must be >= 1.
@@ -54,13 +56,16 @@ func NewHasher(packetsPerSegment int) *Hasher {
 }
 
 // AddPacket feeds one repaired packet (its raw 188 bytes) and the ordinal,
-// byte offset and current PTS of that packet.
+// byte offset and current PTS of that packet. The ordinal must be the
+// packet's stable position in the byte stream so segment ranges stay valid
+// after duplicates or recovered drops.
 func (h *Hasher) AddPacket(ordinal, offset int64, pts uint64, raw []byte) {
 	if h.currentPackets == 0 {
 		h.startPacket, h.startOffset, h.startPTS = ordinal, offset, pts
 	}
 	h.currentHash.Write(raw)
 	h.currentPackets++
+	h.ordinals = append(h.ordinals, ordinal)
 	h.lastPTS = pts
 	if h.currentPackets == h.packetsPerSegment {
 		h.finish(ordinal+1, offset+int64(len(raw)))
@@ -101,11 +106,13 @@ func (h *Hasher) finish(endPacket, endOffset int64) {
 		EndPTS:      h.lastPTS,
 		IndexRange:  idxRange,
 		PacketCount: h.currentPackets,
+		Ordinals:    append([]int64(nil), h.ordinals...),
 		SHA256:      hex.EncodeToString(sum),
 	})
 	h.seq++
 	h.currentPackets = 0
 	h.currentHash.Reset()
+	h.ordinals = nil
 	h.firstKeyframe, h.lastKeyframe = -1, 0
 }
 
