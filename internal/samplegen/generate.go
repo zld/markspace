@@ -152,7 +152,7 @@ func makeBlockPCM(seed int64, block int, rng *rand.Rand) []byte {
 				sample = 32767
 			}
 			if global == 29 && ch == 1 {
-				sample = -32768
+				sample = 32767
 			}
 			off := (f*DemoChannels + ch) * 2
 			binary.LittleEndian.PutUint16(pcm[off:off+2], uint16(sample))
