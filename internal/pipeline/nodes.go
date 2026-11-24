@@ -235,12 +235,21 @@ func (e *Engine) runSync(name string) error {
 			return annotate(rerr, name)
 		}
 		ticks := tl.Convert(uint64(fixture.VideoStep), uint64(fixture.VideoRate))
-		start := tl.Cursor(clock.KindVideo) + e.cfg.VideoDelayTicks
+		// The delay is applied once, to the very first frame; every later
+		// frame starts exactly at the cursor so the timeline stays contiguous
+		// and no module re-accumulates time.
+		start := tl.Cursor(clock.KindVideo)
+		if first {
+			start += e.cfg.VideoDelayTicks
+		}
 		iv, cerr := tl.Commit(clock.KindVideo, start, ticks)
 		if cerr != nil {
 			return mpierr.New(mpierr.CatSync, f.ExtSeq, name, "video commit failed").Wrap(cerr)
 		}
 		vart.Samples = append(vart.Samples, output.Sample{Data: f.Payload, Ticks: uint32(ticks)})
+		// Record every committed video interval so the checkpoint is a complete
+		// audit of the published timeline, not just an aggregate span.
+		e.store.AppendInterval("video", checkpoint.Interval{Start: iv.Start, End: iv.End})
 		if first {
 			firstVideoStart = iv.Start
 			first = false
@@ -263,8 +272,6 @@ func (e *Engine) runSync(name string) error {
 	if aerr != nil {
 		return aerr // CatSync blocks mux; report carries the measured offset
 	}
-	e.store.AppendInterval("video", checkpoint.Interval{Start: firstVideoStart,
-		End: tl.Cursor(clock.KindVideo) + e.cfg.VideoDelayTicks})
 	if err := e.store.Save(); err != nil {
 		return mpierr.New(mpierr.CatCheckpoint, 0, name, "save intervals").Wrap(err)
 	}
