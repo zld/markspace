@@ -250,3 +250,34 @@ func TestConfigDigestIgnoresSubtitleOrder(t *testing.T) {
 		t.Fatal("subtitle slice order must not change the configuration digest")
 	}
 }
+
+func TestBrokenFrameFailureCountSurvivesResume(t *testing.T) {
+	m, _ := setup(t, fixtures.ScenarioBroken)
+	out := t.TempDir()
+	in := inputs(t, m, out)
+	// Short reads live at the very end of the clip, so use small chunks and
+	// stop before the last one, letting the resume render it.
+	in.ChunkSize = 8
+	in.InterruptAfter = 1
+	if _, err := Run(in); err == nil {
+		t.Fatal("expected interruption")
+	}
+	in.InterruptAfter = 0
+	st, err := Run(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.FrameFailures == 0 {
+		t.Fatal("short-read frames must still be counted after a resume")
+	}
+	// A fresh run must report the same count.
+	fresh := inputs(t, m, t.TempDir())
+	fresh.Resume = false
+	st2, err := Run(fresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.FrameFailures != st2.FrameFailures {
+		t.Fatalf("resume counted %d, fresh counted %d", st.FrameFailures, st2.FrameFailures)
+	}
+}

@@ -202,23 +202,19 @@ func Run(in Inputs) (Stats, error) {
 			// and the loop above validates each committed chunk.
 			st.ReplayedChunks++
 		}
-		if _, alreadyCommitted := store.Meta(i); alreadyCommitted {
-			// Should not happen: Begin(resume) validates that committed
-			// chunks match this run's inputs, and a failed check aborts.
-			st.ReplayedChunks++
-		}
 		if in.VerifyOnly {
 			return st, model.NewError(model.CodeCheckpointMismatch, "pipeline", "",
 				model.InputPos{}, "chunk %d is not committed but -verify was requested", i)
 		}
 		if _, alreadyCommitted := store.Meta(i); alreadyCommitted {
+			// Only reachable if verification let a committed chunk through
+			// but it was not marked fresh; count it as redone work.
 			st.ReplayedChunks++
 		}
 		points := render.SamplingPoints(spansOf(pl.chunk.Items), opt)
 		pl.chunk.Frames = render.RenderBatch(reader, track, video.samples, points, opt)
 		for _, fr := range pl.chunk.Frames {
 			if fr.Error != nil {
-				st.FrameFailures++
 				pl.chunk.Errors.Add(fr.Error)
 			}
 		}
@@ -248,12 +244,21 @@ func Run(in Inputs) (Stats, error) {
 		// ReplayedChunks counts any committed chunk that had to be redone.
 	}
 	matches := 0
+	frameFailures := 0
 	var itemsAll []timeline.Item
 	var framesAll []render.FrameRecord
 	for i := range manifest.Chunks {
 		p, err := store.ReadPayload(i)
 		if err != nil {
 			return st, err
+		}
+		// Frame failures are counted from the committed payloads, whether
+		// this process rendered them or verified them on resume. That keeps
+		// frame_errors identical between a resume and a fresh run.
+		for _, fr := range p.Frames {
+			if fr.Error != nil {
+				frameFailures++
+			}
 		}
 		// Recompute the chunk digest exactly as the store does: from the
 		// persisted items and frames plus the recorded input digest.
@@ -270,6 +275,7 @@ func Run(in Inputs) (Stats, error) {
 	}
 	st.SegmentHashMatch = report.NewRatio(matches, len(manifest.Chunks))
 	st.Frames = len(framesAll)
+	st.FrameFailures = frameFailures
 
 	// Round-trip consistency: every timecode label parsed to an instant must
 	// render back to the identical label and instant.
