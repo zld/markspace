@@ -46,9 +46,12 @@ type Options struct {
 
 // InputResult is the terminal state of one input.
 type InputResult struct {
-	Name        string `json:"name"`
-	InputPath   string `json:"input_path"`
-	Status      string `json:"status"`
+	Name      string `json:"name"`
+	InputPath string `json:"input_path"`
+	Status    string `json:"status"`
+	// ExitCode is what a single-input invocation would return: 0 success,
+	// 2 corrupt or unreparable input, 1 any other failure.
+	ExitCode    int    `json:"exit_code"`
 	Error       string `json:"error,omitempty"`
 	ErrorOffset int64  `json:"error_offset"`
 	TrackID     uint32 `json:"track_id"`
@@ -326,6 +329,7 @@ func (r *Runner) process(ctx context.Context, j *job) (*InputResult, error) {
 			// A deliberate interruption is not a failure: the checkpoint is
 			// intact and the next run continues from it.
 			res.Status = "interrupted"
+			res.ExitCode = 1
 			res.Error = err.Error()
 			res.CheckpointStage = cp.LastStage()
 			res.CheckpointKept = true
@@ -339,6 +343,7 @@ func (r *Runner) process(ctx context.Context, j *job) (*InputResult, error) {
 	}
 	res.ResumeMs = r.now().Sub(resumeStart).Milliseconds()
 	res.Status = "ok"
+	res.ExitCode = 0
 	res.CheckpointStage = cp.LastStage()
 	res.RepairedPTS = summarizeRepairs(cp.Repair)
 	res.RepairedEntries = cp.RepairedEntries
@@ -635,6 +640,7 @@ func (r *Runner) rescan(path string) (*scan.Container, error) {
 // fail records an error on the result and preserves a resumable checkpoint.
 func (r *Runner) fail(res *InputResult, err error) (*InputResult, error) {
 	res.Status = "error"
+	res.ExitCode = fault.ExitCode(err)
 	res.Error = err.Error()
 	res.ErrorOffset = -1
 	if f, ok := fault.AsFault(err); ok {

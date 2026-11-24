@@ -43,6 +43,8 @@ func run(args []string) int {
 		return cmdRun(args[1:])
 	case "query":
 		return cmdQuery(args[1:])
+	case "check":
+		return cmdCheck(args[1:])
 	case "help", "-h", "--help":
 		fmt.Print(usage())
 		return exitOK
@@ -60,8 +62,10 @@ Usage:
       Generate fixtures, process them and print an acceptance report.
   archivist run --out <dir> [--queue N] [--chunk N] <file>...
       Repair the given MP4/MOV files.
+  archivist check --out <dir> <file>
+      Process one file and exit 0/2/1 per the acceptance contract.
   archivist query --index <index.json> --track N --time <ticks> [--movie]
-      Resolve a time to the nearest keyframe at or before it.
+      Resolve a time to the nearest sample and its keyframe.
 
 Exit codes: 0 success, 2 corrupt input, 1 any other failure.
 `
@@ -120,6 +124,12 @@ func cmdDemo(args []string) int {
 		fmt.Fprintf(os.Stderr, "archivist: generate fixtures: %v\n", err)
 		return exitFailure
 	}
+	manifestPath, err := fixture.WriteManifest(inputsDir, samples)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "archivist: write manifest: %v\n", err)
+		return exitFailure
+	}
+	_ = manifestPath
 
 	rep := &report{Command: "demo", Dir: *dir, Queue: *queue, Chunk: *chunk}
 	for _, s := range samples {

@@ -7,6 +7,7 @@ package fixture
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -402,4 +403,42 @@ func buildLayout(opts Options, degrade *Degrade) *trackLayout {
 		}
 	}
 	return layout
+}
+
+// Manifest is the machine-readable description of a generated fixture set. It
+// records the exact first-corrupt offset for each damaged sample so tests and
+// the acceptance script can assert zero-byte error.
+type Manifest struct {
+	Samples []*Sample `json:"samples"`
+}
+
+// WriteManifest stores dir/manifest.json atomically.
+func WriteManifest(dir string, samples []*Sample) (string, error) {
+	m := Manifest{Samples: samples}
+	data, err := json.MarshalIndent(&m, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	data = append(data, '\n')
+	path := filepath.Join(dir, "manifest.json")
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return "", err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return "", err
+	}
+	return path, nil
+}
+
+// CorruptOffsets maps fixture kind to the expected first-corrupt offset.
+func CorruptOffsets(samples []*Sample) map[string]int64 {
+	out := make(map[string]int64)
+	for _, s := range samples {
+		if s.CorruptAt >= 0 {
+			out[s.Kind] = s.CorruptAt
+		}
+	}
+	return out
 }
