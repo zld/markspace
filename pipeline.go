@@ -6,15 +6,6 @@ import (
 	"sort"
 )
 
-// FaultConfig controls the synthetic transport scenario used by the demo.
-type FaultConfig struct {
-	Seed      int64
-	LossBurst int
-	Reorder   int
-	Duplicate int
-	Bandwidth []int // bitrate steps in kbit/s, applied as pacing only
-}
-
 // PipelineResult is the outcome of one demo run.
 type PipelineResult struct {
 	Input           InputDigest    `json:"input_digest"`
