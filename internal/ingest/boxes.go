@@ -17,6 +17,9 @@ import (
 const (
 	MaxBoxBytes   = 16 << 20 // 16 MiB per box
 	MaxTotalBytes = 64 << 20 // 64 MiB total input
+	// MaxBoxes bounds the number of boxes walked in one file so a
+	// pathological input of tiny boxes cannot exhaust memory.
+	MaxBoxes = 1 << 20
 )
 
 // ColorMeta is the parsed nclx colour metadata of a video track.
@@ -86,6 +89,7 @@ type parser struct {
 	fatal        *model.Error
 	truncatedBox *model.Error
 
+	boxes       int
 	curMoofOff  int64
 	curSeq      uint32
 	curTrackID  uint32
@@ -135,6 +139,11 @@ func (p *parser) walk(r *bytes.Reader, end int64, depth int) {
 		bi, err := mp4.ReadBoxInfo(r)
 		if err != nil {
 			p.truncateErr(pos, "box header incomplete")
+			return
+		}
+		p.boxes++
+		if p.boxes > MaxBoxes {
+			p.truncateErr(int64(bi.Offset), "box count exceeds limit")
 			return
 		}
 		if bi.Size > MaxBoxBytes {

@@ -39,6 +39,9 @@ func (s Segment) ShiftMs() float64 {
 // Options controls segmentation.
 type Options struct {
 	MaxDuration model.NsDuration
+	// MaxSamples bounds the number of samples examined in one Split call.
+	// Zero means 1,000,000; the excess is reported, never silently split.
+	MaxSamples int
 }
 
 // Result carries segments plus the alignment statistics needed by the
@@ -47,6 +50,8 @@ type Result struct {
 	Segments []Segment `json:"segments"`
 	// MaxShiftNs is the largest backward boundary adjustment observed.
 	MaxShiftNs model.NsDuration `json:"max_shift_ns"`
+	// CapsHit lists memory-budget caps that truncated analysis.
+	CapsHit []string `json:"caps_hit,omitempty"`
 }
 
 // Split cuts samples into segments of at most opts.MaxDuration. The ideal
@@ -62,6 +67,14 @@ func Split(samples []model.Sample, opts Options) Result {
 	var res Result
 	if len(samples) == 0 || opts.MaxDuration <= 0 {
 		return res
+	}
+	maxSamples := opts.MaxSamples
+	if maxSamples <= 0 {
+		maxSamples = 1_000_000
+	}
+	if len(samples) > maxSamples {
+		samples = samples[:maxSamples]
+		res.CapsHit = append(res.CapsHit, "samples")
 	}
 	ordered := append([]model.Sample(nil), samples...)
 	sort.SliceStable(ordered, func(i, j int) bool {

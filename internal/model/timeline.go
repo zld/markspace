@@ -2,7 +2,10 @@
 // intervals and timeline invariants used across all mediamerge modules.
 package model
 
-import "fmt"
+import (
+	"fmt"
+	"math"
+)
 
 // NsPerSecond is the number of nanoseconds in one second.
 const NsPerSecond int64 = 1_000_000_000
@@ -36,16 +39,28 @@ type Timescale struct {
 }
 
 // ToNs converts a tick count to nanoseconds, rounding half away from zero.
-// The rounding error in nanoseconds is returned so callers can account for
-// alignment error deterministically.
+// The signed rounding error in nanoseconds (actual - exact) is returned so
+// callers can account for alignment error deterministically. Values that
+// would overflow the nanosecond range saturate at the representable
+// maximum rather than wrapping.
 func (ts Timescale) ToNs(ticks uint64) (NsTime, float64) {
 	if ts.TicksPerSecond == 0 {
 		return 0, 0
 	}
+	const maxTicks = uint64(math.MaxInt64) / uint64(NsPerSecond)
+	if ticks > maxTicks {
+		return NsTime(math.MaxInt64), 0
+	}
 	num := ticks * uint64(NsPerSecond)
 	whole := num / ts.TicksPerSecond
 	rem := num % ts.TicksPerSecond
-	errNs := -float64(rem) / float64(ts.TicksPerSecond)
+	if rem >= (ts.TicksPerSecond+1)/2 {
+		whole++
+	}
+	if whole > uint64(math.MaxInt64) {
+		return NsTime(math.MaxInt64), 0
+	}
+	errNs := (float64(whole)*float64(ts.TicksPerSecond) - float64(num)) / float64(ts.TicksPerSecond)
 	return NsTime(whole), errNs
 }
 

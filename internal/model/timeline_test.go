@@ -1,6 +1,9 @@
 package model
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 func TestTimescaleToNsExact(t *testing.T) {
 	ts := Timescale{TicksPerSecond: 48000}
@@ -12,13 +15,26 @@ func TestTimescaleToNsExact(t *testing.T) {
 
 func TestTimescaleToNsRounding(t *testing.T) {
 	ts := Timescale{TicksPerSecond: 44100}
-	// 1 tick = 1e9/44100 ns ≈ 22675.7 ns; error must be reported.
+	// 1 tick = 1e9/44100 ns ≈ 22675.7 ns; nearest is 22676, and the
+	// signed error reports that the grid is 0.28 ns late.
 	ns, errNs := ts.ToNs(1)
-	if ns != 22675 {
+	if ns != 22676 {
 		t.Fatalf("ns=%d", ns)
 	}
-	if errNs >= 0 || errNs < -1 {
+	if errNs <= 0 || errNs >= 1 {
 		t.Fatalf("errNs=%v out of range", errNs)
+	}
+	// At the half-way point rounding moves away from zero.
+	half := Timescale{TicksPerSecond: 2_000_000_000}
+	if got, _ := half.ToNs(1); got != 1 {
+		t.Fatalf("half-round=%d", got)
+	}
+}
+
+func TestTimescaleToNsSaturates(t *testing.T) {
+	ts := Timescale{TicksPerSecond: 1}
+	if got, _ := ts.ToNs(^uint64(0)); got != NsTime(math.MaxInt64) {
+		t.Fatalf("overflow not saturated: %d", got)
 	}
 }
 

@@ -129,3 +129,18 @@ func TestSplitEmptyAndDeterministic(t *testing.T) {
 		}
 	}
 }
+
+func TestSplitSampleCap(t *testing.T) {
+	samples := seqSamples(2, 0, 100, 1_000_000)
+	res := Split(samples, Options{MaxDuration: 10_000_000_000, MaxSamples: 40})
+	if len(res.CapsHit) != 1 || res.CapsHit[0] != "samples" {
+		t.Fatalf("cap not reported: %+v", res.CapsHit)
+	}
+	total := 0
+	for _, s := range res.Segments {
+		total += len(s.Samples)
+	}
+	if total != 40 {
+		t.Fatalf("samples=%d", total)
+	}
+}

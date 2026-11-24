@@ -100,6 +100,7 @@ type PathRecord struct {
 	Tracks           []TrackRecord           `json:"tracks"`
 	Duplicates       []fingerprint.Duplicate `json:"duplicates,omitempty"`
 	Collisions       []fingerprint.Collision `json:"collisions,omitempty"`
+	CapsHit          []string                `json:"caps_hit,omitempty"`
 	Diagnostics      []*model.Error          `json:"diagnostics"`
 }
 
@@ -193,6 +194,7 @@ func Build(in Input) *Document {
 
 func buildPath(run RunInput, target int64) PathRecord {
 	pr := PathRecord{Name: run.Name, ExitCode: run.ExitCode,
+		CapsHit:         run.Segments.CapsHit,
 		RecoveredTracks: append([]uint32(nil), run.Recovered...),
 		IsolatedTracks:  append([]uint32(nil), run.Isolated...),
 		Gaps:            run.Gaps,
