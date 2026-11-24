@@ -99,7 +99,7 @@ func ParsePacket(raw []byte, offset int64) (*Packet, *fault.Error) {
 			return nil, fault.New(fault.ErrAdaptation, "ts.packet", offset,
 				fmt.Sprintf("adaptation length %d exceeds packet", l)).WithPID(pid)
 		}
-		af, fe := parseAdaptation(raw[pos:pos+1+l+1], offset, pid)
+		af, fe := parseAdaptation(raw[pos:pos+1+l], offset, pid)
 		if fe != nil {
 			return nil, fe
 		}

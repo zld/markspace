@@ -84,6 +84,7 @@ type TrackMap struct {
 // counted; the returned output time is clamped to the last emitted time so
 // muxed sample durations remain monotonic.
 func (m *TrackMap) MapPTS(raw uint64) (ms int64, wrapped bool, nonMonotonic bool) {
+	first := !m.hasLast
 	u := Unwrap33(m.lastUnwrap, m.hasLast, raw)
 	if u.WrappedThis {
 		m.WrapCount++
@@ -92,7 +93,7 @@ func (m *TrackMap) MapPTS(raw uint64) (ms int64, wrapped bool, nonMonotonic bool
 	m.lastUnwrap = u.Value
 	m.hasLast = true
 	absolute := PTSToMS(u.Value)
-	if m.OriginMS == 0 && m.LastMS == 0 {
+	if first {
 		m.OriginMS = absolute
 	}
 	ms = absolute - m.OriginMS
