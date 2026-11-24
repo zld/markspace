@@ -1,0 +1,6 @@
+# build and demo artifacts
+/bin/
+*.test
+*.out
+.tmp/
+/tmp/
