@@ -34,9 +34,9 @@ func main() {
 		}
 		expected := gen.Expected
 		if s.injection == "none" {
-			expected.TargetFrame = 6*samplegen.DemoBlockFrames + 64
+			expected.TargetFrame = 6*samplegen.DemoBlockFrames + samplegen.DemoLookupOffset
 			expected.ExpectedBlock = 6
-			expected.ExpectedFrameOffset = 64
+			expected.ExpectedFrameOffset = samplegen.DemoLookupOffset
 		}
 		data, err := media.MarshalCanonicalJSON(expected)
 		if err != nil {

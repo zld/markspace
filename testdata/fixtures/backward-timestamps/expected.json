@@ -7,9 +7,9 @@
   "bits_per_sample": 16,
   "block_frames": 240,
   "block_count": 12,
-  "target_frame": 1504,
+  "target_frame": 1500,
   "expected_block": 6,
-  "expected_frame_offset": 64,
+  "expected_frame_offset": 60,
   "backward_block": 6,
   "original_ts_ns": 10000000,
   "repaired_ts_ns": 30000000

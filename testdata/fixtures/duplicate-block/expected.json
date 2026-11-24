@@ -7,8 +7,8 @@
   "bits_per_sample": 16,
   "block_frames": 240,
   "block_count": 13,
-  "target_frame": 1744,
+  "target_frame": 1740,
   "expected_block": 7,
-  "expected_frame_offset": 64,
+  "expected_frame_offset": 60,
   "duplicate_block": 4
 }

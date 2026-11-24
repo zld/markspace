@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	idxpkg "media-archiver/internal/index"
 	"media-archiver/internal/media"
 	"media-archiver/internal/pipeline"
 )
@@ -57,8 +58,19 @@ func TestNormalRunIsDeterministicAndAligned(t *testing.T) {
 	if first.ManifestAlignmentNS > 20834 {
 		t.Fatalf("alignment=%d exceeds one frame", first.ManifestAlignmentNS)
 	}
-	if first.Lookup == nil || first.Lookup.Entry.BlockIndex != 6 || first.Lookup.FrameOffset != 64 {
+	if first.Lookup == nil || first.Lookup.Entry.BlockIndex != 6 || first.Lookup.FrameOffset != 60 {
 		t.Fatalf("lookup=%+v", first.Lookup)
+	}
+	idx, err := idxpkg.Load(filepath.Join(wd, "index", "index.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	timeHit, err := idx.LookupTimeNS(first.Lookup.TimeNS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if timeHit.Entry.BlockIndex != first.Lookup.Entry.BlockIndex || timeHit.FrameOffset != first.Lookup.FrameOffset {
+		t.Fatalf("time lookup=%+v does not match frame lookup=%+v", timeHit, first.Lookup)
 	}
 
 	indexBytes1, err := os.ReadFile(filepath.Join(wd, "index", "index.json"))
@@ -110,7 +122,7 @@ func TestInterruptAfterIndexResumesAndCompletes(t *testing.T) {
 	if rep.Status != "completed" || rep.ManifestSHA256 == "" {
 		t.Fatalf("report=%+v", rep)
 	}
-	if rep.Lookup == nil || rep.Lookup.FrameOffset != 64 {
+	if rep.Lookup == nil || rep.Lookup.FrameOffset != 60 {
 		t.Fatalf("resume lookup=%+v", rep.Lookup)
 	}
 	m = readManifest(t, wd)

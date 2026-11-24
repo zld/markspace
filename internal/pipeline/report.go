@@ -82,6 +82,7 @@ func (r *Report) PrintKeyValues() {
 	if r.Lookup != nil {
 		lines = append(lines,
 			fmt.Sprintf("lookup_frame=%d", r.Lookup.GlobalFrame),
+			fmt.Sprintf("lookup_time_ns=%d", r.Lookup.TimeNS),
 			fmt.Sprintf("lookup_block=%d", r.Lookup.Entry.BlockIndex),
 			fmt.Sprintf("lookup_frame_offset=%d", r.Lookup.FrameOffset),
 			fmt.Sprintf("lookup_original_offset=%d", r.Lookup.BlockOriginalByte),

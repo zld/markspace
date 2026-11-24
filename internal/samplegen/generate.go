@@ -16,6 +16,7 @@ const (
 	DemoChannels      = 2
 	DemoBits          = 16
 	DemoBlockFrames   = 240
+	DemoLookupOffset  = 60
 	DemoBlockCount    = 12
 	TruncateTailBytes = 3
 )
@@ -83,8 +84,8 @@ func Generate(opts Options) (*Generated, error) {
 	exp := Expected{
 		Seed: opts.Seed, Injection: injection, Path: opts.OutputPath,
 		SampleRate: DemoSampleRate, Channels: DemoChannels, BitsPerSample: DemoBits,
-		BlockFrames: DemoBlockFrames, TargetFrame: 6*DemoBlockFrames + 64,
-		ExpectedBlock: 6, ExpectedFrameOffset: 64,
+		BlockFrames: DemoBlockFrames, TargetFrame: 6*DemoBlockFrames + DemoLookupOffset,
+		ExpectedBlock: 6, ExpectedFrameOffset: DemoLookupOffset,
 	}
 
 	switch injection {
@@ -102,9 +103,9 @@ func Generate(opts Options) (*Generated, error) {
 		spec.Blocks = insertBlock(spec.Blocks, src+1, dup)
 		exp.DuplicateBlock = src + 1
 		// Insertion shifts the original block six from index 6 to index 7.
-		exp.TargetFrame = 7*DemoBlockFrames + 64
+		exp.TargetFrame = 7*DemoBlockFrames + DemoLookupOffset
 		exp.ExpectedBlock = 7
-		exp.ExpectedFrameOffset = 64
+		exp.ExpectedFrameOffset = DemoLookupOffset
 	case "truncate":
 		// Handled after encoding so the exact source offset can be read back.
 	default:

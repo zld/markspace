@@ -66,7 +66,7 @@ func TestBackwardTimestampLookupMatchesExpected(t *testing.T) {
 	if d.Kind != "backward_timestamp" || d.OriginalStartFrame == nil || *d.OriginalStartFrame != 480 || d.RepairedStartFrame != 1440 {
 		t.Fatalf("unexpected repair: %+v", d)
 	}
-	if rep.Lookup == nil || rep.Lookup.Entry.BlockIndex != 6 || rep.Lookup.FrameOffset != 64 {
+	if rep.Lookup == nil || rep.Lookup.Entry.BlockIndex != 6 || rep.Lookup.FrameOffset != 60 {
 		t.Fatalf("lookup=%+v", rep.Lookup)
 	}
 }
@@ -89,7 +89,7 @@ func TestDuplicateBlockIsRepairedAndLocated(t *testing.T) {
 	if !found {
 		t.Fatalf("duplicate decision missing: %+v", rep.Repairs)
 	}
-	if rep.Lookup == nil || rep.Lookup.Entry.BlockIndex != 7 || rep.Lookup.FrameOffset != 64 {
+	if rep.Lookup == nil || rep.Lookup.Entry.BlockIndex != 7 || rep.Lookup.FrameOffset != 60 {
 		t.Fatalf("lookup=%+v", rep.Lookup)
 	}
 }
