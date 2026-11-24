@@ -131,3 +131,30 @@ func TestReportSizeLimit(t *testing.T) {
 		t.Fatalf("want report-too-large, got %v", err)
 	}
 }
+
+func TestAlignmentReflectsDeliveryFaults(t *testing.T) {
+	// Healthy timeline aligns exactly; late and truncated segments must push
+	// the manifest alignment error above zero on the same run as the probe.
+	healthy, err := Build(buildInputs(t, nil), safeio.DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if healthy.ManifestAlignmentMs != 0 {
+		t.Fatalf("healthy alignment must be zero, got %.4f", healthy.ManifestAlignmentMs)
+	}
+	faulty, err := Build(buildInputs(t, []model.FaultKind{
+		model.FaultTruncate, model.FaultLate,
+	}), safeio.DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if faulty.ManifestAlignmentMs <= 0 {
+		t.Fatal("delivery faults must produce a non-zero alignment error")
+	}
+	if faulty.ManifestAlignmentMs > 20.0 {
+		t.Fatalf("alignment %.3f ms exceeds 20 ms ceiling", faulty.ManifestAlignmentMs)
+	}
+	if len(faulty.DamagedRanges) == 0 {
+		t.Fatal("faults must also surface as probe damaged ranges")
+	}
+}

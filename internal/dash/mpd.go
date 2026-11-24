@@ -28,14 +28,18 @@ type SegmentRecord struct {
 	StartTick      int64
 	EndTick        int64
 	DurationTick   int64
-	Bytes          int
-	IndexPresent   bool
-	SampleCount    int
-	KeyframeCount  int
-	Late           bool
-	Duplicate      bool
-	Truncated      bool
-	LocatableOnly  bool // sidx missing: only a minimal locatable interval exists
+	// PlannedStartTick/PlannedEndTick are what the manifest announced; the gap
+	// between planned and actual drives the alignment error.
+	PlannedStartTick int64
+	PlannedEndTick   int64
+	Bytes            int
+	IndexPresent     bool
+	SampleCount      int
+	KeyframeCount    int
+	Late             bool
+	Duplicate        bool
+	Truncated        bool
+	LocatableOnly    bool // sidx missing: only a minimal locatable interval exists
 }
 
 // RepresentationRecord is one parsed adaptation-set entry.
@@ -104,10 +108,17 @@ func parseRepresentation(fr *fixture.Representation, lim safeio.Limits) (*Repres
 		if err != nil {
 			return nil, model.NewStageError(model.StageParse, err)
 		}
+		plannedDur, err := clock.ToMaster(seg.PlannedDuration, fr.Timescale)
+		if err != nil {
+			return nil, model.NewStageError(model.StageParse, err)
+		}
 		sr.StartTick, sr.DurationTick, sr.EndTick = start, dur, start+dur
 		if sr.EndTick <= sr.StartTick {
 			return nil, model.NewStageError(model.StageParse, model.ErrDurationBounds)
 		}
+		// Announced anchor and planned end; actual end follows real duration.
+		sr.PlannedStartTick = seg.ManifestStartTick
+		sr.PlannedEndTick = seg.ManifestStartTick + plannedDur
 		for _, smp := range seg.Samples {
 			rec.QualityScores = append(rec.QualityScores, smp.Quality)
 		}

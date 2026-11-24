@@ -31,13 +31,18 @@ type Sample struct {
 
 // Segment is one media segment plus its packetized RTP view.
 type Segment struct {
-	Sequence     uint32
-	Timescale    int64
-	BaseDecode   int64 // tfdt baseMediaDecodeTime in timescale units
-	Duration     int64 // timescale units
-	IndexPresent bool
-	Samples      []Sample
-	Packets      []*rtp.Packet
+	Sequence   uint32
+	Timescale  int64
+	BaseDecode int64 // tfdt baseMediaDecodeTime in timescale units
+	Duration   int64 // actual timescale units observed in the bitstream
+	// PlannedDuration is what the manifest/index announced before any fault.
+	PlannedDuration int64
+	// ManifestStartTick is the announced segment start on the master timeline.
+	// Late delivery under node clock drift shifts this relative to actual.
+	ManifestStartTick int64
+	IndexPresent      bool
+	Samples           []Sample
+	Packets           []*rtp.Packet
 	// ExpectedPackets is the count before truncation-driven tail loss.
 	ExpectedPackets int
 	Data            []byte // fMP4 byte range (styp+moof+mdat, optional sidx)

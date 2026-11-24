@@ -68,15 +68,19 @@ func Build(in Inputs, lim safeio.Limits) (*Line, error) {
 		targetSum += r.TargetBitrate
 		actualSum += r.ActualBitrate
 		quality = append(quality, r.QualityScores...)
-		for i, s := range r.Segments {
-			if i < len(r.ManifestStarts) {
-				diff := s.StartTick - r.ManifestStarts[i]
-				if diff < 0 {
-					diff = -diff
-				}
-				alignErrTick += diff
-				alignCount++
+		for _, s := range r.Segments {
+			// Start skew captures late delivery / clock drift; end skew
+			// captures truncation, where the actual media ends early.
+			startDiff := s.StartTick - s.PlannedStartTick
+			if startDiff < 0 {
+				startDiff = -startDiff
 			}
+			endDiff := s.EndTick - s.PlannedEndTick
+			if endDiff < 0 {
+				endDiff = -endDiff
+			}
+			alignErrTick += startDiff + endDiff
+			alignCount += 2
 		}
 	}
 	line.TargetBitrateBps = targetSum

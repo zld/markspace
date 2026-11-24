@@ -63,7 +63,8 @@ func newVideoRep(seed int64, id string, bitrate int64, color TrackMeta) *Represe
 	frameDur := timescale / fps
 	for s := 0; s < nominalSegmentCount; s++ {
 		seg := &Segment{Sequence: uint32(s), Timescale: timescale,
-			BaseDecode: int64(s) * segDur, Duration: segDur, IndexPresent: true}
+			BaseDecode: int64(s) * segDur, Duration: segDur,
+			PlannedDuration: segDur, IndexPresent: true}
 		payload := 0
 		for f := 0; f < int(segDur/frameDur); f++ {
 			isKey := f == 0
@@ -94,7 +95,8 @@ func newAudioRep(seed int64, id string, bitrate int64, meta TrackMeta) *Represen
 	}
 	for s := 0; s < nominalSegmentCount; s++ {
 		seg := &Segment{Sequence: uint32(s), Timescale: timescale,
-			BaseDecode: int64(s) * segDur, Duration: segDur, IndexPresent: false}
+			BaseDecode: int64(s) * segDur, Duration: segDur,
+			PlannedDuration: segDur, IndexPresent: false}
 		payload := 0
 		for f := 0; f < int(segDur/frameDur); f++ {
 			b := frameSize(bitrate, timescale/frameDur, false, false, rng)
@@ -158,7 +160,14 @@ func injectAudioFaults(r *Representation, levelIdx int, has func(model.FaultKind
 	}
 }
 
-// fillManifestTicks projects every planned segment start onto master ticks.
+// lateSkewTick is the deterministic manifest-vs-actual start offset applied to
+// a late segment to model node clock drift (15 ms on the 90 kHz master clock).
+const lateSkewTick int64 = 15 * clock.MasterTicksPerSecond / 1000
+
+// fillManifestTicks projects every announced segment start onto master ticks.
+// A late segment's announced start is shifted by a deterministic clock-drift
+// offset, so manifest alignment metrics observe the delivery fault rather than
+// always reading zero.
 func fillManifestTicks(p *Program) {
 	all := append(append([]*Representation{}, p.Video...), p.Audio...)
 	for _, r := range all {
@@ -168,6 +177,10 @@ func fillManifestTicks(p *Program) {
 			if err != nil {
 				panic("fixture: non-lossless base decode time: " + err.Error())
 			}
+			if seg.Late {
+				tick += lateSkewTick
+			}
+			seg.ManifestStartTick = tick
 			r.ManifestStarts[i] = tick
 		}
 	}
