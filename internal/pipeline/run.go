@@ -72,6 +72,11 @@ func Run(cfg Config) (*Report, error) {
 	if err != nil || !sameSource {
 		man = newManifest(cfg.Processing, inputSHA, inputSize, configSHA, 0)
 		_ = saveManifest(cfg.WorkDir, man)
+		// A changed source/config invalidates downstream reuse; remove stale
+		// random-access and verification artifacts before recomputation.
+		removeArtifact(cfg.WorkDir, indexPath)
+		removeArtifact(cfg.WorkDir, indexChecksumPath)
+		removeArtifact(cfg.WorkDir, statsPath)
 	} else {
 		cfg.Processing = man.Config
 	}
