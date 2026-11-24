@@ -1,0 +1,8 @@
+# local test artifacts
+.tmp/
+# os/editor noise
+.DS_Store
+*.swp
+# build outputs
+/bin/
+/mediad
