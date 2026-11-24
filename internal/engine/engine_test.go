@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/example/tsrepair/internal/fixture"
+	"github.com/example/tsrepair/internal/model"
 )
 
 func TestCleanStreamFullRoundtrip(t *testing.T) {
@@ -88,5 +89,25 @@ func TestRerunDeterministic(t *testing.T) {
 	a, b := run(), run()
 	if *a != *b {
 		t.Fatalf("rerun metrics differ:\n%+v\n%+v", a, b)
+	}
+}
+
+func TestCorruptSyncByteIsFatal(t *testing.T) {
+	stream := fixture.NewGenerator(7).Generate(20, nil)
+	// Corrupt the second packet's sync byte: the input cannot be parsed.
+	if stream.Data[188] == 0x00 {
+		stream.Data[188] = 0x01
+	} else {
+		stream.Data[188] = 0x00
+	}
+	stream.CompleteData = stream.Data
+	e := New(Config{QueueCapacity: 2, SegmentPackets: 10, Recover: true}, stream)
+	_, err := e.Run(context.Background())
+	if err == nil {
+		t.Fatal("corrupt sync byte must be a fatal parse error even in recover mode")
+	}
+	se := model.AsStreamError(err)
+	if se == nil || se.Severity != model.SeverityFatal {
+		t.Fatalf("corrupt input must be classified fatal, got %v", err)
 	}
 }

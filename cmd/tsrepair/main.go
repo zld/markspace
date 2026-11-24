@@ -44,13 +44,24 @@ func run(args []string) int {
 	switch {
 	case runErr == nil:
 		return 0
-	case model.IsFatal(runErr):
-		fmt.Fprintf(os.Stderr, "fatal: %v\n", runErr)
-		return 2
-	default:
+	case isInternal(runErr):
+		// Implementation faults are distinct from malformed input.
 		fmt.Fprintf(os.Stderr, "internal: %v\n", runErr)
 		return 1
+	default:
+		// Any input-structure error that recovery mode did not absorb means
+		// the input cannot be interpreted safely in this configuration.
+		fmt.Fprintf(os.Stderr, "unsafe input: %v\n", runErr)
+		return 2
 	}
+}
+
+// isInternal reports whether err is a classified internal/implementation fault.
+func isInternal(err error) bool {
+	if se := model.AsStreamError(err); se != nil {
+		return se.Severity == model.SeverityInternal
+	}
+	return false
 }
 
 type options struct {
