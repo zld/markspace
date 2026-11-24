@@ -26,17 +26,17 @@ func DefaultThresholds() Thresholds {
 
 // Metrics is the verification summary of one run.
 type Metrics struct {
-	TargetBitrate        int64       `json:"targetBitrate"`
-	ActualBitrate        int64       `json:"actualBitrate"`
-	BitrateDeviationPct  float64     `json:"bitrateDeviationPct"`
-	SampleCount          int         `json:"sampleCount"`
-	Duration             clock.Ticks `json:"durationTicks"`
-	RepairedTimestamps   int         `json:"repairedTimestamps"`
-	IndexEntries         int         `json:"indexEntries"`
-	MaxAlignmentErrorMs  int64       `json:"maxAlignmentErrorMs"`
-	RandomAccessQueries  int         `json:"randomAccessQueries"`
-	RandomAccessHits     int         `json:"randomAccessHits"`
-	QualitySummary       string      `json:"qualitySummary"`
+	TargetBitrate       int64       `json:"targetBitrate"`
+	ActualBitrate       int64       `json:"actualBitrate"`
+	BitrateDeviationPct float64     `json:"bitrateDeviationPct"`
+	SampleCount         int         `json:"sampleCount"`
+	Duration            clock.Ticks `json:"durationTicks"`
+	RepairedTimestamps  int         `json:"repairedTimestamps"`
+	IndexEntries        int         `json:"indexEntries"`
+	MaxAlignmentErrorMs int64       `json:"maxAlignmentErrorMs"`
+	RandomAccessQueries int         `json:"randomAccessQueries"`
+	RandomAccessHits    int         `json:"randomAccessHits"`
+	QualitySummary      string      `json:"qualitySummary"`
 }
 
 // Bitrate computes bits per second for payloadBytes over dur ticks.

@@ -107,7 +107,7 @@ func corruptDuplicateTS(dir string) error {
 	for i := 0; i < 10; i++ {
 		frag.AddFullSample(mp4.FullSample{
 			Sample:     mp4.NewSample(mp4.SyncSampleFlags, 0, 100, 0), // zero duration
-			DecodeTime: 0,                                            // all duplicate
+			DecodeTime: 0,                                             // all duplicate
 			Data:       bytes.Repeat([]byte{byte(i)}, 100),
 		})
 	}

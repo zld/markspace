@@ -9,8 +9,8 @@ import (
 
 // HLS layout of the generated playlist.
 const (
-	HLSSegments   = 4   // number of TS segments
-	HLSPESPerSeg  = 60  // PES packets per segment
+	HLSSegments   = 4    // number of TS segments
+	HLSPESPerSeg  = 60   // PES packets per segment
 	HLSPESSpacing = 3000 // PTS spacing between PES packets (1/30 s)
 	// HLSDiscontinuityAt is the segment index before which the
 	// EXT-X-DISCONTINUITY tag and the PTS jump are inserted.

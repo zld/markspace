@@ -109,9 +109,9 @@ func TestRTPWraparound(t *testing.T) {
 	const max32 = 1<<32 - 1
 	// Three samples straddling the 32-bit wrap point.
 	f := frag(
-		smp(max32-2999, 3000), // global 0
+		smp(max32-2999, 3000),      // global 0
 		smp(max32-2999+3000, 3000), // global 1: max32+1 -> wraps to 0
-		smp(3000, 3000),        // global 2
+		smp(3000, 3000),            // global 2
 	)
 	f.Samples[1].DecodeTime = 0 // raw 32-bit value after wrap
 	out, err := r.RepairFragment(f, rep)

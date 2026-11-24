@@ -48,9 +48,9 @@ const halfRange uint32 = 1 << 31
 
 // Repairer holds the per-track repair state across fragments.
 type Repairer struct {
-	Track      string
-	Timescale  int64
-	RTP        bool  // treat raw timestamps as 32-bit RTP clock values
+	Track       string
+	Timescale   int64
+	RTP         bool  // treat raw timestamps as 32-bit RTP clock values
 	MaxBackward int64 // largest backward jump (track units) repaired silently
 
 	started bool
