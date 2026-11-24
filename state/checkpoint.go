@@ -179,6 +179,23 @@ func (s *Store) Save(c *Checkpoint) error {
 	return nil
 }
 
+// SaveChecked verifies the proposed checkpoint against the expected input and
+// parameter identities before touching the destination file.
+func (s *Store) SaveChecked(c *Checkpoint, inputHash, parametersHash string) error {
+	if c == nil {
+		return media.NewError("state", media.CodeCheckpoint, "cannot save nil checkpoint", nil)
+	}
+	if inputHash != "" && c.InputHash != inputHash {
+		return media.NewError("state", media.CodeHashMismatch,
+			"refusing checkpoint: input identity does not match run", nil)
+	}
+	if parametersHash != "" && c.ParametersHash != parametersHash {
+		return media.NewError("state", media.CodeHashMismatch,
+			"refusing checkpoint: parameter identity does not match run", nil)
+	}
+	return s.Save(c)
+}
+
 // Load reads and validates the checkpoint checksum.
 func (s *Store) Load() (*Checkpoint, error) {
 	b, err := os.ReadFile(s.Path)
