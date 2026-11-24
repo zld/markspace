@@ -246,6 +246,16 @@ func (s *RTPStream) Packets() []RTPPacket {
 // ranges, so callers can report "track, sequence range, state" directly.
 func (s *RTPStream) Gaps() []Gap { return s.coalescedGaps() }
 
+// Stats returns the running statistics without flushing the stream.
+func (s *RTPStream) Stats() RecoveryStats {
+	st := s.stats
+	st.TrackID = s.cfg.TrackID
+	st.Stream = s.cfg.Stream
+	st.Gaps = s.coalescedGaps()
+	st.Unique = uint64(len(s.order))
+	return st
+}
+
 func (s *RTPStream) coalescedGaps() []Gap {
 	out := make([]Gap, 0, len(s.gaps.Gaps))
 	for _, g := range s.gaps.Gaps {
