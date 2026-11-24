@@ -166,9 +166,16 @@ func swapDisjointAudioPairs(packets []*Packet, pairs int) {
 			audioPositions = append(audioPositions, i)
 		}
 	}
-	for k := 0; k < pairs && 2*k+1 < len(audioPositions); k++ {
-		i := audioPositions[2*k]
-		j := audioPositions[2*k+1]
+	// Start after the first audio packet so startup sequence discovery does
+	// not mistake the preceding late packet for pre-session history.
+	const start = 1
+	for k := 0; k < pairs; k++ {
+		left := start + 2*k
+		if left+1 >= len(audioPositions) {
+			break
+		}
+		i := audioPositions[left]
+		j := audioPositions[left+1]
 		packets[i], packets[j] = packets[j], packets[i]
 	}
 }
