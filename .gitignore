@@ -1,0 +1,16 @@
+# Compiled binaries
+/mediapipeline
+*.exe
+*.out
+
+# Local pipeline working directories and checkpoints
+*.tmp
+**/checkpoint.json
+**/provenance.json
+
+# Test/coverage artifacts
+coverage.txt
+*.test
+
+# OS files
+.DS_Store
