@@ -92,6 +92,12 @@ func NewScheduler(nodes ...Node) (*Scheduler, error) {
 	return s, nil
 }
 
+// Has reports whether name is a registered node.
+func (s *Scheduler) Has(name string) bool {
+	_, ok := s.nodes[name]
+	return ok
+}
+
 // Run executes nodes whose dependencies succeeded.
 func (s *Scheduler) Run(ctx context.Context) *Report {
 	rep := &Report{Order: append([]string(nil), s.names...), Results: make(map[string]*NodeResult, len(s.names))}
