@@ -29,7 +29,9 @@ type Sample struct {
 
 // Samples generates the four required fault classes with small, fast captures.
 func Samples() ([]Sample, error) {
-	base := DemoOptions(99, 2, 1, 0, 0)
+	// Four tracks so both video and audio tracks exist; the reorder sample
+	// needs an audio track to perturb.
+	base := DemoOptions(99, 4, 1, 0, 0)
 	base.DurationMs = 2000
 	base.SRIntervalMs = 500
 

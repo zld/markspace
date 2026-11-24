@@ -8,7 +8,6 @@
 package stream
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -20,6 +19,8 @@ import (
 	"mediatool/internal/fault"
 	"mediatool/internal/index"
 	"mediatool/internal/manifest"
+	"mediatool/internal/media"
+	"mediatool/internal/rtp"
 	"mediatool/internal/segment"
 )
 
@@ -255,6 +256,8 @@ type runner struct {
 	align     *segment.Result
 	resumed   *Checkpoint
 	fallbacks int
+	// wroteInit marks which (representation, track) init segments were written.
+	wroteInit map[string]bool
 }
 
 // emit renders boundaries in order and returns the committed ones.
@@ -471,6 +474,9 @@ func (r *runner) renderOne(seg segment.Segment, sr segment.Representation) (mani
 	}
 	if r.cfg.OutputDir != "" {
 		name := fmt.Sprintf("%s-t%d-%05d.m4s", sanitize(rep.ID), sr.TrackID, seg.Index)
+		if err := r.writeInitIfNeeded(rep.ID, sr.TrackID, track); err != nil {
+			return manifest.SegmentRef{}, err
+		}
 		path := filepath.Join(r.cfg.OutputDir, name)
 		if err := manifest.WriteAtomic(path, data); err != nil {
 			return manifest.SegmentRef{}, err
@@ -489,6 +495,44 @@ func (r *runner) renderOne(seg segment.Segment, sr segment.Representation) (mani
 	return ref, nil
 }
 
+// writeInitIfNeeded emits one init segment per (representation, track) the
+// first time that pair produces media, so the output directory is playable.
+func (r *runner) writeInitIfNeeded(repID string, trackID uint32, track TrackSpec) error {
+	if r.wroteInit == nil {
+		r.wroteInit = make(map[string]bool)
+	}
+	key := coverageID(repID, trackID)
+	if r.wroteInit[key] {
+		return nil
+	}
+	tr, ok := r.in.Index.Track(trackID)
+	if !ok {
+		return nil
+	}
+	cfg := media.TrackConfig{
+		TrackID: trackID, Kind: track.Kind, ClockRate: tr.ClockRate,
+	}
+	if track.Video != nil {
+		cfg.Width = track.Video.Width
+		cfg.Height = track.Video.Height
+		cfg.Color = media.ColorBox(track.Video)
+	}
+	if track.Audio != nil {
+		cfg.Channels = track.Audio.Channels
+		cfg.SampleRate = track.Audio.SampleRate
+	}
+	data, err := media.InitSegment(cfg)
+	if err != nil {
+		return err
+	}
+	name := fmt.Sprintf("%s-t%d-init.mp4", sanitize(repID), trackID)
+	if err := manifest.WriteAtomic(filepath.Join(r.cfg.OutputDir, name), data); err != nil {
+		return err
+	}
+	r.wroteInit[key] = true
+	return nil
+}
+
 // repAndTrack resolves a representation and track spec by coverage ID.
 func (r *runner) repAndTrack(sr segment.Representation) (RepresentationSpec, TrackSpec) {
 	for _, rep := range r.in.Representations {
@@ -504,55 +548,165 @@ func (r *runner) repAndTrack(sr segment.Representation) (RepresentationSpec, Tra
 	return RepresentationSpec{ID: sr.RepresentationID}, TrackSpec{TrackID: sr.TrackID}
 }
 
-// render builds the segment bytes. The header pins the input digest, boundary,
-// representation identity, and normalized color, so a changed input or an
-// unstable choice changes the digest.
+// render builds the media segment bytes as a fragmented ISO BMFF segment.
+//
+// The moof carries the sample timing on the shared media timeline and the mdat
+// carries the packet bytes the index located. Because the timing and payload
+// both come from the verified index and capture, the segment digest
+// authenticates the actual output, not an input summary.
 func (r *runner) render(seg segment.Segment, sr segment.Representation, rep RepresentationSpec, track TrackSpec) ([]byte, error) {
-	color := track.ColorRecord
-	if color == "" && track.Video != nil {
-		color = track.Video.Color
-	}
-	if color == "" {
-		color = "unknown"
-	}
-	var b bytes.Buffer
-	fmt.Fprintf(&b, "MTSG1|rep=%s|track=%d|kind=%s|start=%d|end=%d|kf=%d|skew=%d|color=%s|input=%s\n",
-		rep.ID, sr.TrackID, track.Kind, seg.StartMs, seg.EndMs, sr.KeyframeSeq, sr.SkewMs, color, short(r.in.Digest))
-	body, err := r.media(seg, sr)
+	samples, err := r.samples(seg, sr, track)
 	if err != nil {
 		return nil, err
 	}
-	b.Write(body)
-	return b.Bytes(), nil
+	rate := uint32(90000)
+	if track.Audio != nil && track.Audio.SampleRate > 0 {
+		rate = uint32(track.Audio.SampleRate)
+	} else if tr, ok := r.in.Index.Track(sr.TrackID); ok && tr.ClockRate > 0 {
+		rate = tr.ClockRate
+	}
+	return media.MediaSegment(sr.TrackID, uint32(seg.Index+1), samples, rate)
 }
 
-// media reads the bytes between this segment's keyframe and the next, capped
-// at the per-segment limit. Only one segment is buffered at a time, so memory
-// is bounded by MaxSegmentBytes rather than by the input length.
-func (r *runner) media(seg segment.Segment, sr segment.Representation) ([]byte, error) {
-	if r.in.Reader == nil {
-		return nil, nil
+// samples reconstructs the per-packet samples inside a boundary. Only the span
+// between this boundary's keyframe and the next is read, so memory stays
+// bounded by one segment.
+func (r *runner) samples(seg segment.Segment, sr segment.Representation, track TrackSpec) ([]media.Sample, error) {
+	tr, ok := r.in.Index.Track(sr.TrackID)
+	if !ok {
+		return nil, (&fault.Fault{Kind: fault.KindAlignment, TrackID: sr.TrackID,
+			Recovery: fault.RecoverAbort, Severity: fault.SeverityFatal}).
+			WithDetail("segment %d references missing track %d", seg.Index, sr.TrackID)
 	}
-	start := sr.KeyframeOffset
-	if start < 0 || start >= r.in.InputBytes {
-		return nil, nil
+	rate := tr.ClockRate
+	if track.Audio != nil && track.Audio.SampleRate > 0 {
+		rate = uint32(track.Audio.SampleRate)
 	}
-	end := r.nextKeyframeOffset(sr.TrackID, seg.EndMs)
-	if end > r.in.InputBytes {
-		end = r.in.InputBytes
+	if rate == 0 {
+		return nil, (&fault.Fault{Kind: fault.KindSampleRate, TrackID: sr.TrackID,
+			Recovery: fault.RecoverAbort, Severity: fault.SeverityFatal}).
+			WithDetail("track %d has no usable clock rate", sr.TrackID)
 	}
-	if end <= start {
-		return nil, nil
-	}
+
+	// Collect this boundary's packets by walking the capture once through the
+	// scanner with the same track table.
+	startOffset := sr.KeyframeOffset
+	endOffset := r.nextKeyframeOffset(sr.TrackID, seg.EndMs)
 	limit := int64(r.cfg.maxSegmentBytes())
-	if end-start > limit {
-		end = start + limit
+	if endOffset-startOffset > limit {
+		endOffset = startOffset + limit
 	}
-	buf := make([]byte, end-start)
-	if _, err := r.in.Reader.ReadAt(buf, start); err != nil && err != io.EOF {
-		return nil, fmt.Errorf("read segment bytes at offset %d: %w", start, err)
+	if endOffset <= startOffset || r.in.Reader == nil {
+		// No media bytes for this span: still emit a valid empty fragment so the
+		// boundary is represented consistently.
+		return nil, nil
 	}
-	return buf, nil
+
+	var out []media.Sample
+	var prevRel uint64
+	var baseTick uint64
+	var have bool
+	// Each walk is an independent scan from the start of the capture, so the
+	// clock's wrap extension must be reset too. Otherwise a second boundary
+	// would inherit the first boundary's reference and produce wrong ticks.
+	clk := clock.NewTrackClock(sr.TrackID, 0, clockRateOf(tr))
+	err := r.walk(sr.TrackID, func(offset int64, ts uint32, key bool, payload []byte) error {
+		if offset < startOffset || offset >= endOffset {
+			return nil
+		}
+		ext := clk.ExtendRTP(ts)
+		ticks := ext * uint64(rate) / uint64(clockRateOf(tr))
+		if !have {
+			baseTick = ticks
+		}
+		rel := ticks - baseTick
+		if have && rel < prevRel {
+			rel = prevRel
+		}
+		var dur uint32
+		if have {
+			dur = uint32(rel - prevRel)
+		}
+		out = append(out, media.Sample{
+			DurationTicks:   dur,
+			DecodeTimeTicks: rel,
+			Data:            append([]byte(nil), payload...),
+			Sync:            key,
+		})
+		if have && len(out) >= 2 {
+			out[len(out)-2].DurationTicks = dur
+		}
+		prevRel = rel
+		have = true
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	// The final sample's duration is unknown until the next boundary; give it
+	// the previous interval so the fragment has a consistent duration.
+	if n := len(out); n > 0 && out[n-1].DurationTicks == 0 {
+		if n >= 2 {
+			out[n-1].DurationTicks = out[n-2].DurationTicks
+		} else {
+			out[n-1].DurationTicks = 1
+		}
+	}
+	return out, nil
+}
+
+// walk streams packets of one track through the capture without retaining it.
+func (r *runner) walk(trackID uint32, fn func(offset int64, ts uint32, key bool, payload []byte) error) error {
+	sc, err := rtp.NewScanner(io.NewSectionReader(r.in.Reader, 0, r.in.InputBytes), rtp.Config{
+		Tracks:     r.trackTable(),
+		Window:     64,
+		IsKeyframe: r.isKeyframe,
+	})
+	if err != nil {
+		return err
+	}
+	for {
+		ev, ok, err := sc.Next()
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return nil
+		}
+		if ev.Kind != rtp.EventPacket || ev.TrackID != trackID {
+			continue
+		}
+		if ev.OriginalLength > ev.Length {
+			// A truncated packet's bytes are untrustworthy; skip it and let the
+			// boundary-level rollback handle the segment.
+			continue
+		}
+		if err := fn(ev.Offset, ev.Timestamp, ev.Keyframe, ev.Payload); err != nil {
+			return err
+		}
+	}
+}
+
+func (r *runner) trackTable() map[uint32]rtp.TrackInfo {
+	t := make(map[uint32]rtp.TrackInfo, len(r.in.Index.Tracks))
+	for _, tr := range r.in.Index.Tracks {
+		t[tr.SSRC] = rtp.TrackInfo{TrackID: tr.TrackID, ClockRate: tr.ClockRate}
+	}
+	return t
+}
+
+func (r *runner) isKeyframe(ev *rtp.Event) bool {
+	if tr, ok := r.in.Index.Track(ev.TrackID); ok && tr.Kind == "audio" {
+		return true
+	}
+	return len(ev.Payload) > 0 && ev.Payload[0] == 1
+}
+
+func clockRateOf(tr *index.Track) uint32 {
+	if tr.ClockRate == 0 {
+		return 90000
+	}
+	return tr.ClockRate
 }
 
 // buildManifest assembles the sorted, deterministic output document.

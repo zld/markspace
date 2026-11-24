@@ -241,11 +241,11 @@ func Generate(opts Options) (*Capture, error) {
 	swapped := 0
 	for i := 0; i < len(live) && swapped < opts.InjectReorder; i++ {
 		a := live[i]
-		if a.loss || a.sr {
+		// Reorder only audio packets: their 20ms spacing makes the displacement
+		// small and realistic, and it keeps video keyframe ordering intact.
+		if a.loss || a.sr || isVideo(a, opts) {
 			continue
 		}
-		// Find the next live media packet of the same track carrying the
-		// following sequence number and move it ahead of a.
 		for j := i + 1; j < len(live); j++ {
 			b := live[j]
 			if b.sr || b.trackID != a.trackID || b.seq != a.seq+1 || b.loss {
@@ -299,6 +299,16 @@ func Generate(opts Options) (*Capture, error) {
 		cap.RTCPRegressions = 1
 	}
 	return cap, nil
+}
+
+// isVideo reports whether an event belongs to a video track.
+func isVideo(ev *event, opts Options) bool {
+	for _, spec := range opts.Tracks {
+		if spec.TrackID == ev.trackID {
+			return spec.Kind == "video"
+		}
+	}
+	return false
 }
 
 func liveEvents(events []*event) []*event {
