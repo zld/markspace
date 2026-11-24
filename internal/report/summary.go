@@ -7,49 +7,60 @@ import (
 	"strings"
 )
 
+// Location is one stable error-location line in the acceptance report.
+type Location struct {
+	Kind        string `json:"kind"`
+	MaterialID  string `json:"material_id,omitempty"`
+	RecordIndex int64  `json:"record_index"`
+	Offset      int64  `json:"offset"`
+	Recoverable bool   `json:"recoverable"`
+	Recovered   bool   `json:"recovered"`
+}
+
 // Summary is the terminal acceptance report. Zero-value optional fields are
 // still printed for the stable CLI contract.
 type Summary struct {
-	Mode                string `json:"mode"`
-	Workdir             string `json:"workdir"`
-	Seed                int64  `json:"seed"`
-	FrameTotal          int    `json:"frame_total"`
-	RecordTotal         int    `json:"record_total"`
-	ValidFrames         int    `json:"valid_frames"`
-	PresentFrames       int    `json:"present_frames"`
-	MissingFrames       int    `json:"missing_frames"`
-	BadSHA              int    `json:"bad_sha"`
-	Truncated           int    `json:"truncated"`
-	BadTimestamp        int    `json:"bad_timestamp"`
-	FrameDuplicates     int    `json:"frame_duplicates"`
-	AudioPackets        int    `json:"audio_packets"`
-	StoredAudioRecords  int    `json:"stored_audio_records"`
-	LatePackets         int    `json:"late_packets"`
-	DuplicatePackets    int    `json:"duplicate_packets"`
-	OutOfOrderPackets   int    `json:"out_of_order_packets"`
-	LostPackets         int    `json:"lost_packets"`
-	JitterEvents        int    `json:"jitter_events"`
-	ConcealedPackets    int    `json:"concealed_packets"`
-	ColorConflicts      int    `json:"color_conflicts"`
-	SyncErrors          int    `json:"sync_errors"`
-	UnknownChannels     int    `json:"unknown_channels"`
-	LocationErrorMax    int64  `json:"location_error_max"`
-	ChunkSize           int    `json:"chunk"`
-	ChunkCount          int    `json:"chunk_count"`
-	CommittedChunks     int    `json:"committed_chunks"`
-	ResumedFromChunk    int    `json:"resumed_from_chunk"`
-	HaveResume          bool   `json:"-"`
-	RolledBackFromChunk int    `json:"rolled_back_from_chunk"`
-	IndexCorrupt        bool   `json:"index_corrupt"`
-	InterruptedAfter    int    `json:"interrupt_after,omitempty"`
-	ResumeElapsedMS     int64  `json:"resume_elapsed_ms"`
-	HaveResumeTiming    bool   `json:"-"`
-	InputSHA256         string `json:"input_sha256"`
-	OutputPath          string `json:"output_path"`
-	OutputSHA256        string `json:"output_sha256"`
-	MP4Tracks           int    `json:"mp4_tracks"`
-	Completed           bool   `json:"completed"`
-	ExitCode            int    `json:"exit_code"`
+	Mode                string     `json:"mode"`
+	Workdir             string     `json:"workdir"`
+	Seed                int64      `json:"seed"`
+	FrameTotal          int        `json:"frame_total"`
+	RecordTotal         int        `json:"record_total"`
+	ValidFrames         int        `json:"valid_frames"`
+	PresentFrames       int        `json:"present_frames"`
+	MissingFrames       int        `json:"missing_frames"`
+	BadSHA              int        `json:"bad_sha"`
+	Truncated           int        `json:"truncated"`
+	BadTimestamp        int        `json:"bad_timestamp"`
+	FrameDuplicates     int        `json:"frame_duplicates"`
+	AudioPackets        int        `json:"audio_packets"`
+	StoredAudioRecords  int        `json:"stored_audio_records"`
+	LatePackets         int        `json:"late_packets"`
+	DuplicatePackets    int        `json:"duplicate_packets"`
+	OutOfOrderPackets   int        `json:"out_of_order_packets"`
+	LostPackets         int        `json:"lost_packets"`
+	JitterEvents        int        `json:"jitter_events"`
+	ConcealedPackets    int        `json:"concealed_packets"`
+	ColorConflicts      int        `json:"color_conflicts"`
+	SyncErrors          int        `json:"sync_errors"`
+	UnknownChannels     int        `json:"unknown_channels"`
+	LocationErrorMax    int64      `json:"location_error_max"`
+	ChunkSize           int        `json:"chunk"`
+	ChunkCount          int        `json:"chunk_count"`
+	CommittedChunks     int        `json:"committed_chunks"`
+	ResumedFromChunk    int        `json:"resumed_from_chunk"`
+	HaveResume          bool       `json:"-"`
+	RolledBackFromChunk int        `json:"rolled_back_from_chunk"`
+	IndexCorrupt        bool       `json:"index_corrupt"`
+	InterruptedAfter    int        `json:"interrupt_after,omitempty"`
+	ResumeElapsedMS     int64      `json:"resume_elapsed_ms"`
+	HaveResumeTiming    bool       `json:"-"`
+	InputSHA256         string     `json:"input_sha256"`
+	OutputPath          string     `json:"output_path"`
+	OutputSHA256        string     `json:"output_sha256"`
+	MP4Tracks           int        `json:"mp4_tracks"`
+	Completed           bool       `json:"completed"`
+	ExitCode            int        `json:"exit_code"`
+	Locations           []Location `json:"locations,omitempty"`
 }
 
 // Lines returns the stable terminal report lines.
@@ -90,6 +101,9 @@ func (s Summary) Lines() []string {
 	p("committed_chunks=%d", s.CommittedChunks)
 	if s.HaveResume {
 		p("resumed_from_chunk=%d", s.ResumedFromChunk)
+		if s.ChunkCount > 0 && s.ResumedFromChunk < s.ChunkCount {
+			p("next_chunk_human=%d", s.ResumedFromChunk+1)
+		}
 	}
 	if s.RolledBackFromChunk > 0 {
 		p("rolled_back_from_chunk=%d", s.RolledBackFromChunk)
@@ -114,6 +128,10 @@ func (s Summary) Lines() []string {
 	if s.OutputSHA256 != "" {
 		p("output_sha256=%s", s.OutputSHA256)
 		p("sha256=%s", s.OutputSHA256)
+	}
+	for _, loc := range s.Locations {
+		p("error_location kind=%s material=%s record=%d offset=%d recoverable=%t recovered=%t",
+			loc.Kind, loc.MaterialID, loc.RecordIndex, loc.Offset, loc.Recoverable, loc.Recovered)
 	}
 	p("exit_code=%d", s.ExitCode)
 	for _, line := range strings.Split(strings.TrimRight(out.String(), "\n"), "\n") {
