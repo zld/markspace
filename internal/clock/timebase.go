@@ -47,10 +47,10 @@ func (t *Timebase) FromNanos(nanos int64) int64 {
 // It never guesses or repairs: a negative or regressing timestamp becomes a
 // structured fault carrying the block's input offset.
 type Monitor struct {
-	track    int
-	lastNS   int64
-	hasLast  bool
-	base     *Timebase
+	track   int
+	lastNS  int64
+	hasLast bool
+	base    *Timebase
 }
 
 // NewMonitor creates a monotonicity guard for one track.
@@ -62,15 +62,21 @@ func NewMonitor(track int, base *Timebase) *Monitor {
 // negative or earlier than a previously accepted one. On success it records
 // the timestamp and returns the nanosecond value.
 func (m *Monitor) Check(ticks int64, blockOffset int64) (int64, error) {
-	ns := m.base.ToNanos(ticks)
+	return m.CheckNanos(m.base.ToNanos(ticks), blockOffset)
+}
+
+// CheckNanos enforces monotonicity directly on the unified nanosecond
+// timeline, for containers whose timestamps use a scale rather than a fixed
+// tick rate. It never repairs or guesses.
+func (m *Monitor) CheckNanos(ns int64, blockOffset int64) (int64, error) {
 	if ns < 0 {
 		return 0, fault.NewTrack(fault.KindTimestampRegression, m.track, blockOffset,
-			"negative timestamp %d ticks -> %d ns", ticks, ns)
+			"negative timestamp %d ns", ns)
 	}
 	if m.hasLast && ns < m.lastNS {
 		return 0, fault.NewTrack(fault.KindTimestampRegression, m.track, blockOffset,
-			"timestamp regression: %d ns < previous %d ns (ticks=%d)",
-			ns, m.lastNS, ticks).AsRecoverable()
+			"timestamp regression: %d ns < previous %d ns",
+			ns, m.lastNS).AsRecoverable()
 	}
 	m.lastNS = ns
 	m.hasLast = true

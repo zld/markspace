@@ -113,6 +113,9 @@ func OpenSegment(rs io.ReadSeeker) (*Segment, error) {
 // Element returns the underlying EBML Segment element header.
 func (s *Segment) Element() *Element { return s.element }
 
+// Reader exposes the segment-scoped byte reader for payload range reads.
+func (s *Segment) Reader() *Reader { return s.r }
+
 // ScanClusters walks every cluster in the segment. Unknown-length clusters
 // are bounded by the start of the next cluster or the segment end; a
 // truncated final cluster produces a recoverable fault with its offset.

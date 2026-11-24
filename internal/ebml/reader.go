@@ -89,6 +89,34 @@ func (r *Reader) SeekTo(off int64) error {
 	return nil
 }
 
+// PhysicalEnd returns the underlying stream's EOF offset, or -1 when it
+// cannot be determined. Callers use it to reject payload intervals that a
+// deferred header check could not prove invalid.
+func (r *Reader) PhysicalEnd() int64 { return r.physicalEnd }
+
+// ReadRange returns the bytes in [start, end). It is the entry point used by
+// the demuxer to extract an untouched codec payload from a block interval.
+func (r *Reader) ReadRange(start, end int64) ([]byte, error) {
+	if end < start || start < 0 {
+		return nil, fault.New(fault.KindLengthOutOfRange, start,
+			"illegal read range [%d,%d)", start, end)
+	}
+	if _, err := r.r.Seek(start, io.SeekStart); err != nil {
+		return nil, fault.New(fault.KindIO, start, "seek: %v", err)
+	}
+	buf := make([]byte, end-start)
+	n, err := io.ReadFull(r.r, buf)
+	if err == io.ErrUnexpectedEOF || err == io.EOF {
+		return nil, fault.New(fault.KindTruncated, start+int64(n),
+			"range [%d,%d) truncated: got %d of %d bytes",
+			start, end, n, len(buf)).AsRecoverable()
+	}
+	if err != nil {
+		return nil, fault.New(fault.KindIO, start, "read: %v", err)
+	}
+	return buf, nil
+}
+
 // Remaining reports how many payload bytes are left inside the window, or -1
 // when the window reaches EOF.
 func (r *Reader) Remaining() int64 {
