@@ -58,29 +58,38 @@ func ParsePES(b []byte) (*PESHeader, error) {
 		return nil, fmt.Errorf("ts: PES optional header %d exceeds payload %d", hdrLen, len(b))
 	}
 	h.HeaderBytes = start + hdrLen
-	if flags == 1 || flags == 3 {
+	// PTS_DTS_flags: '10' (2) is PTS only, '11' (3) is PTS+DTS, '01' (1) is
+	// forbidden by the standard.
+	switch flags {
+	case 2, 3:
 		if hdrLen < 5 {
 			return nil, fmt.Errorf("ts: PES PTS flag with %d header bytes", hdrLen)
 		}
-		pts, ok := decodeTimestamp(b[start:start+5], 0x2)
+		// In a PTS+DTS pair the PTS carries the '0011' prefix; a lone PTS
+		// carries '0010'.
+		ptsPrefix := byte(0x2)
+		if flags == 3 {
+			ptsPrefix = 0x3
+		}
+		pts, ok := decodeTimestamp(b[start:start+5], ptsPrefix)
 		if !ok {
 			return nil, fmt.Errorf("ts: malformed PTS field")
 		}
 		h.PTS = pts
 		h.HasPTS = true
-	}
-	if flags == 3 {
-		if hdrLen < 10 {
-			return nil, fmt.Errorf("ts: PES PTS/DTS flags with %d header bytes", hdrLen)
+		if flags == 3 {
+			if hdrLen < 10 {
+				return nil, fmt.Errorf("ts: PES PTS/DTS flags with %d header bytes", hdrLen)
+			}
+			dts, ok := decodeTimestamp(b[start+5:start+10], 0x1)
+			if !ok {
+				return nil, fmt.Errorf("ts: malformed DTS field")
+			}
+			h.DTS = dts
+			h.HasDTS = true
 		}
-		dts, ok := decodeTimestamp(b[start+5:start+10], 0x1)
-		if !ok {
-			return nil, fmt.Errorf("ts: malformed DTS field")
-		}
-		h.DTS = dts
-		h.HasDTS = true
-	} else if flags == 2 {
-		return nil, fmt.Errorf("ts: PES carries DTS without PTS")
+	case 1:
+		return nil, fmt.Errorf("ts: forbidden PTS_DTS_flags value 1")
 	}
 	if !h.HasPTS {
 		return h, nil
@@ -115,7 +124,7 @@ func EncodeTimestamp(prefix byte, ts int64) []byte {
 	return []byte{
 		prefix<<4 | byte((v>>30)&0x07)<<1 | 1,
 		byte(v >> 22),
-		byte((v>>14)&0xFF)<<1 | 1,
+		byte((v>>15)&0x7F)<<1 | 1,
 		byte(v >> 7),
 		byte(v&0x7F)<<1 | 1,
 	}
