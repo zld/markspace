@@ -220,23 +220,22 @@ func (p *PSI) Feed(pkt *Packet) {
 				PrevCC: sb.lastCont, CC: pkt.Continuity, Detail: "PSI reassembly dropped partial section"})
 			sb.partial = nil
 		}
-		off := 0
-		if pkt.PID == p.patPID {
-			// pointer_field applies to the first payload of a PUSI packet.
-			if len(pkt.Payload) == 0 {
-				sb.partial = nil
-				return
-			}
-			ptr := int(pkt.Payload[0])
-			if 1+ptr > len(pkt.Payload) {
-				p.stats.Truncated++
-				p.diag(Diagnostic{Kind: DiagMalformedPacket, PID: pkt.PID, Offset: pkt.Offset, Packet: pkt.Index,
-					Detail: "pointer_field beyond payload"})
-				return
-			}
-			off = 1 + ptr
+		// pointer_field precedes the section in every PUSI payload, for
+		// PAT and PMT alike. A nonzero pointer reserves bytes for the tail
+		// of a section that started in a previous packet.
+		if len(pkt.Payload) == 0 {
+			sb.partial = nil
+			return
 		}
-		p.appendBytes(pkt, sb, pkt.Payload[off:])
+		ptr := int(pkt.Payload[0])
+		if 1+ptr > len(pkt.Payload) {
+			p.stats.Truncated++
+			p.diag(Diagnostic{Kind: DiagMalformedPacket, PID: pkt.PID, Offset: pkt.Offset, Packet: pkt.Index,
+				Detail: "pointer_field beyond payload"})
+			sb.partial = nil
+			return
+		}
+		p.appendBytes(pkt, sb, pkt.Payload[1+ptr:])
 	} else {
 		p.appendBytes(pkt, sb, pkt.Payload)
 	}
@@ -320,24 +319,16 @@ func (p *PSI) acceptPAT(pkt *Packet, sec []byte) {
 		return
 	}
 	end := len(sec) - 4
-	// transport_stream_id and version/current occupy 8 bytes of the header;
-	// section_number/last_section_number occupy the next two. Program entries
-	// follow those, and each PAT section carries 4+2*N such fields.
-	body := sec[8:end]
-	if len(body) < 2 {
-		p.stats.Truncated++
-		p.diag(Diagnostic{Kind: DiagMalformedPacket, PID: pkt.PID, Offset: pkt.Offset, Packet: pkt.Index,
-			Detail: "PAT section too short for section_number"})
-		return
-	}
-	body = body[2:] // skip section_number/last_section_number
-	hdrEnd := 8 + 2
-	if len(sec)-4 < hdrEnd || len(sec[hdrEnd:len(sec)-4])%4 != 0 {
+	// The long-form header is eight bytes: table_id, section_length,
+	// transport_stream_id, version/current_next, section_number,
+	// last_section_number. Program entries follow and are four bytes each.
+	if len(sec)-4 < 8 || (len(sec)-4-8)%4 != 0 {
 		p.stats.Truncated++
 		p.diag(Diagnostic{Kind: DiagMalformedPacket, PID: pkt.PID, Offset: pkt.Offset, Packet: pkt.Index,
 			Detail: "PAT program entries not a multiple of four bytes"})
 		return
 	}
+	_ = end
 	if p.patCandidate == nil || (p.patCandidate.version != version) {
 		p.patCandidate = &patCandidate{version: version, count: last + 1, have: make(map[int][]byte)}
 	}
@@ -354,7 +345,7 @@ func (p *PSI) acceptPAT(pkt *Packet, sec []byte) {
 	var refs []ProgramRef
 	for i := 0; i < p.patCandidate.count; i++ {
 		s := p.patCandidate.have[i]
-		for j := 8 + 2; j < len(s)-4; j += 4 {
+		for j := 8; j < len(s)-4; j += 4 {
 			num := uint16(s[j])<<8 | uint16(s[j+1])
 			pid := uint16(s[j+2]&0x1F)<<8 | uint16(s[j+3])
 			if num == 0 {
