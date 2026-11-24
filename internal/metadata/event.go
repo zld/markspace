@@ -37,19 +37,27 @@ func (k Kind) Valid() bool {
 // Seq preserves the demux order and is only used as a final tie-breaker, so
 // sorting the same input twice always yields the same order.
 type Event struct {
-	Kind         Kind
-	TrackID      uint32
-	Time         clock.Time
+	Kind    Kind
+	TrackID uint32
+	Time    clock.Time
+	// Scheme and Value are the emsg scheme/value pair.  They are empty for
+	// events carried by media samples.
+	Scheme       string
+	Value        string
 	Data         []byte
 	SourceOffset int64
 	Seq          int
 }
 
-// Digest is the content digest of an event: SHA-256 over kind, a separator and
-// the raw payload.  It is used both for de-duplication and for reports.
+// Digest is the content digest of an event: SHA-256 over kind, scheme, value
+// and the raw payload.  It is used both for de-duplication and for reports.
 func (e Event) Digest() [32]byte {
 	h := sha256.New()
 	h.Write([]byte(e.Kind))
+	h.Write([]byte{0})
+	h.Write([]byte(e.Scheme))
+	h.Write([]byte{0})
+	h.Write([]byte(e.Value))
 	h.Write([]byte{0})
 	h.Write(e.Data)
 	var out [32]byte
