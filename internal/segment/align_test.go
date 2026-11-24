@@ -52,8 +52,10 @@ func TestFanInIsolatesDriftingLayerAndKeepsOthers(t *testing.T) {
 	if iso.Name != "bad" || iso.Reason == "" {
 		t.Fatalf("isolation reason missing: %+v", iso)
 	}
-	if sum.ManifestAlignNS <= 1 {
-		t.Fatalf("manifest alignment should record drift, got %d", sum.ManifestAlignNS)
+	// The isolated layer's drift is explained in its own reason and must not
+	// leak into the surviving output's alignment evidence.
+	if sum.ManifestAlignNS != 0 {
+		t.Fatalf("manifest alignment should reflect survivors only, got %d", sum.ManifestAlignNS)
 	}
 }
 

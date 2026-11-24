@@ -76,10 +76,13 @@ func FanIn(inputs []LayerInput, toleranceNS int64) (*Summary, error) {
 	var maxErr int64
 	for _, in := range inputs {
 		st := evaluate(in, toleranceNS)
-		if st.MaxBoundaryErrNS > maxErr {
-			maxErr = st.MaxBoundaryErrNS
-		}
 		if !st.Isolated {
+			// Alignment evidence covers surviving layers only. An isolated
+			// layer's drift is already reported in its own reason, and must
+			// not inflate the manifest alignment of a clean output.
+			if st.MaxBoundaryErrNS > maxErr {
+				maxErr = st.MaxBoundaryErrNS
+			}
 			sum.Active++
 			if sum.Active == 1 || st.StartNS < sum.SharedStartNS {
 				sum.SharedStartNS = st.StartNS
