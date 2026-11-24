@@ -81,8 +81,9 @@ func isContainer(typ string) bool {
 	return false
 }
 
-// removeBox splices the first box of the given type out of data, shifting
-// and shrinking every enclosing size header along the way.
+// removeBox splices the first box of the given type out of data, shrinks
+// every enclosing size header, and rewrites stco chunk offsets so the
+// remaining sample tables keep pointing at the same mdat bytes.
 func removeBox(data []byte, typ string) []byte {
 	pos := findBox(data, typ, 0)
 	if pos < 0 {
@@ -92,9 +93,35 @@ func removeBox(data []byte, typ string) []byte {
 	out := make([]byte, 0, len(data)-size)
 	out = append(out, data[:pos]...)
 	out = append(out, data[pos+size:]...)
-	// Repair the sizes of every ancestor container by re-scanning.
 	repairContainerSizes(out)
+	shiftChunkOffsets(out, uint32(size))
 	return out
+}
+
+// shiftChunkOffsets subtracts delta from every stco chunk offset entry.
+func shiftChunkOffsets(data []byte, delta uint32) {
+	pos := 0
+	for pos+8 <= len(data) {
+		size := int(binary.BigEndian.Uint32(data[pos : pos+4]))
+		if size < 8 || pos+size > len(data) {
+			return
+		}
+		typ := string(data[pos+4 : pos+8])
+		if typ == "stco" && pos+16 <= len(data) {
+			count := int(binary.BigEndian.Uint32(data[pos+12 : pos+16]))
+			for i := 0; i < count; i++ {
+				entry := pos + 16 + i*4
+				if entry+4 <= len(data) {
+					binary.BigEndian.PutUint32(data[entry:entry+4],
+						binary.BigEndian.Uint32(data[entry:entry+4])-delta)
+				}
+			}
+		}
+		if isContainer(typ) {
+			shiftChunkOffsets(data[pos+8:pos+size], delta)
+		}
+		pos += size
+	}
 }
 
 // repairContainerSizes recomputes every container box header from the sum
