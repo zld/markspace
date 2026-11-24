@@ -35,6 +35,7 @@ func (s Sample) ByteRange() media.ByteRange {
 type Keyframe struct {
 	SampleNumber  uint32          `json:"sample_number"`
 	Time          media.Timestamp `json:"time"`
+	DurationTicks int64           `json:"duration_ticks,omitempty"`
 	IntervalTicks int64           `json:"interval_ticks,omitempty"`
 	ByteRange     media.ByteRange `json:"byte_range"`
 	Confirmed     bool            `json:"confirmed"`
@@ -114,6 +115,7 @@ func BuildFromSamples(tb media.Timebase, syncSamples []uint32, samples []Sample,
 		}
 
 		kf.Time = media.Timestamp{Ticks: sample.StartTicks, Timebase: tb}
+		kf.DurationTicks = int64(sample.DurationTicks)
 		kf.ByteRange = sample.ByteRange()
 		if i+1 < len(syncSamples) {
 			if next, ok := byNumber[syncSamples[i+1]]; ok {
