@@ -16,11 +16,11 @@ import (
 
 // Result summarizes a readable MP4 output.
 type Result struct {
-	Path       string `json:"path"`
-	Bytes      int64  `json:"bytes"`
-	SHA256     string `json:"output_sha256"`
-	TrackCount int    `json:"track_count"`
-	SampleCount int   `json:"sample_count"`
+	Path        string `json:"path"`
+	Bytes       int64  `json:"bytes"`
+	SHA256      string `json:"output_sha256"`
+	TrackCount  int    `json:"track_count"`
+	SampleCount int    `json:"sample_count"`
 }
 
 // WriteMP4 writes mapped tracks to path using go-mp4's box writer. The file is
