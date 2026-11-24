@@ -169,8 +169,10 @@ func TestResamplerEdgePolicy(t *testing.T) {
 	}
 	r.Flush()
 	_, tail = r.EdgePolicy()
-	if tail != r.half {
-		t.Fatalf("after flush tail=%d", tail)
+	// Tail padding is half-1 frames: enough to complete every real-frame
+	// window without emitting a phantom frame past the true end.
+	if tail != r.half-1 {
+		t.Fatalf("after flush tail=%d, want %d", tail, r.half-1)
 	}
 }
 

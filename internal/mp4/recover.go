@@ -102,25 +102,33 @@ func buildTrack(t structTrack, readable, maxSamples, mdatStart int64) (TrackInfo
 	}
 
 	// Chunk offsets: declared when present, synthesized from mdat otherwise.
+	// totalChunks counts every chunk position, including zero-sample runs, so
+	// each offset entry stays 1:1 with the chunk it describes.  Dropping a zero
+	// run from the count would shift every later offset onto the wrong chunk.
 	offsets := make([]int64, 0, len(perChunk))
-	totalChunks := 0
-	for _, p := range perChunk {
-		if p > 0 {
-			totalChunks++
-		}
-	}
+	totalChunks := len(perChunk)
 	switch {
 	case len(t.stco) >= totalChunks && !indexMissing:
 		offsets = append(offsets, toInt64(t.stco[:totalChunks])...)
 	case len(t.co64) >= totalChunks && !indexMissing:
 		offsets = append(offsets, toInt64_64(t.co64[:totalChunks])...)
 	default:
-		indexMissing = true
-		start := mdatStart
-		if start < 8 {
-			start = 8
+		// The table is absent, too short, or overflowing; rebuild sequentially,
+		// but only from a real mdat payload.  Without an mdat there is nothing
+		// to rebuild from and confirming samples over ftyp/moov would be a
+		// fabricated extent.
+		if mdatStart < 0 {
+			return ti, []fault.Fault{fault.New(fault.ClassIndex, "no-mdat",
+				"chunk index is missing and the file has no media payload to rebuild from").OnTrack(t.id)}, fmt.Errorf("%w", fault.New(fault.ClassIndex, "no-mdat", "no mdat to rebuild from").OnTrack(t.id))
 		}
-		cursor := start
+		if indexMissing {
+			// already recorded by expandChunks
+		} else {
+			fs = append(fs, fault.New(fault.ClassIndex, "index-short",
+				fmt.Sprintf("chunk table has %d entries for %d chunks; rebuilding from mdat", max64(int64(len(t.stco)), int64(len(t.co64))), totalChunks)).OnTrack(t.id))
+		}
+		indexMissing = true
+		cursor := mdatStart
 		for c := 0; c < totalChunks; c++ {
 			offsets = append(offsets, cursor)
 			cursor += chunkPayloadLen(sizes, perChunk, c)
@@ -140,6 +148,9 @@ func buildTrack(t structTrack, readable, maxSamples, mdatStart int64) (TrackInfo
 		}
 		off := offsets[ci]
 		chunkStart := off
+		// Compare against the high-water mark of all earlier chunks, not just
+		// the adjacent one: a short overlapping chunk must not lower the bar
+		// and let a later chunk overlap an older one unnoticed.
 		overlapped := ci > 0 && off < prevChunkEnd
 		if overlapped {
 			fs = append(fs, fault.New(fault.ClassIndex, "chunk-overlap",
@@ -161,11 +172,13 @@ func buildTrack(t structTrack, readable, maxSamples, mdatStart int64) (TrackInfo
 					fmt.Sprintf("sample %d size %d is not a whole %d-byte PCM frame", cursor, sz, blockAlign)).
 					OnTrack(t.id).AtByte(off))
 			}
-			if off < 0 || off+sz > readable {
+			// Overflow-safe range check: a hostile co64 offset near MaxInt64
+			// must not wrap off+sz negative and slip through as in-file.
+			if off < 0 || sz < 0 || sz > readable || off > readable-sz {
 				confirmed = false
 				broken = true
 				fs = append(fs, fault.New(fault.ClassSample, "truncated-sample",
-					fmt.Sprintf("sample %d range [%d,%d) exceeds readable bytes %d", cursor, off, off+sz, readable)).
+					fmt.Sprintf("sample %d range starting at %d exceeds readable bytes %d", cursor, off, readable)).
 					OnTrack(t.id).AtByte(readable))
 			}
 			if overlapped {
@@ -178,13 +191,21 @@ func buildTrack(t structTrack, readable, maxSamples, mdatStart int64) (TrackInfo
 			s.Confirmed = confirmed
 			samples = append(samples, s)
 			ch.Samples = append(ch.Samples, cursor)
-			off += sz
+			// Advance with saturation so a wrapped offset cannot alias to a
+			// valid-looking position later in the same chunk.
+			if sz > 0 && off <= maxInt64-sz {
+				off += sz
+			} else {
+				off = maxInt64
+			}
 			mediaTick += deltas[cursor]
 			cursor++
 		}
 		ch.Size = off - chunkStart
 		chunks = append(chunks, ch)
-		prevChunkEnd = off
+		if off > prevChunkEnd {
+			prevChunkEnd = off
+		}
 	}
 	ti.Samples = samples
 	ti.Chunks = chunks
@@ -229,6 +250,10 @@ func expandChunks(t structTrack, sampleCount int) (perChunk []int, indexMissing 
 		for c := 1; c <= chunkCount; c++ {
 			run := stscRunAt(t.stsc, c)
 			if run.SamplesPerChunk == 0 {
+				// A zero-length run is malformed; emit a zero-count chunk so
+				// the offset table stays aligned with the chunk numbering and
+				// later chunks keep their declared offsets.
+				per = append(per, 0)
 				continue
 			}
 			k := int(run.SamplesPerChunk)
@@ -243,12 +268,21 @@ func expandChunks(t structTrack, sampleCount int) (perChunk []int, indexMissing 
 		}
 	} else {
 		c := 1
+		zeroRuns := 0
 		for placed < sampleCount {
 			run := stscRunAt(t.stsc, c)
 			k := int(run.SamplesPerChunk)
 			if k <= 0 {
-				break
+				// Skip a malformed zero run, but bound the loop so a table of
+				// zeros cannot spin forever without placing a sample.
+				c++
+				zeroRuns++
+				if zeroRuns > sampleCount+len(t.stsc)+1 {
+					break
+				}
+				continue
 			}
+			zeroRuns = 0
 			if placed+k > sampleCount {
 				k = sampleCount - placed
 			}
@@ -256,17 +290,25 @@ func expandChunks(t structTrack, sampleCount int) (perChunk []int, indexMissing 
 			placed += k
 			c++
 		}
+		// Any samples the runs did not cover are laid out as a final chunk so
+		// the track is never silently dropped.
+		if placed < sampleCount {
+			per = append(per, sampleCount-placed)
+		}
 	}
 	return per, indexMissing, nil
 }
 
 func stscRunAt(entries []mp4.StscEntry, chunk int) mp4.StscEntry {
+	// Start with the run whose FirstChunk is the largest that is <= chunk.
+	// A table whose first run does not begin at chunk 1 is malformed; using
+	// entries[0] for earlier chunks would fabricate sample density, so the
+	// effective run for chunk 1 is the earliest declared run and the caller's
+	// count check keeps placement consistent.
 	cur := entries[0]
 	for _, e := range entries {
-		if int(e.FirstChunk) <= chunk {
+		if int(e.FirstChunk) <= chunk && int(e.FirstChunk) >= int(cur.FirstChunk) {
 			cur = e
-		} else {
-			break
 		}
 	}
 	return cur
@@ -299,6 +341,12 @@ func toInt64(in []uint32) []int64 {
 func toInt64_64(in []uint64) []int64 {
 	out := make([]int64, len(in))
 	for i, v := range in {
+		if v > uint64(maxInt64) {
+			// A chunk offset beyond int64 cannot be a real file position; clamp
+			// to a value the range check will reject rather than wrap negative.
+			out[i] = maxInt64
+			continue
+		}
 		out[i] = int64(v)
 	}
 	return out

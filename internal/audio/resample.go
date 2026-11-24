@@ -231,11 +231,20 @@ func (r *Resampler) Flush() ([]float64, error) {
 		return nil, nil
 	}
 	r.flushed = true
-	r.tailPad = r.half
+	// Head padding fills the window before frame 0 (needs `half` frames).
+	// Tail padding must only complete the windows whose start is a real frame,
+	// so `half-1` frames are enough: with `half` the final synthetic output
+	// lands one frame past the true end, making an identity conversion return
+	// N+1 frames for N inputs.
+	pad := r.half - 1
+	if pad < 0 {
+		pad = 0
+	}
+	r.tailPad = pad
 	origNext := r.absNext
-	r.hist = append(r.hist, make([]float64, r.half*r.Channels)...)
-	r.histFrames += r.half
-	r.absNext += int64(r.half)
+	r.hist = append(r.hist, make([]float64, pad*r.Channels)...)
+	r.histFrames += pad
+	r.absNext += int64(pad)
 	out, err := r.drain()
 	r.absNext = origNext
 	return out, err

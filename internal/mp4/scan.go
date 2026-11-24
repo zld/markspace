@@ -20,6 +20,8 @@ import (
 )
 
 // Limits enforced while scanning.
+const maxInt64 = int64(^uint64(0) >> 1)
+
 const (
 	MaxScanBytes       = 1 << 30
 	MaxSamplesPerTrack = 4_000_000
@@ -72,9 +74,10 @@ type TrackInfo struct {
 
 // TopBox is one top-level box extent.
 type TopBox struct {
-	Type   string
-	Offset int64
-	Size   int64
+	Type       string
+	Offset     int64
+	Size       int64
+	HeaderSize int64 // 8 for a normal box, 16 for a 64-bit largesize box
 }
 
 // ScanResult is the outcome of scanning one file.
@@ -164,7 +167,13 @@ func (s *Scanner) ScanReader(r io.ReadSeeker, readable int64, path string) (*Sca
 	res.Truncated = truncated
 	for _, b := range top {
 		if b.Type == "mdat" {
-			res.MDATStart = b.Offset + 8
+			// Payload begins after the box header, which is 16 bytes for a
+			// 64-bit largesize box and 8 otherwise.
+			hs := b.HeaderSize
+			if hs == 0 {
+				hs = 8
+			}
+			res.MDATStart = b.Offset + hs
 			break
 		}
 	}
@@ -215,6 +224,7 @@ func scanTopLevel(r io.ReadSeeker, readable int64) (boxes []TopBox, declared int
 		}
 		size := int64(binary.BigEndian.Uint32(hdr[:4]))
 		typ := string(hdr[4:8])
+		headerSize := int64(8)
 		switch {
 		case size == 1:
 			if off+16 > readable {
@@ -223,16 +233,26 @@ func scanTopLevel(r io.ReadSeeker, readable int64) (boxes []TopBox, declared int
 			if _, err := io.ReadFull(r, hdr[8:16]); err != nil {
 				return nil, 0, false, -1, err
 			}
-			size = int64(binary.BigEndian.Uint64(hdr[8:16]))
+			raw := binary.BigEndian.Uint64(hdr[8:16])
+			if raw > uint64(maxInt64) {
+				return boxes, declared, false, off, fmt.Errorf("box %q at %d has a 64-bit size beyond int64", typ, off)
+			}
+			size = int64(raw)
+			headerSize = 16
 		case size == 0:
 			size = readable - off
 		}
-		if size < 8 {
+		if size < headerSize {
 			return boxes, off + size, false, off, fmt.Errorf("box %q at %d has invalid size %d", typ, off, size)
 		}
-		boxes = append(boxes, TopBox{Type: typ, Offset: off, Size: size})
-		if off+size > readable {
-			return boxes, off + size, true, readable, nil
+		// Guard against arithmetic overflow so a hostile largesize cannot wrap
+		// past the truncation check and silently advance the cursor backwards.
+		if size > readable-off && off+size < off {
+			return boxes, readable, true, readable, nil
+		}
+		boxes = append(boxes, TopBox{Type: typ, Offset: off, Size: size, HeaderSize: headerSize})
+		if off+size > readable || off+size < off {
+			return boxes, off + headerSize, true, readable, nil
 		}
 		declared = off + size
 		off += size
