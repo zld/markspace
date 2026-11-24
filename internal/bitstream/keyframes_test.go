@@ -67,19 +67,22 @@ func TestAnalyzeRegularCadence(t *testing.T) {
 }
 
 func TestAnalyzeDetectsCadenceBreak(t *testing.T) {
-	starts := make([]int64, 12)
-	for i := range starts {
-		starts[i] = int64(i) * 100
+	// Five regular 400 ms keyframe gaps then one 1200 ms gap.
+	starts := make([]int64, 7)
+	for i := 0; i < 6; i++ {
+		starts[i] = int64(i) * 400
 	}
-	// One large 1200 ms gap between keyframes 4 and 8.
-	starts[8] = starts[4] + 1200
-	sync := map[int]bool{0: true, 4: true, 8: true}
+	starts[6] = starts[5] + 1200
+	sync := map[int]bool{0: true, 1: true, 2: true, 3: true, 4: true, 5: true, 6: true}
 	rep := Analyze(lineFromStarts(t, 1, starts, sync, nil))
 	if len(rep.Anomalies) != 1 {
-		t.Fatalf("anomalies = %d, want 1", len(rep.Anomalies))
+		t.Fatalf("anomalies = %d, want 1 (%+v)", len(rep.Anomalies), rep.Anomalies)
 	}
 	if rep.Anomalies[0].GapMs != 1200 {
 		t.Errorf("anomaly gap = %d, want 1200", rep.Anomalies[0].GapMs)
+	}
+	if rep.Stats.MaxMs != 1200 {
+		t.Errorf("max gap = %d, want 1200", rep.Stats.MaxMs)
 	}
 }
 

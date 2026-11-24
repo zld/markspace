@@ -51,9 +51,8 @@ type Report struct {
 	Boundaries []Boundary `json:"boundaries"`
 }
 
-// Analyze computes keyframe spacing from a track timeline. Anomaly
-// threshold: a gap is abnormal when it exceeds 2x the median deterministic
-// gap (cadence break) or when it is non-positive (timeline defect). Inferred
+// Analyze computes keyframe spacing from a track timeline. Cadence breaks
+// are detected robustly with median/MAD (see findAnomalies); inferred
 // boundaries are listed separately and never counted as decodable.
 func Analyze(line *media.TrackLine) Report {
 	rep := Report{Stats: GapStats{TrackID: line.TrackID, Deterministic: true}}
@@ -91,7 +90,7 @@ func Analyze(line *media.TrackLine) Report {
 	}
 	rep.Stats.GapsMs = gaps
 	rep.Stats.MinMs, rep.Stats.MaxMs, rep.Stats.MeanMs, rep.Stats.P95Ms = summarize(gaps)
-	rep.Anomalies = findAnomalies(line, syncIdx, medianOf(det))
+	rep.Anomalies = findAnomalies(line, syncIdx, det)
 	return rep
 }
 
@@ -113,9 +112,14 @@ func summarize(gaps []int64) (min, max int64, mean float64, p95 int64) {
 	return min, max, mean, p95
 }
 
-// findAnomalies flags non-positive gaps and deterministic gaps beyond 2x
-// the median cadence.
-func findAnomalies(line *media.TrackLine, syncIdx []int, median int64) []Anomaly {
+// findAnomalies flags non-positive gaps and deterministic gaps that deviate
+// from normal cadence. Normal cadence is estimated robustly with the median
+// and median absolute deviation (MAD): a gap beyond median + 4*MAD is a
+// cadence break. With zero MAD (near-constant cadence) it falls back to a
+// 2x-median rule, which keeps small-sample fixtures meaningful.
+func findAnomalies(line *media.TrackLine, syncIdx []int, detGaps []int64) []Anomaly {
+	median := medianOf(detGaps)
+	mad := madOf(detGaps, median)
 	var out []Anomaly
 	for k := 1; k < len(syncIdx); k++ {
 		a, b := line.Points[syncIdx[k-1]], line.Points[syncIdx[k]]
@@ -125,8 +129,8 @@ func findAnomalies(line *media.TrackLine, syncIdx []int, median int64) []Anomaly
 		switch {
 		case gapMs <= 0:
 			reason = "non-positive keyframe gap"
-		case median > 0 && deterministic && gapMs > 2*median:
-			reason = "keyframe gap exceeds 2x median cadence"
+		case deterministic && isCadenceBreak(gapMs, median, mad):
+			reason = "keyframe gap exceeds robust cadence threshold"
 		}
 		if reason != "" {
 			out = append(out, Anomaly{
@@ -140,6 +144,28 @@ func findAnomalies(line *media.TrackLine, syncIdx []int, median int64) []Anomaly
 		}
 	}
 	return out
+}
+
+func isCadenceBreak(gap, median, mad int64) bool {
+	if mad > 0 {
+		return gap > median+4*mad
+	}
+	return median > 0 && gap > 2*median
+}
+
+func madOf(v []int64, median int64) int64 {
+	if len(v) == 0 {
+		return 0
+	}
+	dev := make([]int64, len(v))
+	for i, x := range v {
+		d := x - median
+		if d < 0 {
+			d = -d
+		}
+		dev[i] = d
+	}
+	return medianOf(dev)
 }
 
 func medianOf(v []int64) int64 {
