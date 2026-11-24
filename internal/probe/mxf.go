@@ -361,8 +361,14 @@ func ProbeMXF(src Source) (*File, error) {
 			}
 		} else {
 			t.Index = model.IndexInfo{Present: false, Complete: false, Reason: "no index table segment"}
-			f.Faults.Add(fault.New(fault.MissingIndex, 0, "track %d has no index table segment", id).
-				WithTrack(t.Key, id).WithRecoverable(true))
+			// The descriptor's container duration bounds the track; the range
+			// is determinable even without a per-frame index.
+			fe := fault.New(fault.MissingIndex, 0, "track %d has no index table segment", id).
+				WithTrack(t.Key, id).WithRecoverable(true)
+			if t.DurationTick > 0 {
+				fe.WithRange(t.Timebase.TickToNanos(t.StartTick), t.Timebase.TickToNanos(t.StartTick+t.DurationTick))
+			}
+			f.Faults.Add(fe)
 		}
 		t.Required = t.Kind == model.KindVideo || t.Kind == model.KindAudio
 		f.Tracks = append(f.Tracks, t)

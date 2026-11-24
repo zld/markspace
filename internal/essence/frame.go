@@ -38,6 +38,19 @@ const (
 	MinFrameSize = HeaderSize + TrailerSize
 )
 
+// Frame flag bits.
+const (
+	// FlagSync marks a random-access frame.
+	FlagSync uint16 = 1 << 0
+	// FlagRTP marks an essence payload that begins with a 12-byte RTP
+	// header. Stream-captured masters often keep the original packet
+	// header, and its timestamp is a second, independent statement of the
+	// frame's media time that can be cross-checked against the container
+	// timeline. The header stays inside the payload, so it is copied
+	// verbatim by remux.
+	FlagRTP uint16 = 1 << 1
+)
+
 // Kind mirrors model.TrackKind numerically without importing it.
 type Kind uint8
 
@@ -115,12 +128,15 @@ func ParseHeader(b []byte) (Header, error) {
 		Duration:   binary.BigEndian.Uint64(b[24:32]),
 		PayloadLen: binary.BigEndian.Uint32(b[32:36]),
 	}
-	h.Sync = h.Flags&1 != 0
+	h.Sync = h.Flags&FlagSync != 0
 	if h.Version != Version {
 		return Header{}, fmt.Errorf("essence: unsupported version %d", h.Version)
 	}
 	return h, nil
 }
+
+// HasRTP reports whether the payload starts with an RTP header.
+func (h Header) HasRTP() bool { return h.Flags&FlagRTP != 0 }
 
 // VerifyPayload checks the trailing payload checksum. It returns false when
 // the frame is cut short, making the payload indeterminable.

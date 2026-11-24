@@ -135,10 +135,29 @@ func Map(files []*probe.File, opt Options) (*Result, error) {
 		sort.Strings(deps[logical])
 	}
 
-	order, err := topoOrder(logicals, deps)
+	// The explicit track graph is the authority for ordering and for the
+	// hard failures. Building it here means a cycle or a missing required
+	// dependency is detected by the same code path the container graph uses,
+	// and no mapping is emitted when it fails.
+	logicalTracks := make([]*model.Track, 0, len(logicals))
+	for _, logical := range logicals {
+		required := false
+		for _, m := range grouped[logical] {
+			required = required || m.Required
+		}
+		logicalTracks = append(logicalTracks, &model.Track{
+			Key:       logical,
+			Logical:   logical,
+			Container: model.ContainerKind("logical"),
+			Required:  required,
+			DependsOn: deps[logical],
+		})
+	}
+	tg, err := model.BuildGraph(logicalTracks)
 	if err != nil {
 		return nil, err
 	}
+	order := tg.TrackKeys
 
 	res := &Result{}
 	for i, logical := range order {
@@ -149,47 +168,6 @@ func Map(files []*probe.File, opt Options) (*Result, error) {
 		res.Order = append(res.Order, logical)
 	}
 	return res, nil
-}
-
-// topoOrder returns the logical names in dependency order, or a
-// dependency_cycle fault if any cycle exists.
-func topoOrder(names []string, deps map[string][]string) ([]string, error) {
-	state := map[string]uint8{}
-	var order []string
-	var visit func(n string, stack []string) error
-	visit = func(n string, stack []string) error {
-		switch state[n] {
-		case 2:
-			return nil
-		case 1:
-			return &fault.Error{Code: fault.DependencyCycle, Detail: "map: cycle " + joinCycle(stack, n)}
-		}
-		state[n] = 1
-		for _, dep := range deps[n] {
-			if err := visit(dep, append(stack, n)); err != nil {
-				return err
-			}
-		}
-		state[n] = 2
-		order = append(order, n)
-		return nil
-	}
-	sorted := append([]string(nil), names...)
-	sort.Strings(sorted)
-	for _, n := range sorted {
-		if err := visit(n, nil); err != nil {
-			return nil, err
-		}
-	}
-	return order, nil
-}
-
-func joinCycle(stack []string, last string) string {
-	out := ""
-	for _, s := range stack {
-		out += s + " -> "
-	}
-	return out + last
 }
 
 // resolve merges the container versions of one logical track.

@@ -42,6 +42,10 @@ type TrackSpec struct {
 	Color      ColorClaim
 	// DropsIndex omits the sample table / index while leaving media intact.
 	DropsIndex bool
+	// CarriesRTP embeds an RTP header in each frame payload, as a
+	// stream-captured master would. The RTP timestamp is a second statement
+	// of media time that the demux cross-checks against the container.
+	CarriesRTP bool
 	// DependsOn lists logical tracks this one needs before mapping.
 	DependsOn []string
 }
@@ -103,7 +107,7 @@ func DefaultMixed() []Spec {
 				Logical: "video", Container: model.ContainerMXF, TrackID: 1,
 				Kind: model.KindVideo, Codec: "mxf-h264", Timescale: 25000,
 				FrameTicks: 1000, Frames: 8, PayloadLen: 96, SyncEvery: 4,
-				Required: true, Rotation: 90, Crop: crop16x9,
+				Required: true, Rotation: 90, Crop: crop16x9, CarriesRTP: true,
 				Color: ColorClaim{Primaries: "bt709", Transfer: "bt709", Matrix: "bt709", FullRange: false},
 			},
 			{
@@ -227,9 +231,20 @@ func BuildFrame(t TrackSpec, i int) []byte {
 	sync := t.SyncEvery <= 1 || i%t.SyncEvery == 0
 	var flags uint16
 	if sync {
-		flags = 1
+		flags |= essence.FlagSync
+	}
+	if t.CarriesRTP {
+		flags |= essence.FlagRTP
 	}
 	payload := essence.Payload(seedFor(t.Logical, t.TrackID, seq), t.PayloadLen)
+	if t.CarriesRTP {
+		rtpHeader := essence.RPTSample(uint16(seq), start, t.TrackID, t.Kind == model.KindAudio)
+		hdr, err := rtpHeader.Marshal()
+		if err != nil {
+			panic("fixture: RTP header: " + err.Error())
+		}
+		payload = append(hdr, payload...)
+	}
 	return essence.Build(essence.Header{
 		Kind:      EssenceKind(t.Kind),
 		Flags:     flags,

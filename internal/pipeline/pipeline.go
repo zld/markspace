@@ -129,6 +129,13 @@ func Ingest(src Source) (*Ingested, error) {
 		var report model.TrackTimeline
 		recover.Rebuild(scan, &report)
 		report.Logical = t.Logical
+		// The scan is boundary exact: every frame is reported at its own
+		// header start, so the localization error is zero ticks. Record that
+		// explicitly for the report.
+		if len(scan.Frames) > 0 {
+			report.LocalizationErr = recover.LocalizationError(t.Timebase,
+				report.Declared.StartNS, t.Timebase.TickToNanos(scan.Frames[0].StartTick))
+		}
 		in.Timeline[t.Key] = normalizeTimeline(t, td, &report)
 	}
 	return in, nil

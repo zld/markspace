@@ -158,6 +158,20 @@ func ScanTrack(data []byte, t *model.Track) (*TrackScan, fault.List) {
 				frame.Payload = payload
 				sum := sha256.Sum256(payload)
 				frame.SHA256 = hex.EncodeToString(sum[:])
+				// RTP-embedded frames cross-check their container time
+				// against the packet timestamp. A mismatch is a fault even
+				// though the payload itself is intact.
+				if h.HasRTP() {
+					if rt, err := essence.ParseRTP(h, payload); err == nil {
+						if got := essence.RTPTimestampTicks(h, rt); got != h.StartTick {
+							faults.Add(fault.New(fault.CorruptSegment, frame.Offset,
+								"frame %d of %s container start %d != RTP timestamp %d", h.Seq, t.Key, h.StartTick, got).
+								WithTrack(t.Key, t.TrackID).
+								WithRange(t.Timebase.TickToNanos(h.StartTick), t.Timebase.TickToNanos(h.StartTick+h.Duration)).
+								WithRecoverable(false))
+						}
+					}
+				}
 				scan.Complete++
 			} else {
 				frame.State = StateDamaged

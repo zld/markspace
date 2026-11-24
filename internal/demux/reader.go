@@ -132,6 +132,28 @@ func demuxTrack(src probe.Source, t *model.Track) (*TrackData, fault.List) {
 			td.Skipped++
 			continue
 		}
+		// When the essence retains its RTP header, the RTP timestamp is an
+		// independent statement of the frame's media time. A disagreement
+		// with the container timeline means one of the two is wrong, so the
+		// fragment is reported instead of copied into a confident-looking
+		// output.
+		if h.HasRTP() {
+			rt, err := essence.ParseRTP(h, payload)
+			if err != nil {
+				faults.Add(fault.New(fault.CorruptSegment, fr.PayloadOffset,
+					"fragment %d of %s has an unreadable RTP header: %v", fr.Seq, t.Key, err).
+					WithTrack(t.Key, t.TrackID).WithRange(frRangeNS(td, fr)).WithRecoverable(false))
+				td.Skipped++
+				continue
+			}
+			if got := essence.RTPTimestampTicks(h, rt); got != fr.StartTick {
+				faults.Add(fault.New(fault.CorruptSegment, fr.PayloadOffset,
+					"fragment %d of %s container start %d != RTP timestamp %d", fr.Seq, t.Key, fr.StartTick, got).
+					WithTrack(t.Key, t.TrackID).WithRange(frRangeNS(td, fr)).WithRecoverable(false))
+				td.Skipped++
+				continue
+			}
+		}
 		ok, complete := essence.VerifyPayload(payload, h)
 		if !complete || !ok {
 			code := fault.CorruptSegment

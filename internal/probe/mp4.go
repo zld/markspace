@@ -402,8 +402,15 @@ func probeSampleTable(data []byte, boxes []rawBox, stbl rawBox, t *model.Track, 
 		}
 		t.MissingOptional = append(t.MissingOptional, missing...)
 		t.Index = index
-		faults.Add(fault.New(fault.MissingIndex, stbl.Offset, "sample table missing %v", missing).
-			WithTrack(t.Key, t.TrackID).WithRecoverable(true))
+		// The track's declared media duration bounds the range within which
+		// its samples must lie; that is a determinable interval even though
+		// the per-sample boundaries are not.
+		fe := fault.New(fault.MissingIndex, stbl.Offset, "sample table missing %v", missing).
+			WithTrack(t.Key, t.TrackID).WithRecoverable(true)
+		if t.DurationTick > 0 {
+			fe.WithRange(t.Timebase.TickToNanos(0), t.Timebase.TickToNanos(t.DurationTick))
+		}
+		faults.Add(fe)
 		return nil
 	}
 
