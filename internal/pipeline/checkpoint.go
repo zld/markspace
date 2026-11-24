@@ -23,6 +23,7 @@ type Checkpoint struct {
 	CheckpointPackets   int                       `json:"checkpoint_packets"`
 	ReorderWindow       int                       `json:"reorder_window"`
 	SilenceWindowMs     int64                     `json:"silence_window_ms"`
+	SilenceThreshold    float64                   `json:"silence_threshold"`
 	FingerprintWindowMs int64                     `json:"fingerprint_window_ms"`
 	TimeToleranceMs     int64                     `json:"time_tolerance_ms"`
 	Segments            []model.Segment           `json:"segments"`

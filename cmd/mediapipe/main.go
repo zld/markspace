@@ -81,6 +81,9 @@ func parseDemoFlags(args []string) (commonFlags, error) {
 func runDemo(args []string) int {
 	f, err := parseDemoFlags(args)
 	if err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
 		fmt.Fprintln(os.Stderr, "argument error:", err)
 		return 1
 	}
@@ -150,6 +153,9 @@ func runResume(args []string) int {
 	fs := flag.NewFlagSet("resume", flag.ContinueOnError)
 	out := fs.String("out", "", "output directory")
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
 		return 1
 	}
 	if *out == "" {
@@ -172,6 +178,9 @@ func runVerify(args []string) int {
 	fs := flag.NewFlagSet("verify", flag.ContinueOnError)
 	out := fs.String("out", "", "output directory")
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
 		return 1
 	}
 	if *out == "" {

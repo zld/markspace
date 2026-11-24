@@ -1,5 +1,6 @@
 /tmp/
 /dist/
+/mediapipe
 *.test
 *.out
 .DS_Store

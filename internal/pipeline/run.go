@@ -111,6 +111,7 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 		opts.CheckpointPackets = cp.CheckpointPackets
 		opts.ReorderWindow = cp.ReorderWindow
 		opts.SilenceWindowMs = cp.SilenceWindowMs
+		opts.SilenceThreshold = cp.SilenceThreshold
 		opts.FingerprintWindowMs = cp.FingerprintWindowMs
 		opts.TimeToleranceMs = cp.TimeToleranceMs
 		if _, ierr := segment.ReadMP4Index(indexPath(opts.OutDir)); ierr != nil {
@@ -184,6 +185,7 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 				ProcessedPackets: processed, TargetBitrateBps: opts.TargetBitrateBps,
 				SegmentMs: opts.SegmentMs, CheckpointPackets: opts.CheckpointPackets,
 				ReorderWindow: opts.ReorderWindow, SilenceWindowMs: opts.SilenceWindowMs,
+				SilenceThreshold:    opts.SilenceThreshold,
 				FingerprintWindowMs: opts.FingerprintWindowMs, TimeToleranceMs: opts.TimeToleranceMs,
 				Segments: segments, Fingerprints: fingerprints,
 				Mappings: deduper.MappingsSnapshot(), SilenceWindows: silenceWindows,
