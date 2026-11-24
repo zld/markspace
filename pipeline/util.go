@@ -1,15 +1,11 @@
 package pipeline
 
 import (
-	"bytes"
 	"encoding/binary"
 	"fmt"
 	"hash/fnv"
 	"math"
 )
-
-// bytesReader wraps the fixture buffer without keeping a second copy.
-func bytesReader(fx *Fixtures) *bytes.Buffer { return &fx.TS }
 
 // synthMono builds a deterministic mono sine block in [-amp, amp].
 func synthMono(n int, amp float32) []float32 {

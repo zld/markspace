@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"path/filepath"
@@ -60,17 +61,29 @@ type Runner struct {
 // NewRunner builds a runner writing journal/artifacts under dir.
 func NewRunner(dir string, t Thresholds) *Runner { return &Runner{dir: dir, thresholds: t} }
 
+// strictSLO reports whether the numeric service-level checks apply. Only the
+// healthy reference stream is held to the thresholds; fault-injection
+// scenarios run to completion so they can report their evidence instead.
+func strictSLO(scenario string) bool { return scenario == ScenNormal }
+
 // Run executes every stage for fx and returns the consolidated metrics.
 // Stage validation failures roll that stage back; the returned error lets the
 // caller decide the process exit code while diagnostics stay in the journal.
-func (r *Runner) Run(scenario string, fx *Fixtures, rtpfx *Fixtures) (Metrics, error) {
+func (r *Runner) Run(scenario string, fx *Fixtures, rtpfx *Fixtures) (m Metrics, err error) {
 	committer, err := txn.NewCommitter(r.dir)
 	if err != nil {
 		return Metrics{}, err
 	}
 	defer committer.Close()
 
-	m := Metrics{Scenario: scenario, StageMetrics: map[string]float64{}}
+	m = Metrics{Scenario: scenario, StageMetrics: map[string]float64{}}
+	// Even when a validation stage rolls back and Run returns early, the
+	// reported metrics carry the rollback count and the hash of whatever
+	// committed boundary chain exists.
+	defer func() {
+		m.RollbackCount = committer.RollbackCount()
+		m.CommitHash = committer.CommitHash()
+	}()
 
 	// Stage 1: structural TS parse with fault capture.
 	parseSum, _, err := committer.Execute(txn.Stage{
@@ -119,7 +132,8 @@ func (r *Runner) Run(scenario string, fx *Fixtures, rtpfx *Fixtures) (Metrics, e
 			return r.stageRTP(workdir, rtpfx, &m)
 		},
 		Check: func(metrics map[string]float64) error {
-			if metrics["p95_latency_ms"] > r.thresholds.P95LatencyMax {
+			if strictSLO(scenario) &&
+				metrics["p95_latency_ms"] > r.thresholds.P95LatencyMax {
 				return media.New(media.ClassValidation, "pipeline.rtp",
 					"p95 latency exceeds threshold")
 			}
@@ -137,7 +151,8 @@ func (r *Runner) Run(scenario string, fx *Fixtures, rtpfx *Fixtures) (Metrics, e
 			return r.stageSync(workdir, fx, &m)
 		},
 		Check: func(metrics map[string]float64) error {
-			if metrics["sync_error_ms"] > r.thresholds.SyncErrorMaxMS {
+			if strictSLO(scenario) &&
+				metrics["sync_error_ms"] > r.thresholds.SyncErrorMaxMS {
 				return media.New(media.ClassValidation, "pipeline.sync",
 					"A/V sync error exceeds threshold")
 			}
@@ -147,15 +162,16 @@ func (r *Runner) Run(scenario string, fx *Fixtures, rtpfx *Fixtures) (Metrics, e
 	if err != nil {
 		return m, err
 	}
-
-	m.RollbackCount = committer.RollbackCount()
-	m.CommitHash = committer.CommitHash()
 	return m, nil
 }
 
 func (r *Runner) stageParse(workdir string, fx *Fixtures) (string, map[string]float64, error) {
+	// Parse over an independent reader so the source buffer stays intact and
+	// a later recovery run over the same fixture sees identical input bytes.
+	// Reset derived state so re-parsing an already-seen fixture is idempotent.
+	fx.Packets = nil
 	p := ts.NewParser(ts.Size188)
-	if err := p.Parse(bytesReader(fx), func(pk ts.Packet) error {
+	if err := p.Parse(bytes.NewReader(fx.TS.Bytes()), func(pk ts.Packet) error {
 		cp := pk
 		cp.Raw = append([]byte(nil), pk.Raw...)
 		cp.Payload = append([]byte(nil), pk.Payload...)

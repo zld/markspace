@@ -59,7 +59,8 @@ func (g *Generator) BuildTS(scenario string, packets int) *Fixtures {
 	write(ts.BuildPacket(pmtPID, 0, true,
 		ts.BuildPMT(pmtPID, audioPID, videoPID, 0, fx.PMT, "bt709"), -1, false))
 
-	cc := uint8(0)
+	// Continuity counters are per-PID in MPEG-TS.
+	ccAudio, ccVideo := uint8(0), uint8(0)
 	const ptsStep90 = 3600            // 40 ms per frame at the 90 kHz clock
 	const pcrStep27 = ptsStep90 * 300 // matching 27 MHz PCR increment
 	// PCR-wrap streams start just below the 33-bit boundary so the raw PCR
@@ -81,16 +82,26 @@ func (g *Generator) BuildTS(scenario string, packets int) *Fixtures {
 		// so a healthy stream measures zero A/V deviation on the common axis.
 		for _, pid := range []uint16{audioPID, videoPID} {
 			payload := ts.BuildPESPayload(framePTS, 4)
+			cc := ccAudio
+			if pid == videoPID {
+				cc = ccVideo
+			}
 			write(ts.BuildPacket(pid, cc, true, payload, pcr, false))
-			cc = (cc + 1) & 0x0F
+			if pid == videoPID {
+				ccVideo = (ccVideo + 1) & 0x0F
+			} else {
+				ccAudio = (ccAudio + 1) & 0x0F
+			}
 		}
 	}
 
 	switch scenario {
 	case ScenCCJump:
-		// Rewrite the final packet's CC to jump three steps.
+		// The final packet is a video-PID packet whose CC currently equals
+		// packets-1; rewrite it to jump three continuity-counter steps.
 		raw := fx.TS.Bytes()
-		raw[len(raw)-188+3] = (raw[len(raw)-188+3] & 0xF0) | ((cc + 2) & 0x0F)
+		jumped := uint8(packets+2) & 0x0F
+		raw[len(raw)-188+3] = (raw[len(raw)-188+3] & 0xF0) | jumped
 	case ScenTruncated:
 		fx.TS.Truncate(fx.TS.Len() - 60) // cut the final packet mid-body
 	case ScenPSIVersion:
@@ -105,38 +116,63 @@ func (g *Generator) BuildTS(scenario string, packets int) *Fixtures {
 const ts27Wrap int64 = 1 << 33 * 300 // 27 MHz value at the 33-bit PCR-base boundary
 
 // BuildRTP produces an RTP packet stream with optional loss/reorder injection.
+// In the loss scenario some withheld packets are re-inserted late (inside the
+// window, so they are recovered) while the rest stay withheld past the window
+// (so they are counted as permanent loss). Both counters must be exercised.
 func (g *Generator) BuildRTP(scenario string, count int) *Fixtures {
 	fx := &Fixtures{}
 	fx.RTPWindow = 8
-	withhold := map[uint16]bool{}
-	if scenario == ScenRTPLoss {
-		// Withhold ~15% of sequence numbers, reorder a few late arrivals.
-		for i := 2; i < count; i++ {
-			if g.rng.Intn(100) < 15 {
-				withhold[uint16(i)] = true
+	late := map[uint16]bool{} // withheld then re-inserted within the window
+	gone := map[uint16]bool{} // withheld beyond the window: permanent loss
+	if scenario == ScenRTPLoss && count >= 12 {
+		late[4] = true // re-inserted after a short delay -> recovered
+		late[12] = true
+		for _, s := range []uint16{20, 21, 28} {
+			if int(s) < count {
+				gone[s] = true
 			}
 		}
 	}
+	type pending struct{ seq uint16 }
+	var delayed []pending
 	for i := 0; i < count; i++ {
 		seq := uint16(i)
-		if withhold[seq] {
+		if gone[seq] {
 			fx.LossPlan = append(fx.LossPlan, seq)
+			continue // never transmitted
+		}
+		if late[seq] {
+			delayed = append(delayed, pending{seq})
 			continue
 		}
-		fx.RTPPackets = append(fx.RTPPackets, &prtp.Packet{
-			Header: prtp.Header{
-				SequenceNumber: seq,
-				Timestamp:      uint32(i) * 3600,
-				SSRC:           4242,
-			},
-			Payload: []byte{byte(seq >> 8), byte(seq)},
-		})
+		fx.appendRTPPacket(seq, i)
+		// Re-insert the delayed packet two slots later, still inside the
+		// window so the jitter buffer marks the gap as recovered.
+		if len(delayed) > 0 && i >= int(delayed[0].seq)+2 {
+			d := delayed[0]
+			delayed = delayed[1:]
+			fx.appendRTPPacket(d.seq, int(d.seq))
+		}
 	}
-	// Deterministic mild reorder: swap two adjacent non-withheld packets.
+	for _, d := range delayed { // flush any tail delayed packets
+		fx.appendRTPPacket(d.seq, int(d.seq))
+	}
+	// Deterministic mild reorder: swap two adjacent packets.
 	if len(fx.RTPPackets) > 6 {
 		fx.RTPPackets[3], fx.RTPPackets[4] = fx.RTPPackets[4], fx.RTPPackets[3]
 	}
 	return fx
+}
+
+func (fx *Fixtures) appendRTPPacket(seq uint16, ts int) {
+	fx.RTPPackets = append(fx.RTPPackets, &prtp.Packet{
+		Header: prtp.Header{
+			SequenceNumber: seq,
+			Timestamp:      uint32(ts) * 3600,
+			SSRC:           4242,
+		},
+		Payload: []byte{byte(seq >> 8), byte(seq)},
+	})
 }
 
 // JitterWindow exposes the configured buffer window.

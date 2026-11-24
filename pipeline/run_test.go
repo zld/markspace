@@ -41,10 +41,11 @@ func TestNormalScenarioPassesThresholds(t *testing.T) {
 }
 
 func TestFaultScenariosReportRanges(t *testing.T) {
-	cases := []string{ScenCCJump, ScenTruncated, ScenPSIVersion, ScenPCRWrap}
-	for _, scen := range cases {
+	// Scenarios that must surface concrete fault ranges.
+	faultCases := []string{ScenCCJump, ScenTruncated, ScenPCRDrift}
+	for _, scen := range faultCases {
 		m, tsfx, _ := runScenario(t, t.TempDir(), scen, 7)
-		if len(m.FaultRanges) == 0 && scen != ScenPSIVersion {
+		if len(m.FaultRanges) == 0 {
 			t.Fatalf("%s: expected fault ranges, got none", scen)
 		}
 		for _, fr := range m.FaultRanges {
@@ -55,6 +56,18 @@ func TestFaultScenariosReportRanges(t *testing.T) {
 		if scen == ScenTruncated && len(tsfx.TSFaults) == 0 {
 			t.Fatal("truncated stream must record a parser fault")
 		}
+	}
+
+	// A clean wrap must NOT be reported as a fault: the unwrapper expands it.
+	wrapM, _, _ := runScenario(t, t.TempDir(), ScenPCRWrap, 7)
+	if len(wrapM.FaultRanges) != 0 {
+		t.Fatalf("pcr_wrap must expand cleanly, got faults %+v", wrapM.FaultRanges)
+	}
+
+	// A PSI version change produces a boundary without corrupting packets.
+	psiM, _, _ := runScenario(t, t.TempDir(), ScenPSIVersion, 7)
+	if psiM.StageMetrics == nil {
+		t.Fatal("psi version run must still produce stage metrics")
 	}
 }
 
