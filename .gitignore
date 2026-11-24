@@ -1,0 +1,11 @@
+# Compiled binaries
+/mediascan
+*.exe
+/out/
+
+# Local run artifacts (checkpoints live under the OS temp dir at runtime)
+mediascan-checkpoint.json
+
+# Editor/OS noise
+.DS_Store
+*.swp
