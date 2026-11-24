@@ -7,7 +7,7 @@ import (
 
 // parseSampleTable resolves the classic (non-fragmented) sample tables into
 // absolute sample offsets and exact decode/composition times.
-func parseSampleTable(stbl *rawBox, timescale uint32) ([]Sample, error) {
+func parseSampleTable(stbl *rawBox, timescale uint32, dataLen int) ([]Sample, error) {
 	deltas, err := parseStts(stbl)
 	if err != nil {
 		return nil, err
@@ -48,6 +48,10 @@ func parseSampleTable(stbl *rawBox, timescale uint32) ([]Sample, error) {
 	if err != nil {
 		return nil, err
 	}
+	syncs, hasStss, err := parseStss(stbl)
+	if err != nil {
+		return nil, err
+	}
 	samples := make([]Sample, len(sizes))
 	var dts int64
 	for i := range samples {
@@ -59,12 +63,22 @@ func parseSampleTable(stbl *rawBox, timescale uint32) ([]Sample, error) {
 		if i < len(ctts) {
 			ctsOff = int64(ctts[i])
 		}
+		sync := !hasStss || syncs[uint32(i+1)]
+		off := sampleOffsets[i]
+		if off < 0 || off+int64(sizes[i]) > int64(dataLen) {
+			// A truncated tail keeps its verified prefix: stop at the first
+			// sample the input cannot hold.
+			samples = samples[:i]
+			break
+		}
 		samples[i] = Sample{
-			Offset: sampleOffsets[i],
+			Offset: off,
 			Size:   sizes[i],
 			Delta:  delta,
 			DTS:    clock.New(dts, timescale),
 			CTS:    clock.New(dts+ctsOff, timescale),
+			Sync:   sync,
+			Data:   nil,
 		}
 		dts += int64(delta)
 	}
@@ -242,4 +256,30 @@ func parseCtts(stbl *rawBox) ([]int32, error) {
 		}
 	}
 	return out, nil
+}
+
+// parseStss returns the set of 1-based sync sample numbers.  The bool result
+// reports whether an stss box was present at all.
+func parseStss(stbl *rawBox) (map[uint32]bool, bool, error) {
+	stss := stbl.find("stss")
+	if stss == nil {
+		return nil, false, nil
+	}
+	r := newBinReader(stss, fault.OpIndexIncomplete)
+	if _, _, err := r.fullBox(); err != nil {
+		return nil, true, err
+	}
+	n, err := r.u32()
+	if err != nil {
+		return nil, true, err
+	}
+	set := make(map[uint32]bool, n)
+	for i := uint32(0); i < n; i++ {
+		v, err := r.u32()
+		if err != nil {
+			return nil, true, err
+		}
+		set[v] = true
+	}
+	return set, true, nil
 }

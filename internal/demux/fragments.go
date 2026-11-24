@@ -11,6 +11,10 @@ import (
 // bytes.
 func appendFragmentSamples(media *Media, top []*rawBox, data []byte, opts Options) error {
 	dataLen := int64(len(data))
+	cutStart := dataLen
+	if len(media.Cut) > 0 {
+		cutStart = media.Cut[0].Start
+	}
 	trex := parseTrex(findTop(top, "moov"))
 	byID := make(map[uint32]*Track, len(media.Tracks))
 	for i := range media.Tracks {
@@ -31,19 +35,24 @@ func appendFragmentSamples(media *Media, top []*rawBox, data []byte, opts Option
 				break
 			}
 		}
-		if mdat == nil {
-			reason := "moof without following mdat"
+		if mdat == nil || mdat.off >= cutStart {
+			reason := "moof without a complete following mdat"
 			if opts.TolerateTruncated {
-				media.Cut = append(media.Cut, Range{Start: b.off + b.size, End: dataLen})
+				addCut(media, Range{Start: cutStart, End: dataLen})
 				continue
 			}
-			return fault.New(fault.StageDemux, "mp4", fault.OpTruncated, b.off+b.size, reason)
+			return fault.New(fault.StageDemux, "mp4", fault.OpTruncated, cutStart, reason)
 		}
 		layout, err := parseFragment(b, mdat.payloadOff(), dataLen, trex)
 		if err != nil {
+			if fe, ok := fault.As(err); ok && opts.TolerateTruncated && fe.Operation == fault.OpTruncated {
+				addCut(media, Range{Start: cutStart, End: fe.InputOffset})
+				return nil
+			}
 			return err
 		}
-		for id, samples := range layout.samples {
+		for _, id := range layout.trackIDs {
+			samples := layout.samples[id]
 			tr, ok := byID[id]
 			if !ok {
 				if opts.TolerateTruncated {
@@ -53,11 +62,16 @@ func appendFragmentSamples(media *Media, top []*rawBox, data []byte, opts Option
 					"fragment references unknown track")
 			}
 			seen[id] = true
+			truncated := false
 			for si := range samples {
 				s := samples[si]
 				start, end := s.Offset, s.Offset+int64(s.Size)
 				if start < 0 || end > dataLen || start > end {
-					return fault.New(fault.StageDemux, "mp4", fault.OpTruncated, dataLen,
+					if opts.TolerateTruncated {
+						truncated = true
+						break
+					}
+					return fault.New(fault.StageDemux, "mp4", fault.OpTruncated, cutStart,
 						"fragment sample extends beyond input")
 				}
 				s.DTS = clock.New(s.DTS.Ticks, tr.Timescale)
@@ -65,7 +79,25 @@ func appendFragmentSamples(media *Media, top []*rawBox, data []byte, opts Option
 				s.Data = data[start:end]
 				tr.Samples = append(tr.Samples, s)
 			}
+			if truncated {
+				addCut(media, Range{Start: cutStart, End: dataLen})
+				return nil
+			}
 		}
 	}
 	return nil
+}
+
+// addCut records an incomplete input range once.  Duplicate and empty ranges
+// are dropped so downstream output is stable across tolerant reparses.
+func addCut(media *Media, r Range) {
+	if r.End <= r.Start {
+		return
+	}
+	for _, existing := range media.Cut {
+		if existing == r {
+			return
+		}
+	}
+	media.Cut = append(media.Cut, r)
 }

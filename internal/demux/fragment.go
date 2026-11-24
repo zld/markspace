@@ -63,6 +63,11 @@ type fragmentLayout struct {
 // following mdat payload.  All offsets are absolute positions in the input.
 func parseFragment(moof *rawBox, dataStart int64, end int64, trex map[uint32]trexDefaults) (*fragmentLayout, error) {
 	layout := &fragmentLayout{moofOffset: moof.off, dataOffset: dataStart, samples: make(map[uint32][]Sample)}
+	// A fragment's own bytes end at the moof end; samples live in the mdat
+	// that follows, so the mdat payload start is always a valid lower bound.
+	if end < dataStart {
+		end = dataStart
+	}
 	base := moof.off
 	if mfhd := moof.find("mfhd"); mfhd != nil {
 		_ = mfhd
@@ -206,6 +211,7 @@ func parseFragment(moof *rawBox, dataStart int64, end int64, trex map[uint32]tre
 					Delta:  duration,
 					DTS:    clock.New(dts, 0),
 					CTS:    clock.New(dts+ctsOff, 0),
+					Sync:   true,
 				})
 				pos += int64(size)
 				dts += int64(duration)

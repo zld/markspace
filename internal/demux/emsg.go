@@ -41,7 +41,27 @@ func collectEmsgEvents(top []*rawBox) ([]metadata.Event, error) {
 			}
 		}
 	}
+	// emsg boxes are also valid inside moov (before any media).  Their version
+	// 0 presentation time is then relative to zero.
+	for _, moov := range findTops(top, "moov") {
+		for _, emsg := range moov.findAll("emsg") {
+			ev, err := parseEmsg(emsg, 0, 0)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, ev)
+		}
+	}
+	sortEventsByOffset(out)
 	return out, nil
+}
+
+func sortEventsByOffset(events []metadata.Event) {
+	for i := 1; i < len(events); i++ {
+		for j := i; j > 0 && events[j].SourceOffset < events[j-1].SourceOffset; j-- {
+			events[j], events[j-1] = events[j-1], events[j]
+		}
+	}
 }
 
 // fragmentBaseTime returns the first tfdt base decode time and its timescale.

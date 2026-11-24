@@ -2,9 +2,11 @@ package demux
 
 import (
 	"bytes"
+	"fmt"
 
 	"github.com/abema/go-mp4"
 
+	"mediapipeline/internal/clock"
 	"mediapipeline/internal/fault"
 	"mediapipeline/internal/track"
 )
@@ -17,6 +19,12 @@ func ParseMP4(data []byte, opts Options) (*Media, error) {
 		return nil, err
 	}
 	media := &Media{Format: "mp4", Cut: cut}
+	movieTimescale := uint32(1000)
+	if mvhd := findTop(top, "moov"); mvhd != nil {
+		if t := movieTimescaleOf(mvhd); t != 0 {
+			movieTimescale = t
+		}
+	}
 	if ftyp := findTop(top, "ftyp"); ftyp != nil {
 		var f mp4.Ftyp
 		payload := ftyp.payload()
@@ -27,11 +35,17 @@ func ParseMP4(data []byte, opts Options) (*Media, error) {
 	moofs := findTops(top, "moof")
 	fragmented := len(moofs) > 0
 	if moov := findTop(top, "moov"); moov != nil {
-		tracks, err := parseMoov(moov, fragmented)
+		tracks, err := parseMoov(moov, fragmented, data, movieTimescale)
 		if err != nil {
 			return nil, err
 		}
 		media.Tracks = tracks
+	}
+	if len(media.Cut) > 0 {
+		cutStart := media.Cut[0].Start
+		if err := trimSamplesBefore(media.Tracks, cutStart); err != nil {
+			return nil, err
+		}
 	}
 	if fragmented && !opts.AllowMissingIndex && !hasIndex(top) {
 		return nil, fault.New(fault.StageDemux, "mp4", fault.OpIndexIncomplete, moofs[0].off,
@@ -70,6 +84,20 @@ func ParseMP4(data []byte, opts Options) (*Media, error) {
 	return media, nil
 }
 
+// BoxTypes lists the top-level box types of data.  It exists for tests and
+// diagnostics, not for parsing decisions.
+func BoxTypes(data []byte) ([]string, error) {
+	top, _, err := parseBoxes(data, 0, int64(len(data)), "mp4", false)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, len(top))
+	for i, b := range top {
+		out[i] = fmt.Sprintf("%s@%d+%d", b.typ, b.off, b.size)
+	}
+	return out, nil
+}
+
 func findTop(boxes []*rawBox, typ string) *rawBox {
 	for _, b := range boxes {
 		if b.typ == typ {
@@ -100,10 +128,53 @@ func hasIndex(top []*rawBox) bool {
 	return mfra.find("tfra") != nil
 }
 
-func parseMoov(moov *rawBox, fragmented bool) ([]Track, error) {
+// trimSamplesBefore drops the samples that lie beyond the first cut byte.  A
+// truncated input keeps its verified prefix; the incomplete range is reported
+// rather than silently dropped.
+func trimSamplesBefore(tracks []Track, cutStart int64) error {
+	for ti := range tracks {
+		tr := &tracks[ti]
+		keep := 0
+		for _, s := range tr.Samples {
+			if s.Offset+int64(s.Size) > cutStart {
+				break
+			}
+			keep++
+		}
+		tr.Samples = tr.Samples[:keep]
+	}
+	return nil
+}
+
+// movieTimescaleOf returns the mvhd timescale.
+func movieTimescaleOf(moov *rawBox) uint32 {
+	mvhd := moov.find("mvhd")
+	if mvhd == nil {
+		return 0
+	}
+	r := newBinReader(mvhd, fault.OpBoxHeader)
+	version, _, err := r.fullBox()
+	if err != nil {
+		return 0
+	}
+	skip := 8
+	if version == 1 {
+		skip = 16
+	}
+	if err := r.skip(skip); err != nil {
+		return 0
+	}
+	ts, err := r.u32()
+	if err != nil {
+		return 0
+	}
+	return ts
+}
+
+func parseMoov(moov *rawBox, fragmented bool, data []byte, movieTimescale uint32) ([]Track, error) {
 	var out []Track
 	for _, trak := range moov.findAll("trak") {
-		tr, err := parseTrak(trak, fragmented)
+		tr, err := parseTrak(trak, fragmented, data, movieTimescale)
 		if err != nil {
 			return nil, err
 		}
@@ -112,7 +183,7 @@ func parseMoov(moov *rawBox, fragmented bool) ([]Track, error) {
 	return out, nil
 }
 
-func parseTrak(trak *rawBox, fragmented bool) (Track, error) {
+func parseTrak(trak *rawBox, fragmented bool, data []byte, movieTimescale uint32) (Track, error) {
 	tr := Track{}
 	tkhd := trak.path("tkhd")
 	if tkhd == nil {
@@ -201,12 +272,99 @@ func parseTrak(trak *rawBox, fragmented bool) (Track, error) {
 		}
 		return tr, nil
 	}
-	samples, err := parseSampleTable(stbl, tr.Timescale)
+	samples, err := parseSampleTable(stbl, tr.Timescale, len(data))
 	if err != nil {
 		return tr, err
 	}
+	// An empty edit at the head of the edit list shifts the presentation of
+	// the media timeline.  It is how a remux preserves an absolute start time
+	// without rewriting sample tables, so it must be applied here too or a
+	// round trip would silently move every sample.
+	shift, err := editShift(trak.path("edts", "elst"), movieTimescale, tr.Timescale)
+	if err != nil {
+		return tr, err
+	}
+	for i := range samples {
+		s := &samples[i]
+		s.Data = data[s.Offset : s.Offset+int64(s.Size)]
+		if shift != 0 {
+			s.DTS.Ticks += shift
+			s.CTS.Ticks += shift
+		}
+	}
 	tr.Samples = samples
 	return tr, nil
+}
+
+// editShift returns the presentation shift (in track ticks) contributed by a
+// leading empty edit (media_time == -1).  Only the shape this writer emits is
+// supported: an optional empty edit followed by media at time zero.  Any other
+// edit list is reported instead of being silently ignored.
+func editShift(elst *rawBox, movieTimescale, trackTimescale uint32) (int64, error) {
+	if elst == nil {
+		return 0, nil
+	}
+	if movieTimescale == 0 || trackTimescale == 0 {
+		return 0, fault.New(fault.StageDemux, "mp4", fault.OpIndexIncomplete, elst.payloadOff(),
+			"edit list requires non-zero timescales")
+	}
+	r := newBinReader(elst, fault.OpIndexIncomplete)
+	version, _, err := r.fullBox()
+	if err != nil {
+		return 0, err
+	}
+	n, err := r.u32()
+	if err != nil {
+		return 0, err
+	}
+	var shift int64
+	seenEmpty := false
+	for i := uint32(0); i < n; i++ {
+		var duration uint64
+		var mediaTime int64
+		if version == 1 {
+			if duration, err = r.u64(); err != nil {
+				return 0, err
+			}
+			mt, err := r.u64()
+			if err != nil {
+				return 0, err
+			}
+			mediaTime = int64(mt)
+		} else {
+			d, err := r.u32()
+			if err != nil {
+				return 0, err
+			}
+			mt, err := r.u32()
+			if err != nil {
+				return 0, err
+			}
+			duration, mediaTime = uint64(d), int64(int32(mt))
+		}
+		if _, err := r.u32(); err != nil { // media rate
+			return 0, err
+		}
+		if mediaTime == -1 {
+			if seenEmpty {
+				return 0, fault.New(fault.StageDemux, "mp4", fault.OpIndexIncomplete, elst.payloadOff(),
+					"multiple empty edits are not supported")
+			}
+			seenEmpty = true
+			ticks, exact, err := clock.New(int64(duration), movieTimescale).Rescale(trackTimescale)
+			if err != nil || !exact {
+				return 0, fault.New(fault.StageDemux, "mp4", fault.OpIndexIncomplete, elst.payloadOff(),
+					"empty edit duration is not exact on the track timescale")
+			}
+			shift = ticks
+			continue
+		}
+		if mediaTime != 0 {
+			return 0, fault.New(fault.StageDemux, "mp4", fault.OpIndexIncomplete, elst.payloadOff(),
+				"edit list starting inside the media timeline is not supported")
+		}
+	}
+	return shift, nil
 }
 
 func kindForHandler(h string) track.Kind {
@@ -261,11 +419,14 @@ func sampleEntryInfo(stsd *rawBox) (string, uint8, error) {
 	if typ == "avc1" || typ == "avc3" || typ == "encv" {
 		// Length-prefixed samples are only implied by an avcC box.  Without
 		// one the stream must be Annex B, and 0 tells the event extractor to
-		// use start codes instead of a length prefix.
-		for _, c := range stsd.children {
-			if c.typ == "avcC" {
-				if n, ok := avcNALLength(c); ok {
-					nal = n
+		// use start codes instead of a length prefix.  avcC lives inside the
+		// visual sample entry, not directly inside stsd.
+		for _, entry := range stsd.children {
+			for _, c := range entry.children {
+				if c.typ == "avcC" {
+					if n, ok := avcNALLength(c); ok {
+						nal = n
+					}
 				}
 			}
 		}

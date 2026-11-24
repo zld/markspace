@@ -18,7 +18,10 @@ type Sample struct {
 	Delta uint32
 	DTS   clock.Time
 	CTS   clock.Time
-	Data  []byte
+	// Sync marks a random-access sample.  Samples are sync unless an stss
+	// table says otherwise.
+	Sync bool
+	Data []byte
 }
 
 // Track is a demuxed elementary track.  ID is the identifier used by the
@@ -75,10 +78,14 @@ type Range struct {
 type Segment struct {
 	ID         int      `json:"id"`
 	MoofOffset int64    `json:"moof_offset"`
+	MoofSize   int64    `json:"moof_size"`
 	DataOffset int64    `json:"data_offset"`
 	Size       int64    `json:"size"`
 	Tracks     []uint32 `json:"tracks"`
 	Payload    []byte   `json:"-"`
+	// src aliases the complete input so a recovered segment can be re-parsed
+	// with its original absolute offsets.
+	src []byte
 }
 
 // FragmentScan is the result of scanning a fragmented MP4 without relying on
