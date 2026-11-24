@@ -86,6 +86,8 @@ with `checkpoint_mismatch` (exit 1) instead of mixing old and new results.
 | `-snap T` | 0 | snap subtitle boundaries onto video cuts within T seconds |
 | `-max-drift-ppm N` | 500 | per-track drift threshold; negative disables |
 | `-no-fallback` | off | disable the MP4 keyframe scan fallback |
+| `-timecode-mode M` | from fixtures | override the timecode system (24, 25, 29.97ndf, 29.97df, 50) |
+| `-width N`, `-height N` | 16x16 | audit raster dimensions mixed into every pixel hash |
 | `-verify` | off | verify committed chunks without new work |
 | `-quiet` | off | print summary only |
 
