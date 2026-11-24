@@ -40,7 +40,14 @@ func Run(cfg Config) *Report {
 		OutDir:           cfg.OutDir,
 	}
 
-	_ = os.RemoveAll(cfg.OutDir)
+	// Reset only medpipe-managed sample subdirectories. Never RemoveAll the
+	// user-supplied output root itself.
+	for _, sub := range []string{"normal", "resume", "corrupt"} {
+		if err := os.RemoveAll(filepath.Join(cfg.OutDir, sub)); err != nil {
+			rep.ExitCode = fault.ExitInternal
+			return rep.withInternal(fault.Wrap(fault.ErrInternal, "demo.reset", 0, "reset sample directory", err))
+		}
+	}
 	for _, sub := range []string{"normal", "resume", "corrupt"} {
 		if err := os.MkdirAll(filepath.Join(cfg.OutDir, sub), 0o755); err != nil {
 			rep.ExitCode = fault.ExitInternal
