@@ -43,6 +43,10 @@ type EngineConfig struct {
 }
 
 // Engine is the stateful watermark + recompute machine.
+//
+// Concurrency: an Engine is a single-writer state machine. Push and Snapshot
+// are not safe for concurrent callers on the same instance; drive it from one
+// goroutine and publish Snapshots outward rather than sharing the Engine.
 type Engine struct {
 	cfg       EngineConfig
 	watermark int64

@@ -30,10 +30,10 @@ func isContainerBox(t go_mp4.BoxType) bool {
 // 16.16 fixed point, then their offsets, then pixel aspect ratio.
 type clapBox struct {
 	go_mp4.AnyTypeBox
-	CleanWidth       uint32 `mp4:"0,size=32"`
-	CleanHeight      uint32 `mp4:"1,size=32"`
-	CleanWidthOff    uint32 `mp4:"2,size=32"`
-	CleanHeightOff   uint32 `mp4:"3,size=32"`
+	CleanWidth     uint32 `mp4:"0,size=32"`
+	CleanHeight    uint32 `mp4:"1,size=32"`
+	CleanWidthOff  uint32 `mp4:"2,size=32"`
+	CleanHeightOff uint32 `mp4:"3,size=32"`
 }
 
 func init() {
@@ -206,7 +206,7 @@ func finalizeMP4Track(tr *mp4Track) (*TrackMeta, *model.MediaError) {
 		TrackNo: tr.trackNo, Kind: tr.kind, Clock: tr.clock,
 		Width: tr.width, Height: tr.height,
 		Rotation: rot, RotSrc: SourceMP4,
-		Crop:  FullFrame(tr.width, tr.height),
+		Crop: FullFrame(tr.width, tr.height),
 		Color: Color{Primaries: DefaultColorPrimaries, Transfer: DefaultColorTransfer,
 			Matrix: DefaultColorMatrix, Source: SourceDefault},
 	}

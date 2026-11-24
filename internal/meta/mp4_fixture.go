@@ -37,14 +37,14 @@ func BuildMP4(tracks []MP4Input) []byte {
 }
 
 func buildTrak(tr MP4Input) []byte {
-	tkhd := make([]byte, 88) // version 0 tkhd payload (FullBox + 84 bytes)
-	binary.BigEndian.PutUint32(tkhd[12:], tr.TrackNo)   // track ID
-	binary.BigEndian.PutUint32(tkhd[20:], 1000)         // duration
+	tkhd := make([]byte, 88)                          // version 0 tkhd payload (FullBox + 84 bytes)
+	binary.BigEndian.PutUint32(tkhd[12:], tr.TrackNo) // track ID
+	binary.BigEndian.PutUint32(tkhd[20:], 1000)       // duration
 	putMatrix(tkhd[40:76], matrixFor(tr.Rotation))
 	binary.BigEndian.PutUint32(tkhd[76:], uint32(tr.Width)<<16)
 	binary.BigEndian.PutUint32(tkhd[80:], uint32(tr.Height)<<16)
 
-	mdhd := make([]byte, 24) // version 0 mdhd payload
+	mdhd := make([]byte, 24)                           // version 0 mdhd payload
 	binary.BigEndian.PutUint32(mdhd[12:], tr.ClockNum) // timescale
 	binary.BigEndian.PutUint32(mdhd[16:], 1000)        // duration
 	handler := "vide"
@@ -75,9 +75,9 @@ func buildVisualEntry(tr MP4Input) []byte {
 	binary.BigEndian.PutUint16(vse[26:], tr.Height)
 	binary.BigEndian.PutUint32(vse[28:], 0x00480000) // 72 dpi horiz
 	binary.BigEndian.PutUint32(vse[32:], 0x00480000)
-	binary.BigEndian.PutUint16(vse[38:], 1)          // frame count
-	binary.BigEndian.PutUint16(vse[74:], 0x0018)     // depth
-	binary.BigEndian.PutUint16(vse[76:], 0xffff)     // predefined
+	binary.BigEndian.PutUint16(vse[38:], 1)      // frame count
+	binary.BigEndian.PutUint16(vse[74:], 0x0018) // depth
+	binary.BigEndian.PutUint16(vse[76:], 0xffff) // predefined
 
 	clapPayload := make([]byte, 32)
 	binary.BigEndian.PutUint32(clapPayload[0:], tr.Crop.Width<<16)
@@ -107,10 +107,10 @@ func buildAudioEntry() []byte {
 	// + channel count(2) + sample size(2) + predefined(2) + reserved2(2)
 	// + sample rate 16.16(4) = 28 bytes.
 	payload := make([]byte, 28)
-	binary.BigEndian.PutUint16(payload[6:], 1)              // data reference index
-	binary.BigEndian.PutUint16(payload[16:], 2)             // stereo
-	binary.BigEndian.PutUint16(payload[18:], 16)            // sample size bits
-	binary.BigEndian.PutUint32(payload[24:], 48000<<16)     // 48 kHz 16.16
+	binary.BigEndian.PutUint16(payload[6:], 1)          // data reference index
+	binary.BigEndian.PutUint16(payload[16:], 2)         // stereo
+	binary.BigEndian.PutUint16(payload[18:], 16)        // sample size bits
+	binary.BigEndian.PutUint32(payload[24:], 48000<<16) // 48 kHz 16.16
 	return box("mp4a", payload)
 }
 
@@ -146,6 +146,7 @@ func CorruptMP4InvalidCrop() []byte {
 	bad.Crop = Crop{X: 0, Y: 0, Width: 4000, Height: 1080, Source: SourceMP4}
 	return BuildMP4([]MP4Input{bad})
 }
+
 // ValidMP4Track exposes a known-good track for cross-package fixtures.
 func ValidMP4Track(no uint32) MP4Input { return validMP4Track(no) }
 

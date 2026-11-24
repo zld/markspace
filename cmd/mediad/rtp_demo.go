@@ -40,10 +40,10 @@ func buildRTP(r *rng, window uint16) (rtp.Stats, []*pionrtp.Packet, []string) {
 	emit(3)
 	// A bounded jump opens a small gap set; most are filled inside the window
 	// while one stays open until flush and counts as unrecoverable.
-	emit(12)  // opens gaps 8..11
-	emit(9)   // distance 3 -> recovered
-	emit(10)  // distance 2 -> recovered
-	emit(11)  // distance 1 -> recovered; gap 8 remains open -> unrecoverable
+	emit(12) // opens gaps 8..11
+	emit(9)  // distance 3 -> recovered
+	emit(10) // distance 2 -> recovered
+	emit(11) // distance 1 -> recovered; gap 8 remains open -> unrecoverable
 	// Total gaps: 5,6 (recovered) + 8,9,10,11 = 6; 5 recovered -> 0.8333.
 
 	// Truncated wire buffer must surface RTP_TRUNCATED and be skipped.

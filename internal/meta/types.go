@@ -75,8 +75,8 @@ type TrackMeta struct {
 // Independent tracks survive a broken neighbour: callers process Tracks and
 // surface Errors side by side instead of aborting the whole stream.
 type Result struct {
-	Tracks []*TrackMeta          `json:"tracks"`
-	Errors []*model.MediaError   `json:"errors,omitempty"`
+	Tracks []*TrackMeta        `json:"tracks"`
+	Errors []*model.MediaError `json:"errors,omitempty"`
 }
 
 // ConflictCount is a convenience for the metrics layer.

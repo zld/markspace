@@ -1,0 +1,15 @@
+# Compiled binaries
+/mediad
+/cmd/mediad/mediad
+*.exe
+*.test
+*.out
+
+# Go test and coverage artifacts
+coverage.txt
+*.prof
+
+# Editor / OS noise
+.DS_Store
+.idea/
+.vscode/

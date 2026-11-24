@@ -29,14 +29,14 @@ type LoudnessStats struct {
 
 // AudioStats is the deterministic summary of one full pipeline run.
 type AudioStats struct {
-	InputRate     int     `json:"input_rate"`
-	InputChannels int     `json:"input_channels"`
-	OutputRate    int     `json:"output_rate"`
-	OutputChannels int    `json:"output_channels"`
-	Periods       int     `json:"output_periods"`
-	PeakAbs       int16   `json:"peak_abs"`
-	RMS           float64 `json:"rms"`
-	Loudness      LoudnessStats `json:"loudness"`
+	InputRate      int           `json:"input_rate"`
+	InputChannels  int           `json:"input_channels"`
+	OutputRate     int           `json:"output_rate"`
+	OutputChannels int           `json:"output_channels"`
+	Periods        int           `json:"output_periods"`
+	PeakAbs        int16         `json:"peak_abs"`
+	RMS            float64       `json:"rms"`
+	Loudness       LoudnessStats `json:"loudness"`
 	// Checksum hashes the exact output bytes; repeated runs must match.
 	Checksum uint64 `json:"checksum"`
 }

@@ -48,8 +48,8 @@ func buildMetadata(r *rng) (*meta.Result, []string) {
 		{
 			TrackNo: 1, Kind: "video", ClockNum: 90000, Width: 1920, Height: 1080,
 			Rotation: 270,
-			Crop:  meta.Crop{X: 16, Y: 16, Width: 960, Height: 540, Source: meta.SourceMP4},
-			Color: meta.Color{Primaries: "bt709", Transfer: "bt709", Matrix: "bt709", Source: meta.SourceMP4},
+			Crop:     meta.Crop{X: 16, Y: 16, Width: 960, Height: 540, Source: meta.SourceMP4},
+			Color:    meta.Color{Primaries: "bt709", Transfer: "bt709", Matrix: "bt709", Source: meta.SourceMP4},
 		},
 		{TrackNo: 2, Kind: "audio", ClockNum: 48000, OmitCrop: true, OmitColor: true},
 		{TrackNo: 4, Kind: "video", ClockNum: 30000, Width: 640, Height: 360,

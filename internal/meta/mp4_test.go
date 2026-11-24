@@ -11,8 +11,8 @@ func TestParseMP4HappyPath(t *testing.T) {
 		{
 			TrackNo: 1, Kind: "video", ClockNum: 90000, Width: 1920, Height: 1080,
 			Rotation: 90,
-			Crop:  Crop{X: 4, Y: 8, Width: 1000, Height: 500, Source: SourceMP4},
-			Color: Color{"bt2020", "smpte2084", "bt2020nc", SourceMP4},
+			Crop:     Crop{X: 4, Y: 8, Width: 1000, Height: 500, Source: SourceMP4},
+			Color:    Color{"bt2020", "smpte2084", "bt2020nc", SourceMP4},
 		},
 		{TrackNo: 2, Kind: "audio", ClockNum: 48000},
 	}

@@ -1,6 +1,7 @@
 package clock
 
 import (
+	"strings"
 	"testing"
 
 	"mediad/internal/model"
@@ -49,7 +50,7 @@ func TestSharedConversionRounding(t *testing.T) {
 }
 
 func TestOverflowDetected(t *testing.T) {
-	bad := Stamp{Value: 1<<62, Rate: Rate{1, 1}} // ns = 4.6e27, overflows int64
+	bad := Stamp{Value: 1 << 62, Rate: Rate{1, 1}} // ns = 4.6e27, overflows int64
 	if _, err := bad.Shared(); !model.HasCode(err, model.ErrTimestampOverflow) {
 		t.Fatalf("expected TS_OVERFLOW, got %v", err)
 	}
@@ -66,12 +67,21 @@ func TestMonotonicAndBases(t *testing.T) {
 	if !model.HasCode(err, model.ErrNonMonotonicDTS) {
 		t.Fatalf("want NON_MONOTONIC_DTS, got %v", err)
 	}
-	err = CheckTrackBases([]Rate{{48000, 1}, {48000, 1}})
+	err = CheckTrackBases([]Rate{{Num: 48000, Den: 1}, {Num: 48000, Den: 1}})
 	if err != nil {
 		t.Errorf("matching bases failed: %v", err)
 	}
-	err = CheckTrackBases([]Rate{{48000, 1}, {44100, 1}})
+	err = CheckTrackBases([]Rate{{Num: 48000, Den: 1}, {Num: 44100, Den: 1}})
 	if !model.HasCode(err, model.ErrTimebaseMismatch) {
 		t.Fatalf("want TIMEBASE_MISMATCH, got %v", err)
+	}
+	// The mismatch must name the offending 1-based track.
+	if me := model.AsMediaError(err); me == nil || me.Track != 2 {
+		t.Fatalf("mismatch must locate track 2: %+v", me)
+	}
+	// A backwards DTS error must name the offending sample index.
+	err = CheckMonotonic([]int64{100, 200, 150})
+	if me := model.AsMediaError(err); me == nil || !strings.Contains(me.Message, "sample 2") {
+		t.Fatalf("non-monotonic error must locate the sample: %+v", me)
 	}
 }

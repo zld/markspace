@@ -14,10 +14,10 @@ import (
 type Classification string
 
 const (
-	ClassInOrder    Classification = "in_order"
+	ClassInOrder   Classification = "in_order"
 	ClassReordered Classification = "reordered"
-	ClassDuplicate  Classification = "duplicate"
-	ClassLate       Classification = "late_unrecoverable"
+	ClassDuplicate Classification = "duplicate"
+	ClassLate      Classification = "late_unrecoverable"
 )
 
 // Outcome is the result of feeding one wire packet into the receiver.
@@ -40,6 +40,11 @@ type Stats struct {
 
 // Receiver reorders an RTP stream with a fixed recovery window measured in
 // sequence-number distance.
+//
+// Concurrency: a Receiver is a single-writer state machine. Feed packets from
+// one goroutine (the typical receive-loop model); Write/Snapshot/Flush are not
+// safe for concurrent invocation on the same instance. Cross-goroutine
+// handoff should happen through channels, not shared Receiver access.
 type Receiver struct {
 	window uint16
 	// started distinguishes the first packet from a real backtrack.

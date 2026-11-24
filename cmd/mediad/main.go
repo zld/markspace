@@ -97,12 +97,12 @@ func runDemo(args []string) int {
 // adds kernel-local fields useful for diagnosis.
 type acceptanceOutput struct {
 	report.Summary
-	AudioChecksum uint64             `json:"audio_checksum"`
-	AudioStats    audio.AudioStats   `json:"audio_stats"`
-	BufferStats   stream.Stats       `json:"buffer_stats"`
-	RTPStats      rtp.Stats          `json:"rtp_stats"`
-	TrackCount    int                `json:"track_count"`
-	GeneratedAt   string             `json:"generated_at"`
+	AudioChecksum uint64           `json:"audio_checksum"`
+	AudioStats    audio.AudioStats `json:"audio_stats"`
+	BufferStats   stream.Stats     `json:"buffer_stats"`
+	RTPStats      rtp.Stats        `json:"rtp_stats"`
+	TrackCount    int              `json:"track_count"`
+	GeneratedAt   string           `json:"generated_at"`
 }
 
 // keep imports referenced for the implementation chunks that follow.
