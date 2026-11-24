@@ -49,6 +49,20 @@ func TestClockCmpTick(t *testing.T) {
 	}
 }
 
+func TestClockCmpRational(t *testing.T) {
+	c, _ := NewClock(90000, 1)
+	half := big.NewRat(1, 2)
+	if c.CmpRational(45000, half) != 0 {
+		t.Fatal("45000 ticks must equal 1/2 second")
+	}
+	if c.CmpRational(90001, half) <= 0 {
+		t.Fatal("90001 ticks must exceed 1/2 second")
+	}
+	if c.CmpRational(1, half) >= 0 {
+		t.Fatal("1 tick must be below 1/2 second")
+	}
+}
+
 func TestByteRangeContains(t *testing.T) {
 	r := ByteRange{Offset: 100, Length: 50}
 	if !r.Contains(100) || !r.Contains(149) {
