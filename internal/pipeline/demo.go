@@ -9,95 +9,9 @@ import (
 	"archive/internal/manifest"
 	"archive/internal/normalize"
 	"archive/internal/probe"
-	"archive/internal/render"
 	"archive/internal/rtp"
 	"archive/internal/timeline"
 )
-
-// Options controls one demo run.
-type Options struct {
-	OutDir     string
-	Generate   bool
-	LossBurst  int
-	Bandwidth  []int
-	FrameLimit int
-}
-
-// DefaultOptions returns the acceptance-command defaults.
-func DefaultOptions() Options {
-	return Options{
-		LossBurst: 3,
-		Bandwidth: []int{900, 420, 1100},
-	}
-}
-
-// Scenario summarises one transport pass.
-type Scenario struct {
-	Mode                string      `json:"mode"`
-	LayerCount          int         `json:"layer_count"`
-	ActiveLayers        int         `json:"active_layers"`
-	TargetBitrateKbps   int         `json:"target_bitrate_kbps"`
-	ActualBitrateKbps   float64     `json:"actual_bitrate_kbps"`
-	BitrateDeviationPct float64     `json:"bitrate_deviation_pct"`
-	QualityPSNRDb       float64     `json:"quality_psnr_db"`
-	Duplicates          int         `json:"duplicates"`
-	Reordered           int         `json:"reordered"`
-	Lost                int         `json:"lost"`
-	Gaps                int         `json:"gaps"`
-	ManifestAlignNS     int64       `json:"manifest_alignment_ns"`
-	RecoveredLayers     []string    `json:"recovered_layers"`
-	IsolatedLayers      []string    `json:"isolated_layers"`
-	Layers              []LayerStat `json:"layers"`
-	Log                 []string    `json:"recovery_log"`
-}
-
-// Summary is the JSON document printed on stdout.
-type Summary struct {
-	Command             string         `json:"command"`
-	OutputDir           string         `json:"output_dir"`
-	NormalSample        string         `json:"normal_sample"`
-	Normal              Scenario       `json:"normal"`
-	Burst               Scenario       `json:"burst"`
-	TargetBitrateKbps   int            `json:"target_bitrate_kbps"`
-	ActualBitrateKbps   float64        `json:"actual_bitrate_kbps"`
-	BitrateDeviationPct float64        `json:"bitrate_deviation_pct"`
-	QualityPSNRDb       float64        `json:"quality_psnr_db"`
-	FrameCount          int            `json:"frame_count"`
-	FrameSHA256         string         `json:"frame_sha256"`
-	ManifestSHA256      string         `json:"manifest_sha256"`
-	ManifestAlignmentNS int64          `json:"manifest_alignment_ns"`
-	Duplicates          int            `json:"duplicates"`
-	Reordered           int            `json:"reordered"`
-	Lost                int            `json:"lost"`
-	IsolatedLayers      []string       `json:"isolated_layers"`
-	RecoveredLayers     []string       `json:"recovered_layers"`
-	BandwidthSchedule   []string       `json:"bandwidth_schedule"`
-	Boundary            BoundarySpec   `json:"boundary"`
-	BoundaryErrorNS     int64          `json:"boundary_error_ns"`
-	Corrupt             TruncationInfo `json:"corrupt_sample"`
-	CorruptError        string         `json:"corrupt_error"`
-	InvalidMetadata     InvalidInfo    `json:"invalid_metadata_sample"`
-	RecoveryLog         []string       `json:"recovery_log"`
-	Warnings            []string       `json:"warnings,omitempty"`
-	ExitCode            int            `json:"exit_code"`
-}
-
-// InvalidInfo records a metadata sample that parses but violates normalisation.
-type InvalidInfo struct {
-	File     string `json:"file"`
-	Error    string `json:"error"`
-	Kind     string `json:"kind"`
-	ExitCode int    `json:"exit_code"`
-}
-
-// Result carries the summary and the process exit code. Err is set when the
-// run must fail; recovery success keeps the exit code at zero while the
-// deliberately corrupt sample's non-zero code stays in the summary.
-type Result struct {
-	Summary  *Summary
-	ExitCode int
-	Err      error
-}
 
 // Run executes the demo end to end.
 func Run(opts Options) (*Result, error) {
@@ -268,56 +182,6 @@ func bandwidthPlan(samples []int) ([]string, error) {
 	return sched.Plan(layers)
 }
 
-func renderTracks(opts Options, tl *timeline.Timeline) ([]manifest.FrameEntry, map[string][]byte, error) {
-	var frames []manifest.FrameEntry
-	pngs := make(map[string][]byte)
-	for _, tr := range tl.Tracks {
-		res := tr.Resolution
-		limit := opts.FrameLimit
-		if limit <= 0 {
-			limit = tr.FrameCount()
-		}
-		idx := 0
-		for _, clip := range tr.Clips {
-			for _, ts := range timeline.FrameTimes(tr, clip) {
-				if idx >= limit {
-					break
-				}
-				ref, err := render.Reference(res.StoredWidth, res.StoredHeight, render.Seed(tr.ID), idx)
-				if err != nil {
-					return nil, nil, err
-				}
-				out, err := render.ApplyTransform(ref, res)
-				if err != nil {
-					return nil, nil, err
-				}
-				png, err := render.EncodePNG(out)
-				if err != nil {
-					return nil, nil, err
-				}
-				name := manifest.FrameFileName(tr.ID, idx)
-				pngs[name] = png
-				frames = append(frames, manifest.FrameEntry{
-					TrackID:       tr.ID,
-					TimestampNS:   ts,
-					FrameIndex:    idx,
-					Width:         out.Bounds().Dx(),
-					Height:        out.Bounds().Dy(),
-					Crop:          render.Crop(res),
-					Rotation:      res.Rotation,
-					ColorResolved: res.ColorResolved,
-					File:          name,
-				})
-				idx++
-			}
-		}
-	}
-	if len(frames) == 0 {
-		return nil, nil, clock.New(clock.KindInvalidMetadata, "no frames rendered")
-	}
-	return frames, pngs, nil
-}
-
 func boundaryError(spec BoundarySpec, tl *timeline.Timeline) int64 {
 	var worst int64
 	for _, tr := range tl.Tracks {
@@ -373,40 +237,4 @@ type trackView struct {
 
 func viewOf(t *timeline.Track) trackView {
 	return trackView{ID: t.ID, Resolution: t.Resolution}
-}
-
-// ensureAssets reuses an existing deterministic asset directory unless the
-// caller asked for regeneration or a file is missing.
-func ensureAssets(opts Options) (*AssetPaths, error) {
-	dir := filepath.Join(opts.OutDir, "assets")
-	if !opts.Generate {
-		paths, err := Generate(dir)
-		if err == nil && allPresent(paths) {
-			return paths, nil
-		}
-	}
-	return Generate(dir)
-}
-
-func allPresent(p *AssetPaths) bool {
-	for _, f := range []string{p.NormalMP4, p.NormalMXF, p.BoundaryMP4, p.CorruptMP4, p.InvalidMP4} {
-		if _, err := os.Stat(f); err != nil {
-			return false
-		}
-	}
-	return true
-}
-
-// probeInvalid parses and normalises a sample expected to violate a rule.
-func probeInvalid(path string) error {
-	c, err := probeFile(path)
-	if err != nil {
-		return err
-	}
-	for _, t := range c.Tracks {
-		if _, err := normalize.Resolve(t); err != nil {
-			return err
-		}
-	}
-	return nil
 }
