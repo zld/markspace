@@ -24,7 +24,7 @@ func TestBuildAligned(t *testing.T) {
 		FrameList:  frames(180, 30, 7500, 60), // 6 s @30fps, IDR every 2 s
 		MediaBytes: 180 * 7500,
 	}
-	rep, err := Build(an, 2000, 1800)
+	rep, err := Build(an, 2000, 1800, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func TestAlignmentErrorMeasured(t *testing.T) {
 		fl[i].TimeMs += 12
 	}
 	an := &inspect.Analysis{FrameList: fl, MediaBytes: 90 * 1000}
-	rep, err := Build(an, 1000, 100)
+	rep, err := Build(an, 1000, 100, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +74,7 @@ func TestEmptySegmentFromLoss(t *testing.T) {
 		}
 	}
 	an := &inspect.Analysis{FrameList: kept, MediaBytes: len(kept) * 1000}
-	rep, err := Build(an, 1000, 100)
+	rep, err := Build(an, 1000, 100, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,8 +88,50 @@ func TestEmptySegmentFromLoss(t *testing.T) {
 
 func TestBlockedWhenTimeUncertain(t *testing.T) {
 	an := &inspect.Analysis{TimeUncertain: true, FrameList: frames(10, 30, 100, 5)}
-	if _, err := Build(an, 1000, 100); err != ErrTimeUncertain {
+	if _, err := Build(an, 1000, 100, 0); err != ErrTimeUncertain {
 		t.Fatalf("err = %v, want ErrTimeUncertain", err)
+	}
+}
+
+// TestDeviationCauseLossVsSender separates transport loss from a genuine
+// encoder bitrate change using the loss-compensated sender estimate.
+func TestDeviationCauseLossVsSender(t *testing.T) {
+	an := &inspect.Analysis{
+		FrameList:  frames(180, 30, 6000, 60), // 1440 kbps delivered
+		MediaBytes: 180 * 6000,
+	}
+	// 20% of packets lost: delivered 1440, sender ~1800 -> packet-loss
+	rep, err := Build(an, 2000, 1800, 0.20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d := rep.BitrateDeviationPct(); d < 19 || d > 21 {
+		t.Fatalf("actual deviation = %.2f%%, want ~20", d)
+	}
+	if d := rep.SentDeviationPct(); d > 1 {
+		t.Fatalf("sent deviation = %.2f%%, want ~0", d)
+	}
+	if got := rep.DeviationCause(); got != "packet-loss" {
+		t.Fatalf("cause = %q, want packet-loss", got)
+	}
+
+	// no loss, sender genuinely low: 1200 vs 1800 target -> sender-change
+	an2 := &inspect.Analysis{FrameList: frames(180, 30, 5000, 60), MediaBytes: 180 * 5000}
+	rep2, err := Build(an2, 2000, 1800, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := rep2.DeviationCause(); got != "sender-change" {
+		t.Fatalf("cause = %q, want sender-change (%.1f%%)", got, rep2.BitrateDeviationPct())
+	}
+
+	// loss present but sender also low: still sender-change
+	rep3, err := Build(an2, 2000, 1800, 0.1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := rep3.DeviationCause(); got != "sender-change" {
+		t.Fatalf("cause = %q, want sender-change", got)
 	}
 }
 

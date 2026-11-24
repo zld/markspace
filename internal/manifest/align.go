@@ -28,7 +28,9 @@ type Segment struct {
 // Report summarizes the manifest and its alignment to the ideal grid.
 type Report struct {
 	TargetKbps     float64
-	ActualKbps     float64
+	ActualKbps     float64 // delivered bitrate, computed from received bytes
+	SentKbps       float64 // estimated sender bitrate, grossed up by loss
+	LossRatio      float64 // observed unique-packet loss in [0,1]
 	AlignmentErrMs float64 // max |segment start - grid boundary|
 	StartMs        float64
 	EndMs          float64
@@ -37,7 +39,9 @@ type Report struct {
 
 // Build segments the analyzed stream into segmentMs-long entries aligned
 // to the media-timeline grid anchored at the timeline origin (t=0).
-func Build(an *inspect.Analysis, segmentMs, targetKbps float64) (*Report, error) {
+// lossRatio is the fraction of media packets never observed; it is used to
+// estimate the sender-side bitrate independently of transport loss.
+func Build(an *inspect.Analysis, segmentMs, targetKbps, lossRatio float64) (*Report, error) {
 	if an == nil || an.TimeUncertain {
 		return nil, ErrTimeUncertain
 	}
@@ -48,6 +52,13 @@ func Build(an *inspect.Analysis, segmentMs, targetKbps float64) (*Report, error)
 		return nil, fmt.Errorf("manifest: no frames to segment")
 	}
 	rep := &Report{TargetKbps: targetKbps}
+	if lossRatio < 0 {
+		lossRatio = 0
+	}
+	if lossRatio > 0.99 {
+		lossRatio = 0.99
+	}
+	rep.LossRatio = lossRatio
 
 	segIdx := func(t float64) int { return int(t / segmentMs) }
 	first := an.FrameList[0].TimeMs
@@ -90,6 +101,15 @@ func Build(an *inspect.Analysis, segmentMs, targetKbps float64) (*Report, error)
 	dur := (rep.EndMs - rep.StartMs) / 1000
 	if dur > 0 {
 		rep.ActualKbps = float64(an.MediaBytes) * 8 / dur / 1000
+		// sender-side estimate: the bytes we did receive, grossed up by the
+		// share of packets that never arrived. If loss accounts for the gap
+		// to target, SentKbps stays near target and the deviation is
+		// transport loss, not a real encode change.
+		if lossRatio > 0 {
+			rep.SentKbps = rep.ActualKbps / (1 - lossRatio)
+		} else {
+			rep.SentKbps = rep.ActualKbps
+		}
 	}
 	return rep, nil
 }
@@ -104,8 +124,36 @@ func (r *Report) BitrateDeviationPct() float64 {
 	return math.Abs(r.ActualKbps-r.TargetKbps) / r.TargetKbps * 100
 }
 
+// SentDeviationPct returns |sent-target|/target in percent, where sent is
+// the loss-compensated sender estimate.
+func (r *Report) SentDeviationPct() float64 {
+	if r.TargetKbps <= 0 {
+		return 0
+	}
+	return math.Abs(r.SentKbps-r.TargetKbps) / r.TargetKbps * 100
+}
+
+// DeviationCause explains whether bitrate deviation comes from transport
+// loss or from an actual change in the sender's encoding.
+func (r *Report) DeviationCause() string {
+	switch {
+	case r.LossRatio == 0:
+		if r.SentDeviationPct() > 8 {
+			return "sender-change"
+		}
+		return "none"
+	case r.SentDeviationPct() <= 8 && r.BitrateDeviationPct() > 8:
+		return "packet-loss"
+	case r.SentDeviationPct() > 8:
+		return "sender-change"
+	default:
+		return "none"
+	}
+}
+
 // Summary renders a one-line digest.
 func (r *Report) Summary() string {
-	return fmt.Sprintf("segments=%d range=[%.0f,%.0f]ms target=%.0fkbps actual=%.0fkbps align=%.2fms",
-		len(r.Segments), r.StartMs, r.EndMs, r.TargetKbps, r.ActualKbps, r.AlignmentErrMs)
+	return fmt.Sprintf("segments=%d range=[%.0f,%.0f]ms target=%.0fkbps actual=%.0fkbps sent=%.0fkbps loss=%.2f%% cause=%s align=%.2fms",
+		len(r.Segments), r.StartMs, r.EndMs, r.TargetKbps, r.ActualKbps, r.SentKbps,
+		r.LossRatio*100, r.DeviationCause(), r.AlignmentErrMs)
 }
