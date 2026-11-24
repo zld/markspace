@@ -300,12 +300,20 @@ func expandChunks(t structTrack, sampleCount int) (perChunk []int, indexMissing 
 }
 
 func stscRunAt(entries []mp4.StscEntry, chunk int) mp4.StscEntry {
-	// Start with the run whose FirstChunk is the largest that is <= chunk.
-	// A table whose first run does not begin at chunk 1 is malformed; using
-	// entries[0] for earlier chunks would fabricate sample density, so the
-	// effective run for chunk 1 is the earliest declared run and the caller's
-	// count check keeps placement consistent.
-	cur := entries[0]
+	// A chunk before every declared run has no samples by declaration; return a
+	// zero-count run rather than borrowing the first run's density, which would
+	// fabricate samples at offsets the table never assigned.
+	first := entries[0]
+	for _, e := range entries {
+		if e.FirstChunk < first.FirstChunk {
+			first = e
+		}
+	}
+	if chunk < int(first.FirstChunk) {
+		return mp4.StscEntry{SamplesPerChunk: 0}
+	}
+	// Pick the run with the largest FirstChunk that is <= chunk.
+	cur := first
 	for _, e := range entries {
 		if int(e.FirstChunk) <= chunk && int(e.FirstChunk) >= int(cur.FirstChunk) {
 			cur = e

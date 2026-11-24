@@ -104,12 +104,16 @@ func TestNoOffsetTableLeadingZeroRunDoesNotDropTrack(t *testing.T) {
 	}
 }
 
-func TestStscRunAtPreservesFirstChunk(t *testing.T) {
-	// A run beginning at chunk 5 must not be applied to chunks 1-4 as if it
-	// began at chunk 1.
+func TestStscRunAtBeforeFirstRunIsEmpty(t *testing.T) {
+	// A run beginning at chunk 5 must not be applied to chunks 1-4; those have
+	// no declared samples, so the effective run is a zero-count one.
 	got := stscRunAt([]mp4.StscEntry{{FirstChunk: 5, SamplesPerChunk: 10}}, 1)
-	if got.FirstChunk != 5 {
-		t.Fatalf("stscRunAt returned FirstChunk %d for chunk 1", got.FirstChunk)
+	if got.SamplesPerChunk != 0 {
+		t.Fatalf("chunk 1 before the first run got %d samples/chunk", got.SamplesPerChunk)
+	}
+	got = stscRunAt([]mp4.StscEntry{{FirstChunk: 5, SamplesPerChunk: 10}}, 5)
+	if got.SamplesPerChunk != 10 {
+		t.Fatalf("chunk 5 got %d samples/chunk", got.SamplesPerChunk)
 	}
 }
 
