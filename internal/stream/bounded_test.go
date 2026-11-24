@@ -136,3 +136,31 @@ func TestInvalidConfig(t *testing.T) {
 		t.Fatalf("zero item cap must error, got %v", err)
 	}
 }
+
+func TestNonPositiveSizeRejected(t *testing.T) {
+	for _, size := range []int{0, -1, -100} {
+		s, _ := New(Config{MaxBytes: 100, MaxItems: 8})
+		if err := s.TryPut(Item{Size: size}); !model.HasCode(err, model.ErrBufferFull) {
+			t.Fatalf("TryPut size=%d must be rejected, got %v", size, err)
+		}
+		if err := s.Put(context.Background(), Item{Size: size}); !model.HasCode(err, model.ErrBufferFull) {
+			t.Fatalf("Put size=%d must be rejected, got %v", size, err)
+		}
+		st := s.Snapshot()
+		if st.Enqueued != 0 || st.PeakBytes != 0 {
+			t.Fatalf("rejected item must not affect accounting: %+v", st)
+		}
+	}
+
+	// A negative item must not let subsequent positive items bypass the cap.
+	s, _ := New(Config{MaxBytes: 10, MaxItems: 8})
+	if err := s.TryPut(Item{Size: -100}); err == nil {
+		t.Fatal("negative size accepted")
+	}
+	if err := s.TryPut(Item{Size: 10}); err != nil {
+		t.Fatalf("first valid item should fit: %v", err)
+	}
+	if err := s.TryPut(Item{Size: 1}); !model.HasCode(err, model.ErrBufferFull) {
+		t.Fatalf("byte cap must still hold after the rejected negative item: %v", err)
+	}
+}

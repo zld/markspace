@@ -96,15 +96,32 @@ func (s *Stream) waitWhile(ctx context.Context, condFn func() bool) error {
 	return nil
 }
 
-// Put blocks while the buffer is at either hard limit, then enqueues. It
-// returns on ctx cancellation or consumer Close instead of waiting forever.
-func (s *Stream) Put(ctx context.Context, item Item) error {
-	if item.Size > s.cfg.MaxBytes {
+// validSize rejects non-positive sizes. A zero or negative item would corrupt
+// the running byte total (a negative size would even let later items exceed
+// MaxBytes), so it is refused before any accounting happens.
+func (s *Stream) validSize(size int) error {
+	if size <= 0 {
 		s.mu.Lock()
 		s.rejected++
 		s.mu.Unlock()
 		return model.New(model.ErrBufferFull,
-			"item size %d exceeds MaxBytes %d", item.Size, s.cfg.MaxBytes)
+			"item size must be positive, got %d", size)
+	}
+	if size > s.cfg.MaxBytes {
+		s.mu.Lock()
+		s.rejected++
+		s.mu.Unlock()
+		return model.New(model.ErrBufferFull,
+			"item size %d exceeds MaxBytes %d", size, s.cfg.MaxBytes)
+	}
+	return nil
+}
+
+// Put blocks while the buffer is at either hard limit, then enqueues. It
+// returns on ctx cancellation or consumer Close instead of waiting forever.
+func (s *Stream) Put(ctx context.Context, item Item) error {
+	if err := s.validSize(item.Size); err != nil {
+		return err
 	}
 
 	s.mu.Lock()
@@ -136,10 +153,10 @@ func (s *Stream) TryPut(item Item) error {
 	if s.closed {
 		return model.New(model.ErrStreamClosed, "stream closed by consumer exit")
 	}
-	if item.Size > s.cfg.MaxBytes || s.fullLocked() {
+	if item.Size <= 0 || item.Size > s.cfg.MaxBytes || s.fullLocked() {
 		s.rejected++
-		return model.New(model.ErrBufferFull, "at hard limit: bytes=%d/%d items=%d/%d",
-			s.bytes, s.cfg.MaxBytes, len(s.queue), s.cfg.MaxItems)
+		return model.New(model.ErrBufferFull, "rejected item: size=%d cap=%d bytes=%d/%d items=%d/%d",
+			item.Size, s.cfg.MaxBytes, s.bytes, s.cfg.MaxBytes, len(s.queue), s.cfg.MaxItems)
 	}
 	s.queue = append(s.queue, item)
 	s.bytes += item.Size
@@ -171,6 +188,9 @@ func (s *Stream) Get(ctx context.Context) (Item, bool, error) {
 		return Item{}, false, nil
 	}
 	item := s.queue[0]
+	// Nil the head slot before reslicing so the backing array does not retain
+	// the dequeued Item (and any string data it references) until a future grow.
+	s.queue[0] = Item{}
 	s.queue = s.queue[1:]
 	s.bytes -= item.Size
 	s.cond.Broadcast() // wake a blocked producer
