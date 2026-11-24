@@ -136,22 +136,19 @@ func writeAudioTrak(w *mp4.Writer, audio []AudioSample, dur uint64, cfg Config, 
 	if err := writeAudioStsd(w, cfg.AudioTimescale); err != nil {
 		return err
 	}
-	// stts covers every slot including concealment so durations line up with
-	// the video timeline; stsz only lists slots that carry bytes.
-	var durs []uint32
-	var sizes []uint32
-	for _, a := range audio {
-		durs = append(durs, a.Duration)
-		if len(a.Data) > 0 {
-			sizes = append(sizes, uint32(len(a.Data)))
-		}
+	// A concealment slot carries no bytes. Instead of emitting a zero-length
+	// sample (which confuses strict parsers and breaks stts/stsz agreement),
+	// its duration is folded into the preceding real sample; a leading run of
+	// concealment is folded forward. stts sample count then always equals stsz
+	// sample count, and the track duration still matches the unit timeline.
+	durs, sizes := audioSamples(audio)
+	if len(sizes) == 0 {
+		// Keep stsc/stsz legal for a fully concealed track.
+		sizes = []uint32{0}
+		durs = []uint32{uint32(dur)}
 	}
 	if err := writeStts(w, durs); err != nil {
 		return err
-	}
-	if len(sizes) == 0 {
-		// Keep stsc/stsz legal even for an entirely concealed track.
-		sizes = []uint32{0}
 	}
 	stsc := &mp4.Stsc{EntryCount: 1, Entries: []mp4.StscEntry{{
 		FirstChunk: 1, SamplesPerChunk: uint32(len(sizes)), SampleDescriptionIndex: 1,
@@ -177,6 +174,39 @@ func writeAudioTrak(w *mp4.Writer, audio []AudioSample, dur uint64, cfg Config, 
 	}
 	_, err := w.EndBox() // trak
 	return err
+}
+
+// audioSamples collapses concealment slots into neighbouring real samples.
+// It returns one duration per emitted sample and the matching sizes; the sum of
+// durations equals the full unit timeline.
+func audioSamples(audio []AudioSample) ([]uint32, []uint32) {
+	var durs, sizes []uint32
+	var pending uint64
+	for _, a := range audio {
+		if len(a.Data) == 0 {
+			pending += uint64(a.Duration)
+			continue
+		}
+		d := uint64(a.Duration) + pending
+		pending = 0
+		if d > uint64(^uint32(0)) {
+			d = uint64(^uint32(0))
+		}
+		durs = append(durs, uint32(d))
+		sizes = append(sizes, uint32(len(a.Data)))
+	}
+	if pending > 0 {
+		if len(durs) > 0 {
+			d := uint64(durs[len(durs)-1]) + pending
+			if d > uint64(^uint32(0)) {
+				d = uint64(^uint32(0))
+			}
+			durs[len(durs)-1] = uint32(d)
+		}
+		// With no real sample at all there is nothing to hang the duration on;
+		// the caller substitutes a single duration-only sample.
+	}
+	return durs, sizes
 }
 
 func videoDurations(samples []Sample) []uint32 {

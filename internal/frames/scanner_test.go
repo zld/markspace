@@ -196,6 +196,28 @@ func TestScanVersionAndTrackValidation(t *testing.T) {
 	}
 }
 
+func TestScanRejectsBadTimestamps(t *testing.T) {
+	var buf bytes.Buffer
+	// DTS after PTS.
+	if _, err := Encode(&buf, EncodeOptions{Track: 1, PTS: 100, DTS: 200}, []byte("IMG1abc")); err != nil {
+		t.Fatal(err)
+	}
+	// Timestamp beyond the int64 tick domain.
+	if _, err := Encode(&buf, EncodeOptions{Track: 1, PTS: 1 << 63, DTS: 1 << 63}, []byte("IMG1abc")); err != nil {
+		t.Fatal(err)
+	}
+	recs, faults := scanAll(t, buf.Bytes())
+	if len(recs) != 0 {
+		t.Fatalf("records = %d", len(recs))
+	}
+	if faults.CountKind(fault.KindTimestamp) != 2 {
+		t.Fatalf("faults = %s", faults.Summary())
+	}
+	if faults[0].Offset != 0 || faults[1].Offset == 0 {
+		t.Fatalf("offsets = %d %d", faults[0].Offset, faults[1].Offset)
+	}
+}
+
 func TestEncodeRejectsEmptyAndHugePayload(t *testing.T) {
 	if _, err := Encode(io.Discard, EncodeOptions{}, nil); err == nil {
 		t.Fatal("empty payload accepted")

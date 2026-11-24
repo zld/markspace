@@ -175,12 +175,13 @@ func ReadPayload(r io.ReaderAt, rec *Record) ([]byte, error) {
 	return buf, nil
 }
 
-// frameErr builds a parse fault anchored at the given absolute offset.
+// frameErr builds a parse fault anchored at the given absolute offset. A
+// truncated tail is not recoverable: nothing follows it to resynchronise on.
 func frameErr(kind fault.Kind, offset int64, record int, track uint8, format string, args ...any) *fault.Error {
 	e := fault.New(fault.StageParse, kind, format, args...).At(offset, record)
 	if track != 0 {
 		e.WithTrack(track)
 	}
-	e.Recoverable = true
+	e.Recoverable = kind != fault.KindLimit
 	return e
 }

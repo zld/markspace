@@ -9,6 +9,9 @@ import (
 	"mediarun/internal/fault"
 )
 
+// maxTick caps timestamps so every record fits the int64 timeline domain.
+const maxTick = uint64(1) << 62
+
 // Limits bounds scanner resource usage. Zero values select conservative
 // defaults; negatives disable a limit except where noted.
 type Limits struct {
@@ -143,6 +146,14 @@ func (s *Scanner) readAt(off int64) (*Record, error) {
 	if meta.Track == 0 || meta.Stream != 0 {
 		return nil, frameErr(fault.KindTrack, off, s.seq-1, meta.Track,
 			"invalid track=%d stream=%d", meta.Track, meta.Stream)
+	}
+	if meta.PTS > maxTick || meta.DTS > maxTick {
+		return nil, frameErr(fault.KindTimestamp, off, s.seq-1, meta.Track,
+			"pts=%d dts=%d exceed representable tick range", meta.PTS, meta.DTS)
+	}
+	if meta.DTS > meta.PTS {
+		return nil, frameErr(fault.KindTimestamp, off, s.seq-1, meta.Track,
+			"dts %d is after pts %d", meta.DTS, meta.PTS)
 	}
 	if meta.Size == 0 || int(meta.Size) > s.limits.MaxPayload {
 		return nil, frameErr(fault.KindLength, off, s.seq-1, meta.Track,
