@@ -72,17 +72,22 @@ func runInterruptedResume(cfg Config, s *sample.Sample) (*Result, error) {
 		every = 1
 	}
 	interrupted := NewProcessor(s)
+	lastCheckpointBoundary := 0
 	for i := 0; i < cfg.TruncateAt; i++ {
 		interrupted.ProcessPacket(s.Packets[i])
-		if (i+1)%every == 0 {
-			if err := checkpoint.Append(cfg.CheckpointPath, interrupted.Checkpoint(i+1)); err != nil {
+		boundary := i + 1
+		if every > 0 && boundary%every == 0 {
+			if err := checkpoint.Append(cfg.CheckpointPath, interrupted.Checkpoint(boundary)); err != nil {
 				return nil, err
 			}
+			lastCheckpointBoundary = boundary
 		}
 	}
 	// An interrupt always lands on a packet boundary.
-	if err := checkpoint.Append(cfg.CheckpointPath, interrupted.Checkpoint(cfg.TruncateAt)); err != nil {
-		return nil, err
+	if lastCheckpointBoundary != cfg.TruncateAt {
+		if err := checkpoint.Append(cfg.CheckpointPath, interrupted.Checkpoint(cfg.TruncateAt)); err != nil {
+			return nil, err
+		}
 	}
 	if cfg.CorruptCheckpoint {
 		if err := checkpoint.CorruptLastRecord(cfg.CheckpointPath); err != nil {
