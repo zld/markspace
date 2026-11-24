@@ -6,11 +6,7 @@ import (
 	"github.com/zld/mediarc/internal/model"
 )
 
-// Temporary batch boundaries keep each CLI patch reviewable and compilable.
+// Temporary batch boundary keeps the demo action in the next reviewable patch.
 func runDemo(_ []string) error {
 	return &model.ConfigError{Field: "command", Err: errors.New("demo action pending")}
-}
-
-func runVerify(_ []string) error {
-	return &model.ConfigError{Field: "command", Err: errors.New("verify action pending")}
 }
