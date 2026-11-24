@@ -8,11 +8,13 @@ import (
 )
 
 // Supported source and target rates. Every ratio between these rates is
-// rational with small L/M factors, so conversion needs no floating timebase.
+// rational, but the resampler below works for any ratio because it maps each
+// output sample to a fractional input position rather than a fixed phase set.
 var supportedRates = map[int64]bool{44100: true, 48000: true, 96000: true}
 
 // RationalRatio reduces target/source to coprime up/down factors. Upsampling
-// by L then decimating by M yields exactly target samples per source second.
+// by up then decimating by down yields exactly target samples per source
+// second. The factors are also used for deterministic output-length rounding.
 func RationalRatio(sourceRate, targetRate int64) (up, down int64, err error) {
 	if !supportedRates[sourceRate] || !supportedRates[targetRate] {
 		return 0, 0, model.NewError(model.ErrInvalidConfig, "", 0, 0,
@@ -29,95 +31,79 @@ func gcd(a, b int64) int64 {
 	return a
 }
 
-// filterTaps is the fixed FIR window length. Determinism requires the same
-// taps on every run, so the low-pass is a windowed sinc generated once with
-// a hardcoded cutoff derived from the active ratio.
+// filterTaps is the fixed FIR window length. The same number of taps is used
+// for every ratio so reruns are bit-identical and memory stays bounded by a
+// single window rather than the total sample count.
 const filterTaps = 16
-
-// buildFilter creates a normalized windowed-sinc low-pass with cutoff at
-// min(1, up/down) of the upsampled Nyquist band. Taps are symmetric so the
-// group delay is constant and repeat runs produce bit-identical coefficients.
-func buildFilter(up, down int64) []float64 {
-	cutoff := 1.0
-	if up < down {
-		cutoff = float64(up) / float64(down)
-	}
-	f := make([]float64, filterTaps)
-	mid := (filterTaps - 1) / 2.0
-	var sum float64
-	for i := range f {
-		x := float64(i) - mid
-		var sinc float64
-		if math.Abs(x) < 1e-12 {
-			sinc = cutoff
-		} else {
-			w := math.Pi * cutoff * x
-			sinc = math.Sin(w) / (math.Pi * x)
-		}
-		// Hann window.
-		win := 0.5 * (1 - math.Cos(2*math.Pi*float64(i)/(filterTaps-1)))
-		f[i] = sinc * win
-		sum += f[i]
-	}
-	for i := range f {
-		f[i] /= sum
-	}
-	return f
-}
 
 // ResampleResult reports the converted stream plus boundary bookkeeping.
 type ResampleResult struct {
-	Samples    []float64
-	Rate       int64
-	ZeroPads   int // input samples synthesized as zeros at the boundaries
-	WindowSkips int // output points lacking a full filter window
+	Samples     []float64
+	Rate        int64
+	ZeroPads    int // input taps synthesized as zeros at the boundaries
+	WindowSkips int // output points lacking a complete in-range filter window
 }
 
-// Resample converts one mono channel deterministically. The input is
-// zero-stuffed by up, low-passed with the fixed FIR and decimated by down.
-// When fewer than one filter window of input is available at a boundary, the
-// missing taps are deterministically treated as zeros and counted.
+// lowpassSinc is one windowed-sinc coefficient at signed distance d from the
+// fractional sample position. cutoff is 1.0 for upsampling and the Nyquist
+// ratio target/source for downsampling, providing anti-alias protection.
+func lowpassSinc(d, cutoff float64) float64 {
+	if math.Abs(d) < 1e-12 {
+		return cutoff
+	}
+	w := math.Pi * cutoff * d
+	return math.Sin(w) / (math.Pi * d)
+}
+
+// Resample converts one mono channel deterministically. Each output sample is
+// placed at a fractional input position and formed by a fixed 16-tap Hann-
+// windowed sinc FIR. When the window extends past the input, the missing taps
+// are deterministically treated as zeros, counted in ZeroPads, and the output
+// is marked in WindowSkips. Coefficients are renormalized per output so a
+// constant signal is preserved exactly regardless of fractional delay.
 func Resample(input []float64, sourceRate, targetRate int64) (*ResampleResult, error) {
-	up, down, err := RationalRatio(sourceRate, targetRate)
-	if err != nil {
+	if _, _, err := RationalRatio(sourceRate, targetRate); err != nil {
 		return nil, err
 	}
-	if up == 1 && down == 1 {
+	if sourceRate == targetRate {
 		return &ResampleResult{Samples: append([]float64(nil), input...), Rate: targetRate}, nil
 	}
-	filter := buildFilter(up, down)
-	// Output count rounded half-up from the rational ratio.
-	nOut := (int64(len(input))*up + down/2) / down
+	n := len(input)
+	// Half-up rounding of the rational output length.
+	nOut := int((int64(n)*targetRate + sourceRate/2) / sourceRate)
 	out := make([]float64, 0, nOut)
+	ratio := float64(sourceRate) / float64(targetRate)
+	cutoff := 1.0
+	if targetRate < sourceRate {
+		cutoff = float64(targetRate) / float64(sourceRate)
+	}
+	half := filterTaps / 2
+	last := float64(filterTaps - 1)
 	pads, skips := 0, 0
-	for k := int64(0); k < nOut; k++ {
-		// Index into the zero-stuffed stream this output taps from.
-		stuffed := k * down
-		base := stuffed / up
-		offset := int(stuffed % up)
-		var acc float64
-		full := true
-		for j, coeff := range filter {
-			// FIR reads input positions base+j-mid around the center tap.
-			idx := int(base) + j - filterTaps/2
-			var v float64
-			switch {
-			case idx < 0 || idx >= len(input):
-				v = 0
+
+	for k := 0; k < nOut; k++ {
+		pos := float64(k) * ratio
+		center := math.Floor(pos)
+		base := int(center) - half + 1 // first input index covered by the window
+		var acc, coeffSum float64
+		incomplete := false
+		for i := 0; i < filterTaps; i++ {
+			idx := base + i
+			d := float64(idx) - pos
+			hann := 0.5 * (1 - math.Cos(2*math.Pi*float64(i)/last))
+			coeff := lowpassSinc(d, cutoff) * hann
+			coeffSum += coeff
+			if idx < 0 || idx >= n {
 				pads++
-				full = false
-			default:
-				v = input[idx]
+				incomplete = true
+				continue // zero-padded tap contributes nothing
 			}
-			// Polyphase selection: only taps aligned with the stuffing phase.
-			if (j+offset)%int(up) == 0 {
-				acc += coeff * v * float64(up)
-			}
+			acc += coeff * input[idx]
 		}
-		if !full {
+		if incomplete {
 			skips++
 		}
-		out = append(out, acc)
+		out = append(out, acc/coeffSum)
 	}
 	return &ResampleResult{Samples: out, Rate: targetRate, ZeroPads: pads, WindowSkips: skips}, nil
 }
