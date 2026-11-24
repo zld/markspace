@@ -35,9 +35,9 @@ func TestJitterReorderAndDuplicate(t *testing.T) {
 	push := func(p *rtp.Packet) { out = append(out, b.Push(p)...) }
 
 	push(mkPacket(0, 0, 0, true))
-	push(mkPacket(2, 0, 0, false))   // out of order
-	push(mkPacket(1, 0, 0, false))   // fills gap, inside window
-	push(mkPacket(2, 0, 0, false))   // duplicate
+	push(mkPacket(2, 0, 0, false)) // out of order
+	push(mkPacket(1, 0, 0, false)) // fills gap, inside window
+	push(mkPacket(2, 0, 0, false)) // duplicate
 	push(mkPacket(3, 0, 0, false))
 	out = append(out, b.Flush()...)
 
@@ -77,6 +77,9 @@ func TestJitterLossOutsideWindow(t *testing.T) {
 	}
 	if st.Late != 1 {
 		t.Fatalf("late = %d, want 1", st.Late)
+	}
+	if st.Reordered != 0 {
+		t.Fatalf("reordered = %d, want 0 (pure loss must not count as reorder)", st.Reordered)
 	}
 	if lost := b.Lost(); len(lost) != 1 || lost[0] != 11 {
 		t.Fatalf("lost seqs = %v, want [11]", lost)

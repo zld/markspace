@@ -24,13 +24,21 @@ type Buffer struct {
 	window  int
 	next    uint16 // next sequence number to emit
 	started bool
-	pending map[uint16]*rtp.Packet
+	pending map[uint16]pendEnt
 	// recent records recently resolved sequences: true = emitted,
 	// false = declared lost. Entries further than window behind next are
 	// evicted, keeping the map bounded.
 	recent map[uint16]bool
 	stats  Stats
 	lost   []uint16
+}
+
+// pendEnt is a buffered packet with the context needed to attribute a
+// reorder event only when the gap it jumped is later filled (not lost).
+type pendEnt struct {
+	pkt        *rtp.Packet
+	ahead      bool   // arrived ahead of the expected sequence
+	lostBefore uint64 // loss counter at arrival time
 }
 
 // NewBuffer creates a jitter buffer holding at most windowPackets packets.
@@ -40,7 +48,7 @@ func NewBuffer(windowPackets int) *Buffer {
 	}
 	return &Buffer{
 		window:  windowPackets,
-		pending: make(map[uint16]*rtp.Packet),
+		pending: make(map[uint16]pendEnt),
 		recent:  make(map[uint16]bool),
 	}
 }
@@ -80,10 +88,15 @@ func (b *Buffer) Push(p *rtp.Packet) []*rtp.Packet {
 		b.stats.Duplicates++
 		return nil
 	}
-	if !seqEqual(seq, b.next) {
-		b.stats.Reordered++
+	// In-order fast path: nothing buffered, emit immediately.
+	if seqEqual(seq, b.next) && len(b.pending) == 0 {
+		b.recent[seq] = true
+		b.stats.Emitted++
+		b.next++
+		b.evict()
+		return []*rtp.Packet{p}
 	}
-	b.pending[seq] = p
+	b.pending[seq] = pendEnt{pkt: p, ahead: !seqEqual(seq, b.next), lostBefore: b.stats.Lost}
 	b.evict()
 	return b.drain(false)
 }
@@ -100,11 +113,17 @@ func (b *Buffer) Flush() []*rtp.Packet {
 func (b *Buffer) drain(flush bool) []*rtp.Packet {
 	var out []*rtp.Packet
 	for {
-		if p, ok := b.pending[b.next]; ok {
+		if ent, ok := b.pending[b.next]; ok {
 			delete(b.pending, b.next)
 			b.recent[b.next] = true
 			b.stats.Emitted++
-			out = append(out, p)
+			// A packet that arrived ahead of sequence counts as
+			// reordered only when the gap it skipped was filled by
+			// later arrivals, not declared lost while it waited.
+			if ent.ahead && ent.lostBefore == b.stats.Lost {
+				b.stats.Reordered++
+			}
+			out = append(out, ent.pkt)
 			b.next++
 			continue
 		}
@@ -136,5 +155,8 @@ func (b *Buffer) evict() {
 
 // seqLess reports whether a comes before b in 16-bit sequence arithmetic.
 func seqLess(a, b uint16) bool { return int16(a-b) < 0 }
+
+// SeqLess reports whether a comes before b in 16-bit sequence arithmetic.
+func SeqLess(a, b uint16) bool { return seqLess(a, b) }
 
 func seqEqual(a, b uint16) bool { return a == b }

@@ -51,11 +51,11 @@ func TestConvertBetweenTimescales(t *testing.T) {
 func TestTrackerFaults(t *testing.T) {
 	fl := fault.NewList()
 	tr := NewTracker("video", fl)
-	tr.Check(-100, 0)   // negative start
-	tr.Check(0, 8)      // ok
-	tr.Check(3600, 16)  // ok
-	tr.Check(1000, 24)  // non-monotonic
-	tr.Check(7200, 32)  // ok again
+	tr.Check(-100, 0)  // negative start
+	tr.Check(0, 8)     // ok
+	tr.Check(3600, 16) // ok
+	tr.Check(1000, 24) // non-monotonic
+	tr.Check(7200, 32) // ok again
 	if !fl.Has(fault.ErrNegativeStart) {
 		t.Fatal("expected NEGATIVE_START fault")
 	}

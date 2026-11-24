@@ -134,7 +134,7 @@ func NewWrapTracker(fl *fault.List) *WrapTracker {
 func (w *WrapTracker) Check(ts uint32, offset int64) {
 	if w.started {
 		diff := int32(ts - w.last)
-		if diff < -(1<<30) {
+		if diff < -(1 << 30) {
 			w.faults.Add(fault.ErrWraparound, offset,
 				"32-bit timestamp jumped backwards: 0x%08x -> 0x%08x", w.last, ts)
 		}
