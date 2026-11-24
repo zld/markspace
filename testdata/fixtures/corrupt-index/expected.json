@@ -1,0 +1,13 @@
+{
+  "seed": 17,
+  "injection": "none",
+  "path": "testdata/fixtures/corrupt-index/sample.wav",
+  "sample_rate": 48000,
+  "channels": 2,
+  "bits_per_sample": 16,
+  "block_frames": 240,
+  "block_count": 12,
+  "target_frame": 1504,
+  "expected_block": 6,
+  "expected_frame_offset": 64
+}
