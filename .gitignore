@@ -1,0 +1,14 @@
+# binaries
+/mediasync
+/bin/
+*.out
+
+# local run state
+/.mediasync/
+*.journal
+*.journal.tmp
+*.journal.bad
+
+# editor / OS
+.DS_Store
+*.swp
