@@ -2,10 +2,8 @@
 package provenance
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 
 	mp4 "github.com/abema/go-mp4"
@@ -57,8 +55,16 @@ func Load(path string) (*Manifest, error) {
 
 // WriteStructure 写出结果结构文件（ftyp + 含结果摘要的 free box）。
 func WriteStructure(path, resultSHA string) error {
-	var buf bytes.Buffer
-	if _, err := mp4.Marshal(&buf, &mp4.Ftyp{
+	tmp := path + ".tmp"
+	f, err := os.Create(tmp)
+	if err != nil {
+		return err
+	}
+	w := mp4.NewWriter(f)
+	if _, err := w.StartBox(&mp4.BoxInfo{Type: mp4.BoxTypeFtyp()}); err != nil {
+		return err
+	}
+	if _, err := mp4.Marshal(w, &mp4.Ftyp{
 		MajorBrand:   [4]byte{'m', 's', 'd', 'h'},
 		MinorVersion: 0,
 		CompatibleBrands: []mp4.CompatibleBrandElem{
@@ -67,11 +73,19 @@ func WriteStructure(path, resultSHA string) error {
 	}, mp4.Context{}); err != nil {
 		return err
 	}
-	if _, err := mp4.Marshal(&buf, &mp4.Free{Data: []byte(resultSHA)}, mp4.Context{}); err != nil {
+	if _, err := w.EndBox(); err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, buf.Bytes(), 0o644); err != nil {
+	if _, err := w.StartBox(&mp4.BoxInfo{Type: mp4.BoxTypeFree()}); err != nil {
+		return err
+	}
+	if _, err := mp4.Marshal(w, &mp4.Free{Data: []byte(resultSHA)}, mp4.Context{}); err != nil {
+		return err
+	}
+	if _, err := w.EndBox(); err != nil {
+		return err
+	}
+	if err := f.Close(); err != nil {
 		return err
 	}
 	return os.Rename(tmp, path)
@@ -102,9 +116,6 @@ func VerifyStructure(path, expectSHA string) error {
 				return nil, fmt.Errorf("result structure digest mismatch")
 			}
 			sawFree = true
-		}
-		if _, err := h.Expand(); err != nil && err != io.EOF {
-			return nil, nil // 叶子盒无需展开
 		}
 		return nil, nil
 	})
