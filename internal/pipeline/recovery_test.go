@@ -101,3 +101,14 @@ func TestPathEscapeIsUnrecoverable(t *testing.T) {
 		t.Fatal("expected path escape to fail")
 	}
 }
+
+func TestInputOutsideExplicitMaterialDirRejected(t *testing.T) {
+	gt := groundTruth(t)
+	other := t.TempDir() // allowed root that does not contain the fixture
+	_, err := Run(context.Background(), Config{
+		Input: gt.GoodManifest, MediaDir: other, MemoryMiB: 8,
+	})
+	if err == nil {
+		t.Fatal("expected input outside --media-dir to be rejected")
+	}
+}
