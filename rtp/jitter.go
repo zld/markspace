@@ -46,17 +46,18 @@ type Stats struct {
 }
 
 // JitterBuffer reorders packets by extended 16-bit sequence number. Memory is
-// bounded by Window: at most Window packets plus the gap bookkeeping are held.
+// bounded by Window: at most Window packets plus the outstanding-gap set are
+// held, and gaps older than the window are retired immediately.
 type JitterBuffer struct {
-	Window  int // tolerated out-of-order distance before a gap is declared loss
-	held    map[int64]Packet
-	gapAt   map[int64]int64 // first missing seq -> receive order at which the gap appeared
-	nextOut int64
-	anchor  int64 // extended seq of the first packet ever received
-	started bool
-	recvN   int64
-	latency []int64
-	stats   Stats
+	Window      int // tolerated out-of-order distance before a gap is declared loss
+	held        map[int64]Packet
+	outstanding map[int64]bool // missing sequence numbers still inside the window
+	nextOut     int64
+	anchor      int64 // extended seq of the first packet ever received
+	started     bool
+	recvN       int64
+	latency     []int64
+	stats       Stats
 }
 
 // NewJitterBuffer builds a buffer with the given reorder window (>= 1).
@@ -64,7 +65,7 @@ func NewJitterBuffer(window int) *JitterBuffer {
 	if window < 1 {
 		window = 1
 	}
-	return &JitterBuffer{Window: window, held: map[int64]Packet{}, gapAt: map[int64]int64{}}
+	return &JitterBuffer{Window: window, held: map[int64]Packet{}, outstanding: map[int64]bool{}}
 }
 
 // Push accepts one packet. Duplicate sequence numbers are counted and dropped.
@@ -91,9 +92,9 @@ func (b *JitterBuffer) Push(p Packet) error {
 			"late packet after loss window").WithIndex(ext)
 	}
 	p.Order = b.recvN
-	if _, isGap := b.gapAt[ext]; isGap {
+	if b.outstanding[ext] {
 		// The missing slot is filled before its window expired: recovery.
-		delete(b.gapAt, ext)
+		delete(b.outstanding, ext)
 		b.stats.Recovered++
 	}
 	b.held[ext] = p
@@ -102,8 +103,8 @@ func (b *JitterBuffer) Push(p Packet) error {
 }
 
 // Flush releases every in-order packet available, opening gaps as needed and
-// declaring loss for gaps that have waited longer than Window receive slots.
-// It never fabricates media: missing sequence numbers only update counters.
+// declaring loss for gaps whose distance exceeds the Window. It never
+// fabricates media: missing sequence numbers only update counters.
 func (b *JitterBuffer) Flush() []Packet {
 	var out []Packet
 	for {
@@ -118,11 +119,12 @@ func (b *JitterBuffer) Flush() []Packet {
 		if !has {
 			return out
 		}
-		if _, waiting := b.gapAt[b.nextOut]; !waiting {
-			b.gapAt[b.nextOut] = b.recvN
+		// Every slot between the output cursor and the next held packet is
+		// an outstanding gap until its distance exceeds the window.
+		for seq := b.nextOut; seq < minHeld; seq++ {
+			b.outstanding[seq] = true
 		}
-		distance := int(minHeld - b.nextOut)
-		if distance > b.Window {
+		if int(minHeld-b.nextOut) >= b.Window {
 			b.declareLoss(b.nextOut, minHeld-1)
 			b.nextOut = minHeld
 			continue
@@ -165,7 +167,7 @@ func (b *JitterBuffer) minHeld() (int64, bool) {
 
 func (b *JitterBuffer) declareLoss(from, to int64) {
 	for seq := from; seq <= to; seq++ {
-		delete(b.gapAt, seq)
+		delete(b.outstanding, seq)
 		b.stats.Loss++
 	}
 	gap := int(to - from + 1)

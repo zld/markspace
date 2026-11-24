@@ -88,15 +88,11 @@ func TestLossOutsideWindow(t *testing.T) {
 	for _, s := range []uint16{4, 5, 6, 7} {
 		push(t, b, s)
 	}
-	// First flush releases the contiguous head (0,1); the gap at 2,3 is only
-	// declared once its distance exceeds the window on the following flush.
-	first := b.Flush()
-	if len(first) != 2 || seqs(first)[0] != 0 || seqs(first)[1] != 1 {
-		t.Fatalf("head flush=%v", seqs(first))
-	}
+	// With window 2 the gap distance (2) reaches the window immediately, so
+	// a single flush declares loss for 2,3 and releases the held tail.
 	out := b.Flush()
-	if len(out) != 4 || seqs(out)[0] != 4 {
-		t.Fatalf("post-loss flush=%v", seqs(out))
+	if len(out) != 6 || seqs(out)[0] != 0 || seqs(out)[2] != 4 {
+		t.Fatalf("flush=%v", seqs(out))
 	}
 	st := b.Stats()
 	if st.Loss != 2 || st.MaxGap != 2 {
