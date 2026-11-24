@@ -424,11 +424,15 @@ func buildSamples(t *Track, a sampleArgs, lim Limits, issues *[]Issue) error {
 		}
 		startUs := MustFromTicks(int64(startTicks), t.Timescale).Micros()
 		durUs := MustFromTicks(int64(deltaTicks), t.Timescale).Micros()
+		// Presentation time drives the reported timeline; non-monotonic
+		// presentation is what a consumer actually observes.
+		compUs := int64(0)
 		if i < len(compTicks) {
-			startUs += MustFromTicks(compTicks[i], t.Timescale).Micros()
+			compUs = MustFromTicks(compTicks[i], t.Timescale).Micros()
 		}
+		presUs := startUs + compUs
 
-		if prevStart >= 0 && startTicks < prevTicks {
+		if prevStart >= 0 && presUs < prevStart {
 			// A reset from the top half of the 32-bit tick domain back to the
 			// bottom half is a wraparound; other backward steps are
 			// non-monotonic timestamps. Both are reported, never reordered.
@@ -437,13 +441,13 @@ func buildSamples(t *Track, a sampleArgs, lim Limits, issues *[]Issue) error {
 					warnWrap = true
 					*issues = append(*issues, Issue{Kind: KindWraparound, Severity: SeverityError,
 						Detail: fmt.Sprintf("32-bit timestamp wraparound at sample %d", i+1),
-						At:     i + 1, TimeUS: startUs})
+						At:     i + 1, TimeUS: presUs})
 				}
 			} else if !warnNonMono {
 				warnNonMono = true
 				*issues = append(*issues, Issue{Kind: KindNonMonotonic, Severity: SeverityError,
 					Detail: fmt.Sprintf("sample %d starts before its predecessor", i+1),
-					At:     i + 1, TimeUS: startUs})
+					At:     i + 1, TimeUS: presUs})
 			}
 		} else if prevStart >= 0 && prevDelta > 0 && int64(deltaTicks) > 4*prevDelta && durUs > 100_000 && warnedGap < 4 {
 			warnedGap++
@@ -451,7 +455,7 @@ func buildSamples(t *Track, a sampleArgs, lim Limits, issues *[]Issue) error {
 				Detail: fmt.Sprintf("timing gap of %dus at sample %d", durUs, i+1),
 				At:     i + 1, TimeUS: startUs})
 		}
-		prevStart = startUs
+		prevStart = presUs
 		prevTicks = startTicks
 		prevDelta = int64(deltaTicks)
 
@@ -461,7 +465,7 @@ func buildSamples(t *Track, a sampleArgs, lim Limits, issues *[]Issue) error {
 		}
 		t.Samples[filled] = Sample{
 			Number: i + 1, Offset: offsets[i], Size: int64(sizes[i]),
-			StartUS: startUs, DurUS: durUs, Key: key,
+			StartUS: presUs, DurUS: durUs, Key: key,
 		}
 		filled++
 	}

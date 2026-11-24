@@ -49,12 +49,27 @@ func TestFromTicksNoFloatAccumulation(t *testing.T) {
 	}
 }
 
+func TestFromTicksHandlesSignedOffsets(t *testing.T) {
+	// Composition offsets are signed; negative values convert symmetrically.
+	neg, err := FromTicks(-20000, 30000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if neg != -Time(666_666_667) {
+		t.Fatalf("negative conversion = %d", neg)
+	}
+	pos, err := FromTicks(20000, 30000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if Time(pos)+Time(-neg) != 0 && pos+neg != 0 {
+		t.Fatalf("asymmetric rounding: %d vs %d", pos, neg)
+	}
+}
+
 func TestFromTicksRejectsBadInput(t *testing.T) {
 	if _, err := FromTicks(1, 0); err == nil {
 		t.Fatal("expected error for zero timescale")
-	}
-	if _, err := FromTicks(-1, 10); err == nil {
-		t.Fatal("expected error for negative ticks")
 	}
 	if _, err := FromTicks(1<<62, 1); err == nil {
 		t.Fatal("expected overflow error")

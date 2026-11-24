@@ -2,6 +2,7 @@ package media
 
 import (
 	"fmt"
+	"math"
 	"math/bits"
 	"strconv"
 	"strings"
@@ -22,13 +23,25 @@ type Time int64
 
 // FromTicks converts a track tick value to media time. The conversion uses a
 // 128-bit intermediate so it is exact for the full track duration domain and
-// reports overflow instead of wrapping.
+// reports overflow instead of wrapping. Negative ticks are allowed because
+// composition offsets and edit shifts are signed; sample start times derived
+// from stts are non-negative and are validated separately.
 func FromTicks(ticks int64, timescale uint32) (Time, error) {
 	if timescale == 0 {
 		return 0, NewError(KindUnsupported, "", "timescale must not be zero")
 	}
 	if ticks < 0 {
-		return 0, NewError(KindNonMonotonic, "", "negative track tick %d", ticks)
+		// Convert the magnitude and negate, so rounding is symmetric and
+		// exact: -1.5 rounds to -2, matching positive rounding half away from
+		// zero.
+		if ticks == math.MinInt64 {
+			return 0, NewError(KindLimit, "", "tick value overflows media time")
+		}
+		v, err := FromTicks(-ticks, timescale)
+		if err != nil {
+			return 0, err
+		}
+		return -v, nil
 	}
 	hi, lo := bits.Mul64(uint64(ticks), uint64(NanoDen))
 	timescale64 := uint64(timescale)
