@@ -21,6 +21,7 @@ type Resampler struct {
 	chans   int
 	next    float64 // 下一个输出采样对应的输入流位置（帧）
 	inSeen  int     // 已消费的输入帧数
+	emitted int     // 已产生的输出帧数
 	prev    []int16 // 上一输入块的末帧
 }
 
@@ -61,25 +62,28 @@ func (r *Resampler) Process(in []int16) []int16 {
 			out = append(out, int16(math.Round(a+(b-a)*frac)))
 		}
 		r.next += step
+		r.emitted++
 	}
 	r.inSeen += nIn
 	r.prev = append(r.prev[:0], in[(nIn-1)*ch:]...)
 	return out
 }
 
-// Flush 在输入结束时收尾：末帧之后以常量延拓输出剩余采样。
+// Flush 在输入结束时收尾：以末帧常量延拓，补齐到目标输出总数
+// （round(inSeen × OutRate / InRate)），保证累计采样数确定。
 func (r *Resampler) Flush() []int16 {
 	ch := r.chans
 	last := r.prev
 	if last == nil {
 		return nil
 	}
+	target := (r.inSeen*r.OutRate + r.InRate/2) / r.InRate
 	var out []int16
-	for r.next < float64(r.inSeen) {
+	for r.emitted < target {
 		for c := 0; c < ch; c++ {
 			out = append(out, last[c])
 		}
-		r.next += float64(r.InRate) / float64(r.OutRate)
+		r.emitted++
 	}
 	return out
 }
