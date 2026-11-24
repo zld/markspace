@@ -48,26 +48,42 @@ func TestMergeDeduplicatesOnlyIdenticalContent(t *testing.T) {
 	if got.DuplicateCount != 1 || len(got.Events) != 4 {
 		t.Fatalf("dups=%d out=%d", got.DuplicateCount, len(got.Events))
 	}
-	if got.Events[1].Data[0] != 'd' || got.Events[2].Data[0] != 's' || got.Events[3].Data[0] != 's' {
+	var same, different int
+	for _, e := range got.Events {
+		switch string(e.Data) {
+		case "same":
+			same++
+		case "different":
+			different++
+		}
+	}
+	if same != 3 || different != 1 {
 		t.Fatalf("content-different events must be kept: %+v", got.Events)
 	}
-	if got.Events[2].TrackID != 3 || got.Events[3].Time.Ticks != 200 {
-		t.Fatalf("content-different events must be kept: %+v", got.Events)
+	if got.Events[3].Time.Ticks != 200 {
+		t.Fatalf("later time must sort last: %+v", got.Events)
 	}
 }
 
 func TestMergeIsStableForEqualKeys(t *testing.T) {
-	events := []Event{
-		ev(KindID3, 1, clock.New(1, 1000), "a", 10),
-		ev(KindID3, 1, clock.New(1, 1000), "b", 11),
+	// Events sharing track, kind and time are ordered by content digest, so the
+	// result does not depend on the order in which the demuxer emitted them.
+	a := ev(KindID3, 1, clock.New(1, 1000), "a", 10)
+	b := ev(KindID3, 1, clock.New(1, 1000), "b", 11)
+	forward, err := Merge([]Event{a, b})
+	if err != nil {
+		t.Fatal(err)
 	}
-	for i := 0; i < 5; i++ {
-		got, err := Merge(events)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got.Events[0].Seq != 10 || got.Events[1].Seq != 11 {
-			t.Fatalf("unstable: %+v", got.Events)
+	backward, err := Merge([]Event{b, a})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(forward.Events) != 2 || len(backward.Events) != 2 {
+		t.Fatalf("unexpected counts: %d %d", len(forward.Events), len(backward.Events))
+	}
+	for i := range forward.Events {
+		if forward.Events[i].Digest() != backward.Events[i].Digest() {
+			t.Fatalf("order depends on input order: %+v vs %+v", forward.Events, backward.Events)
 		}
 	}
 }
