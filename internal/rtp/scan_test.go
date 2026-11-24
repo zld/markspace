@@ -273,3 +273,34 @@ func TestUnknownSSRCIsLocated(t *testing.T) {
 		t.Fatalf("unknown ssrc not located: %+v", f)
 	}
 }
+
+func TestScannerMemoryIsBoundedByWindow(t *testing.T) {
+	// Feed many packets with a deliberately tiny window and a large sequence
+	// span. The tracker must never retain more than a window of state.
+	cfg := Config{Tracks: map[uint32]TrackInfo{1: {TrackID: 1, ClockRate: 48000}}, Window: 16}
+	var declared, captured [][]byte
+	for i := 0; i < 5000; i++ {
+		seq := uint16(i * 3) // guaranteed gaps
+		p := rtpPacket(seq, uint32(i)*960, 1, []byte{1}, 0, 0)
+		declared = append(declared, p)
+		captured = append(captured, p)
+	}
+	s, err := NewScanner(bytes.NewReader(buildCapture(declared, captured)), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for {
+		_, ok, err := s.Next()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !ok {
+			break
+		}
+		for _, tr := range s.trackers {
+			if got := len(tr.seen) + len(tr.pending); got > 2*int(tr.window)+2 {
+				t.Fatalf("tracker retained %d entries, window is %d", got, tr.window)
+			}
+		}
+	}
+}
