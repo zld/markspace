@@ -75,3 +75,20 @@ func TestErrorClassification(t *testing.T) {
 		t.Fatalf("classification wrong: %#v", es)
 	}
 }
+
+func TestRatZeroValueJSON(t *testing.T) {
+	var r Rat
+	if !r.IsZero() || r.String() != "0" {
+		t.Fatalf("zero value %q", r.String())
+	}
+	if err := r.UnmarshalText(nil); err != nil || !r.IsZero() {
+		t.Fatalf("empty text must decode to zero: %v", err)
+	}
+	b, err := r.MarshalText()
+	if err != nil || string(b) != "0" {
+		t.Fatalf("marshal %q %v", b, err)
+	}
+	if r.Add(RatFromInt(1)).String() != "1" {
+		t.Fatal("zero value must be usable in arithmetic")
+	}
+}

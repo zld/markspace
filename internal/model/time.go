@@ -107,8 +107,13 @@ func (r Rat) IsZero() bool { return r.r.Sign() == 0 }
 // MarshalText emits the canonical reduced form for deterministic encoding.
 func (r Rat) MarshalText() ([]byte, error) { return []byte(r.r.RatString()), nil }
 
-// UnmarshalText is the inverse of MarshalText.
+// UnmarshalText is the inverse of MarshalText. A nil or empty input leaves
+// the zero value untouched, which is what JSON null/missing fields need.
 func (r *Rat) UnmarshalText(b []byte) error {
+	if len(b) == 0 {
+		*r = Rat{}
+		return nil
+	}
 	v, err := ParseRat(string(b))
 	if err != nil {
 		return err
