@@ -30,13 +30,14 @@ type VerifyFunc func(path string, chunk PlanChunk) error
 
 // RunReport records deterministic progress and recovery actions.
 type RunReport struct {
-	IndexRebuilt   bool  `json:"index_rebuilt"`
-	Planned        int   `json:"planned"`
-	TotalCommitted int   `json:"chunks_committed"`
-	NewlyCommitted int   `json:"chunks_newly_committed"`
-	Reused         int   `json:"chunks_reused"`
-	Redone         []int `json:"chunks_redone"`
-	Truncated      []int `json:"truncated_chunks"`
+	IndexRebuilt         bool  `json:"index_rebuilt"`
+	Planned              int   `json:"planned"`
+	DuplicatePlanEntries int   `json:"duplicate_plan_entries,omitempty"`
+	TotalCommitted       int   `json:"chunks_committed"`
+	NewlyCommitted       int   `json:"chunks_newly_committed"`
+	Reused               int   `json:"chunks_reused"`
+	Redone               []int `json:"chunks_redone"`
+	Truncated            []int `json:"truncated_chunks"`
 }
 
 // Runner executes a chunk plan with checkpoint semantics.
@@ -75,10 +76,38 @@ func PlanChunks(total clock.Span, chunkNs int64) ([]PlanChunk, error) {
 	return out, nil
 }
 
+// NormalizePlan deduplicates exact repeated chunk entries. A repeated index
+// with a different span or output path is contradictory and fails instead of
+// allowing one block to silently replace another.
+func NormalizePlan(plan []PlanChunk) ([]PlanChunk, int, error) {
+	seen := map[int]PlanChunk{}
+	out := make([]PlanChunk, 0, len(plan))
+	duplicates := 0
+	for _, pc := range plan {
+		old, ok := seen[pc.Index]
+		if !ok {
+			seen[pc.Index] = pc
+			out = append(out, pc)
+			continue
+		}
+		duplicates++
+		if old != pc {
+			return nil, duplicates, mederr.New(mederr.CatIndex, "batch", pc.Span.Start, pc.Span.End, false,
+				"conflicting duplicate chunk %d: %+v vs %+v", pc.Index, old, pc)
+		}
+	}
+	return out, duplicates, nil
+}
+
 // Run executes all planned chunks and checkpoints after every commit.
 func (r *Runner) Run(plan []PlanChunk) (*Index, RunReport, error) {
+	plan, duplicates, err := NormalizePlan(plan)
 	var rep RunReport
 	rep.Planned = len(plan)
+	rep.DuplicatePlanEntries = duplicates
+	if err != nil {
+		return nil, rep, err
+	}
 	if r.Render == nil {
 		return nil, rep, mederr.New(mederr.CatIO, "batch", -1, -1, false, "runner has no render function")
 	}

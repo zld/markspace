@@ -12,7 +12,7 @@ import (
 )
 
 func (p *Program) chunkFrames(c batch.PlanChunk) int {
-	return int(clock.Scale{Num: int64(p.Opt.TargetRate)}.FromNanos(c.Span.End - c.Span.Start))
+	return int((clock.Scale{Num: int64(p.Opt.TargetRate), Den: 1}).FromNanos(c.Span.End - c.Span.Start))
 }
 
 // RenderChunk mixes all EDL segments covering this interval with linear

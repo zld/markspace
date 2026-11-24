@@ -139,3 +139,21 @@ func TestFingerprintMismatchRefuses(t *testing.T) {
 		t.Fatalf("expected index fingerprint error, got %v", err)
 	}
 }
+
+func TestNormalizePlanDuplicateRules(t *testing.T) {
+	plan := testPlan(t)
+	withDup := append([]PlanChunk{}, plan...)
+	withDup = append(withDup, plan[1])
+	got, dupes, err := NormalizePlan(withDup)
+	if err != nil || dupes != 1 || len(got) != len(plan) {
+		t.Fatalf("exact duplicate not deduplicated: got=%d dupes=%d err=%v", len(got), dupes, err)
+	}
+
+	conflict := append([]PlanChunk{}, plan...)
+	bad := plan[1]
+	bad.Span.End++
+	conflict = append(conflict, bad)
+	if _, _, err := NormalizePlan(conflict); err == nil {
+		t.Fatal("expected conflicting duplicate chunk error")
+	}
+}
