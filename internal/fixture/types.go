@@ -37,3 +37,20 @@ func Digest(data []byte) string {
 	s := sha256.Sum256(data)
 	return fmt.Sprintf("%x", s[:])
 }
+
+// trackSpec and sampleSpec describe a fixture track before it is laid out.
+type sampleSpec struct {
+	data  []byte
+	delta uint32
+	cts   int64
+	sync  bool
+}
+
+type trackSpec struct {
+	id        uint32
+	kind      string
+	handler   string
+	timescale uint32
+	stsd      []byte
+	samples   []sampleSpec
+}
