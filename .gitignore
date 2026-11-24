@@ -1,0 +1,12 @@
+# Build and local acceptance artifacts
+/bin/
+/dist/
+/out/
+*.test
+*.out
+coverage.txt
+
+# OS/editor files
+.DS_Store
+.idea/
+.vscode/
