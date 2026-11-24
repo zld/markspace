@@ -1,0 +1,7 @@
+# Local acceptance output and build products
+/tmp/
+*.test
+*.out
+/mediarc
+/cmd/mediarc/mediarc
+.DS_Store
