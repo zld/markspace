@@ -251,3 +251,28 @@ func TestManifestIsDeterministic(t *testing.T) {
 		t.Fatal("identical commits must produce a byte-identical manifest")
 	}
 }
+
+func TestVerifyDetectsPayloadIndexTampering(t *testing.T) {
+	s, dir := newStore(t)
+	if err := s.Begin(2, 2, "cfg", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Commit(chunk(0, 2), "in0"); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, ChunkDir, "chunk-00000.json")
+	data, _ := os.ReadFile(path)
+	var p Payload
+	json.Unmarshal(data, &p)
+	p.Index = 7
+	out, _ := json.Marshal(p)
+	os.WriteFile(path, out, 0o644)
+
+	ok, err := s.Verify(0, "in0")
+	if ok || err == nil {
+		t.Fatal("a payload claiming the wrong chunk index must fail")
+	}
+	if e := err.(*model.Error); e.Code != model.CodeCheckpointCorrupt {
+		t.Fatalf("code %s", e.Code)
+	}
+}
