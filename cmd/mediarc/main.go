@@ -78,7 +78,7 @@ func runDemo(args []string) int {
 	}
 
 	opt := fixture.Options{Seed: *seed, LossPackets: *loss, LateMS: *lateMS}
-	oc, err := pipeline.RunDemo(opt)
+	oc, err := pipeline.RunDemoWithMap(opt, *mapSpec)
 	if err != nil {
 		printMediaError(err)
 		return 1

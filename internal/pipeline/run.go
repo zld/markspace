@@ -26,6 +26,10 @@ type Outcome struct {
 }
 
 func RunDemo(opt fixture.Options) (*Outcome, error) {
+	return RunDemoWithMap(opt, "")
+}
+
+func RunDemoWithMap(opt fixture.Options, mapSpec string) (*Outcome, error) {
 	archive := fixture.GenerateArchive(opt)
 	encoded, err := demux.EncodeContainer(archive)
 	if err != nil {
@@ -37,7 +41,23 @@ func RunDemo(opt fixture.Options) (*Outcome, error) {
 	}
 	src := container.Archive
 
-	plan, err := track.PlanMapping(src.Tracks, track.DefaultRules(src.Tracks))
+	var rules []track.Rule
+	if mapSpec != "" {
+		parsed, err := track.ParseSpec(mapSpec)
+		if err != nil {
+			return nil, err
+		}
+		for i := range parsed {
+			if src := archive.Track(parsed[i].SourceID); src != nil {
+				parsed[i].Type = src.Type
+				parsed[i].Required = src.Type == model.TrackVideo || src.Type == model.TrackAudio
+			}
+		}
+		rules = parsed
+	} else {
+		rules = track.DefaultRules(src.Tracks)
+	}
+	plan, err := track.PlanMapping(src.Tracks, rules)
 	if err != nil {
 		return nil, err
 	}
