@@ -33,7 +33,13 @@ func NewUnwrapper(bits uint) (*Unwrapper, error) {
 }
 
 // Extend converts one raw timestamp. It reports whether a wrap was detected
-// at this step and the epoch (number of wraps observed so far).
+// at this step and the total number of wraps observed so far.
+//
+// Forward steps are always taken at face value: a monotonic stream may jump.
+// A backwards step is a wrap only when the implied forward distance is at
+// most half the modulus; otherwise it is a reordered or duplicate packet, and
+// the clock is left untouched (including its anchor) so later in-order
+// timestamps are still measured from the true latest value.
 func (u *Unwrapper) Extend(raw uint64) (ext uint64, wrapped bool, epoch int) {
 	if u.Modulus == 0 {
 		u.Modulus = 1 << 32
@@ -45,25 +51,20 @@ func (u *Unwrapper) Extend(raw uint64) (ext uint64, wrapped bool, epoch int) {
 		u.epoch = raw
 		return raw, false, 0
 	}
-	var delta uint64
 	if raw >= u.last {
-		delta = raw - u.last
-	} else {
-		delta = u.Modulus - u.last + raw
+		u.epoch += raw - u.last
+		u.last = raw
+		return u.epoch, false, u.wraps
 	}
-	// A forward step larger than half the range is really a small backwards
-	// step in the previous epoch (e.g. out-of-order packets); keep monotonic
-	// by treating it as zero rather than inventing a wrap.
+	delta := u.Modulus - u.last + raw
 	if delta > u.Modulus/2 {
-		delta = 0
+		// Reordered/duplicate: do not move the anchor.
+		return u.epoch, false, u.wraps
 	}
-	if raw < u.last && delta > 0 {
-		u.wraps++
-		wrapped = true
-	}
+	u.wraps++
 	u.epoch += delta
 	u.last = raw
-	return u.epoch, wrapped, u.wraps
+	return u.epoch, true, u.wraps
 }
 
 // Wraps returns the number of wraps observed.

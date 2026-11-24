@@ -78,3 +78,31 @@ func TestUnwrapperWidths(t *testing.T) {
 		t.Fatal("64-bit width must fail")
 	}
 }
+
+func TestUnwrapperKeepsAnchorAcrossReordering(t *testing.T) {
+	u, _ := NewUnwrapper(32)
+	// A reordered packet must not advance the anchor: the next in-order
+	// timestamp is 1000 forward from 10000, not 2000.
+	for _, tc := range []struct {
+		raw  uint64
+		want uint64
+	}{{10000, 10000}, {9000, 10000}, {11000, 11000}, {12000, 12000}} {
+		got, _, _ := u.Extend(tc.raw)
+		if got != tc.want {
+			t.Fatalf("raw %d -> %d, want %d", tc.raw, got, tc.want)
+		}
+	}
+	if u.Wraps() != 0 {
+		t.Fatalf("reordering must not count as a wrap: %d", u.Wraps())
+	}
+}
+
+func TestUnwrapperWrapAfterReordering(t *testing.T) {
+	u, _ := NewUnwrapper(32)
+	u.Extend(4294967290)
+	u.Extend(4294967280) // reordered backwards
+	got, wrapped, _ := u.Extend(4)
+	if got != 4294967300 || !wrapped {
+		t.Fatalf("wrap after reorder: got %d wrapped=%v", got, wrapped)
+	}
+}
