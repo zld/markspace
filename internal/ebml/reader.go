@@ -186,7 +186,7 @@ func (p *Parser) Parse(sink Sink) error {
 		return &Error{Code: CodeBadHeader, Offset: hdr.Offset, Msg: "truncated EBML header"}
 	}
 	var h ebmlHeader
-	if err := ebmlgo.Unmarshal(bytesReader(hb), &h); err != nil ||
+	if err := ebmlgo.Unmarshal(bytesReader(hb), &h, ebmlgo.WithIgnoreUnknown(true)); err != nil ||
 		(h.DocType != "matroska" && h.DocType != "webm") {
 		return &Error{Code: CodeBadHeader, Offset: hdr.Offset, Msg: "unsupported EBML DocType"}
 	}
