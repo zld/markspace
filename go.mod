@@ -1,7 +1,7 @@
 module mediapipe
 
-go 1.24.0
+go 1.23
 
-require github.com/pion/rtp v1.10.6
+require github.com/pion/rtp v1.8.11
 
 require github.com/pion/randutil v0.1.0 // indirect
