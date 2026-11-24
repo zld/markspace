@@ -1,0 +1,8 @@
+# build artifacts
+/mediad
+/bin/
+*.test
+*.out
+
+# local demo output (demo always writes to an explicit --out path)
+/tmp/
