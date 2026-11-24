@@ -200,18 +200,14 @@ func Run(in Inputs) (Stats, error) {
 			// what keeps replayed_chunks at zero across a resume.
 			continue
 		}
-		if _, alreadyCommitted := store.Meta(i); alreadyCommitted {
-			// Should not happen: Begin(resume) validates the configuration
-			// and the loop above validates each committed chunk.
-			st.ReplayedChunks++
-		}
 		if in.VerifyOnly {
 			return st, model.NewError(model.CodeCheckpointMismatch, "pipeline", "",
 				model.InputPos{}, "chunk %d is not committed but -verify was requested", i)
 		}
 		if _, alreadyCommitted := store.Meta(i); alreadyCommitted {
-			// Only reachable if verification let a committed chunk through
-			// but it was not marked fresh; count it as redone work.
+			// A chunk the store already holds is being rendered again; count
+			// it so a bad resume shows up in replayed_chunks instead of
+			// hiding. The verify pass above makes this unreachable in practice.
 			st.ReplayedChunks++
 		}
 		points := render.SamplingPoints(spansOf(pl.chunk.Items), opt)
