@@ -5,8 +5,17 @@ import (
 	"testing"
 
 	"medpipe/internal/demux"
+	"medpipe/internal/fault"
 	"medpipe/internal/samplegen"
 )
+
+func TestWriteMP4RejectsUnknownCodec(t *testing.T) {
+	mappings := []demux.Mapping{{OutputIndex: 1, Track: &demux.Track{Codec: "unknown", Kind: "video", Samples: []demux.Sample{{Data: []byte("x")}}}}}
+	_, err := WriteMP4(filepath.Join(t.TempDir(), "x.mp4"), mappings)
+	if err == nil || err.Code != fault.ErrUnknownCodec {
+		t.Fatalf("err=%v want unknown_codec", err)
+	}
+}
 
 func TestWriteMP4GeneratedTS(t *testing.T) {
 	spec := samplegen.TSSpec{IncludePCR: true}

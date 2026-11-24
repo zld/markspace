@@ -74,14 +74,17 @@ func writeDINF(w *gomp4.Writer) *fault.Error {
 }
 
 func writeSTSD(w *gomp4.Writer, t *demux.Track) *fault.Error {
-	entry := buildSampleEntry(t)
+	entry, fe := buildSampleEntry(t)
+	if fe != nil {
+		return fe
+	}
 	payload := make([]byte, 4+len(entry))
 	binary.BigEndian.PutUint32(payload[0:4], 1)
 	copy(payload[4:], entry)
 	return writeFullBox(w, gomp4.BoxTypeStsd(), 0, 0, payload)
 }
 
-func buildSampleEntry(t *demux.Track) []byte {
+func buildSampleEntry(t *demux.Track) ([]byte, *fault.Error) {
 	if t.Kind == "audio" || t.Codec == "mp4a" {
 		content := make([]byte, 8+20)
 		binary.BigEndian.PutUint16(content[6:8], 1)  // data_ref_index
@@ -96,7 +99,15 @@ func buildSampleEntry(t *demux.Track) []byte {
 			sr = 48000
 		}
 		binary.BigEndian.PutUint32(content[24:28], sr<<16)
-		return boxBytes("mp4a", content)
+		return boxBytes("mp4a", content), nil
+	}
+
+	codec := t.Codec
+	if codec == "" {
+		codec = "avc1"
+	}
+	if codec != "avc1" && codec != "hvc1" {
+		return nil, fault.New(fault.ErrUnknownCodec, "mux.sample_entry", 0, "unsupported video codec "+codec).WithPID(t.PID)
 	}
 
 	content := make([]byte, 8+70)
@@ -109,14 +120,22 @@ func buildSampleEntry(t *demux.Track) []byte {
 	// compressorname [32] at 42:74 remains empty
 	binary.BigEndian.PutUint16(content[74:76], 0x0018) // depth
 	binary.BigEndian.PutUint16(content[76:78], 0xffff)
-	avcC := []byte{
+	configType := "avcC"
+	config := []byte{
 		1, 66, 0xc0, 30, 0xff, 0xe1,
 		0x00, 0x03, 0x67, 0x42, 0xc0,
 		0x01,
 		0x00, 0x03, 0x68, 0xce, 0x38,
 	}
-	content = append(content, boxBytes("avcC", avcC)...)
-	return boxBytes("avc1", content)
+	if codec == "hvc1" {
+		configType = "hvcC"
+		config = []byte{
+			1, 1, 96, 0, 0, 0, 0, 0, 0, 0, 0,
+			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		}
+	}
+	content = append(content, boxBytes(configType, config)...)
+	return boxBytes(codec, content), nil
 }
 
 func writeSTTS(w *gomp4.Writer, t *demux.Track) *fault.Error {

@@ -34,6 +34,12 @@ func WriteMP4(path string, mappings []demux.Mapping) (*Result, *fault.Error) {
 		if m.Track == nil {
 			return nil, fault.New(fault.ErrUnmappableTrack, "mux.mp4", 0, "nil mapped track")
 		}
+		switch m.Track.Codec {
+		case "avc1", "hvc1", "mp4a":
+		default:
+			return nil, fault.New(fault.ErrUnknownCodec, "mux.mp4", 0,
+				"refusing to write unsupported codec "+m.Track.Codec).WithPID(m.Track.PID)
+		}
 		var last int64
 		for i, s := range m.Track.Samples {
 			if len(s.Data) == 0 {
