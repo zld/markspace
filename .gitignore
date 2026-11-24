@@ -1,0 +1,8 @@
+# Build artifacts
+/archivectl
+/bin/
+*.test
+*.out
+
+# Local run output (acceptance runs use the OS temp directory by default)
+/run-output/
