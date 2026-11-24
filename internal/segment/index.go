@@ -1,6 +1,7 @@
 package segment
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -99,7 +100,22 @@ func WriteMP4Index(path string, idx Index) error {
 	cleanup := func() { _ = os.Remove(tmpName) }
 
 	box := &mp4.Free{Data: data}
-	if _, err := mp4.Marshal(tmp, box, mp4.Context{}); err != nil {
+	var payload bytes.Buffer
+	if _, err := mp4.Marshal(&payload, box, mp4.Context{}); err != nil {
+		cleanup()
+		return err
+	}
+	boxInfo := &mp4.BoxInfo{
+		Type:       mp4.BoxTypeFree(),
+		Size:       uint64(mp4.SmallHeaderSize + payload.Len()),
+		HeaderSize: mp4.SmallHeaderSize,
+	}
+	if _, err := mp4.WriteBoxInfo(tmp, boxInfo); err != nil {
+		_ = tmp.Close()
+		cleanup()
+		return err
+	}
+	if _, err := tmp.Write(payload.Bytes()); err != nil {
 		_ = tmp.Close()
 		cleanup()
 		return err
