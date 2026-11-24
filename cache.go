@@ -41,17 +41,21 @@ func (c *IndexCache) Load(inputPath string, build func() (*Index, error)) (*Load
 		case cached.Digest.Content != digest.Content || cached.Digest.Size != digest.Size:
 			return c.rebuild(build, "input digest changed")
 		default:
-			return &LoadResult{Index: cached}, nil
+			return &LoadResult{Index: cached, Reason: "cache hit"}, nil
 		}
 	}
-	return c.rebuild(build, reasonFor(err))
+	if err != nil && !os.IsNotExist(underlying(err)) {
+		return c.rebuild(build, "cache unreadable: "+err.Error())
+	}
+	return c.rebuild(build, "cache missing")
 }
 
-func reasonFor(err error) string {
-	if err == nil {
-		return "cache missing"
+// underlying unwraps classified errors to test os.IsNotExist.
+func underlying(err error) error {
+	if e, ok := err.(*Error); ok && e.Err != nil {
+		return e.Err
 	}
-	return err.Error()
+	return err
 }
 
 func (c *IndexCache) rebuild(build func() (*Index, error), reason string) (*LoadResult, error) {
