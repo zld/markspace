@@ -55,17 +55,16 @@ func Parse(trackID uint32, arrival int64, raw []byte, file string, offset int64)
 }
 
 // Extender unfolds a wrapped unsigned value into a monotonically comparable
-// extended space. It implements the standard RFC 3711/3550 style "closest
-// extension" rule: a wrapped value is placed in the same cycle as the
-// reference unless it is nearer to the adjacent cycle.
+// extended space. Each new value is placed relative to the previous one using
+// the signed distance modulo the wrap modulus, which keeps every step smaller
+// than half a cycle (the standard RTP closest-extension rule).
 type Extender struct {
-	bits      uint
-	modulus   uint64
-	halfRange uint64
-	// high is the current cycle base (the extended value minus its low bits).
-	high     int64
-	highSet  bool
-	lastSeen int64
+	bits    uint
+	modulus uint64
+	half    uint64
+	lastRaw uint64
+	lastExt int64
+	init    bool
 }
 
 // NewExtender builds an extender for values of the given bit width (1..63).
@@ -73,59 +72,40 @@ func NewExtender(bits uint) (*Extender, error) {
 	if bits == 0 || bits > 63 {
 		return nil, fmt.Errorf("wrap width must be in 1..63, got %d", bits)
 	}
-	return &Extender{bits: bits, modulus: uint64(1) << bits, halfRange: uint64(1) << (bits - 1)}, nil
+	return &Extender{bits: bits, modulus: uint64(1) << bits, half: uint64(1) << (bits - 1)}, nil
 }
 
 // Bits returns the configured bit width.
 func (e *Extender) Bits() uint { return e.bits }
 
-// Reset forgets the current cycle base.
+// Reset forgets the current reference.
 func (e *Extender) Reset() {
-	e.high = 0
-	e.highSet = false
-	e.lastSeen = 0
+	e.lastRaw = 0
+	e.lastExt = 0
+	e.init = false
 }
 
-// Extend maps a raw value into the extended space relative to the current
-// reference. The first value establishes the base at its own magnitude.
-//
-// It reports whether the value was smaller than the previous extended value
-// (an out-of-order arrival).
+// Extend maps a raw value into the extended space. The first value
+// establishes the base at its own magnitude. The second result reports
+// whether the value landed before the previous one (an out-of-order arrival).
 func (e *Extender) Extend(raw uint64) (ext int64, backward bool) {
 	raw &= e.modulus - 1
-	if !e.highSet {
-		e.high = int64(raw)
-		e.highSet = true
-		e.lastSeen = int64(raw)
-		return e.high, false
+	if !e.init {
+		e.init = true
+		e.lastRaw = raw
+		e.lastExt = int64(raw)
+		return e.lastExt, false
 	}
-	ext = e.high + int64(raw)
-	// Consider the neighbouring cycles and pick the closest one.
-	for _, delta := range []int64{-int64(e.modulus), 0, int64(e.modulus)} {
-		cand := e.high + delta + int64(raw)
-		if abs64(cand-e.lastSeen) < abs64(ext-e.lastSeen) {
-			ext = cand
-		}
+	delta := (raw - e.lastRaw) & (e.modulus - 1)
+	d := int64(delta)
+	if delta >= e.half {
+		d = int64(delta) - int64(e.modulus)
 	}
-	backward = ext < e.lastSeen
-	e.lastSeen = ext
-	return ext, backward
-}
-
-func abs64(x int64) int64 {
-	if x < 0 {
-		return -x
-	}
-	return x
-}
-
-// ParseBits validates and extracts the wrap width of a raw value, which is
-// used by tests to ensure the mask is applied before comparison.
-func maskValue(v uint64, bits uint) uint64 {
-	if bits >= 64 {
-		return v
-	}
-	return v & ((uint64(1) << bits) - 1)
+	prev := e.lastExt
+	ext = prev + d
+	e.lastRaw = raw
+	e.lastExt = ext
+	return ext, ext < prev
 }
 
 // Sequence is one packet in the extended sequence space.
@@ -212,3 +192,54 @@ func DeserializeRaw(raw []byte) (uint16, bool) {
 	}
 	return binary.BigEndian.Uint16(raw[2:4]), true
 }
+
+// ExtRange is an inclusive range of extended sequence numbers.
+type ExtRange struct {
+	Lo int64 `json:"lo"`
+	Hi int64 `json:"hi"`
+}
+
+// DeduperSnapshot is the serializable deduplication state.
+type DeduperSnapshot struct {
+	Extender ExtenderSnapshot `json:"extender"`
+	Seen     []ExtRange       `json:"seen"`
+}
+
+// Snapshot captures the deduper state. The seen set is compressed into
+// inclusive ranges, which stays small even for long runs with many losses.
+func (d *Deduper) Snapshot() DeduperSnapshot {
+	exts := make([]int64, 0, len(d.seen))
+	for e := range d.seen {
+		exts = append(exts, e)
+	}
+	sort.Slice(exts, func(i, j int) bool { return exts[i] < exts[j] })
+	ranges := make([]ExtRange, 0, len(exts))
+	for _, e := range exts {
+		if n := len(ranges); n > 0 && ranges[n-1].Hi == e-1 {
+			ranges[n-1].Hi = e
+			continue
+		}
+		ranges = append(ranges, ExtRange{Lo: e, Hi: e})
+	}
+	return DeduperSnapshot{Extender: d.ext.Snapshot(), Seen: ranges}
+}
+
+// Restore replaces the deduper state.
+func (d *Deduper) Restore(s DeduperSnapshot) {
+	d.ext.Restore(s.Extender)
+	d.seen = make(map[int64]struct{}, len(s.Seen))
+	for _, r := range s.Seen {
+		for e := r.Lo; e <= r.Hi; e++ {
+			d.seen[e] = struct{}{}
+		}
+	}
+	d.highExt = 0
+	d.highInit = false
+	if len(s.Seen) > 0 {
+		d.highExt = s.Seen[len(s.Seen)-1].Hi
+		d.highInit = true
+	}
+}
+
+// Count returns the number of distinct sequence numbers recorded.
+func (d *Deduper) Count() int { return len(d.seen) }
