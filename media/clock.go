@@ -56,6 +56,9 @@ func Extend33(prev int64, value uint64) int64 { return Extend(uint64(prev), valu
 // Extend32 extends a 32-bit value (RTP timestamps / generic counters).
 func Extend32(prev int64, value uint32) int64 { return Extend(uint64(prev), uint64(value), 32) }
 
+// Extend16 extends a 16-bit value (RTP sequence numbers / TS CC counters).
+func Extend16(prev int64, value uint16) int64 { return Extend(uint64(prev), uint64(value), 16) }
+
 // Unwrapper tracks one wrapping counter and emits monotonic extended values.
 type Unwrapper struct {
 	Width       uint
