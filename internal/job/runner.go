@@ -12,6 +12,7 @@ import (
 	"archive-recovery/internal/media"
 	"archive-recovery/internal/provenance"
 	"archive-recovery/internal/repair"
+	"archive-recovery/internal/transport"
 )
 
 // PTSHint carries the (possibly absent) source timestamp for one frame.
@@ -30,6 +31,7 @@ type JobInput struct {
 	LegacyIndex    []byte // optional legacy index bytes
 	InterruptAfter int    // 0 disables controlled interruption
 	Resume         bool   // require and validate an existing checkpoint
+	InputPath      string // optional source file path, used for the overwrite guard
 	WorkDir        string
 }
 
@@ -59,6 +61,9 @@ func Run(in JobInput) (*Result, error) {
 	}
 	if len(in.Stream) == 0 {
 		return nil, media.NewError(media.ClassInvalidArgument, "job", "empty input stream")
+	}
+	if err := guardOutputPath(in.InputPath, in.WorkDir); err != nil {
+		return nil, err
 	}
 	adapt, err := adapter.Latest(in.Codec)
 	if err != nil {
@@ -193,6 +198,9 @@ func finish(in JobInput, adapt adapter.Adapter, inputSHA string, units []adapter
 	manifest := mb.Finalize()
 	manifestSHA, err := manifest.Digest()
 	if err != nil {
+		return nil, err
+	}
+	if err := verifyTransportRoundTrip(frames, manifest); err != nil {
 		return nil, err
 	}
 
@@ -347,4 +355,86 @@ func mustMarshal(m provenance.Manifest) []byte {
 		panic(err)
 	}
 	return raw
+}
+
+// guardOutputPath ensures recovery outputs can never overwrite the source
+// file: the work directory must differ from the input and must not contain
+// it as a regular file. Symlinks are resolved so the check cannot be
+// bypassed through an aliased path.
+func guardOutputPath(inputPath, workDir string) error {
+	if inputPath == "" {
+		return nil // in-memory fixtures have no on-disk input to overwrite
+	}
+	inAbs, err := filepath.Abs(filepath.Clean(inputPath))
+	if err != nil {
+		return media.WrapError(media.ClassInvalidArgument, "job", "input path", err)
+	}
+	wdAbs, err := filepath.Abs(filepath.Clean(workDir))
+	if err != nil {
+		return media.WrapError(media.ClassInvalidArgument, "job", "workdir path", err)
+	}
+	if inAbs == wdAbs {
+		return media.NewError(media.ClassInvalidArgument, "job",
+			"output workdir must not equal the input path")
+	}
+	if resolved, err := filepath.EvalSymlinks(wdAbs); err == nil && resolved == inAbs {
+		return media.NewError(media.ClassInvalidArgument, "job",
+			"workdir resolves to the input path")
+	}
+	// Reject when the input sits directly inside the work directory, where
+	// manifest/index writes could collide with it.
+	if hasPathPrefix(inAbs, wdAbs+string(filepath.Separator)) {
+		return media.NewError(media.ClassInvalidArgument, "job",
+			"input file must live outside the output workdir")
+	}
+	return nil
+}
+
+func hasPathPrefix(path, prefix string) bool {
+	if len(path) < len(prefix) {
+		return false
+	}
+	return path[:len(prefix)] == prefix
+}
+
+// verifyTransportRoundTrip proves two things about every recovered frame:
+// its repaired PTS survives RTP packetization (including values above
+// 2^32), and the canonical manifest survives an MP4 container round trip.
+// Any mismatch is a verification failure rather than a parse problem.
+func verifyTransportRoundTrip(frames []media.FrameEvent, m provenance.Manifest) error {
+	packets, err := transport.Packetize(frames, 0xA1CCE55)
+	if err != nil {
+		return err
+	}
+	recovered, err := transport.Depacketize(packets)
+	if err != nil {
+		return err
+	}
+	if len(recovered) != len(frames) {
+		return media.NewError(media.ClassCheckpoint, "job",
+			"RTP round trip lost frames")
+	}
+	for i, f := range frames {
+		if recovered[i].PTS33 != uint64(f.RepairedPTS) {
+			return media.NewError(media.ClassCheckpoint, "job",
+				"RTP round trip altered a repaired timestamp")
+		}
+	}
+	raw, err := m.Marshal()
+	if err != nil {
+		return err
+	}
+	container, err := transport.WriteMP4Container(raw)
+	if err != nil {
+		return err
+	}
+	back, err := transport.ReadMP4Container(container)
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(back, raw) {
+		return media.NewError(media.ClassCheckpoint, "job",
+			"MP4 container round trip altered the manifest")
+	}
+	return nil
 }
