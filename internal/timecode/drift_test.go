@@ -127,3 +127,25 @@ func TestCorrectionMatchesSlopeSign(t *testing.T) {
 		t.Fatalf("correction %s want 1/100", rep.Correction)
 	}
 }
+
+func TestUnwrapperCrossWrapReordering(t *testing.T) {
+	// A packet sent just before the wrap can arrive just after packets from
+	// the next epoch. It must not be mistaken for a huge forward jump.
+	u, _ := NewUnwrapper(32)
+	u.Extend(4294967290)
+	after, wrapped, _ := u.Extend(5)
+	if !wrapped || after != 4294967301 {
+		t.Fatalf("wrap: got %d wrapped=%v", after, wrapped)
+	}
+	late, wrapped, _ := u.Extend(4294967295)
+	if wrapped || late != after {
+		t.Fatalf("late pre-wrap packet moved the clock: got %d want %d", late, after)
+	}
+	next, wrapped, _ := u.Extend(15)
+	if wrapped || next != after+10 {
+		t.Fatalf("clock after late packet: got %d want %d", next, after+10)
+	}
+	if u.Wraps() != 1 {
+		t.Fatalf("wraps=%d", u.Wraps())
+	}
+}
