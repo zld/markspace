@@ -301,6 +301,9 @@ func (r *Runner) process(ctx context.Context, j *job) (*InputResult, error) {
 		InputPath:   j.path,
 		Status:      "ok",
 		ErrorOffset: -1,
+		// Emit [] rather than null so JSON consumers can iterate the field
+		// without a nil check, including on early failure paths.
+		RepairedPTS: []RepairedPTS{},
 	}
 	started := r.now()
 	defer func() { res.ElapsedMs = r.now().Sub(started).Milliseconds() }()
@@ -743,14 +746,15 @@ func verifyIndexAgainstScan(path string, cp *Checkpoint, rep *repair.Result) err
 // leading sample of the corrections. A missing artifact (for example a run
 // that failed before repair) yields no entries rather than an error.
 func summarizeRepairs(a Artifact) []RepairedPTS {
+	empty := []RepairedPTS{}
 	if !artifactExists(a) {
-		return nil
+		return empty
 	}
 	rep, err := loadRepairArtifact(a)
 	if err != nil {
-		return nil
+		return empty
 	}
-	var out []RepairedPTS
+	out := []RepairedPTS{}
 	for _, tr := range rep.Tracks {
 		for _, e := range tr.Entries {
 			if e.Kind == repair.KindUnchanged {
