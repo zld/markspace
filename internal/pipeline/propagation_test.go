@@ -101,24 +101,22 @@ func TestAudioGapPropagatesThroughSync(t *testing.T) {
 		t.Fatalf("incomplete segment index did not verify: %+v", vr)
 	}
 	// The recovery stage summary carries the loss counts.
-	var recoveryStage *provenanceStage
+	var counts map[string]int
 	for i := range m.Stages {
 		if m.Stages[i].Name == "recovery" {
-			recoveryStage = &provenanceStage{m.Stages[i].Counts}
+			counts = m.Stages[i].Counts
 		}
 	}
-	if recoveryStage == nil {
+	if counts == nil {
 		t.Fatal("no recovery stage summary")
 	}
-	if (*recoveryStage).counts["recovered"] != 3 {
-		t.Fatalf("recovery summary = %+v", (*recoveryStage).counts)
+	if counts["recovered"] != 3 {
+		t.Fatalf("recovery summary = %+v", counts)
 	}
-	if (*recoveryStage).counts["unrecovered"] == 0 {
+	if counts["unrecovered"] == 0 {
 		t.Fatal("large hole not counted as unrecovered")
 	}
 }
-
-type provenanceStage struct{ counts map[string]int }
 
 func newRunnerFor(t *testing.T, dir string, cfg Config) *Runner {
 	t.Helper()

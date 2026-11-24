@@ -60,10 +60,16 @@ produced, `1` configuration or internal error.
 | `dupe`      | duplicates two packets                                               |
 | `desync`    | delays audio by 100 ms (or `--audio-late-ms N`)                      |
 
-Two fault classes propagate all the way through the pipeline and are covered
-by tests: parse/checksum damage reaches sync and mux (output still verifies,
-recovery counted), and audio gaps reach the segment manifests as `loss_gap`
-plus `fragment_incomplete`.
+Two fault classes are tested end to end: parse/checksum damage reaches sync and
+mux (the rejected record never appears in an output sample, the surviving
+frames still verify), and audio gaps reach the segment manifests as `loss_gap`
+plus `fragment_incomplete`, attributed to the one segment that contains the
+hole.
+
+Segments start on keyframes and are spread as evenly as the keyframe positions
+allow, so each output fragment decodes independently. The requested
+`--segments` count is an upper bound; a stream with fewer keyframes yields
+fewer segments rather than an unindexable one.
 
 ## Architecture
 
