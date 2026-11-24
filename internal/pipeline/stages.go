@@ -38,6 +38,9 @@ func (s *blockSink) OnTracks(t []ebml.Track)  { s.tracks = t }
 func (s *blockSink) OnError(e *ebml.Error)    { s.errs = append(s.errs, e) }
 
 func (s *blockSink) OnBlock(b ebml.Block) {
+	if s.clk == nil {
+		s.clk = ebml.NewClock(0)
+	}
 	s.clk.Abs(&b)
 	s.window = append(s.window, b)
 	if len(s.window) >= 2*s.cap {
@@ -61,7 +64,9 @@ func (s *blockSink) flush(n int) {
 
 func (s *blockSink) close() {
 	s.flush(len(s.window))
-	s.errs = append(s.errs, s.clk.Errors()...)
+	if s.clk != nil {
+		s.errs = append(s.errs, s.clk.Errors()...)
+	}
 	close(s.out)
 }
 

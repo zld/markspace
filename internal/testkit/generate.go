@@ -22,6 +22,25 @@ type Inputs struct {
 	RTPSHA256    string `json:"rtp_sha256"`
 }
 
+// Ensure 返回 dir 下的样例；已存在则不覆盖（续跑时核验来源），否则生成。
+func Ensure(dir string, seed int64, loss float64) (*Inputs, error) {
+	in := &Inputs{
+		MediaPath: filepath.Join(dir, "sample.mkv"),
+		RTPPath:   filepath.Join(dir, "stream.rtp"),
+	}
+	if fileExists(in.MediaPath) && fileExists(in.RTPPath) {
+		in.MediaSHA256 = sha256File(in.MediaPath)
+		in.RTPSHA256 = sha256File(in.RTPPath)
+		return in, nil
+	}
+	return Generate(dir, seed, loss)
+}
+
+func fileExists(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
+}
+
 // Generate 在 dir 下生成确定性样例；相同 seed/loss 得到相同字节。
 func Generate(dir string, seed int64, loss float64) (*Inputs, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
