@@ -89,7 +89,6 @@ type Stats struct {
 	Metrics          report.Metrics
 	Warnings         int
 	Recoverable      int
-	TrackKeyframeHit report.Ratio
 	ConfigDigest     string
 	Manifest         checkpoint.Manifest
 	RTP              RTPAudit
