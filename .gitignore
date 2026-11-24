@@ -1,0 +1,15 @@
+# Local build artifacts and run outputs
+/mediacheck
+*.mp4
+*.mp4.tmp
+*.mp4.complete
+*.idx
+*.idx.tmp
+
+# Test/scratch index directories
+/.mc-idx/
+/tmp/
+
+# Editor/OS noise
+.DS_Store
+*.swp
