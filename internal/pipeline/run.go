@@ -331,7 +331,7 @@ func loadVideo(in Inputs, st *Stats) (*videoData, *model.Error) {
 	}
 	data, err := os.ReadFile(in.MP4Path)
 	if err != nil {
-		e := model.NewError(model.CodeIO, "pipeline", "v1", model.InputPos{File: in.MP4Path},
+		e := model.NewError(model.CodeIndexCorrupt, "pipeline", "v1", model.InputPos{File: in.MP4Path},
 			"cannot read video: %v", err)
 		st.Errors.Add(e)
 		return v, e
@@ -400,7 +400,7 @@ func buildTimeline(in Inputs, v *videoData, st *Stats) timeline.Result {
 	for _, si := range in.Subtitles {
 		data, err := os.ReadFile(si.Path)
 		if err != nil {
-			st.Errors.Add(model.NewError(model.CodeIO, "pipeline", si.TrackID,
+			st.Errors.Add(model.NewError(model.CodeSubtitleMalformed, "pipeline", si.TrackID,
 				model.InputPos{File: si.Path}, "cannot read subtitle: %v", err))
 			continue
 		}
@@ -446,7 +446,7 @@ func loadTimecodes(in Inputs, st *Stats) []timeline.TimecodeMark {
 	}
 	data, rerr := os.ReadFile(in.TimecodePath)
 	if rerr != nil {
-		st.Errors.Add(model.NewError(model.CodeIO, "pipeline", "tc1",
+		st.Errors.Add(model.NewError(model.CodeInvalidTimecode, "pipeline", "tc1",
 			model.InputPos{File: in.TimecodePath}, "cannot read timecodes: %v", rerr))
 		return nil
 	}

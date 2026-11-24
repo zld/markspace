@@ -47,7 +47,7 @@ func AuditRTPStreams(paths map[string]string, maxPPM int64) RTPAudit {
 		path := paths[id]
 		data, err := os.ReadFile(path)
 		if err != nil {
-			e := model.NewError(model.CodeIO, "pipeline", id, model.InputPos{File: path},
+			e := model.NewError(model.CodeTimelineAlign, "pipeline", id, model.InputPos{File: path},
 				"cannot read RTP stream: %v", err)
 			out.Errors.Add(e)
 			out.Tracks = append(out.Tracks, RTPTrackResult{TrackID: id, Failed: true, Error: e})
