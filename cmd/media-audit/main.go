@@ -70,7 +70,7 @@ func parseFlags(args []string, errw *os.File) (config, error) {
 	var c config
 	fs := flag.NewFlagSet("media-audit", flag.ContinueOnError)
 	fs.SetOutput(errw)
-	fs.BoolVar(&c.generate, "generate", false, "generate the normal/edge/broken fixture sets before auditing")
+	fs.BoolVar(&c.generate, "generate", false, "generate the normal/edge/broken fixture sets before auditing (accepts an optional directory)")
 	fs.StringVar(&c.samplesRoot, "samples", "", "fixture directory (default: <out>/samples)")
 	fs.StringVar(&c.outDir, "out", "", "output directory for checkpoints and the report (required)")
 	fs.IntVar(&c.chunk, "chunk", 32, "timeline items per committed chunk")
@@ -82,7 +82,7 @@ func parseFlags(args []string, errw *os.File) (config, error) {
 	fs.StringVar(&c.snapTolerance, "snap", "0", "snap subtitle boundaries to video cuts within this many seconds")
 	fs.Int64Var(&c.maxDriftPPM, "max-drift-ppm", 500, "per-track clock drift threshold; negative disables")
 	fs.BoolVar(&c.noFallback, "no-fallback", false, "disable the MP4 keyframe scan fallback")
-	fs.StringVar(&c.timecodeMode, "timecode-mode", "", "override the fixture timecode mode")
+	fs.StringVar(&c.timecodeMode, "timecode-mode", "", "override the fixture timecode mode: 24, 25, 29.97ndf, 29.97df or 50")
 	fs.BoolVar(&c.verify, "verify", false, "verify committed chunks without processing new work")
 	fs.BoolVar(&c.quiet, "quiet", false, "suppress per-diagnostic lines")
 	if err := fs.Parse(normalizeArgs(args)); err != nil {
