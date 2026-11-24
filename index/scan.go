@@ -12,43 +12,47 @@ import (
 	"github.com/zld/mediapipe/media"
 )
 
+// PointHalfUS is half of one media microsecond expressed in product units when
+// converting a microsecond value back to track ticks.
+const PointHalfUS = 500_000
+
 // Version identifies the on-disk index format. Bumping it invalidates any
 // cached index without needing to parse the payload.
 const Version = "idx-v1"
 
 // Keyframe is a keyframe position in both track ticks and media time.
 type Keyframe struct {
-	Sample int    `json:"sample"`
-	Ticks  int64  `json:"ticks"`   // exact track tick offset from the first sample
-	TimeUS int64  `json:"time_us"` // media time of the sample start
+	Sample int   `json:"sample"`
+	Ticks  int64 `json:"ticks"`   // exact track tick offset from the first sample
+	TimeUS int64 `json:"time_us"` // media time of the sample start
 }
 
 // TrackIndex is the persisted per-track timing and keyframe index.
 type TrackIndex struct {
-	ID          uint32     `json:"id"`
-	Kind        string     `json:"kind"`
-	Handler     string     `json:"handler"`
-	Timescale   uint32     `json:"timescale"`
-	StartUS     int64      `json:"start_us"`
-	EndUS       int64      `json:"end_us"`
-	DurationUS  int64      `json:"duration_us"`
-	FrameTicks  uint32     `json:"frame_ticks"`
-	SampleCount int        `json:"sample_count"`
-	Keyframes   []Keyframe `json:"keyframes"`
+	ID          uint32         `json:"id"`
+	Kind        string         `json:"kind"`
+	Handler     string         `json:"handler"`
+	Timescale   uint32         `json:"timescale"`
+	StartUS     int64          `json:"start_us"`
+	EndUS       int64          `json:"end_us"`
+	DurationUS  int64          `json:"duration_us"`
+	FrameTicks  uint32         `json:"frame_ticks"`
+	SampleCount int            `json:"sample_count"`
+	Keyframes   []Keyframe     `json:"keyframes"`
 	Samples     []media.Sample `json:"samples,omitempty"`
 }
 
 // Index is the complete, reproducible description of one container input.
 type Index struct {
-	Version       string          `json:"version"`
-	InputSHA256   string          `json:"input_sha256"`
-	InputSize     int64           `json:"input_size"`
-	Brand         string          `json:"brand"`
-	MovieTimescale uint32         `json:"movie_timescale"`
+	Version         string        `json:"version"`
+	InputSHA256     string        `json:"input_sha256"`
+	InputSize       int64         `json:"input_size"`
+	Brand           string        `json:"brand"`
+	MovieTimescale  uint32        `json:"movie_timescale"`
 	MovieDurationUS int64         `json:"movie_duration_us"`
-	Tracks        []TrackIndex    `json:"tracks"`
-	Issues        []media.Issue   `json:"issues"`
-	Digest        string          `json:"digest"`
+	Tracks          []TrackIndex  `json:"tracks"`
+	Issues          []media.Issue `json:"issues"`
+	Digest          string        `json:"digest"`
 }
 
 // Track returns the indexed track with the given kind, or nil.
@@ -89,17 +93,20 @@ func Build(c *media.Container) (*Index, error) {
 			SampleCount: tr.SampleCount,
 		}
 		// Keyframes are recorded in exact tick space as well as media time so
-		// alignment does not need to re-derive them from float math.
-		scale := int64(1)
+		// boundary alignment never depends on float math. The tick value is
+		// reconstructed from the sample's absolute media time with rounding
+		// back to the nearest tick, which is exact for stts-derived starts.
 		if tr.Timescale > 0 && tr.Samples != nil {
 			for _, kf := range tr.Keyframes {
 				if kf < 1 || kf > len(tr.Samples) {
 					continue
 				}
 				s := tr.Samples[kf-1]
+				ticks := int64(s.StartUS)*int64(tr.Timescale) + int64(PointHalfUS)
+				ticks /= 1_000_000
 				ti.Keyframes = append(ti.Keyframes, Keyframe{
 					Sample: kf,
-					Ticks:  int64(s.StartUS) * int64(tr.Timescale) / scale / 1_000_000,
+					Ticks:  ticks,
 					TimeUS: s.StartUS,
 				})
 			}
