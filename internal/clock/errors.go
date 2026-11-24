@@ -26,6 +26,7 @@ const (
 	CodeVideoUnrecoverable        ErrorCode = "VIDEO_UNRECOVERABLE"
 	CodeUnknownAdapterVersion     ErrorCode = "UNKNOWN_ADAPTER_VERSION"
 	CodeAudioChannelMapped        ErrorCode = "AUDIO_CHANNEL_MAPPED"
+	CodeAudioLayoutUnsupported    ErrorCode = "AUDIO_LAYOUT_UNSUPPORTED"
 	CodeSampleRateConflict        ErrorCode = "AUDIO_SAMPLE_RATE_CONFLICT"
 	CodeColorMetadataPreserved    ErrorCode = "VIDEO_COLOR_PRESERVED"
 	CodeColorMetadataDefaulted    ErrorCode = "VIDEO_COLOR_DEFAULTED"
