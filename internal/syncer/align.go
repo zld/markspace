@@ -172,10 +172,11 @@ func Align(video []*frames.Record, audio []Placed, tl *clock.Timeline, cfg Confi
 		// contributes no drift, even if it began earlier.
 		rep.StartDelta = startGap(audio, rep.VideoStart)
 		// Audio running past the last video frame is a normal tail-out and is
-		// not drift; audio ending early leaves the tail of the picture silent,
-		// which is.
+		// not drift. Audio ending early is only flagged when it leaves most of
+		// the picture silent: a partial last segment often carries just one
+		// audio packet, and up to one packet of silence at the cut is expected.
 		rep.EndDelta = rep.AudioEnd - rep.VideoEnd
-		shortAudio := rep.EndDelta < -cfg.ToleranceTicks
+		shortAudio := rep.EndDelta < -cfg.ToleranceTicks && -rep.EndDelta > packetSlack(audio)
 		if !WithinTolerance(rep.StartDelta, 0, cfg.ToleranceTicks) || shortAudio {
 			rep.Synced = false
 			e := fault.New(fault.StageSync, fault.KindDesync,
@@ -208,6 +209,21 @@ func Align(video []*frames.Record, audio []Placed, tl *clock.Timeline, cfg Confi
 		return rep.Faults[i].Kind < rep.Faults[j].Kind
 	})
 	return rep, nil
+}
+
+// packetSlack returns the larger of one slot duration and the tolerance, the
+// amount of trailing silence that does not indicate a real sync failure.
+func packetSlack(audio []Placed) int64 {
+	var d int64
+	for _, p := range audio {
+		if p.Duration > d {
+			d = p.Duration
+		}
+	}
+	if d <= 0 {
+		return 1
+	}
+	return d
 }
 
 // startGap returns how far after videoStart the first covering audio slot

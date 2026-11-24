@@ -226,3 +226,89 @@ func TestAlignValidation(t *testing.T) {
 		t.Fatalf("empty video: %v %+v", err, rep)
 	}
 }
+
+func TestAlignAudioTailOutIsNotDrift(t *testing.T) {
+	tl := tl90000(t)
+	cfg := Config{ToleranceTicks: 900, AudioClockRate: 48000, AudioTrack: 2}
+	// Audio runs 200 ms past the end of the video: a normal tail.
+	rep, err := Align(videoFrames(0, 25), audioPlaced(t, 60, 0), tl, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rep.Synced {
+		t.Fatalf("tail-out flagged as desync: %v", rep.Faults)
+	}
+	if rep.EndDelta <= 0 {
+		t.Fatalf("end delta = %d want positive", rep.EndDelta)
+	}
+}
+
+func TestAlignShortTailWithinOnePacketIsAccepted(t *testing.T) {
+	tl := tl90000(t)
+	cfg := Config{ToleranceTicks: 100, AudioClockRate: 48000, AudioTrack: 2}
+	// Video runs 26 frames (1.04 s = 93600 ticks). 52 audio slots cover it
+	// exactly; 51 leave 1800 ticks (one 20 ms slot) silent at the cut, which is
+	// inside the one-slot slack and is accepted.
+	v := videoFrames(0, 26)
+	placed := audioPlaced(t, 51, 0)
+	rep, err := Align(v, placed, tl, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rep.Synced {
+		t.Fatalf("one-slot tail flagged: start=%d end=%d", rep.StartDelta, rep.EndDelta)
+	}
+	// Two slots short crosses the slack and is flagged.
+	placed = audioPlaced(t, 50, 0)
+	rep, err = Align(v, placed, tl, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Synced {
+		t.Fatalf("two-slot tail accepted: end=%d", rep.EndDelta)
+	}
+}
+
+func TestAlignEarlyAudioEndIsDesync(t *testing.T) {
+	tl := tl90000(t)
+	cfg := Config{ToleranceTicks: 100, AudioClockRate: 48000, AudioTrack: 2}
+	// Audio stops a full second before the video.
+	rep, err := Align(videoFrames(0, 50), audioPlaced(t, 25, 0), tl, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Synced {
+		t.Fatal("truncated audio track not flagged")
+	}
+	if rep.Faults.CountKind(fault.KindDesync) != 1 {
+		t.Fatalf("faults = %s", rep.Faults.Summary())
+	}
+}
+
+func TestAlignLateAudioStartIsDrift(t *testing.T) {
+	tl := tl90000(t)
+	cfg := Config{ToleranceTicks: 450, AudioClockRate: 48000, AudioTrack: 2}
+	// Audio begins 100 ms after the video.
+	rep, err := Align(videoFrames(0, 50), audioPlaced(t, 55, 9000), tl, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Synced {
+		t.Fatal("late audio start not flagged")
+	}
+	if rep.StartDelta != 9000 {
+		t.Fatalf("start delta = %d", rep.StartDelta)
+	}
+}
+
+func TestPlaceRejectsZeroClockRate(t *testing.T) {
+	tl := tl90000(t)
+	units := []recovery.Unit{{Seq: 1, RTPTimestamp: 100, TickSpan: 960}}
+	placed, faults := Place(units, tl, Config{AudioClockRate: 0})
+	if len(placed) != 0 || faults.Len() != 1 {
+		t.Fatalf("placed=%d faults=%v", len(placed), faults)
+	}
+	if faults[0].Kind != fault.KindConfig {
+		t.Fatalf("kind = %s", faults[0].Kind)
+	}
+}
