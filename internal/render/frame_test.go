@@ -132,3 +132,31 @@ func TestRenderBatchKeepsFailures(t *testing.T) {
 		t.Fatalf("records %+v", recs)
 	}
 }
+
+func TestRenderAtGapResolvesToPreviousSample(t *testing.T) {
+	// Samples 0..0.5 and 1.0..1.5: a point at 0.75 lies in a gap.
+	ss := []SampleRef{
+		{Index: 0, Offset: 0, Size: 2, Start: model.RatFromInt(0), Duration: model.MustRat(1, 2)},
+		{Index: 1, Offset: 2, Size: 2, Start: model.RatFromInt(1), Duration: model.MustRat(1, 2)},
+	}
+	opt := DefaultOptions(model.MustRat(1, 4))
+	rec := RenderAt(&fakeReader{data: []byte{1, 2, 3, 4}}, model.Track{ID: "v", Kind: model.KindVideo},
+		ss, model.MustRat(3, 4), opt)
+	// The record must be honest about which sample it used; it does not claim
+	// the gap has a frame of its own.
+	if rec.SampleIdx != 0 || rec.Error != nil {
+		t.Fatalf("gap resolved to %+v", rec)
+	}
+}
+
+func TestRenderZeroRasterDoesNotPanic(t *testing.T) {
+	opt := Options{Interval: model.RatFromInt(1), Width: 0, Height: 0}
+	rec := RenderAt(&fakeReader{data: []byte("abcdefghijkl")}, model.Track{ID: "v", Kind: model.KindVideo},
+		samples(), model.RatFromInt(0), opt)
+	if rec.Error != nil {
+		t.Fatalf("zero raster must still produce a record: %v", rec.Error)
+	}
+	if rec.PixelHash != "" {
+		t.Fatal("a zero-size raster must not produce a pixel hash")
+	}
+}

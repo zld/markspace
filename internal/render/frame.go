@@ -96,24 +96,14 @@ func SamplingPoints(items []model.Span, opt Options) []model.Rat {
 	return pts
 }
 
-// FindSample returns the index of the sample whose [start, start+duration)
-// interval contains t. The sample list must be in presentation order. When
-// durations are unknown (zero), the closest preceding sample wins. It returns
-// -1 when t is before the first sample.
+// FindSample returns the index of the last sample whose start is at or before
+// t. The sample list must be in presentation order and its durations are not
+// consulted, so a point in a gap resolves to the sample that opened the gap
+// rather than inventing one. It returns -1 when t precedes every sample.
 func FindSample(samples []SampleRef, t model.Rat) int {
-	if len(samples) == 0 {
-		return -1
-	}
 	idx := sort.Search(len(samples), func(i int) bool {
 		return samples[i].Start.Cmp(t) > 0
 	}) - 1
-	if idx < 0 {
-		return -1
-	}
-	// A zero-duration sample (e.g. a gap marker) still owns its own instant.
-	if idx == len(samples)-1 {
-		return idx
-	}
 	return idx
 }
 
@@ -132,8 +122,12 @@ func RasterFromPayload(payload []byte, width, height int) []byte {
 }
 
 // PixelHash hashes the raster. The dimensions are mixed in so rasters of
-// different shapes cannot collide.
+// different shapes cannot collide. A non-positive dimension yields an empty
+// hash: there is no frame to describe.
 func PixelHash(raster []byte, width, height int) string {
+	if width <= 0 || height <= 0 {
+		return ""
+	}
 	h := sha256.New()
 	var dims [8]byte
 	dims[0] = byte(width >> 24)
