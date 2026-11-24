@@ -26,12 +26,13 @@ func TestRebuildSortedAndBounded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(recs) != 10 {
-		t.Fatalf("entries=%d want one per valid packet (10)", len(recs))
+	// One entry per valid interval: sampleIntervals has a single interval.
+	if len(recs) != len(iv) {
+		t.Fatalf("entries=%d want %d (one per interval)", len(recs), len(iv))
 	}
 	for i, r := range recs {
-		if r.TimeTicks != clock.Tick(i)*900 {
-			t.Fatalf("record %d timestamp=%d", i, r.TimeTicks)
+		if r.TimeTicks != iv[i].StartTS {
+			t.Fatalf("record %d timestamp=%d want %d", i, r.TimeTicks, iv[i].StartTS)
 		}
 		if r.ByteOffset+r.Length > inputLength {
 			t.Fatalf("record %d crosses input boundary", i)
@@ -39,12 +40,42 @@ func TestRebuildSortedAndBounded(t *testing.T) {
 		if r.ByteOffset != r.FrameIndex*int64(blockAlign) {
 			t.Fatalf("record %d offset/frame mismatch", i)
 		}
+		if r.Length != int64(10*framesPerPacket)*blockAlign {
+			t.Fatalf("record %d must span the whole interval: len=%d", i, r.Length)
+		}
 		if i > 0 && r.TimeTicks < recs[i-1].TimeTicks {
 			t.Fatal("records not time-sorted")
 		}
 	}
-	if concealed := recs[5].Concealed; !concealed {
-		t.Fatalf("concealed flag not propagated: %+v", recs[5])
+	if !recs[0].Concealed {
+		t.Fatalf("concealed flag not propagated to interval record: %+v", recs[0])
+	}
+}
+
+func TestRebuildOneEntryPerInterval(t *testing.T) {
+	step := clock.Tick(900)
+	// Two intervals separated by a blocked gap.
+	iv := []rtp.Interval{
+		{Index: 0, StartSeq: 0, EndSeq: 4, StartTS: 0, EndTS: 5 * step},
+		{Index: 1, StartSeq: 20, EndSeq: 24, StartTS: 20 * step, EndTS: 25 * step},
+	}
+	gaps := []rtp.Gap{
+		{StartSeq: 5, EndSeq: 19, Packets: 15, StartTS: 5 * step, EndTS: 20 * step, Kind: rtp.GapBlocked},
+	}
+	const blockAlign, framesPerPacket = 4, 480
+	inputLength := int64(10 * framesPerPacket * blockAlign)
+	recs, err := Rebuild(iv, gaps, inputLength, blockAlign, framesPerPacket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recs) != 2 {
+		t.Fatalf("entries=%d want 2 (one per interval)", len(recs))
+	}
+	if recs[1].ByteOffset != int64(5*framesPerPacket)*blockAlign {
+		t.Fatalf("second interval must continue byte geometry: %+v", recs[1])
+	}
+	if recs[0].Concealed || recs[1].Concealed {
+		t.Fatal("blocked-gap intervals must not be flagged concealed")
 	}
 }
 

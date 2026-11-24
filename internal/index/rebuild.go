@@ -8,18 +8,19 @@ import (
 )
 
 // Rebuild constructs random-access records from recovered media intervals.
-// One record is emitted per interval start plus one for every concealment
-// boundary inside an interval, so the number of entries equals the number of
-// valid, time-sorted access points of the repaired timeline. Offsets are
-// computed from frame geometry and are guaranteed not to exceed inputLength.
+// Exactly one record is emitted per continuous interval, so the entry count
+// equals the number of valid time regions on the repaired timeline. Each
+// record covers the whole interval (start offset, byte length and frame
+// span). Offsets are computed from frame geometry and are guaranteed not to
+// exceed inputLength.
 func Rebuild(intervals []rtp.Interval, gaps []rtp.Gap, inputLength int64,
 	blockAlign, framesPerPacket int) ([]Record, error) {
 	if blockAlign <= 0 || framesPerPacket <= 0 {
 		return nil, clock.NewError(clock.ErrInvalidArgument,
 			"blockAlign=%d framesPerPacket=%d invalid", blockAlign, framesPerPacket)
 	}
-	// Quick pre-check that the full stream geometry fits both the input and
-	// the 5-million-record limit before any allocation.
+	// Pre-check that the full stream geometry fits both the input and the
+	// 5-million-record limit before any allocation.
 	totalFrames := int64(0)
 	for _, iv := range intervals {
 		totalFrames += (iv.EndSeq - iv.StartSeq + 1) * int64(framesPerPacket)
@@ -28,6 +29,10 @@ func Rebuild(intervals []rtp.Interval, gaps []rtp.Gap, inputLength int64,
 		return nil, clock.ErrorAt(clock.ErrOverflow, 0,
 			"interval geometry needs %d bytes but input has %d",
 			totalFrames*int64(blockAlign), inputLength)
+	}
+	if int64(len(intervals)) > Limit {
+		return nil, clock.ErrorAt(clock.ErrLimitExceeded, 0,
+			"index exceeds %d records", Limit)
 	}
 
 	concealed := map[int64]bool{}
@@ -39,33 +44,31 @@ func Rebuild(intervals []rtp.Interval, gaps []rtp.Gap, inputLength int64,
 		}
 	}
 
-	var recs []Record
+	recs := make([]Record, 0, len(intervals))
 	frameCursor := int64(0)
 	for _, iv := range intervals {
-		ivStartFrame := frameCursor
 		packets := iv.EndSeq - iv.StartSeq + 1
-		step := clock.Tick(0)
-		if packets > 0 {
-			step = (iv.EndTS - iv.StartTS) / clock.Tick(packets)
+		frames := packets * int64(framesPerPacket)
+		byteLen := frames * int64(blockAlign)
+		hasConceal := iv.Concealed > 0
+		if !hasConceal { // intervals also report concealed runs; map is backup
+			for s := iv.StartSeq; s <= iv.EndSeq; s++ {
+				if concealed[s] {
+					hasConceal = true
+					break
+				}
+			}
 		}
-		for s := iv.StartSeq; s <= iv.EndSeq; s++ {
-			frame := ivStartFrame + (s-iv.StartSeq)*int64(framesPerPacket)
-			ts := iv.StartTS + step*clock.Tick(s-iv.StartSeq)
-			recs = append(recs, Record{
-				ID:         int64(len(recs)),
-				TimeTicks:  ts,
-				TimeMs:     ts.Milli(),
-				ByteOffset: frame * int64(blockAlign),
-				FrameIndex: frame,
-				Length:     int64(framesPerPacket) * int64(blockAlign),
-				Concealed:  concealed[s],
-			})
-		}
-		frameCursor += packets * int64(framesPerPacket)
-		if int64(len(recs)) > Limit {
-			return nil, clock.ErrorAt(clock.ErrLimitExceeded, 0,
-				"index exceeds %d records", Limit)
-		}
+		recs = append(recs, Record{
+			ID:         int64(len(recs)),
+			TimeTicks:  iv.StartTS,
+			TimeMs:     iv.StartTS.Milli(),
+			ByteOffset: frameCursor * int64(blockAlign),
+			FrameIndex: frameCursor,
+			Length:     byteLen,
+			Concealed:  hasConceal,
+		})
+		frameCursor += frames
 	}
 	sort.Slice(recs, func(i, j int) bool { return recs[i].TimeTicks < recs[j].TimeTicks })
 	for i := range recs {
