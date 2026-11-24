@@ -13,13 +13,13 @@ import (
 
 // GapStats summarizes keyframe spacing for one track, in milliseconds.
 type GapStats struct {
-	TrackID       uint32  `json:"track_id"`
-	KeyframeCount int     `json:"keyframe_count"`
+	TrackID       uint32 `json:"track_id"`
+	KeyframeCount int    `json:"keyframe_count"`
 	// GapsMs are the successive inter-keyframe intervals.
-	GapsMs        []int64 `json:"gaps_ms"`
-	MinMs         int64   `json:"min_ms"`
-	MaxMs         int64   `json:"max_ms"`
-	MeanMs        float64 `json:"mean_ms"`
+	GapsMs []int64 `json:"gaps_ms"`
+	MinMs  int64   `json:"min_ms"`
+	MaxMs  int64   `json:"max_ms"`
+	MeanMs float64 `json:"mean_ms"`
 	// P95Ms is the 95th percentile gap (nearest-rank method).
 	P95Ms int64 `json:"p95_ms"`
 	// Deterministic is false when any gap touches an inferred boundary.

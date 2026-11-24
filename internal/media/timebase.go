@@ -58,10 +58,10 @@ func WrapLimit(bits uint) uint64 {
 // direction is treated as a forward/backward step, and large jumps are
 // resolved in the wrap direction consistent with the smaller arc.
 type Wrapper struct {
-	limit  int64
-	half   int64
-	first  bool
-	last   int64 // last unwrapped value
+	limit   int64
+	half    int64
+	first   bool
+	last    int64 // last unwrapped value
 	lastRaw uint32
 }
 

@@ -14,11 +14,11 @@ import (
 // supplied local files, never unbounded streams: refuse pathological input
 // early instead of allocating against it.
 const (
-	MaxInputBytes  = 512 << 20 // 512 MiB
-	MaxBoxDepth    = 16
-	MaxBoxCount    = 200_000
-	SmallHeader    = 8
-	LargeHeader    = 16
+	MaxInputBytes = 512 << 20 // 512 MiB
+	MaxBoxDepth   = 16
+	MaxBoxCount   = 200_000
+	SmallHeader   = 8
+	LargeHeader   = 16
 )
 
 // containerBoxes are the box types whose payload is itself a box list.

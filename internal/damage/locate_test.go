@@ -177,7 +177,8 @@ func TestLocateCrossTrackDamage(t *testing.T) {
 	}
 }
 
-func TestNoDefectsOnHealthyAsset(t *testing.T) {	spec := fixture.MediaSpec{
+func TestNoDefectsOnHealthyAsset(t *testing.T) {
+	spec := fixture.MediaSpec{
 		MovieScale: 1000,
 		Tracks: []fixture.TrackSpec{
 			{TrackID: 1, Handler: "vide", Timescale: 1000, SampleCount: 100, Delta: 10, SyncEvery: 10},

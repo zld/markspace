@@ -36,14 +36,14 @@ type SampleIndex struct {
 
 // TrackModel is everything the scan establishes for one trak.
 type TrackModel struct {
-	TrackID     uint32           `json:"track_id"`
-	HandlerType string           `json:"handler_type"`
-	Timescale   uint32           `json:"timescale"`
-	Duration    uint64           `json:"duration"`
-	Width       uint32           `json:"width"`
-	Height      uint32           `json:"height"`
-	Index       SampleIndex      `json:"index"`
-	Edits       []media.Edit     `json:"edits,omitempty"`
+	TrackID     uint32            `json:"track_id"`
+	HandlerType string            `json:"handler_type"`
+	Timescale   uint32            `json:"timescale"`
+	Duration    uint64            `json:"duration"`
+	Width       uint32            `json:"width"`
+	Height      uint32            `json:"height"`
+	Index       SampleIndex       `json:"index"`
+	Edits       []media.Edit      `json:"edits,omitempty"`
 	RawSamples  []media.RawSample `json:"-"`
 }
 
@@ -64,12 +64,12 @@ func (t *TrackModel) Kind() media.SampleKind {
 // ScanResult is the full container analysis handed to the timeline builder
 // and to damage localization.
 type ScanResult struct {
-	Path        string       `json:"path"`
-	FileSize    int64        `json:"file_size"`
-	MovieScale  uint32       `json:"movie_timescale"`
-	Tracks      []TrackModel `json:"tracks"`
-	Pre         *PreScan     `json:"-"`
-	HasMoov     bool         `json:"has_moov"`
+	Path       string       `json:"path"`
+	FileSize   int64        `json:"file_size"`
+	MovieScale uint32       `json:"movie_timescale"`
+	Tracks     []TrackModel `json:"tracks"`
+	Pre        *PreScan     `json:"-"`
+	HasMoov    bool         `json:"has_moov"`
 	// ParseIncomplete means go-mp4 stopped on a cut box; tracks decoded up
 	// to that point are retained with undecidable tail indexes.
 	ParseIncomplete bool `json:"parse_incomplete"`
@@ -125,6 +125,11 @@ func Parse(path string, pre *PreScan) (*ScanResult, error) {
 			return nil, nil
 		case pathHas(h, "trak") && typ == "tkhd":
 			return decodeTkhd(h, res)
+		case pathHas(h, "trak") && typ == "tref":
+			// go-mp4 has no tref support; the pre-scan already extracted
+			// these edges. Skip expansion so the unknown box never aborts
+			// parsing of the surrounding track.
+			return nil, nil
 		case pathHas(h, "trak") && typ == "mdhd":
 			return decodeMdhd(h, res)
 		case pathHas(h, "trak") && typ == "hdlr":

@@ -49,8 +49,8 @@ type rtpEvent struct {
 func BuildRTP(spec RTPSpec) []*rtp.Packet {
 	lost := map[uint16]bool{}
 	type retrans struct {
-		seq      uint16
-		arrival  int
+		seq     uint16
+		arrival int
 	}
 	var retransList []retrans
 	for _, b := range spec.Bursts {

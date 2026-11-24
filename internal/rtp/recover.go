@@ -99,8 +99,8 @@ type recoverer struct {
 	// lastArrivalSeq tracks the previous non-duplicate arrival so raw
 	// arrival inversions (reordering) are detected independently of the
 	// gap/retransmission state.
-	lastArrivalSeq  uint16
-	haveArrival     bool
+	lastArrivalSeq uint16
+	haveArrival    bool
 	// gapLost records sequence numbers already counted as nominal losses.
 	gapLost map[uint16]bool
 	// settled records sequence numbers already finalized by giveUp so a
@@ -293,7 +293,7 @@ func (r *recoverer) holdP95Millis(holds []int) int64 {
 		}
 		stepTicks = uint32(sum / uint64(len(r.ordered)-1))
 	}
-	return r.tb.ToNanos(int64(stepTicks) * int64(slots)) / 1_000_000
+	return r.tb.ToNanos(int64(stepTicks)*int64(slots)) / 1_000_000
 }
 
 func (r *recoverer) ssrc() uint32 {

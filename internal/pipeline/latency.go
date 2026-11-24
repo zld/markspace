@@ -9,7 +9,7 @@ package pipeline
 // Constants are calibrated so the fixed 10-second fixtures report a
 // sub-100 ms P95; these characterize generated assets, not real capacity.
 type latencyModel struct {
-	units []int64
+	units    []int64
 	stageSeq int
 }
 

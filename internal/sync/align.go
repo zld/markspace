@@ -16,9 +16,9 @@ import (
 // Measurement is one A/V sync sample: the offset of the nearest audio point
 // from a video point on the unified timeline.
 type Measurement struct {
-	VideoNanos  int64 `json:"video_nanos"`
-	AudioNanos  int64 `json:"audio_nanos"`
-	ErrorNanos  int64 `json:"error_nanos"`
+	VideoNanos int64 `json:"video_nanos"`
+	AudioNanos int64 `json:"audio_nanos"`
+	ErrorNanos int64 `json:"error_nanos"`
 	// InDamage means the point falls inside an unrecoverable range; the
 	// measurement is still included, only flagged.
 	InDamage bool `json:"in_damage"`
@@ -30,10 +30,10 @@ type Report struct {
 	AudioTrackID uint32        `json:"audio_track_id"`
 	Measurements []Measurement `json:"measurements"`
 	// ErrorMs: signed mean, absolute mean, max absolute, p95 absolute.
-	MeanErrorMs  float64 `json:"mean_error_ms"`
-	AbsMeanMs    float64 `json:"abs_mean_error_ms"`
-	MaxAbsMs     int64   `json:"max_abs_error_ms"`
-	P95AbsMs     int64   `json:"p95_abs_ms"`
+	MeanErrorMs float64 `json:"mean_error_ms"`
+	AbsMeanMs   float64 `json:"abs_mean_error_ms"`
+	MaxAbsMs    int64   `json:"max_abs_error_ms"`
+	P95AbsMs    int64   `json:"p95_abs_ms"`
 	// DamageMeasurements counts samples explicitly kept from bad regions.
 	DamageMeasurements int `json:"damage_measurements"`
 }

@@ -74,13 +74,13 @@ func buildMvhd(spec MediaSpec) []byte {
 		scale = 1000
 	}
 	payload := make([]byte, 0, 100)
-	payload = append(payload, u32(0)...)          // creation
-	payload = append(payload, u32(0)...)          // modification
-	payload = append(payload, u32(scale)...)      // timescale
-	payload = append(payload, u32(10*scale)...)   // 10 s duration
-	payload = append(payload, u32(0x00010000)...) // rate 1.0
+	payload = append(payload, u32(0)...)             // creation
+	payload = append(payload, u32(0)...)             // modification
+	payload = append(payload, u32(scale)...)         // timescale
+	payload = append(payload, u32(10*scale)...)      // 10 s duration
+	payload = append(payload, u32(0x00010000)...)    // rate 1.0
 	payload = append(payload, []byte{0x01, 0x00}...) // volume
-	payload = append(payload, make([]byte, 10)...)  // reserved
+	payload = append(payload, make([]byte, 10)...)   // reserved
 	matrix := []uint32{0x00010000, 0, 0, 0, 0x00010000, 0, 0, 0, 0x40000000}
 	for _, m := range matrix {
 		payload = append(payload, u32(m)...)

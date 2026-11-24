@@ -6,12 +6,12 @@ import "github.com/pion/rtp"
 type CaseName string
 
 const (
-	CaseNormal      CaseName = "normal"
-	CaseWrapDrift   CaseName = "wrap_drift"
-	CaseVFR         CaseName = "vfr"
-	CaseTruncated   CaseName = "truncated"
-	CaseCrossTrack  CaseName = "cross_track"
-	CaseRTPLoss     CaseName = "rtp_loss"
+	CaseNormal     CaseName = "normal"
+	CaseWrapDrift  CaseName = "wrap_drift"
+	CaseVFR        CaseName = "vfr"
+	CaseTruncated  CaseName = "truncated"
+	CaseCrossTrack CaseName = "cross_track"
+	CaseRTPLoss    CaseName = "rtp_loss"
 )
 
 // AllCases is the fixed demo order used by `--case all`.

@@ -72,10 +72,10 @@ func (r Range) Overlaps(o Range) bool {
 // faults), a timeline range (zero-length when no time mapping exists yet),
 // and a human-readable detail message.
 type Error struct {
-	Code        Code       `json:"code"`
-	TrackID     uint32     `json:"track_id"`
-	Range       Range      `json:"range"`
-	Detail      string     `json:"detail"`
+	Code        Code        `json:"code"`
+	TrackID     uint32      `json:"track_id"`
+	Range       Range       `json:"range"`
+	Detail      string      `json:"detail"`
 	Recoverable Recoverable `json:"recoverable"`
 }
 

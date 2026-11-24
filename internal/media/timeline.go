@@ -12,6 +12,20 @@ const (
 	KindHint
 )
 
+// String renders the kind for reports and test assertions.
+func (k SampleKind) String() string {
+	switch k {
+	case KindVideo:
+		return "video"
+	case KindAudio:
+		return "audio"
+	case KindHint:
+		return "hint"
+	default:
+		return "unknown"
+	}
+}
+
 // BoundarySource records whether a timeline boundary comes from a decoded
 // table or from an inference made because the index was missing/truncated.
 type BoundarySource uint8
@@ -28,11 +42,11 @@ const (
 // streams keep their real per-sample durations here; nothing downstream
 // rewrites these onto an average frame rate.
 type Point struct {
-	StartNanos   int64          `json:"start_nanos"`
-	DurationNanos int64         `json:"duration_nanos"`
-	IsSync       bool           `json:"is_sync"`
-	Kind         SampleKind     `json:"kind"`
-	Source       BoundarySource `json:"source"`
+	StartNanos    int64          `json:"start_nanos"`
+	DurationNanos int64          `json:"duration_nanos"`
+	IsSync        bool           `json:"is_sync"`
+	Kind          SampleKind     `json:"kind"`
+	Source        BoundarySource `json:"source"`
 	// MediaTick is the unwrapped media-time tick of the point, kept for
 	// damage localization back onto track clocks.
 	MediaTick int64 `json:"media_tick"`
@@ -41,9 +55,9 @@ type Point struct {
 // Edit is one elst segment expressed on nanosecond clocks. Negative
 // MediaStartNanos marks an empty (delay) edit.
 type Edit struct {
-	MovieStartNanos  int64 `json:"movie_start_nanos"`
+	MovieStartNanos    int64 `json:"movie_start_nanos"`
 	MovieDurationNanos int64 `json:"movie_duration_nanos"`
-	MediaStartNanos  int64 `json:"media_start_nanos"`
+	MediaStartNanos    int64 `json:"media_start_nanos"`
 }
 
 // IsEmpty reports an empty edit whose media time is undefined.
@@ -53,12 +67,12 @@ func (e Edit) IsEmpty() bool { return e.MediaStartNanos < 0 }
 // container index was incomplete: the tail points are inferences and the
 // track must not be reported as fully indexed.
 type TrackLine struct {
-	TrackID     uint32    `json:"track_id"`
+	TrackID     uint32     `json:"track_id"`
 	Kind        SampleKind `json:"kind"`
-	TimeBase    TimeBase  `json:"-"`
-	Points      []Point   `json:"points"`
-	Edits       []Edit    `json:"edits,omitempty"`
-	Undecidable bool      `json:"undecidable"`
+	TimeBase    TimeBase   `json:"-"`
+	Points      []Point    `json:"points"`
+	Edits       []Edit     `json:"edits,omitempty"`
+	Undecidable bool       `json:"undecidable"`
 	// Monotonic is verified after wrap expansion and edit mapping.
 	Monotonic bool `json:"monotonic"`
 }
@@ -81,9 +95,9 @@ func (l *TrackLine) Gaps() []FrameGap {
 	out := make([]FrameGap, 0, len(l.Points)-1)
 	for i := 1; i < len(l.Points); i++ {
 		out = append(out, FrameGap{
-			TrackID:       l.TrackID,
-			Index:         i,
-			GapNanos:      l.Points[i].StartNanos - l.Points[i-1].StartNanos,
+			TrackID:  l.TrackID,
+			Index:    i,
+			GapNanos: l.Points[i].StartNanos - l.Points[i-1].StartNanos,
 			Deterministic: l.Points[i].Source == SourceDecoded &&
 				l.Points[i-1].Source == SourceDecoded,
 		})
