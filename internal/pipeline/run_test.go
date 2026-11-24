@@ -380,3 +380,23 @@ func TestSubtitleOnlyTimelineStillRenders(t *testing.T) {
 			st.Metrics.KeyframeIndexHitRate.Num, st.Metrics.KeyframeIndexHitRate.Den)
 	}
 }
+
+func TestVerifyWithoutResumeDoesNotWipeCheckpoint(t *testing.T) {
+	m, _ := setup(t, fixtures.ScenarioNormal)
+	out := t.TempDir()
+	in := inputs(t, m, out)
+	in.Resume = false
+	if _, err := Run(in); err != nil {
+		t.Fatal(err)
+	}
+	// A verify-only run without -resume must still see the committed chunks.
+	in.VerifyOnly = true
+	in.Resume = false
+	st, err := Run(in)
+	if err != nil {
+		t.Fatalf("verify wiped or ignored the checkpoint: %v", err)
+	}
+	if st.CommittedChunks != 3 || st.VerifiedChunks != 3 {
+		t.Fatalf("committed=%d verified=%d", st.CommittedChunks, st.VerifiedChunks)
+	}
+}

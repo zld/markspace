@@ -117,6 +117,10 @@ func Run(in Inputs) (Stats, error) {
 		return st, model.NewError(model.CodeInvalidArgument, "pipeline", "", model.InputPos{},
 			"sampling interval must be positive")
 	}
+	// -verify is read-only: it must never reset a checkpoint to check it.
+	if in.VerifyOnly {
+		in.Resume = true
+	}
 	st.ConfigDigest = configDigest(in)
 
 	video, videoErr := loadVideo(in, &st)
