@@ -136,6 +136,16 @@ func (l List) ByCode(code Code) int {
 	return n
 }
 
+// HasTrack reports whether a fault was recorded for the given track key.
+func (l List) HasTrack(key string) bool {
+	for _, e := range l {
+		if e.Track == key {
+			return true
+		}
+	}
+	return false
+}
+
 // Unrecoverable reports whether any recorded fault left payload unusable.
 func (l List) Unrecoverable() bool {
 	for _, e := range l {
