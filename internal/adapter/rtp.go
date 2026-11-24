@@ -136,9 +136,7 @@ func sequenceGaps(trackID int, seen []uint16) []media.Gap {
 	lo, hi := seen[0], seen[0]
 	for _, s := range seen {
 		present[s] = true
-		if uint16(s-lo) < uint16(hi-lo) || hi == lo {
-			// modular min/max over a short capture window
-		}
+		// Modular min/max over a capture window shorter than 2^15.
 		if int16(s-lo) < 0 {
 			lo = s
 		}
