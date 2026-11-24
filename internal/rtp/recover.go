@@ -48,6 +48,9 @@ type Result struct {
 	Ordered   []Ordered      `json:"-"`
 	Errors    []damage.Error `json:"errors"`
 	Timeline  []int64        `json:"timeline"`
+	// Drift is the fitted remote-vs-local clock skew; PPM is parts per
+	// million and R2 quantifies fit quality (NaN when indeterminate).
+	Drift media.Drift `json:"drift"`
 }
 
 // Recover processes an arrival-order packet stream. maxReorderSlots bounds
@@ -273,7 +276,50 @@ func (r *recoverer) buildResult() {
 		Ordered:   r.ordered,
 		Errors:    mergeRTPEvents(r.errs),
 		Timeline:  timeline,
+		Drift:     r.estimateDrift(),
 	}
+}
+
+// estimateDrift fits the remote RTP clock against the receiver's local
+// clock. The local clock advances one nominal step per *sequence-number*
+// distance rather than per reassembled position, so a packet-loss burst
+// (which only compresses arrival positions, never the sender's timestamp
+// progression) cannot masquerade as clock drift. Remote time is each
+// packet's unwrapped timestamp in nanoseconds. The fit is deterministic and
+// requires no wall clock.
+func (r *recoverer) estimateDrift() media.Drift {
+	if len(r.ordered) < 2 {
+		return media.EstimateDrift(nil, nil)
+	}
+	// Nominal per-sequence step: median of timestamp delta divided by the
+	// sequence distance between consecutive reassembled packets. Normal
+	// pairs have distance 1; pairs straddling an unrecovered gap have a
+	// larger distance and normalize back to one step's worth of time.
+	perStep := make([]int64, 0, len(r.ordered)-1)
+	for i := 1; i < len(r.ordered); i++ {
+		dNanos := r.ordered[i].TimestampNanos - r.ordered[i-1].TimestampNanos
+		dSeq := seqDistance(r.ordered[i-1].Packet.SequenceNumber,
+			r.ordered[i].Packet.SequenceNumber)
+		if dNanos > 0 && dSeq > 0 {
+			perStep = append(perStep, dNanos/int64(dSeq))
+		}
+	}
+	if len(perStep) == 0 {
+		return media.EstimateDrift(nil, nil)
+	}
+	sort.Slice(perStep, func(i, j int) bool { return perStep[i] < perStep[j] })
+	step := perStep[len(perStep)/2]
+
+	firstSeq := r.ordered[0].Packet.SequenceNumber
+	base := r.ordered[0].TimestampNanos
+	local := make([]int64, len(r.ordered))
+	remote := make([]int64, len(r.ordered))
+	for i, o := range r.ordered {
+		d := seqDistance(firstSeq, o.Packet.SequenceNumber)
+		local[i] = int64(d) * step
+		remote[i] = o.TimestampNanos - base
+	}
+	return media.EstimateDrift(local, remote)
 }
 
 func (r *recoverer) holdP95Millis(holds []int) int64 {

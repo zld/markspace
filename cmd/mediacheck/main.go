@@ -72,6 +72,7 @@ type demoOutput struct {
 	DamageRanges     int              `json:"damage_ranges"`
 	RecoveredPackets int              `json:"recovered_packets"`
 	LossRecoveryRate float64          `json:"loss_recovery_rate"`
+	ClockDriftPPM    float64          `json:"clock_drift_ppm"`
 	AVSyncErrorMs    float64          `json:"av_sync_error_ms"`
 	P95LatencyMs     int64            `json:"p95_latency_ms"`
 }
@@ -84,6 +85,7 @@ type caseOutput struct {
 	DamageRanges     int              `json:"damage_ranges"`
 	RecoveredPackets int              `json:"recovered_packets"`
 	LossRecoveryRate float64          `json:"loss_recovery_rate"`
+	ClockDriftPPM    float64          `json:"clock_drift_ppm"`
 	AVSyncErrorMs    float64          `json:"av_sync_error_ms"`
 	P95LatencyMs     int64            `json:"p95_latency_ms"`
 	HasUnrecoverable bool             `json:"has_unrecoverable"`
@@ -132,6 +134,7 @@ func runDemo(args []string) int {
 			DamageRanges:     len(out.Metrics.DamageRanges),
 			RecoveredPackets: out.Metrics.RecoveredPackets,
 			LossRecoveryRate: out.Metrics.LossRecoveryRate,
+			ClockDriftPPM:    out.Metrics.ClockDriftPPM,
 			AVSyncErrorMs:    out.Metrics.AVSyncErrorMs,
 			P95LatencyMs:     out.Metrics.P95LatencyMs,
 			HasUnrecoverable: out.Metrics.HasUnrecoverable,
@@ -152,6 +155,7 @@ func runDemo(args []string) int {
 		envelope.DamageRanges = len(last.Metrics.DamageRanges)
 		envelope.RecoveredPackets = last.Metrics.RecoveredPackets
 		envelope.LossRecoveryRate = last.Metrics.LossRecoveryRate
+		envelope.ClockDriftPPM = last.Metrics.ClockDriftPPM
 		envelope.AVSyncErrorMs = last.Metrics.AVSyncErrorMs
 		envelope.P95LatencyMs = last.Metrics.P95LatencyMs
 	}

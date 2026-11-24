@@ -37,6 +37,9 @@ type Metrics struct {
 	LossRecoveryRate float64 `json:"loss_recovery_rate"`
 	// AVSyncErrorMs is the absolute-mean A/V offset; 0 when no pair exists.
 	AVSyncErrorMs float64 `json:"av_sync_error_ms"`
+	// ClockDriftPPM is the fitted RTP remote-clock skew in parts per
+	// million; 0 when no RTP stream was analyzed.
+	ClockDriftPPM float64 `json:"clock_drift_ppm"`
 	// P95LatencyMs is the end-to-end 95th-percentile processing latency.
 	P95LatencyMs int64 `json:"p95_latency_ms"`
 	// HasUnrecoverable drives CLI exit code 3.
@@ -101,6 +104,7 @@ func Build(in Input) Metrics {
 	if in.RTP != nil {
 		m.RecoveredPackets = in.RTP.Stats.Recovered
 		m.LossRecoveryRate = in.RTP.Stats.LossRecoveryRate
+		m.ClockDriftPPM = in.RTP.Drift.PPM
 	}
 	if in.Sync != nil {
 		m.AVSyncErrorMs = in.Sync.AbsMeanMs

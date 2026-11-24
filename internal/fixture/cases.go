@@ -72,6 +72,8 @@ func BuildCase(name CaseName, seed int64) Case {
 		rspec := rtpBase()
 		rspec.BaseTimestamp = 0xFFFFFFFF - 10*rspec.TimestampStep
 		rspec.Count = 60
+		// Remote clock runs 120 ppm fast in addition to the 32-bit wrap.
+		rspec.DriftPPM = 120
 		return Case{
 			Name: name, Description: "32-bit timestamp wrap with clock drift",
 			MP4: BuildMP4(spec), Spec: spec,

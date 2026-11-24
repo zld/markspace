@@ -45,6 +45,10 @@ func TestWrapDriftTimelineMonotonicAndSyncWithin20ms(t *testing.T) {
 			t.Fatal("unwrapped RTP timeline must be non-decreasing across the rollover")
 		}
 	}
+	// The injected 120 ppm drift must be quantified, not silently ignored.
+	if out.RTP.Drift.PPM < 110 || out.RTP.Drift.PPM > 130 {
+		t.Fatalf("quantified drift = %.2f PPM, want ~120", out.RTP.Drift.PPM)
+	}
 	if out.Sync == nil || out.Sync.AbsMeanMs > 20 {
 		t.Fatalf("A/V sync abs mean = %v, want <= 20 ms", out.Sync)
 	}

@@ -29,7 +29,12 @@ type RTPSpec struct {
 	BaseSeq       uint16
 	BaseTimestamp uint32
 	TimestampStep uint32
-	Bursts        []RTPBurst
+	// DriftPPM skews each generated RTP timestamp relative to the nominal
+	// step, so the remote clock runs faster (positive) or slower (negative)
+	// than the receiver's local clock. The skew accumulates linearly and is
+	// fully deterministic.
+	DriftPPM int
+	Bursts   []RTPBurst
 	// ReorderSwaps swaps arrival positions of two consecutive primary
 	// packets (indexed into the primary arrival list).
 	ReorderSwaps []int
@@ -120,17 +125,40 @@ func BuildRTP(spec RTPSpec) []*rtp.Packet {
 }
 
 func mkPacket(spec RTPSpec, index int, seq uint16, marker bool) *rtp.Packet {
+	// Nominal remote tick plus a linear PPM drift term accumulated over the
+	// packet index. Rounding is integer-based so the stream is deterministic.
+	nominal := uint64(index) * uint64(spec.TimestampStep)
+	skew := uint64(0)
+	if spec.DriftPPM != 0 {
+		skew = nominal * uint64(absInt(spec.DriftPPM)) / 1_000_000
+		if spec.DriftPPM < 0 {
+			skew = 0
+		}
+	}
+	ts := spec.BaseTimestamp
+	if spec.DriftPPM >= 0 {
+		ts += uint32(nominal + skew)
+	} else {
+		ts += uint32(nominal - skew)
+	}
 	return &rtp.Packet{
 		Header: rtp.Header{
 			Version:        2,
 			PayloadType:    spec.PayloadType,
 			SequenceNumber: seq,
-			Timestamp:      spec.BaseTimestamp + uint32(index)*spec.TimestampStep,
+			Timestamp:      ts,
 			SSRC:           spec.SSRC,
 			Marker:         marker,
 		},
 		Payload: []byte{byte(index), byte(index >> 8)},
 	}
+}
+
+func absInt(v int) int {
+	if v < 0 {
+		return -v
+	}
+	return v
 }
 
 func sortEvents(events []rtpEvent) {

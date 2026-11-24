@@ -128,3 +128,44 @@ func TestRecoverRejectsZeroClock(t *testing.T) {
 		t.Fatal("zero clock rate must be rejected")
 	}
 }
+
+func TestRecoverEstimatesClockDrift(t *testing.T) {
+	spec := baseSpec()
+	spec.DriftPPM = 120 // remote clock 120 ppm fast
+	res, err := Recover(fixture.BuildRTP(spec), spec.ClockRate, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Allow integer-rounding slack; the fit must land within +/-5 PPM.
+	if res.Drift.PPM < 115 || res.Drift.PPM > 125 {
+		t.Fatalf("estimated drift = %.2f PPM, want ~120", res.Drift.PPM)
+	}
+	if res.Drift.R2 < 0.999 {
+		t.Fatalf("linear drift fit R2 = %.4f, want >= 0.999", res.Drift.R2)
+	}
+}
+
+func TestRecoverNoDriftOnCleanClock(t *testing.T) {
+	spec := baseSpec() // DriftPPM defaults to 0
+	res, err := Recover(fixture.BuildRTP(spec), spec.ClockRate, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Drift.PPM > 1 || res.Drift.PPM < -1 {
+		t.Fatalf("clean clock drift = %.2f PPM, want ~0", res.Drift.PPM)
+	}
+}
+
+func TestRecoverLossBurstMustNotFakeDrift(t *testing.T) {
+	// A zero-drift clock with a 20-packet loss burst must not report a
+	// large skew: sequence distance, not arrival position, anchors the fit.
+	spec := baseSpec()
+	spec.Bursts = []fixture.RTPBurst{{Start: 1020, Length: 20, Retransmit: 19, DelaySlots: 2}}
+	res, err := Recover(fixture.BuildRTP(spec), spec.ClockRate, 8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Drift.PPM > 5 || res.Drift.PPM < -5 {
+		t.Fatalf("loss burst produced fake drift = %.2f PPM, want ~0", res.Drift.PPM)
+	}
+}
