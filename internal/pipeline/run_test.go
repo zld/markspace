@@ -400,3 +400,21 @@ func TestVerifyWithoutResumeDoesNotWipeCheckpoint(t *testing.T) {
 		t.Fatalf("committed=%d verified=%d", st.CommittedChunks, st.VerifiedChunks)
 	}
 }
+
+func TestUnreadableVideoIsRecoverable(t *testing.T) {
+	// A missing video must fail only that input, leaving the batch to finish
+	// with exit code 2 instead of aborting as a process-level I/O error.
+	dir := t.TempDir()
+	interval, _ := model.ParseRat("1/2")
+	in := Inputs{
+		OutDir: filepath.Join(dir, "cp"), MP4Path: filepath.Join(dir, "missing.mp4"),
+		Width: 8, Height: 8, Interval: interval, ChunkSize: 4, FallbackScan: true,
+	}
+	st, err := Run(in)
+	if err != nil {
+		t.Fatalf("missing video must not be fatal: %v", err)
+	}
+	if st.ExitCode() != 2 {
+		t.Fatalf("exit=%d want 2", st.ExitCode())
+	}
+}
