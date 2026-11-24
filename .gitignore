@@ -1,0 +1,4 @@
+/bin/
+/demo-out/
+*.test
+.DS_Store
