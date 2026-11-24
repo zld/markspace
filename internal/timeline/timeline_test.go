@@ -67,7 +67,7 @@ func TestComposeBoundariesMatchManifest(t *testing.T) {
 		}
 	}
 	in := ComposeInput{
-		Spec: media.TrackSpec{ID: 1, Name: "v0", Width: 160, Height: 90},
+		Spec:  media.TrackSpec{ID: 1, Name: "v0", Width: 160, Height: 90},
 		Clock: clk, Frames: frames,
 		SegmentLost:  map[uint32]int{},
 		SegmentBytes: map[uint32]int{1: 1000, 2: 1000},
@@ -104,7 +104,7 @@ func TestComposeRejectsOvershoot(t *testing.T) {
 		Width: 160, Height: 90,
 	}}
 	in := ComposeInput{
-		Spec: media.TrackSpec{ID: 1, Width: 160, Height: 90},
+		Spec:  media.TrackSpec{ID: 1, Width: 160, Height: 90},
 		Clock: clk, Frames: frames,
 		SegmentBytes: map[uint32]int{1: 10},
 	}
@@ -140,7 +140,7 @@ func TestRepeatedComposeIsDeterministic(t *testing.T) {
 			}
 		}
 		in := ComposeInput{
-			Spec: media.TrackSpec{ID: 1, Width: 160, Height: 90},
+			Spec:  media.TrackSpec{ID: 1, Width: 160, Height: 90},
 			Clock: clk, Frames: frames,
 			SegmentBytes: map[uint32]int{1: 1, 2: 1},
 		}

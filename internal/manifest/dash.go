@@ -18,35 +18,35 @@ import (
 //	    <SegmentList timescale duration startNumber>
 //	      <SegmentURL media .../>
 type mpdDoc struct {
-	XMLName       xml.Name  `xml:"MPD"`
-	MinBufferTime string    `xml:"minBufferTime,attr"`
-	Periods       []mpdPer  `xml:"Period"`
+	XMLName       xml.Name `xml:"MPD"`
+	MinBufferTime string   `xml:"minBufferTime,attr"`
+	Periods       []mpdPer `xml:"Period"`
 }
 
 type mpdPer struct {
-	ID              string         `xml:"id,attr"`
-	AdaptationSets  []mpdAdSet     `xml:"AdaptationSet"`
+	ID             string     `xml:"id,attr"`
+	AdaptationSets []mpdAdSet `xml:"AdaptationSet"`
 }
 
 type mpdAdSet struct {
-	ID              string           `xml:"id,attr"`
-	ContentType     string           `xml:"contentType,attr"`
-	Representations []mpdRepr        `xml:"Representation"`
+	ID              string    `xml:"id,attr"`
+	ContentType     string    `xml:"contentType,attr"`
+	Representations []mpdRepr `xml:"Representation"`
 }
 
 type mpdRepr struct {
-	ID          string       `xml:"id,attr"`
-	Bandwidth   int          `xml:"bandwidth,attr"`
-	Width       int          `xml:"width,attr"`
-	Height      int          `xml:"height,attr"`
-	SegmentList *mpdSegList  `xml:"SegmentList"`
+	ID          string      `xml:"id,attr"`
+	Bandwidth   int         `xml:"bandwidth,attr"`
+	Width       int         `xml:"width,attr"`
+	Height      int         `xml:"height,attr"`
+	SegmentList *mpdSegList `xml:"SegmentList"`
 }
 
 type mpdSegList struct {
-	Timescale   int64        `xml:"timescale,attr"`
-	Duration    int64        `xml:"duration,attr"`
-	StartNumber uint32       `xml:"startNumber,attr"`
-	URLs        []mpdSegURL  `xml:"SegmentURL"`
+	Timescale   int64       `xml:"timescale,attr"`
+	Duration    int64       `xml:"duration,attr"`
+	StartNumber uint32      `xml:"startNumber,attr"`
+	URLs        []mpdSegURL `xml:"SegmentURL"`
 }
 
 type mpdSegURL struct {

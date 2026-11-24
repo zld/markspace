@@ -18,6 +18,10 @@ var CaptureMagic = [4]byte{'A', 'R', 'T', 'P'}
 const (
 	captureHeaderLen = 12
 	captureVersion   = 1
+	// CaptureHeaderLen and CaptureVersion are exported for the ingest
+	// layer that reads capture files back.
+	CaptureHeaderLen = captureHeaderLen
+	CaptureVersion   = captureVersion
 	// burstLossCount packets are removed in burst-loss mode. They fall
 	// outside the default window, so they must surface as real gaps.
 	burstLossCount = 5

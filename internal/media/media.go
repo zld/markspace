@@ -20,15 +20,15 @@ const (
 
 // TrackSpec describes one track as declared by a manifest.
 type TrackSpec struct {
-	ID                 uint32
-	Name               string
-	Kind               TrackKind
-	Width              uint16
-	Height             uint16
-	TimebaseNum        uint32 // track timebase as a rational fps/rate
-	TimebaseDen        uint32
-	TargetBitrateKbps  int
-	BandwidthKbps      int // simulated delivered bandwidth for this track
+	ID                uint32
+	Name              string
+	Kind              TrackKind
+	Width             uint16
+	Height            uint16
+	TimebaseNum       uint32 // track timebase as a rational fps/rate
+	TimebaseDen       uint32
+	TargetBitrateKbps int
+	BandwidthKbps     int // simulated delivered bandwidth for this track
 }
 
 // Frame is one decodable (or corrupt) sample on the unified clock.

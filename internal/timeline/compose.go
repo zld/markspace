@@ -47,12 +47,12 @@ func (t *Timeline) BoundaryMap() map[uint32]map[uint32]*media.Segment {
 // placed on the unified clock. Frame PTS values are native track units
 // relative to the start of their segment.
 type ComposeInput struct {
-	Spec          media.TrackSpec
-	Clock         Clock
-	Frames        []media.Frame
-	SegmentLost   map[uint32]int  // seq -> lost packets
-	SegmentBytes  map[uint32]int  // seq -> effective media bytes
-	SegmentTrunc  map[uint32]bool // seq -> truncated flag
+	Spec         media.TrackSpec
+	Clock        Clock
+	Frames       []media.Frame
+	SegmentLost  map[uint32]int  // seq -> lost packets
+	SegmentBytes map[uint32]int  // seq -> effective media bytes
+	SegmentTrunc map[uint32]bool // seq -> truncated flag
 }
 
 // Compose maps every track onto the common clock using exact rational

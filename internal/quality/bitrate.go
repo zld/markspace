@@ -38,7 +38,7 @@ func ActualBitrate(mediaBytes int, durationTicks int64) int {
 		return 0
 	}
 	// bps = bytes*8 * ClockRate / ticks
-	return int(int64(mediaBytes)*8*media.ClockRate / durationTicks)
+	return int(int64(mediaBytes) * 8 * media.ClockRate / durationTicks)
 }
 
 // deviationBP returns |actual-target|/target in basis points.

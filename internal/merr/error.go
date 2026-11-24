@@ -14,24 +14,24 @@ import (
 type Kind string
 
 const (
-	KindManifest   Kind = "manifest_error"    // malformed or inconsistent playlist
-	KindTransport  Kind = "transport_gap"     // packet loss outside the reorder window
-	KindContainer  Kind = "unsupported_media" // codec/container outside the fixture subset
-	KindDecode     Kind = "decode_error"      // truncated or undecodable frame payload
-	KindTimeline   Kind = "timeline_error"    // clock conversion / alignment failure
-	KindDAG        Kind = "dag_error"         // cycle, missing dependency, blocked node
-	KindIO         Kind = "io_error"          // filesystem / atomic commit failure
-	KindArgument   Kind = "argument_error"    // invalid command line parameters
+	KindManifest    Kind = "manifest_error"    // malformed or inconsistent playlist
+	KindTransport   Kind = "transport_gap"     // packet loss outside the reorder window
+	KindContainer   Kind = "unsupported_media" // codec/container outside the fixture subset
+	KindDecode      Kind = "decode_error"      // truncated or undecodable frame payload
+	KindTimeline    Kind = "timeline_error"    // clock conversion / alignment failure
+	KindDAG         Kind = "dag_error"         // cycle, missing dependency, blocked node
+	KindIO          Kind = "io_error"          // filesystem / atomic commit failure
+	KindArgument    Kind = "argument_error"    // invalid command line parameters
 	KindUnsupported Kind = "unsupported"
 )
 
 // Error is the unified error implementation shared by all packages.
 type Error struct {
-	Kind     Kind   `json:"kind"`
+	Kind      Kind   `json:"kind"`
 	Subsystem string `json:"subsystem"`
-	Location string `json:"location"`
-	Message  string `json:"message"`
-	Cause    error  `json:"-"`
+	Location  string `json:"location"`
+	Message   string `json:"message"`
+	Cause     error  `json:"-"`
 }
 
 func (e *Error) Error() string {

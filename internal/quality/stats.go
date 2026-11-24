@@ -8,15 +8,15 @@ import (
 // inputs are counted explicitly: missing packets, truncated segments
 // and corrupt frames are never silently dropped from the report.
 type FrameStats struct {
-	DecodedFrames int   `json:"decoded_frames"`
-	CorruptFrames int   `json:"corrupt_frames"`
-	TotalFrames   int   `json:"total_frames"`
-	MissingSegments int `json:"segments_with_loss"`
-	TruncatedSegments int `json:"truncated_segments"`
-	LostPackets   int   `json:"lost_packets"`
-	MeanLuma      int   `json:"mean_luma"` // 0..255, integer average
-	MeanLumaQ2    int   `json:"mean_luma_q2"`
-	LumaSum       int64 `json:"-"`
+	DecodedFrames     int   `json:"decoded_frames"`
+	CorruptFrames     int   `json:"corrupt_frames"`
+	TotalFrames       int   `json:"total_frames"`
+	MissingSegments   int   `json:"segments_with_loss"`
+	TruncatedSegments int   `json:"truncated_segments"`
+	LostPackets       int   `json:"lost_packets"`
+	MeanLuma          int   `json:"mean_luma"` // 0..255, integer average
+	MeanLumaQ2        int   `json:"mean_luma_q2"`
+	LumaSum           int64 `json:"-"`
 }
 
 // CollectFrames walks every segment of the composed timeline and counts
@@ -50,7 +50,7 @@ func CollectFrames(segments []*media.Segment) FrameStats {
 	if lumaCount > 0 {
 		st.MeanLuma = int(lumaSum / lumaCount)
 		// Two fractional digits of the exact mean.
-		st.MeanLumaQ2 = int(lumaSum*100 / lumaCount)
+		st.MeanLumaQ2 = int(lumaSum * 100 / lumaCount)
 	}
 	return st
 }

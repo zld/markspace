@@ -84,7 +84,7 @@ func u32(v uint32) string {
 	i := len(buf)
 	for v > 0 {
 		i--
-		buf[i] = byte('0'+v%10)
+		buf[i] = byte('0' + v%10)
 		v /= 10
 	}
 	return string(buf[i:])

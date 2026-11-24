@@ -18,9 +18,9 @@ import (
 //   - Flush at end-of-segment drains the buffer and counts any
 //     still-missing sequences between the first and last packet.
 type ReorderBuffer struct {
-	Window   int
-	TrackID  uint32
-	SegSeq   uint32
+	Window  int
+	TrackID uint32
+	SegSeq  uint32
 
 	started   bool
 	nextSeq   uint32 // next expected unwrapped sequence
