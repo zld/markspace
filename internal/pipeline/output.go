@@ -55,6 +55,15 @@ func KVText(res *Result) string {
 	fmt.Fprintf(&b, "fault_time_ticks=%d\n", res.PrimaryTime)
 	fmt.Fprintf(&b, "gop_min_ticks=%d\n", gopMin)
 	fmt.Fprintf(&b, "gop_max_ticks=%d\n", gopMax)
+	if r != nil && len(r.GOPHistogram) > 0 {
+		parts := make([]string, 0, len(r.GOPHistogram))
+		for _, bucket := range r.GOPHistogram {
+			parts = append(parts, fmt.Sprintf("%d:%d", bucket.IntervalTicks, bucket.Count))
+		}
+		fmt.Fprintf(&b, "gop_histogram=%s\n", strings.Join(parts, ","))
+	} else {
+		b.WriteString("gop_histogram=\n")
+	}
 	fmt.Fprintf(&b, "resume_from_sample=%d\n", res.ResumeFromSample)
 	fmt.Fprintf(&b, "elapsed_ms=%d\n", res.ElapsedMS)
 	fmt.Fprintf(&b, "memory_peak_bytes=%d\n", res.MemoryPeakBytes)
@@ -72,10 +81,20 @@ func KVText(res *Result) string {
 
 // FaultTable renders a deterministic per-fault listing.
 func FaultTable(res *Result) string {
-	if res.Report == nil || len(res.Report.Faults) == 0 {
-		return "faults=none\n"
+	if res.Report == nil {
+		return ""
 	}
 	var b strings.Builder
+	for _, s := range res.Report.Segments {
+		if s.DamageStartTicks >= 0 && s.DamageEndTicks >= 0 {
+			fmt.Fprintf(&b, "damage_gop_range segment=%s time=[%d,%d]\n",
+				s.URI, s.DamageStartTicks, s.DamageEndTicks)
+		}
+	}
+	if len(res.Report.Faults) == 0 {
+		b.WriteString("faults=none\n")
+		return b.String()
+	}
 	fmt.Fprintf(&b, "faults=%d\n", len(res.Report.Faults))
 	for _, f := range res.Report.Faults {
 		fmt.Fprintf(&b,
