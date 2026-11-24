@@ -165,6 +165,33 @@ func TestOutputInsideInputRejected(t *testing.T) {
 	}
 }
 
+// TestQueryCommittedIndex checks point queries and both boundary errors.
+func TestQueryCommittedIndex(t *testing.T) {
+	in := genFixture(t)
+	out := filepath.Join(t.TempDir(), "out")
+	if _, err := Run(Options{InputDir: in, OutDir: out, TargetBitrate: 1_200_000}); err != nil {
+		t.Fatal(err)
+	}
+	ix, err := LoadIndex(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mid := ix.Entries[0].Tick + (ix.End-ix.Entries[0].Tick)/2
+	e, err := QueryIndex(out, mid)
+	if err != nil {
+		t.Fatalf("mid query: %v", err)
+	}
+	if e.Tick > mid || e.Fragment == "" || e.SourceDigest == "" {
+		t.Fatalf("bad entry: %+v", e)
+	}
+	if _, err := QueryIndex(out, ix.Entries[0].Tick-1); err == nil {
+		t.Fatal("expected before-start boundary error")
+	}
+	if _, err := QueryIndex(out, ix.End); err == nil {
+		t.Fatal("expected after-end boundary error")
+	}
+}
+
 // TestSafeJoinRejectsTraversal checks manifest references cannot escape.
 func TestSafeJoinRejectsTraversal(t *testing.T) {
 	base := t.TempDir()
