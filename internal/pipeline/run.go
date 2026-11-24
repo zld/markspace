@@ -39,6 +39,14 @@ func Run(cfg Config) (*Report, error) {
 	if err := os.MkdirAll(cfg.WorkDir, 0o755); err != nil {
 		return nil, media.NewError(media.CodeInternal, "", -1, "create workdir", err)
 	}
+	if cfg.Resume {
+		existing, loadErr := loadManifest(cfg.WorkDir)
+		if loadErr != nil {
+			me := media.NewError(media.CodeInvalidConfig, "", -1, "cannot resume without manifest", loadErr)
+			return &Report{WorkDir: cfg.WorkDir, Status: "failed", ErrorCode: me.Code, Stage: me.Stage, CorruptOffset: me.Offset}, me
+		}
+		cfg.Processing = existing.Config
+	}
 	if cfg.Processing.MaxBlockBytes <= 0 {
 		cfg.Processing.MaxBlockBytes = wav.DefaultMaxBlockBytes
 	}

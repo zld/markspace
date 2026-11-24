@@ -87,6 +87,16 @@ func (r *Report) PrintKeyValues() {
 			fmt.Sprintf("lookup_original_offset=%d", r.Lookup.BlockOriginalByte),
 		)
 	}
+	if r.Expected != nil {
+		lines = append(lines,
+			fmt.Sprintf("expected_target_frame=%d", r.Expected.TargetFrame),
+			fmt.Sprintf("expected_block=%d", r.Expected.ExpectedBlock),
+			fmt.Sprintf("expected_frame_offset=%d", r.Expected.ExpectedFrameOffset),
+		)
+		if r.Expected.CorruptOffset > 0 {
+			lines = append(lines, fmt.Sprintf("expected_corrupt_offset=%d", r.Expected.CorruptOffset))
+		}
+	}
 	for i, d := range r.Repairs {
 		origNS := "missing"
 		if d.OriginalStartNS != nil {

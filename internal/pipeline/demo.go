@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 
@@ -46,4 +47,17 @@ func CorruptIndexForDemo(workdir string) error {
 	defer f.Close()
 	_, err = f.WriteString(`{"corrupt":true}`)
 	return err
+}
+
+// LoadExpected reads the generated fixture's expected lookup positions.
+func LoadExpected(workdir string) (*samplegen.Expected, error) {
+	data, err := os.ReadFile(filepath.Join(workdir, "expected.json"))
+	if err != nil {
+		return nil, err
+	}
+	var expected samplegen.Expected
+	if err := json.Unmarshal(data, &expected); err != nil {
+		return nil, err
+	}
+	return &expected, nil
 }
