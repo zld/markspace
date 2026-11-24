@@ -53,13 +53,14 @@ type Options struct {
 	// computed over. Payload bytes are expanded into this raster so hashes are
 	// comparable across runs and independent of decode order.
 	Width, Height int
-	// MaxSamples bounds memory per chunk; zero means a sane default.
-	MaxSamples int
+	// MaxPoints caps the number of sampling points generated for one window,
+	// bounding memory per chunk. Zero uses a high safety ceiling.
+	MaxPoints int
 }
 
 // DefaultOptions returns the documented defaults.
 func DefaultOptions(interval model.Rat) Options {
-	return Options{Interval: interval, Width: 16, Height: 16, MaxSamples: 64}
+	return Options{Interval: interval, Width: 16, Height: 16, MaxPoints: 1_000_000}
 }
 
 // SamplingPoints returns the sorted, de-duplicated points that fall inside the
@@ -86,10 +87,16 @@ func SamplingPoints(items []model.Span, opt Options) []model.Rat {
 	if end.Cmp(start) <= 0 {
 		return nil
 	}
-	var pts []model.Rat
+	limit := opt.MaxPoints
+	if limit <= 0 {
+		limit = 1_000_000
+	}
+	pts := make([]model.Rat, 0, 64)
 	for p := start; p.Cmp(end) < 0; p = p.Add(opt.Interval) {
 		pts = append(pts, p)
-		if opt.MaxSamples > 0 && len(pts) > 1_000_000 {
+		// A zero or negative interval would loop forever; SamplingPoints
+		// already rejects those, and this ceiling protects the caller.
+		if len(pts) >= limit {
 			break
 		}
 	}

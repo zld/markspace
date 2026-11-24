@@ -160,3 +160,17 @@ func TestRenderZeroRasterDoesNotPanic(t *testing.T) {
 		t.Fatal("a zero-size raster must not produce a pixel hash")
 	}
 }
+
+func TestSamplingPointsRespectsMaxPoints(t *testing.T) {
+	items := []model.Span{{Start: model.RatFromInt(0), End: model.RatFromInt(1000)}}
+	opt := Options{Interval: model.MustRat(1, 1000), MaxPoints: 10}
+	pts := SamplingPoints(items, opt)
+	if len(pts) != 10 {
+		t.Fatalf("points=%d want 10", len(pts))
+	}
+	// A zero MaxPoints falls back to the safety ceiling, not to no points.
+	opt.MaxPoints = 0
+	if len(SamplingPoints(items, opt)) != 1_000_000 {
+		t.Fatal("zero MaxPoints should use the ceiling")
+	}
+}
