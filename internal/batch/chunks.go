@@ -4,10 +4,15 @@ import (
 	"fmt"
 
 	"mediapack/internal/index"
+	"mediapack/internal/maptrack"
 	"mediapack/internal/timeline"
 )
 
-func commitTimelineChunks(store *index.Store, tl *timeline.Timeline, chunkSamples int) ([]index.ChunkRecord, int, error) {
+func commitTimelineChunks(store *index.Store, table *maptrack.Table, tl *timeline.Timeline, chunkSamples int) ([]index.ChunkRecord, int, error) {
+	inputByTarget := map[uint32]string{}
+	for _, mt := range table.Tracks {
+		inputByTarget[mt.TargetID] = mt.InputPath
+	}
 	if chunkSamples <= 0 {
 		chunkSamples = 256
 	}
@@ -39,6 +44,7 @@ func commitTimelineChunks(store *index.Store, tl *timeline.Timeline, chunkSample
 				SampleCount:      end - start,
 				PayloadBytes:     payloadBytes,
 				PayloadHashes:    hashes,
+				InputPath:        inputByTarget[plan.TargetID],
 				InputEndOffset:   endOffset,
 			}
 			records = append(records, rec)

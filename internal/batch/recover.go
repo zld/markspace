@@ -51,7 +51,7 @@ func Run(cfg Config) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	records, replayed, err := commitTimelineChunks(store, tl, cfg.ChunkSamples)
+	records, replayed, err := commitTimelineChunks(store, table, tl, cfg.ChunkSamples)
 	if err != nil {
 		return nil, err
 	}

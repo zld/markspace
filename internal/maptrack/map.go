@@ -23,6 +23,7 @@ type Rule struct {
 type MappedTrack struct {
 	TargetID  uint32           `json:"target_id"`
 	Label     string           `json:"label,omitempty"`
+	InputPath string           `json:"input_path,omitempty"`
 	SourcePos string           `json:"source"`
 	Timebase  clock.Timebase   `json:"timebase"`
 	Track     *demux.Track     `json:"-"`
@@ -105,7 +106,7 @@ func resolve(c Catalog, r Rule) (*MappedTrack, error) {
 			for _, st := range doc.Streams {
 				if st.Key == *r.RTP {
 					return &MappedTrack{
-						TargetID: r.TargetID, SourcePos: r.Position(),
+						TargetID: r.TargetID, InputPath: r.Input, SourcePos: r.Position(),
 						Timebase: st.Timebase, RTPStream: st,
 					}, nil
 				}
@@ -120,7 +121,7 @@ func resolve(c Catalog, r Rule) (*MappedTrack, error) {
 		}
 		if tr := doc.Track(r.TrackID); tr != nil {
 			return &MappedTrack{
-				TargetID: r.TargetID, SourcePos: r.Position(),
+				TargetID: r.TargetID, InputPath: r.Input, SourcePos: r.Position(),
 				Timebase: tr.Timebase, Track: tr,
 			}, nil
 		}
