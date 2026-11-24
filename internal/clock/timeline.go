@@ -106,26 +106,34 @@ func (m *TrackMap) MapPTS(raw uint64) (ms int64, wrapped bool, nonMonotonic bool
 	return ms, wrapped, nonMonotonic
 }
 
-// SyncError returns the maximum absolute difference between corresponding
-// millisecond timestamps. It compares the shorter slice and returns -1 when
-// there are no common samples, preventing an empty result from masquerading
-// as perfect sync.
+// SyncError returns the maximum nearest-neighbour absolute difference between
+// video and audio millisecond timestamps. It compares every video instant to
+// the closest audio instant, which remains meaningful when the two tracks
+// have different frame rates. It returns -1 when either track is empty.
 func SyncError(videoMS, audioMS []int64) float64 {
-	n := len(videoMS)
-	if len(audioMS) < n {
-		n = len(audioMS)
-	}
-	if n == 0 {
+	if len(videoMS) == 0 || len(audioMS) == 0 {
 		return -1
 	}
+	sortedAudio := append([]int64(nil), audioMS...)
+	sort.Slice(sortedAudio, func(i, j int) bool { return sortedAudio[i] < sortedAudio[j] })
 	var max float64
-	for i := 0; i < n; i++ {
-		d := float64(videoMS[i] - audioMS[i])
-		if d < 0 {
-			d = -d
+	for _, v := range videoMS {
+		idx := sort.Search(len(sortedAudio), func(i int) bool { return sortedAudio[i] >= v })
+		best := float64(-1)
+		for _, candidate := range []int{idx - 1, idx} {
+			if candidate < 0 || candidate >= len(sortedAudio) {
+				continue
+			}
+			d := float64(v - sortedAudio[candidate])
+			if d < 0 {
+				d = -d
+			}
+			if best < 0 || d < best {
+				best = d
+			}
 		}
-		if d > max {
-			max = d
+		if best > max {
+			max = best
 		}
 	}
 	return max
