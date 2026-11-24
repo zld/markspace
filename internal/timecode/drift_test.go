@@ -106,3 +106,24 @@ func TestUnwrapperWrapAfterReordering(t *testing.T) {
 		t.Fatalf("wrap after reorder: got %d wrapped=%v", got, wrapped)
 	}
 }
+
+func TestCorrectionMatchesSlopeSign(t *testing.T) {
+	track := model.Track{ID: "fast", Kind: model.KindRTP}
+	// Media runs 1% fast: at ref=1 s the media clock reads 1.01 s.
+	samples := []DriftSample{
+		{Media: model.RatFromInt(0), Ref: model.RatFromInt(0)},
+		{Media: model.MustRat(101, 100), Ref: model.RatFromInt(1)},
+	}
+	rep, err := EstimateDrift(track, samples, DriftConfig{MaxPPM: 1000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Drift.Sign() <= 0 {
+		t.Fatalf("fast clock must have positive drift, got %s", rep.Drift)
+	}
+	// 1.01 s of media corresponds to 1 s of reference, so 0.01 s of media
+	// must be removed.
+	if !rep.Correction.Equal(model.MustRat(1, 100)) {
+		t.Fatalf("correction %s want 1/100", rep.Correction)
+	}
+}

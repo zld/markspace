@@ -157,12 +157,19 @@ func EstimateDrift(track model.Track, samples []DriftSample, cfg DriftConfig) (D
 	rep.Slope = slope
 	rep.Drift = slope.Sub(model.RatFromInt(1))
 
+	// Correction is what must be subtracted from the media timeline to match
+	// the reference over the measured span: a fast clock (slope > 1) yields a
+	// positive correction, meaning that many seconds must come off.
 	first := samples[0]
 	last := samples[len(samples)-1]
 	mediaSpan := last.Media.Sub(first.Media)
 	refSpan := last.Ref.Sub(first.Ref)
 	if !refSpan.IsZero() {
-		rep.Correction = mediaSpan.Sub(refSpan)
+		correctedLast, err := mediaSpan.Quo(slope)
+		if err != nil {
+			return rep, model.NewError(model.CodeInternal, "timecode", track.ID, model.InputPos{}, "%v", err)
+		}
+		rep.Correction = mediaSpan.Sub(correctedLast)
 	}
 	rep.Exceeded = exceedsPPM(rep.Drift, cfg.MaxPPM)
 	return rep, nil

@@ -217,6 +217,11 @@ func TestDriftEstimation(t *testing.T) {
 	if !corr[1].Equal(model.RatFromInt(100)) {
 		t.Fatalf("corrected last = %s want 100", corr[1])
 	}
+	// The reported correction must be the same amount that was removed.
+	removed := media[1].Sub(corr[1])
+	if !removed.Equal(rep.Correction) {
+		t.Fatalf("correction %s but removed %s", rep.Correction, removed)
+	}
 }
 
 func TestDriftDegenerate(t *testing.T) {
