@@ -49,8 +49,8 @@ func buildSamples(rep *syncer.Report, tl *clock.Timeline, cfg Config) ([]Sample,
 	return out, nil
 }
 
-// buildAudio converts recovered units into encoded audio samples. Empty
-// concealment slots still consume timeline duration through stts.
+// buildAudio converts recovered units into encoded audio samples. Concealment
+// slots carry no bytes; writeAudioTrak folds their duration into a neighbour.
 func buildAudio(rep *syncer.Report, tl *clock.Timeline, cfg Config) ([]AudioSample, error) {
 	if len(rep.Audio) == 0 {
 		return nil, nil

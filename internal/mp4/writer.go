@@ -95,8 +95,9 @@ func writeVideoTrak(w *mp4.Writer, samples []Sample, dur uint64, cfg Config, chu
 	return err
 }
 
-// writeAudioTrak emits the audio track as Opus. Concealment slots inflate the
-// stts duration without adding samples, matching the unit timeline.
+// writeAudioTrak emits the audio track as Opus. Concealment slots add no bytes;
+// their duration is folded into an adjacent real sample so stts and stsz always
+// describe the same samples.
 func writeAudioTrak(w *mp4.Writer, audio []AudioSample, dur uint64, cfg Config, chunkStart int64) error {
 	if _, err := w.StartBox(&mp4.BoxInfo{Type: mp4.BoxTypeTrak()}); err != nil {
 		return err
