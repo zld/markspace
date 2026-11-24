@@ -17,6 +17,8 @@ import (
 	"fmt"
 	"io"
 
+	pionrtp "github.com/pion/rtp"
+
 	"mediatool/internal/clock"
 	"mediatool/internal/fault"
 )
@@ -316,36 +318,18 @@ func (s *Scanner) parseRTP(body []byte, offset int64, original int) (Event, erro
 		ev.Faults = append(ev.Faults, f)
 		return ev, nil
 	}
-	ev.PayloadType = body[1] & 0x7f
-	ev.Marker = body[1]&0x80 != 0
-	ev.Seq = binary.BigEndian.Uint16(body[2:4])
-	ev.Timestamp = binary.BigEndian.Uint32(body[4:8])
-	ev.SSRC = binary.BigEndian.Uint32(body[8:12])
-
-	payloadStart := 12
-	// RFC 8285 one-byte and two-byte header extensions.
-	if body[0]&0x10 != 0 {
-		if len(body) < 16 {
-			return s.truncatedRTP(ev, "header extension truncated")
-		}
-		extLen := int(binary.BigEndian.Uint16(body[14:16])) * 4
-		payloadStart = 16 + extLen
-		if payloadStart > len(body) {
-			return s.truncatedRTP(ev, "header extension overruns packet")
-		}
+	// pion/rtp owns header and extension parsing; a parse failure is a located
+	// corruption rather than a silent skip.
+	var pkt pionrtp.Packet
+	if err := pkt.Unmarshal(body); err != nil {
+		return s.truncatedRTP(ev, fmt.Sprintf("invalid RTP packet: %v", err))
 	}
-	payloadEnd := len(body)
-	if body[0]&0x20 != 0 { // padding
-		pad := int(body[len(body)-1])
-		if pad == 0 || payloadStart+pad > payloadEnd {
-			return s.truncatedRTP(ev, "invalid RTP padding length")
-		}
-		payloadEnd -= pad
-	}
-	if payloadEnd < payloadStart {
-		return s.truncatedRTP(ev, "negative payload length")
-	}
-	ev.Payload = body[payloadStart:payloadEnd]
+	ev.PayloadType = pkt.PayloadType
+	ev.Marker = pkt.Marker
+	ev.Seq = pkt.SequenceNumber
+	ev.Timestamp = pkt.Timestamp
+	ev.SSRC = pkt.SSRC
+	ev.Payload = pkt.Payload
 
 	info, ok := s.cfg.Tracks[ev.SSRC]
 	if !ok {

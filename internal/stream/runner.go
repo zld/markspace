@@ -16,6 +16,8 @@ import (
 	"path/filepath"
 	"sort"
 
+	pionrtp "github.com/pion/rtp"
+
 	"mediatool/internal/clock"
 	"mediatool/internal/fault"
 	"mediatool/internal/index"
@@ -716,30 +718,14 @@ func (r *runner) readSpan(trackID uint32, startBody, endBody int64) ([]rawPacket
 
 // samplePayload extracts the payload from an RTP body, handling header
 // extensions and padding. It returns false for an invalid body.
+// samplePayload extracts the payload from an RTP body using the same parser as
+// the scanner, so extension and padding handling cannot drift between passes.
 func samplePayload(body []byte) ([]byte, bool) {
-	start := 12
-	if body[0]&0x10 != 0 {
-		if len(body) < 16 {
-			return nil, false
-		}
-		extLen := int(binary.BigEndian.Uint16(body[14:16])) * 4
-		start = 16 + extLen
-		if start > len(body) {
-			return nil, false
-		}
-	}
-	end := len(body)
-	if body[0]&0x20 != 0 {
-		pad := int(body[len(body)-1])
-		if pad == 0 || start+pad > end {
-			return nil, false
-		}
-		end -= pad
-	}
-	if end < start {
+	var pkt pionrtp.Packet
+	if err := pkt.Unmarshal(body); err != nil {
 		return nil, false
 	}
-	return append([]byte(nil), body[start:end]...), true
+	return append([]byte(nil), pkt.Payload...), true
 }
 
 func (r *runner) trackBySSRC(ssrc uint32) (*index.Track, bool) {
