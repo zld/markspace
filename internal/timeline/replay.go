@@ -91,3 +91,22 @@ func RecomputeDigest(s []Sample) string {
 	SortSamples(s)
 	return digestSamples(s)
 }
+
+// Order is the canonical output order shared by live release, replay and the
+// final delivery list: corrected event time, then track id, then extended
+// sequence. Sorting is stable and depends only on sample content, so arrival
+// order cannot change the result.
+func Order(samples []Sample) {
+	sort.SliceStable(samples, func(i, j int) bool { return less(samples[i], samples[j]) })
+}
+
+// LateRecord retains a late event so a rewind can re-derive output from the
+// earliest affected checkpoint. Records are bounded by the replay window.
+type LateRecord struct {
+	Sample     Sample
+	AffectedAt model.Nanos
+	// RewindFrom is the index of the earliest retained sample with corrected
+	// time at or after AffectedAt, or -1 when the late event predates the
+	// retained window.
+	RewindFrom int
+}

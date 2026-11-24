@@ -28,14 +28,17 @@ type Config struct {
 
 // Entry is one packet as the buffer sees it. MediaTime is the uncorrected
 // media timestamp on the kernel time base; Arrival is the capture clock.
+// Lateness is judged on media (event) time, not on reception order, so a
+// packet whose capture timestamp has fallen behind the watermark is late even
+// if it is delivered promptly.
 type Entry struct {
-	Ext       int64
-	TrackID   uint32
-	Kind      model.TrackKind
-	Keyframe  bool
-	MediaTime model.Nanos
-	Arrival   model.Nanos
-	Size      int
+	Ext       int64           `json:"ext"`
+	TrackID   uint32          `json:"track"`
+	Kind      model.TrackKind `json:"kind"`
+	Keyframe  bool            `json:"keyframe"`
+	MediaTime model.Nanos     `json:"media_ns"`
+	Arrival   model.Nanos     `json:"arrival_ns"`
+	Size      int             `json:"size"`
 }
 
 // Status classifies the result of Push.
@@ -62,14 +65,16 @@ type LateEvent struct {
 // JitterBuffer is a single-track reorder buffer. It is deterministic given
 // the same sequence of Push calls.
 type JitterBuffer struct {
-	cfg      Config
-	pending  map[int64]Entry
-	highExt  int64
-	highInit bool
-	maxArr   model.Nanos
-	arrInit  bool
-	released int64
-	relInit  bool
+	cfg       Config
+	pending   map[int64]Entry
+	highExt   int64
+	highInit  bool
+	maxMedia  model.Nanos
+	mediaInit bool
+	released  int64
+	relInit   bool
+	// acceptAll suppresses late rejection during deterministic replay.
+	acceptAll bool
 }
 
 // New constructs a buffer, validating its bounds.
@@ -90,22 +95,27 @@ func New(cfg Config) (*JitterBuffer, error) {
 // mutating any buffer state. It lets the caller rewind deterministically
 // before committing to the event.
 func (b *JitterBuffer) WouldBeLate(e Entry) bool {
-	if b.arrInit && e.Arrival < b.maxArr-b.cfg.LateWindow {
-		return true
+	if b.acceptAll {
+		return false
 	}
-	return false
+	return b.mediaInit && e.MediaTime < b.maxMedia-b.cfg.LateWindow
 }
+
+// SetAcceptAll disables lateness rejection. Deterministic replay uses it so
+// an event that was late live is still buffered and delivered when the same
+// input is re-processed from an earlier state.
+func (b *JitterBuffer) SetAcceptAll(v bool) { b.acceptAll = v }
 
 // Push offers an entry. For Released it returns every entry that is now ready
 // in ascending extended sequence order; for Late it returns the late event and
 // leaves the buffer untouched.
 func (b *JitterBuffer) Push(e Entry) (Status, []Entry, *LateEvent) {
-	if b.arrInit && e.Arrival < b.maxArr-b.cfg.LateWindow {
-		return Late, nil, &LateEvent{Entry: e, Behind: b.maxArr - e.Arrival}
+	if b.WouldBeLate(e) {
+		return Late, nil, &LateEvent{Entry: e, Behind: b.maxMedia - e.MediaTime}
 	}
-	if !b.arrInit || e.Arrival > b.maxArr {
-		b.maxArr = e.Arrival
-		b.arrInit = true
+	if !b.mediaInit || e.MediaTime > b.maxMedia {
+		b.maxMedia = e.MediaTime
+		b.mediaInit = true
 	}
 	if !b.highInit || e.Ext > b.highExt {
 		b.highExt = e.Ext
@@ -118,7 +128,7 @@ func (b *JitterBuffer) Push(e Entry) (Status, []Entry, *LateEvent) {
 	if b.relInit && e.Ext <= b.released {
 		// Already released: this is a late event, not a duplicate. The
 		// sequence layer is responsible for duplicate suppression.
-		return Late, nil, &LateEvent{Entry: e, Behind: b.maxArr - e.Arrival}
+		return Late, nil, &LateEvent{Entry: e, Behind: b.maxMedia - e.MediaTime}
 	}
 	// Bound the buffer before growing it.
 	if len(b.pending) >= b.cfg.MaxPackets {
@@ -211,19 +221,22 @@ func (b *JitterBuffer) Flush() []Entry {
 func (b *JitterBuffer) Len() int { return len(b.pending) }
 
 // Stats reports the released boundary for checkpointing.
-func (b *JitterBuffer) Stats() (released int64, ok bool, high int64, maxArr model.Nanos) {
-	return b.released, b.relInit, b.highExt, b.maxArr
+func (b *JitterBuffer) Stats() (released int64, ok bool, high int64, maxMedia model.Nanos) {
+	return b.released, b.relInit, b.highExt, b.maxMedia
 }
+
+// MaxMediaTime returns the largest event time the buffer has seen.
+func (b *JitterBuffer) MaxMediaTime() model.Nanos { return b.maxMedia }
 
 // Snapshot serializes the buffer's ordering state.
 type Snapshot struct {
-	Released   int64
-	RelInit    bool
-	HighExt    int64
-	HighInit   bool
-	MaxArrival model.Nanos
-	ArrInit    bool
-	Pending    []Entry
+	Released  int64       `json:"released"`
+	RelInit   bool        `json:"rel_init"`
+	HighExt   int64       `json:"high_ext"`
+	HighInit  bool        `json:"high_init"`
+	MaxMedia  model.Nanos `json:"max_media"`
+	MediaInit bool        `json:"media_init"`
+	Pending   []Entry     `json:"pending"`
 }
 
 // Snapshot captures state for checkpointing.
@@ -236,7 +249,7 @@ func (b *JitterBuffer) Snapshot() Snapshot {
 	return Snapshot{
 		Released: b.released, RelInit: b.relInit,
 		HighExt: b.highExt, HighInit: b.highInit,
-		MaxArrival: b.maxArr, ArrInit: b.arrInit,
+		MaxMedia: b.maxMedia, MediaInit: b.mediaInit,
 		Pending: p,
 	}
 }
@@ -249,5 +262,5 @@ func (b *JitterBuffer) Restore(s Snapshot) {
 	}
 	b.released, b.relInit = s.Released, s.RelInit
 	b.highExt, b.highInit = s.HighExt, s.HighInit
-	b.maxArr, b.arrInit = s.MaxArrival, s.ArrInit
+	b.maxMedia, b.mediaInit = s.MaxMedia, s.MediaInit
 }

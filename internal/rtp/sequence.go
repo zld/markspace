@@ -259,3 +259,17 @@ func (d *Deduper) RelativeExt(raw uint64) int64 {
 	}
 	return d.ext.lastExt - int64(behind)
 }
+
+// SnapTo moves the extender's reference to an already extended sequence
+// value. It is used when resuming from a checkpoint, where only extended
+// values were retained.
+func (d *Deduper) SnapTo(ext int64) {
+	d.ext.init = true
+	d.ext.lastExt = ext
+	d.ext.lastRaw = uint64(ext) & (d.ext.modulus - 1)
+	if !d.highInit || ext > d.highExt {
+		d.highExt = ext
+		d.highInit = true
+	}
+	d.seen[ext] = struct{}{}
+}

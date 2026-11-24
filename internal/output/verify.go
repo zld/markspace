@@ -69,6 +69,7 @@ type Summary struct {
 	ExpectedOffset  int64    `json:"expected_offset"`
 	OffsetDeviation int64    `json:"offset_deviation"`
 	Fixture         string   `json:"fixture"`
+	FallbackReason  string   `json:"fallback_reason,omitempty"`
 	Digest          string   `json:"sha256"`
 	Messages        []string `json:"messages,omitempty"`
 }

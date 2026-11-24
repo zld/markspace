@@ -16,15 +16,15 @@ import (
 // timestamp as captured and CorrectedTime is the drift-corrected value on the
 // shared time base. Both are retained so output can report the correction.
 type Sample struct {
-	Index         int64
-	TrackID       uint32
-	Kind          model.TrackKind
-	Keyframe      bool
-	ExtSeq        int64
-	OriginalTime  model.Nanos
-	CorrectedTime model.Nanos
-	Arrival       model.Nanos
-	Size          int
+	Index         int64           `json:"index"`
+	TrackID       uint32          `json:"track"`
+	Kind          model.TrackKind `json:"kind"`
+	Keyframe      bool            `json:"keyframe"`
+	ExtSeq        int64           `json:"ext_seq"`
+	OriginalTime  model.Nanos     `json:"original_ns"`
+	CorrectedTime model.Nanos     `json:"corrected_ns"`
+	Arrival       model.Nanos     `json:"arrival_ns"`
+	Size          int             `json:"size"`
 }
 
 // Config controls watermark progression.
@@ -74,6 +74,8 @@ func (w *Watermark) Advance(et model.Nanos) bool {
 
 // Value returns the current watermark.
 func (w *Watermark) Value() model.Nanos { return w.value }
+
+// Started reports whether any event has been observed.
 
 // MaxEventTime returns the largest event time observed.
 func (w *Watermark) MaxEventTime() model.Nanos { return w.maxEvent }
@@ -164,6 +166,12 @@ func (t *Timeline) Samples() []Sample {
 // Watermark returns the current watermark.
 func (t *Timeline) Watermark() model.Nanos { return t.wm.Value() }
 
+// MaxEvent returns the largest corrected event time observed.
+func (t *Timeline) MaxEvent() model.Nanos { return t.wm.MaxEventTime() }
+
+// WatermarkStarted reports whether the watermark has observed any event.
+func (t *Timeline) WatermarkStarted() bool { return t.wm.Started() }
+
 // MarkLate accounts for a sample rejected as late without buffering it.
 func (t *Timeline) MarkLate() { t.late++ }
 
@@ -240,8 +248,13 @@ func (t *Timeline) Insert(s Sample) {
 // including both original and corrected times. It demonstrates that samples
 // are ordered by their own timestamps and is used by tests.
 func (t *Timeline) TimestampOrderDigest() string {
+	return digestSamples(t.samples)
+}
+
+// digestSamples is shared by RecomputeDigest and TimestampOrderDigest.
+func digestSamples(samples []Sample) string {
 	h := sha256.New()
-	for _, s := range t.samples {
+	for _, s := range samples {
 		fmt.Fprintf(h, "%d|%d|%d|%d|%d\n", s.TrackID, s.Index, s.ExtSeq, s.OriginalTime, s.CorrectedTime)
 	}
 	return hex.EncodeToString(h.Sum(nil))

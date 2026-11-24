@@ -71,11 +71,22 @@ type Packet struct {
 	Carries []int64
 }
 
+// Repair is an out-of-band record proving that a lost packet's content was
+// delivered redundantly. Source is the extended sequence of the packet that
+// carried the copies.
+type Repair struct {
+	Source  int64
+	Targets []int64
+}
+
 // Input is the evidence handed to Classify for one track.
 type Input struct {
 	TrackID uint32
 	Kind    model.TrackKind
 	Packets []Packet
+	// Repairs lists out-of-band redundancy records for packets that are not
+	// themselves part of the media stream.
+	Repairs []Repair
 	// AudioCadence is the nominal inter-packet media duration for audio
 	// tracks. Zero disables audio interval estimation.
 	AudioCadence model.Nanos
@@ -112,6 +123,13 @@ func Classify(in Input) Report {
 		for _, c := range p.Carries {
 			if _, exists := redundant[c]; !exists {
 				redundant[c] = p.Ext
+			}
+		}
+	}
+	for _, r := range in.Repairs {
+		for _, c := range r.Targets {
+			if _, exists := redundant[c]; !exists {
+				redundant[c] = r.Source
 			}
 		}
 	}

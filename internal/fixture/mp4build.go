@@ -6,6 +6,7 @@ package fixture
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"os"
@@ -43,6 +44,10 @@ type MP4Edit struct {
 type MP4Spec struct {
 	Timescale uint32
 	Tracks    []MP4Track
+	// AlignMdatTo, when positive, inserts a free box before mdat so the mdat
+	// box header starts at exactly that byte offset. Damage fixtures rely on
+	// a real box boundary landing on the injection point.
+	AlignMdatTo int64
 }
 
 // SizeBytes returns the number of bytes one sample consumes in mdat.
@@ -109,6 +114,25 @@ func BuildMP4(w io.WriteSeeker, spec MP4Spec) error {
 		return err
 	}
 
+	if spec.AlignMdatTo > 0 {
+		cur, err := w.Seek(0, io.SeekCurrent)
+		if err != nil {
+			return err
+		}
+		// mdat needs an 8-byte header; leave room for it.
+		pad := spec.AlignMdatTo - cur
+		if pad > 0 {
+			// Write the padding without an end box: patching the free box
+			// length in place would rewrite its header, and the writer keeps
+			// its cursor after the payload.
+			if _, err := mw.Write(padBytes(pad, mp4.StrToBoxType("free"))); err != nil {
+				return err
+			}
+			if _, err := w.Seek(spec.AlignMdatTo, io.SeekStart); err != nil {
+				return err
+			}
+		}
+	}
 	if _, err := mw.StartBox(&mp4.BoxInfo{Type: mp4.BoxTypeMdat()}); err != nil {
 		return err
 	}
@@ -125,6 +149,17 @@ func BuildMP4(w io.WriteSeeker, spec MP4Spec) error {
 		return err
 	}
 	return nil
+}
+
+// padBytes builds a complete free box whose total size is n bytes.
+func padBytes(n int64, typ mp4.BoxType) []byte {
+	if n < 8 {
+		return nil
+	}
+	out := make([]byte, n)
+	binary.BigEndian.PutUint32(out[0:4], uint32(n))
+	copy(out[4:8], typ[:])
+	return out
 }
 
 func identityMatrix() [9]int32 {
