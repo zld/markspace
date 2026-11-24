@@ -23,6 +23,8 @@ go run ./cmd/mediarun fixture --dir ./tmp-fixture
 go run ./cmd/mediarun process --input ./tmp-fixture --out ./tmp-out \
     --target-bitrate 1200000 --resume
 go run ./cmd/mediarun verify  --input ./tmp-fixture --out ./tmp-out
+# 随机访问查询（返回不晚于目标时刻的最新同步样本及源分片；越界退出 2）
+go run ./cmd/mediarun query   --out ./tmp-out --time-ms 3000
 ```
 
 或一键脚本（构建、测试、生成、两次 process 校验摘要/复用、verify、三个边界夹具）：

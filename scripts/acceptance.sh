@@ -61,6 +61,15 @@ awk -v a="$ALIGN" 'BEGIN{ exit !(a+0 <= 20) }' || fail "alignment error > 20ms"
 echo "$OUT1" | grep -q 'random_access_hits=100/100' \
   || fail "random-access hit rate not 100%"
 
+say "random-access query and boundaries"
+"$BIN" query --out "$OUT" --time-ms 3000 | grep -q 'hit=true' \
+  || fail "mid-range query did not hit"
+"$BIN" query --out "$OUT" --tick -1 >/dev/null 2>&1 \
+  && fail "before-start query should fail"
+"$BIN" query --out "$OUT" --time-ms 999999 >/dev/null 2>&1 \
+  && fail "after-end query should fail"
+echo "  mid query hits; before-start and after-end return boundary errors"
+
 say "boundary fixtures (each must report stage+offset and exit 2)"
 check_boundary() {
   local name="$1" want_stage="$2"

@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 
+	"mediarun/internal/clock"
 	"mediarun/internal/fault"
 	"mediarun/internal/fixture"
 	"mediarun/internal/pipeline"
@@ -36,6 +37,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		err = runProcess(args[1:], stdout)
 	case "verify":
 		err = runVerify(args[1:], stdout)
+	case "query":
+		err = runQuery(args[1:], stdout)
 	case "-h", "--help", "help":
 		usage(stdout)
 		return fault.ExitOK
@@ -65,7 +68,9 @@ commands:
   process  repair timestamps, build random-access index, verify
            --input DIR --out DIR [--target-bitrate BPS] [--resume]
   verify   re-check a committed output against its input and thresholds
-           --input DIR --out DIR`)
+           --input DIR --out DIR
+  query    look up the decodable sample at/ before a target time
+           --out DIR (--time-ms MS | --tick N)`)
 }
 
 func runFixture(args []string, out io.Writer) error {
@@ -123,6 +128,45 @@ func runVerify(args []string, out io.Writer) error {
 	}
 	printResult(out, res)
 	fmt.Fprintln(out, "verify: OK (input provenance, index digest and thresholds match)")
+	return nil
+}
+
+func runQuery(args []string, out io.Writer) error {
+	fs := flag.NewFlagSet("query", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	outDir := fs.String("out", "./tmp-out", "committed output directory")
+	timeMS := fs.Int64("time-ms", 0, "target time in milliseconds")
+	tick := fs.Int64("tick", 0, "target time in master (90kHz) ticks")
+	if err := fs.Parse(args); err != nil {
+		return fault.New(fault.StageInput, "bad query flags: "+err.Error())
+	}
+	tickSet, msSet := false, false
+	fs.Visit(func(f *flag.Flag) {
+		switch f.Name {
+		case "tick":
+			tickSet = true
+		case "time-ms":
+			msSet = true
+		}
+	})
+	var t clock.Ticks
+	switch {
+	case tickSet:
+		t = clock.Ticks(*tick) // negative values are valid before-start probes
+	case msSet:
+		t = clock.FromMillis(*timeMS)
+	default:
+		return fault.New(fault.StageInput, "query requires --time-ms MS or --tick N")
+	}
+	e, err := pipeline.QueryIndex(*outDir, t)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "query target_tick=%d target_time_ms=%d\n", t, t.Millis())
+	fmt.Fprintf(out, "随机访问命中 / hit=true tick=%d time_ms=%d\n", e.Tick, e.Tick.Millis())
+	fmt.Fprintf(out, "源分片来源 / fragment=%s moof_offset=%d sample_index=%d data_offset=%d\n",
+		e.Fragment, e.MoofOffset, e.SampleIndex, e.DataOffset)
+	fmt.Fprintf(out, "source_digest=%s\n", e.SourceDigest)
 	return nil
 }
 
