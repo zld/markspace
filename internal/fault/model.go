@@ -30,6 +30,7 @@ type Stage string
 
 const (
 	StageScan     Stage = "scan"
+	StageRead     Stage = "read"
 	StageClock    Stage = "clock"
 	StageRepair   Stage = "repair"
 	StageIndex    Stage = "index"
