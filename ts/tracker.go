@@ -5,11 +5,11 @@ import "medkernel/media"
 // PCRTracker unwraps raw PCR values onto a monotonic 90 kHz axis and enforces
 // backstep/drift guardrails shared with the rest of the pipeline.
 type PCRTracker struct {
-	unw        *media.Unwrapper
-	clock      *media.Clock
-	nominal90  int64
-	started    bool
-	lastExt    int64
+	unw       *media.Unwrapper
+	clock     *media.Clock
+	nominal90 int64
+	started   bool
+	lastExt   int64
 }
 
 // NewPCRTracker builds a tracker. nominal is the expected tick delta between

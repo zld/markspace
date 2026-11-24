@@ -77,28 +77,9 @@ func NewParser(size int) *Parser {
 func (p *Parser) Parse(r io.Reader, visit func(Packet) error) error {
 	br := &byteReader{r: r}
 	for {
-		sync, ok := br.next()
+		off, ok := br.nextSync(p)
 		if !ok {
 			return br.err
-		}
-		off := br.read - 1
-		if sync != SyncByte {
-			p.Stats.SyncErrors++
-			p.Faults = append(p.Faults, media.New(media.ClassSync, "ts.parse",
-				"missing 0x47 sync byte").WithIndex(p.Stats.Total).
-				WithRange(off, off+1))
-			// Resynchronize: discard bytes up to the next sync byte.
-			for {
-				b, ok := br.next()
-				if !ok {
-					return br.err
-				}
-				if b == SyncByte {
-					br.unread()
-					break
-				}
-			}
-			continue
 		}
 		size, consumed, ok := p.resolveSize(br)
 		if !ok {
@@ -150,9 +131,9 @@ func (p *Parser) effectiveSize() int {
 }
 
 // resolveSize fixes the packet size once. With auto-detection it peeks the
-// byte at the 188-stride: a sync byte there means 204-byte packets (16 FEC
-// trailing bytes), otherwise standard 188-byte packets. It returns the number
-// of post-sync bytes already buffered into p.buf.
+// byte at the 188-stride: for 188-byte packets that is the *following*
+// packet's sync byte; for 204-byte (FEC-suffixed) packets it is padding.
+// It returns the number of post-sync bytes already buffered into p.buf.
 func (p *Parser) resolveSize(br *byteReader) (size, consumed int, ok bool) {
 	if p.size != 0 {
 		return p.size, 0, true
@@ -161,9 +142,9 @@ func (p *Parser) resolveSize(br *byteReader) (size, consumed int, ok bool) {
 	if !br.readN(peek) {
 		return 0, 0, false
 	}
-	size = Size188
+	size = Size204
 	if peek[Size188-1] == SyncByte {
-		size = Size204
+		size = Size188 // next packet starts exactly one 188-byte stride away
 	}
 	p.size = size
 	p.Stats.PacketSize = size
@@ -173,14 +154,13 @@ func (p *Parser) resolveSize(br *byteReader) (size, consumed int, ok bool) {
 
 func (p *Parser) decode(b []byte, off int64, size int) (Packet, *media.MediaError) {
 	var ferr *media.MediaError
-	h := uint32(b[1])<<16 | uint32(b[2])<<8 | uint32(b[3])
 	pkt := Packet{
 		Index:         p.Stats.Total,
 		Offset:        off,
 		Size:          size,
 		TEI:           b[1]&0x80 != 0,
 		PUSI:          b[1]&0x40 != 0,
-		PID:           uint16(h&0x1FFF00) >> 8,
+		PID:           uint16(b[1]&0x1F)<<8 | uint16(b[2]),
 		Scrambling:    b[3] >> 6,
 		HasAdaptation: b[3]&0x20 != 0,
 		HasPayload:    b[3]&0x10 != 0,
@@ -252,36 +232,49 @@ func parsePESPTS(payload []byte) (uint64, bool) {
 	return pts, true
 }
 
-// byteReader is a single-byte-pushback reader with total byte accounting.
+// byteReader reads a stream byte-by-byte with total byte accounting.
 type byteReader struct {
-	r     io.Reader
-	tail  byte
-	push  bool
-	read  int64
-	err   error
+	r    io.Reader
+	read int64
+	err  error
 }
 
-func (b *byteReader) next() (byte, bool) {
-	if b.push {
-		b.push = false
-		return b.tail, true
-	}
+// nextByte consumes one byte and reports whether a byte was available.
+func (b *byteReader) nextByte() (byte, bool) {
 	var buf [1]byte
 	n, err := io.ReadFull(b.r, buf[:])
 	b.read += int64(n)
 	if err != nil {
-		if err == io.EOF || err == io.ErrUnexpectedEOF {
-			b.err = nil
-			return 0, false
+		if err != io.EOF && err != io.ErrUnexpectedEOF {
+			b.err = media.Wrap(media.ClassIO, "ts.parse", err, "stream read failed")
 		}
-		b.err = media.Wrap(media.ClassIO, "ts.parse", err, "stream read failed")
 		return 0, false
 	}
-	b.tail = buf[0]
 	return buf[0], true
 }
 
-func (b *byteReader) unread() { b.push = true; b.read-- }
+// nextSync scans to the next 0x47 sync byte, recording one sync fault per
+// non-sync byte run. It returns the absolute offset of the sync byte.
+func (b *byteReader) nextSync(p *Parser) (int64, bool) {
+	sawBad := false
+	for {
+		off := b.read
+		v, ok := b.nextByte()
+		if !ok {
+			return 0, false
+		}
+		if v == SyncByte {
+			return off, true
+		}
+		if !sawBad {
+			p.Stats.SyncErrors++
+			p.Faults = append(p.Faults, media.New(media.ClassSync, "ts.parse",
+				"missing 0x47 sync byte").WithIndex(p.Stats.Total).
+				WithRange(off, off+1))
+			sawBad = true
+		}
+	}
+}
 
 func (b *byteReader) readN(dst []byte) bool {
 	n, err := io.ReadFull(b.r, dst)

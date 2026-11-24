@@ -36,7 +36,7 @@ func TestUnwrapperMonotoneAndGuardrails(t *testing.T) {
 	if err != nil || v != Wrap33-2 {
 		t.Fatalf("first push: v=%d err=%v", v, err)
 	}
-	v, err = u.Push(3) // wraps
+	v, err = u.Push(3)                 // wraps
 	if err != nil || v != Wrap32*2+3 { // 2^33 + 3
 		t.Fatalf("wrap push: v=%d err=%v", v, err)
 	}
