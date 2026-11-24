@@ -386,6 +386,36 @@ func writeStbl(bw *boxWriter, t *trackLayout) error {
 	if _, err := mp4.Marshal(bw.w, entry, mp4.Context{}); err != nil {
 		return err
 	}
+	// A minimal avcC makes the sample entry self-describing for container
+	// tools. The payloads are synthetic, so decoders will still refuse to
+	// produce frames; only structure is meant to be realistic.
+	avcc := &mp4.AVCDecoderConfiguration{
+		AnyTypeBox:                 mp4.AnyTypeBox{Type: mp4.StrToBoxType("avcC")},
+		ConfigurationVersion:       1,
+		Profile:                    66,
+		ProfileCompatibility:       0xC0,
+		Level:                      30,
+		LengthSizeMinusOne:         3,
+		NumOfSequenceParameterSets: 1,
+		SequenceParameterSets: []mp4.AVCParameterSet{
+			{Length: 8, NALUnit: []byte{0x67, 0x42, 0xC0, 0x1E, 0xD9, 0x00, 0xF0, 0x11}},
+		},
+		NumOfPictureParameterSets: 1,
+		PictureParameterSets: []mp4.AVCParameterSet{
+			{Length: 4, NALUnit: []byte{0x68, 0xCE, 0x38, 0x80}},
+		},
+	}
+	// avcC is a child box inside the avc1 sample entry, so it needs its own
+	// header; Marshal writes payload only.
+	if err := bw.start("avcC"); err != nil {
+		return err
+	}
+	if _, err := mp4.Marshal(bw.w, avcc, mp4.Context{}); err != nil {
+		return err
+	}
+	if err := bw.end(); err != nil {
+		return err
+	}
 	if err := bw.end(); err != nil {
 		return err
 	}

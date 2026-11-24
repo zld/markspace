@@ -420,25 +420,35 @@ func (r *Runner) reuse(stage Stage, rec *stageRecord, inSHA string) (bool, error
 	cp := rec.checkpoint
 	switch stage {
 	case StageScan:
-		return artifactExists(cp.Scan), nil
+		return artifactVerifies(cp.Scan), nil
 	case StageRepair:
-		return artifactExists(cp.Repair), nil
+		return artifactVerifies(cp.Repair), nil
 	case StageWrite:
-		return artifactExists(cp.Output), nil
+		return artifactVerifies(cp.Output), nil
 	case StageIndex:
-		return artifactExists(cp.Index), nil
+		return artifactVerifies(cp.Index), nil
 	case StageProvenance:
-		return artifactExists(cp.Provenance), nil
+		return artifactVerifies(cp.Provenance), nil
 	case StageVerify:
-		if !artifactExists(cp.Output) {
-			return false, nil
-		}
-		if err := verifyArtifact(cp.Output); err != nil {
-			return false, nil
-		}
-		return true, nil
+		// Verification is only meaningful if what it verified still matches.
+		return artifactVerifies(cp.Output) && artifactVerifies(cp.Index), nil
 	}
 	return false, nil
+}
+
+// artifactVerifies reports whether a recorded artifact still exists with the
+// exact size and SHA-256 recorded for it. Resume never trusts a path alone: a
+// truncated, edited or missing artifact forces its stage and every later one
+// to rerun. An I/O error during hashing is treated as "not reusable" so the
+// rebuild path produces the authoritative error.
+func artifactVerifies(a Artifact) bool {
+	if !artifactExists(a) {
+		return false
+	}
+	if a.SHA256 == "" {
+		return false
+	}
+	return verifyArtifact(a) == nil
 }
 
 func artifactExists(a Artifact) bool {
