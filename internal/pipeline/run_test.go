@@ -138,6 +138,36 @@ func TestResumeRebuildsMissingMP4Index(t *testing.T) {
 	}
 }
 
+func TestLoadLatestCheckpointFallsBackToPrevious(t *testing.T) {
+	dir := t.TempDir()
+	generateTestInput(t, dir, 220)
+	opts := DefaultOptions(dir)
+	opts.CheckpointPackets = 64
+	if _, err := Run(context.Background(), opts); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "checkpoint.json"), []byte("{broken"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cp, source, err := LoadLatestCheckpoint(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if source != "previous_checkpoint" || cp.ProcessedPackets != 128 {
+		t.Fatalf("source=%s processed=%d, want previous/128", source, cp.ProcessedPackets)
+	}
+
+	resume := opts
+	resume.Resume = true
+	result, err := Run(context.Background(), resume)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ResumedFromPacket != 128 {
+		t.Fatalf("resumed=%d want 128", result.ResumedFromPacket)
+	}
+}
+
 func TestResumeRejectsChangedInputDigest(t *testing.T) {
 	dir := t.TempDir()
 	generateTestInput(t, dir, 180)
