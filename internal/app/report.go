@@ -17,6 +17,15 @@ type Report struct {
 	Fatal error
 }
 
+// TruncationOffset returns the byte offset of a truncated tail, or -1 when
+// the input was not truncated.
+func (r *Report) TruncationOffset() int64 {
+	if r.Scratch == nil {
+		return -1
+	}
+	return r.Scratch.truncOffset
+}
+
 // Stats returns the acceptance metrics, zero-valued when the manifest node
 // never ran (e.g. an interrupted or blocked execution).
 func (r *Report) Stats() manifest.Stats {

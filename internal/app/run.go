@@ -29,6 +29,9 @@ type Config struct {
 	SilenceMin     int64
 	TargetBitrate  int64
 	InterruptAfter string
+	// Fault, when set to "truncate", feeds a partially truncated input so the
+	// ingest node fails with a truncated range error (CLI exit code 2).
+	Fault string
 }
 
 // DefaultConfig returns the deterministic demo parameters.
@@ -47,11 +50,12 @@ func DefaultConfig(out string) Config {
 
 // scratch is the in-memory hand-off between nodes within one process.
 type scratch struct {
-	demux    *ts.DemuxResult
-	slices   []slice.Slice
-	silences []audio.Interval
-	printer  []fingerprint.Fingerprint
-	manifest *manifest.Manifest
+	demux       *ts.DemuxResult
+	slices      []slice.Slice
+	silences    []audio.Interval
+	printer     []fingerprint.Fingerprint
+	manifest    *manifest.Manifest
+	truncOffset int64
 }
 
 // Run executes (or resumes) the pipeline for one generated fixture kind.
@@ -67,9 +71,14 @@ func Run(kind sample.Kind, cfg Config) (*Report, error) {
 	if err != nil {
 		return nil, err
 	}
+	sc := &scratch{truncOffset: -1}
 	data, _ := sample.Generate(kind)
+	if cfg.Fault == "truncate" {
+		var truncOffset int64
+		data, truncOffset = sample.Truncate()
+		sc.truncOffset = truncOffset
+	}
 	inputHash := hashBytes(data)
-	sc := &scratch{}
 
 	nodes := buildNodes(kind, data, inputHash, cfg, work, sc)
 	dag, err := pipeline.NewDAG(nodes)
@@ -82,7 +91,7 @@ func Run(kind sample.Kind, cfg Config) (*Report, error) {
 	}
 	results, err := runner.Execute()
 	if err != nil {
-		return &Report{Runner: runner, Fatal: err, Kind: kind}, err
+		return &Report{Runner: runner, Fatal: err, Kind: kind, Scratch: sc}, err
 	}
 	// An interrupt leaves the DAG partially executed with no error: do not
 	// fabricate a manifest, so the absence itself signals "not complete".
