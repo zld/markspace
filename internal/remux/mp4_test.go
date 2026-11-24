@@ -3,7 +3,6 @@ package remux
 import (
 	"bytes"
 	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -110,5 +109,3 @@ func pipelineDigest(media *demux.Media) string {
 }
 
 func reparseDigest(media *demux.Media) string { return pipelineDigest(media) }
-
-var _ = hex.EncodeToString

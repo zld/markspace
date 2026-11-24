@@ -1,9 +1,5 @@
 package remux
 
-import (
-	"github.com/abema/go-mp4"
-)
-
 // synthesizedStsd builds a minimal stsd for inputs whose demuxer did not carry
 // one (MPEG-TS).  The sample entry names the codec so the output re-demuxes to
 // the same track kind; no codec private data is invented.  In particular no
@@ -66,5 +62,3 @@ func synthesizedStsd(handler string) []byte {
 	b.finish(off)
 	return b.bytes()
 }
-
-var _ = mp4.StrToBoxType

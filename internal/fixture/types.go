@@ -6,7 +6,6 @@ package fixture
 import (
 	"crypto/sha256"
 	"fmt"
-	"sort"
 )
 
 // Payload is one generated fixture.
@@ -37,11 +36,4 @@ type Range struct {
 func Digest(data []byte) string {
 	s := sha256.Sum256(data)
 	return fmt.Sprintf("%x", s[:])
-}
-
-// SortedTrackIDs is a helper for deterministic reports.
-func SortedTrackIDs(ids []uint32) []uint32 {
-	out := append([]uint32(nil), ids...)
-	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
-	return out
 }

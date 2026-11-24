@@ -1,8 +1,6 @@
 package pipeline
 
 import (
-	"fmt"
-
 	"mediapipeline/internal/track"
 )
 
@@ -20,5 +18,3 @@ func (o Options) mapFor(inputs []track.Input) (track.Map, error) {
 	}
 	return track.Identity(inputs)
 }
-
-var _ = fmt.Sprintf

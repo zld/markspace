@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
-	"fmt"
 	"math/big"
 )
 
@@ -64,30 +63,4 @@ func (m Merged) Fingerprint() string {
 		h.Write([]byte{'\n'})
 	}
 	return hex.EncodeToString(h.Sum(nil))
-}
-
-// EqualKeys reports whether two key sequences are identical in order.
-func EqualKeys(a, b []Key) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
-// DiffKeys describes the first difference between two key sequences.
-func DiffKeys(want, got []Key) string {
-	for i := 0; i < len(want) && i < len(got); i++ {
-		if want[i] != got[i] {
-			return fmt.Sprintf("event %d differs: want %+v got %+v", i, want[i], got[i])
-		}
-	}
-	if len(want) != len(got) {
-		return fmt.Sprintf("event count differs: want %d got %d", len(want), len(got))
-	}
-	return ""
 }

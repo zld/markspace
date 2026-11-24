@@ -2,7 +2,6 @@ package demux
 
 import (
 	"bytes"
-	"fmt"
 
 	"github.com/abema/go-mp4"
 
@@ -80,20 +79,6 @@ func ParseMP4(data []byte, opts Options) (*Media, error) {
 		media.Events[i].Seq = i
 	}
 	return media, nil
-}
-
-// BoxTypes lists the top-level box types of data.  It exists for tests and
-// diagnostics, not for parsing decisions.
-func BoxTypes(data []byte) ([]string, error) {
-	top, _, err := parseBoxes(data, 0, int64(len(data)), "mp4", false)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]string, len(top))
-	for i, b := range top {
-		out[i] = fmt.Sprintf("%s@%d+%d", b.typ, b.off, b.size)
-	}
-	return out, nil
 }
 
 func findTop(boxes []*rawBox, typ string) *rawBox {
