@@ -170,7 +170,7 @@ same `provenance_sha256`.
 
 ## Fixtures
 
-`fixture.BuildAll` writes nine deterministic samples and a `manifest.json`:
+`fixture.BuildAll` writes ten deterministic samples and a `manifest.json`:
 
 | Kind | What it exercises |
 | --- | --- |
@@ -182,6 +182,7 @@ same `provenance_sha256`.
 | `regression` | timestamps step backwards mid-track |
 | `start_offset` | non-zero starting presentation time |
 | `duplicate` | a repeated presentation timestamp |
+| `multitrack` | video at 90 kHz plus an audio track at 48 kHz |
 | `wrap_regression` | wrap followed by a backward jump |
 
 Sample payload bytes are keyed on the fixture name, so two fixtures never
