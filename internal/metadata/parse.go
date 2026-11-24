@@ -171,10 +171,11 @@ func parseSRTTiming(line string) (clock.Ticks, clock.Ticks, error) {
 	if err != nil {
 		return 0, 0, err
 	}
-	end, err := srtTimeToMillis(strings.TrimSpace(strings.Split(parts[1], " ")[0]))
-	if err != nil {
-		return 0, 0, err
+	endFields := strings.Fields(parts[1])
+	if len(endFields) == 0 {
+		return 0, 0, fmt.Errorf("missing end timestamp")
 	}
+	end, err := srtTimeToMillis(endFields[0])
 	return clock.Ticks(start), clock.Ticks(end), nil
 }
 
