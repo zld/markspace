@@ -45,3 +45,31 @@ func TestCLISucceedsOnDemo(t *testing.T) {
 		}
 	}
 }
+
+func TestCLIProbeReportsExitClasses(t *testing.T) {
+	dir := t.TempDir()
+	if code := run([]string{"demo", "--generate", "--out", dir}); code != 0 {
+		t.Fatalf("setup demo exit = %d", code)
+	}
+	cases := []struct {
+		name string
+		want int
+	}{
+		{"assets/normal.mp4", 0},
+		{"assets/normal.mxf", 0},
+		{"assets/boundary.mp4", 0},
+		{"assets/corrupt.mp4", 3},
+		{"assets/invalid-crop.mp4", 4},
+	}
+	for _, c := range cases {
+		if got := run([]string{"probe", filepath.Join(dir, c.name)}); got != c.want {
+			t.Fatalf("probe %s exit = %d, want %d", c.name, got, c.want)
+		}
+	}
+	if got := run([]string{"probe"}); got != 2 {
+		t.Fatalf("probe without file exit = %d", got)
+	}
+	if got := run([]string{"probe", filepath.Join(dir, "missing.mp4")}); got != 5 {
+		t.Fatalf("probe missing file exit = %d", got)
+	}
+}
