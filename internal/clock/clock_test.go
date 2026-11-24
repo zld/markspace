@@ -84,7 +84,7 @@ func TestDriftExactLinear(t *testing.T) {
 	// remote clock runs 120 ppm fast: remote = local*(1+120e-6)
 	const ppm = 120.0
 	for i := int64(0); i < 100; i++ {
-		local := i * 20_000_000 // 20 ms in nanos
+		local := i * 20_000_000                                // 20 ms in nanos
 		remote := int64(float64(local) * (1 + ppm/1e6) / 1000) // remote ticks (1kHz)
 		d.Add(remote, local)
 	}

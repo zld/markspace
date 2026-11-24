@@ -54,9 +54,9 @@ func (s Scale) FromNanos(nanos int64) int64 {
 // and the clock it came from are always preserved alongside the
 // corrected value so downstream stages never lose provenance.
 type Stamp struct {
-	Ticks  int64 `json:"ticks"`  // corrected ticks on Scale
-	Scale  Scale `json:"scale"`  // scale of Ticks
-	Raw    int64 `json:"raw"`    // original DTS/PTS as read from the source
+	Ticks  int64  `json:"ticks"`  // corrected ticks on Scale
+	Scale  Scale  `json:"scale"`  // scale of Ticks
+	Raw    int64  `json:"raw"`    // original DTS/PTS as read from the source
 	Source string `json:"source"` // source clock id, e.g. "rtp:32000" or "mp4:44100"
 }
 

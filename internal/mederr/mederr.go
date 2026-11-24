@@ -10,14 +10,14 @@ import "fmt"
 type Category string
 
 const (
-	CatParse    Category = "parse"     // malformed input bytes (bad packet, bad box)
-	CatTimeline Category = "timeline"  // non-monotonic, contradictory or wrapped time
-	CatAudio    Category = "audio"     // unsupported rate/layout or render failure
-	CatOverlap  Category = "overlap"   // late input overlapping committed output
-	CatChecksum Category = "checksum"  // chunk output failed verification
-	CatIndex    Category = "index"     // checkpoint index corrupt or inconsistent
-	CatIO       Category = "io"        // filesystem failures
-	CatLimit    Category = "limit"     // input exceeds configured bounds
+	CatParse    Category = "parse"    // malformed input bytes (bad packet, bad box)
+	CatTimeline Category = "timeline" // non-monotonic, contradictory or wrapped time
+	CatAudio    Category = "audio"    // unsupported rate/layout or render failure
+	CatOverlap  Category = "overlap"  // late input overlapping committed output
+	CatChecksum Category = "checksum" // chunk output failed verification
+	CatIndex    Category = "index"    // checkpoint index corrupt or inconsistent
+	CatIO       Category = "io"       // filesystem failures
+	CatLimit    Category = "limit"    // input exceeds configured bounds
 )
 
 // Error is the single error shape used across the pipeline.
