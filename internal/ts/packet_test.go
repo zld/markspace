@@ -189,6 +189,58 @@ func TestAdaptationFieldPCRDecoded(t *testing.T) {
 	}
 }
 
+func TestScannerEnforcesFileSizeLimit(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "small.ts")
+	if _, err := fixture.Generate(path, fixture.Spec{VideoFrames: 20, AudioFrames: 40}); err != nil {
+		t.Fatal(err)
+	}
+	cfg := DefaultConfig()
+	cfg.MaxFileBytes = 1024 // far below the fixture size
+	if _, err := NewScanner(path, cfg); err == nil {
+		t.Fatal("scanner accepted a file over the size limit")
+	}
+}
+
+func TestScannerEnforcesPacketLimit(t *testing.T) {
+	path := writeFixture(t, 8)
+	cfg := DefaultConfig()
+	cfg.MaxPackets = 10
+	_, _, err := ReadAll(path, cfg, nil)
+	if err == nil {
+		t.Fatal("scanner accepted a stream over the packet limit")
+	}
+}
+
+func TestReadAllDoesNotModifyInput(t *testing.T) {
+	path := writeFixture(t, 9)
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := ReadAll(path, DefaultConfig(), nil); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st2, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(before) != string(after) {
+		t.Fatal("reading the stream modified the input bytes")
+	}
+	if st.ModTime() != st2.ModTime() || st.Size() != st2.Size() {
+		t.Fatal("reading the stream changed the input metadata")
+	}
+}
+
 func TestReadPacketMatchesCitedOffset(t *testing.T) {
 	path := writeFixture(t, 7)
 	f, err := os.Open(path)

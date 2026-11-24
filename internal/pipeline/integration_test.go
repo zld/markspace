@@ -111,6 +111,34 @@ func TestRoundtripBytesMatchSource(t *testing.T) {
 	}
 }
 
+// TestAnalyzeIsDeterministic guards the tail-flush ordering: the final open
+// access unit of each PID must be emitted in first-seen order, not Go's map
+// iteration order, or the last index records vary run to run.
+func TestAnalyzeIsDeterministic(t *testing.T) {
+	clean, root := prepare(t)
+	var first string
+	for i := 0; i < 5; i++ {
+		an, err := Analyze(context.Background(), clean, testParams())
+		if err != nil {
+			t.Fatalf("analyze %d: %v", i, err)
+		}
+		// Hash every sample field that flows into the index digest.
+		var b strings.Builder
+		for _, s := range an.Samples {
+			fmt.Fprintf(&b, "%d|%d|%d|%d|%d|%s|%t\n", s.PID, s.DTS, s.PTS, len(s.Offsets), s.PayloadBytes, s.PayloadHash, s.Keyframe)
+		}
+		digest := b.String()
+		if i == 0 {
+			first = digest
+			continue
+		}
+		if digest != first {
+			t.Fatalf("run %d produced a different sample sequence from run 0", i)
+		}
+	}
+	_ = root
+}
+
 // TestDeterministicRerun proves identical input and parameters produce
 // identical per-segment hashes and identical manifest content (excluding the
 // self-hash and the run-local recovered-node counter).
