@@ -97,7 +97,10 @@ func auditOneRTP(id string, data []byte, maxPPM int64) RTPTrackResult {
 	// initial 32-bit value) do not masquerade as drift.
 	mediaOrigin := ext[0]
 	for i, s := range samples {
-		media := ratDiv(int64(ext[i]-mediaOrigin), int64(h.Timescale))
+		// Unsigned subtraction would wrap for a reordered leading packet, so
+		// form the signed difference directly.
+		delta := int64(ext[i]) - int64(mediaOrigin)
+		media := ratDiv(delta, int64(h.Timescale))
 		ref := ratDiv(int64(s.RefTick), int64(h.RefTimescale))
 		driftSamples = append(driftSamples, timecode.DriftSample{Media: media, Ref: ref})
 	}

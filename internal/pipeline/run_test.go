@@ -418,3 +418,27 @@ func TestUnreadableVideoIsRecoverable(t *testing.T) {
 		t.Fatalf("exit=%d want 2", st.ExitCode())
 	}
 }
+
+func TestRTPAuditHandlesReorderedFirstPacket(t *testing.T) {
+	// A stream whose first packet is slightly out of order must not be read
+	// as a huge unsigned difference (which would look like massive drift).
+	dir := t.TempDir()
+	data, err := fixtures.RTPStream(fixtures.RTPSpec{
+		Timescale: 90000, RefTimescale: 90000, Count: 50,
+		StartTS: 100000, StepTS: 9000, StepRef: 9000,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "a.rtp")
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res := AuditRTPStreams(map[string]string{"a": path}, 500)
+	if len(res.Tracks) != 1 || res.Tracks[0].Failed {
+		t.Fatalf("clean stream failed: %+v", res.Tracks)
+	}
+	if res.Tracks[0].Wraps != 0 {
+		t.Fatalf("wraps=%d", res.Tracks[0].Wraps)
+	}
+}
