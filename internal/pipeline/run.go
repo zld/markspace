@@ -197,9 +197,13 @@ func Run(cfg Config) (*Report, error) {
 	}
 
 	badBlocks := repair.CountBadBlocks(blocks)
+	verifyWasCompleted := man.stage(media.StageVerify).Status == "completed"
 	stats, vErr := verify.Compute(format, pcm, badBlocks)
 	if vErr != nil {
 		return failManifest(cfg.WorkDir, man, rep, vErr)
+	}
+	if !verifyWasCompleted {
+		rep.RecomputedStages = append(rep.RecomputedStages, string(media.StageVerify))
 	}
 	alignment := int64(0)
 	if provenance != nil {
