@@ -45,8 +45,9 @@ func (s Summary) Digest() string {
 
 // Manifest is the complete deterministic distribution manifest.
 type Manifest struct {
-	SchemaVersion     string                    `json:"schema_version"`
-	Summary           Summary                   `json:"summary"`
+	SchemaVersion string `json:"schema_version"`
+	// Anonymous embedding promotes all acceptance counters to top-level keys.
+	Summary
 	SummarySHA256     string                    `json:"summary_sha256"`
 	InputPath         string                    `json:"input_path"`
 	InputSHA256       string                    `json:"input_sha256"`
