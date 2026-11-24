@@ -140,22 +140,26 @@ func (e *Estimator) Estimate() Estimate {
 	return est
 }
 
-// Corrector applies the drift estimate around an anchor timestamp. The anchor
-// is the first reference sample of the capture so absolute offsets are not
-// folded into the correction.
+// Corrector maps a candidate clock (for example the audio media clock) onto a
+// reference clock (for example the video timeline). The mapping is anchored at
+// the first observed pair: corrected = refAnchor + (raw - candAnchor) * slope.
+// This absorbs the constant capture offset while correcting only the drift
+// rate, and it never changes the slope beyond MaxPPM.
 type Corrector struct {
-	est       *Estimator
-	anchor    model.Nanos
-	anchorSet bool
+	est        *Estimator
+	refAnchor  model.Nanos
+	candAnchor model.Nanos
+	anchorSet  bool
 }
 
 // NewCorrector builds a corrector over the given estimator.
 func NewCorrector(est *Estimator) *Corrector { return &Corrector{est: est} }
 
-// Observe feeds a pair to the estimator and (once) sets the anchor.
+// Observe feeds a pair to the estimator and anchors on the first one.
 func (c *Corrector) Observe(p Pair) {
 	if !c.anchorSet {
-		c.anchor = p.Candidate
+		c.refAnchor = p.Reference
+		c.candAnchor = p.Candidate
 		c.anchorSet = true
 	}
 	c.est.Add(p)
@@ -163,40 +167,49 @@ func (c *Corrector) Observe(p Pair) {
 
 // State is the serializable drift state.
 type State struct {
-	Anchor    model.Nanos
-	AnchorSet bool
-	PPM       float64
-	Slope     float64
+	RefAnchor  model.Nanos `json:"ref_anchor"`
+	CandAnchor model.Nanos `json:"cand_anchor"`
+	AnchorSet  bool        `json:"anchor_set"`
+	PPM        float64     `json:"ppm"`
+	Slope      float64     `json:"slope"`
+	// Pairs is the estimator window, retained so a resumed run reproduces the
+	// same slope exactly.
+	Pairs []Pair `json:"pairs"`
 }
 
-// State returns the current drift state.
-func (c *Corrector) State() State {
+// Snapshot returns the drift state including the estimator window.
+func (c *Corrector) Snapshot() State {
 	e := c.est.Estimate()
-	return State{Anchor: c.anchor, AnchorSet: c.anchorSet, PPM: e.PPM, Slope: e.Slope}
+	return State{
+		RefAnchor: c.refAnchor, CandAnchor: c.candAnchor, AnchorSet: c.anchorSet,
+		PPM: e.PPM, Slope: e.Slope, Pairs: append([]Pair(nil), c.est.pairs...),
+	}
 }
 
-// Restore replaces the drift state. The estimator window is not serialized in
-// full; resumed runs restart the window at the checkpoint and keep the applied
-// slope, which is why resume also replays samples deterministically.
+// Restore replaces the drift state.
 func (c *Corrector) Restore(s State) {
-	c.anchor = s.Anchor
-	c.anchorSet = s.AnchorSet
+	c.refAnchor, c.candAnchor, c.anchorSet = s.RefAnchor, s.CandAnchor, s.AnchorSet
+	c.est.pairs = append([]Pair(nil), s.Pairs...)
 }
 
-// Correct maps a raw media timestamp to the corrected clock. The correction is
-// anchored so the first observed sample is unchanged; the multiplier is the
-// slope-limited drift estimate.
+// Correct maps a raw candidate timestamp onto the reference clock. Before the
+// estimator has enough pairs the timestamp is returned unchanged apart from
+// the constant anchor offset, which keeps early output stable.
 func (c *Corrector) Correct(raw model.Nanos) model.Nanos {
 	if !c.anchorSet {
 		return raw
 	}
-	e := c.est.Estimate()
-	if e.Insufficient || e.Slope == 1 {
-		return raw
+	slope := 1.0
+	if e := c.est.Estimate(); !e.Insufficient {
+		slope = e.Slope
 	}
-	delta := float64(raw - c.anchor)
-	corrected := float64(c.anchor) + delta*e.Slope
-	return model.Nanos(math.Round(corrected))
+	delta := float64(raw - c.candAnchor)
+	return c.refAnchor + model.Nanos(math.Round(delta*slope))
+}
+
+// Residual is the remaining reference/candidate divergence at a pair.
+func (c *Corrector) Residual(p Pair) model.Nanos {
+	return p.Reference - c.Correct(p.Candidate)
 }
 
 // Skew is the absolute audio/video offset between two samples.

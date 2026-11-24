@@ -45,12 +45,13 @@ func ToNanos(value int64, timescale uint32) (Nanos, error) {
 }
 
 // NanosToScale converts a kernel timestamp back into the given media
-// timescale, truncating toward zero.
+// timescale, truncating toward zero. The scale factor never exceeds 1e9, so
+// the product fits in int64 for timestamps up to about 292 years.
 func NanosToScale(ts Nanos, timescale uint32) (int64, error) {
 	if timescale == 0 {
 		return 0, fmt.Errorf("timescale must be positive")
 	}
-	return int64(ts) / NanosPerSecond * int64(timescale), nil
+	return int64(ts) * int64(timescale) / NanosPerSecond, nil
 }
 
 // MS converts a duration on the kernel time base into milliseconds. It is a
