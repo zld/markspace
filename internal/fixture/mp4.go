@@ -334,10 +334,13 @@ func encode(opts Options, degrade *Degrade) ([]byte, error) {
 		return nil, err
 	}
 	out.Write(hdr)
+	// Payload bytes are keyed on the sample name as well as the index, so two
+	// fixtures with different names never share a digest.
+	seed := nameSeed(opts.Name)
 	payload := make([]byte, payloadLen)
 	for i := 0; i < opts.SampleCount; i++ {
 		for j := 0; j < sampleSize; j++ {
-			payload[i*sampleSize+j] = payloadByte(i, j)
+			payload[i*sampleSize+j] = payloadByte(seed+i, j)
 		}
 	}
 	out.Write(payload)
@@ -354,6 +357,16 @@ const (
 	mdatHeaderSize = 8
 )
 
+// nameSeed derives a stable seed from a fixture name.
+func nameSeed(name string) int {
+	var h uint32 = 2166136261
+	for i := 0; i < len(name); i++ {
+		h ^= uint32(name[i])
+		h *= 16777619
+	}
+	return int(h & 0x7FFFFFFF)
+}
+
 // buildLayout derives DTS/PTS/size tables from options.
 func buildLayout(opts Options, degrade *Degrade) *trackLayout {
 	n := opts.SampleCount
@@ -364,19 +377,21 @@ func buildLayout(opts Options, degrade *Degrade) *trackLayout {
 		Width:   640,
 		Height:  360,
 	}
+	// Decode time starts at zero; the non-zero starting presentation time is
+	// carried by the composition offset, exactly as a real edit-free file
+	// would store it. Sample timestamps are 32-bit patterns, so a start near
+	// 2^32 exercises the wrap path.
 	for i := 0; i < n; i++ {
-		layout.DTS = append(layout.DTS, uint64(opts.FirstPTS)+uint64(i)*uint64(opts.Step))
+		layout.DTS = append(layout.DTS, uint64(i)*uint64(opts.Step))
 	}
-	// Presentation time equals decode time plus the (constant) composition
-	// offset, then any requested defect is applied.
 	for i := 0; i < n; i++ {
-		var pts int64 = int64(layout.DTS[i]) + int64(opts.Composition)
+		var pts int64 = int64(opts.FirstPTS) + int64(i)*int64(opts.Step) + int64(opts.Composition)
 		switch {
 		case degrade == nil:
 		case degrade.Mode == DegradeBackward && i >= degrade.AtSample:
 			pts -= degrade.Amount
 		case degrade.Mode == DegradeDuplicate && i == degrade.AtSample:
-			pts = int64(layout.DTS[i-1]) + int64(opts.Composition)
+			pts = int64(opts.FirstPTS) + int64(i-1)*int64(opts.Step) + int64(opts.Composition)
 		}
 		layout.PTSRaw = append(layout.PTSRaw, uint32(pts))
 	}

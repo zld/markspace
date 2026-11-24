@@ -3,6 +3,7 @@ package index
 import (
 	"io"
 	"os"
+	"path/filepath"
 
 	"archivist/internal/fault"
 	"archivist/internal/repair"
@@ -55,6 +56,9 @@ func Rebuild(src *scan.Container, rep *repair.Result, outPath string, opts Rebui
 	payloadStart := ftypLen + moovLen + int64(mdatHeaderSize)
 	assignOffsets(tracks, payloadStart)
 
+	if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
+		return nil, fault.New(fault.KindIO, fault.StageWrite, "create output dir").In(outPath).Wrap(err)
+	}
 	tmp := outPath + ".tmp"
 	f, err := os.Create(tmp)
 	if err != nil {
@@ -276,4 +280,81 @@ func writeMdat(f *os.File, src *scan.Container, tracks []*plannedTrack) error {
 		}
 	}
 	return nil
+}
+
+// FromOutput reconstructs the index for an already-written output file. It is
+// used when a resumed run skips the write stage: the output is authoritative
+// for offsets, sizes and sync flags, while the repair result supplies the
+// absolute presentation timeline and the rebase base. The function verifies
+// that both agree, so a stale repair result cannot silently produce a wrong
+// index.
+func FromOutput(outPath string, rep *repair.Result) (*Index, error) {
+	if rep == nil {
+		return nil, fault.New(fault.KindInvariant, fault.StageIndex, "nil repair result")
+	}
+	r, err := scan.Open(outPath)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	c, err := r.Scan()
+	if err != nil {
+		return nil, err
+	}
+	byID := make(map[uint32]*scan.Track, len(c.Tracks))
+	for _, t := range c.Tracks {
+		byID[t.ID] = t
+	}
+	ix := &Index{Version: Version}
+	for _, rt := range rep.Tracks {
+		st, ok := byID[rt.TrackID]
+		if !ok {
+			return nil, fault.New(fault.KindInvariant, fault.StageIndex,
+				"output file is missing track %d", rt.TrackID).In(outPath)
+		}
+		if len(st.Samples) != len(rt.Entries) {
+			return nil, fault.New(fault.KindInvariant, fault.StageIndex,
+				"track %d has %d samples in output, repair produced %d",
+				rt.TrackID, len(st.Samples), len(rt.Entries)).In(outPath)
+		}
+		t := &Track{
+			ID:             rt.TrackID,
+			Timescale:      rt.Timescale,
+			MovieTimescale: rt.MovieTimescale,
+			OutputBase:     rt.Entries[0].Repaired,
+		}
+		var prev int64
+		for i, e := range rt.Entries {
+			smp := st.Samples[i]
+			if i > 0 && e.Repaired <= prev {
+				return nil, fault.New(fault.KindInvariant, fault.StageIndex,
+					"track %d sample %d is not monotonic", rt.TrackID, e.Sample)
+			}
+			prev = e.Repaired
+			// The on-disk timestamp must equal the absolute time minus the
+			// rebase base; a mismatch means the output was produced from a
+			// different repair result.
+			if int64(smp.PTS) != e.Repaired-t.OutputBase {
+				return nil, fault.New(fault.KindInvariant, fault.StageIndex,
+					"track %d sample %d stored time %d does not match repaired %d",
+					rt.TrackID, i+1, smp.PTS, e.Repaired-t.OutputBase).In(outPath)
+			}
+			if int64(smp.Size) != int64(e.Size) {
+				return nil, fault.New(fault.KindInvariant, fault.StageIndex,
+					"track %d sample %d size changed", rt.TrackID, i+1).In(outPath)
+			}
+			t.Entries = append(t.Entries, Entry{
+				Sample:    e.Sample,
+				PTS:       e.Repaired,
+				MovieTime: e.MovieTime,
+				Offset:    smp.Offset,
+				Size:      smp.Size,
+				Keyframe:  smp.Keyframe,
+				Original:  e.Original,
+			})
+		}
+		t.buildKeyframes()
+		ix.Tracks = append(ix.Tracks, t)
+	}
+	return ix, nil
 }

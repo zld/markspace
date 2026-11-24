@@ -4,7 +4,9 @@
 package index
 
 import (
+	"encoding/json"
 	"errors"
+	"os"
 	"sort"
 
 	"archivist/internal/fault"
@@ -249,4 +251,20 @@ func (ix *Index) SortedTrackIDs() []uint32 {
 	}
 	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
 	return ids
+}
+
+// Load reads a previously written index artifact.
+func Load(path string) (*Index, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fault.New(fault.KindIO, fault.StageIndex, "read index").In(path).Wrap(err)
+	}
+	var ix Index
+	if err := json.Unmarshal(data, &ix); err != nil {
+		return nil, fault.New(fault.KindInvariant, fault.StageIndex, "parse index").In(path).Wrap(err)
+	}
+	for _, t := range ix.Tracks {
+		t.buildKeyframes()
+	}
+	return &ix, nil
 }
