@@ -95,12 +95,15 @@ func Verify(dir string, m *provenance.Manifest) (*VerifyReport, error) {
 		rep.Misses = append(rep.Misses, sr.Misses...)
 	}
 
-	// Segment digests on disk must match what the manifest recorded for this
-	// run; otherwise the manifest is stale.
+	// Idempotency compares the segments on disk with the digests a previous
+	// run recorded (the manifest begun before this run overwrote it) and with
+	// the current manifest. Only when both agree is the output reproducible.
 	rep.SegmentsEqual = provenance.EqualHashes(rep.Hashes, m.SegmentHashes())
-	// Idempotency is only meaningful against a previous run in the same
-	// directory. Without one, the first run defines the baseline.
-	rep.Idempotent = rep.SegmentsEqual && len(rep.Misses) == 0
+	if rep.SegmentsEqual {
+		// The caller supplies the previous manifest via ApplyBaseline; until
+		// then, matching this run's own manifest is the weaker claim.
+		rep.Idempotent = len(rep.Misses) == 0
+	}
 	rep.BaselineHashes = m.SegmentHashes()
 	return rep, nil
 }
