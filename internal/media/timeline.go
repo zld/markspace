@@ -6,14 +6,14 @@ import "sort"
 // sample with its normalized timestamps. Payload bytes are kept verbatim —
 // nothing is decoded or re-encoded anywhere in the pipeline.
 type Event struct {
-	TrackID  int
-	Seq      int    // decode-order index within the source track
+	TrackID   int
+	Seq       int   // decode-order index within the source track
 	MediaTime int64 // ns on the source media timeline (wrap already expanded)
-	Arrival  int64  // ns local capture clock, 0 for file sources
-	Duration int64  // ns
-	Keyframe bool
-	Damaged  bool   // payload could not be read in full; bytes may be partial
-	Payload  []byte
+	Arrival   int64 // ns local capture clock, 0 for file sources
+	Duration  int64 // ns
+	Keyframe  bool
+	Damaged   bool // payload could not be read in full; bytes may be partial
+	Payload   []byte
 }
 
 // Sample is a timestamped unit on a track's media timeline.
