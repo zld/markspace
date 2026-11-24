@@ -243,3 +243,19 @@ func (d *Deduper) Restore(s DeduperSnapshot) {
 
 // Count returns the number of distinct sequence numbers recorded.
 func (d *Deduper) Count() int { return len(d.seen) }
+
+// RelativeExt maps a raw sequence number to the extended space relative to the
+// most recent packet, assuming it lies within half a wrap cycle. It is used
+// for redundancy records that name earlier sequence numbers.
+func (d *Deduper) RelativeExt(raw uint64) int64 {
+	mod := d.ext.modulus
+	raw &= mod - 1
+	if !d.ext.init {
+		return int64(raw)
+	}
+	behind := (d.ext.lastRaw - raw) & (mod - 1)
+	if behind >= d.ext.half {
+		behind -= mod // signed distance: raw is ahead of the last packet
+	}
+	return d.ext.lastExt - int64(behind)
+}

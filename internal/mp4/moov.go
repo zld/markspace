@@ -50,13 +50,19 @@ type trackMeta struct {
 // InspectTrack expands a single trak, used by tests and by the fixture
 // generator to round-trip files written through go-mp4.
 func InspectTrack(r io.ReadSeeker, path string, trak *mp4.BoxInfo) (TrackInfo, model.ErrorList, error) {
+	return inspectTrack(r, path, trak, 0)
+}
+
+// inspectTrack reads one track. movieTimescale is the mvhd timescale, which
+// governs elst segment durations; zero disables the edit duration check.
+func inspectTrack(r io.ReadSeeker, path string, trak *mp4.BoxInfo, movieTimescale uint32) (TrackInfo, model.ErrorList, error) {
 	var errs model.ErrorList
 	tm := &trackMeta{boxOffsets: map[string]uint64{}}
 	_, err := mp4.ReadBoxStructureFromInternal(r, trak, trackHandler(path, trak.Offset, tm, &errs))
 	if err != nil {
 		return TrackInfo{}, errs, err
 	}
-	ti, terr := buildTrackInfo(path, trak.Offset, tm)
+	ti, terr := buildTrackInfo(path, trak.Offset, tm, movieTimescale)
 	if terr != nil {
 		errs.Add(terr)
 		return TrackInfo{}, errs, nil
@@ -126,7 +132,7 @@ func trackHandler(path string, base uint64, tm *trackMeta, errs *model.ErrorList
 	}
 }
 
-func buildTrackInfo(path string, base uint64, tm *trackMeta) (TrackInfo, *model.Error) {
+func buildTrackInfo(path string, base uint64, tm *trackMeta, movieTimescale uint32) (TrackInfo, *model.Error) {
 	var ti TrackInfo
 	if tm.tkhd != nil {
 		ti.ID = tm.tkhd.TrackID
@@ -174,7 +180,13 @@ func buildTrackInfo(path string, base uint64, tm *trackMeta) (TrackInfo, *model.
 				return ti, model.NewError(model.CodeMP4ElstRange,
 					model.Loc{File: path, TrackID: ti.ID, Field: fmt.Sprintf("elst[%d].media_time", i), HasByteOffset: true, ByteOffset: int64(base)}, "edit media_time").Wrap(err)
 			}
-			dn, err := model.ToNanos(int64(dur), ti.Timescale)
+			// elst segment durations are expressed in the movie timescale,
+			// while media_time is in the media timescale.
+			segScale := ti.Timescale
+			if movieTimescale != 0 {
+				segScale = movieTimescale
+			}
+			dn, err := model.ToNanos(int64(dur), segScale)
 			if err != nil {
 				return ti, model.NewError(model.CodeMP4ElstRange,
 					model.Loc{File: path, TrackID: ti.ID, Field: fmt.Sprintf("elst[%d].segment_duration", i), HasByteOffset: true, ByteOffset: int64(base)}, "edit duration").Wrap(err)
@@ -189,7 +201,10 @@ func buildTrackInfo(path string, base uint64, tm *trackMeta) (TrackInfo, *model.
 			totalEdit += dur
 		}
 	}
-	if totalEdit > ti.DurationTicks && totalEdit-ti.DurationTicks > 0 {
+	if movieTimescale == 0 {
+		totalEdit = 0 // cannot compare across unknown movie timescale
+	}
+	if totalEdit > ti.DurationTicks {
 		return ti, model.NewError(model.CodeMP4ElstRange,
 			model.Loc{File: path, TrackID: ti.ID, Field: "elst.segment_duration", HasByteOffset: true, ByteOffset: int64(base)},
 			"edit list covers %d ticks but media lasts %d ticks", totalEdit, ti.DurationTicks)
@@ -320,7 +335,7 @@ func inspectMoovChildren(r io.ReadSeeker, path string, moov *mp4.BoxInfo, info *
 			"moov has no mvhd box"))
 	}
 	for _, trak := range tracks {
-		ti, terr, e := InspectTrack(r, path, trak)
+		ti, terr, e := inspectTrack(r, path, trak, info.Timescale)
 		if e != nil {
 			return e
 		}

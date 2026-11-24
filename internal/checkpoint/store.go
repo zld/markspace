@@ -107,8 +107,11 @@ func (s *Store) Append(r Record) (Record, error) {
 
 // LoadResult is the outcome of reading a checkpoint log.
 type LoadResult struct {
-	// Valid is the newest checkpoint whose digest and prefix chain verify.
+	// Valid is the newest checkpoint whose digest verifies.
 	Valid *Record
+	// All lists every record whose own digest verifies, oldest first. Callers
+	// that can verify payloads must walk it backwards to fall back.
+	All []Record
 	// Records is the number of complete records parsed.
 	Records int
 	// Corrupt is the number of records that failed verification.
@@ -119,9 +122,9 @@ type LoadResult struct {
 	DamagedOffset int64
 }
 
-// Load reads the log and returns the newest record whose own digest and
-// whose OutputDigest prefix chain verify. Any damaged record causes the loader
-// to fall back to the previous valid record and explain why.
+// Load reads the log and returns every record whose own digest verifies. A
+// damaged record stops the scan: nothing after a damaged record is trusted,
+// because checkpoints form a chain.
 func (s *Store) Load() (LoadResult, error) {
 	var res LoadResult
 	f, err := os.Open(s.path())
@@ -133,19 +136,14 @@ func (s *Store) Load() (LoadResult, error) {
 	}
 	defer f.Close()
 
-	var good []Record
-	var goodEnd []int64 // byte offset just past each good record
 	br := bufio.NewReader(f)
 	var off int64
-	var prevDigest string
 	for {
 		line, rerr := br.ReadBytes('\n')
 		if len(line) > 0 {
 			if rerr == io.EOF && !bytes.HasSuffix(line, []byte("\n")) {
 				res.Corrupt++
-				if res.DamagedOffset == 0 {
-					res.DamagedOffset = off
-				}
+				res.DamagedOffset = off
 				res.FallbackReason = fmt.Sprintf("truncated record at byte %d", off)
 				break
 			}
@@ -154,32 +152,18 @@ func (s *Store) Load() (LoadResult, error) {
 			dec.DisallowUnknownFields()
 			if err := dec.Decode(&r); err != nil {
 				res.Corrupt++
-				if res.DamagedOffset == 0 {
-					res.DamagedOffset = off
-				}
+				res.DamagedOffset = off
 				res.FallbackReason = fmt.Sprintf("undecodable record at byte %d: %v", off, err)
 				break
 			}
 			res.Records++
 			if r.Digest != r.digest() {
 				res.Corrupt++
-				if res.DamagedOffset == 0 {
-					res.DamagedOffset = off
-				}
+				res.DamagedOffset = off
 				res.FallbackReason = fmt.Sprintf("digest mismatch at byte %d", off)
 				break
 			}
-			if prevDigest != "" && r.OutputDigest != prevDigest && !r.OutputDigestMatchesPrevious(prevDigest) {
-				res.Corrupt++
-				if res.DamagedOffset == 0 {
-					res.DamagedOffset = off
-				}
-				res.FallbackReason = fmt.Sprintf("output prefix mismatch at byte %d", off)
-				break
-			}
-			prevDigest = r.OutputDigest
-			good = append(good, r)
-			goodEnd = append(goodEnd, off+int64(len(line)))
+			res.All = append(res.All, r)
 		}
 		off += int64(len(line))
 		if rerr == io.EOF {
@@ -189,20 +173,22 @@ func (s *Store) Load() (LoadResult, error) {
 			return res, model.NewError(model.CodeCheckpointCorrupt, model.Loc{File: s.path()}, "read checkpoint log").Wrap(rerr)
 		}
 	}
-	if len(good) == 0 {
+	if len(res.All) == 0 {
 		return res, model.NewError(model.CodeCheckpointCorrupt, model.Loc{File: s.path()}, "no valid checkpoint record")
 	}
-	r := good[len(good)-1]
-	res.Valid = &r
-	_ = goodEnd
+	v := res.All[len(res.All)-1]
+	res.Valid = &v
 	return res, nil
 }
 
-// OutputDigestMatchesPrevious is a hook for prefix verification. The digest
-// chain is validated by Resume, which recomputes the output prefix; here the
-// check is conservative: an unchanged digest is always acceptable.
-func (r Record) OutputDigestMatchesPrevious(prev string) bool {
-	return r.OutputDigest == prev
+// Candidates returns the verified records newest first, for payload-level
+// fallback.
+func (r LoadResult) Candidates() []Record {
+	out := make([]Record, len(r.All))
+	for i := range r.All {
+		out[i] = r.All[len(r.All)-1-i]
+	}
+	return out
 }
 
 // Compact rewrites the log keeping only the newest MaxRecords valid entries.
