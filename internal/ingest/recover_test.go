@@ -177,3 +177,25 @@ func TestRecoverDeterministic(t *testing.T) {
 		}
 	}
 }
+
+func TestGapRecordedEvenWhenTrackIsolated(t *testing.T) {
+	spec := fixgen.FileSpec{
+		Tracks: []fixgen.TrackSpec{audioTrack()},
+		Frags:  []fixgen.FragSpec{frag(1, 2, 0, 4), frag(5, 2, 100, 4)},
+	}
+	f, errs := parseSpec(t, "gapiso.mp4", spec)
+	res := Recover([]*File{f}, nil, errs)
+	if len(res.IsolatedTracks) != 1 || res.IsolatedTracks[0] != 2 {
+		t.Fatalf("isolated=%v", res.IsolatedTracks)
+	}
+	if len(res.Gaps) != 1 {
+		t.Fatalf("input gap lost on isolation: %+v", res.Gaps)
+	}
+	g := res.Gaps[0]
+	if g.AfterSeq != 1 || g.BeforeSeq != 5 || g.TrackID != 2 || g.EstSamples != 3*4 {
+		t.Fatalf("gap=%+v", g)
+	}
+	if len(res.Samples) != 0 {
+		t.Fatalf("isolated track leaked %d samples", len(res.Samples))
+	}
+}

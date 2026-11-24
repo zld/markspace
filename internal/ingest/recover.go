@@ -59,12 +59,14 @@ func Recover(files []*File, rtp map[uint32][]RTPEvent, errs *model.Errors) *Resu
 			res.IsolatedTracks = append(res.IsolatedTracks, tid)
 			continue
 		}
-		samples, gaps, ok := resolveTimeline(tid, meta, frags, rtp[tid], errs)
+		// Sequence gaps are a property of the input, not of recovery: record
+		// them even when the track is later isolated.
+		res.Gaps = append(res.Gaps, detectGaps(tid, meta, frags)...)
+		samples, ok := resolveTimeline(tid, meta, frags, rtp[tid], errs)
 		if !ok {
 			res.IsolatedTracks = append(res.IsolatedTracks, tid)
 			continue
 		}
-		res.Gaps = append(res.Gaps, gaps...)
 		res.Samples = append(res.Samples, samples...)
 		if hasRecovery(errs, tid) {
 			res.RecoveredTracks = append(res.RecoveredTracks, tid)
@@ -124,25 +126,20 @@ func sameLayout(a, b *Fragment) bool {
 // time follows from continuous sample durations; otherwise the track is
 // isolated. An available RTP capture must confirm monotone arrival order.
 func resolveTimeline(tid uint32, meta *TrackMeta, frags []fragRef,
-	rtpEvents []RTPEvent, errs *model.Errors) ([]model.Sample, []model.Gap, bool) {
+	rtpEvents []RTPEvent, errs *model.Errors) ([]model.Sample, bool) {
 
 	if len(rtpEvents) > 0 && !Monotonic(rtpEvents) {
 		errs.Add(model.NewError(model.LevelIsolated, "recover", "", -1, tid,
 			"RTP capture contradicts fragment order; track isolated"))
-		return nil, nil, false
+		return nil, false
 	}
 
 	ts := model.Timescale{TicksPerSecond: uint64(meta.Timescale)}
 	var samples []model.Sample
-	var gaps []model.Gap
 	var prevEndTicks uint64
 
 	for i, fr := range frags {
 		f := fr.frag
-		var fragDur uint64
-		for _, s := range f.Samples {
-			fragDur += uint64(s.DurationTicks)
-		}
 		tfdt := f.TFDT
 		if i > 0 {
 			prev := frags[i-1].frag
@@ -154,7 +151,7 @@ func resolveTimeline(tid uint32, meta *TrackMeta, frags []fragRef,
 					errs.Add(model.NewError(model.LevelIsolated, "recover",
 						fr.file.Path, f.MoofOffset, tid,
 						"missing tfdt across sequence gap; cannot locate fragment"))
-					return nil, nil, false
+					return nil, false
 				}
 				tfdt = expected
 				errs.Add(model.NewError(model.LevelRecovered, "recover",
@@ -166,23 +163,13 @@ func resolveTimeline(tid uint32, meta *TrackMeta, frags []fragRef,
 						fr.file.Path, f.MoofOffset, tid,
 						"tfdt rollback (%d < expected %d) across sequence gap; unrecoverable",
 						tfdt, expected))
-					return nil, nil, false
+					return nil, false
 				}
 				errs.Add(model.NewError(model.LevelRecovered, "recover",
 					fr.file.Path, f.MoofOffset, tid,
 					"tfdt rollback %d -> %d repaired from continuous durations",
 					tfdt, expected))
 				tfdt = expected
-			}
-			if f.Seq > prev.Seq+1 {
-				startNs, _ := ts.ToNs(prevEndTicks)
-				gaps = append(gaps, model.Gap{
-					TrackID:    tid,
-					AfterSeq:   prev.Seq,
-					BeforeSeq:  f.Seq,
-					Time:       model.Interval{Start: startNs, End: prevEndNsOf(startNs, frags, i, ts, tfdt)},
-					EstSamples: int(f.Seq-prev.Seq-1) * medianSamples(frags),
-				})
 			}
 		}
 		ticks := tfdt
@@ -203,16 +190,45 @@ func resolveTimeline(tid uint32, meta *TrackMeta, frags []fragRef,
 		}
 		prevEndTicks = ticks
 	}
-	return samples, gaps, true
+	return samples, true
 }
 
-// prevEndNsOf computes the gap end: the start time of the next fragment.
-func prevEndNsOf(start model.NsTime, frags []fragRef, i int, ts model.Timescale, tfdt uint64) model.NsTime {
-	end, _ := ts.ToNs(tfdt)
-	if end < start {
-		return start
+// detectGaps reports mfhd sequence holes per track. The gap interval spans
+// from the end of the fragment before the hole to the decode time of the
+// fragment after it; when that time is missing or not after the start, the
+// interval collapses to a point at the start. Samples are never invented
+// for a gap.
+func detectGaps(tid uint32, meta *TrackMeta, frags []fragRef) []model.Gap {
+	ts := model.Timescale{TicksPerSecond: uint64(meta.Timescale)}
+	var gaps []model.Gap
+	var prevEndTicks uint64
+	var prevSeq uint32
+	for i, fr := range frags {
+		f := fr.frag
+		if i > 0 && f.Seq > prevSeq+1 {
+			startNs, _ := ts.ToNs(prevEndTicks)
+			endNs := startNs
+			if f.HasTFDT {
+				if next, _ := ts.ToNs(f.TFDT); next > startNs {
+					endNs = next
+				}
+			}
+			gaps = append(gaps, model.Gap{
+				TrackID:    tid,
+				AfterSeq:   prevSeq,
+				BeforeSeq:  f.Seq,
+				Time:       model.Interval{Start: startNs, End: endNs},
+				EstSamples: int(f.Seq-prevSeq-1) * medianSamples(frags),
+			})
+		}
+		ticks := f.TFDT
+		for _, s := range f.Samples {
+			ticks += uint64(s.DurationTicks)
+		}
+		prevEndTicks = ticks
+		prevSeq = f.Seq
 	}
-	return end
+	return gaps
 }
 
 func medianSamples(frags []fragRef) int {
