@@ -56,6 +56,7 @@ type Element struct {
 // Block 为解析出的媒体块；AbsTS 由 clock 模块统一填充（纳秒）。
 type Block struct {
 	Track       uint64
+	ClusterSeq  int   // 簇序号（解析顺序），供 clock 冻结簇基准
 	ClusterTS   int64 // 所在簇时间戳（刻度单位）；HasClusterTS=false 时无效
 	HasClusTS   bool
 	RelTS       int16
@@ -115,9 +116,10 @@ func readVINT(c *countingReader, keepMarker bool) (uint64, int, error) {
 
 // Parser 为流式 EBML 解析器。
 type Parser struct {
-	c       *countingReader
-	fileEnd int64 // 文件总长度，用于截断检测；-1 未知
-	pending *Element
+	c          *countingReader
+	fileEnd    int64 // 文件总长度，用于截断检测；-1 未知
+	pending    *Element
+	clusterSeq int
 }
 
 // NewParser 构造解析器；fileEnd 为输入总长，用于检测截断元素。
@@ -196,7 +198,9 @@ func (p *Parser) Parse(sink Sink) error {
 			return nil
 		}
 		if err != nil {
-			return err
+			// 段尾之后的残余数据不可解析：记录并终止，不作为致命错误
+			sink.OnError(&Error{Code: CodeTruncatedElement, Offset: p.c.pos, Msg: "trailing data unparsable"})
+			return nil
 		}
 		if e.ID != IDSegment {
 			if e.Size < 0 {

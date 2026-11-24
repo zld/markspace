@@ -18,6 +18,8 @@ func clusterChild(id uint32) bool {
 }
 
 func (p *Parser) parseCluster(cl *Element, sink Sink) {
+	p.clusterSeq++
+	seq := p.clusterSeq
 	end := int64(-1)
 	if cl.Size >= 0 {
 		end = cl.DataOffset + cl.Size
@@ -50,11 +52,11 @@ func (p *Parser) parseCluster(cl *Element, sink Sink) {
 			clusterTS = int64(uintFromBytes(b))
 			hasTS = true
 		case IDSimpleBlock:
-			if !p.parseBlock(e, sink, clusterTS, hasTS, end) {
+			if !p.parseBlock(e, sink, seq, clusterTS, hasTS, end) {
 				return // 块损坏已隔离，簇剩余不可信
 			}
 		case IDBlockGroup:
-			if !p.parseBlockGroup(e, sink, clusterTS, hasTS, end) {
+			if !p.parseBlockGroup(e, sink, seq, clusterTS, hasTS, end) {
 				return
 			}
 		default:
@@ -66,10 +68,17 @@ func (p *Parser) parseCluster(cl *Element, sink Sink) {
 }
 
 // parseBlock 解析 SimpleBlock/Block；返回 false 表示块损坏且簇剩余不可信。
-func (p *Parser) parseBlock(e *Element, sink Sink, clusterTS int64, hasTS bool, clusterEnd int64) bool {
+func (p *Parser) skipTo(pos int64) {
+	if pos > p.c.pos {
+		p.skip(pos - p.c.pos)
+	}
+}
+
+func (p *Parser) parseBlock(e *Element, sink Sink, seq int, clusterTS int64, hasTS bool, clusterEnd int64) bool {
 	if clusterEnd >= 0 && e.DataOffset+e.Size > clusterEnd {
 		sink.OnError(&Error{Code: CodeCorruptBlock, Offset: e.Offset,
 			Msg: fmt.Sprintf("block size %d overruns cluster end", e.Size)})
+		p.skipTo(clusterEnd) // 隔离损坏块，跳到簇尾以便恢复后续元素
 		return false
 	}
 	data, err := p.readBytes(e.Size)
@@ -97,12 +106,12 @@ func (p *Parser) parseBlock(e *Element, sink Sink, clusterTS int64, hasTS bool, 
 		sink.OnError(&Error{Code: CodeMissingTimestamp, Offset: e.Offset,
 			Msg: "cluster missing Timestamp; deterministic correction applied"})
 	}
-	sink.OnBlock(Block{Track: track, ClusterTS: clusterTS, HasClusTS: hasTS,
+	sink.OnBlock(Block{Track: track, ClusterSeq: seq, ClusterTS: clusterTS, HasClusTS: hasTS,
 		RelTS: rel, Data: data[c.pos+3:], Offset: e.Offset})
 	return true
 }
 
-func (p *Parser) parseBlockGroup(e *Element, sink Sink, clusterTS int64, hasTS bool, clusterEnd int64) bool {
+func (p *Parser) parseBlockGroup(e *Element, sink Sink, seq int, clusterTS int64, hasTS bool, clusterEnd int64) bool {
 	end := e.DataOffset + e.Size
 	for p.c.pos < end {
 		sub, err := p.readHeader()
@@ -111,7 +120,7 @@ func (p *Parser) parseBlockGroup(e *Element, sink Sink, clusterTS int64, hasTS b
 			return false
 		}
 		if sub.ID == IDBlock {
-			if !p.parseBlock(sub, sink, clusterTS, hasTS, clusterEnd) {
+			if !p.parseBlock(sub, sink, seq, clusterTS, hasTS, clusterEnd) {
 				return false
 			}
 		} else if sub.Size < 0 || p.skip(sub.Size) != nil {
