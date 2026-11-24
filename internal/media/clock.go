@@ -109,10 +109,11 @@ func (d *DriftEstimator) Add(local, remote int64) {
 	residual := float64(last.Remote) - (slope*float64(last.Local) + off)
 	thr := float64(d.JumpThresholdNs)
 	if residual > thr || residual < -thr {
-		// Close the segment before the outlier; the outlier and the
-		// previous point seed the next segment so it has a slope.
+		// Close the segment before the outlier; the outlier alone opens
+		// the next segment, so a one-off jump cannot create a spurious
+		// two-point transition segment with an absurd slope.
 		d.closed = append(d.closed, makeSegment(open[:len(open)-1]))
-		d.segStart = len(d.pts) - 2
+		d.segStart = len(d.pts) - 1
 	}
 }
 
