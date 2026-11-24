@@ -78,17 +78,31 @@ func writeFile(path string, data []byte) error {
 	return nil
 }
 
-// videoSpec is the shared 25 fps, 40-sample clip used by normal and edge.
+// videoSpec builds a constant-frame-rate 1/25 s clip.
 func videoSpec(label string) MP4Spec {
-	sizes := make([]uint32, 40)
-	deltas := make([]uint32, 40)
+	return videoSpecN(label, 40, func(int) uint32 { return 1200 })
+}
+
+// videoSpecVFR builds a variable-frame-rate clip: alternating long and short
+// frames that average 1/25 s, which is the shape produced by real VFR
+// captures and by rate conversions.
+func videoSpecVFR(label string) MP4Spec {
+	return videoSpecN(label, 60, func(i int) uint32 {
+		if i%2 == 0 {
+			return 1800 // 60 ms
+		}
+		return 600 // 20 ms
+	})
+}
+
+func videoSpecN(label string, n int, delta func(int) uint32) MP4Spec {
+	sizes := make([]uint32, n)
+	deltas := make([]uint32, n)
+	keys := make([]int, 0, n)
 	for i := range sizes {
 		sizes[i] = uint32(64 + (i*37)%160)
-		deltas[i] = 1200 // 1200/30000 = 1/25 s
-	}
-	keys := make([]int, 0, 40)
-	for i := 1; i <= 40; i++ {
-		keys = append(keys, i)
+		deltas[i] = delta(i)
+		keys = append(keys, i+1)
 	}
 	return MP4Spec{
 		TrackID: 1, Timescale: 30000, Width: 64, Height: 36,
@@ -155,7 +169,7 @@ func generateNormal(dir string) (Manifest, error) {
 func generateEdge(dir string) (Manifest, error) {
 	m := Manifest{Dir: dir, Subtitles: map[string]string{}, RTP: map[string]string{},
 		TimecodeMode: "25"}
-	spec := videoSpec("edge")
+	spec := videoSpecVFR("edge")
 	mp4Path := filepath.Join(dir, "video.mp4")
 	data, err := MP4(spec)
 	if err != nil {
@@ -225,7 +239,7 @@ func generateEdge(dir string) (Manifest, error) {
 		return m, err
 	}
 	m.RTP["a2-drift"] = driftPath
-	m.Notes = append(m.Notes, "invalid DF labels, wrapped RTP timestamps, 2000 ppm drift, cut-spanning and malformed cues")
+	m.Notes = append(m.Notes, "VFR video, invalid DF labels, wrapped RTP timestamps, 2000 ppm drift, cut-spanning and malformed cues")
 	return m, nil
 }
 

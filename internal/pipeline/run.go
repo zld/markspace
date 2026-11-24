@@ -37,7 +37,7 @@ type Inputs struct {
 	OutDir string
 	// MP4Path is the video sample file.
 	MP4Path string
-	// SubtitlePaths maps a track ID to a subtitle file.
+	// Subtitles lists every subtitle file and the track ID it feeds.
 	Subtitles []SubtitleInput
 	// TimecodePath is a newline-separated timecode list in the given mode.
 	TimecodePath string
