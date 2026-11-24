@@ -15,11 +15,13 @@ const (
 
 // Frame is one length-prefixed record together with its raw stream offset.
 // FrameOffset points at the tag byte; PayloadOffset points past the header.
+// Raw holds the complete on-wire record (tag + length + payload).
 type Frame struct {
 	Type          byte
 	FrameOffset   int64
 	PayloadOffset int64
 	Payload       []byte
+	Raw           []byte
 }
 
 // Reader scans a stream framed as: [1-byte tag][4-byte big-endian length][payload].
@@ -77,11 +79,14 @@ func (rd *Reader) Next() (*Frame, error) {
 		return nil, &ParseError{Code: ErrTruncated, Offset: frameStart, Stage: StageParse,
 			Err: errors.New("payload shorter than declared length")}
 	}
+	header := [5]byte{tag}
+	binary.BigEndian.PutUint32(header[1:], length)
 	return &Frame{
 		Type:          tag,
 		FrameOffset:   frameStart,
 		PayloadOffset: rd.pos - int64(length),
 		Payload:       payload,
+		Raw:           append(header[:], payload...),
 	}, nil
 }
 
