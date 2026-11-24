@@ -1,0 +1,7 @@
+# Build artifacts
+/medpipe
+/bin/
+*.test
+*.out
+# Local pipeline working directories (fixtures live under /tmp by convention)
+.medpipe/
