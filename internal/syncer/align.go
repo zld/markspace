@@ -171,9 +171,12 @@ func Align(video []*frames.Record, audio []Placed, tl *clock.Timeline, cfg Confi
 		// reaches the video start. Audio already playing at the video start
 		// contributes no drift, even if it began earlier.
 		rep.StartDelta = startGap(audio, rep.VideoStart)
+		// Audio running past the last video frame is a normal tail-out and is
+		// not drift; audio ending early leaves the tail of the picture silent,
+		// which is.
 		rep.EndDelta = rep.AudioEnd - rep.VideoEnd
-		if !WithinTolerance(rep.StartDelta, 0, cfg.ToleranceTicks) ||
-			!WithinTolerance(rep.EndDelta, 0, cfg.ToleranceTicks) {
+		shortAudio := rep.EndDelta < -cfg.ToleranceTicks
+		if !WithinTolerance(rep.StartDelta, 0, cfg.ToleranceTicks) || shortAudio {
 			rep.Synced = false
 			e := fault.New(fault.StageSync, fault.KindDesync,
 				"audio/video drift start=%d end=%d tolerance=%d",

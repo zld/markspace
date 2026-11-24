@@ -97,6 +97,16 @@ func (r *Runner) Resume(on bool) error {
 	if !on {
 		return nil
 	}
+	if err := r.loadCheckpoint(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// loadCheckpoint binds the runner to the checkpoint in its directory. It is
+// idempotent: Resume calls it early so the resume stage can be reported before
+// Run starts, and Run calls it again only when Resume was not used.
+func (r *Runner) loadCheckpoint() error {
 	if err := r.hashInputs(); err != nil {
 		return err
 	}
@@ -128,16 +138,9 @@ func (r *Runner) ResumedStage() string { return r.runtime.resumedAt }
 
 // Run executes or resumes the pipeline and returns the manifest.
 func (r *Runner) Run() (*provenance.Manifest, error) {
-	if err := r.hashInputs(); err != nil {
-		return nil, err
-	}
 	if r.cp == nil {
-		cp, ok := LoadCheckpoint(r.dir, r.cfg.Hash(), r.inputHash())
-		r.cp = cp
-		r.resumed = ok
-		if ok {
-			r.runtime.skippedStages = append([]string(nil), cp.Done...)
-			r.runtime.resumedAt = cp.ResumeStage()
+		if err := r.loadCheckpoint(); err != nil {
+			return nil, err
 		}
 	}
 	if m, err := provenance.Load(filepath.Join(r.dir, ManifestName)); err == nil {
