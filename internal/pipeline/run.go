@@ -68,6 +68,10 @@ func Run(ctx context.Context, cfg Config) (res *Result, err error) {
 	if err != nil {
 		return nil, err
 	}
+	if !manifest.IsWithin(rootAbs, absInput) {
+		return nil, fmt.Errorf("%w: input %q is outside material directory %q",
+			model.ErrPathOutsideMaterial, cfg.Input, root)
+	}
 
 	manifestBytes, err := os.ReadFile(absInput)
 	if err != nil {

@@ -46,3 +46,13 @@ func RelativeURI(root, target string) string {
 	}
 	return filepath.Base(target)
 }
+
+// IsWithin reports whether target is root or a path beneath root, using
+// lexical cleaning (callers operate on already-abs paths).
+func IsWithin(root, target string) bool {
+	rel, err := filepath.Rel(filepath.Clean(root), filepath.Clean(target))
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}

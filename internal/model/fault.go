@@ -2,6 +2,11 @@
 // types shared by every mediascan module.
 package model
 
+import "errors"
+
+// ErrPathOutsideMaterial is returned when an input escapes the allowed root.
+var ErrPathOutsideMaterial = errors.New("path outside material directory")
+
 // UnifiedTimescale is the single integer tick scale every source timescale
 // is mapped to: 1,000,000 ticks per second (microsecond granularity).
 const UnifiedTimescale uint32 = 1_000_000
