@@ -45,21 +45,24 @@ func (e *Engine) specs() map[string]stageSpec {
 			loudID := id + "/loudness"
 			out[layoutID] = stageSpec{
 				id: layoutID, trackID: id, version: versionLayout,
-				params: map[string]interface{}{"channels": mt.Track.Channels},
-				inputs: []string{verifyID},
-				run:    e.runLayout,
+				params:  map[string]interface{}{"channels": mt.Track.Channels},
+				inputs:  []string{verifyID},
+				rebuild: true,
+				run:     e.runLayout,
 			}
 			out[resampleID] = stageSpec{
 				id: resampleID, trackID: id, version: versionResample,
-				params: map[string]interface{}{"from": mt.Track.SampleRate, "to": e.cfg.TargetRate},
-				inputs: []string{layoutID},
-				run:    e.runResample,
+				params:  map[string]interface{}{"from": mt.Track.SampleRate, "to": e.cfg.TargetRate},
+				inputs:  []string{layoutID},
+				rebuild: true,
+				run:     e.runResample,
 			}
 			out[loudID] = stageSpec{
 				id: loudID, trackID: id, version: versionLoudness,
-				params: map[string]interface{}{"target_lufs": e.cfg.TargetLUFS, "true_peak": e.cfg.TruePeak},
-				inputs: []string{resampleID},
-				run:    e.runLoudness,
+				params:  map[string]interface{}{"target_lufs": e.cfg.TargetLUFS, "true_peak": e.cfg.TruePeak},
+				inputs:  []string{resampleID},
+				rebuild: true,
+				run:     e.runLoudness,
 			}
 		}
 	}

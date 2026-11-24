@@ -41,7 +41,7 @@ func TestHealthyRunDeterministic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("healthy run failed: %v", err)
 	}
-	if s1.TrackCount != 2 || s1.FrameCount != 120 || s1.CorruptFirstFrame != -1 {
+	if s1.TrackCount != 2 || s1.FrameCount != 60 || s1.CorruptFirstFrame != -1 {
 		t.Fatalf("unexpected summary: %+v", s1)
 	}
 	if s1.ClipCount < 0 || s1.LoudnessLUFS == silentLUFS {

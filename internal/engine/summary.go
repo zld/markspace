@@ -47,10 +47,21 @@ func (e *Engine) audioStageID(suffix string) string {
 	return ""
 }
 
+// CurrentSummary builds the summary from the engine's current state without
+// running any stage. It lets a CLI report an interrupted partial run.
+func (e *Engine) CurrentSummary() *Summary {
+	s, _ := e.summarize(time.Now(), nil)
+	return s
+}
+
 func (e *Engine) summarize(startedAt time.Time, firstErr error) (*Summary, error) {
+	// frame_count reports delivered video frames; audio chunk counts are
+	// expressed through the audio stage metrics instead.
 	frameCount := 0
 	for _, mt := range e.tracks {
-		frameCount += len(mt.Frames)
+		if mt.Track.Kind == model.KindVideo {
+			frameCount += len(mt.Frames)
+		}
 	}
 	blocked := e.BlockedStagesSnapshot()
 	sort.Strings(blocked)

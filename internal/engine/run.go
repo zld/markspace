@@ -98,6 +98,11 @@ type stageSpec struct {
 	version string
 	params  interface{}
 	inputs  []string // upstream node ids whose digests feed the cache key
+	// rebuild marks stages whose executor must also run when the stage is
+	// cache-skipped: audio stages reconstruct the in-memory PCM chain that a
+	// fresh process would otherwise have no access to. The cached result stays
+	// authoritative for caching; this only restores in-memory side effects.
+	rebuild bool
 	run     func(trackID string) (string, map[string]float64, error)
 }
 
@@ -202,6 +207,13 @@ func (e *Engine) Run(startedAt time.Time) (*Summary, error) {
 		if st, ok := e.cp.Reusable(id, cacheKey); ok {
 			e.digests[id] = st.Digest
 			reused++
+			// Reconstruct in-memory PCM side effects for skipped audio
+			// stages so downstream stages and summaries match a clean run.
+			if spec.rebuild {
+				if _, _, rerr := spec.run(spec.trackID); rerr != nil {
+					return nil, rerr
+				}
+			}
 			continue
 		}
 		digest, metrics, err := spec.run(spec.trackID)
