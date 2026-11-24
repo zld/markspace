@@ -1,0 +1,5 @@
+/mediarc
+/mediarc-*
+*.test
+*.out
+.DS_Store
