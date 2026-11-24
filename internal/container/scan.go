@@ -91,16 +91,17 @@ func walkBoxes(r io.ReadSeeker, start, end int64, depth, trackIndex int, trackCo
 		}
 		if outsideParent {
 			if err := parsePayload(r, bi, pos, rb); err != nil {
-				return err
+				return withTrackContext(err, f, currentTrack)
 			}
 			return &model.ParseError{
+				TrackID:    int(trackIDForIndex(f, currentTrack)),
 				BoxType:    bi.Type.String(),
 				ByteOffset: pos,
 				Err:        fmt.Errorf("box size %d exceeds available end %d", bi.Size, end),
 			}
 		}
 		if err := parsePayload(r, bi, pos, rb); err != nil {
-			return err
+			return withTrackContext(err, f, currentTrack)
 		}
 		f.Boxes = append(f.Boxes, rb)
 
@@ -132,4 +133,27 @@ func parsePayload(r io.ReadSeeker, bi *mp4.BoxInfo, offset int64, rb *RawBox) er
 
 func offsetError(offset int64, box string, err error) error {
 	return &model.ParseError{BoxType: box, ByteOffset: offset, Err: err}
+}
+
+func withTrackContext(err error, f *File, trackIndex int) error {
+	var pe *model.ParseError
+	if errors.As(err, &pe) && pe.TrackID == 0 && trackIndex >= 0 {
+		pe.TrackID = int(trackIDForIndex(f, trackIndex))
+	}
+	return err
+}
+
+func trackIDForIndex(f *File, trackIndex int) uint32 {
+	if trackIndex < 0 {
+		return 0
+	}
+	for _, b := range f.Boxes {
+		if b.TrackIndex != trackIndex {
+			continue
+		}
+		if tkhd, ok := b.Payload.(*mp4.Tkhd); ok && tkhd.TrackID != 0 {
+			return tkhd.TrackID
+		}
+	}
+	return uint32(trackIndex + 1)
 }

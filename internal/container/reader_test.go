@@ -1,6 +1,7 @@
 package container_test
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/zld/mediarc/internal/container"
@@ -61,6 +62,10 @@ func TestTruncatedBoxReportsOffset(t *testing.T) {
 	offset, ok := model.ByteOffset(err)
 	if !ok {
 		t.Fatalf("error has no byte offset: %T %v", err, err)
+	}
+	var pe *model.ParseError
+	if !errors.As(err, &pe) || pe.TrackID != 1 {
+		t.Fatalf("error track context missing: %v", err)
 	}
 	if offset != asset.CorruptOffset {
 		t.Fatalf("offset=%d want %d: %v", offset, asset.CorruptOffset, err)
