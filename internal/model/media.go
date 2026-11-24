@@ -93,7 +93,11 @@ type Track struct {
 	Width         int           `json:"width,omitempty"`
 	Height        int           `json:"height,omitempty"`
 	Color         *ColorMeta    `json:"color,omitempty"`
-	Required      bool          `json:"required,omitempty"`
+	// ColorAlternatives retains every source description when containers and
+	// bitstream metadata disagree. Remuxers that must choose one value reject
+	// a non-empty conflict instead of silently preferring one source.
+	ColorAlternatives []ColorMeta `json:"color_alternatives,omitempty"`
+	Required          bool        `json:"required,omitempty"`
 }
 
 type Sample struct {
@@ -130,12 +134,15 @@ type TimedEvent struct {
 }
 
 type Archive struct {
-	Brand       string       `json:"brand"`
-	Tracks      []Track      `json:"tracks"`
-	Samples     []Sample     `json:"samples"`
-	Events      []TimedEvent `json:"events"`
-	RPTPackets  []RTPPacket  `json:"rtp_packets,omitempty"`
-	GeneratedBy string       `json:"generated_by"`
+	Brand      string       `json:"brand"`
+	Tracks     []Track      `json:"tracks"`
+	Samples    []Sample     `json:"samples"`
+	Events     []TimedEvent `json:"events"`
+	RTPPackets []RTPPacket  `json:"rtp_packets,omitempty"`
+	// ProcessingLatenciesMS is deterministic synthetic event latency data used
+	// by the nearest-rank P95 acceptance metric.
+	ProcessingLatenciesMS []int64 `json:"processing_latencies_ms,omitempty"`
+	GeneratedBy           string  `json:"generated_by"`
 }
 
 // RTPPacket is the deterministic, serialization-friendly projection of an
