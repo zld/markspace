@@ -255,6 +255,48 @@ func TestBlockGroupBlockParsed(t *testing.T) {
 	}
 }
 
+func TestUnknownLengthMultiClusterBoundary(t *testing.T) {
+	// Two unknown-length clusters back to back: the scanner must discover
+	// the first cluster's end at the second cluster's header.
+	b1 := buildBlock(1, 0, true, []byte("AAA"))
+	b2 := buildBlock(2, 0, false, []byte("BBB"))
+	c1 := append([]byte{0x1F, 0x43, 0xB6, 0x75, 0xFF},
+		append(elementHeader(IDTimestamp, 1), 0x32)...)
+	c1 = append(c1, elementHeader(IDSimpleBlock, len(b1))...)
+	c1 = append(c1, b1...)
+	c2 := append([]byte{0x1F, 0x43, 0xB6, 0x75, 0xFF},
+		append(elementHeader(IDTimestamp, 1), 0x64)...)
+	c2 = append(c2, elementHeader(IDSimpleBlock, len(b2))...)
+	c2 = append(c2, b2...)
+	stream := append(elementHeader(IDEBMLHeader, 0),
+		append([]byte{0x18, 0x53, 0x80, 0x67, 0xFF}, append(c1, c2...)...)...)
+
+	seg, err := OpenSegment(bytes.NewReader(stream))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var clusters []*Cluster
+	if err := seg.ScanClusters(func(c *Cluster) error {
+		clusters = append(clusters, c)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(clusters) != 2 {
+		t.Fatalf("want 2 clusters, got %d", len(clusters))
+	}
+	if clusters[0].End <= 0 || clusters[0].End != clusters[1].Start {
+		t.Fatalf("discovered cluster end %d must equal next cluster start %d",
+			clusters[0].End, clusters[1].Start)
+	}
+	if clusters[0].Timestamp != 0x32 || clusters[1].Timestamp != 0x64 {
+		t.Fatalf("cluster timestamps wrong: %d %d", clusters[0].Timestamp, clusters[1].Timestamp)
+	}
+	if len(clusters[0].Blocks) != 1 || clusters[0].Blocks[0].Track != 1 {
+		t.Fatalf("cluster 0 blocks wrong: %+v", clusters[0].Blocks)
+	}
+}
+
 func readAt(t *testing.T, buf []byte, start, end int64) []byte {
 	t.Helper()
 	if end > int64(len(buf)) || start < 0 || end < start {

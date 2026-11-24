@@ -28,11 +28,11 @@ var sizeMask = [8]uint64{
 
 // Element is one parsed EBML element header together with its byte interval.
 type Element struct {
-	ID    uint32
-	Size  int64 // UnknownSize (-1) when the element has unknown length
-	Start int64 // absolute offset of the ID's first byte
+	ID        uint32
+	Size      int64 // UnknownSize (-1) when the element has unknown length
+	Start     int64 // absolute offset of the ID's first byte
 	HeaderEnd int64 // absolute offset where the payload starts
-	End   int64 // absolute offset just past the payload; -1 when unknown
+	End       int64 // absolute offset just past the payload; -1 when unknown
 }
 
 // PayloadOffset is the first byte belonging to the element payload.
@@ -79,6 +79,14 @@ func (r *Reader) Offset() int64 {
 		return -1
 	}
 	return off
+}
+
+// SeekTo moves the underlying stream to an absolute offset.
+func (r *Reader) SeekTo(off int64) error {
+	if _, err := r.r.Seek(off, io.SeekStart); err != nil {
+		return fault.New(fault.KindIO, off, "seek: %v", err)
+	}
+	return nil
 }
 
 // Remaining reports how many payload bytes are left inside the window, or -1
@@ -204,14 +212,15 @@ func (r *Reader) Child(el *Element) (*Reader, error) {
 	}
 	child := &Reader{r: r.r, base: el.HeaderEnd, physicalEnd: r.physicalEnd}
 	if el.Size >= 0 {
-		// Known-length element: a hard structural window.
+		// Known-length element: an explicit structural window, regardless
+		// of whether it coincides with physical EOF.
 		child.end = el.HeaderEnd + el.Size
 		child.bounded = true
 	} else if r.end < 0 {
 		child.end = UnknownSize
 		child.bounded = r.bounded
 	} else {
-		// Unknown-length child inherits the parent's remaining window.
+		// Unknown-length child inherits the parent's implicit window.
 		child.end = r.end
 		child.bounded = r.bounded
 	}
@@ -219,7 +228,7 @@ func (r *Reader) Child(el *Element) (*Reader, error) {
 }
 
 // Skip moves the stream past el's payload. Unknown-length elements cannot be
-// skipped blindly: the caller must have reached a known boundary instead.
+// skipped blindly: the caller must Drain them to a known parent boundary.
 func (r *Reader) Skip(el *Element) error {
 	target := el.End
 	if target < 0 {
@@ -230,6 +239,34 @@ func (r *Reader) Skip(el *Element) error {
 		return fault.New(fault.KindIO, target, "seek: %v", err)
 	}
 	return nil
+}
+
+// Drain consumes an unknown-length master element by walking its children
+// until the current window ends. Every child is fully traversed, so bytes are
+// never silently discarded. A truncated tail surfaces as a recoverable fault.
+func (r *Reader) Drain() error {
+	for {
+		el, err := r.ReadElement()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if el.Size < 0 {
+			child, err := r.Child(el)
+			if err != nil {
+				return err
+			}
+			if err := child.Drain(); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := r.Skip(el); err != nil {
+			return err
+		}
+	}
 }
 
 // ReadPayload copies the full element payload into a freshly allocated slice,

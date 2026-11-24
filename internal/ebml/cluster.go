@@ -9,19 +9,19 @@ import (
 
 // Matroska element IDs referenced while scanning the Segment payload.
 const (
-	IDEBMLHeader uint32 = 0x1A45DFA3
-	IDSegment    uint32 = 0x18538067
-	IDSeekHead   uint32 = 0x114D9B74
-	IDInfo       uint32 = 0x1549A966
-	IDTracks     uint32 = 0x1654AE6B
-	IDCluster    uint32 = 0x1F43B675
-	IDTimestamp  uint32 = 0xE7
-	IDSimpleTag  uint32 = 0x67C8
-	IDBlockGroup uint32 = 0xA0
-	IDBlock      uint32 = 0xA1
+	IDEBMLHeader  uint32 = 0x1A45DFA3
+	IDSegment     uint32 = 0x18538067
+	IDSeekHead    uint32 = 0x114D9B74
+	IDInfo        uint32 = 0x1549A966
+	IDTracks      uint32 = 0x1654AE6B
+	IDCluster     uint32 = 0x1F43B675
+	IDTimestamp   uint32 = 0xE7
+	IDSimpleTag   uint32 = 0x67C8
+	IDBlockGroup  uint32 = 0xA0
+	IDBlock       uint32 = 0xA1
 	IDSimpleBlock uint32 = 0xA3
-	IDVoid       uint32 = 0xEC
-	IDCues       uint32 = 0x1C53BB6B
+	IDVoid        uint32 = 0xEC
+	IDCues        uint32 = 0x1C53BB6B
 )
 
 // Block is one media block located inside a cluster. Payload holds the raw,
@@ -110,6 +110,9 @@ func OpenSegment(rs io.ReadSeeker) (*Segment, error) {
 	return &Segment{r: cr, element: seg}, nil
 }
 
+// Element returns the underlying EBML Segment element header.
+func (s *Segment) Element() *Element { return s.element }
+
 // ScanClusters walks every cluster in the segment. Unknown-length clusters
 // are bounded by the start of the next cluster or the segment end; a
 // truncated final cluster produces a recoverable fault with its offset.
@@ -133,14 +136,19 @@ func (s *Segment) ScanClusters(onCluster func(*Cluster) error) error {
 			if err := onCluster(cl); err != nil {
 				return err
 			}
-		case IDVoid:
-			if err := r.Skip(el); err != nil {
-				return err
-			}
 		default:
-			// Tracks/Info/Cues/SeekHead and other segment-level masters:
-			// skip without interpreting, preserving scan position.
-			if err := r.Skip(el); err != nil {
+			// Tracks/Info/Cues/SeekHead/Void and other segment-level
+			// masters. Known lengths seek directly; unknown lengths are
+			// drained to the segment boundary so bytes are never skipped.
+			if el.Size < 0 {
+				dr, err := r.Child(el)
+				if err != nil {
+					return err
+				}
+				if err := dr.Drain(); err != nil {
+					return err
+				}
+			} else if err := r.Skip(el); err != nil {
 				return err
 			}
 		}
@@ -156,6 +164,7 @@ func (s *Segment) scanCluster(cel *Element) (*Cluster, error) {
 	}
 	cl := &Cluster{Start: cel.Start, HeaderEnd: cel.HeaderEnd, End: cel.End}
 	for {
+		childStart := cr.Offset()
 		child, err := cr.ReadElement()
 		if err == io.EOF {
 			break
@@ -167,6 +176,17 @@ func (s *Segment) scanCluster(cel *Element) (*Cluster, error) {
 				return cl, err
 			}
 			return cl, err
+		}
+		// An unknown-length cluster's window reaches the segment boundary,
+		// so the next Cluster header appears as an apparent child. It is in
+		// fact a sibling: record the discovered end and rewind so the outer
+		// loop reads it as the next cluster.
+		if cel.Size == UnknownSize && isSegmentSibling(child.ID) {
+			cl.End = childStart
+			if serr := s.r.SeekTo(childStart); serr != nil {
+				return cl, serr
+			}
+			return cl, nil
 		}
 		switch child.ID {
 		case IDTimestamp:
@@ -194,12 +214,30 @@ func (s *Segment) scanCluster(cel *Element) (*Cluster, error) {
 				return cl, err
 			}
 		default:
-			if err := cr.Skip(child); err != nil {
+			if child.Size < 0 {
+				dr, err := cr.Child(child)
+				if err != nil {
+					return cl, err
+				}
+				if err := dr.Drain(); err != nil {
+					return cl, err
+				}
+			} else if err := cr.Skip(child); err != nil {
 				return cl, err
 			}
 		}
 	}
 	return cl, nil
+}
+
+// isSegmentSibling reports whether an element ID lives directly under Segment
+// (rather than inside a cluster), used to discover unknown-length cluster ends.
+func isSegmentSibling(id uint32) bool {
+	switch id {
+	case IDCluster, IDTracks, IDInfo, IDCues, IDSeekHead, IDVoid:
+		return true
+	}
+	return false
 }
 
 // scanBlockGroup extracts the Block child, ignoring reference/attachment
