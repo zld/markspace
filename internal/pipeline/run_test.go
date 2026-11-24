@@ -192,6 +192,49 @@ func TestQueryCommittedIndex(t *testing.T) {
 	}
 }
 
+// TestHLSDiscontinuityMonotonic verifies the cross-discontinuity PTS jump
+// stays monotonic on the unified timeline while alignment stays in range.
+func TestHLSDiscontinuityMonotonic(t *testing.T) {
+	in := genFixture(t)
+	tl, err := buildTimeline(in, []string{"playlist.m3u8"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tl.HLS) != 1 {
+		t.Fatalf("hls timelines=%d", len(tl.HLS))
+	}
+	tr, err := processHLS(in, tl.HLS[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tr.Segments) != 4 {
+		t.Fatalf("segments=%d want 4", len(tr.Segments))
+	}
+	sawDisc := false
+	sawOffset := false
+	for i, s := range tr.Segments {
+		if i > 0 && s.ActualStart < tr.Segments[i-1].ActualStart {
+			t.Fatalf("timeline went backwards at segment %d: %d < %d",
+				i, s.ActualStart, tr.Segments[i-1].ActualStart)
+		}
+		if s.AlignmentErrorMs > 20 {
+			t.Fatalf("segment %d alignment %dms > 20", i, s.AlignmentErrorMs)
+		}
+		if s.DiscontinuitySeq > 0 {
+			sawDisc = true
+		}
+		if s.DiscontinuityOff != 0 {
+			sawOffset = true
+		}
+	}
+	if !sawDisc {
+		t.Fatal("no post-discontinuity segment mapped")
+	}
+	if !sawOffset {
+		t.Fatal("expected a nonzero discontinuity mapping offset")
+	}
+}
+
 // TestSafeJoinRejectsTraversal checks manifest references cannot escape.
 func TestSafeJoinRejectsTraversal(t *testing.T) {
 	base := t.TempDir()
