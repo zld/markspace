@@ -51,12 +51,6 @@ func buildMoov(plan Plan, md *media, chapterUdta []byte, timescale uint32) []byt
 	return moov.bytes()
 }
 
-func writeMatrix(b *boxBuilder) {
-	for _, v := range []uint32{0x00010000, 0, 0, 0, 0x00010000, 0, 0, 0, 0x40000000} {
-		b.u32(v)
-	}
-}
-
 func movieDuration(plan Plan, timescale uint32) uint64 {
 	var max uint64
 	for _, tr := range plan.Tracks {

@@ -146,3 +146,9 @@ func trakBox(tr demux.Track, mapped track.Entry, md *media, movieTS uint32) []by
 		return trak.bytes()
 	}
 }
+
+func writeMatrix(b *boxBuilder) {
+	for _, v := range []uint32{0x00010000, 0, 0, 0, 0x00010000, 0, 0, 0, 0x40000000} {
+		b.u32(v)
+	}
+}
