@@ -1,0 +1,10 @@
+# Build and coverage artefacts
+/mediacore
+*.test
+coverage.out
+
+# Remux temporary payload files
+*.payload.tmp
+
+# macOS
+.DS_Store
