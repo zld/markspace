@@ -60,14 +60,15 @@ type State struct {
 
 // SyncerState is the monotonic AV-sync state needed across resume.
 type SyncerState struct {
-	LatestRaw    map[string]int64 `json:"latest_raw,omitempty"`
-	Offsets      map[string]int64 `json:"offsets,omitempty"`
-	LastAdjusted map[string]int64 `json:"last_adjusted,omitempty"`
-	HaveAdjusted map[string]bool  `json:"have_adjusted,omitempty"`
-	Frames       int              `json:"frames"`
-	Corrections  int              `json:"corrections"`
-	MaxDriftNS   int64            `json:"max_drift_ns"`
-	AvDriftMS    float64          `json:"av_drift_ms"`
+	LatestRaw     map[string]int64 `json:"latest_raw,omitempty"`
+	Offsets       map[string]int64 `json:"offsets,omitempty"`
+	LastAdjusted  map[string]int64 `json:"last_adjusted,omitempty"`
+	HaveAdjusted  map[string]bool  `json:"have_adjusted,omitempty"`
+	OverThreshold bool             `json:"over_threshold,omitempty"`
+	Frames        int              `json:"frames"`
+	Corrections   int              `json:"corrections"`
+	MaxDriftNS    int64            `json:"max_drift_ns"`
+	AvDriftMS     float64          `json:"av_drift_ms"`
 }
 
 // Record is one independently checksummed JSONL checkpoint entry.

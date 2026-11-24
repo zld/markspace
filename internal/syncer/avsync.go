@@ -39,10 +39,11 @@ type Syncer struct {
 	Stats       Stats
 	Drifts      []DriftRecord
 
-	latestRaw    map[clock.StreamID]int64
-	offsetNS     map[clock.StreamID]int64
-	lastAdjusted map[clock.StreamID]int64
-	haveAdjusted map[clock.StreamID]bool
+	latestRaw     map[clock.StreamID]int64
+	offsetNS      map[clock.StreamID]int64
+	lastAdjusted  map[clock.StreamID]int64
+	haveAdjusted  map[clock.StreamID]bool
+	overThreshold bool
 }
 
 // New creates an AV synchronizer.
@@ -85,13 +86,17 @@ func (s *Syncer) updateDrift(atNS int64) {
 	s.Stats.LastDriftNS = drift
 	if abs > s.Stats.MaxDriftNS {
 		s.Stats.MaxDriftNS = abs
-		// Report to the nearest microsecond? The CLI field is labeled ms;
-		// round to whole milliseconds for stable terminal output.
+		// Round to whole milliseconds for stable terminal output.
 		s.Stats.AvDriftMS = float64((abs + 500_000) / 1_000_000)
 	}
 	if abs <= s.ThresholdNS {
+		s.overThreshold = false
 		return
 	}
+	if s.overThreshold {
+		return
+	}
+	s.overThreshold = true
 
 	// Audio is master. Move video's adjusted clock to the audio clock.
 	oldOffset := s.offsetNS[clock.StreamVideo]
@@ -106,18 +111,19 @@ func (s *Syncer) updateDrift(atNS int64) {
 
 // State is the checkpointable syncer state.
 type State struct {
-	LatestRaw    map[clock.StreamID]int64
-	Offsets      map[clock.StreamID]int64
-	LastAdjusted map[clock.StreamID]int64
-	HaveAdjusted map[clock.StreamID]bool
-	Stats        Stats
+	LatestRaw     map[clock.StreamID]int64
+	Offsets       map[clock.StreamID]int64
+	LastAdjusted  map[clock.StreamID]int64
+	HaveAdjusted  map[clock.StreamID]bool
+	OverThreshold bool
+	Stats         Stats
 }
 
 // Export returns checkpoint state.
 func (s *Syncer) Export() State {
 	return State{
 		LatestRaw: s.latestRaw, Offsets: s.offsetNS, LastAdjusted: s.lastAdjusted,
-		HaveAdjusted: s.haveAdjusted, Stats: s.Stats,
+		HaveAdjusted: s.haveAdjusted, OverThreshold: s.overThreshold, Stats: s.Stats,
 	}
 }
 
@@ -135,6 +141,7 @@ func (s *Syncer) Restore(st State) {
 	if st.HaveAdjusted != nil {
 		s.haveAdjusted = st.HaveAdjusted
 	}
+	s.overThreshold = st.OverThreshold
 	s.Stats = st.Stats
 }
 

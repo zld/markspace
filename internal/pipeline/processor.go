@@ -165,7 +165,8 @@ func (p *Processor) Checkpoint(boundary int) checkpoint.State {
 		Syncer: checkpoint.SyncerState{
 			LatestRaw: stringMap(syn.LatestRaw), Offsets: stringMap(syn.Offsets),
 			LastAdjusted: stringMap(syn.LastAdjusted), HaveAdjusted: boolStringMap(syn.HaveAdjusted),
-			Frames: syn.Stats.Frames, Corrections: syn.Stats.Corrections,
+			OverThreshold: syn.OverThreshold,
+			Frames:        syn.Stats.Frames, Corrections: syn.Stats.Corrections,
 			MaxDriftNS: syn.Stats.MaxDriftNS, AvDriftMS: syn.Stats.AvDriftMS,
 		},
 		Clocks: map[string]checkpoint.ClockState{
@@ -192,6 +193,7 @@ func (p *Processor) Restore(st checkpoint.State) {
 	p.Syncer.Restore(syncer.State{
 		LatestRaw: clockIDMap(st.Syncer.LatestRaw), Offsets: clockIDMap(st.Syncer.Offsets),
 		LastAdjusted: clockIDMap(st.Syncer.LastAdjusted), HaveAdjusted: clockBoolMap(st.Syncer.HaveAdjusted),
+		OverThreshold: st.Syncer.OverThreshold,
 		Stats: syncer.Stats{Frames: st.Syncer.Frames, Corrections: st.Syncer.Corrections,
 			MaxDriftNS: st.Syncer.MaxDriftNS, AvDriftMS: st.Syncer.AvDriftMS},
 	})
