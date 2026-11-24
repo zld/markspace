@@ -173,6 +173,9 @@ func (st *parseState) materializeMoof(mdatOff uint64) error {
 		return model.NewError(model.KindCorruptBox, st.locAt(uint64(st.moofOff)),
 			fmt.Sprintf("trun sample count %d exceeds entries %d", trun.SampleCount, len(trun.Entries)))
 	}
+	// Frames carry segment-relative PTS (sample tick minus the moof base
+	// media decode time); the core timeline re-bases them with the manifest
+	// segment anchor, mirroring how RTP captures start their clock at zero.
 	tick := st.baseTick
 	offset := 0
 	for i := 0; i < int(trun.SampleCount); i++ {
@@ -183,7 +186,11 @@ func (st *parseState) materializeMoof(mdatOff uint64) error {
 				st.locFrame(mdatOff, i),
 				fmt.Sprintf("frame %d size %d exceeds remaining mdat %d", i, size, len(payload)-offset))
 		}
-		pts, err := model.ScaleRound(int64(tick), st.timescale)
+		if tick < st.baseTick {
+			return model.NewError(model.KindFieldOutOfRange, st.locFrame(mdatOff, i),
+				"sample tick precedes tfdt base media decode time")
+		}
+		pts, err := model.ScaleRound(int64(tick-st.baseTick), st.timescale)
 		if err != nil {
 			return model.WrapError(model.KindFieldOutOfRange, st.locFrame(mdatOff, i), err)
 		}
