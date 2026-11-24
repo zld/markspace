@@ -14,6 +14,7 @@ func keyframePoints(events []Event) []mediaindex.Keyframe {
 			points = append(points, mediaindex.Keyframe{
 				TrackID:        ev.Raw.TrackID,
 				SampleNumber:   ev.Raw.SampleNumber,
+				OrderIndex:     ev.Raw.OrderIndex,
 				RawTimestamp:   ev.Raw.RawTimestamp,
 				Timescale:      ev.Raw.Timescale,
 				TimeNS:         ev.TimeNS,

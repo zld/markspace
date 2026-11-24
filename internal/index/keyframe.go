@@ -12,6 +12,7 @@ import (
 type Keyframe struct {
 	TrackID        uint32   `json:"track_id"`
 	SampleNumber   uint32   `json:"sample_number"`
+	OrderIndex     int      `json:"order_index"`
 	RawTimestamp   uint64   `json:"raw_timestamp"`
 	Timescale      uint32   `json:"timescale"`
 	TimeNS         model.NS `json:"time_ns"`

@@ -173,16 +173,32 @@ func (c cutContext) cutInterval(index int, startRef, endRef Boundary, lastPartia
 		}
 		h := mediahash.New()
 		var chunkBytes []byte
-		for sample := startKF.SampleNumber; sample < endSampleExclusive; sample++ {
-			ev, ok := c.event(tr.TrackID, sample)
-			if !ok {
-				return seg, 0, 0, &model.ParseError{TrackID: int(tr.TrackID), BoxType: "sample", ByteOffset: startKF.Offset, Err: fmt.Errorf("missing sample %d", sample)}
+		for _, ev := range c.built.Continuous {
+			if ev.Raw.TrackID != tr.TrackID {
+				continue
+			}
+			order := ev.Raw.OrderIndex
+			if order < startKF.OrderIndex {
+				continue
+			}
+			if lastPartial {
+				if order > endKF.OrderIndex {
+					continue
+				}
+			} else if order >= endKF.OrderIndex {
+				continue
 			}
 			payload := c.payloadFor(ev)
 			rs.ChunkCount++
 			rs.ByteCount += len(payload)
 			chunkBytes = append(chunkBytes, payload...)
 			_, _ = h.Write(payload)
+		}
+		if rs.ChunkCount == 0 {
+			return seg, 0, 0, &model.ParseError{
+				TrackID: int(tr.TrackID), BoxType: "sample", ByteOffset: startKF.Offset,
+				Err: fmt.Errorf("no samples between keyframes %d and %d", startKF.SampleNumber, endKF.SampleNumber),
+			}
 		}
 		rs.ChunkBytes = chunkBytes
 		rs.SHA256 = fmt.Sprintf("%x", h.Sum(nil))
