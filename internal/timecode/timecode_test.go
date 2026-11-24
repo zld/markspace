@@ -234,3 +234,35 @@ func TestDriftDegenerate(t *testing.T) {
 		t.Fatal("identical reference times must fail")
 	}
 }
+
+func TestMixedSeparatorsRejected(t *testing.T) {
+	// The frame separator may differ from the field separators in DF mode
+	// ("00:00:01;05"), but a ';' in a field position never parses.
+	if _, err := Parse("00;00:01:05", Mode2997DF, model.InputPos{Line: 1}); err == nil {
+		t.Fatal("';' in a field position must be rejected")
+	}
+	if _, err := Parse("00:00:01;05", Mode24, model.InputPos{Line: 1}); err == nil {
+		t.Fatal("';' must be rejected outside drop-frame mode")
+	}
+	if _, err := Parse("00:00:01;05", Mode2997DF, model.InputPos{Line: 1}); err != nil {
+		t.Fatalf("valid DF label rejected: %v", err)
+	}
+}
+
+func TestTimecodeStringRoundTripsNegative(t *testing.T) {
+	for _, mode := range []Mode{Mode24, Mode25, Mode2997NDF, Mode2997DF, Mode50} {
+		for _, f := range []int64{-1, -25, -1800} {
+			tc, err := FromFrames(f, mode)
+			if err != nil {
+				t.Fatal(err)
+			}
+			back, err := Parse(tc.String(), mode, model.InputPos{})
+			if err != nil {
+				t.Fatalf("%s %d -> %q: %v", mode.Name, f, tc.String(), err)
+			}
+			if back.Total != f {
+				t.Fatalf("%s %d -> %q -> %d", mode.Name, f, tc.String(), back.Total)
+			}
+		}
+	}
+}

@@ -228,6 +228,7 @@ func splitTimecode(s string) (byte, []part, error) {
 	var parts []part
 	start := 0
 	var sep byte
+	var fieldSep byte
 	for i := 0; i < len(s); i++ {
 		c := s[i]
 		if c >= '0' && c <= '9' {
@@ -239,6 +240,14 @@ func splitTimecode(s string) (byte, []part, error) {
 			}
 			if i == start {
 				return 0, nil, fmt.Errorf("empty component")
+			}
+			// The first three components are separated by the field
+			// separator; only the final one (before frames) may differ, and
+			// it carries the drop-frame marker.
+			if len(parts) == 0 {
+				fieldSep = c
+			} else if len(parts) < 2 && c != fieldSep {
+				return 0, nil, fmt.Errorf("inconsistent separators %q and %q", string(fieldSep), string(c))
 			}
 			parts = append(parts, part{text: s[start:i], start: start})
 			sep = c
