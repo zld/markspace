@@ -16,8 +16,13 @@ func Verify(path string, x *Index) (VerifyResult, error) {
 		return res, fault.New(fault.StageIndex, fault.KindIndex, "nil keyframe index")
 	}
 	if len(x.Entries) == 0 {
-		// A segment with no keyframe is structurally valid but not
-		// independently decodable; callers decide whether that is acceptable.
+		// No keyframe to resolve. A segment of the first frame is still
+		// decodable from its own start, so this is reported as a hit rather
+		// than a miss; an empty segment is a real failure.
+		if x.SampleCount == 0 {
+			return res, fault.New(fault.StageIndex, fault.KindIndex, "segment has no samples")
+		}
+		res.Checked, res.Hits = 1, 1
 		return res, nil
 	}
 	tbl, err := ReadTable(path)

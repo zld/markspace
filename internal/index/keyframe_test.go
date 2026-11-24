@@ -217,13 +217,18 @@ func TestVerifyRejectsEmptyAndBadCount(t *testing.T) {
 	if _, err := Verify(path, nil); err == nil {
 		t.Fatal("nil index accepted")
 	}
-	// An index with no keyframe entries is legal but resolves nothing.
+	// A single-sample segment with no keyframe entry is decodable from its
+	// own start, so it counts as one satisfied check.
 	empty, err := Verify(path, &Index{SampleCount: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if empty.Verified() || empty.Ratio() != 0 {
-		t.Fatalf("empty entry list reported %+v", empty)
+	if !empty.Verified() || empty.Ratio() != 100 {
+		t.Fatalf("single-sample segment reported %+v", empty)
+	}
+	// A segment with no samples at all cannot be verified.
+	if _, err := Verify(path, &Index{SampleCount: 0}); err == nil {
+		t.Fatal("empty segment accepted")
 	}
 	bad := &Index{SampleCount: 99, Entries: []Entry{{Sample: 1}}}
 	_, err = Verify(path, bad)
@@ -257,5 +262,39 @@ func TestIndexSortAndCount(t *testing.T) {
 	a, b := PayloadHash([]byte("x")), PayloadHash([]byte("x"))
 	if !bytes.Equal(a[:], b[:]) {
 		t.Fatal("digest unstable")
+	}
+}
+
+func TestVerifySingleSampleWithoutKeyframe(t *testing.T) {
+	dir := t.TempDir()
+	path, _ := writeMinimalMP4(t, dir, [][]byte{[]byte("only")})
+	tbl, err := ReadTable(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = tbl
+	idx := &Index{
+		VideoTrack:  1,
+		SampleCount: 1,
+		Entries:     nil,
+		Samples: []SampleRef{{
+			Sample:      1,
+			PayloadHash: PayloadHash([]byte("only")),
+			Size:        4,
+		}},
+	}
+	vr, err := Verify(path, idx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !vr.Verified() || vr.Checked != 1 {
+		t.Fatalf("verify = %+v", vr)
+	}
+	sr, err := VerifySamples(path, idx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sr.Verified() {
+		t.Fatalf("samples = %+v", sr)
 	}
 }
