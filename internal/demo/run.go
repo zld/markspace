@@ -112,13 +112,7 @@ func Run(cfg Config) *Report {
 		rep.ExitCode = fault.ExitInternal
 		return rep.withInternal(fault.New(fault.ErrInternal, "demo.corrupt", 0, "corrupt sample was unexpectedly accepted"))
 	}
-	rep.Corrupt.ErrorCode = cfe.Code
-	rep.Corrupt.ErrorMessage = cfe.Message
-	for _, code := range corrupt.ErrorCodes {
-		if code == string(cfe.Code) {
-			cfe.Code = fault.Code(code)
-		}
-	}
+	applyFaultError(rep.Corrupt, cfe)
 	rep.ExitCode = fault.ExitCode(cfe)
 	rep.OK = rep.ExitCode == fault.ExitCorrupt
 	return rep
@@ -200,7 +194,8 @@ func countGapEvents(events []fault.Event) int {
 func relevantEvents(events []fault.Event) []fault.Event {
 	var out []fault.Event
 	for _, e := range events {
-		if fault.IsGapCode(e.Code) || e.Code == fault.ErrBadCRC || e.Code == fault.ErrPSIVersion || e.Code == fault.ErrPCRWrap || e.Code == fault.ErrPTSWrap {
+		if fault.IsGapCode(e.Code) || e.Code == fault.ErrBadCRC || e.Code == fault.ErrPSIVersion ||
+			e.Code == "psi_version_committed" || e.Code == fault.ErrPCRWrap || e.Code == fault.ErrPTSWrap {
 			out = append(out, e)
 		}
 	}
