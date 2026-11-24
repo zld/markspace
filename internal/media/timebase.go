@@ -11,7 +11,7 @@ var SupportedSampleRates = map[int]bool{
 }
 
 // SupportedChannels is the explicit channel-count allowlist.
-var SupportedChannels = map[int]bool{1: true, 2: true, 6: true}
+var SupportedChannels = map[int]bool{1: true, 2: true, 4: true, 6: true, 8: true}
 
 // SupportedBitsPerSample is the explicit integer PCM bit-depth allowlist.
 var SupportedBitsPerSample = map[int]bool{8: true, 16: true, 24: true, 32: true}
