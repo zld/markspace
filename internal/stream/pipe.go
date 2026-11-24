@@ -5,8 +5,8 @@ import (
 	"sync"
 )
 
-// Envelope is one bounded unit of work. Size must be the wire/heap bytes
-// charged against the queue budget.
+// Envelope is one bounded unit of work. Size is the wire/heap bytes charged
+// against the queue budget.
 type Envelope struct {
 	Sequence     int64
 	ByteSize     int64
@@ -15,13 +15,16 @@ type Envelope struct {
 	SourceOffset int64
 }
 
-// Pipe is a byte-bounded handoff between producer and consumer. It never drops
-// an accepted envelope: Submit applies backpressure until budget is released.
+// Pipe is a dynamically queued, byte-bounded handoff. Accepted envelopes are
+// never dropped: once the byte budget is full, Submit blocks and applies
+// backpressure to the producer.
 type Pipe struct {
 	budget *Budget
-	ch     chan Envelope
 
-	mu       sync.Mutex
+	mu    sync.Mutex
+	cond  *sync.Cond
+	queue []Envelope
+
 	produced int64
 	consumed int64
 	acked    int64
@@ -31,15 +34,13 @@ func NewPipe(maxBytes int64) *Pipe {
 	if maxBytes <= 0 {
 		maxBytes = 1
 	}
-	return &Pipe{
-		budget: NewBudget(maxBytes),
-		// Rendezvous handoff; byte budget is the real buffer bound.
-		ch: make(chan Envelope),
-	}
+	p := &Pipe{budget: NewBudget(maxBytes)}
+	p.cond = sync.NewCond(&p.mu)
+	return p
 }
 
-// Submit reserves byte budget and then hands the envelope to the consumer.
-// While blocked, reserved bytes remain accounted so Peak/Used stay bounded.
+// Submit reserves byte budget and appends the envelope. While blocked in
+// Acquire, queue occupancy is already at the configured ceiling.
 func (p *Pipe) Submit(ctx context.Context, e Envelope) error {
 	if e.ByteSize <= 0 {
 		e.ByteSize = int64(estimateSize(e.Payload))
@@ -47,61 +48,83 @@ func (p *Pipe) Submit(ctx context.Context, e Envelope) error {
 	if err := p.budget.Acquire(ctx, e.ByteSize); err != nil {
 		return err
 	}
-	p.mu.Lock()
-	p.produced++
-	p.mu.Unlock()
 
-	select {
-	case p.ch <- e:
-		return nil
-	case <-ctx.Done():
-		p.budget.Release(e.ByteSize)
-		return ctx.Err()
-	}
+	p.mu.Lock()
+	p.queue = append(p.queue, e)
+	p.produced++
+	p.cond.Signal()
+	p.mu.Unlock()
+	return nil
 }
 
 // Receive waits for the next envelope. The caller must call Ack after the
 // envelope and its output/checkpoint side effects are durable.
 func (p *Pipe) Receive(ctx context.Context) (Envelope, error) {
-	select {
-	case e := <-p.ch:
-		p.mu.Lock()
-		p.consumed++
-		p.mu.Unlock()
-		return e, nil
-	case <-ctx.Done():
-		return Envelope{}, ctx.Err()
+	stop := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			p.mu.Lock()
+			p.cond.Broadcast()
+			p.mu.Unlock()
+		case <-stop:
+		}
+	}()
+	defer close(stop)
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for len(p.queue) == 0 {
+		if err := ctx.Err(); err != nil {
+			return Envelope{}, err
+		}
+		p.cond.Wait()
 	}
+	e := p.queue[0]
+	p.queue[0] = Envelope{} // avoid retaining Payload references
+	p.queue = p.queue[1:]
+	p.consumed++
+	return e, nil
 }
 
 func (p *Pipe) Ack(e Envelope) {
 	p.budget.Release(e.ByteSize)
 	p.mu.Lock()
 	p.acked++
+	p.cond.Broadcast()
 	p.mu.Unlock()
 }
 
-func (p *Pipe) Budget() *Budget  { return p.budget }
+func (p *Pipe) Budget() *Budget { return p.budget }
+
 func (p *Pipe) PeakBytes() int64 { return p.budget.Peak() }
 func (p *Pipe) UsedBytes() int64 { return p.budget.Used() }
 
+func (p *Pipe) QueuedPackets() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return len(p.queue)
+}
+
 type PipeStats struct {
-	MaxBytes  int64 `json:"max_bytes"`
-	PeakBytes int64 `json:"peak_bytes"`
-	UsedBytes int64 `json:"used_bytes"`
-	Produced  int64 `json:"produced"`
-	Consumed  int64 `json:"consumed"`
-	Acked     int64 `json:"acked"`
-	WaitCount int64 `json:"backpressure_waits"`
+	MaxBytes      int64 `json:"max_bytes"`
+	PeakBytes     int64 `json:"peak_bytes"`
+	UsedBytes     int64 `json:"used_bytes"`
+	Produced      int64 `json:"produced"`
+	Consumed      int64 `json:"consumed"`
+	Acked         int64 `json:"acked"`
+	WaitCount     int64 `json:"backpressure_waits"`
+	QueuedPackets int   `json:"queued_packets"`
 }
 
 func (p *Pipe) Stats() PipeStats {
 	p.mu.Lock()
-	defer p.mu.Unlock()
+	queued := len(p.queue)
+	p.mu.Unlock()
 	return PipeStats{
 		MaxBytes: p.budget.Max(), PeakBytes: p.budget.Peak(), UsedBytes: p.budget.Used(),
 		Produced: p.produced, Consumed: p.consumed, Acked: p.acked,
-		WaitCount: p.budget.WaitCount(),
+		WaitCount: p.budget.WaitCount(), QueuedPackets: queued,
 	}
 }
 
