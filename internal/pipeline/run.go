@@ -131,9 +131,6 @@ func (r *Runner) loadCheckpoint() error {
 // run started, or nil when there was none. It is the idempotency baseline.
 func (r *Runner) PreviousManifest() *provenance.Manifest { return r.previous }
 
-// Checkpoint exposes the checkpoint for reporting.
-func (r *Runner) Checkpoint() *Checkpoint { return r.cp }
-
 // ResumedStage returns the stage the run resumed at, if any.
 func (r *Runner) ResumedStage() string { return r.runtime.resumedAt }
 

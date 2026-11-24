@@ -109,12 +109,6 @@ func (s *Scanner) Next() (*Record, error) {
 // Faults returns the accumulated recoverable faults.
 func (s *Scanner) Faults() fault.List { return s.faults }
 
-// Parsed returns how many valid records were emitted.
-func (s *Scanner) Parsed() int { return s.index }
-
-// Offset reports the position of the next unread byte.
-func (s *Scanner) Offset() int64 { return s.pos }
-
 // readAt parses one record starting at off. It never allocates more than the
 // configured payload cap, even when the header declares an enormous size.
 func (s *Scanner) readAt(off int64) (*Record, error) {
