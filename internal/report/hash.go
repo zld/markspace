@@ -9,8 +9,20 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"sort"
 )
+
+// ResumeMismatchError signals that a resumed run did not reproduce the
+// fingerprint or hashes of the original run.
+type ResumeMismatchError string
+
+func (e ResumeMismatchError) Error() string {
+	return fmt.Sprintf("report: resume verification mismatch at %s", string(e))
+}
+
+// ErrResumeMismatch constructs a typed resume mismatch.
+func ErrResumeMismatch(where string) error { return ResumeMismatchError(where) }
 
 // SegmentHash pairs the two hash classes for one segment.
 type SegmentHash struct {
