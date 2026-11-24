@@ -167,6 +167,9 @@ func writeTrak(bw *boxWriter, rep *RepSpec, sttsOffsets, mdhdOffsets map[uint32]
 	if err := writeStss(bw, rep); err != nil {
 		return err
 	}
+	if err := writeBtrt(bw, rep); err != nil {
+		return err
+	}
 	if err := bw.end(); err != nil { // stbl
 		return err
 	}
@@ -206,6 +209,18 @@ func writeStss(bw *boxWriter, rep *RepSpec) error {
 		}
 	}
 	if err := bw.marshal(&mp4.Stss{EntryCount: uint32(len(nums)), SampleNumber: nums}); err != nil {
+		return err
+	}
+	return bw.end()
+}
+
+func writeBtrt(bw *boxWriter, rep *RepSpec) error {
+	if _, err := bw.start(mp4.BoxTypeBtrt()); err != nil {
+		return err
+	}
+	avg := uint32(rep.Bitrate * 1000)
+	maxBitrate := uint32(rep.Bitrate * 1250)
+	if err := bw.marshal(&mp4.Btrt{BufferSizeDB: 1 << 20, MaxBitrate: maxBitrate, AvgBitrate: avg}); err != nil {
 		return err
 	}
 	return bw.end()

@@ -58,7 +58,7 @@ func (c cutContext) activeTracks() ([]model.TrackMetadata, []TrackReport, []mode
 	var issues []model.Issue
 	if len(c.tracks) > 0 {
 		for _, tr := range c.tracks {
-			rep := TrackReport{TrackID: tr.TrackID, Representation: tr.Representation, Empty: tr.Empty || tr.EventCount == 0}
+			rep := TrackReport{TrackID: tr.TrackID, Representation: tr.Representation, BitrateKbps: tr.BitrateKbps, Empty: tr.Empty || tr.EventCount == 0}
 			if rep.Empty {
 				rep.Included = false
 				rep.Reason = "empty_track"
@@ -166,6 +166,7 @@ func (c cutContext) cutInterval(index int, startRef, endRef Boundary, lastPartia
 		rs := RepSegment{
 			TrackID:        tr.TrackID,
 			Representation: tr.Representation,
+			BitrateKbps:    tr.BitrateKbps,
 			Start:          boundaryFromKeyframe(startKF, startDev),
 			End:            boundaryFromKeyframe(endKF, endDev),
 			StartSample:    startKF.SampleNumber,

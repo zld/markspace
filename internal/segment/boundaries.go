@@ -23,6 +23,7 @@ type Boundary struct {
 type RepSegment struct {
 	TrackID        uint32   `json:"track_id"`
 	Representation string   `json:"representation"`
+	BitrateKbps    int      `json:"bitrate_kbps,omitempty"`
 	Start          Boundary `json:"start"`
 	End            Boundary `json:"end"`
 
@@ -52,6 +53,7 @@ type Segment struct {
 type TrackReport struct {
 	TrackID        uint32 `json:"track_id"`
 	Representation string `json:"representation"`
+	BitrateKbps    int    `json:"bitrate_kbps,omitempty"`
 	Empty          bool   `json:"empty"`
 	Included       bool   `json:"included"`
 	Reason         string `json:"reason,omitempty"`

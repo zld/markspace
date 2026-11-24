@@ -26,6 +26,7 @@ type Track struct {
 	Hdlr *mp4.Hdlr `json:"-"`
 	Stts *mp4.Stts `json:"-"`
 	Stss *mp4.Stss `json:"-"`
+	Btrt *mp4.Btrt `json:"-"`
 
 	Events []model.RawEvent `json:"events"`
 }

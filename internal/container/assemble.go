@@ -36,6 +36,8 @@ func (f *File) assembleTracks(cfg model.Config) error {
 			tr.Stts = p
 		case *mp4.Stss:
 			tr.Stss = p
+		case *mp4.Btrt:
+			tr.Btrt = p
 		}
 	}
 
@@ -57,6 +59,10 @@ func (f *File) assembleTracks(cfg model.Config) error {
 		}
 
 		label := labelFor(trackID, tr.Hdlr)
+		bitrateKbps := 0
+		if tr.Btrt != nil {
+			bitrateKbps = int(tr.Btrt.AvgBitrate / 1000)
+		}
 		events, err := tr.buildEvents(int(trackID), label, f.boxOffset(i, mp4.BoxTypeStts().String()), cfg)
 		if err != nil {
 			return err
@@ -69,6 +75,7 @@ func (f *File) assembleTracks(cfg model.Config) error {
 			TrackID:        trackID,
 			Representation: label,
 			HandlerType:    handlerType(tr.Hdlr),
+			BitrateKbps:    bitrateKbps,
 			Timescale:      tr.Mdhd.Timescale,
 			MdhdOffset:     mdhdOffset,
 			EventCount:     len(events),
