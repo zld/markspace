@@ -75,6 +75,26 @@ func TestMissingIndexRebuildsFromFragments(t *testing.T) {
 	}
 }
 
+func TestIncompleteIndexRebuildsOnlyUnindexedFragments(t *testing.T) {
+	spec := testSpec(false)
+	include := true
+	spec.Segments[0].IncludeSidx = &include
+	data, err := BuildRepresentation(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := Scan(data, "partial")
+	if r.MissingIndex {
+		t.Fatal("one sidx exists, so index is incomplete rather than fully missing")
+	}
+	if r.IndexEntries != 1 || r.RebuiltIndex != 1 {
+		t.Fatalf("index entries=%d rebuilt=%d want 1/1", r.IndexEntries, r.RebuiltIndex)
+	}
+	if !r.Segments[0].Indexed || !r.Segments[1].RebuiltIndex {
+		t.Fatalf("index flags: seg0=%+v seg1=%+v", r.Segments[0], r.Segments[1])
+	}
+}
+
 func TestEarlyTruncationReportsOffsetWithoutPanic(t *testing.T) {
 	data, err := BuildRepresentation(testSpec(true))
 	if err != nil {
