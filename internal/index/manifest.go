@@ -27,6 +27,7 @@ type Manifest struct {
 	Version                  int                `json:"version"`
 	OutputMP4                string             `json:"output_mp4"`
 	Tracks                   []TrackManifest    `json:"tracks"`
+	Transitions              []any              `json:"transition_ranges,omitempty"`
 	SampleCount              int                `json:"samples"`
 	PayloadHashMismatches    int                `json:"payload_hash_mismatches"`
 	TargetBitrateBps         float64            `json:"target_bitrate_bps"`

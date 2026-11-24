@@ -36,14 +36,16 @@ type Checkpoint struct {
 	CommittedSequence []int `json:"committed_sequences"`
 	TotalSamples      int   `json:"total_samples"`
 	TotalPayloadBytes int64 `json:"total_payload_bytes"`
+	RecoveredChunks   int   `json:"recovered_chunks_total"`
 }
 
 type Store struct {
-	root       string
-	chunkDir   string
-	checkDir   string
-	mu         sync.Mutex
-	checkpoint *Checkpoint
+	root          string
+	chunkDir      string
+	checkDir      string
+	mu            sync.Mutex
+	checkpoint    *Checkpoint
+	hadCheckpoint bool
 }
 
 func Open(root string) (*Store, error) {
@@ -66,7 +68,20 @@ func Open(root string) (*Store, error) {
 		return nil, err
 	}
 	s.checkpoint = cp
+	s.hadCheckpoint = cp.LastSequence > 0
 	return s, nil
+}
+
+func (s *Store) HadCheckpoint() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.hadCheckpoint
+}
+
+func (s *Store) AddRecoveredChunks(n int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.checkpoint.RecoveredChunks += n
 }
 
 func (s *Store) Checkpoint() *Checkpoint {
