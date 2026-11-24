@@ -161,6 +161,35 @@ func TestInterruptResumeIdentical(t *testing.T) {
 	}
 }
 
+// A stream crossing the 32-bit timestamp edge must still process cleanly and
+// remain deterministic (the unwrap carries the high bits).
+func TestWrapStreamProcesses(t *testing.T) {
+	stream := fixture.WrapStream()
+	r1, pcm1 := runOnce(t, testCfg(), stream, "", 0)
+	r2, pcm2 := runOnce(t, testCfg(), stream, "", 0)
+	if r1.SamplesOut == 0 || len(pcm1) == 0 {
+		t.Fatalf("wrap stream produced no output: %+v", r1)
+	}
+	if r1.SHA256 != r2.SHA256 || !bytes.Equal(pcm1, pcm2) {
+		t.Fatalf("wrap stream non-deterministic")
+	}
+}
+
+// Cross-subsystem fault: a malformed (zero-length) frame header is located.
+func TestMalformedLengthLocated(t *testing.T) {
+	stream, wantOff := fixture.MalformedLength()
+	r, _ := NewRunner(testCfg(), &bytes.Buffer{}, "", 0)
+	_, err := r.Run(bytes.NewReader(stream))
+	var pe *ingest.ParseError
+	if !errors.As(err, &pe) {
+		t.Fatalf("want ParseError, got %v", err)
+	}
+	if pe.Code != ingest.ErrBadLength || pe.Offset != wantOff {
+		t.Fatalf("got code=%s offset=%d, want BAD_LENGTH offset=%d",
+			pe.Code, pe.Offset, wantOff)
+	}
+}
+
 // Reusing a checkpoint with changed parameters must be rejected (exit 3 class).
 func TestResumeConfigMismatchRejected(t *testing.T) {
 	dir := t.TempDir()

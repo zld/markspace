@@ -7,9 +7,9 @@ import (
 
 // Package-level sentinel errors.
 var (
-	ErrBadRate    = errors.New("sample rate must be positive")
-	ErrBadTarget  = errors.New("target LUFS must be negative")
-	ErrNoSamples  = errors.New("cannot measure empty PCM buffer")
+	ErrBadRate   = errors.New("sample rate must be positive")
+	ErrBadTarget = errors.New("target LUFS must be negative")
+	ErrNoSamples = errors.New("cannot measure empty PCM buffer")
 )
 
 // FullScale is the int16 full-scale amplitude as float.
@@ -17,12 +17,12 @@ const FullScale = 32768.0
 
 // LoudnessStats summarizes one processed PCM buffer.
 type LoudnessStats struct {
-	RMS         float64
+	RMS          float64
 	MeasuredLUFS float64
-	GainDB      float64
-	PeakBefore  float64 // dBFS of the loudest sample before the limiter
-	PeakAfter   float64 // dBFS after gain and limiting
-	Clipped     int     // samples the limiter had to pull back
+	GainDB       float64
+	PeakBefore   float64 // dBFS of the loudest sample before the limiter
+	PeakAfter    float64 // dBFS after gain and limiting
+	Clipped      int     // samples the limiter had to pull back
 }
 
 // dbFS converts a linear amplitude (0..1 relative to full scale) to dBFS.

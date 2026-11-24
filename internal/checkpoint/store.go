@@ -25,27 +25,27 @@ const Version = 1
 
 // State is the full recoverable boundary of a processing job.
 type State struct {
-	Version        int    `json:"version"`
-	JobID          string `json:"job_id"`
-	InputPath      string `json:"input_path"`
-	ConfigSummary  string `json:"config_summary"`  // sha256 of normalized job parameters
-	PrefixHash     string `json:"prefix_hash"`     // sha256 of input bytes [0,ConsumedOffset)
-	ConsumedOffset int64  `json:"consumed_offset"` // raw stream bytes already committed
-	NextSeq        uint64 `json:"next_seq"`        // reorder frontier at the boundary
-	BlocksDone     int    `json:"blocks_done"`     // validated audio blocks committed
-	OutputSamples  int64  `json:"output_samples"`  // PCM samples already written
-	OutputHash     string `json:"output_hash"`     // running sha256 of the output prefix
+	Version         int    `json:"version"`
+	JobID           string `json:"job_id"`
+	InputPath       string `json:"input_path"`
+	ConfigSummary   string `json:"config_summary"`   // sha256 of normalized job parameters
+	PrefixHash      string `json:"prefix_hash"`      // sha256 of input bytes [0,ConsumedOffset)
+	ConsumedOffset  int64  `json:"consumed_offset"`  // raw stream bytes already committed
+	NextSeq         uint64 `json:"next_seq"`         // reorder frontier at the boundary
+	BlocksDone      int    `json:"blocks_done"`      // validated audio blocks committed
+	OutputSamples   int64  `json:"output_samples"`   // PCM samples already written
+	OutputHash      string `json:"output_hash"`      // running sha256 of the output prefix
 	CommittedPrefix []byte `json:"committed_prefix"` // exact prefix for byte-level diff
 
 	// Cumulative delivery counters carried across an interruption.
-	Packets     uint64 `json:"packets"`
-	Duplicates  uint64 `json:"duplicates"`
-	Reordered   uint64 `json:"reordered"`
-	LateDropped uint64 `json:"late_dropped"`
-	Gaps        int    `json:"gaps"`
-	Bursts      int    `json:"bursts"`
-	SamplesIn   int64  `json:"samples_in"`
-	Clipped     int    `json:"clipped"`
+	Packets     uint64  `json:"packets"`
+	Duplicates  uint64  `json:"duplicates"`
+	Reordered   uint64  `json:"reordered"`
+	LateDropped uint64  `json:"late_dropped"`
+	Gaps        int     `json:"gaps"`
+	Bursts      int     `json:"bursts"`
+	SamplesIn   int64   `json:"samples_in"`
+	Clipped     int     `json:"clipped"`
 	PeakDBFS    float64 `json:"peak_dbfs"`
 	ClipBefore  float64 `json:"clip_before"`
 	ClipAfter   float64 `json:"clip_after"`

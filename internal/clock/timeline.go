@@ -27,7 +27,7 @@ func (s *SeqUnwrapper) Update(raw uint16) uint64 {
 		s.last = r
 		return r
 	}
-	delta := int64(r-(s.last%wrapMod16))
+	delta := int64(r - (s.last % wrapMod16))
 	if delta < -int64(wrapMod16/2) {
 		delta += int64(wrapMod16)
 	} else if delta > int64(wrapMod16/2) {

@@ -116,8 +116,8 @@ func TestTimelineMonotonicAndFreeze(t *testing.T) {
 	add2 := func(seq uint16, ts uint32) TimelineEntry {
 		return tl2.Add(PacketRef{Seq: seq, RTPTS: ts, ClockRate: MediaClockHz, Offset: int64(seq)})
 	}
-	add2(0xfffe, 0xffffffe0) // anchor packet -> media position 0
-	add2(0xffff, 0xfffffff0) // +16 source ticks
+	add2(0xfffe, 0xffffffe0)    // anchor packet -> media position 0
+	add2(0xffff, 0xfffffff0)    // +16 source ticks
 	wrap := add2(0, 0x00000000) // +16 more across the 32-bit wrap
 	if wrap.ExtSeq != 65536 {
 		t.Fatalf("post-wrap ext seq = %d, want 65536", wrap.ExtSeq)

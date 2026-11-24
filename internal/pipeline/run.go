@@ -113,7 +113,7 @@ type Runner struct {
 
 	// Baselines restored from a checkpoint; zero on a fresh run.
 	basePackets, baseDup, baseReorder, baseLate uint64
-	baseGaps, baseBursts, baseClipped            int
-	baseSamplesIn                                int64
-	basePeak, baseClipBefore, baseClipAfter      float64
+	baseGaps, baseBursts, baseClipped           int
+	baseSamplesIn                               int64
+	basePeak, baseClipBefore, baseClipAfter     float64
 }

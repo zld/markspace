@@ -17,7 +17,7 @@ type Params struct {
 	Packets    int
 	Rate       uint32 // RTP clock rate / source sample rate
 	Channels   int
-	SamplesPkt int    // L16 source frames per packet
+	SamplesPkt int // L16 source frames per packet
 	Seed       uint64
 	SSRC       uint32
 	// Corruption toggles.
@@ -70,7 +70,7 @@ func Build(p Params) (stream []byte, seqs []uint16, samples int) {
 	if p.ReorderSwaps > 0 {
 		// Swap selected adjacent arrivals; each swap is one reorder event.
 		for s := 0; s < p.ReorderSwaps; s++ {
-			idx := (s+1)*len(logical)/(p.ReorderSwaps+1)
+			idx := (s + 1) * len(logical) / (p.ReorderSwaps + 1)
 			if idx+1 < len(logical) {
 				logical[idx], logical[idx+1] = logical[idx+1], logical[idx]
 			}

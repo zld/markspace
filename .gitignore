@@ -1,0 +1,15 @@
+# Build artifacts (no binaries committed to the repo)
+/mediad
+/cmd/mediad/mediad
+*.test
+*.out
+
+# Local working outputs
+*.pcap
+*.pcm
+*.ckpt
+*.mp4
+
+# OS/editor cruft
+.DS_Store
+*.swp

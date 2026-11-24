@@ -17,7 +17,7 @@ type SenderReport struct {
 	RTPTime     uint32 // RTP timestamp paired with NTPTime
 	PacketCount uint32
 	OctetCount  uint32
-	Offset      int64  // raw stream offset of the framing tag
+	Offset      int64 // raw stream offset of the framing tag
 }
 
 // RTCPPacket holds anything decoded from a compound RTCP frame. Only SR

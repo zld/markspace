@@ -15,9 +15,9 @@ func tone(rate, n int, freq float64, amp int16) []int16 {
 
 func TestResampleRatiosAndTail(t *testing.T) {
 	cases := []struct {
-		name              string
-		src, dst, frames  int
-		wantOut           int
+		name             string
+		src, dst, frames int
+		wantOut          int
 	}{
 		{"48k-to-24k half", 48000, 24000, BlockSize, BlockSize / 2},
 		{"24k-to-48k double", 24000, 48000, BlockSize, BlockSize * 2},

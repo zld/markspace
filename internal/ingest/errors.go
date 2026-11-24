@@ -14,12 +14,12 @@ const (
 type ErrorCode string
 
 const (
-	ErrTruncated       ErrorCode = "TRUNCATED"        // stream ended mid-frame
-	ErrBadLength       ErrorCode = "BAD_LENGTH"       // length field is unusable
+	ErrTruncated       ErrorCode = "TRUNCATED"         // stream ended mid-frame
+	ErrBadLength       ErrorCode = "BAD_LENGTH"        // length field is unusable
 	ErrPayloadTooLarge ErrorCode = "PAYLOAD_TOO_LARGE" // frame exceeds 64 KiB
-	ErrRTPHeader       ErrorCode = "RTP_HEADER"       // RTP fixed header invalid
-	ErrRTCPHeader      ErrorCode = "RTCP_HEADER"      // RTCP compound packet invalid
-	ErrUnknownFrame    ErrorCode = "UNKNOWN_FRAME"    // frame type tag unknown
+	ErrRTPHeader       ErrorCode = "RTP_HEADER"        // RTP fixed header invalid
+	ErrRTCPHeader      ErrorCode = "RTCP_HEADER"       // RTCP compound packet invalid
+	ErrUnknownFrame    ErrorCode = "UNKNOWN_FRAME"     // frame type tag unknown
 )
 
 // MaxFramePayload is the hard per-packet limit (64 KiB).

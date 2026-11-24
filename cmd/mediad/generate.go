@@ -16,9 +16,9 @@ func cmdGenerate(args []string) error {
 		return err
 	}
 	kind := "demo"
-	// The acceptance syntax passes demo|corrupt as a positional token.
+	// The acceptance syntax passes the kind as a positional token.
 	for _, a := range f.positional() {
-		if a == "demo" || a == "corrupt" {
+		if a == "demo" || a == "corrupt" || a == "wrap" || a == "malformed" {
 			kind = a
 		}
 	}
@@ -29,8 +29,12 @@ func cmdGenerate(args []string) error {
 		stream, _, _ = fixture.Build(fixture.Default())
 	case "corrupt":
 		stream, _ = fixture.Corrupt()
+	case "wrap":
+		stream = fixture.WrapStream()
+	case "malformed":
+		stream, _ = fixture.MalformedLength()
 	default:
-		return badArgs("unknown --generate kind %q (want demo|corrupt)", kind)
+		return badArgs("unknown --generate kind %q (want demo|corrupt|wrap|malformed)", kind)
 	}
 	return os.WriteFile(f.get("--out", ""), stream, 0o644)
 }
