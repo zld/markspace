@@ -64,7 +64,8 @@ type Result struct {
 // DAG is the validated task graph.
 type DAG struct {
 	nodes map[string]*Node
-	order []string // stable key order for deterministic scheduling
+	order []string   // stable topological order
+	waves [][]string // independent nodes per topological wave, run in parallel
 }
 
 // New validates the graph: unknown deps and cycles are rejected before
@@ -101,7 +102,37 @@ func New(nodes []*Node) (*DAG, error) {
 		return nil, err
 	}
 	d.order = order
+	d.waves = d.computeWaves(order)
 	return d, nil
+}
+
+// computeWaves partitions the topological order into parallel waves: a
+// node joins wave (1 + max wave of its dependencies), so every node in a
+// wave is independent of every other node in that wave and can run
+// concurrently. Each wave is key-sorted for deterministic scheduling.
+func (d *DAG) computeWaves(order []string) [][]string {
+	depth := map[string]int{}
+	maxDepth := 0
+	for _, key := range order {
+		level := 0
+		for _, dep := range d.nodes[key].Deps {
+			if depth[dep]+1 > level {
+				level = depth[dep] + 1
+			}
+		}
+		depth[key] = level
+		if level > maxDepth {
+			maxDepth = level
+		}
+	}
+	waves := make([][]string, maxDepth+1)
+	for key, level := range depth {
+		waves[level] = append(waves[level], key)
+	}
+	for i := range waves {
+		sort.Strings(waves[i])
+	}
+	return waves
 }
 
 // topoOrder returns a deterministic topological ordering using Kahn's

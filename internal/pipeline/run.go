@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"archivecheck/internal/fixture"
 	"archivecheck/internal/manifest"
@@ -60,8 +61,12 @@ type runState struct {
 	Scenario  string   `json:"scenario"`
 }
 
-// artifacts holds in-memory products produced during this run.
+// artifacts holds in-memory products produced during this run. The mutex
+// guards recovery because independent recovery nodes run concurrently in
+// the same DAG wave; downstream timeline/quality/render nodes each run
+// alone in their own wave and need no additional locking.
 type artifacts struct {
+	mu       sync.Mutex
 	recovery map[uint32]map[uint32]*SegmentRecovery
 	timeline *timeline.Timeline
 	frames   *render.Manifest
@@ -300,6 +305,8 @@ func buildNodes(opts RunOptions, fx *fixture.Fixture, specs []media.TrackSpec,
 }
 
 func remember(art *artifacts, rec *SegmentRecovery) {
+	art.mu.Lock()
+	defer art.mu.Unlock()
 	if art.recovery[rec.Spec.ID] == nil {
 		art.recovery[rec.Spec.ID] = map[uint32]*SegmentRecovery{}
 	}

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 
 	"archivecheck/internal/merr"
 )
@@ -150,6 +151,49 @@ func TestInvalidatedAndResumePlan(t *testing.T) {
 	plan := d.ResumePlan(inv)
 	if !plan["recover-v1"] || plan["render"] {
 		t.Fatalf("resume plan wrong: %+v", plan)
+	}
+}
+
+func TestIndependentNodesRunInParallel(t *testing.T) {
+	// Two independent branches must overlap in time. Each leaf blocks on
+	// a barrier that is only released once both have started, proving
+	// concurrency; a serial scheduler would deadlock here.
+	started := make(chan string, 2)
+	release := make(chan struct{})
+	leaf := func(key string) NodeFunc {
+		return func() error {
+			started <- key
+			<-release
+			return nil
+		}
+	}
+	d, err := New([]*Node{
+		{Key: "root", Run: func() error { return nil }},
+		{Key: "leaf-a", Deps: []string{"root"}, Run: leaf("leaf-a")},
+		{Key: "leaf-b", Deps: []string{"root"}, Run: leaf("leaf-b")},
+		{Key: "join", Deps: []string{"leaf-a", "leaf-b"}, Run: func() error { return nil }},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan *Result, 1)
+	go func() { done <- d.Run(Options{MaxAttempts: 1}) }()
+	got := map[string]bool{}
+	for i := 0; i < 2; i++ {
+		select {
+		case k := <-started:
+			got[k] = true
+		case <-time.After(2 * time.Second):
+			t.Fatal("independent leaves did not start concurrently")
+		}
+	}
+	close(release)
+	res := <-done
+	if !got["leaf-a"] || !got["leaf-b"] {
+		t.Fatalf("both leaves should run, got %v", got)
+	}
+	if res.Failed != 0 || res.States["join"].State != StatusSuccess {
+		t.Fatalf("parallel run failed: %+v", res.States)
 	}
 }
 

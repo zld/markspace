@@ -38,23 +38,6 @@ func UnwrapSeq(high uint32, seq16 uint16) uint32 {
 	return uint32(int64(high) + int64(delta))
 }
 
-// Seq16 returns the low 16 bits of an unwrapped sequence number.
-func Seq16(seq uint32) uint16 { return uint16(seq) }
-
-// CmpSeq compares two 16-bit sequence numbers modulo 2^16.
-// It returns -1, 0 or 1.
-func CmpSeq(a, b uint16) int {
-	d := int16(a - b)
-	switch {
-	case d < 0:
-		return -1
-	case d > 0:
-		return 1
-	default:
-		return 0
-	}
-}
-
 func u32(v uint32) string {
 	const digits = "0123456789"
 	if v == 0 {

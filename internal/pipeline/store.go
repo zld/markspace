@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
 
 	"archivecheck/internal/merr"
 )
@@ -89,28 +88,4 @@ func (s *nodeStore) Get(key string, v interface{}) error {
 		return merr.Wrap(err, "pipeline", key, "artifact decode failed")
 	}
 	return nil
-}
-
-// LoadRecoveries loads every committed recovery artifact, in stable
-// (track, sequence) order, so a resumed timeline sees the same inputs
-// as a full rerun.
-func (s *nodeStore) LoadRecoveries(keys []string) ([]*SegmentRecovery, error) {
-	out := make([]*SegmentRecovery, 0, len(keys))
-	for _, key := range keys {
-		if !s.Has(key) {
-			continue
-		}
-		var rec SegmentRecovery
-		if err := s.Get(key, &rec); err != nil {
-			return nil, err
-		}
-		out = append(out, &rec)
-	}
-	sort.SliceStable(out, func(i, j int) bool {
-		if out[i].Spec.ID != out[j].Spec.ID {
-			return out[i].Spec.ID < out[j].Spec.ID
-		}
-		return out[i].Seq < out[j].Seq
-	})
-	return out, nil
 }

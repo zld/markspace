@@ -1,6 +1,8 @@
 package task
 
 import (
+	"sync"
+
 	"archivecheck/internal/merr"
 )
 
@@ -13,9 +15,11 @@ type Options struct {
 	AlreadySucceeded map[string]bool
 }
 
-// Run executes the DAG in dependency order. Nodes whose deps fail are
-// marked blocked and never invoked; the first blocking dependency is
-// reported with the original error's location.
+// Run executes the DAG. Independent nodes in the same topological wave
+// run concurrently on goroutines; waves are joined before the next one,
+// so every dependency has settled before its dependents start. Nodes
+// whose deps fail are marked blocked and never invoked, and the first
+// blocking dependency is reported with the original error location.
 func (d *DAG) Run(opts Options) *Result {
 	if opts.MaxAttempts < 1 {
 		opts.MaxAttempts = 1
@@ -25,62 +29,90 @@ func (d *DAG) Run(opts Options) *Result {
 		res.States[key] = &NodeState{Key: key, State: StatusPending}
 	}
 
-	for _, key := range d.order {
-		st := res.States[key]
-		node := d.nodes[key]
-
-		// Incremental resume: committed artifacts are trusted as-is.
-		if opts.AlreadySucceeded[key] {
-			st.State = StatusSuccess
-			res.Succeeded++
-			continue
+	var mu sync.Mutex
+	for _, wave := range d.waves {
+		var wg sync.WaitGroup
+		for _, key := range wave {
+			wg.Add(1)
+			go func(key string) {
+				defer wg.Done()
+				d.runNode(key, opts, res, &mu)
+			}(key)
 		}
-
-		blockedBy := d.firstFailedDep(key, res)
-		if blockedBy != "" {
-			st.State = StatusBlocked
-			res.Skipped = append(res.Skipped, key)
-			if res.Blocking == nil {
-				res.Blocking = d.buildBlocking(key, blockedBy, res)
-			}
-			continue
-		}
-
-		st.State = StatusRunning
-		var runErr error
-		for attempt := 1; attempt <= opts.MaxAttempts; attempt++ {
-			st.Attempts = attempt
-			if err := node.Run(); err != nil {
-				runErr = err
-				continue
-			}
-			runErr = nil
-			break
-		}
-		res.Executed++
-		res.Order = append(res.Order, key)
-		if runErr != nil {
-			st.State = StatusFailed
-			res.Failed++
-			if me, ok := merr.As(runErr); ok {
-				st.Err = me
-			} else {
-				st.Err = merr.Wrap(runErr, "task", "node:"+key, "node failed")
-			}
-			if res.Blocking == nil {
-				res.Blocking = d.buildBlocking(key, key, res)
-			}
-		} else {
-			st.State = StatusSuccess
-			res.Succeeded++
-		}
+		wg.Wait()
 	}
 	return res
 }
 
+// runNode executes one node with idempotent retry, guarded by mu for the
+// shared result/state bookkeeping.
+func (d *DAG) runNode(key string, opts Options, res *Result, mu *sync.Mutex) {
+	node := d.nodes[key]
+
+	// Incremental resume: committed artifacts are trusted as-is.
+	if opts.AlreadySucceeded[key] {
+		mu.Lock()
+		res.States[key].State = StatusSuccess
+		res.Succeeded++
+		mu.Unlock()
+		return
+	}
+
+	mu.Lock()
+	blockedBy := d.firstFailedDep(key, res)
+	mu.Unlock()
+	if blockedBy != "" {
+		mu.Lock()
+		res.States[key].State = StatusBlocked
+		res.Skipped = append(res.Skipped, key)
+		if res.Blocking == nil {
+			res.Blocking = d.buildBlocking(key, blockedBy, res)
+		}
+		mu.Unlock()
+		return
+	}
+
+	mu.Lock()
+	res.States[key].State = StatusRunning
+	mu.Unlock()
+
+	var runErr error
+	for attempt := 1; attempt <= opts.MaxAttempts; attempt++ {
+		mu.Lock()
+		res.States[key].Attempts = attempt
+		mu.Unlock()
+		if err := node.Run(); err != nil {
+			runErr = err
+			continue
+		}
+		runErr = nil
+		break
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	res.Executed++
+	res.Order = append(res.Order, key)
+	if runErr != nil {
+		res.States[key].State = StatusFailed
+		res.Failed++
+		if me, ok := merr.As(runErr); ok {
+			res.States[key].Err = me
+		} else {
+			res.States[key].Err = merr.Wrap(runErr, "task", "node:"+key, "node failed")
+		}
+		if res.Blocking == nil {
+			res.Blocking = d.buildBlocking(key, key, res)
+		}
+	} else {
+		res.States[key].State = StatusSuccess
+		res.Succeeded++
+	}
+}
+
 // firstFailedDep returns the first dependency that is not successful,
 // honoring the stable (sorted) dependency order for reproducible
-// blocking reports.
+// blocking reports. Callers must hold mu or run before a wave starts.
 func (d *DAG) firstFailedDep(key string, res *Result) string {
 	deps := append([]string(nil), d.nodes[key].Deps...)
 	sortStrings(deps)

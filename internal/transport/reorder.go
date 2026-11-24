@@ -26,7 +26,6 @@ type ReorderBuffer struct {
 	nextSeq   uint32 // next expected unwrapped sequence
 	highest   uint32 // highest unwrapped sequence observed
 	pending   map[uint32]*rtp.Packet
-	firstSeq  uint32
 	Received  int // unique packets accepted
 	DupCount  int
 	LostCount int
@@ -57,9 +56,9 @@ func (b *ReorderBuffer) Push(pkt *rtp.Packet) ([]*rtp.Packet, error) {
 	}
 	if !b.started {
 		b.started = true
-		b.firstSeq = UnwrapSeq(0, pkt.SequenceNumber)
-		b.nextSeq = b.firstSeq
-		b.highest = b.firstSeq
+		first := UnwrapSeq(0, pkt.SequenceNumber)
+		b.nextSeq = first
+		b.highest = first
 	}
 	seq := UnwrapSeq(b.highest, pkt.SequenceNumber)
 

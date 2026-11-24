@@ -60,11 +60,6 @@ func SecondsToTicks(sec *big.Rat) int64 {
 	return roundRat(scaled)
 }
 
-// TicksToSecondsRat renders a tick count as an exact rational second.
-func TicksToSecondsRat(ticks int64) *big.Rat {
-	return new(big.Rat).SetFrac(big.NewInt(ticks), big.NewInt(media.ClockRate))
-}
-
 func roundRat(r *big.Rat) int64 {
 	q := new(big.Int)
 	rem := new(big.Int)
