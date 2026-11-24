@@ -109,6 +109,11 @@ func (r *Reader) decodeTrack(c *Container, trak BoxRef) (*Track, error) {
 	if !ok {
 		return nil, fault.Corrupt(fault.StageScan, r.path, minfRef.Offset, "minf", "sample table box missing")
 	}
+	stsdRef, ok := c.child(stblRef, "stsd")
+	if !ok {
+		return nil, fault.Corrupt(fault.StageScan, r.path, stblRef.Offset, "stbl", "sample description box missing")
+	}
+	tr.STSD = stsdRef
 	if err := r.decodeSampleTable(c, stblRef, tr); err != nil {
 		return nil, err
 	}

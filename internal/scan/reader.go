@@ -42,13 +42,17 @@ type Container struct {
 
 // Track is one media track with its sample table.
 type Track struct {
-	ID        uint32   `json:"id"`
-	Timescale uint32   `json:"timescale"`
-	Handler   string   `json:"handler"`
-	Duration  uint64   `json:"duration"`
-	Width     uint32   `json:"width"`
-	Height    uint32   `json:"height"`
-	Samples   []Sample `json:"samples"`
+	ID        uint32 `json:"id"`
+	Timescale uint32 `json:"timescale"`
+	Handler   string `json:"handler"`
+	Duration  uint64 `json:"duration"`
+	Width     uint32 `json:"width"`
+	Height    uint32 `json:"height"`
+	// STSD locates the sample description box. Its payload is copied
+	// verbatim when the file is rebuilt, so codec configuration survives
+	// without being interpreted.
+	STSD    BoxRef   `json:"stsd"`
+	Samples []Sample `json:"samples"`
 }
 
 // Sample is one decoded sample entry.

@@ -130,6 +130,11 @@ type plannedTrack struct {
 	chunkOffsets    []uint64
 	samplesPerChunk uint32
 	duration        uint64
+	// stsd holds the source sample description box, header included. It is
+	// copied byte for byte so codec configuration is preserved.
+	stsd []byte
+	// video selects vmhd versus smhd for the media information header.
+	video bool
 }
 
 func planTracks(src *scan.Container, rep *repair.Result, chunkSamples int) ([]*plannedTrack, error) {
@@ -161,6 +166,16 @@ func planTracks(src *scan.Container, rep *repair.Result, chunkSamples int) ([]*p
 			return nil, fault.New(fault.KindCorrupt, fault.StageIndex,
 				"track %d has a zero timescale", rt.TrackID)
 		}
+		pt.video = st.Handler == "vide"
+		raw, err := readRange(src.File, st.STSD.Offset, int64(st.STSD.Size))
+		if err != nil {
+			return nil, err
+		}
+		if len(raw) < 8 || string(raw[4:8]) != "stsd" {
+			return nil, fault.New(fault.KindCorrupt, fault.StageIndex,
+				"track %d sample description is malformed", rt.TrackID).In(src.File).At(st.STSD.Offset)
+		}
+		pt.stsd = raw
 		base := rt.Entries[0].Repaired
 		pt.outputBase = base
 
@@ -203,6 +218,24 @@ func planTracks(src *scan.Container, rep *repair.Result, chunkSamples int) ([]*p
 	}
 	sortPlanned(out)
 	return out, nil
+}
+
+// readRange returns size bytes starting at offset.
+func readRange(path string, offset, size int64) ([]byte, error) {
+	if size <= 0 {
+		return nil, fault.New(fault.KindCorrupt, fault.StageRead,
+			"empty source range").In(path).At(offset)
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fault.New(fault.KindIO, fault.StageRead, "open source").In(path).Wrap(err)
+	}
+	defer f.Close()
+	buf := make([]byte, size)
+	if _, err := f.ReadAt(buf, offset); err != nil {
+		return nil, fault.New(fault.KindIO, fault.StageRead, "read source range").In(path).At(offset).Wrap(err)
+	}
+	return buf, nil
 }
 
 func sortPlanned(tracks []*plannedTrack) {

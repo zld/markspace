@@ -214,8 +214,14 @@ func writeTrak(bw *boxWriter, t *plannedTrack, movieTS uint32) error {
 	if err := bw.start("minf"); err != nil {
 		return wrapWrite("start minf", err)
 	}
-	if err := bw.full("vmhd", 0, 0x000001, &mp4.Vmhd{}); err != nil {
-		return wrapWrite("write vmhd", err)
+	if t.video {
+		if err := bw.full("vmhd", 0, 0x000001, &mp4.Vmhd{}); err != nil {
+			return wrapWrite("write vmhd", err)
+		}
+	} else {
+		if err := bw.full("smhd", 0, 0, &mp4.Smhd{}); err != nil {
+			return wrapWrite("write smhd", err)
+		}
 	}
 	if err := bw.start("dinf"); err != nil {
 		return wrapWrite("start dinf", err)
@@ -255,33 +261,10 @@ func writeStbl(bw *boxWriter, t *plannedTrack) error {
 	if err := bw.start("stbl"); err != nil {
 		return wrapWrite("start stbl", err)
 	}
-	if err := bw.start("stsd"); err != nil {
-		return wrapWrite("start stsd", err)
-	}
-	if _, err := mp4.Marshal(bw.w, &mp4.Stsd{EntryCount: 1}, mp4.Context{}); err != nil {
-		return wrapWrite("write stsd", err)
-	}
-	if err := bw.start("avc1"); err != nil {
-		return wrapWrite("start avc1", err)
-	}
-	entry := &mp4.VisualSampleEntry{
-		SampleEntry:     mp4.SampleEntry{AnyTypeBox: mp4.AnyTypeBox{Type: mp4.StrToBoxType("avc1")}, DataReferenceIndex: 1},
-		Width:           uint16(t.width),
-		Height:          uint16(t.height),
-		Horizresolution: 0x00480000,
-		Vertresolution:  0x00480000,
-		FrameCount:      1,
-		Depth:           0x0018,
-		PreDefined3:     -1,
-	}
-	if _, err := mp4.Marshal(bw.w, entry, mp4.Context{}); err != nil {
-		return wrapWrite("write avc1", err)
-	}
-	if err := bw.end(); err != nil {
-		return wrapWrite("close avc1", err)
-	}
-	if err := bw.end(); err != nil {
-		return wrapWrite("close stsd", err)
+	// Copy the source sample description verbatim: it carries codec
+	// configuration we must not guess or rewrite.
+	if _, err := bw.w.Write(t.stsd); err != nil {
+		return wrapWrite("copy stsd", err)
 	}
 	stts := &mp4.Stts{Entries: sttsEntries(t.dts)}
 	stts.EntryCount = uint32(len(stts.Entries))
