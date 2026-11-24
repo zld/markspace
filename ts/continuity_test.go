@@ -123,3 +123,39 @@ func TestPSIVersionBoundary(t *testing.T) {
 		t.Fatalf("PMT boundary details wrong: %+v", b)
 	}
 }
+
+func TestPSISectionReassemblyAcrossPackets(t *testing.T) {
+	// Feed the watcher directly with payload-sized packets (the TS parser's
+	// fixed 188-byte framing is exercised elsewhere); this isolates the
+	// section reassembly across a PUSI head and a continuation tail.
+	meta := TrackMeta{Channels: 2, Layout: 2, SampleRate: 48000}
+	section := BuildPMT(0x1000, 0x1100, 0x1200, 0, meta, "bt709")
+	split := 12 // head holds pointer_field + first section bytes only
+	head := section[:split]
+	tail := section[split:]
+
+	w := NewPSIWatcher()
+	// Register the PMT PID via a PAT first, exactly as a real stream does.
+	if err := w.Feed(Packet{PID: PIDPAT, PUSI: true, HasPayload: true,
+		Index: 0, Payload: BuildPAT(0x1000, 0)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Feed(Packet{PID: 0x1000, PUSI: true, HasPayload: true,
+		Index: 1, Payload: head}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := w.Current().Audio[0x1100]; ok {
+		t.Fatal("section must not parse before the continuation arrives")
+	}
+	if err := w.Feed(Packet{PID: 0x1000, PUSI: false, HasPayload: true,
+		Index: 2, Payload: tail}); err != nil {
+		t.Fatal(err)
+	}
+	audio, ok := w.Current().Audio[0x1100]
+	if !ok || audio.SampleRate != 48000 || audio.Channels != 2 {
+		t.Fatalf("reassembled PMT metadata wrong: %+v ok=%v", audio, ok)
+	}
+	if len(w.Boundaries) != 0 {
+		t.Fatalf("single-version PMT must not open a boundary, got %d", len(w.Boundaries))
+	}
+}

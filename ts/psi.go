@@ -88,6 +88,14 @@ func (w *PSIWatcher) Feed(p Packet) error {
 			return nil
 		}
 		payload = payload[1+ptr:]
+		// A section can end before the packet payload; the remaining bytes are
+		// 0xFF stuffing. Trim to the declared section length when available.
+		if len(payload) >= 3 {
+			seclen := int(binary.BigEndian.Uint16(payload[1:3]) & 0x0FFF)
+			if total := 3 + seclen; total < len(payload) {
+				payload = payload[:total]
+			}
+		}
 		buf = &sectionBuf{data: append([]byte(nil), payload...)}
 		w.sections[p.PID] = buf
 	} else {
@@ -95,6 +103,15 @@ func (w *PSIWatcher) Feed(p Packet) error {
 			return nil // section start was lost; wait for the next PUSI
 		}
 		buf.data = append(buf.data, payload...)
+		// Continuation packets have no length field at their start (the
+		// section header lives only in the PUSI packet); trim stuffing using
+		// the length declared at the head of the reassembled section.
+		if len(buf.data) >= 3 {
+			seclen := int(binary.BigEndian.Uint16(buf.data[1:3]) & 0x0FFF)
+			if total := 3 + seclen; total < len(buf.data) {
+				buf.data = buf.data[:total]
+			}
+		}
 	}
 	if !w.sectionComplete(buf) {
 		if len(buf.data) > 4096 { // bounded reassembly; drop runaway section
@@ -109,12 +126,15 @@ func (w *PSIWatcher) Feed(p Packet) error {
 
 // sectionComplete reports whether the reassembled bytes hold a full section.
 // Buffers contain section data only (the pointer_field was stripped in Feed).
+// The match is exact: a single TS packet may pad a short section with 0xFF
+// stuffing, and a section may also span several packets, so "at least this
+// long" would both misfire on stuffing and fail to wait for continuation.
 func (w *PSIWatcher) sectionComplete(b *sectionBuf) bool {
 	if len(b.data) < 3 {
 		return false
 	}
 	seclen := int(binary.BigEndian.Uint16(b.data[1:3]) & 0x0FFF)
-	return len(b.data) >= 3+seclen
+	return len(b.data) == 3+seclen
 }
 
 func (w *PSIWatcher) parseSection(pid uint16, idx int64, sec []byte) error {
