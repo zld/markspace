@@ -31,6 +31,9 @@ type SampleReport struct {
 	GapEvents       int                     `json:"gap_events"`
 	ErrorCodes      []string                `json:"error_codes,omitempty"`
 	ErrorCode       fault.Code              `json:"error_code,omitempty"`
+	ErrorStage      string                  `json:"error_stage,omitempty"`
+	ErrorOffset     int64                   `json:"error_offset,omitempty"`
+	ErrorPID        uint16                  `json:"error_pid,omitempty"`
 	ErrorMessage    string                  `json:"error_message,omitempty"`
 	ExitCode        int                     `json:"exit_code"`
 	RTPStats        *medrtp.Stats           `json:"rtp_stats,omitempty"`

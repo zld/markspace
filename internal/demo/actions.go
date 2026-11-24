@@ -37,8 +37,7 @@ func commitHealthy(dir, finalName string, ts []byte, rules []demux.MapRule) (*Sa
 	if derr != nil {
 		_ = tx.Rollback(derr.Message)
 		sr.ExitCode = fault.ExitCode(derr)
-		sr.ErrorCode = derr.Code
-		sr.ErrorMessage = derr.Message
+		applyFaultError(sr, derr)
 		return sr, media, nil, derr
 	}
 	if fe := tx.Prepare(res.SHA256, res.Bytes); fe != nil {
@@ -154,6 +153,7 @@ func runCorrupt(dir string, seed int64, faults map[string]bool, rules []demux.Ma
 		_ = tx.Rollback("unexpected acceptance")
 		return sr, events, mgr.RollbackCount, nil
 	}
+	applyFaultError(sr, perr)
 	_ = tx.Rollback(perr.Message)
 	if _, err := os.Stat(tx.FinalPath); !os.IsNotExist(err) {
 		return sr, events, mgr.RollbackCount, fault.New(fault.ErrCommit, "demo.corrupt", 0, "corrupt output was committed")
@@ -176,4 +176,17 @@ func uniqueCodes(events []fault.Event) []string {
 		out = append(out, code)
 	}
 	return out
+}
+
+func applyFaultError(sr *SampleReport, fe *fault.Error) {
+	if sr == nil || fe == nil {
+		return
+	}
+	sr.ErrorCode = fe.Code
+	sr.ErrorStage = fe.Stage
+	sr.ErrorOffset = fe.Offset
+	sr.ErrorMessage = fe.Message
+	if fe.HasPID {
+		sr.ErrorPID = fe.PID
+	}
 }
