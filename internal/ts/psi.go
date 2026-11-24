@@ -181,6 +181,9 @@ func (p *PSI) Snapshot() *Snapshot { return p.current }
 // Snapshots returns the ordered list of published mappings.
 func (p *PSI) Snapshots() []*Snapshot { return p.snaps }
 
+// Stats returns the counters collected while assembling sections.
+func (p *PSI) Stats() PSIStats { return p.stats }
+
 // Diagnostics returns continuity/section problems that affect PSI.
 func (p *PSI) Diagnostics() []Diagnostic { return p.diags }
 
@@ -527,6 +530,22 @@ func snapshotID(s *Snapshot) string {
 		fmt.Fprintf(h, "|p=%d pmt=%d pcr=%d", pr.Number, pr.PMTPID, pr.PCRPID)
 		for _, st := range pr.Streams {
 			fmt.Fprintf(h, " s=%d t=%d", st.PID, st.StreamType)
+		}
+	}
+	return fmt.Sprintf("%08x", h.Sum32())
+}
+
+// MappingSignature is a stable digest of the *track layout*: program numbers,
+// PCR assignment, elementary PIDs and stream types. It deliberately excludes
+// version numbers, so a PMT version bump that keeps the same layout yields the
+// same signature: the mapping did not change, and an index may continue
+// across it without risking a stale track reference.
+func (s *Snapshot) MappingSignature() string {
+	h := crc32.NewIEEE()
+	for _, pr := range s.Programs {
+		fmt.Fprintf(h, "p=%d pcr=%d|", pr.Number, pr.PCRPID)
+		for _, st := range pr.Streams {
+			fmt.Fprintf(h, "%d:%d ", st.PID, st.StreamType)
 		}
 	}
 	return fmt.Sprintf("%08x", h.Sum32())

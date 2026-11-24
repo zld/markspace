@@ -69,6 +69,10 @@ type Sample struct {
 	Keyframe     bool
 	RandomAccess bool
 	SnapshotID   string
+	// Mapping is the track-layout signature of the snapshot that governed
+	// the sample. Segments cut only when this changes; a version bump with an
+	// unchanged layout must not fragment the output.
+	Mapping      string
 	PayloadBytes int
 	PayloadHash  string
 }
@@ -186,6 +190,7 @@ func (a *assembler) feed(p *ts.Packet) error {
 		Keyframe:     p.Adaptation.RandomAccess,
 		RandomAccess: p.Adaptation.RandomAccess,
 		SnapshotID:   snap.ID,
+		Mapping:      snap.MappingSignature(),
 		PayloadBytes: len(p.Payload),
 	}
 	_ = st
@@ -442,64 +447,67 @@ func (p *payloadReader) payloadAt(off int64) ([]byte, error) {
 //
 // The returned records are in source order and carry their segment number.
 func AssignSegments(an *Analysis, segmentTicks int64) ([]index.Record, error) {
-	// Split first: find the source index of every video keyframe that may open
-	// an output. A keyframe opens one when it begins the stream, when the
-	// accumulated span has reached segmentTicks, or when the PSI mapping
-	// changed since the previous keyframe.
-	var open []int
-	lastOpen := -1
-	lastSnap := ""
-	for i := range an.Samples {
-		s := &an.Samples[i]
-		if s.Kind != index.KindVideo || !s.Keyframe {
-			continue
-		}
-		if lastOpen < 0 {
-			open = append(open, i)
-			lastOpen = i
-			lastSnap = s.SnapshotID
-			continue
-		}
-		prev := an.Samples[lastOpen]
-		span := s.DTS - prev.DTS
-		changed := s.SnapshotID != lastSnap
-		if span >= segmentTicks || changed {
-			open = append(open, i)
-			lastOpen = i
-			lastSnap = s.SnapshotID
-		}
-	}
-	if len(open) == 0 {
-		return nil, errors.New("pipeline: no video keyframes to open a segment")
-	}
-	// A run ends right before the next opening keyframe; the final run ends
-	// at end of stream. Audio that precedes the first opening keyframe is
-	// carried into segment 0 so no samples are silently dropped.
+	// Walk samples in source order and decide, at each video keyframe, whether
+	// it opens a new output. A keyframe opens one when it begins the stream,
+	// when its track mapping differs from the mapping the current output was
+	// opened with, or when the accumulated span reaches segmentTicks.
+	//
+	// Every sample is attributed to the output that is current at its source
+	// position. Because a mapping change always coincides with a keyframe,
+	// every sample in one output carries the same mapping, so an index entry
+	// can never cite a stale track.
 	recs := make([]index.Record, 0, len(an.Samples))
-	for k, start := range open {
-		end := len(an.Samples)
-		if k+1 < len(open) {
-			end = open[k+1]
-		}
-		from := start
-		if k == 0 {
-			from = 0
-			// Unowned audio before the first video sample still belongs to
-			// this segment; video before the keyframe would not be decodable,
-			// so it is not emitted.
-			for from < start && an.Samples[from].Kind != index.KindAudio {
-				from++
+	seg := 0
+	segMapping := ""
+	segStartDTS := int64(0)
+	opened := false
+	for i := range an.Samples {
+		s := an.Samples[i]
+		if s.Kind == index.KindVideo && s.Keyframe {
+			openNew := !opened
+			if opened {
+				if s.Mapping != segMapping {
+					// The track layout changed. This keyframe opens a new
+					// output even if the span is short: carrying the change
+					// into the current output would mix two mappings.
+					openNew = true
+				} else if s.DTS-segStartDTS >= segmentTicks {
+					openNew = true
+				}
+			}
+			if openNew {
+				if opened {
+					seg++
+				}
+				opened = true
+				segMapping = s.Mapping
+				segStartDTS = s.DTS
 			}
 		}
-		for i := from; i < end; i++ {
-			s := an.Samples[i]
-			// Audio arriving after the last video frame of this run keeps its
-			// segment, but video that belongs to the next run does not.
-			recs = append(recs, recordOf(s, k, an))
+		if !opened {
+			// Audio before the first video keyframe cannot be decoded into
+			// a playable output without a video sync point, so it is held
+			// until the first keyframe opens the stream; once opened it is
+			// emitted like any other sample. (Fixtures start with video, so
+			// this is only a guard against a non-video-leading master.)
+			if s.Kind == index.KindAudio {
+				continue
+			}
+			continue
 		}
+		if s.Mapping != segMapping {
+			// A non-video sample whose mapping differs from the current
+			// output: it belongs to a layout that has not been opened by
+			// a keyframe yet, so it is not emitted. This only happens for a
+			// PMT that claims a stream before the corresponding keyframe
+			// arrives; dropping it is safer than citing the wrong track.
+			continue
+		}
+		recs = append(recs, recordOf(s, seg, an))
 	}
-	// Reject any segment whose first emitted video sample is not a keyframe:
-	// that would make a random seek land on a non-decodable sample.
+	if !opened {
+		return nil, errors.New("pipeline: no video keyframes to open a segment")
+	}
 	if err := checkSegmentOpenings(recs); err != nil {
 		return nil, err
 	}

@@ -68,11 +68,17 @@ func PATSection(version uint8) []byte {
 // PMTSection returns a PMT with one H.264 and one AAC stream. Video carries
 // the PCR.
 func PMTSection(version uint8, videoST, audioST uint8) []byte {
+	return PMTSectionAudio(version, videoST, audioST, AudioPID)
+}
+
+// PMTSectionAudio is PMTSection with an explicit audio PID, used to model a
+// mid-stream track remap.
+func PMTSectionAudio(version uint8, videoST, audioST uint8, audioPID uint16) []byte {
 	body := []byte{
 		0xE0 | byte(VideoPID>>8), byte(VideoPID & 0xFF), // PCR_PID
 		0xF0, 0x00, // program_info_length
 		videoST, 0xE0 | byte(VideoPID>>8), byte(VideoPID & 0xFF), 0xF0, 0x00,
-		audioST, 0xE0 | byte(AudioPID>>8), byte(AudioPID & 0xFF), 0xF0, 0x00,
+		audioST, 0xE0 | byte(audioPID>>8), byte(audioPID & 0xFF), 0xF0, 0x00,
 	}
 	return section(0x02, 0x0001, version, body)
 }
@@ -217,6 +223,12 @@ type Spec struct {
 	PMTChangeAt      int // frame index at which the PMT version changes; 0 disables
 	PMTStartVersion  uint8
 	PMTChangeVersion uint8
+	// RelayoutAt, when >0, remaps the audio stream to RelayoutAudioPID from
+	// that frame onward. This is a genuine track change, unlike a bare
+	// version bump, and exists to prove the index never points at a stale
+	// track mapping.
+	RelayoutAt       int
+	RelayoutAudioPID uint16
 }
 
 // FrameTicks used by the generator, both integral at 90 kHz.
@@ -377,14 +389,25 @@ func Generate(path string, spec Spec) (*Generated, error) {
 	pmtVersion := spec.PMTStartVersion
 	audioIdx := 0
 	lastPSI := -1000
+	audioPID := uint16(AudioPID)
+	layoutPID := uint16(AudioPID)
 
-	emitPSI := func(frame, version int) {
+	emitPSI := func(_ int, version int) {
 		b.psi(PATPID, PATSection(0))
-		b.psi(PMTPID, PMTSection(uint8(version), VideoStreamType, AudioStreamType))
-		_ = frame
+		b.psi(PMTPID, PMTSectionAudio(uint8(version), VideoStreamType, AudioStreamType, audioPID))
 	}
 
 	for f := 0; f < spec.VideoFrames; f++ {
+		if spec.RelayoutAt > 0 && f == spec.RelayoutAt && spec.RelayoutAudioPID != 0 {
+			// A genuine track change: the audio stream moves to a new PID and
+			// the PMT version advances. Consumers must cut instead of citing
+			// the old PID for frames that now live on the new track.
+			audioPID = spec.RelayoutAudioPID
+			layoutPID = audioPID
+			pmtVersion = (pmtVersion + 1) & 0x1F
+			emitPSI(f, int(pmtVersion))
+			lastPSI = f
+		}
 		if spec.PMTChangeAt > 0 && f >= spec.PMTChangeAt && pmtVersion != spec.PMTChangeVersion {
 			pmtVersion = spec.PMTChangeVersion
 			gen.PMTChanges = append(gen.PMTChanges, ChangePoint{Frame: f, Offset: int64(b.buf.Len()), Version: pmtVersion})
@@ -421,10 +444,10 @@ func Generate(path string, spec Spec) (*Generated, error) {
 				apts := spec.StartPTS + int64(audioIdx)*AudioFrameTicks
 				apes := audioPES(apts, elementary(spec.Seed, 100000+audioIdx, spec.AudioBytes, false, true))
 				aoff := int64(b.buf.Len())
-				b.payload(AudioPID, apes, nil, false)
+				b.payload(audioPID, apes, nil, false)
 				gen.AudioFrames = append(gen.AudioFrames, FrameInfo{
 					Index: audioIdx, Offset: aoff, Packet: aoff / PacketSize,
-					PTS: apts, DTS: apts, PID: AudioPID,
+					PTS: apts, DTS: apts, PID: layoutPID,
 				})
 				audioIdx++
 			}
@@ -500,9 +523,12 @@ func applyDamage(out []byte, class string) ([]byte, []Damage, error) {
 		if pkt < 0 {
 			return nil, nil, fmt.Errorf("fixture: no video packet")
 		}
-		out[pkt+3] = out[pkt+3]&0xF0 | (out[pkt+3]+2)&0x0F
+		// Advance the counter by two relative to its own value so the gap is
+		// exactly two regardless of where the stream started.
+		cc := out[pkt+3] & 0x0F
+		out[pkt+3] = out[pkt+3]&0xF0 | (cc+2)&0x0F
 		return out, []Damage{{Kind: class, Offset: int64(pkt), Packet: int64(pkt) / PacketSize,
-			Detail: "continuity counter advanced by two"}}, nil
+			Detail: fmt.Sprintf("continuity counter advanced by two (%d -> %d)", cc, (cc+2)&0x0F)}}, nil
 
 	case "pcrwrap":
 		// Shift the entire PCR timeline so the 33-bit wrap lands half a

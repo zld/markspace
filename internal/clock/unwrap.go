@@ -162,15 +162,16 @@ func (u *Unwrapper) observePCR(obs Obs) (int64, bool) {
 	if !u.pcrSeen[obs.PID] {
 		u.pcrSeen[obs.PID] = true
 		u.lastPCR[obs.PID] = base
-		u.lastPCRTk[obs.PID] = base
-		// The first PCR also anchors the shared 90 kHz timeline so PTS and
-		// PCR can never disagree about which side of a wrap they are on.
+		// The first PCR anchors the shared 90 kHz timeline so PTS and PCR
+		// can never disagree about which side of a wrap they are on. The
+		// returned value is anchor-relative.
 		if !u.anchored {
 			u.anchored = true
 			u.originRaw = uint64(base)
 			u.originTks = 0
 		}
-		return base, true
+		u.lastPCRTk[obs.PID] = base - int64(u.originRaw)
+		return u.lastPCRTk[obs.PID], true
 	}
 	d := wrapDelta(base, u.lastPCR[obs.PID], basePeriod)
 	if !obs.Discontinuity && d < -u.cfg.MaxReorder {
@@ -184,7 +185,7 @@ func (u *Unwrapper) observePCR(obs Obs) (int64, bool) {
 		return 0, false
 	}
 	u.lastPCR[obs.PID] += d
-	u.lastPCRTk[obs.PID] = u.lastPCR[obs.PID]
+	u.lastPCRTk[obs.PID] = u.lastPCR[obs.PID] - int64(u.originRaw)
 	return u.lastPCRTk[obs.PID], true
 }
 

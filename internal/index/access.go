@@ -273,8 +273,9 @@ func (idx *Index) Segment(n int) (start, end Record, ok bool) {
 }
 
 // Validate re-checks the invariants a consumer relies on: ascending seq,
-// every segment opens on a keyframe, every keyframe carries a snapshot, and
-// no record references an unknown snapshot.
+// every segment's *first video* record is a keyframe (its leading audio, if
+// any, precedes the opening keyframe in source order), every record cites a
+// known PSI snapshot, and durations are positive.
 func (idx *Index) Validate() error {
 	if len(idx.Records) == 0 {
 		return errors.New("index: empty")
@@ -286,8 +287,8 @@ func (idx *Index) Validate() error {
 	if len(known) == 0 {
 		return errors.New("index: no snapshot references")
 	}
-	segOpen := make(map[int]bool)
 	lastSeg := -1
+	opened := false
 	var lastSeq int64 = -1
 	for i := range idx.Records {
 		r := &idx.Records[i]
@@ -302,12 +303,34 @@ func (idx *Index) Validate() error {
 			return fmt.Errorf("index: record %d has non-positive duration %d", r.Seq, r.Duration)
 		}
 		if r.Segment != lastSeg {
-			segOpen[r.Segment] = true
-			if !r.Keyframe {
-				return fmt.Errorf("index: segment %d opens on non-keyframe seq %d", r.Segment, r.Seq)
-			}
 			lastSeg = r.Segment
+			opened = false
 		}
+		if r.Kind == KindVideo && !opened {
+			if !r.Keyframe {
+				return fmt.Errorf("index: segment %d opens on non-keyframe video seq %d", r.Segment, r.Seq)
+			}
+			opened = true
+		}
+	}
+	// Every segment must have opened on a video keyframe.
+	curSeg := -1
+	haveKey := false
+	for i := range idx.Records {
+		r := &idx.Records[i]
+		if r.Segment != curSeg {
+			if curSeg >= 0 && !haveKey {
+				return fmt.Errorf("index: segment %d has no opening keyframe", curSeg)
+			}
+			curSeg = r.Segment
+			haveKey = false
+		}
+		if r.Kind == KindVideo && r.Keyframe {
+			haveKey = true
+		}
+	}
+	if !haveKey {
+		return fmt.Errorf("index: segment %d has no opening keyframe", curSeg)
 	}
 	return nil
 }
