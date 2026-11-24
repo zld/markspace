@@ -24,14 +24,14 @@ import (
 
 // Outcome is everything a run produced, including the final metrics.
 type Outcome struct {
-	Case     fixture.Case
-	Metrics  report.Metrics
-	Plan     track.Plan
-	Lines    []*media.TrackLine
+	Case      fixture.Case
+	Metrics   report.Metrics
+	Plan      track.Plan
+	Lines     []*media.TrackLine
 	Keyframes []bitstream.Report
-	Damages  []damage.Error
-	RTP      *rtppkg.Result
-	Sync     *sync.Report
+	Damages   []damage.Error
+	RTP       *rtppkg.Result
+	Sync      *sync.Report
 }
 
 // Run executes the full kernel over one generated case. workDir holds the
@@ -144,9 +144,17 @@ func Run(c fixture.Case, workDir string) (*Outcome, error) {
 		lat.stage("sync", len(out.Sync.Measurements), costSync)
 	}
 
+	finalizeRecoverability(out.Damages)
 	out.Metrics = report.Build(report.Input{
 		Lines: lines, Keyframes: kfs, Damages: out.Damages,
 		RTP: out.RTP, Sync: out.Sync, Latencies: lat.samples(),
 	})
 	return out, nil
+}
+func finalizeRecoverability(errs []damage.Error) {
+	for i := range errs {
+		if errs[i].Recoverable == damage.RecoverableUnknown {
+			errs[i].SetRecoverable(damage.RecoverableNo)
+		}
+	}
 }
