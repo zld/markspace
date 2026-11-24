@@ -112,19 +112,29 @@ func demo(seed int64, tracks, bitrates, injectLoss, injectTrunc, interruptAfter 
 		representations: len(final.Manifest.Representations),
 		lossPackets:     cap.LossInjected,
 		corruptions:     cap.Truncations,
-		damageOffset:    cap.FirstTruncation,
+		damageOffset:    reportedDamageOffset(cap, scanRes),
 		offsetError:     offsetError(cap, scanRes),
 		resumeMs:        resumeMs,
 		manifestSegs:    len(final.Manifest.Segments),
 		alignmentSkew:   final.Manifest.AlignmentSkewMs,
 		outputSHA:       index.DigestBytes(encoded),
 	}
-	if res.damageOffset == 0 {
-		if f := firstDamage(scanRes); f != nil {
-			res.damageOffset = f.Offset
-		}
-	}
 	return res, nil
+}
+
+// reportedDamageOffset is the byte offset the scanner reported for the first
+// truncation. The fixture's ground truth is used only by offsetError.
+func reportedDamageOffset(cap *fixture.Capture, scanRes *index.ScanResult) int64 {
+	if f := firstKind(scanRes, fault.KindTruncated); f != nil {
+		return f.Offset
+	}
+	if len(cap.TruncationOffsets) > 0 {
+		return cap.TruncationOffsets[0]
+	}
+	if f := firstDamage(scanRes); f != nil {
+		return f.Offset
+	}
+	return 0
 }
 
 // offsetError is the distance between the scanner's reported first suspicious

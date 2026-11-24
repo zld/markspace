@@ -8,6 +8,7 @@
 package stream
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -20,7 +21,6 @@ import (
 	"mediatool/internal/index"
 	"mediatool/internal/manifest"
 	"mediatool/internal/media"
-	"mediatool/internal/rtp"
 	"mediatool/internal/segment"
 )
 
@@ -588,8 +588,9 @@ func (r *runner) samples(seg segment.Segment, sr segment.Representation, track T
 			WithDetail("track %d has no usable clock rate", sr.TrackID)
 	}
 
-	// Collect this boundary's packets by walking the capture once through the
-	// scanner with the same track table.
+	// Read only the packets inside this boundary's byte span, starting at the
+	// keyframe offset. This is a direct read of the capture's self-describing
+	// records, so memory is bounded by one segment and no full rescan happens.
 	startOffset := sr.KeyframeOffset
 	endOffset := r.nextKeyframeOffset(sr.TrackID, seg.EndMs)
 	limit := int64(r.cfg.maxSegmentBytes())
@@ -597,24 +598,21 @@ func (r *runner) samples(seg segment.Segment, sr segment.Representation, track T
 		endOffset = startOffset + limit
 	}
 	if endOffset <= startOffset || r.in.Reader == nil {
-		// No media bytes for this span: still emit a valid empty fragment so the
-		// boundary is represented consistently.
 		return nil, nil
+	}
+
+	packets, err := r.readSpan(sr.TrackID, startOffset, endOffset)
+	if err != nil {
+		return nil, err
 	}
 
 	var out []media.Sample
 	var prevRel uint64
 	var baseTick uint64
 	var have bool
-	// Each walk is an independent scan from the start of the capture, so the
-	// clock's wrap extension must be reset too. Otherwise a second boundary
-	// would inherit the first boundary's reference and produce wrong ticks.
 	clk := clock.NewTrackClock(sr.TrackID, 0, clockRateOf(tr))
-	err := r.walk(sr.TrackID, func(offset int64, ts uint32, key bool, payload []byte) error {
-		if offset < startOffset || offset >= endOffset {
-			return nil
-		}
-		ext := clk.ExtendRTP(ts)
+	for _, p := range packets {
+		ext := clk.ExtendRTP(p.ts)
 		ticks := ext * uint64(rate) / uint64(clockRateOf(tr))
 		if !have {
 			baseTick = ticks
@@ -630,18 +628,14 @@ func (r *runner) samples(seg segment.Segment, sr segment.Representation, track T
 		out = append(out, media.Sample{
 			DurationTicks:   dur,
 			DecodeTimeTicks: rel,
-			Data:            append([]byte(nil), payload...),
-			Sync:            key,
+			Data:            p.payload,
+			Sync:            p.key,
 		})
 		if have && len(out) >= 2 {
 			out[len(out)-2].DurationTicks = dur
 		}
 		prevRel = rel
 		have = true
-		return nil
-	})
-	if err != nil {
-		return nil, err
 	}
 	// The final sample's duration is unknown until the next boundary; give it
 	// the previous interval so the fragment has a consistent duration.
@@ -655,51 +649,113 @@ func (r *runner) samples(seg segment.Segment, sr segment.Representation, track T
 	return out, nil
 }
 
-// walk streams packets of one track through the capture without retaining it.
-func (r *runner) walk(trackID uint32, fn func(offset int64, ts uint32, key bool, payload []byte) error) error {
-	sc, err := rtp.NewScanner(io.NewSectionReader(r.in.Reader, 0, r.in.InputBytes), rtp.Config{
-		Tracks:     r.trackTable(),
-		Window:     64,
-		IsKeyframe: r.isKeyframe,
-	})
-	if err != nil {
-		return err
+// recordHeaderLen is the capture framing header size (captured + original).
+const recordHeaderLen = 8
+
+// rawPacket is one packet read directly from the capture record framing.
+type rawPacket struct {
+	ts      uint32
+	key     bool
+	payload []byte
+}
+
+// readSpan reads capture records whose bodies lie in [startBody, endBody),
+// keeping only packets of the requested track. Index offsets point at the body
+// start, so the record header precedes it by eight bytes.
+func (r *runner) readSpan(trackID uint32, startBody, endBody int64) ([]rawPacket, error) {
+	var out []rawPacket
+	off := startBody - recordHeaderLen
+	if off < 0 {
+		return nil, fmt.Errorf("bad span start %d", startBody)
 	}
-	for {
-		ev, ok, err := sc.Next()
-		if err != nil {
-			return err
+	var hdr [8]byte
+	for off+recordHeaderLen <= endBody {
+		if _, err := r.in.Reader.ReadAt(hdr[:], off); err != nil {
+			if err == io.EOF || err == io.ErrUnexpectedEOF {
+				return out, nil
+			}
+			return nil, fmt.Errorf("read record header at %d: %w", off, err)
 		}
+		captured := int64(binary.BigEndian.Uint32(hdr[0:4]))
+		original := int64(binary.BigEndian.Uint32(hdr[4:8]))
+		bodyStart := off + recordHeaderLen
+		if captured <= 0 || captured > int64(r.cfg.maxSegmentBytes()) || original < captured {
+			// A truncated record cannot yield a trustworthy sample; skip it.
+			off = bodyStart + captured
+			continue
+		}
+		body := make([]byte, captured)
+		if _, err := r.in.Reader.ReadAt(body, bodyStart); err != nil {
+			if err == io.EOF || err == io.ErrUnexpectedEOF {
+				return out, nil
+			}
+			return nil, fmt.Errorf("read record body at %d: %w", bodyStart, err)
+		}
+		off = bodyStart + captured
+		if captured < 12 {
+			continue
+		}
+		ssrc := binary.BigEndian.Uint32(body[8:12])
+		if tr, ok := r.trackBySSRC(ssrc); !ok || tr.TrackID != trackID {
+			continue
+		}
+		pt := body[1]
+		if pt >= 192 && pt <= 223 {
+			continue // RTCP, not a media sample
+		}
+		ts := binary.BigEndian.Uint32(body[4:8])
+		payload, ok := samplePayload(body)
 		if !ok {
-			return nil
-		}
-		if ev.Kind != rtp.EventPacket || ev.TrackID != trackID {
 			continue
 		}
-		if ev.OriginalLength > ev.Length {
-			// A truncated packet's bytes are untrustworthy; skip it and let the
-			// boundary-level rollback handle the segment.
-			continue
-		}
-		if err := fn(ev.Offset, ev.Timestamp, ev.Keyframe, ev.Payload); err != nil {
-			return err
-		}
+		key := r.isKeyframePayload(trackID, payload)
+		out = append(out, rawPacket{ts: ts, key: key, payload: payload})
 	}
+	return out, nil
 }
 
-func (r *runner) trackTable() map[uint32]rtp.TrackInfo {
-	t := make(map[uint32]rtp.TrackInfo, len(r.in.Index.Tracks))
-	for _, tr := range r.in.Index.Tracks {
-		t[tr.SSRC] = rtp.TrackInfo{TrackID: tr.TrackID, ClockRate: tr.ClockRate}
+// samplePayload extracts the payload from an RTP body, handling header
+// extensions and padding. It returns false for an invalid body.
+func samplePayload(body []byte) ([]byte, bool) {
+	start := 12
+	if body[0]&0x10 != 0 {
+		if len(body) < 16 {
+			return nil, false
+		}
+		extLen := int(binary.BigEndian.Uint16(body[14:16])) * 4
+		start = 16 + extLen
+		if start > len(body) {
+			return nil, false
+		}
 	}
-	return t
+	end := len(body)
+	if body[0]&0x20 != 0 {
+		pad := int(body[len(body)-1])
+		if pad == 0 || start+pad > end {
+			return nil, false
+		}
+		end -= pad
+	}
+	if end < start {
+		return nil, false
+	}
+	return append([]byte(nil), body[start:end]...), true
 }
 
-func (r *runner) isKeyframe(ev *rtp.Event) bool {
-	if tr, ok := r.in.Index.Track(ev.TrackID); ok && tr.Kind == "audio" {
+func (r *runner) trackBySSRC(ssrc uint32) (*index.Track, bool) {
+	for i := range r.in.Index.Tracks {
+		if r.in.Index.Tracks[i].SSRC == ssrc {
+			return &r.in.Index.Tracks[i], true
+		}
+	}
+	return nil, false
+}
+
+func (r *runner) isKeyframePayload(trackID uint32, payload []byte) bool {
+	if tr, ok := r.in.Index.Track(trackID); ok && tr.Kind == "audio" {
 		return true
 	}
-	return len(ev.Payload) > 0 && ev.Payload[0] == 1
+	return len(payload) > 0 && payload[0] == 1
 }
 
 func clockRateOf(tr *index.Track) uint32 {

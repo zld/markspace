@@ -28,6 +28,8 @@ func main() {
 		err = runScan(os.Args[2:])
 	case "verify":
 		err = runVerify(os.Args[2:])
+	case "resume":
+		err = runResume(os.Args[2:])
 	case "-h", "--help", "help":
 		usage()
 		return
@@ -49,6 +51,7 @@ Usage:
   mediatool demo [flags]   full pipeline: generate, scan, segment, resume, verify
   mediatool scan [flags]   scan a generated capture and print located damage
   mediatool verify         exercise every self-generated fault class
+  mediatool resume [flags] interrupt then resume, or refuse a corrupted checkpoint
 
 Demo flags:
   --seed int              fixture seed (default 42)
