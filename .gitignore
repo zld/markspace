@@ -1,0 +1,7 @@
+# Build products and generated fixtures are never shipped.
+/mediamerge
+/bin/
+/generated/
+*.test
+*.out
+.DS_Store
