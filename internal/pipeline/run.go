@@ -227,7 +227,8 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 		SchemaVersion: "mediapipe/v1", Summary: summary,
 		InputPath: opts.InputPath, InputSHA256: prepared.InputSHA, InputBytes: prepared.InputBytes,
 		SegmentMs: opts.SegmentMs, CheckpointPackets: opts.CheckpointPackets, ReorderWindow: opts.ReorderWindow,
-		Segments: segments, Fingerprints: fingerprints, DedupeMappings: mappings,
+		Segments: segments, Issues: prepared.Health.Issues,
+		Fingerprints: fingerprints, DedupeMappings: mappings,
 	}
 	if _, err := report.WriteManifest(opts.OutDir, manifest); err != nil {
 		return nil, err

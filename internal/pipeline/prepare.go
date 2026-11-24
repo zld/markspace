@@ -71,9 +71,11 @@ func PrepareInput(inputPath string, reorderWindow int, frameMs int64) (*Prepared
 
 		health.CountRecord(rec)
 		if rec.CRCError != nil {
+			_ = model.WithPacketOffset(rec.CRCError, int64(rec.Header.PacketOffset))
 			health.AddIssue(rec.CRCError)
 		}
 		if rec.ParseError != nil {
+			_ = model.WithPacketOffset(rec.ParseError, int64(rec.Header.PacketOffset))
 			health.AddIssue(rec.ParseError)
 			if rec.Header.Type == stream.RecordRTCP {
 				tl.MarkStaleReport()

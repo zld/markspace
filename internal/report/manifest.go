@@ -56,6 +56,7 @@ type Manifest struct {
 	CheckpointPackets int                       `json:"checkpoint_packets"`
 	ReorderWindow     int                       `json:"reorder_window"`
 	Segments          []model.Segment           `json:"segments"`
+	Issues            []model.Error             `json:"issues,omitempty"`
 	Windows           []model.SilenceWindow     `json:"windows,omitempty"`
 	Fingerprints      []model.WindowFingerprint `json:"fingerprints,omitempty"`
 	DedupeMappings    []model.DedupeMapping     `json:"dedupe_mappings,omitempty"`
