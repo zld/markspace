@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/abema/go-mp4"
 )
 
 func TestGenerateCreatesAllScenariosWithManifests(t *testing.T) {
@@ -147,4 +149,33 @@ func mapValues(m map[string]string) []string {
 		out = append(out, v)
 	}
 	return out
+}
+
+func TestGeneratedMP4IsProbeable(t *testing.T) {
+	data, err := MP4(videoSpec("probe"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := mp4.Probe(bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("independent parser rejected the fixture: %v", err)
+	}
+	if len(info.Tracks) != 1 {
+		t.Fatalf("tracks=%d", len(info.Tracks))
+	}
+	tr := info.Tracks[0]
+	if tr.TrackID != 1 || tr.Timescale != 30000 || len(tr.Samples) != 40 {
+		t.Fatalf("track %+v", tr)
+	}
+	// The fixture writes moov before mdat, which is the fast-start layout
+	// go-mp4 reports as FastStart=true.
+	if !info.FastStart {
+		t.Fatal("expected a fast-start (moov-first) file")
+	}
+	// Every chunk offset must fall inside the file.
+	for _, c := range tr.Chunks {
+		if c.DataOffset == 0 || c.DataOffset >= uint64(len(data)) {
+			t.Fatalf("chunk offset %d outside %d-byte file", c.DataOffset, len(data))
+		}
+	}
 }
