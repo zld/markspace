@@ -12,7 +12,9 @@ import (
 )
 
 func main() {
-	os.Exit(run(os.Args[1:]))
+	code := run(os.Args[1:])
+	fmt.Printf("kernel_exit_code=%d\n", code)
+	os.Exit(code)
 }
 
 func run(args []string) int {
