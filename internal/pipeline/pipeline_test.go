@@ -281,6 +281,12 @@ func TestQueueBoundsConcurrency(t *testing.T) {
 	if len(results) != len(inputs) {
 		t.Fatalf("results = %d", len(results))
 	}
+	if got := r.MaxInFlight(); got > 2 {
+		t.Fatalf("max simultaneous inputs = %d, queue capacity is 2", got)
+	}
+	if got := r.MaxInFlight(); got < 1 {
+		t.Fatalf("no input ever ran")
+	}
 	seen := map[string]bool{}
 	for i, res := range results {
 		if res == nil {

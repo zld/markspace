@@ -201,5 +201,3 @@ func summarizeSkipped(c *scan.Container) []string {
 	sort.Strings(out)
 	return out
 }
-
-var _ = sha256.Sum256

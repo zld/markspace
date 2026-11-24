@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"archivist/internal/fault"
@@ -46,9 +46,11 @@ type Options struct {
 
 // InputResult is the terminal state of one input.
 type InputResult struct {
-	Name      string `json:"name"`
-	InputPath string `json:"input_path"`
-	Status    string `json:"status"`
+	Name        string `json:"name"`
+	InputPath   string `json:"input_path"`
+	InputSize   int64  `json:"input_size"`
+	InputSHA256 string `json:"input_sha256"`
+	Status      string `json:"status"`
 	// ExitCode is what a single-input invocation would return: 0 success,
 	// 2 corrupt or unreparable input, 1 any other failure.
 	ExitCode    int    `json:"exit_code"`
@@ -96,6 +98,10 @@ const leaderRepairs = 8
 type Runner struct {
 	opts Options
 	now  func() time.Time
+	// inFlight and maxInFlight observe concurrency so tests can prove the
+	// queue capacity actually bounds simultaneous work.
+	inFlight    int32
+	maxInFlight int32
 }
 
 // New validates opts and returns a Runner.
@@ -162,7 +168,9 @@ func (r *Runner) Run(ctx context.Context, inputs []string) ([]*InputResult, erro
 		go func() {
 			defer wg.Done()
 			for j := range queue {
+				r.enterInput()
 				res, err := r.process(cctx, j)
+				r.leaveInput()
 				results[j.index] = res
 				if err != nil {
 					var stop *ErrInterrupted
@@ -254,6 +262,23 @@ producer:
 	return results, firstErr
 }
 
+// enterInput records that one more input is being processed and updates the
+// high-water mark.
+func (r *Runner) enterInput() {
+	n := atomic.AddInt32(&r.inFlight, 1)
+	for {
+		max := atomic.LoadInt32(&r.maxInFlight)
+		if n <= max || atomic.CompareAndSwapInt32(&r.maxInFlight, max, n) {
+			return
+		}
+	}
+}
+
+func (r *Runner) leaveInput() { atomic.AddInt32(&r.inFlight, -1) }
+
+// MaxInFlight reports the highest number of inputs processed simultaneously.
+func (r *Runner) MaxInFlight() int { return int(atomic.LoadInt32(&r.maxInFlight)) }
+
 func inputName(path string) string {
 	base := filepath.Base(path)
 	return strings.TrimSuffix(base, filepath.Ext(base))
@@ -284,6 +309,8 @@ func (r *Runner) process(ctx context.Context, j *job) (*InputResult, error) {
 	if err != nil {
 		return r.fail(res, err)
 	}
+	res.InputSHA256 = inSHA
+	res.InputSize = inSize
 	params := r.params()
 	cpPath := checkpointPath(filepath.Join(r.opts.WorkDir, "checkpoints"), j.name, inSHA, params.Hash())
 	res.CheckpointPath = cpPath
@@ -569,17 +596,16 @@ func (r *Runner) execute(ctx context.Context, stage Stage, rec *stageRecord, inS
 		if err := verifyArtifact(cp.Index); err != nil {
 			return err
 		}
-		c, rep, err := r.ensure(rec)
+		_, rep, err := r.ensure(rec)
 		if err != nil {
 			return err
 		}
 		if err := repair.VerifyMonotonic(rep); err != nil {
 			return err
 		}
-		if err := verifyIndexAgainstScan(cp.Output.Path, rep); err != nil {
+		if err := verifyIndexAgainstScan(cp.Output.Path, cp, rep); err != nil {
 			return err
 		}
-		_ = c
 		return nil
 
 	case StageProvenance:
@@ -661,9 +687,10 @@ func (r *Runner) fail(res *InputResult, err error) (*InputResult, error) {
 	return res, err
 }
 
-// verifyIndexAgainstScan confirms every index offset is addressable and every
-// sample it names exists in the rebuilt file.
-func verifyIndexAgainstScan(path string, rep *repair.Result) error {
+// verifyIndexAgainstScan confirms the written index describes the rebuilt
+// file: same tracks, same sample counts, same absolute byte offsets. It is the
+// check that makes a resumed verification as strong as a fresh one.
+func verifyIndexAgainstScan(path string, cp *Checkpoint, rep *repair.Result) error {
 	c, err := (&Runner{}).rescan(path)
 	if err != nil {
 		return err
@@ -682,6 +709,31 @@ func verifyIndexAgainstScan(path string, rep *repair.Result) error {
 			return fault.New(fault.KindInvariant, fault.StageVerify,
 				"rebuilt track %d has %d samples, repair produced %d",
 				tr.TrackID, len(st.Samples), len(tr.Entries)).In(path)
+		}
+	}
+	ix, err := index.Load(cp.Index.Path)
+	if err != nil {
+		return err
+	}
+	for _, tr := range rep.Tracks {
+		it, ok := ix.Track(tr.TrackID)
+		if !ok {
+			return fault.New(fault.KindInvariant, fault.StageVerify,
+				"index is missing track %d", tr.TrackID).In(cp.Index.Path)
+		}
+		st := byID[tr.TrackID]
+		if len(it.Entries) != len(st.Samples) {
+			return fault.New(fault.KindInvariant, fault.StageVerify,
+				"index track %d has %d entries, file has %d samples",
+				tr.TrackID, len(it.Entries), len(st.Samples)).In(cp.Index.Path)
+		}
+		for i, e := range it.Entries {
+			if e.Offset != st.Samples[i].Offset || e.Size != st.Samples[i].Size {
+				return fault.New(fault.KindInvariant, fault.StageVerify,
+					"index track %d sample %d points at %d/%d, file has %d/%d",
+					tr.TrackID, i+1, e.Offset, e.Size,
+					st.Samples[i].Offset, st.Samples[i].Size).In(cp.Index.Path)
+			}
 		}
 	}
 	return nil
@@ -716,9 +768,3 @@ func summarizeRepairs(a Artifact) []RepairedPTS {
 	}
 	return out
 }
-
-// stageRankExport exposes stage ranking to tests.
-func stageRankExport(s Stage) int { return stageRank(s) }
-
-var _ = fmt.Sprintf
-var _ = sort.Strings
