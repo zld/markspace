@@ -52,7 +52,13 @@ func (tb Timebase) FromNanos(ns int64) (int64, error) {
 	if q > math.MaxInt64/t || q < math.MinInt64/t {
 		return 0, New(KindOverflow, fmt.Sprintf("nanoseconds %d overflow timescale %d", ns, tb.Timescale))
 	}
-	return q*t + r*t/NanosPerSecond, nil
+	// r is in (-1e9, 1e9), so r*t can overflow int64 only for very large
+	// timescales; widen the remainder term before comparing.
+	frac := (r / t) * t
+	if frac > 0 && r*t > math.MaxInt64 || frac < 0 && r*t < math.MinInt64 {
+		return 0, New(KindOverflow, fmt.Sprintf("remainder of %d ns overflows timescale %d", ns, tb.Timescale))
+	}
+	return q*t + frac, nil
 }
 
 // Unwrap expands a modular counter value to the representation nearest to
@@ -64,12 +70,14 @@ func Unwrap(value uint32, reference int64, modulus uint64) (int64, error) {
 	m := int64(modulus)
 	v := int64(value)
 	delta := reference - v
-	// Round division to nearest multiple of the modulus.
+	// Round division to the nearest multiple of the modulus. An exact half
+	// modulus is inherently ambiguous; it resolves toward the epoch (k=0) so
+	// repeated runs agree, rather than toward the reference.
 	k := delta / m
 	rem := delta % m
 	if rem > m/2 {
 		k++
-	} else if rem < -m/2 {
+	} else if rem <= -m/2 {
 		k--
 	}
 	if k > 0 && v > math.MaxInt64-k*m || k < 0 && v < math.MinInt64-k*m {
