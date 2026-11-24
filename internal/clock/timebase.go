@@ -122,6 +122,11 @@ func CommonTimebase(bases ...Timebase) (Timebase, error) {
 	return New(1, commonRate), nil
 }
 
+// ToTicks converts an absolute rational time to rounded ticks in tb.
+func ToTicks(t Rational, tb Timebase) int64 {
+	return t.Mul(New(tb.Den, tb.Num)).roundedInt()
+}
+
 func secsToTicksRat(secs Rational, tb Timebase) *big.Rat {
 	return secs.Mul(New(tb.Den, tb.Num)).Big()
 }
