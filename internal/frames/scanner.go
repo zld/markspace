@@ -23,14 +23,15 @@ type Limits struct {
 // at the next locatable record. The scanner retains at most one record, so
 // memory use does not scale with the total asset length.
 type Scanner struct {
-	r      io.ReaderAt
-	size   int64
-	pos    int64
-	index  int
-	seq    int
-	limits Limits
-	faults fault.List
-	done   bool
+	r        io.ReaderAt
+	size     int64
+	pos      int64
+	index    int
+	seq      int
+	limits   Limits
+	faults   fault.List
+	done     bool
+	metaOnly bool
 }
 
 // NewScanner validates limits and returns a scanner over r.
@@ -59,6 +60,9 @@ func NewScanner(r io.ReaderAt, size int64, limits Limits) (*Scanner, error) {
 
 // Next returns the next valid record. io.EOF means the stream is exhausted.
 // All recoverable faults recorded so far are available via Faults.
+//
+// Successive Next calls return distinct records; metadata-only mode is the
+// exception, where the caller copies what it needs before advancing.
 func (s *Scanner) Next() (*Record, error) {
 	for !s.done {
 		if s.pos >= s.size {
@@ -167,8 +171,17 @@ func (s *Scanner) readAt(off int64) (*Record, error) {
 	if err := VerifyDigest(off, s.seq-1, meta, payload); err != nil {
 		return nil, err
 	}
+	if s.metaOnly {
+		payload = nil
+	}
 	return &Record{Offset: off, Index: s.index, Meta: meta, Payload: payload}, nil
 }
+
+// SetMetadataOnly drops payloads from returned records after verification.
+// The pipeline uses this for its planning pass so resident memory tracks the
+// record metadata, not the media payloads; frames destined for the output are
+// re-read by offset when the mux stage runs.
+func (s *Scanner) SetMetadataOnly(on bool) { s.metaOnly = on }
 
 // recordSpan reports the declared total length when the header at off is
 // structurally readable, allowing the scanner to skip a corrupt payload

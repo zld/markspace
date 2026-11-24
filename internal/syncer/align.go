@@ -1,8 +1,12 @@
 // Package syncer aligns the audio RTP path and the frame path on the shared
-// clock.Timeline. It converts extended RTP timestamps to local media ticks,
-// applies explicit per-track start offsets, tolerates nominal frame-rate
-// changes and flags fragments whose audio/video drift exceeds the configured
-// tolerance.
+// clock.Timeline.
+//
+// Place converts RTP timestamps into absolute local timeline ticks. It handles
+// 32 bit timestamp wrap and applies the per-track start offset and the stream's
+// declared base timestamp, so audio that genuinely starts late stays late
+// instead of being re-anchored to video. Align then compares video coverage and
+// audio coverage, tolerates sustained frame-rate changes and marks fragments
+// whose drift exceeds the configured tolerance.
 package syncer
 
 import (
@@ -24,6 +28,10 @@ type Config struct {
 	// AudioOffsetTicks is the intended audio start relative to video start.
 	// Positive values delay audio; negative advances it.
 	AudioOffsetTicks int64
+	// BaseRTP is the declared stream origin timestamp from the sidecar.
+	BaseRTP uint32
+	// BaseTick is the local timeline tick that BaseRTP maps to.
+	BaseTick int64
 	// AudioTrack is written into faults for operator clarity.
 	AudioTrack uint8
 }
@@ -32,13 +40,74 @@ func (c Config) validate() error {
 	if c.ToleranceTicks < 0 {
 		return fmt.Errorf("tolerance must be non-negative")
 	}
-	if c.AudioClockRate == 0 {
-		return fmt.Errorf("audio clock rate must be non-zero")
-	}
-	if c.AudioClockRate > 1_000_000 {
-		return fmt.Errorf("audio clock rate %d is implausible", c.AudioClockRate)
+	if c.AudioClockRate == 0 || c.AudioClockRate > 1_000_000 {
+		return fmt.Errorf("audio clock rate %d is outside 1..1000000", c.AudioClockRate)
 	}
 	return nil
+}
+
+// Placed is one audio unit anchored on the timeline.
+type Placed struct {
+	Unit     recovery.Unit
+	Tick     int64 // absolute local timeline tick of the unit start
+	Duration int64 // timeline ticks
+}
+
+// End returns the exclusive end tick.
+func (p Placed) End() int64 { return p.Tick + p.Duration }
+
+// Place converts recovered units to local timeline ticks. The returned faults
+// describe wrap ambiguity or non-monotonic timestamps; placement itself
+// continues so downstream stages can still report structure.
+func Place(units []recovery.Unit, tl *clock.Timeline, cfg Config) ([]Placed, fault.List) {
+	var faults fault.List
+	if tl == nil || len(units) == 0 {
+		return nil, faults
+	}
+	if err := cfg.validate(); err != nil {
+		faults = append(faults, fault.New(fault.StageSync, fault.KindConfig, "%v", err))
+		return nil, faults
+	}
+	conv := &clock.Converter{
+		Timeline:  tl,
+		ClockRate: cfg.AudioClockRate,
+		Offset:    cfg.BaseTick + cfg.AudioOffsetTicks,
+	}
+	if _, err := conv.Prime(cfg.BaseRTP); err != nil {
+		e := fault.Wrap(fault.StageSync, fault.KindTimestamp, err, "prime audio converter")
+		e.WithTrack(cfg.AudioTrack)
+		faults = append(faults, e)
+		return nil, faults
+	}
+	out := make([]Placed, 0, len(units))
+	prev := int64(0)
+	for i, u := range units {
+		ts := u.RTPTimestamp
+		if u.Packet != nil {
+			ts = u.Packet.Timestamp
+		}
+		tick, err := conv.LocalTick(ts)
+		if err != nil {
+			e := fault.Wrap(fault.StageSync, fault.KindTimestamp, err,
+				"audio slot %d sequence %d", i, u.Seq)
+			e.WithTrack(cfg.AudioTrack)
+			faults = append(faults, e)
+			continue
+		}
+		if i > 0 && tick < prev {
+			e := fault.New(fault.StageSync, fault.KindTimestamp,
+				"audio slot %d tick %d precedes previous %d", i, tick, prev)
+			e.WithTrack(cfg.AudioTrack)
+			faults = append(faults, e)
+		}
+		prev = tick
+		dur := clock.ScaleTicks(u.TickSpan, cfg.AudioClockRate, tl.Timescale)
+		if dur <= 0 {
+			dur = 1
+		}
+		out = append(out, Placed{Unit: u, Tick: tick, Duration: dur})
+	}
+	return out, faults
 }
 
 // VideoFrame is a parsed frame placed on the timeline.
@@ -46,10 +115,10 @@ type VideoFrame struct {
 	Record        *frames.Record
 	LocalTick     int64
 	DurationTicks int64
-	RateChanged   bool // PTS delta differs from the previous frame
+	RateChanged   bool // cadence differs from the previous sustained run
 }
 
-// AudioSlot is a recovered audio unit placed on the timeline.
+// AudioSlot is a placed audio unit as seen by the report.
 type AudioSlot struct {
 	Unit          recovery.Unit
 	LocalTick     int64
@@ -72,10 +141,10 @@ type Report struct {
 	Faults      fault.List
 }
 
-// Align places frames and recovered audio slots on the timeline. Both inputs
-// must already be validated; the function is pure with respect to its inputs
-// so repeated runs produce identical reports.
-func Align(video []*frames.Record, audio []recovery.Unit, tl *clock.Timeline, cfg Config) (*Report, error) {
+// Align compares video sample coverage with the placed audio slots. Video PTS
+// values must already be in the timeline timescale (the ingest format stores
+// 90 kHz ticks).
+func Align(video []*frames.Record, audio []Placed, tl *clock.Timeline, cfg Config) (*Report, error) {
 	if tl == nil {
 		return nil, fault.New(fault.StageSync, fault.KindConfig, "nil timeline")
 	}
@@ -85,20 +154,13 @@ func Align(video []*frames.Record, audio []recovery.Unit, tl *clock.Timeline, cf
 	rep := &Report{Synced: true}
 	if len(video) == 0 {
 		rep.Synced = false
-		e := fault.New(fault.StageSync, fault.KindIncomplete, "no video frames to align")
-		rep.Faults = append(rep.Faults, e)
+		rep.Faults = append(rep.Faults,
+			fault.New(fault.StageSync, fault.KindIncomplete, "no video frames to align"))
 		return rep, nil
 	}
 
-	// Video timestamps are already in the timeline timescale. Origin is the
-	// earliest presentation time so track start offsets are preserved as a
-	// relative shift rather than being discarded.
 	rep.VideoStart = tl.Local(int64(video[0].Meta.PTS))
 	prevTick := rep.VideoStart
-	// Rate changes are detected from sustained cadence runs: a new delta that
-	// follows at least three identical deltas marks the first frame of the new
-	// cadence. This tolerates a single jittered timestamp while still noticing
-	// a 24/25 or 25/30 fps switch.
 	prevDelta := int64(0)
 	runLen := 0
 	for i, rec := range video {
@@ -122,6 +184,8 @@ func Align(video []*frames.Record, audio []recovery.Unit, tl *clock.Timeline, cf
 			case vf.DurationTicks == prevDelta:
 				runLen++
 			default:
+				// A sustained cadence that differs from the previous run marks
+				// the frame-rate transition. Isolated jitter does not.
 				if runLen >= 3 {
 					vf.RateChanged = true
 					rep.RateChanges++
@@ -134,62 +198,51 @@ func Align(video []*frames.Record, audio []recovery.Unit, tl *clock.Timeline, cf
 	}
 	last := rep.Video[len(rep.Video)-1]
 	rep.VideoEnd = last.LocalTick + last.DurationTicks
-	if last.DurationTicks == 0 && len(rep.Video) > 1 {
+	if rep.VideoEnd <= last.LocalTick {
 		rep.VideoEnd = last.LocalTick
 	}
 
 	rep.AudioStart, rep.AudioEnd = rep.VideoStart, rep.VideoStart
+	for _, p := range audio {
+		rep.Audio = append(rep.Audio, AudioSlot{
+			Unit:          p.Unit,
+			LocalTick:     p.Tick,
+			DurationTicks: p.Duration,
+		})
+	}
 	if len(audio) > 0 {
-		conv := &clock.Converter{
-			Timeline:  tl,
-			ClockRate: cfg.AudioClockRate,
-			Offset:    rep.VideoStart + cfg.AudioOffsetTicks,
+		rep.AudioStart = audio[0].Tick
+		rep.AudioEnd = audio[0].Tick
+		for _, p := range audio {
+			if p.Tick < rep.AudioStart {
+				rep.AudioStart = p.Tick
+			}
+			if p.End() > rep.AudioEnd {
+				rep.AudioEnd = p.End()
+			}
 		}
-		prev := int64(0)
-		for i, unit := range audio {
-			var ts uint32
-			if unit.Packet != nil {
-				ts = unit.Packet.Timestamp
-			} else {
-				ts = unit.RTPTimestamp
-			}
-			tick, err := conv.LocalTick(ts)
-			if err != nil {
-				e := fault.Wrap(fault.StageSync, fault.KindTimestamp, err,
-					"audio slot %d sequence %d", i, unit.Seq)
-				e.WithTrack(cfg.AudioTrack)
-				rep.Faults = append(rep.Faults, e)
-				rep.Synced = false
-				continue
-			}
-			slot := AudioSlot{
-				Unit:          unit,
-				LocalTick:     tick,
-				DurationTicks: clock.ScaleTicks(unit.TickSpan, cfg.AudioClockRate, tl.Timescale),
-			}
-			if i > 0 && tick < prev {
-				e := fault.New(fault.StageSync, fault.KindTimestamp,
-					"audio slot %d tick %d precedes previous %d", i, tick, prev)
-				e.WithTrack(cfg.AudioTrack)
-				rep.Faults = append(rep.Faults, e)
-				rep.Synced = false
-			}
-			prev = tick
-			rep.Audio = append(rep.Audio, slot)
-		}
-		if len(rep.Audio) > 0 {
-			rep.AudioStart = rep.Audio[0].LocalTick
-			rep.AudioEnd = rep.AudioStart
-			for _, slot := range rep.Audio {
-				rep.AudioEnd += slot.DurationTicks
-			}
+		// Start drift is the uncovered gap before the first audio slot that
+		// reaches the video start. Audio already playing at the video start
+		// contributes no drift, even if it began earlier.
+		rep.StartDelta = startGap(audio, rep.VideoStart)
+		rep.EndDelta = rep.AudioEnd - rep.VideoEnd
+		if !WithinTolerance(rep.StartDelta, 0, cfg.ToleranceTicks) ||
+			!WithinTolerance(rep.EndDelta, 0, cfg.ToleranceTicks) {
+			rep.Synced = false
+			e := fault.New(fault.StageSync, fault.KindDesync,
+				"audio/video drift start=%d end=%d tolerance=%d",
+				rep.StartDelta, rep.EndDelta, cfg.ToleranceTicks)
+			e.WithTrack(cfg.AudioTrack)
+			e.Recoverable = true
+			rep.Faults = append(rep.Faults, e)
 		}
 	}
 
-	// A gap in the video path means the fragment timeline is unknown; mark it
-	// incomplete but keep the audio alignment for diagnosis.
+	// A hole far wider than the nominal cadence means the fragment timeline is
+	// unknown; keep the audio comparison for diagnosis but mark incomplete.
+	maxDur := maxDuration(rep.Video)
 	for i := 1; i < len(rep.Video); i++ {
-		if rep.Video[i].LocalTick-rep.Video[i-1].LocalTick > 4*maxDuration(rep.Video) {
+		if rep.Video[i].LocalTick-rep.Video[i-1].LocalTick > 4*maxDur {
 			rep.Incomplete = true
 			e := fault.New(fault.StageSync, fault.KindIncomplete,
 				"video timeline hole before frame %d", i)
@@ -199,26 +252,41 @@ func Align(video []*frames.Record, audio []recovery.Unit, tl *clock.Timeline, cf
 		}
 	}
 
-	rep.StartDelta = rep.AudioStart - (rep.VideoStart + cfg.AudioOffsetTicks)
-	rep.EndDelta = rep.AudioEnd - (rep.VideoEnd + cfg.AudioOffsetTicks)
-	if abs64(rep.StartDelta) > cfg.ToleranceTicks || abs64(rep.EndDelta) > cfg.ToleranceTicks {
-		rep.Synced = false
-		if len(rep.Faults) == 0 || !hasDesync(rep.Faults) {
-			e := fault.New(fault.StageSync, fault.KindDesync,
-				"audio/video drift start=%d end=%d tolerance=%d",
-				rep.StartDelta, rep.EndDelta, cfg.ToleranceTicks)
-			e.WithTrack(cfg.AudioTrack)
-			e.Recoverable = true
-			rep.Faults = append(rep.Faults, e)
-		}
-	}
 	sort.SliceStable(rep.Faults, func(i, j int) bool {
-		return rep.Faults[i].Offset < rep.Faults[j].Offset
+		if rep.Faults[i].Offset != rep.Faults[j].Offset {
+			return rep.Faults[i].Offset < rep.Faults[j].Offset
+		}
+		return rep.Faults[i].Kind < rep.Faults[j].Kind
 	})
 	return rep, nil
 }
 
-func hasDesync(l fault.List) bool { return l.CountKind(fault.KindDesync) > 0 }
+// startGap returns how far after videoStart the first covering audio slot
+// begins, or zero when audio already covers videoStart.
+func startGap(audio []Placed, videoStart int64) int64 {
+	best := int64(0)
+	for _, p := range audio {
+		if p.Tick <= videoStart && p.End() > videoStart {
+			return 0
+		}
+		if p.Tick > videoStart {
+			d := p.Tick - videoStart
+			if best == 0 || d < best {
+				best = d
+			}
+		}
+	}
+	return best
+}
+
+// WithinTolerance reports whether |a-b| is at most tol ticks.
+func WithinTolerance(a, b, tol int64) bool {
+	d := a - b
+	if d < 0 {
+		d = -d
+	}
+	return d <= tol
+}
 
 func maxDuration(v []VideoFrame) int64 {
 	var m int64
@@ -231,11 +299,4 @@ func maxDuration(v []VideoFrame) int64 {
 		m = 1
 	}
 	return m
-}
-
-func abs64(v int64) int64 {
-	if v < 0 {
-		return -v
-	}
-	return v
 }

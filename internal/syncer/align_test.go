@@ -37,26 +37,32 @@ func videoFrames(startTick int64, n int) []*frames.Record {
 	return out
 }
 
-// audioUnits builds recovered 20 ms units at 48 kHz.
-func audioUnits(n int) []recovery.Unit {
-	out := make([]recovery.Unit, n)
-	for i := range out {
+// audioPlaced builds recovered 20 ms units at 48 kHz, anchored at baseTick.
+func audioPlaced(t *testing.T, n int, baseTick int64) []Placed {
+	t.Helper()
+	tl := tl90000(t)
+	units := make([]recovery.Unit, n)
+	for i := range units {
 		p := &rtpparse.Packet{Timestamp: uint32(i * 960)}
-		out[i] = recovery.Unit{
+		units[i] = recovery.Unit{
 			Seq:          uint64(i),
 			RTPTimestamp: p.Timestamp,
 			TickSpan:     960,
 			Packet:       p,
 		}
 	}
-	return out
+	placed, faults := Place(units, tl, Config{ToleranceTicks: 900, AudioClockRate: 48000, BaseTick: baseTick, AudioTrack: 2})
+	if faults.Len() != 0 {
+		t.Fatalf("place faults: %v", faults)
+	}
+	return placed
 }
 
 func TestAlignSyncedTracks(t *testing.T) {
 	tl := tl90000(t)
 	cfg := Config{ToleranceTicks: 900, AudioClockRate: 48000, AudioTrack: 2}
 	// 25 video frames = 1 s. 50 audio units = 1 s.
-	rep, err := Align(videoFrames(0, 25), audioUnits(50), tl, cfg)
+	rep, err := Align(videoFrames(0, 25), audioPlaced(t, 50, 0), tl, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,20 +88,36 @@ func TestAlignSyncedTracks(t *testing.T) {
 
 func TestAlignExplicitAudioOffset(t *testing.T) {
 	tl := tl90000(t)
+	// The sidecar declares audio to begin 50 ms after video (4500 ticks at
+	// 90 kHz). That offset is applied, so the drift equals the offset.
 	cfg := Config{ToleranceTicks: 450, AudioClockRate: 48000, AudioOffsetTicks: 4500, AudioTrack: 2}
 	v := videoFrames(3600, 25)
-	rep, err := Align(v, audioUnits(50), tl, cfg)
+	placed := audioPlaced(t, 50, 3600+4500)
+	rep, err := Align(v, placed, tl, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Audio[0].LocalTick != 3600+4500 {
+		t.Fatalf("audio start = %d", rep.Audio[0].LocalTick)
+	}
+	if rep.StartDelta != 4500 {
+		t.Fatalf("start delta = %d want 4500", rep.StartDelta)
+	}
+	if rep.Synced {
+		t.Fatal("offset beyond tolerance must be flagged")
+	}
+	if rep.Faults.CountKind(fault.KindDesync) != 1 {
+		t.Fatalf("faults = %s", rep.Faults.Summary())
+	}
+
+	// The same offset with a matching tolerance is accepted.
+	cfg.ToleranceTicks = 4500
+	rep, err = Align(v, placed, tl, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !rep.Synced {
-		t.Fatalf("offset should be absorbed, faults %v", rep.Faults)
-	}
-	if rep.StartDelta != 0 {
-		t.Fatalf("start delta = %d", rep.StartDelta)
-	}
-	if rep.Audio[0].LocalTick != 3600+4500 {
-		t.Fatalf("audio start = %d", rep.Audio[0].LocalTick)
+		t.Fatalf("offset within tolerance flagged: %v", rep.Faults)
 	}
 }
 
@@ -103,7 +125,7 @@ func TestAlignDesyncBeyondTolerance(t *testing.T) {
 	tl := tl90000(t)
 	// Audio starts 7200 ticks late (~80 ms) but tolerance is 900.
 	cfg := Config{ToleranceTicks: 900, AudioClockRate: 48000, AudioOffsetTicks: 7200, AudioTrack: 2}
-	rep, err := Align(videoFrames(0, 25), audioUnits(45), tl, cfg)
+	rep, err := Align(videoFrames(0, 25), audioPlaced(t, 50, 7200), tl, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,15 +145,19 @@ func TestAlignDesyncBeyondTolerance(t *testing.T) {
 
 func TestAlignRTPWrapAndTrackStart(t *testing.T) {
 	tl := tl90000(t)
-	units := audioUnits(3)
-	// Move timestamps close to wrap: base 0xFFFFFC00.
+	tl2 := tl90000(t)
+	units := make([]recovery.Unit, 3)
 	for i := range units {
 		ts := uint32(0xFFFFFC00 + i*960)
-		units[i].RTPTimestamp = ts
-		units[i].Packet.Timestamp = ts
+		p := &rtpparse.Packet{Timestamp: ts}
+		units[i] = recovery.Unit{Seq: uint64(i), RTPTimestamp: ts, TickSpan: 960, Packet: p}
 	}
-	cfg := Config{ToleranceTicks: 900, AudioClockRate: 48000, AudioTrack: 2}
-	rep, err := Align(videoFrames(0, 3), units, tl, cfg)
+	cfg := Config{ToleranceTicks: 900, AudioClockRate: 48000, AudioTrack: 2, BaseRTP: 0xFFFFFC00}
+	placed, pf := Place(units, tl2, cfg)
+	if pf.Len() != 0 {
+		t.Fatalf("place faults: %v", pf)
+	}
+	rep, err := Align(videoFrames(0, 3), placed, tl, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +178,7 @@ func TestAlignDetectsRateChange(t *testing.T) {
 		recs[i].Meta.DTS = recs[i].Meta.PTS
 	}
 	cfg := Config{ToleranceTicks: 9000, AudioClockRate: 48000, AudioTrack: 2}
-	rep, err := Align(recs, audioUnits(10), tl, cfg)
+	rep, err := Align(recs, audioPlaced(t, 10, 0), tl, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

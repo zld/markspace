@@ -32,12 +32,24 @@ type Entry struct {
 	Size        int      // sample payload size
 }
 
+// SampleRef ties an MP4 sample back to the ingest record it came from. It is
+// stored for every sample, not only keyframes, so an independent verifier can
+// recompute the end-to-end roundtrip ratio from the output alone.
+type SampleRef struct {
+	Sample      int      `json:"sample"`
+	SourceOff   int64    `json:"source_offset"`
+	SourceHash  [32]byte `json:"source_sha256"`
+	PayloadHash [32]byte `json:"payload_sha256"`
+	Size        int      `json:"size"`
+}
+
 // Index is the keyframe table for one segment.
 type Index struct {
-	Segment     int     `json:"segment"`
-	Entries     []Entry `json:"entries"`
-	VideoTrack  uint32  `json:"video_track"`
-	SampleCount int     `json:"sample_count"`
+	Segment     int         `json:"segment"`
+	Entries     []Entry     `json:"entries"`
+	Samples     []SampleRef `json:"samples"`
+	VideoTrack  uint32      `json:"video_track"`
+	SampleCount int         `json:"sample_count"`
 }
 
 // Count returns the number of indexed keyframes.
@@ -80,8 +92,13 @@ type Table struct {
 // hash to the indexed payload digest.
 func Verify(path string, x *Index) (VerifyResult, error) {
 	var res VerifyResult
-	if x == nil || len(x.Entries) == 0 {
-		return res, fault.New(fault.StageIndex, fault.KindIndex, "empty keyframe index")
+	if x == nil {
+		return res, fault.New(fault.StageIndex, fault.KindIndex, "nil keyframe index")
+	}
+	if len(x.Entries) == 0 {
+		// A segment with no keyframe is structurally valid but not
+		// independently decodable; callers decide whether that is acceptable.
+		return res, nil
 	}
 	tbl, err := ReadTable(path)
 	if err != nil {
@@ -264,3 +281,80 @@ func hashAt(f io.ReaderAt, off int64, size int) ([32]byte, error) {
 func PayloadHash(p []byte) [32]byte {
 	return sha256.Sum256(p)
 }
+
+// SampleVerify counts end-to-end roundtrip hits across every stored sample.
+type SampleVerify struct {
+	Checked int
+	Hits    int
+	Misses  []string
+}
+
+// Ratio returns the hit ratio in percent, rounded down.
+func (r SampleVerify) Ratio() int {
+	if r.Checked == 0 {
+		return 0
+	}
+	return r.Hits * 100 / r.Checked
+}
+
+// VerifySamples recomputes every sample's file position from the MP4 tables
+// and confirms the payload digest recorded at export time. Used by the resume
+// path to prove a cached segment still matches its index.
+func VerifySamples(path string, x *Index) (SampleVerify, error) {
+	var res SampleVerify
+	if x == nil || len(x.Samples) == 0 {
+		return res, fault.New(fault.StageIndex, fault.KindIndex, "index has no sample map")
+	}
+	tbl, err := ReadTable(path)
+	if err != nil {
+		return res, err
+	}
+	offs, err := SampleOffsets(tbl)
+	if err != nil {
+		return res, err
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return res, fault.Wrap(fault.StageIndex, fault.KindIO, err, "open %s", path)
+	}
+	defer f.Close()
+	for _, ref := range x.Samples {
+		res.Checked++
+		if ref.Sample < 1 || ref.Sample > len(offs) {
+			res.Misses = append(res.Misses, fmt.Sprintf("sample %d outside 1..%d", ref.Sample, len(offs)))
+			continue
+		}
+		size := int(tbl.SampleSizes[ref.Sample-1])
+		if size != ref.Size {
+			res.Misses = append(res.Misses, fmt.Sprintf("sample %d size %d != %d", ref.Sample, size, ref.Size))
+			continue
+		}
+		got, err := hashAt(f, offs[ref.Sample-1], size)
+		if err != nil {
+			res.Misses = append(res.Misses, fmt.Sprintf("sample %d unreadable: %v", ref.Sample, err))
+			continue
+		}
+		if got != ref.PayloadHash {
+			res.Misses = append(res.Misses, fmt.Sprintf("sample %d digest mismatch", ref.Sample))
+			continue
+		}
+		res.Hits++
+	}
+	return res, nil
+}
+
+// BuildSamples records a SampleRef for each exported sample.
+func BuildSamples(sampleOffsets []int64, sizes []uint32) []SampleRef {
+	n := len(sampleOffsets)
+	if len(sizes) < n {
+		n = len(sizes)
+	}
+	out := make([]SampleRef, n)
+	for i := 0; i < n; i++ {
+		out[i] = SampleRef{Sample: i + 1, Size: int(sizes[i])}
+	}
+	return out
+}
+
+// Verified reports whether every mapped sample resolved.
+func (r SampleVerify) Verified() bool { return r.Checked > 0 && r.Hits == r.Checked }

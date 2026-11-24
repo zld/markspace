@@ -62,7 +62,10 @@ func (c *Config) defaults() error {
 
 // Sample describes one MP4 video sample.
 type Sample struct {
-	Record     *frames.Record
+	Record *frames.Record
+	// Payload overrides Record.Payload when non-nil, letting the pipeline
+	// stream metadata and re-read payloads at write time.
+	Payload    []byte
 	Duration   uint32
 	PTS        uint64 // rebucketed to the output timescale
 	DTS        uint64
@@ -92,6 +95,8 @@ type Result struct {
 	Keyframes     []index.Entry
 	PTSList       []uint64
 	SizeList      []uint32
+	// SampleOffsets holds the absolute file offset of every video sample.
+	SampleOffsets []int64
 }
 
 // Mux writes an MP4 to w. Sample order is never changed: file sample i is
@@ -222,8 +227,8 @@ func writeFile(w io.WriteSeeker, samples []Sample, audio []AudioSample, cfg Conf
 		return nil, wrapMux("mdat position", err)
 	}
 	var videoBytes, audioBytes int64
-	for _, s := range samples {
-		n, err := mw.Write(s.Record.Payload)
+	for i := range samples {
+		n, err := mw.Write(samples[i].payload())
 		if err != nil {
 			return nil, wrapMux("video payload", err)
 		}
@@ -303,7 +308,16 @@ func writeFile(w io.WriteSeeker, samples []Sample, audio []AudioSample, cfg Conf
 		Keyframes:     keyframes,
 		PTSList:       ptsList(samples),
 		SizeList:      sizeList(samples),
+		SampleOffsets: sampleOffsets(samples, videoStart),
 	}, nil
+}
+
+// payload returns the bytes to write for this sample.
+func (s Sample) payload() []byte {
+	if s.Payload != nil {
+		return s.Payload
+	}
+	return s.Record.Payload
 }
 
 func ptsList(samples []Sample) []uint64 {
@@ -314,10 +328,20 @@ func ptsList(samples []Sample) []uint64 {
 	return out
 }
 
+func sampleOffsets(samples []Sample, chunkStart int64) []int64 {
+	out := make([]int64, len(samples))
+	off := chunkStart
+	for i, s := range samples {
+		out[i] = off
+		off += int64(len(s.payload()))
+	}
+	return out
+}
+
 func sizeList(samples []Sample) []uint32 {
 	out := make([]uint32, len(samples))
 	for i, s := range samples {
-		out[i] = uint32(len(s.Record.Payload))
+		out[i] = uint32(len(s.payload()))
 	}
 	return out
 }
@@ -328,7 +352,7 @@ func keyframeIndex(samples []Sample, chunkStart int64) []index.Entry {
 	off := chunkStart
 	for i, s := range samples {
 		offsets[i] = off
-		off += int64(len(s.Record.Payload))
+		off += int64(len(s.payload()))
 	}
 	out := make([]index.Entry, 0, len(samples)/4+1)
 	for i, s := range samples {
@@ -341,9 +365,9 @@ func keyframeIndex(samples []Sample, chunkStart int64) []index.Entry {
 			PTS:         s.PTS,
 			SourceOff:   s.SourceOff,
 			SourceHash:  s.SourceHash,
-			PayloadHash: index.PayloadHash(s.Record.Payload),
+			PayloadHash: index.PayloadHash(s.payload()),
 			DataOffset:  offsets[i],
-			Size:        len(s.Record.Payload),
+			Size:        len(s.payload()),
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Sample < out[j].Sample })

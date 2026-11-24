@@ -149,6 +149,32 @@ func HeaderBytes(meta Metadata) []byte {
 	return hdr
 }
 
+// ReadPayload reads the payload of a metadata-only record back from the
+// source. It re-verifies the digest so a file that changed after the planning
+// pass is detected instead of muxed.
+func ReadPayload(r io.ReaderAt, rec *Record) ([]byte, error) {
+	if rec == nil {
+		return nil, fault.New(fault.StageParse, fault.KindIO, "nil record")
+	}
+	if rec.Payload != nil {
+		return rec.Payload, nil
+	}
+	n := int(rec.Meta.Size)
+	if n <= 0 || n > MaxPayload {
+		e := fault.New(fault.StageParse, fault.KindLength, "declared payload %d outside limits", n)
+		e.At(rec.Offset, rec.Index).WithTrack(rec.Meta.Track)
+		return nil, e
+	}
+	buf := make([]byte, n)
+	if _, err := r.ReadAt(buf, rec.Offset+HeaderSize); err != nil {
+		return nil, fault.Wrap(fault.StageParse, fault.KindIO, err, "re-read payload")
+	}
+	if err := VerifyDigest(rec.Offset, rec.Index, rec.Meta, buf); err != nil {
+		return nil, err
+	}
+	return buf, nil
+}
+
 // frameErr builds a parse fault anchored at the given absolute offset.
 func frameErr(kind fault.Kind, offset int64, record int, track uint8, format string, args ...any) *fault.Error {
 	e := fault.New(fault.StageParse, kind, format, args...).At(offset, record)
