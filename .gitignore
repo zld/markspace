@@ -1,0 +1,13 @@
+# Build artifacts and local output
+*.test
+*.out
+/mediatool
+/dist/
+
+# Runtime output from local demos
+/tmp/
+*.m4s
+*.mp4
+index.json
+checkpoint.json
+manifest.json

@@ -190,9 +190,8 @@ func (b *Builder) AddEvent(ev *rtp.Event, stamp clock.Stamped) {
 		}
 		t := b.Track(ev.TrackID)
 		t.SSRC = ev.SSRC
-		if t.ClockRate == 0 {
-			t.ClockRate = b.clockRateFor(ev.TrackID)
-		}
+		// Clock rate comes from SetClockRate or a sender report; the scanner
+		// config is the authoritative source.
 		if t.Packets.Packets == 0 {
 			t.Packets.FirstOffset = ev.Offset
 			t.Packets.FirstExtSeq = ev.ExtSeq
@@ -247,10 +246,6 @@ func (b *Builder) AddEvent(ev *rtp.Event, stamp clock.Stamped) {
 	for _, f := range ev.Faults {
 		b.faults = append(b.faults, f)
 	}
-}
-
-func (b *Builder) clockRateFor(id uint32) uint32 {
-	return 0 // filled by RTCP or by the caller's track metadata
 }
 
 // SetAudio attaches normalized audio metadata to a track.
