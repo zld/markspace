@@ -8,7 +8,7 @@ go mod tidy
 go build ./...
 go test ./...
 
-rm -rf .medcheck medcheck-output.mp4
+rm -rf .medcheck medcheck-output.mp4 medcheck-checkpoint.jsonl
 
 first="$(go run ./cmd/medcheck demo --seed 17 --loss 4,9 --reorder 3 --checkpoint-every 5)"
 echo "$first"

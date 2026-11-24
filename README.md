@@ -61,8 +61,8 @@ state and its SHA-256. If the last record is corrupt, loading returns
 valid, it returns `CHECKPOINT_NO_VALID_BOUNDARY`.
 
 ```bash
-go run ./cmd/medcheck checkpoint verify --path .medcheck/checkpoint.jsonl
-go run ./cmd/medcheck checkpoint corrupt --path .medcheck/checkpoint.jsonl
+go run ./cmd/medcheck checkpoint verify --path medcheck-checkpoint.jsonl
+go run ./cmd/medcheck checkpoint corrupt --path medcheck-checkpoint.jsonl
 ```
 
 ## Exit codes

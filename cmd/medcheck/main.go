@@ -48,7 +48,7 @@ func runDemo(args []string) int {
 	resume := fs.Bool("resume", false, "simulate checkpoint save, interruption, and resume")
 	corruptCP := fs.Bool("corrupt-checkpoint", false, "corrupt the interruption checkpoint record")
 	unrecoverable := fs.Bool("unrecoverable", false, "add an unresolved terminal video gap")
-	cpPath := fs.String("checkpoint", ".medcheck/checkpoint.jsonl", "checkpoint JSONL path")
+	cpPath := fs.String("checkpoint", "medcheck-checkpoint.jsonl", "checkpoint JSONL path")
 	outPath := fs.String("output", "medcheck-output.mp4", "MP4 output path")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -104,7 +104,7 @@ func runCheckpoint(args []string) int {
 	switch args[0] {
 	case "verify":
 		fs := flag.NewFlagSet("checkpoint verify", flag.ContinueOnError)
-		path := fs.String("path", ".medcheck/checkpoint.jsonl", "checkpoint path")
+		path := fs.String("path", "medcheck-checkpoint.jsonl", "checkpoint path")
 		if err := fs.Parse(args[1:]); err != nil {
 			return 2
 		}
@@ -123,7 +123,7 @@ func runCheckpoint(args []string) int {
 		return 0
 	case "corrupt":
 		fs := flag.NewFlagSet("checkpoint corrupt", flag.ContinueOnError)
-		path := fs.String("path", ".medcheck/checkpoint.jsonl", "checkpoint path")
+		path := fs.String("path", "medcheck-checkpoint.jsonl", "checkpoint path")
 		if err := fs.Parse(args[1:]); err != nil {
 			return 2
 		}
