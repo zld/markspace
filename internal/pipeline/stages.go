@@ -144,11 +144,13 @@ func (r *Runner) runAudio() ([]recovery.Unit, jitter.Stats, error) {
 	if err != nil {
 		return nil, jitter.Stats{}, err
 	}
-	allFaults := append(fault.List{}, parseFaults...)
-	allFaults = append(allFaults, profileFaults...)
-	allFaults = append(allFaults, buf.Faults()...)
-	allFaults = append(allFaults, rep.Faults...)
-	r.runtime.audioFaults = allFaults
+	// The jitter summary covers sidecar syntax, profile and buffer decisions;
+	// loss and incompleteness belong to the recovery summary below, so they are
+	// not duplicated between the two stages.
+	jitterFaults := append(fault.List{}, parseFaults...)
+	jitterFaults = append(jitterFaults, profileFaults...)
+	jitterFaults = append(jitterFaults, buf.Faults()...)
+	r.runtime.audioFaults = jitterFaults
 
 	stats := buf.Stats()
 	outputHash := audioDigest(rep.Units)
@@ -167,10 +169,10 @@ func (r *Runner) runAudio() ([]recovery.Unit, jitter.Stats, error) {
 			"out_of_order": stats.OutOfOrder(),
 			"recovered":    rep.Recovered,
 			"incomplete":   rep.Unrecovered,
-			"faults":       allFaults.Len(),
+			"faults":       jitterFaults.Len(),
 		},
 	}
-	for _, e := range allFaults {
+	for _, e := range jitterFaults {
 		summary.Faults = append(summary.Faults, provenance.FromFault(e))
 	}
 	if err := r.recordStage(summary); err != nil {
