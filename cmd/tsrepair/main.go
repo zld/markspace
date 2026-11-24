@@ -156,6 +156,8 @@ func knownFault(name string) bool {
 
 func printMetrics(m *engine.Metrics) {
 	fmt.Printf("parse_roundtrip=%.2f%%\n", m.ParseRoundtripPct)
+	// Alias used by the faulty-stream acceptance description; same value.
+	fmt.Printf("roundtrip_rate=%.2f%%\n", m.ParseRoundtripPct)
 	fmt.Printf("keyframe_hit_rate=%.2f%%\n", m.KeyframeHitRatePct)
 	fmt.Printf("segment_hash_match=%.2f%%\n", m.HashMatchPct)
 	fmt.Printf("repaired_wraps=%d\n", m.RepairedWraps)
