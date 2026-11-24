@@ -277,7 +277,11 @@ type Runner struct {
 // branches finishing early never change the printed outcome.
 func (r *Runner) Run(ctx context.Context, g *Graph) (*Report, error) {
 	if r.Workers <= 1 {
-		return r.RunSequential(ctx, g)
+		rep, err := r.RunSequential(ctx, g)
+		if rep == nil {
+			rep = &Report{}
+		}
+		return rep, err
 	}
 	workers := r.Workers
 	if workers > 16 {
@@ -475,7 +479,7 @@ func (r *Runner) RunSequential(ctx context.Context, g *Graph) (*Report, error) {
 				break
 			}
 			if ds.Status != StatusDone && ds.Status != StatusRecovered {
-				return nil, fmt.Errorf("dag: %q scheduled before dependency %q", name, d)
+				return rep, fmt.Errorf("dag: %q scheduled before dependency %q", name, d)
 			}
 		}
 		if blocked != "" {
@@ -497,6 +501,7 @@ func (r *Runner) RunSequential(ctx context.Context, g *Graph) (*Report, error) {
 					st.Recovered = true
 					st.Result = cached
 					results[name] = cached
+					states[name] = st
 					rep.States = append(rep.States, st)
 					rep.Order = append(rep.Order, name)
 					continue
@@ -512,6 +517,7 @@ func (r *Runner) RunSequential(ctx context.Context, g *Graph) (*Report, error) {
 		if err != nil {
 			st.Status = StatusFailed
 			st.Err = err
+			states[name] = st
 			rep.States = append(rep.States, st)
 			rep.Order = append(rep.Order, name)
 			continue
@@ -520,6 +526,7 @@ func (r *Runner) RunSequential(ctx context.Context, g *Graph) (*Report, error) {
 			if err := n.Commit(ctx, key, res); err != nil {
 				st.Status = StatusFailed
 				st.Err = err
+				states[name] = st
 				rep.States = append(rep.States, st)
 				rep.Order = append(rep.Order, name)
 				continue
@@ -531,6 +538,7 @@ func (r *Runner) RunSequential(ctx context.Context, g *Graph) (*Report, error) {
 		st.Status = StatusDone
 		st.Result = res
 		results[name] = res
+		states[name] = st
 		rep.States = append(rep.States, st)
 		rep.Order = append(rep.Order, name)
 	}
