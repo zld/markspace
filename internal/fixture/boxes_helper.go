@@ -60,27 +60,26 @@ func buildTfdt(base uint64) []byte {
 // sample (flags 0x000701).
 func buildTrun(samples []Sample, withDataOffset bool) []byte {
 	flags := uint32(0x000700) // duration|size|flags
-	header := 4 + 4
+	// Bytes following the 4-byte full box: sample count plus optional
+	// data offset.
+	header := 4
 	if withDataOffset {
 		flags |= 0x000001
 		header += 4
 	}
 	d := append(fullBox(1, flags), make([]byte, header)...)
 	putU32(d[4:], uint32(len(samples)))
-	off := 8
-	if withDataOffset {
-		off = 12 // data offset patched later
-	}
 	for _, s := range samples {
 		entry := make([]byte, 12)
 		putU32(entry[0:], s.Duration)
 		putU32(entry[4:], s.Size)
 		if !s.Keyframe {
-			entry[8] = 0x01 // sample_is_non_sync_sample, top byte of flags word
+			// sample_is_non_sync_sample is bit 16 of the flags word,
+			// i.e. the second byte in big-endian order.
+			entry[9] = 0x01
 		}
 		d = append(d, entry...)
 	}
-	_ = off
 	return d
 }
 
