@@ -80,6 +80,13 @@ func (r *Runner) handleOrdered(item ingest.Item) error {
 	if sr := r.silence.Add(*item.Frame); sr != nil {
 		r.state.SilenceRanges = append(r.state.SilenceRanges, *sr)
 	}
+	if built != nil {
+		// Segment bytes are durable and silence state for this boundary frame
+		// has also been advanced; this is a complete cross-subsystem point.
+		if err := r.saveCheckpoint(false, ""); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -100,7 +107,7 @@ func (r *Runner) finalizeSegment(built *media.BuiltSegment) error {
 			}
 		}
 		r.state.Segments = append(r.state.Segments, seg)
-		return r.saveCheckpoint(false, "")
+		return nil
 	}
 
 	payload, err := encodeSegmentPayload(built)
@@ -124,7 +131,7 @@ func (r *Runner) finalizeSegment(built *media.BuiltSegment) error {
 	seg.SHA256 = sha256Hex(mp4Bytes)
 	seg.ByteSize = len(mp4Bytes)
 	r.state.Segments = append(r.state.Segments, seg)
-	return r.saveCheckpoint(false, "")
+	return nil
 }
 
 // flushReorderAndSegments is called after EOF.

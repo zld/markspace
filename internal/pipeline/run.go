@@ -103,14 +103,17 @@ func (r *Runner) Run(ctx context.Context) (*Result, error) {
 			r.recordParseError(clock.Wrap(clock.CodeInvalidPacket,
 				&clock.Location{ByteOffset: env.SourceOffset}, parseErr, "source chunk read failed"))
 		} else if chunk, ok := env.Payload.(sample.Chunk); ok {
+			// Advance the source boundary before processing so a checkpoint
+			// written immediately after segment durable output cannot point
+			// before state that the checkpoint already contains.
+			r.state.ProcessedChunks++
+			r.state.NextSourceOffset = env.SourceOffset + env.ByteSize
 			if err := r.processChunk(chunk); err != nil {
 				runErr = err
 				r.pipe.Ack(env)
 				cancel()
 				break
 			}
-			r.state.ProcessedChunks++
-			r.state.NextSourceOffset = env.SourceOffset + env.ByteSize
 		}
 
 		every := int64(r.opts.CheckpointEvery)

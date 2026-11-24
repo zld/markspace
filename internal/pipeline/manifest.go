@@ -65,7 +65,7 @@ type Result struct {
 	CorruptPacketSeq  uint16               `json:"corrupt_packet_seq,omitempty"`
 	CorruptByteOffset int64                `json:"corrupt_byte_offset,omitempty"`
 	ErrorCode         clock.ErrorCode      `json:"error_code,omitempty"`
-	ResumeMS          int64                `json:"resume_ms,omitempty"`
+	ResumeMS          int64                `json:"resume_ms"`
 	ResumeFromSeq     uint16               `json:"resume_from_seq,omitempty"`
 	ResumeFromExtSeq  uint64               `json:"resume_from_ext_seq,omitempty"`
 	Interrupted       bool                 `json:"interrupted,omitempty"`
