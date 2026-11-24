@@ -17,11 +17,11 @@ type BlockInput struct {
 
 // TrackInput is the immutable description merge needs for one track.
 type TrackInput struct {
-	Number       uint32
-	UID          uint32
-	IsVideo      bool
-	SampleRate   int64 // audio
-	FrameRate    int64 // video ticks per second
+	Number     uint32
+	UID        uint32
+	IsVideo    bool
+	SampleRate int64 // audio
+	FrameRate  int64 // video ticks per second
 }
 
 // Event is one point on the merged programme timeline.

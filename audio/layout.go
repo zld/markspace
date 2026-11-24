@@ -12,12 +12,12 @@ import (
 
 // Channel positions recognised by the fixture convention.
 const (
-	PosFL uint32 = 1 // front left
-	PosFR uint32 = 2 // front right
-	PosFC uint32 = 3 // front centre
+	PosFL  uint32 = 1 // front left
+	PosFR  uint32 = 2 // front right
+	PosFC  uint32 = 3 // front centre
 	PosLFE uint32 = 4 // low frequency effects
-	PosBL uint32 = 5 // back left
-	PosBR uint32 = 6 // back right
+	PosBL  uint32 = 5 // back left
+	PosBR  uint32 = 6 // back right
 )
 
 // supportedPositions is the closed set this tool knows how to label.
@@ -35,7 +35,7 @@ var namedLayouts = map[string][]uint32{
 
 // Layout is the resolved, validated mapping for one audio track.
 type Layout struct {
-	Channels int
+	Channels  int
 	Positions []uint32 // one entry per channel, in storage order
 	Source    string   // "map" | "name" | "config"
 }

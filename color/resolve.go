@@ -22,9 +22,9 @@ const (
 // Known enumerations the tool can safely interpret. Values outside these
 // sets are treated as opaque and block conversion.
 var (
-	knownMatrices    = map[uint32]bool{1: true, 6: true, 9: true, 10: true}
-	knownTransfers   = map[uint32]bool{1: true, 6: true, 16: true, 18: true}
-	knownPrimaries   = map[uint32]bool{1: true, 6: true, 9: true}
+	knownMatrices  = map[uint32]bool{1: true, 6: true, 9: true, 10: true}
+	knownTransfers = map[uint32]bool{1: true, 6: true, 16: true, 18: true}
+	knownPrimaries = map[uint32]bool{1: true, 6: true, 9: true}
 )
 
 // Policy orders the metadata sources. The first entry present wins.

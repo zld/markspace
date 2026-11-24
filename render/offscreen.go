@@ -14,19 +14,19 @@ import (
 
 // Missing reasons reported in place of a hash.
 const (
-	ReasonNoBlock      = "no frame block covering sample time"
-	ReasonCheckFailed  = "source block failed cluster CRC"
-	ReasonTruncated    = "input truncated before frame was delivered"
+	ReasonNoBlock     = "no frame block covering sample time"
+	ReasonCheckFailed = "source block failed cluster CRC"
+	ReasonTruncated   = "input truncated before frame was delivered"
 )
 
 // FrameHash is one reviewer-facing frame record.
 type FrameHash struct {
-	Index      int    `json:"index"`
-	SampleNs   int64  `json:"sample_time_ns"`
-	Offset     int64  `json:"offset"`
-	Hash       string `json:"hash,omitempty"`
-	Missing    bool   `json:"missing"`
-	Reason     string `json:"reason,omitempty"`
+	Index    int    `json:"index"`
+	SampleNs int64  `json:"sample_time_ns"`
+	Offset   int64  `json:"offset"`
+	Hash     string `json:"hash,omitempty"`
+	Missing  bool   `json:"missing"`
+	Reason   string `json:"reason,omitempty"`
 }
 
 // VideoSource groups the blocks and geometry the renderer needs.

@@ -50,15 +50,15 @@ type BlockRecord struct {
 
 // Record is the full persisted scan projection.
 type Record struct {
-	Version       int                 `json:"version"`
-	InputHex      string              `json:"input_sha256"`
-	InputSize     int64               `json:"input_size"`
-	TimeScaleNs   int64               `json:"time_scale_ns"`
-	SegmentLive   bool                `json:"segment_live"`
-	TruncatedAt   int64               `json:"truncated_at"`
-	CheckFailures []int64             `json:"check_failures"`
-	Tracks        []*ebml.TrackSpec   `json:"tracks"`
-	Blocks        []BlockRecord       `json:"blocks"`
+	Version       int               `json:"version"`
+	InputHex      string            `json:"input_sha256"`
+	InputSize     int64             `json:"input_size"`
+	TimeScaleNs   int64             `json:"time_scale_ns"`
+	SegmentLive   bool              `json:"segment_live"`
+	TruncatedAt   int64             `json:"truncated_at"`
+	CheckFailures []int64           `json:"check_failures"`
+	Tracks        []*ebml.TrackSpec `json:"tracks"`
+	Blocks        []BlockRecord     `json:"blocks"`
 }
 
 // Store manages index files inside one directory.
