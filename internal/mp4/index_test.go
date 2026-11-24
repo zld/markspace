@@ -160,3 +160,27 @@ func TestCorruptTopLevelReportedNotFatal(t *testing.T) {
 		}
 	}
 }
+
+func TestCorruptChunkTableRejected(t *testing.T) {
+	// The chunk table claims 1 sample per chunk but the clip has 6 samples
+	// in 3 chunks; the reader must reject the track rather than invent
+	// offsets for samples it cannot address.
+	s := spec()
+	s.CorruptStsc = true
+	ix, es := Parse(bytes.NewReader(mustMP4(t, s)), "bad.mp4", Options{FallbackScan: true})
+	if len(ix.Tracks) != 0 {
+		t.Fatalf("unaddressable samples must not yield a track: %+v", ix.Tracks)
+	}
+	if len(es) == 0 || es[0].Code != model.CodeIndexCorrupt {
+		t.Fatalf("diagnostics %v", es)
+	}
+}
+
+func mustMP4(t *testing.T, s fixtures.MP4Spec) []byte {
+	t.Helper()
+	data, err := fixtures.MP4(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
