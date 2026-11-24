@@ -152,7 +152,7 @@ func (r *Reorderer) Push(p Packet) []Packet {
 	r.stats.Received++
 	if !r.initialized {
 		r.initialized = true
-		r.next = p.Sequence
+		r.next = p.Sequence + 1
 		r.markSeen(p.Sequence)
 		r.stats.Emitted++
 		return []Packet{p}

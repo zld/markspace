@@ -98,6 +98,16 @@ func ApplyCCJump(ts []byte, pid uint16, packetIndex int) (int64, error) {
 	}
 	cc := ts[idx+3] & 0x0f
 	ts[idx+3] = (ts[idx+3] & 0xf0) | ((cc + 3) & 0x0f)
+	// Shift later CC values on this PID by the same delta so the injected
+	// discontinuity produces exactly one gap rather than cascading errors.
+	for off := idx + 188; off+188 <= len(ts); off += 188 {
+		currentPID := uint16(ts[off+1]&0x1f)<<8 | uint16(ts[off+2])
+		if currentPID != pid {
+			continue
+		}
+		later := ts[off+3] & 0x0f
+		ts[off+3] = (ts[off+3] & 0xf0) | ((later + 3) & 0x0f)
+	}
 	return int64(idx), nil
 }
 
