@@ -173,3 +173,34 @@ func TestBuildBoundariesSorted(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildRejectsNegativeDuration(t *testing.T) {
+	in := BaseBuild()
+	in.VideoSamples[2].Duration = model.RatFromInt(-1)
+	res := Build(in)
+	found := false
+	for _, e := range res.Errors {
+		if e.Code == model.CodeTimelineAlign {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("negative sample duration must be reported")
+	}
+	for _, it := range res.Items {
+		if it.Kind == ItemVideo && it.Span.End.Cmp(it.Span.Start) < 0 {
+			t.Fatalf("reversed video span committed: %+v", it.Span)
+		}
+	}
+}
+
+func TestBuildKeepsZeroDurationSample(t *testing.T) {
+	in := BaseBuild()
+	in.VideoSamples[2].Duration = model.RatFromInt(0)
+	res := Build(in)
+	for _, e := range res.Errors {
+		if e.Code == model.CodeTimelineAlign {
+			t.Fatalf("zero duration must be accepted: %v", e)
+		}
+	}
+}

@@ -102,12 +102,14 @@ type Result struct {
 // never on map iteration order.
 func Build(in BuildOptions) Result {
 	var res Result
-	// 1. Video samples, already expected in presentation order.
+	// 1. Video samples, already expected in presentation order. A sample with
+	// a zero duration is still valid (a gap marker owns its own instant), but
+	// a negative one would make the span run backwards.
 	for _, s := range in.VideoSamples {
 		end := s.Start.Add(s.Duration)
-		if s.Duration.Sign() > 0 && end.Cmp(s.Start) < 0 {
+		if s.Duration.Sign() < 0 {
 			res.Errors.Add(model.NewError(model.CodeTimelineAlign, "timeline", s.Track.ID, model.InputPos{},
-				"sample %d has negative duration", s.Index))
+				"sample %d has negative duration %s", s.Index, s.Duration))
 			continue
 		}
 		res.Items = append(res.Items, Item{
