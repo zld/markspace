@@ -179,3 +179,38 @@ func TestGeneratedMP4IsProbeable(t *testing.T) {
 		}
 	}
 }
+
+func TestMP4SpecValidation(t *testing.T) {
+	ok := videoSpec("v")
+	cases := []struct {
+		name string
+		mut  func(*MP4Spec)
+	}{
+		{"no samples", func(s *MP4Spec) { s.Sizes = nil; s.Deltas = nil }},
+		{"delta mismatch", func(s *MP4Spec) { s.Deltas = s.Deltas[:2] }},
+		{"ctts mismatch", func(s *MP4Spec) { s.Ctts = []int64{0} }},
+		{"over-truncation", func(s *MP4Spec) { s.TruncateSample = 1 << 20 }},
+	}
+	for _, c := range cases {
+		s := ok
+		c.mut(&s)
+		if _, err := MP4(s); err == nil {
+			t.Fatalf("%s: expected an error", c.name)
+		}
+	}
+	if _, err := MP4(ok); err != nil {
+		t.Fatalf("valid spec rejected: %v", err)
+	}
+}
+
+func TestCorruptIndexBytesRequiresStss(t *testing.T) {
+	s := videoSpec("noss")
+	s.MissingStss = true
+	data, err := MP4(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := CorruptIndexBytes(data); err == nil {
+		t.Fatal("a file without stss cannot have its index corrupted")
+	}
+}
