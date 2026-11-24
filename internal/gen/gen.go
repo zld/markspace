@@ -148,10 +148,14 @@ func buildFrames(opts Options, total int, inject map[string]bool) ([]byte, []int
 	var buf bytes.Buffer
 	var offsets []int64
 	step := int64(90000) * int64(1) / 25 // 25 fps at 90 kHz
+	// Keyframes land on the requested cadence and on every nominal segment
+	// boundary, mirroring how a real encoder is forced to close a fragment.
+	segStart := func(i int) bool { return i%opts.FramesPerSeg == 0 }
+	_ = segStart
 	for i := 0; i < total; i++ {
 		payload := makePayload(i)
 		flags := uint16(0)
-		if i%opts.KeyframeEvery == 0 {
+		if i%opts.KeyframeEvery == 0 || i%opts.FramesPerSeg == 0 {
 			flags |= frames.FlagKeyframe
 		}
 		if i == total-1 {

@@ -58,13 +58,13 @@ func FromFault(e *fault.Error) FaultRecord {
 
 // StageSummary is the checkpointable summary of one stage.
 type StageSummary struct {
-	Name       string        `json:"name"`
-	InputHash  string        `json:"input_hash"`
-	ConfigHash string        `json:"config_hash"`
-	OutputHash string        `json:"output_hash"`
-	Detail     string        `json:"detail,omitempty"`
+	Name       string         `json:"name"`
+	InputHash  string         `json:"input_hash"`
+	ConfigHash string         `json:"config_hash"`
+	OutputHash string         `json:"output_hash"`
+	Detail     string         `json:"detail,omitempty"`
 	Counts     map[string]int `json:"counts,omitempty"`
-	Faults     []FaultRecord `json:"faults,omitempty"`
+	Faults     []FaultRecord  `json:"faults,omitempty"`
 }
 
 // Segment describes one remuxed output.
@@ -88,19 +88,19 @@ type Segment struct {
 
 // Metrics are the acceptance counters printed by the CLI.
 type Metrics struct {
-	Frames            int `json:"frames"`
-	AudioPackets      int `json:"audio_packets"`
-	ParseErrors       int `json:"parse_errors"`
-	RecoveredAudio    int `json:"recovered_audio"`
-	RecoveredVideo    int `json:"recovered_video"`
-	DroppedAudio      int `json:"dropped_audio"`
-	Segments          int `json:"segments"`
-	KeyframeTotal     int `json:"keyframe_total"`
-	KeyframeHits      int `json:"keyframe_hits"`
-	RoundtripTotal    int `json:"roundtrip_total"`
-	RoundtripHits     int `json:"roundtrip_hits"`
+	Frames             int `json:"frames"`
+	AudioPackets       int `json:"audio_packets"`
+	ParseErrors        int `json:"parse_errors"`
+	RecoveredAudio     int `json:"recovered_audio"`
+	RecoveredVideo     int `json:"recovered_video"`
+	DroppedAudio       int `json:"dropped_audio"`
+	Segments           int `json:"segments"`
+	KeyframeTotal      int `json:"keyframe_total"`
+	KeyframeHits       int `json:"keyframe_hits"`
+	RoundtripTotal     int `json:"roundtrip_total"`
+	RoundtripHits      int `json:"roundtrip_hits"`
 	IncompleteSegments int `json:"incomplete_segments"`
-	UnsyncedSegments  int `json:"unsynced_segments"`
+	UnsyncedSegments   int `json:"unsynced_segments"`
 }
 
 // Manifest is the full provenance document for one run.

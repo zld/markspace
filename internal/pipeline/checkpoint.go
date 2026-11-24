@@ -21,6 +21,11 @@ type Checkpoint struct {
 	Stage      string            `json:"stage"`
 	Done       []string          `json:"done"`
 	Hashes     map[string]string `json:"hashes"`
+	// Invalidated is set in memory when a checkpoint existed but could not be
+	// trusted. It is never serialized; it only drives the resume report.
+	Invalidated bool `json:"-"`
+	// Exists reports whether a checkpoint file was present.
+	Exists bool `json:"-"`
 }
 
 const checkpointVersion = 1
@@ -42,6 +47,7 @@ const IndexDir = "index"
 var stageOrder = []string{
 	"parse",
 	"jitter", // jitter ordering and loss recovery share one pass
+	"recovery",
 	"sync",
 	"mux",
 	"index",
@@ -69,11 +75,14 @@ func LoadCheckpoint(dir, configHash, inputHash string) (*Checkpoint, bool) {
 	}
 	var cp Checkpoint
 	if err := json.Unmarshal(data, &cp); err != nil || cp.Version != checkpointVersion {
-		return newCheckpoint(configHash, inputHash), false
+		fresh := newCheckpoint(configHash, inputHash)
+		fresh.Invalidated = true
+		return fresh, false
 	}
+	cp.Exists = true
 	if cp.ConfigHash != configHash || cp.InputHash != inputHash {
 		fresh := newCheckpoint(configHash, inputHash)
-		fresh.Stage = "invalidated"
+		fresh.Invalidated = true
 		return fresh, false
 	}
 	if cp.Hashes == nil {

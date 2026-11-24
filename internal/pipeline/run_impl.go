@@ -228,6 +228,7 @@ func (r *Runner) loadOrRebuildSegment(plan *SegmentPlan, rep *syncer.Report, seg
 		return fault.New(fault.StageIndex, fault.KindIndex,
 			"cached segment %d failed sample verification: %v", plan.Index, sr.Misses)
 	}
+	frames, audioBytes := audioStats(rep)
 	*seg = provenance.Segment{
 		Index:        plan.Index,
 		Path:         filepath.ToSlash(filepath.Join(SegmentsDir, segmentName(plan.Index))),
@@ -239,7 +240,13 @@ func (r *Runner) loadOrRebuildSegment(plan *SegmentPlan, rep *syncer.Report, seg
 		RoundtripHit: sr.Hits,
 		Synced:       rep.Synced,
 		Incomplete:   rep.Incomplete || r.runtime.audioIncomplete,
+		AudioFrames:  frames,
+		AudioBytes:   audioBytes,
 		Faults:       segmentFaults(rep),
+	}
+	if len(rep.Video) > 0 {
+		seg.StartPTS = uint64(rep.Video[0].LocalTick)
+		seg.EndPTS = uint64(rep.VideoEnd)
 	}
 	return nil
 }
@@ -293,6 +300,18 @@ func (r *Runner) loadPayloads(recs []*frames.Record) ([][]byte, error) {
 		out[i] = data
 	}
 	return out, nil
+}
+
+// audioStats derives the manifest audio counters from the alignment report so
+// a resumed run reports the same numbers as a fresh one without re-reading the
+// segment.
+func audioStats(rep *syncer.Report) (frames int, bytes int) {
+	for _, slot := range rep.Audio {
+		if slot.Unit.Packet != nil {
+			bytes += len(slot.Unit.Packet.Payload)
+		}
+	}
+	return len(rep.Audio), bytes
 }
 
 // sampleRefs pairs every exported sample with its ingest coordinates.

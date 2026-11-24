@@ -214,11 +214,19 @@ func TestVerifyDetectsShiftedIndex(t *testing.T) {
 func TestVerifyRejectsEmptyAndBadCount(t *testing.T) {
 	dir := t.TempDir()
 	path, _ := writeMinimalMP4(t, dir, [][]byte{[]byte("a")})
-	if _, err := Verify(path, &Index{}); err == nil {
-		t.Fatal("empty index accepted")
+	if _, err := Verify(path, nil); err == nil {
+		t.Fatal("nil index accepted")
+	}
+	// An index with no keyframe entries is legal but resolves nothing.
+	empty, err := Verify(path, &Index{SampleCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if empty.Verified() || empty.Ratio() != 0 {
+		t.Fatalf("empty entry list reported %+v", empty)
 	}
 	bad := &Index{SampleCount: 99, Entries: []Entry{{Sample: 1}}}
-	_, err := Verify(path, bad)
+	_, err = Verify(path, bad)
 	if err == nil {
 		t.Fatal("sample count mismatch accepted")
 	}

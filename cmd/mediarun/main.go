@@ -128,6 +128,7 @@ func run(args []string, stdout, stderr *os.File) int {
 			fmt.Fprintf(stderr, "verify_error: %v\n", err)
 			return exitInternal
 		}
+		pipeline.ApplyBaseline(vr, runner.PreviousManifest())
 		report(stdout, opts, m, vr, runner)
 	} else {
 		report(stdout, opts, m, nil, runner)

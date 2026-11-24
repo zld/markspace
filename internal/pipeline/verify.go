@@ -87,12 +87,26 @@ func Verify(dir string, m *provenance.Manifest) (*VerifyReport, error) {
 		rep.Misses = append(rep.Misses, sr.Misses...)
 	}
 
-	// Idempotency is judged against the stored manifest's own digests, so a
-	// repeated run that changed a segment would fail here.
+	// Segment digests on disk must match what the manifest recorded for this
+	// run; otherwise the manifest is stale.
 	rep.SegmentsEqual = provenance.EqualHashes(rep.Hashes, m.SegmentHashes())
+	// Idempotency is only meaningful against a previous run in the same
+	// directory. Without one, the first run defines the baseline.
 	rep.Idempotent = rep.SegmentsEqual && len(rep.Misses) == 0
 	rep.BaselineHashes = m.SegmentHashes()
 	return rep, nil
+}
+
+// ApplyBaseline folds a previous run's manifest into the report. When a
+// baseline exists, idempotency means the new segment digests equal the old
+// ones, not merely that the manifest agrees with the files it just wrote.
+func ApplyBaseline(rep *VerifyReport, previous *provenance.Manifest) {
+	if rep == nil || previous == nil {
+		return
+	}
+	prior := previous.SegmentHashes()
+	rep.BaselineHashes = prior
+	rep.Idempotent = len(prior) == len(rep.Hashes) && provenance.EqualHashes(rep.Hashes, prior) && len(rep.Misses) == 0
 }
 
 // verifyCachedManifest loads the manifest written by a previous run so a

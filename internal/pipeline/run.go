@@ -51,6 +51,10 @@ type Runner struct {
 
 	cp      *Checkpoint
 	resumed bool
+	// previous is the manifest from an earlier run in the same directory. It
+	// is the baseline for idempotency: a repeated run must reproduce its
+	// segment digests exactly.
+	previous *provenance.Manifest
 
 	runtime runtimeState
 
@@ -104,15 +108,21 @@ func (r *Runner) Resume(on bool) error {
 	cp, ok := LoadCheckpoint(r.dir, r.cfg.Hash(), r.inputHash())
 	r.cp = cp
 	r.resumed = ok
-	if !ok {
-		return nil
+	if ok {
+		r.runtime.skippedStages = append([]string(nil), cp.Done...)
 	}
-	r.runtime.skippedStages = append([]string(nil), cp.Done...)
-	// A complete checkpoint resumes at "complete"; otherwise report the first
-	// stage that still needs work.
-	r.runtime.resumedAt = cp.ResumeStage()
+	// A complete checkpoint resumes at "complete"; an invalidated one resumes
+	// at the first stage, which is "parse". A directory with no checkpoint is
+	// a fresh run and reports no resume stage.
+	if ok || cp.Invalidated {
+		r.runtime.resumedAt = cp.ResumeStage()
+	}
 	return nil
 }
+
+// PreviousManifest returns the manifest found in the run directory before this
+// run started, or nil when there was none. It is the idempotency baseline.
+func (r *Runner) PreviousManifest() *provenance.Manifest { return r.previous }
 
 // Checkpoint exposes the checkpoint for reporting.
 func (r *Runner) Checkpoint() *Checkpoint { return r.cp }
@@ -134,6 +144,9 @@ func (r *Runner) Run() (*provenance.Manifest, error) {
 			r.runtime.resumedAt = cp.ResumeStage()
 		}
 	}
+	if m, err := provenance.Load(filepath.Join(r.dir, ManifestName)); err == nil {
+		r.previous = m
+	}
 	segmentsDir := filepath.Join(r.dir, SegmentsDir)
 	if err := os.MkdirAll(segmentsDir, 0o755); err != nil {
 		return nil, fault.Wrap(fault.StagePipeline, fault.KindIO, err, "create segments directory")
@@ -146,20 +159,14 @@ func (r *Runner) Run() (*provenance.Manifest, error) {
 		r.hashes.baseRTP = stats.BaseRTP
 	}
 
-	// parse
-	if r.cp.IsDone("parse") {
-		recs, err := r.runParse()
-		if err != nil {
-			return nil, err
-		}
-		r.records = recs
-	} else {
-		recs, err := r.runParse()
-		if err != nil {
-			return nil, err
-		}
-		r.records = recs
+	// parse: the scan is cheap relative to muxing and is required to rebuild
+	// the plan, so it always runs; the checkpoint still records the digest so
+	// a changed input invalidates later stages.
+	recs, err := r.runParse()
+	if err != nil {
+		return nil, err
 	}
+	r.records = recs
 
 	// jitter + recovery are a single pass over the audio sidecar
 	units, stats, err := r.runAudio()

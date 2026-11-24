@@ -28,33 +28,54 @@ type SegmentPlan struct {
 
 // selectSegments partitions records and already-placed audio into segments.
 //
-// Segment boundaries are snapped to keyframes so every output fragment starts
-// at a random access point and can be decoded independently; within that
-// constraint the split stays as close to equal frame counts as possible. Frame
+// Every segment starts on a keyframe so each output fragment is independently
+// decodable. When the stream has fewer keyframes than requested segments the
+// count is reduced rather than emitting a segment that cannot be indexed.
+// Within the keyframe constraint starts are spaced as evenly as possible. Frame
 // order is preserved and no frame is duplicated or dropped. Audio is assigned
 // by the placed timeline tick, so a segment carries the audio that actually
 // sounds over its video span.
 func selectSegments(recs []*frames.Record, audio []syncer.Placed, count int) []SegmentPlan {
-	if len(recs) == 0 {
+	if len(recs) == 0 || count < 1 {
 		return nil
+	}
+	starts := keyframeStarts(recs)
+	if count > len(starts) {
+		count = len(starts)
 	}
 	if count > len(recs) {
 		count = len(recs)
 	}
-	bounds := keyframeBounds(recs, count)
-	plans := make([]SegmentPlan, 0, len(bounds)-1)
-	for i := 0; i+1 < len(bounds); i++ {
-		start, end := bounds[i], bounds[i+1]
+	if count < 1 {
+		count = 1
+	}
+	// Pick evenly spaced keyframe starts, always including index zero.
+	picked := make([]int, 0, count)
+	for i := 0; i < count; i++ {
+		pos := i * len(starts) / count
+		if pos >= len(starts) {
+			pos = len(starts) - 1
+		}
+		if len(picked) > 0 && starts[pos] <= picked[len(picked)-1] {
+			continue
+		}
+		picked = append(picked, starts[pos])
+	}
+	plans := make([]SegmentPlan, 0, len(picked))
+	for i, start := range picked {
+		end := len(recs)
+		if i+1 < len(picked) {
+			end = picked[i+1]
+		}
 		if end <= start {
 			continue
 		}
-		plan := SegmentPlan{
+		plans = append(plans, SegmentPlan{
 			Index:     len(plans),
 			Frames:    recs[start:end],
 			StartTick: int64(recs[start].Meta.PTS),
 			EndTick:   segmentEndTick(recs, start, end),
-		}
-		plans = append(plans, plan)
+		})
 	}
 	if len(plans) == 0 {
 		return nil
@@ -71,53 +92,17 @@ func selectSegments(recs []*frames.Record, audio []syncer.Placed, count int) []S
 	return plans
 }
 
-// keyframeBounds returns count+1 record indices delimiting the segments. Index
-// zero and len(recs) are always included; interior boundaries snap to the
-// nearest keyframe that keeps all segments non-empty and ordered. When the
-// stream has too few keyframes the ideal equal split is used instead.
-func keyframeBounds(recs []*frames.Record, count int) []int {
-	n := len(recs)
-	bounds := []int{0}
-	if count <= 1 || n <= 1 {
-		return append(bounds, n)
-	}
-	var keys []int
-	for i, r := range recs {
-		if r.Keyframe() && i > 0 {
-			keys = append(keys, i)
+// keyframeStarts returns record indices that may begin a segment. Index zero is
+// always eligible so the first fragment is never empty, even if the producer
+// forgot to flag its first frame.
+func keyframeStarts(recs []*frames.Record) []int {
+	out := []int{0}
+	for i := 1; i < len(recs); i++ {
+		if recs[i].Keyframe() {
+			out = append(out, i)
 		}
 	}
-	prev := 0
-	for seg := 1; seg < count; seg++ {
-		ideal := seg * n / count
-		if ideal <= prev {
-			ideal = prev + 1
-		}
-		if ideal >= n {
-			break
-		}
-		chosen := ideal
-		if len(keys) > 0 {
-			best := -1
-			for _, k := range keys {
-				if k <= prev || k >= n || k <= prev {
-					continue
-				}
-				if best == -1 || absInt(k-ideal) < absInt(best-ideal) ||
-					(absInt(k-ideal) == absInt(best-ideal) && k > best) {
-					best = k
-				}
-			}
-			// Never pick a boundary that would starve a later segment.
-			remainingSegs := count - seg
-			if best != -1 && n-best >= remainingSegs {
-				chosen = best
-			}
-		}
-		bounds = append(bounds, chosen)
-		prev = chosen
-	}
-	return append(bounds, n)
+	return out
 }
 
 // segmentEndTick is the half-open end of a segment in the 90 kHz domain. The
@@ -134,13 +119,6 @@ func segmentEndTick(recs []*frames.Record, start, end int) int64 {
 		return int64(recs[end-1].Meta.PTS) + step
 	}
 	return int64(recs[end-1].Meta.PTS)
-}
-
-func absInt(v int) int {
-	if v < 0 {
-		return -v
-	}
-	return v
 }
 
 // runParse scans the frame file in metadata-only mode and records the stage
@@ -225,13 +203,10 @@ func (r *Runner) resyncRecoveries(parseFaults fault.List, recs []*frames.Record)
 }
 
 // runAudio parses and orders the RTP sidecar, then seals recoverable gaps.
+// Jitter and recovery share one pass, so both stage summaries are emitted
+// here: the jitter summary covers ordering and drops, the recovery summary
+// covers hole concealment and incomplete fragments.
 func (r *Runner) runAudio() ([]recovery.Unit, jitter.Stats, error) {
-	// The jitter stage records its own summary, so the loss report from the
-	// recovery pass is folded into it rather than emitted twice.
-	return r.runAudioOnce()
-}
-
-func (r *Runner) runAudioOnce() ([]recovery.Unit, jitter.Stats, error) {
 	f, err := os.Open(r.inputs.AudioPath)
 	if err != nil {
 		return nil, jitter.Stats{}, fault.Wrap(fault.StageJitter, fault.KindIO, err, "open %s", r.inputs.AudioPath)
@@ -295,6 +270,26 @@ func (r *Runner) runAudioOnce() ([]recovery.Unit, jitter.Stats, error) {
 		return nil, jitter.Stats{}, err
 	}
 	r.runtime.audioIncomplete = rep.Incomplete
+
+	recSummary := provenance.StageSummary{
+		Name:       "recovery",
+		InputHash:  r.hashes.audio,
+		ConfigHash: r.cfg.Hash(),
+		OutputHash: audioDigest(rep.Units),
+		Detail:     "sealed audio gaps",
+		Counts: map[string]int{
+			"gap_events":  rep.GapEvents,
+			"recovered":   rep.Recovered,
+			"unrecovered": rep.Unrecovered,
+			"faults":      rep.Faults.Len(),
+		},
+	}
+	for _, e := range rep.Faults {
+		recSummary.Faults = append(recSummary.Faults, provenance.FromFault(e))
+	}
+	if err := r.recordStage(recSummary); err != nil {
+		return nil, jitter.Stats{}, err
+	}
 	return rep.Units, stats, nil
 }
 
