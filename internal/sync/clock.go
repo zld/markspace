@@ -14,44 +14,58 @@ type Observation struct {
 	Media   model.Nanos
 }
 
-// ClockDrift estimates the rate of a candidate media clock relative to a
-// reference clock over a set of observations on the shared arrival clock.
-//
-// Each track's media time is regressed against arrival time. Delivery jitter
-// attenuates both slopes by the same factor, so their ratio is preserved: a
-// candidate running 120 ppm fast yields a ratio of 1.00012 regardless of
-// per-sample noise. This is markedly more stable than pairing individual
-// samples, where reference jitter biases the slope toward zero.
+// ClockDrift is an estimate of a candidate media clock's rate relative to a
+// reference media clock.
 type ClockDrift struct {
 	// Ratio is candidate rate / reference rate.
-	Ratio float64
+	Ratio float64 `json:"ratio"`
 	// PPM is (Ratio-1)*1e6.
-	PPM float64
+	PPM float64 `json:"ppm"`
 	// Clamped reports that MaxPPM limited the correction.
-	Clamped bool
-	// Insufficient reports that a slope could not be estimated.
-	Insufficient bool
-	// Samples is the number of observations that contributed.
-	Samples int
+	Clamped bool `json:"clamped"`
+	// Insufficient reports that a usable slope could not be estimated.
+	Insufficient bool `json:"insufficient"`
+	// Bins is the number of arrival bins that contributed.
+	Bins int `json:"bins"`
 }
 
-// EstimateClockDrift fits the two clocks and returns the relative rate. A
-// non-positive fitted reference slope (a clock that does not advance with
-// arrival) means the data is unusable and Insufficient is set.
-func EstimateClockDrift(reference, candidate []Observation, maxPPM float64) ClockDrift {
+// BinCount bounds the resolution of the arrival-binned estimator.
+const BinCount = 64
+
+// EstimateClockDrift compares two tracks observed against the same capture
+// arrival clock.
+//
+// Both sample sets are split into the same arrival-time bins. Within each bin
+// the median video media time and the median audio media time are taken over
+// the same wall-clock interval, so per-packet delivery delay contributes the
+// same median offset to both and cancels in the slope. The slope of audio
+// media against video media across bins is therefore the relative media clock
+// rate, free of the errors-in-variables bias that separate regressions would
+// introduce. Medians make the estimate robust to isolated late, reordered or
+// duplicated deliveries.
+func EstimateClockDrift(reference, candidate []Observation, cfg Config) ClockDrift {
 	out := ClockDrift{Ratio: 1}
-	if maxPPM <= 0 {
+	maxPPM := cfg.MaxPPM
+	bins := BinCount
+	if cfg.Window > 0 && cfg.Window < bins {
+		bins = cfg.Window
+	}
+	if maxPPM <= 0 || len(reference) < bins/2 || len(candidate) < bins/2 {
 		out.Insufficient = true
 		return out
 	}
-	sr, okr := fitSlope(reference)
-	sc, okc := fitSlope(candidate)
-	if !okr || !okc || sr <= 0 || sc <= 0 {
+
+	vx, ax, ok := binnedMedians(reference, candidate, bins)
+	if !ok || len(vx) < 3 {
 		out.Insufficient = true
 		return out
 	}
-	ratio := sc / sr
-	out.Samples = len(reference) + len(candidate)
+	ratio, ok := slopeRatio(vx, ax)
+	if !ok {
+		out.Insufficient = true
+		return out
+	}
+	out.Bins = len(vx)
 	out.Ratio = ratio
 	out.PPM = (ratio - 1) * 1e6
 	limit := maxPPM / 1e6
@@ -67,71 +81,90 @@ func EstimateClockDrift(reference, candidate []Observation, maxPPM float64) Cloc
 	return out
 }
 
-// binCount bounds the robust regression's resolution. Each bin contributes
-// one (median arrival, median media) point, so isolated late, reordered or
-// duplicate deliveries cannot lever the slope.
-const binCount = 64
-
-// fitSlope returns the slope of media against arrival, in nanoseconds of
-// media per nanosecond of arrival. It uses a binned median regression: the
-// samples are split into equal-count arrival bins and each bin's median
-// arrival and median media form one regression point. With fewer than two
-// usable bins, or if every bin shares one arrival, it reports failure.
-func fitSlope(obs []Observation) (float64, bool) {
-	if len(obs) < 4 {
-		return 0, false
+// binnedMedians splits both sets over the shared arrival range and returns the
+// per-bin median reference time and median candidate time. Bins where either
+// side is empty are skipped.
+func binnedMedians(reference, candidate []Observation, bins int) ([]model.Nanos, []model.Nanos, bool) {
+	lo, hi, ok := arrivalRange(reference, candidate)
+	if !ok || hi <= lo {
+		return nil, nil, false
 	}
-	s := append([]Observation(nil), obs...)
-	sort.SliceStable(s, func(i, j int) bool {
-		if s[i].Arrival != s[j].Arrival {
-			return s[i].Arrival < s[j].Arrival
+	refBins := make([][]model.Nanos, bins)
+	candBins := make([][]model.Nanos, bins)
+	fill := func(obs []Observation, dst [][]model.Nanos) {
+		for _, o := range obs {
+			idx := int(int64(bins) * int64(o.Arrival-lo) / int64(hi-lo))
+			if idx < 0 {
+				idx = 0
+			} else if idx >= bins {
+				idx = bins - 1
+			}
+			dst[idx] = append(dst[idx], o.Media)
 		}
-		return s[i].Media < s[j].Media
-	})
-	bins := binCount
-	if len(s) < bins {
-		bins = len(s)
 	}
-	pts := make([]Observation, 0, bins)
-	for b := 0; b < bins; b++ {
-		lo := b * len(s) / bins
-		hi := (b + 1) * len(s) / bins
-		if hi <= lo {
+	fill(reference, refBins)
+	fill(candidate, candBins)
+	var vx, ax []model.Nanos
+	for i := 0; i < bins; i++ {
+		if len(refBins[i]) == 0 || len(candBins[i]) == 0 {
 			continue
 		}
-		arrivals := make([]int64, 0, hi-lo)
-		medias := make([]int64, 0, hi-lo)
-		for _, o := range s[lo:hi] {
-			arrivals = append(arrivals, int64(o.Arrival))
-			medias = append(medias, int64(o.Media))
-		}
-		sort.Slice(arrivals, func(i, j int) bool { return arrivals[i] < arrivals[j] })
-		sort.Slice(medias, func(i, j int) bool { return medias[i] < medias[j] })
-		pts = append(pts, Observation{
-			Arrival: model.Nanos(arrivals[len(arrivals)/2]),
-			Media:   model.Nanos(medias[len(medias)/2]),
-		})
+		vx = append(vx, median(refBins[i]))
+		ax = append(ax, median(candBins[i]))
 	}
-	if len(pts) < 2 {
+	return vx, ax, true
+}
+
+func arrivalRange(sets ...[]Observation) (model.Nanos, model.Nanos, bool) {
+	lo := model.Nanos(math.MaxInt64)
+	hi := model.Nanos(math.MinInt64)
+	found := false
+	for _, s := range sets {
+		for _, o := range s {
+			if o.Arrival < lo {
+				lo = o.Arrival
+			}
+			if o.Arrival > hi {
+				hi = o.Arrival
+			}
+			found = true
+		}
+	}
+	return lo, hi, found
+}
+
+func median(v []model.Nanos) model.Nanos {
+	if len(v) == 0 {
+		return 0
+	}
+	s := append([]model.Nanos(nil), v...)
+	sort.Slice(s, func(i, j int) bool { return s[i] < s[j] })
+	return s[len(s)/2]
+}
+
+// slopeRatio fits y = ratio*x through the origin with an intercept, i.e. an
+// ordinary least squares slope, and rejects degenerate input.
+func slopeRatio(x, y []model.Nanos) (float64, bool) {
+	n := float64(len(x))
+	if n < 3 || float64(len(y)) != n {
 		return 0, false
 	}
-	x0, y0 := pts[0].Arrival, pts[0].Media
+	x0, y0 := x[0], y[0]
 	var sx, sy, sxx, sxy float64
-	n := float64(len(pts))
-	for _, o := range pts {
-		x := float64(o.Arrival - x0)
-		y := float64(o.Media - y0)
-		sx += x
-		sy += y
-		sxx += x * x
-		sxy += x * y
+	for i := range x {
+		dx := float64(x[i] - x0)
+		dy := float64(y[i] - y0)
+		sx += dx
+		sy += dy
+		sxx += dx * dx
+		sxy += dx * dy
 	}
 	den := n*sxx - sx*sx
 	if den == 0 {
 		return 0, false
 	}
 	slope := (n*sxy - sx*sy) / den
-	if math.IsNaN(slope) || math.IsInf(slope, 0) {
+	if math.IsNaN(slope) || math.IsInf(slope, 0) || slope <= 0 {
 		return 0, false
 	}
 	return slope, true

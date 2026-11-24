@@ -28,16 +28,22 @@ func ToNanos(value int64, timescale uint32) (Nanos, error) {
 		return 0, fmt.Errorf("timescale must be positive")
 	}
 	// Split the multiplication so a full int64 timestamp can never overflow
-	// while still rounding correctly.
+	// while still rounding to nearest, with halves away from zero.
 	whole := value / int64(timescale)
 	rem := value % int64(timescale)
 	wholeNs := whole * NanosPerSecond
 	if whole != 0 && (wholeNs/NanosPerSecond != whole) {
 		return 0, fmt.Errorf("timestamp %d in timescale %d overflows nanosecond time base", value, timescale)
 	}
-	remNs := (rem*NanosPerSecond + int64(timescale)/2) / int64(timescale)
-	// remNs has the sign of rem; the two terms cannot both overflow because
-	// wholeNs is bounded by the check above and remNs is below one second.
+	var remNs int64
+	switch {
+	case rem > 0:
+		remNs = (rem*NanosPerSecond + int64(timescale)/2) / int64(timescale)
+	case rem < 0:
+		remNs = -((-rem*NanosPerSecond + int64(timescale)/2) / int64(timescale))
+	}
+	// remNs has the sign of rem and magnitude below one second; the two terms
+	// cannot both overflow because wholeNs is bounded by the check above.
 	if (remNs > 0 && wholeNs > math.MaxInt64-remNs) || (remNs < 0 && wholeNs < math.MinInt64-remNs) {
 		return 0, fmt.Errorf("timestamp %d in timescale %d overflows nanosecond time base", value, timescale)
 	}

@@ -53,9 +53,11 @@ func writeEvents(dir string, cfg CaptureConfig, plans []TrackPlan, rng *model.RN
 	for _, p := range plans {
 		for i := 0; i < p.Count; i++ {
 			keyframe := p.Track.kind == model.KindVideo && i%p.Track.keyEvery == 0
-			// Network delay trails the media time by a bounded random amount,
-			// kept below the packet spacing so arrive-order pairing is stable.
-			delay := model.Nanos(rng.Intn(6)) * model.Nanos(model.NanosPerMilli)
+			// The capture host stamps arrivals with sub-millisecond jitter.
+			// Jitter must stay well below the drift signal accumulated over a
+			// capture (120 ppm over 20 s is about 2.4 ms) or arrival-based
+			// slope estimation would be noise-dominated.
+			delay := model.Nanos(rng.Intn(400_000))
 			media := ticksToNanos(float64(p.NominalTicks[i]), p.Track.timescale)
 			events = append(events, genEvent{
 				trackID: p.Track.id, kind: p.Track.kind, ssrc: p.Track.ssrc,

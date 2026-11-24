@@ -42,7 +42,7 @@ func deriveRecords(acc []accepted, repairs []adminRepair, tracks map[uint32]mani
 	drift := sync.EstimateClockDrift(
 		observations(log, refTrack, model.KindVideo, 0),
 		observations(log, 0, model.KindAudio, firstAudioTrack(tracks, order)),
-		opts.DriftPPM,
+		sync.Config{MaxPPM: opts.DriftPPM, Window: 256, MinSamples: 8},
 	)
 	der.driftPPM = drift.PPM
 	der.driftClamped = drift.Clamped
