@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"tsforge/internal/dag"
 
 	"tsforge/internal/clock"
 	"tsforge/internal/fixture"
@@ -49,6 +50,8 @@ func main() {
 		err = runDemo(os.Args[2:])
 	case "verify":
 		err = runVerify(os.Args[2:])
+	case "run":
+		err = runProcess(os.Args[2:])
 	case "help", "-h", "--help":
 		usage()
 		return
@@ -75,6 +78,7 @@ func usage() {
 
 usage:
   tsforge demo   --seed N --out DIR
+  tsforge run    --input FILE --out DIR
   tsforge verify --input DIR
 
 demo generates synthetic clean and damaged masters, processes both through
@@ -307,6 +311,67 @@ func acceptance(res *pipeline.RunResult) (roundtrip, keyframeHit float64, err er
 	}
 	keyframeHit = float64(hits) / float64(seeks)
 	return roundtrip, keyframeHit, nil
+}
+
+// ---- run ----
+
+// runProcess processes one local TS master and returns the documented exit
+// codes: 0 verified, 2 damaged input/format, 3 a blocking dependency (an
+// unrecoverable timestamp or a failed upstream node), 4 a hash mismatch.
+func runProcess(args []string) error {
+	fs := flag.NewFlagSet("run", flag.ContinueOnError)
+	input := fs.String("input", "", "input MPEG-TS file")
+	out := fs.String("out", "", "output directory")
+	seed := fs.Int64("seed", 17, "run seed recorded in the manifest")
+	workers := fs.Int("workers", 4, "DAG worker count")
+	segSecs := fs.Int("segment-seconds", 2, "target segment duration in seconds")
+	cache := fs.String("cache", "", "DAG result cache directory (defaults to OUT/cache)")
+	noRecover := fs.Bool("no-recover", false, "disable reuse of verified cached results")
+	if err := fs.Parse(args); err != nil {
+		return exitCode{code: exitDamaged, message: err.Error()}
+	}
+	if *input == "" || *out == "" {
+		return exitCode{code: exitDamaged, message: "run: --input and --out are required"}
+	}
+	if _, err := os.Stat(*input); err != nil {
+		return exitCode{code: exitDamaged, message: fmt.Sprintf("run: %v", err)}
+	}
+	params := pipeline.DefaultParams()
+	params.Seed = *seed
+	params.SegmentTicks = int64(*segSecs) * clock.TimeScale
+	cacheDir := *cache
+	if cacheDir == "" {
+		cacheDir = filepath.Join(*out, "cache")
+	}
+	opts := pipeline.Options{Workers: *workers, CacheDir: cacheDir, AllowRecovery: !*noRecover}
+	res, err := pipeline.Run(context.Background(), *input, *out, params, opts)
+	if err != nil {
+		var blocked *pipeline.BlockedError
+		if errors.As(err, &blocked) {
+			fmt.Printf("blocked_by=clock\n")
+			fmt.Fprintln(os.Stderr, "tsforge:", err)
+			return exitCode{code: exitBlocked, message: ""}
+		}
+		// A failed node (blocking dependency) also maps to exit 3.
+		var failure *dag.Failure
+		if errors.As(err, &failure) {
+			fmt.Fprintf(os.Stderr, "tsforge: blocked_by=%s: %v\n", res.BlockedBy, err)
+			return exitCode{code: exitBlocked, message: ""}
+		}
+		return classifyRunError(err)
+	}
+	rep, err := verifyManifest(*out)
+	if err != nil {
+		return exitCode{code: exitMismatch, message: fmt.Sprintf("verify: %v", err)}
+	}
+	fmt.Printf("segments=%d\n", len(res.Segments))
+	fmt.Printf("segment_sha256_verified=%d/%d\n", rep.segmentsOK, rep.segmentsTotal)
+	fmt.Printf("recovered_nodes=%d\n", res.Recovered)
+	fmt.Printf("blocked_by=%s\n", res.BlockedBy)
+	if rep.segmentsOK != rep.segmentsTotal {
+		return exitCode{code: exitMismatch, message: "segment verification failed"}
+	}
+	return nil
 }
 
 // ---- verify ----

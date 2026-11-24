@@ -91,6 +91,36 @@ func TestDemoRequiresOut(t *testing.T) {
 	}
 }
 
+func TestRunExitCodes(t *testing.T) {
+	// Build the demo fixtures once so their inputs exist.
+	dir := filepath.Join(t.TempDir(), "demo")
+	if code := exitOf(t, func() error {
+		return runDemo([]string{"--seed", "17", "--out", dir})
+	}); code != exitOK {
+		t.Fatalf("demo exit=%d", code)
+	}
+	out := filepath.Join(t.TempDir(), "run")
+	// A clean master processes and verifies: exit 0.
+	if code := exitOf(t, func() error {
+		return runProcess([]string{"--input", filepath.Join(dir, "fixtures", "clean.ts"), "--out", out})
+	}); code != exitOK {
+		t.Fatalf("clean run exit=%d", code)
+	}
+	// A master with an unrecoverable timestamp is blocked: exit 3.
+	blockedOut := filepath.Join(t.TempDir(), "blocked")
+	if code := exitOf(t, func() error {
+		return runProcess([]string{"--input", filepath.Join(dir, "fixtures", "blocked.ts"), "--out", blockedOut})
+	}); code != exitBlocked {
+		t.Fatalf("blocked run exit=%d, want %d", code, exitBlocked)
+	}
+	// A missing input is a damaged-input error: exit 2.
+	if code := exitOf(t, func() error {
+		return runProcess([]string{"--input", filepath.Join(dir, "fixtures", "absent.ts"), "--out", out})
+	}); code != exitDamaged {
+		t.Fatalf("missing input exit=%d, want %d", code, exitDamaged)
+	}
+}
+
 func TestDemoDeterministicAcrossOutDirs(t *testing.T) {
 	// The same seed produces the same synthetic master content in any
 	// directory, and the emitted segments cite content, not paths, so segment
