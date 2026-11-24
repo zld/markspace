@@ -1,0 +1,16 @@
+# Compiled binaries
+/mediapipe
+/bin/
+*.exe
+*.out
+
+# Local demo work directories and checkpoints
+/.work/
+/work-*/
+checkpoint.json.tmp
+
+# OS/editor noise
+.DS_Store
+*.swp
+.idea/
+.vscode/
