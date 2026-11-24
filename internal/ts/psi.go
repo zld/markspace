@@ -3,7 +3,6 @@ package ts
 import (
 	"encoding/binary"
 	"fmt"
-	"hash/crc32"
 
 	"medpipe/internal/fault"
 )
@@ -63,11 +62,21 @@ type Section struct {
 	CRCOK           bool
 }
 
-var mpegCRC = crc32.MakeTable(0x04c11db7)
-
-// CRC32MPEG computes the MPEG-2 PSI CRC32.
+// CRC32MPEG computes the non-reflected MPEG-2 PSI CRC32:
+// polynomial 0x04C11DB7, initial value 0xFFFFFFFF, no final XOR.
 func CRC32MPEG(data []byte) uint32 {
-	return crc32.Update(0xffffffff, mpegCRC, data)
+	crc := uint32(0xffffffff)
+	for _, b := range data {
+		crc ^= uint32(b) << 24
+		for i := 0; i < 8; i++ {
+			if crc&0x80000000 != 0 {
+				crc = (crc << 1) ^ 0x04c11db7
+			} else {
+				crc <<= 1
+			}
+		}
+	}
+	return crc
 }
 
 // ParseSection parses and validates one complete PSI section. The returned

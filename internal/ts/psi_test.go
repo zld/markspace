@@ -18,6 +18,12 @@ func submit(t *testing.T, p *ts.PSIParser, pid uint16, section []byte) bool {
 	return committed
 }
 
+func TestMPEGCRC32CheckValue(t *testing.T) {
+	if got := ts.CRC32MPEG([]byte("123456789")); got != 0x0376e6e7 {
+		t.Fatalf("CRC=%08x want 0376e6e7", got)
+	}
+}
+
 func TestPATPMTVersionCommit(t *testing.T) {
 	p := ts.NewPSIParser()
 	if !submit(t, p, 0, samplegen.BuildPAT(0, samplegen.PMTPID)) {
