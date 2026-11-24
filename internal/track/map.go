@@ -22,6 +22,7 @@ type Rule struct {
 }
 
 type Mapping struct {
+	SourceID uint32      `json:"source_id"`
 	Source   model.Track `json:"source"`
 	TargetID uint32      `json:"target_id"`
 }
@@ -113,8 +114,11 @@ func PlanMapping(tracks []model.Track, rules []Rule) (*Plan, error) {
 		}
 		targets[rule.TargetID] = rule.SourceID
 		sources[rule.SourceID] = true
-		tr.ID = rule.TargetID
-		plan.Mappings = append(plan.Mappings, Mapping{Source: tr, TargetID: rule.TargetID})
+		mapped := tr
+		mapped.ID = rule.TargetID
+		plan.Mappings = append(plan.Mappings, Mapping{
+			SourceID: rule.SourceID, Source: mapped, TargetID: rule.TargetID,
+		})
 	}
 
 	for _, rule := range rules {
@@ -136,9 +140,6 @@ func PlanMapping(tracks []model.Track, rules []Rule) (*Plan, error) {
 func DefaultRules(tracks []model.Track) []Rule {
 	rules := make([]Rule, 0, len(tracks))
 	for _, tr := range tracks {
-		if tr.Type == model.TrackSubtitle || tr.Type == model.TrackChapter {
-			continue
-		}
 		rules = append(rules, Rule{
 			SourceID: tr.ID, TargetID: tr.ID, Type: tr.Type,
 			Required: tr.Type == model.TrackVideo || tr.Type == model.TrackAudio,
