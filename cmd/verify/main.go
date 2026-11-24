@@ -66,6 +66,9 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("parse AAC sample: %w", err)
 	}
+	if aacInfo.Samples != 1024 || aacInfo.SampleRateHz != 48000 {
+		return fmt.Errorf("AAC self-check returned %+v", aacInfo)
+	}
 
 	paramsHash, err := provenance.HashParameters(params)
 	if err != nil {
