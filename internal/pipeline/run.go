@@ -82,11 +82,6 @@ func Run(cfg Config) (*Report, error) {
 	}
 
 	rep := &Report{WorkDir: cfg.WorkDir, Status: man.Status, InputSHA256: inputSHA}
-	for _, s := range man.Stages {
-		if s.Status == "completed" {
-			rep.ReusedStages = append(rep.ReusedStages, string(s.Name))
-		}
-	}
 
 	format := man.Format
 	var blocks []media.CanonicalBlock
@@ -156,9 +151,13 @@ func Run(cfg Config) (*Report, error) {
 		if cfg.InterruptAfter == media.StageTransform {
 			return interrupt(cfg.WorkDir, man, rep, media.StageTransform)
 		}
-	} else if provenance != nil {
-		rep.Repairs = provenance.Decisions
-		rep.RepairCount = len(provenance.Decisions)
+	} else {
+		rep.ReusedStages = append(rep.ReusedStages,
+			string(media.StageParse), string(media.StageTransform))
+		if provenance != nil {
+			rep.Repairs = provenance.Decisions
+			rep.RepairCount = len(provenance.Decisions)
+		}
 	}
 
 	idx, indexSHA, iErr := loadIndexArtifact(cfg.WorkDir, man.IndexSHA256)
@@ -186,6 +185,7 @@ func Run(cfg Config) (*Report, error) {
 		}
 	} else {
 		indexSHA = man.IndexSHA256
+		rep.ReusedStages = append(rep.ReusedStages, string(media.StageIndex))
 	}
 	if cfg.InterruptAfter == media.StageIndex {
 		rep.IndexSHA256 = indexSHA
@@ -209,6 +209,8 @@ func Run(cfg Config) (*Report, error) {
 	}
 	if !verifyWasCompleted {
 		rep.RecomputedStages = append(rep.RecomputedStages, string(media.StageVerify))
+	} else {
+		rep.ReusedStages = append(rep.ReusedStages, string(media.StageVerify))
 	}
 	alignment := int64(0)
 	if provenance != nil {
