@@ -204,3 +204,28 @@ func TestBuildKeepsZeroDurationSample(t *testing.T) {
 		}
 	}
 }
+
+func TestSnapAtExactDistanceBoundary(t *testing.T) {
+	// A boundary exactly tol away from a cut may snap; cut points on both
+	// sides at equal distance resolve to the earlier one.
+	in := BaseBuild()
+	in.VideoSamples = videoAt(0, 2, 4)
+	in.Cues["s1"] = []Cue{{Track: subTrack(), Index: 1, Start: model.RatFromInt(1), End: model.RatFromInt(4), Text: "x"}}
+	in.Opts.Tolerance = model.RatFromInt(1)
+	res := Build(in)
+	if res.Snapped == 0 {
+		t.Fatal("a boundary exactly tol away should snap")
+	}
+	// The cue start at 1 is equidistant from cuts 0 and 2; the earlier must
+	// win, which keeps the result stable.
+	var start model.Rat
+	for _, it := range res.Items {
+		if it.Kind == ItemSubtitle {
+			start = it.Span.Start
+			break
+		}
+	}
+	if !start.Equal(model.RatFromInt(0)) {
+		t.Fatalf("equidistant snap chose %s, want 0", start)
+	}
+}
