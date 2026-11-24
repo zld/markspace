@@ -3,6 +3,7 @@ package sample
 import (
 	"os"
 
+	"mediapipe/internal/model"
 	"mediapipe/internal/stream"
 )
 
@@ -28,7 +29,7 @@ func CorruptRTPPayloads(path string, count int) error {
 	}
 	_, records, readErr := stream.ReadAll(f)
 	_ = f.Close()
-	if readErr != nil {
+	if readErr != nil && !model.IsClass(readErr, model.ErrorTruncated) {
 		return readErr
 	}
 	var rtpOffsets []int64

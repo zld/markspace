@@ -106,6 +106,13 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 				fmt.Sprintf("checkpoint digest %s does not match input %s", cp.InputSHA256, prepared.InputSHA), nil)
 		}
 		resumedFrom = cp.ProcessedPackets
+		opts.TargetBitrateBps = cp.TargetBitrateBps
+		opts.SegmentMs = cp.SegmentMs
+		opts.CheckpointPackets = cp.CheckpointPackets
+		opts.ReorderWindow = cp.ReorderWindow
+		opts.SilenceWindowMs = cp.SilenceWindowMs
+		opts.FingerprintWindowMs = cp.FingerprintWindowMs
+		opts.TimeToleranceMs = cp.TimeToleranceMs
 		if _, ierr := segment.ReadMP4Index(indexPath(opts.OutDir)); ierr != nil {
 			if err := RecoverIndexFromCheckpoint(opts.OutDir, cp); err != nil {
 				return nil, err
@@ -163,7 +170,8 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 		if opts.CheckpointPackets > 0 && processed%int64(opts.CheckpointPackets) == 0 {
 			checkpoint := &Checkpoint{
 				Version: CheckpointVersion, InputPath: opts.InputPath, InputSHA256: prepared.InputSHA,
-				ProcessedPackets: processed, SegmentMs: opts.SegmentMs, CheckpointPackets: opts.CheckpointPackets,
+				ProcessedPackets: processed, TargetBitrateBps: opts.TargetBitrateBps,
+				SegmentMs: opts.SegmentMs, CheckpointPackets: opts.CheckpointPackets,
 				ReorderWindow: opts.ReorderWindow, SilenceWindowMs: opts.SilenceWindowMs,
 				FingerprintWindowMs: opts.FingerprintWindowMs, TimeToleranceMs: opts.TimeToleranceMs,
 				Segments: segments, Windows: windows, Fingerprints: fingerprints,

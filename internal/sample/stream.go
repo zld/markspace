@@ -47,7 +47,7 @@ func Amplitude(frame int) int16 {
 	if segment == 3 {
 		return AmplitudeForMotif(0, relative)
 	}
-	return AmplitudeForMotif(segment+1, relative)
+	return AmplitudeForMotif(segment, relative)
 }
 
 func AmplitudeForMotif(seed, relative int) int16 {

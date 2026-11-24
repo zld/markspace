@@ -18,6 +18,7 @@ type Checkpoint struct {
 	InputPath           string                    `json:"input_path"`
 	InputSHA256         string                    `json:"input_sha256"`
 	ProcessedPackets    int64                     `json:"processed_packets"`
+	TargetBitrateBps    int                       `json:"target_bitrate_bps"`
 	SegmentMs           int64                     `json:"segment_ms"`
 	CheckpointPackets   int                       `json:"checkpoint_packets"`
 	ReorderWindow       int                       `json:"reorder_window"`
