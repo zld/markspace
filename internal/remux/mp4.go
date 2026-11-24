@@ -222,6 +222,19 @@ func (w *Writer) WriteSegment(src SegmentSource, outPath string) (*Segment, erro
 	seg.VideoTiming = TimingOf(vSamples)
 	seg.AudioTiming = TimingOf(aSamples)
 
+	// Compute the payload digest before building the file: the provenance
+	// uuid box embeds it, so it must be final by then. Each sample's SHA-256
+	// is concatenated and hashed again, matching the per-record digest the
+	// pipeline records in the index. This digest covers elementary bytes only
+	// and is independent of container options.
+	var ph strings.Builder
+	for _, s := range samples {
+		fh := sha256.Sum256(s.Data)
+		ph.WriteString(hex.EncodeToString(fh[:]))
+	}
+	psum := sha256.Sum256([]byte(ph.String()))
+	seg.PayloadHash = hex.EncodeToString(psum[:])
+
 	// Build the complete file in memory, then commit atomically: a crash
 	// mid-write can never leave a partial segment visible.
 	var buf bytes.Buffer
@@ -230,16 +243,6 @@ func (w *Writer) WriteSegment(src SegmentSource, outPath string) (*Segment, erro
 	}
 	sum := sha256.Sum256(buf.Bytes())
 	seg.SHA256 = hex.EncodeToString(sum[:])
-	// The payload digest covers elementary bytes only, independent of
-	// container options. Each sample's SHA-256 is concatenated and hashed
-	// again, matching the digest the pipeline records per index record.
-	var ph strings.Builder
-	for _, s := range samples {
-		fh := sha256.Sum256(s.Data)
-		ph.WriteString(hex.EncodeToString(fh[:]))
-	}
-	psum := sha256.Sum256([]byte(ph.String()))
-	seg.PayloadHash = hex.EncodeToString(psum[:])
 
 	if err := writeAtomic(outPath, buf.Bytes()); err != nil {
 		return nil, err

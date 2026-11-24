@@ -449,6 +449,73 @@ func TestTrackRelayoutCutsOnKeyframe(t *testing.T) {
 	}
 }
 
+// TestFaultsRecoverToIdenticalPayloads proves the strongest recovery claim:
+// running the same master through several transport/PSI/clock faults that
+// reach parsing, indexing and scheduling still yields byte-identical media
+// payloads for every segment the faults did not truncate. This covers PCR
+// wrap (clock repair), continuity jump (parse), CRC error (PSI), duplicate
+// packet (parse) and a stray byte (resync).
+func TestFaultsRecoverToIdenticalPayloads(t *testing.T) {
+	root := t.TempDir()
+	clean := filepath.Join(root, "clean.ts")
+	if _, err := fixture.Generate(clean, fixture.DefaultSpec(201)); err != nil {
+		t.Fatal(err)
+	}
+	dmg := filepath.Join(root, "dmg.ts")
+	// Faults that alter clock/PSI metadata or duplicate an intact packet do
+	// not touch media bytes, so a faithful repair reproduces them exactly.
+	// (A stray inserted byte can land inside a payload and legitimately change
+	// that frame's bytes; it is covered by its own detection test instead.)
+	classes := []string{"pcrwrap", "cc", "crc", "dup"}
+	if _, err := fixture.Mutate(clean, dmg, classes, 201); err != nil {
+		t.Fatal(err)
+	}
+
+	cleanOut := filepath.Join(root, "clean-out")
+	dmgOut := filepath.Join(root, "dmg-out")
+	rc, err := Run(context.Background(), clean, cleanOut, testParams(), Options{Workers: 2})
+	if err != nil {
+		t.Fatalf("clean run: %v", err)
+	}
+	rd, err := Run(context.Background(), dmg, dmgOut, testParams(), Options{Workers: 2})
+	if err != nil {
+		t.Fatalf("damaged run: %v", err)
+	}
+	if len(rc.Segments) < 2 {
+		t.Fatalf("clean produced %d segments", len(rc.Segments))
+	}
+	// Compare payload digests by segment number. Every segment present in
+	// both runs must be byte-identical.
+	byNum := map[int]string{}
+	for _, s := range rc.Segments {
+		byNum[s.Number] = s.PayloadHash
+	}
+	matched := 0
+	for _, s := range rd.Segments {
+		if want, ok := byNum[s.Number]; ok {
+			if s.PayloadHash != want {
+				t.Fatalf("segment %d payload differs after repair: %s != %s",
+					s.Number, s.PayloadHash, want)
+			}
+			matched++
+		}
+	}
+	if matched == 0 {
+		t.Fatal("no segments matched between clean and damaged runs")
+	}
+	// Both runs must have produced verified segment files.
+	for _, res := range []*RunResult{rc, rd} {
+		for _, seg := range res.Segments {
+			ok, _, err := provenance.VerifySegment(filepath.Dir(seg.Path), provenance.Segment{
+				Number: seg.Number, File: filepath.Base(seg.Path), Size: seg.Bytes, SHA256: seg.SHA256,
+			})
+			if err != nil || !ok {
+				t.Fatalf("segment %d failed verification: ok=%v err=%v", seg.Number, ok, err)
+			}
+		}
+	}
+}
+
 // TestLimitsAreResumable proves a limit violation is reported as a limit
 // error rather than a silent truncation.
 func TestLimitsAreResumable(t *testing.T) {

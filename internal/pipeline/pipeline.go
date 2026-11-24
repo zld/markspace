@@ -100,6 +100,10 @@ type assembler struct {
 	params  Params
 	samples []Sample
 	current map[uint16]*Sample
+	// pidOrder records the first appearance of each PID so final assembly is
+	// deterministic.
+	pidOrder []uint16
+	seenPID  map[uint16]bool
 	// snapshot in force when a sample's first packet was seen is captured
 	// per access unit, so a later PSI change never rewrites history.
 	snapAt     map[string]*ts.Snapshot
@@ -181,6 +185,10 @@ func (a *assembler) feed(p *ts.Packet) error {
 		}
 		dtsTicks = v
 	}
+	if !a.seenPID[p.PID] {
+		a.seenPID[p.PID] = true
+		a.pidOrder = append(a.pidOrder, p.PID)
+	}
 	a.current[p.PID] = &Sample{
 		PID: p.PID, Kind: kind,
 		Offsets:      []int64{p.Offset},
@@ -238,6 +246,7 @@ func Analyze(ctx context.Context, inputPath string, params Params) (*Analysis, e
 		unwrap:     clock.NewUnwrapper(params.Clock),
 		params:     params,
 		current:    make(map[uint16]*Sample),
+		seenPID:    make(map[uint16]bool),
 		snapAt:     make(map[string]*ts.Snapshot),
 		maxSamples: params.IndexLimit + 1,
 	}
@@ -262,8 +271,15 @@ func Analyze(ctx context.Context, inputPath string, params Params) (*Analysis, e
 			return nil, err
 		}
 	}
-	for _, cur := range a.current {
-		a.close(cur)
+	// Flush the final open access unit of each PID in a deterministic order.
+	// The PIDs are flushed in the order they first appeared, which is the
+	// source order, so the tail of the stream does not depend on Go's map
+	// iteration order.
+	for _, pid := range a.pidOrder {
+		if cur := a.current[pid]; cur != nil {
+			a.close(cur)
+			delete(a.current, pid)
+		}
 	}
 	// Recompute the payload hash of every sample from its cited packets.
 	for i := range a.samples {
