@@ -1,0 +1,8 @@
+# Compiled binaries
+/tsrepair
+/bin/
+*.test
+*.out
+
+# Local workspace
+.DS_Store
