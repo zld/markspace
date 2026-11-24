@@ -20,10 +20,10 @@ import (
 
 // Config controls one processing run.
 type Config struct {
-	QueueCapacity        int
-	SegmentPackets       int
-	Recover              bool
-	MaxBufferedPackets   int
+	QueueCapacity      int
+	SegmentPackets     int
+	Recover            bool
+	MaxBufferedPackets int
 }
 
 // Metrics is the terminal summary printed by the demo.
@@ -49,19 +49,19 @@ type Metrics struct {
 // goroutines, so mu serializes every access to the shared mutable state;
 // back-pressure still bounds memory through the pipeline queues.
 type Engine struct {
-	mu          sync.Mutex
-	cfg         Config
-	psi         *ts.PSITracker
-	cc          *repair.ContinuityChecker
-	tsCorr      *repair.TimestampCorrector
-	audio       *metadata.AudioNormalizer
-	video       *metadata.ColorNormalizer
-	builder     *index.Builder
-	hasher      *segment.Hasher
-	stream      *fixture.Stream
-	rawByOrd    map[int64][]byte
-	eligible    int // non-null packets that must traverse the pipeline
-	audioSeen   map[uint16]bool // PIDs whose descriptor was already validated
+	mu        sync.Mutex
+	cfg       Config
+	psi       *ts.PSITracker
+	cc        *repair.ContinuityChecker
+	tsCorr    *repair.TimestampCorrector
+	audio     *metadata.AudioNormalizer
+	video     *metadata.ColorNormalizer
+	builder   *index.Builder
+	hasher    *segment.Hasher
+	stream    *fixture.Stream
+	rawByOrd  map[int64][]byte
+	eligible  int // non-null packets that must traverse the pipeline
+	audioSeen map[uint16]bool // PIDs whose descriptor was already validated
 }
 
 // New assembles an engine for one fixture stream.
@@ -113,7 +113,6 @@ func (e *Engine) Run(ctx context.Context) (*Metrics, error) {
 	var pumpErr error
 	go func() {
 		defer close(source)
-		var ordinal int64
 		tr, pumpErr = ts.SplitPackets(e.stream.Data, func(p *ts.Packet) error {
 			if !p.IsNull() {
 				e.mu.Lock()
@@ -124,13 +123,10 @@ func (e *Engine) Run(ctx context.Context) (*Metrics, error) {
 			// segment ranges line up with rawByOrd even after duplicates or
 			// recovered drops.
 			ord := p.ByteOffset / int64(ts.PacketSize)
-			if ord > ordinal {
-				ordinal = ord
-			}
 			item := pipeline.Item{
-				Seq: ordinal, Offset: p.ByteOffset,
+				Seq: ord, Offset: p.ByteOffset,
 				Boundary: p.PayloadUnitStart,
-				Payload:  workItem{pkt: p, ordinal: ordinal},
+				Payload:  workItem{pkt: p, ordinal: ord},
 			}
 			select {
 			case source <- item:
@@ -154,203 +150,4 @@ func (e *Engine) Run(ctx context.Context) (*Metrics, error) {
 		return m, pumpErr
 	}
 	return m, err
-}
-
-// stagePSI applies the active mapping and rejects unknown PIDs fatally.
-func (e *Engine) stagePSI(_ context.Context, in pipeline.Item) (pipeline.Item, error) {
-	w := in.Payload.(workItem)
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	if err := e.psi.Observe(w.pkt); err != nil {
-		return in, err
-	}
-	if w.pkt.PID == ts.PIDPAT || w.pkt.IsNull() {
-		return in, nil
-	}
-	if e.psi.Active() == nil {
-		return in, repair.FatalMappingError(w.pkt)
-	}
-	if w.pkt.PID == e.psi.Active().PMTPID {
-		return in, nil
-	}
-	if _, ok := e.psi.Active().Lookup(w.pkt.PID); !ok {
-		return in, repair.FatalMappingError(w.pkt)
-	}
-	return in, nil
-}
-
-// stageRepair runs continuity and timestamp correction.
-func (e *Engine) stageRepair(_ context.Context, in pipeline.Item) (pipeline.Item, error) {
-	w := in.Payload.(workItem)
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	res, _ := e.cc.Check(w.pkt)
-	if res == repair.CheckDuplicate {
-		return in, model.New(model.StageContinuity, model.SeverityRecoverable,
-			"duplicate packet ignored")
-	}
-	if corr, err := e.tsCorr.ObservePCR(w.pkt); err != nil {
-		return in, err
-	} else if corr != nil {
-		w.pts = corr.Corrected
-		in.Payload = w
-	}
-	return in, nil
-}
-
-// stageMetadata validates audio descriptors and video color metadata.
-func (e *Engine) stageMetadata(_ context.Context, in pipeline.Item) (pipeline.Item, error) {
-	w := in.Payload.(workItem)
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	track, ok := e.psi.Active().Lookup(w.pkt.PID)
-	if !ok {
-		return in, nil
-	}
-	switch track.Kind {
-	case ts.KindAudio:
-		layout := metadata.LayoutStereo
-		rate := uint32(48000)
-		// The fixture places the layout marker at the fixed payload slot 2;
-		// scanning the whole stuffed payload would collide with data bytes.
-		if len(w.pkt.Payload) > 2 && w.pkt.Payload[2] == audioLayoutFaultMarker {
-			layout = metadata.LayoutUnknown
-		}
-		// A descriptor-level conflict is reported once per PID; every packet
-		// of that track still flows through the remaining stages.
-		if !e.audioSeen[w.pkt.PID] {
-			e.audioSeen[w.pkt.PID] = true
-			if _, err := e.audio.Normalize(metadata.AudioDescriptor{
-				PID: w.pkt.PID, Layout: layout, Channels: 2,
-				SampleRate: rate, FrameSizeBytes: 4,
-			}, w.pkt.ByteOffset); err != nil {
-				return in, err
-			}
-		}
-		if err := e.audio.CheckDivisible(w.pkt.PID,
-			len(w.pkt.Payload), 4, w.pkt.ByteOffset); err != nil {
-			return in, err
-		}
-	case ts.KindVideo:
-		res := e.video.Normalize(
-			metadata.ColorMetadata{PID: w.pkt.PID, ColorPrimaries: 9,
-				TransferCharacteristics: 16, MatrixCoefficients: 9},
-			metadata.ColorMetadata{PID: w.pkt.PID}, w.pkt.ByteOffset)
-		_ = res
-	}
-	return in, nil
-}
-
-// stageIndex admits verified keyframes and feeds segment hashing.
-func (e *Engine) stageIndex(_ context.Context, in pipeline.Item) (pipeline.Item, error) {
-	w := in.Payload.(workItem)
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	res := e.builder.Consider(w.pkt, w.ordinal, w.pts)
-	if res.Admitted {
-		e.hasher.NoteKeyframe(len(e.builder.Build().Frames) - 1)
-	}
-	e.hasher.AddPacket(w.ordinal, w.pkt.ByteOffset, w.pts, w.pkt.Raw)
-	e.rawByOrd[w.ordinal] = w.pkt.Raw
-	return in, nil
-}
-
-func (e *Engine) finalize(stats *pipeline.Stats, tr *ts.TruncatedRange, runErr error) (*Metrics, error) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	ix := e.builder.Build()
-	summaries := e.hasher.Summaries()
-	segment.AttachIndexRanges(summaries, ix)
-	hashOK, hashTotal := e.verifyHashes(summaries)
-	hits, seeks := e.verifyKeyframes(ix)
-	ccStats := e.cc.Stats()
-	m := &Metrics{
-		PacketsAccepted:    stats.Processed,
-		RepairedWraps:      e.tsCorr.WrapCount(),
-		IgnoredDuplicates:  len(ccStats.Duplicates),
-		ContinuityGaps:     len(ccStats.Gaps),
-		PSIVersions:        len(e.psi.Boundaries()),
-		AudioErrors:        e.audio.ErrorCount(),
-		TruncatedBytes:     truncatedLen(tr),
-		MaxQueueDepth:      stats.MaxQueueDepth,
-		SegmentCount:       len(summaries),
-		RecoveredDrops:     stats.Recovered,
-		HashMatchPct:       pct(hashOK, hashTotal),
-		KeyframeHitRatePct: pct(hits, seeks),
-		ParseRoundtripPct:  e.roundtripPct(stats),
-	}
-	m.PacketsIn = e.stream.TotalPackets
-	if se := model.AsStreamError(runErr); se != nil {
-		// Non-recover mode surfaces every classified stage fault; recover
-		// mode leaves runErr nil because the runner already handled it.
-		m.Fatal = se
-		return m, se
-	}
-	return m, nil
-}
-// verifyHashes recomputes every fully-confirmed segment digest from the
-// stored raw packets. Segments containing recovered (dropped) packets cannot
-// be re-verified byte-for-byte and are excluded rather than counted as misses.
-func (e *Engine) verifyHashes(summaries []segment.Summary) (ok, total int) {
-	for _, s := range summaries {
-		var buf []byte
-		complete := true
-		// Re-hash exactly the ordinals the segment was built from; the
-		// summary makes the membership auditable for independent nodes.
-		for _, ord := range s.Ordinals {
-			raw, exists := e.rawByOrd[ord]
-			if !exists {
-				complete = false
-				break
-			}
-			buf = append(buf, raw...)
-		}
-		if !complete {
-			continue
-		}
-		total++
-		if s.Recompute(buf) {
-			ok++
-		}
-	}
-	return ok, total
-}
-
-// verifyKeyframes reads every indexed frame back from the complete stream.
-func (e *Engine) verifyKeyframes(ix *index.Index) (hits, seeks int) {
-	for _, f := range ix.Frames {
-		seeks++
-		if err := ix.VerifySeek(f, e.stream.CompleteData); err == nil {
-			hits++
-		}
-	}
-	return hits, seeks
-}
-
-func (e *Engine) roundtripPct(stats *pipeline.Stats) float64 {
-	// Round-trip measures how much of the eligible (non-null) input survived
-	// into confirmed work; null stuffing is never part of the media timeline.
-	eligible := e.eligible
-	if eligible == 0 {
-		return 100
-	}
-	return pct(stats.Processed, eligible)
-}
-
-// audioLayoutFaultMarker is the fixed-slot marker injected by the fixture's
-// audio-layout fault; it is read only at payload index 2, never by scanning.
-const audioLayoutFaultMarker byte = 0x33
-
-func truncatedLen(tr *ts.TruncatedRange) int {
-	if tr == nil {
-		return 0
-	}
-	return tr.Length
-}
-
-func pct(part, total int) float64 {
-	if total == 0 {
-		return 100
-	}
-	return float64(part) * 100 / float64(total)
 }
