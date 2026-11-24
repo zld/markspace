@@ -46,6 +46,13 @@ func ParseEDL(r io.Reader) (*EDL, error) {
 	return &e, nil
 }
 
+// WriteEDL writes an EDL as deterministic indented JSON.
+func WriteEDL(w io.Writer, e *EDL) error {
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(e)
+}
+
 // Validate checks the list against the set of known tracks. Missing
 // tracks, negative durations and contradictory boundaries are located
 // to the offending track and fail; nothing is silently rewritten.
