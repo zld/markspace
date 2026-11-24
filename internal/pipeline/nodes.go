@@ -84,7 +84,7 @@ func (e *Engine) runParse(name string) error {
 			if isEOF(rerr) {
 				break
 			}
-			return rerr
+			return annotate(rerr, name)
 		}
 		frames = append(frames, f)
 	}
@@ -232,7 +232,7 @@ func (e *Engine) runSync(name string) error {
 			break
 		}
 		if rerr != nil {
-			return rerr
+			return annotate(rerr, name)
 		}
 		ticks := tl.Convert(uint64(fixture.VideoStep), uint64(fixture.VideoRate))
 		start := tl.Cursor(clock.KindVideo) + e.cfg.VideoDelayTicks

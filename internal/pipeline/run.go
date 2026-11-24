@@ -107,6 +107,19 @@ func asMedia(err error, node string) *mpierr.MediaError {
 	return mpierr.New(mpierr.CatUnknown, 0, node, err.Error())
 }
 
+// annotate stamps the observing node onto a structured media error so every
+// surfaced error carries its dependency-graph origin.
+func annotate(err error, node string) error {
+	var me *mpierr.MediaError
+	if errors.As(err, &me) {
+		if me.Node == "" {
+			me.Node = node
+		}
+		return me
+	}
+	return mpierr.New(mpierr.CatUnknown, 0, node, err.Error())
+}
+
 // hashIfExists returns the SHA-256 of path, or "" when it does not exist.
 func hashIfExists(path string) string {
 	f, err := os.Open(path)
