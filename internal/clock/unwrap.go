@@ -5,10 +5,10 @@ import "fmt"
 // WrapEvent marks a detected modulo-2^32 rollover. Offset is the ordinal
 // position of the sample (within its source) at which it was observed.
 type WrapEvent struct {
-	Offset      int   `json:"offset"`
+	Offset      int    `json:"offset"`
 	FromWrapped uint32 `json:"from_wrapped"`
 	ToWrapped   uint32 `json:"to_wrapped"`
-	Expanded    int64 `json:"expanded_value"`
+	Expanded    int64  `json:"expanded_value"`
 }
 
 // Unwrapper expands 32-bit RTP-style timestamps into a monotonic 64-bit
@@ -16,12 +16,12 @@ type WrapEvent struct {
 // crossed 2^32) from a genuine backward jump, which must never be silently
 // treated as a new segment boundary.
 type Unwrapper struct {
-	last       int64
-	haveLast   bool
-	wraps      []WrapEvent
-	sample     int
-	negJumps   int
-	lastNegAt  int
+	last      int64
+	haveLast  bool
+	wraps     []WrapEvent
+	sample    int
+	negJumps  int
+	lastNegAt int
 }
 
 // NewUnwrapper returns a ready unwrapper.

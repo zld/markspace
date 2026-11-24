@@ -10,10 +10,10 @@ import "fmt"
 type Stage string
 
 const (
-	StageManifest Stage = "manifest"
-	StageParse    Stage = "parse"
+	StageManifest  Stage = "manifest"
+	StageParse     Stage = "parse"
 	StageTransform Stage = "transform"
-	StageValidate Stage = "validate"
+	StageValidate  Stage = "validate"
 )
 
 // Severity ranks records. Errors stop safe processing of the affected
@@ -42,11 +42,11 @@ const (
 
 // Record is a single, reproducible finding.
 type Record struct {
-	Stage      Stage    `json:"stage"`
-	Severity   Severity `json:"severity"`
-	Kind       Kind     `json:"kind"`
-	Segment    string   `json:"segment"`
-	MediaSeq   uint64   `json:"media_seq"`
+	Stage    Stage    `json:"stage"`
+	Severity Severity `json:"severity"`
+	Kind     Kind     `json:"kind"`
+	Segment  string   `json:"segment"`
+	MediaSeq uint64   `json:"media_seq"`
 	// SourceOffset is the offset inside the originating manifest/plain
 	// text at which the problem was located (0 when not applicable).
 	SourceOffset int64 `json:"source_offset"`
@@ -54,7 +54,7 @@ type Record struct {
 	ByteOffset int64 `json:"byte_offset"`
 	// SafeBoundary is the first byte that cannot be parsed safely after
 	// the fault; -1 when no boundary is implied.
-	SafeBoundary int64 `json:"safe_boundary"`
+	SafeBoundary int64  `json:"safe_boundary"`
 	Message      string `json:"message"`
 }
 

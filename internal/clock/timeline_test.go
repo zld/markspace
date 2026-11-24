@@ -73,7 +73,7 @@ func TestTimelineMapping(t *testing.T) {
 	if tl.At(180000).Cmp(NewRat(1, 1)) != 0 {
 		t.Fatalf("tick mapping = %v", tl.At(180000))
 	}
-	tl.SetDriftPPM(100) // clock runs 100 ppm fast
+	tl.SetDriftPPM(100)              // clock runs 100 ppm fast
 	got := tl.Correct(90000 + 90000) // one raw second
 	// Expected 1/1.0001 s -> 999900 microseconds.
 	if got.Cmp(NewRat(999900, 1_000_000)) != 0 {
