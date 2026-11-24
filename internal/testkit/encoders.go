@@ -22,17 +22,26 @@ func encNAL(nalType byte, payload []byte) []byte {
 	return append(out, payload...)
 }
 
+// frameBody produces a deterministic payload of the requested size.
+func frameBody(i, size int, fill byte) []byte {
+	body := make([]byte, size)
+	for j := range body {
+		body[j] = fill ^ byte(i) ^ byte(j)
+	}
+	return body
+}
+
 // encH264Stream builds an Annex B H.264 stream of n frames with an IDR
 // every keyEvery frames, plus SPS/PPS metadata up front.
-func encH264Stream(n, keyEvery int) []byte {
+func encH264Stream(n, keyEvery, payloadSize int) []byte {
 	var out []byte
 	out = append(out, encNAL(0x67, []byte{0x10, 0x0a})...) // SPS
 	out = append(out, encNAL(0x68, []byte{0xee})...)       // PPS
 	for i := 0; i < n; i++ {
 		if i%keyEvery == 0 {
-			out = append(out, encNAL(0x65, []byte{byte(i), 0xaa})...) // IDR
+			out = append(out, encNAL(0x65, frameBody(i, payloadSize, 0xaa))...) // IDR
 		} else {
-			out = append(out, encNAL(0x41, []byte{byte(i), 0xbb})...) // non-IDR slice
+			out = append(out, encNAL(0x41, frameBody(i, payloadSize, 0xbb))...) // non-IDR slice
 		}
 	}
 	return out
@@ -40,17 +49,17 @@ func encH264Stream(n, keyEvery int) []byte {
 
 // encH265Stream builds an Annex B H.265 stream of n frames, IDR every
 // keyEvery frames, preceded by VPS/SPS/PPS.
-func encH265Stream(n, keyEvery int) []byte {
+func encH265Stream(n, keyEvery, payloadSize int) []byte {
 	var out []byte
 	out = append(out, encNAL(0x40, []byte{0x01})...) // VPS (type 32)
 	out = append(out, encNAL(0x42, []byte{0x02})...) // SPS (type 33)
 	out = append(out, encNAL(0x44, []byte{0x03})...) // PPS (type 34)
 	for i := 0; i < n; i++ {
-		payload := []byte{byte(i), 0xcc}
+		body := frameBody(i, payloadSize, 0xcc)
 		if i%keyEvery == 0 {
-			out = append(out, encNAL(0x26, payload)...) // IDR_W_RADL (type 19)
+			out = append(out, encNAL(0x26, body)...) // IDR_W_RADL (type 19)
 		} else {
-			out = append(out, encNAL(0x02, payload)...) // TRAIL_R (type 1)
+			out = append(out, encNAL(0x02, body)...) // TRAIL_R (type 1)
 		}
 	}
 	return out
@@ -75,15 +84,16 @@ func encOBU(obuType int, payload []byte) []byte {
 
 // encAV1Stream builds a low-overhead AV1 stream of n frames; every
 // keyEvery-th frame is a KEY_FRAME, others are INTER frames.
-func encAV1Stream(n, keyEvery int) []byte {
+func encAV1Stream(n, keyEvery, payloadSize int) []byte {
 	var out []byte
 	out = append(out, encOBU(adapter.OBUTypeSeqHeaderForTest(), []byte{0x01, 0x42})...)
 	for i := 0; i < n; i++ {
-		var first byte = 0x40 // show_existing=0, frame_type=INTER
+		first := byte(0x40) // show_existing=0, frame_type=INTER
 		if i%keyEvery == 0 {
 			first = 0x00 // KEY_FRAME
 		}
-		out = append(out, encOBU(adapter.OBUTypeFrameForTest(), []byte{first, byte(i), 0x77})...)
+		body := append([]byte{first, byte(i)}, frameBody(i, payloadSize, 0x77)...)
+		out = append(out, encOBU(adapter.OBUTypeFrameForTest(), body)...)
 	}
 	return out
 }

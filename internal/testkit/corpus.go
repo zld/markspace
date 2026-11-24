@@ -67,8 +67,11 @@ func Generate(codec, scenario string, seed int64, chunkBytes int64) (*Corpus, er
 	rng := newRNG(seed)
 	n := defaultFrames + rng.intn(5) // 24..28 frames, seed-dependent
 	keyEvery := defaultKeyEvery
+	// Scale frame payloads so the stream spans several chunks even for large
+	// --chunk-bytes values, keeping interruption and resume demonstrable.
+	payloadSize := targetPayloadSize(chunkBytes, n)
 
-	stream := encodeStream(codec, n, keyEvery, rng)
+	stream := encodeStream(codec, n, keyEvery, payloadSize, rng)
 	if scenario == ScenarioBoundary {
 		stream = alignKeyframeToBoundary(codec, stream, chunkBytes)
 	}
@@ -94,14 +97,27 @@ func Generate(codec, scenario string, seed int64, chunkBytes int64) (*Corpus, er
 	return c, nil
 }
 
-func encodeStream(codec string, n, keyEvery int, rng *lcg) []byte {
+// targetPayloadSize chooses per-frame payload bytes so the fixture spans at
+// least four chunks while keeping every unit smaller than one chunk.
+func targetPayloadSize(chunkBytes int64, frames int) int {
+	target := int(chunkBytes) / 4
+	if target < 4 {
+		target = 4
+	}
+	if target > 4096 {
+		target = 4096
+	}
+	return target
+}
+
+func encodeStream(codec string, n, keyEvery, payloadSize int, rng *lcg) []byte {
 	switch codec {
 	case "h264":
-		return jitterAnnexB(encH264Stream(n, keyEvery), rng)
+		return jitterAnnexB(encH264Stream(n, keyEvery, payloadSize), rng)
 	case "h265":
-		return jitterAnnexB(encH265Stream(n, keyEvery), rng)
+		return jitterAnnexB(encH265Stream(n, keyEvery, payloadSize), rng)
 	default:
-		return jitterAV1(encAV1Stream(n, keyEvery), rng)
+		return jitterAV1(encAV1Stream(n, keyEvery, payloadSize), rng)
 	}
 }
 
