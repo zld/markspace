@@ -96,7 +96,14 @@ func (s *Slicer) Observe(ev ts.TrackEvent, errs []clock.RangeError) {
 		s.blocked[ev.TrackID] = false
 	}
 	cur.End = ev.End
-	cur.Bytes += int64(len(ev.Payload))
+	// Bitrate accounts for whole TS packets so the measured rate uses the
+	// same byte basis as the whole-stream target; payload bytes remain the
+	// basis for content fingerprinting elsewhere.
+	if ev.PacketBytes > 0 {
+		cur.Bytes += ev.PacketBytes
+	} else {
+		cur.Bytes += int64(len(ev.Payload))
+	}
 	duration := cur.End - cur.Start
 	if duration >= s.cfg.TargetTicks-s.cfg.ToleranceTicks {
 		s.closeAt(ev.TrackID, cur.End)

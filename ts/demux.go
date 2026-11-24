@@ -19,7 +19,10 @@ type TrackEvent struct {
 	Offset  int64
 	Start   int64 // monotonic tick at which this payload begins
 	End     int64 // monotonic tick at which the next packet begins
-	Payload []byte
+	// PacketBytes is the full MPEG-TS packet size, used for stream bitrate so
+	// the measured rate matches the whole-packet target rather than payload.
+	PacketBytes int64
+	Payload     []byte
 }
 
 // DemuxResult collects everything the TS subsystem establishes.
@@ -95,7 +98,8 @@ func Demux(r io.Reader, opts ScanOptions) (*DemuxResult, error) {
 		}
 		ev := TrackEvent{
 			TrackID: trackID(psi, p.PID), PID: p.PID, Ordinal: ordinal,
-			Offset: p.Offset, Payload: append([]byte{}, p.Payload...),
+			Offset: p.Offset, PacketBytes: PacketSize,
+			Payload: append([]byte{}, p.Payload...),
 		}
 		if st, ok := lastTick[p.PID]; ok {
 			// Extend the previous event to this packet's interpolated tick.
