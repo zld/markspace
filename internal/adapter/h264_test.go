@@ -32,10 +32,10 @@ func TestH264Classification(t *testing.T) {
 
 func TestH264SplitterFullStream(t *testing.T) {
 	stream := bytes.Join([][]byte{
-		buildNAL([]byte{0, 0, 0, 1}, 0x67, []byte{1, 2, 3}),       // SPS
-		buildNAL([]byte{0, 0, 1}, 0x68, []byte{4}),                // PPS, 3-byte SC
+		buildNAL([]byte{0, 0, 0, 1}, 0x67, []byte{1, 2, 3}),             // SPS
+		buildNAL([]byte{0, 0, 1}, 0x68, []byte{4}),                      // PPS, 3-byte SC
 		buildNAL([]byte{0, 0, 0, 1}, 0x65, bytes.Repeat([]byte{9}, 10)), // IDR
-		buildNAL([]byte{0, 0, 1}, 0x41, bytes.Repeat([]byte{7}, 8)),    // P slice
+		buildNAL([]byte{0, 0, 1}, 0x41, bytes.Repeat([]byte{7}, 8)),     // P slice
 	}, nil)
 
 	a, err := Get("h264", H264Version)

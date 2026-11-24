@@ -37,8 +37,8 @@ type Adapter interface {
 }
 
 var (
-	regMu     sync.RWMutex
-	registry  = map[string]map[string]Adapter{}
+	regMu    sync.RWMutex
+	registry = map[string]map[string]Adapter{}
 )
 
 // Register installs an adapter version. It panics on duplicate registration
