@@ -19,18 +19,20 @@ type KeyframeEntry struct {
 
 // TrackIndex is the scan result for one track.
 type TrackIndex struct {
-	TrackID   uint32          `json:"track_id"`
-	TargetID  uint32          `json:"target_id"`
-	Kind      TrackKind       `json:"kind"`
-	Codec     string          `json:"codec"`
-	Timescale uint32          `json:"timescale"`
-	Samples   int             `json:"samples"`
-	Duration  int64           `json:"duration"`
-	Bytes     int64           `json:"bytes"`
-	Keyframes []KeyframeEntry `json:"keyframes"`
-	Sizes     []int64         `json:"sizes"`
-	TrackHash string          `json:"track_hash"`
-	Preserved bool            `json:"preserved"`
+	TrackID    uint32          `json:"track_id"`
+	TargetID   uint32          `json:"target_id"`
+	Kind       TrackKind       `json:"kind"`
+	Codec      string          `json:"codec"`
+	Timescale  uint32          `json:"timescale"`
+	Samples    int             `json:"samples"`
+	StartTicks int64           `json:"start_ticks"`
+	EndTicks   int64           `json:"end_ticks"`
+	Duration   int64           `json:"duration"`
+	Bytes      int64           `json:"bytes"`
+	Keyframes  []KeyframeEntry `json:"keyframes"`
+	Sizes      []int64         `json:"sizes"`
+	TrackHash  string          `json:"track_hash"`
+	Preserved  bool            `json:"preserved"`
 }
 
 // Segment is a contiguous sample range that starts on a keyframe.
@@ -170,15 +172,17 @@ func scanTrack(src *Track, target uint32) (*TrackIndex, error) {
 		return nil, fail(KindIndex, "scan", "track %d has zero timescale", src.ID)
 	}
 	ti := &TrackIndex{
-		TrackID:   src.ID,
-		TargetID:  target,
-		Kind:      src.Kind,
-		Codec:     src.Codec,
-		Timescale: src.Timescale,
-		Samples:   len(src.Samples),
-		Duration:  src.EndTicks - src.StartTicks,
-		Preserved: src.Unknown,
-		TrackHash: trackDigest(src),
+		TrackID:    src.ID,
+		TargetID:   target,
+		Kind:       src.Kind,
+		Codec:      src.Codec,
+		Timescale:  src.Timescale,
+		Samples:    len(src.Samples),
+		StartTicks: src.StartTicks,
+		EndTicks:   src.EndTicks,
+		Duration:   src.EndTicks - src.StartTicks,
+		Preserved:  src.Unknown,
+		TrackHash:  trackDigest(src),
 	}
 	var prevDTS int64
 	for i, s := range src.Samples {
