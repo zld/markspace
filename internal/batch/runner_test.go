@@ -106,6 +106,61 @@ func TestInterruptThenResumeSkipsProcessedBlocks(t *testing.T) {
 	}
 }
 
+func TestResumeDoesLessWorkAndReportsTiming(t *testing.T) {
+	dir := t.TempDir()
+	// A larger input makes the difference between full and resumed work
+	// observable rather than rounding to zero.
+	spec := fixture.Spec{
+		Seed: 9, Codecs: []string{"V_VP9", "A_OPUS"},
+		Clusters: 8, FramesPerTrack: 4, PayloadMin: 2048, PayloadMax: 4096,
+	}
+	raw, _ := fixture.Build(spec, fixture.CorruptNone)
+	in := Input(raw)
+	total := countBlocks(t, raw)
+
+	// Full run baseline.
+	full := New(Options{
+		InputPath: filepath.Join(dir, "full.webm"),
+		IndexDir:  filepath.Join(dir, "full-idx"), BatchSize: 4,
+	})
+	var fullOut bytes.Buffer
+	fullRes, err := full.Execute(in, &fullOut)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fullRes.NewBlocks != total {
+		t.Fatalf("full run should process all %d blocks, got %d", total, fullRes.NewBlocks)
+	}
+
+	// Interrupted then resumed run.
+	index := filepath.Join(dir, "resume-idx")
+	first := New(Options{
+		InputPath: filepath.Join(dir, "in.webm"),
+		IndexDir:  index, BatchSize: 4, InterruptAfter: 12,
+	})
+	var firstOut bytes.Buffer
+	if _, err := first.Execute(in, &firstOut); err != nil {
+		t.Fatal(err)
+	}
+	second := New(Options{
+		InputPath: filepath.Join(dir, "in.webm"),
+		IndexDir:  index, BatchSize: 4,
+	})
+	var secondOut bytes.Buffer
+	resumeRes, err := second.Execute(in, &secondOut)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The resumed run strictly reprocesses fewer blocks than a full run.
+	if resumeRes.NewBlocks <= 0 || resumeRes.NewBlocks >= fullRes.NewBlocks {
+		t.Fatalf("resume must do less work: resume=%d full=%d",
+			resumeRes.NewBlocks, fullRes.NewBlocks)
+	}
+	if !resumeRes.Resume.Resumed || resumeRes.ElapsedMS < 0 {
+		t.Fatalf("resume metadata wrong: %+v", resumeRes.Resume)
+	}
+}
+
 func TestResumeDigestMatchesCleanRun(t *testing.T) {
 	dir := t.TempDir()
 	in := Input(sampleInput(t))
@@ -158,36 +213,6 @@ func TestResumeDigestMatchesCleanRun(t *testing.T) {
 	// Resume info confirms a real checkpoint was honored.
 	if !resumeRes.Resume.Resumed || resumeRes.Resume.ResumeBlock != 3 {
 		t.Fatalf("resume not honored: %+v", resumeRes.Resume)
-	}
-}
-
-func TestResumeFasterThanFullRun(t *testing.T) {
-	dir := t.TempDir()
-	in := Input(sampleInput(t))
-	index := filepath.Join(dir, "index")
-
-	r1 := New(Options{
-		InputPath: filepath.Join(dir, "in.webm"),
-		IndexDir:  index, BatchSize: 2, InterruptAfter: 6,
-	})
-	var out1 bytes.Buffer
-	if _, err := r1.Execute(in, &out1); err != nil {
-		t.Fatal(err)
-	}
-	r2 := New(Options{
-		InputPath: filepath.Join(dir, "in.webm"),
-		IndexDir:  index, BatchSize: 2,
-	})
-	var out2 bytes.Buffer
-	resumed, err := r2.Execute(in, &out2)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Resume reports an elapsed time (the runner also exposes it). It must
-	// be a non-negative measured duration; structural correctness is the
-	// stronger guarantee, timing is asserted loosely to avoid flaky CI.
-	if resumed.ElapsedMS < 0 {
-		t.Fatalf("negative elapsed time %d", resumed.ElapsedMS)
 	}
 }
 

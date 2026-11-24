@@ -40,11 +40,16 @@ type ResumeInfo struct {
 
 // Outcome is the complete result of a run, including timing and the digest.
 type Outcome struct {
-	Report        *verify.Report
-	Resume        ResumeInfo
-	ElapsedMS     int64
-	OutputPath    string
+	Report *verify.Report
+	Resume ResumeInfo
+	// ElapsedMS is the wall-clock duration of this run.
+	ElapsedMS int64
+	// NewBlocks counts blocks actually processed after any checkpoint skip.
+	// A resumed run has fewer of these than a full run, which is the
+	// deterministic reason its elapsed time is lower.
+	NewBlocks     int
 	BlocksWritten int
+	OutputPath    string
 	// MuxResult is non-nil when remuxing produced a container.
 	MuxResult *mux.Result
 }
@@ -169,6 +174,7 @@ func (r *Runner) Execute(in *runInput, outWriter *bytes.Buffer) (*Outcome, error
 	}
 	out.MuxResult = res
 	out.BlocksWritten = len(packets)
+	out.NewBlocks = newBlocks
 	out.Report = acc.Finalize(nil)
 	out.ElapsedMS = time.Since(start).Milliseconds()
 	if interrupted {
