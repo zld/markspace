@@ -42,17 +42,21 @@ func walkBoxes(r io.ReadSeeker, start, end int64, depth, trackIndex int, trackCo
 		if int64(bi.HeaderSize) <= 0 || headerEnd > end {
 			return &model.ParseError{BoxType: bi.Type.String(), ByteOffset: pos, Err: errors.New("invalid box header size")}
 		}
+		if bi.Size > uint64(^uint64(0)>>1) || uint64(pos)+bi.Size > uint64(1<<62) {
+			return &model.ParseError{BoxType: bi.Type.String(), ByteOffset: pos, Err: errors.New("box size overflow")}
+		}
 		boxEnd := pos + int64(bi.Size)
 		if bi.Size == 0 && bi.ExtendToEOF {
 			boxEnd = end
 		}
-		if bi.Size < bi.HeaderSize || boxEnd > end || boxEnd < headerEnd {
+		if bi.Size < bi.HeaderSize || boxEnd < headerEnd {
 			return &model.ParseError{
 				BoxType:    bi.Type.String(),
 				ByteOffset: pos,
-				Err:        fmt.Errorf("box size %d exceeds parent end %d", bi.Size, end),
+				Err:        fmt.Errorf("invalid box size %d", bi.Size),
 			}
 		}
+		outsideParent := boxEnd > end
 
 		currentTrack := trackIndex
 		if bi.Type == mp4.BoxTypeTrak() {
@@ -66,6 +70,34 @@ func walkBoxes(r io.ReadSeeker, start, end int64, depth, trackIndex int, trackCo
 			HeaderSize: int(bi.HeaderSize),
 			Depth:      depth,
 			TrackIndex: currentTrack,
+		}
+
+		// A truncated container can still contain a fully readable deeper box
+		// header. Recurse first so the reported offset is the deepest necessary
+		// box rather than only its outermost ancestor.
+		if outsideParent && containerBoxes[bi.Type] && headerEnd < end {
+			walkEnd := boxEnd
+			if walkEnd <= headerEnd || walkEnd > 1<<62 {
+				walkEnd = end
+			}
+			if err := walkBoxes(r, headerEnd, walkEnd, depth+1, currentTrack, trackCount, cfg, f); err != nil {
+				return err
+			}
+			return &model.ParseError{
+				BoxType:    bi.Type.String(),
+				ByteOffset: pos,
+				Err:        fmt.Errorf("box size %d exceeds available end %d", bi.Size, end),
+			}
+		}
+		if outsideParent {
+			if err := parsePayload(r, bi, pos, rb); err != nil {
+				return err
+			}
+			return &model.ParseError{
+				BoxType:    bi.Type.String(),
+				ByteOffset: pos,
+				Err:        fmt.Errorf("box size %d exceeds available end %d", bi.Size, end),
+			}
 		}
 		if err := parsePayload(r, bi, pos, rb); err != nil {
 			return err
