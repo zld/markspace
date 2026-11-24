@@ -1,5 +1,10 @@
 package pipeline
 
+import (
+	"archive/internal/normalize"
+	"archive/internal/timeline"
+)
+
 // Options controls one demo run.
 type Options struct {
 	OutDir     string
@@ -63,4 +68,14 @@ type Result struct {
 	Summary  *Summary
 	ExitCode int
 	Err      error
+}
+
+// trackView is the subset of a composed track the transport scenarios need.
+type trackView struct {
+	ID         string
+	Resolution *normalize.Resolution
+}
+
+func viewOf(t *timeline.Track) trackView {
+	return trackView{ID: t.ID, Resolution: t.Resolution}
 }
