@@ -2,6 +2,7 @@ package fixture
 
 import (
 	"fmt"
+	"math"
 	"strings"
 )
 
@@ -9,6 +10,7 @@ import (
 // generator injects. All fields are deterministic.
 type ScenarioConfig struct {
 	Segments          int
+	SamplesPerSegment int
 	Timescale         uint32
 	VFR               bool
 	TimestampWrap     bool
@@ -44,7 +46,8 @@ type GeneratedSegment struct {
 // DefaultConfig returns a clean 4-segment baseline.
 func DefaultConfig() ScenarioConfig {
 	return ScenarioConfig{
-		Segments: 4, Timescale: 1000, TruncateTarget: 1,
+		Segments: 4, SamplesPerSegment: 4, Timescale: 1000,
+		TruncateTarget: 1,
 	}
 }
 
@@ -70,7 +73,14 @@ func BuildScenario(cfg ScenarioConfig) (*Scenario, error) {
 		// Start close to the 32-bit boundary so later segments cross it.
 		base = (1 << 32) - uint64(cfg.Timescale)
 	}
-	samplesPerSeg := 4
+	// Drift is accumulated as a float: at 120 ppm a single short segment
+	// moves by a fraction of a tick, so rounding per segment would erase
+	// the effect entirely. Only the tfdt base value is quantized.
+	driftBase := float64(base)
+	samplesPerSeg := cfg.SamplesPerSegment
+	if samplesPerSeg <= 0 {
+		samplesPerSeg = 4
+	}
 	for i := 0; i < cfg.Segments; i++ {
 		samples := make([]Sample, samplesPerSeg)
 		segDur := uint64(0)
@@ -85,12 +95,15 @@ func BuildScenario(cfg ScenarioConfig) (*Scenario, error) {
 			}
 			segDur += uint64(dur)
 		}
-		data := MediaSegment(1, uint32(i), base, samples)
+		data := MediaSegment(1, uint32(i), uint64(math.Round(driftBase)), samples)
 		name := fmt.Sprintf("seg%d.m4s", i)
 		builtSegs = append(builtSegs, built{
 			seq: uint64(i), name: name, data: data, present: true,
 		})
-		base += segDur
+		// A fast source clock accumulates extra ticks per real segment,
+		// so the tfdt base advances by (1+drift) times the true span.
+		// The drift estimator must then recover the configured ppm.
+		driftBase += float64(segDur) * (1 + cfg.DriftPPM/1e6)
 	}
 
 	if cfg.TruncateBoxBytes > 0 && cfg.TruncateTarget < len(builtSegs) {

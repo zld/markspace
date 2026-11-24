@@ -94,6 +94,15 @@ func (r Rat) RoundMillis() int64 {
 	return (v - r.Den/2) / r.Den
 }
 
+// RoundMicros quantizes to whole microseconds.
+func (r Rat) RoundMicros() int64 {
+	v := r.Num * 1_000_000
+	if (v >= 0) == (r.Den >= 0) {
+		return (v + r.Den/2) / r.Den
+	}
+	return (v - r.Den/2) / r.Den
+}
+
 func (r Rat) String() string {
 	if r.Den == 1 {
 		return fmt.Sprintf("%d", r.Num)

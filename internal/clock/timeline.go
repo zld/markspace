@@ -86,11 +86,20 @@ func (d *DriftEstimator) Add(o Observation) {
 // (positive = source clock runs fast). Fewer than two points (or a
 // degenerate interval) yields zero.
 func (d *DriftEstimator) EstimatePPM() float64 {
+	ppm, _ := d.Fit()
+	return ppm
+}
+
+// Fit returns the drift estimate together with the R-squared goodness of
+// fit. A low R-squared means the observations do not lie on a stable
+// clock line (for example after an unmodeled discontinuity), in which
+// case callers must not trust the PPM value.
+func (d *DriftEstimator) Fit() (ppm, rSquared float64) {
 	if len(d.obs) < 2 {
-		return 0
+		return 0, 0
 	}
 	first := d.obs[0]
-	var sumX, sumY, sumXY, sumXX float64
+	var sumX, sumY, sumXY, sumXX, sumYY float64
 	n := float64(len(d.obs))
 	for _, o := range d.obs {
 		// Regress source elapsed seconds (y) on reference elapsed
@@ -101,13 +110,22 @@ func (d *DriftEstimator) EstimatePPM() float64 {
 		sumY += y
 		sumXY += x * y
 		sumXX += x * x
+		sumYY += y * y
 	}
 	denom := n*sumXX - sumX*sumX
 	if denom == 0 {
-		return 0
+		return 0, 0
 	}
 	slope := (n*sumXY - sumX*sumY) / denom
-	return (slope - 1) * 1e6
+	// R^2 = (n*sumXY - sumX*sumY)^2 / ((n*sumXX-sumX^2)(n*sumYY-sumY^2))
+	yDenom := n*sumYY - sumY*sumY
+	if yDenom != 0 {
+		rSquared = (n*sumXY - sumX*sumY) * (n*sumXY - sumX*sumY) / (denom * yDenom)
+		if rSquared > 1 {
+			rSquared = 1
+		}
+	}
+	return (slope - 1) * 1e6, rSquared
 }
 
 // Residuals returns, per observation, (reference - corrected source) in
@@ -122,7 +140,7 @@ func (d *DriftEstimator) Residuals(ppm float64) []int64 {
 	for _, o := range d.obs {
 		corrected := base.Add(tl.Correct(o.Tick))
 		residual := o.RefSeconds.Sub(corrected)
-		out = append(out, residual.RoundMillis()*1000)
+		out = append(out, residual.RoundMicros())
 	}
 	return out
 }

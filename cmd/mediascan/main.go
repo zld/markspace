@@ -96,11 +96,20 @@ func configForCase(name string, extra fixture.ScenarioConfig) (fixture.ScenarioC
 			extra.TruncateBoxBytes = 17
 		}
 		extra.TruncateTarget = 1
+		// More segments give sub-tick clock drift enough span to become
+		// observable above tfdt integer quantization.
+		if extra.DriftPPM != 0 && cfg.Segments < 24 {
+			cfg.Segments = 24
+		}
 	case "boundary":
 		extra.MissingSegment = true
 		extra.DuplicateSequence = true
 	default:
 		return cfg, fmt.Errorf("unknown --case %q", name)
+	}
+	cfg.SamplesPerSegment = extra.SamplesPerSegment
+	if cfg.SamplesPerSegment == 0 {
+		cfg.SamplesPerSegment = 4
 	}
 	cfg.TruncateBoxBytes = extra.TruncateBoxBytes
 	cfg.TruncateTarget = extra.TruncateTarget
@@ -140,15 +149,37 @@ func scanOne(f manifest.Format, sc *fixture.Scenario, cfg fixture.ScenarioConfig
 
 	inputs := make([]pipeline.SegmentInput, len(sc.Segments))
 	for i, s := range sc.Segments {
+		var manifestDuration float64
+		if i < len(mani.Segments) {
+			manifestDuration = mani.Segments[i].Duration
+		}
 		inputs[i] = pipeline.SegmentInput{
 			Name: s.Name, MediaSeq: s.MediaSeq, Present: s.Present,
 			Data: s.Data, ManifestOffset: s.ManifestOffset,
+			DurationSeconds: manifestDuration,
 		}
 	}
 
 	p := pipeline.New(cfg.DriftPPM)
 	mergeManifestFaults(p, mlog)
 	summary := p.Run(inputs)
+
+	// Multi-point drift fit from segment boundaries (source tfdt vs
+	// manifest reference), recorded with before/after residuals.
+	timescale := cfg.Timescale
+	if ts := firstTimescale(p); ts > 0 {
+		timescale = ts
+	}
+	parsed := make([]*pipeline.ParsedSegment, 0, len(p.Results()))
+	for _, r := range p.Results() {
+		parsed = append(parsed, r.Parsed)
+	}
+	obs := pipeline.BuildObservations(parsed, timescale)
+	fit := p.EstimateDrift(timescale, obs)
+	fmt.Printf("drift_estimated_ppm=%.3f drift_applied_ppm=%.3f r_squared=%.4f trusted=%d observations=%d residual_micros=%v\n",
+		fit.EstimatedPPM, fit.AppliedPPM, fit.RSquared, boolInt(fit.Trusted),
+		fit.Observations, fit.ResidualMicros)
+
 	printHashes(p)
 	printFaults(p)
 	printSummary(mani, summary)
@@ -221,6 +252,19 @@ func printSummary(mani *manifest.Manifest, s *pipeline.Summary) {
 
 func maniStart(m *manifest.Manifest) float64 { a, _ := m.TimeRange(); return a }
 func maniEnd(m *manifest.Manifest) float64   { _, b := m.TimeRange(); return b }
+
+// firstTimescale recovers the parsed track time base from any clean
+// result, falling back to zero when every segment is damaged.
+func firstTimescale(p *pipeline.Pipeline) uint32 {
+	for _, r := range p.Results() {
+		if r.Parsed != nil && r.Parsed.MP4 != nil && len(r.Parsed.MP4.Tracks) > 0 {
+			if ts := r.Parsed.MP4.Tracks[0].Timescale; ts > 0 {
+				return ts
+			}
+		}
+	}
+	return 0
+}
 
 func scanRTP(sc *fixture.Scenario) int {
 	if len(sc.RTPPackets) == 0 {

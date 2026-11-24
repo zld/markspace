@@ -44,13 +44,18 @@ func (p *Pipeline) TransformStage(ps *ParsedSegment, st *TransformState) (*Norma
 	var views []index.SampleView
 	if ps.MP4 != nil {
 		for _, s := range ps.MP4.Samples {
+			raw := tl.At(int64(s.DTS))
 			corrected := tl.Correct(int64(s.DTS))
+			delta := corrected.Sub(raw)
+			absRaw := st.GlobalSeconds + raw.Seconds()
 			absSeconds := st.GlobalSeconds + corrected.Seconds()
 			ns.Samples = append(ns.Samples, NormalizedSample{
 				Index: s.Index, TrackID: s.TrackID, DTS: s.DTS,
 				Duration: s.Duration, Keyframe: s.Keyframe,
 				ByteOffset: s.ByteOffset, Size: s.Size,
-				TimeSeconds: round6(absSeconds),
+				TimeSeconds:     round6(absSeconds),
+				TimeSecondsRaw:  round6(absRaw),
+				CorrectionDelta: round6(delta.Seconds()),
 			})
 			views = append(views, index.SampleView{
 				SampleIndex: s.Index, Keyframe: s.Keyframe,

@@ -202,3 +202,37 @@ func TestVFRTimesPreserved(t *testing.T) {
 		}
 	}
 }
+
+func TestDriftRecordsBeforeAndAfter(t *testing.T) {
+	inputs := makeSegments(t, 2, false)
+	p := New(120) // source runs 120 ppm fast
+	s := p.Run(inputs)
+	if s.DamagedSegments != 0 {
+		t.Fatalf("drift alone must not damage segments: %+v", s)
+	}
+	for _, r := range p.Results() {
+		for _, smp := range r.Normalized.Samples {
+			// The origin sample has zero elapsed time and thus zero delta.
+			if smp.DTS == 0 && smp.TimeSecondsRaw == 0 {
+				if smp.CorrectionDelta != 0 {
+					t.Fatalf("origin sample delta must be zero: %+v", smp)
+				}
+				continue
+			}
+			if smp.CorrectionDelta >= 0 {
+				t.Fatalf("fast-clock delta must be negative: %+v", smp)
+			}
+			if got := smp.TimeSecondsRaw + smp.CorrectionDelta; abs(got-smp.TimeSeconds) > 1e-6 {
+				t.Fatalf("raw+delta != corrected: %v+%v != %v",
+					smp.TimeSecondsRaw, smp.CorrectionDelta, smp.TimeSeconds)
+			}
+		}
+	}
+}
+
+func abs(v float64) float64 {
+	if v < 0 {
+		return -v
+	}
+	return v
+}

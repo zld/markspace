@@ -23,6 +23,9 @@ type SegmentInput struct {
 	Data    []byte
 	// ManifestOffset points back into the source playlist/MPD.
 	ManifestOffset int64
+	// DurationSeconds is the manifest-declared span, used as the
+	// reference-clock fallback when sample timing cannot be parsed.
+	DurationSeconds float64
 }
 
 // ParsedSegment is the parse-stage output for one input.
@@ -44,6 +47,10 @@ type NormalizedSample struct {
 	ByteOffset  int64   `json:"byte_offset"`
 	Size        uint32  `json:"size"`
 	TimeSeconds float64 `json:"time_seconds"`
+	// RawSeconds is the uncorrected mapping; CorrectionDelta is the
+	// drift adjustment applied (corrected = raw + delta).
+	TimeSecondsRaw  float64 `json:"time_seconds_raw"`
+	CorrectionDelta float64 `json:"correction_delta_seconds"`
 }
 
 // NormalizedSegment is the transform-stage artifact. Its canonical JSON
