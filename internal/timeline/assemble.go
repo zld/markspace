@@ -14,6 +14,7 @@ import (
 type ClipSpec struct {
 	ID       string         `json:"id"`
 	TargetID uint32         `json:"target_id"`
+	Group    string         `json:"group,omitempty"`
 	Start    clock.Rational `json:"start"`
 	In       clock.Rational `json:"in"`
 	Out      clock.Rational `json:"out"`
@@ -81,8 +82,9 @@ type Timeline struct {
 }
 
 type clipInterval struct {
-	spec ClipSpec
-	end  clock.Rational
+	spec  ClipSpec
+	end   clock.Rational
+	group string
 }
 
 // Assemble validates edits and overlaps, applies half-open [In, Out) sample
@@ -112,7 +114,11 @@ func Assemble(table *maptrack.Table, spec Spec) (*Timeline, error) {
 			return nil, fault.AtPosition(fault.KindTimeline, clipPos(c), "clip duration must be positive")
 		}
 		end := c.Start.Add(dur)
-		intervals[c.ID] = clipInterval{spec: c, end: end}
+		group := c.Group
+		if group == "" {
+			group = fmt.Sprintf("target-%d", c.TargetID)
+		}
+		intervals[c.ID] = clipInterval{spec: c, end: end, group: group}
 	}
 
 	transResults, err := validateOverlaps(spec.Transitions, intervals)
@@ -242,6 +248,9 @@ func validateOverlaps(trans []TransitionSpec, clips map[string]clipInterval) ([]
 		for j := i + 1; j < len(ids); j++ {
 			a := clips[ids[i]]
 			b := clips[ids[j]]
+			if a.group != b.group {
+				continue // independent A/V groups may overlap without a transition
+			}
 			start := maxRat(a.spec.Start, b.spec.Start)
 			end := minRat(a.end, b.end)
 			if end.Cmp(start) <= 0 {

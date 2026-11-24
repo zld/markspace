@@ -80,8 +80,8 @@ func TestUndeclaredOverlapIsRejectedButDeclaredTransitionAccepted(t *testing.T) 
 		})
 	}
 	clips := []timeline.ClipSpec{
-		{ID: "a", TargetID: 1, Start: clock.New(0, 1), In: clock.New(0, 24000), Out: clock.New(6000, 24000)},
-		{ID: "b", TargetID: 2, Start: clock.New(1, 8), In: clock.New(0, 24000), Out: clock.New(4000, 24000)},
+		{ID: "a", TargetID: 1, Group: "vision", Start: clock.New(0, 1), In: clock.New(0, 24000), Out: clock.New(6000, 24000)},
+		{ID: "b", TargetID: 2, Group: "vision", Start: clock.New(1, 8), In: clock.New(0, 24000), Out: clock.New(4000, 24000)},
 	}
 	if _, err := timeline.Assemble(table, timeline.Spec{Clips: clips}); err == nil {
 		t.Fatal("expected undeclared overlap")
