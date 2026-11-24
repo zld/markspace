@@ -1,0 +1,4 @@
+/archive-demo/
+/dist/
+*.test
+*.out
