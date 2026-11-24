@@ -1,11 +1,7 @@
 package pipeline
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"os"
-	"path/filepath"
 	"time"
 
 	"mediapipeline/internal/demux"
@@ -188,109 +184,4 @@ func attachRecoveredSamples(media *demux.Media, scan *demux.FragmentScan) error 
 		}
 	}
 	return nil
-}
-
-func segmentStates(scan *demux.FragmentScan) []SegmentState {
-	states := make([]SegmentState, 0, len(scan.Segments))
-	for _, seg := range scan.Segments {
-		d := sha256.Sum256(seg.Payload)
-		states = append(states, SegmentState{
-			ID: seg.ID, MoofOffset: seg.MoofOffset, Size: seg.Size,
-			Digest: hex.EncodeToString(d[:]), Committed: true,
-		})
-	}
-	return states
-}
-
-func countDuplicates(states []SegmentState) int {
-	seen := make(map[string]int, len(states))
-	dups := 0
-	for _, s := range states {
-		key := s.Digest
-		seen[key]++
-		if seen[key] > 1 {
-			dups++
-		}
-	}
-	return dups
-}
-
-func containsAll(committed, recovered []SegmentState) bool {
-	index := make(map[string]SegmentState, len(committed))
-	for _, s := range committed {
-		index[s.Digest] = s
-	}
-	for _, s := range recovered {
-		if _, ok := index[s.Digest]; !ok {
-			return false
-		}
-	}
-	return true
-}
-
-func committedOutputMatches(path, wantDigest string) (string, bool) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", false
-	}
-	got := OutputPayloadDigest(data)
-	if wantDigest != "" && got != wantDigest {
-		return "", false
-	}
-	return got, true
-}
-
-// RecoveryCheckpoint is the recovery breakpoint file.
-type RecoveryCheckpoint struct {
-	Input            string         `json:"input"`
-	InputSHA256      string         `json:"input_sha256"`
-	PayloadSHA256In  string         `json:"payload_sha256_in"`
-	PayloadSHA256    string         `json:"payload_sha256"`
-	EventsIn         int            `json:"events_in"`
-	EventsOut        int            `json:"events_out"`
-	EventOrderSHA256 string         `json:"event_order_sha256"`
-	Tracks           []track.Entry  `json:"tracks"`
-	Segments         []SegmentState `json:"segments"`
-	UpdatedAt        string         `json:"updated_at"`
-}
-
-func writeRecoveryCheckpoint(dir string, cp *RecoveryCheckpoint) error {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	cp.UpdatedAt = time.Now().UTC().Format(time.RFC3339Nano)
-	buf, err := json.MarshalIndent(cp, "", "  ")
-	if err != nil {
-		return err
-	}
-	tmp := filepath.Join(dir, "recovery.json.tmp")
-	if err := os.WriteFile(tmp, append(buf, '\n'), 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, filepath.Join(dir, "recovery.json"))
-}
-
-func loadRecoveryCheckpoint(dir string) (*RecoveryCheckpoint, bool) {
-	buf, err := os.ReadFile(filepath.Join(dir, "recovery.json"))
-	if err != nil {
-		return nil, false
-	}
-	var cp RecoveryCheckpoint
-	if err := json.Unmarshal(buf, &cp); err != nil {
-		return nil, false
-	}
-	return &cp, true
-}
-
-func failRecovery(sum RecoverySummary, err error) RecoverySummary {
-	if fe, ok := fault.As(err); ok {
-		sum.ErrorStage = string(fe.Stage)
-		sum.Reason = fe.Reason
-		if fe.HasOffset() {
-			sum.InputOffset = fe.InputOffset
-		}
-	} else if err != nil {
-		sum.Reason = err.Error()
-	}
-	return sum
 }
