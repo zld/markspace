@@ -33,6 +33,18 @@ keyframe_index_hit_rate=1.000
 segment_hash_match=1.000
 ```
 
+The three ratios mean:
+
+- `roundtrip_consistency` — share of valid timecode labels that parse,
+  re-render canonically and parse back to the identical instant.
+- `keyframe_index_hit_rate` — share of sampling points whose frame resolved
+  its sample through the keyframe index rather than the scan fallback.
+- `segment_hash_match` — share of committed chunks whose content re-hashes to
+  the digest recorded in the manifest.
+
+A ratio with no applicable items is reported as `0/0` (`0.000`) rather than a
+vacuous perfect score.
+
 ### Scenarios
 
 `-generate` writes three fixture sets under `<samples>` and a `fixtures.json`
