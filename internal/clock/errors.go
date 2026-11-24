@@ -16,6 +16,7 @@ const (
 	CodeUnsupportedPayload     ErrorCode = "UNSUPPORTED_PAYLOAD"
 	CodeCorruptPayload         ErrorCode = "CORRUPT_PAYLOAD"
 	CodeGap                    ErrorCode = "RTP_SEQUENCE_GAP"
+	CodeDuplicate              ErrorCode = "RTP_DUPLICATE"
 	CodeReorder                ErrorCode = "RTP_REORDER"
 	CodeMissingClockReport     ErrorCode = "MISSING_RTCP_REPORT"
 	CodeClockRollback          ErrorCode = "CLOCK_REPORT_ROLLBACK"

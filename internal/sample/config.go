@@ -47,6 +47,11 @@ func DefaultConfig() Config {
 	}
 }
 
+// WithDefaults fills zero-valued optional generation settings.
+func (c Config) WithDefaults() Config {
+	return c.withDefaults()
+}
+
 func (c Config) withDefaults() Config {
 	d := DefaultConfig()
 	if c.Packets <= 0 {
