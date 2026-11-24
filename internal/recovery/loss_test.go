@@ -41,6 +41,9 @@ func TestRecoverFillsSmallGap(t *testing.T) {
 	if rep.LengthTicks() != 5*960 {
 		t.Fatalf("length = %d", rep.LengthTicks())
 	}
+	if len(rep.Gaps) != 0 {
+		t.Fatalf("recovered gap recorded as loss: %+v", rep.Gaps)
+	}
 }
 
 func TestRecoverMarksLargeGapIncomplete(t *testing.T) {
@@ -64,16 +67,17 @@ func TestRecoverMarksLargeGapIncomplete(t *testing.T) {
 	if rep.Faults[0].Offset != 0 {
 		t.Fatalf("fault offset = %d", rep.Faults[0].Offset)
 	}
+	if len(rep.Gaps) != 1 || rep.Gaps[0] != (Gap{AfterSeq: 1, NextSeq: 20, Missing: 18}) {
+		t.Fatalf("gaps = %+v", rep.Gaps)
+	}
 }
 
 func TestRecoverBoundaryGapIsRecoverable(t *testing.T) {
-	// Exactly MaxGapPackets missing packets is still recoverable.
 	ordered := []*rtpparse.Packet{packet(1, 0), packet(5, 0)}
 	rep, _ := Recover(ordered, DefaultPolicy())
 	if rep.Incomplete || rep.Recovered != 3 {
 		t.Fatalf("report = %+v", rep)
 	}
-	// One more missing packet crosses the threshold.
 	rep, _ = Recover([]*rtpparse.Packet{packet(1, 0), packet(6, 0)}, DefaultPolicy())
 	if !rep.Incomplete || rep.Recovered != 0 {
 		t.Fatalf("report = %+v", rep)
@@ -93,6 +97,24 @@ func TestRecoverNoGap(t *testing.T) {
 	}
 }
 
+func TestRecoverMultipleGaps(t *testing.T) {
+	// A two-packet hole (recoverable) then a ten-packet hole (not).
+	ordered := []*rtpparse.Packet{packet(1, 0), packet(4, 0), packet(15, 0)}
+	rep, _ := Recover(ordered, DefaultPolicy())
+	if rep.GapEvents != 2 {
+		t.Fatalf("gap events = %d", rep.GapEvents)
+	}
+	if rep.Recovered != 2 {
+		t.Fatalf("recovered = %d", rep.Recovered)
+	}
+	if !rep.Incomplete || len(rep.Gaps) != 1 {
+		t.Fatalf("gaps = %+v incomplete=%v", rep.Gaps, rep.Incomplete)
+	}
+	if rep.Gaps[0].NextSeq != 15 {
+		t.Fatalf("gap = %+v", rep.Gaps[0])
+	}
+}
+
 func TestRecoverEmptyAndBadPolicy(t *testing.T) {
 	rep, err := Recover(nil, DefaultPolicy())
 	if err != nil || len(rep.Units) != 0 {
@@ -104,11 +126,29 @@ func TestRecoverEmptyAndBadPolicy(t *testing.T) {
 }
 
 func TestRecoverCustomTimestampSpan(t *testing.T) {
-	// 10 ms frames (480 ticks) with one loss: each slot spans 480 ticks.
 	a := &rtpparse.Packet{ExtSeq: 1, Timestamp: 0}
 	b := &rtpparse.Packet{ExtSeq: 3, Timestamp: 960}
 	rep, _ := Recover([]*rtpparse.Packet{a, b}, Policy{MaxGapPackets: 3, MaxGapEvents: 4, NominalTickSpan: 480})
 	if rep.Units[1].TickSpan != 480 || rep.Units[1].RTPTimestamp != 480 {
 		t.Fatalf("unit = %+v", rep.Units[1])
+	}
+}
+
+func TestRecoverFaultListIsBounded(t *testing.T) {
+	policy := DefaultPolicy()
+	policy.MaxGapEvents = 2
+	var ordered []*rtpparse.Packet
+	for i := 0; i < 60; i += 10 {
+		ordered = append(ordered, packet(uint64(i), 0))
+	}
+	rep, err := Recover(ordered, policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Faults.Len() > 2 {
+		t.Fatalf("fault list = %d", rep.Faults.Len())
+	}
+	if len(rep.Gaps) != len(ordered)-1 {
+		t.Fatalf("gaps = %d", len(rep.Gaps))
 	}
 }
