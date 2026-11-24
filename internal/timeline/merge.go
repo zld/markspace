@@ -95,7 +95,9 @@ type Result struct {
 	Boundaries []Boundary
 	// Snapped counts subtitle boundaries moved onto video cuts.
 	Snapped int
-	Errors  model.Errors
+	// Items and Boundaries are in deterministic order and carry Seq indices
+	// assigned after sorting.
+	Errors model.Errors
 }
 
 // Build merges every track. The output depends only on the values passed in,
