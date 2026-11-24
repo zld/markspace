@@ -68,8 +68,6 @@ type TrackSpec struct {
 	Channels  uint16
 }
 
-func (t TrackSpec) sampleDigestBytes(i int) []byte { return t.Samples[i].Data }
-
 // FixturePaths names the generated sample set.
 type FixturePaths struct {
 	MP4       string
@@ -129,7 +127,7 @@ func syntheticTracks(seed int64, withUnknown bool) []TrackSpec {
 		Codec: "mp4a", Channels: 2,
 	}
 	var dts int64
-	for i := 0; i < 8; i++ {
+	for i := 0; i < 40; i++ {
 		size := 220 + rnd.Intn(90)
 		data := make([]byte, size)
 		for j := range data {
@@ -147,7 +145,7 @@ func syntheticTracks(seed int64, withUnknown bool) []TrackSpec {
 		dts += 3000
 	}
 	dts = 0
-	for i := 0; i < 12; i++ {
+	for i := 0; i < 64; i++ {
 		size := 96 + rnd.Intn(32)
 		data := make([]byte, size)
 		for j := range data {
