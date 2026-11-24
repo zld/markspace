@@ -586,7 +586,11 @@ func inputWorkDir(root, sha string) string {
 }
 
 func combineDigests(digests []string) string {
-	// A batch manifest digest depends on the ordered per-input manifests.
+	// A single input's manifest digest is itself; a batch digest folds every
+	// per-input manifest digest in a stable order.
+	if len(digests) == 1 {
+		return digests[0]
+	}
 	sort.Strings(digests)
 	h := sha256.New()
 	for _, d := range digests {
