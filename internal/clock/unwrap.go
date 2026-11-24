@@ -63,7 +63,10 @@ type Obs struct {
 	Discontinuity bool // adaptation-field discontinuity_indicator
 }
 
-const pcrPeriod int64 = 1 << 33 // 27 MHz PCR base field
+// pcrPeriod is the 27 MHz PCR domain period: the 33-bit base field times
+// the 300-tick extension granularity. Computing wrap relative to this period
+// keeps sub-tick precision in the unwrapped clock.
+const pcrPeriod int64 = 300 * (1 << 33)
 const ptsPeriod int64 = 1 << 33 // 90 kHz PTS/DTS field
 
 // spanLimit is how far the timeline may drift from the current anchor before
@@ -154,6 +157,13 @@ func (u *Unwrapper) observePCR(obs Obs) (int64, bool) {
 		u.pcrSeen[obs.PID] = true
 		u.lastPCR[obs.PID] = int64(raw)
 		u.lastPCRTk[obs.PID] = int64(raw) / PCRToTicks
+		// The first PCR also anchors the shared 90 kHz timeline so PTS and
+		// PCR can never disagree about which side of a wrap they are on.
+		if !u.anchored {
+			u.anchored = true
+			u.originRaw = raw / uint64(PCRToTicks)
+			u.originTks = 0
+		}
 		return u.lastPCRTk[obs.PID], true
 	}
 	d := wrapDelta(int64(raw), u.lastPCR[obs.PID], pcrPeriod)
@@ -181,9 +191,11 @@ func (u *Unwrapper) observeTimestamp(obs Obs) (int64, bool) {
 		u.originTks = 0
 	}
 	// Move the anchor when the timeline drifts a quarter-field away, keeping
-	// modular decoding unambiguous for very long inputs.
+	// modular decoding unambiguous for very long inputs. A discontinuity
+	// flag forces the anchor on so pre/post-reset values stay comparable.
 	if u.seenPTS[obs.PID] {
-		if d := wrapDelta(int64(raw), int64(u.originRaw), ptsPeriod); d > spanLimit || d < -spanLimit {
+		d := wrapDelta(int64(raw), int64(u.originRaw), ptsPeriod)
+		if d > spanLimit || d < -spanLimit || obs.Discontinuity {
 			u.originTks += d
 			u.originRaw = raw
 		}
