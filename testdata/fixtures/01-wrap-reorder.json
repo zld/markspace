@@ -1,0 +1,33 @@
+{
+  "name": "01-wrap-reorder",
+  "description": "out-of-order RTP packets across uint32 timestamp wrap",
+  "config": {
+    "seed": 101,
+    "packets": 600,
+    "loss": 0,
+    "reorder": 1,
+    "duplicate": 0,
+    "ssrc": 1296322609,
+    "start_sequence": 1000,
+    "start_timestamp": 4294945215,
+    "sample_rate": 48000,
+    "frame_samples": 960,
+    "content_size": 142,
+    "keyframe_every": 100,
+    "rtcp_every": 250,
+    "suppress_rtcp": false,
+    "corrupt_offset": 0,
+    "protected_ranges": [
+      [
+        400,
+        599
+      ],
+      [
+        1000,
+        1199
+      ]
+    ]
+  },
+  "sha256": "1527f74f1d9e85ae0a7a184541a95b9528823f230cb95dda5eac574165276154",
+  "wire_chunks": 602
+}

@@ -1,0 +1,33 @@
+{
+  "name": "02-missing-rtcp",
+  "description": "RTP source with no RTCP sender reports",
+  "config": {
+    "seed": 102,
+    "packets": 500,
+    "loss": 0.02,
+    "reorder": 0.08,
+    "duplicate": 0.01,
+    "ssrc": 1296322609,
+    "start_sequence": 1000,
+    "start_timestamp": 4294945215,
+    "sample_rate": 48000,
+    "frame_samples": 960,
+    "content_size": 142,
+    "keyframe_every": 100,
+    "rtcp_every": 250,
+    "suppress_rtcp": true,
+    "corrupt_offset": 0,
+    "protected_ranges": [
+      [
+        400,
+        599
+      ],
+      [
+        1000,
+        1199
+      ]
+    ]
+  },
+  "sha256": "eda6387ac036a18083f8e70037a55813758c1bbdf44d948cfc1c7cf120f1e54c",
+  "wire_chunks": 491
+}

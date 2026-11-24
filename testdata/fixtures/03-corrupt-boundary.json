@@ -1,0 +1,33 @@
+{
+  "name": "03-corrupt-boundary",
+  "description": "corrupted frame near a segment boundary",
+  "config": {
+    "seed": 103,
+    "packets": 600,
+    "loss": 0.02,
+    "reorder": 0.08,
+    "duplicate": 0.01,
+    "ssrc": 1296322609,
+    "start_sequence": 1000,
+    "start_timestamp": 4294945215,
+    "sample_rate": 48000,
+    "frame_samples": 960,
+    "content_size": 142,
+    "keyframe_every": 100,
+    "rtcp_every": 250,
+    "suppress_rtcp": false,
+    "corrupt_offset": 4097,
+    "protected_ranges": [
+      [
+        400,
+        599
+      ],
+      [
+        1000,
+        1199
+      ]
+    ]
+  },
+  "sha256": "fe583664488b33400e72757bc76edd633517a31b3cff8c5d7136a185303dbb41",
+  "wire_chunks": 600
+}

@@ -1,0 +1,33 @@
+{
+  "name": "04-slow-consumer",
+  "description": "loss, reorder and duplicate stream for bounded queue recovery",
+  "config": {
+    "seed": 104,
+    "packets": 1600,
+    "loss": 0.02,
+    "reorder": 0.08,
+    "duplicate": 0.01,
+    "ssrc": 1296322609,
+    "start_sequence": 1000,
+    "start_timestamp": 4294945215,
+    "sample_rate": 48000,
+    "frame_samples": 960,
+    "content_size": 142,
+    "keyframe_every": 100,
+    "rtcp_every": 250,
+    "suppress_rtcp": false,
+    "corrupt_offset": 0,
+    "protected_ranges": [
+      [
+        400,
+        599
+      ],
+      [
+        1000,
+        1199
+      ]
+    ]
+  },
+  "sha256": "0fefcd2d5f8a59468c18132fdbd82e6f8cf8eb93f0fd5a906d23f5fec95d9e9d",
+  "wire_chunks": 1584
+}
