@@ -119,6 +119,16 @@ func (r *Runner) Run(plan []PlanChunk) (*Index, RunReport, error) {
 			continue
 		} else if ok {
 			rep.Redone = append(rep.Redone, pc.Index)
+			if _, statErr := os.Stat(finalPath); statErr == nil {
+				sum, _, hashErr := HashFile(finalPath)
+				verifyErr := error(nil)
+				if r.Verify != nil {
+					verifyErr = r.Verify(finalPath, pc)
+				}
+				if hashErr != nil || verifyErr != nil || sum != rec.SHA256 {
+					rep.Truncated = append(rep.Truncated, pc.Index)
+				}
+			}
 		} else if _, statErr := os.Stat(finalPath); statErr == nil && r.Verify != nil {
 			if verr := r.Verify(finalPath, pc); verr != nil {
 				rep.Truncated = append(rep.Truncated, pc.Index)
