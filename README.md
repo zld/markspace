@@ -44,7 +44,9 @@ fault stage=parse kind=truncated_record offset=3906
 ```
 
 Exit codes: `0` success, `2` input damaged but a verifiable output was
-produced, `1` configuration or internal error.
+produced, `1` configuration or internal error. Every run also prints
+`exit_code=N`, because `go run` collapses any non-zero program exit to 1; the
+built binary (`./mediarun`) returns the code directly.
 
 ## Fault injection classes
 

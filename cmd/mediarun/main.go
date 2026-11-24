@@ -136,6 +136,10 @@ func run(args []string, stdout, stderr *os.File) int {
 		return exitInternal
 	}
 
+	code := exitOK
+	if hasUnrepairedDamage(m) {
+		code = exitDamaged
+	}
 	if opts.verify {
 		vr, err := pipeline.Verify(opts.out, m)
 		if err != nil {
@@ -143,17 +147,17 @@ func run(args []string, stdout, stderr *os.File) int {
 			return exitInternal
 		}
 		pipeline.ApplyBaseline(vr, runner.PreviousManifest())
-		report(stdout, opts, m, vr, runner)
+		report(stdout, opts, m, vr, runner, code)
 	} else {
-		report(stdout, opts, m, nil, runner)
+		report(stdout, opts, m, nil, runner, code)
 	}
-	if hasUnrepairedDamage(m) {
-		return exitDamaged
-	}
-	return exitOK
+	// `go run` collapses any non-zero program exit to 1, so the intended code
+	// is also printed. Running the built binary yields it directly.
+	fmt.Fprintf(stdout, "exit_code=%d\n", code)
+	return code
 }
 
-func report(stdout *os.File, opts *options, m *provenance.Manifest, vr *pipeline.VerifyReport, runner *pipeline.Runner) {
+func report(stdout *os.File, opts *options, m *provenance.Manifest, vr *pipeline.VerifyReport, runner *pipeline.Runner, code int) {
 	fmt.Fprintf(stdout, "frames=%d audio_packets=%d segments=%d\n",
 		m.Metrics.Frames, m.Metrics.AudioPackets, m.Metrics.Segments)
 	fmt.Fprintf(stdout, "parse_errors=%d first_error_offset=%d recovered_audio=%d recovered_video=%d dropped_audio=%d\n",

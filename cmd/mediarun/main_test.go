@@ -43,6 +43,7 @@ func TestCLIHealthyRun(t *testing.T) {
 		"segment_sha256_equal=1",
 		"idempotent=1",
 		"parse_errors=0",
+		"exit_code=0",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in output:\n%s", want, out)
