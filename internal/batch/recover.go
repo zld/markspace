@@ -86,6 +86,7 @@ func Run(cfg Config) (*Result, error) {
 	manifest := index.Manifest{
 		Version:                  1,
 		OutputMP4:                "output.mp4",
+		PayloadHash:              built.aggregateHash,
 		Tracks:                   built.manifests,
 		Transitions:              trans,
 		SampleCount:              built.totalSamples,

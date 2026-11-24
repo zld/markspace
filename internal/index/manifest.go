@@ -26,6 +26,7 @@ type TrackManifest struct {
 type Manifest struct {
 	Version                  int                `json:"version"`
 	OutputMP4                string             `json:"output_mp4"`
+	PayloadHash              string             `json:"payload_hash,omitempty"`
 	Tracks                   []TrackManifest    `json:"tracks"`
 	Transitions              []any              `json:"transition_ranges,omitempty"`
 	SampleCount              int                `json:"samples"`

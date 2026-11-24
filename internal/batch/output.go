@@ -12,11 +12,12 @@ import (
 )
 
 type outputBuild struct {
-	tracks       []remux.Track
-	manifests    []index.TrackManifest
-	totalSamples int
-	totalBytes   int64
-	maxDuration  float64
+	tracks        []remux.Track
+	manifests     []index.TrackManifest
+	totalSamples  int
+	totalBytes    int64
+	maxDuration   float64
+	aggregateHash string
 }
 
 func buildOutputs(table *maptrack.Table, tl *timeline.Timeline) outputBuild {
@@ -25,6 +26,7 @@ func buildOutputs(table *maptrack.Table, tl *timeline.Timeline) outputBuild {
 		mapped[m.TargetID] = m
 	}
 	var out outputBuild
+	var trackHashes []string
 	rate := uint32(tl.Timebase.Den)
 
 	for _, plan := range tl.Tracks {
@@ -76,6 +78,7 @@ func buildOutputs(table *maptrack.Table, tl *timeline.Timeline) outputBuild {
 		tm.SampleHashes = hashes
 		tm.PayloadBytes = bytes
 		tm.PayloadHash = demux.HashPayload([]byte(strings.Join(hashes, "\n")))
+		trackHashes = append(trackHashes, tm.PayloadHash)
 		if n := len(plan.Samples); n > 0 {
 			last := plan.Samples[n-1]
 			tm.DurationSeconds = clock.Ticks(last.DTS+last.Duration, tl.Timebase).Float64()
@@ -89,6 +92,7 @@ func buildOutputs(table *maptrack.Table, tl *timeline.Timeline) outputBuild {
 		out.tracks = append(out.tracks, rt)
 		out.manifests = append(out.manifests, tm)
 	}
+	out.aggregateHash = demux.HashPayload([]byte(strings.Join(trackHashes, "\n")))
 	return out
 }
 
