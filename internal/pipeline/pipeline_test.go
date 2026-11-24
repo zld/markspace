@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -147,6 +148,32 @@ func TestJournalCheckpointReuse(t *testing.T) {
 	}
 	if first.Summary.OutputSHA256 != second.Summary.OutputSHA256 {
 		t.Fatal("checkpoint reuse changed the output")
+	}
+}
+
+func TestCorruptJournalRecomputesSafely(t *testing.T) {
+	dir := t.TempDir()
+	journalPath := filepath.Join(dir, "state.journal")
+	opt := Options{Seed: 9, Duration: 3 * time.Second, RetryLimit: 1,
+		JournalPath: journalPath}
+	first, err := Run(opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Corrupt the journal bytes: the next run must quarantine and recompute
+	// from safe predecessor nodes rather than trusting damaged checkpoints.
+	if err := os.WriteFile(journalPath, []byte("{broken-json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	second, err := Run(opt)
+	if err != nil {
+		t.Fatalf("corrupt journal must be recoverable, got %v", err)
+	}
+	if second.Journal == nil || second.Journal.QuarantinedPath() == "" {
+		t.Fatal("corrupt journal was not quarantined before recompute")
+	}
+	if second.Summary.OutputSHA256 != first.Summary.OutputSHA256 {
+		t.Fatal("recompute after quarantine changed the deterministic output")
 	}
 }
 
