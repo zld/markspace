@@ -37,7 +37,10 @@ func CollectFrames(segments []*media.Segment) FrameStats {
 		}
 		for _, f := range seg.Frames {
 			st.TotalFrames++
-			if f.Corrupt || seg.Truncated {
+			// Only the frame's own decode status counts; a truncated
+			// segment marks its physically missing tail frames at frame
+			// level, leaving the intact leading frames decodable.
+			if f.Corrupt {
 				st.CorruptFrames++
 				continue
 			}

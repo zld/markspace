@@ -104,7 +104,7 @@ func Export(tl *timeline.Timeline, outDir string) (*Manifest, error) {
 					"track:"+u32s(f.TrackID)+":seq:"+u32s(f.SegmentSeq),
 					"frame has no dimensions, unsupported fixture subset")
 			}
-			corrupt := f.Corrupt || seg.Truncated
+			corrupt := f.Corrupt
 			m.Frames = append(m.Frames, FrameRecord{
 				Index:     idx,
 				TrackID:   f.TrackID,

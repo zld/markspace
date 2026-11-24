@@ -59,19 +59,21 @@ func TestFrameStatsCountErrors(t *testing.T) {
 			Frames: []media.Frame{frame(0, true)},
 		},
 		{
+			// Truncated segment: its intact leading frames still decode;
+			// only the physically cut tail frame is corrupt.
 			TrackID: 1, Seq: 3, DurationTicks: 90_000, Truncated: true,
-			Frames: []media.Frame{frame(200, false)},
+			Frames: []media.Frame{frame(80, false), frame(0, true)},
 		},
 	}
 	st := CollectFrames(segments)
-	if st.DecodedFrames != 2 || st.CorruptFrames != 2 || st.TotalFrames != 4 {
+	if st.DecodedFrames != 3 || st.CorruptFrames != 2 || st.TotalFrames != 5 {
 		t.Fatalf("frame counts wrong: %+v", st)
 	}
 	if st.MissingSegments != 1 || st.LostPackets != 3 || st.TruncatedSegments != 1 {
 		t.Fatalf("error counters wrong: %+v", st)
 	}
-	// Mean luma over the two decodable frames (100,120) = 110.
-	if st.MeanLuma != 110 || st.MeanLumaQ2 != 11000 {
+	// Mean luma over the three decodable frames (100,120,80) = 100.
+	if st.MeanLuma != 100 || st.MeanLumaQ2 != 10000 {
 		t.Fatalf("luma stats wrong: %+v", st)
 	}
 	if !st.HasBlockingErrors() {

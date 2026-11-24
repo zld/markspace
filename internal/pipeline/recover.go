@@ -61,21 +61,34 @@ func recoverSegment(spec media.TrackSpec, seq uint32, window int,
 		DuplicatePkts: buf.DupCount,
 		Truncated:     mdatTruncated,
 	}
+	// Physical mdat end: samples whose declared bytes start at or beyond
+	// this offset were cut off by truncation and are undecodable even
+	// though their RTP packets arrived intact.
+	mdatEnd := len(mdat)
+	sampleStart := 0
 	for idx := range samples {
 		f := media.Frame{
 			TrackID: spec.ID, SegmentSeq: seq, Index: uint32(idx),
 			Width: spec.Width, Height: spec.Height,
 			Duration: 1, // native frame units (30 fps timebase)
 		}
+		sampleLen := 0
+		if idx < len(sampleBytes) {
+			sampleLen = len(sampleBytes[idx])
+		}
+		physicallyCut := mdatTruncated && sampleStart >= mdatEnd
 		var payload []byte
 		if idx < len(framePayloads) {
 			payload = framePayloads[idx]
 		}
-		if len(payload) == 0 || (idx < len(sampleBytes) &&
-			len(payload) < len(sampleBytes[idx])) {
-			// Missing due to burst loss or physically truncated mdat.
+		switch {
+		case physicallyCut:
+			// Truncation removed this sample's container bytes.
 			f.Corrupt = true
-		} else {
+		case len(payload) == 0 || (sampleLen > 0 && len(payload) < sampleLen):
+			// Missing due to burst packet loss.
+			f.Corrupt = true
+		default:
 			arch, err := fixture.ParseArchFrame(payload)
 			if err != nil {
 				f.Corrupt = true
@@ -87,6 +100,7 @@ func recoverSegment(spec media.TrackSpec, seq uint32, window int,
 		if idx < len(sampleBytes) {
 			rec.MediaBytes += len(sampleBytes[idx])
 		}
+		sampleStart += sampleLen
 		rec.Frames = append(rec.Frames, f)
 	}
 	return rec, nil
