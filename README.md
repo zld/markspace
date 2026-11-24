@@ -7,6 +7,7 @@
 - `github.com/pion/rtcp v1.2.15`
 - `github.com/abema/go-mp4 v1.29.0` 需求固定在 `go.mod`；公共模块代理当前不存在该 tag，因此通过 `replace` 使用可解析的最新兼容版 `v1.7.4`。在有内部 `v1.29.0` 的环境可删除该 replace。
 - 仅依赖 Go 标准库测试工具，无外部服务。
+- macOS 可使用 `brew install go@1.23` 安装目标工具链；其余依赖由 `go mod tidy` 自动解析。
 
 ## 构建与测试
 
