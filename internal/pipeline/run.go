@@ -71,6 +71,12 @@ type Report struct {
 
 // Run executes every case in the fixture index, resuming committed items.
 func Run(fixtureRoot, stateDir string, params Parameters) (*Report, error) {
+	return RunFiltered(fixtureRoot, stateDir, params, nil)
+}
+
+// RunFiltered behaves like Run but processes only the cases listed in allow.
+// A nil allow list means every case in the index.
+func RunFiltered(fixtureRoot, stateDir string, params Parameters, allow []string) (*Report, error) {
 	indexPath := filepath.Join(fixtureRoot, "cases.json")
 	indexBytes, err := readFile(indexPath)
 	if err != nil {
@@ -82,11 +88,18 @@ func Run(fixtureRoot, stateDir string, params Parameters) (*Report, error) {
 		return nil, model.WrapError(model.KindCorruptBox,
 			model.SourceLoc{Manifest: indexPath, Entry: -1, Frame: -1}, err)
 	}
+	allowed := map[string]bool{}
+	for _, id := range allow {
+		allowed[id] = true
+	}
 	rep := &Report{}
 	aggHashes := map[string]bool{}
 	var rtSum, kfSum float64
 	rtN, kfN := 0, 0
 	for _, c := range index.Cases {
+		if len(allowed) > 0 && !allowed[c.ID] {
+			continue
+		}
 		cr := runCase(fixtureRoot, stateDir, c, params)
 		rep.Cases = append(rep.Cases, cr)
 		if cr.OK {

@@ -14,6 +14,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"mediad/internal/fixture"
 	"mediad/internal/pipeline"
@@ -99,13 +100,22 @@ func runProcess(args []string) error {
 	input := fs.String("input", "", "fixture directory containing cases.json")
 	state := fs.String("state", "", "state directory for checkpoints")
 	asJSON := fs.Bool("json", false, "emit the full report as JSON")
+	only := fs.String("only", "", "comma-separated case ids to process (default: all)")
 	if err := fs.Parse(args); err != nil {
 		return &procError{exitUsage, err.Error()}
 	}
 	if *input == "" || *state == "" {
 		return &procError{exitUsage, "process requires --input and --state"}
 	}
-	report, err := pipeline.Run(*input, *state, pipeline.DefaultParameters())
+	var allow []string
+	if *only != "" {
+		for _, id := range strings.Split(*only, ",") {
+			if id = strings.TrimSpace(id); id != "" {
+				allow = append(allow, id)
+			}
+		}
+	}
+	report, err := pipeline.RunFiltered(*input, *state, pipeline.DefaultParameters(), allow)
 	if err != nil {
 		return &procError{exitUsage, "cannot start processing: " + err.Error()}
 	}

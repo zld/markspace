@@ -56,6 +56,7 @@ func BuildTimeline(repID string, kind model.TrackKind, blocked bool, segs []Segm
 	rep := &TimelineReport{RepID: repID, Kind: kind, BlockedMerge: blocked, Monotonic: true}
 	var lastPTS model.PlayTime
 	haveLast := false
+	lastEntry := -1
 	frameNo := 0
 	for si, in := range segs {
 		if in.Track == nil {
@@ -80,7 +81,10 @@ func BuildTimeline(repID string, kind model.TrackKind, blocked bool, segs []Segm
 					model.SourceLoc{Representation: repID, Entry: si, Frame: frameNo},
 					fmt.Sprintf("absolute pts %d precedes previous pts %d", abs, lastPTS))
 			}
-			if haveLast && abs == lastPTS {
+			// Equal PTS is a duplicate only within the same source segment.
+			// Across a segment boundary the same timestamp is the legitimate
+			// boundary frame of the next segment (often a fresh keyframe).
+			if haveLast && abs == lastPTS && si == lastEntry {
 				rep.Events = append(rep.Events, TimelineEvent{
 					Kind: EventDuplicate, Rep: repID, Frame: frameNo, PTS: abs,
 					Detail: "equal absolute presentation timestamp",
@@ -91,6 +95,7 @@ func BuildTimeline(repID string, kind model.TrackKind, blocked bool, segs []Segm
 			f.PTS = abs
 			rep.Frames = append(rep.Frames, f)
 			lastPTS = abs
+			lastEntry = si
 			haveLast = true
 			frameNo++
 		}

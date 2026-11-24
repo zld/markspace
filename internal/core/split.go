@@ -106,27 +106,14 @@ func Split(repID string, frames []model.Frame, opts SplitOptions) (*SplitResult,
 }
 
 // nextBoundary returns the exclusive end index for the chunk beginning at
-// startIdx and the boundary descriptor for the following chunk. The end is
-// the last keyframe at or before the ideal boundary; when no keyframe exists
-// inside the chunk the ideal edge is kept and Hit=false is reported. The
-// result is len(frames) when the remaining frames fit one target span.
+// startIdx and the boundary descriptor for the following chunk.
+//
+// The boundary is the last keyframe whose PTS is at or before the ideal
+// boundary and strictly inside the current chunk. When no such keyframe
+// exists, the ideal edge (first frame past the target) is kept and Hit=false
+// is recorded honestly rather than jumping to a keyframe in a later span.
+// The result is len(frames) when the remaining frames fit one target span.
 func nextBoundary(frames []model.Frame, startIdx int, ideal model.PlayTime) (int, Boundary) {
-	kf := -1
-	for i := startIdx + 1; i < len(frames); i++ {
-		if frames[i].PTS > ideal {
-			break
-		}
-		if frames[i].KeyFrame {
-			kf = i
-		}
-	}
-	if kf > startIdx {
-		hit := frames[kf].PTS == ideal
-		return kf, Boundary{
-			IdealAt: ideal, ActualAt: frames[kf].PTS,
-			KeyFramePTS: frames[kf].PTS, Hit: hit, SourceFrame: kf,
-		}
-	}
 	edge := startIdx + 1
 	for edge < len(frames) && frames[edge].PTS < ideal {
 		edge++
@@ -134,9 +121,25 @@ func nextBoundary(frames []model.Frame, startIdx int, ideal model.PlayTime) (int
 	if edge >= len(frames) {
 		return len(frames), Boundary{IdealAt: ideal, ActualAt: 0, Hit: false, SourceFrame: -1}
 	}
-	return edge, Boundary{
-		IdealAt: ideal, ActualAt: frames[edge].PTS,
-		KeyFramePTS: -1, Hit: false, SourceFrame: edge,
+	// Search only within [startIdx+1, edge]: the boundary must not reach
+	// past the ideal time or collapse onto the current chunk start.
+	kf := -1
+	for i := edge; i > startIdx; i-- {
+		if frames[i].KeyFrame && frames[i].PTS <= ideal {
+			kf = i
+			break
+		}
+	}
+	if kf < 0 {
+		return edge, Boundary{
+			IdealAt: ideal, ActualAt: frames[edge].PTS,
+			KeyFramePTS: -1, Hit: false, SourceFrame: edge,
+		}
+	}
+	hit := frames[kf].PTS == ideal
+	return kf, Boundary{
+		IdealAt: ideal, ActualAt: frames[kf].PTS,
+		KeyFramePTS: frames[kf].PTS, Hit: hit, SourceFrame: kf,
 	}
 }
 
