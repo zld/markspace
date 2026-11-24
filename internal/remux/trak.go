@@ -1,6 +1,7 @@
 package remux
 
 import (
+	"mediapipeline/internal/clock"
 	"mediapipeline/internal/demux"
 	"mediapipeline/internal/track"
 )
@@ -28,9 +29,16 @@ func trakBox(tr demux.Track, mapped track.Entry, md *media, movieTS uint32) []by
 	for _, s := range tr.Samples {
 		ticks += uint64(s.Delta)
 	}
+	// tkhd duration covers the whole presentation: any leading empty edit plus
+	// the media itself.
+	start := trackStartTicks(tr)
 	dur1000 := uint64(0)
 	if tr.Timescale != 0 {
-		dur1000 = ticks * uint64(movieTS) / uint64(tr.Timescale)
+		startMovie, _, err := clock.New(start, tr.Timescale).Rescale(movieTS)
+		if err == nil && startMovie > 0 {
+			dur1000 = uint64(startMovie)
+		}
+		dur1000 += ticks * uint64(movieTS) / uint64(tr.Timescale)
 	}
 
 	var tkhd boxBuilder

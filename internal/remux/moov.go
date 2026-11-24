@@ -1,5 +1,9 @@
 package remux
 
+import (
+	"mediapipeline/internal/clock"
+)
+
 // buildMoov assembles a complete moov from the demuxed tracks, the mapping and
 // the relocated chunk offsets.
 func buildMoov(plan Plan, md *media, chapterUdta []byte, timescale uint32) []byte {
@@ -60,11 +64,17 @@ func movieDuration(plan Plan, timescale uint32) uint64 {
 		for _, s := range tr.Samples {
 			ticks += uint64(s.Delta)
 		}
-		if tr.Timescale != 0 {
-			v := ticks * uint64(timescale) / uint64(tr.Timescale)
-			if v > max {
-				max = v
-			}
+		if tr.Timescale == 0 {
+			continue
+		}
+		start := trackStartTicks(tr)
+		var startMovie int64
+		if start > 0 {
+			startMovie, _, _ = clock.New(start, tr.Timescale).Rescale(timescale)
+		}
+		v := uint64(startMovie) + ticks*uint64(timescale)/uint64(tr.Timescale)
+		if v > max {
+			max = v
 		}
 	}
 	if len(plan.Events.Events) > 0 {
