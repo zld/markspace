@@ -30,18 +30,26 @@ type CorruptRange struct {
 	Reason  string // "packet-loss" | "truncated-nal" | "missing-fragment"
 }
 
+// Frame describes one reconstructed access unit on the media timeline.
+type Frame struct {
+	TimeMs float64
+	Bytes  int
+	IDR    bool
+}
+
 // Analysis is the structural summary of the inspected bitstream.
 type Analysis struct {
-	SPSCount        int
-	PPSCount        int
-	IDRCount        int
-	SliceCount      int
-	KeyframeIntMs   []float64 // intervals between consecutive IDR frames
-	Corrupt         []CorruptRange
-	Frames          int
-	MediaBytes      int
-	TimeUncertain   bool // true when no clock anchor was available
-	DurationMs      float64
+	SPSCount      int
+	PPSCount      int
+	IDRCount      int
+	SliceCount    int
+	KeyframeIntMs []float64 // intervals between consecutive IDR frames
+	Corrupt       []CorruptRange
+	Frames        int
+	FrameList     []Frame
+	MediaBytes    int
+	TimeUncertain bool // true when no clock anchor was available
+	DurationMs    float64
 }
 
 // Analyzer consumes committed RTP events in order.
@@ -54,8 +62,9 @@ type Analyzer struct {
 	fuType   uint8
 
 	// per-frame NAL classification, keyed by RTP timestamp
-	frameNALs map[uint32][]uint8
-	frameOrd  []uint32
+	frameNALs  map[uint32][]uint8
+	frameOrd   []uint32
+	frameBytes map[uint32]int
 
 	corrupt []CorruptRange
 	bytes   int
@@ -63,7 +72,7 @@ type Analyzer struct {
 
 // NewAnalyzer creates an Analyzer bound to the shared timeline.
 func NewAnalyzer(tl *clock.Timeline) *Analyzer {
-	return &Analyzer{tl: tl, frameNALs: make(map[uint32][]uint8)}
+	return &Analyzer{tl: tl, frameNALs: make(map[uint32][]uint8), frameBytes: make(map[uint32]int)}
 }
 
 func (a *Analyzer) ms(ts uint32) float64 {
@@ -87,6 +96,7 @@ func (a *Analyzer) Add(ev ingest.Event) {
 	}
 	p := ev.Packet
 	a.bytes += len(p.Payload)
+	a.frameBytes[p.Timestamp] += len(p.Payload)
 	if len(p.Payload) == 0 {
 		a.addCorrupt(p.Timestamp, "truncated-nal")
 		return
@@ -193,6 +203,7 @@ func (a *Analyzer) Finish() *Analysis {
 	var idrTimes []float64
 	for _, ts := range a.frameOrd {
 		res.Frames++
+		fr := Frame{TimeMs: a.ms(ts), Bytes: a.frameBytes[ts]}
 		for _, nt := range a.frameNALs[ts] {
 			switch nt {
 			case nalSPS:
@@ -201,11 +212,13 @@ func (a *Analyzer) Finish() *Analysis {
 				res.PPSCount++
 			case nalIDR:
 				res.IDRCount++
-				idrTimes = append(idrTimes, a.ms(ts))
+				fr.IDR = true
+				idrTimes = append(idrTimes, fr.TimeMs)
 			case nalSlice:
 				res.SliceCount++
 			}
 		}
+		res.FrameList = append(res.FrameList, fr)
 	}
 	for i := 1; i < len(idrTimes); i++ {
 		res.KeyframeIntMs = append(res.KeyframeIntMs, idrTimes[i]-idrTimes[i-1])
