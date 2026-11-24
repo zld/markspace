@@ -98,6 +98,33 @@ func (m *Manager) Recover(verify VerifyFunc) (*RecoveryResult, *fault.Error) {
 	return res, fault.New(fault.ErrWAL, "txn.recover", 0, "unknown WAL state")
 }
 
+// RollbackLast explicitly discards the last open transaction. It is used when
+// the caller chooses not to resume a prepared interruption.
+func (m *Manager) RollbackLast(reason string) (*RecoveryResult, *fault.Error) {
+	recs, fe := m.WAL.ReadRecords()
+	if fe != nil {
+		return nil, fe
+	}
+	res := &RecoveryResult{Action: ActionRollback, RollbackCount: m.RollbackCount}
+	if len(recs) == 0 {
+		res.Action = ActionNone
+		return res, nil
+	}
+	last := recs[len(recs)-1]
+	if last.State == StateCommitted || last.State == StateRolledBack {
+		res.Action = ActionNone
+		return res, nil
+	}
+	t := m.transactionFromRecord(last)
+	if fe := t.Rollback(reason); fe != nil {
+		return res, fe
+	}
+	res.TxnID = last.TxnID
+	res.FinalPath = last.FinalPath
+	res.RollbackCount = m.RollbackCount
+	return res, nil
+}
+
 func (m *Manager) transactionFromRecord(r Record) *Transaction {
 	return &Transaction{
 		mgr:          m,

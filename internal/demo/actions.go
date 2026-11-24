@@ -89,7 +89,7 @@ func runResume(dir string, ts []byte, rules []demux.MapRule, resume bool) (*Samp
 
 	if !resume {
 		mgr2, _ := txn.NewManager(dir)
-		rec, _ := mgr2.Recover(mux.VerifyReadable)
+		rec, _ := mgr2.RollbackLast("--resume not set; discarding interrupted transaction")
 		sr.Recovery = rec
 		mgr2.Close()
 		return sr, "", fault.New(fault.ErrResumeUnsupported, "demo.resume", 0, "--resume is required")
