@@ -73,6 +73,10 @@ func At(kind Kind, path string, offset int64, format string, args ...any) *Error
 	return &Error{Kind: kind, Path: path, Offset: offset, Err: fmt.Errorf(format, args...)}
 }
 
+func AtPosition(kind Kind, position string, format string, args ...any) *Error {
+	return &Error{Kind: kind, Position: position, Offset: -1, Err: fmt.Errorf(format, args...)}
+}
+
 func Track(kind Kind, path string, trackID uint32, offset int64, err error, recoverable bool) *Error {
 	return &Error{Kind: kind, Path: path, TrackID: trackID, Offset: offset, Err: err, Recoverable: recoverable}
 }
