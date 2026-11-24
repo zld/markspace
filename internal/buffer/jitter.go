@@ -21,16 +21,16 @@ const (
 
 // Stats contains deterministic buffer counters.
 type Stats struct {
-	Received       int   `json:"received"`
-	Accepted       int   `json:"accepted"`
-	Duplicate      int   `json:"duplicate_packets"`
-	OutOfOrder     int   `json:"out_of_order_packets"`
-	Late           int   `json:"late_packets"`
-	Expired        int   `json:"expired_packets"`
-	Lost           int   `json:"lost_packets"`
-	JitterEvents   int   `json:"jitter_events"`
-	JitterTicks    int64 `json:"jitter_ticks"`
-	WindowSize     int   `json:"window_size"`
+	Received     int   `json:"received"`
+	Accepted     int   `json:"accepted"`
+	Duplicate    int   `json:"duplicate_packets"`
+	OutOfOrder   int   `json:"out_of_order_packets"`
+	Late         int   `json:"late_packets"`
+	Expired      int   `json:"expired_packets"`
+	Lost         int   `json:"lost_packets"`
+	JitterEvents int   `json:"jitter_events"`
+	JitterTicks  int64 `json:"jitter_ticks"`
+	WindowSize   int   `json:"window_size"`
 }
 
 // Item is one buffered RTP packet keyed by an extended sequence number.

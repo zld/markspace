@@ -23,15 +23,15 @@ const (
 // RestoredFrame is a canonical timeline slot. Winner is set only when a
 // checksum-valid record won timestamp deduplication.
 type RestoredFrame struct {
-	Index       int                `json:"index"`
-	PTS         uint64             `json:"pts"`
-	Duration    uint32             `json:"duration"`
-	State       FrameState         `json:"state"`
-	Reason      model.Kind         `json:"reason,omitempty"`
-	Winner      *ingest.FrameMeta  `json:"winner,omitempty"`
-	Candidates  int                `json:"candidates"`
-	DuplicateOf int                `json:"duplicate_of,omitempty"`
-	Marker      []byte             `json:"-"`
+	Index       int               `json:"index"`
+	PTS         uint64            `json:"pts"`
+	Duration    uint32            `json:"duration"`
+	State       FrameState        `json:"state"`
+	Reason      model.Kind        `json:"reason,omitempty"`
+	Winner      *ingest.FrameMeta `json:"winner,omitempty"`
+	Candidates  int               `json:"candidates"`
+	DuplicateOf int               `json:"duplicate_of,omitempty"`
+	Marker      []byte            `json:"-"`
 }
 
 // FrameReport contains the sorted canonical video timeline.
@@ -148,11 +148,11 @@ type AudioBlock struct {
 
 // AudioReport contains ordered blocks and deterministic concealment counts.
 type AudioReport struct {
-	Blocks             []AudioBlock `json:"-"`
-	PacketCount        int          `json:"packet_count"`
-	GapCount           int          `json:"gap_count"`
-	ConcealedPackets   int          `json:"concealed_packets"`
-	ConcealedSamples   int          `json:"concealed_samples"`
+	Blocks           []AudioBlock `json:"-"`
+	PacketCount      int          `json:"packet_count"`
+	GapCount         int          `json:"gap_count"`
+	ConcealedPackets int          `json:"concealed_packets"`
+	ConcealedSamples int          `json:"concealed_samples"`
 }
 
 // FillAudioGaps inserts explicit silence/marker blocks for every closed-window

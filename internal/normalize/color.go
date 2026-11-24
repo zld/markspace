@@ -8,9 +8,9 @@ import (
 
 // ColorReport retains every source value and records field conflicts.
 type ColorReport struct {
-	Sources    []model.SourcedColor   `json:"sources"`
-	Conflicts  []model.ColorConflict  `json:"conflicts"`
-	Resolved   model.ColorMetadata    `json:"resolved"`
+	Sources     []model.SourcedColor  `json:"sources"`
+	Conflicts   []model.ColorConflict `json:"conflicts"`
+	Resolved    model.ColorMetadata   `json:"resolved"`
 	HasConflict bool                  `json:"has_conflict"`
 }
 

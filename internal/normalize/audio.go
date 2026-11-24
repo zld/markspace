@@ -47,9 +47,9 @@ func MustLayout(name string) Layout {
 
 // Route sends one source channel to one destination with Q15 gain.
 type Route struct {
-	From     string `json:"from"`
-	To       string `json:"to"`
-	GainQ15  int32  `json:"gain_q15"`
+	From    string `json:"from"`
+	To      string `json:"to"`
+	GainQ15 int32  `json:"gain_q15"`
 }
 
 // UnityQ15 is gain 1.0 in fixed point.
@@ -95,7 +95,10 @@ func MapChannels(samples []int16, from Layout, to Layout, routes []Route) ([]int
 	for i, c := range to.Channels {
 		targetIndex[c] = i
 	}
-	type wired struct{ src, dst int; gain int32 }
+	type wired struct {
+		src, dst int
+		gain     int32
+	}
 	var ws []wired
 	for _, r := range routes {
 		si, ok1 := sourceIndex[r.From]
@@ -161,13 +164,13 @@ func Resample(samples []int16, channels int, inRate, outRate uint32) []int16 {
 
 // AudioResult records conversion facts for the acceptance summary.
 type AudioResult struct {
-	Samples          []int16 `json:"-"`
-	InputRate        uint32  `json:"input_rate"`
-	OutputRate       uint32  `json:"output_rate"`
-	InputChannels    int     `json:"input_channels"`
-	OutputChannels   int     `json:"output_channels"`
-	Resampled        bool    `json:"resampled"`
-	MappedChannels   bool    `json:"mapped_channels"`
+	Samples        []int16 `json:"-"`
+	InputRate      uint32  `json:"input_rate"`
+	OutputRate     uint32  `json:"output_rate"`
+	InputChannels  int     `json:"input_channels"`
+	OutputChannels int     `json:"output_channels"`
+	Resampled      bool    `json:"resampled"`
+	MappedChannels bool    `json:"mapped_channels"`
 }
 
 // AudioSpec is the complete deterministic normalization request.

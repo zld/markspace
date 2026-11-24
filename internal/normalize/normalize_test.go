@@ -51,7 +51,7 @@ func TestUnknownChannelLayoutIsExit3(t *testing.T) {
 	}
 	_, err := NormalizeAudio([]byte{0, 1, 0, 2}, AudioSpec{
 		InputRate: 48000, OutputRate: 48000,
-		Input: Layout{Name: "mystery", Channels: []string{"A", "B"}},
+		Input:  Layout{Name: "mystery", Channels: []string{"A", "B"}},
 		Output: LayoutStereo,
 	})
 	var ee *model.ExitError

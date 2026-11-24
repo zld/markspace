@@ -9,9 +9,9 @@ import (
 
 // VideoTimescale is the deterministic demo time base: 90 kHz, 25 fps.
 const (
-	VideoTimescale uint32 = 90000
-	VideoFrameDelta       = 3600 // 40 ms in 90 kHz
-	AudioClockRate uint32 = 48000
+	VideoTimescale  uint32 = 90000
+	VideoFrameDelta        = 3600 // 40 ms in 90 kHz
+	AudioClockRate  uint32 = 48000
 )
 
 // Timebase is a rational mapping from media ticks to wall-clock duration.
@@ -81,14 +81,14 @@ func (m ClockMap) Map(sourceTS uint64) uint64 {
 
 // AVSync reports whether audio and video times differ by at most one frame.
 type AVSync struct {
-	VideoPTS       uint64        `json:"video_pts"`
-	AudioPTS       uint64        `json:"audio_pts"`
-	Delta          time.Duration `json:"delta_ns"`
-	FramePeriod    time.Duration `json:"frame_period_ns"`
-	Tolerance      time.Duration `json:"tolerance_ns"`
-	WithinFrame    bool          `json:"within_frame"`
-	OriginalVideo  uint64        `json:"original_video_pts"`
-	OriginalAudio  uint64        `json:"original_audio_pts"`
+	VideoPTS      uint64        `json:"video_pts"`
+	AudioPTS      uint64        `json:"audio_pts"`
+	Delta         time.Duration `json:"delta_ns"`
+	FramePeriod   time.Duration `json:"frame_period_ns"`
+	Tolerance     time.Duration `json:"tolerance_ns"`
+	WithinFrame   bool          `json:"within_frame"`
+	OriginalVideo uint64        `json:"original_video_pts"`
+	OriginalAudio uint64        `json:"original_audio_pts"`
 }
 
 // CheckAVSync compares mapped audio PTS with the nearest video PTS. On false

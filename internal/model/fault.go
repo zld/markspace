@@ -58,8 +58,8 @@ type Fault struct {
 
 // ExitError associates an operational exit code with faults.
 type ExitError struct {
-	Code  int
-	Err   error
+	Code   int
+	Err    error
 	Faults []Fault
 }
 

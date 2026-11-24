@@ -17,12 +17,12 @@ type Config struct {
 // Alignment retains mapped and original timestamps. AlignedPTS is quantized to
 // the nearest video frame only when the difference is within one frame.
 type Alignment struct {
-	SourceTimestamp uint32        `json:"source_timestamp"`
-	MappedPTS       uint64        `json:"mapped_pts"`
-	ExpectedPTS     uint64        `json:"expected_pts"`
-	AlignedPTS      uint64        `json:"aligned_pts"`
-	Sync            model.AVSync  `json:"sync"`
-	OK              bool          `json:"ok"`
+	SourceTimestamp uint32       `json:"source_timestamp"`
+	MappedPTS       uint64       `json:"mapped_pts"`
+	ExpectedPTS     uint64       `json:"expected_pts"`
+	AlignedPTS      uint64       `json:"aligned_pts"`
+	Sync            model.AVSync `json:"sync"`
+	OK              bool         `json:"ok"`
 }
 
 // Align maps one source timestamp and compares it with expectedVideoPTS.
@@ -42,8 +42,8 @@ func Align(sourceTimestamp uint32, expectedVideoPTS uint64, cfg Config, faults *
 	}
 	if !sync.WithinFrame {
 		f := model.Fault{Kind: model.FaultSync, Actual: sync.Delta.String(),
-			Expected: "<=" + sync.Tolerance.String(),
-			Message: "A/V drift exceeds one video frame; original timestamps retained",
+			Expected:    "<=" + sync.Tolerance.String(),
+			Message:     "A/V drift exceeds one video frame; original timestamps retained",
 			Recoverable: false}
 		if faults != nil {
 			faults.Add(f)
