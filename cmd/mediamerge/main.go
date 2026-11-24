@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -20,7 +21,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "usage: mediamerge demo [flags]")
 		os.Exit(1)
 	}
-	os.Exit(runDemo(os.Args[2:]))
+	os.Exit(runDemo(os.Args[2:], os.Stdout, os.Stderr))
 }
 
 type pathSummary struct {
@@ -47,8 +48,9 @@ type summary struct {
 	Note                string        `json:"note"`
 }
 
-func runDemo(args []string) int {
+func runDemo(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("demo", flag.ContinueOnError)
+	fs.SetOutput(stderr)
 	seed := fs.Int64("seed", 17, "fixture generation seed")
 	target := fs.Int64("target-bitrate", 640000, "target bitrate in bits per second")
 	segMs := fs.Int("segment-ms", 2000, "maximum segment duration in milliseconds")
@@ -59,7 +61,7 @@ func runDemo(args []string) int {
 		return pipeline.ExitBadInput
 	}
 	if *target <= 0 || *segMs <= 0 || *seed < 0 {
-		fmt.Fprintln(os.Stderr, "demo: --target-bitrate, --segment-ms must be positive and --seed non-negative")
+		fmt.Fprintln(stderr, "demo: --target-bitrate, --segment-ms must be positive and --seed non-negative")
 		return pipeline.ExitBadInput
 	}
 	if *indexPath == "" {
@@ -67,17 +69,17 @@ func runDemo(args []string) int {
 	}
 
 	if err := os.MkdirAll(*fixtureDir, 0o755); err != nil {
-		fmt.Fprintf(os.Stderr, "demo: fixture dir: %v\n", err)
+		fmt.Fprintf(stderr, "demo: fixture dir: %v\n", err)
 		return pipeline.ExitBadInput
 	}
 	if err := os.MkdirAll(filepath.Dir(*manifestPath), 0o755); err != nil {
-		fmt.Fprintf(os.Stderr, "demo: manifest dir: %v\n", err)
+		fmt.Fprintf(stderr, "demo: manifest dir: %v\n", err)
 		return pipeline.ExitBadInput
 	}
 
 	fixtures, err := pipeline.Generate(*fixtureDir, *seed, *segMs)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "demo: %v\n", err)
+		fmt.Fprintf(stderr, "demo: %v\n", err)
 		return pipeline.ExitBadInput
 	}
 	suite := pipeline.Run(fixtures, pipeline.Options{
@@ -86,11 +88,11 @@ func runDemo(args []string) int {
 
 	hash, err := suite.Doc.Write(*manifestPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "demo: %v\n", err)
+		fmt.Fprintf(stderr, "demo: %v\n", err)
 		return pipeline.ExitBadInput
 	}
 	if err := suite.Index.WriteFile(*indexPath); err != nil {
-		fmt.Fprintf(os.Stderr, "demo: fingerprint index: %v\n", err)
+		fmt.Fprintf(stderr, "demo: fingerprint index: %v\n", err)
 		return pipeline.ExitBadInput
 	}
 
@@ -116,9 +118,9 @@ func runDemo(args []string) int {
 	}
 	b, err := json.MarshalIndent(out, "", "  ")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "demo: %v\n", err)
+		fmt.Fprintf(stderr, "demo: %v\n", err)
 		return pipeline.ExitBadInput
 	}
-	fmt.Println(string(b))
+	fmt.Fprintln(stdout, string(b))
 	return pipeline.ExitOK
 }
