@@ -117,29 +117,27 @@ func TestDemoProducesReport(t *testing.T) {
 // TestDemoRepeatedSameDirIsStable guards running the documented acceptance
 // command more than once against the same --dir. Products left by the first
 // invocation must not collapse the cold-first vs resume comparison into a
-// spurious timing failure or change any digest.
+// spurious timing failure or change the output digest.
 func TestDemoRepeatedSameDirIsStable(t *testing.T) {
 	root := t.TempDir()
-	for i := 0; i < 2; i++ {
-		if code := cmdDemo([]string{"--dir", root, "--queue", "2"}); code != exitOK {
-			t.Fatalf("demo run %d exit = %d", i+1, code)
-		}
+	if code := cmdDemo([]string{"--dir", root, "--queue", "2"}); code != exitOK {
+		t.Fatalf("demo run 1 exit = %d", code)
+	}
+	first, err := os.ReadFile(filepath.Join(root, "work", "output", "normal.mp4"))
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	outPath := filepath.Join(root, "work", "output", "normal.mp4")
-	first, err := os.ReadFile(outPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	// The second invocation reuses the same --dir and used to fail its timing
+	// budget once completed work trees made both passes near-instant.
 	if code := cmdDemo([]string{"--dir", root, "--queue", "2"}); code != exitOK {
-		t.Fatalf("demo run 3 exit = %d", code)
+		t.Fatalf("demo run 2 exit = %d", code)
 	}
-	third, err := os.ReadFile(outPath)
+	second, err := os.ReadFile(filepath.Join(root, "work", "output", "normal.mp4"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Resetting the work trees must still reproduce byte-identical output.
-	if !bytes.Equal(first, third) {
+	if !bytes.Equal(first, second) {
 		t.Fatal("output/normal.mp4 differs across repeated demo runs")
 	}
 }
