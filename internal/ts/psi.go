@@ -94,10 +94,12 @@ func crcRead(b []byte) uint32 {
 
 // section assembler state for one PID.
 type sectionBuf struct {
-	partial  []byte
-	started  bool // section header seen for the current table id/version
-	lastCont uint8
-	haveCont bool
+	partial       []byte
+	partialTotal  int
+	partialOffset int64
+	partialPacket int64
+	lastCont      uint8
+	haveCont      bool
 }
 
 // PSI assembles PAT and PMT sections from packet payloads and publishes only
@@ -214,7 +216,16 @@ func (p *PSI) Feed(pkt *Packet) {
 		p.bufs[pkt.PID] = sb
 	}
 	if pkt.PayloadStart {
-		if sb.haveCont && pkt.Continuity != ((sb.lastCont+1)&0xF) && len(sb.partial) > 0 {
+		if len(sb.partial) > 0 {
+			// A new section starts while the previous one was still short.
+			// No continuation packet completed it, so it was truncated; the
+			// last validated snapshot stays in force.
+			p.stats.Truncated++
+			p.diag(Diagnostic{Kind: DiagMalformedPacket, PID: pkt.PID, Offset: sb.partialOffset, Packet: sb.partialPacket,
+				Detail: fmt.Sprintf("section truncated: promised %d bytes, got %d before next start", sb.partialTotal, len(sb.partial))})
+			sb.partial = nil
+		}
+		if sb.haveCont && pkt.Continuity != ((sb.lastCont+1)&0xF) {
 			p.stats.Discontinuity++
 			p.diag(Diagnostic{Kind: DiagContinuityJump, PID: pkt.PID, Offset: pkt.Offset, Packet: pkt.Index,
 				PrevCC: sb.lastCont, CC: pkt.Continuity, Detail: "PSI reassembly dropped partial section"})
@@ -262,6 +273,9 @@ func (p *PSI) appendBytes(pkt *Packet, sb *sectionBuf, data []byte) {
 					return
 				}
 				sb.partial = append(sb.partial, make([]byte, 0, total-3)...)
+				sb.partialTotal = total
+				sb.partialOffset = pkt.Offset
+				sb.partialPacket = pkt.Index
 			}
 		}
 		total := 3 + int(uint16(sb.partial[1]&0x0F)<<8|uint16(sb.partial[2]))

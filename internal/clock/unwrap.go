@@ -63,10 +63,12 @@ type Obs struct {
 	Discontinuity bool // adaptation-field discontinuity_indicator
 }
 
-// pcrPeriod is the 27 MHz PCR domain period: the 33-bit base field times
-// the 300-tick extension granularity. Computing wrap relative to this period
-// keeps sub-tick precision in the unwrapped clock.
-const pcrPeriod int64 = 300 * (1 << 33)
+// basePeriod is the size of the 33-bit PCR *base* field. PCR is unwrapped in
+// this 90 kHz domain rather than at 27 MHz: 300*(1<<33) is not a power of
+// two, so modular arithmetic is simplest in the base domain where the period
+// is exactly 1<<33. The 9-bit extension is retained for spacing but not for
+// the shared timeline.
+const basePeriod int64 = 1 << 33
 const ptsPeriod int64 = 1 << 33 // 90 kHz PTS/DTS field
 
 // spanLimit is how far the timeline may drift from the current anchor before
@@ -152,34 +154,37 @@ func (u *Unwrapper) Observe(obs Obs) (ticks int64, ok bool) {
 }
 
 func (u *Unwrapper) observePCR(obs Obs) (int64, bool) {
-	raw := obs.Raw & (uint64(pcrPeriod) - 1)
+	// obs.Raw is a 27 MHz value; fold it into the 90 kHz base domain first so
+	// all wrap arithmetic shares one power-of-two period.
+	raw27 := obs.Raw
+	base := int64(raw27 / uint64(PCRToTicks))
+	base &= basePeriod - 1
 	if !u.pcrSeen[obs.PID] {
 		u.pcrSeen[obs.PID] = true
-		u.lastPCR[obs.PID] = int64(raw)
-		u.lastPCRTk[obs.PID] = int64(raw) / PCRToTicks
+		u.lastPCR[obs.PID] = base
+		u.lastPCRTk[obs.PID] = base
 		// The first PCR also anchors the shared 90 kHz timeline so PTS and
 		// PCR can never disagree about which side of a wrap they are on.
 		if !u.anchored {
 			u.anchored = true
-			u.originRaw = raw / uint64(PCRToTicks)
+			u.originRaw = uint64(base)
 			u.originTks = 0
 		}
-		return u.lastPCRTk[obs.PID], true
+		return base, true
 	}
-	d := wrapDelta(int64(raw), u.lastPCR[obs.PID], pcrPeriod)
-	limit := u.cfg.MaxJump * PCRToTicks
-	if !obs.Discontinuity && d < -u.cfg.MaxReorder*PCRToTicks {
-		u.addError(KindNonMonotonic, obs, raw, true,
-			fmt.Sprintf("PCR moved backward by %d ticks(27MHz) without discontinuity flag", -d))
+	d := wrapDelta(base, u.lastPCR[obs.PID], basePeriod)
+	if !obs.Discontinuity && d < -u.cfg.MaxReorder {
+		u.addError(KindNonMonotonic, obs, raw27, true,
+			fmt.Sprintf("PCR moved backward by %d ticks without discontinuity flag", -d))
 		return 0, false
 	}
-	if !obs.Discontinuity && d > limit {
-		u.addError(KindDiscontinuity, obs, raw, true,
-			fmt.Sprintf("PCR jumped forward by %d ticks(27MHz), limit %d", d, limit))
+	if !obs.Discontinuity && d > u.cfg.MaxJump {
+		u.addError(KindDiscontinuity, obs, raw27, true,
+			fmt.Sprintf("PCR jumped forward by %d ticks, limit %d", d, u.cfg.MaxJump))
 		return 0, false
 	}
 	u.lastPCR[obs.PID] += d
-	u.lastPCRTk[obs.PID] = u.lastPCR[obs.PID] / PCRToTicks
+	u.lastPCRTk[obs.PID] = u.lastPCR[obs.PID]
 	return u.lastPCRTk[obs.PID], true
 }
 

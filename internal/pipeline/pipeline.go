@@ -270,7 +270,16 @@ func Analyze(ctx context.Context, inputPath string, params Params) (*Analysis, e
 	}
 	an.Samples = a.samples
 	an.Stats = sc.Stats()
-	an.Diagnostics = sc.Diagnostics()
+	// Transport-level and PSI-level faults are both located diagnostics; a
+	// PSI fault means a table was rejected, not that the run is unusable.
+	an.Diagnostics = append(an.Diagnostics, sc.Diagnostics()...)
+	an.Diagnostics = append(an.Diagnostics, a.psi.Diagnostics()...)
+	sort.Slice(an.Diagnostics, func(i, j int) bool {
+		if an.Diagnostics[i].Offset != an.Diagnostics[j].Offset {
+			return an.Diagnostics[i].Offset < an.Diagnostics[j].Offset
+		}
+		return an.Diagnostics[i].Kind < an.Diagnostics[j].Kind
+	})
 	an.ClockErrors = a.unwrap.Finish()
 	for _, s := range a.psi.Snapshots() {
 		an.Snapshots = append(an.Snapshots, s)

@@ -236,8 +236,11 @@ func DefaultSpec(seed int64) Spec {
 		AudioBytes:  700,
 		PCRInterval: 10,
 		GOP:         12,
-		StartPCR:    uint64(1<<33) - 90000*300*3, // three seconds before wrap
-		StartPTS:    90000 * 3,
+		// Start one second before the 33-bit PCR wrap so a normal master
+		// crosses the rollover mid-stream; the damaged master crosses it
+		// earlier, still monotonically.
+		StartPCR: uint64(1<<33) - 90000,
+		StartPTS: 90000 * 3,
 	}
 }
 
@@ -502,15 +505,42 @@ func applyDamage(out []byte, class string) ([]byte, []Damage, error) {
 			Detail: "continuity counter advanced by two"}}, nil
 
 	case "pcrwrap":
-		// Place a PCR one second before the 33-bit boundary so unwrapping
-		// must cross it while the stream continues.
-		pkt := findPCR(out, 6)
-		if pkt < 0 {
+		// Shift the entire PCR timeline so the 33-bit wrap lands half a
+		// second after the first PCR. Shifting every PCR by one constant
+		// preserves the cadence: a repair that mishandles the rollover will
+		// still see a clean monotonic clock, while a repair that assumes
+		// monotonic raw values sees a huge backward step.
+		first := findPCR(out, 0)
+		if first < 0 {
 			return nil, nil, fmt.Errorf("fixture: no PCR to wrap")
 		}
-		setPCR(out, pkt, uint64(1<<33)-90000*PCRToTicks)
-		return out, []Damage{{Kind: class, Offset: int64(pkt), Packet: int64(pkt) / PacketSize,
-			Detail: "PCR rewritten to 1s before 33-bit wrap"}}, nil
+		old := pcrBaseOf(out, first)
+		target := uint64(1<<33) - 45000
+		delta := int64(target) - int64(old)
+		count := 0
+		var wrapAt int64 = -1
+		prev := int64(-1)
+		for off := 0; off+PacketSize <= len(out); off += PacketSize {
+			if out[off] != 0x47 {
+				continue
+			}
+			if (out[off+3]>>4)&2 == 0 || out[off+4] < 7 || out[off+5]&0x10 == 0 {
+				continue
+			}
+			v := (int64(pcrBaseOf(out, off)) + delta) & (1<<33 - 1)
+			setPCR(out, off, uint64(v))
+			if prev >= 0 && v < prev && wrapAt < 0 {
+				wrapAt = int64(off)
+			}
+			prev = v
+			count++
+		}
+		off := int64(first)
+		if wrapAt >= 0 {
+			off = wrapAt
+		}
+		return out, []Damage{{Kind: class, Offset: off, Packet: off / PacketSize,
+			Detail: fmt.Sprintf("PCR timeline shifted so the 33-bit wrap occurs mid-stream (after %d PCRs)", count)}}, nil
 
 	case "dup":
 		// Insert an exact copy of a video packet. Alignment is preserved,
@@ -525,9 +555,10 @@ func applyDamage(out []byte, class string) ([]byte, []Damage, error) {
 			Packet: int64(pkt+PacketSize) / PacketSize, Detail: "verbatim duplicate inserted"}}, nil
 
 	case "truncpsi":
-		// Claim a PMT section longer than the packet payload, so reassembly
-		// can never complete and the prior valid snapshot stays in force.
-		pkt := findPacket(out, PMTPID, 0)
+		// Damage a *later* PMT repeat, exactly like a mid-stream table update
+		// that arrives broken. The first repeat establishes a valid snapshot;
+		// the damaged one must not replace it.
+		pkt := findPacket(out, PMTPID, 4)
 		if pkt < 0 {
 			return nil, nil, fmt.Errorf("fixture: no PMT")
 		}
@@ -569,6 +600,21 @@ func applyDamage(out []byte, class string) ([]byte, []Damage, error) {
 	}
 }
 
+// payloadStart returns the index of the first payload byte of a packet,
+// accounting for an adaptation field. PSI sections live here, after the
+// pointer_field, not at a fixed offset.
+func payloadStart(b []byte, pktOff int) int {
+	afc := (b[pktOff+3] >> 4) & 3
+	start := pktOff + 4
+	if afc&2 != 0 {
+		start += 1 + int(b[pktOff+4])
+	}
+	if start > pktOff+PacketSize {
+		return -1
+	}
+	return start
+}
+
 func findPacket(b []byte, pid uint16, n int) int {
 	seen := 0
 	for off := 0; off+PacketSize <= len(b); off += PacketSize {
@@ -587,11 +633,12 @@ func findPacket(b []byte, pid uint16, n int) int {
 }
 
 func sectionBounds(b []byte, pktOff int) (start, length int) {
-	if pktOff+5 > len(b) {
+	ps := payloadStart(b, pktOff)
+	if ps < 0 || ps+1 > len(b) {
 		return -1, 0
 	}
-	ptr := int(b[pktOff+4])
-	start = pktOff + 5 + ptr
+	ptr := int(b[ps])
+	start = ps + 1 + ptr
 	if start+3 > len(b) {
 		return -1, 0
 	}
@@ -617,6 +664,11 @@ func findPCR(b []byte, n int) int {
 		seen++
 	}
 	return -1
+}
+
+func pcrBaseOf(b []byte, off int) uint64 {
+	return uint64(b[off+6])<<25 | uint64(b[off+7])<<17 | uint64(b[off+8])<<9 |
+		uint64(b[off+9])<<1 | uint64(b[off+10])>>7
 }
 
 func setPCR(b []byte, off int, base uint64) {
