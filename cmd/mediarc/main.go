@@ -217,5 +217,8 @@ func printMediaError(err error) {
 	if me.Unrecoverable > 0 {
 		fmt.Fprintf(os.Stderr, " unrecoverable_packets=%d", me.Unrecoverable)
 	}
+	if me.Err != nil {
+		fmt.Fprintf(os.Stderr, " cause=%q", me.Err.Error())
+	}
 	fmt.Fprintln(os.Stderr)
 }

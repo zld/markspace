@@ -92,17 +92,22 @@ func buildEvents(opt Options) []model.TimedEvent {
 	events := []model.TimedEvent{
 		{ID: "chapters", Kind: model.MetaChapter, TrackID: 4, PTS: model.Milliseconds(0), SourceOffset: 4096,
 			Payload: ChapterBook([]Chapter{{0, "Opening"}, {300, "Archive reel"}, {700, "Recovery"}})},
-		{ID: "id3-tit2", Kind: model.MetaID3, TrackID: 5, PTS: model.Milliseconds(20), SourceOffset: 4200,
+		// ID3 arrives on the audio clock base (48 kHz): 960 ticks is 20 ms.
+		{ID: "id3-tit2", Kind: model.MetaID3, TrackID: 5,
+			PTS: model.NewTimestamp(960, model.TimeBase{Num: 1, Den: 48000}), SourceOffset: 4200,
 			Payload: ID3Tag("Historical Asset 7", "MediaRC")},
 		{ID: "sub-001", Kind: model.MetaSubtitle, TrackID: 3, PTS: model.Milliseconds(100), DurationMS: 2000, SourceOffset: 8192,
 			Payload: WebVTT(100, "Deterministic archive recovery")},
 	}
 	if msg, err := Emsg(250, 1001, "timed metadata beacon"); err == nil {
+		// emsg media time is represented on a 90 kHz clock: 22500 ticks = 250 ms.
 		events = append(events, model.TimedEvent{ID: "emsg-1001", Kind: model.MetaEmsg, TrackID: 5,
-			PTS: model.Milliseconds(250), SourceOffset: 12288, Payload: msg})
+			PTS: model.NewTimestamp(22500, model.TimeBase{Num: 1, Den: 90000}), SourceOffset: 12288, Payload: msg})
 	}
+	// SEI follows the video time base: 9990/30000 seconds = 333 ms.
 	events = append(events, model.TimedEvent{ID: "sei-user", Kind: model.MetaSEI, TrackID: 1,
-		PTS: model.Milliseconds(333), SourceOffset: 16384, Payload: SEIUserdata("frame synchronization marker")})
+		PTS: model.NewTimestamp(9990, model.TimeBase{Num: 1, Den: 30000}), SourceOffset: 16384,
+		Payload: SEIUserdata("frame synchronization marker")})
 	latePTS := int64(720)
 	events = append(events, model.TimedEvent{ID: "sub-late", Kind: model.MetaSubtitle, TrackID: 3,
 		PTS: model.Milliseconds(latePTS), DurationMS: 1500, SourceOffset: 20480,
