@@ -76,7 +76,7 @@ func cmdDemo(args []string) int {
 		return 1
 	}
 	mxfPath := filepath.Join(*out, "normal.mxf")
-	if _, err := sample.GenMXF(mxfPath, sample.MXFOptions{}); err != nil {
+	if _, err := sample.GenMXF(mxfPath, sample.MXFOptions{CorruptAt: -1, TruncateAt: -1}); err != nil {
 		fmt.Fprintln(os.Stderr, "error: generate MXF fixture:", err)
 		return 1
 	}

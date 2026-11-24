@@ -85,8 +85,9 @@ func (b *Buffer) Next() *Event {
 		return &Event{Packet: p}
 	}
 	// Gap at head of line: wait until the window expires, then declare the
-	// missing sequence lost and advance the timeline.
-	if seqDiff(b.maxSeq, b.expected) >= b.cfg.Window {
+	// missing sequence lost and advance the timeline. Only a packet that
+	// actually arrived ahead of the gap can expire the window.
+	if seqAfter(b.maxSeq, b.expected) && seqDiff(b.maxSeq, b.expected) >= b.cfg.Window {
 		lost := b.expected
 		b.expected++
 		return &Event{Lost: []uint16{lost}}

@@ -147,7 +147,10 @@ func runPipeline(dir string, interruptAfter int) int {
 			fmt.Fprintln(os.Stderr, "error: demux:", err)
 			return 1
 		}
-		if i < committed { // already confirmed range: skip, deterministically
+			if i < committed {
+			// Already confirmed range: skip output, but still observe the
+			// packet so the sync measurement matches an uninterrupted run.
+			tracker.Observe(pkt.Type, pkt.PtsNs)
 			i++
 			continue
 		}
@@ -162,9 +165,6 @@ func runPipeline(dir string, interruptAfter int) int {
 		// Checkpoint only at a complete packet boundary.
 		cp.Committed = i
 		cp.HashState, _ = hasher.MarshalState()
-		cp.MaxDevNs = max64(cp.MaxDevNs, tracker.MaxDevNs)
-		cp.AVViolations += tracker.Violations
-		tracker.Violations = 0
 		if err := recover.Save(dir, cp); err != nil {
 			fmt.Fprintln(os.Stderr, "error: checkpoint:", err)
 			return 1
@@ -177,6 +177,11 @@ func runPipeline(dir string, interruptAfter int) int {
 		}
 	}
 
+	// Sync is measured over the whole emitted stream (resume re-observes the
+	// confirmed range), so interrupted and uninterrupted runs agree exactly.
+	tracker.Finalize()
+	cp.MaxDevNs = tracker.MaxDevNs
+	cp.AVViolations = tracker.Violations
 	stats := demux.Stats()
 	cp.Recovered, cp.Skipped, cp.Lost = stats.Recovered, stats.Skipped, stats.Lost
 	cp.Done = true
@@ -223,12 +228,5 @@ func encodeRecord(p *stream.Packet) []byte {
 	binary.BigEndian.PutUint64(b[4:12], uint64(p.PtsNs))
 	binary.BigEndian.PutUint16(b[12:14], p.Seq)
 	copy(b[14:], p.Payload)
-	return b
-}
-
-func max64(a, b int64) int64 {
-	if a > b {
-		return a
-	}
 	return b
 }

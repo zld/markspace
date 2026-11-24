@@ -37,7 +37,7 @@ func printReport(dir string, res *scan.Result, cp *recover.Checkpoint, elapsed t
 	}
 	if meta := loadMeta(dir); meta != nil {
 		reportOffsetError("corrupt", firstOffset(res.Errors, model.ErrEssenceCRC), meta.CorruptAt, meta.CorruptPacketSize)
-		reportOffsetError("truncate", firstOffset(res.Errors, model.ErrTruncated), meta.TruncateAt, meta.TruncatePacketSize)
+		reportOffsetError("truncate", minSampleOffset(res.Errors, model.ErrTruncated), meta.TruncateAt, meta.TruncatePacketSize)
 	}
 	fmt.Printf("packets: recovered=%d skipped=%d lost=%d\n", cp.Recovered, cp.Skipped, cp.Lost)
 	fmt.Printf("A/V max deviation: %.3fms (tolerance %.1fms, violations=%d)\n",
@@ -58,6 +58,19 @@ func firstOffset(errs model.Errors, code model.ErrCode) int64 {
 		}
 	}
 	return -1
+}
+
+// minSampleOffset returns the smallest offset among sample-level (track >= 0)
+// errors with the given code: the earliest point at which truncation was
+// localised.
+func minSampleOffset(errs model.Errors, code model.ErrCode) int64 {
+	best := int64(-1)
+	for _, e := range errs {
+		if e.Code == code && e.Track >= 0 && (best < 0 || e.Offset < best) {
+			best = e.Offset
+		}
+	}
+	return best
 }
 
 // reportOffsetError prints detected-vs-actual damage offset and checks the
