@@ -180,15 +180,17 @@ func BuildEMSG(e EMSGEvent) []byte {
 	if e.SchemeIDURI == "" {
 		e.SchemeIDURI = "urn:avpipe:timed"
 	}
+	// emsg version 1 field order: fixed timing fields first, then both
+	// null-terminated URI/value strings, then message bytes.
 	p := fullBox(1, 0, nil)
-	p = append(p, []byte(e.SchemeIDURI)...)
-	p = append(p, 0)
-	p = append(p, []byte(e.Value)...)
-	p = append(p, 0)
 	p = append(p, be32(e.Timescale)...)
 	p = append(p, be64(e.PTS)...)
 	p = append(p, be32(e.Duration)...)
 	p = append(p, be32(e.ID)...)
+	p = append(p, []byte(e.SchemeIDURI)...)
+	p = append(p, 0)
+	p = append(p, []byte(e.Value)...)
+	p = append(p, 0)
 	p = append(p, e.Message...)
 	return box("emsg", p)
 }

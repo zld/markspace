@@ -102,7 +102,9 @@ func findChild(payload []byte, want string) (BoxView, bool) {
 	return found, ok
 }
 
-// findDeep searches direct children and one container level for want.
+// findDeep recursively searches a box payload for want. The returned view's
+// offsets are relative to payload; callers parsing only Payload do not need
+// global offsets.
 func findDeep(payload []byte, want string) (BoxView, bool) {
 	if v, ok := findChild(payload, want); ok {
 		return v, true
@@ -110,14 +112,10 @@ func findDeep(payload []byte, want string) (BoxView, bool) {
 	var result BoxView
 	found := false
 	_ = iterBoxes(payload, 0, func(parent BoxView) error {
-		if found || len(parent.Payload) == 0 {
+		if found {
 			return nil
 		}
-		if child, ok := findChild(parent.Payload, want); ok {
-			// Convert child offsets from parent-payload-relative to the
-			// original payload coordinate space.
-			child.Offset += parent.PayloadStart
-			child.PayloadStart += parent.PayloadStart
+		if child, ok := findDeep(parent.Payload, want); ok {
 			result = child
 			found = true
 		}
