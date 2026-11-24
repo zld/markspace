@@ -83,7 +83,8 @@ type packet struct {
 	pid     uint16
 	pusi    bool
 	cc      uint8
-	pcr     *uint64 // 27 MHz base
+	pcr     *uint64 // 33-bit 90 kHz base
+	pcrExt  uint16  // 9-bit 27 MHz extension
 	rai     bool
 	payload []byte // <= capacity guaranteed by the caller
 }
@@ -136,8 +137,8 @@ func (p packet) bytes() []byte {
 		b[pos+1] = byte(v >> 17)
 		b[pos+2] = byte(v >> 9)
 		b[pos+3] = byte(v >> 1)
-		b[pos+4] = byte(v&1)<<7 | 0x7E
-		b[pos+5] = 0x00
+		b[pos+4] = byte(v&1)<<7 | byte((p.pcrExt>>8)&1)<<0 | 0x7E
+		b[pos+5] = byte(p.pcrExt)
 		pos += 6
 	}
 	for pos < 5+afLen {
@@ -154,24 +155,26 @@ func timestampField(prefix byte, ts int64) []byte {
 	return []byte{
 		prefix<<4 | byte((v>>30)&0x07)<<1 | 1,
 		byte(v >> 22),
-		byte((v>>14)&0xFF)<<1 | 1,
+		byte((v>>15)&0x7F)<<1 | 1,
 		byte(v >> 7),
 		byte(v&0x7F)<<1 | 1,
 	}
 }
 
-// videoPES builds an H.264 PES with PTS/DTS.
+// videoPES builds an H.264 PES with PTS/DTS. The optional header follows
+// ISO/IEC 13818-1: marker '10', flags byte, header_data_length, then the
+// fixed-width 33-bit timestamp encodings.
 func videoPES(dts, pts int64, data []byte) []byte {
 	hasDTS := dts != pts
-	flags := byte(0x80)
 	hdrLen := 5
+	tsFlags := byte(0x80) // PTS only
 	if hasDTS {
-		flags = 0xC0
 		hdrLen = 10
+		tsFlags = 0xC0 // PTS + DTS
 	}
 	out := []byte{0x00, 0x00, 0x01, 0xE0}
-	out = append(out, 0x00, 0x00) // placeholder for PES_packet_length
-	out = append(out, flags, byte(hdrLen))
+	out = append(out, 0x00, 0x00) // PES_packet_length placeholder
+	out = append(out, 0x80, tsFlags, byte(hdrLen))
 	if hasDTS {
 		out = append(out, timestampField(0x3, pts)...)
 		out = append(out, timestampField(0x1, dts)...)
@@ -187,7 +190,7 @@ func videoPES(dts, pts int64, data []byte) []byte {
 
 // audioPES builds an AAC PES carrying a PTS.
 func audioPES(pts int64, data []byte) []byte {
-	out := []byte{0x00, 0x00, 0x01, 0xC0, 0x00, 0x00, 0x80, 0x05}
+	out := []byte{0x00, 0x00, 0x01, 0xC0, 0x00, 0x00, 0x80, 0x80, 0x05}
 	out = append(out, timestampField(0x2, pts)...)
 	out = append(out, data...)
 	pl := len(out) - 6
@@ -209,6 +212,7 @@ type Spec struct {
 	GOP              int // video frames between random access points
 	StartPCR         uint64
 	StartPTS         int64
+	PCRFraction      int // 27 MHz sub-tick offset kept in every PCR
 	NoAudio          bool
 	PMTChangeAt      int // frame index at which the PMT version changes; 0 disables
 	PMTStartVersion  uint8
@@ -366,7 +370,7 @@ func Generate(path string, spec Spec) (*Generated, error) {
 	b.psi(PATPID, PATSection(0))
 	b.psi(PMTPID, PMTSection(spec.PMTStartVersion, VideoStreamType, AudioStreamType))
 
-	pcr := spec.StartPCR
+	pcrBase := spec.StartPCR
 	pmtVersion := spec.PMTStartVersion
 	audioIdx := 0
 	lastPSI := -1000
@@ -393,9 +397,13 @@ func Generate(path string, spec Spec) (*Generated, error) {
 		pts := dts + 2*VideoFrameTicks
 		var pcrArg *uint64
 		if f%spec.PCRInterval == 0 || keyframe {
-			v := pcr
+			// PCR tracks decode time on the same 27 MHz scale, which keeps
+			// the clock model coherent and the wrap exercise meaningful.
+			// PCR_base counts 90 kHz ticks; the 9-bit extension carries
+			// the 27 MHz fraction. Mixing the two here would inflate every
+			// interval by 300 and make sane clocks look discontinuous.
+			v := (pcrBase + uint64(dts-spec.StartPTS)) & (1<<33 - 1)
 			pcrArg = &v
-			pcr += uint64(VideoFrameTicks * PCRToTicks)
 		}
 		pes := videoPES(dts, pts, elementary(spec.Seed, f, spec.VideoBytes, keyframe, false))
 		off := int64(b.buf.Len())
