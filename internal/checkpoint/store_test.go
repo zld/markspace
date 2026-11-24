@@ -211,3 +211,43 @@ func TestInterruptLeavesOnlyCommittedChunks(t *testing.T) {
 		t.Fatal("resume did not finish the batch")
 	}
 }
+
+func TestInterruptedWriteLeavesNoTempFile(t *testing.T) {
+	s, dir := newStore(t)
+	if err := s.Begin(2, 2, "cfg", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Commit(chunk(0, 2), "in0"); err != nil {
+		t.Fatal(err)
+	}
+	// Any temp file a crash could have left must be harmless: Open ignores
+	// it and the committed manifest still verifies.
+	dir1 := filepath.Join(dir, ChunkDir)
+	if err := os.WriteFile(filepath.Join(dir1, ".chunk-00000.json.tmp-crash"), []byte("{partial"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s2, err := Open(dir)
+	if err != nil {
+		t.Fatalf("stray temp file must not break Open: %v", err)
+	}
+	if ok, err := s2.Verify(0, "in0"); !ok || err != nil {
+		t.Fatalf("stray temp file must not break Verify: %v", err)
+	}
+}
+
+func TestManifestIsDeterministic(t *testing.T) {
+	read := func() []byte {
+		s, dir := newStore(t)
+		s.Begin(2, 2, "cfg", false)
+		s.Commit(chunk(0, 2), "in0")
+		s.Commit(chunk(1, 2), "in1")
+		data, err := os.ReadFile(filepath.Join(dir, ManifestName))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return data
+	}
+	if string(read()) != string(read()) {
+		t.Fatal("identical commits must produce a byte-identical manifest")
+	}
+}
