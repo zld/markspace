@@ -191,17 +191,14 @@ func (r DriftReport) DriftError() *model.Error {
 		return nil
 	}
 	return model.NewError(model.CodeDriftExceeded, "timecode", r.Track.ID, model.InputPos{},
-		"clock drift %s (%s ppm) exceeds limit %d ppm; correction %s s",
+		"clock drift %s (%s ppm) exceeds limit %d ppm; correction %s s (exact ratio)",
 		r.Drift, r.PPM(), r.MaxPPM, r.Correction)
 }
 
-// PPM renders the drift in parts per million, rounded toward zero.
+// PPM renders the drift in parts per million with one decimal. It is a
+// human-facing string; all comparisons use the exact Drift ratio.
 func (r DriftReport) PPM() string {
-	ppm, err := r.Drift.Mul(model.RatFromInt(1_000_000)).Quo(model.RatFromInt(1))
-	if err != nil {
-		return "0"
-	}
-	return fmt.Sprintf("%.1f", ppm.Seconds())
+	return fmt.Sprintf("%.1f", r.Drift.Mul(model.RatFromInt(1_000_000)).Seconds())
 }
 
 // CorrectTimeline applies the report's slope correction to raw media times and
