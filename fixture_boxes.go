@@ -18,6 +18,7 @@ type muxSample struct {
 // set, is copied verbatim as the stsd sample entry (used to preserve tracks
 // whose codec structure this package does not rebuild).
 type muxTrack struct {
+	SourceID  uint32
 	ID        uint32
 	Kind      TrackKind
 	Handler   string
