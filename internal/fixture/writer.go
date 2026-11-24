@@ -182,33 +182,45 @@ func scaleUint(v uint64, from, to uint32) uint64 {
 	return (v*uint64(to) + uint64(from)/2) / uint64(from)
 }
 
+// rleSTTS emits one duration per sample. SampleCount therefore sums to the
+// number of samples, and expanding the table reproduces every DTS exactly.
 func rleSTTS(dts []uint64) []mp4.SttsEntry {
-	if len(dts) < 2 {
+	if len(dts) == 0 {
 		return []mp4.SttsEntry{}
 	}
+	deltas := make([]uint32, len(dts))
+	for i := 0; i < len(dts)-1; i++ {
+		deltas[i] = uint32(dts[i+1] - dts[i])
+	}
+	// The final sample keeps the nominal step so mdhd duration covers it.
+	last := uint64(1)
+	if len(dts) > 1 {
+		last = dts[len(dts)-1] - dts[len(dts)-2]
+	}
+	if last == 0 {
+		last = 1
+	}
+	deltas[len(deltas)-1] = uint32(last)
+
 	var out []mp4.SttsEntry
 	var count uint32
-	var delta uint64
+	var cur uint32
 	flush := func() {
 		if count > 0 {
-			out = append(out, mp4.SttsEntry{SampleCount: count, SampleDelta: uint32(delta)})
+			out = append(out, mp4.SttsEntry{SampleCount: count, SampleDelta: cur})
 		}
 	}
-	for i := 1; i < len(dts); i++ {
-		d := dts[i] - dts[i-1]
-		if count == 0 {
-			delta, count = d, 1
+	for i, d := range deltas {
+		if i == 0 {
+			cur, count = d, 1
 			continue
 		}
-		if d == delta {
+		if d == cur {
 			count++
 			continue
 		}
 		flush()
-		delta, count = d, 1
-	}
-	if delta == 0 {
-		delta = 1
+		cur, count = d, 1
 	}
 	flush()
 	return out
