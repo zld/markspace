@@ -27,13 +27,13 @@ func TestProbeHealthyContainer(t *testing.T) {
 		t.Fatalf("tracks=%d", len(c.Tracks))
 	}
 	v := c.VideoTrack()
-	if v == nil || v.SampleCount != 60 {
+	if v == nil || v.SampleCount != 240 {
 		t.Fatalf("video track: %+v", v)
 	}
-	if v.StartUS != 0 || v.EndUS != 2_000_000 {
+	if v.StartUS != 0 || v.EndUS != 8_000_000 {
 		t.Fatalf("video span %d..%d", v.StartUS, v.EndUS)
 	}
-	if len(v.Keyframes) != 4 {
+	if len(v.Keyframes) != 8 {
 		t.Fatalf("keyframes=%d", len(v.Keyframes))
 	}
 	if v.FrameTicks != 1000 {

@@ -9,11 +9,11 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/zld/mediapipe/fixtures"
 	"github.com/zld/mediapipe/media"
-	"github.com/zld/mediapipe/pipeline"
 	"github.com/zld/mediapipe/runner"
 )
 
@@ -74,7 +74,7 @@ func run(args []string) int {
 		}
 		maxDev = v
 	} else {
-		maxDev = pipeline.DefaultMaxDeviation(0)
+		maxDev = 0 // runner derives one and a half reference frames
 	}
 
 	inputs, err := collectInputs(*input)
@@ -149,7 +149,7 @@ func collectInputs(root string) ([]string, error) {
 			}
 			return nil
 		}
-		if isMediaPath(path) {
+		if isMediaPath(path) && !isRepresentationPath(path) {
 			out = append(out, path)
 		}
 		return nil
@@ -166,6 +166,24 @@ func isMediaPath(p string) bool {
 	return ext == ".mp4" || ext == ".mov"
 }
 
+// isRepresentationPath reports whether a file is a per-bitrate representation
+// of a sibling input (e.g. "baseline.500k.mp4"). Those are consumed as layers
+// of their base input, not as independent batch entries.
+func isRepresentationPath(p string) bool {
+	base := strings.TrimSuffix(filepath.Base(p), filepath.Ext(p))
+	parts := strings.Split(base, ".")
+	if len(parts) < 2 {
+		return false
+	}
+	last := strings.ToLower(parts[len(parts)-1])
+	last = strings.TrimPrefix(last, "video-")
+	if !strings.HasSuffix(last, "k") && !strings.HasSuffix(last, "m") {
+		return false
+	}
+	_, err := strconv.Atoi(strings.TrimSuffix(strings.TrimSuffix(last, "k"), "m"))
+	return err == nil
+}
+
 func generateSamples(dir string) int {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		fmt.Fprintf(os.Stderr, "internal error: %v\n", err)
@@ -175,12 +193,27 @@ func generateSamples(dir string) int {
 	corrupt := filepath.Join(dir, "corrupt")
 	routed := filepath.Join(dir, "rtp")
 
+	// Representation variants share the reference video timing but shift
+	// their keyframe grid by one sample, so cross-bitrate alignment has a
+	// real (sub-frame) deviation to measure.
+	variant := func(name string, phase int) fixtures.Spec {
+		s := fixtures.DefaultSpec(name)
+		s.Tracks = s.Tracks[:1]
+		s.Tracks[0].SyncOffsetPhase = phase
+		return s
+	}
 	specsGood := []fixtures.Spec{
 		fixtures.DefaultSpec("baseline.mp4"),
 		func() fixtures.Spec { s := fixtures.DefaultSpec("baseline.mov"); s.Corrupt = "mov"; return s }(),
+		variant("baseline.500k.mp4", 0),
+		variant("baseline.1000k.mp4", 1),
 	}
 	specsCorrupt := []fixtures.Spec{
-		func() fixtures.Spec { s := fixtures.DefaultSpec("truncated.mp4"); s.Corrupt = "truncate_moov"; return s }(),
+		func() fixtures.Spec {
+			s := fixtures.DefaultSpec("truncated.mp4")
+			s.Corrupt = "truncate_moov"
+			return s
+		}(),
 		func() fixtures.Spec {
 			s := fixtures.DefaultSpec("corrupt_box.mp4")
 			s.Corrupt = "corrupt_box"

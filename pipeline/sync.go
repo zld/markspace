@@ -77,6 +77,7 @@ func CheckSync(video, audio *index.TrackIndex) SyncReport {
 
 	rep.MaxErrorUS = maxErr
 	rep.AtUS = maxAt
+	rep.OK = true
 	if maxErr > rep.ToleranceUS {
 		rep.OK = false
 		rep.Issues = append(rep.Issues, media.Issue{

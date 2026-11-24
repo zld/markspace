@@ -91,9 +91,11 @@ func Run(opts Options) (*Report, int) {
 		rep.FailureCount = 1
 		return rep, ExitArgument
 	}
-	if opts.MaxDeviation <= 0 {
-		opts.MaxDeviation = pipeline.DefaultMaxDeviation(0)
-	}
+	// A non-positive max deviation means "derive from the source": one and a
+	// half reference video frames tolerates a one-frame GOP phase difference
+	// between representations while still failing gross misalignment.
+	autoDeviation := opts.MaxDeviation <= 0
+	_ = autoDeviation
 	if opts.RTPWait <= 0 {
 		opts.RTPWait = rtp.DefaultConfig().WaitPackets
 	}
@@ -237,10 +239,33 @@ func runOne(input string, opts Options, interrupted *bool) FileResult {
 	}
 	var layers []pipeline.LayerInput
 	layers = append(layers, pipeline.LayerInput{Name: "reference", Path: input, Index: idx, Track: refTrack})
+
 	for _, br := range opts.Bitrates {
-		layers = append(layers, pipeline.LayerInput{
-			Name: "video-" + sanitizeBitrate(br), Path: input, Index: idx, Track: refTrack,
-		})
+		name := "video-" + sanitizeBitrate(br)
+		// A representation may be a sibling file named after the bitrate, in
+		// which case it is indexed independently so alignment compares真实
+		// keyframe grids. Otherwise the layer reuses the reference source.
+		repPath := representationPath(input, br)
+		if repPath == "" {
+			layers = append(layers, pipeline.LayerInput{Name: name, Path: input, Index: idx, Track: refTrack})
+			continue
+		}
+		repC, err := media.Probe(repPath, lim)
+		if err != nil {
+			fr.Error = media.AsError(err)
+			return fr
+		}
+		repIdx, err := index.Build(repC)
+		if err != nil {
+			fr.Error = media.AsError(err)
+			return fr
+		}
+		tr := repIdx.Track("video")
+		if tr == nil {
+			fr.Error = media.NewError(media.KindUnsupported, repPath, "representation has no video track")
+			return fr
+		}
+		layers = append(layers, pipeline.LayerInput{Name: name, Path: repPath, Index: repIdx, Track: tr})
 	}
 
 	paramsDigest := manifest.ParamsDigest(opts.Segment, opts.Bitrates, opts.MaxDeviation)
@@ -268,6 +293,13 @@ func runOne(input string, opts Options, interrupted *bool) FileResult {
 		state = checkpoint.Create(ckOpts)
 	}
 
+	if opts.MaxDeviation <= 0 {
+		if fi, ok := refTrack.FrameInterval(); ok {
+			opts.MaxDeviation = fi + fi/2
+		} else {
+			opts.MaxDeviation = pipeline.DefaultMaxDeviation(0)
+		}
+	}
 	plan, err := pipeline.Plan(refTrack, layerTracks(layers), pipeline.PlanConfig{
 		Segment: opts.Segment, MaxDeviation: opts.MaxDeviation,
 	})
@@ -532,6 +564,21 @@ func writeProvenance(root, input string, c *media.Container, idx *index.Index,
 		return err
 	}
 	return index.WriteAtomic(filepath.Join(root, "provenance.json"), b)
+}
+
+// representationPath finds a sibling representation file for a bitrate, e.g.
+// "baseline.mp4" + "500k" -> "baseline.500k.mp4". An empty string means the
+// layer should reuse the reference source.
+func representationPath(input, bitrate string) string {
+	ext := filepath.Ext(input)
+	base := strings.TrimSuffix(input, ext)
+	for _, suffix := range []string{".video-" + sanitizeBitrate(bitrate), "." + bitrate, "." + sanitizeBitrate(bitrate)} {
+		candidate := base + suffix + ext
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
+	return ""
 }
 
 func inputWorkDir(root, sha string) string {

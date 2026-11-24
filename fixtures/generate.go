@@ -22,7 +22,10 @@ type TrackSpec struct {
 	SampleCount int
 	SampleDelta uint32 // ticks per sample
 	SyncEvery   int    // 0 means every sample is a keyframe
-	PayloadSize int
+	// SyncOffsetPhase shifts the first keyframe by this many samples, which
+	// models representation layers whose GOP phase differs slightly.
+	SyncOffsetPhase int
+	PayloadSize     int
 }
 
 // Spec describes one generated file.
@@ -48,14 +51,16 @@ type Spec struct {
 	ZeroDuration bool
 }
 
-// DefaultSpec returns a healthy two-second 30 fps file with one audio track.
+// DefaultSpec returns a healthy eight-second 30 fps file with one
+// AAC-timed audio track spanning the same interval.
 func DefaultSpec(name string) Spec {
 	return Spec{
 		Name:           name,
 		MovieTimescale: 1000,
 		Tracks: []TrackSpec{
-			{Kind: "video", Timescale: 30000, SampleCount: 60, SampleDelta: 1000, SyncEvery: 15, PayloadSize: 137},
-			{Kind: "audio", Timescale: 48000, SampleCount: 192, SampleDelta: 1024, SyncEvery: 0, PayloadSize: 61},
+			{Kind: "video", Timescale: 30000, SampleCount: 240, SampleDelta: 1000, SyncEvery: 30, PayloadSize: 137},
+			// 8 s at 48 kHz with 1024-tick AAC frames is 375 samples.
+			{Kind: "audio", Timescale: 48000, SampleCount: 375, SampleDelta: 1024, SyncEvery: 0, PayloadSize: 61},
 		},
 	}
 }
@@ -483,8 +488,18 @@ func writeStbl(w *mp4.Writer, spec Spec, ts TrackSpec, refs []sampleRef) error {
 	}
 
 	if ts.SyncEvery > 0 {
-		var sync []uint32
-		for i := 1; i <= len(refs); i += ts.SyncEvery {
+		// Sample 1 is always a sync sample (the stream must start decodable);
+		// SyncOffsetPhase shifts only the periodic keyframes after it. A small
+		// phase models a layer whose GOP grid differs by a frame or two.
+		sync := []uint32{1}
+		phase := ts.SyncOffsetPhase
+		if phase > ts.SyncEvery-1 {
+			phase = ts.SyncEvery - 1
+		}
+		if phase < 0 {
+			phase = 0
+		}
+		for i := 1 + ts.SyncEvery + phase; i <= len(refs); i += ts.SyncEvery {
 			sync = append(sync, uint32(i))
 		}
 		if err := start(w, mp4.BoxTypeStss()); err != nil {
@@ -512,7 +527,9 @@ func buildStts(spec Spec, ts TrackSpec, n int) []mp4.SttsEntry {
 	for i := 0; i < n; i++ {
 		delta := ts.SampleDelta
 		if spec.FrameDropEvery > 0 && (i+1)%spec.FrameDropEvery == 0 {
-			delta = ts.SampleDelta * 5
+			// A dropped frame lasts three frame intervals instead of one, a
+			// visible timing gap that stays within A/V sync tolerance.
+			delta = ts.SampleDelta * 3
 		}
 		appendDelta(delta)
 	}

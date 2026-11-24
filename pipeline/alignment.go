@@ -62,11 +62,11 @@ func (c PlanConfig) validate() error {
 // Plan computes shared segment boundaries from the reference index.
 //
 // Boundaries are cut at the reference video track's keyframes: the start
-// target advances by the segment duration, and the chosen boundary is the
-// latest keyframe at or before the target, except the final segment which
-// ends at the track end. All representations are then mapped onto these
-// boundaries; a representation with no keyframe at or before the boundary
-// records a deviation and, above threshold, fails the plan.
+// target advances by the segment duration, and each cut is the reference
+// keyframe nearest the target (preferring the earlier one on a tie). All
+// representations then map their own keyframe nearest the shared boundary;
+// the distance is recorded as a deviation and, above threshold, fails the
+// plan.
 func Plan(ref *index.TrackIndex, layers []*index.TrackIndex, cfg PlanConfig) ([]PlannedSegment, error) {
 	if err := cfg.validate(); err != nil {
 		return nil, err
@@ -98,7 +98,7 @@ func Plan(ref *index.TrackIndex, layers []*index.TrackIndex, cfg PlanConfig) ([]
 		if target >= natural {
 			break
 		}
-		cut, ok := findKeyframeAtOrBefore(ref, target)
+		cut, ok := nearestKeyframe(ref, target)
 		if !ok {
 			// The target precedes the first keyframe; start at the first one.
 			if cut, ok = firstKeyframeAfter(ref, current); !ok {
@@ -139,10 +139,10 @@ func Plan(ref *index.TrackIndex, layers []*index.TrackIndex, cfg PlanConfig) ([]
 		}
 		for li, layer := range allLayers {
 			name := layerName(li, layer)
-			bf, ok := findKeyframeAtOrBefore(layer, segStart)
+			bf, ok := nearestKeyframe(layer, segStart)
 			if !ok {
 				return nil, media.NewError(media.KindMissingKeyframe, name,
-					"no keyframe at or before %s", segStart)
+					"no keyframe near %s", segStart)
 			}
 			dev := (media.Time(bf.TimeUS*1_000) - segStart).Abs()
 			seg.LayerBounds = append(seg.LayerBounds, LayerBoundary{
@@ -206,6 +206,27 @@ func findKeyframeAtOrBefore(t *index.TrackIndex, target media.Time) (index.Keyfr
 		break
 	}
 	return best, found
+}
+
+// nearestKeyframe returns the keyframe whose time is closest to target,
+// preferring the earlier keyframe when two are equidistant.
+func nearestKeyframe(t *index.TrackIndex, target media.Time) (index.Keyframe, bool) {
+	if len(t.Keyframes) == 0 {
+		return index.Keyframe{}, false
+	}
+	targetUS := target.Micros()
+	best := index.Keyframe{}
+	bestDist := int64(-1)
+	for _, kf := range t.Keyframes {
+		d := kf.TimeUS - targetUS
+		if d < 0 {
+			d = -d
+		}
+		if bestDist < 0 || d < bestDist {
+			best, bestDist = kf, d
+		}
+	}
+	return best, true
 }
 
 func firstKeyframeAfter(t *index.TrackIndex, after media.Time) (index.Keyframe, bool) {

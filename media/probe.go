@@ -126,6 +126,33 @@ func FileSHA256(path string) (string, int64, error) {
 	return hex.EncodeToString(h.Sum(nil)), n, nil
 }
 
+// hasTruncatedTopLevelBox reports whether any top-level box declares a size
+// that extends past the end of the file.
+func hasTruncatedTopLevelBox(f *os.File, size int64) (bool, error) {
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return false, err
+	}
+	for {
+		bi, err := mp4.ReadBoxInfo(f)
+		if err == io.EOF {
+			return false, nil
+		}
+		if err != nil {
+			return false, nil // structural error surfaces later, classified there
+		}
+		if bi.ExtendToEOF {
+			return false, nil
+		}
+		boxEnd := int64(bi.Offset) + int64(bi.Size)
+		if boxEnd > size {
+			return true, nil
+		}
+		if _, err := f.Seek(boxEnd, io.SeekStart); err != nil {
+			return false, err
+		}
+	}
+}
+
 // Probe parses a container and returns all tracks with exact sample timings.
 // Issues that do not prevent indexing are returned on Container.Issues;
 // structural failures are returned as classified errors.
@@ -143,6 +170,12 @@ func Probe(path string, lim Limits) (*Container, error) {
 	}
 	defer f.Close()
 
+	// Detect truncation up front: a top-level box that claims to extend past
+	// the end of the file is the signature of an incomplete transfer.
+	truncated, err := hasTruncatedTopLevelBox(f, size)
+	if err != nil {
+		return nil, classifyMP4Error(path, err)
+	}
 	if _, err := mp4.ReadBoxStructure(f, func(h *mp4.ReadHandle) (any, error) {
 		if h.Path[len(h.Path)-1] == mp4.BoxTypeMoov() {
 			return h.Expand()
@@ -156,6 +189,11 @@ func Probe(path string, lim Limits) (*Container, error) {
 	if boxes, err := mp4.ExtractBoxWithPayload(f, nil, mp4.BoxPath{mp4.BoxTypeMoov(), mp4.BoxTypeMvhd()}); err != nil {
 		return nil, classifyMP4Error(path, err)
 	} else if len(boxes) == 0 {
+		// A file whose bytes end inside its own top-level box cannot be
+		// parsed to the end; that is truncation, not arbitrary corruption.
+		if truncated {
+			return nil, NewError(KindTruncatedInput, path, "file ends before moov is complete")
+		}
 		return nil, NewError(KindCorruptBox, path, "no mvhd box found")
 	} else {
 		mvhd := boxes[0].Payload.(*mp4.Mvhd)
@@ -449,7 +487,7 @@ func buildSamples(t *Track, a sampleArgs, lim Limits, issues *[]Issue) error {
 					Detail: fmt.Sprintf("sample %d starts before its predecessor", i+1),
 					At:     i + 1, TimeUS: presUs})
 			}
-		} else if prevStart >= 0 && prevDelta > 0 && int64(deltaTicks) > 4*prevDelta && durUs > 100_000 && warnedGap < 4 {
+		} else if prevStart >= 0 && prevDelta > 0 && int64(deltaTicks) > 2*prevDelta && durUs >= 50_000 && warnedGap < 4 {
 			warnedGap++
 			*issues = append(*issues, Issue{Kind: KindTimestampGap, Severity: SeverityWarning,
 				Detail: fmt.Sprintf("timing gap of %dus at sample %d", durUs, i+1),

@@ -55,6 +55,18 @@ type Index struct {
 	Digest          string        `json:"digest"`
 }
 
+// FrameInterval returns the nominal constant frame duration of the track.
+func (t *TrackIndex) FrameInterval() (media.Time, bool) {
+	if t.FrameTicks == 0 || t.Timescale == 0 {
+		return 0, false
+	}
+	m, err := media.FromTicks(int64(t.FrameTicks), t.Timescale)
+	if err != nil {
+		return 0, false
+	}
+	return m, true
+}
+
 // Track returns the indexed track with the given kind, or nil.
 func (idx *Index) Track(kind string) *TrackIndex {
 	for i := range idx.Tracks {

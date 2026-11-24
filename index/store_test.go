@@ -56,11 +56,11 @@ func TestBuildIsDeterministic(t *testing.T) {
 	if tr == nil {
 		t.Fatal("no video track indexed")
 	}
-	if tr.SampleCount != 60 || len(tr.Keyframes) != 4 {
+	if tr.SampleCount != 240 || len(tr.Keyframes) != 8 {
 		t.Fatalf("track=%+v", tr)
 	}
 	// Keyframe 0 is at tick 0, keyframe 15 (sample 16) is at tick 15000.
-	if tr.Keyframes[0].Ticks != 0 || tr.Keyframes[1].Sample != 16 || tr.Keyframes[1].Ticks != 15000 {
+	if tr.Keyframes[0].Ticks != 0 || tr.Keyframes[1].Sample != 31 || tr.Keyframes[1].Ticks != 30000 {
 		t.Fatalf("keyframes=%+v", tr.Keyframes)
 	}
 }

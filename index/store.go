@@ -15,7 +15,7 @@ import (
 // index is reused only when the input digest matches the recorded one and the
 // stored payload still validates.
 type Store struct {
-	Root  string
+	Root   string
 	Limits media.Limits
 }
 
@@ -42,11 +42,11 @@ func (s *Store) PathFor(inputSHA string) string {
 
 // Outcome reports how an index was obtained.
 type Outcome struct {
-	Index      *Index
-	Reused     bool   `json:"reused"`
-	Rebuilt    bool   `json:"rebuilt"`
-	CachePath  string `json:"cache_path"`
-	Reason     string `json:"reason,omitempty"`
+	Index     *Index
+	Reused    bool   `json:"reused"`
+	Rebuilt   bool   `json:"rebuilt"`
+	CachePath string `json:"cache_path"`
+	Reason    string `json:"reason,omitempty"`
 }
 
 // Scan builds or reuses an index for the given container.

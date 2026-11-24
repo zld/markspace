@@ -18,14 +18,15 @@ const FileName = "checkpoint.json"
 
 // Segment records one committed segment output.
 type Segment struct {
-	Number  int    `json:"number"`
-	Layer   string `json:"layer"`
-	Path    string `json:"path"`
-	SHA256  string `json:"sha256"`
-	Bytes   int64  `json:"bytes"`
-	Samples int    `json:"samples"`
-	StartUS int64  `json:"start_us"`
-	EndUS   int64  `json:"end_us"`
+	Number    int    `json:"number"`
+	Layer     string `json:"layer"`
+	Path      string `json:"path"`
+	SHA256    string `json:"sha256"`
+	Bytes     int64  `json:"bytes"`
+	Samples   int    `json:"samples"`
+	StartUS   int64  `json:"start_us"`
+	EndUS     int64  `json:"end_us"`
+	ElapsedUS int64  `json:"elapsed_us"`
 }
 
 // State is the durable progress record for one input and parameter set.
