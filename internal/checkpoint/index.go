@@ -72,7 +72,7 @@ func (s *Store) Prepare() error {
 
 // ChunkPath returns the final chunk artifact path.
 func (s *Store) ChunkPath(i int) string {
-	return filepath.Join(s.ChunkDir, fmt.Sprintf("chunk-%06d.bin", i))
+	return filepath.Join(s.ChunkDir, fmt.Sprintf("chunk-%06d.mp4", i))
 }
 
 // HashBytes returns lowercase hex SHA-256.

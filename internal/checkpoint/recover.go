@@ -116,10 +116,10 @@ func (s *Store) recoverFromChunks(idx *Index) (Recovery, error) {
 	byIndex := map[int]Chunk{}
 	for _, e := range entries {
 		name := e.Name()
-		if !strings.HasPrefix(name, "chunk-") || !strings.HasSuffix(name, ".bin") {
+		if !strings.HasPrefix(name, "chunk-") || !strings.HasSuffix(name, ".mp4") {
 			continue
 		}
-		n, err := strconv.Atoi(strings.TrimSuffix(strings.TrimPrefix(name, "chunk-"), ".bin"))
+		n, err := strconv.Atoi(strings.TrimSuffix(strings.TrimPrefix(name, "chunk-"), ".mp4"))
 		if err != nil {
 			continue
 		}

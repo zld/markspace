@@ -48,6 +48,7 @@ type Summary struct {
 	OutputPath          string `json:"output_path"`
 	OutputSHA256        string `json:"output_sha256"`
 	MP4Tracks           int    `json:"mp4_tracks"`
+	Completed           bool   `json:"completed"`
 	ExitCode            int    `json:"exit_code"`
 }
 
@@ -90,8 +91,10 @@ func (s Summary) Lines() []string {
 	if s.HaveResume {
 		p("resumed_from_chunk=%d", s.ResumedFromChunk)
 	}
-	if s.RolledBackFromChunk > 0 || s.IndexCorrupt {
+	if s.RolledBackFromChunk > 0 {
 		p("rolled_back_from_chunk=%d", s.RolledBackFromChunk)
+	}
+	if s.IndexCorrupt {
 		p("index_corrupt=%t", s.IndexCorrupt)
 	}
 	if s.HaveResumeTiming {
@@ -107,6 +110,7 @@ func (s Summary) Lines() []string {
 	if s.MP4Tracks > 0 {
 		p("mp4_tracks=%d", s.MP4Tracks)
 	}
+	p("completed=%t", s.Completed)
 	if s.OutputSHA256 != "" {
 		p("output_sha256=%s", s.OutputSHA256)
 		p("sha256=%s", s.OutputSHA256)
