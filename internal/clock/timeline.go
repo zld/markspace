@@ -3,7 +3,10 @@
 // timestamps are always preserved, and conversions are exact.
 package clock
 
-import "math/big"
+import (
+	"fmt"
+	"math/big"
+)
 
 // Scale is a rational time scale: Num/Den ticks per second.
 // A nanosecond scale is Scale{1_000_000_000, 1}.
@@ -17,6 +20,11 @@ var NanoScale = Scale{Num: 1_000_000_000, Den: 1}
 
 // Valid reports whether the scale is well-formed.
 func (s Scale) Valid() bool { return s.Num > 0 && s.Den > 0 }
+
+// String renders the rational scale as num/den.
+func (s Scale) String() string {
+	return fmt.Sprintf("%d/%d", s.Num, s.Den)
+}
 
 // ToNanos converts ticks on this scale to nanoseconds, rounding to the
 // nearest nanosecond. The computation uses big integers so it is exact
