@@ -42,8 +42,8 @@ type PATEntry struct {
 
 // PMTStream is one elementary stream entry of a PMT.
 type PMTStream struct {
-	PID    uint16
-	Type   uint8
+	PID     uint16
+	Type    uint8
 	TrackID string // stable per-PID label used by analysis subsystems
 }
 

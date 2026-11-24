@@ -23,7 +23,7 @@ const MaxInputSize int64 = 2 * 1024 * 1024 * 1024
 
 // Well-known PIDs.
 const (
-	PIDPAT = 0x0000
+	PIDPAT  = 0x0000
 	PIDNull = 0x1fff
 )
 

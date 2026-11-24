@@ -8,10 +8,10 @@ import (
 
 // ContinuityEvent describes one per-PID continuity counter anomaly.
 type ContinuityEvent struct {
-	PID       uint16
-	Kind      clock.Kind // KindContinuity for jumps; duplicates are counted only
-	WantCC    uint8
-	GotCC     uint8
+	PID    uint16
+	Kind   clock.Kind // KindContinuity for jumps; duplicates are counted only
+	WantCC uint8
+	GotCC  uint8
 	// PacketRange is the half-open range of packet ordinal numbers involved.
 	PacketRange [2]int64
 	// OffsetRange is the same span expressed as byte offsets in the input.
@@ -20,10 +20,10 @@ type ContinuityEvent struct {
 
 // pidState remembers the last continuity state for one PID.
 type pidState struct {
-	lastCC    uint8
-	lastPkt   int64
-	lastOff   int64
-	have      bool
+	lastCC  uint8
+	lastPkt int64
+	lastOff int64
+	have    bool
 }
 
 // ContinuityTracker validates 4-bit continuity counters per PID.
