@@ -14,17 +14,25 @@ var (
 	sharedOnce sync.Once
 	sharedGT   *fixture.GroundTruth
 	sharedErr  error
+	sharedDir  string
 )
+
+func TestMain(m *testing.M) {
+	code := m.Run()
+	if sharedDir != "" {
+		_ = os.RemoveAll(sharedDir)
+	}
+	os.Exit(code)
+}
 
 func groundTruth(t *testing.T) *fixture.GroundTruth {
 	t.Helper()
 	sharedOnce.Do(func() {
-		dir, err := os.MkdirTemp("", "mediascan-shared-*")
-		if err != nil {
-			sharedErr = err
+		sharedDir, sharedErr = os.MkdirTemp("", "mediascan-shared-*")
+		if sharedErr != nil {
 			return
 		}
-		sharedGT, sharedErr = fixture.Generate(dir)
+		sharedGT, sharedErr = fixture.Generate(sharedDir)
 	})
 	if sharedErr != nil {
 		t.Fatal(sharedErr)
