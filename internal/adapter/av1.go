@@ -129,8 +129,10 @@ func parseOBUHeader(p []byte) (headerLen int, obuType int, hasSize bool, me *med
 	return headerLen, obuType, hasSize, nil
 }
 
-// decodeLEB128 parses an unsigned LEB128 integer, rejecting overlong
-// encodings, continuation past 8 bytes and 64-bit overflow.
+// decodeLEB128 parses an unsigned LEB128 integer (capped at 8 bytes / 56
+// bits), rejecting non-canonical overlong encodings and continuation on a
+// 9th byte. Semantic size limits are enforced by the caller against
+// MaxUnitSize so 56-bit values stay representable without overflow.
 func decodeLEB128(p []byte) (value int64, n int, ok bool) {
 	var v uint64
 	for i := 0; i < lebMaxBytes; i++ {
@@ -138,9 +140,6 @@ func decodeLEB128(p []byte) (value int64, n int, ok bool) {
 			return 0, 0, false
 		}
 		b := p[i]
-		if i == lebMaxBytes-1 && b&0x7f > 0x0f {
-			return 0, 0, false // exceeds uint64
-		}
 		v |= uint64(b&0x7f) << (7 * i)
 		if b&0x80 == 0 {
 			if b == 0 && i > 0 {

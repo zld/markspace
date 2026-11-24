@@ -40,14 +40,12 @@ func TestDecodeLEB128(t *testing.T) {
 		{[]byte{0x7f}, 127, 1, true},
 		{[]byte{0x80, 0x01}, 128, 2, true},
 		{[]byte{0xe5, 0x8e, 0x26}, 624485, 3, true},
-		{[]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x0f},
-			-1, 8, true}, // max uint64
+		{[]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f},
+			1<<56 - 1, 8, true}, // maximum value expressible in 8 LEB128 bytes
 		{[]byte{0x80}, 0, 0, false},       // truncated continuation
 		{[]byte{0x80, 0x00}, 0, 0, false}, // non-canonical overlong
 		{[]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01},
-			0, 0, false}, // 9th continuation byte
-		{[]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x10},
-			0, 0, false}, // exceeds uint64 on final byte
+			0, 0, false}, // 9th continuation byte: overlong length field
 	}
 	for _, tc := range cases {
 		v, n, ok := decodeLEB128(tc.in)
@@ -147,6 +145,28 @@ func TestAV1ForbiddenBitResync(t *testing.T) {
 	}
 	if len(uerrs) != 1 || uerrs[0].Class != media.ClassRecoverable {
 		t.Fatalf("want one recoverable header error, got %+v", uerrs)
+	}
+}
+
+func TestAV1OversizeOBURejected(t *testing.T) {
+	// LEB128 encoding of av1MaxOBUSize+1 (16 MiB + 1).
+	oversize := av1MaxOBUSize + 1
+	stream := []byte{byte(obuFrame)<<3 | 0x02}
+	rem := oversize
+	for {
+		b := byte(rem & 0x7f)
+		rem >>= 7
+		if rem != 0 {
+			stream = append(stream, b|0x80)
+		} else {
+			stream = append(stream, b)
+			break
+		}
+	}
+	sp := AV1Adapter{}.NewSplitter()
+	_, _, err := sp.Write(stream)
+	if err == nil || media.ClassOf(err) != media.ClassRecoverable {
+		t.Fatalf("oversize OBU must raise recoverable error, got %v", err)
 	}
 }
 
