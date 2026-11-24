@@ -1,0 +1,13 @@
+# Compiled binaries
+/mediacheck
+*.test
+*.out
+
+# Runtime write-ahead journals and transaction records
+.mediacheck-txn/
+mediacheck.wal
+txn-*.json
+txn-*.tmp
+
+# Local working/transient directories
+/tmp/
