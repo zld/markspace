@@ -111,9 +111,10 @@ func RemuxRanges(src *Container, dst string, ranges map[uint32][]SampleRange, op
 	res.OutputSize = st.Size()
 	for i := range muxTracks {
 		res.Tracks = append(res.Tracks, RemuxTrack{
-			SourceID: muxTracks[i].SourceID,
-			TargetID: muxTracks[i].ID,
-			Samples:  len(muxTracks[i].Samples),
+			SourceID:  muxTracks[i].SourceID,
+			TargetID:  muxTracks[i].ID,
+			Samples:   len(muxTracks[i].Samples),
+			Preserved: len(muxTracks[i].RawEntry) > 0,
 		})
 	}
 	if opts.Validate {
