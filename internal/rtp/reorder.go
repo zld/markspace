@@ -151,11 +151,10 @@ func Reorder(in []Packet) (*Result, error) {
 			if err != nil {
 				return nil, err
 			}
-			// A wildly older packet is treated as late by watermark rather
-			// than allowed to drag expansion backwards.
-			if ext < next-SeqModulus/2 {
-				ext += SeqModulus
-			}
+			// Unwrap already chooses the representation nearest the highest
+			// sequence seen, so a value below the confirmed watermark is
+			// genuinely late. It must stay late: shifting it forward by a full
+			// modulus would resurrect an old packet as a future one.
 		}
 		if ext < maxExt {
 			res.Reordered++
