@@ -92,10 +92,23 @@ func (c *Committer) Close() error { return c.journal.Close() }
 // found dangling during crash replay).
 func (c *Committer) RollbackCount() int { return c.Rollbacks }
 
+func (c *Committer) inOrder(name string) bool {
+	for _, n := range c.order {
+		if n == name {
+			return true
+		}
+	}
+	return false
+}
+
 // Execute runs one stage. An identical committed InputHash reuses the stored
 // summary and skips rerun, which makes recovery output match a full rerun.
 func (c *Committer) Execute(st Stage) (Summary, bool, error) {
 	if prev, ok := c.committed[st.Name]; ok && prev.InputHash == st.InputHash {
+		// A reused boundary still belongs to the committed chain.
+		if !c.inOrder(st.Name) {
+			c.order = append(c.order, st.Name)
+		}
 		return prev, true, nil // reused from the committed boundary
 	}
 	workdir := filepath.Join(c.dir, st.Name)
