@@ -7,11 +7,11 @@ import (
 // ColorMetadata describes the color descriptor of one video track. A zero
 // value in any field means the field is absent from the input.
 type ColorMetadata struct {
-	PID                uint16
-	ColorPrimaries     uint8
+	PID                     uint16
+	ColorPrimaries          uint8
 	TransferCharacteristics uint8
-	MatrixCoefficients uint8
-	VideoFullRangeFlag bool
+	MatrixCoefficients      uint8
+	VideoFullRangeFlag      bool
 }
 
 // Present reports whether the descriptor declares any color field.
@@ -24,10 +24,10 @@ func (c ColorMetadata) Present() bool {
 // keep the original value and carry the Uncertain flag.
 type ResolvedColor struct {
 	ColorMetadata
-	Uncertain  bool
-	Source     string // "input" | "config" | "preserved"
-	Conflicts  []ColorConflict
-	Missing    []string
+	Uncertain bool
+	Source    string // "input" | "config" | "preserved"
+	Conflicts []ColorConflict
+	Missing   []string
 }
 
 // ColorConflict records two incompatible values for the same field.
@@ -42,10 +42,10 @@ type ColorConflict struct {
 // ColorConfig supplies fallback values used only when the input lacks a
 // field. Input-track values always take priority over these.
 type ColorConfig struct {
-	DefaultPrimaries  uint8
-	DefaultTransfer   uint8
-	DefaultMatrix     uint8
-	DefaultFullRange  bool
+	DefaultPrimaries uint8
+	DefaultTransfer  uint8
+	DefaultMatrix    uint8
+	DefaultFullRange bool
 }
 
 // ColorNormalizer applies the input-priority rule and logs every missing

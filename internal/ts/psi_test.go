@@ -5,11 +5,11 @@ import "testing"
 // buildPATSection builds a one-program PAT section (table id 0x00).
 func buildPATSection(version byte, pmtPID uint16) []byte {
 	sec := []byte{
-		0x00, // table id
+		0x00,       // table id
 		0xB0, 0x11, // section syntax indicator + section_length=17
 		0x00, 0x01, // transport stream id
 		0xC0 | (version << 1) | 0x01, // version, current=1
-		0x00, 0x00, // section/last section number
+		0x00, 0x00,                   // section/last section number
 		0x00, 0x01, // program number 1
 		byte(0xE0 | pmtPID>>8), byte(pmtPID),
 	}

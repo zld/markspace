@@ -14,17 +14,17 @@ import (
 
 // Summary is the independently re-checkable record of one segment.
 type Summary struct {
-	Seq          int
-	StartPacket  int64
-	EndPacket    int64 // exclusive
-	StartOffset  int64
-	EndOffset    int64 // exclusive
-	StartPTS     uint64
-	EndPTS       uint64
-	IndexRange   [2]int // keyframe IDs [first, last) inside the segment
-	PacketCount  int
-	Ordinals     []int64 // stable packet ordinals actually hashed, in order
-	SHA256       string
+	Seq         int
+	StartPacket int64
+	EndPacket   int64 // exclusive
+	StartOffset int64
+	EndOffset   int64 // exclusive
+	StartPTS    uint64
+	EndPTS      uint64
+	IndexRange  [2]int // keyframe IDs [first, last) inside the segment
+	PacketCount int
+	Ordinals    []int64 // stable packet ordinals actually hashed, in order
+	SHA256      string
 }
 
 // Hasher accumulates fixed-size segments over a run of TS packets.

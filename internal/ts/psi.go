@@ -60,12 +60,12 @@ func (m *PSIMapping) Lookup(pid uint16) (TrackMap, bool) {
 
 // psiSection is a reassembled table section (pointer-field payload removed).
 type psiSection struct {
-	tableID  byte
-	version  byte
-	current  bool
-	section  []byte // full section bytes starting at table_id
-	pid      uint16
-	offset   int64
+	tableID byte
+	version byte
+	current bool
+	section []byte // full section bytes starting at table_id
+	pid     uint16
+	offset  int64
 }
 
 // PSITracker reassembles PAT and PMT sections and applies version changes at

@@ -46,15 +46,15 @@ type Stream struct {
 
 // Generator builds streams from a seed and a fault set.
 type Generator struct {
-	rng       *rand.Rand
-	videoPID  uint16
-	audioPID  uint16
-	pmtPID    uint16
-	ccVideo   byte
-	ccAudio   byte
-	ccPSI     byte
-	pcrBase   uint64
-	pts       uint64
+	rng        *rand.Rand
+	videoPID   uint16
+	audioPID   uint16
+	pmtPID     uint16
+	ccVideo    byte
+	ccAudio    byte
+	ccPSI      byte
+	pcrBase    uint64
+	pts        uint64
 	pktOrdinal int64
 }
 

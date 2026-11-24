@@ -61,7 +61,7 @@ type Engine struct {
 	hasher    *segment.Hasher
 	stream    *fixture.Stream
 	rawByOrd  map[int64][]byte
-	eligible  int // non-null packets that must traverse the pipeline
+	eligible  int             // non-null packets that must traverse the pipeline
 	audioSeen map[uint16]bool // PIDs whose descriptor was already validated
 	guard     *pipeline.MemoryGuard
 }
@@ -78,11 +78,11 @@ func New(cfg Config, stream *fixture.Stream) *Engine {
 		cfg.MaxBufferedPackets = cfg.QueueCapacity * cfg.SegmentPackets
 	}
 	return &Engine{
-		cfg:      cfg,
-		psi:      ts.NewPSITracker(),
-		cc:       repair.NewContinuityChecker(),
-		tsCorr:   repair.NewTimestampCorrector(),
-		audio:    metadata.NewAudioNormalizer(metadata.DefaultAudioConfig()),
+		cfg:    cfg,
+		psi:    ts.NewPSITracker(),
+		cc:     repair.NewContinuityChecker(),
+		tsCorr: repair.NewTimestampCorrector(),
+		audio:  metadata.NewAudioNormalizer(metadata.DefaultAudioConfig()),
 		video: metadata.NewColorNormalizer(metadata.ColorConfig{
 			DefaultPrimaries: 1, DefaultTransfer: 1, DefaultMatrix: 1}),
 		builder:   index.NewBuilder(),

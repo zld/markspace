@@ -16,9 +16,9 @@ const HalfMod33 uint64 = Mask33 / 2
 // Clock33 maintains the unwrapped timeline of one 33-bit timestamp source
 // (one PCR PID or one PTS track).
 type Clock33 struct {
-	lastRaw    uint64
-	lastAbs    uint64
-	wraps      uint64
+	lastRaw     uint64
+	lastAbs     uint64
+	wraps       uint64
 	initialized bool
 }
 

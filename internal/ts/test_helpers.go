@@ -3,16 +3,16 @@ package ts
 // BuildPacket assembles a syntactically valid 188-byte TS packet for tests
 // and the deterministic demo fixtures.
 type BuildOpts struct {
-	PID              uint16
-	PUSI             bool
+	PID               uint16
+	PUSI              bool
 	AdaptationControl byte // 1=payload only, 2=adaptation only, 3=both
-	CC               byte
-	PCRBase          uint64
-	PCRExt           uint16
-	WithPCR          bool
-	RandomAccess     bool
-	Discontinuity    bool
-	Payload          []byte // copied and 0xFF stuffed to fill the packet
+	CC                byte
+	PCRBase           uint64
+	PCRExt            uint16
+	WithPCR           bool
+	RandomAccess      bool
+	Discontinuity     bool
+	Payload           []byte // copied and 0xFF stuffed to fill the packet
 }
 
 // BuildPacket returns a freshly allocated packet buffer.

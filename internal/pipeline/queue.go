@@ -12,13 +12,13 @@ import (
 
 // Queue is a capacity-bounded FIFO guarded by a mutex and two conditions.
 type Queue struct {
-	mu      sync.Mutex
-	notFull *sync.Cond
+	mu       sync.Mutex
+	notFull  *sync.Cond
 	notEmpty *sync.Cond
-	items   []any
-	cap     int
-	closed  bool
-	depth   int // high-water mark of len(items)
+	items    []any
+	cap      int
+	closed   bool
+	depth    int // high-water mark of len(items)
 }
 
 // NewQueue creates a queue with the given capacity (>= 1).

@@ -20,8 +20,8 @@ import (
 // Keyframe is one verifiable random-access point.
 type Keyframe struct {
 	ID           int
-	PacketOffset int64 // ordinal of the TS packet in the input stream
-	ByteOffset   int64 // byte offset of the packet's sync byte
+	PacketOffset int64  // ordinal of the TS packet in the input stream
+	ByteOffset   int64  // byte offset of the packet's sync byte
 	PTS          uint64 // unwrapped 90 kHz PTS
 	PayloadLen   int
 }

@@ -12,12 +12,12 @@ import (
 
 // GapEvent records one continuity-counter jump with its input byte range.
 type GapEvent struct {
-	PID         uint16
-	ExpectedCC  byte
-	GotCC       byte
-	Missing     int // number of missing packets
-	ByteOffset  int64
-	ByteRange   [2]int64 // [offset of last good, offset of jump packet]
+	PID        uint16
+	ExpectedCC byte
+	GotCC      byte
+	Missing    int // number of missing packets
+	ByteOffset int64
+	ByteRange  [2]int64 // [offset of last good, offset of jump packet]
 }
 
 // DuplicateEvent records an ignored duplicate packet.
@@ -37,10 +37,10 @@ type ContinuityStats struct {
 
 // ContinuityChecker keeps per-PID continuity state.
 type ContinuityChecker struct {
-	lastCC      map[uint16]byte
-	lastOffset  map[uint16]int64
-	have        map[uint16]bool
-	stats       ContinuityStats
+	lastCC     map[uint16]byte
+	lastOffset map[uint16]int64
+	have       map[uint16]bool
+	stats      ContinuityStats
 }
 
 // NewContinuityChecker returns an empty checker.

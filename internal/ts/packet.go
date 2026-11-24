@@ -36,28 +36,28 @@ const (
 
 // AdaptationField holds the parsed adaptation field header.
 type AdaptationField struct {
-	Length             byte
-	Discontinuity      bool
-	RandomAccess       bool
-	PCRFlag            bool
-	HasPCR             bool
-	PCRBase            uint64 // 33-bit 90 kHz base, raw
-	PCRExtension       uint16 // 9-bit 27 MHz extension, raw
-	RawFlags           byte
-	AdaptationBytes    []byte // full adaptation field including length byte
+	Length          byte
+	Discontinuity   bool
+	RandomAccess    bool
+	PCRFlag         bool
+	HasPCR          bool
+	PCRBase         uint64 // 33-bit 90 kHz base, raw
+	PCRExtension    uint16 // 9-bit 27 MHz extension, raw
+	RawFlags        byte
+	AdaptationBytes []byte // full adaptation field including length byte
 }
 
 // Packet is one validated 188-byte TS packet.
 type Packet struct {
-	Raw             []byte
-	PID             uint16
-	PayloadUnitStart bool
-	Priority        bool
+	Raw               []byte
+	PID               uint16
+	PayloadUnitStart  bool
+	Priority          bool
 	AdaptationControl byte
 	ContinuityCounter byte
-	Adaptation      *AdaptationField
-	Payload         []byte
-	ByteOffset      int64 // offset of the sync byte in the input stream
+	Adaptation        *AdaptationField
+	Payload           []byte
+	ByteOffset        int64 // offset of the sync byte in the input stream
 }
 
 // HasPayload reports whether the adaptation field control allows a payload.
