@@ -15,7 +15,7 @@ const (
 	DemoSampleRate    = 48000
 	DemoChannels      = 2
 	DemoBits          = 16
-	DemoBlockFrames   = 256
+	DemoBlockFrames   = 240
 	DemoBlockCount    = 12
 	TruncateTailBytes = 3
 )

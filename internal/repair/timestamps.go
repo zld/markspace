@@ -75,7 +75,7 @@ func RepairTimeline(raw []media.RawBlock, tb media.Timebase, policy Policy) (*Ti
 			case lastDeclaredFrame != nil && f == *lastDeclaredFrame && f < expectedFrame:
 				kind = "duplicate_frame_timestamp"
 				repairEnabled = policy.RepairDuplicate
-			case f < expectedFrame:
+			case f < expectedFrame-policy.MaxJumpFrames:
 				kind = "backward_timestamp"
 				repairEnabled = policy.RepairBackward
 			case f > expectedFrame+policy.MaxJumpFrames:
