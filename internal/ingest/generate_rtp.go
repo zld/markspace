@@ -25,15 +25,15 @@ type RTPGenOptions struct {
 
 // RTPFixture records generated packet ordering facts.
 type RTPFixture struct {
-	Path             string `json:"path"`
-	CanonicalPackets int    `json:"canonical_packets"`
-	StoredRecords    int    `json:"stored_records"`
-	SamplesPerPacket uint32 `json:"samples_per_packet"`
-	Channels         int    `json:"channels"`
-	SampleRate       uint32 `json:"sample_rate"`
-	LateSequence     int    `json:"late_sequence,omitempty"`
-	DuplicateSequence int   `json:"duplicate_sequence,omitempty"`
-	Offsets          []int64 `json:"-"`
+	Path              string  `json:"path"`
+	CanonicalPackets  int     `json:"canonical_packets"`
+	StoredRecords     int     `json:"stored_records"`
+	SamplesPerPacket  uint32  `json:"samples_per_packet"`
+	Channels          int     `json:"channels"`
+	SampleRate        uint32  `json:"sample_rate"`
+	LateSequence      int     `json:"late_sequence,omitempty"`
+	DuplicateSequence int     `json:"duplicate_sequence,omitempty"`
+	Offsets           []int64 `json:"-"`
 }
 
 // GenerateRTPFile creates L16-like deterministic packets and injects ordering

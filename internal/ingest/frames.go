@@ -23,23 +23,23 @@ const MaxFrameEnvelope = 64 << 20
 
 // FrameMeta is validated frame metadata without retaining pixel payload.
 type FrameMeta struct {
-	Offset         int64                `json:"offset"`
-	PayloadOffset  int64                `json:"payload_offset"`
-	MaterialID     string               `json:"material_id"`
-	RecordIndex    uint32               `json:"record_index"`
-	PTS            uint64               `json:"pts"`
-	Duration       uint32               `json:"duration"`
-	Width          uint16               `json:"width"`
-	Height         uint16               `json:"height"`
-	KeyFrame       bool                 `json:"key_frame"`
-	PayloadLength  uint32               `json:"payload_length"`
-	EnvelopeLength uint32               `json:"envelope_length"`
-	SHA256         [32]byte             `json:"sha256"`
-	Color          model.ColorMetadata  `json:"color"`
-	ChecksumOK     bool                 `json:"checksum_ok"`
-	LengthOK       bool                 `json:"length_ok"`
-	TimestampOK    bool                 `json:"timestamp_ok"`
-	Valid          bool                 `json:"valid"`
+	Offset         int64               `json:"offset"`
+	PayloadOffset  int64               `json:"payload_offset"`
+	MaterialID     string              `json:"material_id"`
+	RecordIndex    uint32              `json:"record_index"`
+	PTS            uint64              `json:"pts"`
+	Duration       uint32              `json:"duration"`
+	Width          uint16              `json:"width"`
+	Height         uint16              `json:"height"`
+	KeyFrame       bool                `json:"key_frame"`
+	PayloadLength  uint32              `json:"payload_length"`
+	EnvelopeLength uint32              `json:"envelope_length"`
+	SHA256         [32]byte            `json:"sha256"`
+	Color          model.ColorMetadata `json:"color"`
+	ChecksumOK     bool                `json:"checksum_ok"`
+	LengthOK       bool                `json:"length_ok"`
+	TimestampOK    bool                `json:"timestamp_ok"`
+	Valid          bool                `json:"valid"`
 }
 
 // FrameRecord is a fully read frame including its payload.
@@ -156,7 +156,7 @@ func DecodeFrameEnvelope(env []byte, outerOffset int64) (FrameMeta, *model.Fault
 		f := model.Fault{Kind: model.FaultBadTimestamp, MaterialID: meta.MaterialID, RecordIndex: idx,
 			Offset: outerOffset + 8 + 20, RecordStart: outerOffset, Actual: fmt.Sprint(meta.PTS),
 			Expected: fmt.Sprint(uint64(meta.RecordIndex) * uint64(meta.Duration)),
-			Message: "frame timestamp is off declared grid"}
+			Message:  "frame timestamp is off declared grid"}
 		return meta, &f
 	case !meta.ChecksumOK:
 		f := model.Fault{Kind: model.FaultBadSHA, MaterialID: meta.MaterialID, RecordIndex: idx,

@@ -19,29 +19,30 @@ type InjectedLocation struct {
 
 // FrameGenOptions controls deterministic frame fixture generation.
 type FrameGenOptions struct {
-	Path         string
-	MaterialID   string
-	Seed         int64
-	Frames       int
-	Width        uint16
-	Height       uint16
-	Duration     uint32
-	BadSHA       bool
-	Truncated    bool
-	Duplicate    bool
-	OutOfOrder   bool
+	Path          string
+	MaterialID    string
+	Seed          int64
+	Frames        int
+	Width         uint16
+	Height        uint16
+	Duration      uint32
+	BadSHA        bool
+	Truncated     bool
+	TruncateIndex int
+	Duplicate     bool
+	OutOfOrder    bool
 }
 
 // FrameFixture describes generated frame records and known damage offsets.
 type FrameFixture struct {
-	Path           string              `json:"path"`
-	MaterialID     string              `json:"material_id"`
-	LogicalFrames  int                 `json:"logical_frames"`
-	RecordCount    int                 `json:"record_count"`
-	BadSHA         *InjectedLocation   `json:"bad_sha,omitempty"`
-	Truncated      *InjectedLocation   `json:"truncated,omitempty"`
-	DuplicateIndex int                 `json:"duplicate_index,omitempty"`
-	SwappedPairs   [][2]int            `json:"swapped_pairs,omitempty"`
+	Path           string            `json:"path"`
+	MaterialID     string            `json:"material_id"`
+	LogicalFrames  int               `json:"logical_frames"`
+	RecordCount    int               `json:"record_count"`
+	BadSHA         *InjectedLocation `json:"bad_sha,omitempty"`
+	Truncated      *InjectedLocation `json:"truncated,omitempty"`
+	DuplicateIndex int               `json:"duplicate_index,omitempty"`
+	SwappedPairs   [][2]int          `json:"swapped_pairs,omitempty"`
 }
 
 // GenerateFrameFile creates the self-contained MRC1 frame fixture.
@@ -71,9 +72,13 @@ func GenerateFrameFile(o FrameGenOptions) (*FrameFixture, error) {
 		badIndex = clampIndex(o.Frames, o.Frames/3+rng.Intn(max1(o.Frames/3)))
 	}
 	if o.Truncated {
-		truncIndex = clampIndex(o.Frames, 2*o.Frames/3+rng.Intn(max1(o.Frames/4)))
-		if truncIndex == badIndex {
-			truncIndex = (truncIndex + 1) % o.Frames
+		if o.TruncateIndex > 0 && o.TruncateIndex < o.Frames {
+			truncIndex = o.TruncateIndex
+		} else {
+			truncIndex = clampIndex(o.Frames, 2*o.Frames/3+rng.Intn(max1(o.Frames/4)))
+			if truncIndex == badIndex {
+				truncIndex = (truncIndex + 1) % o.Frames
+			}
 		}
 	}
 
