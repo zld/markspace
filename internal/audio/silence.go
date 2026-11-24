@@ -52,6 +52,7 @@ type Stats struct {
 	AllZero       int     `json:"all_zero"`
 	Missing       int     `json:"missing"`
 	AnalyzedBytes int     `json:"analyzed_bytes"`
+	PCMParts      int64   `json:"pcm_parts"`
 	PeakDBFS      float64 `json:"peak_dbfs"`
 	RMSDBFS       float64 `json:"rms_dbfs"`
 	ClippedParts  int     `json:"clipped_parts"`
@@ -220,6 +221,7 @@ func Analyze(trackID uint32, samples []model.Sample, payload PayloadFunc, opts O
 	} else {
 		rep.Stats.RMSDBFS = minDB
 	}
+	rep.Stats.PCMParts = sumParts
 	rep.Stats.AnalyzedBytes = 0
 	for _, w := range rep.Windows {
 		rep.Stats.AnalyzedBytes += w.Bytes
