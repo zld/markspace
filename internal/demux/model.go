@@ -89,9 +89,10 @@ func SelectTracks(media *Media, rules []MapRule) ([]Mapping, *fault.Error) {
 	var out []Mapping
 	used := map[int]bool{}
 	for _, rule := range rules {
-		if !rule.Enabled && rule != (MapRule{}) {
-			continue
-		}
+		// A supplied rule is explicit and therefore selected. Enabled remains
+		// available for callers that set it, but the zero value must not make
+		// a structurally populated rule silently disappear. Callers disable a
+		// mapping by omitting it.
 		found := -1
 		for i, t := range media.Tracks {
 			if used[i] {

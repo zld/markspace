@@ -16,7 +16,7 @@ func TestSelectTracksDefaultAndExplicitRules(t *testing.T) {
 		t.Fatalf("default mappings=%d err=%v", len(all), err)
 	}
 
-	rules := []MapRule{{FromPID: 257, ToIndex: 1, Enabled: true}}
+	rules := []MapRule{{FromPID: 257, ToIndex: 1}}
 	one, err := SelectTracks(m, rules)
 	if err != nil || len(one) != 1 {
 		t.Fatalf("explicit mapping err=%v", err)
