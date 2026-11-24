@@ -111,13 +111,14 @@ type FragmentsResult struct {
 
 // Report is the committed final report with the full provenance trail.
 type Report struct {
-	InputDigest     string         `json:"inputDigest"`
-	ParamDigest     string         `json:"paramDigest"`
-	Manifests       []FileDigest   `json:"manifests"`
-	Fragments       []FileDigest   `json:"fragments"`
-	RepairMapDigest string         `json:"repairMapDigest"`
-	IndexDigest     string         `json:"indexDigest"`
-	Metrics         verify.Metrics `json:"metrics"`
+	InputDigest     string                    `json:"inputDigest"`
+	ParamDigest     string                    `json:"paramDigest"`
+	Manifests       []FileDigest              `json:"manifests"`
+	Fragments       []FileDigest              `json:"fragments"`
+	RepairMap       map[string][]repair.Entry `json:"repairMap,omitempty"`
+	RepairMapDigest string                    `json:"repairMapDigest"`
+	IndexDigest     string                    `json:"indexDigest"`
+	Metrics         verify.Metrics            `json:"metrics"`
 	// ReusedStages is run-local and deliberately excluded from the
 	// committed report so the output digest stays identical on reruns.
 	ReusedStages int `json:"-"`

@@ -30,7 +30,8 @@ func commitOutputs(outDir string, j *journal.Journal, tl *Timeline,
 	if err != nil {
 		return nil, fault.New(fault.StageCommit, "cannot encode index").Wrap(err)
 	}
-	repairDigest, err := repairMapDigest(fr)
+	repairMap := buildRepairMap(fr)
+	repairDigest, err := digestRepairMap(repairMap)
 	if err != nil {
 		return nil, err
 	}
@@ -39,6 +40,7 @@ func commitOutputs(outDir string, j *journal.Journal, tl *Timeline,
 		ParamDigest:     j.ParamDigest,
 		Manifests:       tl.Manifests,
 		Fragments:       fragmentDigests(fr),
+		RepairMap:       repairMap,
 		RepairMapDigest: repairDigest,
 		IndexDigest:     journal.DigestBytes(indexBytes),
 		Metrics:         *m,
@@ -87,15 +89,21 @@ func fragmentDigests(fr *FragmentsResult) []FileDigest {
 	return out
 }
 
-// repairMapDigest hashes the complete per-track repair mapping.
-func repairMapDigest(fr *FragmentsResult) (string, error) {
-	maps := map[string][]repair.Entry{}
+// buildRepairMap collects the non-empty per-track repair mappings.
+func buildRepairMap(fr *FragmentsResult) map[string][]repair.Entry {
+	out := map[string][]repair.Entry{}
 	for _, tr := range fr.Tracks {
 		if len(tr.Repairs) > 0 {
-			maps[tr.ID] = tr.Repairs
+			out[tr.ID] = tr.Repairs
 		}
 	}
-	data, err := json.Marshal(maps) // encoding/json sorts map keys
+	return out
+}
+
+// digestRepairMap hashes the canonical JSON of the repair mapping;
+// encoding/json sorts map keys so the digest is deterministic.
+func digestRepairMap(m map[string][]repair.Entry) (string, error) {
+	data, err := json.Marshal(m)
 	if err != nil {
 		return "", fault.New(fault.StageCommit, "cannot encode repair map").Wrap(err)
 	}
