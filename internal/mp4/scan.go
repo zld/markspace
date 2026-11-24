@@ -91,6 +91,10 @@ type ScanResult struct {
 	Truncated      bool
 	CorruptOffset  int64 // -1 when every boundary was confirmed
 	MDATStart      int64
+	// ScanPin is the byte offset of the first unconfirmed sample boundary, or
+	// 0 when every boundary was confirmed.  It is deterministic and used for
+	// repeated-run and degraded-plan checks.
+	ScanPin int64
 }
 
 // AddFault records a fault from scanning and tracks the earliest byte offset

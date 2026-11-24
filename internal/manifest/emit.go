@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"math"
 	"sort"
 
 	"regional.example/mediad/internal/clock"
@@ -208,9 +207,17 @@ func Emit(in EmitInput) (*Document, error) {
 			maxAlignMS = d
 		}
 	}
-	doc.ManifestAlignmentMS = int64(math.Ceil(maxAlignMS))
-	// The timeline error is the residual carried by the streaming converter,
-	// supplied by the audio pipeline.  It is < 1 output tick by construction.
+	// Alignment is the worst per-boundary rounding error; its ceiling is the
+	// reported millisecond figure, which must not exceed 1.
+	alignMS := int64(0)
+	if maxAlignMS > 0 {
+		alignMS = 1
+	}
+	doc.ManifestAlignmentMS = alignMS
+	// The timeline error is the conversion remainder carried by the streaming
+	// resampler, reported in whole target ticks (0 or 1).  It measures rational
+	// tick conversion rounding, not the millisecond manifest field, which has
+	// its own alignment figure above.
 	doc.TimelineErrorTicks = in.TimelineErrorTicks
 	if err := doc.finalize(); err != nil {
 		return nil, err

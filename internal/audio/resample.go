@@ -248,3 +248,15 @@ func (r *Resampler) EdgePolicy() (headPad, tailPad int) {
 
 // OutputFrames returns the number of output frames emitted so far.
 func (r *Resampler) OutputFrames() int64 { return r.outIndex }
+
+// ErrorTicksExact returns the carried fractional residue of the conversion,
+// (numerator, denominator), always a proper fraction in [0,1).  Summing emitted
+// frames never runs ahead of the exact rational duration, so this is the
+// conversion error measured in output ticks.
+func (r *Resampler) ErrorTicksExact() (int64, int64) {
+	if r.stepDen == 0 {
+		return 0, 1
+	}
+	rem := (r.outIndex * r.stepNum) % r.stepDen
+	return rem, r.stepDen
+}

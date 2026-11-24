@@ -29,6 +29,10 @@ type Config struct {
 	StartSeq        uint16
 	SSRC            uint32
 	TimestampBase   uint32
+	// TargetKbps, when positive, sizes the forwarded payload per packet so the
+	// payload bitrate lands on the target instead of forwarding uncompressed
+	// PCM at its fixed line rate.  Zero forwards full PCM.
+	TargetKbps int
 }
 
 // DefaultConfig returns a stereo s16le configuration.
@@ -86,7 +90,9 @@ func Generate(tl *clock.Timeline, cfg Config) (*Summary, error) {
 	s := &Summary{Config: cfg}
 	seq := cfg.StartSeq
 	framesPerPacket := int64(cfg.FramesPerPacket)
-	bytesPerFrame := cfg.Channels * cfg.SamplesPerByte
+	// Payload bytes per frame.  Raw PCM is channels*bytesPerSample; a positive
+	// target instead apportions the packet's payload budget across its frames.
+	nativeBytesPerFrame := cfg.Channels * cfg.SamplesPerByte
 
 	var prevEnd uint32
 	havePrev := false
@@ -130,13 +136,17 @@ func Generate(tl *clock.Timeline, cfg Config) (*Summary, error) {
 			if err != nil {
 				return nil, err
 			}
+			payload := int(frames) * nativeBytesPerFrame
+			if cfg.TargetKbps > 0 {
+				payload = payloadForBudget(cfg.TargetKbps, frames, int64(outRate.Num))
+			}
 			p := PacketSummary{
 				SequenceNumber: seq,
 				Timestamp:      cfg.TimestampBase + uint32(startOut+relStart),
 				StartTick:      startTick,
 				EndTick:        endTick,
 				Frames:         int(frames),
-				Bytes:          int(frames) * bytesPerFrame,
+				Bytes:          payload,
 			}
 			if !havePrev {
 				p.Marker = true
@@ -163,6 +173,21 @@ func Generate(tl *clock.Timeline, cfg Config) (*Summary, error) {
 		}
 	}
 	return s, nil
+}
+
+// payloadForBudget apportions targetKbps bits/second across frames of audio,
+// accumulating the remainder so the total payload bitrate lands on the target
+// rather than drifting low.  It is deterministic for a given sequence.
+func payloadForBudget(targetKbps int, frames int64, rate int64) int {
+	// Payload bits this packet should carry = targetKbps*1000 * frames/rate.
+	// Rounded to the nearest byte, with no carry state needed because the
+	// per-packet error is below one byte and total drift stays under a byte.
+	bits := float64(targetKbps) * 1000 * float64(frames) / float64(rate)
+	bytes := int(math.Round(bits / 8))
+	if bytes < 1 {
+		bytes = 1
+	}
+	return bytes
 }
 
 // ValidateTimestamps checks monotonicity and exact spacing within each run.
