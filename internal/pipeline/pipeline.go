@@ -121,7 +121,7 @@ func Run(asset *manifest.Asset, opts Options) (*Result, error) {
 	if opts.ForceStartTick != nil {
 		startTick = *opts.ForceStartTick
 	}
-	scanner := &mediam.Scanner{MaxSamples: opts.MaxSamples, StartTick: startTick}
+	scanner := &mediam.Scanner{MaxBytes: manifest.MaxInputBytes, MaxSamples: opts.MaxSamples, StartTick: startTick}
 	scan, err := scanner.Scan(asset.ResolvePath(audioDecl))
 	if err != nil {
 		// A dependency-graph failure is unrecoverable; a scan failure caused by
@@ -178,6 +178,12 @@ func Run(asset *manifest.Asset, opts Options) (*Result, error) {
 	}
 	res.RecoveredSamples = recoveredCount(scan)
 	res.MissingDurationMS = mustMS(scan.Timeline.MissingDuration(), movieRate)
+	// Enforce the presentation-duration cap from the manifest package so a
+	// pathological edit list cannot schedule hours of decode work.
+	if durMS := mustMS(scan.Timeline.Duration(), movieRate); durMS > manifest.MaxDurationMS {
+		return nil, fault.Fatal(fault.ClassLimit, "duration",
+			fmt.Sprintf("presentation duration %d ms exceeds cap %d ms", durMS, manifest.MaxDurationMS)).OnTrack(audioDecl.ID)
+	}
 
 	// 5. Audio pipeline in dependency order.
 	// The output stream cannot legitimately exceed twice the confirmed media
