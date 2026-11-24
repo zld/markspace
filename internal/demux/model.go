@@ -35,9 +35,10 @@ type Track struct {
 
 // Media is a format-independent collection of tracks and observations.
 type Media struct {
-	Format string        `json:"format"`
-	Tracks []*Track      `json:"tracks"`
-	Events []fault.Event `json:"events,omitempty"`
+	Format     string        `json:"format"`
+	PSIVersion int           `json:"psi_version,omitempty"`
+	Tracks     []*Track      `json:"tracks"`
+	Events     []fault.Event `json:"events,omitempty"`
 }
 
 // MapRule explicitly maps one source track to an output MP4 track ID/index.

@@ -60,7 +60,7 @@ func DemuxTS(data []byte) (*Media, []fault.Event, *fault.Error) {
 	byPID := map[uint16]*Track{}
 	pesByPID := map[uint16][]*ts.PESPacket{}
 	ptsClocks := map[uint16]*clock.TrackMap{}
-	media := &Media{Format: "mpeg-ts"}
+	media := &Media{Format: "mpeg-ts", PSIVersion: int(psi.ActivePAT().Version)}
 	for i, d := range trackDescs {
 		if d.Codec == "unknown" {
 			fe := fault.New(fault.ErrUnknownCodec, "demux.ts", 0,
