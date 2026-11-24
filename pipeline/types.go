@@ -100,6 +100,7 @@ type Metrics struct {
 	TruncatedAt       int64    `json:"truncated_at,omitempty"`
 	CRCFailures       []int64  `json:"crc_failures,omitempty"`
 	TimelineTrusted   bool     `json:"timeline_trusted"`
+	AudioLayoutValid  bool     `json:"audio_layout_valid"`
 	ColorSource       string   `json:"color_source,omitempty"`
 	ColorUnsafeReason string   `json:"color_unsafe_reason,omitempty"`
 	Published         bool     `json:"published"`

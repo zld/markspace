@@ -64,6 +64,7 @@ func decidePublish(ctx context.Context, m *Metrics, scan *ebml.ScanResult, cfg C
 		{scan.TruncatedAt < 0, "input truncated"},
 		{len(scan.CheckFailures) == 0, "cluster crc failure"},
 		{m.TimelineTrusted, "timeline not trusted"},
+		{m.AudioLayoutValid, "invalid audio channel layout"},
 		{m.ColorUnsafeReason == "", "unsafe colour metadata"},
 		{m.AVSyncErrorMs <= cfg.SyncLimitMs, "av sync error exceeds limit"},
 		{m.P95LatencyMs <= cfg.P95LimitMs, "p95 latency exceeds limit"},

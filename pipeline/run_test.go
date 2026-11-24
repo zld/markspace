@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	mp4 "github.com/abema/go-mp4"
@@ -13,7 +14,6 @@ import (
 	"mediacheck/color"
 	"mediacheck/internal/fixture"
 	"mediacheck/pipeline"
-	"mediacheck/timeline"
 )
 
 func healthyConfig(t *testing.T, out string) pipeline.Config {
@@ -165,9 +165,21 @@ func TestRunBadAudioLayoutReported(t *testing.T) {
 	}
 	cfg := healthyConfig(t, filepath.Join(t.TempDir(), "bad.mp4"))
 	cfg.Frames = 12
-	_, err = pipeline.Run(context.Background(), bytes.NewReader(stream), 17, cfg)
-	if !timeline.IsCategory(err, timeline.CatUnsupported) {
-		t.Fatalf("duplicate layout must surface unsupported error, got %v", err)
+	m, err := pipeline.Run(context.Background(), bytes.NewReader(stream), 17, cfg)
+	if err != nil {
+		t.Fatalf("layout faults are soft report errors: %v", err)
+	}
+	found := false
+	for _, f := range m.Faults {
+		if strings.Contains(f, "audio layout") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("duplicate layout must be recorded as a fault: %v", m.Faults)
+	}
+	if m.Published {
+		t.Fatal("invalid layout must block publication")
 	}
 }
 

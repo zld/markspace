@@ -22,7 +22,7 @@ func Run(ctx context.Context, in ReadSeekerAt, seed int64, cfg Config) (*Metrics
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	m := &Metrics{TruncatedAt: -1, TimelineTrusted: true}
+	m := &Metrics{TruncatedAt: -1, TimelineTrusted: true, AudioLayoutValid: true}
 
 	// 1. Input summary (size-bounded) and index binding.
 	sum, err := index.Digest(in)
@@ -58,11 +58,11 @@ func Run(ctx context.Context, in ReadSeekerAt, seed int64, cfg Config) (*Metrics
 		return nil, err
 	}
 
-	// 3. Locate tracks and normalise audio layout / colour metadata.
+	// 3. Locate tracks and normalise audio layout / colour metadata. Layout
+	// and colour faults are recorded, not fatal: the corrupt-path report must
+	// still carry frame, sync and recovery evidence.
 	videoTrack, audioTrack := classify(scan)
-	if err := normaliseAudio(m, scan, audioTrack, cfg); err != nil {
-		return nil, err
-	}
+	normaliseAudio(m, scan, audioTrack, cfg)
 	normaliseColor(m, videoTrack, scan.ContainerColor, cfg)
 
 	// 4. Merge the interleaved block timelines onto the common clock.
@@ -82,7 +82,8 @@ func Run(ctx context.Context, in ReadSeekerAt, seed int64, cfg Config) (*Metrics
 	}
 	frameResult, err := exportFrames(scan, videoTrack, cfg)
 	if err != nil {
-		return nil, err
+		m.Faults = append(m.Faults, "frame export: "+err.Error())
+		frameResult = &render.Result{}
 	}
 	m.FrameHashes = frameResult.HashSequence()
 	for _, f := range frameResult.Frames {
@@ -125,30 +126,38 @@ func classify(scan *ebml.ScanResult) (video, audioT *ebml.TrackSpec) {
 	return video, audioT
 }
 
-func normaliseAudio(m *Metrics, scan *ebml.ScanResult, track *ebml.TrackSpec, cfg Config) error {
+func normaliseAudio(m *Metrics, scan *ebml.ScanResult, track *ebml.TrackSpec, cfg Config) {
 	if track == nil {
-		return timeline.New(timeline.CatConfig, "no audio track in input")
+		m.AudioLayoutValid = false
+		m.Faults = append(m.Faults, "audio layout: no audio track in input")
+		return
 	}
 	if _, err := audio.Resolve(track, cfg.AudioPolicy); err != nil {
+		m.AudioLayoutValid = false
 		m.Faults = append(m.Faults, "audio layout: "+err.Error())
-		return err
 	}
-	// Each audio block covers one video frame: samples = rate / fps.
+	// Sample accounting still runs on the declared rate so the report shows
+	// input/output counts even when the layout itself is rejected.
 	audioBlocks := 0
 	for _, b := range scan.Blocks {
 		if b.TrackNumber == track.Number {
 			audioBlocks++
 		}
 	}
+	if track.SampleRate == 0 {
+		m.AudioLayoutValid = false
+		m.Faults = append(m.Faults, "audio layout: zero sample rate")
+		return
+	}
 	inSamples := int64(audioBlocks) * int64(track.SampleRate) / fpsOr(cfg.FPS)
 	stats, err := audio.Plan(int64(track.SampleRate), cfg.TargetSampleRate, inSamples)
 	if err != nil {
-		return err
+		m.Faults = append(m.Faults, "audio resample: "+err.Error())
+		return
 	}
 	m.AudioSamplesIn = stats.SamplesIn
 	m.AudioSamplesOut = stats.SamplesOut
 	m.AudioDurationErrNs = stats.DurationErrorNs
-	return nil
 }
 
 func normaliseColor(m *Metrics, video *ebml.TrackSpec, container *ebml.ColorMeta, cfg Config) {
