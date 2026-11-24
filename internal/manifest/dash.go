@@ -21,11 +21,11 @@ type DASHSegment struct {
 
 // Representation is one DASH AdaptationSet representation.
 type Representation struct {
-	ID         string
-	Bandwidth  int
-	Timescale  uint32
-	InitURI    string
-	Segments   []DASHSegment
+	ID        string
+	Bandwidth int
+	Timescale uint32
+	InitURI   string
+	Segments  []DASHSegment
 }
 
 // DASH is the parsed MPD.
@@ -39,9 +39,9 @@ type mpdXML struct {
 		AdaptationSets []struct {
 			SegmentTemplate *segmentTemplateXML `xml:"SegmentTemplate"`
 			Representations []struct {
-				ID              string                `xml:"id,attr"`
-				Bandwidth       int                   `xml:"bandwidth,attr"`
-				SegmentTemplate *segmentTemplateXML   `xml:"SegmentTemplate"`
+				ID              string              `xml:"id,attr"`
+				Bandwidth       int                 `xml:"bandwidth,attr"`
+				SegmentTemplate *segmentTemplateXML `xml:"SegmentTemplate"`
 			} `xml:"Representation"`
 		} `xml:"AdaptationSet"`
 	} `xml:"Period"`

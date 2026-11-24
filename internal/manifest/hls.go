@@ -12,12 +12,12 @@ import (
 
 // Segment is one playlist entry on the unified timeline.
 type Segment struct {
-	URI               string `json:"uri"`
-	DurationTicks     int64  `json:"duration_ticks"`
-	Period            int    `json:"period"`
-	Discontinuity     bool   `json:"discontinuity_before"`
-	MapURI            string `json:"map_uri,omitempty"`
-	GlobalStartTicks  int64  `json:"global_start_ticks"`
+	URI              string `json:"uri"`
+	DurationTicks    int64  `json:"duration_ticks"`
+	Period           int    `json:"period"`
+	Discontinuity    bool   `json:"discontinuity_before"`
+	MapURI           string `json:"map_uri,omitempty"`
+	GlobalStartTicks int64  `json:"global_start_ticks"`
 }
 
 // Variant is one master-playlist stream representation.

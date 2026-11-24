@@ -15,18 +15,18 @@ const (
 // Stable fault classification codes. Repeated runs on the same input must
 // produce byte-identical codes.
 const (
-	CodeZeroTimescale       = "zero_timescale"
-	CodeTickOverflow        = "tick_overflow"
-	CodeManifestParse       = "manifest_parse_error"
-	CodePathEscape          = "path_escape"
-	CodeIllegalBoxLength    = "illegal_box_length"
-	CodeTruncatedBox        = "truncated_box"
-	CodeMissingInit         = "missing_initialization"
-	CodeMissingSampleTable  = "missing_sample_table"
-	CodeDashAlignment       = "dash_representation_misaligned"
-	CodeWrapEvidence        = "wrap_evidence_insufficient"
-	CodeCheckpointCorrupt   = "checkpoint_corrupt"
-	CodeSegmentUnreadable   = "segment_unreadable"
+	CodeZeroTimescale         = "zero_timescale"
+	CodeTickOverflow          = "tick_overflow"
+	CodeManifestParse         = "manifest_parse_error"
+	CodePathEscape            = "path_escape"
+	CodeIllegalBoxLength      = "illegal_box_length"
+	CodeTruncatedBox          = "truncated_box"
+	CodeMissingInit           = "missing_initialization"
+	CodeMissingSampleTable    = "missing_sample_table"
+	CodeDashAlignment         = "dash_representation_misaligned"
+	CodeWrapEvidence          = "wrap_evidence_insufficient"
+	CodeCheckpointCorrupt     = "checkpoint_corrupt"
+	CodeSegmentUnreadable     = "segment_unreadable"
 	CodeTimelineDiscontinuity = "timeline_discontinuity"
 )
 

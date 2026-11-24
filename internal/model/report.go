@@ -16,25 +16,25 @@ type GOPBucket struct {
 // SegmentReport is the deterministic, checkpointable result for one
 // manifest-referenced media segment.
 type SegmentReport struct {
-	URI              string      `json:"uri"`
-	Kind             string      `json:"kind"` // progressive | fragmented | initialization
-	Period           int         `json:"period"`
-	Timescale        uint32      `json:"timescale"`
-	Bytes            int64       `json:"bytes"`
-	SampleCount      int64       `json:"sample_count"`
-	SyncSamples      []int64     `json:"sync_samples"`
-	GOPIntervals     []int64     `json:"gop_intervals_ticks"`
-	GOPMinTicks      int64       `json:"gop_min_ticks"`
-	GOPMaxTicks      int64       `json:"gop_max_ticks"`
-	GlobalStartTicks int64       `json:"global_start_ticks"`
-	GlobalEndTicks   int64       `json:"global_end_ticks"`
-	DamageStartTicks int64       `json:"damage_start_ticks"`
-	DamageEndTicks   int64       `json:"damage_end_ticks"`
-	WrapEvents       int         `json:"wrap_events"`
-	DriftPPM         int64       `json:"drift_ppm"`
-	ContentSHA256    string      `json:"content_sha256"`
-	Faults           []Fault     `json:"faults"`
-	Complete         bool        `json:"complete"`
+	URI              string  `json:"uri"`
+	Kind             string  `json:"kind"` // progressive | fragmented | initialization
+	Period           int     `json:"period"`
+	Timescale        uint32  `json:"timescale"`
+	Bytes            int64   `json:"bytes"`
+	SampleCount      int64   `json:"sample_count"`
+	SyncSamples      []int64 `json:"sync_samples"`
+	GOPIntervals     []int64 `json:"gop_intervals_ticks"`
+	GOPMinTicks      int64   `json:"gop_min_ticks"`
+	GOPMaxTicks      int64   `json:"gop_max_ticks"`
+	GlobalStartTicks int64   `json:"global_start_ticks"`
+	GlobalEndTicks   int64   `json:"global_end_ticks"`
+	DamageStartTicks int64   `json:"damage_start_ticks"`
+	DamageEndTicks   int64   `json:"damage_end_ticks"`
+	WrapEvents       int     `json:"wrap_events"`
+	DriftPPM         int64   `json:"drift_ppm"`
+	ContentSHA256    string  `json:"content_sha256"`
+	Faults           []Fault `json:"faults"`
+	Complete         bool    `json:"complete"`
 }
 
 // Report is the full deterministic analysis result. Runtime metrics

@@ -8,27 +8,27 @@ import (
 
 // CorruptTruth records the planted truncation for offset accuracy checks.
 type CorruptTruth struct {
-	Manifest           string `json:"manifest"`
-	Segment            string `json:"segment"`
-	CutOffsetBytes     int64  `json:"cut_offset_bytes"`
-	OriginalSizeBytes  int    `json:"original_size_bytes"`
-	VictimSampleIndex  int    `json:"victim_sample_index"`
-	SampleStartOffset  int64  `json:"sample_start_offset"`
-	Timescale          uint32 `json:"timescale"`
-	SampleTimeUnified  int64  `json:"sample_time_unified_ticks"`
+	Manifest          string `json:"manifest"`
+	Segment           string `json:"segment"`
+	CutOffsetBytes    int64  `json:"cut_offset_bytes"`
+	OriginalSizeBytes int    `json:"original_size_bytes"`
+	VictimSampleIndex int    `json:"victim_sample_index"`
+	SampleStartOffset int64  `json:"sample_start_offset"`
+	Timescale         uint32 `json:"timescale"`
+	SampleTimeUnified int64  `json:"sample_time_unified_ticks"`
 }
 
 // GroundTruth describes every generated scenario and the planted fault.
 type GroundTruth struct {
-	OutDir                  string       `json:"out_dir"`
-	GoodManifest            string       `json:"good_manifest"`
-	CorruptManifest         string       `json:"corrupt_manifest"`
-	DiscontinuityManifest   string       `json:"discontinuity_manifest"`
-	VFRManifest             string       `json:"vfr_manifest"`
-	WrapDriftManifest       string       `json:"wrap_drift_manifest"`
-	DashManifest            string       `json:"dash_manifest"`
-	DashMisalignedManifest  string       `json:"dash_misaligned_manifest"`
-	Corrupt                 CorruptTruth `json:"corrupt_truth"`
+	OutDir                 string       `json:"out_dir"`
+	GoodManifest           string       `json:"good_manifest"`
+	CorruptManifest        string       `json:"corrupt_manifest"`
+	DiscontinuityManifest  string       `json:"discontinuity_manifest"`
+	VFRManifest            string       `json:"vfr_manifest"`
+	WrapDriftManifest      string       `json:"wrap_drift_manifest"`
+	DashManifest           string       `json:"dash_manifest"`
+	DashMisalignedManifest string       `json:"dash_misaligned_manifest"`
+	Corrupt                CorruptTruth `json:"corrupt_truth"`
 }
 
 // Generate creates the full deterministic fixture tree under dir.

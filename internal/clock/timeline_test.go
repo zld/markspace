@@ -9,11 +9,11 @@ import (
 
 func TestConvertTimescales(t *testing.T) {
 	cases := []struct {
-		name        string
-		ticks       int64
-		from, to    uint32
-		want        int64
-		wantErrIs   error
+		name      string
+		ticks     int64
+		from, to  uint32
+		want      int64
+		wantErrIs error
 	}{
 		{"90k to unified one second", 90000, 90000, UnifiedHz, 1_000_000, nil},
 		{"48k to 90k", 48000, 48000, 90000, 90000, nil},

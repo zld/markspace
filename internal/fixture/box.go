@@ -15,8 +15,8 @@ func (w *wb) u32(v uint32) {
 	binary.BigEndian.PutUint32(a[:], v)
 	w.b = append(w.b, a[:]...)
 }
-func (w *wb) i32(v int32) { w.u32(uint32(v)) }
-func (w *wb) p(n int)     { w.b = append(w.b, make([]byte, n)...) }
+func (w *wb) i32(v int32)  { w.u32(uint32(v)) }
+func (w *wb) p(n int)      { w.b = append(w.b, make([]byte, n)...) }
 func (w *wb) raw(p []byte) { w.b = append(w.b, p...) }
 func (w *wb) fourcc(s string) {
 	if len(s) != 4 {

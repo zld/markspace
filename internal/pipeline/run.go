@@ -15,8 +15,8 @@ import (
 
 	"mediascan/internal/checkpoint"
 	"mediascan/internal/manifest"
-	mp4inspect "mediascan/internal/mp4"
 	"mediascan/internal/model"
+	mp4inspect "mediascan/internal/mp4"
 	"mediascan/internal/stream"
 )
 

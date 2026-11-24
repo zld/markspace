@@ -50,8 +50,8 @@ type Result struct {
 
 // Options controls InspectWith.
 type Options struct {
-	Segment            string
-	FallbackTimescale  uint32
+	Segment           string
+	FallbackTimescale uint32
 }
 
 // Inspect opens and analyses one MP4 file.

@@ -7,11 +7,11 @@ import (
 
 func TestSecondsToUnifiedTicks(t *testing.T) {
 	cases := map[string]int64{
-		"1":      1_000_000,
-		"4.000":  4_000_000,
-		"0.033333": 33333,
-		"0.0333333": 33333,  // 7th digit 3, no round
-		"0.0333336": 33334,  // rounds up
+		"1":         1_000_000,
+		"4.000":     4_000_000,
+		"0.033333":  33333,
+		"0.0333333": 33333, // 7th digit 3, no round
+		"0.0333336": 33334, // rounds up
 	}
 	for in, want := range cases {
 		got, err := SecondsToUnifiedTicks(in)

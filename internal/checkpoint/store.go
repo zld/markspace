@@ -22,14 +22,14 @@ const Version = 1
 
 // State is the persisted resume state. It contains only deterministic data.
 type State struct {
-	Version            int                   `json:"version"`
-	ManifestKey        string                `json:"manifest_key"`
-	CommittedSamples   int64                 `json:"committed_samples"`
-	CompletedSegments  int                   `json:"completed_segments"`
-	TotalSegments      int                   `json:"total_segments"`
-	Complete           bool                  `json:"complete"`
-	ResultSHA256       string                `json:"result_sha256,omitempty"`
-	Segments           []model.SegmentReport `json:"segments,omitempty"`
+	Version           int                   `json:"version"`
+	ManifestKey       string                `json:"manifest_key"`
+	CommittedSamples  int64                 `json:"committed_samples"`
+	CompletedSegments int                   `json:"completed_segments"`
+	TotalSegments     int                   `json:"total_segments"`
+	Complete          bool                  `json:"complete"`
+	ResultSHA256      string                `json:"result_sha256,omitempty"`
+	Segments          []model.SegmentReport `json:"segments,omitempty"`
 }
 
 // Store manages one checkpoint file and its .bak generation.
@@ -118,9 +118,9 @@ func (s *Store) Save(st *State) error {
 
 // LoadResult describes what Load recovered.
 type LoadResult struct {
-	State            *State
-	Source           string // main | backup | fresh
-	RollbackReason   string
+	State          *State
+	Source         string // main | backup | fresh
+	RollbackReason string
 }
 
 // Load reads and verifies the checkpoint, applying the safe fallback rules.
