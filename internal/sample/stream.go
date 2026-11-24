@@ -115,7 +115,7 @@ func Generate(o Options) error {
 	}
 
 	lost := map[int]bool{200: true, 450: true}
-	heldLate := 80
+	heldLate := 160
 	swaps := map[int]bool{20: true, 140: true, 260: true, 420: true}
 	order := make([]int, 0, o.Frames)
 	for i := 0; i < o.Frames; {
@@ -158,7 +158,7 @@ func Generate(o Options) error {
 				return err
 			}
 		}
-		if idx == 112 {
+		if idx == 192 {
 			if _, err := w.WriteRTP(packets[heldLate]); err != nil { // outside window
 				return err
 			}
