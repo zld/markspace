@@ -89,7 +89,7 @@ func GenerateDemo(o Options) (*DemoResult, error) {
 	}
 	afx, err := ingest.GenerateRTPFile(ingest.RTPGenOptions{
 		Path: p.Audio, Seed: o.Seed, Packets: o.AudioPackets,
-		Channels: 2, SampleRate: orDefault32(o.TargetRate, model.AudioClockRate),
+		Channels: 2, SampleRate: orDefault32(o.SourceRate, model.AudioClockRate),
 		Late: late, Duplicate: duplicate, OutOfOrder: true,
 	})
 	if err != nil {

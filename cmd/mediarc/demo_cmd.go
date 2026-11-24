@@ -22,7 +22,8 @@ func runDemo(argv []string, stdout io.Writer) (int, error) {
 	fs.IntVar(&o.ChunkSize, "chunk-size", o.ChunkSize, "alias for --chunk")
 	fs.StringVar(&inject, "inject", "", "comma list: bad-sha,truncated,late,duplicate")
 	fs.StringVar(&o.Workdir, "workdir", "", "local working directory")
-	var targetRate uint
+	var sourceRate, targetRate uint
+	fs.UintVar(&sourceRate, "source-rate", uint(o.SourceRate), "source RTP clock / PCM sample rate")
 	fs.UintVar(&targetRate, "target-rate", uint(o.TargetRate), "normalized audio sample rate")
 	fs.StringVar(&o.SourceLayout, "source-layout", o.SourceLayout, "mono|stereo|5.1")
 	fs.StringVar(&o.TargetLayout, "target-layout", o.TargetLayout, "mono|stereo|5.1")
@@ -33,6 +34,7 @@ func runDemo(argv []string, stdout io.Writer) (int, error) {
 	if o.Workdir == "" {
 		return 1, fmt.Errorf("demo requires --workdir")
 	}
+	o.SourceRate = uint32(sourceRate)
 	o.TargetRate = uint32(targetRate)
 	for _, token := range strings.Split(inject, ",") {
 		token = strings.TrimSpace(token)

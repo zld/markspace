@@ -20,6 +20,7 @@ type Options struct {
 	ChunkSize       int      `json:"chunk_size"`
 	Inject          []string `json:"inject"`
 	InterruptAfter  int      `json:"interrupt_after"`
+	SourceRate      uint32   `json:"source_rate"`
 	TargetRate      uint32   `json:"target_rate"`
 	SourceLayout    string   `json:"source_layout"`
 	TargetLayout    string   `json:"target_layout"`
@@ -35,7 +36,7 @@ func ConfigPath(workdir string) string { return filepath.Join(workdir, "config.j
 func DefaultOptions() Options {
 	return Options{
 		Seed: 17, Frames: 120, AudioPackets: 480, ChunkSize: 16,
-		TargetRate: 48000, SourceLayout: "stereo", TargetLayout: "stereo",
+		SourceRate: 48000, TargetRate: 48000, SourceLayout: "stereo", TargetLayout: "stereo",
 		Window: 64, LateThreshold: 8,
 	}
 }

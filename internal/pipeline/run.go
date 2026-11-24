@@ -104,8 +104,8 @@ func Run(o Options) (*RunResult, error) {
 	audio := recovery.FillAudioGaps(items, gaps, audioSamplesPerPacket(manifest), uint32(len(srcLayout.Channels)))
 	_ = reconcileColor(o, metas, faults)
 
-	sourceRate := uint32(model.AudioClockRate)
-	if manifest.Audio != nil && manifest.Audio.SampleRate != 0 {
+	sourceRate := orDefault32(o.SourceRate, model.AudioClockRate)
+	if manifest.Audio != nil && manifest.Audio.SampleRate != 0 && o.SourceRate == 0 {
 		sourceRate = manifest.Audio.SampleRate
 	}
 	clock := model.ClockMap{
