@@ -63,12 +63,15 @@ func SimulateInterruptAndResume(store *state.Store, result *Result, paramsHash s
 		AfterHashes:      map[int]string{},
 	}
 
+	resumeAt := loaded.SafeSegmentIndex
 	for _, seg := range result.Segments {
-		if prior, ok := loaded.Segments[seg.Index]; ok {
-			if prior.SHA256 != seg.SHA256 {
+		if seg.Index < resumeAt {
+			prior, ok := loaded.Segments[seg.Index]
+			if !ok || prior.SHA256 != seg.SHA256 {
 				return nil, media.NewError("pipeline.recovery", media.CodeHashMismatch,
 					fmt.Sprintf("completed segment %d hash changed", seg.Index), nil)
 			}
+			continue
 		}
 		if err := loaded.RecordSegment(toSegmentState(seg)); err != nil {
 			return nil, err
