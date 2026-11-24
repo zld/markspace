@@ -3,7 +3,6 @@ package cli
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"mediasync/internal/fixture"
 	"mediasync/internal/model"
@@ -85,5 +84,3 @@ func diagsDigest(errs model.ErrorList) string {
 	h := sha256Hex(errs.Error())
 	return h
 }
-
-var _ = filepath.Join
