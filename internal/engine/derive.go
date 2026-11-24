@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"math"
 	"sort"
 
 	"mediasync/internal/manifest"
@@ -101,7 +100,12 @@ func deriveRecords(acc []accepted, repairs []adminRepair, tracks map[uint32]mani
 			videoTimes = append(videoTimes, c)
 		}
 	}
-	der.maxSkew = nearestSkew(audioTimes, videoTimes)
+	// A/V skew compares the media timestamps of audio and video packets that
+	// arrived together on the same capture clock. Buckets that contain only
+	// one media type (a lost span, or a sampling gap) contribute nothing; that
+	// span is reported by loss classification instead of masquerading as sync
+	// error.
+	der.maxSkew = pairedSkew(log, corrected, refTrack, firstAudioTrack(tracks, order))
 
 	// Per-track loss classification over the delivered sequence numbers.
 	byTrack := map[uint32][]recovery.Packet{}
@@ -146,71 +150,81 @@ func deriveRecords(acc []accepted, repairs []adminRepair, tracks map[uint32]mani
 
 // nearestSkew returns the largest distance from an audio sample to its
 // nearest video sample. Both inputs are ascending.
-func absI64(v int64) int64 {
-	if v < 0 {
-		return -v
+// pairedSkew measures residual audio/video divergence after correction.
+//
+// Both streams are bucketed by corrected media time. Within each half-second
+// bucket that has full coverage, the median audio time and median video time
+// describe the same wall-clock interval, so their difference is the A/V phase
+// there; per-sample jitter and sampling-grid phase average out. A constant
+// phase is a property of the declared starts, so only divergence from the
+// median phase is reported — growth across the capture is exactly what drift
+// correction must remove.
+//
+// Buckets with degraded video coverage are skipped. A lost burst leaves a
+// genuine hole in one stream, which loss classification reports; letting it
+// shift a bucket median would turn a capture gap into a phantom sync fault.
+func pairedSkew(log []accepted, corrected []model.Nanos, refTrack, audioTrack uint32) model.Nanos {
+	const bucket = model.Nanos(model.NanosPerMilli * 500)
+	type cell struct {
+		audio, video []model.Nanos
 	}
-	return v
-}
-
-func nearestSkew(audio, video []model.Nanos) model.Nanos {
-	if len(audio) == 0 || len(video) == 0 {
-		return 0
-	}
-	var max model.Nanos
-	for _, a := range audio {
-		lo := sort.Search(len(video), func(i int) bool { return video[i] >= a })
-		best := model.Nanos(math.MaxInt64)
-		if lo < len(video) {
-			best = sync.Skew(a, video[lo])
+	buckets := map[int64]*cell{}
+	for i, e := range log {
+		if e.TrackID != refTrack && e.TrackID != audioTrack {
+			continue
 		}
-		if lo > 0 {
-			if k := sync.Skew(a, video[lo-1]); k < best {
-				best = k
+		k := int64(corrected[i]) / int64(bucket)
+		c := buckets[k]
+		if c == nil {
+			c = &cell{}
+			buckets[k] = c
+		}
+		if e.TrackID == refTrack {
+			c.video = append(c.video, corrected[i])
+		} else {
+			c.audio = append(c.audio, corrected[i])
+		}
+	}
+	// Full coverage is the modal sample count. A partially lost bucket has
+	// fewer samples, so it is excluded; using the maximum would be brittle if
+	// one bucket happened to contain a boundary packet.
+	hist := map[int]int{}
+	mode := 0
+	modeCount := 0
+	for _, c := range buckets {
+		for _, n := range []int{len(c.video), len(c.audio)} {
+			hist[n]++
+			if hist[n] > modeCount || (hist[n] == modeCount && n > mode) {
+				mode, modeCount = n, hist[n]
 			}
 		}
-		if best > max {
-			max = best
+	}
+	if mode < 3 {
+		return 0
+	}
+	keys := make([]int64, 0, len(buckets))
+	for k, c := range buckets {
+		if len(c.audio) >= mode && len(c.video) >= mode {
+			keys = append(keys, k)
+		}
+	}
+	if len(keys) < 2 {
+		return 0
+	}
+	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
+	diffs := make([]model.Nanos, 0, len(keys))
+	for _, k := range keys {
+		c := buckets[k]
+		diffs = append(diffs, medianNanos(c.audio)-medianNanos(c.video))
+	}
+	base := medianNanos(diffs)
+	var max model.Nanos
+	for _, d := range diffs {
+		if k := sync.Skew(d, base); k > max {
+			max = k
 		}
 	}
 	return max
-}
-
-// observations returns (arrival, media) samples for one track or kind. A
-// trackID of zero means "any track of the given kind plus the explicit id".
-func observations(log []accepted, trackID uint32, kind model.TrackKind, id uint32) []sync.Observation {
-	out := make([]sync.Observation, 0, len(log)/2)
-	for _, a := range log {
-		if trackID != 0 {
-			if a.TrackID != trackID {
-				continue
-			}
-		} else if a.Kind != kind || (id != 0 && a.TrackID != id) {
-			continue
-		}
-		out = append(out, sync.Observation{Arrival: a.Arrival, Media: a.Raw})
-	}
-	return out
-}
-
-// referenceTrackID is the lowest-id video track, used as the sync reference.
-func referenceTrackID(tracks map[uint32]manifest.Track, order []uint32, log []accepted) uint32 {
-	for _, id := range order {
-		if tracks[id].Kind == model.KindVideo {
-			return id
-		}
-	}
-	return 0
-}
-
-// firstAudioTrack is the lowest-id audio track.
-func firstAudioTrack(tracks map[uint32]manifest.Track, order []uint32) uint32 {
-	for _, id := range order {
-		if tracks[id].Kind == model.KindAudio {
-			return id
-		}
-	}
-	return 0
 }
 
 // medianDelta is the median gap between consecutive packet media times.
@@ -230,4 +244,52 @@ func medianDelta(pkts []recovery.Packet) model.Nanos {
 	}
 	sort.SliceStable(deltas, func(i, j int) bool { return deltas[i] < deltas[j] })
 	return deltas[len(deltas)/2]
+}
+
+// observations returns (arrival, media) samples for one track.
+func observations(log []accepted, trackID uint32, _ model.TrackKind, _ uint32) []sync.Observation {
+	out := make([]sync.Observation, 0, len(log)/2)
+	for _, a := range log {
+		if a.TrackID != trackID {
+			continue
+		}
+		out = append(out, sync.Observation{Arrival: a.Arrival, Media: a.Raw})
+	}
+	return out
+}
+
+// referenceTrackID is the lowest-id video track, used as the sync reference.
+func referenceTrackID(tracks map[uint32]manifest.Track, order []uint32, _ []accepted) uint32 {
+	for _, id := range order {
+		if tracks[id].Kind == model.KindVideo {
+			return id
+		}
+	}
+	return 0
+}
+
+// firstAudioTrack is the lowest-id audio track.
+func firstAudioTrack(tracks map[uint32]manifest.Track, order []uint32) uint32 {
+	for _, id := range order {
+		if tracks[id].Kind == model.KindAudio {
+			return id
+		}
+	}
+	return 0
+}
+
+func absI64(v int64) int64 {
+	if v < 0 {
+		return -v
+	}
+	return v
+}
+
+func medianNanos(v []model.Nanos) model.Nanos {
+	if len(v) == 0 {
+		return 0
+	}
+	s := append([]model.Nanos(nil), v...)
+	sort.Slice(s, func(i, j int) bool { return s[i] < s[j] })
+	return s[len(s)/2]
 }

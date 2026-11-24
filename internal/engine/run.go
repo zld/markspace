@@ -5,6 +5,7 @@ import (
 
 	"mediasync/internal/model"
 	"mediasync/internal/output"
+	"mediasync/internal/rtp"
 )
 
 // Run processes every event from a clean state and returns the derived
@@ -17,7 +18,7 @@ func (e *Engine) Run(in *Input) (*Result, error) {
 	if err := e.store.Remove(); err != nil {
 		return nil, model.NewError(model.CodeCheckpointCorrupt, model.Loc{File: e.store.Dir()}, "reset checkpoint log").Wrap(err)
 	}
-	e.checkpoints = 0
+	e.reset()
 	return e.runFrom(in, 0)
 }
 
@@ -32,6 +33,9 @@ func (e *Engine) ResumeFromCheckpoint(in *Input) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	// A resumed run always continues to the end: the interrupt point belongs
+	// to the run that was interrupted, not to the recovery that follows it.
+	e.opts.InterruptAfter = 0
 	res, rerr := e.runFrom(in, int(rr.ResumedFrom))
 	if rerr != nil {
 		return nil, rerr
@@ -79,14 +83,18 @@ func (e *Engine) runFrom(in *Input, start int) (*Result, error) {
 			errs.Add(err)
 		}
 		e.processed++
+		if e.opts.InterruptAfter > 0 && e.processed >= e.opts.InterruptAfter {
+			// Stop at the interruption point without checkpointing it. Resume
+			// therefore starts from the last periodic checkpoint before the
+			// interrupt, which is what an operator recovers from after a
+			// crash mid-interval.
+			e.interrupted = true
+			break
+		}
 		if e.opts.CheckpointEvery > 0 && e.processed%e.opts.CheckpointEvery == 0 {
 			if werr := e.writeCheckpoint(in.EventBytes[i]); werr != nil {
 				errs.Add(werr)
 			}
-		}
-		if e.opts.InterruptAfter > 0 && e.processed >= e.opts.InterruptAfter {
-			e.interrupted = true
-			break
 		}
 	}
 	e.Errors = errs
@@ -148,9 +156,12 @@ func (e *Engine) ingestMedia(ev model.PacketEvent, index int, byteOffset int64) 
 	late := e.wm.Started() && e.wm.IsLate(media)
 	if late {
 		e.lateRec++
+		// The affected span starts at the late event's own media time: output
+		// at or after that instant must be re-derived. The watermark only says
+		// how far processing had already gone.
 		e.late = append(e.late, LateEvent{
 			TrackID: ev.TrackID, ExtSeq: seq.Ext, Corrected: media,
-			AffectedAt: e.wm.Value(), RewindIndex: e.affectedIndex(media),
+			AffectedAt: media, RewindIndex: e.affectedIndex(media),
 		})
 	}
 	// The watermark advances on every accepted event, late or not: a late
@@ -254,4 +265,31 @@ func sortedAccepted(a []accepted) []accepted {
 	out := append([]accepted(nil), a...)
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Event < out[j].Event })
 	return out
+}
+
+// reset returns the engine to a clean pre-run state. It is used by Run so a
+// fresh run never observes state left by an earlier Run or Resume call on the
+// same engine.
+func (e *Engine) reset() {
+	e.accepted = nil
+	e.repairs = nil
+	e.late = nil
+	e.lateRec = 0
+	e.packets = 0
+	e.dups = 0
+	e.bases = map[uint32]model.Nanos{}
+	e.processed = 0
+	e.interrupted = false
+	e.Errors = nil
+	e.checkpoints = 0
+	e.resumedFrom = 0
+	e.resumeMS = 0
+	e.fallbackReason = ""
+	e.wm.Restore(0, 0, false)
+	for _, d := range e.dedupers {
+		d.Reset()
+	}
+	for _, t := range e.tsExt {
+		t.Restore(rtp.TimestampSnapshot{})
+	}
 }

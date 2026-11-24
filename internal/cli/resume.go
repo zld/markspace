@@ -53,8 +53,11 @@ func Resume(args []string) (int, error) {
 		WrapBits: *wrapBits, DriftPPM: 1000, LateWindowMS: *lateMS,
 		CheckpointEvery: *every, InterruptAfter: *interrupt,
 	}
-	// Reference: an uninterrupted run with the same parameters.
-	refEng, err := engine.New(base, in.Manifest)
+	// Reference: a full, uninterrupted run with otherwise identical
+	// parameters. The reference must not inherit the interrupt point.
+	refOpts := base
+	refOpts.InterruptAfter = 0
+	refEng, err := engine.New(refOpts, in.Manifest)
 	if err != nil {
 		return output.ExitFailure, err
 	}

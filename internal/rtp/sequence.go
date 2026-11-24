@@ -273,3 +273,11 @@ func (d *Deduper) SnapTo(ext int64) {
 	}
 	d.seen[ext] = struct{}{}
 }
+
+// Reset clears all deduplication state and restarts the extender.
+func (d *Deduper) Reset() {
+	d.ext.Reset()
+	d.seen = map[int64]struct{}{}
+	d.highExt = 0
+	d.highInit = false
+}

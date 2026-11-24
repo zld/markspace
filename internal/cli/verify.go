@@ -55,14 +55,23 @@ func Verify(args []string) (int, error) {
 	}
 	sum.LocatedOffset = located
 	sum.ExpectedOffset = want
+	// An intact file is a success: there is no damage to locate.
+	if len(diags) == 0 {
+		sum.OK = true
+		sum.ExitCode = output.ExitOK
+		sum.Messages = []string{"no structural damage found"}
+		if err := printSummary(os.Stdout, sum); err != nil {
+			return output.ExitFailure, err
+		}
+		fmt.Fprintf(os.Stderr, "verify: %s is intact\n", path)
+		return output.ExitOK, nil
+	}
 	code, dev := output.VerifyTruncation(located, want, len(diags))
 	sum.OffsetDeviation = dev
-	sum.OK = code == output.ExitCorrupted || code == output.ExitOK
+	sum.OK = code == output.ExitCorrupted
 	sum.ExitCode = code
-	if len(diags) > 0 {
-		sum.Messages = errorMessages(diags)
-		sum.Digest = diagsDigest(diags)
-	}
+	sum.Messages = errorMessages(diags)
+	sum.Digest = diagsDigest(diags)
 	if err := printSummary(os.Stdout, sum); err != nil {
 		return output.ExitFailure, err
 	}

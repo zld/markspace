@@ -188,7 +188,16 @@ func Generate(dir string, cfg CaptureConfig) (manifestPath, eventsPath string, e
 				tk.Keyframes = append(tk.Keyframes, p.Ticks[i])
 			}
 		} else {
-			tk.Keyframes = []int64{p.Ticks[0]}
+			// Audio keyframes are the periodic resync points a capture system
+			// records, here roughly every 200 ms.
+			every := p.Count / 10
+			if every < 1 {
+				every = 1
+			}
+			for i := 0; i < p.Count; i += every {
+				tk.Keyframes = append(tk.Keyframes, p.Ticks[i])
+			}
+			tk.Keyframes = dedupeInt64(tk.Keyframes)
 		}
 		man.Tracks = append(man.Tracks, tk)
 	}
@@ -198,6 +207,19 @@ func Generate(dir string, cfg CaptureConfig) (manifestPath, eventsPath string, e
 	}
 	eventsPath, err = writeEvents(dir, cfg, plans, rng)
 	return manifestPath, eventsPath, err
+}
+
+// dedupeInt64 removes repeated values while preserving order.
+func dedupeInt64(v []int64) []int64 {
+	seen := make(map[int64]bool, len(v))
+	out := v[:0]
+	for _, x := range v {
+		if !seen[x] {
+			seen[x] = true
+			out = append(out, x)
+		}
+	}
+	return out
 }
 
 func writeManifest(dir string, man manifest.Manifest) (string, error) {
