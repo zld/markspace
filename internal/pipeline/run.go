@@ -126,17 +126,19 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 
 	cutter := segment.NewCutter(opts.SegmentMs)
 	var segments []model.Segment
-	var windows []model.SilenceWindow
 	var fingerprints []model.WindowFingerprint
 	var mappings []model.DedupeMapping
+	silenceWindows, unknownWindows, voicedWindows := 0, 0, 0
 	deduper := fingerprint.NewDeduper(opts.TimeToleranceMs)
 	lastCheckpoint := resumedFrom
 
 	if cp != nil {
 		segments = append(segments, cp.Segments...)
-		windows = append(windows, cp.Windows...)
 		fingerprints = append(fingerprints, cp.Fingerprints...)
 		mappings = append(mappings, cp.Mappings...)
+		silenceWindows = cp.SilenceWindows
+		unknownWindows = cp.UnknownWindows
+		voicedWindows = cp.VoicedWindows
 		deduper = fingerprint.NewDeduperFromState(cp.Segments, cp.Fingerprints, cp.Mappings, opts.TimeToleranceMs)
 		for i := int64(0); i < resumedFrom; i++ {
 			_ = cutter.Push(prepared.Packets[i])
@@ -146,12 +148,21 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 	detector := audio.NewDetector(opts.SilenceWindowMs, opts.SilenceThreshold)
 	handleClosed := func(closed *segment.ClosedSegment) {
 		closedWindows := detector.Detect(closed.Segment, closed.Packets)
+		for _, w := range closedWindows {
+			switch w.State {
+			case model.WindowSilent:
+				silenceWindows++
+			case model.WindowUnknown:
+				unknownWindows++
+			case model.WindowVoiced:
+				voicedWindows++
+			}
+		}
 		closedFingerprints := fingerprint.HashWindows(closed.Segment, closed.Packets, opts.FingerprintWindowMs)
+		fingerprints = append(fingerprints, closedFingerprints...)
 		updated, _ := deduper.Add(closed.Segment, closedFingerprints)
 		closed.Segment = updated
 		segments = append(segments, updated)
-		windows = append(windows, closedWindows...)
-		fingerprints = append(fingerprints, closedFingerprints...)
 	}
 
 	processed := resumedFrom
@@ -174,9 +185,10 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 				SegmentMs: opts.SegmentMs, CheckpointPackets: opts.CheckpointPackets,
 				ReorderWindow: opts.ReorderWindow, SilenceWindowMs: opts.SilenceWindowMs,
 				FingerprintWindowMs: opts.FingerprintWindowMs, TimeToleranceMs: opts.TimeToleranceMs,
-				Segments: segments, Windows: windows, Fingerprints: fingerprints,
-				Mappings: deduper.MappingsSnapshot(), Health: prepared.Health,
-				MaxAlignmentErrorMs: cutter.MaxAlignmentMs,
+				Segments: segments, Fingerprints: fingerprints,
+				Mappings: deduper.MappingsSnapshot(), SilenceWindows: silenceWindows,
+				UnknownWindows: unknownWindows, VoicedWindows: voicedWindows,
+				Health: prepared.Health, MaxAlignmentErrorMs: cutter.MaxAlignmentMs,
 			}
 			if err := SaveCheckpoint(opts.OutDir, checkpoint); err != nil {
 				return nil, err
@@ -201,6 +213,12 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 		PacketDuplicate:   prepared.Health.PacketDuplicate,
 		PacketLate:        prepared.Health.PacketLate,
 		PacketCorrupt:     prepared.Health.PacketCorrupt,
+		RTCPInvalid:       prepared.Health.RTCPInvalid,
+		RTCPStaleReports:  prepared.Health.RTCPStaleReports,
+		RTCPMissing:       prepared.Health.RTCPMissing,
+		SilenceWindows:    silenceWindows,
+		UnknownWindows:    unknownWindows,
+		VoicedWindows:     voicedWindows,
 		ResumedFromPacket: resumedFrom,
 		CheckpointPacket:  lastCheckpoint,
 		Truncated:         prepared.Health.Truncated,
@@ -209,7 +227,7 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 		SchemaVersion: "mediapipe/v1", Summary: summary,
 		InputPath: opts.InputPath, InputSHA256: prepared.InputSHA, InputBytes: prepared.InputBytes,
 		SegmentMs: opts.SegmentMs, CheckpointPackets: opts.CheckpointPackets, ReorderWindow: opts.ReorderWindow,
-		Segments: segments, Windows: windows, Fingerprints: fingerprints, DedupeMappings: mappings,
+		Segments: segments, Fingerprints: fingerprints, DedupeMappings: mappings,
 	}
 	if _, err := report.WriteManifest(opts.OutDir, manifest); err != nil {
 		return nil, err

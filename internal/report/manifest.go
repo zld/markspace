@@ -22,6 +22,9 @@ type Summary struct {
 	PacketDuplicate      int64   `json:"packet_duplicate"`
 	PacketLate           int64   `json:"packet_late"`
 	PacketCorrupt        int64   `json:"packet_corrupt"`
+	RTCPInvalid          int64   `json:"rtcp_invalid,omitempty"`
+	RTCPStaleReports     int64   `json:"rtcp_stale_reports,omitempty"`
+	RTCPMissing          bool    `json:"rtcp_missing,omitempty"`
 	SilenceWindows       int     `json:"silence_windows"`
 	UnknownWindows       int     `json:"unknown_windows"`
 	VoicedWindows        int     `json:"voiced_windows,omitempty"`
@@ -86,20 +89,22 @@ func (m *Manifest) Prepare() {
 			float64(m.Summary.BitrateTargetBps) * 100
 		m.Summary.BitrateDeviationPct = round2(deviation)
 	}
-	var silent, unknown, voiced int
-	for _, w := range m.Windows {
-		switch w.State {
-		case model.WindowSilent:
-			silent++
-		case model.WindowUnknown:
-			unknown++
-		case model.WindowVoiced:
-			voiced++
+	if len(m.Windows) > 0 {
+		var silent, unknown, voiced int
+		for _, w := range m.Windows {
+			switch w.State {
+			case model.WindowSilent:
+				silent++
+			case model.WindowUnknown:
+				unknown++
+			case model.WindowVoiced:
+				voiced++
+			}
 		}
+		m.Summary.SilenceWindows = silent
+		m.Summary.UnknownWindows = unknown
+		m.Summary.VoicedWindows = voiced
 	}
-	m.Summary.SilenceWindows = silent
-	m.Summary.UnknownWindows = unknown
-	m.Summary.VoicedWindows = voiced
 	m.Summary.DeduplicatedSegments = len(m.DedupeMappings)
 	m.SummarySHA256 = m.Summary.Digest()
 }

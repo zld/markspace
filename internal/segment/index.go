@@ -167,11 +167,3 @@ func ReadMP4Index(path string) (Index, error) {
 	}
 	return idx, nil
 }
-
-// IsIncompleteIndex reports whether an index should trigger checkpoint recovery.
-func IsIncompleteIndex(err error) bool {
-	if err == nil {
-		return false
-	}
-	return errors.Is(err, os.ErrNotExist) || true
-}

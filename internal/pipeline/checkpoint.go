@@ -26,9 +26,11 @@ type Checkpoint struct {
 	FingerprintWindowMs int64                     `json:"fingerprint_window_ms"`
 	TimeToleranceMs     int64                     `json:"time_tolerance_ms"`
 	Segments            []model.Segment           `json:"segments"`
-	Windows             []model.SilenceWindow     `json:"windows"`
 	Fingerprints        []model.WindowFingerprint `json:"fingerprints"`
 	Mappings            []model.DedupeMapping     `json:"mappings"`
+	SilenceWindows      int                       `json:"silence_windows"`
+	UnknownWindows      int                       `json:"unknown_windows"`
+	VoicedWindows       int                       `json:"voiced_windows"`
 	Health              stream.Health             `json:"health"`
 	MaxAlignmentErrorMs int64                     `json:"max_alignment_error_ms"`
 }

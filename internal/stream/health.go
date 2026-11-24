@@ -4,17 +4,19 @@ import "mediapipe/internal/model"
 
 // Health contains the required stream quality counters.
 type Health struct {
-	RTPPackets      int64         `json:"rtp_packets"`
-	RTCPPackets     int64         `json:"rtcp_packets"`
-	PacketLost      int64         `json:"packet_lost"`
-	PacketDuplicate int64         `json:"packet_duplicate"`
-	PacketLate      int64         `json:"packet_late"`
-	PacketCorrupt   int64         `json:"packet_corrupt"`
-	RTCPInvalid     int64         `json:"rtcp_invalid,omitempty"`
-	Truncated       bool          `json:"truncated"`
-	TruncateOffset  int64         `json:"truncate_offset,omitempty"`
-	HeaderOffset    int64         `json:"header_offset,omitempty"`
-	Issues          []model.Error `json:"issues,omitempty"`
+	RTPPackets       int64         `json:"rtp_packets"`
+	RTCPPackets      int64         `json:"rtcp_packets"`
+	PacketLost       int64         `json:"packet_lost"`
+	PacketDuplicate  int64         `json:"packet_duplicate"`
+	PacketLate       int64         `json:"packet_late"`
+	PacketCorrupt    int64         `json:"packet_corrupt"`
+	RTCPInvalid      int64         `json:"rtcp_invalid,omitempty"`
+	RTCPStaleReports int64         `json:"rtcp_stale_reports,omitempty"`
+	RTCPMissing      bool          `json:"rtcp_missing,omitempty"`
+	Truncated        bool          `json:"truncated"`
+	TruncateOffset   int64         `json:"truncate_offset,omitempty"`
+	HeaderOffset     int64         `json:"header_offset,omitempty"`
+	Issues           []model.Error `json:"issues,omitempty"`
 }
 
 func (h *Health) CountRecord(rec *RawRecord) {

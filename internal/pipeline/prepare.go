@@ -126,6 +126,10 @@ func PrepareInput(inputPath string, reorderWindow int, frameMs int64) (*Prepared
 	}
 
 	stamp(reorder.Flush())
+	if tl.AppliedReports == 0 {
+		health.RTCPMissing = true
+	}
+	health.RTCPStaleReports = int64(tl.StaleReports)
 	return &PreparedInput{
 		Header:     header,
 		Packets:    packets,
