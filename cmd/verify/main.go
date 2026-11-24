@@ -119,6 +119,7 @@ func writeManifest(path string, f *sample.Fixture, params runParameters, paramsH
 	manifest.ParametersHash = paramsHash
 	manifest.Segments = r.Segments
 	manifest.Errors = collectErrors(r)
+	manifest.Damage = r.Damage
 	manifest.Metrics["round_trip_rate"] = r.NormalMP4.RoundTrip.Rate
 	manifest.Metrics["keyframe_hit_rate"] = r.NormalMP4.Index.HitRate()
 	manifest.Metrics["missing_packets"] = len(r.MissingSequences)

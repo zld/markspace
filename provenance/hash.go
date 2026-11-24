@@ -48,6 +48,7 @@ type Manifest struct {
 	ParametersHash string           `json:"parameters_hash"`
 	Segments       []SegmentSummary `json:"segments"`
 	Errors         []*media.Error   `json:"errors,omitempty"`
+	Damage         any              `json:"damage,omitempty"`
 	Metrics        map[string]any   `json:"metrics,omitempty"`
 }
 
