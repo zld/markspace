@@ -14,6 +14,9 @@ type RTPPlan struct {
 	StartSeq    uint16
 	StartTS     uint32
 	TSStep      uint32
+	// Payloads optionally supplies a distinct payload per packet index. When
+	// empty a deterministic filler payload is generated.
+	Payloads [][]byte
 	// DuplicateAt lists sequence indexes (0-based, pre-loss) to send twice.
 	DuplicateAt []int
 	// ReorderAt lists sequence indexes that are delayed by one position.
@@ -39,7 +42,13 @@ func BuildRTP(plan RTPPlan) (RTPSession, error) {
 	if plan.PacketCount <= 0 || plan.PacketCount > 1<<20 {
 		return RTPSession{}, fmt.Errorf("fixture: packet count %d out of range", plan.PacketCount)
 	}
-	if plan.PayloadLen <= 0 || plan.PayloadLen > 1024 {
+	if len(plan.Payloads) > 0 {
+		for i, p := range plan.Payloads {
+			if len(p) == 0 || len(p) > 1024 {
+				return RTPSession{}, fmt.Errorf("fixture: payload %d length %d out of range", i, len(p))
+			}
+		}
+	} else if plan.PayloadLen <= 0 || plan.PayloadLen > 1024 {
 		return RTPSession{}, fmt.Errorf("fixture: payload length %d out of range", plan.PayloadLen)
 	}
 	if plan.LossStart < 0 || plan.LossStart >= plan.PacketCount {
@@ -76,9 +85,17 @@ func BuildRTP(plan RTPPlan) (RTPSession, error) {
 	}
 	for i := 0; i < plan.PacketCount; i++ {
 		if !drop[i] {
-			payload := make([]byte, plan.PayloadLen)
-			for j := range payload {
-				payload[j] = byte(i*7 + j)
+			var payload []byte
+			if i < len(plan.Payloads) {
+				payload = plan.Payloads[i]
+			} else {
+				payload = make([]byte, plan.PayloadLen)
+				for j := range payload {
+					payload[j] = byte(i*7 + j)
+				}
+			}
+			if plan.PayloadLen <= 0 {
+				plan.PayloadLen = 1
 			}
 			p := rtp.Packet{
 				Header: rtp.Header{
