@@ -55,11 +55,6 @@ func (c Config) validate() *clock.Error {
 func (c Config) generateRendition(rend int, bitrate int, scenario Scenario) (RenditionStream, []GroundFrame, *clock.Error) {
 	r := newRNG(c.Seed + int64(rend)*1_000_003)
 	ssrc := c.SSRCBase + uint32(rend)
-	// Bytes per frame follows the target bitrate; keyframes are larger.
-	bytesPerFrame := bitrate / 8 / int(1_000_000_000/c.BaseFrameNS)
-	if bytesPerFrame < 8 {
-		bytesPerFrame = 8
-	}
 
 	// Drift-aware device clock: RTP advances slightly faster/slower than wall.
 	drift := c.DriftPPM
@@ -78,13 +73,29 @@ func (c Config) generateRendition(rend int, bitrate int, scenario Scenario) (Ren
 	if frameCount > clock.MaxIndexEntries {
 		return RenditionStream{}, nil, clock.NewError(clock.ErrOverflow, "frame count exceeds bound")
 	}
-	ground := make([]GroundFrame, 0, frameCount)
-	var extRTP int64 = int64(startRTP)
-	var wall int64
+	// Size frames so total payload bytes match the target bitrate over the
+	// real duration. Keyframes weigh 4x a P-frame; the per-frame base is solved
+	// from the exact key/P counts so average bytes converge on the target.
 	gopOffset := 0
 	if rend < len(c.KeyframeOffset) {
 		gopOffset = c.KeyframeOffset[rend]
 	}
+	keyCount := 0
+	for f := 0; f < frameCount; f++ {
+		if (f+gopOffset)%c.GOPFrames == 0 {
+			keyCount++
+		}
+	}
+	pCount := frameCount - keyCount
+	weightUnits := pCount + keyCount*4
+	totalTargetBytes := int64(bitrate) * (c.DurationNS / 1_000_000_000) / 8
+	baseBytes := int(totalTargetBytes / int64(weightUnits))
+	if baseBytes < 8 {
+		baseBytes = 8
+	}
+	ground := make([]GroundFrame, 0, frameCount)
+	var extRTP int64 = int64(startRTP)
+	var wall int64
 	for f := 0; f < frameCount; f++ {
 		// VFR: deterministic jitter around the nominal period.
 		jitter := int64(r.float64()*2-1) * c.VFRAmplitude
@@ -93,9 +104,9 @@ func (c Config) generateRendition(rend int, bitrate int, scenario Scenario) (Ren
 			extRTP += int64(devicePerNS * float64(c.BaseFrameNS+jitter))
 		}
 		isKey := (f+gopOffset)%c.GOPFrames == 0
-		size := bytesPerFrame
+		size := baseBytes
 		if isKey {
-			size = bytesPerFrame * 4
+			size = baseBytes * 4
 		}
 		gf := GroundFrame{
 			Rendition:   rend,
@@ -111,13 +122,13 @@ func (c Config) generateRendition(rend int, bitrate int, scenario Scenario) (Ren
 		ground = append(ground, gf)
 	}
 
-	dgs, reports := c.serializeAndImpair(r, ssrc, ground, scenario)
+	dgs, reports := c.serializeAndImpair(r, ssrc, ground, scenario, devicePerNS)
 	return RenditionStream{SSRC: ssrc, Bitrate: bitrate, Datagrams: dgs, Reports: reports}, ground, nil
 }
 
 // serializeAndImpair turns ground frames into wire datagrams, then applies the
 // scenario-specific loss, reorder, duplication, wrap and truncation effects.
-func (c Config) serializeAndImpair(r *rng, ssrc uint32, ground []GroundFrame, scenario Scenario) ([]Datagram, []SenderReportBundle) {
+func (c Config) serializeAndImpair(r *rng, ssrc uint32, ground []GroundFrame, scenario Scenario, devicePerNS float64) ([]Datagram, []SenderReportBundle) {
 	dgs := make([]Datagram, 0, len(ground))
 	for _, gf := range ground {
 		payload := make([]byte, gf.PayloadSize)
@@ -137,7 +148,7 @@ func (c Config) serializeAndImpair(r *rng, ssrc uint32, ground []GroundFrame, sc
 	dgs = applyDuplicates(dgs, r, dupRate)
 	dgs = applyReorder(dgs, r, reorderRate, c.ReorderWindow)
 
-	reports := buildReports(ssrc, ground)
+	reports := buildReports(ssrc, ground, devicePerNS)
 	return dgs, reports
 }
 
@@ -154,12 +165,15 @@ func (c Config) scenarioRates(scenario Scenario, r *rng) (loss, reorder, dup, tr
 	}
 }
 
-// buildReports emits one SR per second for drift fitting.
-func buildReports(ssrc uint32, ground []GroundFrame) []SenderReportBundle {
+// buildReports emits one SR per second for drift fitting. The RTP timestamp is
+// computed directly from the drift-scaled device clock so the regression sees
+// the true device slope rather than a quantized frame timestamp.
+func buildReports(ssrc uint32, ground []GroundFrame, devicePerNS float64) []SenderReportBundle {
 	out := make([]SenderReportBundle, 0)
 	if len(ground) == 0 {
 		return out
 	}
+	startRTP := int64(ground[0].RawRTP)
 	lastSec := int64(-1)
 	for _, gf := range ground {
 		sec := gf.WallNS / 1_000_000_000
@@ -167,9 +181,11 @@ func buildReports(ssrc uint32, ground []GroundFrame) []SenderReportBundle {
 			continue
 		}
 		lastSec = sec
-		sr := encodeSR(ssrc, gf.WallNS, gf.RawRTP)
+		// RTP at this wall time, relative to the stream's starting timestamp.
+		rtpAt := startRTP + int64(devicePerNS*float64(gf.WallNS))
+		sr := encodeSR(ssrc, gf.WallNS, uint32(rtpAt))
 		out = append(out, SenderReportBundle{
-			Rendition: gf.Rendition, Data: sr, WallNS: gf.WallNS, RTP: gf.RawRTP, ArrivalNS: gf.WallNS,
+			Rendition: gf.Rendition, Data: sr, WallNS: gf.WallNS, RTP: uint32(rtpAt), ArrivalNS: gf.WallNS,
 		})
 	}
 	return out
