@@ -33,6 +33,13 @@ type Node struct {
 type RunContext struct {
 	Node    *Node
 	outputs map[string]string
+	// offsets is optional provenance the node records into its checkpoint.
+	offsets []SourceOffset
+}
+
+// SetSourceOffsets lets a node record the input byte ranges it consumed.
+func (c *RunContext) SetSourceOffsets(offsets []SourceOffset) {
+	c.offsets = append([]SourceOffset{}, offsets...)
 }
 
 // Output returns the recorded output summary of a dependency by name.
