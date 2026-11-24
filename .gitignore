@@ -1,0 +1,8 @@
+# build artifacts
+/mediascan
+*.test
+*.out
+coverage.txt
+
+# os / editor
+.DS_Store
