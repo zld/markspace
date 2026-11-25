@@ -48,6 +48,10 @@ func NewManager(dir string) (*Manager, error) {
 // WAL exposes the journal for callers that need to append stage records.
 func (m *Manager) WAL() *WAL { return m.wal }
 
+// RootDir returns the working directory root holding wal.log, staging and
+// committed subdirectories.
+func (m *Manager) RootDir() string { return m.dir }
+
 // Close releases the journal.
 func (m *Manager) Close() error { return m.wal.Close() }
 

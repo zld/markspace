@@ -55,9 +55,18 @@ func Generate(seed int64, fault Fault) (*Fixture, error) {
 	f.MP4 = buildMP4()
 	f.RTPFrames, f.Bandwidth = buildRTP(seed)
 	if fault == FaultTruncated {
-		// Cut inside the header region, after the magic and a few records.
-		cut := int64(120)
-		if cut > int64(len(f.MXF)-1) {
+		// Cut at the END marker: every field/track record has already parsed
+		// cleanly, but the declared LENGTH exceeds the bytes actually present,
+		// so the parser emits a located TRUNCATED_HEADER rather than a field
+		// parse error.
+		cut := int64(-1)
+		for i := 0; i+3 <= len(f.MXF); i++ {
+			if string(f.MXF[i:i+3]) == "END" {
+				cut = int64(i)
+				break
+			}
+		}
+		if cut < 0 {
 			cut = int64(len(f.MXF) - 1)
 		}
 		f.TruncatedOffset = cut
