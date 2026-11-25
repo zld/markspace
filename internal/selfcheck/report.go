@@ -55,8 +55,12 @@ func printCase(w io.Writer, r CaseReport) {
 		if f.HasByteOffset {
 			off = f.ByteOffset
 		}
-		fmt.Fprintf(w, "failure_code=%s failure_stage=%s failure_offset=%d track=%d time_ns=%d\n",
-			f.Code, f.Stage, off, f.TrackID, f.TimeNS)
+		timeNS := "-"
+		if f.HasTime {
+			timeNS = fmt.Sprintf("%d", f.TimeNS)
+		}
+		fmt.Fprintf(w, "failure_code=%s failure_stage=%s failure_offset=%d track=%d time_ns=%s\n",
+			f.Code, f.Stage, off, f.TrackID, timeNS)
 	} else {
 		fmt.Fprintln(w, "failure_code=- failure_stage=- failure_offset=- track=- time_ns=-")
 	}
