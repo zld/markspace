@@ -196,13 +196,17 @@ func Parse(r io.ReaderAt, size int64) (*Layout, error) {
 			"not a RIFF/WAVE file (magic %q/%q)", head[0:4], head[8:12])
 	}
 	declaredRIFF := int64(binary.LittleEndian.Uint32(head[4:8])) + 8
+	if declaredRIFF < 12 {
+		return nil, fault.New(fault.KindBadHeader, fault.Fatal, fault.ByteAt(4),
+			"RIFF size %d smaller than header", declaredRIFF)
+	}
 	limit := size
+	// A RIFF header that promises more bytes than the file holds means the
+	// file was cut short; the chunks that are present stay parseable, and
+	// the missing tail is reported at the file's end.
+	riffShort := declaredRIFF > size
 	if declaredRIFF < limit {
 		limit = declaredRIFF
-		if declaredRIFF < 12 {
-			return nil, fault.New(fault.KindBadHeader, fault.Fatal, fault.ByteAt(4),
-				"RIFF size %d smaller than header", declaredRIFF)
-		}
 	}
 
 	lay := &Layout{FirstBadOffset: -1}
@@ -266,6 +270,14 @@ func Parse(r io.ReaderAt, size int64) (*Layout, error) {
 		pos = next
 	}
 
+	if riffShort {
+		lay.Issues.Add(fault.New(fault.KindTruncated, fault.Damaged, fault.ByteAt(size),
+			"RIFF declares %d bytes, file holds %d", declaredRIFF, size))
+		lay.Truncated = true
+		if lay.FirstBadOffset < 0 {
+			lay.FirstBadOffset = size
+		}
+	}
 	if !fmtSeen {
 		return nil, fault.New(fault.KindBadChunk, fault.Fatal, fault.ByteAt(12),
 			"no fmt chunk found")

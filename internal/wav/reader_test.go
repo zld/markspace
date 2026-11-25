@@ -220,3 +220,24 @@ func TestSixChannelPCM(t *testing.T) {
 		t.Fatalf("peak = %f, want %f", peak, want)
 	}
 }
+
+func TestRiffSizeBeyondFileReported(t *testing.T) {
+	// A RIFF header promising more bytes than exist means the file was cut
+	// short after a complete data chunk; that must be reported, not ignored.
+	img := BuildPCM(1, 8000, 16, make([]byte, 100))
+	binary.LittleEndian.PutUint32(img[4:8], uint32(len(img)+500-8))
+	lay, err := Parse(bytes.NewReader(img), int64(len(img)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !lay.Truncated {
+		t.Fatal("expected truncation from short RIFF")
+	}
+	iss, ok := lay.Issues.First(fault.KindTruncated)
+	if !ok {
+		t.Fatalf("missing truncation issue: %v", &lay.Issues)
+	}
+	if iss.Where.ByteOffset != int64(len(img)) {
+		t.Fatalf("bad offset = %d, want %d", iss.Where.ByteOffset, len(img))
+	}
+}
