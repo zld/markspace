@@ -13,15 +13,11 @@ func Resolve(root, manifestDir, ref string) (string, error) {
 	if filepath.IsAbs(ref) {
 		return "", diagnostic.Wrap(diagnostic.ErrPathEscape, diagnostic.Location{Stage: "path"}, "absolute media references are not allowed: "+ref)
 	}
-	cleanRef := filepath.Clean(filepath.FromSlash(ref))
-	if cleanRef == ".." || strings.HasPrefix(cleanRef, ".."+string(filepath.Separator)) {
-		return "", diagnostic.Wrap(diagnostic.ErrPathEscape, diagnostic.Location{Stage: "path"}, "media reference escapes manifest directory: "+ref)
-	}
 	base := manifestDir
 	if base == "" {
 		base = root
 	}
-	p := filepath.Clean(filepath.Join(base, cleanRef))
+	p := filepath.Clean(filepath.Join(base, filepath.FromSlash(ref)))
 	absRoot, err := filepath.Abs(root)
 	if err != nil {
 		return "", err
