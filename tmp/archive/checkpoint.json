@@ -7,7 +7,7 @@
       "row_count": 4,
       "row_start": 0,
       "row_end": 4,
-      "sha256": "8aa1b2da8cc646441baacafc7e3ddf5173ef75acc11e4043e08be3db30c4fc3b"
+      "sha256": "616c1f3a6f9052ca28ec2854fe2fd85cac7621ed138d96946495ac324c04bd1c"
     },
     {
       "index": 1,
@@ -15,7 +15,7 @@
       "row_count": 4,
       "row_start": 4,
       "row_end": 8,
-      "sha256": "5738c1236bbd2ac9f46403b930c54031377ca4aa30c3c962e1a6b77624b23143"
+      "sha256": "f8c9c235adb83bc0642d3469e08202267cc68e5a90df3e8a24d05a466513e686"
     },
     {
       "index": 2,
@@ -23,24 +23,32 @@
       "row_count": 4,
       "row_start": 8,
       "row_end": 12,
-      "sha256": "4975fe5c3ba428f630d57bc2a3f4b259c30cea8bc0b96ecb96a81a6ffa7668fa"
+      "sha256": "f78b8f5cfd5dbc277e12a6eb482a27eefb69b52dacbb94685e4fa5edb67a58cc"
     },
     {
       "index": 3,
       "path": "tmp/archive/chunk-0003.json",
-      "row_count": 2,
+      "row_count": 4,
       "row_start": 12,
-      "row_end": 14,
-      "sha256": "e631208c6b26adad1a8d620fdc9f649f235fc95bf9119ff388af36a0e19a4009"
+      "row_end": 16,
+      "sha256": "352e199b62036653529738ead4761744034d71d3699abff5ac8ccdb42bcc69c6"
     },
     {
       "index": 4,
       "path": "tmp/archive/chunk-0004.json",
-      "row_count": 1,
-      "row_start": 14,
-      "row_end": 15,
-      "sha256": "b323fcc58d9d102c8f69e55131b73664d2f3034e9471a40ba1ed3131b3f6cd0a"
+      "row_count": 4,
+      "row_start": 16,
+      "row_end": 20,
+      "sha256": "9777722423fcd34a08327fdbad4cb3202fa591b6a2238875fac080b45e34db72"
+    },
+    {
+      "index": 5,
+      "path": "tmp/archive/chunk-0005.json",
+      "row_count": 4,
+      "row_start": 20,
+      "row_end": 24,
+      "sha256": "1428a9f282951a1e91e6946205f114e1974e660c5c81de64f5b18fe2a7c7ee32"
     }
   ],
-  "committed_rows": 15
+  "committed_rows": 24
 }

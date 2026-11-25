@@ -20,8 +20,9 @@ func (e *Engine) processTrack(pt *ingest.ParsedTrack, rep *repair.BoundaryRepair
 	rep.Register(id, norm)
 
 	// When the boundary-jump fault is active, synthesize a clock reset on
-	// this track's timeline and repair it through the shared repairer.
-	if e.cfg.Fault == FaultBoundaryJump && id.Kind == timeline.KindVideo {
+	// the MP4 video timeline and repair it through the shared repairer.
+	// The RTP track is reserved for the 32-bit wrap path and is not jumped.
+	if e.cfg.Fault == FaultBoundaryJump && id.Kind == timeline.KindVideo && id.Source == "demo" {
 		if err := e.injectBoundaryJump(pt, norm, rep, b); err != nil {
 			return nil, err
 		}

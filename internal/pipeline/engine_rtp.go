@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"os"
 	"path/filepath"
 
 	"mediavault/internal/fixture"
@@ -33,6 +34,10 @@ func rtpSpec() fixture.RTPSpec {
 // join the MP4 samples as an additional archive-backed track.
 func (e *Engine) ingestRTP(rep *repair.BoundaryRepairer, b *report.Builder) ([]timeline.Sample, []*timeline.StageError) {
 	dir := filepath.Join(e.cfg.WorkDir, "input")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		b.AddError(report.ErrorView{Stage: timeline.StageIngest, Kind: timeline.KindTruncatedCapture, Recoverable: true, Detail: err.Error()})
+		return nil, nil
+	}
 	path := filepath.Join(dir, "sidechannel.rtp")
 	spec := rtpSpec()
 	if err := fixture.WriteRTP(path, spec); err != nil {
@@ -40,10 +45,12 @@ func (e *Engine) ingestRTP(rep *repair.BoundaryRepairer, b *report.Builder) ([]t
 		return nil, nil
 	}
 	capInfo := ingest.RTPCapture{
-		Source:        "rtp",
-		ClockRate:     spec.ClockRate,
-		Kind:          timeline.KindVideo,
-		JumpThreshold: 1_000_000,
+		Source:    "rtp",
+		ClockRate: spec.ClockRate,
+		Kind:      timeline.KindVideo,
+		// Above the 2^32 wrap span so a legitimate counter wrap is unwrapped
+		// transparently rather than mistaken for a source-switch jump.
+		JumpThreshold: 1 << 33,
 	}
 	refs, err := ingest.ReadRTPFile(path, capInfo)
 	if err != nil {
