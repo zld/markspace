@@ -1,0 +1,3 @@
+# generated fixtures and run outputs are never committed
+/testdata/generated/
+/out/
