@@ -1,6 +1,6 @@
 module regress-kernel
 
-go 1.27.0
+go 1.23
 
 require (
 	github.com/abema/go-mp4 v1.3.0

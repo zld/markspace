@@ -1,0 +1,15 @@
+# Go build artifacts
+/regress
+*.test
+*.out
+
+# Local acceptance workspaces and temp files
+/tmp/
+*.tmp
+*.m4s.tmp
+
+# Editor / OS noise
+.DS_Store
+*.swp
+.idea/
+.vscode/
