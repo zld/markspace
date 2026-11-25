@@ -1,3 +1,4 @@
-# generated fixtures and run outputs are never committed
+# generated fixtures, run outputs and compiled binaries are never committed
 /testdata/generated/
 /out/
+/bin/
