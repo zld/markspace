@@ -1,0 +1,11 @@
+# Local build outputs and self-test workspace
+/bin/
+/dist/
+/tmp/
+*.test
+*.out
+
+# OS/editor noise
+.DS_Store
+.idea/
+.vscode/
