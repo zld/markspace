@@ -17,10 +17,10 @@ import (
 
 // InputRef identifies one source fragment and its digest.
 type InputRef struct {
-	InputPath  string `json:"input_path"`
-	SHA256     string `json:"sha256"`
-	MFHD       uint32 `json:"mfhd"`
-	TFDT       uint64 `json:"tfdt"`
+	InputPath string `json:"input_path"`
+	SHA256    string `json:"sha256"`
+	MFHD      uint32 `json:"mfhd"`
+	TFDT      uint64 `json:"tfdt"`
 }
 
 // Entry is one committed segment's lineage record.

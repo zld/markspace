@@ -19,9 +19,9 @@ import (
 
 // Default file locations under the output directory.
 const (
-	ManifestPath   = "manifest.json"
-	TracePath      = "provenance.json"
-	CheckpointPath = "pipeline.checkpoint"
+	ManifestPath    = "manifest.json"
+	TracePath       = "provenance.json"
+	CheckpointPath  = "pipeline.checkpoint"
 	ManifestVersion = "v1"
 )
 
@@ -36,30 +36,30 @@ type Config struct {
 	// InterruptAfter stops the pipeline after this stage without advancing
 	// past it (empty means run to completion).
 	InterruptAfter checkpoint.Stage
-	Resume          bool
+	Resume         bool
 }
 
 // Summary is the deterministic terminal-facing result of a run.
 type Summary struct {
-	State                string `json:"state"`
-	Representations      int    `json:"representations"`
-	AlignedSegments      int    `json:"aligned_segments"`
-	CommittedSegments    int    `json:"committed_segments"`
-	QueuePeak            int    `json:"queue_capacity_peak"`
-	QueueCapacity        int    `json:"queue_capacity"`
-	GapCount             int    `json:"gap_count"`
-	RegressionCount      int    `json:"regression_count"`
-	ManifestValid        bool   `json:"manifest_valid"`
-	ManifestSHA256       string `json:"manifest_sha256,omitempty"`
-	ProvenanceSHA256     string `json:"provenance_sha256,omitempty"`
-	ProvenanceDiff       int    `json:"provenance_diff"`
-	CheckpointVersion    int    `json:"checkpoint_version"`
-	CheckpointStage      string `json:"checkpoint_stage"`
-	ErrorCode            string `json:"error,omitempty"`
-	ErrorInput           string `json:"error_input,omitempty"`
-	RecoveryHint         string `json:"recovery_hint,omitempty"`
-	SafeResumeStage      string `json:"safe_resume_stage,omitempty"`
-	ConflictDiffs        []provenance.FieldDiff `json:"conflict_diffs,omitempty"`
+	State             string                 `json:"state"`
+	Representations   int                    `json:"representations"`
+	AlignedSegments   int                    `json:"aligned_segments"`
+	CommittedSegments int                    `json:"committed_segments"`
+	QueuePeak         int                    `json:"queue_capacity_peak"`
+	QueueCapacity     int                    `json:"queue_capacity"`
+	GapCount          int                    `json:"gap_count"`
+	RegressionCount   int                    `json:"regression_count"`
+	ManifestValid     bool                   `json:"manifest_valid"`
+	ManifestSHA256    string                 `json:"manifest_sha256,omitempty"`
+	ProvenanceSHA256  string                 `json:"provenance_sha256,omitempty"`
+	ProvenanceDiff    int                    `json:"provenance_diff"`
+	CheckpointVersion int                    `json:"checkpoint_version"`
+	CheckpointStage   string                 `json:"checkpoint_stage"`
+	ErrorCode         string                 `json:"error,omitempty"`
+	ErrorInput        string                 `json:"error_input,omitempty"`
+	RecoveryHint      string                 `json:"recovery_hint,omitempty"`
+	SafeResumeStage   string                 `json:"safe_resume_stage,omitempty"`
+	ConflictDiffs     []provenance.FieldDiff `json:"conflict_diffs,omitempty"`
 }
 
 // repState holds one representation's working data.

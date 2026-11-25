@@ -17,11 +17,11 @@ type Gap struct {
 // Regression records one tfdt backwards movement. Original source values are
 // preserved; the timeline is never rewritten.
 type Regression struct {
-	InputPath      string `json:"input_path"`
-	MFHD           uint32 `json:"mfhd"`
-	PreviousTFDT   uint64 `json:"previous_tfdt"`
-	ObservedTFDT   uint64 `json:"observed_tfdt"`
-	InputSHA256    string `json:"input_sha256"`
+	InputPath    string `json:"input_path"`
+	MFHD         uint32 `json:"mfhd"`
+	PreviousTFDT uint64 `json:"previous_tfdt"`
+	ObservedTFDT uint64 `json:"observed_tfdt"`
+	InputSHA256  string `json:"input_sha256"`
 }
 
 // TrackReport is the per-representation result of sequence analysis.
@@ -31,8 +31,8 @@ type TrackReport struct {
 	TickDuration uint64
 	// Fragments holds only the accepted (folded, gap-free) records in
 	// mfhd order. Regressed fragments are isolated, not included here.
-	Fragments []*Fragment
-	Gaps      []Gap
+	Fragments   []*Fragment
+	Gaps        []Gap
 	Regressions []Regression
 	// Isolated lists fragments excluded from alignment/manifest because of
 	// a tfdt regression, preserving their original records.

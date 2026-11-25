@@ -112,7 +112,7 @@ func Align(inputs []Input) (*Report, error) {
 				repID:      in.Representation,
 				frag:       f,
 				startNanos: start,
-				endNanos:     end,
+				endNanos:   end,
 			})
 		}
 		regressions = append(regressions, in.Report.Regressions...)

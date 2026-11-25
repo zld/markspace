@@ -93,7 +93,7 @@ func fragmentArrivals(cfg Config, rep RepresentationDescriptor) ([]arrival, erro
 			base += rep.TickDuration * 5
 		}
 		if cfg.Case == CaseDuplicateConflict && seq >= 100 {
-			base = rep.TickDuration * uint64(conflictSeq-1) + rep.TickDuration/2
+			base = rep.TickDuration*uint64(conflictSeq-1) + rep.TickDuration/2
 		}
 		out = append(out, arrival{
 			inputIndex: uint32(inputIdx),

@@ -25,12 +25,12 @@ type Item struct {
 
 // BoundedQueue is a context-aware FIFO queue with a hard capacity.
 type BoundedQueue struct {
-	mu      sync.Mutex
-	cond    *sync.Cond
-	items   []Item
+	mu       sync.Mutex
+	cond     *sync.Cond
+	items    []Item
 	capacity int
-	closed  bool
-	peak    int
+	closed   bool
+	peak     int
 }
 
 // NewBoundedQueue creates a queue that never holds more than capacity items.

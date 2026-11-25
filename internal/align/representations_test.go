@@ -181,11 +181,11 @@ func syntheticInput(repID string, timescale uint32, tfdt []uint64) Input {
 	for i, base := range tfdt {
 		f := &scan.Fragment{
 			InputIndex: i,
-			FileName:    fixture.FragmentName(uint32(i + 1)),
-			InputPath:   repID + "/" + fixture.FragmentName(uint32(i+1)),
-			SHA256:      fmt.Sprintf("sha-%s-%d", repID, i),
-			MFHD:        uint32(i + 1),
-			TFDT:        base,
+			FileName:   fixture.FragmentName(uint32(i + 1)),
+			InputPath:  repID + "/" + fixture.FragmentName(uint32(i+1)),
+			SHA256:     fmt.Sprintf("sha-%s-%d", repID, i),
+			MFHD:       uint32(i + 1),
+			TFDT:       base,
 		}
 		if err := tr.Observe(f); err != nil {
 			panic(err)

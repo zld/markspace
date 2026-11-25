@@ -12,11 +12,11 @@ import (
 // representation. Sequence numbers and timestamps come straight from the
 // captured RTP headers via pion/rtp; no reordering or repair is attempted.
 type RTPBoundary struct {
-	PacketCount        int
-	FirstSequence      uint16
-	LastSequence       uint16
-	FirstTimestamp     uint32
-	LastTimestamp      uint32
+	PacketCount    int
+	FirstSequence  uint16
+	LastSequence   uint16
+	FirstTimestamp uint32
+	LastTimestamp  uint32
 	// SequenceGaps lists the missing RTP sequence numbers (expected values
 	// that never arrived).
 	SequenceGaps []uint16
