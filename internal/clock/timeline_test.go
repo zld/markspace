@@ -35,7 +35,8 @@ func TestAlignDownNeverPassesRequest(t *testing.T) {
 	}
 }
 
-func TestAlignUpCoversRequest(t *testing.T) {	tl, err := New(MustRate(90000, 1), 48000)
+func TestAlignUpCoversRequest(t *testing.T) {
+	tl, err := New(MustRate(90000, 1), 48000)
 	if err != nil {
 		t.Fatal(err)
 	}
