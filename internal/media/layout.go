@@ -153,19 +153,19 @@ func ResolveLayout(sample int, source TrackDescription, req RequestedLayout) (La
 	plan := LayoutPlan{Accepted: true}
 	var reject *diagnostic.Error
 
-	channelDecision, err := resolveChannels(source, req)
+	channelDecision, err := resolveChannels(sample, source, req)
 	plan.Decisions = append(plan.Decisions, channelDecision)
 	if err != nil && reject == nil {
 		reject = err.(*diagnostic.Error)
 	}
 
-	sampleDecision, err := resolveSampleRate(source, req)
+	sampleDecision, err := resolveSampleRate(sample, source, req)
 	plan.Decisions = append(plan.Decisions, sampleDecision)
 	if err != nil && reject == nil {
 		reject = err.(*diagnostic.Error)
 	}
 
-	colorDecision, err := resolveColor(source, req)
+	colorDecision, err := resolveColor(sample, source, req)
 	plan.Decisions = append(plan.Decisions, colorDecision)
 	if err != nil && reject == nil {
 		reject = err.(*diagnostic.Error)
@@ -178,7 +178,7 @@ func ResolveLayout(sample int, source TrackDescription, req RequestedLayout) (La
 	return plan, nil
 }
 
-func resolveChannels(source TrackDescription, req RequestedLayout) (Decision, error) {
+func resolveChannels(sample int, source TrackDescription, req RequestedLayout) (Decision, error) {
 	from := fmt.Sprintf("%d/%s", source.Channels, source.ChannelLayout)
 	targetLayout := req.ChannelLayout
 	targetChannels := req.Channels
@@ -195,7 +195,7 @@ func resolveChannels(source TrackDescription, req RequestedLayout) (Decision, er
 			Reason: "channel count and explicit layout already match"}, nil
 	}
 	if req.ChannelMappingID == "" {
-		err := diagnostic.New(diagnostic.CodeMetadataConflict, diagnostic.PhaseLayout, source.Index, source.MetadataOffset,
+		err := diagnostic.New(diagnostic.CodeMetadataConflict, diagnostic.PhaseLayout, sample, source.MetadataOffset,
 			"channel conflict %s -> %s has no declared mapping; refusing to guess", from, to)
 		return Decision{Field: "channel_layout", Action: ActionReject, From: from, To: to, Reason: err.Message}, err
 	}
@@ -203,7 +203,7 @@ func resolveChannels(source TrackDescription, req RequestedLayout) (Decision, er
 		Reason: "apply explicitly requested channel mapping " + req.ChannelMappingID}, nil
 }
 
-func resolveSampleRate(source TrackDescription, req RequestedLayout) (Decision, error) {
+func resolveSampleRate(sample int, source TrackDescription, req RequestedLayout) (Decision, error) {
 	from := fmt.Sprintf("%dHz", source.SampleRate)
 	if req.SampleRate == 0 || req.SampleRate == source.SampleRate {
 		return Decision{Field: "sample_rate", Action: ActionPreserve, From: from, To: from,
@@ -211,7 +211,7 @@ func resolveSampleRate(source TrackDescription, req RequestedLayout) (Decision, 
 	}
 	to := fmt.Sprintf("%dHz", req.SampleRate)
 	if req.ResampleAlgorithm == "" {
-		err := diagnostic.New(diagnostic.CodeMetadataConflict, diagnostic.PhaseLayout, source.Index, source.MetadataOffset,
+		err := diagnostic.New(diagnostic.CodeMetadataConflict, diagnostic.PhaseLayout, sample, source.MetadataOffset,
 			"sample-rate conflict %s -> %s has no declared resampler; refusing to guess", from, to)
 		return Decision{Field: "sample_rate", Action: ActionReject, From: from, To: to, Reason: err.Message}, err
 	}
@@ -219,7 +219,7 @@ func resolveSampleRate(source TrackDescription, req RequestedLayout) (Decision, 
 		Reason: "resample using explicitly declared algorithm " + req.ResampleAlgorithm}, nil
 }
 
-func resolveColor(source TrackDescription, req RequestedLayout) (Decision, error) {
+func resolveColor(sample int, source TrackDescription, req RequestedLayout) (Decision, error) {
 	from := "absent"
 	if source.Color != nil {
 		from = source.Color.String()
@@ -234,7 +234,7 @@ func resolveColor(source TrackDescription, req RequestedLayout) (Decision, error
 			Reason: "color metadata already matches target"}, nil
 	}
 	if req.ColorConversionID == "" {
-		err := diagnostic.New(diagnostic.CodeMetadataConflict, diagnostic.PhaseLayout, source.Index, source.MetadataOffset,
+		err := diagnostic.New(diagnostic.CodeMetadataConflict, diagnostic.PhaseLayout, sample, source.MetadataOffset,
 			"color conflict %s -> %s has no declared conversion rule; refusing to infer primaries", from, to)
 		return Decision{Field: "color_metadata", Action: ActionReject, From: from, To: to, Reason: err.Message}, err
 	}
