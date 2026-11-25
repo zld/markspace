@@ -44,6 +44,8 @@ go run ./cmd/mediacheck demo --case rtp-gap
 - `1`：输入不一致、损坏或存在可恢复但仍应报告的 RTP 缺口
 - `2`：命令行参数错误
 
+参数退出码以编译后的二进制为准（`go build -o mediacheck ./cmd/mediacheck`）；`go run` 会把任意非零子程序状态包装成 go 命令自身的退出码 `1`。
+
 ## 输出字段
 
 每条 JSON 记录都包含固定字段：
