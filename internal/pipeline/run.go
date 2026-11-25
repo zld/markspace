@@ -27,6 +27,9 @@ func (rn *Runner) Run() (*Report, error) {
 	if err := rn.runValidate(); err != nil {
 		return rn.reportWithError(err), err
 	}
+	if err := rn.runPublish(); err != nil {
+		return rn.reportWithError(err), err
+	}
 	rep := rn.Report
 	return &rep, nil
 }
