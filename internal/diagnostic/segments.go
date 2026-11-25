@@ -180,7 +180,8 @@ func canMerge(a, b Segment) bool {
 	if a.TimeRangeMS.Timescale == 0 || b.TimeRangeMS.Timescale == 0 {
 		return a.FirstBadOffset == b.FirstBadOffset
 	}
-	return rangesOverlap(a.StartMS, a.EndMS, b.StartMS, b.EndMS)
+	// Adjacent bad samples form one contiguous damaged section.
+	return a.StartMS <= b.EndMS && b.StartMS <= a.EndMS
 }
 
 func rangesOverlap(a0, a1, b0, b1 int64) bool {
