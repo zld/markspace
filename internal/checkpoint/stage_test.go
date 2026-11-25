@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"sync"
 	"testing"
 )
 
@@ -114,4 +115,27 @@ func contains(s, sub string) bool {
 		}
 	}
 	return false
+}
+
+func TestConcurrentWritesAreAtomic(t *testing.T) {
+	dir := t.TempDir()
+	s := New(dir)
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			if err := s.Write("task", "cut", "d", payload{N: i}); err != nil {
+				t.Errorf("write %d: %v", i, err)
+			}
+		}(i)
+	}
+	wg.Wait()
+	var out payload
+	if err := s.Load("task", "cut", "d", &out); err != nil {
+		t.Fatalf("load after concurrent writes: %v", err)
+	}
+	if out.N < 0 || out.N >= 20 {
+		t.Fatalf("payload = %+v, want one of the written values", out)
+	}
 }
