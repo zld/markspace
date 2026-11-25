@@ -5,6 +5,7 @@ import "testing"
 func TestLegalAndIllegalTransitions(t *testing.T) {
 	legal := [][2]Stage{
 		{StagePendingScan, StageScanned},
+		{StagePendingScan, StageFailed},
 		{StageScanned, StagePlanned},
 		{StagePlanned, StageProcessing},
 		{StageProcessing, StageVerified},

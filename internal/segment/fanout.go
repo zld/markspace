@@ -55,7 +55,7 @@ func BuildLayer(assetID, recordDir string, bitrate int64, scan *mp4scan.ScanResu
 			return nil, err.WithBitrate(bitrate)
 		}
 		hash := model.SHA256Bytes(b)
-		rel := fmt.Sprintf("artifacts/%s/%d/fragment-%d.rtpfrag", recordDir, bitrate, i)
+		rel := fmt.Sprintf("artifacts/%s/%s/%d/fragment-%d.rtpfrag", recordDir, assetID, bitrate, i)
 		fb := FragmentBundle{
 			Index: i, Bytes: b, Hash: hash, Boundary: boundary, Recovery: pos,
 			Summary: model.ArtifactSummary{

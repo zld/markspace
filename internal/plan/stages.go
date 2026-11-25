@@ -51,7 +51,7 @@ func CanTransition(from, to Stage) bool {
 	}
 	if to == StageFailed {
 		switch from {
-		case StageScanned, StagePlanned, StageProcessing, StageVerified:
+		case StagePendingScan, StageScanned, StagePlanned, StageProcessing, StageVerified:
 			return true
 		default:
 			return false

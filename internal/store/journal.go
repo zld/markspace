@@ -9,6 +9,7 @@ import (
 
 	apperrors "archivecheck/internal/errors"
 	"archivecheck/internal/model"
+	mp4 "archivecheck/internal/mp4"
 	"archivecheck/internal/plan"
 )
 
@@ -27,16 +28,18 @@ type LayerState struct {
 
 // Journal is the complete local recovery state for one processing record.
 type Journal struct {
-	SchemaVersion string                  `json:"schema_version"`
-	RecordID      string                  `json:"record_id"`
-	InputSHA256   string                  `json:"input_sha256"`
-	StageVersion  string                  `json:"stage_version"`
-	Parameters    model.Parameters        `json:"parameters"`
-	Stage         plan.Stage              `json:"stage"`
-	Transitions   []model.StageTransition `json:"stage_transitions"`
-	Layers        map[int64]*LayerState   `json:"layers"`
-	Artifacts     []model.ArtifactSummary `json:"artifacts"`
-	LastError     *JournalError           `json:"last_error,omitempty"`
+	SchemaVersion string                    `json:"schema_version"`
+	RecordID      string                    `json:"record_id"`
+	InputSHA256   string                    `json:"input_sha256"`
+	StageVersion  string                    `json:"stage_version"`
+	Parameters    model.Parameters          `json:"parameters"`
+	Stage         plan.Stage                `json:"stage"`
+	Transitions   []model.StageTransition   `json:"stage_transitions"`
+	Scans         map[string]mp4.ScanResult `json:"scans,omitempty"`
+	Layers        map[int64]*LayerState     `json:"layers"`
+	Artifacts     []model.ArtifactSummary   `json:"artifacts"`
+	Result        *model.OutputManifest     `json:"result_manifest,omitempty"`
+	LastError     *JournalError             `json:"last_error,omitempty"`
 }
 
 // JournalError is the durable classified failure.
@@ -57,6 +60,7 @@ func NewJournal(recordID, inputSHA string, params model.Parameters) *Journal {
 		StageVersion:  model.StageVersion,
 		Parameters:    params,
 		Stage:         plan.StagePendingScan,
+		Scans:         map[string]mp4.ScanResult{},
 		Layers:        map[int64]*LayerState{},
 	}
 }
@@ -76,6 +80,9 @@ func Load(path string) (*Journal, bool, error) {
 	}
 	if j.Layers == nil {
 		j.Layers = map[int64]*LayerState{}
+	}
+	if j.Scans == nil {
+		j.Scans = map[string]mp4.ScanResult{}
 	}
 	return &j, true, nil
 }
