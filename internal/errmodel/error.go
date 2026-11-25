@@ -17,13 +17,13 @@ import "fmt"
 type Category int
 
 const (
-	CatOK Category = iota
-	CatFormat  // input cannot be parsed reliably
-	CatStream  // bitstream/scan anomaly that still produced findings
-	CatIndex   // index construction/validation problem
-	CatCache   // cache persistence problem
-	CatTxn     // WAL, commit or recovery failure
-	CatBudget  // analysis succeeded but a business threshold was exceeded
+	CatOK     Category = iota
+	CatFormat          // input cannot be parsed reliably
+	CatStream          // bitstream/scan anomaly that still produced findings
+	CatIndex           // index construction/validation problem
+	CatCache           // cache persistence problem
+	CatTxn             // WAL, commit or recovery failure
+	CatBudget          // analysis succeeded but a business threshold was exceeded
 	CatInternal
 )
 
@@ -50,15 +50,19 @@ const (
 	ErrNonFrameTail       Code = 1014
 	ErrMissingDataChunk   Code = 1015
 	ErrMetadataEncoding   Code = 1016
-	ErrRIFFSizeMismatch    Code = 1017
+	ErrRIFFSizeMismatch   Code = 1017
+	ErrReadInput          Code = 1018
 
 	// 2xxx: stream blocks / intervals.
-	ErrBlockChecksum   Code = 2001
-	ErrTruncatedBlock  Code = 2002
+	ErrBlockChecksum     Code = 2001
+	ErrTruncatedBlock    Code = 2002
 	ErrDuplicateBoundary Code = 2003
-	ErrOverlapRange    Code = 2004
-	ErrScanBudget      Code = 2005
-	ErrClock           Code = 2006
+	ErrOverlapRange      Code = 2004
+	ErrScanBudget        Code = 2005
+	ErrClock             Code = 2006
+	ErrRTPPacket         Code = 2007
+	ErrRTPSequence       Code = 2008
+	ErrRTPTimestamp      Code = 2009
 
 	// 3xxx: time index.
 	ErrDuplicateKey  Code = 3001
@@ -87,10 +91,10 @@ const (
 
 // Info is one reportable, offset-tagged error or finding.
 type Error struct {
-	Code   Code     `json:"code"`
-	Offset int64    `json:"offset"` // byte offset, -1 when not applicable
-	Frame  int64    `json:"frame"`  // sample frame, -1 when not applicable
-	Msg    string   `json:"message"`
+	Code   Code   `json:"code"`
+	Offset int64  `json:"offset"` // byte offset, -1 when not applicable
+	Frame  int64  `json:"frame"`  // sample frame, -1 when not applicable
+	Msg    string `json:"message"`
 }
 
 // New builds an Error with offset/frame marked unavailable.
