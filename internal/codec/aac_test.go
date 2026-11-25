@@ -106,7 +106,7 @@ func TestParseRawAAC(t *testing.T) {
 	if err != nil || res.SampleRate != 44100 {
 		t.Fatalf("default raw aac rate wrong: %+v %v", res, err)
 	}
-	if _, err := ParseRawAAC(nil, 48000); !errors.Is(err, ErrTruncated) {
+	if _, err := ParseRawAAC(nil, 48000); !errors.Is(err, ErrEmpty) {
 		t.Fatalf("empty raw frame: %v", err)
 	}
 }

@@ -93,7 +93,7 @@ func ParseADTS(payload []byte) (AACResult, error) {
 // samples per raw AAC frame.
 func ParseRawAAC(payload []byte, sampleRate uint32) (AACResult, error) {
 	if len(payload) == 0 {
-		return AACResult{}, ErrTruncated
+		return AACResult{}, ErrEmpty
 	}
 	if sampleRate == 0 {
 		sampleRate = 44100

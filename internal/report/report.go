@@ -108,7 +108,9 @@ func (b *Builder) SetFlowWindowCount(n int) { b.flowWindows = n }
 func (b *Builder) Build(packets, tracks, keyframes, duplicates int, canceled bool) *Report {
 	model.SortFindings(b.findings)
 	lossCount := model.CountCode(b.findings, model.ErrSequenceGap)
-	truncated := model.CountCode(b.findings, model.ErrTruncatedPacket)
+	// Truncated packets include both cut-off frames and fully empty payloads.
+	truncated := model.CountCode(b.findings, model.ErrTruncatedPacket) +
+		model.CountCode(b.findings, model.ErrEmptyPayload)
 	badIndex := model.CountCode(b.findings, model.ErrMissingIndex)
 
 	lossPassed := lossCount <= b.budget.MaxLossPackets

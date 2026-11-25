@@ -139,7 +139,7 @@
   ],
   "findings": [
     {
-      "code": "truncated_packet",
+      "code": "empty_payload",
       "severity": "error",
       "source": "codec",
       "message": "packet 0: duration_undecidable",
@@ -269,7 +269,7 @@
       },
       "status": "duration_undecidable",
       "codes": [
-        "truncated_packet"
+        "empty_payload"
       ]
     },
     {

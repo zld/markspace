@@ -58,7 +58,10 @@ func TestAnalyzeDamagedFailsBudget(t *testing.T) {
 		t.Fatalf("loss count = %d, want 3", s.LossCount)
 	}
 	if s.TruncatedCount < 1 {
-		t.Fatalf("truncated errors = %d, want >= 1", s.TruncatedCount)
+		t.Fatalf("truncated/empty errors = %d, want >= 1", s.TruncatedCount)
+	}
+	if model.CountCode(out.Report.Findings, model.ErrEmptyPayload) < 1 {
+		t.Fatal("empty truncated packet must be reported with a code")
 	}
 	if s.BadIndexCount < 1 {
 		t.Fatalf("bad index regions = %d, want >= 1", s.BadIndexCount)

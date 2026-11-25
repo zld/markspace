@@ -7,6 +7,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"sync/atomic"
 	"time"
@@ -247,17 +248,23 @@ func parsePacket(p model.PacketRecord, cursor *model.Tick) (start, end model.Tic
 }
 
 func classifyCodecError(err error) model.ErrorCode {
-	if err == codec.ErrTruncated {
+	switch {
+	case errors.Is(err, codec.ErrEmpty):
+		return model.ErrEmptyPayload
+	case errors.Is(err, codec.ErrTruncated):
 		return model.ErrTruncatedPacket
+	default:
+		return model.ErrInvalidDuration
 	}
-	return model.ErrInvalidDuration
 }
 
 func severityFor(code model.ErrorCode) model.Severity {
-	if code == model.ErrTruncatedPacket {
+	switch code {
+	case model.ErrTruncatedPacket, model.ErrEmptyPayload:
 		return model.SeverityError
+	default:
+		return model.SeverityWarning
 	}
-	return model.SeverityWarning
 }
 
 func analyzeMP4(cfg Config, trace *fixture.Trace, b *report.Builder) (int, int, []model.TimelineEvent) {

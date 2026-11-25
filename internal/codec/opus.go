@@ -10,6 +10,9 @@ import (
 	"tracecheck/internal/model"
 )
 
+// ErrEmpty is returned when a packet carries no payload bytes at all.
+var ErrEmpty = errors.New("empty codec packet")
+
 // opusFrameSamples is the per-frame sample count at the fixed 48 kHz Opus
 // reference clock, indexed by the 5-bit TOC config field (RFC 6716 table 1).
 // 120=2.5ms, 240=5ms, 480=10ms, 960=20ms, 1920=40ms and 2880=60ms.
@@ -48,7 +51,7 @@ type OpusResult struct {
 // length: codec payload content is never decoded or repaired.
 func ParseOpus(payload []byte) (OpusResult, error) {
 	if len(payload) == 0 {
-		return OpusResult{}, ErrTruncated
+		return OpusResult{}, ErrEmpty
 	}
 	toc := payload[0]
 	config := toc >> 3

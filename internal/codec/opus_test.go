@@ -56,7 +56,7 @@ func TestParseOpusMultiFrameCodes(t *testing.T) {
 }
 
 func TestParseOpusRejectsBadPackets(t *testing.T) {
-	if _, err := ParseOpus(nil); !errors.Is(err, ErrTruncated) {
+	if _, err := ParseOpus(nil); !errors.Is(err, ErrEmpty) {
 		t.Fatalf("empty payload: %v", err)
 	}
 	// Code 1 needs TOC + length + at least two frame bytes.
