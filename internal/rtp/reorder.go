@@ -83,6 +83,33 @@ type ReorderResult struct {
 // Lost reports whether any sequence number was recorded as missing.
 func (r *ReorderResult) Lost() bool { return len(r.Gaps) > 0 }
 
+// PermanentlyLost counts sequence numbers that are gone for good. A hole is
+// buffered while a later packet could still fill it, so a hole only counts as
+// loss once the stream has advanced a full reorder window past it: a packet
+// arriving that late could never be committed under the same policy.
+func (r *ReorderResult) PermanentlyLost() int {
+	n := 0
+	for _, g := range r.Gaps {
+		if r.Highest-g.End >= uint64(r.Window) {
+			n += g.Count()
+		}
+	}
+	return n
+}
+
+// FrontierGaps returns holes still within one window of the highest observed
+// sequence. They are reported as unresolved tail borders rather than asserted
+// loss, because the sender may simply not have finished.
+func (r *ReorderResult) FrontierGaps() GapList {
+	var out GapList
+	for _, g := range r.Gaps {
+		if r.Highest-g.End < uint64(r.Window) {
+			out = append(out, g)
+		}
+	}
+	return out
+}
+
 // ReorderOptions controls windowed reordering.
 type ReorderOptions struct {
 	// Window is how far past the next expected packet a sequence number may

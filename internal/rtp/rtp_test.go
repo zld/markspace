@@ -296,10 +296,34 @@ func TestReorderLargeGapCoalesced(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got.Gaps.Total() != 9 {
-		t.Fatalf("lost = %d, want 9", got.Gaps.Total())
+		t.Fatalf("holes = %d, want 9 (11..19)", got.Gaps.Total())
 	}
 	if len(got.Gaps) != 1 || got.Gaps[0].Start != 11 || got.Gaps[0].End != 19 {
 		t.Fatalf("gaps = %+v", got.Gaps)
+	}
+	// All nine holes sit below the highest observed sequence 21, so they are
+	// permanent loss rather than an unresolved tail.
+	if got.PermanentlyLost() != 9 {
+		t.Fatalf("permanent loss = %d, want 9", got.PermanentlyLost())
+	}
+	if len(got.FrontierGaps()) != 0 {
+		t.Fatalf("frontier gaps = %v, want none", got.FrontierGaps())
+	}
+}
+
+func TestPermanentLossVersusFrontier(t *testing.T) {
+	// 102 never arrives; 104 is also missing but sits within one window of
+	// the last packet, so it is only an unresolved border, not asserted loss.
+	tr := buildTrace(t, []uint16{100, 101, 103, 105, 106}, []int64{0, 1, 2, 3, 4}, 0)
+	got, err := Reorder(tr, ReorderOptions{Window: 4})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.PermanentlyLost() != 1 {
+		t.Fatalf("permanent loss = %d, want 1 (102)", got.PermanentlyLost())
+	}
+	if f := got.FrontierGaps(); len(f) != 1 || f[0].Start != 104 {
+		t.Fatalf("frontier = %+v, want gap at 104", f)
 	}
 }
 
