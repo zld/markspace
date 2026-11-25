@@ -133,6 +133,7 @@ func printDuplicateDiff(res *kernel.RunResult) {
 	// Stable aliases used by terminal acceptance checks.
 	fmt.Printf("created=%d reused=%d invalidated=%d\n",
 		res.Cache.Created, res.Cache.Reused, res.Cache.Invalidated)
+	fmt.Printf("invalidated=%d\n", res.Cache.Invalidated)
 }
 
 func printManifestSummary(res *kernel.RunResult) {

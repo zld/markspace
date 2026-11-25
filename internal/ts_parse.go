@@ -30,8 +30,6 @@ type TSParser struct {
 	lastPCTime  map[uint16]uint64
 	lastTime    uint64
 	haveTime    bool
-	Packets     []TSPacket
-	Gaps        []GapEvent
 	PacketCount uint64
 }
 
@@ -72,7 +70,6 @@ func (p *TSParser) ParseDatagram(data []byte, sourcePacket uint64) ([]TSPacket, 
 		if data[off] != TSSyncByte {
 			gap := p.syncLossGap(data[off:], off, sourcePacket)
 			gaps = append(gaps, gap)
-			p.Gaps = append(p.Gaps, gap)
 			next := findNextSync(data, off+1)
 			if next < 0 {
 				return packets, gaps, nil
@@ -85,7 +82,6 @@ func (p *TSParser) ParseDatagram(data []byte, sourcePacket uint64) ([]TSPacket, 
 			return packets, gaps, err
 		}
 		packets = append(packets, pkt)
-		p.Packets = append(p.Packets, pkt)
 		p.PacketCount++
 		gaps = append(gaps, p.checkContinuity(pkt, sourcePacket)...)
 		off += TSPacketSize
@@ -108,7 +104,6 @@ func (p *TSParser) ParseDatagram(data []byte, sourcePacket uint64) ([]TSPacket, 
 			Recoverable:  true,
 		}
 		gaps = append(gaps, gap)
-		p.Gaps = append(p.Gaps, gap)
 	}
 	return packets, gaps, nil
 }
@@ -195,7 +190,6 @@ func (p *TSParser) checkContinuity(pkt TSPacket, sourcePacket uint64) []GapEvent
 			Recoverable:  true,
 		}
 		gaps = append(gaps, g)
-		p.Gaps = append(p.Gaps, g)
 	}
 	p.lastCC[pkt.PID] = pkt.CC
 	p.lastPCTime[pkt.PID] = p.lastTime

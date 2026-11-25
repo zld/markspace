@@ -29,7 +29,7 @@ grep -q '^created=0 reused=2 invalidated=0$' <<<"$out" || fail "repeat cache"
 
 echo "== source mutation =="
 out="$(go run ./cmd/demo --fixture clean --out /tmp/replay-a --mutate-source)"
-grep -q 'invalidated=2' <<<"$out" || fail "invalidation"
+grep -q '^invalidated=2$' <<<"$out" || fail "invalidation"
 
 echo "== recoverable cut checkpoint =="
 set +e
