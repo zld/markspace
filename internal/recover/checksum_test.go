@@ -14,7 +14,7 @@ func TestLocalizeSingleByte(t *testing.T) {
 	corrupt := append([]byte(nil), data...)
 	corrupt[7] ^= 0xff
 	before := append([]byte(nil), corrupt...)
-	got, ok := LocalizeSingleByte(corrupt, Range{0, int64(len(corrupt))}, want)
+	got, ok := LocalizeSingleByte(corrupt, Range{Start: 0, End: int64(len(corrupt))}, want)
 	if !ok {
 		t.Fatal("corrupt byte not localized")
 	}
