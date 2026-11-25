@@ -157,6 +157,28 @@ func TestIncompleteBlockIncludesTrackAndOffsets(t *testing.T) {
 	}
 }
 
+func TestUnknownClusterEndsAtNextLegalSegmentBoundary(t *testing.T) {
+	data := append([]byte{}, unknownHeader(ebml.IDSegment, 8)...)
+	data = append(data, unknownHeader(ebml.IDCluster, 4)...)
+	data = append(data, 0xE7, 0x81, 0x00) // Timecode=0
+	secondClusterOffset := len(data)
+	data = append(data, unknownHeader(ebml.IDCluster, 4)...)
+
+	doc, err := ebml.ParseDocument(data)
+	if err != nil {
+		t.Fatalf("ParseDocument: %v", err)
+	}
+	if len(doc.Clusters) != 2 {
+		t.Fatalf("clusters=%d want 2", len(doc.Clusters))
+	}
+	if got := doc.Clusters[0].Element.End; got != secondClusterOffset {
+		t.Fatalf("first unknown Cluster end=%d want next Cluster offset %d", got, secondClusterOffset)
+	}
+	if got := doc.Clusters[1].Element.Offset; got != secondClusterOffset {
+		t.Fatalf("second Cluster offset=%d want %d", got, secondClusterOffset)
+	}
+}
+
 func unknownHeader(id uint32, width int) []byte {
 	var idBytes []byte
 	switch {
