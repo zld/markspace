@@ -92,6 +92,11 @@ type Expected struct {
 	SegmentMS      int
 	PrecisionUS    int
 	Segments       int
+	// ExpectedTimes, when set, are the pre-quantization source times the
+	// artifact must reproduce. They let the verifier check the actual value
+	// of each record, not merely that it happens to sit on the grid. When
+	// empty the verifier falls back to the grid-only check.
+	ExpectedTimes []int64
 }
 
 // Result reports the verifier's verdict.
@@ -302,10 +307,17 @@ func Check(a *Artifact, exp Expected) (*Result, error) {
 	}
 
 	// Time accuracy: every record must lie within the declared deviation of
-	// the precision grid.
+	// the precision grid. When the caller supplies the source times, each
+	// record is additionally compared against its own expected value, so a
+	// record that drifted within the grid but away from its source event is
+	// still caught.
 	step := int64(exp.PrecisionUS) * 1000
 	if step <= 0 {
 		return mismatch("precision", nil, fmt.Sprintf("invalid precision %dus", exp.PrecisionUS)), nil
+	}
+	if n := len(exp.ExpectedTimes); n > 0 && n != len(a.Records) {
+		return mismatch("event-count", nil,
+			fmt.Sprintf("%d expected source times for %d records", n, len(a.Records))), nil
 	}
 	var maxDev int64
 	for i := range a.Records {
@@ -318,6 +330,14 @@ func Check(a *Artifact, exp Expected) (*Result, error) {
 			return mismatch("deviation", r,
 				fmt.Sprintf("event %d is %dns off the %dns grid, limit %dns",
 					i+1, dev, step, exp.MaxDeviationNs)), nil
+		}
+		if len(exp.ExpectedTimes) > 0 {
+			want := Quantize(exp.ExpectedTimes[i], step)
+			if r.TimeNs != want {
+				return mismatch("time-value", r,
+					fmt.Sprintf("event %d at %dns, source event maps to %dns (%dns off)",
+						i+1, r.TimeNs, want, abs64(r.TimeNs-want))), nil
+			}
 		}
 		if dev > maxDev {
 			maxDev = dev
@@ -348,6 +368,29 @@ func Check(a *Artifact, exp Expected) (*Result, error) {
 			fmt.Sprintf("artifact has %d segments, plan has %d", len(a.Segments), exp.Segments)), nil
 	}
 	return &Result{OK: true, Summary: summary}, nil
+}
+
+// Quantize rounds ns to the nearest multiple of step, breaking half-steps up.
+// It is defined here independently of the planner so the verifier never
+// borrows the producer's rounding rule and thereby agrees with a bug in it.
+func Quantize(ns, step int64) int64 {
+	if step <= 0 {
+		return ns
+	}
+	q, rem := ns/step, ns%step
+	if rem*2 >= step {
+		q++
+	} else if rem*2 <= -step {
+		q--
+	}
+	return q * step
+}
+
+func abs64(v int64) int64 {
+	if v < 0 {
+		return -v
+	}
+	return v
 }
 
 // Summary builds the stable digest block for an artifact.

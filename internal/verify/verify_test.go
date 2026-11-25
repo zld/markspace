@@ -117,6 +117,48 @@ func TestDecodeRejectsCorruptStructures(t *testing.T) {
 	}
 }
 
+// TestCheckTimeValueAgainstSource checks that supplied source times are
+// reproduced exactly after independent quantization, and that a drift which
+// still lands inside the grid is still caught.
+func TestCheckTimeValueAgainstSource(t *testing.T) {
+	a, _, exp := sampleArtifact(t)
+	// Source times that quantize to the record times with a small remainder.
+	exp.ExpectedTimes = []int64{4_000, 500_004_000, 899_998_000, 1_800_000_000}
+	res, err := Check(a, exp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.OK {
+		t.Fatalf("expected match: %+v", res.Mismatch)
+	}
+	// The verifier quantizes source times itself; check it agrees with the
+	// producer's rounding on a half-step.
+	if got := Quantize(10_000, 20_000); got != 20_000 {
+		t.Fatalf("half-step quantize = %d, want 20000", got)
+	}
+	if got := Quantize(9_999, 20_000); got != 0 {
+		t.Fatalf("sub-half quantize = %d, want 0", got)
+	}
+
+	// A source time that maps to a different on-grid value must fail even
+	// though the record itself is on the grid.
+	exp.ExpectedTimes = []int64{4_000, 520_000_000, 899_998_000, 1_800_000_000}
+	res, _ = Check(a, exp)
+	if res.OK || res.Mismatch.Check != "time-value" {
+		t.Fatalf("time-value drift not caught: %+v", res.Mismatch)
+	}
+	if res.Mismatch.Track != "chapter" || !res.Mismatch.HasOffset {
+		t.Fatalf("time-value mismatch not localized: %+v", res.Mismatch)
+	}
+
+	// A source-time list of the wrong length is rejected up front.
+	exp.ExpectedTimes = []int64{0}
+	res, _ = Check(a, exp)
+	if res.OK || res.Mismatch.Check != "event-count" {
+		t.Fatalf("length mismatch not caught: %+v", res.Mismatch)
+	}
+}
+
 func TestCheckLocatesFirstMismatch(t *testing.T) {
 	a, _, exp := sampleArtifact(t)
 
