@@ -97,7 +97,7 @@ func (s *Summary) RecomputeExit() int {
 	return s.ExitCode
 }
 
-// WriteJSON atomically-ish writes the full summary.
+// WriteJSON writes the full summary with stable struct field ordering.
 func (s *Summary) WriteJSON(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
