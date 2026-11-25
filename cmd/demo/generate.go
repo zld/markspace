@@ -68,6 +68,7 @@ func generateFixture(out string) error {
 	evs := map[string]any{"events": []map[string]any{
 		{"id": "kill-1", "type": "kill", "time_ms": 12000},
 		{"id": "kill-2", "type": "kill", "time_ms": 19800},
+		{"id": "kill-3", "type": "kill", "time_ms": 21000},
 	}}
 	b, err := json.MarshalIndent(evs, "", "  ")
 	if err != nil {
