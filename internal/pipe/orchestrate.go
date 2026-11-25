@@ -71,6 +71,9 @@ type RunReport struct {
 // ProcessEntries runs bounded scan workers, persists each successful item, and
 // advances the checkpoint only after both index and provenance writes succeed.
 func ProcessEntries(ctx context.Context, entries []manifest.Entry, inputDigest string, cfg Config) (*RunReport, error) {
+	for i := range entries {
+		entries[i].EntryNumber = i
+	}
 	if cfg.MaxReaders <= 0 {
 		cfg.MaxReaders = 2
 	}
@@ -252,7 +255,7 @@ func commitOutcome(workDir, cpPath string, cp *checkpoint.Checkpoint, inputDiges
 		_ = provenance.WriteAtomicJSON(out.ReportPath, out.Range)
 	}
 	cp.Mark(checkpoint.EntryState{
-		EntryNumber:    out.Entry.EntryIndex,
+		EntryNumber:    out.Entry.EntryNumber,
 		StableKey:      out.Entry.StableKey,
 		IndexPath:      out.IndexPath,
 		ProvenancePath: out.ProvenancePath,

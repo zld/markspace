@@ -10,8 +10,10 @@ type Entry struct {
 	Manifest  string `json:"manifest"`
 	// Representation is DASH Representation ID or HLS rendition name.
 	Representation string `json:"representation"`
-	// EntryIndex is zero-based position in the parsed manifest/list.
+	// EntryIndex is zero-based position within its representation/list.
 	EntryIndex int `json:"entry_index"`
+	// EntryNumber is the globally unique ordinal in the processed manifest set.
+	EntryNumber int `json:"entry_number"`
 	// OriginalSequence preserves DASH startNumber+position or HLS MEDIA-SEQUENCE+position.
 	OriginalSequence int `json:"original_sequence"`
 

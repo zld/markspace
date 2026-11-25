@@ -58,8 +58,9 @@ func ScanEntry(e manifest.Entry, opts ScanOptions) (*EntryIndex, error) {
 
 	pm, err := parseMP4(e.MediaPath)
 	if err != nil {
-		// Box-level truncation/malformation. Keep the source entry in the location.
-		loc.ByteOffset = -1
+		// Box-level truncation/malformation. The shortened file length is the first
+		// unavailable byte and gives a stable located failure coordinate.
+		loc.ByteOffset = mediaSize
 		return nil, diagnostic.Wrap(diagnostic.ErrTruncated, loc, err)
 	}
 	timescale := pm.timescale

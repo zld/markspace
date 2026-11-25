@@ -81,9 +81,7 @@ func ParseDASHWithReference(path, workRoot string, referenceStartU int64) (*DASH
 		loc := diagnostic.Location{Stage: "dash", ManifestPath: path, EntryIndex: -1, ByteOffset: -1}
 		return nil, diagnostic.New(diagnostic.ErrMissingDuration, loc, "MPD contains no segment entries")
 	}
-	if err := ValidateMonotonic(d.Entries); err != nil {
-		return nil, err
-	}
+	// DASH representations are independent timelines; monotonicity is validated per Representation.
 	return d, nil
 }
 
@@ -120,6 +118,7 @@ func (d *DASH) parseRepresentation(rep dashRepresentation, manifestDir string, r
 		return diagnostic.Wrap(diagnostic.ErrMissingDuration, loc, err)
 	}
 	repEntries := make([]Entry, 0, len(spans))
+	expectedStartU := referenceStartU
 	for i, span := range spans {
 		loc := baseLoc
 		loc.EntryIndex = i
@@ -147,7 +146,7 @@ func (d *DASH) parseRepresentation(rep dashRepresentation, manifestDir string, r
 		if err != nil {
 			return diagnostic.Wrap(err, loc, err.Error())
 		}
-		aligned, deviation, err := clock.AlignmentWithinLimit(startU, referenceStartU)
+		aligned, deviation, err := clock.AlignmentWithinLimit(startU, expectedStartU)
 		if err != nil {
 			return diagnostic.Wrap(err, loc, err.Error())
 		}
@@ -166,12 +165,19 @@ func (d *DASH) parseRepresentation(rep dashRepresentation, manifestDir string, r
 			SourceDuration:   span.Duration,
 			ProgramStartU:    startU,
 			ProgramEndU:      endU,
-			ReferenceStartU:  referenceStartU,
+			ReferenceStartU:  expectedStartU,
 			DeviationU:       deviation,
 			Aligned:          aligned,
 		}
 		repEntries = append(repEntries, e)
 		d.Entries = append(d.Entries, e)
+		expectedStartU, err = clock.Add(expectedStartU, durU)
+		if err != nil {
+			return diagnostic.Wrap(err, loc, err.Error())
+		}
+	}
+	if err := ValidateMonotonic(repEntries); err != nil {
+		return err
 	}
 	d.ByRep[repID] = append(d.ByRep[repID], repEntries...)
 	return nil
