@@ -1,6 +1,7 @@
 package state
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
@@ -134,5 +135,39 @@ func TestCorruptSnapshotRejected(t *testing.T) {
 	}
 	if _, err := Open(dir, "task-g", "d"); err == nil {
 		t.Fatal("corrupt snapshot should be rejected")
+	}
+}
+
+func TestSnapshotJSONIsOrdered(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Open(dir, "task-h", "d")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.MarkStages(StageIngest, StageTransport); err != nil {
+		t.Fatal(err)
+	}
+	first, err := os.ReadFile(s.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Toggling an unrelated stage marker and restoring it must not reorder
+	// or reformat the document.
+	s2, err := Open(dir, "task-h", "d")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s2.MarkStage(StageScan, "note"); err != nil {
+		t.Fatal(err)
+	}
+	second, err := os.ReadFile(s.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(second, []byte(`"scan": true`)) {
+		t.Fatalf("scan stage not recorded: %s", second)
+	}
+	if !bytes.Contains(first, []byte(`"ingest": true`)) {
+		t.Fatalf("first snapshot malformed: %s", first)
 	}
 }

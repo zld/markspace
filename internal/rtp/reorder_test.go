@@ -165,3 +165,43 @@ func TestEmptyTrace(t *testing.T) {
 		t.Fatalf("empty trace produced %+v", res.Summary())
 	}
 }
+
+func TestBurstLossSpansCarryTimestamps(t *testing.T) {
+	r := New(Config{Window: 8, ClockRate: 90000})
+	// Timestamps advance 3000 ticks per sequence number.
+	for _, s := range []uint16{1, 2, 3, 10, 11, 12} {
+		r.Push(pkt(s, uint32(s)*3000))
+	}
+	res := r.Finish()
+	if res.Lost != 6 {
+		t.Fatalf("lost = %d, want 6", res.Lost)
+	}
+	if len(res.Committed) != 2 {
+		t.Fatalf("spans = %d, want 2", len(res.Committed))
+	}
+	sp := res.Committed[0]
+	if sp.GapStartTick != 9000 || sp.GapEndTick != 30000 {
+		t.Fatalf("gap ticks = %d..%d, want 9000..30000", sp.GapStartTick, sp.GapEndTick)
+	}
+	if TimestampMillis(sp.GapEndTick, 90000) != 333 {
+		t.Fatalf("gap end ms = %d", TimestampMillis(sp.GapEndTick, 90000))
+	}
+}
+
+func TestWindowLateThenBurst(t *testing.T) {
+	// A packet from inside the window may still fill its slot.
+	r := New(Config{Window: 16, ClockRate: 90000})
+	r.Push(pkt(1, 3000))
+	r.Push(pkt(5, 15000))
+	r.Push(pkt(2, 6000)) // inside window
+	res := r.Finish()
+	if res.Lost != 2 {
+		t.Fatalf("lost = %d, want 2 (3 and 4)", res.Lost)
+	}
+	if res.Late != 0 {
+		t.Fatalf("late = %d, want 0", res.Late)
+	}
+	if len(res.Packets) != 3 {
+		t.Fatalf("packets = %d, want 3", len(res.Packets))
+	}
+}

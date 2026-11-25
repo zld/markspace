@@ -177,3 +177,46 @@ func TestOddChunkPadding(t *testing.T) {
 		t.Fatalf("frames = %d, want 4", lay.Frames)
 	}
 }
+
+func TestSixChannelPCM(t *testing.T) {
+	const ch = 6
+	frames := 200
+	data := make([]byte, frames*ch*2)
+	for i := 0; i < frames; i++ {
+		for c := 0; c < ch; c++ {
+			v := int16(1000 * (c + 1))
+			binary.LittleEndian.PutUint16(data[(i*ch+c)*2:], uint16(v))
+		}
+	}
+	img := BuildPCM(ch, 48000, 16, data)
+	lay, err := Parse(bytes.NewReader(img), int64(len(img)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lay.Format.Channels != ch || lay.Format.BlockAlign != ch*2 {
+		t.Fatalf("format = %+v", lay.Format)
+	}
+	if lay.Frames != int64(frames) {
+		t.Fatalf("frames = %d, want %d", lay.Frames, frames)
+	}
+	got, err := lay.ReadFrames(bytes.NewReader(img), 10, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 5*ch*2 {
+		t.Fatalf("frame read = %d bytes, want %d", len(got), 5*ch*2)
+	}
+	// Channel 5 (the sixth) holds 6000, proving interleaving is preserved.
+	first := int16(binary.LittleEndian.Uint16(got[5*2:]))
+	if first != 6000 {
+		t.Fatalf("sixth channel sample = %d, want 6000", first)
+	}
+	peak, err := lay.Peak(bytes.NewReader(img), 0, int64(frames))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := 6000.0 / 32768.0
+	if peak < want-1e-9 || peak > want+1e-9 {
+		t.Fatalf("peak = %f, want %f", peak, want)
+	}
+}
