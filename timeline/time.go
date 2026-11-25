@@ -41,6 +41,11 @@ func (tb Timebase) Validate() error {
 	return nil
 }
 
+// String renders the rational timebase as numerator/denominator.
+func (tb Timebase) String() string {
+	return fmt.Sprintf("%d/%d", tb.Numerator, tb.Denominator)
+}
+
 // ToNanos converts signed ticks to the common nanosecond timeline using
 // nearest-integer rounding. Overflow is reported rather than wrapped.
 func (tb Timebase) ToNanos(ticks int64) (int64, error) {
