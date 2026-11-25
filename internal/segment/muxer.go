@@ -26,6 +26,9 @@ func NewMuxer(dir string) (*Muxer, error) {
 	return &Muxer{dir: dir}, nil
 }
 
+// Dir returns the output directory.
+func (m *Muxer) Dir() string { return m.dir }
+
 // WriteInit writes the init fragment: ftyp plus a moov with a trex that
 // declares the track ready for movie fragments.
 func (m *Muxer) WriteInit(repID string, timescale uint32) (string, error) {

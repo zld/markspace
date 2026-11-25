@@ -2,6 +2,7 @@ package ts
 
 import (
 	"fmt"
+	"sort"
 
 	"mediad/internal/model"
 )
@@ -182,3 +183,30 @@ func (t *PSITracker) MapForPID(pid uint16) *ProgramMap {
 
 // PATVersion reports the last current PAT version seen.
 func (t *PSITracker) PATVersion() (uint8, bool) { return t.patVersion, t.patSeen }
+
+// VideoPIDs returns the elementary PIDs carrying the given stream type
+// (e.g. 0x1B H.264 video) across all current program maps, sorted. It lets
+// the segmenter follow PID changes introduced by a PMT version switch
+// instead of pinning the PIDs seen at stream start.
+func (t *PSITracker) VideoPIDs(streamType uint8) []uint16 {
+	var out []uint16
+	for _, m := range t.maps {
+		for pid, st := range m.Streams {
+			if st == streamType {
+				out = append(out, pid)
+			}
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
+}
+
+// PCRPIDs returns all current PCR PIDs, sorted.
+func (t *PSITracker) PCRPIDs() []uint16 {
+	var out []uint16
+	for _, m := range t.maps {
+		out = append(out, m.PCRPID)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
+}

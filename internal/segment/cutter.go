@@ -47,6 +47,9 @@ type Cutter struct {
 	current     *Descriptor
 	segments    []*Descriptor
 	hasher      sha256Hash
+	// adoptedThrough is the highest index restored from a checkpoint.
+	// Replayed segments at or below this index are not re-appended.
+	adoptedThrough int
 	// PacketTicks is the nominal duration represented by one input packet,
 	// used as the alignment tolerance.
 	PacketTicks int64
@@ -111,6 +114,9 @@ func (c *Cutter) closeCurrent(media, nextOffset int64) *Descriptor {
 		d.EndOffset = nextOffset
 	}
 	d.SHA256 = hex.EncodeToString(c.hasher.Sum(nil))
+	// During resume replay every segment is recomputed exactly once, so the
+	// descriptor is appended once regardless of whether it was adopted; the
+	// engine's checkpoint ledger decides whether the file is re-muxed.
 	c.segments = append(c.segments, d)
 	c.current = nil
 	return d
@@ -126,6 +132,24 @@ func (c *Cutter) Flush() *Descriptor {
 
 // Segments returns all closed descriptors in order.
 func (c *Cutter) Segments() []*Descriptor { return c.segments }
+
+// NextIndex returns the segment index the next packet would open if it were
+// added now. It lets the pipeline apply an interrupt gate before a new
+// segment is created rather than after it has already been committed.
+func (c *Cutter) NextIndex(mediaTicks int64) int {
+	return c.base.SegmentIndex(mediaTicks)
+}
+
+// Adopt marks segment index d.Index as already produced and committed in an
+// earlier run. It records only the replay watermark: no placeholder
+// descriptor is inserted, because the resumed run recomputes every
+// descriptor from the identical input, then reuses the ledger record for
+// the on-disk file and its digest.
+func (c *Cutter) Adopt(d *Descriptor) {
+	if d.Index > c.adoptedThrough {
+		c.adoptedThrough = d.Index
+	}
+}
 
 // mergePIDs unions two PID lists without duplicates.
 func mergePIDs(a, b []uint16) []uint16 {

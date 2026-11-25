@@ -58,8 +58,15 @@ func (rd *Reader) ReadPacket(ctx context.Context) (*model.Packet, error) {
 			Detail: "first byte is not 0x47",
 		}
 	}
-	pkt := parsePacket(raw, off)
+	pkt := ParsePacket(raw, off)
 	return pkt, nil
+}
+
+// ParsePacket decodes the fixed header, adaptation field and PCR of one
+// packet whose sync byte has already been validated. It is exported so
+// pipeline stages that re-encounter a raw packet can decode it uniformly.
+func ParsePacket(raw [model.PacketSize]byte, off int64) *model.Packet {
+	return parsePacket(raw, off)
 }
 
 // parsePacket decodes the fixed header, adaptation field and PCR of one

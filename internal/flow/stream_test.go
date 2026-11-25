@@ -8,27 +8,27 @@ import (
 )
 
 func TestBoundedQueueBlocksAndDrains(t *testing.T) {
-	s := New(2)
+	s := New[int](2)
 	ctx := context.Background()
-	if err := s.Send(ctx, []byte{1}); err != nil {
+	if err := s.Send(ctx, 1); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Send(ctx, []byte{2}); err != nil {
+	if err := s.Send(ctx, 2); err != nil {
 		t.Fatal(err)
 	}
 	if s.Len() != 2 {
 		t.Fatalf("len = %d, want 2", s.Len())
 	}
 	got, ok, err := s.Recv(ctx)
-	if err != nil || !ok || got[0] != 1 {
+	if err != nil || !ok || got != 1 {
 		t.Fatalf("recv = %v ok=%v err=%v", got, ok, err)
 	}
 	// After one slot frees, a third send must succeed.
-	if err := s.Send(ctx, []byte{3}); err != nil {
+	if err := s.Send(ctx, 3); err != nil {
 		t.Fatal(err)
 	}
 	s.CloseWithError(nil)
-	for want := byte(2); ; want++ {
+	for want := 2; ; want++ {
 		item, ok, err := s.Recv(ctx)
 		if err != nil {
 			t.Fatal(err)
@@ -39,21 +39,21 @@ func TestBoundedQueueBlocksAndDrains(t *testing.T) {
 			}
 			return
 		}
-		if item[0] != want {
-			t.Fatalf("item = %d, want %d", item[0], want)
+		if item != want {
+			t.Fatalf("item = %d, want %d", item, want)
 		}
 	}
 }
 
 func TestSendBlocksOnFullQueueThenReleasedByCancel(t *testing.T) {
-	s := New(1)
+	s := New[int](1)
 	ctx, cancel := context.WithCancel(context.Background())
-	if err := s.Send(ctx, []byte("x")); err != nil {
+	if err := s.Send(ctx, 1); err != nil {
 		t.Fatal(err)
 	}
 	released := make(chan error, 1)
 	go func() {
-		released <- s.Send(ctx, []byte("blocked"))
+		released <- s.Send(ctx, 2)
 	}()
 	select {
 	case err := <-released:
@@ -72,14 +72,14 @@ func TestSendBlocksOnFullQueueThenReleasedByCancel(t *testing.T) {
 }
 
 func TestSendBlocksThenReleasedByWriterFailure(t *testing.T) {
-	s := New(1)
+	s := New[int](1)
 	ctx := context.Background()
 	fatal := errors.New("disk full")
-	if err := s.Send(ctx, []byte("x")); err != nil {
+	if err := s.Send(ctx, 1); err != nil {
 		t.Fatal(err)
 	}
 	released := make(chan error, 1)
-	go func() { released <- s.Send(ctx, []byte("blocked")) }()
+	go func() { released <- s.Send(ctx, 2) }()
 	time.Sleep(20 * time.Millisecond)
 	s.CloseWithError(fatal)
 	select {
@@ -90,13 +90,13 @@ func TestSendBlocksThenReleasedByWriterFailure(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("CloseWithError did not release the blocked producer")
 	}
-	if err := s.Send(ctx, []byte("z")); err == nil {
+	if err := s.Send(ctx, 3); err == nil {
 		t.Fatal("send after close must fail")
 	}
 }
 
 func TestRecvCancellation(t *testing.T) {
-	s := New(1)
+	s := New[int](1)
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
 		time.Sleep(20 * time.Millisecond)

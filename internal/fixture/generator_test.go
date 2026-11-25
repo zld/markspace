@@ -82,7 +82,7 @@ func TestCorruptionOffsetsAndTruncation(t *testing.T) {
 		{CorruptTruncated, 0},
 		{CorruptContinuity, vidPID0},
 		{CorruptPCR, pcrPID0},
-		{CorruptPSI, pmtPID},
+		{CorruptPSI, pmtPID0},
 	}
 	for _, tc := range cases {
 		t.Run(tc.mode, func(t *testing.T) {

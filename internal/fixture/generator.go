@@ -57,7 +57,8 @@ type Stream struct {
 	PCRPIDs [2]uint16
 	// VideoPIDs are the corresponding elementary-stream PIDs.
 	VideoPIDs [2]uint16
-	PMTPID    uint16
+	// PMTPIDs are the two program map table PIDs, one per representation.
+	PMTPIDs [2]uint16
 	// PacketTicks is the nominal media duration of one 188-byte packet.
 	PacketTicks int64
 	SegmentTicks int64
@@ -69,14 +70,33 @@ type Stream struct {
 }
 
 const (
-	patPID   = uint16(0x0000)
-	pmtPID   = uint16(0x0100)
-	pcrPID0  = uint16(0x0101)
-	vidPID0  = uint16(0x0200)
-	pcrPID1  = uint16(0x0102)
-	vidPID1  = uint16(0x0201)
-	program1 = uint16(1)
+	patPID    = uint16(0x0000)
+	pmtPID0   = uint16(0x0100)
+	pmtPID1   = uint16(0x0101)
+	pcrPID0   = uint16(0x0110)
+	vidPID0   = uint16(0x0200)
+	pcrPID1   = uint16(0x0111)
+	vidPID1   = uint16(0x0201)
+	program1  = uint16(1)
+	program2  = uint16(2)
 )
+
+// program describes one representation as an independent MPEG-TS program:
+// it owns a PMT PID, a PCR PID and one video elementary PID.
+type program struct {
+	number uint16
+	pmtPID uint16
+	pcrPID uint16
+	vidPID uint16
+}
+
+// programs returns the two representation programs in stable order.
+func programs() [2]program {
+	return [2]program{
+		{number: program1, pmtPID: pmtPID0, pcrPID: pcrPID0, vidPID: vidPID0},
+		{number: program2, pmtPID: pmtPID1, pcrPID: pcrPID1, vidPID: vidPID1},
+	}
+}
 
 // Generate builds the stream described by spec.
 func Generate(spec Spec) (*Stream, error) {
@@ -87,10 +107,11 @@ func Generate(spec Spec) (*Stream, error) {
 	segmentTicks := int64(spec.SegmentMs) * model.ClockHz / 1000
 	packetTicks := segmentTicks / int64(spec.PacketsPerSegment)
 
+	progs := programs()
 	out := &Stream{
-		PCRPIDs:         [2]uint16{pcrPID0, pcrPID1},
-		VideoPIDs:       [2]uint16{vidPID0, vidPID1},
-		PMTPID:          pmtPID,
+		PCRPIDs:         [2]uint16{progs[0].pcrPID, progs[1].pcrPID},
+		VideoPIDs:       [2]uint16{progs[0].vidPID, progs[1].vidPID},
+		PMTPIDs:         [2]uint16{progs[0].pmtPID, progs[1].pmtPID},
 		PacketTicks:     packetTicks,
 		SegmentTicks:    segmentTicks,
 		CorruptionOffset: -1,
@@ -112,31 +133,40 @@ func Generate(spec Spec) (*Stream, error) {
 		startPCR = pcrPeriod - int64(totalPackets)*packetTicks/2
 	}
 
-	// PAT + PMT at the head of the stream.
-	put(patPID, true, model.AFCPayloadOnly, buildPAT(0), nil)
-	put(pmtPID, true, model.AFCPayloadOnly,
-		buildPMT(0, pcrPID0, vidPID0, pcrPID1, vidPID1), nil)
+	// PAT plus one PMT per program at the head of the stream.
+	put(patPID, true, model.AFCPayloadOnly, buildPAT(0, progs), nil)
+	for _, pr := range progs {
+		put(pr.pmtPID, true, model.AFCPayloadOnly,
+			buildPMT(0, pr.number, pr.pcrPID, pr.vidPID), nil)
+	}
 
 	psiSwitchAt := totalPackets / 2
 	for i := 0; i < totalPackets; i++ {
 		if spec.PSIUpdate && i == psiSwitchAt {
-			// Version 1 swaps both elementary PIDs; the old PIDs must
-			// disappear from the mapping atomically.
-			put(pmtPID, true, model.AFCPayloadOnly,
-				buildPMT(1, pcrPID0, vidPID0+0x10, pcrPID1, vidPID1+0x10), nil)
+			// Version 1 moves each program's video PID to a new value; the
+			// old PIDs must disappear from the mapping atomically.
+			for rep, pr := range progs {
+				put(pr.pmtPID, true, model.AFCPayloadOnly,
+					buildPMT(1, pr.number, pr.pcrPID, pr.vidPID+0x10), nil)
+				_ = rep
+			}
 		}
 		pcr := startPCR + int64(i)*packetTicks
 		pcr %= pcrPeriod
 		if pcr < 0 {
 			pcr += pcrPeriod
 		}
-		// Two representations: each gets one adaptation+payload packet per
-		// iteration carrying the same PCR, so both share one time base.
-		for rep := 0; rep < 2; rep++ {
-			pcrPid := out.PCRPIDs[rep]
-			put(pcrPid, false, model.AFCAdaptAndPayload,
+		// Both representations carry the same PCR value per iteration, so
+		// their timelines share one monotonic media time base.
+		for rep, pr := range progs {
+			put(pr.pcrPID, false, model.AFCAdaptAndPayload,
 				syntheticPayload(rep, i), buildAdaptation(pcr))
-			vidPid := out.VideoPIDs[rep]
+			// After the PSI switch the video PID moves; mirror it in the
+			// emitted packets so the router follows the new mapping.
+			vidPid := pr.vidPID
+			if spec.PSIUpdate && i >= psiSwitchAt {
+				vidPid += 0x10
+			}
 			put(vidPid, i%spec.PacketsPerSegment == 0,
 				model.AFCPayloadOnly, syntheticPayload(rep+8, i), nil)
 		}
@@ -203,45 +233,42 @@ func syntheticPayload(rep, i int) []byte {
 	return b
 }
 
-// buildPAT encodes a one-program PAT section at the given version.
-func buildPAT(version uint8) []byte {
-	pid := uint16(pmtPID)
-	pmtLo := byte(pid)
-	pmtHi := byte(pid>>8) | 0xE0
+// buildPAT encodes a PAT listing both representation programs.
+func buildPAT(version uint8, progs [2]program) []byte {
 	body := []byte{
-		0x00,
-		0x00, 0xB0, 0x11,
-		byte(program1 >> 8), byte(program1),
-		(version << 1) | 0x01, 0x00, 0x00,
-		byte(program1 >> 8), byte(program1),
-		pmtHi, pmtLo,
-		0x00, 0x00, 0x00, 0x00,
+		0x00, // pointer field
+		0x00, // table id
 	}
+	body = append(body, 0x00, 0x00) // section length placeholder
+	body = append(body, 0x00, 0x01) // transport stream id
+	body = append(body, byte((version<<1)|0x01), 0x00, 0x00)
+	for _, pr := range progs {
+		body = append(body, byte(pr.number>>8), byte(pr.number))
+		body = append(body, byte(pr.pmtPID>>8)|0xE0, byte(pr.pmtPID))
+	}
+	body = append(body, 0x00, 0x00, 0x00, 0x00) // CRC
+	sectionLen := len(body) - 3
+	body[2] = 0xB0 | byte(sectionLen>>8)
+	body[3] = byte(sectionLen)
 	return body
 }
 
-// buildPMT encodes a PMT version carrying two representations.
-func buildPMT(version uint8, pcr0, vid0, pcr1, vid1 uint16) []byte {
-	streams := []uint16{vid0, vid1}
-	pcrs := []uint16{pcr0, pcr1}
+// buildPMT encodes one program's PMT with a single video elementary stream.
+func buildPMT(version, program, pcrPID, vidPID uint16) []byte {
 	body := []byte{
-		0x00,
-		0x02,
+		0x00, // pointer field
+		0x02, // PMT table id
 	}
-	// Section length placeholder filled after assembly.
-	body = append(body, 0x00, 0x00)
-	body = append(body, byte(program1>>8), byte(program1))
-	body = append(body, (version<<1)|0x01, 0x00, 0x00)
-	// PCR PID: first representation's PCR PID.
-	body = append(body, byte(pcrs[0]>>8)|0xE0, byte(pcrs[0]))
+	body = append(body, 0x00, 0x00) // section length placeholder
+	body = append(body, byte(program>>8), byte(program))
+	body = append(body, byte((version<<1)|0x01), 0x00, 0x00)
+	body = append(body, byte(pcrPID>>8)|0xE0, byte(pcrPID))
 	body = append(body, 0xF0, 0x00) // no program descriptors
-	for _, es := range streams {
-		body = append(body, 0x1B) // video stream type
-		body = append(body, byte(es>>8)|0xE0, byte(es))
-		body = append(body, 0xF0, 0x00) // no ES descriptors
-	}
-	body = append(body, 0x00, 0x00, 0x00, 0x00) // CRC
-	sectionLen := len(body) - 3                 // bytes after the length field
+	body = append(body, 0x1B)       // H.264 video stream type
+	body = append(body, byte(vidPID>>8)|0xE0, byte(vidPID))
+	body = append(body, 0xF0, 0x00) // no ES descriptors
+	body = append(body, 0x00, 0x00, 0x00, 0x00)
+	sectionLen := len(body) - 3
 	body[2] = 0xB0 | byte(sectionLen>>8)
 	body[3] = byte(sectionLen)
 	return body
@@ -289,11 +316,11 @@ func applyCorruption(mode string, raw []byte, out *Stream) ([]byte, error) {
 		// but physically impossible value (0x3FD), so the section runs past
 		// the end of the packet and PSI parsing rejects it.
 		// Payload at +4: pointer(+4), table id(+5), section length +6/+7.
-		pktOff := findPacket(raw, pmtPID, 0)
+		pktOff := findPacket(raw, pmtPID0, 0)
 		raw[pktOff+6] = 0xB3
 		raw[pktOff+7] = 0xFD
 		out.CorruptionOffset = pktOff
-		out.CorruptionPID = pmtPID
+		out.CorruptionPID = pmtPID0
 	default:
 		return nil, fmt.Errorf("fixture: unknown corruption mode %q", mode)
 	}
