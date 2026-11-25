@@ -1,0 +1,12 @@
+# Go
+/bin/
+*.test
+*.out
+
+# Local acceptance artifacts
+/tmp-fixtures/
+/tmp-index/
+/.assetcheck-index/
+
+# OS/editor
+.DS_Store
