@@ -78,11 +78,11 @@ func indexMP4Trak(f *os.File, path string, idx *Index, trak *mp4.BoxInfo, movieT
 	if err != nil {
 		return fault.At(err, path, int64(trak.Offset))
 	}
-	mdhd, mdhdInfo, err := firstPayloadWithInfo[mp4.Mdhd](f, trak, mp4.BoxPath{mp4.BoxTypeMdhd()})
+	mdhd, mdhdInfo, err := firstPayloadWithInfo[mp4.Mdhd](f, trak, mp4.BoxPath{mp4.BoxTypeMdia(), mp4.BoxTypeMdhd()})
 	if err != nil {
 		return fault.At(err, path, int64(trak.Offset))
 	}
-	hdlr, hdlrInfo, err := firstPayloadWithInfo[mp4.Hdlr](f, trak, mp4.BoxPath{mp4.BoxTypeHdlr()})
+	hdlr, hdlrInfo, err := firstPayloadWithInfo[mp4.Hdlr](f, trak, mp4.BoxPath{mp4.BoxTypeMdia(), mp4.BoxTypeHdlr()})
 	if err != nil {
 		return fault.At(err, path, int64(trak.Offset))
 	}
@@ -96,7 +96,7 @@ func indexMP4Trak(f *os.File, path string, idx *Index, trak *mp4.BoxInfo, movieT
 		return fault.At(fault.New(fault.UnsupportedTrack, "unsupported handler "+handler), path, int64(hdlrInfo.Offset))
 	}
 
-	stsd, stsdInfo, err := firstPayloadWithInfo[mp4.Stsd](f, trak, mp4.BoxPath{mp4.BoxTypeStbl(), mp4.BoxTypeStsd()})
+	stsd, stsdInfo, err := firstPayloadWithInfo[mp4.Stsd](f, trak, mp4.BoxPath{mp4.BoxTypeMdia(), mp4.BoxTypeMinf(), mp4.BoxTypeStbl(), mp4.BoxTypeStsd()})
 	if err != nil || stsd == nil {
 		return fault.At(fault.New(fault.CorruptHeader, "missing stsd"), path, int64(trak.Offset))
 	}
@@ -122,18 +122,18 @@ func indexMP4Trak(f *os.File, path string, idx *Index, trak *mp4.BoxInfo, movieT
 	}
 	idx.Tracks = append(idx.Tracks, tr)
 
-	stsz, _, err := firstPayloadWithInfo[mp4.Stsz](f, trak, mp4.BoxPath{mp4.BoxTypeStbl(), mp4.BoxTypeStsz()})
+	stsz, _, err := firstPayloadWithInfo[mp4.Stsz](f, trak, mp4.BoxPath{mp4.BoxTypeMdia(), mp4.BoxTypeMinf(), mp4.BoxTypeStbl(), mp4.BoxTypeStsz()})
 	if err != nil || stsz == nil || stsz.SampleCount == 0 {
 		return fault.At(fault.New(fault.CorruptHeader, "missing/empty stsz"), path, int64(trak.Offset))
 	}
 	if int(stsz.SampleCount) > idx.Params.MaxEntries {
 		return fault.New(fault.LimitExceeded, "too many samples")
 	}
-	stts, _, err := firstPayloadWithInfo[mp4.Stts](f, trak, mp4.BoxPath{mp4.BoxTypeStbl(), mp4.BoxTypeStts()})
+	stts, _, err := firstPayloadWithInfo[mp4.Stts](f, trak, mp4.BoxPath{mp4.BoxTypeMdia(), mp4.BoxTypeMinf(), mp4.BoxTypeStbl(), mp4.BoxTypeStts()})
 	if err != nil || stts == nil {
 		return fault.At(fault.New(fault.CorruptHeader, "missing stts"), path, int64(trak.Offset))
 	}
-	stsc, _, err := firstPayloadWithInfo[mp4.Stsc](f, trak, mp4.BoxPath{mp4.BoxTypeStbl(), mp4.BoxTypeStsc()})
+	stsc, _, err := firstPayloadWithInfo[mp4.Stsc](f, trak, mp4.BoxPath{mp4.BoxTypeMdia(), mp4.BoxTypeMinf(), mp4.BoxTypeStbl(), mp4.BoxTypeStsc()})
 	if err != nil || stsc == nil || len(stsc.Entries) == 0 {
 		return fault.At(fault.New(fault.CorruptHeader, "missing stsc"), path, int64(trak.Offset))
 	}
@@ -223,14 +223,14 @@ func editUnits(version uint8, e *mp4.ElstEntry) (seg int64, media int64) {
 }
 
 func readChunkOffsets(f *os.File, path string, trak *mp4.BoxInfo) ([]uint64, error) {
-	if stco, _, err := firstPayloadWithInfo[mp4.Stco](f, trak, mp4.BoxPath{mp4.BoxTypeStbl(), mp4.BoxTypeStco()}); err == nil && stco != nil {
+	if stco, _, err := firstPayloadWithInfo[mp4.Stco](f, trak, mp4.BoxPath{mp4.BoxTypeMdia(), mp4.BoxTypeMinf(), mp4.BoxTypeStbl(), mp4.BoxTypeStco()}); err == nil && stco != nil {
 		out := make([]uint64, len(stco.ChunkOffset))
 		for i, v := range stco.ChunkOffset {
 			out[i] = uint64(v)
 		}
 		return out, nil
 	}
-	co64, _, err := firstPayloadWithInfo[mp4.Co64](f, trak, mp4.BoxPath{mp4.BoxTypeStbl(), mp4.BoxTypeCo64()})
+	co64, _, err := firstPayloadWithInfo[mp4.Co64](f, trak, mp4.BoxPath{mp4.BoxTypeMdia(), mp4.BoxTypeMinf(), mp4.BoxTypeStbl(), mp4.BoxTypeCo64()})
 	if err != nil || co64 == nil {
 		return nil, fault.At(fault.New(fault.CorruptHeader, "missing stco/co64"), path, int64(trak.Offset))
 	}

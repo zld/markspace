@@ -13,11 +13,11 @@ func appendSamples(f *os.File, idx *Index, path string, tr Track, trak *mp4.BoxI
 	sampleCount := int(stsz.SampleCount)
 	dts := expandStts(stts, sampleCount)
 	cts := []int64{}
-	if ctts, _, _ := firstPayloadWithInfo[mp4.Ctts](f, trak, mp4.BoxPath{mp4.BoxTypeStbl(), mp4.BoxTypeCtts()}); ctts != nil {
+	if ctts, _, _ := firstPayloadWithInfo[mp4.Ctts](f, trak, mp4.BoxPath{mp4.BoxTypeMdia(), mp4.BoxTypeMinf(), mp4.BoxTypeStbl(), mp4.BoxTypeCtts()}); ctts != nil {
 		cts = expandCtts(ctts, sampleCount)
 	}
 	keySet := map[uint32]bool{}
-	if stss, _, _ := firstPayloadWithInfo[mp4.Stss](f, trak, mp4.BoxPath{mp4.BoxTypeStbl(), mp4.BoxTypeStss()}); stss != nil {
+	if stss, _, _ := firstPayloadWithInfo[mp4.Stss](f, trak, mp4.BoxPath{mp4.BoxTypeMdia(), mp4.BoxTypeMinf(), mp4.BoxTypeStbl(), mp4.BoxTypeStss()}); stss != nil {
 		for _, n := range stss.SampleNumber {
 			keySet[n] = true
 		}
