@@ -44,6 +44,15 @@ func Run(opts RunOptions) (*RunResult, error) {
 	if err := os.MkdirAll(opts.Out, 0o755); err != nil {
 		return &RunResult{}, err
 	}
+	if !opts.Resume {
+		// An explicit fresh run must not leave an old recovery marker that
+		// could be mistaken for the result of this invocation.
+		if cpPath, pathErr := CheckpointPath(opts.Out); pathErr == nil {
+			if err := os.Remove(cpPath); err != nil && !os.IsNotExist(err) {
+				return &RunResult{CheckpointPath: cpPath}, err
+			}
+		}
+	}
 	if opts.Resume {
 		return runResume(opts)
 	}
@@ -132,6 +141,13 @@ func runFresh(opts RunOptions) (*RunResult, error) {
 	res.SilenceMS = sumSegmentSilence(segments)
 
 	if opts.StopAfter == StageCut {
+		// A manifest from an older completed run must not masquerade as the
+		// not-yet-produced manifest for this checkpoint.
+		if manifestPath, pathErr := ManifestPath(opts.Out); pathErr == nil {
+			if err := os.Remove(manifestPath); err != nil && !os.IsNotExist(err) {
+				return res, err
+			}
+		}
 		cp := &Checkpoint{
 			Stage: StageCut, Fixture: opts.Fixture, MutateSource: opts.MutateSource,
 			SourceDigest: fixture.SourceDigest, InputPacket: inputPacket,
