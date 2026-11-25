@@ -41,23 +41,28 @@ func renderMaster(path string, o masterOpts) error {
 		"-f", "lavfi", "-i", fmt.Sprintf("testsrc2=size=640x360:rate=30:duration=%d", o.durationSec),
 		"-f", "lavfi", "-i", fmt.Sprintf("sine=frequency=440:sample_rate=%d:duration=%d", o.audioRate, o.durationSec),
 		"-c:v", "libx264", "-g", "60", "-keyint_min", "60", "-sc_threshold", "0",
-		"-pix_fmt", "yuv420p", "-vf", "noise=alls=6:allf=t",
+		"-pix_fmt", "yuv420p", "-vf", videoFilter(o),
 		"-c:a", "aac", "-b:a", "128k",
 		"-ac", fmt.Sprint(o.audioCh), "-ar", fmt.Sprint(o.audioRate),
 		"-movflags", movflags,
 		"-frag_duration", "2000000",
-	}
-	if len(o.colorTags) == 3 {
-		args = append(args,
-			"-color_primaries", o.colorTags[0],
-			"-color_trc", o.colorTags[1],
-			"-colorspace", o.colorTags[2])
 	}
 	args = append(args, path)
 	if out, err := exec.Command("ffmpeg", args...).CombinedOutput(); err != nil {
 		return fmt.Errorf("ffmpeg render: %w: %s", err, out)
 	}
 	return nil
+}
+
+// videoFilter builds the source filter chain. Color tags are applied with
+// setparams: output-side -color_* options do not reach the colr box.
+func videoFilter(o masterOpts) string {
+	vf := "noise=alls=6:allf=t"
+	if len(o.colorTags) == 3 {
+		vf += fmt.Sprintf(",setparams=color_primaries=%s:color_trc=%s:colorspace=%s",
+			o.colorTags[0], o.colorTags[1], o.colorTags[2])
+	}
+	return vf
 }
 
 // splitMaster splits a fragmented MP4 into init.mp4 plus one .m4s file per

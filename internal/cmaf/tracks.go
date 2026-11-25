@@ -99,12 +99,14 @@ func parseStsd(payload []byte, cur *TrackInfo) error {
 		entry := payload[off+8 : off+size]
 		switch typ {
 		case "avc1", "avc3", "hvc1", "hev1", "av01":
-			if len(entry) < 70 {
+			if len(entry) < 78 {
 				return fmt.Errorf("cmaf: %s entry too short (%d bytes)", typ, len(entry))
 			}
 			cur.Width = uint32(binary.BigEndian.Uint16(entry[24:]))
 			cur.Height = uint32(binary.BigEndian.Uint16(entry[26:]))
-			scanVisualChildren(entry[70:], cur)
+			// VisualSampleEntry header is 78 bytes; children (avcC, colr)
+			// follow it.
+			scanVisualChildren(entry[78:], cur)
 		case "mp4a":
 			if len(entry) < 28 {
 				return fmt.Errorf("cmaf: mp4a entry too short (%d bytes)", len(entry))

@@ -91,8 +91,14 @@ func BuildTimeline(frags []*Fragment, init *Init, rep *model.Report) *Timeline {
 		prevSeq = f.Seq
 
 		if !f.HasVideo {
-			rep.Addf(model.CodeMissingMedia, model.SevWarn, f.Path, -1,
-				"fragment seq %d has no video decode time; span undeterminable", f.Seq)
+			// A fragment without a video traf (e.g. an audio-only tail
+			// fragment from unequal track durations) carries no video
+			// timeline information; it is skipped, not treated as damage.
+			// A fragment with no decode times at all is undeterminable.
+			if !f.HasAudio {
+				rep.Addf(model.CodeMissingMedia, model.SevWarn, f.Path, -1,
+					"fragment seq %d has no decode times; span undeterminable", f.Seq)
+			}
 			continue
 		}
 		if haveExpected {

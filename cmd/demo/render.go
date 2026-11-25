@@ -70,14 +70,11 @@ func renderClip(ctx context.Context, s setInfo, segs []cmaf.Segment, win events.
 		"-x264-params", "nal-hrd=cbr",
 		"-threads", "1",
 		"-pix_fmt", "yuv420p",
+		"-vf", outputFilter(cand),
 		"-c:a", "aac", "-b:a", fmt.Sprint(cand.AudioBitrate),
 		"-ar", fmt.Sprint(cand.Audio.SampleRate),
 		"-movflags", "+write_colr",
-		"-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709",
 		"-fflags", "+bitexact", "-flags", "+bitexact",
-	}
-	if cand.Color.Convert {
-		args = append(args, "-vf", "scale=out_color_matrix=bt709")
 	}
 	args = append(args, outPath)
 	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
@@ -98,6 +95,17 @@ func renderClip(ctx context.Context, s setInfo, segs []cmaf.Segment, win events.
 		SizeBytes:  st.Size(),
 		DurationMS: win.Dur().Milliseconds(),
 	}, nil
+}
+
+// outputFilter builds the render filter chain: color conversion when the
+// plan requires it, and explicit bt709 tagging via setparams (output-side
+// -color_* options do not reliably reach the colr box).
+func outputFilter(cand *planner.Candidate) string {
+	vf := ""
+	if cand.Color.Convert {
+		vf = "scale=out_color_matrix=bt709,"
+	}
+	return vf + "setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709"
 }
 
 // buildManifest assembles the delivery manifest for one produced clip.

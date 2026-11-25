@@ -102,7 +102,7 @@ func stsdBox(entries ...[]byte) []byte {
 }
 
 func avc1Entry(w, h uint16, colr []byte) []byte {
-	e := make([]byte, 70)
+	e := make([]byte, 78) // VisualSampleEntry header
 	binary.BigEndian.PutUint16(e[24:], w)
 	binary.BigEndian.PutUint16(e[26:], h)
 	return makeBox("avc1", append(e, colr...))
