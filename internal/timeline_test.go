@@ -49,8 +49,11 @@ func TestTimelineInOrder(t *testing.T) {
 	if prog.Stats.TimeDeltaTicks != 0 || prog.Stats.ByteDelta != 0 {
 		t.Fatalf("delta=%+v", prog.Stats)
 	}
-	if prog.Samples[0].ByteOffset != 0 || prog.Samples[7].ByteOffset != 7 {
-		t.Fatalf("byte offsets=%d..%d", prog.Samples[0].ByteOffset, prog.Samples[7].ByteOffset)
+	if prog.Samples[0].OutputOffset != 0 || prog.Samples[7].OutputOffset != 7 {
+		t.Fatalf("output offsets=%d..%d", prog.Samples[0].OutputOffset, prog.Samples[7].OutputOffset)
+	}
+	if prog.Samples[0].ByteOffset != 0 || prog.Samples[7].ByteOffset != 70 {
+		t.Fatalf("source byte offsets=%d..%d", prog.Samples[0].ByteOffset, prog.Samples[7].ByteOffset)
 	}
 }
 

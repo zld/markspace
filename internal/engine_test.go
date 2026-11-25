@@ -48,7 +48,7 @@ func TestDemoAcceptance(t *testing.T) {
 		t.Fatalf("mapping lines=%v tracks=%d", rep.MappingLines, len(rep.Tracks))
 	}
 	for _, line := range rep.Lines {
-		if !strings.Contains(line, "bytes=[") || !strings.Contains(line, "time_delta=") {
+		if !strings.Contains(line, "src_bytes=[") || !strings.Contains(line, "out_bytes=[") || !strings.Contains(line, "time_delta=") {
 			t.Fatalf("line lacks byte range/timing: %s", line)
 		}
 	}

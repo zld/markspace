@@ -415,7 +415,7 @@ func finishReport(rep *Report, tl *Timeline, tm *TrackMap) (*Report, error) {
 	rep.Segments = segments
 	rep.Bytes = totalBytes
 	rep.SHA256 = prog.Digest(out.DASH, out.DigestInput())
-	rep.Lines = describeSamples(prog)
+	rep.Lines = describeSamples(prog, out)
 	rep.Tracks = prog.Tracks
 	rep.MappingLines = tm.Describe()
 	rep.FailureLocation = prog.Stats.FailureLocation
@@ -443,12 +443,14 @@ func verifyRoundTrip(prog *Program, out *MuxOutput) (timeDelta, byteDelta int64,
 			}
 			remuxed = append(remuxed, parsed.Samples...)
 		}
+		// Compare in decode order: the remuxer writes fragme	nts in DTS order.
 		var want []PlacedSample
 		for _, s := range prog.Samples {
 			if s.Target == key {
 				want = append(want, s)
 			}
 		}
+		sort.SliceStable(want, func(i, j int) bool { return want[i].DTS < want[j].DTS })
 		if len(remuxed) != len(want) {
 			return 0, 0, 0, 0, NewError(KindMux, Location{Offset: -1, Sample: -1},
 				"track %s remuxed %d samples but the program has %d", key, len(remuxed), len(want))
@@ -492,14 +494,20 @@ func byteDeviation(got, want []byte) int64 {
 	return d
 }
 
-// describeSamples renders per-sample provenance, timing and byte ranges.
-func describeSamples(prog *Program) []string {
+// describeSamples renders per-sample provenance, target mapping, start/end
+// times and both source and output byte ranges.
+func describeSamples(prog *Program, out *MuxOutput) []string {
 	lines := make([]string, 0, len(prog.Samples))
 	for _, s := range prog.Samples {
+		outRange, ok := out.OutBytes[OutputSampleKey(s.Target, s)]
+		outText := "none"
+		if ok {
+			outText = fmt.Sprintf("[%d,%d)", outRange.Start, outRange.End)
+		}
 		lines = append(lines, fmt.Sprintf(
-			"sample source=%s track=%d target=%s dts=%d pts=%d dur=%d sync=%t bytes=[%d,%d) time_delta=%d",
-			s.Source, s.SourceID, s.Target, s.DTS, s.PTS, s.Duration, s.Sync,
-			s.ByteOffset, s.ByteOffset+s.ByteLength, s.PTS-s.SourcePTS))
+			"sample source=%s track=%d target=%s dts=%d pts=%d start=%d end=%d sync=%t src_bytes=[%d,%d) out_bytes=%s time_delta=%d",
+			s.Source, s.SourceID, s.Target, s.DTS, s.PTS, s.PTS, s.End(), s.Sync,
+			s.ByteOffset, s.ByteOffset+s.ByteLength, outText, s.PTS-s.SourcePTS))
 	}
 	return lines
 }

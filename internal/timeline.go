@@ -61,17 +61,20 @@ type Program struct {
 
 // PlacedSample is one output sample after conflict resolution.
 type PlacedSample struct {
-	Source     string
-	SourceID   uint32
-	Target     string
-	TrackKey   string
-	DTS        Ticks
-	PTS        Ticks
-	Duration   Ticks
-	Sync       bool
+	Source   string
+	SourceID uint32
+	Target   string
+	TrackKey string
+	DTS      Ticks
+	PTS      Ticks
+	Duration Ticks
+	Sync     bool
+	// ByteOffset/ByteLength locate the sample payload in its source segment.
 	ByteOffset int64
 	ByteLength int64
-	Data       []byte
+	// OutputOffset is the sample's index in the deployed output order.
+	OutputOffset int64
+	Data         []byte
 	// SourcePTS is the sample PTS before unwrapping, for delta accounting.
 	SourcePTS Ticks
 	// Segment/Index locate the sample in its input.
@@ -356,7 +359,7 @@ func (t *Timeline) Recompute() (*Program, error) {
 		return out[i].Index < out[j].Index
 	})
 	for i := range out {
-		out[i].ByteOffset = int64(i)
+		out[i].OutputOffset = int64(i)
 		d := out[i].PTS - out[i].SourcePTS
 		if d < 0 {
 			d = -d
@@ -390,8 +393,9 @@ func (p *Program) Digest(manifest []byte, media []byte) string {
 		fmt.Fprintf(h, "track|%s|%s|%d|%x\n", tr.Key, tr.Codec, tr.Timescale, tr.CodecConfig)
 	}
 	for _, s := range p.Samples {
-		fmt.Fprintf(h, "sample|%s|%s|%d|%d|%d|%t|%d|%d|%x\n",
-			s.Source, s.Target, s.DTS, s.PTS, s.Duration, s.Sync, s.ByteOffset, s.ByteLength, s.Data)
+		fmt.Fprintf(h, "sample|%s|%s|%d|%d|%d|%t|%d|%d|%d|%x\n",
+			s.Source, s.Target, s.DTS, s.PTS, s.Duration, s.Sync,
+			s.ByteOffset, s.ByteLength, s.OutputOffset, s.Data)
 	}
 	h.Write(manifest)
 	h.Write(media)

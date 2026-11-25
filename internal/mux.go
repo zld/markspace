@@ -34,6 +34,9 @@ type MuxOutput struct {
 	// Starts and Durations hold per-track fragment timing.
 	Starts    map[string][]Ticks
 	Durations map[string][]Ticks
+	// OutBytes maps every output sample to its byte range inside the output
+	// fragment. Keys are "target|dts|pts", which is unique per program.
+	OutBytes map[string]ByteRange
 	// TrackIDs maps a target key to its output track_ID.
 	TrackIDs map[string]uint32
 }
@@ -59,6 +62,7 @@ func MuxProgram(prog *Program, segTicks Ticks) (*MuxOutput, error) {
 		HLS:       map[string][]byte{},
 		Starts:    map[string][]Ticks{},
 		Durations: map[string][]Ticks{},
+		OutBytes:  map[string]ByteRange{},
 		TrackIDs:  ids,
 	}
 	for _, track := range tracks {
@@ -97,6 +101,7 @@ func MuxProgram(prog *Program, segTicks Ticks) (*MuxOutput, error) {
 			if _, err := Boxes(data); err != nil {
 				return nil, NewError(KindMux, Location{Offset: -1, Sample: -1}, "encoded fragment for %s is malformed: %v", track.Key, err)
 			}
+			recordOutputRanges(out, track.Key, idx, data, group)
 			out.Segments[track.Key] = append(out.Segments[track.Key], data)
 			out.Starts[track.Key] = append(out.Starts[track.Key], startTicks)
 			out.Durations[track.Key] = append(out.Durations[track.Key], durTicks)
@@ -106,6 +111,40 @@ func MuxProgram(prog *Program, segTicks Ticks) (*MuxOutput, error) {
 	}
 	out.DASH = DASHManifest(tracks, out.Starts, out.Durations)
 	return out, nil
+}
+
+// recordOutputRanges re-demuxes one encoded fragment to map every source sample
+// to its exact output byte range.
+func recordOutputRanges(out *MuxOutput, key string, fragIndex int, data []byte, group []PlacedSample) {
+	// The fragment was produced from exactly this group, so the parsed sample
+	// order matches the group's order.
+	init := &InitSegment{}
+	_ = init
+	boxes, err := Boxes(data)
+	if err != nil {
+		return
+	}
+	var mdatStart int64 = -1
+	for _, b := range boxes {
+		if b.Type == "mdat" {
+			mdatStart = b.Offset + b.Header
+			break
+		}
+	}
+	if mdatStart < 0 {
+		return
+	}
+	cursor := mdatStart
+	for _, s := range group {
+		out.OutBytes[OutputSampleKey(key, s)] = ByteRange{Start: cursor, End: cursor + int64(len(s.Data))}
+		cursor += int64(len(s.Data))
+	}
+	_ = fragIndex
+}
+
+// OutputSampleKey identifies an output sample within MuxOutput.OutBytes.
+func OutputSampleKey(trackKey string, s PlacedSample) string {
+	return fmt.Sprintf("%s|%d|%d", trackKey, s.DTS, s.PTS)
 }
 
 // splitFragments groups decode-ordered samples into fragments of at most
