@@ -102,6 +102,9 @@ func TestTruncatedClusterHasStableStructuredLocation(t *testing.T) {
 	if rec.FailureOffset != len(bundle.EBML) || rec.FailureOffset != 366 {
 		t.Fatalf("failure_offset=%d want stable truncation offset 366/len=%d", rec.FailureOffset, len(bundle.EBML))
 	}
+	if rec.ByteDelta != 64 {
+		t.Fatalf("byte_delta=%d want 64 missing bytes", rec.ByteDelta)
+	}
 	if rec.Category != "truncated_element" {
 		t.Fatalf("category=%q", rec.Category)
 	}

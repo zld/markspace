@@ -129,10 +129,10 @@ func Check(doc *ebml.Document, graph *tracks.Graph, streams []rtp.Stream) (*Resu
 				report.FragmentTimeOrder, "negative_fragment_span",
 				"fragment %s has negative time span %d", frag.ID, span))
 		}
-		if span > doc.Limits.MaxFragmentSpan {
+		if span > clock.MaxSpanNS {
 			res.Records = append(res.Records, issue(0, frag.ClusterOffset, frag.EndOffset,
 				report.FragmentLimit, "fragment_span_too_large",
-				"fragment %s span %dns exceeds limit %dns", frag.ID, span, doc.Limits.MaxFragmentSpan))
+				"fragment %s span %dns exceeds limit %dns", frag.ID, span, clock.MaxSpanNS))
 		}
 		if graph != nil {
 			for _, trackNumber := range sortedGraphTracks(graph) {

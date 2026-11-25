@@ -250,12 +250,16 @@ func (r *Reader) ReadElementAt(offset, parentEnd int) (*Element, *report.Error) 
 	}
 	end64 := int64(e.PayloadOffset) + e.Size
 	if end64 > int64(len(r.data)) {
-		return nil, report.NewError(report.EBMLTruncated, "truncated_element", HexID(e.ID), e.Offset, len(r.data),
+		terr := report.NewError(report.EBMLTruncated, "truncated_element", HexID(e.ID), e.Offset, len(r.data),
 			"element declares %d payload bytes ending at %d, input ends at %d", e.Size, end64, len(r.data))
+		terr.Record.ByteDelta = end64 - int64(len(r.data))
+		return nil, terr
 	}
 	if end64 > int64(parentEnd) {
-		return nil, report.NewError(report.EBMLIllegalLength, "element_exceeds_parent", HexID(e.ID), e.Offset, parentEnd,
+		lerr := report.NewError(report.EBMLIllegalLength, "element_exceeds_parent", HexID(e.ID), e.Offset, parentEnd,
 			"element ends at %d beyond parent boundary %d", end64, parentEnd)
+		lerr.Record.ByteDelta = end64 - int64(parentEnd)
+		return nil, lerr
 	}
 	e.End = int(end64)
 	return e, nil
