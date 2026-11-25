@@ -127,7 +127,7 @@ func ParseTimecode(token string, rate Rate, sample int, sourceOffset int64) (Nan
 			frameOffset, "dropped timecode number %q is illegal for %s", token, rate.Name)
 	}
 
-	frameIndex, err := smpteFrameIndex(hour, minute, second, frame, rate.DropFrame)
+	frameIndex, err := smpteFrameIndex(hour, minute, second, frame, rate.NominalFPS, rate.DropFrame)
 	if err != nil {
 		return 0, diagnostic.Wrap(diagnostic.CodeOverflow, diagnostic.PhaseClock, sample, sourceOffset, err,
 			"timecode %q overflows frame counter", token)
@@ -152,8 +152,8 @@ func overflowOrInvalid(err error, sample int, offset int64, field, token string)
 		"invalid %s field in %q", field, token)
 }
 
-func smpteFrameIndex(h, m, s, f uint64, drop bool) (uint64, error) {
-	const nominal = uint64(30) // DF arithmetic is defined on the 30-count base.
+func smpteFrameIndex(h, m, s, f uint64, nominalFPS int, drop bool) (uint64, error) {
+	nominal := uint64(nominalFPS)
 	parts := []struct{ value, factor uint64 }{
 		{h, 3600 * nominal},
 		{m, 60 * nominal},
