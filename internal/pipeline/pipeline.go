@@ -105,9 +105,8 @@ func bundleFingerprint(key string, in []*parsedInput, metaVersion string) source
 	}
 }
 
-func (p *Pipeline) cachedDone(key, bundleHash string) *manifest.Item {
-	plan, err := p.tasks.ResumePlan(key)
-	if err != nil || plan.ResumeStage != task.StageDone || plan.LastValid == nil {
+func (p *Pipeline) cachedDone(plan task.ResumePlan, bundleHash string) *manifest.Item {
+	if plan.ResumeStage != task.StageDone || plan.LastValid == nil {
 		return nil
 	}
 	var item manifest.Item

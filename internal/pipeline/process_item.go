@@ -54,15 +54,28 @@ func (p *Pipeline) ProcessPaths(key, sampleID, kind string, expect Expectation, 
 		return nil, err
 	}
 	contentHash := bundleFingerprint(key, inputs, "").ContentSHA256
-	if cached := p.cachedDone(key, contentHash); cached != nil {
+	plan, _ := p.tasks.ResumePlan(key)
+	if cached := p.cachedDone(plan, contentHash); cached != nil {
 		return cached, nil
 	}
 	if _, err := p.tasks.MarkRunning(key, paths); err != nil {
 		return nil, err
 	}
-	plan, _ := p.tasks.ResumePlan(key)
 
 	st := p.restoreState(plan, contentHash, inputs, expect)
+	if st.Item != nil && st.Item.Recovery != nil {
+		for _, stage := range plan.CorruptStages {
+			already := false
+			for _, existing := range st.Item.Recovery.CorruptCheckpoints {
+				if existing == stage {
+					already = true
+				}
+			}
+			if !already {
+				st.Item.Recovery.CorruptCheckpoints = append(st.Item.Recovery.CorruptCheckpoints, stage)
+			}
+		}
+	}
 	if shouldRun(task.StageFingerprint, plan) {
 		st.FP = source.Fingerprint{Path: key, ContentSHA256: contentHash}
 		if err := p.checkpoint(key, task.StageFingerprint, st); err != nil {
