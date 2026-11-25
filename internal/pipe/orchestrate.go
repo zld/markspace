@@ -110,6 +110,10 @@ func ProcessEntries(ctx context.Context, entries []manifest.Entry, inputDigest s
 	jobs := NewQueue[manifest.Entry](cfg.QueueCapacity)
 	results := NewQueue[*ItemOutcome](cfg.QueueCapacity)
 	budget := NewByteBudget(cfg.MaxBufferBytes)
+	doneStates := make(map[string]checkpoint.EntryState, len(cp.Entries))
+	for k, v := range cp.Entries {
+		doneStates[k] = v
+	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -123,7 +127,7 @@ func ProcessEntries(ctx context.Context, entries []manifest.Entry, inputDigest s
 				if qerr != nil || !ok {
 					return
 				}
-				out := processOne(ctx, e, cfg, budget, cp)
+				out := processOne(ctx, e, cfg, budget, doneStates, inputDigest, configDigest)
 				// The collector always drains results; use Background so a terminal
 				// located error is not lost during cancellation.
 				if serr := results.Send(context.Background(), out); serr != nil {
@@ -170,6 +174,9 @@ func ProcessEntries(ctx context.Context, entries []manifest.Entry, inputDigest s
 	sort.Slice(report.Outcomes, func(i, j int) bool {
 		return report.Outcomes[i].Entry.EntryIndex < report.Outcomes[j].Entry.EntryIndex
 	})
+	if firstErr == nil && ctx.Err() != nil {
+		firstErr = diagnostic.Wrap(diagnostic.ErrCancelled, diagnostic.Location{Stage: "pipe", ByteOffset: -1}, ctx.Err())
+	}
 	report.Completed = cp.CompletedNumbers()
 	report.BufferPeak = budget.Peak()
 	report.JobQueuePeak = jobs.Peak()
@@ -177,14 +184,14 @@ func ProcessEntries(ctx context.Context, entries []manifest.Entry, inputDigest s
 	return report, firstErr
 }
 
-func processOne(ctx context.Context, e manifest.Entry, cfg Config, budget *ByteBudget, cp *checkpoint.Checkpoint) *ItemOutcome {
+func processOne(ctx context.Context, e manifest.Entry, cfg Config, budget *ByteBudget, done map[string]checkpoint.EntryState, inputDigest, configDigest string) *ItemOutcome {
 	out := &ItemOutcome{Entry: e}
 	key := provenance.FileKey(e.StableKey)
 	out.IndexPath = filepath.Join(cfg.WorkDir, "indexes", key+".json")
 	out.ProvenancePath = filepath.Join(cfg.WorkDir, "provenance", key+".json")
 	out.ReportPath = filepath.Join(cfg.WorkDir, "reports", key+".json")
 
-	if state, done := cp.Entries[e.StableKey]; done {
+	if state, isDone := done[e.StableKey]; isDone {
 		out.Skipped = true
 		out.IndexPath = state.IndexPath
 		out.ProvenancePath = state.ProvenancePath
@@ -226,7 +233,7 @@ func processOne(ctx context.Context, e manifest.Entry, cfg Config, budget *ByteB
 		return out
 	}
 	out.Index = idx
-	rec := provenance.NewRecord(cp.InputDigest, cp.ConfigDigest, idx)
+	rec := provenance.NewRecord(inputDigest, configDigest, idx)
 	out.Record = &rec
 	if idx.Aligned {
 		r, qerr := index.QueryIndex(idx, e.ProgramStartU, e.ProgramEndU)
