@@ -1,0 +1,16 @@
+.DS_Store
+
+# Go build and coverage artifacts
+*.test
+*.out
+/coverage.txt
+/pack
+/mediapack
+/bin/
+/dist/
+
+# Local demo output
+/out/
+/tmp/
+/game-pack/
+/game-pack-bad/
