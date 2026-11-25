@@ -126,7 +126,7 @@ func Write(w io.Writer, r *Run) error {
 		if r.Stream.FirstFail != nil {
 			p.line("first failure  stage=%s offset=%s time=%s: %s",
 				r.Stream.FirstFail.Stage, offsetCell(r.Stream.FirstFail.Offset),
-				timeCell(r.Stream.FirstFail.Time), r.Stream.FirstFail.Msg)
+				failureTime(r.Stream.FirstFail.Time), r.Stream.FirstFail.Msg)
 		}
 	}
 	faults := collect(r)
@@ -276,6 +276,13 @@ func (r *Run) packetLine() string {
 		line += fmt.Sprintf(", last gap at %s leaves a hole ending at %s", offsetCell(lastGap.Offset), lastGap.Time)
 	}
 	return line
+}
+
+func failureTime(t clock.Nanos) string {
+	if t == clock.Invalid {
+		return "unknown"
+	}
+	return fmt.Sprintf("%dns", int64(t))
 }
 
 func offsetCell(off int64) string {

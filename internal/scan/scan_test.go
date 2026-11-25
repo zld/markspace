@@ -283,6 +283,36 @@ func TestPacketTimesMatchSampleDTS(t *testing.T) {
 	}
 }
 
+func TestTruncatedPacketFaultPointsAtPayload(t *testing.T) {
+	var asset fixture.Asset
+	for _, a := range fixture.Build(7) {
+		if a.Scenario == fixture.ScenarioTruncated {
+			asset = a
+		}
+	}
+	res := scan.Run(scan.Input{MP4: asset.MP4, RTP: asset.RTP})
+	var trunc *fault.Error
+	for _, f := range res.Faults {
+		if f.Code == "codec.opus.truncated" {
+			trunc = f
+		}
+	}
+	if trunc == nil {
+		t.Fatalf("no truncated fault: %v", faultStrings(res.Faults))
+	}
+	// Compute the payload offset of the second packet independently from the
+	// fixture's length-prefixed framing: 4 byte prefix + 12 byte RTP header.
+	off := 0
+	for i := 0; i < 1; i++ {
+		n := int(asset.RTP[off])<<24 | int(asset.RTP[off+1])<<16 | int(asset.RTP[off+2])<<8 | int(asset.RTP[off+3])
+		off += 4 + n
+	}
+	want := int64(off + 4 + 12)
+	if trunc.Offset != want {
+		t.Fatalf("truncated fault offset = %d, want payload offset %d", trunc.Offset, want)
+	}
+}
+
 func TestScannerDeterministic(t *testing.T) {
 	for _, a := range fixture.Build(7) {
 		first := scan.Run(scan.Input{MP4: a.MP4, RTP: a.RTP})

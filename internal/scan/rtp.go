@@ -43,7 +43,8 @@ func (s *Scanner) scanPackets(data []byte) {
 				"rtp packet header cannot be parsed", err))
 			return
 		}
-		payloadOff := off + int64(len(raw)-len(pkt.Payload))
+		// off addresses the 4-byte length prefix; the packet bytes follow it.
+		payloadOff := off + 4 + int64(len(raw)-len(pkt.Payload))
 		ext := tracker.Accept(pkt.SequenceNumber, off)
 		tsExt, monotonic := tsTracker.Accept(pkt.Timestamp)
 		if first {
