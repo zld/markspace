@@ -18,10 +18,11 @@ const MaxRecoverableGap = 16
 
 // Stream is one SSRC packet sequence in observed/capture order.
 type Stream struct {
-	Track     int
-	SSRC      uint32
-	ClockRate uint32
-	Packets   []pionrtp.Packet
+	Track         int
+	SSRC          uint32
+	ClockRate     uint32
+	FragmentIndex int
+	Packets       []pionrtp.Packet
 }
 
 // Missing is one uniquely identified absent sequence number.
