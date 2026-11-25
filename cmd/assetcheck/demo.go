@@ -98,7 +98,7 @@ func runDemo(args []string, stdout, stderr io.Writer) int {
 			}
 		}
 	}
-	printSummary(stdout, *seed, *out, *reuse, digests)
+	printSummary(stdout, *seed, *reuse, digests)
 
 	// A fixture whose outcome contradicts its declared expectation means the
 	// harness itself is wrong (exit 2). Otherwise the exit code reflects the
@@ -119,9 +119,9 @@ func verdictText(run *report.Run) string {
 	return "fail"
 }
 
-func printSummary(w io.Writer, seed int64, out string, reuse bool, digests map[string]string) {
+func printSummary(w io.Writer, seed int64, reuse bool, digests map[string]string) {
 	fmt.Fprintln(w, "demo summary")
-	fmt.Fprintf(w, "  seed=%d out=%s reuse-index=%t\n", seed, out, reuse)
+	fmt.Fprintf(w, "  seed=%d reuse-index=%t\n", seed, reuse)
 	for _, sc := range fixture.AllScenarios {
 		fmt.Fprintf(w, "  %-10s index-digest=%s\n", sc, short(digests[string(sc)]))
 	}

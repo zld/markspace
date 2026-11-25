@@ -26,11 +26,14 @@ const (
 	ScenarioMissing   Scenario = "missing"
 	ScenarioTruncated Scenario = "truncated"
 	ScenarioCorrupt   Scenario = "corrupt"
+	// ScenarioWrap starts the sequence just below the 16-bit ceiling so the
+	// stream crosses the wrap point mid-delivery.
+	ScenarioWrap Scenario = "wrap"
 )
 
 // AllScenarios is the demo order.
 var AllScenarios = []Scenario{
-	ScenarioNormal, ScenarioDuplicate, ScenarioMissing, ScenarioTruncated, ScenarioCorrupt,
+	ScenarioNormal, ScenarioDuplicate, ScenarioMissing, ScenarioTruncated, ScenarioCorrupt, ScenarioWrap,
 }
 
 // Asset is one generated input pair and its expected outcome.
@@ -143,6 +146,8 @@ func Build(seed int64) []Asset {
 			a.ExpectPass, a.Expect = false, "truncated packet reported at a byte offset"
 		case ScenarioCorrupt:
 			a.ExpectPass, a.Expect = false, "corrupt fragment reported at a byte offset"
+		case ScenarioWrap:
+			a.ExpectPass, a.Expect = true, "sequence wrap extended without duplicate or gap"
 		}
 		assets = append(assets, a)
 	}
@@ -155,6 +160,9 @@ func buildRTP(p plan, sc Scenario, seed int64) []byte {
 	payloads := p.dialoguePackets()
 	// Sequence numbers are derived from the seed so demos are not identical.
 	startSeq := uint16(seed*37 + 10)
+	if sc == ScenarioWrap {
+		startSeq = 65534 // two packets below the ceiling: the stream wraps
+	}
 	startTS := uint32(seed * 997)
 	type pkt struct {
 		seq uint16
@@ -162,7 +170,6 @@ func buildRTP(p plan, sc Scenario, seed int64) []byte {
 		pl  []byte
 	}
 	var packets []pkt
-	ts := startTS
 	tsOffset := uint64(startTS)
 	for i, pl := range payloads {
 		seq := uint16(uint64(startSeq) + uint64(i))
@@ -170,11 +177,9 @@ func buildRTP(p plan, sc Scenario, seed int64) []byte {
 			pl = pl[:1] // TOC promises two frames but the second byte is gone
 		}
 		packets = append(packets, pkt{seq: seq, ts: uint32(tsOffset), pl: pl})
-		dec, ok := patternByTOC(pl)
-		if ok {
+		if dec, ok := patternByTOC(pl); ok {
 			tsOffset += dec
 		}
-		_ = ts
 	}
 	switch sc {
 	case ScenarioDuplicate:

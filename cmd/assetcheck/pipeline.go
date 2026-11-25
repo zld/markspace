@@ -36,7 +36,7 @@ func process(name string, in scan.Input, indexPath string, reuse bool) (*report.
 			res = scan.Rebuild(in)
 		case os.IsNotExist(err):
 			run.State.Reason = "no index on disk"
-			res = scan.Run(in)
+			res = scan.Rebuild(in)
 		default:
 			// A present but unreadable or structurally incomplete index is
 			// treated the same as a stale one: rebuild and record why.

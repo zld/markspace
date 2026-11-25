@@ -191,6 +191,26 @@ func TestScannerScenarios(t *testing.T) {
 				if gaps != 1 || missing != 1 {
 					t.Fatalf("gaps=%d missing=%d, want 1/1", gaps, missing)
 				}
+			case fixture.ScenarioWrap:
+				if !res.Ok() {
+					t.Fatalf("wrap scan not clean: %v", faultStrings(res.Faults))
+				}
+				var wrapped bool
+				for i := 1; i < len(res.Index.Packets); i++ {
+					a, b := res.Index.Packets[i-1], res.Index.Packets[i]
+					if a.SeqExt > 0xFFFF && b.Seq > a.Seq {
+						wrapped = true
+					}
+					if b.Kind == "duplicate" || b.Kind == "gap" {
+						t.Fatalf("wrap produced a %s event", b.Kind)
+					}
+					if b.SeqExt <= a.SeqExt {
+						t.Fatalf("extended sequence did not advance across the wrap: %d then %d", a.SeqExt, b.SeqExt)
+					}
+				}
+				if !wrapped {
+					t.Fatal("fixture did not actually cross the wrap point")
+				}
 			case fixture.ScenarioTruncated:
 				if res.Ok() {
 					t.Fatal("truncated packet should be reported")
@@ -203,6 +223,41 @@ func TestScannerScenarios(t *testing.T) {
 				assertLocated(t, res.Faults)
 			}
 		})
+	}
+}
+
+func TestScannerReportsNonMonotonicTimestamp(t *testing.T) {
+	a := fixture.Build(7)[0] // normal
+	// Rewrite the third packet's 32-bit timestamp to a value far behind its
+	// predecessor. The length prefix is left untouched, so only the RTP
+	// header changes and the packet boundaries stay valid.
+	buf := append([]byte{}, a.RTP...)
+	off := 0
+	for i := 0; i < 3; i++ {
+		n := int(buf[off])<<24 | int(buf[off+1])<<16 | int(buf[off+2])<<8 | int(buf[off+3])
+		if i == 2 {
+			// RTP: version/flags, marker/payload, sequence(2), timestamp(4).
+			ts := off + 4 + 2 + 2
+			buf[ts], buf[ts+1], buf[ts+2], buf[ts+3] = 0, 0, 0, 1
+			break
+		}
+		off += 4 + n
+	}
+	res := scan.Run(scan.Input{MP4: a.MP4, RTP: buf})
+	if res.Ok() {
+		t.Fatal("a regressing timestamp must be reported")
+	}
+	var found bool
+	for _, f := range res.Faults {
+		if f.Code == "codec.rtp.non_monotonic" {
+			found = true
+			if f.Stage != fault.StageCodec || f.Offset < 0 {
+				t.Fatalf("non-monotonic fault is not located: %v", f)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("no non_monotonic fault: %v", faultStrings(res.Faults))
 	}
 }
 

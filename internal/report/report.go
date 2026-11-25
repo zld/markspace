@@ -11,8 +11,6 @@ import (
 	"fmt"
 	"hash/fnv"
 	"io"
-	"sort"
-	"strings"
 
 	"example.com/assetcheck/internal/clock"
 	"example.com/assetcheck/internal/fault"
@@ -122,6 +120,11 @@ func Write(w io.Writer, r *Run) error {
 	if r.Stream != nil {
 		p.line("stream         confirmed=%d failed=%d skipped=%d completed=%v total-byte-dev=%d total-time-dev=%v",
 			r.Stream.Confirmed, r.Stream.Failed, r.Stream.Skipped, r.Stream.Completed, r.Stream.ByteDev, r.Stream.TimeDev)
+		if r.Stream.FirstFail != nil {
+			p.line("first failure  stage=%s offset=%s time=%s: %s",
+				r.Stream.FirstFail.Stage, offsetCell(r.Stream.FirstFail.Offset),
+				timeCell(r.Stream.FirstFail.Time), r.Stream.FirstFail.Msg)
+		}
 	}
 	faults := collect(r)
 	p.line("")
@@ -246,27 +249,9 @@ func timeCell(t clock.Nanos) string {
 	return fmt.Sprintf("%d", int64(t))
 }
 
-// SortMappings provides a stable order for callers that merge mappings from
-// several runs.
-func SortMappings(list []validate.Mapping) {
-	sort.SliceStable(list, func(i, j int) bool {
-		if list[i].TrackID != list[j].TrackID {
-			return list[i].TrackID < list[j].TrackID
-		}
-		return list[i].Sample < list[j].Sample
-	})
-}
-
-// OneLine renders a compact single-line result, used by the demo summary.
-func OneLine(r *Run) string {
-	v := verdictName(r.Verdict())
-	var b strings.Builder
-	if r.Index != nil {
-		fmt.Fprintf(&b, "digest=%s ", r.Index.Digest.Value[:12])
+func offsetCell(off int64) string {
+	if off < 0 {
+		return "unknown"
 	}
-	if r.Validate != nil {
-		fmt.Fprintf(&b, "dup=%d missing=%d faults=%d ", r.Validate.Duplicate, r.Validate.Missing, len(r.Validate.Faults))
-	}
-	fmt.Fprintf(&b, "result=%s", v)
-	return b.String()
+	return fmt.Sprintf("%d", off)
 }
