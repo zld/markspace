@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 )
 
 // SHA256Hex returns the lowercase hex SHA-256 digest of b.
@@ -46,4 +47,14 @@ func ValidDigest(s string) bool {
 		}
 	}
 	return true
+}
+
+// HashReader returns the SHA-256 hex digest and byte count of r.
+func HashReader(r io.Reader) (string, int64, error) {
+	h := sha256.New()
+	n, err := io.CopyBuffer(h, r, make([]byte, 64<<10))
+	if err != nil {
+		return "", 0, err
+	}
+	return hex.EncodeToString(h.Sum(nil)), n, nil
 }
