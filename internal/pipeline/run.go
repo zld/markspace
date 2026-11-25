@@ -40,11 +40,12 @@ type Options struct {
 
 // SegmentOutcome is the per-segment analysis result.
 type SegmentOutcome struct {
-	ID          uint64 `json:"id"`
-	Hash        string `json:"sha256"`
-	Corrupt     bool   `json:"corrupt"`
-	RoundTripOK bool   `json:"roundtrip_ok"`
-	Silence     string `json:"silence"`
+	ID          uint64   `json:"id"`
+	Hash        string   `json:"sha256"`
+	Corrupt     bool     `json:"corrupt"`
+	Reasons     []string `json:"reasons,omitempty"`
+	RoundTripOK bool     `json:"roundtrip_ok"`
+	Silence     string   `json:"silence"`
 }
 
 // Result is the full run output consumed by the CLI acceptance command.
@@ -171,6 +172,7 @@ consume:
 			}
 			outcomes = append(outcomes, SegmentOutcome{
 				ID: seg0.ID, Hash: digest, Corrupt: seg0.Corrupt,
+				Reasons:     append([]string(nil), seg0.Reasons...),
 				RoundTripOK: rtOK, Silence: regions[0].Verdict.String(),
 			})
 
@@ -210,11 +212,26 @@ consume:
 	for _, au := range aus {
 		res.Damages = append(res.Damages, au.Damages...)
 	}
-	fillMatch(res, aus, opts, tb)
+	for _, o := range res.Segments {
+		if o.Corrupt {
+			res.CorruptSegmentCount++
+		}
+		if o.RoundTripOK {
+			res.RoundTripRate++
+		}
+	}
+	if n := len(res.Segments); n > 0 {
+		res.RoundTripRate /= float64(n)
+	}
 
 	if status == StatusInterrupted {
-		return res, nil // checkpoint only; no partial manifest is ever published
+		// A checkpoint-only stop has only processed a prefix of the stream,
+		// so a whole-index hit rate would report fictitious misses. Index
+		// evidence is computed on the completing (resume) run instead.
+		res.Match = &index.Report{}
+		return res, nil
 	}
+	fillMatch(res, aus, opts, tb)
 
 	if err := publishManifest(res, opts, outcomes, cp, manifestPath, store); err != nil {
 		return nil, err

@@ -21,15 +21,4 @@ func fillMatch(res *Result, aus []*stream.AccessUnit, opts Options, tb *clock.Ti
 	}
 	res.Match = index.MatchTimeline(aus, idx, tb)
 	res.KeyframeHitRate = res.Match.HitRate
-	for _, o := range res.Segments {
-		if o.Corrupt {
-			res.CorruptSegmentCount++
-		}
-		if o.RoundTripOK {
-			res.RoundTripRate += 1
-		}
-	}
-	if len(res.Segments) > 0 {
-		res.RoundTripRate /= float64(len(res.Segments))
-	}
 }
