@@ -45,6 +45,9 @@ func NewGraph(nodes []Node) (*Graph, error) {
 
 	indegree := make(map[model.TrackID]int, len(nodes))
 	dependents := make(map[model.TrackID][]model.TrackID, len(nodes))
+	for id := range g.nodes {
+		indegree[id] = 0
+	}
 	for id, n := range g.nodes {
 		seen := make(map[model.TrackID]bool)
 		for _, dep := range n.DependsOn {
