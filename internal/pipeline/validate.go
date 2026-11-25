@@ -9,6 +9,7 @@ import (
 	"media-audit/internal/manifest"
 	"media-audit/internal/media"
 	"media-audit/internal/recover"
+	"media-audit/internal/timebase"
 )
 
 func validateIntegrity(inputs []*parsedInput, item *manifest.Item) {
@@ -38,6 +39,9 @@ func validateIntegrity(inputs []*parsedInput, item *manifest.Item) {
 			e.Message = fmt.Sprintf("SHA-256 mismatch; single-byte damage localized at %d", loc)
 			if tr, smp, found := findSampleAt(in.Doc, loc); found {
 				e.WithTrack(tr.ID).WithBytes(smp.RecordStart, smp.RecordEnd)
+				if r, err := timebase.ConvertRange(tr.Timebase, smp.PTS, smp.PTS+int64(smp.Duration)); err == nil {
+					e.WithInterval(r)
+				}
 			}
 		}
 		item.Errors = append(item.Errors, e)

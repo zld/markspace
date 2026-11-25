@@ -78,15 +78,14 @@ func resolveField(name string, candidates []Candidate, def any, declaredFn func(
 		}
 		return values[i].party.TrackID < values[j].party.TrackID
 	})
-	if def != nil {
-		values = append(values, declared{value: def, party: Party{Source: SourceDefault, Value: valueString(def)}})
-	}
 	if len(values) == 0 {
-		return nil, Party{}, nil
+		if def == nil {
+			return nil, Party{}, nil
+		}
+		return def, Party{Source: SourceDefault, Value: valueString(def)}, nil
 	}
 	winner := values[0]
 	winnerKey := valueString(winner.value)
-	var losers []Party
 	var conflict *Conflict
 	for _, v := range values[1:] {
 		if valueString(v.value) != winnerKey {
@@ -94,7 +93,6 @@ func resolveField(name string, candidates []Candidate, def any, declaredFn func(
 				conflict = &Conflict{Field: name, Winner: winner.party}
 			}
 			conflict.Losers = append(conflict.Losers, v.party)
-			losers = append(losers, v.party)
 		}
 	}
 	if conflict != nil {
@@ -157,5 +155,13 @@ func Resolve(candidates []Candidate) Result {
 		out.Metadata.MetadataVersion = v.(uint32)
 		out.Conflicts = append(out.Conflicts, conflicts...)
 	}
+
+	best := SourceDefault
+	for _, c := range candidates {
+		if rank(c.Source) < rank(best) {
+			best = c.Source
+		}
+	}
+	out.Source = best
 	return out
 }
