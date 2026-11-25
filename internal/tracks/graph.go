@@ -137,60 +137,80 @@ func BuildGraph(data []byte, doc *ebml.Document) (*Graph, *report.Error) {
 
 func extractAudio(r *ebml.Reader, t *Track, audio *ebml.Element) *report.Error {
 	if el := ebml.FindFirst(audio, ebml.IDChannels); el != nil {
-		if v, err := r.ReadUint(el); err == nil {
-			t.Channels, t.ChannelsOffset = v, el.Offset
+		v, err := r.ReadUint(el)
+		if err != nil {
+			return err
 		}
+		t.Channels, t.ChannelsOffset = v, el.Offset
 	}
 	if el := ebml.FindFirst(audio, ebml.IDChannelLayout); el != nil {
-		if v, err := r.ReadUint(el); err == nil {
-			t.Layout, t.LayoutOffset = v, el.Offset
+		v, err := r.ReadUint(el)
+		if err != nil {
+			return err
 		}
+		t.Layout, t.LayoutOffset = v, el.Offset
 	}
 	if el := ebml.FindFirst(audio, ebml.IDSamplingFreq); el != nil {
-		if v, err := r.ReadFloat(el); err == nil {
-			t.SampleRate, t.SampleRateOff = v, el.Offset
+		v, err := r.ReadFloat(el)
+		if err != nil {
+			return err
 		}
+		t.SampleRate, t.SampleRateOff = v, el.Offset
 	}
 	if el := ebml.FindFirst(audio, ebml.IDOutputSampling); el != nil {
-		if v, err := r.ReadFloat(el); err == nil {
-			t.OutputRate, t.OutputRateOff = v, el.Offset
+		v, err := r.ReadFloat(el)
+		if err != nil {
+			return err
 		}
+		t.OutputRate, t.OutputRateOff = v, el.Offset
 	}
 	if el := ebml.FindFirst(audio, ebml.IDBitDepth); el != nil {
-		if v, err := r.ReadUint(el); err == nil {
-			t.BitDepth = v
+		v, err := r.ReadUint(el)
+		if err != nil {
+			return err
 		}
+		t.BitDepth = v
 	}
 	return nil
 }
 
 func extractVideo(r *ebml.Reader, t *Track, video *ebml.Element) *report.Error {
 	if el := ebml.FindFirst(video, ebml.IDPixelWidth); el != nil {
-		if v, err := r.ReadUint(el); err == nil {
-			t.PixelWidth = v
+		v, err := r.ReadUint(el)
+		if err != nil {
+			return err
 		}
+		t.PixelWidth = v
 	}
 	if el := ebml.FindFirst(video, ebml.IDPixelHeight); el != nil {
-		if v, err := r.ReadUint(el); err == nil {
-			t.PixelHeight = v
+		v, err := r.ReadUint(el)
+		if err != nil {
+			return err
 		}
+		t.PixelHeight = v
 	}
 	if colour := ebml.FindFirst(video, ebml.IDColour); colour != nil {
 		c := &ColorMetadata{Element: colour}
 		if el := ebml.FindFirst(colour, ebml.IDMatrixCoeffs); el != nil {
-			if v, err := r.ReadUint(el); err == nil {
-				c.Matrix, c.MatrixOffset = v, el.Offset
+			v, err := r.ReadUint(el)
+			if err != nil {
+				return err
 			}
+			c.Matrix, c.MatrixOffset = v, el.Offset
 		}
 		if el := ebml.FindFirst(colour, ebml.IDTransferChars); el != nil {
-			if v, err := r.ReadUint(el); err == nil {
-				c.Transfer, c.TransferOffset = v, el.Offset
+			v, err := r.ReadUint(el)
+			if err != nil {
+				return err
 			}
+			c.Transfer, c.TransferOffset = v, el.Offset
 		}
 		if el := ebml.FindFirst(colour, ebml.IDColourPrimaries); el != nil {
-			if v, err := r.ReadUint(el); err == nil {
-				c.Primaries, c.PrimariesOffset = v, el.Offset
+			v, err := r.ReadUint(el)
+			if err != nil {
+				return err
 			}
+			c.Primaries, c.PrimariesOffset = v, el.Offset
 		}
 		t.Color = c
 	}
