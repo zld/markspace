@@ -273,3 +273,40 @@ func readManifestDigest(t *testing.T, outputDir string) string {
 	}
 	return res.ManifestSHA256
 }
+
+func TestDuplicateConflictStopsGroupCommit(t *testing.T) {
+	cfg := testConfig(t, fixture.CaseDuplicateConflict)
+	p, _ := New(cfg)
+	summary, err := p.Run(context.Background())
+	if !fault.Is(err, fault.CodeDuplicateConflict) {
+		t.Fatalf("expected duplicate_conflict, got %v", err)
+	}
+	if summary.CommittedSegments != 0 {
+		t.Fatalf("conflict must stop the group commit, committed=%d", summary.CommittedSegments)
+	}
+	fe := err.(*fault.Error)
+	if fe.Detail["first_sha256"] == fe.Detail["duplicate_sha256"] {
+		t.Fatal("conflict error must expose the differing digest fields")
+	}
+	if p.store.Exists() {
+		cp, _ := p.store.Load()
+		if cp.Reached(checkpoint.StageAlign) {
+			t.Fatal("checkpoint must not advance past scan on a conflict")
+		}
+	}
+}
+
+func TestDuplicateFoldCommitsNormally(t *testing.T) {
+	cfg := testConfig(t, fixture.CaseDuplicateFold)
+	p, _ := New(cfg)
+	summary, err := p.Run(context.Background())
+	if err != nil {
+		t.Fatalf("identical duplicate should fold and complete: %v", err)
+	}
+	if summary.State != string(checkpoint.StageComplete) {
+		t.Fatalf("state = %s, want complete", summary.State)
+	}
+	if !summary.ManifestValid || summary.CommittedSegments == 0 {
+		t.Fatal("folded run should produce a valid committed manifest")
+	}
+}
