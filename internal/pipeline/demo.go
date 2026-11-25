@@ -43,11 +43,40 @@ func RunDemo(ctx context.Context, opts Options) (*report.Report, error) {
 		return nil, err
 	}
 	plan := store.Plan(specs)
+	if opts.CorruptBoundary {
+		// The fault-injection flag must reproduce the same failure even when an
+		// output directory contains a previously recovered/reused target.
+		targetID := assetIDForLayer(CorruptLayer)
+		targetKey := index.Key{}
+		for _, spec := range specs {
+			if spec.ID == targetID {
+				targetKey = spec.Key
+				break
+			}
+		}
+		plan.Reused = removeDecision(plan.Reused, targetID)
+		plan.Rebuilt = removeDecision(plan.Rebuilt, targetID)
+		plan.Rebuilt = append(plan.Rebuilt, index.Decision{
+			ID:     targetID,
+			Reason: "forced_corruption_injection",
+			Key:    targetKey,
+		})
+	}
 	decisions := decisionMap(plan)
 
 	cp, err := loadCheckpoint(ctx, opts, fx, identity)
 	if err != nil {
 		return nil, err
+	}
+	if opts.CorruptBoundary {
+		cp.Layers[CorruptLayer] = &recovery.LayerState{
+			LastCompleteIndex: -1,
+			SegmentHashes:     map[int]string{},
+			Status:            "fault_injection_reset",
+		}
+		if err := cp.Save(); err != nil {
+			return nil, err
+		}
 	}
 
 	rep := &report.Report{
@@ -112,6 +141,10 @@ func RunDemo(ctx context.Context, opts Options) (*report.Report, error) {
 		allSegments = append(allSegments, segs...)
 		if layerErr != nil {
 			_ = cp.MarkFailed(layer, asFault(layerErr))
+			// A failed layer must not leave a stale "reusable" index record that
+			// a later resume could trust without rebuilding the bad boundary.
+			delete(store.Assets, spec.ID)
+			_ = store.Save()
 			continue
 		}
 

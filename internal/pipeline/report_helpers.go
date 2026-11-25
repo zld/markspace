@@ -31,6 +31,16 @@ func decisionMap(plan index.Plan) map[string]index.Decision {
 	return out
 }
 
+func removeDecision(in []index.Decision, id string) []index.Decision {
+	out := in[:0]
+	for _, d := range in {
+		if d.ID != id {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
 func failureReport(err error) *report.FailureReport {
 	code := fault.ExitCode(err)
 	var fe *fault.Error
