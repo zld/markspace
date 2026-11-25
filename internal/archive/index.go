@@ -15,19 +15,19 @@ import (
 
 // ManifestRow is one archived fingerprint record.
 type ManifestRow struct {
-	StageKey       string  `json:"stage_key"`
-	Track          string  `json:"track"`
-	Order          uint64  `json:"order"`
-	FragmentSHA    string  `json:"fragment_sha256"`
-	FrameSHA       string  `json:"frame_sha256"`
-	SegmentSHA     string  `json:"segment_sha256"`
-	PixelMean      float64 `json:"pixel_mean,omitempty"`
-	PixelVariance  float64 `json:"pixel_variance,omitempty"`
-	PeakDBFS       float64 `json:"peak_dbfs,omitempty"`
-	AlignmentNs    int64   `json:"alignment_error_ns"`
-	DTSNs          int64   `json:"dts_ns"`
-	ContentDupe    bool    `json:"content_duplicate"`
-	TimelineDistinct bool  `json:"timeline_distinct"`
+	StageKey         string  `json:"stage_key"`
+	Track            string  `json:"track"`
+	Order            uint64  `json:"order"`
+	FragmentSHA      string  `json:"fragment_sha256"`
+	FrameSHA         string  `json:"frame_sha256"`
+	SegmentSHA       string  `json:"segment_sha256"`
+	PixelMean        float64 `json:"pixel_mean,omitempty"`
+	PixelVariance    float64 `json:"pixel_variance,omitempty"`
+	PeakDBFS         float64 `json:"peak_dbfs,omitempty"`
+	AlignmentNs      int64   `json:"alignment_error_ns"`
+	DTSNs            int64   `json:"dts_ns"`
+	ContentDupe      bool    `json:"content_duplicate"`
+	TimelineDistinct bool    `json:"timeline_distinct"`
 }
 
 // Chunk is one fully written manifest chunk file.
@@ -42,11 +42,11 @@ type Chunk struct {
 
 // Index is the chunked local manifest for one work directory.
 type Index struct {
-	mu       sync.Mutex
-	dir      string
-	seen     map[string]bool // stage keys already committed
-	rows     []ManifestRow
-	chunks   []Chunk
+	mu        sync.Mutex
+	dir       string
+	seen      map[string]bool // stage keys already committed
+	rows      []ManifestRow
+	chunks    []Chunk
 	chunkSize int
 }
 

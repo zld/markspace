@@ -13,11 +13,11 @@ import (
 // Correction is one applied boundary repair.
 type Correction struct {
 	Track        string `json:"track"`
-	Position     uint64 `json:"position"`       // packet/sample position on the track
-	ByteOffset   int64  `json:"byte_offset"`    // originating byte offset when known
-	RawDTS       int64  `json:"raw_dts"`        // uncorrected clock ticks
-	OffsetTicks  int64  `json:"offset_ticks"`   // signed correction applied
-	CorrectedDTS int64  `json:"corrected_dts"`  // ticks after correction
+	Position     uint64 `json:"position"`      // packet/sample position on the track
+	ByteOffset   int64  `json:"byte_offset"`   // originating byte offset when known
+	RawDTS       int64  `json:"raw_dts"`       // uncorrected clock ticks
+	OffsetTicks  int64  `json:"offset_ticks"`  // signed correction applied
+	CorrectedDTS int64  `json:"corrected_dts"` // ticks after correction
 	Timescale    uint32 `json:"timescale"`
 	Recovered    bool   `json:"recovered"`
 }

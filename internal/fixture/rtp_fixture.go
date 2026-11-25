@@ -9,12 +9,12 @@ import (
 
 // RTPSpec describes a deterministic RTP capture.
 type RTPSpec struct {
-	SSRC       uint32
-	ClockRate  uint32
-	PacketCount uint32
+	SSRC          uint32
+	ClockRate     uint32
+	PacketCount   uint32
 	TimestampStep uint32 // ticks between consecutive packets
-	PayloadSize int
-	Key         byte
+	PayloadSize   int
+	Key           byte
 	// Wrap emits the first packets near 2^32 so the timestamp counter wraps.
 	Wrap bool
 	// BoundaryJump resets the raw timestamp close to zero at packet index

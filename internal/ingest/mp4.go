@@ -208,4 +208,3 @@ func realEOF(r io.ReadSeeker) int64 {
 var containerBoxes = map[BoxType]bool{
 	boxMoov: true, boxTrak: true, boxMdia: true, boxMinf: true, boxStbl: true,
 }
-

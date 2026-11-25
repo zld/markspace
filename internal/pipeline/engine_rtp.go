@@ -15,15 +15,15 @@ import (
 // end-to-end; the boundary-jump fault additionally resets the clock.
 func rtpSpec() fixture.RTPSpec {
 	return fixture.RTPSpec{
-		SSRC:           0x5151,
-		ClockRate:      90000,
-		PacketCount:    10,
-		TimestampStep:  3000,
-		PayloadSize:    24,
-		Key:            21,
-		Wrap:           true,
-		BoundaryJump:   false,
-		JumpIndex:      0,
+		SSRC:          0x5151,
+		ClockRate:     90000,
+		PacketCount:   10,
+		TimestampStep: 3000,
+		PayloadSize:   24,
+		Key:           21,
+		Wrap:          true,
+		BoundaryJump:  false,
+		JumpIndex:     0,
 	}
 }
 

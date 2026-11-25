@@ -23,15 +23,15 @@ type SampleFingerprint struct {
 // and records whether two segments share content but sit at different
 // timeline positions (content duplicate vs timeline-distinct).
 type SegmentFingerprint struct {
-	Track         string             `json:"track"`
-	StartOrder    uint64             `json:"start_order"`
-	EndOrder      uint64             `json:"end_order"`
-	SegmentSHA    string             `json:"segment_sha256"`
-	Samples       []SampleFingerprint `json:"samples"`
-	ContentKey    string             `json:"content_key"`
-	TimelineKey   string             `json:"timeline_key"`
-	ContentDupe   bool               `json:"content_duplicate"`
-	TimelineDistinct bool            `json:"timeline_distinct"`
+	Track            string              `json:"track"`
+	StartOrder       uint64              `json:"start_order"`
+	EndOrder         uint64              `json:"end_order"`
+	SegmentSHA       string              `json:"segment_sha256"`
+	Samples          []SampleFingerprint `json:"samples"`
+	ContentKey       string              `json:"content_key"`
+	TimelineKey      string              `json:"timeline_key"`
+	ContentDupe      bool                `json:"content_duplicate"`
+	TimelineDistinct bool                `json:"timeline_distinct"`
 }
 
 // OfSample fingerprints one normalized sample. The alignment residual is

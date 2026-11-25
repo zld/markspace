@@ -10,12 +10,12 @@ import (
 // through a fixed transform into grayscale pixels, so identical bytes
 // always yield identical statistics.
 type FrameStats struct {
-	FrameHash    string  `json:"frame_hash"`
-	Width        int     `json:"width"`
-	Height       int     `json:"height"`
-	Mean         float64 `json:"pixel_mean"`
-	Variance     float64 `json:"pixel_variance"`
-	AlignmentNs  int64   `json:"alignment_error_ns"`
+	FrameHash   string  `json:"frame_hash"`
+	Width       int     `json:"width"`
+	Height      int     `json:"height"`
+	Mean        float64 `json:"pixel_mean"`
+	Variance    float64 `json:"pixel_variance"`
+	AlignmentNs int64   `json:"alignment_error_ns"`
 }
 
 // AudioStats is the deterministic summary of one audio sample.

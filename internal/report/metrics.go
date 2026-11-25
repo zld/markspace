@@ -15,32 +15,32 @@ import (
 
 // Metrics is the full JSON-serializable run report.
 type Metrics struct {
-	Status           string             `json:"status"`
-	Fault            string             `json:"fault"`
-	ManifestEntries  int                `json:"manifest_entries"`
-	ChunksCommitted  int                `json:"chunks_committed"`
-	Tracks           []TrackMetrics     `json:"tracks"`
-	Corrections      []repair.Correction `json:"corrections,omitempty"`
+	Status           string               `json:"status"`
+	Fault            string               `json:"fault"`
+	ManifestEntries  int                  `json:"manifest_entries"`
+	ChunksCommitted  int                  `json:"chunks_committed"`
+	Tracks           []TrackMetrics       `json:"tracks"`
+	Corrections      []repair.Correction  `json:"corrections,omitempty"`
 	FailedTracks     []repair.FailedTrack `json:"failed_tracks,omitempty"`
-	Errors           []ErrorView        `json:"errors,omitempty"`
-	MaxAlignmentNs   int64              `json:"max_alignment_error_ns"`
-	SegmentCount     int                `json:"segment_count"`
-	ContentDupes     int                `json:"content_duplicates"`
-	TimelineDistinct int                `json:"timeline_distinct"`
-	Recovered        bool               `json:"recovered_from_checkpoint,omitempty"`
+	Errors           []ErrorView          `json:"errors,omitempty"`
+	MaxAlignmentNs   int64                `json:"max_alignment_error_ns"`
+	SegmentCount     int                  `json:"segment_count"`
+	ContentDupes     int                  `json:"content_duplicates"`
+	TimelineDistinct int                  `json:"timeline_distinct"`
+	Recovered        bool                 `json:"recovered_from_checkpoint,omitempty"`
 }
 
 // TrackMetrics aggregates one track's per-sample fingerprints.
 type TrackMetrics struct {
-	Track         string       `json:"track"`
-	Kind          string       `json:"kind"`
-	SampleCount   int          `json:"sample_count"`
-	FrameHashes   []string     `json:"frame_sha256"`
-	SegmentHashes []string     `json:"segment_sha256"`
-	PixelMeanAvg  float64      `json:"pixel_mean_avg,omitempty"`
-	PixelVarAvg   float64      `json:"pixel_variance_avg,omitempty"`
-	PeakDBFS      float64      `json:"peak_dbfs,omitempty"`
-	MaxAlignNs    int64        `json:"max_alignment_error_ns"`
+	Track         string                `json:"track"`
+	Kind          string                `json:"kind"`
+	SampleCount   int                   `json:"sample_count"`
+	FrameHashes   []string              `json:"frame_sha256"`
+	SegmentHashes []string              `json:"segment_sha256"`
+	PixelMeanAvg  float64               `json:"pixel_mean_avg,omitempty"`
+	PixelVarAvg   float64               `json:"pixel_variance_avg,omitempty"`
+	PeakDBFS      float64               `json:"peak_dbfs,omitempty"`
+	MaxAlignNs    int64                 `json:"max_alignment_error_ns"`
 	Rows          []archive.ManifestRow `json:"-"`
 }
 

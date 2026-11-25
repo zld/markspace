@@ -14,9 +14,9 @@ const checkpointName = "checkpoint.json"
 // Checkpoint records the durable state needed to resume a chunked run:
 // every fully committed chunk and the stage it reached.
 type Checkpoint struct {
-	Stage        string  `json:"stage"`
-	Chunks       []Chunk `json:"chunks"`
-	CommittedRows int    `json:"committed_rows"`
+	Stage         string  `json:"stage"`
+	Chunks        []Chunk `json:"chunks"`
+	CommittedRows int     `json:"committed_rows"`
 }
 
 // checkpointPath returns the checkpoint location inside the archive dir.

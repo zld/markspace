@@ -139,15 +139,15 @@ func gcd(a, b int64) int64 {
 // Timestamp preserves both the raw clock ticks and the normalized rational
 // DTS/PTS, together with the track and source clock they came from.
 type Timestamp struct {
-	Track      TrackID
-	Clock      ClockRef
-	RawDTS     int64
-	RawPTS     int64
-	Timescale  uint32
-	DTS        Rational
-	PTS        Rational
-	WrapCount  uint32 // number of 32-bit RTP wraps unwrapped before this point
-	Order      uint64 // packet/sample position on the originating track
+	Track     TrackID
+	Clock     ClockRef
+	RawDTS    int64
+	RawPTS    int64
+	Timescale uint32
+	DTS       Rational
+	PTS       Rational
+	WrapCount uint32 // number of 32-bit RTP wraps unwrapped before this point
+	Order     uint64 // packet/sample position on the originating track
 }
 
 // Sample is the normalized unit flowing between stages: a time-stamped piece
@@ -170,13 +170,13 @@ const (
 
 // Error kinds emitted by the pipeline.
 const (
-	KindTruncatedBox      = "truncated-box"
-	KindIllegalBoxLength  = "illegal-box-length"
-	KindDuplicateTime     = "duplicate-timestamp"
-	KindMissingTrack      = "missing-track"
-	KindBoundaryJump      = "boundary-jump"
-	KindTruncatedCapture  = "truncated-capture"
-	KindUnrecoverable     = "unrecoverable-track"
+	KindTruncatedBox     = "truncated-box"
+	KindIllegalBoxLength = "illegal-box-length"
+	KindDuplicateTime    = "duplicate-timestamp"
+	KindMissingTrack     = "missing-track"
+	KindBoundaryJump     = "boundary-jump"
+	KindTruncatedCapture = "truncated-capture"
+	KindUnrecoverable    = "unrecoverable-track"
 )
 
 // StageError is the common error model. It records the failing stage, the

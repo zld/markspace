@@ -16,9 +16,9 @@ import (
 // framing lets the ingest layer report precise byte offsets when a packet
 // is truncated mid-capture.
 type RTPCapture struct {
-	Source       string
-	ClockRate    uint32
-	Kind         timeline.TrackKind
+	Source        string
+	ClockRate     uint32
+	Kind          timeline.TrackKind
 	JumpThreshold uint64 // raw-tick excursion treated as a source switch
 }
 
@@ -119,11 +119,11 @@ func IngestRTP(refs []RTPPacketRef, cap RTPCapture) ([]timeline.Sample, []*timel
 			continue // duplicate timestamp already recorded on the normalizer
 		}
 		samples = append(samples, timeline.Sample{
-			Track:  id,
-			Order:  ts.Order,
-			TS:     *ts,
+			Track:   id,
+			Order:   ts.Order,
+			TS:      *ts,
 			Payload: ref.Packet.Payload,
-			Marker: ref.Packet.Marker,
+			Marker:  ref.Packet.Marker,
 		})
 	}
 	return samples, append(jumpErrs, norm.Errors()...), nil
