@@ -2,6 +2,8 @@
 package selftest
 
 import (
+	"fmt"
+	"os"
 	"path/filepath"
 
 	"mediacore/internal/manifest"
@@ -22,7 +24,7 @@ type CaseReport struct {
 	Gaps              int                     `json:"gaps"`
 }
 
-// Report contains terminal-review fields required by the acceptance run.
+// Report contains all terminal-review fields required by the acceptance run.
 type Report struct {
 	OK      bool          `json:"ok"`
 	WorkDir string        `json:"work_dir"`
@@ -46,8 +48,71 @@ type Report struct {
 	RepeatManifestDigestMatch bool `json:"repeat_manifest_digest_match"`
 }
 
-// Run is replaced by the full orchestrator in a later batch.
+// Run generates fixtures, executes recovery/remux/verification, and aggregates.
 func Run(work string) (*Report, error) {
-	abs, _ := filepath.Abs(work)
-	return &Report{OK: true, WorkDir: abs}, nil
+	if work == "" {
+		work = "./tmp"
+	}
+	abs, err := filepath.Abs(work)
+	if err != nil {
+		return nil, err
+	}
+	for _, d := range []string{"inputs", "outputs", "manifests", "cache"} {
+		if err := os.MkdirAll(filepath.Join(abs, d), 0o755); err != nil {
+			return nil, err
+		}
+	}
+	r := &Report{OK: true, WorkDir: abs, VideoPSNR: "n/a"}
+
+	normal, err := runNormalCase(abs)
+	r.add(normal, err)
+
+	truncated, err := runTruncatedCase(abs)
+	r.add(truncated, err)
+
+	lossy, err := runRTPCase(abs)
+	r.add(lossy, err)
+
+	changed, err := runChangedCase(abs)
+	r.add(changed, err)
+
+	r.aggregate(normal, lossy, changed)
+	if !r.OK {
+		return r, fmt.Errorf("mediacore selftest failed: %d assertion/process error(s)", len(r.Errors))
+	}
+	return r, nil
+}
+
+func (r *Report) add(c *CaseReport, err error) {
+	if c == nil {
+		c = &CaseReport{Name: "unknown", OK: false}
+	}
+	if err != nil {
+		c.OK = false
+		r.OK = false
+		r.Errors = append(r.Errors, err.Error())
+	}
+	r.Cases = append(r.Cases, c)
+}
+
+func (r *Report) aggregate(normal, lossy, changed *CaseReport) {
+	if normal != nil {
+		r.TargetBitrate = normal.Metrics.TargetBitrate
+		r.ActualBitrate = normal.Metrics.ActualBitrate
+		r.BitrateDeltaPct = normal.Metrics.BitrateDeltaPct
+		r.VideoPSNR = normal.Metrics.VideoPSNR
+		r.AudioDiffSamples = normal.Metrics.AudioDiffSamples
+		r.ManifestAlignmentMS = normal.Metrics.ManifestAlignmentMS
+		r.NormalMissingPackets = normal.Recovery.MissingPackets
+		r.RepeatManifestDigestMatch = normal.Detail == "repeat-manifest-digest-match"
+	}
+	if lossy != nil {
+		r.DuplicatesRemoved = lossy.Recovery.DuplicatesRemoved
+		r.ReorderedPackets = lossy.Recovery.ReorderedPackets
+		r.MissingPackets = lossy.Recovery.MissingPackets
+		r.LossyMissingPackets = lossy.Recovery.MissingPackets
+	}
+	if changed != nil {
+		r.IndexRebuilt = changed.Recovery.IndexRebuilt
+	}
 }
