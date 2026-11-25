@@ -122,3 +122,32 @@ func (c *Converter) ApplyGain(measuredLUFS float64) error {
 	c.GainDB = gain
 	return nil
 }
+
+// MeasureLoudness integrates loudness over a track's source blocks at the
+// converter's target layout and rate, without producing output. It runs the
+// same mix and resample rules as ConvertBlock, so a later gain applied during
+// conversion matches the measurement exactly. Blocks must be in track order.
+func (c *Converter) MeasureLoudness(blocks [][]byte) (float64, error) {
+	cv := &Conversion{conv: c, resample: newResampler(c.SourceRate, c.TargetRate)}
+	var srcStart int64
+	for i, block := range blocks {
+		src, _, err := c.sourceFrames(block, i, srcStart)
+		if err != nil {
+			return 0, err
+		}
+		if len(src) == 0 {
+			continue
+		}
+		n := int64(len(src[0]))
+		for _, p := range cv.resample.blockPositions(srcStart, n) {
+			mixed := c.mixFrame(src, int(p.In-srcStart))
+			for _, v := range mixed {
+				f := float64(v) / 32768.0
+				cv.sumSquares += f * f
+			}
+			cv.framesSeen++
+		}
+		srcStart += n
+	}
+	return cv.InputLoudness(), nil
+}

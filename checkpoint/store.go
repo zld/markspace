@@ -45,6 +45,20 @@ type StageState struct {
 }
 
 // File is the on-disk checkpoint.
+// Commit is one durably committed block. The list lets a resumed run rebuild
+// the manifest for blocks it does not reprocess, without trusting anything
+// that is not both digested and recorded in the checkpoint.
+type Commit struct {
+	Block        int    `json:"block"`
+	TrackID      uint32 `json:"track_id"`
+	Timestamp    uint32 `json:"timestamp"`
+	StartTick    int64  `json:"start_tick"`
+	EndTick      int64  `json:"end_tick"`
+	Frames       int    `json:"frames"`
+	Bytes        int    `json:"bytes"`
+	OutputDigest string `json:"output_digest"`
+}
+
 type File struct {
 	Version     int                   `json:"version"`
 	RunID       string                `json:"run_id"`
@@ -53,7 +67,8 @@ type File struct {
 	TotalBlocks int                   `json:"total_blocks"`
 	Stages      map[Stage]*StageState `json:"stages"`
 	// Order preserves stage insertion order for stable output.
-	Order []Stage `json:"order"`
+	Order   []Stage  `json:"order"`
+	Commits []Commit `json:"commits"`
 }
 
 // Store persists one checkpoint file.
@@ -230,6 +245,42 @@ func (f *File) Summary() string {
 		out += fmt.Sprintf(" %s:%d", st.Stage, st.CommittedBlock)
 	}
 	return out
+}
+
+// AppendCommit records a committed block. Re-committing an existing block
+// replaces its record so a recompute cannot duplicate it.
+func (f *File) AppendCommit(c Commit) {
+	for i := range f.Commits {
+		if f.Commits[i].Block == c.Block {
+			f.Commits[i] = c
+			return
+		}
+	}
+	f.Commits = append(f.Commits, c)
+}
+
+// CommitsThrough returns committed blocks with index <= block, in block order.
+func (f *File) CommitsThrough(block int) []Commit {
+	var out []Commit
+	for _, c := range f.Commits {
+		if c.Block <= block {
+			out = append(out, c)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Block < out[j].Block })
+	return out
+}
+
+// RecomputedBlocks reports how many blocks a resume from startBlock must
+// process: everything at or after startBlock.
+func (f *File) RecomputedBlocks(startBlock int) int {
+	n := 0
+	for b := startBlock; b <= f.TotalBlocks; b++ {
+		if b >= 1 {
+			n++
+		}
+	}
+	return n
 }
 
 // LastCommitted returns the highest committed block across audio/stream.
