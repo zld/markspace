@@ -3,12 +3,12 @@ package main
 import (
 	"bytes"
 	"io"
-	"os"
 	"path/filepath"
 
 	go_mp4 "github.com/abema/go-mp4"
 
 	"continuity/internal/demo"
+	"continuity/internal/index"
 	"continuity/internal/media"
 	mp4box "continuity/internal/mp4"
 )
@@ -87,16 +87,13 @@ func demoDurationSamples() int {
 	return demo.PacketCount * demo.SamplesPerPacket
 }
 
-// corruptCheckpoint writes invalid JSON into the checkpoint file so the
-// next run must roll back to the last valid boundary.
+// corruptCheckpoint appends an unverifiable tail record while keeping the
+// valid prefix, so the next run rolls back precisely to the last valid
+// boundary instead of discarding the whole index.
 func corruptCheckpoint(workDir string) error {
 	idxDir := filepath.Join(workDir, "index")
-	if err := os.MkdirAll(idxDir, 0o755); err != nil {
-		return media.WrapError(media.CatIO, "checkpoint: mkdir", err)
-	}
-	p := filepath.Join(idxDir, "index.json")
-	if err := os.WriteFile(p, []byte("{corrupt-checkpoint"), 0o644); err != nil {
-		return media.WrapError(media.CatIO, "checkpoint: corrupt write", err)
+	if _, err := index.CorruptTailRecord(idxDir); err != nil {
+		return err
 	}
 	return nil
 }

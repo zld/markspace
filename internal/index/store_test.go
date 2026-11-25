@@ -115,6 +115,29 @@ func TestStoreTruncateInvalidatesDependents(t *testing.T) {
 	}
 }
 
+func TestCorruptTailRecordRollsBackOne(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := OpenStore(dir)
+	for i := 0; i < 6; i++ {
+		s.CommitBlock(rec(i, "h"))
+	}
+	kept, err := CorruptTailRecord(dir)
+	if err != nil || kept != 6 {
+		t.Fatalf("corrupt inject: kept=%d err=%v", kept, err)
+	}
+	s2, err := OpenStore(dir)
+	if err != nil {
+		t.Fatalf("reopen should recover: %v", err)
+	}
+	if s2.BlockCount() != 6 {
+		t.Fatalf("want 6 valid blocks after rollback, got %d", s2.BlockCount())
+	}
+	rb, ok := s2.Rollback()
+	if !ok || rb.Dropped != 1 {
+		t.Fatalf("rollback info wrong: %+v %v", rb, ok)
+	}
+}
+
 func TestStoreContainerSeparate(t *testing.T) {
 	dir := t.TempDir()
 	s, _ := OpenStore(dir)

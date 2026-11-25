@@ -218,6 +218,36 @@ func (s *Store) TruncateFrom(from int) (int, error) {
 // BlockCount returns the number of verified blocks currently stored.
 func (s *Store) BlockCount() int { return len(s.state.Blocks) }
 
+// CorruptTailRecord is a fault-injection helper for the acceptance demo.
+// It appends an unverifiable (incomplete) block record after the valid
+// prefix and persists it, so the next OpenStore rolls back to the last
+// valid boundary. It returns the number of valid blocks kept.
+func CorruptTailRecord(workDir string) (int, error) {
+	path := filepath.Join(workDir, "index.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return 0, media.WrapError(media.CatIO, "corrupt: read checkpoint", err)
+	}
+	var sf stateFile
+	if err := json.Unmarshal(raw, &sf); err != nil {
+		return 0, media.WrapError(media.CatCheckpoint, "corrupt: checkpoint already unreadable", err)
+	}
+	valid := len(sf.Blocks)
+	sf.Blocks = append(sf.Blocks, BlockRecord{Index: valid, Complete: false})
+	out, err := json.MarshalIndent(&sf, "", "  ")
+	if err != nil {
+		return 0, media.WrapError(media.CatIO, "corrupt: marshal", err)
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, out, 0o644); err != nil {
+		return 0, media.WrapError(media.CatIO, "corrupt: temp write", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return 0, media.WrapError(media.CatIO, "corrupt: rename", err)
+	}
+	return valid, nil
+}
+
 func maxInt(a, b int) int {
 	if a > b {
 		return a
