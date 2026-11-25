@@ -61,6 +61,10 @@ type Report struct {
 	MappingCount      int   `json:"mapping_count"`
 	MaxTimeErrorTicks int64 `json:"max_time_error_ticks"`
 	TotalByteError    int64 `json:"byte_error_total"`
+	LossCount         int   `json:"loss_count"`
+	DuplicateCount    int   `json:"duplicate_count"`
+	OutOfOrderCount   int   `json:"out_of_order_count"`
+	LateCount         int   `json:"late_count"`
 
 	GraphOrder         []uint32                         `json:"track_processing_order"`
 	TrackStates        []*track.Node                    `json:"track_states,omitempty"`
@@ -115,6 +119,12 @@ func Build(in Input) *Report {
 		}
 	}
 
+	if in.Trace != nil {
+		r.LossCount = in.Trace.Counts.Lost
+		r.DuplicateCount = in.Trace.Counts.Duplicate
+		r.OutOfOrderCount = in.Trace.Counts.OutOfOrder
+		r.LateCount = in.Trace.Counts.Late
+	}
 	primaryTrack, primarySample, primaryState := recover.Primary(in.RecoveryItems)
 	r.FailureTrack = primaryTrack
 	r.FailureSample = primarySample
