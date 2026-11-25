@@ -113,6 +113,9 @@ func runChangedCase(work string) (*CaseReport, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := scan.SaveCache(cache, idx); err != nil {
+		return nil, err
+	}
 	if _, err := remux.WriteMP4(idx, mappings, idx.Samples, remux.Options{OutputPath: output, AllowedRoot: work, Resume: true}); err != nil {
 		return nil, err
 	}

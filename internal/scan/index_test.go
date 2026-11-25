@@ -112,6 +112,21 @@ func TestIndexCacheDigestInvalidation(t *testing.T) {
 	if aAgain.SourceSHA256 == bIdx.SourceSHA256 {
 		t.Fatal("rebuilt index has stale digest")
 	}
+	mappings, err := maptrack.Map(aAgain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	aAgain.Mapping = mappings
+	if err := scan.SaveCache(cache, aAgain); err != nil {
+		t.Fatal(err)
+	}
+	persisted, err := scan.LoadCache(cache)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(persisted.Mapping) != len(aAgain.Tracks) {
+		t.Fatalf("cached mapping=%d tracks=%d", len(persisted.Mapping), len(aAgain.Tracks))
+	}
 }
 
 func TestRTPIndexUnknownSSRCAndTruncation(t *testing.T) {

@@ -26,6 +26,9 @@ func processMP4Case(name, work, input, output, manifestPath, cachePath string, p
 	if err != nil {
 		return nil, err
 	}
+	if err := scan.SaveCache(cachePath, idx); err != nil {
+		return nil, err
+	}
 	paceSamples(idx)
 
 	if _, err := remux.WriteMP4(idx, mappings, idx.Samples, remux.Options{

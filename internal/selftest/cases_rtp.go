@@ -34,6 +34,9 @@ func runRTPCase(work string) (*CaseReport, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := scan.SaveCache(cache, idx); err != nil {
+		return nil, err
+	}
 	rec, samples, err := pipeline.RecoverRTP(idx, params.ReorderWindow)
 	if err != nil {
 		return nil, err
