@@ -136,6 +136,7 @@ func Run(opts Options) (*Report, int) {
 	rep.SegmentCount = totalSegments
 	rep.ManifestSHA256 = combineDigests(manifests)
 	rep.Interrupted = interrupted
+	rep.Resumed = opts.Resume
 	rep.P95LatencyMS = percentile95(latenciesOf(rep.Files))
 	for _, fr := range rep.Files {
 		if fr.AVSyncErrorMS > rep.AVSyncErrorMS {
