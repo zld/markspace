@@ -80,11 +80,11 @@ func CostMS(p Problem, c Candidate) float64 {
 }
 
 // EstimatedBytes predicts the size of the generated artifact. It matches the
-// artifact layout in verify: a 48-byte header, a 16-byte record per segment,
-// 20 bytes per event record and the event text.
+// artifact layout in verify: a 64-byte header, a 16-byte record per segment,
+// a 20-byte fixed record per event and the event text.
 func EstimatedBytes(p Problem, c Candidate) int {
 	segs := SegmentCount(p.DurationNs, c.SegmentMS)
-	return 48 + segs*16 + p.Events*20 + p.TextBytes
+	return 64 + segs*16 + p.Events*20 + p.TextBytes
 }
 
 // DefaultCandidates is the fixed planning grid. Fixed rather than random so
