@@ -47,13 +47,20 @@ func MapEvent(ev Event, timeline clock.Timeline) (Cut, error) {
 		endAt = ev.StartNS
 	}
 	endFrame, endIndex, endQuant, ok := timeline.Boundary(endAt)
-	if !ok {
-		// An inclusive endpoint exactly at or after the last frame start can
-		// still use that last frame's end. Requesting beyond its end fails.
+	cutEndNS := int64(0)
+	if ok {
+		// The frame start is an exclusive end boundary, so no extra frame
+		// duration is added here.
+		cutEndNS = endFrame.DTSNS
+	} else {
+		// An endpoint inside the final frame extends to that frame's decoded
+		// end. Requesting beyond its end fails.
 		last := timeline.Frames[len(timeline.Frames)-1]
-		if endAt <= last.DTSNS+last.DurationNS {
+		lastEnd := last.DTSNS + last.DurationNS
+		if endAt <= lastEnd {
 			endFrame, endIndex = last, last.Index
-			endQuant = 0
+			cutEndNS = lastEnd
+			endQuant = lastEnd - endAt
 		} else {
 			return Cut{}, clock.NewError(clock.CodeEventOutOfRange,
 				fmt.Sprintf("event %q end %d is outside timeline", ev.ID, ev.EndNS), -1).
@@ -68,7 +75,7 @@ func MapEvent(ev Event, timeline clock.Timeline) (Cut, error) {
 	return Cut{
 		Event: ev, TrackID: timeline.TrackID,
 		StartFrame: startIndex, EndFrame: endIndex,
-		CutStartNS: startFrame.DTSNS, CutEndNS: endFrame.DTSNS + endFrame.DurationNS,
+		CutStartNS: startFrame.DTSNS, CutEndNS: cutEndNS,
 		StartQuantizationNS: startQuant, EndQuantizationNS: endQuant,
 		BoundaryErrorNS: errNS,
 	}, nil
