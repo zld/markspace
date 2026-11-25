@@ -1,7 +1,8 @@
 package main
 
 import (
-	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -46,7 +47,11 @@ func cutAll(cfg RunConfig, wavR *wav.Reader, mp4F *os.File, gaps []repair.Gap) (
 		if err != nil {
 			return nil, err
 		}
-		audioBytes, err := audioFragment(wavR, sl)
+		audioName := safeName(ev.Name) + ".wav"
+		videoName := safeName(ev.Name) + ".h264"
+		audioPath := filepath.Join(outClips, audioName)
+		videoPath := filepath.Join(outClips, videoName)
+		audioDigest, err := writeAudioFragment(wavR, cut, sl, audioPath)
 		if err != nil {
 			return nil, err
 		}
@@ -54,15 +59,11 @@ func cutAll(cfg RunConfig, wavR *wav.Reader, mp4F *os.File, gaps []repair.Gap) (
 		if err != nil {
 			return nil, err
 		}
-
-		audioName := safeName(ev.Name) + ".wav"
-		videoName := safeName(ev.Name) + ".h264"
-		audioPath := filepath.Join(outClips, audioName)
-		videoPath := filepath.Join(outClips, videoName)
-		if err := writeAtomic(audioPath, audioBytes); err != nil {
+		if err := writeAtomic(videoPath, videoBytes); err != nil {
 			return nil, err
 		}
-		if err := writeAtomic(videoPath, videoBytes); err != nil {
+		clipSum, err := canonicalDigest(audioDigest, len(audioName), videoBytes)
+		if err != nil {
 			return nil, err
 		}
 
@@ -84,7 +85,6 @@ func cutAll(cfg RunConfig, wavR *wav.Reader, mp4F *os.File, gaps []repair.Gap) (
 				"video interval overlaps transport damage"))
 		}
 
-		clipSum := metrics.HashBytes(canonical(audioBytes, videoBytes))
 		st := ClipStats{
 			TaskKey:     cfg.TaskKey + "/" + ev.Name,
 			Event:       ev.Name,
@@ -100,7 +100,7 @@ func cutAll(cfg RunConfig, wavR *wav.Reader, mp4F *os.File, gaps []repair.Gap) (
 			PixelMean:   metrics.FormatFloat(metrics.MeanBytes(videoBytes)),
 			AudioPeak:   metrics.FormatFloat(peak),
 			Damaged:     damaged,
-			Bytes:       int64(len(audioBytes) + len(videoBytes)),
+			Bytes:       sl.Audio.Bytes + int64(len(videoBytes)),
 			Path:        filepath.Join("clips", cfg.TaskKey, audioName),
 		}
 		stats = append(stats, st)
@@ -108,18 +108,44 @@ func cutAll(cfg RunConfig, wavR *wav.Reader, mp4F *os.File, gaps []repair.Gap) (
 	return stats, nil
 }
 
-// audioFragment renders the slice as a standalone WAV image.
-func audioFragment(wavR *wav.Reader, sl *clip.Slice) ([]byte, error) {
+// writeAudioFragment streams the slice's PCM into a standalone WAV file via
+// a temporary file and returns the SHA-256 of the written bytes. The
+// fragment is never held in memory, so long events stay cheap.
+func writeAudioFragment(wavR *wav.Reader, cut *clip.Cutter, sl *clip.Slice, path string) (string, error) {
 	lay := wavR.Layout
-	frames := sl.Audio.Frames
-	if frames == 0 {
-		return wav.BuildPCM(lay.Format.Channels, lay.Format.SampleRate, lay.Format.BitsPerSam, nil), nil
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
 	}
-	pcm, err := wavR.ReadFrames(sl.Audio.StartFrame, frames)
+	tmp, err := os.CreateTemp(dir, ".audio-*.tmp")
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	return wav.BuildPCM(lay.Format.Channels, lay.Format.SampleRate, lay.Format.BitsPerSam, pcm), nil
+	name := tmp.Name()
+	defer os.Remove(name)
+
+	h := sha256.New()
+	mw := io.MultiWriter(tmp, h)
+	if _, err := wav.WritePCMHeader(mw, lay.Format.Channels, lay.Format.SampleRate,
+		lay.Format.BitsPerSam, sl.Audio.Bytes); err != nil {
+		tmp.Close()
+		return "", err
+	}
+	if _, err := cut.CopyAudio(sl, mw); err != nil {
+		tmp.Close()
+		return "", err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return "", err
+	}
+	if err := tmp.Close(); err != nil {
+		return "", err
+	}
+	if err := os.Rename(name, path); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // splitSamples cuts a concatenated payload back into per-sample slices using
@@ -144,15 +170,15 @@ func splitSamples(video []byte, info *stream.Info, sl *clip.Slice) [][]byte {
 	return out
 }
 
-// canonical concatenates the two fragment payloads with explicit lengths so
-// the clip digest is unambiguous.
-func canonical(audio, video []byte) []byte {
-	var b bytes.Buffer
-	fmt.Fprintf(&b, "audio:%d\n", len(audio))
-	b.Write(audio)
-	fmt.Fprintf(&b, "\nvideo:%d\n", len(video))
-	b.Write(video)
-	return b.Bytes()
+// canonicalDigest hashes the two fragments with explicit framing so the
+// clip digest is unambiguous about channel boundaries.
+func canonicalDigest(audioHash string, audioNameLen int, video []byte) (string, error) {
+	h := sha256.New()
+	fmt.Fprintf(h, "audio-sha256:%s\naudio-name-len:%d\nvideo:%d\n", audioHash, audioNameLen, len(video))
+	if _, err := h.Write(video); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 func writeAtomic(path string, data []byte) error {
