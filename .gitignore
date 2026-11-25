@@ -1,0 +1,13 @@
+# Compiled binaries
+/mediad
+/cmd/mediad/mediad
+*.test
+*.out
+
+# Local demo output directories
+/output/
+/.mediad-demo-*/
+
+# OS/editor noise
+.DS_Store
+*.swp
