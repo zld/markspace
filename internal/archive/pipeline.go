@@ -353,7 +353,9 @@ func trackTimescale(trackID uint32) uint32 {
 func finishRun(res RunResult, cfg Config, outDir string) (manifest.Manifest, Report, *events.Error) {
 	tl := res.Timeline
 	committed := tl.Committed()
-	gaps := tl.Gaps(false)
+	// Only unresolved gaps are reported: a gap filled by a late packet no
+	// longer represents missing data.
+	gaps := tl.Gaps(true)
 
 	endNS := fixture.CorpusSpanNS
 	if maxAt := tl.MaxEventAt(); maxAt > endNS {
