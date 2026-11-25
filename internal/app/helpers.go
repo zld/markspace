@@ -2,7 +2,6 @@ package app
 
 import (
 	"os"
-	"path/filepath"
 	"sort"
 
 	"mediapipeline/internal/checkpoint"
@@ -13,8 +12,6 @@ import (
 
 // alignment is stored between stages on the Pipeline.
 // (declared here to keep the stage files focused.)
-
-func fixtureRTPName() string { return fixture.RTPFileName }
 
 // listFragmentFiles returns fragment base names in deterministic numeric
 // (input-index) order for one representation directory.
@@ -123,13 +120,4 @@ func Verify(manifestPath string) (*VerifyResult, error) {
 	}
 	res.Valid = true
 	return res, nil
-}
-
-// absOutputDir exposes the output location for the adapter.
-func (p *Pipeline) absOutputDir() string {
-	if filepath.IsAbs(p.cfg.OutputDir) {
-		return p.cfg.OutputDir
-	}
-	abs, _ := filepath.Abs(p.cfg.OutputDir)
-	return abs
 }

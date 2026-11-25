@@ -7,6 +7,7 @@ import (
 	"mediapipeline/internal/align"
 	"mediapipeline/internal/checkpoint"
 	"mediapipeline/internal/fault"
+	"mediapipeline/internal/fixture"
 	"mediapipeline/internal/manifest"
 	"mediapipeline/internal/provenance"
 	"mediapipeline/internal/scan"
@@ -20,19 +21,18 @@ func (p *Pipeline) stageScan(ctx context.Context, summary *Summary) error {
 	cp := p.resumeCheckpoint()
 
 	// Init segments are small and read first to establish each clock.
-	for i, st := range p.states {
+	for _, st := range p.states {
 		init, err := scan.ReadInitSegment(st.desc.Directory + "/init.mp4")
 		if err != nil {
 			return p.classify(err, summary)
 		}
 		st.init = init
 		st.tracker = scan.NewSequenceTrackerWithDuration(st.desc.ID, st.desc.TickDuration)
-		boundary, err := scan.ReadRTPStream(st.desc.Directory + "/" + fixtureRTPName())
+		boundary, err := scan.ReadRTPStream(st.desc.Directory + "/" + fixture.RTPFileName)
 		if err != nil {
 			return p.classify(err, summary)
 		}
 		st.boundary = boundary
-		_ = i
 	}
 
 	// Build the global work list in deterministic input-index order.
@@ -83,7 +83,6 @@ func (p *Pipeline) stageScan(ctx context.Context, summary *Summary) error {
 	if err != nil {
 		return p.classify(err, summary)
 	}
-	p.peak = stats.QueuePeak
 	summary.QueuePeak = stats.QueuePeak
 
 	// Feed fragments to the per-representation sequence trackers in order.
@@ -171,7 +170,7 @@ func (p *Pipeline) stageManifest(ctx context.Context, summary *Summary) error {
 		return p.classify(err, summary)
 	}
 	path := p.cfg.OutputDir + "/" + ManifestPath
-	digest, replaced, err := m.WriteAtomic(path)
+	digest, _, err := m.WriteAtomic(path)
 	if err != nil {
 		return p.classify(err, summary)
 	}
@@ -183,7 +182,6 @@ func (p *Pipeline) stageManifest(ctx context.Context, summary *Summary) error {
 	next := p.buildCheckpoint(cp, checkpoint.StageManifest)
 	next.ManifestVersion = m.ManifestVersion
 	next.ManifestSHA256 = digest
-	_ = replaced
 	if existing := p.existingCheckpoint(); existing != nil && existing.Reached(checkpoint.StageManifest) {
 		summary.CheckpointVersion = existing.Version
 		summary.CheckpointStage = string(existing.Stage)
@@ -207,14 +205,13 @@ func (p *Pipeline) stageComplete(ctx context.Context, summary *Summary) error {
 			StartNanos:   b.StartNanos,
 			EndNanos:     b.EndNanos,
 		}
-		for repID, mem := range b.Members {
+		for _, mem := range b.Members {
 			entry.Inputs = append(entry.Inputs, provenance.InputRef{
 				InputPath: mem.InputPath,
 				SHA256:    mem.SHA256,
 				MFHD:      mem.MFHD,
 				TFDT:      mem.TFDT,
 			})
-			_ = repID
 		}
 		trace.Add(entry)
 	}

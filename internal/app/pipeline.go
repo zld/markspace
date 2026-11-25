@@ -78,7 +78,6 @@ type Pipeline struct {
 	descs     []fixture.RepresentationDescriptor
 	states    []*repState
 	alignment *align.Report
-	peak      int
 }
 
 // New validates config and prepares output paths.
