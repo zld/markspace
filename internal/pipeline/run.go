@@ -62,7 +62,9 @@ func Run(inputPath, outDir string, plan rtptrace.Plan) (*Report, error) {
 	tracks, parseFaults := probe.ParseTracks(data, nodes)
 	state.Complete(StageTracks)
 
-	if f := firstFault(append(scanFaults, parseFaults...)); f != nil && f.Category == clock.CategoryBounds {
+	// Structural length faults (out-of-bounds / truncated box) stop parsing at
+	// the box level before sample recovery is attempted.
+	if f := firstStructuralFault(scanFaults, parseFaults); f != nil {
 		state.Fail(StageTracks, f.Offset, f.Category, f.Detail)
 		return rep.finish(state, digest, outDir)
 	}
@@ -79,6 +81,7 @@ func Run(inputPath, outDir string, plan rtptrace.Plan) (*Report, error) {
 		}
 		state.Fail(StageRecover, failureOffset(err), cat, err.Error())
 		rep.StageFailure = state.Failure
+		rep.Transitions = state.Transitions()
 		_ = Save(outDir, state.snapshot(digest, recoveredSafe(recovered)))
 		return rep, err
 	}
@@ -90,10 +93,14 @@ func Run(inputPath, outDir string, plan rtptrace.Plan) (*Report, error) {
 	if err := state.Advance(StageTrace); err != nil {
 		return nil, err
 	}
-	for id := range recovered.Tracks {
+	for _, id := range sortedIDSet(recovered.Tracks) {
 		pkts := rtptrace.FromTimeline(recovered.Tracks[id],
 			rtptrace.TimelineOptions{SSRC: 1000 + id, StartSequence: 0})
-		trace := rtptrace.Apply(pkts, plan)
+		// A per-track derived seed keeps every representation deterministic
+		// while avoiding two tracks drawing identical PRNG decisions.
+		trackPlan := plan
+		trackPlan.Seed = plan.Seed ^ (uint64(id) * 0x9e3779b97f4a7c15)
+		trace := rtptrace.Apply(pkts, trackPlan)
 		rep.RTPStats.Lost += trace.Stats.Lost
 		rep.RTPStats.Duplicated += trace.Stats.Duplicated
 		rep.RTPStats.Reordered += trace.Stats.Reordered
@@ -109,6 +116,7 @@ func Run(inputPath, outDir string, plan rtptrace.Plan) (*Report, error) {
 	if err != nil {
 		state.Fail(StageSegment, failureOffset(err), clock.CategoryBounds, err.Error())
 		rep.StageFailure = state.Failure
+		rep.Transitions = state.Transitions()
 		_ = Save(outDir, state.snapshot(digest, recovered.LastSafeOffset))
 		return rep, err
 	}
@@ -131,6 +139,8 @@ func Run(inputPath, outDir string, plan rtptrace.Plan) (*Report, error) {
 	rep.Verification = segment.Verify(manifest, data, sortedIDs(trackIDs))
 	if !rep.Verification.OK() {
 		state.Fail(StageVerify, 0, clock.CategoryBounds, "manifest verification failed")
+		rep.StageFailure = state.Failure
+		rep.Transitions = state.Transitions()
 		_ = Save(outDir, state.snapshot(digest, recovered.LastSafeOffset))
 		return rep, &clock.ErrUnrecoverable{Reason: "manifest verification failed", Offset: 0}
 	}
@@ -157,9 +167,16 @@ func (r *Report) finish(state *State, digest, outDir string) (*Report, error) {
 	}
 }
 
-func firstFault(faults []*clock.OffsetError) *clock.OffsetError {
-	for _, f := range faults {
-		return f
+// firstStructuralFault returns the first fault that must halt the pipeline
+// before recovery: truncated boxes or out-of-bounds declared lengths. Missing
+// indexes are deliberately recoverable and do not stop the run.
+func firstStructuralFault(groups ...[]*clock.OffsetError) *clock.OffsetError {
+	for _, faults := range groups {
+		for _, f := range faults {
+			if f.Category == clock.CategoryBounds || f.Category == clock.CategoryTruncated {
+				return f
+			}
+		}
 	}
 	return nil
 }
@@ -206,6 +223,16 @@ func sortedIDs(ids []uint32) []uint32 {
 		}
 	}
 	return ids
+}
+
+// sortedIDSet returns recovered track IDs in ascending order so per-track
+// impairment decisions happen in a stable sequence across reruns.
+func sortedIDSet(tracks map[uint32][]probe.RecoveredSample) []uint32 {
+	ids := make([]uint32, 0, len(tracks))
+	for id := range tracks {
+		ids = append(ids, id)
+	}
+	return sortedIDs(ids)
 }
 
 func writeManifest(outDir string, m *segment.Manifest) error {
