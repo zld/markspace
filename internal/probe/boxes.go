@@ -4,7 +4,6 @@
 package probe
 
 import (
-	"encoding/binary"
 	"io"
 
 	"tracecheck/internal/clock"
@@ -62,34 +61,21 @@ func scanRegion(data []byte, start, limit int64, depth int) ([]*Node, []*clock.O
 				clock.CategoryTruncated, "fewer than 8 header bytes remain", nil))
 			break
 		}
-		size32 := int64(binary.BigEndian.Uint32(data[pos : pos+4]))
-		typ := string(data[pos+4 : pos+8])
-		hdr := int64(8)
-		size := size32
-
-		switch size32 {
-		case 0: // box extends to end of enclosing region
-			size = limit - pos
-		case 1: // 64-bit largesize follows the type
-			if limit-pos < 16 {
-				faults = append(faults, clock.NewOffsetError(clock.Offset(pos),
-					clock.CategoryTruncated, "64-bit box header truncated", nil))
-				return nodes, faults
-			}
-			hdr = 16
-			large := int64(binary.BigEndian.Uint64(data[pos+8 : pos+16]))
-			if large < 16 || large > limit-pos {
-				faults = append(faults, clock.NewOffsetError(clock.Offset(pos),
-					clock.CategoryBounds, "largesize extends past container end", nil))
-				return nodes, faults
-			}
-			size = large
-		default:
-			if size32 < 8 {
-				faults = append(faults, clock.NewOffsetError(clock.Offset(pos),
-					clock.CategoryBounds, "declared box size below 8-byte header", nil))
-				return nodes, faults
-			}
+		// go-mp4 is the spec-correct header parser (handles size==0 and the
+		// 64-bit largesize form); the bounds decision against this file stays
+		// local so every fault keeps its original offset.
+		h, hErr := readBoxHeader(data, pos, limit)
+		if hErr != nil {
+			faults = append(faults, hErr)
+			return nodes, faults
+		}
+		typ := h.boxType
+		hdr := h.headerSize
+		size := h.size
+		if size < hdr {
+			faults = append(faults, clock.NewOffsetError(clock.Offset(pos),
+				clock.CategoryBounds, "declared box size below its header", nil))
+			return nodes, faults
 		}
 
 		if size > limit-pos {
