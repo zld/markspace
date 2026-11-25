@@ -109,7 +109,8 @@ func parseBlock(lines []sourceLine, sample int, format Format, order int) (*Cue,
 		}
 	}
 	if timingIdx < 0 {
-		if format == FormatVTT && strings.HasPrefix(strings.TrimSpace(lines[0].text), "NOTE") {
+		first := strings.TrimSpace(lines[0].text)
+		if format == FormatVTT && (strings.HasPrefix(first, "WEBVTT") || strings.HasPrefix(first, "NOTE")) {
 			return nil, nil
 		}
 		last := lines[len(lines)-1]
