@@ -16,6 +16,7 @@ const (
 	NotFound          Code = "not_found"
 	DigestMismatch    Code = "digest_mismatch"
 	UnsupportedFormat Code = "unsupported_format"
+	UnsupportedTrack  Code = "unsupported_track"
 	UnsupportedCodec  Code = "unsupported_codec"
 	CorruptHeader     Code = "corrupt_header"
 	TruncatedData     Code = "truncated_data"
