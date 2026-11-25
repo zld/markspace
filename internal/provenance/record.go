@@ -80,6 +80,9 @@ func VerifyArtifacts(outDir string, m *model.OutputManifest) error {
 				fmt.Sprintf("artifact digest/size mismatch for %s", expected.Path)).WithPath(full)
 		}
 	}
+	if len(m.Artifacts) == 0 && m.ArtifactSetSHA256 == "" {
+		return nil
+	}
 	if got := ArtifactSetHash(m.Artifacts); !strings.EqualFold(got, m.ArtifactSetSHA256) {
 		return apperrors.E(apperrors.KindProvenance, "artifact set hash mismatch")
 	}

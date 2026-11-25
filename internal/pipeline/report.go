@@ -7,15 +7,16 @@ import (
 	apperrors "archivecheck/internal/errors"
 	"archivecheck/internal/model"
 	"archivecheck/internal/provenance"
-	"archivecheck/internal/recovery"
 	"archivecheck/internal/store"
 )
 
 func (p *processor) completed() (*Result, error) {
 	m := p.j.Result
 	if m == nil {
-		return nil, apperrors.E(apperrors.KindJournal, "completed journal is missing result manifest").
-			WithPath(p.journalPath)
+		// Recovery path for a journal that reached completed before its
+		// canonical result was persisted. Snapshots and artifact hashes let
+		// process() rebuild and atomically repair the record.
+		return p.process()
 	}
 	if err := provenance.VerifyArtifacts(p.cfg.OutputDir, m); err != nil {
 		return nil, err
@@ -43,7 +44,7 @@ func (p *processor) writeResult(m *model.OutputManifest) (*Result, error) {
 		ManifestSHA256: manifestSHA,
 		ManifestPath:   p.rootPath,
 		JournalPath:    p.journalPath,
-		Resume:         recovery.FromJournal(p.j),
+		Resume:         p.resume,
 	}
 	if old, err := os.ReadFile(p.rootPath); err == nil {
 		res.PreviousManifestSHA256 = model.SHA256Bytes(old)
@@ -75,17 +76,18 @@ func byteDiffCount(a, b []byte) int {
 	if len(b) < n {
 		n = len(b)
 	}
-	diff := 0
+	diff := absInt(len(a) - len(b))
 	for i := 0; i < n; i++ {
 		if a[i] != b[i] {
 			diff++
 		}
 	}
-	if len(a) != len(b) {
-		diff += len(a) - n
-		if diff < 0 {
-			diff = -diff
-		}
-	}
 	return diff
+}
+
+func absInt(v int) int {
+	if v < 0 {
+		return -v
+	}
+	return v
 }

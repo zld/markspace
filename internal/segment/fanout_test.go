@@ -57,4 +57,7 @@ func TestFanoutPacketsAndBoundaryFanIn(t *testing.T) {
 	if _, err := segment.CheckLayerBoundaries(skewed); err == nil {
 		t.Fatal("expected skewed layer boundary to fail")
 	}
+	if max, err := segment.CheckLayerBoundaries(reports); err != nil || max != 0 {
+		t.Fatalf("original reports mutated by skew helper: max=%d err=%v", max, err)
+	}
 }

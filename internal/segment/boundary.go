@@ -40,7 +40,12 @@ func CheckLayerBoundaries(layers []model.LayerReport) (clock.Tick, error) {
 // IntroduceSkew is a deterministic test helper that moves one boundary of one
 // layer by more than one tick.
 func IntroduceSkew(layers []model.LayerReport, bitrate int64, fragment int, delta int64) []model.LayerReport {
-	out := append([]model.LayerReport(nil), layers...)
+	out := make([]model.LayerReport, len(layers))
+	for i := range layers {
+		out[i] = layers[i]
+		out[i].Boundaries = append([]model.Boundary(nil), layers[i].Boundaries...)
+		out[i].Recovery = append([]model.RecoveryPosition(nil), layers[i].Recovery...)
+	}
 	for i := range out {
 		if out[i].Bitrate == bitrate && fragment < len(out[i].Boundaries) {
 			out[i].Boundaries[fragment].StartTick += delta

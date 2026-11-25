@@ -163,11 +163,30 @@ func (p *processor) process() (*Result, error) {
 			return nil, p.fail(err)
 		}
 	}
-	if err := p.advance(plan.StageCompleted, "manifest and provenance committed"); err != nil {
+	if err := p.commitCompleted(&m); err != nil {
 		if errors.Is(err, errInterrupt) {
 			return nil, err
 		}
 		return nil, p.fail(err)
+	}
+	return p.writeResult(&m)
+}
+
+// commitCompleted appends the terminal transition and persists the transition
+// plus canonical result manifest in one atomic journal update. This avoids a
+// window where a completed journal has no result and cannot resume.
+func (p *processor) commitCompleted(m *model.OutputManifest) error {
+	if p.j.Stage != plan.StageCompleted {
+		if err := plan.Transition(p.j.Stage, plan.StageCompleted); err != nil {
+			return err
+		}
+		p.j.Transitions = append(p.j.Transitions, model.StageTransition{
+			Sequence: len(p.j.Transitions) + 1,
+			From:     string(p.j.Stage),
+			To:       string(plan.StageCompleted),
+			Reason:   "manifest and provenance committed",
+		})
+		p.j.Stage = plan.StageCompleted
 	}
 	m.Status = string(plan.StageCompleted)
 	m.StageTransitions = append([]model.StageTransition(nil), p.j.Transitions...)
@@ -176,11 +195,16 @@ func (p *processor) process() (*Result, error) {
 		m.Assets[i].Status = string(plan.StageCompleted)
 		m.Assets[i].Provenance.Transitions = m.StageTransitions
 	}
-	p.j.Result = &m
+	p.j.Result = m
 	if err := p.j.SaveAtomic(p.journalPath); err != nil {
-		return nil, p.fail(err)
+		return err
 	}
-	return p.writeResult(&m)
+	if p.cfg.ResumeAfter > 0 && len(p.j.Transitions) >= p.cfg.ResumeAfter {
+		return apperrors.Wrap(apperrors.KindInterrupted, errInterrupt).
+			WithStage(string(p.j.Stage)).
+			WithPath(p.journalPath)
+	}
+	return nil
 }
 
 func timelineSummary(s mp4.ScanResult) model.TimelineSummary {

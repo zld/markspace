@@ -10,6 +10,7 @@ import (
 	"archivecheck/internal/fixture"
 	"archivecheck/internal/model"
 	"archivecheck/internal/pipeline"
+	"archivecheck/internal/plan"
 )
 
 func TestCheckpointResumeAndRepeatHasZeroDiff(t *testing.T) {
@@ -37,6 +38,9 @@ func TestCheckpointResumeAndRepeatHasZeroDiff(t *testing.T) {
 	}
 	if r2.Manifest.TransitionCount != 5 {
 		t.Fatalf("transitions=%d want5", r2.Manifest.TransitionCount)
+	}
+	if r2.Resume.StartStage != plan.StageScanned {
+		t.Fatalf("resume start=%s want scanned", r2.Resume.StartStage)
 	}
 	if r2.Manifest.MaxBoundaryDiffTicks > 1 {
 		t.Fatalf("boundary diff=%d >1", r2.Manifest.MaxBoundaryDiffTicks)
@@ -103,5 +107,47 @@ func TestChangedInputCreatesNewRecord(t *testing.T) {
 	}
 	if _, err := os.Stat(old.JournalPath); err != nil {
 		t.Fatalf("old journal should remain: %v", err)
+	}
+}
+
+func TestResumeAfterEveryTransitionIsRecoverable(t *testing.T) {
+	root := t.TempDir()
+	fx, err := fixture.Generate(filepath.Join(root, "fixtures"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for n := 1; n <= 5; n++ {
+		t.Run(string(rune('0'+n)), func(t *testing.T) {
+			out := filepath.Join(root, "out-"+string(rune('0'+n)))
+			bitrates := []int64{400_000, 900_000}
+			_, err := pipeline.Run(pipeline.Config{
+				InputPath: fx.ValidInput, OutputDir: out, Bitrates: bitrates,
+				ResumeAfter: n, Log: &bytes.Buffer{},
+			})
+			if k := apperrors.KindOf(err); k != apperrors.KindInterrupted {
+				t.Fatalf("checkpoint %d kind=%q: %v", n, k, err)
+			}
+			r, err := pipeline.Run(pipeline.Config{
+				InputPath: fx.ValidInput, OutputDir: out, Bitrates: bitrates,
+				Log: &bytes.Buffer{},
+			})
+			if err != nil {
+				t.Fatalf("resume checkpoint %d: %v", n, err)
+			}
+			if r.Manifest.Status != string(plan.StageCompleted) || r.Manifest.TransitionCount != 5 {
+				t.Fatalf("checkpoint %d result status=%s transitions=%d", n, r.Manifest.Status, r.Manifest.TransitionCount)
+			}
+			repeat, err := pipeline.Run(pipeline.Config{
+				InputPath: fx.ValidInput, OutputDir: out, Bitrates: bitrates,
+				Log: &bytes.Buffer{},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if repeat.RepeatManifestByteDiff != 0 || repeat.RepeatArtifactDigestDiff != 0 {
+				t.Fatalf("checkpoint %d repeat diffs manifest=%d artifacts=%d",
+					n, repeat.RepeatManifestByteDiff, repeat.RepeatArtifactDigestDiff)
+			}
+		})
 	}
 }

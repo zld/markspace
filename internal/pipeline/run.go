@@ -77,14 +77,20 @@ func execute(cfg Config) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	if len(input.Assets) == 0 {
+		return nil, apperrors.E(apperrors.KindManifest, "input manifest contains no assets").
+			WithStage("load_input").WithPath(cfg.InputPath)
+	}
 	bitrates := append([]int64(nil), cfg.Bitrates...)
 	if len(bitrates) == 0 {
 		bitrates = append([]int64(nil), input.Bitrates...)
 	}
 	if len(bitrates) == 0 {
-		return nil, apperrors.E(apperrors.KindInvalidArgument, "no target bitrates supplied")
+		return nil, apperrors.E(apperrors.KindManifest, "no target bitrates supplied").
+			WithStage("load_input").WithPath(cfg.InputPath)
 	}
 	slices.Sort(bitrates)
+	bitrates = slices.Compact(bitrates)
 	params := model.Parameters{Bitrates: bitrates}
 	paramBytes, err := model.CanonicalJSON(params)
 	if err != nil {
