@@ -1,0 +1,5 @@
+# Local demo output and build artifacts
+/output/
+/mediapack-output/
+*.test
+coverage.out
