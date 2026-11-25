@@ -321,3 +321,51 @@ func TestDuplicateEventNamesRejected(t *testing.T) {
 		t.Fatal("duplicate event names should be rejected")
 	}
 }
+
+// A resume that begins at cut must produce the same manifest as a full run:
+// the cut stage re-derives geometry from the same media, and the manifest
+// must not depend on which earlier stages ran in this process.
+func TestResumeAtCutMatchesFullRun(t *testing.T) {
+	dir := t.TempDir()
+	fs, err := buildFixtures(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := RunConfig{
+		TaskKey: "test/resume-cut", WAVPath: fs.NormalWAV, MP4Path: fs.NormalMP4,
+		Events: eventSet(), RTPTrace: fs.DupTrace, OutDir: filepath.Join(dir, "out", "r"),
+		StateDir: filepath.Join(dir, "state"), CkptDir: filepath.Join(dir, "ckpt"),
+		ClockRate: videoRate,
+	}
+	partial := base
+	partial.StopAfter = "repair"
+	if _, err := Run(partial); err != nil {
+		t.Fatal(err)
+	}
+	resumed, err := Run(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	full := base
+	full.OutDir = filepath.Join(dir, "out", "full")
+	full.StateDir = filepath.Join(dir, "state-full")
+	full.CkptDir = filepath.Join(dir, "ckpt-full")
+	resFull, err := Run(full)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := os.ReadFile(resumed.ManifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(resFull.ManifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(a, b) {
+		t.Fatalf("resumed manifest differs from full run\n%s\n%s", a, b)
+	}
+	if resumed.StartStage != "cut" {
+		t.Fatalf("resume stage = %q, want cut", resumed.StartStage)
+	}
+}
