@@ -12,6 +12,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strconv"
 )
 
 func main() {
@@ -37,8 +38,7 @@ func run(args []string) int {
 }
 
 func runDemoCmd(args []string) int {
-	var out, scenario string
-	scenario = "all"
+	opts := defaultDemoOptions()
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--out":
@@ -47,30 +47,51 @@ func runDemoCmd(args []string) int {
 				fmt.Fprintln(os.Stderr, "--out requires a directory argument")
 				return 1
 			}
-			out = args[i]
+			opts.out = args[i]
 		case "--scenario":
 			i++
 			if i >= len(args) {
 				fmt.Fprintln(os.Stderr, "--scenario requires an argument")
 				return 1
 			}
-			scenario = args[i]
+			opts.scenario = args[i]
+		case "--max-file-bytes":
+			i++
+			v, ok := parseIntFlag(args, i, &opts.maxFileBytes)
+			if !ok {
+				return 1
+			}
+			_ = v
+		case "--max-box-bytes":
+			i++
+			if _, ok := parseIntFlag(args, i, &opts.maxBoxBytes); !ok {
+				return 1
+			}
+		case "--max-samples":
+			i++
+			if _, ok := parseIntFlag(args, i, &opts.maxSamples); !ok {
+				return 1
+			}
 		default:
 			fmt.Fprintf(os.Stderr, "unknown flag %q\n", args[i])
 			return 1
 		}
 	}
-	if out == "" {
+	if opts.out == "" {
 		fmt.Fprintln(os.Stderr, "missing required --out directory")
 		return 1
 	}
-	switch scenario {
+	switch opts.scenario {
 	case "all", "normal", "boundary", "corrupt":
 	default:
-		fmt.Fprintf(os.Stderr, "invalid --scenario %q\n", scenario)
+		fmt.Fprintf(os.Stderr, "invalid --scenario %q\n", opts.scenario)
 		return 1
 	}
-	rep, code := runDemo(out, scenario)
+	if opts.maxFileBytes <= 0 || opts.maxBoxBytes <= 0 || opts.maxSamples <= 0 {
+		fmt.Fprintln(os.Stderr, "limit flags must be positive integers")
+		return 1
+	}
+	rep, code := runDemo(opts)
 	if err := printJSON(rep); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to write report: %v\n", err)
 		return 1
@@ -78,6 +99,21 @@ func runDemoCmd(args []string) int {
 	return code
 }
 
+func parseIntFlag(args []string, idx int, dst *int64) (int64, bool) {
+	if idx >= len(args) {
+		fmt.Fprintf(os.Stderr, "flag requires a numeric argument\n")
+		return 0, false
+	}
+	v, err := strconv.ParseInt(args[idx], 10, 64)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "invalid numeric argument %q: %v\n", args[idx], err)
+		return 0, false
+	}
+	*dst = v
+	return v, true
+}
+
 func usage() {
 	fmt.Fprintln(os.Stderr, "usage: mediad demo --out <dir> [--scenario all|normal|boundary|corrupt]")
+	fmt.Fprintln(os.Stderr, "       [--max-file-bytes N] [--max-box-bytes N] [--max-samples N]")
 }
