@@ -79,6 +79,9 @@ func Locate(scanRes *stream.Result, _ *timeline.Report) *Report {
 	}
 
 	merged := mergeCandidates(candidates)
+	if merged == nil {
+		merged = []Segment{}
+	}
 	for i := range merged {
 		merged[i].ID = damageID(i, merged[i])
 	}

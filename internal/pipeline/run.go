@@ -166,6 +166,7 @@ func Run(cfg Config) (*Outcome, error) {
 	allIssues = append(allIssues, st.Timeline.Issues...)
 	allIssues = append(allIssues, exportIssues...)
 
+	appendStage(&st.Stages, "manifest")
 	m := buildManifest(st, allIssues)
 	if existing, ok, err := manifest.Load(filepath.Join(cfg.WorkDir, "manifest.json")); err != nil {
 		out.ExitCode = ExitState
@@ -179,7 +180,6 @@ func Run(cfg Config) (*Outcome, error) {
 		return out, err
 	}
 	st.Manifest = m
-	appendStage(&st.Stages, "manifest")
 	if err := persist(store, st, "manifest", statusFor(st.Diagnostic, exportIssues)); err != nil {
 		out.ExitCode = ExitState
 		return out, err
