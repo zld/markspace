@@ -186,6 +186,7 @@ func validateVideo(tracks []Track, profile Profile) []Issue {
 				}
 				colourByRule[rule] = append(colourByRule[rule], tr.Number)
 				if want, ok := profile.VideoColour[tr.Number]; ok {
+					want.Range = rule.Range
 					if want != rule {
 						issues = append(issues, Issue{
 							Category: timeline.CatTrackConflict,

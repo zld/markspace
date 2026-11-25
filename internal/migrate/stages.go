@@ -323,7 +323,7 @@ func buildNormalized(m *manifest.Manifest) (*NormalizedManifest, error) {
 		for num, layout := range m.Layouts {
 			key := fmt.Sprintf("%d", num)
 			entry := n.Audio[key]
-			entry.Layout = layout
+			entry.Layout = string(layout)
 			n.Audio[key] = entry
 		}
 	}

@@ -215,18 +215,20 @@ type Profile struct {
 
 // RateRange is an inclusive sampling-rate window in Hz.
 type RateRange struct {
-	Min float64
-	Max float64
+	Min float64 `json:"min_hz"`
+	Max float64 `json:"max_hz"`
 }
 
 // Contains reports whether hz is inside the window (inclusive).
 func (r RateRange) Contains(hz float64) bool { return hz >= r.Min && hz <= r.Max }
 
-// ColourRule constrains the CICP triple for a video track.
+// ColourRule constrains the CICP triple for a video track. The JSON tags make
+// it the canonical manifest encoding as well.
 type ColourRule struct {
-	MatrixCoefficients uint64
-	Transfer           uint64
-	Primaries          uint64
+	MatrixCoefficients uint64 `json:"matrix_coefficients"`
+	Transfer           uint64 `json:"transfer_characteristics"`
+	Primaries          uint64 `json:"primaries"`
+	Range              uint64 `json:"range,omitempty"`
 }
 
 func nearlyEqual(a, b float64) bool {

@@ -13,6 +13,7 @@ import (
 	"sort"
 
 	"example.com/assetcheck/internal/timeline"
+	"example.com/assetcheck/internal/tracks"
 )
 
 // Supported schema versions. The manifest is JSON with an explicit version
@@ -32,7 +33,7 @@ type Manifest struct {
 	Title         string
 	Languages     []string
 	AudioRates    map[uint64]RateRange
-	Layouts       map[uint64]string
+	Layouts       map[uint64]ChannelLayout
 	VideoColour   map[uint64]ColourRule
 	MaxChannels   uint64
 	RequireColour bool
@@ -56,24 +57,18 @@ type TrackDecl struct {
 	Name    string
 }
 
-// RateRange is both the validation window and the migration output.
-type RateRange struct {
-	Min float64 `json:"min_hz"`
-	Max float64 `json:"max_hz"`
-}
-
-// ColourRule is a CICP triple plus range metadata.
-type ColourRule struct {
-	MatrixCoefficients uint64 `json:"matrix_coefficients"`
-	Transfer           uint64 `json:"transfer_characteristics"`
-	Primaries          uint64 `json:"primaries"`
-	Range              uint64 `json:"range,omitempty"`
-}
+// Alias the validator's rule types so the manifest layer cannot drift from the
+// rules it feeds.
+type (
+	RateRange     = tracks.RateRange
+	ChannelLayout = tracks.ChannelLayout
+	ColourRule    = tracks.ColourRule
+)
 
 // ProfileFor converts the manifest into the track-validator profile.
 type Profile struct {
 	AudioRates    map[uint64]RateRange
-	Layouts       map[uint64]string
+	Layouts       map[uint64]ChannelLayout
 	VideoColour   map[uint64]ColourRule
 	MaxChannels   uint64
 	RequireColour bool
@@ -135,7 +130,7 @@ func Parse(data []byte) (*Manifest, error) {
 	m := &Manifest{
 		Version:      version,
 		AudioRates:   map[uint64]RateRange{},
-		Layouts:      map[uint64]string{},
+		Layouts:      map[uint64]ChannelLayout{},
 		VideoColour:  map[uint64]ColourRule{},
 		SequenceBase: -1,
 		FieldMap:     map[string]string{},

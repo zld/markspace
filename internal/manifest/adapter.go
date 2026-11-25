@@ -98,7 +98,7 @@ func readAudioV2(m *Manifest, track uint64, path string, body map[string]interfa
 		if err != nil {
 			return err
 		}
-		m.Layouts[track] = s
+		m.Layouts[track] = ChannelLayout(s)
 		m.FieldMap[canonicalLayout(track)] = path
 	}
 	return nil
@@ -239,7 +239,7 @@ func readAudioLegacy(m *Manifest, track uint64, path string, body map[string]int
 		if err != nil {
 			return err
 		}
-		m.Layouts[track] = s
+		m.Layouts[track] = ChannelLayout(s)
 		m.FieldMap[canonicalLayout(track)] = cp
 	}
 	return nil
