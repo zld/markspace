@@ -54,21 +54,22 @@ go run ./cmd/mediadump --self-check
 ## 作为库使用
 
 ```go
-src := store.SourceFromBytes(mp4Bytes, "input.mp4")
-opts := pipeline.Options{
-    Segment: segment.Params{
-        Cuts: []segment.Cut{{At: 400_000_000}},
-        Transitions: []segment.Transition{{
+import mediacore "github.com/zld/mediacore"
+
+opts := mediacore.Options{
+    Segment: mediacore.SegmentParams{
+        Cuts: []mediacore.Cut{{At: 400_000_000}},
+        Transitions: []mediacore.Transition{{
             ID: "xfade", Start: 400_000_000, End: 600_000_000,
             FromTrack: 1, ToTrack: 2,
         }},
     },
-    Silence: audio.DefaultConfig(),
+    Silence: mediacore.DefaultSilenceConfig(),
 }
 
-result, err := pipeline.Process(src, opts)
+result, err := mediacore.ProcessBytes(mp4Bytes, opts)
 if err != nil {
-    if located, ok := trace.As(err); ok {
+    if located, ok := mediacore.AsError(err); ok {
         // located.Code / Stage / TrackID / TimeNS / ByteOffset
         _ = located
     }
@@ -78,10 +79,13 @@ for _, clip := range result.Segments {
 }
 ```
 
+根包 `github.com/zld/mediacore` 导出了可被外部 Go 程序直接引用的稳定别名；`internal/*` 是内核实现。也可以使用 `mediacore.ProcessFile`、`mediacore.OpenSource` 和 `mediacore.NewCache`。
+
 即使返回错误，`result.Segments` 也可能包含损坏点前所有完整、可确认的片段。
 
 ## 包结构
 
+- `api.go`：外部 Go 程序可直接导入的根包 API 与稳定类型别名。
 - `internal/model`：纳秒基准、半开区间、轨道/样本模型和规范化校验。
 - `internal/trace`：统一错误码、处理阶段、轨道、时间和字节位置。
 - `internal/ingest`：`github.com/abema/go-mp4` 元数据/`stts` 解析和 `github.com/pion/rtp` 时间换算。
