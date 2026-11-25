@@ -38,3 +38,18 @@ func TestBackwardsErrorIsTyped(t *testing.T) {
 		t.Fatal("offset not preserved")
 	}
 }
+
+// TestUnsupportedHandlerRejectsWithOffset proves untranslatable content is
+// reported at the hdlr box rather than silently ignored.
+func TestUnsupportedHandlerRejectsWithOffset(t *testing.T) {
+	dir := t.TempDir()
+	path := writeUnsupportedTrack(t, dir)
+	_, err := ParseContainer(path, DefaultLimits())
+	me, ok := model.AsError(err)
+	if !ok || me.Stage != model.StageIngest {
+		t.Fatalf("expected ingest error, got %v", err)
+	}
+	if me.Offset == 0 {
+		t.Fatalf("expected locatable offset")
+	}
+}

@@ -71,6 +71,29 @@ func ParseContainer(path string, lim Limits) (*Container, error) {
 	return c, nil
 }
 
+// supportedCodecs is the closed set the fixtures cover. Accepting a codec the
+// kernel cannot reason about would let unvalidated content reach the manifest.
+var supportedCodecs = map[string]map[string]bool{
+	"video": {"avc1": true, "avc3": true},
+	"audio": {"mp4a": true, "Opus": true},
+}
+
+func supportedCodec(kind, codec string) bool {
+	set, ok := supportedCodecs[kind]
+	return ok && set[codec]
+}
+
+func printable4(b [4]byte) string {
+	out := make([]rune, 0, 4)
+	for _, c := range b {
+		if c < 0x20 || c > 0x7e {
+			return fmt.Sprintf("0x%02x%02x%02x%02x", b[0], b[1], b[2], b[3])
+		}
+		out = append(out, rune(c))
+	}
+	return string(out)
+}
+
 // readSampleEntryType reads the four-character format of the first sample
 // entry. stsd is a full box followed by entry_count and the entries; the entry
 // type sits 8 bytes after the payload start, inside the entry's own header.
@@ -150,7 +173,11 @@ func parseTrack(f io.ReadSeeker, c *Container, trak *Box, lim Limits) (*Track, e
 	case "soun":
 		t.Kind = "audio"
 	default:
-		t.Kind = "other"
+		// The kernel only understands timed video and audio replay
+		// tracks. Anything else is reported rather than skipped, because
+		// silently dropping a track would shift every later boundary.
+		return nil, model.Errorf(model.StageIngest, "hdlr", ref, hdlrBox.Offset,
+			"unsupported handler %q", printable4(hdlr.HandlerType))
 	}
 
 	minf := mdia.Find("minf")
@@ -199,6 +226,10 @@ func parseTrack(f io.ReadSeeker, c *Container, trak *Box, lim Limits) (*Track, e
 	codec, err := readSampleEntryType(f, stsdBox)
 	if err != nil {
 		return nil, model.WrapError(model.StageIngest, "stsd", ref, stsdBox.Offset, "unreadable sample description", err)
+	}
+	if !supportedCodec(t.Kind, codec) {
+		return nil, model.Errorf(model.StageIngest, "stsd", ref, stsdBox.Offset,
+			"unsupported %s codec %q", t.Kind, codec)
 	}
 	t.Codec = codec
 
