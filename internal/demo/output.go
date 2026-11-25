@@ -45,8 +45,11 @@ func printReport(rep *pipeline.Report) {
 		fmt.Println("report=null")
 		return
 	}
+	fmt.Printf("track_count=%d\n", rep.TrackCount)
 	fmt.Printf("parse_roundtrip_rate=%.4f\n", rep.ParseRoundtripRate)
+	fmt.Printf("parse_roundtrip_percent=%.2f%%\n", 100*rep.ParseRoundtripRate)
 	fmt.Printf("keyframe_hit_rate=%.4f\n", rep.KeyframeHitRate)
+	fmt.Printf("keyframe_hit_percent=%.2f%%\n", 100*rep.KeyframeHitRate)
 	hashes, _ := json.Marshal(rep.SegmentHashes)
 	fmt.Printf("segment_hashes=%s\n", hashes)
 	fmt.Printf("recovered_artifacts=%d\n", rep.RecoveredArtifacts)

@@ -71,7 +71,7 @@ func mvhdBox(timescale uint32, duration uint32) []byte {
 	for i := 0; i < 6; i++ {
 		b.u32(0)
 	}
-	b.u32(2) // next track ID
+	b.u32(3) // next track ID
 	return box("mvhd", fullBox(0, 0, b.buf))
 }
 

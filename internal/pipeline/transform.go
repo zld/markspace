@@ -20,6 +20,9 @@ type transformArtifact struct {
 
 func (rn *Runner) runTransform() error {
 	a := rn.data
+	if _, err := index.QueryAll(a.indexList, rn.Range); err != nil {
+		return err
+	}
 	res, err := a.primary.Query(rn.Range)
 	if err != nil {
 		return err

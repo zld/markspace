@@ -21,8 +21,8 @@ func TestNormalFixtureParsesTracksAndWrappingRTP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(parsed) != 2 {
-		t.Fatalf("parsed sources = %d, want 2", len(parsed))
+	if len(parsed) != 3 {
+		t.Fatalf("parsed sources = %d, want 3", len(parsed))
 	}
 	tr := parsed[0].MP4
 	if tr == nil || len(tr.Samples) != fixture.NormalSamples {
@@ -40,7 +40,7 @@ func TestNormalFixtureParsesTracksAndWrappingRTP(t *testing.T) {
 	if tr.Samples[0].PTS != fixture.StartPTSOffset {
 		t.Fatalf("first PTS = %d, want nonzero offset %d", tr.Samples[0].PTS, fixture.StartPTSOffset)
 	}
-	rtpTrack := parsed[1].RTP
+	rtpTrack := parsed[2].RTP
 	if rtpTrack == nil || len(rtpTrack.Packets) != fixture.NormalSamples {
 		t.Fatalf("rtp track = %#v", rtpTrack)
 	}

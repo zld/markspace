@@ -20,6 +20,7 @@ type Segment struct {
 // Report contains all acceptance metrics and recovery counters.
 type Report struct {
 	BatchID               string        `json:"batch_id"`
+	TrackCount            int           `json:"track_count"`
 	ManifestPath          string        `json:"manifest_path"`
 	Range                 index.Range   `json:"range"`
 	QuerySampleCount      int           `json:"query_sample_count"`
@@ -43,10 +44,11 @@ type ErrorOffset struct {
 }
 
 type analysis struct {
-	manifest *mp4.Manifest
-	parsed   []mp4.ParsedSource
-	indexes  map[string]*index.Index
-	primary  *index.Index
-	result   *index.QueryResult
-	segments []Segment
+	manifest  *mp4.Manifest
+	parsed    []mp4.ParsedSource
+	indexes   map[string]*index.Index
+	indexList []*index.Index
+	primary   *index.Index
+	result    *index.QueryResult
+	segments  []Segment
 }

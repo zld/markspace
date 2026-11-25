@@ -72,6 +72,46 @@ func TestRangeQueryUsesPrecedingKeyframeAndHalfOpenBoundaries(t *testing.T) {
 	}
 }
 
+func TestMultiTrackQueryConvertsDifferentTimescales(t *testing.T) {
+	dir := t.TempDir()
+	set, err := fixture.GenerateNormal(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := mp4.LoadManifest(set.ManifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := mp4.ParseManifest(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var indexes []*index.Index
+	for _, ps := range parsed[:2] {
+		idx, err := index.Build(ps.Source.ID, ps.File.Size(), ps.MP4)
+		if err != nil {
+			t.Fatal(err)
+		}
+		indexes = append(indexes, idx)
+	}
+	r := index.Range{Start: 600_000_000_000, End: 612_000_000_000}
+	results, err := index.QueryAll(indexes, r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("track results = %d", len(results))
+	}
+	for key, res := range results {
+		if len(res.Samples) != 12 {
+			t.Fatalf("track %s samples = %d, want 12", key, len(res.Samples))
+		}
+		if res.Samples[0].EventStart != r.Start {
+			t.Fatalf("track %s first event = %d, want %d", key, res.Samples[0].EventStart, r.Start)
+		}
+	}
+}
+
 func TestMissingTrackAndOverlapAreLocated(t *testing.T) {
 	_, err := index.QueryNamed(map[string]*index.Index{}, []string{"nope"},
 		index.Range{Start: 0, End: clock.EventTime(timeSecond)})

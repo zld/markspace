@@ -43,6 +43,8 @@ func (rn *Runner) runParse() error {
 	if err := index.CheckTimebases(indexes); err != nil {
 		return err
 	}
+	a.indexList = indexes
+	rn.Report.TrackCount = len(indexes)
 	rn.Report.ParseRoundtripRate = roundtripRate(parsed, a.indexes)
 	rn.Report.KeyframeHitRate = keyframeHitRate(a.primary)
 	rn.data = a

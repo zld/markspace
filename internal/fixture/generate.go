@@ -48,7 +48,8 @@ func GenerateNormal(root string) (*Set, error) {
 		MovieTimeScale: NormalMovieScale,
 		Sources: []mp4.Source{
 			{ID: "video", Kind: mp4.SourceMP4, Path: "normal.mp4", TrackNumber: 1, TimeScale: NormalMovieScale, Role: "video"},
-			{ID: "rtp-metadata", Kind: mp4.SourceRTP, Path: "timeline.rtp", TrackNumber: 2, TimeScale: RTPScale, Role: "rtp-metadata"},
+			{ID: "video-high-res-timebase", Kind: mp4.SourceMP4, Path: "normal.mp4", TrackNumber: 2, TimeScale: RTPScale, Role: "video-alt"},
+			{ID: "rtp-metadata", Kind: mp4.SourceRTP, Path: "timeline.rtp", TrackNumber: 3, TimeScale: RTPScale, Role: "rtp-metadata"},
 		},
 	}
 	data, err := json.MarshalIndent(manifest, "", "  ")
@@ -64,37 +65,63 @@ func GenerateNormal(root string) (*Set, error) {
 
 func buildNormalMP4() []byte {
 	ftyp := ftypBox()
-	sampleData := make([]byte, NormalSamples*SampleSize)
+	track1Data := make([]byte, NormalSamples*SampleSize)
+	track2Data := make([]byte, NormalSamples*SampleSize)
 	for i := 0; i < NormalSamples; i++ {
-		binary.BigEndian.PutUint32(sampleData[i*SampleSize:], uint32(i+1))
+		binary.BigEndian.PutUint32(track1Data[i*SampleSize:], uint32(i+1))
+		binary.BigEndian.PutUint32(track2Data[i*SampleSize:], uint32(0x80000000+uint32(i+1)))
 	}
-	mdat := box("mdat", sampleData)
-	mdatPayloadOffset := uint32(len(ftyp) + 8)
+	mdatPayload := concat(track1Data, track2Data)
+	mdat := box("mdat", mdatPayload)
+	track1Offset := uint32(len(ftyp) + 8)
+	track2Offset := track1Offset + uint32(len(track1Data))
 
 	var sync []uint32
 	for i := 0; i < NormalSamples; i += KeyframeEvery {
 		sync = append(sync, uint32(i+1))
 	}
-	stbl := box("stbl", concat(
+	stbl1 := box("stbl", concat(
 		stsdBox(),
 		sttsUniformBox(NormalSamples, SampleDeltaMS),
 		cttsUniformBox(NormalSamples, StartPTSOffset),
 		stssBox(sync),
 		stscOneChunkBox(NormalSamples),
 		stszUniformBox(NormalSamples, SampleSize),
-		stcoOneBox(mdatPayloadOffset),
+		stcoOneBox(track1Offset),
 	))
-	elst := elstV0Box([]EditSpec{
+	elst1 := elstV0Box([]EditSpec{
 		{Duration: EmptyEditMS, MediaTime: -1},
 		{Duration: NormalSamples * SampleDeltaMS, MediaTime: MediaOffsetMS},
 	})
-	edts := edtsBox(elst)
-	mdhd := mdhdBox(NormalMovieScale, NormalSamples*SampleDeltaMS)
-	mdia := box("mdia", concat(mdhd, hdlrBox(), box("minf", stbl)))
-	tkhd := tkhdBox(1, EmptyEditMS+NormalSamples*SampleDeltaMS)
-	trak := box("trak", concat(tkhd, edts, mdia))
+	mdia1 := box("mdia", concat(
+		mdhdBox(NormalMovieScale, NormalSamples*SampleDeltaMS), hdlrBox(), box("minf", stbl1),
+	))
+	trak1 := box("trak", concat(
+		tkhdBox(1, EmptyEditMS+NormalSamples*SampleDeltaMS), edtsBox(elst1), mdia1,
+	))
+
+	const altPTSOffset = 22_500 // 250 ms in a 90 kHz timebase
+	stbl2 := box("stbl", concat(
+		stsdBox(),
+		sttsUniformBox(NormalSamples, RTPScale),
+		cttsUniformBox(NormalSamples, altPTSOffset),
+		stssBox(sync),
+		stscOneChunkBox(NormalSamples),
+		stszUniformBox(NormalSamples, SampleSize),
+		stcoOneBox(track2Offset),
+	))
+	elst2 := elstV0Box([]EditSpec{
+		{Duration: EmptyEditMS, MediaTime: -1}, // duration remains in movie timescale
+		{Duration: NormalSamples * SampleDeltaMS, MediaTime: altPTSOffset},
+	})
+	mdia2 := box("mdia", concat(
+		mdhdBox(RTPScale, NormalSamples*RTPScale), hdlrBox(), box("minf", stbl2),
+	))
+	trak2 := box("trak", concat(
+		tkhdBox(2, EmptyEditMS+NormalSamples*SampleDeltaMS), edtsBox(elst2), mdia2,
+	))
 	mvhd := mvhdBox(NormalMovieScale, EmptyEditMS+NormalSamples*SampleDeltaMS)
-	moov := box("moov", concat(mvhd, trak))
+	moov := box("moov", concat(mvhd, trak1, trak2))
 
 	return concat(ftyp, mdat, moov)
 }
