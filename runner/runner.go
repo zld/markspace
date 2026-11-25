@@ -269,6 +269,16 @@ func runOne(input string, opts Options, interrupted *bool) FileResult {
 		layers = append(layers, pipeline.LayerInput{Name: name, Path: repPath, Index: repIdx, Track: tr})
 	}
 
+	// Resolve the effective deviation before hashing parameters, so the
+	// params digest reflects what was actually used and is identical across
+	// runs and resumes.
+	if opts.MaxDeviation <= 0 {
+		if fi, ok := refTrack.FrameInterval(); ok {
+			opts.MaxDeviation = fi + fi/2
+		} else {
+			opts.MaxDeviation = pipeline.DefaultMaxDeviation(0)
+		}
+	}
 	paramsDigest := manifest.ParamsDigest(opts.Segment, opts.Bitrates, opts.MaxDeviation)
 	ckOpts := checkpoint.Options{
 		Root: perInputDir, InputSHA256: c.SHA256,
@@ -294,13 +304,6 @@ func runOne(input string, opts Options, interrupted *bool) FileResult {
 		state = checkpoint.Create(ckOpts)
 	}
 
-	if opts.MaxDeviation <= 0 {
-		if fi, ok := refTrack.FrameInterval(); ok {
-			opts.MaxDeviation = fi + fi/2
-		} else {
-			opts.MaxDeviation = pipeline.DefaultMaxDeviation(0)
-		}
-	}
 	plan, err := pipeline.Plan(refTrack, layerTracks(layers), pipeline.PlanConfig{
 		Segment: opts.Segment, MaxDeviation: opts.MaxDeviation,
 	})
