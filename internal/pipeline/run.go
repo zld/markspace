@@ -16,28 +16,17 @@ import (
 	"replaycheck/internal/timeline"
 )
 
-// step is one registered phase. Registering from the stage's own file keeps
-// each phase self-contained and lets the pipeline grow one stage at a time.
+// step is one registered phase. Each phase file registers a method value, so
+// the registry holds no package state and two runs never share progress.
 type step struct {
 	stage model.Stage
-	fn    func() error
+	run   func(*run) error
 }
 
-var registry []step
+var registry = map[model.Stage]func(*run) error{}
 
-func register(stage model.Stage, fn func() error) {
-	registry = append(registry, step{stage, fn})
-}
-
-// sortedSteps returns registered phases in canonical order.
-func sortedSteps() []step {
-	out := append([]step(nil), registry...)
-	for i := 1; i < len(out); i++ {
-		for j := i; j > 0 && out[j].stage.Index() < out[j-1].stage.Index(); j-- {
-			out[j], out[j-1] = out[j-1], out[j]
-		}
-	}
-	return out
+func register(stage model.Stage, fn func(*run) error) {
+	registry[stage] = fn
 }
 
 type trackSummary struct {
@@ -91,11 +80,15 @@ func (r *run) execute() error {
 	r.cache = store.NewDerived(filepath.Join(r.siteDir, "cache"))
 	r.blobs = store.NewBlobStore(filepath.Join(r.siteDir, "blobs"))
 	r.result = &Result{Fixture: string(r.cfg.Kind), SourceDigest: r.mediaAsset.Digest}
-	for _, s := range sortedSteps() {
-		if r.cfg.FailAt == s.stage {
-			return r.injectedFailure(s.stage)
+	for _, stage := range model.StageOrder {
+		fn, ok := registry[stage]
+		if !ok {
+			continue
 		}
-		if err := s.fn(); err != nil {
+		if r.cfg.FailAt == stage {
+			return r.injectedFailure(stage)
+		}
+		if err := fn(r); err != nil {
 			return err
 		}
 	}
