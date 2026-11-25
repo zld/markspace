@@ -35,8 +35,8 @@ func checkpointPath(dir, key string, stage Stage) string {
 	return filepath.Join(dir, key+"."+string(stage)+".ckpt")
 }
 
-func (s *Store) SaveCheckpoint(stage Stage, payload any) (*Checkpoint, error) {
-	return SaveCheckpoint(s.dir, "", stage, payload)
+func (s *Store) SaveCheckpoint(taskKey string, stage Stage, payload any) (*Checkpoint, error) {
+	return SaveCheckpoint(s.dir, taskKey, stage, payload)
 }
 
 // SaveCheckpoint writes and atomically renames a verified stage checkpoint.
