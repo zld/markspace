@@ -90,6 +90,22 @@ func SelectTrackBoundaries(t manifest.Track, segment time.Duration, count int) T
 			PresentationTimescale: scale, State: BoundaryAligned,
 		}
 
+		if len(sorted) == 0 {
+			b.State = BoundaryTruncated
+			b.FailureSample = 1
+			b.Message = "track sample table contains no samples"
+			out.Boundaries = append(out.Boundaries, b)
+			continue
+		}
+		lastTime := PresentationTime(t, sorted[len(sorted)-1])
+		if target.Cmp(lastTime) > 0 {
+			b.State = BoundaryTruncated
+			b.FailureSample = sorted[len(sorted)-1].Index + 1
+			b.Message = fmt.Sprintf("sample table ends at %s before target %s", lastTime, target)
+			out.Boundaries = append(out.Boundaries, b)
+			continue
+		}
+
 		if t.Kind != manifest.TrackVideo {
 			first := sampleAtOrAfter(t, sorted, target)
 			if first != nil {

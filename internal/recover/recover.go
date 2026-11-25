@@ -59,6 +59,8 @@ func BoundaryItem(b segment.Boundary) Item {
 	code := "boundary-failed"
 	if b.State == segment.BoundaryMissingKey {
 		code = "missing-keyframe"
+	} else if b.State == segment.BoundaryTruncated {
+		code = "truncated-stbl"
 	}
 	return Item{
 		Code: code, TrackID: b.TrackID, FailureSample: b.FailureSample,

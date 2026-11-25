@@ -51,6 +51,16 @@ func TestMissingKeyframeFailsWithoutMovingTarget(t *testing.T) {
 	}
 }
 
+func TestTargetBeyondTruncatedSampleTableFails(t *testing.T) {
+	tr := videoTrack()
+	tr.Samples = tr.Samples[:2] // presentation times 0 and 1 only
+	bp := SelectTrackBoundaries(tr, 2*time.Second, 2)
+	b := bp.Boundaries[1]
+	if b.State != BoundaryTruncated || b.FailureSample != 3 {
+		t.Fatalf("boundary=%+v", b)
+	}
+}
+
 func TestAlignProducesZeroByteAndTimeErrors(t *testing.T) {
 	tr := videoTrack()
 	m := &manifest.Manifest{
