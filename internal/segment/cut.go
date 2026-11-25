@@ -64,20 +64,26 @@ func Build(tl *model.Timeline, params Params) ([]Segment, error) {
 	boundaries := map[model.NS]struct{}{lo: {}, hi: {}}
 	cutAt := map[model.NS]bool{}
 	for _, c := range params.Cuts {
-		if c.At < lo || c.At > hi {
-			return nil, trace.E(trace.CodeInvalidArgument, trace.StageCut, "cut %s at %d outside timeline [0,%d]", c.Label, c.At, hi).WithTime(int64(c.At))
+		if c.At < lo {
+			return nil, trace.E(trace.CodeInvalidArgument, trace.StageCut, "cut %s at %d is before timeline", c.Label, c.At).WithTime(int64(c.At))
 		}
-		boundaries[c.At] = struct{}{}
 		cutAt[c.At] = true
+		if c.At < hi {
+			boundaries[c.At] = struct{}{}
+		}
 	}
 	for _, tr := range params.Transitions {
-		if tr.Start > tr.End || tr.Start < lo || tr.End > hi {
+		if tr.Start > tr.End || tr.Start < lo {
 			return nil, trace.E(trace.CodeInvalidArgument, trace.StageCut, "transition %q has invalid range [%d,%d)", tr.ID, tr.Start, tr.End)
 		}
-		boundaries[tr.Start] = struct{}{}
-		boundaries[tr.End] = struct{}{}
-		cutAt[tr.Start] = true
-		cutAt[tr.End] = true
+		if tr.Start < hi {
+			boundaries[tr.Start] = struct{}{}
+			cutAt[tr.Start] = true
+		}
+		if tr.End < hi {
+			boundaries[tr.End] = struct{}{}
+			cutAt[tr.End] = true
+		}
 	}
 
 	points := make([]model.NS, 0, len(boundaries))
@@ -111,6 +117,18 @@ func Build(tl *model.Timeline, params Params) ([]Segment, error) {
 			}
 		}
 		segments = append(segments, seg)
+	}
+
+	// A cut exactly at the confirmed EOF is still the left edge of the next
+	// interval, so a half-open damage range starting there contains it.
+	orderedCuts := append([]Cut{}, params.Cuts...)
+	sort.Slice(orderedCuts, func(i, j int) bool { return orderedCuts[i].At < orderedCuts[j].At })
+	for _, c := range orderedCuts {
+		if c.At >= hi {
+			if derr := damageAt(tl, c.At); derr != nil {
+				return segments, derr
+			}
+		}
 	}
 	return segments, nil
 }

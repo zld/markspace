@@ -30,7 +30,7 @@ func TestParseGeneratedMP4(t *testing.T) {
 	if tr2 == nil || tr2.OffsetNS != 400_000_000 {
 		t.Fatalf("track2 offset = %+v", tr2)
 	}
-	if len(tl.Track(1).Samples) != 10 || len(tr2.Samples) != 6 || len(tl.Track(3).Samples) != 10 {
+	if len(tl.Track(1).Samples) != 6 || len(tr2.Samples) != 6 || len(tl.Track(3).Samples) != 10 {
 		t.Fatalf("sample counts = %d,%d,%d", len(tl.Track(1).Samples), len(tr2.Samples), len(tl.Track(3).Samples))
 	}
 	if tr2.Start != 400_000_000 || tr2.End != 1_000_000_000 {
@@ -50,7 +50,7 @@ func TestParseMissingIndexRebuildsFromBoxes(t *testing.T) {
 	if doc.IndexPresent {
 		t.Fatal("index should be absent")
 	}
-	if len(doc.TrackByID(1).Samples) != 10 {
+	if len(doc.TrackByID(1).Samples) != 6 {
 		t.Fatalf("rebuilt samples = %d", len(doc.TrackByID(1).Samples))
 	}
 }

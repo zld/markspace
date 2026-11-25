@@ -166,8 +166,14 @@ func As(err error) (*Error, bool) {
 	return nil, false
 }
 
-// HasCode reports whether err contains code.
+// HasCode reports whether any error in err's chain has code.
 func HasCode(err error, code Code) bool {
-	te, ok := As(err)
-	return ok && te.Code == code
+	for err != nil {
+		var te *Error
+		if errors.As(err, &te) && te.Code == code {
+			return true
+		}
+		err = errors.Unwrap(err)
+	}
+	return false
 }
