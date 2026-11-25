@@ -21,6 +21,11 @@ func runRTPCase(work string) (*CaseReport, error) {
 		return nil, err
 	}
 	params := scan.DefaultParams()
+	// Warm separately so the audited manifest is identical on cold and repeated
+	// command invocations with an unchanged source.
+	if _, _, err := scan.LoadOrBuild(input, cache, params); err != nil {
+		return nil, err
+	}
 	idx, rebuilt, err := scan.LoadOrBuild(input, cache, params)
 	if err != nil {
 		return nil, err
