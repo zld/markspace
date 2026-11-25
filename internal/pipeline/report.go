@@ -75,6 +75,16 @@ func (ws *Workspace) RunProgram(opts RunOptions) (*ProgramResult, error) {
 		RecoveryRate: recoveryRateOrOne(loss),
 	}
 	var worstSyncNs int64
+	// A simulated crash belongs only to the first execution. Once any
+	// publish checkpoint is durable, the same command is a recovery run and
+	// must drive the task through merge instead of crashing again.
+	crashPending := opts.CrashAfterWrite
+	for _, rd := range opts.Fx.Renditions {
+		if exists, _ := ws.CheckpointExists(rd.TaskKey, StagePublish); exists {
+			crashPending = false
+			break
+		}
+	}
 	for _, rd := range opts.Fx.Renditions {
 		res, err := ws.RunTask(opts, rd, audio, loss)
 		if err != nil {
@@ -112,7 +122,7 @@ func (ws *Workspace) RunProgram(opts RunOptions) (*ProgramResult, error) {
 
 	// Simulate a process exit after every rendition's fragments are durable
 	// but before the merge stage and the committed state transition.
-	if opts.CrashAfterWrite {
+	if crashPending {
 		return out, ErrSimulatedCrash
 	}
 

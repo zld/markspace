@@ -102,7 +102,9 @@ func (ws *Workspace) RunTask(opts RunOptions, rd media.Rendition,
 	}
 
 	// Stage ingest: frame validation plus the program-level RTP loss outcome.
-	if resumeAt <= StageIndex(StageIngest) {
+	// Validation is recomputed on every run so recovery reports keep their
+	// frame counters and fault indexes; checkpoint writes stay stage-gated.
+	{
 		start := time.Now()
 		rep, verr := ingest.ValidateFrames(rd.Frames, rd.Config.Width,
 			rd.Config.Height, ingest.DefaultFrameLimits())
@@ -121,29 +123,36 @@ func (ws *Workspace) RunTask(opts RunOptions, rd media.Rendition,
 			_ = ws.SaveState(st)
 			return res, &ValidationError{TaskKey: rd.TaskKey, Report: rep}
 		}
-		if _, err := ws.WriteCheckpoint(rd.TaskKey, StageIngest, digest,
-			map[string]interface{}{
-				"frame_count":    rep.Accepted,
-				"loss_injected":  loss.Injected,
-				"loss_recovered": loss.Recovered,
-			}); err != nil {
-			return nil, err
+		if resumeAt <= StageIndex(StageIngest) {
+			if _, err := ws.WriteCheckpoint(rd.TaskKey, StageIngest, digest,
+				map[string]interface{}{
+					"frame_count":    rep.Accepted,
+					"loss_injected":  loss.Injected,
+					"loss_recovered": loss.Recovered,
+				}); err != nil {
+				return nil, err
+			}
 		}
 	}
 
 	// Stage align: project both tracks on the shared nanosecond clock.
-	if resumeAt <= StageIndex(StageAlign) {
+	// Alignment is a pure, deterministic function, so it is recomputed on every
+	// run (including recovery) to keep sync statistics present in the report;
+	// only the durable checkpoint write is gated by the stage boundary.
+	{
 		start := time.Now()
 		res.Sync = ingest.Align(rd.Frames, audio, cfg.Clock)
 		res.Samples = append(res.Samples,
 			StageSample{StageAlign, time.Since(start).Nanoseconds()})
-		if _, err := ws.WriteCheckpoint(rd.TaskKey, StageAlign, digest,
-			map[string]interface{}{
-				"sample_count":     res.Sync.SampleCount,
-				"max_abs_error_ns": res.Sync.MaxAbsErrorNs,
-				"mean_error_ns":    res.Sync.MeanErrorNs,
-			}); err != nil {
-			return nil, err
+		if resumeAt <= StageIndex(StageAlign) {
+			if _, err := ws.WriteCheckpoint(rd.TaskKey, StageAlign, digest,
+				map[string]interface{}{
+					"sample_count":     res.Sync.SampleCount,
+					"max_abs_error_ns": res.Sync.MaxAbsErrorNs,
+					"mean_error_ns":    res.Sync.MeanErrorNs,
+				}); err != nil {
+				return nil, err
+			}
 		}
 	}
 
