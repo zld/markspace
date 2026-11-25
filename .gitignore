@@ -1,0 +1,15 @@
+# Local demo / acceptance work directories
+/tmp/
+**/work/
+*.local/
+
+# Go build / test artifacts
+/bin/
+*.test
+*.out
+coverage.txt
+
+# OS / editor noise
+.DS_Store
+.idea/
+.vscode/
