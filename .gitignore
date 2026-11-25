@@ -1,0 +1,10 @@
+# Build and local evidence output
+/rtptrace
+/bin/
+/dist/
+*.test
+*.out
+/tmp/
+
+# macOS
+.DS_Store
