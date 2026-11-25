@@ -99,7 +99,7 @@ func fragment(rep RepresentationDescriptor, seq, baseTime uint64) []byte {
 // initSegment builds a minimal ftyp+moov init segment whose mdhd exposes the
 // track timescale used by later timestamp normalization.
 func initSegment(rep RepresentationDescriptor, duration uint32) []byte {
-	ftyp := brandBox(boxFtyp, "iso5", 1, []string{"iso5", "iso6", "dash"})
+	ftyp := brandBox(boxFtyp, "iso5", 1, nil)
 	tkhdBox := tkhd(rep.TrackID, duration)
 	mdhdBox := mdhd(rep.Timescale, duration)
 	mdia := box(boxMdia, append(mdhdBox, append(hdlr(), box(boxMinf, nil)...)...))
@@ -117,7 +117,16 @@ func writeFile(path string, data []byte) error {
 }
 
 // regressionSeq is the fragment whose tfdt moves backwards in that scenario.
+// It follows at least one normal fragment so the previous base time is
+// strictly greater than the injected regression value.
 const regressionSeq = 3
+
+// gapSeq is the fragment that is removed to create an explicit mfhd gap.
+const gapSeq = 3
+
+// regressionTicks is the deliberately low BaseMediaDecodeTime injected to
+// create a tfdt backwards movement (smaller than any normal fragment base).
+const regressionTicks = uint64(100)
 
 // conflictSeq is the mfhd number duplicated by the conflict scenarios.
 const conflictSeq = 4
@@ -148,14 +157,15 @@ func generateRepresentation(cfg Config, rep RepresentationDescriptor) error {
 		return err
 	}
 	for seq := 1; seq <= cfg.Fragments; seq++ {
-		if cfg.Case == CaseMfhdGap && seq == regressionSeq {
+		if cfg.Case == CaseMfhdGap && seq == gapSeq {
 			continue // missing fragment leaves an explicit gap
 		}
 		base := rep.TickDuration * uint64(seq-1)
 		if cfg.Case == CaseTFDTRegression && seq == regressionSeq {
-			// Move backwards by one whole fragment; the source value is kept
-			// for reporting rather than silently rewritten.
-			base -= rep.TickDuration
+			// Move strictly behind the previous fragment's base time (which
+			// is zero for the second fragment); the source value is preserved
+			// for reporting, never silently rewritten.
+			base = regressionTicks
 		}
 		data := fragment(rep, uint64(seq), base)
 		if cfg.Case == CaseTruncatedBox && seq == regressionSeq {
