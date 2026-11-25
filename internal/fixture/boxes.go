@@ -31,6 +31,11 @@ func be32(v uint32) []byte {
 	binary.BigEndian.PutUint32(b, v)
 	return b
 }
+func be64(v uint64) []byte {
+	b := make([]byte, 8)
+	binary.BigEndian.PutUint64(b, v)
+	return b
+}
 
 func ftypBox() []byte {
 	p := append([]byte("isom"), be32(0x200)...)

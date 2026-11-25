@@ -1,6 +1,7 @@
 package probe_test
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -138,6 +139,27 @@ func TestNonzeroStartAndSparseKeyframes(t *testing.T) {
 	}
 	if !nonzero || !sparse {
 		t.Fatalf("nonzero=%v sparse=%v intervals=%+v", nonzero, sparse, r.Intervals)
+	}
+}
+
+func TestInvalidShortBoxSize(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "short.mp4")
+	// size=5 is shorter than the eight-byte box header.
+	if err := os.WriteFile(path, []byte{0, 0, 0, 5, 'f', 't', 'y', 'p'}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r, err := probe.ScanFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, in := range r.Intervals {
+		if in.Class == "box_length_overflow" && in.ByteStart == 0 && in.Reject && in.Quarantine {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("missing short-length fault: %+v", r.Intervals)
 	}
 }
 

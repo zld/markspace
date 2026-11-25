@@ -129,14 +129,17 @@ func buildMoov(s Spec, videoSizes, videoOffsets, audioOffsets []uint32) []byte {
 	return box("moov", moovPayload)
 }
 
-// CorruptBoxLength overwrites the first box size with an impossibly short value.
+// CorruptBoxLength turns ftyp into a 64-bit-size box whose length overflows int64.
 func CorruptBoxLength(path string) error {
 	f, err := os.OpenFile(path, os.O_RDWR, 0o644)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	_, err = f.WriteAt(be32(5), 0)
+	if _, err := f.WriteAt(be32(1), 0); err != nil { // size==1 signals 64-bit largesize
+		return err
+	}
+	_, err = f.WriteAt(be64(0xffffffffffffffff), 8)
 	return err
 }
 
