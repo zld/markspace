@@ -1,6 +1,7 @@
 package mediakernel
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"os"
@@ -367,4 +368,64 @@ func bytesEqual(a, b []byte) bool {
 		}
 	}
 	return true
+}
+
+func TestManifestVerifyDigestDetectsTampering(t *testing.T) {
+	m := testBuildManifest(7, "a")
+	if err := m.ComputeDigest(); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.VerifyDigest(); err != nil {
+		t.Fatalf("untampered manifest must verify: %v", err)
+	}
+	// Tamper with a committed field without refreshing the digest.
+	m.Entries[0].TimelineEnd += 100
+	err := m.VerifyDigest()
+	me, ok := AsMediaError(err)
+	if !ok || me.Phase != PhaseMigrate {
+		t.Fatalf("tampered document must produce a migration-phase error, got %v", err)
+	}
+	// A manifest with no stored digest is also a verification failure.
+	fresh := testBuildManifest(7, "a")
+	if err := fresh.VerifyDigest(); err == nil {
+		t.Fatal("missing digest must fail verification")
+	}
+	// Recomputing after the change restores verification, proving the digest
+	// tracks the document rather than the file name.
+	if err := m.ComputeDigest(); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.VerifyDigest(); err != nil {
+		t.Fatalf("recomputed digest must verify: %v", err)
+	}
+}
+
+func TestMigratorRejectsTamperedExistingManifest(t *testing.T) {
+	dir := t.TempDir()
+	mg := NewMigrator(dir, "manifest.json")
+	m := testBuildManifest(7, "a")
+	if _, err := mg.Run(m); err != nil {
+		t.Fatal(err)
+	}
+	// Tamper with the committed file directly (digest left stale).
+	path := mg.ManifestPath()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tampered := bytes.Replace(raw, []byte(`"timeline_end_ticks": 48000`),
+		[]byte(`"timeline_end_ticks": 99999`), 1)
+	if bytes.Equal(tampered, raw) {
+		t.Fatal("test setup failed to tamper manifest")
+	}
+	if err := os.WriteFile(path, tampered, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rep, err := mg.Run(testBuildManifest(7, "b"))
+	if err == nil {
+		t.Fatal("migration over a tampered manifest must be rejected at validate")
+	}
+	if rep.Stage != StageValidate {
+		t.Fatalf("reject at validate, got stage %s", rep.Stage)
+	}
 }

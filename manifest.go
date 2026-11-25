@@ -166,6 +166,25 @@ func (m *Manifest) ComputeDigest() error {
 	return nil
 }
 
+// VerifyDigest recomputes the canonical digest and compares it with the stored
+// ManifestDigest. A mismatch means the document was altered after commit and
+// is reported as a structured migration-phase error (the digest-mismatch
+// boundary case). An empty stored digest is likewise a failure.
+func (m *Manifest) VerifyDigest() error {
+	if m.ManifestDigest.Hex == "" {
+		return NewError(PhaseMigrate, -1, "manifest has no stored digest to verify")
+	}
+	b, err := m.CanonicalBytes()
+	if err != nil {
+		return NewError(PhaseMigrate, -1, "canonical manifest marshal failed").WithCause(err)
+	}
+	recomputed := DigestBytes(b)
+	if !recomputed.Equal(m.ManifestDigest) {
+		return NewError(PhaseMigrate, -1, "manifest digest mismatch: document altered after commit")
+	}
+	return nil
+}
+
 // LoadManifest reads and decodes a manifest file. A missing file is reported
 // with os.ErrNotExist so callers can treat the first run specially.
 func LoadManifest(path string) (*Manifest, error) {

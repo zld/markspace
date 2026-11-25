@@ -70,8 +70,16 @@ func (m *Migrator) Run(next *Manifest) (*MigrationReport, error) {
 		return &MigrationReport{Stage: StageValidate}, err
 	}
 	if existing, err := os.ReadFile(m.ManifestPath()); err == nil {
-		if _, derr := DecodeManifest(existing); derr != nil {
+		oldManifest, derr := DecodeManifest(existing)
+		if derr != nil {
 			return &MigrationReport{Stage: StageValidate}, derr
+		}
+		// A committed manifest must carry a self-consistent digest; an adapted
+		// V1 manifest has none and is allowed to skip this check.
+		if oldManifest.ManifestDigest.Hex != "" {
+			if verr := oldManifest.VerifyDigest(); verr != nil {
+				return &MigrationReport{Stage: StageValidate}, verr
+			}
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return &MigrationReport{Stage: StageValidate},
