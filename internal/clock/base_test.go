@@ -81,7 +81,7 @@ func TestUnwrap32(t *testing.T) {
 		{0, 0, 0},
 		{10, 20, 20},
 		{20, 10, 10},
-		{1_000_000, 4_294_967_000, -296}, // near the top of the range reads as just-before-anchor
+		{1_000_000, 4_294_967_000, -296},    // near the top of the range reads as just-before-anchor
 		{4_294_967_000, 100, 4_294_967_396}, // wrapped forward across the 32-bit boundary
 		{100, 4_294_967_000, -296},          // late pre-roll wrapped backwards
 	}
