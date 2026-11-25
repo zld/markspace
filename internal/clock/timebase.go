@@ -1,10 +1,10 @@
 // Package clock defines the single rational media timebase used by every
 // subsystem and provides deterministic conversions between tick rates.
 //
-// All media timestamps are represented as integer ticks in a rational base
-// (Num/Den seconds per tick). Conversions use round-half-away-from-zero on
-// exact rational arithmetic, so repeated runs over the same inputs produce
-// bit-identical results on every platform.
+// All media timestamps are represented as integer ticks counted in a rational
+// tick rate (Num/Den ticks per second). Conversions use
+// round-half-away-from-zero on exact rational arithmetic, so repeated runs
+// over the same inputs produce bit-identical results on every platform.
 package clock
 
 import (
@@ -21,6 +21,12 @@ type Rational struct {
 // Master is the single program timebase (90 kHz, MPEG style). Every timeline
 // exposed in a manifest is expressed in Master ticks.
 var Master = Rational{Num: 90000, Den: 1}
+
+// Rate builds a tick-rate base from an integer rate in Hz (for example a
+// sample rate or a timescale).
+func Rate(hz uint32) Rational {
+	return Rational{Num: int64(hz), Den: 1}
+}
 
 // New builds a normalized rational. The denominator must not be zero.
 func New(num, den int64) (Rational, error) {
@@ -79,14 +85,14 @@ func (r Rational) Cmp(o Rational) int {
 	return a.Cmp(b)
 }
 
-// Float64 returns the base as seconds-per-tick ratio in floating point. It is
-// for reporting only; never use it for timeline arithmetic.
+// Float64 returns the base as a tick rate in floating point. It is for
+// reporting only; never use it for timeline arithmetic.
 func (r Rational) Float64() float64 {
 	return float64(r.Num) / float64(r.Den)
 }
 
 func (r Rational) valid() bool {
-	return r.Den > 0 && r.Num >= 0
+	return r.Den > 0 && r.Num > 0
 }
 
 // Validate checks that the rational can be used as a timebase.
@@ -106,9 +112,10 @@ func ConvertTicks(ticks int64, from, to Rational) (int64, error) {
 	if err := to.Validate(); err != nil {
 		return 0, err
 	}
-	num := new(big.Int).Mul(big.NewInt(ticks), big.NewInt(from.Num))
-	num.Mul(num, big.NewInt(to.Den))
-	den := new(big.Int).Mul(big.NewInt(from.Den), big.NewInt(to.Num))
+	// ticks * (to_rate / from_rate)
+	num := new(big.Int).Mul(big.NewInt(ticks), big.NewInt(to.Num))
+	num.Mul(num, big.NewInt(from.Den))
+	den := new(big.Int).Mul(big.NewInt(to.Den), big.NewInt(from.Num))
 	if den.Sign() == 0 {
 		return 0, fmt.Errorf("clock: conversion to zero-rate base %s", to.String())
 	}
@@ -154,7 +161,7 @@ func (t Time) Convert(base Rational) (Time, error) {
 
 // Seconds returns the floating-point duration, for reporting only.
 func (t Time) Seconds() float64 {
-	return float64(t.Ticks) * t.Base.Float64()
+	return float64(t.Ticks) / t.Base.Float64()
 }
 
 // Add adds two times, converting o into t's base. Overflow is an error.
@@ -188,7 +195,7 @@ func FromFrames(frames int64, sampleRate uint32, out Rational) (Time, error) {
 	if sampleRate == 0 {
 		return Time{}, fmt.Errorf("clock: zero sample rate")
 	}
-	from := Rational{Num: 1, Den: int64(sampleRate)}
+	from := Rational{Num: int64(sampleRate), Den: 1}
 	ticks, err := ConvertTicks(frames, from, out)
 	if err != nil {
 		return Time{}, err

@@ -26,11 +26,11 @@ func TestConvertTicksExact(t *testing.T) {
 		to    Rational
 		want  int64
 	}{
-		{48000, MustNew(1, 48000), Master, 90000},
-		{90000, Master, MustNew(1, 48000), 48000},
-		{25, MustNew(1, 25), Master, 3600},
-		{0, MustNew(1, 48000), Master, 0},
-		{1001, MustNew(1, 24000), Master, 3754}, // 3753.75 rounds up
+		{48000, MustNew(48000, 1), Master, 90000},
+		{90000, Master, MustNew(48000, 1), 48000},
+		{25, MustNew(25, 1), Master, 90000}, // 1s,
+		{0, MustNew(48000, 1), Master, 0},
+		{1001, MustNew(24000, 1), Master, 3754}, // 3753.75 rounds up
 	}
 	for _, c := range cases {
 		got, err := ConvertTicks(c.ticks, c.from, c.to)
@@ -44,7 +44,7 @@ func TestConvertTicksExact(t *testing.T) {
 }
 
 func TestConvertTicksRoundsHalfAwayFromZero(t *testing.T) {
-	from := MustNew(1, 2)
+	from := MustNew(2, 1)
 	to := MustNew(1, 1)
 	got, err := ConvertTicks(1, from, to) // 0.5 -> 1
 	if err != nil || got != 1 {
@@ -56,7 +56,7 @@ func TestConvertTicksRoundsHalfAwayFromZero(t *testing.T) {
 }
 
 func TestConvertTicksDeterministic(t *testing.T) {
-	from := MustNew(1001, 30000)
+	from := MustNew(30000, 1001)
 	for i := int64(0); i < 1000; i++ {
 		a, err := ConvertTicks(i*37, from, Master)
 		if err != nil {
@@ -73,8 +73,8 @@ func TestConvertTicksDeterministic(t *testing.T) {
 }
 
 func TestTimeAddSub(t *testing.T) {
-	a, _ := NewTime(1, MustNew(1, 1000))
-	b, _ := NewTime(500, MustNew(1, 500))
+	a, _ := NewTime(1, MustNew(1000, 1))
+	b, _ := NewTime(500, MustNew(500, 1))
 	sum, err := a.Add(b)
 	if err != nil {
 		t.Fatal(err)
@@ -89,8 +89,8 @@ func TestTimeAddSub(t *testing.T) {
 	if diff.Ticks != 1000 {
 		t.Fatalf("got %d want 1000", diff.Ticks)
 	}
-	if _, err := a.Add(Time{Ticks: 1 << 62, Base: Master}); err != nil {
-		t.Fatalf("unexpected overflow: %v", err)
+	if _, err := a.Add(Time{Ticks: 1 << 62, Base: MustNew(1, 1)}); err == nil {
+		t.Fatal("expected overflow error")
 	}
 }
 
