@@ -136,6 +136,7 @@ func processItem(it probe.Item, m *probe.Manifest, opt Options, batchKey string,
 	rep.ConfigDigest = cfg.Digest
 	rep.QualityScore = cfg.Decision.QualityScore
 	rep.QualityPass = cfg.Decision.QualityPass
+	rep.RequiredBitrateKbps = cfg.Decision.RequiredTotalKbps
 	rep.TargetBitrateKbps = cfg.Decision.TargetTotalKbps
 	rep.Tolerance = target.Tolerance
 	rep.Reasons = append(rep.Reasons, cfg.Decision.Reasons...)

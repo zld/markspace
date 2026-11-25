@@ -34,6 +34,7 @@ type ItemReport struct {
 	QualityScore        float64             `json:"quality_score"`
 	QualityMin          float64             `json:"quality_min"`
 	QualityPass         bool                `json:"quality_pass"`
+	RequiredBitrateKbps int                 `json:"required_bitrate_kbps"`
 	TargetBitrateKbps   int                 `json:"target_bitrate_kbps"`
 	ActualBitrateKbps   int                 `json:"actual_bitrate_kbps"`
 	BudgetMbps          float64             `json:"budget_mbps"`
@@ -114,9 +115,9 @@ func (s *Summary) PrintText(w io.Writer) {
 	for _, it := range s.Items {
 		start, end := anomalyRange(it.Intervals)
 		fmt.Fprintf(w,
-			"ITEM %s status=%s quality=%.4f/min=%.2f pass=%v target_kbps=%d actual_kbps=%d budget_mbps=%.2f actual_mbps=%.3f budget_delta=%.3f tol_pass=%v anomalies=%d range_ms=[%d,%d] chunks=%d/%d",
+			"ITEM %s status=%s quality=%.4f/min=%.2f pass=%v required_kbps=%d target_kbps=%d actual_kbps=%d budget_mbps=%.2f actual_mbps=%.3f budget_delta=%.3f tol_pass=%v anomalies=%d range_ms=[%d,%d] chunks=%d/%d",
 			it.ItemID, it.Status, it.QualityScore, it.QualityMin, it.QualityPass,
-			it.TargetBitrateKbps, it.ActualBitrateKbps, it.BudgetMbps, it.ActualMbps,
+			it.RequiredBitrateKbps, it.TargetBitrateKbps, it.ActualBitrateKbps, it.BudgetMbps, it.ActualMbps,
 			it.BudgetDeviationMbps, it.BitrateWithinTol, it.AnomalyCount, start, end,
 			it.CompletedChunks, it.ChunkCount)
 		fmt.Fprintf(w, " in=%s out=%s cfg=%s\n", shortDigest(it.InputDigest), shortDigest(it.OutputDigest), shortDigest(it.ConfigDigest))
