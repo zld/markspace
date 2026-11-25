@@ -1,0 +1,58 @@
+[
+  {
+    "stage_key": "e935cedff85a8ae1165b06dbb1a567fbb454d9f63a7174963a64920338cdedbb",
+    "track": "demo/t0(video)",
+    "order": 5,
+    "fragment_sha256": "aefc89571e402b980b4ae93c72e48eb8db0ff24b52079cdfee061fb301ba52b9",
+    "frame_sha256": "bd6fd01ca528cf72a5b494a28add4e19fddcf52596fc27fa7b3e882ae97c0b2e",
+    "segment_sha256": "7d155f99399a986197001e946c5aa0616b693d7f843c331880836f9e89ccb1f7",
+    "pixel_mean": 126,
+    "pixel_variance": 5456,
+    "alignment_error_ns": 5065,
+    "dts_ns": 133466666,
+    "content_duplicate": false,
+    "timeline_distinct": false
+  },
+  {
+    "stage_key": "fd616e894822e1176ea55bceb8be382d87894310c506e8c99b775af82d3254a5",
+    "track": "demo/t0(video)",
+    "order": 6,
+    "fragment_sha256": "783232f882bde334ad925fc3aa4a1e7702c9a44bd3ee858d3648ea7c3323f49c",
+    "frame_sha256": "d11e41bf62bab156733ca7f0a640e17486b83939908479c2ee71b77754b77ebf",
+    "segment_sha256": "7d155f99399a986197001e946c5aa0616b693d7f843c331880836f9e89ccb1f7",
+    "pixel_mean": 127,
+    "pixel_variance": 5460,
+    "alignment_error_ns": 473,
+    "dts_ns": 166833333,
+    "content_duplicate": false,
+    "timeline_distinct": false
+  },
+  {
+    "stage_key": "7f0efa8ed679a4b7fbe4492825a0c1a57f645f3ae70127bce248b0f79579f78c",
+    "track": "demo/t0(video)",
+    "order": 7,
+    "fragment_sha256": "ce95ae10f009aff7f5d1b5207c0e336b1831ee1c98f57dc5fb32423f7d9f8a9c",
+    "frame_sha256": "d30708a0d5fdc5d5348f2ffabf96e76db1ab53e5b5a25173c4a1aaaec7b3cdb9",
+    "segment_sha256": "7d155f99399a986197001e946c5aa0616b693d7f843c331880836f9e89ccb1f7",
+    "pixel_mean": 124,
+    "pixel_variance": 5456,
+    "alignment_error_ns": 0,
+    "dts_ns": 200200000,
+    "content_duplicate": false,
+    "timeline_distinct": false
+  },
+  {
+    "stage_key": "7cb6fccd5d532027258a91591d0d211522b109f8e1b3e28dc3a9097641159004",
+    "track": "demo/t0(video)",
+    "order": 8,
+    "fragment_sha256": "4d1fb63955cd246a52ae7783d523b695c77963b70e2ec16c3e295d834238c327",
+    "frame_sha256": "003bde590f9747b5a3b1732cb0fc2152cf5ec28f14f4a03c87f33ca4954d4d32",
+    "segment_sha256": "7d155f99399a986197001e946c5aa0616b693d7f843c331880836f9e89ccb1f7",
+    "pixel_mean": 129,
+    "pixel_variance": 5460,
+    "alignment_error_ns": 5065,
+    "dts_ns": 233566666,
+    "content_duplicate": false,
+    "timeline_distinct": false
+  }
+]

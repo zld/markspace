@@ -1,0 +1,15 @@
+[
+  {
+    "stage_key": "5a47950893ef9fdb381473eb764ca65acdcf1b1ecb50c0465f18fc8fdeaaa4ff",
+    "track": "demo/t1(audio)",
+    "order": 6,
+    "fragment_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "frame_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "segment_sha256": "d1649bd6962ce473ed7e7ff880719292a03b0a8e2609da5ce3e8fad4daa909ce",
+    "peak_dbfs": -32768,
+    "alignment_error_ns": 7,
+    "dts_ns": 106666666,
+    "content_duplicate": false,
+    "timeline_distinct": false
+  }
+]

@@ -1,0 +1,58 @@
+[
+  {
+    "stage_key": "d01ad287c2748e7686a50292d4bd5ac27256c81f64bff0ff621178cf076a4001",
+    "track": "demo/t0(video)",
+    "order": 1,
+    "fragment_sha256": "d97ba17fb743653078382aa7692fc3922bb6982dab78f1e72536c3bc742eba81",
+    "frame_sha256": "c4e75856ff9762f4a75f5f4576c03f637586fd5a2f4168f14241ac9cf2981f85",
+    "segment_sha256": "e650ed57be72806fd845b19a101c8c7151ebe1a7a94305fe23edc39fb1e6d585",
+    "pixel_mean": 130,
+    "pixel_variance": 5449,
+    "alignment_error_ns": 0,
+    "dts_ns": 0,
+    "content_duplicate": false,
+    "timeline_distinct": false
+  },
+  {
+    "stage_key": "b78b9b43b639d30d6080a4f357f612d10893d8cc97603e80de5c3afe389c0404",
+    "track": "demo/t0(video)",
+    "order": 2,
+    "fragment_sha256": "9428227bfe9a3c9969d9286c1ceb7e9327969579718253e58c472559a98276dc",
+    "frame_sha256": "ade709e98ee39701b1ab1bca800705645436262b155361607e5302226f74ef45",
+    "segment_sha256": "e650ed57be72806fd845b19a101c8c7151ebe1a7a94305fe23edc39fb1e6d585",
+    "pixel_mean": 127,
+    "pixel_variance": 5469,
+    "alignment_error_ns": 5065,
+    "dts_ns": 33366666,
+    "content_duplicate": false,
+    "timeline_distinct": false
+  },
+  {
+    "stage_key": "3130177ad899b891705bc35d705278c0068063053bc0cfac1220593488aaca2c",
+    "track": "demo/t0(video)",
+    "order": 3,
+    "fragment_sha256": "81404791503eacb1075d443cc6547e694b69b5b7269552a614a11bb32b20748f",
+    "frame_sha256": "a80e588043f04d35dc0e8824e12225b1b78abd8b42333a76016548944c83ffa6",
+    "segment_sha256": "e650ed57be72806fd845b19a101c8c7151ebe1a7a94305fe23edc39fb1e6d585",
+    "pixel_mean": 128,
+    "pixel_variance": 5457,
+    "alignment_error_ns": 2532,
+    "dts_ns": 66733333,
+    "content_duplicate": false,
+    "timeline_distinct": false
+  },
+  {
+    "stage_key": "b5ef9d3f25db64daedaf234a1cb5d6d7dec8e8bd437ccd237a2171c8f53f70c7",
+    "track": "demo/t0(video)",
+    "order": 4,
+    "fragment_sha256": "c56e319e988de67fb0a5186dac5c84711b88ca669017a7770bc2c969f0b688fd",
+    "frame_sha256": "2d977b6ad838daf47f71efc5273437a9757af78d55f098ab5966d64a83bfe452",
+    "segment_sha256": "e650ed57be72806fd845b19a101c8c7151ebe1a7a94305fe23edc39fb1e6d585",
+    "pixel_mean": 125,
+    "pixel_variance": 5477,
+    "alignment_error_ns": 0,
+    "dts_ns": 100100000,
+    "content_duplicate": false,
+    "timeline_distinct": false
+  }
+]

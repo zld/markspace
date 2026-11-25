@@ -1,0 +1,46 @@
+{
+  "stage": "archive",
+  "chunks": [
+    {
+      "index": 0,
+      "path": "tmp/archive/chunk-0000.json",
+      "row_count": 4,
+      "row_start": 0,
+      "row_end": 4,
+      "sha256": "8aa1b2da8cc646441baacafc7e3ddf5173ef75acc11e4043e08be3db30c4fc3b"
+    },
+    {
+      "index": 1,
+      "path": "tmp/archive/chunk-0001.json",
+      "row_count": 4,
+      "row_start": 4,
+      "row_end": 8,
+      "sha256": "5738c1236bbd2ac9f46403b930c54031377ca4aa30c3c962e1a6b77624b23143"
+    },
+    {
+      "index": 2,
+      "path": "tmp/archive/chunk-0002.json",
+      "row_count": 4,
+      "row_start": 8,
+      "row_end": 12,
+      "sha256": "4975fe5c3ba428f630d57bc2a3f4b259c30cea8bc0b96ecb96a81a6ffa7668fa"
+    },
+    {
+      "index": 3,
+      "path": "tmp/archive/chunk-0003.json",
+      "row_count": 2,
+      "row_start": 12,
+      "row_end": 14,
+      "sha256": "e631208c6b26adad1a8d620fdc9f649f235fc95bf9119ff388af36a0e19a4009"
+    },
+    {
+      "index": 4,
+      "path": "tmp/archive/chunk-0004.json",
+      "row_count": 1,
+      "row_start": 14,
+      "row_end": 15,
+      "sha256": "b323fcc58d9d102c8f69e55131b73664d2f3034e9471a40ba1ed3131b3f6cd0a"
+    }
+  ],
+  "committed_rows": 15
+}

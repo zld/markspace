@@ -6,6 +6,8 @@ package report
 
 import (
 	"encoding/json"
+	"math"
+	"strings"
 
 	"mediavault/internal/archive"
 	"mediavault/internal/repair"
@@ -42,6 +44,17 @@ type TrackMetrics struct {
 	Rows          []archive.ManifestRow `json:"-"`
 }
 
+// kindFromTrack extracts the media kind encoded in a track name such as
+// "demo/t0(video)" -> "video".
+func kindFromTrack(name string) string {
+	for _, k := range []string{"video", "audio", "unknown"} {
+		if strings.Contains(name, "("+k+")") {
+			return k
+		}
+	}
+	return "unknown"
+}
+
 // ErrorView is the JSON projection of a timeline.StageError.
 type ErrorView struct {
 	Stage       string `json:"stage"`
@@ -70,7 +83,7 @@ func (b *Builder) AddRows(rows []archive.ManifestRow) {
 	for _, r := range rows {
 		tm, ok := byTrack[r.Track]
 		if !ok {
-			tm = &TrackMetrics{Track: r.Track, PeakDBFS: negInf}
+			tm = &TrackMetrics{Track: r.Track, Kind: kindFromTrack(r.Track)}
 			byTrack[r.Track] = tm
 			order = append(order, r.Track)
 		}
@@ -134,8 +147,6 @@ func (m Metrics) JSON() ([]byte, error) {
 	return json.MarshalIndent(m, "", "  ")
 }
 
-const negInf = -1e308
-
 func countSegments(rows []archive.ManifestRow) int {
 	seen := map[string]bool{}
 	for _, r := range rows {
@@ -150,7 +161,7 @@ func summarize(tm *TrackMetrics) *TrackMetrics {
 	var meanSum, varSum float64
 	var meanN, varN int
 	hasAudio := false
-	var peak float64 = negInf
+	peak := math.Inf(-1)
 	segSeen := map[string]bool{}
 	for _, r := range tm.Rows {
 		if r.PixelMean != 0 {
@@ -161,7 +172,7 @@ func summarize(tm *TrackMetrics) *TrackMetrics {
 			varSum += r.PixelVariance
 			varN++
 		}
-		if r.PeakDBFS != 0 {
+		if tm.Kind == "audio" {
 			hasAudio = true
 			if r.PeakDBFS > peak {
 				peak = r.PeakDBFS

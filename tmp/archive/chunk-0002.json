@@ -1,0 +1,54 @@
+[
+  {
+    "stage_key": "1ee4af895eed96f38a16863ccf6bc568b3a83282f83cca43e9854f23dee6d33c",
+    "track": "demo/t1(audio)",
+    "order": 1,
+    "fragment_sha256": "c01a002c480976312dfc70425906ac1c62ca806524855c8eb694d7d302f43b96",
+    "frame_sha256": "c01a002c480976312dfc70425906ac1c62ca806524855c8eb694d7d302f43b96",
+    "segment_sha256": "f4499ec4c2eee292c1d4f36b6ca3df18faf5a653b17b98e662adcfe61b53e0d5",
+    "peak_dbfs": -0.5284013378180275,
+    "alignment_error_ns": 0,
+    "dts_ns": 0,
+    "content_duplicate": false,
+    "timeline_distinct": false
+  },
+  {
+    "stage_key": "b66a62325e884744cdfa43b724b78b8ff4d4111c98b52a647ffeccfbdd4185f8",
+    "track": "demo/t1(audio)",
+    "order": 2,
+    "fragment_sha256": "c435347942829c7b8c90fa829bb91668ceca9f8c1d1f131ea4ad45c5bfedefa6",
+    "frame_sha256": "c435347942829c7b8c90fa829bb91668ceca9f8c1d1f131ea4ad45c5bfedefa6",
+    "segment_sha256": "f4499ec4c2eee292c1d4f36b6ca3df18faf5a653b17b98e662adcfe61b53e0d5",
+    "peak_dbfs": -0.8316715834605227,
+    "alignment_error_ns": 93,
+    "dts_ns": 21333333,
+    "content_duplicate": false,
+    "timeline_distinct": false
+  },
+  {
+    "stage_key": "70a8c5ce214dfefc5923ce4504ec148f8280619ab844df2281974e23521fff6a",
+    "track": "demo/t1(audio)",
+    "order": 3,
+    "fragment_sha256": "f02fc8266a737b5011677efef3eb484d2b481ab86d89100a07d40ad196c79ba8",
+    "frame_sha256": "f02fc8266a737b5011677efef3eb484d2b481ab86d89100a07d40ad196c79ba8",
+    "segment_sha256": "f4499ec4c2eee292c1d4f36b6ca3df18faf5a653b17b98e662adcfe61b53e0d5",
+    "peak_dbfs": -0.10909685892637741,
+    "alignment_error_ns": 44,
+    "dts_ns": 42666666,
+    "content_duplicate": false,
+    "timeline_distinct": false
+  },
+  {
+    "stage_key": "a8b1a98a4791005df44f623ea62b5cad4d598dfb9c9aa9ed7bf96b825dcb2e64",
+    "track": "demo/t1(audio)",
+    "order": 4,
+    "fragment_sha256": "5fe7c0cf809c76aba947a702306f7d974e9e7efd89803c5dd918b0939d062497",
+    "frame_sha256": "5fe7c0cf809c76aba947a702306f7d974e9e7efd89803c5dd918b0939d062497",
+    "segment_sha256": "f4499ec4c2eee292c1d4f36b6ca3df18faf5a653b17b98e662adcfe61b53e0d5",
+    "peak_dbfs": -0.24299283116892678,
+    "alignment_error_ns": 0,
+    "dts_ns": 64000000,
+    "content_duplicate": false,
+    "timeline_distinct": false
+  }
+]

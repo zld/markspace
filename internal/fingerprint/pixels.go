@@ -90,6 +90,9 @@ func AudioFrame(payload []byte) AudioStats {
 	db := math.Inf(-1)
 	if peak > 0 {
 		db = 20 * math.Log10(float64(peak)/float64(1<<15))
+	} else {
+		// JSON cannot encode -Inf; use a finite sentinel for full silence.
+		db = SilentDBFS
 	}
 	// Hash the normalized sample values, not the raw container bytes.
 	norm := make([]byte, len(payload))
@@ -97,7 +100,11 @@ func AudioFrame(payload []byte) AudioStats {
 	return AudioStats{FrameHash: FrameHash(norm), PeakDBFS: db}
 }
 
+// SilentDBFS is the finite sentinel reported for a fully silent frame so
+// the JSON report stays serializable.
+const SilentDBFS = -32768.0
+
 // IsSilence reports whether an audio stats value represents a silent frame.
 func IsSilence(s AudioStats) bool {
-	return math.IsInf(s.PeakDBFS, -1)
+	return s.PeakDBFS <= SilentDBFS
 }
