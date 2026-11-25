@@ -1,0 +1,10 @@
+# Build and test artifacts
+/tracecheck
+/bin/
+*.exe
+*.test
+*.out
+coverage.txt
+
+# Local demo output
+/out/
