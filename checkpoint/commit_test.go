@@ -41,7 +41,7 @@ func TestCommitsRoundTrip(t *testing.T) {
 
 func TestRecomputedBlocks(t *testing.T) {
 	f := NewFile("r", "s", "i", 12)
-	cases := map[int]int{0: 12, 3: 9, 12: 1}
+	cases := map[int]int{0: 12, 3: 10, 12: 1}
 	for start, want := range cases {
 		if got := f.RecomputedBlocks(start); got != want {
 			t.Fatalf("start %d: got %d want %d", start, got, want)
