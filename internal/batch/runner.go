@@ -98,6 +98,13 @@ func processItem(it probe.Item, m *probe.Manifest, opt Options, batchKey string,
 		rep.Reasons = append(rep.Reasons, err.Error())
 		return rep
 	}
+	if checked, err := safepath.CheckExistingWithin(opt.WorkDir, inputPath); err != nil {
+		rep.Status = audit.StatusManifestError
+		rep.Reasons = append(rep.Reasons, err.Error())
+		return rep
+	} else {
+		inputPath = checked
+	}
 	scan, err := probe.ScanFile(inputPath)
 	if err != nil {
 		rep.Status = audit.StatusIOError

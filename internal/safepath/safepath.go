@@ -38,6 +38,27 @@ func Resolve(root string, parts ...string) (string, error) {
 	return target, nil
 }
 
+// CheckExistingWithin resolves symlinks for an existing path and rejects targets
+// whose real location is outside root.
+func CheckExistingWithin(root, p string) (string, error) {
+	realRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", fault.Wrap(fault.ClassPath, err, "resolve working directory symlinks")
+	}
+	realTarget, err := filepath.EvalSymlinks(p)
+	if err != nil {
+		return "", fault.Wrap(fault.ClassPath, err, "resolve input symlinks")
+	}
+	rel, err := filepath.Rel(realRoot, realTarget)
+	if err != nil {
+		return "", fault.Wrap(fault.ClassPath, err, "cannot check real path containment")
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fault.New(fault.ClassPath, "input resolves outside working directory: %s", p)
+	}
+	return realTarget, nil
+}
+
 // CheckWithin resolves an OS-supplied path against the current directory and
 // ensures it is the root itself or beneath root.
 func CheckWithin(root, p string) (string, error) {
