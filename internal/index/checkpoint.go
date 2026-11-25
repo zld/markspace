@@ -21,15 +21,25 @@ const (
 	SchemaVersion  = 1
 )
 
+// Unit identifies one track-specific sample range.
+type Unit struct {
+	TrackID     uint32 `json:"track_id"`
+	StartSample int    `json:"start_sample"`
+	EndSample   int    `json:"end_sample"`
+}
+
 // ChunkRecord binds one output chunk to its source/config range and checksum.
 type ChunkRecord struct {
-	Index       int    `json:"index"`
-	StartSample int    `json:"start_sample"`
-	EndSample   int    `json:"end_sample"` // exclusive
-	ByteLength  int64  `json:"byte_length"`
-	SHA256      string `json:"sha256"`
-	Status      string `json:"status"`
-	Attempt     int    `json:"attempt"`
+	Index        int    `json:"index"`
+	TrackID      uint32 `json:"track_id"`
+	StartSample  int    `json:"start_sample"`
+	EndSample    int    `json:"end_sample"` // exclusive
+	InputDigest  string `json:"input_digest"`
+	ConfigDigest string `json:"config_digest"`
+	ByteLength   int64  `json:"byte_length"`
+	SHA256       string `json:"sha256"`
+	Status       string `json:"status"`
+	Attempt      int    `json:"attempt"`
 }
 
 // Index is the durable checkpoint for one batch key and item.
@@ -72,10 +82,20 @@ func Load(path string) (*Index, error) {
 
 // New creates an in-memory checkpoint with all chunks pending.
 func New(path, batchKey, itemID, inputDigest, configDigest string, ranges [][2]int) *Index {
-	chunks := make([]ChunkRecord, len(ranges))
+	units := make([]Unit, len(ranges))
 	for i, r := range ranges {
+		units[i] = Unit{StartSample: r[0], EndSample: r[1]}
+	}
+	return NewUnits(path, batchKey, itemID, inputDigest, configDigest, units)
+}
+
+// NewUnits creates a track-aware checkpoint with all chunks pending.
+func NewUnits(path, batchKey, itemID, inputDigest, configDigest string, units []Unit) *Index {
+	chunks := make([]ChunkRecord, len(units))
+	for i, u := range units {
 		chunks[i] = ChunkRecord{
-			Index: i, StartSample: r[0], EndSample: r[1], Status: StatusPending,
+			Index: i, TrackID: u.TrackID, StartSample: u.StartSample,
+			EndSample: u.EndSample, Status: StatusPending,
 		}
 	}
 	return &Index{
@@ -166,6 +186,8 @@ func (x *Index) MarkComplete(rec ChunkRecord) error {
 		return fault.New(fault.ClassCheckpoint, "chunk index %d out of range", rec.Index)
 	}
 	rec.Status = StatusComplete
+	rec.InputDigest = x.InputDigest
+	rec.ConfigDigest = x.ConfigDigest
 	x.Chunks[rec.Index] = rec
 	return x.Save()
 }
