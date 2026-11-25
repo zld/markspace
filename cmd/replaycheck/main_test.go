@@ -138,3 +138,33 @@ func TestByteIdenticalManifestAcrossRuns(t *testing.T) {
 		t.Fatalf("manifests differ between identical runs\n%s\n%s", a, b)
 	}
 }
+
+func TestSelfTestIsRepeatable(t *testing.T) {
+	dir := t.TempDir()
+	first, err := runSelfTest(dir, "test/repeat")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !first.Passed {
+		t.Fatal("first run failed")
+	}
+	second, err := runSelfTest(dir, "test/repeat")
+	if err != nil {
+		t.Fatalf("second run into the same directory: %v", err)
+	}
+	if !second.Passed {
+		for _, c := range second.Checks {
+			if !c.OK {
+				t.Logf("FAILED: %s: %s", c.Name, c.Detail)
+			}
+		}
+		t.Fatal("second run failed")
+	}
+	if first.Normal.ManifestHash != second.Normal.ManifestHash {
+		t.Fatalf("manifest changed between runs: %s vs %s",
+			first.Normal.ManifestHash, second.Normal.ManifestHash)
+	}
+	if second.Recovery.ResumeStage != "repair" {
+		t.Fatalf("second run resumed at %q, want repair", second.Recovery.ResumeStage)
+	}
+}

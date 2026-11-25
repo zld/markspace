@@ -45,6 +45,13 @@ type fixtureSet struct {
 }
 
 func buildFixtures(dir string) (*fixtureSet, error) {
+	// The self-test is repeatable: generated state from an earlier run is
+	// removed so the interruption scenario always starts from scratch.
+	for _, sub := range []string{"out", "state", "ckpt", "state-uninterrupted", "ckpt-uninterrupted"} {
+		if err := os.RemoveAll(filepath.Join(dir, sub)); err != nil {
+			return nil, err
+		}
+	}
 	for _, sub := range []string{"fixtures", "out", "state", "ckpt"} {
 		if err := os.MkdirAll(filepath.Join(dir, sub), 0o755); err != nil {
 			return nil, err
