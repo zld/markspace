@@ -17,9 +17,9 @@ type Verdict string
 
 // Recovery verdicts.
 const (
-	VerdictPassed     Verdict = "passed"
-	VerdictFailed     Verdict = "failed"
-	VerdictRecovered  Verdict = "recovered"
+	VerdictPassed      Verdict = "passed"
+	VerdictFailed      Verdict = "failed"
+	VerdictRecovered   Verdict = "recovered"
 	VerdictQuarantined Verdict = "quarantined"
 )
 
@@ -124,15 +124,17 @@ func (m *Manager) States() []*LayerState {
 	return out
 }
 
-// Eligible returns representations allowed into the rollback manifest:
-// layers that passed or recovered and carry no error-severity issue.
+// Eligible returns representations allowed into the rollback manifest.
+// Only layers that passed without any recovery intervention qualify: a
+// recovered layer is auditable and cross-checked again, but a failed layer
+// never enters the manifest even after a successful recomputation.
 func (m *Manager) Eligible() []string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var out []string
 	for _, n := range m.order {
 		st := m.states[n]
-		if (st.After == VerdictPassed || st.After == VerdictRecovered) && st.Healthy {
+		if st.After == VerdictPassed && st.Healthy {
 			out = append(out, n)
 		}
 	}

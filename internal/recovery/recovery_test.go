@@ -30,7 +30,7 @@ func TestIndependentRecoveryAndQuarantine(t *testing.T) {
 	if q.After != VerdictQuarantined || q.Healthy {
 		t.Errorf("quarantine verdict wrong: %+v", q)
 	}
-	if len(m.Eligible()) != 3 { // low, high, recovered mid
+	if len(m.Eligible()) != 2 { // only originally-passing low and high
 		t.Errorf("eligible=%v", m.Eligible())
 	}
 }
