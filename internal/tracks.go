@@ -37,10 +37,10 @@ type TrackMap struct {
 // Mapping records how one source track projects onto a target track.
 type Mapping struct {
 	// Source is the manifest/representation label (e.g. "main" or "backup").
-	Source   string
-	SourceID uint32
+	Source    string
+	SourceID  uint32
 	SourceKey string
-	Target   string
+	Target    string
 	// StableKey includes the source identity, keeping per-source provenance.
 	StableKey string
 }
@@ -105,7 +105,7 @@ func BuildTrackMap(sources []TrackSource) (*TrackMap, error) {
 				targets[tr.Key] = &TargetTrack{
 					Key: tr.Key, Kind: tr.Kind, Codec: tr.Codec, Timescale: tr.Timescale,
 					CodecConfig: append([]byte(nil), tr.CodecConfig...),
-					Width: tr.Width, Height: tr.Height, ChannelCount: tr.ChannelCount, SampleRate: tr.SampleRate,
+					Width:       tr.Width, Height: tr.Height, ChannelCount: tr.ChannelCount, SampleRate: tr.SampleRate,
 				}
 			} else if err := compatibleTarget(cur, tr, src.Label); err != nil {
 				return nil, err
