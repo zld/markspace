@@ -60,6 +60,8 @@ func Check(doc *ebml.Document, graph *tracks.Graph, streams []rtp.Stream) (*Resu
 		trackBlocks := map[uint64][]*ebml.Block{}
 		prevRawOffset := -1
 		trackSeen := map[int]bool{}
+		haveBlock := false
+		firstBlockNS := int64(0)
 
 		for _, b := range cluster.Blocks {
 			ns, nerr := clock.BlockNS(cluster.Timecode, b.RelativeTicks, b.Element.Offset, b.Element.End)
@@ -82,6 +84,10 @@ func Check(doc *ebml.Document, graph *tracks.Graph, streams []rtp.Stream) (*Resu
 			prevRawOffset = b.Element.Offset
 			trackBlocks[b.Track] = append(trackBlocks[b.Track], b)
 			trackSeen[int(b.Track)] = true
+			if !haveBlock {
+				haveBlock = true
+				firstBlockNS = ns
+			}
 			if ns > frag.EndNS {
 				frag.EndNS = ns
 			}
@@ -109,7 +115,15 @@ func Check(doc *ebml.Document, graph *tracks.Graph, streams []rtp.Stream) (*Resu
 		}
 
 		frag.Tracks = sortedTracks(trackSeen)
+		if haveBlock {
+			frag.StartNS = firstBlockNS
+		}
 		span := frag.EndNS - frag.StartNS
+		if haveBlock && frag.StartNS > frag.EndNS {
+			res.Records = append(res.Records, issue(0, frag.ClusterOffset, frag.EndOffset,
+				report.FragmentTimeOrder, "first_after_last",
+				"fragment %s first time %d is after last time %d", frag.ID, frag.StartNS, frag.EndNS))
+		}
 		if span < 0 {
 			res.Records = append(res.Records, issue(0, frag.ClusterOffset, frag.EndOffset,
 				report.FragmentTimeOrder, "negative_fragment_span",
