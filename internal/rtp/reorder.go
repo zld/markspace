@@ -211,6 +211,13 @@ func (b *ReorderBuffer) account(res PushResult) {
 	}
 }
 
+// ExpandSeq maps a raw 16-bit sequence number to the buffer's expanded
+// axis without delivering anything, so callers can label packets that
+// cannot be fully parsed using the same coordinate system as gaps.
+func (b *ReorderBuffer) ExpandSeq(raw uint16) uint64 {
+	return b.exp.feed(raw)
+}
+
 // Stats returns a copy of the running counters.
 func (b *ReorderBuffer) Stats() Stats { return b.stats }
 

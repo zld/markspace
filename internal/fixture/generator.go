@@ -209,6 +209,9 @@ func (s *Stream) attachReports() {
 }
 
 func (s *Stream) materialize() {
+	// Rebuild datagrams from scratch so repeated mutations never append
+	// duplicates on top of an earlier materialization.
+	s.Datagrams = make([]Datagram, 0, len(s.Packets)+len(s.RTCP))
 	for i, p := range s.Packets {
 		raw, err := rtppkg.EncodeDatagram(p)
 		if err != nil {
@@ -267,6 +270,22 @@ func (s *Stream) CorruptLength(seq uint16) {
 		}
 	}
 	s.materialize()
+}
+
+// InjectTruncatedHeader replaces the datagram for seq with a datagram
+// whose RTP header is shorter than the 12-byte minimum. The packet keeps
+// its arrival position, so the resulting fault is localized to exactly
+// that sequence number without disturbing any other packet.
+func (s *Stream) InjectTruncatedHeader(seq uint16) (injected bool) {
+	for i, d := range s.Datagrams {
+		if d.IsRTCP || d.SeqHint != seq {
+			continue
+		}
+		short := []byte{0x80, 0x60, 0x00, byte(seq), 0x00}
+		s.Datagrams[i].Raw = short
+		return true
+	}
+	return false
 }
 
 // PayloadBytes flattens every packet payload for content hashing.
