@@ -19,6 +19,10 @@ type Rational struct {
 	Den int64 `json:"den"`
 }
 
+// TimelineBase is the unified microsecond tick rate used by normalized
+// tracks, cut points and derived clips.
+const TimelineBase Base = 1_000_000
+
 var (
 	ErrNegativeTime = errors.New("media time must be non-negative")
 	ErrZeroDen      = errors.New("rational denominator must be positive")

@@ -80,11 +80,16 @@ func Generate(root string, kind Kind) (Fixture, error) {
 	case KindTruncated:
 		fx.MediaPath = filepath.Join(dir, "replay.mp4")
 		fx.EventsPath = filepath.Join(dir, "events.rtp")
-		fx.Expect = "mdat box truncated mid-payload"
+		fx.Expect = "mdat box declares more payload than the file carries"
 		media := normalMedia()
-		if err := writeFile(fx.MediaPath, media[:len(media)-37]); err != nil {
+		truncated, truncAt := truncateBox(media, "mdat", 37)
+		if truncated == nil {
+			return Fixture{}, fmt.Errorf("fixture layout: mdat box not found")
+		}
+		if err := writeFile(fx.MediaPath, truncated); err != nil {
 			return Fixture{}, err
 		}
+		_ = truncAt
 		events, err := rtpCapture(normalEvents(), fx.ClockRate)
 		if err != nil {
 			return Fixture{}, err

@@ -61,44 +61,77 @@ type trackSpec struct {
 	samples   []sampleSpec
 }
 
-// buildMP4 lays out ftyp, mdat and moov with one chunk per sample. The mdat
-// payload offsets are computed from the actual ftyp length so stco entries are
-// valid without a second pass.
+// buildMP4 lays out a fast-start file: ftyp, moov, then mdat. Chunk offsets
+// live in moov and therefore depend on moov's own length, so the movie header
+// is built twice with identical field widths.
 func buildMP4(tracks []trackSpec, movieTimescale uint32) []byte {
 	ftyp := box("ftyp", []byte("isom"), u32(512), []byte("isom"), []byte("iso2"), []byte("mp41"))
 
-	var mdatPayload bytes.Buffer
-	offsets := make(map[uint32][]uint32, len(tracks))
-	for _, tr := range tracks {
-		var offs []uint32
+	sizes := make([]uint64, len(tracks))
+	for i, tr := range tracks {
+		var n uint64
 		for _, s := range tr.samples {
-			offs = append(offs, uint32(uint64(len(ftyp))+8+uint64(mdatPayload.Len())))
-			mdatPayload.Write(s.payload)
+			n += uint64(s.size)
 		}
-		offsets[tr.id] = offs
+		sizes[i] = n
 	}
-	mdat := box("mdat", mdatPayload.Bytes())
 
+	// First pass: zero offsets (same slice lengths) establish moov's length.
+	scratch := make([][]uint32, len(tracks))
+	for i, tr := range tracks {
+		scratch[i] = make([]uint32, len(tr.samples))
+	}
+	moovLen := uint64(len(buildMoov(tracks, scratch, movieTimescale, sizes)))
+	mdatPayload := uint64(8)
+	for _, n := range sizes {
+		mdatPayload += n
+	}
+	base := uint64(len(ftyp)) + moovLen + 8 // mdat header
+
+	offsets := make([][]uint32, len(tracks))
+	for i, tr := range tracks {
+		offs := make([]uint32, len(tr.samples))
+		cur := base
+		for j, s := range tr.samples {
+			offs[j] = uint32(cur)
+			cur += uint64(s.size)
+		}
+		offsets[i] = offs
+	}
+	moov := buildMoov(tracks, offsets, movieTimescale, sizes)
+	if uint64(len(moov)) != moovLen {
+		panic("fixture moov length changed between passes")
+	}
+
+	var mdatBody bytes.Buffer
+	for _, tr := range tracks {
+		for _, s := range tr.samples {
+			mdatBody.Write(s.payload)
+		}
+	}
+	return cat(ftyp, moov, box("mdat", mdatBody.Bytes()))
+}
+
+func buildMoov(tracks []trackSpec, offsets [][]uint32, movieTimescale uint32, _ []uint64) []byte {
 	var traks [][]byte
 	var movieDuration uint64
-	nextTrack := uint32(1)
-	for _, tr := range tracks {
+	for i, tr := range tracks {
 		var dur uint64
+		var byteDur uint64
 		for _, s := range tr.samples {
 			dur += uint64(s.dur)
+			byteDur += uint64(s.size)
 		}
+		_ = byteDur
 		if d := dur * uint64(movieTimescale) / uint64(tr.timescale); d > movieDuration {
 			movieDuration = d
 		}
-		traks = append(traks, buildTrak(tr, offsets[tr.id], dur))
-		nextTrack++
+		traks = append(traks, buildTrak(tr, offsets[i], dur))
 	}
-
 	mvhd := fullBox("mvhd", 0, 0,
 		u32(0), u32(0), u32(movieTimescale), u32(uint32(movieDuration)),
-		u32(0x00010000), u16(0x0100), u16(0), zeros(8), identityMatrix, zeros(24), u32(nextTrack))
-	moov := box("moov", append([][]byte{mvhd}, traks...)...)
-	return cat(ftyp, mdat, moov)
+		u32(0x00010000), u16(0x0100), u16(0), zeros(8), identityMatrix, zeros(24), u32(uint32(len(tracks)+1)))
+	return box("moov", append([][]byte{mvhd}, traks...)...)
 }
 
 func buildTrak(tr trackSpec, chunkOffsets []uint32, trackDuration uint64) []byte {
@@ -148,4 +181,33 @@ func sampleEntry(handler, codec string) []byte {
 			u16(1), zeros(32), u16(24), u16(0xffff))
 	}
 	return box(codec, zeros(6), u16(1), u16(0), u16(0), u16(2), u16(16), u16(0), u16(0), u32(48000))
+}
+
+// truncateBox locates the top-level box of the given type and cuts drop bytes
+// out of its payload, leaving the declared size intact so the reader sees a
+// box that overruns the file. It returns the damaged bytes and the byte offset
+// of the truncation.
+func truncateBox(data []byte, wantType string, drop int) ([]byte, int) {
+	off := 0
+	for off+8 <= len(data) {
+		size := int(binary.BigEndian.Uint32(data[off:]))
+		typ := string(data[off+4 : off+8])
+		if size < 8 || off+size > len(data) {
+			return nil, 0
+		}
+		if typ == wantType {
+			if drop >= size-8 {
+				return nil, 0
+			}
+			// Remove bytes from the middle of the payload so the declared
+			// box size stays larger than the bytes that follow it.
+			cut := off + 8 + (size-8)/2
+			out := make([]byte, 0, len(data)-drop)
+			out = append(out, data[:cut]...)
+			out = append(out, data[cut+drop:]...)
+			return out, cut
+		}
+		off += size
+	}
+	return nil, 0
 }

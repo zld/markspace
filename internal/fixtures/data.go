@@ -6,7 +6,7 @@ package fixtures
 
 const (
 	videoFrameDur = 3000 // 90 kHz ticks = 33.333 ms
-	audioFrameDur = 1024 // 48 kHz ticks = 21.333 ms
+	audioFrameDur = 1000 // 48 kHz ticks = 20.833 ms
 	framesPerGOP  = 60
 	totalVideo    = 180
 	totalAudio    = 288
@@ -35,12 +35,17 @@ func normalMedia() []byte {
 	}, 1000)
 }
 
-// timebaseMedia uses a 30 kHz video clock so 33 ms frames produce fractional
-// microsecond boundaries (remainder 100 per frame at 30 kHz -> not integral).
+// timebaseMedia uses a 30 kHz video clock: 1001-tick frames are 33.3667 ms, so
+// sample boundaries carry a 2/3 microsecond fraction that normalization must
+// report rather than round.
 func timebaseMedia() []byte {
 	tr := mediaTrack(1, "vide", "avc1", timebaseTS, totalVideo, 1001)
 	return buildMP4([]trackSpec{tr}, 1000)
 }
+
+// timebaseVideoEnd is the exact normalized end of timebaseMedia in
+// microseconds: 180 * 1001 ticks at 30 kHz, floored.
+const timebaseVideoEnd = totalVideo * 1001 * 1_000_000 / timebaseTS
 
 // eventSpecs are expressed in microseconds; the helper converts them with the
 // fixture clock rate so the relationship between wall time and RTP ticks is
@@ -73,11 +78,13 @@ func wrapEvents() []eventSpec {
 
 func timebaseEvents() []eventSpec {
 	const rate = wrapClockRate
+	// The closing trigger lands exactly on the floored video end so the
+	// timeline is closed without rounding it up past the last sample.
 	return []eventSpec{
 		{ssrc: 0xC3, seq: 20, ts: atUS(0, rate), marker: true, payload: "open"},
 		{ssrc: 0xC3, seq: 21, ts: atUS(2_001_000, rate), marker: true, payload: "cut-odd"},
 		{ssrc: 0xC3, seq: 22, ts: atUS(4_000_000, rate), marker: true, payload: "cut-4s"},
-		{ssrc: 0xC3, seq: 23, ts: atUS(6_000_000, rate), marker: true, payload: "close"},
+		{ssrc: 0xC3, seq: 23, ts: atUS(uint64(timebaseVideoEnd), rate), marker: true, payload: "close"},
 	}
 }
 
