@@ -1,11 +1,13 @@
 package pipeline
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"mediad/internal/mp4"
+	"mediad/internal/txn"
 )
 
 func readFile(t *testing.T, p string) ([]byte, error) {
@@ -139,5 +141,43 @@ func TestRunRejectsChangedInputOnResume(t *testing.T) {
 	_, err := Run(inputs, testCfg(dir))
 	if err == nil {
 		t.Fatal("changed input must be rejected on resume")
+	}
+}
+
+func TestFaultAfterCommitThenResume(t *testing.T) {
+	inputs := buildInput(t)
+	dir := t.TempDir()
+
+	// First run: inject a fault right after the analyze stage commits.
+	faultCfg := testCfg(dir)
+	faultCfg.FaultAfterStage = txn.StageAnalyze
+	if _, err := Run(inputs, faultCfg); !errors.Is(err, ErrFaultInjected) {
+		t.Fatalf("want ErrFaultInjected, got %v", err)
+	}
+	// The analyze output must be committed; the later fingerprint output must
+	// not exist yet (no half-finished work past the atomic boundary).
+	if _, err := os.Stat(filepath.Join(dir, "analyze.json")); err != nil {
+		t.Fatalf("committed analyze output missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "fingerprint.json")); !os.IsNotExist(err) {
+		t.Fatal("no output may exist beyond the faulted commit boundary")
+	}
+
+	// Uninterrupted reference run in a separate directory.
+	ref, err := Run(inputs, testCfg(t.TempDir()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Resume without the fault: must finish and reproduce the identical output.
+	resumed, err := Run(inputs, testCfg(dir))
+	if err != nil {
+		t.Fatalf("resume after fault: %v", err)
+	}
+	if resumed.ManifestSHA256 != ref.ManifestSHA256 {
+		t.Fatalf("resumed output %q differs from reference %q",
+			resumed.ManifestSHA256, ref.ManifestSHA256)
+	}
+	if resumed.RecoveryMS >= 5000 {
+		t.Fatalf("recovery_ms too large: %d", resumed.RecoveryMS)
 	}
 }
