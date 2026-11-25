@@ -23,6 +23,13 @@ type Item struct {
 	Sequence     uint16 // RTP sequence number assigned on send
 	Payload      []byte
 	SourceFrames int64
+	// InputOffset is the byte offset of the block in the source container.
+	InputOffset int64
+	// Digest is the output digest computed by the producer, carried so the
+	// consumer records exactly what was produced.
+	Digest string
+	// Channels is the interleaved channel count of Payload.
+	Channels uint16
 }
 
 // Size reports the payload size accounted against the byte limit.

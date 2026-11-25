@@ -127,11 +127,16 @@ type Manifest struct {
 }
 
 // canonicalDigest computes the manifest digest over a canonical serialization
-// in which Digest is cleared and segments are sorted by index. json.Marshal
-// emits struct fields in declaration order, so the bytes are stable.
+// in which Digest is cleared, segments are sorted by index and the run summary
+// is excluded. The summary holds timing-dependent counters (queue peaks,
+// resume bookkeeping) that must not change the published digest: the same
+// inputs and parameters must always verify against the same manifest hash,
+// whether or not the run was cached or resumed. json.Marshal emits struct
+// fields in declaration order, so the bytes are stable.
 func (m *Manifest) canonicalDigest() (string, error) {
 	clone := *m
 	clone.Digest = ""
+	clone.Summary = Summary{}
 	segs := append([]Segment(nil), clone.Track.Segments...)
 	sort.Slice(segs, func(i, j int) bool { return segs[i].Index < segs[j].Index })
 	clone.Track.Segments = segs

@@ -172,7 +172,7 @@ func buildMP4Moov(s *spec, ess *mp4Essence, blocks []Block, mdatStart int64) (mp
 	if err != nil {
 		return nil, err
 	}
-	audioTrak, err := buildMP4AudioTrak(s, ess, blocks, mdatStart)
+	audioTrak, err := buildMP4AudioTrak(s, ess, blocks)
 	if err != nil {
 		return nil, err
 	}
@@ -269,7 +269,7 @@ func visualEntry(colr *mp4.Colr, clap *mp4ext.Clap) (mp4Box, error) {
 	return rawBox("avc1", payload), nil
 }
 
-func buildMP4AudioTrak(s *spec, ess *mp4Essence, blocks []Block, mdatStart int64) (mp4Box, error) {
+func buildMP4AudioTrak(s *spec, ess *mp4Essence, blocks []Block) (mp4Box, error) {
 	tkhd := marshalBox(&mp4.Tkhd{
 		TrackID:    AudioTrackID,
 		DurationV0: VideoFrames * 1000 / FPS,
@@ -290,7 +290,7 @@ func buildMP4AudioTrak(s *spec, ess *mp4Essence, blocks []Block, mdatStart int64
 	offsets := make([]uint32, len(blocks))
 	for i, b := range blocks {
 		sizes[i] = uint32(b.Length)
-		offsets[i] = uint32(mdatStart + b.Offset)
+		offsets[i] = uint32(b.Offset)
 	}
 	bcrc := make([]byte, 0, 4+4*len(ess.crcs))
 	bcrc = append(bcrc, u32(uint32(len(ess.crcs)))...)

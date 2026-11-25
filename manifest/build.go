@@ -109,9 +109,10 @@ func (b *Builder) AddSegment(seg Segment) {
 }
 
 // SegmentFromBlock converts a converted block and its start tick into a
-// segment. The end tick is derived from the block's output frame count at the
-// target sample rate, so segment windows tile exactly.
-func SegmentFromBlock(trackID uint32, block audio.Block, startTick int64, targetRate uint32, digest string) (Segment, error) {
+// segment. index is the published 1-based segment number; the end tick is
+// derived from the block's output frame count at the target sample rate, so
+// segment windows tile exactly.
+func SegmentFromBlock(trackID uint32, index int, block audio.Block, startTick int64, targetRate uint32, digest string) (Segment, error) {
 	if block.Frames <= 0 {
 		return Segment{}, merr.New(merr.StageManifest, merr.KindInconsistent, trackID, int64(block.Index),
 			"block %d produced no frames", block.Index)
@@ -121,7 +122,7 @@ func SegmentFromBlock(trackID uint32, block audio.Block, startTick int64, target
 		return Segment{}, err
 	}
 	return Segment{
-		Index:     block.Index,
+		Index:     index,
 		TrackID:   trackID,
 		StartTick: startTick,
 		EndTick:   startTick + dur,

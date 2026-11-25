@@ -96,6 +96,16 @@ func (p *Pipeline) Run(ctx context.Context) error {
 	}
 }
 
+// MaxBlocks returns the configured block bound.
+func (p *Pipeline) MaxBlocks() int { return p.queue.cfg.MaxBlocks }
+
+// MaxBytes returns the configured byte bound.
+func (p *Pipeline) MaxBytes() int { return p.queue.cfg.MaxBytes }
+
+// Pop removes the next block from the bounded queue. It lets synchronous
+// callers drive the same queue the asynchronous Run loop uses.
+func (p *Pipeline) Pop(ctx context.Context) (Item, error) { return p.queue.Pop(ctx) }
+
 // Close stops intake and wakes the consumer.
 func (p *Pipeline) Close() { p.queue.Close() }
 

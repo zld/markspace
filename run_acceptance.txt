@@ -1,0 +1,29 @@
+# Acceptance commands (macOS, Local Go toolchain)
+
+brew install go@1.23
+go mod tidy
+go build ./...
+go test ./...
+
+# 1) Normal sample: expect stages=5, queue_peak_bytes <= --memory-bytes,
+#    manifest_segments > 0, continuity_errors=0, sha256 present.
+go run ./cmd/regress --fixture valid --sample-rate 48000 --layout stereo \
+  --loudness -16 --slow-consumer-ms 20
+
+# 2) Corrupt block: expect exit=2 with failed stage, track_id, input_offset.
+go run ./cmd/regress --fixture corrupt --corrupt-block 3
+
+# 3) Truncated timestamp: expect timestamp_errors=1 and no manifest.
+go run ./cmd/regress --fixture boundary --truncate-timestamp
+
+# 4) Interrupt then resume: resume_block=3, recomputed_blocks < total,
+#    final manifest_sha256 equal to the uninterrupted run.
+go run ./cmd/regress --fixture valid --interrupt-after-block 3 --checkpoint ./tmp/checkpoint.json
+go run ./cmd/regress --fixture valid --interrupt-after-block 3 --checkpoint ./tmp/checkpoint.json --resume
+
+# 5) Cache: repeated run hits the cache; tampering forces recompute.
+go run ./cmd/regress --fixture valid --cache ./tmp/cache
+go run ./cmd/regress --fixture valid --cache ./tmp/cache
+go run ./cmd/regress --fixture valid --cache ./tmp/cache --tamper-cache
+
+# Exit codes: 0 verified, 2 input/processing error, 3 manifest continuity/digest failure.

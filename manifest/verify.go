@@ -114,9 +114,21 @@ func verifyAudioTrack(m *Manifest, expected AudioTarget) []error {
 			errs = append(errs, merr.New(merr.StageManifest, merr.KindInconsistent, s.TrackID, s.StartTick,
 				"segment %d belongs to track %d, not %d", s.Index, s.TrackID, t.ID))
 		}
-		if s.Index != i+1 {
+		// Numbering must be dense and 1-based. A missing run is reported once at
+		// the first segment that follows it; the same loss is not re-reported
+		// for every later segment.
+		missing := false
+		if i == 0 {
+			if s.Index != 1 {
+				missing = true
+				errs = append(errs, merr.New(merr.StageManifest, merr.KindContinuity, s.TrackID, s.StartTick,
+					"segment numbering must start at 1, found %d", s.Index))
+			}
+		} else if s.Index != segs[i-1].Index+1 {
+			missing = true
 			errs = append(errs, merr.New(merr.StageManifest, merr.KindContinuity, s.TrackID, s.StartTick,
-				"segment numbering jumps: expected %d, found %d", i+1, s.Index))
+				"segment numbering jumps from %d to %d (%d missing)",
+				segs[i-1].Index, s.Index, s.Index-segs[i-1].Index-1))
 		}
 		if s.Frames <= 0 {
 			errs = append(errs, merr.New(merr.StageManifest, merr.KindInconsistent, s.TrackID, s.StartTick,
@@ -130,7 +142,7 @@ func verifyAudioTrack(m *Manifest, expected AudioTarget) []error {
 			errs = append(errs, merr.New(merr.StageManifest, merr.KindContinuity, s.TrackID, s.StartTick,
 				"segment %d window [%d,%d) is empty", s.Index, s.StartTick, s.EndTick))
 		}
-		if i > 0 {
+		if i > 0 && !missing {
 			prev := segs[i-1]
 			if s.StartTick != prev.EndTick {
 				errs = append(errs, merr.New(merr.StageManifest, merr.KindContinuity, s.TrackID, s.StartTick,
