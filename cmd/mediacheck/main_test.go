@@ -77,6 +77,16 @@ func TestRunRTPGapFailsButReportsRecovery(t *testing.T) {
 	}
 }
 
+func TestRunHelpReturns0(t *testing.T) {
+	var out, errOut bytes.Buffer
+	if code := run([]string{"--help"}, &out, &errOut); code != 0 {
+		t.Fatalf("help code=%d want0", code)
+	}
+	if out.Len() == 0 {
+		t.Fatal("help output is empty")
+	}
+}
+
 func TestRunInvalidArgumentsReturns2(t *testing.T) {
 	var out, errOut bytes.Buffer
 	if code := run([]string{"--unknown"}, &out, &errOut); code != 2 {

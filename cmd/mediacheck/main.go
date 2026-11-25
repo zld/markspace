@@ -3,6 +3,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -17,9 +18,20 @@ func main() {
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
-	if len(args) == 0 || args[0] != "demo" {
-		fmt.Fprintln(stderr, "usage: mediacheck demo [--seed N] [--case NAME]")
-		fmt.Fprintln(stderr, "cases: normal, truncated-cluster, audio-conflict, rtp-gap")
+	usage := func(w io.Writer) {
+		fmt.Fprintln(w, "usage: mediacheck demo [--seed N] [--case NAME]")
+		fmt.Fprintln(w, "cases: normal, truncated-cluster, audio-conflict, rtp-gap")
+	}
+	if len(args) == 0 {
+		usage(stderr)
+		return 2
+	}
+	if args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
+		usage(stdout)
+		return 0
+	}
+	if args[0] != "demo" {
+		usage(stderr)
 		return 2
 	}
 
@@ -28,6 +40,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	seed := fs.Int64("seed", 7, "deterministic sample seed")
 	caseName := fs.String("case", sample.CaseNormal, "sample case name")
 	if err := fs.Parse(args[1:]); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
 		return 2
 	}
 	if fs.NArg() != 0 || !sample.ValidCase(*caseName) {
