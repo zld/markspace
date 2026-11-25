@@ -98,8 +98,9 @@ func TestRecoveryWindowAndDeterminism(t *testing.T) {
 		t.Fatalf("out-of-window gap must not be filled, got %d", len(out))
 	}
 	st := rec.Stats()
-	if st.WindowSkips != 37 || st.Lost != 37 || st.Recovered != 0 {
-		// sequences 1..37 are all beyond the window relative to high=40
+	// seq 1..35 are beyond the window; 36..37 are inside the window but have
+	// no redundancy, so they are ordinary unrecoverable losses.
+	if st.WindowSkips != 35 || st.Lost != 37 || st.Recovered != 0 {
 		t.Fatalf("window accounting wrong: %+v", st)
 	}
 
