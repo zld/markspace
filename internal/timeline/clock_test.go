@@ -85,6 +85,27 @@ func TestTrackClockRejectsUnexplainedRollback(t *testing.T) {
 	}
 }
 
+func TestTrackClockRolloverThenRollback(t *testing.T) {
+	c := NewTrackClock(ClockConfig{TrackID: 1, Timescale: 90000})
+	// High-end fragment near the 32-bit boundary.
+	c.MapTick(0, 0xFFFFFFF0, 8)
+	// Wrapped fragment low in the next period: a valid rollover.
+	wrap := c.MapTick(1, 15, 8)
+	if wrap.Invalid || c.Rollovers() != 1 {
+		t.Fatalf("wrap must be accepted once: %+v rollovers=%d", wrap, c.Rollovers())
+	}
+	// A second low-half fragment whose raw tick drops further back. Both
+	// values are in the bottom half, so this is NOT another rollover; on the
+	// unwrapped absolute axis it is a rollback and must be refused.
+	rollback := c.MapTick(2, 5, 8)
+	if !rollback.Invalid || rollback.ErrCode != ErrTimeline {
+		t.Fatalf("post-wrap rollback must be invalid, got %+v", rollback)
+	}
+	if c.Rollovers() != 1 {
+		t.Fatalf("rollback must not be counted as a rollover: %d", c.Rollovers())
+	}
+}
+
 func TestTrackClockMonotonicUnderRounding(t *testing.T) {
 	// timescale 3 (coarse) makes microsecond rounding collide for close ticks.
 	c := NewTrackClock(ClockConfig{TrackID: 2, Timescale: 3})
@@ -112,5 +133,25 @@ func TestCheckDrift(t *testing.T) {
 	ppm, err := c.CheckDrift(1_000_100, 1_000_000) // 100 ppm
 	if err != nil || ppm != 100 {
 		t.Fatalf("within-limit drift: ppm=%d err=%v", ppm, err)
+	}
+}
+
+func TestDriftPPMFromTickSpan(t *testing.T) {
+	// 48000 ticks = exactly 1.0 s of media. Reference 0.99 s -> ~10101 ppm.
+	c := NewTrackClock(ClockConfig{Timescale: 48000, DriftPPMMax: 50000})
+	ppm, err := c.DriftPPM(0, 48000, 990_000)
+	if err != nil {
+		t.Fatalf("within bound: %v", err)
+	}
+	if ppm <= 9000 || ppm >= 11000 {
+		t.Fatalf("drift ppm out of expected band: %d", ppm)
+	}
+	if got := c.SpanUS(0, 48000); got != 1_000_000 {
+		t.Fatalf("span = %d, want 1000000us", got)
+	}
+	// Tight bound must turn the same span into an error, never a fake time.
+	strict := NewTrackClock(ClockConfig{Timescale: 48000, DriftPPMMax: 100})
+	if _, err := strict.DriftPPM(0, 48000, 990_000); err == nil {
+		t.Fatal("drift beyond bound must error")
 	}
 }
