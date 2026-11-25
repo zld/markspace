@@ -69,7 +69,10 @@ func ParsePMT(sec []byte) *PMT {
 	return m
 }
 
-type sectionBuilder struct{ buf []byte; need int }
+type sectionBuilder struct {
+	buf  []byte
+	need int
+}
 
 // PSIParser reassembles PSI sections per PID (single-packet sections in the
 // generated fixtures, plus continuation support) with bounded buffering.
@@ -130,27 +133,27 @@ func (p *PSIParser) feed(sb *sectionBuilder, chunk []byte, out *[][]byte) {
 
 // Mapping is one complete PAT/PMT signalling state.
 type Mapping struct {
-	PATVersion int               `json:"pat_version"`
-	PMTVersion int               `json:"pmt_version"`
-	PMTPID     uint16            `json:"pmt_pid"`
-	Programs   map[uint16]uint16 `json:"programs"`
-	PCRPID     uint16            `json:"pcr_pid"`
-	VideoPID   uint16            `json:"video_pid"`
-	AudioPID   uint16            `json:"audio_pid"`
-	StreamPIDs []uint16          `json:"stream_pids"`
-	Complete   bool              `json:"complete"`
-	SinceTick  uint64            `json:"since_tick"`
-	SinceOffset int64            `json:"since_offset"`
+	PATVersion  int               `json:"pat_version"`
+	PMTVersion  int               `json:"pmt_version"`
+	PMTPID      uint16            `json:"pmt_pid"`
+	Programs    map[uint16]uint16 `json:"programs"`
+	PCRPID      uint16            `json:"pcr_pid"`
+	VideoPID    uint16            `json:"video_pid"`
+	AudioPID    uint16            `json:"audio_pid"`
+	StreamPIDs  []uint16          `json:"stream_pids"`
+	Complete    bool              `json:"complete"`
+	SinceTick   uint64            `json:"since_tick"`
+	SinceOffset int64             `json:"since_offset"`
 }
 
 // MappingGap is an interval where a version switch / CRC failure left the
 // active mapping incomplete.
 type MappingGap struct {
-	Reason                    string `json:"reason"`
-	StartOffset, EndOffset    int64  `json:"start_offset"`
-	StartTick, EndTick        uint64 `json:"start_tick"`
-	Resolved                  bool   `json:"resolved"`
-	FromVersion, ToVersion    int    `json:"from_version"`
+	Reason                 string `json:"reason"`
+	StartOffset, EndOffset int64  `json:"start_offset"`
+	StartTick, EndTick     uint64 `json:"start_tick"`
+	Resolved               bool   `json:"resolved"`
+	FromVersion, ToVersion int    `json:"from_version"`
 }
 
 // Tracker tracks PAT/PMT versions, mappings and incompleteness gaps.
@@ -166,6 +169,7 @@ type Tracker struct {
 	gap        *MappingGap
 	pmtSeen    map[uint16]bool
 	pmtVersion map[uint16]int
+	pmtPIDs    map[uint16]bool
 
 	// History contains every completed mapping in order.
 	History []Mapping
@@ -180,6 +184,7 @@ func NewTracker(issues *merr.Book) *Tracker {
 		Issues:     issues,
 		pmtSeen:    map[uint16]bool{},
 		pmtVersion: map[uint16]int{},
+		pmtPIDs:    map[uint16]bool{},
 	}
 }
 
@@ -191,14 +196,28 @@ func (t *Tracker) Current() *Mapping {
 	return t.current
 }
 
-// Handle feeds a packet through reassembly and PAT/PMT tracking.
+// Handle feeds a packet through reassembly and PAT/PMT tracking. Only PID 0
+// (PAT) and PMT PIDs announced by a valid PAT are interpreted as PSI, so PES
+// packets on elementary PIDs are never mistaken for sections.
 func (t *Tracker) Handle(pkt *Packet) {
+	if pkt == nil {
+		return
+	}
+	isPAT := pkt.PID == 0x0000
+	isPMT := t.pmtPIDs[pkt.PID]
+	if !isPAT && !isPMT {
+		return
+	}
 	for _, sec := range t.Parser.Sections(pkt) {
 		switch sec[0] {
 		case 0x00:
-			t.handlePAT(sec, pkt)
+			if isPAT {
+				t.handlePAT(sec, pkt)
+			}
 		case 0x02:
-			t.handlePMT(sec, pkt)
+			if isPMT {
+				t.handlePMT(sec, pkt)
+			}
 		}
 	}
 }
@@ -241,6 +260,9 @@ func (t *Tracker) handlePAT(sec []byte, pkt *Packet) {
 		t.openGap("version_switch", pkt.Offset, t.patVersion, v)
 	}
 	t.hasPAT, t.patVersion = true, v
+	for _, pid := range pat.Programs {
+		t.pmtPIDs[pid] = true
+	}
 	m := &Mapping{PATVersion: v, Programs: pat.Programs, SinceTick: t.NowTick, SinceOffset: pkt.Offset}
 	if pid, ok := pat.Programs[1]; ok {
 		m.PMTPID = pid
