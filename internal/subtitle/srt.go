@@ -104,24 +104,34 @@ func splitBlocks(raw string) []block {
 	return blocks
 }
 
-func parseTimingLine(source string, b block, line string, format string) (clock.Ticks, clock.Ticks, int, error) {
+func blockLineOffset(b block, idx int) int {
+	off := 0
+	for i := 0; i < idx && i < len(b.lines); i++ {
+		off += len(b.lines[i]) + 1
+	}
+	return off
+}
+
+func parseTimingLine(source string, b block, line string, lineOffset int, format string) (clock.Ticks, clock.Ticks, int, error) {
 	arrow := strings.Index(line, "-->")
 	if arrow < 0 {
-		return 0, 0, 0, fault.At(fault.SubtitleParse, source, int64(b.startOffset),
+		return 0, 0, 0, fault.At(fault.SubtitleParse, source, int64(b.startOffset+lineOffset),
 			"%s cue missing '-->' timing line", format)
 	}
 	left := strings.TrimSpace(line[:arrow])
 	rest := strings.TrimSpace(line[arrow+3:])
 	rightFields := strings.Fields(rest)
 	if left == "" || len(rightFields) == 0 {
-		return 0, 0, 0, fault.At(fault.SubtitleParse, source, int64(b.startOffset+arrow),
+		return 0, 0, 0, fault.At(fault.SubtitleParse, source, int64(b.startOffset+lineOffset+arrow),
 			"%s cue has incomplete timing", format)
 	}
-	start, err := ParseStamp(source, int64(b.startOffset), left)
+	leftPos := strings.Index(line, left)
+	start, err := ParseStamp(source, int64(b.startOffset+lineOffset+leftPos), left)
 	if err != nil {
 		return 0, 0, 0, err
 	}
-	end, err := ParseStamp(source, int64(b.startOffset+arrow+3), rightFields[0])
+	endPos := arrow + 3 + strings.Index(line[arrow+3:], rightFields[0])
+	end, err := ParseStamp(source, int64(b.startOffset+lineOffset+endPos), rightFields[0])
 	if err != nil {
 		return 0, 0, 0, err
 	}
@@ -168,7 +178,7 @@ func ParseSRT(source string, raw []byte) (*Document, error) {
 			return nil, fault.At(fault.SubtitleParse, source, int64(b.startOffset),
 				"SRT cue %d lacks timing line", index)
 		}
-		start, end, _, err := parseTimingLine(source, b, b.lines[lineIdx], "SRT")
+		start, end, _, err := parseTimingLine(source, b, b.lines[lineIdx], blockLineOffset(b, lineIdx), "SRT")
 		if err != nil {
 			return nil, err
 		}

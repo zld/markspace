@@ -44,7 +44,7 @@ func ParseVTT(source string, raw []byte) (*Document, error) {
 				"WebVTT cue has malformed identifier/timing order")
 		}
 
-		start, end, _, err := parseTimingLine(source, b, b.lines[timingIdx], "WebVTT")
+		start, end, _, err := parseTimingLine(source, b, b.lines[timingIdx], blockLineOffset(b, timingIdx), "WebVTT")
 		if err != nil {
 			return nil, err
 		}
