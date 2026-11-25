@@ -84,10 +84,11 @@ func Generate(opt Options) (*Trace, error) {
 	tr.PlannedJobs = packetCount
 	tr.Packets = make([]model.PacketRecord, 0, packetCount+4)
 
-	// Arrival schedule: 20 ms Opus packets on the microsecond clock.
+	// Arrival schedule: 20 ms packets on the microsecond clock. Each RTP
+	// stream has its own independent 16-bit sequence and timestamp space.
 	var arrival model.Tick
-	seq := uint16(0)
-	rtpTS := uint32(0)
+	seqByStream := map[uint32]uint16{}
+	tsByStream := map[uint32]uint32{}
 	for i := 0; i < packetCount; i++ {
 		isOpus := i%2 == 0
 		var payload []byte
@@ -100,6 +101,8 @@ func Generate(opt Options) (*Trace, error) {
 			payload = aacPacket(rng, 16)
 			stream, kind = AACStream, model.CodecAAC
 		}
+		seq := seqByStream[stream]
+		rtpTS := tsByStream[stream]
 		tr.Packets = append(tr.Packets, model.PacketRecord{
 			Stream:       stream,
 			Codec:        kind,
@@ -113,22 +116,24 @@ func Generate(opt Options) (*Trace, error) {
 			At: arrival, Bytes: int64(len(payload)),
 		})
 		arrival += 20_000
-		seq++
+		seqByStream[stream] = seq + 1
 		if isOpus {
-			rtpTS += 960
+			tsByStream[stream] = rtpTS + 960
 		} else {
-			rtpTS += 1024
+			tsByStream[stream] = rtpTS + 1024
 		}
 	}
 
 	// Video track: 10 samples, 100 ms each in a 1000-unit timescale.
+	// Video track: 10 samples at 1 ms each in a 1000-unit timescale, so a
+	// healthy keyframe interval is 2 ms, inside the default 3 ms budget.
 	spec := mp4.VideoSpec{
 		TrackID:       VideoTrack,
 		Timescale:     1000,
 		SampleCounts:  []uint32{10},
-		SampleDeltas:  []uint32{100},
+		SampleDeltas:  []uint32{1},
 		SampleSizes:   repeatU32(40, 10),
-		KeyframeIndex: []uint32{1, 4, 7, 10},
+		KeyframeIndex: []uint32{1, 3, 5, 7, 9},
 	}
 
 	switch opt.Profile {
@@ -154,15 +159,19 @@ func Generate(opt Options) (*Trace, error) {
 // one duplicate, a three-packet burst loss, one truncated packet and a bad
 // MP4 index, plus a throughput dip and an oversized keyframe gap.
 func applyDamaged(rng *rand.Rand, tr *Trace, spec *mp4.VideoSpec) {
-	// 1. Duplicate an early packet (counted once by the reorder buffer).
+	// 1. Burst loss first, while packet indices still map 1:1 to the
+	// generated sequence. Remove three same-stream records (even indices
+	// are Opus) so the reorder buffer reports one three-number gap rather
+	// than two unrelated single-number holes across streams.
+	tr.Packets = removeRange(tr.Packets, 16, 1)
+	tr.Packets = removeRange(tr.Packets, 14, 1)
+	tr.Packets = removeRange(tr.Packets, 12, 1)
+	tr.BurstLosses = 3
+
+	// 2. Duplicate an early packet; the reorder buffer counts it once.
 	dup := tr.Packets[2]
 	tr.Packets = insertAt(tr.Packets, 4, dup)
 	tr.Duplicates++
-
-	// 2. Burst loss of three consecutive packets near the middle.
-	lossAt := 12
-	tr.Packets = removeRange(tr.Packets, lossAt, 3)
-	tr.BurstLosses = 3
 
 	// 3. Truncate one remaining Opus packet to an empty payload.
 	for i := range tr.Packets {
@@ -181,8 +190,9 @@ func applyDamaged(rng *rand.Rand, tr *Trace, spec *mp4.VideoSpec) {
 
 	// 5. MP4 damage: an out-of-range sync sample and a long keyframe gap.
 	spec.BadSTSSIndex = 999
-	// Remove the middle keyframes so the 1 -> 10 gap spans 900 ms.
-	spec.KeyframeIndex = []uint32{1, 10}
+	// Keep only the boundary keyframes: the 1 -> 9 gap spans 8 ms, well
+	// beyond the default 3 ms keyframe budget.
+	spec.KeyframeIndex = []uint32{1, 9}
 }
 
 // applyCancelShape keeps the stream structurally clean; the cancellation

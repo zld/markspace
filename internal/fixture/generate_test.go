@@ -29,7 +29,7 @@ func TestGenerateClean(t *testing.T) {
 	if err != nil {
 		t.Fatalf("clean mp4 must scan: %v", err)
 	}
-	if len(res.Tracks) != 1 || len(res.Tracks[0].Keyframes) != 4 {
+	if len(res.Tracks) != 1 || len(res.Tracks[0].Keyframes) != 5 {
 		t.Fatalf("clean track wrong: %+v", res.Tracks)
 	}
 	if len(res.Findings) != 0 {
@@ -65,8 +65,8 @@ func TestGenerateDamaged(t *testing.T) {
 	if model.CountCode(res.Findings, model.ErrMissingIndex) == 0 {
 		t.Fatal("bad stss index must produce a finding")
 	}
-	// The two surviving keyframes create a 900 ms oversized interval.
-	if res.Tracks[0].MaxKeyframeInterval != model.TicksFromMillis(900) {
+	// The two surviving keyframes create an 8 ms oversized interval.
+	if res.Tracks[0].MaxKeyframeInterval != model.TicksFromMillis(8) {
 		t.Fatalf("keyframe interval = %v", res.Tracks[0].MaxKeyframeInterval)
 	}
 }
