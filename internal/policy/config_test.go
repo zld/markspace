@@ -31,7 +31,7 @@ func TestDecideFeasibleConfigIncludesEstimateAndReasons(t *testing.T) {
 		t.Fatalf("incomplete config: %+v", cfg)
 	}
 	joined := strings.Join(cfg.Reasons, "\n")
-	for _, want := range []string{"quality score 92", "budget 1048576", "estimate="} {
+	for _, want := range []string{"quality score 92", "budget 1048576", "estimate_bytes="} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("reasons missing %q:\n%s", want, joined)
 		}

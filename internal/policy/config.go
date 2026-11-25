@@ -135,7 +135,7 @@ func Decide(sample int, desc media.TrackDescription, quality Quality, constraint
 	cfg.EstimatedBytes = estimateBytes(params.VideoBitrateBps+params.AudioBitrateBps, duration)
 	cfg.Feasible = true
 	cfg.Reasons = append(cfg.Reasons, fmt.Sprintf(
-		"selected profile=%s video_codec=%s audio_codec=%s size=%dx%d video=%d_bps audio=%d_bps channels=%d sample_rate=%d estimate=%d_bytes",
+		"selected profile=%s video_codec=%s audio_codec=%s size=%dx%d video_bitrate_bps=%d audio_bitrate_bps=%d channels=%d sample_rate_hz=%d estimate_bytes=%d",
 		params.Profile, params.VideoCodec, params.AudioCodec, params.Width, params.Height,
 		params.VideoBitrateBps, params.AudioBitrateBps, params.Channels, params.SampleRate, cfg.EstimatedBytes,
 	))
