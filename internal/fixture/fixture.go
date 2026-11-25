@@ -74,12 +74,12 @@ func WAVE(n int) []byte {
 // even the RIFF/WAVE fixed header cannot be read.
 func TruncatedWAVE() []byte { return WAVE(16)[:7] }
 
-// OOBWAVE declares a 500-byte data payload while only 100 bytes are present,
-// and adjusts the RIFF size to match the false declaration.
+// OOBWAVE keeps an internally consistent RIFF container but declares a
+// 500-byte data payload while only 100 payload bytes exist, so the single
+// fault is a chunk-level out-of-bounds rather than a truncated container.
 func OOBWAVE() []byte {
 	buf := WAVE(100)
 	binary.LittleEndian.PutUint32(buf[40:44], 500)
-	binary.LittleEndian.PutUint32(buf[4:8], uint32(4+24+8+500))
 	return buf
 }
 
@@ -125,9 +125,11 @@ func RTPReorder() [][]byte {
 	}
 }
 
-// Dataset returns the canonical demo/test dataset. Sample anchors are chosen
-// up front so the timeline is deterministic; one case deliberately opens a
-// 200-sample gap to exercise interval analysis.
+// Dataset returns the canonical demo/test dataset. Every segment owns a
+// distinct, non-overlapping sample anchor even when its byte payload is
+// damaged; one case deliberately opens a 200-sample gap to exercise interval
+// analysis. The anchor advance is the frame count the segment would have
+// covered when healthy.
 func Dataset() []Case {
 	cursor := int64(0)
 	advance := func(frames int) int64 {
@@ -138,9 +140,12 @@ func Dataset() []Case {
 	cases := []Case{
 		{Name: "clean-a", Kind: KindOK, WAV: WAVE(16), SampleStart: advance(4)},
 		{Name: "clean-b", Kind: KindOK, WAV: WAVE(32), SampleStart: advance(8)},
-		{Name: "truncated-header", Kind: KindTruncated, WAV: TruncatedWAVE(), SampleStart: cursor},
-		{Name: "oob-chunk", Kind: KindOOB, WAV: OOBWAVE(), SampleStart: cursor},
-		{Name: "partial-frame", Kind: KindPartial, WAV: PartialFrameWAVE(), SampleStart: cursor},
+		// Truncated header exposes no data size: pipeline assigns a 1-frame span.
+		{Name: "truncated-header", Kind: KindTruncated, WAV: TruncatedWAVE(), SampleStart: advance(1)},
+		// OOB chunk declares 500 bytes => nominal 125 frames.
+		{Name: "oob-chunk", Kind: KindOOB, WAV: OOBWAVE(), SampleStart: advance(125)},
+		// 35 payload bytes => 8 full frames + 3 trailing, nominal 9 frames.
+		{Name: "partial-frame", Kind: KindPartial, WAV: PartialFrameWAVE(), SampleStart: advance(9)},
 		{Name: "rtp-wrap", Kind: KindRTPWrap, WAV: WAVE(16), RTP: RTPWrap(), SampleStart: advance(4)},
 	}
 	// gap-segment is structurally fine but anchored 200 samples after the

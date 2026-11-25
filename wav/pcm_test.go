@@ -118,10 +118,10 @@ func TestValidatePCMUnsupportedFormat(t *testing.T) {
 }
 
 func TestValidatePCMOutOfBoundsPayloadClamped(t *testing.T) {
-	// Data chunk claims 500 bytes while only 100 payload bytes exist.
+	// Data chunk claims 500 bytes while only 100 payload bytes exist; the
+	// RIFF container remains internally consistent.
 	buf := buildWAVE(100)
 	putU32(buf[40:44], 500)
-	putU32(buf[4:8], uint32(4+24+8+500))
 	f := ParseChunks(buf)
 	res := ValidatePCM(f, f.Faults)
 	// Payload must be clamped to actual data available, never reading past it.

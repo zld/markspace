@@ -79,10 +79,16 @@ func ParseChunks(buf []byte) *File {
 	f.DeclaredEnd = int64(f.RIFFSize) + 8
 	f.Limit = f.DeclaredEnd
 	if f.DeclaredEnd > f.ActualLen {
+		// The container itself ends before its declared size: a truncated
+		// RIFF header/body. A chunk that merely overruns an internally
+		// consistent RIFF is reported at the chunk level instead.
 		f.Faults = append(f.Faults, media.NewByteFault(
 			media.CatChunkOutOfBounds, f.ActualLen, f.DeclaredEnd,
 			"RIFF declares %d bytes but buffer ends at %d", f.DeclaredEnd, f.ActualLen))
 		f.Limit = f.ActualLen
+	} else if f.DeclaredEnd < f.ActualLen {
+		// Trailing bytes beyond the RIFF container are ignored, not trusted.
+		f.Limit = f.DeclaredEnd
 	}
 	// A non-RIFF buffer cannot be walked safely.
 	if len(f.Faults) > 0 && string(buf[0:4]) != "RIFF" {

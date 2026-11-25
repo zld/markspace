@@ -79,9 +79,9 @@ func TestBadContainerIdentifiers(t *testing.T) {
 
 func TestChunkOutOfBounds(t *testing.T) {
 	buf := buildWAVE(100)
-	// Declare a data payload of 500 while only 100 bytes exist.
+	// Declare a data payload of 500 while only 100 bytes exist. The RIFF
+	// container stays internally consistent, so the sole fault is chunk-level.
 	binary.LittleEndian.PutUint32(buf[40:44], 500)
-	binary.LittleEndian.PutUint32(buf[4:8], uint32(4+24+8+500))
 	f := ParseChunks(buf)
 	var oob *media.Fault
 	for i := range f.Faults {
@@ -92,7 +92,10 @@ func TestChunkOutOfBounds(t *testing.T) {
 	if oob == nil {
 		t.Fatalf("out-of-bounds data chunk not detected: %+v", f.Faults)
 	}
-	if oob.ByteStart != 44 || oob.ByteEnd != 44+500 {
+	if len(f.Faults) != 1 {
+		t.Fatalf("want exactly one OOB fault, got %+v", f.Faults)
+	}
+	if oob.ByteStart != 44 || oob.ByteEnd != 544 {
 		t.Fatalf("oob range = [%d,%d), want [44,544)", oob.ByteStart, oob.ByteEnd)
 	}
 	if f.Data == nil || f.Data.Size != 500 {

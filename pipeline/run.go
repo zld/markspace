@@ -66,6 +66,9 @@ func Resume(ctx context.Context, cases []fixture.Case, cfg Config, prev *Outcome
 
 // parseCase converts one fixture case into an analyzer segment on the
 // unified sample axis, accumulating faults from both WAV and RTP layers.
+// Every segment receives its nominal frame span so damaged blocks still
+// occupy a coherent timeline position; their corruption lives solely in the
+// fault list and fails the quality gate there.
 func parseCase(tb media.TimeBase, idx int, c fixture.Case) analyze.Segment {
 	f := wav.ParseChunks(c.WAV)
 	pcm := wav.ValidatePCM(f, f.Faults)
@@ -77,9 +80,19 @@ func parseCase(tb media.TimeBase, idx int, c fixture.Case) analyze.Segment {
 		faults = append(faults, rtpRes.Faults...)
 	}
 
-	end := c.SampleStart
-	if pcm.FrameCount > 0 {
-		end = c.SampleStart + pcm.FrameCount
+	// Nominal span: the frame count the block was meant to cover. A partial
+	// tail still occupies the timeline slot of the frame it failed to
+	// complete, so the span rounds up; the corruption remains in faults.
+	avail := pcm.FrameCount*int64(fixture.FrameBytes) + pcm.Partial
+	frames := (avail + int64(fixture.FrameBytes) - 1) / int64(fixture.FrameBytes)
+	if f.Data != nil && f.Data.Size > 0 && f.Data.Size%fixture.FrameBytes == 0 {
+		frames = int64(f.Data.Size) / int64(fixture.FrameBytes)
+	}
+	end := c.SampleStart + frames
+	if end <= c.SampleStart {
+		// Truncated headers expose no data size: keep a minimal one-frame
+		// span so the segment remains visible and orderable on the axis.
+		end = c.SampleStart + 1
 	}
 	return analyze.Segment{
 		InputIndex:  idx,
