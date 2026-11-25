@@ -384,7 +384,7 @@ func runStage(stage string, index int, store *Store, genDir string, opts Options
 	case StageNormalize:
 		cp.OutputDigest = Digest(manifestOut)
 	case StageWrite:
-		if err := writeGeneration(genDir, manifestOut); err != nil {
+		if err := writeGeneration(genDir, manifestOut, opts.Asset); err != nil {
 			cp.Failure = failureFrom(err, stage)
 			if serr := store.Save(cp); serr != nil {
 				return rec, serr
@@ -463,7 +463,7 @@ func asError(err error, target **timeline.Error) bool {
 // writeGeneration writes every output file for a generation into a staging
 // directory, then renames the staging directory into place. A failure leaves the
 // previous generation untouched.
-func writeGeneration(genDir string, manifestOut []byte) error {
+func writeGeneration(genDir string, manifestOut []byte, asset *media.Asset) error {
 	parent := filepath.Dir(genDir)
 	staging, err := os.MkdirTemp(parent, ".staging-"+filepath.Base(genDir)+"-")
 	if err != nil {
@@ -484,6 +484,12 @@ func writeGeneration(genDir string, manifestOut []byte) error {
 	if err := writeFile(filepath.Join(staging, "index.json"), indexJSON()); err != nil {
 		return err
 	}
+	// The fragment index is streamed through a buffer so a large asset does not
+	// need its index in memory twice, and any ordering defect aborts the write
+	// while the staging directory is still disposable.
+	if err := writeFragmentIndex(filepath.Join(staging, "fragments.jsonl"), asset); err != nil {
+		return err
+	}
 	if err := writeFile(filepath.Join(staging, completionMarker), []byte("ok\n")); err != nil {
 		return err
 	}
@@ -499,8 +505,12 @@ const completionMarker = ".complete"
 
 func writtenPath(genDir string) string { return filepath.Join(genDir, completionMarker) }
 
+// generationFiles lists the files that make up a generation, in digest order.
+// The completion marker is intentionally excluded: it certifies the others.
+var generationFiles = []string{"fragments.jsonl", "index.json", "manifest.json"}
+
 func indexJSON() []byte {
-	return []byte("{\n  \"files\": [\"index.json\", \"manifest.json\"],\n  \"format\": \"assetcheck/v1\"\n}\n")
+	return []byte("{\n  \"files\": [\"fragments.jsonl\", \"index.json\", \"manifest.json\"],\n  \"format\": \"assetcheck/v1\"\n}\n")
 }
 
 func writeFile(path string, data []byte) error {
@@ -524,7 +534,7 @@ func commitGeneration(out, genDir string) (string, error) {
 // GenerationDigest hashes the manifest and index bytes of a generation in sorted
 // name order, so the same inputs always yield the same digest.
 func GenerationDigest(genDir string) (string, error) {
-	names := []string{"index.json", "manifest.json"}
+	names := generationFiles
 	sort.Strings(names)
 	var all []byte
 	for _, name := range names {

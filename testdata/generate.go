@@ -505,6 +505,18 @@ func write(dir, name string, data []byte) error {
 // findTrackEntryOffset locates the TrackEntry whose TrackNumber matches. The
 // generator knows the layout, so it can scan for the TrackNumber payload rather
 // than trusting a parser.
+// HeaderForTest returns a standalone EBML header with the given DocType, used by
+// adapter tests that need a well-formed but unsupported container.
+func HeaderForTest(docType string) []byte {
+	return el(0x1A45DFA3,
+		uintEl(0x4286, 1),
+		uintEl(0x42F7, 1),
+		strEl(0x4282, docType),
+		uintEl(0x4287, 4),
+		uintEl(0x4285, 2),
+	)
+}
+
 func manifestV1JSON(seed int64) string {
 	return fmt.Sprintf(`{
   "version": 1,
@@ -564,7 +576,8 @@ func manifestV2JSON(seed int64) string {
 func rtpDump(seed int64) string {
 	var b bytes.Buffer
 	for c := 0; c < 2; c++ {
-		ts := uint32(c) * 48000 * 0
+		// Cluster c starts at c seconds; at 48 kHz that is c*48000 ticks.
+		ts := uint32(c) * 48000
 		for _, tr := range []struct {
 			ssrc uint32
 			tag  byte

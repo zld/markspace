@@ -10,6 +10,7 @@ replace github.com/abema/go-mp4 v1.0.4 => github.com/abema/go-mp4 v1.0.0
 
 require (
 	github.com/abema/go-mp4 v1.0.4
+	github.com/orcaman/writerseeker v0.0.0-20200621085525-1d3f536ff85e
 	github.com/pion/rtp v1.8.9
 )
 
