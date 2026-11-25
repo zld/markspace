@@ -89,7 +89,7 @@ func ParseDASHWithReference(path, workRoot string, referenceStartU int64) (*DASH
 
 func (d *DASH) parseRepresentation(rep dashRepresentation, manifestDir string, referenceStartU int64) error {
 	repID := rep.ID
-	baseLoc := diagnostic.Location{Stage: "dash", ManifestPath: d.ManifestPath, Representation: repID, EntryIndex: -1, ByteOffset: -1}
+	baseLoc := diagnostic.Location{Stage: "dash", ManifestPath: d.ManifestPath, Representation: repID, EntryIndex: 0, ByteOffset: -1}
 	if rep.SegmentTemplate == nil {
 		return diagnostic.New(diagnostic.ErrMissingDuration, baseLoc, "Representation has no SegmentTemplate")
 	}

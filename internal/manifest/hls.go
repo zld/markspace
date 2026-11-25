@@ -46,6 +46,7 @@ func ParseHLSWithExisting(path, workRoot string, existing []Entry) (*HLS, error)
 	segmentIndex := 0
 	var pendingDurSec string
 	var pendingLineOffset int64
+	var initPath string
 	discontinuity := false
 	explicitSeq := -1
 	var lastPDT time.Time
@@ -92,6 +93,19 @@ func ParseHLSWithExisting(path, workRoot string, existing []Entry) (*HLS, error)
 			}
 			lastPDT = ts
 			havePDT = true
+			continue
+		}
+		if strings.HasPrefix(trimmed, "#EXT-X-MAP:") {
+			attrs := parseTagAttributes(strings.TrimPrefix(trimmed, "#EXT-X-MAP:"))
+			uri := strings.Trim(attrs["URI"], `"`)
+			if uri == "" {
+				return nil, h.err(diagnostic.ErrMissingDuration, segmentIndex, lineStart, "EXT-X-MAP has no URI")
+			}
+			p, perr := workspace.Resolve(workRoot, manifestDir, uri)
+			if perr != nil {
+				return nil, diagnostic.Wrap(perr, h.loc(segmentIndex, mediaSequence+segmentIndex, lineStart), perr)
+			}
+			initPath = p
 			continue
 		}
 		if strings.HasPrefix(trimmed, "#EXTINF:") {
@@ -145,6 +159,7 @@ func ParseHLSWithExisting(path, workRoot string, existing []Entry) (*HLS, error)
 			Representation:      rendition,
 			EntryIndex:          entryIndex,
 			OriginalSequence:    seq,
+			InitPath:            initPath,
 			MediaPath:           mediaPath,
 			MediaURI:            trimmed,
 			SourceTimescale:     clock.UnifiedTimescale,
@@ -227,6 +242,17 @@ func (h *HLS) loc(index, seq int, offset int64) diagnostic.Location {
 
 func (h *HLS) err(kind error, index int, offset int64, msg string) error {
 	return diagnostic.New(kind, h.loc(index, 0, offset), msg)
+}
+
+func parseTagAttributes(s string) map[string]string {
+	out := map[string]string{}
+	for _, part := range strings.Split(s, ",") {
+		kv := strings.SplitN(part, "=", 2)
+		if len(kv) == 2 {
+			out[strings.TrimSpace(kv[0])] = strings.TrimSpace(kv[1])
+		}
+	}
+	return out
 }
 
 // MergeEntries appends only entries whose system representation/sequence key is new.
