@@ -7,6 +7,9 @@ import (
 	"mediad/media"
 )
 
+// putU32 writes a little-endian uint32 into a 4-byte slice.
+func putU32(b []byte, v uint32) { binary.LittleEndian.PutUint32(b, v) }
+
 // buildWAVE assembles a minimal 16-bit stereo 48kHz WAVE with payload n bytes.
 func buildWAVE(n int) []byte {
 	buf := make([]byte, riffHeaderLen+24+8+n)

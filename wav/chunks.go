@@ -41,6 +41,7 @@ type FmtChunk struct {
 // File is the structural parse result. Limit is the safe walk boundary
 // (min of declared RIFF end and actual buffer length).
 type File struct {
+	raw         []byte
 	RIFFSize    uint32
 	DeclaredEnd int64
 	ActualLen   int64
@@ -55,7 +56,7 @@ type File struct {
 // The returned File is always non-nil; faults describe everything that could
 // not be trusted. Byte ranges in faults are half-open absolute intervals.
 func ParseChunks(buf []byte) *File {
-	f := &File{ActualLen: int64(len(buf))}
+	f := &File{ActualLen: int64(len(buf)), raw: buf}
 
 	if len(buf) < riffHeaderLen {
 		end := int64(len(buf))
