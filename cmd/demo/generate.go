@@ -59,7 +59,7 @@ func generateFixture(out string) error {
 		return err
 	}
 	cc := defaultMaster()
-	cc.colorTags = []string{"bt2020", "bt2020", "bt2020nc"}
+	cc.colorTags = []string{"bt2020", "bt2020-10", "bt2020nc"}
 	if err := renderSet(join(tmp, "cc.mp4"), join(out, "color-conflict"), cc); err != nil {
 		return err
 	}
