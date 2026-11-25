@@ -146,26 +146,66 @@ func (g *Graph) topoOrder() ([]uint32, error) {
 	if len(order) == len(g.Nodes) {
 		return order, nil
 	}
-	remaining := make([]uint32, 0)
-	for id, d := range indegree {
-		if d > 0 {
-			remaining = append(remaining, id)
-		}
+	cycleDeps := g.findCycleEdges()
+	ids := make(map[uint32]bool)
+	for _, d := range cycleDeps {
+		ids[d.TrackID] = true
+		ids[d.DependsOn] = true
+	}
+	remaining := make([]uint32, 0, len(ids))
+	for id := range ids {
+		remaining = append(remaining, id)
 	}
 	sort.Slice(remaining, func(i, j int) bool { return remaining[i] < remaining[j] })
-	remSet := make(map[uint32]bool, len(remaining))
-	for _, id := range remaining {
-		remSet[id] = true
+	return nil, &CycleError{TrackIDs: remaining, Dependencies: cycleDeps}
+}
+
+// findCycleEdges returns one deterministic dependency cycle. DFS starts at the
+// smallest track ID and follows dependencies in ascending ID order.
+func (g *Graph) findCycleEdges() []manifest.Dependency {
+	ids := make([]uint32, 0, len(g.Nodes))
+	for id := range g.Nodes {
+		ids = append(ids, id)
 	}
-	cycleDeps := make([]manifest.Dependency, 0)
-	for _, id := range remaining {
-		for _, prereq := range g.Nodes[id].DependsOn {
-			if remSet[prereq] {
-				cycleDeps = append(cycleDeps, manifest.Dependency{TrackID: id, DependsOn: prereq})
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	color := make(map[uint32]uint8, len(ids))
+	stack := make([]uint32, 0, len(ids))
+	at := make(map[uint32]int, len(ids))
+	var cycle []manifest.Dependency
+
+	var dfs func(uint32) bool
+	dfs = func(id uint32) bool {
+		color[id] = 1
+		at[id] = len(stack)
+		stack = append(stack, id)
+		for _, next := range g.Nodes[id].DependsOn {
+			switch color[next] {
+			case 0:
+				if dfs(next) {
+					return true
+				}
+			case 1:
+				start := at[next]
+				nodes := append([]uint32(nil), stack[start:]...)
+				nodes = append(nodes, next)
+				cycle = cycle[:0]
+				for i := 0; i+1 < len(nodes); i++ {
+					cycle = append(cycle, manifest.Dependency{TrackID: nodes[i], DependsOn: nodes[i+1]})
+				}
+				return true
 			}
 		}
+		stack = stack[:len(stack)-1]
+		delete(at, id)
+		color[id] = 2
+		return false
 	}
-	return nil, &CycleError{TrackIDs: remaining, Dependencies: cycleDeps}
+	for _, id := range ids {
+		if color[id] == 0 && dfs(id) {
+			return cycle
+		}
+	}
+	return nil
 }
 
 // Execution records per-track processing states.
