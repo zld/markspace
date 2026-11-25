@@ -165,13 +165,14 @@ func buildStsd() []byte {
 
 func buildTrak(track TrackSpec, chunkOffset uint32) []byte {
 	n := uint32(len(track.Deltas))
-	stbl := []byte{}
-	stbl = append(stbl, buildStsd()...)
-	stbl = append(stbl, buildStts(track.Deltas)...)
-	stbl = append(stbl, buildStsc(n)...)
-	stbl = append(stbl, buildStco(chunkOffset)...)
+	stblPayload := []byte{}
+	stblPayload = append(stblPayload, buildStsd()...)
+	stblPayload = append(stblPayload, buildStts(track.Deltas)...)
+	stblPayload = append(stblPayload, buildStsc(n)...)
+	stblPayload = append(stblPayload, buildStco(chunkOffset)...)
 
-	minf := box("minf", stbl)
+	stblBox := box("stbl", stblPayload)
+	minf := box("minf", stblBox)
 	mdia := box("mdia", append(buildMdhd(track.Timescale, track.Duration), minf...))
 	trakPayload := append(buildTkhd(track.TrackID, track.Duration), mdia...)
 	return box("trak", trakPayload)
