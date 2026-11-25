@@ -72,7 +72,11 @@ func (t *PSITracker) Observe(p *model.Packet) (*PSIEvent, error) {
 	}
 	end := start + 3 + sectionLen
 	if end > len(b) {
-		end = len(b)
+		return nil, &model.CorruptError{
+			Kind: "psi", Offset: p.Offset, PID: p.PID,
+			Detail: fmt.Sprintf("section length %d runs past packet payload (%d bytes)",
+				sectionLen, len(b)-start),
+		}
 	}
 	switch {
 	case p.PID == model.PIDPAT && tableID == 0x00:
