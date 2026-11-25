@@ -11,6 +11,7 @@ type Category string
 
 const (
 	CategoryInvalidArgument     Category = "invalid_argument"
+	CategoryInvalidBox          Category = "invalid_box"
 	CategoryTruncatedBox        Category = "truncated_box"
 	CategoryInvalidEditList     Category = "invalid_edit_list"
 	CategoryNegativeDuration    Category = "negative_duration_edit"
