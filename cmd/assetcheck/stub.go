@@ -1,24 +1,6 @@
 package main
 
-import (
-	"encoding/json"
-	"io"
-
-	"assetcheck/internal/errmodel"
-)
-
-// ReportView is replaced by the full definition in report.go next batch.
-type ReportView struct {
-	EvalPass bool `json:"eval-pass"`
-}
-
-func RenderText(v *ReportView) string { return "" }
-
-func writeJSON(w io.Writer, v any) error {
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	return enc.Encode(v)
-}
+import "assetcheck/internal/errmodel"
 
 func exitCodeFor(err error) int { return errmodel.ExitCode(err) }
 
