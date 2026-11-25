@@ -158,12 +158,7 @@ func BuildTimeRanges(samples []scan.SampleRef) []TimeRange {
 }
 
 func durationNS(s scan.SampleRef) int64 {
-	if s.DurationUnits == 0 {
-		return 0
-	}
-	// The caller's track timescale is unavailable here; PTS differences are
-	// normally used by verification. Keep this conservative fallback at ns.
-	return int64(s.DurationUnits)
+	return s.DurationNS
 }
 
 // WriteJSON atomically writes the manifest.

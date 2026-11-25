@@ -86,10 +86,14 @@ type SampleRef struct {
 	PTSUnits      int64  `json:"pts_units"`
 	DTSUnits      int64  `json:"dts_units"`
 	DurationUnits uint32 `json:"duration_units"`
+	DurationNS    int64  `json:"duration_ns"`
 	PTSNS         int64  `json:"pts_ns"`
 	DTSNS         int64  `json:"dts_ns"`
 	KeyFrame      bool   `json:"key_frame"`
 	SHA256        string `json:"sha256,omitempty"`
+	// Data is used only for in-memory recovered RTP payloads and is never
+	// persisted in the index cache.
+	Data []byte `json:"-"`
 }
 
 // PacketRef is one RTP packet in arrival order plus its fixture location.

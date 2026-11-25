@@ -68,6 +68,7 @@ func appendSamples(f *os.File, idx *Index, path string, tr Track, trak *mp4.BoxI
 				PTSUnits:      ptsUnits,
 				DTSUnits:      dts[sampleIdx],
 				DurationUnits: dur,
+				DurationNS:    tb.ToNS(int64(dur)),
 				PTSNS:         tb.ToNS(ptsUnits),
 				DTSNS:         tb.ToNS(dts[sampleIdx]),
 				KeyFrame:      len(keySet) == 0 || keySet[uint32(sampleIdx+1)],

@@ -108,6 +108,7 @@ func fillRTPDurations(idx *scan.Index, samples []scan.SampleRef) {
 				}
 			}
 			tb := tbByTrack[track]
+			samples[i].DurationNS = tb.ToNS(int64(samples[i].DurationUnits))
 			samples[i].PTSNS = tb.ToNS(samples[i].PTSUnits)
 			samples[i].DTSNS = samples[i].PTSNS
 		}
