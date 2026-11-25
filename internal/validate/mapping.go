@@ -49,6 +49,7 @@ func (r *Result) mapPackets(idx *index.Index, audio *index.Track) {
 			DTS:     s.DTS,
 			Time:    clock.Invalid,
 		}
+		gapOpen := r.Missing > 0
 		if pi < len(pkts) && pkts[pi].Kind == index.PacketOK && pkts[pi].Time == s.DTS {
 			p := &pkts[pi]
 			m.Packet = p.SeqExt
@@ -78,12 +79,16 @@ func (r *Result) mapPackets(idx *index.Index, audio *index.Track) {
 		}
 		dev.OK = dev.ByteDelta == 0 && dev.TimeDelta == 0
 		m.Dev = dev
-		// Report only where the drift changes: one located fault at the
-		// divergence instead of one per downstream sample.
+		// Report only where the drift changes, and only for a packet that was
+		// actually delivered. Drift on samples after a gap is the gap's
+		// consequence, already located at its own sample; reporting it again
+		// on every downstream row would bury the real cause.
 		if dev.ByteDelta != prevByte || dev.TimeDelta != prevTime {
-			r.Faults = append(r.Faults, fault.New(fault.StageValidate, "validate.mapping.deviation", s.Offset, s.DTS,
-				fmt.Sprintf("delivery drifts to %d byte(s) and %v at sample %d", dev.ByteDelta, dev.TimeDelta, si)).
-				WithSample(si))
+			if m.HasPkt && !gapOpen {
+				r.Faults = append(r.Faults, fault.New(fault.StageValidate, "validate.mapping.deviation", s.Offset, s.DTS,
+					fmt.Sprintf("delivery drifts to %d byte(s) and %v at sample %d", dev.ByteDelta, dev.TimeDelta, si)).
+					WithSample(si))
+			}
 			prevByte, prevTime = dev.ByteDelta, dev.TimeDelta
 		}
 		r.Mappings = append(r.Mappings, m)
