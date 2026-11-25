@@ -287,17 +287,6 @@ func (s *Stream) TruncateNAL(seq uint16, head int) {
 	s.materialize()
 }
 
-// CorruptLength rewrites a FU length field region by zeroing the tail of
-// one packet, producing an illegal-length style fault at a known byte.
-func (s *Stream) CorruptLength(seq uint16) {
-	for _, p := range s.Packets {
-		if p.SequenceNumber == seq && len(p.Payload) > 4 {
-			p.Payload = p.Payload[:2]
-		}
-	}
-	s.materialize()
-}
-
 // InjectTruncatedHeader replaces the datagram for seq with a datagram
 // whose RTP header is shorter than the 12-byte minimum. The packet keeps
 // its arrival position, so the resulting fault is localized to exactly

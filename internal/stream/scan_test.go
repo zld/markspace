@@ -113,6 +113,33 @@ func TestIllegalAndUnknownNALRecorded(t *testing.T) {
 	}
 }
 
+func TestIllegalLengthInAggregateIsLocalized(t *testing.T) {
+	s := NewScanner(CodecH264)
+	// STAP-A (type 24): header byte plus a 2-byte length claiming 200
+	// bytes while only two NAL bytes follow — an illegal length fault.
+	payload := []byte{0x78, 0x00, 0xC8, 0x65, 0xAA}
+	s.Push(mkOrdered(0, 0, mkPacket(0, true, payload)))
+	// A healthy frame after the damage must still be scanned.
+	s.Push(mkOrdered(1, 1, mkPacket(3600, true, []byte{0x41, 7})))
+	res := s.Flush()
+
+	var illegal *fault.Fault
+	for i := range res.Faults {
+		if res.Faults[i].Class == fault.ClassIllegalLength {
+			illegal = &res.Faults[i]
+		}
+	}
+	if illegal == nil {
+		t.Fatalf("illegal-length fault missing: %+v", res.Faults)
+	}
+	if illegal.Seq.First != 0 || illegal.Seq.Last != 0 {
+		t.Fatalf("illegal length must localize to seq 0: %+v", illegal.Seq)
+	}
+	if len(res.Samples) != 1 || res.Samples[0].FirstSeq != 1 {
+		t.Fatalf("post-damage sample must survive: %+v", res.Samples)
+	}
+}
+
 func TestH265FragmentAndKeyFrame(t *testing.T) {
 	s := NewScanner(CodecH265)
 	indicator := []byte{0x62, 0x01} // type 49 (FU), two-byte header
