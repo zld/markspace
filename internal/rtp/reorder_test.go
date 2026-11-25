@@ -121,6 +121,32 @@ func TestCommittedDuplicateCountsAsDuplicate(t *testing.T) {
 	}
 }
 
+func TestLossAcrossSequenceWrapCounted(t *testing.T) {
+	// 0, 1 and 2 are lost across the 65535 -> 0 rollover. Sequence-number
+	// subtraction would wrap here; the extended axis must not.
+	r := New(Config{Window: 4, ClockRate: 90000})
+	for _, s := range []uint16{65530, 65531, 65532, 65533, 65534, 65535, 3, 4} {
+		r.Push(pkt(s, uint32(s)*100))
+	}
+	res := r.Finish()
+	if res.Lost != 3 {
+		t.Fatalf("lost = %d, want 3 (%s)", res.Lost, res.Summary())
+	}
+	if len(res.Committed) != 2 {
+		t.Fatalf("spans = %d, want 2", len(res.Committed))
+	}
+	sp := res.Committed[0]
+	if sp.GapStart != 0 || sp.GapEnd != 2 {
+		t.Fatalf("gap = %d..%d, want 0..2", sp.GapStart, sp.GapEnd)
+	}
+	if sp.GapStartSeq != 65536 || sp.GapEndSeq != 65538 {
+		t.Fatalf("extended gap = %d..%d, want 65536..65538", sp.GapStartSeq, sp.GapEndSeq)
+	}
+	if sp.GapStartTick != 6553500 || sp.GapEndTick != 300 {
+		t.Fatalf("gap ticks = %d..%d, want 6553500..300", sp.GapStartTick, sp.GapEndTick)
+	}
+}
+
 func TestSequenceWrap(t *testing.T) {
 	r := New(Config{Window: 4, ClockRate: 90000})
 	feed(r, 65532, 65533, 65534, 65535, 0, 1, 2)

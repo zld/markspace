@@ -41,7 +41,10 @@ func DefaultConfig() Config {
 
 // Packet is an ordered view entry.
 type Packet struct {
-	Seq         uint16
+	Seq uint16
+	// ExtSeq is Seq on the monotone extended axis; it orders packets across
+	// a 16-bit rollover and must be used for span arithmetic.
+	ExtSeq      int64
 	Timestamp   uint32
 	Marker      bool
 	PayloadType uint8
@@ -184,6 +187,7 @@ func (r *Reorderer) Push(p *prtp.Packet) {
 
 	r.seen[p.SequenceNumber] = Packet{
 		Seq:         p.SequenceNumber,
+		ExtSeq:      ext,
 		Timestamp:   p.Timestamp,
 		Marker:      p.Marker,
 		PayloadType: p.PayloadType,
@@ -302,13 +306,16 @@ func groupSpans(pkts []Packet) []Span {
 	}
 	spans := make([]Span, 0, 8)
 	cur := Span{First: pkts[0].Seq, Last: pkts[0].Seq}
+	lastExt := pkts[0].ExtSeq
 	for _, p := range pkts[1:] {
-		if p.Seq == cur.Last+1 {
+		if p.ExtSeq == lastExt+1 {
 			cur.Last = p.Seq
+			lastExt = p.ExtSeq
 			continue
 		}
-		spans = append(spans, closeSpan(cur, p.Seq))
+		spans = append(spans, closeSpan(cur, p, lastExt))
 		cur = Span{First: p.Seq, Last: p.Seq}
+		lastExt = p.ExtSeq
 	}
 	spans = append(spans, cur)
 	return spans
@@ -318,10 +325,13 @@ func groupSpans(pkts []Packet) []Span {
 func annotateSpans(spans []Span, pkts []Packet) {
 	i := 0
 	for si := range spans {
-		// Advance to the last packet of this span; packets are ordered and
-		// every span is a consecutive run of them.
+		// Packets are ordered on the extended axis; walk the run belonging
+		// to this span until membership stops.
 		n := 0
-		for i+n < len(pkts) && pkts[i+n].Seq >= spans[si].First && pkts[i+n].Seq <= spans[si].Last {
+		for i+n < len(pkts) {
+			if n > 0 && pkts[i+n].ExtSeq != pkts[i+n-1].ExtSeq+1 {
+				break
+			}
 			n++
 		}
 		if n == 0 {
@@ -339,11 +349,16 @@ func annotateSpans(spans []Span, pkts []Packet) {
 	}
 }
 
-func closeSpan(cur Span, next uint16) Span {
-	if next > cur.Last {
-		cur.Lost = int(next-cur.Last) - 1
+// closeSpan records the gap between the span ending at cur and the next
+// packet. The distance is computed on the extended axis so a rollover
+// between 65535 and 0 is a one-step gap, not a 65535-step one.
+func closeSpan(cur Span, next Packet, lastExt int64) Span {
+	if gap := next.ExtSeq - lastExt - 1; gap > 0 {
+		cur.Lost = int(gap)
 		cur.GapStart = cur.Last + 1
-		cur.GapEnd = next - 1
+		cur.GapEnd = next.Seq - 1
+		cur.GapStartSeq = lastExt + 1
+		cur.GapEndSeq = next.ExtSeq - 1
 	}
 	return cur
 }

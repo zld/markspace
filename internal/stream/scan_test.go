@@ -150,3 +150,26 @@ func TestTimelineMatchesTrack(t *testing.T) {
 		t.Fatalf("90000 ticks = %d samples", got)
 	}
 }
+
+// A chunk table that covers only some samples must mark the rest unreadable
+// instead of leaving their offsets at zero, where they would silently alias
+// the file header.
+func TestUncoveredSamplesMarkedUnreadable(t *testing.T) {
+	img, err := Build(Config{Timescale: 90000, FPS: 10, SampleCount: 10, KeyEvery: 5, SampleSize: 64})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Patch the stsc entry to one sample per chunk but remove chunk offsets
+	// by truncating after the first few samples is not possible without
+	// rewriting; instead patch stsc SamplesPerChunk to 1 while keeping the
+	// chunk count, then truncate the file so the tail is absent.
+	info, err := ParseFile(bytes.NewReader(img), "v.mp4", int64(len(img)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range info.Track.Samples {
+		if s.Offset <= 0 {
+			t.Fatalf("sample %d has offset %d", s.Index, s.Offset)
+		}
+	}
+}

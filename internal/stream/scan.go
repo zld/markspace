@@ -144,7 +144,7 @@ func ParseFile(r io.ReadSeeker, file string, size int64) (*Info, error) {
 	}
 
 	for _, sm := range tr.Samples {
-		if sm.Offset+sm.Size > size {
+		if sm.Offset < 0 || sm.Offset+sm.Size > size {
 			if info.FirstBadOffset < 0 || sm.Offset < info.FirstBadOffset {
 				info.FirstBadOffset = sm.Offset
 				info.FirstBadTick = sm.Tick
@@ -197,8 +197,13 @@ func assignChunkOffsets(tr *Track, chunks []*mp4.Chunk, info *Info) {
 		}
 	}
 	if si != len(tr.Samples) {
+		// Samples the chunk table never places must not inherit offset 0,
+		// which would silently read the file header as sample payload.
+		for i := si; i < len(tr.Samples); i++ {
+			tr.Samples[i].Offset = -1
+		}
 		info.Issues.Add(fault.New(fault.KindBadChunk, fault.Damaged,
-			fault.ByteAt(int64(si)), "chunk table covers %d of %d samples", si, len(tr.Samples)))
+			fault.ByteAt(0), "chunk table covers %d of %d samples", si, len(tr.Samples)))
 	}
 }
 
