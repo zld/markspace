@@ -1,0 +1,17 @@
+# Build and local workflow output
+/mediacore
+/tmp/
+/work/
+*.tmp
+*.partial
+*.mp4
+*.mov
+*.rtpbin
+!testdata/**/*.mp4
+
+# Go and editor artifacts
+*.test
+*.out
+.DS_Store
+.idea/
+.vscode/
