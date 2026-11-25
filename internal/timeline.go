@@ -62,6 +62,7 @@ type Program struct {
 // PlacedSample is one output sample after conflict resolution.
 type PlacedSample struct {
 	Source     string
+	SourceID   uint32
 	Target     string
 	TrackKey   string
 	DTS        Ticks
@@ -147,7 +148,7 @@ func (t *Timeline) Add(source string, s Sample) error {
 		return err
 	}
 	placed := PlacedSample{
-		Source: source, Target: m.Target, TrackKey: target.Key,
+		Source: source, SourceID: s.SourceID, Target: m.Target, TrackKey: target.Key,
 		DTS: dts, PTS: pts, Duration: s.Duration, Sync: s.Sync,
 		ByteOffset: s.ByteOffset, ByteLength: s.ByteLength, Data: s.Data,
 		SourcePTS: s.PTS, Segment: s.Segment, Index: s.Index,
