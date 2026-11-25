@@ -444,13 +444,14 @@ func buildSamples(t *Track, a sampleArgs, lim Limits, issues *[]Issue) error {
 	t.Keyframes = t.Keyframes[:0]
 	t.Keyframes = make([]int, 0, n)
 
+	ticker := newTickCursor(a.stts)
 	var prevStart int64 = -1
 	var prevTicks uint64
 	prevDelta := int64(0)
 	warnNonMono, warnWrap, warnedGap := false, false, 0
 	filled := 0
 	for i := 0; i < n; i++ {
-		startTicks, deltaTicks, err := tickAt(a.stts, i)
+		startTicks, deltaTicks, err := ticker.next()
 		if err != nil {
 			if IsKind(err, KindTruncatedInput) {
 				*issues = append(*issues, Issue{Kind: KindTimestampGap, Severity: SeverityError,
@@ -555,27 +556,64 @@ func stscCheck(stsc mp4.IBox, chunks int, issues *[]Issue) {
 	}
 }
 
-// tickAt returns the absolute start tick and the duration delta of sample i.
-// sampleStartTicks is used by wraparound checks only.
-func tickAt(stts *mp4.Stts, i int) (uint64, uint32, error) {
-	target := uint64(i)
-	var accumulated uint64
-	for _, e := range stts.Entries {
-		c := uint64(e.SampleCount)
-		if target < c {
-			start := accumulated + target*uint64(e.SampleDelta)
-			if start > 1<<62 {
-				return 0, 0, NewError(KindLimit, "", "sample tick overflow at sample %d", i+1)
-			}
-			return start, e.SampleDelta, nil
-		}
-		accumulated += c * uint64(e.SampleDelta)
-		if accumulated > 1<<62 {
-			return 0, 0, NewError(KindLimit, "", "sample tick overflow at sample %d", i+1)
-		}
-		target -= c
+// tickCursor walks the stts runs once in sample order, yielding the absolute
+// start tick and duration delta of each successive sample. Advancing is
+// amortized O(1) per sample because samples are consumed in order.
+type tickCursor struct {
+	entries   []mp4.SttsEntry
+	runIdx    int
+	leftInRun uint64
+	nextTick  uint64
+	sample    int
+	exhausted bool
+	overflow  bool
+}
+
+func newTickCursor(stts *mp4.Stts) *tickCursor {
+	c := &tickCursor{entries: stts.Entries}
+	if len(c.entries) > 0 {
+		c.leftInRun = uint64(c.entries[0].SampleCount)
 	}
-	return 0, 0, NewError(KindTruncatedInput, "", "no timing entry for sample %d", i+1)
+	c.exhausted = len(c.entries) == 0
+	return c
+}
+
+func (c *tickCursor) next() (uint64, uint32, error) {
+	if c.overflow {
+		return 0, 0, NewError(KindLimit, "", "sample tick overflow at sample %d", c.sample+1)
+	}
+	for c.runIdx < len(c.entries) && c.leftInRun == 0 {
+		c.runIdx++
+		if c.runIdx < len(c.entries) {
+			c.leftInRun = uint64(c.entries[c.runIdx].SampleCount)
+		}
+	}
+	if c.runIdx >= len(c.entries) {
+		return 0, 0, NewError(KindTruncatedInput, "", "no timing entry for sample %d", c.sample+1)
+	}
+	e := c.entries[c.runIdx]
+	start := c.nextTick
+	next, overflow := addMul(start, uint64(e.SampleDelta))
+	if overflow || next > 1<<62 {
+		c.overflow = true
+		return 0, 0, NewError(KindLimit, "", "sample tick overflow at sample %d", c.sample+1)
+	}
+	c.nextTick = next
+	c.leftInRun--
+	c.sample++
+	return start, e.SampleDelta, nil
+}
+
+func addMul(base, delta uint64) (uint64, bool) {
+	sum := base + delta
+	if sum < base {
+		return 0, true
+	}
+	// Guard against the 1<<62 domain limit used throughout the indexer.
+	if sum > 1<<62 {
+		return sum, true
+	}
+	return sum, false
 }
 
 func samplesPerChunk(stsc mp4.IBox, chunk uint32) uint32 {

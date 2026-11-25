@@ -130,3 +130,20 @@ func TestFrameInterval(t *testing.T) {
 		t.Fatalf("interval = %d", f.Media())
 	}
 }
+
+func TestFromTicksSignedRoundTrip(t *testing.T) {
+	// Sign-symmetric rounding: |FromTicks(-n)| == FromTicks(n).
+	for _, n := range []int64{1, 7, 999, 12345} {
+		pos, err := FromTicks(n, 30000)
+		if err != nil {
+			t.Fatal(err)
+		}
+		neg, err := FromTicks(-n, 30000)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if int64(pos)+int64(neg) != 0 {
+			t.Fatalf("asymmetric at %d: %d vs %d", n, pos, neg)
+		}
+	}
+}
