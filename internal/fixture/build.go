@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math/rand"
+	"sort"
 
 	"archive.example/mediakernel/internal/metadata"
 )
@@ -45,10 +46,9 @@ func Build(kind Kind, seed int64) (Archive, error) {
 	arc := Archive{Kind: kind, Seed: seed, MP4: mp4}
 	switch kind {
 	case KindTruncated:
-		cut := int64(len(mp4)) - 37 // cut inside the final fragment
-		if cut < 8 {
-			cut = int64(len(mp4)) / 2
-		}
+		// Cut in the middle of a media fragment's traf so the damage is
+		// attributed to a real track and the earlier fragments still export.
+		cut := truncationPoint(mp4)
 		arc.MP4 = mp4[:cut]
 		arc.Truncated = true
 		arc.TruncatedAt = cut
@@ -88,12 +88,26 @@ func buildRTP(kind Kind, seed int64, items []TimedItem) ([]RTPPacket, []string, 
 		seq++
 	}
 
+	// A real RTP flow is delivered in media-time order. The corpus is laid out
+	// track by track, so sort by the shared media instant before framing.
+	type scheduled struct {
+		ns   int64
+		item TimedItem
+	}
+	var sched []scheduled
 	for _, it := range items {
-		// The item's nanosecond instant is derived from its own track scale.
 		ns := nsFromTicks(it.Presentation, timescaleFor(it.TrackID))
-		ts := baseTS + uint32(ns*tickRate/1_000_000_000)
-		payload := rtpPayload(it)
-		appendPacket(ts, payload)
+		sched = append(sched, scheduled{ns: ns, item: it})
+	}
+	sort.SliceStable(sched, func(i, j int) bool {
+		if sched[i].ns != sched[j].ns {
+			return sched[i].ns < sched[j].ns
+		}
+		return sched[i].item.TrackID < sched[j].item.TrackID
+	})
+	for _, sc := range sched {
+		ts := baseTS + uint32(sc.ns*tickRate/1_000_000_000)
+		appendPacket(ts, rtpPayload(sc.item))
 	}
 
 	switch kind {
@@ -186,15 +200,18 @@ func buildPacket(seq, ts, ssrc uint32, pt uint8, payload []byte) []byte {
 }
 
 // rtpPayload encodes the item as a compact record: version, track id, kind byte,
-// presentation ticks (per the item's track scale) and text.
+// the item's logical sequence (shared with the MP4 copy so both transports
+// resolve to one timeline event), presentation ticks (per the item's track
+// scale), duration and text.
 func rtpPayload(it TimedItem) []byte {
-	p := make([]byte, 16, 16+len(it.Text)+1)
+	p := make([]byte, 20, 20+len(it.Text)+1)
 	p[0] = 1
 	p[1] = byte(it.TrackID)
 	p[2] = kindByte(it.BoxType)
 	p[3] = 0 // reserved
 	binary.BigEndian.PutUint64(p[4:12], it.Presentation)
 	binary.BigEndian.PutUint32(p[12:16], it.Duration)
+	binary.BigEndian.PutUint32(p[16:20], uint32(it.Sequence))
 	p = append(p, []byte(it.Text)...)
 	p = append(p, 0)
 	return p
@@ -213,4 +230,64 @@ func kindByte(boxType string) byte {
 	default:
 		return 0
 	}
+}
+
+// truncationPoint finds a byte offset strictly inside a timed box of a media
+// fragment, so truncation damages about half of one track's final item while
+// every earlier fragment stays intact. It falls back to the midpoint.
+func truncationPoint(mp4 []byte) int64 {
+	// Walk the top-level boxes and remember the last moof carrying a traf.
+	var lastMediaMoofStart, lastMediaMoofEnd int64
+	off := int64(0)
+	for off+8 <= int64(len(mp4)) {
+		declared := int64(binaryBE32(mp4[off : off+4]))
+		typ := string(mp4[off+4 : off+8])
+		if declared < 8 || off+declared > int64(len(mp4)) {
+			break
+		}
+		if typ == "moof" {
+			// Cheap check: a 'traf' child follows the moof's 'mfhd'.
+			hasTraf := bytesContains(mp4[off+8:off+declared], []byte("traf"))
+			if hasTraf {
+				lastMediaMoofStart, lastMediaMoofEnd = off, off+declared
+			}
+		}
+		off += declared
+	}
+	if lastMediaMoofStart == 0 {
+		return int64(len(mp4)) / 2
+	}
+	// Cut two-thirds into the moof, which lands inside its last child box.
+	cut := lastMediaMoofStart + (lastMediaMoofEnd-lastMediaMoofStart)*2/3
+	if cut <= 0 || cut >= int64(len(mp4)) {
+		return int64(len(mp4)) / 2
+	}
+	return cut
+}
+
+func binaryBE32(b []byte) uint32 {
+	var v uint32
+	for i := 0; i < 4 && i < len(b); i++ {
+		v = v<<8 | uint32(b[i])
+	}
+	return v
+}
+
+func bytesContains(hay, needle []byte) bool {
+	if len(needle) == 0 || len(hay) < len(needle) {
+		return false
+	}
+	for i := 0; i+len(needle) <= len(hay); i++ {
+		match := true
+		for j := range needle {
+			if hay[i+j] != needle[j] {
+				match = false
+				break
+			}
+		}
+		if match {
+			return true
+		}
+	}
+	return false
 }

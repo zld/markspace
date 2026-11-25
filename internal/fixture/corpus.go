@@ -103,7 +103,7 @@ func boundarySubtitleItem(rng *rand.Rand) []TimedItem {
 			Text: "boundary-one-tick", Payload: []byte{1}},
 		{TrackID: 3, BoxType: metadata.BoxSubtitle, Presentation: uint64(ticks(CorpusSpanNS, 1000)) - 1,
 			Duration: 1, Sequence: 902, Text: "boundary-last", Payload: []byte{2}},
-		{TrackID: 1, BoxType: "subt", Presentation: 0xFFFF_FFFF, Duration: 1, Sequence: 903,
+		{TrackID: 1, BoxType: metadata.BoxSubtitle, Presentation: 0xFFFF_FFFF, Duration: 1, Sequence: 903,
 			Text: "boundary-out-of-range", Payload: []byte{3}},
 	}
 }

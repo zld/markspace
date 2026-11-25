@@ -77,7 +77,9 @@ func decodeTextFrame(frame []byte) string {
 // NUL-terminated message and the raw codec tail. It validates sizes so a
 // damaged payload is reported instead of guessed at.
 func DecodeSEI(payload []byte) (text string, rest []byte, ok bool) {
-	if len(payload) < 26 {
+	// NAL header(1) + payload type(1) + size(1) + UUID(16) + at least one
+	// message byte is the minimum useful SEI payload.
+	if len(payload) < 20 {
 		return "", nil, false
 	}
 	nalType := payload[0] & 0x1f

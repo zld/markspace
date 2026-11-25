@@ -298,17 +298,17 @@ func sign(v float64) float64 {
 }
 
 // Bytes serialises the manifest with stable key ordering and a trailing
-// newline. ManifestSHA256 is excluded from the digest it names.
-func (m Manifest) Bytes() ([]byte, error) {
-	mcopy := m
-	mcopy.ManifestSHA256 = ""
-	body, err := json.MarshalIndent(mcopy, "", "  ")
+// newline. ManifestSHA256 is the digest of the manifest with that field blank,
+// then recorded in the output; the same inputs always yield the same bytes.
+func (m *Manifest) Bytes() ([]byte, error) {
+	m.ManifestSHA256 = ""
+	body, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		return nil, err
 	}
 	digest := sha256.Sum256(body)
-	mcopy.ManifestSHA256 = hex.EncodeToString(digest[:])
-	final, err := json.MarshalIndent(mcopy, "", "  ")
+	m.ManifestSHA256 = hex.EncodeToString(digest[:])
+	final, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		return nil, err
 	}

@@ -1,15 +1,16 @@
 package rtp
 
 // Payload record layout of the generated archive RTP stream: version(1)
-// trackID(1) kind(1) reserved(1) presentation(8) duration(4) text(NUL) data.
-// It is defined here, next to the reorderer, because the reorderer is the only
-// subsystem that turns wire payloads into timeline events.
+// trackID(1) kind(1) reserved(1) presentation(8) duration(4) sequence(4)
+// text(NUL) data. It is defined here, next to the reorderer, because the
+// reorderer is the only subsystem that turns wire payloads into timeline
+// events.
 
 const (
 	// PayloadVersion is the only accepted generated payload version.
 	PayloadVersion = 1
 	// PayloadHeaderLen is the fixed prefix length of a payload record.
-	PayloadHeaderLen = 16
+	PayloadHeaderLen = 20
 )
 
 // PayloadKind is the semantic kind code carried by a generated RTP payload.
@@ -28,6 +29,7 @@ type Payload struct {
 	Kind         PayloadKind
 	Presentation uint64
 	Duration     uint32
+	Sequence     uint32 // logical sequence shared with the MP4 copy
 	Text         string
 	Data         []byte
 }
@@ -44,6 +46,7 @@ func DecodePayload(payload []byte) (Payload, bool) {
 		Kind:         PayloadKind(payload[2]),
 		Presentation: binaryBE64(payload[4:12]),
 		Duration:     uint32(binaryBE64(payload[12:16])),
+		Sequence:     uint32(binaryBE64(payload[16:20])),
 	}
 	rest := payload[PayloadHeaderLen:]
 	if idx := indexByte(rest, 0); idx >= 0 {

@@ -121,11 +121,19 @@ func ParseBytes(data []byte) (*Document, error) {
 	p := &parser{data: data, size: int64(len(data)), doc: &Document{}}
 	root, errs := parseContainer(data, 0, int64(len(data)), 0)
 	p.doc.Errors = append(p.doc.Errors, errs...)
-	if errs.hasFatal() {
-		return p.doc, p.doc.FatalErr()
-	}
 	p.resolve(root)
+	p.reportTruncations(root)
 	p.finalize()
+	// A fatal error (an unusable timebase, an exceeded limit) stops the
+	// document; otherwise the first structural error is still returned so the
+	// caller can classify the run as recovered while the parsed events remain
+	// available in the Document.
+	if fe := p.doc.FatalErr(); fe != nil {
+		return p.doc, fe
+	}
+	if len(p.doc.Errors) > 0 {
+		return p.doc, p.doc.Errors[0]
+	}
 	return p.doc, nil
 }
 
@@ -193,10 +201,10 @@ func parseContainer(data []byte, off, end int64, depth int) ([]*node, errList) {
 		size := declared
 		truncated := false
 		if off+size > end {
+			// Truncation is recorded on the node and reported in a dedicated
+			// pass, so the error can name the track that owned the data.
 			size = end - off
 			truncated = true
-			errs = append(errs, events.NewError(events.CodeTruncated, "", 0, off, "truncated",
-				fmt.Sprintf("box %q declares %d bytes but only %d remain", typ, declared, size), nil))
 		}
 		n := &node{
 			typ:       typ,
@@ -325,9 +333,11 @@ func (p *parser) resolveTrak(trak *node) {
 	}
 	walk(trak)
 
+	var hdlrName string
 	if hdlrNode != nil {
 		if hdlr, ok := p.unmarshal(hdlrNode).(*mp4.Hdlr); ok {
 			spec.Handler = string(hdlr.HandlerType[:])
+			hdlrName = hdlr.Name
 		}
 	}
 	if mdhdNode != nil {
@@ -341,6 +351,12 @@ func (p *parser) resolveTrak(trak *node) {
 		}
 	}
 	spec.Track = TrackForHandler(spec.Handler, spec.TrackID)
+	// The handler type is not unique: the generated SEI track uses the video
+	// handler. A handler name that names a known track ("sei", "id3", ...) is
+	// authoritative, so the SEI track stays distinct from the video track.
+	if t, ok := TrackForName(hdlrName); ok {
+		spec.Track = t
+	}
 	if spec.Timescale == 0 {
 		p.doc.Errors = append(p.doc.Errors, events.NewError(events.CodeInvalidTimescale, spec.Track, 0,
 			trak.offset, "trak", "track has no valid timescale", nil))
@@ -372,6 +388,29 @@ func TrackForHandler(handler string, trackID uint32) events.TrackID {
 	}
 }
 
+// TrackForName maps a handler name string to a unified track identity. Names
+// that do not match a known track are ignored by the caller.
+func TrackForName(name string) (events.TrackID, bool) {
+	switch name {
+	case "video":
+		return events.TrackVideo, true
+	case "audio":
+		return events.TrackAudio, true
+	case "subtitle":
+		return events.TrackSubtitle, true
+	case "chapter":
+		return events.TrackChapter, true
+	case "id3":
+		return events.TrackID3, true
+	case "sei":
+		return events.TrackSEI, true
+	case "emsg":
+		return events.TrackEmsg, true
+	default:
+		return "", false
+	}
+}
+
 // trackForKind names the unified track produced by a timed box. The generated
 // SEI track is declared with the video handler (SEI is a video NAL payload),
 // so it must be distinguished from the video track itself; the resolved spec's
@@ -386,41 +425,69 @@ func trackForKind(kind events.Kind, spec TrackSpec) events.TrackID {
 // resolveMoof walks a fragment, binding each traf to its declared track via
 // tfhd and parsing the timed boxes inside it.
 func (p *parser) resolveMoof(moof *node) {
-	for _, traf := range moof.children {
-		if traf.typ == "emsg" {
-			p.resolveEmsg(traf, events.TrackEmsg, 0)
+	for _, c := range moof.children {
+		if c.typ == "emsg" {
+			p.resolveEmsg(c, events.TrackEmsg, 0)
 			continue
 		}
-		if traf.typ != "traf" {
+		if c.typ != "traf" {
 			continue
 		}
-		var spec TrackSpec
-		haveSpec := false
-		for _, c := range traf.children {
-			if c.typ != "tfhd" {
-				continue
-			}
-			if tfhd, ok := p.unmarshal(c).(*mp4.Tfhd); ok {
-				if s, found := p.doc.TrackByID(tfhd.TrackID); found {
-					spec, haveSpec = s, true
-				} else {
-					p.doc.Errors = append(p.doc.Errors, events.NewError(events.CodeMalformed, "", 0, c.offset,
-						"tfhd", fmt.Sprintf("unknown track id %d", tfhd.TrackID), nil))
-				}
-			}
+		p.resolveTraf(c)
+	}
+}
+
+// specForTraf resolves the declared track a fragment refers to.
+func (p *parser) specForTraf(traf *node) (TrackSpec, bool) {
+	for _, c := range traf.children {
+		if c.typ != "tfhd" {
+			continue
 		}
+		tfhd, ok := p.unmarshal(c).(*mp4.Tfhd)
+		if !ok {
+			continue
+		}
+		if s, found := p.doc.TrackByID(tfhd.TrackID); found {
+			return s, true
+		}
+		p.doc.Errors = append(p.doc.Errors, events.NewError(events.CodeMalformed, "", 0, c.offset,
+			"tfhd", fmt.Sprintf("unknown track id %d", tfhd.TrackID), nil))
+	}
+	return TrackSpec{}, false
+}
+
+// resolveTraf admits the timed boxes of one fragment. When the traf itself was
+// cut, only its complete leading boxes are admitted; the cut box and anything
+// after it are left for the truncation pass to report.
+func (p *parser) resolveTraf(traf *node) {
+	spec, haveSpec := p.specForTraf(traf)
+	if haveSpec && traf.truncated {
 		for _, c := range traf.children {
+			if c.truncated {
+				return // everything from here on is incomplete
+			}
 			switch c.typ {
 			case "emsg":
 				p.resolveEmsg(c, events.TrackEmsg, 0)
 			case BoxSubtitle, BoxChapter, BoxID3, BoxSEI:
-				if !haveSpec {
-					p.doc.Errors = append(p.doc.Errors, events.NewError(events.CodeMalformed, "", 0, c.offset,
-						"timed-box", "timed box outside a resolvable traf", nil))
-					continue
+				if spec.Timescale != 0 {
+					p.resolveTimedBox(c, spec)
 				}
-				p.resolveTimedBox(c, spec)
 			}
+		}
+		return
+	}
+	for _, c := range traf.children {
+		switch c.typ {
+		case "emsg":
+			p.resolveEmsg(c, events.TrackEmsg, 0)
+		case BoxSubtitle, BoxChapter, BoxID3, BoxSEI:
+			if !haveSpec {
+				p.doc.Errors = append(p.doc.Errors, events.NewError(events.CodeMalformed, "", 0, c.offset,
+					"timed-box", "timed box outside a resolvable traf", nil))
+				continue
+			}
+			p.resolveTimedBox(c, spec)
 		}
 	}
 }
@@ -621,6 +688,74 @@ func (p *parser) unmarshal(n *node) mp4.IBox {
 		return nil
 	}
 	return box
+}
+
+// reportTruncations emits one attributed error per truncated box, in document
+// order. A truncated box is never admitted as an event; the pass only reports
+// what was cut and which track owned it.
+func (p *parser) reportTruncations(nodes []*node) {
+	for _, n := range nodes {
+		// A truncated moof: attribute to the first traf's declared track.
+		if n.truncated && n.typ == "moof" {
+			track := p.firstTrafTrack(n)
+			size := n.size - n.headerLen
+			detail := fmt.Sprintf("moof declares %d bytes but only %d remain", n.declared, n.size)
+			p.doc.Errors = append(p.doc.Errors, events.NewError(events.CodeTruncated, track, 0, n.offset, "truncated", detail, nil))
+			_ = size
+			continue
+		}
+		if n.truncated && n.typ == "traf" {
+			// resolveMoof may already have reported this traf; skip the
+			// duplicate by checking the existing error offsets.
+			if !p.hasErrorAt(n.offset) {
+				p.doc.Errors = append(p.doc.Errors, events.NewError(events.CodeTruncated, p.trafTrack(n), 0, n.offset,
+					"truncated", fmt.Sprintf("traf declares %d bytes but only %d remain", n.declared, n.size), nil))
+			}
+			continue
+		}
+		if n.truncated && !isContainer(n.typ) {
+			if !p.hasErrorAt(n.offset) {
+				p.doc.Errors = append(p.doc.Errors, events.NewError(events.CodeTruncated, "", 0, n.offset,
+					"truncated", fmt.Sprintf("box %q declares %d bytes but only %d remain", n.typ, n.declared, n.size), nil))
+			}
+			continue
+		}
+		if len(n.children) > 0 {
+			p.reportTruncations(n.children)
+		}
+	}
+}
+
+func (p *parser) hasErrorAt(offset int64) bool {
+	for _, e := range p.doc.Errors {
+		if e.Offset == offset && e.Code == events.CodeTruncated {
+			return true
+		}
+	}
+	return false
+}
+
+func (p *parser) firstTrafTrack(n *node) events.TrackID {
+	for _, c := range n.children {
+		if c.typ == "traf" {
+			return p.trafTrack(c)
+		}
+	}
+	return ""
+}
+
+func (p *parser) trafTrack(n *node) events.TrackID {
+	for _, c := range n.children {
+		if c.typ != "tfhd" {
+			continue
+		}
+		if tfhd, ok := p.unmarshal(c).(*mp4.Tfhd); ok {
+			if s, found := p.doc.TrackByID(tfhd.TrackID); found {
+				return s.Track
+			}
+		}
+	}
+	return ""
 }
 
 // finalize sorts events canonically, marks content-bearing tracks and

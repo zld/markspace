@@ -294,9 +294,12 @@ func (e *Error) Unwrap() error { return e.Err }
 // tracks continue and missing data stays marked as a gap.
 func (e *Error) Fatal() bool {
 	switch e.Code {
-	case CodeInvalidTimescale, CodeTimeOutOfRange, CodeCapacity, CodePath, CodeWrite, CodeFixture, CodeInternal:
+	case CodeInvalidTimescale, CodeCapacity, CodePath, CodeWrite, CodeFixture, CodeInternal:
 		return true
 	default:
+		// Truncation, malformed boxes and out-of-range timestamps are
+		// recoverable at the item level: the offending item is skipped and
+		// the remaining tracks still export.
 		return false
 	}
 }

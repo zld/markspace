@@ -240,6 +240,19 @@ func (t *Timeline) MarkGap(g events.Gap) *events.Error {
 	return nil
 }
 
+// ResolveGap marks an explicit gap as filled when its missing data arrives.
+// It reports whether a matching unresolved gap existed; no event is created.
+func (t *Timeline) ResolveGap(track events.TrackID, kind events.Kind, seq uint64) bool {
+	k := gapKey{track: track, kind: kind, seq: seq}
+	g, ok := t.gaps[k]
+	if !ok || g.Filled {
+		return false
+	}
+	g.Filled = true
+	t.gaps[k] = g
+	return true
+}
+
 // Advance moves the watermark to now-lateWindow (if that is forward) and
 // commits the newly final events.
 func (t *Timeline) Advance(nowNS int64) (CommitResult, *events.Error) {
