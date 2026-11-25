@@ -1,9 +1,12 @@
 package fixture_test
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"assetcheck/internal/fixture"
+	"assetcheck/internal/mp4check"
 	"assetcheck/internal/wav"
 )
 
@@ -72,7 +75,15 @@ func TestGenerateWritesAllFixtures(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(paths) < 8 {
-		t.Fatalf("expected >=8 fixtures, got %d", len(paths))
+	if len(paths) < 9 {
+		t.Fatalf("expected >=9 fixtures, got %d", len(paths))
+	}
+	mp4Bytes, err := os.ReadFile(filepath.Join(dir, "sample.mp4"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := mp4check.Analyze(mp4Bytes)
+	if err != nil || info.TrackCount != 1 || info.Tracks[0].Timescale != 48000 {
+		t.Fatalf("generated sample.mp4 invalid: %+v err=%v", info, err)
 	}
 }

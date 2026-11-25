@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"assetcheck/internal/mp4check"
 	"assetcheck/internal/wav"
 )
 
@@ -19,9 +20,9 @@ type Spec struct {
 	Bits              int
 	BlockFrames       int
 	Title             string
-	CorruptBlockIndex int   // -1 = none
-	TruncateTailBytes int   // cut this many bytes off the finished file
-	DuplicateBoundary bool  // duplicate one ABLK start frame
+	CorruptBlockIndex int  // -1 = none
+	TruncateTailBytes int  // cut this many bytes off the finished file
+	DuplicateBoundary bool // duplicate one ABLK start frame
 }
 
 // GoodSpec is the acceptance baseline: 2 s, 48 kHz, 6 channels, PCM16.
@@ -179,5 +180,11 @@ func Generate(dir string) ([]string, error) {
 		}
 		paths = append(paths, p)
 	}
+	// Minimal MP4 container/track-structure sample for go-mp4 verification.
+	mp4Path := filepath.Join(dir, "sample.mp4")
+	if err := os.WriteFile(mp4Path, mp4check.MinimalMP4(48000), 0o644); err != nil {
+		return nil, err
+	}
+	paths = append(paths, mp4Path)
 	return paths, nil
 }
