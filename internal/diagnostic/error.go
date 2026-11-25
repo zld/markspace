@@ -34,6 +34,7 @@ const (
 	CodeOverflow            Code = "OVERFLOW"
 	CodeInvalidTimecode     Code = "INVALID_TIMECODE"
 	CodeInvalidTimestamp    Code = "INVALID_TIMESTAMP"
+	CodeInvalidSubtitle     Code = "INVALID_SUBTITLE"
 	CodeTruncated           Code = "TRUNCATED_INPUT"
 	CodeLineTooLarge        Code = "LINE_TOO_LARGE"
 	CodeInputTooLarge       Code = "INPUT_TOO_LARGE"
