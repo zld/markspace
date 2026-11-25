@@ -91,7 +91,9 @@ func buildTSPackets(damaged, mutated bool) ([][]byte, error) {
 		return nil
 	}
 	addJump := func(pid uint16, payload []byte, pcr *uint64) error {
-		wrong := (cc[pid] + 2) % 16
+		// cc[pid] is the next CC that would normally be used. Skip that value
+		// to model one lost TS packet and send the following CC instead.
+		wrong := (cc[pid] + 1) % 16
 		pkt, err := BuildTSPacket(pid, wrong, payload, true, pcr)
 		if err != nil {
 			return err
