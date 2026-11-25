@@ -159,13 +159,13 @@ func TestDurationNSAllowsLongDurations(t *testing.T) {
 	// A 30-minute chapter on a 1kHz track must not be capped by the 24h
 	// timeline range used for absolute timestamps.
 	cases := []struct {
-		ticks     int64
-		scale     uint32
-		wantNS    int64
+		ticks  int64
+		scale  uint32
+		wantNS int64
 	}{
-		{60_000, 1000, 60_000_000_000},        // 60s
-		{1_800_000, 1000, 1_800_000_000_000},  // 30min
-		{3_600, 90_000, 40_000_000},           // 3600/90000 s = 40ms
+		{60_000, 1000, 60_000_000_000},       // 60s
+		{1_800_000, 1000, 1_800_000_000_000}, // 30min
+		{3_600, 90_000, 40_000_000},          // 3600/90000 s = 40ms
 	}
 	for _, c := range cases {
 		got, err := DurationNS(c.ticks, c.scale)

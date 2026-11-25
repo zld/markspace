@@ -28,7 +28,7 @@ network.
 |--------------|---------|
 | `normal`     | Well-formed, in-order archive. Clean exit **0**. |
 | `truncated`  | MP4 structure cut inside a fragment: reports track + byte offset, incomplete track is dropped, others still export. Exit **2**. |
-| `damaged`    | RTP duplicates, reordering and burst loss: unresolved gaps > 0, frames still export. Exit **2**. |
+| `damaged`    | RTP duplicates, reordering and burst loss **plus** one attributed MP4 truncation: reports track+offset, unresolved gaps > 0, and frames still export. Exit **2**. |
 | `late`       | Packets delivered after their hole was declared lost: triggers checkpoint replay; final state hash equals the fully ordered run. Exit **0**. |
 | `boundary`   | Timestamps at zero, one tick, the last representable instant and beyond the 24h range: the out-of-range item is reported and skipped. Exit **2**. |
 
@@ -47,9 +47,14 @@ Flags:
 | Code | Meaning |
 |------|---------|
 | 0    | Success. |
-| 2    | Input was damaged but partially recovered (unresolved gaps or a truncated document). |
-| 1    | Fatal: unusable time base, exceeded limit, or a write/path failure. |
+| 2    | Input was damaged but partially recovered (unresolved gaps or a truncated document). A late event whose rollback would exceed the replay window is reported and skipped, leaving the gap marked. |
+| 1    | Fatal: unusable time base, a hard input/buffer/event limit, or a write/path failure. |
 | 64   | Usage error. |
+
+The terminal prints two manifest digests: `sha256 manifest=` is the canonical
+self-digest embedded as `manifest_sha256`, while `sha256 manifest_file=` is the
+plain SHA-256 of the atomically written `manifest.json` bytes and matches
+`shasum -a 256 manifest.json`.
 
 > Note: `go run` may report a bare `1` for any non-zero exit on some
 > toolchains. Build the binary (`go build -o archive ./cmd/archive`) if you
@@ -121,9 +126,10 @@ internal/archive/pipeline.go wires the subsystems into one run
 ./scripts/verify.sh       # same procedure, fails fast on the first error
 ```
 
-`check.sh` proves: normal manifests are byte-identical across runs;
-truncated input reports track and offset while other tracks export; damaged
-input reports loss and unresolved gaps while frames still export; the late
+`check.sh` proves: normal manifests are byte-identical across runs and the
+printed `manifest_file` hash matches `shasum`; truncated input reports track
+and offset while other tracks export; the damaged run reports the attributed
+truncation, loss and unresolved gaps while frames still export; the late
 replay state hash equals the ordered run; boundary input reports its
 out-of-range timestamp.
 

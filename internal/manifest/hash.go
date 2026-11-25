@@ -20,8 +20,10 @@ import (
 	"archive.example/mediakernel/internal/render"
 )
 
-// OutputDirName is the fixed directory name the CLI writes into the requested
-// output root. Paths are confined to it.
+// OutputDirName is a conventional subdirectory name some callers may append
+// beneath a chosen root. The CLI writes manifest.json directly into -out, so
+// the acceptance path is <out>/manifest.json; writes stay confined to
+// whichever directory ResolveOutDir returns.
 const OutputDirName = "archive"
 
 // Manifest is the complete archive summary.

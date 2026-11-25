@@ -128,11 +128,11 @@ func TestPixelStatsBounded(t *testing.T) {
 
 func TestPixelStatsExpandsRGB565ToByteScale(t *testing.T) {
 	cases := []struct {
-		name       string
-		pixels     []uint16
-		wantMean   float64
-		wantMin    uint8
-		wantMax    uint8
+		name     string
+		pixels   []uint16
+		wantMean float64
+		wantMin  uint8
+		wantMax  uint8
 	}{
 		{"black", []uint16{0x0000}, 0, 0, 0},
 		{"white", []uint16{0xFFFF}, 255, 255, 255},
