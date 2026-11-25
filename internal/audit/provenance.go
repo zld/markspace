@@ -128,9 +128,11 @@ func (s *Summary) PrintText(w io.Writer) {
 			fmt.Fprintf(w, "  anomaly class=%s kind=%s %s time_ms=[%d,%d] reject=%v msg=%s\n",
 				in.Class, in.Kind, loc, in.StartMS, in.EndMS, in.Reject, in.Message)
 		}
-		for _, d := range it.Config.Decision.Deviations {
-			fmt.Fprintf(w, "  deviation constraint=%s expected=%.4f actual=%.4f delta=%.4f unit=%s\n",
-				d.Constraint, d.Expected, d.Actual, d.Delta, d.Unit)
+		if it.Config != nil {
+			for _, d := range it.Config.Decision.Deviations {
+				fmt.Fprintf(w, "  deviation constraint=%s expected=%.4f actual=%.4f delta=%.4f unit=%s\n",
+					d.Constraint, d.Expected, d.Actual, d.Delta, d.Unit)
+			}
 		}
 		for _, r := range it.Reasons {
 			fmt.Fprintf(w, "  reason: %s\n", r)
