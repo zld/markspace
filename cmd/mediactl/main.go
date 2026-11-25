@@ -150,6 +150,16 @@ func runBatchCommand(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "manifest invalid: %v\n", err)
 		return 2
 	}
+	fs.Visit(func(f *flag.Flag) {
+		switch f.Name {
+		case "budget-mbps":
+			m.BudgetMbps = c.budgetMbps
+		case "quality-min":
+			m.QualityMin = c.qualityMin
+		case "chunk-samples":
+			m.ChunkSamples = c.chunkSamples
+		}
+	})
 	summary := batch.RunManifest(m, batch.Options{WorkDir: work, BatchKey: *batchKey})
 	summary.PrintText(stdout)
 	summaryPath, _ := safepath.Resolve(work, "last-summary.json")
