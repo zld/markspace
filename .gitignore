@@ -1,0 +1,4 @@
+# Local assetcheck run state (manifests, incremental index sidecars)
+.assetcheck-state/
+# Built binaries
+/assetcheck

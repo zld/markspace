@@ -27,6 +27,14 @@ type RunConfig struct {
 // is supplied. The generated fixtures land within tolerance of it.
 const DefaultTargetBitrateBps = 100_000
 
+// FixtureTargetBitrateBps / FixtureBitrateTolerance document the delivery spec
+// of the self-generated offline fixtures: a nominal 24 kbps packet stream with
+// a +/-20% allowed delivery band. The fixture's measured ~22 kbps passes.
+const (
+	FixtureTargetBitrateBps = 24_000
+	FixtureBitrateTolerance = 0.20
+)
+
 // PipelineCounters aggregates packet-level counters for the JSON report.
 type PipelineCounters struct {
 	Packets     int  `json:"packets"`
@@ -108,11 +116,23 @@ func NewPipeline(cfg RunConfig) *Pipeline {
 // returns the structured error (already carrying offset/phase) together with
 // a partial report so callers can still emit quantified output.
 func (p *Pipeline) Process(ctx context.Context, data []byte) (*Report, error) {
+	return p.ProcessWithContainer(ctx, data, data)
+}
+
+// ProcessWithContainer streams the inner packet stream while computing the
+// container digest over the full encapsulation bytes (e.g. a complete MP4
+// document), which may differ from the inner stream. The content digest still
+// excludes framing and duplicates.
+func (p *Pipeline) ProcessWithContainer(ctx context.Context, packetData, containerBytes []byte) (*Report, error) {
+	containerDigest := DigestBytes(containerBytes)
+	return p.process(ctx, packetData, containerDigest)
+}
+
+func (p *Pipeline) process(ctx context.Context, data []byte, containerDigest Digest) (*Report, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	containerHasher := NewDigester()
-	reader := NewFrameReaderWithTee(bytes.NewReader(data), containerHasher)
+	reader := NewFrameReader(bytes.NewReader(data))
 
 	var consumerErr error
 	var wg sync.WaitGroup
@@ -193,7 +213,7 @@ producer:
 		runErr = consumerErr
 	}
 
-	report := p.buildReport(containerHasher.Sum())
+	report := p.buildReport(containerDigest)
 	if runErr != nil {
 		report.Counters.Cancelled = isCancelled(runErr)
 		return report, runErr

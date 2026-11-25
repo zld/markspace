@@ -172,7 +172,7 @@ func TestLoadManifestMissingFile(t *testing.T) {
 	}
 }
 
-func buildManifest(seed int64, id string) *Manifest {
+func testBuildManifest(seed int64, id string) *Manifest {
 	return &Manifest{
 		Version: ManifestCurrent, Seed: seed, Stage: StageDone,
 		IndexDigest: DigestBytes([]byte("idx")),
@@ -188,7 +188,7 @@ func buildManifest(seed int64, id string) *Manifest {
 func TestMigrationHappyPath(t *testing.T) {
 	dir := t.TempDir()
 	mg := NewMigrator(dir, "manifest.json")
-	m := buildManifest(7, "a")
+	m := testBuildManifest(7, "a")
 	rep, err := mg.Run(m)
 	if err != nil || !rep.Committed || rep.Stage != StageDone {
 		t.Fatalf("happy run failed: rep=%+v err=%v", rep, err)
@@ -214,7 +214,7 @@ func TestMigrationHappyPath(t *testing.T) {
 func TestMigrationInterruptKeepsOriginal(t *testing.T) {
 	dir := t.TempDir()
 	mg := NewMigrator(dir, "manifest.json")
-	original := buildManifest(1, "orig")
+	original := testBuildManifest(1, "orig")
 	if _, err := mg.Run(original); err != nil {
 		t.Fatal(err)
 	}
@@ -231,7 +231,7 @@ func TestMigrationInterruptKeepsOriginal(t *testing.T) {
 			}
 			return nil
 		})
-		next := buildManifest(2, "next-"+stage)
+		next := testBuildManifest(2, "next-"+stage)
 		rep, err := mg.Run(next)
 		if err == nil {
 			t.Fatalf("hook at %s must interrupt", stage)
@@ -262,7 +262,7 @@ func TestMigrationInterruptKeepsOriginal(t *testing.T) {
 func TestMigrationRestoreAfterInterrupt(t *testing.T) {
 	dir := t.TempDir()
 	mg := NewMigrator(dir, "manifest.json")
-	original := buildManifest(1, "orig")
+	original := testBuildManifest(1, "orig")
 	if _, err := mg.Run(original); err != nil {
 		t.Fatal(err)
 	}
@@ -274,7 +274,7 @@ func TestMigrationRestoreAfterInterrupt(t *testing.T) {
 		}
 		return nil
 	})
-	if _, err := mg.Run(buildManifest(2, "next")); err == nil {
+	if _, err := mg.Run(testBuildManifest(2, "next")); err == nil {
 		t.Fatal("expected interrupt")
 	}
 	if !mg.HasRollback() {
@@ -301,7 +301,7 @@ func TestMigrationFirstRunInterruptThenCommit(t *testing.T) {
 		}
 		return nil
 	})
-	if _, err := mg.Run(buildManifest(1, "a")); err == nil {
+	if _, err := mg.Run(testBuildManifest(1, "a")); err == nil {
 		t.Fatal("expected interrupt")
 	}
 	if _, err := os.Stat(mg.ManifestPath()); !errors.Is(err, os.ErrNotExist) {
@@ -311,7 +311,7 @@ func TestMigrationFirstRunInterruptThenCommit(t *testing.T) {
 		t.Fatalf("restore on empty marker: %v", err)
 	}
 	mg.SetInterruptHook(nil)
-	rep, err := mg.Run(buildManifest(1, "a"))
+	rep, err := mg.Run(testBuildManifest(1, "a"))
 	if err != nil || !rep.Committed {
 		t.Fatalf("retry after first-run interrupt must commit: %v", err)
 	}
@@ -320,12 +320,12 @@ func TestMigrationFirstRunInterruptThenCommit(t *testing.T) {
 func TestMigrationRepeatDigestStability(t *testing.T) {
 	dir := t.TempDir()
 	mg := NewMigrator(dir, "manifest.json")
-	m1 := buildManifest(7, "a")
+	m1 := testBuildManifest(7, "a")
 	if _, err := mg.Run(m1); err != nil {
 		t.Fatal(err)
 	}
 	// A second identical migration produces the same manifest digest.
-	m2 := buildManifest(7, "a")
+	m2 := testBuildManifest(7, "a")
 	rep, err := mg.Run(m2)
 	if err != nil || !rep.Committed {
 		t.Fatalf("second run: %v", err)
