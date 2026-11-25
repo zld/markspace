@@ -3,18 +3,20 @@ package rtp
 import (
 	"testing"
 
+	"github.com/pion/rtp"
+
 	"mediasync/internal/model"
 )
 
-// streamFixture builds an ordered stream with sequence numbers 0..9 minus the
-// supplied missing set, plus redundancy entries for some missing numbers.
-func streamFixture(missing, redundant map[uint16]bool) ([]OrderedPacket, map[uint16][]byte) {
-	var pkts []OrderedPacket
+// streamFixture builds an ordered RTP stream with sequence numbers 0..9 minus
+// the supplied missing set, plus redundancy entries for some missing numbers.
+func streamFixture(missing, redundant map[uint16]bool) ([]*rtp.Packet, map[uint16][]byte) {
+	var pkts []*rtp.Packet
 	for seq := uint16(0); seq < 10; seq++ {
 		if missing[seq] {
 			continue
 		}
-		pkts = append(pkts, OrderedPacket{Sequence: seq, Payload: []byte{byte(seq)}})
+		pkts = append(pkts, pkt(seq))
 	}
 	red := map[uint16][]byte{}
 	for seq := range redundant {
@@ -33,12 +35,15 @@ func TestRecoverGapsInsideWindow(t *testing.T) {
 		t.Fatalf("repaired stream length = %d, want 10", len(out))
 	}
 	for i, p := range out {
-		if p.Sequence != uint16(i) {
+		if p.SequenceNumber != uint16(i) {
 			t.Fatalf("position %d gap not filled: %+v", i, p)
 		}
 	}
 	if out[2].Payload[0] != 0xF2 {
 		t.Fatalf("repaired payload must come from redundancy, got %x", out[2].Payload)
+	}
+	if out[2].Timestamp != uint32(2)*90 {
+		t.Fatal("repaired packet must carry a derived monotonic RTP timestamp")
 	}
 	st := rec.Stats()
 	if st.Gaps != 2 || st.Recovered != 2 || st.Lost != 0 {
@@ -56,7 +61,7 @@ func TestUnrecoverableGapIsLocatedNotSynthesized(t *testing.T) {
 		t.Fatalf("missing packet must not be fabricated: got %d packets", len(out))
 	}
 	for _, p := range out {
-		if p.Sequence == 3 {
+		if p.SequenceNumber == 3 {
 			t.Fatal("seq 3 must be absent, never invented")
 		}
 	}
@@ -90,7 +95,7 @@ func TestBoundaryFailureBlocksRecovery(t *testing.T) {
 
 func TestRecoveryWindowAndDeterminism(t *testing.T) {
 	// Gap at seq 1 with high=40 is beyond window=4, so repair is never tried.
-	pkts := []OrderedPacket{{Sequence: 0}, {Sequence: 38}, {Sequence: 39}, {Sequence: 40}}
+	pkts := []*rtp.Packet{pkt(0), pkt(38), pkt(39), pkt(40)}
 	red := map[uint16][]byte{1: {0xAA}}
 	rec := NewRecoverer("far", 4, red)
 	out := rec.AnalyzeWindow(pkts, func(seq uint16) bool { return true })
@@ -115,7 +120,8 @@ func TestRecoveryWindowAndDeterminism(t *testing.T) {
 		t.Fatal("output length differs across runs")
 	}
 	for i := range o1 {
-		if o1[i].Sequence != o2[i].Sequence || string(o1[i].Payload) != string(o2[i].Payload) {
+		if o1[i].SequenceNumber != o2[i].SequenceNumber ||
+			string(o1[i].Payload) != string(o2[i].Payload) {
 			t.Fatalf("packet %d differs across runs", i)
 		}
 	}

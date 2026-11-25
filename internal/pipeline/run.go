@@ -73,6 +73,7 @@ type LaneInput struct {
 	MP4Tracks       []verify.TrackSpec
 	MP4Fragments    []verify.FragmentSpec
 	CorruptMP4      bool
+	CorruptMP4Data  []byte // real truncated MP4 bytes; parsed when CorruptMP4 is set
 }
 
 // Run executes the full kernel over pre-built per-representation lane inputs.
@@ -164,9 +165,16 @@ func (r *Report) runVerification(lanes []LaneInput, active map[string]bool) {
 		}
 		attempted++
 		if lane.CorruptMP4 {
-			r.Errors = append(r.Errors, model.NewError(model.KindTruncatedMP4,
-				"verify", 0, "rep %s fixture is corrupt, isolated from other layers",
-				lane.Representation))
+			// Parse the real truncated bytes so the failure is a located parser
+			// error, not a synthetic flag. The error never stops sibling lanes.
+			if _, perr := verify.ParseFragmentedMP4(lane.CorruptMP4Data); perr != nil {
+				r.Errors = append(r.Errors, model.NewError(model.Classify(perr),
+					"verify", model.Locate(perr),
+					"rep %s corrupt input: %v", lane.Representation, perr))
+			} else {
+				r.Errors = append(r.Errors, model.NewError(model.KindMalformedMP4,
+					"verify", 0, "rep %s corrupt fixture unexpectedly parsed", lane.Representation))
+			}
 			continue
 		}
 		if len(lane.MP4Tracks) == 0 {

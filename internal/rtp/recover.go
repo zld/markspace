@@ -1,14 +1,16 @@
 package rtp
 
 import (
+	"github.com/pion/rtp"
+
 	"mediasync/internal/model"
 )
 
 // RecoveryStats summarises one representation's loss repair outcome.
 type RecoveryStats struct {
-	Gaps       int // missing sequence numbers detected inside closed windows
-	Recovered  int // gaps repaired from redundancy inside the window
-	Lost       int // gaps that could not be repaired, kept as located errors
+	Gaps        int // missing sequence numbers detected inside closed windows
+	Recovered   int // gaps repaired from redundancy inside the window
+	Lost        int // gaps that could not be repaired, kept as located errors
 	WindowSkips int // gaps outside the recovery window, never touched
 }
 
@@ -41,26 +43,27 @@ func NewRecoverer(repID string, window int, redundancy map[uint16][]byte) *Recov
 	return &Recoverer{repID: repID, window: window, redundancy: cp}
 }
 
-// AnalyzeWindow inspects the ordered packets that survived buffering and
-// repairs every interior gap. Packets and repaired entries are merged into one
-// ordered stream; unrepaired gaps appear in Losses() rather than as data.
-// The highest sequence number seen in the stream defines the window edge.
-func (r *Recoverer) AnalyzeWindow(packets []OrderedPacket, ok BoundaryChecker) []OrderedPacket {
+// AnalyzeWindow inspects the ordered pion RTP packets that survived buffering
+// and repairs every interior gap. Existing packets and repaired entries are
+// merged into one ordered stream; unrepaired gaps appear in Losses() rather
+// than as data. The highest sequence number defines the window edge.
+func (r *Recoverer) AnalyzeWindow(packets []*rtp.Packet, ok BoundaryChecker) []*rtp.Packet {
 	if len(packets) == 0 {
 		return nil
 	}
 	present := make(map[uint16]bool, len(packets))
 	var high uint16
 	for i, p := range packets {
-		present[p.Sequence] = true
-		if i == 0 || seqDiff(p.Sequence, high) > 0 {
-			high = p.Sequence
+		present[p.SequenceNumber] = true
+		if i == 0 || seqDiff(p.SequenceNumber, high) > 0 {
+			high = p.SequenceNumber
 		}
 	}
 
-	repaired := make(map[uint16][]byte)
-	// Walk every sequence number from the first packet up to the highest.
-	start := packets[0].Sequence
+	repaired := make(map[uint16]*rtp.Packet)
+	// Walk every sequence number from the first packet up to the highest. The
+	// uint16 cursor wraps naturally at the 16-bit boundary.
+	start := packets[0].SequenceNumber
 	for cursor := start; seqDiff(cursor, high) <= 0; cursor++ {
 		if present[cursor] {
 			continue
@@ -89,14 +92,20 @@ func (r *Recoverer) AnalyzeWindow(packets []OrderedPacket, ok BoundaryChecker) [
 			r.stats.Lost++
 			continue
 		}
-		repaired[cursor] = payload
+		// Rebuild a pion packet carrying the sender redundancy; its RTP
+		// timestamp is derived from its sequence position so timing stays
+		// monotonic across the repair.
+		repaired[cursor] = &rtp.Packet{
+			Header:  rtp.Header{SequenceNumber: cursor, Timestamp: uint32(cursor) * 90},
+			Payload: append([]byte(nil), payload...),
+		}
 		r.stats.Recovered++
 	}
 
-	out := make([]OrderedPacket, 0, len(packets)+len(repaired))
+	out := make([]*rtp.Packet, 0, len(packets)+len(repaired))
 	out = append(out, packets...)
-	for seq, payload := range repaired {
-		out = append(out, OrderedPacket{Sequence: seq, Payload: payload})
+	for _, pkt := range repaired {
+		out = append(out, pkt)
 	}
 	sortPackets(out)
 	return out

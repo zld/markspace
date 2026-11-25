@@ -1,12 +1,23 @@
 package rtp
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/pion/rtp"
+)
+
+func pkt(seq uint16) *rtp.Packet {
+	return &rtp.Packet{
+		Header:  rtp.Header{SequenceNumber: seq, Timestamp: uint32(seq) * 90},
+		Payload: []byte{byte(seq)},
+	}
+}
 
 func TestInOrderAndReorder(t *testing.T) {
 	b := NewJitterBuffer("video-hi", 16, 8)
 	// Out-of-order arrival: 0, 2, 1, 3
 	for _, seq := range []uint16{0, 2, 1, 3} {
-		if err := b.Push(seq, []byte{byte(seq)}); err != nil {
+		if err := b.Push(pkt(seq)); err != nil {
 			t.Fatalf("seq %d rejected: %v", seq, err)
 		}
 	}
@@ -19,8 +30,11 @@ func TestInOrderAndReorder(t *testing.T) {
 		t.Fatalf("flushed %d packets", len(out))
 	}
 	for i, p := range out {
-		if p.Sequence != uint16(i) || p.Payload[0] != byte(i) {
+		if p.SequenceNumber != uint16(i) || p.Payload[0] != byte(i) {
 			t.Fatalf("position %d not ordered: %+v", i, p)
+		}
+		if p.Timestamp != uint32(i)*90 {
+			t.Fatalf("RTP timestamp not retained at %d", i)
 		}
 	}
 	if b.Len() != 0 {
@@ -31,14 +45,13 @@ func TestInOrderAndReorder(t *testing.T) {
 func TestDuplicateAndLate(t *testing.T) {
 	b := NewJitterBuffer("audio-core", 32, 4)
 	for _, seq := range []uint16{10, 11, 12, 13, 14, 15} {
-		_ = b.Push(seq, nil)
+		_ = b.Push(pkt(seq))
 	}
-	// Re-push an already seen sequence -> duplicate.
-	if err := b.Push(12, nil); err == nil {
+	if err := b.Push(pkt(12)); err == nil {
 		t.Fatal("duplicate must be reported")
 	}
 	// Sequence 5 is more than window=4 behind highest 15 -> late.
-	if err := b.Push(5, nil); err == nil {
+	if err := b.Push(pkt(5)); err == nil {
 		t.Fatal("late packet must be reported")
 	}
 	stats := b.Stats()
@@ -53,15 +66,15 @@ func TestDuplicateAndLate(t *testing.T) {
 func TestSequenceWrapAround(t *testing.T) {
 	b := NewJitterBuffer("wrap", 32, 16)
 	for _, seq := range []uint16{65533, 65534, 65535, 0, 1, 2} {
-		if err := b.Push(seq, nil); err != nil {
+		if err := b.Push(pkt(seq)); err != nil {
 			t.Fatalf("seq %d rejected across wrap: %v", seq, err)
 		}
 	}
 	out := b.Flush()
 	want := []uint16{65533, 65534, 65535, 0, 1, 2}
 	for i, p := range out {
-		if p.Sequence != want[i] {
-			t.Fatalf("wrap ordering wrong at %d: got %d want %d", i, p.Sequence, want[i])
+		if p.SequenceNumber != want[i] {
+			t.Fatalf("wrap ordering wrong at %d: got %d want %d", i, p.SequenceNumber, want[i])
 		}
 	}
 }
@@ -71,8 +84,8 @@ func TestEvictionIsDeterministic(t *testing.T) {
 	second := NewJitterBuffer("cap3", 3, 32)
 	seqs := []uint16{7, 9, 8, 10, 11} // capacity 3 evicts twice, oldest first
 	for _, seq := range seqs {
-		_ = first.Push(seq, []byte{byte(seq)})
-		_ = second.Push(seq, []byte{byte(seq)})
+		_ = first.Push(pkt(seq))
+		_ = second.Push(pkt(seq))
 	}
 	if first.Stats().Evicted != 2 {
 		t.Fatalf("evictions = %d, want 2", first.Stats().Evicted)
@@ -89,7 +102,7 @@ func TestEvictionIsDeterministic(t *testing.T) {
 		t.Fatal("identical input must yield identical eviction decisions")
 	}
 	out := first.Flush()
-	got := []uint16{out[0].Sequence, out[1].Sequence, out[2].Sequence}
+	got := []uint16{out[0].SequenceNumber, out[1].SequenceNumber, out[2].SequenceNumber}
 	if len(got) != 3 || got[0] != 8 || got[1] != 10 || got[2] != 11 {
 		t.Fatalf("survivors wrong: %v", got)
 	}
@@ -99,10 +112,10 @@ func TestBuffersAreIndependentPerRepresentation(t *testing.T) {
 	video := NewJitterBuffer("video", 8, 8)
 	audio := NewJitterBuffer("audio", 8, 8)
 	for _, seq := range []uint16{0, 1, 2} {
-		_ = video.Push(seq, nil)
+		_ = video.Push(pkt(seq))
 	}
 	for _, seq := range []uint16{100, 100, 101} {
-		_ = audio.Push(seq, nil)
+		_ = audio.Push(pkt(seq))
 	}
 	if video.Stats().Duplicate != 0 || audio.Stats().Duplicate != 1 {
 		t.Fatalf("representation state leaked: video=%+v audio=%+v", video.Stats(), audio.Stats())

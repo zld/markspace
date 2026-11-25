@@ -1,11 +1,14 @@
 // Package rtp implements per-representation RTP reception: a bounded jitter
-// buffer that reorders packets by sequence number with uint16 wrap handling,
-// classifies late/duplicate/out-of-order arrivals, and applies a deterministic
-// eviction rule when the queue fills. Each representation owns an independent
-// buffer so a lossy layer can never disturb another layer's window.
+// buffer that reorders github.com/pion/rtp packets by sequence number with
+// uint16 wrap handling, classifies late/duplicate/out-of-order arrivals, and
+// applies a deterministic eviction rule when the queue fills. Each
+// representation owns an independent buffer so a lossy layer can never
+// disturb another layer's window.
 package rtp
 
 import (
+	"github.com/pion/rtp"
+
 	"mediasync/internal/model"
 )
 
@@ -42,18 +45,18 @@ func seqDiff(b, a uint16) int {
 
 // JitterBuffer is one representation's bounded reorder buffer.
 type JitterBuffer struct {
-	repID      string
-	capacity   int
-	window     int // playout window size in sequence numbers
-	packets    map[uint16][]byte
-	order      []uint16 // insertion order of keys still in the map
-	base       uint16   // oldest sequence number still inside the window
-	haveBase   bool
-	highest    uint16
-	haveHigh   bool
-	seen       map[uint16]bool // every sequence number ever observed
-	stats      Counters
-	evictions  []Eviction
+	repID     string
+	capacity  int
+	window    int // playout window size in sequence numbers
+	packets   map[uint16]*rtp.Packet
+	order     []uint16 // insertion order of keys still in the map
+	base      uint16   // oldest sequence number still inside the window
+	haveBase  bool
+	highest   uint16
+	haveHigh  bool
+	seen      map[uint16]bool // every sequence number ever observed
+	stats     Counters
+	evictions []Eviction
 }
 
 // NewJitterBuffer creates a buffer for one representation. capacity bounds the
@@ -70,19 +73,21 @@ func NewJitterBuffer(repID string, capacity, window int) *JitterBuffer {
 		repID:    repID,
 		capacity: capacity,
 		window:   window,
-		packets:  make(map[uint16][]byte),
+		packets:  make(map[uint16]*rtp.Packet),
 		seen:     make(map[uint16]bool),
 	}
 }
 
-// Push classifies and stores one packet. The returned error is non-nil only
-// for late/duplicate/eviction events; callers decide whether to record them.
-// A successfully buffered packet always returns nil.
-func (b *JitterBuffer) Push(seq uint16, payload []byte) *model.MediaError {
+// Push classifies and stores one pion RTP packet, using the packet's own
+// sequence number and RTP timestamp. The returned error is non-nil only for
+// late/duplicate/eviction events; callers decide whether to record them. A
+// successfully buffered packet always returns nil.
+func (b *JitterBuffer) Push(pkt *rtp.Packet) *model.MediaError {
+	seq := pkt.SequenceNumber
 	if b.seen[seq] {
 		b.stats.Duplicate++
 		return model.NewError(model.KindPacketLost, "rtp", int64(seq),
-			"rep %s duplicate packet seq=%d", b.repID, seq)
+			"rep %s duplicate packet seq=%d ts=%d", b.repID, seq, pkt.Timestamp)
 	}
 	b.seen[seq] = true
 
@@ -105,7 +110,7 @@ func (b *JitterBuffer) Push(seq uint16, payload []byte) *model.MediaError {
 		b.evictions = append(b.evictions, Eviction{Sequence: oldest, Reason: model.KindEviction})
 	}
 
-	b.packets[seq] = append([]byte(nil), payload...)
+	b.packets[seq] = pkt
 	b.order = append(b.order, seq)
 	b.stats.Received++
 
@@ -119,23 +124,17 @@ func (b *JitterBuffer) Push(seq uint16, payload []byte) *model.MediaError {
 	return nil
 }
 
-// Flush returns the buffered payloads in ascending circular sequence order,
+// Flush returns the buffered RTP packets in ascending circular sequence order,
 // clearing the buffer.
-func (b *JitterBuffer) Flush() []OrderedPacket {
-	out := make([]OrderedPacket, 0, len(b.packets))
-	for seq, payload := range b.packets {
-		out = append(out, OrderedPacket{Sequence: seq, Payload: payload})
+func (b *JitterBuffer) Flush() []*rtp.Packet {
+	out := make([]*rtp.Packet, 0, len(b.packets))
+	for _, pkt := range b.packets {
+		out = append(out, pkt)
 	}
 	sortPackets(out)
-	b.packets = make(map[uint16][]byte)
+	b.packets = make(map[uint16]*rtp.Packet)
 	b.order = nil
 	return out
-}
-
-// OrderedPacket is a sequence-numbered payload emitted in playout order.
-type OrderedPacket struct {
-	Sequence uint16
-	Payload  []byte
 }
 
 // Stats returns a copy of the lifetime counters.
@@ -155,18 +154,19 @@ func (b *JitterBuffer) Highest() (uint16, bool) { return b.highest, b.haveHigh }
 // Len is the number of currently buffered packets.
 func (b *JitterBuffer) Len() int { return len(b.packets) }
 
-// sortPackets orders packets by circular distance from the smallest sequence
-// number present, which is correct inside one reorder window.
-func sortPackets(pkts []OrderedPacket) {
-	base := pkts[0].Sequence
+// sortPackets orders RTP packets by circular distance from the smallest
+// sequence number present, which is correct inside one reorder window.
+func sortPackets(pkts []*rtp.Packet) {
+	base := pkts[0].SequenceNumber
 	for _, p := range pkts[1:] {
-		if seqDiff(p.Sequence, base) < 0 {
-			base = p.Sequence
+		if seqDiff(p.SequenceNumber, base) < 0 {
+			base = p.SequenceNumber
 		}
 	}
 	// insertion sort: buffers are small and determinism matters more than speed
 	for i := 1; i < len(pkts); i++ {
-		for j := i; j > 0 && seqDiff(pkts[j].Sequence, pkts[j-1].Sequence) < 0; j-- {
+		for j := i; j > 0 &&
+			seqDiff(pkts[j].SequenceNumber, pkts[j-1].SequenceNumber) < 0; j-- {
 			pkts[j], pkts[j-1] = pkts[j-1], pkts[j]
 		}
 	}

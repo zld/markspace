@@ -106,6 +106,13 @@ func TestSizeCapAndCorruptLaneIsolation(t *testing.T) {
 		baseLane("video", model.KindVideo, model.PriorityLow, 8),
 	}
 	lanes[1].CorruptMP4 = true
+	tracks, frags := mp4Tracks("video", model.KindVideo, 8), mp4Frags(8)
+	good, err := verify.WriteFragmentedMP4(tracks, frags)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lanes[1].MP4Tracks, lanes[1].MP4Fragments = tracks, frags
+	lanes[1].CorruptMP4Data = good[:len(good)/2]
 	rep := Run(Config{BudgetMS: 1_000_000, MaxBytes: 1_000_000}, lanes)
 
 	// The corrupt lane stays active but fails verification with a located
