@@ -50,6 +50,33 @@ func ElstBox(entries ...ElstEntrySpec) []byte {
 	return FullBox("elst", 0, 0, p)
 }
 
+func MvhdBox(timescale, duration uint32) []byte {
+	p := make([]byte, 96)
+	binary.BigEndian.PutUint32(p[8:12], timescale)
+	binary.BigEndian.PutUint32(p[12:16], duration)
+	binary.BigEndian.PutUint32(p[16:20], 0x00010000) // rate 1.0
+	binary.BigEndian.PutUint16(p[20:22], 0x0100)     // volume 1.0
+	// Identity transformation matrix.
+	binary.BigEndian.PutUint32(p[32:36], 0x00010000)
+	binary.BigEndian.PutUint32(p[48:52], 0x00010000)
+	binary.BigEndian.PutUint32(p[64:68], 0x40000000)
+	binary.BigEndian.PutUint32(p[92:96], 2) // next track id
+	return FullBox("mvhd", 0, 0, p)
+}
+
+func TkhdBox(trackID, duration uint32) []byte {
+	p := make([]byte, 80)
+	binary.BigEndian.PutUint32(p[8:12], trackID)
+	binary.BigEndian.PutUint32(p[16:20], duration)
+	// Identity transformation matrix.
+	binary.BigEndian.PutUint32(p[36:40], 0x00010000)
+	binary.BigEndian.PutUint32(p[52:56], 0x00010000)
+	binary.BigEndian.PutUint32(p[68:72], 0x40000000)
+	binary.BigEndian.PutUint32(p[72:76], 320<<16) // width 16.16
+	binary.BigEndian.PutUint32(p[76:80], 240<<16) // height 16.16
+	return FullBox("tkhd", 0, 0, p)
+}
+
 func MdhdBox(timescale, duration uint32) []byte {
 	p := make([]byte, 20)
 	binary.BigEndian.PutUint32(p[8:12], timescale)
