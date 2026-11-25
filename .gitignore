@@ -1,0 +1,14 @@
+# Build and test outputs
+/bin/
+/dist/
+*.test
+*.out
+
+# Local working media and reports
+/work/
+/tmp-media-check/
+
+# OS/editor files
+.DS_Store
+.idea/
+.vscode/
