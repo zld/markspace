@@ -44,6 +44,7 @@ func processSample(s fixture.Sample) processed {
 	p.conclusion.WrapCount = p.wrapCount
 	p.conclusion.DriftMS = float64(p.maxDriftNS) / float64(clock.NanosecondsPerMillisecond)
 	p.conclusion.MaxBoundaryMS = float64(p.maxBoundaryNS) / float64(clock.NanosecondsPerMillisecond)
+	p.conclusion.Anomalies = p.anomalies
 	p.conclusion.AnomalyCount = len(p.anomalies)
 	for _, a := range p.anomalies {
 		if a.EndNS > a.StartNS {
