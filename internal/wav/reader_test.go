@@ -8,31 +8,6 @@ import (
 	"replaycheck/internal/fault"
 )
 
-// BuildPCM constructs a canonical 44-byte-header WAV image in memory.
-// data is interleaved little-endian sample bytes.
-func BuildPCM(channels, rate, bits int, data []byte) []byte {
-	frame := channels * bits / 8
-	payload := append([]byte{}, data...)
-	if len(payload)%2 == 1 {
-		payload = append(payload, 0) // RIFF chunk padding, not sample data
-	}
-	var hdr [44]byte
-	copy(hdr[0:4], "RIFF")
-	binary.LittleEndian.PutUint32(hdr[4:8], uint32(36+len(payload)))
-	copy(hdr[8:12], "WAVE")
-	copy(hdr[12:16], "fmt ")
-	binary.LittleEndian.PutUint32(hdr[16:20], 16)
-	binary.LittleEndian.PutUint16(hdr[20:22], 1)
-	binary.LittleEndian.PutUint16(hdr[22:24], uint16(channels))
-	binary.LittleEndian.PutUint32(hdr[24:28], uint32(rate))
-	binary.LittleEndian.PutUint32(hdr[28:32], uint32(rate*frame))
-	binary.LittleEndian.PutUint16(hdr[32:34], uint16(frame))
-	binary.LittleEndian.PutUint16(hdr[34:36], uint16(bits))
-	copy(hdr[36:40], "data")
-	binary.LittleEndian.PutUint32(hdr[40:44], uint32(len(data)))
-	return append(hdr[:], payload...)
-}
-
 func TestParseStereo(t *testing.T) {
 	rate := 8000
 	frames := 100
