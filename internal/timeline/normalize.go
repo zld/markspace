@@ -103,10 +103,11 @@ func (n *TrackNormalizer) PushRTP(p *rtp.Packet) (*Timestamp, error) {
 		return nil, n.trackErr(KindMissingTrack, -1, n.order, nil, "RTP clock rate is zero")
 	}
 	n.order++
+	packetOrder := n.order
 	if n.started {
 		newSeq := ExpandSequence(n.lastSeq, p.SequenceNumber)
 		if newSeq <= n.lastSeq {
-			n.record(KindDuplicateTime, -1, n.order, true,
+			n.record(KindDuplicateTime, -1, packetOrder, true,
 				fmt.Sprintf("sequence %d is not after %d", p.SequenceNumber, uint16(n.lastSeq)))
 		}
 	}
@@ -122,13 +123,15 @@ func (n *TrackNormalizer) PushRTP(p *rtp.Packet) (*Timestamp, error) {
 	}
 	delta := int64(expanded) - int64(n.lastExpanded)
 	if n.started && abs64(delta) > int64(n.jumpThreshold) {
-		return nil, n.trackErr(KindBoundaryJump, -1, n.order, nil,
+		// Do not advance the clock: the repair layer must ApplyCorrection
+		// or Fail before later packets are linearized against the jump.
+		return nil, n.trackErr(KindBoundaryJump, -1, packetOrder, nil,
 			fmt.Sprintf("raw %d vs previous raw %d (delta ticks %d)", p.Timestamp, uint32(n.lastExpanded), delta))
 	}
 	ts := n.makeTimestamp(int64(expanded), int64(expanded), p.Marker)
 	ts.WrapCount = n.wraps
 	if n.started && ts.DTS.Cmp(n.lastDTS) == 0 {
-		n.record(KindDuplicateTime, -1, n.order, true,
+		n.record(KindDuplicateTime, -1, packetOrder, true,
 			fmt.Sprintf("expanded timestamp %d repeats previous", expanded))
 		return nil, nil
 	}
