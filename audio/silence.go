@@ -17,10 +17,12 @@ const DefaultLevelThreshold = 4.0
 
 // SilenceRegion is a maximal run of consecutive silent packets.
 type SilenceRegion struct {
-	StartMS, EndMS         float64
-	Threshold              float64
-	StartRecord, EndRecord int
-	Packets                int
+	StartMS     float64 `json:"start_ms"`
+	EndMS       float64 `json:"end_ms"`
+	Threshold   float64 `json:"threshold"`
+	StartRecord int     `json:"start_record"`
+	EndRecord   int     `json:"end_record"`
+	Packets     int     `json:"packets"`
 }
 
 // Level returns the mean absolute byte amplitude of one RTP payload.

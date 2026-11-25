@@ -19,13 +19,13 @@ const DefaultWindow = 1
 // Duplicate links a repeated content window to its first occurrence.
 type Duplicate struct {
 	// First occurrence (retained position).
-	FirstStartRecord int
-	FirstEndRecord   int
+	FirstStartRecord int `json:"first_start_record"`
+	FirstEndRecord   int `json:"first_end_record"`
 	// Later matching position.
-	MatchStartRecord int
-	MatchEndRecord   int
-	WindowPackets    int
-	Fingerprint      string
+	MatchStartRecord int    `json:"match_start_record"`
+	MatchEndRecord   int    `json:"match_end_record"`
+	WindowPackets    int    `json:"window_packets"`
+	Fingerprint      string `json:"fingerprint"`
 }
 
 // Fingerprint hashes normalized content bytes with FNV-1a 64-bit.
