@@ -27,7 +27,16 @@ type Config struct {
 	SilenceThreshold float64
 	SilenceMinUS     int64
 	Limits           mp4.Limits
+	// FaultAfterStage, when non-empty, makes Run stop with ErrFaultInjected
+	// immediately after that stage's atomic commit lands. The committed output
+	// and WAL remain valid, so a subsequent run resumes deterministically.
+	FaultAfterStage string
 }
+
+// ErrFaultInjected is returned when Config.FaultAfterStage fires. It is a
+// controlled crash after an atomic commit, never a data error.
+var ErrFaultInjected = timeline.New(timeline.ErrInvalidInput, "", -1,
+	"injected fault: stage commit boundary reached")
 
 // InputFile is one fMP4 fragment-group file with its raw bytes already read.
 type InputFile struct {
@@ -76,6 +85,18 @@ func Run(inputs []InputFile, cfg Config) (*Result, error) {
 	}
 	recoveryStart := walMillis()
 
+	// stage runs one WAL-gated stage and raises the configured fault right
+	// after its atomic commit boundary (before any later work starts).
+	stage := func(name string, fn txn.StageFunc) error {
+		if err := mgr.RunStage(name, fn); err != nil {
+			return err
+		}
+		if cfg.FaultAfterStage == name {
+			return ErrFaultInjected
+		}
+		return nil
+	}
+
 	// In-memory results are always recomputed deterministically so a resumed
 	// process can rebuild its summary; the WAL gates the durable side effects
 	// and validates that committed outputs still match.
@@ -83,7 +104,7 @@ func Run(inputs []InputFile, cfg Config) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := mgr.RunStage(txn.StageParse, func(temp string) error {
+	if err := stage(txn.StageParse, func(temp string) error {
 		return writeJSON(temp, struct {
 			Groups []ingest.Report `json:"groups"`
 		}{Reports(groups)})
@@ -99,21 +120,21 @@ func Run(inputs []InputFile, cfg Config) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := mgr.RunStage(txn.StageTimeline, func(temp string) error {
+	if err := stage(txn.StageTimeline, func(temp string) error {
 		return writeJSON(temp, segments)
 	}); err != nil {
 		return nil, err
 	}
 
 	silences := runSilence(inputs, frags, mapped, cfg)
-	if err := mgr.RunStage(txn.StageAnalyze, func(temp string) error {
+	if err := stage(txn.StageAnalyze, func(temp string) error {
 		return writeJSON(temp, silences)
 	}); err != nil {
 		return nil, err
 	}
 
 	fingerprints := runFingerprint(inputs, frags)
-	if err := mgr.RunStage(txn.StageFingerprint, func(temp string) error {
+	if err := stage(txn.StageFingerprint, func(temp string) error {
 		return writeJSON(temp, fingerprints)
 	}); err != nil {
 		return nil, err
@@ -125,7 +146,7 @@ func Run(inputs []InputFile, cfg Config) (*Result, error) {
 		return nil, err
 	}
 	manifestSHA := txn.BytesSHA256(manifestBytes)
-	if err := mgr.RunStage(txn.StageCommit, func(temp string) error {
+	if err := stage(txn.StageCommit, func(temp string) error {
 		return os.WriteFile(temp, manifestBytes, 0o600)
 	}); err != nil {
 		return nil, err
