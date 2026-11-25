@@ -51,6 +51,7 @@ type Config struct {
 	BudgetBytes        int64            `json:"budget_bytes,omitempty"`
 	DurationNS         int64            `json:"duration_ns"`
 	RequiredBitrateBps int64            `json:"required_bitrate_bps"`
+	MinimumBitrateBps  int64            `json:"minimum_bitrate_bps"`
 	EstimatedBytes     int64            `json:"estimated_bytes"`
 	Selected           Params           `json:"selected"`
 	Reasons            []string         `json:"reasons"`
@@ -101,12 +102,18 @@ func Decide(sample int, desc media.TrackDescription, quality Quality, constraint
 		cfg.Reasons = append(cfg.Reasons, capReason)
 	}
 
-	if capBps > 0 && cfg.RequiredBitrateBps > capBps {
+	minimumVideo := int64(0)
+	if params.VideoCodec != "" {
+		minimumVideo = 250_000
+	}
+	cfg.MinimumBitrateBps = params.AudioBitrateBps + minimumVideo
+
+	if capBps > 0 && cfg.MinimumBitrateBps > capBps {
 		cfg.Feasible = false
 		cfg.EstimatedBytes = estimateBytes(cfg.RequiredBitrateBps, duration)
 		cfg.Reasons = append(cfg.Reasons, fmt.Sprintf(
-			"minimum quality bitrate %d bps exceeds cap %d bps; estimated %d bytes",
-			cfg.RequiredBitrateBps, capBps, cfg.EstimatedBytes,
+			"minimum quality bitrate %d bps exceeds cap %d bps; desired estimate %d bytes",
+			cfg.MinimumBitrateBps, capBps, cfg.EstimatedBytes,
 		))
 		return cfg, diagnostic.New(diagnostic.CodeBudgetInfeasible, diagnostic.PhasePolicy, sample,
 			constraints.SourceOffset, "budget/bitrate cannot meet quality floor %d", cfg.QualityTarget)
@@ -115,14 +122,14 @@ func Decide(sample int, desc media.TrackDescription, quality Quality, constraint
 	if capBps > 0 {
 		total := cfg.RequiredBitrateBps
 		if total > capBps {
+			cfg.Reasons = append(cfg.Reasons, fmt.Sprintf(
+				"cap reduces desired bitrate from %d to %d while staying above minimum %d",
+				cfg.RequiredBitrateBps, capBps, cfg.MinimumBitrateBps,
+			))
 			total = capBps
 		}
-		if total < params.AudioBitrateBps {
-			params.AudioBitrateBps = total
-			params.VideoBitrateBps = 0
-		} else {
-			params.VideoBitrateBps = total - params.AudioBitrateBps
-		}
+		params.VideoBitrateBps = max(minimumVideo, total-params.AudioBitrateBps)
+		params.AudioBitrateBps = total - params.VideoBitrateBps
 		cfg.Selected = params
 	}
 	cfg.EstimatedBytes = estimateBytes(params.VideoBitrateBps+params.AudioBitrateBps, duration)
