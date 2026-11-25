@@ -75,7 +75,7 @@ func buildNormalMP4() []byte {
 	for i := 0; i < NormalSamples; i += KeyframeEvery {
 		sync = append(sync, uint32(i+1))
 	}
-	stbl := append([][]byte{
+	stbl := box("stbl", concat(
 		stsdBox(),
 		sttsUniformBox(NormalSamples, SampleDeltaMS),
 		cttsUniformBox(NormalSamples, StartPTSOffset),
@@ -83,15 +83,14 @@ func buildNormalMP4() []byte {
 		stscOneChunkBox(NormalSamples),
 		stszUniformBox(NormalSamples, SampleSize),
 		stcoOneBox(mdatPayloadOffset),
-	}, nil...)
-	stblPayload := concat(stbl...)
+	))
 	elst := elstV0Box([]EditSpec{
 		{Duration: EmptyEditMS, MediaTime: -1},
 		{Duration: NormalSamples * SampleDeltaMS, MediaTime: MediaOffsetMS},
 	})
 	edts := edtsBox(elst)
 	mdhd := mdhdBox(NormalMovieScale, NormalSamples*SampleDeltaMS)
-	mdia := box("mdia", concat(mdhd, hdlrBox(), box("minf", stblPayload)))
+	mdia := box("mdia", concat(mdhd, hdlrBox(), box("minf", stbl)))
 	tkhd := tkhdBox(1, EmptyEditMS+NormalSamples*SampleDeltaMS)
 	trak := box("trak", concat(tkhd, edts, mdia))
 	mvhd := mvhdBox(NormalMovieScale, EmptyEditMS+NormalSamples*SampleDeltaMS)
