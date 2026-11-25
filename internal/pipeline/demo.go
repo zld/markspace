@@ -203,7 +203,14 @@ func buildLayer(
 	}
 
 	var built []builtSegment
-	var segs []stream.Segment
+	segs := make([]stream.Segment, 0, SegmentCount)
+	for idx := 0; idx < start; idx++ {
+		segs = append(segs, stream.Segment{
+			Layer: layer, Index: idx,
+			Start: fx.Windows[idx].Start, End: fx.Windows[idx].End,
+			SHA256: restored[idx],
+		})
+	}
 	for idx := start; idx < SegmentCount; idx++ {
 		frame, err := q.Dequeue(ctx)
 		if err != nil {
