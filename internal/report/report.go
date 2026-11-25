@@ -67,8 +67,8 @@ type Record struct {
 	Sequence     int    `json:"rtp_sequence,omitempty"`
 	MissingCount int    `json:"missing_count,omitempty"`
 	TimeNS       int64  `json:"time_ns,omitempty"`
-	TimeStartNS  int64  `json:"time_start_ns,omitempty"`
-	TimeEndNS    int64  `json:"time_end_ns,omitempty"`
+	TimeStartNS  int64  `json:"time_start_ns"`
+	TimeEndNS    int64  `json:"time_end_ns"`
 	Message      string `json:"message,omitempty"`
 }
 
