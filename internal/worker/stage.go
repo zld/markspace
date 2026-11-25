@@ -64,6 +64,12 @@ func (r *Runner) StagePath(stage string) string { return stagePath(r.opt.Dir, st
 // the same key either waits its turn or sees the completed manifest, and can
 // never observe a half-written manifest because the manifest is replaced by
 // an atomic rename.
+//
+// Stages are committed in order. On resume a stage is skipped only when the
+// manifest records it and its persisted output still hashes to the recorded
+// digest; any missing or altered output is recomputed, so a crash between
+// writing a stage file and committing the manifest can never publish a
+// digest that does not match its bytes.
 func (r *Runner) Run(summary RunSummary) (*Manifest, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -85,19 +91,26 @@ func (r *Runner) Run(summary RunSummary) (*Manifest, error) {
 		return nil, err
 	}
 	if m.Completed {
-		// Identical re-delivery of a finished run is a no-op.
+		// Identical re-delivery of a finished run is a no-op; the caller
+		// still re-verifies the artifact it reads back.
 		return m, nil
 	}
 
-	start := 0
-	if len(m.Stages) > 0 {
-		idx := StageIndex(m.Stages[len(m.Stages)-1].Name)
-		if idx < 0 {
-			return nil, media.Newf(media.KindResume,
-				"manifest records unknown stage %q", m.Stages[len(m.Stages)-1].Name)
+	// The committed prefix is rebuilt by walking the stage order and keeping
+	// records whose output bytes still hash as recorded.
+	committed := make([]StageRecord, 0, len(Stages))
+	for _, name := range Stages {
+		rec, ok := findStage(m, name)
+		if !ok {
+			break
 		}
-		start = idx + 1
+		if !r.outputIntact(rec) {
+			break
+		}
+		committed = append(committed, rec)
 	}
+	m.Stages = committed
+	start := len(committed)
 	m.Summary = summary
 	m.Summary.Resumed = start > 0
 
@@ -151,6 +164,17 @@ func (r *Runner) Run(summary RunSummary) (*Manifest, error) {
 		return nil, err
 	}
 	return m, nil
+}
+
+// outputIntact reports whether a committed stage's persisted bytes still hash
+// to the digest recorded in the manifest. A missing or altered file means the
+// stage must run again.
+func (r *Runner) outputIntact(rec StageRecord) bool {
+	data, err := os.ReadFile(r.StagePath(rec.Name))
+	if err != nil {
+		return false
+	}
+	return Digest(data) == rec.OutputDigest
 }
 
 // MarkCompleted records the final artifact and summary and re-publishes the

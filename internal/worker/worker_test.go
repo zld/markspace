@@ -137,6 +137,56 @@ func TestResumeManifestMatchesContinuous(t *testing.T) {
 	}
 }
 
+func TestResumeRecomputesTamperedStageOutput(t *testing.T) {
+	dir := t.TempDir()
+	calls := map[string]int{}
+	if _, err := newRunner(t, dir, "run-1", "sha256:aa", "sha256:pp", StageAlign, calls).Run(RunSummary{}); err != nil &&
+		media.KindOf(err) != media.KindInterrupt {
+		t.Fatalf("interrupt run: %v", err)
+	}
+	// Corrupt align's committed output behind the manifest's back. Resume
+	// must notice the digest mismatch and recompute rather than trust the
+	// manifest index.
+	alignPath := filepath.Join(dir, "stage-align.out")
+	if err := os.WriteFile(alignPath, []byte("tampered"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m, err := newRunner(t, dir, "run-1", "sha256:aa", "sha256:pp", "", calls).Run(RunSummary{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !m.Completed {
+		t.Fatal("run did not complete")
+	}
+	if calls[StageAlign] != 2 {
+		t.Fatalf("align ran %d times, want 2 (recomputed)", calls[StageAlign])
+	}
+	if calls[StageParse] != 1 {
+		t.Fatalf("parse re-ran despite intact output: %d", calls[StageParse])
+	}
+	// The published digest must describe the recomputed bytes.
+	data, err := os.ReadFile(alignPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if Digest(data) != m.Stages[StageIndex(StageAlign)].OutputDigest {
+		t.Fatal("manifest digest does not match the recomputed stage output")
+	}
+}
+
+func TestResumeWithoutCommittedManifestStartsFresh(t *testing.T) {
+	dir := t.TempDir()
+	calls := map[string]int{}
+	// An empty directory has no manifest; the first run is not a resume.
+	m, err := newRunner(t, dir, "run-1", "sha256:aa", "sha256:pp", "", calls).Run(RunSummary{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Summary.Resumed {
+		t.Fatal("fresh run marked as resumed")
+	}
+}
+
 func TestDuplicateDeliveryIsNoOp(t *testing.T) {
 	dir := t.TempDir()
 	calls := map[string]int{}

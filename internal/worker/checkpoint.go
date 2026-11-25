@@ -81,6 +81,7 @@ type RunSummary struct {
 	MaxDeviationMs float64        `json:"maxDeviationMs"`
 	InputBytes     int            `json:"inputBytes"`
 	OutputBytes    int            `json:"outputBytes"`
+	OutputSHA256   string         `json:"outputSha256"`
 	Quality        float64        `json:"quality"`
 	Segments       int            `json:"segments"`
 	StageIndexes   map[string]int `json:"stageIndexes"`
