@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/binary"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -16,6 +17,9 @@ const (
 	sampleRate = 48000
 	videoRate  = 90000
 	fps        = 30
+	// fixtureSampleSize is the uniform coded sample size in every video
+	// fixture, which lets the damage oracle work without a sample table.
+	fixtureSampleSize = 500
 )
 
 // fixtureSet holds every generated input.
@@ -32,6 +36,12 @@ type fixtureSet struct {
 	CleanTrace [][]byte
 	DupTrace   [][]byte
 	BurstTrace [][]byte
+
+	// TruncWAVSize is the byte length of the truncated WAV image.
+	TruncWAVSize int64
+	// CutMP4Size and CutMP4BadOffset describe the truncated video.
+	CutMP4Size      int64
+	CutMP4BadOffset int64
 }
 
 func buildFixtures(dir string) (*fixtureSet, error) {
@@ -62,7 +72,7 @@ func buildFixtures(dir string) (*fixtureSet, error) {
 	// Video: 30 fps, keyframe every 30 samples (one second), 90 kHz.
 	normalMP4, err := stream.Build(stream.Config{
 		Timescale: videoRate, FPS: fps, Width: 160, Height: 90,
-		SampleCount: 4 * fps, KeyEvery: 30, SampleSize: 500,
+		SampleCount: 4 * fps, KeyEvery: 30, SampleSize: fixtureSampleSize,
 	})
 	if err != nil {
 		return nil, err
@@ -93,7 +103,7 @@ func buildFixtures(dir string) (*fixtureSet, error) {
 	// Video whose last samples are missing from the file.
 	cutMP4, err := stream.Build(stream.Config{
 		Timescale: videoRate, FPS: fps, Width: 160, Height: 90,
-		SampleCount: 4 * fps, KeyEvery: 30, SampleSize: 500, TruncateBytes: 1200,
+		SampleCount: 4 * fps, KeyEvery: 30, SampleSize: fixtureSampleSize, TruncateBytes: 1200,
 	})
 	if err != nil {
 		return nil, err
@@ -206,4 +216,48 @@ func eventSet() []clip.Event {
 		{Name: "clutch", StartTick: 180001, EndTick: 225000}, // 2.000s
 		{Name: "final", StartTick: 270001, EndTick: 330000},  // 3.000s
 	}
+}
+
+// mustReadFile reads a generated fixture; failures indicate a build bug.
+func mustReadFile(path string) []byte {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		panic(fmt.Sprintf("fixture %s: %v", path, err))
+	}
+	return data
+}
+
+// firstMissingSampleOffset finds the first byte of the mdat payload the
+// file cannot supply, assuming the fixture's uniform sample size. It is the
+// oracle the damaged scenario is checked against, so it deliberately avoids
+// the scanner's sample-table code path.
+func firstMissingSampleOffset(img []byte, sampleSize int64) int64 {
+	pos := int64(0)
+	for pos+8 <= int64(len(img)) {
+		size := int64(binary.BigEndian.Uint32(img[pos : pos+4]))
+		typ := string(img[pos+4 : pos+8])
+		if size == 1 {
+			if pos+16 > int64(len(img)) {
+				return pos
+			}
+			size = int64(binary.BigEndian.Uint64(img[pos+8 : pos+16]))
+		}
+		if typ != "mdat" {
+			if size == 0 || pos+size > int64(len(img)) {
+				return pos
+			}
+			pos += size
+			continue
+		}
+		payload := pos + 8
+		available := int64(len(img)) - payload
+		if size > 0 && available >= size-8 {
+			return -1 // mdat complete
+		}
+		if sampleSize <= 0 {
+			return payload
+		}
+		return payload + (available/sampleSize)*sampleSize
+	}
+	return int64(len(img))
 }

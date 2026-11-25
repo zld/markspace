@@ -370,16 +370,30 @@ func localiseGaps(ts TransportStats, lay *wav.Layout, scan ScanStats, clockRate 
 		if scan.Timescale > 0 {
 			base = int64(scan.Timescale)
 		}
-		start := lay.Frames * base / int64(sampleRate)
-		end := start + base/int64(sampleRate)
+		frameTicks := func(frames int64) int64 { return frames * base / int64(sampleRate) }
+		start := frameTicks(lay.Frames)
+		// The declared data size bounds the damaged interval: readable
+		// frames before it, declared frames after it. An incomplete tail
+		// declares the same frame count, so the interval is one tick.
+		declared := lay.Frames
+		if fb := int64(lay.Format.BlockAlign); fb > 0 && lay.DataSize > 0 {
+			declared = lay.DataSize / fb
+		}
+		end := frameTicks(declared)
 		if end <= start {
 			end = start + 1
+		}
+		kind := fault.KindTruncated
+		detail := "wav data ends before its declared size"
+		if lay.PartialTail > 0 && lay.DataSize/int64(lay.Format.BlockAlign) == lay.Frames {
+			kind = fault.KindPartialFrame
+			detail = "wav ends with an incomplete sample frame"
 		}
 		gaps = append(gaps, repair.Gap{
 			Source: "wav", Start: start, End: end,
 			ByteOffset: lay.FirstBadOffset,
-			Kind:       fault.KindTruncated,
-			Detail:     "wav data ends before its declared size",
+			Kind:       kind,
+			Detail:     detail,
 		})
 	}
 	if scan.FirstBadOffset >= 0 && scan.Timescale > 0 {

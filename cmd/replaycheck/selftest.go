@@ -9,15 +9,25 @@ import (
 	"sort"
 
 	"replaycheck/internal/clip"
+	"replaycheck/internal/fault"
+	"replaycheck/internal/wav"
 )
 
 // report is the JSON printed on stdout. Field order is fixed.
 type report struct {
-	Normal   scenarioReport `json:"normal"`
-	Damaged  scenarioReport `json:"damaged"`
-	Recovery recoveryReport `json:"recovery"`
-	Checks   []checkResult  `json:"checks"`
-	Passed   bool           `json:"passed"`
+	Normal      scenarioReport `json:"normal"`
+	Damaged     scenarioReport `json:"damaged"`
+	Recovery    recoveryReport `json:"recovery"`
+	PartialTail tailReport     `json:"partial_tail"`
+	Checks      []checkResult  `json:"checks"`
+	Passed      bool           `json:"passed"`
+}
+
+type tailReport struct {
+	CompleteFrames int   `json:"complete_frames"`
+	TrailingBytes  int   `json:"trailing_bytes"`
+	BadOffset      int64 `json:"bad_offset"`
+	BadTick        int64 `json:"bad_tick"`
 }
 
 type scenarioReport struct {
@@ -30,6 +40,7 @@ type scenarioReport struct {
 	KeyframeTicks     []int64       `json:"keyframe_ticks"`
 	KeyframeIntervals []int64       `json:"keyframe_intervals"`
 	DamagedOffsets    []int64       `json:"damaged_offsets"`
+	DamagedGaps       []gapReport   `json:"damaged_gaps"`
 	MaxAlignErrMs     float64       `json:"max_alignment_error_ms"`
 	ManifestHash      string        `json:"manifest_hash"`
 	ManifestPath      string        `json:"manifest_path"`
@@ -47,6 +58,13 @@ type eventReport struct {
 	FrameHash   string  `json:"frame_hash"`
 	PixelMean   string  `json:"pixel_mean"`
 	Damaged     bool    `json:"damaged"`
+}
+
+type gapReport struct {
+	Source     string `json:"source"`
+	StartTick  int64  `json:"start_tick"`
+	EndTick    int64  `json:"end_tick"`
+	ByteOffset int64  `json:"byte_offset"`
 }
 
 type recoveryReport struct {
@@ -88,6 +106,11 @@ func runSelfTest(dir, task string) (*report, error) {
 	}
 	st.fs = fs
 
+	st.fs.TruncWAVSize = int64(len(mustReadFile(st.fs.TruncWAV)))
+	cutImg := mustReadFile(st.fs.CutMP4)
+	st.fs.CutMP4Size = int64(len(cutImg))
+	st.fs.CutMP4BadOffset = firstMissingSampleOffset(cutImg, fixtureSampleSize)
+
 	normal, err := st.scenario("normal", fs.NormalWAV, fs.NormalMP4, fs.DupTrace)
 	if err != nil {
 		return nil, fmt.Errorf("normal scenario: %w", err)
@@ -106,6 +129,19 @@ func runSelfTest(dir, task string) (*report, error) {
 	}
 	st.rep.Recovery = recovery
 
+	tail, err := inspectPartialTail(fs.PartialWAV)
+	if err != nil {
+		return nil, fmt.Errorf("partial tail: %w", err)
+	}
+	st.rep.PartialTail = tail
+	st.check("incomplete trailing sample frame localised",
+		tail.TrailingBytes > 0 && tail.BadOffset > 0,
+		fmt.Sprintf("%d trailing bytes at offset %d (tick %d)",
+			tail.TrailingBytes, tail.BadOffset, tail.BadTick))
+	st.check("incomplete trailing frame is not padded into a frame",
+		tail.CompleteFrames == sampleRate,
+		fmt.Sprintf("%d complete frames, want %d", tail.CompleteFrames, sampleRate))
+
 	st.check("normal has no damaged output", !anyDamaged(normal.Events),
 		"all normal fragments are intact")
 	st.check("normal alignment within one audio sample plus one frame",
@@ -113,13 +149,27 @@ func runSelfTest(dir, task string) (*report, error) {
 		fmt.Sprintf("max %.3fms <= %.3fms", normal.MaxAlignErrMs, st.alignLimitMs()))
 	st.check("damaged scenario localises truncation offset",
 		len(damaged.DamagedOffsets) > 0, fmt.Sprintf("offsets %v", damaged.DamagedOffsets))
+	st.check("damaged scenario points exactly at the truncated wav byte",
+		hasOffset(damaged.DamagedOffsets, st.fs.TruncWAVSize),
+		fmt.Sprintf("want %d in %v", st.fs.TruncWAVSize, damaged.DamagedOffsets))
+	st.check("damaged scenario points exactly at the missing mp4 sample",
+		hasOffset(damaged.DamagedOffsets, st.fs.CutMP4BadOffset),
+		fmt.Sprintf("want %d in %v", st.fs.CutMP4BadOffset, damaged.DamagedOffsets))
 	st.check("damaged scenario flags lost packets", damaged.PacketsLost > 0,
 		fmt.Sprintf("%d packets lost", damaged.PacketsLost))
+	st.check("damaged scenario marks the missing-packet interval",
+		hasSourceGap(damaged.DamagedGaps, "rtp"),
+		fmt.Sprintf("gaps %v", damaged.DamagedGaps))
+	st.check("normal scenario records no damage gaps", len(normal.DamagedGaps) == 0,
+		fmt.Sprintf("gaps %v", normal.DamagedGaps))
 	st.check("duplicate and reorder counted",
 		normal.PacketsDuplicate > 0 && normal.PacketsReordered > 0,
 		fmt.Sprintf("dup=%d reordered=%d", normal.PacketsDuplicate, normal.PacketsReordered))
 	st.check("recovery manifest matches uninterrupted", recovery.ManifestHash == recovery.UninterruptedHash,
 		recovery.ManifestHash+" vs "+recovery.UninterruptedHash)
+	st.check("resume started from the first incomplete stage",
+		recovery.ResumeStage == "repair" && len(recovery.LoadedStages) == 3,
+		fmt.Sprintf("resume=%s loaded=%v", recovery.ResumeStage, recovery.LoadedStages))
 	st.check("keyframe interval reported", len(normal.KeyframeIntervals) > 0,
 		fmt.Sprintf("%d intervals", len(normal.KeyframeIntervals)))
 
@@ -199,6 +249,12 @@ func (st *selfTest) scenario(name, wavPath, mp4Path string, trace [][]byte) (sce
 	}
 	for _, g := range res.Gaps {
 		addOff(g.ByteOffset)
+		out.DamagedGaps = append(out.DamagedGaps, gapReport{
+			Source:     g.Source,
+			StartTick:  g.Start,
+			EndTick:    g.End,
+			ByteOffset: g.ByteOffset,
+		})
 	}
 	addOff(res.FirstBadByte)
 	sort.Slice(out.DamagedOffsets, func(i, j int) bool {
@@ -306,6 +362,53 @@ func manifestHashFromFile(data []byte) string {
 		return ""
 	}
 	return doc.Hash
+}
+
+// inspectPartialTail parses the trailing-frame fixture and reports the
+// incomplete tail exactly as the reader sees it.
+func inspectPartialTail(path string) (tailReport, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return tailReport{}, err
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		return tailReport{}, err
+	}
+	lay, err := wav.Parse(f, st.Size())
+	if err != nil {
+		return tailReport{}, err
+	}
+	rep := tailReport{
+		CompleteFrames: int(lay.Frames),
+		TrailingBytes:  lay.PartialTail,
+		BadOffset:      -1,
+		BadTick:        -1,
+	}
+	if iss, ok := lay.Issues.First(fault.KindPartialFrame); ok {
+		rep.BadOffset = iss.Where.ByteOffset
+		rep.BadTick = iss.Where.Tick
+	}
+	return rep, nil
+}
+
+func hasOffset(offsets []int64, want int64) bool {
+	for _, o := range offsets {
+		if o == want {
+			return true
+		}
+	}
+	return false
+}
+
+func hasSourceGap(gaps []gapReport, source string) bool {
+	for _, g := range gaps {
+		if g.Source == source && g.EndTick > g.StartTick {
+			return true
+		}
+	}
+	return false
 }
 
 func anyDamaged(evs []eventReport) bool {
