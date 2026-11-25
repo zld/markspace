@@ -112,14 +112,14 @@ type readAtSeeker interface {
 
 func readBoxPayload(r readAtSeeker, path string, b *Box, track int) ([]byte, error) {
 	size := b.Size - b.HeaderSize
-	if size < 0 || size > maxBoxPayload {
+	if size < 0 {
 		return nil, clock.New(clock.CategoryInvalidBox, path, track, b.Offset, "invalid payload size")
 	}
+	// Box boundaries were validated against file/parent size, so this allocation
+	// is proportional to the sample-table/index metadata being decoded.
 	buf := make([]byte, size)
 	if _, err := r.ReadAt(buf, b.PayloadOffset); err != nil {
 		return nil, clock.Wrap(clock.CategoryTruncatedBox, path, track, b.Offset, "read box payload", err)
 	}
 	return buf, nil
 }
-
-const maxBoxPayload = 256 << 20
