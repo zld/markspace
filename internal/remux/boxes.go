@@ -110,7 +110,7 @@ func writeMoov(f interface {
 	if _, err := w.StartBox(&mp4.BoxInfo{Type: mp4.BoxTypeMoov()}); err != nil {
 		return err
 	}
-	if err := marshalBox(w, &mp4.Mvhd{
+	if err := writeFullBox(w, mp4.BoxTypeMvhd(), &mp4.Mvhd{
 		FullBox: mp4.FullBox{Version: 0}, Timescale: 1000, DurationV0: movieMS,
 		Rate: 0x00010000, Volume: 0x0100,
 		Matrix:      [9]int32{0x10000, 0, 0, 0, 0x10000, 0, 0, 0, 0x40000000},
@@ -149,7 +149,7 @@ func writeTrak(w *mp4.Writer, tc trackConfig, trackID uint32, movieMS uint32) er
 		width = uint32(tc.track.Width) << 16
 		height = uint32(tc.track.Height) << 16
 	}
-	if err := marshalBox(w, &mp4.Tkhd{
+	if err := writeFullBox(w, mp4.BoxTypeTkhd(), &mp4.Tkhd{
 		FullBox:    mp4.FullBox{Flags: [3]byte{0, 0, 0x07}},
 		TrackID:    trackID,
 		DurationV0: movieMS,
@@ -166,7 +166,7 @@ func writeTrak(w *mp4.Writer, tc trackConfig, trackID uint32, movieMS uint32) er
 	if _, err := w.StartBox(&mp4.BoxInfo{Type: mp4.BoxTypeMdia()}); err != nil {
 		return err
 	}
-	if err := marshalBox(w, &mp4.Mdhd{
+	if err := writeFullBox(w, mp4.BoxTypeMdhd(), &mp4.Mdhd{
 		Timescale: tc.track.Timescale, DurationV0: uint32(tc.durationUnits),
 	}); err != nil {
 		return err
@@ -175,7 +175,7 @@ func writeTrak(w *mp4.Writer, tc trackConfig, trackID uint32, movieMS uint32) er
 	if tc.track.Kind == "audio" {
 		handler = [4]byte{'s', 'o', 'u', 'n'}
 	}
-	if err := marshalBox(w, &mp4.Hdlr{HandlerType: handler, Name: "mediacore-" + tc.track.Kind}); err != nil {
+	if err := writeFullBox(w, mp4.BoxTypeHdlr(), &mp4.Hdlr{HandlerType: handler, Name: "mediacore-" + tc.track.Kind}); err != nil {
 		return err
 	}
 	if err := writeMinf(w, tc); err != nil {
@@ -229,11 +229,11 @@ func writeMinf(w *mp4.Writer, tc trackConfig) error {
 		return err
 	}
 	if tc.track.Kind == "audio" {
-		if err := marshalBox(w, &mp4.Smhd{}); err != nil {
+		if err := writeFullBox(w, mp4.BoxTypeSmhd(), &mp4.Smhd{}); err != nil {
 			return err
 		}
 	} else {
-		if err := marshalBox(w, &mp4.Vmhd{FullBox: mp4.FullBox{Flags: [3]byte{0, 0, 1}}}); err != nil {
+		if err := writeFullBox(w, mp4.BoxTypeVmhd(), &mp4.Vmhd{FullBox: mp4.FullBox{Flags: [3]byte{0, 0, 1}}}); err != nil {
 			return err
 		}
 	}

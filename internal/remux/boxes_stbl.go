@@ -79,7 +79,7 @@ func writeStsd(w *mp4.Writer, tc trackConfig) error {
 	var payload mp4.IImmutableBox
 	switch codec {
 	case "mp4v":
-		payload = &mp4.VisualSampleEntry{
+		v := &mp4.VisualSampleEntry{
 			SampleEntry:     mp4.SampleEntry{DataReferenceIndex: 1},
 			Width:           tc.track.Width,
 			Height:          tc.track.Height,
@@ -89,6 +89,8 @@ func writeStsd(w *mp4.Writer, tc trackConfig) error {
 			Depth:           0x0018,
 			PreDefined3:     -1,
 		}
+		v.AnyTypeBox.Type = mp4.BoxTypeMp4v()
+		payload = v
 	case "mp4a":
 		rate := uint32(48000)
 		if tc.track.SampleRate != 0 {
@@ -98,12 +100,14 @@ func writeStsd(w *mp4.Writer, tc trackConfig) error {
 		if channels == 0 {
 			channels = 2
 		}
-		payload = &mp4.AudioSampleEntry{
+		a := &mp4.AudioSampleEntry{
 			SampleEntry:  mp4.SampleEntry{DataReferenceIndex: 1},
 			ChannelCount: channels,
 			SampleSize:   16,
 			SampleRate:   rate << 16,
 		}
+		a.AnyTypeBox.Type = mp4.BoxTypeMp4a()
+		payload = a
 	default:
 		return fault.New(fault.UnsupportedCodec, "remux writer refuses unknown codec "+codec)
 	}
