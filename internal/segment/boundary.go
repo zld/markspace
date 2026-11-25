@@ -19,6 +19,7 @@ const (
 
 // Boundary is one target segment start and its selected decode anchor.
 type Boundary struct {
+	TrackID               uint32 `json:"track_id"`
 	Index                 int    `json:"index"`
 	SegmentID             string `json:"segment_id"`
 	TargetStartNanos      int64  `json:"target_start_ns"`
@@ -83,7 +84,8 @@ func SelectTrackBoundaries(t manifest.Track, segment time.Duration, count int) T
 		target := TargetTime(i, segment)
 		targetTicks := target.Mul(timeline.Rat(int64(scale), 1)).Floor()
 		b := Boundary{
-			Index: i, SegmentID: SegmentID(i, count), TargetStartNanos: segment.Nanoseconds() * int64(i),
+			TrackID: t.ID,
+			Index:   i, SegmentID: SegmentID(i, count), TargetStartNanos: segment.Nanoseconds() * int64(i),
 			PresentationStart: target.String(), PresentationTicks: targetTicks,
 			PresentationTimescale: scale, State: BoundaryAligned,
 		}
