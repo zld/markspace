@@ -31,6 +31,7 @@ type FrameStat struct {
 
 type SegmentStat struct {
 	SegmentID       string     `json:"segment_id"`
+	TrackID         uint32     `json:"track_id"`
 	MaterialID      string     `json:"material_id"`
 	SHA256          string     `json:"segment_sha256"`
 	MaterialSHA256  string     `json:"material_sha256"`

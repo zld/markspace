@@ -30,7 +30,7 @@ func exportSegments(segments []mp4.Segment, frames []FrameStat, opts Options) []
 		canonical := fmt.Sprintf("%s|%d|%d|%s|%s", seg.ID, seg.TimelineStart, seg.TimelineEnd, seg.MaterialID, materialHash)
 		sum := sha256.Sum256([]byte(canonical))
 		out = append(out, SegmentStat{
-			SegmentID: seg.ID, MaterialID: seg.MaterialID, SHA256: hex.EncodeToString(sum[:]),
+			SegmentID: seg.ID, TrackID: seg.TrackID, MaterialID: seg.MaterialID, SHA256: hex.EncodeToString(sum[:]),
 			MaterialSHA256: materialHash, FrameHashes: hashes,
 			TimelineStartMS: seg.TimelineStart, TimelineEndMS: seg.TimelineEnd,
 			Provenance: Provenance{
