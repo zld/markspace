@@ -49,6 +49,8 @@ type Info struct {
 	// FirstBadOffset is the offset of the first sample whose payload is not
 	// fully present, or -1.
 	FirstBadOffset int64
+	// FirstBadTick is the decode time of that sample, or -1.
+	FirstBadTick int64
 	// KeyframeTicks are the decode times of sync samples.
 	KeyframeTicks []int64
 	// KeyframeIntervals are tick deltas between consecutive keyframes.
@@ -82,7 +84,7 @@ func (t *Track) KeyframeAtOrBefore(tick int64) (int, bool) {
 
 // ParseFile parses a progressive MP4. size is the file's byte length.
 func ParseFile(r io.ReadSeeker, file string, size int64) (*Info, error) {
-	info := &Info{File: file, FirstBadOffset: -1}
+	info := &Info{File: file, FirstBadOffset: -1, FirstBadTick: -1}
 	probe, err := mp4.Probe(r)
 	if err != nil {
 		return nil, fault.Wrap(fault.KindUnreadable, fault.Fatal, fault.ByteAt(0), err,
@@ -145,6 +147,7 @@ func ParseFile(r io.ReadSeeker, file string, size int64) (*Info, error) {
 		if sm.Offset+sm.Size > size {
 			if info.FirstBadOffset < 0 || sm.Offset < info.FirstBadOffset {
 				info.FirstBadOffset = sm.Offset
+				info.FirstBadTick = sm.Tick
 			}
 			ms := clock.TicksToMillisSafe(sm.Tick, int64(track.Timescale))
 			info.Issues.Add(fault.New(fault.KindUnreadable, fault.Damaged,

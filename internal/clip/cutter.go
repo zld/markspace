@@ -1,14 +1,15 @@
 // Package clip cuts event intervals out of the two media streams.
 //
-// Intervals are half-open [Start, End) in ticks of the shared timeline. An
-// event that reaches before zero or past the end of the programme is
-// rejected rather than clamped: silently moving a boundary would make the
-// report lie about what was delivered.
+// Every event interval is half-open [Start, End) in ticks of one shared
+// tick base (the video track timescale). Audio frame positions are mapped
+// into that base through the PCM sample rate; video sample decode times are
+// already in it. An event that starts before zero or ends past either
+// stream is rejected rather than clamped: silently moving a boundary would
+// make the report lie about what was delivered.
 //
 // Audio boundaries are floored to whole sample frames so a channel is never
 // split mid-frame. Video starts at the latest keyframe not later than the
-// event start, and the difference is recorded as the actual lead-in. The
-// cutter reads through bounded buffers and never rewrites the source.
+// event start, and the difference is recorded as the actual lead-in.
 package clip
 
 import (
@@ -51,6 +52,9 @@ type VideoCut struct {
 	// because the boundary was moved back to a keyframe.
 	LeadInTicks int64 `json:"lead_in_ticks"`
 	LeadInMs    int64 `json:"lead_in_ms"`
+	// EndSlackTicks is how far the last video sample ends before the event
+	// end; the audio cut covers the full interval regardless.
+	EndSlackTicks int64 `json:"end_slack_ticks"`
 }
 
 // Slice is one event's cut.
@@ -65,51 +69,53 @@ type Slice struct {
 type Source struct {
 	WAV    *wav.Reader
 	Stream *stream.Info
-	// AudioOffsetTick is added to WAV frame positions to place them on the
-	// shared timeline; zero means the WAV starts with the programme.
+	// AudioOffsetTick is where the WAV starts on the shared tick base.
 	AudioOffsetTick int64
+	// TickRate is the shared tick base; it must equal the video track
+	// timescale. Zero is rejected: callers must be explicit.
+	TickRate clock.Rate
 }
 
 // Cutter produces slices from one source.
 type Cutter struct {
 	src *Source
 	tl  *clock.Timeline
-	vtl *clock.Timeline
 }
 
-// New validates the source and prepares the timelines.
+// New validates the source and prepares the shared timeline.
 func New(src *Source) (*Cutter, error) {
 	if src == nil || src.WAV == nil || src.Stream == nil {
 		return nil, fmt.Errorf("clip: source needs both WAV and stream")
 	}
-	audio := src.WAV.Layout
-	if audio == nil || audio.Format.Channels == 0 {
+	lay := src.WAV.Layout
+	if lay == nil || lay.Format.Channels == 0 || lay.Format.SampleRate == 0 {
 		return nil, fmt.Errorf("clip: WAV layout not parsed")
 	}
-	vtl, err := src.Stream.Timeline(audio.Format.SampleRate)
+	if src.Stream.Track == nil {
+		return nil, fmt.Errorf("clip: stream has no track")
+	}
+	trackRate := clock.Rate{Num: int64(src.Stream.Track.Timescale), Den: 1}
+	tickRate := src.TickRate
+	if tickRate.Num == 0 {
+		tickRate = trackRate
+	}
+	if tickRate != trackRate {
+		return nil, fmt.Errorf("clip: shared tick rate %s does not match video timescale %s",
+			tickRate, trackRate)
+	}
+	tl, err := clock.New(tickRate, lay.Format.SampleRate)
 	if err != nil {
 		return nil, err
 	}
-	// Audio and video must share a tick base; a mismatch would make an event
-	// boundary mean different things in the two streams.
-	if vtl.Rate().Num != int64(audio.Format.SampleRate) || vtl.Rate().Den != 1 {
-		// Different tick bases are allowed, but then we need an explicit
-		// conversion; the cutter uses the sample-rate timeline for audio and
-		// the track timeline for video, so nothing else is required.
-	}
-	return &Cutter{
-		src: src,
-		tl:  audio.Timeline(),
-		vtl: vtl,
-	}, nil
+	return &Cutter{src: src, tl: tl}, nil
 }
 
-// AudioDurationTicks returns the tick length of the WAV.
+// AudioDurationTicks returns the shared-tick length of the WAV.
 func (c *Cutter) AudioDurationTicks() int64 {
-	return c.src.AudioOffsetTick + c.src.WAV.Layout.Frames
+	return c.src.AudioOffsetTick + c.tl.SamplesToTicks(c.src.WAV.Layout.Frames)
 }
 
-// VideoDurationTicks returns the tick length covered by samples.
+// VideoDurationTicks returns the shared-tick length covered by the samples.
 func (c *Cutter) VideoDurationTicks() int64 {
 	tr := c.src.Stream.Track
 	if len(tr.Samples) == 0 {
@@ -118,6 +124,9 @@ func (c *Cutter) VideoDurationTicks() int64 {
 	last := tr.Samples[len(tr.Samples)-1]
 	return last.Tick + last.Duration
 }
+
+// TickRate returns the shared tick base.
+func (c *Cutter) TickRate() clock.Rate { return c.tl.Rate() }
 
 // Cut validates ev and returns the slice geometry. The returned slice may
 // still carry issues for regions that overlap known damage; the caller
@@ -139,7 +148,7 @@ func (c *Cutter) Cut(ev Event) (*Slice, error) {
 			fault.Location{ByteOffset: -1, Tick: ev.EndTick, HasTick: true},
 			"event %q [%d,%d) exceeds programme length %d ticks", ev.Name, ev.StartTick, ev.EndTick, limit)
 	}
-	if c.src.AudioOffsetTick != 0 && ev.StartTick < c.src.AudioOffsetTick {
+	if ev.StartTick < c.src.AudioOffsetTick {
 		return nil, fault.New(fault.KindOutOfRange, fault.Fatal,
 			fault.Location{ByteOffset: -1, Tick: ev.StartTick, HasTick: true},
 			"event %q starts before audio origin %d", ev.Name, c.src.AudioOffsetTick)
@@ -178,7 +187,7 @@ func (c *Cutter) cutAudio(sl *Slice) {
 	if audio.Frames == 0 {
 		sl.Issues.Add(fault.New(fault.KindOutOfRange, fault.Damaged,
 			fault.Location{ByteOffset: -1, Tick: sl.Event.StartTick, HasTick: true},
-			"event %q has no whole audio sample frame", sl.Event.Name))
+			"event %q contains no whole audio sample frame", sl.Event.Name))
 	}
 }
 
@@ -193,10 +202,8 @@ func (c *Cutter) cutVideo(sl *Slice) error {
 	}
 	kf, ok := tr.KeyframeAtOrBefore(sl.Event.StartTick)
 	if !ok {
-		// No keyframe at or before the start: the earliest sample is the
-		// best available start, and it is necessarily later than requested.
-		// That breaks the "never later than the event start" invariant, so
-		// the event is refused rather than delivered misleadingly.
+		// Refuse rather than start late: a fragment that begins after the
+		// requested instant would misrepresent the event boundary.
 		return fault.New(fault.KindMissingKeyframe, fault.Fatal,
 			fault.Location{ByteOffset: -1, Tick: sl.Event.StartTick, HasTick: true},
 			"no keyframe at or before event %q start %d", sl.Event.Name, sl.Event.StartTick)
@@ -205,7 +212,7 @@ func (c *Cutter) cutVideo(sl *Slice) error {
 	v.StartTick = tr.Samples[kf].Tick
 	if sl.Event.StartTick > v.StartTick {
 		v.LeadInTicks = sl.Event.StartTick - v.StartTick
-		v.LeadInMs = c.vtl.TicksToMillis(v.LeadInTicks)
+		v.LeadInMs = c.tl.TicksToMillis(v.LeadInTicks)
 	}
 	last := kf
 	for i := kf + 1; i < len(tr.Samples); i++ {
@@ -216,19 +223,18 @@ func (c *Cutter) cutVideo(sl *Slice) error {
 	}
 	v.LastSample = last
 	v.Samples = last - kf + 1
-	var bytes int64
 	for i := kf; i <= last; i++ {
-		bytes += tr.Samples[i].Size
+		v.Bytes += tr.Samples[i].Size
 	}
-	v.Bytes = bytes
 	v.EndTick = tr.Samples[last].Tick + tr.Samples[last].Duration
+	if sl.Event.EndTick > v.EndTick {
+		v.EndSlackTicks = sl.Event.EndTick - v.EndTick
+	}
 	sl.Video = v
 	if sl.Event.EndTick > v.EndTick {
-		// The audio interval extends past the last video sample inside the
-		// event; that is normal at the tail but worth reporting.
 		sl.Issues.Add(fault.New(fault.KindOutOfRange, fault.Warn,
 			fault.Location{ByteOffset: -1, Tick: v.EndTick, HasTick: true},
-			"video ends at %d, event ends at %d", v.EndTick, sl.Event.EndTick))
+			"video coverage ends at %d, event ends at %d", v.EndTick, sl.Event.EndTick))
 	}
 	return nil
 }
@@ -260,20 +266,16 @@ func (c *Cutter) CopyAudio(sl *Slice, dst io.Writer) (int64, error) {
 }
 
 // SliceBytes reads the video sample payloads of a slice into memory. Clip
-// sizes are bounded by the event, not the programme, so this stays small.
+// size is bounded by the event, not the programme, so this stays small.
 func (c *Cutter) SliceBytes(sl *Slice, r io.ReaderAt) ([]byte, error) {
 	if sl.Video.FirstSample < 0 {
 		return nil, nil
 	}
 	tr := c.src.Stream.Track
-	var total int64
-	for i := sl.Video.FirstSample; i <= sl.Video.LastSample; i++ {
-		total += tr.Samples[i].Size
+	if sl.Video.Bytes > 64<<20 {
+		return nil, fmt.Errorf("clip: video slice of %d bytes exceeds 64MiB cap", sl.Video.Bytes)
 	}
-	if total > 64<<20 {
-		return nil, fmt.Errorf("clip: video slice of %d bytes exceeds 64MiB cap", total)
-	}
-	out := make([]byte, 0, total)
+	out := make([]byte, 0, sl.Video.Bytes)
 	for i := sl.Video.FirstSample; i <= sl.Video.LastSample; i++ {
 		s := tr.Samples[i]
 		buf := make([]byte, s.Size)

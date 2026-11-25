@@ -58,6 +58,14 @@ type Span struct {
 	Lost     int
 	GapStart uint16
 	GapEnd   uint16
+	// GapStartTick and GapEndTick are RTP timestamps of the packets
+	// bracketing the gap. They are meaningful only when Lost > 0.
+	GapStartTick uint32
+	GapEndTick   uint32
+	// GapStartSeq/GapEndSeq are the extended sequence numbers on either
+	// side of a gap, used to place it on the media timeline precisely.
+	GapStartSeq int64
+	GapEndSeq   int64
 }
 
 // Result is the full analysis of a trace.
@@ -79,6 +87,8 @@ type Result struct {
 	FirstTimestamp uint32
 	LastTimestamp  uint32
 	HasTimestamps  bool
+	// ClockRate is the timestamp clock the result was produced at.
+	ClockRate int
 }
 
 // Reorderer consumes packets incrementally and commits ordered positions.
@@ -229,6 +239,7 @@ func (r *Reorderer) advance() {
 // uncommitted position through the highest observed.
 func (r *Reorderer) Finish() *Result {
 	if !r.hasAny {
+		r.result.ClockRate = r.cfg.ClockRate
 		return &r.result
 	}
 	for seq := r.scanAt; seq <= r.highest; seq++ {
@@ -239,6 +250,7 @@ func (r *Reorderer) Finish() *Result {
 		r.final = r.scanAt
 	}
 	r.result.Committed = groupSpans(r.result.Packets)
+	annotateSpans(r.result.Committed, r.result.Packets)
 	for _, sp := range r.result.Committed {
 		if sp.Lost == 0 {
 			continue
@@ -250,6 +262,7 @@ func (r *Reorderer) Finish() *Result {
 			"sequence gap %d..%d (%d packets missing) before seq %d at %dms",
 			sp.GapStart, sp.GapEnd, sp.Lost, sp.Last, ms))
 	}
+	r.result.ClockRate = r.cfg.ClockRate
 	return &r.result
 }
 
@@ -289,6 +302,31 @@ func groupSpans(pkts []Packet) []Span {
 	}
 	spans = append(spans, cur)
 	return spans
+}
+
+// annotateSpans records the timestamps on either side of every gap.
+func annotateSpans(spans []Span, pkts []Packet) {
+	i := 0
+	for si := range spans {
+		// Advance to the last packet of this span; packets are ordered and
+		// every span is a consecutive run of them.
+		n := 0
+		for i+n < len(pkts) && pkts[i+n].Seq >= spans[si].First && pkts[i+n].Seq <= spans[si].Last {
+			n++
+		}
+		if n == 0 {
+			continue
+		}
+		if spans[si].Lost > 0 {
+			spans[si].GapStartTick = pkts[i+n-1].Timestamp
+			if i+n < len(pkts) {
+				spans[si].GapEndTick = pkts[i+n].Timestamp
+			} else {
+				spans[si].GapEndTick = pkts[i+n-1].Timestamp
+			}
+		}
+		i += n
+	}
 }
 
 func closeSpan(cur Span, next uint16) Span {
