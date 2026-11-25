@@ -3,7 +3,8 @@
 /dist/
 *.test
 *.out
-archivecheck
+/archivecheck
+/out/
 
 # Local working state
 *.state.json
