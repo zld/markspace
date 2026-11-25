@@ -26,6 +26,14 @@ type box struct {
 
 var containers = map[string]bool{"moov": true, "trak": true, "mdia": true, "minf": true, "stbl": true}
 
+var knownBoxes = map[string]bool{
+	"ftyp": true, "moov": true, "mvhd": true, "trak": true, "tkhd": true,
+	"mdia": true, "mdhd": true, "hdlr": true, "minf": true, "stbl": true,
+	"stsd": true, "avc1": true, "avcC": true, "clap": true, "colr": true,
+	"mdat": true, "free": true, "wide": true, "amet": true, "asmp": true,
+	"adig": true,
+}
+
 func scanBoxes(data []byte, start, end int64, errs *[]*auditerrors.Error) []box {
 	var boxes []box
 	pos := start
@@ -94,6 +102,13 @@ func Parse(path string, data []byte) *media.Document {
 	boxes := scanBoxes(data, 0, int64(len(data)), &scanErrs)
 	for _, e := range scanErrs {
 		doc.Errors = append(doc.Errors, e.WithPath(path))
+	}
+	for _, b := range boxes {
+		if !knownBoxes[b.typ] {
+			doc.Errors = append(doc.Errors, auditerrors.New(
+				auditerrors.CodeUnknownStructure, b.start, "unrecognized MP4 box %s", b.typ,
+			).WithPath(path).WithBytes(b.start, b.end))
+		}
 	}
 	for _, b := range boxes {
 		doc.Elements = append(doc.Elements, media.Element{

@@ -43,6 +43,22 @@ func TestBuildAndParseTrackMetadata(t *testing.T) {
 	}
 }
 
+func TestUnknownBoxReportedWithOffset(t *testing.T) {
+	data := BuildTrackFile(TrackRequest{ID: 1, Timebase: timebase.MP4(90000)})
+	off := int64(len(data))
+	data = append(data, 0, 0, 0, 8, 'x', 'x', 'x', 'x')
+	doc := Parse("unknown.mp4", data)
+	var found bool
+	for _, e := range doc.Errors {
+		if e.Code == auditerrors.CodeUnknownStructure && e.Offset == off {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("unknown box at %d was not retained: %+v", off, doc.Errors)
+	}
+}
+
 func TestInvalidBoxSizeReportsHeaderOffset(t *testing.T) {
 	req := TrackRequest{ID: 1, Timebase: timebase.MP4(90000)}
 	data := BuildTrackFile(req)
