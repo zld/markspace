@@ -53,6 +53,8 @@ const (
 )
 
 // Packet is one parsed media packet positioned at a byte offset in the input.
+// Payload holds the codec payload (without the RTP/framing headers) and is
+// excluded from JSON output; it feeds the content hasher instead.
 type Packet struct {
 	Seq             uint16 `json:"seq"`
 	Codec           Codec  `json:"codec"`
@@ -60,6 +62,7 @@ type Packet struct {
 	ValidSamples    int64  `json:"valid_samples"`
 	DeclaredSamples uint32 `json:"declared_samples"`
 	PayloadLen      int    `json:"payload_len"`
+	Payload         []byte `json:"-"`
 }
 
 // ValidSamplesFor validates a declared per-packet sample count for the codec
@@ -131,25 +134,41 @@ func BuildFramedPacket(seq uint16, codec Codec, samples uint32, audioPayload []b
 }
 
 // FrameReader parses length-prefixed RTP packets from a stream. Every reported
-// error is a *MediaError carrying the byte offset of the offending frame.
+// error is a *MediaError carrying the byte offset of the offending frame. An
+// optional tee writer receives every raw framing byte (length prefix plus RTP
+// bytes) so the container digest can be computed without buffering the stream.
 type FrameReader struct {
-	r         io.Reader
-	offset    int64
-	lenBuf    [2]byte
-	headerBuf [4]byte
+	r      io.Reader
+	offset int64
+	lenBuf [2]byte
+	tee    io.Writer
 }
 
 // NewFrameReader wraps r as a packet stream.
 func NewFrameReader(r io.Reader) *FrameReader { return &FrameReader{r: r} }
 
+// NewFrameReaderWithTee wraps r and copies every consumed raw byte to tee
+// (typically a Digester producing the container digest).
+func NewFrameReaderWithTee(r io.Reader, tee io.Writer) *FrameReader {
+	return &FrameReader{r: r, tee: tee}
+}
+
 // Offset returns the number of bytes consumed so far.
 func (f *FrameReader) Offset() int64 { return f.offset }
+
+func (f *FrameReader) readFull(p []byte) (int, error) {
+	n, err := io.ReadFull(f.r, p)
+	if f.tee != nil && n > 0 {
+		_, _ = f.tee.Write(p[:n])
+	}
+	return n, err
+}
 
 // ReadPacket parses the next packet. io.EOF is returned unwrapped at a clean
 // stream end; every other failure is a structured *MediaError.
 func (f *FrameReader) ReadPacket() (*Packet, error) {
 	frameStart := f.offset
-	if _, err := io.ReadFull(f.r, f.lenBuf[:]); err != nil {
+	if _, err := f.readFull(f.lenBuf[:]); err != nil {
 		if errors.Is(err, io.EOF) {
 			return nil, io.EOF // clean end between frames
 		}
@@ -158,7 +177,7 @@ func (f *FrameReader) ReadPacket() (*Packet, error) {
 	f.offset += 2
 	frameLen := int(binary.BigEndian.Uint16(f.lenBuf[:]))
 	buf := make([]byte, frameLen)
-	if _, err := io.ReadFull(f.r, buf); err != nil {
+	if _, err := f.readFull(buf); err != nil {
 		return nil, NewError(PhaseParse, frameStart, "truncated packet body").WithCause(err)
 	}
 	f.offset += int64(frameLen)
@@ -177,6 +196,7 @@ func (f *FrameReader) ReadPacket() (*Packet, error) {
 		Offset:          frameStart,
 		DeclaredSamples: frame.samples,
 		PayloadLen:      len(frame.payload),
+		Payload:         append([]byte(nil), frame.payload...),
 	}
 	valid, ok := ValidSamplesFor(frame.codec, frame.samples)
 	if !ok {
