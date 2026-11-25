@@ -22,6 +22,7 @@ const (
 	CategoryTruncatedBox       ErrorCategory = "truncated_box"
 	CategoryInvalidLength      ErrorCategory = "invalid_length"
 	CategoryMissingKeyframe    ErrorCategory = "missing_keyframe"
+	CategoryIntegrityMismatch  ErrorCategory = "integrity_mismatch"
 	CategoryChecksumMismatch   ErrorCategory = "checksum_mismatch"
 	CategoryPathTraversal      ErrorCategory = "path_traversal"
 	CategoryUnsafeResume       ErrorCategory = "unsafe_resume"
