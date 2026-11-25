@@ -99,6 +99,23 @@ func (e *Engine) Run() (*report.Metrics, error) {
 	rep := repair.NewBoundaryRepairer(1 << 33)
 	var fatal *timeline.StageError
 	var rows []archive.ManifestRow
+
+	// RTP side-channel: exercises 32-bit unwrap and, under the fault,
+	// a source-switch boundary repair. Its samples join the archive too.
+	rtpSamples, _ := e.ingestRTP(rep, b)
+	if len(rtpSamples) > 0 {
+		rtpPT := &ingest.ParsedTrack{
+			ID:        timeline.TrackID{Source: "rtp", Index: 0, Kind: timeline.KindVideo},
+			Timescale: 90000,
+			Samples:   rtpSamples,
+		}
+		rtpRows, ferr := e.processTrack(rtpPT, rep, b)
+		if ferr != nil {
+			fatal = ferr
+		}
+		rows = append(rows, rtpRows...)
+	}
+
 	for _, pt := range parsed.Tracks {
 		for _, se := range pt.Errors {
 			b.AddError(report.ErrorView{
