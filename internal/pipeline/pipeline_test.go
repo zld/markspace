@@ -1,6 +1,8 @@
 package pipeline
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"medpipe/internal/fault"
@@ -36,8 +38,8 @@ func TestRunSelfTestSummaryContract(t *testing.T) {
 	}
 	found := map[string]bool{}
 	for _, f := range res.Failures {
-		if f.Offset < 0 || f.TrackID < 0 {
-			t.Fatalf("failure missing coordinates: %+v", f)
+		if f.Stage != fault.StageParse || f.Offset < 0 || f.TrackID < 0 {
+			t.Fatalf("failure missing stage/coordinates: %+v", f)
 		}
 		found[f.Code] = true
 	}
@@ -105,6 +107,50 @@ func TestBudgetFailureReturnsErrorAndNoSummaryHash(t *testing.T) {
 	}
 	if res == nil || res.Summary.SegmentSHA256 != "" {
 		t.Fatalf("unsuccessful run produced success summary: %+v", res)
+	}
+}
+
+func TestFailedRenderStageCanResumeAndMatchesFull(t *testing.T) {
+	root := t.TempDir()
+	blocker := filepath.Join(root, "not-a-directory")
+	if err := os.WriteFile(blocker, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cp := filepath.Join(root, "checkpoint.gob")
+	bad := Config{
+		Seed: 17, BudgetMS: 5000, MaxBytes: 1 << 20, MinQuality: 99,
+		OutDir: blocker, CheckpointPath: cp,
+	}
+	if _, err := Run(bad); err == nil {
+		t.Fatal("expected render failure when output directory cannot be created")
+	}
+	st, err := LoadCheckpoint(cp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Completed != fault.StageBudget {
+		t.Fatalf("completed stage=%q want budget", st.Completed)
+	}
+
+	recoveredDir := filepath.Join(root, "recovered")
+	recoveryCP := filepath.Join(root, "recovery.gob")
+	st.Cfg.OutDir = recoveredDir
+	st.Cfg.CheckpointPath = recoveryCP
+	if err := SaveCheckpoint(recoveryCP, st); err != nil {
+		t.Fatal(err)
+	}
+	resumed, err := Resume(recoveryCP)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	good := testConfig(t)
+	full, err := Run(good)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resumed.Summary != full.Summary {
+		t.Fatalf("recovery mismatch:\n%s\n%s", resumed.Summary.Line(), full.Summary.Line())
 	}
 }
 
