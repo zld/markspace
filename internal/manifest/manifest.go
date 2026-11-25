@@ -28,6 +28,17 @@ type Entry struct {
 	SampleCount   int        `json:"sampleCount"`
 }
 
+// ClipRef binds a derived artifact to the segment that produced it. Its digest
+// is the content address of the artifact bytes, so verification can recompute
+// it from storage rather than trusting the manifest.
+type ClipRef struct {
+	Segment    int
+	Digest     string
+	Bytes      int64
+	Level      string
+	QualityPPM policy.PPM
+}
+
 // Manifest is the delivered document.
 type Manifest struct {
 	Version       int        `json:"version"`
@@ -41,13 +52,12 @@ type Manifest struct {
 	Digest        string     `json:"digest"`
 }
 
-// Build assembles a manifest from the split plan, the policy result and the
-// source digests. Derived digests are computed from the entry's immutable
-// fields, not from the source bytes, so they are reproducible in any process.
-func Build(fixture string, tl *timeline.Timeline, plan *split.Plan, res *policy.Result, eventDigest string) (*Manifest, error) {
-	if len(plan.Segments) != len(res.Choices) {
+// Build assembles a manifest from the split plan, the policy result, the
+// derived clip addresses and the source digests.
+func Build(fixture string, tl *timeline.Timeline, plan *split.Plan, res *policy.Result, clips []ClipRef, eventDigest string) (*Manifest, error) {
+	if len(plan.Segments) != len(res.Choices) || len(clips) != len(plan.Segments) {
 		return nil, model.Errorf(model.StageManifest, "build", model.TrackRef{}, 0,
-			"segment count %d does not match choice count %d", len(plan.Segments), len(res.Choices))
+			"segment count %d, choice count %d and clip count %d disagree", len(plan.Segments), len(res.Choices), len(clips))
 	}
 	m := &Manifest{
 		Version:       1,
@@ -59,22 +69,23 @@ func Build(fixture string, tl *timeline.Timeline, plan *split.Plan, res *policy.
 	}
 	for i, seg := range plan.Segments {
 		choice := res.Choices[i]
+		clip := clips[i]
+		if clip.Segment != seg.Index || !model.ValidDigest(clip.Digest) {
+			return nil, model.Errorf(model.StageManifest, "build", model.TrackRef{}, 0,
+				"clip for segment %d has invalid address", seg.Index)
+		}
 		entry := Entry{
-			Index:       seg.Index,
-			StartTick:   int64(seg.Span.Start),
-			EndTick:     int64(seg.Span.End),
-			Bytes:       choice.Bytes,
-			QualityPPM:  choice.QualityPPM,
-			Level:       choice.Level,
-			Triggers:    []string{seg.StartName, seg.EndName},
-			SampleCount: seg.Samples,
+			Index:         seg.Index,
+			StartTick:     int64(seg.Span.Start),
+			EndTick:       int64(seg.Span.End),
+			SourceDigest:  model.Fingerprint(tl.SourceDigest, eventDigest, fmt.Sprint(seg.Index)),
+			DerivedDigest: clip.Digest,
+			Bytes:         clip.Bytes,
+			QualityPPM:    choice.QualityPPM,
+			Level:         choice.Level,
+			Triggers:      []string{seg.StartName, seg.EndName},
+			SampleCount:   seg.Samples,
 		}
-		entry.SourceDigest = model.Fingerprint(tl.SourceDigest, eventDigest, fmt.Sprint(i))
-		derived, err := derivedDigest(entry)
-		if err != nil {
-			return nil, err
-		}
-		entry.DerivedDigest = derived
 		if seg.TransitionIn != "" {
 			entry.Transitions = append(entry.Transitions, seg.TransitionIn)
 		}
@@ -82,9 +93,7 @@ func Build(fixture string, tl *timeline.Timeline, plan *split.Plan, res *policy.
 			entry.Transitions = append(entry.Transitions, seg.TransitionOut)
 		}
 		m.Segments = append(m.Segments, entry)
-	}
-	for _, e := range m.Segments {
-		m.TotalBytes += e.Bytes
+		m.TotalBytes += entry.Bytes
 	}
 	d, err := Digest(m)
 	if err != nil {
@@ -92,22 +101,6 @@ func Build(fixture string, tl *timeline.Timeline, plan *split.Plan, res *policy.
 	}
 	m.Digest = d
 	return m, nil
-}
-
-// derivedDigest hashes the fields that define a segment's derived output.
-func derivedDigest(e Entry) (string, error) {
-	d, err := model.DigestJSON(struct {
-		Start, End int64
-		Source     string
-		Bytes      int64
-		Quality    policy.PPM
-		Level      string
-		Triggers   []string
-	}{e.StartTick, e.EndTick, e.SourceDigest, e.Bytes, e.QualityPPM, e.Level, e.Triggers})
-	if err != nil {
-		return "", model.WrapError(model.StageManifest, "digest", model.TrackRef{}, 0, "cannot digest segment", err)
-	}
-	return d, nil
 }
 
 // Digest computes the manifest-level digest over everything except Digest.

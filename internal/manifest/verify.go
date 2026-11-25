@@ -19,11 +19,16 @@ type Report struct {
 	Issues         []string   `json:"issues"`
 }
 
+// BlobCheck recomputes a stored artifact's digest and size. When non-nil,
+// Verify re-derives every derived digest from storage rather than trusting the
+// manifest.
+type BlobCheck func(digest string) (string, int64, error)
+
 // Verify checks a manifest against the expected source and policy. Rules:
 // entries are contiguous and non-overlapping half-open intervals, every derived
 // digest recomputes, the declared total equals the sum, the floor is respected,
 // and the manifest digest matches its own contents.
-func Verify(m *Manifest, wantSource, wantPolicy string, minQuality policy.PPM) (Report, error) {
+func Verify(m *Manifest, wantSource, wantPolicy string, minQuality policy.PPM, blob BlobCheck) (Report, error) {
 	rep := Report{Segments: len(m.Segments), ManifestDigest: m.Digest, MinQualityPPM: minQuality, TotalBytes: m.TotalBytes}
 	if len(m.Segments) == 0 {
 		rep.Issues = append(rep.Issues, "manifest has no segments")
@@ -60,11 +65,15 @@ func Verify(m *Manifest, wantSource, wantPolicy string, minQuality policy.PPM) (
 		if !model.ValidDigest(e.SourceDigest) {
 			rep.Issues = append(rep.Issues, fmt.Sprintf("segment %d source digest malformed", i))
 		}
-		again, err := derivedDigest(e)
-		if err != nil {
-			rep.Issues = append(rep.Issues, fmt.Sprintf("segment %d digest error: %v", i, err))
-		} else if again != e.DerivedDigest {
-			rep.Issues = append(rep.Issues, fmt.Sprintf("segment %d derived digest does not recompute", i))
+		if blob != nil {
+			sum, size, err := blob(e.DerivedDigest)
+			if err != nil {
+				rep.Issues = append(rep.Issues, fmt.Sprintf("segment %d artifact unreadable: %v", i, err))
+			} else if sum != e.DerivedDigest {
+				rep.Issues = append(rep.Issues, fmt.Sprintf("segment %d derived digest does not recompute", i))
+			} else if size != e.Bytes {
+				rep.Issues = append(rep.Issues, fmt.Sprintf("segment %d stored size %d != declared %d", i, size, e.Bytes))
+			}
 		}
 		if len(e.Triggers) != 2 {
 			rep.Issues = append(rep.Issues, fmt.Sprintf("segment %d does not name both boundary triggers", i))
