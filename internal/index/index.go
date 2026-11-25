@@ -137,6 +137,16 @@ func (idx *Index) AudioTrack() *Track {
 	return nil
 }
 
+// SubtitleTrack returns the first subtitle track, or nil.
+func (idx *Index) SubtitleTrack() *Track {
+	for i := range idx.Tracks {
+		if idx.Tracks[i].Kind == "subtitle" {
+			return &idx.Tracks[i]
+		}
+	}
+	return nil
+}
+
 // TrackByID returns the track with the given ID, or nil.
 func (idx *Index) TrackByID(id uint32) *Track {
 	for i := range idx.Tracks {
