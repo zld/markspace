@@ -240,30 +240,4 @@ func (s *Scanner) updateFragmentRange(fragIdx int) {
 	}
 }
 
-// finalizeTracks derives each track's covered time range and confirms that
-// decode times advance monotonically.
-func (s *Scanner) finalizeTracks() {
-	for ti := range s.idx.Tracks {
-		tr := &s.idx.Tracks[ti]
-		if len(tr.Samples) == 0 {
-			s.fail(fault.New(fault.StageScan, "scan.track.no_samples", fault.NoOffset, clock.Invalid,
-				fmt.Sprintf("track %d has no samples in any fragment", tr.ID)))
-			continue
-		}
-		var prevEnd clock.Nanos
-		for si := range tr.Samples {
-			smp := &tr.Samples[si]
-			if si > 0 && smp.DTS < prevEnd && smp.DTS < tr.Samples[si-1].DTS {
-				s.fail(fault.New(fault.StageScan, "scan.track.non_monotonic", smp.Offset, smp.DTS,
-					fmt.Sprintf("track %d sample %d goes backwards in decode time", tr.ID, si)).WithSample(si))
-				break
-			}
-			prevEnd = clock.Add(smp.DTS, smp.Duration)
-		}
-		tr.Start = tr.Samples[0].DTS
-		last := tr.Samples[len(tr.Samples)-1]
-		tr.End = clock.Add(last.DTS, last.Duration)
-	}
-}
-
 // --------------------------------------------------------------- packets --

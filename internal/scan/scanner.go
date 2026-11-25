@@ -9,6 +9,8 @@
 package scan
 
 import (
+	"fmt"
+
 	"example.com/assetcheck/internal/clock"
 	"example.com/assetcheck/internal/fault"
 	"example.com/assetcheck/internal/index"
@@ -58,11 +60,10 @@ type Scanner struct {
 	faults []*fault.Error
 	track  map[uint32]*TrackInfo
 	order  []uint32
-	// sample cursor per track while fragments are materialised in file order.
-	dts    map[uint32]clock.Nanos
-	ticks  map[uint32]uint64
-	trIdx  map[uint32]int
-	failed bool
+	// Written while fragments are materialised in file order: the running
+	// media-tick cursor and its nanosecond form per track.
+	dts   map[uint32]clock.Nanos
+	ticks map[uint32]uint64
 }
 
 // Run scans in and returns a digest-bound index plus every located fault.
@@ -81,7 +82,6 @@ func Run(in Input) *Result {
 		track: make(map[uint32]*TrackInfo),
 		dts:   make(map[uint32]clock.Nanos),
 		ticks: make(map[uint32]uint64),
-		trIdx: make(map[uint32]int),
 	}
 	s.scanContainer()
 	s.finalizeTracks()
@@ -110,4 +110,28 @@ func (s *Scanner) fail(err *fault.Error) {
 	s.faults = append(s.faults, err)
 }
 
-// --------------------------------------------------------------- packets --
+// finalizeTracks derives each track's covered time range and confirms that
+// decode times advance monotonically.
+func (s *Scanner) finalizeTracks() {
+	for ti := range s.idx.Tracks {
+		tr := &s.idx.Tracks[ti]
+		if len(tr.Samples) == 0 {
+			s.fail(fault.New(fault.StageScan, "scan.track.no_samples", fault.NoOffset, clock.Invalid,
+				fmt.Sprintf("track %d has no samples in any fragment", tr.ID)))
+			continue
+		}
+		var prevEnd clock.Nanos
+		for si := range tr.Samples {
+			smp := &tr.Samples[si]
+			if si > 0 && smp.DTS < prevEnd && smp.DTS < tr.Samples[si-1].DTS {
+				s.fail(fault.New(fault.StageScan, "scan.track.non_monotonic", smp.Offset, smp.DTS,
+					fmt.Sprintf("track %d sample %d goes backwards in decode time", tr.ID, si)).WithSample(si))
+				break
+			}
+			prevEnd = clock.Add(smp.DTS, smp.Duration)
+		}
+		tr.Start = tr.Samples[0].DTS
+		last := tr.Samples[len(tr.Samples)-1]
+		tr.End = clock.Add(last.DTS, last.Duration)
+	}
+}
