@@ -54,8 +54,19 @@ func run(args []string) int {
 		}
 		return 1
 	}
-	printOutcome(outcome)
+	printOutcome(outcome, *seed, *corrupt, *taskKey)
 	return outcome.ExitCode
+}
+
+func resumeHint(workDir string, seed int64, corrupt, taskKey string) string {
+	cmd := fmt.Sprintf("go run ./cmd/media-check demo --seed %d --work %q", seed, workDir)
+	if corrupt != "" {
+		cmd += fmt.Sprintf(" --corrupt %s", corrupt)
+	}
+	if taskKey != "" {
+		cmd += fmt.Sprintf(" --task-key %s", taskKey)
+	}
+	return cmd + " --resume"
 }
 
 func printError(err error) {
@@ -76,7 +87,7 @@ func printError(err error) {
 	fmt.Printf("status=error\nerror=%q\n", err.Error())
 }
 
-func printOutcome(o *pipeline.Outcome) {
+func printOutcome(o *pipeline.Outcome, seed int64, corrupt, taskKey string) {
 	if o == nil {
 		fmt.Println("status=error")
 		return
@@ -85,7 +96,7 @@ func printOutcome(o *pipeline.Outcome) {
 		fmt.Println("status=interrupted")
 		fmt.Printf("task_key=%s\n", o.TaskKey)
 		fmt.Println("checkpoint_stage=scan")
-		fmt.Printf("resume_command=media-check demo --seed 17 --work %s --resume\n", o.WorkDir)
+		fmt.Printf("resume_command=%s\n", resumeHint(o.WorkDir, seed, corrupt, taskKey))
 		return
 	}
 	if o.Resumed {

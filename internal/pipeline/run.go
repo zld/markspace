@@ -51,7 +51,8 @@ func Run(cfg Config) (*Outcome, error) {
 		hash, err := fingerprint.File(absInput)
 		if err != nil {
 			out.ExitCode = ExitState
-			return out, err
+			return out, fault.Wrap(fault.StageJobs, fault.CodeReadFailed, err,
+				"hash input before resume", fault.WithPath(absInput))
 		}
 		cp, err := store.ResumeCheckpoint(cfg.TaskKey, hash.SHA256)
 		if err != nil {
@@ -172,9 +173,11 @@ func Run(cfg Config) (*Outcome, error) {
 	if existing, ok, err := manifest.Load(filepath.Join(cfg.WorkDir, "manifest.json")); err != nil {
 		out.ExitCode = ExitState
 		return out, err
-	} else if ok {
+	} else if ok && existing.TaskKey == m.TaskKey {
 		m = manifest.Merge(existing, m)
 	}
+	// A root manifest belonging to another task key is replaced as the
+	// work-directory pointer. Its task-keyed archive copy remains intact.
 	rootPath, archivePath, sum, err := manifest.Archive(cfg.WorkDir, m)
 	if err != nil {
 		out.ExitCode = ExitState

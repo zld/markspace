@@ -39,8 +39,8 @@ type Report struct {
 	DamageCount    int       `json:"damage_count"`
 	FirstBadOffset int64     `json:"first_bad_offset,omitempty"`
 	TrackID        uint32    `json:"track_id,omitempty"`
-	StartMS        int64     `json:"start_ms,omitempty"`
-	EndMS          int64     `json:"end_ms,omitempty"`
+	StartMS        int64     `json:"start_ms"`
+	EndMS          int64     `json:"end_ms"`
 	Segments       []Segment `json:"segments"`
 }
 
