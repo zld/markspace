@@ -2,9 +2,12 @@ package mediakernel
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
+	"sync"
 	"testing"
+	"time"
 )
 
 func buildStream(t *testing.T, frames ...[]byte) *FrameReader {
@@ -162,5 +165,132 @@ func TestGapTrackerBackwardsAndJump(t *testing.T) {
 	_, _, _ = g2.Observe(100)
 	if _, missing, err := g2.Observe(100 + MaxSequenceJump); err != nil || len(missing) != MaxSequenceJump-1 {
 		t.Fatalf("boundary jump must be accepted as %d losses, got err=%v", MaxSequenceJump-1, err)
+	}
+}
+
+func TestBoundedQueueBasicsAndPeak(t *testing.T) {
+	q := NewBoundedQueue[int](3)
+	ctx := context.Background()
+	for i := 0; i < 3; i++ {
+		if err := q.Enqueue(ctx, i); err != nil {
+			t.Fatalf("enqueue %d: %v", i, err)
+		}
+	}
+	s := q.Stats()
+	if s.Pending != 3 || s.Peak != 3 || s.Capacity != 3 || s.Enqueued != 3 {
+		t.Fatalf("full queue stats wrong: %+v", s)
+	}
+	v, err := q.Dequeue(ctx)
+	if err != nil || v != 0 {
+		t.Fatalf("dequeue want 0, got %d err=%v", v, err)
+	}
+	if s := q.Stats(); s.Pending != 2 || s.Dequeued != 1 || s.Peak != 3 {
+		t.Fatalf("post-dequeue stats wrong: %+v", s)
+	}
+}
+
+func TestBoundedQueueBackpressure(t *testing.T) {
+	q := NewBoundedQueue[int](2)
+	ctx := context.Background()
+	// Saturate the queue.
+	if err := q.Enqueue(ctx, 1); err != nil {
+		t.Fatalf("fill: %v", err)
+	}
+	if err := q.Enqueue(ctx, 2); err != nil {
+		t.Fatalf("fill: %v", err)
+	}
+	blocked := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		close(blocked)
+		done <- q.Enqueue(ctx, 3)
+	}()
+	<-blocked
+	// Give the producer time to park on the full queue, then assert it stayed parked.
+	time.Sleep(20 * time.Millisecond)
+	select {
+	case err := <-done:
+		t.Fatalf("producer must be blocked by backpressure, returned %v", err)
+	default:
+	}
+	if s := q.Stats(); s.Pending != 2 {
+		t.Fatalf("queue must not grow past capacity: %+v", s)
+	}
+	if _, err := q.Dequeue(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("producer should proceed after a slot frees: %v", err)
+	}
+	if s := q.Stats(); s.Peak > s.Capacity || s.Pending != 2 {
+		t.Fatalf("invariant violated: %+v", s)
+	}
+}
+
+func TestBoundedQueueCancellation(t *testing.T) {
+	q := NewBoundedQueue[int](1)
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := q.Enqueue(context.Background(), 99); err != nil {
+		t.Fatal(err)
+	}
+	errc := make(chan error, 1)
+	go func() { errc <- q.Enqueue(ctx, 100) }()
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+	if err := <-errc; err == nil {
+		t.Fatal("cancelled full-queue enqueue must error")
+	} else if me, ok := AsMediaError(err); !ok || me.Phase != PhaseCancelled {
+		t.Fatalf("want cancellation media error, got %v", err)
+	}
+	// A consumer waiting on an empty queue must also exit on cancellation.
+	empty := NewBoundedQueue[int](1)
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	go func() { time.Sleep(10 * time.Millisecond); cancel2() }()
+	if _, err := empty.Dequeue(ctx2); err == nil {
+		t.Fatal("cancelled dequeue must error")
+	}
+}
+
+func TestBoundedQueueConcurrentInvariant(t *testing.T) {
+	q := NewBoundedQueue[int](4)
+	ctx, cancel := context.WithCancel(context.Background())
+	const n = 200
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < n; i++ {
+			if err := q.Enqueue(ctx, i); err != nil {
+				return
+			}
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for i := 0; i < n; i++ {
+			if _, err := q.Dequeue(ctx); err != nil {
+				return
+			}
+		}
+	}()
+	wg.Wait()
+	cancel()
+	s := q.Stats()
+	if s.Peak > s.Capacity {
+		t.Fatalf("peak %d exceeded capacity %d", s.Peak, s.Capacity)
+	}
+	if s.Enqueued != n || s.Dequeued != n || s.Pending != 0 {
+		t.Fatalf("counters wrong: %+v", s)
+	}
+}
+
+func TestCounters(t *testing.T) {
+	var c Counters
+	c.IncEnqueued()
+	c.IncEnqueued()
+	c.IncProcessed()
+	enq, proc := c.Snapshot()
+	if enq != 2 || proc != 1 {
+		t.Fatalf("snapshot enq=%d proc=%d", enq, proc)
 	}
 }
