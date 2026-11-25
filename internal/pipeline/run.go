@@ -195,11 +195,16 @@ func findTrack(tracks []manifest.Track, id uint32) *manifest.Track {
 }
 
 func mediaDurationTicks(t manifest.Track) int64 {
-	if len(t.Samples) == 0 {
-		return t.StartTimeTicks
+	count := t.DeclaredSampleCount
+	if count == 0 {
+		count = uint32(len(t.Samples))
 	}
-	last := t.Samples[len(t.Samples)-1]
-	return last.DecodeTicks + int64(t.SourceTimescale)
+	if count > 0 {
+		// Fixture samples have a uniform one-second delta. Using the declared
+		// count prevents a truncated table from generating a secondary edit fault.
+		return t.StartTimeTicks + int64(count)*int64(t.SourceTimescale)
+	}
+	return t.StartTimeTicks
 }
 
 func rtpResolver(seg time.Duration, count int) rtptrace.SegmentResolver {
