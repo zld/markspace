@@ -50,6 +50,7 @@ const (
 	ErrNonFrameTail       Code = 1014
 	ErrMissingDataChunk   Code = 1015
 	ErrMetadataEncoding   Code = 1016
+	ErrRIFFSizeMismatch    Code = 1017
 
 	// 2xxx: stream blocks / intervals.
 	ErrBlockChecksum   Code = 2001
