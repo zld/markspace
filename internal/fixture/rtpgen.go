@@ -31,24 +31,39 @@ func GenerateRTP(seed int64, n int) ([][]byte, error) {
 	}
 
 	perm := rng.Perm(n)
-	drop := make(map[int]bool, 8)
-	for _, idx := range perm[:8] {
+	dropCount := 8
+	dupCount := 6
+	if n < 30 {
+		dropCount = 1
+		dupCount = 1
+	}
+	if dropCount > n {
+		dropCount = n
+	}
+	drop := make(map[int]bool, dropCount)
+	for _, idx := range perm[:dropCount] {
 		drop[idx] = true
 	}
-	duplicate := make(map[int]bool, 6)
-	for _, idx := range perm[8:14] {
+	duplicate := make(map[int]bool, dupCount)
+	dupEnd := dropCount + dupCount
+	if dupEnd > n {
+		dupEnd = n
+	}
+	for _, idx := range perm[dropCount:dupEnd] {
 		if !drop[idx] {
 			duplicate[idx] = true
 		}
 	}
-	lateIndex := 18
-	if drop[lateIndex] {
-		lateIndex = 19
+	lateIndex := -1
+	if n >= 30 {
+		lateIndex = 18
+		if drop[lateIndex] {
+			lateIndex = 19
+		}
 		drop[lateIndex] = false
 	}
-	drop[lateIndex] = false
 
-	swapStart := map[int]bool{24: true, 48: true, 72: true, 96: true}
+	swapStart := map[int]bool{2: n > 4, 24: true, 48: true, 72: true, 96: true}
 	arrivals := make([]pionrtp.Packet, 0, n+len(duplicate))
 	for i := 0; i < n; {
 		if drop[i] || i == lateIndex {
@@ -70,7 +85,9 @@ func GenerateRTP(seed int64, n int) ([][]byte, error) {
 		i++
 	}
 	// A very late arrival: outside the analyzer's 64-sequence window.
-	arrivals = append(arrivals, source[lateIndex])
+	if lateIndex >= 0 {
+		arrivals = append(arrivals, source[lateIndex])
+	}
 
 	blobs := make([][]byte, 0, len(arrivals))
 	for i, p := range arrivals {
