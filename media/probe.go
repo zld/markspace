@@ -471,10 +471,11 @@ func buildSamples(t *Track, a sampleArgs, lim Limits, issues *[]Issue) error {
 		presUs := startUs + compUs
 
 		if prevStart >= 0 && presUs < prevStart {
-			// A reset from the top half of the 32-bit tick domain back to the
-			// bottom half is a wraparound; other backward steps are
-			// non-monotonic timestamps. Both are reported, never reordered.
-			if prevTicks >= 1<<31 && startTicks < 1<<31 {
+			// A 32-bit tick wraparound, or a composition reset to the start of
+			// the timeline, is a wraparound; a small backward step is merely a
+			// non-monotonic timestamp. Both are reported, never reordered.
+			largeReset := prevStart > 500_000 && presUs < prevStart/4
+			if (prevTicks >= 1<<31 && startTicks < 1<<31) || largeReset {
 				if !warnWrap {
 					warnWrap = true
 					*issues = append(*issues, Issue{Kind: KindWraparound, Severity: SeverityError,
