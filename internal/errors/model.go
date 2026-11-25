@@ -15,6 +15,7 @@ const (
 	CodeChecksumMismatch  Code = "CHECKSUM_MISMATCH"
 	CodeInvalidTimestamp  Code = "INVALID_TIMESTAMP"
 	CodeTimestampWrap     Code = "TIMESTAMP_WRAP"
+	CodeSequenceGap       Code = "SEQUENCE_GAP"
 	CodeMetadataConflict  Code = "METADATA_CONFLICT"
 	CodeFingerprintChange Code = "FINGERPRINT_CHANGE"
 	CodeCheckpointCorrupt Code = "CHECKPOINT_CORRUPT"
