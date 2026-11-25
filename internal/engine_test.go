@@ -248,3 +248,74 @@ func lateWin() Ticks {
 	}
 	return tk
 }
+
+func TestDemoQueueSizeInvariant(t *testing.T) {
+	root := demoRoot(t, DefaultDemoConfig())
+	run := func(queueBytes int64) string {
+		rep, err := Run(context.Background(), EngineConfig{
+			Root: root, Format: []ManifestKind{ManifestHLS, ManifestDASH},
+			LateWindow: lateWin(), QueueBytes: queueBytes,
+		})
+		if err != nil {
+			t.Fatalf("queueBytes=%d: %v", queueBytes, err)
+		}
+		return rep.SHA256
+	}
+	// A buffer just large enough for one sample must produce the same digest as
+	// a generous one: backpressure must not change output.
+	small, big := run(512), run(1<<20)
+	if small != big {
+		t.Fatalf("digest depends on queue size: small=%s big=%s", small, big)
+	}
+}
+
+func TestDemoQueueTooSmallForSampleFails(t *testing.T) {
+	root := demoRoot(t, DefaultDemoConfig())
+	_, err := Run(context.Background(), EngineConfig{
+		Root: root, Format: []ManifestKind{ManifestHLS},
+		LateWindow: lateWin(), QueueBytes: 8,
+	})
+	if err == nil || !IsKind(err, KindQueueLimit) {
+		t.Fatalf("err=%v", err)
+	}
+	if loc := LocationOf(err); loc.Segment == "" || loc.Offset < 0 {
+		t.Fatalf("queue-limit error lacks position: %+v", err)
+	}
+}
+
+func TestDemoCanceledContext(t *testing.T) {
+	root := demoRoot(t, DefaultDemoConfig())
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := Run(ctx, EngineConfig{
+		Root: root, Format: []ManifestKind{ManifestHLS, ManifestDASH},
+		LateWindow: lateWin(), QueueBytes: 1 << 20,
+	})
+	if err == nil {
+		t.Fatal("cancelled run must fail rather than hang or succeed")
+	}
+}
+
+func TestDemoPathEscapeRejected(t *testing.T) {
+	root := demoRoot(t, DefaultDemoConfig())
+	hlsPath := filepath.Join(root, "main", "video", "index.m3u8")
+	data, err := os.ReadFile(hlsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	broken := strings.Replace(string(data), "seg-00000.m4s", "../../../etc/passwd", 1)
+	if err := os.WriteFile(hlsPath, []byte(broken), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err = Run(context.Background(), EngineConfig{
+		Root: root, Format: []ManifestKind{ManifestHLS},
+		LateWindow: lateWin(), QueueBytes: 1 << 20,
+	})
+	if err == nil || !IsKind(err, KindPathEscape) {
+		t.Fatalf("err=%v", err)
+	}
+	loc := LocationOf(err)
+	if loc.File == "" || loc.Line <= 0 {
+		t.Fatalf("path-escape error must report manifest line: %+v", loc)
+	}
+}

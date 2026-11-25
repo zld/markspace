@@ -215,3 +215,58 @@ func TestQueueConcurrentOrdering(t *testing.T) {
 		t.Fatalf("peak bytes %d exceeded limit", peak)
 	}
 }
+
+func TestQueueContextCancelBeforePush(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	q, err := NewQueue(ctx, QueueConfig{MaxBytes: 16})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer q.Close()
+	cancel()
+	if err := q.Push(qSample(0, 4)); !errors.Is(err, context.Canceled) {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestQueueBackpressureDoesNotDropSamples(t *testing.T) {
+	// A producer pushing 100 samples through a 32-byte buffer must deliver all
+	// 100 when a consumer drains slowly.
+	q, err := NewQueue(context.Background(), QueueConfig{MaxBytes: 32})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer q.Close()
+	const n = 100
+	produced := make(chan error, 1)
+	go func() {
+		for i := 0; i < n; i++ {
+			if err := q.Push(qSample(i, 8)); err != nil {
+				produced <- err
+				return
+			}
+		}
+		q.Close()
+		produced <- nil
+	}()
+	seen := 0
+	for {
+		_, err := q.Pop()
+		if errors.Is(err, ErrQueueClosed) {
+			break
+		}
+		if err != nil {
+			t.Fatalf("pop: %v", err)
+		}
+		seen++
+	}
+	if err := <-produced; err != nil {
+		t.Fatal(err)
+	}
+	if seen != n {
+		t.Fatalf("delivered %d want %d", seen, n)
+	}
+	if st := q.Stats(); st.Blocked == 0 || st.Rejected != 0 {
+		t.Fatalf("expected backpressure, no rejections: %+v", st)
+	}
+}
