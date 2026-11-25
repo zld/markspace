@@ -11,14 +11,15 @@ import (
 
 // trun/tfhd flag bits from ISO/IEC 14496-12.
 const (
-	flagTrunDataOffset   uint32 = 0x000001
-	flagTrunFirstFlags   uint32 = 0x000004
-	flagTrunDuration     uint32 = 0x000100
-	flagTrunSize         uint32 = 0x000200
-	flagTrunFlags        uint32 = 0x000400
-	flagTrunCompOffset   uint32 = 0x000800
-	flagTfhdDuration     uint32 = 0x000008
-	flagTfhdSize         uint32 = 0x000010
+	// FlagTrunDataOffset marks the trun data-offset field.
+	FlagTrunDataOffset uint32 = 0x000001
+	flagTrunFirstFlags uint32 = 0x000004
+	flagTrunDuration   uint32 = 0x000100
+	flagTrunSize       uint32 = 0x000200
+	flagTrunFlags      uint32 = 0x000400
+	flagTrunCompOffset uint32 = 0x000800
+	flagTfhdDuration   uint32 = 0x000008
+	flagTfhdSize       uint32 = 0x000010
 	flagTfhdDefaultIsMoof uint32 = 0x020000
 )
 
@@ -40,6 +41,8 @@ type TrackFragment struct {
 	Handler      string // "vide"/"snd"/"" from moov when available
 	Samples      []Sample
 	TrunOffset   int64 // trun-declared data offset (relative to moof), 0 if absent
+	TrunBox      *Box  // trun box location, nil when absent
+	TrunFlags    uint32
 }
 
 // Fragment is one moof/mdat pair (a CMAF chunk), fully located.
@@ -155,6 +158,8 @@ func decodeTraf(r io.ReadSeeker, file string, moof, mdat, traf *Box, lim Limits)
 		return nil, err
 	}
 	trunFlags := fullBoxFlags(trun.Flags)
+	tf.TrunBox = trunBox
+	tf.TrunFlags = trunFlags
 	if int(trun.SampleCount) > lim.MaxSamples {
 		return nil, timeline.New(timeline.ErrLimitExceeded, file, trunBox.Offset,
 			"trun declares %d samples, limit %d", trun.SampleCount, lim.MaxSamples)
@@ -171,7 +176,7 @@ func decodeTraf(r io.ReadSeeker, file string, moof, mdat, traf *Box, lim Limits)
 	// Data offset is relative to the start of the enclosing moof.
 	var dataOff int64
 	switch {
-	case trunFlags&flagTrunDataOffset != 0:
+	case trunFlags&FlagTrunDataOffset != 0:
 		dataOff = moof.Offset + int64(trun.DataOffset)
 		tf.TrunOffset = int64(trun.DataOffset)
 	case tfhdFlags&flagTfhdDefaultIsMoof != 0:
