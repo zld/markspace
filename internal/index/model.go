@@ -40,6 +40,9 @@ type EntryIndex struct {
 	InputSHA256      string   `json:"input_sha256"`
 	InitSHA256       string   `json:"init_sha256,omitempty"`
 	MappingVersion   string   `json:"mapping_version"`
+	ReferenceStartU  int64    `json:"reference_start_u"`
+	DeviationU       int64    `json:"deviation_u"`
+	Aligned          bool     `json:"aligned"`
 	Timescale        int64    `json:"timescale"`
 	Samples          []Sample `json:"samples"`
 	Digest           string   `json:"digest"`
