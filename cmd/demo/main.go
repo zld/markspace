@@ -95,9 +95,13 @@ func printReport(opts kernel.RunOptions, res *kernel.RunResult, err error) {
 	if stages == "" {
 		stages = "-"
 	}
-	fmt.Printf("stage_status=%s stages=%s\n", status, stages)
-	fmt.Printf("wraps=%d cuts=%d silence_ms=%d gap_events=%d input_packet=%d\n",
-		res.Wraps, res.CutCount, res.SilenceMS, res.GapEventCount, res.InputPacket)
+	fmt.Printf("stage_status=%s\n", status)
+	fmt.Printf("stages=%s\n", stages)
+	fmt.Printf("wraps=%d\n", res.Wraps)
+	fmt.Printf("cuts=%d\n", res.CutCount)
+	fmt.Printf("silence_ms=%d\n", res.SilenceMS)
+	fmt.Printf("gap_events=%d\n", res.GapEventCount)
+	fmt.Printf("input_packet=%d\n", res.InputPacket)
 
 	if err != nil {
 		fmt.Printf("error=%q exit_code=%d\n", err.Error(), kernel.ExitCodeOf(err))
@@ -116,8 +120,10 @@ func printRecovery(opts kernel.RunOptions, res *kernel.RunResult, err error) {
 	} else if opts.Resume {
 		checkpointValue = kernel.StageCut
 	}
-	fmt.Printf("checkpoint=%s checkpoint_path=%s\n", checkpointValue, dash(res.CheckpointPath))
-	fmt.Printf("resume_stage=%s resume_packet=%d\n", dash(res.ResumeStage), res.ResumePacket)
+	fmt.Printf("checkpoint=%s\n", checkpointValue)
+	fmt.Printf("checkpoint_path=%s\n", dash(res.CheckpointPath))
+	fmt.Printf("resume_stage=%s\n", dash(res.ResumeStage))
+	fmt.Printf("resume_packet=%d\n", res.ResumePacket)
 }
 
 func printDuplicateDiff(res *kernel.RunResult) {
@@ -131,7 +137,9 @@ func printDuplicateDiff(res *kernel.RunResult) {
 
 func printManifestSummary(res *kernel.RunResult) {
 	if res.Manifest == nil {
-		fmt.Println("manifest_status=not_written manifest_valid=n/a items=0 validation_errors=0")
+		fmt.Println("manifest_status=not_written")
+		fmt.Println("manifest_valid=n/a")
+		fmt.Println("manifest_items=0 validation_errors=0")
 		return
 	}
 	valid := "false"
@@ -139,8 +147,10 @@ func printManifestSummary(res *kernel.RunResult) {
 		valid = "true"
 	}
 	fmt.Printf("manifest_path=%s\n", dash(res.ManifestPath))
-	fmt.Printf("manifest_status=written manifest_valid=%s items=%d validation_errors=%d\n",
-		valid, len(res.Manifest.Segments), res.Validation.ErrorCount)
+	fmt.Println("manifest_status=written")
+	fmt.Printf("manifest_valid=%s\n", valid)
+	fmt.Printf("manifest_items=%d\n", len(res.Manifest.Segments))
+	fmt.Printf("validation_errors=%d\n", res.Validation.ErrorCount)
 	for _, msg := range res.Validation.Errors {
 		fmt.Printf("manifest_error=%s\n", msg)
 	}
