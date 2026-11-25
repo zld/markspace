@@ -20,7 +20,7 @@ func samplePlan() *plan.Plan {
 			{InputIndex: 1, Name: "bad-b", SampleStart: 100, SampleEnd: 200,
 				QualityPass: false, CostMs: 100, BytesEstimated: 50,
 				Decision: plan.DecisionRejectQuality,
-				Reasons: []media.Fault{media.NewFault(media.CatPartialFrame, "tail")}},
+				Reasons:  []media.Fault{media.NewFault(media.CatPartialFrame, "tail")}},
 			{InputIndex: 2, Name: "big-c", SampleStart: 200, SampleEnd: 300,
 				QualityPass: true, CostMs: 100, BytesEstimated: 50, Decision: plan.DecisionSkipBytes},
 		},

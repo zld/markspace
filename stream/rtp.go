@@ -32,11 +32,11 @@ type StreamResult struct {
 
 // Decoder keeps the running state needed to extend wrapping counters.
 type Decoder struct {
-	tb            media.TimeBase
-	prevSeq       uint64
-	prevStamp     uint64
-	highestSeq    uint64
-	started       bool
+	tb         media.TimeBase
+	prevSeq    uint64
+	prevStamp  uint64
+	highestSeq uint64
+	started    bool
 }
 
 // NewDecoder builds a decoder bound to the shared time base. tb.RTPClock

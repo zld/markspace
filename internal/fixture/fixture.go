@@ -158,7 +158,7 @@ func Dataset() []Case {
 	cases = append(cases,
 		Case{Name: "large-1", Kind: KindLargeBytes, WAV: WAVE(3000), SampleStart: advance(750)},
 		Case{Name: "large-2", Kind: KindLargeBytes, WAV: WAVE(2000), SampleStart: advance(500)},
-		Case{Name: "heavy-budget", Kind: KindHeavyBudget, WAV: WAVE(48000*FrameBytes), SampleStart: advance(48000)},
+		Case{Name: "heavy-budget", Kind: KindHeavyBudget, WAV: WAVE(48000 * FrameBytes), SampleStart: advance(48000)},
 		Case{Name: "trailing-small", Kind: KindOK, WAV: WAVE(16), SampleStart: advance(4)},
 	)
 	return cases

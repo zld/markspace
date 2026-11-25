@@ -16,9 +16,9 @@ type TimeBase struct {
 // Errors returned by clock conversion. They are never silently corrected:
 // callers must surface them through the segment error model.
 var (
-	ErrNoRTPClock         = errors.New("rtp clock rate is zero: cannot convert RTP timestamps")
-	ErrInexactConversion  = errors.New("rtp-to-sample conversion would truncate ticks")
-	ErrZeroSampleRate     = errors.New("sample rate is zero: cannot express the duration on the time base")
+	ErrNoRTPClock        = errors.New("rtp clock rate is zero: cannot convert RTP timestamps")
+	ErrInexactConversion = errors.New("rtp-to-sample conversion would truncate ticks")
+	ErrZeroSampleRate    = errors.New("sample rate is zero: cannot express the duration on the time base")
 )
 
 // RTPToSamples converts RTP timestamp ticks onto the unified PCM-sample axis.

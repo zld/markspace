@@ -11,10 +11,10 @@ import (
 
 // Decision tokens are stable strings used verbatim in the JSONL report.
 const (
-	DecisionDeliver      = "deliver"
+	DecisionDeliver       = "deliver"
 	DecisionRejectQuality = "reject_quality"
-	DecisionSkipBudget   = "skip_budget"
-	DecisionSkipBytes    = "skip_bytes"
+	DecisionSkipBudget    = "skip_budget"
+	DecisionSkipBytes     = "skip_bytes"
 )
 
 // Constraints bound the delivery plan. A zero value means the constraint is
@@ -39,12 +39,12 @@ type Item struct {
 
 // Plan is the full decision set plus consumed/remaining headroom.
 type Plan struct {
-	Items         []Item `json:"items"`
-	BudgetMs      uint64 `json:"budget_ms"`
-	BudgetDeltaMs int64  `json:"budget_delta_ms"` // remaining budget; negative if exceeded
-	BytesEstimated int64 `json:"bytes_estimated"`
-	BytesLimit    int64  `json:"bytes_limit"`
-	BytesDelta    int64  `json:"bytes_delta"`
+	Items          []Item `json:"items"`
+	BudgetMs       uint64 `json:"budget_ms"`
+	BudgetDeltaMs  int64  `json:"budget_delta_ms"` // remaining budget; negative if exceeded
+	BytesEstimated int64  `json:"bytes_estimated"`
+	BytesLimit     int64  `json:"bytes_limit"`
+	BytesDelta     int64  `json:"bytes_delta"`
 }
 
 // Decide walks intervals in their deterministic analyzed order. Quality

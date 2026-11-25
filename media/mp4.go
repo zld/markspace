@@ -127,7 +127,7 @@ func BuildMP4Artifact(desc SampleDescription, keyframes KeyframeIndex) (*MP4Arti
 	}
 	entry := &mp4.AudioSampleEntry{
 		SampleEntry: mp4.SampleEntry{
-			AnyTypeBox:        mp4.AnyTypeBox{Type: mp4.BoxTypeMp4a()},
+			AnyTypeBox:         mp4.AnyTypeBox{Type: mp4.BoxTypeMp4a()},
 			DataReferenceIndex: 1,
 		},
 		ChannelCount: desc.Channels,

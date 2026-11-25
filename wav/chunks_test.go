@@ -170,7 +170,7 @@ func TestOddSizedChunkPadding(t *testing.T) {
 	copy(buf[8:12], "WAVE")
 	copy(buf[12:16], "fmt ")
 	binary.LittleEndian.PutUint32(buf[16:20], 17) // odd size -> one pad byte
-	buf[37] = 0xAB                                 // pad byte
+	buf[37] = 0xAB                                // pad byte
 	copy(buf[38:42], "data")
 	binary.LittleEndian.PutUint32(buf[42:46], 4)
 	f := ParseChunks(buf)

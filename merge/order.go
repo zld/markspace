@@ -24,8 +24,8 @@ type Item struct {
 // Order is the merge outcome. Successful items are sorted; failures are kept
 // in arrival order so a re-run with the same inputs renders identically.
 type Order struct {
-	Items    []Item       `json:"items"`
-	Failures []Item       `json:"failures"`
+	Items    []Item        `json:"items"`
+	Failures []Item        `json:"failures"`
 	Faults   []media.Fault `json:"faults"`
 }
 

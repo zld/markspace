@@ -44,7 +44,7 @@ func TestQueueCapacityHardLimit(t *testing.T) {
 	acquired := make(chan struct{})
 	handler := func(ctx context.Context, t Task) (any, error) {
 		once.Do(func() { close(acquired) }) // signal the first acquisition only
-		<-block                              // hold the worker so the buffer stays full
+		<-block                             // hold the worker so the buffer stays full
 		return nil, nil
 	}
 	p := New(ctx, 1, 2, handler)

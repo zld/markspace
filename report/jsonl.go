@@ -15,19 +15,19 @@ import (
 
 // Summary is the single run-level JSONL object.
 type Summary struct {
-	Kind           string             `json:"kind"`
-	SamplesTotal   int64              `json:"samples_total"`
+	Kind           string                `json:"kind"`
+	SamplesTotal   int64                 `json:"samples_total"`
 	DamageRanges   []analyze.DamageRange `json:"damage_ranges"`
-	QualityPass    bool               `json:"quality_pass"`
-	BudgetMs       uint64             `json:"budget_ms"`
-	BudgetDeltaMs  int64              `json:"budget_delta_ms"`
-	BytesEstimated int64              `json:"bytes_estimated"`
-	BytesLimit     int64              `json:"bytes_limit"`
-	Decision       string             `json:"decision"`
-	Delivered      int                `json:"delivered"`
-	Rejected       int                `json:"rejected"`
-	Skipped        int                `json:"skipped"`
-	MergeFailures  int                `json:"merge_failures"`
+	QualityPass    bool                  `json:"quality_pass"`
+	BudgetMs       uint64                `json:"budget_ms"`
+	BudgetDeltaMs  int64                 `json:"budget_delta_ms"`
+	BytesEstimated int64                 `json:"bytes_estimated"`
+	BytesLimit     int64                 `json:"bytes_limit"`
+	Decision       string                `json:"decision"`
+	Delivered      int                   `json:"delivered"`
+	Rejected       int                   `json:"rejected"`
+	Skipped        int                   `json:"skipped"`
+	MergeFailures  int                   `json:"merge_failures"`
 }
 
 // SegmentLine is one per-segment JSONL object.

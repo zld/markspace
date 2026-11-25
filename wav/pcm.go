@@ -28,13 +28,13 @@ func (p PCMInfo) TimeBase() media.TimeBase {
 
 // PCMResult combines geometry, payload range and frame accounting.
 type PCMResult struct {
-	Info        PCMInfo
-	Payload     []byte // aliases the raw buffer, never copied
-	DataStart   int64
-	DataEnd     int64
-	FrameCount  int64
-	Partial     int64 // trailing bytes that do not complete a frame
-	Faults      []media.Fault
+	Info       PCMInfo
+	Payload    []byte // aliases the raw buffer, never copied
+	DataStart  int64
+	DataEnd    int64
+	FrameCount int64
+	Partial    int64 // trailing bytes that do not complete a frame
+	Faults     []media.Fault
 }
 
 // ValidatePCM cross-checks fmt fields against the data payload. It requires a

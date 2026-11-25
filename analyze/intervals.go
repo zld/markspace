@@ -22,17 +22,17 @@ type Segment struct {
 
 // Interval is the analyzed form of a segment.
 type Interval struct {
-	InputIndex      int            `json:"input_index"`
-	Name            string         `json:"name"`
-	SampleStart     int64          `json:"sample_start"`
-	SampleEnd       int64          `json:"sample_end"`
-	ExpectedNext    int64          `json:"expected_next"`
-	ActualNext      int64          `json:"actual_next"`
-	ExpectedGap     int64          `json:"expected_gap_samples"`
-	ActualGap       int64          `json:"actual_gap_samples"`
-	DamageRanges    []media.Fault  `json:"damage_ranges"`
-	QualityPass     bool           `json:"quality_pass"`
-	Bytes           int64          `json:"bytes_estimated"`
+	InputIndex   int           `json:"input_index"`
+	Name         string        `json:"name"`
+	SampleStart  int64         `json:"sample_start"`
+	SampleEnd    int64         `json:"sample_end"`
+	ExpectedNext int64         `json:"expected_next"`
+	ActualNext   int64         `json:"actual_next"`
+	ExpectedGap  int64         `json:"expected_gap_samples"`
+	ActualGap    int64         `json:"actual_gap_samples"`
+	DamageRanges []media.Fault `json:"damage_ranges"`
+	QualityPass  bool          `json:"quality_pass"`
+	Bytes        int64         `json:"bytes_estimated"`
 }
 
 // DamageRange is a summary view of one localized defect on the timeline.
@@ -66,12 +66,12 @@ func Run(segments []Segment) *Report {
 	var total int64
 	for i, seg := range ordered {
 		iv := Interval{
-			InputIndex:  seg.InputIndex,
-			Name:        seg.Name,
-			SampleStart: seg.SampleStart,
-			SampleEnd:   seg.SampleEnd,
+			InputIndex:   seg.InputIndex,
+			Name:         seg.Name,
+			SampleStart:  seg.SampleStart,
+			SampleEnd:    seg.SampleEnd,
 			ExpectedNext: seg.SampleEnd,
-			Bytes:       seg.Bytes,
+			Bytes:        seg.Bytes,
 		}
 		faults := append([]media.Fault(nil), seg.Faults...)
 

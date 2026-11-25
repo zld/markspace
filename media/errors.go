@@ -44,16 +44,16 @@ const (
 // fatalCategories are quality-gate failures: a segment carrying any of them
 // can never be delivered, regardless of remaining budget or byte headroom.
 var fatalCategories = map[Category]bool{
-	CatTruncatedHeader:      true,
-	CatChunkOutOfBounds:     true,
-	CatPartialFrame:         true,
-	CatBadContainer:         true,
-	CatRTPReorder:           true,
-	CatRTPClockUnavailable:  true,
-	CatRTPMalformed:         true,
-	CatIntervalGap:          true,
-	CatIntervalOverlap:      true,
-	CatWorkerFailed:         true,
+	CatTruncatedHeader:     true,
+	CatChunkOutOfBounds:    true,
+	CatPartialFrame:        true,
+	CatBadContainer:        true,
+	CatRTPReorder:          true,
+	CatRTPClockUnavailable: true,
+	CatRTPMalformed:        true,
+	CatIntervalGap:         true,
+	CatIntervalOverlap:     true,
+	CatWorkerFailed:        true,
 }
 
 // QualityFatal reports whether the category blocks delivery at the quality
