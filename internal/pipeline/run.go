@@ -21,6 +21,9 @@ func (rn *Runner) Run() (*Report, error) {
 	if err := rn.runParse(); err != nil {
 		return rn.reportWithError(err), err
 	}
+	if err := rn.runTransform(); err != nil {
+		return rn.reportWithError(err), err
+	}
 	rep := rn.Report
 	return &rep, nil
 }
