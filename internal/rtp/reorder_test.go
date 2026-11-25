@@ -80,26 +80,44 @@ func TestBurstLossLocalised(t *testing.T) {
 
 func TestLatePacketDoesNotRewriteCommit(t *testing.T) {
 	r := New(Config{Window: 4, ClockRate: 90000})
-	// Advance far enough that 1 and 2 are committed and positions after them
-	// are final.
+	// Advance far enough that positions after 1 and 2 are final, but 3 was
+	// never delivered, so a copy of 3 arriving now is late rather than a
+	// duplicate.
 	feed(r, 1, 2, 30)
-	late := pkt(2, 1234)
+	late := pkt(3, 1234)
 	r.Push(late)
 	if r.result.Late != 1 {
 		t.Fatalf("late = %d, want 1", r.result.Late)
 	}
-	res := r.Finish()
-	n := 0
-	for _, p := range res.Packets {
-		if p.Seq == 2 {
-			n++
-		}
+	if r.result.Duplicate != 0 {
+		t.Fatalf("duplicate = %d, want 0", r.result.Duplicate)
 	}
-	if n != 1 {
-		t.Fatalf("seq 2 appears %d times, want exactly the original copy", n)
+	res := r.Finish()
+	for _, p := range res.Packets {
+		if p.Seq == 3 {
+			t.Fatalf("late packet seq 3 was committed")
+		}
 	}
 	if !res.Issues.HasKind(fault.KindStageStale) {
 		t.Fatal("late arrival should be reported as stale")
+	}
+}
+
+func TestCommittedDuplicateCountsAsDuplicate(t *testing.T) {
+	r := New(Config{Window: 4, ClockRate: 90000})
+	feed(r, 1, 2, 30)
+	// Both 1 and 2 are committed; a second copy of either is a duplicate.
+	r.Push(pkt(1, 0))
+	r.Push(pkt(2, 3000))
+	res := r.Finish()
+	if res.Duplicate != 2 {
+		t.Fatalf("duplicates = %d, want 2 (%s)", res.Duplicate, res.Summary())
+	}
+	if res.Late != 0 {
+		t.Fatalf("late = %d, want 0", res.Late)
+	}
+	if len(res.Packets) != 3 {
+		t.Fatalf("packets = %d, want 3", len(res.Packets))
 	}
 }
 

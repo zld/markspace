@@ -95,6 +95,7 @@ type Result struct {
 type Reorderer struct {
 	cfg  Config
 	seen map[uint16]Packet
+	done map[uint16]bool
 
 	lowest  int64 // smallest extended sequence accepted
 	highest int64 // largest extended sequence accepted
@@ -120,6 +121,7 @@ func New(cfg Config) *Reorderer {
 	return &Reorderer{
 		cfg:         cfg,
 		seen:        make(map[uint16]Packet),
+		done:        make(map[uint16]bool),
 		final:       -(1 << 62),
 		committedTS: make(map[uint16]uint32),
 	}
@@ -141,6 +143,13 @@ func (r *Reorderer) Push(p *prtp.Packet) {
 	ext := r.extend(p.SequenceNumber)
 
 	if r.hasAny && ext < r.final {
+		// A copy of a packet already in the committed view is a duplicate;
+		// a position that was never delivered is a late arrival. Neither may
+		// change what has been committed.
+		if r.done[p.SequenceNumber] {
+			r.result.Duplicate++
+			return
+		}
 		r.result.Late++
 		r.result.Issues.Add(fault.New(fault.KindStageStale, fault.Warn,
 			fault.ByteAt(0), "late packet seq %d (extended %d) after final position %d",
@@ -274,6 +283,7 @@ func (r *Reorderer) commit(seq int64) {
 	}
 	r.result.Packets = append(r.result.Packets, pk)
 	r.committedTS[s] = pk.Timestamp
+	r.done[s] = true
 	delete(r.seen, s)
 }
 
