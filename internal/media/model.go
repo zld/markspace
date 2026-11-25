@@ -8,8 +8,9 @@ import (
 type Format string
 
 const (
-	FormatMXF Format = "MXF"
-	FormatMP4 Format = "MP4"
+	FormatMXF   Format = "MXF"
+	FormatMP4   Format = "MP4"
+	FormatMixed Format = "MIXED"
 )
 
 // Crop stores pixel margins removed from the encoded image.
