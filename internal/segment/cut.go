@@ -11,15 +11,15 @@ import (
 
 // Segment is one deliverable clip covering a contiguous run of access units.
 type Segment struct {
-	ID       uint64         `json:"id"`
-	Interval clock.Interval `json:"interval"`
-	AUStart  uint64         `json:"au_start"`
-	AUEnd    uint64         `json:"au_end"` // exclusive
-	ByteStart int64         `json:"byte_start"`
-	ByteEnd   int64         `json:"byte_end"` // exclusive
-	Corrupt  bool           `json:"corrupt"`
-	Reasons  []string       `json:"reasons,omitempty"`
-	Payload  []byte         `json:"-"`
+	ID        uint64         `json:"id"`
+	Interval  clock.Interval `json:"interval"`
+	AUStart   uint64         `json:"au_start"`
+	AUEnd     uint64         `json:"au_end"` // exclusive
+	ByteStart int64          `json:"byte_start"`
+	ByteEnd   int64          `json:"byte_end"` // exclusive
+	Corrupt   bool           `json:"corrupt"`
+	Reasons   []string       `json:"reasons,omitempty"`
+	Payload   []byte         `json:"-"`
 }
 
 // Cutter groups access units into segments using the shared time base.

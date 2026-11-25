@@ -82,9 +82,9 @@ func TestQuietRunBelowMinimumIsNotSilence(t *testing.T) {
 			pcm = append(pcm, s16(v)...)
 		}
 	}
-	appendN(2, 0)      // too short
-	appendN(2, 9000)   // noise
-	appendN(2, 0)      // too short again
+	appendN(2, 0)    // too short
+	appendN(2, 9000) // noise
+	appendN(2, 0)    // too short again
 	regions := Detector{MaxAmplitude: 64, MinSilentFrames: 4}.Analyze(iv, af, pcm)
 	if len(regions) != 1 || regions[0].Verdict != NonSilent {
 		t.Fatalf("short quiet runs must not count: %+v", regions)
