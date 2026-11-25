@@ -17,6 +17,7 @@ const (
 type InputManifest struct {
 	SchemaVersion string       `json:"schema_version"`
 	Description   string       `json:"description,omitempty"`
+	Bitrates      []int64      `json:"bitrates,omitempty"`
 	Assets        []InputAsset `json:"assets"`
 }
 
