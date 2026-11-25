@@ -122,8 +122,12 @@ func psnrAgainstReference(m *manifest.Manifest, setDir, outPath string) (float64
 		return 0, fmt.Errorf("verify: reference render: %w: %s", err, out)
 	}
 
+	// Align both streams to zero before comparing: container timestamp
+	// offsets (edit lists, audio priming) differ between renders and would
+	// otherwise misalign the frame pairing.
 	cmd := exec.Command("ffmpeg", "-i", outPath, "-i", refPath,
-		"-lavfi", "[0:v][1:v]psnr", "-f", "null", "-")
+		"-lavfi", "[0:v]setpts=PTS-STARTPTS[a];[1:v]setpts=PTS-STARTPTS[b];[a][b]psnr",
+		"-f", "null", "-")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
