@@ -165,6 +165,16 @@ func selectParameters(desc media.TrackDescription, quality Quality, floor int) P
 		p.AudioBitrateBps = 256_000
 	}
 
+	if desc.Kind == "subtitle" || desc.Kind == "timecode" || desc.Kind == "metadata" {
+		p.Profile = desc.Kind + "-archive-v1"
+		p.VideoCodec = ""
+		p.AudioCodec = ""
+		p.Channels = 0
+		p.SampleRate = 0
+		p.AudioBitrateBps = 0
+		p.VideoBitrateBps = 0
+		return p
+	}
 	if desc.Kind == "audio" || desc.Width == 0 {
 		p.Profile = "audio-archive-v1"
 		p.VideoCodec = ""
@@ -232,7 +242,7 @@ func effectiveBitrateCap(duration clock.Nanoseconds, c Constraints) (int64, stri
 		budgetCap := (usable * 8 * int64(clock.Second)) / int64(duration)
 		if cap == 0 || budgetCap < cap {
 			cap = budgetCap
-			reason = fmt.Sprintf("budget %d bytes over %dns implies %d bps after %d-byte overhead",
+			reason = fmt.Sprintf("budget %d bytes over %dms implies %d bps after %d-byte overhead",
 				c.BudgetBytes, duration/clock.Millisecond, cap, containerOverheadBytes)
 		}
 	}
