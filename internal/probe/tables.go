@@ -13,6 +13,7 @@ func parseTracks(f interface {
 }, moov *boxNode) ([]*Track, []fault.Interval) {
 	var tracks []*Track
 	var intervals []fault.Interval
+	movieScale := parseMVHDTimescale(f, findChild(moov, "mvhd"))
 	for i, trakBox := range findChildren(moov, "trak") {
 		t := &Track{Number: i + 1, SyncSamples: map[int]bool{}}
 		tkhd := findChild(trakBox, "tkhd")
@@ -50,13 +51,29 @@ func parseTracks(f interface {
 		}
 		t.Timeline = clock.Timeline{
 			TrackID: t.ID, TrackNumber: t.Number, MediaTimescale: t.Timescale,
-			MediaDuration: t.DurationTicks, FirstSampleTick: t.FirstTick, Edits: t.Edits,
+			MovieTimescale: movieScale, MediaDuration: t.DurationTicks,
+			FirstSampleTick: t.FirstTick, Edits: t.Edits,
 		}
 		intervals = append(intervals, t.Timeline.ValidateEdits()...)
 		intervals = append(intervals, detectTimelineFacts(t)...)
 		tracks = append(tracks, t)
 	}
 	return tracks, intervals
+}
+
+func parseMVHDTimescale(f readerAt, n *boxNode) uint32 {
+	if n == nil {
+		return 0
+	}
+	b, err := readNodePayload(f, n)
+	if err != nil || len(b) < 16 {
+		return 0
+	}
+	version, _ := fullBoxVersionFlags(b)
+	if version == 1 && len(b) >= 24 {
+		return u32(b, 20)
+	}
+	return u32(b, 12)
 }
 
 func parseTKHD(f interface {
