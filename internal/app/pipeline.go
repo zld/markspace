@@ -123,6 +123,7 @@ func analyzeRTP(ctx context.Context, cfg Config, trace *fixture.Trace, b *report
 	var events []model.TimelineEvent
 	packetCount := 0
 	duplicates := 0
+	var lossAnomalies []merge.Anomaly
 	for _, sb := range streams {
 		stream, buf := sb.id, sb.buf
 		released := buf.Flush()
@@ -147,10 +148,10 @@ func analyzeRTP(ctx context.Context, cfg Config, trace *fixture.Trace, b *report
 					Codes: []model.ErrorCode{model.ErrSequenceGap},
 				})
 			}
-			b.AddAnomalies([]merge.Anomaly{{
+			lossAnomalies = append(lossAnomalies, merge.Anomaly{
 				Span: gap.Span, LossCount: int(gap.Count),
 				Reasons: []string{"burst_loss"},
-			}})
+			})
 			events = append(events, model.TimelineEvent{
 				Kind: model.EventGap, Start: gap.Span.Start, End: gap.Span.End,
 				Stream: stream, Sequence: gap.FromExtended,
@@ -182,6 +183,9 @@ func analyzeRTP(ctx context.Context, cfg Config, trace *fixture.Trace, b *report
 			})
 		}
 	}
+	// Merge once across streams so adjacent loss runs carry their full
+	// count into one budget-checked interval.
+	b.AddAnomalies(merge.MergeAnomalies(lossAnomalies))
 	return events, packetCount, duplicates
 }
 

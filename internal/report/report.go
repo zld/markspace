@@ -151,18 +151,23 @@ func (b *Builder) keyframeBudgetPassed() bool {
 
 func (b *Builder) buildIntervals() []Interval {
 	var out []Interval
-	// Loss intervals carry the loss-budget threshold and deviation.
+	// The loss budget applies to the trace as a whole, so every loss
+	// interval is judged against the cumulative loss total rather than
+	// only its own run length.
+	totalLoss := int64(model.CountCode(b.findings, model.ErrSequenceGap))
+	limit := int64(b.budget.MaxLossPackets)
 	for _, a := range b.anomalies {
-		limit := int64(b.budget.MaxLossPackets)
-		observed := int64(a.LossCount)
+		if a.LossCount == 0 {
+			continue // pure flow-change region; reported but not loss-judged
+		}
 		out = append(out, Interval{
 			Span:        a.Span,
 			Kind:        "loss_flow",
 			Threshold:   "max_loss_packets",
-			Observed:    observed,
+			Observed:    totalLoss,
 			BudgetLimit: limit,
-			Deviation:   observed - limit,
-			Passed:      observed <= limit,
+			Deviation:   totalLoss - limit,
+			Passed:      totalLoss <= limit,
 			Conclusions: b.spanConclusions(a.Span),
 		})
 	}
