@@ -31,6 +31,7 @@ type SourceMapping struct {
 	ManifestPath     string `json:"manifest_path"`
 	Representation   string `json:"representation"`
 	EntryIndex       int    `json:"entry_index"`
+	EntryNumber      int    `json:"entry_number"`
 	OriginalSequence int    `json:"original_sequence"`
 	InitPath         string `json:"init_path,omitempty"`
 	MediaPath        string `json:"media_path"`
@@ -104,6 +105,7 @@ func SourceFromEntry(e manifest.Entry, mediaHash, initHash string) SourceMapping
 		ManifestPath:     e.Manifest,
 		Representation:   e.Representation,
 		EntryIndex:       e.EntryIndex,
+		EntryNumber:      e.EntryNumber,
 		OriginalSequence: e.OriginalSequence,
 		InitPath:         e.InitPath,
 		MediaPath:        e.MediaPath,
@@ -126,11 +128,15 @@ func NewRecord(combinedInputHash, configHash string, idx *index.EntryIndex) Reco
 		IndexDigest:        idx.Digest,
 		Source: SourceMapping{
 			StableKey:        idx.StableKey,
+			System:           idx.System,
 			ManifestPath:     idx.Manifest,
 			Representation:   idx.Representation,
 			EntryIndex:       idx.EntryIndex,
+			EntryNumber:      idx.EntryNumber,
 			OriginalSequence: idx.OriginalSequence,
 			MediaPath:        idx.InputPath,
+			ProgramStartU:    idx.ProgramStartU,
+			ProgramEndU:      idx.ProgramEndU,
 			InputSHA256:      idx.InputSHA256,
 			InitSHA256:       idx.InitSHA256,
 			Aligned:          idx.Aligned,

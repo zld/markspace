@@ -76,14 +76,18 @@ func ScanEntry(e manifest.Entry, opts ScanOptions) (*EntryIndex, error) {
 
 	idx := &EntryIndex{
 		StableKey:        e.StableKey,
+		System:           e.System,
 		Manifest:         e.Manifest,
 		Representation:   e.Representation,
 		EntryIndex:       e.EntryIndex,
+		EntryNumber:      e.EntryNumber,
 		OriginalSequence: e.OriginalSequence,
 		InputPath:        e.MediaPath,
 		InputSHA256:      mediaHash,
 		InitSHA256:       initHash,
 		MappingVersion:   MappingRuleVersion,
+		ProgramStartU:    e.ProgramStartU,
+		ProgramEndU:      e.ProgramEndU,
 		ReferenceStartU:  e.ReferenceStartU,
 		DeviationU:       e.DeviationU,
 		Aligned:          e.Aligned,

@@ -32,14 +32,18 @@ type Sample struct {
 // EntryIndex is the random-access index for one manifest source entry.
 type EntryIndex struct {
 	StableKey        string   `json:"stable_key"`
+	System           string   `json:"system"`
 	Manifest         string   `json:"manifest"`
 	Representation   string   `json:"representation"`
 	EntryIndex       int      `json:"entry_index"`
+	EntryNumber      int      `json:"entry_number"`
 	OriginalSequence int      `json:"original_sequence"`
 	InputPath        string   `json:"input_path"`
 	InputSHA256      string   `json:"input_sha256"`
 	InitSHA256       string   `json:"init_sha256,omitempty"`
 	MappingVersion   string   `json:"mapping_version"`
+	ProgramStartU    int64    `json:"program_start_u"`
+	ProgramEndU      int64    `json:"program_end_u"`
 	ReferenceStartU  int64    `json:"reference_start_u"`
 	DeviationU       int64    `json:"deviation_u"`
 	Aligned          bool     `json:"aligned"`
