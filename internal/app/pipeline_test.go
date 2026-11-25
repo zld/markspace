@@ -71,7 +71,7 @@ func TestAnalyzeDamagedFailsBudget(t *testing.T) {
 		t.Fatal("damaged report must include per-item conclusions")
 	}
 	// Damage propagated on both the RTP path and the MP4 path.
-	var hasGap, hasBadIndex bool
+	var hasGap, hasBadIndex, hasTimestampRegression bool
 	for _, f := range out.Report.Findings {
 		if f.Source == model.SourceRTP && f.Code == model.ErrSequenceGap {
 			hasGap = true
@@ -79,9 +79,15 @@ func TestAnalyzeDamagedFailsBudget(t *testing.T) {
 		if f.Source == model.SourceMP4 && f.Code == model.ErrMissingIndex {
 			hasBadIndex = true
 		}
+		if f.Code == model.ErrTimestampRegress {
+			hasTimestampRegression = true
+		}
 	}
 	if !hasGap || !hasBadIndex {
 		t.Fatalf("damage must propagate on both paths: gap=%v badIndex=%v", hasGap, hasBadIndex)
+	}
+	if !hasTimestampRegression {
+		t.Fatal("rolled-back RTP timestamp must be detected")
 	}
 }
 

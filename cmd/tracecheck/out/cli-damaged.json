@@ -173,6 +173,18 @@
       }
     },
     {
+      "code": "timestamp_regression",
+      "severity": "warning",
+      "source": "rtp",
+      "message": "rtp timestamp 1920 below stream max 3840 on stream 100",
+      "stream": 100,
+      "sequence": 5,
+      "span": {
+        "start": 80000,
+        "end": 100000
+      }
+    },
+    {
       "code": "sequence_gap",
       "severity": "error",
       "source": "rtp",
@@ -303,7 +315,10 @@
         "start": 80000,
         "end": 100000
       },
-      "status": "accepted_opus"
+      "status": "accepted_opus",
+      "codes": [
+        "timestamp_regression"
+      ]
     },
     {
       "item": "packet:9",

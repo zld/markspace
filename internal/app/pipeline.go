@@ -161,8 +161,28 @@ func analyzeRTP(ctx context.Context, cfg Config, trace *fixture.Trace, b *report
 		// Codec duration parsing for every recovered packet; cumulative
 		// durations build a monotonic per-stream timeline.
 		var cursor model.Tick
+		var maxRTP uint32
+		haveRTP := false
 		for _, p := range released {
 			start, end, codes, status := parsePacket(p, &cursor)
+			// RTP timestamps must advance with the sequence; any value
+			// below the highest already seen is clock damage distinct
+			// from packet reordering, even if a later packet recovers.
+			if haveRTP && p.RTPTimestamp < maxRTP {
+				seq := p.ExtendedSequence
+				f := model.NewFinding(model.ErrTimestampRegress, model.SourceRTP,
+					model.SeverityWarning, model.NewSpan(start, end),
+					"rtp timestamp %d below stream max %d on stream %d",
+					p.RTPTimestamp, maxRTP, stream)
+				f.Stream = stream
+				f.Sequence = &seq
+				b.AddFinding(f)
+				codes = append(codes, model.ErrTimestampRegress)
+			}
+			if !haveRTP || p.RTPTimestamp > maxRTP {
+				maxRTP = p.RTPTimestamp
+			}
+			haveRTP = true
 			verdict := report.Conclusion{
 				Item: fmt.Sprintf("packet:%d", p.ExtendedSequence),
 				Sequence: p.ExtendedSequence, Span: model.NewSpan(start, end),
@@ -170,6 +190,9 @@ func analyzeRTP(ctx context.Context, cfg Config, trace *fixture.Trace, b *report
 			}
 			b.AddConclusion(verdict)
 			for _, code := range codes {
+				if code == model.ErrTimestampRegress {
+					continue // already emitted above with full context
+				}
 				f := model.NewFinding(code, model.SourceCodec, severityFor(code),
 					model.NewSpan(start, end), "packet %d: %s", p.ExtendedSequence, status)
 				f.Stream = stream

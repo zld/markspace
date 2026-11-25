@@ -41,9 +41,10 @@ type Trace struct {
 	// FlowSamples back the throughput windows; one entry per packet.
 	FlowSamples []merge.ByteSample
 	// Applied damage for assertions.
-	Duplicates  int
-	BurstLosses int
-	Truncated   int
+	Duplicates          int
+	BurstLosses         int
+	Truncated           int
+	TimestampRegression int
 	// Cancel profile only: total jobs the producer would submit.
 	PlannedJobs int
 }
@@ -180,6 +181,25 @@ func applyDamaged(rng *rand.Rand, tr *Trace, spec *mp4.VideoSpec) {
 			tr.Truncated++
 			break
 		}
+	}
+
+	// 4. Roll one RTP timestamp backwards to exercise clock-regression
+	// detection; sequence order is left intact so it is not a reorder. The
+	// target is a late, unique packet so duplicate/truncation damage cannot
+	// mask it, and the comparison stays inside the stream's own clock.
+	var prevOpusTS uint32
+	havePrev := false
+	for i := range tr.Packets {
+		if tr.Packets[i].Stream != OpusStream || tr.Packets[i].Sequence < 4 {
+			continue
+		}
+		if havePrev {
+			tr.Packets[i].RTPTimestamp = prevOpusTS / 2
+			tr.TimestampRegression++
+			break
+		}
+		prevOpusTS = tr.Packets[i].RTPTimestamp
+		havePrev = true
 	}
 
 	// 4. Throughput dip: shrink the later flow samples to simulate a

@@ -46,7 +46,7 @@ func TestGenerateDamaged(t *testing.T) {
 	if len(tr.Packets) != 22 {
 		t.Fatalf("damaged packet count = %d, want 22", len(tr.Packets))
 	}
-	if tr.Duplicates != 1 || tr.BurstLosses != 3 || tr.Truncated != 1 {
+	if tr.Duplicates != 1 || tr.BurstLosses != 3 || tr.Truncated != 1 || tr.TimestampRegression != 1 {
 		t.Fatalf("damage markers wrong: %+v", tr)
 	}
 	empty := 0
