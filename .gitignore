@@ -3,7 +3,7 @@
 /work/
 *.out
 *.test
-mediactl
+/mediactl
 
 # OS/editor files
 .DS_Store
