@@ -156,6 +156,14 @@ func (c *Cutter) Cut(ev Event) (*Slice, error) {
 
 	sl := &Slice{Event: ev}
 	c.cutAudio(sl)
+	if sl.Audio.Frames == 0 {
+		// The interval is narrower than one sample frame, so it maps to no
+		// deliverable audio at all. Refuse rather than hand back an empty
+		// fragment that looks like a successful cut.
+		return nil, fault.New(fault.KindOutOfRange, fault.Fatal,
+			fault.Location{ByteOffset: -1, Tick: ev.StartTick, HasTick: true},
+			"event %q [%d,%d) maps to no whole audio sample frame", ev.Name, ev.StartTick, ev.EndTick)
+	}
 	if err := c.cutVideo(sl); err != nil {
 		return nil, err
 	}
@@ -184,11 +192,6 @@ func (c *Cutter) cutAudio(sl *Slice) {
 		audio.Bytes = audio.Frames * int64(c.src.WAV.Layout.Format.BlockAlign)
 	}
 	sl.Audio = audio
-	if audio.Frames == 0 {
-		sl.Issues.Add(fault.New(fault.KindOutOfRange, fault.Damaged,
-			fault.Location{ByteOffset: -1, Tick: sl.Event.StartTick, HasTick: true},
-			"event %q contains no whole audio sample frame", sl.Event.Name))
-	}
 }
 
 func (c *Cutter) cutVideo(sl *Slice) error {

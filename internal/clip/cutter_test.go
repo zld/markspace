@@ -244,3 +244,12 @@ func TestNoKeyframeBeforeStartRefused(t *testing.T) {
 		t.Fatalf("err = %v, want missing-keyframe", err)
 	}
 }
+
+func TestSubSampleEventRefused(t *testing.T) {
+	// 90000 ticks/s and 48000 frames/s means one frame is 1.875 ticks. A
+	// 1-tick interval can never cover a whole frame.
+	f := newFixture(t, 2, 30)
+	if _, err := f.cutter.Cut(Event{Name: "tiny", StartTick: 100, EndTick: 101}); !fault.IsKind(err, fault.KindOutOfRange) {
+		t.Fatalf("err = %v, want out-of-range", err)
+	}
+}
