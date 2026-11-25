@@ -54,9 +54,6 @@ type Track struct {
 	Audio               *AudioMetadata     `json:"audio,omitempty"`
 	Color               *ColorMetadata     `json:"color,omitempty"`
 	DeclaredSampleCount uint32             `json:"declared_sample_count,omitempty"`
-	// FaultSampleHint lets a deliberately truncated container report the exact
-	// first missing sample even when the declared sample count is damaged.
-	FaultSampleHint uint32 `json:"-"`
 }
 
 // Dependency is a directed processing edge: TrackID requires DependsOn.

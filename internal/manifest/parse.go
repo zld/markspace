@@ -57,14 +57,14 @@ func Parse(data []byte) (*Manifest, error) {
 		if t.Kind != TrackVideo && t.Kind != TrackAudio {
 			return &m, fmt.Errorf("track %d has unsupported kind %q", t.ID, t.Kind)
 		}
-		if err := validateSamples(t); err != nil {
+		if err := validateSamples(&m.Tracks[ti], m.Fault); err != nil {
 			return &m, err
 		}
 	}
 	return &m, nil
 }
 
-func validateSamples(t *Track) error {
+func validateSamples(t *Track, fault *FaultSpec) error {
 	actual := uint32(len(t.Samples))
 	declared := t.DeclaredSampleCount
 	if declared == 0 {
@@ -73,8 +73,8 @@ func validateSamples(t *Track) error {
 	}
 	if declared > actual {
 		sample := actual + 1
-		if t.FaultSampleHint != 0 { // populated by deterministic fixture input
-			sample = t.FaultSampleHint
+		if fault != nil && fault.TrackID == t.ID && fault.Sample != 0 {
+			sample = fault.Sample
 		}
 		return &CorruptionError{
 			Code: "truncated-stbl", TrackID: t.ID, Sample: sample, Recoverable: false,
