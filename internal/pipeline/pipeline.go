@@ -52,24 +52,37 @@ func New(stateDir string) (*Pipeline, error) {
 
 func (p *Pipeline) Close() error { return p.index.Save() }
 
-func readAndParse(paths []string) ([]*parsedInput, error) {
+func readInputs(paths []string) ([]*parsedInput, error) {
 	out := make([]*parsedInput, 0, len(paths))
 	for _, path := range paths {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return nil, err
 		}
-		var doc *media.Document
-		switch strings.ToLower(filepath.Ext(path)) {
-		case ".mxf":
-			doc = mxf.Parse(path, data)
-		case ".mp4":
-			doc = mp4.Parse(path, data)
-		default:
-			doc = &media.Document{Format: media.Format("UNKNOWN"), Path: path, Size: int64(len(data))}
-		}
-		out = append(out, &parsedInput{Path: path, Data: data, Doc: doc})
+		out = append(out, &parsedInput{Path: path, Data: data})
 	}
+	return out, nil
+}
+
+func parseInputs(inputs []*parsedInput) {
+	for _, in := range inputs {
+		switch strings.ToLower(filepath.Ext(in.Path)) {
+		case ".mxf":
+			in.Doc = mxf.Parse(in.Path, in.Data)
+		case ".mp4":
+			in.Doc = mp4.Parse(in.Path, in.Data)
+		default:
+			in.Doc = &media.Document{Format: media.Format("UNKNOWN"), Path: in.Path, Size: int64(len(in.Data))}
+		}
+	}
+}
+
+func readAndParse(paths []string) ([]*parsedInput, error) {
+	out, err := readInputs(paths)
+	if err != nil {
+		return nil, err
+	}
+	parseInputs(out)
 	return out, nil
 }
 
@@ -78,8 +91,10 @@ func bundleFingerprint(key string, in []*parsedInput, metaVersion string) source
 	structH := sha256.New()
 	for _, x := range in {
 		h.Write(x.Data)
-		structH.Write([]byte(x.Doc.StructureSHA256))
-		structH.Write([]byte{0})
+		if x.Doc != nil {
+			structH.Write([]byte(x.Doc.StructureSHA256))
+			structH.Write([]byte{0})
+		}
 	}
 	return source.Fingerprint{
 		Path:            key,

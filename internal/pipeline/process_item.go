@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"encoding/json"
 	"math"
 	"strconv"
 
@@ -19,6 +20,14 @@ type Expectation struct {
 	Code         auditerrors.Code
 }
 
+type pipelineState struct {
+	Item       *manifest.Item       `json:"item"`
+	Inputs     []*parsedInput       `json:"inputs"`
+	Candidates []metadata.Candidate `json:"candidates"`
+	FP         source.Fingerprint   `json:"fingerprint"`
+	Expect     Expectation          `json:"expectation"`
+}
+
 func (p *Pipeline) ProcessSample(s *samplegen.Sample) (*manifest.Item, error) {
 	return p.ProcessPaths(s.StableKey, s.ID, s.Kind, Expectation{
 		DamageOffset: s.ExpectedDamageOffset,
@@ -26,8 +35,21 @@ func (p *Pipeline) ProcessSample(s *samplegen.Sample) (*manifest.Item, error) {
 	}, s.Paths)
 }
 
+func stageIndex(stage task.Stage) int {
+	for i, s := range task.Stages {
+		if s == stage {
+			return i
+		}
+	}
+	return 0
+}
+
+func shouldRun(stage task.Stage, plan task.ResumePlan) bool {
+	return stageIndex(stage) >= stageIndex(plan.ResumeStage)
+}
+
 func (p *Pipeline) ProcessPaths(key, sampleID, kind string, expect Expectation, paths []string) (*manifest.Item, error) {
-	inputs, err := readAndParse(paths)
+	inputs, err := readInputs(paths)
 	if err != nil {
 		return nil, err
 	}
@@ -40,14 +62,83 @@ func (p *Pipeline) ProcessPaths(key, sampleID, kind string, expect Expectation, 
 	}
 	plan, _ := p.tasks.ResumePlan(key)
 
-	candidates := make([]metadata.Candidate, 0)
+	st := p.restoreState(plan, contentHash, inputs, expect)
+	if shouldRun(task.StageFingerprint, plan) {
+		st.FP = source.Fingerprint{Path: key, ContentSHA256: contentHash}
+		if err := p.checkpoint(key, task.StageFingerprint, st); err != nil {
+			return nil, err
+		}
+	}
+	if shouldRun(task.StageParse, plan) {
+		parseInputs(st.Inputs)
+		if err := p.checkpoint(key, task.StageParse, st); err != nil {
+			return nil, err
+		}
+	}
+	if shouldRun(task.StageMetadata, plan) || st.Item == nil {
+		p.buildMetadataState(key, sampleID, kind, paths, st)
+		if err := p.checkpoint(key, task.StageMetadata, st); err != nil {
+			return nil, err
+		}
+	}
+	if shouldRun(task.StageValidate, plan) {
+		validateIntegrity(st.Inputs, st.Item)
+		addTimeDeviations(st.Item)
+		if err := p.checkpoint(key, task.StageValidate, st); err != nil {
+			return nil, err
+		}
+	}
+	if shouldRun(task.StageRecover, plan) || st.Item.Recovery == nil {
+		st.Item.Recovery = buildRecovery(st.Inputs, st.Item, plan)
+		addExpectedDeviation(st.Item, st.Expect)
+		if err := p.checkpoint(key, task.StageRecover, st); err != nil {
+			return nil, err
+		}
+	}
+
+	st.Item.ErrorCount = len(st.Item.Errors)
+	st.Item.ConflictCount = len(st.Item.Metadata.Conflicts)
+	p.index.Upsert(index.Record{
+		TaskKey: key, Path: st.Item.InputPath, ContentSHA256: st.FP.ContentSHA256,
+		StructureSHA256: st.FP.StructureSHA256, MetadataVersion: st.FP.MetadataVersion,
+		TrackCount: len(st.Item.Tracks), ErrorCount: st.Item.ErrorCount,
+	})
+	if err := p.index.Save(); err != nil {
+		return nil, err
+	}
+	if err := p.checkpoint(key, task.StageManifest, st); err != nil {
+		return nil, err
+	}
+	if err := p.checkpoint(key, task.StageDone, st); err != nil {
+		return nil, err
+	}
+	return st.Item, nil
+}
+
+func (p *Pipeline) restoreState(plan task.ResumePlan, contentHash string, inputs []*parsedInput, expect Expectation) *pipelineState {
+	fresh := &pipelineState{Inputs: inputs, Expect: expect}
+	if plan.LastValid == nil {
+		return fresh
+	}
+	var restored pipelineState
+	if err := json.Unmarshal(plan.LastValid.Payload, &restored); err != nil {
+		return fresh
+	}
+	if restored.FP.ContentSHA256 != contentHash || len(restored.Inputs) != len(inputs) {
+		return fresh
+	}
+	restored.Expect = expect
+	return &restored
+}
+
+func (p *Pipeline) buildMetadataState(key, sampleID, kind string, paths []string, st *pipelineState) {
 	item := &manifest.Item{StableKey: key, SampleID: sampleID, Kind: kind, SubmissionCount: 1}
-	for _, in := range inputs {
+	for _, in := range st.Inputs {
 		item.InputPaths = append(item.InputPaths, in.Path)
 		item.Tracks = append(item.Tracks, in.Doc.Tracks...)
 		item.Errors = append(item.Errors, in.Doc.Errors...)
 		for _, tr := range in.Doc.Tracks {
-			candidates = append(candidates, metadata.Candidate{Source: string(in.Doc.Format), TrackID: tr.ID, Meta: tr.Metadata})
+			st.Candidates = append(st.Candidates, metadata.Candidate{Source: string(in.Doc.Format), TrackID: tr.ID, Meta: tr.Metadata})
 		}
 		mv := "0"
 		if len(in.Doc.Tracks) > 0 {
@@ -56,28 +147,27 @@ func (p *Pipeline) ProcessPaths(key, sampleID, kind string, expect Expectation, 
 		item.Fingerprints = append(item.Fingerprints, source.FromBytes(in.Path, in.Data, in.Doc.StructureSHA256, mv))
 	}
 	item.InputPath = paths[0]
-	item.Format = inputs[0].Doc.Format
-	if len(inputs) > 1 {
+	item.Format = st.Inputs[0].Doc.Format
+	if len(st.Inputs) > 1 {
 		item.Format = "MIXED"
 	}
-	item.InputByteRange.Start = 0
-	item.InputByteRange.End = int64(len(inputs[0].Data))
-
-	resolved := metadata.Resolve(candidates)
+	item.InputByteRange.End = int64(len(st.Inputs[0].Data))
+	resolved := metadata.Resolve(st.Candidates)
 	item.Metadata = &resolved
-	fp := bundleFingerprint(key, inputs, strconv.FormatUint(uint64(resolved.Metadata.MetadataVersion), 10))
-	item.SHA256 = fp.ContentSHA256
-	item.Fingerprint = &fp
+	st.FP = bundleFingerprint(key, st.Inputs, strconv.FormatUint(uint64(resolved.Metadata.MetadataVersion), 10))
+	item.SHA256 = st.FP.ContentSHA256
+	item.Fingerprint = &st.FP
+	st.Item = item
 
 	old, hadOld := p.index.Get(key)
 	change := source.ChangeSet{SamePath: hadOld}
 	if hadOld {
-		change.ContentReplaced = old.ContentSHA256 != fp.ContentSHA256
-		change.StructureChanged = old.StructureSHA256 != fp.StructureSHA256
-		change.MetadataChanged = old.MetadataVersion != fp.MetadataVersion
+		change.ContentReplaced = old.ContentSHA256 != st.FP.ContentSHA256
+		change.StructureChanged = old.StructureSHA256 != st.FP.StructureSHA256
+		change.MetadataChanged = old.MetadataVersion != st.FP.MetadataVersion
 	}
-	p.tracker.Observe(fp)
-	keySet := cacheKeysFor(key, fp)
+	p.tracker.Observe(st.FP)
+	keySet := cache.KeysFor(key, st.FP)
 	if hadOld {
 		p.cache.InvalidateForChange(keySet, change)
 		p.index.Invalidate(key, change)
@@ -85,49 +175,6 @@ func (p *Pipeline) ProcessPaths(key, sampleID, kind string, expect Expectation, 
 	for _, ck := range []string{keySet.Parsed, keySet.Metadata, keySet.Recovery, keySet.Manifest} {
 		p.cache.Put(ck, true)
 	}
-	if err := p.checkpoint(key, task.StageFingerprint, fp); err != nil {
-		return nil, err
-	}
-	if err := p.checkpoint(key, task.StageParse, map[string]int{"inputs": len(inputs), "tracks": len(item.Tracks)}); err != nil {
-		return nil, err
-	}
-	if err := p.checkpoint(key, task.StageMetadata, resolved); err != nil {
-		return nil, err
-	}
-
-	validateIntegrity(inputs, item)
-	addTimeDeviations(item)
-	if err := p.checkpoint(key, task.StageValidate, map[string]int{"errors": len(item.Errors)}); err != nil {
-		return nil, err
-	}
-
-	item.Recovery = buildRecovery(inputs, item, plan)
-	addExpectedDeviation(item, expect)
-	if err := p.checkpoint(key, task.StageRecover, item.Recovery); err != nil {
-		return nil, err
-	}
-
-	item.ErrorCount = len(item.Errors)
-	item.ConflictCount = len(resolved.Conflicts)
-	p.index.Upsert(index.Record{
-		TaskKey: key, Path: item.InputPath, ContentSHA256: fp.ContentSHA256,
-		StructureSHA256: fp.StructureSHA256, MetadataVersion: fp.MetadataVersion,
-		TrackCount: len(item.Tracks), ErrorCount: item.ErrorCount,
-	})
-	if err := p.index.Save(); err != nil {
-		return nil, err
-	}
-	if err := p.checkpoint(key, task.StageManifest, item); err != nil {
-		return nil, err
-	}
-	if err := p.checkpoint(key, task.StageDone, item); err != nil {
-		return nil, err
-	}
-	return item, nil
-}
-
-func cacheKeysFor(key string, fp source.Fingerprint) cache.KeySet {
-	return cache.KeysFor(key, fp)
 }
 
 func (p *Pipeline) checkpoint(key string, stage task.Stage, payload any) error {
