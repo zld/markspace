@@ -409,8 +409,15 @@ func localiseGaps(ts TransportStats, lay *wav.Layout, scan ScanStats, clockRate 
 		})
 	}
 	for _, pair := range ts.LostTimestamps {
-		start := int64(pair[0]) * int64(scan.Timescale) / int64(maxInt(clockRate, 1))
-		end := int64(pair[1]) * int64(scan.Timescale) / int64(maxInt(clockRate, 1))
+		clock := int64(maxInt(clockRate, 1))
+		start := int64(pair[0]) * int64(scan.Timescale) / clock
+		endTs := int64(pair[1])
+		if endTs < int64(pair[0]) {
+			// The gap straddles a 32-bit timestamp rollover; extend the end
+			// onto the unwrapped axis before scaling.
+			endTs += 1 << 32
+		}
+		end := endTs * int64(scan.Timescale) / clock
 		if end <= start {
 			end = start + int64(scan.Timescale)/30
 		}
