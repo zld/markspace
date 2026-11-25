@@ -47,6 +47,14 @@ type Fixture struct {
 
 // GenerateFixture deterministically builds clean, damaged, or malformed input.
 func GenerateFixture(name string, mutate bool) (*Fixture, error) {
+	switch name {
+	case "clean", "damaged", "malformed":
+	default:
+		return nil, &MediaError{
+			Stage: "fixture", Code: "unknown_fixture",
+			Message: fmt.Sprintf("unknown fixture %q", name), Recoverable: false,
+		}
+	}
 	spec := SourceSpec{
 		ID: "generated-event-replay", Fixture: name,
 		DurationMS: fixtureDurationMS, SampleMS: fixtureSampleMS,

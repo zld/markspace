@@ -41,9 +41,7 @@ func DetectSilence(track *Track, gaps []GapEvent, cfg SilenceConfig) ([]SilenceI
 			Recoverable: false,
 		}
 	}
-	if cfg.ThresholdAmplitude == 0 {
-		cfg.ThresholdAmplitude = DefaultSilenceConfig().ThresholdAmplitude
-	}
+	// ThresholdAmplitude zero is meaningful: only exact-zero PCM is silent.
 
 	type rawRun struct{ r TimeRange }
 	var runs []rawRun
@@ -141,14 +139,14 @@ func SubtractGapsWithIDs(r TimeRange, gaps []GapEvent) ([]TimeRange, []string) {
 	cur := r.Start90k
 	for _, g := range ordered {
 		gr := g.Time
+		if _, ok := r.Intersect(gr); ok && g.ID != "" {
+			ids = append(ids, g.ID)
+		}
 		if gr.End90k <= cur {
 			continue
 		}
 		if gr.Start90k >= r.End90k {
 			break
-		}
-		if _, ok := r.Intersect(gr); ok && g.ID != "" {
-			ids = append(ids, g.ID)
 		}
 		gs := max64(cur, gr.Start90k)
 		ge := min64(r.End90k, gr.End90k)
