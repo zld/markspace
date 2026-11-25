@@ -48,6 +48,9 @@ func evaluate(tc caseSpec, _ interface{}, res, rerun *pipeline.Result) CaseRepor
 		if f.Stage != tc.wantStage {
 			report.Problems = append(report.Problems, "failure stage = "+string(f.Stage)+", want "+string(tc.wantStage))
 		}
+		if tc.wantTrack != 0 && (!f.HasTrack || f.TrackID != tc.wantTrack) {
+			report.Problems = append(report.Problems, "failure track location mismatch")
+		}
 		if tc.injectedOffset >= 0 {
 			if !f.HasByteOffset {
 				report.Problems = append(report.Problems, "failure has no byte offset")

@@ -73,6 +73,7 @@ func ScanRootBoxes(data []byte) (*ScanReport, error) {
 
 		if declared < headerSize {
 			scanErr = trace.E(trace.CodeBoxLengthOutOfBounds, trace.StageRecover, "box %q declared size %d < header %d", boxType, declared, headerSize).WithOffset(off)
+			scanErr = attachSampleTrack(scanErr, data, off, headerSize)
 			rep.Failure = scanErr
 			return rep, scanErr
 		}
@@ -88,6 +89,7 @@ func ScanRootBoxes(data []byte) (*ScanReport, error) {
 			box.Complete = false
 			rep.Boxes = append(rep.Boxes, box)
 			scanErr = trace.E(trace.CodeTruncated, trace.StageRecover, "box %q needs %d bytes but file ends at %d", boxType, end, size).WithOffset(size)
+			scanErr = attachSampleTrack(scanErr, data, off, headerSize)
 			rep.Failure = scanErr
 			return rep, scanErr
 		}
@@ -99,6 +101,20 @@ func ScanRootBoxes(data []byte) (*ScanReport, error) {
 	return rep, nil
 }
 
+// IndexEntry is one decoded stts run-length entry.
+type IndexEntry struct {
+	SampleCount uint32 `json:"sample_count"`
+	SampleDelta uint32 `json:"sample_delta"`
+}
+
+func attachSampleTrack(e *trace.Error, data []byte, boxOffset, headerSize int64) *trace.Error {
+	payload := boxOffset + headerSize
+	if payload+8 <= int64(len(data)) && [4]byte(data[payload:payload+4]) == SampleMagic {
+		return e.WithTrack(int(binary.BigEndian.Uint32(data[payload+4 : payload+8])))
+	}
+	return e
+}
+
 // TrackMeta supplies timescale information extracted from MP4 metadata.
 type TrackMeta struct {
 	ID           int
@@ -107,6 +123,7 @@ type TrackMeta struct {
 	Handler      string
 	OffsetNS     model.NS
 	IndexPresent bool
+	IndexEntries []IndexEntry
 }
 
 // RebuildTracks converts complete MCS1 sample boxes into tracks. The final
@@ -186,7 +203,33 @@ func RebuildTracks(data []byte, rep *ScanReport, meta []TrackMeta) ([]*model.Tra
 
 	tracks := make([]*model.Track, 0, len(order))
 	for _, id := range order {
-		tracks = append(tracks, byID[id])
+		tr := byID[id]
+		for _, m := range meta {
+			if m.ID == id && m.IndexPresent && len(m.IndexEntries) > 0 {
+				applyTimeIndex(tr, m.IndexEntries)
+				break
+			}
+		}
+		tracks = append(tracks, tr)
 	}
 	return tracks, damages
+}
+
+// applyTimeIndex reconstructs timestamps from an MP4 stts time-to-sample index.
+// It intentionally covers only the complete prefix available after recovery.
+func applyTimeIndex(tr *model.Track, entries []IndexEntry) {
+	tick := uint64(0)
+	pos := 0
+	for _, entry := range entries {
+		for i := uint32(0); i < entry.SampleCount && pos < len(tr.Samples); i++ {
+			s := tr.Samples[pos]
+			s.StartTick = tick
+			s.DurationTick = entry.SampleDelta
+			tick += uint64(entry.SampleDelta)
+			pos++
+		}
+		if pos == len(tr.Samples) {
+			return
+		}
+	}
 }

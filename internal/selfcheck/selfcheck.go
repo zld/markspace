@@ -20,6 +20,7 @@ type caseSpec struct {
 	injectedOffset   int64
 	wantCode         trace.Code
 	wantStage        trace.Stage
+	wantTrack        int
 	wantSegments     int
 	checkMappings    bool
 	checkContainment bool
@@ -138,14 +139,14 @@ func buildCases() ([]caseSpec, error) {
 	return []caseSpec{
 		{name: "normal", data: normal.Data, opts: standardOptions(), wantSegments: 3, checkMappings: true},
 		{name: "truncated-box", data: truncated.Data, opts: standardOptions(), injectedOffset: truncOff,
-			wantCode: trace.CodeTruncated, wantStage: trace.StageIngest, wantSegments: 3, checkContainment: true},
+			wantCode: trace.CodeTruncated, wantStage: trace.StageIngest, wantTrack: 2, wantSegments: 3, checkContainment: true},
 		{name: "bad-box-length", data: badLength.Data, opts: standardOptions(), injectedOffset: badOff,
-			wantCode: trace.CodeBoxLengthOutOfBounds, wantStage: trace.StageIngest, wantSegments: 3, checkContainment: true},
+			wantCode: trace.CodeBoxLengthOutOfBounds, wantStage: trace.StageIngest, wantTrack: 2, wantSegments: 3, checkContainment: true},
 		{name: "missing-index", data: noIndex.Data, opts: standardOptions(), wantSegments: 3, checkMappings: true},
 		{name: "boundary-cut", data: boundary.Data, opts: boundaryOpts, injectedOffset: boundaryOff,
-			wantCode: trace.CodeCutPointCorrupt, wantStage: trace.StageCut, wantSegments: 2, checkContainment: true},
+			wantCode: trace.CodeCutPointCorrupt, wantStage: trace.StageCut, wantTrack: 1, wantSegments: 2, checkContainment: true},
 		{name: "fingerprint-corrupt", data: fpCorrupt.Data, opts: fpOpts, injectedOffset: flipOff,
-			wantCode: trace.CodePayloadMismatch, wantStage: trace.StageFingerprint, wantSegments: 3},
+			wantCode: trace.CodePayloadMismatch, wantStage: trace.StageFingerprint, wantTrack: 1, wantSegments: 3},
 	}, nil
 }
 

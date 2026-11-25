@@ -105,7 +105,19 @@ func readMoovMeta(data []byte, moov recover.Box) ([]recover.TrackMeta, bool, uin
 		if !ok {
 			return nil, false, 0, trace.E(trace.CodeUnsupported, trace.StageIngest, "tkhd payload type %T", box.Payload)
 		}
-		meta := recover.TrackMeta{ID: int(tkhd.TrackID), TimeScale: 1000, IndexPresent: len(sttsBoxes) == len(tkhdBoxes)}
+		meta := recover.TrackMeta{ID: int(tkhd.TrackID), TimeScale: 1000, IndexPresent: i < len(sttsBoxes)}
+		if i < len(sttsBoxes) {
+			if stts, ok := sttsBoxes[i].Payload.(*mp4.Stts); ok {
+				meta.IndexPresent = true
+				meta.IndexEntries = make([]recover.IndexEntry, 0, len(stts.Entries))
+				for _, entry := range stts.Entries {
+					meta.IndexEntries = append(meta.IndexEntries, recover.IndexEntry{
+						SampleCount: entry.SampleCount,
+						SampleDelta: entry.SampleDelta,
+					})
+				}
+			}
+		}
 		if i < len(mdhdBoxes) {
 			if mdhd, ok := mdhdBoxes[i].Payload.(*mp4.Mdhd); ok && mdhd.Timescale != 0 {
 				meta.TimeScale = mdhd.Timescale
