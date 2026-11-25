@@ -66,7 +66,7 @@ func (s Spec) withDefaults() Spec {
 }
 
 func videoSampleSize(index int, keyframe bool) uint32 {
-	size := uint32(32768 + (index%7)*512)
+	size := uint32(30000 + (index%7)*512)
 	if keyframe {
 		size += 12288
 	}
