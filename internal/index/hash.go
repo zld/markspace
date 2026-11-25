@@ -7,15 +7,23 @@ import (
 	"os"
 )
 
-// HashFile streams a file in fixed chunks so large shards are not loaded whole.
+// HashFile streams a file in fixed 64 KiB chunks so large shards are not loaded whole.
 func HashFile(path string) (string, int64, error) {
+	return HashFileChunked(path, 64*1024)
+}
+
+// HashFileChunked streams a file using the caller-supplied bounded chunk size.
+func HashFileChunked(path string, chunk int) (string, int64, error) {
+	if chunk <= 0 {
+		chunk = 64 * 1024
+	}
 	f, err := os.Open(path)
 	if err != nil {
 		return "", 0, err
 	}
 	defer f.Close()
 	h := sha256.New()
-	n, err := io.CopyBuffer(h, f, make([]byte, 64*1024))
+	n, err := io.CopyBuffer(h, f, make([]byte, chunk))
 	if err != nil {
 		return "", n, err
 	}

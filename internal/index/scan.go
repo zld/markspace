@@ -29,7 +29,7 @@ func ScanEntry(e manifest.Entry, opts ScanOptions) (*EntryIndex, error) {
 	}
 	loc := e.Location("index")
 
-	mediaHash, mediaSize, err := HashFile(e.MediaPath)
+	mediaHash, mediaSize, err := HashFileChunked(e.MediaPath, opts.ChunkBytes)
 	if err != nil {
 		loc.ByteOffset = 0
 		return nil, diagnostic.Wrap(errKindForRead(err), loc, err)
@@ -41,7 +41,7 @@ func ScanEntry(e manifest.Entry, opts ScanOptions) (*EntryIndex, error) {
 	initHash := ""
 	var initTimescale int64
 	if e.InitPath != "" {
-		h, _, err := HashFile(e.InitPath)
+		h, _, err := HashFileChunked(e.InitPath, opts.ChunkBytes)
 		if err != nil {
 			loc.Field = "initialization"
 			return nil, diagnostic.Wrap(errKindForRead(err), loc, err)
