@@ -37,6 +37,9 @@ func TestBuildConvertsTimebasesAndQueriesWindow(t *testing.T) {
 	if got := idx.Query(1, 2_000_000_001, 3_000_000_000); len(got) != 0 {
 		t.Fatalf("end-exclusive boundary wrong: %+v", got)
 	}
+	if got := idx.Query(99, 0, 3_000_000_000); len(got) != 0 {
+		t.Fatalf("empty/nonexistent track should have no keyframes: %+v", got)
+	}
 }
 
 func TestIndexWithoutKeyframesAndEmptyTracks(t *testing.T) {
