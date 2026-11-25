@@ -90,6 +90,19 @@ func (r Rational) Floor() int64 {
 	return q
 }
 
+// Ceil returns the least integer tick count not less than r.
+func (r Rational) Ceil() int64 {
+	q, rem := divRem(r.Num, r.Den)
+	if rem != 0 && r.Num > 0 {
+		return q + 1
+	}
+	if rem != 0 && r.Num < 0 {
+		// Truncation toward zero is already the ceiling for negative fractions.
+		return q
+	}
+	return q
+}
+
 // Round returns nearest integer, halves toward positive infinity.
 func (r Rational) Round() int64 {
 	q, rem := divRem(r.Num, r.Den)

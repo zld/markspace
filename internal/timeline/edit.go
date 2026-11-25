@@ -112,12 +112,15 @@ func (l EditList) ValidateMediaRange(mediaDurationTicks int64) []RangeIssue {
 		if e.MediaTime == EmptyMediaTime {
 			continue
 		}
-		durationMediaTicks := e.SegmentDuration * int64(l.MediaTimescale) / int64(l.MovieTimescale)
-		required := e.MediaTime + durationMediaTicks
-		if required > mediaDurationTicks {
+		durationMedia := Rat(e.SegmentDuration, int64(l.MovieTimescale)).
+			Mul(Rat(int64(l.MediaTimescale), 1))
+		requiredExact := Rat(e.MediaTime, 1).Add(durationMedia)
+		mediaEnd := Rat(mediaDurationTicks, 1)
+		if requiredExact.Cmp(mediaEnd) > 0 {
+			overflow := requiredExact.Sub(mediaEnd).Ceil()
 			issues = append(issues, RangeIssue{
 				EditIndex: i, MediaTime: e.MediaTime, MediaDuration: mediaDurationTicks,
-				RequiredEnd: required, OverflowTicks: required - mediaDurationTicks,
+				RequiredEnd: requiredExact.Ceil(), OverflowTicks: overflow,
 			})
 		}
 	}

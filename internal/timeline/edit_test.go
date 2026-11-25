@@ -21,6 +21,17 @@ func TestEditListDistinguishesGapAndMediaTime(t *testing.T) {
 	}
 }
 
+func TestValidateEditRangeUsesExactRationalOverflow(t *testing.T) {
+	// 1 movie tick at 1000 scale is 24.024 media ticks at 24024 scale.
+	l := EditList{MovieTimescale: 1000, MediaTimescale: 24024, Edits: []Edit{
+		{SegmentDuration: 1, MediaTime: 10},
+	}}
+	issues := l.ValidateMediaRange(34) // exact required end is 34.024
+	if len(issues) != 1 || issues[0].RequiredEnd != 35 || issues[0].OverflowTicks != 1 {
+		t.Fatalf("issues=%+v", issues)
+	}
+}
+
 func TestValidateEditRange(t *testing.T) {
 	l := EditList{MovieTimescale: 1000, MediaTimescale: 24000, Edits: []Edit{
 		{SegmentDuration: 3000, MediaTime: 200000},
