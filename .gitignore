@@ -1,0 +1,11 @@
+# Local media processing outputs
+/tmp/
+/work/
+*.out
+*.test
+mediactl
+
+# OS/editor files
+.DS_Store
+.idea/
+.vscode/
