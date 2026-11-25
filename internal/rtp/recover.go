@@ -119,13 +119,15 @@ func (g *Recovery) Stats() RecoveryStats {
 }
 
 // RecoverStream runs an entire capture through the engine and returns the
-// fully ordered packet sequence plus the summary. Corrupt frames are
-// reported on rec; unrecovered gaps are declared, never filled with fake
+// fully ordered packet sequence plus the summary. All datagrams are ingested
+// first (so adjacent duplicates are still in the reorder buffer when their
+// copy arrives), then the buffer is pumped to close wait-window gaps and
+// drain in order, with a final forced flush at end of stream. Corrupt frames
+// are reported on rec; unrecovered gaps are declared, never filled with fake
 // media. It is the convenience entry point used by the demo pipeline.
 func RecoverStream(frames []CaptureFrame, bandwidth []BandwidthSample,
 	cfg RecoveryConfig, rec *model.Recorder) ([]Packet, RecoveryStats) {
 	g := NewRecovery(cfg, rec)
-	ordered := make([]Packet, 0, len(frames))
 	for i, f := range frames {
 		if f.Arrival == 0 && i > 0 {
 			f.Arrival = i
@@ -134,8 +136,10 @@ func RecoverStream(frames []CaptureFrame, bandwidth []BandwidthSample,
 		if i < len(bandwidth) {
 			g.ObserveBandwidth(bandwidth[i])
 		}
-		ordered = append(ordered, g.Pump(false)...)
 	}
-	ordered = append(ordered, g.Pump(true)...)
+	// Periodically pump while gaps age: each pass lets the wait window
+	// advance, but the buffered packets are only emitted as they become
+	// contiguous, preserving in-buffer duplicate detection.
+	ordered := g.Pump(true)
 	return ordered, g.Stats()
 }

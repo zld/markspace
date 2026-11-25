@@ -84,11 +84,14 @@ func TestRecoverStreamFullScenario(t *testing.T) {
 			t.Fatalf("position %d got seq %d, want %d", i, p.Raw.SequenceNumber, want[i])
 		}
 	}
-	// With per-packet pumping the first copy of 2 is emitted before the
-	// second arrives, so it is correctly accounted as late; in-buffer
-	// duplicates are covered by TestReorderDuplicatesAndReorder.
-	if stats.Late != 1 {
-		t.Fatalf("late = %d, want 1", stats.Late)
+	// With whole-stream buffering the second copy of 2 is still in the
+	// reorder buffer, so it is correctly counted as an in-buffer duplicate;
+	// post-emission "late" handling is covered separately by TestWaitWindowThenGap.
+	if stats.Duplicates != 1 {
+		t.Fatalf("duplicates = %d, want 1", stats.Duplicates)
+	}
+	if stats.Late != 0 {
+		t.Fatalf("late = %d, want 0", stats.Late)
 	}
 	if stats.Missing != 1 || len(stats.Gaps) != 1 || stats.Gaps[0].Start != 7 || stats.Gaps[0].End != 7 {
 		t.Fatalf("gap accounting wrong: %+v", stats.Gaps)
