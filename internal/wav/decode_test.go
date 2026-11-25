@@ -2,6 +2,7 @@ package wav
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"testing"
 
@@ -114,8 +115,8 @@ func TestNonIntegralFrameRejected(t *testing.T) {
 	d := NewDecoder(bytes.NewReader(raw))
 	for {
 		_, err := d.ReadFrame()
-		if err == io.EOF {
-			t.Fatal("decoder silently accepted a partial frame")
+		if errors.Is(err, ErrNeedsData) || err == io.EOF {
+			break
 		}
 		if fe, ok := fault.As(err); ok {
 			if fe.Category != fault.CatAlignment && fe.Category != fault.CatTruncated {
@@ -126,6 +127,12 @@ func TestNonIntegralFrameRejected(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+	}
+	// At end of input the soft "need data" state must resolve to a fault.
+	err := d.Finalize()
+	fe, ok := fault.As(err)
+	if !ok || (fe.Category != fault.CatAlignment && fe.Category != fault.CatTruncated) {
+		t.Fatalf("expected alignment/truncation fault, got %v", err)
 	}
 }
 

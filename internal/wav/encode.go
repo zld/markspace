@@ -11,6 +11,12 @@ var (
 	errShortFmt = errors.New("fmt chunk shorter than 16 bytes")
 )
 
+// ErrNeedsData signals that the decoder consumed every queued chunk while the
+// declared data chunk still expects more bytes. Streaming callers should
+// Append the next chunk and retry instead of treating this as corruption;
+// Finalize distinguishes it from a genuinely truncated stream at end-of-input.
+var ErrNeedsData = errors.New("wav: waiting for more input data")
+
 // Encode builds a canonical little-endian PCM WAV byte stream containing pcm
 // as interleaved sample frames. It is used by tests and the demo command to
 // synthesize fixtures locally; no external media files are needed.
@@ -53,6 +59,13 @@ func ReadAllPCM(d *Decoder) ([]byte, Format, error) {
 			out.Write(buf[:n])
 		}
 		if err == io.EOF {
+			break
+		}
+		if errors.Is(err, ErrNeedsData) {
+			// No more chunks will be appended: this is genuine truncation.
+			if ferr := d.Finalize(); ferr != nil {
+				return nil, Format{}, ferr
+			}
 			break
 		}
 		if err != nil {

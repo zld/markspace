@@ -6,7 +6,6 @@
 package wav
 
 import (
-	"bufio"
 	"encoding/binary"
 	"io"
 
@@ -39,18 +38,66 @@ const (
 // Decoder consumes a WAV byte stream and emits whole interleaved sample
 // frames. The zero value is not usable; use NewDecoder.
 type Decoder struct {
-	r          *bufio.Reader
-	offset     int64 // absolute bytes consumed from the input stream
+	r          io.Reader // always a *sourceMux; no bufio so a mid-stream EOF
+	mux        *sourceMux // cannot be cached ahead of an Append
+	offset     int64     // absolute bytes consumed from the input stream
 	format     Format
 	haveFormat bool
 	dataLeft   int64 // bytes remaining inside the data chunk, -1 until found
+	dataDecl   int64 // declared data chunk size from the header
 	headerDone bool
 }
 
 // NewDecoder wraps a WAV byte stream. The reader may deliver the RIFF header
 // and PCM payload in arbitrarily small pieces.
 func NewDecoder(r io.Reader) *Decoder {
-	return &Decoder{r: bufio.NewReader(r), dataLeft: -1}
+	mux := &sourceMux{sources: []io.Reader{r}}
+	return &Decoder{r: mux, mux: mux, dataLeft: -1}
+}
+
+// Append chains another byte source after the currently buffered data. It lets
+// one decoder span many transport chunks without re-parsing the RIFF header.
+func (d *Decoder) Append(r io.Reader) {
+	d.mux.append(r)
+}
+
+// Reset repoints the decoder at a fresh byte stream and clears every parsed
+// state, allowing one decoder to be reused across independent streams.
+func (d *Decoder) Reset(r io.Reader) {
+	d.mux = &sourceMux{sources: []io.Reader{r}}
+	d.r = d.mux
+	d.offset = 0
+	d.format = Format{}
+	d.haveFormat = false
+	d.dataLeft = -1
+	d.dataDecl = 0
+	d.headerDone = false
+}
+
+// sourceMux presents a sequence of readers as one continuous byte stream so
+// the buffering layer never discards unread data at a chunk boundary.
+type sourceMux struct {
+	sources []io.Reader
+}
+
+func (m *sourceMux) append(r io.Reader) { m.sources = append(m.sources, r) }
+
+// exhausted reports that every queued source has returned io.EOF.
+func (m *sourceMux) exhausted() bool { return len(m.sources) == 0 }
+
+func (m *sourceMux) Read(p []byte) (int, error) {
+	for len(m.sources) > 0 {
+		n, err := m.sources[0].Read(p)
+		if err == io.EOF {
+			m.sources = m.sources[1:]
+			if n > 0 {
+				return n, nil
+			}
+			continue
+		}
+		return n, err
+	}
+	return 0, io.EOF
 }
 
 // Offset reports how many input bytes have been consumed so far. It is the
@@ -107,14 +154,37 @@ func (d *Decoder) Read(p []byte) (int, error) {
 	}
 	switch {
 	case err == io.EOF && d.dataLeft > 0:
-		return n, fault.Wrap(fault.CatTruncated, "wav.read", d.offset,
-			faultNoTrack, true, io.ErrUnexpectedEOF)
+		// The currently queued sources are drained but more chunks may be
+		// appended later: a soft "need data" condition, not real truncation.
+		return n, ErrNeedsData
 	case err != nil:
 		return n, err
 	default:
 		// Read returns arbitrary byte counts; frame-integrity checks belong
 		// to ReadFrame and the frame assembler above this decoder.
 		return n, nil
+	}
+}
+
+// Finalize must be called once every transport chunk has been appended. It
+// turns an unresolved ErrNeedsData condition into a real truncation fault,
+// detects a non-integral trailing frame, and confirms clean completion.
+func (d *Decoder) Finalize() error {
+	if !d.headerDone {
+		return fault.New(fault.CatTruncated, "wav.finalize", true,
+			"stream ended before the data chunk was reached")
+	}
+	switch {
+	case d.dataLeft == 0:
+		return nil
+	case d.dataDecl%int64(d.format.FrameSize()) != 0 && d.mux.exhausted():
+		// The header itself declared a size that cannot hold whole frames.
+		return fault.New(fault.CatAlignment, "wav.finalize", true,
+			"data chunk size is not an integral number of frames")
+	default:
+		// The declared size was frame-aligned but the file ended early.
+		return fault.Wrap(fault.CatTruncated, "wav.finalize", d.offset,
+			faultNoTrack, true, io.ErrUnexpectedEOF)
 	}
 }
 
@@ -130,9 +200,13 @@ func (d *Decoder) ReadFrame() ([]byte, error) {
 		return nil, io.EOF
 	}
 	if err := d.readFull(frame); err != nil {
+		// A short read with data still expected means the queued chunks are
+		// temporarily drained; the caller may Append more and retry.
 		if err == io.EOF || err == io.ErrUnexpectedEOF {
-			return nil, fault.Wrap(fault.CatTruncated, "wav.frame", d.offset,
-				faultNoTrack, true, err)
+			if d.dataLeft > 0 {
+				return nil, ErrNeedsData
+			}
+			return nil, io.EOF
 		}
 		return nil, err
 	}
@@ -179,6 +253,7 @@ func (d *Decoder) parseHeader() error {
 					"data chunk appears before fmt chunk")
 			}
 			d.dataLeft = size
+			d.dataDecl = size
 			d.headerDone = true
 			return nil
 		default:
