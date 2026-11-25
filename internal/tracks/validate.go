@@ -41,10 +41,11 @@ func validateAudio(tracks []Track, profile Profile) []Issue {
 	for _, tr := range tracks {
 		if prev, ok := seenNumbers[tr.Number]; ok {
 			issues = append(issues, Issue{
-				Category: timeline.CatDuplicate,
-				Offset:   tr.Offset,
-				Tracks:   []uint64{tr.Number},
-				Field:    "TrackNumber",
+				Category:  timeline.CatDuplicate,
+				ElementID: ElementTrackEntry,
+				Offset:    tr.Offset,
+				Tracks:    []uint64{tr.Number},
+				Field:     "TrackNumber",
 				Reason: fmt.Sprintf("track number %d already declared at offset %d",
 					tr.Number, prev),
 			})
@@ -57,11 +58,12 @@ func validateAudio(tracks []Track, profile Profile) []Issue {
 		a := tr.Audio
 		if a.Channels == 0 {
 			issues = append(issues, Issue{
-				Category: timeline.CatMissingElement,
-				Offset:   tr.Offset,
-				Tracks:   []uint64{tr.Number},
-				Field:    "Audio.Channels",
-				Reason:   fmt.Sprintf("%s declares no channel count", tr.Label()),
+				Category:  timeline.CatMissingElement,
+				ElementID: ElementTrackEntry,
+				Offset:    tr.Offset,
+				Tracks:    []uint64{tr.Number},
+				Field:     "Audio.Channels",
+				Reason:    fmt.Sprintf("%s declares no channel count", tr.Label()),
 			})
 			continue
 		}
@@ -92,21 +94,23 @@ func validateAudio(tracks []Track, profile Profile) []Issue {
 		}
 		if profile.MaxChannels > 0 && a.Channels > profile.MaxChannels {
 			issues = append(issues, Issue{
-				Category: timeline.CatTrackConflict,
-				Offset:   tr.Offset,
-				Tracks:   []uint64{tr.Number},
-				Field:    "Audio.Channels",
+				Category:  timeline.CatTrackConflict,
+				ElementID: ElementTrackEntry,
+				Offset:    tr.Offset,
+				Tracks:    []uint64{tr.Number},
+				Field:     "Audio.Channels",
 				Reason: fmt.Sprintf("%s has %d channels, profile allows at most %d",
 					tr.Label(), a.Channels, profile.MaxChannels),
 			})
 		}
 		if a.SamplingFrequency <= 0 {
 			issues = append(issues, Issue{
-				Category: timeline.CatMissingElement,
-				Offset:   tr.Offset,
-				Tracks:   []uint64{tr.Number},
-				Field:    "Audio.SamplingFrequency",
-				Reason:   fmt.Sprintf("%s declares no sampling frequency", tr.Label()),
+				Category:  timeline.CatMissingElement,
+				ElementID: ElementTrackEntry,
+				Offset:    tr.Offset,
+				Tracks:    []uint64{tr.Number},
+				Field:     "Audio.SamplingFrequency",
+				Reason:    fmt.Sprintf("%s declares no sampling frequency", tr.Label()),
 			})
 			continue
 		}
@@ -151,11 +155,12 @@ func validateVideo(tracks []Track, profile Profile) []Issue {
 		v := tr.Video
 		if v.PixelWidth == 0 || v.PixelHeight == 0 {
 			issues = append(issues, Issue{
-				Category: timeline.CatMissingElement,
-				Offset:   tr.Offset,
-				Tracks:   []uint64{tr.Number},
-				Field:    "Video.PixelWidth/PixelHeight",
-				Reason:   fmt.Sprintf("%s declares no pixel dimensions", tr.Label()),
+				Category:  timeline.CatMissingElement,
+				ElementID: ElementTrackEntry,
+				Offset:    tr.Offset,
+				Tracks:    []uint64{tr.Number},
+				Field:     "Video.PixelWidth/PixelHeight",
+				Reason:    fmt.Sprintf("%s declares no pixel dimensions", tr.Label()),
 			})
 		}
 		if v.Colour.Present {
@@ -202,11 +207,12 @@ func validateVideo(tracks []Track, profile Profile) []Issue {
 			}
 		} else if profile.RequireColour {
 			issues = append(issues, Issue{
-				Category: timeline.CatMissingElement,
-				Offset:   tr.Offset,
-				Tracks:   []uint64{tr.Number},
-				Field:    "Video.Colour",
-				Reason:   fmt.Sprintf("%s has no colour metadata but the manifest requires it", tr.Label()),
+				Category:  timeline.CatMissingElement,
+				ElementID: ElementTrackEntry,
+				Offset:    tr.Offset,
+				Tracks:    []uint64{tr.Number},
+				Field:     "Video.Colour",
+				Reason:    fmt.Sprintf("%s has no colour metadata but the manifest requires it", tr.Label()),
 			})
 		}
 	}
@@ -243,10 +249,11 @@ func validateVideo(tracks []Track, profile Profile) []Issue {
 			}
 		}
 		issues = append(issues, Issue{
-			Category: timeline.CatTrackConflict,
-			Offset:   earliest,
-			Tracks:   all,
-			Field:    "Video.Colour",
+			Category:  timeline.CatTrackConflict,
+			ElementID: ElementTrackEntry,
+			Offset:    earliest,
+			Tracks:    all,
+			Field:     "Video.Colour",
 			Reason: fmt.Sprintf("video tracks disagree on colour metadata: %s",
 				describeRules(rules, colourByRule)),
 		})

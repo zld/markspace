@@ -91,9 +91,13 @@ func parseLine(txt string, line int, ssrcTrack map[uint32]uint64, next *uint64) 
 		return Record{}, timeline.New(timeline.StageParse, timeline.CatIllegalLength, 0, -1,
 			"rtp dump line %d: clock rate is zero", line)
 	}
-	if fields[1] != strconv.FormatUint(vals[1], 10) {
+	if vals[1] > 0xFFFF {
 		return Record{}, timeline.New(timeline.StageParse, timeline.CatLimitExceeded, 0, -1,
 			"rtp dump line %d: sequence %s exceeds 16 bits", line, fields[1])
+	}
+	if vals[2] > 0xFFFFFFFF {
+		return Record{}, timeline.New(timeline.StageParse, timeline.CatLimitExceeded, 0, -1,
+			"rtp dump line %d: timestamp %s exceeds 32 bits", line, fields[2])
 	}
 	if _, ok := ssrcTrack[ssrc]; !ok {
 		ssrcTrack[ssrc] = *next

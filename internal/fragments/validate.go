@@ -12,22 +12,27 @@ import (
 	"example.com/assetcheck/internal/timeline"
 )
 
+// ElementBlock is the Matroska SimpleBlock ID. Fragment problems point here.
+const ElementBlock uint32 = 0xA3
+
 // Problem is one fragment-level failure with the earliest locatable offset.
 type Problem struct {
-	Category timeline.Category
-	Offset   int64
-	Tracks   []uint64
-	Reason   string
-	Cluster  int
+	Category  timeline.Category
+	ElementID uint32
+	Offset    int64
+	Tracks    []uint64
+	Reason    string
+	Cluster   int
 }
 
 func (p Problem) toError() *timeline.Error {
 	return &timeline.Error{
-		Stage:    timeline.StageValidate,
-		Category: p.Category,
-		Offset:   p.Offset,
-		Tracks:   p.Tracks,
-		Reason:   p.Reason,
+		Stage:     timeline.StageValidate,
+		Category:  p.Category,
+		ElementID: p.ElementID,
+		Offset:    p.Offset,
+		Tracks:    p.Tracks,
+		Reason:    p.Reason,
 	}
 }
 
@@ -65,9 +70,10 @@ func Validate(a *media.Asset) Report {
 	rep.DeviationAt = at
 	if dev > timeline.MaxTolerance {
 		rep.Problems = append(rep.Problems, Problem{
-			Category: timeline.CatFragmentConflict,
-			Offset:   at,
-			Tracks:   a.TrackNumbers(),
+			Category:  timeline.CatFragmentConflict,
+			ElementID: ElementBlock,
+			Offset:    at,
+			Tracks:    a.TrackNumbers(),
 			Reason: fmt.Sprintf("cross-track deviation %s ns exceeds %d ns tolerance",
 				timeline.FormatNS(dev), timeline.MaxTolerance),
 		})
@@ -92,17 +98,19 @@ func validateStarts(a *media.Asset) []Problem {
 	for _, f := range a.Fragments {
 		if f.Start < 0 {
 			out = append(out, Problem{
-				Category: timeline.CatFragmentConflict,
-				Offset:   f.Offset,
-				Tracks:   []uint64{f.TrackNumber},
-				Reason:   fmt.Sprintf("track %d fragment starts at negative time", f.TrackNumber),
+				Category:  timeline.CatFragmentConflict,
+				ElementID: ElementBlock,
+				Offset:    f.Offset,
+				Tracks:    []uint64{f.TrackNumber},
+				Reason:    fmt.Sprintf("track %d fragment starts at negative time", f.TrackNumber),
 			})
 		}
 		if a.Duration > 0 && f.Start > a.Duration {
 			out = append(out, Problem{
-				Category: timeline.CatFragmentConflict,
-				Offset:   f.Offset,
-				Tracks:   []uint64{f.TrackNumber},
+				Category:  timeline.CatFragmentConflict,
+				ElementID: ElementBlock,
+				Offset:    f.Offset,
+				Tracks:    []uint64{f.TrackNumber},
 				Reason: fmt.Sprintf("track %d fragment starts at %s past duration %s",
 					f.TrackNumber, timeline.FormatNS(f.Start), timeline.FormatNS(a.Duration)),
 			})
@@ -159,10 +167,11 @@ func validateTracks(a *media.Asset) []Problem {
 		if !known[f.TrackNumber] && !reported[f.TrackNumber] {
 			reported[f.TrackNumber] = true
 			out = append(out, Problem{
-				Category: timeline.CatFragmentConflict,
-				Offset:   f.Offset,
-				Tracks:   []uint64{f.TrackNumber},
-				Reason:   fmt.Sprintf("block references undeclared track %d", f.TrackNumber),
+				Category:  timeline.CatFragmentConflict,
+				ElementID: ElementBlock,
+				Offset:    f.Offset,
+				Tracks:    []uint64{f.TrackNumber},
+				Reason:    fmt.Sprintf("block references undeclared track %d", f.TrackNumber),
 			})
 		}
 	}
@@ -188,7 +197,9 @@ func validateSequences(a *media.Asset) []Problem {
 	var out []Problem
 	for _, tn := range tracks {
 		fs := byTrack[tn]
-		sort.Slice(fs, func(i, j int) bool { return fs[i].Seq < fs[j].Seq })
+		// Validate in document order, not sorted by sequence: a delivery that
+		// stores fragments out of sequence order is itself the defect.
+		sort.Slice(fs, func(i, j int) bool { return fs[i].Order < fs[j].Order })
 		for i := 1; i < len(fs); i++ {
 			switch {
 			case fs[i].Seq == fs[i-1].Seq:
@@ -262,9 +273,10 @@ func validateInterleave(a *media.Asset) []Problem {
 		for _, f := range fs {
 			if prev, ok := lastStart[f.TrackNumber]; ok && f.Start < prev {
 				out = append(out, Problem{
-					Category: timeline.CatOrder,
-					Offset:   f.Offset,
-					Tracks:   []uint64{f.TrackNumber},
+					Category:  timeline.CatOrder,
+					ElementID: ElementBlock,
+					Offset:    f.Offset,
+					Tracks:    []uint64{f.TrackNumber},
 					Reason: fmt.Sprintf("track %d time went backwards from %s to %s (previous block at %d)",
 						f.TrackNumber, timeline.FormatNS(prev), timeline.FormatNS(f.Start),
 						lastOffset[f.TrackNumber]),

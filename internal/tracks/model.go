@@ -155,6 +155,10 @@ type Video struct {
 	Colour        Colour
 }
 
+// ElementTrackEntry is the Matroska TrackEntry ID. Validation issues that
+// concern a track's declared metadata point here.
+const ElementTrackEntry uint32 = 0xAE
+
 // Track is the normalized track description every subsystem consumes.
 type Track struct {
 	Number          uint64
@@ -238,21 +242,23 @@ func nearlyEqual(a, b float64) bool {
 // Issue is one validation failure, attributed to specific tracks and the
 // earliest locatable input offset.
 type Issue struct {
-	Category timeline.Category
-	Offset   int64
-	Tracks   []uint64
-	Field    string
-	Reason   string
+	Category  timeline.Category
+	ElementID uint32
+	Offset    int64
+	Tracks    []uint64
+	Field     string
+	Reason    string
 }
 
 // ToError converts the first issue into the shared error type.
 func (i Issue) ToError(stage timeline.Stage) *timeline.Error {
 	return &timeline.Error{
-		Stage:    stage,
-		Category: i.Category,
-		Offset:   i.Offset,
-		Tracks:   i.Tracks,
-		Field:    i.Field,
-		Reason:   i.Reason,
+		Stage:     stage,
+		Category:  i.Category,
+		ElementID: i.ElementID,
+		Offset:    i.Offset,
+		Tracks:    i.Tracks,
+		Field:     i.Field,
+		Reason:    i.Reason,
 	}
 }

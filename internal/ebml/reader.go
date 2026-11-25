@@ -230,9 +230,13 @@ func (r *Reader) Next() (Element, error) {
 
 	size, marker, sizeLen, err := r.readVint(false)
 	if err != nil {
-		if f := r.top(); f != nil && errors.Is(err, io.EOF) {
-			return Element{}, timeline.New(timeline.StageParse, timeline.CatTruncated, elemID, start,
-				"element header at %d is incomplete at input end %d", start, r.size)
+		// The ID has already been read, so the error belongs to that element
+		// even though its size field is what ran off the end of input.
+		var te *timeline.Error
+		if errors.As(err, &te) {
+			cp := *te
+			cp.ElementID = elemID
+			return Element{}, &cp
 		}
 		return Element{}, err
 	}

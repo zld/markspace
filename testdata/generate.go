@@ -8,6 +8,7 @@ package testdata
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"math"
 	"os"
@@ -239,7 +240,7 @@ func defaultClusters(seed int64) []clusterPlan {
 		for _, tr := range []struct{ n uint64 }{{1}, {2}, {3}, {4}, {5}} {
 			payload := make([]byte, 8)
 			for i := range payload {
-				payload[i] = base[i] ^ byte(seed) ^ byte(tr.n) ^ byte(c<<4)
+				payload[i] = base[i%len(base)] ^ byte(seed) ^ byte(tr.n) ^ byte(c<<4)
 			}
 			p.blocks = append(p.blocks, blockPlan{
 				track: tr.n, relTicks: int16(c & 0x7), payload: payload,
@@ -261,6 +262,14 @@ func encodeCluster(plan clusterPlan) []byte {
 		parts = append(parts, simpleBlock(b.track, b.relTicks, b.payload))
 	}
 	return el(0x1F43B675, parts...)
+}
+
+func clusterPayloadLen(plan clusterPlan) int {
+	n := len(uintEl(0xE7, plan.timecode))
+	for _, b := range plan.blocks {
+		n += len(simpleBlock(b.track, b.relTicks, b.payload))
+	}
+	return n
 }
 
 // buildValid assembles one complete file and records structural offsets. The
@@ -292,25 +301,33 @@ func buildValid(seed int64, clusters []clusterPlan, trackList []trackSpec, opts 
 	)
 	offsets["info"] = int64(len(header) + len(putID(0x18538067)) + len(putUnknown()))
 	offsets["tracks"] = offsets["info"] + int64(len(info))
+	// TrackEntry offsets: Tracks header + every earlier TrackEntry's bytes.
+	entryBase := offsets["tracks"] + int64(len(putID(0x1654AE6B))) + int64(len(putSize(len(bytes.Join(trackParts, nil)))))
+	running := entryBase
+	for i, part := range trackParts {
+		offsets[fmt.Sprintf("track%d", i+1)] = running
+		running += int64(len(part))
+	}
 	offset := offsets["tracks"] + int64(len(tracks))
 
 	var clusterBytes [][]byte
 	for i, c := range clusters {
+		clusterStart := offset
+		var body []byte
 		if c.unknown {
-			body := append(putID(0x1F43B675), putUnknown()...)
+			body = append(putID(0x1F43B675), putUnknown()...)
 			body = append(body, uintEl(0xE7, c.timecode)...)
-			for _, b := range c.blocks {
-				body = append(body, simpleBlock(b.track, b.relTicks, b.payload)...)
-			}
-			offsets[fmt.Sprintf("cluster%d", i)] = offset
-			offset += int64(len(body))
-			clusterBytes = append(clusterBytes, body)
 		} else {
-			b := encodeCluster(c)
-			offsets[fmt.Sprintf("cluster%d", i)] = offset
-			offset += int64(len(b))
-			clusterBytes = append(clusterBytes, b)
+			body = append(putID(0x1F43B675), putSize(clusterPayloadLen(c))...)
+			body = append(body, uintEl(0xE7, c.timecode)...)
 		}
+		offsets[fmt.Sprintf("cluster%d", i)] = clusterStart
+		for bi, b := range c.blocks {
+			offsets[fmt.Sprintf("cluster%d_block%d", i, bi)] = clusterStart + int64(len(body))
+			body = append(body, simpleBlock(b.track, b.relTicks, b.payload)...)
+		}
+		offset += int64(len(body))
+		clusterBytes = append(clusterBytes, body)
 	}
 	cues := el(0x1C53BB6B,
 		el(0xBB,
@@ -360,10 +377,10 @@ func Generate(dir string, seed int64) (*Result, error) {
 	}
 	res.Offsets["unknown_cluster"] = unknownOffsets["cluster0"]
 
-	// Truncated element: cut the final cluster's block payload in half. The
-	// validator must report the block header offset.
+	// Truncated element: cut one byte into the Cues element's payload so its
+	// declared size cannot be satisfied. The reader reports the Cues ID offset.
 	trunc := append([]byte(nil), valid...)
-	cutAt := int(offsets["cues"]) + 3
+	cutAt := int(offsets["cues"]) + 5
 	trunc = trunc[:cutAt]
 	if err := write(dir, TruncatedMKV, trunc); err != nil {
 		return nil, err
@@ -388,37 +405,50 @@ func Generate(dir string, seed int64) (*Result, error) {
 		Note: "five-byte element ID inserted where the Tracks element began",
 	})
 
-	// Track metadata conflict: 5.1 layout claimed with 2 channels, and a second
-	// video track whose colour disagrees with the first.
+	// Track metadata conflict: a second video track whose colour metadata
+	// disagrees with track 1. The manifest points both tracks at one CICP triple,
+	// so the conflict is detectable without external context and is reported at
+	// track 1's TrackEntry offset (the earliest locatable one).
 	conflictTracks := defaultTracks()
-	conflictTracks[1].audio.channels = 2 // track 2 claims stereo
-	conflictTracks[2].audio.channels = 3 // track 3 keeps "5.1" profile name
-	conflictTracks[2].name = "dialogue"
+	conflictTracks = append(conflictTracks, trackSpec{
+		number: 6, typ: 1, codec: "V_MPEG4/ISO/AVC", lang: "eng", name: "alt",
+		video: &videoSpec{w: 1920, h: 1080, colour: &colourSpec{
+			present: true, matrix: 1, transfer: 1, primaries: 1, rangeVal: 1,
+			bits: 8, chromaH: 1, chromaV: 1}},
+	})
 	conflictData, conflictOffsets := buildValid(seed, clusters, conflictTracks, buildOpts{})
 	if err := write(dir, TrackConflictMKV, conflictData); err != nil {
 		return nil, err
 	}
-	trackThreeEntry := findTrackEntryOffset(conflictData, 3)
 	res.Expectations = append(res.Expectations, Expectation{
 		File: TrackConflictMKV, Category: "track_metadata_conflict", ElementID: 0xAE,
-		Offset: trackThreeEntry, Stage: "validate",
-		Note: "track 3 declares 5.1 (6 channels) in the manifest but Channels=3",
+		Offset: conflictOffsets["track1"], Stage: "validate",
+		Note: "track 6 declares CICP 1/1/1 while track 1 declares 9/16/9",
 	})
-	_ = conflictOffsets
 
-	// Fragment order: swap two blocks so track 1 arrives after track 2 within a
-	// cluster, and repeat a sequence number via a duplicated block.
+	// Manifest variant that maps the conflicting track so verify can reproduce
+	// the conflict: the shipped v1 manifest names only track 1, while this file
+	// also carries track 6.
+	res.Offsets["conflict_track6"] = conflictOffsets["track6"]
+
+	// Fragment order: track 2's first block sits 1 ms after the cluster
+	// reference (inside tolerance) and a second block repeats the track one tick
+	// earlier, so that track's time runs backwards without leaving the timeline.
 	orderClusters := defaultClusters(seed)
 	c0 := orderClusters[0]
-	c0.blocks[0], c0.blocks[1] = c0.blocks[1], c0.blocks[0]
+	c0.blocks[1].relTicks = 1
+	back := c0.blocks[1]
+	back.relTicks = 0
+	c0.blocks = append(c0.blocks, back)
+	orderClusters[0] = c0
 	orderData, orderOffsets := buildValid(seed, orderClusters, trackList, buildOpts{})
 	if err := write(dir, FragOrderMKV, orderData); err != nil {
 		return nil, err
 	}
 	res.Expectations = append(res.Expectations, Expectation{
 		File: FragOrderMKV, Category: "order_violation", ElementID: 0xA3,
-		Offset: orderOffsets["cluster0"], Stage: "validate",
-		Note: "the first cluster interleaves track 2 before track 1 with a later order value",
+		Offset: orderOffsets["cluster0_block5"], Stage: "validate",
+		Note: "track 2's second block in cluster 0 repeats one tick earlier than the first",
 	})
 
 	mv1 := manifestV1JSON(seed)
@@ -437,7 +467,35 @@ func Generate(dir string, seed int64) (*Result, error) {
 	sort.Slice(res.Expectations, func(i, j int) bool {
 		return res.Expectations[i].File < res.Expectations[j].File
 	})
+	if err := writeExpectations(dir, res); err != nil {
+		return nil, err
+	}
 	return res, nil
+}
+
+// ExpectationsFile is written next to the fixtures so a later verify run can
+// compare its report against the generator's preset offsets byte for byte.
+const ExpectationsFile = "expectations.json"
+
+func writeExpectations(dir string, res *Result) error {
+	data, err := json.MarshalIndent(res.Expectations, "", "  ")
+	if err != nil {
+		return err
+	}
+	return write(dir, ExpectationsFile, append(data, '\n'))
+}
+
+// LoadExpectations reads the preset failures written beside the fixtures.
+func LoadExpectations(dir string) ([]Expectation, error) {
+	data, err := os.ReadFile(filepath.Join(dir, ExpectationsFile))
+	if err != nil {
+		return nil, err
+	}
+	var out []Expectation
+	if err := json.Unmarshal(data, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func write(dir, name string, data []byte) error {
@@ -447,28 +505,6 @@ func write(dir, name string, data []byte) error {
 // findTrackEntryOffset locates the TrackEntry whose TrackNumber matches. The
 // generator knows the layout, so it can scan for the TrackNumber payload rather
 // than trusting a parser.
-func findTrackEntryOffset(data []byte, track uint64) int64 {
-	// TrackEntry ID 0xAE immediately precedes the TrackNumber element.
-	needle := append(putID(0xAE), putSize(0)...)
-	for i := 0; i+len(needle) < len(data); i++ {
-		if data[i] == needle[0] && data[i+1] == needle[1] {
-			// Confirm the TrackNumber inside.
-			want := uintEl(0xD7, track)
-			if bytes.Contains(data[i:i+min(len(data)-i, 64)], want) {
-				return int64(i)
-			}
-		}
-	}
-	return -1
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 func manifestV1JSON(seed int64) string {
 	return fmt.Sprintf(`{
   "version": 1,

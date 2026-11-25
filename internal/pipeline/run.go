@@ -120,8 +120,8 @@ func (r *VerifyReport) Err() error {
 
 func pErr(p fragments.Problem, target **timeline.Error) bool {
 	*target = &timeline.Error{
-		Stage: timeline.StageValidate, Category: p.Category, Offset: p.Offset,
-		Tracks: p.Tracks, Reason: p.Reason,
+		Stage: timeline.StageValidate, Category: p.Category, ElementID: p.ElementID,
+		Offset: p.Offset, Tracks: p.Tracks, Reason: p.Reason,
 	}
 	return true
 }
