@@ -162,6 +162,9 @@ func runSelfTest(dir, task string) (*report, error) {
 		fmt.Sprintf("gaps %v", damaged.DamagedGaps))
 	st.check("normal scenario records no damage gaps", len(normal.DamagedGaps) == 0,
 		fmt.Sprintf("gaps %v", normal.DamagedGaps))
+	st.check("damaged scenario marks fragments overlapping damage",
+		anyDamaged(damaged.Events),
+		fmt.Sprintf("events %v", damagedFlags(damaged.Events)))
 	st.check("duplicate and reorder counted",
 		normal.PacketsDuplicate > 0 && normal.PacketsReordered > 0,
 		fmt.Sprintf("dup=%d reordered=%d", normal.PacketsDuplicate, normal.PacketsReordered))
@@ -409,6 +412,14 @@ func hasSourceGap(gaps []gapReport, source string) bool {
 		}
 	}
 	return false
+}
+
+func damagedFlags(evs []eventReport) map[string]bool {
+	m := make(map[string]bool, len(evs))
+	for _, e := range evs {
+		m[e.Name] = e.Damaged
+	}
+	return m
 }
 
 func anyDamaged(evs []eventReport) bool {
