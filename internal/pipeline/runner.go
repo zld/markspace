@@ -344,6 +344,10 @@ func (r *Runner) process(ctx context.Context, j *job) (*InputResult, error) {
 		}
 	}
 	res.ResumedStages = append([]Stage(nil), cp.Completed...)
+	// A checkpoint carrying completed stages means this invocation is a
+	// resume; on a cold run there is nothing to resume and ResumeMs stays 0
+	// so the field cannot be mistaken for the full first-run duration.
+	hadProgress := len(cp.Completed) > 0
 	resumeStart := r.now()
 
 	// Interrupting means "stop after interrupting the first execution", so
@@ -371,7 +375,9 @@ func (r *Runner) process(ctx context.Context, j *job) (*InputResult, error) {
 		out.CheckpointStage = cp.LastStage()
 		return out, ferr
 	}
-	res.ResumeMs = r.now().Sub(resumeStart).Milliseconds()
+	if hadProgress {
+		res.ResumeMs = r.now().Sub(resumeStart).Milliseconds()
+	}
 	res.Status = "ok"
 	res.ExitCode = 0
 	res.CheckpointStage = cp.LastStage()

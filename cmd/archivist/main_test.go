@@ -87,6 +87,9 @@ func TestRunReportIsStable(t *testing.T) {
 	}
 	a := run()
 	b := run()
+	if a.Results[0].ResumeMs != 0 {
+		t.Fatalf("cold run resume_ms = %d, want 0", a.Results[0].ResumeMs)
+	}
 	if a.Results[0].OutputSHA256 != b.Results[0].OutputSHA256 {
 		t.Fatal("output digest changed between runs")
 	}

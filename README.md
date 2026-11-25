@@ -27,7 +27,7 @@ and prints a JSON report with these fields per input:
 | `error_offset` | absolute byte offset of the first unparseable box (`-1` if none) |
 | `repaired_pts` | sample of changed timestamps with original, repaired and delta |
 | `index_entries` | samples described by the rebuilt random-access index |
-| `resume_ms` | wall time spent in this invocation |
+| `resume_ms` | wall time spent reusing/resuming completed stages in this invocation (`0` on a cold run) |
 | `output_sha256` | digest of the rebuilt MP4 |
 | `provenance_sha256` | path-independent digest of the provenance record |
 
