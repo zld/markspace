@@ -1,0 +1,14 @@
+# Build artifacts
+/tracecheck
+/bin/
+/dist/
+
+# Generated reports and local fixtures
+/out/
+*.mp4
+*.jsonl
+
+# Editor and OS metadata
+.DS_Store
+.idea/
+.vscode/
