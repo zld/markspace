@@ -18,10 +18,10 @@ func sample() *Manifest {
 			Segments:  []SegmentInfo{{Path: "seg_5.m4s", Seq: 5, StartMS: 8000, DurMS: 2000}},
 			MissingMS: [][2]int64{},
 		},
-		Audio: AudioInfo{InputChannels: 2, InputSampleRate: 48000, OutputChannels: 2, OutputSampleRate: 48000, Layout: "stereo"},
-		Video: VideoInfo{ColorTarget: model.ColorInfo{Primaries: "bt709", Transfer: "bt709", Matrix: "bt709"}},
-		Output: Output{Path: "kill-1.mp4", SHA256: "abc", SizeBytes: 1000, DurationMS: 8000, Bitrate: 1000000},
-		Params: Params{WindowBeforeMS: 3000, WindowAfterMS: 5000, TargetBitrate: 1800000, Workers: 2, ParamsHash: "ph"},
+		Audio:       AudioInfo{InputChannels: 2, InputSampleRate: 48000, OutputChannels: 2, OutputSampleRate: 48000, Layout: "stereo"},
+		Video:       VideoInfo{ColorTarget: model.ColorInfo{Primaries: "bt709", Transfer: "bt709", Matrix: "bt709"}},
+		Output:      Output{Path: "kill-1.mp4", SHA256: "abc", SizeBytes: 1000, DurationMS: 8000, Bitrate: 1000000},
+		Params:      Params{WindowBeforeMS: 3000, WindowAfterMS: 5000, TargetBitrate: 1800000, Workers: 2, ParamsHash: "ph"},
 		IssueCounts: map[string]int{"COLOR_MISSING": 1},
 	}
 }

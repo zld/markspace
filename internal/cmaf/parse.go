@@ -90,11 +90,11 @@ func (i *Init) TrackTypeOf(id uint32) TrackType {
 
 // Fragment is one parsed media fragment (moof+mdat).
 type Fragment struct {
-	Path     string
-	Seq      uint32 // mfhd sequence number
-	Tfdt     uint64 // video track base media decode time (video timescale)
-	VideoDur uint64 // video decode duration (video timescale)
-	HasVideo bool
+	Path      string
+	Seq       uint32 // mfhd sequence number
+	Tfdt      uint64 // video track base media decode time (video timescale)
+	VideoDur  uint64 // video decode duration (video timescale)
+	HasVideo  bool
 	AudioTfdt uint64
 	AudioDur  uint64
 	HasAudio  bool
