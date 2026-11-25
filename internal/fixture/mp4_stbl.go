@@ -55,13 +55,13 @@ func videoStsd(spec MP4Spec) []byte {
 	// Minimal self-consistent avcC: one 4-byte SPS and one 4-byte PPS.
 	// Structural markers only; no decoder behavior is claimed.
 	avcC := []byte{
-		1,          // configurationVersion
-		0x42,       // AVCProfileBaseline
-		0,          // profile_compatibility
-		0x1E,       // level 30
-		0xFF,       // 6 reserved bits + lengthSizeMinusOne=3 (4-byte NAL len)
-		0xE1,       // 3 reserved bits + numOfSequenceParameterSets=1
-		0, 4,       // SPS length
+		1,    // configurationVersion
+		0x42, // AVCProfileBaseline
+		0,    // profile_compatibility
+		0x1E, // level 30
+		0xFF, // 6 reserved bits + lengthSizeMinusOne=3 (4-byte NAL len)
+		0xE1, // 3 reserved bits + numOfSequenceParameterSets=1
+		0, 4, // SPS length
 		0x67, 0x42, 0x00, 0x1E, // SPS NAL (marker content)
 		1,    // numOfPictureParameterSets
 		0, 4, // PPS length

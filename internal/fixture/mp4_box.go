@@ -68,14 +68,14 @@ type SampleDesc struct {
 	Index    uint32 // 1-based sample number within the track
 	Offset   int64  // absolute file offset of the sample bytes
 	Size     uint32
-	TimeTick int64  // presentation time in master ticks
+	TimeTick int64 // presentation time in master ticks
 	Keyframe bool
 	Complete bool // false when truncation cut this sample short
 }
 
 // MP4Manifest captures the generator ground truth for later assertions.
 type MP4Manifest struct {
-	Samples       []SampleDesc
+	Samples        []SampleDesc
 	VideoTimescale uint32
 	AudioTimescale uint32
 	Width, Height  uint32

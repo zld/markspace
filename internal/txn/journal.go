@@ -29,10 +29,10 @@ const (
 // one-file committed-boundary marker. All writes are fsynced before a
 // commit is acknowledged.
 type Journal struct {
-	mu       sync.Mutex
-	path     string
-	file     *os.File
-	writer   *bufio.Writer
+	mu        sync.Mutex
+	path      string
+	file      *os.File
+	writer    *bufio.Writer
 	committed map[string]bool
 }
 

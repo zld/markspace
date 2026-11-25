@@ -11,11 +11,11 @@ import (
 // ReorderConfig bounds the buffer so memory use stays finite under burst
 // loss and pathological reordering.
 type ReorderConfig struct {
-	WindowSize       int   // max sequence distance held before flushing
-	MaxBuffered      int   // hard cap on packets retained
-	BaseWaitTicks    int64 // buffer wait at high bandwidth
-	MinWaitTicks     int64 // floor so wait never collapses to zero
-	MaxWaitTicks     int64 // ceiling so wait can never grow unbounded
+	WindowSize    int   // max sequence distance held before flushing
+	MaxBuffered   int   // hard cap on packets retained
+	BaseWaitTicks int64 // buffer wait at high bandwidth
+	MinWaitTicks  int64 // floor so wait never collapses to zero
+	MaxWaitTicks  int64 // ceiling so wait can never grow unbounded
 }
 
 // DefaultReorderConfig returns safe bounded defaults.
@@ -30,22 +30,22 @@ func DefaultReorderConfig() ReorderConfig {
 
 // arrival is one buffered packet with its simulated arrival tick.
 type arrival struct {
-	seq       uint16
-	ts        uint32
+	seq        uint16
+	ts         uint32
 	arriveTick int64
-	payload   []byte
-	repair    bool
+	payload    []byte
+	repair     bool
 }
 
 // ReorderBuffer deduplicates by sequence number, sorts within a bounded
 // window and reports late packets (outside the window) as losses. It is
 // safe for sequential single-goroutine use.
 type ReorderBuffer struct {
-	cfg       ReorderConfig
-	have      map[uint16]arrival
-	order     []uint16 // sorted sequence numbers currently buffered
-	nextSeq   uint16   // next expected in-order sequence
-	started   bool
+	cfg     ReorderConfig
+	have    map[uint16]arrival
+	order   []uint16 // sorted sequence numbers currently buffered
+	nextSeq uint16   // next expected in-order sequence
+	started bool
 	// recentDelivered is a bounded ring of delivered seqs so duplicates of
 	// already-flushed packets are still recognized.
 	recentDelivered []uint16

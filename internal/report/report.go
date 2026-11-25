@@ -21,17 +21,17 @@ type DamageRange struct {
 
 // Summary is the complete, stable result of one pipeline run.
 type Summary struct {
-	CommitID        string        `json:"commit_id"`
-	AVSyncMs        int64         `json:"av_sync_ms"`
-	RecoveryRate    float64       `json:"recovery_rate"`
-	P95LatencyMs    int64         `json:"p95_latency_ms"`
-	KeyframeGapMs   int64         `json:"keyframe_gap_ms"`
-	DamageRanges    []DamageRange `json:"damage_ranges"`
-	ConflictCount   int           `json:"conflict_count"`
-	ErrorCount      int           `json:"error_count"`
-	RecoveredPackets int          `json:"recovered_packets"`
-	Unrecovered     int           `json:"unrecovered_packets"`
-	Healthy         bool          `json:"healthy"`
+	CommitID         string        `json:"commit_id"`
+	AVSyncMs         int64         `json:"av_sync_ms"`
+	RecoveryRate     float64       `json:"recovery_rate"`
+	P95LatencyMs     int64         `json:"p95_latency_ms"`
+	KeyframeGapMs    int64         `json:"keyframe_gap_ms"`
+	DamageRanges     []DamageRange `json:"damage_ranges"`
+	ConflictCount    int           `json:"conflict_count"`
+	ErrorCount       int           `json:"error_count"`
+	RecoveredPackets int           `json:"recovered_packets"`
+	Unrecovered      int           `json:"unrecovered_packets"`
+	Healthy          bool          `json:"healthy"`
 }
 
 // Builder accumulates the values each subsystem contributes.

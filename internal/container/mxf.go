@@ -36,12 +36,12 @@ type MXFIndexEntry struct {
 // MXFMeta is the structured result of parsing one MXF sample.
 type MXFMeta struct {
 	FileMeta
-	EditRateNum  int64
-	EditRateDen  int64
-	Duration     int64
-	Origin       int64
-	EssenceStart int64
-	Index        []MXFIndexEntry
+	EditRateNum   int64
+	EditRateDen   int64
+	Duration      int64
+	Origin        int64
+	EssenceStart  int64
+	Index         []MXFIndexEntry
 	width, height uint32
 }
 

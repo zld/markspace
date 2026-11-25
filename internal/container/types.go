@@ -6,11 +6,11 @@ package container
 // ColorDesc is an nclx-style colour description. Source identifies which
 // container supplied it so arbitration conflicts stay auditable.
 type ColorDesc struct {
-	Primaries  uint16
-	Transfer   uint16
-	Matrix     uint16
-	FullRange  bool
-	Source     string // "mxf" | "mp4"
+	Primaries uint16
+	Transfer  uint16
+	Matrix    uint16
+	FullRange bool
+	Source    string // "mxf" | "mp4"
 }
 
 // TrackDesc is the normalized description of one track. All time fields
@@ -38,7 +38,7 @@ type FileMeta struct {
 	Tracks []TrackDesc
 	// ConflictCandidates lists fields whose raw values differ across
 	// containers, already converted to comparable units.
-	Color     *ColorDesc
-	Rotation  int
-	HasIndex  bool
+	Color    *ColorDesc
+	Rotation int
+	HasIndex bool
 }

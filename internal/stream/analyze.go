@@ -12,15 +12,15 @@ import (
 // Frame is one coded frame normalized from container samples. Only the
 // video track produces frames here; audio is handled via timing checks.
 type Frame struct {
-	Track     uint32
-	Number    uint32 // 1-based
-	Offset    int64
-	Size      uint32
-	TimeTick  int64
-	EndTick   int64
-	Keyframe  bool
-	Complete  bool
-	HasIndex  bool // a keyframe index existed for this track
+	Track    uint32
+	Number   uint32 // 1-based
+	Offset   int64
+	Size     uint32
+	TimeTick int64
+	EndTick  int64
+	Keyframe bool
+	Complete bool
+	HasIndex bool // a keyframe index existed for this track
 }
 
 // FrameStats summarizes the structural scan.
