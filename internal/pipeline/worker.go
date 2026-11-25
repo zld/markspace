@@ -132,6 +132,12 @@ func Run(parent context.Context, jobs []Job, opts Options) []Result {
 func produce(ctx context.Context, controller *Controller, jobs []Job, jobsCh chan<- Job, resultsCh chan<- Result) {
 	defer close(jobsCh)
 	for i, job := range jobs {
+		if err := ctx.Err(); err != nil {
+			for _, remaining := range jobs[i:] {
+				resultsCh <- notStartedResult(remaining, context.Cause(ctx))
+			}
+			return
+		}
 		select {
 		case jobsCh <- job:
 		case <-ctx.Done():
