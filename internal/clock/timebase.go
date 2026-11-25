@@ -67,15 +67,22 @@ func Scale(units uint64, from, to uint32) (uint64, error) {
 	return mulDiv(units, uint64(to), uint64(from))
 }
 
-// mulDiv computes roundHalfUp(a*b/d) using 128-bit intermediates.
+// mulDiv computes roundHalfUp(a*b/d) using 128-bit intermediates. A result
+// that does not fit in 64 bits is reported as overflow rather than wrapping.
 func mulDiv(a, b, d uint64) (uint64, error) {
 	if d == 0 {
 		return 0, ErrZeroTimescale
 	}
 	hi, lo := bits.Mul64(a, b)
+	if hi >= d {
+		return 0, ErrTimeOverflow
+	}
 	q, r := bits.Div64(hi, lo, d)
 	// Round half away from zero (all inputs are unsigned).
 	if r >= d-r {
+		if q == math.MaxUint64 {
+			return 0, ErrTimeOverflow
+		}
 		q++
 	}
 	return q, nil
