@@ -24,10 +24,10 @@ var Magic = [8]byte{'R', 'T', 'P', 'L', 'O', 'G', '1', 0}
 
 // Record is one parsed rtplog entry.
 type Record struct {
-	Index   int           // zero-based record position in the file
-	Offset  int64         // byte offset of the record's length prefix
-	Arrival time.Time     // receiver arrival time
-	Packet  []byte        // RTP packet bytes (owned by the record)
+	Index   int       // zero-based record position in the file
+	Offset  int64     // byte offset of the record's length prefix
+	Arrival time.Time // receiver arrival time
+	Packet  []byte    // RTP packet bytes (owned by the record)
 }
 
 // HeaderSize is the magic header length.
