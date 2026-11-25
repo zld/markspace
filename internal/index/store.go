@@ -16,6 +16,7 @@ type Record struct {
 	Path            string `json:"path"`
 	ContentSHA256   string `json:"content_sha256"`
 	StructureSHA256 string `json:"structure_sha256"`
+	MetadataVersion string `json:"metadata_version,omitempty"`
 	TrackCount      int    `json:"track_count"`
 	ErrorCount      int    `json:"error_count"`
 }

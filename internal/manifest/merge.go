@@ -47,6 +47,7 @@ type Item struct {
 	Format          media.Format          `json:"format"`
 	SHA256          string                `json:"sha256"`
 	Fingerprint     *source.Fingerprint   `json:"fingerprint,omitempty"`
+	Fingerprints    []source.Fingerprint  `json:"fingerprints,omitempty"`
 	Tracks          []media.Track         `json:"tracks,omitempty"`
 	Metadata        *metadata.Result      `json:"metadata_resolution,omitempty"`
 	InputByteRange  auditerrors.ByteRange `json:"input_byte_range"`
