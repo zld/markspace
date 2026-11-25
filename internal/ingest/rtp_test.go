@@ -12,7 +12,7 @@ import (
 func marshalRTP(t *testing.T, seq uint16, ts uint32, ssrc uint32) []byte {
 	t.Helper()
 	p := &rtp.Packet{
-		Header: rtp.Header{Version: 2, PayloadType: 96, SequenceNumber: seq, Timestamp: ts, SSRC: ssrc},
+		Header:  rtp.Header{Version: 2, PayloadType: 96, SequenceNumber: seq, Timestamp: ts, SSRC: ssrc},
 		Payload: []byte{1, 2, 3},
 	}
 	b, err := p.Marshal()
