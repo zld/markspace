@@ -17,7 +17,9 @@ echo "== clean first run =="
 out="$(go run ./cmd/demo --fixture clean --out /tmp/replay-a)"
 echo "$out"
 grep -q '^stages=ingest,parse,cut,manifest$' <<<"$out" || fail "stages"
-grep -q '^wraps=1 cuts=2 silence_ms=1000' <<<"$out" || fail "clean metrics"
+grep -q '^wraps=1$' <<<"$out" || fail "wraps"
+grep -q '^cuts=2$' <<<"$out" || fail "cuts"
+grep -q '^silence_ms=1000$' <<<"$out" || fail "silence"
 grep -q '^created=2 reused=0 invalidated=0$' <<<"$out" || fail "first cache"
 grep -q '^manifest_valid=true$' <<<"$out" || fail "manifest valid"
 
@@ -27,7 +29,7 @@ grep -q '^created=0 reused=2 invalidated=0$' <<<"$out" || fail "repeat cache"
 
 echo "== source mutation =="
 out="$(go run ./cmd/demo --fixture clean --out /tmp/replay-a --mutate-source)"
-grep -q '^invalidated=2$' <<<"$out" || fail "invalidation"
+grep -q 'invalidated=2' <<<"$out" || fail "invalidation"
 
 echo "== recoverable cut checkpoint =="
 set +e
@@ -35,7 +37,7 @@ go run ./cmd/demo --fixture damaged --out /tmp/replay-b --stop-after cut > /tmp/
 gorun_code=$?
 set -e
 cat /tmp/replay-stop.out
-grep -q '^checkpoint=cut ' /tmp/replay-stop.out || fail "checkpoint marker"
+grep -q '^checkpoint=cut$' /tmp/replay-stop.out || fail "checkpoint marker"
 grep -q 'gap_events=2' /tmp/replay-stop.out || fail "gap count"
 grep -q 'exit_code=2' /tmp/replay-stop.out || fail "internal exit marker"
 # "go run" itself normalizes any nonzero child status to 1. Verify the
@@ -51,7 +53,7 @@ echo "go_run_wrapper_exit=$gorun_code compiled_binary_exit=$stop_code"
 echo "== resume =="
 out="$(go run ./cmd/demo --fixture damaged --out /tmp/replay-b --resume)"
 echo "$out"
-grep -q '^resume_stage=manifest ' <<<"$out" || fail "resume stage"
+grep -q '^resume_stage=manifest$' <<<"$out" || fail "resume stage"
 grep -q '^resume_packet=[1-9][0-9]*$' <<<"$out" || fail "resume packet"
 grep -q 'manifest_valid=true' <<<"$out" || fail "resume manifest"
 
