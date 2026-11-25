@@ -14,6 +14,11 @@ import (
 
 func mustStream(t *testing.T, seqTS [][2]uint32, rate uint32, kbps int) *ingest.Stream {
 	t.Helper()
+	return mustStreamWithArrivals(t, seqTS, rate, kbps, nil)
+}
+
+func mustStreamWithArrivals(t *testing.T, seqTS [][2]uint32, rate uint32, kbps int, extraMS map[int]int64) *ingest.Stream {
+	t.Helper()
 	var buf bytes.Buffer
 	if err := rtplog.WriteHeader(&buf); err != nil {
 		t.Fatal(err)
@@ -31,7 +36,11 @@ func mustStream(t *testing.T, seqTS [][2]uint32, rate uint32, kbps int) *ingest.
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := rtplog.WriteRecord(&buf, base.Add(time.Duration(i)*20*time.Millisecond), raw); err != nil {
+		arrival := base.Add(time.Duration(i) * 20 * time.Millisecond)
+		if extraMS != nil {
+			arrival = arrival.Add(time.Duration(extraMS[i]) * time.Millisecond)
+		}
+		if err := rtplog.WriteRecord(&buf, arrival, raw); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -125,7 +134,7 @@ func TestLocateBoundariesVFR(t *testing.T) {
 	r.LocateBoundaries(50) // 50 ms = 4500 ticks at 90 kHz
 	wantMS := []float64{
 		0,
-		44.44444444444444,  // 4000 ticks
+		44.44444444444444,  // 4000 ticks (relative to first sample)
 		111.11111111111111, // 10000 ticks
 		116.66666666666667, // 10500 ticks
 		222.22222222222223, // 20000 ticks

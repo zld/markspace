@@ -144,8 +144,10 @@ func (r *Representation) LocateBoundaries(periodMS float64) {
 	firstMS := timeAt(0)
 	lastMS := timeAt(len(pkts) - 1)
 
+	// Boundary times are relative to the stream start so different
+	// representations can be compared on the shared clock.
 	r.Boundaries = append(r.Boundaries, Boundary{
-		TimeMS: firstMS, FirstRecord: pkts[0].RecordIndex, ExtSeqStart: pkts[0].Clock.ExtSeq,
+		TimeMS: 0, FirstRecord: pkts[0].RecordIndex, ExtSeqStart: pkts[0].Clock.ExtSeq,
 	})
 	target := firstMS + periodMS
 	idx := 1
@@ -168,7 +170,7 @@ func (r *Representation) LocateBoundaries(periodMS float64) {
 			continue // two targets snapped to the same sample
 		}
 		r.Boundaries = append(r.Boundaries, Boundary{
-			TimeMS: timeAt(chosen), FirstRecord: p.RecordIndex, ExtSeqStart: p.Clock.ExtSeq,
+			TimeMS: timeAt(chosen) - firstMS, FirstRecord: p.RecordIndex, ExtSeqStart: p.Clock.ExtSeq,
 		})
 		target += periodMS
 	}
