@@ -142,10 +142,12 @@ func Run(opts Options) (*Result, error) {
 			return nil, err
 		}
 	} else if len(existing) > 0 {
-		// A fresh run over a root with stale checkpoints starts clean.
+		// A fresh run over a root with stale checkpoints starts clean. The
+		// cleared slice must not be reused for stage skipping, so drop it.
 		if err := store.Clear(-1); err != nil {
 			return nil, err
 		}
+		existing = nil
 	}
 
 	normalized, err := buildNormalized(opts.Manifest)
@@ -501,6 +503,32 @@ func writeGeneration(genDir string, manifestOut []byte, asset *media.Asset) erro
 	}
 	if err := writeFile(filepath.Join(staging, completionMarker), []byte("ok\n")); err != nil {
 		return err
+	}
+	// A generation directory name is derived from the input and manifest
+	// digests, so an existing directory with the same name should hold the same
+	// bytes. Re-committing identical content is idempotent; anything else must
+	// not overwrite what may be the last valid output.
+	if info, statErr := os.Stat(genDir); statErr == nil {
+		if !info.IsDir() {
+			return timeline.New(timeline.StageCommit, timeline.CatCheckpointState, 0, -1,
+				"generation path %s exists and is not a directory", filepath.Base(genDir))
+		}
+		existingDigest, err := GenerationDigest(genDir)
+		if err != nil {
+			return timeline.Wrap(err, timeline.StageCommit, timeline.CatCheckpointState, 0, -1,
+				"generation %s exists but is not readable", filepath.Base(genDir))
+		}
+		stagingDigest, err := GenerationDigest(staging)
+		if err != nil {
+			return err
+		}
+		if existingDigest != stagingDigest {
+			return timeline.New(timeline.StageCommit, timeline.CatCheckpointState, 0, -1,
+				"generation %s already exists with different content; refusing to overwrite",
+				filepath.Base(genDir))
+		}
+		ok = true // identical content is already published; drop staging
+		return nil
 	}
 	if err := os.Rename(staging, genDir); err != nil {
 		return timeline.Wrap(err, timeline.StageCommit, timeline.CatIO, 0, -1,

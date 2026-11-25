@@ -358,3 +358,72 @@ var tracksFixture = []tracks.Track{
 	{Number: 1, Type: tracks.TypeVideo, CodecID: "V_MPEG4/ISO/AVC", Language: "jpn"},
 	{Number: 2, Type: tracks.TypeAudio, CodecID: "A_OPUS", Language: "jpn"},
 }
+
+func TestFreshRerunReusesNoStaleCheckpoints(t *testing.T) {
+	dir := t.TempDir()
+	m := testManifest(t, manifestV1)
+	a := testAsset()
+	first, err := Run(Options{Out: dir, Manifest: m, Asset: a})
+	if err != nil {
+		t.Fatalf("first: %v", err)
+	}
+	// A second run without --resume must ignore checkpoints, rerun every stage
+	// and still be idempotent against the existing generation directory.
+	second, err := Run(Options{Out: dir, Manifest: m, Asset: a})
+	if err != nil {
+		t.Fatalf("second: %v", err)
+	}
+	for _, r := range second.Records {
+		if r.Skipped {
+			t.Fatalf("fresh rerun reused a checkpoint: %+v", r)
+		}
+	}
+	if second.FinalDigest != first.FinalDigest {
+		t.Fatalf("fresh rerun digest %s != %s", second.FinalDigest, first.FinalDigest)
+	}
+}
+
+func TestResumeAfterCompleteIsIdempotent(t *testing.T) {
+	dir := t.TempDir()
+	m := testManifest(t, manifestV1)
+	a := testAsset()
+	first, err := Run(Options{Out: dir, Manifest: m, Asset: a})
+	if err != nil {
+		t.Fatalf("first: %v", err)
+	}
+	// Resume after a fully committed run must verify, not fail on the existing
+	// generation directory.
+	second, err := Run(Options{Out: dir, Manifest: m, Asset: a, Resume: true})
+	if err != nil {
+		t.Fatalf("resume after complete: %v", err)
+	}
+	if second.FinalDigest != first.FinalDigest {
+		t.Fatalf("resume digest %s != %s", second.FinalDigest, first.FinalDigest)
+	}
+}
+
+func TestCommitRefusesToOverwriteDifferentGeneration(t *testing.T) {
+	dir := t.TempDir()
+	m := testManifest(t, manifestV1)
+	a := testAsset()
+	first, err := Run(Options{Out: dir, Manifest: m, Asset: a})
+	if err != nil {
+		t.Fatalf("first: %v", err)
+	}
+	// Corrupt a published file while keeping the directory name, then force a
+	// recommit: the differing content must be refused, not silently replaced.
+	target := filepath.Join(dir, first.Generation, "manifest.json")
+	if err := os.WriteFile(target, []byte("corrupted\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Run(Options{Out: dir, Manifest: m, Asset: a}); err == nil {
+		t.Fatal("recommit overwrote a generation with different content")
+	}
+	data, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "corrupted\n" {
+		t.Fatalf("corrupt generation was overwritten: %q", data)
+	}
+}
