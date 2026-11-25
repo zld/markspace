@@ -3,9 +3,12 @@ package pipeline
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"mediapack/internal/fault"
+	"mediapack/internal/recovery"
 	"mediapack/internal/report"
 )
 
@@ -92,6 +95,25 @@ func TestDemoCorruptBoundaryThenResumePreservesHealthy(t *testing.T) {
 	}
 	if resumed.SegmentSHA256 != clean.SegmentSHA256 {
 		t.Fatalf("recovered aggregate %s != clean %s", resumed.SegmentSHA256, clean.SegmentSHA256)
+	}
+}
+
+func TestCorruptRunDoesNotReplacePublishedManifest(t *testing.T) {
+	dir := t.TempDir()
+	old := []byte(`{"version":"previous-good"}`)
+	if _, err := recovery.Publish(dir, old); err != nil {
+		t.Fatal(err)
+	}
+	_, err := RunDemo(context.Background(), Options{Out: dir, CorruptBoundary: true})
+	if fault.Classify(err) != fault.BoundaryMismatch {
+		t.Fatalf("err=%v", err)
+	}
+	current, err := os.ReadFile(filepath.Join(dir, "published", "current.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(current) != string(old) {
+		t.Fatalf("published manifest was replaced:\n%s", current)
 	}
 }
 
