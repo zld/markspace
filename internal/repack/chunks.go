@@ -2,7 +2,9 @@ package repack
 
 import (
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -12,6 +14,17 @@ import (
 	"mediaflow/internal/policy"
 	"mediaflow/internal/probe"
 )
+
+// chunkMeta is embedded at the start of every mchk payload. It makes each chunk
+// self-describing even when separated from its checkpoint index.
+type chunkMeta struct {
+	Index        int    `json:"index"`
+	TrackID      uint32 `json:"track_id"`
+	StartSample  int    `json:"start_sample"`
+	EndSample    int    `json:"end_sample"`
+	InputDigest  string `json:"input_digest"`
+	ConfigDigest string `json:"config_digest"`
+}
 
 func chunkPath(dir string, i int, temp bool) string {
 	name := fmt.Sprintf("chunk-%06d.mchk", i)
@@ -60,6 +73,14 @@ func writeChunk(input *os.File, r *probe.Report, rec index.ChunkRecord, dir stri
 	for i := rec.StartSample; i < rec.EndSample; i++ {
 		payloadBytes += int64(track.Samples[i].Size)
 	}
+	meta, err := json.Marshal(chunkMeta{
+		Index: rec.Index, TrackID: rec.TrackID, StartSample: rec.StartSample,
+		EndSample: rec.EndSample, InputDigest: rec.InputDigest, ConfigDigest: rec.ConfigDigest,
+	})
+	if err != nil {
+		return 0, nil, err
+	}
+	metaFrame := int64(4 + len(meta))
 
 	tmpPath := chunkPath(dir, rec.Index, true)
 	finalPath := chunkPath(dir, rec.Index, false)
@@ -69,7 +90,17 @@ func writeChunk(input *os.File, r *probe.Report, rec index.ChunkRecord, dir stri
 	}
 	h := sha256.New()
 	w := io.MultiWriter(out, h)
-	if _, err := w.Write(boxHeader("mchk", 8+payloadBytes)); err != nil {
+	if _, err := w.Write(boxHeader("mchk", 8+metaFrame+payloadBytes)); err != nil {
+		out.Close()
+		return 0, nil, err
+	}
+	var length [4]byte
+	binary.BigEndian.PutUint32(length[:], uint32(len(meta)))
+	if _, err := w.Write(length[:]); err != nil {
+		out.Close()
+		return 0, nil, err
+	}
+	if _, err := w.Write(meta); err != nil {
 		out.Close()
 		return 0, nil, err
 	}

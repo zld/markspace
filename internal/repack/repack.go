@@ -140,7 +140,10 @@ func Process(opt Options) (*Result, error) {
 		if err := cp.Begin(i); err != nil {
 			return nil, err
 		}
-		written, newRec, err := writeChunk(input, opt.Report, cp.Chunks[i], chunkDir, opt.Hooks)
+		chunkRec := cp.Chunks[i]
+		chunkRec.InputDigest = cp.InputDigest
+		chunkRec.ConfigDigest = cp.ConfigDigest
+		written, newRec, err := writeChunk(input, opt.Report, chunkRec, chunkDir, opt.Hooks)
 		if err != nil {
 			return nil, err
 		}
