@@ -109,9 +109,6 @@ func (q *BoundedQueue) Put(ctx context.Context, u *model.Unit) error {
 	if err := q.checkSize(u); err != nil {
 		return err
 	}
-	if u.EnqueuedAt.IsZero() {
-		u.EnqueuedAt = time.Now()
-	}
 
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -130,6 +127,8 @@ func (q *BoundedQueue) Put(ctx context.Context, u *model.Unit) error {
 			"producer timed out or was canceled while queue was full", err).RecoverableWarn()
 	}
 
+	// Timestamp after the backpressure wait so latency measures queue dwell.
+	u.EnqueuedAt = time.Now()
 	q.items = append(q.items, u)
 	q.enqueued++
 	if len(q.items) > q.peak {
