@@ -318,10 +318,11 @@ func runOne(input string, opts Options, interrupted *bool) FileResult {
 		MaxBytesPerSegment: pipeline.DefaultMaxBytesPerSegment(),
 	}
 
-	// Execute, skipping already-committed segments when resuming.
-	allOutputs := make([]pipeline.SegmentOutput, 0, len(plan)*len(layers))
+	// Execute, skipping already-committed segments when resuming. The
+	// manifest is later rebuilt from the checkpoint, so execution results
+	// need not be retained here.
 	done := 0
-	for li, layer := range layers {
+	for _, layer := range layers {
 		for _, seg := range plan {
 			if state.Has(layer.Name, seg.Number) {
 				continue
@@ -332,7 +333,6 @@ func runOne(input string, opts Options, interrupted *bool) FileResult {
 				return fr
 			}
 			out := so[0]
-			allOutputs = append(allOutputs, out)
 			if err := state.Commit(checkpoint.Segment{
 				Number: out.Number, Layer: out.Layer, Path: filepath.Join("segments", out.Path), SHA256: out.SHA256,
 				Bytes: out.Bytes, Samples: out.Samples, StartUS: out.StartUS, EndUS: out.EndUS,
@@ -355,7 +355,6 @@ func runOne(input string, opts Options, interrupted *bool) FileResult {
 				return fr
 			}
 		}
-		_ = li
 	}
 
 	// Reconstruct the complete output list from the checkpoint so resumed and
@@ -371,7 +370,6 @@ func runOne(input string, opts Options, interrupted *bool) FileResult {
 		rep := pipeline.CheckSync(refTrack, audio)
 		syncRep = &rep
 		fr.AVSyncErrorMS = rep.MaxErrorUS / 1000
-
 	}
 
 	man, err := manifest.Build(c.SHA256, idx.Digest, paramsDigest, state.ID,
