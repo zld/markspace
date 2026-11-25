@@ -44,24 +44,14 @@ type Result struct {
 	SimulatedInterruption    bool
 }
 
-// Run executes the pipeline, transparently restarting once after the requested
-// number of committed stage transitions. The restart loads state from disk.
+// Run executes one process attempt. A -resume-after fault is committed to the
+// journal and returned as a classified interruption; a later normal process
+// loads that journal and resumes.
 func Run(cfg Config) (*Result, error) {
 	if cfg.Log == nil {
 		cfg.Log = io.Discard
 	}
-	res, err := execute(cfg)
-	if errors.Is(err, errInterrupt) && cfg.ResumeAfter > 0 {
-		fmt.Fprintf(cfg.Log, "simulated_interruption=after_%d_committed_transitions\n", cfg.ResumeAfter)
-		cfg.ResumeAfter = 0
-		cfg.Restarted = true
-		res, err = execute(cfg)
-		if res != nil {
-			res.SimulatedInterruption = true
-		}
-		return res, err
-	}
-	return res, err
+	return execute(cfg)
 }
 
 type processor struct {
@@ -132,6 +122,16 @@ func execute(cfg Config) (*Result, error) {
 	fmt.Fprintf(cfg.Log,
 		"journal_recovery=%t journal_path=%s start_stage=%s restarted_from_disk=%t from_scratch=%t\n",
 		found, journalPath, p.resume.StartStage, cfg.Restarted, !found)
+	if found {
+		switch j.Stage {
+		case plan.StageCompleted:
+			fmt.Fprintln(cfg.Log, "resume_source=journal action=verify_completed_products_without_reprocessing")
+		case plan.StageFailed:
+			fmt.Fprintln(cfg.Log, "resume_source=journal action=legal_failed_to_pending_retry")
+		default:
+			fmt.Fprintf(cfg.Log, "resume_source=journal committed_stage=%s action=redo_only_uncommitted_stages\n", j.Stage)
+		}
+	}
 
 	if j.Stage == plan.StageFailed {
 		if _, err := recovery.RetryFailed(j); err != nil {
@@ -171,7 +171,9 @@ func (p *processor) advance(to plan.Stage, reason string) error {
 		return err
 	}
 	if p.cfg.ResumeAfter > 0 && len(p.j.Transitions) >= p.cfg.ResumeAfter {
-		return errInterrupt
+		return apperrors.Wrap(apperrors.KindInterrupted, errInterrupt).
+			WithStage(string(p.j.Stage)).
+			WithPath(p.journalPath)
 	}
 	return nil
 }
