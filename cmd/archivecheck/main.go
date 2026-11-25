@@ -3,17 +3,21 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
 	apperrors "archivecheck/internal/errors"
 	"archivecheck/internal/fixture"
+	"archivecheck/internal/model"
 	"archivecheck/internal/pipeline"
+	"archivecheck/internal/provenance"
 )
 
 func main() {
@@ -24,6 +28,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("archivecheck", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	generate := fs.String("generate", "", "generate deterministic fixtures in DIR")
+	verify := fs.String("verify", "", "independently verify an output manifest JSON")
 	input := fs.String("input", "", "input manifest JSON")
 	out := fs.String("out", "./tmp-out", "output directory")
 	bitratesFlag := fs.String("bitrates", "", "comma-separated target bitrates")
@@ -43,6 +48,13 @@ func run(args []string, stdout, stderr io.Writer) int {
 		}
 		fmt.Fprintf(stdout, "generated_fixtures dir=%s valid=%s truncated=%s bad_edit=%s\n",
 			paths.Directory, paths.ValidInput, paths.Truncated, paths.BadEdit)
+		return 0
+	}
+	if *verify != "" {
+		if err := verifyManifestFile(*verify, *out, stdout); err != nil {
+			printFailure(stderr, err)
+			return apperrors.ExitCode(err)
+		}
 		return 0
 	}
 	if *input == "" {
@@ -72,6 +84,40 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	printResult(stdout, res)
 	return 0
+}
+
+func verifyManifestFile(manifestPath, outFlag string, stdout io.Writer) error {
+	b, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return apperrors.Wrap(apperrors.KindProvenance, err).WithPath(manifestPath).WithStage("verify")
+	}
+	var m model.OutputManifest
+	if err := json.Unmarshal(b, &m); err != nil {
+		return apperrors.Wrap(apperrors.KindManifest, err).WithPath(manifestPath).WithStage("verify")
+	}
+	baseDir := outFlag
+	if filepath.Base(manifestPath) == "manifest.json" {
+		baseDir = filepath.Dir(manifestPath)
+	}
+	if err := provenance.VerifyArtifacts(baseDir, &m); err != nil {
+		return err
+	}
+	checkedSources := 0
+	for _, a := range m.Assets {
+		if a.Provenance.SourcePath == "" || a.Provenance.SourceSHA256 == "" {
+			continue
+		}
+		if err := provenance.VerifySource(model.InputAsset{
+			ID: a.AssetID, Path: a.Provenance.SourcePath,
+		}, a.Provenance.SourceSHA256); err != nil {
+			return err
+		}
+		checkedSources++
+	}
+	fmt.Fprintf(stdout,
+		"verify=ok manifest=%s artifacts=%d sources_checked=%d manifest_sha256=%s artifact_sha256=%s\n",
+		manifestPath, len(m.Artifacts), checkedSources, model.SHA256Bytes(b), m.ArtifactSetSHA256)
+	return nil
 }
 
 func parseBitrates(s string) ([]int64, error) {
