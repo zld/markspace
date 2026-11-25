@@ -43,6 +43,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	workers := fs.Int("workers", 3, "bounded worker count (1..8)")
 	budgetBytes := fs.Int64("budget-bytes", 1<<20, "total/per-item output budget in bytes")
 	cancelAfter := fs.Int("cancel-after", 0, "cancel demonstration run after this many completed items")
+	validOnly := fs.Bool("valid-only", false, "run only the valid mapping samples and exit 0 on success")
 	if err := fs.Parse(args[1:]); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return exitOK
@@ -67,6 +68,20 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	samples := samplegen.All(*seed, *budgetBytes)
+	if *validOnly {
+		filtered := samples[:0:0]
+		for _, sample := range samples {
+			switch sample.Kind {
+			case "subtitle", "timecode", "mp4", "rtp":
+				filtered = append(filtered, sample)
+			case "description":
+				if sample.ID == "layout-remap" {
+					filtered = append(filtered, sample)
+				}
+			}
+		}
+		samples = filtered
+	}
 	jobs := BuildJobs(samples, *seed)
 	opts := pipeline.Options{Workers: *workers, CancelAfterCompleted: *cancelAfter}
 
