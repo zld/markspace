@@ -31,7 +31,7 @@ func ParseFile(path string) (*File, error) {
 	if err := scanChildren(f, path, root, 0, st.Size(), &trackCount, 0); err != nil {
 		return nil, err
 	}
-	file := &File{Path: path, root: root, fileSize: st.Size()}
+	file := &File{Path: path, root: root, fileSize: st.Size(), SizeBytes: st.Size()}
 	if err := file.parseMetadata(f); err != nil {
 		return nil, err
 	}

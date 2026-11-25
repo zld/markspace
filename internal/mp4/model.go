@@ -30,6 +30,7 @@ type Track struct {
 	Number      int
 	ID          uint32
 	TimeScale   clock.TicksPerSecond
+	MovieScale  clock.TicksPerSecond
 	Duration    uint64
 	Edits       []clock.EditEntry
 	HasEdit     bool
@@ -43,9 +44,13 @@ type File struct {
 	MovieTimeScale clock.TicksPerSecond
 	MovieDuration  uint64
 	Tracks         []*Track
+	SizeBytes      int64
 	root           *Box
 	fileSize       int64
 }
+
+// Size returns the container size observed when it was parsed.
+func (f *File) Size() int64 { return f.fileSize }
 
 func (b *Box) findChild(want string) *Box {
 	if b == nil {

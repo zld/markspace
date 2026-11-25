@@ -54,7 +54,7 @@ func parseTrack(r readAtSeeker, path string, trak *Box, movieScale clock.TicksPe
 	if number == 0 {
 		number = 1
 	}
-	t := &Track{Path: path, Number: number}
+	t := &Track{Path: path, Number: number, MovieScale: movieScale}
 	if tkhdBox := trak.findPath("tkhd"); tkhdBox != nil {
 		if any, err := unmarshalBox(r, path, tkhdBox, number); err == nil {
 			if tkhd, ok := any.(*gomp4.Tkhd); ok {
