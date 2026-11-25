@@ -39,6 +39,7 @@ type Mapping struct {
 	SegmentTargetStart  string `json:"segment_target_start"`
 	BoundaryState       string `json:"boundary_state"`
 	DecodeStartSample   uint32 `json:"decode_start_sample"`
+	FailureSample       uint32 `json:"failure_sample,omitempty"`
 	ByteStart           int64  `json:"byte_start"`
 	ByteEnd             int64  `json:"byte_end"`
 	RepresentationBytes int64  `json:"representation_bytes"`
@@ -110,10 +111,12 @@ func Align(m *manifest.Manifest, segmentDuration time.Duration, trackOrder []uin
 				errTicks := int64(0)
 				state := BoundaryAligned
 				decode := uint32(0)
+				failureSample := uint32(0)
 				if boundary != nil {
 					errTicks = BoundaryErrorTicks(TargetTime(boundary.Index, segmentDuration), boundary.PresentationTimescale)
 					state = boundary.State
 					decode = boundary.DecodeStartSample
+					failureSample = boundary.FailureSample
 				}
 				expectedOffset := verifyOffset(rm.ByteRanges, inputID)
 				byteError := offset - expectedOffset
@@ -123,8 +126,10 @@ func Align(m *manifest.Manifest, segmentDuration time.Duration, trackOrder []uin
 					Timescale:         presentationScale(t), SegmentIndex: segIdx, SegmentID: segID,
 					Representation: rep.ID, TimeErrorTicks: errTicks, ByteError: byteError,
 					SegmentTargetStart: TargetTime(max0(segIdx), segmentDuration).String(),
-					BoundaryState:      state, DecodeStartSample: decode,
-					ByteStart: offset, ByteEnd: offset + size, RepresentationBytes: size,
+					BoundaryState:      state,
+					DecodeStartSample:  decode,
+					FailureSample:      failureSample,
+					ByteStart:          offset, ByteEnd: offset + size, RepresentationBytes: size,
 				}
 				if errTicks > out.MaxTimeErrorTicks {
 					out.MaxTimeErrorTicks = errTicks
