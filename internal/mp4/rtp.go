@@ -83,7 +83,7 @@ func ParseRTP(path string, trackNumber int, scale clock.TicksPerSecond) (*RTPTra
 				"pion/rtp failed to parse header", err)
 		}
 		seq := widenSequence(lastSeq, pkt.SequenceNumber, have)
-		ts, err := widenTimestamp(path, trackNumber, recordOff+4, lastTS, pkt.Timestamp, have)
+		ts, err := widenTimestamp(path, trackNumber, recordOff+8, lastTS, pkt.Timestamp, have)
 		if err != nil {
 			return nil, err
 		}
