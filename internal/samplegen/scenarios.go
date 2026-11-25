@@ -21,7 +21,7 @@ const (
 // global steps it shares with track 1.
 func NormalSpec(includeIndex bool) Spec {
 	track1 := TrackSpec{ID: 1, Kind: "video", TimeScale: VideoTimescale}
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 6; i++ {
 		track1.Samples = append(track1.Samples, SampleSpec{
 			Index: i, StartTick: uint64(i * VideoStepTicks), DurationTick: VideoStepTicks,
 			Payload: videoPayload(i),
