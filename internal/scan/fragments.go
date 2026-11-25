@@ -139,7 +139,10 @@ func (s *Scanner) materialise(fragIdx int, moofOff, moofSize int64, trafs []traf
 			base = int64(*tp.baseOffset)
 		}
 		cursor := base
-		startDTS := s.dts[tp.trackID]
+		// Time is accumulated in media ticks and converted once per sample,
+		// so fractional-tick timescales (44.1 kHz, 90 kHz) never accumulate a
+		// rounding error across a track.
+		baseTicks, startDTS := s.ticks[tp.trackID], s.dts[tp.trackID]
 		if tp.baseTime != nil {
 			t, err := clock.FromUnits(*tp.baseTime, info.Timescale)
 			if err != nil {
@@ -147,9 +150,11 @@ func (s *Scanner) materialise(fragIdx int, moofOff, moofSize int64, trafs []traf
 					"base media decode time does not fit the time base", err))
 				return false
 			}
-			startDTS = t
+			baseTicks, startDTS = *tp.baseTime, t
 		}
-		s.dts[tp.trackID] = startDTS
+		_ = startDTS
+		s.ticks[tp.trackID] = baseTicks
+		tickCursor := baseTicks
 		first := len(tr.Samples)
 		for _, run := range tp.truns {
 			if run.dataOffset != nil {
@@ -171,8 +176,14 @@ func (s *Scanner) materialise(fragIdx int, moofOff, moofSize int64, trafs []traf
 					return false
 				}
 				if e.duration == 0 {
-					s.fail(fault.New(fault.StageScan, "scan.trun.zero_duration", off, s.dts[tp.trackID],
+					s.fail(fault.New(fault.StageScan, "scan.trun.zero_duration", off, clock.Invalid,
 						"sample declares a zero duration").WithSample(len(tr.Samples)))
+					return false
+				}
+				dts, err := clock.FromUnits(tickCursor, info.Timescale)
+				if err != nil {
+					s.fail(fault.Wrap(fault.StageScan, "scan.trun.dts_overflow", off, clock.Invalid,
+						"sample decode time does not fit the time base", err).WithSample(len(tr.Samples)))
 					return false
 				}
 				tr.Samples = append(tr.Samples, index.Sample{
@@ -182,12 +193,18 @@ func (s *Scanner) materialise(fragIdx int, moofOff, moofSize int64, trafs []traf
 					Size:         e.size,
 					Ticks:        uint64(e.duration),
 					TickDuration: e.duration,
-					DTS:          s.dts[tp.trackID],
+					DTS:          dts,
 					Duration:     dur,
 					Fragment:     fragIdx,
 				})
-				s.dts[tp.trackID] = clock.Add(s.dts[tp.trackID], dur)
+				tickCursor += uint64(e.duration)
 				cursor += int64(e.size)
+			}
+		}
+		s.ticks[tp.trackID] = tickCursor
+		if tickCursor > 0 {
+			if end, err := clock.FromUnits(tickCursor, info.Timescale); err == nil {
+				s.dts[tp.trackID] = end
 			}
 		}
 		if len(tr.Samples) > first {

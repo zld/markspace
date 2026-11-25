@@ -261,6 +261,28 @@ func TestScannerReportsNonMonotonicTimestamp(t *testing.T) {
 	}
 }
 
+func TestPacketTimesMatchSampleDTS(t *testing.T) {
+	a := fixture.Build(7)[0]
+	res := scan.Run(scan.Input{MP4: a.MP4, RTP: a.RTP})
+	if !res.Ok() {
+		t.Fatalf("normal scan failed: %v", faultStrings(res.Faults))
+	}
+	audio := res.Index.AudioTrack()
+	pi := 0
+	for _, s := range audio.Samples {
+		for pi < len(res.Index.Packets) && res.Index.Packets[pi].Kind != "packet" {
+			pi++
+		}
+		if pi >= len(res.Index.Packets) {
+			t.Fatal("ran out of packets before the last sample")
+		}
+		if res.Index.Packets[pi].Time != s.DTS {
+			t.Fatalf("packet time %v != sample dts %v", res.Index.Packets[pi].Time, s.DTS)
+		}
+		pi++
+	}
+}
+
 func TestScannerDeterministic(t *testing.T) {
 	for _, a := range fixture.Build(7) {
 		first := scan.Run(scan.Input{MP4: a.MP4, RTP: a.RTP})

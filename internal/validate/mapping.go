@@ -88,10 +88,16 @@ func (r *Result) mapPackets(idx *index.Index, audio *index.Track) {
 		}
 		r.Mappings = append(r.Mappings, m)
 	}
-	// Any packet the container never accounted for is a delivery surplus.
+	// Any packet the container never accounted for is a delivery surplus:
+	// extra audio that no container sample describes.
 	for ; pi < len(pkts); pi++ {
-		if pkts[pi].Kind == index.PacketDuplicate {
+		p := &pkts[pi]
+		switch p.Kind {
+		case index.PacketDuplicate:
 			r.Duplicate++
+		case index.PacketOK:
+			r.Faults = append(r.Faults, fault.New(fault.StageValidate, "validate.packet.surplus", p.Offset, p.Time,
+				fmt.Sprintf("packet %d has no container sample at its media time", p.SeqExt)))
 		}
 	}
 }

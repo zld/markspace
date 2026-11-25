@@ -60,6 +60,7 @@ type Scanner struct {
 	order  []uint32
 	// sample cursor per track while fragments are materialised in file order.
 	dts    map[uint32]clock.Nanos
+	ticks  map[uint32]uint64
 	trIdx  map[uint32]int
 	failed bool
 }
@@ -79,6 +80,7 @@ func Run(in Input) *Result {
 		},
 		track: make(map[uint32]*TrackInfo),
 		dts:   make(map[uint32]clock.Nanos),
+		ticks: make(map[uint32]uint64),
 		trIdx: make(map[uint32]int),
 	}
 	s.scanContainer()
