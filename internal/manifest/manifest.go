@@ -37,6 +37,7 @@ type TrackRecord struct {
 	OutputTrackID uint32 `json:"output_track_id"`
 	SSRC          uint32 `json:"ssrc,omitempty"`
 	Kind          string `json:"kind"`
+	SourceCodec   string `json:"source_codec,omitempty"`
 	Codec         string `json:"codec"`
 	Timescale     uint32 `json:"timescale"`
 	Channels      uint16 `json:"channels,omitempty"`
@@ -116,7 +117,7 @@ func BuildTracks(idx *scan.Index, mappings []scan.TrackMapping) []TrackRecord {
 		tr := trackByID[mp.SourceTrackID]
 		out = append(out, TrackRecord{
 			SourceTrackID: mp.SourceTrackID, OutputTrackID: mp.OutputTrackID, SSRC: mp.SSRC,
-			Kind: mp.Kind, Codec: mp.Codec, Timescale: tr.Timescale,
+			Kind: mp.Kind, SourceCodec: mp.SourceCodec, Codec: mp.Codec, Timescale: tr.Timescale,
 			Channels: tr.Channels, SampleRate: tr.SampleRate, OffsetNS: mp.OffsetNS, Action: mp.Action,
 		})
 	}

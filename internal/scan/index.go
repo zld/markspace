@@ -71,6 +71,7 @@ type TrackMapping struct {
 	SourceTrackID uint32 `json:"source_track_id"`
 	OutputTrackID uint32 `json:"output_track_id"`
 	SSRC          uint32 `json:"ssrc,omitempty"`
+	SourceCodec   string `json:"source_codec,omitempty"`
 	Codec         string `json:"codec"`
 	Kind          string `json:"kind"`
 	Action        string `json:"action"` // copy

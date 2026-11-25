@@ -56,6 +56,7 @@ func Map(idx *scan.Index) ([]scan.TrackMapping, error) {
 			SourceTrackID: tr.ID,
 			OutputTrackID: nextOut,
 			SSRC:          ssrc,
+			SourceCodec:   tr.Codec,
 			Codec:         normalizeCodec(tr.Codec),
 			Kind:          kind,
 			Action:        action,
