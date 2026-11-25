@@ -18,6 +18,10 @@ func StableDigest(s *Summary) (string, error) {
 
 	for _, it := range s.Items {
 		cp := *it
+		// Absolute work-directory locations are environment details, not the
+		// reproducible acceptance conclusion.
+		cp.OutputPath = ""
+		cp.CheckpointPath = ""
 		cp.WrittenChunks = nil
 		cp.SkippedChunks = nil
 		cp.RolledBackChunks = nil
