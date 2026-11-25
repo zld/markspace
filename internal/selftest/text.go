@@ -48,7 +48,7 @@ func FormatText(r *Report) string {
 		if c.OutputSHA256 != "" {
 			fmt.Fprintf(&b, " output_sha256=%s", c.OutputSHA256[:min(16, len(c.OutputSHA256))])
 		}
-		fmt.Fprintf(&b, " duplicates=%d reordered=%d missing=%d index_rebuilt=%d gaps=%d\n",
+		fmt.Fprintf(&b, " duplicates_removed=%d reordered_packets=%d missing_packets=%d index_rebuilt=%d gaps=%d\n",
 			c.Recovery.DuplicatesRemoved, c.Recovery.ReorderedPackets,
 			c.Recovery.MissingPackets, c.Recovery.IndexRebuilt, c.Gaps)
 	}
