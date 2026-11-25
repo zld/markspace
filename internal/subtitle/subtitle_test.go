@@ -1,6 +1,7 @@
 package subtitle
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -110,6 +111,18 @@ func TestMalformedTimestampHasSourceLocation(t *testing.T) {
 	}
 	if fe.Source != "bad.srt" || fe.Offset <= 0 {
 		t.Fatalf("bad location %+v", fe)
+	}
+}
+
+func TestCRLFTimestampOffsetUsesOriginalBytes(t *testing.T) {
+	raw := "1\r\n00:00:xx --> 00:00:01,000\r\nx\r\n"
+	_, err := ParseSRT("crlf.srt", []byte(raw))
+	var fe *fault.Error
+	if !errors.As(err, &fe) {
+		t.Fatalf("expected fault error: %v", err)
+	}
+	if fe.Offset != 3 {
+		t.Fatalf("CRLF offset=%d want 3", fe.Offset)
 	}
 }
 

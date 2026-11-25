@@ -69,28 +69,26 @@ type block struct {
 	startLine   int
 	startOffset int
 	lines       []string
+	lineStarts  []int
 }
 
 func splitBlocks(raw string) []block {
-	raw = strings.ReplaceAll(raw, "\r\n", "\n")
-	raw = strings.ReplaceAll(raw, "\r", "\n")
 	lines := strings.Split(raw, "\n")
 	var blocks []block
 	var cur block
 	offset := 0
-	lineStart := 0
-	flush := func(endLine int) {
+	flush := func() {
 		if len(cur.lines) > 0 {
 			blocks = append(blocks, cur)
 		}
 		cur = block{}
-		_ = endLine
 	}
-	for i, line := range lines {
+	for i, rawLine := range lines {
+		lineStart := offset
+		line := strings.TrimSuffix(rawLine, "\r") // retain original offsets for CRLF
 		if strings.TrimSpace(line) == "" {
-			flush(i)
-			lineStart = offset + len(line) + 1
-			offset = lineStart
+			flush()
+			offset = lineStart + len(rawLine) + 1
 			continue
 		}
 		if len(cur.lines) == 0 {
@@ -98,18 +96,18 @@ func splitBlocks(raw string) []block {
 			cur.startOffset = lineStart
 		}
 		cur.lines = append(cur.lines, line)
-		offset += len(line) + 1
+		cur.lineStarts = append(cur.lineStarts, lineStart)
+		offset = lineStart + len(rawLine) + 1
 	}
-	flush(len(lines))
+	flush()
 	return blocks
 }
 
 func blockLineOffset(b block, idx int) int {
-	off := 0
-	for i := 0; i < idx && i < len(b.lines); i++ {
-		off += len(b.lines[i]) + 1
+	if idx < 0 || idx >= len(b.lineStarts) {
+		return 0
 	}
-	return off
+	return b.lineStarts[idx] - b.startOffset
 }
 
 func parseTimingLine(source string, b block, line string, lineOffset int, format string) (clock.Ticks, clock.Ticks, int, error) {
