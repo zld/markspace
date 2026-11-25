@@ -11,7 +11,18 @@ import (
 
 // commitDelivery records one delivered block in the manifest and checkpoint.
 func (r *runState) commitDelivery(b *manifest.Builder, d stream.Delivery) error {
-	frames := len(d.Payload) / (int(d.Channels) * 2)
+	// The delivered payload is an RTP packet. Decode it so the consumer commits
+	// exactly the essence the packet carries, and re-validate sequence and
+	// timestamp instead of trusting the producer.
+	seq, ts, essence, err := stream.DecodePacket(d.Payload, d.TrackID, r.opts.SampleRate)
+	if err != nil {
+		return err
+	}
+	if seq != d.Sequence || ts != d.Timestamp {
+		return merr.New(merr.StageStream, merr.KindCorrupt, d.TrackID, int64(d.Index),
+			"rtp packet for block %d disagrees with its queue record", d.Index)
+	}
+	frames := len(essence) / (int(d.Channels) * 2)
 	if frames == 0 {
 		return merr.New(merr.StageStream, merr.KindInconsistent, d.TrackID, int64(d.Index),
 			"delivered block %d is empty", d.Index)
@@ -20,7 +31,7 @@ func (r *runState) commitDelivery(b *manifest.Builder, d stream.Delivery) error 
 	if err != nil {
 		return err
 	}
-	block := audio.Block{Index: d.Index, Frames: frames, PCM: d.Payload}
+	block := audio.Block{Index: d.Index, Frames: frames, PCM: essence}
 	seg, err := manifest.SegmentFromBlock(d.TrackID, d.Index, block, startTick, r.opts.SampleRate, d.Digest)
 	if err != nil {
 		return err

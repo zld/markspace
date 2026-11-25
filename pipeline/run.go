@@ -57,6 +57,8 @@ type Result struct {
 	Asset      *media.Asset
 	// CacheStats mirrors the cache counters when a cache is enabled.
 	CacheStats *CacheStats
+	// PacketStats records RTP framing counters.
+	PacketStats stream.PacketStats
 }
 
 // CacheStats is a copy of the cache counters for reporting.
@@ -79,7 +81,7 @@ func (o *Options) Defaults() {
 		o.MaxBlocks = 4
 	}
 	if o.MaxBytes == 0 {
-		o.MaxBytes = 1 << 20
+		o.MaxBytes = 32000
 	}
 }
 

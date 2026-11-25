@@ -28,12 +28,22 @@ type Item struct {
 	// Digest is the output digest computed by the producer, carried so the
 	// consumer records exactly what was produced.
 	Digest string
-	// Channels is the interleaved channel count of Payload.
+	// Channels is the interleaved channel count of the essence in Payload.
 	Channels uint16
+	// Essence is the media byte count of the block. When Payload carries a
+	// serialized RTP packet, Essence is the audio size without the transport
+	// header, so the queue bound measures buffered media rather than framing
+	// overhead. Zero means Payload is raw media.
+	Essence int
 }
 
-// Size reports the payload size accounted against the byte limit.
-func (i Item) Size() int { return len(i.Payload) }
+// Size reports the media bytes accounted against the byte limit.
+func (i Item) Size() int {
+	if i.Essence > 0 {
+		return i.Essence
+	}
+	return len(i.Payload)
+}
 
 // Config bounds the pipeline.
 type Config struct {
@@ -89,6 +99,12 @@ func (q *Queue) fits(item Item) bool {
 	return len(q.items) < q.cfg.MaxBlocks && q.bytes+item.Size() <= q.cfg.MaxBytes
 }
 
+// oversized reports whether an item can never fit even in an empty queue. Such
+// an item is rejected immediately instead of blocking forever.
+func (q *Queue) oversized(item Item) bool {
+	return item.Size() > q.cfg.MaxBytes
+}
+
 // Push blocks until there is room, the context is done, or the queue closes.
 // The item and its byte accounting are updated under one lock so the byte peak
 // is never observed half-updated.
@@ -105,6 +121,13 @@ func (q *Queue) Push(ctx context.Context, item Item) error {
 			return merr.Wrap(merr.StageStream, kindForContext(err), item.TrackID, int64(item.Index),
 				err, "canceled pushing block %d", item.Index)
 		}
+		if q.oversized(item) {
+			size := item.Size()
+			limit := q.cfg.MaxBytes
+			q.mu.Unlock()
+			return merr.New(merr.StageStream, merr.KindLimit, item.TrackID, int64(item.Index),
+				"block %d needs %d bytes but the queue byte limit is %d", item.Index, size, limit)
+		}
 		if q.fits(item) {
 			break
 		}
@@ -112,7 +135,7 @@ func (q *Queue) Push(ctx context.Context, item Item) error {
 		q.mu.Unlock()
 		// Wait outside the lock so a consumer can make room, and wake on
 		// cancellation even though sync.Cond cannot observe a context.
-		if err := q.wait(ctx); err != nil {
+		if err := q.wait(ctx, item); err != nil {
 			if _, ok := err.(closedError); ok {
 				return merr.New(merr.StageStream, merr.KindCanceled, item.TrackID, int64(item.Index),
 					"queue closed before block %d could be enqueued", item.Index)
@@ -152,8 +175,10 @@ func (q *Queue) lockedWatcher(ctx context.Context) func() {
 	return func() { once.Do(func() { close(done) }) }
 }
 
-// wait blocks until a state change or context cancellation.
-func (q *Queue) wait(ctx context.Context) error {
+// wait blocks until a state change or context cancellation, re-checking the
+// room predicate under the lock so a wakeup that arrives between the caller's
+// unlock and this Wait cannot be lost.
+func (q *Queue) wait(ctx context.Context, item Item) error {
 	stop := q.lockedWatcher(ctx)
 	defer stop()
 	q.mu.Lock()
@@ -163,6 +188,9 @@ func (q *Queue) wait(ctx context.Context) error {
 	}
 	if q.closed {
 		return closedError{}
+	}
+	if q.fits(item) || q.oversized(item) {
+		return nil
 	}
 	q.cond.Wait()
 	return ctx.Err()

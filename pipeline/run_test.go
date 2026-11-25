@@ -29,15 +29,16 @@ func baseOptions(t *testing.T, data []byte) Options {
 
 func TestRunValidAllStages(t *testing.T) {
 	_, data := fixtureData(t, fixture.NameValid, fixture.FormatMP4, 0)
-	res, err := Run(baseOptions(t, data))
+	opts := baseOptions(t, data)
+	res, err := Run(opts)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if res.Summary.Stages != 5 {
 		t.Fatalf("stages %d", res.Summary.Stages)
 	}
-	if res.Summary.QueuePeakBytes > 32000 {
-		t.Fatalf("peak %d exceeds limit", res.Summary.QueuePeakBytes)
+	if res.Summary.QueuePeakBytes > opts.MaxBytes {
+		t.Fatalf("peak %d exceeds limit %d", res.Summary.QueuePeakBytes, opts.MaxBytes)
 	}
 	if len(res.Manifest.Track.Segments) != fixture.AudioBlocks {
 		t.Fatalf("segments %d", len(res.Manifest.Track.Segments))

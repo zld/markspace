@@ -140,9 +140,11 @@ func (r *runState) processBlocks(b *manifest.Builder) error {
 			})
 		}
 	}
-	prefix := r.startBlock // first block to process is 1-based; zero means all
-	if prefix > 0 {
-		prefix-- // number of already committed blocks replayed for phase
+	// Blocks are 1-based on the command line and in the checkpoint, so
+	// startBlock-1 blocks are already committed and must be replayed for phase.
+	prefix := r.startBlock - 1
+	if prefix < 0 {
+		prefix = 0
 	}
 	for i := 0; i < prefix && i < len(r.track.Samples); i++ {
 		n := int64(sourceFrameCount(r.track.Samples[i].Data, r.conv))
@@ -168,10 +170,12 @@ func (r *runState) processBlocks(b *manifest.Builder) error {
 		return err
 	}
 	p.ConsumerDelay = time.Duration(r.opts.SlowConsumerMs) * time.Millisecond
+	pz := stream.NewPacketizer(p)
 	runDone := make(chan error, 1)
 	go func() { runDone <- p.Run(ctx) }()
 
 	var pushErr error
+	pushOrdinal := 0
 	for i := prefix; i < len(r.track.Samples); i++ {
 		sample := r.track.Samples[i]
 		blockIndex := i + 1
@@ -223,10 +227,16 @@ func (r *runState) processBlocks(b *manifest.Builder) error {
 			Index: blockIndex, TrackID: r.track.ID, Timestamp: uint32(tsTick),
 			Payload: block.PCM, SourceFrames: block.SourceFrames,
 			InputOffset: sample.Offset,
+			// Sequence is the wire order of this run's pushes, which is exactly
+			// what the pipeline assigns, so packet and queue record agree even
+			// when a resume skips earlier blocks.
+			Sequence: uint16(pushOrdinal),
 		}
 		item.Digest = digest
 		item.Channels = uint16(len(r.conv.TargetLayout.Channels))
-		if err := p.Push(ctx, item); err != nil {
+		last := i == len(r.track.Samples)-1
+		pushOrdinal++
+		if err := pz.Push(ctx, item, last); err != nil {
 			// The consumer may have stopped the run; surface its error.
 			pushErr = err
 			break
@@ -252,6 +262,7 @@ func (r *runState) processBlocks(b *manifest.Builder) error {
 	stats := p.Stats()
 	r.res.Summary.QueuePeakBytes = stats.QueuePeakBytes
 	r.res.Summary.QueuePeakBlocks = stats.QueuePeakBlocks
+	r.res.PacketStats = pz.Stats()
 	if convStream.Truncated() {
 		r.res.Summary.TruncatedBlocks = 1
 	}
