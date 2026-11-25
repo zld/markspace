@@ -13,6 +13,8 @@ const (
 	CategoryInvalidArgument     Category = "invalid_argument"
 	CategoryInvalidBox          Category = "invalid_box"
 	CategoryTruncatedBox        Category = "truncated_box"
+	CategoryTruncatedRTP        Category = "truncated_rtp_packet"
+	CategoryInvalidRTP          Category = "invalid_rtp_packet"
 	CategoryInvalidEditList     Category = "invalid_edit_list"
 	CategoryNegativeDuration    Category = "negative_duration_edit"
 	CategoryTimestampWrap       Category = "timestamp_wrap_ambiguous"
