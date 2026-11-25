@@ -182,3 +182,11 @@ func floorDiv(a, b int64) int64 {
 	}
 	return q
 }
+
+// TicksToMillisSafe converts ticks at an arbitrary rate to milliseconds.
+func TicksToMillisSafe(ticks, perSecond int64) int64 {
+	if perSecond <= 0 {
+		return 0
+	}
+	return floorDiv(ticks*1000, perSecond)
+}
