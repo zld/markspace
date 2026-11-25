@@ -126,8 +126,9 @@ var containerBoxes = map[mp4.BoxType]bool{
 }
 
 // walk iterates boxes in [base, end), recursing into known containers.
-// fn is called for every box before descending into it.
-func walk(f io.ReadSeeker, base, end int64, fn func(bi *mp4.BoxInfo) error) error {
+// fn is called for every box with its nesting depth (0 = top level)
+// before descending into it.
+func walk(f io.ReadSeeker, base, end int64, depth int, fn func(bi *mp4.BoxInfo, depth int) error) error {
 	off := base
 	n := 0
 	for off < end {
@@ -157,11 +158,11 @@ func walk(f io.ReadSeeker, base, end int64, fn func(bi *mp4.BoxInfo) error) erro
 		if n > MaxBoxes {
 			return fmt.Errorf("cmaf: more than %d boxes, refusing to continue", MaxBoxes)
 		}
-		if err := fn(bi); err != nil {
+		if err := fn(bi, depth); err != nil {
 			return err
 		}
 		if containerBoxes[bi.Type] {
-			if err := walk(f, off+int64(bi.HeaderSize), off+size, fn); err != nil {
+			if err := walk(f, off+int64(bi.HeaderSize), off+size, depth+1, fn); err != nil {
 				return err
 			}
 		}
@@ -222,5 +223,29 @@ func (p *Parser) WalkBoxes(path string, fn func(bi *mp4.BoxInfo) error) error {
 	if err != nil {
 		return err
 	}
-	return walk(f, 0, st.Size(), fn)
+	return walk(f, 0, st.Size(), 0, func(bi *mp4.BoxInfo, _ int) error { return fn(bi) })
+}
+
+// TopLevelBoxes returns the top-level boxes of path in file order.
+func (p *Parser) TopLevelBoxes(path string) ([]mp4.BoxInfo, error) {
+	var out []mp4.BoxInfo
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	err = walk(f, 0, st.Size(), 0, func(bi *mp4.BoxInfo, depth int) error {
+		if depth == 0 {
+			out = append(out, *bi)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }

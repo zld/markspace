@@ -33,7 +33,7 @@ func (p *Parser) ParseFragment(path string, init *Init) (*Fragment, error) {
 	frag := &Fragment{Path: path, FileSize: size}
 	var trafs []*trafState
 	var cur *trafState
-	walkErr := walk(f, 0, size, func(bi *mp4.BoxInfo) error {
+	walkErr := walk(f, 0, size, 0, func(bi *mp4.BoxInfo, _ int) error {
 		switch bi.Type {
 		case mp4.BoxTypeMfhd():
 			var b mp4.Mfhd

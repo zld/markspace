@@ -19,7 +19,7 @@ func (p *Parser) ParseInit(path string) (*Init, error) {
 	defer f.Close()
 	init := &Init{Path: path}
 	var cur *TrackInfo
-	err = walk(f, 0, fileSize(f), func(bi *mp4.BoxInfo) error {
+	err = walk(f, 0, fileSize(f), 0, func(bi *mp4.BoxInfo, _ int) error {
 		switch bi.Type {
 		case mp4.BoxTypeTrak():
 			init.Tracks = append(init.Tracks, TrackInfo{})
