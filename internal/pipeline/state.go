@@ -41,6 +41,8 @@ type Store struct {
 func NewStore(path string) *Store { return &Store{path: path} }
 
 func (s *Store) Load() (*State, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	data, err := os.ReadFile(s.path)
 	if errors.Is(err, os.ErrNotExist) {
 		return &State{Artifacts: map[string]ArtifactState{}}, nil
