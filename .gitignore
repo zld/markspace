@@ -1,0 +1,9 @@
+# Local acceptance artifacts
+/tmp-fixtures/
+/tmp-out/
+
+# Go build and test outputs
+/archivecheck
+*.test
+*.out
+coverage.txt
