@@ -5,10 +5,13 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 
 	"mediaflow/internal/audit"
 	"mediaflow/internal/batch"
 	"mediaflow/internal/fixture"
+	"mediaflow/internal/index"
 	"mediaflow/internal/probe"
 	"mediaflow/internal/safepath"
 )
@@ -51,6 +54,10 @@ func runDemo(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	fmt.Fprintf(stdout, "generated fixtures and manifest=%s\n", manifestPath)
+	if err := resetDemoState(work, m); err != nil {
+		fmt.Fprintf(stderr, "reset demo checkpoint state: %v\n", err)
+		return 1
+	}
 
 	fmt.Fprintln(stdout, "== phase 1: normal offline batch ==")
 	normal := batch.RunManifest(m, batch.Options{WorkDir: work, BatchKey: "demo-normal"})
@@ -101,6 +108,33 @@ func runDemo(args []string, stdout, stderr io.Writer) int {
 func injectedFault(itemID string, chunkIndex int, _ string) error {
 	if itemID == "good-1080p30" && chunkIndex == 1 {
 		return errors.New("injected interruption after partial chunk write")
+	}
+	return nil
+}
+
+// resetDemoState removes only the two fixed demo batch identities. This lets the
+// fault scenario be replayed when the same demo command is run repeatedly.
+func resetDemoState(work string, m *probe.Manifest) error {
+	for _, batchKey := range []string{"demo-normal", "demo-recovery"} {
+		for _, item := range m.Items {
+			cpPath, err := index.PathFor(work, batchKey, item.ID)
+			if err != nil {
+				return err
+			}
+			stem := filepath.Base(cpPath)
+			stem = stem[:len(stem)-len(".json")]
+			chunkDir, err := safepath.Resolve(work, "chunks", stem)
+			if err != nil {
+				return err
+			}
+			outputPath, err := safepath.Resolve(work, "outputs", stem+".mp4")
+			if err != nil {
+				return err
+			}
+			_ = os.Remove(cpPath)
+			_ = os.RemoveAll(chunkDir)
+			_ = os.Remove(outputPath)
+		}
 	}
 	return nil
 }
