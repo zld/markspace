@@ -407,6 +407,13 @@ func RoundTrip(rep string, tracks []TrackSpec, frags []FragmentSpec) (RoundTripR
 	if err != nil {
 		return RoundTripResult{Representation: rep, OK: false}, err
 	}
+	res := compareTracksOnly(rep, tracks, meta)
+	res = compareFragments(res, frags, meta)
+	return res, nil
+}
+
+// compareTracksOnly validates parsed track metadata against the written spec.
+func compareTracksOnly(rep string, tracks []TrackSpec, meta *MP4Metadata) RoundTripResult {
 	res := RoundTripResult{Representation: rep, Metadata: meta, OK: true}
 	if len(meta.Tracks) != len(tracks) {
 		res.OK = false
@@ -433,6 +440,11 @@ func RoundTrip(rep string, tracks []TrackSpec, frags []FragmentSpec) (RoundTripR
 				i, want.KeyframeIndices, got.KeyframeIndices))
 		}
 	}
+	return res
+}
+
+// compareFragments appends fragment-level differences to an existing result.
+func compareFragments(res RoundTripResult, frags []FragmentSpec, meta *MP4Metadata) RoundTripResult {
 	if len(meta.Fragments) != len(frags) {
 		res.OK = false
 		res.Reasons = append(res.Reasons, fmt.Sprintf(
@@ -452,7 +464,7 @@ func RoundTrip(rep string, tracks []TrackSpec, frags []FragmentSpec) (RoundTripR
 				got.BaseDecodeTime, got.SampleCount, got.SampleDuration))
 		}
 	}
-	return res, nil
+	return res
 }
 
 func sameIndices(a, b []uint32) bool {
