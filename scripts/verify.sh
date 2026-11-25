@@ -55,6 +55,7 @@ FRAMES=$(sed -n 's/.*"count": \([0-9]*\).*/\1/p' "$OUT_ROOT/truncated/manifest.j
 echo "== damaged fixture =="
 "$BIN" -fixture damaged -seed "$SEED" -out "$OUT_ROOT/damaged" && DMG_CODE=0 || DMG_CODE=$?
 [ "$DMG_CODE" -eq 2 ] || fail "damaged exit $DMG_CODE, want 2"
+grep -q '"code": "truncated"' "$OUT_ROOT/damaged/manifest.json" || fail "damaged run missing track+offset truncation"
 grep -q '"gaps"' "$OUT_ROOT/damaged/manifest.json" || fail "gaps missing"
 DMG_FRAMES=$(sed -n 's/.*"count": \([0-9]*\).*/\1/p' "$OUT_ROOT/damaged/manifest.json" | head -1)
 [ "$DMG_FRAMES" -gt 0 ] || fail "damaged fixture exported no frames"

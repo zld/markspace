@@ -30,7 +30,7 @@ json_get() { sed -n "s/.*\"$2\": \\([0-9]*\\).*/\\1/p" "$1" | head -1; }
 state_of() { sed -n 's/.*"state_sha256": "\([0-9a-f]*\)".*/\1/p' "$1" | head -1; }
 
 echo "== normal fixture twice =="
-"$BIN" -fixture normal -seed "$SEED" -out "$OUT/a" >/dev/null; A=$?
+"$BIN" -fixture normal -seed "$SEED" -out "$OUT/a" >"$OUT/a.stdout"; A=$?
 "$BIN" -fixture normal -seed "$SEED" -out "$OUT/a2" >/dev/null; B=$?
 [ "$A" -eq 0 ] && ok "normal exit 0" || bad "normal exit $A"
 [ "$B" -eq 0 ] && ok "normal rerun exit 0" || bad "normal rerun exit $B"
@@ -42,6 +42,13 @@ fi
 NORMAL_STATE=$(state_of "$OUT/a/manifest.json")
 [ -n "$NORMAL_STATE" ] && ok "state hash recorded" || bad "state hash missing"
 grep -q '"sequence_sha256"' "$OUT/a/manifest.json" && ok "frame sequence hash recorded" || bad "frame hash missing"
+MF_PRINTED=$(sed -n 's/.*manifest_file=\([0-9a-f]\{64\}\).*/\1/p' "$OUT/a.stdout" | head -1)
+MF_FILE=$(shasum -a 256 "$OUT/a/manifest.json" 2>/dev/null | awk '{print $1}')
+if [ -n "$MF_PRINTED" ] && [ "$MF_PRINTED" = "$MF_FILE" ]; then
+  ok "printed manifest_file hash matches shasum"
+else
+  bad "manifest_file hash mismatch ('$MF_PRINTED' vs '$MF_FILE')"
+fi
 
 echo "== truncated fixture =="
 "$BIN" -fixture truncated -seed "$SEED" -out "$OUT/truncated" >/dev/null; C=$?
@@ -55,6 +62,13 @@ F=$(json_get "$OUT/truncated/manifest.json" count)
 echo "== damaged fixture =="
 "$BIN" -fixture damaged -seed "$SEED" -out "$OUT/damaged" >/dev/null; D=$?
 [ "$D" -eq 2 ] && ok "damaged exit 2" || bad "damaged exit $D"
+if grep -q '"code": "truncated"' "$OUT/damaged/manifest.json" \
+   && grep -Eq '"track": "[^"]+"' "$OUT/damaged/manifest.json" \
+   && grep -Eq '"offset": [1-9][0-9]*' "$OUT/damaged/manifest.json"; then
+  ok "damaged run also reports track+offset truncation"
+else
+  bad "damaged run missing track+offset truncation"
+fi
 LOST=$(sed -n 's/.*"lost": \([0-9]*\).*/\1/p' "$OUT/damaged/manifest.json" | head -1)
 [ "${LOST:-0}" -gt 0 ] && ok "gap/loss count > 0 ($LOST)" || bad "no losses reported"
 GAPS=$(grep -c '"reason"' "$OUT/damaged/manifest.json")
