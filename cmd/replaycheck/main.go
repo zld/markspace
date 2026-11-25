@@ -54,7 +54,9 @@ func run(args []string) int {
 	fmt.Printf("simulated_batch_exit_code=%d (1 is expected because two negative fixtures are asserted as failures)\n",
 		report.Recovery.ExitCode)
 
+	fmt.Println("异常起止偏移 / anomaly intervals:")
 	printAnomalies(report)
+	fmt.Println("逐项结论 / item conclusions:")
 	printConclusions(report)
 
 	normalAnomalyRate := 0.0
@@ -63,11 +65,24 @@ func run(args []string) int {
 		fmt.Printf("check name=%q ok=%t detail=%q\n", check.Name, check.OK, check.Detail)
 	}
 	if !report.OK() {
-		fmt.Println("self_test=FAIL")
-		return 1
+		code := selfTestExitCode(report)
+		fmt.Printf("self_test=FAIL exit_code=%d\n", code)
+		return code
 	}
-	fmt.Println("self_test=PASS")
+	fmt.Println("self_test=PASS exit_code=0")
 	return 0
+}
+
+func selfTestExitCode(report *batch.SelfTestReport) int {
+	for _, check := range report.Checks {
+		if check.OK {
+			continue
+		}
+		if strings.HasPrefix(check.Name, "anomaly_rate") || strings.HasPrefix(check.Name, "budget_deviation") {
+			return 2
+		}
+	}
+	return 1
 }
 
 func printAnomalies(report *batch.SelfTestReport) {

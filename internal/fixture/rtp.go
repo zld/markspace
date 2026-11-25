@@ -78,7 +78,6 @@ func ParseRTPBytes(data []byte) ([]RTPPacket, error) {
 	packets := []RTPPacket{}
 	pos := int64(len(RTPMagic))
 	for pos < int64(len(data)) {
-		lengthOffset := pos
 		if pos+4 > int64(len(data)) {
 			return packets, clock.NewError(clock.CodeTruncated, "RTP record length prefix is truncated", pos)
 		}
@@ -90,18 +89,24 @@ func ParseRTPBytes(data []byte) ([]RTPPacket, error) {
 				fmt.Sprintf("invalid RTP record length %d", n), packetStart)
 		}
 		if packetEnd > int64(len(data)) {
-			return packets, clock.NewError(clock.CodeTruncated,
+			ce := clock.NewError(clock.CodeTruncated,
 				fmt.Sprintf("RTP record of %d bytes ends beyond file at %d", n, packetEnd), packetStart)
+			ce.EndOffset = int64(len(data))
+			return packets, ce
 		}
 		raw := data[packetStart:packetEnd]
 		if len(raw) < 12 || raw[0]>>6 != 2 {
-			return packets, clock.NewError(clock.CodeCorruptPacket,
+			ce := clock.NewError(clock.CodeCorruptPacket,
 				"RTP header is too short or has unsupported version", packetStart)
+			ce.EndOffset = packetEnd
+			return packets, ce
 		}
 		pkt := &rtp.Packet{}
 		if err := pkt.Unmarshal(raw); err != nil {
-			return packets, clock.NewError(clock.CodeCorruptPacket,
+			ce := clock.NewError(clock.CodeCorruptPacket,
 				"pion/rtp unmarshal failed: "+err.Error(), packetStart)
+			ce.EndOffset = packetEnd
+			return packets, ce
 		}
 		packets = append(packets, RTPPacket{
 			Stamp: clock.Stamp{
@@ -110,7 +115,6 @@ func ParseRTPBytes(data []byte) ([]RTPPacket, error) {
 			Packet: pkt, Raw: raw,
 		})
 		pos = packetEnd
-		_ = lengthOffset
 	}
 	return packets, nil
 }

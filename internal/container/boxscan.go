@@ -46,7 +46,10 @@ func readBoxHeader(data []byte, off int64) (boxHeader, *clock.Error) {
 		return boxHeader{}, clock.NewError(clock.CodeBadHeader, fmt.Sprintf("box %q has invalid size %d", typ, size), off)
 	}
 	if off+size > int64(len(data)) {
-		return boxHeader{}, clock.NewError(clock.CodeTruncated, fmt.Sprintf("box %q declares end %d beyond file %d", typ, off+size, len(data)), off)
+		err := clock.NewError(clock.CodeTruncated,
+			fmt.Sprintf("box %q declares end %d beyond file %d", typ, off+size, len(data)), off)
+		err.EndOffset = int64(len(data))
+		return boxHeader{}, err
 	}
 	return boxHeader{typ: typ, start: start, headerSize: hdr, size: size}, nil
 }
