@@ -249,6 +249,7 @@ func (r *Reader) parseBlock(e *Element, clusterIndex, globalIndex int) (*Block, 
 	if tv.Offset+tv.Width+3 > e.End {
 		rec := report.NewError(report.EBMLIncompleteBlock, "incomplete_block", HexID(e.ID), e.Offset, e.End,
 			"block header needs track VINT plus timecode and flags; element ends at %d", e.End)
+		rec.Record.Track = int(tv.Value)
 		return nil, rec
 	}
 	timeBits := binary.BigEndian.Uint16(r.data[p+tv.Width : p+tv.Width+2])
