@@ -49,6 +49,11 @@ func (tr *Track) isSync(sampleNo int) bool {
 	return true
 }
 
+// EventResumed labels a positive recovery event: playback restarts at a
+// verifiable sync sample. It is intentionally outside the closed failure
+// taxonomy in internal/clock, which only names fault categories.
+const EventResumed clock.Category = "resumed_at_sync"
+
 // ConversionEvent records sub-tick remainder discarded at a boundary.
 func ConversionEvent(off clock.Offset, remainder uint64) RecoveryEvent {
 	return RecoveryEvent{

@@ -111,7 +111,7 @@ func verifyIndexed(data []byte, tr *Track, res *RecoveryResult) ([]RecoveredSamp
 				continue // keep dropping until a verifiable sync sample
 			}
 			res.Events = append(res.Events, RecoveryEvent{
-				Category: clock.CategoryNoSync,
+				Category: EventResumed,
 				Offset:   rs.Offset,
 				Detail:   "resumed at verifiable sync sample " + itoa(uint32(i)),
 			})
@@ -169,7 +169,7 @@ func rebuildByMagic(data []byte, tr *Track, mdat *Node, res *RecoveryResult) ([]
 		}
 		if skipping {
 			res.Events = append(res.Events, RecoveryEvent{
-				Category: clock.CategoryNoSync,
+				Category: EventResumed,
 				Offset:   clock.Offset(abs),
 				Detail:   "magic scan resumed at sync sample " + itoa(uint32(sampleNo)),
 			})

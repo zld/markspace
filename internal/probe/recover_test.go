@@ -72,7 +72,7 @@ func TestRecoverCorruptSampleResumesAtSync(t *testing.T) {
 			int64(ev.Offset) == int64(f.TrackMdat[1][5].Offset) {
 			corrupt = true
 		}
-		if ev.Category == clock.CategoryNoSync &&
+		if ev.Category == EventResumed &&
 			int64(ev.Offset) == int64(f.TrackMdat[1][8].Offset) {
 			resume = true
 		}
