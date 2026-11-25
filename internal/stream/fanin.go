@@ -41,28 +41,42 @@ type Verification struct {
 	ValidatedSegments int     `json:"validated_segments"`
 }
 
+type rtpValidator struct {
+	seenSeq map[uint16]int
+	prevTS  uint32
+	haveTS  bool
+}
+
+func newRTPValidator() *rtpValidator {
+	return &rtpValidator{seenSeq: map[uint16]int{}}
+}
+
 // ValidateRTPPackets checks duplicate sequence numbers and timestamp
 // regression while locating the representation, segment, and packet offset.
+// The check is scoped to the supplied packet batch; Verify keeps state across
+// all segments of a layer.
 func ValidateRTPPackets(layer string, segment int, packets []rtp.Packet) error {
-	seenSeq := make(map[uint16]int)
-	var prevTS uint32
-	haveTS := false
+	return newRTPValidator().Validate(layer, segment, packets)
+}
+
+// Validate applies cross-segment sequence/timestamp state.
+func (v *rtpValidator) Validate(layer string, segment int, packets []rtp.Packet) error {
 	for i, pkt := range packets {
-		if prev, dup := seenSeq[pkt.SequenceNumber]; dup {
+		if prev, dup := v.seenSeq[pkt.SequenceNumber]; dup {
 			return fault.InLayer(fault.DuplicateSequence, layer, segment, int64(i),
-				"duplicate RTP sequence %d at packet %d (first at %d)",
+				"duplicate RTP sequence %d at packet %d (first at packet/seq offset %d)",
 				pkt.SequenceNumber, i, prev)
 		}
-		seenSeq[pkt.SequenceNumber] = i
-		if haveTS {
+		v.seenSeq[pkt.SequenceNumber] = i
+		if v.haveTS {
 			// int32 subtraction also accepts a legitimate 32-bit wrap-forward.
-			if int32(pkt.Timestamp-prevTS) < 0 {
+			if int32(pkt.Timestamp-v.prevTS) < 0 {
 				return fault.InLayer(fault.TimestampRegression, layer, segment, int64(i),
-					"RTP timestamp regressed %d -> %d at packet %d", prevTS, pkt.Timestamp, i)
+					"RTP timestamp regressed %d -> %d at packet %d", v.prevTS, pkt.Timestamp, i)
 			}
 		}
-		prevTS = pkt.Timestamp
-		haveTS = true
+		v.prevTS = pkt.Timestamp
+		v.haveTS = true
 	}
 	return nil
 }
@@ -88,6 +102,7 @@ func Verify(layers []string, windows []Window, segments []Segment, tolerance clo
 	var maxErr clock.Ticks
 	for _, name := range layers {
 		got := byLayer[name]
+		rtpState := newRTPValidator()
 		for _, w := range windows {
 			seg, ok := got[w.Index]
 			segmentOneBased := w.Index + 1
@@ -95,7 +110,7 @@ func Verify(layers []string, windows []Window, segments []Segment, tolerance clo
 				return res, fault.InLayer(fault.MissingSegment, name, segmentOneBased, 0,
 					"segment %d missing", segmentOneBased)
 			}
-			if err := ValidateRTPPackets(name, segmentOneBased, seg.Packets); err != nil {
+			if err := rtpState.Validate(name, segmentOneBased, seg.Packets); err != nil {
 				return res, err
 			}
 			startErr := absTicks(seg.Start - w.Start)

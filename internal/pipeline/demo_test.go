@@ -117,6 +117,41 @@ func TestCorruptRunDoesNotReplacePublishedManifest(t *testing.T) {
 	}
 }
 
+func TestDeletedSegmentIsDetectedAndRebuilt(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	first, err := RunDemo(ctx, Options{Out: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	missing := segmentAbsPath(dir, "web/480p", 1)
+	if err := os.Remove(missing); err != nil {
+		t.Fatal(err)
+	}
+	second, err := RunDemo(ctx, Options{Out: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.RebuiltAssets != 1 {
+		t.Fatalf("rebuilt=%d want one artifact recovery", second.RebuiltAssets)
+	}
+	foundReason := false
+	for _, d := range second.AssetDecisions {
+		if d.ID == "mp4:web/480p" && d.Reason == "artifact_verification_failed" {
+			foundReason = true
+		}
+	}
+	if !foundReason {
+		t.Fatal("missing artifact was not classified as artifact_verification_failed")
+	}
+	if _, err := os.Stat(missing); err != nil {
+		t.Fatalf("segment was not restored: %v", err)
+	}
+	if second.SegmentSHA256 != first.SegmentSHA256 {
+		t.Fatal("restored artifact hash differs")
+	}
+}
+
 func layerHashMap(r *report.Report) map[string][]string {
 	out := make(map[string][]string, len(r.Layers))
 	for _, layer := range r.Layers {

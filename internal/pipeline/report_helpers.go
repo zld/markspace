@@ -4,6 +4,7 @@ import (
 	"errors"
 	"sort"
 	"strconv"
+	"strings"
 
 	"mediapack/internal/clock"
 	"mediapack/internal/fault"
@@ -39,6 +40,39 @@ func removeDecision(in []index.Decision, id string) []index.Decision {
 		}
 	}
 	return out
+}
+
+// verifyPlanArtifacts downgrades cache entries whose recorded segment bytes
+// are missing or externally modified. Digest matches alone are not enough to
+// reuse an artifact that can no longer be verified on disk.
+func verifyPlanArtifacts(out string, plan *index.Plan, store *index.Store) {
+	kept := make([]index.Decision, 0, len(plan.Reused))
+	for _, d := range plan.Reused {
+		if strings.HasPrefix(d.ID, "mp4:") {
+			layer := strings.TrimPrefix(d.ID, "mp4:")
+			rec, ok := store.Assets[d.ID]
+			if !ok || verifyRecordSegmentFiles(out, layer, rec) != nil {
+				d.Reason = "artifact_verification_failed"
+				plan.Rebuilt = append(plan.Rebuilt, d)
+				continue
+			}
+		}
+		kept = append(kept, d)
+	}
+	plan.Reused = kept
+}
+
+func verifyRecordSegmentFiles(out, layer string, rec index.Record) error {
+	for key, want := range rec.SegmentHashes {
+		idx, err := strconv.Atoi(key)
+		if err != nil {
+			return err
+		}
+		if err := verifyExistingSegmentHash(out, layer, idx, want); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func failureReport(err error) *report.FailureReport {

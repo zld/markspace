@@ -43,6 +43,7 @@ func RunDemo(ctx context.Context, opts Options) (*report.Report, error) {
 		return nil, err
 	}
 	plan := store.Plan(specs)
+	verifyPlanArtifacts(opts.Out, &plan, store)
 	if opts.CorruptBoundary {
 		// The fault-injection flag must reproduce the same failure even when an
 		// output directory contains a previously recovered/reused target.
@@ -76,6 +77,11 @@ func RunDemo(ctx context.Context, opts Options) (*report.Report, error) {
 		}
 		if err := cp.Save(); err != nil {
 			return nil, err
+		}
+	}
+	for _, d := range plan.Rebuilt {
+		if d.Reason == "artifact_verification_failed" && strings.HasPrefix(d.ID, "mp4:") {
+			delete(cp.Layers, strings.TrimPrefix(d.ID, "mp4:"))
 		}
 	}
 

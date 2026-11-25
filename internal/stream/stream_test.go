@@ -132,3 +132,29 @@ func TestVerifyBoundaryAndMissingSegment(t *testing.T) {
 		t.Fatalf("alignment %.3f > frame %.3f", res.AlignmentErrorMS, frame.Milliseconds())
 	}
 }
+
+func TestVerifyDetectsDuplicateSequenceAcrossSegments(t *testing.T) {
+	frame := clock.Rate25.FrameDuration()
+	windows := []Window{
+		{Index: 0, Start: 0, End: 2 * frame},
+		{Index: 1, Start: 2 * frame, End: 4 * frame},
+	}
+	segments := []Segment{
+		{Layer: "a", Index: 0, Start: 0, End: 2 * frame, Packets: []rtp.Packet{
+			{Header: rtp.Header{SequenceNumber: 1, Timestamp: 0}},
+			{Header: rtp.Header{SequenceNumber: 2, Timestamp: 1000}},
+		}},
+		{Layer: "a", Index: 1, Start: 2 * frame, End: 4 * frame, Packets: []rtp.Packet{
+			{Header: rtp.Header{SequenceNumber: 3, Timestamp: 2000}},
+			{Header: rtp.Header{SequenceNumber: 2, Timestamp: 3000}},
+		}},
+	}
+	_, err := Verify([]string{"a"}, windows, segments, frame)
+	if fault.Classify(err) != fault.DuplicateSequence {
+		t.Fatalf("kind=%q err=%v", fault.Classify(err), err)
+	}
+	var fe *fault.Error
+	if !errors.As(err, &fe) || fe.Segment == nil || *fe.Segment != 2 {
+		t.Fatalf("location=%+v want segment 2", fe)
+	}
+}
