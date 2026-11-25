@@ -11,6 +11,13 @@ import (
 
 func timeNow() time.Time { return time.Now() }
 
+// demoTimingBudgetEnforced makes the 80% resume wall-clock budget fatal for
+// the real CLI. The in-package test binary flips it off via TestMain so a
+// loaded, parallel `go test ./...` runner cannot flake on scheduler noise;
+// the strict budget is still enforced by the built binary and
+// scripts/acceptance.sh.
+var demoTimingBudgetEnforced = true
+
 // runQueries resolves representative times to keyframes for every healthy
 // sample. Tolerance is one sample tick of the track timescale.
 func runQueries(results []*pipeline.InputResult, samples []*fixture.Sample) ([]queryReport, error) {

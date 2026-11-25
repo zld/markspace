@@ -212,7 +212,7 @@ func cmdDemo(args []string) int {
 	if err := compareDigests(first, resumed); err != nil {
 		return finish(rep, err)
 	}
-	if rep.ResumeRunMs > rep.ResumeBudgetMs {
+	if rep.ResumeRunMs > rep.ResumeBudgetMs && demoTimingBudgetEnforced {
 		return finish(rep, fmt.Errorf(
 			"resume took %dms, budget is 80%% of the %dms first run (%dms)",
 			rep.ResumeRunMs, rep.FirstRunMs, rep.ResumeBudgetMs))
