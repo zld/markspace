@@ -47,20 +47,33 @@ type AnomalyInterval struct {
 
 // Result is everything the acceptance harness prints and evaluates.
 type Result struct {
-	LayerCount          int
-	AlignedBoundaries   bool
-	InputBytes          int64
-	OutputBytes         int64
-	BudgetDeltaBytes    int64
-	BudgetThreshold     int64
-	ThresholdPass       bool
-	RuntimeError        bool
-	PeakQueueDepth      int
-	Conclusions         []LayerConclusion
-	Anomalies           []AnomalyInterval
-	Issues              []model.Issue
-	ManifestDigest      string
-	ManifestText        string
+	LayerCount        int
+	AlignedBoundaries bool
+	InputBytes        int64
+	OutputBytes       int64
+	BudgetDeltaBytes  int64
+	BudgetThreshold   int64
+	ThresholdPass     bool
+	RuntimeError      bool
+	PeakQueueDepth    int
+	Conclusions       []LayerConclusion
+	Anomalies         []AnomalyInterval
+	CrossChecks       []CrossCheckValue
+	Issues            []model.Issue
+	ManifestDigest    string
+	ManifestText      string
+}
+
+// CrossCheckValue is one layer's boundary signature compared against the
+// shared reference grid on the converged clock.
+type CrossCheckValue struct {
+	Representation string
+	Healthy        bool
+	ObservedCount  int
+	ReferenceCount int
+	Matched        bool
+	FirstTimestamp uint32
+	LastTimestamp  uint32
 }
 
 // BudgetDelta computes input minus output, as required by the specification.
@@ -104,6 +117,11 @@ func (r *Result) Render() string {
 		fmt.Fprintf(&b, "layer name=%s container=%s subtitle=%s boundary=%s verdict=%s in_manifest=%t\n",
 			c.Representation, passWord(c.ContainerOK), passWord(c.SubtitleOK),
 			passWord(c.BoundaryOK), c.Verdict, c.InManifest)
+	}
+	for _, x := range r.CrossChecks {
+		fmt.Fprintf(&b, "crosscheck representation=%s healthy=%t observed=%d reference=%d matched=%t rtp_first=%d rtp_last=%d\n",
+			x.Representation, x.Healthy, x.ObservedCount, x.ReferenceCount,
+			x.Matched, x.FirstTimestamp, x.LastTimestamp)
 	}
 	for _, a := range r.Anomalies {
 		fmt.Fprintf(&b, "anomaly representation=%s code=%s byte_offset=%d rtp_start=%d rtp_end=%d\n",
