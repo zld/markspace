@@ -83,7 +83,10 @@ func Run(in Input) *Result {
 	}
 	s.scanContainer()
 	s.finalizeTracks()
-	if len(s.faults) == 0 {
+	// Packet scanning does not depend on the fragment walk, so it still runs
+	// after a container failure: the confirmed packet records make a partial
+	// index useful for reporting.
+	if s.idx.AudioTrack() != nil {
 		s.scanPackets(in.RTP)
 	}
 	s.idx.Complete = len(s.faults) == 0 && len(s.idx.Tracks) > 0
