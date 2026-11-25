@@ -107,6 +107,9 @@ func Write(w io.Writer, r *Run) error {
 		}
 		if len(idx.Tracks) > 0 {
 			p.line("tracks/frags   %d tracks, %d fragments, %d packets", len(idx.Tracks), len(idx.Fragments), len(idx.Packets))
+			if len(idx.Packets) > 0 {
+				p.line("packets        %s", r.packetLine())
+			}
 		}
 	}
 	if r.Validate != nil {
@@ -114,7 +117,7 @@ func Write(w io.Writer, r *Run) error {
 		p.line("sample mapping")
 		p.table(r.Validate.Mappings)
 		p.line("")
-		p.line("validation     duplicate=%d missing=%d skew=%v subtitle=%v covered of %v",
+		p.line("validation     duplicate=%d (time +0ns) missing=%d skew=%v subtitle=%v covered of %v",
 			r.Validate.Duplicate, r.Validate.Missing, r.Validate.Skew, r.Validate.Subtitle.Covered, r.Validate.Subtitle.Required)
 	}
 	if r.Stream != nil {
@@ -247,6 +250,32 @@ func timeCell(t clock.Nanos) string {
 		return "unknown"
 	}
 	return fmt.Sprintf("%d", int64(t))
+}
+
+// packetLine summarises delivery events, proving duplicates advance no time
+// and gaps are retained with a time position.
+func (r *Run) packetLine() string {
+	var ok, dup, gaps int
+	var missing uint64
+	var lastGap *index.Packet
+	for i := range r.Index.Packets {
+		p := &r.Index.Packets[i]
+		switch p.Kind {
+		case index.PacketOK:
+			ok++
+		case index.PacketDuplicate:
+			dup++
+		case index.PacketGap:
+			gaps++
+			missing += p.GapCount
+			lastGap = p
+		}
+	}
+	line := fmt.Sprintf("%d delivered, %d duplicate (time +0ns), %d gap(s) totalling %d missing", ok, dup, gaps, missing)
+	if lastGap != nil {
+		line += fmt.Sprintf(", last gap at %s leaves a hole ending at %s", offsetCell(lastGap.Offset), lastGap.Time)
+	}
+	return line
 }
 
 func offsetCell(off int64) string {
