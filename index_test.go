@@ -226,3 +226,148 @@ func TestSubtitleAlignmentAndSummary(t *testing.T) {
 		t.Fatalf("empty summary must be zero-valued: %+v", s)
 	}
 }
+
+func sourceStates() (SourceState, SourceState) {
+	return SourceState{
+		SourceID:        "src-a",
+		ContentDigest:   DigestBytes([]byte("content-a-v1")),
+		ContainerDigest: DigestBytes([]byte("container-a-v1")),
+	}, SourceState{
+		SourceID:        "src-b",
+		ContentDigest:   DigestBytes([]byte("content-b-v1")),
+		ContainerDigest: DigestBytes([]byte("container-b-v1")),
+	}
+}
+
+func sampleAssets() []AssetDependency {
+	return []AssetDependency{
+		{AssetID: "dialogue-a", Kind: "dialogue", Sources: []string{"src-a"}, NeedsContainer: true},
+		{AssetID: "subtitle-a", Kind: "subtitle", Sources: []string{"src-a"}, NeedsContainer: false},
+		{AssetID: "sfx-b", Kind: "sfx", Sources: []string{"src-b"}, NeedsContainer: true},
+	}
+}
+
+func TestPlanFirstRunRecomputesAll(t *testing.T) {
+	a, b := sourceStates()
+	idx := NewIncrementalIndex(nil)
+	plan, err := idx.Plan([]SourceState{a, b}, sampleAssets())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.RecomputeCount != 3 || plan.ReuseCount != 0 {
+		t.Fatalf("first run must recompute all, got %+v", plan)
+	}
+	if plan.Recompute[0].AssetID != "dialogue-a" { // sorted
+		t.Fatal("decisions must be sorted by asset id")
+	}
+}
+
+func TestPlanUnchangedReusesAll(t *testing.T) {
+	a, b := sourceStates()
+	idx := NewIncrementalIndex([]SourceState{a, b})
+	plan, err := idx.Plan([]SourceState{a, b}, sampleAssets())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.RecomputeCount != 0 || plan.ReuseCount != 3 || len(plan.ChangedSources) != 0 {
+		t.Fatalf("unchanged sources must reuse everything, got %+v", plan)
+	}
+}
+
+func TestPlanContainerOnlyChange(t *testing.T) {
+	a, b := sourceStates()
+	idx := NewIncrementalIndex([]SourceState{a, b})
+	next := SourceState{
+		SourceID:        "src-a",
+		ContentDigest:   a.ContentDigest, // content identical
+		ContainerDigest: DigestBytes([]byte("container-a-v2")),
+	}
+	if got := idx.Classify(next); got != ChangeContainerOnly {
+		t.Fatalf("classify = %s, want container-only", got)
+	}
+	plan, err := idx.Plan([]SourceState{next, b}, sampleAssets())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.RecomputeCount != 1 || plan.Recompute[0].AssetID != "dialogue-a" {
+		t.Fatalf("only container-dependent asset recomputes, got %+v", plan)
+	}
+	for _, r := range plan.Reuse {
+		if r.AssetID == "dialogue-a" {
+			t.Fatal("dialogue-a needs container data and must not be reused")
+		}
+	}
+}
+
+func TestPlanContentChange(t *testing.T) {
+	a, b := sourceStates()
+	idx := NewIncrementalIndex([]SourceState{a, b})
+	next := SourceState{
+		SourceID:        "src-a",
+		ContentDigest:   DigestBytes([]byte("content-a-v2")),
+		ContainerDigest: a.ContainerDigest,
+	}
+	if got := idx.Classify(next); got != ChangeContent {
+		t.Fatalf("classify = %s, want content", got)
+	}
+	plan, err := idx.Plan([]SourceState{next, b}, sampleAssets())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, d := range plan.Recompute {
+		got[d.AssetID] = true
+	}
+	if !got["dialogue-a"] || !got["subtitle-a"] || got["sfx-b"] {
+		t.Fatalf("both src-a assets recompute, src-b reused: %+v", plan)
+	}
+}
+
+func TestPlanNewSourceAndRepeatStability(t *testing.T) {
+	a, b := sourceStates()
+	idx := NewIncrementalIndex([]SourceState{a})
+	plan, err := idx.Plan([]SourceState{a, b}, sampleAssets())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.RecomputeCount != 1 || plan.Recompute[0].AssetID != "sfx-b" {
+		t.Fatalf("new source recomputes its asset only: %+v", plan)
+	}
+	// The same plan computed twice yields the same affected set and index digest.
+	d1, err := IndexDigest([]SourceState{b, a}) // shuffled order
+	if err != nil {
+		t.Fatal(err)
+	}
+	d2, err := IndexDigest([]SourceState{a, b})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !d1.Equal(d2) {
+		t.Fatal("index digest must be independent of input ordering")
+	}
+	plan2, err := idx.Plan([]SourceState{b, a}, sampleAssets())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan2.RecomputeCount != plan.RecomputeCount || plan2.ReuseCount != plan.ReuseCount {
+		t.Fatal("repeat planning must produce identical recompute/reuse counts")
+	}
+	for n := range plan.Recompute {
+		if plan.Recompute[n].AssetID != plan2.Recompute[n].AssetID {
+			t.Fatal("repeat planning must produce identical affected asset set")
+		}
+	}
+}
+
+func TestPlanMissingDependency(t *testing.T) {
+	a, _ := sourceStates()
+	idx := NewIncrementalIndex([]SourceState{a})
+	assets := []AssetDependency{{AssetID: "orphan", Kind: "sfx", Sources: []string{"src-gone"}, NeedsContainer: false}}
+	plan, err := idx.Plan([]SourceState{a}, assets)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.RecomputeCount != 1 || plan.ReuseCount != 0 {
+		t.Fatal("asset whose dependency vanished must be recomputed, not silently reused")
+	}
+}
