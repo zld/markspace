@@ -38,6 +38,13 @@ go run ./cmd/assetcheck verify --repeat 2 --print-json
 Exit codes: `0` spec passed, `1` business validation failure, `2` argument or
 runtime error (corrupt input, interrupted migration, bad flags).
 
+> Note on `go run`: the Go tool reports a child process's non-zero exit as its
+> own generic code `1`, so the precise `0/1/2` contract is observable from the
+> compiled binary. Build first for exact codes:
+> `go build -o assetcheck ./cmd/assetcheck && ./assetcheck ...`. The acceptance
+> script `accept.sh` does this automatically. The `--expect-error` flag still
+> causes a non-zero (failure) exit either way.
+
 ## Architecture and data flow
 
 ```
