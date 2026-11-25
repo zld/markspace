@@ -1,0 +1,5 @@
+# generated samples and run artifacts
+/generated/
+/tmp/
+*.checkpoint
+*.tmp
