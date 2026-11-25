@@ -9,6 +9,7 @@ import (
 	"github.com/pion/rtp"
 
 	"mediad/internal/gen"
+	"mediad/internal/mp4"
 	"mediad/internal/pipeline"
 	"mediad/internal/splitter"
 	"mediad/internal/timeline"
@@ -36,7 +37,34 @@ type demoReport struct {
 	InvalidSegmentCount int             `json:"invalid_segment_count"`
 }
 
+// demoOptions carries CLI-tunable processing parameters.
+type demoOptions struct {
+	out          string
+	scenario     string
+	maxFileBytes int64
+	maxBoxBytes  int64
+	maxSamples   int64
+}
+
+func defaultDemoOptions() demoOptions {
+	d := mp4.DefaultLimits()
+	return demoOptions{
+		scenario:     "all",
+		maxFileBytes: d.MaxFileSize,
+		maxBoxBytes:  d.MaxBoxSize,
+		maxSamples:   int64(d.MaxSamples),
+	}
+}
+
+// activeLimits is the process-wide input limit set from CLI flags. It defaults
+// to the library defaults and is applied to every scenario in a demo run.
+var activeLimits = mp4.DefaultLimits()
+
 func baseConfig(work string) pipeline.Config {
+	return baseConfigWithLimits(work, activeLimits)
+}
+
+func baseConfigWithLimits(work string, lim mp4.Limits) pipeline.Config {
 	return pipeline.Config{
 		WorkDir:          work,
 		Timescales:       map[uint32]uint32{1: gen.AudioTimescale, 2: 90000},
@@ -44,6 +72,7 @@ func baseConfig(work string) pipeline.Config {
 		DriftPPMMax:      2000,
 		SilenceThreshold: 0.01,
 		SilenceMinUS:     1,
+		Limits:           lim,
 	}
 }
 
@@ -127,7 +156,13 @@ func mappedIsMonotonic(res *pipeline.Result) bool {
 
 // runDemo executes every scenario and assembles the acceptance report. The
 // returned int is the process exit code (0 for a successful demonstration).
-func runDemo(outDir, scenario string) (demoReport, int) {
+func runDemo(opts demoOptions) (demoReport, int) {
+	outDir, scenario := opts.out, opts.scenario
+	activeLimits = mp4.Limits{
+		MaxFileSize: opts.maxFileBytes,
+		MaxBoxSize:  opts.maxBoxBytes,
+		MaxSamples:  int(opts.maxSamples),
+	}
 	if err := os.MkdirAll(outDir, 0o700); err != nil {
 		return demoReport{ErrorCode: timeline.ErrInvalidInput}, 1
 	}

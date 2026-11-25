@@ -10,9 +10,16 @@ import (
 	"mediad/internal/timeline"
 )
 
+func optsFor(dir, scenario string) demoOptions {
+	o := defaultDemoOptions()
+	o.out = dir
+	o.scenario = scenario
+	return o
+}
+
 func TestRunDemoAllScenariosReportsContract(t *testing.T) {
 	dir := t.TempDir()
-	rep, code := runDemo(dir, "all")
+	rep, code := runDemo(optsFor(dir, "all"))
 	if code != 0 {
 		t.Fatalf("combined demo must exit 0, got %d", code)
 	}
@@ -37,7 +44,7 @@ func TestRunDemoAllScenariosReportsContract(t *testing.T) {
 }
 
 func TestRunDemoCorruptScenarioExitsTwo(t *testing.T) {
-	_, code := runDemo(t.TempDir(), "corrupt")
+	_, code := runDemo(optsFor(t.TempDir(), "corrupt"))
 	if code != 2 {
 		t.Fatalf("corrupt scenario exit = %d, want 2", code)
 	}
@@ -109,5 +116,18 @@ func TestBoundaryRecoveryReproducesChecksum(t *testing.T) {
 	}
 	if resumed.RecoveryMS >= 5000 {
 		t.Fatalf("recovery_ms = %d exceeds 5000", resumed.RecoveryMS)
+	}
+}
+
+func TestLimitFlagRejectsOversizedInput(t *testing.T) {
+	// A tiny file-size limit must surface as E_LIMIT during parsing.
+	o := optsFor(t.TempDir(), "normal")
+	o.maxFileBytes = 4
+	rep, code := runDemo(o)
+	if code != 2 {
+		t.Fatalf("oversized input exit = %d, want 2", code)
+	}
+	if rep.ErrorCode != timeline.ErrLimitExceeded {
+		t.Fatalf("want E_LIMIT, got %q", rep.ErrorCode)
 	}
 }
