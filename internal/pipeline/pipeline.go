@@ -10,6 +10,7 @@ import (
 	"github.com/zld/mediacore/internal/fingerprint"
 	"github.com/zld/mediacore/internal/ingest"
 	"github.com/zld/mediacore/internal/model"
+	"github.com/zld/mediacore/internal/recover"
 	"github.com/zld/mediacore/internal/segment"
 	"github.com/zld/mediacore/internal/store"
 	"github.com/zld/mediacore/internal/trace"
@@ -83,6 +84,11 @@ func Process(src *store.Source, opts Options) (*Result, error) {
 	res.Segments = segs
 	if cutErr != nil {
 		res.addError(cutErr)
+		// The located editorial failure is the primary user-facing failure;
+		// the underlying recovery error remains in Errors/Unwrap.
+		if te, ok := trace.As(cutErr); ok {
+			res.Failure = te
+		}
 	}
 
 	for _, tr := range tl.Tracks {
@@ -180,7 +186,7 @@ func conversionDeviation(tl *model.Timeline) int64 {
 func verifyPayloads(tl *model.Timeline) error {
 	for _, tr := range tl.Tracks {
 		for _, s := range tr.Samples {
-			if err := fingerprint.VerifyCRC(s.ExpectedCRC, s.Data, tr.ID, s.PayloadOffset); err != nil {
+			if err := fingerprint.VerifyCRC(s.ExpectedCRC, s.Data, tr.ID, s.PayloadOffset+int64(recover.SampleHeaderSize)); err != nil {
 				return err
 			}
 		}
