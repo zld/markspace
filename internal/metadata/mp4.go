@@ -108,7 +108,7 @@ func (s *mp4State) handle(h *mp4.ReadHandle) (interface{}, error) {
 			t := box.(*mp4.Tkhd)
 			s.track.TrackID = t.TrackID
 			s.track.Duration = int64(t.GetDuration())
-			if rot, ok := matrixRotation(t.Matrix); ok {
+			if rot, ok := matrixRotation(t.Matrix); ok && rot != 0 {
 				s.track.Rotation = rot
 				s.track.Declared["rotation"] = true
 			}
