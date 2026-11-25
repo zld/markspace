@@ -39,10 +39,6 @@ func Run(cfg Config) (*Result, error) {
 	}
 	res.GraphOrder = graph.TopoOrder()
 
-	if _, err := passThroughQueue(generated, cfg, collector); err != nil {
-		return res, err
-	}
-
 	mp4Stage := prepareMP4Stage(generated, cfg)
 	for _, w := range mp4Stage.Warnings {
 		recovery.AddWarning(w)
@@ -158,6 +154,12 @@ func Run(cfg Config) (*Result, error) {
 		audioPTS = append(audioPTS, u.PTSNanos)
 	}
 	syncReport := timeline.MaxAVOffset(videoPTS, audioPTS)
+
+	// After timeline normalization/alignment, bounded transfer applies
+	// backpressure before the segmentation/muxing stage.
+	if _, err := passThroughQueue(generated, cfg, collector); err != nil {
+		return res, err
+	}
 
 	repManifests, files, err := buildSegmentFiles(generated, intervals)
 	if err != nil {
