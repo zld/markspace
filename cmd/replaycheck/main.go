@@ -46,6 +46,11 @@ func run(args []string, stdout *os.File) int {
 		return exitUsage
 	}
 	kind := fixtures.Kind(opts.fixture)
+	if kind == "generated" {
+		// "generated" is the acceptance entry point: the clean fixture is
+		// generated from code like every other one.
+		kind = fixtures.KindNormal
+	}
 	switch kind {
 	case fixtures.KindNormal, fixtures.KindTruncated, fixtures.KindWrap, fixtures.KindTimebase, fixtures.KindDuplicate:
 	default:

@@ -19,7 +19,12 @@ func (r *run) stageManifest() error {
 		r.man = &m
 		r.manifestOut = out
 		r.record(model.StageManifest, input, true)
-		r.fillResult()
+		// Even a resumed phase is re-verified against stored artifacts:
+		// skipping recomputation must never mean skipping the authenticity
+		// check, or a tampered site could report a valid run.
+		if err := r.emitManifest(); err != nil {
+			return err
+		}
 		r.finish(model.StageManifest, out)
 		return nil
 	}
