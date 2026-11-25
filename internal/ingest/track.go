@@ -1,6 +1,7 @@
 package ingest
 
 import (
+	"fmt"
 	"io"
 	"path/filepath"
 
@@ -68,6 +69,23 @@ func ParseContainer(path string, lim Limits) (*Container, error) {
 		return nil, model.NewError(model.StageIngest, "trak", ref, moov.Offset, "no usable tracks")
 	}
 	return c, nil
+}
+
+// readSampleEntryType reads the four-character format of the first sample
+// entry. stsd is a full box followed by entry_count and the entries; the entry
+// type sits 8 bytes after the payload start, inside the entry's own header.
+func readSampleEntryType(r io.ReadSeeker, stsd *Box) (string, error) {
+	if stsd.PayloadSize() < 16 {
+		return "", fmt.Errorf("stsd payload too small: %d", stsd.PayloadSize())
+	}
+	buf := make([]byte, 8)
+	if _, err := r.Seek(int64(stsd.PayloadOffset()+8), io.SeekStart); err != nil {
+		return "", err
+	}
+	if _, err := io.ReadFull(r, buf); err != nil {
+		return "", err
+	}
+	return string(buf[4:8]), nil
 }
 
 // readPayload unmarshals a box payload into dst.
@@ -178,11 +196,11 @@ func parseTrack(f io.ReadSeeker, c *Container, trak *Box, lim Limits) (*Track, e
 	if stsd.EntryCount == 0 {
 		return nil, model.NewError(model.StageIngest, "stsd", ref, stsdBox.Offset, "no sample description entries")
 	}
-	if len(stsdBox.Children) > 0 {
-		t.Codec = stsdBox.Children[0].Type
-	} else {
-		t.Codec = "unknown"
+	codec, err := readSampleEntryType(f, stsdBox)
+	if err != nil {
+		return nil, model.WrapError(model.StageIngest, "stsd", ref, stsdBox.Offset, "unreadable sample description", err)
 	}
+	t.Codec = codec
 
 	var stts mp4.Stts
 	var stsz mp4.Stsz
