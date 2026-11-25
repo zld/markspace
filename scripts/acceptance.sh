@@ -48,12 +48,12 @@ for kind in truncated-box missing-keyframe timestamp-regression; do
   grep -q '^damage_count=[1-9][0-9]*$' <<<"$bad_out"
   grep -q '^first_bad_offset=[1-9][0-9]*$' <<<"$bad_out"
   grep -q '^track_id=[1-9][0-9]*$' <<<"$bad_out"
-  grep -q '^time_range=\[[0-9][0-9]*,[0-9][0-9]*\)ms$' <<<"$bad_out"
+  grep -q '^time_range=\[[0-9][0-9]*,[0-9][0-9]*[)]ms$' <<<"$bad_out"
 done
 
 # Keep the exact requested truncated-box path current as well.
 rm -rf "$BAD_WORK"
-"$bin_dir/media-check" demo --seed 17 --corrupt truncated-box --work "$BAD_WORK" >/dev/null
+"$bin_dir/media-check" demo --seed 17 --corrupt truncated-box --work "$BAD_WORK" >/dev/null || true
 
 echo "==> interrupt/resume: $RECOVERY_WORK"
 rm -rf "$RECOVERY_WORK"
