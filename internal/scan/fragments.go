@@ -142,17 +142,10 @@ func (s *Scanner) materialise(fragIdx int, moofOff, moofSize int64, trafs []traf
 		// Time is accumulated in media ticks and converted once per sample,
 		// so fractional-tick timescales (44.1 kHz, 90 kHz) never accumulate a
 		// rounding error across a track.
-		baseTicks, startDTS := s.ticks[tp.trackID], s.dts[tp.trackID]
+		baseTicks := s.ticks[tp.trackID]
 		if tp.baseTime != nil {
-			t, err := clock.FromUnits(*tp.baseTime, info.Timescale)
-			if err != nil {
-				s.fail(fault.Wrap(fault.StageScan, "scan.tfdt.overflow", moofOff, clock.Invalid,
-					"base media decode time does not fit the time base", err))
-				return false
-			}
-			baseTicks, startDTS = *tp.baseTime, t
+			baseTicks = *tp.baseTime
 		}
-		_ = startDTS
 		s.ticks[tp.trackID] = baseTicks
 		tickCursor := baseTicks
 		first := len(tr.Samples)
