@@ -13,14 +13,16 @@ import (
 
 // Checkpoint is the recovery point written after a fixed number of blocks.
 type Checkpoint struct {
-	BasisVersion       string         `json:"basis_version"`
-	CheckpointEvery    int            `json:"checkpoint_every"`
-	InputsDigest       string         `json:"inputs_digest"`
-	Inputs             []InputSummary `json:"inputs"`
-	CompletedBlocks    []BlockRecord  `json:"completed_blocks"`
-	ConfirmedBlockKeys []string       `json:"confirmed_block_keys"`
-	LastBlockKey       string         `json:"last_block_key"`
-	CompletedCount     int            `json:"completed_count"`
+	BasisVersion       string           `json:"basis_version"`
+	CheckpointEvery    int              `json:"checkpoint_every"`
+	InputsDigest       string           `json:"inputs_digest"`
+	Inputs             []InputSummary   `json:"inputs"`
+	CompletedBlocks    []BlockRecord    `json:"completed_blocks"`
+	ConfirmedBlockKeys []string         `json:"confirmed_block_keys"`
+	Conclusions        []FileConclusion `json:"conclusions,omitempty"`
+	Anomalies          []clock.Anomaly  `json:"anomalies,omitempty"`
+	LastBlockKey       string           `json:"last_block_key"`
+	CompletedCount     int              `json:"completed_count"`
 }
 
 // InputsDigest computes a stable digest over path/size/SHA tuples. Input order
