@@ -108,12 +108,12 @@ func parseRecord(track model.TrackID, lineNo int, offset int64, f []string) (mod
 		return base, nil
 
 	case recordID3:
-		if len(f) < 6 {
+		if len(f) < 5 {
 			return model.Event{}, metadataError(track, lineNo, offset, "ID3 requires pts, frame id, and value", nil)
 		}
 		base.Kind = model.KindID3
-		base.Key = f[4]
-		base.Value = f[5]
+		base.Key = f[3]
+		base.Value = strings.Join(f[4:], "\t")
 		return base, nil
 
 	case recordEMSG:

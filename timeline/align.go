@@ -59,10 +59,11 @@ func NewDedup() *Dedup {
 	return &Dedup{seen: make(map[string]struct{})}
 }
 
-// EventKey builds a stable identity for an event.
+// EventKey builds a stable identity for an event. A key alone is not enough:
+// the same ID3 frame or SEI payload type can occur at multiple media times.
 func EventKey(e model.Event) string {
 	if e.Key != "" {
-		return string(e.Track) + "|" + string(e.Kind) + "|" + e.Key
+		return fmt.Sprintf("%s|%s|%s|%d|%d", e.Track, e.Kind, e.Key, e.StartNanos, e.EndNanos)
 	}
 	return fmt.Sprintf("%s|%s|%s|%d|%d|%d", e.Track, e.Kind, e.Source, e.Offset, e.StartNanos, e.EndNanos)
 }
