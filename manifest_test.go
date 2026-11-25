@@ -171,3 +171,200 @@ func TestLoadManifestMissingFile(t *testing.T) {
 		t.Fatalf("want os.ErrNotExist, got %v", err)
 	}
 }
+
+func buildManifest(seed int64, id string) *Manifest {
+	return &Manifest{
+		Version: ManifestCurrent, Seed: seed, Stage: StageDone,
+		IndexDigest: DigestBytes([]byte("idx")),
+		Entries: []AssetEntry{{
+			AssetID: id, Kind: "dialogue", SourceID: "src-a",
+			ContentDigest: DigestBytes([]byte("content-" + id)),
+			TimelineStart: 0, TimelineEnd: 48000,
+			Quality: SNRProxy(id, true, 100, 4),
+		}},
+	}
+}
+
+func TestMigrationHappyPath(t *testing.T) {
+	dir := t.TempDir()
+	mg := NewMigrator(dir, "manifest.json")
+	m := buildManifest(7, "a")
+	rep, err := mg.Run(m)
+	if err != nil || !rep.Committed || rep.Stage != StageDone {
+		t.Fatalf("happy run failed: rep=%+v err=%v", rep, err)
+	}
+	if m.ManifestDigest.Hex == "" {
+		t.Fatal("committed manifest must carry a digest")
+	}
+	if mg.HasRollback() {
+		t.Fatal("rollback point must be removed after commit")
+	}
+	if _, err := os.Stat(mg.tempPath()); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("temp file must not linger after commit")
+	}
+	loaded, err := LoadManifest(mg.ManifestPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Stage != StageDone || !loaded.ManifestDigest.Equal(m.ManifestDigest) {
+		t.Fatalf("loaded manifest mismatch: %+v", loaded)
+	}
+}
+
+func TestMigrationInterruptKeepsOriginal(t *testing.T) {
+	dir := t.TempDir()
+	mg := NewMigrator(dir, "manifest.json")
+	original := buildManifest(1, "orig")
+	if _, err := mg.Run(original); err != nil {
+		t.Fatal(err)
+	}
+	wantBytes, err := os.ReadFile(mg.ManifestPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantDigest := original.ManifestDigest
+
+	for _, stage := range []string{StageValidate, StageStage, StageCommit} {
+		mg.SetInterruptHook(func(s string) error {
+			if s == stage {
+				return errors.New("simulated crash")
+			}
+			return nil
+		})
+		next := buildManifest(2, "next-"+stage)
+		rep, err := mg.Run(next)
+		if err == nil {
+			t.Fatalf("hook at %s must interrupt", stage)
+		} else if me, ok := AsMediaError(err); !ok || me.Phase != PhaseMigrate {
+			t.Fatalf("interrupt must be a migration error, got %v", err)
+		}
+		if rep.Committed {
+			t.Fatalf("interrupted run at %s must not report committed", stage)
+		}
+		gotBytes, rerr := os.ReadFile(mg.ManifestPath())
+		if rerr != nil || !bytesEqual(gotBytes, wantBytes) {
+			t.Fatalf("after interrupt at %s original manifest changed", stage)
+		}
+		if _, err := os.Stat(mg.tempPath()); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("temp file must be cleaned up after %s interrupt", stage)
+		}
+		loaded, _ := LoadManifest(mg.ManifestPath())
+		if !loaded.ManifestDigest.Equal(wantDigest) {
+			t.Fatalf("digest changed after interrupt at %s", stage)
+		}
+		// Validate-stage interrupt happens before the rollback point exists.
+		if stage == StageValidate && mg.HasRollback() {
+			t.Fatal("validate interrupt must not leave a rollback point")
+		}
+	}
+}
+
+func TestMigrationRestoreAfterInterrupt(t *testing.T) {
+	dir := t.TempDir()
+	mg := NewMigrator(dir, "manifest.json")
+	original := buildManifest(1, "orig")
+	if _, err := mg.Run(original); err != nil {
+		t.Fatal(err)
+	}
+	want, _ := os.ReadFile(mg.ManifestPath())
+
+	mg.SetInterruptHook(func(s string) error {
+		if s == StageStage {
+			return errors.New("boom")
+		}
+		return nil
+	})
+	if _, err := mg.Run(buildManifest(2, "next")); err == nil {
+		t.Fatal("expected interrupt")
+	}
+	if !mg.HasRollback() {
+		t.Fatal("stage interrupt must leave a rollback point")
+	}
+	if err := mg.Restore(); err != nil {
+		t.Fatalf("restore: %v", err)
+	}
+	got, err := os.ReadFile(mg.ManifestPath())
+	if err != nil || !bytesEqual(got, want) {
+		t.Fatal("restore must reinstate the exact original bytes")
+	}
+	if mg.HasRollback() {
+		t.Fatal("restore must consume the rollback point")
+	}
+}
+
+func TestMigrationFirstRunInterruptThenCommit(t *testing.T) {
+	dir := t.TempDir()
+	mg := NewMigrator(dir, "manifest.json")
+	mg.SetInterruptHook(func(s string) error {
+		if s == StageStage {
+			return errors.New("boom")
+		}
+		return nil
+	})
+	if _, err := mg.Run(buildManifest(1, "a")); err == nil {
+		t.Fatal("expected interrupt")
+	}
+	if _, err := os.Stat(mg.ManifestPath()); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("interrupted first run must not create the target manifest")
+	}
+	if err := mg.Restore(); err != nil {
+		t.Fatalf("restore on empty marker: %v", err)
+	}
+	mg.SetInterruptHook(nil)
+	rep, err := mg.Run(buildManifest(1, "a"))
+	if err != nil || !rep.Committed {
+		t.Fatalf("retry after first-run interrupt must commit: %v", err)
+	}
+}
+
+func TestMigrationRepeatDigestStability(t *testing.T) {
+	dir := t.TempDir()
+	mg := NewMigrator(dir, "manifest.json")
+	m1 := buildManifest(7, "a")
+	if _, err := mg.Run(m1); err != nil {
+		t.Fatal(err)
+	}
+	// A second identical migration produces the same manifest digest.
+	m2 := buildManifest(7, "a")
+	rep, err := mg.Run(m2)
+	if err != nil || !rep.Committed {
+		t.Fatalf("second run: %v", err)
+	}
+	if !m2.ManifestDigest.Equal(m1.ManifestDigest) {
+		t.Fatal("identical manifests across runs must share a digest")
+	}
+	_ = rep
+}
+
+func TestMigrationRejectsInvalidNext(t *testing.T) {
+	dir := t.TempDir()
+	mg := NewMigrator(dir, "manifest.json")
+	bad := &Manifest{Version: ManifestCurrent, Entries: []AssetEntry{{
+		AssetID: "x", TimelineStart: 9, TimelineEnd: 1, ContentDigest: DigestBytes([]byte("c")),
+	}}}
+	rep, err := mg.Run(bad)
+	if err == nil {
+		t.Fatal("invalid manifest must not migrate")
+	}
+	if rep.Stage != StageValidate {
+		t.Fatalf("failure stage = %s, want validate", rep.Stage)
+	}
+	if _, err := os.Stat(mg.ManifestPath()); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("failed validation must leave no target file")
+	}
+	if mg.HasRollback() {
+		t.Fatal("validation failure must leave no rollback point")
+	}
+}
+
+func bytesEqual(a, b []byte) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
