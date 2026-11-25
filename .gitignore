@@ -1,0 +1,9 @@
+# Compiled binaries / build output
+/mediad
+/bin/
+*.exe
+*.test
+*.out
+
+# Local environment
+.DS_Store
