@@ -192,7 +192,9 @@ func (r *Report) Finalize(sampleName, caseName, digest string, seed int64) {
 			s.RecoveredMissing += rec.MissingCount
 		}
 	}
-	if s.Errors > 0 {
+	// A uniquely recovered RTP gap is still an input inconsistency and therefore
+	// keeps the command exit status non-zero even though validation did not fail.
+	if s.Errors > 0 || s.RecoveredMissing > 0 {
 		s.ExitCode = 1
 	}
 	r.Summary = s
