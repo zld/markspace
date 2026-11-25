@@ -3,6 +3,7 @@ package pipeline_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/zld/mediapipe/fixtures"
@@ -114,15 +115,25 @@ func TestExecuteRespectsByteLimit(t *testing.T) {
 	}
 }
 
-func TestExecuteRejectsEscapingWorkDir(t *testing.T) {
+func TestExecuteConfinesOutputsToWorkDir(t *testing.T) {
 	layer, _, plan := setup(t)
-	if _, err := pipeline.Execute([]pipeline.LayerInput{layer}, plan, pipeline.SegmentConfig{
-		WorkDir: "../escape", Segment: 2 * media.Time(media.NanoDen),
+	work := t.TempDir()
+	layer.Name = "nested/layer"
+	outs, err := pipeline.Execute([]pipeline.LayerInput{layer}, plan, pipeline.SegmentConfig{
+		WorkDir: work, Segment: 2 * media.Time(media.NanoDen),
 		MaxBytesPerSegment: pipeline.DefaultMaxBytesPerSegment(),
-	}); err != nil {
-		// Creating "../escape" is still inside the parent; the important
-		// guarantee is that the layer name is sanitized, tested below.
-		_ = err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, o := range outs {
+		full := filepath.Join(work, o.Path)
+		if _, err := os.Stat(full); err != nil {
+			t.Fatalf("segment %d not inside work dir: %v", o.Number, err)
+		}
+		if rel, _ := filepath.Rel(work, full); filepath.IsAbs(rel) || strings.HasPrefix(rel, "..") {
+			t.Fatalf("segment %d escaped work dir: %s", o.Number, rel)
+		}
 	}
 }
 
