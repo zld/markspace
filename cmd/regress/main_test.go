@@ -156,6 +156,30 @@ func TestCLITamperCache(t *testing.T) {
 	}
 }
 
+// TestExpectedTargetRebuildsFromFlags locks in that manifest verification is
+// driven by the requested publish target rather than the manifest's own values.
+func TestExpectedTargetRebuildsFromFlags(t *testing.T) {
+	cases := []struct {
+		layout   string
+		channels uint16
+	}{
+		{"mono", 1},
+		{"stereo", 2},
+		{"5.1", 6},
+		{"7.1", 8},
+	}
+	for _, c := range cases {
+		f := &flags{sampleRate: 44100, layout: c.layout, loudness: -23.5}
+		got := expectedTarget(f)
+		if got.SampleRate != 44100 || got.Layout != c.layout || got.Channels != c.channels {
+			t.Fatalf("%s target = %+v", c.layout, got)
+		}
+		if got.LoudnessLUFS != "-23.5" {
+			t.Fatalf("loudness = %q, want -23.5", got.LoudnessLUFS)
+		}
+	}
+}
+
 // fieldLenient returns "" when the key is absent instead of failing.
 func fieldLenient(out, key string) string {
 	for _, line := range strings.Split(out, "\n") {

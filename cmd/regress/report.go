@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/zld/media-regress/fixture"
 	"github.com/zld/media-regress/internal/error"
@@ -10,11 +11,10 @@ import (
 	"github.com/zld/media-regress/pipeline"
 )
 
-// loadInput reads a file or generates the selected fixture. The returned name
-// is used for reporting and as the cache source identity.
-// loadInput reads a file or generates the selected fixture. The second return
-// is the reporting name, the third the 1-based segment the fixture asks to
-// drop (0 for none).
+// loadInput reads a file or generates the selected fixture. The first return
+// is the input bytes, the second the reporting name (also the cache source
+// identity), the third the 1-based segment the fixture asks to drop
+// (0 for none).
 func loadInput(f *flags) ([]byte, string, int, error) {
 	if f.file != "" {
 		data, err := os.ReadFile(f.file)
@@ -99,7 +99,7 @@ func isManifestFailure(err error) bool {
 func reportSuccess(f *flags, res *pipeline.Result) int {
 	m := res.Manifest
 	// Verify before printing so continuity errors force a non-zero exit.
-	errs := manifest.Verify(m, m.Track.Audio, true)
+	errs := manifest.Verify(m, expectedTarget(f), true)
 	if len(errs) != 0 {
 		res.Summary.ContinuityErrors = countManifestErrors(errs)
 		m.Summary = res.Summary
@@ -130,6 +130,19 @@ func reportSuccess(f *flags, res *pipeline.Result) int {
 
 	printSuccess(f, res, m)
 	return exitOK
+}
+
+// expectedTarget rebuilds the audio target from the requested flags so the
+// manifest is verified against what the run was asked to publish, not merely
+// against itself.
+func expectedTarget(f *flags) manifest.AudioTarget {
+	channels := map[string]uint16{"mono": 1, "stereo": 2, "5.1": 6, "7.1": 8}[f.layout]
+	return manifest.AudioTarget{
+		SampleRate:   uint32(f.sampleRate),
+		Layout:       f.layout,
+		Channels:     channels,
+		LoudnessLUFS: strconv.FormatFloat(f.loudness, 'f', -1, 64),
+	}
 }
 
 func printSuccess(f *flags, res *pipeline.Result, m *manifest.Manifest) {
