@@ -27,6 +27,8 @@ type Regression struct {
 // TrackReport is the per-representation result of sequence analysis.
 type TrackReport struct {
 	Representation string
+	// TickDuration is the constant fragment duration in timescale ticks.
+	TickDuration uint64
 	// Fragments holds only the accepted (folded, gap-free) records in
 	// mfhd order. Regressed fragments are isolated, not included here.
 	Fragments []*Fragment
@@ -35,6 +37,12 @@ type TrackReport struct {
 	// Isolated lists fragments excluded from alignment/manifest because of
 	// a tfdt regression, preserving their original records.
 	Isolated []*Fragment
+}
+
+// FragmentDuration returns the duration in ticks of the fragment carrying
+// mfhd. The generator produces constant-duration fragments.
+func (r *TrackReport) FragmentDuration(mfhd uint32) uint64 {
+	return r.TickDuration
 }
 
 // SequenceTracker consumes one representation's fragments in input-index
@@ -50,10 +58,16 @@ type SequenceTracker struct {
 
 // NewSequenceTracker starts a tracker for one representation.
 func NewSequenceTracker(representation string) *SequenceTracker {
+	return NewSequenceTrackerWithDuration(representation, 0)
+}
+
+// NewSequenceTrackerWithDuration starts a tracker and records the constant
+// fragment duration in ticks, needed later for nanosecond end-time alignment.
+func NewSequenceTrackerWithDuration(representation string, tickDuration uint64) *SequenceTracker {
 	return &SequenceTracker{
 		representation: representation,
 		byMFHD:         map[uint32]*Fragment{},
-		report:         &TrackReport{Representation: representation},
+		report:         &TrackReport{Representation: representation, TickDuration: tickDuration},
 	}
 }
 

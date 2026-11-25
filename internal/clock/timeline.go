@@ -49,10 +49,15 @@ func (t *Timeline) ToNanos(ticks uint64) int64 {
 }
 
 // TickNanos returns the duration of one tick of this timeline in nanoseconds,
-// rounded up. It is the smallest non-zero duration distinguishable on this
-// track and is used as the alignment tolerance unit.
+// rounded to the nearest nanosecond. It is the smallest non-zero duration
+// distinguishable on this track and is used as the alignment tolerance unit.
 func (t *Timeline) TickNanos() int64 {
-	v := (NanoPerSecond + int64(t.timescale) - 1) / int64(t.timescale)
+	num := NanoPerSecond
+	den := int64(t.timescale)
+	v := num / den
+	if 2*(num%den) >= den {
+		v++
+	}
 	if v < 1 {
 		return 1
 	}

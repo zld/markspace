@@ -43,8 +43,8 @@ func TestToNanosRounding(t *testing.T) {
 
 func TestTickNanos(t *testing.T) {
 	low, _ := NewTimeline(90000)
-	if got := low.TickNanos(); got != 11112 {
-		t.Errorf("90kHz tick = %d ns, want 11112", got)
+	if got := low.TickNanos(); got != 11111 {
+		t.Errorf("90kHz tick = %d ns, want 11111", got)
 	}
 	high, err := NewTimeline(1_000_000_000)
 	if err != nil {
