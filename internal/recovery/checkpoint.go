@@ -232,6 +232,11 @@ func Rollback(outDir string) ([]byte, error) {
 	return prev, nil
 }
 
+// NextVersion exposes the next zero-padded release version number.
+func NextVersion(outDir string) int {
+	return nextVersion(filepath.Join(outDir, "published", "versions"))
+}
+
 func nextVersion(dir string) int {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
