@@ -44,10 +44,10 @@ type Ingest struct {
 	received      int
 	blocks        []Block
 	// accumulator for the block currently being filled
-	curPCM        []byte
-	curBase       int64 // global sample index of curPCM[0]
-	curFilled     int64 // samples already placed in curPCM
-	gapQueue      []Gap // finalized gaps not yet consumed into blocks
+	curPCM    []byte
+	curBase   int64 // global sample index of curPCM[0]
+	curFilled int64 // samples already placed in curPCM
+	gapQueue  []Gap // finalized gaps not yet consumed into blocks
 }
 
 // Config parameterizes an Ingest.

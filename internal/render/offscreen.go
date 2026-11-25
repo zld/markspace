@@ -17,12 +17,22 @@ import (
 
 // Frame is one fixed-size off-screen frame. Pixels are 8-bit grayscale.
 type Frame struct {
-	Index    int
-	Width    int
-	Height   int
-	Pixels   []byte
-	Mean     float64
-	Hash     string
+	Index  int
+	Width  int
+	Height int
+	Pixels []byte
+	Mean   float64
+	Hash   string
+}
+
+// CanMerge reports whether two adjacent segments may be combined. Segments
+// are never merged across an input gap because the missing samples make
+// the boundary untrustworthy after a primary/backup source switch.
+func CanMerge(a, b Segment) bool {
+	if a.Gap || b.Gap {
+		return false
+	}
+	return a.EndSample == b.StartSample
 }
 
 // Segment is the rendered artifact for one source block.

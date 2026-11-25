@@ -57,6 +57,30 @@ func TestRenderMarksGapAndKeepsSegmentsSeparate(t *testing.T) {
 	}
 }
 
+func TestNoMergeAcrossGap(t *testing.T) {
+	plain := func(i int, start int64) Segment {
+		in := baseInput()
+		in.BlockIndex = i
+		in.StartSample = start
+		in.EndSample = start + 16
+		s, _ := Render(in)
+		return s
+	}
+	a := plain(0, 0)
+	b := plain(1, 16)
+	if !CanMerge(a, b) {
+		t.Fatal("two clean adjacent segments should be mergeable")
+	}
+	gapIn := baseInput()
+	gapIn.BlockIndex = 1
+	gapIn.GapSamples = 4
+	gapIn.GapRanges = []GapRange{{StartSample: 16, EndSample: 20}}
+	g, _ := Render(gapIn)
+	if CanMerge(a, g) {
+		t.Fatal("segments must not merge across an input gap")
+	}
+}
+
 func TestWriteSegmentAtomicAndReusable(t *testing.T) {
 	dir := t.TempDir()
 	seg, _ := Render(baseInput())

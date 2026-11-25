@@ -11,14 +11,14 @@ import (
 
 // BlockRecord is the persisted, reviewable state of one processed block.
 type BlockRecord struct {
-	Index       int            `json:"index"`
-	StartSample int64          `json:"start_sample"`
-	EndSample   int64          `json:"end_sample"`
-	ContentHash string         `json:"content_hash"`
-	GapSamples  int64          `json:"gap_samples"`
+	Index       int              `json:"index"`
+	StartSample int64            `json:"start_sample"`
+	EndSample   int64            `json:"end_sample"`
+	ContentHash string           `json:"content_hash"`
+	GapSamples  int64            `json:"gap_samples"`
 	GapRanges   []BlockRecordGap `json:"gap_ranges,omitempty"`
-	PeakDBFS    float64        `json:"peak_dbfs"`
-	Complete    bool           `json:"complete"`
+	PeakDBFS    float64          `json:"peak_dbfs"`
+	Complete    bool             `json:"complete"`
 }
 
 // BlockRecordGap marks a missing sample range inside a block.
@@ -49,10 +49,10 @@ type Store struct {
 }
 
 type stateFile struct {
-	Version    int              `json:"version"`
-	Blocks     []BlockRecord    `json:"blocks"`
-	Container  *ContainerRecord `json:"container,omitempty"`
-	LastValid  int              `json:"last_valid_index"`
+	Version   int              `json:"version"`
+	Blocks    []BlockRecord    `json:"blocks"`
+	Container *ContainerRecord `json:"container,omitempty"`
+	LastValid int              `json:"last_valid_index"`
 }
 
 // OpenStore loads (or initializes) the index inside workDir. A corrupt

@@ -20,11 +20,11 @@ import (
 
 // Config controls one offline run.
 type Config struct {
-	WorkDir         string
-	BlockFrames     int64
-	FramesPerBlock  int
-	FrameWidth      int
-	FrameHeight     int
+	WorkDir        string
+	BlockFrames    int64
+	FramesPerBlock int
+	FrameWidth     int
+	FrameHeight    int
 	// PaceDelay, when non-zero, only throttles batch read rhythm. It is
 	// applied by the caller; it never affects hashes or ordering.
 	ContainerDigest string
@@ -33,24 +33,24 @@ type Config struct {
 
 // Manifest is the top-level reviewable output document.
 type Manifest struct {
-	Version              int             `json:"version"`
-	Blocks               int             `json:"blocks"`
-	Duplicates           int             `json:"duplicates"`
-	Reordered            int             `json:"reordered"`
-	Gaps                 int             `json:"gaps"`
-	LateDropped          int             `json:"late_dropped"`
-	PCMHash              string          `json:"pcm_hash"`
-	SegmentHash          string          `json:"segment_hash"`
-	PixelMean            float64         `json:"pixel_mean"`
-	PeakDBFS             float64         `json:"peak_dbfs"`
-	AlignmentErrorSmp    int64           `json:"alignment_error_samples"`
-	Reused               int             `json:"reused"`
-	Recomputed           int             `json:"recomputed"`
-	ContainerRecomputed  int             `json:"container_recomputed"`
-	PCMRecomputed        int             `json:"pcm_recomputed"`
-	RollbackBlocks       int             `json:"rollback_blocks,omitempty"`
-	Segments             []render.Segment `json:"segments"`
-	Container            *index.ContainerRecord `json:"container,omitempty"`
+	Version             int                    `json:"version"`
+	Blocks              int                    `json:"blocks"`
+	Duplicates          int                    `json:"duplicates"`
+	Reordered           int                    `json:"reordered"`
+	Gaps                int                    `json:"gaps"`
+	LateDropped         int                    `json:"late_dropped"`
+	PCMHash             string                 `json:"pcm_hash"`
+	SegmentHash         string                 `json:"segment_hash"`
+	PixelMean           float64                `json:"pixel_mean"`
+	PeakDBFS            float64                `json:"peak_dbfs"`
+	AlignmentErrorSmp   int64                  `json:"alignment_error_samples"`
+	Reused              int                    `json:"reused"`
+	Recomputed          int                    `json:"recomputed"`
+	ContainerRecomputed int                    `json:"container_recomputed"`
+	PCMRecomputed       int                    `json:"pcm_recomputed"`
+	RollbackBlocks      int                    `json:"rollback_blocks,omitempty"`
+	Segments            []render.Segment       `json:"segments"`
+	Container           *index.ContainerRecord `json:"container,omitempty"`
 }
 
 // Runner executes one or more runs against a persistent work directory.

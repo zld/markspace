@@ -29,14 +29,14 @@ const (
 // File is a parsed WAV file. PCM bytes stay on disk; callers read frames
 // through ReadFrames instead of holding the whole stream in memory.
 type File struct {
-	SampleRate   uint32
-	Channels     uint16
+	SampleRate    uint32
+	Channels      uint16
 	BitsPerSample uint16
-	BlockAlign   uint16
-	DataOffset   int64
-	DataLength   int64 // bytes, always a multiple of BlockAlign after Parse
-	FrameCount   int64
-	r            io.ReaderAt
+	BlockAlign    uint16
+	DataOffset    int64
+	DataLength    int64 // bytes, always a multiple of BlockAlign after Parse
+	FrameCount    int64
+	r             io.ReaderAt
 }
 
 // Parse validates the RIFF/WAVE structure and fmt chunk of r. Only PCM

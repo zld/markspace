@@ -9,8 +9,8 @@ import (
 	go_mp4 "github.com/abema/go-mp4"
 
 	"continuity/internal/demo"
-	mp4box "continuity/internal/mp4"
 	"continuity/internal/media"
+	mp4box "continuity/internal/mp4"
 )
 
 // seekBuffer is an in-memory io.WriteSeeker for the go-mp4 writer.
