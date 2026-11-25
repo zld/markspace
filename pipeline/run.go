@@ -125,9 +125,27 @@ func Run(cfg Config) (*Result, error) {
 	for _, b := range boundaries {
 		gate.MarkReady(generated.Reps[0].Track, b.Nanos)
 	}
-	for _, b := range boundaries {
-		if err := gate.RequireSeal("subtitle", b.Nanos, generated.Reps[0].Track); err != nil {
-			return res, err
+	// Schedule sealing checks in dependency-topological order. A subtitle or
+	// timed-metadata node that waits for a video keyframe cannot pass a boundary
+	// until that exact keyframe has been observed.
+	for _, id := range graph.TopoOrder() {
+		node, _ := graph.Node(id)
+		if !node.WaitForKeyframe {
+			continue
+		}
+		keyDeps := make([]model.TrackID, 0, len(node.DependsOn))
+		for _, dep := range node.DependsOn {
+			if depNode, ok := graph.Node(dep); ok && depNode.Kind == model.KindVideo {
+				keyDeps = append(keyDeps, dep)
+			}
+		}
+		if len(keyDeps) == 0 {
+			continue
+		}
+		for _, b := range boundaries {
+			if err := gate.RequireSeal(id, b.Nanos, keyDeps...); err != nil {
+				return res, err
+			}
 		}
 	}
 
