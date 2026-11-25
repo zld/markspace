@@ -6,7 +6,7 @@ import (
 )
 
 func TestNewNormalizes(t *testing.T) {
-	r := MustNew(48000 * 2, 48000)
+	r := MustNew(48000*2, 48000)
 	if r.Num != 2 || r.Den != 1 {
 		t.Fatalf("got %s want 2/1", r)
 	}

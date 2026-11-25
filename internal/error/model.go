@@ -43,6 +43,9 @@ const (
 	KindContinuity   Kind = "continuity"
 	KindLimit        Kind = "limit"
 	KindResume       Kind = "resume"
+	// KindTimestamp marks a timestamp table that is truncated or internally
+	// inconsistent (for example an stts that declares more entries than exist).
+	KindTimestamp Kind = "timestamp"
 )
 
 // Error is the structured processing error.

@@ -8,6 +8,7 @@ package fixture
 
 import (
 	"fmt"
+	"hash/crc32"
 
 	"github.com/zld/media-regress/internal/error"
 )
@@ -63,7 +64,7 @@ type Options struct {
 
 // Block describes one audio block as stored in the container.
 type Block struct {
-	Index      int    // 1-based, matches --corrupt-block and resume_block
+	Index      int // 1-based, matches --corrupt-block and resume_block
 	TrackID    uint32
 	StartFrame int64
 	Frames     int64
@@ -88,12 +89,12 @@ type TrackInfo struct {
 
 // Fixture is a generated input plus its expected metadata.
 type Fixture struct {
-	Name     string
-	Format   Format
-	Seed     uint64
-	Bytes    []byte
-	Blocks   []Block
-	Tracks   []TrackInfo
+	Name   string
+	Format Format
+	Seed   uint64
+	Bytes  []byte
+	Blocks []Block
+	Tracks []TrackInfo
 	// ExpectedConflicts counts description disagreements the normalizer must
 	// report (video colour + crop in the default profile).
 	ExpectedConflicts int
@@ -237,4 +238,16 @@ func validateSpec(s *spec) error {
 // FixtureFromBytes exists for tests that need to wrap arbitrary bytes.
 func FixtureFromBytes(name string, format Format, data []byte) *Fixture {
 	return &Fixture{Name: name, Format: format, Bytes: data}
+}
+
+// AudioBlockBytes is the byte length of one synthesized audio block.
+const AudioBlockBytes = audioBlockBytes
+
+// FixedCRC returns the checksum of the intact synthesized block with the given
+// 1-based index. Tests use it to assert that recorded checksums disagree with
+// damaged essence.
+func FixedCRC(index int) uint32 {
+	buf := make([]byte, audioBlockBytes)
+	synthAudioBlock(buf, int64(index-1)*AudioBlockFrame)
+	return crc32.ChecksumIEEE(buf)
 }

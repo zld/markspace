@@ -98,20 +98,15 @@ type AudioInfo struct {
 	Layout     string
 }
 
-// Segment is one container segment in track timescale ticks.
-type Segment struct {
-	Index    int
-	Start    int64
-	Duration int64
-	Digest   string
-	Offset   int64 // input byte offset of the segment payload
-}
-
 // Sample is an audio sample payload read from the container.
 type Sample struct {
 	Index  int
 	Offset int64
 	Data   []byte
+	// CRC32 and HasCRC carry the container-recorded per-sample checksum used
+	// by the stream stage to detect half-written essence.
+	CRC32  uint32
+	HasCRC bool
 }
 
 // Track is a normalized track.
@@ -124,7 +119,6 @@ type Track struct {
 	Video        *VideoInfo
 	Audio        *AudioInfo
 	Conflicts    int
-	Segments     []Segment
 	Samples      []Sample
 	InputOffset  int64
 	Source       string
@@ -132,10 +126,10 @@ type Track struct {
 
 // Asset is a parsed input file.
 type Asset struct {
-	Format   string // "mxf" or "mp4"
-	Source   string
-	Digest   string // sha256 of the input bytes, hex
-	Tracks   []*Track
+	Format    string // "mxf" or "mp4"
+	Source    string
+	Digest    string // sha256 of the input bytes, hex
+	Tracks    []*Track
 	Conflicts int
 }
 
