@@ -34,6 +34,7 @@ type Clock struct {
 	periodStart map[int]int64 // clock position of local-time zero per period
 	periodSpan  map[int]int64 // longest local end observed per period
 	aligned     map[string]bool
+	lastPeriod  map[string]int // last period ingested per lane (FanIn calls)
 }
 
 // NewClock creates an empty shared clock.
@@ -42,7 +43,16 @@ func NewClock() *Clock {
 		periodStart: map[int]int64{},
 		periodSpan:  map[int]int64{},
 		aligned:     map[string]bool{},
+		lastPeriod:  map[string]int{},
 	}
+}
+
+// laneKey identifies a FanIn lane by its representation name.
+func laneKey(lane []model.SegmentDescriptor) string {
+	if len(lane) == 0 {
+		return ""
+	}
+	return lane[0].Representation
 }
 
 // layOut assigns a contiguous clock offset to each period the first time it is
@@ -116,15 +126,18 @@ func (c *Clock) Cuts() []Cut {
 // identifier advances, then returns the clock-aligned descriptors sorted by
 // period, clock start and asset kind for deterministic downstream hashing.
 func (c *Clock) FanIn(lane []model.SegmentDescriptor) []model.SegmentDescriptor {
+	key := laneKey(lane)
 	out := make([]model.SegmentDescriptor, 0, len(lane))
-	lastPeriod := -1
+	lastPeriod, seen := c.lastPeriod[key]
 	for _, s := range lane {
-		if lastPeriod >= 0 && s.PeriodID != lastPeriod {
+		if seen && s.PeriodID != lastPeriod {
 			c.OpenCut(s.StartNS, s.PeriodID, model.KindDiscontinuity)
 		}
 		lastPeriod = s.PeriodID
+		seen = true
 		out = append(out, c.Ingest(s))
 	}
+	c.lastPeriod[key] = lastPeriod
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].PeriodID != out[j].PeriodID {
 			return out[i].PeriodID < out[j].PeriodID
