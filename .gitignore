@@ -1,0 +1,6 @@
+.DS_Store
+/archive
+/dist/
+/tmp/
+*.test
+*.out
