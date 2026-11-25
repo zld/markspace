@@ -100,8 +100,8 @@ func TestContinuityGapsAndRepeats(t *testing.T) {
 // patPacket builds a PAT containing one program -> pmtPID mapping.
 func patPacket(version, cc uint8, program, pmtPID uint16) [model.PacketSize]byte {
 	body := []byte{
-		0x00, // pointer field
-		0x00, // table id PAT
+		0x00,       // pointer field
+		0x00,       // table id PAT
 		0xB0, 0x11, // section syntax indicator + length 17
 		byte(program >> 8), byte(program), // transport stream id
 		(version << 1) | 0x01, 0x00, 0x00, // version/current, section/last

@@ -41,15 +41,15 @@ type Report struct {
 	CorruptKinds        []string `json:"corrupt_kinds,omitempty"`
 	// ResumedFromSegment and ResumeMs are always emitted on a resumed run
 	// (including zero values) so the acceptance output field is stable.
-	ResumedFromSegment  int      `json:"resumed_from_segment"`
-	ResumeMs            int64    `json:"resume_ms"`
+	ResumedFromSegment int   `json:"resumed_from_segment"`
+	ResumeMs           int64 `json:"resume_ms"`
 }
 
 // Config controls one run.
 type Config struct {
-	OutDir        string
-	InterruptAt   string // e.g. "segment:2", empty disables
-	CorruptMode   string
+	OutDir      string
+	InterruptAt string // e.g. "segment:2", empty disables
+	CorruptMode string
 	// ReuseFixture lets tests inject a pre-generated stream; nil generates.
 	Input *fixture.Stream
 }

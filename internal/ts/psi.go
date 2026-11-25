@@ -30,12 +30,12 @@ type ProgramMap struct {
 // Output stages consult IsMapped before writing; when a media PID has no
 // mapping they pause and Blocker names the first missing dependency.
 type PSITracker struct {
-	patVersion   uint8
-	patSeen      bool
-	pmtVersion   map[uint16]uint8 // program number -> PMT version
-	pmtPid       map[uint16]uint16 // program number -> PMT PID (from PAT)
-	maps         map[uint16]*ProgramMap
-	pidProgram   map[uint16]uint16 // media/PCR PID -> owning program number
+	patVersion uint8
+	patSeen    bool
+	pmtVersion map[uint16]uint8  // program number -> PMT version
+	pmtPid     map[uint16]uint16 // program number -> PMT PID (from PAT)
+	maps       map[uint16]*ProgramMap
+	pidProgram map[uint16]uint16 // media/PCR PID -> owning program number
 	// Events lists every PAT/PMT version transition in stream order.
 	Events []PSIEvent
 }

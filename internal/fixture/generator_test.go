@@ -60,7 +60,7 @@ func TestGenerateCleanStreamParsesAndWrapsPCR(t *testing.T) {
 		t.Fatalf("expected PSI version events, got %+v", psi.Events)
 	}
 	// After the PMT version switch the new elementary PIDs must be mapped.
-	if !psi.IsMapped(vidPID0+0x10) {
+	if !psi.IsMapped(vidPID0 + 0x10) {
 		t.Fatal("updated PMT did not map the new elementary PID")
 	}
 }

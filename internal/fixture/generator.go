@@ -60,7 +60,7 @@ type Stream struct {
 	// PMTPIDs are the two program map table PIDs, one per representation.
 	PMTPIDs [2]uint16
 	// PacketTicks is the nominal media duration of one 188-byte packet.
-	PacketTicks int64
+	PacketTicks  int64
 	SegmentTicks int64
 	// CorruptionOffset is the byte offset at which the mutation starts,
 	// or -1 for a clean stream.
@@ -70,15 +70,15 @@ type Stream struct {
 }
 
 const (
-	patPID    = uint16(0x0000)
-	pmtPID0   = uint16(0x0100)
-	pmtPID1   = uint16(0x0101)
-	pcrPID0   = uint16(0x0110)
-	vidPID0   = uint16(0x0200)
-	pcrPID1   = uint16(0x0111)
-	vidPID1   = uint16(0x0201)
-	program1  = uint16(1)
-	program2  = uint16(2)
+	patPID   = uint16(0x0000)
+	pmtPID0  = uint16(0x0100)
+	pmtPID1  = uint16(0x0101)
+	pcrPID0  = uint16(0x0110)
+	vidPID0  = uint16(0x0200)
+	pcrPID1  = uint16(0x0111)
+	vidPID1  = uint16(0x0201)
+	program1 = uint16(1)
+	program2 = uint16(2)
 )
 
 // program describes one representation as an independent MPEG-TS program:
@@ -109,11 +109,11 @@ func Generate(spec Spec) (*Stream, error) {
 
 	progs := programs()
 	out := &Stream{
-		PCRPIDs:         [2]uint16{progs[0].pcrPID, progs[1].pcrPID},
-		VideoPIDs:       [2]uint16{progs[0].vidPID, progs[1].vidPID},
-		PMTPIDs:         [2]uint16{progs[0].pmtPID, progs[1].pmtPID},
-		PacketTicks:     packetTicks,
-		SegmentTicks:    segmentTicks,
+		PCRPIDs:          [2]uint16{progs[0].pcrPID, progs[1].pcrPID},
+		VideoPIDs:        [2]uint16{progs[0].vidPID, progs[1].vidPID},
+		PMTPIDs:          [2]uint16{progs[0].pmtPID, progs[1].pmtPID},
+		PacketTicks:      packetTicks,
+		SegmentTicks:     segmentTicks,
 		CorruptionOffset: -1,
 	}
 

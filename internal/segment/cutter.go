@@ -41,12 +41,12 @@ type TimelineView interface {
 // It is single-goroutine and retains only the running digest plus one open
 // descriptor, never a full segment's packets.
 type Cutter struct {
-	repID       string
-	base        model.TimeBase
-	timeline    TimelineView
-	current     *Descriptor
-	segments    []*Descriptor
-	hasher      sha256Hash
+	repID    string
+	base     model.TimeBase
+	timeline TimelineView
+	current  *Descriptor
+	segments []*Descriptor
+	hasher   sha256Hash
 	// adoptedThrough is the highest index restored from a checkpoint.
 	// Replayed segments at or below this index are not re-appended.
 	adoptedThrough int

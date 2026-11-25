@@ -8,8 +8,8 @@ import "mediad/internal/model"
 // the counter and are ignored; duplicate packets (same counter, payload
 // start) are flagged as repeated so callers may safely ignore them.
 type ContinuityTracker struct {
-	last      map[uint16]uint8
-	have      map[uint16]bool
+	last map[uint16]uint8
+	have map[uint16]bool
 	// Gaps accumulates every observed discontinuity in stream order.
 	Gaps []model.Gap
 }

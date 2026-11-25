@@ -27,10 +27,10 @@ type SegmentCommit struct {
 // data is the on-disk checkpoint layout. Maps keep per-node progress; the
 // outputs ledger is the authoritative set of already-submitted segments.
 type data struct {
-	Version      int                     `json:"version"`
-	Generation   int64                   `json:"generation"`
-	Nodes        map[string]State        `json:"nodes"`
-	InputOffsets map[string]int64        `json:"input_offsets"`
+	Version      int                      `json:"version"`
+	Generation   int64                    `json:"generation"`
+	Nodes        map[string]State         `json:"nodes"`
+	InputOffsets map[string]int64         `json:"input_offsets"`
 	Outputs      map[string]SegmentCommit `json:"outputs"`
 }
 

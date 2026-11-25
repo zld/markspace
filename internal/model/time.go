@@ -57,14 +57,14 @@ func (b TimeBase) SegmentStart(idx int) int64 { return int64(idx) * b.SegmentTic
 // location. The raw bytes are retained so downstream stages can repackage
 // without reconstructing anything.
 type Packet struct {
-	Offset          int64
-	PID             uint16
-	Continuity      uint8
-	HasPayload      bool
-	PayloadStart    bool
-	HasAdaptation   bool
-	PCR             int64 // raw PCR in 27 MHz units, -1 when absent
-	HasPCR          bool
-	Raw             [PacketSize]byte
-	Payload         []byte // slice into Raw
+	Offset        int64
+	PID           uint16
+	Continuity    uint8
+	HasPayload    bool
+	PayloadStart  bool
+	HasAdaptation bool
+	PCR           int64 // raw PCR in 27 MHz units, -1 when absent
+	HasPCR        bool
+	Raw           [PacketSize]byte
+	Payload       []byte // slice into Raw
 }
