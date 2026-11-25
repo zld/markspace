@@ -157,9 +157,10 @@ func (s *Summary) FormatTerminal() string {
 			m.Index, m.Sample, m.Input, dash(m.Output), m.Status, m.TimeDeltaNS, m.ByteDelta,
 			m.InputBytes, m.OutputBytes, m.EstimatedBytes)
 		if m.Config != nil {
-			fmt.Fprintf(&b, "  config feasible=%t profile=%s quality_target=%d max_bitrate_bps=%d budget_bytes=%d estimated_bytes=%d\n",
-				m.Config.Feasible, m.Config.Selected.Profile, m.Config.QualityTarget,
-				m.Config.MaxBitrateBps, m.Config.BudgetBytes, m.Config.EstimatedBytes)
+			fmt.Fprintf(&b, "  config feasible=%t profile=%s video_codec=%s audio_codec=%s size=%dx%d channels=%d sample_rate_hz=%d quality_target=%d max_bitrate_bps=%d budget_bytes=%d estimated_bytes=%d\n",
+				m.Config.Feasible, m.Config.Selected.Profile, m.Config.Selected.VideoCodec, m.Config.Selected.AudioCodec,
+				m.Config.Selected.Width, m.Config.Selected.Height, m.Config.Selected.Channels, m.Config.Selected.SampleRate,
+				m.Config.QualityTarget, m.Config.MaxBitrateBps, m.Config.BudgetBytes, m.Config.EstimatedBytes)
 			for _, reason := range m.Config.Reasons {
 				fmt.Fprintf(&b, "  reason: %s\n", reason)
 			}
