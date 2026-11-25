@@ -85,7 +85,7 @@ func TestParseRTPStreamDrift(t *testing.T) {
 	// time -> exactly 125 ppm fast at 8000 Hz.
 	for i := 0; i < 30; i++ {
 		pkts = append(pkts, makePacket(uint16(i), uint32(i*8001), ssrc))
-		arrivals = append(arrivals, base.Add(time.Duration(i) * time.Second))
+		arrivals = append(arrivals, base.Add(time.Duration(i)*time.Second))
 	}
 	data := buildLog(t, pkts, arrivals)
 	s, err := ParseRTPStream(bytes.NewReader(data), int64(len(data)), media.AudioClockRate, 16)
