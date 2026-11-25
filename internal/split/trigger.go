@@ -24,6 +24,18 @@ type Segment struct {
 	TransitionOut string `json:"transitionOut"`
 	Samples       int    `json:"sampleCount"`
 	Bytes         uint64 `json:"sourceBytes"`
+	// Ranges are the source byte ranges owned by this segment, in track
+	// order. Streaming derivation reads exactly these bytes.
+	Ranges []SampleRef `json:"sampleRanges"`
+}
+
+// SampleRef is one sample's location in the sealed source file.
+type SampleRef struct {
+	TrackID uint32        `json:"trackId"`
+	Offset  uint64        `json:"offset"`
+	Size    uint32        `json:"size"`
+	Start   timeline.Tick `json:"start"`
+	End     timeline.Tick `json:"end"`
 }
 
 // Plan is the split stage output.
@@ -77,6 +89,9 @@ func SplitCuts(tl *timeline.Timeline, cuts []timeline.ClipPoint, trans []timelin
 				if s.Start >= span.Start && s.Start < span.End {
 					seg.Samples++
 					seg.Bytes += uint64(s.Size)
+					seg.Ranges = append(seg.Ranges, SampleRef{
+						TrackID: tr.ID, Offset: s.Byte, Size: s.Size, Start: s.Start, End: s.End,
+					})
 				}
 			}
 		}
