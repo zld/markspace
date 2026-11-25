@@ -1,0 +1,10 @@
+# Build and local demo artifacts
+/bin/
+/dist/
+/mediacore
+/.mediacore-demo/
+*.test
+*.out
+
+# OS/editor noise
+.DS_Store
