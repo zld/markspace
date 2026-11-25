@@ -49,17 +49,18 @@ const (
 // Error is the only error shape expected to cross package and process
 // boundaries for malformed media or state.
 type Error struct {
-	Code      Code        `json:"code"`
-	Stage     Stage       `json:"stage"`
-	Message   string      `json:"message"`
-	Path      string      `json:"path,omitempty"`
-	InputID   string      `json:"input_id,omitempty"`
-	InputSHA  string      `json:"input_sha256,omitempty"`
-	TrackID   uint32      `json:"track_id,omitempty"`
-	Offset    int64       `json:"byte_offset,omitempty"`
-	Length    int64       `json:"byte_length,omitempty"`
-	BoxOffset int64       `json:"box_offset,omitempty"`
-	TimeRange clock.Range `json:"time_range,omitempty"`
+	Code         Code        `json:"code"`
+	Stage        Stage       `json:"stage"`
+	Message      string      `json:"message"`
+	Path         string      `json:"path,omitempty"`
+	InputID      string      `json:"input_id,omitempty"`
+	InputSHA     string      `json:"input_sha256,omitempty"`
+	TrackID      uint32      `json:"track_id,omitempty"`
+	Offset       int64       `json:"byte_offset,omitempty"`
+	Length       int64       `json:"byte_length,omitempty"`
+	SampleOffset int64       `json:"sample_offset,omitempty"`
+	BoxOffset    int64       `json:"box_offset,omitempty"`
+	TimeRange    clock.Range `json:"time_range,omitempty"`
 
 	// Prev* describes the previous sample when detecting regression/gaps.
 	PrevOffset int64       `json:"previous_byte_offset,omitempty"`
@@ -112,6 +113,10 @@ func WithOffset(offset, length int64) Option {
 
 func WithBoxOffset(offset int64) Option {
 	return func(e *Error) { e.BoxOffset = offset }
+}
+
+func WithSampleOffset(offset int64) Option {
+	return func(e *Error) { e.SampleOffset = offset }
 }
 
 func WithTimeRange(r clock.Range) Option {
