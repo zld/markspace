@@ -56,8 +56,6 @@ func (s *Store) SaveJob(rec JobRecord) error {
 	if rec.CompletedStages == nil {
 		rec.CompletedStages = []string{}
 	} else {
-		rec.CompletedStages = append([]string(nil), rec.CompletedStages...)
-		sort.Strings(rec.CompletedStages)
 		rec.CompletedStages = compactStages(rec.CompletedStages)
 	}
 	return writeJSONAtomic(s.jobPath(rec.TaskKey), rec)
@@ -92,14 +90,14 @@ func (s *Store) ListJobs() ([]JobRecord, error) {
 }
 
 func compactStages(in []string) []string {
-	out := in[:0]
-	var last string
-	for i, v := range in {
-		if i > 0 && v == last {
+	seen := make(map[string]bool, len(in))
+	out := make([]string, 0, len(in))
+	for _, stage := range in {
+		if stage == "" || seen[stage] {
 			continue
 		}
-		out = append(out, v)
-		last = v
+		seen[stage] = true
+		out = append(out, stage)
 	}
 	return out
 }
