@@ -161,8 +161,11 @@ func Dataset() []Case {
 
 // CancelDataset returns enough cheap tasks to keep a depth-2 queue saturated
 // when workers are intentionally parked, exercising producer cancellation.
+// Five thousand tiny blocks are enough that a single worker cannot drain the
+// producer before cancellation arrives, while total memory stays small.
 func CancelDataset() []Case {
-	cases := make([]Case, 12)
+	const n = 5000
+	cases := make([]Case, n)
 	for i := range cases {
 		cases[i] = Case{
 			Name:        "cancel-" + itoa(i),

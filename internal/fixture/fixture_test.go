@@ -112,8 +112,8 @@ func TestDatasetDeterministic(t *testing.T) {
 
 func TestCancelDatasetBounded(t *testing.T) {
 	cases := CancelDataset()
-	if len(cases) != 12 {
-		t.Fatalf("cancel dataset size = %d, want 12", len(cases))
+	if len(cases) != 5000 {
+		t.Fatalf("cancel dataset size = %d, want 5000", len(cases))
 	}
 	for i, c := range cases {
 		if c.SampleStart != int64(i)*4 {
