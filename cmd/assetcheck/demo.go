@@ -85,15 +85,9 @@ func runDemo(args []string, stdout, stderr io.Writer) int {
 				a.Scenario, a.ExpectPass, verdictText(run), a.Expect)
 			code = exitErr
 		}
-		if a.Scenario == fixture.ScenarioMissing {
-			if run.Validate == nil || run.Validate.Missing != 1 {
-				fmt.Fprintf(stderr, "assetcheck demo: missing: expected one missing packet\n")
-				code = exitErr
-			}
-		}
-		if a.Scenario == fixture.ScenarioDuplicate {
-			if run.Validate == nil || run.Validate.Duplicate == 0 || run.Validate.Skew != 0 {
-				fmt.Fprintf(stderr, "assetcheck demo: duplicate: expected a counted duplicate with zero skew\n")
+		if !*reuse {
+			if msg := checkInvariant(a.Scenario, run); msg != "" {
+				fmt.Fprintf(stderr, "assetcheck demo: %s: %s\n", a.Scenario, msg)
 				code = exitErr
 			}
 		}
@@ -110,6 +104,56 @@ func runDemo(args []string, stdout, stderr io.Writer) int {
 		return exitFail
 	}
 	return exitPass
+}
+
+// checkInvariant enforces the acceptance theorem for a scenario and returns
+// a description of the first violated invariant, or "".
+func checkInvariant(sc fixture.Scenario, run *report.Run) string {
+	switch sc {
+	case fixture.ScenarioNormal:
+		if run.Stream == nil || run.Stream.ByteDev != 0 || run.Stream.TimeDev != 0 {
+			return "normal asset must have zero byte and time deviation"
+		}
+		for _, m := range run.Validate.Mappings {
+			if !m.Dev.OK {
+				return fmt.Sprintf("normal sample %d deviates by %d bytes / %v", m.Sample, m.Dev.ByteDelta, m.Dev.TimeDelta)
+			}
+		}
+	case fixture.ScenarioDuplicate:
+		if run.Validate == nil || run.Validate.Duplicate != 1 {
+			return "duplicate asset must count exactly one duplicate"
+		}
+		if run.Validate.Skew != 0 {
+			return fmt.Sprintf("duplicate must not add media time, skew=%v", run.Validate.Skew)
+		}
+	case fixture.ScenarioMissing:
+		if run.Validate == nil || run.Validate.Missing != 1 {
+			return "missing asset must report exactly one missing packet"
+		}
+		var gapTime bool
+		for _, f := range run.Validate.Faults {
+			if f.Code == "validate.packet.gap" && f.Time != 0 {
+				gapTime = true
+			}
+		}
+		if !gapTime {
+			return "missing packet must retain a located time gap"
+		}
+	case fixture.ScenarioTruncated, fixture.ScenarioCorrupt:
+		if run.Verdict() != report.Fail {
+			return "truncated/corrupt asset must fail"
+		}
+		var located bool
+		for _, f := range run.Scan {
+			if f.Offset >= 0 {
+				located = true
+			}
+		}
+		if !located {
+			return "failure must be reported at a non-negative byte offset"
+		}
+	}
+	return ""
 }
 
 func verdictText(run *report.Run) string {
