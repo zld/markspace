@@ -55,9 +55,11 @@ func renderMaster(path string, o masterOpts) error {
 }
 
 // videoFilter builds the source filter chain. Color tags are applied with
-// setparams: output-side -color_* options do not reach the colr box.
+// setparams: output-side -color_* options do not reach the colr box. A
+// light noise floor keeps the encode realistic; CBR filler maintains the
+// bitrate regardless.
 func videoFilter(o masterOpts) string {
-	vf := "noise=alls=6:allf=t"
+	vf := "noise=alls=2:allf=t"
 	if len(o.colorTags) == 3 {
 		vf += fmt.Sprintf(",setparams=color_primaries=%s:color_trc=%s:colorspace=%s",
 			o.colorTags[0], o.colorTags[1], o.colorTags[2])

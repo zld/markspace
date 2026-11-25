@@ -19,14 +19,15 @@ type Plan struct {
 }
 
 // PlanColor decides color handling against the bt709 target.
-//   - missing metadata: reported, passed through, never claimed converted;
+//   - missing or fully unspecified metadata: reported, passed through,
+//     never claimed converted;
 //   - matching metadata: pass through;
 //   - conflicting metadata: convert to the explicit target and record the
 //     source so the conversion is auditable.
 func PlanColor(src *model.ColorInfo, rep *model.Report) Plan {
 	p := Plan{Source: src, Target: TargetBT709}
 	switch {
-	case src == nil:
+	case src == nil || unspecified(src):
 		p.Note = "input color metadata missing; passing through, no conversion claimed"
 		rep.Addf(model.CodeColorMissing, model.SevInfo, "", -1, "%s", p.Note)
 	case *src == TargetBT709:
@@ -38,4 +39,10 @@ func PlanColor(src *model.ColorInfo, rep *model.Report) Plan {
 		rep.Addf(model.CodeColorConverted, model.SevInfo, "", -1, "%s", p.Note)
 	}
 	return p
+}
+
+// unspecified reports whether every field carries no information.
+func unspecified(c *model.ColorInfo) bool {
+	blank := func(s string) bool { return s == "" || s == "unspecified" }
+	return blank(c.Primaries) && blank(c.Transfer) && blank(c.Matrix)
 }

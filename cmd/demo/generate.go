@@ -55,6 +55,7 @@ func generateFixture(out string) error {
 	}
 	cm := defaultMaster()
 	cm.writeColr = false
+	cm.colorTags = nil // untagged frames: no colr box is written
 	if err := renderSet(join(tmp, "cm.mp4"), join(out, "color-missing"), cm); err != nil {
 		return err
 	}

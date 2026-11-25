@@ -105,11 +105,21 @@ func makeGapSet(src, dst string) error {
 }
 
 // makeTfdtRegressSet copies src and rewinds the 6th segment's tfdt by 2s
-// (180000 units at 90kHz), creating a decode-time regression.
+// (in the video track's own timescale), creating a decode-time regression.
 func makeTfdtRegressSet(src, dst string) error {
 	if err := copySet(src, dst); err != nil {
 		return err
 	}
+	p := cmaf.NewParser(nil)
+	init, err := p.ParseInit(join(dst, "init.mp4"))
+	if err != nil {
+		return err
+	}
+	v := init.Video()
+	if v == nil {
+		return fmt.Errorf("variants: no video track in %s", dst)
+	}
+	rewind := uint64(2 * v.Timescale) // 2 seconds in media units
 	names, err := segmentNames(dst)
 	if err != nil {
 		return err
@@ -120,9 +130,9 @@ func makeTfdtRegressSet(src, dst string) error {
 	return rewriteBox(join(dst, names[5]), mp4.BoxTypeTfdt(), func(b mp4.IBox) {
 		t := b.(*mp4.Tfdt)
 		if t.Version == 1 {
-			t.BaseMediaDecodeTimeV1 -= 180000
+			t.BaseMediaDecodeTimeV1 -= rewind
 		} else {
-			t.BaseMediaDecodeTimeV0 -= 180000
+			t.BaseMediaDecodeTimeV0 -= uint32(rewind)
 		}
 	})
 }

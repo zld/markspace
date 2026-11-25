@@ -57,11 +57,26 @@ func renderClip(ctx context.Context, s setInfo, segs []cmaf.Segment, win events.
 	if err := concatFiles(concat, srcs...); err != nil {
 		return worker.Result{}, err
 	}
+	// Remux to normalize the absolute tfdt timeline to zero; direct seeks
+	// on concatenated fMP4 are unreliable.
+	remux := join(tmp, "remux.mp4")
+	if out, err := exec.CommandContext(ctx, "ffmpeg", "-y", "-loglevel", "error",
+		"-i", concat, "-c", "copy", remux).CombinedOutput(); err != nil {
+		return worker.Result{}, fmt.Errorf("ffmpeg remux: %w: %s", err, out)
+	}
+	relStart := win.Start
+	if len(segs) > 0 {
+		relStart = win.Start - segs[0].Start
+		if relStart < 0 {
+			relStart = 0
+		}
+	}
 
 	args := []string{
 		"-y", "-loglevel", "error",
-		"-i", concat,
-		"-ss", secStr(win.Start), "-t", secStr(win.Dur()),
+		"-ss", secStr(relStart),
+		"-i", remux,
+		"-t", secStr(win.Dur()),
 		"-c:v", "libx264",
 		"-b:v", fmt.Sprint(cand.VideoBitrate),
 		"-minrate", fmt.Sprint(cand.VideoBitrate),

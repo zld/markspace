@@ -96,11 +96,26 @@ func psnrAgainstReference(m *manifest.Manifest, setDir, outPath string) (float64
 	}
 	cf.Close()
 
+	// Remux to normalize the absolute tfdt timeline to zero, then cut the
+	// window relative to the first segment's media start.
+	remuxPath := filepath.Join(tmp, "remux.mp4")
+	if out, err := exec.Command("ffmpeg", "-y", "-loglevel", "error",
+		"-i", concatPath, "-c", "copy", remuxPath).CombinedOutput(); err != nil {
+		return 0, fmt.Errorf("verify: remux: %w: %s", err, out)
+	}
+	relStartMS := m.Window.StartMS
+	if len(m.Timeline.Segments) > 0 {
+		relStartMS = m.Window.StartMS - m.Timeline.Segments[0].StartMS
+		if relStartMS < 0 {
+			relStartMS = 0
+		}
+	}
+
 	refPath := filepath.Join(tmp, "ref.mp4")
-	ss := strconv.FormatFloat(float64(m.Window.StartMS)/1000, 'f', 3, 64)
+	ss := strconv.FormatFloat(float64(relStartMS)/1000, 'f', 3, 64)
 	dur := strconv.FormatFloat(float64(m.Window.EndMS-m.Window.StartMS)/1000, 'f', 3, 64)
-	args := []string{"-y", "-loglevel", "error", "-i", concatPath,
-		"-ss", ss, "-t", dur, "-an", "-c:v", "libx264", "-qp", "0", "-pix_fmt", "yuv420p"}
+	args := []string{"-y", "-loglevel", "error", "-ss", ss, "-i", remuxPath,
+		"-t", dur, "-an", "-c:v", "libx264", "-qp", "0", "-pix_fmt", "yuv420p"}
 	args = append(args, colorArgs(m)...)
 	args = append(args, refPath)
 	if out, err := exec.Command("ffmpeg", args...).CombinedOutput(); err != nil {
