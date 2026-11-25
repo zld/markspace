@@ -74,7 +74,7 @@ func TestMisalignmentBeyond20ms(t *testing.T) {
 	objs := alignedObjects(2)
 	// Shorten the low representation's second segment by 30 ms: high ends
 	// at 200 ms cumulative while low ends at 170 ms, a 30 ms divergence.
-	objs[3].TimeStart += 900 // 3000 -> 3900
+	objs[3].TimeStart += 900                   // 3000 -> 3900
 	objs[3].TimeEnd = objs[3].TimeStart + 2100 // 70 ms duration instead of 100
 	sum, err := r.Run(objs)
 	if err != nil {

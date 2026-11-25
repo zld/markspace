@@ -19,10 +19,10 @@ import (
 
 // Layout names inside the checkpoint directory.
 const (
-	dirName    = "checkpoints"
-	indexName  = "index.json"
-	storeName  = "store.json"
-	tmpSuffix  = ".tmp"
+	dirName   = "checkpoints"
+	indexName = "index.json"
+	storeName = "store.json"
+	tmpSuffix = ".tmp"
 )
 
 // ChunkState is the recorded outcome for one chunk.
@@ -37,11 +37,11 @@ const (
 
 // Chunk is one checkpoint entry.
 type Chunk struct {
-	ID          int      `json:"id"`
-	InputHash   string   `json:"input_hash"`
-	ManifestHash string  `json:"manifest_hash"`
-	RuleVersion string   `json:"rule_version"`
-	State       ChunkState `json:"state"`
+	ID           int        `json:"id"`
+	InputHash    string     `json:"input_hash"`
+	ManifestHash string     `json:"manifest_hash"`
+	RuleVersion  string     `json:"rule_version"`
+	State        ChunkState `json:"state"`
 	// SegmentHashes are the content hashes produced by committed objects.
 	SegmentHashes []string `json:"segment_hashes,omitempty"`
 	// ErrorCount is the number of structured errors recorded in the chunk.
@@ -65,8 +65,8 @@ func (c Chunk) Matches(id Identity) bool {
 
 // Store is the on-disk checkpoint store plus the serialized index.
 type Store struct {
-	root   string
-	store  storeFile
+	root  string
+	store storeFile
 }
 
 type storeFile struct {
@@ -75,9 +75,9 @@ type storeFile struct {
 
 // IndexSnapshot is the local index written atomically next to the store.
 type IndexSnapshot struct {
-	RuleVersion string                  `json:"rule_version"`
-	Records     []fingerprint.Record    `json:"records"`
-	Keyframes   []KeyframeDTO           `json:"keyframes"`
+	RuleVersion string               `json:"rule_version"`
+	Records     []fingerprint.Record `json:"records"`
+	Keyframes   []KeyframeDTO        `json:"keyframes"`
 }
 
 // KeyframeDTO is the serialized keyframe shape (avoids an import cycle by

@@ -43,7 +43,7 @@ func Run(outDir string, chunkSize int, resume bool) (*Result, error) {
 		return nil, err
 	}
 	identity := checkpoint.Identity{
-		InputHash:    fingerprint.Sum([]byte("demo-input-set-v1")),
+		InputHash: fingerprint.Sum([]byte("demo-input-set-v1")),
 		ManifestHash: fingerprint.ManifestHash(
 			append(append([]byte(nil), bundle.ManifestDASH...), bundle.ManifestHLS...)),
 		RuleVersion: fingerprint.RuleVersion,
@@ -149,16 +149,16 @@ func buildObjects(b *demo.Bundle) ([]batch.Object, error) {
 			return nil, err
 		}
 		objs = append(objs, batch.Object{
-			Source:       filepath.Join(demo.DirCorrupt, filepath.Base(cf.Path)),
-			ManifestKind: "corrupt",
-			RepID:        "corrupt",
-			SegmentIndex: int64(len(objs)),
-			TrackID:      9,
-			Timescale:    90000,
-			TimeStart:    0,
-			TimeEnd:      100,
-			Data:         data,
-			Corrupt:      false, // runner runs real container validation
+			Source:        filepath.Join(demo.DirCorrupt, filepath.Base(cf.Path)),
+			ManifestKind:  "corrupt",
+			RepID:         "corrupt",
+			SegmentIndex:  int64(len(objs)),
+			TrackID:       9,
+			Timescale:     90000,
+			TimeStart:     0,
+			TimeEnd:       100,
+			Data:          data,
+			Corrupt:       false, // runner runs real container validation
 			CorruptOffset: cf.BadOffset,
 		})
 	}

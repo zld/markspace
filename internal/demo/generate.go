@@ -13,12 +13,12 @@ import (
 
 // FixtureRoot is the generated tree layout.
 const (
-	DirDASH   = "dash"
-	DirHLS    = "hls"
-	DirRTP    = "rtp"
+	DirDASH    = "dash"
+	DirHLS     = "hls"
+	DirRTP     = "rtp"
 	DirCorrupt = "corrupt"
-	MPDName   = "manifest.mpd"
-	M3U8Name  = "playlist.m3u8"
+	MPDName    = "manifest.mpd"
+	M3U8Name   = "playlist.m3u8"
 )
 
 // Segment is one generated media segment and its expected identity.
@@ -40,20 +40,20 @@ type Segment struct {
 
 // Bundle is everything the generator wrote.
 type Bundle struct {
-	Root      string
-	Segments  []Segment
+	Root         string
+	Segments     []Segment
 	ManifestDASH []byte
 	ManifestHLS  []byte
-	RTPPath   string
+	RTPPath      string
 	// Corrupt lists paths intentionally damaged with their first bad offset.
 	Corrupt []CorruptFixture
 }
 
 // CorruptFixture records a damaged object and its locatable offset.
 type CorruptFixture struct {
-	Path       string
-	BadOffset  int64
-	Kind       string
+	Path      string
+	BadOffset int64
+	Kind      string
 }
 
 // Generate writes the full fixture tree under root and returns the bundle.

@@ -48,8 +48,8 @@ func buildValidMP4(t *testing.T) []byte {
 	hdlr := fullBox("hdlr", 0, hdlrPayload)
 
 	sttsPayload := make([]byte, 12)
-	binary.BigEndian.PutUint32(sttsPayload[0:4], 1) // entry_count
-	binary.BigEndian.PutUint32(sttsPayload[4:8], 4) // sample_count=4
+	binary.BigEndian.PutUint32(sttsPayload[0:4], 1)     // entry_count
+	binary.BigEndian.PutUint32(sttsPayload[4:8], 4)     // sample_count=4
 	binary.BigEndian.PutUint32(sttsPayload[8:12], 2250) // sample_delta
 	stts := fullBox("stts", 0, sttsPayload)
 

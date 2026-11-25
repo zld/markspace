@@ -16,12 +16,12 @@ import (
 
 // Segment is one media segment entry in a playlist.
 type Segment struct {
-	Index       int
-	URI         string
-	DurationMS  int64 // EXTINF duration in whole milliseconds
-	LineOffset  int64 // byte offset of the EXTINF line
-	Discontinuity bool // true when preceded by EXT-X-DISCONTINUITY
-	ByteRange   *Range
+	Index         int
+	URI           string
+	DurationMS    int64 // EXTINF duration in whole milliseconds
+	LineOffset    int64 // byte offset of the EXTINF line
+	Discontinuity bool  // true when preceded by EXT-X-DISCONTINUITY
+	ByteRange     *Range
 }
 
 // Range is a half-open byte interval [Start, End).
@@ -32,18 +32,18 @@ type Range struct {
 
 // Playlist is a parsed media playlist.
 type Playlist struct {
-	Source       string
-	TargetDurMS  int64
-	Version      int
-	Independent  bool
-	Segments     []Segment
-	Endlist      bool
-	raw          []byte
-	segStarts    []int64 // continuous-timeline start of each segment (ms)
-	discOffsets  []int64 // byte offsets of EXT-X-DISCONTINUITY tags
+	Source      string
+	TargetDurMS int64
+	Version     int
+	Independent bool
+	Segments    []Segment
+	Endlist     bool
+	raw         []byte
+	segStarts   []int64 // continuous-timeline start of each segment (ms)
+	discOffsets []int64 // byte offsets of EXT-X-DISCONTINUITY tags
 	// Timeline positions each segment on a shared 1 ms scale. Discontinuity
 	// boundaries are visible as ordinary adjacent ranges.
-	timeline     *clock.Timeline
+	timeline *clock.Timeline
 }
 
 // Raw returns the exact playlist bytes.

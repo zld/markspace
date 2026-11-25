@@ -160,8 +160,8 @@ func TestSegmentBaseByteRange(t *testing.T) {
 
 func TestParseDurationMS(t *testing.T) {
 	cases := map[string]int64{
-		"PT2S":    2000,
-		"PT1.5S":  1500,
+		"PT2S":     2000,
+		"PT1.5S":   1500,
 		"PT0.250S": 250,
 	}
 	for in, want := range cases {

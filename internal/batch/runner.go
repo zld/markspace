@@ -53,20 +53,20 @@ type Summary struct {
 
 // Runner holds the shared pipeline state for one run.
 type Runner struct {
-	store      *checkpoint.Store
-	hasher     *fingerprint.Hasher
-	idx        *index.Index
-	collect    errs.Collection
-	chunkSize  int
-	identity   checkpoint.Identity
+	store     *checkpoint.Store
+	hasher    *fingerprint.Hasher
+	idx       *index.Index
+	collect   errs.Collection
+	chunkSize int
+	identity  checkpoint.Identity
 	// boundariesMS records, per manifest kind and segment index, each
 	// representation's cumulative boundary on the shared millisecond scale.
 	// DASH and HLS are separate timelines and are never compared across.
-	boundariesMS   map[string]map[int64]map[string]int64
-	repAccs        map[string]*clock.Accumulator
-	repPrevMS      map[string]int64
-	reusedChunks   int
-	misalignCount  int
+	boundariesMS  map[string]map[int64]map[string]int64
+	repAccs       map[string]*clock.Accumulator
+	repPrevMS     map[string]int64
+	reusedChunks  int
+	misalignCount int
 }
 
 // NewRunner wires a runner to its checkpoint store and run identity.
@@ -173,11 +173,11 @@ func (r *Runner) processChunk(cid int, chunk []Object) error {
 	}
 	return r.store.Commit(checkpoint.Chunk{
 		ID: cid, InputHash: r.identity.InputHash,
-		ManifestHash: r.identity.ManifestHash,
-		RuleVersion:  r.identity.RuleVersion,
-		State:        checkpoint.StateCommitted,
+		ManifestHash:  r.identity.ManifestHash,
+		RuleVersion:   r.identity.RuleVersion,
+		State:         checkpoint.StateCommitted,
 		SegmentHashes: committedHashes,
-		ErrorCount:   r.collect.Len(),
+		ErrorCount:    r.collect.Len(),
 	})
 }
 
@@ -233,7 +233,6 @@ func (r *Runner) processObject(obj *Object) (string, bool) {
 	return rec.Hash, true
 }
 
-
 func (r *Runner) summarize(objs []Object) *Summary {
 	wanted := make([]index.Boundary, 0, len(objs))
 	for _, o := range objs {
@@ -266,7 +265,7 @@ func (r *Runner) Errors() []*errs.Error { return r.collect.All() }
 
 // reused/misalign counters live on the runner via helpers so tests can
 // observe resume behavior without reaching into internals.
-func (r *Runner) reusedInc()    { r.reusedChunks++ }
+func (r *Runner) reusedInc()   { r.reusedChunks++ }
 func (r *Runner) misalignInc() { r.misalignCount++ }
 
 // ReusedChunks reports how many chunks were skipped via checkpoint reuse.

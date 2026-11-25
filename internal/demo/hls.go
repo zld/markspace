@@ -9,11 +9,11 @@ import (
 
 // hlsSegment is one playlist entry with its generated payload.
 type hlsSegment struct {
-	name        string
-	durationMS  int64
-	payload     []byte
+	name          string
+	durationMS    int64
+	payload       []byte
 	discontinuity bool
-	byterange   bool
+	byterange     bool
 }
 
 // generateHLS writes a media playlist that crosses an EXT-X-DISCONTINUITY

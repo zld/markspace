@@ -26,15 +26,15 @@ type Packet struct {
 	PayloadType  uint8
 	SSRC         uint32
 	PayloadLen   int
-	ByteOffset   int64 // offset of the packet inside the source bytes
+	ByteOffset   int64  // offset of the packet inside the source bytes
 	Raw          []byte // exact original datagram bytes
 }
 
 // Stream is one SSRC's ordered, unwrapped packet stream.
 type Stream struct {
-	SSRC     uint32
+	SSRC      uint32
 	ClockRate uint32
-	Packets  []Packet
+	Packets   []Packet
 	unwrapper clock.RTPUnwrapper
 	lastSeq   uint16
 	haveSeq   bool

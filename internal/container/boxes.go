@@ -17,9 +17,9 @@ import (
 // Safety limits keep untrusted input from exhausting memory or the
 // stack. Inputs beyond these limits are rejected, never partially read.
 const (
-	MaxFileSize  int64 = 512 << 20 // 512 MiB
-	MaxBoxDepth        = 16
-	MaxBoxCount        = 200_000
+	MaxFileSize int64 = 512 << 20 // 512 MiB
+	MaxBoxDepth       = 16
+	MaxBoxCount       = 200_000
 )
 
 // BoxRecord describes one parsed top-level or nested box.
