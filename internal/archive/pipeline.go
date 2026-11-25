@@ -441,8 +441,10 @@ func finishRun(res RunResult, cfg Config, outDir string) (manifest.Manifest, Rep
 	rep.MeanByte = m.Frames.MeanByte
 	rep.MinByte = m.Frames.MinByte
 	rep.MaxByte = m.Frames.MaxByte
-	rep.Peak = astats.Peak
-	rep.PeakDBFS = astats.PeakDBFS
+	// Report the same rounded values the manifest publishes so terminal
+	// output and JSON never disagree.
+	rep.Peak = m.Audio.Peak
+	rep.PeakDBFS = m.Audio.PeakDBFS
 	rep.AudioFinite = audio.PeakWithin(astats)
 	rep.StateHash = tl.StateHash()
 	rep.FramesHash = seq.SequenceHash()
