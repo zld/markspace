@@ -1,0 +1,9 @@
+# build products
+/continuity
+/bin/
+/dist/
+*.test
+*.out
+
+# demo scratch space
+/demo-out/
