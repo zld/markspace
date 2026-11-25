@@ -109,6 +109,27 @@ func TestDamagedRunHasGapsAndAlignedFrames(t *testing.T) {
 	}
 }
 
+func TestDamagedRunReportsTruncationAndGaps(t *testing.T) {
+	res := runFixture(t, fixture.KindDamaged, 17)
+	// The literal acceptance sentence attaches track+offset truncation
+	// reporting to the damaged invocation as well.
+	var truncated bool
+	for _, e := range res.Manifest.Errors {
+		if e.Code == string(events.CodeTruncated) && e.Track != "" && e.Offset > 0 {
+			truncated = true
+		}
+	}
+	if !truncated {
+		t.Fatalf("damaged run missing track-attributed truncation: %+v", res.Manifest.Errors)
+	}
+	if res.Report.GapCount == 0 {
+		t.Fatal("damaged run must still report unresolved gaps")
+	}
+	if res.Manifest.Frames.Count == 0 {
+		t.Fatal("other tracks must still export frames")
+	}
+}
+
 func TestLateRunReplayMatchesOrderedInput(t *testing.T) {
 	ordered := runFixture(t, fixture.KindNormal, 17)
 	late := runFixture(t, fixture.KindLate, 17)

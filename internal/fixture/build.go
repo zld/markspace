@@ -45,9 +45,12 @@ func Build(kind Kind, seed int64) (Archive, error) {
 
 	arc := Archive{Kind: kind, Seed: seed, MP4: mp4}
 	switch kind {
-	case KindTruncated:
-		// Cut in the middle of a media fragment's traf so the damage is
-		// attributed to a real track and the earlier fragments still export.
+	case KindTruncated, KindDamaged:
+		// The truncated fixture cuts inside a media fragment's traf so the
+		// damage is attributed to a real track and earlier fragments survive.
+		// The damaged fixture is a superset: it carries the same cut on top of
+		// its RTP duplicates/reordering/loss, so one damaged run exhibits both
+		// the track+offset truncation report and unresolved packet gaps.
 		cut := truncationPoint(mp4)
 		arc.MP4 = mp4[:cut]
 		arc.Truncated = true

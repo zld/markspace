@@ -15,7 +15,9 @@ const (
 	KindNormal Kind = "normal"
 	// KindTruncated cuts the MP4 structure mid-box.
 	KindTruncated Kind = "truncated"
-	// KindDamaged injects duplicates, reordering and burst loss into RTP.
+	// KindDamaged injects duplicates, reordering and burst loss into RTP and
+	// also carries one attributed MP4 truncation, so the combined damaged
+	// entry point reports both structural cut location and packet gaps.
 	KindDamaged Kind = "damaged"
 	// KindLate delivers events after their committed interval, forcing replay.
 	KindLate Kind = "late"
