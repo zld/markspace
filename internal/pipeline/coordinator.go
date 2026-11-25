@@ -12,11 +12,11 @@ import (
 
 // LayerStats makes each invalidation path independently observable.
 type LayerStats struct {
-	CacheHits           int `json:"cache_hits"`
-	CacheMisses         int `json:"cache_misses"`
-	CacheInvalidations  int `json:"cache_invalidations"`
-	IndexBuilds         int `json:"index_builds"`
-	IndexInvalidations  int `json:"index_invalidations"`
+	CacheHits          int `json:"cache_hits"`
+	CacheMisses        int `json:"cache_misses"`
+	CacheInvalidations int `json:"cache_invalidations"`
+	IndexBuilds        int `json:"index_builds"`
+	IndexInvalidations int `json:"index_invalidations"`
 }
 
 // Coordinator owns one content cache, one index store and the manifest

@@ -219,17 +219,17 @@ func writeStsd(mw *mp4.Writer, codec string) error {
 	}
 
 	entry := &bytes.Buffer{}
-	entry.Write(make([]byte, 6))                                  // reserved
-	binary.Write(entry, binary.BigEndian, uint16(1))             // data_ref_index
-	binary.Write(entry, binary.BigEndian, uint16(0))             // pre_defined
-	binary.Write(entry, binary.BigEndian, uint16(0))             // reserved
-	entry.Write(make([]byte, 12))                                // pre_defined[3]
-	binary.Write(entry, binary.BigEndian, uint16(320))           // width
-	binary.Write(entry, binary.BigEndian, uint16(240))           // height
-	binary.Write(entry, binary.BigEndian, uint32(0x00480000))    // h resolution
-	binary.Write(entry, binary.BigEndian, uint32(0x00480000))    // v resolution
-	binary.Write(entry, binary.BigEndian, uint32(0))             // reserved
-	binary.Write(entry, binary.BigEndian, uint16(1))             // frame count
+	entry.Write(make([]byte, 6))                              // reserved
+	binary.Write(entry, binary.BigEndian, uint16(1))          // data_ref_index
+	binary.Write(entry, binary.BigEndian, uint16(0))          // pre_defined
+	binary.Write(entry, binary.BigEndian, uint16(0))          // reserved
+	entry.Write(make([]byte, 12))                             // pre_defined[3]
+	binary.Write(entry, binary.BigEndian, uint16(320))        // width
+	binary.Write(entry, binary.BigEndian, uint16(240))        // height
+	binary.Write(entry, binary.BigEndian, uint32(0x00480000)) // h resolution
+	binary.Write(entry, binary.BigEndian, uint32(0x00480000)) // v resolution
+	binary.Write(entry, binary.BigEndian, uint32(0))          // reserved
+	binary.Write(entry, binary.BigEndian, uint16(1))          // frame count
 	name := []byte("mediacheck")
 	compressor := make([]byte, 32)
 	compressor[0] = byte(len(name))

@@ -57,8 +57,8 @@ type Entry struct {
 
 // Stats makes cache behavior observable for the acceptance scenarios.
 type Stats struct {
-	Hits        int
-	Misses      int
+	Hits          int
+	Misses        int
 	Invalidations int
 }
 

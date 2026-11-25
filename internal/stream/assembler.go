@@ -19,16 +19,16 @@ type location struct {
 // NALUnit is one reassembled NAL unit plus the coordinates of every
 // packet and byte that contributed to it.
 type NALUnit struct {
-	Type     uint32
-	Kind     nalKind
-	Data     []byte
-	FirstSeq uint64
-	LastSeq  uint64
-	ByteOff  int64
-	ByteLen  int64
+	Type      uint32
+	Kind      nalKind
+	Data      []byte
+	FirstSeq  uint64
+	LastSeq   uint64
+	ByteOff   int64
+	ByteLen   int64
 	TimeStart int64
 	TimeEnd   int64
-	Marker   bool // RTP marker on the final contributing packet
+	Marker    bool // RTP marker on the final contributing packet
 }
 
 // AssembleEvent is everything one packet produced.

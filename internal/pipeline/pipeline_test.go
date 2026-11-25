@@ -4,8 +4,8 @@ import (
 	"testing"
 
 	"mediacheck/internal/cache"
-	"mediacheck/internal/fixture"
 	"mediacheck/internal/fault"
+	"mediacheck/internal/fixture"
 	"mediacheck/internal/stream"
 )
 

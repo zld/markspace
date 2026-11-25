@@ -24,17 +24,17 @@ var ErrMalformed = errors.New("malformed manifest")
 
 // SampleRow is one per-sample mapping row.
 type SampleRow struct {
-	Index       int    `json:"index"`
-	Codec       string `json:"codec"`
-	KeyFrame    bool   `json:"key_frame"`
-	FirstSeq    uint64 `json:"first_seq"`
-	LastSeq     uint64 `json:"last_seq"`
-	ByteOffset  int64  `json:"byte_offset"`
-	ByteLength  int64  `json:"byte_length"`
-	TimeStart   int64  `json:"time_start"`
-	TimeEnd     int64  `json:"time_end"`
-	Duration    int64  `json:"duration"`
-	NALTypes    []uint32 `json:"nal_types,omitempty"`
+	Index        int      `json:"index"`
+	Codec        string   `json:"codec"`
+	KeyFrame     bool     `json:"key_frame"`
+	FirstSeq     uint64   `json:"first_seq"`
+	LastSeq      uint64   `json:"last_seq"`
+	ByteOffset   int64    `json:"byte_offset"`
+	ByteLength   int64    `json:"byte_length"`
+	TimeStart    int64    `json:"time_start"`
+	TimeEnd      int64    `json:"time_end"`
+	Duration     int64    `json:"duration"`
+	NALTypes     []uint32 `json:"nal_types,omitempty"`
 	FaultClasses []string `json:"fault_classes,omitempty"`
 }
 
@@ -77,12 +77,12 @@ type Summary struct {
 
 // Manifest is the current (v2) in-memory representation.
 type Manifest struct {
-	Version  int          `json:"version"`
-	TrackID  uint32       `json:"track_id"`
-	Identity Identity     `json:"identity"`
-	Summary  Summary      `json:"summary"`
-	Samples  []SampleRow  `json:"samples"`
-	Faults   []FaultRow   `json:"faults"`
+	Version  int         `json:"version"`
+	TrackID  uint32      `json:"track_id"`
+	Identity Identity    `json:"identity"`
+	Summary  Summary     `json:"summary"`
+	Samples  []SampleRow `json:"samples"`
+	Faults   []FaultRow  `json:"faults"`
 	// CreatedAt is metadata only and never participates in summaries or
 	// hashes; adapters strip it when computing stable digests.
 	CreatedAt time.Time `json:"created_at,omitempty"`

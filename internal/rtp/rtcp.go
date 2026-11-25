@@ -14,11 +14,11 @@ var ErrMalformedRTCP = errors.New("malformed RTCP compound packet")
 // pipeline needs to anchor the media clock: the SSRC, the RTP timestamp
 // named in the report and the NTP wall-clock instant.
 type SenderReport struct {
-	SSRC          uint32
-	RTPTimestamp  uint32
-	NTPSeconds    float64
-	PacketCount   uint32
-	OctetCount    uint32
+	SSRC         uint32
+	RTPTimestamp uint32
+	NTPSeconds   float64
+	PacketCount  uint32
+	OctetCount   uint32
 }
 
 // ParseCompoundRTCP walks one compound RTCP datagram and returns every

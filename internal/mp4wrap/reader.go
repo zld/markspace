@@ -67,15 +67,15 @@ func Read(r io.ReadSeeker) (*ReadResult, error) {
 }
 
 type capture struct {
-	codec             string
-	mdhd              *mp4.Mdhd
-	stts              *mp4.Stts
-	stsc              *mp4.Stsc
-	stsz              *mp4.Stsz
-	stco              *mp4.Stco
-	stss              *mp4.Stss
-	mdat              []byte
-	mdatPayloadStart  int64
+	codec            string
+	mdhd             *mp4.Mdhd
+	stts             *mp4.Stts
+	stsc             *mp4.Stsc
+	stsz             *mp4.Stsz
+	stco             *mp4.Stco
+	stss             *mp4.Stss
+	mdat             []byte
+	mdatPayloadStart int64
 }
 
 func (c *capture) remember(name string, box mp4.IBox) {

@@ -5,8 +5,8 @@ import (
 
 	"github.com/pion/rtp"
 
-	rtppkg "mediacheck/internal/rtp"
 	"mediacheck/internal/fault"
+	rtppkg "mediacheck/internal/rtp"
 )
 
 func mkOrdered(seq uint64, raw uint16, p *rtp.Packet) rtppkg.OrderedPacket {

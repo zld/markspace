@@ -42,10 +42,10 @@ func TestCompoundWithMultipleReports(t *testing.T) {
 
 func TestMalformedRTCP(t *testing.T) {
 	cases := [][]byte{
-		{0x80, 200},                                  // truncated header
-		{0x80, 200, 0x00, 0x02, 0x01, 0x02, 0x03},    // length overruns
-		{0x40, 200, 0x00, 0x00},                      // bad version
-		{0x80, 200, 0x00, 0x00, 0, 0, 0, 1},          // SR block too short
+		{0x80, 200}, // truncated header
+		{0x80, 200, 0x00, 0x02, 0x01, 0x02, 0x03}, // length overruns
+		{0x40, 200, 0x00, 0x00},                   // bad version
+		{0x80, 200, 0x00, 0x00, 0, 0, 0, 1},       // SR block too short
 	}
 	for i, c := range cases {
 		if _, err := ParseCompoundRTCP(c); err == nil {

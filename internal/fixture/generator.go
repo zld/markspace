@@ -22,30 +22,30 @@ const FrameTicks = 3600
 
 // Scenario names exercised by the demo and acceptance tests.
 const (
-	ScenarioNormal        = "normal"
-	ScenarioReorderLoss   = "reorder_loss"
-	ScenarioTruncatedNAL  = "truncated_nal"
-	ScenarioReplace       = "same_path_replace"
-	ScenarioMetadata      = "metadata_update"
-	ScenarioCommitAbort   = "commit_interrupt"
+	ScenarioNormal       = "normal"
+	ScenarioReorderLoss  = "reorder_loss"
+	ScenarioTruncatedNAL = "truncated_nal"
+	ScenarioReplace      = "same_path_replace"
+	ScenarioMetadata     = "metadata_update"
+	ScenarioCommitAbort  = "commit_interrupt"
 )
 
 // Datagram is one generated transport datagram in arrival order.
 type Datagram struct {
-	Raw       []byte
-	IsRTCP    bool
-	SeqHint   uint16
-	Arrival   int
+	Raw     []byte
+	IsRTCP  bool
+	SeqHint uint16
+	Arrival int
 }
 
 // Stream is a fully generated synthetic track.
 type Stream struct {
-	Codec      stream.Codec
-	SSRC       uint32
-	ClockRate  uint32
-	Packets    []*rtp.Packet
-	RTCP       []Datagram
-	Datagrams  []Datagram
+	Codec     stream.Codec
+	SSRC      uint32
+	ClockRate uint32
+	Packets   []*rtp.Packet
+	RTCP      []Datagram
+	Datagrams []Datagram
 	// Ground truth for acceptance assertions.
 	SampleCount   int
 	KeyFrameEvery int

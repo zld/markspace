@@ -35,8 +35,8 @@ type ScenarioResult struct {
 	Manifest *manifest.Manifest
 	Digest   string
 	// Facts is the stable, path-free one-line summary block.
-	Facts        []string
-	CacheStats   pipeline.LayerStats
+	Facts             []string
+	CacheStats        pipeline.LayerStats
 	MigrateRolledBack bool
 }
 
@@ -254,7 +254,7 @@ func (r *Runner) commitInterrupt() ScenarioResult {
 	afterDigest := migrate.StableDigest(res.Final)
 	return ScenarioResult{
 		Name: fixture.ScenarioCommitAbort, Report: rep, Manifest: res.Final,
-		Digest: afterDigest,
+		Digest:            afterDigest,
 		MigrateRolledBack: rolledBack,
 		Facts: []string{
 			fmt.Sprintf("rolled_back=%t", rolledBack),
@@ -280,9 +280,9 @@ func WriteMP4(w io.WriteSeeker, rep *pipeline.Report) error {
 	samples := make([]mp4wrap.Sample, 0, len(rep.Samples))
 	for _, s := range rep.Samples {
 		samples = append(samples, mp4wrap.Sample{
-			Data:      sampleBytes(rep, s),
-			KeyFrame:  s.KeyFrame,
-			Duration:  uint32(s.Duration),
+			Data:     sampleBytes(rep, s),
+			KeyFrame: s.KeyFrame,
+			Duration: uint32(s.Duration),
 		})
 	}
 	return mp4wrap.Write(w, rep.Codec, rep.ClockRate, samples)

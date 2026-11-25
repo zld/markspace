@@ -24,11 +24,11 @@ const (
 type nalKind int
 
 const (
-	nalVCL  nalKind = iota // slice layer
-	nalIDR                 // random-access slice (key frame)
-	nalSPS                 // sequence parameter set
-	nalPPS                 // picture parameter set
-	nalOther               // parameter/non-VCL unit we still record
+	nalVCL   nalKind = iota // slice layer
+	nalIDR                  // random-access slice (key frame)
+	nalSPS                  // sequence parameter set
+	nalPPS                  // picture parameter set
+	nalOther                // parameter/non-VCL unit we still record
 )
 
 // ErrEmptyPayload means an RTP packet carried no payload bytes at all,
