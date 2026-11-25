@@ -2,6 +2,7 @@ package kernel
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 )
 
@@ -62,6 +63,9 @@ func TestCheckpointResumeMatchesFullRun(t *testing.T) {
 		if a.ContentHash != b.ContentHash || a.SHA256 != b.SHA256 || a.Time != b.Time {
 			t.Fatalf("segment %d mismatch resume=%#v full=%#v", i, a, b)
 		}
+	}
+	if !reflect.DeepEqual(resumeRes.Manifest, full.Manifest) {
+		t.Fatalf("whole manifests differ:\nresume=%#v\nfull=%#v", resumeRes.Manifest, full.Manifest)
 	}
 }
 

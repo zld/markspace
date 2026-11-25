@@ -20,6 +20,7 @@ type RunOptions struct {
 type RunResult struct {
 	SourceDigest    string
 	Stages          []string
+	ManifestStages  []string
 	ResumeStage     string
 	ResumePacket    uint64
 	CheckpointPath  string
@@ -204,6 +205,9 @@ func runResume(opts RunOptions) (*RunResult, error) {
 		res.GapEventCount = len(cp.Gaps)
 	}
 	res.Stages = []string{StageManifest}
+	// The checkpoint proves ingest/parse/cut completed. Record that full
+	// provenance in the manifest even though this process resumes at manifest.
+	res.ManifestStages = []string{StageIngest, StageParse, StageCut, StageManifest}
 	return completeDelivery(opts, res, cp.SourceDigest, cp.Fixture, cp.MutateSource, cp.Gaps, cp.Wraps, cp.SilenceMS, cp.Segments)
 }
 
@@ -219,9 +223,13 @@ func completeDelivery(opts RunOptions, res *RunResult, sourceDigest, fixtureName
 	}
 	res.DuplicateGroups = len(dups)
 
+	manifestStages := res.Stages
+	if len(res.ManifestStages) > 0 {
+		manifestStages = res.ManifestStages
+	}
 	m := &Manifest{
 		Source: ManifestSource{Digest: sourceDigest, Fixture: fixtureName, Mutated: mutated},
-		Stages: res.Stages, Wraps: wraps, CutCount: len(segments),
+		Stages: manifestStages, Wraps: wraps, CutCount: len(segments),
 		SilenceMS: silenceMS, GapEvents: gaps,
 	}
 	for _, seg := range segments {
