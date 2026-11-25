@@ -38,7 +38,9 @@ type FingerprintGroup struct {
 type CheckpointInfo struct {
 	LastStage       string   `json:"last_stage"`
 	CompletedStages []string `json:"completed_stages"`
-	Resumed         bool     `json:"resumed"`
+	// Resumed is process/provenance information but intentionally excluded
+	// from the stable manifest bytes so resumed and clean runs match.
+	Resumed bool `json:"-"`
 }
 
 type Summary struct {
