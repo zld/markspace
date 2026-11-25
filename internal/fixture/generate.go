@@ -208,6 +208,16 @@ func Generate(cfg Config) (*Fixture, error) {
 		f.Data = append([]byte(nil), valid[:cut]...)
 	} else {
 		f.Data = valid
+		// Missing-keyframe and timestamp modes mutate descriptors before
+		// serialization. Generate the clean asset separately so evidence/
+		// always retains an unmodified baseline.
+		if cfg.Corrupt == CorruptMissingKeyframe || cfg.Corrupt == CorruptTimestampRegression {
+			baseline, err := Generate(Config{Seed: cfg.Seed})
+			if err != nil {
+				return nil, err
+			}
+			f.ValidData = baseline.ValidData
+		}
 	}
 	return f, nil
 }
