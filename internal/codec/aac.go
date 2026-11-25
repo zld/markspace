@@ -109,3 +109,19 @@ func ParseRawAAC(payload []byte, sampleRate uint32) (AACResult, error) {
 		Duration:    duration,
 	}, nil
 }
+
+// BuildADTSForFixture assembles a minimal valid ADTS frame around raw AAC
+// bytes. It is shared by the fixture generator and tests so generated
+// packets always parse through the real ADTS reader.
+func BuildADTSForFixture(rateIndex, channels byte, raw []byte) []byte {
+	frameLength := uint16(adtsHeaderNoCRC + len(raw))
+	b := make([]byte, adtsHeaderNoCRC, frameLength)
+	b[0] = 0xFF
+	b[1] = 0xF1 // MPEG-4, layer 0, protection absent
+	b[2] = (1 << 6) | (rateIndex << 2) | byte((channels>>2)&0x01)
+	b[3] = (byte(channels&0x03) << 6) | byte((frameLength>>11)&0x03)
+	b[4] = byte((frameLength >> 3) & 0xFF)
+	b[5] = byte((frameLength&0x07)<<5) | 0x1F
+	b[6] = 0xFC
+	return append(b, raw...)
+}
