@@ -192,8 +192,14 @@ func NewTimestampTracker(maxStep uint64) *TimestampTracker {
 	return &TimestampTracker{maxStep: maxStep}
 }
 
-// Accept extends ts and returns the extended value. The bool is false when
-// the timestamp regresses beyond the allowed tolerance.
+// Accept extends ts and returns the extended value. The first result is the
+// media-clock position; the second reports whether the reading is monotonic.
+//
+// A reading that is lower than the previous value is either a wrap of the
+// 32-bit media clock or a genuine regression. It is treated as a wrap (and
+// shifted into the next cycle) only when the forward distance implied by
+// that wrap is within maxStep; otherwise the reading is reported as
+// non-monotonic and does not move the clock.
 func (t *TimestampTracker) Accept(ts uint32) (uint64, bool) {
 	if !t.started {
 		t.started = true
@@ -203,11 +209,11 @@ func (t *TimestampTracker) Accept(ts uint32) (uint64, bool) {
 	base := t.lastExt &^ 0xFFFFFFFF
 	candidate := base | uint64(ts)
 	if candidate < t.lastExt {
-		if candidate+0x100000000 > t.lastExt && candidate+0x100000000-t.lastExt <= t.maxStep {
-			// Small forward step that wrapped past 2^32.
-			candidate += 0x100000000
-		} else if t.lastExt-candidate > t.maxStep {
-			return candidate, false
+		wrapped := candidate + 0x100000000
+		if wrapped-t.lastExt <= t.maxStep {
+			candidate = wrapped
+		} else {
+			return t.lastExt, false
 		}
 	}
 	t.lastExt = candidate
