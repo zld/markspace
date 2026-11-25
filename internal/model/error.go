@@ -57,14 +57,14 @@ const (
 
 // Issue is one auditable defect.
 type Issue struct {
-	Code         Code                       `json:"code"`
-	Severity     Severity                   `json:"severity"`
-	Layer        Layer                      `json:"layer"`
-	Track        string                     `json:"track,omitempty"`
-	Representation string                   `json:"representation,omitempty"`
-	ByteOffset   int64                      `json:"byte_offset"`
-	Interval     *clock.NormalizedInterval  `json:"interval,omitempty"`
-	Message      string                     `json:"message"`
+	Code           Code                      `json:"code"`
+	Severity       Severity                  `json:"severity"`
+	Layer          Layer                     `json:"layer"`
+	Track          string                    `json:"track,omitempty"`
+	Representation string                    `json:"representation,omitempty"`
+	ByteOffset     int64                     `json:"byte_offset"`
+	Interval       *clock.NormalizedInterval `json:"interval,omitempty"`
+	Message        string                    `json:"message"`
 }
 
 // String renders a stable single-line form for shell comparison.

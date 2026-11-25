@@ -15,14 +15,14 @@ import (
 
 // Cue is one subtitle interval on the unified time base.
 type Cue struct {
-	Index      int
-	Start      clock.Rat
-	End        clock.Rat
-	Text       string
+	Index       int
+	Start       clock.Rat
+	End         clock.Rat
+	Text        string
 	StartOffset int64 // byte offset of the cue header line
 	EndOffset   int64 // byte offset immediately after the cue payload
-	Empty      bool
-	AtCutPoint bool
+	Empty       bool
+	AtCutPoint  bool
 }
 
 // CutPoints are normalized instants where container cuts occur.

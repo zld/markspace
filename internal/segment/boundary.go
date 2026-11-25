@@ -25,9 +25,9 @@ type Packet struct {
 
 // Frame is a reconstructed frame boundary on the shared clock.
 type Frame struct {
-	Seq       uint16
-	TS        uint32
-	Start     clock.Rat
+	Seq        uint16
+	TS         uint32
+	Start      clock.Rat
 	ByteOffset int64
 }
 

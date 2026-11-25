@@ -13,13 +13,13 @@ var errSeekOutOfRange = errors.New("seek out of range")
 // single-video-track fragmented layout (ftyp/moov/sidx/mdat) whose declared
 // sidx boundaries can be deliberately corrupted for failure fixtures.
 type BuildOptions struct {
-	Timescale      uint32
-	Samples        uint32 // total frames
-	SegmentFrames  uint32 // sidx reference duration
-	StartTick      uint32 // edit-list media start
-	Drift          int32  // added to the final sidx duration (boundary drift)
-	Truncate       bool   // drop the final sidx reference (truncated layer)
-	BadTimebase    uint32 // if non-zero, mdhd timescale is overridden
+	Timescale     uint32
+	Samples       uint32 // total frames
+	SegmentFrames uint32 // sidx reference duration
+	StartTick     uint32 // edit-list media start
+	Drift         int32  // added to the final sidx duration (boundary drift)
+	Truncate      bool   // drop the final sidx reference (truncated layer)
+	BadTimebase   uint32 // if non-zero, mdhd timescale is overridden
 }
 
 // Build renders an MP4 byte stream from the declared options. It is the
@@ -115,7 +115,7 @@ func Build(opt BuildOptions) ([]byte, error) {
 		}
 		if err := marshal(w, &mp4.Elst{EntryCount: 1, Entries: []mp4.ElstEntry{{
 			SegmentDurationV0: opt.Samples, MediaTimeV0: int32(opt.StartTick),
-			MediaRateInteger:   1,
+			MediaRateInteger: 1,
 		}}}, mp4.Context{}); err != nil {
 			return nil, err
 		}

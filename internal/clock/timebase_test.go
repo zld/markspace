@@ -15,11 +15,11 @@ func TestParseRate(t *testing.T) {
 		{"30000/1001-df", true, true},
 		{"29.97-df", true, true},
 		{"29.97-ndf", true, false},
-		{"30", false, false},       // undeclared integer rate
-		{"24-df", false, false},    // DF marker on non-DF rate
-		{"23.976", false, false},   // unsupported decimal
-		{"30000/0", false, false},  // zero denominator
-		{"abc", false, false},      // garbage
+		{"30", false, false},        // undeclared integer rate
+		{"24-df", false, false},     // DF marker on non-DF rate
+		{"23.976", false, false},    // unsupported decimal
+		{"30000/0", false, false},   // zero denominator
+		{"abc", false, false},       // garbage
 		{"30000/1001", true, false}, // fractional defaults to NDF
 	}
 	for _, c := range cases {

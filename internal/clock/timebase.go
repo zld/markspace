@@ -226,7 +226,7 @@ func (r Rate) droppedPerMinute() uint32 {
 // wraparound (frame count below the previous label) report it themselves.
 func (tc Timecode) Frames() int64 {
 	r := tc.Rate
-	total := int64(((tc.H*60+tc.M)*60 + tc.S)) * int64(r.nominalFPS()) + int64(tc.F)
+	total := int64(((tc.H*60+tc.M)*60+tc.S))*int64(r.nominalFPS()) + int64(tc.F)
 	if r.DF {
 		drop := int64(r.droppedPerMinute())
 		minutes := int64(tc.H*60 + tc.M)
