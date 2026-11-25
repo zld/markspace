@@ -158,3 +158,53 @@ func TestDecodeSampleCountLimit(t *testing.T) {
 		t.Fatalf("want E_LIMIT, got %v", err)
 	}
 }
+
+func TestParseMoovTrackMetadata(t *testing.T) {
+	fb := func(ver uint8, flags uint32) []byte {
+		return []byte{ver, byte(flags >> 16), byte(flags >> 8), byte(flags)}
+	}
+	// tkhd v0: fullbox + creation + modification + trackID(4)=7 + reserved(4)
+	// + duration(4) to clear the 24-byte minimum readTrackID expects.
+	tkhdPay := append(fb(0, 0), u32(0)...)
+	tkhdPay = append(tkhdPay, u32(0)...)
+	tkhdPay = append(tkhdPay, u32(7)...)
+	tkhdPay = append(tkhdPay, u32(0)...)
+	tkhdPay = append(tkhdPay, u32(0)...)
+	// mdhd v0: fullbox + creation + modification + timescale + duration +
+	// language(2) + pre_defined(2)
+	mdhdPay := append(fb(0, 0), u32(0)...)
+	mdhdPay = append(mdhdPay, u32(0)...)
+	mdhdPay = append(mdhdPay, u32(48000)...)
+	mdhdPay = append(mdhdPay, u32(0)...)
+	mdhdPay = append(mdhdPay, make([]byte, 4)...)
+	// hdlr: fullbox + pre_defined(4) + handler_type(4) + reserved(12) + name
+	hdlrPay := append(fb(0, 0), u32(0)...)
+	hdlrPay = append(hdlrPay, []byte("snd\x00")...)
+	hdlrPay = append(hdlrPay, make([]byte, 12)...)
+	hdlrPay = append(hdlrPay, 0) // empty name (null terminator)
+	mdia := box("mdia", append(append(box("mdhd", mdhdPay), box("hdlr", hdlrPay)...), box("minf", nil)...))
+	trak := box("trak", append(box("tkhd", tkhdPay), mdia...))
+	moov := box("moov", trak)
+
+	r := NewSeeker(moov)
+	boxes, err := ScanTopLevel(r, "moov.m4s", Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	metas, err := ParseMoov(r, boxes[0])
+	if err != nil {
+		t.Fatalf("ParseMoov: %v", err)
+	}
+	if len(metas) != 1 {
+		t.Fatalf("want 1 track meta, got %d", len(metas))
+	}
+	m := metas[0]
+	if m.TrackID != 7 || m.Timescale != 48000 || m.Handler[:3] != "snd" {
+		t.Fatalf("metadata mismatch: %+v", m)
+	}
+	// ReadPayload is exercised by readTrackID; verify it directly too.
+	p, err := ReadPayload(r, boxes[0].FindPath("trak", "tkhd"))
+	if err != nil || len(p) < 16 {
+		t.Fatalf("ReadPayload failed: %d err=%v", len(p), err)
+	}
+}
