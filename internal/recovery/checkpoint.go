@@ -237,6 +237,26 @@ func NextVersion(outDir string) int {
 	return nextVersion(filepath.Join(outDir, "published", "versions"))
 }
 
+// CurrentVersion returns the newest published version, or zero if none exists.
+func CurrentVersion(outDir string) int {
+	n := NextVersion(outDir)
+	if n <= 1 {
+		return 0
+	}
+	return n - 1
+}
+
+// CurrentManifestPath returns the active manifest path.
+func CurrentManifestPath(outDir string) string {
+	return filepath.Join(outDir, "published", "current.json")
+}
+
+// WriteCurrent atomically updates the active manifest without creating a new
+// numbered release. It is used by fully reused, idempotent reruns.
+func WriteCurrent(outDir string, manifest []byte) error {
+	return index.AtomicWriteFile(CurrentManifestPath(outDir), manifest, 0o644)
+}
+
 func nextVersion(dir string) int {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
