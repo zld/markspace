@@ -93,8 +93,21 @@ func scanRegion(data []byte, start, limit int64, depth int) ([]*Node, []*clock.O
 		}
 
 		if size > limit-pos {
-			faults = append(faults, clock.NewOffsetError(clock.Offset(pos),
-				clock.CategoryTruncated, "box size "+typ+" exceeds remaining bytes", nil))
+			fault := clock.NewOffsetError(clock.Offset(pos),
+				clock.CategoryTruncated, "box size "+typ+" exceeds remaining bytes", nil)
+			faults = append(faults, fault)
+			// Keep the node with a bounded payload so later stages can still
+			// recover samples from the bytes that are present.
+			size = limit - pos
+			nodes = append(nodes, &Node{
+				Type:       typ,
+				Offset:     clock.Offset(pos),
+				HeaderSize: hdr,
+				Size:       size,
+				PayloadOff: clock.Offset(pos + hdr),
+				PayloadLen: size - hdr,
+				Fault:      fault,
+			})
 			return nodes, faults
 		}
 
