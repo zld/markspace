@@ -59,10 +59,10 @@ func TestPeriodTransitionIsNotABoundaryError(t *testing.T) {
 
 func TestValidateKeyframes(t *testing.T) {
 	segs := []model.SegmentDescriptor{
-		seg("v", 0, 0, 0, 1_000_000, true, model.KindVideo),  // period first, exempt
+		seg("v", 0, 0, 0, 1_000_000, true, model.KindVideo),          // period first, exempt
 		seg("v", 0, 1, 1_000_000, 1_000_000, false, model.KindVideo), // bad cut
 		seg("v", 0, 2, 2_000_000, 1_000_000, true, model.KindVideo),
-		seg("v", 1, 0, 0, 1_000_000, false, model.KindVideo), // first of new period, exempt
+		seg("v", 1, 0, 0, 1_000_000, false, model.KindVideo),      // first of new period, exempt
 		seg("sub", 0, 0, 0, 1_000_000, false, model.KindSubtitle), // non-video, skipped
 	}
 	rep := ValidateKeyframes(segs)

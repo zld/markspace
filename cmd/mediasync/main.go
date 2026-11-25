@@ -73,13 +73,15 @@ func run(args []string) int {
 	// 4. Acceptance assertions.
 	failed := false
 	if report.RoundTripRate != 1.0 {
-		// The deliberately corrupt lane must be the only round-trip failure and
-		// it must be classified as truncation, not a silent data fabrication.
-		if !onlyCorruptLaneFailed(report) {
-			fmt.Fprintf(os.Stderr, "ASSERT FAIL: roundtrip_rate=%.3f with non-corrupt failures\n",
-				report.RoundTripRate)
-			failed = true
-		}
+		fmt.Fprintf(os.Stderr, "ASSERT FAIL: roundtrip_rate=%.3f, want 1.000 for healthy samples\n",
+			report.RoundTripRate)
+		failed = true
+	}
+	// The deliberately corrupt sample must be located (truncation) and must
+	// never masquerade as a healthy round-trip failure.
+	if report.CorruptIsolated == 0 || !onlyCorruptLaneFailed(report) {
+		fmt.Fprintln(os.Stderr, "ASSERT FAIL: corrupt sample not located/isolated correctly")
+		failed = true
 	}
 	if report.KeyframeHitRate != 1.0 {
 		fmt.Fprintf(os.Stderr, "ASSERT FAIL: keyframe_hit_rate=%.3f, want 1.000\n",
@@ -100,6 +102,7 @@ func run(args []string) int {
 func printReport(r *pipeline.Report, dashErrors []*model.MediaError, playlist *hls.Playlist) {
 	fmt.Printf("roundtrip_rate: %.3f\n", r.RoundTripRate)
 	fmt.Printf("keyframe_hit_rate: %.3f\n", r.KeyframeHitRate)
+	fmt.Printf("corrupt_samples_isolated: %d\n", r.CorruptIsolated)
 
 	fmt.Println("segment_hashes:")
 	for _, h := range r.SegmentHashes {

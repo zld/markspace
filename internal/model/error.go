@@ -10,18 +10,18 @@ type ErrorKind string
 const (
 	KindInvalidTimescale ErrorKind = "invalid_timescale" // zero/illegal timescale
 	KindNegativeDuration ErrorKind = "negative_duration" // zero or negative duration
-	KindOverflow         ErrorKind = "overflow"           // integer time-base overflow
-	KindTruncatedMP4     ErrorKind = "truncated_mp4"      // box declares more bytes than available
-	KindMalformedMP4     ErrorKind = "malformed_mp4"      // structurally invalid MP4 box
-	KindBoundaryGap      ErrorKind = "boundary_gap"       // gap between adjacent segments
-	KindBoundaryOverlap  ErrorKind = "boundary_overlap"   // overlapping adjacent segments
-	KindMissingKeyframe  ErrorKind = "missing_keyframe"   // cut point is not a sync sample
-	KindDiscontinuity    ErrorKind = "discontinuity"      // HLS discontinuity timeline jump
-	KindPacketLost       ErrorKind = "packet_lost"        // unrecoverable missing RTP packet
-	KindRecovered        ErrorKind = "packet_recovered"   // loss repaired inside the window
-	KindEviction         ErrorKind = "eviction"           // jitter queue overflow eviction
-	KindBudgetExceeded   ErrorKind = "budget_exceeded"    // processing budget exhausted
-	KindSizeExceeded     ErrorKind = "size_exceeded"      // delivery size cap exceeded
+	KindOverflow         ErrorKind = "overflow"          // integer time-base overflow
+	KindTruncatedMP4     ErrorKind = "truncated_mp4"     // box declares more bytes than available
+	KindMalformedMP4     ErrorKind = "malformed_mp4"     // structurally invalid MP4 box
+	KindBoundaryGap      ErrorKind = "boundary_gap"      // gap between adjacent segments
+	KindBoundaryOverlap  ErrorKind = "boundary_overlap"  // overlapping adjacent segments
+	KindMissingKeyframe  ErrorKind = "missing_keyframe"  // cut point is not a sync sample
+	KindDiscontinuity    ErrorKind = "discontinuity"     // HLS discontinuity timeline jump
+	KindPacketLost       ErrorKind = "packet_lost"       // unrecoverable missing RTP packet
+	KindRecovered        ErrorKind = "packet_recovered"  // loss repaired inside the window
+	KindEviction         ErrorKind = "eviction"          // jitter queue overflow eviction
+	KindBudgetExceeded   ErrorKind = "budget_exceeded"   // processing budget exhausted
+	KindSizeExceeded     ErrorKind = "size_exceeded"     // delivery size cap exceeded
 )
 
 // MediaError is a locatable failure. Offset is a byte offset for MP4 parse

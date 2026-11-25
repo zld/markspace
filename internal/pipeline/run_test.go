@@ -13,7 +13,7 @@ func baseLane(rep string, kind model.AssetKind, pri model.Priority, n int) LaneI
 		segs[i] = model.SegmentDescriptor{
 			Source: "dash", Representation: rep, PeriodID: 0, Index: i, Kind: kind,
 			Keyframe: kind == model.KindVideo && i%4 == 0,
-			StartNS: int64(i) * 1_000_000, DurationNS: 1_000_000,
+			StartNS:  int64(i) * 1_000_000, DurationNS: 1_000_000,
 			Timescale: 1000, StartInScale: int64(i), DurationScale: 1,
 			Payload: []byte{byte(i)},
 		}
@@ -116,7 +116,7 @@ func TestSizeCapAndCorruptLaneIsolation(t *testing.T) {
 	rep := Run(Config{BudgetMS: 1_000_000, MaxBytes: 1_000_000}, lanes)
 
 	// The corrupt lane stays active but fails verification with a located
-	// error, while the healthy lane still achieves its round trip.
+	// error; it is isolated from the healthy lane's round-trip rate.
 	var foundTruncation bool
 	for _, e := range rep.Errors {
 		if model.Classify(e) == model.KindTruncatedMP4 && e.Subsystem == "verify" {
@@ -126,8 +126,12 @@ func TestSizeCapAndCorruptLaneIsolation(t *testing.T) {
 	if !foundTruncation {
 		t.Fatalf("corrupt MP4 must be reported, errors: %+v", rep.Errors)
 	}
-	if rep.RoundTripRate != 0.5 {
-		t.Fatalf("one of two lanes must still round-trip, got %.3f", rep.RoundTripRate)
+	if rep.CorruptIsolated != 1 {
+		t.Fatalf("one corrupt sample must be isolated, got %d", rep.CorruptIsolated)
+	}
+	// Healthy lanes exclude corrupt samples, so the round-trip rate stays 1.0.
+	if rep.RoundTripRate != 1.0 {
+		t.Fatalf("healthy round-trip rate must be 1.000, got %.3f", rep.RoundTripRate)
 	}
 
 	// A size cap below the lanes' delivery size suspends the non-core lane.

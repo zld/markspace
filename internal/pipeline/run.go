@@ -19,10 +19,10 @@ import (
 // Config carries the command-line resource limits.
 type Config struct {
 	Seed     int64
-	LossPct  int     // simulated packet loss percentage
-	JitterMS int     // jitter buffer window expressed in arrival disorder
-	BudgetMS int64   // processing budget in virtual milliseconds
-	MaxBytes int64   // delivery size cap in bytes
+	LossPct  int   // simulated packet loss percentage
+	JitterMS int   // jitter buffer window expressed in arrival disorder
+	BudgetMS int64 // processing budget in virtual milliseconds
+	MaxBytes int64 // delivery size cap in bytes
 }
 
 // BudgetDecision records one resource trade-off with the priority rule that
@@ -49,15 +49,16 @@ type Counters struct {
 
 // Report is the complete, deterministic processing result.
 type Report struct {
-	RoundTripRate    float64
-	KeyframeHitRate  float64
-	SegmentHashes    []verify.SegmentHash
-	Counters         Counters
-	BudgetDecisions  []BudgetDecision
-	Errors           []*model.MediaError
-	AlignedSegments  []model.SegmentDescriptor
-	BudgetUsedMS     int64
-	SizeUsedBytes    int64
+	RoundTripRate   float64 // healthy lanes only; corrupt samples are excluded
+	KeyframeHitRate float64
+	CorruptIsolated int // corrupt samples located and kept out of the rate
+	SegmentHashes   []verify.SegmentHash
+	Counters        Counters
+	BudgetDecisions []BudgetDecision
+	Errors          []*model.MediaError
+	AlignedSegments []model.SegmentDescriptor
+	BudgetUsedMS    int64
+	SizeUsedBytes   int64
 }
 
 // LaneInput is one representation's recovered descriptor stream plus the RTP
@@ -70,10 +71,10 @@ type LaneInput struct {
 	BufferStats    rtp.Counters
 	Recovery       rtp.RecoveryStats
 	Losses         []*model.MediaError
-	MP4Tracks       []verify.TrackSpec
-	MP4Fragments    []verify.FragmentSpec
-	CorruptMP4      bool
-	CorruptMP4Data  []byte // real truncated MP4 bytes; parsed when CorruptMP4 is set
+	MP4Tracks      []verify.TrackSpec
+	MP4Fragments   []verify.FragmentSpec
+	CorruptMP4     bool
+	CorruptMP4Data []byte // real truncated MP4 bytes; parsed when CorruptMP4 is set
 }
 
 // Run executes the full kernel over pre-built per-representation lane inputs.
@@ -158,15 +159,17 @@ func Run(cfg Config, lanes []LaneInput) *Report {
 
 func (r *Report) runVerification(lanes []LaneInput, active map[string]bool) {
 	var attempted, succeeded int
+	var corruptIsolated int
 	var kfAttempts, kfHits int
 	for _, lane := range lanes {
 		if !active[lane.Representation] {
 			continue
 		}
-		attempted++
 		if lane.CorruptMP4 {
-			// Parse the real truncated bytes so the failure is a located parser
-			// error, not a synthetic flag. The error never stops sibling lanes.
+			// Corrupt samples are a separate, deliberately negative case: they
+			// must be located and isolated, but they never enter the healthy
+			// round-trip rate, which must stay 1.000 for every well-formed lane.
+			corruptIsolated++
 			if _, perr := verify.ParseFragmentedMP4(lane.CorruptMP4Data); perr != nil {
 				r.Errors = append(r.Errors, model.NewError(model.Classify(perr),
 					"verify", model.Locate(perr),
@@ -180,6 +183,7 @@ func (r *Report) runVerification(lanes []LaneInput, active map[string]bool) {
 		if len(lane.MP4Tracks) == 0 {
 			continue
 		}
+		attempted++
 		res, err := verify.RoundTrip(lane.Representation, lane.MP4Tracks, lane.MP4Fragments)
 		if err != nil {
 			r.Errors = append(r.Errors, model.NewError(model.Classify(err),
@@ -216,6 +220,7 @@ func (r *Report) runVerification(lanes []LaneInput, active map[string]bool) {
 	if attempted > 0 {
 		r.RoundTripRate = float64(succeeded) / float64(attempted)
 	}
+	r.CorruptIsolated = corruptIsolated
 	if kfAttempts > 0 {
 		r.KeyframeHitRate = float64(kfHits) / float64(kfAttempts)
 	} else {

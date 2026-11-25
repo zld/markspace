@@ -15,6 +15,7 @@ import (
 	"mediasync/internal/rtp"
 	"mediasync/internal/verify"
 )
+
 // PCG is a tiny deterministic pseudo-random generator (PCG hash step) so the
 // fixtures never depend on the global math/rand source or its seed protocol.
 type PCG struct {
@@ -22,7 +23,9 @@ type PCG struct {
 }
 
 // NewPCG seeds a generator from the command-line seed.
-func NewPCG(seed int64) *PCG { return &PCG{state: uint64(seed)*6364136223846793005 + 1442695040888963407} }
+func NewPCG(seed int64) *PCG {
+	return &PCG{state: uint64(seed)*6364136223846793005 + 1442695040888963407}
+}
 
 // Intn returns a deterministic value in [0,n). It applies the standard PCG
 // 32-bit output transformation (xorshift plus a variable rotation) before the
@@ -145,7 +148,7 @@ func BuildLane(rng *PCG, rep string, kind model.AssetKind, pri model.Priority,
 		descs = append(descs, model.SegmentDescriptor{
 			Source: "dash", Representation: rep, PeriodID: 0,
 			Index: int(p.SequenceNumber),
-			Kind: kind, Keyframe: true,
+			Kind:  kind, Keyframe: true,
 			StartNS: int64(pos) * 1_000_000, DurationNS: 1_000_000,
 			Timescale: 1000, StartInScale: int64(pos), DurationScale: 1,
 			Payload: p.Payload,
