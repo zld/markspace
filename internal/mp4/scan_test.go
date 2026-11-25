@@ -118,6 +118,29 @@ func TestScanMissingBoxes(t *testing.T) {
 	}
 }
 
+func TestScanBadChunkOffset(t *testing.T) {
+	spec := cleanSpec()
+	spec.BadChunkOffset = true
+	data, err := BuildVideoMP4(spec)
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	res, err := Scan(bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	n := model.CountCode(res.Findings, model.ErrBrokenChunk)
+	if n == 0 {
+		t.Fatal("out-of-file chunk offsets must produce broken_chunk findings")
+	}
+	// Each broken chunk finding must carry a locatable span.
+	for _, f := range res.Findings {
+		if f.Code == model.ErrBrokenChunk && !f.Span.Valid() {
+			t.Fatalf("broken chunk finding lacks a span: %+v", f)
+		}
+	}
+}
+
 func TestScanRejectsNonMP4(t *testing.T) {
 	_, err := Scan(bytes.NewReader([]byte("not an mp4 at all")))
 	if !errors.Is(err, ErrNotMP4) {

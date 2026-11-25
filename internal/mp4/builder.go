@@ -20,6 +20,7 @@ type VideoSpec struct {
 	ZeroDelta       bool   // force the first stts delta to zero
 	OmitSTCO        bool   // drop the chunk offset box
 	OmitSTSS        bool   // drop the sync sample box
+	BadChunkOffset  bool   // point every chunk offset past the end of the file
 }
 
 // BuildVideoMP4 writes a minimal but standards-shaped MP4 containing one
@@ -182,11 +183,16 @@ func writeSTBL(w *gomp4.Writer, spec VideoSpec) error {
 		return err
 	}
 	if !spec.OmitSTCO {
-		// Offsets point past the header region; structural scan only
-		// checks presence, so placeholder offsets are sufficient.
+		// Healthy offsets sit inside the generated file's mdat payload.
+		// The damage flag instead points every chunk beyond the file end.
 		offsets := make([]uint32, len(spec.SampleSizes))
+		base := uint32(64)
+		stride := uint32(4)
+		if spec.BadChunkOffset {
+			base = 0x70000000
+		}
 		for i := range offsets {
-			offsets[i] = 4096 + uint32(i)*8
+			offsets[i] = base + uint32(i)*stride
 		}
 		if err := box(w, gomp4.BoxTypeStco(), &gomp4.Stco{
 			EntryCount:  uint32(len(offsets)),

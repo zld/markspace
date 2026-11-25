@@ -51,19 +51,27 @@ type trackBuilder struct {
 	hasSTCO   bool
 	hasSTSZ   bool
 	sampleCnt uint32
+	chunkOffsets []uint64
 }
 
 // Scan parses an MP4 stream and analyzes every track it contains. The
 // read handler tracks the current trak with an explicit stack so nested
 // box reads always land in the owning track builder.
 func Scan(r io.ReadSeeker) (*ScanResult, error) {
+	size, err := r.Seek(0, io.SeekEnd)
+	if err != nil {
+		return nil, fmt.Errorf("mp4 scan: %w", err)
+	}
+	if _, err := r.Seek(0, io.SeekStart); err != nil {
+		return nil, fmt.Errorf("mp4 scan: %w", err)
+	}
 	builders := map[int]*trackBuilder{}
 	var order []int
 	var trakStack []int
 	nextTrak := 0
 	container := &ScanResult{}
 
-	_, err := gomp4.ReadBoxStructure(r, func(h *gomp4.ReadHandle) (interface{}, error) {
+	_, err = gomp4.ReadBoxStructure(r, func(h *gomp4.ReadHandle) (interface{}, error) {
 		if h.BoxInfo.Type == gomp4.BoxTypeTrak() {
 			idx := nextTrak
 			nextTrak++
@@ -99,7 +107,7 @@ func Scan(r io.ReadSeeker) (*ScanResult, error) {
 	}
 
 	for _, idx := range order {
-		finalizeTrack(builders[idx], container)
+		finalizeTrack(builders[idx], container, uint64(size))
 	}
 	model.SortFindings(container.Findings)
 	return container, nil
@@ -147,13 +155,19 @@ func readBox(h *gomp4.ReadHandle, b *trackBuilder) error {
 		b.scan.SampleCount = p.SampleCount
 	case *gomp4.Stsc:
 		b.hasSTSC = true
-	case *gomp4.Stco, *gomp4.Co64:
+	case *gomp4.Stco:
 		b.hasSTCO = true
+		for _, off := range p.ChunkOffset {
+			b.chunkOffsets = append(b.chunkOffsets, uint64(off))
+		}
+	case *gomp4.Co64:
+		b.hasSTCO = true
+		b.chunkOffsets = append(b.chunkOffsets, p.ChunkOffset...)
 	}
 	return nil
 }
 
-func finalizeTrack(b *trackBuilder, out *ScanResult) {
+func finalizeTrack(b *trackBuilder, out *ScanResult, fileSize uint64) {
 	s := b.scan
 	if !b.hasSTTS {
 		b.addFinding(model.ErrMissingIndex, model.SeverityError, model.Span{},
@@ -167,6 +181,7 @@ func finalizeTrack(b *trackBuilder, out *ScanResult) {
 		b.addFinding(model.ErrMissingIndex, model.SeverityWarning, model.Span{},
 			"stsz size table missing on track %d", s.TrackID)
 	}
+	b.validateChunkOffsets(fileSize)
 	analyzeTiming(b)
 	if b.scan.Handler == "vide" {
 		analyzeKeyframes(b)
@@ -241,6 +256,22 @@ func analyzeKeyframes(b *trackBuilder) {
 			}
 		}
 		prev = at
+	}
+}
+
+// validateChunkOffsets flags chunk offsets that point outside the file or
+// overlap the header region, locating the region by sample timing when
+// possible. These are structural errors the kernel reports but never
+// repairs.
+func (b *trackBuilder) validateChunkOffsets(fileSize uint64) {
+	for i, off := range b.chunkOffsets {
+		if off == 0 || off >= fileSize {
+			sample := uint32(i + 1)
+			span := b.rangeSpan(sample, sample)
+			b.addFinding(model.ErrBrokenChunk, model.SeverityError, span,
+				"chunk %d offset %d outside file size %d on track %d",
+				i, off, fileSize, b.scan.TrackID)
+		}
 	}
 }
 
