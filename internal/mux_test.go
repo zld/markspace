@@ -67,7 +67,7 @@ func TestMuxProgramLosslessRoundTrip(t *testing.T) {
 	}
 	var got [][]byte
 	for i, seg := range videoSegs {
-		parsed, err := ParseSegment(init, SegmentName("video-avc1", i), seg, "video-avc1")
+		parsed, err := ParseSegment(init, SegmentName("video-avc1", i), seg)
 		if err != nil {
 			t.Fatalf("remuxed segment %d: %v", i, err)
 		}
@@ -117,7 +117,7 @@ func TestMuxTimingExactAndDeterministic(t *testing.T) {
 	}
 	var got []Sample
 	for i, seg := range a.Segments["video-avc1"] {
-		parsed, err := ParseSegment(init, SegmentName("video-avc1", i), seg, "video-avc1")
+		parsed, err := ParseSegment(init, SegmentName("video-avc1", i), seg)
 		if err != nil {
 			t.Fatal(err)
 		}

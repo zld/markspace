@@ -74,7 +74,7 @@ func TestParseSegmentSamples(t *testing.T) {
 		t.Fatal(err)
 	}
 	segBytes := videoFragment(90000, pattern(1, 40), pattern(2, 24), pattern(3, 31))
-	seg, err := ParseSegment(init, "video/seg1.m4s", segBytes, "video-avc1")
+	seg, err := ParseSegment(init, "video/seg1.m4s", segBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +110,7 @@ func TestParseSegmentTruncatedBoxReportsOffset(t *testing.T) {
 		Samples:       []SampleSpec{{Data: pattern(9, 64), Duration: 3000, Sync: true}},
 		TruncateBytes: 16,
 	})
-	_, err = ParseSegment(init, "video/trunc.m4s", segBytes, "video-avc1")
+	_, err = ParseSegment(init, "video/trunc.m4s", segBytes)
 	if err == nil {
 		t.Fatal("truncated segment must fail")
 	}
@@ -132,7 +132,7 @@ func TestParseSegmentRejectsUnknownTrack(t *testing.T) {
 		t.Fatal(err)
 	}
 	segBytes := BuildFragment(FragmentSpec{TrackID: 99, Timescale: 90000, Samples: []SampleSpec{{Data: pattern(1, 8), Duration: 1, Sync: true}}})
-	_, err = ParseSegment(init, "x.m4s", segBytes, "video-avc1")
+	_, err = ParseSegment(init, "x.m4s", segBytes)
 	if err == nil || !IsKind(err, KindMapping) {
 		t.Fatalf("err=%v", err)
 	}
@@ -143,7 +143,7 @@ func TestParseSegmentMissingMoof(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ParseSegment(init, "x.m4s", []byte{}, "video-avc1"); err == nil || !IsKind(err, KindParse) {
+	if _, err := ParseSegment(init, "x.m4s", []byte{}); err == nil || !IsKind(err, KindParse) {
 		t.Fatalf("err=%v", err)
 	}
 }
@@ -158,7 +158,7 @@ func TestParseSegmentPreservesAudioTiming(t *testing.T) {
 		samples = append(samples, SampleSpec{Data: pattern(byte(i), 20), Duration: 1024, Sync: true})
 	}
 	data := BuildFragment(FragmentSpec{BaseDecodeTime: 48000, TrackID: 2, Timescale: 48000, Samples: samples})
-	seg, err := ParseSegment(init, "a.m4s", data, "audio-mp4a")
+	seg, err := ParseSegment(init, "a.m4s", data)
 	if err != nil {
 		t.Fatal(err)
 	}

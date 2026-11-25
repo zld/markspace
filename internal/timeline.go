@@ -90,15 +90,19 @@ type timelineState struct {
 
 // Timeline accepts samples in arrival order.
 type Timeline struct {
-	cfg          TimelineConfig
-	tm           *TrackMap
-	state        map[string]*timelineState // key: source|target
-	accepted     []PlacedSample
-	watermark    Ticks
-	observedMax  Ticks
-	haveObserved bool
-	stats        TimelineStats
-	failure      *Error
+	cfg           TimelineConfig
+	tm            *TrackMap
+	state         map[string]*timelineState // key: source|target
+	accepted      []PlacedSample
+	watermark     Ticks
+	haveWatermark bool
+	observedMax   Ticks
+	haveObserved  bool
+	stats         TimelineStats
+	failure       *Error
+	// index groups accepted sample positions by (target, DTS, PTS, duration)
+	// so exact duplicates are recognised before lateness accounting.
+	index map[string][]int
 }
 
 // NewTimeline builds a timeline for the mapping.
@@ -115,11 +119,20 @@ func NewTimeline(tm *TrackMap, cfg TimelineConfig) (*Timeline, error) {
 	if cfg.WrapGap <= 0 {
 		cfg.WrapGap = cfg.WrapModulus / 2
 	}
-	return &Timeline{cfg: cfg, tm: tm, state: map[string]*timelineState{}}, nil
+	return &Timeline{cfg: cfg, tm: tm, state: map[string]*timelineState{}, index: map[string][]int{}}, nil
 }
 
-// Watermark returns the current event-time watermark.
-func (t *Timeline) Watermark() Ticks { return t.watermark }
+// Watermark returns the current event-time watermark, or zero before any
+// sample has advanced it.
+func (t *Timeline) Watermark() Ticks {
+	if !t.haveWatermark {
+		return 0
+	}
+	return t.watermark
+}
+
+// haveWatermarkNow reports whether a watermark has been established.
+func (t *Timeline) haveWatermarkNow() bool { return t.haveWatermark }
 
 // Add ingests one sample. A returned error with KindLate means the sample was
 // rejected at the boundary and the committed output is unchanged; other errors
@@ -154,9 +167,13 @@ func (t *Timeline) Add(source string, s Sample) error {
 		SourcePTS: s.PTS, Segment: s.Segment, Index: s.Index,
 	}
 	end := placed.End()
+	// An exact duplicate carries no new information: it is registered here so
+	// the overlap resolver can count it, and it skips lateness accounting so a
+	// backup source re-delivering main's samples does not look like late data.
+	duplicate := t.isDuplicate(placed)
 	// A sample at or behind the watermark is late: its position in the
 	// committed output is already decided by earlier samples.
-	if t.haveObserved && placed.PTS <= t.watermark {
+	if t.haveWatermark && placed.PTS <= t.watermark {
 		lateness := t.watermark - placed.PTS
 		if lateness > t.cfg.LateWindow {
 			t.stats.LateRejected++
@@ -167,7 +184,14 @@ func (t *Timeline) Add(source string, s Sample) error {
 		}
 		t.stats.LateRecomputed++
 	}
+	if duplicate {
+		// Accepted for resolution/reporting but never advances the watermark.
+		t.accepted = append(t.accepted, placed)
+		t.index[dupKey(placed)] = append(t.index[dupKey(placed)], len(t.accepted)-1)
+		return nil
+	}
 	t.accepted = append(t.accepted, placed)
+	t.index[dupKey(placed)] = append(t.index[dupKey(placed)], len(t.accepted)-1)
 	if !t.haveObserved || end > t.observedMax {
 		t.observedMax = end
 		t.haveObserved = true
@@ -175,10 +199,26 @@ func (t *Timeline) Add(source string, s Sample) error {
 	// Event-time watermark: the highest event time seen minus the late window.
 	// It is not clamped at zero, so replaying a stream that starts at a
 	// negative timestamp classifies lateness identically.
-	if wm := t.observedMax - t.cfg.LateWindow; wm > t.watermark {
+	if wm := t.observedMax - t.cfg.LateWindow; !t.haveWatermark || wm > t.watermark {
 		t.watermark = wm
+		t.haveWatermark = true
 	}
 	return nil
+}
+
+// isDuplicate reports whether an identical sample is already accepted.
+func (t *Timeline) isDuplicate(p PlacedSample) bool {
+	for _, i := range t.index[dupKey(p)] {
+		prev := t.accepted[i]
+		if bytesEqual(prev.Data, p.Data) && prev.Sync == p.Sync {
+			return true
+		}
+	}
+	return false
+}
+
+func dupKey(p PlacedSample) string {
+	return fmt.Sprintf("%s|%d|%d|%d", p.Target, p.DTS, p.PTS, p.Duration)
 }
 
 // unwrap converts a source sample's DTS/PTS to the base timeline, repairing
@@ -281,6 +321,7 @@ func (t *Timeline) Recompute() (*Program, error) {
 			prev := kept[conflict]
 			if prev.PTS == c.PTS && prev.Duration == c.Duration && equalBytes(prev.Data, c.Data) {
 				dups++
+				_ = prev
 				continue
 			}
 			// Keep the higher-priority source; on ties keep the earlier one.

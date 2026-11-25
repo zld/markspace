@@ -469,11 +469,10 @@ func payloadBytes(data []byte, bi *mp4.BoxInfo) ([]byte, error) {
 	return out, nil
 }
 
-// ParseSegment demuxes one media segment. init supplies track metadata and
-// bounds; trackKey is the stable target key for the samples. file is the
-// manifest-relative path; localStart/localEnd select the byte range within
-// data (for HLS byte ranges).
-func ParseSegment(init *InitSegment, file string, data []byte, trackKey string) (*Segment, error) {
+// ParseSegment demuxes one media segment. init supplies track metadata and each
+// sample's stable track key is taken from the init track matched by track_ID.
+// file is the manifest-relative path used in fault positions.
+func ParseSegment(init *InitSegment, file string, data []byte) (*Segment, error) {
 	if len(data) > maxSegmentBytes {
 		return nil, NewError(KindParse, locWithFile(file, 0), "segment is %d bytes, limit %d", len(data), maxSegmentBytes)
 	}
@@ -498,7 +497,7 @@ func ParseSegment(init *InitSegment, file string, data []byte, trackKey string) 
 			if i+1 >= len(boxes) || boxes[i+1].Type != "mdat" {
 				return nil, NewError(KindBadReference, locWithFile(file, b.Offset), "moof is not followed by mdat")
 			}
-			if err := parseFragment(init, byID, file, data, b, boxes[i+1], seg, trackKey); err != nil {
+			if err := parseFragment(init, byID, file, data, b, boxes[i+1], seg); err != nil {
 				return nil, err
 			}
 			i++ // consumed mdat
@@ -522,7 +521,7 @@ func ParseSegment(init *InitSegment, file string, data []byte, trackKey string) 
 	return seg, nil
 }
 
-func parseFragment(init *InitSegment, byID map[uint32]Track, file string, data []byte, moof, mdat Box, seg *Segment, trackKey string) error {
+func parseFragment(init *InitSegment, byID map[uint32]Track, file string, data []byte, moof, mdat Box, seg *Segment) error {
 	trafs, err := Boxes(moof.Payload)
 	if err != nil {
 		return NewError(KindTruncated, locWithFile(file, moof.Offset+moof.Header), "malformed moof: %v", err)
@@ -566,14 +565,14 @@ func parseFragment(init *InitSegment, byID map[uint32]Track, file string, data [
 		if tfhd == nil || trun == nil {
 			return NewError(KindBadReference, locWithFile(file, trafOff), "traf requires tfhd and trun")
 		}
-		if err := fillSamples(init, byID, file, data, moof, mdat, tfhd, tfdt, trun, trafOff, seg, trackKey); err != nil {
+		if err := fillSamples(init, byID, file, data, moof, mdat, tfhd, tfdt, trun, trafOff, seg); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func fillSamples(init *InitSegment, byID map[uint32]Track, file string, data []byte, moof Box, mdat Box, tfhd, tfdt, trun *Box, trafOff int64, seg *Segment, trackKey string) error {
+func fillSamples(init *InitSegment, byID map[uint32]Track, file string, data []byte, moof Box, mdat Box, tfhd, tfdt, trun *Box, trafOff int64, seg *Segment) error {
 	if len(tfhd.Payload) < 8 {
 		return NewError(KindTruncated, locWithFile(file, trafOff+tfhd.Offset), "tfhd too short")
 	}
@@ -758,7 +757,7 @@ func fillSamples(init *InitSegment, byID map[uint32]Track, file string, data []b
 			return NewError(KindParse, locWithFile(file, cursor), "sample %d composition offset overflows the 90 kHz base: %v", i, err)
 		}
 		seg.Samples = append(seg.Samples, Sample{
-			TrackKey:       trackKey,
+			TrackKey:       track.Key,
 			SourceID:       trackID,
 			Segment:        file,
 			File:           file,

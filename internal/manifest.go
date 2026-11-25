@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -99,6 +100,92 @@ func (m *Manifest) Segments() []SegmentRef {
 		out = append(out, m.Representations[i].Segments...)
 	}
 	return out
+}
+
+// LoadSourceManifest loads every rendition playlist describing one source.
+// HLS keeps one media playlist per rendition under label/<role>/index.m3u8;
+// DASH keeps a single label/index.mpd. The returned Manifest is the union of
+// all renditions, with deterministic ordering and every URI rewritten relative
+// to root so segment reads are uniform.
+func LoadSourceManifest(root, label string, kind ManifestKind) (*Manifest, error) {
+	switch kind {
+	case ManifestHLS:
+		entries, err := os.ReadDir(filepath.Join(root, filepath.FromSlash(label)))
+		if err != nil {
+			return nil, WrapError(err, KindParse, Location{File: label, Offset: -1, Sample: -1}, "source directory not readable")
+		}
+		var dirs []string
+		for _, e := range entries {
+			if e.IsDir() {
+				dirs = append(dirs, e.Name())
+			}
+		}
+		sort.Strings(dirs)
+		merged := &Manifest{Kind: ManifestHLS, Path: label}
+		for _, role := range dirs {
+			rel := label + "/" + role + "/index.m3u8"
+			if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(rel))); err != nil {
+				continue
+			}
+			m, err := LoadManifest(root, rel)
+			if err != nil {
+				return nil, err
+			}
+			merged.MediaSequence = m.MediaSequence
+			if m.TargetDuration > merged.TargetDuration {
+				merged.TargetDuration = m.TargetDuration
+			}
+			for i := range m.Representations {
+				if m.Representations[i].Kind == MediaUnknown {
+					m.Representations[i].Kind = KindForRole(role)
+				}
+				m.Representations[i].ID = label + "-" + role
+				// Playlist URIs are relative to the rendition directory; rewrite
+				// them to be relative to the source root for uniform resolution.
+				rendDir := label + "/" + role
+				m.Representations[i].InitURI = joinSlash(label, m.Representations[i].InitURI)
+				for j := range m.Representations[i].Segments {
+					seg := &m.Representations[i].Segments[j]
+					seg.URI = joinSlash(rendDir, seg.URI)
+					seg.InitURI = m.Representations[i].InitURI
+				}
+				merged.Representations = append(merged.Representations, m.Representations[i])
+			}
+		}
+		if len(merged.Representations) == 0 {
+			return nil, NewError(KindParse, Location{File: label, Offset: -1, Sample: -1}, "no HLS rendition playlists under %q", label)
+		}
+		return merged, nil
+	case ManifestDASH:
+		rel := label + "/index.mpd"
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(rel))); err != nil {
+			return nil, WrapError(err, KindParse, Location{File: rel, Offset: -1, Sample: -1}, "manifest not found")
+		}
+		return LoadManifest(root, rel)
+	default:
+		return nil, Usagef("unsupported manifest format %q", kind)
+	}
+}
+
+// KindForRole maps a rendition directory name to a media kind.
+func KindForRole(role string) MediaKind {
+	switch strings.ToLower(role) {
+	case "video", "v":
+		return MediaVideo
+	case "audio", "a":
+		return MediaAudio
+	}
+	return MediaUnknown
+}
+
+func joinSlash(a, b string) string {
+	if b == "" {
+		return ""
+	}
+	if strings.HasPrefix(b, a+"/") {
+		return b
+	}
+	return a + "/" + b
 }
 
 // LoadManifest reads and parses a playlist from root/rel. The file extension
