@@ -26,6 +26,7 @@ type AccessUnit struct {
 	Keyframe bool      `json:"keyframe"`
 	Corrupt  bool      `json:"corrupt"`
 	Reasons  []string  `json:"reasons,omitempty"`
+	Damages  []Damage  `json:"-"`
 }
 
 // Damage is a structural defect located at a stream byte offset.
@@ -259,10 +260,12 @@ func (s *Scanner) closeNAL(endOff int64, prefixLen int) {
 
 func (s *Scanner) record(off int64, err error) {
 	e := errs.As(err)
-	s.damages = append(s.damages, Damage{Offset: off, Code: e.Code, Msg: e.Msg})
+	dmg := Damage{Offset: off, Code: e.Code, Msg: e.Msg}
+	s.damages = append(s.damages, dmg)
 	if s.au != nil {
 		s.au.Corrupt = true
 		s.au.Reasons = append(s.au.Reasons, string(e.Code))
+		s.au.Damages = append(s.au.Damages, dmg)
 	}
 }
 
