@@ -91,7 +91,46 @@ func Split(trackID uint32, samples []MappedSample, cfg Config) []Segment {
 	if len(samples) == 0 {
 		return nil
 	}
-	sorted := append([]MappedSample(nil), samples...)
+	// Partition unmappable (no-time) samples from timed ones. No-time samples
+	// are reported as their own flagged segment instead of distorting the
+	// common-axis boundaries; invalid samples that still carry explicit time
+	// stay inline and merely flag whichever segment contains them.
+	var timed, noTime []MappedSample
+	for _, s := range samples {
+		if s.Invalid && s.StartUS == 0 && s.EndUS == 0 {
+			noTime = append(noTime, s)
+		} else {
+			timed = append(timed, s)
+		}
+	}
+
+	segs := splitTimed(trackID, timed, cfg)
+
+	if len(noTime) > 0 {
+		// Anchor the invalid segment at the last valid boundary when one
+		// exists so its placement is deterministic; otherwise at zero.
+		var startUS int64
+		var seq uint32
+		var offset int64
+		if n := len(segs); n > 0 {
+			startUS = segs[n-1].EndUS
+			seq = noTime[0].SeqNum
+			offset = noTime[0].Offset
+		}
+		segs = append(segs, Segment{
+			ID: len(segs) + 1, TrackID: trackID, SeqNum: seq,
+			InputOffset: offset, StartUS: startUS, EndUS: startUS,
+			SampleCount: len(noTime), SpansInvalid: true,
+		})
+	}
+	return segs
+}
+
+// splitTimed splits only samples that carry a real common-axis time.
+func splitTimed(trackID uint32, sorted []MappedSample, cfg Config) []Segment {
+	if len(sorted) == 0 {
+		return nil
+	}
 	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].StartUS < sorted[j].StartUS })
 
 	// Collect every real sample edge (start and end) on the axis once, then
@@ -158,6 +197,15 @@ func Split(trackID uint32, samples []MappedSample, cfg Config) []Segment {
 // single clock is maintained per track for the whole group, so rollover and
 // rollback decisions span fragment boundaries.
 func Run(frags []*mp4.Fragment, cfg Config) (map[uint32][]MappedSample, map[uint32][]Segment, error) {
+	mapped, segments, _, err := RunWithClocks(frags, cfg)
+	return mapped, segments, err
+}
+
+// RunWithClocks behaves like Run but also returns the per-track clocks so a
+// caller can read rollover counts and run explicit clock-drift checks.
+func RunWithClocks(frags []*mp4.Fragment, cfg Config) (
+	map[uint32][]MappedSample, map[uint32][]Segment, map[uint32]*timeline.TrackClock, error,
+) {
 	clocks := map[uint32]*timeline.TrackClock{}
 	mapped := map[uint32][]MappedSample{}
 	for _, f := range frags {
@@ -178,5 +226,5 @@ func Run(frags []*mp4.Fragment, cfg Config) (map[uint32][]MappedSample, map[uint
 	for trackID, ms := range mapped {
 		segments[trackID] = Split(trackID, ms, cfg)
 	}
-	return mapped, segments, nil
+	return mapped, segments, clocks, nil
 }
