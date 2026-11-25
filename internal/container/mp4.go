@@ -28,10 +28,11 @@ type Boundary struct {
 
 // Container is the parsed, normalized view of an MP4 stream.
 type Container struct {
-	MovieTimescale uint32
-	Tracks         []TrackInfo
-	Boundaries     []Boundary
+	MovieTimescale  uint32
+	Tracks          []TrackInfo
+	Boundaries      []Boundary
 	DeclaredSamples uint32 // sum of sidx subsegment durations in frames
+	SidxOffset      int64  // raw byte offset of the sidx box, -1 when absent
 }
 
 // ValidationResult bundles the container view and the counted defects.
@@ -44,8 +45,7 @@ type ValidationResult struct {
 // A hard parse failure is returned as an error; constraint failures appear
 // in the issue log so callers can still produce an auditable conclusion.
 func Parse(r io.ReadSeeker) (*Container, error) {
-	c := &Container{}
-	var sidxOff int64 = -1
+	c := &Container{SidxOffset: -1}
 	handler := func(h *mp4.ReadHandle) (interface{}, error) {
 		path := h.Path
 		last := path[len(path)-1]
@@ -99,7 +99,7 @@ func Parse(r io.ReadSeeker) (*Container, error) {
 			}
 			return nil, nil
 		case last == mp4.BoxTypeSidx():
-			sidxOff = int64(h.BoxInfo.Offset)
+			c.SidxOffset = int64(h.BoxInfo.Offset)
 			box, _, err := h.ReadPayload()
 			if err != nil {
 				return nil, err
@@ -120,13 +120,14 @@ func Parse(r io.ReadSeeker) (*Container, error) {
 		}
 	}
 	if _, err := mp4.ReadBoxStructure(r, handler); err != nil {
-		return nil, fmt.Errorf("mp4 parse failure (sidx offset %d): %w", sidxOff, err)
+		return nil, fmt.Errorf("mp4 parse failure (sidx offset %d): %w", c.SidxOffset, err)
 	}
 	if c.MovieTimescale == 0 {
 		return nil, fmt.Errorf("mp4 constraint failure: missing mvhd time base")
 	}
 	return c, nil
 }
+
 // Validate applies the declared container constraints and counts each defect
 // class separately instead of repairing it.
 func Validate(c *Container, expectedTracks int) *ValidationResult {
@@ -156,7 +157,7 @@ func Validate(c *Container, expectedTracks int) *ValidationResult {
 	if c.DeclaredSamples != actual {
 		res.Issues.Add(model.Issue{
 			Code: model.CodeBoundaryDrift, Severity: model.SeverityError,
-			Layer: model.LayerContainer, ByteOffset: 0,
+			Layer: model.LayerContainer, ByteOffset: c.SidxOffset,
 			Message: fmt.Sprintf("sidx declares %d frames, sample tables hold %d (drift=%d)",
 				c.DeclaredSamples, actual, int64(c.DeclaredSamples)-int64(actual)),
 		})
