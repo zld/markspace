@@ -30,15 +30,16 @@ type Config struct {
 
 // Frame is one rendered frame with its canonical digest.
 type Frame struct {
-	Index      int
-	AtNS       int64
-	Pixels     []uint16 // RGB565, row-major
-	SHA256     string
-	MeanByte   float64
-	MinByte    uint8
-	MaxByte    uint8
-	EventIDs   []events.Identity
-	AlignError int64 // ns between this frame instant and the nearest active event
+	Index        int
+	AtNS         int64
+	Pixels       []uint16 // RGB565, row-major
+	SHA256       string
+	MeanByte     float64
+	MinByte      uint8
+	MaxByte      uint8
+	EventIDs     []events.Identity
+	AlignError   int64 // ns from this frame instant to the nearest active event boundary
+	HasAlignment bool  // false when no event was active at this instant
 }
 
 // Sequence is the rendered frame sequence for one interval.
@@ -135,12 +136,14 @@ func RenderFrameSequence(cfg Config, committed []events.Event, endNS int64) (Seq
 		f.SHA256 = hashPixels(f.Pixels)
 		f.MeanByte, f.MinByte, f.MaxByte = pixelStats(f.Pixels)
 		if len(active) > 0 {
+			// Alignment is measurable only where an event is active. The
+			// maximum is taken over those frames; a frame with no active
+			// events contributes no alignment observation.
 			f.AlignError = alignmentError(ordered, at, cfg.StepNS)
-		} else {
-			f.AlignError = cfg.StepNS
-		}
-		if f.AlignError > seq.MaxAlignError {
-			seq.MaxAlignError = f.AlignError
+			f.HasAlignment = true
+			if f.AlignError > seq.MaxAlignError {
+				seq.MaxAlignError = f.AlignError
+			}
 		}
 		seq.Frames = append(seq.Frames, f)
 	}
@@ -214,9 +217,11 @@ func pixelStats(pixels []uint16) (mean float64, lo, hi uint8) {
 	lo, hi = 255, 0
 	sum := 0
 	for _, p := range pixels {
-		r := byte((p >> 11) & 0x1F)
-		g := byte((p >> 5) & 0x3F)
-		b := byte(p & 0x1F)
+		// Expand the RGB565 components to 8-bit so mean/min/max are on the
+		// conventional 0..255 scale.
+		r := uint8(uint32((p>>11)&0x1F) * 255 / 31)
+		g := uint8(uint32((p>>5)&0x3F) * 255 / 63)
+		b := uint8(uint32(p&0x1F) * 255 / 31)
 		for _, v := range []byte{r, g, b} {
 			sum += int(v)
 			if v < lo {

@@ -110,15 +110,80 @@ func TestPixelStatsBounded(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, f := range seq.Frames {
-		if f.MeanByte < 0 || f.MeanByte > 63 {
-			t.Fatalf("mean byte %f out of RGB565 range", f.MeanByte)
+		// Stats are expanded to the conventional 0..255 byte scale.
+		if f.MeanByte < 0 || f.MeanByte > 255 {
+			t.Fatalf("mean byte %f out of 0..255 range", f.MeanByte)
 		}
 		if f.MinByte > f.MaxByte {
 			t.Fatalf("min %d > max %d", f.MinByte, f.MaxByte)
 		}
+		if f.MeanByte < float64(f.MinByte) || f.MeanByte > float64(f.MaxByte) {
+			t.Fatalf("mean %f outside extremes [%d,%d]", f.MeanByte, f.MinByte, f.MaxByte)
+		}
 		if len(f.Pixels) != cfg.Width*cfg.Height {
 			t.Fatalf("pixel count %d", len(f.Pixels))
 		}
+	}
+}
+
+func TestPixelStatsExpandsRGB565ToByteScale(t *testing.T) {
+	cases := []struct {
+		name       string
+		pixels     []uint16
+		wantMean   float64
+		wantMin    uint8
+		wantMax    uint8
+	}{
+		{"black", []uint16{0x0000}, 0, 0, 0},
+		{"white", []uint16{0xFFFF}, 255, 255, 255},
+		{"red", []uint16{0xF800}, 255.0 / 3.0, 0, 255},
+		{"green", []uint16{0x07E0}, 255.0 / 3.0, 0, 255},
+		{"blue", []uint16{0x001F}, 255.0 / 3.0, 0, 255},
+	}
+	for _, tc := range cases {
+		mean, lo, hi := pixelStats(tc.pixels)
+		if lo != tc.wantMin || hi != tc.wantMax {
+			t.Fatalf("%s: extremes [%d,%d] want [%d,%d]", tc.name, lo, hi, tc.wantMin, tc.wantMax)
+		}
+		if diff := mean - tc.wantMean; diff > 0.001 || diff < -0.001 {
+			t.Fatalf("%s: mean %v want %v", tc.name, mean, tc.wantMean)
+		}
+	}
+}
+
+func TestAlignmentObservedOnlyOnActiveFrames(t *testing.T) {
+	cfg := DefaultConfig(0) // step = 40ms
+	step := cfg.StepNS
+	if step == 0 {
+		step = 40_000_000
+	}
+	// One event covering exactly the first frame instant [0,step). It is
+	// active only on frame 0 and aligns exactly to its start.
+	ev := []events.Event{{Track: events.TrackSubtitle, Kind: events.KindSubtitle, At: 0, Duration: step, Seq: 1}}
+	seq, err := RenderFrameSequence(cfg, ev, 5*step)
+	if err != nil {
+		t.Fatal(err)
+	}
+	active, inactive := 0, 0
+	for _, f := range seq.Frames {
+		if f.HasAlignment {
+			active++
+			if f.AlignError > step {
+				t.Fatalf("frame %d alignment %d exceeds step %d", f.Index, f.AlignError, step)
+			}
+		} else {
+			inactive++
+			if f.AlignError != 0 {
+				t.Fatalf("inactive frame %d must carry no alignment error, got %d", f.Index, f.AlignError)
+			}
+		}
+	}
+	if active != 1 || inactive != 4 {
+		t.Fatalf("active=%d inactive=%d, want 1/4", active, inactive)
+	}
+	// The inactive frames must not inflate the maximum to a full step.
+	if seq.MaxAlignError != 0 {
+		t.Fatalf("max alignment %d, want 0 for exact-start single frame", seq.MaxAlignError)
 	}
 }
 

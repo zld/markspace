@@ -87,6 +87,7 @@ type AlignSummary struct {
 	MaxAlignmentErrorNS  int64 `json:"max_alignment_error_ns"`
 	FrameDurationNS      int64 `json:"frame_duration_ns"`
 	AlignmentWithinFrame bool  `json:"alignment_within_one_frame"`
+	ObservedFrames       int   `json:"align_observed_frames"`
 }
 
 // RTPSummary is the reorderer inventory.
@@ -227,6 +228,12 @@ func Build(in Inputs) Manifest {
 	}
 
 	alignOK := in.Frames.FrameDurationNS > 0 && in.Frames.MaxAlignError <= in.Frames.FrameDurationNS
+	observed := 0
+	for _, f := range in.Frames.Frames {
+		if f.HasAlignment {
+			observed++
+		}
+	}
 
 	m := Manifest{
 		Version: "archive-manifest-v1",
@@ -271,6 +278,7 @@ func Build(in Inputs) Manifest {
 			MaxAlignmentErrorNS:  in.Frames.MaxAlignError,
 			FrameDurationNS:      in.Frames.FrameDurationNS,
 			AlignmentWithinFrame: alignOK,
+			ObservedFrames:       observed,
 		},
 		RTP:         in.RTP,
 		Gaps:        gaps,

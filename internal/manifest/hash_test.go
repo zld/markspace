@@ -198,6 +198,15 @@ func TestAlignmentFlag(t *testing.T) {
 	}
 }
 
+func TestAlignmentObservedFramesCounted(t *testing.T) {
+	in := sampleInputs()
+	in.Frames.Frames[0].HasAlignment = true
+	in.Frames.Frames[1].HasAlignment = false
+	if got := Build(in).Alignment.ObservedFrames; got != 1 {
+		t.Fatalf("observed frames %d, want 1", got)
+	}
+}
+
 func TestManifestRoundTrip(t *testing.T) {
 	m := Build(sampleInputs())
 	body, err := m.Bytes()
