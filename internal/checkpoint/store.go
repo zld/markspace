@@ -54,6 +54,9 @@ type Checkpoint struct {
 	ManifestVersion string `json:"manifest_version"`
 	// ManifestSHA256 is the digest of the persisted manifest when present.
 	ManifestSHA256 string `json:"manifest_sha256"`
+	// Case records the fixture scenario the inputs were generated under, so
+	// a resume regenerates identical inputs rather than the default case.
+	Case string `json:"case"`
 }
 
 // Store loads and saves checkpoints at a fixed file path.

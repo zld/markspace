@@ -55,6 +55,7 @@ func (p *Pipeline) buildCheckpoint(prev *checkpoint.Checkpoint, stage checkpoint
 	cp := &checkpoint.Checkpoint{
 		Stage:        stage,
 		InputDigests: map[string]string{},
+		Case:         string(p.cfg.Case),
 	}
 	if prev != nil {
 		cp.ManifestVersion = prev.ManifestVersion

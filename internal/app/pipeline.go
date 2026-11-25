@@ -133,6 +133,11 @@ func (p *Pipeline) Run(ctx context.Context) (*Summary, error) {
 		QueueCapacity:   p.cfg.QueueCapacity,
 	}
 	if len(p.descs) == 0 {
+		// On resume the recorded fault case must drive regeneration so the
+		// recreated inputs match the digests stored in the checkpoint.
+		if cp := p.existingCheckpoint(); cp != nil && cp.Case != "" {
+			p.cfg.Case = fixture.Case(cp.Case)
+		}
 		if err := p.Generate(ctx); err != nil {
 			return summary, err
 		}
