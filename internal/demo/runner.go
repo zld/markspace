@@ -4,6 +4,7 @@
 package demo
 
 import (
+	"encoding/binary"
 	"fmt"
 	"io"
 	"strings"
@@ -274,18 +275,35 @@ func stageNames(ss []migrate.StageRecord) string {
 	return strings.Join(names, ",")
 }
 
-// WriteMP4 serializes the samples of one report into an MP4 byte stream
-// via mp4wrap, proving the go-mp4 integration end to end.
+// WriteMP4 serializes the real reassembled NAL units of every report into
+// an MP4 byte stream. Each ISO BMFF sample is a sequence of 4-byte
+// length-prefixed NAL units, so mdat content is structurally valid rather
+// than placeholder bytes.
 func WriteMP4(w io.WriteSeeker, rep *pipeline.Report) error {
 	samples := make([]mp4wrap.Sample, 0, len(rep.Samples))
 	for _, s := range rep.Samples {
+		data := lengthPrefixedNALs(s.NALUnits)
+		if len(data) == 0 {
+			data = sampleBytes(rep, s)
+		}
 		samples = append(samples, mp4wrap.Sample{
-			Data:     sampleBytes(rep, s),
+			Data:     data,
 			KeyFrame: s.KeyFrame,
 			Duration: uint32(s.Duration),
 		})
 	}
 	return mp4wrap.Write(w, rep.Codec, rep.ClockRate, samples)
+}
+
+func lengthPrefixedNALs(nals [][]byte) []byte {
+	var out []byte
+	for _, nal := range nals {
+		var prefix [4]byte
+		binary.BigEndian.PutUint32(prefix[:], uint32(len(nal)))
+		out = append(out, prefix[:]...)
+		out = append(out, nal...)
+	}
+	return out
 }
 
 // sampleBytes reconstructs deterministic per-sample payload bytes from

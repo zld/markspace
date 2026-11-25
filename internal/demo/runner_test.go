@@ -2,6 +2,7 @@ package demo
 
 import (
 	"bytes"
+	"encoding/binary"
 	"strings"
 	"testing"
 
@@ -81,6 +82,15 @@ func TestWriteMP4RoundTrip(t *testing.T) {
 	}
 	if string(buf.Bytes()[4:8]) != "ftyp" {
 		t.Fatalf("MP4 does not start with ftyp: %#x", buf.Bytes()[4:8])
+	}
+	first := results[0].Report.Samples[0]
+	if len(first.NALUnits) == 0 || len(first.NALUnits[0]) == 0 {
+		t.Fatal("MP4 sample source must retain reassembled NAL units")
+	}
+	serialized := lengthPrefixedNALs(first.NALUnits)
+	prefix := binary.BigEndian.Uint32(serialized[:4])
+	if int(prefix) != len(first.NALUnits[0]) {
+		t.Fatalf("length-prefixed NAL prefix=%d, want %d", prefix, len(first.NALUnits[0]))
 	}
 }
 

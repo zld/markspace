@@ -32,6 +32,7 @@ type SampleOutput struct {
 	TimeEnd    int64
 	Duration   int64
 	Faults     []string
+	NALUnits   [][]byte
 }
 
 // Report is the complete result of processing one track.
@@ -216,6 +217,16 @@ func itoa(v uint64) string {
 	return string(buf[i:])
 }
 
+func extractNALData(nals []stream.NALUnit) [][]byte {
+	out := make([][]byte, 0, len(nals))
+	for _, nal := range nals {
+		cp := make([]byte, len(nal.Data))
+		copy(cp, nal.Data)
+		out = append(out, cp)
+	}
+	return out
+}
+
 func (r *Report) buildSamples(scan stream.ScanResult) {
 	faultsBySeq := map[uint64][]string{}
 	for _, f := range r.Faults {
@@ -242,6 +253,7 @@ func (r *Report) buildSamples(scan stream.ScanResult) {
 			TimeStart:  s.Time.Start,
 			TimeEnd:    s.Time.End,
 			Duration:   s.Duration,
+			NALUnits:   extractNALData(s.Contributed),
 		}
 		for c := range classes {
 			row.Faults = append(row.Faults, c)
