@@ -1,0 +1,8 @@
+# Build output
+/bin/
+/dist/
+*.test
+*.out
+
+# Local demo output
+/tmp-demo/
