@@ -162,3 +162,24 @@ func contains(hay, needle string) bool {
 	}
 	return false
 }
+
+func TestClockSaturatesInsteadOfWrapping(t *testing.T) {
+	cases := []struct {
+		timescale uint64
+		ts        uint64
+	}{
+		{1, 1_000_000_000_000}, // 1e12 s would overflow after *1e9
+		{1, ^uint64(0)},        // MaxUint64 as one tick
+		{3, ^uint64(0)},        // ~6.1e18 s, well past int64 nanoseconds
+	}
+	for _, tc := range cases {
+		c := MustClock(tc.timescale)
+		if got := c.ToNanos(tc.ts); got != Nanosecond(1<<63-1) {
+			t.Fatalf("scale=%d ts=%d -> %d, want saturation at MaxInt64", tc.timescale, tc.ts, got)
+		}
+	}
+	// A normal value still converts exactly.
+	if got := MustClock(1).ToNanos(1_000_000); got != 1_000_000_000_000_000 {
+		t.Fatalf("normal conversion = %d", got)
+	}
+}

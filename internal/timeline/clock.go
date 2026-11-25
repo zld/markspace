@@ -55,14 +55,18 @@ func (c Clock) ToNanos(ts uint64) Nanosecond {
 	if c.timescale == 0 {
 		return 0
 	}
-	// ts * 1e9 may overflow uint64 for extreme inputs; split it.
+	// Split into whole seconds and a remainder so the multiply is small, then
+	// detect overflow explicitly instead of letting it wrap to a negative or
+	// tiny value. A saturated result is still far beyond any real media length.
 	seconds := ts / c.timescale
 	rem := ts % c.timescale
-	ns := seconds*1_000_000_000 + (rem*1_000_000_000)/c.timescale
-	if ns > math.MaxInt64 {
+	// rem < timescale <= MaxUint32, so rem*1e9 fits in uint64 comfortably.
+	sub := (rem * 1_000_000_000) / c.timescale
+	const maxNS = uint64(math.MaxInt64)
+	if seconds > (maxNS-sub)/1_000_000_000 {
 		return Nanosecond(math.MaxInt64)
 	}
-	return Nanosecond(ns)
+	return Nanosecond(seconds*1_000_000_000 + sub)
 }
 
 // FromNanos converts a media-base instant back to this clock's units, which is
