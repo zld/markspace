@@ -28,10 +28,10 @@ type Publisher interface {
 
 // RecoveryResult explains what recovery did.
 type RecoveryResult struct {
-	LastCommitSeq    uint64   `json:"last-commit-seq"`
-	RolledForward    []string `json:"rolled-forward-txns,omitempty"`
-	RolledBack       []string `json:"rolled-back-txns,omitempty"`
-	RemovedStaging   int      `json:"removed-staging-files"`
+	LastCommitSeq  uint64   `json:"last-commit-seq"`
+	RolledForward  []string `json:"rolled-forward-txns,omitempty"`
+	RolledBack     []string `json:"rolled-back-txns,omitempty"`
+	RemovedStaging int      `json:"removed-staging-files"`
 }
 
 // Manager groups the WAL with transaction orchestration.

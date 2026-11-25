@@ -24,16 +24,16 @@ type Key struct {
 
 // Index is the deterministic, content-addressed time index payload.
 type Index struct {
-	Schema               string `json:"schema"`
-	ContentFingerprint   string `json:"content-fingerprint"`
-	MetadataFingerprint  string `json:"metadata-fingerprint"`
-	SampleRate           int    `json:"sample-rate"`
-	Channels             int    `json:"channels"`
-	TotalFrames          int64  `json:"total-frames"`
-	MaxIntervalFrames    int64  `json:"max-interval-frames"`
-	CorruptRanges        []rangeJSON `json:"corrupt-ranges,omitempty"`
-	Keys                 []Key  `json:"keys"`
-	Digest               string `json:"digest"`
+	Schema              string      `json:"schema"`
+	ContentFingerprint  string      `json:"content-fingerprint"`
+	MetadataFingerprint string      `json:"metadata-fingerprint"`
+	SampleRate          int         `json:"sample-rate"`
+	Channels            int         `json:"channels"`
+	TotalFrames         int64       `json:"total-frames"`
+	MaxIntervalFrames   int64       `json:"max-interval-frames"`
+	CorruptRanges       []rangeJSON `json:"corrupt-ranges,omitempty"`
+	Keys                []Key       `json:"keys"`
+	Digest              string      `json:"digest"`
 }
 
 // rangeJSON mirrors mediaclock.Range without importing the type into the

@@ -28,16 +28,16 @@ func DefaultThresholds() Thresholds {
 
 // Item is one threshold row: measured value, threshold and signed deviation.
 type Item struct {
-	Key        string         `json:"key"`
-	Label      string         `json:"label"`
-	Pass       bool           `json:"pass"`
-	Comparator string         `json:"comparator"` // eq | min | max
-	Actual     float64        `json:"actual"`
-	Threshold  float64        `json:"threshold"`
-	Deviation  float64        `json:"deviation"` // actual - threshold
-	Unit       string         `json:"unit"`
-	ActualText string         `json:"actual-text"`
-	Code       errmodel.Code  `json:"code,omitempty"`
+	Key        string        `json:"key"`
+	Label      string        `json:"label"`
+	Pass       bool          `json:"pass"`
+	Comparator string        `json:"comparator"` // eq | min | max
+	Actual     float64       `json:"actual"`
+	Threshold  float64       `json:"threshold"`
+	Deviation  float64       `json:"deviation"` // actual - threshold
+	Unit       string        `json:"unit"`
+	ActualText string        `json:"actual-text"`
+	Code       errmodel.Code `json:"code,omitempty"`
 }
 
 // Evaluation is the full itemized verdict.

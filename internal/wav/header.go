@@ -20,10 +20,10 @@ type Config struct {
 
 // Wav is the parsed representation of one WAV file.
 type Wav struct {
-	FileSize         int64            `json:"file-size"`
-	RIFFDeclaredSize uint32           `json:"riff-declared-size"`
-	Config           Config           `json:"config"`
-	Chunks           []ChunkInfo      `json:"chunks"`
+	FileSize         int64             `json:"file-size"`
+	RIFFDeclaredSize uint32            `json:"riff-declared-size"`
+	Config           Config            `json:"config"`
+	Chunks           []ChunkInfo       `json:"chunks"`
 	Findings         []*errmodel.Error `json:"findings,omitempty"`
 
 	DataChunk        *ChunkInfo `json:"-"`
@@ -33,7 +33,7 @@ type Wav struct {
 	FramedPCM        []byte     `json:"-"` // whole frames only
 	TailBytes        []byte     `json:"-"` // non-integral trailing bytes
 	ValidFrames      int64      `json:"valid-frames"`
-	DataTruncated     bool       `json:"data-truncated"`
+	DataTruncated    bool       `json:"data-truncated"`
 
 	Info map[string]string `json:"info,omitempty"`
 }
@@ -162,7 +162,7 @@ func parseFmt(p []byte, base int64, c *Config) ([]*errmodel.Error, error) {
 	if wantRate := c.SampleRate * c.BlockAlign; c.ByteRate != wantRate {
 		extra = append(extra, errmodel.New(errmodel.ErrByteRateMismatch,
 			"byteRate=%d but rate*blockAlign=%d; using blockAlign for frame math",
-			c.ByteRate, wantRate).AtOffset(base + 8))
+			c.ByteRate, wantRate).AtOffset(base+8))
 	}
 	return extra, nil
 }

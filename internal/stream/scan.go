@@ -34,35 +34,35 @@ func (b Budget) withDefaults() Budget {
 
 // BlockVerdict is the integrity/geometry result for one block.
 type BlockVerdict struct {
-	Index      int                `json:"index"`
-	Range      mediaclock.Range   `json:"range"`
-	ByteOffset int64              `json:"byte-offset"`
-	Frames     int64              `json:"frames"`
-	Keyframe   bool               `json:"keyframe"`
-	State      string             `json:"state"` // ok | corrupt | truncated | duplicate
-	Code       errmodel.Code      `json:"code,omitempty"`
-	ExpectedCRC uint32            `json:"expected-crc,omitempty"`
-	ActualCRC   uint32             `json:"actual-crc,omitempty"`
+	Index       int              `json:"index"`
+	Range       mediaclock.Range `json:"range"`
+	ByteOffset  int64            `json:"byte-offset"`
+	Frames      int64            `json:"frames"`
+	Keyframe    bool             `json:"keyframe"`
+	State       string           `json:"state"` // ok | corrupt | truncated | duplicate
+	Code        errmodel.Code    `json:"code,omitempty"`
+	ExpectedCRC uint32           `json:"expected-crc,omitempty"`
+	ActualCRC   uint32           `json:"actual-crc,omitempty"`
 }
 
 // Report is the deterministic analysis output.
 type Report struct {
-	SampleRate  int                 `json:"sample-rate"`
-	Channels    int                 `json:"channels"`
-	Clock       *mediaclock.Clock   `json:"-"`
-	TotalFrames int64               `json:"total-frames"`
+	SampleRate    int               `json:"sample-rate"`
+	Channels      int               `json:"channels"`
+	Clock         *mediaclock.Clock `json:"-"`
+	TotalFrames   int64             `json:"total-frames"`
 	PresentFrames int64             `json:"present-frames"`
 
-	Blocks    []BlockVerdict      `json:"blocks"`
-	Keyframes []int64             `json:"keyframes"`
-	Interval  IntervalStats       `json:"interval"`
+	Blocks    []BlockVerdict `json:"blocks"`
+	Keyframes []int64        `json:"keyframes"`
+	Interval  IntervalStats  `json:"interval"`
 
 	CorruptRanges []mediaclock.Range `json:"corrupt-ranges"`
 	CorruptFrames int64              `json:"corrupt-frames"`
 	CorruptRatio  float64            `json:"corrupt-ratio"`
 
-	Findings             []*errmodel.Error `json:"findings,omitempty"`
-	DuplicateBoundaries  []int64           `json:"duplicate-boundaries,omitempty"`
+	Findings            []*errmodel.Error `json:"findings,omitempty"`
+	DuplicateBoundaries []int64           `json:"duplicate-boundaries,omitempty"`
 
 	Budget         Budget `json:"budget"`
 	BudgetExceeded bool   `json:"budget-exceeded"`

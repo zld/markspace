@@ -26,11 +26,11 @@ type FrameInfo struct {
 
 // TxnView carries WAL sequence information.
 type TxnView struct {
-	TxnID          string `json:"txn-id,omitempty"`
-	LastCommitSeq  uint64 `json:"last-commit-seq"`
-	CommitSeq      uint64 `json:"commit-seq"`
-	PreparedSeq    uint64 `json:"prepared-seq,omitempty"`
-	InjectedPoint  string `json:"injected-failure,omitempty"`
+	TxnID         string `json:"txn-id,omitempty"`
+	LastCommitSeq uint64 `json:"last-commit-seq"`
+	CommitSeq     uint64 `json:"commit-seq"`
+	PreparedSeq   uint64 `json:"prepared-seq,omitempty"`
+	InjectedPoint string `json:"injected-failure,omitempty"`
 }
 
 // IndexView summarizes the visible index.
@@ -44,24 +44,24 @@ type IndexView struct {
 
 // ReportView is the complete deterministic terminal/JSON report.
 type ReportView struct {
-	File           string              `json:"file"`
-	Mutation       string              `json:"mutation,omitempty"`
-	SummaryDigest  string              `json:"summary-digest"`
-	Fingerprints   cache.Fingerprints  `json:"fingerprints"`
-	Audio          FrameInfo           `json:"audio"`
+	File           string               `json:"file"`
+	Mutation       string               `json:"mutation,omitempty"`
+	SummaryDigest  string               `json:"summary-digest"`
+	Fingerprints   cache.Fingerprints   `json:"fingerprints"`
+	Audio          FrameInfo            `json:"audio"`
 	Interval       stream.IntervalStats `json:"interval"`
 	CorruptRanges  []mediaclock.Range   `json:"corrupt-ranges"`
-	CorruptFrames  int64               `json:"corrupt-frames"`
-	CorruptRatio   float64             `json:"corrupt-ratio"`
-	BudgetExceeded bool                `json:"budget-exceeded,omitempty"`
-	LastFrame      int64               `json:"last-frame,omitempty"`
-	Findings       []*errmodel.Error   `json:"findings,omitempty"`
-	Items          []stream.Item       `json:"threshold-items"`
-	EvalPass       bool                `json:"eval-pass"`
+	CorruptFrames  int64                `json:"corrupt-frames"`
+	CorruptRatio   float64              `json:"corrupt-ratio"`
+	BudgetExceeded bool                 `json:"budget-exceeded,omitempty"`
+	LastFrame      int64                `json:"last-frame,omitempty"`
+	Findings       []*errmodel.Error    `json:"findings,omitempty"`
+	Items          []stream.Item        `json:"threshold-items"`
+	EvalPass       bool                 `json:"eval-pass"`
 	Invalidations  []cache.Invalidation `json:"invalidations,omitempty"`
 	Recovery       *txn.RecoveryResult  `json:"recovery,omitempty"`
-	Txn            TxnView             `json:"txn"`
-	Index          IndexView           `json:"index"`
+	Txn            TxnView              `json:"txn"`
+	Index          IndexView            `json:"index"`
 }
 
 func writeJSON(w io.Writer, v any) error {

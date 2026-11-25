@@ -11,16 +11,16 @@ import (
 // Summary is the deterministic, operational-field-free identity of an
 // analysis plus its verdict. It is what repeated runs must reproduce.
 type Summary struct {
-	ContentFingerprint string              `json:"content-fingerprint"`
-	SampleRate         int                 `json:"sample-rate"`
-	Channels           int                 `json:"channels"`
-	TotalFrames        int64               `json:"total-frames"`
-	PresentFrames      int64               `json:"present-frames"`
-	MaxIntervalFrames  int64               `json:"max-interval-frames"`
-	CorruptRanges      []mediaclock.Range  `json:"corrupt-ranges"`
-	CorruptFrames      int64               `json:"corrupt-frames"`
-	CorruptRatio       float64             `json:"corrupt-ratio"`
-	Items              []Item              `json:"items"`
+	ContentFingerprint string             `json:"content-fingerprint"`
+	SampleRate         int                `json:"sample-rate"`
+	Channels           int                `json:"channels"`
+	TotalFrames        int64              `json:"total-frames"`
+	PresentFrames      int64              `json:"present-frames"`
+	MaxIntervalFrames  int64              `json:"max-interval-frames"`
+	CorruptRanges      []mediaclock.Range `json:"corrupt-ranges"`
+	CorruptFrames      int64              `json:"corrupt-frames"`
+	CorruptRatio       float64            `json:"corrupt-ratio"`
+	Items              []Item             `json:"items"`
 }
 
 // DigestSummary returns the canonical "sha256:..." summary digest.
