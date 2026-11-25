@@ -59,9 +59,10 @@ type Runner struct {
 	collect    errs.Collection
 	chunkSize  int
 	identity   checkpoint.Identity
-	// boundariesMS records, per segment index, each representation's
-	// cumulative boundary on the shared millisecond scale.
-	boundariesMS   map[int64]map[string]int64
+	// boundariesMS records, per manifest kind and segment index, each
+	// representation's cumulative boundary on the shared millisecond scale.
+	// DASH and HLS are separate timelines and are never compared across.
+	boundariesMS   map[string]map[int64]map[string]int64
 	repAccs        map[string]*clock.Accumulator
 	repPrevMS      map[string]int64
 	reusedChunks   int
@@ -76,7 +77,7 @@ func NewRunner(store *checkpoint.Store, chunkSize int, identity checkpoint.Ident
 		idx:          index.New(),
 		chunkSize:    chunkSize,
 		identity:     identity,
-		boundariesMS: map[int64]map[string]int64{},
+		boundariesMS: map[string]map[int64]map[string]int64{},
 	}
 }
 
@@ -107,7 +108,10 @@ func (r *Runner) Run(objs []Object) (*Summary, error) {
 	chunks := chunkObjects(objs, r.chunkSize)
 	firstIncomplete := r.store.FirstIncomplete(len(chunks), r.identity)
 	for cid, chunk := range chunks {
-		if firstIncomplete >= 0 && cid < firstIncomplete {
+		// A chunk is reusable when all chunks are complete (-1) or this
+		// chunk precedes the first incomplete one.
+		reusable := firstIncomplete < 0 || cid < firstIncomplete
+		if reusable {
 			// Reuse a previously committed chunk: replay its recorded
 			// hashes into the in-memory hasher so the final summary is
 			// identical to a continuous full run.
@@ -135,27 +139,18 @@ func (r *Runner) Run(objs []Object) (*Summary, error) {
 	return r.summarize(objs), nil
 }
 
-// replayCommitted restores a reused chunk's hashes and keyframe hits
-// without re-validating bytes, preserving deterministic output.
+// replayCommitted restores a reused chunk without redoing its successful
+// work. Corrupt or invalid objects are re-validated so their structured
+// errors are re-recorded (a resumed run must still surface them and exit 2),
+// while valid objects are restored by re-hashing their identical bytes.
 func (r *Runner) replayCommitted(saved *checkpoint.Chunk, chunk []Object) {
-	for _, obj := range chunk {
-		// Re-hashing identical input bytes reproduces the same hash; the
-		// checkpoint identity guarantees the bytes have not changed.
-		tr := fingerprint.TimeRange{Start: obj.TimeStart, End: obj.TimeEnd, Scale: obj.Timescale}
-		ref := fingerprint.SourceRef{
-			Source: obj.Source, Segment: obj.SegmentIndex, TrackID: obj.TrackID,
-			ByteRange: fingerprint.ByteRange{Start: 0, End: int64(len(obj.Data))},
-		}
-		if _, err := r.hasher.Add(obj.Data, tr, obj.Keyframe, ref); err != nil {
-			r.collect.Add(err)
+	for i := range chunk {
+		obj := &chunk[i]
+		// Re-run validation: damaged inputs fail again and stay out of the
+		// index, reproducing the original chunk's error set deterministically.
+		if _, ok := r.processObject(obj); !ok {
+			r.idx.Reject(obj.Source)
 			continue
-		}
-		if obj.Keyframe {
-			_ = r.idx.Add(index.Keyframe{
-				TrackID: obj.TrackID, SegmentIndex: obj.SegmentIndex,
-				SampleNumber: 1, TimeTicks: obj.TimeStart,
-				ByteOffset: 0, State: index.StateKnown,
-			})
 		}
 	}
 	r.reusedInc()
