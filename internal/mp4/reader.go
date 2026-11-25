@@ -78,6 +78,10 @@ func parseTrack(r readAtSeeker, path string, trak *Box, movieScale clock.TicksPe
 	}
 	t.TimeScale = clock.TicksPerSecond(mdhd.Timescale)
 	t.Duration = durationV(mdhd.GetVersion(), mdhd.DurationV0, mdhd.DurationV1)
+	t.TimebaseOffset = mdhdBox.PayloadOffset + 12 // v0: fullbox + creation + modification
+	if mdhd.GetVersion() == 1 {
+		t.TimebaseOffset = mdhdBox.PayloadOffset + 20 // v1 uses two 64-bit timestamps
+	}
 
 	if elstBox := trak.findPath("edts", "elst"); elstBox != nil {
 		edits, err := parseEditList(r, path, elstBox, number)

@@ -1,8 +1,10 @@
 package mp4_test
 
 import (
+	"errors"
 	"testing"
 
+	"mediacore/internal/clock"
 	"mediacore/internal/fixture"
 	"mediacore/internal/mp4"
 )
@@ -58,5 +60,25 @@ func TestNormalFixtureParsesTracksAndWrappingRTP(t *testing.T) {
 	}
 	if !sawSeqWrap || !sawTSWrap {
 		t.Fatalf("did not observe wraps: seq=%v ts=%v", sawSeqWrap, sawTSWrap)
+	}
+}
+
+func TestManifestTimescaleMismatchIsLocated(t *testing.T) {
+	set, err := fixture.GenerateNormal(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := mp4.LoadManifest(set.ManifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Sources[0].TimeScale = 48_000
+	_, err = mp4.ParseManifest(m)
+	var ce *clock.Error
+	if !errors.As(err, &ce) || ce.Category != clock.CategoryTimebase {
+		t.Fatalf("mismatch error = %#v", err)
+	}
+	if ce.Track != 1 || ce.Offset < 0 || ce.Path == "" {
+		t.Fatalf("timebase error location incomplete: %+v", ce)
 	}
 }

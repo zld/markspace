@@ -26,16 +26,17 @@ type Sample struct {
 
 // Track contains the metadata needed to build a random-access index.
 type Track struct {
-	Path        string
-	Number      int
-	ID          uint32
-	TimeScale   clock.TicksPerSecond
-	MovieScale  clock.TicksPerSecond
-	Duration    uint64
-	Edits       []clock.EditEntry
-	HasEdit     bool
-	Samples     []Sample
-	SyncNumbers []uint32
+	Path           string
+	Number         int
+	ID             uint32
+	TimeScale      clock.TicksPerSecond
+	MovieScale     clock.TicksPerSecond
+	Duration       uint64
+	TimebaseOffset int64
+	Edits          []clock.EditEntry
+	HasEdit        bool
+	Samples        []Sample
+	SyncNumbers    []uint32
 }
 
 // File is the parsed MP4 container.

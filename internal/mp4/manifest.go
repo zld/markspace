@@ -92,6 +92,10 @@ func ParseManifest(m *Manifest) ([]ParsedSource, error) {
 			tr := file.Tracks[src.TrackNumber-1]
 			tr.Number = src.TrackNumber
 			tr.Path = src.Path
+			if src.TimeScale != 0 && clock.TicksPerSecond(src.TimeScale) != tr.TimeScale {
+				return nil, clock.New(clock.CategoryTimebase, src.Path, src.TrackNumber, tr.TimebaseOffset,
+					"manifest timescale is incompatible with MP4 mdhd timescale")
+			}
 			ps.File = file
 			ps.MP4 = tr
 		case SourceRTP:
