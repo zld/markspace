@@ -28,6 +28,7 @@ type RTPStats struct {
 	DeliveredPackets    int           `json:"delivered_packets"`
 	Gaps                []Gap         `json:"gaps"`
 	UnrecoveredPackets  int           `json:"unrecovered_packets"`
+	LateOutsideWindow   int           `json:"late_outside_window_packets"`
 	ReorderRecoveryRate float64       `json:"reorder_recovery_rate"`
 	LossRecoveryRate    float64       `json:"loss_recovery_rate"`
 	RecoveryRate        float64       `json:"recovery_rate"`
@@ -99,12 +100,6 @@ func (r *RTPReorder) Stats() RTPStats {
 	return s
 }
 
-func (r *RTPReorder) isOld(seq uint16) bool {
-	// A sequence behind expected by at most 2*window+1 is in the replay region.
-	d := sequenceForward(seq, r.expected)
-	return d > 0 && d <= 2*r.window+1
-}
-
 // Push accepts one packet and returns any newly contiguous packets. A packet
 // beyond the reorder window finalizes the gap before it and allows processing
 // to continue.
@@ -123,10 +118,15 @@ func (r *RTPReorder) Push(p *rtp.Packet) ([]*rtp.Packet, error) {
 		r.stats.DuplicatePackets++
 		return nil, nil
 	}
-	if r.started && r.isOld(seq) {
-		r.stats.DuplicatePackets++
-		r.recent[seq] = struct{}{}
-		return nil, nil
+	if r.started {
+		behind := sequenceForward(seq, r.expected)
+		if behind > 0 && behind < 0x8000 {
+			// Exact delivered repeats were handled by r.recent above. An
+			// unrecognized behind-expected packet is late for a gap already
+			// finalized; it must not be delivered or counted as a repeat.
+			r.stats.LateOutsideWindow++
+			return nil, nil
+		}
 	}
 
 	r.started = true
@@ -134,7 +134,7 @@ func (r *RTPReorder) Push(p *rtp.Packet) ([]*rtp.Packet, error) {
 	distance := sequenceForward(r.expected, seq)
 
 	// A far-ahead packet means the missing region has exceeded the window.
-	if distance > r.window && distance < 0x8000 {
+	if distance > r.window {
 		return r.skipGapUntil(seq, p)
 	}
 

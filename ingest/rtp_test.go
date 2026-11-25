@@ -124,6 +124,24 @@ func TestRTPSequenceWrap(t *testing.T) {
 	}
 }
 
+func TestRTPLatePacketAfterGapIsNotDuplicate(t *testing.T) {
+	r := NewRTPReorder("video", 1, 0)
+	if _, err := r.Push(pkt(5)); err != nil {
+		t.Fatal(err)
+	}
+	st := r.Stats()
+	if st.UnrecoveredPackets != 5 {
+		t.Fatalf("expected 0..4 gap before seq5, got %+v", st.Gaps)
+	}
+	if _, err := r.Push(pkt(2)); err != nil {
+		t.Fatal(err)
+	}
+	st = r.Stats()
+	if st.LateOutsideWindow != 1 || st.DuplicatePackets != 0 {
+		t.Fatalf("late packet should not be counted duplicate: %+v", st)
+	}
+}
+
 func TestParseRTPWithPion(t *testing.T) {
 	original := pkt(7)
 	raw, err := original.Marshal()
