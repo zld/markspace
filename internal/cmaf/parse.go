@@ -196,6 +196,20 @@ func readPayload(f io.ReadSeeker, bi *mp4.BoxInfo) ([]byte, error) {
 	return buf, nil
 }
 
+// openFile opens path for reading; callers must close it.
+func openFile(path string) (*os.File, error) {
+	return os.Open(path)
+}
+
+// fileSize returns the size of f, or 0 if it cannot be determined.
+func fileSize(f *os.File) int64 {
+	st, err := f.Stat()
+	if err != nil {
+		return 0
+	}
+	return st.Size()
+}
+
 // WalkBoxes enumerates every box in path, invoking fn with each BoxInfo.
 // Truncation is reported as *TruncError carrying the file offset.
 func (p *Parser) WalkBoxes(path string, fn func(bi *mp4.BoxInfo) error) error {
