@@ -26,6 +26,9 @@ const (
 	CaseDuplicateConflict Case = "duplicate-conflict"
 	// CaseDuplicateFold repeats an mfhd number with identical content.
 	CaseDuplicateFold Case = "duplicate-fold"
+	// CaseMisaligned shifts one representation's fragment starts outside the
+	// one-coarse-tick alignment tolerance.
+	CaseMisaligned Case = "misaligned"
 )
 
 // Config controls sample generation.
@@ -166,6 +169,11 @@ func generateRepresentation(cfg Config, rep RepresentationDescriptor) error {
 			// is zero for the second fragment); the source value is preserved
 			// for reporting, never silently rewritten.
 			base = regressionTicks
+		}
+		// Representation index 1 drifts by five coarse ticks, well beyond the
+		// one-tick alignment tolerance, while staying monotonic.
+		if cfg.Case == CaseMisaligned && rep.TrackID == 2 {
+			base += rep.TickDuration * 5
 		}
 		data := fragment(rep, uint64(seq), base)
 		if cfg.Case == CaseTruncatedBox && seq == regressionSeq {

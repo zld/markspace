@@ -28,7 +28,7 @@ func TestGenerateNormalDeterministic(t *testing.T) {
 }
 
 func TestGenerateFaultCases(t *testing.T) {
-	cases := []Case{CaseTruncatedBox, CaseTFDTRegression, CaseMfhdGap, CaseDuplicateConflict, CaseDuplicateFold}
+	cases := []Case{CaseTruncatedBox, CaseTFDTRegression, CaseMfhdGap, CaseDuplicateConflict, CaseDuplicateFold, CaseMisaligned}
 	for _, c := range cases {
 		t.Run(string(c), func(t *testing.T) {
 			cfg := Config{Root: filepath.Join(t.TempDir(), "gen"), Case: c, Representations: 2, Fragments: 5}

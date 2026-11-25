@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -176,4 +177,99 @@ func TestVerifyStandalone(t *testing.T) {
 	if res.ManifestSHA256 == "" {
 		t.Fatal("verify must report the manifest digest")
 	}
+}
+
+func TestMfhdGapIsCarriedForward(t *testing.T) {
+	cfg := testConfig(t, fixture.CaseMfhdGap)
+	p, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	summary, err := p.Run(context.Background())
+	// The generated gap is identical on every representation, so windows
+	// stay complete; assert the explicit gap is at least carried forward.
+	if err != nil {
+		t.Fatalf("uniform gap should still validate: %v", err)
+	}
+	if summary.GapCount != 2 {
+		t.Fatalf("gap count = %d, want 2 (one per rep)", summary.GapCount)
+	}
+	cp, _ := p.store.Load()
+	if cp.Stage != checkpoint.StageComplete {
+		t.Fatalf("uniform-gap run should complete, stage=%s", cp.Stage)
+	}
+}
+
+func TestMisalignedFailsManifestAndStopsAtSafeCheckpoint(t *testing.T) {
+	cfg := testConfig(t, fixture.CaseMisaligned)
+	p, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	summary, err := p.Run(context.Background())
+	if !fault.Is(err, fault.CodeMisaligned) {
+		t.Fatalf("expected misaligned manifest error, got %v", err)
+	}
+	if summary.ManifestValid {
+		t.Fatal("manifest must not be marked valid when misaligned")
+	}
+	if summary.CommittedSegments != 0 {
+		t.Fatalf("no segment may commit when validation fails, got %d", summary.CommittedSegments)
+	}
+	// The last safe checkpoint remains at align; manifest never advanced.
+	cp, _ := p.store.Load()
+	if cp.Stage != checkpoint.StageAlign {
+		t.Fatalf("checkpoint should stay at align, got %s", cp.Stage)
+	}
+	if _, statErr := os.Stat(filepath.Join(cfg.OutputDir, ManifestPath)); !os.IsNotExist(statErr) {
+		t.Fatal("no manifest file may exist after a failed validation")
+	}
+}
+
+func TestTamperedInputIsRecomputedNotReused(t *testing.T) {
+	cfg := testConfig(t, fixture.CaseNormal)
+	p, _ := New(cfg)
+	if _, err := p.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	firstDigest := readManifestDigest(t, cfg.OutputDir)
+
+	// Tamper with an input file after the checkpoint was written.
+	target := filepath.Join(cfg.InputDir, "rep0", "frag-002.m4s")
+	data, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data[len(data)-1] ^= 0xff
+	if err := os.WriteFile(target, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// The repeat run recomputes every fragment (the stored digest no longer
+	// verifies, so nothing is blindly reused). The previously successful
+	// manifest artifact is protected from overwrite by WriteAtomic.
+	p2, _ := New(cfg)
+	summary, err := p2.Run(context.Background())
+	if err != nil {
+		t.Fatalf("tampered-but-parseable input should still process: %v", err)
+	}
+	if !summary.ManifestValid {
+		t.Fatal("recomputed manifest should be valid")
+	}
+	if readManifestDigest(t, cfg.OutputDir) != firstDigest {
+		t.Fatal("prior successful manifest must not be overwritten on retry")
+	}
+	cp, _ := p2.store.Load()
+	if cp.InputDigests["rep0/frag-002.m4s"] == "" {
+		t.Fatal("recomputed digest must be recorded in the checkpoint")
+	}
+}
+
+func readManifestDigest(t *testing.T, outputDir string) string {
+	t.Helper()
+	res, err := Verify(filepath.Join(outputDir, ManifestPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return res.ManifestSHA256
 }

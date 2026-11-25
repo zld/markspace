@@ -89,6 +89,9 @@ func fragmentArrivals(cfg Config, rep RepresentationDescriptor) ([]arrival, erro
 		if cfg.Case == CaseTFDTRegression && seq == regressionSeq {
 			base = regressionTicks
 		}
+		if cfg.Case == CaseMisaligned && rep.TrackID == 2 {
+			base += rep.TickDuration * 5
+		}
 		if cfg.Case == CaseDuplicateConflict && seq >= 100 {
 			base = rep.TickDuration * uint64(conflictSeq-1) + rep.TickDuration/2
 		}

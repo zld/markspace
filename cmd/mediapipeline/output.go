@@ -44,8 +44,8 @@ func printSummary(s *app.Summary) {
 func printVerify(v *app.VerifyResult) {
 	data, _ := json.Marshal(v)
 	fmt.Println(string(data))
-	fmt.Printf("segment_count=%d representation_count=%d gap_count=%d manifest_sha256=%s valid=%t\n",
-		v.SegmentCount, v.RepresentationCount, v.GapCount, v.ManifestSHA256, v.Valid)
+	fmt.Printf("segment_count=%d representation_count=%d gap_count=%d regression_count=%d manifest_sha256=%s valid=%t\n",
+		v.SegmentCount, v.RepresentationCount, v.GapCount, v.RegressionCount, v.ManifestSHA256, v.Valid)
 }
 
 func printFault(err error) {
@@ -74,7 +74,8 @@ func printUsage(w *os.File) {
 func validCase(c fixture.Case) bool {
 	switch c {
 	case fixture.CaseNormal, fixture.CaseTruncatedBox, fixture.CaseTFDTRegression,
-		fixture.CaseMfhdGap, fixture.CaseDuplicateConflict, fixture.CaseDuplicateFold:
+		fixture.CaseMfhdGap, fixture.CaseDuplicateConflict, fixture.CaseDuplicateFold,
+		fixture.CaseMisaligned:
 		return true
 	}
 	return false
