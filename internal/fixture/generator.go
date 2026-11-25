@@ -179,17 +179,43 @@ func (g *Generator) mkPacket(seq uint16, ts uint32, marker bool, payload []byte)
 // Normal builds a clean, in-order stream with frames frames and an IDR
 // every keyEvery frames. Expected loss and damage counts are both zero.
 func (g *Generator) Normal(codec stream.Codec, frames, keyEvery int) *Stream {
+	return g.NormalFragmented(codec, frames, keyEvery, -1, 0)
+}
+
+// NormalFragmented behaves like Normal but forces one frame (at
+// bigFrame) to carry an oversized NAL of bigSize bytes so the packetizer
+// must split it across FU packets. bigFrame < 0 disables the large frame.
+func (g *Generator) NormalFragmented(codec stream.Codec, frames, keyEvery, bigFrame, bigSize int) *Stream {
 	s := &Stream{Codec: codec, SSRC: g.ssrc, ClockRate: g.clockRate,
 		SampleCount: frames, KeyFrameEvery: keyEvery, Seed: g.rng.Int63()}
 	var seq uint16
 	for f := 0; f < frames; f++ {
 		ts := uint32(f * FrameTicks)
 		nals := g.frameNALs(codec, f, keyEvery)
+		if f == bigFrame {
+			nals = g.oversizedNAL(codec, f, keyEvery, bigSize)
+		}
 		s.Packets = append(s.Packets, g.packetize(codec, nals, ts, &seq)...)
 	}
 	s.attachReports()
 	s.materialize()
 	return s
+}
+
+// oversizedNAL returns a single NAL of the same key/non-key class as a
+// normal frame but padded to bigSize, forcing FU fragmentation.
+func (g *Generator) oversizedNAL(codec stream.Codec, frame, keyEvery, bigSize int) [][]byte {
+	nals := g.frameNALs(codec, frame, keyEvery)
+	nal := nals[0]
+	if bigSize <= len(nal) {
+		return nals
+	}
+	grown := make([]byte, bigSize)
+	copy(grown, nal)
+	for i := len(nal); i < bigSize; i++ {
+		grown[i] = byte(i % 251)
+	}
+	return [][]byte{grown}
 }
 
 // attachReports emits one sender report halfway through the stream so
@@ -286,6 +312,31 @@ func (s *Stream) InjectTruncatedHeader(seq uint16) (injected bool) {
 		return true
 	}
 	return false
+}
+
+// ClearFUEnd removes the FU end bit and RTP marker from the packet with
+// the given raw seq, so the fragmented NAL never completes and the
+// scanner must report a truncated NAL at a known packet and time.
+func (s *Stream) ClearFUEnd(seq uint16) (cleared bool) {
+	for _, p := range s.Packets {
+		if p.SequenceNumber != seq || len(p.Payload) == 0 {
+			continue
+		}
+		if s.Codec == stream.CodecH264 && p.Payload[0]&0x1F == 28 && len(p.Payload) >= 2 {
+			p.Payload[1] &^= 0x40
+		} else if s.Codec == stream.CodecH265 &&
+			(p.Payload[0]&0x7E)>>1 == 49 && len(p.Payload) >= 3 {
+			p.Payload[2] &^= 0x40
+		} else {
+			continue
+		}
+		p.Marker = false
+		cleared = true
+	}
+	if cleared {
+		s.materialize()
+	}
+	return cleared
 }
 
 // PayloadBytes flattens every packet payload for content hashing.
