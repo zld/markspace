@@ -14,6 +14,9 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+
+	mp4 "github.com/abema/go-mp4"
+	"github.com/orcaman/writerseeker"
 )
 
 // Fixture files produced by Generate.
@@ -27,6 +30,8 @@ const (
 	ManifestV1       = "manifest-v1.json"
 	ManifestV2       = "manifest-v2.json"
 	RTPDump          = "audio.rtp.txt"
+	// MP4Sidecar is a go-mp4-encoded index sidecar sharing the delivery time base.
+	MP4Sidecar = "index-sidecar.mp4"
 )
 
 // Expectation is the structured failure the generator pre-computed for a
@@ -463,6 +468,13 @@ func Generate(dir string, seed int64) (*Result, error) {
 	if err := write(dir, RTPDump, []byte(rtp)); err != nil {
 		return nil, err
 	}
+	sidecar, err := buildMP4Sidecar()
+	if err != nil {
+		return nil, err
+	}
+	if err := write(dir, MP4Sidecar, sidecar); err != nil {
+		return nil, err
+	}
 
 	sort.Slice(res.Expectations, func(i, j int) bool {
 		return res.Expectations[i].File < res.Expectations[j].File
@@ -505,6 +517,75 @@ func write(dir, name string, data []byte) error {
 // findTrackEntryOffset locates the TrackEntry whose TrackNumber matches. The
 // generator knows the layout, so it can scan for the TrackNumber payload rather
 // than trusting a parser.
+// buildMP4Sidecar assembles a minimal MP4 index sidecar with go-mp4's
+// marshaller: ftyp, mvhd, and one audio track whose mdhd timescale and stts
+// table define the sample timeline. Element and box headers are written by the
+// library, so the sidecar is a real MP4 rather than a private format.
+func buildMP4Sidecar() ([]byte, error) {
+	payload := func(src mp4.IImmutableBox) ([]byte, error) {
+		ws := &writerseeker.WriterSeeker{}
+		if _, err := mp4.Marshal(ws, src, mp4.Context{}); err != nil {
+			return nil, err
+		}
+		// BytesReader is a one-shot reader over the written payload; its length
+		// already equals the marshalled size for these small boxes.
+		br := ws.BytesReader()
+		buf := make([]byte, br.Len())
+		if br.Len() == 0 {
+			return buf, nil
+		}
+		if _, err := br.Read(buf); err != nil {
+			return nil, err
+		}
+		return buf, nil
+	}
+	wrap := func(typ string, parts ...[]byte) []byte {
+		n := 8
+		for _, p := range parts {
+			n += len(p)
+		}
+		out := make([]byte, 8, n)
+		binary.BigEndian.PutUint32(out[0:4], uint32(n))
+		copy(out[4:8], typ)
+		for _, p := range parts {
+			out = append(out, p...)
+		}
+		return out
+	}
+	marshal := func(src mp4.IImmutableBox) ([]byte, error) { return payload(src) }
+
+	mvhd, err := marshal(&mp4.Mvhd{Timescale: 1000, DurationV0: 2000,
+		Rate: 0x10000, Volume: 0x100, NextTrackID: 2})
+	if err != nil {
+		return nil, err
+	}
+	hdlr, err := marshal(&mp4.Hdlr{HandlerType: [4]byte{'s', 'o', 'u', 'n'}, Name: "SoundHandler"})
+	if err != nil {
+		return nil, err
+	}
+	mdhd, err := marshal(&mp4.Mdhd{Timescale: 48000, DurationV0: 96000,
+		Language: [3]byte{'j', 'p', 'n'}})
+	if err != nil {
+		return nil, err
+	}
+	// EntryCount must equal len(Entries); the entry covers four samples.
+	stts, err := marshal(&mp4.Stts{EntryCount: 1,
+		Entries: []mp4.SttsEntry{{SampleCount: 4, SampleDelta: 24000}}})
+	if err != nil {
+		return nil, err
+	}
+	tkhd, err := marshal(&mp4.Tkhd{TrackID: 2, DurationV0: 2000, Volume: 0x100})
+	if err != nil {
+		return nil, err
+	}
+	ftyp := wrap("ftyp", []byte("isom\x00\x00\x02\x00isomiso2"))
+	stbl := wrap("stbl", wrap("stts", stts))
+	mdia := wrap("mdia", wrap("hdlr", hdlr), wrap("mdhd", mdhd), wrap("minf", stbl))
+	trak := wrap("trak", wrap("tkhd", tkhd), mdia)
+	moov := wrap("moov", wrap("mvhd", mvhd), trak)
+	return append(ftyp, moov...), nil
+}
+
 // HeaderForTest returns a standalone EBML header with the given DocType, used by
 // adapter tests that need a well-formed but unsupported container.
 func HeaderForTest(docType string) []byte {

@@ -54,7 +54,8 @@ go run ./cmd/assetcheck migrate --input /tmp/game-assets/valid.mkv \
 
 What each command proves:
 
-- **demo** writes nine fixtures plus `expectations.json`. The same seed writes
+- **demo** writes the Matroska fixtures, an MP4 index sidecar, an RTP capture, two
+  manifests and `expectations.json`. The same seed writes
   byte-identical files. The damaged fixtures list the element ID and byte offset
   the validator must report.
 - **verify (valid)** prints element count, track count, fragment count, the

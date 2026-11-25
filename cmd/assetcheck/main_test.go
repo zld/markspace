@@ -203,3 +203,25 @@ func TestDamagedVerifyPrintsOneDiagnosis(t *testing.T) {
 		t.Fatalf("audit verdict missing:\n%s", stdout)
 	}
 }
+
+func TestVerifyMP4SidecarAndRTP(t *testing.T) {
+	dir := t.TempDir()
+	if _, _, code := runCLI(t, "demo", "--seed", "17", "--out", dir); code != exitOK {
+		t.Fatal("demo failed")
+	}
+	out, _, code := runCLI(t, "verify",
+		"--input", filepath.Join(dir, "index-sidecar.mp4"),
+		"--rtp", filepath.Join(dir, "audio.rtp.txt"))
+	if code != exitOK {
+		t.Fatalf("mp4 verify exit = %d:\n%s", code, out)
+	}
+	if !strings.Contains(out, "container:  mp4") {
+		t.Fatalf("mp4 container not detected:\n%s", out)
+	}
+	if !strings.Contains(out, "rtp:") {
+		t.Fatalf("rtp report missing:\n%s", out)
+	}
+	if !strings.Contains(out, "result:     OK") {
+		t.Fatalf("mp4 sidecar not OK:\n%s", out)
+	}
+}

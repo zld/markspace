@@ -32,7 +32,8 @@ func ParseInput(path string) (*media.Asset, error) {
 		return nil, timeline.Wrap(err, timeline.StageParse, timeline.CatIO, 0, -1,
 			"open %s", path)
 	}
-	head := make([]byte, 4)
+	// Eight bytes cover the EBML magic and an MP4 box size plus type.
+	head := make([]byte, 8)
 	n, err := io.ReadFull(f, head)
 	f.Close()
 	if err != nil {
@@ -42,21 +43,21 @@ func ParseInput(path string) (*media.Asset, error) {
 		}
 		return nil, timeline.Wrap(err, timeline.StageParse, timeline.CatIO, 0, -1, "read header")
 	}
-	if bytes.Equal(head, ebmlMagic) {
+	if bytes.Equal(head[:4], ebmlMagic) {
 		return matroska.Parse(path)
 	}
-	if isMP4Head(head) {
+	if isMP4Head(head[4:8]) {
 		return mp4index.Parse(path)
 	}
 	return nil, timeline.New(timeline.StageParse, timeline.CatUnsupported, 0, 0,
-		"input %s is neither Matroska (EBML 0x1A45DFA3) nor MP4 (%q)", path, string(head))
+		"input %s is neither Matroska (EBML 0x1A45DFA3) nor MP4 (%q)", path, string(head[4:8]))
 }
 
-func isMP4Head(head []byte) bool {
+func isMP4Head(boxType []byte) bool {
 	// A top-level MP4 box carries its size in the first four bytes followed by
 	// a known type; ftyp, moov, mdat, free and sidx are all accepted.
 	known := map[string]bool{"ftyp": true, "moov": true, "mdat": true, "free": true, "sidx": true}
-	return known[string(head)]
+	return known[string(boxType)]
 }
 
 // VerifyOptions configure a verification run.

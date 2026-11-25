@@ -124,9 +124,10 @@ func runDemo(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return ioErr(err, "generate fixtures")
 	}
-	fmt.Fprintf(stdout, "generated %d fixtures in %s (seed %d, %d ms)\n",
-		len(res.Offsets), *out, *seed, time.Since(start).Milliseconds())
-	for _, f := range sortedFiles(res) {
+	files := sortedFiles(res)
+	fmt.Fprintf(stdout, "generated %d files in %s (seed %d, %d ms)\n",
+		len(files), *out, *seed, time.Since(start).Milliseconds())
+	for _, f := range files {
 		fmt.Fprintf(stdout, "  %-22s %d bytes\n", f.name, f.size)
 	}
 	fmt.Fprintln(stdout, "\npreset fault offsets:")

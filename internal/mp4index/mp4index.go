@@ -151,8 +151,10 @@ func Parse(path string) (*media.Asset, error) {
 			return nil, err
 		}
 		typ := trackTypeForHandler(t.handler)
+		// A sidecar describes timing, not codecs, so the codec label marks the
+		// MP4 handler rather than claiming a specific encoder.
 		tr := tracks.Track{Number: uint64(tn), UID: uint64(tn), Type: typ,
-			CodecID: "mp4/" + t.handler, Language: "und"}
+			CodecID: codecLabel(t.handler), Language: "und"}
 		a.Tracks = append(a.Tracks, tr)
 
 		var sample uint64
@@ -196,6 +198,14 @@ func wrapBox(err error, h *mp4.ReadHandle) error {
 // space the Matroska side uses, so reports can print one field for both.
 func boxID(t mp4.BoxType) uint32 {
 	return uint32(t[0])<<24 | uint32(t[1])<<16 | uint32(t[2])<<8 | uint32(t[3])
+}
+
+// codecLabel names the sample table origin for a handler type.
+func codecLabel(handler string) string {
+	if handler == "" {
+		return "mp4/unknown"
+	}
+	return "mp4/" + handler
 }
 
 func trackTypeForHandler(name string) tracks.TrackType {
