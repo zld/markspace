@@ -96,6 +96,7 @@ const (
 // Packet is one RTP delivery event. GapCount is set only for PacketGap.
 type Packet struct {
 	Kind          PacketKind  `json:"kind"`
+	TrackID       uint32      `json:"track,omitempty"`
 	SeqExt        uint64      `json:"seq_ext"`
 	Seq           uint16      `json:"seq"`
 	Timestamp     uint64      `json:"timestamp"`
@@ -103,6 +104,10 @@ type Packet struct {
 	Offset        int64       `json:"offset"`
 	PayloadOffset int64       `json:"payload_offset"`
 	PayloadSize   int         `json:"payload_size"`
+	Samples       uint64      `json:"samples,omitempty"`
+	Duration      clock.Nanos `json:"duration,omitempty"`
+	Frames        int         `json:"frames,omitempty"`
+	Inferred      bool        `json:"inferred,omitempty"`
 	GapCount      uint64      `json:"gap_count,omitempty"`
 }
 
@@ -118,6 +123,7 @@ type Index struct {
 	Packets   []Packet       `json:"packets"`
 	RTPTrack  uint32         `json:"rtp_track"`
 	ClockRate uint32         `json:"clock_rate"`
+	Rebuilt   bool           `json:"rebuilt"`
 	Faults    []*fault.Error `json:"-"`
 }
 
@@ -270,15 +276,18 @@ func (idx *Index) CheckStructure() error {
 		}
 		switch p.Kind {
 		case PacketOK:
-			if p.PayloadOffset < 0 || p.PayloadSize < 0 {
+			if p.PayloadOffset < 0 || p.PayloadSize <= 0 {
 				return fmt.Errorf("index: packet %d has invalid payload", pi)
 			}
-			if p.Time == clock.Invalid {
+			if p.Time == clock.Invalid || p.Duration <= 0 {
 				return fmt.Errorf("index: packet %d has no time", pi)
 			}
 		case PacketDuplicate:
 			if p.Time == clock.Invalid {
 				return fmt.Errorf("index: duplicate %d has no time", pi)
+			}
+			if p.Duration != 0 {
+				return fmt.Errorf("index: duplicate %d advances media time", pi)
 			}
 		case PacketGap:
 			if p.GapCount == 0 {
