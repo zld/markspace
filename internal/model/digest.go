@@ -58,3 +58,15 @@ func HashReader(r io.Reader) (string, int64, error) {
 	}
 	return hex.EncodeToString(h.Sum(nil)), n, nil
 }
+
+// HashReaderStream copies src into dst, returning the SHA-256 and size of the
+// bytes written. It is used to hash derived artifacts while they are stored,
+// so a large clip is never held in memory.
+func HashReaderStream(dst io.Writer, src io.Reader) (string, int64, error) {
+	h := sha256.New()
+	n, err := io.CopyBuffer(io.MultiWriter(dst, h), src, make([]byte, 64<<10))
+	if err != nil {
+		return "", 0, err
+	}
+	return hex.EncodeToString(h.Sum(nil)), n, nil
+}
