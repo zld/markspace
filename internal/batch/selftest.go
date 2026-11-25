@@ -134,7 +134,7 @@ func evaluateSelfTest(r *SelfTestReport) []Check {
 
 func failedOffset(conclusions []index.FileConclusion, name string) (int64, bool) {
 	for _, c := range conclusions {
-		if !containsSubstring(c.File, name) {
+		if c.Name != name && !containsSubstring(c.File, name) {
 			continue
 		}
 		for _, a := range c.Anomalies {

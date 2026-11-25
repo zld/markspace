@@ -40,6 +40,7 @@ type BlockRecord struct {
 
 // FileConclusion is the item-level processing result printed and indexed.
 type FileConclusion struct {
+	Name          string          `json:"name,omitempty"`
 	File          string          `json:"file"`
 	Status        string          `json:"status"` // pass, warning, failed
 	ExitCode      int             `json:"exit_code,omitempty"`

@@ -29,7 +29,7 @@ type processed struct {
 func processSample(s fixture.Sample) processed {
 	p := processed{
 		inputDurationNS: s.InputDurationNS,
-		conclusion:      index.FileConclusion{File: s.Path, Status: "pass"},
+		conclusion:      index.FileConclusion{Name: s.Name, File: s.Path, Status: "pass"},
 		block:           index.BlockRecord{Key: s.Name, File: s.Path},
 	}
 
@@ -59,6 +59,9 @@ func processSample(s fixture.Sample) processed {
 
 func (p *processed) fail(err error) {
 	ce := clock.AsError(err)
+	if ce.Path == "" {
+		ce.Path = p.conclusion.File
+	}
 	p.anomalies = append(p.anomalies, clock.AnomalyFromError(ce, "failure"))
 	p.conclusion.Status = "failed"
 	p.conclusion.Message = ce.Error()
@@ -155,7 +158,10 @@ func (p *processed) mapAndChunk(s fixture.Sample, timeline clock.Timeline) {
 		p.fail(err)
 		return
 	}
-	p.maxBoundaryNS = cut.BoundaryErrorNS
+	p.maxBoundaryNS = 0
+	if s.Kind == fixture.KindVFR {
+		p.maxBoundaryNS = cut.BoundaryErrorNS
+	}
 	p.plannedClipNS = s.EventRelativeEndNS - s.EventRelativeStartNS
 	p.actualClipNS = cut.CutEndNS - cut.CutStartNS
 	p.block.StartNS = cut.CutStartNS

@@ -81,9 +81,9 @@ func printAnomalies(report *batch.SelfTestReport) {
 
 func printConclusions(report *batch.SelfTestReport) {
 	for i, c := range report.Recovery.Index.Conclusions {
-		fmt.Printf("conclusion[%d] file=%s status=%s tracks_checked=%d wrap_count=%d drift_ms=%.3f "+
+		fmt.Printf("conclusion[%d] name=%s file=%s status=%s tracks_checked=%d wrap_count=%d drift_ms=%.3f "+
 			"vfr_boundary_error_ms=%.3f anomaly_count=%d message=%q\n",
-			i, c.File, c.Status, c.Tracks, c.WrapCount, c.DriftMS, c.MaxBoundaryMS,
+			i, c.Name, c.File, c.Status, c.Tracks, c.WrapCount, c.DriftMS, c.MaxBoundaryMS,
 			c.AnomalyCount, c.Message)
 	}
 }
