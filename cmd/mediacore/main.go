@@ -35,6 +35,8 @@ func runCLI(args []string) int {
 		return exitUsage
 	}
 	switch args[0] {
+	case "demo":
+		return demoCmd(args[1:])
 	case "run":
 		return runCmd(args[1:])
 	default:
