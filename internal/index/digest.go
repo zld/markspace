@@ -6,6 +6,7 @@ package index
 
 import (
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"math"
@@ -71,8 +72,9 @@ type LoudnessStats struct {
 func PeakLoudness(pcm16 []byte) LoudnessStats {
 	peak := 0
 	for i := 0; i+1 < len(pcm16); i += 2 {
-		lo, hi := int16(pcm16[i]), int16(pcm16[i+1])
-		v := int(lo) | int(hi)<<8
+		// Decode little-endian unsigned first, then reinterpret as signed.
+		u := binary.LittleEndian.Uint16(pcm16[i : i+2])
+		v := int(int16(u))
 		if v < 0 {
 			v = -v
 		}
@@ -82,6 +84,11 @@ func PeakLoudness(pcm16 []byte) LoudnessStats {
 	}
 	if peak == 0 {
 		return LoudnessStats{PeakDBFS: -96, PeakAmplitude: 0}
+	}
+	// Clamp the amplitude to the 16-bit positive scale so dBFS can never
+	// exceed zero, even for the -32768 code.
+	if peak > 32768 {
+		peak = 32768
 	}
 	db := 20 * math.Log10(float64(peak)/32768)
 	return LoudnessStats{PeakDBFS: round2(db), PeakAmplitude: peak}

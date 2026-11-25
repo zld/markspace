@@ -1,0 +1,8 @@
+# Local working directories for demo and test runs
+/tmp/
+/tmp
+tmp/
+*.tmp
+
+# Build artifacts
+/continuity

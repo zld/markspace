@@ -86,7 +86,9 @@ func (r *Runner) Run(blocks []BlockInput, stats rtp.Stats) (Manifest, error) {
 	reused, recomputed := 0, 0
 	var pixelAccum float64
 	var pixelWeight int64
-	var peak float64
+	// dBFS values are negative; start at the silence floor so the max
+	// selects the loudest block instead of staying pinned at zero.
+	peak := -96.0
 
 	// Re-validate the stored prefix against freshly computed digests; the
 	// first mismatch invalidates that block and every dependent one.
@@ -159,8 +161,9 @@ func (r *Runner) Run(blocks []BlockInput, stats rtp.Stats) (Manifest, error) {
 		Reused:              reused,
 		Recomputed:          recomputed,
 		ContainerRecomputed: containerRecomputed,
-		PCMRecomputed:       recomputed,
-		Segments:            segments,
+		// PCM recomputation excludes container-only work.
+		PCMRecomputed: recomputed,
+		Segments:      segments,
 	}
 	if cr, ok := r.store.Container(); ok {
 		c := cr

@@ -123,10 +123,12 @@ func (in *Ingest) advanceToGaps(firstSeq uint64) {
 // checkAlignment measures the error, in samples, between the RTP
 // timestamp increment and the integer sample position it implies.
 func (in *Ingest) checkAlignment(ts uint32) {
-	delta := int64(ts) - int64(in.lastTS)
+	// Use signed 32-bit delta so normal forward increments (including
+	// values that cross the uint32 wrap) stay positive.
+	delta := int64(int32(ts - in.lastTS))
 	samples := in.clock.TimestampToSamples(delta, in.clockRate)
 	back := in.clock.SamplesToTimestamp(samples, in.clockRate)
-	tsErr := media.AbsInt64(int64(back) - delta)
+	tsErr := media.AbsInt64(int64(int32(back)) - delta)
 	// Convert timestamp-unit error back into samples with the same rule.
 	smpErr := in.clock.TimestampToSamples(tsErr, in.clockRate)
 	if smpErr > in.maxAlignSmp {
