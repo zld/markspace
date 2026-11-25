@@ -24,13 +24,13 @@ func (g *Graph) Validate() []report.Record {
 			return
 		}
 		if state[n] == 1 {
-			records = append(records, issue(int(n), int(t.Entry.Offset), report.TrackDependency, "dependency_cycle",
+			records = append(records, issue(int(n), trackOffset(t), report.TrackDependency, "dependency_cycle",
 				"track dependency cycle: %v", append(path, n)))
 			return
 		}
 		state[n] = 1
 		for i, dep := range t.DependsOn {
-			depOffset := t.Entry.Offset
+			depOffset := trackOffset(t)
 			if i < len(t.DependencyOff) {
 				depOffset = t.DependencyOff[i]
 			}
@@ -159,6 +159,13 @@ func colorPairConflict(t, dep *Track) (report.Record, bool) {
 			"matrix coefficients %d conflict with dependency track %d value %d", a.Matrix, dep.Number, b.Matrix), true
 	}
 	return report.Record{}, false
+}
+
+func trackOffset(t *Track) int {
+	if t != nil && t.Entry != nil {
+		return t.Entry.Offset
+	}
+	return 0
 }
 
 func issue(track, offset int, code, category, format string, args ...any) report.Record {
