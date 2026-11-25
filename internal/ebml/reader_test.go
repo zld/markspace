@@ -412,3 +412,46 @@ func TestReadPayloadRestoresCursor(t *testing.T) {
 		t.Fatalf("next after payload: %v", err)
 	}
 }
+
+// TestNestedUnknownFramesCloseAtEachLevel covers an unknown-length Cluster
+// inside an unknown-length Segment with a Segment-level sibling after it: the
+// Cluster must close at that sibling, and the Segment at the next top-level
+// header, so every element lands at the right level.
+func TestNestedUnknownFramesCloseAtEachLevel(t *testing.T) {
+	info := givenLen(IDInfo, uintElem(IDTimecodeScale, 1_000_000))
+	cluster := append(unknownLen(IDCluster), uintElem(IDTimecode, 0)...)
+	cluster = append(cluster, givenLen(IDSimpleBlock, []byte{0x81, 0x00, 0x00, 0x00})...)
+	tags := givenLen(IDTags, nil)
+	header := givenLen(IDEBML, strElem(IDDocType, "matroska"))
+	second := givenLen(IDEBML, strElem(IDDocType, "webm"))
+	data := append(header, unknownLen(IDSegment)...)
+	data = append(data, info...)
+	data = append(data, cluster...)
+	data = append(data, tags...)
+	data = append(data, second...)
+
+	tree, err := parse(t, data)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	seg := tree.Root.Child(IDSegment)
+	if seg == nil || seg.Child(IDInfo) == nil {
+		t.Fatal("Segment or its Info child missing")
+	}
+	cl := seg.Child(IDCluster)
+	if cl == nil || cl.Child(IDSimpleBlock) == nil {
+		t.Fatal("Cluster or its block missing")
+	}
+	if seg.Child(IDTags) == nil {
+		t.Fatal("Tags not reattributed to Segment; cluster boundary close failed")
+	}
+	if len(tree.Root.ChildrenOf(IDEBML)) != 2 {
+		t.Fatalf("second header swallowed; EBML children = %d", len(tree.Root.ChildrenOf(IDEBML)))
+	}
+	if got, want := cl.End, seg.Child(IDTags).Offset; got != want {
+		t.Fatalf("cluster end = %d, want Tags offset %d", got, want)
+	}
+	if got, want := seg.End, tree.Root.ChildrenOf(IDEBML)[1].Offset; got != want {
+		t.Fatalf("segment end = %d, want second header offset %d", got, want)
+	}
+}
