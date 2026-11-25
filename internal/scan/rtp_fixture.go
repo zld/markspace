@@ -198,6 +198,9 @@ func buildRTPIndex(idx *Index) error {
 			TrackID:      meta.TrackID,
 		})
 		arrival++
+		if idx.Params.MaxEntries > 0 && arrival > idx.Params.MaxEntries {
+			return fault.At(fault.New(fault.LimitExceeded, "RTP packet index exceeds max_entries"), path, recordOff)
+		}
 	}
 	if len(idx.Packets) == 0 {
 		return fault.At(fault.New(fault.TruncatedData, "RTP fixture contains no packets"), path, 0)
