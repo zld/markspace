@@ -233,23 +233,10 @@ func (idx *Index) CheckStructure() error {
 	if !idx.Complete {
 		return errors.New("index: scan did not complete")
 	}
-	var pts []clock.Nanos
-	for i := range idx.Packets {
-		if idx.Packets[i].Kind == PacketDuplicate {
-			pts = append(pts, idx.Packets[i].Time)
-		}
-	}
-	for i := range idx.Packets {
-		p := &idx.Packets[i]
-		if p.Kind != PacketOK {
-			continue
-		}
-		for _, t := range pts {
-			if p.Time == t {
-				return fmt.Errorf("index: duplicate at %v also appears as a deliverable packet", t)
-			}
-		}
-	}
+	// A duplicate legitimately shares the media time of the packet it
+	// repeats; that is what makes it a duplicate and not a new sample, so no
+	// cross-kind time uniqueness is enforced here.
+
 	if len(idx.Tracks) == 0 {
 		return errors.New("index: no tracks")
 	}

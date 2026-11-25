@@ -211,6 +211,21 @@ func TestIndexBoundToDigest(t *testing.T) {
 	}
 }
 
+func TestDuplicateIndexPersists(t *testing.T) {
+	p := findByScenario(t, fixture.ScenarioDuplicate)
+	path := t.TempDir() + "/dup.json"
+	if err := p.scan.Index.Save(path); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := index.Load(path)
+	if err != nil {
+		t.Fatalf("a duplicate-bearing index must still be structurally valid: %v", err)
+	}
+	if loaded.Digest.Value != p.scan.Index.Digest.Value {
+		t.Fatal("reloaded index lost its digest")
+	}
+}
+
 func TestRepeatedRunsAreStable(t *testing.T) {
 	for _, a := range fixture.Build(7) {
 		first := runPipeline(t, a)
