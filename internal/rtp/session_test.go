@@ -79,11 +79,12 @@ func TestSessionBurstLossRecoveryRate(t *testing.T) {
 }
 
 func TestSessionMultiLossGroupUnrecoverable(t *testing.T) {
-	// Two holes inside one 4-packet group exceed what one parity packet
-	// can reconstruct; the kernel must report this honestly rather than
-	// fabricate data.
-	res := runSession(t, fixture.RTPPerturbation{Seed: 7, LossBurst: 2, LossAt: 4},
-		[]int{800})
+	// Two contiguous holes inside one 4-packet group exceed what one
+	// parity packet can reconstruct; the kernel must report this honestly
+	// rather than fabricate data.
+	res := runSession(t, fixture.RTPPerturbation{
+		Seed: 7, LossBurst: 2, LossAt: 4, RawConsecutive: true,
+	}, []int{800})
 	if RecoveryRate(res.Recovery) >= 1.0 {
 		t.Fatalf("double-loss group must be unrecoverable, got %+v", res.Recovery)
 	}
@@ -123,10 +124,9 @@ func TestSessionP95LatencyBounded(t *testing.T) {
 
 func TestSessionLateAndLossRecorded(t *testing.T) {
 	var book model.ErrorBook
-	ordered, _ := fixture.GenerateRTPSession(7, 16, 4, 0, 90000)
-	// Heavy loss spanning two groups.
+	ordered, _ := fixture.GenerateRTPSession(7, 32, 4, 0, 90000)
 	incoming := fixture.PerturbRTP(ordered, fixture.RTPPerturbation{
-		Seed: 7, LossBurst: 6, LossAt: 4,
+		Seed: 7, LossBurst: 6, LossAt: 4, RawConsecutive: true,
 	})
 	cfg := DefaultReorderConfig()
 	cfg.WindowSize = 4

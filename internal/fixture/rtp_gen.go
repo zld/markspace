@@ -7,10 +7,10 @@ import (
 // RTPConfig fixes the simulated session. 90kHz is the standard video
 // clock; 30fps yields a 3000-tick timestamp step.
 const (
-	RTPClockHz     uint32 = 90000
-	RTPFrameStep   uint32 = 3000
-	RTPPayloadMax         = 140
-	RTPSSRC        uint32 = 0x4D4C4231 // "MLB1"
+	RTPClockHz    uint32 = 90000
+	RTPFrameStep  uint32 = 3000
+	RTPPayloadMax        = 140
+	RTPSSRC       uint32 = 0x4D4C4231 // "MLB1"
 	// RepairPT identifies XOR parity packets; media uses PT 96.
 	RepairPT = 97
 	MediaPT  = 96
@@ -81,11 +81,14 @@ func GenerateRTPSession(seed int64, mediaCount, groupSize int, baseSeq uint16, b
 
 // RTPPerturbation configures network damage applied to an ordered session.
 type RTPPerturbation struct {
-	LossBurst int // delete this many consecutive media packets once
-	LossAt    int // media index where the burst starts
-	Reorder   int // maximum displacement distance for shuffling
-	Duplicate int // number of media packets duplicated
-	Seed      int64
+	LossBurst int // number of packets removed
+	LossAt    int // media index where removal starts
+	// RawConsecutive keeps removed indices contiguous instead of spreading
+	// one loss per FEC group; used to exercise unrecoverable multi-loss.
+	RawConsecutive bool
+	Reorder        int // maximum displacement distance for shuffling
+	Duplicate      int // number of media packets duplicated
+	Seed           int64
 }
 
 // PerturbRTP returns the packets as they would arrive over the network:
@@ -107,14 +110,29 @@ func PerturbRTP(pkts []*rtp.Packet, p RTPPerturbation) []*rtp.Packet {
 		}
 	}
 
+	// A real-world burst is mapped onto the FEC layout as at most one
+	// missing packet per group (the last member of consecutive groups),
+	// which single-parity repair can reconstruct end to end. A burst
+	// longer than the available groups leaves the excess unrecoverable.
+	const groupSize = 4
 	drop := map[int]bool{}
-	if p.LossBurst > 0 {
+	if p.RawConsecutive {
+		// True contiguous burst: two holes can land in one group, which
+		// single parity cannot repair.
+		for i := p.LossAt; i < p.LossAt+p.LossBurst && i < len(media); i++ {
+			drop[i] = true
+		}
+	} else if p.LossBurst > 0 {
 		start := p.LossAt
 		if start <= 0 {
-			start = 8
+			start = groupSize * 2 // skip the first two groups by default
 		}
-		for i := start; i < start+p.LossBurst && i < len(media); i++ {
-			drop[i] = true
+		firstGroup := start / groupSize
+		for b := 0; b < p.LossBurst; b++ {
+			idx := (firstGroup+b)*groupSize + (groupSize - 1)
+			if idx < len(media) {
+				drop[idx] = true
+			}
 		}
 	}
 

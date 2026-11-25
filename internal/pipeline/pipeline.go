@@ -22,14 +22,14 @@ import (
 
 // Config captures the demo and test parameters in one value.
 type Config struct {
-	Seed         int64
-	LossBurst    int
-	LossAt       int
-	Reorder      int
-	Duplicate    int
-	Bandwidth    []int
-	InterruptAt  string // e.g. "commit-1", "" disables injection
-	WorkDir      string
+	Seed        int64
+	LossBurst   int
+	LossAt      int
+	Reorder     int
+	Duplicate   int
+	Bandwidth   []int
+	InterruptAt string // e.g. "commit-1", "" disables injection
+	WorkDir     string
 	// DamageKind selects the MP4 mutation for the damaged sample; zero is
 	// truncation.
 	DamageKind fixture.Corruption

@@ -71,7 +71,8 @@ func DetectDamage(meta *container.MP4Meta, fileSize int64, stats FrameStats, boo
 }
 
 // detectInvalidTimestamps walks per-track presentation times and flags
-// zero/negative deltas with the offending sample's offset and window.
+// zero/negative deltas with the offending sample's offset and a
+// reviewable one-frame-wide window.
 func detectInvalidTimestamps(meta *container.MP4Meta, book *model.ErrorBook, rep *DamageReport) {
 	lastByTrack := map[uint32]int64{}
 	seen := map[uint32]bool{}
@@ -80,7 +81,10 @@ func detectInvalidTimestamps(meta *container.MP4Meta, book *model.ErrorBook, rep
 			rep.InvalidTime = true
 			book.Add(model.ErrorRecord{
 				Code: model.CodeInvalidTimestamp, Offset: s.Offset, Track: s.Track,
-				Window: timeline.Window{Start: s.TimeTick, End: s.TimeTick + 1},
+				Window: timeline.Window{
+					Start: s.TimeTick,
+					End:   s.TimeTick + timeline.MasterHz/30,
+				},
 				Detail: "non-positive presentation timestamp delta",
 			})
 		}
