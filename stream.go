@@ -2,8 +2,12 @@ package mediakernel
 
 import (
 	"context"
+	"io"
 	"sync/atomic"
 )
+
+// ErrDrained is returned by Dequeue after Close once the buffer is empty.
+var ErrDrained = io.EOF
 
 // QueueStats is a point-in-time snapshot of a BoundedQueue. Pending is the
 // number of items currently buffered; it never exceeds Capacity.
@@ -55,12 +59,16 @@ func (q *BoundedQueue[T]) Enqueue(ctx context.Context, item T) error {
 	return nil
 }
 
-// Dequeue removes and returns the next item, blocking while empty. On context
-// cancellation it returns the cancellation error and a zero value.
+// Dequeue removes and returns the next item, blocking while empty. It returns
+// ErrDrained after Close has drained the buffer, or the cancellation error
+// when the context ends first.
 func (q *BoundedQueue[T]) Dequeue(ctx context.Context) (T, error) {
 	var zero T
 	select {
-	case item := <-q.ch:
+	case item, ok := <-q.ch:
+		if !ok {
+			return zero, ErrDrained
+		}
 		q.dequeued.Add(1)
 		return item, nil
 	case <-ctx.Done():
