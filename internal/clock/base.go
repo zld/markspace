@@ -199,14 +199,37 @@ func (c *Converter) SetAnchor(raw uint32) {
 	c.hasAnchor = true
 }
 
-// DurationNS converts a native duration to nanoseconds without origin offset.
+// DurationNS converts a native duration to nanoseconds without origin offset
+// and without applying the archive wall-clock range: a duration may be far
+// longer than the 24h timeline bound (for example a multi-minute chapter).
+// It keeps the split-before-multiply overflow safety of MapTicks and rejects
+// only a duration that cannot be represented in int64 nanoseconds.
 func DurationNS(ticks int64, timescale uint32) (int64, error) {
 	if timescale == 0 {
 		return 0, ErrInvalidTimescale
 	}
-	ns, aerr := MapTicks("", ticks, timescale, 0, math.MaxInt64/NSPerSecond, 0, -1)
-	if aerr != nil {
-		return 0, aerr
+	if ticks == math.MinInt64 {
+		return 0, events.NewError(events.CodeTimeOutOfRange, "", 0, -1, "duration",
+			"duration magnitude exceeds int64", nil)
+	}
+	scale := int64(timescale)
+	neg := ticks < 0
+	t := ticks
+	if neg {
+		t = -t
+	}
+	hi := t / scale
+	lo := t % scale
+	// lo < scale <= math.MaxUint32, so lo*NSPerSecond cannot overflow int64.
+	frac := (lo*NSPerSecond + scale/2) / scale
+	// Guard hi*NSPerSecond+frac against int64 overflow.
+	if hi > (math.MaxInt64-frac)/NSPerSecond {
+		return 0, events.NewError(events.CodeTimeOutOfRange, "", 0, -1, "duration",
+			fmt.Sprintf("duration ticks=%d timescale=%d overflows int64 nanoseconds", ticks, timescale), nil)
+	}
+	ns := hi*NSPerSecond + frac
+	if neg {
+		ns = -ns
 	}
 	return ns, nil
 }

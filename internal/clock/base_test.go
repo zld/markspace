@@ -155,6 +155,37 @@ func TestDurationNS(t *testing.T) {
 	}
 }
 
+func TestDurationNSAllowsLongDurations(t *testing.T) {
+	// A 30-minute chapter on a 1kHz track must not be capped by the 24h
+	// timeline range used for absolute timestamps.
+	cases := []struct {
+		ticks     int64
+		scale     uint32
+		wantNS    int64
+	}{
+		{60_000, 1000, 60_000_000_000},        // 60s
+		{1_800_000, 1000, 1_800_000_000_000},  // 30min
+		{3_600, 90_000, 40_000_000},           // 3600/90000 s = 40ms
+	}
+	for _, c := range cases {
+		got, err := DurationNS(c.ticks, c.scale)
+		if err != nil {
+			t.Fatalf("ticks=%d scale=%d: %v", c.ticks, c.scale, err)
+		}
+		if got != c.wantNS {
+			t.Fatalf("ticks=%d scale=%d: got %d want %d", c.ticks, c.scale, got, c.wantNS)
+		}
+	}
+}
+
+func TestDurationNSOverflowRejected(t *testing.T) {
+	// A near-MaxInt64 tick count at scale 1 would be ~10^18 seconds and must
+	// be rejected rather than wrapping.
+	if _, err := DurationNS(1<<62, 1); err == nil {
+		t.Fatal("expected overflow error for huge duration")
+	}
+}
+
 func TestTicksFromNSRoundTrip(t *testing.T) {
 	ns := int64(2_000_000_000)
 	ticks, err := TicksFromNS(events.TrackAudio, ns, 48000, 0, 1, 0)
