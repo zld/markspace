@@ -97,7 +97,9 @@ type TimelineEvent struct {
 }
 
 // Less defines the stable ordering of the merged timeline: media start,
-// then end, kind, track, stream and original input order.
+// then end, kind, track, stream and sequence. The input Order is only a
+// final tiebreak for events that are otherwise identical, so merging the
+// same events in different group orders yields the same timeline.
 func (e TimelineEvent) Less(o TimelineEvent) bool {
 	if e.Start != o.Start {
 		return e.Start < o.Start
