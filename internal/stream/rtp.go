@@ -80,6 +80,8 @@ func ParseRTPFile(path string, defaultClockRate uint32) (*RTPSession, error) {
 	off += 4
 	unw := clock.NewUnwrapper(1 << 32)
 	rate := sess.ClockRate
+	var prevSeq uint16
+	haveSeq := false
 	for off < int64(len(data)) {
 		if int64(len(data))-off < 4 {
 			sess.damaged(path, off, int64(len(data)), issue.RTPCorrupt, "truncated length prefix")
@@ -108,6 +110,19 @@ func ParseRTPFile(path string, defaultClockRate uint32) (*RTPSession, error) {
 			off = hdrStart + length
 			continue
 		}
+		// Missing packets are detected from the sequence number: timestamps
+		// normally advance per frame even when no frame is missing.
+		if haveSeq && pkt.SequenceNumber != 0 {
+			gap := seqGap(prevSeq, pkt.SequenceNumber)
+			if gap > 1 {
+				sess.Missing += uint64(gap) - 1
+				sess.Issues.Add(issue.New(issue.TimestampMissing, path,
+					fmt.Sprintf("%d packet(s) missing before sequence %d", gap-1, pkt.SequenceNumber)).
+					WithByte(hdrStart).WithPacket(idx).WithRef(fmt.Sprintf("missing:%d", gap-1)))
+			}
+		}
+		prevSeq, haveSeq = pkt.SequenceNumber, true
+
 		u := unw.Push(uint64(pkt.Timestamp))
 		if u.Duplicate {
 			sess.Duplicates++
@@ -120,12 +135,6 @@ func ParseRTPFile(path string, defaultClockRate uint32) (*RTPSession, error) {
 			sess.Issues.Add(issue.New(issue.TimestampRegress, path,
 				fmt.Sprintf("RTP timestamp %d regressed at packet %d", pkt.Timestamp, idx)).
 				WithByte(hdrStart).WithPacket(idx))
-		}
-		if u.Missing > 0 {
-			sess.Missing += u.Missing
-			sess.Issues.Add(issue.New(issue.TimestampMissing, path,
-				fmt.Sprintf("%d timestamps missing before packet %d", u.Missing, idx)).
-				WithByte(hdrStart).WithPacket(idx).WithRef(fmt.Sprintf("missing:%d", u.Missing)))
 		}
 		tick := clock.Tick(0)
 		if rate > 0 {
@@ -148,6 +157,13 @@ func (s *RTPSession) damaged(input string, start, end int64, cat issue.Category,
 	s.Issues.Add(issue.New(cat, input, detail).WithByte(start))
 	s.Damaged = append(s.Damaged, issue.ByteRange{Input: input, Start: start, End: end,
 		Categories: []issue.Category{cat}})
+}
+
+func seqGap(prev, cur uint16) int {
+	if cur >= prev {
+		return int(cur) - int(prev)
+	}
+	return 0x10000 - int(prev) + int(cur)
 }
 
 func readAllBounded(r io.Reader, limit int64) ([]byte, error) {

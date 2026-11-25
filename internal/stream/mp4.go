@@ -79,7 +79,7 @@ func ParseMP4(path string) (*MP4Result, error) {
 	res.Issues.Add(scanIssues...)
 	res.Damaged = append(res.Damaged, scanDamage...)
 
-	traks := collectTracks(f, path, fileSize, res)
+	traks := collectTracks(f, path, res)
 	if len(traks) == 0 {
 		if len(res.Issues) == 0 {
 			res.Issues.Add(issue.New(issue.UnsupportedInput, path, "no MP4 track found"))
