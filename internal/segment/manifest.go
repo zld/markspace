@@ -29,6 +29,10 @@ type Manifest struct {
 	Representations []Representation `json:"representations"`
 	Segments        []*Descriptor    `json:"segments"`
 	MaxAlignDrift   int64            `json:"max_alignment_delta_ticks"`
+	// ManifestSHA256 is the digest of every other field, recomputed over a
+	// canonical rendering with this field set to the empty string. It lets a
+	// verifier confirm a manifest was not tampered with after writing.
+	ManifestSHA256 string `json:"manifest_sha256"`
 	// Corruption lists every reported defect with its input offset/PID.
 	Corruption []CorruptionReport `json:"corruption,omitempty"`
 }
@@ -110,12 +114,28 @@ func (m *Manifest) Marshal() ([]byte, error) {
 	return out, nil
 }
 
-// SHA256 returns the hex digest of the canonical marshaled manifest.
+// SHA256 returns the hex digest of the canonical marshaled manifest. Because
+// ManifestSHA256 is part of the document, it is first cleared, the digest is
+// computed over the remaining fields, then restored, so the recorded value
+// describes the rest of the manifest rather than itself.
 func (m *Manifest) SHA256() (string, error) {
+	saved := m.ManifestSHA256
+	m.ManifestSHA256 = ""
 	raw, err := m.Marshal()
+	m.ManifestSHA256 = saved
 	if err != nil {
 		return "", err
 	}
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:]), nil
+}
+
+// Seal computes the self-describing digest and stores it on the manifest.
+func (m *Manifest) Seal() error {
+	digest, err := m.SHA256()
+	if err != nil {
+		return err
+	}
+	m.ManifestSHA256 = digest
+	return nil
 }

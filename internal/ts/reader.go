@@ -41,8 +41,12 @@ func (rd *Reader) ReadPacket(ctx context.Context) (*model.Packet, error) {
 		}
 		off := rd.offset
 		rd.offset += int64(n)
+		pid := uint16(0)
+		if n >= 3 {
+			pid = (uint16(raw[1]&0x1F) << 8) | uint16(raw[2])
+		}
 		return nil, &model.CorruptError{
-			Kind: "truncated", Offset: off,
+			Kind: "truncated", Offset: off, PID: pid,
 			Detail: "input ended with a partial packet",
 		}
 	}
@@ -53,8 +57,11 @@ func (rd *Reader) ReadPacket(ctx context.Context) (*model.Packet, error) {
 	rd.offset += model.PacketSize
 
 	if raw[0] != model.SyncByte {
+		// The sync byte is invalid but the PID fields are still readable,
+		// so name the affected PID to keep every corruption report complete.
+		pid := (uint16(raw[1]&0x1F) << 8) | uint16(raw[2])
 		return nil, &model.CorruptError{
-			Kind: "sync", Offset: off,
+			Kind: "sync", Offset: off, PID: pid,
 			Detail: "first byte is not 0x47",
 		}
 	}

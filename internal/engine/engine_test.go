@@ -161,8 +161,10 @@ func TestInterruptAndResumeProducesIdenticalManifest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resume failed: %v", err)
 	}
-	if resumed.ResumedFromSegment != 0 {
-		t.Fatalf("resumed_from_segment = %d, want 0", resumed.ResumedFromSegment)
+	// Two segments were committed before the interrupt, so resume starts at
+	// segment index 2.
+	if resumed.ResumedFromSegment != 2 {
+		t.Fatalf("resumed_from_segment = %d, want 2", resumed.ResumedFromSegment)
 	}
 	if resumed.ResumeMs > 5000 {
 		t.Fatalf("resume_ms = %d exceeds 5000", resumed.ResumeMs)

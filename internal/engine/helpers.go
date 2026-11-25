@@ -2,6 +2,8 @@ package engine
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -81,14 +83,31 @@ func finalizeSegment(
 		return err
 	}
 	r.samples = nil
+	// The authoritative digest covers the exact bytes on disk, so verify can
+	// recompute it from the shipped fragment rather than from TS packets.
+	digest, err := hashFile(filepath.Join(muxer.Dir(), name))
+	if err != nil {
+		return err
+	}
 	d.ByteSize = size
+	d.SHA256 = digest
 	if _, _, err := cp.CommitSegment(dag.SegmentCommit{
-		Key: key, File: name, SHA256: d.SHA256,
+		Key: key, File: name, SHA256: digest,
 		ByteSize: size, Index: d.Index, Rep: r.id,
 	}); err != nil {
 		return err
 	}
 	return cp.SetInputOffset("segment:"+r.id, d.EndOffset)
+}
+
+// hashFile returns the hex SHA-256 of a file's contents.
+func hashFile(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:]), nil
 }
 
 // ledgerLookup returns the committed record for a stable task key.
@@ -138,20 +157,16 @@ func classifyFailure(err error) error {
 	return err
 }
 
-// firstResumableSegment is the smallest segment index present in the ledger,
-// reported as resumed_from_segment after a successful resume.
-func firstResumableSegment(cp *dag.Checkpoint) int {
-	commits := cp.Commits()
-	if len(commits) == 0 {
-		return 0
+// resumedFromSegment reports the segment index at which processing resumed:
+// the number of distinct segment indices already present in the ledger. With
+// two segments committed per representation this is 2, matching the index of
+// the first segment the resumed run has to produce.
+func resumedFromSegment(cp *dag.Checkpoint) int {
+	seen := map[int]struct{}{}
+	for _, c := range cp.Commits() {
+		seen[c.Index] = struct{}{}
 	}
-	min := commits[0].Index
-	for _, c := range commits[1:] {
-		if c.Index < min {
-			min = c.Index
-		}
-	}
-	return min
+	return len(seen)
 }
 
 // atomicWrite writes data to a sibling temp file and renames it into place.

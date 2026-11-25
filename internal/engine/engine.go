@@ -39,8 +39,10 @@ type Report struct {
 	CorruptionOffset    int64    `json:"corruption_offset,omitempty"`
 	AffectedPID         uint16   `json:"affected_pid,omitempty"`
 	CorruptKinds        []string `json:"corrupt_kinds,omitempty"`
-	ResumedFromSegment  int      `json:"resumed_from_segment,omitempty"`
-	ResumeMs            int64    `json:"resume_ms,omitempty"`
+	// ResumedFromSegment and ResumeMs are always emitted on a resumed run
+	// (including zero values) so the acceptance output field is stable.
+	ResumedFromSegment  int      `json:"resumed_from_segment"`
+	ResumeMs            int64    `json:"resume_ms"`
 }
 
 // Config controls one run.
@@ -71,6 +73,11 @@ func Run(ctx context.Context, cfg Config) (*Report, error) {
 	cpPath := filepath.Join(cfg.OutDir, "checkpoint.json")
 	cp, loadErr := dag.LoadCheckpoint(cpPath)
 	resuming := loadErr == nil
+	// Capture the resume origin before the run appends new ledger entries.
+	resumeOrigin := 0
+	if resuming {
+		resumeOrigin = resumedFromSegment(cp)
+	}
 	start := time.Now()
 
 	stream := cfg.Input
@@ -250,9 +257,13 @@ func Run(ctx context.Context, cfg Config) (*Report, error) {
 		return nil, err
 	}
 
-	// Build the manifest from the checkpoint ledger plus descriptors.
+	// Build the manifest from the checkpoint ledger plus descriptors, then
+	// seal it with its self-describing digest before persisting.
 	manifest, err := buildManifest(base, repMeta, reps, align, corruption, cp)
 	if err != nil {
+		return nil, err
+	}
+	if err := manifest.Seal(); err != nil {
 		return nil, err
 	}
 	manifestRaw, err := manifest.Marshal()
@@ -263,7 +274,7 @@ func Run(ctx context.Context, cfg Config) (*Report, error) {
 	if err := atomicWrite(manifestPath, manifestRaw); err != nil {
 		return nil, err
 	}
-	manifestSHA, _ := manifest.SHA256()
+	manifestSHA := manifest.ManifestSHA256
 
 	report := &Report{
 		SegmentCount:        manifest.SegmentCount,
@@ -284,7 +295,7 @@ func Run(ctx context.Context, cfg Config) (*Report, error) {
 		}
 	}
 	if resuming {
-		report.ResumedFromSegment = firstResumableSegment(cp)
+		report.ResumedFromSegment = resumeOrigin
 		report.ResumeMs = time.Since(start).Milliseconds()
 	}
 	// Persist a node-level marker so the DAG view shows completion.
