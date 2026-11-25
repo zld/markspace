@@ -53,6 +53,42 @@ func TestDuplicateSegmentsKeepAllSourceRecords(t *testing.T) {
 	}
 }
 
+func TestCorruptReasonsReachManifest(t *testing.T) {
+	fx, err := fixture.Generate(fixture.Spec{
+		Codec: stream.HEVC, Frames: 8, IndexMode: fixture.IndexExact, Truncate: 6})
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	opts := Options{
+		FixtureID: "corrupt", Codec: stream.HEVC,
+		Stream: fx.Stream, IndexText: fx.IndexText, WorkDir: t.TempDir(),
+		QueueSize: 1, StreamCfg: stream.DefaultConfig(),
+	}
+	res, err := Run(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.CorruptSegmentCount != 1 {
+		t.Fatalf("corrupt count = %d", res.CorruptSegmentCount)
+	}
+	m, err := provenance.Load(res.ManifestPath)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	var found bool
+	for _, s := range m.Segments {
+		if s.Corrupt {
+			found = true
+			if len(s.Reasons) == 0 {
+				t.Fatal("corrupt segment persisted without reasons")
+			}
+		}
+	}
+	if !found {
+		t.Fatal("no corrupt segment in manifest")
+	}
+}
+
 func TestCancellationStopsStages(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	opts := baseOpts(t, t.TempDir(), fixture.Spec{

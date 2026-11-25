@@ -35,7 +35,10 @@ func publishManifest(res *Result, opts Options,
 	}
 	firstOf := map[string]uint64{}
 	for _, o := range outcomes {
-		rec := provenance.SegmentRecord{ID: o.ID, SHA256: o.Hash, Corrupt: o.Corrupt}
+		rec := provenance.SegmentRecord{
+			ID: o.ID, SHA256: o.Hash, Corrupt: o.Corrupt,
+			Reasons: append([]string(nil), o.Reasons...),
+		}
 		if origin, dup := firstOf[o.Hash]; dup {
 			rec.Duplicate, rec.FirstOfHash = true, origin
 		} else {
