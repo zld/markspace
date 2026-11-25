@@ -1,9 +1,6 @@
 package clock
 
-import (
-	"fmt"
-	"math"
-)
+import "fmt"
 
 // Stamp is one parsed RTP timestamp and its original packet location.
 type Stamp struct {
@@ -24,6 +21,7 @@ type UnwrappedStamp struct {
 // UnwrapReport is the monotonic expansion plus every non-silent anomaly.
 type UnwrapReport struct {
 	ClockRate uint32           `json:"clock_rate"`
+	MaxStep   uint32           `json:"max_step_ticks"`
 	Samples   []UnwrappedStamp `json:"samples"`
 	WrapCount int              `json:"wrap_count"`
 	Anomalies []Anomaly        `json:"anomalies"`
@@ -39,7 +37,7 @@ func UnwrapRTP(stamps []Stamp, clockRate, maxStep uint32) *UnwrapReport {
 	if maxStep == 0 {
 		maxStep = DefaultMaxStepTicks
 	}
-	rep := &UnwrapReport{ClockRate: clockRate, Samples: make([]UnwrappedStamp, 0, len(stamps))}
+	rep := &UnwrapReport{ClockRate: clockRate, MaxStep: maxStep, Samples: make([]UnwrappedStamp, 0, len(stamps))}
 	if clockRate == 0 {
 		rep.Anomalies = append(rep.Anomalies, Anomaly{
 			Kind: CodeInvalidTimebase, Severity: "failure", Offset: -1,
@@ -136,11 +134,15 @@ func (r *UnwrapReport) Monotonic() bool {
 // WrapInterval returns the media-time interval of the idx-th unique wrap.
 // Wrap indices are one-based in reporting helpers.
 func (r *UnwrapReport) WrapInterval(wrapOrdinal int) (startNS, endNS int64, offset, endOffset int64, ok bool) {
+	maxStep := r.MaxStep
+	if maxStep == 0 {
+		maxStep = DefaultMaxStepTicks
+	}
 	seen := 0
 	for i := 1; i < len(r.Samples); i++ {
 		a, b := r.Samples[i-1], r.Samples[i]
-		if b.Raw < a.Raw && int64(uint32(b.Raw-a.Raw)) <= int64(DefaultMaxStepTicks) &&
-			int64(a.Raw)-int64(b.Raw) > int64(DefaultMaxStepTicks) {
+		if b.Raw < a.Raw && int64(uint32(b.Raw-a.Raw)) <= int64(maxStep) &&
+			int64(a.Raw)-int64(b.Raw) > int64(maxStep) {
 			seen++
 			if seen == wrapOrdinal {
 				return a.NS, b.NS, a.Offset, b.Offset, true
@@ -149,6 +151,3 @@ func (r *UnwrapReport) WrapInterval(wrapOrdinal int) (startNS, endNS int64, offs
 	}
 	return 0, 0, -1, -1, false
 }
-
-// Ensure math is referenced even if future edits remove direct use.
-var _ = math.MaxInt64
