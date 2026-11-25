@@ -12,8 +12,8 @@ import (
 // gives callers a fixed upper memory bound for queued media.
 const DefaultMaxUnitBytes = 4 * 1024 * 1024
 
-// BoundedQueue is a fixed-capacity queue of media units. Its storage cannot
-// grow with the length of an input stream: producers block or receive a
+// BoundedQueue is a fixed-capacity ring queue of media units. Its storage
+// cannot grow with the length of an input stream: producers block or receive a
 // recoverable timeout/backpressure error when all slots are occupied.
 type BoundedQueue struct {
 	capacity     int
@@ -23,6 +23,9 @@ type BoundedQueue struct {
 	notFull   *sync.Cond
 	notEmpty  *sync.Cond
 	items     []*model.Unit
+	head      int
+	tail      int
+	count     int
 	closed    bool
 	peak      int
 	enqueued  uint64
@@ -38,7 +41,11 @@ func NewBoundedQueue(capacity, maxUnitBytes int) (*BoundedQueue, error) {
 	if maxUnitBytes <= 0 {
 		maxUnitBytes = DefaultMaxUnitBytes
 	}
-	q := &BoundedQueue{capacity: capacity, maxUnitBytes: maxUnitBytes}
+	q := &BoundedQueue{
+		capacity:     capacity,
+		maxUnitBytes: maxUnitBytes,
+		items:        make([]*model.Unit, capacity),
+	}
 	q.notFull = sync.NewCond(&q.mu)
 	q.notEmpty = sync.NewCond(&q.mu)
 	return q, nil
@@ -51,7 +58,7 @@ func (q *BoundedQueue) Cap() int { return q.capacity }
 func (q *BoundedQueue) Len() int {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	return len(q.items)
+	return q.count
 }
 
 // Peak returns the largest observed occupancy.
@@ -78,7 +85,7 @@ func (q *BoundedQueue) Stats() QueueStats {
 	return QueueStats{
 		Capacity:         q.capacity,
 		PeakOccupancy:    q.peak,
-		CurrentOccupancy: len(q.items),
+		CurrentOccupancy: q.count,
 		Enqueued:         q.enqueued,
 		Timeouts:         q.timeouts,
 		Oversized:        q.oversized,
@@ -115,7 +122,7 @@ func (q *BoundedQueue) Put(ctx context.Context, u *model.Unit) error {
 	stopWake := context.AfterFunc(ctx, q.notFull.Broadcast)
 	defer stopWake()
 
-	for len(q.items) == q.capacity && !q.closed && ctx.Err() == nil {
+	for q.count == q.capacity && !q.closed && ctx.Err() == nil {
 		q.notFull.Wait()
 	}
 	if q.closed {
@@ -129,10 +136,12 @@ func (q *BoundedQueue) Put(ctx context.Context, u *model.Unit) error {
 
 	// Timestamp after the backpressure wait so latency measures queue dwell.
 	u.EnqueuedAt = time.Now()
-	q.items = append(q.items, u)
+	q.items[q.tail] = u
+	q.tail = (q.tail + 1) % q.capacity
+	q.count++
 	q.enqueued++
-	if len(q.items) > q.peak {
-		q.peak = len(q.items)
+	if q.count > q.peak {
+		q.peak = q.count
 	}
 	q.notEmpty.Signal()
 	return nil
@@ -152,19 +161,20 @@ func (q *BoundedQueue) Get(ctx context.Context) (*model.Unit, error) {
 	stopWake := context.AfterFunc(ctx, q.notEmpty.Broadcast)
 	defer stopWake()
 
-	for len(q.items) == 0 && !q.closed && ctx.Err() == nil {
+	for q.count == 0 && !q.closed && ctx.Err() == nil {
 		q.notEmpty.Wait()
 	}
-	if len(q.items) == 0 {
+	if q.count == 0 {
 		if ctx.Err() != nil {
 			return nil, model.NewError("", "", -1, model.CategoryQueueBackpressure,
 				"consumer wait canceled", ctx.Err()).RecoverableWarn()
 		}
 		return nil, nil
 	}
-	u := q.items[0]
-	q.items[0] = nil
-	q.items = q.items[1:]
+	u := q.items[q.head]
+	q.items[q.head] = nil
+	q.head = (q.head + 1) % q.capacity
+	q.count--
 	q.notFull.Signal()
 	return u, nil
 }
