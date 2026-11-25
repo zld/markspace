@@ -6,11 +6,11 @@ import "sort"
 type ChangeKind string
 
 const (
-	ChangeUnknown          ChangeKind = "unknown"
-	ChangeNone             ChangeKind = "unchanged"
-	ChangeContainerOnly    ChangeKind = "container-only"
-	ChangeContent          ChangeKind = "content"
-	ChangeNew              ChangeKind = "new-source"
+	ChangeUnknown       ChangeKind = "unknown"
+	ChangeNone          ChangeKind = "unchanged"
+	ChangeContainerOnly ChangeKind = "container-only"
+	ChangeContent       ChangeKind = "content"
+	ChangeNew           ChangeKind = "new-source"
 )
 
 // SourceState is one indexed source with its independent content and container
@@ -25,10 +25,10 @@ type SourceState struct {
 // the derivation reads encapsulation (offsets, packet framing) or only decoded
 // content (timeline, samples, subtitle text).
 type AssetDependency struct {
-	AssetID          string   `json:"asset_id"`
-	Kind             string   `json:"kind"` // dialogue | subtitle | sfx
-	Sources          []string `json:"sources"`
-	NeedsContainer   bool     `json:"needs_container"`
+	AssetID        string   `json:"asset_id"`
+	Kind           string   `json:"kind"` // dialogue | subtitle | sfx
+	Sources        []string `json:"sources"`
+	NeedsContainer bool     `json:"needs_container"`
 }
 
 // AssetDecision records what the incremental plan will do with one asset.
@@ -41,11 +41,11 @@ type AssetDecision struct {
 
 // Plan is the per-run incremental result.
 type Plan struct {
-	Recompute           []AssetDecision `json:"recompute"`
-	Reuse               []AssetDecision `json:"reuse"`
-	ChangedSources      []SourceChange  `json:"changed_sources"`
-	RecomputeCount      int             `json:"recompute_count"`
-	ReuseCount          int             `json:"reuse_count"`
+	Recompute      []AssetDecision `json:"recompute"`
+	Reuse          []AssetDecision `json:"reuse"`
+	ChangedSources []SourceChange  `json:"changed_sources"`
+	RecomputeCount int             `json:"recompute_count"`
+	ReuseCount     int             `json:"reuse_count"`
 }
 
 // SourceChange explains how a source changed.

@@ -6,12 +6,12 @@ import "math"
 // relative deviation. All formulas in this file are fixed and covered by tests
 // so results are reproducible across runs.
 type BitrateSpec struct {
-	AssetID          string  `json:"asset_id"`
-	TargetBps        float64 `json:"target_bps"`
-	ActualBps        float64 `json:"actual_bps"`
+	AssetID           string  `json:"asset_id"`
+	TargetBps         float64 `json:"target_bps"`
+	ActualBps         float64 `json:"actual_bps"`
 	RelativeDeviation float64 `json:"relative_deviation"`
-	Tolerance        float64 `json:"tolerance"`
-	Pass             bool    `json:"pass"`
+	Tolerance         float64 `json:"tolerance"`
+	Pass              bool    `json:"pass"`
 }
 
 // BitrateSpecCheck computes (actual-target)/target and marks pass when the
@@ -94,13 +94,13 @@ func SNRProxy(assetID string, processed bool, signalEnergy, noiseEnergy float64)
 // SubtitleAlignment compares one subtitle interval against its reference audio
 // interval on the shared media clock. Errors are exported in milliseconds.
 type SubtitleAlignment struct {
-	SubtitleID      string  `json:"subtitle_id"`
-	StartErrorMs    float64 `json:"start_error_ms"`
-	EndErrorMs      float64 `json:"end_error_ms"`
-	AbsMaxErrorMs   float64 `json:"abs_max_error_ms"`
-	SourceDigest    Digest  `json:"source_digest"`
-	ToleranceMs     float64 `json:"tolerance_ms"`
-	Pass            bool    `json:"pass"`
+	SubtitleID    string  `json:"subtitle_id"`
+	StartErrorMs  float64 `json:"start_error_ms"`
+	EndErrorMs    float64 `json:"end_error_ms"`
+	AbsMaxErrorMs float64 `json:"abs_max_error_ms"`
+	SourceDigest  Digest  `json:"source_digest"`
+	ToleranceMs   float64 `json:"tolerance_ms"`
+	Pass          bool    `json:"pass"`
 }
 
 // CheckSubtitleAlignment maps both intervals through clock and verifies the
@@ -123,9 +123,9 @@ func CheckSubtitleAlignment(id string, audio, subtitle TimeRange, clock Clock, t
 
 // AlignmentSummary aggregates per-subtitle results into max and average error.
 type AlignmentSummary struct {
-	Checked      int     `json:"checked"`
-	Failed       int     `json:"failed"`
-	MaxErrorMs   float64 `json:"max_error_ms"`
+	Checked        int     `json:"checked"`
+	Failed         int     `json:"failed"`
+	MaxErrorMs     float64 `json:"max_error_ms"`
 	AverageErrorMs float64 `json:"average_error_ms"`
 }
 
