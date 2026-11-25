@@ -18,12 +18,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strings"
 
 	"archive.example/mediakernel/internal/archive"
 	"archive.example/mediakernel/internal/events"
 	"archive.example/mediakernel/internal/fixture"
-	"archive.example/mediakernel/internal/manifest"
 )
 
 func main() {
@@ -36,7 +36,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	var (
 		kind       = fs.String("fixture", "normal", "input fixture: normal, truncated, damaged, late or boundary")
 		seed       = fs.Int64("seed", 17, "deterministic seed for generated inputs")
-		outRoot    = fs.String("out", "", "required output root; the manifest is written to <out>/archive/manifest.json")
+		outRoot    = fs.String("out", "", "required output root; the manifest is written to <out>/manifest.json")
 		lateWindow = fs.String("late-window", "2s", "allowed event lateness, e.g. 2s or 500ms")
 		verbose    = fs.Bool("v", false, "print per-track and per-error detail")
 	)
@@ -71,6 +71,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	for _, line := range archive.SortedErrorLines(res.Report.Errors) {
 		fmt.Fprintf(stdout, "  error %s\n", line)
 	}
+	if *verbose {
+		printVerbose(stdout, res)
+	}
 
 	if fatal != nil {
 		fmt.Fprintf(stderr, "fatal: %s\n", fatal.Error())
@@ -92,16 +95,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 // exitCodeFor maps a fatal archive error to the documented exit code.
 func exitCodeFor(e *events.Error) int {
-	switch e.Code {
-	case events.CodeInvalidTimescale, events.CodeTimeOutOfRange:
-		return 1
-	case events.CodeWrite, events.CodePath:
-		return 1
-	case events.CodeFixture:
+	if e.Code == events.CodeFixture {
 		return 64
-	default:
-		return 1
 	}
+	// An unusable time base, an exceeded limit and a write/path failure are
+	// all fatal with a non-zero, non-usage code.
+	return 1
 }
 
 // parseDurationNS parses a compact duration such as "2s", "500ms" or "1500us".
@@ -137,6 +136,28 @@ func parseDurationNS(s string) (int64, error) {
 	return 0, fmt.Errorf("missing unit in %q (use ns, us, ms or s)", s)
 }
 
+// printVerbose prints per-track committed counts and the replay inventory.
+func printVerbose(w io.Writer, res archive.RunResult) {
+	if res.Document != nil {
+		for _, t := range res.Document.Tracks {
+			fmt.Fprintf(w, "  track %-9s id=%d handler=%q timescale=%d content=%t\n",
+				t.Track, t.TrackID, t.Handler, t.Timescale, t.HasContent)
+		}
+	}
+	byTrack := map[string]int{}
+	for _, e := range res.Timeline.Committed() {
+		byTrack[string(e.Track)]++
+	}
+	keys := make([]string, 0, len(byTrack))
+	for k := range byTrack {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		fmt.Fprintf(w, "  committed %-9s %d\n", k, byTrack[k])
+	}
+}
+
 func printReport(w io.Writer, r archive.Report, verbose bool) {
 	fmt.Fprintf(w, "fixture=%s seed=%d\n", r.Fixture, r.Seed)
 	for _, note := range r.Notes {
@@ -160,5 +181,3 @@ func printReport(w io.Writer, r archive.Report, verbose bool) {
 		fmt.Fprintf(w, "manifest path=%s\n", r.ManifestPath)
 	}
 }
-
-var _ = manifest.OutputDirName
