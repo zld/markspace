@@ -144,3 +144,19 @@ func TestParseRejectsGarbage(t *testing.T) {
 		t.Fatal("expected probe error for empty input")
 	}
 }
+
+func TestParseTruncatedAudio(t *testing.T) {
+	f, err := fixture.Generate(fixture.Options{Name: fixture.NameTruncatedAudio, Format: fixture.FormatMP4})
+	if err != nil {
+		t.Fatal(err)
+	}
+	asset, err := Parse(f.Bytes, "truncated.mp4")
+	if err != nil {
+		t.Fatalf("parser must accept a short final sample: %v", err)
+	}
+	a := asset.Tracks[1]
+	last := a.Samples[len(a.Samples)-1]
+	if len(last.Data) != fixture.AudioBlockBytes-3 {
+		t.Fatalf("last block length %d want %d", len(last.Data), fixture.AudioBlockBytes-3)
+	}
+}

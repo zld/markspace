@@ -51,7 +51,7 @@ func parseFlags(args []string) (*flags, error) {
 	f := &flags{}
 	fs := flag.NewFlagSet("regress", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	fs.StringVar(&f.fixture, "fixture", "valid", "fixture name: valid, corrupt, boundary, gap")
+	fs.StringVar(&f.fixture, "fixture", "valid", "fixture name: valid, corrupt, boundary, gap, truncated-audio")
 	fs.StringVar(&f.file, "file", "", "read input from a file instead of generating a fixture")
 	fs.StringVar(&f.format, "format", "mp4", "fixture container: mp4 or mxf")
 	fs.IntVar(&f.sampleRate, "sample-rate", 48000, "target audio sample rate")

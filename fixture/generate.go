@@ -28,6 +28,8 @@ const (
 	NameCorrupt  = "corrupt"
 	NameBoundary = "boundary"
 	NameGap      = "gap"
+	// NameTruncatedAudio ends the audio track with a partial sample frame.
+	NameTruncatedAudio = "truncated-audio"
 )
 
 // Fixed profile constants shared by both container writers.
@@ -103,6 +105,8 @@ type Fixture struct {
 	DropSegment bool
 	// TruncateTimestamp marks inputs whose last sample timing entry is zeroed.
 	TruncateTimestamp bool
+	// PartialAudio marks inputs whose final audio block ends mid-frame.
+	PartialAudio bool
 }
 
 // AudioTrack returns the expected audio track info.
@@ -145,6 +149,8 @@ func Generate(opts Options) (*Fixture, error) {
 		spec.truncateTimestamp = true
 	case NameGap:
 		spec.dropSegment = true
+	case NameTruncatedAudio:
+		spec.partialAudio = true
 	default:
 		return nil, merr.New(merr.StageFixture, merr.KindParse, 0, 0, "unknown fixture %q", opts.Name)
 	}
@@ -172,6 +178,7 @@ func Generate(opts Options) (*Fixture, error) {
 		ExpectedConflicts: 2,
 		DropSegment:       spec.dropSegment,
 		TruncateTimestamp: spec.truncateTimestamp,
+		PartialAudio:      spec.partialAudio,
 	}
 	f.Tracks = []TrackInfo{
 		{
@@ -193,6 +200,7 @@ type spec struct {
 	corruptBlock      int
 	truncateTimestamp bool
 	dropSegment       bool
+	partialAudio      bool
 	format            Format
 }
 

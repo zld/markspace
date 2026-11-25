@@ -139,7 +139,14 @@ func buildMP4Essence(s *spec) (*mp4Essence, error) {
 	for i := 1; i <= AudioBlocks; i++ {
 		start := int64(i-1) * AudioBlockFrame
 		synthAudioBlock(block, start)
-		crc := crc32.ChecksumIEEE(block)
+		// The truncated-audio fixture's final block is stored three bytes
+		// short, so a reader sees a partial sample frame at the track end. Its
+		// checksum describes exactly the stored bytes.
+		stored := block
+		if s.partialAudio && i == AudioBlocks {
+			stored = block[:len(block)-3]
+		}
+		crc := crc32.ChecksumIEEE(stored)
 		if i == s.corruptBlock {
 			// Damage essence while the recorded checksum keeps describing the
 			// intact block: a half-written publication.
@@ -148,11 +155,11 @@ func buildMP4Essence(s *spec) (*mp4Essence, error) {
 			}
 		}
 		rel := int64(ess.videoBytes + (i-1)*audioBlockBytes)
-		ess.payload = append(ess.payload, block...)
+		ess.payload = append(ess.payload, stored...)
 		ess.blocks = append(ess.blocks, Block{
 			Index: i, TrackID: AudioTrackID,
 			StartFrame: start, Frames: AudioBlockFrame,
-			Offset: rel, Length: audioBlockBytes, CRC32: crc,
+			Offset: rel, Length: len(stored), CRC32: crc,
 		})
 		ess.crcs = append(ess.crcs, crc)
 	}

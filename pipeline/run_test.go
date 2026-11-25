@@ -194,3 +194,20 @@ func TestRunDropSegmentFailsVerification(t *testing.T) {
 		t.Fatal("dropped segment must fail verification")
 	}
 }
+
+func TestRunTruncatedAudioReportsTruncation(t *testing.T) {
+	_, data := fixtureData(t, fixture.NameTruncatedAudio, fixture.FormatMP4, 0)
+	res, err := Run(baseOptions(t, data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Summary.TruncatedBlocks != 1 {
+		t.Fatalf("truncated_blocks %d want 1", res.Summary.TruncatedBlocks)
+	}
+	if len(res.Manifest.Track.Segments) != fixture.AudioBlocks {
+		t.Fatalf("segments %d", len(res.Manifest.Track.Segments))
+	}
+	if errs := manifest.Verify(res.Manifest, res.Manifest.Track.Audio, true); len(errs) != 0 {
+		t.Fatalf("verify: %v", errs)
+	}
+}
