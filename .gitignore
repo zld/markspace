@@ -1,0 +1,10 @@
+# Working directories created by the mediavault demo/resume commands
+/tmp/
+tmp/
+
+# Compiled binaries
+/mediavault
+
+# Go test/coverage artifacts
+*.out
+coverage.txt
