@@ -193,9 +193,15 @@ func writeEdts(w *mp4.Writer, tc trackConfig, movieMS uint32) error {
 	if len(tc.track.Edits) > 0 {
 		mb := clock.Timebase{Timescale: 1000}
 		for _, e := range tc.track.Edits {
+			var mediaTime int32
+			if e.MediaTimeNS == -1 {
+				mediaTime = -1 // ISO BMFF empty-edit sentinel.
+			} else {
+				mediaTime = int32(clock.Timebase{Timescale: tc.track.Timescale}.FromNS(e.MediaTimeNS))
+			}
 			entries = append(entries, mp4.ElstEntry{
 				SegmentDurationV0: uint32(mb.FromNS(e.SegmentDurationNS)),
-				MediaTimeV0:       int32(clock.Timebase{Timescale: tc.track.Timescale}.FromNS(e.MediaTimeNS)),
+				MediaTimeV0:       mediaTime,
 				MediaRateInteger:  e.MediaRate,
 			})
 		}

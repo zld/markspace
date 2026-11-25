@@ -205,6 +205,16 @@ func convertEdits(elst *mp4.Elst, movieTS, mediaTS uint32) ([]EditMapping, int64
 	for i, e := range elst.Entries {
 		segUnits, mediaUnits := editUnits(elst.Version, &e)
 		segNS := mb.ToNS(segUnits)
+		if mediaUnits < 0 {
+			// Empty edit: this segment contributes movie-timeline delay and has
+			// no media-time mapping.
+			out = append(out, EditMapping{SegmentDurationNS: segNS, MediaTimeNS: -1, MediaRate: e.MediaRateInteger})
+			if i == 0 {
+				initialOffset = segNS
+			}
+			cursorNS += segNS
+			continue
+		}
 		mediaNS := mt.ToNS(mediaUnits)
 		out = append(out, EditMapping{SegmentDurationNS: segNS, MediaTimeNS: mediaNS, MediaRate: e.MediaRateInteger})
 		if i == 0 {

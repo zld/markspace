@@ -70,7 +70,7 @@ type Metrics struct {
 	ActualBitrate       float64 `json:"actual_bitrate"`
 	BitrateDeltaPct     float64 `json:"bitrate_delta_pct"`
 	VideoPSNR           string  `json:"video_psnr"`
-	VideoPSNRValue      float64 `json:"video_psnr_value"`
+	VideoPSNRValue      float64 `json:"-"`
 	AudioDiffSamples    int64   `json:"audio_diff_samples"`
 	ManifestAlignmentMS float64 `json:"manifest_alignment_ms"`
 }
