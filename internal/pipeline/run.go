@@ -70,6 +70,7 @@ func Run(cfg Config) (*Outcome, error) {
 			return out, fault.E(fault.StageJobs, fault.CodeCheckpointNotFound, "checkpoint does not contain scan state")
 		}
 		st.Config.Resume = true
+		st.Config.WorkDir = cfg.WorkDir
 		out.Resumed = true
 		out.ResumeFrom = cp.LastStage
 		src, err := ingest.ReadFile(absInput, ingest.ReadOptions{ID: InputRelPath})
