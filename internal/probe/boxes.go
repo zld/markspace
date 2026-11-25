@@ -83,10 +83,9 @@ func scanBoxTree(f *os.File, start, limit int64) ([]*boxNode, []fault.Interval) 
 		}
 		end, overflow := add64(cursor, size)
 		if overflow || end > limit {
-			in := byteFault(fault.ClassTruncated, cursor, min64(limit, cursor+headerSize),
+			in := byteFault(fault.ClassTruncated, cursor, limit,
 				"box %q declared end %d exceeds available end %d", boxType, end, limit)
 			in.Kind = "truncated_box"
-			in.ByteEnd = end
 			if overflow {
 				in.Class = fault.ClassBoxLength
 				in.Reject = true
