@@ -51,12 +51,18 @@ func TestChunkFailureRecoveryAndIdempotentSummary(t *testing.T) {
 			return nil
 		}},
 	})
+	if interrupted.ExitCode != 1 {
+		t.Fatalf("interrupted batch exit = %d, want 1", interrupted.ExitCode)
+	}
 	failed := find(interrupted, "a")
 	if failed == nil || failed.Status != audit.StatusChunkFailed {
 		t.Fatalf("expected chunk failure, got %+v", failed)
 	}
 
 	recovered := batch.RunManifest(m, batch.Options{WorkDir: work})
+	if recovered.ExitCode != 0 {
+		t.Fatalf("all-recovered batch exit = %d, want 0", recovered.ExitCode)
+	}
 	ok := find(recovered, "a")
 	if ok == nil || ok.Status != audit.StatusPass {
 		t.Fatalf("expected recovered pass, got %+v", ok)
