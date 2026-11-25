@@ -87,17 +87,20 @@ type SampleTime struct {
 }
 
 // TrackClock maps one track's tick timeline onto common-axis microseconds.
-// It keeps the raw tfdt tick and a high-period cycle count, so rollover is
-// absorbed exactly once and subsequent in-period samples stay ordinary.
+// It keeps both the raw tfdt tick and an unwrapped absolute tick (raw tick
+// plus accumulated rollover periods), so a genuine 32-bit rollover is
+// absorbed once and a later mid-window rollback is still recognised and
+// refused rather than mistaken for a second rollover.
 type TrackClock struct {
-	cfg        ClockConfig
-	scale      float64
-	lastRaw    uint64 // previous raw (pre-wrap) base tick
-	cycles     uint64 // accumulated full WrapWindowTicks+1 periods
-	prevEndUS  int64
-	started    bool
-	rollovers  int
-	driftAccum int64
+	cfg         ClockConfig
+	scale       float64
+	lastRaw     uint64 // previous raw (pre-wrap) base tick
+	lastAbsTick uint64 // previous unwrapped absolute base tick
+	cycles      uint64 // accumulated full WrapWindowTicks+1 periods
+	prevEndUS   int64
+	started     bool
+	rollovers   int
+	driftAccum  int64
 }
 
 // NewTrackClock builds a track clock.
@@ -120,23 +123,25 @@ func (c *TrackClock) DriftCorrectionUS() int64 { return c.driftAccum }
 // be mapped deterministically are flagged invalid rather than fabricated.
 func (c *TrackClock) MapTick(index int, base, duration uint64) SampleTime {
 	period := c.cfg.WrapWindowTicks + 1
+	topHalf := c.cfg.WrapWindowTicks / 2
 	st := SampleTime{Index: index}
 
-	if c.started && base < c.lastRaw {
-		// Backward raw tick. A genuine 32-bit rollover has two signatures:
-		// the previous raw tick sat in the top half of the window, and the
-		// implied forward span (old->boundary->new) stays within one window.
-		// A rollback in the middle of the window fails both and is refused.
-		forwardSpan := c.cfg.WrapWindowTicks - c.lastRaw + base
-		if c.lastRaw > c.cfg.WrapWindowTicks/2 && base <= c.cfg.WrapWindowTicks &&
-			forwardSpan <= c.cfg.WrapWindowTicks {
+	if c.started {
+		// Step 1: detect a genuine 32-bit rollover purely from the raw ticks —
+		// a drop from the top half of the window into the bottom half.
+		if base < c.lastRaw && c.lastRaw > topHalf && base <= topHalf {
 			c.cycles += period
 			c.rollovers++
 			st.AdjustUS = c.tickToUS(period)
-		} else {
+		}
+		// Step 2: compare on the unwrapped absolute axis. Any backward move
+		// here is an unexplained rollback (a real rollover was already
+		// compensated in step 1), so refuse it instead of inventing time.
+		absBase := c.cycles + base
+		if absBase < c.lastAbsTick {
 			st.Invalid = true
 			st.ErrCode = ErrTimeline
-			st.ErrMsg = "tfdt rollback without plausible 32-bit rollover"
+			st.ErrMsg = "tfdt rollback on the unwrapped absolute axis"
 			return st
 		}
 	}
@@ -155,6 +160,7 @@ func (c *TrackClock) MapTick(index int, base, duration uint64) SampleTime {
 	}
 	c.started = true
 	c.lastRaw = base
+	c.lastAbsTick = absBase
 	c.prevEndUS = st.EndUS
 	return st
 }
@@ -179,6 +185,27 @@ func (c *TrackClock) CheckDrift(mediaElapsedUS, refElapsedUS int64) (int64, erro
 			"clock drift %d ppm exceeds limit %d ppm", ppm, c.cfg.DriftPPMMax)
 	}
 	return ppm, nil
+}
+
+// DriftPPM measures the drift between the media timeline and an external
+// reference over a whole span: it compares the media-axis span the clock
+// produced for [firstRaw,lastRaw] ticks against a reference elapsed duration
+// in microseconds. A reference of zero means none is available, so it returns
+// 0. Bounds violations are reported as ErrTimeline, never papered over.
+func (c *TrackClock) DriftPPM(firstRaw, lastRaw uint64, refElapsedUS int64) (int64, error) {
+	if refElapsedUS <= 0 || lastRaw <= firstRaw {
+		return 0, nil
+	}
+	mediaUS := c.tickToUS(lastRaw - firstRaw)
+	return c.CheckDrift(mediaUS, refElapsedUS)
+}
+
+// SpanUS returns the common-axis span between two raw tick values.
+func (c *TrackClock) SpanUS(firstRaw, lastRaw uint64) int64 {
+	if lastRaw <= firstRaw {
+		return 0
+	}
+	return c.tickToUS(lastRaw - firstRaw)
 }
 
 func abs64(v int64) int64 {
