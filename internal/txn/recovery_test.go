@@ -137,6 +137,46 @@ func TestInjectedFailureRollsBackAndRecommitsSameDigest(t *testing.T) {
 	}
 }
 
+func TestRecoveryIsIdempotentAcrossReopens(t *testing.T) {
+	dir := t.TempDir()
+	contentFP, idx := prepareGood(t)
+	store, err := index.OpenStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mgr, _ := txn.NewManager(dir)
+	txid, seq, _ := mgr.Begin()
+	a := store.NewArtifact(txid, contentFP, seq)
+	if err := store.WriteStaging(&a, idx); err != nil {
+		t.Fatal(err)
+	}
+	if err := mgr.RecordPrepared(a); err != nil {
+		t.Fatal(err)
+	}
+	mgr.Close()
+
+	openAndRecover := func() txn.RecoveryResult {
+		m, err := txn.NewManager(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer m.Close()
+		res, err := m.Recover(store)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res
+	}
+	first := openAndRecover()
+	if len(first.RolledBack) != 1 {
+		t.Fatalf("first recovery=%+v", first)
+	}
+	second := openAndRecover()
+	if len(second.RolledBack) != 0 || len(second.RolledForward) != 0 {
+		t.Fatalf("second recovery must be a no-op, got %+v", second)
+	}
+}
+
 func TestRecoveryRollsForwardCommittedUnapplied(t *testing.T) {
 	dir := t.TempDir()
 	contentFP, idx := prepareGood(t)

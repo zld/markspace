@@ -127,12 +127,15 @@ func (m *Manager) Recover(p Publisher) (RecoveryResult, error) {
 		rs := byTx[id]
 		var commit, prepared *Record
 		applied := false
+		rolledBack := false
 		for i := range rs {
 			switch rs[i].Type {
 			case RecCommit:
 				commit = &rs[i]
 			case RecApplied:
 				applied = true
+			case RecRollback:
+				rolledBack = true
 			case RecPrepareIndex:
 				prepared = &rs[i]
 			}
@@ -145,7 +148,7 @@ func (m *Manager) Recover(p Publisher) (RecoveryResult, error) {
 			}
 			_, _ = m.wal.Append(Record{Type: RecApplied, TxnID: id, Seq: commit.Seq, Reason: "recovery-rollforward"})
 			res.RolledForward = append(res.RolledForward, id)
-		case commit == nil && prepared != nil:
+		case commit == nil && prepared != nil && !rolledBack:
 			a := artifactFrom(*prepared)
 			if err := p.DiscardStaging(a); err != nil {
 				return res, errmodel.New(errmodel.ErrRecovery, "rollback %s failed: %v", id, err)
