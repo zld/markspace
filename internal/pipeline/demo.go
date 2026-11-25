@@ -56,6 +56,7 @@ func RunDemo(ctx context.Context, opts Options) (*report.Report, error) {
 		Out:             opts.Out,
 		Platform:        "multi-platform",
 		InputSHA256:     fx.SourceSHA256,
+		FrameSHA256:     index.SHA256Hex(fx.Frame),
 		ReusedAssets:    len(plan.Reused),
 		RebuiltAssets:   len(plan.Rebuilt),
 		ReusedAssetIDs:  decisionIDs(plan.Reused),
@@ -132,6 +133,14 @@ func RunDemo(ctx context.Context, opts Options) (*report.Report, error) {
 	if ver != nil {
 		rep.AlignmentErrorMS = ver.AlignmentErrorMS
 		rep.MaxTickError = ver.MaxTickError
+		rep.Boundary = &report.BoundaryResult{
+			LayerCount:        ver.LayerCount,
+			SegmentCount:      ver.SegmentCount,
+			ValidatedSegments: ver.ValidatedSegments,
+			AlignmentErrorMS:  ver.AlignmentErrorMS,
+			MaxTickError:      ver.MaxTickError,
+			Passed:            verifyErr == nil,
+		}
 	}
 	if verifyErr != nil {
 		fr := failureReport(verifyErr)
@@ -141,6 +150,10 @@ func RunDemo(ctx context.Context, opts Options) (*report.Report, error) {
 			var fe *fault.Error
 			if errors.As(verifyErr, &fe) {
 				rep.MaxTickError = fe.Offset
+				if rep.Boundary != nil {
+					rep.Boundary.MaxTickError = fe.Offset
+					rep.Boundary.AlignmentErrorMS = clock.Ticks(fe.Offset).Milliseconds()
+				}
 			}
 		}
 		_ = store.Save()
@@ -149,7 +162,12 @@ func RunDemo(ctx context.Context, opts Options) (*report.Report, error) {
 
 	rep.OK = true
 	rep.Published = false
-	rep.Version = recovery.NextVersion(opts.Out)
+	idempotentReuse := len(plan.Rebuilt) == 0
+	if idempotentReuse {
+		rep.Version = recovery.CurrentVersion(opts.Out)
+	} else {
+		rep.Version = recovery.NextVersion(opts.Out)
+	}
 	pre, err := report.CanonicalBytes(rep)
 	if err != nil {
 		return rep, err
@@ -159,7 +177,12 @@ func RunDemo(ctx context.Context, opts Options) (*report.Report, error) {
 	if err != nil {
 		return rep, err
 	}
-	if _, err := recovery.Publish(opts.Out, final); err != nil {
+	if idempotentReuse {
+		if err := recovery.WriteCurrent(opts.Out, final); err != nil {
+			rep.Failure = failureReport(err)
+			return rep, err
+		}
+	} else if _, err := recovery.Publish(opts.Out, final); err != nil {
 		rep.Failure = failureReport(err)
 		return rep, err
 	}
