@@ -120,6 +120,11 @@ func WriteAtomicVerified(path string, data []byte) (string, error) {
 	return want, nil
 }
 
+func hashBytes(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
 // HashFile returns the SHA-256 content hash of path.
 func HashFile(path string) (string, error) {
 	f, err := os.Open(path)
