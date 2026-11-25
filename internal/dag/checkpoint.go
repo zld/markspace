@@ -89,6 +89,26 @@ func (c *Checkpoint) NodeState(key string) (State, bool) {
 	return st, ok
 }
 
+// ResetStageNodes clears pipeline node states while leaving the segment
+// ledger intact. Every engine run replays its stages; the ledger (not the
+// node states) is the idempotency authority that prevents double-committing
+// segments. It returns the number of node entries removed.
+func (c *Checkpoint) ResetStageNodes(keys ...string) (int, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	removed := 0
+	for _, k := range keys {
+		if _, ok := c.d.Nodes[k]; ok {
+			delete(c.d.Nodes, k)
+			removed++
+		}
+	}
+	if removed == 0 {
+		return 0, nil
+	}
+	return removed, c.saveLocked()
+}
+
 // SetInputOffset persists how far a node has consumed its input.
 func (c *Checkpoint) SetInputOffset(node string, offset int64) error {
 	c.mu.Lock()

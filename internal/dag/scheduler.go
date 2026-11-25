@@ -100,14 +100,17 @@ func (s *Scheduler) Execute(ctx context.Context) ([]Result, error) {
 				Err: fmt.Errorf("%w: %s", model.ErrBlocked, blocker)}
 			results = append(results, res)
 			done[k] = StateFailed
+			_ = cp.MarkNode(k, StateFailed) // best effort: surface the block durably
 			if firstErr == nil {
 				firstErr = res.Err
 			}
 			continue
 		}
+		_ = cp.MarkNode(k, StateRunning)
 		done[k] = StateRunning
 		if err := n.Run(ctx, cp); err != nil {
 			done[k] = StateFailed
+			_ = cp.MarkNode(k, StateFailed)
 			results = append(results, Result{Key: k, State: StateFailed, Err: err})
 			if firstErr == nil {
 				firstErr = err
@@ -115,6 +118,10 @@ func (s *Scheduler) Execute(ctx context.Context) ([]Result, error) {
 			continue
 		}
 		done[k] = StateSucceeded
+		if err := cp.MarkNode(k, StateSucceeded); err != nil {
+			results = append(results, Result{Key: k, State: StateFailed, Err: err})
+			return results, err
+		}
 		results = append(results, Result{Key: k, State: StateSucceeded})
 	}
 	return results, firstErr

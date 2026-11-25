@@ -73,6 +73,12 @@ func Run(ctx context.Context, cfg Config) (*Report, error) {
 	cpPath := filepath.Join(cfg.OutDir, "checkpoint.json")
 	cp, loadErr := dag.LoadCheckpoint(cpPath)
 	resuming := loadErr == nil
+	// Stage node states describe one run and are replayed every time; clear
+	// them up front so the scheduler never skips a stage. The segment ledger
+	// is untouched and remains the authority for idempotent commits.
+	if _, err := cp.ResetStageNodes("parse", "segment", "manifest", "interrupted"); err != nil {
+		return nil, err
+	}
 	// Capture the resume origin before the run appends new ledger entries.
 	resumeOrigin := 0
 	if resuming {
@@ -221,18 +227,69 @@ func Run(ctx context.Context, cfg Config) (*Report, error) {
 		}
 	}()
 
-	consumerErr := runConsumer(ctx, cfg, queue, ct, psi, routing, reps, stream, base, align, muxer, cp, recordCorrupt, recordBlocker)
-	close(stop) // release a producer potentially blocked on the full queue
-	pErr := <-prodErr
-	cErr := consumerErr
-	if err := errors.Join(pErr, cErr); err != nil && !errors.Is(err, errInterrupt) {
-		return nil, classifyFailure(err)
+	// The three high-level stages run as a DAG: parse -> segment -> manifest.
+	// dag.Scheduler guarantees a node runs only after its dependencies
+	// succeeded and records each state in the checkpoint, so a resumed run
+	// skips completed stages and a blocked node names its first blocker.
+	var interrupted bool
+	var sealedManifest *segment.Manifest
+	sched := dag.NewScheduler(cp)
+
+	sched.Add(dag.Node{Key: "parse", Run: func(ctx context.Context, _ *dag.Checkpoint) error {
+		consumerErr := runConsumer(ctx, cfg, queue, ct, psi, routing, reps, stream, base, align, muxer, cp, recordCorrupt, recordBlocker)
+		close(stop) // release a producer potentially blocked on the full queue
+		pErr := <-prodErr
+		cErr := consumerErr
+		if err := errors.Join(pErr, cErr); err != nil {
+			if errors.Is(err, errInterrupt) {
+				interrupted = true // expected state, not a node failure
+				return nil
+			}
+			return classifyFailure(err)
+		}
+		return nil
+	}})
+
+	sched.Add(dag.Node{Key: "segment", Deps: []string{"parse"}, Run: func(ctx context.Context, cp *dag.Checkpoint) error {
+		if interrupted {
+			return nil
+		}
+		for _, r := range reps {
+			if d := r.cutter.Flush(); d != nil {
+				if err := finalizeSegment(r, d, muxer, cp, base); err != nil {
+					return err
+				}
+			}
+		}
+		return align.Validate()
+	}})
+
+	sched.Add(dag.Node{Key: "manifest", Deps: []string{"segment"}, Run: func(ctx context.Context, cp *dag.Checkpoint) error {
+		if interrupted {
+			return nil
+		}
+		manifest, err := buildManifest(base, repMeta, reps, align, corruption, cp)
+		if err != nil {
+			return err
+		}
+		if err := manifest.Seal(); err != nil {
+			return err
+		}
+		raw, err := manifest.Marshal()
+		if err != nil {
+			return err
+		}
+		sealedManifest = manifest
+		return atomicWrite(filepath.Join(cfg.OutDir, "manifest.json"), raw)
+	}})
+
+	if _, err := sched.Execute(ctx); err != nil {
+		return nil, err
 	}
 
-	// Flush the open segment of every representation at clean EOF. An
-	// interrupted run deliberately leaves the open segment uncommitted and
-	// writes no manifest: resume replays and finishes the remaining work.
-	if errors.Is(cErr, errInterrupt) {
+	// An interrupted run commits nothing further and writes no manifest:
+	// resume replays and finishes the remaining work deterministically.
+	if interrupted {
 		if err := cp.MarkNode("interrupted", dag.StateSucceeded); err != nil {
 			return nil, err
 		}
@@ -245,35 +302,8 @@ func Run(ctx context.Context, cfg Config) (*Report, error) {
 			AffectedPID:         firstCorruptPID(firstCorrupt),
 		}, ErrInterrupted
 	}
-	for _, r := range reps {
-		if d := r.cutter.Flush(); d != nil {
-			if err := finalizeSegment(r, d, muxer, cp, base); err != nil {
-				return nil, err
-			}
-		}
-	}
 
-	if err := align.Validate(); err != nil {
-		return nil, err
-	}
-
-	// Build the manifest from the checkpoint ledger plus descriptors, then
-	// seal it with its self-describing digest before persisting.
-	manifest, err := buildManifest(base, repMeta, reps, align, corruption, cp)
-	if err != nil {
-		return nil, err
-	}
-	if err := manifest.Seal(); err != nil {
-		return nil, err
-	}
-	manifestRaw, err := manifest.Marshal()
-	if err != nil {
-		return nil, err
-	}
-	manifestPath := filepath.Join(cfg.OutDir, "manifest.json")
-	if err := atomicWrite(manifestPath, manifestRaw); err != nil {
-		return nil, err
-	}
+	manifest := sealedManifest
 	manifestSHA := manifest.ManifestSHA256
 
 	report := &Report{
@@ -297,10 +327,6 @@ func Run(ctx context.Context, cfg Config) (*Report, error) {
 	if resuming {
 		report.ResumedFromSegment = resumeOrigin
 		report.ResumeMs = time.Since(start).Milliseconds()
-	}
-	// Persist a node-level marker so the DAG view shows completion.
-	if err := cp.MarkNode("manifest", dag.StateSucceeded); err != nil {
-		return nil, err
 	}
 	return report, nil
 }
