@@ -2,6 +2,7 @@ package mediakernel
 
 import (
 	"bytes"
+	"math"
 	"testing"
 )
 
@@ -134,4 +135,94 @@ func joinFrames(frames [][]byte) []byte {
 		buf.Write(f)
 	}
 	return buf.Bytes()
+}
+
+func TestBitrateSpecCheck(t *testing.T) {
+	pass := BitrateSpecCheck("a", 100_000, 102_000, 0.05)
+	if !pass.Pass || math.Abs(pass.RelativeDeviation-0.02) > 1e-12 {
+		t.Fatalf("2%% over target within 5%% must pass: %+v", pass)
+	}
+	fail := BitrateSpecCheck("b", 100_000, 110_000, 0.05)
+	if fail.Pass || math.Abs(fail.RelativeDeviation-0.10) > 1e-12 {
+		t.Fatalf("10%% over must fail: %+v", fail)
+	}
+	under := BitrateSpecCheck("c", 100_000, 90_000, 0.05)
+	if under.Pass {
+		t.Fatal("10% under target must fail")
+	}
+	zero := BitrateSpecCheck("d", 0, 0, 0.05)
+	if !zero.Pass || zero.RelativeDeviation != 0 {
+		t.Fatal("zero/zero must pass with zero deviation")
+	}
+	noTarget := BitrateSpecCheck("e", 0, 1000, 0.05)
+	if noTarget.Pass || !math.IsInf(noTarget.RelativeDeviation, 1) {
+		t.Fatal("bitrate with no target must fail with +Inf deviation")
+	}
+}
+
+func TestEffectiveBps(t *testing.T) {
+	// 1000 bytes over one second at 48 kHz => 8000 bps.
+	if got := EffectiveBps(1000, 48000, NewClock(DefaultClockRate)); got != 8000 {
+		t.Fatalf("got %v bps, want 8000", got)
+	}
+	if got := EffectiveBps(1000, 0, NewClock(DefaultClockRate)); got != 0 {
+		t.Fatalf("zero duration must yield 0 bps, got %v", got)
+	}
+}
+
+func TestSNRProxy(t *testing.T) {
+	// 100/1 => 20 dB exactly.
+	q := SNRProxy("x", true, 100, 1)
+	if !q.Applicable || q.SNRProxyDB == nil || math.Abs(*q.SNRProxyDB-20) > 1e-12 {
+		t.Fatalf("want 20 dB, got %+v", q)
+	}
+	// Unprocessed asset: not applicable with a reason.
+	skip := SNRProxy("y", false, 100, 1)
+	if skip.Applicable || skip.SNRProxyDB != nil || skip.Reason == "" {
+		t.Fatalf("unprocessed asset must report N/A reason: %+v", skip)
+	}
+	// Zero noise: lossless path, not applicable.
+	lossless := SNRProxy("z", true, 50, 0)
+	if lossless.Applicable || lossless.Reason == "" {
+		t.Fatalf("zero-noise must be N/A: %+v", lossless)
+	}
+	// Determinism: same inputs, same score.
+	q2 := SNRProxy("x", true, 100, 1)
+	if *q.SNRProxyDB != *q2.SNRProxyDB {
+		t.Fatal("SNR proxy must be reproducible")
+	}
+}
+
+func TestSubtitleAlignmentAndSummary(t *testing.T) {
+	clock := NewClock(DefaultClockRate)
+	source := DigestBytes([]byte("source"))
+	audio := TimeRange{StartTicks: 0, EndTicks: 48000} // 0..1000 ms
+
+	// Subtitle 48 ticks (1 ms) late on both edges.
+	subLate := TimeRange{StartTicks: 48, EndTicks: 48048}
+	item := CheckSubtitleAlignment("s1", audio, subLate, clock, 5, source)
+	if !item.Pass || math.Abs(item.StartErrorMs-1) > 1e-9 || math.Abs(item.EndErrorMs-1) > 1e-9 {
+		t.Fatalf("1ms late within 5ms must pass: %+v", item)
+	}
+	if !item.SourceDigest.Equal(source) {
+		t.Fatal("alignment item must carry source digest")
+	}
+
+	// 480 ticks = 10 ms early, beyond tolerance.
+	subEarly := TimeRange{StartTicks: -480, EndTicks: 47520}
+	bad := CheckSubtitleAlignment("s2", audio, subEarly, clock, 5, source)
+	if bad.Pass || bad.AbsMaxErrorMs != 10 || bad.StartErrorMs != -10 {
+		t.Fatalf("10ms early must fail with signed error: %+v", bad)
+	}
+
+	summary := SummarizeAlignment([]SubtitleAlignment{item, bad})
+	if summary.Checked != 2 || summary.Failed != 1 || summary.MaxErrorMs != 10 {
+		t.Fatalf("summary wrong: %+v", summary)
+	}
+	if math.Abs(summary.AverageErrorMs-5.5) > 1e-9 {
+		t.Fatalf("average = %v, want 5.5", summary.AverageErrorMs)
+	}
+	if s := SummarizeAlignment(nil); s.Checked != 0 || s.MaxErrorMs != 0 || s.AverageErrorMs != 0 {
+		t.Fatalf("empty summary must be zero-valued: %+v", s)
+	}
 }
