@@ -109,10 +109,15 @@ func Run(cfg RunConfig) (*RunResult, error) {
 	if cfg.TaskKey == "" {
 		return nil, fmt.Errorf("empty task key")
 	}
+	seenNames := make(map[string]bool, len(cfg.Events))
 	for _, ev := range cfg.Events {
 		if ev.Name == "" {
 			return nil, fmt.Errorf("event with empty name")
 		}
+		if seenNames[ev.Name] {
+			return nil, fmt.Errorf("duplicate event name %q", ev.Name)
+		}
+		seenNames[ev.Name] = true
 	}
 	digest, err := inputDigest(cfg)
 	if err != nil {

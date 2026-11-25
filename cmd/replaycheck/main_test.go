@@ -300,3 +300,24 @@ func TestEventNeedingMissingPayloadIsRefused(t *testing.T) {
 		t.Fatalf("error does not name the missing byte %d: %v", fs.CutMP4BadOffset, err)
 	}
 }
+
+func TestDuplicateEventNamesRejected(t *testing.T) {
+	dir := t.TempDir()
+	fs, err := buildFixtures(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := RunConfig{
+		TaskKey: "test/dup-events", WAVPath: fs.NormalWAV, MP4Path: fs.NormalMP4,
+		Events: []clip.Event{
+			{Name: "same", StartTick: 90000, EndTick: 120000},
+			{Name: "same", StartTick: 150000, EndTick: 180000},
+		},
+		RTPTrace: fs.CleanTrace, OutDir: filepath.Join(dir, "out", "d"),
+		StateDir: filepath.Join(dir, "state"), CkptDir: filepath.Join(dir, "ckpt"),
+		ClockRate: videoRate,
+	}
+	if _, err := Run(cfg); err == nil {
+		t.Fatal("duplicate event names should be rejected")
+	}
+}
