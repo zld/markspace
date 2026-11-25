@@ -92,7 +92,7 @@ func runDemo(args []string) int {
 
 	plan := rtptrace.Plan{
 		Seed: 13, LossRate: 0.2,
-		DuplicateAt: []int{2}, ReorderAt: []int{4},
+		DuplicateAt: []int{7}, ReorderAt: []int{11},
 	}
 	allMatched := true
 	for _, tc := range demoCases() {

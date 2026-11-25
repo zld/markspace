@@ -65,7 +65,7 @@ func runSingle(args []string) int {
 	}
 	plan := rtptrace.Plan{
 		Seed: *seed, LossRate: *loss,
-		DuplicateAt: []int{3}, ReorderAt: []int{6},
+		DuplicateAt: []int{7}, ReorderAt: []int{11},
 	}
 	rep, err := pipeline.Run(*input, *out, plan)
 	if rep != nil {
