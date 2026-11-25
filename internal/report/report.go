@@ -139,11 +139,10 @@ func Write(w io.Writer, r *Run) error {
 			p.line("  %s", f.Error())
 		}
 	}
-	digest, canonical := Summarize(r, faults)
+	digest, _ := Summarize(r, faults)
 	p.line("")
 	p.line("summary digest %s:%016x", SummaryDigestVersion, digest)
 	p.line("result         %s", verdictName(r.Verdict()))
-	_ = canonical
 	return p.err
 }
 
