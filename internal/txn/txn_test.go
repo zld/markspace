@@ -204,3 +204,60 @@ func TestTempFilesAreOwnerOnly(t *testing.T) {
 		t.Fatalf("output perm = %o, want %o", perm, privateFileMode)
 	}
 }
+
+func TestCreateWALRejectsCorruptRecord(t *testing.T) {
+	dir := t.TempDir()
+	// Pre-create a WAL with a malformed line.
+	if err := os.WriteFile(filepath.Join(dir, "wal.jsonl"), []byte("{not json}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := CreateWAL(dir, "input-x")
+	var me *timeline.MediaError
+	if !errors.As(err, &me) || me.Code != timeline.ErrRecovery {
+		t.Fatalf("corrupt WAL must be ErrRecovery, got %v", err)
+	}
+}
+
+func TestAppendRejectsForeignInputDigest(t *testing.T) {
+	dir := t.TempDir()
+	wal, err := CreateWAL(dir, "input-bound")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = wal.Append(Record{Stage: StageParse, InputSHA: "input-other"})
+	var me *timeline.MediaError
+	if !errors.As(err, &me) || me.Code != timeline.ErrRecovery {
+		t.Fatalf("foreign digest append must fail, got %v", err)
+	}
+}
+
+func TestBytesSHA256Deterministic(t *testing.T) {
+	if BytesSHA256([]byte("abc")) != BytesSHA256(append([]byte{}, "abc"...)) {
+		t.Fatal("identical bytes must hash identically")
+	}
+	if BytesSHA256([]byte("abc")) == BytesSHA256([]byte("abd")) {
+		t.Fatal("different bytes must hash differently")
+	}
+}
+
+func TestAtomicRenameReplacesDestination(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src")
+	dst := filepath.Join(dir, "dst")
+	if err := os.WriteFile(src, []byte("new"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dst, []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := atomicRename(src, dst); err != nil {
+		t.Fatalf("atomicRename: %v", err)
+	}
+	got, err := os.ReadFile(dst)
+	if err != nil || string(got) != "new" {
+		t.Fatalf("destination not replaced: %q err=%v", got, err)
+	}
+	if _, err := os.Stat(src); !os.IsNotExist(err) {
+		t.Fatal("source must be gone after rename")
+	}
+}
