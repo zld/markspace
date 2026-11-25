@@ -95,15 +95,17 @@ func Write(w io.Writer, r *Run) error {
 		for _, in := range idx.Inputs {
 			p.line("  %-12s %s:%s (%d bytes)", in.Name, in.Digest.Algorithm, in.Digest.Value, in.Digest.Size)
 		}
-		if idx.Rebuilt {
+		switch {
+		case r.State.Stale && r.State.Rebuilt:
+			p.line("index stale    yes, rebuilt (%s)", r.State.Reason)
+		case r.State.Rebuilt:
 			p.line("index rebuilt  yes (%s)", r.State.Reason)
-		} else if r.State.Loaded {
+		case r.State.Reused:
 			p.line("index reused   %s", r.State.Path)
-		} else {
+		case r.State.Loaded:
+			p.line("index loaded   %s", r.State.Path)
+		default:
 			p.line("index built    in memory")
-		}
-		if r.State.Stale {
-			p.line("index stale    yes (%s)", r.State.Reason)
 		}
 		if len(idx.Tracks) > 0 {
 			p.line("tracks/frags   %d tracks, %d fragments, %d packets", len(idx.Tracks), len(idx.Fragments), len(idx.Packets))

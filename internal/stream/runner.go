@@ -40,6 +40,7 @@ type Outcome struct {
 	Confirmed int
 	Failed    int
 	Skipped   int
+	Aborted   bool
 	FirstFail *fault.Error
 	ByteDev   int64
 	TimeDev   clock.Nanos
@@ -56,13 +57,12 @@ func Run(idx *index.Index, mp4 []byte) *Outcome {
 		return out
 	}
 	if !idx.Complete {
-		// A partial scan still streams its confirmed container records; the
-		// earliest scan fault becomes this run's first failure.
+		// A partial scan still streams its confirmed container records. The
+		// scan fault is already reported by the scanner; the stream only
+		// records that the run stopped early.
+		out.Aborted = true
 		if len(idx.Faults) > 0 {
-			out.fail(idx.Faults[0])
-		} else {
-			out.fail(fault.New(fault.StageStream, "stream.index_incomplete", fault.NoOffset, clock.Invalid,
-				"index did not complete its scan"))
+			out.FirstFail = idx.Faults[0]
 		}
 	}
 	packets := packetIndex(idx)
