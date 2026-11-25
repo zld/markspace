@@ -86,6 +86,7 @@ func (r *run) emitManifest() error {
 		r.out.Emit(report.KindDiff, diff)
 	}
 	r.fillResult()
+	r.result.Valid = rep.Valid
 	if verr != nil {
 		return verr
 	}
@@ -98,7 +99,6 @@ func (r *run) fillResult() {
 	r.result.TotalBytes = r.man.TotalBytes
 	r.result.Segments = len(r.man.Segments)
 	r.result.MinQualityPPM = r.man.MinQualityPPM
-	r.result.Valid = len(r.man.Segments) > 0
 }
 
 func readManifest(path string) (*manifest.Manifest, error) {
