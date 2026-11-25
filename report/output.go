@@ -65,7 +65,8 @@ type Summary struct {
 	IsolatedRanges   []RangeReport           `json:"isolated_ranges"`
 	Repairs          []RepairEvidence        `json:"recovery_evidence"`
 	ErrorCode        string                  `json:"error_code,omitempty"`
-	ErrorOffset      *int64                  `json:"error_offset,omitempty"`
+	ErrorOffset      *int64                  `json:"error_offset"`
+	severity         int                     `json:"-"`
 }
 
 // Build assembles the summary from pipeline outputs. Inputs keep their
@@ -120,15 +121,35 @@ func Build(
 }
 
 // AttachError records a structured error offset/code for damaged runs.
+// Errors are ranked by severity: an unrecoverable failure is never
+// overwritten by a lower-severity metadata/parse observation. The first
+// error at a given severity is retained so original offsets survive.
 func (s *Summary) AttachError(err error) {
 	le, ok := media.AsLocatable(err)
 	if !ok {
 		return
 	}
-	s.ErrorCode = le.Code
-	if le.Offset >= 0 {
-		off := le.Offset
-		s.ErrorOffset = &off
+	if s.severity < severity(le.Kind) ||
+		(s.severity == severity(le.Kind) && s.ErrorCode == "") {
+		s.ErrorCode = le.Code
+		if le.Offset >= 0 {
+			off := le.Offset
+			s.ErrorOffset = &off
+		}
+		s.severity = severity(le.Kind)
+	}
+}
+
+func severity(k media.Kind) int {
+	switch k {
+	case media.KindUnrecoverable:
+		return 3
+	case media.KindConflict:
+		return 2
+	case media.KindUnsupported:
+		return 1
+	default:
+		return 0
 	}
 }
 

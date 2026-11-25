@@ -53,7 +53,8 @@ func ReadMP4(r io.ReadSeeker, size int64) (*MP4Metadata, error) {
 			"input %d bytes exceeds cap %d", size, media.MaxInputBytes)
 	}
 	md := &MP4Metadata{}
-	var stack []*MP4Track // current trak nesting, outermost last
+	var stack []*MP4Track   // current trak nesting, outermost last
+	lastGoodEnd := int64(0) // declared end of the last fully parsed box
 	var handler mp4.ReadHandler
 
 	handler = func(h *mp4.ReadHandle) (interface{}, error) {
@@ -62,6 +63,14 @@ func ReadMP4(r io.ReadSeeker, size int64) (*MP4Metadata, error) {
 		if err != nil {
 			return nil, media.NewError(media.KindBadInput, "TRUNCATED_BOX", "mp4", off,
 				"box %s: %v", h.BoxInfo.Type.String(), err)
+		}
+		// Only leaf boxes carry fully-consumed payload; container boxes
+		// (moov/trak/mdia) declare an end beyond their parsed children and
+		// must not count as complete when the walk truncates inside them.
+		if !isContainerBox(h.BoxInfo.Type) {
+			if end := off + int64(h.BoxInfo.Size); end > lastGoodEnd {
+				lastGoodEnd = end
+			}
 		}
 
 		trakDepth := len(stack)
@@ -108,16 +117,42 @@ func ReadMP4(r io.ReadSeeker, size int64) (*MP4Metadata, error) {
 		return box, nil
 	}
 
-	if _, err := mp4.ReadBoxStructure(r, handler); err != nil && err != io.EOF {
-		if _, ok := media.AsLocatable(err); ok {
-			return nil, err
+	_, parseErr := mp4.ReadBoxStructure(r, handler)
+	if parseErr != nil && parseErr != io.EOF {
+		if _, ok := media.AsLocatable(parseErr); ok {
+			return nil, parseErr
 		}
-		return nil, media.NewError(media.KindBadInput, "MP4_PARSE_FAILED", "mp4", -1, "%v", err)
+		return nil, media.NewError(media.KindBadInput, "MP4_PARSE_FAILED", "mp4", -1, "%v", parseErr)
+	}
+	pos, perr := r.Seek(0, io.SeekCurrent)
+	// Leaf-box accounting is the reliable truncation signal: buffered
+	// readers make the raw seek position equal the declared size even when
+	// the walk ended inside a container box. A zero lastGoodEnd means no leaf
+	// box was ever parsed (e.g. a lone ftyp whose top-level handler the
+	// library skips), which is a trackless file rather than truncation.
+	if parseErr == io.EOF && lastGoodEnd > 0 && lastGoodEnd < size {
+		return nil, media.NewError(media.KindBadInput, "TRUNCATED_BOX", "mp4", lastGoodEnd,
+			"stream ended inside a box; last complete box ended at byte %d of %d", lastGoodEnd, size)
+	}
+	// Non-buffered readers may still expose the gap via the seek position.
+	if perr == nil && pos < size {
+		return nil, media.NewError(media.KindBadInput, "TRUNCATED_BOX", "mp4", pos,
+			"stream ended %d bytes before the declared size", size-pos)
 	}
 	if len(md.Tracks) == 0 {
 		return nil, media.NewError(media.KindBadInput, "NO_TRACKS", "mp4", -1, "no trak boxes found")
 	}
 	return md, nil
+}
+
+// isContainerBox reports boxes whose payload is itself a sequence of boxes.
+func isContainerBox(t mp4.BoxType) bool {
+	switch t {
+	case mp4.BoxTypeMoov(), mp4.BoxTypeTrak(), mp4.BoxTypeMdia(),
+		mp4.BoxTypeMinf(), mp4.BoxTypeStbl(), mp4.BoxTypeUdta():
+		return true
+	}
+	return false
 }
 
 func colrCandidate(b *mp4.Colr) meta.Candidate {

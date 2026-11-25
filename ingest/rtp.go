@@ -4,6 +4,7 @@ package ingest
 
 import (
 	"io"
+	"os"
 	"time"
 
 	"github.com/pion/rtp"
@@ -12,6 +13,24 @@ import (
 	"rtpreplay/internal/rtplog"
 	"rtpreplay/media"
 )
+
+// ParseRTPFile opens an rtplog file with size bounds and parses one stream.
+func ParseRTPFile(path string, rate uint32, bitrateKbps int) (*Stream, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, media.NewError(media.KindBadInput, "STAT_FAILED", "rtp", -1, "%v", err)
+	}
+	if info.Size() > media.MaxInputBytes {
+		return nil, media.NewError(media.KindBadInput, "INPUT_TOO_LARGE", "rtp", -1,
+			"file %d bytes exceeds cap %d", info.Size(), media.MaxInputBytes)
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, media.NewError(media.KindBadInput, "OPEN_FAILED", "rtp", -1, "%v", err)
+	}
+	defer f.Close()
+	return ParseRTPStream(f, info.Size(), rate, bitrateKbps)
+}
 
 // Packet couples a parsed RTP packet with its record position and its
 // position on the representation's unwrapped clock.

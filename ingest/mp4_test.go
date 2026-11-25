@@ -185,9 +185,20 @@ func TestReadMP4SizeCap(t *testing.T) {
 }
 
 func TestReadMP4NoTracks(t *testing.T) {
-	data := (&boxBuilder{}).rawBox("ftyp", []byte("isom"))
+	// A structurally complete file (valid ftyp + empty moov) with no trak boxes.
+	moov := (&boxBuilder{}).rawBox("moov", nil)
+	data := append((&boxBuilder{}).rawBox("ftyp", append([]byte("isom"), make([]byte, 8)...)), moov...)
 	_, err := ReadMP4(bytes.NewReader(data), int64(len(data)))
 	if le, ok := media.AsLocatable(err); !ok || le.Code != "NO_TRACKS" {
 		t.Fatalf("got %v", err)
+	}
+}
+
+func TestReadMP4LoneFtypIsNotTruncated(t *testing.T) {
+	// A lone ftyp box is structurally valid; it simply contains no tracks.
+	data := (&boxBuilder{}).rawBox("ftyp", []byte("isom"))
+	_, err := ReadMP4(bytes.NewReader(data), int64(len(data)))
+	if le, ok := media.AsLocatable(err); !ok || le.Code != "NO_TRACKS" {
+		t.Fatalf("lone ftyp must be a valid trackless file, got %v", err)
 	}
 }

@@ -83,6 +83,10 @@ func recoverOne(st *ingest.Stream, kind string, maxGap int) (*Representation, er
 	pkts := st.Packets
 	for i := 1; i < len(pkts); i++ {
 		prev, cur := pkts[i-1], pkts[i]
+		// Duplicates and non-advancing packets introduce no sequence hole.
+		if cur.Clock.ExtSeq <= prev.Clock.ExtSeq {
+			continue
+		}
 		gap := cur.Clock.ExtSeq - prev.Clock.ExtSeq - 1
 		if gap == 0 {
 			continue
