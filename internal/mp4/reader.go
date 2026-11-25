@@ -127,7 +127,9 @@ func parseSampleTables(r readAtSeeker, path string, number int, stbl *Box, t *Tr
 	}
 	sync := map[uint32]bool{}
 	var syncNumbers []uint32
-	if stssBox := stbl.findChild("stss"); stssBox != nil {
+	stssBox := stbl.findChild("stss")
+	allSyncSamples := stssBox == nil // ISO-BMFF: absent stss means every sample is sync.
+	if stssBox != nil {
 		any, err := unmarshalBox(r, path, stssBox, number)
 		if err != nil {
 			return err
@@ -165,7 +167,7 @@ func parseSampleTables(r readAtSeeker, path string, number int, stbl *Box, t *Tr
 		}
 		t.Samples[i] = Sample{
 			Number: n, DTS: dtss[i], PTS: ptss[i], Delta: delta,
-			Size: size, Offset: offsets[i], Sync: sync[uint32(n)],
+			Size: size, Offset: offsets[i], Sync: allSyncSamples || sync[uint32(n)],
 		}
 	}
 	return nil
