@@ -223,10 +223,11 @@ func hdlrBox(kind string) []byte {
 	return fullBox("hdlr", 0, 0, body)
 }
 
-func sttsBox(count, delta uint32) []byte {
-	body := make([]byte, 8)
-	binary.BigEndian.PutUint32(body[0:4], count)
-	binary.BigEndian.PutUint32(body[4:8], delta)
+func sttsBox(sampleCount, delta uint32) []byte {
+	body := make([]byte, 12)
+	binary.BigEndian.PutUint32(body[0:4], 1)           // entry_count
+	binary.BigEndian.PutUint32(body[4:8], sampleCount) // sample_count
+	binary.BigEndian.PutUint32(body[8:12], delta)      // sample_delta
 	return fullBox("stts", 0, 0, body)
 }
 

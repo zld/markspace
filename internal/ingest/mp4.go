@@ -58,6 +58,16 @@ func ParseMP4(data []byte) (*Document, error) {
 	return doc, nil
 }
 
+// TrackByID returns a parsed track.
+func (d *Document) TrackByID(id int) *model.Track {
+	for _, tr := range d.Tracks {
+		if tr.ID == id {
+			return tr
+		}
+	}
+	return nil
+}
+
 func readMoovMeta(data []byte, moov recover.Box) ([]recover.TrackMeta, bool, uint32, error) {
 	moovBytes := data[moov.Offset:moov.DeclaredEnd]
 	r := bytes.NewReader(moovBytes)
@@ -81,7 +91,7 @@ func readMoovMeta(data []byte, moov recover.Box) ([]recover.TrackMeta, bool, uin
 	if err != nil {
 		return nil, false, 0, trace.E(trace.CodeBoxLengthOutOfBounds, trace.StageIngest, "parse tkhd: %v", err)
 	}
-	mdhdBoxes, err := mp4.ExtractBoxWithPayload(r, nil, mp4.BoxPath{mp4.BoxTypeMoov(), mp4.BoxTypeTrak(), mp4.BoxTypeMdhd()})
+	mdhdBoxes, err := mp4.ExtractBoxWithPayload(r, nil, mp4.BoxPath{mp4.BoxTypeMoov(), mp4.BoxTypeTrak(), mp4.BoxTypeMdia(), mp4.BoxTypeMdhd()})
 	if err != nil {
 		return nil, false, 0, trace.E(trace.CodeBoxLengthOutOfBounds, trace.StageIngest, "parse mdhd: %v", err)
 	}
