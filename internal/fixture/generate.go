@@ -61,7 +61,7 @@ func Generate(cfg Config) (*Fixture, error) {
 	}
 
 	tracks := []mp4.Track{
-		{TrackID: 1, Kind: "video", Timescale: VideoTimescale, Duration: FrameCount * FrameDuration, Width: FrameWidth, Height: FrameHeight},
+		{TrackID: 1, Kind: "video", Timescale: VideoTimescale, Duration: FrameCount * FrameDuration, Width: FrameWidth, Height: FrameHeight, KeyframeEvery: 3},
 		{TrackID: 2, Kind: "audio", Timescale: AudioTimescale, Duration: FrameCount * AudioBlock, Channels: AudioChannels, SampleRate: AudioTimescale},
 		{TrackID: 3, Kind: "subtitle", Timescale: 1000, Duration: 1200},
 	}

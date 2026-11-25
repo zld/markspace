@@ -27,14 +27,15 @@ type Manifest struct {
 }
 
 type Track struct {
-	TrackID    uint32 `json:"track_id"`
-	Kind       string `json:"kind"` // video, audio, subtitle
-	Timescale  uint32 `json:"timescale"`
-	Duration   int64  `json:"duration_ticks"`
-	Width      int    `json:"width,omitempty"`
-	Height     int    `json:"height,omitempty"`
-	Channels   int    `json:"channels,omitempty"`
-	SampleRate int    `json:"sample_rate,omitempty"`
+	TrackID       uint32 `json:"track_id"`
+	Kind          string `json:"kind"` // video, audio, subtitle
+	Timescale     uint32 `json:"timescale"`
+	Duration      int64  `json:"duration_ticks"`
+	Width         int    `json:"width,omitempty"`
+	Height        int    `json:"height,omitempty"`
+	Channels      int    `json:"channels,omitempty"`
+	SampleRate    int    `json:"sample_rate,omitempty"`
+	KeyframeEvery int    `json:"keyframe_every_samples,omitempty"`
 }
 
 type Sample struct {
