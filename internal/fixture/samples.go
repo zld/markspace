@@ -93,8 +93,8 @@ func GenerateSet(dir string) (*Set, error) {
 	set.Samples = append(set.Samples, Sample{
 		Name: "timestamp_wrap", Path: wrapPath, Kind: KindRTPWrap,
 		InputDurationNS:      15_000 * clock.NanosecondsPerSecond / 90_000,
-		EventRelativeStartNS: 80 * clock.NanosecondsPerMillisecond,
-		EventRelativeEndNS:   120 * clock.NanosecondsPerMillisecond,
+		EventRelativeStartNS: 9000 * clock.NanosecondsPerSecond / 90_000,
+		EventRelativeEndNS:   15_000 * clock.NanosecondsPerSecond / 90_000,
 		ChunkCount:           2,
 	})
 
@@ -110,8 +110,8 @@ func GenerateSet(dir string) (*Set, error) {
 	if err := os.WriteFile(vfrPath, vfrBytes, 0o644); err != nil {
 		return nil, err
 	}
-	vfrStart, _ := clock.Convert(2500, 90000)
-	vfrEnd, _ := clock.Convert(10000, 90000)
+	vfrStart, _ := clock.Convert(5800, 90000)
+	vfrEnd, _ := clock.Convert(17800, 90000)
 	set.Samples = append(set.Samples, Sample{
 		Name: "variable_frame_rate", Path: vfrPath, Kind: KindVFR,
 		InputDurationNS:      200 * clock.NanosecondsPerMillisecond,

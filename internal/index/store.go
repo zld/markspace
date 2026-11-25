@@ -22,12 +22,20 @@ type InputSummary struct {
 
 // BlockRecord identifies one confirmed processing block/chunk.
 type BlockRecord struct {
-	Key         string `json:"key"`
-	File        string `json:"file"`
-	Sequence    int    `json:"sequence"`
-	StartNS     int64  `json:"start_ns"`
-	EndNS       int64  `json:"end_ns"`
-	InputOffset int64  `json:"input_offset,omitempty"`
+	Key               string `json:"key"`
+	File              string `json:"file"`
+	Sequence          int    `json:"sequence"`
+	StartNS           int64  `json:"start_ns"`
+	EndNS             int64  `json:"end_ns"`
+	InputOffset       int64  `json:"input_offset,omitempty"`
+	Tracks            int    `json:"tracks_checked,omitempty"`
+	WrapCount         int    `json:"wrap_count,omitempty"`
+	MaxDriftNS        int64  `json:"max_drift_ns,omitempty"`
+	MaxBoundaryNS     int64  `json:"max_boundary_ns,omitempty"`
+	InputDurationNS   int64  `json:"input_duration_ns,omitempty"`
+	PlannedClipNS     int64  `json:"planned_clip_ns,omitempty"`
+	ActualClipNS      int64  `json:"actual_clip_ns,omitempty"`
+	AnomalyDurationNS int64  `json:"anomaly_duration_ns,omitempty"`
 }
 
 // FileConclusion is the item-level processing result printed and indexed.
