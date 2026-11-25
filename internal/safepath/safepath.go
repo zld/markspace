@@ -37,3 +37,29 @@ func Resolve(root string, parts ...string) (string, error) {
 	}
 	return target, nil
 }
+
+// CheckWithin resolves an OS-supplied path against the current directory and
+// ensures it is the root itself or beneath root.
+func CheckWithin(root, p string) (string, error) {
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return "", fault.Wrap(fault.ClassPath, err, "cannot resolve working directory")
+	}
+	var absTarget string
+	if filepath.IsAbs(p) {
+		absTarget = filepath.Clean(p)
+	} else {
+		absTarget, err = filepath.Abs(p)
+		if err != nil {
+			return "", fault.Wrap(fault.ClassPath, err, "cannot resolve path")
+		}
+	}
+	rel, err := filepath.Rel(absRoot, absTarget)
+	if err != nil {
+		return "", fault.Wrap(fault.ClassPath, err, "cannot check path containment")
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fault.New(fault.ClassPath, "path escapes working directory: %s", p)
+	}
+	return absTarget, nil
+}
