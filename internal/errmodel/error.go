@@ -63,6 +63,7 @@ const (
 	ErrRTPPacket         Code = 2007
 	ErrRTPSequence       Code = 2008
 	ErrRTPTimestamp      Code = 2009
+	ErrMemoryBudget      Code = 2010
 
 	// 3xxx: time index.
 	ErrDuplicateKey  Code = 3001

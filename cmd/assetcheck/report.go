@@ -44,24 +44,26 @@ type IndexView struct {
 
 // ReportView is the complete deterministic terminal/JSON report.
 type ReportView struct {
-	File           string               `json:"file"`
-	Mutation       string               `json:"mutation,omitempty"`
-	SummaryDigest  string               `json:"summary-digest"`
-	Fingerprints   cache.Fingerprints   `json:"fingerprints"`
-	Audio          FrameInfo            `json:"audio"`
-	Interval       stream.IntervalStats `json:"interval"`
-	CorruptRanges  []mediaclock.Range   `json:"corrupt-ranges"`
-	CorruptFrames  int64                `json:"corrupt-frames"`
-	CorruptRatio   float64              `json:"corrupt-ratio"`
-	BudgetExceeded bool                 `json:"budget-exceeded,omitempty"`
-	LastFrame      int64                `json:"last-frame,omitempty"`
-	Findings       []*errmodel.Error    `json:"findings,omitempty"`
-	Items          []stream.Item        `json:"threshold-items"`
-	EvalPass       bool                 `json:"eval-pass"`
-	Invalidations  []cache.Invalidation `json:"invalidations,omitempty"`
-	Recovery       *txn.RecoveryResult  `json:"recovery,omitempty"`
-	Txn            TxnView              `json:"txn"`
-	Index          IndexView            `json:"index"`
+	File             string               `json:"file"`
+	Mutation         string               `json:"mutation,omitempty"`
+	SummaryDigest    string               `json:"summary-digest"`
+	Fingerprints     cache.Fingerprints   `json:"fingerprints"`
+	Audio            FrameInfo            `json:"audio"`
+	Interval         stream.IntervalStats `json:"interval"`
+	CorruptRanges    []mediaclock.Range   `json:"corrupt-ranges"`
+	CorruptFrames    int64                `json:"corrupt-frames"`
+	CorruptRatio     float64              `json:"corrupt-ratio"`
+	ScanBudgetFrames int64                `json:"scan-budget-frames"`
+	FileBudgetMB     int                  `json:"file-budget-mb"`
+	BudgetExceeded   bool                 `json:"budget-exceeded,omitempty"`
+	LastFrame        int64                `json:"last-frame,omitempty"`
+	Findings         []*errmodel.Error    `json:"findings,omitempty"`
+	Items            []stream.Item        `json:"threshold-items"`
+	EvalPass         bool                 `json:"eval-pass"`
+	Invalidations    []cache.Invalidation `json:"invalidations,omitempty"`
+	Recovery         *txn.RecoveryResult  `json:"recovery,omitempty"`
+	Txn              TxnView              `json:"txn"`
+	Index            IndexView            `json:"index"`
 }
 
 func writeJSON(w io.Writer, v any) error {
@@ -105,8 +107,12 @@ func RenderText(v *ReportView) string {
 			v.Audio.durationMS(r.Frames()))
 	}
 	fmt.Fprintf(&b, "  corrupt-frames=%d corrupt-ratio=%.6f\n", v.CorruptFrames, v.CorruptRatio)
+	fmt.Fprintln(&b, "budgets:")
+	fmt.Fprintf(&b, "  memory-budget-mb=%d scan-frame-budget=%d\n", v.FileBudgetMB, v.ScanBudgetFrames)
 	if v.BudgetExceeded {
-		fmt.Fprintf(&b, "  scan-budget-exceeded: last-processed-frame=%d\n", v.LastFrame)
+		fmt.Fprintf(&b, "  scan-budget-exceeded: processed through last-valid-frame=%d\n", v.LastFrame)
+	} else {
+		fmt.Fprintln(&b, "  scan-budget: within limit")
 	}
 
 	fmt.Fprintln(&b, "errors:")

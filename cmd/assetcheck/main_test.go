@@ -140,6 +140,21 @@ func TestCLIMutateContentInvalidatesParseCache(t *testing.T) {
 	}
 }
 
+func TestCLIScanBudgetReportsLastFrame(t *testing.T) {
+	e := newCLIEnv(t)
+	code, out, _ := e.run(t, "-input", filepath.Join(e.fixDir, "good.wav"),
+		"-index", e.indexDir, "-max-scan-frames", "1000")
+	if code != 0 {
+		t.Fatalf("budget-limited run exit=%d", code)
+	}
+	if !strings.Contains(out, "scan-budget-exceeded: processed through last-valid-frame=999") {
+		t.Fatalf("missing budget last-frame report:\n%s", out)
+	}
+	if !strings.Contains(out, "E2005") {
+		t.Fatal("budget finding must carry E2005")
+	}
+}
+
 func TestCLIJSONReport(t *testing.T) {
 	e := newCLIEnv(t)
 	code, out, _ := e.run(t, "-input", filepath.Join(e.fixDir, "good.wav"),

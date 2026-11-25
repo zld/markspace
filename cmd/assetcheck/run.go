@@ -20,6 +20,12 @@ func runAnalyze(opts options) (*ReportView, error) {
 	if err != nil {
 		return nil, errmodel.New(errmodel.ErrReadInput, "cannot read input %q: %v", opts.input, err)
 	}
+	fileLimit := int64(opts.maxFileMB) * 1024 * 1024
+	if opts.maxFileMB > 0 && int64(len(data)) > fileLimit {
+		return nil, errmodel.New(errmodel.ErrMemoryBudget,
+			"input size %d bytes exceeds memory budget -max-file-mb=%d (%d bytes)",
+			len(data), opts.maxFileMB, fileLimit)
+	}
 
 	store, err := index.OpenStore(opts.indexDir)
 	if err != nil {
@@ -66,7 +72,7 @@ func runAnalyze(opts options) (*ReportView, error) {
 		}
 	}
 
-	rep, err := stream.Scan(w, data, stream.Budget{})
+	rep, err := stream.Scan(w, data, stream.Budget{MaxScanFrames: opts.maxScanFrames})
 	if err != nil {
 		return nil, err
 	}
@@ -154,6 +160,7 @@ func buildView(
 		},
 		Interval: rep.Interval, CorruptRanges: rep.CorruptRanges,
 		CorruptFrames: rep.CorruptFrames, CorruptRatio: rep.CorruptRatio,
+		ScanBudgetFrames: rep.Budget.MaxScanFrames, FileBudgetMB: opts.maxFileMB,
 		BudgetExceeded: rep.BudgetExceeded, LastFrame: rep.LastFrame,
 		Findings: rep.Findings, Items: items, EvalPass: ev.Pass,
 		Invalidations: inv, Recovery: &recovery,

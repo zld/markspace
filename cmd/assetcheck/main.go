@@ -11,7 +11,11 @@ import (
 	"os"
 
 	"assetcheck/internal/fixture"
+	"assetcheck/internal/stream"
 )
+
+// DefaultMaxFileMB is the in-memory read budget for one input file.
+const DefaultMaxFileMB = 256
 
 // Exit codes mandated by the acceptance contract.
 const (
@@ -30,6 +34,8 @@ type options struct {
 	mutate        string
 	injectFailure string
 	resume        bool
+	maxScanFrames int64
+	maxFileMB     int
 	thresholds    thresholdFlag
 }
 
@@ -49,6 +55,10 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(&opts.mutate, "mutate", "", "apply one mutation before analysis: content|container|metadata")
 	fs.StringVar(&opts.injectFailure, "inject-failure", "", "inject failure at phase, e.g. after-index-prepare")
 	fs.BoolVar(&opts.resume, "resume", false, "recover interrupted transactions and run to completion")
+	fs.Int64Var(&opts.maxScanFrames, "max-scan-frames", stream.DefaultMaxScanFrames,
+		"scan budget in sample frames before reporting the last processed frame")
+	fs.IntVar(&opts.maxFileMB, "max-file-mb", DefaultMaxFileMB,
+		"memory budget for one fully-read input file, in MiB")
 	fs.Var(&opts.thresholds, "threshold", "comma-separated key=value thresholds (repeatable)")
 	if err := fs.Parse(args); err != nil {
 		if err == flag.ErrHelp {
