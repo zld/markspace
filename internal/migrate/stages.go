@@ -3,7 +3,6 @@ package migrate
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -212,6 +211,16 @@ func Run(opts Options) (*Result, error) {
 			res.Generation = cur.Generation
 			res.FinalDigest = digest
 			return res, nil
+		}
+		// The write checkpoint survived but its generation directory did not;
+		// redo the write rather than committing a missing directory.
+		if _, statErr := os.Stat(writtenPath(genDir)); statErr != nil {
+			rec, err := runStage(StageWrite, StageIndex(StageWrite), store, genDir, opts,
+				manifestDigest, manifestOut, nil)
+			if err != nil {
+				return nil, err
+			}
+			res.Records = append(res.Records, rec)
 		}
 	}
 	// Publish the staged output atomically.
@@ -565,10 +574,4 @@ func ReadCommitted(store *Store) ([]byte, Current, error) {
 			"read committed manifest")
 	}
 	return data, cur, nil
-}
-
-// Copy is a small helper used by tests to feed one reader twice.
-func Copy(dst io.Writer, src io.Reader) error {
-	_, err := io.Copy(dst, src)
-	return err
 }

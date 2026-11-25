@@ -1,7 +1,6 @@
 package ebml
 
 import (
-	"errors"
 	"io"
 	"math"
 
@@ -64,6 +63,3 @@ func RequireUint(src io.ReadSeeker, parent *Node, id uint32) (uint64, error) {
 	}
 	return ReadUint(src, child)
 }
-
-// ErrNoTree is returned when a caller asks for data that the parse did not keep.
-var ErrNoTree = errors.New("ebml: tree not retained")

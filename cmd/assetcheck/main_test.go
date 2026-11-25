@@ -178,3 +178,28 @@ func deviationFrom(t *testing.T, out string) int64 {
 	}
 	return v
 }
+
+func TestDamagedVerifyPrintsOneDiagnosis(t *testing.T) {
+	dir := t.TempDir()
+	if _, _, code := runCLI(t, "demo", "--seed", "17", "--out", dir); code != exitOK {
+		t.Fatal("demo failed")
+	}
+	stdout, stderr, code := runCLI(t, "verify", "--input", filepath.Join(dir, "truncated.mkv"))
+	if code != exitBadInput {
+		t.Fatalf("exit = %d", code)
+	}
+	// The full diagnosis belongs on stdout; stderr must not repeat it.
+	if !strings.Contains(stdout, "failure:") {
+		t.Fatalf("stdout missing structured failure:\n%s", stdout)
+	}
+	if strings.Contains(stderr, "failure:") || strings.Contains(stderr, "category=") {
+		t.Fatalf("stderr repeats the diagnosis:\n%s", stderr)
+	}
+	// The audit must show a zero delta against the generator preset.
+	if !strings.Contains(stdout, "offset-delta: 0 bytes") {
+		t.Fatalf("audit delta not zero:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "audit:      OK") {
+		t.Fatalf("audit verdict missing:\n%s", stdout)
+	}
+}

@@ -54,10 +54,28 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return exitUsage
 	}
 	if err != nil {
-		printError(stderr, err)
+		// A command that already printed a full failure report marks it so the
+		// terminal does not show the same diagnosis twice.
+		var reported *reportedError
+		if !errors.As(err, &reported) {
+			printError(stderr, err)
+		}
 		return timeline.ExitCodeOf(err)
 	}
 	return exitOK
+}
+
+// reportedError marks an error whose structured report was already written.
+type reportedError struct{ err error }
+
+func (r *reportedError) Error() string { return r.err.Error() }
+func (r *reportedError) Unwrap() error { return r.err }
+func (r *reportedError) ExitCode() int { return timeline.ExitCodeOf(r.err) }
+func (r *reportedError) As(target interface{}) bool {
+	if te, ok := target.(**timeline.Error); ok {
+		return errors.As(r.err, te)
+	}
+	return false
 }
 
 func usage(w io.Writer) {
@@ -174,17 +192,17 @@ func runVerify(args []string, stdout, stderr io.Writer) error {
 		opts.Profile = m
 	}
 	rep, err := pipeline.Verify(*input, opts)
-	if rep == nil {
-		printStructuredError(stdout, err)
-		printPresetAudit(stdout, *input, err)
-		return err
-	}
-	printVerify(stdout, rep, err)
 	if err != nil {
-		printStructuredError(stdout, err)
+		if rep == nil {
+			printStructuredError(stdout, err)
+		} else {
+			printVerify(stdout, rep, err)
+		}
 		printPresetAudit(stdout, *input, err)
+		return &reportedError{err: err}
 	}
-	return err
+	printVerify(stdout, rep, nil)
+	return nil
 }
 
 // printStructuredError prints the full structured error on stdout so a report
