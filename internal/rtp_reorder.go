@@ -40,6 +40,8 @@ type Reorderer struct {
 
 	pending map[uint64]*rtp.Packet
 	seen    map[uint64]struct{}
+	lastTS  uint32
+	haveTS  bool
 }
 
 // NewReorderer constructs a windowed RTP reorder buffer.
@@ -180,6 +182,8 @@ func (r *Reorderer) drain() []*rtp.Packet {
 		}
 		delete(r.pending, r.next)
 		r.seen[r.next] = struct{}{}
+		r.lastTS = pkt.Header.Timestamp
+		r.haveTS = true
 		out = append(out, pkt)
 		r.next++
 	}
@@ -196,16 +200,24 @@ func (r *Reorderer) FlushLosses(firstSourcePacket uint64) ([]*rtp.Packet, []GapE
 	var gaps []GapEvent
 	holeStart := uint64(0)
 	holeCount := 0
-	flushHole := func(end uint64) {
+	flushHole := func(end uint64, next *rtp.Packet) {
 		if holeCount == 0 {
 			return
 		}
 		seq := uint16(holeStart)
+		timeRange := TimeRange{}
+		if r.haveTS {
+			timeRange.Start90k = uint64(r.lastTS)
+		}
+		if next != nil {
+			timeRange.End90k = uint64(next.Header.Timestamp)
+		}
+		timeRange = boundedRange(timeRange.Start90k, timeRange.End90k)
 		gaps = append(gaps, GapEvent{
 			ID:           fmt.Sprintf("rtp-gap-%d", seq),
 			Kind:         GapRTPSequence,
 			PID:          0xFFFF,
-			Time:         TimeRange{},
+			Time:         timeRange,
 			FirstPacket:  firstSourcePacket,
 			LastPacket:   firstSourcePacket,
 			MissingCount: holeCount,
@@ -218,9 +230,11 @@ func (r *Reorderer) FlushLosses(firstSourcePacket uint64) ([]*rtp.Packet, []GapE
 
 	for seq := r.next; seq <= r.maxExt && r.ready; seq++ {
 		if pkt, ok := r.pending[seq]; ok {
-			flushHole(seq - 1)
+			flushHole(seq-1, pkt)
 			delete(r.pending, seq)
 			r.seen[seq] = struct{}{}
+			r.lastTS = pkt.Header.Timestamp
+			r.haveTS = true
 			out = append(out, pkt)
 			r.next = seq + 1
 		} else {
@@ -234,7 +248,7 @@ func (r *Reorderer) FlushLosses(firstSourcePacket uint64) ([]*rtp.Packet, []GapE
 			break
 		}
 	}
-	flushHole(r.maxExt)
+	flushHole(r.maxExt, nil)
 	r.stats.Released += len(out)
 	r.pruneSeen()
 	return out, gaps

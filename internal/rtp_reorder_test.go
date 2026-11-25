@@ -62,6 +62,9 @@ func TestReordererLateOutsideWindowDoesNotRewriteCommit(t *testing.T) {
 	if len(gaps) != 1 || gaps[0].Kind != GapRTPSequence || gaps[0].MissingCount != 1 {
 		t.Fatalf("loss gaps=%#v released=%d", gaps, len(released))
 	}
+	if gaps[0].Time.End90k <= gaps[0].Time.Start90k {
+		t.Fatalf("RTP loss gap lacks time range: %#v", gaps[0].Time)
+	}
 	if len(released) != 1 || released[0].SequenceNumber != 4 {
 		t.Fatalf("flush order wrong: %#v", released)
 	}
