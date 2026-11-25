@@ -15,6 +15,7 @@ import (
 	"mediad/internal/mp4"
 	"mediad/internal/silence"
 	"mediad/internal/splitter"
+	"mediad/internal/timeline"
 )
 
 // digestInputs hashes the ordered concatenation of file names and bytes so
@@ -86,6 +87,31 @@ func flattenGaps(groups []*ingest.Group) []ingest.Gap {
 		out = append(out, g.Gaps...)
 	}
 	return out
+}
+
+// assertMonotonic verifies that every valid mapped sample is non-decreasing
+// on the common axis per track. Samples flagged Invalid are skipped because
+// they represent intervals deliberately left unmapped rather than fabricated.
+func assertMonotonic(mapped map[uint32][]splitter.MappedSample) error {
+	trackIDs := make([]uint32, 0, len(mapped))
+	for id := range mapped {
+		trackIDs = append(trackIDs, id)
+	}
+	sort.Slice(trackIDs, func(i, j int) bool { return trackIDs[i] < trackIDs[j] })
+	for _, id := range trackIDs {
+		var last int64 = -1
+		for _, s := range mapped[id] {
+			if s.Invalid {
+				continue
+			}
+			if s.StartUS < last {
+				return timeline.New(timeline.ErrTimeline, s.Fragment, s.Offset,
+					"track %d common-axis time went backwards: %d < %d", id, s.StartUS, last)
+			}
+			last = s.StartUS
+		}
+	}
+	return nil
 }
 
 // buildPCMFrames treats fixture sample payloads as little-endian 16-bit PCM.

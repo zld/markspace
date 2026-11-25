@@ -85,10 +85,13 @@ func BoundaryGroup() []byte {
 			{PCM: payloadB, Duration: 33}, // VFR again
 		},
 	}})
-	// A tfdt that jumps backwards inside the normal range: unexplained
-	// rollback, which the timeline must mark invalid rather than fabricate.
+	// After the rollover the raw clock sits low (fragment 2 base 15). A
+	// third fragment whose tfdt drops to 5 is now a rollback on the unwrapped
+	// absolute axis (both are in the bottom half, so no second rollover is
+	// plausible). The timeline must flag this interval invalid rather than
+	// fabricate a time for it.
 	f3 := Fragment(12, []TrackSpec{{
-		TrackID: 2, BaseT: 100,
+		TrackID: 2, BaseT: 5,
 		Samples: []SampleSpec{
 			{PCM: payloadC, Duration: 9},
 		},

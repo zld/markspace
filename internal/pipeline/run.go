@@ -112,7 +112,7 @@ func Run(inputs []InputFile, cfg Config) (*Result, error) {
 		return nil, err
 	}
 
-	mapped, segments, err := splitter.Run(flattenFrags(groups, frags), splitter.Config{
+	mapped, segments, clocks, err := splitter.RunWithClocks(flattenFrags(groups, frags), splitter.Config{
 		TargetSegmentUS: cfg.TargetSegmentUS,
 		Timescales:      cfg.Timescales,
 		DriftPPMMax:     cfg.DriftPPMMax,
@@ -120,6 +120,13 @@ func Run(inputs []InputFile, cfg Config) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Explicit monotonicity guard: the common-axis mapping must never produce
+	// a backwards interval. Invalid (unmappable) samples are allowed and are
+	// surfaced separately; everything else must be ordered.
+	if err := assertMonotonic(mapped); err != nil {
+		return nil, err
+	}
+	_ = clocks // clocks expose rollover counts and drift checks to callers
 	if err := stage(txn.StageTimeline, func(temp string) error {
 		return writeJSON(temp, segments)
 	}); err != nil {

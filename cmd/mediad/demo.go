@@ -10,6 +10,7 @@ import (
 
 	"mediad/internal/gen"
 	"mediad/internal/pipeline"
+	"mediad/internal/splitter"
 	"mediad/internal/timeline"
 	"mediad/internal/txn"
 )
@@ -28,9 +29,11 @@ type demoReport struct {
 	ManifestSHA256   string          `json:"manifest_sha256"`
 	OutputSHA256     string          `json:"output_sha256"`
 	// Extra provenance (not part of the required contract).
-	RTPWrapMonotonic  bool `json:"rtp_wrap_monotonic"`
-	TimelineMonotonic bool `json:"timeline_monotonic"`
-	CorruptExitCode   int  `json:"corrupt_exit_code"`
+	RTPWrapMonotonic   bool             `json:"rtp_wrap_monotonic"`
+	TimelineMonotonic  bool             `json:"timeline_monotonic"`
+	CorruptExitCode    int              `json:"corrupt_exit_code"`
+	BoundarySegments   []splitter.Segment `json:"boundary_segments"`
+	InvalidSegmentCount int             `json:"invalid_segment_count"`
 }
 
 func baseConfig(work string) pipeline.Config {
@@ -154,6 +157,12 @@ func runDemo(outDir, scenario string) (demoReport, int) {
 		rep.RecoveryMS = resumed.RecoveryMS
 		rep.TimelineMonotonic = mono
 		rep.RTPWrapMonotonic = rtpWrapCheck()
+		rep.BoundarySegments = resumed.Segments
+		for _, s := range resumed.Segments {
+			if s.SpansInvalid {
+				rep.InvalidSegmentCount++
+			}
+		}
 	}
 
 	if scenario == "all" || scenario == "corrupt" {
