@@ -1,0 +1,4 @@
+/mediacheck
+/dist/
+*.test
+*.out
