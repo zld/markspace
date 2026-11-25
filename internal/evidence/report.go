@@ -165,6 +165,8 @@ func Build(in Input) *Report {
 		r.InputSample = "none"
 		r.SegmentID = "none"
 		r.Representation = "none"
+		r.TrackID = r.FailureTrack
+		r.PresentationStart = "none"
 	}
 	if r.RecoveryState == "" {
 		r.RecoveryState = recover.StateOK
