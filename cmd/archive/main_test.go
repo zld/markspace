@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"strings"
@@ -28,6 +30,23 @@ func TestNormalExitZero(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "manifest.json")); err != nil {
 		t.Fatalf("manifest missing: %v", err)
+	}
+}
+
+func TestPrintedManifestFileHashMatchesDisk(t *testing.T) {
+	dir := t.TempDir()
+	code, stdout, stderr := invoke(t, "-fixture", "normal", "-seed", "17", "-out", dir)
+	if code != 0 {
+		t.Fatalf("exit %d, stderr=%s", code, stderr)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(data)
+	want := hex.EncodeToString(sum[:])
+	if !strings.Contains(stdout, "sha256 manifest_file="+want) {
+		t.Fatalf("stdout does not carry the on-disk manifest hash %s:\n%s", want, stdout)
 	}
 }
 

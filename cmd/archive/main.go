@@ -177,6 +177,9 @@ func printReport(w io.Writer, r archive.Report, verbose bool) {
 	fmt.Fprintf(w, "sha256 state=%s\n", r.StateHash)
 	fmt.Fprintf(w, "sha256 frames=%s\n", r.FramesHash)
 	fmt.Fprintf(w, "sha256 manifest=%s\n", r.ManifestHash)
+	if r.ManifestFileHash != "" {
+		fmt.Fprintf(w, "sha256 manifest_file=%s\n", r.ManifestFileHash)
+	}
 	if r.ManifestPath != "" {
 		fmt.Fprintf(w, "manifest path=%s\n", r.ManifestPath)
 	}

@@ -5,6 +5,8 @@
 package archive
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"sort"
 
@@ -64,19 +66,22 @@ type Report struct {
 	StateHash     string
 	FramesHash    string
 	ManifestHash  string
-	Segments      int
-	GapCount      int
-	ErrorCount    int
-	Committed     int
-	Replays       int
-	Late          int
-	WatermarkNS   int64
-	Recovered     bool
-	RTPSummary    manifest.RTPSummary
-	Notes         []string
-	Errors        []*events.Error
-	OutDir        string
-	ManifestPath  string
+	// ManifestFileHash is the SHA-256 of the exact manifest.json bytes on
+	// disk, so it can be checked directly against `shasum -a 256`.
+	ManifestFileHash string
+	Segments         int
+	GapCount         int
+	ErrorCount       int
+	Committed        int
+	Replays          int
+	Late             int
+	WatermarkNS      int64
+	Recovered        bool
+	RTPSummary       manifest.RTPSummary
+	Notes            []string
+	Errors           []*events.Error
+	OutDir           string
+	ManifestPath     string
 }
 
 // DefaultConfig builds a config for a fixture kind and seed.
@@ -425,6 +430,9 @@ func finishRun(res RunResult, cfg Config, outDir string) (manifest.Manifest, Rep
 	if werr != nil {
 		return manifest.Manifest{}, res.Report, events.NewError(events.CodeWrite, "", 0, -1, "write", werr.Error(), werr)
 	}
+	// body is exactly the bytes atomically renamed to manifest.json.
+	fileSum := sha256.Sum256(body)
+	fileHash := hex.EncodeToString(fileSum[:])
 
 	// Render frames were already hashed; the manifest reports the sequence
 	// digest. For terminal output, also report frame and segment counts.
@@ -451,6 +459,7 @@ func finishRun(res RunResult, cfg Config, outDir string) (manifest.Manifest, Rep
 	rep.StateHash = tl.StateHash()
 	rep.FramesHash = seq.SequenceHash()
 	rep.ManifestHash = m.ManifestSHA256
+	rep.ManifestFileHash = fileHash
 	rep.Segments = segCount
 	rep.GapCount = len(gaps)
 	rep.ErrorCount = len(res.Report.Errors)
