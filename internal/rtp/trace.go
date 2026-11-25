@@ -59,11 +59,16 @@ type Trace struct {
 // origin, so packet timestamps map onto media time without a separate
 // reference clock.
 func (t *Trace) Timebase() media.Timebase {
-	var origin uint64
+	var origin int64
 	if len(t.Packets) > 0 {
-		origin = uint64(t.Packets[0].Timestamp)
+		origin = int64(t.Packets[0].Timestamp)
 	}
-	return media.Timebase{Track: t.Header.Track, Timescale: t.Header.Timescale, OriginTicks: origin}
+	return media.Timebase{
+		Track:       t.Header.Track,
+		Timescale:   t.Header.Timescale,
+		OriginTicks: origin,
+		OriginNs:    0,
+	}
 }
 
 // TimestampNs maps a 32-bit RTP timestamp onto the common nanosecond timeline.
@@ -73,8 +78,15 @@ func (t *Trace) TimestampNs(ts uint32) (int64, error) {
 	if len(t.Packets) == 0 {
 		return 0, media.Newf(media.KindInput, "trace %q has no packets", t.Header.Track)
 	}
-	delta := uint64(uint32(ts - t.Packets[0].Timestamp))
-	ns, err := t.Timebase().ToNs(delta)
+	// The 32-bit signed difference resolves wraparound relative to the
+	// first packet; adding it to that packet's absolute tick yields a
+	// monotonic tick value even across the 2^32 boundary.
+	delta := int64(int32(ts - t.Packets[0].Timestamp))
+	abs := int64(t.Packets[0].Timestamp) + delta
+	if abs < 0 {
+		abs += 1 << 32
+	}
+	ns, err := t.Timebase().ToNs(uint64(abs))
 	if err != nil {
 		return 0, media.At(err, media.Loc{Track: t.Header.Track, Stage: "parse"})
 	}

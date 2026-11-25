@@ -76,7 +76,7 @@ func TestParseTraceRoundTrip(t *testing.T) {
 			t.Fatalf("packet %d pt = %d", i, p.PayloadType)
 		}
 	}
-	ns, err := got.TimestampNs(960)
+	ns, err := got.TimestampNs(1920)
 	if err != nil {
 		t.Fatal(err)
 	}

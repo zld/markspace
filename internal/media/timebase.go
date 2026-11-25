@@ -2,23 +2,31 @@ package media
 
 import (
 	"fmt"
-	"math/bits"
+	"math/big"
 	"sort"
 )
 
 // Timebase describes one track's native clock. Media times are stored and
 // compared in nanoseconds, but every track keeps its original timescale so
-// conversions stay integer-exact instead of drifting through float64.
+// conversions use exact rational arithmetic instead of drifting through
+// float64.
+//
+// The mapping is affine: a tick count t maps to
+//
+//	OriginNs + (t - OriginTicks) * 1e9 / Timescale
+//
+// Both origins are signed because a track may start after another on the
+// shared timeline (positive offset) and because RTP timestamps wrap past a
+// 32-bit boundary.
 type Timebase struct {
 	// Track is the logical track name ("audio", "video", "subtitle", ...).
 	Track string
 	// Timescale is ticks per second (mdhd timescale or RTP clock rate).
 	Timescale uint32
-	// OriginTicks is the presentation offset of tick 0 on the shared
-	// nanosecond timeline, expressed in this track's own ticks. MP4 tracks
-	// derive it from an edit-list delay; RTP tracks use the timestamp of the
-	// first committed packet.
-	OriginTicks uint64
+	// OriginTicks is the tick value that maps to OriginNs.
+	OriginTicks int64
+	// OriginNs is the shared-timeline nanosecond time of OriginTicks.
+	OriginNs int64
 }
 
 // Validate reports whether the timebase can participate in conversions.
@@ -35,51 +43,77 @@ func (tb Timebase) Validate() error {
 
 // String renders the timebase deterministically for reports and digests.
 func (tb Timebase) String() string {
-	return fmt.Sprintf("%s/%d+%d", tb.Track, tb.Timescale, tb.OriginTicks)
+	return fmt.Sprintf("%s/%d@%d=%dns", tb.Track, tb.Timescale, tb.OriginTicks, tb.OriginNs)
 }
 
-// ToNs converts ticks in tb to nanoseconds on the shared timeline. The
-// product is computed at 128-bit width, so the only failure modes are
-// overflow and a zero timescale.
+// nsFor computes (ticks - OriginTicks) * 1e9 / Timescale with arbitrary
+// precision, requires the result to fit in an int64, and adds OriginNs with an
+// overflow check. Big integers keep every intermediate exact; only the final
+// truncation toward zero is lossy.
+func (tb Timebase) nsFor(ticks int64) (int64, error) {
+	delta := new(big.Int).Sub(big.NewInt(ticks), big.NewInt(tb.OriginTicks))
+	delta.Mul(delta, big.NewInt(1_000_000_000))
+	delta.Quo(delta, big.NewInt(int64(tb.Timescale)))
+	if !delta.IsInt64() {
+		return 0, At(Newf(KindTimebase,
+			"timebase overflow: ticks=%d timescale=%d originTicks=%d", ticks, tb.Timescale, tb.OriginTicks),
+			Loc{Track: tb.Track})
+	}
+	ns, overflow := addInt64(delta.Int64(), tb.OriginNs)
+	if overflow {
+		return 0, At(Newf(KindTimebase, "timebase overflow adding origin %dns", tb.OriginNs),
+			Loc{Track: tb.Track})
+	}
+	return ns, nil
+}
+
+func addInt64(a, b int64) (int64, bool) {
+	if b > 0 && a > 1<<63-1-b {
+		return 0, true
+	}
+	if b < 0 && a < -1<<63-b {
+		return 0, true
+	}
+	return a + b, false
+}
+
+// ToNs converts ticks in tb to nanoseconds on the shared timeline. Results
+// before the shared zero are allowed and simply negative; callers that need
+// non-negative media time reject them.
 func (tb Timebase) ToNs(ticks uint64) (int64, error) {
 	if err := tb.Validate(); err != nil {
 		return 0, err
 	}
-	if ticks > ^uint64(0)-tb.OriginTicks {
-		return 0, At(Newf(KindTimebase, "tick overflow: ticks=%d origin=%d", ticks, tb.OriginTicks),
-			Loc{Track: tb.Track})
+	if ticks > 1<<63-1 {
+		return 0, At(Newf(KindTimebase, "tick count too large: %d", ticks), Loc{Track: tb.Track})
 	}
-	abs := ticks + tb.OriginTicks
-	hi, lo := bits.Mul64(abs, 1_000_000_000)
-	if hi >= uint64(tb.Timescale) {
-		return 0, At(Newf(KindTimebase, "nanosecond overflow: ticks=%d timescale=%d", abs, tb.Timescale),
-			Loc{Track: tb.Track})
-	}
-	q, _ := bits.Div64(hi, lo, uint64(tb.Timescale))
-	if q > 1<<63-1 {
-		return 0, At(Newf(KindTimebase, "nanosecond overflow: ticks=%d timescale=%d", abs, tb.Timescale),
-			Loc{Track: tb.Track})
-	}
-	return int64(q), nil
+	return tb.nsFor(int64(ticks))
 }
 
-// FromNs converts a non-negative nanosecond time back to ticks in tb,
-// truncating toward zero. Times before the track origin are rejected rather
-// than silently clamped.
-func (tb Timebase) FromNs(ns int64) (uint64, error) {
+// FromNs converts a nanosecond time back to ticks in tb, truncating
+// sub-tick remainders toward zero. Negative results are preserved because a
+// track may legitimately be mapped to times before its first tick.
+func (tb Timebase) FromNs(ns int64) (int64, error) {
 	if err := tb.Validate(); err != nil {
 		return 0, err
 	}
-	if ns < 0 {
-		return 0, At(Newf(KindTimebase, "negative media time: %dns", ns), Loc{Track: tb.Track})
+	rel := new(big.Int).Sub(big.NewInt(ns), big.NewInt(tb.OriginNs))
+	rel.Mul(rel, big.NewInt(int64(tb.Timescale)))
+	rel.Quo(rel, big.NewInt(1_000_000_000))
+	if !rel.IsInt64() {
+		return 0, At(Newf(KindTimebase, "timebase overflow: %dns timescale=%d", ns, tb.Timescale),
+			Loc{Track: tb.Track})
 	}
-	hi, lo := bits.Mul64(uint64(ns), uint64(tb.Timescale))
-	q, _ := bits.Div64(hi, lo, 1_000_000_000)
-	if q < tb.OriginTicks {
-		return 0, At(Newf(KindTimebase, "media time precedes track origin: %dns origin=%d ticks",
-			ns, tb.OriginTicks), Loc{Track: tb.Track})
+	ticks := new(big.Int).Add(rel, big.NewInt(tb.OriginTicks))
+	if !ticks.IsInt64() {
+		return 0, At(Newf(KindTimebase, "tick overflow: %dns timescale=%d", ns, tb.Timescale),
+			Loc{Track: tb.Track})
 	}
-	return q - tb.OriginTicks, nil
+	out := ticks.Int64()
+	// Negative ticks are meaningful when OriginNs is positive: they name
+	// times before the track's first tick on the shared timeline. Callers
+	// that need a non-negative tick (e.g. a container edit) check for it.
+	return out, nil
 }
 
 // Ratio is an exact reduced rational factor between two tick clocks.
@@ -92,12 +126,13 @@ func NewRatio(num, den uint64) (Ratio, error) {
 	if den == 0 {
 		return Ratio{}, New(KindTimebase, "zero ratio denominator")
 	}
-	return Ratio{Num: num / gcd(num, den), Den: den / gcd(num, den)}, nil
+	g := gcd(num, den)
+	return Ratio{Num: num / g, Den: den / g}, nil
 }
 
-// Scaled converts a tick count from src to dst without going through
-// nanoseconds. Results that would lose more than one tick are rejected so a
-// caller cannot quietly round a timebase it does not understand.
+// Scaled converts a tick count from src's clock into dst's clock without
+// going through nanoseconds. Conversion is exact-or-error: a result that
+// needs a fractional tick is rejected rather than rounded.
 func Scaled(ticks uint64, src, dst Timebase) (uint64, error) {
 	if err := src.Validate(); err != nil {
 		return 0, err
@@ -105,22 +140,20 @@ func Scaled(ticks uint64, src, dst Timebase) (uint64, error) {
 	if err := dst.Validate(); err != nil {
 		return 0, err
 	}
-	num, den := uint64(dst.Timescale), uint64(src.Timescale)
-	g := gcd(num, den)
-	num, den = num/g, den/g
-	hi, lo := bits.Mul64(ticks, num)
-	if hi >= den {
-		return 0, At(Newf(KindTimebase,
-			"unscalable timebase: track %q -> %q ticks=%d overflow", src.Track, dst.Track, ticks),
-			Loc{Track: src.Track})
-	}
-	q, rem := bits.Div64(hi, lo, den)
-	if rem != 0 {
+	p := new(big.Int).SetUint64(ticks)
+	p.Mul(p, big.NewInt(int64(dst.Timescale)))
+	q, rem := new(big.Int).QuoRem(p, big.NewInt(int64(src.Timescale)), new(big.Int))
+	if rem.Sign() != 0 {
 		return 0, At(Newf(KindTimebase,
 			"unscalable timebase: track %q -> %q ticks=%d produces a fractional tick",
 			src.Track, dst.Track, ticks), Loc{Track: src.Track})
 	}
-	return q, nil
+	if !q.IsUint64() {
+		return 0, At(Newf(KindTimebase,
+			"unscalable timebase: track %q -> %q ticks=%d overflow",
+			src.Track, dst.Track, ticks), Loc{Track: src.Track})
+	}
+	return q.Uint64(), nil
 }
 
 func gcd(a, b uint64) uint64 {

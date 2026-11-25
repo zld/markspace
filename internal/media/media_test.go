@@ -31,25 +31,37 @@ func TestTimebaseRoundTrip(t *testing.T) {
 }
 
 func TestTimebaseOrigin(t *testing.T) {
-	tb := Timebase{Track: "audio", Timescale: 48000, OriginTicks: 4800}
-	ns, err := tb.ToNs(0)
+	tb := Timebase{Track: "audio", Timescale: 48000, OriginTicks: 4800, OriginNs: 0}
+	ns, err := tb.ToNs(4800)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ns != 100_000_000 {
-		t.Fatalf("origin: got %dns want 100ms", ns)
+	if ns != 0 {
+		t.Fatalf("origin: got %dns want 0", ns)
 	}
 	ticks, err := tb.FromNs(ns)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ticks != 0 {
-		t.Fatalf("origin roundtrip: got %d want 0", ticks)
+	if ticks != 4800 {
+		t.Fatalf("origin roundtrip: got %d want 4800", ticks)
 	}
-	if _, err := tb.FromNs(ns - 1); err == nil {
-		t.Fatal("expected error for time before track origin")
-	} else if KindOf(err) != KindTimebase {
-		t.Fatalf("kind = %s, want timebase", KindOf(err))
+	// A track that starts 250ms into the shared timeline.
+	late := Timebase{Track: "video", Timescale: 90000, OriginTicks: 0, OriginNs: 250_000_000}
+	if ns, err := late.ToNs(0); err != nil || ns != 250_000_000 {
+		t.Fatalf("late origin: %d %v", ns, err)
+	}
+	if got, err := late.FromNs(200_000_000); err != nil || got != -4500 {
+		t.Fatalf("negative tick: %d %v", got, err)
+	}
+	if _, err := late.FromNs(200_000_000); err != nil {
+		t.Fatal(err)
+	}
+	// A zero origin maps negative shared time to negative ticks rather than
+	// clamping it silently.
+	tbZero := Timebase{Track: "audio", Timescale: 48000}
+	if got, err := tbZero.FromNs(-48_000); err != nil || got != -2 {
+		t.Fatalf("negative time: %d %v", got, err)
 	}
 }
 
@@ -79,8 +91,8 @@ func TestTimebaseOverflow(t *testing.T) {
 	} else if KindOf(err) != KindTimebase {
 		t.Fatalf("kind = %s, want timebase", KindOf(err))
 	}
-	tb2 := Timebase{Track: "audio", Timescale: 48000, OriginTicks: 1 << 63}
-	if _, err := tb2.ToNs(1 << 63); err == nil {
+	tb2 := Timebase{Track: "audio", Timescale: 1, OriginTicks: 0, OriginNs: 1 << 62}
+	if _, err := tb2.ToNs(1 << 62); err == nil {
 		t.Fatal("expected origin overflow error")
 	}
 }
