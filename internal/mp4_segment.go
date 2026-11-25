@@ -20,7 +20,10 @@ func PackageSegmentMP4(seg *Segment, sourceDigest string) ([]byte, error) {
 	if seg == nil {
 		return nil, &MediaError{Stage: "package", Code: "nil_segment", Recoverable: false}
 	}
-	media, err := json.Marshal(mp4MediaPayload{SourceDigest: sourceDigest, Segment: seg})
+	mediaSeg := *seg
+	mediaSeg.FileSHA256 = ""
+	mediaSeg.SizeBytes = 0
+	media, err := json.Marshal(mp4MediaPayload{SourceDigest: sourceDigest, Segment: &mediaSeg})
 	if err != nil {
 		return nil, &MediaError{Stage: "package", Code: "encode_mdat", Err: err, Recoverable: false}
 	}
