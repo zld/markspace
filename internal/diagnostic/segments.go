@@ -44,11 +44,12 @@ type Report struct {
 	Segments       []Segment `json:"segments"`
 }
 
-// Locate converts structured faults into merged damaged timeline ranges.
-func Locate(scanRes *stream.Result, _ *timeline.Report) *Report {
+// Locate converts structured scan and timeline faults into merged damaged
+// timeline ranges.
+func Locate(scanRes *stream.Result, timelineRep *timeline.Report) *Report {
 	rep := &Report{Segments: []Segment{}}
 	if scanRes == nil {
-		return rep
+		scanRes = &stream.Result{}
 	}
 
 	var candidates []Segment
@@ -56,26 +57,20 @@ func Locate(scanRes *stream.Result, _ *timeline.Report) *Report {
 		if issue == nil {
 			continue
 		}
-		d := Segment{
-			Kind:           kindFor(issue.Code),
-			Severity:       "error",
-			TrackID:        issue.TrackID,
-			InputID:        issue.InputID,
-			InputSHA256:    issue.InputSHA,
-			FirstBadOffset: issue.Offset,
-			SampleOffset:   issue.SampleOffset,
-			BoxOffset:      issue.BoxOffset,
-			TimeRange:      issue.TimeRange,
-			Causes: []Cause{{
-				Stage: issue.Stage, Code: issue.Code, Message: issue.Message, ByteOffset: issue.Offset,
-			}},
-		}
+		d := segmentFromIssue(issue)
 		enrichFromSamples(&d, scanRes.Samples)
-		if ms, err := d.TimeRange.Milliseconds(); err == nil {
-			d.TimeRangeMS = ms
-			d.StartMS, d.EndMS = ms.Start, ms.End
-		}
+		finishTimeRange(&d)
 		candidates = append(candidates, d)
+	}
+	if timelineRep != nil {
+		for _, issue := range timelineRep.Issues {
+			if issue == nil {
+				continue
+			}
+			d := segmentFromIssue(issue)
+			finishTimeRange(&d)
+			candidates = append(candidates, d)
+		}
 	}
 
 	merged := mergeCandidates(candidates)
@@ -108,6 +103,30 @@ func Locate(scanRes *stream.Result, _ *timeline.Report) *Report {
 		rep.EndMS = first.EndMS
 	}
 	return rep
+}
+
+func segmentFromIssue(issue *fault.Error) Segment {
+	return Segment{
+		Kind:           kindFor(issue.Code),
+		Severity:       "error",
+		TrackID:        issue.TrackID,
+		InputID:        issue.InputID,
+		InputSHA256:    issue.InputSHA,
+		FirstBadOffset: issue.Offset,
+		SampleOffset:   issue.SampleOffset,
+		BoxOffset:      issue.BoxOffset,
+		TimeRange:      issue.TimeRange,
+		Causes: []Cause{{
+			Stage: issue.Stage, Code: issue.Code, Message: issue.Message, ByteOffset: issue.Offset,
+		}},
+	}
+}
+
+func finishTimeRange(d *Segment) {
+	if ms, err := d.TimeRange.Milliseconds(); err == nil {
+		d.TimeRangeMS = ms
+		d.StartMS, d.EndMS = ms.Start, ms.End
+	}
 }
 
 func enrichFromSamples(d *Segment, samples []stream.SampleReport) {
