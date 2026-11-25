@@ -35,6 +35,16 @@ type FailureReport struct {
 	ExitCode int     `json:"exit_code"`
 }
 
+// BoundaryResult records shared-clock and RTP verification totals.
+type BoundaryResult struct {
+	LayerCount        int     `json:"layer_count"`
+	SegmentCount      int     `json:"segment_count"`
+	ValidatedSegments int     `json:"validated_segments"`
+	AlignmentErrorMS  float64 `json:"alignment_error_ms"`
+	MaxTickError      int64   `json:"max_tick_error"`
+	Passed            bool    `json:"passed"`
+}
+
 // Report is the acceptance JSON object and release manifest body.
 type Report struct {
 	OK              bool             `json:"ok"`
@@ -42,6 +52,7 @@ type Report struct {
 	Out             string           `json:"out"`
 	Platform        string           `json:"platform"`
 	InputSHA256     string           `json:"input_sha256"`
+	FrameSHA256     string           `json:"frame_sha256"`
 	ManifestSHA256  string           `json:"manifest_sha256,omitempty"`
 	ReusedAssets    int              `json:"reused_assets"`
 	RebuiltAssets   int              `json:"rebuilt_assets"`
@@ -54,11 +65,12 @@ type Report struct {
 	SegmentHashes     []string          `json:"segment_hashes"`
 	SegmentSHA256ByID map[string]string `json:"segment_sha256_by_id"`
 
-	PixelMean        float64 `json:"pixel_mean"`
-	PeakDBFS         float64 `json:"peak_dbfs"`
-	AlignmentErrorMS float64 `json:"alignment_error_ms"`
-	FrameDurationMS  float64 `json:"frame_duration_ms"`
-	MaxTickError     int64   `json:"max_tick_error"`
+	PixelMean        float64         `json:"pixel_mean"`
+	PeakDBFS         float64         `json:"peak_dbfs"`
+	AlignmentErrorMS float64         `json:"alignment_error_ms"`
+	FrameDurationMS  float64         `json:"frame_duration_ms"`
+	MaxTickError     int64           `json:"max_tick_error"`
+	Boundary         *BoundaryResult `json:"boundary_verification,omitempty"`
 
 	TimeRange       TimeRange         `json:"time_range"`
 	Layers          []LayerStatus     `json:"layers"`
