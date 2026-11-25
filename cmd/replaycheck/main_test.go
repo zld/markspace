@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 
 	"replaycheck/internal/checkpoint"
 	"replaycheck/internal/clip"
+	"replaycheck/internal/fault"
 )
 
 func TestSelfTestEndToEnd(t *testing.T) {
@@ -268,5 +271,32 @@ func TestEventEndingAtProgrammeEnd(t *testing.T) {
 	}
 	if c.VideoLast != 119 {
 		t.Fatalf("last sample = %d, want 119", c.VideoLast)
+	}
+}
+
+// An event whose video slice needs sample payload missing from the file is
+// refused with the exact byte offset, not delivered short.
+func TestEventNeedingMissingPayloadIsRefused(t *testing.T) {
+	dir := t.TempDir()
+	fs, err := buildFixtures(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := RunConfig{
+		TaskKey: "test/missing-payload", WAVPath: fs.NormalWAV, MP4Path: fs.CutMP4,
+		Events:   []clip.Event{{Name: "past-end", StartTick: 340000, EndTick: 360000}},
+		RTPTrace: fs.CleanTrace, OutDir: filepath.Join(dir, "out"),
+		StateDir: filepath.Join(dir, "state"), CkptDir: filepath.Join(dir, "ckpt"),
+		ClockRate: videoRate,
+	}
+	_, err = Run(cfg)
+	if err == nil {
+		t.Fatal("expected refusal")
+	}
+	if !fault.IsKind(err, fault.KindUnreadable) {
+		t.Fatalf("err = %v, want unreadable", err)
+	}
+	if !strings.Contains(err.Error(), strconv.FormatInt(fs.CutMP4BadOffset, 10)) {
+		t.Fatalf("error does not name the missing byte %d: %v", fs.CutMP4BadOffset, err)
 	}
 }

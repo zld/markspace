@@ -47,17 +47,27 @@ func cutAll(cfg RunConfig, wavR *wav.Reader, mp4F *os.File, gaps []repair.Gap) (
 		if err != nil {
 			return nil, err
 		}
+		// Refuse before writing anything: the payload is not on disk, and a
+		// short fragment would misrepresent the cut.
+		if g, ok := ix.OverlapsSource(sl.Video.StartTick, sl.Video.EndTick, "mp4"); ok {
+			return nil, fault.New(fault.KindUnreadable, fault.Fatal,
+				fault.Location{ByteOffset: g.ByteOffset, Tick: g.Start, HasTick: true,
+					Millis: g.Start * 1000 / int64(info.Track.Timescale), Label: "mp4"},
+				"event %q needs sample payload missing at byte %d (tick %d)",
+				ev.Name, g.ByteOffset, g.Start)
+		}
+
 		audioName := safeName(ev.Name) + ".wav"
 		videoName := safeName(ev.Name) + ".h264"
 		audioPath := filepath.Join(outClips, audioName)
 		videoPath := filepath.Join(outClips, videoName)
 		audioDigest, err := writeAudioFragment(wavR, cut, sl, audioPath)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("event %q audio fragment: %w", ev.Name, err)
 		}
 		videoBytes, err := cut.SliceBytes(sl, io.NewSectionReader(mp4F, 0, fileSize(mp4F)))
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("event %q video fragment: %w", ev.Name, err)
 		}
 		if err := writeAtomic(videoPath, videoBytes); err != nil {
 			return nil, err
@@ -84,7 +94,6 @@ func cutAll(cfg RunConfig, wavR *wav.Reader, mp4F *os.File, gaps []repair.Gap) (
 				fault.Location{ByteOffset: g.ByteOffset, Tick: sl.Video.StartTick, HasTick: true},
 				"video interval overlaps transport damage"))
 		}
-
 		st := ClipStats{
 			TaskKey:     cfg.TaskKey + "/" + ev.Name,
 			Event:       ev.Name,
