@@ -39,15 +39,17 @@ func (c CodecKind) SampleRate(rate uint32) (uint32, error) {
 
 // PacketRecord is one captured RTP packet as stored in the offline trace.
 // ArrivalTick is the capture time on the unified clock; RTPTimestamp is the
-// 32-bit media timestamp carried in the RTP header.
+// 32-bit media timestamp carried in the RTP header. ExtendedSequence is
+// filled in by the RTP reorder stage.
 type PacketRecord struct {
-	Stream       uint32    `json:"stream"`
-	Codec        CodecKind `json:"codec"`
-	Sequence     uint16    `json:"sequence"`
-	RTPTimestamp uint32    `json:"rtp_timestamp"`
-	Payload      []byte    `json:"-"`
-	ArrivalTick  Tick      `json:"arrival_tick"`
-	ClockRate    uint32    `json:"clock_rate,omitempty"`
+	Stream           uint32    `json:"stream"`
+	Codec            CodecKind `json:"codec"`
+	Sequence         uint16    `json:"sequence"`
+	ExtendedSequence uint32    `json:"extended_sequence,omitempty"`
+	RTPTimestamp     uint32    `json:"rtp_timestamp"`
+	Payload          []byte    `json:"-"`
+	ArrivalTick      Tick      `json:"arrival_tick"`
+	ClockRate        uint32    `json:"clock_rate,omitempty"`
 }
 
 // PacketVerdict is the per-packet processing conclusion. Every input packet
