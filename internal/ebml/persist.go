@@ -54,18 +54,20 @@ func unmarshalIndexEntry(b []byte) IndexEntry {
 	}
 }
 
-// IndexBuilder streams entries into a temp file and atomically renames it on
-// Commit. An interrupted build leaves only the temp file, which is never read.
+// IndexBuilder streams entries into a temp file and finalizes it. An
+// interrupted build leaves only the temp file, which is never read.
 type IndexBuilder struct {
-	tmp   *os.File
-	path  string
-	sum   hash.Hash
-	count uint32
+	tmp      *os.File
+	tmpPath  string
+	finalPath string
+	sum      hash.Hash
+	count    uint32
 }
 
 // NewIndexBuilder creates path+".tmp" and writes the header.
 func NewIndexBuilder(path string, inputSHA []byte) (*IndexBuilder, error) {
-	tmp, err := os.Create(path + ".tmp")
+	tmpPath := path + ".tmp"
+	tmp, err := os.Create(tmpPath)
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +76,27 @@ func NewIndexBuilder(path string, inputSHA []byte) (*IndexBuilder, error) {
 	hdr = append(hdr, indexVersion)
 	hdr = append(hdr, inputSHA...)
 	hdr = binary.LittleEndian.AppendUint32(hdr, 0)
-	b := &IndexBuilder{tmp: tmp, path: path, sum: sha256.New()}
+	b := &IndexBuilder{tmp: tmp, tmpPath: tmpPath, finalPath: path, sum: sha256.New()}
+	if err := b.write(hdr); err != nil {
+		return nil, b.abort(err)
+	}
+	return b, nil
+}
+
+// NewIndexBuilderAt creates a builder with an explicit temp path and final
+// publication path, allowing callers to keep temp files outside the index
+// directory tree.
+func NewIndexBuilderAt(tmpPath, finalPath string, inputSHA []byte) (*IndexBuilder, error) {
+	tmp, err := os.Create(tmpPath)
+	if err != nil {
+		return nil, err
+	}
+	hdr := make([]byte, 0, headerSize)
+	hdr = append(hdr, indexMagic...)
+	hdr = append(hdr, indexVersion)
+	hdr = append(hdr, inputSHA...)
+	hdr = binary.LittleEndian.AppendUint32(hdr, 0)
+	b := &IndexBuilder{tmp: tmp, tmpPath: tmpPath, finalPath: finalPath, sum: sha256.New()}
 	if err := b.write(hdr); err != nil {
 		return nil, b.abort(err)
 	}
@@ -96,8 +118,9 @@ func (b *IndexBuilder) Append(e IndexEntry) error {
 	return b.write(buf[:])
 }
 
-// Commit finalizes the trailer and atomically publishes the index.
-func (b *IndexBuilder) Commit() error {
+// Finalize writes the checksum trailer, flushes and closes the temp file.
+// The file stays at its temp path; callers atomically rename it into place.
+func (b *IndexBuilder) Finalize() error {
 	// Backfill the entry count into the header (last 4 bytes of the header),
 	// then recompute the checksum over the finalized header + records so the
 	// hash covers the exact published bytes.
@@ -122,10 +145,15 @@ func (b *IndexBuilder) Commit() error {
 	if err := b.tmp.Sync(); err != nil {
 		return b.abort(err)
 	}
-	if err := b.tmp.Close(); err != nil {
-		return b.abort(err)
+	return b.tmp.Close()
+}
+
+// Commit finalizes and atomically publishes the index at the final path.
+func (b *IndexBuilder) Commit() error {
+	if err := b.Finalize(); err != nil {
+		return err
 	}
-	if err := os.Rename(b.tmp.Name(), b.path); err != nil {
+	if err := os.Rename(b.tmpPath, b.finalPath); err != nil {
 		return b.abort(err)
 	}
 	return nil
@@ -133,9 +161,19 @@ func (b *IndexBuilder) Commit() error {
 
 func (b *IndexBuilder) abort(err error) error {
 	b.tmp.Close()
-	os.Remove(b.tmp.Name())
+	os.Remove(b.tmpPath)
 	return err
 }
+
+// AbortForTest closes and removes the temp file without publishing,
+// simulating a crashed build. Test-only helper.
+func (b *IndexBuilder) AbortForTest() error {
+	b.tmp.Close()
+	return os.Remove(b.tmpPath)
+}
+
+// TempPath returns the temp file path the builder writes to.
+func (b *IndexBuilder) TempPath() string { return b.tmpPath }
 
 // Index is a verified, read-only block index backed by a memory-mapped-style
 // file. Entries are read on demand via ReadAt, so opening a large index does
