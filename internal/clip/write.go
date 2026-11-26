@@ -145,14 +145,12 @@ func (b *Builder) Cut(spec ClipSpec, outPath string) (res *ClipResult, retErr er
 	if _, err := w.StartBox(&mp4.BoxInfo{Type: mp4.BoxTypeMdat()}); err != nil {
 		return nil, err
 	}
-	hash := sha256.New()
-	mw := io.MultiWriter(out, hash)
-	copies, err := b.streamTrack(vt, w, mw)
+	copies, err := b.streamTrack(vt, w, out)
 	if err != nil {
 		return nil, err
 	}
 	if at != nil {
-		ac, err := b.streamTrack(at, w, mw)
+		ac, err := b.streamTrack(at, w, out)
 		if err != nil {
 			return nil, err
 		}
@@ -181,10 +179,32 @@ func (b *Builder) Cut(spec ClipSpec, outPath string) (res *ClipResult, retErr er
 		r := *at.rngRef()
 		res.AudioRange = &r
 	}
-	sum := sha256.Sum256(hash.Sum(nil))
+	// Hash the complete delivered file (boxes included) so the digest
+	// matches what the cache verifies on a materialized artifact.
+	sum, err := hashWholeFile(outPath)
+	if err != nil {
+		return nil, err
+	}
 	res.SHA256 = sum
 	res.SHA256Hex = hex.EncodeToString(sum[:])
 	return res, nil
+}
+
+// hashWholeFile streams the file through SHA-256 with a bounded buffer.
+func hashWholeFile(path string) ([32]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return [32]byte{}, err
+	}
+	defer f.Close()
+	h := sha256.New()
+	buf := make([]byte, 64*1024)
+	if _, err := io.CopyBuffer(h, f, buf); err != nil {
+		return [32]byte{}, err
+	}
+	var sum [32]byte
+	copy(sum[:], h.Sum(nil))
+	return sum, nil
 }
 
 // streamTrack appends one track's samples into the open mdat, recording

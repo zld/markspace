@@ -15,16 +15,19 @@ import (
 )
 
 // Stage names are fixed so checkpoints written by an older run are
-// recognizable by a newer one.
+// recognizable by a newer one. Stage records the last COMPLETED stage;
+// StageNone on a fresh checkpoint means no work has finished.
 const (
+	StageNone   = ""
 	StageScan   = "scan"
 	StagePlan   = "plan"
 	StageCut    = "cut"
 	StageCommit = "commit"
 )
 
+// rank orders completion states so each stage has exactly one successor.
 var stageOrder = map[string]int{
-	StageScan: 1, StagePlan: 2, StageCut: 3, StageCommit: 4,
+	StageNone: 0, StageScan: 1, StagePlan: 2, StageCut: 3, StageCommit: 4,
 }
 
 // Checkpoint is the durable record of pipeline progress.
@@ -125,7 +128,7 @@ func (cp *Checkpoint) Reached(stage string) bool {
 	return stageOrder[cp.Stage] >= stageOrder[stage]
 }
 
-// Advance validates stage ordering before persisting progress.
+// Advance marks one more stage complete, enforcing strict succession.
 func (s *Store) Advance(cp *Checkpoint, stage string) error {
 	if stageOrder[stage] != stageOrder[cp.Stage]+1 {
 		return clock.NewError(clock.KindCheckpoint, "advance",

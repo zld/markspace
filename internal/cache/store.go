@@ -16,12 +16,13 @@ import (
 
 // Entry is the on-disk verification record accompanying one artifact.
 type Entry struct {
-	Key         string `json:"key"`
-	SourceSHA   string `json:"source_sha256"`
-	ConfigSHA   string `json:"config_sha256"`
-	ArtifactSHA string `json:"artifact_sha256"`
-	Size        int64  `json:"size"`
-	MediaType   string `json:"media_type"`
+	Key         string          `json:"key"`
+	SourceSHA   string          `json:"source_sha256"`
+	ConfigSHA   string          `json:"config_sha256"`
+	ArtifactSHA string          `json:"artifact_sha256"`
+	Size        int64           `json:"size"`
+	MediaType   string          `json:"media_type"`
+	Result      json.RawMessage `json:"result,omitempty"`
 }
 
 // HitOutcome reports why a cached entry was or was not reused.

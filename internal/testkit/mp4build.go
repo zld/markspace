@@ -1,238 +1,252 @@
 package testkit
 
 import (
-	"io"
-
-	"github.com/abema/go-mp4"
+	"encoding/binary"
+	"os"
 )
-
-var matrix = [9]int32{0x00010000, 0, 0, 0, 0x00010000, 0, 0, 0, 0x40000000}
 
 // mp4Spec parameterizes a generated fixture.
 type mp4Spec struct {
 	path      string
 	gapAfter  int  // frame index after which a one-frame gap is inserted
-	truncated bool // truncate mdat payload at the end
+	truncated bool // truncate the final mdat sample at a known offset
 }
 
-// generateMP4 writes a single-track AVC file: ftyp + moov + mdat with one
-// sample per chunk, 30 fps, sync samples every second.
+// generateMP4 hand-assembles ftyp + moov + mdat. moov is built first with
+// a placeholder co64 table; once mdat layout is known the table is patched
+// in place before the file is written.
 func generateMP4(spec mp4Spec) error {
-	bw, err := createBoxWriter(spec.path)
-	if err != nil {
+	nal := newNALBuilder()
+	deltas := buildDeltas(spec.gapAfter)
+	syncs, sizes, samples := buildSamples(nal)
+	avc1 := buildAVC1(nal.avcC())
+
+	moov := buildMoov(deltas, syncs, sizes, avc1)
+	co64Table := findCo64Table(moov)
+	mdat := buildMdat(samples)
+
+	ftyp := &boxBuilder{}
+	buildFtyp(ftyp)
+	mdatStart := len(ftyp.buf) + 8 + len(moov)
+	// First chunk sits at the mdat payload start (header is 8 bytes).
+	patchCo64(moov, co64Table, uint64(mdatStart)+8, sizes)
+
+	var out []byte
+	out = append(out, ftyp.buf...)
+	wrap := boxBuilder{}
+	wrap.bytes("moov", moov)
+	out = append(out, wrap.buf...)
+	if spec.truncated {
+		// Emit only half of the last sample while mdat keeps its declared
+		// full size, producing a deterministic overrun at a known offset.
+		cut := len(mdat) - len(samples[len(samples)-1])/2
+		out = append(out, mdat[:cut]...)
+	} else {
+		out = append(out, mdat...)
+	}
+	if err := os.MkdirAll(dirOf(spec.path), 0o755); err != nil {
 		return err
 	}
-	defer bw.close()
-	nal := newNALBuilder()
-
-	deltas := make([]mp4.SttsEntry, 0, 4)
-	if spec.gapAfter > 0 {
-		// frames [0, gapAfter): normal delta; one doubled delta creates the gap.
-		deltas = append(deltas,
-			mp4.SttsEntry{SampleCount: uint32(spec.gapAfter), SampleDelta: frameDelta},
-			mp4.SttsEntry{SampleCount: 1, SampleDelta: frameDelta * 2},
-			mp4.SttsEntry{SampleCount: uint32(frameCount - spec.gapAfter - 1), SampleDelta: frameDelta},
-		)
-	} else {
-		deltas = append(deltas, mp4.SttsEntry{
-			SampleCount: uint32(frameCount), SampleDelta: frameDelta,
-		})
+	tmp := spec.path + ".tmp"
+	if err := os.WriteFile(tmp, out, 0o644); err != nil {
+		return err
 	}
-	syncs := make([]uint32, 0, frameCount/keyframeEvery)
-	sizes := make([]uint32, frameCount)
-	samples := make([][]byte, frameCount)
+	return os.Rename(tmp, spec.path)
+}
+
+func dirOf(p string) string {
+	for i := len(p) - 1; i >= 0; i-- {
+		if p[i] == '/' {
+			return p[:i]
+		}
+	}
+	return "."
+}
+
+func buildDeltas(gapAfter int) [][2]uint32 {
+	if gapAfter <= 0 {
+		return [][2]uint32{{frameCount, frameDelta}}
+	}
+	return [][2]uint32{
+		{uint32(gapAfter), frameDelta},
+		{1, frameDelta * 2},
+		{uint32(frameCount - gapAfter - 1), frameDelta},
+	}
+}
+
+func buildSamples(nal *nalBuilder) (syncs, sizes []uint32, samples [][]byte) {
+	syncs = make([]uint32, 0, frameCount/keyframeEvery)
+	sizes = make([]uint32, frameCount)
+	samples = make([][]byte, frameCount)
 	for i := 0; i < frameCount; i++ {
 		isIDR := i%keyframeEvery == 0
 		if isIDR {
-			syncs = append(syncs, uint32(i+1)) // stss is 1-based
+			syncs = append(syncs, uint32(i+1))
 		}
 		samples[i] = nal.sample(isIDR, uint32(i))
 		sizes[i] = uint32(len(samples[i]))
 	}
-
-	if err := bw.writeFtyp(); err != nil {
-		return err
-	}
-	if err := writeFixtureMoov(bw, deltas, syncs, sizes, nal.avcC(), spec.truncated, samples); err != nil {
-		return err
-	}
-	return nil
+	return syncs, sizes, samples
 }
 
-// writeFixtureMoov builds the minimal moov matching the generated samples.
-func writeFixtureMoov(bw *boxWriter, deltas []mp4.SttsEntry, syncs, sizes []uint32,
-	avcC []byte, truncated bool, samples [][]byte) error {
-	if err := bw.start(mp4.BoxTypeMoov()); err != nil {
-		return err
-	}
+func buildFtyp(b *boxBuilder) {
+	payload := []byte{'i', 's', 'o', 'm'}
+	payload = append(payload, u32(0x200)...)
+	payload = append(payload, []byte("isom")...)
+	payload = append(payload, []byte("avc1")...)
+	b.bytes("ftyp", payload)
+}
+
+// buildMoov returns the moov payload (children only).
+func buildMoov(deltas [][2]uint32, syncs, sizes []uint32, avc1 []byte) []byte {
+	root := &boxBuilder{}
 	duration := uint32(frameCount * frameDelta)
-	if _, err := mp4.Marshal(bw.f, &mp4.Mvhd{
-		Timescale: FixtureTimescale, DurationV0: duration,
-		Rate: 0x00010000, Volume: 0x0100, Matrix: matrix, NextTrackID: 2,
-	}, mp4.Context{}); err != nil {
-		return err
-	}
-	if err := bw.start(mp4.BoxTypeTrak()); err != nil {
-		return err
-	}
-	if _, err := mp4.Marshal(bw.f, &mp4.Tkhd{
-		TrackID: 1, DurationV0: duration, Matrix: matrix,
-		Width: uint32(width) << 16, Height: uint32(height) << 16,
-	}, mp4.Context{}); err != nil {
-		return err
-	}
-	if err := bw.start(mp4.BoxTypeMdia()); err != nil {
-		return err
-	}
-	if _, err := mp4.Marshal(bw.f, &mp4.Mdhd{
-		Timescale: FixtureTimescale, DurationV0: duration,
-		Language: [3]byte{'u', 'n', 'd'},
-	}, mp4.Context{}); err != nil {
-		return err
-	}
-	if _, err := mp4.Marshal(bw.f, &mp4.Hdlr{
-		HandlerType: [4]byte{'v', 'i', 'd', 'e'}, Name: "video",
-	}, mp4.Context{}); err != nil {
-		return err
-	}
-	if err := writeFixtureMinf(bw, deltas, syncs, sizes, avcC, truncated, samples); err != nil {
-		return err
-	}
-	// writeFixtureMinf closes minf/mdia/trak/moov after patching co64.
-	return nil
+	// mvhd (version 0)
+	mvhd := make([]byte, 0, 100)
+	mvhd = append(mvhd, make([]byte, 8)...)      // creation/modification
+	mvhd = append(mvhd, u32(FixtureTimescale)...) // timescale
+	mvhd = append(mvhd, u32(duration)...)         // duration
+	mvhd = append(mvhd, u32(0x00010000)...)       // rate
+	mvhd = append(mvhd, 0x01, 0x00)               // volume
+	mvhd = append(mvhd, make([]byte, 10)...)      // reserved
+	mvhd = append(mvhd, matrixPayload()...)
+	mvhd = append(mvhd, make([]byte, 24)...) // pre_defined
+	mvhd = append(mvhd, u32(2)...)           // next track id
+	root.fullBox("mvhd", 0, 0, mvhd)
+
+	trak := &boxBuilder{}
+	tkhd := make([]byte, 0, 92)
+	tkhd = append(tkhd, make([]byte, 8)...)
+	tkhd = append(tkhd, u32(1)...)             // track id
+	tkhd = append(tkhd, u32(0)...)             // reserved
+	tkhd = append(tkhd, u32(duration)...)      // duration
+	tkhd = append(tkhd, make([]byte, 8)...)    // reserved
+	tkhd = append(tkhd, 0, 0, 0, 0)            // layer/alternate
+	tkhd = append(tkhd, 0, 0)                  // volume
+	tkhd = append(tkhd, 0, 0)                  // reserved
+	tkhd = append(tkhd, matrixPayload()...)
+	tkhd = append(tkhd, u32(uint32(width)<<16)...)
+	tkhd = append(tkhd, u32(uint32(height)<<16)...)
+	trak.fullBox("tkhd", 0, 3, tkhd)
+
+	mdia := &boxBuilder{}
+	mdhd := append(append([]byte{}, make([]byte, 8)...), u32(FixtureTimescale)...)
+	mdhd = append(mdhd, u32(duration)...)
+	mdhd = append(mdhd, 0x55, 0xC4) // ISO language 'und' packed into 16 bits
+	mdhd = append(mdhd, 0, 0)       // pre_defined quality
+	mdia.fullBox("mdhd", 0, 0, mdhd)
+	hdlr := make([]byte, 0, 32)
+	hdlr = append(hdlr, 0, 0, 0, 0) // pre_defined
+	hdlr = append(hdlr, []byte("vide")...)
+	hdlr = append(hdlr, make([]byte, 12)...) // reserved
+	hdlr = append(hdlr, []byte("video")...)
+	hdlr = append(hdlr, 0) // null terminator
+	mdia.fullBox("hdlr", 0, 0, hdlr)
+	minf := &boxBuilder{}
+	minf.fullBox("vmhd", 0, 1, make([]byte, 8)) // graphicsmode + opcolor
+	dref := &boxBuilder{}
+	dref.fullBox("url ", 0, 1, nil)
+	dinf := &boxBuilder{}
+	drefBox := &boxBuilder{}
+	drefBox.fullBox("dref", 0, 0, append(u32(1), dref.buf...))
+	dinf.bytes("dinf", drefBox.buf)
+	minf.bytes("dinf", dinf.buf)
+	minf.buf = append(minf.buf, buildStbl(deltas, syncs, sizes, avc1)...)
+	mdia.bytes("minf", minf.buf)
+	trak.bytes("mdia", mdia.buf)
+	root.bytes("trak", trak.buf)
+	return root.buf
 }
 
-func writeFixtureMinf(bw *boxWriter, deltas []mp4.SttsEntry, syncs, sizes []uint32,
-	avcC []byte, truncated bool, samples [][]byte) error {
-	if err := bw.start(mp4.BoxTypeMinf()); err != nil {
-		return err
+func buildStbl(deltas [][2]uint32, syncs, sizes []uint32, avc1 []byte) []byte {
+	stbl := &boxBuilder{}
+	// stsd is one full box: version/flags + entry_count + raw avc1 entry.
+	stbl.fullBox("stsd", 0, 0, append(u32(1), avc1...))
+	sttsPayload := u32(uint32(len(deltas)))
+	for _, d := range deltas {
+		sttsPayload = append(sttsPayload, u32(d[0])...)
+		sttsPayload = append(sttsPayload, u32(d[1])...)
 	}
-	vmhd := &mp4.Vmhd{}
-	vmhd.SetFlags(0x000001)
-	if _, err := mp4.Marshal(bw.f, vmhd, mp4.Context{}); err != nil {
-		return err
+	stbl.fullBox("stts", 0, 0, sttsPayload)
+	stss := u32(uint32(len(syncs)))
+	for _, s := range syncs {
+		stss = append(stss, u32(s)...)
 	}
-	if err := bw.start(mp4.BoxTypeDinf()); err != nil {
-		return err
+	stbl.fullBox("stss", 0, 0, stss)
+	stsc := append(u32(1), u32(1)...)
+	stsc = append(stsc, u32(1)...)
+	stsc = append(stsc, u32(1)...)
+	stbl.fullBox("stsc", 0, 0, stsc)
+	stsz := append(u32(0), u32(uint32(len(sizes)))...)
+	for _, s := range sizes {
+		stsz = append(stsz, u32(s)...)
 	}
-	if err := bw.start(mp4.BoxTypeDref()); err != nil {
-		return err
-	}
-	if _, err := mp4.Marshal(bw.f, &mp4.Dref{EntryCount: 1}, mp4.Context{}); err != nil {
-		return err
-	}
-	url := &mp4.Url{}
-	url.SetFlags(0x000001)
-	if _, err := mp4.Marshal(bw.f, url, mp4.Context{}); err != nil {
-		return err
-	}
-	if err := bw.end(); err != nil { // dref
-		return err
-	}
-	if err := bw.end(); err != nil { // dinf
-		return err
-	}
-	if err := bw.start(mp4.BoxTypeStbl()); err != nil {
-		return err
-	}
-	if err := writeFixtureStsd(bw, avcC); err != nil {
-		return err
-	}
-	if _, err := mp4.Marshal(bw.f, &mp4.Stts{
-		EntryCount: uint32(len(deltas)), Entries: deltas,
-	}, mp4.Context{}); err != nil {
-		return err
-	}
-	if _, err := mp4.Marshal(bw.f, &mp4.Stss{
-		EntryCount: uint32(len(syncs)), SampleNumber: syncs,
-	}, mp4.Context{}); err != nil {
-		return err
-	}
-	if _, err := mp4.Marshal(bw.f, &mp4.Stsc{
-		EntryCount: 1,
-		Entries:    []mp4.StscEntry{{FirstChunk: 1, SamplesPerChunk: 1, SampleDescriptionIndex: 1}},
-	}, mp4.Context{}); err != nil {
-		return err
-	}
-	if _, err := mp4.Marshal(bw.f, &mp4.Stsz{
-		SampleSize: 0, SampleCount: uint32(len(sizes)), EntrySize: sizes,
-	}, mp4.Context{}); err != nil {
-		return err
-	}
-	// One chunk per sample; co64 is reserved here and patched after mdat
-	// is written because moov precedes mdat in these fixtures.
-	co64Pos, err := reserveCO64(bw, len(sizes))
-	if err != nil {
-		return err
-	}
-	if err := bw.end(); err != nil { // stbl
-		return err
-	}
-	if err := bw.end(); err != nil { // minf
-		return err
-	}
-	if err := bw.end(); err != nil { // mdia
-		return err
-	}
-	if err := bw.end(); err != nil { // trak
-		return err
-	}
-	if err := bw.end(); err != nil { // moov
-		return err
-	}
-	return writeFixtureMdat(bw, samples, co64Pos, truncated)
+	stbl.fullBox("stsz", 0, 0, stsz)
+	co64 := u32(uint32(len(sizes)))
+	co64 = append(co64, make([]byte, 8*len(sizes))...) // placeholders
+	stbl.fullBox("co64", 0, 0, co64)
+	return stbl.buf
 }
 
-// writeFixtureStsd emits avc1 + avcC. The avcC payload is hand-built so
-// the fixture stays independent of any real encoder.
-func writeFixtureStsd(bw *boxWriter, avcC []byte) error {
-	if err := bw.start(mp4.BoxTypeStsd()); err != nil {
-		return err
+// buildMdat concatenates every sample payload under one mdat header.
+func buildMdat(samples [][]byte) []byte {
+	mdat := &boxBuilder{}
+	var payload []byte
+	for _, s := range samples {
+		payload = append(payload, s...)
 	}
-	if _, err := mp4.Marshal(bw.f, &mp4.Stsd{EntryCount: 1}, mp4.Context{}); err != nil {
-		return err
-	}
-	avc1 := buildAVC1(avcC)
-	if err := bw.raw(avc1); err != nil {
-		return err
-	}
-	if err := bw.end(); err != nil { // stsd
-		return err
-	}
-	return nil
+	mdat.bytes("mdat", payload)
+	return mdat.buf
 }
 
-// writeFixtureMdat writes each sample as its own chunk, records absolute
-// offsets, then patches the co64 table. When truncated is set, the final
-// sample is cut short so the top-level scan reports a box overrun.
-func writeFixtureMdat(bw *boxWriter, samples [][]byte, co64Pos int64, truncated bool) error {
-	if err := bw.start(mp4.BoxTypeMdat()); err != nil {
-		return err
+// findCo64Table returns the offset of the first co64 chunk entry inside
+// the moov payload: 4-byte type tag + 8-byte box header remainder is not
+// needed; the table follows type(4)+size already passed, so we locate the
+// type tag and add 4 (type) + 4 (version/flags) + 4 (entry count).
+func findCo64Table(moov []byte) int {
+	idx := indexOf(moov, []byte("co64"))
+	if idx < 0 {
+		return -1
 	}
-	offsets := make([]uint64, len(samples))
-	for i, s := range samples {
-		pos, err := bw.f.Seek(0, io.SeekCurrent)
-		if err != nil {
-			return err
-		}
-		offsets[i] = uint64(pos)
-		if truncated && i == len(samples)-1 {
-			if _, err := bw.f.Write(s[:len(s)/2]); err != nil {
-				return err
-			}
-			if err := bw.end(); err != nil {
-				return err
-			}
-			// Deliberately leave co64 unpatched: the declared box runs
-			// past EOF and the scan stage must reject the file first.
-			return nil
-		}
-		if _, err := bw.f.Write(s); err != nil {
-			return err
+	return idx + 4 + 4 + 4
+}
+
+func patchCo64(moov []byte, tablePos int, base uint64, sizes []uint32) {
+	off := base
+	for i, sz := range sizes {
+		binary.BigEndian.PutUint64(moov[tablePos+i*8:], off)
+		off += uint64(sz)
+	}
+}
+
+func indexOf(haystack, needle []byte) int {
+	for i := 0; i+len(needle) <= len(haystack); i++ {
+		if string(haystack[i:i+len(needle)]) == string(needle) {
+			return i
 		}
 	}
-	if err := bw.end(); err != nil {
-		return err
-	}
-	return patchCO64(bw, co64Pos, offsets)
+	return -1
+}
+
+// buildAVC1 constructs the raw avc1 sample entry including its nested
+// avcC box by hand, avoiding any codec-specific marshalling.
+func buildAVC1(avcC []byte) []byte {
+	const entryBody = 78
+	avc1Size := 8 + entryBody + 8 + len(avcC)
+	buf := make([]byte, avc1Size)
+	binary.BigEndian.PutUint32(buf[0:4], uint32(avc1Size))
+	copy(buf[4:8], "avc1")
+	binary.BigEndian.PutUint16(buf[14:16], 1) // data_reference_index
+	binary.BigEndian.PutUint32(buf[24:28], 0x00480000)
+	binary.BigEndian.PutUint32(buf[28:32], 0x00480000)
+	binary.BigEndian.PutUint16(buf[38:40], 1)
+	binary.BigEndian.PutUint16(buf[40:42], uint16(width))
+	binary.BigEndian.PutUint16(buf[42:44], uint16(height))
+	binary.BigEndian.PutUint16(buf[70:72], 0x0018)
+	binary.BigEndian.PutUint16(buf[72:74], 0xFFFF)
+	off := 8 + entryBody
+	binary.BigEndian.PutUint32(buf[off:off+4], uint32(8+len(avcC)))
+	copy(buf[off+4:off+8], "avcC")
+	copy(buf[off+8:], avcC)
+	return buf
 }

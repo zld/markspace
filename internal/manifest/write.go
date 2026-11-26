@@ -74,8 +74,9 @@ type Stats struct {
 	ClipS          float64 `json:"clip_s"`
 	BudgetS        float64 `json:"budget_s"`
 	DeviationS     float64 `json:"deviation_s"`
-	CacheHits      int     `json:"cache_hits"`
-	CacheRebuilds  int     `json:"cache_rebuilds"`
+	// Cache hit/rebuild counters are intentionally excluded: they describe
+	// how a run was executed, not what was delivered, so repeat runs with
+	// identical artifacts must produce identical manifests.
 }
 
 // Manifest is the complete, deterministically ordered delivery document.

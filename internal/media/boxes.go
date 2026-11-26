@@ -196,28 +196,37 @@ var stblBoxTypes = map[string]bool{
 	"stco": true, "co64": true, "stss": true,
 }
 
-// parseMoov walks moov/trak/mdia/minf/stbl with the mp4 library and
-// captures the sample tables needed for timeline construction and cutting.
+// parseMoov walks the whole file recursively with Expand and captures the
+// sample tables needed for timeline construction and cutting. Box type is
+// matched against its path so multiple tracks stay independent.
 func parseMoov(f *os.File, moov BoxRef) (*mp4.Mvhd, []*TrackBoxes, error) {
-	section := io.NewSectionReader(f, moov.Offset, moov.Size)
-	root := &mp4.BoxInfo{Offset: uint64(moov.Offset), Size: uint64(moov.Size), HeaderSize: uint64(moov.Header)}
 	var mvhd *mp4.Mvhd
 	var tracks []*TrackBoxes
 	var cur *TrackBoxes
 	handler := func(h *mp4.ReadHandle) (interface{}, error) {
 		bt := h.BoxInfo.Type.String()
-		pathLen := len(h.Path)
+		path := h.Path
 		switch {
-		case pathLen == 2 && bt == "mvhd":
+		case bt == "mvhd":
 			box, _, err := h.ReadPayload()
 			if err != nil {
 				return nil, err
 			}
 			mvhd = box.(*mp4.Mvhd)
-		case pathLen == 2 && bt == "trak":
+		case bt == "trak":
 			cur = &TrackBoxes{}
 			tracks = append(tracks, cur)
-		case pathLen == 4 && bt == "mdhd":
+		case hasType(path, "tkhd"):
+			box, _, err := h.ReadPayload()
+			if err != nil {
+				return nil, err
+			}
+			tkhd := box.(*mp4.Tkhd)
+			cur.TrackID = tkhd.TrackID
+			cur.Width = uint16(tkhd.Width >> 16)
+			cur.Height = uint16(tkhd.Height >> 16)
+			cur.Volume = uint16(tkhd.Volume)
+		case hasType(path, "mdhd"):
 			box, _, err := h.ReadPayload()
 			if err != nil {
 				return nil, err
@@ -228,29 +237,19 @@ func parseMoov(f *os.File, moov BoxRef) (*mp4.Mvhd, []*TrackBoxes, error) {
 			if mdhd.GetVersion() == 0 {
 				cur.MDHDDur = uint64(mdhd.DurationV0)
 			}
-		case pathLen == 4 && bt == "hdlr":
+		case hasType(path, "hdlr"):
 			box, _, err := h.ReadPayload()
 			if err != nil {
 				return nil, err
 			}
 			cur.Handler = HandlerType(string(box.(*mp4.Hdlr).HandlerType[:]))
-		case pathLen == 3 && bt == "tkhd":
-			box, _, err := h.ReadPayload()
-			if err != nil {
-				return nil, err
-			}
-			tkhd := box.(*mp4.Tkhd)
-			cur.TrackID = tkhd.TrackID
-			cur.Width = uint16(tkhd.Width >> 16)
-			cur.Height = uint16(tkhd.Height >> 16)
-			cur.Volume = uint16(tkhd.Volume)
-		case pathLen == 6 && bt == "stsd":
+		case bt == "stsd":
 			entry, err := readStsdEntry(f, &h.BoxInfo)
 			if err != nil {
 				return nil, err
 			}
 			cur.StsdEntry = entry
-		case pathLen == 6 && stblBoxTypes[bt]:
+		case stblBoxTypes[bt]:
 			box, _, err := h.ReadPayload()
 			if err != nil {
 				return nil, err
@@ -272,15 +271,25 @@ func parseMoov(f *os.File, moov BoxRef) (*mp4.Mvhd, []*TrackBoxes, error) {
 				cur.Stss = v
 			}
 		}
-		return nil, nil
+		return h.Expand()
 	}
-	if _, err := mp4.ReadBoxStructureFromInternal(section, root, handler); err != nil {
+	if _, err := mp4.ReadBoxStructure(f, handler); err != nil {
 		if ce, ok := clock.AsClockError(err); ok {
 			return nil, nil, ce
 		}
 		return nil, nil, clock.NewError(clock.KindBoxMalformed, "moov", err.Error())
 	}
 	return mvhd, tracks, nil
+}
+
+// hasType reports whether a box path contains a box type.
+func hasType(path mp4.BoxPath, want string) bool {
+	for _, t := range path {
+		if t.String() == want {
+			return true
+		}
+	}
+	return false
 }
 
 // ParseFile performs the scan-stage container parse. The returned FileInfo

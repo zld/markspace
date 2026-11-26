@@ -176,6 +176,11 @@ func printStats(st *pipeline.Stats, mf *manifest.Manifest) {
 	}
 }
 
+// formatSeconds prints whole-second metrics without a trailing decimal
+// when the value is integral, matching the acceptance report format.
 func formatSeconds(v float64) string {
+	if v == float64(int64(v)) {
+		return strconv.FormatInt(int64(v), 10)
+	}
 	return strconv.FormatFloat(v, 'f', 3, 64)
 }

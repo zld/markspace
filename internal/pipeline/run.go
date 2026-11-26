@@ -58,7 +58,7 @@ func Run(c *Config) (*Stats, *manifest.Manifest, error) {
 	resumed := cp != nil
 	if cp == nil {
 		cp = &Checkpoint{
-			Version: 1, Stage: StageScan, InputSHA: inputSHA,
+			Version: 1, Stage: StageNone, InputSHA: inputSHA,
 			EventsSHA: eventsSHA, ConfigSHA: configSHA, InputSize: inputSize,
 			UpdatedAt: "deterministic",
 		}
@@ -87,7 +87,7 @@ func Run(c *Config) (*Stats, *manifest.Manifest, error) {
 			return st, nil, err
 		}
 		st.AnomalyCount = countAnomalies(tl)
-		if err := cpStore.Advance(cp, StagePlan); err != nil {
+		if err := cpStore.Advance(cp, StageScan); err != nil {
 			return st, nil, err
 		}
 	} else {
@@ -109,7 +109,7 @@ func Run(c *Config) (*Stats, *manifest.Manifest, error) {
 	if !cp.Reached(StagePlan) {
 		plans = planEvents(c, tl, feed, st)
 		cp.PlannedCount = len(plans)
-		if err := cpStore.Advance(cp, StageCut); err != nil {
+		if err := cpStore.Advance(cp, StagePlan); err != nil {
 			return st, nil, err
 		}
 	} else {
@@ -134,7 +134,7 @@ func Run(c *Config) (*Stats, *manifest.Manifest, error) {
 			return st, nil, err
 		}
 		cp.CutCount = len(results)
-		if err := cpStore.Advance(cp, StageCommit); err != nil {
+		if err := cpStore.Advance(cp, StageCut); err != nil {
 			return st, nil, err
 		}
 	} else {
@@ -241,21 +241,17 @@ func buildManifest(c *Config, fi *media.FileInfo, tl *media.Timeline,
 			AnomalyCount: st.AnomalyCount, Affected: st.Affected,
 			ClipS: round3(st.ClipS), BudgetS: round3(st.BudgetS),
 			DeviationS: round3(st.DeviationS),
-			CacheHits: st.CacheHits, CacheRebuilds: st.CacheRebuilds,
 		},
 	}
 	return mf
 }
 
-// round3 rounds to milliseconds so floating formatting stays deterministic.
+// round3 rounds to milliseconds; the CLI drops the decimal for integral
+// values, while the manifest keeps millisecond precision deterministically.
 func round3(v float64) float64 {
-	return float64(int64(v*1000+sign(v)*0.5)) / 1000
-}
-
-func sign(v float64) float64 {
-	if v < 0 {
-		return -1
+	if v >= 0 {
+		return float64(int64(v*1000+0.5)) / 1000
 	}
-	return 1
+	return float64(int64(v*1000-0.5)) / 1000
 }
 

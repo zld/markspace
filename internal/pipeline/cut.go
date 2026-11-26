@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"encoding/hex"
+	"encoding/json"
 	"os"
 	"path/filepath"
 
@@ -46,8 +47,15 @@ func cutPlans(c *Config, b *clip.Builder, store *cache.Store,
 		// against both the cache record and the materialized output file.
 		if _, ent, outcome := store.Get(key, inputSHA, "video/mp4"); outcome == cache.HitVerified {
 			if cache.VerifyArtifact(outPath, ent.ArtifactSHA, ent.Size) == cache.HitVerified {
+				res, rerr := decodeResult(pe, name, ent)
+				if rerr != nil {
+					return nil, rerr
+				}
 				st.CacheHits++
-				results = append(results, resultFromCache(pe, name, ent))
+				st.Accepted++
+				st.ClipS += secondsOf(res.Duration, res.Timescale)
+				st.DeviationS = pe.deviation
+				results = append(results, res)
 				continue
 			}
 			st.CacheRebuilds++
@@ -63,9 +71,13 @@ func cutPlans(c *Config, b *clip.Builder, store *cache.Store,
 		if err != nil {
 			return nil, err
 		}
+		resultJSON, err := json.Marshal(res)
+		if err != nil {
+			return nil, err
+		}
 		ent := cache.Entry{
 			Key: key, SourceSHA: inputSHA, ConfigSHA: configSHA,
-			MediaType: "video/mp4",
+			MediaType: "video/mp4", Result: resultJSON,
 		}
 		if err := store.Put(ent, raw); err != nil {
 			return nil, err
@@ -78,14 +90,17 @@ func cutPlans(c *Config, b *clip.Builder, store *cache.Store,
 	return results, nil
 }
 
-// resultFromCache reconstructs the manifest result from a verified record.
-func resultFromCache(pe *plannedEvent, name string, ent cache.Entry) *clip.ClipResult {
-	return &clip.ClipResult{
-		EventID: pe.ev.ID, FileName: name,
-		SHA256Hex: ent.ArtifactSHA, Size: ent.Size,
-		StartPTS: pe.spec.SyncStart, Duration: pe.clipDur,
-		Timescale: pe.timescale(),
+// decodeResult restores the full cut provenance (including sample offsets)
+// from a verified cache record.
+func decodeResult(pe *plannedEvent, name string, ent cache.Entry) (*clip.ClipResult, error) {
+	var res clip.ClipResult
+	if err := json.Unmarshal(ent.Result, &res); err != nil {
+		return nil, err
 	}
+	res.FileName = name
+	res.SHA256Hex = ent.ArtifactSHA
+	res.Size = ent.Size
+	return &res, nil
 }
 
 func mustSHA(hexSHA string) [32]byte {
