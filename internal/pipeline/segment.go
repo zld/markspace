@@ -59,13 +59,15 @@ func (r *Runner) processSegment(layer, kind string, seg manifest.Segment) segmen
 	}
 	out.report.InputSHA256 = verify.HashBytes(inputData)
 
-	// Resume hint: a previously committed segment with an unchanged input
-	// digest. The segment is still parsed and verified so the report is
-	// identical to a cold run; the rewrite is skipped only when the existing
-	// output file is byte-identical to what a fresh rewrite would produce.
-	cached, cacheHit := r.cp.Reuse(layer, seg.Sequence, out.report.InputSHA256)
-	_ = cached
-	_ = cacheHit
+	// A segment whose input digest changed since the checkpoint was written is
+	// rescanned from scratch; a segment with an unchanged digest is parsed and
+	// verified again anyway, so a resumed run reports exactly what a cold run
+	// does. The checkpoint is what proves the digest continuity in the report.
+	if _, ok := r.cp.Done0(layer, seg.Sequence); ok {
+		if _, reuse := r.cp.Reuse(layer, seg.Sequence, out.report.InputSHA256); !reuse && r.opts.Recover {
+			out.report.Rescanned = true
+		}
+	}
 
 	initBytes, err := r.loadInit(seg)
 	if err != nil {

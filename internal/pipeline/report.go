@@ -28,7 +28,10 @@ type SegmentReport struct {
 	Keyframes           int
 	Complete            bool
 	Recovered           bool
-	Faults              []*fault.Error
+	// Rescanned marks a segment whose input digest changed since the
+	// checkpoint, so its content was re-deriving from the new bytes.
+	Rescanned bool
+	Faults    []*fault.Error
 }
 
 // LayerReport aggregates one representation.
@@ -176,6 +179,9 @@ func (r *Report) Print(w io.Writer) {
 			}
 			if s.Recovered {
 				state = "reused"
+			}
+			if s.Rescanned {
+				state = "rescanned"
 			}
 			match := "payload_match=true"
 			if s.PayloadSHA256 != s.SourcePayloadSHA256 {
