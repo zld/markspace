@@ -42,6 +42,7 @@ type MP4File struct {
 	Bytes     []byte
 	Samples   []MP4Sample
 	Truncated []byte
+	Cut16     []byte
 }
 
 // MP4Sample describes one generated sample.
@@ -58,23 +59,20 @@ type MP4Sample struct {
 
 const (
 	VideoTimescale = 90000
-	VideoSampleDur = 3000 // 30 fps
-	VideoSamples   = 16
+	VideoSampleDur = 9000 // 10 fps
+	VideoSamples   = 8
 	AudioTimescale = 48000
-	AudioSampleDur = 1024
-	AudioSamples   = 16
+	AudioSampleDur = 4800 // 100 ms
+	AudioSamples   = 8
 )
-
-// VideoTimescaleRational is 3000/90000 = 1/30 s per video sample.
-func Sample35Nanos() int64 { return 0 }
 
 // GenerateMP4 builds a two-track MP4 with 16 samples per track. Sample
 // payloads carry a "RPLY" tag so byte offsets are verifiable. The moov box is
 // written after mdat to exercise offset-based parsing rather than fast start.
 func GenerateMP4(video, audio TrackSpec) (*MP4File, error) {
 	if video.Kind == "" {
-		video = TrackSpec{ID: 1, Kind: "video", Timescale: VideoTimescale, SampleDur: VideoSampleDur, Samples: VideoSamples, KeyEvery: 8, Width: 1920, Height: 1080, Rotation: 90,
-			Color: &Color{Primaries: 1, Transfer: 1, Matrix: 1}}
+		video = TrackSpec{ID: 1, Kind: "video", Timescale: VideoTimescale, SampleDur: VideoSampleDur, Samples: VideoSamples, KeyEvery: 4, Width: 1920, Height: 1080, Rotation: 90,
+			Color: &Color{Primaries: 1, Transfer: 1, Matrix: 1}, ZeroDeltas: []int{5}}
 	}
 	if audio.Kind == "" {
 		audio = TrackSpec{ID: 2, Kind: "audio", Timescale: AudioTimescale, SampleDur: AudioSampleDur, Samples: AudioSamples}
@@ -142,6 +140,12 @@ func GenerateMP4(video, audio TrackSpec) (*MP4File, error) {
 
 	res := &MP4File{Bytes: out}
 	for ti, spec := range specs {
+		zero := make(map[int]bool, len(spec.ZeroDeltas))
+		for _, z := range spec.ZeroDeltas {
+			zero[z] = true
+		}
+		// The declared DTS follows the raw stts deltas, including injected
+		// zero deltas; repair is expected to fix the duplicates.
 		dts := int64(0)
 		for i := 0; i < spec.Samples; i++ {
 			key := spec.KeyEvery <= 0 || i%spec.KeyEvery == 0
@@ -150,6 +154,9 @@ func GenerateMP4(video, audio TrackSpec) (*MP4File, error) {
 				Duration: int64(spec.SampleDur), Offset: int64(absOffsets[ti][i]),
 				Size: sizes[ti][i], Keyframe: key, Payload: payloads[ti][i],
 			})
+			if zero[i+1] {
+				continue
+			}
 			dts += int64(spec.SampleDur)
 		}
 	}
@@ -157,6 +164,9 @@ func GenerateMP4(video, audio TrackSpec) (*MP4File, error) {
 	// more bytes than exist.
 	cut := mdatPayloadStart + int64(len(mdatPayload))/3
 	res.Truncated = append([]byte(nil), out[:cut]...)
+	// Cut16 is the verification corruption: the file ends 16 bytes in, while
+	// the ftyp header at offset 0 still declares its full length.
+	res.Cut16 = append([]byte(nil), out[:16]...)
 	return res, nil
 }
 

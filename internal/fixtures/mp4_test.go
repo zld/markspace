@@ -55,8 +55,11 @@ func TestGenerateMP4IsParseable(t *testing.T) {
 		if s.Offset != want.Offset || s.Size != want.Size {
 			t.Fatalf("video sample %d offset/size %d/%d want %d/%d", i+1, s.Offset, s.Size, want.Offset, want.Size)
 		}
-		if s.DTS.Cmp(media.FromTicks(int64(i*VideoSampleDur), VideoTimescale)) != 0 {
-			t.Fatalf("video sample %d dts=%d us", i+1, s.DTS.Micros())
+		// Sample 5 has an injected zero delta, so its successor repeats the
+		// same DTS; raw parse preserves that.
+		wantDTS := media.FromTicks(want.DTS, VideoTimescale)
+		if s.DTS.Cmp(wantDTS) != 0 {
+			t.Fatalf("video sample %d dts=%d us want %d us", i+1, s.DTS.Micros(), wantDTS.Micros())
 		}
 		if s.Keyframe != want.Keyframe {
 			t.Fatalf("video sample %d key=%v want %v", i+1, s.Keyframe, want.Keyframe)
@@ -97,9 +100,10 @@ func TestGenerateMP4TruncatedReportsOffset(t *testing.T) {
 	if me.Code != media.CodeTruncatedBox {
 		t.Fatalf("code=%s err=%v", me.Code, err)
 	}
-	// The cut lands inside mdat, whose header starts at the ftyp boundary.
-	if me.Offset != 28 {
-		t.Fatalf("offset=%d err=%v", me.Offset, err)
+	// The failure position is the truncation point at the end of the file;
+	// the message names the box that overruns it.
+	if me.Offset != int64(len(gen.Truncated)) {
+		t.Fatalf("offset=%d want end of file %d: %v", me.Offset, len(gen.Truncated), err)
 	}
 }
 
@@ -108,13 +112,13 @@ func TestTruncatedAtExactOffset16(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := writeTemp(t, "cut16.mp4", Truncate(gen.Bytes, 16))
+	path := writeTemp(t, "cut16.mp4", gen.Cut16)
 	_, err = parse.ParseMP4(path)
 	me, ok := mediaAs(err)
 	if !ok {
 		t.Fatalf("err=%v", err)
 	}
-	if me.Code != media.CodeTruncatedBox || me.Offset != 0 {
-		t.Fatalf("offset=%d code=%s", me.Offset, me.Code)
+	if me.Code != media.CodeTruncatedBox || me.Offset != 16 {
+		t.Fatalf("offset=%d code=%s err=%v", me.Offset, me.Code, err)
 	}
 }

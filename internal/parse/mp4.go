@@ -81,7 +81,7 @@ func scanBoxes(f *os.File, start, end, fileSize int64, depth int) error {
 			}
 			n := binary.BigEndian.Uint64(ext[:])
 			if n > uint64(end-off) {
-				return boxOverrun(off, int64(n), end, typ)
+				return boxOverrun(off, int64(n), end, typ, fileSize)
 			}
 			boxSize = int64(n)
 			header = 16
@@ -96,7 +96,7 @@ func scanBoxes(f *os.File, start, end, fileSize int64, depth int) error {
 			}
 		}
 		if off+boxSize > end {
-			return boxOverrun(off, boxSize, end, typ)
+			return boxOverrun(off, boxSize, end, typ, fileSize)
 		}
 		if containerTypes[typ] {
 			childStart := off + header + boxPrefix[typ]
@@ -121,10 +121,13 @@ func scanBoxes(f *os.File, start, end, fileSize int64, depth int) error {
 	return nil
 }
 
-func boxOverrun(off, boxSize, end int64, typ string) error {
+// boxOverrun reports a truncation at the byte where the file actually ends,
+// which is the position an operator can inspect. The declared and available
+// lengths plus the box start are carried in the message.
+func boxOverrun(off, boxSize, end int64, typ string, fileSize int64) error {
 	return &media.Error{
-		Code: media.CodeTruncatedBox, Op: "mp4.scan", Offset: off,
-		Msg: fmt.Sprintf("box %q declares %d bytes, only %d available", typ, boxSize, end-off),
+		Code: media.CodeTruncatedBox, Op: "mp4.scan", Offset: fileSize,
+		Msg: fmt.Sprintf("box %q at offset %d declares %d bytes, only %d available", typ, off, boxSize, end-off),
 	}
 }
 
