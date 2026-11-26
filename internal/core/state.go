@@ -62,17 +62,23 @@ type Item struct {
 // Summary aggregates one run.
 type Summary struct {
 	Mapped, Emitted, Duplicate, Lost, Late, Resumed int
-	GapMs                                           int64
-	P50DelayMs                                      int64
-	DriftPPM                                        int64
-	MaxAbsTimeDeltaUs                               int64
-	MaxAbsByteDelta                                 int64
+	GapMs              int64
+	P50DelayMs         int64
+	DriftPPM           int64
+	MaxAbsTimeDeltaUs  int64
+	MaxAbsByteDelta    int64
 }
 
 // Input bundles records and RTP events for the kernel.
 type Input struct {
 	Records []Record
 	Events  []Event
+}
+
+// Result is the kernel output: ordered mapping rows plus summary.
+type Result struct {
+	Items   []Item
+	Summary Summary
 }
 
 // mapped is a record with its unwrapped, reference-mapped media time.
@@ -89,50 +95,53 @@ type row struct {
 	dup bool
 }
 
-// Result is the kernel output: ordered mapping rows plus summary.
-type Result struct {
-	Items   []Item
-	Summary Summary
+// recordOrder returns record indices sorted by (Index, ArrivalRef, Source).
+func recordOrder(records []Record) []int {
+	ord := make([]int, len(records))
+	for i := range ord {
+		ord[i] = i
+	}
+	sort.SliceStable(ord, func(a, b int) bool {
+		ra, rb := records[ord[a]], records[ord[b]]
+		if ra.Index != rb.Index {
+			return ra.Index < rb.Index
+		}
+		if ra.ArrivalRef != rb.ArrivalRef {
+			return ra.ArrivalRef < rb.ArrivalRef
+		}
+		return ra.Source < rb.Source
+	})
+	return ord
 }
 
-// Build reconstructs continuity state from records and events.
-// Records are sorted by media time; arrival order is only used for
-// duplicate tie-breaking and byte-displacement accounting.
-func Build(in Input) (*Result, error) {
-	// 1. RTP events -> sync anchors (unwrap 32-bit RTP timestamps).
+// UnwrapRecords unwraps every record's raw base time into the shared
+// source-clock epoch established by the RTP events, and fits the clock
+// model (offset+drift) from the lifted anchors. PTS (mod 2^33) and RTP
+// (mod 2^32) are the same source clock reduced by different moduli, so
+// the PTS unwrapper is seeded into the RTP-established epoch and anchors
+// are lifted into the PTS domain by a constant multiple of 2^32.
+//
+// The returned slice aligns with the input records order; maxSrc is the
+// largest lifted anchor source tick. Fixtures and callers that need
+// kernel-consistent reference times use the returned clock.
+func UnwrapRecords(events []Event, records []Record) (unwrapped []int64, clk *timebase.Clock, maxSrc int64, err error) {
 	rtpUW := timebase.NewUnwrapper(RTPModulus)
-	rtpVals := make([]int64, 0, len(in.Events))
-	var maxSrc int64
-	for i, ev := range in.Events {
-		src, err := rtpUW.Unwrap(int64(ev.RTPTime))
-		if err != nil {
-			return nil, NewError(StageTimebase, CodeAmbiguousJump, "events", 0, int64(i), "rtp timestamp", err)
+	rtpVals := make([]int64, 0, len(events))
+	for i, ev := range events {
+		src, uerr := rtpUW.Unwrap(int64(ev.RTPTime))
+		if uerr != nil {
+			return nil, nil, 0, NewError(StageTimebase, CodeAmbiguousJump, "events", 0, int64(i), "rtp timestamp", uerr)
 		}
-		rtpVals = append(rtpVals, src)
-		if src > maxSrc {
+		if i == 0 || src > maxSrc {
 			maxSrc = src
 		}
+		rtpVals = append(rtpVals, src)
 	}
-
-	// 2. Unwrap PTS per record in media-sequence order. PTS (mod 2^33)
-	// and RTP (mod 2^32) are the same source clock reduced by different
-	// moduli, so the PTS unwrapper is seeded into the RTP-established
-	// epoch and anchors are lifted into the PTS domain by a constant
-	// multiple of 2^32.
-	recs := append([]Record(nil), in.Records...)
-	sort.SliceStable(recs, func(i, j int) bool {
-		if recs[i].Index != recs[j].Index {
-			return recs[i].Index < recs[j].Index
-		}
-		if recs[i].ArrivalRef != recs[j].ArrivalRef {
-			return recs[i].ArrivalRef < recs[j].ArrivalRef
-		}
-		return recs[i].Source < recs[j].Source
-	})
+	ord := recordOrder(records)
 	ptsUW := timebase.NewUnwrapper(PTSModulus)
-	if len(rtpVals) > 0 && len(recs) > 0 {
+	if len(rtpVals) > 0 && len(ord) > 0 {
 		seed := rtpVals[0]
-		firstRaw := recs[0].Info.BaseTime
+		firstRaw := records[ord[0]].Info.BaseTime
 		for d := int64(0); d*RTPModulus < PTSModulus; d++ {
 			if (rtpVals[0]+d*RTPModulus)%PTSModulus == firstRaw%PTSModulus {
 				seed = rtpVals[0] + d*RTPModulus
@@ -141,34 +150,54 @@ func Build(in Input) (*Result, error) {
 		}
 		ptsUW.Seed(seed)
 	}
-	var clk timebase.Clock
-	lift := int64(0)
-	ms := make([]mapped, 0, len(recs))
-	for i, r := range recs {
-		un, err := ptsUW.Unwrap(r.Info.BaseTime)
-		if err != nil {
-			return nil, NewError(StageTimebase, CodeAmbiguousJump, r.Source, r.Line, -1, "pts", err)
+	clk = &timebase.Clock{}
+	unwrapped = make([]int64, len(records))
+	for i, oi := range ord {
+		r := records[oi]
+		un, uerr := ptsUW.Unwrap(r.Info.BaseTime)
+		if uerr != nil {
+			return nil, nil, 0, NewError(StageTimebase, CodeAmbiguousJump, r.Source, r.Line, -1, "pts", uerr)
 		}
 		if i == 0 && len(rtpVals) > 0 {
-			lift = roundDiv(un-rtpVals[0], RTPModulus)
+			lift := roundDiv(un-rtpVals[0], RTPModulus)
 			for j, rv := range rtpVals {
-				clk.AddAnchor(timebase.Anchor{Source: rv + lift*RTPModulus, Ref: in.Events[j].ArrivalRef})
+				clk.AddAnchor(timebase.Anchor{Source: rv + lift*RTPModulus, Ref: events[j].ArrivalRef})
 			}
 			maxSrc += lift * RTPModulus
 		}
-		if clk.Anchors() == 0 {
-			return nil, NewError(StageTimebase, CodeInput, r.Source, r.Line, -1, "no sync anchors", nil)
-		}
-		ref, _ := clk.ToRef(un)
+		unwrapped[oi] = un
+	}
+	return unwrapped, clk, maxSrc, nil
+}
+
+// Build reconstructs continuity state from records and events.
+// Records are sorted by media time; arrival order is only used for
+// duplicate tie-breaking and byte-displacement accounting.
+func Build(in Input) (*Result, error) {
+	unwrapped, clk, maxSrc, err := UnwrapRecords(in.Events, in.Records)
+	if err != nil {
+		return nil, err
+	}
+	if len(in.Records) > 0 && clk.Anchors() == 0 {
+		return nil, NewError(StageTimebase, CodeInput, in.Records[0].Source, in.Records[0].Line, -1,
+			"no sync anchors", nil)
+	}
+	drift, hasClock := clk.DriftPPM()
+
+	// Map records to reference time in media-sequence order.
+	ord := recordOrder(in.Records)
+	ms := make([]mapped, 0, len(ord))
+	for _, oi := range ord {
+		r := in.Records[oi]
+		ref, _ := clk.ToRef(unwrapped[oi])
 		var dur int64
 		for _, s := range r.Info.Samples {
 			dur += s.Duration // actual VFR intervals, never re-quantized
 		}
-		ms = append(ms, mapped{rec: r, unwrapped: un, mediaRef: ref, dur: dur})
+		ms = append(ms, mapped{rec: r, unwrapped: unwrapped[oi], mediaRef: ref, dur: dur})
 	}
-	drift, hasClock := clk.DriftPPM()
 
-	// 3. Media-time order; arrival time breaks ties (earliest wins dup).
+	// Media-time order; arrival time breaks ties (earliest wins dup).
 	sort.SliceStable(ms, func(i, j int) bool {
 		if ms[i].mediaRef != ms[j].mediaRef {
 			return ms[i].mediaRef < ms[j].mediaRef
@@ -179,7 +208,7 @@ func Build(in Input) (*Result, error) {
 		return ms[i].rec.Source < ms[j].rec.Source
 	})
 
-	// 4. Duplicate detection: same track + fingerprint + normalized time.
+	// Duplicate detection: same track + fingerprint + normalized time.
 	res := &Result{}
 	res.Summary.Mapped = len(ms)
 	res.Summary.DriftPPM = drift
@@ -205,7 +234,7 @@ func Build(in Input) (*Result, error) {
 		}
 	}
 
-	// 5. Expected gapless timeline from actual durations; gaps -> lost.
+	// Expected gapless timeline from actual durations; gaps -> lost.
 	var emittedDur []int64
 	for _, r := range rows {
 		if !r.dup {
@@ -228,7 +257,10 @@ func Build(in Input) (*Result, error) {
 			})
 			continue
 		}
-		if out > 0 && m.mediaRef-expectedRef > gapSlackTicks {
+		if out == 0 {
+			expectedRef = m.mediaRef
+			expectedByte = 0
+		} else if m.mediaRef-expectedRef > gapSlackTicks {
 			gap := m.mediaRef - expectedRef
 			lost := 1
 			if medDur > 0 {
@@ -250,10 +282,6 @@ func Build(in Input) (*Result, error) {
 			// Resume from the next valid anchor: re-anchor the expected
 			// timeline; the gap itself stays marked unrecovered.
 			expectedRef = m.mediaRef
-		}
-		if out == 0 {
-			expectedRef = m.mediaRef
-			expectedByte = 0
 		}
 		deltaUs := ticksToUs(m.mediaRef - expectedRef)
 		byteDelta := arrivalByte[m.rec.Source] - expectedByte
