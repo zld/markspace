@@ -48,6 +48,9 @@ func Run(in Input) (*Result, error) {
 	if _, err := index.Build(mov); err != nil {
 		return nil, err
 	}
+	if err := validateSupportedFormats(mov); err != nil {
+		return nil, err
+	}
 
 	ev, err := selectEvent(in.EventPath, in.EventID)
 	if err != nil {
@@ -74,6 +77,24 @@ func Run(in Input) (*Result, error) {
 
 	key := journal.DeliveryKey(ev.ID, in.StartMS, in.EndMS)
 	return publish(in, key, ev.ID, art)
+}
+
+func validateSupportedFormats(mov *mp4scan.Movie) error {
+	vt := mov.Track("video")
+	at := mov.Track("audio")
+	if vt == nil || at == nil {
+		return fault.New(fault.Unsupported, fault.StageScan, mov.Path, -1, -1, "requires one video and one audio track")
+	}
+	if vt.Codec != "jpeg" {
+		return fault.New(fault.Unsupported, fault.StageScan, mov.Path, -1, -1, "video codec %q is outside MJPEG support", vt.Codec)
+	}
+	if at.Codec != "sowt" {
+		return fault.New(fault.Unsupported, fault.StageScan, mov.Path, -1, -1, "audio codec %q is outside little-endian PCM support", at.Codec)
+	}
+	if at.Timescale != 48_000 {
+		return fault.New(fault.Unsupported, fault.StageScan, mov.Path, -1, -1, "audio timescale %d is not 48 kHz", at.Timescale)
+	}
+	return nil
 }
 
 func selectEvent(path, wantID string) (*event.Event, error) {

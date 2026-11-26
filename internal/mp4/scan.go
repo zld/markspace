@@ -66,6 +66,9 @@ type scanner struct {
 	mov  *Movie
 }
 
+// MaxSourceBytes is the promised single-source input bound: 1 GiB.
+const MaxSourceBytes int64 = 1 << 30
+
 // ScanFile opens path and parses its boxes and sample tables.
 func ScanFile(path string) (*Movie, error) {
 	f, err := os.Open(path)
@@ -76,6 +79,9 @@ func ScanFile(path string) (*Movie, error) {
 	st, err := f.Stat()
 	if err != nil {
 		return nil, fault.New(fault.IO, fault.StageScan, path, -1, -1, "stat: %v", err)
+	}
+	if st.Size() > MaxSourceBytes {
+		return nil, fault.New(fault.Unsupported, fault.StageScan, path, -1, -1, "source size %d exceeds 1 GiB limit", st.Size())
 	}
 	return Scan(f, st.Size(), path)
 }

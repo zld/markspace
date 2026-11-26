@@ -53,6 +53,23 @@ type demoFlags struct {
 	crashAfterRename bool
 }
 
+func normalizeCase(name string) string {
+	switch name {
+	case "", "ok", "normal", "success":
+		return fixture.CaseOK
+	case "truncated-box", "truncated", "corrupt", "corrupted":
+		return fixture.CaseTruncated
+	case "time-gap", "gap", "empty-gap":
+		return fixture.CaseTimeGap
+	case "timestamp-wrap", "wrap", "rtp-wrap":
+		return fixture.CaseWrap
+	case "recover", "recovery", "crash-after-rename":
+		return fixture.CaseRecover
+	default:
+		return name
+	}
+}
+
 func runDemo(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("demo", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -83,7 +100,8 @@ func runDemo(args []string, stdout, stderr io.Writer) int {
 	case recover:
 		f.caseName = fixture.CaseRecover
 	}
-	if recover {
+	f.caseName = normalizeCase(f.caseName)
+	if recover || f.caseName == fixture.CaseRecover {
 		f.crashAfterRename = true
 	}
 	if !f.selfFixture {
