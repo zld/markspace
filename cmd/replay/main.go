@@ -169,6 +169,14 @@ func executeAll(out string, verbose bool) (Proof, bool, error) {
 			p.Lost, p.Duplicate, p.Truncated, p.IndexRebuilt)
 		fmt.Printf("PROOF resume rebuilt=%d reused=%d duplicate_products=%d hash_match=%s\n",
 			p.Rebuilt, p.Reused, p.DuplicateProducts, p.ResumeHashMatch)
+		// One consolidated line carrying every acceptance metric for simple
+		// single-pass extraction.
+		fmt.Printf("REPLAY_RESULT status=%s roundtrip=%s index_hits=%s boundary_skew_ticks=%d "+
+			"segments=%d hash_match=%s anomalies=%d lost=%d duplicate=%d truncated=%d "+
+			"index_rebuilt=%d rebuilt=%d reused=%d duplicate_products=%d\n",
+			p.Status, p.Roundtrip, p.IndexHits, p.BoundarySkewTicks, p.Segments, p.HashMatch,
+			p.Anomalies, p.Lost, p.Duplicate, p.Truncated, p.IndexRebuilt, p.Rebuilt, p.Reused,
+			p.DuplicateProducts)
 		fmt.Printf("proof written: %s\n", filepath.Join(out, "proof.json"))
 	}
 	return p, allOK, nil

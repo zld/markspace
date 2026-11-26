@@ -33,18 +33,30 @@ func runUnrecoverable(root string) scenarioResult {
 }
 
 // runFatal feeds a container with no mdhd timescale: no time mapping exists,
-// which is an input fatal error mapped to exit status 1.
+// which is an input fatal error mapped to exit status 1. The task interval
+// that cannot be mapped is still reported on the manifest.
 func runFatal(root string) scenarioResult {
 	const name = "fatal"
 	rep := audit.NewReport(name)
+	ev := proofEvents()[0]
+	// Event interval in raw nanoseconds, carried exactly as tick values with
+	// the nanosecond denominator so the unmappable interval is still reported.
+	nsRange := fault.Range{
+		Start: clockNS(ev.AtNS - ev.PreNS),
+		End:   clockNS(ev.AtNS + ev.PostNS),
+	}
 	_, err := newLayer("broken", fixture.NoTimescaleVideo(), 3000, nil)
 	isFatal := err != nil && fault.IsFatal(err)
 	if isFatal {
-		rep.Note("fatal as expected: %v", err)
+		rep.Note("fatal as expected for interval ns=[%d,%d): %v",
+			ev.AtNS-ev.PreNS, ev.AtNS+ev.PostNS, err)
 		rep.Add(fault.New("broken", 0, fault.CategorySegmentFail, fault.SeverityFatal,
-			fault.ActionNone, 0, fault.Range{}, err.Error()))
+			fault.ActionNone, 0, nsRange,
+			fmt.Sprintf("no time mapping for requested interval ns=[%d,%d): %v",
+				ev.AtNS-ev.PreNS, ev.AtNS+ev.PostNS, err)))
 	}
 	ok := isFatal
-	line := fmt.Sprintf("[fatal] time_mapping_available=%t expected_exit=1 %s", !isFatal, boolOK(ok))
+	line := fmt.Sprintf("[fatal] time_mapping_available=%t unmappable_interval_ns=[%d,%d) expected_exit=1 %s",
+		!isFatal, ev.AtNS-ev.PreNS, ev.AtNS+ev.PostNS, boolOK(ok))
 	return finish(name, root, 1, 1, rep, ok, line)
 }

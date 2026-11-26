@@ -93,6 +93,10 @@ func frameTicksFor(timescale uint32) int64 {
 	return int64(fixture.HiFrameTicks)
 }
 
+// clockNS represents a nanosecond interval endpoint as a canonical integer
+// tick so a fatal, timescale-less failure can still report its event interval.
+func clockNS(ns int64) clock.Tick { return clock.Tick{Value: ns, RemDen: 1} }
+
 // toItems turns recoverable windows into checkpointed recovery items.
 func toItems(ws []*segment.Window) []recovery.Item {
 	items := make([]recovery.Item, 0, len(ws))
