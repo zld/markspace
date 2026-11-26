@@ -16,6 +16,7 @@ go test ./...
 /tmp/continuity verify --case recovery --out /tmp/continuity-recovery
 
 # Explicit terminal exit-code contract for direct invocation.
+rm -rf /tmp/continuity-exit-damaged /tmp/continuity-exit-crash
 set +e
 /tmp/continuity run --case damaged --out /tmp/continuity-exit-damaged >/dev/null 2>&1
 damaged_code=$?
