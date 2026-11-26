@@ -43,6 +43,9 @@ type TrackInfo struct {
 	Samples        []Sample        `json:"samples,omitempty"`
 	Segments       []Segment       `json:"segments,omitempty"`
 	TrackSHA256    string          `json:"track_sha256,omitempty"`
+	// SampleDescription is the raw stsd payload (full-box header, count, and
+	// entries), retained so rewrap need not reconstruct codec configuration.
+	SampleDescription []byte `json:"-"`
 }
 
 // ContainerInfo is the parsed description of one MP4/MOV source.
