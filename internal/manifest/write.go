@@ -33,6 +33,9 @@ type Segment struct {
 	ActualBPS      float64   `json:"actual_bps"`
 	DeltaPct       float64   `json:"delta_pct"`
 	PayloadBytes   int64     `json:"payload_bytes"`
+	ContainerBytes int64     `json:"container_bytes"`
+	Delivered      bool      `json:"delivered"`
+	Reason         string    `json:"reason,omitempty"`
 	GapCount       int       `json:"gap_count"`
 	Gaps           []gap.Gap `json:"gaps"`
 }

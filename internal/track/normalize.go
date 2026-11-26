@@ -174,6 +174,9 @@ type ChunkSink func(Chunk) error
 func StreamWAV(id string, ra io.ReaderAt, size int64, chunkFrames int, sink ChunkSink) (*Track, error) {
 	wr, err := wav.OpenAt(ra, size)
 	if err != nil {
+		if te, ok := timebase.AsError(err); ok && te.Track == "" {
+			te.Track = id
+		}
 		return nil, err
 	}
 	m := wr.Meta()

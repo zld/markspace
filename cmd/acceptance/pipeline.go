@@ -129,7 +129,7 @@ func runHealthy(opts healthyOptions) (Report, error) {
 		}),
 		SampleRate: f.Rate, Channels: f.Ch, Gaps: ledger.Gaps(),
 	}
-	var payloadBytes int64
+	var fragmentBytes int64
 	var deliveredSamples []int32
 	for i, seg := range segments {
 		name := fmt.Sprintf("segment-%03d.m4s", i)
@@ -137,8 +137,8 @@ func runHealthy(opts healthyOptions) (Report, error) {
 		if err := cache.AtomicWriteFile(path, seg.Data, 0o644); err != nil {
 			return rep, err
 		}
-		payloadBytes += int64(seg.View.PayloadBytes)
-		actual, err := metrics.ActualBitrate(int64(seg.View.PayloadBytes), seg.View.FrameCount, f.Rate)
+		fragmentBytes += int64(len(seg.Data))
+		actual, err := metrics.ActualBitrate(int64(len(seg.Data)), seg.View.FrameCount, f.Rate)
 		if err != nil {
 			return rep, err
 		}
@@ -153,7 +153,10 @@ func runHealthy(opts healthyOptions) (Report, error) {
 			SourceOffset: seg.SourceOffset, SourceLength: seg.SourceLength,
 			OutputBits: decision.Bits, Channels: f.Ch, SampleRate: f.Rate,
 			TargetBPS: decision.TargetBPS, ActualBPS: actual, DeltaPct: delta,
-			PayloadBytes: int64(seg.View.PayloadBytes), Gaps: []gap.Gap{},
+			PayloadBytes:   int64(seg.View.PayloadBytes),
+			ContainerBytes: int64(len(seg.Data)),
+			Delivered:      true,
+			Gaps:           []gap.Gap{},
 		})
 	}
 	for _, c := range tr.Chunks {
@@ -166,7 +169,7 @@ func runHealthy(opts healthyOptions) (Report, error) {
 	align := metrics.AlignAndSNR(f.Samples, reconstructed, 2)
 	rep.SNRDB = align.SNRDB
 	rep.AlignErrSamples = align.ErrorSamples
-	rep.ActualBPS, err = metrics.ActualBitrate(payloadBytes, int64(f.Frames), f.Rate)
+	rep.ActualBPS, err = metrics.ActualBitrate(fragmentBytes, int64(f.Frames), f.Rate)
 	if err != nil {
 		return rep, err
 	}

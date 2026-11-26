@@ -54,6 +54,11 @@ func caseDamage(out string) Report {
 		return rep
 	}
 	rep.BadOffset = partialTE.Offset
+	partialTE.Track = "cam-damage"
+	badSample, _ := timebase.TicksToSamples(partialTE.Range.Start, timebase.TickRate, 48000)
+	rep.Details["track"] = "cam-damage"
+	rep.Details["bad_sample_frame"] = badSample
+	rep.Details["bad_time_range"] = partialTE.Range
 	rep.Details["riff_bad_offset"] = riffTE.Offset
 	rep.Details["partial_error"] = partialTE.Error()
 

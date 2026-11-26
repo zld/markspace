@@ -7,7 +7,7 @@ import (
 
 const (
 	packetFrames  = 64
-	segmentFrames = 24000
+	segmentFrames = 48000
 )
 
 func checkHealthyThresholds(r *Report) error {
@@ -29,7 +29,7 @@ func checkHealthyThresholds(r *Report) error {
 
 func caseNormal(out string) Report {
 	dir := out + "/normal"
-	f := genTone(toneSpec{SampleRate: 48000, Channels: 2, Frames: 48000, Frequency: 440})
+	f := genTone(toneSpec{SampleRate: 48000, Channels: 2, Frames: 96000, Frequency: 440})
 	packets := packetize(f, 0, packetFrames)
 	r, err := runHealthy(healthyOptions{
 		caseName: "normal", trackID: "cam-normal", outDir: dir, fixture: f,
@@ -51,7 +51,7 @@ func caseNormal(out string) Report {
 
 func caseRecovery(out string) Report {
 	dir := out + "/recovery"
-	f := genTone(toneSpec{SampleRate: 48000, Channels: 2, Frames: 48000, Frequency: 523.25})
+	f := genTone(toneSpec{SampleRate: 48000, Channels: 2, Frames: 96000, Frequency: 523.25})
 	ordered := packetize(f, 0, packetFrames)
 	shuffled := shuffledWithDuplicates(ordered)
 	r, err := runHealthy(healthyOptions{

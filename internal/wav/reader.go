@@ -182,9 +182,17 @@ func OpenAt(r io.ReaderAt, fileSize int64) (*Reader, error) {
 				whole := size / int64(meta.BlockAlign)
 				bad := body + whole*int64(meta.BlockAlign)
 				meta.FirstBadOffset = bad
+				startTick, tickErr := timebase.SamplesToTicks(whole, uint32(meta.SampleRate), timebase.TickRate)
+				if tickErr != nil {
+					return nil, tickErr
+				}
+				endTick, tickErr := timebase.SamplesToTicks(whole+1, uint32(meta.SampleRate), timebase.TickRate)
+				if tickErr != nil {
+					return nil, tickErr
+				}
 				return nil, timebase.At(timebase.CodeAlignment, bad,
 					"data size %d leaves partial frame after %d complete frames (block_align=%d)",
-					size, whole, meta.BlockAlign)
+					size, whole, meta.BlockAlign).WithRange(startTick, endTick)
 			}
 			meta.FrameCount = size / int64(meta.BlockAlign)
 			return &Reader{
