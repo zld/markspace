@@ -7,10 +7,12 @@ import (
 	"os"
 	"path/filepath"
 
+	"pwflow/internal/ebml"
 	"pwflow/internal/fault"
 	"pwflow/internal/fingerprint"
 	"pwflow/internal/media"
 	"pwflow/internal/planner"
+	pwrtp "pwflow/internal/rtp"
 	"pwflow/internal/segment"
 )
 
@@ -93,6 +95,9 @@ func Run(ctx context.Context, opts Options) (*RunResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Changing RTP arrival patterns updates the EWMA. The adaptive chunk may
+	// shrink prefetch depth, but is always clamped by the memory plan.
+	plan.MaxChunkBytes = planner.AdaptiveChunk(bundle.bandwidth.BpsEWMA, 1_000_000_000, plan.MaxChunkBytes)
 
 	width, height := videoDimensions(bundle.ebml)
 	registry := fingerprint.NewRegistry()
@@ -180,6 +185,12 @@ func Run(ctx context.Context, opts Options) (*RunResult, error) {
 		if c.MaxErrorNS > maxCutErr {
 			maxCutErr = c.MaxErrorNS
 		}
+	}
+	if bundle.repaired.Gaps == nil {
+		bundle.repaired.Gaps = []pwrtp.Gap{}
+	}
+	if bundle.ebml.Damages == nil {
+		bundle.ebml.Damages = []ebml.Damage{}
 	}
 	manifest := &Manifest{
 		SchemaVersion: ManifestVersion, Status: status,
