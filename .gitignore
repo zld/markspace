@@ -1,0 +1,10 @@
+# Local build outputs
+/mediaprep
+/bin/
+/dist/
+*.test
+*.out
+
+# Generated local media and manifests
+/tmp/
+/.tmp/
