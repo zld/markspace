@@ -42,6 +42,7 @@ func Build(ctx context.Context, m *cmaf.Manifest, opts BuildOptions) (*BuildResu
 	mapper := timebase.NewMapper()
 	var reports []*timebase.Report
 	var anchorResults []timebase.SyncResult
+	var clocks []timebase.ClockAnchor
 	fileSeen := map[string]bool{}
 	addFile := func(rel string) error {
 		if rel == "" || fileSeen[rel] {
@@ -114,11 +115,11 @@ func Build(ctx context.Context, m *cmaf.Manifest, opts BuildOptions) (*BuildResu
 			}
 		case cmaf.EventAnchor:
 			if ev.Anchor != nil {
-				_, sync, aerr := timebase.AnchorFromSpec(*ev.Anchor)
+				clock, sync, aerr := timebase.AnchorFromSpec(*ev.Anchor)
 				if aerr != nil {
 					return nil, aerr
 				}
-				// Anchors are attached to the result after the loop below.
+				clocks = append(clocks, clock)
 				anchorResults = append(anchorResults, sync)
 			}
 		}
@@ -134,8 +135,21 @@ func Build(ctx context.Context, m *cmaf.Manifest, opts BuildOptions) (*BuildResu
 		return nil, err
 	}
 	rtpReport := rtptrace.RecoverTrace(arrivals, rtptrace.Config{Window: opts.RTPWindow})
+	var rtpTimeline []timebase.MappedRTPPoint
+	if len(clocks) > 0 {
+		points := make([]timebase.RTPPointInput, 0, len(rtpReport.Ordered))
+		for _, p := range rtpReport.Ordered {
+			points = append(points, timebase.RTPPointInput{
+				Sequence: p.SequenceNumber, Timestamp: p.Timestamp,
+			})
+		}
+		rtpTimeline = clocks[0].MapRTPPoints(points)
+	}
 	idx.InputFingerprint = opts.InputFingerprint
-	return &BuildResult{Index: idx, Timeline: tl, RTP: rtpReport, Anchors: anchorResults}, nil
+	return &BuildResult{
+		Index: idx, Timeline: tl, RTP: rtpReport, RTPTimeline: rtpTimeline,
+		Anchors: anchorResults,
+	}, nil
 }
 
 func resolveInput(root, p string) string {

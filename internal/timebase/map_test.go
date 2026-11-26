@@ -91,6 +91,20 @@ func TestSourceSwitchContinuesAtPreviousEnd(t *testing.T) {
 	}
 }
 
+func TestAnchorMapsRTPClockToIntegerMicroseconds(t *testing.T) {
+	a := ClockAnchor{RTPStart: 180_000, RTPHz: 90_000, MediaStart: 2_000_000}
+	points := a.MapRTPPoints([]RTPPointInput{
+		{Sequence: 100, Timestamp: 180_000},
+		{Sequence: 101, Timestamp: 183_000},
+	})
+	if points[0].StartUs != 2_000_000 {
+		t.Fatalf("anchor point=%d", points[0].StartUs)
+	}
+	if points[1].StartUs != 2_033_333 {
+		t.Fatalf("3000 RTP ticks at 90k mapped to %d", points[1].StartUs)
+	}
+}
+
 func TestObserveMFHDGapDoesNotChangeDuration(t *testing.T) {
 	m := NewMapper()
 	m.ObserveSequence("src-a", 1, 0, 8)

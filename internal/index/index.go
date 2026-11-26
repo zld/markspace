@@ -60,10 +60,11 @@ type Index struct {
 
 // BuildResult bundles the index with non-index audit/recovery reports.
 type BuildResult struct {
-	Index    *Index                `json:"index"`
-	Timeline *timebase.Report      `json:"timeline"`
-	RTP      *rtp.Report           `json:"rtp,omitempty"`
-	Anchors  []timebase.SyncResult `json:"anchors,omitempty"`
+	Index       *Index                    `json:"index"`
+	Timeline    *timebase.Report          `json:"timeline"`
+	RTP         *rtp.Report               `json:"rtp,omitempty"`
+	RTPTimeline []timebase.MappedRTPPoint `json:"rtp_timeline,omitempty"`
+	Anchors     []timebase.SyncResult     `json:"anchors,omitempty"`
 }
 
 // Digest returns the stable digest stored separately from the document.

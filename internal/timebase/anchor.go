@@ -70,6 +70,39 @@ func SyncErrorMS(us model.Us) float64 {
 	return float64(us) / 1000.0
 }
 
+// RTPPointInput is the minimal sequence/timestamp data needed for mapping.
+type RTPPointInput struct {
+	Sequence  uint16
+	Timestamp uint32
+}
+
+// MappedRTPPoint places one reordered/recovered RTP packet on the us timeline.
+type MappedRTPPoint struct {
+	Sequence     uint16   `json:"sequence"`
+	RTPTimestamp uint32   `json:"rtp_timestamp"`
+	StartUs      model.Us `json:"start_us"`
+}
+
+// MapRTPPoints extends 32-bit RTP timestamps and maps them through an anchor.
+func (a ClockAnchor) MapRTPPoints(points []RTPPointInput) []MappedRTPPoint {
+	out := make([]MappedRTPPoint, 0, len(points))
+	var prevExt int64
+	have := false
+	for _, p := range points {
+		var us model.Us
+		var ext int64
+		if !have {
+			us, ext = a.RTPToUs(p.Timestamp, 0)
+			have = true
+		} else {
+			us, ext = a.RTPToUs(p.Timestamp, prevExt)
+		}
+		prevExt = ext
+		out = append(out, MappedRTPPoint{Sequence: p.Sequence, RTPTimestamp: p.Timestamp, StartUs: us})
+	}
+	return out
+}
+
 func absUs(v model.Us) model.Us {
 	if v < 0 {
 		return -v
