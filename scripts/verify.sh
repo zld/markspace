@@ -10,6 +10,10 @@ go build ./...
 go test ./...
 
 rm -rf "$DIR"
+mkdir -p "$DIR"
+BIN="$DIR/continuity"
+go build -o "$BIN" ./cmd/continuity
+
 go run ./cmd/continuity demo \
   --dir "$DIR" \
   --seed 17 \
@@ -37,8 +41,8 @@ expect_code() {
   fi
 }
 
-expect_code 2 go run ./cmd/continuity inspect --file "$DIR/truncated-vint.mkv" --expect-offset 4
-expect_code 3 go run ./cmd/continuity plan --dir "$DIR" --budget-ms 1 --max-bitrate-bps 100000
-expect_code 4 go run ./cmd/continuity resume --dir "$DIR/checkpoint-conflict" --fixture-dir "$DIR" --lfe-mix
+expect_code 2 "$BIN" inspect --file "$DIR/truncated-vint.mkv" --expect-offset 4
+expect_code 3 "$BIN" plan --dir "$DIR" --budget-ms 1 --max-bitrate-bps 100000
+expect_code 4 "$BIN" resume --dir "$DIR/checkpoint-conflict" --fixture-dir "$DIR" --lfe-mix
 
 echo "verify_ok: demo=0 input_corrupt=2 infeasible=3 checkpoint_conflict=4"
