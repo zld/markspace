@@ -63,21 +63,23 @@ func runPipeline(o options) int {
 	sets, err := discoverSets(o.input)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "demo:", err)
-		return 2
+		return 1
 	}
-	evs, err := events.Load(join(o.input, "events.json"))
+	eventsPath := resolveEventsPath(o.input)
+	evs, err := events.Load(eventsPath)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "demo: events:", err)
-		return 2
+		return 1
 	}
-	if events.Find(evs, o.event) == nil {
-		fmt.Fprintf(os.Stderr, "demo: event %q not found in events.json\n", o.event)
+	ev := events.Find(evs, o.event)
+	if ev == nil {
+		fmt.Fprintf(os.Stderr, "demo: event %q not found in %s\n", o.event, eventsPath)
 		return 2
 	}
 	exit := 0
 	var deliverableManifest string
 	for _, s := range sets {
-		mpath, ok := processSet(s, o)
+		mpath, ok := processSet(s, o, ev)
 		if s.deliverable {
 			if !ok {
 				exit = 1
@@ -91,14 +93,30 @@ func runPipeline(o options) int {
 			fmt.Fprintln(os.Stderr, "demo: verify: no deliverable manifest produced")
 			return 1
 		}
-		return verifyDeliverable(deliverableManifest, sets, o)
+		return verifyDeliverable(deliverableManifest, sets, o, eventsPath)
 	}
 	return exit
 }
 
+// resolveEventsPath locates events.json: first inside input (fixture root),
+// then one directory up so pointing --input directly at a set directory
+// still finds the fixture-level event records. It returns the conventional
+// in-input path when neither exists so the loader reports a clear error.
+func resolveEventsPath(input string) string {
+	direct := join(input, "events.json")
+	if _, err := os.Stat(direct); err == nil {
+		return direct
+	}
+	parent := join(input, "..", "events.json")
+	if _, err := os.Stat(parent); err == nil {
+		return parent
+	}
+	return direct
+}
+
 // processSet runs the slice pipeline for one set. It returns the manifest
 // path and whether the set was processed successfully.
-func processSet(s setInfo, o options) (string, bool) {
+func processSet(s setInfo, o options, ev *events.Event) (string, bool) {
 	fmt.Printf("== set %s ==\n", s.name)
 	rep := &model.Report{}
 	p := cmaf.NewParser(rep)
@@ -122,8 +140,6 @@ func processSet(s setInfo, o options) (string, bool) {
 		return "", false
 	}
 
-	evs, _ := events.Load(join(o.input, "events.json")) // validated by runPipeline
-	ev := events.Find(evs, o.event)
 	win, err := events.WindowFor(*ev, o.before, o.after, tl, eventTolerance, rep)
 	if err != nil {
 		fmt.Println("  rejected:", err)
@@ -186,14 +202,14 @@ func printPlan(c *planner.Candidate) {
 	fmt.Printf("  color: %s (convert=%t)\n", c.Color.Note, c.Color.Convert)
 }
 
-func verifyDeliverable(mpath string, sets []setInfo, o options) int {
+func verifyDeliverable(mpath string, sets []setInfo, o options, eventsPath string) int {
 	var s setInfo
 	for _, x := range sets {
 		if x.deliverable {
 			s = x
 		}
 	}
-	out, err := verify.Verify(mpath, s.dir, join(o.input, "events.json"), verify.DefaultConstraints())
+	out, err := verify.Verify(mpath, s.dir, eventsPath, verify.DefaultConstraints())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "demo: verify:", err)
 		return 1
