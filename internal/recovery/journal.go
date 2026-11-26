@@ -37,12 +37,15 @@ type Intent struct {
 
 // Stats summarizes restart recovery.
 type Stats struct {
-	Recovered   int      `json:"recovered"`
-	Republished int      `json:"republished"`
-	Missing     int      `json:"missing"`
-	Corrupt     int      `json:"corrupt"`
-	Duplicates  int      `json:"duplicates"`
-	NeedsWork   []Intent `json:"-"`
+	Recovered      int      `json:"recovered"`
+	Republished    int      `json:"republished"`
+	Missing        int      `json:"missing"`
+	Corrupt        int      `json:"corrupt"`
+	Duplicates     int      `json:"duplicates"`
+	NeedsWork      []Intent `json:"-"`
+	RecoveredItems []Intent `json:"-"`
+	MissingItems   []Intent `json:"-"`
+	CorruptItems   []Intent `json:"-"`
 }
 
 // Journal is an append-only, fsynced JSONL publish log.
@@ -194,15 +197,19 @@ func (j *Journal) Recover() (Stats, error) {
 		switch {
 		case errors.Is(err, os.ErrNotExist):
 			stats.Missing++
+			stats.MissingItems = append(stats.MissingItems, in)
 			stats.NeedsWork = append(stats.NeedsWork, in)
 		case err != nil:
 			stats.Corrupt++
+			stats.CorruptItems = append(stats.CorruptItems, in)
 			stats.NeedsWork = append(stats.NeedsWork, in)
 		case got != in.SHA256 || (in.Size != 0 && size != in.Size):
 			stats.Corrupt++
+			stats.CorruptItems = append(stats.CorruptItems, in)
 			stats.NeedsWork = append(stats.NeedsWork, in)
 		default:
 			stats.Recovered++
+			stats.RecoveredItems = append(stats.RecoveredItems, in)
 			if err := j.Commit(in.ID); err != nil {
 				return stats, err
 			}
