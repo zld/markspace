@@ -43,26 +43,29 @@ func payloadBytes(pkt []byte, h tsHeader, off int64) ([]byte, error) {
 	return pkt[pos:], nil
 }
 
-// checkContinuity enforces per-PID increment semantics. Duplicate CC with the
-// same payload presence is legal; every other jump is a CC discontinuity. On a
-// jump the observed CC is adopted as the new baseline (resync), so the next
-// packet is judged against it rather than re-triggering the same fault.
+// checkContinuity enforces per-PID increment semantics (ISO 13818-1 2.4.3.3).
+// Each packet (including adaptation-field-only ones) normally increments the
+// CC by one; a repeated CC is the legal duplicate case. Null PID 0x1FFF is
+// uncounted. On a jump the observed CC is adopted as the new baseline (resync),
+// so the next packet is judged against it rather than re-firing the fault.
 func (d *Demuxer) checkContinuity(h tsHeader, st *pidState, off int64) error {
-	if !h.HasPayload || h.PID == 0x1FFF {
+	if h.PID == 0x1FFF {
 		return nil
 	}
-	if st.hasCC {
-		want := (st.lastCC + 1) & 0x0F
-		if h.CC != want && h.CC != st.lastCC {
-			d.stats.CCJumps++
-			err := clock.New(clock.CodeTSCCJump,
-				"ts:pid=0x"+hexPID(h.PID), off, st.lastPTSNS, 0,
-				"CC %d -> %d, want %d", st.lastCC, h.CC, want)
-			st.lastCC = h.CC // resync to the observed value
-			return err
-		}
+	if !st.hasCC {
+		st.hasCC = true
+		st.lastCC = h.CC
+		return nil
 	}
-	st.hasCC = true
+	want := (st.lastCC + 1) & 0x0F
+	if h.CC != want && h.CC != st.lastCC {
+		d.stats.CCJumps++
+		err := clock.New(clock.CodeTSCCJump,
+			"ts:pid=0x"+hexPID(h.PID), off, st.lastPTSNS, 0,
+			"CC %d -> %d, want %d", st.lastCC, h.CC, want)
+		st.lastCC = h.CC // resync to the observed value
+		return err
+	}
 	st.lastCC = h.CC
 	return nil
 }
