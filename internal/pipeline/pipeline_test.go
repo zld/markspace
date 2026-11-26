@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"os"
 	"testing"
 
 	"liveregress/internal/fixture"
@@ -214,5 +215,62 @@ func TestPathEscapeExitsOne(t *testing.T) {
 func TestMissingRootIsRefused(t *testing.T) {
 	if _, err := Run(Options{Root: "/definitely/not/here", Case: "x"}); err == nil {
 		t.Fatal("expected an error for a missing root")
+	}
+}
+
+// TestChangedInputRescansOnlyAffectedSegment commits a clean run, mutates one
+// segment's bytes, and resumes. The untouched segments must reproduce their
+// previous output digests while the changed one is rescanned.
+func TestChangedInputRescansOnlyAffectedSegment(t *testing.T) {
+	dir := t.TempDir()
+	tree, err := fixture.GenerateOne(dir, fixture.CaseClean)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := Options{Root: tree.Root, Case: fixture.CaseClean}
+	first, err := Run(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := first.SegmentDigests()
+
+	// Change one audio segment's source bytes without touching the others.
+	target := tree.Root + "/a1/seg2.m4s"
+	data, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Flip a payload byte late in the file (inside mdat).
+	data[len(data)-1] ^= 0xFF
+	if err := os.WriteFile(target, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	second, err := Run(Options{Root: tree.Root, Case: fixture.CaseClean, Recover: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	after := second.SegmentDigests()
+	for path, digest := range before {
+		if path == "a1/seg2.m4s" {
+			continue
+		}
+		if after[path] != digest {
+			t.Fatalf("untouched %s changed: %s -> %s", path, digest, after[path])
+		}
+	}
+	if after["a1/seg2.m4s"] == before["a1/seg2.m4s"] {
+		t.Fatal("changed segment produced the same output digest")
+	}
+	found := false
+	for _, l := range second.Layers {
+		for _, s := range l.Segments {
+			if s.Path == "a1/seg2.m4s" && s.Rescanned {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Fatal("changed segment was not marked as rescanned")
 	}
 }
