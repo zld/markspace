@@ -117,7 +117,9 @@ func (c *Collector) HandleEvent(ev media.TimeEvent) error {
 		st.hasFirst = true
 		st.report.FirstStart = ev.Start
 		st.expectedNext = ev.Start
-	} else {
+	} else if ev.Kind == media.EventAudio {
+		// PCM blocks are contiguous; sparse cues/effects are not expected to
+		// arrive back-to-back and are aligned by their own boundary rules.
 		drift := media.Abs(media.Sub(ev.Start, st.expectedNext))
 		if ms := media.ToMilliseconds(drift); ms > st.report.AlignMaxMS {
 			st.report.AlignMaxMS = ms
@@ -131,9 +133,7 @@ func (c *Collector) HandleEvent(ev media.TimeEvent) error {
 		if err := c.checkPCM(st, ev); err != nil {
 			return err
 		}
-		duration := media.Sub(ev.End, ev.Start)
 		st.expectedNext = ev.End
-		_ = duration
 	case media.EventSubtitle:
 		st.report.Kind = media.EventSubtitle
 		c.cues = append(c.cues, CueRecord{
