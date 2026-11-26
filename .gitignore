@@ -1,4 +1,6 @@
 .tmp/
+/mediasync
+/media-sync
 *.test
 *.out
 coverage.txt
