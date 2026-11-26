@@ -29,6 +29,9 @@ type TrackSpec struct {
 	Width      int
 	Height     int
 	Language   [3]byte
+	// SampleEntryType overrides the stsd sample entry fourcc. When set to
+	// "enca" the audio entry is wrapped, which a remuxer must reject.
+	SampleEntryType string
 }
 
 // FragmentSpec is one moof+mdat to append.
@@ -62,6 +65,7 @@ func BuildInit(tracks []TrackSpec) ([]byte, error) {
 		CompatibleBrands: []mp4.CompatibleBrandElem{
 			{CompatibleBrand: mp4.BrandISO6()},
 			{CompatibleBrand: [4]byte{'d', 'a', 's', 'h'}},
+			{CompatibleBrand: [4]byte{'i', 'p', 'c', 'm'}},
 		},
 	}
 	if err := writeBox(w, mp4.BoxTypeFtyp(), ftyp, mp4.Context{}); err != nil {
@@ -241,7 +245,9 @@ func writeStsd(w *mp4.Writer, t TrackSpec) error {
 		if _, err := mp4.Marshal(w, entry, mp4.Context{}); err != nil {
 			return err
 		}
-		avcc := &mp4.AVCDecoderConfiguration{ConfigurationVersion: 1, Level: 0x1f,
+		avcc := &mp4.AVCDecoderConfiguration{
+			AnyTypeBox:           mp4.AnyTypeBox{Type: mp4.BoxTypeAvcC()},
+			ConfigurationVersion: 1, Level: 0x1f,
 			LengthSizeMinusOne: 3, NumOfSequenceParameterSets: 0, NumOfPictureParameterSets: 0}
 		if err := writeBox(w, mp4.BoxTypeAvcC(), avcc, mp4.Context{}); err != nil {
 			return err
@@ -259,8 +265,41 @@ func writeStsd(w *mp4.Writer, t TrackSpec) error {
 			SampleSize:   uint16(t.SampleSize),
 			SampleRate:   uint32(t.SampleRate) << 16,
 		}
-		if err := writeBox(w, mp4.StrToBoxType(t.Codec), entry, mp4.Context{}); err != nil {
-			return err
+		entryType := t.Codec
+		if t.SampleEntryType != "" {
+			entryType = t.SampleEntryType
+			entry.AnyTypeBox.Type = mp4.StrToBoxType(entryType)
+		}
+		if entryType == "enca" {
+			if _, err := w.StartBox(&mp4.BoxInfo{Type: mp4.BoxTypeEnca()}); err != nil {
+				return err
+			}
+			if _, err := mp4.Marshal(w, entry, mp4.Context{}); err != nil {
+				return err
+			}
+			if _, err := w.EndBox(); err != nil {
+				return err
+			}
+		} else if t.Codec != "ipcm" {
+			if err := writeBox(w, mp4.StrToBoxType(t.Codec), entry, mp4.Context{}); err != nil {
+				return err
+			}
+		} else {
+			// ipcm carries pcmC describing the stored sample size.
+			if _, err := w.StartBox(&mp4.BoxInfo{Type: mp4.BoxTypeIpcm()}); err != nil {
+				return err
+			}
+			if _, err := mp4.Marshal(w, entry, mp4.Context{}); err != nil {
+				return err
+			}
+			pcmC := &mp4.PcmC{FormatFlags: 0, PCMSampleSize: uint8(t.SampleSize)}
+			fullBox(&pcmC.FullBox)
+			if err := writeBox(w, mp4.BoxTypePcmC(), pcmC, mp4.Context{}); err != nil {
+				return err
+			}
+			if _, err := w.EndBox(); err != nil {
+				return err
+			}
 		}
 	}
 	if _, err := w.EndBox(); err != nil { // stsd
@@ -292,25 +331,22 @@ func BuildSegment(fragments []FragmentSpec) ([]byte, error) {
 }
 
 func appendFragment(w *mp4.Writer, fr FragmentSpec) error {
-	// Marshal the moof into a scratch buffer first so trun.data_offset can be
-	// computed relative to the moof start.
-	scratch := &posWriter{}
-	sw := mp4.NewWriter(scratch)
-	if err := marshalMoof(sw, fr, 0); err != nil {
+	// data_offset is relative to the start of the enclosing moof and equals
+	// the moof size plus the 8-byte mdat header. moof size does not depend on
+	// the data_offset value, so it can be measured with a first pass.
+	first := &posWriter{}
+	if err := marshalMoof(mp4.NewWriter(first), fr, 0); err != nil {
 		return err
 	}
-	moofSize := len(scratch.buf)
-	mdatHeader := 8
-	// data_offset is relative to the start of the enclosing moof.
-	dataOffset := int32(moofSize + mdatHeader)
-	scratch.buf, scratch.pos = nil, 0
-	if err := marshalMoof(sw, fr, dataOffset); err != nil {
+	moofSize := len(first.buf)
+	second := &posWriter{}
+	if err := marshalMoof(mp4.NewWriter(second), fr, int32(moofSize+8)); err != nil {
 		return err
 	}
-	if len(scratch.buf) != moofSize {
-		return fmt.Errorf("moof size changed between passes: %d != %d", len(scratch.buf), moofSize)
+	if len(second.buf) != moofSize {
+		return fmt.Errorf("moof size changed between passes: %d != %d", len(second.buf), moofSize)
 	}
-	if _, err := w.Write(scratch.buf); err != nil {
+	if _, err := w.Write(second.buf); err != nil {
 		return err
 	}
 	var payload []byte
