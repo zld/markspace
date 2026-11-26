@@ -107,6 +107,11 @@ func readInputs(opts Options) (*inputBundle, error) {
 		clockHz = 48000
 	}
 
+	if st, err := os.Stat(opts.Input); err != nil {
+		return nil, fault.Wrap(fault.InvalidArgument, err)
+	} else if st.Size() > ebml.DefaultMaxBytes {
+		return nil, fault.New(fault.InputTooLarge, "media is %d bytes; limit is %d", st.Size(), ebml.DefaultMaxBytes)
+	}
 	digest, err := DigestFiles(map[string]string{
 		"media": opts.Input, "events": opts.Events, "rtp": opts.RTP,
 	})
@@ -116,6 +121,9 @@ func readInputs(opts Options) (*inputBundle, error) {
 	media, err := os.ReadFile(opts.Input)
 	if err != nil {
 		return nil, fault.Wrap(fault.InvalidArgument, err)
+	}
+	if int64(len(media)) > ebml.DefaultMaxBytes {
+		return nil, fault.New(fault.InputTooLarge, "media is %d bytes; limit is %d", len(media), ebml.DefaultMaxBytes)
 	}
 	lim := ebml.DefaultLimits()
 	ebmlReport, ebmlErr := ebml.Parse(media, lim)
