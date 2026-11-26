@@ -28,6 +28,12 @@ type Metrics struct {
 	Rejected        int            `json:"rejected"`
 	DuplicateCues   int            `json:"duplicate_cues"`
 	Replayed        int            `json:"replayed"`
+	HashMatchOK     int            `json:"hash_match_ok,omitempty"`
+	HashMatchTotal  int            `json:"hash_match_total,omitempty"`
+	Interrupted     bool           `json:"interrupted,omitempty"`
+	// ResumeReport forces replayed/duplicate_cues lines even when zero, which
+	// the recovery acceptance output requires explicitly.
+	ResumeReport    bool           `json:"resume_report,omitempty"`
 	ManifestChanged bool           `json:"manifest_changed"`
 	SegmentHashes   []SegmentHash  `json:"segment_hashes"`
 	GapRecords      []track.Gap    `json:"gap_records,omitempty"`
@@ -82,6 +88,14 @@ func (m *Metrics) Keyframe(hits, total int) {
 	m.KeyframeHits, m.KeyframeTotal = hits, total
 }
 
+// HashMatch sets the post-resume per-segment hash verification counters.
+func (m *Metrics) HashMatch(ok, total int) {
+	m.HashMatchOK, m.HashMatchTotal = ok, total
+}
+
+// MarkInterrupted records a simulated interrupt for audit output.
+func (m *Metrics) MarkInterrupted() { m.Interrupted = true }
+
 // WriteJSON emits the full machine-readable report.
 func (m *Metrics) WriteJSON(w io.Writer) error {
 	b, err := json.MarshalIndent(m, "", "  ")
@@ -111,11 +125,17 @@ func (m *Metrics) WriteText(w io.Writer) {
 	if m.Rejected != 0 {
 		fmt.Fprintf(w, "rejected=%d\n", m.Rejected)
 	}
-	if m.DuplicateCues != 0 {
+	if m.DuplicateCues != 0 || m.ResumeReport {
 		fmt.Fprintf(w, "duplicate_cues=%d\n", m.DuplicateCues)
 	}
-	if m.Replayed != 0 {
+	if m.Replayed != 0 || m.ResumeReport {
 		fmt.Fprintf(w, "replayed=%d\n", m.Replayed)
+	}
+	if m.HashMatchTotal != 0 {
+		fmt.Fprintf(w, "hash_match=%d/%d\n", m.HashMatchOK, m.HashMatchTotal)
+	}
+	if m.Interrupted {
+		fmt.Fprintln(w, "interrupted=1")
 	}
 	if !m.ManifestChanged {
 		fmt.Fprintln(w, "manifest_unchanged=1")
