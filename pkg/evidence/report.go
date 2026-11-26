@@ -168,7 +168,7 @@ func (r *Report) TerminalLines() []string {
 		lines = append(lines, fmt.Sprintf("replacement old_retained=%t old=%s new=%s", r.Replacement.OldRetained, short(r.Replacement.OldAssetID), short(r.Replacement.NewAssetID)))
 	}
 	for _, c := range r.Cache {
-		lines = append(lines, fmt.Sprintf("cache %s stream=%s offset=%s timeline=%s", c.Scenario, c.State.StreamParse, c.State.OffsetMapping, c.State.TimelineIndex))
+		lines = append(lines, fmt.Sprintf("cache %s stream_parse=%s offset_mapping=%s timeline_index=%s", c.Scenario, c.State.StreamParse, c.State.OffsetMapping, c.State.TimelineIndex))
 	}
 	var corrupt int
 	for _, is := range []media.Issues{r.Issues} {
