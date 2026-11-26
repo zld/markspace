@@ -19,6 +19,12 @@ type sample struct {
 
 func expandSamples(t *trakData, fileSize int64) ([]sample, issue.List) {
 	var issues issue.List
+	if t.sttsFailed || t.stszFailed || t.stsc == nil || (t.stco == nil && t.co64 == nil) {
+		// The box walk already reported the exact first damaged byte when a
+		// table could not be read, and the structural scan localises a cut.
+		// Do not invent coarser, duplicate problems for the same damage.
+		return nil, issues
+	}
 	scale := t.mdhd.Timescale
 	if scale == 0 {
 		issues.Add(issue.New(issue.MP4Structure, "", "mdhd timescale is zero").WithByte(t.mdhdOffset))

@@ -107,8 +107,6 @@ func Digest(s Summary) string {
 	for _, k := range s.IssueKeys {
 		w("is", k)
 	}
-	w("wm", fmt.Sprint(s.Admitted), fmt.Sprint(s.Recomputed),
-		fmt.Sprint(s.Unrecoverable), fmt.Sprint(s.Sealed))
 	for _, m := range s.CueMaps {
 		w("cue", fmt.Sprint(m.CueIndex), m.CueStart.String(), fmt.Sprint(m.Keyframe),
 			m.KeyframePTS.String(), m.TimeDev.String(), fmt.Sprint(m.ByteDev),

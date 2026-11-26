@@ -124,15 +124,44 @@ func ParseMP4(path string) (*MP4Result, error) {
 		}
 	}
 	res.Issues.Add(tableIssues...)
+	res.Damaged = clampRanges(issue.MergeRanges(res.Damaged, 4), fileSize)
 	res.Frames = len(samples)
 	res.Track.SampleCount = len(samples)
 	buildKeyframes(res, video, samples)
+	normalizeMP4(res, fileSize)
 	if len(res.Issues) > 0 {
 		if first, ok := res.Issues.First(); ok && first.Loc.ByteOffset >= 0 {
 			res.FirstOffset = first.Loc.ByteOffset
 		}
 	}
 	return res, nil
+}
+
+// clampRanges trims ranges to the file extent and drops empty ones.
+func clampRanges(in []issue.ByteRange, fileSize int64) []issue.ByteRange {
+	out := in[:0]
+	for _, r := range in {
+		if r.Start < 0 {
+			r.Start = 0
+		}
+		if r.End > fileSize {
+			r.End = fileSize
+		}
+		if r.End < r.Start {
+			r.End = r.Start
+		}
+		if r.End == r.Start && r.Start >= fileSize {
+			continue
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
+// normalize walks the merge again after keyframe construction.
+func normalizeMP4(res *MP4Result, fileSize int64) {
+	res.Damaged = clampRanges(issue.MergeRanges(res.Damaged, 4), fileSize)
+	res.Issues = res.Issues.Sorted()
 }
 
 func buildKeyframes(res *MP4Result, t *trakData, samples []sample) {

@@ -101,18 +101,19 @@ func (l List) Less(i, j int) bool {
 	if a.Loc.Input != b.Loc.Input {
 		return a.Loc.Input < b.Loc.Input
 	}
-	if a.Loc.ByteOffset != b.Loc.ByteOffset {
-		// An absent offset (-1) sorts after a real offset.
-		if a.Loc.ByteOffset < 0 {
-			return false
-		}
-		if b.Loc.ByteOffset < 0 {
-			return true
-		}
-		return a.Loc.ByteOffset < b.Loc.ByteOffset
+	// Source-line problems (subtitles, timecodes) are listed before byte
+	// problems (streams), each group ordered by its own coordinate.
+	if (a.Loc.Line > 0) != (b.Loc.Line > 0) {
+		return a.Loc.Line > 0
 	}
 	if a.Loc.Line != b.Loc.Line {
 		return a.Loc.Line < b.Loc.Line
+	}
+	if (a.Loc.ByteOffset >= 0) != (b.Loc.ByteOffset >= 0) {
+		return a.Loc.ByteOffset >= 0
+	}
+	if a.Loc.ByteOffset != b.Loc.ByteOffset {
+		return a.Loc.ByteOffset < b.Loc.ByteOffset
 	}
 	if a.Loc.Packet != b.Loc.Packet {
 		return a.Loc.Packet < b.Loc.Packet

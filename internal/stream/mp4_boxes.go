@@ -70,6 +70,19 @@ func scanBoxStructure(r io.ReadSeeker, input string, fileSize int64) (issue.List
 				return
 			}
 			if off+boxSize > end {
+				// Descend when the header itself is intact and the box is a
+				// container: the missing bytes belong to a child, and its own
+				// header is a better (earlier) location than the parent.
+				if isContainer(typ) && depth < 8 && end-off >= headerLen {
+					walk(off+headerLen, end, depth+1)
+					addAt := firstTruncationEnd(damage, off)
+					if addAt < 0 {
+						add(off, end, issue.MP4Truncated,
+							fmt.Sprintf("box %q at %d declares %d bytes but only %d remain",
+								typ, off, boxSize, end-off))
+					}
+					return
+				}
 				add(off, end, issue.MP4Truncated,
 					fmt.Sprintf("box %q at %d declares %d bytes but only %d remain",
 						typ, off, boxSize, end-off))
@@ -83,6 +96,18 @@ func scanBoxStructure(r io.ReadSeeker, input string, fileSize int64) (issue.List
 	}
 	walk(0, fileSize, 0)
 	return issues, damage
+}
+
+// firstTruncationEnd reports whether damage already starts inside a range and
+// returns its start, so the caller can skip a redundant parent-level issue.
+func firstTruncationEnd(damage []issue.ByteRange, from int64) int64 {
+	best := int64(-1)
+	for _, d := range damage {
+		if d.Start >= from && (best < 0 || d.Start < best) {
+			best = d.Start
+		}
+	}
+	return best
 }
 
 func isContainer(typ string) bool {
@@ -113,6 +138,10 @@ type trakData struct {
 	sttsOffset int64
 	stszOffset int64
 	stssOffset int64
+	hasStsz    bool
+	hasStts    bool
+	stszFailed bool
+	sttsFailed bool
 }
 
 func underTrak(path mp4.BoxPath) bool {
@@ -136,11 +165,28 @@ func collectTracks(f *os.File, input string, res *MP4Result) []*trakData {
 			traks = append(traks, cur)
 		}
 		if cur != nil && underTrak(h.Path) && !isContainer(typ.String()) && typ != mp4.BoxTypeTrak() {
+			if typ == mp4.BoxTypeStsz() {
+				cur.stszOffset = int64(h.BoxInfo.Offset)
+				cur.hasStsz = true
+			}
+			if typ == mp4.BoxTypeStts() {
+				cur.sttsOffset = int64(h.BoxInfo.Offset)
+				cur.hasStts = true
+			}
 			box, _, err := h.ReadPayload()
 			if err != nil {
-				cat := issue.MP4Structure
 				if errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.EOF) {
-					cat = issue.MP4Truncated
+					// scanBoxStructure already localises truncation at the
+					// first incomplete child; a container-level EOF would
+					// only report a coarser, later position.
+					return nil, nil
+				}
+				cat := issue.MP4Structure
+				switch typ {
+				case mp4.BoxTypeStsz():
+					cur.stszFailed = true
+				case mp4.BoxTypeStts():
+					cur.sttsFailed = true
 				}
 				res.Issues.Add(issue.New(cat, input,
 					fmt.Sprintf("%s: %v", typ.String(), err)).WithByte(int64(h.BoxInfo.Offset)))
@@ -176,7 +222,11 @@ func collectTracks(f *os.File, input string, res *MP4Result) []*trakData {
 		}
 		if isContainer(typ.String()) {
 			if _, err := h.Expand(); err != nil {
-				res.Issues.Add(issue.New(issue.MP4Truncated, input,
+				if errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.EOF) {
+					// Localised by the structural scan.
+					return nil, nil
+				}
+				res.Issues.Add(issue.New(issue.MP4Structure, input,
 					fmt.Sprintf("%s: %v", typ.String(), err)).WithByte(int64(h.BoxInfo.Offset)))
 				return nil, nil
 			}
@@ -184,12 +234,10 @@ func collectTracks(f *os.File, input string, res *MP4Result) []*trakData {
 		return nil, nil
 	}
 	if _, err := mp4.ReadBoxStructure(f, handler); err != nil {
-		cat := issue.MP4Structure
-		if errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.EOF) {
-			cat = issue.MP4Truncated
+		if !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, io.EOF) {
+			res.Issues.Add(issue.New(issue.MP4Structure, input, fmt.Sprintf("box walk: %v", err)).
+				WithByte(int64(filesize(f))))
 		}
-		res.Issues.Add(issue.New(cat, input, fmt.Sprintf("box walk: %v", err)).
-			WithByte(int64(filesize(f))))
 	}
 	return traks
 }

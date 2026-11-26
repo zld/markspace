@@ -154,23 +154,25 @@ func ParseTimecode(s string, rate Rate) (Timecode, error) {
 	if rate.Num <= 0 || rate.Den <= 0 {
 		return Timecode{}, fmt.Errorf("%w: invalid rate", ErrTimecodeSyntax)
 	}
-	sep := byte(':')
+	s = strings.TrimSpace(s)
 	drop := false
 	switch {
 	case strings.ContainsRune(s, ';'):
-		sep, drop = ';', true
+		drop = true
+		if strings.Count(s, ";") != 1 || strings.LastIndex(s, ";") != len(s)-3 {
+			return Timecode{}, fmt.Errorf("%w: %q", ErrTimecodeSyntax, s)
+		}
+		s = strings.Replace(s, ";", ":", 1)
 	case strings.ContainsRune(s, ','):
-		sep, drop = ',', true
+		drop = true
+		if strings.Count(s, ",") != 1 || strings.LastIndex(s, ",") != len(s)-3 {
+			return Timecode{}, fmt.Errorf("%w: %q", ErrTimecodeSyntax, s)
+		}
+		s = strings.Replace(s, ",", ":", 1)
 	}
-	parts := strings.Split(s, string(sep))
+	parts := strings.Split(s, ":")
 	if len(parts) != 4 {
 		return Timecode{}, fmt.Errorf("%w: %q", ErrTimecodeSyntax, s)
-	}
-	if strings.ContainsRune(s, ':') && drop {
-		// Only the last separator may denote drop-frame.
-		if strings.Count(s, string(sep)) != 1 || strings.Count(s, ":") != 3 {
-			return Timecode{}, fmt.Errorf("%w: mixed separators %q", ErrTimecodeSyntax, s)
-		}
 	}
 	vals := make([]int, 4)
 	for i, p := range parts {
@@ -203,8 +205,8 @@ func ParseTimecode(s string, rate Rate) (Timecode, error) {
 		}
 		totalMinutes := tc.Hours*60 + tc.Minutes
 		if tc.Seconds == 0 && tc.Minutes%10 != 0 && tc.Frames < 2 && totalMinutes > 0 {
-			return Timecode{}, fmt.Errorf("%w: %02d:%02d:%02d%s%02d", ErrDroppedFrameUsed,
-				tc.Hours, tc.Minutes, tc.Seconds, string(sep), tc.Frames)
+			return Timecode{}, fmt.Errorf("%w: %02d:%02d:%02d;%02d", ErrDroppedFrameUsed,
+				tc.Hours, tc.Minutes, tc.Seconds, tc.Frames)
 		}
 	}
 	return tc, nil
