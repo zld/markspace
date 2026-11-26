@@ -97,7 +97,11 @@ func ParseMP4As(path, label string) (*MP4Result, error) {
 	}
 	video := pickVideoTrack(traks)
 	if video == nil {
-		res.Issues.Add(issue.New(issue.UnsupportedInput, label, "no video track (handler != vide)"))
+		// A truncation already explains the missing track; adding an
+		// unsupported-input error would misclassify damaged material.
+		if len(res.Issues) == 0 {
+			res.Issues.Add(issue.New(issue.UnsupportedInput, label, "no video track (handler != vide)"))
+		}
 		return res, nil
 	}
 	if video.mdhd == nil || video.stts == nil {

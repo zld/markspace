@@ -161,3 +161,29 @@ func TestArrivalReorderingDeterministic(t *testing.T) {
 		}
 	}
 }
+
+func TestCueMapsToNearestPresentationKeyframeWithBFrames(t *testing.T) {
+	// Decode order 1,2,3 with presentation order 1(PTS 0),3(PTS 500ms),
+	// 2(PTS 1000ms). A cue at 600ms must map to kf#2 (PTS 1000ms) under the
+	// "latest keyframe at or before the cue" rule, never to a later decode
+	// entry just because PTS is not monotonic in decode order.
+	v := video()
+	v.Keyframes = []stream.Keyframe{
+		{Index: 1, DTS: 0, PTS: 0, Offset: 100, Size: 10},
+		{Index: 2, DTS: clock.FromMilliseconds(500), PTS: clock.FromMilliseconds(1000), Offset: 200, Size: 10},
+		{Index: 3, DTS: clock.FromMilliseconds(1000), PTS: clock.FromMilliseconds(500), Offset: 300, Size: 10},
+	}
+	tr := subtitle.Track{Input: "s.srt", Cues: []subtitle.Cue{
+		{Index: 1, Start: clock.FromMilliseconds(600), End: clock.FromMilliseconds(900), StartLn: 1, EndLn: 2},
+	}}
+	res := Analyze(Spec{Name: "b", Window: clock.FromMilliseconds(2000), Cues: []subtitle.Track{tr}, MP4: v})
+	if len(res.CueMaps) != 1 {
+		t.Fatalf("maps=%v", res.CueMaps)
+	}
+	if res.CueMaps[0].Keyframe != 3 || res.CueMaps[0].KeyframePTS != clock.FromMilliseconds(500) {
+		t.Fatalf("mapped %+v", res.CueMaps[0])
+	}
+	if res.CueMaps[0].TimeDev != clock.FromMilliseconds(100) {
+		t.Fatalf("dev=%s", res.CueMaps[0].TimeDev)
+	}
+}

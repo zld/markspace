@@ -201,13 +201,14 @@ func mapCues(tracks []subtitle.Track, mp4 *stream.MP4Result, rtp *stream.RTPSess
 	for _, tr := range tracks {
 		for _, c := range tr.Cues {
 			m := CueMap{CueIndex: c.Index, Line: c.StartLn, CueStart: c.Start, CueEnd: c.End}
+			// Keyframes are in decode order; presentation time is not
+			// necessarily monotonic with B-frames, so scan every keyframe.
 			var best *stream.Keyframe
 			for i := range mp4.Keyframes {
 				k := &mp4.Keyframes[i]
-				if k.PTS > c.Start {
-					break
+				if k.PTS <= c.Start && (best == nil || k.PTS > best.PTS) {
+					best = k
 				}
-				best = k
 			}
 			if best == nil {
 				best = &mp4.Keyframes[0]
