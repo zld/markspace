@@ -4,6 +4,7 @@ go 1.23.12
 
 require (
 	github.com/abema/go-mp4 v1.7.4
+	github.com/at-wat/ebml-go v0.17.2
 	github.com/pion/rtp v1.10.0
 )
 

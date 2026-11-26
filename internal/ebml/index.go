@@ -279,12 +279,17 @@ func parseBlock(r io.ReaderAt, e Element, clusterTC, scale int64, simple bool) (
 		return Block{}, &Error{ErrInvalidEBML, e.DataOff, "laced blocks are not supported"}
 	}
 	hdrLen := int64(tw) + 3
-	return Block{
+	parsed := Block{
 		TrackNo:    trackRef, // Matroska block track numbers are 1-based
 		TimeNs:     (clusterTC + int64(rel)) * scale,
 		IsKeyframe: flags&0x80 != 0,
 		ElemOffset: e.Offset,
 		DataOffset: e.DataOff + hdrLen,
 		DataSize:   e.Size - hdrLen,
-	}, nil
+	}
+	// Independent cross-check with the reference ebml-go decoder.
+	if err := CrossValidateBlock(head, parsed, clusterTC, scale); err != nil {
+		return Block{}, err
+	}
+	return parsed, nil
 }
