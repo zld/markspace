@@ -201,7 +201,10 @@ func (s *Stream) Send(ctx context.Context, rec Record) error {
 		return ctx.Err()
 	case <-s.ctx.Done():
 		s.budget.Release(size)
-		return s.Err()
+		if err := s.Err(); err != nil {
+			return err
+		}
+		return s.ctx.Err()
 	}
 }
 
