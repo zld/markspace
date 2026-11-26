@@ -404,3 +404,7 @@ func baseName(p string) string {
 	}
 	return p
 }
+
+// FragmentName returns the base file name of a fragment path and is exported
+// for pipeline error context.
+func FragmentName(p string) string { return baseName(p) }
