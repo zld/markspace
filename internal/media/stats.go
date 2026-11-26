@@ -66,12 +66,12 @@ func AnalyzeTimeline(input []Event) TimelineReport {
 				missing = 1
 			}
 			r.Gaps = append(r.Gaps, Gap{
-				TrackID:       e.TrackID,
-				StartNS:       e.PTSNS,
-				EndNS:         e.EndNS,
-				DurationNS:    e.DurationNS,
-				MissingCount:  missing,
-				Reason:        e.Detail,
+				TrackID:      e.TrackID,
+				StartNS:      e.PTSNS,
+				EndNS:        e.EndNS,
+				DurationNS:   e.DurationNS,
+				MissingCount: missing,
+				Reason:       e.Detail,
 			})
 		}
 		if e.EndNS > r.EndNS {
@@ -168,8 +168,9 @@ func detectTrackGaps(events []Event) []Gap {
 	return gaps
 }
 
-// MaxAVSkew returns the largest nearest-neighbor PTS distance between audio
-// and video events. It does not invent missing pairs.
+// MaxAVSkew returns the largest nearest-audio PTS distance for each video
+// frame. Audio packets may be denser than video frames, so every audio packet
+// is not required to have a matching video PTS. Missing pairs are not invented.
 func MaxAVSkew(events []Event) int64 {
 	audio := ByKind(events, KindAudio)
 	video := ByKind(events, KindVideo)
@@ -179,11 +180,6 @@ func MaxAVSkew(events []Event) int64 {
 	var max int64
 	for _, v := range video {
 		if d := nearestPTSDistance(audio, v.PTSNS); d > max {
-			max = d
-		}
-	}
-	for _, a := range audio {
-		if d := nearestPTSDistance(video, a.PTSNS); d > max {
 			max = d
 		}
 	}

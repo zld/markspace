@@ -142,7 +142,7 @@ func (p *Pipeline) Run() (*Result, error) {
 		result.Processed = append(result.Processed, i)
 		result.Committed = append(result.Committed, i)
 
-		if p.InterruptAfter == i {
+		if p.InterruptAfter >= 0 && p.InterruptAfter == i {
 			return result, ErrSimulatedInterrupt
 		}
 	}
