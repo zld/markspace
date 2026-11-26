@@ -11,10 +11,10 @@ import (
 
 // Exit codes are part of the CLI contract.
 const (
-	ExitOK             = 0
-	ExitInputCorrupt   = 2
-	ExitQualityBudget  = 3
-	ExitVerifyOrWrite  = 4
+	ExitOK            = 0
+	ExitInputCorrupt  = 2
+	ExitQualityBudget = 3
+	ExitVerifyOrWrite = 4
 )
 
 // BudgetBitrates are the three AAC ladders tried in order. The engine keeps

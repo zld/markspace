@@ -10,9 +10,9 @@ import (
 
 // Event kinds accepted in the JSONL input.
 const (
-	KindEvent      = "event"
-	KindRTP        = "rtp"
-	KindSSRCMap    = "ssrc_map"
+	KindEvent   = "event"
+	KindRTP     = "rtp"
+	KindSSRCMap = "ssrc_map"
 )
 
 // Event is one client-side observation. Track is the Matroska track number
@@ -35,21 +35,21 @@ type Event struct {
 type GapKind string
 
 const (
-	GapNone          GapKind = ""
-	GapNoEvent       GapKind = "no_matching_event"
-	GapRegression    GapKind = "time_regression"
-	GapRTPMismatch   GapKind = "rtp_timestamp_gap"
+	GapNone        GapKind = ""
+	GapNoEvent     GapKind = "no_matching_event"
+	GapRegression  GapKind = "time_regression"
+	GapRTPMismatch GapKind = "rtp_timestamp_gap"
 )
 
 // Mapping ties one indexed media block to an event and an output frame range.
 type Mapping struct {
-	TrackNo        uint64
-	BlockTimeNS    int64
-	EventAtNS      int64
-	EventLine      int
-	TimeErrorNS    int64
-	Gap            GapKind
-	Detail         string
+	TrackNo     uint64
+	BlockTimeNS int64
+	EventAtNS   int64
+	EventLine   int
+	TimeErrorNS int64
+	Gap         GapKind
+	Detail      string
 	// OutputFrameStart/End are 48 kHz frame indices assigned downstream;
 	// zero here means "not yet assigned".
 	OutputFrameStart int64

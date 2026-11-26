@@ -14,14 +14,14 @@ import (
 
 // Delivery parameters mandated by the specification.
 const (
-	TargetRateHz     = 48000
-	TargetChannels   = 2
-	TargetLoudness   = -16.0 // LUFS integrated
-	LoudnessTol      = 1.0   // ±LUFS acceptance band
-	MaxTruePeakDBTP  = -1.0
+	TargetRateHz    = 48000
+	TargetChannels  = 2
+	TargetLoudness  = -16.0 // LUFS integrated
+	LoudnessTol     = 1.0   // ±LUFS acceptance band
+	MaxTruePeakDBTP = -1.0
 	// Normalization aims slightly inside the peak ceiling so measurement
 	// rounding cannot push a candidate over the -1 dBTP gate.
-	NormPeakTarget   = -1.5
+	NormPeakTarget = -1.5
 )
 
 // Exit-class sentinels used by the engine to map process failures.

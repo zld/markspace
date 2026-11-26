@@ -132,7 +132,7 @@ func TestAlignHappyPath(t *testing.T) {
 func TestAlignGapsNoGuessing(t *testing.T) {
 	blocks := []BlockView{
 		{TrackNo: 1, TimeNS: 1000},
-		{TrackNo: 1, TimeNS: 500}, // regression
+		{TrackNo: 1, TimeNS: 500},  // regression
 		{TrackNo: 9, TimeNS: 2000}, // no event for track
 	}
 	events := []Event{{Kind: KindEvent, AtNS: 1000, Track: 1, Line: 1}}

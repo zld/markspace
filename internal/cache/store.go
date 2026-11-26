@@ -47,11 +47,11 @@ type Store struct {
 // repaired file (new content key at a previously-failing path) report
 // cache=rebuilt rather than a first-time miss.
 const (
-	idxDirName      = "idx"
-	tmpDirName      = "tmp"
-	genDirName      = "gen"
-	indexName       = "index.mtid"
-	generationName  = "generation"
+	idxDirName     = "idx"
+	tmpDirName     = "tmp"
+	genDirName     = "gen"
+	indexName      = "index.mtid"
+	generationName = "generation"
 )
 
 // NewStore opens (creating if needed) the cache directory tree.

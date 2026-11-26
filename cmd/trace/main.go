@@ -183,7 +183,7 @@ func cmdDemo(args []string) int {
 	files := map[string][]byte{
 		"ok.webm":       good,
 		"bad.webm":      bad,
-		"repaired.webm": good, // identical bytes => same SHA, demonstrates rebuilt
+		"repaired.webm": good,                     // identical bytes => same SHA, demonstrates rebuilt
 		"quiet.webm":    fixture.BuildQuietWebM(), // fails the -16 LUFS gate
 		"events.jsonl":  events,
 	}

@@ -14,27 +14,27 @@ import (
 // encodings as they appear on the wire (length marker included), matching
 // Element.ID directly.
 const (
-	IDEBML            = 0x1A45DFA3
-	IDEBMLDocType     = 0x4282
-	IDSegment         = 0x18538067
-	IDInfo            = 0x1549A966
-	IDTimecodeScale   = 0x2AD7B1
-	IDMuxingApp       = 0x4D80
-	IDWritingApp      = 0x5741
-	IDTracks          = 0x1654AE6B
-	IDTrackEntry      = 0xAE
-	IDTrackNumber     = 0xD7
-	IDTrackType       = 0x83
-	IDCodecID         = 0x86
-	IDAudio           = 0xE1
-	IDSamplingFreq    = 0xB5
-	IDChannels        = 0x9F
-	IDCluster         = 0x1F43B675
-	IDTimecode        = 0xE7
-	IDSimpleBlock     = 0xA3
-	IDBlockGroup      = 0xA0
-	IDBlock           = 0xA1
-	IDReferenceBlock  = 0xFB
+	IDEBML           = 0x1A45DFA3
+	IDEBMLDocType    = 0x4282
+	IDSegment        = 0x18538067
+	IDInfo           = 0x1549A966
+	IDTimecodeScale  = 0x2AD7B1
+	IDMuxingApp      = 0x4D80
+	IDWritingApp     = 0x5741
+	IDTracks         = 0x1654AE6B
+	IDTrackEntry     = 0xAE
+	IDTrackNumber    = 0xD7
+	IDTrackType      = 0x83
+	IDCodecID        = 0x86
+	IDAudio          = 0xE1
+	IDSamplingFreq   = 0xB5
+	IDChannels       = 0x9F
+	IDCluster        = 0x1F43B675
+	IDTimecode       = 0xE7
+	IDSimpleBlock    = 0xA3
+	IDBlockGroup     = 0xA0
+	IDBlock          = 0xA1
+	IDReferenceBlock = 0xFB
 )
 
 // ErrorCode identifies a stable failure class independent of wording.

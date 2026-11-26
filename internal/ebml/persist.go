@@ -57,11 +57,11 @@ func unmarshalIndexEntry(b []byte) IndexEntry {
 // IndexBuilder streams entries into a temp file and finalizes it. An
 // interrupted build leaves only the temp file, which is never read.
 type IndexBuilder struct {
-	tmp      *os.File
-	tmpPath  string
+	tmp       *os.File
+	tmpPath   string
 	finalPath string
-	sum      hash.Hash
-	count    uint32
+	sum       hash.Hash
+	count     uint32
 }
 
 // NewIndexBuilder creates path+".tmp" and writes the header.
@@ -110,6 +110,7 @@ func (b *IndexBuilder) write(p []byte) error {
 	_, err := b.sum.Write(p)
 	return err
 }
+
 // Append records one block.
 func (b *IndexBuilder) Append(e IndexEntry) error {
 	var buf [entrySize]byte

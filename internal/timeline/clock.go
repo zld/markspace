@@ -35,8 +35,8 @@ func (c Clock) MediaToNS(timecode int64) int64 {
 
 // RTPClock maps one RTP synchronization source (SSRC) onto nanoseconds.
 type RTPClock struct {
-	SSRC          uint32
-	ClockRateHz   uint32
+	SSRC        uint32
+	ClockRateHz uint32
 	// FirstRTP is the RTP timestamp of the reference packet.
 	FirstRTP uint32
 	// FirstNS is the nanosecond instant assigned to the reference packet.

@@ -29,16 +29,16 @@ func (s LoudnessStats) PassesGate() bool {
 
 // loudnormJSON mirrors the print_format=json object FFmpeg emits.
 type loudnormJSON struct {
-	InputI         string `json:"input_i"`
-	InputTP        string `json:"input_tp"`
-	InputLRA       string `json:"input_lra"`
-	InputThresh    string `json:"input_thresh"`
-	OutputI        string `json:"output_i"`
-	OutputTP       string `json:"output_tp"`
-	OutputLRA      string `json:"output_lra"`
-	OutputThresh   string `json:"output_thresh"`
-	NormType       string `json:"normalization_type"`
-	TargetOffset   string `json:"target_offset"`
+	InputI       string `json:"input_i"`
+	InputTP      string `json:"input_tp"`
+	InputLRA     string `json:"input_lra"`
+	InputThresh  string `json:"input_thresh"`
+	OutputI      string `json:"output_i"`
+	OutputTP     string `json:"output_tp"`
+	OutputLRA    string `json:"output_lra"`
+	OutputThresh string `json:"output_thresh"`
+	NormType     string `json:"normalization_type"`
+	TargetOffset string `json:"target_offset"`
 }
 
 // ParseLoudnessJSON extracts the first-pass measured source stats.
@@ -83,9 +83,9 @@ func clampMeasured(v, lo, hi float64) float64 {
 }
 
 var (
-	reIntegrated = regexp.MustCompile(`I:\s*(-?[0-9.]+)\s*LUFS`)
-	reTruePeak   = regexp.MustCompile(`TPK:\s*(-?[0-9.]+)(?:\s+-?[0-9.]+)?\s*dB(FS|TP)`)
-	reSummaryI   = regexp.MustCompile(`(?m)^\s*I:\s*(-?[0-9.]+)\s*LUFS\s*$`)
+	reIntegrated  = regexp.MustCompile(`I:\s*(-?[0-9.]+)\s*LUFS`)
+	reTruePeak    = regexp.MustCompile(`TPK:\s*(-?[0-9.]+)(?:\s+-?[0-9.]+)?\s*dB(FS|TP)`)
+	reSummaryI    = regexp.MustCompile(`(?m)^\s*I:\s*(-?[0-9.]+)\s*LUFS\s*$`)
 	reSummaryPeak = regexp.MustCompile(`(?m)^\s*Peak:\s*(-?[0-9.]+)\s*dB(FS|TP)\s*$`)
 )
 

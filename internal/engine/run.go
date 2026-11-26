@@ -18,12 +18,12 @@ import (
 
 // Result summarizes a completed run for terminal reporting.
 type Result struct {
-	CacheState    cache.State
-	Manifest      *output.Manifest
-	OutputPath    string
-	MaxTimeError  int64
-	ByteDrift     int64
-	QualityFail   bool
+	CacheState   cache.State
+	Manifest     *output.Manifest
+	OutputPath   string
+	MaxTimeError int64
+	ByteDrift    int64
+	QualityFail  bool
 }
 
 // Runner executes one end-to-end processing plan.
@@ -125,7 +125,6 @@ func (r *Runner) Run(ctx context.Context, p Plan) (*Result, error) {
 		MaxTimeError: manifest.MaxErrorNS,
 	}, nil
 }
-
 
 func (r *Runner) processTracks(ctx context.Context, p Plan, doc *ebml.Document,
 	entries []ebml.IndexEntry, mappings []timeline.Mapping, staging *output.Staging,

@@ -15,13 +15,13 @@ const ManifestVersion = 1
 
 // InputSummary captures the identity and structure of the source container.
 type InputSummary struct {
-	Path           string `json:"path"`
-	SHA256         string `json:"sha256"`
-	SizeBytes      int64  `json:"size_bytes"`
-	DocType        string `json:"doc_type"`
-	TimecodeScale  uint64 `json:"timecode_scale"`
-	TrackCount     int    `json:"track_count"`
-	BlockCount     int    `json:"block_count"`
+	Path          string `json:"path"`
+	SHA256        string `json:"sha256"`
+	SizeBytes     int64  `json:"size_bytes"`
+	DocType       string `json:"doc_type"`
+	TimecodeScale uint64 `json:"timecode_scale"`
+	TrackCount    int    `json:"track_count"`
+	BlockCount    int    `json:"block_count"`
 }
 
 // BlockRecord is the per-block audit row: where it lived in the input, what
@@ -43,20 +43,20 @@ type BlockRecord struct {
 
 // TrackDelivery records the chosen AAC candidate and its measured quality.
 type TrackDelivery struct {
-	TrackNo          uint64  `json:"track_no"`
-	CodecID          string  `json:"codec_id"`
-	SourceRateHz     float64 `json:"source_rate_hz"`
-	SourceChannels   uint64  `json:"source_channels"`
-	OutputFile       string  `json:"output_file"`
-	OutputSHA256     string  `json:"output_sha256"`
-	OutputBytes      int64   `json:"output_bytes"`
-	BitrateKbps      int     `json:"bitrate_kbps"`
-	SampleCount      uint32  `json:"sample_count"`
-	Timescale        uint32  `json:"timescale"`
-	IntegratedLUFS   float64 `json:"integrated_lufs"`
-	TruePeakDBTP     float64 `json:"true_peak_dbtp"`
-	GatePassed       bool    `json:"gate_passed"`
-	ByteDrift        int64   `json:"byte_drift"`
+	TrackNo        uint64  `json:"track_no"`
+	CodecID        string  `json:"codec_id"`
+	SourceRateHz   float64 `json:"source_rate_hz"`
+	SourceChannels uint64  `json:"source_channels"`
+	OutputFile     string  `json:"output_file"`
+	OutputSHA256   string  `json:"output_sha256"`
+	OutputBytes    int64   `json:"output_bytes"`
+	BitrateKbps    int     `json:"bitrate_kbps"`
+	SampleCount    uint32  `json:"sample_count"`
+	Timescale      uint32  `json:"timescale"`
+	IntegratedLUFS float64 `json:"integrated_lufs"`
+	TruePeakDBTP   float64 `json:"true_peak_dbtp"`
+	GatePassed     bool    `json:"gate_passed"`
+	ByteDrift      int64   `json:"byte_drift"`
 }
 
 // RTPObservation is one RTP packet translated onto the shared NS clock.
@@ -82,15 +82,15 @@ type FailureRecord struct {
 
 // Manifest is the complete, deterministic audit document.
 type Manifest struct {
-	Version    int             `json:"version"`
-	Input      InputSummary    `json:"input"`
-	CacheState string          `json:"cache_state"`
-	Blocks     []BlockRecord   `json:"blocks"`
+	Version    int              `json:"version"`
+	Input      InputSummary     `json:"input"`
+	CacheState string           `json:"cache_state"`
+	Blocks     []BlockRecord    `json:"blocks"`
 	RTP        []RTPObservation `json:"rtp,omitempty"`
-	Tracks     []TrackDelivery `json:"tracks"`
-	Failures   []FailureRecord `json:"failures,omitempty"`
-	Mapped     string          `json:"mapped"` // "4/4" style summary
-	MaxErrorNS int64           `json:"max_time_error_ns"`
+	Tracks     []TrackDelivery  `json:"tracks"`
+	Failures   []FailureRecord  `json:"failures,omitempty"`
+	Mapped     string           `json:"mapped"` // "4/4" style summary
+	MaxErrorNS int64            `json:"max_time_error_ns"`
 }
 
 // Staging is an in-progress output directory. Its public directory is only
