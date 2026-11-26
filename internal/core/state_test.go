@@ -7,9 +7,9 @@ import (
 )
 
 const (
-	testOff = int64(5000)   // clock offset in ref ticks
-	testPPM = int64(80)     // source drift
-	delayTk = int64(3600)   // 40 ms arrival delay
+	testOff = int64(5000) // clock offset in ref ticks
+	testPPM = int64(80)   // source drift
+	delayTk = int64(3600) // 40 ms arrival delay
 	baseP0  = int64(8589720000)
 )
 
@@ -215,5 +215,22 @@ func TestBuildNoAnchors(t *testing.T) {
 	}}
 	if _, err := Build(in); err == nil {
 		t.Fatal("expected error without anchors")
+	}
+}
+
+func TestBuildLateArrival(t *testing.T) {
+	in := normalInput()
+	// make segment 4 arrive 2 s after its output slot (budget is 1 s)
+	in.Records[4].ArrivalRef = refOf(baseP0+4*90000) + delayTk + 2*90000
+	res, err := Build(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Summary.Late != 1 {
+		t.Fatalf("late=%d, want 1", res.Summary.Late)
+	}
+	// late segment still emits; it is counted separately, not dropped
+	if res.Summary.Emitted != 5 {
+		t.Fatalf("emitted=%d, want 5", res.Summary.Emitted)
 	}
 }

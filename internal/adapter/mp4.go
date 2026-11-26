@@ -16,6 +16,11 @@ import (
 // decode time, trun sample durations and an mdat content fingerprint.
 type MP4Parser struct{}
 
+func init() {
+	// Register the built-in mp4 parser once per process.
+	_ = RegisterV1("mp4", MP4Parser{})
+}
+
 // Version implements ParserV1.
 func (MP4Parser) Version() int { return 1 }
 

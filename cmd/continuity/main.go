@@ -96,10 +96,6 @@ func usage(w io.Writer) {
 
 // runPipeline executes manifest -> parse -> timebase -> kernel -> report.
 func runPipeline(maniPath, eventsPath, arrivalsPath string, stdout, stderr io.Writer) int {
-	if err := adapter.RegisterV1("mp4", adapter.MP4Parser{}); err != nil {
-		fmt.Fprintln(stderr, "error:", err)
-		return exitInput
-	}
 	pl, err := parseManifest(maniPath)
 	if err != nil {
 		return fail(stderr, err)
