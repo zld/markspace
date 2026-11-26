@@ -1,0 +1,7 @@
+# Build output
+/regress
+/bin/
+
+# Local fixture trees and run artifacts
+/.out/
+*.report
