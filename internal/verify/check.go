@@ -154,7 +154,7 @@ func Verify(mpath, setDir, eventsPath string, c Constraints) (Outcome, error) {
 	}
 	dev := BitrateDev(actual, m.Params.TargetBitrate)
 	o.add("bitrate", dev <= c.MaxBitrateDev,
-		"target=%d actual=%d dev=%.1f%% limit=%.0f%%",
+		"target=%d actual=%d dev=%.2f%% deviation limit=%.0f%%",
 		m.Params.TargetBitrate, actual, dev*100, c.MaxBitrateDev*100)
 
 	// 5. window recomputed independently from events + input timeline
@@ -189,7 +189,7 @@ func Verify(mpath, setDir, eventsPath string, c Constraints) (Outcome, error) {
 			tl.Duplicates == m.Timeline.Duplicates &&
 			tl.Regressions == m.Timeline.TfdtRegressions &&
 			len(tl.Missing) == len(m.Timeline.MissingMS),
-		"gaps=%d/%d dups=%d/%d regressions=%d/%d missing=%d/%d (manifest/actual)",
+		"mfhd_gaps=%d/%d duplicates=%d/%d tfdt_regressions=%d/%d lost_missing=%d/%d (manifest/actual)",
 		m.Timeline.SeqGaps, tl.SeqGaps, m.Timeline.Duplicates, tl.Duplicates,
 		m.Timeline.TfdtRegressions, tl.Regressions, len(m.Timeline.MissingMS), len(tl.Missing))
 
@@ -198,7 +198,7 @@ func Verify(mpath, setDir, eventsPath string, c Constraints) (Outcome, error) {
 	if err != nil {
 		return o, err
 	}
-	o.add("psnr", psnr >= c.MinPSNR, "average=%.2f dB limit=%.1f dB", psnr, c.MinPSNR)
+	o.add("psnr", psnr >= c.MinPSNR, "PSNR=%.2f dB limit=%.1f dB", psnr, c.MinPSNR)
 
 	return o, nil
 }
