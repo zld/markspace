@@ -66,12 +66,16 @@ func Run(seed int64, lateWindow clock.Tick) ([]Sample, error) {
 	if _, err := fixtures.WriteRTPTimestamps(normalRTP, 90000, frameTimestamps(spec), seed); err != nil {
 		return nil, err
 	}
-	srt, srtIssues := parseSRTFixture(normalSRT, "normal.srt")
+	ld := &loader{}
+	srt, srtIssues := ld.srt(normalSRT, "normal.srt")
+	if ld.err != nil {
+		return nil, ld.err
+	}
 	{
 		normRes := validate.Analyze(validate.Spec{
 			Name: "normal", Window: lateWindow,
 			Cues: []subtitle.Track{srt}, CueIssues: srtIssues,
-			MP4: mustMP4(normalMP4), RTP: mustRTP(normalRTP),
+			MP4: ld.mp4(normalMP4), RTP: ld.rtp(normalRTP),
 		})
 		add("normal", normRes, digestOf(normRes))
 	}
@@ -87,7 +91,7 @@ func Run(seed int64, lateWindow clock.Tick) ([]Sample, error) {
 	}
 	{
 		res := validate.Analyze(validate.Spec{
-			Name: "truncated-mp4", Window: lateWindow, MP4: mustMP4(truncMP4),
+			Name: "truncated-mp4", Window: lateWindow, MP4: ld.mp4(truncMP4),
 		})
 		add("truncated-mp4", res, digestOf(res))
 	}
@@ -104,7 +108,7 @@ func Run(seed int64, lateWindow clock.Tick) ([]Sample, error) {
 	}
 	{
 		res := validate.Analyze(validate.Spec{
-			Name: "corrupt-rtp", Window: lateWindow, RTP: mustRTP(badRTP),
+			Name: "corrupt-rtp", Window: lateWindow, RTP: ld.rtp(badRTP),
 		})
 		add("corrupt-rtp", res, digestOf(res))
 	}
@@ -128,11 +132,11 @@ func Run(seed int64, lateWindow clock.Tick) ([]Sample, error) {
 	// --- in-window late cue ---------------------------------------------
 	baseline := validate.Analyze(validate.Spec{
 		Name: "late-in-window", Window: lateWindow,
-		Cues: []subtitle.Track{srt}, CueIssues: srtIssues, MP4: mustMP4(normalMP4),
+		Cues: []subtitle.Track{srt}, CueIssues: srtIssues, MP4: ld.mp4(normalMP4),
 	})
 	add("late-in-window", validate.Analyze(validate.Spec{
 		Name: "late-in-window", Window: lateWindow,
-		Cues: []subtitle.Track{srt}, CueIssues: srtIssues, MP4: mustMP4(normalMP4),
+		Cues: []subtitle.Track{srt}, CueIssues: srtIssues, MP4: ld.mp4(normalMP4),
 		Arrival: func(evs []timeline.Event) []timeline.Event { return arriveLate(evs, 1500) },
 	}), digestOf(baseline))
 
@@ -140,37 +144,56 @@ func Run(seed int64, lateWindow clock.Tick) ([]Sample, error) {
 	{
 		res := validate.Analyze(validate.Spec{
 			Name: "late-out-of-window", Window: lateWindow,
-			Cues: []subtitle.Track{srt}, CueIssues: srtIssues, MP4: mustMP4(normalMP4),
+			Cues: []subtitle.Track{srt}, CueIssues: srtIssues, MP4: ld.mp4(normalMP4),
 			Arrival: func(evs []timeline.Event) []timeline.Event { return arriveLate(evs, 5000) },
 		})
 		add("late-out-of-window", res, digestOf(res))
 	}
 
+	if ld.err != nil {
+		return nil, ld.err
+	}
 	return samples, nil
 }
 
-func parseSRTFixture(path, label string) (subtitle.Track, issue.List) {
+// loaders return errors rather than panicking: the demo reports execution
+// failure with exit code 2 instead of a stack trace.
+type loader struct{ err error }
+
+func (l *loader) srt(path, label string) (subtitle.Track, issue.List) {
+	if l.err != nil {
+		return subtitle.Track{}, nil
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		panic(err)
+		l.err = err
+		return subtitle.Track{}, nil
 	}
 	return subtitle.ParseSRT(label, string(data))
 }
 
-func mustMP4(path string) *stream.MP4Result {
+func (l *loader) mp4(path string) *stream.MP4Result {
+	if l.err != nil {
+		return nil
+	}
 	// Report under the base name so digests never contain the temporary
 	// directory created for this run.
 	res, err := stream.ParseMP4As(path, filepath.Base(path))
 	if err != nil {
-		panic(err)
+		l.err = err
+		return nil
 	}
 	return res
 }
 
-func mustRTP(path string) *stream.RTPSession {
+func (l *loader) rtp(path string) *stream.RTPSession {
+	if l.err != nil {
+		return nil
+	}
 	res, err := stream.ParseRTPFileAs(path, filepath.Base(path), 90000)
 	if err != nil {
-		panic(err)
+		l.err = err
+		return nil
 	}
 	return res
 }
