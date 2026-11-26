@@ -29,12 +29,12 @@ type File struct {
 
 // Journal records the in-flight commit so a rerun can roll back cleanly.
 type Journal struct {
-	State       string    `json:"state"`
-	Manifest    string    `json:"manifest"`
-	Backup      string    `json:"backup"`
-	StartedUnix int64     `json:"started_unix"`
-	Files       []string  `json:"files"`
-	Stage       []string  `json:"stage"`
+	State       string   `json:"state"`
+	Manifest    string   `json:"manifest"`
+	Backup      string   `json:"backup"`
+	StartedUnix int64    `json:"started_unix"`
+	Files       []string `json:"files"`
+	Stage       []string `json:"stage"`
 }
 
 // CommitOptions control failure-injection used by the interrupted-migration
@@ -47,14 +47,14 @@ type CommitOptions struct {
 
 // Result describes a completed or rolled-back commit.
 type Result struct {
-	Committed     bool     `json:"committed"`
-	RolledBack    bool     `json:"rolled_back"`
-	Idempotent    bool     `json:"idempotent"`
-	ManifestPath  string   `json:"manifest_path"`
-	ManifestSHA   string   `json:"manifest_sha256"`
-	PreviousSHA   string   `json:"previous_sha256,omitempty"`
-	BackupPath    string   `json:"backup_path,omitempty"`
-	Files         []string `json:"files"`
+	Committed    bool     `json:"committed"`
+	RolledBack   bool     `json:"rolled_back"`
+	Idempotent   bool     `json:"idempotent"`
+	ManifestPath string   `json:"manifest_path"`
+	ManifestSHA  string   `json:"manifest_sha256"`
+	PreviousSHA  string   `json:"previous_sha256,omitempty"`
+	BackupPath   string   `json:"backup_path,omitempty"`
+	Files        []string `json:"files"`
 }
 
 // Commit atomically publishes manifest plus asset files under root. It:
