@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -96,6 +97,19 @@ func TestCLINormalIdempotentAndRecovery(t *testing.T) {
 	rd := decodeSummary(t, resume.stdout)
 	if rd["artifact_sha256"] != d["artifact_sha256"] || rd["manifest_sha256"] != d["manifest_sha256"] {
 		t.Fatalf("recovery hash mismatch: %v vs %v", rd["artifact_sha256"], d["artifact_sha256"])
+	}
+	for _, name := range []string{"timeline.json", "track-index.json", "offset-audit.json", "summary.json"} {
+		normalBytes, err := os.ReadFile(filepath.Join(root, "demo", "artifacts", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		recoveryBytes, err := os.ReadFile(filepath.Join(recoveryRoot, "cut", "artifacts", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(normalBytes, recoveryBytes) {
+			t.Fatalf("recovery artifact %s differs from normal run", name)
+		}
 	}
 }
 

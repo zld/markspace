@@ -119,7 +119,15 @@ func writeReport(s *report.Summary, asJSON bool, stdout, stderr io.Writer) {
 		enc := json.NewEncoder(stdout)
 		enc.SetIndent("", "  ")
 		enc.SetEscapeHTML(false)
-		_ = enc.Encode(s)
+		_ = enc.Encode(struct {
+			*report.Summary
+			Emitted      int    `json:"emitted"`
+			DeliveryLine string `json:"delivery_line"`
+		}{
+			Summary:      s,
+			Emitted:      s.Emitted,
+			DeliveryLine: fmt.Sprintf("emitted=%d", s.Emitted),
+		})
 		fmt.Fprint(stderr, human)
 		return
 	}
@@ -130,6 +138,7 @@ func renderHuman(s *report.Summary) string {
 	var b strings.Builder
 	b.WriteString(s.SummaryLine)
 	b.WriteByte('\n')
+	fmt.Fprintf(&b, "emitted=%d\n", s.Emitted)
 	for _, line := range s.TerminalLines {
 		b.WriteString(line)
 		b.WriteByte('\n')

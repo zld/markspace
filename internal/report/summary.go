@@ -43,30 +43,32 @@ type TrackConclusion struct {
 
 // Summary is the machine-readable terminal and summary.json report.
 type Summary struct {
-	Schema           string            `json:"schema"`
-	Status           string            `json:"status"`
-	Verdict          string            `json:"verdict"`
-	ErrorCode        string            `json:"error_code,omitempty"`
-	ExitCode         int               `json:"exit_code,omitempty"`
-	Tracks           int               `json:"tracks"`
-	Samples          int               `json:"samples"`
-	WrapEvents       int               `json:"wrap_events"`
-	EmptyEdits       int               `json:"empty_edits"`
-	Repairs          int               `json:"repairs"`
-	EstimateUnits    int               `json:"estimate"`
-	ActualUnits      int               `json:"actual"`
-	BudgetUnits      int               `json:"budget_units"`
-	VariancePct      float64           `json:"variance_pct"`
-	MaxResidualTicks int64             `json:"max_residual_ticks"`
-	ManifestSHA256   string            `json:"manifest_sha256"`
-	ArtifactSHA256   string            `json:"artifact_sha256"`
-	JobKey           string            `json:"job_key"`
-	Emitted          int               `json:"emitted"`
-	SkippedStages    []string          `json:"skipped_stages,omitempty"`
-	ArtifactHashes   map[string]string `json:"artifact_hashes,omitempty"`
-	TrackDetails     []TrackConclusion `json:"track_details"`
-	TerminalLines    []string          `json:"terminal_lines"`
-	SummaryLine      string            `json:"summary_line"`
+	Schema           string  `json:"schema"`
+	Status           string  `json:"status"`
+	Verdict          string  `json:"verdict"`
+	ErrorCode        string  `json:"error_code,omitempty"`
+	ExitCode         int     `json:"exit_code,omitempty"`
+	Tracks           int     `json:"tracks"`
+	Samples          int     `json:"samples"`
+	WrapEvents       int     `json:"wrap_events"`
+	EmptyEdits       int     `json:"empty_edits"`
+	Repairs          int     `json:"repairs"`
+	EstimateUnits    int     `json:"estimate"`
+	ActualUnits      int     `json:"actual"`
+	BudgetUnits      int     `json:"budget_units"`
+	VariancePct      float64 `json:"variance_pct"`
+	MaxResidualTicks int64   `json:"max_residual_ticks"`
+	ManifestSHA256   string  `json:"manifest_sha256"`
+	ArtifactSHA256   string  `json:"artifact_sha256"`
+	JobKey           string  `json:"job_key"`
+	// Emitted is process delivery metadata, not part of the stable summary
+	// artifact; the terminal adapter promotes it into its output envelope.
+	Emitted        int               `json:"-"`
+	SkippedStages  []string          `json:"skipped_stages,omitempty"`
+	ArtifactHashes map[string]string `json:"artifact_hashes,omitempty"`
+	TrackDetails   []TrackConclusion `json:"track_details"`
+	TerminalLines  []string          `json:"terminal_lines"`
+	SummaryLine    string            `json:"summary_line"`
 }
 
 // Build aggregates per-track conclusions and applies the pass criteria.
@@ -127,25 +129,22 @@ func Build(status, manifestHash, artifactHash, jobKey string, budgetUnits int, t
 	return s
 }
 
-// WithEmitted updates the duplicate-delivery count and re-renders greppable text.
+// WithEmitted records the current process's publication count without changing
+// stable artifact text.
 func (s *Summary) WithEmitted(n int) *Summary {
 	s.Emitted = n
-	s.SummaryLine = renderSummaryLine(s)
 	return s
 }
 
 func renderSummaryLine(s *Summary) string {
-	line := fmt.Sprintf(
-		"tracks=%d samples=%d estimate=%d actual=%d variance_pct=%.2f max_residual_ticks=%d wraps=%d empty_edits=%d repairs=%d verdict=%s emitted=%d",
+	return fmt.Sprintf(
+		"tracks=%d samples=%d estimate=%d actual=%d variance_pct=%.2f max_residual_ticks=%d wraps=%d empty_edits=%d repairs=%d verdict=%s",
 		s.Tracks, s.Samples, s.EstimateUnits, s.ActualUnits, s.VariancePct,
-		s.MaxResidualTicks, s.WrapEvents, s.EmptyEdits, s.Repairs, s.Verdict, s.Emitted,
+		s.MaxResidualTicks, s.WrapEvents, s.EmptyEdits, s.Repairs, s.Verdict,
+	) + "\n" + fmt.Sprintf(
+		"tracks=%d estimate=%d actual=%d variance_pct=%.2f max_residual_ticks=%d verdict=%s",
+		s.Tracks, s.EstimateUnits, s.ActualUnits, s.VariancePct, s.MaxResidualTicks, s.Verdict,
 	)
-	// Keep the exact required ordering/tokens easily greppable as a second line.
-	line += "\n" + fmt.Sprintf(
-		"tracks=%d estimate=%d actual=%d variance_pct=%.2f max_residual_ticks=%d verdict=%s emitted=%d",
-		s.Tracks, s.EstimateUnits, s.ActualUnits, s.VariancePct, s.MaxResidualTicks, s.Verdict, s.Emitted,
-	)
-	return line
 }
 
 func renderLines(s *Summary) []string {

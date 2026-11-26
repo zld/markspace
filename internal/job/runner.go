@@ -202,7 +202,6 @@ func execute(opts Options, m *manifest.Manifest, hash, baseDir, manifestPath str
 		auditName:    auditSHA,
 	}
 	_, err = pub.Publish("artifact:summary", summaryName, func() ([]byte, error) {
-		summary.WithEmitted(pub.Emitted() + 1)
 		return json.MarshalIndent(summary, "", "  ")
 	}, "")
 	if err != nil {
