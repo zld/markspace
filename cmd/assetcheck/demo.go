@@ -21,6 +21,14 @@ func runDemo(out io.Writer, dir, caseName string, redeliver int) error {
 		return demoReplaceIdentical(out, dir, redeliver)
 	case "metadata-change":
 		return demoMetadataChange(out, dir, redeliver)
+	case "crash-resume":
+		return demoCrashResume(out, dir, redeliver)
+	case "unknown-size-eof":
+		return demoUnknownEOF(out, dir, redeliver)
+	case "invalid-vint":
+		return demoInvalidVINT(dir)
+	case "truncate-cluster":
+		return demoTruncateCluster(dir)
 	default:
 		return media.SpecMismatch("DEMO_UNKNOWN_CASE", "unknown demo case").WithDetail(caseName)
 	}
