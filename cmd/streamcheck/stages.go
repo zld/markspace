@@ -140,6 +140,7 @@ func packetStage(work string) pipeline.Stage {
 			return "", err
 		}
 		re := packet.NewReorderer(fixture.RTPWindow)
+		re.BucketMs = 100 // fine-grained sustained-bandwidth samples
 		arrival := 0
 		for pos := 0; pos < len(data); {
 			if pos+2 > len(data) {

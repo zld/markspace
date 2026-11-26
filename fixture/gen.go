@@ -164,12 +164,15 @@ func Generate(work string, seed int64, faultSet string) (*Plan, error) {
 		return nil, err
 	}
 
+	// The plan covers itself: register the name before marshaling so the
+	// on-disk plan and the in-memory input list agree.
+	plan.Inputs = append(plan.Inputs, PlanFile)
 	planData, err := json.MarshalIndent(plan, "", "  ")
 	if err != nil {
 		return nil, core.E(core.KindInput, "generate", "cannot encode plan", err)
 	}
-	if err := write(PlanFile, planData); err != nil {
-		return nil, err
+	if err := os.WriteFile(filepath.Join(work, PlanFile), planData, 0o644); err != nil {
+		return nil, core.E(core.KindInput, "generate", "cannot write plan", err).At(PlanFile, -1)
 	}
 	return plan, nil
 }
