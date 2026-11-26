@@ -53,6 +53,11 @@ type Track struct {
 	SampleRate   uint32
 	StsdRaw      []byte
 	Meta         *Meta
+
+	// mxfEdit and mxfCount carry container-declared timing that is not part
+	// of the MP4 sample table model.
+	mxfEdit  media.Rational
+	mxfCount uint32
 }
 
 // Duration returns the end time of the last sample.
