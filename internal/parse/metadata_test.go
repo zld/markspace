@@ -2,7 +2,6 @@ package parse
 
 import (
 	"testing"
-
 )
 
 func TestResolveMetadataSingleSource(t *testing.T) {
