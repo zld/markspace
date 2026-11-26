@@ -22,6 +22,7 @@ const (
 	ErrArchive      Code = "ARCHIVE"       // archive unrecoverable
 	ErrInput        Code = "INPUT"         // unreadable input / bad arguments
 	ErrPath         Code = "PATH"          // path escapes its base directory
+	ErrRTP          Code = "RTP"           // malformed RTP header in an index record
 )
 
 // Error carries a stable code, the track and the first byte offset involved.
