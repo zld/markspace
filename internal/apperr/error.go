@@ -127,6 +127,7 @@ func ExitCode(err error) int {
 		strings.HasPrefix(pe.Code, "E_PATH"),
 		strings.HasPrefix(pe.Code, "E_TRACK_"),
 		pe.Code == "E_CYCLE",
+		pe.Code == "E_DEPENDENCY_MISSING",
 		pe.Code == "E_SAMPLE_RANGE",
 		pe.Code == "E_MP4":
 		return ExitInvalid
