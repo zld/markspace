@@ -56,14 +56,22 @@ func AnalyzeTimeline(input []Event) TimelineReport {
 			r.CueCount++
 		}
 		if e.Lost {
-			r.LostEvents++
+			if e.MissingCount > 0 {
+				r.LostEvents += e.MissingCount
+			} else {
+				r.LostEvents++
+			}
+			missing := e.MissingCount
+			if missing == 0 {
+				missing = 1
+			}
 			r.Gaps = append(r.Gaps, Gap{
-				TrackID:      e.TrackID,
-				StartNS:      e.PTSNS,
-				EndNS:        e.EndNS,
-				DurationNS:   e.DurationNS,
-				MissingCount: 1,
-				Reason:       e.Detail,
+				TrackID:       e.TrackID,
+				StartNS:       e.PTSNS,
+				EndNS:         e.EndNS,
+				DurationNS:    e.DurationNS,
+				MissingCount:  missing,
+				Reason:        e.Detail,
 			})
 		}
 		if e.EndNS > r.EndNS {

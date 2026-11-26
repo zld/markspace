@@ -26,6 +26,7 @@ type Event struct {
 	SourceID       string    `json:"source_id,omitempty"`
 	Offset         int64     `json:"input_offset,omitempty"`
 	Lost           bool      `json:"lost,omitempty"`
+	MissingCount   int       `json:"missing_count,omitempty"`
 	Detail         string    `json:"detail,omitempty"`
 }
 
