@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"mediasync/internal/clock"
+	"mediasync/internal/issue"
 	"mediasync/internal/report"
 	"mediasync/internal/validate"
 )
@@ -14,7 +15,11 @@ func TestRunProducesAllScenarios(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"normal", "truncated-mp4", "corrupt-rtp", "illegal-df", "late-in-window", "late-out-of-window"}
+	want := []string{
+		"normal", "truncated-mp4", "corrupt-rtp", "illegal-df",
+		"late-in-window", "late-out-of-window",
+		"invalid-srt", "vfr-mp4", "rtp-wrap",
+	}
 	if len(samples) != len(want) {
 		t.Fatalf("samples=%d want %d", len(samples), len(want))
 	}
@@ -138,6 +143,81 @@ func TestDamagedSamplesReportByteLocations(t *testing.T) {
 		}
 	}
 }
+
+func TestVFRScenarioUsesActualIntervals(t *testing.T) {
+	samples, err := Run(7, clock.FromMilliseconds(2000))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range samples {
+		if s.Name != "vfr-mp4" {
+			continue
+		}
+		if !s.Result.VFR {
+			t.Fatal("VFR track not flagged")
+		}
+		if len(s.Result.Intervals) < 2 {
+			t.Fatalf("intervals=%v", s.Result.Intervals)
+		}
+		// Actual decode-time gaps differ; a nominal rate would make them equal.
+		if s.Result.Intervals[0].DTSGap == s.Result.Intervals[2].DTSGap {
+			t.Fatalf("intervals look nominal, not actual: %v", s.Result.Intervals)
+		}
+		if len(s.Result.Issues) != 0 {
+			t.Fatalf("VFR sample reported issues: %v", s.Result.Issues)
+		}
+		return
+	}
+	t.Fatal("vfr-mp4 sample missing")
+}
+
+func TestRTPWrapScenario(t *testing.T) {
+	samples, err := Run(7, clock.FromMilliseconds(2000))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range samples {
+		if s.Name != "rtp-wrap" {
+			continue
+		}
+		if s.Result.RTPWraps != 1 {
+			t.Fatalf("wraps=%d", s.Result.RTPWraps)
+		}
+		if s.Result.RTPRegressions != 0 || s.Result.RTPDuplicates != 0 {
+			t.Fatalf("spurious timestamp errors: %+v", s.Result)
+		}
+		if len(s.Result.Issues) != 0 {
+			t.Fatalf("wrap sample issued errors: %v", s.Result.Issues)
+		}
+		return
+	}
+	t.Fatal("rtp-wrap sample missing")
+}
+
+func TestInvalidSRTKeepsValidCues(t *testing.T) {
+	samples, err := Run(7, clock.FromMilliseconds(2000))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range samples {
+		if s.Name != "invalid-srt" {
+			continue
+		}
+		cats := s.Result.Issues.Counts()
+		for _, want := range []string{"invalid_time", "negative_duration", "overlapping_cue"} {
+			if cats[issueCategory(want)] == 0 {
+				t.Fatalf("missing %s in %v", want, s.Result.Issues)
+			}
+		}
+		if s.Result.First == nil || s.Result.First.Loc.Line == 0 {
+			t.Fatalf("no source line on first failure")
+		}
+		return
+	}
+	t.Fatal("invalid-srt sample missing")
+}
+
+func issueCategory(s string) issue.Category { return issue.Category(s) }
 
 func TestSeedChangesByteContentNotStructure(t *testing.T) {
 	// The normal sample's structural summary must not depend on the seed;

@@ -185,6 +185,40 @@ func verifyDemo(samples []demo.Sample) (report.Verdict, []string) {
 		fail("illegal DF scenario missing")
 	}
 
+	if s, ok := byName["invalid-srt"]; ok {
+		cats := s.Result.Issues.Counts()
+		if cats["invalid_time"] > 0 && cats["negative_duration"] > 0 && cats["overlapping_cue"] > 0 {
+			pass("invalid SRT reports invalid time, negative duration and overlap with source lines")
+		} else {
+			fail("invalid SRT missing an expected category: %v", cats)
+		}
+	} else {
+		fail("invalid SRT scenario missing")
+	}
+
+	if s, ok := byName["vfr-mp4"]; ok {
+		if s.Result.VFR && len(s.Result.Intervals) > 1 &&
+			s.Result.Intervals[0].DTSGap != s.Result.Intervals[2].DTSGap {
+			pass("VFR keyframe intervals use actual time (%s vs %s)",
+				s.Result.Intervals[0].DTSGap, s.Result.Intervals[2].DTSGap)
+		} else {
+			fail("VFR intervals were not derived from actual time")
+		}
+	} else {
+		fail("VFR scenario missing")
+	}
+
+	if s, ok := byName["rtp-wrap"]; ok {
+		if s.Result.RTPWraps == 1 && s.Result.RTPRegressions == 0 && len(s.Result.Issues) == 0 {
+			pass("RTP 32-bit timestamp wrap expanded (%d packets, no spurious errors)", s.Result.PacketCount)
+		} else {
+			fail("RTP wrap not handled cleanly: wraps=%d regressions=%d issues=%d",
+				s.Result.RTPWraps, s.Result.RTPRegressions, len(s.Result.Issues))
+		}
+	} else {
+		fail("RTP wrap scenario missing")
+	}
+
 	inWindow, okIn := byName["late-in-window"]
 	outWindow, okOut := byName["late-out-of-window"]
 	if !okIn || !okOut {

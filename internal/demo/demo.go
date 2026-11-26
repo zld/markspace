@@ -121,6 +121,7 @@ func Run(seed int64, lateWindow clock.Tick) ([]Sample, error) {
 			Name: "illegal-df", Window: lateWindow, Issues: tcIssues,
 			Sources: []string{"timecodes.txt"},
 		}
+		validate.Finalize(res)
 		for _, e := range entries {
 			res.Notes = append(res.Notes, fmt.Sprintf(
 				"line %d: %s %s -> ticks=%d frame_error=%d",
@@ -152,6 +153,57 @@ func Run(seed int64, lateWindow clock.Tick) ([]Sample, error) {
 
 	if ld.err != nil {
 		return nil, ld.err
+	}
+
+	// --- invalid SRT: bad time, negative duration, overlap ---------------
+	{
+		text := invalidCues()
+		tr, cueIssues := subtitle.ParseSRT("invalid.srt", text)
+		res := &validate.Result{
+			Name: "invalid-srt", Window: lateWindow,
+			Sources: []string{"invalid.srt"}, Issues: cueIssues,
+		}
+		validate.Finalize(res)
+		for _, c := range tr.Cues {
+			res.Notes = append(res.Notes, fmt.Sprintf(
+				"cue %d kept: line %d %s -> %s", c.Index, c.StartLn, c.Start, c.End))
+		}
+		add("invalid-srt", res, digestOf(res))
+	}
+
+	// --- VFR MP4: irregular deltas, intervals from actual time -----------
+	{
+		vfrPath := filepath.Join(dir, "vfr.mp4")
+		vfrSpec := vfrMP4Spec()
+		layout, err := fixtures.WriteMP4(vfrPath, vfrSpec, seed)
+		if err != nil {
+			return nil, err
+		}
+		_ = layout
+		res := validate.Analyze(validate.Spec{
+			Name: "vfr-mp4", Window: lateWindow, MP4: ld.mp4(vfrPath),
+		})
+		add("vfr-mp4", res, digestOf(res))
+	}
+
+	// --- RTP with a 32-bit timestamp wrap --------------------------------
+	{
+		wrapPath := filepath.Join(dir, "wrap.rtp")
+		ts := frameTimestamps(spec)
+		// Start close to the 32-bit boundary so a wrap occurs mid-stream.
+		const start = uint32(0xFFFF0000)
+		for i := range ts {
+			ts[i] += start
+		}
+		layout, err := fixtures.WriteRTPTimestamps(wrapPath, 90000, ts, seed)
+		if err != nil {
+			return nil, err
+		}
+		_ = layout
+		res := validate.Analyze(validate.Spec{
+			Name: "rtp-wrap", Window: lateWindow, RTP: ld.rtp(wrapPath),
+		})
+		add("rtp-wrap", res, digestOf(res))
 	}
 	return samples, nil
 }
@@ -243,6 +295,41 @@ func timecodeLines() string {
 30 00:00:00:01
 25 00:00:00:25
 `
+}
+
+func invalidCues() string {
+	return `1
+00:00:01,000 --> 00:00:03,000
+第一句 / kept
+
+2
+00:00:02,000 --> 00:00:04,000
+overlaps cue 1
+
+3
+00:00:05,000 --> 00:00:06,00X
+illegal milliseconds field
+
+4
+00:00:08,000 --> 00:00:07,000
+negative duration
+`
+}
+
+// vfrMP4Spec builds a track whose sample deltas vary, so a nominal frame rate
+// would misreport keyframe intervals.
+func vfrMP4Spec() fixtures.MP4Spec {
+	deltas := []uint32{
+		1001, 1001, 1001, 3000, 1001, 1001, 1001, 3000, 1001, 1001, 1001, 3000, 1001,
+	}
+	sizes := make([]uint32, len(deltas))
+	for i := range sizes {
+		sizes[i] = uint32(150 + i*7)
+	}
+	return fixtures.MP4Spec{
+		Timescale: 30000, SampleDelta: deltas, SampleSizes: sizes,
+		Keyframes: []int{1, 4, 7, 10, 13}, Width: 640, Height: 360,
+	}
 }
 
 func normalCues() string {

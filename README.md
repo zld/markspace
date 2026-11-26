@@ -25,9 +25,11 @@ go test ./...
 go run ./cmd/mediasync demo --seed 7 --late-window 2s
 ```
 
-The demo generates and analyses six samples: a normal take, a truncated MP4,
-a corrupted RTP recording, an illegal drop-frame timecode list, and in-window
-and out-of-window late subtitle events. It prints, per sample: input names,
+The demo generates and analyses nine samples: a normal take, a truncated MP4,
+a corrupted RTP recording, an illegal drop-frame timecode list, in-window and
+out-of-window late subtitle events, an SRT with invalid times/negative
+duration/overlap, a VFR MP4, and an RTP recording crossing the 32-bit
+timestamp wrap. It prints, per sample: input names,
 cue/keyframe/packet mapping, keyframe count and actual-time intervals, maximum
 time and byte deviation, damaged byte ranges, error categories, the first
 failure position and the SHA-256 digest.
@@ -42,9 +44,11 @@ Exit codes:
 
 `demo` exits 0 when the cross-sample acceptance relations hold — the normal
 sample deviates by at most one tick, both damaged samples report a
-byte-localised first failure, the in-window late event recomputes to the
-event-time baseline digest, and the out-of-window event is reported as
-unrecoverable with its source line. `check` follows the material-error
+byte-localised first failure, the invalid SRT reports every problem with its
+source line, VFR intervals differ by actual time, the RTP wrap expands without
+spurious errors, the in-window late event recomputes to the event-time baseline
+digest, and the out-of-window event is reported as unrecoverable with its
+source line. `check` follows the material-error
 semantics for real inputs.
 
 ## Commands

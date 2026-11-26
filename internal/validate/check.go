@@ -169,12 +169,20 @@ func Analyze(spec Spec) *Result {
 	}
 	checkCueRange(spec.Cues, spec.MP4, &res.Issues)
 	res.Damaged = issue.MergeRanges(res.Damaged, 4)
+	Finalize(res)
+	return res
+}
+
+// Finalize sorts the issue list and records the deterministic first failure.
+// Callers that construct a Result from pre-parsed issues must call it so the
+// report and the first-failure line agree.
+func Finalize(res *Result) {
 	res.Issues = res.Issues.Sorted()
+	res.First = nil
 	if first, ok := res.Issues.First(); ok {
 		f := first
 		res.First = &f
 	}
-	return res
 }
 
 // buildEvents converts parsed modules into timeline events. cueLine maps the
