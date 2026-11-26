@@ -37,6 +37,16 @@ func publish(in Input, key, eventID string, art *render.Artifact) (*Result, erro
 		if err != nil {
 			return nil, err
 		}
+		if _, statErr := os.Stat(store.ManifestPath()); os.IsNotExist(statErr) {
+			manifest := journal.Manifest{
+				Schema: "replay-manifest-v1", DeliveryKey: key, EventID: eventID,
+				StartMS: in.StartMS, EndMS: in.EndMS, Artifact: rel, SHA256: hash,
+				Metrics: *metrics,
+			}
+			if err := store.WriteManifest(manifest); err != nil {
+				return nil, err
+			}
+		}
 		return &Result{
 			DeliveryKey: key, Artifact: rel, SHA256: hash, Metrics: metrics,
 			Recovered: 0, Published: 1, Duplicate: 0, Committed: true,
