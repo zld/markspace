@@ -139,3 +139,13 @@ func slug(s string) string {
 	}
 	return out
 }
+
+// firstOf returns the first non-blank string in order.
+func firstOf(vals ...string) string {
+	for _, v := range vals {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
+}
