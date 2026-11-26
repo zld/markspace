@@ -176,12 +176,8 @@ func AlphaFraction(t, start, end int64) (num, den int64) {
 	return num, den
 }
 
-// MixLinear blends a and b with alpha=num/den and saturates to int16 range.
-func MixLinear(a, b int16, num, den int64) int16 {
-	if den <= 0 {
-		return a
-	}
-	v := (int64(a)*(den-num) + int64(b)*num) / den
+// LimitSample saturates an integer mix accumulator to signed 16-bit PCM range.
+func LimitSample(v int64) int16 {
 	if v > 32767 {
 		return 32767
 	}
@@ -189,4 +185,13 @@ func MixLinear(a, b int16, num, den int64) int16 {
 		return -32768
 	}
 	return int16(v)
+}
+
+// MixLinear blends a and b with alpha=num/den and saturates to int16 range.
+func MixLinear(a, b int16, num, den int64) int16 {
+	if den <= 0 {
+		return a
+	}
+	v := (int64(a)*(den-num) + int64(b)*num) / den
+	return LimitSample(v)
 }
