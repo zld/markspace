@@ -263,7 +263,7 @@ func Run(opts Options) (*Result, error) {
 	// Land outputs record by record, checkpointing after each atomic write.
 	// Repairs are keyed by source and path; the timeline's fragment path is the
 	// absolute input path, which is also the record path.
-	plans := map[string]map[uint32]RepairPlan{}
+	plans := map[string]map[uint32]WritePlan{}
 	for key, byTrack := range planRepairs(tl) {
 		plans[key] = byTrack
 	}
@@ -325,7 +325,7 @@ func Run(opts Options) (*Result, error) {
 			})
 		}
 	}
-	if a, err := writeReport(opts, res, facts); err != nil {
+	if a, err := writeReport(opts, res, facts, switches, plans, records); err != nil {
 		return nil, err
 	} else {
 		artifacts = dedupeByName(append(artifacts, a...))
@@ -353,7 +353,7 @@ func Run(opts Options) (*Result, error) {
 // written to disk hashes to the recorded digest, and re-deriving the timeline,
 // index and media digest from the same inputs reproduces them exactly. Any
 // nondeterminism in map iteration or time handling would fail here.
-func (res *Result) checkRepeatability(records []Record, plans map[string]map[uint32]RepairPlan) error {
+func (res *Result) checkRepeatability(records []Record, plans map[string]map[uint32]WritePlan) error {
 	tlBytes, err := cmaf.MarshalDeterministic(res.Timeline)
 	if err != nil {
 		return model.E(model.CodeInternal, "repeatability", "%v", err)

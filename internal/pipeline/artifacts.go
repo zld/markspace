@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"rtx/internal/cmaf"
 	"rtx/internal/evidence"
@@ -14,38 +15,89 @@ import (
 	"rtx/internal/repair"
 )
 
-// RepairPlan maps a fragment path and track to the tfdt value that must be
-// written into the output artifact, and the record explaining why.
-type RepairPlan struct {
-	Fragment string
-	TrackID  uint32
-	Value    uint64
-	Repair   repair.Repair
+// WritePlan is the base media decode time one track's tfdt must carry in the
+// output. The value is on the shared, absolute media grid, so concatenated
+// outputs form one continuous timeline across a tfdt repair and across a source
+// switch. Reason and Repair explain why the value differs from the input.
+type WritePlan struct {
+	TrackID uint32
+	Value   uint64
+	Reason  string
+	Repair  *repair.Repair
 }
 
-// planRepairs maps repair records to concrete tfdt patches keyed by fragment.
-func planRepairs(tl *repair.Timeline) map[string]map[uint32]RepairPlan {
-	out := map[string]map[uint32]RepairPlan{}
-	for _, r := range tl.Repairs {
-		key := r.Source + "\x00" + r.Fragment
-		if out[key] == nil {
-			out[key] = map[uint32]RepairPlan{}
+// planRepairs derives, for every fragment track, the absolute tfdt to write.
+// Where a fragment's own tfdt already matches the absolute value and the source
+// starts at zero, no plan is emitted and the bytes are left untouched.
+func planRepairs(tl *repair.Timeline) map[string]map[uint32]WritePlan {
+	mediaRate := tl.MediaRate
+	out := map[string]map[uint32]WritePlan{}
+	for _, ft := range tl.Fragments {
+		frag := ft.Fragment
+		key := ft.Source + "\x00" + frag.Path
+		for _, span := range ft.Tracks {
+			value, err := model.FromTicks(span.Start.Ticks, mediaRate, span.Rate)
+			if err != nil {
+				// Index construction already proved the span lands exactly;
+				// keep the original bytes defensively rather than truncating.
+				continue
+			}
+			if uint64(value) == span.OriginalTFD {
+				continue
+			}
+			plan := WritePlan{TrackID: span.TrackID, Value: uint64(value)}
+			if span.RepairedTFD != span.OriginalTFD {
+				plan.Reason = "tfdt_rollback"
+			} else {
+				plan.Reason = "source_offset"
+			}
+			if out[key] == nil {
+				out[key] = map[uint32]WritePlan{}
+			}
+			out[key][span.TrackID] = plan
 		}
-		out[key][r.TrackID] = RepairPlan{Fragment: r.Fragment, TrackID: r.TrackID, Value: r.Repaired, Repair: r}
+	}
+	// Attach the exact repair record so the emitted explanation stays precise.
+	for i := range tl.Repairs {
+		r := &tl.Repairs[i]
+		key := r.Source + "\x00" + r.Fragment
+		plan, ok := out[key][r.TrackID]
+		if !ok {
+			continue
+		}
+		plan.Repair = r
+		out[key][r.TrackID] = plan
 	}
 	return out
 }
 
 // writeRecord writes one source fragment's repaired artifact: the original
-// fragment bytes with any repairing tfdt patch applied, named by source and
+// fragment bytes with the planned absolute tfdt written in, named by source and
 // order so the output is independent of absolute input paths.
-func writeRecord(outDir string, rec Record, plans map[uint32]RepairPlan) ([]ArtifactRecord, error) {
+func writeRecord(outDir string, rec Record, plans map[uint32]WritePlan) ([]ArtifactRecord, error) {
 	name := fmt.Sprintf("%s-%04d.m4s", sanitize(rec.SourceID), rec.Order)
 	data, err := buildRepairedFragment(rec, plans)
 	if err != nil {
 		return nil, err
 	}
 	return writeArtifact(outDir, name, data)
+}
+
+// buildRepairedFragment applies every planned tfdt patch for one record.
+func buildRepairedFragment(rec Record, plans map[uint32]WritePlan) ([]byte, error) {
+	data := rec.Raw
+	for _, track := range rec.Fragment.Tracks {
+		plan, ok := plans[track.TrackID]
+		if !ok {
+			continue
+		}
+		patched, err := cmaf.PatchTFDT(data, &track, plan.Value)
+		if err != nil {
+			return nil, err
+		}
+		data = patched
+	}
+	return data, nil
 }
 
 func cacheSum(data []byte) string {
@@ -65,25 +117,8 @@ func writeArtifact(outDir, name string, data []byte) ([]ArtifactRecord, error) {
 	return []ArtifactRecord{{Name: name, SHA256: sum, Size: size}}, nil
 }
 
-// buildRepairedFragment applies every planned tfdt patch for one record.
-func buildRepairedFragment(rec Record, plans map[uint32]RepairPlan) ([]byte, error) {
-	data := rec.Raw
-	for _, track := range rec.Fragment.Tracks {
-		plan, ok := plans[track.TrackID]
-		if !ok {
-			continue
-		}
-		patched, err := cmaf.PatchTFDT(data, &track, plan.Value)
-		if err != nil {
-			return nil, err
-		}
-		data = patched
-	}
-	return data, nil
-}
-
-// writeDerived emits the index, timeline, evidence and a report, returning
-// their artifact records plus the metrics.
+// writeDerived emits the index, timeline, evidence and report artifacts,
+// returning their records plus the metrics.
 func writeDerived(opts Options, res *Result, records []Record, tl *repair.Timeline, idx *index.Index, switches []cmaf.Event) ([]ArtifactRecord, *evidence.Metrics, error) {
 	var artifacts []ArtifactRecord
 
@@ -108,7 +143,6 @@ func writeDerived(opts Options, res *Result, records []Record, tl *repair.Timeli
 		artifacts = append(artifacts, a...)
 	}
 
-	// Assemble evidence samples over the repaired index.
 	samples, err := indexSamples(records, idx)
 	if err != nil {
 		return nil, nil, err
@@ -229,47 +263,83 @@ type rtpFacts struct {
 
 // Report is the human- and machine-readable run summary.
 type Report struct {
-	OK           bool                 `json:"ok"`
-	Resume       bool                 `json:"resume"`
-	Records      int                  `json:"records"`
-	Cursor       int                  `json:"cursor"`
-	CacheHits    int                  `json:"cache_hits"`
-	CacheMisses  int                  `json:"cache_misses"`
-	Gaps         int                  `json:"gap"`
-	TFDTRepairs  int                  `json:"tfdt_rollback"`
-	SourceSwitch int                  `json:"source_switch"`
-	RepairDetail []repair.Repair      `json:"repairs"`
-	SequenceGaps []repair.SequenceGap `json:"sequence_gaps"`
-	TraceFacts   []rtpFacts           `json:"rtp"`
-	IndexDigest  string               `json:"index_sha256"`
-	MediaDigest  string               `json:"media_sha256"`
-	ManifestSum  string               `json:"manifest_sha256"`
-	InputSum     string               `json:"input_sha256"`
+	OK                 bool                 `json:"ok"`
+	Resume             bool                 `json:"resume"`
+	Records            int                  `json:"records"`
+	Cursor             int                  `json:"cursor"`
+	CacheHits          int                  `json:"cache_hits"`
+	CacheMisses        int                  `json:"cache_misses"`
+	Gaps               int                  `json:"gap"`
+	TFDTRepairs        int                  `json:"tfdt_rollback"`
+	SourceSwitch       int                  `json:"source_switch"`
+	RepairDetail       []repair.Repair      `json:"repairs"`
+	SequenceGaps       []repair.SequenceGap `json:"sequence_gaps"`
+	SourceSwitchEvents []cmaf.Event         `json:"source_switch_events,omitempty"`
+	TraceFacts         []rtpFacts           `json:"rtp"`
+	Timeline           []assemblyEntry      `json:"written_timeline,omitempty"`
+	IndexDigest        string               `json:"index_sha256"`
+	MediaDigest        string               `json:"media_sha256"`
+	ManifestSum        string               `json:"manifest_sha256"`
+	InputSum           string               `json:"input_sha256"`
 }
 
 // writeReport emits report.json from the finished result.
-func writeReport(opts Options, res *Result, facts []rtpFacts) ([]ArtifactRecord, error) {
+func writeReport(opts Options, res *Result, facts []rtpFacts, switches []cmaf.Event, plans map[string]map[uint32]WritePlan, records []Record) ([]ArtifactRecord, error) {
 	rep := &Report{
-		OK:           true,
-		Resume:       res.Resume,
-		Records:      res.Records,
-		Cursor:       res.Cursor,
-		CacheHits:    res.CacheHits,
-		CacheMisses:  res.CacheMisses,
-		Gaps:         res.Gaps,
-		TFDTRepairs:  res.Repairs,
-		SourceSwitch: res.SourceSwitch,
-		RepairDetail: res.Timeline.Repairs,
-		SequenceGaps: res.Timeline.SequenceGaps,
-		TraceFacts:   facts,
-		IndexDigest:  res.IndexSum,
-		MediaDigest:  res.MediaSum,
-		ManifestSum:  res.ManifestSum,
-		InputSum:     res.InputSum,
+		OK:                 true,
+		Resume:             res.Resume,
+		Records:            res.Records,
+		Cursor:             res.Cursor,
+		CacheHits:          res.CacheHits,
+		CacheMisses:        res.CacheMisses,
+		Gaps:               res.Gaps,
+		TFDTRepairs:        res.Repairs,
+		SourceSwitch:       res.SourceSwitch,
+		RepairDetail:       res.Timeline.Repairs,
+		SequenceGaps:       res.Timeline.SequenceGaps,
+		SourceSwitchEvents: switches,
+		TraceFacts:         facts,
+		Timeline:           assemblyFromPlans(plans, records),
+		IndexDigest:        res.IndexSum,
+		MediaDigest:        res.MediaSum,
+		ManifestSum:        res.ManifestSum,
+		InputSum:           res.InputSum,
 	}
 	data, err := cmaf.MarshalDeterministic(rep)
 	if err != nil {
 		return nil, model.E(model.CodeInternal, "encode report", "%v", err)
 	}
 	return writeArtifact(opts.OutDir, "report.json", data)
+}
+
+// switchAssembly reports, for the report, the absolute tfdt carried by each
+// written fragment track so a reader can see the unified timeline.
+type assemblyEntry struct {
+	Fragment  string `json:"fragment"`
+	TrackID   uint32 `json:"track_id"`
+	TFDTTicks int64  `json:"tfdt_ticks"`
+	Reason    string `json:"reason,omitempty"`
+}
+
+func assemblyFromPlans(plans map[string]map[uint32]WritePlan, records []Record) []assemblyEntry {
+	var out []assemblyEntry
+	for _, rec := range records {
+		key := rec.SourceID + "\x00" + rec.Fragment.Path
+		byTrack := plans[key]
+		for trackID, plan := range byTrack {
+			out = append(out, assemblyEntry{
+				Fragment:  filepath.Base(rec.RelPath),
+				TrackID:   trackID,
+				TFDTTicks: int64(plan.Value),
+				Reason:    plan.Reason,
+			})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Fragment != out[j].Fragment {
+			return out[i].Fragment < out[j].Fragment
+		}
+		return out[i].TrackID < out[j].TrackID
+	})
+	return out
 }
