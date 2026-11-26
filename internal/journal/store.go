@@ -1,6 +1,8 @@
 package journal
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -25,7 +27,11 @@ func appendJournal(dir, line string) error {
 	return f.Sync()
 }
 
-func atomicWrite(path string, data []byte) error {
+func atomicWrite(path string, data []byte, expectedSHA string) error {
+	if expectedSHA == "" {
+		sum := sha256.Sum256(data)
+		expectedSHA = hex.EncodeToString(sum[:])
+	}
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
@@ -50,6 +56,16 @@ func atomicWrite(path string, data []byte) error {
 	}
 	if err := tmp.Close(); err != nil {
 		return err
+	}
+	// Validate the durable temporary file before the atomic rename.
+	tmpBytes, err := os.ReadFile(name)
+	if err != nil {
+		return err
+	}
+	tmpSum := sha256.Sum256(tmpBytes)
+	if got := hex.EncodeToString(tmpSum[:]); got != expectedSHA {
+		return &media.Fault{Phase: media.PhaseJournal, Code: media.CodeHashMismatch, Source: name,
+			Detail: fmt.Sprintf("temporary artifact hash %s != expected %s", got, expectedSHA)}
 	}
 	if err := os.Rename(name, path); err != nil {
 		return err

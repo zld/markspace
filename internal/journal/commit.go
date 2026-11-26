@@ -68,7 +68,7 @@ func Commit(dir, caseName, tx string, artifacts []Artifact, frames []FrameRecord
 			}
 			continue
 		}
-		if err := atomicWrite(finalPath, a.Data); err != nil {
+		if err := atomicWrite(finalPath, a.Data, expected); err != nil {
 			return rep, fault(media.CodePublication, finalPath, err)
 		}
 		if err := appendJournal(dir, "PREPARED "+a.Name+" "+expected); err != nil {
@@ -95,11 +95,12 @@ func Commit(dir, caseName, tx string, artifacts []Artifact, frames []FrameRecord
 	if err != nil {
 		return rep, err
 	}
-	if err := atomicWrite(rep.StatePath, data); err != nil {
+	stateSum := sha256.Sum256(data)
+	stateSHA := hex.EncodeToString(stateSum[:])
+	if err := atomicWrite(rep.StatePath, data, stateSHA); err != nil {
 		return rep, fault(media.CodePublication, rep.StatePath, err)
 	}
-	stateSum := sha256.Sum256(data)
-	if err := appendJournal(dir, "COMMIT "+tx+" "+hex.EncodeToString(stateSum[:])); err != nil {
+	if err := appendJournal(dir, "COMMIT "+tx+" "+stateSHA); err != nil {
 		return rep, err
 	}
 	return rep, nil
