@@ -1,0 +1,11 @@
+# Build artifacts
+/mediad
+/cmd/mediad/mediad
+*.test
+*.out
+
+# Local runtime data (demo roots, databases, archives)
+/local-data/
+*.db
+*.db-shm
+*.db-wal
