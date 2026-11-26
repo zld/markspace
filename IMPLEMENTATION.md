@@ -76,6 +76,15 @@ go run ./cmd/replaycheck verify --seed 7 --out "$TMPDIR/replay-proof" \
     --workers 3 --queue 2 --delay 20ms
 ```
 
+### Toolchain note
+
+The brief asks for Go 1.23.12 and pion/rtp v1.10.6. That pion release declares
+`go 1.24.0` and refuses to build under a 1.23 language version, so `go.mod`
+carries `go 1.24.0`. With the default `GOTOOLCHAIN=auto` the Go 1.23.12 binary
+installed from `go@1.23` reads that directive and runs the build with the
+matching 1.24 toolchain automatically; `go version` after that reports
+`go1.24.0`. Nothing else in the project needs a feature newer than 1.23.
+
 Acceptance output: `map_count=16`, `clips=2`, `max_time_error_us<=11112`,
 `byte_error=0`, `bad_cases=3`, `queue_peak<=2`, `resume_digest_equal=true`,
 and a 64-character `digest_sha256`. Rerunning with the same seed prints the same
