@@ -13,20 +13,20 @@ import (
 // under root. It never permits absolute URIs, schemes, or ".." escapes.
 func SafeResolve(root, sourceFile, uri string) (string, string, error) {
 	if uri == "" {
-		return "", "", media.NewFault(media.PhaseManifest, media.CodeInvalidManifest, "empty URI")
+		return "", "", &media.Fault{Phase: media.PhaseManifest, Code: media.CodeInvalidManifest, Source: sourceFile, Detail: "empty URI"}
 	}
 	if strings.Contains(uri, "://") || strings.HasPrefix(uri, "file:") {
-		return "", "", media.NewFault(media.PhaseManifest, media.CodePathEscape,
-			"external URI is not allowed: "+uri)
+		return "", "", &media.Fault{Phase: media.PhaseManifest, Code: media.CodePathEscape, Source: sourceFile,
+			Detail: "external URI is not allowed: " + uri}
 	}
 	if filepath.IsAbs(uri) || strings.HasPrefix(uri, "/") {
-		return "", "", media.NewFault(media.PhaseManifest, media.CodePathEscape,
-			"absolute URI is not allowed: "+uri)
+		return "", "", &media.Fault{Phase: media.PhaseManifest, Code: media.CodePathEscape, Source: sourceFile,
+			Detail: "absolute URI is not allowed: " + uri}
 	}
 	cleanURI := filepath.Clean(filepath.FromSlash(uri))
 	if cleanURI == ".." || strings.HasPrefix(cleanURI, ".."+string(filepath.Separator)) {
-		return "", "", media.NewFault(media.PhaseManifest, media.CodePathEscape,
-			"URI escapes sample root: "+uri)
+		return "", "", &media.Fault{Phase: media.PhaseManifest, Code: media.CodePathEscape, Source: sourceFile,
+			Detail: "URI escapes sample root: " + uri}
 	}
 	rootAbs, err := filepath.Abs(root)
 	if err != nil {

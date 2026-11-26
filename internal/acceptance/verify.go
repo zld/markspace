@@ -73,7 +73,9 @@ func verifyDamaged(out string) error {
 		return fmt.Errorf("expected OOB path rejection, got %v", oobErr)
 	}
 	fmt.Printf("oob_reference=%s\n", spec.OOBReference)
+	fmt.Printf("越界引用=%s\n", spec.OOBReference)
 	fmt.Printf("out_of_bounds_rejected=true location=%s:%d\n", oobFault.Source, oobFault.Line)
+	fmt.Println("确认拒绝输入=true")
 
 	_, truncErr := media.ReadFragment(spec.TruncatedFile, spec.VideoTimescale)
 	tf, ok := media.AsFault(truncErr)
@@ -81,6 +83,7 @@ func verifyDamaged(out string) error {
 		return fmt.Errorf("expected truncation fault, got %v", truncErr)
 	}
 	fmt.Printf("truncation_offset=%d\n", tf.Offset)
+	fmt.Printf("截断偏移=%d\n", tf.Offset)
 	fmt.Printf("truncation_detail=%q\n", tf.Detail)
 
 	code, combined, err := runBinary("run", "--case", "damaged", "--out", out)
@@ -113,6 +116,7 @@ func verifyBoundary(out string) error {
 		return fmt.Errorf("expected time overflow, got %v", dashErr)
 	}
 	fmt.Printf("time_overflow=rejected time_overflow_offset=%d\n", of.Offset)
+	fmt.Printf("时间溢出=拒绝 时间溢出偏移=%d\n", of.Offset)
 
 	pkts, err := rtprec.ReadRecords(spec.RTPPath)
 	if err != nil {
@@ -123,6 +127,7 @@ func verifyBoundary(out string) error {
 		return fmt.Errorf("unrecoverable=%d want 2", rep.Unrecoverable)
 	}
 	fmt.Printf("unrecoverable_packets=%d gaps=%d\n", rep.Unrecoverable, len(rep.Gaps))
+	fmt.Printf("不可恢复包数=%d\n", rep.Unrecoverable)
 
 	code, combined, err := runBinary("run", "--case", "boundary", "--out", out)
 	if err != nil {
