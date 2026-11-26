@@ -9,6 +9,7 @@ import (
 	"sort"
 	"time"
 
+	"example.com/archiveverify/internal/cmaf"
 	"example.com/archiveverify/internal/fixture"
 	"example.com/archiveverify/internal/index"
 	"example.com/archiveverify/internal/model"
@@ -17,14 +18,15 @@ import (
 
 // Config controls one verification run.
 type Config struct {
-	Case        string
-	Range       string
-	WorkDir     string
-	Iterations  int
-	MemoryBytes int64
-	Queue       int
-	Resume      bool
-	Repeat      int
+	Case         string
+	Range        string
+	WorkDir      string
+	ManifestPath string
+	Iterations   int
+	MemoryBytes  int64
+	Queue        int
+	Resume       bool
+	Repeat       int
 }
 
 // OffsetTrace is the audit view printed for timestamp repairs.
@@ -76,17 +78,36 @@ func Run(ctx context.Context, cfg Config) (*Report, error) {
 	if cfg.Queue <= 0 {
 		cfg.Queue = 4
 	}
-	if cfg.WorkDir == "" {
-		cfg.WorkDir = filepath.Join(".verify-work", cfg.Case)
+	var manifestPath string
+	var manifest *cmaf.Manifest
+	if cfg.ManifestPath != "" {
+		manifestPath = cfg.ManifestPath
+		loaded, err := cmaf.LoadManifest(manifestPath)
+		if err != nil {
+			return nil, err
+		}
+		manifest = loaded
+		if cfg.WorkDir == "" {
+			cfg.WorkDir = filepath.Dir(manifestPath)
+		}
+	} else {
+		if cfg.WorkDir == "" {
+			cfg.WorkDir = filepath.Join(".verify-work", cfg.Case)
+		}
+		if err := os.MkdirAll(cfg.WorkDir, 0o755); err != nil {
+			return nil, err
+		}
+		ws, err := fixture.Generate(cfg.WorkDir, cfg.Case)
+		if err != nil {
+			return nil, err
+		}
+		manifestPath = ws.ManifestPath
+		manifest = ws.Manifest
 	}
 	if err := os.MkdirAll(cfg.WorkDir, 0o755); err != nil {
 		return nil, err
 	}
 
-	ws, err := fixture.Generate(cfg.WorkDir, cfg.Case)
-	if err != nil {
-		return nil, err
-	}
 	rng, err := index.ParseRange(cfg.Range)
 	if err != nil {
 		return nil, err
@@ -102,7 +123,7 @@ func Run(ctx context.Context, cfg Config) (*Report, error) {
 	var digests []string
 	resumed := false
 	for i := 0; i < cfg.Repeat; i++ {
-		res, didResume, err := index.BuildOrResume(ctx, ws.ManifestPath, indexPath, checkpointPath, index.BuildOptions{
+		res, didResume, err := index.BuildOrResume(ctx, manifestPath, indexPath, checkpointPath, index.BuildOptions{
 			RTPWindow: 16,
 		})
 		if err != nil {
@@ -123,7 +144,7 @@ func Run(ctx context.Context, cfg Config) (*Report, error) {
 	if err != nil {
 		return nil, err
 	}
-	pipeStats, err := runPipe(ctx, cfg, ws, last.Index)
+	pipeStats, err := runPipe(ctx, cfg, manifest, last.Index)
 	if err != nil {
 		return nil, err
 	}
@@ -184,14 +205,14 @@ func benchmarkReads(idx *index.Index, rng index.Range, n int) (*benchmarkResult,
 	return &benchmarkResult{p95MS: float64(lat[p95idx].Microseconds()) / 1000.0, result: last}, nil
 }
 
-func runPipe(ctx context.Context, cfg Config, ws *fixture.Workspace, idx *index.Index) (stream.Stats, error) {
+func runPipe(ctx context.Context, cfg Config, m *cmaf.Manifest, idx *index.Index) (stream.Stats, error) {
 	items := make([]stream.Item, 0, len(idx.Entries))
 	for i, e := range idx.Entries {
 		items = append(items, stream.Item{ID: i, Size: 4096, Payload: e})
 	}
 	slowDelay := time.Duration(0)
 	slowItems := 0
-	for _, ev := range ws.Manifest.Events {
+	for _, ev := range m.Events {
 		if ev.Kind == "slow_consumer" && ev.Slow != nil {
 			slowDelay = time.Duration(ev.Slow.DelayMS) * time.Millisecond
 			slowItems = ev.Slow.Items

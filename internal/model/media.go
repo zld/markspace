@@ -97,7 +97,8 @@ func ExitCode(err error) int {
 			return 3
 		}
 	}
-	if errors.Is(err, ErrResourceLimit) || errors.Is(err, ErrCanceled) || errors.Is(err, context.Canceled) {
+	if errors.Is(err, ErrResourceLimit) || errors.Is(err, ErrCanceled) ||
+		errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return 3
 	}
 	return 2

@@ -29,6 +29,7 @@ func run() int {
 	resume := flag.Bool("resume", false, "use fingerprinted checkpoint/resume")
 	repeat := flag.Int("repeat", 1, "repeat build and compare index digests")
 	workDir := flag.String("workdir", "", "generated input/checkpoint directory")
+	input := flag.String("input", "", "use an existing manifest instead of generating a fixture")
 	flag.Parse()
 
 	memBytes, err := parseSize(*mem)
@@ -40,7 +41,7 @@ func run() int {
 	defer stop()
 
 	rep, err := verify.Run(ctx, verify.Config{
-		Case: *caseName, Range: *rangeSpec, WorkDir: *workDir,
+		Case: *caseName, Range: *rangeSpec, WorkDir: *workDir, ManifestPath: *input,
 		Iterations: *iterations, MemoryBytes: memBytes, Queue: *queue,
 		Resume: *resume, Repeat: *repeat,
 	})
