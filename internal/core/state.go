@@ -101,28 +101,24 @@ type Result struct {
 func Build(in Input) (*Result, error) {
 	// 1. RTP events -> sync anchors (unwrap 32-bit RTP timestamps).
 	rtpUW := timebase.NewUnwrapper(RTPModulus)
-	var clk timebase.Clock
-	var firstSrc, maxSrc int64
+	rtpVals := make([]int64, 0, len(in.Events))
+	var maxSrc int64
 	for i, ev := range in.Events {
 		src, err := rtpUW.Unwrap(int64(ev.RTPTime))
 		if err != nil {
 			return nil, NewError(StageTimebase, CodeAmbiguousJump, "events", 0, int64(i), "rtp timestamp", err)
 		}
-		if i == 0 {
-			firstSrc = src
-		}
+		rtpVals = append(rtpVals, src)
 		if src > maxSrc {
 			maxSrc = src
 		}
-		clk.AddAnchor(timebase.Anchor{Source: src, Ref: ev.ArrivalRef})
-	}
-	drift, hasClock := clk.DriftPPM()
-	if len(in.Records) > 0 && !hasClock {
-		return nil, NewError(StageTimebase, CodeInput, "events", 0, -1, "no sync anchors", nil)
 	}
 
-	// 2. Unwrap PTS per record in media-sequence order, seeded to the
-	// RTP-established epoch.
+	// 2. Unwrap PTS per record in media-sequence order. PTS (mod 2^33)
+	// and RTP (mod 2^32) are the same source clock reduced by different
+	// moduli, so the PTS unwrapper is seeded into the RTP-established
+	// epoch and anchors are lifted into the PTS domain by a constant
+	// multiple of 2^32.
 	recs := append([]Record(nil), in.Records...)
 	sort.SliceStable(recs, func(i, j int) bool {
 		if recs[i].Index != recs[j].Index {
@@ -134,12 +130,34 @@ func Build(in Input) (*Result, error) {
 		return recs[i].Source < recs[j].Source
 	})
 	ptsUW := timebase.NewUnwrapper(PTSModulus)
-	ptsUW.Seed(firstSrc)
+	if len(rtpVals) > 0 && len(recs) > 0 {
+		seed := rtpVals[0]
+		firstRaw := recs[0].Info.BaseTime
+		for d := int64(0); d*RTPModulus < PTSModulus; d++ {
+			if (rtpVals[0]+d*RTPModulus)%PTSModulus == firstRaw%PTSModulus {
+				seed = rtpVals[0] + d*RTPModulus
+				break
+			}
+		}
+		ptsUW.Seed(seed)
+	}
+	var clk timebase.Clock
+	lift := int64(0)
 	ms := make([]mapped, 0, len(recs))
-	for _, r := range recs {
+	for i, r := range recs {
 		un, err := ptsUW.Unwrap(r.Info.BaseTime)
 		if err != nil {
 			return nil, NewError(StageTimebase, CodeAmbiguousJump, r.Source, r.Line, -1, "pts", err)
+		}
+		if i == 0 && len(rtpVals) > 0 {
+			lift = roundDiv(un-rtpVals[0], RTPModulus)
+			for j, rv := range rtpVals {
+				clk.AddAnchor(timebase.Anchor{Source: rv + lift*RTPModulus, Ref: in.Events[j].ArrivalRef})
+			}
+			maxSrc += lift * RTPModulus
+		}
+		if clk.Anchors() == 0 {
+			return nil, NewError(StageTimebase, CodeInput, r.Source, r.Line, -1, "no sync anchors", nil)
 		}
 		ref, _ := clk.ToRef(un)
 		var dur int64
@@ -148,6 +166,7 @@ func Build(in Input) (*Result, error) {
 		}
 		ms = append(ms, mapped{rec: r, unwrapped: un, mediaRef: ref, dur: dur})
 	}
+	drift, hasClock := clk.DriftPPM()
 
 	// 3. Media-time order; arrival time breaks ties (earliest wins dup).
 	sort.SliceStable(ms, func(i, j int) bool {
@@ -228,13 +247,16 @@ func Build(in Input) (*Result, error) {
 				MediaRef: expectedRef, ExpectedRef: expectedRef,
 				Note: "unrecovered interval",
 			})
+			// Resume from the next valid anchor: re-anchor the expected
+			// timeline; the gap itself stays marked unrecovered.
+			expectedRef = m.mediaRef
+		}
+		if out == 0 {
+			expectedRef = m.mediaRef
+			expectedByte = 0
 		}
 		deltaUs := ticksToUs(m.mediaRef - expectedRef)
 		byteDelta := arrivalByte[m.rec.Source] - expectedByte
-		if out == 0 {
-			deltaUs = 0
-			byteDelta = 0
-		}
 		if a := abs64(deltaUs); a > res.Summary.MaxAbsTimeDeltaUs {
 			res.Summary.MaxAbsTimeDeltaUs = a
 		}
@@ -321,4 +343,18 @@ func abs64(v int64) int64 {
 		return -v
 	}
 	return v
+}
+
+// roundDiv returns round(a/b) with halves away from zero; b must be > 0.
+func roundDiv(a, b int64) int64 {
+	q := a / b
+	r := a % b
+	if 2*abs64(r) >= b {
+		if a >= 0 {
+			q++
+		} else {
+			q--
+		}
+	}
+	return q
 }
