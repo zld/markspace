@@ -62,12 +62,13 @@ func scanAV1(r io.Reader, track string) (*Result, error) {
 
 		payloadStart := s.offset
 		u.PayloadOffset = payloadStart
-		payload, readErr := readExactOrRest(s, size, hasSize)
+		firstPayload, hasPayload, readErr := consumeOBUPayload(s, size, hasSize)
 		if readErr != nil {
 			off := start
 			if readErr == io.ErrUnexpectedEOF {
 				res.Issues.Add(media.CatTruncatedOBU, track, int64(u.Index), off, "OBU type %d declared size %d is truncated", obuType(hdr), size)
 			} else if me, ok := readErr.(*media.Error); ok {
+				me.Sequence = int64(u.Index)
 				res.Issues = append(res.Issues, me)
 			} else {
 				return nil, readErr
@@ -86,8 +87,8 @@ func scanAV1(r io.Reader, track string) (*Result, error) {
 		u.Complete = true
 		t := obuType(hdr)
 		u.Kind = av1Name(t)
-		if t == AV1OBUFrame || t == AV1OBUFrameHeader {
-			if ft, ok := av1FrameType(payload); ok && ft == 0 {
+		if hasPayload && (t == AV1OBUFrame || t == AV1OBUFrameHeader) {
+			if ft, ok := av1FrameType(firstPayload); ok && ft == 0 {
 				u.Keyframe = true
 				u.Kind = "key_frame_" + u.Kind
 			}
@@ -141,29 +142,42 @@ func readLEB128(s *byteScanner, track string) (uint64, int, error) {
 	}
 }
 
-func readExactOrRest(s *byteScanner, size uint64, hasSize bool) ([]byte, error) {
-	if hasSize {
-		buf := make([]byte, size)
-		for i := uint64(0); i < size; i++ {
-			b, _, err := s.readAt()
-			if err != nil {
-				return buf[:i], io.ErrUnexpectedEOF
-			}
-			buf[i] = b
-		}
-		return buf, nil
+// consumeOBUPayload advances over an OBU without retaining the whole payload.
+// It returns only the first payload byte because that contains the AV1
+// frame_type bits needed for keyframe classification.
+func consumeOBUPayload(s *byteScanner, size uint64, hasSize bool) (first byte, hasFirst bool, err error) {
+	if hasSize && size == 0 {
+		return 0, false, nil
 	}
-	return io.ReadAll(s.r)
+	b, _, readErr := s.readAt()
+	if readErr != nil {
+		if readErr == io.EOF {
+			return 0, false, io.ErrUnexpectedEOF
+		}
+		return 0, false, readErr
+	}
+	if !hasSize {
+		n, copyErr := io.Copy(io.Discard, s.r)
+		s.offset += n
+		if copyErr != nil && copyErr != io.EOF {
+			return b, true, copyErr
+		}
+		return b, true, nil
+	}
+	remaining := int64(size) - 1
+	n, copyErr := io.CopyN(io.Discard, s.r, remaining)
+	s.offset += n
+	if copyErr != nil {
+		return b, true, io.ErrUnexpectedEOF
+	}
+	return b, true, nil
 }
 
-func av1FrameType(payload []byte) (byte, bool) {
-	if len(payload) < 1 {
+func av1FrameType(first byte) (byte, bool) {
+	if first&0x80 != 0 { // show_existing_frame
 		return 0, false
 	}
-	if payload[0]&0x80 != 0 { // show_existing_frame
-		return 0, false
-	}
-	return (payload[0] >> 5) & 0x03, true
+	return (first >> 5) & 0x03, true
 }
 
 func av1Name(t byte) string {
