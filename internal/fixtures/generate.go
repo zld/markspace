@@ -18,7 +18,7 @@ const (
 	Timescale = 90000
 	FPS       = 30
 	FrameDur  = Timescale / FPS // 3000 ticks
-	GOP       = 60              // 2s keyframe interval
+	GOP       = 40              // 8 independent keyframes over 300 frames
 	Frames    = 300             // 10s presentation
 	Width     = 1280
 	Height    = 720
@@ -108,11 +108,9 @@ func Generate(root string) (*Set, error) {
 	if err := os.WriteFile(set.Envelope, mp4box.Build(tracks, envOpts), 0o644); err != nil {
 		return nil, err
 	}
-	// Event variant changes only the final cue text; sample bytes are equal.
-	eventTracks := BuildTracks()
-	eventTracks[0].Samples[0].Data = append([]byte(nil), eventTracks[0].Samples[0].Data...)
-	eventTracks[0].Samples[0].Data[len(eventTracks[0].Samples[0].Data)-1] ^= 0x01
-	if err := os.WriteFile(set.Event, mp4box.Build(eventTracks, mp4box.DefaultOpts()), 0o644); err != nil {
+	// The event-only variant keeps identical media; only side-car cue text
+	// differs, so exactly one slice must be recomputed.
+	if err := os.WriteFile(set.Event, mp4box.Build(tracks, mp4box.DefaultOpts()), 0o644); err != nil {
 		return nil, err
 	}
 	if err := os.WriteFile(set.SRT, []byte(srtText(EventSeconds, false)), 0o644); err != nil {

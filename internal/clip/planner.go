@@ -302,11 +302,12 @@ func totalSampleBytes(media *index.Media) uint64 {
 	return n
 }
 
-// planEventSlice aligns one event to keyframes within the pre/post window.
-// The window is always clamped to the media range; alignment never moves a
-// sample boundary outside the window unless no keyframe exists there, in
-// which case the nearest keyframe inside the media range is used and the
-// slice is marked as truncated.
+// planEventSlice aligns one event to keyframes inside the pre/post window.
+// The window is always clamped to the media range. The start cut is the best
+// keyframe between window start and the event start (falling back to the
+// first keyframe after the event start), so the fragment can decode from its
+// first frame. The end cut is the latest keyframe that still lies inside the
+// window, which keeps post-roll without extending past event+post.
 func planEventSlice(ord int, ev metadata.Event, media *index.Media,
 	kf *index.KeyframeIndex, budget Budget, mediaRange timebase.RangeNS) (Slice, *timebase.Error) {
 	video := media.VideoTrack()
@@ -326,20 +327,34 @@ func planEventSlice(ord int, ev metadata.Event, media *index.Media,
 		return Slice{}, timebase.Newf(timebase.CodeEventOutOfRange, ev.TrackID, ev.SourceOffset,
 			"event %q window is empty after clamping", ev.ID)
 	}
-	startKF, okStart := keyframeWithin(kf, window, ev)
-	if !okStart {
+	startKF, ok := startKeyframeFor(kf, window, startNS)
+	if !ok {
 		return Slice{}, timebase.Newf(timebase.CodeNoKeyframe, video.ID, ev.SourceOffset,
 			"no decodable keyframe in window [%d,%d) for event %q", window.Start, window.End, ev.ID)
 	}
 	alignedStart := startKF.PTSNS()
+	// The end cut needs no keyframe (decoding simply stops), but it must
+	// cover the whole event. Prefer the latest keyframe inside the window and
+	// never cut before the event end or beyond the media end.
 	alignedEnd := window.End
-	if next, ok := kf.AtOrAfter(window.End); ok {
-		alignedEnd = next.PTSNS()
-	} else if last := kf.Frames[len(kf.Frames)-1]; last.PTSNS() < alignedEnd {
-		alignedEnd = last.PTSNS()
+	if f, ok := kf.AtOrBefore(window.End); ok && f.PTSNS() > alignedStart {
+		alignedEnd = f.PTSNS()
+	}
+	if alignedEnd < endNS {
+		alignedEnd = endNS
+	}
+	if alignedEnd > mediaRange.End {
+		alignedEnd = mediaRange.End
 	}
 	if alignedEnd <= alignedStart {
-		alignedEnd = alignedStart
+		if f, ok := kf.AtOrAfter(startNS); ok && f.PTSNS() < window.End {
+			alignedEnd = f.PTSNS()
+		} else if last := kf.Frames[len(kf.Frames)-1]; last.PTSNS() > alignedStart {
+			alignedEnd = last.PTSNS()
+		} else {
+			return Slice{}, timebase.Newf(timebase.CodeNoKeyframe, video.ID, ev.SourceOffset,
+				"event %q has no usable keyframe span", ev.ID)
+		}
 	}
 	vs := sampleAtOrAfter(video, alignedStart)
 	ve := sampleAtOrAfter(video, alignedEnd)
@@ -368,11 +383,14 @@ func planEventSlice(ord int, ev metadata.Event, media *index.Media,
 	}, nil
 }
 
-// keyframeWithin picks the latest keyframe at or before the window end that
-// renders from the window start. Events nearer the beginning of the media
-// align to their closest following keyframe when none precedes them.
-func keyframeWithin(kf *index.KeyframeIndex, window timebase.RangeNS, ev metadata.Event) (index.Keyframe, bool) {
-	if f, ok := kf.AtOrBefore(window.End); ok && f.PTSNS() >= window.Start {
+// startKeyframeFor picks the latest keyframe at or before the event start but
+// no earlier than the window start. If none exists, it takes the first
+// keyframe after the event start that still lies inside the window.
+func startKeyframeFor(kf *index.KeyframeIndex, window timebase.RangeNS, eventStart int64) (index.Keyframe, bool) {
+	if f, ok := kf.AtOrBefore(eventStart); ok && f.PTSNS() >= window.Start {
+		return f, true
+	}
+	if f, ok := kf.AtOrAfter(eventStart); ok && f.PTSNS() < window.End {
 		return f, true
 	}
 	if f, ok := kf.AtOrAfter(window.Start); ok && f.PTSNS() < window.End {

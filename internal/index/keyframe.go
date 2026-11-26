@@ -34,11 +34,27 @@ func BuildKeyframeIndex(tr *Track) (*KeyframeIndex, *timebase.Error) {
 	if tr.Kind != TrackVideo {
 		return idx, nil
 	}
+	// Without an stss every sample is a sync sample; only the declared
+	// keyframe interval is an independent random-access point. When the track
+	// distinguishes sync samples, honour the flag as-is.
+	if allSync(tr) && len(tr.Samples) > 0 {
+		step := inferGOP(tr)
+		for i := 0; i < len(tr.Samples); i += step {
+			s := tr.Samples[i]
+			dtsNS, e := tr.Base.ToNanos(s.DTS, tr.ID, s.Offset)
+			if e != nil {
+				return nil, e
+			}
+			idx.Frames = append(idx.Frames, Keyframe{
+				Index: s.Index, DTS: s.DTS, DTSNS: dtsNS, Offset: s.Offset, Size: s.Size,
+			})
+		}
+	}
 	if !tr.Base.Valid() {
 		return nil, timebase.Newf(timebase.CodeTimeOverflow, tr.ID, -1, "video track has no valid timebase")
 	}
 	for _, s := range tr.Samples {
-		if !s.Sync {
+		if allSync(tr) || !s.Sync {
 			continue
 		}
 		dtsNS, e := tr.Base.ToNanos(s.DTS, tr.ID, s.Offset)
@@ -131,6 +147,35 @@ func (k *KeyframeIndex) Nearest(ns int64) (Keyframe, bool) {
 	default:
 		return after, true
 	}
+}
+
+// allSync reports whether every sample is marked sync.
+func allSync(tr *Track) bool {
+	for _, s := range tr.Samples {
+		if !s.Sync {
+			return false
+		}
+	}
+	return true
+}
+
+// inferGOP returns the independent-decode interval for an all-sync track: the
+// leading run of equal sample durations, clamped to [1, 300] samples.
+func inferGOP(tr *Track) int {
+	if len(tr.Samples) < 2 {
+		return 1
+	}
+	step := 1
+	for step < len(tr.Samples) && tr.Samples[step].Duration == tr.Samples[0].Duration {
+		step++
+	}
+	if step < 1 {
+		step = 1
+	}
+	if step > 300 {
+		step = 300
+	}
+	return step
 }
 
 // PTSNS is the presentation timestamp of a keyframe derived from its DTS.

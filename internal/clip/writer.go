@@ -38,6 +38,10 @@ type Writer struct {
 	Media *index.Media
 	File  *os.File
 	Dir   string
+	// MaxOutBytes is the hard delivery ceiling for one fragment. Zero means
+	// the default budget ceiling. Exceeding it fails the slice and publishes
+	// nothing.
+	MaxOutBytes uint64
 	// Opened records slice ids whose file was opened by this run.
 	Opened map[string]bool
 }
@@ -99,6 +103,14 @@ func (w *Writer) WriteSlice(s Slice) (*Written, *timebase.Error) {
 		})
 	}
 	data := mp4box.Build(tracks, mp4box.DefaultOpts())
+	limit := w.MaxOutBytes
+	if limit == 0 {
+		limit = DefaultBudget().MaxOutBytes
+	}
+	if uint64(len(data)) > limit {
+		return nil, timebase.Newf(timebase.CodeOutputTooLarge, video.ID, int64(s.VideoStart),
+			"slice %q is %d bytes, delivery ceiling %d", s.ID, len(data), limit)
+	}
 	path := filepath.Join(w.Dir, s.ID+".mp4")
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, data, 0o644); err != nil {

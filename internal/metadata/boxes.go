@@ -41,7 +41,7 @@ func ParseID3(tag []byte, opts ParseOptions) ([]Event, *timebase.Error) {
 			"id3 version 2.%d is not supported", version)
 	}
 	flags := tag[5]
-	if tag[6]|tag[7]|tag[8]|tag[9] != 0 || tag[6]&0x80 != 0 {
+	if tag[6]&0x80 != 0 || tag[7]&0x80 != 0 || tag[8]&0x80 != 0 || tag[9]&0x80 != 0 {
 		return nil, timebase.Newf(timebase.CodeCorruptField, opts.TrackID, opts.BaseOffset,
 			"id3 syncsafe size has high bits set")
 	}
@@ -73,7 +73,8 @@ func ParseID3(tag []byte, opts ParseOptions) ([]Event, *timebase.Error) {
 		body = body[extLen:]
 	}
 
-	var tsTicks int64 = -1
+	var tsTicks []int64
+	var tsText []string
 	var title, desc, textVal string
 	frameIDLen, frameSizeLen := 4, 4
 	if version == 2 {
@@ -112,9 +113,14 @@ func ParseID3(tag []byte, opts ParseOptions) ([]Event, *timebase.Error) {
 		switch id {
 		case "PRIV":
 			owner, rest := splitEncoded(payload)
-			if owner == tsPrivOwner && len(rest) >= 8 {
-				tsTicks = int64(binary.BigEndian.Uint64(rest[len(rest)-8:]) & 0x1FFFFFFFF)
+			if owner != tsPrivOwner || len(rest) < 8 {
+				break
 			}
+			ticks := int64(binary.BigEndian.Uint64(rest[len(rest)-8:]) & 0x1FFFFFFFF)
+			// Several timestamp frames in one tag describe several events;
+			// remember each one with the text collected so far.
+			tsTicks = append(tsTicks, ticks)
+			tsText = append(tsText, firstOf(title, textVal, desc))
 		case "TIT2", "TT2":
 			title = decodeTextFrame(payload)
 		case "TXXX", "TXX":
@@ -123,36 +129,53 @@ func ParseID3(tag []byte, opts ParseOptions) ([]Event, *timebase.Error) {
 		off = dataOff + fsz
 	}
 
-	startNS := opts.AnchorNS
-	tbDesc := "anchor"
-	if tsTicks >= 0 {
-		tsBase, err := timebase.FromTimescale(mpegTSClockRate)
-		if err != nil {
-			return nil, timebase.Fail(timebase.CodeInternal, opts.TrackID, opts.BaseOffset).Wrap(err, "id3 clock")
+	if len(tsTicks) == 0 {
+		ev := Event{
+			ID:           fmt.Sprintf("id3-anchor-%d", opts.AnchorNS),
+			Kind:         KindID3,
+			TrackID:      opts.TrackID,
+			Source:       "id3",
+			StartNS:      opts.AnchorNS,
+			EndNS:        opts.AnchorNS,
+			Timebase:     "anchor",
+			Text:         strings.TrimSpace(firstOf(title, textVal)),
+			SourceOffset: opts.BaseOffset,
 		}
-		ns, e := tsBase.ToNanos(tsTicks, opts.TrackID, opts.BaseOffset)
+		if e := ev.Validate(opts); e != nil {
+			return nil, e
+		}
+		return []Event{ev}, nil
+	}
+	tsBase, err := timebase.FromTimescale(mpegTSClockRate)
+	if err != nil {
+		return nil, timebase.Fail(timebase.CodeInternal, opts.TrackID, opts.BaseOffset).Wrap(err, "id3 clock")
+	}
+	events := make([]Event, 0, len(tsTicks))
+	for i, ticks := range tsTicks {
+		ns, e := tsBase.ToNanos(ticks, opts.TrackID, opts.BaseOffset)
 		if e != nil {
 			return nil, e
 		}
-		startNS = ns
-		tbDesc = tsBase.String() + " (id3 priv)"
+		ev := Event{
+			ID:           fmt.Sprintf("id3-%05d", i+1),
+			Kind:         KindID3,
+			TrackID:      opts.TrackID,
+			Source:       "id3",
+			StartNS:      ns,
+			EndNS:        ns,
+			Timebase:     tsBase.String() + " (id3 priv)",
+			Text:         strings.TrimSpace(firstOf(tsText[i], title, textVal)),
+			SourceOffset: opts.BaseOffset,
+		}
+		if e := ev.Validate(opts); e != nil {
+			return nil, e
+		}
+		events = append(events, ev)
 	}
-	idBody := firstOf(title, textVal, desc, "id3")
-	ev := Event{
-		ID:           fmt.Sprintf("id3-%s-%d", slug(idBody), startNS),
-		Kind:         KindID3,
-		TrackID:      opts.TrackID,
-		Source:       "id3",
-		StartNS:      startNS,
-		EndNS:        startNS,
-		Timebase:     tbDesc,
-		Text:         strings.TrimSpace(firstNonEmpty(title, textVal)),
-		SourceOffset: opts.BaseOffset,
-	}
-	if e := ev.Validate(opts); e != nil {
+	if e := ValidateOrder(events, opts); e != nil {
 		return nil, e
 	}
-	return []Event{ev}, nil
+	return events, nil
 }
 
 // ParseEmsg decodes a complete emsg box payload (without the 8-byte header).

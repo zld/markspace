@@ -21,17 +21,20 @@ var Supported = []int{1, 2}
 
 // Entry is one deliverable clip in the manifest.
 type Entry struct {
-	SliceID        string  `json:"slice_id"`
-	EventID        string  `json:"event_id"`
-	EventKind      string  `json:"event_kind"`
-	EventStartNS   int64   `json:"event_start_ns"`
-	EventEndNS     int64   `json:"event_end_ns"`
-	AlignedStartNS int64   `json:"aligned_start_ns"`
-	AlignedEndNS   int64   `json:"aligned_end_ns"`
-	Path           string  `json:"path"`
-	Size           int64   `json:"size"`
-	SHA256         string  `json:"sha256"`
-	Quality        Quality `json:"quality"`
+	SliceID        string `json:"slice_id"`
+	EventID        string `json:"event_id"`
+	EventKind      string `json:"event_kind"`
+	EventStartNS   int64  `json:"event_start_ns"`
+	EventEndNS     int64  `json:"event_end_ns"`
+	AlignedStartNS int64  `json:"aligned_start_ns"`
+	AlignedEndNS   int64  `json:"aligned_end_ns"`
+	Path           string `json:"path"`
+	Size           int64  `json:"size"`
+	SHA256         string `json:"sha256"`
+	// AssetDigest binds the entry to the sample/event inputs that produced
+	// it. It is a planning input, so unchanged entries are reused.
+	AssetDigest string  `json:"asset_digest,omitempty"`
+	Quality     Quality `json:"quality"`
 }
 
 // Quality is the retained gate evidence for a delivered entry.
@@ -68,9 +71,9 @@ func (m Manifest) ComputeDigest() string {
 		return entries[i].SliceID < entries[j].SliceID
 	})
 	for _, e := range entries {
-		fmt.Fprintf(h, "e:%s:%s:%s:%d:%d:%d:%d:%s:%d:%s:%d:%d:%.6f:%t:%t:%s\x00",
+		fmt.Fprintf(h, "e:%s:%s:%s:%d:%d:%d:%d:%s:%d:%s:%s:%d:%d:%.6f:%t:%t:%s\x00",
 			e.SliceID, e.EventID, e.EventKind, e.EventStartNS, e.EventEndNS,
-			e.AlignedStartNS, e.AlignedEndNS, e.Path, e.Size, e.SHA256,
+			e.AlignedStartNS, e.AlignedEndNS, e.Path, e.Size, e.SHA256, e.AssetDigest,
 			e.Quality.Width, e.Quality.Height, e.Quality.FPS,
 			e.Quality.GateOK, e.Quality.BudgetOK, e.Quality.Representation)
 	}

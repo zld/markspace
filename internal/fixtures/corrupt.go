@@ -45,7 +45,7 @@ func buildRTP() []byte {
 		if err != nil {
 			continue
 		}
-		out = append(out, raw...)
+		out = append(out, lengthPrefixed(raw)...)
 		seq++
 		// A non-marker packet between events keeps the stream realistic.
 		body := &rtp.Packet{
@@ -62,10 +62,18 @@ func buildRTP() []byte {
 		if err != nil {
 			continue
 		}
-		out = append(out, raw...)
+		out = append(out, lengthPrefixed(raw)...)
 		seq++
 	}
 	return out
+}
+
+// lengthPrefixed frames one raw RTP packet as a 4-byte big-endian length
+// followed by the packet, which is the capture format ParseRTP consumes.
+func lengthPrefixed(raw []byte) []byte {
+	out := make([]byte, 4, 4+len(raw))
+	binary.BigEndian.PutUint32(out, uint32(len(raw)))
+	return append(out, raw...)
 }
 
 // writeCorrupt derives the defect fixtures from the healthy file.
@@ -181,10 +189,12 @@ func moofTrun(samples int) []byte {
 }
 
 func fixTrunDataOffset(trun []byte, off int32) {
-	if len(trun) < 16 {
+	// Layout: size(4) type(4) version(1) flags(3) sample_count(4)
+	// data_offset(4) entries...
+	if len(trun) < 20 {
 		return
 	}
-	binary.BigEndian.PutUint32(trun[12:16], uint32(off))
+	binary.BigEndian.PutUint32(trun[16:20], uint32(off))
 }
 
 func regressionFragments() []byte {

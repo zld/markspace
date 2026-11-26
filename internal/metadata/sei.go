@@ -148,7 +148,7 @@ func parseSEIPayload(payload []byte, offset int64, opts ParseOptions) ([]Event, 
 		}
 		text = strings.TrimRight(text, "\x00")
 		ev := Event{
-			ID:           fmt.Sprintf("sei-%d-%s", startNS, slug(text)),
+			ID:           fmt.Sprintf("sei-%d", startNS),
 			Kind:         KindSEI,
 			TrackID:      opts.TrackID,
 			Source:       "sei",

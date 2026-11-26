@@ -1,6 +1,7 @@
 package metadata
 
 import (
+	"encoding/binary"
 	"fmt"
 
 	"github.com/pion/rtp"
@@ -28,9 +29,11 @@ type RTPSession struct {
 	Events    []Event
 }
 
-// ParseRTP decodes RTP packets from a capture (12-byte headers, optional
-// extensions, no SRTP). Out-of-order sequence numbers are reordered by
-// sequence number, a duplicate sequence number is CORRUPT_FIELD, and packet
+// ParseRTP decodes an RTP side-band capture. The capture format is a sequence
+// of length-prefixed packets: a 4-byte big-endian payload length followed by
+// the raw RTP packet (RFC 3550 header, optional extensions, no SRTP). A
+// truncated prefix or body is BOX_TRUNCATED. Out-of-order sequence numbers are
+// reordered, a duplicate sequence number is CORRUPT_FIELD, and packet
 // timestamps that regress against the reordered stream are TIME_REGRESSION.
 func ParseRTP(data []byte, clockRate uint32, opts ParseOptions) (*RTPSession, *timebase.Error) {
 	if clockRate == 0 {
@@ -45,20 +48,25 @@ func ParseRTP(data []byte, clockRate uint32, opts ParseOptions) (*RTPSession, *t
 	off := 0
 	seen := map[uint16]bool{}
 	for off < len(data) {
+		if off+4 > len(data) {
+			return nil, timebase.Newf(timebase.CodeBoxTruncated, opts.TrackID, opts.BaseOffset+int64(off),
+				"rtp length prefix truncated, %d bytes remain", len(data)-off)
+		}
+		n := int(binary.BigEndian.Uint32(data[off : off+4]))
+		off += 4
+		if n < 12 || n > len(data)-off {
+			return nil, timebase.Newf(timebase.CodeBoxTruncated, opts.TrackID, opts.BaseOffset+int64(off-4),
+				"rtp packet length %d exceeds remaining %d", n, len(data)-off)
+		}
+		raw := data[off : off+n]
 		var pkt rtp.Packet
-		if err := pkt.Unmarshal(data[off:]); err != nil {
-			// pion returns io.ErrShortBuffer / parse errors on truncated data.
-			if off == 0 && len(data) >= 2 && data[0]>>6 != 2 {
-				return nil, timebase.Newf(timebase.CodeUnsupportedFormat, opts.TrackID, opts.BaseOffset,
-					"rtp capture does not start with version 2 header")
-			}
-			return nil, timebase.Fail(timebase.CodeBoxTruncated, opts.TrackID, opts.BaseOffset+int64(off)).
+		if err := pkt.Unmarshal(raw); err != nil {
+			return nil, timebase.Fail(timebase.CodeCorruptField, opts.TrackID, opts.BaseOffset+int64(off)).
 				Wrap(err, "decode rtp packet")
 		}
-		n := rtpPacketSize(&pkt, data[off:])
-		if n <= 0 || n > len(data)-off {
+		if consumed := rtpPacketSize(&pkt, raw); consumed != n {
 			return nil, timebase.Newf(timebase.CodeCorruptField, opts.TrackID, opts.BaseOffset+int64(off),
-				"rtp packet length %d exceeds remaining %d", n, len(data)-off)
+				"rtp packet declares %d bytes but header/payload span %d", n, consumed)
 		}
 		if seen[pkt.SequenceNumber] {
 			return nil, timebase.Newf(timebase.CodeCorruptField, opts.TrackID, opts.BaseOffset+int64(off),

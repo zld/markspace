@@ -85,14 +85,9 @@ func scanSubtitle(r io.Reader, isVTT bool) ([]subtitleCue, *timebase.Error) {
 					cur.id, cur.start, cur.end = m[1], m[2], m[3]
 					continue
 				}
-				if isVTT {
+				if isVTT || isCueNumber(strings.TrimSpace(raw)) {
+					// A cue identifier line precedes the timing line.
 					cur.id = strings.TrimSpace(raw)
-					cur.line = len(cues) + 1
-					cur.byteOff = lineStart
-					// hold as cue-id; next line is the timing line.
-					if cur.id == "" {
-						cur = nil
-					}
 					continue
 				}
 				return nil, timebase.Newf(timebase.CodeCorruptField, 0, lineStart,
@@ -191,6 +186,19 @@ func scanVTT(r io.Reader) ([]subtitleCue, *timebase.Error) {
 	return cues, nil
 }
 
+// isCueNumber reports whether s is an integer cue identifier line.
+func isCueNumber(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 func firstNonEmpty(a, b string) string {
 	if strings.TrimSpace(a) != "" {
 		return a
@@ -226,7 +234,12 @@ func cuesToEvents(cues []subtitleCue, kind Kind, source string, opts ParseOption
 			return nil, e
 		}
 		text := strings.Join(c.text, "\n")
-		id := fmt.Sprintf("%s-%04d", slug(source+"-"+firstNonEmpty(c.id, text)), i+1)
+		// Event ids are positional, not derived from text, so editing a cue
+		// changes its payload digest without changing its identity.
+		id := fmt.Sprintf("%s-%04d", source, i+1)
+		if strings.TrimSpace(c.id) != "" {
+			id = fmt.Sprintf("%s-%04d-%s", source, i+1, slug(c.id))
+		}
 		ev := Event{
 			ID:           id,
 			Kind:         kind,

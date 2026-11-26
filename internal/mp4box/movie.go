@@ -53,11 +53,16 @@ func Build(tracks []Track, opts BuildOpts) []byte {
 	if opts.FreePadding > 0 {
 		free = Box("free", Zeros(opts.FreePadding))
 	}
-	// First pass with zero chunk offsets to measure moov size.
-	moov := buildMoov(tracks, nil)
-	head := len(ftyp) + len(free) + len(moov)
+	// First pass with correctly sized, zero-filled chunk offset tables so the
+	// measured moov size already includes every stco entry.
+	zeros := zeroOffsets(tracks)
+	first := buildMoov(tracks, zeros)
+	head := len(ftyp) + len(free) + len(first)
 	offsets := layoutOffsets(tracks, head+8)
-	moov = buildMoov(tracks, offsets)
+	moov := buildMoov(tracks, offsets)
+	if len(moov) != len(first) {
+		panic("mp4box: moov size changed while resolving chunk offsets")
+	}
 
 	out := make([]byte, 0, head+len(mdatPayload(tracks))+8)
 	out = append(out, ftyp...)
@@ -65,6 +70,17 @@ func Build(tracks []Track, opts BuildOpts) []byte {
 	out = append(out, moov...)
 	mdat := mdatPayload(tracks)
 	out = append(out, Box("mdat", mdat)...)
+	return out
+}
+
+// zeroOffsets returns per-track chunk offset tables with the right number of
+// entries and zero values, used to measure moov before mdat placement.
+func zeroOffsets(tracks []Track) [][]uint64 {
+	out := make([][]uint64, len(tracks))
+	for i, tr := range tracks {
+		n := (len(tr.Samples) + chunkSamples - 1) / chunkSamples
+		out[i] = make([]uint64, n)
+	}
 	return out
 }
 

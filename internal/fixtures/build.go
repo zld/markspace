@@ -31,7 +31,7 @@ func BuildTracks() []mp4box.Track {
 	}
 	audio := mp4box.Track{
 		ID: 2, Handler: "soun", Timescale: 48000,
-		SampleRate: 48000, Channel: 2, Codec: "mp4a",
+		SampleRate: 48000, Channel: 2, Codec: "mp4a", Volume: 0x0100,
 	}
 	const audioSamples = 48000 / 1024 * 10 // 10 seconds of 1024-frame AAC
 	for i := 0; i < audioSamples; i++ {
