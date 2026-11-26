@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"path/filepath"
+	"time"
 
 	"github.com/pion/rtp"
 
@@ -106,7 +107,16 @@ func runHealthy(opts healthyOptions) (Report, error) {
 		return rep, fmt.Errorf("delivered %d frames want %d", tr.Delivered, f.Frames)
 	}
 
-	decision, err := budget.Adapt(opts.bandwidthBPS, f.Rate, f.Ch)
+	bwWindow, err := budget.NewWindow(5 * time.Second)
+	if err != nil {
+		return rep, err
+	}
+	for i := 0; i < 3; i++ {
+		if err := bwWindow.AddBPS(time.Duration(i)*time.Second, opts.bandwidthBPS); err != nil {
+			return rep, err
+		}
+	}
+	decision, err := budget.AdaptWindow(bwWindow, 2*time.Second, f.Rate, f.Ch)
 	if err != nil {
 		return rep, err
 	}

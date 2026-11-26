@@ -94,6 +94,14 @@ func TargetBPS(sampleRate, channels, bits int) (int64, error) {
 	return v, nil
 }
 
+// AdaptWindow applies Adapt to the active sliding-window bandwidth estimate.
+func AdaptWindow(w *Window, now time.Duration, sampleRate, channels int) (Decision, error) {
+	if w == nil {
+		return Decision{}, timebase.NewError(timebase.CodeInvalidArgument, "nil bandwidth window")
+	}
+	return Adapt(w.Bandwidth(now), sampleRate, channels)
+}
+
 // Adapt applies the 80% budget and chooses 24, then 16, otherwise no delivery.
 func Adapt(bandwidthBPS float64, sampleRate, channels int) (Decision, error) {
 	if bandwidthBPS < 0 {
