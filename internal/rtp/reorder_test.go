@@ -348,3 +348,26 @@ func TestAnchorSecondCycleLowTimestamp(t *testing.T) {
 		t.Fatalf("ticks = %d, want 90000", got.Ticks)
 	}
 }
+
+func TestReorderSequenceWrapMidStream(t *testing.T) {
+	tr := &Trace{Packets: []Packet{
+		mustPacket(t, "a", 65533, 0), mustPacket(t, "a", 65534, 0),
+		mustPacket(t, "a", 65535, 0), mustPacket(t, "a", 0, 0),
+		mustPacket(t, "a", 1, 0), mustPacket(t, "a", 2, 0),
+	}}
+	streams, err := Reorder(tr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := streams[0]
+	var seqs []uint16
+	for _, p := range s.Packets {
+		seqs = append(seqs, p.Seq)
+	}
+	if want := []uint16{65533, 65534, 65535, 0, 1, 2}; !equalSeqs(seqs, want) {
+		t.Fatalf("seqs = %v, want %v", seqs, want)
+	}
+	if s.Wraps != 1 || len(s.Gaps) != 0 {
+		t.Fatalf("wraps=%d gaps=%v", s.Wraps, s.Gaps)
+	}
+}

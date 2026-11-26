@@ -188,3 +188,53 @@ func putU32(b []byte, v uint32) {
 	b[2] = byte(v >> 8)
 	b[3] = byte(v)
 }
+
+func TestPatchTFDTKeepsOtherBytes(t *testing.T) {
+	raw, err := BuildFragment(FragmentSpec{
+		Sequence: 1, VideoTFD: 12345,
+		Video: []MuxSample{{Data: []byte("abcdef"), Duration: 3600, Key: true}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := ParseBytes("f.m4s", raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := ParseFragment(parsed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	track := f.Tracks[0]
+	patched, err := PatchTFDT(raw, &track, 99999)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(patched) != len(raw) {
+		t.Fatalf("length changed: %d != %d", len(patched), len(raw))
+	}
+	p2, err := ParseBytes("f.m4s", patched)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f2, err := ParseFragment(p2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f2.Tracks[0].BaseMediaDecodeTime != 99999 {
+		t.Fatalf("tfdt = %d, want 99999", f2.Tracks[0].BaseMediaDecodeTime)
+	}
+	s := f2.Tracks[0].Samples[0]
+	if got := string(patched[s.DataOffset : s.DataOffset+int64(s.Size)]); got != "abcdef" {
+		t.Fatalf("sample data changed: %q", got)
+	}
+}
+
+func TestPatchTFDTRejectsOverflowForV0(t *testing.T) {
+	// A v0 tfdt field is 32 bits; a larger value must be rejected, not truncated.
+	track := &TrackFragment{TFDTVersion: 0, TFDTOffset: 0}
+	buf := make([]byte, 4)
+	if _, err := PatchTFDT(buf, track, 1<<33); err == nil {
+		t.Fatal("expected overflow rejection")
+	}
+}
