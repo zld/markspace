@@ -37,6 +37,7 @@ type Entry struct {
 	Size               uint32 `json:"size"`
 	FragmentByteOffset int64  `json:"fragment_byte_offset"`
 	Duration           uint32 `json:"duration"`
+	MediaDuration      int64  `json:"media_duration"`
 }
 
 // Index is the full random-access index. Media rate is stored as an explicit
@@ -82,6 +83,13 @@ func Build(tl *repair.Timeline, tracks TrackKeys) (*Index, error) {
 			repairedMedia := tr.Start.Ticks
 			var cursor uint32
 			for _, s := range tr.Samples {
+				durMedia, err := model.FromTicks(int64(s.Duration), tr.Rate, tl.MediaRate)
+				if err != nil {
+					return nil, model.E(model.CodeInvalidInput, "index",
+						"fragment %s track %d sample duration %d does not land on %s",
+						frag.Path, tr.TrackID, s.Duration, tl.MediaRate).
+						WithPath(frag.Path).WithByte(s.DataOffset)
+				}
 				// Audio frames are independently decodable, so every audio
 				// sample is a valid random-access point. Video relies on the
 				// sync flag from the fragment.
@@ -101,13 +109,7 @@ func Build(tl *repair.Timeline, tracks TrackKeys) (*Index, error) {
 					Size:               s.Size,
 					FragmentByteOffset: frag.MoofOffset,
 					Duration:           s.Duration,
-				}
-				durMedia, err := model.FromTicks(int64(s.Duration), tr.Rate, tl.MediaRate)
-				if err != nil {
-					return nil, model.E(model.CodeInvalidInput, "index",
-						"fragment %s track %d sample duration %d does not land on %s",
-						frag.Path, tr.TrackID, s.Duration, tl.MediaRate).
-						WithPath(frag.Path).WithByte(s.DataOffset)
+					MediaDuration:      durMedia,
 				}
 				if e.IsKeyframe {
 					idx.Keyframes = append(idx.Keyframes, len(idx.Entries))

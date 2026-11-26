@@ -95,6 +95,9 @@ type Entry struct {
 	Payload []byte `json:"-"`
 	// PayloadFile is where the payload lives on disk.
 	payloadPath string
+	// recomputed records that the entry was rebuilt after a failed
+	// verification, so the run can report it.
+	recomputed bool
 }
 
 // Cache is a directory-backed content-addressed store.
@@ -132,7 +135,10 @@ func (c *Cache) metaPath(key Key) string {
 	return filepath.Join(c.dir, "meta", key.String()+".json")
 }
 
-// Get returns a verified entry, or nil when the cache has no usable entry.
+// WasRecomputed reports whether a Put replaced an entry that failed
+// verification rather than creating a new one.
+func (e *Entry) WasRecomputed() bool { return e.recomputed }
+
 // A mismatch in the recorded origin digest, the content digest, the size, or
 // the format version is reported as a miss with a reason so the caller can
 // recompute; it never returns unverified bytes as a hit.

@@ -21,6 +21,7 @@ import (
 //	badcache   good media with a poisoned cache entry written alongside
 //	oversize   a fragment above 64 MiB
 //	queue      more than 32 fragment records
+//	nomfhd     one fragment has no mfhd box; no sequence or duration is inferred
 
 func buildGood(workDir string, opts Options) (Scenario, error) {
 	src := noMutation()
@@ -159,6 +160,15 @@ func buildQueueOverflow(workDir string, opts Options) (Scenario, error) {
 		m.Sources[0].Fragments = append(m.Sources[0].Fragments, cmaf.FragmentRef{Path: name, Order: i + 1})
 	}
 	return sc, cmaf.WriteManifestFile(sc.Manifest, m)
+}
+
+// buildNoMFHD omits the mfhd box from the second fragment. The run must record
+// no invented sequence number or duration for it.
+func buildNoMFHD(workDir string, opts Options) (Scenario, error) {
+	src := noMutation()
+	src.id, src.ssrc, src.tsBase = "cam-a", 0x1001, 1_000_000
+	src.omitMFHDAt = 1
+	return generateDataset(workDir, opts, NameNoMFHD, []sourcePlan{src}, nil, false)
 }
 
 func noMutationWithID(id string, ssrc uint32) sourcePlan {

@@ -20,6 +20,7 @@ const (
 	NameBadCache  = "badcache"
 	NameOversize  = "oversize"
 	NameQueue     = "queue"
+	NameNoMFHD    = "nomfhd"
 )
 
 // Scenario describes one generated dataset.
@@ -51,7 +52,7 @@ func Generate(workDir string, opts Options) ([]Scenario, error) {
 	}
 	builders := []func(string, Options) (Scenario, error){
 		buildGood, buildEdge, buildGapOnly, buildRollbackOnly, buildSwitchOnly,
-		buildTruncated, buildBadCache, buildOversize, buildQueueOverflow,
+		buildTruncated, buildBadCache, buildOversize, buildQueueOverflow, buildNoMFHD,
 	}
 	var out []Scenario
 	for _, b := range builders {

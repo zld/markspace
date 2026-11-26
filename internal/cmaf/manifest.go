@@ -33,6 +33,10 @@ type Source struct {
 	Fragments  []FragmentRef `json:"fragments"`
 	RTPTrace   string        `json:"rtp_trace"`
 	RTPAnchors []RTPAnchor   `json:"rtp_anchors"`
+	// MediaOffset is the explicit media-grid tick at which this source's
+	// timeline begins. A source switch is placed only by these offsets, never
+	// inferred from fragment contents.
+	MediaOffset int64 `json:"media_offset_ticks"`
 }
 
 // FragmentRef points at a fragment file and gives it an explicit order.
@@ -41,7 +45,8 @@ type FragmentRef struct {
 	Order int    `json:"order"`
 }
 
-// RTPAnchor is the manifest encoding of an explicit source anchor.
+// RTPAnchor is the manifest encoding of an explicit source anchor. It ties an
+// RTP timestamp (with its 32-bit wrap count) to an absolute media instant.
 type RTPAnchor struct {
 	Source       string `json:"source"`
 	RTPTimestamp uint32 `json:"rtp_timestamp"`

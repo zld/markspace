@@ -26,6 +26,8 @@ type TrackFragment struct {
 	// TFDTOffset is the absolute file offset of the base media decode time
 	// field itself, so repairs can name the exact byte they changed.
 	TFDTOffset int64 `json:"tfdt_offset"`
+	// TFDTVersion is the tfdt box version, which fixes the field width.
+	TFDTVersion uint8 `json:"tfdt_version"`
 	// TFDTBoxOffset is the absolute offset of the tfdt box header.
 	TFDTBoxOffset int64    `json:"tfdt_box_offset"`
 	Samples       []Sample `json:"samples"`
@@ -144,6 +146,7 @@ func parseTraf(path string, moof, traf *Box) (*TrackFragment, error) {
 	}
 	version := tfdt.Payload[0]
 	tf.TFDTBoxOffset = tfdt.Offset
+	tf.TFDTVersion = version
 	switch version {
 	case 0:
 		if len(tfdt.Payload) < 8 {
