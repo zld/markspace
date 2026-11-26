@@ -83,7 +83,14 @@ func buildTables(track *media.TrackTimeline, src *media.TrackBoxes, rng Range) *
 			})
 		}
 	}
-	tb.stsc = []mp4.StscEntry{{FirstChunk: 1, SamplesPerChunk: count, SampleDescriptionIndex: 1}}
+	// One chunk per output sample, so stsc gets one entry per chunk (each
+	// FirstChunk is 1-based and each entry covers exactly one sample).
+	tb.stsc = make([]mp4.StscEntry, 0, count)
+	for i := uint32(0); i < count; i++ {
+		tb.stsc = append(tb.stsc, mp4.StscEntry{
+			FirstChunk: i + 1, SamplesPerChunk: 1, SampleDescriptionIndex: 1,
+		})
+	}
 	return tb
 }
 
@@ -138,28 +145,28 @@ func (b *Builder) Cut(spec ClipSpec, outPath string) (res *ClipResult, retErr er
 			os.Remove(outPath)
 		}
 	}()
-	w := mp4.NewWriter(out)
-	if err := writeFtyp(w); err != nil {
+	if err := writeFtyp(out); err != nil {
 		return nil, err
 	}
-	if _, err := w.StartBox(&mp4.BoxInfo{Type: mp4.BoxTypeMdat()}); err != nil {
+	mdatCw, err := openContainer(out, "mdat")
+	if err != nil {
 		return nil, err
 	}
-	copies, err := b.streamTrack(vt, w, out)
+	copies, err := b.streamTrack(vt, out)
 	if err != nil {
 		return nil, err
 	}
 	if at != nil {
-		ac, err := b.streamTrack(at, w, out)
+		ac, err := b.streamTrack(at, out)
 		if err != nil {
 			return nil, err
 		}
 		copies = append(copies, ac...)
 	}
-	if _, err := w.EndBox(); err != nil {
+	if err := mdatCw.close(); err != nil {
 		return nil, err
 	}
-	if err := writeMoov(w, b, vt, at); err != nil {
+	if err := writeMoov(out, b, vt, at); err != nil {
 		return nil, err
 	}
 	fi, err := out.Stat()
@@ -209,24 +216,24 @@ func hashWholeFile(path string) ([32]byte, error) {
 
 // streamTrack appends one track's samples into the open mdat, recording
 // absolute output offsets and per-sample provenance.
-func (b *Builder) streamTrack(tb *tables, w *mp4.Writer, dst io.Writer) ([]SampleCopy, error) {
-	out := make([]SampleCopy, 0, tb.rng.Last-tb.rng.First+1)
+func (b *Builder) streamTrack(tb *tables, out *os.File) ([]SampleCopy, error) {
+	res := make([]SampleCopy, 0, tb.rng.Last-tb.rng.First+1)
 	for i := tb.rng.First; i <= tb.rng.Last; i++ {
 		s := tb.track.Samples[i]
-		pos, err := w.Seek(0, io.SeekCurrent)
+		pos, err := out.Seek(0, io.SeekCurrent)
 		if err != nil {
 			return nil, err
 		}
 		tb.co64 = append(tb.co64, uint64(pos))
-		if err := b.copySample(dst, s.Offset, s.Size); err != nil {
+		if err := b.copySample(out, s.Offset, s.Size); err != nil {
 			return nil, err
 		}
-		out = append(out, SampleCopy{
+		res = append(res, SampleCopy{
 			TrackID: tb.track.TrackID, OutputIndex: i - tb.rng.First,
 			SourceIndex: i, SourceOffset: s.Offset, Size: s.Size,
 		})
 	}
-	return out, nil
+	return res, nil
 }
 
 // copySample streams one sample with a bounded 64 KiB transfer buffer.

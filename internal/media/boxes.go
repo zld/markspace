@@ -271,6 +271,11 @@ func parseMoov(f *os.File, moov BoxRef) (*mp4.Mvhd, []*TrackBoxes, error) {
 				cur.Stss = v
 			}
 		}
+		// Sample descriptions (avc1/mp4a and their codec config children)
+		// are captured raw via readStsdEntry; do not recurse into them.
+		if bt == "stsd" || isSampleEntry(bt) {
+			return nil, nil
+		}
 		return h.Expand()
 	}
 	if _, err := mp4.ReadBoxStructure(f, handler); err != nil {
@@ -288,6 +293,16 @@ func hasType(path mp4.BoxPath, want string) bool {
 		if t.String() == want {
 			return true
 		}
+	}
+	return false
+}
+
+// isSampleEntry recognizes the codec sample-entry box types handled here.
+func isSampleEntry(bt string) bool {
+	switch bt {
+	case "avc1", "avc3", "mp4v", "encv", "hev1", "hvc1",
+		"mp4a", "enca", "avcC", "esds", "hvcC":
+		return true
 	}
 	return false
 }
