@@ -78,6 +78,7 @@ const (
 	CatTimestampAnomaly  Category = "timestamp_anomaly"
 	CatDuplicatePacket   Category = "duplicate_packet"
 	CatLateWindow        Category = "late_outside_window"
+	CatOutsideWindow     Category = "outside_forward_window"
 	CatUnrecoverableGap  Category = "unrecoverable_gap"
 	CatIntegrityMismatch Category = "integrity_mismatch"
 	CatMissingAsset      Category = "missing_asset"
