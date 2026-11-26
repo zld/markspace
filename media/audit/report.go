@@ -13,12 +13,12 @@ import (
 type SegmentState string
 
 const (
-	StatePlanned  SegmentState = "planned"
-	StateBuilt    SegmentState = "built"
-	StateReused   SegmentState = "reused"
-	StateRebuilt  SegmentState = "rebuilt"
-	StatePartial  SegmentState = "partial"
-	StateFailed   SegmentState = "failed"
+	StatePlanned SegmentState = "planned"
+	StateBuilt   SegmentState = "built"
+	StateReused  SegmentState = "reused"
+	StateRebuilt SegmentState = "rebuilt"
+	StatePartial SegmentState = "partial"
+	StateFailed  SegmentState = "failed"
 )
 
 // SegmentRecord is one row of the delivery manifest: identity, exact range,
@@ -48,53 +48,53 @@ type SegmentRecord struct {
 
 // Boundary records one cross-layer shared-clock boundary核对.
 type Boundary struct {
-	EventID   string `json:"event_id"`
-	Layer     string `json:"layer"`
-	Edge      string `json:"edge"` // "start" or "end"
-	TargetNS  int64  `json:"target_ns"`
-	ChosenNS  int64  `json:"chosen_ns"`
-	SkewTicks int64  `json:"skew_ticks"`
-	FrameTicks int64 `json:"frame_ticks"`
-	WithinFrame bool  `json:"within_one_frame"`
+	EventID     string `json:"event_id"`
+	Layer       string `json:"layer"`
+	Edge        string `json:"edge"` // "start" or "end"
+	TargetNS    int64  `json:"target_ns"`
+	ChosenNS    int64  `json:"chosen_ns"`
+	SkewTicks   int64  `json:"skew_ticks"`
+	FrameTicks  int64  `json:"frame_ticks"`
+	WithinFrame bool   `json:"within_one_frame"`
 }
 
 // Metrics is the flat counter set printed for verification.
 type Metrics struct {
-	RoundtripTotal      int   `json:"roundtrip_total"`
-	RoundtripOK         int   `json:"roundtrip_ok"`
-	RoundtripPct        int   `json:"roundtrip_pct"`
-	IndexLookups        int   `json:"index_lookups"`
-	IndexHits           int   `json:"index_hits"`
-	IndexHitsPct        int   `json:"index_hits_pct"`
-	BoundarySkewTicks   int64 `json:"boundary_skew_ticks"`
-	Segments            int   `json:"segments"`
-	HashMatched         int   `json:"hash_matched"`
-	HashTotal           int   `json:"hash_total"`
-	Anomalies           int   `json:"anomalies"`
-	Lost                int   `json:"lost"`
-	Duplicate           int   `json:"duplicate"`
-	Late                int   `json:"late"`
-	Truncated           int   `json:"truncated"`
-	IndexRebuilt        int   `json:"index_rebuilt"`
-	Rebuilt             int   `json:"rebuilt"`
-	Reused              int   `json:"reused"`
-	DuplicateProducts   int   `json:"duplicate_products"`
-	Partial             int   `json:"partial"`
-	Unrecoverable       int   `json:"unrecoverable"`
+	RoundtripTotal    int   `json:"roundtrip_total"`
+	RoundtripOK       int   `json:"roundtrip_ok"`
+	RoundtripPct      int   `json:"roundtrip_pct"`
+	IndexLookups      int   `json:"index_lookups"`
+	IndexHits         int   `json:"index_hits"`
+	IndexHitsPct      int   `json:"index_hits_pct"`
+	BoundarySkewTicks int64 `json:"boundary_skew_ticks"`
+	Segments          int   `json:"segments"`
+	HashMatched       int   `json:"hash_matched"`
+	HashTotal         int   `json:"hash_total"`
+	Anomalies         int   `json:"anomalies"`
+	Lost              int   `json:"lost"`
+	Duplicate         int   `json:"duplicate"`
+	Late              int   `json:"late"`
+	Truncated         int   `json:"truncated"`
+	IndexRebuilt      int   `json:"index_rebuilt"`
+	Rebuilt           int   `json:"rebuilt"`
+	Reused            int   `json:"reused"`
+	DuplicateProducts int   `json:"duplicate_products"`
+	Partial           int   `json:"partial"`
+	Unrecoverable     int   `json:"unrecoverable"`
 }
 
 // Report is the deterministic audit document for one case or whole run.
 type Report struct {
-	Case      string          `json:"case"`
-	Status    string          `json:"status"` // pass | expected_exit | fail
-	ExitCode  int             `json:"exit_code"`
-	OutDir    string          `json:"out_dir,omitempty"`
-	Metrics   Metrics         `json:"metrics"`
-	Segments  []SegmentRecord `json:"segments"`
-	Boundaries []Boundary     `json:"boundaries"`
-	Anomalies []fault.Anomaly `json:"anomalies"`
-	Notes     []string        `json:"notes,omitempty"`
-	ledger    fault.Ledger
+	Case       string          `json:"case"`
+	Status     string          `json:"status"` // pass | expected_exit | fail
+	ExitCode   int             `json:"exit_code"`
+	OutDir     string          `json:"out_dir,omitempty"`
+	Metrics    Metrics         `json:"metrics"`
+	Segments   []SegmentRecord `json:"segments"`
+	Boundaries []Boundary      `json:"boundaries"`
+	Anomalies  []fault.Anomaly `json:"anomalies"`
+	Notes      []string        `json:"notes,omitempty"`
+	ledger     fault.Ledger
 }
 
 // NewReport builds an empty report for case.

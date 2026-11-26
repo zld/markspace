@@ -13,19 +13,19 @@ func testItems(n int) []Item {
 	for i := range items {
 		body := []byte{byte('a' + i), byte(i), 0, 1, 2, 3, 4, 5}
 		items[i] = Item{
-			Key:         fmtKey(i),
-			File:        fileName(i),
-			InputDigest: "input-" + string(rune('a'+i)),
+			Key:          fmtKey(i),
+			File:         fileName(i),
+			InputDigest:  "input-" + string(rune('a'+i)),
 			RangeStartNS: int64(i) * 1000,
 			RangeEndNS:   int64(i+1) * 1000,
-			Hash:        audit.HashBytes(body),
-			Bytes:       body,
+			Hash:         audit.HashBytes(body),
+			Bytes:        body,
 		}
 	}
 	return items
 }
 
-func fmtKey(i int) string  { return "event/layer-" + string(rune('0'+i)) }
+func fmtKey(i int) string   { return "event/layer-" + string(rune('0'+i)) }
 func fileName(i int) string { return "seg-" + string(rune('0'+i)) + ".fmp4" }
 
 func TestResumeBuildReuseRebuild(t *testing.T) {

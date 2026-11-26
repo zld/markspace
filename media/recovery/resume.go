@@ -28,35 +28,35 @@ var ErrOutputVerification = errors.New("recovery: output verification failed")
 // Item is one desired segment artifact. Bytes are the deterministic content
 // to write when the artifact must be (re)built.
 type Item struct {
-	Key         string
-	File        string
-	InputDigest string
+	Key          string
+	File         string
+	InputDigest  string
 	RangeStartNS int64
 	RangeEndNS   int64
-	MediaStart  int64
-	MediaEnd    int64
-	Hash        string // expected SHA-256 of Bytes
-	Bytes       []byte
+	MediaStart   int64
+	MediaEnd     int64
+	Hash         string // expected SHA-256 of Bytes
+	Bytes        []byte
 }
 
 // Entry is one checkpoint row binding input digest and range to output hash.
 type Entry struct {
-	Key         string `json:"key"`
-	File        string `json:"file"`
-	InputDigest string `json:"input_digest"`
-	RangeStartNS int64 `json:"range_start_ns"`
-	RangeEndNS   int64 `json:"range_end_ns"`
-	MediaStart  int64  `json:"media_start_ticks"`
-	MediaEnd    int64  `json:"media_end_ticks"`
-	Bytes       int    `json:"bytes"`
-	SHA256      string `json:"sha256"`
+	Key          string `json:"key"`
+	File         string `json:"file"`
+	InputDigest  string `json:"input_digest"`
+	RangeStartNS int64  `json:"range_start_ns"`
+	RangeEndNS   int64  `json:"range_end_ns"`
+	MediaStart   int64  `json:"media_start_ticks"`
+	MediaEnd     int64  `json:"media_end_ticks"`
+	Bytes        int    `json:"bytes"`
+	SHA256       string `json:"sha256"`
 }
 
 // Checkpoint is the content-addressed resume state.
 type Checkpoint struct {
-	Version  int              `json:"version"`
+	Version  int               `json:"version"`
 	Inputs   map[string]string `json:"inputs,omitempty"`
-	Segments map[string]Entry `json:"segments"`
+	Segments map[string]Entry  `json:"segments"`
 }
 
 // Outcome classifies one item after a resume pass.
