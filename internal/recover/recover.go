@@ -109,6 +109,7 @@ func rebuild(work string, m *manifest.Manifest, j *commit.Journal, src io.ReadSe
 	if err != nil {
 		return err
 	}
+	art.Attempts++ // independent per-representation retry accounting
 	art.TempRelPath = art.RelPath + ".part"
 	if err := commit.Prepare(work, m, j, art, bytes.NewReader(data)); err != nil {
 		return err

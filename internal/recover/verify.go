@@ -128,6 +128,13 @@ func evaluate(work string, m *manifest.Manifest) (*Report, error) {
 	fi := fanout.FanIn(parsed)
 	rep.Aligned = fi.Aligned
 	rep.BoundaryPackets = fi.MaxErrorPackets
+	// Isolate any representation that failed fan-in boundary/keyframe checks.
+	// On the aligned acceptance fixture this set is empty.
+	for _, isoID := range fi.IsolatedArtifact {
+		if a := m.FindArtifact(isoID); a != nil && a.Status != manifest.StatusIsolated {
+			a.Status = manifest.StatusIsolated
+		}
+	}
 
 	rep.Pass = rep.RoundtripOK == rep.RoundtripTotal &&
 		rep.KeyHits == rep.KeyTotal &&
