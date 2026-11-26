@@ -114,8 +114,8 @@ func rtpTrace(caseName string) []cmaf.RTPPacketSpec {
 		return out
 	}
 
-	lost := map[uint16]bool{103: true, 108: true, 113: true, 117: true}
-	retrans := map[uint16]bool{103: true, 108: true, 113: true}
+	// Four originals are absent from order; the first three are retransmitted.
+	retrans := []uint16{103, 108, 113}
 	order := []uint16{
 		100, 101, 102, 101, // duplicate
 		105, 104, // reorder
@@ -132,7 +132,7 @@ func rtpTrace(caseName string) []cmaf.RTPPacketSpec {
 		})
 	}
 	// Three matching retransmissions for four lost originals.
-	for seq := range retrans {
+	for _, seq := range retrans {
 		out = append(out, cmaf.RTPPacketSpec{
 			Sequence: seq, Timestamp: 180_000 + uint32(seq-100)*3000, SSRC: 0xabcdef,
 			Payload: []byte{byte(seq)}, IsRetrans: true, OriginalSeq: seq,
@@ -140,6 +140,5 @@ func rtpTrace(caseName string) []cmaf.RTPPacketSpec {
 	}
 	// A packet far outside the 16-sequence window.
 	out = append(out, cmaf.RTPPacketSpec{Sequence: 70, Timestamp: 90_000, SSRC: 0xabcdef})
-	_ = lost
 	return out
 }
