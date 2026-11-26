@@ -62,6 +62,7 @@ type RangeResult struct {
 	Video         []ReadSample   `json:"video"`
 	DecodePrefix  []ReadSample   `json:"decode_prefix"`
 	Audio         []ReadSample   `json:"audio"`
+	Repairs       []model.Repair `json:"repairs,omitempty"`
 	AudioBoundary *AudioBoundary `json:"audio_boundary,omitempty"`
 }
 
@@ -137,6 +138,12 @@ func ReadRange(idx *Index, r Range) (*RangeResult, error) {
 			StartUs: first.StartUs, EndUs: last.EndUs,
 			StartFrame: int64(first.StartUs) * int64(scale) / 1_000_000,
 			EndFrame:   int64(last.EndUs) * int64(scale) / 1_000_000,
+		}
+	}
+	for _, rp := range idx.Repairs {
+		if (rp.FixedUs >= r.Start && rp.FixedUs < r.End) ||
+			(rp.OrigUs >= r.Start && rp.OrigUs < r.End) {
+			out.Repairs = append(out.Repairs, rp)
 		}
 	}
 	return out, nil

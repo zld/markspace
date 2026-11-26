@@ -72,6 +72,9 @@ func Generate(dir, caseName string) (*Workspace, error) {
 	})
 	m.RTPTrace = rtpTrace(caseName)
 
+	for i := range m.Events {
+		m.Events[i].Index = i
+	}
 	mp := filepath.Join(dir, "manifest.json")
 	b, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
