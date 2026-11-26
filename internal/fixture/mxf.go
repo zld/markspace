@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"mediaprep/internal/source"
 )
@@ -53,18 +54,10 @@ func WriteMXF(spec MXFSpec) (string, error) {
 	}
 	var data []byte
 	data = append(data, klv(source.MXFKeyPartition, []byte("mediaprep-mxf-pcm-subset"))...)
-	if fields, err := json.Marshal(spec.ContainerFields); err == nil && len(spec.ContainerFields) > 0 {
-		data = append(data, klv(source.MXFKeyContainer, fields)...)
-	}
+	data = appendFieldKLVs(data, source.MXFKeyContainer, spec.ContainerFields)
 	data = append(data, klv(source.MXFKeyTrackInfo, info)...)
-	if len(spec.DescriptorFields) > 0 {
-		b, _ := json.Marshal(spec.DescriptorFields)
-		data = append(data, klv(source.MXFKeyDescriptor, b)...)
-	}
-	if len(spec.TrackFields) > 0 {
-		b, _ := json.Marshal(spec.TrackFields)
-		data = append(data, klv(source.MXFKeyTrackMeta, b)...)
-	}
+	data = appendFieldKLVs(data, source.MXFKeyDescriptor, spec.DescriptorFields)
+	data = appendFieldKLVs(data, source.MXFKeyTrackMeta, spec.TrackFields)
 	data = append(data, klv(source.MXFKeyPCM, spec.PCM)...)
 	if spec.TruncatedKLV {
 		bad := make([]byte, 16)
@@ -82,6 +75,19 @@ func WriteMXF(spec MXFSpec) (string, error) {
 		return "", err
 	}
 	return spec.Path, nil
+}
+
+func appendFieldKLVs(data []byte, key [16]byte, fields map[string]string) []byte {
+	names := make([]string, 0, len(fields))
+	for name := range fields {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		payload, _ := json.Marshal(map[string]string{name: fields[name]})
+		data = append(data, klv(key, payload)...)
+	}
+	return data
 }
 
 func klv(key [16]byte, value []byte) []byte {

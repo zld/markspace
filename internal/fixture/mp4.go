@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
 )
 
 type MP4Spec struct {
@@ -203,9 +204,18 @@ func mustProvenance(fields map[string]string) []byte {
 	if len(fields) == 0 {
 		return nil
 	}
-	data, err := json.Marshal(fields)
-	if err != nil {
-		panic(err)
+	names := make([]string, 0, len(fields))
+	for name := range fields {
+		names = append(names, name)
 	}
-	return box("mprv", data)
+	sort.Strings(names)
+	var out []byte
+	for _, name := range names {
+		data, err := json.Marshal(map[string]string{name: fields[name]})
+		if err != nil {
+			panic(err)
+		}
+		out = append(out, box("mprv", data)...)
+	}
+	return out
 }
