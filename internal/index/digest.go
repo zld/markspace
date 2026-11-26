@@ -90,6 +90,7 @@ type Track struct {
 	Width      uint16        `json:"width"`
 	Height     uint16        `json:"height"`
 	SampleRate uint32        `json:"sample_rate,omitempty"`
+	AvcC       []byte        `json:"-"`
 	Duration   int64         `json:"duration_ticks"`
 	Samples    []Sample      `json:"samples"`
 	Base       timebase.Base `json:"-"`

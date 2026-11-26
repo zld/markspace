@@ -273,6 +273,7 @@ func (p *parser) parseStsd(stsd boxView, tr *Track) *timebase.Error {
 				tr.Height = vse.Height
 			}
 		}
+		p.setAvcC(tr, entry)
 	case "mp4a", "enca", "ac-3", "ec-3", "Opus":
 		box, _, err := mp4.UnmarshalAny(bytesReader(entry.payload), mp4.StrToBoxType(entry.typ), uint64(len(entry.payload)), mp4.Context{})
 		if err != nil {
@@ -629,4 +630,19 @@ func cttsOffset(e mp4.CttsEntry) int64 {
 		return int64(e.SampleOffsetV1)
 	}
 	return int64(e.SampleOffsetV0)
+}
+
+// setAvcC records the raw avcC payload found in the first visual sample entry
+// so clips can be written with an independently decodable configuration.
+func (p *parser) setAvcC(tr *Track, entry boxView) {
+	kids, err := childBoxes(entry.payload, entry.off+entry.hdr)
+	if err != nil {
+		return
+	}
+	for _, k := range kids {
+		if k.typ == "avcC" {
+			tr.AvcC = append([]byte(nil), k.payload...)
+			return
+		}
+	}
 }
