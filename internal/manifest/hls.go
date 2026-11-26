@@ -32,6 +32,8 @@ func parseHLS(rel string, data []byte) (*Playlist, error) {
 		pendingDisc bool
 		pendingPDT  int64
 		havePDT     bool
+		mapURI      string
+		haveMap     bool
 		segIndex    int64
 		seenSeg     bool
 	)
@@ -62,6 +64,20 @@ func parseHLS(rel string, data []byte) (*Playlist, error) {
 			return nil, hlsFault(rel, l.Num, "#EXT-X-DISCONTINUITY-TYPE is not supported")
 		case text == "#EXT-X-DISCONTINUITY":
 			pendingDisc = true
+		case strings.HasPrefix(text, "#EXT-X-MAP:"):
+			attrs, err := attr(strings.TrimPrefix(text, "#EXT-X-MAP:"))
+			if err != nil {
+				return nil, hlsFault(rel, l.Num, err.Error())
+			}
+			raw, ok := attrs["URI"]
+			if !ok || raw == "" {
+				return nil, hlsFault(rel, l.Num, "#EXT-X-MAP has no URI")
+			}
+			uri, f := resolveRel(rel, ref{URIPath: raw, Line: l.Num})
+			if f != nil {
+				return nil, f
+			}
+			mapURI, haveMap = uri, true
 		case strings.HasPrefix(text, "#EXT-X-PROGRAM-DATE-TIME:"):
 			v := strings.TrimPrefix(text, "#EXT-X-PROGRAM-DATE-TIME:")
 			nanos, err := parseProgramDateTime(v)
@@ -125,8 +141,10 @@ func parseHLS(rel string, data []byte) (*Playlist, error) {
 	if pendingDisc || haveDur {
 		return nil, hlsFault(rel, ls[len(ls)-1].Num, "playlist ends with dangling segment tags")
 	}
-	if hasTarget && pendingDur == 0 {
-		// target duration validated above; nothing further to check.
+	if haveMap {
+		// An fMP4 HLS playlist has one initialization segment; model it as a
+		// single, unnamed representation so the index resolves the timescale.
+		pl.Representations = append(pl.Representations, Representation{Init: mapURI})
 	}
 	return pl, nil
 }

@@ -151,9 +151,15 @@ func parseMoof(f io.ReadSeeker, rel string, moof *mp4.BoxInfo, out *mp4Scan) *co
 		return core.NewFault(core.KindBoxParse, pos, "scan", "moof has no trun")
 	}
 
+	// The sample base offset follows ISO/IEC 14496-12: an explicit
+	// base-data-offset wins; otherwise default-base-is-moof anchors at the
+	// moof start; otherwise the base is the byte after the moof.
 	base := int64(moof.Offset) + int64(moof.Size)
-	if tfhd.CheckFlag(mp4.TfhdBaseDataOffsetPresent) {
+	switch {
+	case tfhd.CheckFlag(mp4.TfhdBaseDataOffsetPresent):
 		base = int64(tfhd.BaseDataOffset)
+	case tfhd.CheckFlag(mp4.TfhdDefaultBaseIsMoof):
+		base = int64(moof.Offset)
 	}
 	dts := int64(0)
 	if tfdt != nil {
