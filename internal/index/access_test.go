@@ -19,7 +19,11 @@ func rate(t *testing.T) model.Rate {
 
 func timeline(t *testing.T, frags []*cmaf.Fragment) *repair.Timeline {
 	t.Helper()
-	tl, err := repair.BuildTimeline(rate(t), repair.DefaultTrackSpecs(), frags)
+	inputs := make([]repair.Input, len(frags))
+	for i, f := range frags {
+		inputs[i] = repair.Input{Source: "a", Order: i, Frag: f}
+	}
+	tl, err := repair.BuildTimeline(rate(t), repair.DefaultTrackSpecs(), map[string]int64{"a": 0}, inputs)
 	if err != nil {
 		t.Fatal(err)
 	}

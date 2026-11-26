@@ -1,6 +1,7 @@
-// Package repair makes media timelines monotonic per track. Repairs never
-// guess: every change is recorded with the source, fragment, track, original
-// value, repaired value and the byte offset of the original tfdt field.
+// Package repair makes media timelines monotonic per source and track.
+// Repairs never guess: every change is recorded with the source, fragment,
+// track, original value, repaired value and the byte offset of the original
+// tfdt field.
 package repair
 
 import (
@@ -13,14 +14,15 @@ import (
 
 // Code values for this package.
 const (
-	// CodeTFDTBackwards marks a tfdt that moved the track before its previous
-	// end (a rollback).
+	// CodeTFDTBackwards marks a tfdt that moved a track before its previous end.
 	CodeTFDTBackwards model.Code = "tfdt_backward"
-	// CodeTimelineGap marks track data that is missing between fragments.
+	// CodeTimelineGap marks track data missing between fragments.
 	CodeTimelineGap model.Code = "timeline_gap"
 )
 
-// Repair records one accepted tfdt adjustment.
+// Repair records one accepted tfdt adjustment. Original, Repaired and
+// PreviousEnd are in the track's own timescale; MediaStart is on the shared
+// media grid including the source offset.
 type Repair struct {
 	Source      string `json:"source"`
 	Fragment    string `json:"fragment"`
@@ -29,48 +31,41 @@ type Repair struct {
 	Repaired    uint64 `json:"repaired_tfdt"`
 	PreviousEnd uint64 `json:"previous_end"`
 	ByteOffset  int64  `json:"byte_offset"`
+	MediaOffset int64  `json:"source_media_offset"`
+	MediaStart  int64  `json:"media_start"`
 	Reason      string `json:"reason"`
-}
-
-// FragmentTimeline is a fragment's track spans after repair, in the shared
-// media grid. Offsets are absolute in the fragment file.
-type FragmentTimeline struct {
-	Source   string
-	Fragment *cmaf.Fragment
-	Sequence uint32
-	// HasSequence is false when mfhd was absent.
-	HasSequence bool
-	Tracks      []TrackSpan
 }
 
 // TrackSpan is one track's continuous media span in one fragment.
 type TrackSpan struct {
-	TrackID     uint32
-	Rate        model.Rate
-	Start       model.Time
-	End         model.Time
+	TrackID uint32
+	Rate    model.Rate
+	// Start and End are on the shared media grid, including SourceOffset.
+	Start model.Time
+	End   model.Time
+	// SourceOffset is the explicit per-source media offset in media ticks.
+	SourceOffset int64
+	// OriginalTFD and RepairedTFD are raw tfdt values in the track timescale.
 	OriginalTFD uint64
 	RepairedTFD uint64
 	TFDTOffset  int64
 	Samples     []cmaf.Sample
 }
 
-// Timeline is the repaired media timeline for a whole run.
-type Timeline struct {
-	MediaRate model.Rate
-	// VideoRate and AudioRate are each track's own timescale.
-	VideoRate model.Rate
-	AudioRate model.Rate
-	Fragments []*FragmentTimeline
-	Repairs   []Repair
-	// SequenceGaps lists mfhd sequence numbers that were skipped. The gap is
-	// recorded, never converted to a media duration.
-	SequenceGaps []SequenceGap
-	// SourceSwitches lists detected source changes with their anchors.
-	SourceSwitches []cmaf.Event
+// FragmentTimeline is a fragment's track spans after repair.
+type FragmentTimeline struct {
+	Source   string
+	Fragment *cmaf.Fragment
+	Sequence uint32
+	// HasSequence is false when mfhd was absent.
+	HasSequence bool
+	// Order is the fragment's declared order within its source.
+	Order  int
+	Tracks []TrackSpan
 }
 
-// SequenceGap is a skipped mfhd sequence number.
+// SequenceGap is a skipped mfhd sequence number. The gap is recorded, never
+// converted into a media duration.
 type SequenceGap struct {
 	Source  string   `json:"source"`
 	After   uint32   `json:"after"`
@@ -78,7 +73,19 @@ type SequenceGap struct {
 	Missing []uint32 `json:"missing"`
 }
 
-// TrackSpecs describes the per-track timescale used to interpret tfdt.
+// Timeline is the repaired media timeline for a whole run.
+type Timeline struct {
+	MediaRate model.Rate
+	VideoRate model.Rate
+	AudioRate model.Rate
+	// Offsets maps source id to explicit media offset in media ticks.
+	Offsets      map[string]int64
+	Fragments    []*FragmentTimeline
+	Repairs      []Repair
+	SequenceGaps []SequenceGap
+}
+
+// TrackSpecs describes the per-track timescales used to interpret tfdt.
 type TrackSpecs struct {
 	VideoTrackID   uint32
 	VideoTimescale uint32
@@ -91,13 +98,16 @@ func DefaultTrackSpecs() TrackSpecs {
 	return TrackSpecs{VideoTrackID: 1, VideoTimescale: 90000, AudioTrackID: 2, AudioTimescale: 48000}
 }
 
-// BuildTimeline reparses the fragments (already parsed by the caller) in the
-// given order and resets any track whose tfdt would rewind. A fragment whose
-// tfdt is behind the previous end of the same track is moved forward to that
-// end, and the original value and byte offset are recorded. A fragment whose
-// declared size cannot be read is rejected upstream; this function never
-// invents samples.
-func BuildTimeline(mediaRate model.Rate, specs TrackSpecs, inputs []*cmaf.Fragment) (*Timeline, error) {
+// Input couples a parsed fragment with its source and declared order.
+type Input struct {
+	Source string
+	Order  int
+	Frag   *cmaf.Fragment
+}
+
+// BuildTimeline processes inputs in declared order, adding each source's
+// explicit offset and raising any tfdt that rewinds its own source/track.
+func BuildTimeline(mediaRate model.Rate, specs TrackSpecs, offsets map[string]int64, inputs []Input) (*Timeline, error) {
 	videoRate, err := model.NewRate(specs.VideoTimescale)
 	if err != nil {
 		return nil, model.E(model.CodeInvalidInput, "timeline", "%v", err)
@@ -106,9 +116,11 @@ func BuildTimeline(mediaRate model.Rate, specs TrackSpecs, inputs []*cmaf.Fragme
 	if err != nil {
 		return nil, model.E(model.CodeInvalidInput, "timeline", "%v", err)
 	}
-	tl := &Timeline{MediaRate: mediaRate, VideoRate: videoRate, AudioRate: audioRate}
+	tl := &Timeline{MediaRate: mediaRate, VideoRate: videoRate, AudioRate: audioRate, Offsets: map[string]int64{}}
+	for k, v := range offsets {
+		tl.Offsets[k] = v
+	}
 
-	// Last decode end per (source, track), in media ticks.
 	type key struct {
 		source string
 		track  uint32
@@ -116,33 +128,36 @@ func BuildTimeline(mediaRate model.Rate, specs TrackSpecs, inputs []*cmaf.Fragme
 	lastEnd := map[key]int64{}
 	lastSeq := map[string]*uint32{}
 
-	for _, frag := range inputs {
-		if frag.IsInit {
+	for _, in := range inputs {
+		frag := in.Frag
+		if frag == nil || frag.IsInit {
 			continue
 		}
-		ft := &FragmentTimeline{Source: frag.Source, Fragment: frag}
+		offset, ok := offsets[in.Source]
+		if !ok {
+			return nil, model.E(model.CodeAnchorAmbiguous, "timeline",
+				"source %s has no explicit media offset", in.Source).WithPath(frag.Path)
+		}
+		ft := &FragmentTimeline{Source: in.Source, Fragment: frag, Order: in.Order}
 		if frag.MFHDSequence != nil {
 			ft.Sequence = *frag.MFHDSequence
 			ft.HasSequence = true
-		}
-		// mfhd gap detection per source.
-		if ft.HasSequence {
-			if prev, ok := lastSeq[frag.Source]; ok && prev != nil && ft.Sequence > *prev+1 {
-				g := SequenceGap{Source: frag.Source, After: *prev, Before: ft.Sequence}
+			if prev := lastSeq[in.Source]; prev != nil && ft.Sequence > *prev+1 {
+				g := SequenceGap{Source: in.Source, After: *prev, Before: ft.Sequence}
 				for s := *prev + 1; s < ft.Sequence; s++ {
 					g.Missing = append(g.Missing, s)
 				}
 				tl.SequenceGaps = append(tl.SequenceGaps, g)
 			}
 			seq := ft.Sequence
-			lastSeq[frag.Source] = &seq
+			lastSeq[in.Source] = &seq
 		}
-		// A missing mfhd neither invents nor closes a sequence gap: the last
-		// known sequence is retained so a later fragment still reports it.
+		// A missing mfhd neither invents nor closes a gap: retain the last
+		// known sequence so a later fragment still reports the gap.
 
 		for i := range frag.Tracks {
 			tr := frag.Tracks[i]
-			rate := videoRate
+			var rate model.Rate
 			switch tr.TrackID {
 			case specs.AudioTrackID:
 				rate = audioRate
@@ -156,11 +171,13 @@ func BuildTimeline(mediaRate model.Rate, specs TrackSpecs, inputs []*cmaf.Fragme
 			for _, s := range tr.Samples {
 				durTicks += int64(s.Duration)
 			}
-			startTicks, err := model.FromTicks(int64(tr.BaseMediaDecodeTime), rate, mediaRate)
+			localStart, err := model.FromTicks(int64(tr.BaseMediaDecodeTime), rate, mediaRate)
 			if err != nil {
 				return nil, model.E(model.CodeInvalidInput, "timeline",
 					"fragment %s track %d tfdt %d does not map exactly onto %s",
-					frag.Path, tr.TrackID, tr.BaseMediaDecodeTime, mediaRate).WithPath(frag.Path).WithRange(int64(tr.BaseMediaDecodeTime), int64(tr.BaseMediaDecodeTime)).WithByte(tr.TFDTOffset)
+					frag.Path, tr.TrackID, tr.BaseMediaDecodeTime, mediaRate).
+					WithPath(frag.Path).WithByte(tr.TFDTOffset).
+					WithRange(int64(tr.BaseMediaDecodeTime), int64(tr.BaseMediaDecodeTime))
 			}
 			durMedia, err := model.FromTicks(durTicks, rate, mediaRate)
 			if err != nil {
@@ -168,57 +185,59 @@ func BuildTimeline(mediaRate model.Rate, specs TrackSpecs, inputs []*cmaf.Fragme
 					"fragment %s track %d duration %d does not map exactly onto %s",
 					frag.Path, tr.TrackID, durTicks, mediaRate).WithPath(frag.Path).WithByte(tr.TFDTOffset)
 			}
-			k := key{source: frag.Source, track: tr.TrackID}
-			repaired := startTicks
-			prevEnd, seen := lastEnd[k]
+			k := key{source: in.Source, track: tr.TrackID}
+			repairedLocal := localStart
 			repairedTFD := tr.BaseMediaDecodeTime
-			if seen && startTicks < prevEnd {
-				// A rewrite to prevEnd must land on the track's own grid.
-				newTicks, err := model.FromTicks(prevEnd, mediaRate, rate)
+			if prevEnd, seen := lastEnd[k]; seen && localStart < prevEnd {
+				prevEndTrack, err := model.FromTicks(prevEnd, mediaRate, rate)
 				if err != nil {
 					return nil, model.E(CodeTFDTBackwards, "timeline",
 						"fragment %s track %d: tfdt %d is behind %d and cannot be raised onto the %s grid",
 						frag.Path, tr.TrackID, tr.BaseMediaDecodeTime, prevEnd, rate).
 						WithPath(frag.Path).WithByte(tr.TFDTOffset).
-						WithRange(startTicks, startTicks+durMedia)
+						WithRange(localStart, localStart+durMedia)
 				}
-				repairedTFD = uint64(newTicks)
-				prevEndTrack, err := model.FromTicks(prevEnd, mediaRate, rate)
-				if err != nil {
-					return nil, model.E(CodeTFDTBackwards, "timeline",
-						"fragment %s track %d: previous end %d does not map onto %s",
-						frag.Path, tr.TrackID, prevEnd, rate).WithPath(frag.Path).WithByte(tr.TFDTOffset)
-				}
+				repairedTFD = uint64(prevEndTrack)
+				repairedLocal = prevEnd
 				tl.Repairs = append(tl.Repairs, Repair{
-					Source:      frag.Source,
+					Source:      in.Source,
 					Fragment:    frag.Path,
 					TrackID:     tr.TrackID,
 					Original:    tr.BaseMediaDecodeTime,
 					Repaired:    repairedTFD,
 					PreviousEnd: uint64(prevEndTrack),
 					ByteOffset:  tr.TFDTOffset,
+					MediaOffset: offset,
+					MediaStart:  offset + prevEnd,
 					Reason:      "tfdt_rollback",
 				})
-				repaired = prevEnd
 			}
+			start := offset + repairedLocal
 			span := TrackSpan{
-				TrackID:     tr.TrackID,
-				Rate:        rate,
-				Start:       model.MustTime(repaired, mediaRate),
-				End:         model.MustTime(repaired+durMedia, mediaRate),
-				OriginalTFD: tr.BaseMediaDecodeTime,
-				RepairedTFD: repairedTFD,
-				TFDTOffset:  tr.TFDTOffset,
-				Samples:     tr.Samples,
+				TrackID:      tr.TrackID,
+				Rate:         rate,
+				Start:        model.MustTime(start, mediaRate),
+				End:          model.MustTime(start+durMedia, mediaRate),
+				SourceOffset: offset,
+				OriginalTFD:  tr.BaseMediaDecodeTime,
+				RepairedTFD:  repairedTFD,
+				TFDTOffset:   tr.TFDTOffset,
+				Samples:      tr.Samples,
 			}
-			lastEnd[k] = repaired + durMedia
+			lastEnd[k] = repairedLocal + durMedia
 			ft.Tracks = append(ft.Tracks, span)
 		}
 		tl.Fragments = append(tl.Fragments, ft)
 	}
-	// Order the timeline by media start so sequence order does not matter.
 	sort.SliceStable(tl.Fragments, func(i, j int) bool {
-		return tl.Fragments[i].startTicks() < tl.Fragments[j].startTicks()
+		si, sj := tl.Fragments[i].startTicks(), tl.Fragments[j].startTicks()
+		if si != sj {
+			return si < sj
+		}
+		if tl.Fragments[i].Source != tl.Fragments[j].Source {
+			return tl.Fragments[i].Source < tl.Fragments[j].Source
+		}
+		return tl.Fragments[i].Order < tl.Fragments[j].Order
 	})
 	return tl, nil
 }
@@ -236,9 +255,8 @@ func (ft *FragmentTimeline) startTicks() int64 {
 	return min
 }
 
-// Validate checks that every track is monotonic across the timeline and that
-// no track has an inverted span. It is a defense-in-depth check run after
-// repairs and before indexing.
+// Validate checks that every track is monotonic on the global media grid and
+// that no span is inverted. It runs after repairs and before indexing.
 func (tl *Timeline) Validate() error {
 	last := map[uint32]int64{}
 	for _, ft := range tl.Fragments {
@@ -246,7 +264,8 @@ func (tl *Timeline) Validate() error {
 			c, err := tr.Start.Compare(tr.End)
 			if err != nil || c > 0 {
 				return model.E(model.CodeNonMonotonic, "validate timeline",
-					"track %d span is inverted", tr.TrackID).WithRange(tr.Start.Ticks, tr.End.Ticks)
+					"track %d span is inverted", tr.TrackID).
+					WithRange(tr.Start.Ticks, tr.End.Ticks).WithPath(ft.Fragment.Path)
 			}
 			if prev, ok := last[tr.TrackID]; ok && tr.Start.Ticks < prev {
 				return model.E(model.CodeNonMonotonic, "validate timeline",
@@ -261,6 +280,15 @@ func (tl *Timeline) Validate() error {
 
 // RepairCount returns how many tfdt values were rewritten.
 func (tl *Timeline) RepairCount() int { return len(tl.Repairs) }
+
+// RepairedFragments counts distinct fragments with at least one repair.
+func (tl *Timeline) RepairedFragments() int {
+	seen := map[string]bool{}
+	for _, r := range tl.Repairs {
+		seen[r.Source+"\x00"+r.Fragment] = true
+	}
+	return len(seen)
+}
 
 // Summary renders a one-line description used by terminal output.
 func (tl *Timeline) Summary() string {

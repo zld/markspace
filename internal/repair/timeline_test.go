@@ -7,16 +7,16 @@ import (
 	"rtx/internal/model"
 )
 
-func mediaRate(t *testing.T) model.Rate {
+func mediaRate(t *testing.T) (model.Rate, map[string]int64) {
 	t.Helper()
 	r, err := model.NewRateRatio(720000, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return r
+	return r, map[string]int64{"a": 0}
 }
 
-func frag(t *testing.T, source, path string, seq *uint32, videoTFD, audioTFD uint64, videoDur, audioDur uint32) *cmaf.Fragment {
+func frag(t *testing.T, source, path string, seq *uint32, videoTFD, audioTFD uint64, videoDur, audioDur uint32) Input {
 	t.Helper()
 	video := []cmaf.MuxSample{{Data: []byte("frame"), Duration: videoDur, Key: true}}
 	audio := []cmaf.MuxSample{{Data: make([]byte, 8), Duration: audioDur}}
@@ -41,13 +41,21 @@ func frag(t *testing.T, source, path string, seq *uint32, videoTFD, audioTFD uin
 		v := *seq
 		f.MFHDSequence = &v
 	}
-	return f
+	return Input{Source: source, Frag: f, Order: int(seq0(seq))}
+}
+
+func seq0(p *uint32) uint32 {
+	if p == nil {
+		return 0
+	}
+	return *p
 }
 
 func u32(v uint32) *uint32 { return &v }
 
 func TestTimelineCleanIsUnchanged(t *testing.T) {
-	tl, err := BuildTimeline(mediaRate(t), DefaultTrackSpecs(), []*cmaf.Fragment{
+	r, off := mediaRate(t)
+	tl, err := BuildTimeline(r, DefaultTrackSpecs(), off, []Input{
 		frag(t, "a", "f1.m4s", u32(1), 0, 0, 3600, 1920),
 		frag(t, "a", "f2.m4s", u32(2), 3600, 1920, 3600, 1920),
 	})
@@ -66,8 +74,8 @@ func TestTimelineCleanIsUnchanged(t *testing.T) {
 }
 
 func TestTimelineRollbackIsRepaired(t *testing.T) {
-	// Second fragment's video tfdt rewinds to 1800 instead of 3600.
-	tl, err := BuildTimeline(mediaRate(t), DefaultTrackSpecs(), []*cmaf.Fragment{
+	r, off := mediaRate(t)
+	tl, err := BuildTimeline(r, DefaultTrackSpecs(), off, []Input{
 		frag(t, "a", "f1.m4s", u32(1), 0, 0, 3600, 1920),
 		frag(t, "a", "f2.m4s", u32(2), 1800, 1920, 3600, 1920),
 	})
@@ -80,22 +88,16 @@ func TestTimelineRollbackIsRepaired(t *testing.T) {
 	if len(tl.Repairs) != 1 {
 		t.Fatalf("repairs = %d, want 1", len(tl.Repairs))
 	}
-	r := tl.Repairs[0]
-	if r.Original != 1800 || r.PreviousEnd != 3600 || r.TrackID != 1 {
-		t.Fatalf("repair = %+v", r)
+	rep := tl.Repairs[0]
+	if rep.Original != 1800 || rep.PreviousEnd != 3600 || rep.TrackID != 1 {
+		t.Fatalf("repair = %+v", rep)
 	}
-	// Repaired value is the previous end (3600 video ticks = 28800 media ticks).
-	if r.Repaired != 3600 {
-		t.Fatalf("repaired = %d, want 3600", r.Repaired)
+	if rep.Repaired != 3600 {
+		t.Fatalf("repaired = %d, want 3600", rep.Repaired)
 	}
-	if r.ByteOffset <= 0 {
-		t.Fatalf("byte offset = %d", r.ByteOffset)
+	if rep.ByteOffset <= 0 || rep.Source != "a" || rep.Fragment != "f2.m4s" || rep.Reason != "tfdt_rollback" {
+		t.Fatalf("repair attribution = %+v", rep)
 	}
-	if r.Source != "a" || r.Fragment != "f2.m4s" || r.Reason != "tfdt_rollback" {
-		t.Fatalf("repair attribution = %+v", r)
-	}
-	// The second fragment must start at the end of the first on the media grid.
-	// 3600 video ticks at 90k = 0.04s = 28800 media ticks.
 	var second *TrackSpan
 	for _, ft := range tl.Fragments {
 		for i := range ft.Tracks {
@@ -107,6 +109,7 @@ func TestTimelineRollbackIsRepaired(t *testing.T) {
 	if second == nil {
 		t.Fatal("missing repaired span")
 	}
+	// 3600 video ticks at 90k = 0.04s = 28800 media ticks.
 	if second.Start.Ticks != 28800 {
 		t.Fatalf("second start = %d, want 28800", second.Start.Ticks)
 	}
@@ -116,7 +119,8 @@ func TestTimelineRollbackIsRepaired(t *testing.T) {
 }
 
 func TestTimelineSequenceGapRecorded(t *testing.T) {
-	tl, err := BuildTimeline(mediaRate(t), DefaultTrackSpecs(), []*cmaf.Fragment{
+	r, off := mediaRate(t)
+	tl, err := BuildTimeline(r, DefaultTrackSpecs(), off, []Input{
 		frag(t, "a", "f1.m4s", u32(1), 0, 0, 3600, 1920),
 		frag(t, "a", "f3.m4s", u32(3), 3600, 1920, 3600, 1920),
 	})
@@ -126,19 +130,17 @@ func TestTimelineSequenceGapRecorded(t *testing.T) {
 	if len(tl.SequenceGaps) != 1 {
 		t.Fatalf("gaps = %+v", tl.SequenceGaps)
 	}
-	g := tl.SequenceGaps[0]
-	if len(g.Missing) != 1 || g.Missing[0] != 2 {
+	if g := tl.SequenceGaps[0]; len(g.Missing) != 1 || g.Missing[0] != 2 {
 		t.Fatalf("missing = %v", g.Missing)
 	}
-	// Crucially, the missing fragment contributes no duration: the timeline
-	// simply continues at the next present fragment's tfdt.
 	if len(tl.Repairs) != 0 {
 		t.Fatalf("gap must not create a repair: %+v", tl.Repairs)
 	}
 }
 
 func TestTimelineMissingMFHDNotInferred(t *testing.T) {
-	tl, err := BuildTimeline(mediaRate(t), DefaultTrackSpecs(), []*cmaf.Fragment{
+	r, off := mediaRate(t)
+	tl, err := BuildTimeline(r, DefaultTrackSpecs(), off, []Input{
 		frag(t, "a", "f1.m4s", u32(1), 0, 0, 3600, 1920),
 		frag(t, "a", "f2.m4s", nil, 3600, 1920, 3600, 1920),
 		frag(t, "a", "f3.m4s", u32(3), 7200, 3840, 3600, 1920),
@@ -146,35 +148,33 @@ func TestTimelineMissingMFHDNotInferred(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// mfhd 1 -> 3 crosses a missing-2 gap; the gap must still be recorded
-	// because the missing fragment did not reset the known sequence.
 	if len(tl.SequenceGaps) != 1 || tl.SequenceGaps[0].Missing[0] != 2 {
 		t.Fatalf("gaps = %+v", tl.SequenceGaps)
 	}
 }
 
 func TestTimelineOffGridFails(t *testing.T) {
-	// 1 video tick at 90kHz is not a whole number of 720000 ticks... it is
-	// (720000/90000 = 8), so use a timescale that does not divide.
+	r, off := mediaRate(t)
 	specs := TrackSpecs{VideoTrackID: 1, VideoTimescale: 44100, AudioTrackID: 2, AudioTimescale: 48000}
-	f := frag(t, "a", "f1.m4s", u32(1), 1, 0, 1, 1920)
-	if _, err := BuildTimeline(mediaRate(t), specs, []*cmaf.Fragment{f}); err == nil {
+	in := frag(t, "a", "f1.m4s", u32(1), 1, 0, 1, 1920)
+	if _, err := BuildTimeline(r, specs, off, []Input{in}); err == nil {
 		t.Fatal("expected off-grid error")
 	}
 }
 
 func TestTimelineUnknownTrackFails(t *testing.T) {
+	r, off := mediaRate(t)
 	specs := TrackSpecs{VideoTrackID: 7, VideoTimescale: 90000, AudioTrackID: 8, AudioTimescale: 48000}
-	f := frag(t, "a", "f1.m4s", u32(1), 0, 0, 3600, 1920)
-	if _, err := BuildTimeline(mediaRate(t), specs, []*cmaf.Fragment{f}); err == nil {
+	in := frag(t, "a", "f1.m4s", u32(1), 0, 0, 3600, 1920)
+	if _, err := BuildTimeline(r, specs, off, []Input{in}); err == nil {
 		t.Fatal("expected unknown track error")
 	}
 }
 
 func TestTimelinePerSourceIsolation(t *testing.T) {
-	// Two sources each start at tfdt 0; that is not a rollback because track
-	// state is per source.
-	tl, err := BuildTimeline(mediaRate(t), DefaultTrackSpecs(), []*cmaf.Fragment{
+	r, off := mediaRate(t)
+	off["b"] = 0
+	tl, err := BuildTimeline(r, DefaultTrackSpecs(), off, []Input{
 		frag(t, "a", "a1.m4s", u32(1), 3600, 1920, 3600, 1920),
 		frag(t, "b", "b1.m4s", u32(1), 0, 0, 3600, 1920),
 	})
@@ -183,5 +183,34 @@ func TestTimelinePerSourceIsolation(t *testing.T) {
 	}
 	if len(tl.Repairs) != 0 {
 		t.Fatalf("cross-source repair should not happen: %+v", tl.Repairs)
+	}
+}
+
+func TestTimelineSourceOffsetApplied(t *testing.T) {
+	r, off := mediaRate(t)
+	off["b"] = 28800 // 0.04s
+	tl, err := BuildTimeline(r, DefaultTrackSpecs(), off, []Input{
+		frag(t, "a", "a1.m4s", u32(1), 0, 0, 3600, 1920),
+		frag(t, "b", "b1.m4s", u32(1), 0, 0, 3600, 1920),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var bStart int64 = -1
+	for _, ft := range tl.Fragments {
+		if ft.Source == "b" {
+			bStart = ft.Tracks[0].Start.Ticks
+		}
+	}
+	if bStart != 28800 {
+		t.Fatalf("source b start = %d, want 28800", bStart)
+	}
+}
+
+func TestTimelineMissingSourceOffsetFails(t *testing.T) {
+	r, _ := mediaRate(t)
+	in := frag(t, "z", "z1.m4s", u32(1), 0, 0, 3600, 1920)
+	if _, err := BuildTimeline(r, DefaultTrackSpecs(), map[string]int64{"a": 0}, []Input{in}); err == nil {
+		t.Fatal("expected missing offset error")
 	}
 }
