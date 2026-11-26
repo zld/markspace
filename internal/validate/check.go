@@ -55,6 +55,13 @@ type Result struct {
 	Issues                                      issue.List
 	Drift                                       clock.Correction
 	DriftKnown                                  bool
+	VFR                                         bool
+	VFRReason                                   string
+	PacketCount                                 int
+	RTPWraps                                    int
+	RTPDuplicates                               int
+	RTPRegressions                              int
+	RTPMissing                                  uint64
 	Admitted, Recomputed, Unrecoverable, Sealed int
 	Replays                                     []timeline.Replay
 	First                                       *issue.Issue
@@ -83,6 +90,7 @@ func Analyze(spec Spec) *Result {
 		res.Issues.Add(spec.MP4.Issues...)
 		res.Damaged = append(res.Damaged, spec.MP4.Damaged...)
 		res.Intervals = spec.MP4.Intervals
+		res.VFR, res.VFRReason = spec.MP4.VFR, spec.MP4.VFRReason
 		res.Keyframes = KeyframeStat{
 			Count: len(spec.MP4.Keyframes), Min: spec.MP4.MinGap,
 			Median: spec.MP4.MedianGap, Max: spec.MP4.MaxGap,
@@ -92,6 +100,11 @@ func Analyze(spec Spec) *Result {
 		res.Sources = append(res.Sources, spec.RTP.Input)
 		res.Issues.Add(spec.RTP.Issues...)
 		res.Damaged = append(res.Damaged, spec.RTP.Damaged...)
+		res.PacketCount = len(spec.RTP.Packets)
+		res.RTPWraps = spec.RTP.Wraps
+		res.RTPDuplicates = spec.RTP.Duplicates
+		res.RTPRegressions = spec.RTP.Regressions
+		res.RTPMissing = spec.RTP.Missing
 	}
 	for _, tr := range spec.Cues {
 		res.Sources = append(res.Sources, tr.Input)

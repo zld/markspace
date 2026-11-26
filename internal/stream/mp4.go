@@ -1,6 +1,7 @@
 package stream
 
 import (
+	"fmt"
 	"os"
 	"sort"
 
@@ -51,6 +52,10 @@ type MP4Result struct {
 	MaxGap      clock.Tick
 	Timescale   uint32
 	FirstOffset int64
+	// VFR reports that sample durations are not uniform. Intervals are always
+	// computed from actual decode time in that case.
+	VFR       bool
+	VFRReason string
 }
 
 func toTick(delta uint64, timescale uint32) clock.Tick {
@@ -132,6 +137,7 @@ func ParseMP4As(path, label string) (*MP4Result, error) {
 	res.Frames = len(samples)
 	res.Track.SampleCount = len(samples)
 	buildKeyframes(res, video, samples)
+	detectVFR(res, video)
 	normalizeMP4(res, fileSize)
 	if len(res.Issues) > 0 {
 		if first, ok := res.Issues.First(); ok && first.Loc.ByteOffset >= 0 {
@@ -160,6 +166,23 @@ func clampRanges(in []issue.ByteRange, fileSize int64) []issue.ByteRange {
 		out = append(out, r)
 	}
 	return out
+}
+
+// detectVFR compares consecutive sample deltas. Different deltas mean a
+// variable frame rate; interval statistics must then come from actual decode
+// time, which buildKeyframes already guarantees.
+func detectVFR(res *MP4Result, t *trakData) {
+	if t.stts == nil || len(t.stts.Entries) == 0 {
+		return
+	}
+	first := t.stts.Entries[0].SampleDelta
+	for _, e := range t.stts.Entries[1:] {
+		if e.SampleDelta != first {
+			res.VFR = true
+			res.VFRReason = fmt.Sprintf("sample deltas vary (%d vs %d)", first, e.SampleDelta)
+			return
+		}
+	}
 }
 
 // normalize walks the merge again after keyframe construction.

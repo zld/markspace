@@ -19,24 +19,30 @@ import (
 
 // Summary is the normalized, digestable projection of a Result.
 type Summary struct {
-	Name          string
-	Window        clock.Tick
-	Sources       []string
-	EventCount    int
-	EventOrder    []string
-	Keyframes     validate.KeyframeStat
-	MaxTimeDev    clock.Tick
-	MaxByteDev    int64
-	Damaged       []issue.ByteRange
-	IssueKeys     []string
-	IssueCount    int
-	Admitted      int
-	Recomputed    int
-	Unrecoverable int
-	Sealed        int
-	FirstFail     string
-	CueMaps       []validate.CueMap
-	Intervals     []intervalKey
+	Name           string
+	Window         clock.Tick
+	Sources        []string
+	EventCount     int
+	EventOrder     []string
+	Keyframes      validate.KeyframeStat
+	MaxTimeDev     clock.Tick
+	MaxByteDev     int64
+	Damaged        []issue.ByteRange
+	IssueKeys      []string
+	IssueCount     int
+	Admitted       int
+	Recomputed     int
+	Unrecoverable  int
+	Sealed         int
+	PacketCount    int
+	RTPWraps       int
+	RTPDuplicates  int
+	RTPRegressions int
+	RTPMissing     uint64
+	Categories     []string
+	FirstFail      string
+	CueMaps        []validate.CueMap
+	Intervals      []intervalKey
 }
 
 type intervalKey struct {
@@ -50,13 +56,18 @@ func BuildSnapshot(r *validate.Result) Summary {
 		Name: r.Name, Window: r.Window, Sources: append([]string(nil), r.Sources...),
 		EventCount: len(r.Events), Keyframes: r.Keyframes,
 		MaxTimeDev: r.MaxTimeDev, MaxByteDev: r.MaxByteDev,
-		Damaged:       append([]issue.ByteRange(nil), r.Damaged...),
-		IssueCount:    len(r.Issues),
-		Admitted:      r.Admitted,
-		Recomputed:    r.Recomputed,
-		Unrecoverable: r.Unrecoverable,
-		Sealed:        r.Sealed,
-		CueMaps:       append([]validate.CueMap(nil), r.CueMaps...),
+		Damaged:        append([]issue.ByteRange(nil), r.Damaged...),
+		IssueCount:     len(r.Issues),
+		Admitted:       r.Admitted,
+		Recomputed:     r.Recomputed,
+		Unrecoverable:  r.Unrecoverable,
+		Sealed:         r.Sealed,
+		PacketCount:    r.PacketCount,
+		RTPWraps:       r.RTPWraps,
+		RTPDuplicates:  r.RTPDuplicates,
+		RTPRegressions: r.RTPRegressions,
+		RTPMissing:     r.RTPMissing,
+		CueMaps:        append([]validate.CueMap(nil), r.CueMaps...),
 	}
 	sort.Strings(s.Sources)
 	for _, ev := range r.Events {
@@ -69,6 +80,7 @@ func BuildSnapshot(r *validate.Result) Summary {
 	for _, iv := range r.Intervals {
 		s.Intervals = append(s.Intervals, intervalKey{From: iv.From, To: iv.To, DTS: iv.DTSGap, PTS: iv.PTSGap})
 	}
+	s.Categories = r.Issues.Categories()
 	if r.First != nil {
 		s.FirstFail = r.First.String()
 	}
@@ -103,6 +115,11 @@ func Digest(s Summary) string {
 	for _, d := range s.Damaged {
 		w("dmg", d.Input, fmt.Sprint(d.Start), fmt.Sprint(d.End))
 	}
+	for _, c := range s.Categories {
+		w("cat", c)
+	}
+	w("rtp", fmt.Sprint(s.PacketCount), fmt.Sprint(s.RTPWraps),
+		fmt.Sprint(s.RTPDuplicates), fmt.Sprint(s.RTPRegressions), fmt.Sprint(s.RTPMissing))
 	w("issues", fmt.Sprint(s.IssueCount))
 	for _, k := range s.IssueKeys {
 		w("is", k)
@@ -130,8 +147,15 @@ func Render(r *validate.Result) string {
 		s.EventCount, s.Admitted, s.Recomputed, s.Unrecoverable, s.Sealed)
 	fmt.Fprintf(&b, "  keyframes: count=%d min=%s median=%s max=%s\n",
 		s.Keyframes.Count, s.Keyframes.Min, s.Keyframes.Median, s.Keyframes.Max)
+	if s.PacketCount > 0 {
+		fmt.Fprintf(&b, "  packets: count=%d wraps=%d duplicates=%d regressions=%d missing=%d\n",
+			s.PacketCount, s.RTPWraps, s.RTPDuplicates, s.RTPRegressions, s.RTPMissing)
+	}
 	renderKeyframeIntervals(&b, r)
 	renderCueMaps(&b, r)
+	if r.VFR {
+		fmt.Fprintf(&b, "  variable frame rate: true (%s); intervals use actual decode time\n", r.VFRReason)
+	}
 	fmt.Fprintf(&b, "  max time deviation: %s (%d ticks)\n", r.MaxTimeDev, int64(r.MaxTimeDev))
 	fmt.Fprintf(&b, "  max byte deviation: %d\n", r.MaxByteDev)
 	if r.DriftKnown {
@@ -146,6 +170,9 @@ func Render(r *validate.Result) string {
 		fmt.Fprintf(&b, "    %s\n", timeline.DescribeReplay(rp))
 	}
 	fmt.Fprintf(&b, "  errors: %d\n", s.IssueCount)
+	if len(s.Categories) > 0 {
+		fmt.Fprintf(&b, "  error categories: %s\n", strings.Join(s.Categories, ", "))
+	}
 	for _, it := range r.Issues.Sorted() {
 		recoverable := ""
 		if it.Recoverable {
