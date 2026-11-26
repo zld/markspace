@@ -163,6 +163,22 @@ func (r *Runner) runLayer(layer, playlistPath, kind string) {
 		committedFacts = append(committedFacts, factsForSegment(perSegment[i])...)
 	}
 	r.verifyKeyframes(&lr, pl, kind, perSegment, committedFacts, timescale)
+	if kind == "video" {
+		r.probeVideoTS(&lr, pl)
+	}
+	if kind == "audio" {
+		check, cerr := r.verifyWAVMapping(&lr, pl)
+		if cerr != nil {
+			r.report.AddFault(cerr)
+			lr.Isolated = true
+			lr.IsolatedReason = "channel mapping"
+			if fe, ok := fault.As(cerr); ok {
+				lr.IsolatedOffset = fe.Offset
+			}
+		} else if check != nil {
+			lr.WAV = check
+		}
+	}
 	lr.Gaps = gapFaults
 	r.report.Layers = append(r.report.Layers, lr)
 }

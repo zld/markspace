@@ -40,8 +40,18 @@ type Sample struct {
 	NALUnitTypes []uint8
 	// AUStartCodeLen is the length of the leading start code, when present.
 	AUStartCodeLen int
+	// PayloadRanges are the raw byte ranges, in file order, that hold AUBytes.
+	// A PES spanning several transport packets is not contiguous in the file,
+	// so verifying content requires these exact ranges.
+	PayloadRanges []ByteSpan
 
 	hasParameterSets bool
+}
+
+// ByteSpan is one contiguous raw byte extent in the input file.
+type ByteSpan struct {
+	Offset int64
+	Length int64
 }
 
 // Track is one demultiplexed elementary stream.
@@ -249,6 +259,7 @@ func streamKind(st uint8) (string, bool) {
 // pesAccumulator gathers PES payload across packets for one PID.
 type pesAccumulator struct {
 	buf       []byte
+	chunks    []ByteSpan
 	startOff  int64
 	declared  int
 	headerLen int
@@ -283,11 +294,13 @@ func (a *pesAccumulator) Push(tr *Track, p *Packet, path string) ([]Sample, erro
 		}
 		a.startOff = p.PayloadOffset
 		a.buf = append(a.buf, p.Payload...)
+		a.chunks = append(a.chunks, ByteSpan{Offset: p.PayloadOffset, Length: int64(len(p.Payload))})
 	} else {
 		if !a.started {
 			return out, nil
 		}
 		a.buf = append(a.buf, p.Payload...)
+		a.chunks = append(a.chunks, ByteSpan{Offset: p.PayloadOffset, Length: int64(len(p.Payload))})
 	}
 	if !a.hasHeader && len(a.buf) >= 9 {
 		if a.buf[0] != 0 || a.buf[1] != 0 || a.buf[2] != 1 {
@@ -331,6 +344,7 @@ func (a *pesAccumulator) Push(tr *Track, p *Packet, path string) ([]Sample, erro
 
 func (a *pesAccumulator) reset() {
 	a.buf = nil
+	a.chunks = nil
 	a.hasHeader = false
 	a.declared = 0
 	a.headerLen = 0
@@ -351,11 +365,12 @@ func (a *pesAccumulator) Flush(tr *Track, path string) (Sample, bool, error) {
 	}
 	data := a.buf[a.headerLen:end]
 	s := Sample{
-		TrackID:  tr.TrackID,
-		PTS:      a.pts,
-		DTS:      a.dts,
-		AUOffset: a.startOff + int64(a.headerLen),
-		AUBytes:  append([]byte(nil), data...),
+		TrackID:       tr.TrackID,
+		PTS:           a.pts,
+		DTS:           a.dts,
+		AUOffset:      a.startOff + int64(a.headerLen),
+		AUBytes:       append([]byte(nil), data...),
+		PayloadRanges: sliceSpans(a.chunks, int64(a.headerLen), int64(end)),
 	}
 	if tr.Kind == "video" {
 		s.NALUnitTypes, s.AUStartCodeLen = scanNALTypes(data)
@@ -363,6 +378,44 @@ func (a *pesAccumulator) Flush(tr *Track, path string) (Sample, bool, error) {
 	}
 	a.reset()
 	return s, true, nil
+}
+
+// sliceSpans projects the byte interval [from,to) of the concatenated chunks
+// onto the chunks' raw file ranges.
+func sliceSpans(chunks []ByteSpan, from, to int64) []ByteSpan {
+	var out []ByteSpan
+	var pos int64
+	for _, c := range chunks {
+		chunkEnd := pos + c.Length
+		if chunkEnd <= from {
+			pos = chunkEnd
+			continue
+		}
+		if pos >= to {
+			break
+		}
+		start := maxI64(from, pos)
+		stop := minI64(to, chunkEnd)
+		if stop > start {
+			out = append(out, ByteSpan{Offset: c.Offset + (start - pos), Length: stop - start})
+		}
+		pos = chunkEnd
+	}
+	return out
+}
+
+func maxI64(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func minI64(a, b int64) int64 {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // decodeTimestamp decodes a 33-bit PTS/DTS from a PES header. The expected

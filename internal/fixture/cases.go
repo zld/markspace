@@ -2,8 +2,10 @@ package fixture
 
 import (
 	"crypto/sha256"
+
 	"encoding/hex"
 	"fmt"
+	"github.com/pion/rtp"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,16 +13,19 @@ import (
 
 // Case names accepted by the regress command.
 const (
-	CaseAll       = "all"
-	CaseClean     = "clean"
-	CaseTruncated = "truncated"
-	CaseCorrupt   = "corrupt"
-	CaseNoIndex   = "no-index"
-	CaseClockGap  = "clock-gap"
+	CaseAll        = "all"
+	CaseClean      = "clean"
+	CaseTruncated  = "truncated"
+	CaseCorrupt    = "corrupt"
+	CaseNoIndex    = "no-index"
+	CaseClockGap   = "clock-gap"
+	CaseBadMapping = "bad-mapping"
+	CaseBadPath    = "bad-path"
 )
 
-// Cases lists every generated case.
-var Cases = []string{CaseClean, CaseTruncated, CaseCorrupt, CaseNoIndex, CaseClockGap}
+// Cases lists every generated case. bad-mapping and bad-path are refusal
+// cases: they must exit 1 rather than guess.
+var Cases = []string{CaseClean, CaseTruncated, CaseCorrupt, CaseNoIndex, CaseClockGap, CaseBadMapping, CaseBadPath}
 
 // ValidCase reports whether name is a known case (or "all").
 func ValidCase(name string) bool {
@@ -89,6 +94,8 @@ type SegmentRecord struct {
 	Layout         []SampleLoc
 	KeyframeRanges []ByteRange // relative to the segment file
 	SourceWAV      []byte      // audio only: the exact PCM source file
+	TSBytes        []byte      // video only: the same samples as MPEG-TS
+	RTPBytes       []byte      // video only: length-prefixed RTP sidecar
 	DeclaredDur    Rational
 }
 
@@ -175,6 +182,15 @@ func (t *Tree) build() error {
 			if err := os.WriteFile(initPath, r.InitBytes, 0o644); err != nil {
 				return err
 			}
+			if r.TSBytes != nil {
+				tsPath := filepath.Join(t.Root, filepath.FromSlash(l.Path), fmt.Sprintf("seg%d.ts", r.Index+1))
+				if err := os.WriteFile(tsPath, r.TSBytes, 0o644); err != nil {
+					return err
+				}
+				if err := os.WriteFile(tsPath+".rtp", r.RTPBytes, 0o644); err != nil {
+					return err
+				}
+			}
 		}
 	}
 	return t.writeManifests()
@@ -206,7 +222,7 @@ func buildVideo(l Layer) ([]SegmentRecord, error) {
 		var samples []SampleSpec
 		for k := 0; k < n; k++ {
 			key := k == 0
-			au := AnnexBAU(key, 300+20*i+k, i*10+k)
+			au := AnnexBAU(key, 300+20*i+k, seedFor(l.Name)+i*10+k)
 			samples = append(samples, SampleSpec{Duration: 3000, Size: uint32(len(au)),
 				Keyframe: key, Payload: au})
 		}
@@ -215,12 +231,16 @@ func buildVideo(l Layer) ([]SegmentRecord, error) {
 		if err != nil {
 			return nil, err
 		}
+		// A parallel MPEG-TS rendition plus an RTP packet sidecar exercises
+		// the demuxer and RTP timing checks on the same samples.
+		tsBytes, rtpBytes := buildTSWithRTP(l.Name, i, decodeTime, samples)
 		decodeTime += uint64(dur)
 		recs = append(recs, SegmentRecord{
 			Layer: l.Name, Index: i, Path: l.Path + "/" + fmt.Sprintf(SegmentPattern, i+1),
 			Bytes: seg, InitBytes: initBytes, Timescale: 90000, Layout: layout.Samples,
 			KeyframeRanges: absoluteKeyframes(layout.Samples),
 			DeclaredDur:    Rational{Num: int64(dur), Den: 90000},
+			TSBytes:        tsBytes, RTPBytes: rtpBytes,
 		})
 	}
 	return recs, nil
@@ -359,6 +379,36 @@ func (t *Tree) writeIFramePlaylist(l Layer) error {
 	return os.WriteFile(filepath.Join(t.Root, filepath.FromSlash(l.Path), IFrameName), []byte(sb.String()), 0o644)
 }
 
+// buildTSWithRTP converts generated access units to an MPEG-TS segment and a
+// matching RTP packet sidecar. RTP packets are length-prefixed (big-endian
+// uint16 length, then the packet) and use one packet per access unit, so the
+// sequence and timestamp bookkeeping is exact and reproducible.
+func buildTSWithRTP(layer string, segIndex int, baseDecode uint64, samples []SampleSpec) ([]byte, []byte) {
+	aus := make([]TSAU, 0, len(samples))
+	for i, s := range samples {
+		aus = append(aus, TSAU{PTS: baseDecode + uint64(s.Duration)*uint64(i),
+			Key: s.Keyframe, Payload: append([]byte(nil), s.Payload...)})
+	}
+	tsBytes := BuildTS(TSSpec{VideoPID: 0x101, AudioPID: 0x102, AUs: aus})
+	var rtpBytes []byte
+	seq := uint16(1000 + segIndex*len(samples))
+	for i := range samples {
+		pkt := &rtp.Packet{Header: rtp.Header{
+			Version: 2, PayloadType: 96, SequenceNumber: seq + uint16(i),
+			Timestamp: uint32(baseDecode + uint64(samples[i].Duration)*uint64(i)),
+			SSRC:      0x1234,
+		}, Payload: []byte{0x00, 0x01}}
+		raw, err := pkt.Marshal()
+		if err != nil {
+			continue
+		}
+		rtpBytes = append(rtpBytes, byte(len(raw)>>8), byte(len(raw)))
+		rtpBytes = append(rtpBytes, raw...)
+	}
+	_ = layer
+	return tsBytes, rtpBytes
+}
+
 // ByteRange is a byte extent within one file.
 type ByteRange struct {
 	Offset int64
@@ -395,8 +445,44 @@ func applyCaseFault(root, caseName string) error {
 		// v1's playlist declares 3.5 s for its first segment while the media
 		// fragment says 3.0 s: a reproducible gap on v1 only.
 		return injectClockGap(filepath.Join(root, "v1", MediaName))
+	case CaseBadMapping:
+		// The audio source declares four channels while the rendition mapping
+		// expects three: a channel conflict that must be refused, not patched
+		// by dropping or duplicating a channel.
+		return rewriteWAVChannels(filepath.Join(root, "a1", "seg1.wav"), 4)
+	case CaseBadPath:
+		// A playlist URI escaping the input root must be refused before any
+		// media is opened.
+		return appendToFile(filepath.Join(root, "v0", MediaName),
+			"#EXTINF:1.000000,\n../../outside.m4s\n")
 	}
 	return fmt.Errorf("unknown case %q", caseName)
+}
+
+// rewriteWAVChannels changes only the declared channel count in a WAV header,
+// leaving the sample bytes intact. A reader must then see a block-align and
+// byte-rate inconsistency and refuse the file.
+func rewriteWAVChannels(path string, channels int) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	idx := bytesIndex(data, []byte("fmt "))
+	if idx < 0 || idx+10 >= len(data) {
+		return fmt.Errorf("no fmt chunk in %s", path)
+	}
+	data[idx+10] = byte(channels)
+	return os.WriteFile(path, data, 0o644)
+}
+
+func appendToFile(path, text string) error {
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = f.WriteString(text)
+	return err
 }
 
 func truncateFile(path string, n int) error {

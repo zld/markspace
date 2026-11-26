@@ -17,6 +17,11 @@ func TestAllCasesGenerateParseableTree(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", c, err)
 		}
+		if c == CaseBadPath || c == CaseBadMapping {
+			// Refusal cases are intentionally unloadable; the pipeline tests
+			// assert they fail with the right exit code.
+			continue
+		}
 		master, err := manifest.LoadMaster(tree.Root, MasterName)
 		if err != nil {
 			t.Fatalf("%s master: %v", c, err)

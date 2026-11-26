@@ -44,6 +44,8 @@ type LayerReport struct {
 	KeyframeTotal       int
 	IndexFalsePositives int
 	Rebuilt             bool
+	WAV                 *audioCheck
+	TS                  *tsCheck
 	Gaps                []*fault.Error
 }
 
@@ -148,6 +150,15 @@ func (r *Report) Print(w io.Writer) {
 		}
 		fmt.Fprintf(w, "layer=%s kind=%s segments=%d status=%s%s\n",
 			l.Layer, l.Kind, len(l.Segments), status, extra)
+		if l.TS != nil {
+			fmt.Fprintf(w, "  ts layer=%s packets=%d tracks=%d samples=%d keyframes=%d rtp_packets=%d rtp_seq_gaps=%d\n",
+				l.Layer, l.TS.Packets, l.TS.Tracks, l.TS.Samples, l.TS.Keyframes,
+				l.TS.RTPPackets, l.TS.RTPSeqGaps)
+		}
+		if l.WAV != nil {
+			fmt.Fprintf(w, "  wav layer=%s source=%s channels=%d frames=%d matched_bytes=%d\n",
+				l.WAV.Layer, l.WAV.Path, l.WAV.Channels, l.WAV.Frames, l.WAV.MatchedBytes)
+		}
 		for _, s := range l.Segments {
 			state := "committed"
 			if !s.Complete {
