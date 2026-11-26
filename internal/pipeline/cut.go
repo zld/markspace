@@ -10,14 +10,17 @@ import (
 	"replay/internal/events"
 )
 
-// stopError signals a deliberate --stop-after interruption. It is not a
+// StopAfter signals a deliberate --stop-after interruption. It is not a
 // failure; the CLI maps it to exit code 75.
-type stopError struct{ stage string }
+type StopAfter struct{ stage string }
 
-func (e *stopError) Error() string { return "stopped after stage " + e.stage }
+// NewStopAfter builds the interruption sentinel for the reached stage.
+func NewStopAfter(stage string) *StopAfter { return &StopAfter{stage: stage} }
+
+func (e *StopAfter) Error() string { return "stopped after stage " + e.stage }
 
 // Stage returns the stage that was reached.
-func (e *stopError) Stage() string { return e.stage }
+func (e *StopAfter) Stage() string { return e.stage }
 
 // cutPlans materializes every still-accepted plan. Cache entries are keyed
 // by source+config and reused only when the on-disk artifact matches the

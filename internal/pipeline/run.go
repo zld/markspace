@@ -102,7 +102,7 @@ func Run(c *Config) (*Stats, *manifest.Manifest, error) {
 		st.AnomalyCount = countAnomalies(tl)
 	}
 	if c.StopAfter == StageScan {
-		return st, nil, &stopError{stage: StageScan}
+		return st, nil, &StopAfter{stage: StageScan}
 	}
 
 	// ---- plan: map, judge and budget every event ----
@@ -116,7 +116,7 @@ func Run(c *Config) (*Stats, *manifest.Manifest, error) {
 		plans = planEvents(c, tl, feed, st)
 	}
 	if c.StopAfter == StagePlan {
-		return st, nil, &stopError{stage: StagePlan}
+		return st, nil, &StopAfter{stage: StagePlan}
 	}
 
 	// ---- cut: rebuild accepted clips, cache-verified ----
@@ -144,7 +144,7 @@ func Run(c *Config) (*Stats, *manifest.Manifest, error) {
 		}
 	}
 	if c.StopAfter == StageCut {
-		return st, nil, &stopError{stage: StageCut}
+		return st, nil, &StopAfter{stage: StageCut}
 	}
 
 	// ---- commit: write manifest only after every clip is verified ----
