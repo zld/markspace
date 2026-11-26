@@ -62,11 +62,11 @@ type Item struct {
 // Summary aggregates one run.
 type Summary struct {
 	Mapped, Emitted, Duplicate, Lost, Late, Resumed int
-	GapMs              int64
-	P50DelayMs         int64
-	DriftPPM           int64
-	MaxAbsTimeDeltaUs  int64
-	MaxAbsByteDelta    int64
+	GapMs                                           int64
+	P50DelayMs                                      int64
+	DriftPPM                                        int64
+	MaxAbsTimeDeltaUs                               int64
+	MaxAbsByteDelta                                 int64
 }
 
 // Input bundles records and RTP events for the kernel.
