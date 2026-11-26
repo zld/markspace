@@ -175,3 +175,15 @@ func (k *KeyframeIndex) Resolve(times []int64) (map[int64]Keyframe, HitStats) {
 	}
 	return res, stats
 }
+
+// ToNanosCached converts ticks using the track base, returning 0 when the
+// conversion would overflow. Callers that need the error should use the base
+// directly; this helper exists for binary-search comparisons on already
+// validated sample tables.
+func (t *Track) ToNanosCached(ticks int64, offset int64) int64 {
+	ns, err := t.Base.ToNanos(ticks, t.ID, offset)
+	if err != nil {
+		return 0
+	}
+	return ns
+}
