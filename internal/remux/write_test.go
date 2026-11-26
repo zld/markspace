@@ -137,3 +137,54 @@ func TestRemuxRespectsByteLimit(t *testing.T) {
 		t.Fatalf("want limit, got %v", err)
 	}
 }
+
+func TestRemuxWritesExplicitPayload(t *testing.T) {
+	outPath := filepath.Join(t.TempDir(), "out.mp4")
+	w, err := NewWriter(outPath, "ts", bytes.NewReader(nil), Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr := Track{OutputID: 1, Timescale: 90000, Handler: "vide", Codec: "avc1", Width: 640, Height: 360,
+		Samples: []Sample{
+			{SourceOffset: 999, Size: 4, Duration: 3000, Keyframe: true, Payload: []byte{0, 0, 0, 1}},
+			{SourceOffset: 1000, Size: 3, Duration: 3000, Payload: []byte{9, 9, 9}},
+		}}
+	if err := w.WriteInit([]Track{tr}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.WriteFragment(FragmentPlan{Sequence: 1, TrackID: 1, Samples: tr.Samples}); err != nil {
+		t.Fatalf("explicit payload should not touch the source: %v", err)
+	}
+	w.Close()
+	r, err := fmp4.Open(outPath, "out.mp4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	seg, err := r.ParseSegment()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := r.ReadSample(seg.Fragments[0].Samples[0], 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string([]byte{0, 0, 0, 1}) {
+		t.Fatalf("payload = %v", got)
+	}
+}
+
+func TestRemuxRejectsPayloadSizeMismatch(t *testing.T) {
+	outPath := filepath.Join(t.TempDir(), "out.mp4")
+	w, err := NewWriter(outPath, "ts", bytes.NewReader(nil), Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	_, err = w.WriteFragment(FragmentPlan{Sequence: 1, TrackID: 1, Samples: []Sample{
+		{Size: 10, Payload: []byte{1, 2}, Keyframe: true},
+	}})
+	if !errors.Is(err, fault.ErrCorrupt) {
+		t.Fatalf("want corrupt, got %v", err)
+	}
+}

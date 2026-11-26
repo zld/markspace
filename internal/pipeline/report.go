@@ -46,6 +46,7 @@ type LayerReport struct {
 	Rebuilt             bool
 	WAV                 *audioCheck
 	TS                  *tsCheck
+	TSRemux             []SegmentReport
 	Gaps                []*fault.Error
 }
 
@@ -150,6 +151,15 @@ func (r *Report) Print(w io.Writer) {
 		}
 		fmt.Fprintf(w, "layer=%s kind=%s segments=%d status=%s%s\n",
 			l.Layer, l.Kind, len(l.Segments), status, extra)
+		if len(l.TSRemux) > 0 {
+			total := 0
+			for _, s := range l.TSRemux {
+				if s.Complete && s.PayloadSHA256 == s.SourcePayloadSHA256 {
+					total++
+				}
+			}
+			fmt.Fprintf(w, "  ts_remux layer=%s segments=%d matched=%d\n", l.Layer, len(l.TSRemux), total)
+		}
 		if l.TS != nil {
 			fmt.Fprintf(w, "  ts layer=%s packets=%d tracks=%d samples=%d keyframes=%d rtp_packets=%d rtp_seq_gaps=%d\n",
 				l.Layer, l.TS.Packets, l.TS.Tracks, l.TS.Samples, l.TS.Keyframes,

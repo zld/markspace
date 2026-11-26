@@ -25,6 +25,10 @@ type Sample struct {
 	Keyframe          bool
 	// Time is the sample's decode time in the track timescale after remuxing.
 	Time uint64
+	// Payload, when non-nil, is written instead of reading from the source.
+	// Transport streams scatter an access unit across packets, so their bytes
+	// are supplied directly; SourceOffset is then only diagnostic.
+	Payload []byte
 }
 
 // Track describes one output track and the samples to write.
@@ -267,6 +271,14 @@ func (w *Writer) WriteFragment(plan FragmentPlan) (int64, error) {
 		if int64(s.Size) > 64<<20 {
 			return 0, fault.New(fault.KindLimit, w.path, s.SourceOffset,
 				fmt.Sprintf("sample size %d exceeds the per-sample limit", s.Size)).Recover(false)
+		}
+		if s.Payload != nil {
+			if uint32(len(s.Payload)) != s.Size {
+				return 0, fault.New(fault.KindCorrupt, w.path, s.SourceOffset,
+					fmt.Sprintf("payload length %d does not match declared size %d", len(s.Payload), s.Size)).Recover(false)
+			}
+			data.Write(s.Payload)
+			continue
 		}
 		if _, err := w.src.Seek(s.SourceOffset, io.SeekStart); err != nil {
 			return 0, fault.Wrap(fault.KindCorrupt, w.path, s.SourceOffset, "seek source sample", err)

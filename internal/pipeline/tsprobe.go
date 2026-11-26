@@ -19,6 +19,19 @@ func (r *Runner) probeVideoTS(lr *LayerReport, pl *manifest.Playlist) {
 		if _, err := os.Stat(filepath.Join(r.opts.Root, filepath.FromSlash(tsRel))); err != nil {
 			continue
 		}
+		// Copy the TS rendition into fMP4 and prove the payload is unchanged;
+		// this exercises the container-only rewrite for transport streams too.
+		if sr, rerr := r.remuxTSFile(lr.Layer, tsRel); rerr != nil {
+			r.report.AddFault(rerr)
+			if fe, ok := fault.As(rerr); ok && !fe.Recoverable {
+				lr.Isolated = true
+				lr.IsolatedReason = "ts"
+				lr.IsolatedOffset = fe.Offset
+			}
+			continue
+		} else {
+			lr.TSRemux = append(lr.TSRemux, *sr)
+		}
 		check, err := r.probeTS(tsRel)
 		if err != nil {
 			r.report.AddFault(err)
