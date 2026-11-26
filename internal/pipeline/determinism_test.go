@@ -38,8 +38,8 @@ func runWithWorkers(t *testing.T, workers, n int) (string, []int) {
 		jobs <- Job{Segment: seg, PID: seg.PID, SegNumber: i}
 	}
 	close(jobs)
-	if err := pool.Run(context.Background(), jobs, func(r poolResult) {
-		merger.Add(r, placements[r.job.SegNumber])
+	if err := pool.Run(context.Background(), jobs, func(r PoolResult) {
+		merger.Add(r, placements[r.Job.SegNumber])
 	}); err != nil {
 		t.Fatal(err)
 	}

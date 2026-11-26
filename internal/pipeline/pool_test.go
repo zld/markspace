@@ -63,7 +63,7 @@ func TestPoolProcessesAllJobs(t *testing.T) {
 		}
 	}
 	close(jobs)
-	err = pool.Run(context.Background(), jobs, func(poolResult) { atomic.AddInt64(&got, 1) })
+	err = pool.Run(context.Background(), jobs, func(PoolResult) { atomic.AddInt64(&got, 1) })
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -85,7 +85,7 @@ func TestPoolCancellationPublishesNothingHalfDone(t *testing.T) {
 	var published int64
 	done := make(chan error, 1)
 	go func() {
-		done <- pool.Run(ctx, jobs, func(poolResult) { atomic.AddInt64(&published, 1) })
+		done <- pool.Run(ctx, jobs, func(PoolResult) { atomic.AddInt64(&published, 1) })
 	}()
 	time.Sleep(20 * time.Millisecond)
 	cancel()

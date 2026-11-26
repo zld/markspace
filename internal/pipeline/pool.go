@@ -26,11 +26,11 @@ type Job struct {
 	SegNumber int
 }
 
-// poolResult is the internal envelope carrying order plus converter output.
-type poolResult struct {
-	job    Job
-	result *audio.Result
-	err    error
+// PoolResult is the envelope carrying a job plus its converter output.
+type PoolResult struct {
+	Job    Job
+	Result *audio.Result
+	Err    error
 }
 
 // Processor converts one audio segment. *audio.Converter satisfies it; tests
@@ -64,10 +64,10 @@ func NewPool(workers, queueSize int, conv Processor) (*Pool, error) {
 // in-flight ffmpeg processes are killed and Run returns without invoking
 // handle for any unfinished job. The producer must close jobs when done.
 func (p *Pool) Run(ctx context.Context, jobs <-chan Job,
-	handle func(poolResult)) error {
+	handle func(PoolResult)) error {
 	var (
 		wg      sync.WaitGroup
-		results = make(chan poolResult, p.queueSize)
+		results = make(chan PoolResult, p.queueSize)
 	)
 	wg.Add(p.workers)
 	for i := 0; i < p.workers; i++ {
@@ -83,7 +83,7 @@ func (p *Pool) Run(ctx context.Context, jobs <-chan Job,
 					}
 					res, err := p.conv.Process(ctx, job.Segment)
 					select {
-					case results <- poolResult{job: job, result: res, err: err}:
+					case results <- PoolResult{Job: job, Result: res, Err: err}:
 					case <-ctx.Done():
 						return
 					}

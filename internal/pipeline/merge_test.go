@@ -7,11 +7,11 @@ import (
 	"rtpregress/internal/audio"
 )
 
-func makePoolResult(segNum int, pid uint16, startSample int64, id int) (poolResult, audio.Placement) {
+func makePoolResult(segNum int, pid uint16, startSample int64, id int) (PoolResult, audio.Placement) {
 	pcm := []byte{byte(id), 0xBB}
-	r := poolResult{
-		job: Job{Segment: audio.Segment{ID: id}, PID: pid, SegNumber: segNum},
-		result: &audio.Result{
+	r := PoolResult{
+		Job: Job{Segment: audio.Segment{ID: id}, PID: pid, SegNumber: segNum},
+		Result: &audio.Result{
 			SegmentID: id, Samples: 2, PCM: pcm, PCMSHA256: sha256.Sum256(pcm),
 		},
 	}

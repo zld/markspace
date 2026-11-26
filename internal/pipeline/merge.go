@@ -16,7 +16,7 @@ type MergedSegment struct {
 	StartSample int64
 	Samples     int
 	PCMSHA256   string
-	AAC         []byte
+	PCM         []byte
 }
 
 // Merger collects worker results and emits a total order independent of the
@@ -30,16 +30,16 @@ type Merger struct {
 func NewMerger() *Merger { return &Merger{} }
 
 // Add folds one completed pool result into the merge buffer.
-func (m *Merger) Add(r poolResult, placement audio.Placement) {
-	sum := sha256.Sum256(r.result.PCM)
+func (m *Merger) Add(r PoolResult, placement audio.Placement) {
+	sum := sha256.Sum256(r.Result.PCM)
 	m.items = append(m.items, MergedSegment{
-		SegNumber:   r.job.SegNumber,
-		PID:         r.job.PID,
-		StartNanos:  r.result.StartNanos,
+		SegNumber:   r.Job.SegNumber,
+		PID:         r.Job.PID,
+		StartNanos:  r.Result.StartNanos,
 		StartSample: placement.StartSample,
-		Samples:     r.result.Samples,
+		Samples:     r.Result.Samples,
 		PCMSHA256:   hex.EncodeToString(sum[:]),
-		AAC:         r.result.AAC,
+		PCM:         r.Result.PCM,
 	})
 }
 
