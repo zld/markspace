@@ -7,7 +7,6 @@ package replay
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"replayproof/internal/media"
 )
@@ -40,7 +39,6 @@ type Config struct {
 	DelayNS   int64
 	PreRoll   media.Rational
 	PostRoll  media.Rational
-	MaxDev    media.Rational
 	Selectors Selectors
 	ClockRate uint32
 	// OutDir receives input copies, clips, the index and the summary.
@@ -63,7 +61,6 @@ func DefaultConfig() Config {
 		// the two default windows cover the whole 4 s fixture program.
 		PreRoll:   media.FromMillis(1000),
 		PostRoll:  media.FromMillis(1200),
-		MaxDev:    media.FromMicros(11_112),
 		ClockRate: 90000,
 		Selectors: Selectors{"rotation": "mp4"},
 	}
@@ -110,6 +107,3 @@ func errCanceled(err error) error {
 	}
 	return err
 }
-
-// fmtDur renders a duration for log lines.
-func fmtDur(ns int64) string { return fmt.Sprintf("%dns", ns) }

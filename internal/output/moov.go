@@ -18,8 +18,6 @@ type outTrack struct {
 	stsd      []byte
 	width     uint16
 	height    uint16
-	channels  uint16
-	rate      uint32
 }
 
 // outSample is one sample to write, with times already shifted to clip zero.
@@ -67,8 +65,6 @@ func buildMoov(meta *parse.Meta, tracks []*sourceTrack) ([]byte, error) {
 			stsd:      ts.track.StsdRaw,
 			width:     ts.track.Width,
 			height:    ts.track.Height,
-			channels:  ts.track.ChannelCount,
-			rate:      ts.track.SampleRate,
 		}
 		if ot.trackID == 0 {
 			ot.trackID = uint32(len(outs) + 1)
