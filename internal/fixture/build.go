@@ -1,9 +1,11 @@
 package fixture
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+
+	"continuity/internal/media"
 )
 
 // Spec describes the generated sample tree and expected acceptance values.
@@ -33,7 +35,7 @@ type Spec struct {
 // fixture files and keeps every generated input below root.
 func Build(caseName, root string) (*Spec, error) {
 	if root == "" {
-		return nil, fmt.Errorf("fixture root is required")
+		return nil, media.NewFault(media.PhaseFixture, media.CodeInvalidArgument, "fixture root is required")
 	}
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return nil, err
@@ -48,7 +50,8 @@ func Build(caseName, root string) (*Spec, error) {
 	case "boundary":
 		err = buildBoundary(s)
 	default:
-		return nil, fmt.Errorf("unknown fixture case %q", caseName)
+		return nil, media.NewFault(media.PhaseFixture, media.CodeInvalidArgument,
+			"unknown fixture case "+strconv.Quote(caseName))
 	}
 	if err != nil {
 		return nil, err
