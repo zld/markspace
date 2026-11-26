@@ -26,6 +26,9 @@ type SegmentResult struct {
 	Digests     digest.Digests
 	Keyframes   []index.Keyframe
 	Incomplete  bool
+	// Change classifies this run's digest versus the checkpointed one. A
+	// fresh segment with no prior entry is reported as ChangeContent.
+	Change digest.ChangeKind
 }
 
 // Checkpoint is the on-disk resume state, written via temp-file + rename.
@@ -122,34 +125,14 @@ func (p *Pool) Process(seg *ingest.Segment) (SegmentResult, error) {
 		}, nil
 	}
 
-	hasher := digest.NewHasher()
-	scanner := index.NewScanner(p.epoch)
-	for i := range seg.Records {
-		rec := &seg.Records[i]
-		hasher.AddPacket(rec.Raw[:], rec.Payload())
-		scanner.Feed(rec)
-	}
-	d := hasher.Sum()
-	kfs := scanner.Frames()
-	incomplete := false
-	for _, kf := range kfs {
-		if !kf.Complete {
-			incomplete = true
-			break
-		}
-	}
-	rec := index.SegmentRecord{
-		SegmentID: seg.ID, StartOffset: seg.StartOffset, EndOffset: seg.EndOffset,
-		Packets: len(seg.Records), RawHash: d.Raw, ContentHash: d.Content,
-		Keyframes: kfs, Incomplete: incomplete,
-	}
-	sidecar, err := index.WriteSidecar(p.dir, p.chkSource(seg.ID), rec)
+	result, rec, err := p.computeSegment(seg, nil)
 	if err != nil {
 		return SegmentResult{}, err
 	}
-	result := SegmentResult{
-		SegmentID: seg.ID, StartOffset: seg.StartOffset, EndOffset: seg.EndOffset,
-		Packets: len(seg.Records), Digests: d, Keyframes: kfs, Incomplete: incomplete,
+	d := result.Digests
+	sidecar, err := index.WriteSidecar(p.dir, p.chkSource(seg.ID), rec)
+	if err != nil {
+		return SegmentResult{}, err
 	}
 	p.mu.Lock()
 	p.done[seg.ID] = CompletedItem{
@@ -170,8 +153,10 @@ func (p *Pool) Process(seg *ingest.Segment) (SegmentResult, error) {
 
 // computeSegment performs the CPU-bound, side-effect-free work: two-tier
 // hashing and keyframe scanning. It touches no shared pool state and no disk,
-// which is what makes it safe to fan out across the bounded worker pool.
-func (p *Pool) computeSegment(seg *ingest.Segment) (SegmentResult, index.SegmentRecord, error) {
+// which is what makes it safe to fan out across the bounded worker pool. When
+// prior is the checkpointed digest for this segment, the result's Change field
+// distinguishes an unchanged segment, a remux and a real content edit.
+func (p *Pool) computeSegment(seg *ingest.Segment, prior *digest.Digests) (SegmentResult, index.SegmentRecord, error) {
 	hasher := digest.NewHasher()
 	scanner := index.NewScanner(p.epoch)
 	for i := range seg.Records {
@@ -180,6 +165,10 @@ func (p *Pool) computeSegment(seg *ingest.Segment) (SegmentResult, index.Segment
 		scanner.Feed(rec)
 	}
 	d := hasher.Sum()
+	change := digest.ChangeContent
+	if prior != nil {
+		change = d.Classify(*prior)
+	}
 	kfs := scanner.Frames()
 	incomplete := false
 	for _, kf := range kfs {
@@ -196,6 +185,7 @@ func (p *Pool) computeSegment(seg *ingest.Segment) (SegmentResult, index.Segment
 	result := SegmentResult{
 		SegmentID: seg.ID, StartOffset: seg.StartOffset, EndOffset: seg.EndOffset,
 		Packets: len(seg.Records), Digests: d, Keyframes: kfs, Incomplete: incomplete,
+		Change: change,
 	}
 	return result, rec, nil
 }
@@ -238,7 +228,7 @@ func (p *Pool) ProcessBatch(segs []*ingest.Segment) ([]SegmentResult, error) {
 				}
 			}
 			defer atomic.AddInt32(&p.inFlight, -1)
-			result, rec, cerr := p.computeSegment(s)
+			result, rec, cerr := p.computeSegment(s, nil)
 			if cerr != nil {
 				setErr(cerr)
 				return

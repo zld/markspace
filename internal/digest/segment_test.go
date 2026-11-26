@@ -39,3 +39,32 @@ func TestHasherDeterministic(t *testing.T) {
 		t.Fatal("identical input must yield identical digests")
 	}
 }
+
+func TestClassifyDistinguishesChangeKinds(t *testing.T) {
+	// Baseline: one packet with a header byte and a payload.
+	base := func(header, payload byte) Digests {
+		h := NewHasher()
+		p := make([]byte, 188)
+		p[0] = 0x47
+		p[3] = header  // transport header region (CC)
+		p[50] = payload // demuxed payload region
+		h.AddPacket(p, p[4:])
+		return h.Sum()
+	}
+	stored := base(0x00, 0x77)
+
+	// Identical input => unchanged.
+	if got := base(0x00, 0x77).Classify(stored); got != ChangeUnchanged {
+		t.Fatalf("identical input classified as %v", got)
+	}
+	// Header-only change (CC rewrite) with same payload => encapsulation only.
+	encap := base(0x05, 0x77)
+	if got := encap.Classify(stored); got != ChangeEncapsulationOnly {
+		t.Fatalf("remux classified as %v, want encapsulation-only", got)
+	}
+	// Payload change => real content change requiring dependent recompute.
+	content := base(0x00, 0x99)
+	if got := content.Classify(stored); got != ChangeContent {
+		t.Fatalf("payload edit classified as %v, want content", got)
+	}
+}

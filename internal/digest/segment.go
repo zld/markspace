@@ -39,6 +39,45 @@ func (d Digests) ContentEqual(o Digests) bool {
 	return d.Content == o.Content
 }
 
+// ChangeKind classifies how a freshly computed digest relates to a previously
+// indexed one. This is what lets the planner treat a remux differently from a
+// real source-content edit.
+type ChangeKind uint8
+
+const (
+	// ChangeUnchanged: neither transport bytes nor demuxed content moved.
+	ChangeUnchanged ChangeKind = iota
+	// ChangeEncapsulationOnly: content hashes match but the raw transport
+	// bytes differ (e.g. a remux, restuffing or CC/PCR rewrite).
+	ChangeEncapsulationOnly
+	// ChangeContent: demuxed content changed, so the asset and anything that
+	// depends on its keyframes must be recomputed.
+	ChangeContent
+)
+
+// String returns a stable lowercase name used in logs and sidecars.
+func (k ChangeKind) String() string {
+	switch k {
+	case ChangeEncapsulationOnly:
+		return "encapsulation-only"
+	case ChangeContent:
+		return "content"
+	default:
+		return "unchanged"
+	}
+}
+
+// Classify compares a fresh digest against the stored one.
+func (d Digests) Classify(stored Digests) ChangeKind {
+	if d.Equal(stored) {
+		return ChangeUnchanged
+	}
+	if d.ContentEqual(stored) {
+		return ChangeEncapsulationOnly
+	}
+	return ChangeContent
+}
+
 // Hasher incrementally builds both hashes while a segment streams through.
 // It never retains the packet bodies, only the rolling hash state.
 type Hasher struct {

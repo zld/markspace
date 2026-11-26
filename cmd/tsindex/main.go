@@ -269,8 +269,25 @@ func processAsset(f demoFlags, budget *plan.Budget, run *assetRun, newAssetBudge
 	// cooperative interruption at asset boundaries.
 	pool := worker.NewPool(budget.Workers, f.out, run.name, psi.Current(), prior, 0)
 	hadPrior := prior != nil && len(prior.Completed) > 0
-	processedAny := false
 
+	// Stream complete segments and submit them in worker-sized windows. At
+	// most `workers` segments are ever resident at once, so the live working
+	// set stays inside the budget the planner admitted rather than buffering
+	// the whole asset. PSI is fed as each segment's packets arrive.
+	window := make([]*ingest.Segment, 0, budget.Workers)
+	hasReused := false
+	hasFresh := false
+	segmentCount := 0
+	flush := func() error {
+		if len(window) == 0 {
+			return nil
+		}
+		if _, err := pool.ProcessBatch(window); err != nil {
+			return err
+		}
+		window = window[:0]
+		return nil
+	}
 	for {
 		seg, err := sr.NextSegment(budget.PacketsPerSegment)
 		if errors.Is(err, io.EOF) {
@@ -279,32 +296,44 @@ func processAsset(f demoFlags, budget *plan.Budget, run *assetRun, newAssetBudge
 		if err != nil {
 			return err
 		}
-		// PSI is fed first so the segment's keyframe scan sees the epoch.
 		for i := range seg.Records {
 			psi.Feed(&seg.Records[i])
 		}
-		pool.SetEpoch(psi.Current())
-		wasDone := pool.IsDone(seg.ID)
-		if _, err := pool.Process(seg); err != nil {
-			return err
-		}
-		processedAny = true
-		// Asset-level delta. On resume the headline counters cap at one each:
-		// they evidence that a checkpointed asset was reused and a new asset
-		// recomputed across the resume boundary, rather than restate totals.
-		if wasDone {
-			run.reused = 1
-			if !(isResume && delta.Reused >= 1) {
-				delta.Reused++
-			}
+		if pool.IsDone(seg.ID) {
+			hasReused = true
 		} else {
-			run.recomputed = 1
-			if !(isResume && delta.Recomputed >= 1) {
-				delta.Recomputed++
+			hasFresh = true
+		}
+		window = append(window, seg)
+		segmentCount++
+		if len(window) >= budget.Workers {
+			pool.SetEpoch(psi.Current())
+			if err := flush(); err != nil {
+				return err
 			}
-			if !isResume && *newAssetBudget > 0 {
-				*newAssetBudget--
-			}
+		}
+	}
+	pool.SetEpoch(psi.Current())
+	if err := flush(); err != nil {
+		return err
+	}
+	processedAny := segmentCount > 0
+	// Asset-level delta. On resume the headline counters cap at one each:
+	// they evidence that a checkpointed asset was reused and a new asset
+	// recomputed across the resume boundary, rather than restate totals.
+	if hasReused {
+		run.reused = 1
+		if !(isResume && delta.Reused >= 1) {
+			delta.Reused++
+		}
+	}
+	if hasFresh {
+		run.recomputed = 1
+		if !(isResume && delta.Recomputed >= 1) {
+			delta.Recomputed++
+		}
+		if !isResume && *newAssetBudget > 0 {
+			*newAssetBudget--
 		}
 	}
 	// Drain any trailing packets (damage layers) through PSI/fault tracking
