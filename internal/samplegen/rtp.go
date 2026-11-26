@@ -40,7 +40,7 @@ func BuildRTPStream(fault string) ([]byte, error) {
 	seq := uint16(4000)
 	for i := 0; i < 6; i++ {
 		if fault == "rtp-missing" && i == 3 {
-			seq += 2 // skip one sequence number
+			seq++ // skip exactly the next expected sequence number
 		}
 		pkt := &rtp.Packet{
 			Header: rtp.Header{
