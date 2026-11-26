@@ -44,13 +44,20 @@ func FromFiles(f Files) (*Result, error) {
 		cues = append(cues, tr)
 		cueIssues.Add(issues...)
 	}
+	var notes []string
+	var extraSources []string
 	if f.Timecode != "" {
 		data, err := os.ReadFile(f.Timecode)
 		if err != nil {
 			return nil, fmt.Errorf("read timecode: %w", err)
 		}
-		_, issues := clock.ParseTimecodeFile(f.Timecode, string(data))
+		entries, issues := clock.ParseTimecodeFile(f.Timecode, string(data))
+		extraSources = append(extraSources, f.Timecode)
 		cueIssues.Add(issues...)
+		for _, e := range entries {
+			notes = append(notes, fmt.Sprintf("line %d: %s %s -> ticks=%d frame_error=%d",
+				e.Line, e.Rate, e.Text, int64(e.Ticks), e.FrameDiff))
+		}
 	}
 	var mp4 *stream.MP4Result
 	if f.MP4 != "" {
@@ -72,5 +79,9 @@ func FromFiles(f Files) (*Result, error) {
 	if name == "" {
 		name = "check"
 	}
-	return Analyze(Spec{Name: name, Window: f.Window, Cues: cues, CueIssues: cueIssues, MP4: mp4, RTP: rtp}), nil
+	res := Analyze(Spec{Name: name, Window: f.Window, Cues: cues, CueIssues: cueIssues, MP4: mp4, RTP: rtp})
+	res.Sources = append(res.Sources, extraSources...)
+	res.Notes = append(res.Notes, notes...)
+	Finalize(res)
+	return res, nil
 }

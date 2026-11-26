@@ -146,8 +146,8 @@ func (t *Timeline) Push(ev Event) {
 	if ev.Time < horizon {
 		t.unrecov++
 		it := issue.New(issue.LateUnrecoverable, ev.Input,
-			fmt.Sprintf("%s %s at %s is older than watermark horizon %s (late window %s)",
-				ev.Kind, ev.Ref, ev.Time, horizon, t.lateWindow)).
+			fmt.Sprintf("%s %s at %s is older than watermark horizon %s (watermark %s, late window %s)",
+				ev.Kind, ev.Ref, ev.Time, horizon, t.maxSeen, t.lateWindow)).
 			WithLine(ev.Line).WithByte(ev.Offset).WithPacket(ev.Packet).WithRef(ev.Ref)
 		t.issues.Add(it)
 		return
@@ -240,6 +240,6 @@ func (t *Timeline) Counters() (admitted, recomputed, unrecoverable, sealed int) 
 
 // DescribeReplay formats a replay record without wall-clock data.
 func DescribeReplay(r Replay) string {
-	return fmt.Sprintf("late %s %s at %s (horizon %s) recomputed tail [%d,%d) = %d intervals",
-		r.Event.Kind, r.Event.Ref, r.Event.Time, r.Horizon, r.From, r.To, r.Recomputed)
+	return fmt.Sprintf("late %s %s at %s (watermark %s, horizon %s) replayed tail [%d,%d) = %d intervals",
+		r.Event.Kind, r.Event.Ref, r.Event.Time, r.PrevMax, r.Horizon, r.From, r.To, r.Recomputed)
 }
