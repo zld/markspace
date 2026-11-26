@@ -1,0 +1,14 @@
+# Local build outputs
+/mediapipeline
+/mediapipeline.exe
+*.test
+*.out
+
+# Demo working directories are normally created under mktemp/TMPDIR.
+/work/
+/tmp/
+
+# OS/editor files
+.DS_Store
+.idea/
+.vscode/
