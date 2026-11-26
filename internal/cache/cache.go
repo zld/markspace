@@ -14,12 +14,14 @@ type Counters struct {
 	PackagingMisses        int `json:"packaging_misses"`
 	PackagingInvalidations int `json:"packaging_invalidations"`
 	IndexInvalidations     int `json:"index_invalidations"`
+	PathReplacements       int `json:"path_replacements"`
 }
 
 type Cache struct {
 	mu sync.Mutex
 
 	decoded map[string]image.Image
+	pathFP  map[string]string
 
 	packagingFingerprint string
 	packagingTable       *source.SampleTable
@@ -29,7 +31,21 @@ type Cache struct {
 }
 
 func New() *Cache {
-	return &Cache{decoded: make(map[string]image.Image)}
+	return &Cache{decoded: make(map[string]image.Image), pathFP: make(map[string]string)}
+}
+
+// ObservePath records same-path content identity changes for reporting. The
+// path is never used as the decode cache key.
+func (c *Cache) ObservePath(path, contentFP string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	old, seen := c.pathFP[path]
+	c.pathFP[path] = contentFP
+	if seen && old != contentFP {
+		c.Counters.PathReplacements++
+		return true
+	}
+	return false
 }
 
 // GetDecode returns a previously decoded frame only when its content

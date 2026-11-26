@@ -9,6 +9,7 @@ import (
 	"image/color"
 	"image/png"
 	"math"
+	"math/rand"
 	"os"
 	"path/filepath"
 
@@ -33,10 +34,23 @@ func PixelRGB(globalPixel int) (uint8, uint8, uint8) {
 
 func BuildFramePNG(frame, width, height int) ([]byte, error) {
 	img := image.NewRGBA(image.Rect(0, 0, width, height))
+	n := width * height
+	parity := make([]byte, n)
+	positions := make([]int, n)
+	for i := range positions {
+		positions[i] = i
+	}
+	// Exactly half of the pixels use the +1 values, preserving the required
+	// aggregate mean while giving each frame a different content hash.
+	rng := rand.New(rand.NewSource(int64(frame + 1)))
+	rng.Shuffle(n, func(i, j int) { positions[i], positions[j] = positions[j], positions[i] })
+	for i := 0; i < n/2; i++ {
+		parity[positions[i]] = 1
+	}
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
-			global := frame*width*height + y*width + x
-			r, g, b := PixelRGB(global)
+			p := int(parity[y*width+x])
+			r, g, b := PixelRGB(p)
 			img.SetRGBA(x, y, color.RGBA{R: r, G: g, B: b, A: 255})
 		}
 	}

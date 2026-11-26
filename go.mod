@@ -1,6 +1,6 @@
 module mediarepair
 
-go 1.24.0
+go 1.23.12
 
 require (
 	github.com/abema/go-mp4 v1.7.4

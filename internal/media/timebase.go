@@ -2,6 +2,7 @@ package media
 
 import (
 	"errors"
+	"fmt"
 	"math"
 )
 
@@ -33,6 +34,10 @@ func MustRational(num, den int64) Rational {
 		panic(err)
 	}
 	return r
+}
+
+func (r Rational) String() string {
+	return fmt.Sprintf("%d/%d", r.Num, r.Den)
 }
 
 func gcd(a, b int64) int64 {

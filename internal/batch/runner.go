@@ -61,16 +61,24 @@ func Run(opts Options) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	resumed := cp != nil
-	if cp != nil {
-		if cp.InputFingerprint != inputFP {
+	resumed := cp != nil && !cp.Complete
+	if cp != nil && cp.InputFingerprint != inputFP {
+		if !cp.Complete {
 			return nil, media.E(media.CodeInputChanged, "batch.resume", nil).
 				WithFile("manifest.json").WithOffset(-1)
 		}
+		// A completed revision may be superseded. Its package history stays
+		// untouched, but block/index progress starts over.
+		cp = nil
+	}
+	if cp != nil {
 		if opts.BlockSize > 0 && cp.BlockSize != opts.BlockSize {
 			return nil, media.E(media.CodeInvalidArgument, "batch.block_size", nil)
 		}
 		blockSize = cp.BlockSize
+	}
+	if opts.Cache != nil {
+		opts.Cache.RequireIndexRebuild(inputFP)
 	}
 
 	if err := source.ValidateFrames(root, m); err != nil {
@@ -139,6 +147,9 @@ func Run(opts Options) (*Result, error) {
 	for i, fr := range m.Frames {
 		blockIndex := i / blockSize
 		contentFP := "content:" + fr.SHA256
+		if opts.Cache != nil {
+			opts.Cache.ObservePath(fr.Path, contentFP)
+		}
 		var img image.Image
 		if opts.Cache != nil {
 			if cached, ok := opts.Cache.GetDecode(contentFP); ok {
