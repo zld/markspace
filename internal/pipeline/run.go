@@ -310,7 +310,7 @@ func Run(opts Options) (*Result, error) {
 
 	// Write the derived artifacts (index, evidence, timeline, report).
 	res.timelineSum = DigestBytes(mustMarshal(tl))
-	outArtifacts, metrics, err := writeDerived(opts, res, records, tl, idx, switches)
+	outArtifacts, metrics, err := writeDerived(opts, res, records, tl, idx, switches, plans)
 	if err != nil {
 		return nil, err
 	}

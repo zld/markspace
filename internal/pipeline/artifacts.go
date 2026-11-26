@@ -119,7 +119,7 @@ func writeArtifact(outDir, name string, data []byte) ([]ArtifactRecord, error) {
 
 // writeDerived emits the index, timeline, evidence and report artifacts,
 // returning their records plus the metrics.
-func writeDerived(opts Options, res *Result, records []Record, tl *repair.Timeline, idx *index.Index, switches []cmaf.Event) ([]ArtifactRecord, *evidence.Metrics, error) {
+func writeDerived(opts Options, res *Result, records []Record, tl *repair.Timeline, idx *index.Index, switches []cmaf.Event, plans map[string]map[uint32]WritePlan) ([]ArtifactRecord, *evidence.Metrics, error) {
 	var artifacts []ArtifactRecord
 
 	idxBytes, err := cmaf.MarshalDeterministic(idx)
@@ -166,13 +166,18 @@ func writeDerived(opts Options, res *Result, records []Record, tl *repair.Timeli
 		artifacts = append(artifacts, a...)
 	}
 
-	// A digest over the input fragment bytes, so repeat runs can assert
-	// byte-for-byte equality of the media they consumed.
+	// A digest over the written fragment artifacts (after any tfdt patch), so
+	// repeat runs assert byte-for-byte equality of the media they emit, not
+	// merely of the input they consumed.
 	h := sha256.New()
 	for _, rec := range records {
+		written, err := buildRepairedFragment(rec, plans[rec.SourceID+"\x00"+rec.Fragment.Path])
+		if err != nil {
+			return nil, nil, err
+		}
 		h.Write([]byte(rec.SourceID))
 		h.Write([]byte{0})
-		h.Write(rec.Raw)
+		h.Write(written)
 	}
 	res.MediaSum = hex.EncodeToString(h.Sum(nil))
 

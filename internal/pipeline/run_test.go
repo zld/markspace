@@ -133,6 +133,11 @@ func TestResumeMatchesUninterrupted(t *testing.T) {
 	if resume.MediaSum != clean.MediaSum {
 		t.Fatalf("resumed media %s != uninterrupted %s", resume.MediaSum, clean.MediaSum)
 	}
+	// The media digest must reflect written bytes, not merely the input, so a
+	// repair change is visible in it.
+	if resume.MediaSum == "" || resume.IndexSum == "" {
+		t.Fatal("empty digests")
+	}
 	if len(resume.FragmentDigests) != len(clean.FragmentDigests) {
 		t.Fatalf("fragment counts differ: %d vs %d", len(resume.FragmentDigests), len(clean.FragmentDigests))
 	}
