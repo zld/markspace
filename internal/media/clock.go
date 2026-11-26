@@ -68,6 +68,10 @@ func (r Rational) String() string {
 }
 
 func bigRat(r Rational) *big.Rat {
+	if r.D == 0 {
+		// The zero value is a convenient zero duration in structs.
+		return new(big.Rat).SetInt64(r.N)
+	}
 	return new(big.Rat).SetFrac64(r.N, r.D)
 }
 

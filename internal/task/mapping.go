@@ -14,7 +14,7 @@ func later(a, b media.Rational) media.Rational {
 }
 
 func buildManifestRequest(in Input, contentSHA string, rep *analyze.Report) manifest.Request {
-	var duration media.Rational
+	var duration = media.Zero
 	tracks := make([]manifest.TrackInput, 0, len(rep.Tracks))
 	for _, t := range rep.Tracks {
 		if t.LastEnd.D > 0 {

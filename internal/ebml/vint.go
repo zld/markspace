@@ -199,5 +199,8 @@ func EncodeID(id uint32) []byte {
 	if id <= 0xffff {
 		return []byte{byte(id >> 8), byte(id)}
 	}
+	if id <= 0xffffff {
+		return []byte{byte(id >> 16), byte(id >> 8), byte(id)}
+	}
 	return []byte{byte(id >> 24), byte(id >> 16), byte(id >> 8), byte(id)}
 }
