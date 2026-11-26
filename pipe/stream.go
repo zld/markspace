@@ -13,14 +13,18 @@ import (
 
 // Record is one bounded-pipeline work item.
 type Record struct {
-	Cursor  int64
-	Kind    string
-	Source  string
-	Payload []byte
+	Cursor    int64
+	Kind      string
+	Source    string
+	Payload   []byte
+	SizeBytes int64
 }
 
 // Size returns the accounted byte footprint of a record.
 func (r Record) Size() int64 {
+	if r.SizeBytes > 0 {
+		return r.SizeBytes
+	}
 	if len(r.Payload) > 0 {
 		return int64(len(r.Payload))
 	}
@@ -31,6 +35,7 @@ func (r Record) Size() int64 {
 type Config struct {
 	Queue       int
 	MemoryBytes int64
+	Budget      *Budget
 }
 
 // Handler processes one record. Returning an error aborts the stream and keeps
@@ -138,10 +143,14 @@ func NewStream(cfg Config, handler Handler) *Stream {
 		cfg.Queue = 1
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	budget := cfg.Budget
+	if budget == nil {
+		budget = NewBudget(cfg.MemoryBytes)
+	}
 	return &Stream{
 		cfg:     cfg,
 		handler: handler,
-		budget:  NewBudget(cfg.MemoryBytes),
+		budget:  budget,
 		jobs:    make(chan envelope, cfg.Queue),
 		ctx:     ctx,
 		cancel:  cancel,
