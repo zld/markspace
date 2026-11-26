@@ -14,6 +14,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -35,7 +36,7 @@ const (
 
 func main() { os.Exit(dispatch(os.Args[1:], os.Stdout, os.Stderr)) }
 
-func dispatch(args []string, stdout, stderr *os.File) int {
+func dispatch(args []string, stdout, stderr io.Writer) int {
 	if len(args) < 1 {
 		usage(stderr)
 		return exitUsage
@@ -87,14 +88,14 @@ func dispatch(args []string, stdout, stderr *os.File) int {
 	}
 }
 
-func usage(w *os.File) {
+func usage(w io.Writer) {
 	fmt.Fprintln(w, "usage:")
 	fmt.Fprintln(w, "  continuity demo --case normal|damaged|recover --seed N")
 	fmt.Fprintln(w, "  continuity run --manifest <m3u8|mpd> --events <file> --arrivals <file>")
 }
 
 // runPipeline executes manifest -> parse -> timebase -> kernel -> report.
-func runPipeline(maniPath, eventsPath, arrivalsPath string, stdout, stderr *os.File) int {
+func runPipeline(maniPath, eventsPath, arrivalsPath string, stdout, stderr io.Writer) int {
 	if err := adapter.RegisterV1("mp4", adapter.MP4Parser{}); err != nil {
 		fmt.Fprintln(stderr, "error:", err)
 		return exitInput
@@ -203,7 +204,7 @@ func readEvents(path string) ([]core.Event, error) {
 }
 
 // fail prints the error and maps it to an exit code.
-func fail(stderr *os.File, err error) int {
+func fail(stderr io.Writer, err error) int {
 	var ce *core.Error
 	if errors.As(err, &ce) {
 		fmt.Fprintln(stderr, "error", ce.Error())

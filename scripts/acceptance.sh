@@ -31,7 +31,8 @@ for tok in 'segment\[2\]' 'byte=24' 'truncated_box'; do
   echo "$err" | grep -q "$tok" || { echo "FAIL damaged: missing $tok in: $err"; exit 1; }
 done
 # go run masks exit codes; it must still surface "exit status 2"
-go run ./cmd/continuity demo --case damaged --seed 17 2>&1 >/dev/null | grep -q 'exit status 2' \
+grout=$(go run ./cmd/continuity demo --case damaged --seed 17 2>&1 >/dev/null || true)
+echo "$grout" | grep -q 'exit status 2' \
   || { echo "FAIL damaged: go run did not report exit status 2"; exit 1; }
 
 echo "== case recover (twice, deterministic) =="
