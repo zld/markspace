@@ -150,13 +150,16 @@ func buildMoov(tracks []Track, chunkOffsets [][]uint64) []byte {
 	return Container("moov", kids...)
 }
 
-func movieDuration(tracks []Track) uint64 {
+// movieDurationTicks returns the longest track duration in the movie
+// timescale, rounding up so the last sample is fully covered.
+func movieDurationTicks(tracks []Track) uint64 {
 	var max uint64
 	for _, tr := range tracks {
-		var d uint64
-		for _, s := range tr.Samples {
-			d += uint64(s.Duration)
+		if tr.Timescale == 0 {
+			continue
 		}
+		dTicks := trackDuration(tr)
+		d := (dTicks*1000 + uint64(tr.Timescale) - 1) / uint64(tr.Timescale)
 		if d > max {
 			max = d
 		}
@@ -169,7 +172,7 @@ func buildMvhd(tracks []Track) []byte {
 	p = append(p, U32(0)...) // creation
 	p = append(p, U32(0)...) // modification
 	p = append(p, U32(1000)...)
-	p = append(p, U32(uint32(movieDuration(tracks)))...)
+	p = append(p, U32(uint32(movieDurationTicks(tracks)))...)
 	p = append(p, U32(0x00010000)...) // rate 1.0
 	p = append(p, I16(0x0100)...)     // volume 1.0
 	p = append(p, Zeros(2)...)

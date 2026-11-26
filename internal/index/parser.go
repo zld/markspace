@@ -1,6 +1,8 @@
 package index
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"io"
 	"os"
 	"sort"
@@ -97,6 +99,13 @@ func (p *parser) walk() *timebase.Error {
 			p.moofBase = append(p.moofBase, moofInfo{offset: off, size: size})
 		case "mdat":
 			p.media.Fragmented = p.media.Fragmented || len(p.moofBase) > 0
+		default:
+			// Hash the payload of every other top-level box so brand or
+			// free-space edits are visible in the envelope digest even when
+			// no sample byte changes.
+			if e := p.hashTopPayload(typ, off, size, headerSize); e != nil {
+				return e
+			}
 		}
 		off += size
 	}
@@ -111,6 +120,32 @@ func (p *parser) walk() *timebase.Error {
 		}
 	}
 	return p.finishTracks()
+}
+
+// hashTopPayload computes a short payload digest for non-media top-level
+// boxes, bounded by the per-box limit.
+func (p *parser) hashTopPayload(typ string, off, size, hdr int64) *timebase.Error {
+	plen := size - hdr
+	if plen <= 0 {
+		return nil
+	}
+	if uint64(plen) > p.limits.box() {
+		return timebase.Newf(timebase.CodeByteLimit, 0, off,
+			"box %q payload %d bytes exceeds per-box limit %d", typ, plen, p.limits.box())
+	}
+	if e := p.addBytes(uint64(plen), off); e != nil {
+		return e
+	}
+	buf := make([]byte, plen)
+	if _, err := p.f.ReadAt(buf, off+hdr); err != nil {
+		return timebase.Fail(timebase.CodeBoxTruncated, 0, off).Wrap(err, "read %s payload", typ)
+	}
+	sum := sha256.Sum256(buf)
+	idx := len(p.media.Boxes) - 1
+	if idx >= 0 {
+		p.media.Boxes[idx].PayloadSum = hex.EncodeToString(sum[:8])
+	}
+	return nil
 }
 
 func (p *parser) record(depth int, typ string, off int64, size, hdr uint64, payloadSum string) {

@@ -213,3 +213,23 @@ func indexOf(s, sub string) int {
 	}
 	return -1
 }
+
+func TestEnvelopeDigestDetectsBrandEdit(t *testing.T) {
+	base := fixtures.BuildTracks()
+	opts := mp4box.DefaultOpts()
+	opts.MajorBrand = "mp42"
+	a, err := ParseFile(writeFixture(t, base, mp4box.DefaultOpts()), DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := ParseFile(writeFixture(t, base, opts), DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.ContentDigest != b.ContentDigest {
+		t.Fatal("brand edit changed the sample content digest")
+	}
+	if a.EnvelopeDigest == b.EnvelopeDigest {
+		t.Fatal("brand edit did not change the envelope digest")
+	}
+}
