@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"os"
-	"strconv"
 
 	"mediamerge/internal/fault"
 	"mediamerge/internal/merge"
@@ -80,8 +79,8 @@ func commitSegments(cfg Config, m *report.Metrics, res *merge.Result) error {
 		// Simulate an interrupt after the requested number of staged steps:
 		// the journal persists but no commit record is written.
 		if cfg.InterruptAfter > 0 && i+1 == cfg.InterruptAfter {
-			return fault.New(fault.StageTxn, fault.KindState, cfg.OutDir,
-				"simulated interrupt after staging "+strconv.Itoa(cfg.InterruptAfter)+" segments")
+			m.MarkInterrupted()
+			return ErrInterrupted
 		}
 	}
 	manifest, err := j.Commit(segs, len(allCues))

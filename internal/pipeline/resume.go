@@ -61,9 +61,15 @@ func Resume(outDir string) (*report.Metrics, error) {
 	}
 	m.Replayed = 0 // journaled steps were not re-executed, only completed
 	m.DuplicateCues = st.DuplicateCues
+	m.ResumeReport = true
 	m.FromManifest(manifest, 0)
 	m.RoundtripOK, m.RoundtripTotal = cueCountRecovery, cueCountRecovery
 	m.Keyframe(8, 8)
+	matches, total, err := VerifyResumeHashes(outDir)
+	if err != nil {
+		return m, err
+	}
+	m.HashMatch(matches, total)
 	return m, nil
 }
 

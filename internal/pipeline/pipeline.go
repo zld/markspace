@@ -19,6 +19,11 @@ const (
 	PolicyMarkGaps = string(merge.PolicyMarkGaps)
 )
 
+// ErrInterrupted marks the deliberately simulated crash used by the recovery
+// scenario. It is a valid terminal state, not a rule rejection or IO failure.
+var ErrInterrupted = fault.New(fault.StageTxn, fault.KindState, "",
+	"simulated interrupt: segments staged but not committed")
+
 // Config controls one verify run.
 type Config struct {
 	Case           string
@@ -105,6 +110,12 @@ func Run(cfg Config) (*report.Metrics, error) {
 
 	// --- segment, hash and transactionally commit ---
 	if err := commitSegments(cfg, m, res); err != nil {
+		// A simulated interrupt leaves the journal intact for resume and is
+		// not a rollback.
+		if err == ErrInterrupted {
+			m.ManifestChanged = false
+			return m, err
+		}
 		m.Rollbacks = 1
 		if reason := rollbackReason(cfg.OutDir); reason != "" {
 			m.RollbackReason = reason
