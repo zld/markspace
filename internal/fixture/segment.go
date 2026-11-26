@@ -49,8 +49,8 @@ func BuildSegment(spec SegmentSpec) ([]byte, error) {
 		return nil, err
 	}
 
-	traf := box("traf", concat(tfhd, tfdtBytes, trunBytes))
-	moof := box("moof", concat(mfhd, traf))
+	traf := box("traf", concat(box("tfhd", tfhd), box("tfdt", tfdtBytes), box("trun", trunBytes)))
+	moof := box("moof", concat(box("mfhd", mfhd), traf))
 	ftypBytes, err := payload(ftyp)
 	if err != nil {
 		return nil, err

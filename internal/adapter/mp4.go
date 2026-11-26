@@ -45,6 +45,11 @@ func (MP4Parser) ParseSegment(r io.ReadSeeker, source string) (*SegmentInfo, err
 				return nil, core.NewError(core.StageParse, core.CodeTruncatedBox, source, 0,
 					info.MoofOffset, "moof payload", err)
 			}
+		case mp4.BoxTypeTraf():
+			if _, err := h.Expand(walk); err != nil {
+				return nil, core.NewError(core.StageParse, core.CodeTruncatedBox, source, 0,
+					int64(h.BoxInfo.Offset), "traf payload", err)
+			}
 		case mp4.BoxTypeTfhd():
 			box, _, err := h.ReadPayload()
 			if err != nil {
