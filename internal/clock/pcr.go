@@ -78,16 +78,26 @@ func (u *RTPUnwrapper) Unwrap(ts uint32, offset int64) (int64, error) {
 }
 
 // DriftEstimator correlates the RTP media clock against the PCR clock and
-// reports the relative rate error in parts per million.
+// reports the relative rate error in parts per million. The two clocks have
+// independent origins, so the first anchor pair defines a common zero and only
+// the relative deltas from it are regressed; absolute offsets never enter it.
 type DriftEstimator struct {
 	sumX, sumY, sumXY, sumXX float64
 	n                        int
+	baseRTP, basePCR         int64
+	hasBase                  bool
 }
 
 // Add records one (RTP nanos, PCR nanos) anchor pair.
 func (d *DriftEstimator) Add(rtpNanos, pcrNanos int64) {
-	x := float64(rtpNanos)
-	y := float64(pcrNanos)
+	if !d.hasBase {
+		d.hasBase = true
+		d.baseRTP, d.basePCR = rtpNanos, pcrNanos
+		return
+	}
+	// work in elapsed time relative to the first anchor, removing origin offset
+	x := float64(rtpNanos - d.baseRTP)
+	y := float64(pcrNanos - d.basePCR)
 	d.sumX += x
 	d.sumY += y
 	d.sumXY += x * y
@@ -96,7 +106,7 @@ func (d *DriftEstimator) Add(rtpNanos, pcrNanos int64) {
 }
 
 // PPM returns (slope-1)*1e6: positive means the PCR clock runs fast versus
-// the RTP clock. Zero is returned until two anchors exist.
+// the RTP clock. Zero is returned until two post-base anchors exist.
 func (d *DriftEstimator) PPM() float64 {
 	if d.n < 2 {
 		return 0
