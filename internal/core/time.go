@@ -175,67 +175,125 @@ func fmtSigned(n Nanos) string {
 	return n.String()
 }
 
-// EpochTracker assigns canonical nanoseconds to raw timestamps while keeping
-// the canonical timeline monotonic across discontinuities. It is used
-// identically by the scanner and by the streaming runner so both classify
-// jumps the same way.
+// EpochTracker assigns canonical nanoseconds to raw timestamps and keeps the
+// canonical timeline monotonic across discontinuities. Scanning and streaming
+// both drive the same tracker, so they classify jumps identically.
 type EpochTracker struct {
-	epochs    []Epoch
-	current   Epoch
-	have      bool
-	lastCanon Nanos
-	// rawUnit is informational only: "ticks" or "rtp".
-	rawUnit string
+	epochs     []Epoch
+	current    Epoch
+	active     bool
+	lastCanon  Nanos
+	lastRaw    int64
+	haveRaw    bool
+	rawUnit    string
+	wrapPeriod int64
 }
 
-// NewEpochTracker starts a tracker with a human-readable raw unit name.
-func NewEpochTracker(rawUnit string) *EpochTracker {
-	return &EpochTracker{rawUnit: rawUnit}
+// NewEpochTracker creates a tracker for a raw unit ("ticks" or "rtp"). For
+// RTP, wrapPeriod is 1<<32; for media ticks pass 0 to disable wrap detection
+// (representations may legitimately jump forward a lot).
+func NewEpochTracker(rawUnit string, wrapPeriod int64) *EpochTracker {
+	return &EpochTracker{rawUnit: rawUnit, wrapPeriod: wrapPeriod}
 }
 
-// Epochs returns the epochs opened so far, in order.
-func (t *EpochTracker) Epochs() []Epoch { return t.epochs }
+// Epochs returns a copy of the epochs opened so far, in order.
+func (t *EpochTracker) Epochs() []Epoch {
+	return append([]Epoch(nil), t.epochs...)
+}
 
 // Current returns the active epoch.
 func (t *EpochTracker) Current() Epoch { return t.current }
 
-// Open starts a new epoch. rawBase is the raw value of the first timestamp in
-// the epoch and canonicalBase its assigned canonical position; delta is chosen
-// so that the mapping is exact and monotonic.
-func (t *EpochTracker) Open(reason EpochReason, source string, rawBase int64, rawAsNanos Nanos, canonicalBase Nanos) Epoch {
+// Last returns the greatest canonical position emitted so far.
+func (t *EpochTracker) Last() Nanos { return t.lastCanon }
+
+// OpenStart begins the initial epoch at canonical zero.
+func (t *EpochTracker) OpenStart(source string, raw int64, rawNanos Nanos) Nanos {
+	t.open(EpochStart, source, raw, rawNanos, 0)
+	return t.current.CanonicalBase
+}
+
+// OpenAfter ends the current epoch and starts a new one whose first raw value
+// maps to lastCanon. boundary is the canonical position at which the new
+// source begins; when the caller has no better estimate it should pass
+// t.Last(). Because the new epoch's base is anchored at boundary, the delta
+// jump is measured against the previous epoch and reported in BoundaryOffset.
+func (t *EpochTracker) OpenAfter(reason EpochReason, source string, raw int64, rawNanos, boundary Nanos) Nanos {
+	t.open(reason, source, raw, rawNanos, boundary)
+	return t.current.CanonicalBase
+}
+
+func (t *EpochTracker) open(reason EpochReason, source string, raw int64, rawNanos, canonicalBase Nanos) {
 	prevDelta := Nanos(0)
-	if t.have {
+	if t.active {
 		prevDelta = t.current.Delta
 	}
-	delta := canonicalBase - rawAsNanos
+	delta := canonicalBase - rawNanos
 	ep := Epoch{
 		Number:         len(t.epochs),
 		Reason:         reason,
 		Source:         source,
-		RawBase:        rawBase,
+		RawBase:        raw,
 		CanonicalBase:  canonicalBase,
 		Delta:          delta,
 		BoundaryOffset: delta - prevDelta,
 	}
 	t.epochs = append(t.epochs, ep)
 	t.current = ep
-	t.have = true
-	t.lastCanon = canonicalBase
-	return ep
+	t.active = true
+	t.lastRaw = raw
+	t.haveRaw = true
+	if canonicalBase > t.lastCanon {
+		t.lastCanon = canonicalBase
+	}
 }
 
-// Map converts a raw timestamp in the current epoch to a canonical position.
-// It returns the position and whether that position advanced the canonical
-// timeline; a value that would go backwards is clamped to lastCanon so the
-// output stays monotonic, and the caller is told so it can record a fault.
-func (t *EpochTracker) Map(rawAsNanos Nanos) (Nanos, bool) {
-	pos := rawAsNanos + t.current.Delta
-	if pos < t.lastCanon {
+// Jump inspects a raw timestamp arriving after prevRaw in the current epoch
+// and reports the epoch reason it implies, or "" when it is continuous.
+// Backwards means strictly less than the previous raw value; Wrap means the
+// value fell by more than WrapThreshold when the unit is a wrapping counter.
+func (t *EpochTracker) Jump(prevRaw, raw int64) EpochReason {
+	if raw >= prevRaw {
+		return ""
+	}
+	if t.wrapPeriod > 0 && prevRaw-raw > t.wrapPeriod/2 {
+		return EpochWrap
+	}
+	if raw < prevRaw {
+		return EpochBackwards
+	}
+	return ""
+}
+
+// Map converts a raw timestamp already known to be continuous in the current
+// epoch. The result is clamped to lastCanon so canonical time never regresses.
+func (t *EpochTracker) Map(rawNanos Nanos) (Nanos, bool) {
+	pos := rawNanos + t.current.Delta
+	if t.active && pos < t.lastCanon {
 		return t.lastCanon, false
 	}
 	t.lastCanon = pos
 	return pos, true
 }
 
-// Last returns the greatest canonical position emitted so far.
-func (t *EpochTracker) Last() Nanos { return t.lastCanon }
+// NoteRaw advances the tracker's remembered raw value.
+func (t *EpochTracker) NoteRaw(raw int64) { t.lastRaw, t.haveRaw = raw, true }
+
+// LastRaw reports the most recent raw timestamp fed to the tracker.
+func (t *EpochTracker) LastRaw() (int64, bool) { return t.lastRaw, t.haveRaw }
+
+// ToTicks converts nanoseconds to media ticks at timescale, rounding down.
+// It is the inverse of FromTicks and is used when a duration declared in
+// nanoseconds must be expressed in a template's tick unit.
+func ToTicks(n Nanos, timescale uint32) (int64, error) {
+	if timescale == 0 {
+		return 0, fmt.Errorf("timescale must be positive")
+	}
+	num := big.NewInt(int64(n))
+	num.Mul(num, big.NewInt(int64(timescale)))
+	q, _ := new(big.Int).DivMod(num, big.NewInt(int64(Second)), new(big.Int))
+	if !q.IsInt64() {
+		return 0, fmt.Errorf("nanosecond value %d at timescale %d overflows ticks", n, timescale)
+	}
+	return q.Int64(), nil
+}
