@@ -81,15 +81,22 @@ func runDemo(args []string, stdout, stderr io.Writer) int {
 	fs.Int64Var(&f.eventMS, "event-ms", 1000, "event position in fixture milliseconds")
 	fs.Int64Var(&f.preMS, "pre-ms", 500, "pre-event half-window in milliseconds")
 	fs.Int64Var(&f.postMS, "post-ms", 500, "post-event half-window in milliseconds")
-	fs.BoolVar(&f.crashAfterRename, "crash-after-rename", false, "inject exit 75 after final artifact rename")
 	var truncated, timeGap, wrap, recover bool
+	var corruptAlias, gapAlias, recoveryAlias, crashAlias bool
 	fs.BoolVar(&truncated, "truncated-box", false, "use the 16-byte declared-longer box fixture")
+	fs.BoolVar(&corruptAlias, "corrupt", false, "alias for --truncated-box")
 	fs.BoolVar(&timeGap, "time-gap", false, "place the event in an empty clip segment")
+	fs.BoolVar(&gapAlias, "gap", false, "alias for --time-gap")
 	fs.BoolVar(&wrap, "timestamp-wrap", false, "use the 32-bit RTP timestamp wrap fixture")
 	fs.BoolVar(&recover, "recover", false, "enable one-shot rename-then-exit recovery injection")
+	fs.BoolVar(&recoveryAlias, "recovery", false, "alias for --recover")
+	fs.BoolVar(&crashAlias, "crash-after-rename", false, "inject exit 75 after final artifact rename")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
+	truncated = truncated || corruptAlias
+	timeGap = timeGap || gapAlias
+	recover = recover || recoveryAlias
 	switch {
 	case truncated:
 		f.caseName = fixture.CaseTruncated
@@ -101,7 +108,7 @@ func runDemo(args []string, stdout, stderr io.Writer) int {
 		f.caseName = fixture.CaseRecover
 	}
 	f.caseName = normalizeCase(f.caseName)
-	if recover || f.caseName == fixture.CaseRecover {
+	if recover || crashAlias || f.caseName == fixture.CaseRecover {
 		f.crashAfterRename = true
 	}
 	if !f.selfFixture {
