@@ -149,11 +149,14 @@ type Mapping struct {
 // MappingGap is an interval where a version switch / CRC failure left the
 // active mapping incomplete.
 type MappingGap struct {
-	Reason                 string `json:"reason"`
-	StartOffset, EndOffset int64  `json:"start_offset"`
-	StartTick, EndTick     uint64 `json:"start_tick"`
-	Resolved               bool   `json:"resolved"`
-	FromVersion, ToVersion int    `json:"from_version"`
+	Reason      string `json:"reason"`
+	StartOffset int64  `json:"start_offset"`
+	EndOffset   int64  `json:"end_offset"`
+	StartTick   uint64 `json:"start_tick"`
+	EndTick     uint64 `json:"end_tick"`
+	Resolved    bool   `json:"resolved"`
+	FromVersion int    `json:"from_version"`
+	ToVersion   int    `json:"to_version"`
 }
 
 // Tracker tracks PAT/PMT versions, mappings and incompleteness gaps.
@@ -194,6 +197,15 @@ func (t *Tracker) Current() *Mapping {
 		return nil
 	}
 	return t.current
+}
+
+// OpenGap returns a copy of the currently unresolved mapping gap, if any.
+func (t *Tracker) OpenGap() *MappingGap {
+	if t.gap == nil {
+		return nil
+	}
+	g := *t.gap
+	return &g
 }
 
 // Handle feeds a packet through reassembly and PAT/PMT tracking. Only PID 0

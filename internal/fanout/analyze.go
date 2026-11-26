@@ -188,18 +188,32 @@ type unwrappedPCR struct {
 }
 
 func annotateMappingGaps(intervals []Interval, psi *ts.Tracker) {
-	for i := range intervals {
-		iv := &intervals[i]
-		for _, g := range psi.Gaps {
-			if g.StartOffset < iv.EndOffset && g.EndOffset > iv.StartOffset {
-				iv.MappingPaused = true
-				iv.PauseReason = g.Reason
-				if g.Resolved && g.EndOffset <= iv.EndOffset {
-					iv.MappingRecovered = true
-				}
+	// A closed gap pauses every interval it overlaps. An interval is only
+	// considered recovered (packable) if a valid mapping returned before that
+	// interval's end; otherwise it is held/blocked even if a later interval
+	// eventually resolves the switch.
+	for _, g := range psi.Gaps {
+		for i := range intervals {
+			iv := &intervals[i]
+			if g.StartOffset >= iv.EndOffset || g.EndOffset <= iv.StartOffset {
+				continue // no overlap
+			}
+			iv.MappingPaused = true
+			iv.PauseReason = g.Reason
+			if g.Resolved && g.EndOffset <= iv.EndOffset {
+				iv.MappingRecovered = true
+			} else {
+				iv.Blocked = true
 			}
 		}
-		if og := psi.OpenGap(); og != nil && og.StartOffset < iv.EndOffset {
+	}
+	// A gap still open at end-of-stream blocks every interval from its start.
+	if og := psi.OpenGap(); og != nil {
+		for i := range intervals {
+			iv := &intervals[i]
+			if og.StartOffset >= iv.EndOffset {
+				continue
+			}
 			iv.MappingPaused = true
 			iv.PauseReason = og.Reason
 			iv.Blocked = true

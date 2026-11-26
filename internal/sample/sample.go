@@ -8,18 +8,19 @@ import (
 
 // Config controls deterministic fixture generation and anomaly injection.
 type Config struct {
-	Intervals          int    `json:"intervals"`
-	PacketsPerInterval int    `json:"packets_per_interval"`
-	SegDuration        uint64 `json:"seg_duration_90k"`
-	WrapPCR            bool   `json:"wrap_pcr"`
-	WrapAtInterval     int    `json:"wrap_at_interval"`
-	SwitchPSI          bool   `json:"switch_psi"`
-	CCJump             bool   `json:"cc_jump"`
-	CCDuplicate        bool   `json:"cc_duplicate"`
-	SyncError          bool   `json:"sync_error"`
-	BadPMTCRC          bool   `json:"bad_pmt_crc"`
-	TruncatedTail      bool   `json:"truncated_tail"`
-	TruncatedTailBytes int    `json:"truncated_tail_bytes"`
+	Intervals           int    `json:"intervals"`
+	PacketsPerInterval  int    `json:"packets_per_interval"`
+	SegDuration         uint64 `json:"seg_duration_90k"`
+	WrapPCR             bool   `json:"wrap_pcr"`
+	WrapAtInterval      int    `json:"wrap_at_interval"`
+	SwitchPSI           bool   `json:"switch_psi"`
+	CCJump              bool   `json:"cc_jump"`
+	CCDuplicate         bool   `json:"cc_duplicate"`
+	SyncError           bool   `json:"sync_error"`
+	BadPMTCRC           bool   `json:"bad_pmt_crc"`
+	UnresolvedPMTSwitch bool   `json:"unresolved_pmt_switch"`
+	TruncatedTail       bool   `json:"truncated_tail"`
+	TruncatedTailBytes  int    `json:"truncated_tail_bytes"`
 }
 
 // DefaultConfig is the acceptance fixture: four intervals, all anomalies.
@@ -168,8 +169,10 @@ func Generate(in Config) *Layout {
 				L.Anomalies.BadCRCPacket = int64(badIdx)
 				L.Anomalies.BadCRCOffset = int64(badIdx) * 188
 			}
-			m.emit(PIDPMT, true, 0x01, nil,
-				psiPacketPayload(buildPMT(1, PIDVideo, PIDVideo, PIDAudio)))
+			if !cfg.UnresolvedPMTSwitch {
+				m.emit(PIDPMT, true, 0x01, nil,
+					psiPacketPayload(buildPMT(1, PIDVideo, PIDVideo, PIDAudio)))
+			}
 		} else {
 			pmtV := byte(0)
 			if cfg.SwitchPSI && i > switchInterval {
