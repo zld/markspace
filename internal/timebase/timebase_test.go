@@ -6,7 +6,7 @@ func TestUnwrapModulus33(t *testing.T) {
 	u := NewUnwrapper(1 << 33)
 	base := int64(1<<33) - 100
 	vals := []int64{base, base + 50, 10, 60} // wraps across 2^33
-	want := []int64{base, base + 50, 1 << 33 + 10, 1 << 33 + 60}
+	want := []int64{base, base + 50, 1<<33 + 10, 1<<33 + 60}
 	for i, v := range vals {
 		got, err := u.Unwrap(v)
 		if err != nil {
@@ -42,7 +42,7 @@ func TestUnwrapAmbiguous(t *testing.T) {
 
 func TestUnwrapSeed(t *testing.T) {
 	u := NewUnwrapper(1 << 33)
-	u.Seed(1<<33 + 500) // epoch hint near true clock
+	u.Seed(1<<33 + 500)       // epoch hint near true clock
 	got, err := u.Unwrap(500) // raw PTS just after wrap
 	if err != nil {
 		t.Fatal(err)

@@ -50,12 +50,12 @@ sub/seg1.m4s
 func TestParseHLSRejectsTraversal(t *testing.T) {
 	dir := t.TempDir()
 	cases := map[string]string{
-		"dotdot":  "#EXTM3U\n../outside.m4s\n",
-		"abs":     "#EXTM3U\n/etc/passwd\n",
-		"remote":  "#EXTM3U\nhttps://example.com/s.m4s\n",
-		"proto":   "#EXTM3U\n//example.com/s.m4s\n",
-		"nohead":  "seg0.m4s\n",
-		"empty":   "#EXTM3U\n#EXT-X-ENDLIST\n",
+		"dotdot": "#EXTM3U\n../outside.m4s\n",
+		"abs":    "#EXTM3U\n/etc/passwd\n",
+		"remote": "#EXTM3U\nhttps://example.com/s.m4s\n",
+		"proto":  "#EXTM3U\n//example.com/s.m4s\n",
+		"nohead": "seg0.m4s\n",
+		"empty":  "#EXTM3U\n#EXT-X-ENDLIST\n",
 	}
 	for name, body := range cases {
 		p := write(t, dir, name+".m3u8", body)
