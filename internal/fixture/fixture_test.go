@@ -73,12 +73,23 @@ func TestRTPStreamFramingTruncation(t *testing.T) {
 }
 
 func TestMaterializeScenarioMutations(t *testing.T) {
-	base := &Bundle{MP4Path: filepath.Join(t.TempDir(), "src.fmp4")}
+	base := &Bundle{
+		MP4Path:     filepath.Join(t.TempDir(), "src.fmp4"),
+		ReplacePath: filepath.Join(t.TempDir(), "repl.fmp4"),
+	}
 	// Minimal fragmented-MP4-ish blob containing an mdat box.
 	mdatPayload := make([]byte, 64)
 	blob := append([]byte{0, 0, 0, 8, 'f', 't', 'y', 'p'},
 		append([]byte{0, 0, 0, byte(72), 'm', 'd', 'a', 't'}, mdatPayload...)...)
 	if err := os.WriteFile(base.MP4Path, blob, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// A distinct, valid replacement blob.
+	repl := append([]byte{}, blob...)
+	for i := range repl {
+		repl[i] ^= 0x5A
+	}
+	if err := os.WriteFile(base.ReplacePath, repl, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	work := t.TempDir()
@@ -89,12 +100,17 @@ func TestMaterializeScenarioMutations(t *testing.T) {
 	normal, _ := os.ReadFile(paths[ScenarioNormal])
 	damage, _ := os.ReadFile(paths[ScenarioDamage])
 	meta, _ := os.ReadFile(paths[ScenarioMetadata])
+	replaced, _ := os.ReadFile(paths[ScenarioReplace])
 
 	if string(normal) != string(blob) {
 		t.Fatal("normal scenario must be byte-identical to base")
 	}
 	if string(damage) == string(blob) {
 		t.Fatal("damage scenario must alter bytes")
+	}
+	// Replace scenario is the distinct replacement content, same size.
+	if string(replaced) != string(repl) {
+		t.Fatal("replace scenario must use the replacement asset")
 	}
 	// Metadata scenario appends exactly a 16-byte free box, prefix unchanged.
 	if len(meta) != len(blob)+16 || string(meta[:len(blob)]) != string(blob) {

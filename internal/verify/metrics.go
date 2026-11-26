@@ -91,11 +91,14 @@ func (r FFmpegRunner) bin() string {
 }
 
 // PSNR shells out to ffmpeg -i dist -i ref -lavfi psnr and parses the summary
-// line "PSNR avg:xx.xx ...". No network or remote material is involved.
+// line "PSNR avg:xx.xx ...". No network or remote material is involved. The
+// distorted input is read with error concealment so a deliberately damaged
+// segment (the recovery scenario) still yields an average PSNR over the
+// decodable frames rather than aborting the whole comparison.
 func (r FFmpegRunner) PSNR(refPath, distPath string) (float64, error) {
 	filter := "psnr"
 	cmd := exec.Command(r.bin(),
-		"-hide_banner", "-nostdin",
+		"-hide_banner", "-nostdin", "-err_detect", "ignore_err",
 		"-i", distPath,
 		"-i", refPath,
 		"-lavfi", filter,

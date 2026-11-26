@@ -45,9 +45,14 @@ func Materialize(base *Bundle, workDir string, scenarios []string) (map[string]s
 		case ScenarioDamage:
 			data = corruptMdatPayload(data)
 		case ScenarioReplace:
-			// A replacement changes content bytes (new visual pattern), which
-			// must produce a new source hash and force a re-index.
-			data = append(data, 0x00)
+			// Genuine same-path replacement: substitute a valid but visually
+			// different fMP4. New source hash and track content force an index
+			// rebuild and a derived-cache miss, while the file stays decodable.
+			repl, rerr := os.ReadFile(base.ReplacePath)
+			if rerr != nil {
+				return nil, rerr
+			}
+			data = repl
 		case ScenarioMetadata:
 			// A container/metadata-only edit: append a free box. Media sample
 			// bytes are untouched so derived segment content stays reusable.
