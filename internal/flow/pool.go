@@ -35,7 +35,9 @@ type Func func(ctx context.Context, job Job) (any, error)
 
 // Stats records observable pipeline behaviour.
 type Stats struct {
-	// QueuePeak is the high-water mark of buffered, not-yet-started jobs.
+	// QueuePeak is the high-water mark of buffered, not-yet-started jobs. It
+	// is sampled when a worker takes a job, so it can never exceed the
+	// configured queue capacity; a short run may legitimately observe zero.
 	QueuePeak int
 	// Submitted counts jobs handed to workers; Completed and Failed count
 	// results consumed by the consumer.
@@ -99,9 +101,10 @@ func (p *Pipeline) Run(ctx context.Context, produce func(context.Context, chan<-
 		go func() {
 			defer workers.Done()
 			for job := range jobs {
-				// The handoff buffer capacity is the configured queue size,
-				// so its occupancy alone is the reported peak. Counting the
-				// job already in hand would double-count a worker's slot.
+				// len(jobs) is the number of jobs still buffered in the
+				// handoff channel at the moment a worker picks one up; the
+				// channel's capacity is cfg.Queue, so this bounded sample is
+				// reported as the queue high-water mark.
 				p.observeQueue(len(jobs))
 				if ctx.Err() != nil {
 					// Keep draining so a producer blocked on send can make
