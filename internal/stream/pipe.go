@@ -68,13 +68,15 @@ func newRunState() *runState {
 // queue or memory budget is full the producer blocks, providing backpressure.
 // Cancellation uses one cause for producer and workers.
 func (p *Pipe) Run(parent context.Context, items []Item, handle func(context.Context, Item) error) (Stats, error) {
-	ctx, cancel := context.WithCancelCause(parent)
+	// Detach cancellation propagation so the watcher below can install one
+	// normalized cause for every stage while retaining parent context values.
+	ctx, cancel := context.WithCancelCause(context.WithoutCancel(parent))
 	defer cancel(nil)
 	stopWatch := context.AfterFunc(parent, func() {
 		cause := context.Cause(parent)
-		if errors.Is(cause, context.Canceled) {
-			cause = errors.Join(model.ErrCanceled, context.Canceled)
-		}
+		// Any parent termination is a cancellation of this pipeline. Preserve
+		// the caller's cause while adding the shared exit-classification error.
+		cause = errors.Join(model.ErrCanceled, cause, parent.Err())
 		cancel(cause)
 	})
 	defer stopWatch()
