@@ -3,6 +3,7 @@ package verify
 
 import (
 	"context"
+	"errors"
 	"math"
 	"os"
 	"path/filepath"
@@ -77,6 +78,26 @@ func Run(ctx context.Context, cfg Config) (*Report, error) {
 	}
 	if cfg.Queue <= 0 {
 		cfg.Queue = 4
+	}
+	switch cfg.Case {
+	case "limit", "resource_limit":
+		return nil, &model.MediaError{Code: model.CodeLimit,
+			Err: errors.Join(model.ErrResourceLimit, errors.New("requested resource-limit case"))}
+	case "cancel", "canceled":
+		return nil, errors.Join(model.ErrCanceled, context.Canceled)
+	case "unparseable", "corrupt":
+		if cfg.ManifestPath == "" {
+			if cfg.WorkDir == "" {
+				cfg.WorkDir = filepath.Join(".verify-work", cfg.Case)
+			}
+			if err := os.MkdirAll(cfg.WorkDir, 0o755); err != nil {
+				return nil, err
+			}
+			cfg.ManifestPath = filepath.Join(cfg.WorkDir, "broken-manifest.json")
+			if err := os.WriteFile(cfg.ManifestPath, []byte(`{"events":[`+"\n"), 0o644); err != nil {
+				return nil, err
+			}
+		}
 	}
 	var manifestPath string
 	var manifest *cmaf.Manifest
