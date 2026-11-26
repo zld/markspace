@@ -12,6 +12,7 @@ import (
 // are cross-checked by the independent verifier.
 const (
 	CodeTruncatedBox     = "TRUNCATED_BOX"
+	CodeMalformedBox     = "MALFORMED_BOX"
 	CodeMFHDGap          = "MFHD_GAP"
 	CodeMFHDDup          = "MFHD_DUP"
 	CodeTfdtRegression   = "TFDT_REGRESSION"

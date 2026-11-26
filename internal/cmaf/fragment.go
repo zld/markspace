@@ -33,6 +33,15 @@ func (p *Parser) ParseFragment(path string, init *Init) (*Fragment, error) {
 	frag := &Fragment{Path: path, FileSize: size}
 	var trafs []*trafState
 	var cur *trafState
+	badNesting := false
+	noteNesting := func(box string) {
+		if badNesting {
+			return
+		}
+		badNesting = true
+		p.Report.Addf(model.CodeMalformedBox, model.SevWarn, path, -1,
+			"%s box outside traf; ignored", box)
+	}
 	walkErr := walk(f, 0, size, 0, func(bi *mp4.BoxInfo, _ int) error {
 		switch bi.Type {
 		case mp4.BoxTypeMfhd():
@@ -45,6 +54,10 @@ func (p *Parser) ParseFragment(path string, init *Init) (*Fragment, error) {
 			cur = &trafState{}
 			trafs = append(trafs, cur)
 		case mp4.BoxTypeTfhd():
+			if cur == nil {
+				noteNesting("tfhd")
+				return nil
+			}
 			var b mp4.Tfhd
 			if err := unmarshalBox(f, bi, &b); err != nil {
 				return err
@@ -52,6 +65,10 @@ func (p *Parser) ParseFragment(path string, init *Init) (*Fragment, error) {
 			cur.trackID = b.TrackID
 			cur.defaultDur = b.DefaultSampleDuration
 		case mp4.BoxTypeTfdt():
+			if cur == nil {
+				noteNesting("tfdt")
+				return nil
+			}
 			var b mp4.Tfdt
 			if err := unmarshalBox(f, bi, &b); err != nil {
 				return err
@@ -63,6 +80,10 @@ func (p *Parser) ParseFragment(path string, init *Init) (*Fragment, error) {
 			}
 			cur.hasTfdt = true
 		case mp4.BoxTypeTrun():
+			if cur == nil {
+				noteNesting("trun")
+				return nil
+			}
 			var b mp4.Trun
 			if err := unmarshalBox(f, bi, &b); err != nil {
 				return err
