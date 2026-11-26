@@ -116,6 +116,12 @@ func TruncateAt(path string, off int64) (int64, error) {
 // WriteRTPTimestamps writes a recording with explicit RTP timestamps, so a
 // fixture can align packets with MP4 keyframe times or start near the wrap.
 func WriteRTPTimestamps(path string, clockRate uint32, timestamps []uint32, seed int64) (RTPLayout, error) {
+	return WriteRTPTimestampsSized(path, clockRate, timestamps, 12, seed)
+}
+
+// WriteRTPTimestampsSized is WriteRTPTimestamps with a fixed payload size,
+// used to model realistic datagram sizes for memory-bound checks.
+func WriteRTPTimestampsSized(path string, clockRate uint32, timestamps []uint32, payloadSize int, seed int64) (RTPLayout, error) {
 	rng := rand.New(rand.NewSource(seed))
 	ssrc := uint32(0xA1B2C3D0) ^ uint32(rng.Intn(255))
 	f, err := os.Create(path)
@@ -135,7 +141,11 @@ func WriteRTPTimestamps(path string, clockRate uint32, timestamps []uint32, seed
 	off := int64(len("MSRTP1\n") + 4)
 	var lenBuf [4]byte
 	for i, ts := range timestamps {
-		payload := make([]byte, 6+rng.Intn(10))
+		size := payloadSize
+		if size <= 0 {
+			size = 6 + rng.Intn(10)
+		}
+		payload := make([]byte, size)
 		for k := range payload {
 			payload[k] = byte(seed + int64(i*11+k))
 		}

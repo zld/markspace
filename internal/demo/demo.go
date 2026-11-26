@@ -5,6 +5,7 @@
 package demo
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -110,11 +111,16 @@ func Run(seed int64, lateWindow clock.Tick) ([]Sample, error) {
 
 	// --- illegal drop-frame timecodes -----------------------------------
 	tcText := timecodeLines()
-	_, tcIssues := clock.ParseTimecodeFile("timecodes.txt", tcText)
+	entries, tcIssues := clock.ParseTimecodeFile("timecodes.txt", tcText)
 	{
 		res := &validate.Result{
 			Name: "illegal-df", Window: lateWindow, Issues: tcIssues,
 			Sources: []string{"timecodes.txt"},
+		}
+		for _, e := range entries {
+			res.Notes = append(res.Notes, fmt.Sprintf(
+				"line %d: %s %s -> ticks=%d frame_error=%d",
+				e.Line, e.Rate, e.Text, int64(e.Ticks), e.FrameDiff))
 		}
 		add("illegal-df", res, digestOf(res))
 	}

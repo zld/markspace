@@ -41,32 +41,34 @@ type KeyframeStat struct {
 
 // Result is the full analysis of one sample.
 type Result struct {
-	Name                                        string
-	Window                                      clock.Tick
-	Sources                                     []string
-	Events                                      []timeline.Event
-	Gaps                                        []timeline.Gap
-	CueMaps                                     []CueMap
-	Intervals                                   []stream.Interval
-	Keyframes                                   KeyframeStat
-	MaxTimeDev                                  clock.Tick
-	MaxByteDev                                  int64
-	Damaged                                     []issue.ByteRange
-	Issues                                      issue.List
-	Drift                                       clock.Correction
-	DriftKnown                                  bool
-	VFR                                         bool
-	VFRReason                                   string
-	PacketCount                                 int
-	RTPWraps                                    int
-	RTPDuplicates                               int
-	RTPRegressions                              int
-	RTPMissing                                  uint64
+	Name           string
+	Window         clock.Tick
+	Sources        []string
+	Events         []timeline.Event
+	Gaps           []timeline.Gap
+	CueMaps        []CueMap
+	Intervals      []stream.Interval
+	Keyframes      KeyframeStat
+	MaxTimeDev     clock.Tick
+	MaxByteDev     int64
+	Damaged        []issue.ByteRange
+	Issues         issue.List
+	Drift          clock.Correction
+	DriftKnown     bool
+	VFR            bool
+	VFRReason      string
+	PacketCount    int
+	RTPWraps       int
+	RTPDuplicates  int
+	RTPRegressions int
+	RTPMissing     uint64
+	// Notes carries deterministic, human-readable facts derived from the
+	// inputs (for example legal timecode conversions). It never includes
+	// wall-clock data.
+	Notes                                       []string
 	Admitted, Recomputed, Unrecoverable, Sealed int
 	Replays                                     []timeline.Replay
 	First                                       *issue.Issue
-	ReplayEqual                                 bool // set by the caller comparing baseline digests
-	Digest                                      string
 }
 
 // Spec is the input to Analyze.

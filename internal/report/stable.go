@@ -40,6 +40,7 @@ type Summary struct {
 	RTPRegressions int
 	RTPMissing     uint64
 	Categories     []string
+	Notes          []string
 	FirstFail      string
 	CueMaps        []validate.CueMap
 	Intervals      []intervalKey
@@ -81,6 +82,7 @@ func BuildSnapshot(r *validate.Result) Summary {
 		s.Intervals = append(s.Intervals, intervalKey{From: iv.From, To: iv.To, DTS: iv.DTSGap, PTS: iv.PTSGap})
 	}
 	s.Categories = r.Issues.Categories()
+	s.Notes = append([]string(nil), r.Notes...)
 	if r.First != nil {
 		s.FirstFail = r.First.String()
 	}
@@ -120,6 +122,9 @@ func Digest(s Summary) string {
 	}
 	w("rtp", fmt.Sprint(s.PacketCount), fmt.Sprint(s.RTPWraps),
 		fmt.Sprint(s.RTPDuplicates), fmt.Sprint(s.RTPRegressions), fmt.Sprint(s.RTPMissing))
+	for _, n := range s.Notes {
+		w("note", n)
+	}
 	w("issues", fmt.Sprint(s.IssueCount))
 	for _, k := range s.IssueKeys {
 		w("is", k)
@@ -168,6 +173,12 @@ func Render(r *validate.Result) string {
 	fmt.Fprintf(&b, "  replay: %d late event(s) inside window\n", len(r.Replays))
 	for _, rp := range r.Replays {
 		fmt.Fprintf(&b, "    %s\n", timeline.DescribeReplay(rp))
+	}
+	if len(s.Notes) > 0 {
+		fmt.Fprintf(&b, "  notes:\n")
+		for _, n := range s.Notes {
+			fmt.Fprintf(&b, "    %s\n", n)
+		}
 	}
 	fmt.Fprintf(&b, "  errors: %d\n", s.IssueCount)
 	if len(s.Categories) > 0 {
