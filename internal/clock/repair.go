@@ -109,6 +109,8 @@ type Repair struct {
 	Basis               string   `json:"basis"`
 	OriginalTime        Rational `json:"original_time"`
 	CorrectedTime       Rational `json:"corrected_time"`
+	OffsetTime          Rational `json:"offset_time"`
+	RepairTime          Rational `json:"repair_time"`
 }
 
 // Isolation records a track that cannot be safely aligned.
@@ -148,6 +150,7 @@ func ResolveBoundary(b Boundary) Decision {
 		OriginalTimeTick:    b.CurrentTick,
 		OriginalOffsetTicks: originalOffset,
 		OriginalTime:        TickTime(b.CurrentTick, b.Timescale),
+		OffsetTime:          TickTime(originalOffset, b.Timescale),
 	}
 
 	offsetSeconds := TickTime(originalOffset, b.Timescale).Abs()
@@ -156,6 +159,7 @@ func ResolveBoundary(b Boundary) Decision {
 		shift := -originalOffset
 		base.Kind = "boundary-continuity"
 		base.RepairOffsetTicks = shift
+		base.RepairTime = TickTime(shift, b.Timescale)
 		base.CorrectedTimeTick = b.CurrentTick + shift
 		base.CorrectedTime = TickTime(base.CorrectedTimeTick, b.Timescale)
 		base.ResidualTicks = base.CorrectedTimeTick - expected
@@ -185,6 +189,7 @@ func ResolveBoundary(b Boundary) Decision {
 			shift := *b.LeftAnchorShift
 			base.Kind = "dual-anchor"
 			base.RepairOffsetTicks = shift
+			base.RepairTime = TickTime(shift, b.Timescale)
 			base.CorrectedTimeTick = b.CurrentTick + shift
 			base.CorrectedTime = TickTime(base.CorrectedTimeTick, b.Timescale)
 			base.ResidualTicks = diff

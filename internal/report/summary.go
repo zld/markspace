@@ -121,17 +121,29 @@ func Build(status, manifestHash, artifactHash, jobKey string, budgetUnits int, t
 		}
 	}
 	s.TerminalLines = renderLines(&s)
-	s.SummaryLine = fmt.Sprintf(
+	s.SummaryLine = renderSummaryLine(&s)
+	return s
+}
+
+// WithEmitted updates the duplicate-delivery count and re-renders greppable text.
+func (s *Summary) WithEmitted(n int) *Summary {
+	s.Emitted = n
+	s.SummaryLine = renderSummaryLine(s)
+	return s
+}
+
+func renderSummaryLine(s *Summary) string {
+	line := fmt.Sprintf(
 		"tracks=%d samples=%d estimate=%d actual=%d variance_pct=%.2f max_residual_ticks=%d wraps=%d empty_edits=%d repairs=%d verdict=%s emitted=%d",
 		s.Tracks, s.Samples, s.EstimateUnits, s.ActualUnits, s.VariancePct,
 		s.MaxResidualTicks, s.WrapEvents, s.EmptyEdits, s.Repairs, s.Verdict, s.Emitted,
 	)
 	// Keep the exact required ordering/tokens easily greppable as a second line.
-	s.SummaryLine += "\n" + fmt.Sprintf(
-		"tracks=%d estimate=%d actual=%d variance_pct=%.2f max_residual_ticks=%d verdict=%s",
-		s.Tracks, s.EstimateUnits, s.ActualUnits, s.VariancePct, s.MaxResidualTicks, s.Verdict,
+	line += "\n" + fmt.Sprintf(
+		"tracks=%d estimate=%d actual=%d variance_pct=%.2f max_residual_ticks=%d verdict=%s emitted=%d",
+		s.Tracks, s.EstimateUnits, s.ActualUnits, s.VariancePct, s.MaxResidualTicks, s.Verdict, s.Emitted,
 	)
-	return s
+	return line
 }
 
 func renderLines(s *Summary) []string {
