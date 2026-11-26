@@ -20,6 +20,7 @@ type RunResult struct {
 	ManifestPath   string
 	ManifestSHA256 string
 	Checkpoint     *Checkpoint
+	Resumed        []int
 }
 
 type clipResult struct {
@@ -106,9 +107,11 @@ func Run(ctx context.Context, opts Options) (*RunResult, error) {
 	}
 
 	tasks := make([]Task[clipResult], 0, len(segments))
+	resumed := make([]int, 0)
 	pendingOrdinal := 0
 	for i := range segments {
 		if done, ok := cp.CompletedIndex(i); ok {
+			resumed = append(resumed, i)
 			if err := verifyCompletedFile(opts.Out, done); err != nil {
 				return nil, err
 			}
@@ -215,7 +218,10 @@ func Run(ctx context.Context, opts Options) (*RunResult, error) {
 	if err := SaveCheckpoint(opts.Checkpoint, *cp); err != nil {
 		return nil, err
 	}
-	return &RunResult{Manifest: manifest, ManifestPath: mpath, ManifestSHA256: msha, Checkpoint: cp}, nil
+	return &RunResult{
+		Manifest: manifest, ManifestPath: mpath, ManifestSHA256: msha,
+		Checkpoint: cp, Resumed: resumed,
+	}, nil
 }
 
 func verifyCompletedFile(out string, done CompletedSegment) error {

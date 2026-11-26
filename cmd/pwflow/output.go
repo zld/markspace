@@ -24,6 +24,19 @@ func printManifestSummary(m *pipeline.Manifest, manifestSHA string) {
 		fmt.Println("响度峰值: n/a")
 	}
 	fmt.Printf("最大对齐误差: %.3f ms (阈值 %.0f ms)\n", m.Alignment.MaxErrorMS, m.Alignment.ThresholdMS)
+	for _, d := range m.EBMLDamages {
+		fmt.Printf("EBML损坏范围: code=%s bad_offset=%d confirmed_cluster=%d skipped=[%d,%d)\n",
+			d.Code, d.Offset, d.SkippedTo, d.Offset, d.SkippedTo)
+	}
+	for _, g := range m.RTPGaps {
+		if g.Mapped {
+			fmt.Printf("RTP缺口: ssrc=%d ext_seq=%d..%d missing=%d media=[%dns,%dns)\n",
+				g.SSRC, g.StartExt, g.EndExt, g.Missing, g.StartNS, g.EndNS)
+		} else {
+			fmt.Printf("RTP缺口: ssrc=%d ext_seq=%d..%d missing=%d mapping_error=%s\n",
+				g.SSRC, g.StartExt, g.EndExt, g.Missing, g.MapError)
+		}
+	}
 	if m.BandwidthBpsEWMA > 0 {
 		fmt.Printf("吞吐估算: %.0f bps\n", m.BandwidthBpsEWMA)
 	}

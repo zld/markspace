@@ -48,6 +48,9 @@ func runPipelineCommand(ctx context.Context, args []string) error {
 		}
 		return &cliError{code: code, err: err}
 	}
+	if len(res.Resumed) > 0 {
+		fmt.Printf("检查点恢复: 跳过已完成片段 %v，不重复提交\n", res.Resumed)
+	}
 	printManifestSummary(res.Manifest, res.ManifestSHA256)
 	fmt.Printf("manifest: %s\n", res.ManifestPath)
 	report, verr := validate.Verify(ctx, res.ManifestPath)
