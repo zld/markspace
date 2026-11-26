@@ -5,8 +5,10 @@
 
 # Generated reports and local fixtures
 /out/
+**/out/
 *.mp4
 *.jsonl
+*.json
 
 # Editor and OS metadata
 .DS_Store
