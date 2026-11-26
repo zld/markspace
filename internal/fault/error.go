@@ -59,6 +59,9 @@ func New(code Code, stage Stage, path string, offset, tick int64, format string,
 		inner = fmt.Errorf(format, args...)
 	}
 	exit := 1
+	if code == Usage {
+		exit = 2
+	}
 	if IsDataFailure(code) {
 		exit = 2
 	}

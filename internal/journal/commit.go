@@ -62,6 +62,10 @@ func Open(outDir string) (*Store, error) {
 	if err := os.MkdirAll(deliveryDir, 0o755); err != nil {
 		return nil, fault.New(fault.Journal, fault.StageJournal, dir, -1, -1, "create deliveries: %v", err)
 	}
+	// Persist the newly-created "deliveries" directory entry in dir.
+	if err := SyncDirectory(dir); err != nil {
+		return nil, err
+	}
 	return &Store{Dir: dir, DeliveryDir: deliveryDir, JournalPath: filepath.Join(dir, JournalName)}, nil
 }
 
@@ -161,6 +165,11 @@ func (s *Store) AppendRecord(rec Record) error {
 	if err != nil {
 		return fault.New(fault.Journal, fault.StageJournal, s.JournalPath, -1, -1, "encode record: %v", err)
 	}
+	_, statErr := os.Stat(s.JournalPath)
+	if statErr != nil && !os.IsNotExist(statErr) {
+		return fault.New(fault.Journal, fault.StageJournal, s.JournalPath, -1, -1, "stat journal: %v", statErr)
+	}
+	firstCreate := os.IsNotExist(statErr)
 	line = append(line, '\n')
 	f, err := os.OpenFile(s.JournalPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
@@ -174,7 +183,13 @@ func (s *Store) AppendRecord(rec Record) error {
 		f.Close()
 		return fault.New(fault.Journal, fault.StageJournal, s.JournalPath, -1, -1, "sync journal: %v", err)
 	}
-	return f.Close()
+	if err := f.Close(); err != nil {
+		return fault.New(fault.Journal, fault.StageJournal, s.JournalPath, -1, -1, "close journal: %v", err)
+	}
+	if firstCreate {
+		return SyncDirectory(s.Dir)
+	}
+	return nil
 }
 
 // SyncDirectory fsyncs a directory after atomic rename.

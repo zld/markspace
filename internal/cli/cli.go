@@ -93,7 +93,11 @@ func runDemo(args []string, stdout, stderr io.Writer) int {
 	fs.BoolVar(&recoveryAlias, "recovery", false, "alias for --recover")
 	fs.BoolVar(&crashAlias, "crash-after-rename", false, "inject exit 75 after final artifact rename")
 	fs.BoolVar(&injectAlias, "inject-exit-after-rename", false, "alias for --crash-after-rename")
+	fs.Usage = func() { usage(stderr) }
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
 		return 2
 	}
 	truncated = truncated || corruptAlias
@@ -110,6 +114,12 @@ func runDemo(args []string, stdout, stderr io.Writer) int {
 		f.caseName = fixture.CaseRecover
 	}
 	f.caseName = normalizeCase(f.caseName)
+	switch f.caseName {
+	case fixture.CaseOK, fixture.CaseTruncated, fixture.CaseTimeGap, fixture.CaseWrap, fixture.CaseRecover:
+	default:
+		fmt.Fprintf(stderr, "unknown --case %q\n", f.caseName)
+		return 2
+	}
 	if os.Getenv("REPLAYCTL_CRASH_AFTER_RENAME") == "1" || os.Getenv("REPLAYCTL_INJECT_EXIT") == "1" {
 		crashAlias = true
 	}
@@ -160,7 +170,14 @@ func runVerify(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	var dir string
 	fs.StringVar(&dir, "dir", "", "delivery directory to verify")
+	fs.Usage = func() {
+		fmt.Fprintln(stderr, "usage: replayctl verify --dir DIR")
+		fs.PrintDefaults()
+	}
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
 		return 2
 	}
 	if strings.TrimSpace(dir) == "" {

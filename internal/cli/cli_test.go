@@ -77,6 +77,21 @@ func TestRecoveryExitSeventyFiveThenCounters(t *testing.T) {
 	}
 }
 
+func TestHelpAndUnknownCaseExitCodes(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"demo", "--help"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("demo help code=%d", code)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	code := Run([]string{
+		"demo", "--self-fixture", "--case", "bogus", "--fixture-dir", t.TempDir(), "--out", t.TempDir(),
+	}, &stdout, &stderr)
+	if code != 2 || !strings.Contains(stderr.String(), `unknown --case "bogus"`) {
+		t.Fatalf("unknown case code=%d stderr=%q", code, stderr.String())
+	}
+}
+
 func extractLine(text, prefix string) string {
 	for _, line := range strings.Split(text, "\n") {
 		if strings.HasPrefix(line, prefix) {
