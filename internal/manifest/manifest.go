@@ -39,24 +39,24 @@ type RTPInfo struct {
 
 // Entry is one archived asset.
 type Entry struct {
-	Key                   string  `json:"key"`
-	Name                  string  `json:"name"`
-	Transport             string  `json:"transport"`
-	Stage                 string  `json:"stage"`
-	ContentDigest         string  `json:"content_digest"`
-	SourceContainerDigest string  `json:"source_container_digest"`
-	ArchiveDigest         string  `json:"archive_digest"`
-	ArchiveSize           int64   `json:"archive_size"`
-	ContainerDigest       string  `json:"container_digest"`
-	PolicyVersion         string  `json:"policy_version"`
-	SampleRateNum         int64   `json:"sample_rate_num"`
-	SampleRateDen         int64   `json:"sample_rate_den"`
-	Channels              int     `json:"channels"`
-	BitsPerSample         int     `json:"bits_per_sample"`
-	ChunkFrames           int64   `json:"chunk_frames"`
-	Frames                int64   `json:"frames"`
-	Blocks                int     `json:"blocks"`
-	Chunks                []Chunk `json:"chunks"`
+	Key                   string   `json:"key"`
+	Name                  string   `json:"name"`
+	Transport             string   `json:"transport"`
+	Stage                 string   `json:"stage"`
+	ContentDigest         string   `json:"content_digest"`
+	SourceContainerDigest string   `json:"source_container_digest"`
+	ArchiveDigest         string   `json:"archive_digest"`
+	ArchiveSize           int64    `json:"archive_size"`
+	ContainerDigest       string   `json:"container_digest"`
+	PolicyVersion         string   `json:"policy_version"`
+	SampleRateNum         int64    `json:"sample_rate_num"`
+	SampleRateDen         int64    `json:"sample_rate_den"`
+	Channels              int      `json:"channels"`
+	BitsPerSample         int      `json:"bits_per_sample"`
+	ChunkFrames           int64    `json:"chunk_frames"`
+	Frames                int64    `json:"frames"`
+	Blocks                int      `json:"blocks"`
+	Chunks                []Chunk  `json:"chunks"`
 	RTP                   *RTPInfo `json:"rtp,omitempty"`
 }
 
@@ -160,8 +160,8 @@ func (f *File) Validate() error {
 		return fault.New(fault.CodeManifest, fault.StageArchived, -1, "unsupported manifest version %q", f.Version)
 	}
 	last := ""
-	for _, e := range f.Entries {
-		if e.Key <= last && last != "" {
+	for i, e := range f.Entries {
+		if i > 0 && e.Key <= last {
 			return fault.New(fault.CodeManifest, fault.StageArchived, -1, "entries are not strictly ordered at %q", e.Key)
 		}
 		last = e.Key
@@ -170,6 +170,12 @@ func (f *File) Validate() error {
 		}
 		if !isDigest(e.ContentDigest) || !isDigest(e.ArchiveDigest) || !isDigest(e.ContainerDigest) {
 			return fault.New(fault.CodeManifest, fault.StageArchived, -1, "entry %q has a malformed digest", e.Key)
+		}
+		for _, c := range e.Chunks {
+			if !isDigest(c.Digest) {
+				return fault.New(fault.CodeManifest, fault.StageArchived, -1,
+					"entry %q block %d has a malformed digest", e.Key, c.Index)
+			}
 		}
 		if len(e.Chunks) != e.Blocks || e.Blocks == 0 {
 			return fault.New(fault.CodeManifest, fault.StageArchived, -1,

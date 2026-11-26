@@ -122,6 +122,7 @@ func (u *Unwrapper) Unwrap(raw uint32) (uint64, bool, error) {
 		return u.base + uint64(raw), false, nil
 	}
 	if raw > u.last {
+		u.last = raw
 		return u.base + uint64(raw), false, nil
 	}
 	// raw < last: only a wrap (half the timestamp space or bigger) is valid.

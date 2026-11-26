@@ -48,8 +48,8 @@ const (
 
 // WAVFormat is the parsed fmt-chunk description of an uncompressed WAV file.
 type WAVFormat struct {
-	SampleRate   clock.Rate
-	Channels     int
+	SampleRate    clock.Rate
+	Channels      int
 	BitsPerSample int
 }
 
@@ -78,15 +78,15 @@ func (f WAVFormat) Validate() error {
 
 // Track carries timing facts required to place an asset on the shared base.
 type Track struct {
-	ID             string          `json:"id"`
-	Transport      Transport       `json:"transport"`
-	Format         WAVFormat       `json:"-"`
-	SampleRate     clock.Rate      `json:"sample_rate"`
-	Channels       int             `json:"channels"`
-	BitsPerSample  int             `json:"bits_per_sample"`
-	TotalFrames    int64           `json:"total_frames"`
-	StartTimestamp uint32          `json:"start_timestamp,omitempty"`
-	ClockRate      uint32          `json:"clock_rate,omitempty"`
+	ID             string     `json:"id"`
+	Transport      Transport  `json:"transport"`
+	Format         WAVFormat  `json:"-"`
+	SampleRate     clock.Rate `json:"sample_rate"`
+	Channels       int        `json:"channels"`
+	BitsPerSample  int        `json:"bits_per_sample"`
+	TotalFrames    int64      `json:"total_frames"`
+	StartTimestamp uint32     `json:"start_timestamp,omitempty"`
+	ClockRate      uint32     `json:"clock_rate,omitempty"`
 }
 
 // ChunkRef records one content-addressed block of derived PCM.

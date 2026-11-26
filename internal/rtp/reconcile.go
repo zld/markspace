@@ -36,13 +36,13 @@ type Packet struct {
 
 // Timeline is the reconciled RTP result for one track.
 type Timeline struct {
-	Packets     []Packet `json:"packets"`
-	Wraps       int      `json:"wraps"`
-	SampleRate  clock.Rate `json:"sample_rate"`
-	ClockRate   uint32     `json:"clock_rate"`
-	TotalSamples int64     `json:"total_samples"`
-	DriftPPM    int64      `json:"drift_ppm"`
-	Corrections int64      `json:"corrections"`
+	Packets      []Packet   `json:"packets"`
+	Wraps        int        `json:"wraps"`
+	SampleRate   clock.Rate `json:"sample_rate"`
+	ClockRate    uint32     `json:"clock_rate"`
+	TotalSamples int64      `json:"total_samples"`
+	DriftPPM     int64      `json:"drift_ppm"`
+	Corrections  int64      `json:"corrections"`
 }
 
 // Convert maps an extended RTP timestamp at clockRate ticks per second to a
