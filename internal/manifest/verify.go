@@ -55,6 +55,11 @@ func (v *Verifier) verifyEntry(e Entry) error {
 	if err := v.Store.VerifyObject(e.ArchiveDigest, e.ArchiveSize); err != nil {
 		return err
 	}
+	if e.SourceDigest != "" {
+		if err := v.Store.VerifyObject(e.SourceDigest, -1); err != nil {
+			return err
+		}
+	}
 	for _, c := range e.Chunks {
 		if c.Length < 0 || c.Length > 1<<20 {
 			return fault.New(fault.CodeManifest, fault.StageArchived, -1, "block %d has implausible length %d", c.Index, c.Length)

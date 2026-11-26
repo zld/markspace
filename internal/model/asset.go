@@ -105,6 +105,7 @@ type Asset struct {
 	Name             string     `json:"name"`
 	Path             string     `json:"path"`
 	Transport        Transport  `json:"transport"`
+	SourceDigest     string     `json:"source_digest"`
 	ContentDigest    string     `json:"content_digest"`
 	ContainerDigest  string     `json:"container_digest"`
 	PolicyVersion    string     `json:"policy_version"`

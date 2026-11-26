@@ -44,6 +44,7 @@ type Entry struct {
 	Transport             string   `json:"transport"`
 	Stage                 string   `json:"stage"`
 	ContentDigest         string   `json:"content_digest"`
+	SourceDigest          string   `json:"source_digest"`
 	SourceContainerDigest string   `json:"source_container_digest"`
 	ArchiveDigest         string   `json:"archive_digest"`
 	ArchiveSize           int64    `json:"archive_size"`
@@ -77,6 +78,7 @@ func NewEntry(a model.Asset, archiveDigest string, archiveSize int64, archiveCon
 		Transport:             string(a.Transport),
 		Stage:                 string(model.StageArchived),
 		ContentDigest:         a.ContentDigest,
+		SourceDigest:          a.SourceDigest,
 		SourceContainerDigest: a.ContainerDigest,
 		ArchiveDigest:         archiveDigest,
 		ArchiveSize:           archiveSize,
@@ -168,7 +170,8 @@ func (f *File) Validate() error {
 		if e.Stage != string(model.StageArchived) {
 			return fault.New(fault.CodeManifest, fault.StageArchived, -1, "entry %q is not archived", e.Key)
 		}
-		if !isDigest(e.ContentDigest) || !isDigest(e.ArchiveDigest) || !isDigest(e.ContainerDigest) {
+		if !isDigest(e.ContentDigest) || !isDigest(e.ArchiveDigest) || !isDigest(e.ContainerDigest) ||
+			(e.SourceDigest != "" && !isDigest(e.SourceDigest)) {
 			return fault.New(fault.CodeManifest, fault.StageArchived, -1, "entry %q has a malformed digest", e.Key)
 		}
 		for _, c := range e.Chunks {

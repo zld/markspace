@@ -80,10 +80,16 @@ func (r *Runner) ingestWAV(in Input) Report {
 		return r.reject(rep, model.StageReceived, err)
 	}
 	defer f.Close()
+	// The source bytes are archived under their own digest, read-only, before
+	// any derived work is trusted. Identity and recovery both key off content.
+	if err := r.store.PutFile(info.SourceDigest, in.Path, info.FileSize); err != nil {
+		return r.reject(rep, model.StageReceived, err)
+	}
 	rep.Asset = model.Asset{
 		Name:            in.Name,
 		Path:            in.Path,
 		Transport:       model.TransportWAV,
+		SourceDigest:    info.SourceDigest,
 		ContainerDigest: info.ContainerDigest,
 		ChunkFrames:     r.policy.ChunkFrames,
 		Track: model.Track{

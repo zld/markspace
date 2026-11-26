@@ -31,8 +31,10 @@ type ArchiveSpec struct {
 }
 
 const (
-	ftypSize     = 24
-	mdatHdrSize  = 8
+	ftypSize    = 24
+	mdatHdrSize = 8
+	// WriteArchive lays out exactly one ftyp, then the mdat header, then the
+	// payload, then the moov. buildMoov therefore knows where every chunk is.
 	payloadStart = ftypSize + mdatHdrSize
 )
 

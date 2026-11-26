@@ -13,6 +13,10 @@ import (
 	"example.com/mediavault/internal/packageindex"
 )
 
+// maxArchiveChunks caps a single archive's block table. Beyond this the stco
+// entry count stops being meaningful for our 1 MiB block policy anyway.
+const maxArchiveChunks = 1 << 20
+
 // blockSource streams stored block objects one at a time so that archiving
 // never holds more than one block in memory.
 type blockSource struct {
@@ -76,12 +80,20 @@ func (r *Runner) archive(rep Report, refs []model.ChunkRef, extra *manifest.RTPI
 		frames[i] = c.Frames
 		total += c.Length
 	}
+	if len(refs) > maxArchiveChunks {
+		return r.reject(rep, model.StageNormalized, fault.New(fault.CodeLimit, fault.StageNormalized, -1,
+			"asset has %d blocks, above the %d the stco table supports", len(refs), maxArchiveChunks))
+	}
+	sampleRate := uint32(a.Track.SampleRate.Num / a.Track.SampleRate.Den)
+	if sampleRate == 0 {
+		sampleRate = 8000
+	}
 	spec := packageindex.ArchiveSpec{
-		SampleRate:    uint32(a.Track.SampleRate.Num / a.Track.SampleRate.Den),
+		SampleRate:    sampleRate,
 		Channels:      uint16(a.Track.Channels),
 		BitsPerSample: uint16(a.Track.BitsPerSample),
-		SampleCount:   1,
-		Timescale:     uint32(a.Track.SampleRate.Num / a.Track.SampleRate.Den),
+		SampleCount:   uint32(a.Track.TotalFrames),
+		Timescale:     sampleRate,
 		Duration:      uint64(a.Track.TotalFrames),
 		PayloadSize:   total,
 		ChunkOffsets:  offsets,
@@ -109,10 +121,11 @@ func (r *Runner) archive(rep Report, refs []model.ChunkRef, extra *manifest.RTPI
 		return r.reject(rep, model.StageNormalized, fault.Wrap(fault.CodeIO, fault.StageNormalized, -1, err, "close archive scratch"))
 	}
 	digest := hex.EncodeToString(h.Sum(nil))
-	size := total + archiveOverhead(total, len(refs))
-	if st, err := os.Stat(tmpPath); err == nil {
-		size = st.Size()
+	st, statErr := os.Stat(tmpPath)
+	if statErr != nil {
+		return r.reject(rep, model.StageArchived, fault.Wrap(fault.CodeIO, fault.StageArchived, -1, statErr, "stat archive scratch"))
 	}
+	size := st.Size()
 	rep.ArchiveDigest = digest
 	if r.store.Exists(digest) {
 		rep.Deduplicated = true
@@ -159,10 +172,4 @@ func (r *Runner) putScratch(digest, path string, size int64) error {
 	}
 	defer f.Close()
 	return r.store.PutReader(digest, f, size)
-}
-
-// archiveOverhead estimates the ftyp+mdat header and moov size; the real size
-// is read back from the scratch file, so this only guards the zero case.
-func archiveOverhead(payload int64, blocks int) int64 {
-	return 32 + int64(blocks)*40
 }

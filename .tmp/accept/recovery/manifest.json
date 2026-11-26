@@ -1,7 +1,7 @@
 {
   "version": "mediavault-manifest-v1",
   "policy": "pcm-shard-v1",
-  "digest": "331ba48136cd3a2e05200fa27da98774f4a0b1e16be82a8b1f915fea6cb9e1fe",
+  "digest": "0f23f405365b39f58c47b67f3caa8fc769b44c7086088dec44258ef2c5b14012",
   "unique_pcm": 1,
   "entries": [
     {
@@ -10,10 +10,11 @@
       "transport": "wav",
       "stage": "ARCHIVED",
       "content_digest": "bb667a519f5c05358a1749f156715aac4409992a59cc81f7e407f7243bc31eac",
+      "source_digest": "53e133030cf39d98aedaa5d0dae32c780b4395d66fe8520f32636eabf55e3ea5",
       "source_container_digest": "e423c0b5fe41b94e20b3dff9cbddf275105a1cf47e29e634b59a3da0865f07a2",
-      "archive_digest": "c247769986dbb8faa7c46cb02a0188fed17e1a045cbcbc17748fb51758ca6c7e",
+      "archive_digest": "83ecd2b5712a79e8f98b6d678892ed3e162d52c9d4d16b794571362480f6321a",
       "archive_size": 33441,
-      "container_digest": "eb25b624775f420528c6029a82a6eb6b982adedbcf78a9583c3467bbb20cafa6",
+      "container_digest": "36e483e03ab8349d545a48aa66e3d5988d00ecbff5835af3b28315ad049fd080",
       "policy_version": "pcm-shard-v1",
       "sample_rate_num": 8000,
       "sample_rate_den": 1,

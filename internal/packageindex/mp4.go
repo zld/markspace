@@ -126,16 +126,25 @@ func readStructure(r io.ReadSeeker, start, end int64, depth int, idx *Index, hCo
 		hContainer.Write(hdr[:])
 		hContainer.Write(bi.Type[:])
 
-		if isContainer(bi.Type) {
-			if boxEnd > pos+int64(bi.HeaderSize) {
-				children, err := readStructure(r, pos+int64(bi.HeaderSize), boxEnd, depth+1, idx, hContainer)
+		payloadStart := pos + int64(bi.HeaderSize)
+		switch {
+		case isContainer(bi.Type):
+			if boxEnd > payloadStart {
+				children, err := readStructure(r, payloadStart, boxEnd, depth+1, idx, hContainer)
 				if err != nil {
 					return nil, err
 				}
 				boxes = append(boxes, children...)
 			}
-		} else if bi.Type == mp4.BoxTypeMdat() {
-			idx.MdatBytes += int64(bi.Size) - int64(bi.HeaderSize)
+		case bi.Type == mp4.BoxTypeMdat():
+			idx.MdatBytes += boxEnd - payloadStart
+		default:
+			// Non-container payloads are part of the wrapper: moov tables,
+			// edit lists, metadata. Hashing them keeps a table edit from being
+			// mistaken for an unchanged package.
+			if err := hashPayload(r, hContainer, payloadStart, boxEnd-payloadStart); err != nil {
+				return nil, err
+			}
 		}
 		pos = boxEnd
 	}
@@ -153,6 +162,17 @@ func isContainer(t mp4.BoxType) bool {
 		return true
 	}
 	return false
+}
+
+// hashPayload folds a byte range into the container digest with an explicit
+// length prefix, so box ordering and sizes are part of the address.
+func hashPayload(r io.ReadSeeker, h io.Writer, off, n int64) error {
+	var lenBuf [8]byte
+	binary.BigEndian.PutUint64(lenBuf[:], uint64(n))
+	if _, err := h.Write(lenBuf[:]); err != nil {
+		return err
+	}
+	return copyN(r.(io.ReadSeeker), h, off, n)
 }
 
 func hashMdatPayload(r io.ReadSeeker, boxes []BoxEntry, h io.Writer) error {
