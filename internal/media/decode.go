@@ -92,6 +92,9 @@ func CutWebM(ctx context.Context, src, dst string, startNS, endNS int64) error {
 		"-i", src,
 		"-t", duration,
 		"-c", "copy",
+		"-map_metadata", "-1",
+		"-fflags", "+bitexact",
+		"-flags", "+bitexact",
 		"-avoid_negative_ts", "make_zero",
 		"-f", "webm", dst)
 	var stderr bytes.Buffer
