@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"continuity/internal/fixture"
 	"continuity/internal/manifest"
@@ -92,6 +93,11 @@ func runDemoAll(g *fixture.Generated, c manifest.Constraints) int {
 	}
 	fmt.Printf("timeline events=%d coverage_ppm=%d max_av_skew_ms=%.3f clusters=%d\n",
 		job.index.Report.EventCount, pkg.CoveragePPM, pkg.MaxAVSkewMS, len(job.clusters))
+	if err := publishTopLevelArtifacts(g.Dir, job, pkg); err != nil {
+		return demoPlanError(err)
+	}
+	fmt.Printf("artifacts config=%s timeline=%s\n",
+		filepath.Join(g.Dir, "config-package.json"), filepath.Join(g.Dir, "timeline-index.json"))
 	fmt.Printf("config target_bitrate_bps=%d profile=%s estimated_ms=%d audio_mappings=%d color_decisions=%d reasons=%d\n",
 		pkg.Bitrate.TargetBPS, pkg.Bitrate.SelectedProfile, pkg.Budget.EstimatedMS,
 		len(pkg.Audio.Mappings), len(pkg.Color.Decisions), len(pkg.Reasons))

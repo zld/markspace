@@ -1,12 +1,14 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
 
+	"continuity/internal/atomicfile"
 	"continuity/internal/fixture"
 	"continuity/internal/manifest"
 	"continuity/internal/media"
@@ -27,6 +29,21 @@ func preparePlan(g *fixture.Generated, c manifest.Constraints) (*builtJob, *mani
 		InputPrefix:  job.prefixSHA,
 	})
 	return job, pkg, err
+}
+
+func publishTopLevelArtifacts(dir string, job *builtJob, pkg *manifest.ConfigPackage) error {
+	configJSON, err := json.MarshalIndent(pkg, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := atomicfile.Write(filepath.Join(dir, "config-package.json"), configJSON, 0o644); err != nil {
+		return err
+	}
+	timelineJSON, err := json.MarshalIndent(job.index, "", "  ")
+	if err != nil {
+		return err
+	}
+	return atomicfile.Write(filepath.Join(dir, "timeline-index.json"), timelineJSON, 0o644)
 }
 
 func checkMigration(g *fixture.Generated) (*manifest.MigrationReport, error) {
