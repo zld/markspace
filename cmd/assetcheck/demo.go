@@ -74,13 +74,21 @@ func demoClean(out io.Writer, dir string, redeliver int) error {
 		return err
 	}
 	primary := committedResult(results)
-	if countCommitted(results) != 1 {
-		return media.SpecMismatch("DEMO_DUPLICATE_COMMIT", "concurrent deliveries did not commit exactly once").
-			WithDetail(fmt.Sprintf("committed=%d deliveries=%d", countCommitted(results), len(results)))
+	newCommits := countCommitted(results)
+	if newCommits > 1 {
+		return media.SpecMismatch("DEMO_DUPLICATE_COMMIT", "concurrent deliveries committed more than once").
+			WithDetail(fmt.Sprintf("committed=%d deliveries=%d", newCommits, len(results)))
+	}
+	if newCommits == 0 {
+		for _, r := range results {
+			if r == nil || (!r.Deduplicated && !r.AlreadyDone) {
+				return media.SpecMismatch("DEMO_NO_COMMIT", "delivery neither committed nor deduplicated an existing product")
+			}
+		}
 	}
 	printCoreMetrics(out, primary)
-	fmt.Fprintf(out, "deliveries=%d committed=%d deduplicated=%d\n",
-		len(results), countCommitted(results), len(results)-countCommitted(results))
+	fmt.Fprintf(out, "deliveries=%d new_commits=%d deduplicated=%d\n",
+		len(results), newCommits, len(results)-newCommits)
 	printManifest(out, primary)
 	return nil
 }
