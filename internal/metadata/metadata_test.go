@@ -231,3 +231,86 @@ func id3TagForTest(body []byte) []byte {
 		byte((n >> 21) & 0x7f), byte((n >> 14) & 0x7f), byte((n >> 7) & 0x7f), byte(n & 0x7f)}
 	return append(hdr, body...)
 }
+
+// buildEmsgPayload builds a version-0 or version-1 emsg payload (without the
+// 8-byte box header) that go-mp4 can decode.
+func buildEmsgPayload(version byte, timescale uint32, presentation uint64, duration uint32, data string) []byte {
+	var p []byte
+	p = append(p, version, 0, 0, 0)
+	if version == 1 {
+		// ISO/IEC 23009-1 emsg v1 moves scheme/value after the numeric
+		// fields; that is the layout go-mp4 decodes.
+		p = append(p, u32(timescale)...)
+		p = append(p, u64(presentation)...)
+		p = append(p, u32(duration)...)
+		p = append(p, u32(7)...)
+		p = append(p, []byte("urn:test:scheme")...)
+		p = append(p, 0)
+		p = append(p, []byte("v1")...)
+		p = append(p, 0)
+		p = append(p, []byte(data)...)
+		return p
+	} else {
+		p = append(p, []byte("urn:test:scheme")...)
+		p = append(p, 0)
+		p = append(p, []byte("v0")...)
+		p = append(p, 0)
+		p = append(p, u32(timescale)...)
+		p = append(p, u32(uint32(presentation))...)
+	}
+	p = append(p, u32(duration)...)
+	p = append(p, u32(7)...)
+	p = append(p, []byte(data)...)
+	return p
+}
+
+func u32(v uint32) []byte { return []byte{byte(v >> 24), byte(v >> 16), byte(v >> 8), byte(v)} }
+
+func u64(v uint64) []byte {
+	return append(u32(uint32(v>>32)), u32(uint32(v))...)
+}
+
+func TestParseEmsgV1(t *testing.T) {
+	payload := buildEmsgPayload(1, 1000, 2500, 750, "ad-break")
+	events, err := ParseEmsg(payload, ParseOptions{MediaEndNS: 10_000_000_000, TrackID: 4})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("events = %d", len(events))
+	}
+	if events[0].StartNS != 2_500_000_000 || events[0].EndNS != 3_250_000_000 {
+		t.Fatalf("emsg span = %d..%d", events[0].StartNS, events[0].EndNS)
+	}
+	if events[0].Kind != KindEmsg || events[0].Text != "ad-break" {
+		t.Fatalf("event = %+v", events[0])
+	}
+}
+
+func TestParseEmsgV0Anchored(t *testing.T) {
+	payload := buildEmsgPayload(0, 1000, 500, 0, "x")
+	events, err := ParseEmsg(payload, ParseOptions{MediaEndNS: 10_000_000_000, AnchorNS: 1_000_000_000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if events[0].StartNS != 1_500_000_000 {
+		t.Fatalf("v0 anchored start = %d", events[0].StartNS)
+	}
+}
+
+func TestParseEmsgRejectsZeroTimescale(t *testing.T) {
+	payload := buildEmsgPayload(1, 0, 100, 0, "x")
+	_, err := ParseEmsg(payload, ParseOptions{MediaEndNS: 10_000_000_000})
+	if err == nil || err.Code != timebase.CodeCorruptField {
+		t.Fatalf("want CORRUPT_FIELD, got %v", err)
+	}
+}
+
+func TestParseEmsgTruncated(t *testing.T) {
+	// Cutting into the numeric fields (before scheme/value) must be reported.
+	payload := buildEmsgPayload(1, 1000, 2500, 750, "truncated-message")
+	_, err := ParseEmsg(payload[:8], ParseOptions{MediaEndNS: 10_000_000_000})
+	if err == nil || (err.Code != timebase.CodeBoxTruncated && err.Code != timebase.CodeCorruptField) {
+		t.Fatalf("want truncation code, got %v", err)
+	}
+}
