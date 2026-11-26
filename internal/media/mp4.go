@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/abema/go-mp4"
 )
@@ -248,8 +249,33 @@ func wrapMP4ReadError(err error) error {
 	if errors.As(err, &me) {
 		return err
 	}
-	if errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.EOF) {
-		return NewError(StageScan, "mp4.read", "truncated box or unexpected end of file: "+err.Error())
+	msg := err.Error()
+	if errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.EOF) ||
+		strings.Contains(msg, "box size exceeds file size") ||
+		strings.Contains(msg, "too large box size") {
+		base := NewError(StageScan, "mp4.read", "truncated box or unexpected end of file: "+msg)
+		if off, ok := parseTruncationOffset(msg); ok {
+			base = base.WithOffset(off)
+		}
+		return base
 	}
-	return NewError(StageScan, "mp4.read", err.Error())
+	return NewError(StageScan, "mp4.read", msg)
+}
+
+// parseTruncationOffset extracts the "offset=%d" field emitted by go-mp4's
+// payload-size check so truncation errors remain byte-addressable.
+func parseTruncationOffset(msg string) (int64, bool) {
+	idx := strings.Index(msg, "offset=")
+	if idx < 0 {
+		return 0, false
+	}
+	var v int64
+	for i := idx + len("offset="); i < len(msg); i++ {
+		c := msg[i]
+		if c < '0' || c > '9' {
+			break
+		}
+		v = v*10 + int64(c-'0')
+	}
+	return v, true
 }

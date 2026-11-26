@@ -137,19 +137,30 @@ func ParseRTP(path, trackKey string) (*Track, error) {
 			return nil, NewError(StageScan, "rtp.time", err.Error()).
 				WithTrack(trackKey).WithOffset(fr.off)
 		}
-		durTicks := fr.delta
-		if i == len(frames)-1 {
-			durTicks = lastStep
+		// Each sample's duration is the distance to the next timestamp;
+		// the final sample reuses the last observed step.
+		durTicks := lastStep
+		if i < len(frames)-1 {
+			durTicks = frames[i+1].delta
 		}
 		durNs, err := tb.DeltaNs(durTicks)
 		if err != nil {
 			return nil, NewError(StageScan, "rtp.time", err.Error()).
 				WithTrack(trackKey).WithOffset(fr.off)
 		}
-		if err := track.Add(startNs, durNs, fr.off, int64(len(fr.pkt.Payload)), fr.tick,
-			append([]byte(nil), fr.pkt.Payload...)); err != nil {
-			return nil, err
+		if durNs <= 0 {
+			return nil, NewError(StageScan, "rtp.time", "non-positive sample duration").
+				WithTrack(trackKey).WithOffset(fr.off)
 		}
+		track.Samples = append(track.Samples, Sample{
+			Index:      i + 1,
+			StartNs:    startNs,
+			DurationNs: durNs,
+			DataOffset: fr.off,
+			Size:       int64(len(fr.pkt.Payload)),
+			Payload:    append([]byte(nil), fr.pkt.Payload...),
+			SourceTick: fr.tick,
+		})
 	}
 	return track, nil
 }
@@ -167,7 +178,7 @@ func readRTPHeader(r io.Reader) (int64, RTPHeader, error) {
 			fmt.Sprintf("bad magic %q, want RTP1", hdr.Magic[:]))
 	}
 	if hdr.ClockRate == 0 {
-		return 16, hdr, NewError(StageScan, "rtp.header", "zero RTP clock rate").WithOffset(16)
+		return 16, hdr, NewError(StageScan, "rtp.header", "zero RTP clock rate").WithOffset(4)
 	}
 	if hdr.Reserved != 0 {
 		return 16, hdr, NewError(StageScan, "rtp.header", "non-zero reserved header field").WithOffset(12)
