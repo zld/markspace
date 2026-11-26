@@ -30,7 +30,8 @@ func (r Rate) NominalFPS() (int64, error) {
 	if !r.Valid() {
 		return 0, fault.New(fault.StageClock, fault.KindTimecode, "", "invalid frame rate")
 	}
-	return r.Num / r.Den, nil
+	// Nominal SMPTE frame count rounds the rational rate (30000/1001 -> 30).
+	return (r.Num + r.Den/2) / r.Den, nil
 }
 
 // DropCapable reports whether the rate may carry a drop-frame label.
@@ -132,7 +133,8 @@ func ParseTimecode(s string, r Rate) (frames int64, df bool, err error) {
 		return 0, df, err
 	}
 	if df {
-		// 30000/1001: skip frames 0,1 of every minute except every tenth.
+		// In DF labels the nominal frame count runs ahead of the true frame
+		// number by the skipped frames: 2 per minute, 0 at every tenth minute.
 		dropped, err := mul64(mins, 2)
 		if err != nil {
 			return 0, df, err
@@ -141,7 +143,7 @@ func ParseTimecode(s string, r Rate) (frames int64, df bool, err error) {
 		if err != nil {
 			return 0, df, err
 		}
-		if total, err = add64(total, dropped-skip10); err != nil {
+		if total, err = add64(total, -(dropped - skip10)); err != nil {
 			return 0, df, err
 		}
 		if mm%10 != 0 && ss == 0 && ff < 2 {
