@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"hash"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,22 +19,53 @@ import (
 	"replay/internal/worker"
 )
 
-// buildJob assembles the worker job that renders one clip.
-func buildJob(s setInfo, o options, tl *cmaf.Timeline, win events.Window, cand *planner.Candidate, outDir string) worker.Job {
-	outPath := join(outDir, o.event+".mp4")
-	segs := tl.SegmentsIn(win.Start, win.End)
-	params := fmt.Sprintf("set=%s;event=%s;ss=%d;t=%d;vb=%d;ab=%d;ar=%d;conv=%t;nseg=%d",
-		s.name, o.event, win.Start.Milliseconds(), win.Dur().Milliseconds(),
-		cand.VideoBitrate, cand.AudioBitrate, cand.Audio.SampleRate, cand.Color.Convert, len(segs))
-	sum := sha256.Sum256([]byte(params))
+// buildJob assembles the worker job that renders one clip. ph is the
+// content-aware parameter hash shared with the manifest.
+func buildJob(s setInfo, o options, segs []cmaf.Segment, win events.Window, cand *planner.Candidate, outDir, outPath, ph string) worker.Job {
 	return worker.Job{
 		ID:         s.name + "/" + o.event,
-		ParamsHash: hex.EncodeToString(sum[:]),
+		ParamsHash: ph,
 		OutputPath: outPath,
 		Run: func(ctx context.Context) (worker.Result, error) {
 			return renderClip(ctx, s, segs, win, cand, outDir, outPath)
 		},
 	}
+}
+
+// computeParamsHash returns a deterministic hash of every parameter that can
+// change the rendered clip, including a byte fingerprint of the init segment
+// and the exact fragments used. Any input repair therefore invalidates a
+// stale worker marker instead of reusing pre-repair bytes.
+func computeParamsHash(s setInfo, o options, win events.Window, cand *planner.Candidate, segs []cmaf.Segment) (string, error) {
+	h := sha256.New()
+	if err := hashFileInto(h, join(s.dir, "init.mp4")); err != nil {
+		return "", err
+	}
+	for _, sg := range segs {
+		if err := hashFileInto(h, sg.Frag.Path); err != nil {
+			return "", err
+		}
+	}
+	fp := hex.EncodeToString(h.Sum(nil))
+	params := fmt.Sprintf("v2;set=%s;event=%s;ss=%d;t=%d;vb=%d;ab=%d;ar=%d;ch=%d;conv=%t;nseg=%d;fp=%s",
+		s.name, o.event, win.Start.Milliseconds(), win.Dur().Milliseconds(),
+		cand.VideoBitrate, cand.AudioBitrate, cand.Audio.SampleRate, cand.Audio.Channels,
+		cand.Color.Convert, len(segs), fp)
+	sum := sha256.Sum256([]byte(params))
+	return hex.EncodeToString(sum[:]), nil
+}
+
+// hashFileInto streams a file into h.
+func hashFileInto(h hash.Hash, path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if _, err := io.Copy(h, f); err != nil {
+		return err
+	}
+	return nil
 }
 
 // renderClip concatenates init + the window's fragments and re-encodes the
@@ -123,8 +156,9 @@ func outputFilter(cand *planner.Candidate) string {
 	return vf + "setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709"
 }
 
-// buildManifest assembles the delivery manifest for one produced clip.
-func buildManifest(s setInfo, o options, win events.Window, tl *cmaf.Timeline, cand *planner.Candidate, res worker.Result, rep *model.Report, nfrags int) *manifest.Manifest {
+// buildManifest assembles the delivery manifest for one produced clip. ph is
+// the content-aware parameter hash shared with the worker job.
+func buildManifest(s setInfo, o options, win events.Window, tl *cmaf.Timeline, cand *planner.Candidate, res worker.Result, rep *model.Report, nfrags int, ph string) *manifest.Manifest {
 	segs := tl.SegmentsIn(win.Start, win.End)
 	segInfos := make([]manifest.SegmentInfo, 0, len(segs))
 	for _, sg := range segs {
@@ -177,7 +211,7 @@ func buildManifest(s setInfo, o options, win events.Window, tl *cmaf.Timeline, c
 			WindowAfterMS:  o.after.Milliseconds(),
 			TargetBitrate:  o.bitrate,
 			Workers:        o.workers,
-			ParamsHash:     paramHash(s, o, win, cand, len(segs)),
+			ParamsHash:     ph,
 		},
 		IssueCounts: rep.Counts(),
 	}
@@ -191,13 +225,4 @@ func manifestVideoInfo(cand *planner.Candidate) manifest.VideoInfo {
 		Converted:   cand.Color.Convert,
 		Note:        cand.Color.Note,
 	}
-}
-
-// paramHash recomputes the job's params hash for the manifest record.
-func paramHash(s setInfo, o options, win events.Window, cand *planner.Candidate, nseg int) string {
-	params := fmt.Sprintf("set=%s;event=%s;ss=%d;t=%d;vb=%d;ab=%d;ar=%d;conv=%t;nseg=%d",
-		s.name, o.event, win.Start.Milliseconds(), win.Dur().Milliseconds(),
-		cand.VideoBitrate, cand.AudioBitrate, cand.Audio.SampleRate, cand.Color.Convert, nseg)
-	sum := sha256.Sum256([]byte(params))
-	return hex.EncodeToString(sum[:])
 }

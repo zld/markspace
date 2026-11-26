@@ -160,7 +160,14 @@ func processSet(s setInfo, o options, ev *events.Event) (string, bool) {
 	printPlan(cand)
 
 	outDir := join(o.input, "out", s.name)
-	job := buildJob(s, o, tl, win, cand, outDir)
+	outPath := join(outDir, o.event+".mp4")
+	usedSegs := tl.SegmentsIn(win.Start, win.End)
+	ph, err := computeParamsHash(s, o, win, cand, usedSegs)
+	if err != nil {
+		fmt.Println("  params:", err)
+		return "", false
+	}
+	job := buildJob(s, o, usedSegs, win, cand, outDir, outPath, ph)
 	results, err := worker.New(o.workers).Run(context.Background(), []worker.Job{job})
 	if err != nil {
 		fmt.Println("  worker:", err)
@@ -171,7 +178,7 @@ func processSet(s setInfo, o options, ev *events.Event) (string, bool) {
 		fmt.Println("  worker: reused previous result (idempotent re-run)")
 	}
 
-	m := buildManifest(s, o, win, tl, cand, res, rep, len(frags))
+	m := buildManifest(s, o, win, tl, cand, res, rep, len(frags), ph)
 	mpath := join(outDir, o.event+".manifest.json")
 	if err := manifest.Write(mpath, m); err != nil {
 		fmt.Println("  manifest:", err)
