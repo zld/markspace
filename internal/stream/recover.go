@@ -79,8 +79,8 @@ func (r *Runner) segmentVerifies(seg *core.Segment, res *Result) bool {
 	if err != nil {
 		return false
 	}
-	res.HashChecks++
 	if sum != seg.SHA256 {
+		res.HashBad++
 		res.Anomalies = append(res.Anomalies, core.Anomaly{
 			Category: core.CatHashMismatch, Pos: core.Pos{File: seg.URI, Byte: 0},
 			Track: seg.Track, Segment: seg.URI, ByteOffset: 0,
@@ -89,6 +89,7 @@ func (r *Runner) segmentVerifies(seg *core.Segment, res *Result) bool {
 		})
 		return false
 	}
+	res.HashChecks++
 	res.HashMatches++
 	return true
 }

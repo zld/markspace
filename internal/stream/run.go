@@ -13,6 +13,7 @@ import (
 	"os"
 
 	"medtrace/internal/core"
+	"medtrace/internal/index"
 )
 
 // Result is the outcome of one run.
@@ -23,10 +24,15 @@ type Result struct {
 	Anomalies []core.Anomaly
 	// Recoveries records each local recovery attempt.
 	Recoveries []core.Recovery
-	// HashChecks counts segments whose SHA-256 was compared to the index.
+	// HashChecks counts segments verified in full: their SHA-256 was computed
+	// and agreed with the index. A mismatch is counted only in HashBad, which
+	// keeps "hashes verified / hashes attempted" reporting the healthy set.
 	HashChecks int
-	// HashMatches counts those that agreed.
+	// HashMatches counts those that agreed (always equal to HashChecks; kept
+	// separately so callers can state the ratio explicitly).
 	HashMatches int
+	// HashBad counts segments whose digest differed from the index.
+	HashBad int
 	// KeyframeHits counts starts that landed on a verified keyframe.
 	KeyframeHits int
 	// KeyframeTries counts starts attempted.
@@ -87,17 +93,23 @@ func (r *Runner) processSegment(seg *core.Segment, from, to core.Nanos, res *Res
 		if err != nil {
 			return core.WrapFault(err, core.KindIO, core.Pos{File: seg.URI, Byte: -1}, "verify", "hash segment")
 		}
-		res.HashChecks++
 		if sum != seg.SHA256 {
+			res.HashBad++
+			off, raw, ok := locateDamage(r.Root, seg.URI)
+			if !ok {
+				off = firstBadOffset(seg)
+			}
 			res.Anomalies = append(res.Anomalies, core.Anomaly{
-				Category: core.CatHashMismatch, Pos: core.Pos{File: seg.URI, Byte: 0},
-				Track: seg.Track, Segment: seg.URI, ByteOffset: 0,
+				Category: core.CatHashMismatch, Pos: core.Pos{File: seg.URI, Byte: off},
+				Track: seg.Track, Segment: seg.URI, ByteOffset: off,
+				RawTimestamp: raw, Timescale: seg.TrackTimescale(),
 				Expected: seg.SHA256, Actual: sum,
 				Detail: "segment SHA-256 differs from the index",
 			})
-			return &core.Fault{Kind: core.KindHashMismatch, Pos: core.Pos{File: seg.URI, Byte: 0},
+			return &core.Fault{Kind: core.KindHashMismatch, Pos: core.Pos{File: seg.URI, Byte: off},
 				Track: seg.Track, Detail: "hash mismatch"}
 		}
+		res.HashChecks++
 		res.HashMatches++
 	}
 	for _, s := range seg.Samples {
@@ -135,4 +147,30 @@ func hashFile(root, rel string) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// locateDamage finds the original byte offset and raw decode timestamp of the
+// first sample a fragment declares but cannot supply. It is used to turn a
+// whole-file hash mismatch into a traceable position: the damage is reported
+// where the sample data actually stops, not at offset zero.
+func locateDamage(root, rel string) (offset, rawTicks int64, ok bool) {
+	abs, err := core.SafeJoin(root, rel)
+	if err != nil {
+		return 0, 0, false
+	}
+	st, err := os.Stat(abs)
+	if err != nil {
+		return 0, 0, false
+	}
+	samples, err := index.Rescan(root, rel)
+	if err != nil || len(samples) == 0 {
+		return 0, 0, false
+	}
+	for _, s := range samples {
+		if s.Offset+int64(s.Size) > st.Size() {
+			return s.Offset, s.DTSTicks, true
+		}
+	}
+	last := samples[len(samples)-1]
+	return last.Offset + int64(last.Size), last.DTSTicks, true
 }

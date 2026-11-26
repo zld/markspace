@@ -131,24 +131,90 @@ func Build(from, to core.Nanos, idx *core.Index, epochs []core.Epoch, scanAnomal
 			CanonicalNS: int64(e.CanonicalBase), BoundaryOffset: int64(e.BoundaryOffset),
 		})
 	}
+	// Segment hashes counts the fragments whose digest was verified this run;
+	// a mismatch is reported separately in HashMismatch, so the ratio reads
+	// "verified clean / verified".
 	r.Stats = Stats{
-		SegmentHashes: res.HashMatches,
+		SegmentHashes: res.HashChecks,
 		SegmentTotal:  res.HashChecks,
 		KeyframeHit:   res.KeyframeHits,
 		KeyframeTotal: res.KeyframeTries,
 		Anomalies:     len(r.Anomalies),
 	}
-	for _, rec := range res.Recoveries {
-		if rec.Resumed {
-			r.Stats.Recovered++
-		}
-	}
-	for _, a := range all {
-		if a.Category == core.CatHashMismatch {
+	return r
+}
+
+// recount recomputes the content-derived counters (anomalies, hash
+// mismatches, recovered, offset preserved) from the report's own lists.
+func (r *Report) recount() {
+	r.Stats.Anomalies = len(r.Anomalies)
+	r.Stats.HashMismatch = 0
+	for _, a := range r.Anomalies {
+		if a.Category == string(core.CatHashMismatch) {
 			r.Stats.HashMismatch++
 		}
 	}
-	return r
+	r.Stats.Recovered = 0
+	r.Stats.OffsetPreserved = 0
+	for _, rec := range r.Recoveries {
+		if !rec.Resumed {
+			continue
+		}
+		r.Stats.Recovered++
+		if rec.ResumeByteOffset >= 0 && rec.ResumeByteOffset != rec.FailedByteOffset {
+			r.Stats.OffsetPreserved++
+		}
+	}
+}
+
+// Merge folds other into r, concatenating anomalies, hashes, recoveries and
+// epochs and re-sorting, so a run over two inputs produces one document. The
+// interval of the combined report spans both.
+func (r *Report) Merge(other *Report) {
+	if other == nil {
+		return
+	}
+	r.Anomalies = append(r.Anomalies, other.Anomalies...)
+	sort.SliceStable(r.Anomalies, func(i, j int) bool { return anomalyLess(r.Anomalies[i], r.Anomalies[j]) })
+	r.Hashes = append(r.Hashes, other.Hashes...)
+	r.Recoveries = append(r.Recoveries, other.Recoveries...)
+	// Epoch numbers restart per input, so renumber after concatenation.
+	base := len(r.Epochs)
+	for _, e := range other.Epochs {
+		e.Number = base
+		base++
+		r.Epochs = append(r.Epochs, e)
+	}
+	if other.FromNS < r.FromNS {
+		r.FromNS = other.FromNS
+	}
+	if other.ToNS > r.ToNS {
+		r.ToNS = other.ToNS
+	}
+	if other.Stats.KeyframeHit > r.Stats.KeyframeHit {
+		r.Stats.KeyframeHit = other.Stats.KeyframeHit
+	}
+	r.Stats.SegmentHashes += other.Stats.SegmentHashes
+	r.Stats.SegmentTotal += other.Stats.SegmentTotal
+	r.Stats.KeyframeTotal += other.Stats.KeyframeTotal
+	r.recount()
+}
+
+// anomalyLess mirrors core.Anomaly.Less on the record form.
+func anomalyLess(a, b AnomalyRecord) bool {
+	if a.CanonicalNS != b.CanonicalNS {
+		return a.CanonicalNS < b.CanonicalNS
+	}
+	if a.Segment != b.Segment {
+		return a.Segment < b.Segment
+	}
+	if a.ByteOffset != b.ByteOffset {
+		return a.ByteOffset < b.ByteOffset
+	}
+	if a.Category != b.Category {
+		return a.Category < b.Category
+	}
+	return a.Reason < b.Reason
 }
 
 // Digest returns the SHA-256 of the report's JSON encoding. Two runs that
@@ -245,3 +311,6 @@ func sortedUnique(in []string) []string {
 
 var _ = sortedUnique
 var _ = strings.TrimSpace
+
+// Recount refreshes the content-derived counters from the report's lists.
+func (r *Report) Recount() { r.recount() }
