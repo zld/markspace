@@ -44,7 +44,7 @@ type DASHManifest struct {
 type dashS struct {
 	T *int64 `xml:"t,attr"`
 	D int64  `xml:"d,attr"`
-	R int    `xml:"r,attr"`
+	R int64  `xml:"r,attr"`
 }
 
 type dashTimeline struct {
@@ -163,9 +163,23 @@ func buildRepresentation(as dashAdaptationSet, rx dashRepresentation) (Represent
 		if sx.R < 0 {
 			return rep, fmt.Errorf("negative repeat r=%d is unsupported", sx.R)
 		}
+		if sx.R == 1<<63-1 {
+			return rep, fmt.Errorf("repeat r=%d overflows segment count", sx.R)
+		}
 		repeats := sx.R + 1
-		for i := 0; i < repeats; i++ {
-			t, err := checkedAdd(start, int64(i)*sx.D)
+		totalDuration, err := checkedMul(int64(repeats), sx.D)
+		if err != nil {
+			return rep, err
+		}
+		if _, err := checkedAdd(start, totalDuration); err != nil {
+			return rep, err
+		}
+		for i := int64(0); i < repeats; i++ {
+			offset, err := checkedMul(int64(i), sx.D)
+			if err != nil {
+				return rep, err
+			}
+			t, err := checkedAdd(start, offset)
 			if err != nil {
 				return rep, err
 			}
@@ -176,11 +190,10 @@ func buildRepresentation(as dashAdaptationSet, rx dashRepresentation) (Represent
 			rep.Segments = append(rep.Segments, seg)
 			number++
 		}
-		end, err := checkedAdd(start, int64(repeats)*sx.D)
+		nextT, err = checkedAdd(start, totalDuration)
 		if err != nil {
 			return rep, err
 		}
-		nextT = end
 	}
 	return rep, nil
 }
@@ -222,6 +235,11 @@ func checkedAdd(a, b int64) (int64, error) {
 	return int64(ns), err
 }
 
+func checkedMul(a, b int64) (int64, error) {
+	ns, err := internal.MulNS(internal.NS(a), b)
+	return int64(ns), err
+}
+
 func parseISO8601Duration(s string) (internal.NS, error) {
 	s = strings.TrimSpace(s)
 	if !strings.HasPrefix(s, "P") {
@@ -230,12 +248,7 @@ func parseISO8601Duration(s string) (internal.NS, error) {
 	s = s[1:]
 	inTime := false
 	var total internal.NS
-	unitNS := map[byte]int64{
-		'D': 24 * int64(internal.NSPerSecond) * 60 * 60,
-		'H': int64(internal.NSPerSecond) * 60 * 60,
-		'M': int64(internal.NSPerSecond) * 60,
-		'S': int64(internal.NSPerSecond),
-	}
+	factorByUnit := map[byte]int64{'S': 1, 'M': 60, 'H': 3600, 'D': 86400}
 	for len(s) > 0 {
 		if s[0] == 'T' {
 			inTime = true
@@ -251,10 +264,10 @@ func parseISO8601Duration(s string) (internal.NS, error) {
 		}
 		token, unit := s[:i], s[i]
 		s = s[i+1:]
+		factor, ok := factorByUnit[unit]
 		if unit == 'M' && !inTime {
-			unitNS['M'] = 30 * 24 * int64(internal.NSPerSecond) * 60 * 60 // approximate month not used by fixtures
+			factor, ok = 30*86400, true // calendar month approximation for MPD syntax
 		}
-		scale, ok := unitNS[unit]
 		if !ok || (unit == 'D' && inTime) {
 			return 0, fmt.Errorf("invalid duration unit %q", string(unit))
 		}
@@ -262,7 +275,10 @@ func parseISO8601Duration(s string) (internal.NS, error) {
 		if err != nil {
 			return 0, err
 		}
-		add := internal.NS(int64(d) * scale / int64(internal.NSPerSecond))
+		add, err := internal.MulNS(d, factor)
+		if err != nil {
+			return 0, err
+		}
 		total, err = internal.AddNS(total, add)
 		if err != nil {
 			return 0, err

@@ -54,6 +54,16 @@ func TestParseDASHMultipleRepresentations(t *testing.T) {
 	}
 }
 
+func TestParseDASHTimelineOverflow(t *testing.T) {
+	mpd := `<?xml version="1.0"?><MPD><Period><AdaptationSet><Representation id="x">
+		<SegmentTemplate timescale="1"><SegmentTimeline>
+		<S t="9223372036854775806" d="2" r="0"/>
+		</SegmentTimeline></SegmentTemplate></Representation></AdaptationSet></Period></MPD>`
+	if _, err := ParseDASH([]byte(mpd), "overflow.mpd"); err == nil {
+		t.Fatal("expected timeline overflow error")
+	}
+}
+
 func TestParseDASHMalformedLocation(t *testing.T) {
 	_, err := ParseDASH([]byte("<MPD><Period></MPD>"), "bad.mpd")
 	if err == nil || !strings.Contains(err.Error(), "bad.mpd") {

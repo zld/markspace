@@ -143,6 +143,20 @@ func AddNS(a, b NS) (NS, error) {
 	return a + b, nil
 }
 
+// MulNS returns a checked positive multiplication in nanoseconds.
+func MulNS(a NS, factor int64) (NS, error) {
+	if a == 0 || factor == 0 {
+		return 0, nil
+	}
+	if a < 0 || factor < 0 {
+		return 0, fmt.Errorf("negative multiplication is not supported: %d * %d", a, factor)
+	}
+	if int64(a) > math.MaxInt64/factor {
+		return 0, fmt.Errorf("nanosecond multiplication overflow: %d * %d", a, factor)
+	}
+	return a * NS(factor), nil
+}
+
 // Milliseconds renders nanoseconds as a float for reporting only.
 func (n NS) Milliseconds() float64 {
 	return float64(n) / float64(NSPerMillisecond)

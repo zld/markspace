@@ -3,6 +3,7 @@ package rtp
 import (
 	"bufio"
 	"bytes"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -37,12 +38,12 @@ const (
 
 // Observation is the result of feeding one event to a TrackTracker.
 type Observation struct {
-	Event        Event       `json:"event"`
-	TrackKey     string      `json:"track_key"`
-	ExtendedSeq  uint64      `json:"extended_seq"`
-	Disposition  Disposition `json:"disposition"`
-	Missing      []uint64    `json:"missing,omitempty"`
-	GapDetected  int         `json:"gap_detected,omitempty"`
+	Event       Event       `json:"event"`
+	TrackKey    string      `json:"track_key"`
+	ExtendedSeq uint64      `json:"extended_seq"`
+	Disposition Disposition `json:"disposition"`
+	Missing     []uint64    `json:"missing,omitempty"`
+	GapDetected int         `json:"gap_detected,omitempty"`
 }
 
 // TrackStats contains sequence quality counters for one source/track.
@@ -259,7 +260,10 @@ func validateEvent(e Event) error {
 		return fmt.Errorf("pts_ns and arrival_ns must be non-negative")
 	}
 	if len(e.Digest) != 64 {
-		return fmt.Errorf("digest must be a lowercase SHA-256 hex string")
+		return fmt.Errorf("digest must be a 64-character SHA-256 hex string")
+	}
+	if _, err := hex.DecodeString(e.Digest); err != nil {
+		return fmt.Errorf("digest must be hexadecimal: %w", err)
 	}
 	return nil
 }
