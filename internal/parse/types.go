@@ -54,6 +54,10 @@ type Track struct {
 	StsdRaw      []byte
 	Meta         *Meta
 
+	// MetaOffset is the absolute byte offset of the container's metadata
+	// payload, used to report where a conflict was found.
+	MetaOffset int64
+
 	// mxfEdit and mxfCount carry container-declared timing that is not part
 	// of the MP4 sample table model.
 	mxfEdit  media.Rational
@@ -74,6 +78,16 @@ type Asset struct {
 	Source string // "mp4" or "mxf"
 	Path   string
 	Tracks []*Track
+}
+
+// TrackByID returns the track with the given id, or nil.
+func (a *Asset) TrackByID(id uint32) *Track {
+	for _, t := range a.Tracks {
+		if t.ID == id {
+			return t
+		}
+	}
+	return nil
 }
 
 func (a *Asset) VideoTrack() *Track {

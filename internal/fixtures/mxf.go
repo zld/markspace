@@ -213,15 +213,34 @@ func GenerateMXF(spec MXFSpec) (*MXFFile, error) {
 // CorruptMXFAt returns a copy with the essence length field of the first
 // essence KLV overwritten to claim more bytes than the file holds.
 func CorruptMXFAt(data []byte, essenceStart int64) []byte {
+	return corruptKLVLenAt(data, essenceStart)
+}
+
+// CorruptMXFAtZero corrupts the partition pack at offset 0 so the KLV claims
+// more bytes than the file holds. The failure position is offset 0.
+func CorruptMXFAtZero(data []byte) []byte {
+	return corruptKLVLenAt(data, 0)
+}
+
+func corruptKLVLenAt(data []byte, klvStart int64) []byte {
 	out := append([]byte(nil), data...)
-	if essenceStart+16 >= int64(len(out)) {
+	pos := int(klvStart) + 16
+	if pos+3 > len(out) {
 		return out
 	}
-	// Overwrite the first essence KLV's BER length with a huge 3-byte value.
-	pos := int(essenceStart) + 16
-	if pos+3 <= len(out) {
-		out[pos] = 0x83
-		binary.BigEndian.PutUint16(out[pos+1:pos+3], 0x7fff)
-	}
+	// Replace the BER length with a 3-byte form claiming the maximum the
+	// scanner accepts, which is necessarily beyond this small file.
+	out[pos] = 0x83
+	binary.BigEndian.PutUint16(out[pos+1:pos+3], 0x7fff)
 	return out
+}
+
+// ConflictMXF returns a two-track MXF whose video rotation and colour differ
+// from the MP4 fixture, so metadata resolution conflicts unless a selector
+// names a source.
+func ConflictMXF() (*MXFFile, error) {
+	spec := DefaultMXFSpec()
+	spec.Rotation = 270
+	spec.Color = &Color{Primaries: 9, Transfer: 16, Matrix: 9}
+	return GenerateMXF(spec)
 }

@@ -26,8 +26,16 @@ type Merger struct {
 }
 
 // NewMerger starts at sequence 1.
-func NewMerger() *Merger {
-	return &Merger{next: 1, buf: make(map[int]Result)}
+func NewMerger() *Merger { return NewMergerAt(1) }
+
+// NewMergerAt starts at the given sequence. It is used when resuming from a
+// checkpoint: sequences at or below lastSeq are already released and must not
+// block the new run.
+func NewMergerAt(seq int) *Merger {
+	if seq < 1 {
+		seq = 1
+	}
+	return &Merger{next: seq, buf: make(map[int]Result), lastSeq: seq - 1}
 }
 
 // Add buffers a result and returns, in order, every result that became

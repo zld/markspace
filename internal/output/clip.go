@@ -111,8 +111,18 @@ func WriteClip(srcPath, path string, meta *parse.Meta, video, audio *parse.Track
 		Hash:     hash,
 		FirstDTS: spec.Video[0].DTS,
 		LastEnd:  spec.Video[len(spec.Video)-1].End,
-		Shift:    spec.Video[0].DTS,
+		Shift:    SpecShift(spec),
 	}, nil
+}
+
+// SpecShift is the source time subtracted from every sample to make a clip
+// begin at zero: the earliest start across the sliced tracks.
+func SpecShift(spec ClipSpec) media.Rational {
+	tracks := []*sourceTrack{{entries: spec.Video}}
+	if len(spec.Audio) > 0 {
+		tracks = append(tracks, &sourceTrack{entries: spec.Audio})
+	}
+	return clipShift(tracks)
 }
 
 // HashFile returns the lowercase hex SHA-256 of a file.

@@ -106,7 +106,6 @@ func TestRepairFirstSampleZeroDurationUsesPolicy(t *testing.T) {
 
 func TestRepairPTSFollowsDTSShift(t *testing.T) {
 	s2 := smp(2, 0, 3000)
-	s2.PTS = s2.PTS
 	tr := vTrack([]parse.Sample{smp(1, 3000, 3000), s2})
 	res, err := RepairTrack(tr, Policy{})
 	if err != nil {

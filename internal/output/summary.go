@@ -147,8 +147,8 @@ func (s *Summary) ComputeErrors() {
 func (s *Summary) Canonical() []byte {
 	var b strings.Builder
 	fmt.Fprintf(&b, "seed=%d\n", s.Seed)
-	fmt.Fprintf(&b, "map_count=%d clips=%d max_time_error_us=%d byte_error=%d bad_cases=%d resume_digest_equal=%v\n",
-		s.MapCount, len(s.Clips), s.MaxTimeErr, s.ByteErrors, len(s.BadCases), s.ResumeEqual)
+	fmt.Fprintf(&b, "map_count=%d clips=%d max_time_error_us=%d byte_error=%d bad_cases=%d\n",
+		s.MapCount, len(s.Clips), s.MaxTimeErr, s.ByteErrors, len(s.BadCases))
 	for _, m := range s.Maps {
 		fmt.Fprintf(&b, "%s\n", m.Line())
 	}

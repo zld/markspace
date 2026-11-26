@@ -99,6 +99,9 @@ func (p *Pipeline) Run(ctx context.Context, produce func(context.Context, chan<-
 		go func() {
 			defer workers.Done()
 			for job := range jobs {
+				// The handoff buffer capacity is the configured queue size,
+				// so its occupancy alone is the reported peak. Counting the
+				// job already in hand would double-count a worker's slot.
 				p.observeQueue(len(jobs))
 				if ctx.Err() != nil {
 					// Keep draining so a producer blocked on send can make

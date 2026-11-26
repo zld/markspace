@@ -1,8 +1,6 @@
 package event
 
 import (
-	"fmt"
-
 	"replayproof/internal/media"
 	"replayproof/internal/parse"
 )
@@ -27,25 +25,23 @@ type Window struct {
 	AudioSample int
 }
 
-// MaxDeviation is the largest alignment error any window may contain.
-type Limits struct {
-	MaxDeviation media.Rational
-}
-
-// BuildOptions configures window construction.
+// BuildOptions configures window construction. Alignment deviations are
+// reported on each window; there is no fixed acceptance threshold because a
+// long GOP legitimately pushes the video start back by up to one keyframe
+// interval, while audio alignment moves by up to one packet.
 type BuildOptions struct {
 	PreRoll  media.Rational
 	PostRoll media.Rational
-	Limits   Limits
 }
 
 // BuildWindows maps events onto sample indices of the repaired tracks.
 //
 // The interval is [event-pre, event+post). Its start is aligned backwards to
 // the nearest decodable video keyframe at or before the requested boundary,
-// which makes every clip independently decodable. The audio boundary is
-// aligned to the audio packet containing the requested start. A boundary
-// outside the track range is an error carrying the track and time range.
+// which makes every clip independently decodable. Audio is then aligned to
+// the video-aligned start, so both tracks begin together in the clip rather
+// than inheriting the requested boundary. A boundary outside the track range
+// is an error carrying the track and time range.
 func BuildWindows(events []Event, video, audio *parse.Track, opts BuildOptions) ([]Window, error) {
 	if video == nil {
 		return nil, media.New(media.CodeNoTrack, "window.video", -1, "no video track")
@@ -63,7 +59,7 @@ func BuildWindows(events []Event, video, audio *parse.Track, opts BuildOptions) 
 		}
 		ws := Window{Event: ev, Start: start, End: end}
 
-		v, err := alignVideo(video, start, opts.Limits)
+		v, err := alignVideo(video, start)
 		if err != nil {
 			return nil, err
 		}
@@ -71,20 +67,12 @@ func BuildWindows(events []Event, video, audio *parse.Track, opts BuildOptions) 
 		ws.VideoDeviation = v.at.Sub(start).Abs()
 
 		if audio != nil {
-			a, err := alignAudio(audio, start, opts.Limits)
+			a, err := alignAudio(audio, ws.VideoStart)
 			if err != nil {
 				return nil, err
 			}
 			ws.AudioStart, ws.AudioSample = a.at, a.sample.Number
-			ws.AudioDeviation = a.at.Sub(start).Abs()
-		}
-		if err := checkLimit(ws.VideoDeviation, opts.Limits, video.ID, start); err != nil {
-			return nil, err
-		}
-		if audio != nil {
-			if err := checkLimit(ws.AudioDeviation, opts.Limits, audio.ID, start); err != nil {
-				return nil, err
-			}
+			ws.AudioDeviation = a.at.Sub(ws.VideoStart).Abs()
 		}
 		out = append(out, ws)
 	}
@@ -101,7 +89,7 @@ type alignment struct {
 // records the difference. Choosing a later keyframe would drop video that
 // the caller asked for; choosing an earlier one is safe because the clip is
 // still decodable from its first frame.
-func alignVideo(track *parse.Track, target media.Rational, limits Limits) (alignment, error) {
+func alignVideo(track *parse.Track, target media.Rational) (alignment, error) {
 	if len(track.Samples) == 0 {
 		return alignment{}, &media.Error{Code: media.CodeNoKeyframe, Op: "window.video", TrackID: track.ID, Offset: -1, Msg: "track has no samples"}
 	}
@@ -135,7 +123,7 @@ func alignVideo(track *parse.Track, target media.Rational, limits Limits) (align
 // alignAudio finds the packet whose interval contains target, or the first
 // packet when target precedes the track. Audio packets are independently
 // decodable so no keyframe scan is needed.
-func alignAudio(track *parse.Track, target media.Rational, limits Limits) (alignment, error) {
+func alignAudio(track *parse.Track, target media.Rational) (alignment, error) {
 	if len(track.Samples) == 0 {
 		return alignment{}, &media.Error{Code: media.CodeNoKeyframe, Op: "window.audio", TrackID: track.ID, Offset: -1, Msg: "track has no samples"}
 	}
@@ -149,20 +137,6 @@ func alignAudio(track *parse.Track, target media.Rational, limits Limits) (align
 	}
 	s := track.Samples[best]
 	return alignment{at: s.DTS, sample: s}, nil
-}
-
-func checkLimit(dev media.Rational, limits Limits, trackID uint32, start media.Rational) error {
-	if limits.MaxDeviation.Sign() <= 0 {
-		return nil
-	}
-	if dev.Greater(limits.MaxDeviation) {
-		return &media.Error{
-			Code: media.CodeEventWindow, Op: "window.deviation",
-			TrackID: trackID, HasTime: true, From: start, To: start,
-			Msg: fmt.Sprintf("alignment error %d us exceeds limit %d us", dev.Micros(), limits.MaxDeviation.Micros()),
-		}
-	}
-	return nil
 }
 
 // SliceRange is the sample extent of one track within a window.

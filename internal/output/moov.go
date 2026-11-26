@@ -32,13 +32,29 @@ type outSample struct {
 	keyframe bool
 }
 
+// clipShift is the earliest sample start across all tracks, so every sample
+// in the published clip has a non-negative timestamp.
+func clipShift(tracks []*sourceTrack) media.Rational {
+	first := true
+	var shift media.Rational
+	for _, ts := range tracks {
+		for _, e := range ts.entries {
+			if first || e.DTS.Less(shift) {
+				shift = e.DTS
+				first = false
+			}
+		}
+	}
+	return shift
+}
+
 // buildMoov assembles the moov box for the sliced tracks. Times are shifted
-// by the video start so the clip begins at zero.
+// by the earliest sample start so the clip begins at zero.
 func buildMoov(meta *parse.Meta, tracks []*sourceTrack) ([]byte, error) {
 	if len(tracks) == 0 {
 		return nil, media.New(media.CodeEventWindow, "clip.moov", -1, "no tracks")
 	}
-	shift := tracks[0].entries[0].DTS
+	shift := clipShift(tracks)
 	var outs []*outTrack
 	for _, ts := range tracks {
 		if ts.track.Timescale == 0 {

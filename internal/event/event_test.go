@@ -147,12 +147,12 @@ func TestBuildWindowsAlignsToKeyframeAndAudio(t *testing.T) {
 	if w.VideoDeviation.Cmp(media.FromMillis(50)) != 0 {
 		t.Fatalf("video deviation %v", w.VideoDeviation)
 	}
-	// Audio packets are 20 ms; the boundary 250 ms is inside the packet that
-	// runs 240..260 ms, so the aligned start is 240 ms.
-	if w.AudioStart.Cmp(media.FromMillis(240)) != 0 {
+	// Audio aligns to the video-aligned start (200 ms), not to the requested
+	// 250 ms boundary, so the clip's two tracks begin together.
+	if w.AudioStart.Cmp(media.FromMillis(200)) != 0 {
 		t.Fatalf("audio start %v", w.AudioStart)
 	}
-	if w.AudioDeviation.Cmp(media.FromMillis(10)) != 0 {
+	if w.AudioDeviation.Cmp(media.Zero) != 0 {
 		t.Fatalf("audio deviation %v", w.AudioDeviation)
 	}
 }
@@ -168,18 +168,6 @@ func TestBuildWindowsBeforeFirstKeyframeUsesFirst(t *testing.T) {
 	}
 	if wins[0].VideoSample != 1 {
 		t.Fatalf("video sample=%d", wins[0].VideoSample)
-	}
-}
-
-func TestBuildWindowsDeviationLimit(t *testing.T) {
-	video := mkTrack(1, []int64{100, 100, 100})
-	evs := []Event{{Index: 1, At: media.FromMillis(150)}}
-	_, err := BuildWindows(evs, video, nil, BuildOptions{
-		PreRoll: media.FromMillis(120), PostRoll: media.FromMillis(100),
-		Limits: Limits{MaxDeviation: media.FromMicros(10)},
-	})
-	if err == nil {
-		t.Fatal("expected deviation error")
 	}
 }
 
@@ -210,7 +198,9 @@ func TestPlanClipRanges(t *testing.T) {
 	if plan.End.Cmp(media.FromMillis(400)) != 0 {
 		t.Fatalf("end=%v", plan.End)
 	}
-	if plan.Audio.First != 7 || plan.Audio.Last != 20 {
+	// Audio starts with the video-aligned boundary, which here is 0 ms
+	// because the latest keyframe at or before 150 ms is the first sample.
+	if plan.Audio.First != 0 || plan.Audio.Last != 20 {
 		t.Fatalf("audio range %#v", plan.Audio)
 	}
 }

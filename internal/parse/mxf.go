@@ -231,6 +231,7 @@ func ParseMXF(path string) (*Asset, error) {
 		return nil, err
 	}
 	var header []byte
+	headerOffset := int64(0)
 	havePartition := false
 	for _, k := range klvs {
 		switch {
@@ -238,6 +239,7 @@ func ParseMXF(path string) (*Asset, error) {
 			havePartition = true
 		case len(k.Key) == 16 && bytesEqual(k.Key, mxfHeaderMetadataKey):
 			header = k.Payload
+			headerOffset = k.Offset
 		}
 	}
 	if !havePartition {
@@ -270,7 +272,7 @@ func ParseMXF(path string) (*Asset, error) {
 		if !ok1 || !ok2 || !ok3 || den == 0 {
 			return nil, &media.Error{Code: media.CodeMXFMalformed, Op: "mxf.track", File: path, Offset: 0, Msg: "incomplete track timing"}
 		}
-		tr := &Track{ID: id, Timescale: den, Meta: &Meta{}}
+		tr := &Track{ID: id, Timescale: den, Meta: &Meta{}, MetaOffset: headerOffset}
 		switch kindVal {
 		case 1:
 			tr.Kind = KindVideo

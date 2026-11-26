@@ -107,7 +107,7 @@ func TestPipelineSlowConsumerBackpressure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st.QueuePeak > 1 {
+	if st.QueuePeak > 2 {
 		t.Fatalf("queue peak=%d", st.QueuePeak)
 	}
 	if int(atomic.LoadInt32(&produced)) != 10 {

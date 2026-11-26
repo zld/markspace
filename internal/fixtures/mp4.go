@@ -59,10 +59,10 @@ type MP4Sample struct {
 
 const (
 	VideoTimescale = 90000
-	VideoSampleDur = 9000 // 10 fps
+	VideoSampleDur = 45000 // 500 ms at 90 kHz
 	VideoSamples   = 8
 	AudioTimescale = 48000
-	AudioSampleDur = 4800 // 100 ms
+	AudioSampleDur = 24000 // 500 ms at 48 kHz
 	AudioSamples   = 8
 )
 
@@ -71,8 +71,8 @@ const (
 // written after mdat to exercise offset-based parsing rather than fast start.
 func GenerateMP4(video, audio TrackSpec) (*MP4File, error) {
 	if video.Kind == "" {
-		video = TrackSpec{ID: 1, Kind: "video", Timescale: VideoTimescale, SampleDur: VideoSampleDur, Samples: VideoSamples, KeyEvery: 4, Width: 1920, Height: 1080, Rotation: 90,
-			Color: &Color{Primaries: 1, Transfer: 1, Matrix: 1}, ZeroDeltas: []int{5}}
+		video = TrackSpec{ID: 1, Kind: "video", Timescale: VideoTimescale, SampleDur: VideoSampleDur, Samples: VideoSamples, KeyEvery: 2, Width: 1920, Height: 1080, Rotation: 90,
+			Color: &Color{Primaries: 1, Transfer: 1, Matrix: 1}, ZeroDeltas: []int{5}, Crop: &Crop{Left: 4, Top: 4, Right: 4, Bottom: 4}}
 	}
 	if audio.Kind == "" {
 		audio = TrackSpec{ID: 2, Kind: "audio", Timescale: AudioTimescale, SampleDur: AudioSampleDur, Samples: AudioSamples}
