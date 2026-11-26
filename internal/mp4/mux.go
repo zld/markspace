@@ -28,7 +28,7 @@ type TrackIn struct {
 	SyncSamples       []uint32 // 1-based video sync sample numbers
 }
 
-// MuxFile writes a deterministic MP4 containing the constrained track subset.
+// MuxFile writes tracks atomically via a same-directory temporary file.
 func MuxFile(path string, tracks []TrackIn) error {
 	if path == "" {
 		return fault.New(fault.Usage, fault.StageRender, path, -1, -1, "empty output path")
@@ -41,9 +41,33 @@ func MuxFile(path string, tracks []TrackIn) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fault.New(fault.IO, fault.StageRender, path, -1, -1, "create output directory: %v", err)
 	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".mp4-write-*")
+	if err != nil {
+		return fault.New(fault.IO, fault.StageRender, path, -1, -1, "temp file: %v", err)
+	}
+	tmpName := tmp.Name()
+	if err := tmp.Close(); err != nil {
+		return fault.New(fault.IO, fault.StageRender, tmpName, -1, -1, "close temp: %v", err)
+	}
+	if err := WriteFile(tmpName, tracks); err != nil {
+		os.Remove(tmpName)
+		return err
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		os.Remove(tmpName)
+		return fault.New(fault.IO, fault.StageRender, path, -1, -1, "atomic rename: %v", err)
+	}
+	return nil
+}
+
+// WriteFile writes and fsyncs tracks to an already-selected path.
+func WriteFile(path string, tracks []TrackIn) error {
+	if path == "" {
+		return fault.New(fault.Usage, fault.StageRender, path, -1, -1, "empty output path")
+	}
 	for i := range tracks {
 		if err := validateTrack(&tracks[i]); err != nil {
-			return err
+			return fault.Wrap(err, fault.InvalidBox, fault.StageRender, path, -1, -1)
 		}
 	}
 
@@ -61,37 +85,32 @@ func MuxFile(path string, tracks []TrackIn) error {
 		return fault.New(fault.Render, fault.StageRender, path, -1, -1, "internal error: moov length changed during offset fixup")
 	}
 
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".mp4-write-*")
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
-		return fault.New(fault.IO, fault.StageRender, path, -1, -1, "temp file: %v", err)
+		return fault.New(fault.IO, fault.StageRender, path, -1, -1, "open for write: %v", err)
 	}
-	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
 	mdatSize := uint32(8 + cursor)
 	var head [8]byte
 	binary.BigEndian.PutUint32(head[0:4], mdatSize)
 	copy(head[4:8], "mdat")
 	for _, chunk := range [][]byte{ftyp, moov, head[:]} {
-		if _, err := tmp.Write(chunk); err != nil {
-			tmp.Close()
+		if _, err := f.Write(chunk); err != nil {
+			f.Close()
 			return fault.New(fault.IO, fault.StageRender, path, -1, -1, "write mp4: %v", err)
 		}
 	}
 	for _, tr := range tracks {
-		if _, err := tmp.Write(tr.Data); err != nil {
-			tmp.Close()
+		if _, err := f.Write(tr.Data); err != nil {
+			f.Close()
 			return fault.New(fault.IO, fault.StageRender, path, -1, -1, "write mdat: %v", err)
 		}
 	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
+	if err := f.Sync(); err != nil {
+		f.Close()
 		return fault.New(fault.IO, fault.StageRender, path, -1, -1, "sync mp4: %v", err)
 	}
-	if err := tmp.Close(); err != nil {
+	if err := f.Close(); err != nil {
 		return fault.New(fault.IO, fault.StageRender, path, -1, -1, "close mp4: %v", err)
-	}
-	if err := os.Rename(tmpName, path); err != nil {
-		return fault.New(fault.IO, fault.StageRender, path, -1, -1, "atomic rename: %v", err)
 	}
 	return nil
 }
