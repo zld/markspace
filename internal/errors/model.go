@@ -49,17 +49,17 @@ const (
 
 // Issue is one traceable anomaly record.
 type Issue struct {
-	ID          string        `json:"id"`
-	Category    Category      `json:"category"`
-	Severity    string        `json:"severity"`
-	Message     string        `json:"message"`
-	InputStart  int64         `json:"input_start"`
-	InputEnd    int64         `json:"input_end"`
-	PID         int           `json:"pid"`
-	Offset      int64         `json:"offset"`
-	PacketIndex int64         `json:"packet_index"`
-	IntervalID  string        `json:"interval_id,omitempty"`
-	ClockTime   int64         `json:"clock_time_90k"`
+	ID          string   `json:"id"`
+	Category    Category `json:"category"`
+	Severity    string   `json:"severity"`
+	Message     string   `json:"message"`
+	InputStart  int64    `json:"input_start"`
+	InputEnd    int64    `json:"input_end"`
+	PID         int      `json:"pid"`
+	Offset      int64    `json:"offset"`
+	PacketIndex int64    `json:"packet_index"`
+	IntervalID  string   `json:"interval_id,omitempty"`
+	ClockTime   int64    `json:"clock_time_90k"`
 
 	// Continuity-counter gap details.
 	GapFromCC      int   `json:"gap_from_cc,omitempty"`
@@ -73,7 +73,7 @@ type Issue struct {
 	// Keyframe association (byte offset of the related keyframe packet).
 	RelatedKeyframeOffset int64 `json:"related_keyframe_offset,omitempty"`
 
-	Recovery RecoveryState   `json:"recovery_state"`
+	Recovery RecoveryState     `json:"recovery_state"`
 	Attrs    map[string]string `json:"attrs,omitempty"`
 }
 

@@ -85,14 +85,14 @@ func (rd *Reader) Next() (*Packet, error) {
 	if err == io.ErrUnexpectedEOF {
 		if rd.Issues != nil && n > 0 {
 			rd.Issues.Add(merr.Issue{
-				Category:   merr.CatTruncatedPacket,
-				Message:    "partial TS packet at tail",
-				InputStart: offset,
-				InputEnd:   offset + int64(n),
-				Offset:     offset,
+				Category:    merr.CatTruncatedPacket,
+				Message:     "partial TS packet at tail",
+				InputStart:  offset,
+				InputEnd:    offset + int64(n),
+				Offset:      offset,
 				PacketIndex: rd.index,
-				Recovery:   merr.StateOpen,
-				Attrs:      map[string]string{"bytes_present": itoa(n), "bytes_expected": "188"},
+				Recovery:    merr.StateOpen,
+				Attrs:       map[string]string{"bytes_present": itoa(n), "bytes_expected": "188"},
 			})
 		}
 		rd.local += int64(n)
@@ -174,12 +174,12 @@ const (
 
 // CCEvent describes one CC transition for a PID.
 type CCEvent struct {
-	PID                                  uint16
-	Kind                                 CCEventKind
-	From, To                             byte
-	Missing                              int
-	PrevIndex, CurIndex                  int64
-	PrevOffset, CurOffset                int64
+	PID                   uint16
+	Kind                  CCEventKind
+	From, To              byte
+	Missing               int
+	PrevIndex, CurIndex   int64
+	PrevOffset, CurOffset int64
 }
 
 // Issue converts a jump/duplicate event into the shared anomaly model.
