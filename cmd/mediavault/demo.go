@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"example.com/mediavault/internal/fault"
+	"example.com/mediavault/internal/manifest"
 	"example.com/mediavault/internal/pipeline"
 )
 
@@ -17,7 +17,7 @@ func runDemo(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return exitCode(err)
 	}
-	sum, mf, err := pipeline.RunDemo(dir, os.Stdout)
+	sum, _, err := pipeline.RunDemo(dir, os.Stdout)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "demo failed: %v\n", err)
 		code := exitCode(err)
@@ -27,9 +27,7 @@ func runDemo(args []string) int {
 		return code
 	}
 	pipeline.PrintDemo(os.Stdout, sum)
-	fmt.Printf("manifest=%s\n", "manifest.json")
+	fmt.Printf("manifest=%s\n", manifest.FileName)
 	fmt.Printf("demo_ok=true\n")
-	_ = mf
-	_ = fault.CodeArgs
 	return 0
 }

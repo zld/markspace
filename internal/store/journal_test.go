@@ -215,3 +215,36 @@ func mustPath(t *testing.T, s *Store, digest string) string {
 	}
 	return p
 }
+
+func TestPutBytesVerifiesExistingObject(t *testing.T) {
+	s := newStore(t)
+	payload := []byte("same-size tamper")
+	digest := fingerprint.BlobDigest(payload)
+	if err := s.PutBytes(digest, payload); err != nil {
+		t.Fatal(err)
+	}
+	// Replace with a same-length but different payload: a size-only check would
+	// accept it, so the store must re-hash before treating the write as a no-op.
+	tampered := append([]byte(nil), payload...)
+	tampered[0] ^= 0xFF
+	if err := os.WriteFile(mustPath(t, s, digest), tampered, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.PutBytes(digest, payload); fault.CodeOf(err) != fault.CodeDigest {
+		t.Fatalf("same-size tamper not detected: %v", err)
+	}
+	// Repair restores the verified bytes.
+	if err := s.RepairBytes(digest, payload); err != nil {
+		t.Fatalf("repair: %v", err)
+	}
+	if err := s.VerifyObject(digest, int64(len(payload))); err != nil {
+		t.Fatalf("repaired object: %v", err)
+	}
+}
+
+func TestRepairBytesRejectsWrongDigest(t *testing.T) {
+	s := newStore(t)
+	if err := s.RepairBytes(strings.Repeat("0", 64), []byte("x")); fault.CodeOf(err) != fault.CodeDigest {
+		t.Fatalf("code = %q", fault.CodeOf(err))
+	}
+}

@@ -8,7 +8,6 @@
 package main
 
 import (
-	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -16,7 +15,6 @@ import (
 
 	"example.com/mediavault/internal/fault"
 	"example.com/mediavault/internal/manifest"
-	"example.com/mediavault/internal/pipeline"
 	"example.com/mediavault/internal/store"
 )
 
@@ -136,23 +134,4 @@ func verifyDir(dir string) (*manifest.Result, error) {
 	}
 	v := &manifest.Verifier{Store: st}
 	return v.Verify(f)
-}
-
-var errUsage = errors.New("usage")
-
-// newRunner is a small seam shared by demo and tests.
-func newRunner(dir string, out *os.File, stopAfter int) (*pipeline.Runner, *store.Store, error) {
-	st, err := store.Open(dir)
-	if err != nil {
-		return nil, nil, err
-	}
-	r, err := pipeline.New(pipeline.Options{
-		Store:           st,
-		Out:             out,
-		StopAfterBlocks: stopAfter,
-	})
-	if err != nil {
-		return nil, nil, err
-	}
-	return r, st, nil
 }

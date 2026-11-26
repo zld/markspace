@@ -91,11 +91,17 @@ func (s *Store) put(digest string, r io.Reader, size int64, replace bool) error 
 		if err != nil {
 			return fault.Wrap(fault.CodeIO, fault.StageNormalized, -1, err, "stat object %s", digest)
 		}
-		if st.Size() == size {
-			return nil
+		if st.Size() != size {
+			return fault.New(fault.CodeDigest, fault.StageNormalized, -1,
+				"existing object %s is %d bytes, expected %d", digest, st.Size(), size)
 		}
-		return fault.New(fault.CodeDigest, fault.StageNormalized, -1,
-			"existing object %s is %d bytes, expected %d", digest, st.Size(), size)
+		// Size alone would let a same-size corrupt object be reused forever.
+		// Re-hash the stored copy before declaring the write a no-op.
+		if err := s.VerifyObject(digest, size); err != nil {
+			return fault.Wrap(fault.CodeDigest, fault.StageNormalized, -1, err,
+				"existing object %s failed verification", digest)
+		}
+		return nil
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fault.Wrap(fault.CodeIO, fault.StageNormalized, -1, err, "create object dir")
