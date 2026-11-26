@@ -37,7 +37,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 
 func usage(w io.Writer) {
 	fmt.Fprintln(w, "usage:")
-	fmt.Fprintln(w, "  replayctl demo --self-fixture [--case ok|truncated-box|time-gap|timestamp-wrap|recover]")
+	fmt.Fprintln(w, "  replayctl demo --self-fixture [--case NAME|--truncated-box|--time-gap|--timestamp-wrap|--recover]")
 	fmt.Fprintln(w, "                 --event-ms N --pre-ms N --post-ms N --out DIR [--crash-after-rename]")
 	fmt.Fprintln(w, "  replayctl verify --dir DIR")
 }
@@ -65,8 +65,26 @@ func runDemo(args []string, stdout, stderr io.Writer) int {
 	fs.Int64Var(&f.preMS, "pre-ms", 500, "pre-event half-window in milliseconds")
 	fs.Int64Var(&f.postMS, "post-ms", 500, "post-event half-window in milliseconds")
 	fs.BoolVar(&f.crashAfterRename, "crash-after-rename", false, "inject exit 75 after final artifact rename")
+	var truncated, timeGap, wrap, recover bool
+	fs.BoolVar(&truncated, "truncated-box", false, "use the 16-byte declared-longer box fixture")
+	fs.BoolVar(&timeGap, "time-gap", false, "place the event in an empty clip segment")
+	fs.BoolVar(&wrap, "timestamp-wrap", false, "use the 32-bit RTP timestamp wrap fixture")
+	fs.BoolVar(&recover, "recover", false, "enable one-shot rename-then-exit recovery injection")
 	if err := fs.Parse(args); err != nil {
 		return 2
+	}
+	switch {
+	case truncated:
+		f.caseName = fixture.CaseTruncated
+	case timeGap:
+		f.caseName = fixture.CaseTimeGap
+	case wrap:
+		f.caseName = fixture.CaseWrap
+	case recover:
+		f.caseName = fixture.CaseRecover
+	}
+	if recover {
+		f.crashAfterRename = true
 	}
 	if !f.selfFixture {
 		fmt.Fprintln(stderr, "demo currently requires --self-fixture")
