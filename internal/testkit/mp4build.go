@@ -67,6 +67,9 @@ func buildDeltas(gapAfter int) [][2]uint32 {
 	if gapAfter <= 0 {
 		return [][2]uint32{{frameCount, frameDelta}}
 	}
+	// Normal deltas up to gapAfter, then a single doubled delta whose extra
+	// length opens a one-frame PTS hole. Every later step stays nominal so
+	// the fixture contains exactly one anomaly interval.
 	return [][2]uint32{
 		{uint32(gapAfter), frameDelta},
 		{1, frameDelta * 2},

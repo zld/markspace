@@ -198,7 +198,9 @@ func buildManifest(c *Config, fi *media.FileInfo, tl *media.Timeline,
 				Detail: pe.anomaly.Detail,
 			}
 		}
-		if r, ok := resultByID[pe.ev.ID]; ok {
+		// Only the accepted (first) occurrence of an ID owns a clip;
+		// duplicates and skips reference the decision without artifacts.
+		if r, ok := resultByID[pe.ev.ID]; ok && pe.decision == events.DecisionAccepted {
 			cr := &manifest.ClipRecord{
 				FileName: r.FileName, SHA256: r.SHA256Hex, Size: r.Size,
 				StartPTS: r.StartPTS, EndPTS: r.EndPTS,
