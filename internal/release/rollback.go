@@ -67,7 +67,7 @@ func VerifyWithPixels(dir string) (*Manifest, error) {
 				return m, fmt.Errorf("%w: %s RGB got %+v want %+v", ErrVerification, target.Platform, got, target.RGBMean)
 			}
 		}
-		if len(audio) > 0 {
+		if target.AudioSampleFrames > 0 && len(audio) > 0 {
 			peak := render.PeakDBFS(audio)
 			if math.Abs(peak-target.PeakDBFS) > 0.01 {
 				return m, fmt.Errorf("%w: audio peak %.4f != manifest %.4f", ErrVerification, peak, target.PeakDBFS)
