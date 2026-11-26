@@ -171,3 +171,57 @@ func itoa(n int) string {
 	}
 	return string(buf[i:])
 }
+
+// parseInterval splits "start --> end" into two tick timestamps.
+func parseInterval(line string) (clock.Ticks, clock.Ticks, error) {
+	return parseIntervalOpt(line, Options{Rate: clock.Rate25})
+}
+
+// parseIntervalOpt additionally rejects drop-frame punctuation that is
+// illegal for the configured frame rate.
+func parseIntervalOpt(line string, opt Options) (clock.Ticks, clock.Ticks, error) {
+	arrow := "-->"
+	i := strings.Index(line, arrow)
+	if i < 0 {
+		return 0, 0, fault.New(fault.StageParse, fault.KindTimecode, "",
+			"timestamp line must contain -->: "+strings.TrimSpace(line))
+	}
+	left := strings.TrimSpace(line[:i])
+	right := strings.TrimSpace(line[i+len(arrow):])
+	if sp := strings.IndexAny(right, " \t"); sp >= 0 {
+		right = right[:sp]
+	}
+	if err := checkDropFrame(left, opt); err != nil {
+		return 0, 0, err
+	}
+	if err := checkDropFrame(right, opt); err != nil {
+		return 0, 0, err
+	}
+	start, err := parseClock(left)
+	if err != nil {
+		return 0, 0, err
+	}
+	end, err := parseClock(right)
+	if err != nil {
+		return 0, 0, err
+	}
+	return start, end, nil
+}
+
+// checkDropFrame flags ';' separators: a DF label on a non-DF-capable rate is
+// an explicit fault rather than a silently corrected timestamp.
+func checkDropFrame(ts string, opt Options) error {
+	if !strings.ContainsRune(ts, ';') {
+		return nil
+	}
+	if _, _, err := clock.ParseTimecode(strings.ReplaceAll(ts, ".", ":"), opt.Rate); err != nil {
+		fe := fault.As(err)
+		kind := fault.KindDropFrame
+		if fe != nil && fe.Kind == fault.KindTimecode {
+			kind = fault.KindTimecode
+		}
+		return fault.New(fault.StageParse, kind, "",
+			"illegal drop-frame label "+ts+": "+err.Error())
+	}
+	return nil
+}
