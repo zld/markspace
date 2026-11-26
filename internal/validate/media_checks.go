@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"hash"
 	"math"
+	"path/filepath"
 
 	"pwflow/internal/ebml"
 	"pwflow/internal/fingerprint"
@@ -179,6 +180,36 @@ func checkAudio(ctx context.Context, rep *Report, m *pipeline.Manifest) {
 		}
 	}
 	rep.pass("audio-window-hashes", fmt.Sprintf("verified %d windows", len(m.AudioWindows)))
+}
+
+func checkSegmentPixels(ctx context.Context, rep *Report, m *pipeline.Manifest, manifestDir string, w, h int) {
+	for _, s := range m.Segments {
+		path := filepath.Join(manifestDir, s.File)
+		seen := 0
+		err := media.DecodeRGB(ctx, path, w, h, 30, func(index int, _ int64, rgb []byte) error {
+			if index >= len(s.Frames) {
+				return fmt.Errorf("segment contains extra frame %d", index)
+			}
+			want := s.Frames[index]
+			if got := fingerprint.Pixel(w, h, rgb); got != want.PixelSHA256 {
+				return fmt.Errorf("segment %d frame %d pixel hash mismatch", s.Index, index)
+			}
+			if got := round2(frameLuma(rgb)); math.Abs(got-want.LumaMean) > 0.01 {
+				return fmt.Errorf("segment %d frame %d luma %.2f != %.2f", s.Index, index, got, want.LumaMean)
+			}
+			seen++
+			return nil
+		})
+		if err != nil {
+			rep.fail("segment-pixels:"+s.File, err.Error())
+			continue
+		}
+		if seen != len(s.Frames) {
+			rep.fail("segment-frame-count:"+s.File, fmt.Sprintf("decoded=%d manifest=%d", seen, len(s.Frames)))
+			continue
+		}
+		rep.pass("segment-pixels:"+s.File, fmt.Sprintf("verified %d decoded output frames", seen))
+	}
 }
 
 func frameLuma(rgb []byte) float64 {

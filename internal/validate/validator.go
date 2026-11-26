@@ -89,6 +89,7 @@ func Verify(ctx context.Context, manifestPath string) (*Report, error) {
 		checkAlignment(rep, &m, ebmlRep)
 		w, h := videoDims(ebmlRep)
 		checkVideo(ctx, rep, &m, m.Inputs.MediaPath, w, h)
+		checkSegmentPixels(ctx, rep, &m, manifestDir, w, h)
 	}
 
 	checkRTP(rep, &m)
