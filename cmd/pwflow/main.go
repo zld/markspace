@@ -59,9 +59,12 @@ func runCLI(ctx context.Context, args []string) int {
 	}
 	var ce *cliError
 	if errors.As(err, &ce) {
-		if ce.code == exitInterrupted {
+		switch ce.code {
+		case exitInterrupted:
 			fmt.Fprintf(os.Stdout, "CHECKPOINT: %v\n", ce.err)
-		} else {
+		case exitGaps:
+			fmt.Fprintf(os.Stdout, "STATUS: %v\n", ce.err)
+		default:
 			fmt.Fprintf(os.Stderr, "ERROR(%d): %v\n", ce.code, ce.err)
 		}
 		return ce.code

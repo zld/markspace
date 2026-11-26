@@ -8,6 +8,7 @@ import (
 
 	"pwflow/internal/fault"
 	"pwflow/internal/pipeline"
+	"pwflow/internal/validate"
 )
 
 func runPipelineCommand(ctx context.Context, args []string) error {
@@ -49,5 +50,16 @@ func runPipelineCommand(ctx context.Context, args []string) error {
 	}
 	printManifestSummary(res.Manifest, res.ManifestSHA256)
 	fmt.Printf("manifest: %s\n", res.ManifestPath)
+	report, verr := validate.Verify(ctx, res.ManifestPath)
+	if verr != nil {
+		if report != nil {
+			printVerification(report)
+		}
+		return &cliError{code: exitRejected, err: verr}
+	}
+	printVerification(report)
+	if report.Status == pipeline.StatusGaps {
+		return &cliError{code: exitGaps, err: fmt.Errorf("produced and verified with recoverable gaps")}
+	}
 	return nil
 }
