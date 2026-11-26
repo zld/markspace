@@ -22,6 +22,7 @@ type mp4State struct {
 	curTrack uint32
 	moof     *fragState
 	fragSeq  uint32
+	reader   io.ReaderAt // source for bounded NAL-header reads (sync detection)
 }
 
 type fragState struct {
@@ -33,6 +34,15 @@ type fragState struct {
 	dataOffset int64 // trun data offset, relative to moof start
 	hasDataOff bool
 	runFlags   []uint32
+	// tfhd defaults used when trun omits per-sample fields (the common
+	// ffmpeg output: durations live in tfhd default_sample_duration and the
+	// keyframe flag in default_sample_flags).
+	defDur      uint32
+	defSize     uint32
+	defFlags    uint32
+	hasDefFlags bool
+	durInTrun   bool // trun carries an explicit per-sample duration
+	flagsInTrun bool // trun carries explicit per-sample flags
 }
 
 // ScanMP4 parses a regular or fragmented MP4 stream. Reads are bounded to the
@@ -41,6 +51,11 @@ func ScanMP4(r io.ReadSeeker, sourcePath, sourceHash string) (*ScanResult, error
 	st := &mp4State{
 		res:    &ScanResult{SourcePath: sourcePath, SourceHash: sourceHash},
 		tracks: map[uint32]*TrackSummary{},
+	}
+	// Sync detection needs random access to sample headers; every caller we
+	// support (*os.File, *bytes.Reader) provides ReaderAt alongside ReadSeeker.
+	if ra, ok := r.(io.ReaderAt); ok {
+		st.reader = ra
 	}
 	_, err := mp4.ReadBoxStructure(r, st.handle)
 	if err != nil {
@@ -76,6 +91,11 @@ func (st *mp4State) handle(h *mp4.ReadHandle) (interface{}, error) {
 		t.TimeBase = model.Rational{Num: 1, Den: int64(m.Timescale)}
 		t.Duration = int64(m.GetDuration())
 	case mp4.BoxTypeHdlr():
+		// Only the hdlr inside trak/mdia describes a track; the moov-level
+		// udta/meta/hdlr ("mdir") must not overwrite the track kind.
+		if !pathHasType(h.Path, mp4.BoxTypeTrak()) {
+			break
+		}
 		p, _, err := h.ReadPayload()
 		if err != nil {
 			return nil, err
@@ -104,7 +124,19 @@ func (st *mp4State) handle(h *mp4.ReadHandle) (interface{}, error) {
 	case mp4.BoxTypeTfhd():
 		if st.moof != nil {
 			if p, _, err := h.ReadPayload(); err == nil {
-				st.moof.trackID = p.(*mp4.Tfhd).TrackID
+				tf := p.(*mp4.Tfhd)
+				st.moof.trackID = tf.TrackID
+				flags := tf.GetFlags()
+				if flags&mp4.TfhdDefaultSampleDurationPresent != 0 {
+					st.moof.defDur = tf.DefaultSampleDuration
+				}
+				if flags&mp4.TfhdDefaultSampleSizePresent != 0 {
+					st.moof.defSize = tf.DefaultSampleSize
+				}
+				if flags&mp4.TfhdDefaultSampleFlagsPresent != 0 {
+					st.moof.defFlags = tf.DefaultSampleFlags
+					st.moof.hasDefFlags = true
+				}
 			}
 		}
 	case mp4.BoxTypeTfdt():
@@ -131,6 +163,16 @@ func (st *mp4State) ensureTrack(id uint32) *TrackSummary {
 	return t
 }
 
+// pathHasType reports whether a box path contains a given ancestor type.
+func pathHasType(path mp4.BoxPath, want mp4.BoxType) bool {
+	for _, b := range path {
+		if b == want {
+			return true
+		}
+	}
+	return false
+}
+
 // collectTrun captures per-sample durations, sizes and flags from a fragment.
 func (st *mp4State) collectTrun(h *mp4.ReadHandle) {
 	if st.moof == nil {
@@ -142,18 +184,25 @@ func (st *mp4State) collectTrun(h *mp4.ReadHandle) {
 	}
 	tr := p.(*mp4.Trun)
 	fs := st.moof
-	if tr.GetFlags()&0x1 != 0 {
+	trFlags := tr.GetFlags()
+	if trFlags&0x1 != 0 {
 		fs.dataOffset = int64(tr.DataOffset)
 		fs.hasDataOff = true
 	}
+	fs.durInTrun = trFlags&0x100 != 0
+	fs.flagsInTrun = trFlags&0x400 != 0
+	sizeInTrun := trFlags&0x200 != 0
 	for _, e := range tr.Entries {
-		if tr.GetFlags()&0x100 != 0 {
+		if fs.durInTrun {
 			fs.runDurs = append(fs.runDurs, int64(e.SampleDuration))
 		}
-		if tr.GetFlags()&0x200 != 0 {
+		// Size: prefer the trun entry; fall back to the tfhd default size.
+		if sizeInTrun {
 			fs.runSizes = append(fs.runSizes, int64(e.SampleSize))
+		} else {
+			fs.runSizes = append(fs.runSizes, int64(fs.defSize))
 		}
-		if tr.GetFlags()&0x800 != 0 || tr.GetFlags()&0x400 != 0 {
+		if fs.flagsInTrun {
 			fs.runFlags = append(fs.runFlags, e.SampleFlags)
 		}
 	}
@@ -177,11 +226,27 @@ func (st *mp4State) materializeFragment(bi mp4.BoxInfo) {
 	}
 	tick := fs.baseTick
 	for i, size := range fs.runSizes {
-		dur := int64(0)
-		if i < len(fs.runDurs) {
+		// Duration: explicit trun value when present, else the tfhd default.
+		var dur int64
+		if fs.durInTrun && i < len(fs.runDurs) {
 			dur = fs.runDurs[i]
+		} else {
+			dur = int64(fs.defDur)
 		}
-		sync := i < len(fs.runFlags) && fs.runFlags[i]&0x10000 != 0
+		// Sync detection: prefer an explicit trun/tfhd sample flag, then fall
+		// back to inspecting the sample's leading NAL units for an IDR slice.
+		var flags uint32
+		if fs.flagsInTrun && i < len(fs.runFlags) {
+			flags = fs.runFlags[i]
+		} else if fs.hasDefFlags {
+			flags = fs.defFlags
+		}
+		sync := isSyncSample(flags)
+		if !fs.flagsInTrun && st.reader != nil {
+			if nal, ok := st.sampleHasIDR(off, size); ok {
+				sync = nal
+			}
+		}
 		st.res.Samples = append(st.res.Samples, Sample{
 			TrackID: fs.trackID, Tick: tick, DurTick: dur,
 			Offset: off, Length: size, IsSync: sync,
@@ -192,6 +257,54 @@ func (st *mp4State) materializeFragment(bi mp4.BoxInfo) {
 	}
 	st.fragSeq++
 	st.moof = nil
+}
+
+// maxNALHeaders bounds the number of NAL headers inspected in one sample. The
+// IDR/parameter-set NALs always precede slice data, so only the leading headers
+// matter; this caps reads regardless of individual NAL size.
+const maxNALHeaders = 16
+
+// sampleHasIDR reports whether an avcC length-prefixed sample contains an
+// H.264 IDR slice NAL (type 5). It reads only each NAL's 4-byte length prefix
+// and one type byte and then seeks past the payload, so a large leading SEI
+// NAL cannot hide the IDR that follows it and total reads stay bounded.
+func (st *mp4State) sampleHasIDR(offset, length int64) (bool, bool) {
+	pos := offset
+	end := offset + length
+	hdr := make([]byte, 5)
+	for n := 0; n < maxNALHeaders && pos+5 <= end; n++ {
+		if m, err := st.reader.ReadAt(hdr, pos); err != nil || m != 5 {
+			return false, false
+		}
+		nalLen := int64(hdr[0])<<24 | int64(hdr[1])<<16 | int64(hdr[2])<<8 | int64(hdr[3])
+		if nalLen <= 0 || pos+4+nalLen > end {
+			break
+		}
+		if hdr[4]&0x1F == 5 { // IDR slice
+			return true, true
+		}
+		pos += 4 + nalLen
+	}
+	return false, true
+}
+
+// isSyncSample interprets ISO 14496 sample flags. The sample_depends_on field
+// occupies bits 24-25 of the full 32-bit flags; value 1 means the sample does
+// depend on others (not sync), value 2 means it does not (a sync/key sample),
+// 0 is unknown. ffmpeg's default_sample_flags of 0x1010000 marks non-key
+// samples, while a key frame's flags are 0x02000000 (depends_on=2) or zero.
+func isSyncSample(flags uint32) bool {
+	dependsOn := (flags >> 24) & 0x3
+	switch dependsOn {
+	case 1:
+		return false // depends on others
+	case 2:
+		return true // independent / sync
+	default:
+		// Unknown: treat the common ffmpeg non-key marker (bit 24 set in the
+		// low region) as non-sync, otherwise assume sync.
+		return flags&0x01000000 == 0
+	}
 }
 
 // hdlrKind maps an ISOBMFF handler type to our stable track kind.
