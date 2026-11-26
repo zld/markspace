@@ -99,6 +99,24 @@ func TestCLINormalIdempotentAndRecovery(t *testing.T) {
 	}
 }
 
+func TestCLIBudgetPauseThenRaiseLimit(t *testing.T) {
+	fdir := fixtureDir(t)
+	root := filepath.Join(t.TempDir(), "budget")
+	paused := runCLI(t, "run", "--manifest", filepath.Join(fdir, "normal.json"),
+		"--root", root, "--job-id", "low", "--budget-units", "74")
+	if paused.code != 4 || !strings.Contains(paused.stderr, "E_BUDGET_PAUSED") {
+		t.Fatalf("pause code=%d stderr=%s", paused.code, paused.stderr)
+	}
+	resumed := runCLI(t, "resume", "--root", root, "--job-id", "low", "--budget-units", "80", "--json")
+	if resumed.code != 0 {
+		t.Fatalf("resume code=%d stderr=%s", resumed.code, resumed.stderr)
+	}
+	d := decodeSummary(t, resumed.stdout)
+	if d["verdict"] != "PASS" || d["artifact_sha256"] == "" {
+		t.Fatalf("bad resumed summary: %v", d)
+	}
+}
+
 func TestCLIBadRangeAndBadJumpExitCodes(t *testing.T) {
 	fdir := fixtureDir(t)
 	rangeRes := runCLI(t, "run",

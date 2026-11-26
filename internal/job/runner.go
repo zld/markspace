@@ -82,9 +82,12 @@ func execute(opts Options, m *manifest.Manifest, hash, baseDir, manifestPath str
 		}
 		sourceHashes[t.Path] = sha
 	}
-	params := m.Parameters
-	params.BudgetUnits = opts.BudgetUnits
-	jobKey := manifest.JobKey(hash, sourceHashes, params)
+	// Budget is an admission policy, not a content-processing parameter, so an
+	// operator can raise a paused budget without changing the identity of the
+	// reusable manifest/source computation.
+	keyParams := m.Parameters
+	keyParams.BudgetUnits = 0
+	jobKey := manifest.JobKey(hash, sourceHashes, keyParams)
 
 	lock, err := AcquireKeyLock(opts.Root, jobKey)
 	if err != nil {
