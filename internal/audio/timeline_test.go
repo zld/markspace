@@ -2,8 +2,6 @@ package audio
 
 import (
 	"testing"
-
-	"rtpregress/internal/clock"
 )
 
 func TestPlannerPlacesByRealPTSAndDetectsGaps(t *testing.T) {
@@ -34,14 +32,21 @@ func TestPlannerPlacesByRealPTSAndDetectsGaps(t *testing.T) {
 	}
 }
 
-func TestPlannerRejectsBackwardsTime(t *testing.T) {
+func TestPlannerAcceptsOutOfOrderAndSorts(t *testing.T) {
+	// Workers may complete in any order; Place must not depend on call order.
 	p, _ := NewPlanner()
-	if _, err := p.Place(Segment{ID: 0, StartNanos: 1_000_000_000}, 100); err != nil {
+	if _, err := p.Place(Segment{ID: 1, StartNanos: 1_000_000_000}, 100); err != nil {
 		t.Fatal(err)
 	}
-	_, err := p.Place(Segment{ID: 1, StartNanos: 500_000_000}, 100)
-	if e := clock.AsError(err); e == nil || e.Code != clock.CodeTimeBackwards {
-		t.Fatalf("want CodeTimeBackwards, got %v", err)
+	if _, err := p.Place(Segment{ID: 0, StartNanos: 0}, 100); err != nil {
+		t.Fatalf("out-of-order Place must be allowed: %v", err)
+	}
+	ordered := p.Placements()
+	if ordered[0].SegmentID != 0 || ordered[1].SegmentID != 1 {
+		t.Fatalf("sorted order wrong: %+v", ordered)
+	}
+	if p.TotalSamples() == 0 {
+		t.Fatal("total samples must span both segments")
 	}
 }
 

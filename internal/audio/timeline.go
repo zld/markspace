@@ -29,12 +29,8 @@ type Span struct {
 // Planner places VFR segments onto one monotonic sample grid using their real
 // PTS. It never fabricates source audio: holes become explicit silence spans.
 type Planner struct {
-	tb       *clock.Timebase
-	placed   []Placement
-	spans    []Span
-	lastNS   int64
-	lastSamp int64
-	started  bool
+	tb     *clock.Timebase
+	placed []Placement
 }
 
 // NewPlanner builds a planner over the canonical 48 kHz time base.
@@ -47,24 +43,12 @@ func NewPlanner() (*Planner, error) {
 	return &Planner{tb: tb}, nil
 }
 
-// Place records one segment's position using its actual PTS. Backwards time is
-// rejected via the shared time base; forward gaps are emitted as silence spans.
+// Place records one segment's position using its actual PTS. Positioning is a
+// pure function of the PTS, so it is safe to call from concurrent workers in
+// any completion order. Gap derivation happens later over the sorted output,
+// so no "last seen" state is required here.
 func (p *Planner) Place(seg Segment, samples int) (Placement, error) {
 	startSample := p.tb.NanosToSample(seg.StartNanos)
-	if p.started && seg.StartNanos < p.lastNS {
-		return Placement{}, clock.New(clock.CodeTimeBackwards, "audio",
-			-1, p.lastNS, seg.StartNanos,
-			"segment %d PTS %d is before last %d", seg.ID, p.lastNS, seg.StartNanos)
-	}
-	if p.started && startSample > p.lastSamp {
-		p.spans = append(p.spans, Span{
-			FromSample: p.lastSamp,
-			ToSample:   startSample,
-			FromNanos:  p.tb.SampleToNanos(p.lastSamp),
-			ToNanos:    seg.StartNanos,
-			Code:       clock.CodeRTPLost,
-		})
-	}
 	pl := Placement{
 		SegmentID:   seg.ID,
 		PID:         seg.PID,
@@ -73,10 +57,29 @@ func (p *Planner) Place(seg Segment, samples int) (Placement, error) {
 		Samples:     samples,
 	}
 	p.placed = append(p.placed, pl)
-	p.lastNS = seg.StartNanos
-	p.lastSamp = startSample + int64(samples)
-	p.started = true
 	return pl, nil
+}
+
+// Gaps derives silence spans from the sorted placements: any interval between
+// the end of one segment and the start of the next is a gap the muxer must
+// bridge. It is computed once, after all (possibly out-of-order) Place calls.
+func (p *Planner) Gaps() []Span {
+	ordered := p.Placements()
+	var spans []Span
+	for i := 1; i < len(ordered); i++ {
+		prevEnd := ordered[i-1].StartSample + int64(ordered[i-1].Samples)
+		nextStart := ordered[i].StartSample
+		if nextStart > prevEnd {
+			spans = append(spans, Span{
+				FromSample: prevEnd,
+				ToSample:   nextStart,
+				FromNanos:  p.tb.SampleToNanos(prevEnd),
+				ToNanos:    p.tb.SampleToNanos(nextStart),
+				Code:       clock.CodeRTPLost,
+			})
+		}
+	}
+	return spans
 }
 
 // Placements returns placements sorted by start sample (VFR order by real PTS).
@@ -95,18 +98,20 @@ func (p *Planner) Placements() []Placement {
 	return out
 }
 
-// Spans returns the silence gaps in timeline order.
-func (p *Planner) Spans() []Span {
-	out := make([]Span, len(p.spans))
-	copy(out, p.spans)
-	sort.SliceStable(out, func(i, j int) bool {
-		return out[i].FromSample < out[j].FromSample
-	})
-	return out
-}
+// Spans returns the silence gaps in timeline order, derived from the sorted
+// placements at call time.
+func (p *Planner) Spans() []Span { return p.Gaps() }
 
-// TotalSamples is the highest sample index reached, including gaps.
-func (p *Planner) TotalSamples() int64 { return p.lastSamp }
+// TotalSamples is the highest sample index reached, including gaps. It is
+// computed from the sorted placements, independent of completion order.
+func (p *Planner) TotalSamples() int64 {
+	ordered := p.Placements()
+	if len(ordered) == 0 {
+		return 0
+	}
+	last := ordered[len(ordered)-1]
+	return last.StartSample + int64(last.Samples)
+}
 
 // TimeBase exposes the shared canonical time base.
 func (p *Planner) TimeBase() *clock.Timebase { return p.tb }

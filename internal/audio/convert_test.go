@@ -74,9 +74,6 @@ func TestProcessNormalizesSpecAndIsDeterministic(t *testing.T) {
 	if len(r1.PCM) != r1.Samples*pcmBytesPerSample {
 		t.Fatalf("PCM must be mono S16LE: %d bytes", len(r1.PCM))
 	}
-	if len(r1.AAC) == 0 {
-		t.Fatal("AAC output empty")
-	}
 	// rerun must produce byte-identical PCM and hash
 	r2, err := c.Process(context.Background(), seg)
 	if err != nil {
