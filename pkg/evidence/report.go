@@ -5,6 +5,7 @@ package evidence
 import (
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/zld/medcheck/pkg/media"
@@ -150,10 +151,22 @@ func (r *Report) Write(outDir string) (string, error) {
 func (r *Report) TerminalLines() []string {
 	lines := []string{
 		fmt.Sprintf("seed=%d window=%d", r.Seed, r.Window),
+	}
+	codecNames := make([]string, 0, len(r.Codecs))
+	for name := range r.Codecs {
+		codecNames = append(codecNames, name)
+	}
+	sort.Strings(codecNames)
+	for _, name := range codecNames {
+		c := r.Codecs[name]
+		lines = append(lines, fmt.Sprintf("codec=%s keyframes=%d roundtrip=%d index_hits=%d stream_sha256=%s",
+			c.Codec, c.Keyframes, c.RoundTripRecords, c.IndexHits, short(c.StreamSHA256)))
+	}
+	lines = append(lines,
 		fmt.Sprintf("roundtrip=%d/%d", r.RoundTripOK, r.RoundTripTotal),
 		fmt.Sprintf("index_hit=%d/%d", r.IndexHitOK, r.IndexHitTotal),
 		fmt.Sprintf("segments=%d", len(r.Segments)),
-	}
+	)
 	for _, s := range r.Segments {
 		lines = append(lines, fmt.Sprintf("segment_%02d sha256=%s repeat_match=%t", s.Ordinal, s.SHA256, s.RepeatMatch))
 	}
