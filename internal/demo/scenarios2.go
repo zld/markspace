@@ -186,6 +186,7 @@ func (r *Runner) scenarioRecovery(ctx context.Context) (ScenarioResult, error) {
 	if err != nil || reused != task.StageSeal {
 		return res, fmt.Errorf("sealed checkpoint not reusable: %s %v", reused, err)
 	}
+	res.Status = loaded.Status
 
 	// Manifest stability: serialize twice, SHA-256 must be identical.
 	sha1, err := r.writeManifest()
