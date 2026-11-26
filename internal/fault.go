@@ -3,7 +3,6 @@ package continuity
 import (
 	"errors"
 	"fmt"
-	"strconv"
 )
 
 // Kind classifies a failure. The kind is stable output and drives the CLI exit
@@ -169,17 +168,3 @@ func atSegmentSample(segment, file string, offset int64, sample int) Location {
 }
 
 func (k Kind) String() string { return string(k) }
-
-// exitCodeName is used in diagnostics only.
-func exitCodeName(code int) string {
-	switch code {
-	case 0:
-		return "ok"
-	case 1:
-		return "usage"
-	case 2:
-		return "rejected"
-	default:
-		return strconv.Itoa(code)
-	}
-}
