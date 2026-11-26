@@ -85,6 +85,23 @@ func TestUsageAndExternalInputExitCodes(t *testing.T) {
 	}
 }
 
+func TestExternalValidInputExitZero(t *testing.T) {
+	f := genTone(toneSpec{SampleRate: 48000, Channels: 1, Frames: 256, Frequency: 440})
+	path := filepath.Join(t.TempDir(), "valid.wav")
+	if err := os.WriteFile(path, f.WAV, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var stdout bytes.Buffer
+	code := run([]string{"--input", path}, &stdout, &bytes.Buffer{})
+	if code != 0 {
+		t.Fatalf("valid input code=%d output=%s", code, stdout.String())
+	}
+	rs := decodeReports(t, &stdout)
+	if len(rs) != 1 || !rs[0].OK {
+		t.Fatalf("valid report=%+v", rs)
+	}
+}
+
 func TestRepeatStableAcrossTwoInvocations(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "stable")
 	var first, second bytes.Buffer
