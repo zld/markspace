@@ -128,8 +128,32 @@ func TestCorruptNALAndOBUAreReportedButParserReturnsPriorUnits(t *testing.T) {
 		t.Fatalf("missing truncated NAL issue: %+v", res.Issues)
 	}
 	e := firstCategory(res.Issues, media.CatTruncatedNAL)
-	if e.TrackID != "broken/h264" || e.Offset < 0 {
-		t.Fatalf("issue lacks track/offset: %+v", e)
+	if e.TrackID != "broken/h264" || e.Offset < 0 || e.Sequence < 0 {
+		t.Fatalf("issue lacks track/sequence/offset: %+v", e)
+	}
+
+	// A header-only VCL NAL followed by a fresh IDR must isolate one bad
+	// segment but still expose the resync keyframe.
+	middle := append(append([]byte{}, good...), []byte{0, 0, 0, 1, 0x65}...)
+	middle = append(middle, annexBNAL(5, 0x65, 0x77, 0x88, 0x99)...)
+	midRes, err := bitstream.Scan(bytes.NewReader(middle), bitstream.CodecH264, "resync")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(midRes.Keyframes()) != 2 {
+		t.Fatalf("resync keyframes=%d units=%+v", len(midRes.Keyframes()), midRes.Units)
+	}
+	midIdx, err := index.Build("resync", bitstream.CodecH264, midRes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	midSegs, err := midIdx.Segments(int64(len(middle)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	midSegs = index.AnnotateIssues(midSegs, midRes.Issues)
+	if got := index.CountCorrupt(midSegs); got != 1 || len(midSegs)-got != 1 {
+		t.Fatalf("isolation corrupt=%d total=%d", got, len(midSegs))
 	}
 
 	illegal := []byte{(5 << 3) | 0x02}
