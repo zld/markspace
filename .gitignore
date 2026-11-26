@@ -1,0 +1,16 @@
+# Build and test artifacts
+/bin/
+/dist/
+/medcheck
+*.test
+*.out
+coverage.txt
+
+# Local generated evidence and media fixtures
+/media-evidence/
+*.evidence.json
+
+# OS/editor files
+.DS_Store
+.idea/
+.vscode/
