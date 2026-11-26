@@ -203,3 +203,78 @@ func writeU32At(dst []byte, off int, v uint32) {
 	dst[off+2] = byte(v >> 8)
 	dst[off+3] = byte(v)
 }
+
+// SampleLayout describes one generated sample for later round-trip checks.
+type SampleLayout struct {
+	Offset   int64
+	Size     int
+	DTSTicks int64
+	DurTicks int64
+	Key      bool
+}
+
+// SegmentLayout records what a generated fragment contains, so a test or the
+// verifier can compare a re-parse against the generator's intent.
+type SegmentLayout struct {
+	URI            string
+	Init           string
+	Representation string
+	TrackID        uint32
+	Timescale      uint32
+	BaseDTSTicks   int64
+	Samples        []SampleLayout
+}
+
+// fragment builds a media fragment and returns both its bytes and a layout
+// describing where each sample landed. The layout is computed the same way a
+// parser would, by walking the finished moof and mdat headers.
+func fragment(t TrackSpec, seq uint32, baseDecodeTime int64, samples []SampleSpec, seed int64, uri, init, rep string) ([]byte, SegmentLayout) {
+	data := buildSegment(t, seq, baseDecodeTime, samples, seed)
+	lay := SegmentLayout{
+		URI: uri, Init: init, Representation: rep,
+		TrackID: t.ID, Timescale: t.Timescale, BaseDTSTicks: baseDecodeTime,
+	}
+	// Recover the moof size and mdat payload start by reading the first boxes,
+	// which mirrors what a decoder does and keeps the layout honest.
+	mdatPayload := mdatDataOffset(data)
+	dts := baseDecodeTime
+	off := mdatPayload
+	for _, s := range samples {
+		lay.Samples = append(lay.Samples, SampleLayout{
+			Offset: off, Size: s.Size, DTSTicks: dts, DurTicks: s.DurTicks, Key: s.Key,
+		})
+		off += int64(s.Size)
+		dts += s.DurTicks
+	}
+	return data, lay
+}
+
+// mdatDataOffset returns the byte offset of the mdat payload in a generated
+// fragment (after styp, moof and the mdat header).
+func mdatDataOffset(data []byte) int64 {
+	off := int64(0)
+	for off+8 <= int64(len(data)) {
+		size := int64(uint32(data[off])<<24 | uint32(data[off+1])<<16 | uint32(data[off+2])<<8 | uint32(data[off+3]))
+		typ := string(data[off+4 : off+8])
+		if typ == "mdat" {
+			return off + 8
+		}
+		if size < 8 {
+			return off
+		}
+		off += size
+	}
+	return off
+}
+
+// Fragment returns the bytes and layout of one media fragment, for tests and
+// the scenario generator that need to describe a fragment before writing it.
+func Fragment(t TrackSpec, seq uint32, baseDecodeTime int64, samples []SampleSpec, seed int64, uri, init, rep string) ([]byte, SegmentLayout) {
+	return fragment(t, seq, baseDecodeTime, samples, seed, uri, init, rep)
+}
+
+// Init returns the initialization segment bytes for a track.
+func Init(t TrackSpec) []byte { return buildInit(t) }
+
+// WriteFile writes data to dir/name, creating parents, and returns its size.
+func WriteFile(dir, name string, data []byte) (int64, error) { return writeFile(dir, name, data) }
