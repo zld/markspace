@@ -41,7 +41,7 @@ type Error struct {
 }
 
 // New builds an Error with a formatted message.
-func NewError(code Code, track uint32, offset int64) *Error {
+func Fail(code Code, track uint32, offset int64) *Error {
 	return &Error{Code: code, TrackID: track, Offset: offset}
 }
 
