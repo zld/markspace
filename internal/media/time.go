@@ -62,7 +62,16 @@ func FromMillis(ms int64) Rational {
 	return NewRational(ms, 1_000)
 }
 
-func (r Rational) IsZero() bool { return r.Num == 0 }
+// norm repairs the zero value so a Rational may be used without calling
+// NewRational. A zero denominator is only ever produced by the zero value.
+func (r Rational) norm() Rational {
+	if r.Den == 0 {
+		r.Den = 1
+	}
+	return r
+}
+
+func (r Rational) IsZero() bool { r = r.norm(); return r.Num == 0 }
 
 func (r Rational) Sign() int {
 	switch {
@@ -75,23 +84,30 @@ func (r Rational) Sign() int {
 	}
 }
 
-func (r Rational) Neg() Rational { return Rational{Num: -r.Num, Den: r.Den} }
+func (r Rational) Neg() Rational {
+	r = r.norm()
+	return Rational{Num: -r.Num, Den: r.Den}
+}
 
 func (r Rational) Add(o Rational) Rational {
+	r, o = r.norm(), o.norm()
 	return NewRational(r.Num*o.Den+o.Num*r.Den, r.Den*o.Den)
 }
 
 func (r Rational) Sub(o Rational) Rational {
+	r, o = r.norm(), o.norm()
 	return NewRational(r.Num*o.Den-o.Num*r.Den, r.Den*o.Den)
 }
 
 func (r Rational) MulInt(n int64) Rational {
+	r = r.norm()
 	return NewRational(r.Num*n, r.Den)
 }
 
 // Scale converts to a tick count at timescale, rounding to nearest with
 // halves away from zero.
 func (r Rational) Scale(timescale uint32) int64 {
+	r = r.norm()
 	return divRound(r.Num*int64(timescale), r.Den)
 }
 
@@ -106,6 +122,7 @@ func divRound(num, den int64) int64 {
 }
 
 func (r Rational) Cmp(o Rational) int {
+	r, o = r.norm(), o.norm()
 	l := r.Num * o.Den
 	rr := o.Num * r.Den
 	switch {
@@ -124,11 +141,13 @@ func (r Rational) Greater(o Rational) bool   { return r.Cmp(o) > 0 }
 func (r Rational) GreaterEq(o Rational) bool { return r.Cmp(o) >= 0 }
 
 func (r Rational) Float() float64 {
+	r = r.norm()
 	return float64(r.Num) / float64(r.Den)
 }
 
 // Micros returns the nearest whole microsecond, half away from zero.
 func (r Rational) Micros() int64 {
+	r = r.norm()
 	return divRound(r.Num*1_000_000, r.Den)
 }
 
@@ -136,6 +155,7 @@ func (r Rational) Micros() int64 {
 // It is used for verifiable error bounds so a fractional tick cannot hide
 // just above a limit.
 func (r Rational) MicrosCeil() int64 {
+	r = r.norm()
 	num := r.Num
 	if num < 0 {
 		num = -num
@@ -156,6 +176,7 @@ func (r Rational) Abs() Rational {
 }
 
 func (r Rational) String() string {
+	r = r.norm()
 	if r.Den == 1 {
 		return fmt.Sprintf("%ds", r.Num)
 	}
