@@ -111,10 +111,12 @@ func (p *Pipeline) Process(ctx context.Context, r io.Reader, sink Sink) (Metrics
 	go func() {
 		defer wg.Done()
 		for b := range ch {
+			// Receipt removes the block from queue occupancy even though its
+			// byte-budget slot remains held until processing finishes.
+			p.changeQueueDepth(-1)
 			if ctx.Err() != nil {
 				p.dropped.Add(1)
 				p.releaseBuffer()
-				p.changeQueueDepth(-1)
 				continue
 			}
 			p.started.Add(1)
@@ -122,7 +124,6 @@ func (p *Pipeline) Process(ctx context.Context, r io.Reader, sink Sink) (Metrics
 			p.finished.Add(1)
 			p.consumed.Add(1)
 			p.releaseBuffer()
-			p.changeQueueDepth(-1)
 			if err != nil {
 				addSinkErr(err)
 				return
