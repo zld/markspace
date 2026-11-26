@@ -204,9 +204,9 @@ func (st *runState) prepare(ctx context.Context, inputs Inputs) error {
 	if st.events, err = stream.Events(packets); err != nil {
 		return err
 	}
-	if len(st.events) != 2 {
+	if len(st.events) == 0 {
 		return &media.Error{Code: media.CodeEventWindow, Op: "replay.events", Offset: -1,
-			Msg: fmt.Sprintf("expected 2 marker events, got %d", len(st.events))}
+			Msg: "no marker event in the RTP stream"}
 	}
 	windows, err := event.BuildWindows(st.events, st.videoFixed, st.audioFixed,
 		event.BuildOptions{PreRoll: st.cfg.PreRoll, PostRoll: st.cfg.PostRoll})
