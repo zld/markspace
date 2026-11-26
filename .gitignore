@@ -1,0 +1,5 @@
+/archivecheck
+/tmp/
+.archivecheck-work/
+*.test
+*.out
