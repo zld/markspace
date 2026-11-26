@@ -1,10 +1,10 @@
 package adapter
 
 import (
-	"io"
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"io"
 	"testing"
 
 	"github.com/pion/rtp"
@@ -32,7 +32,7 @@ type fakeParser struct{ version int }
 
 func (f fakeParser) Version() int { return f.version }
 
-func (f fakeParser) ParseSegment(r io.ReadSeeker, source string) (*SegmentInfo, error) {
+func (f fakeParser) ParseSegment(r io.ReadSeeker, source string) (*core.SegmentInfo, error) {
 	return nil, nil
 }
 
@@ -46,7 +46,7 @@ func TestMP4ParseSegment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	info, err := MP4Parser{}.ParseSegment(bytes.NewReader(data), "seg.m4s")
+	info, err := (MP4Parser{}).ParseSegment(bytes.NewReader(data), "seg.m4s")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func TestMP4TruncatedMoof(t *testing.T) {
 	binary.BigEndian.PutUint32(moofHdr[0:4], 200)
 	copy(moofHdr[4:8], "moof")
 	broken := append(append(append([]byte{}, ftyp...), moofHdr...), 0, 0, 0, 0)
-	_, err = MP4Parser{}.ParseSegment(bytes.NewReader(broken), "seg2.m4s")
+	_, err = (MP4Parser{}).ParseSegment(bytes.NewReader(broken), "seg2.m4s")
 	var ce *core.Error
 	if !errors.As(err, &ce) {
 		t.Fatalf("want core.Error, got %v", err)

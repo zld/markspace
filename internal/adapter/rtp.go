@@ -9,14 +9,6 @@ import (
 	"continuity/internal/core"
 )
 
-// Event is one RTP event record with its reference-clock arrival time.
-type Event struct {
-	ArrivalRef int64  // reference-clock ticks at arrival
-	RTPTime    uint32 // raw 32-bit RTP timestamp (source clock)
-	Seq        uint16
-	SSRC       uint32
-}
-
 // RTPParser parses event-record files. Record framing:
 // [8B arrival ref ticks BE][2B packet length BE][RTP packet].
 type RTPParser struct{}
@@ -26,8 +18,8 @@ func (RTPParser) Version() int { return 1 }
 
 // ParseEvents decodes all records; a malformed record is reported with
 // its byte offset in the source.
-func (RTPParser) ParseEvents(r io.Reader, source string) ([]Event, error) {
-	var out []Event
+func (RTPParser) ParseEvents(r io.Reader, source string) ([]core.Event, error) {
+	var out []core.Event
 	off := int64(0)
 	for {
 		var hdr [10]byte
@@ -54,7 +46,7 @@ func (RTPParser) ParseEvents(r io.Reader, source string) ([]Event, error) {
 			return nil, core.NewError(core.StageParse, core.CodeInput, source, 0, off,
 				"rtp unmarshal", err)
 		}
-		out = append(out, Event{
+		out = append(out, core.Event{
 			ArrivalRef: arr,
 			RTPTime:    pkt.Timestamp,
 			Seq:        pkt.SequenceNumber,

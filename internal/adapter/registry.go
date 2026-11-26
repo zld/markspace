@@ -6,30 +6,14 @@ import (
 	"fmt"
 	"io"
 	"sort"
+
+	"continuity/internal/core"
 )
-
-// Sample is one media sample's actual duration in 90 kHz ticks.
-// VFR streams keep per-sample durations; nothing is normalized to a
-// nominal frame rate.
-type Sample struct {
-	Duration int64
-}
-
-// SegmentInfo is the parser output consumed by the kernel.
-type SegmentInfo struct {
-	Source      string
-	TrackID     uint32
-	BaseTime    int64 // raw decode time in source ticks (may be wrapped)
-	Samples     []Sample
-	Fingerprint [32]byte // content fingerprint over sample payload
-	MoofOffset  int64
-	Size        int64
-}
 
 // ParserV1 is the versioned container-parser contract.
 type ParserV1 interface {
 	Version() int
-	ParseSegment(r io.ReadSeeker, source string) (*SegmentInfo, error)
+	ParseSegment(r io.ReadSeeker, source string) (*core.SegmentInfo, error)
 }
 
 var parsersV1 = map[string]ParserV1{}

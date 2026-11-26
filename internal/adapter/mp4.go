@@ -22,7 +22,7 @@ func (MP4Parser) Version() int { return 1 }
 // ParseSegment implements ParserV1. Truncated boxes are reported with the
 // byte offset of the offending box; the timeline is never silently
 // shortened.
-func (MP4Parser) ParseSegment(r io.ReadSeeker, source string) (*SegmentInfo, error) {
+func (MP4Parser) ParseSegment(r io.ReadSeeker, source string) (*core.SegmentInfo, error) {
 	size, err := r.Seek(0, io.SeekEnd)
 	if err != nil {
 		return nil, core.NewError(core.StageParse, core.CodeInput, source, 0, -1, "seek", err)
@@ -34,7 +34,7 @@ func (MP4Parser) ParseSegment(r io.ReadSeeker, source string) (*SegmentInfo, err
 	if err := checkTruncation(r, source, size); err != nil {
 		return nil, err
 	}
-	info := &SegmentInfo{Source: source, Size: size, MoofOffset: -1}
+	info := &core.SegmentInfo{Source: source, Size: size, MoofOffset: -1}
 	hash := sha256.New()
 	var walk mp4.ReadHandler
 	walk = func(h *mp4.ReadHandle) (interface{}, error) {
@@ -68,7 +68,7 @@ func (MP4Parser) ParseSegment(r io.ReadSeeker, source string) (*SegmentInfo, err
 				return nil, err
 			}
 			for _, e := range box.(*mp4.Trun).Entries {
-				info.Samples = append(info.Samples, Sample{Duration: int64(e.SampleDuration)})
+				info.Samples = append(info.Samples, core.Sample{Duration: int64(e.SampleDuration)})
 			}
 		case mp4.BoxTypeMdat():
 			if _, err := h.ReadData(hash); err != nil {
