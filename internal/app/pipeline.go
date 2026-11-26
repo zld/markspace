@@ -91,6 +91,17 @@ func Analyze(ctx context.Context, cfg Config) (*Outcome, error) {
 	_ = results
 
 	canceled := stats.Canceled
+	if canceled {
+		builder.AddFinding(model.NewFinding(model.ErrCanceled, model.SourceFlow,
+			model.SeverityWarning, model.Span{},
+			"analysis canceled after %d completed jobs, %d not received",
+			stats.Completed, stats.NotReceived))
+		builder.AddConclusion(report.Conclusion{
+			Item: "pool", Status: "canceled",
+			Detail: fmt.Sprintf("completed=%d not_received=%d", stats.Completed, stats.NotReceived),
+			Codes: []model.ErrorCode{model.ErrCanceled},
+		})
+	}
 	r := builder.Build(packetCount, trackCount, keyframeCount, duplicates, canceled)
 
 	exit := 0
@@ -133,6 +144,45 @@ func analyzeRTP(ctx context.Context, cfg Config, trace *fixture.Trace, b *report
 		released := buf.Flush()
 		packetCount += len(released)
 		duplicates += buf.Duplicates()
+
+		// Locate every duplicate and wrap observation on the tick clock.
+		// Duplicates are counted once in the packet set but still get a
+		// finding so the repeated-vs-real-loss distinction is explicit.
+		byExt := make(map[uint32]model.PacketRecord, len(released))
+		for _, p := range released {
+			byExt[p.ExtendedSequence] = p
+		}
+		for _, obs := range buf.Observations() {
+			rec, known := byExt[obs.Extended]
+			var span model.Span
+			if known {
+				span = model.NewSpan(rec.ArrivalTick, rec.ArrivalTick)
+			}
+			switch {
+			case obs.Duplicate:
+				seq := obs.Extended
+				f := model.NewFinding(model.ErrDuplicatePacket, model.SourceRTP,
+					model.SeverityInfo, span,
+					"duplicate packet %d counted once on stream %d", obs.Extended, stream)
+				f.Stream = stream
+				f.Sequence = &seq
+				b.AddFinding(f)
+				b.AddConclusion(report.Conclusion{
+					Item: fmt.Sprintf("duplicate:%d", obs.Extended),
+					Sequence: obs.Extended, Span: span,
+					Status: "duplicate_suppressed",
+					Codes: []model.ErrorCode{model.ErrDuplicatePacket},
+				})
+			case obs.Wrapped:
+				seq := obs.Extended
+				f := model.NewFinding(model.ErrSequenceWrap, model.SourceRTP,
+					model.SeverityInfo, span,
+					"sequence wrapped to extended %d on stream %d", obs.Extended, stream)
+				f.Stream = stream
+				f.Sequence = &seq
+				b.AddFinding(f)
+			}
+		}
 
 		// Gaps become located findings and loss anomalies; no audio is
 		// ever synthesized for missing numbers. One finding per missing

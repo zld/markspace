@@ -21,13 +21,16 @@ type Gap struct {
 // window has passed. Missing numbers that the window cannot fill become
 // gaps, so reordering and real loss are kept distinct.
 type ReorderBuffer struct {
-	tracker   *SequenceTracker
-	window    uint16
+	tracker    *SequenceTracker
+	window     uint16
 	duplicates int
 	reorders   int
 	wraps      int
-	pending   map[uint32]model.PacketRecord
-	gaps      []Gap
+	pending    map[uint32]model.PacketRecord
+	gaps       []Gap
+	// observations retains every push classification so callers can emit
+	// duplicate/wrap findings per packet, not only aggregate counters.
+	observations []Observation
 	// highWater is the highest extended number whose prefix (every number
 	// up to it) has been observed or declared missing.
 	highWater uint32
@@ -50,6 +53,7 @@ func NewReorderBuffer(window uint16) *ReorderBuffer {
 // buffer itself is drained through Drain and Flush.
 func (b *ReorderBuffer) Push(rec model.PacketRecord) Observation {
 	obs := b.tracker.Push(rec.Sequence)
+	b.observations = append(b.observations, obs)
 	if obs.Duplicate {
 		b.duplicates++
 		return obs
@@ -198,6 +202,9 @@ func (b *ReorderBuffer) Wraps() int { return b.wraps }
 
 // Pending returns how many packets are still held inside the window.
 func (b *ReorderBuffer) Pending() int { return len(b.pending) }
+
+// Observations returns every per-packet classification recorded by Push.
+func (b *ReorderBuffer) Observations() []Observation { return b.observations }
 
 func extendedOf(rec model.PacketRecord) uint32 {
 	return rec.ExtendedSequence

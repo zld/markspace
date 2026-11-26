@@ -54,6 +54,13 @@ func TestAnalyzeDamagedFailsBudget(t *testing.T) {
 	if s.DuplicateCount == 0 {
 		t.Fatal("damaged trace must report duplicates > 0")
 	}
+	if model.CountCode(out.Report.Findings, model.ErrDuplicatePacket) == 0 {
+		t.Fatal("duplicate packet must produce a duplicate_packet finding")
+	}
+	// The duplicated record is stored once: packet count reflects unique seq.
+	if s.PacketCount != 21 {
+		t.Fatalf("unique packet count = %d, want 21 (duplicate counted once)", s.PacketCount)
+	}
 	if s.LossCount != 3 {
 		t.Fatalf("loss count = %d, want 3", s.LossCount)
 	}
@@ -119,6 +126,9 @@ func TestAnalyzeCancelReturns130(t *testing.T) {
 	}
 	if out.Stats.Completed+out.Stats.NotReceived != out.Stats.Submitted {
 		t.Fatalf("job accounting inconsistent: %+v", out.Stats)
+	}
+	if model.CountCode(out.Report.Findings, model.ErrCanceled) != 1 {
+		t.Fatal("canceled run must record one canceled finding")
 	}
 }
 

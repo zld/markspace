@@ -236,6 +236,18 @@
       }
     },
     {
+      "code": "duplicate_packet",
+      "severity": "info",
+      "source": "rtp",
+      "message": "duplicate packet 1 counted once on stream 100",
+      "stream": 100,
+      "sequence": 1,
+      "span": {
+        "start": 40000,
+        "end": 40000
+      }
+    },
+    {
       "code": "timestamp_regression",
       "severity": "warning",
       "source": "rtp",
@@ -285,6 +297,18 @@
     }
   ],
   "conclusions": [
+    {
+      "item": "duplicate:1",
+      "sequence": 1,
+      "span": {
+        "start": 40000,
+        "end": 40000
+      },
+      "status": "duplicate_suppressed",
+      "codes": [
+        "duplicate_packet"
+      ]
+    },
     {
       "item": "gap:6",
       "sequence": 6,
