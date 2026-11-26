@@ -138,12 +138,14 @@ func Parse(b []byte) (*Index, error) {
 
 // Segment is a half-open byte interval beginning at a keyframe.
 type Segment struct {
-	Ordinal  int    `json:"ordinal"`
-	Offset   int64  `json:"offset"`
-	End      int64  `json:"end"`
-	Length   int64  `json:"length"`
-	Keyframe Record `json:"keyframe"`
-	SHA256   string `json:"sha256,omitempty"`
+	Ordinal         int      `json:"ordinal"`
+	Offset          int64    `json:"offset"`
+	End             int64    `json:"end"`
+	Length          int64    `json:"length"`
+	Keyframe        Record   `json:"keyframe"`
+	SHA256          string   `json:"sha256,omitempty"`
+	Corrupt         bool     `json:"corrupt,omitempty"`
+	IssueCategories []string `json:"issue_categories,omitempty"`
 }
 
 // Segments computes deterministic keyframe boundaries up to streamSize.
