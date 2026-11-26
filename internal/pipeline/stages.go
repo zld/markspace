@@ -67,18 +67,18 @@ func NewRunner(cfg Config) (*Runner, error) {
 	if cfg.Chunk <= 0 {
 		cfg.Chunk = 2
 	}
-	inAbs, err := filepath.Abs(cfg.InputDir)
-	if err != nil {
-		return nil, clock.New(clock.KindIO, "pipeline", "abs input: %v", err)
-	}
-	cfg.InputDir = inAbs
-	// Reject URL-style inputs outright.
+	// Reject URL-style inputs before any filesystem normalization.
 	for _, p := range []string{cfg.InputDir, cfg.OutputDir, cfg.IndexDir} {
 		if looksURL(p) {
 			return nil, clock.New(clock.KindInvalidInput, "pipeline",
 				"URL inputs are not permitted: %q", p)
 		}
 	}
+	inAbs, err := filepath.Abs(cfg.InputDir)
+	if err != nil {
+		return nil, clock.New(clock.KindIO, "pipeline", "abs input: %v", err)
+	}
+	cfg.InputDir = inAbs
 	j, err := index.NewJournal(cfg.IndexDir, inAbs)
 	if err != nil {
 		return nil, err
