@@ -1,0 +1,16 @@
+# Build and acceptance output
+/bin/
+/dist/
+/tmp/
+*.test
+*.out
+coverage.out
+
+# Local acceptance artifacts
+/media-check-*/
+**/testdata/out/
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/
