@@ -156,7 +156,11 @@ func Run(ctx context.Context, cfg Config) (*Report, error) {
 		}
 	}
 	traces := make([]OffsetTrace, 0, len(last.Index.Repairs))
+	tfdtRepairs := 0
 	for _, r := range last.Index.Repairs {
+		if r.Kind == "tfdt_backward_monotonic_clamp" || r.Kind == "tfdt_v0_wraparound_extend" {
+			tfdtRepairs++
+		}
 		traces = append(traces, OffsetTrace{
 			Kind: r.Kind, Source: r.Source, TrackID: r.TrackID, BoxOffset: r.BoxOffset,
 			Original: r.OrigRaw, Fixed: r.FixedRaw, OrigRaw: r.OrigRaw, FixedRaw: r.FixedRaw,
@@ -169,7 +173,7 @@ func Run(ctx context.Context, cfg Config) (*Report, error) {
 		SyncMS:          math.Round(float64(maxSync)/1000.0*1000) / 1000,
 		LossRecoveryPct: last.RTP.RecoveryPct,
 		P95MS:           readRes.p95MS, PeakMiB: float64(pipeStats.PeakMemoryBytes) / float64(1<<20),
-		MFHDGaps: len(last.Index.MFHDGaps), TFDTRepairs: len(last.Index.Repairs),
+		MFHDGaps: len(last.Index.MFHDGaps), TFDTRepairs: tfdtRepairs,
 		Quarantined: len(last.Index.Quarantine), OffsetTrace: traces,
 		DigestEqual: allEqual, Digest: digests[len(digests)-1], Resumed: resumed,
 		VideoSamples: len(readRes.result.Video), AudioSamples: len(readRes.result.Audio),

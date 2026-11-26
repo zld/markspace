@@ -80,7 +80,9 @@ func BuildOrResume(ctx context.Context, manifestPath, indexPath, checkpointPath 
 		return nil, false, err
 	}
 	resumed := false
-	if cp.MatchesInput(fp) && cp.Completed && cp.Digest != "" {
+	if cp.MatchesInput(fp) && cp.Completed && cp.Digest != "" &&
+		cp.ProcessedEvents == len(m.Events) &&
+		cp.StageOffsets["events"] == int64(len(m.Events)) {
 		if saved, lerr := LoadIndex(indexPath); lerr == nil && DigestIndex(saved) == cp.Digest {
 			resumed = true
 		}
