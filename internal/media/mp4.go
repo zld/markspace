@@ -224,6 +224,9 @@ func (m *mp4Info) sampleOffsets(count int) ([]int64, error) {
 // checkPayload verifies that [off, off+size) lies inside an mdat payload.
 // Reaching past the file means the sample table points at truncated data.
 func (m *mp4Info) checkPayload(r io.ReadSeeker, off, size int64) error {
+	if off < 0 || size < 0 || off > (1<<63-1)-size {
+		return errors.New("sample offset/size overflows int64")
+	}
 	end := off + size
 	for _, bi := range m.mdat {
 		payloadStart := int64(bi.Offset + bi.HeaderSize)
