@@ -180,3 +180,59 @@ func TestCorruptCheckpointRejected(t *testing.T) {
 		t.Fatal("corrupt checkpoint must be rejected")
 	}
 }
+
+func TestProcessBatchBoundsConcurrencyAndPreservesOrder(t *testing.T) {
+	segs := buildSegments(t, 12, 8)
+	dir := t.TempDir()
+	const workers = 3
+	pool := NewPool(workers, dir, "batch", h264Epoch(), nil, 0)
+	if pool.Workers() != workers {
+		t.Fatalf("worker count not retained: %d", pool.Workers())
+	}
+
+	results, err := pool.ProcessBatch(segs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pool.MaxInFlight() > workers {
+		t.Fatalf("concurrency exceeded worker bound: peak=%d workers=%d",
+			pool.MaxInFlight(), workers)
+	}
+	if pool.MaxInFlight() < 2 {
+		t.Fatalf("expected genuine parallelism, peak was %d", pool.MaxInFlight())
+	}
+	if len(results) != len(segs) {
+		t.Fatalf("result count: got %d want %d", len(results), len(segs))
+	}
+	// Results must come back in input order even though execution is parallel.
+	for i, res := range results {
+		if res.SegmentID != int64(i) {
+			t.Fatalf("result order broken at %d: segment %d", i, res.SegmentID)
+		}
+	}
+	// Every sidecar must exist and re-parse.
+	sidecars, _ := filepath.Glob(filepath.Join(dir, "batch-segment-*.ts.tsix"))
+	if len(sidecars) != len(segs) {
+		t.Fatalf("want %d sidecars, got %d", len(segs), len(sidecars))
+	}
+}
+
+func TestProcessBatchMatchesSequentialRun(t *testing.T) {
+	segs := buildSegments(t, 10, 8)
+
+	seqDir := t.TempDir()
+	seq := runToCompletion(t, seqDir, "asset", segs, nil)
+
+	parDir := t.TempDir()
+	pool := NewPool(4, parDir, "asset", h264Epoch(), nil, 0)
+	batch, err := pool.ProcessBatch(segs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, res := range batch {
+		want := seq[res.SegmentID]
+		if !res.Digests.Equal(want.Digests) {
+			t.Fatalf("parallel segment %d digest differs from sequential", res.SegmentID)
+		}
+	}
+}

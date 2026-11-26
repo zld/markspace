@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 
 	"tsindex/internal/digest"
 	"tsindex/internal/index"
@@ -64,6 +65,8 @@ type Pool struct {
 	mu         sync.Mutex
 	done       map[int64]CompletedItem
 	processed  int
+	inFlight   int32 // atomic: currently computing segments
+	maxFlight  int32 // atomic: high-water mark of inFlight
 }
 
 // NewPool builds a pool. Already-completed items from a prior checkpoint make
@@ -164,6 +167,113 @@ func (p *Pool) Process(seg *ingest.Segment) (SegmentResult, error) {
 	}
 	return result, nil
 }
+
+// computeSegment performs the CPU-bound, side-effect-free work: two-tier
+// hashing and keyframe scanning. It touches no shared pool state and no disk,
+// which is what makes it safe to fan out across the bounded worker pool.
+func (p *Pool) computeSegment(seg *ingest.Segment) (SegmentResult, index.SegmentRecord, error) {
+	hasher := digest.NewHasher()
+	scanner := index.NewScanner(p.epoch)
+	for i := range seg.Records {
+		rec := &seg.Records[i]
+		hasher.AddPacket(rec.Raw[:], rec.Payload())
+		scanner.Feed(rec)
+	}
+	d := hasher.Sum()
+	kfs := scanner.Frames()
+	incomplete := false
+	for _, kf := range kfs {
+		if !kf.Complete {
+			incomplete = true
+			break
+		}
+	}
+	rec := index.SegmentRecord{
+		SegmentID: seg.ID, StartOffset: seg.StartOffset, EndOffset: seg.EndOffset,
+		Packets: len(seg.Records), RawHash: d.Raw, ContentHash: d.Content,
+		Keyframes: kfs, Incomplete: incomplete,
+	}
+	result := SegmentResult{
+		SegmentID: seg.ID, StartOffset: seg.StartOffset, EndOffset: seg.EndOffset,
+		Packets: len(seg.Records), Digests: d, Keyframes: kfs, Incomplete: incomplete,
+	}
+	return result, rec, nil
+}
+
+// ProcessBatch runs complete segments through a bounded worker pool. At most
+// p.workers segments compute concurrently; results are returned in input order
+// regardless of completion order so downstream indexing stays deterministic.
+// Already-checkpointed segments are skipped (their stored identity is reused)
+// and never recomputed.
+func (p *Pool) ProcessBatch(segs []*ingest.Segment) ([]SegmentResult, error) {
+	results := make([]SegmentResult, len(segs))
+	sem := make(chan struct{}, p.workers)
+	var wg sync.WaitGroup
+	var errOnce sync.Once
+	var firstErr error
+	setErr := func(e error) { errOnce.Do(func() { firstErr = e }) }
+
+	for i, seg := range segs {
+		if p.IsDone(seg.ID) {
+			p.mu.Lock()
+			item := p.done[seg.ID]
+			p.mu.Unlock()
+			results[i] = SegmentResult{
+				SegmentID: item.SegmentID, StartOffset: item.StartOffset,
+				EndOffset: item.EndOffset, Digests: digest.Digests{
+					Raw: item.RawHash, Content: item.ContentHash},
+			}
+			continue
+		}
+		wg.Add(1)
+		sem <- struct{}{} // acquire a worker slot, bounding concurrency
+		go func(idx int, s *ingest.Segment) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			cur := atomic.AddInt32(&p.inFlight, 1)
+			for {
+				peak := atomic.LoadInt32(&p.maxFlight)
+				if cur <= peak || atomic.CompareAndSwapInt32(&p.maxFlight, peak, cur) {
+					break
+				}
+			}
+			defer atomic.AddInt32(&p.inFlight, -1)
+			result, rec, cerr := p.computeSegment(s)
+			if cerr != nil {
+				setErr(cerr)
+				return
+			}
+			sidecar, werr := index.WriteSidecar(p.dir, p.chkSource(s.ID), rec)
+			if werr != nil {
+				setErr(werr)
+				return
+			}
+			p.mu.Lock()
+			p.done[s.ID] = CompletedItem{
+				SegmentID: s.ID, StartOffset: s.StartOffset, EndOffset: s.EndOffset,
+				RawHash: rec.RawHash, ContentHash: rec.ContentHash, Sidecar: sidecar,
+			}
+			p.processed++
+			p.mu.Unlock()
+			results[idx] = result
+		}(i, seg)
+	}
+	wg.Wait()
+	if firstErr != nil {
+		return nil, firstErr
+	}
+	if err := p.persist(false); err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
+// Workers returns the pool's bounded concurrency level.
+func (p *Pool) Workers() int { return p.workers }
+
+// MaxInFlight returns the largest number of segments that computed
+// concurrently during the last ProcessBatch call.
+func (p *Pool) MaxInFlight() int { return int(atomic.LoadInt32(&p.maxFlight)) }
 
 // chkSource gives each segment a per-asset sidecar base name so distinct
 // assets never overwrite one another's index.
