@@ -11,12 +11,17 @@ import (
 	"bufio"
 	"context"
 	"encoding/binary"
+	"errors"
 	"io"
 
 	"github.com/pion/rtp"
 
 	"rtpregress/internal/clock"
 )
+
+// ErrTraceTruncated marks a trace whose final record is incomplete. It is
+// recoverable: every complete record before it has already been returned.
+var ErrTraceTruncated = errors.New("rtp: truncated final record")
 
 // Magic is the four-byte trace file prefix.
 var Magic = [4]byte{'R', 'T', 'P', '1'}
@@ -34,15 +39,23 @@ type Record struct {
 
 // Reader streams records from an underlying io.Reader.
 type Reader struct {
-	br      *bufio.Reader
-	offset  int64
-	index   int64
-	started bool
+	br        *bufio.Reader
+	offset    int64
+	index     int64
+	started   bool
+	truncated bool
+	truncOff  int64
 }
 
 // NewReader wraps r. The magic header is consumed lazily on the first Read.
 func NewReader(r io.Reader) *Reader {
 	return &Reader{br: bufio.NewReaderSize(r, 64*1024)}
+}
+
+// Truncated reports whether the input ended inside a final record, and the
+// byte offset at which the truncation began. Recovered records remain valid.
+func (rd *Reader) Truncated() (offset int64, yes bool) {
+	return rd.truncOff, rd.truncated
 }
 
 func (rd *Reader) checkMagic() error {
@@ -60,7 +73,9 @@ func (rd *Reader) checkMagic() error {
 	return nil
 }
 
-// Read returns the next record or io.EOF at clean end of input.
+// Read returns the next record or io.EOF at clean end of input. A truncated
+// final record yields ErrTraceTruncated after every complete record preceding
+// it has been returned normally.
 func (rd *Reader) Read() (*Record, error) {
 	if !rd.started {
 		if err := rd.checkMagic(); err != nil {
@@ -71,8 +86,8 @@ func (rd *Reader) Read() (*Record, error) {
 	var lenBuf [4]byte
 	if _, err := io.ReadFull(rd.br, lenBuf[:]); err != nil {
 		if err == io.ErrUnexpectedEOF {
-			return nil, clock.New(clock.CodeRTPSync, "rtp", recOffset, 0, 0,
-				"truncated length prefix")
+			rd.truncated, rd.truncOff = true, recOffset
+			return nil, ErrTraceTruncated
 		}
 		return nil, err // clean io.EOF propagates unchanged
 	}
@@ -84,8 +99,8 @@ func (rd *Reader) Read() (*Record, error) {
 	}
 	buf := make([]byte, n)
 	if _, err := io.ReadFull(rd.br, buf); err != nil {
-		return nil, clock.New(clock.CodeRTPSync, "rtp", recOffset, 0, 0,
-			"truncated record body: %v", err)
+		rd.truncated, rd.truncOff = true, recOffset
+		return nil, ErrTraceTruncated
 	}
 	rd.offset += n
 	pkt := &rtp.Packet{}
@@ -100,19 +115,30 @@ func (rd *Reader) Read() (*Record, error) {
 
 // ReadAll drains the reader until EOF, honoring ctx cancellation.
 func ReadAll(ctx context.Context, r io.Reader) ([]*Record, error) {
+	recs, _, err := ReadAllWithTruncation(ctx, r)
+	return recs, err
+}
+
+// ReadAllWithTruncation is ReadAll plus the truncation flag and offset. A
+// truncated tail is recoverable: complete records are returned and truncated
+// is true, while the error stays nil. Other faults still return an error.
+func ReadAllWithTruncation(ctx context.Context, r io.Reader) (recs []*Record, truncOffset int64, err error) {
 	rd := NewReader(r)
 	var out []*Record
 	for {
-		if err := ctx.Err(); err != nil {
-			return nil, clock.New(clock.CodeCanceled, "rtp", rd.offset, 0, 0,
-				"read canceled: %v", err)
+		if cerr := ctx.Err(); cerr != nil {
+			return out, rd.truncOff, clock.New(clock.CodeCanceled, "rtp", rd.offset, 0, 0,
+				"read canceled: %v", cerr)
 		}
-		rec, err := rd.Read()
-		if err == io.EOF {
-			return out, nil
+		rec, rerr := rd.Read()
+		if rerr == io.EOF {
+			return out, -1, nil
 		}
-		if err != nil {
-			return nil, err
+		if rerr == ErrTraceTruncated {
+			return out, rd.truncOff, nil
+		}
+		if rerr != nil {
+			return out, rd.truncOff, rerr
 		}
 		out = append(out, rec)
 	}

@@ -3,7 +3,7 @@ package rtp
 import (
 	"bytes"
 	"context"
-	"io"
+	"encoding/binary"
 	"testing"
 
 	"github.com/pion/rtp"
@@ -195,11 +195,38 @@ func TestTraceReaderRejectsBadMagicAndOversize(t *testing.T) {
 }
 
 func TestTraceReaderTruncatedBody(t *testing.T) {
+	data := append([]byte{}, Magic[:]...)
+	data = append(data, 0, 0, 0, 10) // claims 10 bytes
+	data = append(data, 0x80)        // only 1 present
+	// a truncated tail is recoverable: no error, but a flagged offset
+	recs, off, err := ReadAllWithTruncation(context.Background(), bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("truncation must be recoverable, got %v", err)
+	}
+	if len(recs) != 0 || off < 0 {
+		t.Fatalf("want zero records and a truncation offset, got n=%d off=%d",
+			len(recs), off)
+	}
+	// the low-level reader still surfaces the explicit sentinel
+	rd := NewReader(bytes.NewReader(data))
+	if _, rerr := rd.Read(); rerr != ErrTraceTruncated {
+		t.Fatalf("reader sentinel = %v, want ErrTraceTruncated", rerr)
+	}
+}
+
+func TestTraceReaderTruncationKeepsCompletedRecords(t *testing.T) {
 	var buf bytes.Buffer
 	buf.Write(Magic[:])
-	buf.Write([]byte{0, 0, 0, 10}) // claims 10 bytes
-	buf.Write([]byte{0x80})        // only 1 present
-	if _, err := ReadAll(context.Background(), &buf); err == io.EOF {
-		t.Fatal("truncation must not look like clean EOF")
+	// one complete record, then a truncated length prefix
+	raw, _ := mkRecord(0, 0).Packet.Marshal()
+	var lenBuf [4]byte
+	binary.BigEndian.PutUint32(lenBuf[:], uint32(len(raw)))
+	buf.Write(lenBuf[:])
+	buf.Write(raw)
+	buf.Write([]byte{0, 0}) // partial next length prefix
+	recs, _, err := ReadAllWithTruncation(context.Background(), &buf)
+	if err != nil || len(recs) != 1 {
+		t.Fatalf("complete record must survive truncation: n=%d err=%v",
+			len(recs), err)
 	}
 }
