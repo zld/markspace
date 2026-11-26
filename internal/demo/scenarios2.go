@@ -8,6 +8,9 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 )
 
 func (r *Runner) newCheckpoint(streamID string, rng media.Range, inputSHA string) *task.Checkpoint {
@@ -38,14 +41,36 @@ func (r *Runner) scenarioTruncatedIndex(ctx context.Context) (ScenarioResult, er
 	builder.AddFragment(stream.Packets[20:24], 2) // declares 6, indexes 4
 	data := builder.Bytes()
 
-	frags, timescale, errs, err := ingest.ParseFMP4(bytes.NewReader(data))
+	// Persist the fMP4 inside the work root and reopen through SafeOpen so
+	// path-traversal and symlink protections are exercised end-to-end.
+	inDir := filepath.Join(r.work, "inputs")
+	if err := os.MkdirAll(inDir, 0o755); err != nil {
+		return res, err
+	}
+	fmp4Path := filepath.Join(inDir, "truncated.m4s")
+	if err := os.WriteFile(fmp4Path, data, 0o600); err != nil {
+		return res, err
+	}
+	f, absPath, err := media.SafeOpen(r.work, fmp4Path)
 	if err != nil {
 		return res, err
 	}
+	defer f.Close()
+	frags, timescale, errs, err := ingest.ParseFMP4(f)
+	if err != nil {
+		return res, err
+	}
+	_ = absPath
 	ing := ingest.NewFMP4Ingester(timescale, 2)
-	for _, f := range frags {
-		payload := data[f.Offset : f.Offset+int64(f.Size)]
-		ing.AddFragment(f, payload)
+	for _, fr := range frags {
+		if _, err := f.Seek(fr.Offset, io.SeekStart); err != nil {
+			return res, err
+		}
+		payload := make([]byte, fr.Size)
+		if _, err := io.ReadFull(f, payload); err != nil {
+			return res, err
+		}
+		ing.AddFragment(fr, payload)
 	}
 	inRes := ing.Result()
 	// Parse-level and ingest-level errors both indicate the unlocatable tail.

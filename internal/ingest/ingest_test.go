@@ -70,6 +70,28 @@ func TestRTPMissingAndDuplicate(t *testing.T) {
 	}
 }
 
+func TestRTPConsecutiveLossMergesOneGap(t *testing.T) {
+	in := NewRTPIngester(CodecOpus, 48000, 2)
+	// Drop seq 10..12: three consecutive 20 ms packets.
+	for seq := uint16(0); seq < 20; seq++ {
+		if seq >= 10 && seq <= 12 {
+			continue
+		}
+		if err := in.Push(buildRTPPacket(t, seq, uint32(seq)*960, opus20ms()), 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	res, _ := in.Close()
+	if len(res.Gaps) != 1 {
+		t.Fatalf("gaps = %d, want 1 merged interval", len(res.Gaps))
+	}
+	g := res.Gaps[0]
+	if g.When.Start != 10*960 || g.When.End != 13*960 || g.When.Length() != 3*960 {
+		t.Fatalf("gap = [%d,%d) len=%d, want [%d,%d) len=%d",
+			g.When.Start, g.When.End, g.When.Length(), 10*960, 13*960, 3*960)
+	}
+}
+
 func TestRTPSequenceWraparound(t *testing.T) {
 	in := NewRTPIngester(CodecOpus, 48000, 1)
 	seqs := []uint16{0xfffe, 0xffff, 0x0000, 0x0001}
