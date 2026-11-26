@@ -72,6 +72,17 @@ func runResumeScenario(opts Options, out io.Writer) int {
 	}
 	fmt.Fprintf(out, "scenario=resume status=ok exit=0 resumed=%v checkpoint_complete=%v committed_blocks=%d index_entries=%d segments=%d index_sha256=%s repeat_hash_match=true\n",
 		first.Resumed, complete, committed, len(first.Index.Records), len(first.SegmentHashes), first.IndexSHA256)
+	fmt.Fprintf(out, "frames=%d repaired=%d pixel_mean_rgb=%s", len(first.FrameHashes), first.Repair.RepairedCount, first.PixelMeanRGB)
+	if first.Audio != nil {
+		fmt.Fprintf(out, " audio_peak_dbfs=%.2f align_max_us=%.3f", first.Audio.PeakDBFS, first.AlignMaxUS)
+	}
+	fmt.Fprintln(out)
+	for i, h := range first.FrameHashes {
+		fmt.Fprintf(out, "frame_%04d_sha256=%s\n", i+1, h)
+	}
+	for i, h := range first.SegmentHashes {
+		fmt.Fprintf(out, "segment_%03d_sha256=%s\n", i, h)
+	}
 	fmt.Fprintf(out, "cache_decode_hits=%d cache_decode_misses=%d index_invalidations=%d\n",
 		second.CacheCounters.DecodeHits, second.CacheCounters.DecodeMisses, second.CacheCounters.IndexInvalidations)
 	return ExitOK
