@@ -207,6 +207,9 @@ func (t *EpochTracker) Current() Epoch { return t.current }
 // Last returns the greatest canonical position emitted so far.
 func (t *EpochTracker) Last() Nanos { return t.lastCanon }
 
+// HasEpoch reports whether at least one epoch has been opened.
+func (t *EpochTracker) HasEpoch() bool { return t.active }
+
 // OpenStart begins the initial epoch at canonical zero.
 func (t *EpochTracker) OpenStart(source string, raw int64, rawNanos Nanos) Nanos {
 	t.open(EpochStart, source, raw, rawNanos, 0)
