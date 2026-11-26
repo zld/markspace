@@ -65,11 +65,16 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 		cp = existing
 		if cp.State == checkpoint.StateCommitted {
 			cat, _, err := output.LoadCatalog(opts.OutDir)
-			if err != nil {
+			if err == nil {
+				fillCommittedReport(rep, cat, cp.CommittedUnits)
+				return rep, nil
+			}
+			// A committed checkpoint without an atomically committed catalog
+			// means the final commit was interrupted. Rebuild instead of
+			// treating the output as complete.
+			if !errors.Is(err, os.ErrNotExist) {
 				return rep, err
 			}
-			fillCommittedReport(rep, cat, cp.CommittedUnits)
-			return rep, nil
 		}
 	} else {
 		_ = os.Remove(filepath.Join(opts.OutDir, output.CatalogName))
