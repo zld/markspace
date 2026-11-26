@@ -110,7 +110,11 @@ func drawTrack(img *image.RGBA, x, y int, glyph string, present bool, c color.RG
 	box := image.Rect(x, y, x+64, y+34)
 	if present {
 		fill(img, box, c)
-		drawDigits(img, x+22, y+8, glyphValue(glyph), 4, color.RGBA{10, 14, 20, 255})
+		r := 'V'
+		if glyph == "A" {
+			r = 'A'
+		}
+		drawRune(img, x+22, y+8, r, 4, color.RGBA{10, 14, 20, 255})
 	} else {
 		fill(img, box, color.RGBA{90, 35, 40, 255})
 		drawThickLine(img, x+8, y+8, x+56, y+26, color.RGBA{255, 90, 90, 255}, 3)
@@ -141,34 +145,29 @@ var digits = map[rune][5]byte{
 	'7': {0b11111, 0b00001, 0b00010, 0b00100, 0b01000},
 	'8': {0b01110, 0b10001, 0b01110, 0b10001, 0b01110},
 	'9': {0b01110, 0b10001, 0b01111, 0b00001, 0b01110},
+	'A': {0b01110, 0b10001, 0b11111, 0b10001, 0b10001},
+	'V': {0b10001, 0b10001, 0b10001, 0b01010, 0b00100},
 }
 
-func glyphValue(s string) int {
-	if s == "V" {
-		return 8
-	} // Use digit-like block distinction plus lane color/position.
-	if s == "A" {
-		return 4
+func drawRune(img *image.RGBA, x, y int, r rune, scale int, c color.Color) {
+	glyph, ok := digits[r]
+	if !ok {
+		return
 	}
-	return 0
+	for row, bits := range glyph {
+		for col := 0; col < 5; col++ {
+			if bits&(1<<(4-col)) != 0 {
+				rect := image.Rect(x+col*scale, y+row*scale,
+					x+(col+1)*scale, y+(row+1)*scale)
+				fill(img, rect, c)
+			}
+		}
+	}
 }
 
 func drawDigits(img *image.RGBA, x, y, value, scale int, c color.Color) {
-	s := itoa(value)
-	for di, ch := range s {
-		glyph, ok := digits[ch]
-		if !ok {
-			continue
-		}
-		for row, bits := range glyph {
-			for col := 0; col < 5; col++ {
-				if bits&(1<<(4-col)) != 0 {
-					r := image.Rect(x+(di*6+col)*scale, y+row*scale,
-						x+(di*6+col+1)*scale, y+(row+1)*scale)
-					fill(img, r, c)
-				}
-			}
-		}
+	for di, ch := range itoa(value) {
+		drawRune(img, x+di*6*scale, y, ch, scale, c)
 	}
 }
 
