@@ -28,7 +28,7 @@ func checkHealthyThresholds(r *Report) error {
 }
 
 func caseNormal(out string) Report {
-	dir := out + "/normal"
+	dir := out
 	f := genTone(toneSpec{SampleRate: 48000, Channels: 2, Frames: 96000, Frequency: 440})
 	packets := packetize(f, 0, packetFrames)
 	r, err := runHealthy(healthyOptions{
@@ -50,7 +50,7 @@ func caseNormal(out string) Report {
 }
 
 func caseRecovery(out string) Report {
-	dir := out + "/recovery"
+	dir := out
 	f := genTone(toneSpec{SampleRate: 48000, Channels: 2, Frames: 96000, Frequency: 523.25})
 	ordered := packetize(f, 0, packetFrames)
 	shuffled := shuffledWithDuplicates(ordered)

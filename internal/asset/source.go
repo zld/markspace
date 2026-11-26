@@ -113,6 +113,10 @@ func (s *Store) Import(r io.Reader, size int64, mediaType string) (*Source, erro
 		_ = tmp.Close()
 		return nil, timebase.At(timebase.CodeDigest, -1, "source length mismatch: expected=%d actual=%d", size, n)
 	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return nil, timebase.NewError(timebase.CodeCache, "sync temporary source").Wrap(err)
+	}
 	if err := tmp.Chmod(0o444); err != nil {
 		_ = tmp.Close()
 		return nil, timebase.NewError(timebase.CodeCache, "make source read-only").Wrap(err)

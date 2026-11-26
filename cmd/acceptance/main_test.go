@@ -85,6 +85,17 @@ func TestUsageAndExternalInputExitCodes(t *testing.T) {
 	}
 }
 
+func TestSingleCaseWritesManifestAtOutputRoot(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "single")
+	code := run([]string{"--case", "normal", "--out", out}, &bytes.Buffer{}, &bytes.Buffer{})
+	if code != 0 {
+		t.Fatalf("single case code=%d", code)
+	}
+	if _, err := os.Stat(filepath.Join(out, "manifest.json")); err != nil {
+		t.Fatalf("manifest not at --out root: %v", err)
+	}
+}
+
 func TestExternalValidInputExitZero(t *testing.T) {
 	f := genTone(toneSpec{SampleRate: 48000, Channels: 1, Frames: 256, Frequency: 440})
 	path := filepath.Join(t.TempDir(), "valid.wav")

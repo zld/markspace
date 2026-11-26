@@ -78,6 +78,17 @@ func TestFragmentCannotCrossGap(t *testing.T) {
 	}
 }
 
+func TestUnionGapSamplesDoesNotDoubleCountLateOverlap(t *testing.T) {
+	gaps := []gap.Gap{
+		{StartSample: 100, EndSample: 200},
+		{StartSample: 120, EndSample: 140}, // late audit interval inside missing run
+		{StartSample: 300, EndSample: 310},
+	}
+	if got := unionGapSamples(gaps); got != 110 {
+		t.Fatalf("union missing samples=%d want 110", got)
+	}
+}
+
 func TestSourceTrackCompleteness(t *testing.T) {
 	tr := testTrack(t)
 	meta := wav.Metadata{SampleRate: 48000, Channels: 2, BitsPerSample: 16, FrameCount: 48}

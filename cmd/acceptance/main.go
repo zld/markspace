@@ -113,10 +113,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		reports = []Report{caseRepeat(cfg.out)}
 	default:
 		reports = []Report{
-			caseNormal(cfg.out),
-			caseDamage(cfg.out),
-			caseRecovery(cfg.out),
-			caseRepeat(cfg.out),
+			caseNormal(filepath.Join(cfg.out, "normal")),
+			caseDamage(filepath.Join(cfg.out, "damage")),
+			caseRecovery(filepath.Join(cfg.out, "recovery")),
+			caseRepeat(filepath.Join(cfg.out, "repeat")),
 		}
 	}
 

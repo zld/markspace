@@ -125,7 +125,7 @@ func AlignAndSNR(reference, delivered []int32, maxShift int) Alignment {
 		}
 	}
 	best.ErrorSamples = absInt(best.ShiftSamples)
-	if math.IsInf(best.SNRDB, 1) {
+	if math.IsInf(best.SNRDB, 0) {
 		best.SNRDB = 0
 	}
 	return best

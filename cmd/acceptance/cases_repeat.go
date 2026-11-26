@@ -81,7 +81,7 @@ func buildCachedFragment(st *cache.Store, g *cache.Graph, dir, id, trackID, sour
 }
 
 func caseRepeat(out string) Report {
-	dir := filepath.Join(out, "repeat")
+	dir := out
 	rep := newReport("repeat", dir)
 	st, err := cache.NewStore(filepath.Join(dir, "cache"))
 	if err != nil {

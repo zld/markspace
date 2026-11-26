@@ -5,6 +5,7 @@ package validate
 import (
 	"sort"
 
+	"mediacheck/internal/gap"
 	"mediacheck/internal/timebase"
 	"mediacheck/internal/track"
 	"mediacheck/internal/wav"
@@ -22,6 +23,29 @@ type FragmentView struct {
 	StartTick    int64
 	EndTick      int64
 	PayloadBytes int
+}
+
+// unionGapSamples totals missing samples without double-counting a late packet
+// whose audit interval overlaps the earlier missing-sequence gap.
+func unionGapSamples(gaps []gap.Gap) int64 {
+	if len(gaps) == 0 {
+		return 0
+	}
+	gs := append([]gap.Gap(nil), gaps...)
+	sort.Slice(gs, func(i, j int) bool { return gs[i].StartSample < gs[j].StartSample })
+	var total int64
+	curStart, curEnd := gs[0].StartSample, gs[0].EndSample
+	for _, g := range gs[1:] {
+		switch {
+		case g.StartSample > curEnd:
+			total += curEnd - curStart
+			curStart, curEnd = g.StartSample, g.EndSample
+		case g.EndSample > curEnd:
+			curEnd = g.EndSample
+		}
+	}
+	total += curEnd - curStart
+	return total
 }
 
 // SourceTrack checks WAV format fields against the canonical track.
@@ -42,10 +66,7 @@ func SourceTrack(meta wav.Metadata, tr *track.Track, allowGaps bool) error {
 		return timebase.NewError(timebase.CodeTrack, "timeline frame count mismatch").
 			WithTrack(tr.ID).WithRange(0, tr.TimelineEnd)
 	}
-	missing := int64(0)
-	for _, g := range tr.Gaps {
-		missing += g.EndSample - g.StartSample
-	}
+	missing := unionGapSamples(tr.Gaps)
 	if allowGaps {
 		if tr.Delivered+missing != meta.FrameCount {
 			return timebase.NewError(timebase.CodeTrack, "delivered plus gap frames does not equal source frames").

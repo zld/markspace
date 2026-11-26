@@ -24,7 +24,7 @@ func canonicalError(err error) *timebase.Error {
 }
 
 func caseDamage(out string) Report {
-	dir := filepath.Join(out, "damage")
+	dir := out
 	rep := newReport("damage", dir)
 	fixtureDir := filepath.Join(dir, "fixtures")
 	if err := mkdirAll(fixtureDir); err != nil {
