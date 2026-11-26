@@ -75,12 +75,16 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 		_ = os.Remove(filepath.Join(opts.OutDir, output.CatalogName))
 	}
 	rep.State = cp.State
+	if err := cp.Save(opts.OutDir); err != nil {
+		return rep, media.InputError("checkpoint.save", "", err)
+	}
 
 	manifest, _, err := ingest.LoadManifest(opts.InputDir)
 	if err != nil {
 		return rep, err
 	}
 	cp.State = checkpoint.StateScanning
+	rep.State = cp.State
 	if err := cp.Save(opts.OutDir); err != nil {
 		return rep, media.InputError("checkpoint.save", "", err)
 	}
@@ -129,6 +133,7 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 	}
 
 	cp.State = checkpoint.StateMerging
+	rep.State = cp.State
 	if err := cp.Save(opts.OutDir); err != nil {
 		return rep, media.InputError("checkpoint.save", "", err)
 	}
@@ -151,6 +156,7 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 	}
 
 	cp.State = checkpoint.StateRendering
+	rep.State = cp.State
 	if err := cp.Save(opts.OutDir); err != nil {
 		return rep, media.InputError("checkpoint.save", "", err)
 	}

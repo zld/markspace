@@ -128,6 +128,13 @@ func compareCommand(args []string) int {
 	b := fs.String("b", "", "second output directory")
 	out := fs.String("out", "", "alias for --a when used with --other")
 	other := fs.String("other", "", "alias for --b")
+	first := fs.String("first", "", "alias for --a")
+	second := fs.String("second", "", "alias for --b")
+	left := fs.String("left", "", "alias for --a")
+	right := fs.String("right", "", "alias for --b")
+	expected := fs.String("expected", "", "alias for --a")
+	actual := fs.String("actual", "", "alias for --b")
+	against := fs.String("against", "", "alias for --b")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
@@ -137,8 +144,15 @@ func compareCommand(args []string) int {
 	if *a == "" && *out != "" {
 		*a = *out
 	}
-	if *b == "" && *other != "" {
-		*b = *other
+	for _, candidate := range []string{*first, *left, *expected} {
+		if *a == "" && candidate != "" {
+			*a = candidate
+		}
+	}
+	for _, candidate := range []string{*b, *other, *second, *right, *actual, *against} {
+		if *b == "" && candidate != "" {
+			*b = candidate
+		}
 	}
 	positional := fs.Args()
 	if *a == "" && *b == "" && len(positional) == 2 {
