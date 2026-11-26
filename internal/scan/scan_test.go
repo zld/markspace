@@ -234,3 +234,32 @@ func containsCode(codes []fault.Code, want fault.Code) bool {
 func readFile(path string) ([]byte, error) {
 	return os.ReadFile(path)
 }
+
+// TestKeyframesLandExactlyOnSegmentBounds covers the required fixture where a
+// keyframe sits precisely on every segment boundary. For all three codecs the
+// four keyframes must be at frame ordinals 0, 12, 24, 36 with a 12-frame GOP.
+func TestKeyframesLandExactlyOnSegmentBounds(t *testing.T) {
+	ctx := context.Background()
+	want := []int{0, 12, 24, 36}
+	for _, codec := range []string{scan.CodecH264, scan.CodecH265, scan.CodecAV1} {
+		set, err := fixture.Build(ctx, t.TempDir(), fixture.DefaultSpec(codec))
+		if err != nil {
+			t.Fatalf("%s: %v", codec, err)
+		}
+		if len(set.Scan.Keyframes) != len(want) {
+			t.Fatalf("%s: keyframes %v, want %v", codec, set.Scan.Keyframes, want)
+		}
+		for i, kfi := range set.Scan.Keyframes {
+			if kfi != want[i] {
+				t.Fatalf("%s: keyframe %d at %d, want %d (not on segment bound)",
+					codec, i, kfi, want[i])
+			}
+		}
+		// The derived index must point exactly at those keyframe offsets.
+		for i, e := range set.Index.Entries {
+			if e.Offset != set.Scan.AccessUnits[want[i]].Offset {
+				t.Fatalf("%s: index entry %d offset not on keyframe boundary", codec, i)
+			}
+		}
+	}
+}

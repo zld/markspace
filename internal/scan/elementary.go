@@ -24,18 +24,21 @@ const (
 )
 
 // NAL kinds (H.264/H.265) and OBU kinds (AV1) share one enumeration so that
-// access unit assembly code below stays codec agnostic.
+// access unit assembly code below stays codec agnostic. The AV1-specific
+// values deliberately match the OBU type numbers (sequence header=1,
+// temporal delimiter=2, frame header=6); Annex B classifiers map their own
+// NAL types onto these semantic categories.
 const (
 	kindUnknown = iota
-	kindVCL
-	kindAUD
-	kindSPS
-	kindPPS
-	kindVPS
-	kindTemporalDelimiter
-	kindFrameHeader
-	kindSequenceHeader
-	kindOther
+	kindSequenceHeader // 1: AV1 OBU sequence header
+	kindTemporalDelimiter // 2: AV1 OBU temporal delimiter
+	kindAUD             // 3
+	kindSPS             // 4
+	kindPPS             // 5
+	kindFrameHeader     // 6: AV1 OBU frame header
+	kindVCL             // 7
+	kindVPS             // 8
+	kindOther           // 9
 )
 
 // NALUnit is one Annex B NAL unit or one AV1 OBU.
@@ -263,14 +266,15 @@ func splitOBU(r io.ByteReader) ([]NALUnit, int64, error) {
 		hdrPos := pos
 		pos++
 		obuType := (hdr >> 3) & 0x0f
-		// OBU header (AV1 spec 5.3.2): forbidden(1) type(4) extension(1)
-		// has-size(1) reserved(1). Low-overhead format always sets has-size.
-		if hdr&0x02 == 0 {
-			return nil, pos, fault.At(fault.StageScan, fault.CodeParse, CodecAV1,
-				hdrPos, "OBU without size field is not supported in low-overhead format")
-		}
+		// OBU header (AV1 spec 5.3.2), MSB to LSB:
+		//   obu_forbidden_bit(1) obu_type(4) obu_extension_flag(1)
+		//   obu_has_size_field(1) obu_reserved_1bit(1)
+		// The low-overhead bitstream format requires every OBU to be followed
+		// by an unsigned LEB128 size regardless of the has-size bit, so the
+		// size is always read here. The extension flag is bit 2 (0x04).
+		hasExtension := hdr&0x04 != 0
 		data := []byte{hdr}
-		if hdr&0x04 != 0 {
+		if hasExtension {
 			ext, err := readByte("extension byte", hdrPos)
 			if err != nil {
 				return nil, pos, err

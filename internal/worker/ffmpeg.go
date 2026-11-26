@@ -53,15 +53,9 @@ func (e *FFmpegEncoder) Encode(ctx context.Context, codec string, c plan.Candida
 	args := []string{
 		"-hide_banner", "-loglevel", "error", "-nostdin", "-y",
 		"-i", e.SourcePath,
-		"-c:v", encoderName(codec),
-		"-s", fmt.Sprintf("%dx%d", c.Width, c.Height),
-		"-b:v", strconv.FormatInt(c.BitrateBPS, 10),
-		"-maxrate", strconv.FormatInt(c.BitrateBPS, 10),
-		"-bufsize", strconv.FormatInt(c.BitrateBPS*2, 10),
-		"-g", strconv.Itoa(e.gop()),
-		"-pix_fmt", "yuv420p",
-		"-an", "-f", rawMuxer(codec), out,
 	}
+	args = append(args, fixture.TranscodeArgs(codec, c.Width, c.Height, e.gop(), c.BitrateBPS, c.CRF)...)
+	args = append(args, "-an", "-f", fixture.RawMuxer(codec), out)
 	cmd := exec.CommandContext(ctx, bin, args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -180,28 +174,6 @@ func parseSSIM(log string) (float64, error) {
 		v /= 100
 	}
 	return v, nil
-}
-
-func encoderName(codec string) string {
-	switch codec {
-	case scan.CodecH264:
-		return "libx264"
-	case scan.CodecH265:
-		return "libx265"
-	default:
-		return "libsvtav1"
-	}
-}
-
-func rawMuxer(codec string) string {
-	switch codec {
-	case scan.CodecH265:
-		return "hevc"
-	case scan.CodecAV1:
-		return "obu"
-	default:
-		return codec
-	}
 }
 
 func rawExt(codec string) string {

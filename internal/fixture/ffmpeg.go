@@ -136,17 +136,23 @@ func encodeArgs(spec Spec) []string {
 			"-x264-params", gop + ":keyint_min=" + fmt.Sprint(spec.GOP) + ":aud=1:force-cfr=1",
 		}
 	case "h265":
+		// repeat-headers keeps VPS/SPS/PPS at every IDR so downstream raw
+		// re-encodes always have the parameter sets they need.
 		return []string{
 			"-c:v", "libx265", "-preset", "veryfast", "-pix_fmt", "yuv420p",
 			"-x265-params", fmt.Sprintf(
-				"keyint=%d:min-keyint=%d:bframes=0:aud=1:scenecut=0:repeat-headers=0",
+				"keyint=%d:min-keyint=%d:bframes=0:aud=1:scenecut=0:repeat-headers=1",
 				spec.GOP, spec.GOP),
 		}
 	default: // av1
+		// SVT-AV1 needs an explicit keyint inside svtav1-params; the global
+		// -g alone is not honored, so without it keyframes land on the default
+		// 7-frame mini-GOP and break the shared segment boundaries.
 		return []string{
 			"-c:v", "libsvtav1", "-preset", "8", "-pix_fmt", "yuv420p",
-			"-g", fmt.Sprint(spec.GOP),
-			"-svtav1-params", "pred-struct=2:force-key-frames=" + gop + ":enable-tf=0",
+			"-g", fmt.Sprint(spec.GOP), "-crf", "28",
+			"-svtav1-params", fmt.Sprintf(
+				"pred-struct=2:rc=0:enable-tf=0:keyint=%d", spec.GOP),
 		}
 	}
 }

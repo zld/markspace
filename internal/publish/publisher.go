@@ -2,7 +2,6 @@ package publish
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -64,16 +63,12 @@ func (p *Publisher) fragmentedEncode(ctx context.Context, req *Request, outMP4 s
 	args := []string{
 		"-hide_banner", "-loglevel", "error", "-nostdin", "-y",
 		"-i", req.SourcePath,
-		"-c:v", encoderLib(req.Codec),
-		"-s", fmt.Sprintf("%dx%d", c.Width, c.Height),
-		"-b:v", fmt.Sprint(c.BitrateBPS),
-		"-maxrate", fmt.Sprint(c.BitrateBPS),
-		"-bufsize", fmt.Sprint(c.BitrateBPS*2),
-		"-g", fmt.Sprint(gop),
-		"-pix_fmt", "yuv420p", "-an",
+	}
+	args = append(args, fixture.TranscodeArgs(req.Codec, c.Width, c.Height, gop, c.BitrateBPS, c.CRF)...)
+	args = append(args, "-an",
 		"-movflags", "+frag_keyframe+empty_moov+default_base_moof",
 		"-f", "mp4", outMP4,
-	}
+	)
 	cmd := exec.CommandContext(ctx, bin, args...)
 	var stderr []byte
 	cmd.Stderr = &stderrBuf{buf: &stderr}
@@ -188,17 +183,6 @@ func (p *Publisher) Publish(ctx context.Context, req *Request) (*ArtifactSet, er
 		SegmentPaths: pubSegs,
 		Manifest:     manifest,
 	}, nil
-}
-
-func encoderLib(codec string) string {
-	switch codec {
-	case scan.CodecH265:
-		return "libx265"
-	case scan.CodecAV1:
-		return "libsvtav1"
-	default:
-		return "libx264"
-	}
 }
 
 func rtpPayloadType(codec string) uint8 {
