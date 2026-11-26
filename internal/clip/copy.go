@@ -65,8 +65,9 @@ func NewBuilder(info *media.FileInfo, tl *media.Timeline) (*Builder, error) {
 	return &Builder{Info: info, TL: tl}, nil
 }
 
-// pickVideoRange selects the sync-backed start and the sample containing
-// the window end; every chosen sample stays inside the source timeline.
+// pickVideoRange selects the sync-backed start and the last sample fully
+// inside the half-open window [start, windowEnd). Every chosen sample
+// stays inside the source timeline.
 func (b *Builder) pickVideoRange(spec ClipSpec) (Range, error) {
 	v := b.TL.Video
 	start := v.SyncAtOrBefore(spec.EventStart)
@@ -74,9 +75,14 @@ func (b *Builder) pickVideoRange(spec ClipSpec) (Range, error) {
 		return Range{}, clock.NewError(clock.KindAlignment, "cut",
 			"no sync sample at or before event start").WithEvent(spec.EventID)
 	}
-	end := v.FirstSampleAtOrAfter(spec.WindowEnd)
+	// First sample at or after the end is excluded, so the last included
+	// sample is its predecessor.
+	end := v.FirstSampleAtOrAfter(spec.WindowEnd) - 1
 	if end >= len(v.Samples) {
 		end = len(v.Samples) - 1
+	}
+	if end < 0 {
+		end = 0
 	}
 	if uint32(start) > uint32(end) {
 		return Range{}, clock.NewError(clock.KindAlignment, "cut",

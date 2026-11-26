@@ -91,11 +91,15 @@ func planEvents(c *Config, tl *media.Timeline, feed *events.Feed, st *Stats) []*
 		syncPTS := v.Samples[syncIdx].PTS
 		pe.spec.SyncStart = syncPTS
 
-		// The actual clip length is dictated by the keyframe, not by the
-		// nominal event window; the budget is checked on that real length.
-		endIdx := v.FirstSampleAtOrAfter(reqEnd)
+		// The actual clip length is dictated by the keyframe and the
+		// half-open window [syncPTS, reqEnd): the first sample at or past
+		// reqEnd is excluded. The budget is checked on that real length.
+		endIdx := v.FirstSampleAtOrAfter(reqEnd) - 1
 		if endIdx >= len(v.Samples) {
 			endIdx = len(v.Samples) - 1
+		}
+		if endIdx < syncIdx {
+			endIdx = syncIdx
 		}
 		realEnd := v.Samples[endIdx].PTS + int64(v.Samples[endIdx].Dur)
 		pe.clipDur = realEnd - syncPTS

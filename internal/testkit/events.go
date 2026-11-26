@@ -92,8 +92,9 @@ func cleanEvents() ([]eventLine, error) {
 	if err != nil {
 		return nil, err
 	}
-	// t=5s with a 2s event window: requested end is t=9s and the keyframe
-	// back-off to t=5s makes the aligned clip 6s, exceeding the 5s budget.
+	// t=5s with a 3s event window: requested end is t=10s and the keyframe
+	// back-off to t=5s makes the half-open aligned clip span 6s, exceeding
+	// the 5s duration budget so the event is recorded as skip_budget.
 	b, err := rtpPacket(5, wrap32(AnchorTick, int64(5)*FixtureTimescale), 0x05)
 	if err != nil {
 		return nil, err
@@ -109,7 +110,7 @@ func cleanEvents() ([]eventLine, error) {
 			Packets: []string{a1}},
 		{ID: "ev-a", Confidence: 0.95, DurationS: 1, Content: "goal",
 			Packets: []string{a2}},
-		{ID: "ev-b", Confidence: 0.9, DurationS: 2, Content: "foul",
+		{ID: "ev-b", Confidence: 0.9, DurationS: 3, Content: "foul",
 			Packets: []string{b}},
 		{ID: "ev-c", Confidence: 0.4, DurationS: 1, Content: "crowd",
 			Packets: []string{c}},
