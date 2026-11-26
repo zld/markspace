@@ -13,6 +13,7 @@ type RTPPoint struct {
 	Sequence     uint16 `json:"sequence"`
 	RawTimestamp uint32 `json:"raw_timestamp"`
 	Timestamp    int64  `json:"monotonic_timestamp"`
+	RelativeTick int64  `json:"relative_tick"`
 	ByteOffset   int64  `json:"byte_offset,omitempty"`
 }
 
@@ -66,6 +67,10 @@ func UnwrapRTP(points []RTPPoint) ([]RTPPoint, []WrapEvent) {
 				AfterRaw:   curRaw,
 			})
 		}
+	}
+	origin := out[0].Timestamp
+	for i := range out {
+		out[i].RelativeTick = out[i].Timestamp - origin
 	}
 	return out, wraps
 }

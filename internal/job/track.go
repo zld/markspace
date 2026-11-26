@@ -47,6 +47,12 @@ func processTrack(m *manifest.Manifest, baseDir string, t manifest.Track) (*Trac
 		points = append(points, p)
 	}
 	unwrapped, wraps := clock.UnwrapRTP(points)
+	if len(unwrapped) > 0 {
+		sourceMap := clock.NewMapper(scan.MediaTimeBase, unwrapped[0].Timestamp)
+		for i := range unwrapped {
+			unwrapped[i].RelativeTick = sourceMap.Relative(unwrapped[i].Timestamp)
+		}
+	}
 
 	c := report.TrackConclusion{ID: t.ID, SourceFile: t.Path}
 	c.Samples = scan.SampleCount
