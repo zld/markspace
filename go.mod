@@ -4,3 +4,7 @@ module replaykit
 // (go1.23.12) has GOTOOLCHAIN=auto, so it selects the cached toolchain that
 // the pinned dependency requires while the commands stay unchanged.
 go 1.24.0
+
+require github.com/abema/go-mp4 v1.7.4
+
+require github.com/google/uuid v1.1.2 // indirect
