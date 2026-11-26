@@ -192,6 +192,10 @@ func execute(opts Options, m *manifest.Manifest, hash, baseDir, manifestPath str
 	}
 	built := report.Build(status, hash, timelineSHA, jobKey, opts.BudgetUnits, conclusions, skipped)
 	summary := &built
+	if len(isolatedIDs) > 0 {
+		summary.ErrorCode = "E_TRACK_ISOLATED"
+		summary.ExitCode = apperr.ExitIsolated
+	}
 	summary.ArtifactHashes = map[string]string{
 		timelineName: timelineSHA,
 		indexName:    indexSHA,

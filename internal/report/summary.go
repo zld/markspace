@@ -46,6 +46,8 @@ type Summary struct {
 	Schema           string            `json:"schema"`
 	Status           string            `json:"status"`
 	Verdict          string            `json:"verdict"`
+	ErrorCode        string            `json:"error_code,omitempty"`
+	ExitCode         int               `json:"exit_code,omitempty"`
 	Tracks           int               `json:"tracks"`
 	Samples          int               `json:"samples"`
 	WrapEvents       int               `json:"wrap_events"`

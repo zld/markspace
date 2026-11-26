@@ -91,10 +91,26 @@ func runJob(args []string, stdout, stderr io.Writer, resume bool) int {
 		writeReport(summary, *asJSON, stdout, stderr)
 	}
 	if err != nil {
+		code := apperr.ExitCode(err)
+		if *asJSON && summary == nil {
+			writeErrorJSON(stdout, err, code)
+		}
 		printError(stderr, err)
-		return apperr.ExitCode(err)
+		return code
 	}
 	return apperr.ExitOK
+}
+
+func writeErrorJSON(w io.Writer, err error, exitCode int) {
+	body := map[string]any{"ok": false, "exit_code": exitCode}
+	if pe, ok := apperr.As(err); ok {
+		body["error"] = pe
+	} else {
+		body["error"] = map[string]string{"code": "E_INTERNAL", "message": err.Error()}
+	}
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	_ = enc.Encode(body)
 }
 
 func writeReport(s *report.Summary, asJSON bool, stdout, stderr io.Writer) {
