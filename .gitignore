@@ -1,0 +1,12 @@
+# Compiled binaries and build output
+/tsindex
+*.test
+*.out
+
+# Local demo/scratch output (never part of the deliverable)
+/tsdemo/
+/tmp/
+
+# OS/editor noise
+.DS_Store
+*.swp

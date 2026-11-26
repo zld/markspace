@@ -6,8 +6,11 @@
 package fixture
 
 import (
+	"encoding/binary"
 	"os"
 	"path/filepath"
+
+	"github.com/pion/rtp"
 
 	"tsindex/internal/clock"
 	"tsindex/internal/ingest"
@@ -249,6 +252,45 @@ type caseError struct{ name string }
 
 func (e caseError) Error() string { return "fixture: unknown case: " + e.name }
 func unknownCase(n string) error  { return caseError{n} }
+
+// WriteRTP wraps whole 188-byte TS packets in local length-prefixed RTP
+// datagrams. Each datagram carries a fixed number of TS packets in its RTP
+// payload; nothing is read from a network socket.
+func WriteRTP(path string, ts []byte, packetsPerDatagram int) error {
+	if packetsPerDatagram <= 0 {
+		packetsPerDatagram = 7
+	}
+	out, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+	seq := uint16(0)
+	for off := 0; off < len(ts); off += packetsPerDatagram * ingest.PacketSize {
+		end := off + packetsPerDatagram*ingest.PacketSize
+		if end > len(ts) {
+			end = len(ts)
+		}
+		pkt := rtp.Packet{
+			Header:  rtp.Header{Version: 2, PayloadType: 33, SequenceNumber: seq, SSRC: 0x54534958},
+			Payload: ts[off:end],
+		}
+		raw, err := pkt.Marshal()
+		if err != nil {
+			return err
+		}
+		var lenBuf [2]byte
+		binary.BigEndian.PutUint16(lenBuf[:], uint16(len(raw)))
+		if _, err := out.Write(lenBuf[:]); err != nil {
+			return err
+		}
+		if _, err := out.Write(raw); err != nil {
+			return err
+		}
+		seq++
+	}
+	return nil
+}
 
 func crc32MPEG2(b []byte) uint32 {
 	crc := uint32(0xFFFFFFFF)

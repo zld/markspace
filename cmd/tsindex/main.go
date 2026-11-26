@@ -67,11 +67,12 @@ type demoFlags struct {
 	interruptAfter int
 	resume         bool
 	segmentPackets int
+	format         string // "ts" (default) or "rtp"
 }
 
 func parseDemoFlags(args []string) (demoFlags, error) {
 	f := demoFlags{budgetMB: 64, workers: 2, segmentPackets: fixture.SegmentPackets,
-		cases: fixture.AllCases}
+		format: "ts", cases: fixture.AllCases}
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		next := func() (string, error) {
@@ -120,6 +121,15 @@ func parseDemoFlags(args []string) (demoFlags, error) {
 			}
 		case "--resume":
 			f.resume = true
+		case "--format":
+			v, err := next()
+			if err != nil {
+				return f, err
+			}
+			if v != "ts" && v != "rtp" {
+				return f, fmt.Errorf("--format must be ts or rtp, got %q", v)
+			}
+			f.format = v
 		default:
 			return f, fmt.Errorf("unknown flag: %s", a)
 		}
@@ -162,6 +172,22 @@ func runDemo(args []string) error {
 	paths, err := fixture.GenerateAll(f.out, f.cases)
 	if err != nil {
 		return err
+	}
+	if f.format == "rtp" {
+		// Repackage each generated TS asset into a local .rtp datagram file;
+		// the TS source remains on disk untouched as the read-only reference
+		// and stays the path recorded in the manifest for verification.
+		for name, tsPath := range paths {
+			data, rerr := os.ReadFile(tsPath)
+			if rerr != nil {
+				return rerr
+			}
+			rtpPath := filepath.Join(f.out, name+".rtp")
+			if rerr := fixture.WriteRTP(rtpPath, data, 7); rerr != nil {
+				return rerr
+			}
+			_ = rtpPath
+		}
 	}
 	names := make([]string, 0, len(paths))
 	for n := range paths {
@@ -213,14 +239,25 @@ func runDemo(args []string) error {
 }
 
 func processAsset(f demoFlags, budget *plan.Budget, run *assetRun, newAssetBudget *int, isResume bool, delta *deltaState) error {
-	src, err := os.Open(run.sourcePath)
+	// RTP mode reads the local datagram wrapper; plain mode reads the TS source.
+	inputPath := run.sourcePath
+	if f.format == "rtp" {
+		inputPath = strings.TrimSuffix(run.sourcePath, ".ts") + ".rtp"
+	}
+	src, err := os.Open(inputPath)
 	if err != nil {
 		return err
 	}
 	defer src.Close()
 
 	rec := fault.NewRecorder()
-	sr := ingest.NewStreamReader(src, rec)
+	// RTP mode unwraps local length-prefixed datagrams into a TS byte stream;
+	// plain TS mode reads the source directly. Both stay fully local.
+	var input io.Reader = src
+	if f.format == "rtp" {
+		input = ingest.NewRTPTransport(src, rec)
+	}
+	sr := ingest.NewStreamReader(input, rec)
 	psi := ingest.NewPSITracker(rec)
 
 	chkPath := filepath.Join(f.out, "."+run.name+".chk.json")
