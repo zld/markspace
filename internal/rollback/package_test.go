@@ -95,3 +95,28 @@ func TestFailedPublishLeavesCurrentPointer(t *testing.T) {
 		t.Fatalf("failed version directory should not be published, stat err=%v", err)
 	}
 }
+
+func TestCorruptInputDoesNotAdvanceCurrent(t *testing.T) {
+	root, res := completedRun(t)
+	platform := "android-arm64"
+	publish(t, root, res, platform, "v1")
+
+	framePath := filepath.Join(root, res.Index.Records[0].RelativePath)
+	f, err := os.OpenFile(framePath, os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.Write([]byte{0}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := batch.Run(batch.Options{Root: root, BlockSize: 4}); !media.HasCode(err, media.CodeChecksum) {
+		t.Fatalf("corrupt frame batch err=%v", err)
+	}
+	cur, err := rollback.ReadCurrent(root, platform)
+	if err != nil || cur.Version != "v1" {
+		t.Fatalf("current pointer changed after corrupt input: %+v err=%v", cur, err)
+	}
+}

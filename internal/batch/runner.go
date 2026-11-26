@@ -92,12 +92,12 @@ func Run(opts Options) (*Result, error) {
 		if err != nil {
 			return nil, err
 		}
-		packagingFP, err = cache.FileSHA256(mp4Full)
+		packagingKey, err := cache.FileSHA256(mp4Full)
 		if err != nil {
 			return nil, media.E(media.CodeWrite, "mp4.fingerprint", err).WithFile(m.MP4.Path)
 		}
 		if opts.Cache != nil {
-			if cached, ok := opts.Cache.GetPackaging(packagingFP); ok {
+			if cached, ok := opts.Cache.GetPackaging(packagingKey); ok {
 				st = cached
 			}
 		}
@@ -107,9 +107,14 @@ func Run(opts Options) (*Result, error) {
 				return nil, err
 			}
 			if opts.Cache != nil {
-				opts.Cache.PutPackaging(packagingFP, st)
+				opts.Cache.PutPackaging(packagingKey, st)
 			}
 		}
+		canonicalPackagingFP, err := cache.PackagingFingerprint(st)
+		if err != nil {
+			return nil, err
+		}
+		packagingFP = canonicalPackagingFP
 	}
 
 	committed := 0

@@ -124,6 +124,7 @@ func printNormal(out io.Writer, _ string, first, second *batch.Result, pkgs []*r
 	fmt.Fprintln(out, "scenario=normal status=ok")
 	fmt.Fprintf(out, "frames=%d\n", len(first.FrameHashes))
 	fmt.Fprintf(out, "repaired=%d\n", first.Repair.RepairedCount)
+	fmt.Fprintf(out, "max_deviation_us=%d\n", first.Repair.MaxDeviationUS)
 	fmt.Fprintf(out, "index_entries=%d\n", len(first.Index.Records))
 	fmt.Fprintf(out, "segments=%d\n", len(first.SegmentHashes))
 	fmt.Fprintf(out, "pixel_mean_rgb=%s\n", first.PixelMeanRGB)
