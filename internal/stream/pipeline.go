@@ -68,7 +68,7 @@ func (p *Pipeline) Run(parent context.Context) (PipelineStats, error) {
 				return
 			}
 			if err := p.Consume(ctx, b); err != nil {
-				consumerErr = fmt.Errorf("%w block=%d: %v", ErrConsumer, b.Index, err)
+				consumerErr = fmt.Errorf("%w block=%d: %w", ErrConsumer, b.Index, err)
 				cancel()
 				return
 			}
