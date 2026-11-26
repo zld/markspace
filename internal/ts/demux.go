@@ -166,10 +166,7 @@ func (d *Demuxer) Run(ctx context.Context, onEvent func(TimelineEvent)) (Stats, 
 					return d.stats, perr
 				}
 			}
-			d.flushAll(onEvent)
-			d.stats.DriftPPM = clock.RoundPPM(d.drift.PPM())
-			d.stats.PCRWraps = d.pcrUnwrap.Wraps()
-			return d.stats, nil
+			return d.Finish(onEvent)
 		}
 		if err != nil {
 			return d.stats, err
@@ -180,6 +177,36 @@ func (d *Demuxer) Run(ctx context.Context, onEvent func(TimelineEvent)) (Stats, 
 		d.offset += PacketSize
 		d.stats.Packets++
 	}
+}
+
+// ProcessAlignedChunk handles one buffer containing a whole number of 188-byte
+// TS packets (for example one RTP record's payload). It enables the caller to
+// anchor the RTP media clock just before the packets' PCR observations.
+func (d *Demuxer) ProcessAlignedChunk(chunk []byte, onEvent func(TimelineEvent)) error {
+	for off := 0; off+PacketSize <= len(chunk); off += PacketSize {
+		if ferr := d.processPacket(chunk[off:off+PacketSize], onEvent); ferr != nil {
+			return ferr
+		}
+		d.offset += PacketSize
+		d.stats.Packets++
+	}
+	if rem := len(chunk) % PacketSize; rem != 0 {
+		terr := clock.New(clock.CodeTSTruncated, "ts", d.offset, 0, 0,
+			"chunk ends with %d non-packet bytes", rem)
+		d.stats.Truncations++
+		if ferr := d.fail(terr); ferr != nil {
+			return ferr
+		}
+	}
+	return nil
+}
+
+// Finish flushes in-flight PES packets and finalizes drift/wrap statistics.
+func (d *Demuxer) Finish(onEvent func(TimelineEvent)) (Stats, error) {
+	d.flushAll(onEvent)
+	d.stats.DriftPPM = clock.RoundPPM(d.drift.PPM())
+	d.stats.PCRWraps = d.pcrUnwrap.Wraps()
+	return d.stats, nil
 }
 
 func (d *Demuxer) processPacket(pkt []byte, onEvent func(TimelineEvent)) error {
