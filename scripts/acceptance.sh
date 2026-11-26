@@ -3,9 +3,11 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-GO_BIN="${GO_BIN:-/opt/homebrew/opt/go@1.23/bin/go}"
-if [[ -x "$GO_BIN" ]]; then
-  export PATH="$(dirname "$GO_BIN"):$PATH"
+if command -v brew >/dev/null 2>&1; then
+  BREW_GO_BIN="$(brew --prefix go@1.23 2>/dev/null)/bin"
+  if [[ -x "$BREW_GO_BIN/go" ]]; then
+    export PATH="$BREW_GO_BIN:$PATH"
+  fi
 fi
 
 CASES="${CASES:-/tmp/pw-cases}"
