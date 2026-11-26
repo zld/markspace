@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"medpipe/internal/apperr"
@@ -184,6 +185,13 @@ func SafeMediaPath(baseDir, p string, checkFile bool) (string, *apperr.E) {
 			WithStage("manifest").WithField("path")
 	}
 	abs := filepath.Join(baseDir, clean)
+	if !filepath.IsAbs(abs) {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return "", apperr.New("E_PATH_ESCAPE", "resolve working directory: %v", err).WithStage("manifest")
+		}
+		abs = filepath.Join(cwd, abs)
+	}
 	realBase, err := filepath.Abs(baseDir)
 	if err != nil {
 		return "", apperr.New("E_PATH_ESCAPE", "resolve base: %v", err).WithStage("manifest")
@@ -244,6 +252,7 @@ func JobKey(manifestHash string, sourceHashes map[string]string, params Paramete
 	for k := range sourceHashes {
 		keys = append(keys, k)
 	}
+	sort.Strings(keys)
 	sortedHashes := make([][2]string, 0, len(keys))
 	for _, k := range keys {
 		sortedHashes = append(sortedHashes, [2]string{k, sourceHashes[k]})

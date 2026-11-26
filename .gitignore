@@ -3,6 +3,7 @@
 /tmp/
 *.test
 *.out
+/medpipe
 
 # macOS and editor noise
 .DS_Store
