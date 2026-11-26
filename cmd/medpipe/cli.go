@@ -92,10 +92,20 @@ func runJob(args []string, stdout, stderr io.Writer, resume bool) int {
 	}
 	if err != nil {
 		code := apperr.ExitCode(err)
-		if *asJSON && summary == nil {
+		switch {
+		case *asJSON && summary == nil:
 			writeErrorJSON(stdout, err, code)
+			printError(stderr, err)
+		case *asJSON && summary != nil:
+			// The summary JSON already carries error_code/exit_code; keep
+			// stdout a single JSON document and log the error to stderr.
+			printError(stderr, err)
+		default:
+			// Batch callers may inspect stdout alone; terminal users see the
+			// same structured conclusion once per stream.
+			printError(stdout, err)
+			printError(stderr, err)
 		}
-		printError(stderr, err)
 		return code
 	}
 	return apperr.ExitOK

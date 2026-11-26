@@ -145,6 +145,20 @@ func TestCLIBadRangeAndBadJumpExitCodes(t *testing.T) {
 			t.Fatalf("range output missing %q:\n%s", token, combined)
 		}
 	}
+	if !strings.Contains(rangeRes.stdout, `"code": "E_SAMPLE_RANGE"`) ||
+		!strings.Contains(rangeRes.stdout, `"byte_offset": 412`) {
+		t.Fatalf("JSON stdout missing structured error: %s", rangeRes.stdout)
+	}
+	plainRange := runCLI(t, "run", "--manifest", filepath.Join(fdir, "bad-range.json"),
+		"--root", filepath.Join(t.TempDir(), "range-plain"), "--job-id", "bad")
+	if plainRange.code != 2 {
+		t.Fatalf("plain range code=%d", plainRange.code)
+	}
+	for _, token := range []string{"E_SAMPLE_RANGE", "track=range-bad", "sample=2", "byte_offset=412"} {
+		if !strings.Contains(plainRange.stdout, token) {
+			t.Fatalf("plain stdout missing %q:\n%s", token, plainRange.stdout)
+		}
+	}
 
 	jumpRes := runCLI(t, "run",
 		"--manifest", filepath.Join(fdir, "bad-jump.json"),
