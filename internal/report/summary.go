@@ -24,6 +24,7 @@ type TrackConclusion struct {
 	SyncSamples        []int             `json:"sync_samples,omitempty"`
 	CheckpointSample   int               `json:"checkpoint_sample"`
 	SampleRange        [2]int            `json:"sample_range"`
+	ResumeRange        [2]int            `json:"resume_range"`
 	WrapEvents         int               `json:"wrap_events"`
 	EmptyEdits         int               `json:"empty_edits"`
 	RepairCount        int               `json:"repair_count"`
@@ -147,9 +148,9 @@ func renderLines(s *Summary) []string {
 			budgetDecision = "over-5pct"
 		}
 		lines = append(lines, fmt.Sprintf(
-			"track=%s source=%s verdict=%s samples=%d sample_range=%d..%d checkpoint_sync=%d wraps=%d empty_edits=%d",
+			"track=%s source=%s verdict=%s samples=%d sample_range=%d..%d checkpoint_sync=%d resume_range=%d..%d wraps=%d empty_edits=%d",
 			t.ID, t.SourceFile, t.Verdict, t.Samples, t.SampleRange[0], t.SampleRange[1],
-			t.CheckpointSample, t.WrapEvents, t.EmptyEdits,
+			t.CheckpointSample, t.ResumeRange[0], t.ResumeRange[1], t.WrapEvents, t.EmptyEdits,
 		))
 		lines = append(lines, fmt.Sprintf(
 			"  anomaly_start_tick=%d anomaly_end_tick=%d original_offset_ticks=%d repair_offset_ticks=%d max_residual_ticks=%d",
