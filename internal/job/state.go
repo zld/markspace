@@ -48,16 +48,16 @@ func indexOf(p Phase) int {
 
 // Task is the persisted state of one processing job.
 type Task struct {
-	Key             string
-	SourceDigest    string
-	PolicyDigest    string
-	Phase           Phase
-	LastSample      int64 // highest fully processed sample number (0-based count)
-	TotalSamples    int64
-	ManifestDigest  string
-	FailureStage    string
-	FailureOffset   int64
-	FailureReason   string
+	Key            string
+	SourceDigest   string
+	PolicyDigest   string
+	Phase          Phase
+	LastSample     int64 // highest fully processed sample number (0-based count)
+	TotalSamples   int64
+	ManifestDigest string
+	FailureStage   string
+	FailureOffset  int64
+	FailureReason  string
 }
 
 // Store wraps the SQLite connection and owns the schema.

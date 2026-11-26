@@ -8,13 +8,13 @@ import (
 // Sample is one timed media unit. Time fields are integer nanoseconds on the
 // unified timeline clock; DataOffset is the byte offset inside the source.
 type Sample struct {
-	Index       int    // 1-based position within its track
-	StartNs     int64  // presentation start on the unified clock
-	DurationNs  int64  // exact duration of the unit
-	DataOffset  int64  // source byte offset of the payload
-	Size        int64  // payload size in bytes
-	Payload     []byte // in-memory payload (small fixtures only; nil after flush)
-	SourceTick  int64  // original clock tick, retained for audit output
+	Index      int    // 1-based position within its track
+	StartNs    int64  // presentation start on the unified clock
+	DurationNs int64  // exact duration of the unit
+	DataOffset int64  // source byte offset of the payload
+	Size       int64  // payload size in bytes
+	Payload    []byte // in-memory payload (small fixtures only; nil after flush)
+	SourceTick int64  // original clock tick, retained for audit output
 }
 
 // EndNs returns the half-open end of the sample.

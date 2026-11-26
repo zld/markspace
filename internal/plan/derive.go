@@ -15,11 +15,11 @@ import (
 // normalized [0,1] estimated perceptual quality; Bitrate is bits per second
 // and CostPerNs is processing-budget units consumed per nanosecond of media.
 type Candidate struct {
-	Width      int
-	Height     int
-	Bitrate    int64
-	Quality    Rational
-	CostPerNs  int64
+	Width     int
+	Height    int
+	Bitrate   int64
+	Quality   Rational
+	CostPerNs int64
 }
 
 // Rational mirrors media.Rational locally to keep plan self-contained while
