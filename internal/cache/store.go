@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -82,19 +83,51 @@ func (s *Store) paths(key string) (artifact, record string) {
 	return filepath.Join(s.root, key+".bin"), filepath.Join(s.root, key+".json")
 }
 
-// Put atomically writes the artifact and its verification record. The
-// artifact digest is computed by the caller from the exact bytes delivered.
-func (s *Store) Put(e Entry, artifact []byte) error {
+// PutStream copies an artifact from r into the cache with a bounded
+// transfer buffer, hashing as it goes so the whole file is never held in
+// memory. The verification record is written atomically afterwards.
+func (s *Store) PutStream(e Entry, r io.Reader) error {
 	if e.Key == "" {
 		return fmt.Errorf("cache: empty key")
 	}
-	sum := sha256.Sum256(artifact)
-	e.ArtifactSHA = hex.EncodeToString(sum[:])
-	e.Size = int64(len(artifact))
 	ap, rp := s.paths(e.Key)
-	if err := atomicWrite(ap, artifact); err != nil {
+	tmp, err := os.CreateTemp(s.root, ".put-*")
+	if err != nil {
 		return err
 	}
+	tmpName := tmp.Name()
+	h := sha256.New()
+	buf := make([]byte, 64*1024)
+	var size int64
+	for {
+		n, rerr := r.Read(buf)
+		if n > 0 {
+			if _, werr := tmp.Write(buf[:n]); werr != nil {
+				tmp.Close()
+				os.Remove(tmpName)
+				return werr
+			}
+			h.Write(buf[:n])
+			size += int64(n)
+		}
+		if rerr == io.EOF {
+			break
+		}
+		if rerr != nil {
+			tmp.Close()
+			os.Remove(tmpName)
+			return rerr
+		}
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpName)
+		return err
+	}
+	if err := os.Rename(tmpName, ap); err != nil {
+		return err
+	}
+	e.ArtifactSHA = hex.EncodeToString(h.Sum(nil))
+	e.Size = size
 	raw, err := json.MarshalIndent(e, "", "  ")
 	if err != nil {
 		return err
@@ -102,39 +135,29 @@ func (s *Store) Put(e Entry, artifact []byte) error {
 	return atomicWrite(rp, raw)
 }
 
-// Get verifies a cached artifact against its record and the expected
-// source digest. Any discrepancy returns a non-verified outcome and the
-// caller is expected to rebuild rather than trust the bytes.
-func (s *Store) Get(key, sourceSHA, mediaType string) ([]byte, Entry, HitOutcome) {
+// Get loads the verification record and confirms the on-disk artifact
+// matches its source binding, digest and length. The artifact bytes are
+// never loaded into memory; callers read the returned path via streaming.
+func (s *Store) Get(key, sourceSHA, mediaType string) (string, Entry, HitOutcome) {
 	ap, rp := s.paths(key)
 	var e Entry
 	raw, err := os.ReadFile(rp)
 	if err != nil {
-		return nil, e, HitMiss
+		return ap, e, HitMiss
 	}
 	if err := json.Unmarshal(raw, &e); err != nil || e.Key != key {
 		s.invalidate(key)
-		return nil, e, HitBadRecord
+		return ap, e, HitBadRecord
 	}
 	if e.SourceSHA != sourceSHA || (mediaType != "" && e.MediaType != mediaType) {
 		s.invalidate(key)
-		return nil, e, HitTampered
+		return ap, e, HitTampered
 	}
-	artifact, err := os.ReadFile(ap)
-	if err != nil {
+	outcome := VerifyArtifact(ap, e.ArtifactSHA, e.Size)
+	if outcome != HitVerified {
 		s.invalidate(key)
-		return nil, e, HitMiss
 	}
-	if int64(len(artifact)) != e.Size {
-		s.invalidate(key)
-		return nil, e, HitWrongSize
-	}
-	sum := sha256.Sum256(artifact)
-	if hex.EncodeToString(sum[:]) != e.ArtifactSHA {
-		s.invalidate(key)
-		return nil, e, HitTampered
-	}
-	return artifact, e, HitVerified
+	return ap, e, outcome
 }
 
 // invalidate removes every file belonging to a key.

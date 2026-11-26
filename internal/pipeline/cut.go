@@ -3,6 +3,7 @@ package pipeline
 import (
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -43,10 +44,11 @@ func cutPlans(c *Config, b *clip.Builder, store *cache.Store,
 		sourceSum := mustSHA(inputSHA)
 		key := cache.Key(sourceSum, configSHA+":"+pe.ev.ID)
 
-		// A previously delivered clip is trusted only if it still verifies
-		// against both the cache record and the materialized output file.
-		if _, ent, outcome := store.Get(key, inputSHA, "video/mp4"); outcome == cache.HitVerified {
-			if cache.VerifyArtifact(outPath, ent.ArtifactSHA, ent.Size) == cache.HitVerified {
+		// A verified cache entry is streamed back to the output path and
+		// re-verified there; any failure invalidates the entry for rebuild.
+		if cachePath, ent, outcome := store.Get(key, inputSHA, "video/mp4"); outcome == cache.HitVerified {
+			copyErr := streamCopy(cachePath, outPath)
+			if copyErr == nil && cache.VerifyArtifact(outPath, ent.ArtifactSHA, ent.Size) == cache.HitVerified {
 				res, rerr := decodeResult(pe, name, ent)
 				if rerr != nil {
 					return nil, rerr
@@ -67,11 +69,13 @@ func cutPlans(c *Config, b *clip.Builder, store *cache.Store,
 		if err != nil {
 			return nil, err
 		}
-		raw, err := os.ReadFile(outPath)
+		resultJSON, err := json.Marshal(res)
 		if err != nil {
 			return nil, err
 		}
-		resultJSON, err := json.Marshal(res)
+		// Stream the finished clip into the cache with bounded memory; the
+		// store hashes bytes as they pass through.
+		in, err := os.Open(outPath)
 		if err != nil {
 			return nil, err
 		}
@@ -79,8 +83,10 @@ func cutPlans(c *Config, b *clip.Builder, store *cache.Store,
 			Key: key, SourceSHA: inputSHA, ConfigSHA: configSHA,
 			MediaType: "video/mp4", Result: resultJSON,
 		}
-		if err := store.Put(ent, raw); err != nil {
-			return nil, err
+		putErr := store.PutStream(ent, in)
+		in.Close()
+		if putErr != nil {
+			return nil, putErr
 		}
 		st.Accepted++
 		st.ClipS += secondsOf(res.Duration, res.Timescale)
@@ -115,4 +121,22 @@ func mustSHA(hexSHA string) [32]byte {
 
 func secondsOf(ticks int64, timescale uint32) float64 {
 	return float64(ticks) / float64(timescale)
+}
+
+// streamCopy copies a cached artifact to its output path using a bounded
+// 64 KiB buffer so neither file is fully buffered in memory.
+func streamCopy(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+	buf := make([]byte, 64*1024)
+	_, err = io.CopyBuffer(out, in, buf)
+	return err
 }
