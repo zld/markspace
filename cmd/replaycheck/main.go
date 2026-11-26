@@ -123,12 +123,12 @@ func execute(ctx context.Context, fn func(context.Context) (*output.Summary, err
 	}
 	if digest != "" {
 		// Print the published summary verbatim so terminal output and the
-		// file an operator diffs are identical, line for line.
+		// file an operator diffs are identical, line for line. The digest is
+		// already the last line of that file; only the path is added here.
 		if text, rerr := os.ReadFile(sumPath); rerr == nil {
 			os.Stdout.Write(text)
 		}
 		fmt.Printf("summary_path=%s\n", sumPath)
-		fmt.Printf("digest_sha256=%s\n", digest)
 	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "replaycheck: %v\n", err)
