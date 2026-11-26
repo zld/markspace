@@ -185,6 +185,7 @@ func DefaultRegistry() *Registry {
 	r := NewRegistry()
 	_ = r.RegisterFormat(NewMP4V1(FormatMP4))
 	_ = r.RegisterFormat(NewMP4V1(FormatFMP4))
+	_ = r.RegisterFormat(NewRTPV1())
 	_ = r.RegisterCodec(NewRGBA8V1())
 	_ = r.RegisterCodec(NewPCMS16LEV1())
 	return r
