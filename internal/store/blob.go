@@ -66,11 +66,27 @@ func (s *Store) PutBytes(digest string, p []byte) error {
 // PutReader streams r into the object location. If the object already exists
 // the write is skipped after confirming the stored size.
 func (s *Store) PutReader(digest string, r io.Reader, size int64) error {
+	return s.put(digest, r, size, false)
+}
+
+// RepairBytes overwrites an existing object with verified bytes. It is used
+// only when recovery has re-derived a block from an intact source and found
+// the stored copy corrupt; immutable objects are otherwise never replaced.
+func (s *Store) RepairBytes(digest string, p []byte) error {
+	sum := sha256.Sum256(p)
+	if got := hex.EncodeToString(sum[:]); got != digest {
+		return fault.New(fault.CodeDigest, fault.StageNormalized, -1,
+			"repair content hashes to %s, expected %s", got, digest)
+	}
+	return s.put(digest, bytes.NewReader(p), int64(len(p)), true)
+}
+
+func (s *Store) put(digest string, r io.Reader, size int64, replace bool) error {
 	path, err := s.Path(digest)
 	if err != nil {
 		return err
 	}
-	if s.Exists(digest) {
+	if !replace && s.Exists(digest) {
 		st, err := os.Stat(path)
 		if err != nil {
 			return fault.Wrap(fault.CodeIO, fault.StageNormalized, -1, err, "stat object %s", digest)

@@ -1,220 +1,220 @@
 {
   "version": "mediavault-manifest-v1",
-  "policy": "pcm-shard-v1",
-  "digest": "0f23f405365b39f58c47b67f3caa8fc769b44c7086088dec44258ef2c5b14012",
+  "policy": "pcm-shard-v2",
+  "digest": "449c4f6bb9ed6012872feed85946460ca3158d493e4b7bbe77c584aa62966385",
   "unique_pcm": 1,
   "entries": [
     {
-      "key": "wav:bb667a519f5c05358a1749f156715aac4409992a59cc81f7e407f7243bc31eac",
+      "key": "wav:3d71fe1922b65d7f2983745d847aa001b77ee340b4812011c91f79ac5029a6f0",
       "name": "interrupted",
       "transport": "wav",
       "stage": "ARCHIVED",
-      "content_digest": "bb667a519f5c05358a1749f156715aac4409992a59cc81f7e407f7243bc31eac",
-      "source_digest": "53e133030cf39d98aedaa5d0dae32c780b4395d66fe8520f32636eabf55e3ea5",
-      "source_container_digest": "e423c0b5fe41b94e20b3dff9cbddf275105a1cf47e29e634b59a3da0865f07a2",
-      "archive_digest": "83ecd2b5712a79e8f98b6d678892ed3e162d52c9d4d16b794571362480f6321a",
-      "archive_size": 33441,
-      "container_digest": "36e483e03ab8349d545a48aa66e3d5988d00ecbff5835af3b28315ad049fd080",
-      "policy_version": "pcm-shard-v1",
+      "content_digest": "3d71fe1922b65d7f2983745d847aa001b77ee340b4812011c91f79ac5029a6f0",
+      "source_digest": "61e55fa526a13559e7e351bb4f9f12f03375ce68944a70d2fc4f41571d4c647a",
+      "source_container_digest": "1bd3fb8a385275f7b91da77409e3f4ac66ca7b72fe812dceb6180db12edb8412",
+      "archive_digest": "06e9452c3a64c27256321b85701d25f108c355f84935650de181cf77cb1ca54b",
+      "archive_size": 2097825,
+      "container_digest": "db4a9cb7193c76befb04475c333a9fc5c60509b3587559c120d356515e2f2b6f",
+      "policy_version": "pcm-shard-v2",
       "sample_rate_num": 8000,
       "sample_rate_den": 1,
       "channels": 1,
       "bits_per_sample": 16,
-      "chunk_frames": 512,
-      "frames": 16384,
+      "chunk_frames": 32768,
+      "frames": 1048576,
       "blocks": 32,
       "chunks": [
         {
           "index": 0,
-          "frames": 512,
-          "length": 1024,
-          "digest": "c9cfc0172495e0eed06a2f395dd702d70f1c56d211b01fb56c5eea72dfcde32d"
+          "frames": 32768,
+          "length": 65536,
+          "digest": "b6f6296507acb120ef1d2b0982879ac526da1bb22f62dac2d268afab7d069fe9"
         },
         {
           "index": 1,
-          "frames": 512,
-          "length": 1024,
-          "digest": "3a34de72d273d0ab2e82fc9f46e23dfc07b9d9bc66be182e70aab0060a137718"
+          "frames": 32768,
+          "length": 65536,
+          "digest": "19c7589469d9a47a97723b44459e0dfbdb9c4344d5be54f12c92096773b3d019"
         },
         {
           "index": 2,
-          "frames": 512,
-          "length": 1024,
-          "digest": "2c79434fa0c1219ee4a35a0b407ae330dbc2c1cc704a708e064212709e9605f2"
+          "frames": 32768,
+          "length": 65536,
+          "digest": "c9373d8a9f0bf062612cd47b457579dda2001ff12dce3b66966fe212ed88b95f"
         },
         {
           "index": 3,
-          "frames": 512,
-          "length": 1024,
-          "digest": "77af0c08879e79e174797203665c2d578ab2443c5808c9181d2ae97be022e5e9"
+          "frames": 32768,
+          "length": 65536,
+          "digest": "5eac5d5664e0341d4914724a8c8ef1afa72360fe0f1ca88c6cf18ec372b24491"
         },
         {
           "index": 4,
-          "frames": 512,
-          "length": 1024,
-          "digest": "d7338352131d2bf1d7cb9c42688756b0daf2dcde94778b302c2c700e641d1a2a"
+          "frames": 32768,
+          "length": 65536,
+          "digest": "8a95f8b78affaaaf1f30fd4d966fdac0d83641089bfe2e3227e7a9d39d7468e1"
         },
         {
           "index": 5,
-          "frames": 512,
-          "length": 1024,
-          "digest": "235fdba611b4454f0ed19ba5b77b3c69f5ba516c6cf547324f0c3f3dff05ce28"
+          "frames": 32768,
+          "length": 65536,
+          "digest": "652bf2414b2798a0d31dc9e2b2ead09bf37b5cff82740676da0598bebfe8bdf5"
         },
         {
           "index": 6,
-          "frames": 512,
-          "length": 1024,
-          "digest": "c29f5442b49e9e03d4cd72abe1e344a63bf62ef4465f072376f98b3f598c690f"
+          "frames": 32768,
+          "length": 65536,
+          "digest": "2781c2614d97bb32019e9018ff5e3c119d25775e2755ae0ab12daa8312b38198"
         },
         {
           "index": 7,
-          "frames": 512,
-          "length": 1024,
-          "digest": "ab50294ef013fdb6a3c2dab420a1badb8a84ac06f136e4072b1242610d1566b5"
+          "frames": 32768,
+          "length": 65536,
+          "digest": "11a46e0cec6cff476dd3a7fa1708932db3648e406c566497fd70ebef844a8036"
         },
         {
           "index": 8,
-          "frames": 512,
-          "length": 1024,
-          "digest": "56f53f130ba381aa4dbdd9d659af3681863338a06a946f15e95ee964176d164b"
+          "frames": 32768,
+          "length": 65536,
+          "digest": "24b1d4ec36b09ee3d3295227da7ca7ff6d4103d93e3a83421e5cfd009966cb6d"
         },
         {
           "index": 9,
-          "frames": 512,
-          "length": 1024,
-          "digest": "3b984922e81589e69c759c43ebdadab9bf1f4a3713cb114ac371da36b279db41"
+          "frames": 32768,
+          "length": 65536,
+          "digest": "2c1401ec54c672c1a55c96d3c954aa7dbd3848d70800f9bcd3f95dd0ac4981ea"
         },
         {
           "index": 10,
-          "frames": 512,
-          "length": 1024,
-          "digest": "dfe31f4f77f65a804c5a632bc9bc51c40da1b947b3958a7f2be64d99e9519147"
+          "frames": 32768,
+          "length": 65536,
+          "digest": "321dc11812d58fa755777db4478b08f0acfc089107548489acc5bdd3056a2908"
         },
         {
           "index": 11,
-          "frames": 512,
-          "length": 1024,
-          "digest": "ff1cedf0184c21b1cfcd094bea06eef550b6e8e4cdf7df91eeae39d2e4f1a7fe"
+          "frames": 32768,
+          "length": 65536,
+          "digest": "dfa2859470dd7bdda138c6830ae95c5db75ae0313da3048db908c3daa04456fa"
         },
         {
           "index": 12,
-          "frames": 512,
-          "length": 1024,
-          "digest": "3f341af8c5e67350b0bceb590188e22a40d35d713a827fbd48a706f9ac7d823e"
+          "frames": 32768,
+          "length": 65536,
+          "digest": "68aca1ac93fccfb353e38062f8f435501529fc3a717a76a5c0d0a9d8e9979df0"
         },
         {
           "index": 13,
-          "frames": 512,
-          "length": 1024,
-          "digest": "c4cab120b898ade4deba74907cd2eae9c3130b8269996296416374f54e3740e2"
+          "frames": 32768,
+          "length": 65536,
+          "digest": "50afdb5dbf4782dda17e55a3facb452e31add4bea2e9322a311cc8815315ae56"
         },
         {
           "index": 14,
-          "frames": 512,
-          "length": 1024,
-          "digest": "ba40a870597753d7e7bdb602ffbf13de116edabeee118526277bce9bf008dde7"
+          "frames": 32768,
+          "length": 65536,
+          "digest": "6279d8e31c8e6890cc743b78c001f40289e48922d855c536969ac2820f93989a"
         },
         {
           "index": 15,
-          "frames": 512,
-          "length": 1024,
-          "digest": "f7f12bb6f929e5baa2effbc4094ba4758e71e10b1aff01e53bbbe50a394ae9c7"
+          "frames": 32768,
+          "length": 65536,
+          "digest": "07507e2e8922e21b3b50893bf968a272217193885f71b08d8a45d0b5e7e9b2f4"
         },
         {
           "index": 16,
-          "frames": 512,
-          "length": 1024,
-          "digest": "317a515ffc0fcc61487b963b35b72e03ae562a3ae24358fb073537ed6afabec5"
+          "frames": 32768,
+          "length": 65536,
+          "digest": "312297f4a8ad3caa95d7d35963bf8823abe875e218198d86e848cf5ab8b8860a"
         },
         {
           "index": 17,
-          "frames": 512,
-          "length": 1024,
-          "digest": "39c11dc865a633cbd0bf8f51015b796e09c17ab8f914a45aaab107c068712436"
+          "frames": 32768,
+          "length": 65536,
+          "digest": "d03f041d6a5c0899608f709d3a0f041d6fe0315d36d7286a7f14158be0789175"
         },
         {
           "index": 18,
-          "frames": 512,
-          "length": 1024,
-          "digest": "35ba75b5a7d6554c6c6e52f5bb5cf001cf92eda4401222470ae9290e12c89b6a"
+          "frames": 32768,
+          "length": 65536,
+          "digest": "f3f24dcda7919ee3d6da91065e8fb6f57422c56e1f75e3267072757a6202681b"
         },
         {
           "index": 19,
-          "frames": 512,
-          "length": 1024,
-          "digest": "45055c12f91bdf21094f6d5570249467f11cd1bc47ebd0ead0b103fd618143ae"
+          "frames": 32768,
+          "length": 65536,
+          "digest": "bb30e654917eddc7c132216b5c7d8e0eb5e2a60db2d1a3555abf70524e8ad2d9"
         },
         {
           "index": 20,
-          "frames": 512,
-          "length": 1024,
-          "digest": "57770ad5b027924340a5291fc51b5d370298e7197e73d4c448c8df7df0f95070"
+          "frames": 32768,
+          "length": 65536,
+          "digest": "c2fe3d96407a113594a3737cb82253c1c5fd2e2fbb58de3f82d5bd4835723b19"
         },
         {
           "index": 21,
-          "frames": 512,
-          "length": 1024,
-          "digest": "d4a0058393bc458679c9cd4f25cb4364250c8abe868f9c721a88c6ec0995d063"
+          "frames": 32768,
+          "length": 65536,
+          "digest": "050c9b0d8e0571e7929138a356b0e84de2e9d05192dee02701aba5e927eafee2"
         },
         {
           "index": 22,
-          "frames": 512,
-          "length": 1024,
-          "digest": "1cf45bb75f8249a3491ff61f93af63c84b9a850de38b0d6f23c6268a150b5e98"
+          "frames": 32768,
+          "length": 65536,
+          "digest": "3b9b46a6e92a062d6a160f0982f6a411af5e1a5fcaed9540e27143569c363036"
         },
         {
           "index": 23,
-          "frames": 512,
-          "length": 1024,
-          "digest": "14cc7b02fb248972afe37fb4ebc8cc4ca0507c075cbc17aaebc5766a229b9586"
+          "frames": 32768,
+          "length": 65536,
+          "digest": "9790274b68eb3d91ea1537323f1d5014cb07651cd3a3d2aa9a8cdef53f832162"
         },
         {
           "index": 24,
-          "frames": 512,
-          "length": 1024,
-          "digest": "c2aff6c711d3ca605ea46b5411c797b239fbb40903ea368d0baa838171d3f1ab"
+          "frames": 32768,
+          "length": 65536,
+          "digest": "bcbe2e8d89599eff9a4672ec19b69adfb953c9b869b81acacf1bbf10a0020cc2"
         },
         {
           "index": 25,
-          "frames": 512,
-          "length": 1024,
-          "digest": "00247ba3933bf642bc75cf5fc765c0bf50229a189f5ecbbb4a69b5194c0b754a"
+          "frames": 32768,
+          "length": 65536,
+          "digest": "c1a389fe7443268028341d310c16a026fd648a59cd971609b5532ba5e8fb2686"
         },
         {
           "index": 26,
-          "frames": 512,
-          "length": 1024,
-          "digest": "0645edeb8e5cfa884939a415d4e59fea77f7fcd1e5b7abdfe05321cda81dd2c0"
+          "frames": 32768,
+          "length": 65536,
+          "digest": "6146ebb1f0ef27b90fbb1e8a3c1d2c6cd619103b770320cca2684d4fd143beaa"
         },
         {
           "index": 27,
-          "frames": 512,
-          "length": 1024,
-          "digest": "d7d1a8c7768fce430b3c016244f933564038b2ae5b95050de19a6a5bc4fb20ad"
+          "frames": 32768,
+          "length": 65536,
+          "digest": "f13db4996224812c32244a0de671f96cbea641f74d167907680cf590fe4cd815"
         },
         {
           "index": 28,
-          "frames": 512,
-          "length": 1024,
-          "digest": "19db018a63acff70a29c0b24ab6dd92dc9c66267e06e3cafc6ae636902a44505"
+          "frames": 32768,
+          "length": 65536,
+          "digest": "eab6ef2596e529fae6562ff525ddaf88497bb41c8c72e39ffe0391234aeb7ad9"
         },
         {
           "index": 29,
-          "frames": 512,
-          "length": 1024,
-          "digest": "1e0a6b0193fb69a9ee470e35b674a9bafb6296115f4e3348082175bd8c177552"
+          "frames": 32768,
+          "length": 65536,
+          "digest": "03a1c18652982bdf833054a7fe0d1983b8d166e5bb075f7c9dd65ab8c3b9b511"
         },
         {
           "index": 30,
-          "frames": 512,
-          "length": 1024,
-          "digest": "c80b05f98a8ba2885dcdb04b064edc13cc6cd95d8a9f5be918c1c26f5fab0e57"
+          "frames": 32768,
+          "length": 65536,
+          "digest": "6a4e61a092708cc6a226a4d4745e596933832a3478fd459fb9c005fe712e4212"
         },
         {
           "index": 31,
-          "frames": 512,
-          "length": 1024,
-          "digest": "a6a83f25cf7c300d9acbd6cba61b088917f6aaf02eeb5059df9b311a520270cf"
+          "frames": 32768,
+          "length": 65536,
+          "digest": "429965f999e69f9f923e208b0f13f490b31c482777cd3245f58de90bbb378fc9"
         }
       ]
     }

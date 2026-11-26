@@ -32,9 +32,12 @@ func newTestRunner(t *testing.T, dir string, stopAfter int) *Runner {
 	return r
 }
 
+// testBlockFrames matches one policy block so multi-block tests stay readable.
+var testBlockFrames = int(fingerprint.DefaultPolicy(1, 16).ChunkFrames)
+
 var baseOpts = fixtures.WAVOptions{
-	SampleRate: 8000, Channels: 1, Bits: 16, Frames: 8192,
-	BlockFrames: 512, ModifyBlock: -1, Seed: 3,
+	SampleRate: 8000, Channels: 1, Bits: 16, Frames: 16 * testBlockFrames,
+	BlockFrames: testBlockFrames, ModifyBlock: -1, Seed: 3,
 }
 
 func TestWAVIngestReportsAllStagesInOrder(t *testing.T) {
@@ -155,12 +158,13 @@ func TestResumeFromFirstUncommittedBlock(t *testing.T) {
 	}
 }
 
-func TestResumeValidatesCommittedCheckpointDigests(t *testing.T) {
+func TestResumeValidatesAndRepairsCommittedBlocks(t *testing.T) {
 	dir := t.TempDir()
 	path := writeFixture(t, dir, "a.wav", fixtures.WAV(baseOpts))
 	newTestRunner(t, dir, 2).Ingest(Input{Name: "a", Kind: "wav", Path: path})
 
-	// Corrupt a committed block object on disk. Recovery must refuse to skip it.
+	// Corrupt a committed block object on disk. Recovery must re-derive the
+	// block from the intact source rather than silently trusting the object.
 	ref := checkpointRef(t, dir, 0)
 	blob, err := storeRead(t, dir, ref)
 	if err != nil {
@@ -170,11 +174,17 @@ func TestResumeValidatesCommittedCheckpointDigests(t *testing.T) {
 	storeWrite(t, dir, ref, blob)
 
 	resumed := newTestRunner(t, dir, 0).Ingest(Input{Name: "a", Kind: "wav", Path: path})
-	if !resumed.Rejected {
-		t.Fatal("resumed run trusted a corrupted committed block")
+	if resumed.Rejected {
+		t.Fatalf("resumed run failed: %v", resumed.Err)
 	}
-	if resumed.ErrorCode != fault.CodeCommitted {
-		t.Fatalf("code = %q", resumed.ErrorCode)
+	if resumed.ResumeFrom != 2 {
+		t.Fatalf("resume_from_block = %d", resumed.ResumeFrom)
+	}
+	if err := mustStore(t, dir).VerifyObject(ref, int64(len(blob))); err != nil {
+		t.Fatalf("corrupt block was not repaired: %v", err)
+	}
+	if resumed.Committed != 16 {
+		t.Fatalf("committed = %d", resumed.Committed)
 	}
 }
 

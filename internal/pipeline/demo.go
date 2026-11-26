@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"example.com/mediavault/internal/fingerprint"
 	"example.com/mediavault/internal/fixtures"
 	"example.com/mediavault/internal/manifest"
 	"example.com/mediavault/internal/store"
@@ -46,10 +47,17 @@ type fixtureSet struct {
 // demoMarker identifies a directory owned by the demo command.
 const demoMarker = ".mediavault-demo"
 
-// demoBase is 16384 frames: exactly 32 blocks at the 1 KiB policy.
+// demoBlockFrames is the number of frames in one policy block at the demo's
+// 16-bit mono 8 kHz layout, and demoBlocks is how many blocks the acceptance
+// fixtures are built from.
+const demoBlocks = 32
+
+var demoBlockFrames = int(fingerprint.DefaultPolicy(1, 16).ChunkFrames)
+
+// demoBase is exactly demoBlocks blocks at the current policy.
 var demoBase = fixtures.WAVOptions{
-	SampleRate: 8000, Channels: 1, Bits: 16, Frames: 16384,
-	BlockFrames: 512, ModifyBlock: -1, Seed: 11,
+	SampleRate: 8000, Channels: 1, Bits: 16, Frames: demoBlocks * demoBlockFrames,
+	BlockFrames: demoBlockFrames, ModifyBlock: -1, Seed: 11,
 }
 
 func buildFixtures(dir string) (*fixtureSet, error) {
@@ -230,6 +238,9 @@ func RunDemo(dir string, out *os.File) (*DemoSummary, *manifest.File, error) {
 		fmt.Fprintf(out, "expected-rejection %s code=%s\n", in.Name, rep.ErrorCode)
 	}
 
+	if err := r.Close(); err != nil {
+		return nil, nil, err
+	}
 	mf, _, err := r.Finalize()
 	if err != nil {
 		return nil, nil, err

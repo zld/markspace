@@ -16,7 +16,15 @@ import (
 // PolicyVersion is bumped whenever chunking or digest framing changes. It is
 // stored beside every digest so a policy change invalidates derived products
 // without touching the source bytes.
-const PolicyVersion = "pcm-shard-v1"
+//
+// v2 targets 64 KiB blocks: at the 2 GiB source limit that is at most 32k
+// blocks per asset, so a full ingest writes a bounded number of small objects
+// instead of millions of 1 KiB ones. 64 KiB is still far below the 4 MiB
+// working-memory ceiling and large enough to keep object-store overhead down.
+const PolicyVersion = "pcm-shard-v2"
+
+// TargetBlockBytes is the desired block size. Actual blocks are whole frames.
+const TargetBlockBytes = 64 << 10
 
 // Policy describes how frames are grouped into blocks.
 type Policy struct {
@@ -24,15 +32,14 @@ type Policy struct {
 	ChunkFrames int64
 }
 
-// DefaultPolicy is the acceptance policy: 1 KiB blocks, sized in frames so
-// that every block is frame aligned and bounded well below the 4 MiB working
-// memory envelope.
+// DefaultPolicy sizes blocks in whole frames so every block is frame aligned
+// and stays close to TargetBlockBytes.
 func DefaultPolicy(channels, bits int) Policy {
 	frameBytes := channels * ((bits + 7) / 8)
 	if frameBytes <= 0 {
 		frameBytes = 1
 	}
-	frames := int64(1024 / frameBytes)
+	frames := int64(TargetBlockBytes / frameBytes)
 	if frames < 1 {
 		frames = 1
 	}

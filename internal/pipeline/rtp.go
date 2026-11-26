@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"encoding/binary"
+	"fmt"
 
 	"github.com/pion/rtp"
 
@@ -73,17 +74,23 @@ func (r *Runner) ingestRTP(in Input) Report {
 	rep.Asset.Track.StartTimestamp = packets[0].Timestamp
 	r.transition(&rep, in.Name, model.StageScanned, model.StageFingerprinted)
 
-	// The canonical timeline product is a compact JSON-free binary stream of
-	// (sequence, stamp, samples, position) records, chunked like PCM.
+	// The canonical timeline product is a compact binary stream of
+	// (sequence, stamp, samples, position) records. It is archived as its own
+	// content-addressed source, then chunked like PCM.
 	timeline := encodeTimeline(tl)
-	scanID := resumeKey("rtp", timelineDigest(timeline), r.policy.ChunkFrames)
+	timelineSource := timelineDigest(timeline)
+	if err := r.store.PutBytes(timelineSource, timeline); err != nil {
+		return r.reject(rep, model.StageFingerprinted, err)
+	}
+	rep.Asset.SourceDigest = timelineSource
+	scanID := resumeKey("rtp", timelineSource, r.policy.ChunkFrames)
 	rec, err := r.replay()
 	if err != nil {
 		return r.reject(rep, model.StageFingerprinted, err)
 	}
 	prior := priorCheckpoints(rec, scanID)
 	var refs []model.ChunkRef
-	newBlocks := 0
+	firstGap := -1
 	for idx, frames := range blockLayout(int64(len(tl.Packets)), r.policy.ChunkFrames) {
 		start := int64(idx) * r.policy.ChunkFrames
 		end := start + frames
@@ -91,24 +98,39 @@ func (r *Runner) ingestRTP(in Input) Report {
 		digest := fingerprint.ChunkDigest(idx, frames, pcm)
 		ref := model.ChunkRef{Index: idx, Frames: frames, Length: int64(len(pcm)), Digest: digest}
 		refs = append(refs, ref)
-		if prev, ok := prior[idx]; ok && prev.ContentHash == digest {
+		if prev, ok := prior[idx]; ok && firstGap < 0 && prev.ContentHash == digest {
+			if err := r.store.VerifyObject(digest, int64(len(pcm))); err != nil {
+				if rewErr := r.store.RepairBytes(digest, pcm); rewErr != nil {
+					return r.reject(rep, model.StageFingerprinted, fault.Wrap(fault.CodeCommitted, fault.StageFingerprinted, -1, err,
+						"committed timeline block %d failed verification", idx))
+				}
+			}
 			rep.Reused++
 			rep.Committed++
 			continue
+		}
+		if firstGap < 0 {
+			firstGap = idx
+			rep.ResumeFrom = idx
+			fmt.Fprintf(r.out, "resume_from_block=%d asset=%s\n", idx, in.Name)
 		}
 		existed := r.store.Exists(digest)
 		if err := r.store.PutBytes(digest, pcm); err != nil {
 			return r.reject(rep, model.StageFingerprinted, err)
 		}
 		if !existed {
-			newBlocks++
+			rep.Recomputed++
+			if err := r.store.VerifyObject(digest, int64(len(pcm))); err != nil {
+				return r.reject(rep, model.StageFingerprinted, err)
+			}
+		} else {
+			rep.Reused++
 		}
-		rep.Recomputed++
 		if err := r.recordCheckpoint(scanID, ref); err != nil {
 			return r.reject(rep, model.StageFingerprinted, err)
 		}
 		rep.Committed++
-		if r.stopAfterBlocks > 0 && newBlocks >= r.stopAfterBlocks {
+		if r.stopAfterBlocks > 0 && rep.Committed >= r.stopAfterBlocks {
 			rep.Interrupted = true
 			rep.Asset.Stage = model.StageScanned
 			return r.appendReport(rep)
@@ -116,6 +138,9 @@ func (r *Runner) ingestRTP(in Input) Report {
 	}
 	r.transition(&rep, in.Name, model.StageFingerprinted, model.StageNormalized)
 	rep.Asset.Stage = model.StageNormalized
+	if rep.ResumeFrom == 0 && rep.Committed == len(refs) {
+		fmt.Fprintf(r.out, "resume_from_block=0 asset=%s\n", in.Name)
+	}
 
 	format := model.WAVFormat{SampleRate: rate, Channels: 1, BitsPerSample: 16}
 	content, err := fingerprint.Aggregate(r.policy, format, refs)
@@ -157,22 +182,7 @@ func appendPackets(dst []byte, p rtpc.Packet) []byte {
 	return append(dst, b[:14]...)
 }
 
-func timelineDigest(b []byte) string {
-	h := fingerprint.NewContentHasher()
-	h.Write(b)
-	return h.Sum()
-}
-
-// writeTimelineDump is a diagnostic side product used by the demo output.
-func (r *Runner) writeTimelineDump(name string, b []byte) (string, error) {
-	d := fingerprint.NewContentHasher()
-	d.Write(b)
-	digest := d.Sum()
-	if err := r.store.PutBytes(digest, b); err != nil {
-		return "", fault.Wrap(fault.CodeDigest, fault.StageNormalized, -1, err, "store timeline dump %s", name)
-	}
-	return digest, nil
-}
+func timelineDigest(b []byte) string { return fingerprint.BlobDigest(b) }
 
 // rtpInfo projects the reconciled timeline into the manifest.
 func rtpInfo(tl *rtpc.Timeline) *manifest.RTPInfo {

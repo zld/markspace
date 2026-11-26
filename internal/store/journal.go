@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"example.com/mediavault/internal/fault"
 	"example.com/mediavault/internal/model"
@@ -41,6 +42,10 @@ type Record struct {
 // Journal is an append-only record log.
 type Journal struct {
 	path string
+	// f is kept open across appends so a large ingest does not reopen the log
+	// per block; the runner Syncs it once per committed checkpoint.
+	f  *os.File
+	mu sync.Mutex
 }
 
 // OpenJournal prepares the log inside the store root.
@@ -54,7 +59,10 @@ func OpenJournal(root string) (*Journal, error) {
 // Path returns the log path.
 func (j *Journal) Path() string { return j.path }
 
-// Append writes one record durably.
+// Append writes one record. The write is buffered; it becomes durable at the
+// next Sync, which the runner issues once per committed block. Batching a
+// handful of writes keeps a multi-gigabyte ingest from paying an fsync per
+// line while still bounding how much work a crash can lose.
 func (j *Journal) Append(rec Record) error {
 	var b []byte
 	b, err := json.Marshal(rec)
@@ -62,19 +70,49 @@ func (j *Journal) Append(rec Record) error {
 		return fault.Wrap(fault.CodeCheckpoint, fault.StageNormalized, -1, err, "encode journal record")
 	}
 	b = append(b, '\n')
-	f, err := os.OpenFile(j.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-	if err != nil {
-		return fault.Wrap(fault.CodeIO, fault.StageNormalized, -1, err, "open journal")
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if j.f == nil {
+		f, err := os.OpenFile(j.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+		if err != nil {
+			return fault.Wrap(fault.CodeIO, fault.StageNormalized, -1, err, "open journal")
+		}
+		j.f = f
 	}
-	if _, err := f.Write(b); err != nil {
-		f.Close()
+	if _, err := j.f.Write(b); err != nil {
 		return fault.Wrap(fault.CodeIO, fault.StageNormalized, -1, err, "append journal")
 	}
-	if err := f.Sync(); err != nil {
-		f.Close()
+	return nil
+}
+
+// Sync flushes buffered journal writes to stable storage.
+func (j *Journal) Sync() error {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if j.f == nil {
+		return nil
+	}
+	if err := j.f.Sync(); err != nil {
 		return fault.Wrap(fault.CodeIO, fault.StageNormalized, -1, err, "sync journal")
 	}
-	return f.Close()
+	return nil
+}
+
+// Close flushes and closes the log.
+func (j *Journal) Close() error {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if j.f == nil {
+		return nil
+	}
+	if err := j.f.Sync(); err != nil {
+		j.f.Close()
+		j.f = nil
+		return fault.Wrap(fault.CodeIO, fault.StageNormalized, -1, err, "sync journal")
+	}
+	err := j.f.Close()
+	j.f = nil
+	return err
 }
 
 // Replay reads every intact record. A torn trailing line is ignored so that a

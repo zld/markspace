@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"io"
 
 	"example.com/mediavault/internal/fault"
 	"example.com/mediavault/internal/fingerprint"
@@ -85,13 +84,16 @@ func (r *Runner) ingestWAV(in Input) Report {
 	if err := r.store.PutFile(info.SourceDigest, in.Path, info.FileSize); err != nil {
 		return r.reject(rep, model.StageReceived, err)
 	}
+	// Block size follows the source format so every block is a whole number of
+	// frames of roughly TargetBlockBytes, within the 4 MiB working-memory limit.
+	policy := fingerprint.DefaultPolicy(info.Format.Channels, info.Format.BitsPerSample)
 	rep.Asset = model.Asset{
 		Name:            in.Name,
 		Path:            in.Path,
 		Transport:       model.TransportWAV,
 		SourceDigest:    info.SourceDigest,
 		ContainerDigest: info.ContainerDigest,
-		ChunkFrames:     r.policy.ChunkFrames,
+		ChunkFrames:     policy.ChunkFrames,
 		Track: model.Track{
 			ID:            in.Name,
 			Transport:     model.TransportWAV,
@@ -106,7 +108,7 @@ func (r *Runner) ingestWAV(in Input) Report {
 	rep.Asset.Stage = model.StageReceived
 	r.transition(&rep, in.Name, model.StageReceived, model.StageScanned)
 	rep.Asset.Stage = model.StageScanned
-	scanID := resumeKey("wav", info.SourceDigest, r.policy.ChunkFrames)
+	scanID := resumeKey("wav", info.SourceDigest, policy.ChunkFrames)
 
 	rec, err := r.replay()
 	if err != nil {
@@ -122,8 +124,8 @@ func (r *Runner) ingestWAV(in Input) Report {
 		refs     []model.ChunkRef
 		firstGap = -1
 	)
-	for idx, frames := range blockLayout(info.Frames, r.policy.ChunkFrames) {
-		pcm, err := rd.ReadFrames(int64(idx)*r.policy.ChunkFrames, frames)
+	for idx, frames := range blockLayout(info.Frames, policy.ChunkFrames) {
+		pcm, err := rd.ReadFrames(int64(idx)*policy.ChunkFrames, frames)
 		if err != nil {
 			return r.reject(rep, model.StageScanned, err)
 		}
@@ -132,12 +134,19 @@ func (r *Runner) ingestWAV(in Input) Report {
 		refs = append(refs, ref)
 
 		if prev, ok := prior[idx]; ok && firstGap < 0 && prev.ContentHash == digest {
-			// Recovery must prove the checkpoint still describes these bytes,
-			// including the stored object itself, before skipping the block.
+			// Recompute the block digest from the source bytes and confirm the
+			// stored object still matches. A corrupt object is rewritten from
+			// the intact source rather than failing the whole asset; the
+			// checkpoint's own digest is still the authority on identity.
 			if err := r.store.VerifyObject(digest, int64(len(pcm))); err != nil {
-				return r.reject(rep, model.StageScanned, fault.Wrap(fault.CodeCommitted, fault.StageScanned,
-					info.DataOffset+int64(idx)*int64(info.Format.FrameBytes()), err,
-					"committed block %d failed verification", idx))
+				if rewErr := r.store.RepairBytes(digest, pcm); rewErr != nil {
+					return r.reject(rep, model.StageScanned, fault.Wrap(fault.CodeCommitted, fault.StageScanned,
+						info.DataOffset+int64(idx)*int64(info.Format.FrameBytes()), err,
+						"committed block %d failed verification", idx))
+				}
+				rep.Recomputed++
+				rep.Committed++
+				continue
 			}
 			rep.Reused++
 			rep.Committed++
@@ -178,12 +187,12 @@ func (r *Runner) ingestWAV(in Input) Report {
 	r.transition(&rep, in.Name, model.StageScanned, model.StageFingerprinted)
 	rep.Asset.Stage = model.StageFingerprinted
 
-	content, err := fingerprint.Aggregate(r.policy, info.Format, refs)
+	content, err := fingerprint.Aggregate(policy, info.Format, refs)
 	if err != nil {
 		return r.reject(rep, model.StageFingerprinted, err)
 	}
 	rep.Asset.ContentDigest = content
-	rep.Asset.PolicyVersion = r.policy.Version
+	rep.Asset.PolicyVersion = policy.Version
 	rep.Asset.Key = model.AssetKey(model.TransportWAV, content)
 	rep.Asset.Chunks = refs
 	rep.Asset.RecomputedBlocks = rep.Recomputed
@@ -193,6 +202,3 @@ func (r *Runner) ingestWAV(in Input) Report {
 	rep.Asset.Stage = model.StageNormalized
 	return r.archive(rep, refs, nil)
 }
-
-// openSource is a seam used by tests to substitute a reader.
-var openSource = io.Discard

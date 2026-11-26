@@ -70,6 +70,11 @@ func (r *Runner) Store() *store.Store { return r.store }
 // Reports returns every ingest result in submission order.
 func (r *Runner) Reports() []Report { return r.reports }
 
+// Close flushes the journal. It is safe to call more than once.
+func (r *Runner) Close() error {
+	return r.journal.Close()
+}
+
 // Report is the outcome of one ingest.
 type Report struct {
 	Name          string      `json:"name"`
@@ -172,6 +177,9 @@ func (r *Runner) Finalize() (*manifest.File, bool, error) {
 	}); err != nil {
 		return nil, false, err
 	}
+	if err := r.journal.Sync(); err != nil {
+		return nil, false, err
+	}
 	return f, true, nil
 }
 
@@ -200,11 +208,25 @@ func (r *Runner) recordArchive(e manifest.Entry) error {
 	return r.journal.Append(store.Record{Kind: "archive", AssetKey: e.Key, Digest: e.ArchiveDigest, Blob: raw})
 }
 
+// recordCheckpoint appends a block checkpoint and flushes it to stable
+// storage before the next block is attempted. The bound is one block's work,
+// not the whole asset: a crash can lose at most the block in flight, never the
+// frontier the next run resumes from.
 func (r *Runner) recordCheckpoint(key string, c model.ChunkRef) error {
-	return r.journal.Append(store.Record{
+	if err := r.journal.Append(store.Record{
 		Kind: "checkpoint", AssetKey: key, Block: c.Index, Frames: c.Frames,
 		Length: c.Length, ContentHash: c.Digest,
-	})
+	}); err != nil {
+		return err
+	}
+	return r.journal.Sync()
+}
+
+// closeJournal flushes the log at the end of a run.
+func (r *Runner) closeJournal() {
+	if err := r.journal.Close(); err != nil {
+		fmt.Fprintf(r.out, "journal-close: %v\n", err)
+	}
 }
 
 func collectEntries(rec *store.Recorder) ([]manifest.Entry, error) {
