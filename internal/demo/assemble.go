@@ -126,7 +126,7 @@ func commitPackage(
 			Name: "input.mp4", Format: "mp4/v1", Size: len(files["inputs/input.mp4"]),
 			SHA256: render.HashBytes(files["inputs/input.mp4"]),
 		}},
-		Clips:     []release.Artifact{hashArtifact("timeline.json", "timeline", "", files)},
+		Clips:     timelineClipHashes(tl),
 		Artifacts: arts,
 		Targets: []release.Target{
 			{
@@ -159,6 +159,27 @@ func commitPackage(
 func hashArtifact(path, kind, platform string, files map[string][]byte) release.Artifact {
 	b := files[path]
 	return release.Artifact{Path: path, Kind: kind, Platform: platform, Size: int64(len(b)), SHA256: render.HashBytes(b)}
+}
+
+func timelineClipHashes(tl *timeline.Timeline) []release.Artifact {
+	var out []release.Artifact
+	for _, tr := range tl.Tracks {
+		for _, el := range tr.Elements {
+			b, _ := json.Marshal(el.Clip)
+			out = append(out, release.Artifact{
+				Path: "timeline.json#clip/" + el.Clip.ID, Kind: "clip",
+				Platform: el.Clip.Track, Size: int64(len(b)), SHA256: render.HashBytes(b),
+			})
+		}
+	}
+	for _, tr := range tl.Transitions {
+		b, _ := json.Marshal(tr.Transition)
+		out = append(out, release.Artifact{
+			Path: "timeline.json#transition/" + tr.ID, Kind: "transition",
+			Platform: tr.Track, Size: int64(len(b)), SHA256: render.HashBytes(b),
+		})
+	}
+	return out
 }
 
 func frameSegments(platform string, group, count int, cov *index.Coverage, files map[string][]byte) ([]release.Segment, []string) {
