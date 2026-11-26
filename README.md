@@ -32,6 +32,8 @@ go run ./cmd/acceptance --input /path/to/foreign.wav
 
 注意：`go run` 会把被运行程序的非零退出统一包装为 `1`；需要核验原始 `2/3` 时，请先 `go build -o ... ./cmd/acceptance` 再运行二进制，`scripts/verify.sh` 已这样处理。
 
+版本说明：固定的 `github.com/pion/rtp v1.10.6` 自身声明 `go 1.24.0`，因此 `go mod tidy` 会把主 `go.mod` 的 go 指令维护为 `1.24.0`。在 Go 1.23.12 上使用默认 `GOTOOLCHAIN=auto` 时可自动获取兼容工具链；若强制 `GOTOOLCHAIN=local` 且离线，则题目指定的该依赖版本与 Go 1.23.12 存在工具链下限冲突。
+
 ## 输出字段
 
 每个用例向 stdout 输出一行稳定 JSON，包含：
