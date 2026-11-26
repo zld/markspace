@@ -7,28 +7,28 @@ import (
 
 // EBML and Matroska element identifiers used by pwflow.
 const (
-	IDEBMLHeader     uint32 = 0x1A45DFA3
-	IDSegment        uint32 = 0x18538067
-	IDSeekHead       uint32 = 0x114D9B74
-	IDInfo           uint32 = 0x1549A966
-	IDTimecodeScale  uint32 = 0x2AD7B1
-	IDTracks         uint32 = 0x1654AE6B
-	IDTrackEntry     uint32 = 0xAE
-	IDTrackNumber    uint32 = 0xD7
-	IDTrackType      uint32 = 0x83
-	IDCodecID        uint32 = 0x86
-	IDVideo          uint32 = 0xE0
-	IDPixelWidth     uint32 = 0xB0
-	IDPixelHeight    uint32 = 0xBA
-	IDCluster        uint32 = 0x1F43B675
-	IDTimecode       uint32 = 0xE7
-	IDSimpleBlock    uint32 = 0xA3
-	IDBlockGroup     uint32 = 0xA0
-	IDBlock          uint32 = 0xA1
-	IDCues           uint32 = 0x1C53BB6B
-	IDTags           uint32 = 0x1254C367
-	IDChapters       uint32 = 0x1043A770
-	IDAttachments    uint32 = 0x1941A469
+	IDEBMLHeader    uint32 = 0x1A45DFA3
+	IDSegment       uint32 = 0x18538067
+	IDSeekHead      uint32 = 0x114D9B74
+	IDInfo          uint32 = 0x1549A966
+	IDTimecodeScale uint32 = 0x2AD7B1
+	IDTracks        uint32 = 0x1654AE6B
+	IDTrackEntry    uint32 = 0xAE
+	IDTrackNumber   uint32 = 0xD7
+	IDTrackType     uint32 = 0x83
+	IDCodecID       uint32 = 0x86
+	IDVideo         uint32 = 0xE0
+	IDPixelWidth    uint32 = 0xB0
+	IDPixelHeight   uint32 = 0xBA
+	IDCluster       uint32 = 0x1F43B675
+	IDTimecode      uint32 = 0xE7
+	IDSimpleBlock   uint32 = 0xA3
+	IDBlockGroup    uint32 = 0xA0
+	IDBlock         uint32 = 0xA1
+	IDCues          uint32 = 0x1C53BB6B
+	IDTags          uint32 = 0x1254C367
+	IDChapters      uint32 = 0x1043A770
+	IDAttachments   uint32 = 0x1941A469
 )
 
 const unknownVINT = ^uint64(0)
@@ -72,7 +72,7 @@ func readVINT(data []byte, off int, keepMarker bool) (value uint64, width int, u
 	}
 	value = raw & (marker - 1)
 	// All data bits one means an unknown-sized element.
-	dataBits := 7*width + (width-1) // total bits minus width marker/leading-zero bits
+	dataBits := 7*width + (width - 1) // total bits minus width marker/leading-zero bits
 	_ = dataBits
 	lowMask := marker - 1
 	unknown = value == lowMask

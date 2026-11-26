@@ -10,12 +10,12 @@ import (
 
 // TrackSummary is the timeline information pwflow uses from an MP4 track.
 type TrackSummary struct {
-	ID              uint32 `json:"id"`
-	Type            string `json:"type"`
-	Timescale       uint32 `json:"timescale"`
-	Duration        uint64 `json:"duration"`
-	DurationNS      int64  `json:"duration_ns"`
-	SampleCount     int    `json:"sample_count"`
+	ID          uint32 `json:"id"`
+	Type        string `json:"type"`
+	Timescale   uint32 `json:"timescale"`
+	Duration    uint64 `json:"duration"`
+	DurationNS  int64  `json:"duration_ns"`
+	SampleCount int    `json:"sample_count"`
 }
 
 // Summary is the stable MP4 probe result.
