@@ -21,17 +21,18 @@ type Input struct {
 }
 
 type Result struct {
-	Key            string
-	ResumeFrom     Stage
-	AlreadyDone    bool
-	IndexRebuilt   bool
-	CacheHit       bool
-	Committed      bool
-	Deduplicated   bool
-	ManifestPath   string
-	ManifestSHA256 string
-	Manifest       *manifest.Manifest
-	Report         *analyze.Report
+	Key              string
+	ResumeFrom       Stage
+	AlreadyDone      bool
+	IndexRebuilt     bool
+	CacheHit         bool
+	CacheInvalidated bool
+	Committed        bool
+	Deduplicated     bool
+	ManifestPath     string
+	ManifestSHA256   string
+	Manifest         *manifest.Manifest
+	Report           *analyze.Report
 }
 
 type Runner struct {
@@ -109,11 +110,12 @@ func (r *Runner) Process(in Input) (*Result, error) {
 		return nil, err
 	}
 
-	indexRebuilt, err := r.reconcileIndex(in.SourcePath, identity, contentSHA, in.AssetID, doc)
+	indexRebuilt, cacheInvalidated, err := r.reconcileIndex(in.SourcePath, identity, contentSHA, in.AssetID, doc)
 	if err != nil {
 		return nil, err
 	}
 	res.IndexRebuilt = indexRebuilt
+	res.CacheInvalidated = cacheInvalidated
 
 	if StageRank(state.Stage) < StageRank(StageParsed) {
 		p, err := r.store.SaveStructure(key, doc)
@@ -209,18 +211,20 @@ func (r *Runner) loadOrParseStructure(key, source string, state *State) (*ebml.D
 	return ebml.ParseFile(source, ebml.Options{})
 }
 
-func (r *Runner) reconcileIndex(source string, id cache.FileIdentity, contentSHA, assetID string, doc *ebml.Document) (bool, error) {
+func (r *Runner) reconcileIndex(source string, id cache.FileIdentity, contentSHA, assetID string, doc *ebml.Document) (bool, bool, error) {
 	idx, err := cache.LoadIndex(r.indexPath)
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
 	if _, ok := idx.Lookup(source, id, doc.StructureFingerprint); ok {
-		return false, nil
+		return false, false, nil
 	}
+	invalidated := false
 	if old, ok := idx.Previous(source); ok && old.ContentSHA != contentSHA {
 		if err := r.content.Invalidate(old.ContentSHA, analyze.Version); err != nil {
-			return false, err
+			return false, false, err
 		}
+		invalidated = true
 	}
 	idx.Put(cache.StructureRecord{
 		Path:        source,
@@ -230,9 +234,9 @@ func (r *Runner) reconcileIndex(source string, id cache.FileIdentity, contentSHA
 		AssetID:     assetID,
 	})
 	if err := idx.Save(r.indexPath); err != nil {
-		return false, err
+		return false, false, err
 	}
-	return true, nil
+	return true, invalidated, nil
 }
 
 func (r *Runner) loadOrMeasure(source, contentSHA, assetID string, state *State, doc *ebml.Document) (*analyze.Report, bool, error) {
