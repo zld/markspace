@@ -11,21 +11,21 @@ import (
 
 // HLSSegment is one URI plus its integer-nanosecond presentation duration.
 type HLSSegment struct {
-	Index          int    `json:"index"`
-	URI            string `json:"uri"`
-	StartNS        int64  `json:"start_ns"`
-	DurationNS     int64  `json:"duration_ns"`
-	Discontinuity  bool   `json:"discontinuity"`
-	EXTINFLine     int    `json:"extinf_line"`
-	URIOffset      int    `json:"uri_offset"`
+	Index         int    `json:"index"`
+	URI           string `json:"uri"`
+	StartNS       int64  `json:"start_ns"`
+	DurationNS    int64  `json:"duration_ns"`
+	Discontinuity bool   `json:"discontinuity"`
+	EXTINFLine    int    `json:"extinf_line"`
+	URIOffset     int    `json:"uri_offset"`
 }
 
 // HLSManifest contains the normalized media playlist view needed by recovery.
 type HLSManifest struct {
-	Source          string       `json:"source"`
+	Source           string       `json:"source"`
 	TargetDurationNS int64        `json:"target_duration_ns"`
-	Segments        []HLSSegment  `json:"segments"`
-	Discontinuities []int         `json:"discontinuity_segment_indexes"`
+	Segments         []HLSSegment `json:"segments"`
+	Discontinuities  []int        `json:"discontinuity_segment_indexes"`
 }
 
 // ParseHLS parses a media playlist from memory. Offsets in faults are zero-based
