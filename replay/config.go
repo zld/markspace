@@ -53,11 +53,14 @@ type Config struct {
 // DefaultConfig returns the parameters used by `replaycheck verify`.
 func DefaultConfig() Config {
 	return Config{
-		Seed:      7,
-		Workers:   3,
-		Queue:     2,
-		PreRoll:   media.FromMillis(400),
-		PostRoll:  media.FromMillis(300),
+		Seed:    7,
+		Workers: 3,
+		Queue:   2,
+		// Pre-roll reaches back at most one keyframe interval so each clip is
+		// independently decodable; post-roll extends past the event. Together
+		// the two default windows cover the whole 4 s fixture program.
+		PreRoll:   media.FromMillis(1000),
+		PostRoll:  media.FromMillis(1200),
 		MaxDev:    media.FromMicros(11_112),
 		ClockRate: 90000,
 		Selectors: Selectors{"rotation": "mp4"},

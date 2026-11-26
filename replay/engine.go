@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"replayproof/internal/event"
@@ -34,12 +35,15 @@ type runState struct {
 	meta       parse.Meta
 	choices    []parse.FieldChoice
 	conflicts  []parse.Conflict
-	events     []event.Event
-	plans      []event.ClipPlan
-	bad        []output.BadCase
-	indexer    *index.Index
-	inputHash  string
-	paramsHash string
+	// allDisagreements lists field conflicts that selectors resolved, so the
+	// summary records both sides of every choice.
+	allDisagreements []parse.Conflict
+	events           []event.Event
+	plans            []event.ClipPlan
+	bad              []output.BadCase
+	indexer          *index.Index
+	inputHash        string
+	paramsHash       string
 	// startSeq resumes after a validated checkpoint: plans with a sequence
 	// at or below it are not re-run.
 	startSeq int
@@ -131,6 +135,9 @@ func (st *runState) prepare(ctx context.Context, inputs Inputs) error {
 	}
 	meta, choices, conflicts := parse.ResolveMetadata(sources, st.cfg.Selectors)
 	st.meta, st.choices, st.conflicts = meta, choices, conflicts
+	// Resolve a second time without selectors so the summary can report both
+	// the disagreement and the choice that settled it.
+	_, _, st.allDisagreements = parse.ResolveMetadata(sources, nil)
 
 	// The conflict case is a second MXF whose descriptors disagree. It is
 	// evaluated on its own so it stays reportable even when the primary pair
@@ -379,9 +386,9 @@ func (st *runState) process(ctx context.Context) (*output.Summary, error) {
 			}
 			clip := res.Data.(*output.Clip)
 			sum.Clips = append(sum.Clips, clip)
-			// Clips are numbered by event index, which equals the sequence
-			// number because one event yields exactly one clip.
-			checkpoint.Record(clip.Spec.EventIndex, clip.Hash)
+			// Only the merger's contiguous sequence is recorded, never a
+			// completion order.
+			checkpoint.Record(res.Seq, clip.Hash)
 			if st.cfg.CheckpointPath != "" {
 				if err := checkpoint.Save(st.cfg.CheckpointPath); err != nil {
 					return err
@@ -434,7 +441,7 @@ func (st *runState) baseSummary() *output.Summary {
 	}
 	for _, c := range st.choices {
 		rec := output.MetadataRecord{Field: c.Field, Source: c.Source, Value: c.Value}
-		for _, conf := range st.conflicts {
+		for _, conf := range append(append([]parse.Conflict(nil), st.conflicts...), st.allDisagreements...) {
 			if conf.Field != c.Field {
 				continue
 			}
@@ -443,6 +450,7 @@ func (st *runState) baseSummary() *output.Summary {
 				rec.Candidates = append(rec.Candidates, cand.Source+"="+cand.Value)
 			}
 		}
+		sort.Strings(rec.Candidates)
 		sum.Metadata = append(sum.Metadata, rec)
 	}
 	for _, r := range []*repair.Result{st.videoRep, st.audioRep} {

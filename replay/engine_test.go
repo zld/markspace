@@ -47,16 +47,15 @@ func TestRunProducesTwoClipsAndFullSampleMap(t *testing.T) {
 	if sum.QueuePeak > cfg.Queue {
 		t.Fatalf("queue peak=%d", sum.QueuePeak)
 	}
-	// Every source sample is listed; samples before the first event window
-	// are reported without a clip rather than omitted.
-	clipped := 0
+	// The default windows cover the whole program, so every source sample is
+	// reported with its clip time, offsets and deviation.
 	for _, m := range sum.Maps {
-		if m.ClipName != "" {
-			clipped++
+		if m.ClipName == "" {
+			t.Fatalf("sample %d/%d missing from clips", m.TrackID, m.Number)
 		}
-	}
-	if clipped == 0 {
-		t.Fatal("no sample landed in a clip")
+		if m.ByteError != 0 {
+			t.Fatalf("sample %d/%d byte error", m.TrackID, m.Number)
+		}
 	}
 	// Clips must start on a decodable video keyframe and be readable.
 	for _, c := range sum.Clips {

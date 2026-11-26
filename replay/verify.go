@@ -48,8 +48,13 @@ func GenerateInputs(seed int64) (Inputs, error) {
 // different seed exercises different windows. Two marker events are emitted,
 // each with a deliberate duplicate sequence number.
 func generateRTP(seed int64) ([][]byte, error) {
-	first := uint32(90_000) + uint32(seed%5)*9_000 // ~1 s at 90 kHz, jittered
-	second := first + 1_400_000                    // 1.4 s later
+	// The generated program is 4 s. Events sit at roughly 1.2 s and 3.0 s,
+	// and with the default roll the two windows cover every sample. At
+	// 90 kHz one second is 90000 ticks; the seed nudges both events together
+	// by up to 0.8 s so different seeds exercise different keyframe boundaries
+	// without ever pushing a window outside the program.
+	first := uint32(108_000) + uint32(seed%5)*18_000
+	second := first + 162_000 // 1.8 s later
 	type pkt struct {
 		seq    uint16
 		marker bool
@@ -126,10 +131,20 @@ func RunVerify(ctx context.Context, cfg Config) (*output.Summary, error) {
 	}
 	runSum.Canceled = true
 
-	// Resume: continue from the checkpoint written by the cancelled run, in
-	// the same output directory so the checkpoint's clip can be adopted.
+	// Resume: restore the checkpoint written by the cancelled run into a
+	// fresh directory. Only the release record is reused; the clip files are
+	// regenerated so the digest comparison proves the restored run is
+	// self-contained rather than inheriting bytes from the interrupted run.
 	resumeCfg := cancelCfg
 	resumeCfg.CancelAfter = 0
+	resumeCfg.OutDir = filepath.Join(cfg.OutDir, "resume-run")
+	resumeCfg.CheckpointPath = filepath.Join(resumeCfg.OutDir, "checkpoint.json")
+	if err := os.MkdirAll(resumeCfg.OutDir, 0o755); err != nil {
+		return runSum, media.Wrap(err, media.CodeIO, "verify.resumedir", -1)
+	}
+	if err := copyCheckpointFiles(cancelCfg.OutDir, resumeCfg.OutDir, cancelCfg.CheckpointPath, resumeCfg.CheckpointPath); err != nil {
+		return runSum, err
+	}
 	resumeSum, resumeErr := Resume(ctx, resumeCfg, inputs)
 	if resumeErr != nil {
 		return runSum, resumeErr
@@ -150,6 +165,41 @@ func RunVerify(ctx context.Context, cfg Config) (*output.Summary, error) {
 			"resume with changed parameters was not refused")
 	}
 	return runSum, nil
+}
+
+// copyCheckpointFiles carries the interrupted run's checkpoint (and the clips
+// it published) into the resume directory, so the resume starts from the
+// recorded prefix exactly as an operator restoring a checkpoint would.
+func copyCheckpointFiles(fromDir, toDir, fromCheckpoint, toCheckpoint string) error {
+	data, err := os.ReadFile(fromCheckpoint)
+	if err != nil {
+		return media.Wrap(err, media.CodeIO, "verify.cp", -1)
+	}
+	if err := os.WriteFile(toCheckpoint, data, 0o644); err != nil {
+		return media.Wrap(err, media.CodeIO, "verify.cp", -1)
+	}
+	fromClips := filepath.Join(fromDir, "clips")
+	toClips := filepath.Join(toDir, "clips")
+	if err := os.MkdirAll(toClips, 0o755); err != nil {
+		return media.Wrap(err, media.CodeIO, "verify.cp", -1)
+	}
+	entries, err := os.ReadDir(fromClips)
+	if err != nil {
+		return media.Wrap(err, media.CodeIO, "verify.cp", -1)
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		src, err := os.ReadFile(filepath.Join(fromClips, e.Name()))
+		if err != nil {
+			return media.Wrap(err, media.CodeIO, "verify.cp", -1)
+		}
+		if err := os.WriteFile(filepath.Join(toClips, e.Name()), src, 0o644); err != nil {
+			return media.Wrap(err, media.CodeIO, "verify.cp", -1)
+		}
+	}
+	return nil
 }
 
 // Resume validates the checkpoint against the current inputs and parameters,
