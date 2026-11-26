@@ -37,7 +37,7 @@ type RTPClock struct {
 	SequenceGaps int
 	// TimestampJumps records non-monotonic timestamp movements in ticks.
 	TimestampJumps []int64
-	seen bool
+	seen           bool
 }
 
 // NewRTPClock returns a clock for the given rate.

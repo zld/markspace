@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"liveregress/internal/fmp4"
 	"liveregress/internal/fault"
+	"liveregress/internal/fmp4"
 )
 
 func TestRemuxPreservesSampleBytes(t *testing.T) {
