@@ -115,7 +115,7 @@ func scanAnnexB(r io.Reader, track string, codec Codec, headerSize int, classify
 		if err == io.EOF {
 			res.Size = s.offset
 			if start >= 0 {
-				res.Issues.Add(media.CatTruncatedNAL, track, -1, start, "%s stream ends inside start code", codec)
+				res.Issues.Add(media.CatTruncatedNAL, track, int64(len(res.Units)), start, "%s stream ends inside start code", codec)
 			}
 			return res, nil
 		}
@@ -132,7 +132,7 @@ func scanAnnexB(r io.Reader, track string, codec Codec, headerSize int, classify
 				u.Length = u.End - u.Offset
 				u.Complete = false
 				res.Units = append(res.Units, u)
-				res.Issues.Add(media.CatTruncatedNAL, track, -1, start, "%s NAL header truncated at byte %d", codec, off)
+				res.Issues.Add(media.CatTruncatedNAL, track, int64(u.Index), start, "%s NAL header truncated at byte %d", codec, off)
 				res.Size = s.offset
 				return res, nil
 			}
@@ -149,7 +149,7 @@ func scanAnnexB(r io.Reader, track string, codec Codec, headerSize int, classify
 			c := classify(header, u.End-headerOff)
 			applyClassified(&u, c)
 			if !u.Complete {
-				res.Issues.Add(c.issueCat, track, -1, u.Offset, "%s", c.issueMsg)
+				res.Issues.Add(c.issueCat, track, int64(u.Index), u.Offset, "%s", c.issueMsg)
 			}
 			res.Units = append(res.Units, u)
 			res.Size = s.offset
@@ -162,7 +162,7 @@ func scanAnnexB(r io.Reader, track string, codec Codec, headerSize int, classify
 		c := classify(header, nextStart-headerOff)
 		applyClassified(&u, c)
 		if !u.Complete {
-			res.Issues.Add(c.issueCat, track, -1, u.Offset, "%s", c.issueMsg)
+			res.Issues.Add(c.issueCat, track, int64(u.Index), u.Offset, "%s", c.issueMsg)
 		}
 		res.Units = append(res.Units, u)
 

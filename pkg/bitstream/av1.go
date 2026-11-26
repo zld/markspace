@@ -32,6 +32,9 @@ func scanAV1(r io.Reader, track string) (*Result, error) {
 		}
 		if err != nil {
 			if me, ok := err.(*media.Error); ok {
+				if me.Sequence < 0 {
+					me.Sequence = int64(len(res.Units))
+				}
 				res.Issues = append(res.Issues, me)
 				res.Size = s.offset
 				return res, nil
@@ -46,6 +49,7 @@ func scanAV1(r io.Reader, track string) (*Result, error) {
 			size, _, err = readLEB128(s, track)
 			if err != nil {
 				me := err.(*media.Error)
+				me.Sequence = int64(u.Index)
 				res.Issues = append(res.Issues, me)
 				u.Complete = false
 				u.End = s.offset
@@ -62,7 +66,7 @@ func scanAV1(r io.Reader, track string) (*Result, error) {
 		if readErr != nil {
 			off := start
 			if readErr == io.ErrUnexpectedEOF {
-				res.Issues.Add(media.CatTruncatedOBU, track, -1, off, "OBU type %d declared size %d is truncated", obuType(hdr), size)
+				res.Issues.Add(media.CatTruncatedOBU, track, int64(u.Index), off, "OBU type %d declared size %d is truncated", obuType(hdr), size)
 			} else if me, ok := readErr.(*media.Error); ok {
 				res.Issues = append(res.Issues, me)
 			} else {
