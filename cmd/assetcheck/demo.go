@@ -17,6 +17,10 @@ func runDemo(out io.Writer, dir, caseName string, redeliver int) error {
 	switch caseName {
 	case "clean":
 		return demoClean(out, dir, redeliver)
+	case "replace-identical":
+		return demoReplaceIdentical(out, dir, redeliver)
+	case "metadata-change":
+		return demoMetadataChange(out, dir, redeliver)
 	default:
 		return media.SpecMismatch("DEMO_UNKNOWN_CASE", "unknown demo case").WithDetail(caseName)
 	}
