@@ -148,12 +148,12 @@ func splitScenarios(s string) []string {
 
 func validateScenarios(ss []string) error {
 	known := map[string]bool{}
-	for _, s := range fixture.AllScenarios {
+	for _, s := range fixture.KnownScenarios {
 		known[s] = true
 	}
 	for _, s := range ss {
 		if !known[s] {
-			return fmt.Errorf("unknown scenario %q (valid: %s)", s, strings.Join(fixture.AllScenarios, ", "))
+			return fmt.Errorf("unknown scenario %q (valid: %s)", s, strings.Join(fixture.KnownScenarios, ", "))
 		}
 	}
 	return nil

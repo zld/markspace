@@ -13,12 +13,19 @@ const (
 	ScenarioDamage   = "damage"
 	ScenarioReplace  = "replace"
 	ScenarioMetadata = "metadata"
+	// ScenarioCorrupt is an optional extra scenario that models a genuinely
+	// unusable source: its bytes cannot be recomputed, producing an
+	// unrecoverable range (exit code 2). It is not part of the default set.
+	ScenarioCorrupt = "corrupt"
 )
 
 // AllScenarios is the canonical order used when the demo runs the full set.
 var AllScenarios = []string{
 	ScenarioNormal, ScenarioDamage, ScenarioReplace, ScenarioMetadata,
 }
+
+// KnownScenarios includes the optional corrupt scenario for validation.
+var KnownScenarios = append(append([]string{}, AllScenarios...), ScenarioCorrupt)
 
 // ScenarioPaths maps a scenario name to its on-disk MP4 working copy.
 func ScenarioPaths(base *Bundle, workDir, scenario string) string {
@@ -57,6 +64,10 @@ func Materialize(base *Bundle, workDir string, scenarios []string) (map[string]s
 			// A container/metadata-only edit: append a free box. Media sample
 			// bytes are untouched so derived segment content stays reusable.
 			data = appendFreeBox(data)
+		case ScenarioCorrupt:
+			// Same byte-level damage as the damage scenario, but the pipeline
+			// treats it as an unrecoverable source fault (no recompute).
+			data = corruptMdatPayload(data)
 		default:
 			return nil, fmt.Errorf("fixture: unknown scenario %q", sc)
 		}

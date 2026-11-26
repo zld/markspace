@@ -20,18 +20,19 @@ import (
 
 // Row is the per-scenario acceptance record printed by the demo command.
 type Row struct {
-	Scenario           string  `json:"scenario"`
-	TargetKbps         int     `json:"target_kbps"`
-	ActualKbps         int     `json:"actual_kbps"`
-	BitrateDeltaPct    float64 `json:"bitrate_delta_pct"`
-	PSNRDB             float64 `json:"psnr_db"`
-	ManifestMaxErrorMs float64 `json:"manifest_max_error_ms"`
-	AnomalyCount       int     `json:"anomaly_count"`
-	RecoveredSegments  int     `json:"recovered_segments"`
-	CacheHit           bool    `json:"cache_hit"`
-	IndexRebuilt       bool    `json:"index_rebuilt"`
-	ExitCode           int     `json:"exit_code"`
-	ManifestHash       string  `json:"manifest_hash"`
+	Scenario              string  `json:"scenario"`
+	TargetKbps            int     `json:"target_kbps"`
+	ActualKbps            int     `json:"actual_kbps"`
+	BitrateDeltaPct       float64 `json:"bitrate_delta_pct"`
+	PSNRDB                float64 `json:"psnr_db"`
+	ManifestMaxErrorMs    float64 `json:"manifest_max_error_ms"`
+	AnomalyCount          int     `json:"anomaly_count"`
+	RecoveredSegments     int     `json:"recovered_segments"`
+	UnrecoverableSegments int     `json:"unrecoverable_segments"`
+	CacheHit              bool    `json:"cache_hit"`
+	IndexRebuilt          bool    `json:"index_rebuilt"`
+	ExitCode              int     `json:"exit_code"`
+	ManifestHash          string  `json:"manifest_hash"`
 }
 
 // Dirs groups the persistent on-disk locations shared across runs.
@@ -60,12 +61,22 @@ func (p *extractProcessor) Process(seg recover.Segment) ([]byte, error) {
 	return buf, nil
 }
 
+// RunOptions controls fault injection for a single pipeline run.
+type RunOptions struct {
+	// ForceCacheCorruption corrupts one in-window derived cache entry so the
+	// segment is recomputed from its sync boundary (recoverable).
+	ForceCacheCorruption bool
+	// ForceSourceCorrupt marks one in-window segment's source bytes unusable,
+	// which cannot be recomputed and yields an unrecoverable range.
+	ForceSourceCorrupt bool
+}
+
 // Run executes one scenario over [fromNanos,toNanos] and returns its metrics.
 // It is deterministic: identical inputs and caches yield identical rows and
 // manifest hashes.
 func Run(d Dirs, b *fixture.Bundle, mp4Path, scenario string,
 	fromNanos, toNanos int64, params cache.Params, runner verify.Runner,
-	forceCacheCorruption bool) (*Row, error) {
+	opts RunOptions) (*Row, error) {
 
 	// 1. Ingest the source into the immutable CAS (replacement-safe).
 	srcStore, err := source.NewStore(d.Store)
@@ -118,18 +129,24 @@ func Run(d Dirs, b *fixture.Bundle, mp4Path, scenario string,
 		return nil, err
 	}
 
-	// 6. Fault injection for the damage scenario: corrupt a derived cache
-	// entry for a segment that lies inside the requested time window, so the
-	// resulting checksum anomaly appears in the windowed manifest with its
-	// source offset, and exactly that segment recomputes from its sync boundary.
+	// 6. Fault injection. A cache-entry fault (damage) is recoverable by
+	// recomputing from the sync boundary; a source-byte fault cannot be
+	// recomputed and becomes an unrecoverable range. In both cases the victim
+	// is chosen inside the requested window so it appears in the manifest.
 	knownFaults := map[int]model.Anomaly{}
-	if forceCacheCorruption && len(set.Segments) > 0 {
+	corruptOffsets := map[int64]bool{}
+	if (opts.ForceCacheCorruption || opts.ForceSourceCorrupt) && len(set.Segments) > 0 {
 		victim := segmentInWindow(set.Segments, fromNanos, toNanos)
-		_ = cacheStore.Put(victim.CacheKey, []byte("stale-corrupt-bytes"))
-		anom := model.Anomaly{
-			Type:    model.AnomalyChecksum,
-			Message: "derived segment checksum failed",
+		anomType := model.AnomalyChecksum
+		msg := "derived segment checksum failed"
+		if opts.ForceSourceCorrupt {
+			anomType = model.AnomalyUnrecoverable
+			msg = "source bytes corrupt: range cannot be recomputed"
+			corruptOffsets[victim.Offset] = true
+		} else {
+			_ = cacheStore.Put(victim.CacheKey, []byte("stale-corrupt-bytes"))
 		}
+		anom := model.Anomaly{Type: anomType, Message: msg}
 		if tr := findTrack(norm, trackID); tr != nil {
 			anom.TrackKind = tr.Kind
 			anom.TimeBase = tr.TimeBase
@@ -141,7 +158,7 @@ func Run(d Dirs, b *fixture.Bundle, mp4Path, scenario string,
 	}
 
 	// 7. Cache-first, range-scoped recovery.
-	proc := &extractProcessor{ra: blob}
+	proc := &extractProcessor{ra: blob, corruptAt: corruptOffsets}
 	rec := recover.New(cacheStore, proc)
 	recResult, err := rec.Run(set, knownFaults)
 	if err != nil {
@@ -160,6 +177,13 @@ func Run(d Dirs, b *fixture.Bundle, mp4Path, scenario string,
 	if err != nil {
 		return nil, err
 	}
-	row.ExitCode = model.ExitOK
+	row.UnrecoverableSegments = len(recResult.Unrecoverable)
+	// A genuinely corrupt source yields an unrecoverable range: the manifest
+	// is already retained above, and the command must surface exit code 2.
+	if row.UnrecoverableSegments > 0 {
+		row.ExitCode = model.ExitUnrecoverable
+	} else {
+		row.ExitCode = model.ExitOK
+	}
 	return row, nil
 }

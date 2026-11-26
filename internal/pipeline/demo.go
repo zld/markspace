@@ -58,13 +58,13 @@ func Demo(cfg DemoConfig) ([]*Row, error) {
 		case fixture.ScenarioNormal:
 			// Cold pass: derive every segment and build the index.
 			cold, err := Run(dirs, bundle, mp4Path, sc+"-cold",
-				cfg.FromNanos, cfg.ToNanos, params, cfg.Runner, false)
+				cfg.FromNanos, cfg.ToNanos, params, cfg.Runner, RunOptions{})
 			if err != nil {
 				return nil, err
 			}
 			// Warm pass: identical input must hit cache, no index rebuild.
 			warm, err := Run(dirs, bundle, mp4Path, sc,
-				cfg.FromNanos, cfg.ToNanos, params, cfg.Runner, false)
+				cfg.FromNanos, cfg.ToNanos, params, cfg.Runner, RunOptions{})
 			if err != nil {
 				return nil, err
 			}
@@ -75,18 +75,18 @@ func Demo(cfg DemoConfig) ([]*Row, error) {
 			// First derive healthy segments, then corrupt one derived cache
 			// entry so only that segment recomputes from its sync boundary.
 			if _, err := Run(dirs, bundle, mp4Path, sc+"-prime",
-				cfg.FromNanos, cfg.ToNanos, params, cfg.Runner, false); err != nil {
+				cfg.FromNanos, cfg.ToNanos, params, cfg.Runner, RunOptions{}); err != nil {
 				return nil, err
 			}
 			row, err := Run(dirs, bundle, mp4Path, sc,
-				cfg.FromNanos, cfg.ToNanos, params, cfg.Runner, true)
+				cfg.FromNanos, cfg.ToNanos, params, cfg.Runner, RunOptions{ForceCacheCorruption: true})
 			if err != nil {
 				return nil, err
 			}
 			rows = append(rows, row)
 		case fixture.ScenarioReplace:
 			row, err := Run(dirs, bundle, mp4Path, sc,
-				cfg.FromNanos, cfg.ToNanos, params, cfg.Runner, false)
+				cfg.FromNanos, cfg.ToNanos, params, cfg.Runner, RunOptions{})
 			if err != nil {
 				return nil, err
 			}
@@ -97,11 +97,22 @@ func Demo(cfg DemoConfig) ([]*Row, error) {
 			// unchanged derived segments.
 			basePath := paths[fixture.ScenarioNormal]
 			if _, err := Run(dirs, bundle, basePath, sc+"-prime",
-				cfg.FromNanos, cfg.ToNanos, params, cfg.Runner, false); err != nil {
+				cfg.FromNanos, cfg.ToNanos, params, cfg.Runner, RunOptions{}); err != nil {
 				return nil, err
 			}
 			row, err := Run(dirs, bundle, mp4Path, sc,
-				cfg.FromNanos, cfg.ToNanos, params, cfg.Runner, false)
+				cfg.FromNanos, cfg.ToNanos, params, cfg.Runner, RunOptions{})
+			if err != nil {
+				return nil, err
+			}
+			rows = append(rows, row)
+		case fixture.ScenarioCorrupt:
+			// Genuinely unusable source: the affected range cannot be
+			// recomputed, so the row carries an unrecoverable state and the
+			// command returns exit code 2 while retaining the manifest.
+			row, err := Run(dirs, bundle, mp4Path, sc,
+				cfg.FromNanos, cfg.ToNanos, params, cfg.Runner,
+				RunOptions{ForceSourceCorrupt: true})
 			if err != nil {
 				return nil, err
 			}
@@ -120,7 +131,7 @@ func orderedScenarios(want []string) []string {
 		wantSet[s] = true
 	}
 	var out []string
-	for _, s := range fixture.AllScenarios {
+	for _, s := range fixture.KnownScenarios {
 		if wantSet[s] {
 			out = append(out, s)
 		}
