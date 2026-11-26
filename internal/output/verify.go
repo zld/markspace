@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"mediasync/internal/checkpoint"
 	"mediasync/internal/media"
 )
 
@@ -99,7 +100,7 @@ func scanFiles(outDir string) (map[string]int64, error) {
 			return err
 		}
 		rel = filepath.ToSlash(rel)
-		if rel == CatalogName {
+		if rel == CatalogName || rel == checkpoint.FileName {
 			return nil
 		}
 		if strings.HasSuffix(rel, ".tmp") {
