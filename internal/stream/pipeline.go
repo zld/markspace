@@ -126,7 +126,9 @@ func (p *Pipeline) Process(ctx context.Context, r io.Reader, sink Sink) (Metrics
 			p.releaseBuffer()
 			if err != nil {
 				addSinkErr(err)
-				return
+				// Keep draining until the producer observes cancellation and
+				// closes the channel; this releases every queued slot.
+				continue
 			}
 		}
 	}()
