@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -62,6 +63,15 @@ func checkRTPWrap(g *fixture.Generated) error {
 
 func runRecoveryScenario(g *fixture.Generated, job *builtJob, pkg *manifest.ConfigPackage) (map[string]any, error) {
 	interruptDir := filepath.Join(g.Dir, "resume-interrupted")
+	cleanDir := filepath.Join(g.Dir, "resume-clean")
+	// The demo recreates its interruption fixture so repeated `demo` runs are
+	// idempotent rather than treating an already completed job as a fresh cut.
+	if err := os.RemoveAll(interruptDir); err != nil {
+		return nil, err
+	}
+	if err := os.RemoveAll(cleanDir); err != nil {
+		return nil, err
+	}
 	base := &resume.Pipeline{
 		Dir: interruptDir, JobID: "pwf-demo", Manifest: fixture.CanonicalManifest(g.Seed, pkg.Constraints),
 		Config: pkg, Timeline: job.index, Clusters: job.clusters, InterruptAfter: -1,
@@ -92,7 +102,6 @@ func runRecoveryScenario(g *fixture.Generated, job *builtJob, pkg *manifest.Conf
 	}
 	replayMatch := replay.OutputSHA256 == resumed.OutputSHA256
 
-	cleanDir := filepath.Join(g.Dir, "resume-clean")
 	clean := *base
 	clean.Dir = cleanDir
 	cleanResult, err := clean.Run()
@@ -122,6 +131,9 @@ func runRecoveryScenario(g *fixture.Generated, job *builtJob, pkg *manifest.Conf
 
 func runConflictScenario(g *fixture.Generated, job *builtJob, pkg *manifest.ConfigPackage) (bool, error) {
 	conflictDir := filepath.Join(g.Dir, "checkpoint-conflict")
+	if err := os.RemoveAll(conflictDir); err != nil {
+		return false, err
+	}
 	original := resume.Pipeline{
 		Dir: conflictDir, JobID: "conflict-demo", Manifest: fixture.CanonicalManifest(g.Seed, pkg.Constraints),
 		Config: pkg, Timeline: job.index, Clusters: job.clusters, InterruptAfter: -1,
