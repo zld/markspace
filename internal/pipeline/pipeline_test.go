@@ -117,3 +117,39 @@ func TestDemoEndToEnd(t *testing.T) {
 		t.Fatalf("manifest not retained: %v", err)
 	}
 }
+
+// TestDemoSourceCorruptIsUnrecoverable verifies the exit-code-2 path: a source
+// that cannot be recomputed yields an unrecoverable row while the manifest is
+// still written. This exercises the contract at the Go layer (the built binary
+// returns process exit code 2; note that `go run` normalizes it to 1).
+func TestDemoSourceCorruptIsUnrecoverable(t *testing.T) {
+	if !ffmpegOnPath() {
+		t.Skip("ffmpeg not on PATH; skipping end-to-end demo")
+	}
+	work := t.TempDir()
+	cfg := DemoConfig{
+		WorkDir: work, Scenarios: []string{"corrupt"},
+		FromNanos: 1_000_000_000, ToNanos: 5_000_000_000,
+		TargetKbps: 400, DurationSec: 6, Runner: verify.FFmpegRunner{},
+	}
+	rows, err := Demo(cfg)
+	if err != nil {
+		t.Fatalf("demo: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("want one row, got %d", len(rows))
+	}
+	r := rows[0]
+	if r.ExitCode != model.ExitUnrecoverable {
+		t.Fatalf("corrupt row exit = %d, want %d", r.ExitCode, model.ExitUnrecoverable)
+	}
+	if r.UnrecoverableSegments != 1 || r.RecoveredSegments != 0 {
+		t.Fatalf("expected one unrecoverable, zero recovered: %+v", r)
+	}
+	if r.AnomalyCount != 1 {
+		t.Fatalf("unrecoverable range must still be in the manifest: %+v", r)
+	}
+	if _, err := os.Stat(work + "/manifests/latest.json"); err != nil {
+		t.Fatalf("manifest must be retained for an unrecoverable input: %v", err)
+	}
+}
