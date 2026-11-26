@@ -79,9 +79,10 @@ func runAssetsAndCache(rep *evidence.Report, out string, seed int64, primary *an
 	}
 	containerA := media.SHA256Bytes(mp4A).Value
 	containerB := media.SHA256Bytes(mp4B).Value
+	containerC := media.SHA256Bytes(mp4C).Value
 	fpA := media.Fingerprint{StreamSHA256: streamD, ContainerSHA256: containerA, MetadataSHA256: mdA}
 	fpB := media.Fingerprint{StreamSHA256: streamD, ContainerSHA256: containerB, MetadataSHA256: mdB}
-	fpC := media.Fingerprint{StreamSHA256: streamD, ContainerSHA256: containerA, MetadataSHA256: mdC}
+	fpC := media.Fingerprint{StreamSHA256: streamD, ContainerSHA256: containerC, MetadataSHA256: mdC}
 
 	parseKey := cache.Key("keyframe-index", streamD)
 	if err := cache.PutJSON(parseKey, primary.parsed); err != nil {
