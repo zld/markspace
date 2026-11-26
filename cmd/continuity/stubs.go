@@ -7,11 +7,6 @@ func runDemo(_ []string) int {
 	return exitGeneric
 }
 
-func runInspect(_ []string) int {
-	fmt.Println("inspect command is being assembled")
-	return exitGeneric
-}
-
 func runPlan(_ []string) int {
 	fmt.Println("plan command is being assembled")
 	return exitGeneric
