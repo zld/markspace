@@ -13,11 +13,11 @@ import (
 
 // Rates used by the supported fixture and delivery formats.
 const (
-	EventRate uint32 = 90_000
-	VideoRate uint32 = 90_000
-	AudioRate uint32 = 48_000
-	VideoFPS        = 25
-	FrameDuration   = 3600 // 90 kHz / 25 fps
+	EventRate     uint32 = 90_000
+	VideoRate     uint32 = 90_000
+	AudioRate     uint32 = 48_000
+	VideoFPS             = 25
+	FrameDuration        = 3600 // 90 kHz / 25 fps
 )
 
 // Rational is num/den seconds. Den must be positive.
