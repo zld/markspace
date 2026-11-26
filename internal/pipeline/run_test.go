@@ -3,6 +3,7 @@ package pipeline
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"replayctl/internal/fault"
@@ -83,6 +84,17 @@ func TestRenameCrashRecoveryCounters(t *testing.T) {
 	recs, _ = store.Load()
 	if len(recs) != 1 {
 		t.Fatalf("journal records=%d want exactly one", len(recs))
+	}
+
+	if err := os.Remove(filepath.Join(in.Out, journal.ManifestName)); err != nil {
+		t.Fatal(err)
+	}
+	fourth, err := Run(in)
+	if err != nil || fourth.Recovered != 0 || fourth.Published != 1 {
+		t.Fatalf("manifest regeneration result=%+v err=%v", fourth, err)
+	}
+	if _, err := os.Stat(filepath.Join(in.Out, journal.ManifestName)); err != nil {
+		t.Fatalf("manifest was not regenerated: %v", err)
 	}
 }
 
