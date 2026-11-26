@@ -11,6 +11,13 @@ import (
 	"github.com/pion/rtp"
 )
 
+// File is an index document describing one stream of one version.
+type File struct {
+	Stream  string   `json:"stream"`
+	Version string   `json:"version"`
+	Records []Record `json:"records"`
+}
+
 // Record is one index entry: a sample located in a stream, optionally
 // carrying the raw RTP packet header it arrived with.
 type Record struct {
