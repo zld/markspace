@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"path/filepath"
 
 	"replaykit/internal/fixture"
@@ -86,13 +85,6 @@ func newLayer(name string, data []byte, frameTicks int64, side *gomp4mp4.Sidecar
 	}, nil
 }
 
-func frameTicksFor(timescale uint32) int64 {
-	if timescale == fixture.LoTimescale {
-		return int64(fixture.LoFrameTicks)
-	}
-	return int64(fixture.HiFrameTicks)
-}
-
 // clockNS represents a nanosecond interval endpoint as a canonical integer
 // tick so a fatal, timescale-less failure can still report its event interval.
 func clockNS(ns int64) clock.Tick { return clock.Tick{Value: ns, RemDen: 1} }
@@ -165,10 +157,4 @@ func pct(ok, total int) int {
 		return 0
 	}
 	return 100 * ok / total
-}
-
-func must(err error) {
-	if err != nil {
-		panic(fmt.Sprintf("replay: %v", err))
-	}
 }

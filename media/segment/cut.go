@@ -110,12 +110,6 @@ func safeName(s string) string {
 	return string(out)
 }
 
-type fragmentRegion struct {
-	moof gomp4mp4.BoxRef
-	mdat *gomp4mp4.BoxRef
-	init bool
-}
-
 // FragmentRegions pairs every top-level moof with its adjacent mdat and
 // returns the init-prefix end (end of moov) plus 1-based fragment regions.
 // A moof whose mdat box is missing/untrusted is returned with HasMdat=false.

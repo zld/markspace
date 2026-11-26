@@ -23,7 +23,6 @@ type Builder struct {
 
 type fragment struct {
 	moofStart int
-	trunStart int
 	samples   []SampleSpec
 }
 
