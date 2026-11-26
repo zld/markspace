@@ -81,7 +81,7 @@ func ExitCode(err error) int {
 	var e *Error
 	if errors.As(err, &e) {
 		switch e.Kind {
-		case KindUsage, KindInput:
+		case KindUsage, KindInput, KindCheckpoint:
 			return ExitUsage
 		}
 	}
