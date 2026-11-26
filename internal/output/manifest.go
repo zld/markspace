@@ -67,6 +67,10 @@ type RTPObservation struct {
 	RTPTS       uint32 `json:"rtp_ts"`
 	ConvertedNS int64  `json:"converted_ns"`
 	LoggedNS    int64  `json:"logged_ns"`
+	// Gap is non-empty when the packet's RTP timestamp regressed relative to
+	// the previous packet on its stream. The timestamp is still reported; it
+	// is never silently corrected.
+	Gap string `json:"gap,omitempty"`
 }
 
 // FailureRecord pins a failure to the byte offset where it was detected.

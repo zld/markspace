@@ -206,3 +206,22 @@ func TestBuildRTPObservations(t *testing.T) {
 		t.Fatalf("unmapped SSRC must keep track 0: %+v", got[2])
 	}
 }
+
+func TestBuildRTPMarksRegression(t *testing.T) {
+	events := []timeline.Event{
+		{Kind: "ssrc_map", SSRC: 7, Track: 1, ClockRate: 48000},
+		{Kind: "rtp", SSRC: 7, RTPTS: 1000, Sequence: 1, AtNS: 0},
+		{Kind: "rtp", SSRC: 7, RTPTS: 900, Sequence: 2, AtNS: 100}, // backwards
+	}
+	got := buildRTPObservations(events)
+	if got[0].Gap != "" {
+		t.Fatalf("first packet cannot regress: %+v", got[0])
+	}
+	if got[1].Gap != string(timeline.GapRegression) {
+		t.Fatalf("regression not marked: %+v", got[1])
+	}
+	// The raw timestamp is preserved, not rewritten.
+	if got[1].RTPTS != 900 || got[1].ConvertedNS == got[0].ConvertedNS {
+		t.Fatalf("regressed packet values wrong: %+v", got[1])
+	}
+}

@@ -38,6 +38,7 @@ func buildRTPObservations(events []timeline.Event) []output.RTPObservation {
 		}
 	}
 	out := make([]output.RTPObservation, 0, len(rtpEvents))
+	prevTS := map[uint32]uint32{}
 	for _, e := range rtpEvents {
 		rate := ssrcRate[e.SSRC]
 		if rate == 0 {
@@ -49,14 +50,22 @@ func buildRTPObservations(events []timeline.Event) []output.RTPObservation {
 			FirstRTP:    firstTS[e.SSRC],
 			FirstNS:     firstNS[e.SSRC],
 		}
-		out = append(out, output.RTPObservation{
+		obs := output.RTPObservation{
 			SSRC:        e.SSRC,
 			TrackNo:     ssrcToTrack[e.SSRC],
 			Sequence:    e.Sequence,
 			RTPTS:       e.RTPTS,
 			ConvertedNS: clock.RTPToNSExact(e.RTPTS),
 			LoggedNS:    e.AtNS,
-		})
+		}
+		// Wrapping-aware regression check against the prior packet.
+		if prior, ok := prevTS[e.SSRC]; ok {
+			if int32(e.RTPTS-prior) < 0 {
+				obs.Gap = string(timeline.GapRegression)
+			}
+		}
+		prevTS[e.SSRC] = e.RTPTS
+		out = append(out, obs)
 	}
 	return out
 }
