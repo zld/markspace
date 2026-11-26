@@ -1,0 +1,6 @@
+# local build and scratch output
+/bin/
+/dist/
+/tmp/
+*.test
+.DS_Store
