@@ -53,13 +53,17 @@ type Error struct {
 	Cause   error    `json:"-"`
 }
 
-func NewError(code Code, message string) *Error {
-	return &Error{Code: code, Message: message, Offset: -1, Range: Interval{Start: -1, End: -1}}
+func NewError(code Code, format string, args ...any) *Error {
+	return &Error{Code: code, Message: fmt.Sprintf(format, args...), Offset: -1, Range: Interval{Start: -1, End: -1}}
 }
 
 func At(code Code, offset int64, format string, args ...any) *Error {
-	e := NewError(code, fmt.Sprintf(format, args...))
-	e.Offset = offset
+	e := &Error{
+		Code:    code,
+		Message: fmt.Sprintf(format, args...),
+		Offset:  offset,
+		Range:   Interval{Start: -1, End: -1},
+	}
 	return e
 }
 
