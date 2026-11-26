@@ -102,7 +102,7 @@ func ParseDASH(data []byte, source string) (*DASHManifest, error) {
 	for _, period := range root.Periods {
 		for _, as := range period.AdaptationSets {
 			for _, rx := range as.Representations {
-				rep, err := buildRepresentation(as, rx)
+				rep, err := buildRepresentation(as, rx, out.MediaDurationNS)
 				if err != nil {
 					return nil, internal.WrapFault("dash.timeline", source, 0, err)
 				}
@@ -125,7 +125,7 @@ func ParseDASHFile(path string) (*DASHManifest, error) {
 	return ParseDASH(data, path)
 }
 
-func buildRepresentation(as dashAdaptationSet, rx dashRepresentation) (Representation, error) {
+func buildRepresentation(as dashAdaptationSet, rx dashRepresentation, mediaDurationNS int64) (Representation, error) {
 	rep := Representation{
 		ID: rx.ID, Kind: as.ContentType, MimeType: rx.MimeType,
 		Bandwidth: rx.Bandwidth, Timescale: 1000, StartNumber: 1,
@@ -160,13 +160,33 @@ func buildRepresentation(as dashAdaptationSet, rx dashRepresentation) (Represent
 		if sx.T != nil {
 			start = *sx.T
 		}
-		if sx.R < 0 {
-			return rep, fmt.Errorf("negative repeat r=%d is unsupported", sx.R)
-		}
-		if sx.R == 1<<63-1 {
+		var repeats int64
+		switch {
+		case sx.R < -1:
+			return rep, fmt.Errorf("invalid negative repeat r=%d", sx.R)
+		case sx.R == -1:
+			durNS, err := internal.ScaledToNS(sx.D, rep.Timescale)
+			if err != nil {
+				return rep, err
+			}
+			startNS, err := internal.ScaledToNS(start, rep.Timescale)
+			if err != nil {
+				return rep, err
+			}
+			if durNS <= 0 {
+				return rep, fmt.Errorf("cannot expand open-ended repeat with zero nanosecond duration")
+			}
+			if mediaDurationNS <= int64(startNS) {
+				repeats = 1
+			} else {
+				remaining := mediaDurationNS - int64(startNS)
+				repeats = (remaining-1)/int64(durNS) + 1
+			}
+		case sx.R == 1<<63-1:
 			return rep, fmt.Errorf("repeat r=%d overflows segment count", sx.R)
+		default:
+			repeats = sx.R + 1
 		}
-		repeats := sx.R + 1
 		totalDuration, err := checkedMul(int64(repeats), sx.D)
 		if err != nil {
 			return rep, err

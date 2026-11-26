@@ -54,6 +54,20 @@ func TestParseDASHMultipleRepresentations(t *testing.T) {
 	}
 }
 
+func TestParseDASHOpenEndedRepeatUsesMPDDuration(t *testing.T) {
+	mpd := `<?xml version="1.0"?><MPD mediaPresentationDuration="PT6S"><Period><AdaptationSet><Representation id="x">
+		<SegmentTemplate timescale="1000"><SegmentTimeline>
+		<S t="0" d="2000" r="-1"/>
+		</SegmentTimeline></SegmentTemplate></Representation></AdaptationSet></Period></MPD>`
+	m, err := ParseDASH([]byte(mpd), "open.mpd")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Representations[0].Segments) != 3 {
+		t.Fatalf("segments=%d, want 3", len(m.Representations[0].Segments))
+	}
+}
+
 func TestParseDASHTimelineOverflow(t *testing.T) {
 	mpd := `<?xml version="1.0"?><MPD><Period><AdaptationSet><Representation id="x">
 		<SegmentTemplate timescale="1"><SegmentTimeline>
