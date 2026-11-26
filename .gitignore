@@ -1,0 +1,13 @@
+# Build and test outputs
+/bin/
+/dist/
+*.test
+*.out
+coverage.txt
+
+# Local assetcheck working directories
+/.assetcheck/
+**/assetcheck-work/
+
+# OS/editor noise
+.DS_Store
