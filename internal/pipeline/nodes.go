@@ -123,15 +123,17 @@ func (e *Engine) computeRTP() func(map[string]string) (string, []byte, error) {
 }
 
 func (e *Engine) computeMP4(data []byte, corrupt bool) func(map[string]string) (string, []byte, error) {
+	source := "asset-healthy.mp4"
+	if corrupt {
+		source = "asset-corrupt.mp4"
+	}
 	return func(map[string]string) (string, []byte, error) {
-		fs, err := mp4.ScanReader(bytes.NewReader(data), "asset.mp4")
+		fs, err := mp4.ScanReader(bytes.NewReader(data), source)
 		if err != nil {
 			return "", nil, err
 		}
-		if !corrupt {
-			e.mp4Healthy = fs
-		}
-		// A corrupt track is an isolated, structured outcome, not a node error.
+		// A corrupt track is an isolated, structured outcome carried in
+		// fs.TrackErrors, not a node-level failure.
 		return fs.ContainerDigest, mustJSON(fs), nil
 	}
 }

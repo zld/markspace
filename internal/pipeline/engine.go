@@ -65,9 +65,8 @@ type Engine struct {
 	workDir string
 	assets  *fixture.Assets
 	store   *checkpoint.Store
-	// resolved values shared across node compute closures.
-	rtpState   *rtp.TrackState
-	mp4Healthy *mp4.FileState
+	// rtpState holds the recovered RTP track for metric extraction.
+	rtpState *rtp.TrackState
 }
 
 // NewEngine prepares the working directory and checkpoint store.
