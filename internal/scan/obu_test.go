@@ -15,7 +15,7 @@ func obu(typ byte, payload ...byte) []byte {
 
 func TestScanAV1(t *testing.T) {
 	var data []byte
-	data = append(data, obu(2)...)          // temporal delimiter
+	data = append(data, obu(2)...)             // temporal delimiter
 	data = append(data, obu(6, 0x00, 0xAA)...) // frame, key (frame_type=0)
 	data = append(data, obu(2)...)
 	data = append(data, obu(6, 0x20, 0xBB)...) // frame, inter (frame_type=1)
