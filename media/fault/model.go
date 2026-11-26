@@ -182,6 +182,15 @@ func IsFatal(err error) bool {
 	return errors.As(err, &fe)
 }
 
+// AsFatal returns the wrapped FatalError payload when present.
+func AsFatal(err error) (*FatalError, bool) {
+	var fe *FatalError
+	if errors.As(err, &fe) {
+		return fe, true
+	}
+	return nil, false
+}
+
 // RecoverableError marks a defect that was localised and worked around.
 type RecoverableError struct {
 	Category Category
