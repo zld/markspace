@@ -34,6 +34,11 @@ func Run(cfg Config) error {
 			return err
 		}
 	}
+	fileLock, err := index.LockFile(filepath.Join(cfg.Work, "pipeline.lock"))
+	if err != nil {
+		return err
+	}
+	defer fileLock.Unlock()
 
 	store, err := index.Open(filepath.Join(cfg.Work, "index", "index.json"))
 	if err != nil {
