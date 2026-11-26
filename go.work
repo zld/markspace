@@ -1,0 +1,6 @@
+// pion/rtp v1.10.6's upstream go.mod declares Go 1.24. The main module still
+// targets the Go 1.23 language/runtime contract; this workspace directive lets
+// a compatible Go toolchain satisfy that pinned dependency without replacing it.
+go 1.24.0
+
+use .
