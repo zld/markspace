@@ -2,10 +2,6 @@ package main
 
 import "context"
 
-func runPipelineCommand(_ context.Context, args []string) error {
-	return &cliError{code: exitRejected, err: errNotImplemented("run")}
-}
-
 func runVerifyCommand(_ context.Context, args []string) error {
 	return &cliError{code: exitRejected, err: errNotImplemented("verify")}
 }
