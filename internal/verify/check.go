@@ -45,6 +45,27 @@ type Checker struct {
 // NewChecker roots verification at a publish job directory.
 func NewChecker(pubRoot string) *Checker { return &Checker{pubRoot: pubRoot} }
 
+// safeJoin resolves a manifest-supplied file name strictly inside the job
+// root. Any absolute path or ".." traversal that would escape the root is
+// rejected with a structured I/O fault rather than followed.
+func safeJoin(root, name string) (string, error) {
+	if filepath.IsAbs(name) {
+		return "", fault.New(fault.StageVerify, fault.CodeIO, "",
+			"manifest entry must be a relative file name: "+name)
+	}
+	cleanRoot, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+	joined := filepath.Join(cleanRoot, filepath.Clean("/"+name))
+	rel, err := filepath.Rel(cleanRoot, joined)
+	if err != nil || rel == ".." || len(rel) >= 3 && rel[:3] == ".."+string(filepath.Separator) {
+		return "", fault.New(fault.StageVerify, fault.CodeIO, "",
+			"manifest path escapes job root: "+name)
+	}
+	return joined, nil
+}
+
 // Check performs every independent check. A non-nil error carries structured
 // fault codes for the first hard failure; the Report accumulates all findings.
 func (c *Checker) Check(ctx context.Context, exp Expectations) (*Report, error) {
@@ -56,7 +77,10 @@ func (c *Checker) Check(ctx context.Context, exp Expectations) (*Report, error) 
 	rep := &Report{SSIMMin: exp.MeasuredSSIM, BoundaryOK: true}
 
 	// 1. Init segment hash and independent re-parse.
-	initPath := filepath.Join(c.pubRoot, manifest.InitFile)
+	initPath, err := safeJoin(c.pubRoot, manifest.InitFile)
+	if err != nil {
+		return rep, err
+	}
 	if err := worker.VerifyHash(initPath, manifest.InitSHA256); err != nil {
 		return rep, err
 	}
@@ -76,7 +100,10 @@ func (c *Checker) Check(ctx context.Context, exp Expectations) (*Report, error) 
 		if ctx.Err() != nil {
 			return rep, ctx.Err()
 		}
-		segPath := filepath.Join(c.pubRoot, entry.File)
+		segPath, err := safeJoin(c.pubRoot, entry.File)
+		if err != nil {
+			return rep, err
+		}
 		if _, err := os.Stat(segPath); err != nil {
 			return rep, fault.New(fault.StageVerify, fault.CodeIO, manifest.Codec,
 				"manifest references missing segment: "+entry.File).Wrap(err)
