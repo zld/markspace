@@ -308,46 +308,91 @@ func writeStsd(w *mp4.Writer, t TrackSpec) error {
 	return nil
 }
 
+// SampleLoc is the absolute byte location of one generated sample.
+type SampleLoc struct {
+	Offset     int64
+	Size       uint32
+	Keyframe   bool
+	DecodeTime uint64
+	Duration   uint32
+}
+
+// SegmentLayout lists every sample of a generated segment by absolute offset.
+type SegmentLayout struct {
+	Samples []SampleLoc
+}
+
 // BuildSegment writes a styp + one or more moof/mdat pairs.
 func BuildSegment(fragments []FragmentSpec) ([]byte, error) {
+	b, _, err := BuildSegmentLayout(fragments)
+	return b, err
+}
+
+// BuildSegmentLayout is BuildSegment plus the absolute sample locations, so
+// callers can write an accurate I-frame byte-range playlist.
+func BuildSegmentLayout(fragments []FragmentSpec) ([]byte, *SegmentLayout, error) {
 	buf := &posWriter{}
 	w := mp4.NewWriter(buf)
 	styp := &mp4.Styp{MajorBrand: [4]byte{'m', 's', 'd', 'h'}}
 	if _, err := w.StartBox(&mp4.BoxInfo{Type: mp4.BoxTypeStyp()}); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if _, err := mp4.Marshal(w, styp, mp4.Context{}); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if _, err := w.EndBox(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+	layout := &SegmentLayout{}
 	for _, fr := range fragments {
-		if err := appendFragment(w, fr); err != nil {
-			return nil, err
+		locs, err := appendFragmentLayout(w, fr, int64(len(buf.buf)))
+		if err != nil {
+			return nil, nil, err
 		}
+		layout.Samples = append(layout.Samples, locs...)
 	}
-	return buf.buf, nil
+	return buf.buf, layout, nil
 }
 
 func appendFragment(w *mp4.Writer, fr FragmentSpec) error {
+	_, err := appendFragmentLayout(w, fr, 0)
+	return err
+}
+
+// appendFragmentLayout writes one moof/mdat pair starting at absolute offset
+// base and returns the absolute location of every sample.
+func appendFragmentLayout(w *mp4.Writer, fr FragmentSpec, base int64) ([]SampleLoc, error) {
 	// data_offset is relative to the start of the enclosing moof and equals
 	// the moof size plus the 8-byte mdat header. moof size does not depend on
 	// the data_offset value, so it can be measured with a first pass.
 	first := &posWriter{}
 	if err := marshalMoof(mp4.NewWriter(first), fr, 0); err != nil {
-		return err
+		return nil, err
 	}
 	moofSize := len(first.buf)
 	second := &posWriter{}
 	if err := marshalMoof(mp4.NewWriter(second), fr, int32(moofSize+8)); err != nil {
-		return err
+		return nil, err
 	}
 	if len(second.buf) != moofSize {
-		return fmt.Errorf("moof size changed between passes: %d != %d", len(second.buf), moofSize)
+		return nil, fmt.Errorf("moof size changed between passes: %d != %d", len(second.buf), moofSize)
 	}
 	if _, err := w.Write(second.buf); err != nil {
-		return err
+		return nil, err
+	}
+	payloadStart := base + int64(len(second.buf)) + 8
+	var locs []SampleLoc
+	decode := fr.BaseDecodeTime
+	var cursor int64
+	for _, smp := range fr.Samples {
+		size := smp.Size
+		if size == 0 {
+			size = uint32(len(smp.Payload))
+		}
+		locs = append(locs, SampleLoc{Offset: payloadStart + cursor, Size: size,
+			Keyframe: smp.Keyframe, DecodeTime: decode, Duration: smp.Duration})
+		cursor += int64(size)
+		decode += uint64(smp.Duration)
 	}
 	var payload []byte
 	for _, s := range fr.Samples {
@@ -357,13 +402,15 @@ func appendFragment(w *mp4.Writer, fr FragmentSpec) error {
 		}
 	}
 	if _, err := w.StartBox(&mp4.BoxInfo{Type: mp4.BoxTypeMdat()}); err != nil {
-		return err
+		return nil, err
 	}
 	if _, err := w.Write(payload); err != nil {
-		return err
+		return nil, err
 	}
-	_, err := w.EndBox()
-	return err
+	if _, err := w.EndBox(); err != nil {
+		return nil, err
+	}
+	return locs, nil
 }
 
 func marshalMoof(w *mp4.Writer, fr FragmentSpec, dataOffset int32) error {
