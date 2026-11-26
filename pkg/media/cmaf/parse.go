@@ -10,18 +10,6 @@ import (
 	"cmafrepair/pkg/media/timebase"
 )
 
-// Sample is one trun entry plus its computed timeline position.
-type Sample struct {
-	Index      uint32 // 0-based within the fragment
-	Duration   uint32 // trun sample duration, or tfhd/trex default
-	Size       uint32 // trun sample size, or tfhd/trex default
-	Flags      uint32
-	Sync       bool   // sample is a random-access point
-	MediaTime  uint64 // absolute media time of the sample (track timescale)
-	PayloadOff int64  // absolute mdat payload offset of sample bytes
-	PayloadLen int64
-}
-
 // Fragment is the parsed view of one media segment file.
 type Fragment struct {
 	Name            string // base name
@@ -100,13 +88,13 @@ func ParseFragment(path string) (*Fragment, error) {
 		}
 	}
 	if err := sc.Err(); err != nil {
-		frag.addDefect(timebase.AsMedia(err))
+		frag.addDefect(timebase.AsMedia(err).WithContext("", frag.Name))
 		if len(moofPayload) == 0 {
 			return frag, err
 		}
 	}
 	for _, d := range sc.Defects() {
-		frag.addDefect(d)
+		frag.addDefect(d.WithContext("", frag.Name))
 	}
 	frag.scanCorruptMdat = mdatCorrupt
 	frag.scanMdatGap = mdatGap
@@ -137,7 +125,8 @@ func (f *Fragment) parseMoof(moofPayload []byte) error {
 		return timebase.AtError(timebase.CodeReadOutOfBounds, timebase.PhaseScan, mfhd.hdr.Offset,
 			"mfhd payload too short")
 	}
-	f.SeqOffset = mfhd.hdr.PayloadOff
+	// Sequence value follows the 4-byte full-box header inside mfhd.
+	f.SeqOffset = mfhd.hdr.PayloadOff + 4
 	f.Sequence = binary.BigEndian.Uint32(mfhd.payload[4:8])
 
 	traf := findChild(children, BoxTraf)
@@ -232,13 +221,16 @@ func (f *Fragment) checkMdat() {
 	if f.Mdat.Type != BoxMdat {
 		return
 	}
-	// The scanner already proved the box length overruns EOF.
+	// The scanner already proved the box length overruns EOF. Replace the
+	// generic length defect with the precise truncation defect so one
+	// physical fault yields one positionable record.
 	if f.scanCorruptMdat {
 		f.MdatOK = false
 		f.MdatGap = f.scanMdatGap
+		f.dropDefect(timebase.CodeBoxLength)
 		f.addDefect(timebase.AtError(timebase.CodeMdatTruncated, timebase.PhaseValidate,
 			f.FileLen, "mdat truncated: %d declared payload bytes missing",
-			f.scanMdatGap).WithBox(BoxMdat))
+			f.scanMdatGap).WithBox(BoxMdat).WithContext("", f.Name))
 		return
 	}
 	// Available payload = bytes physically present from payload offset to EOF.
@@ -278,133 +270,14 @@ func (f *Fragment) addDefect(e *timebase.MediaError) {
 	}
 }
 
-// isSyncSample applies the ISO BMFF sample-depends-on rule: bits 24-25
-// value 2 means the sample does not depend on others (a sync sample).
-func isSyncSample(flags uint32) bool {
-	return (flags>>24)&0x03 == 0x02
-}
-
-// ParseInit reads the init segment and extracts track timescale plus trex
-// defaults via a bounded top-level scan and go-mp4 structure decoding.
-func ParseInit(path string) (*InitInfo, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, timebase.NewError(timebase.CodeIO, timebase.PhaseScan, "open %s: %v", path, err)
-	}
-	defer f.Close()
-	st, err := f.Stat()
-	if err != nil {
-		return nil, timebase.NewError(timebase.CodeIO, timebase.PhaseScan, "stat %s: %v", path, err)
-	}
-	info := &InitInfo{}
-	err = ScanTopLevel(f, st.Size(), func(s *Scanner, h BoxHeader) error {
-		info.Boxes = append(info.Boxes, h)
-		if h.Type != BoxMoov {
-			return s.Skip()
-		}
-		payload, perr := s.ReadPayload(0)
-		if perr != nil {
-			return perr
-		}
-		return info.parseMoov(payload, h.PayloadOff)
-	})
-	if err != nil {
-		return nil, err
-	}
-	if info.Timescale == 0 {
-		return nil, timebase.NewError(timebase.CodeInputInvalid, timebase.PhaseScan,
-			"init segment has no track timescale")
-	}
-	return info, nil
-}
-
-func (i *InitInfo) parseMoov(payload []byte, absOff int64) error {
-	children, err := parseContainer(payload, absOff)
-	if err != nil {
-		return err
-	}
-	for _, c := range children {
-		switch c.hdr.Type {
-		case "trak":
-			if err := i.parseTrak(c.payload, c.hdr.PayloadOff); err != nil {
-				return err
-			}
-		case "mvex":
-			if err := i.parseMvex(c.payload, c.hdr.PayloadOff); err != nil {
-				return err
-			}
+// dropDefect removes all recorded defects of a code (used to collapse a
+// generic length error into a precise truncation record).
+func (f *Fragment) dropDefect(code timebase.Code) {
+	kept := f.Defects[:0]
+	for _, d := range f.Defects {
+		if d.Code != code {
+			kept = append(kept, d)
 		}
 	}
-	return nil
+	f.Defects = kept
 }
-
-func (i *InitInfo) parseTrak(payload []byte, absOff int64) error {
-	children, err := parseContainer(payload, absOff)
-	if err != nil {
-		return err
-	}
-	mdia := findChild(children, "mdia")
-	if mdia == nil {
-		return nil
-	}
-	mdiaKids, err := parseContainer(mdia.payload, mdia.hdr.PayloadOff)
-	if err != nil {
-		return err
-	}
-	mdhd := findChild(mdiaKids, "mdhd")
-	if mdhd == nil {
-		return nil
-	}
-	var mdhdBox mp4.Mdhd
-	if _, err := mp4.Unmarshal(bytes.NewReader(mdhd.payload), uint64(len(mdhd.payload)), &mdhdBox, mp4.Context{}); err != nil {
-		return timebase.AtError(timebase.CodeBoxLength, timebase.PhaseScan, mdhd.hdr.Offset,
-			"mdhd unmarshal: %v", err)
-	}
-	i.Timescale = mdhdBox.Timescale
-
-	tkhd := findChild(children, "tkhd")
-	if tkhd != nil && len(tkhd.payload) >= 8+4+4+4+4 {
-		// tkhd: version/flags(4) creation(4/8) modification(4/8) trackID(4)
-		// We only need track id for the common version-0 layout.
-		if tkhd.payload[0] == 0 {
-			i.TrackID = binary.BigEndian.Uint32(tkhd.payload[12:16])
-		}
-	}
-	return nil
-}
-
-func (i *InitInfo) parseMvex(payload []byte, absOff int64) error {
-	children, err := parseContainer(payload, absOff)
-	if err != nil {
-		return err
-	}
-	trex := findChild(children, "trex")
-	if trex == nil {
-		return nil
-	}
-	var t mp4.Trex
-	if _, err := mp4.Unmarshal(bytes.NewReader(trex.payload), uint64(len(trex.payload)), &t, mp4.Context{}); err != nil {
-		return timebase.AtError(timebase.CodeBoxLength, timebase.PhaseScan, trex.hdr.Offset,
-			"trex unmarshal: %v", err)
-	}
-	if i.TrackID == 0 {
-		i.TrackID = t.TrackID
-	}
-	i.TrexDefaultDuration = t.DefaultSampleDuration
-	i.TrexDefaultSize = t.DefaultSampleSize
-	i.TrexDefaultFlags = t.DefaultSampleFlags
-	return nil
-}
-
-func baseName(p string) string {
-	for i := len(p) - 1; i >= 0; i-- {
-		if p[i] == '/' || p[i] == os.PathSeparator {
-			return p[i+1:]
-		}
-	}
-	return p
-}
-
-// FragmentName returns the base file name of a fragment path and is exported
-// for pipeline error context.
-func FragmentName(p string) string { return baseName(p) }

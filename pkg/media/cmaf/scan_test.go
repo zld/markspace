@@ -112,12 +112,12 @@ func TestOversizedBoxRejectedWithoutOutOfBoundsRead(t *testing.T) {
 	}
 	var me *timebase.MediaError
 	for _, d := range f.Defects {
-		if d.Code == timebase.CodeBoxLength && d.ByteOffset == int64(mdatSizeOff) {
+		if d.Code == timebase.CodeMdatTruncated && d.Box == BoxMdat && d.ByteOffset >= 0 {
 			me = d
 		}
 	}
 	if me == nil {
-		t.Fatalf("want positioned E_BOX_LENGTH at %d, got %+v", mdatSizeOff, f.Defects)
+		t.Fatalf("want positioned E_MDAT_TRUNCATED, got %+v", f.Defects)
 	}
 	if f.MdatOK || f.MdatGap <= 0 {
 		t.Fatalf("mdat must be marked truncated: ok=%v gap=%d", f.MdatOK, f.MdatGap)

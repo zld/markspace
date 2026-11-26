@@ -96,15 +96,15 @@ func (t *TimelineRepair) Add(f *Fragment) (TimelineEntry, error) {
 
 	// Detect mfhd sequence gaps against the expected next number.
 	if t.haveExpected && f.Sequence != t.expectedSeq {
-		entry.addDefect(timebase.NewError(timebase.CodeMfhdGap, timebase.PhaseValidate,
-			"sequence jumped from %d to %d", t.expectedSeq, f.Sequence).
+		entry.addDefect(timebase.AtError(timebase.CodeMfhdGap, timebase.PhaseValidate,
+			f.SeqOffset, "sequence jumped from %d to %d", t.expectedSeq, f.Sequence).
 			WithContext(t.rep, f.Name).WithBox(BoxMfhd))
 	}
 	// A duplicate sequence number is always a hard defect.
 	for _, prior := range t.entries {
 		if prior.Sequence == f.Sequence {
-			entry.addDefect(timebase.NewError(timebase.CodeMfhdDuplicate, timebase.PhaseValidate,
-				"duplicate sequence number %d", f.Sequence).
+			entry.addDefect(timebase.AtError(timebase.CodeMfhdDuplicate, timebase.PhaseValidate,
+				f.SeqOffset, "duplicate sequence number %d", f.Sequence).
 				WithContext(t.rep, f.Name).WithBox(BoxMfhd))
 		}
 	}

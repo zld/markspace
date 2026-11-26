@@ -1,0 +1,16 @@
+# build artifacts
+/regress
+/cmd/regress/regress
+*.test
+*.out
+
+# local run outputs and caches
+/.cache/
+/.checkpoint.json
+*.tmp
+.tmp-*
+
+# editor/OS noise
+.DS_Store
+.idea/
+.vscode/
