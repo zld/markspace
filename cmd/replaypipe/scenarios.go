@@ -154,17 +154,21 @@ func runEvent(r *reporter, cfg *config, set *fixtures.Set) {
 
 	// Reused slices must keep the exact assets published by the earlier run:
 	// compare their asset digests and the on-disk hashes from that manifest.
-	published, err := publishedDigests(cfg.root)
+	published, err := loadPublished(cfg.root)
 	if err != nil {
 		r.failf("read published manifest: %v", err)
 		return
+	}
+	publishedDigest := map[string]string{}
+	for _, entry := range published.Entries {
+		publishedDigest[entry.SliceID] = entry.AssetDigest
 	}
 	preserved := 0
 	for _, sl := range planB.Slices {
 		if !sl.Reused {
 			continue
 		}
-		if published[sl.ID] == sl.AssetDigest(media) {
+		if publishedDigest[sl.ID] == sl.AssetDigest(media) {
 			preserved++
 		}
 	}

@@ -148,25 +148,6 @@ func runNormal(r *reporter, cfg *config, set *fixtures.Set) bool {
 	if !ok {
 		return false
 	}
-	roundTrip := 0
-	total := 0
-	for _, pair := range []struct {
-		name  string
-		srt   []metadata.Event
-		other []metadata.Event
-	}{
-		{"srt", es.SRT, es.VTT},
-		{"chapters", es.Chapters, es.Chapters},
-		{"id3", es.ID3, es.ID3},
-	} {
-		for _, ev := range pair.srt {
-			total++
-			if ev.StartNS == ev.StartNS && ev.DigestHex() != "" {
-				roundTrip++
-			}
-		}
-	}
-	_ = roundTrip
 	// Round-trip consistency is measured by re-parsing each source and
 	// comparing canonical digests.
 	consistent, checked := roundTripRate(set, es, media)
@@ -189,8 +170,18 @@ func runNormal(r *reporter, cfg *config, set *fixtures.Set) bool {
 
 	// Events used for cutting come from SRT (three cues at keyframe times).
 	cutEvents := es.SRT
+	// A published manifest from an earlier run supplies the asset digests so
+	// unchanged slices are reused instead of re-cut.
+	priorManifest, priorErr := loadPublished(cfg.root)
+	var prior map[string]string
+	if priorErr == nil {
+		prior = map[string]string{}
+		for _, entry := range priorManifest.Entries {
+			prior[entry.SliceID] = entry.AssetDigest
+		}
+	}
 	plan, e := clip.BuildPlan(clip.PlanOptions{
-		Media: media, Keyframes: kf, Events: cutEvents, Budget: cfg.budget(),
+		Media: media, Keyframes: kf, Events: cutEvents, Budget: cfg.budget(), Known: prior,
 	})
 	if e != nil {
 		r.failf("plan: %v", e)
@@ -201,11 +192,14 @@ func runNormal(r *reporter, cfg *config, set *fixtures.Set) bool {
 	r.check("keyframe hits 8/8", hits == 8, fmt.Sprintf("%d/8", hits))
 
 	clipDir := filepath.Join(cfg.root, "clips")
-	written, ok := writeAll(r, cfg, media, plan, clipDir)
+	written, ok := writeChanged(r, cfg, media, plan, clipDir)
 	if !ok {
 		return false
 	}
-	mfst := manifestFromPlan(plan, written, media)
+	if len(written) == 0 && plan.ReusedCount > 0 {
+		r.printf("every slice reused; no sample bytes were copied")
+	}
+	mfst := manifestFromPlan(plan, written, media, priorManifest)
 	data, e := manifest.Encode(mfst)
 	if e != nil {
 		r.failf("encode manifest: %v", e)
@@ -229,15 +223,17 @@ func runNormal(r *reporter, cfg *config, set *fixtures.Set) bool {
 	r.printf("slice count: %d", len(written))
 	hashesOK := reportHashes(r, written)
 	r.check("slice hashes reported", hashesOK, "")
-	r.check("slice count is 3", len(written) == 3, fmt.Sprintf("%d", len(written)))
+	r.check("slice count is 3", len(plan.Slices) == 3, fmt.Sprintf("%d", len(plan.Slices)))
+	firstRun := plan.PlannedCount > 0
 
 	// Second run reads the published manifest back from disk: the asset
 	// digests recorded there must make every slice reusable and the on-disk
 	// hashes must be unchanged.
-	known, err := publishedDigests(cfg.root)
-	if err != nil {
-		r.failf("read published manifest: %v", err)
-		return false
+	known := map[string]string{}
+	if pub, err := loadPublished(cfg.root); err == nil {
+		for _, entry := range pub.Entries {
+			known[entry.SliceID] = entry.AssetDigest
+		}
 	}
 	plan2, e := clip.BuildPlan(clip.PlanOptions{
 		Media: media, Keyframes: kf, Events: cutEvents, Budget: cfg.budget(),
@@ -249,6 +245,10 @@ func runNormal(r *reporter, cfg *config, set *fixtures.Set) bool {
 	}
 	recomputed := plan2.PlannedCount
 	r.check("rerun recomputation is 0", recomputed == 0, fmt.Sprintf("recomputed=%d", recomputed))
+	if firstRun {
+		r.check("first run planned all slices", plan.ReusedCount == 0,
+			fmt.Sprintf("reused=%d", plan.ReusedCount))
+	}
 	r.check("rerun reuses every slice", plan2.ReusedCount == len(plan2.Slices),
 		fmt.Sprintf("reused=%d/%d", plan2.ReusedCount, len(plan2.Slices)))
 	same, detail := compareDiskHashes(cfg.root)
@@ -256,7 +256,9 @@ func runNormal(r *reporter, cfg *config, set *fixtures.Set) bool {
 	return true
 }
 
-func writeAll(r *reporter, cfg *config, media *index.Media, plan *clip.Plan, dir string) ([]*clip.Written, bool) {
+// writeChanged writes only slices whose asset digest is new. Reused slices keep
+// the assets already on disk untouched.
+func writeChanged(r *reporter, cfg *config, media *index.Media, plan *clip.Plan, dir string) ([]*clip.Written, bool) {
 	w, e := clip.NewWriter(media, dir)
 	if e != nil {
 		r.failf("open writer: %v", e)
@@ -266,6 +268,9 @@ func writeAll(r *reporter, cfg *config, media *index.Media, plan *clip.Plan, dir
 	defer w.Close()
 	var out []*clip.Written
 	for _, s := range plan.Slices {
+		if s.Reused {
+			continue
+		}
 		wr, e := w.WriteSlice(s)
 		if e != nil {
 			r.failf("write %s: %v", s.ID, e)
@@ -288,9 +293,8 @@ func reportHashes(r *reporter, written []*clip.Written) bool {
 	return ok
 }
 
-// publishedDigests loads the committed manifest and maps slice ids to the
-// asset digests recorded at commit time.
-func publishedDigests(root string) (map[string]string, error) {
+// loadPublished reads the committed manifest, if any.
+func loadPublished(root string) (*manifest.Manifest, error) {
 	data, err := os.ReadFile(filepath.Join(root, "manifest.json"))
 	if err != nil {
 		return nil, err
@@ -299,11 +303,7 @@ func publishedDigests(root string) (map[string]string, error) {
 	if e != nil {
 		return nil, e
 	}
-	out := map[string]string{}
-	for _, entry := range m.Entries {
-		out[entry.SliceID] = entry.AssetDigest
-	}
-	return out, nil
+	return m, nil
 }
 
 // compareDiskHashes re-hashes every asset referenced by the published manifest
@@ -346,18 +346,25 @@ func keyframeHits(kf *index.KeyframeIndex, plan *clip.Plan) int {
 	return stats.Exact
 }
 
-func manifestFromPlan(plan *clip.Plan, written []*clip.Written, media *index.Media) *manifest.Manifest {
+func manifestFromPlan(plan *clip.Plan, written []*clip.Written, media *index.Media, prior *manifest.Manifest) *manifest.Manifest {
 	m := &manifest.Manifest{
 		Version:             manifest.Version,
 		MediaContentDigest:  plan.MediaContentDigest,
 		MediaEnvelopeDigest: plan.MediaEnvelopeDigest,
 		EventDigest:         plan.EventDigest,
 	}
-	for i, s := range plan.Slices {
-		var w *clip.Written
-		if i < len(written) {
-			w = written[i]
+	priorEntry := map[string]manifest.Entry{}
+	if prior != nil {
+		for _, entry := range prior.Entries {
+			priorEntry[entry.SliceID] = entry
 		}
+	}
+	writtenByID := map[string]*clip.Written{}
+	for _, w := range written {
+		writtenByID[w.SliceID] = w
+	}
+	for _, s := range plan.Slices {
+		w := writtenByID[s.ID]
 		entry := manifest.Entry{
 			SliceID: s.ID, EventID: s.EventID, EventKind: string(s.EventKind),
 			EventStartNS: s.EventStartNS, EventEndNS: s.EventEndNS,
@@ -375,6 +382,12 @@ func manifestFromPlan(plan *clip.Plan, written []*clip.Written, media *index.Med
 			entry.Quality.Width = w.Quality.Width
 			entry.Quality.Height = w.Quality.Height
 			entry.Quality.FPS = w.Quality.FPS
+		} else if old, ok := priorEntry[s.ID]; ok && s.Reused {
+			// Reused slices keep the published file and its recorded hash.
+			entry.Path = old.Path
+			entry.Size = old.Size
+			entry.SHA256 = old.SHA256
+			entry.Quality = old.Quality
 		}
 		m.Entries = append(m.Entries, entry)
 	}
