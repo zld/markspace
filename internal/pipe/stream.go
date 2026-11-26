@@ -103,6 +103,11 @@ func Run[T any](parent context.Context, cfg Config, count int, produce Produce[T
 					if !ok {
 						return
 					}
+					if err := ctx.Err(); err != nil {
+						<-slots
+						current.Add(-1)
+						return
+					}
 					err := handle(ctx, chunk)
 					<-slots
 					current.Add(-1)
@@ -124,6 +129,11 @@ produceLoop:
 			runErr = ctx.Err()
 			break produceLoop
 		case slots <- struct{}{}:
+		}
+		if err := ctx.Err(); err != nil {
+			<-slots
+			runErr = err
+			break produceLoop
 		}
 
 		chunk, err := produce(ctx, i)
