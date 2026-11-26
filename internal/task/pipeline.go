@@ -37,8 +37,11 @@ type Input struct {
 	RTPResult   *ingest.Result
 	FMP4Result  *ingest.Result
 	InputSHA256 string
-	// DecodeSpec tells FFmpeg how to read the concatenated payloads.
+	// DecodeSpec tells FFmpeg how to read the container.
 	DecodeSpec audio.StreamSpec
+	// ContainerData is the full muxed byte stream (Ogg/ADTS/Matroska)
+	// handed to the decoder; packet payloads alone are not demuxable.
+	ContainerData []byte
 }
 
 // Run executes the stage machine. On restart it verifies the checkpoint
@@ -88,7 +91,7 @@ func (p *Pipeline) Run(ctx context.Context, in Input) (*Checkpoint, *RunReport, 
 		report.Recomputed = append(report.Recomputed, StageIngest)
 	}
 	if Index(cp.Stage) < Index(StageDecode) {
-		if err := p.stageDecode(ctx, cp, result, in.DecodeSpec); err != nil {
+		if err := p.stageDecode(ctx, cp, in.DecodeSpec, in.ContainerData); err != nil {
 			return cp, report, err
 		}
 		report.Recomputed = append(report.Recomputed, StageDecode)
@@ -116,17 +119,18 @@ func (p *Pipeline) stageIngest(cp *Checkpoint, result *ingest.Result) error {
 	return cp.RecordStage(p.root, StageIngest, "ingest.json", data)
 }
 
-func (p *Pipeline) stageDecode(ctx context.Context, cp *Checkpoint, result *ingest.Result, spec audio.StreamSpec) error {
-	// Concatenate coded payloads in timeline order into one container
-	// decode call. Per-packet PCM alignment is the decoder's job; the
-	// timeline ranges remain authoritative for gap accounting.
-	var container []byte
+func (p *Pipeline) stageDecode(ctx context.Context, cp *Checkpoint, spec audio.StreamSpec, container []byte) error {
+	// The caller supplies the full muxed stream (Ogg/ADTS/Matroska); raw
+	// codec packets are not demuxable on their own. Timeline ranges from
+	// the ingest stage remain authoritative for gap accounting.
 	switch spec.Container {
-	case "matroska", "adts", "aac":
+	case "matroska", "adts", "aac", "ogg":
 	default:
 		return fmt.Errorf("unsupported decode container %q", spec.Container)
 	}
-	container = buildContainer(result, spec)
+	if len(container) == 0 {
+		return errors.New("empty decode container")
+	}
 	pcm, err := p.decoder.DecodeStream(ctx, spec, container)
 	if err != nil {
 		cp.Errors = append(cp.Errors, media.NewPendingError(media.ErrDecode, err.Error(), 0, 0))

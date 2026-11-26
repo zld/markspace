@@ -1,8 +1,6 @@
 package task
 
 import (
-	"audionorm/internal/audio"
-	"audionorm/internal/ingest"
 	"math"
 	"os"
 	"path/filepath"
@@ -43,18 +41,6 @@ func f32ToBytes(s []float32) []byte {
 		out[4*i+1] = byte(bits >> 8)
 		out[4*i+2] = byte(bits >> 16)
 		out[4*i+3] = byte(bits >> 24)
-	}
-	return out
-}
-
-// buildContainer concatenates coded packet payloads into one byte
-// stream suitable for the selected FFmpeg demuxer. For AAC the packets
-// are assumed to already carry ADTS framing; for Opus the caller passes
-// a pre-muxed Matroska stream via the single-packet path instead.
-func buildContainer(result *ingest.Result, spec audio.StreamSpec) []byte {
-	var out []byte
-	for _, pkt := range result.Packets {
-		out = append(out, pkt.Payload...)
 	}
 	return out
 }

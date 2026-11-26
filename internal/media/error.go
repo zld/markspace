@@ -1,6 +1,16 @@
 package media
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
+
+// Sentinel errors wrap the stable error codes so callers can use
+// errors.Is while records keep their machine-readable ErrorCode.
+var (
+	ErrSentinelConflict   = errors.New(string(ErrConflict))
+	ErrSentinelCheckpoint = errors.New(string(ErrCheckpoint))
+)
 
 // ErrorCode is the stable, machine-readable classification of an ingest
 // or processing failure. Codes never change meaning once released.
