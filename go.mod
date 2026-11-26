@@ -8,7 +8,7 @@ replace github.com/pion/rtp => ./third_party/pion-rtp
 
 require (
 	github.com/abema/go-mp4 v1.7.4
-	github.com/pion/rtp v0.0.0-00010101000000-000000000000
+	github.com/pion/rtp v1.10.6
 )
 
 require (
