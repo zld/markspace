@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"fmt"
+	"io"
 	"math"
 	"os"
 
@@ -57,6 +58,10 @@ func ReadAACTrack(spec TrackSpec, inputDir string) (*AACResult, error) {
 	if len(track.Samples) == 0 {
 		return nil, media.InputError("ingest.mp4", spec.ID, fmt.Errorf("sample table is empty")).WithOffset(0)
 	}
+	uniformSize, err := uniformSTSZSize(f)
+	if err != nil {
+		return nil, media.InputError("ingest.mp4", spec.ID, err).WithOffset(0)
+	}
 
 	out := &AACResult{TrackID: spec.ID, TimeScale: track.Timescale, Samples: make([]AACSample, 0, len(track.Samples))}
 	var (
@@ -77,6 +82,9 @@ func ReadAACTrack(spec TrackSpec, inputDir string) (*AACResult, error) {
 			}
 			probeSample := track.Samples[sampleIndex]
 			size := probeSample.Size
+			if size == 0 {
+				size = uniformSize
+			}
 			if size == 0 {
 				return nil, mp4Fault(spec.ID, sampleIndex, offset,
 					fmt.Errorf("sample has zero size or missing stsz entry"))
@@ -122,6 +130,23 @@ func ReadAACTrack(spec TrackSpec, inputDir string) (*AACResult, error) {
 			fmt.Errorf("sample table count %d does not match stsc expansion %d", len(track.Samples), sampleIndex))
 	}
 	return out, nil
+}
+
+func uniformSTSZSize(f *os.File) (uint32, error) {
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return 0, err
+	}
+	boxes, err := mp4.ExtractBoxWithPayload(f, nil, mp4.BoxPath{
+		mp4.BoxTypeMoov(), mp4.BoxTypeTrak(), mp4.BoxTypeMdia(),
+		mp4.BoxTypeMinf(), mp4.BoxTypeStbl(), mp4.BoxTypeStsz(),
+	})
+	if err != nil || len(boxes) == 0 {
+		return 0, err
+	}
+	if stsz, ok := boxes[0].Payload.(*mp4.Stsz); ok {
+		return stsz.SampleSize, nil
+	}
+	return 0, nil
 }
 
 func mp4Fault(track string, index int, offset int64, err error) *media.Error {
