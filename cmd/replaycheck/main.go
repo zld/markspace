@@ -121,10 +121,12 @@ func execute(ctx context.Context, fn func(context.Context) (*output.Summary, err
 	if werr != nil && err == nil {
 		err = werr
 	}
-	for _, line := range replay.ReportLines(sum) {
-		fmt.Println(line)
-	}
 	if digest != "" {
+		// Print the published summary verbatim so terminal output and the
+		// file an operator diffs are identical, line for line.
+		if text, rerr := os.ReadFile(sumPath); rerr == nil {
+			os.Stdout.Write(text)
+		}
 		fmt.Printf("summary_path=%s\n", sumPath)
 		fmt.Printf("digest_sha256=%s\n", digest)
 	}

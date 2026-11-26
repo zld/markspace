@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"replayproof/internal/event"
@@ -351,31 +350,4 @@ func ExitCode(err error) int {
 // FromDuration converts a command-line duration to the shared rational time.
 func FromDuration(d time.Duration) media.Rational {
 	return media.FromMicros(d.Microseconds())
-}
-
-// ReportLines renders the audit output the command prints: one line per
-// source sample, the metadata choices, the published clips, the rejected
-// cases and the acceptance metrics. The same lines are written to the
-// summary file, so terminal and file agree line for line.
-func ReportLines(sum *output.Summary) []string {
-	var out []string
-	for _, m := range sum.Maps {
-		out = append(out, m.Line())
-	}
-	for _, md := range sum.Metadata {
-		out = append(out, fmt.Sprintf("meta field=%s source=%s value=%s conflict=%v candidates=%s",
-			md.Field, md.Source, md.Value, md.Conflict, strings.Join(md.Candidates, ",")))
-	}
-	for _, f := range sum.Fixes {
-		out = append(out, fmt.Sprintf("fix track=%d n=%d kind=%s before_us=%d after_us=%d",
-			f.TrackID, f.SampleNumber, f.Kind, f.BeforeDTS.Micros(), f.AfterDTS.Micros()))
-	}
-	for _, c := range sum.Clips {
-		out = append(out, fmt.Sprintf("clip event=%d path=%s bytes=%d sha256=%s",
-			c.Spec.EventIndex, c.Path, c.Bytes, c.Hash))
-	}
-	for _, bc := range sum.BadCases {
-		out = append(out, bc.Line())
-	}
-	return append(out, sum.KeyMetrics())
 }
