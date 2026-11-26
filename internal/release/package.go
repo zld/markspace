@@ -81,14 +81,14 @@ func Commit(req CommitRequest) (*CommitResult, error) {
 	if err := os.WriteFile(filepath.Join(staging, ManifestName), manifestBytes, 0o644); err != nil {
 		return nil, err
 	}
-	if _, err := VerifyDir(staging); err != nil {
+	if _, err := VerifyWithPixels(staging); err != nil {
 		return nil, err
 	}
 
 	final := filepath.Join(req.Root, VersionsDir, version)
 	reused := false
 	if _, err := os.Stat(final); err == nil {
-		if _, err := VerifyDir(final); err != nil {
+		if _, err := VerifyWithPixels(final); err != nil {
 			return nil, fmt.Errorf("existing version %s is incomplete: %w", version, err)
 		}
 		reused = true
