@@ -234,7 +234,7 @@ func parseSegment(rs io.ReadSeeker, path string) (*Segment, error) {
 			break
 		}
 		if bi.Size < bi.HeaderSize {
-			fe := fault.New(fault.KindCorrupt, path, offset, "box size smaller than header").Recover(false)
+			fe := fault.New(fault.KindCorrupt, path, offset, "box size smaller than header").Recover(true)
 			seg.Faults = append(seg.Faults, fe)
 			return seg, fe
 		}
@@ -244,9 +244,11 @@ func parseSegment(rs io.ReadSeeker, path string) (*Segment, error) {
 			return nil, fault.Wrap(fault.KindFormat, path, offset, "seek end", seekErr)
 		}
 		if boxEnd > end {
+			// A tail box that runs past EOF is truncation: everything before
+			// it is complete and may be committed, so it is recoverable.
 			fe := fault.New(fault.KindTruncate, path, offset,
 				fmt.Sprintf("box %s declares %d bytes but only %d remain", bi.Type.String(), bi.Size, end-int64(bi.Offset))).
-				Recover(false)
+				Recover(true)
 			seg.Faults = append(seg.Faults, fe)
 			return seg, fe
 		}
@@ -283,7 +285,7 @@ func parseSegment(rs io.ReadSeeker, path string) (*Segment, error) {
 		offset = boxEnd
 	}
 	if !sawMoof {
-		return nil, fault.New(fault.KindFormat, path, 0, "segment has no moof box").Recover(false)
+		return nil, fault.New(fault.KindCorrupt, path, 0, "segment has no moof box").Recover(true)
 	}
 	// Populate per-sample raw offsets for every fragment's mdat.
 	for i := range seg.Fragments {
@@ -297,9 +299,27 @@ func parseSegment(rs io.ReadSeeker, path string) (*Segment, error) {
 			cursor += int64(f.Samples[j].Size)
 		}
 		if cursor > f.MdatSize {
+			// Keep only the samples fully inside the mdat; the dropped tail is
+			// a recoverable truncation at the exact byte boundary.
+			full := 0
+			var used int64
+			for _, s := range f.Samples {
+				if used+int64(s.Size) > f.MdatSize {
+					break
+				}
+				used += int64(s.Size)
+				full++
+			}
 			fe := fault.New(fault.KindTruncate, path, f.MdatOffset+f.MdatSize,
-				fmt.Sprintf("fragment samples need %d bytes, mdat holds %d", cursor, f.MdatSize)).Recover(false)
+				fmt.Sprintf("fragment samples need %d bytes, mdat holds %d; %d of %d samples complete",
+					cursor, f.MdatSize, full, len(f.Samples))).Recover(true)
 			seg.Faults = append(seg.Faults, fe)
+			f.Samples = f.Samples[:full]
+			var cursor2 int64
+			for j := range f.Samples {
+				f.Samples[j].Offset = f.MdatOffset + cursor2
+				cursor2 += int64(f.Samples[j].Size)
+			}
 			return seg, fe
 		}
 	}

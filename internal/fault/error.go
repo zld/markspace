@@ -26,6 +26,7 @@ const (
 	KindUnsupported Kind = "unsupported" // codec/feature deliberately not supported
 	KindGap         Kind = "gap"         // timeline discontinuity
 	KindIndex       Kind = "index"       // keyframe index disagrees with media
+	KindVerify      Kind = "verify"      // post-remux content verification failed
 	KindLimit       Kind = "limit"       // resource limit (segment size, depth)
 )
 
@@ -101,6 +102,7 @@ var (
 	ErrUnsupported = &sentinel{KindUnsupported}
 	ErrGap         = &sentinel{KindGap}
 	ErrIndex       = &sentinel{KindIndex}
+	ErrVerify      = &sentinel{KindVerify}
 	ErrLimit       = &sentinel{KindLimit}
 )
 
