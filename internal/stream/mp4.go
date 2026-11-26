@@ -62,7 +62,11 @@ func toTick(delta uint64, timescale uint32) clock.Tick {
 
 // ParseMP4 analyses the first video track. Structural damage is reported with
 // the first damaged byte offset; nothing is repaired.
-func ParseMP4(path string) (*MP4Result, error) {
+func ParseMP4(path string) (*MP4Result, error) { return ParseMP4As(path, path) }
+
+// ParseMP4As is ParseMP4 with a stable label for reports. The label must not
+// contain run-specific data (temporary directories, timestamps).
+func ParseMP4As(path, label string) (*MP4Result, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -73,26 +77,26 @@ func ParseMP4(path string) (*MP4Result, error) {
 		return nil, err
 	}
 	fileSize := stat.Size()
-	res := &MP4Result{Input: path, FirstOffset: -1}
+	res := &MP4Result{Input: label, FirstOffset: -1}
 
-	scanIssues, scanDamage := scanBoxStructure(f, path, fileSize)
+	scanIssues, scanDamage := scanBoxStructure(f, label, fileSize)
 	res.Issues.Add(scanIssues...)
 	res.Damaged = append(res.Damaged, scanDamage...)
 
-	traks := collectTracks(f, path, res)
+	traks := collectTracks(f, label, res)
 	if len(traks) == 0 {
 		if len(res.Issues) == 0 {
-			res.Issues.Add(issue.New(issue.UnsupportedInput, path, "no MP4 track found"))
+			res.Issues.Add(issue.New(issue.UnsupportedInput, label, "no MP4 track found"))
 		}
 		return res, nil
 	}
 	video := pickVideoTrack(traks)
 	if video == nil {
-		res.Issues.Add(issue.New(issue.UnsupportedInput, path, "no video track (handler != vide)"))
+		res.Issues.Add(issue.New(issue.UnsupportedInput, label, "no video track (handler != vide)"))
 		return res, nil
 	}
 	if video.mdhd == nil || video.stts == nil {
-		res.Issues.Add(issue.New(issue.MP4Structure, path, "video track missing mdhd or stts").
+		res.Issues.Add(issue.New(issue.MP4Structure, label, "video track missing mdhd or stts").
 			WithByte(video.trakOffset))
 		return res, nil
 	}
@@ -114,11 +118,11 @@ func ParseMP4(path string) (*MP4Result, error) {
 	}
 
 	samples, tableIssues := expandSamples(video, fileSize)
-	stampInput(tableIssues, path)
+	stampInput(tableIssues, label)
 	for i := range tableIssues {
 		if tableIssues[i].Loc.ByteOffset >= 0 && tableIssues[i].Loc.ByteOffset < fileSize {
 			res.Damaged = append(res.Damaged, issue.ByteRange{
-				Input: path, Start: tableIssues[i].Loc.ByteOffset, End: fileSize,
+				Input: label, Start: tableIssues[i].Loc.ByteOffset, End: fileSize,
 				Categories: []issue.Category{tableIssues[i].Category},
 			})
 		}

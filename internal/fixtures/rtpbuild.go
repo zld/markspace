@@ -112,3 +112,53 @@ func TruncateAt(path string, off int64) (int64, error) {
 	}
 	return off, nil
 }
+
+// WriteRTPTimestamps writes a recording with explicit RTP timestamps, so a
+// fixture can align packets with MP4 keyframe times or start near the wrap.
+func WriteRTPTimestamps(path string, clockRate uint32, timestamps []uint32, seed int64) (RTPLayout, error) {
+	rng := rand.New(rand.NewSource(seed))
+	ssrc := uint32(0xA1B2C3D0) ^ uint32(rng.Intn(255))
+	f, err := os.Create(path)
+	if err != nil {
+		return RTPLayout{}, err
+	}
+	defer f.Close()
+	if _, err := f.WriteString("MSRTP1\n"); err != nil {
+		return RTPLayout{}, err
+	}
+	var rateBuf [4]byte
+	binary.BigEndian.PutUint32(rateBuf[:], clockRate)
+	if _, err := f.Write(rateBuf[:]); err != nil {
+		return RTPLayout{}, err
+	}
+	layout := RTPLayout{Path: path}
+	off := int64(len("MSRTP1\n") + 4)
+	var lenBuf [4]byte
+	for i, ts := range timestamps {
+		payload := make([]byte, 6+rng.Intn(10))
+		for k := range payload {
+			payload[k] = byte(seed + int64(i*11+k))
+		}
+		pkt, err := stream.MarshalPacket(uint16(i+1), ts, i == len(timestamps)-1, 96, ssrc, payload)
+		if err != nil {
+			return RTPLayout{}, err
+		}
+		layout.PacketAt = append(layout.PacketAt, off)
+		layout.PayloadAt = append(layout.PayloadAt, off+4)
+		binary.BigEndian.PutUint32(lenBuf[:], uint32(len(pkt)))
+		if _, err := f.Write(lenBuf[:]); err != nil {
+			return RTPLayout{}, err
+		}
+		if _, err := f.Write(pkt); err != nil {
+			return RTPLayout{}, err
+		}
+		off += 4 + int64(len(pkt))
+	}
+	layout.HeaderAt = layout.PayloadAt
+	st, err := f.Stat()
+	if err != nil {
+		return RTPLayout{}, err
+	}
+	layout.Size = st.Size()
+	return layout, nil
+}

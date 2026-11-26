@@ -153,8 +153,8 @@ func Render(r *validate.Result) string {
 		}
 		fmt.Fprintf(&b, "    %s%s\n", it.String(), recoverable)
 	}
-	if r.First != nil {
-		fmt.Fprintf(&b, "  first failure: %s\n", r.First.String())
+	if first := firstFailure(r); first != nil {
+		fmt.Fprintf(&b, "  first failure: %s\n", first.String())
 	} else {
 		fmt.Fprintf(&b, "  first failure: none\n")
 	}
@@ -207,6 +207,19 @@ func renderDamage(b *strings.Builder, s Summary) {
 	for _, d := range s.Damaged {
 		fmt.Fprintf(b, "    %s\n", d.String())
 	}
+}
+
+// firstFailure prefers the explicitly recorded first issue but falls back to
+// the deterministic head of the issue list, so callers that construct a
+// Result directly still get a stable first-failure line.
+func firstFailure(r *validate.Result) *issue.Issue {
+	if r.First != nil {
+		return r.First
+	}
+	if it, ok := r.Issues.First(); ok {
+		return &it
+	}
+	return nil
 }
 
 // Verdict classifies the overall run.

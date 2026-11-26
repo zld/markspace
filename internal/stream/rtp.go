@@ -2,7 +2,6 @@ package stream
 
 import (
 	"bufio"
-	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -54,69 +53,96 @@ const rtpMagic = "MSRTP1\n"
 // ParseRTPFile reads the synthetic recording format. Unknown magic is a
 // hard unsupported-input error, not a guess.
 func ParseRTPFile(path string, defaultClockRate uint32) (*RTPSession, error) {
+	return ParseRTPFileAs(path, path, defaultClockRate)
+}
+
+// ParseRTPFileAs is ParseRTPFile with a stable label for reports. The file is
+// read record by record, so memory stays proportional to the parsed packet
+// list rather than the input size.
+func ParseRTPFileAs(path, label string, defaultClockRate uint32) (*RTPSession, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
-	data, err := readAllBounded(f, 1<<30)
+	stat, err := f.Stat()
 	if err != nil {
 		return nil, err
 	}
-	sess := &RTPSession{Input: path, ClockRate: defaultClockRate}
-	if len(data) < len(rtpMagic) || string(data[:len(rtpMagic)]) != rtpMagic {
-		sess.Issues.Add(issue.New(issue.UnsupportedInput, path,
+	total := stat.Size()
+	br := bufio.NewReaderSize(f, 64*1024)
+	sess := &RTPSession{Input: label, ClockRate: defaultClockRate}
+	hdr := make([]byte, len(rtpMagic))
+	if _, err := io.ReadFull(br, hdr); err != nil || string(hdr) != rtpMagic {
+		sess.Issues.Add(issue.New(issue.UnsupportedInput, label,
 			"not an MSRTP1 recording").WithByte(0))
 		return sess, nil
 	}
 	off := int64(len(rtpMagic))
-	if len(data) < int(off)+4 {
-		sess.Issues.Add(issue.New(issue.RTPCorrupt, path, "missing clock rate field").WithByte(off))
-		sess.Damaged = append(sess.Damaged, issue.ByteRange{Input: path, Start: off, End: int64(len(data)),
+	var rateBuf [4]byte
+	if _, err := io.ReadFull(br, rateBuf[:]); err != nil {
+		sess.Issues.Add(issue.New(issue.RTPCorrupt, label, "missing clock rate field").WithByte(off))
+		sess.Damaged = append(sess.Damaged, issue.ByteRange{Input: label, Start: off, End: total,
 			Categories: []issue.Category{issue.RTPCorrupt}})
 		return sess, nil
 	}
-	sess.ClockRate = binary.BigEndian.Uint32(data[off : off+4])
+	sess.ClockRate = binary.BigEndian.Uint32(rateBuf[:])
 	off += 4
+
 	unw := clock.NewUnwrapper(1 << 32)
 	rate := sess.ClockRate
 	var prevSeq uint16
 	haveSeq := false
-	for off < int64(len(data)) {
-		if int64(len(data))-off < 4 {
-			sess.damaged(path, off, int64(len(data)), issue.RTPCorrupt, "truncated length prefix")
+	var base uint64
+	haveBase := false
+	buf := make([]byte, 0, 1500)
+	for off < total {
+		if total-off < 4 {
+			sess.damaged(label, off, total, issue.RTPCorrupt, "truncated length prefix")
 			break
 		}
-		length := int64(binary.BigEndian.Uint32(data[off : off+4]))
+		var lenBuf [4]byte
+		if _, err := io.ReadFull(br, lenBuf[:]); err != nil {
+			sess.damaged(label, off, total, issue.RTPCorrupt, "truncated length prefix")
+			break
+		}
+		length := int64(binary.BigEndian.Uint32(lenBuf[:]))
 		recStart := off
 		hdrStart := off + 4
-		if length <= 0 || hdrStart+length > int64(len(data)) {
-			sess.damaged(path, recStart, int64(len(data)), issue.RTPCorrupt,
-				fmt.Sprintf("packet record declares %d bytes, %d available", length, int64(len(data))-hdrStart))
+		if length <= 0 || hdrStart+length > total {
+			sess.damaged(label, recStart, total, issue.RTPCorrupt,
+				fmt.Sprintf("packet record declares %d bytes, %d available", length, total-hdrStart))
 			break
 		}
-		buf := data[hdrStart : hdrStart+length]
+		if int64(cap(buf)) < length {
+			buf = make([]byte, length)
+		}
+		payload := buf[:length]
+		if _, err := io.ReadFull(br, payload); err != nil {
+			sess.damaged(label, recStart, total, issue.RTPCorrupt, "truncated packet record")
+			break
+		}
 		idx := len(sess.Packets) + 1
 		var pkt rtp.Packet
-		if err := pkt.Unmarshal(buf); err != nil {
-			sess.damaged(path, hdrStart, hdrStart+length, issue.RTPCorrupt,
+		if err := pkt.Unmarshal(payload); err != nil {
+			sess.damaged(label, hdrStart, hdrStart+length, issue.RTPCorrupt,
 				fmt.Sprintf("packet %d: %v", idx, err))
 			off = hdrStart + length
 			continue
 		}
 		if pkt.Version != 2 {
-			sess.damaged(path, hdrStart, hdrStart+length, issue.RTPCorrupt,
+			sess.damaged(label, hdrStart, hdrStart+length, issue.RTPCorrupt,
 				fmt.Sprintf("packet %d: RTP version %d != 2", idx, pkt.Version))
 			off = hdrStart + length
 			continue
 		}
 		// Missing packets are detected from the sequence number: timestamps
 		// normally advance per frame even when no frame is missing.
-		if haveSeq && pkt.SequenceNumber != 0 {
+		if haveSeq {
 			gap := seqGap(prevSeq, pkt.SequenceNumber)
 			if gap > 1 {
 				sess.Missing += uint64(gap) - 1
-				sess.Issues.Add(issue.New(issue.TimestampMissing, path,
+				sess.Issues.Add(issue.New(issue.TimestampMissing, label,
 					fmt.Sprintf("%d packet(s) missing before sequence %d", gap-1, pkt.SequenceNumber)).
 					WithByte(hdrStart).WithPacket(idx).WithRef(fmt.Sprintf("missing:%d", gap-1)))
 			}
@@ -126,19 +152,26 @@ func ParseRTPFile(path string, defaultClockRate uint32) (*RTPSession, error) {
 		u := unw.Push(uint64(pkt.Timestamp))
 		if u.Duplicate {
 			sess.Duplicates++
-			sess.Issues.Add(issue.New(issue.TimestampDuplicate, path,
+			sess.Issues.Add(issue.New(issue.TimestampDuplicate, label,
 				fmt.Sprintf("RTP timestamp %d repeated at packet %d", pkt.Timestamp, idx)).
 				WithByte(hdrStart).WithPacket(idx))
 		}
 		if u.Regressed {
 			sess.Regressions++
-			sess.Issues.Add(issue.New(issue.TimestampRegress, path,
+			sess.Issues.Add(issue.New(issue.TimestampRegress, label,
 				fmt.Sprintf("RTP timestamp %d regressed at packet %d", pkt.Timestamp, idx)).
 				WithByte(hdrStart).WithPacket(idx))
 		}
+		// The timeline is anchored at the first packet so a stream that
+		// starts near the 32-bit wrap still begins at t=0. Expansion keeps
+		// later packets ordered across the boundary.
+		if !haveBase {
+			base = u.Value
+			haveBase = true
+		}
 		tick := clock.Tick(0)
 		if rate > 0 {
-			tick = clock.Tick((u.Value*90000 + uint64(rate)/2) / uint64(rate))
+			tick = clock.Tick(((u.Value-base)*90000 + uint64(rate)/2) / uint64(rate))
 		}
 		sess.Packets = append(sess.Packets, RTPPacket{
 			Seq: pkt.SequenceNumber, TS: pkt.Timestamp, Expanded: u.Value,
@@ -153,27 +186,11 @@ func ParseRTPFile(path string, defaultClockRate uint32) (*RTPSession, error) {
 	return sess, nil
 }
 
-func (s *RTPSession) damaged(input string, start, end int64, cat issue.Category, detail string) {
-	s.Issues.Add(issue.New(cat, input, detail).WithByte(start))
-	s.Damaged = append(s.Damaged, issue.ByteRange{Input: input, Start: start, End: end,
-		Categories: []issue.Category{cat}})
-}
-
 func seqGap(prev, cur uint16) int {
 	if cur >= prev {
 		return int(cur) - int(prev)
 	}
 	return 0x10000 - int(prev) + int(cur)
-}
-
-func readAllBounded(r io.Reader, limit int64) ([]byte, error) {
-	var buf bytes.Buffer
-	br := bufio.NewReaderSize(r, 64*1024)
-	_, err := io.Copy(&buf, io.LimitReader(br, limit))
-	if err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
 }
 
 // EncodeRTPFile writes the synthetic RTP container used by fixtures.
@@ -217,4 +234,10 @@ func sortedKeys(m map[issue.Category]int) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+func (s *RTPSession) damaged(input string, start, end int64, cat issue.Category, detail string) {
+	s.Issues.Add(issue.New(cat, input, detail).WithByte(start))
+	s.Damaged = append(s.Damaged, issue.ByteRange{Input: input, Start: start, End: end,
+		Categories: []issue.Category{cat}})
 }
