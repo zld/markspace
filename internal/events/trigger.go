@@ -95,7 +95,8 @@ func WindowFor(ev Event, before, after time.Duration, tl *cmaf.Timeline, tol tim
 				ev.ID, start, end, m.Start, m.End, d, tol, model.ErrEventOutOfRange)
 		}
 		rep.Addf(model.CodeEventMismatch, model.SevWarn, "", -1,
-			"event %s window clipped around missing media [%v, %v)", ev.ID, m.Start, m.End)
+			"event %s within tolerance: missing media [%v, %v) is %v from event (tolerance %v); window clipped",
+			ev.ID, m.Start, m.End, d, tol)
 		if m.Start >= t {
 			if m.Start < end {
 				end = m.Start
