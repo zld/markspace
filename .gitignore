@@ -1,0 +1,16 @@
+# Local demo workspaces and generated media
+.tmp/
+*.tmp
+
+# x264 two-pass log artifacts
+*.pass
+*.log
+x264pass*
+
+# Build output
+/mediad
+/bin/
+
+# OS/editor cruft
+.DS_Store
+*.swp
