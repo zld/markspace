@@ -31,6 +31,7 @@ const (
 	IDCodecID      uint32 = 0x86
 	IDChannels     uint32 = 0x9F
 	IDSamplingFreq uint32 = 0xB5
+	IDBitDepth     uint32 = 0x6264
 
 	IDCluster       uint32 = 0x1F43B675
 	IDTimecode      uint32 = 0xE7

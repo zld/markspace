@@ -71,6 +71,16 @@ func bigRat(r Rational) *big.Rat {
 	return new(big.Rat).SetFrac64(r.N, r.D)
 }
 
+// Add returns a+b using arbitrary-precision intermediates and rejects a
+// normalized result that cannot be represented by Rational's int64 fields.
+func Add(a, b Rational) (Rational, error) {
+	x := new(big.Rat).Add(bigRat(a), bigRat(b))
+	if !x.Num().IsInt64() || !x.Denom().IsInt64() {
+		return Zero, Corrupt("CLOCK_OVERFLOW", "rational addition exceeds int64 representation")
+	}
+	return Rational{N: x.Num().Int64(), D: x.Denom().Int64()}, nil
+}
+
 // Sub returns a-b without silently saturating.
 func Sub(a, b Rational) Rational {
 	x := new(big.Rat).Sub(bigRat(a), bigRat(b))
