@@ -10,11 +10,11 @@ import (
 
 // Config bundles the external collaborators a run needs.
 type Config struct {
-	Store         *Store
-	Archive       *Archive
-	Timeline      *media.Timeline
-	SourceDigest  string
-	PolicyDigest  string
+	Store        *Store
+	Archive      *Archive
+	Timeline     *media.Timeline
+	SourceDigest string
+	PolicyDigest string
 	// PauseAfterSample, when > 0, stops the run once this many samples are
 	// archived, leaving the task in the archive phase for a later resume.
 	PauseAfterSample int64
@@ -22,14 +22,14 @@ type Config struct {
 
 // RunResult summarizes what one invocation did, for stable CLI output.
 type RunResult struct {
-	TaskKey            string
-	ResumedFromSample  int64
-	DuplicateWrites    int
-	NewWrites          int
-	TotalSamples       int64
-	Paused             bool
-	ManifestDigest     string
-	Entries            []manifest.Entry
+	TaskKey           string
+	ResumedFromSample int64
+	DuplicateWrites   int
+	NewWrites         int
+	TotalSamples      int64
+	Paused            bool
+	ManifestDigest    string
+	Entries           []manifest.Entry
 }
 
 // Runner executes the state machine for one task.
@@ -80,9 +80,6 @@ func (r *Runner) Run() (*RunResult, error) {
 		return nil, err
 	}
 	res.ResumedFromSample = start
-	// Samples before the resume point were archived in an earlier run, so
-	// they count as deduplicated writes on every subsequent invocation.
-	res.DuplicateWrites = int(start)
 
 	for i := start; i < total; i++ {
 		item := ordered[i]

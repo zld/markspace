@@ -122,8 +122,10 @@ func TestRunnerPauseAndResume(t *testing.T) {
 	if second.ResumedFromSample != 4 {
 		t.Fatalf("resumedFromSample = %d, want 4", second.ResumedFromSample)
 	}
-	if second.NewWrites != 4 || second.DuplicateWrites != 4 {
-		t.Fatalf("resume writes = new %d dup %d, want 4/4",
+	// Samples 4-8 have never been written, so all four are new writes and
+	// none are content-addressing duplicates.
+	if second.NewWrites != 4 || second.DuplicateWrites != 0 {
+		t.Fatalf("resume writes = new %d dup %d, want 4/0",
 			second.NewWrites, second.DuplicateWrites)
 	}
 
@@ -135,17 +137,50 @@ func TestRunnerPauseAndResume(t *testing.T) {
 	}
 }
 
-func TestDuplicateSubmissionDedups(t *testing.T) {
+func TestDuplicateSubmissionIsStable(t *testing.T) {
 	store, archive, src, pol := newHarness(t)
 	tl := buildTestTimeline()
 	first := runOnce(t, store, archive, tl, src, pol, 0)
 
+	// The task is already complete, so the re-run performs no writes at all:
+	// the resume point equals the sample count and the loop never executes.
 	again := runOnce(t, store, archive, tl, src, pol, 0)
-	if again.DuplicateWrites != 8 || again.NewWrites != 0 {
-		t.Fatalf("re-run must hit dedup: %+v", again)
+	if again.ResumedFromSample != 8 || again.NewWrites != 0 || again.DuplicateWrites != 0 {
+		t.Fatalf("completed re-run must perform no writes: %+v", again)
 	}
 	if again.ManifestDigest != first.ManifestDigest {
 		t.Fatal("duplicate run changed the manifest digest")
+	}
+}
+
+func TestContentAddressingDedupAcrossDistinctSamples(t *testing.T) {
+	store, archive, src, pol := newHarness(t)
+	tb, _ := media.NewTimeBase(1000)
+	track := &media.Track{Key: "video", TimeBase: tb}
+	shared := []byte("identical-payload-bytes")
+	// Two distinct samples (different index/start) carrying identical bytes.
+	for i := 0; i < 2; i++ {
+		track.Samples = append(track.Samples, media.Sample{
+			Index: i + 1, StartNs: int64(i) * media.NanoPerSecond,
+			DurationNs: media.NanoPerSecond, Size: int64(len(shared)),
+			Payload: shared,
+		})
+	}
+	tl := media.NewTimeline([]*media.Track{track})
+	r, err := NewRunner(Config{
+		Store: store, Archive: archive, Timeline: tl,
+		SourceDigest: src, PolicyDigest: pol,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := r.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.NewWrites != 1 || res.DuplicateWrites != 1 {
+		t.Fatalf("content dedup = new %d dup %d, want 1/1",
+			res.NewWrites, res.DuplicateWrites)
 	}
 }
 
