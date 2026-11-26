@@ -13,8 +13,9 @@ type scannedField struct {
 }
 
 type scanResult struct {
-	fields       []RawField
-	codecByTrack map[string]string
+	fields             []RawField
+	codecByTrack       map[string]string
+	codecOffsetByTrack map[string]int64
 }
 
 var containerBoxes = map[string]bool{
@@ -66,7 +67,10 @@ func readBoxHeader(data []byte, off, parentEnd int64, track string) (boxHeader, 
 // scanBoxes validates every box length before go-mp4 builds the sample table.
 // The first invalid length is returned with its absolute source offset.
 func scanBoxes(data []byte) (*scanResult, error) {
-	res := &scanResult{codecByTrack: map[string]string{}}
+	res := &scanResult{
+		codecByTrack:       map[string]string{},
+		codecOffsetByTrack: map[string]int64{},
+	}
 	err := scanRange(data, 0, int64(len(data)), nil, "", res)
 	if err != nil {
 		return nil, err
@@ -90,6 +94,7 @@ func scanRange(data []byte, start, end int64, path []string, track string, res *
 		}
 		if len(path) > 0 && path[len(path)-1] == "stsd" && currentTrack != "" {
 			res.codecByTrack[currentTrack] = h.typ
+			res.codecOffsetByTrack[currentTrack] = h.start
 		}
 		if h.typ == "mprv" {
 			if err := collectProvenance(data, h, path, currentTrack, res); err != nil {

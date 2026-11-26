@@ -35,14 +35,14 @@ type RawField struct {
 }
 
 type Sample struct {
-	Index     int    `json:"index"`
-	Offset    int64  `json:"offset"`
-	Size      int    `json:"size"`
-	DTS       int64  `json:"dts"`
-	PTS       int64  `json:"pts"`
-	Duration  int64  `json:"duration"`
-	KeyFrame  bool   `json:"key_frame"`
-	Payload   []byte `json:"-"`
+	Index    int    `json:"index"`
+	Offset   int64  `json:"offset"`
+	Size     int    `json:"size"`
+	DTS      int64  `json:"dts"`
+	PTS      int64  `json:"pts"`
+	Duration int64  `json:"duration"`
+	KeyFrame bool   `json:"key_frame"`
+	Payload  []byte `json:"-"`
 }
 
 type PCMFormat struct {
@@ -52,18 +52,18 @@ type PCMFormat struct {
 }
 
 type Track struct {
-	Index      int         `json:"index"`
-	ID         int         `json:"id"`
-	Label      string      `json:"label"`
-	Role       string      `json:"role"`
-	Codec      string      `json:"codec"`
-	Clock      model.Clock `json:"clock"`
-	Duration   int64       `json:"duration"`
-	Width      int         `json:"width,omitempty"`
-	Height     int         `json:"height,omitempty"`
-	PCM        *PCMFormat  `json:"pcm,omitempty"`
-	Samples    []Sample    `json:"samples"`
-	RawFields  []RawField  `json:"raw_fields,omitempty"`
+	Index     int         `json:"index"`
+	ID        int         `json:"id"`
+	Label     string      `json:"label"`
+	Role      string      `json:"role"`
+	Codec     string      `json:"codec"`
+	Clock     model.Clock `json:"clock"`
+	Duration  int64       `json:"duration"`
+	Width     int         `json:"width,omitempty"`
+	Height    int         `json:"height,omitempty"`
+	PCM       *PCMFormat  `json:"pcm,omitempty"`
+	Samples   []Sample    `json:"samples"`
+	RawFields []RawField  `json:"raw_fields,omitempty"`
 }
 
 type MediaFile struct {
