@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 
 	"github.com/pion/rtp"
@@ -81,6 +82,9 @@ func ReadRecords(path string) ([]*rtp.Packet, error) {
 
 // WriteRecords writes length-prefixed RTP packets in arrival order.
 func WriteRecords(path string, packets []*rtp.Packet) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
 	f, err := os.Create(path)
 	if err != nil {
 		return err
