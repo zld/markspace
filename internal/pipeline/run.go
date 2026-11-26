@@ -89,17 +89,7 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 		return rep, media.InputError("checkpoint.save", "", err)
 	}
 
-	loadedTracks := make([]loaded, 0, len(manifest.Tracks))
 	inputs := make([]timeline.Input, 0, len(manifest.Tracks))
-	for _, spec := range manifest.Tracks {
-		lt, err := loadTrack(spec, opts.InputDir)
-		if err != nil {
-			return rep, err
-		}
-		loadedTracks = append(loadedTracks, lt)
-		inputs = append(inputs, lt.input)
-	}
-
 	resumeIndex := -1
 	for i, spec := range manifest.Tracks {
 		if cp.LastCommittedTrack == spec.ID {
@@ -108,7 +98,16 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 	}
 	units := cp.CommittedUnits
 	rep.UsedUnits = units
-	for i, lt := range loadedTracks {
+
+	// Load and durably advance one track at a time so cancellation leaves a
+	// useful track/record coordinate for resume.
+	for i, spec := range manifest.Tracks {
+		lt, err := loadTrack(spec, opts.InputDir)
+		if err != nil {
+			return rep, err
+		}
+		inputs = append(inputs, lt.input)
+
 		count := lt.track.recordCount()
 		start := 0
 		if i < resumeIndex {
@@ -124,9 +123,9 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 				return rep, err
 			}
 			units++
-			cp.CommitPosition(lt.spec.ID, pos, units)
+			cp.CommitPosition(spec.ID, pos, units)
 			if err := cp.Save(opts.OutDir); err != nil {
-				return rep, media.InputError("checkpoint.save", lt.spec.ID, err).WithRecord(pos)
+				return rep, media.InputError("checkpoint.save", spec.ID, err).WithRecord(pos)
 			}
 			rep.UsedUnits = units
 		}
