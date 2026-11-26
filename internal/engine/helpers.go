@@ -23,7 +23,7 @@ func (p Plan) validate() error {
 func (r *Runner) scanAndIndex(ctx context.Context, p Plan, store *cache.Store,
 	key string, inputSHA []byte, f *os.File, size int64,
 ) (*ebml.Document, []ebml.IndexEntry, error) {
-	builder, err := store.Builder(key, inputSHA)
+	builder, err := store.Builder(key, p.InputPath, inputSHA)
 	if err != nil {
 		return nil, nil, err
 	}

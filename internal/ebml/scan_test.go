@@ -122,6 +122,7 @@ func buildWebM(t *testing.T, unknownLen bool) []byte {
 			elem(IDTrackType, beUint(2, 1))...),
 			append(elem(IDCodecID, []byte("A_PCM/INT/LIT")), audio...)...))
 	tracks := elem(IDTracks, append(t1, t2...))
+	// Block track numbers are 1-based and match TrackEntry numbers.
 	c1 := elem(IDCluster,
 		append(elem(IDTimecode, beUint(0, 4)),
 			append(elem(IDSimpleBlock, blockBody(1, 0, true, []byte("AAAA"))),

@@ -19,6 +19,8 @@ type Track struct {
 // Block is one indexed media block. Payloads stay on disk; only offsets and
 // timestamps are retained.
 type Block struct {
+	// TrackNo is the Matroska track number as written in the block header,
+	// which directly matches TrackEntry.TrackNumber and client event records.
 	TrackNo    uint64
 	TimeNs     int64 // cluster timecode + relative block timecode, scaled to ns
 	IsKeyframe bool
@@ -267,7 +269,7 @@ func parseBlock(r io.ReaderAt, e Element, clusterTC, scale int64, simple bool) (
 	if err != nil {
 		return Block{}, &Error{ErrInvalidEBML, e.DataOff, "bad block track VINT"}
 	}
-	trackNo := VINTData(trackRaw, tw)
+	trackRef := VINTData(trackRaw, tw)
 	if int64(tw)+2 >= e.Size {
 		return Block{}, &Error{ErrInvalidEBML, e.DataOff, "block header truncated"}
 	}
@@ -278,7 +280,7 @@ func parseBlock(r io.ReaderAt, e Element, clusterTC, scale int64, simple bool) (
 	}
 	hdrLen := int64(tw) + 3
 	return Block{
-		TrackNo:    trackNo,
+		TrackNo:    trackRef, // Matroska block track numbers are 1-based
 		TimeNs:     (clusterTC + int64(rel)) * scale,
 		IsKeyframe: flags&0x80 != 0,
 		ElemOffset: e.Offset,

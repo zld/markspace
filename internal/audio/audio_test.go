@@ -33,6 +33,33 @@ func TestParseLoudnessJSONMissing(t *testing.T) {
 	}
 }
 
+func TestParseLoudnessJSONClampsInf(t *testing.T) {
+	stderr := []byte(`{
+	"input_i" : "-inf",
+	"input_tp" : "-inf",
+	"input_lra" : "0.00",
+	"input_thresh" : "-70.00",
+	"output_i" : "-inf",
+	"output_tp" : "-inf",
+	"output_lra" : "0.00",
+	"output_thresh" : "-70.00",
+	"normalization_type" : "dynamic",
+	"target_offset" : "0.00"
+}`)
+	got, err := ParseLoudnessJSON(stderr)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	// -inf must be clamped into the filter's legal range, not propagated.
+	if got.Integrated != -99 || got.TruePeak != -99 {
+		t.Fatalf("inf clamping wrong: %+v", got)
+	}
+	// The finite threshold passes through unchanged.
+	if got.Threshold != -70 || got.Range != 0 {
+		t.Fatalf("finite values altered: %+v", got)
+	}
+}
+
 func TestParseEBUR128(t *testing.T) {
 	stderr := []byte(`[Parsed_ebur128_0 @ 0x0] t: 0.4 I: -21.8 LUFS LRA: 0.0 LU FTPK: -18.1 dBFS TPK: -18.1 dBFS
 [Parsed_ebur128_0 @ 0x0] t: 2.0 I: -16.2 LUFS LRA: 0.0 LU FTPK: -2.4 dBFS TPK: -2.4 dBFS`)

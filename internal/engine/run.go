@@ -65,7 +65,7 @@ func (r *Runner) Run(ctx context.Context, p Plan) (*Result, error) {
 		return nil, err
 	}
 
-	idx, cacheState, lookupErr := store.Lookup(key, inputSHA)
+	idx, cacheState, lookupErr := store.Lookup(key, p.InputPath, inputSHA)
 	if lookupErr != nil && !errors.Is(lookupErr, ebml.ErrIndexMismatch) {
 		return nil, lookupErr
 	}
