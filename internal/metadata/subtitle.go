@@ -262,30 +262,60 @@ func cuesToEvents(cues []subtitleCue, kind Kind, source string, opts ParseOption
 	return events, nil
 }
 
-// parseClock parses SRT/WebVTT timestamps (HH:MM:SS,mmm or HH:MM:SS.mmm)
-// into milliseconds. Negative or malformed components are rejected.
+// parseClock parses SRT/WebVTT timestamps into milliseconds. Accepted forms
+// are HH:MM:SS,mmm, HH:MM:SS.mmm, MM:SS.mmm and (WebVTT) H:MM:SS.mmm. Every
+// component is validated; nothing is repaired silently.
 func parseClock(s string) (int64, *timebase.Error) {
-	m := vttTime.FindStringSubmatch(s)
-	if m == nil {
-		m = srtTimeOnly.FindStringSubmatch(s)
-	}
-	// WebVTT also permits HH:MM:SS.mmm without leading hours padding.
-	if m == nil {
-		parts := strings.FieldsFunc(s, func(r rune) bool { return r == ':' })
-		if len(parts) == 3 {
-			joined := fmt.Sprintf("%02d:%s:%s", atoiSafe(parts[0]), parts[1], parts[2])
-			return parseClock(joined)
-		}
+	bad := func() (int64, *timebase.Error) {
 		return 0, timebase.Newf(timebase.CodeCorruptField, 0, -1, "invalid timestamp %q", s)
 	}
-	h, _ := strconv.ParseInt(m[1], 10, 64)
-	min, _ := strconv.ParseInt(m[2], 10, 64)
-	sec, _ := strconv.ParseInt(m[3], 10, 64)
-	ms, _ := strconv.ParseInt(m[4], 10, 64)
-	if min > 59 || sec > 59 {
-		return 0, timebase.Newf(timebase.CodeCorruptField, 0, -1, "timestamp %q has out-of-range minutes/seconds", s)
+	text := strings.TrimSpace(s)
+	sep := strings.LastIndexAny(text, ".,")
+	if sep < 0 {
+		return bad()
 	}
-	return h*3_600_000 + min*60_000 + sec*1_000 + ms, nil
+	frac := text[sep+1:]
+	clock := text[:sep]
+	if len(frac) != 3 {
+		return bad()
+	}
+	ms, err := strconv.ParseInt(frac, 10, 64)
+	if err != nil {
+		return bad()
+	}
+	parts := strings.Split(clock, ":")
+	if len(parts) < 2 || len(parts) > 3 {
+		return bad()
+	}
+	var h, m, sec int64
+	for _, part := range parts {
+		if part == "" {
+			return bad()
+		}
+		for _, r := range part {
+			if r < '0' || r > '9' {
+				return bad()
+			}
+		}
+	}
+	nums := make([]int64, len(parts))
+	for i, part := range parts {
+		v, err := strconv.ParseInt(part, 10, 64)
+		if err != nil {
+			return bad()
+		}
+		nums[i] = v
+	}
+	if len(nums) == 3 {
+		h, m, sec = nums[0], nums[1], nums[2]
+	} else {
+		m, sec = nums[0], nums[1]
+	}
+	if m > 59 || sec > 59 {
+		return 0, timebase.Newf(timebase.CodeCorruptField, 0, -1,
+			"timestamp %q has out-of-range minutes/seconds", s)
+	}
+	return h*3_600_000 + m*60_000 + sec*1_000 + ms, nil
 }
 
 func atoiSafe(s string) int64 {
