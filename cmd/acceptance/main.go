@@ -35,10 +35,10 @@ func printJSON(w io.Writer, v any) {
 	}
 }
 
-func checkExternalInput(path string) int {
+func checkExternalInput(path string, stdout io.Writer) int {
 	f, err := os.Open(path)
 	if err != nil {
-		printJSON(os.Stdout, Report{
+		printJSON(stdout, Report{
 			Case: "external_input", OK: false, BadOffset: -1,
 			ErrorCode: string(timebase.CodeExternalBad), Error: err.Error(),
 		})
@@ -47,7 +47,7 @@ func checkExternalInput(path string) int {
 	defer f.Close()
 	st, err := f.Stat()
 	if err != nil {
-		printJSON(os.Stdout, Report{Case: "external_input", OK: false, BadOffset: -1, Error: err.Error()})
+		printJSON(stdout, Report{Case: "external_input", OK: false, BadOffset: -1, Error: err.Error()})
 		return exitExternalBad
 	}
 	if _, err := wav.OpenAt(f, st.Size()); err != nil {
@@ -59,10 +59,10 @@ func checkExternalInput(path string) int {
 		} else {
 			rep.ErrorCode = string(timebase.CodeExternalBad)
 		}
-		printJSON(os.Stdout, rep)
+		printJSON(stdout, rep)
 		return exitExternalBad
 	}
-	printJSON(os.Stdout, Report{Case: "external_input", OK: true, BadOffset: -1})
+	printJSON(stdout, Report{Case: "external_input", OK: true, BadOffset: -1})
 	return exitOK
 }
 
@@ -90,7 +90,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return exitUsage
 	}
 	if cfg.input != "" {
-		return checkExternalInput(cfg.input)
+		return checkExternalInput(cfg.input, stdout)
 	}
 	if err := os.MkdirAll(cfg.out, 0o755); err != nil {
 		fmt.Fprintln(stderr, "create --out:", err)
