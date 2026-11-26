@@ -83,6 +83,21 @@ func TestMXFTruncatedKLVReportsOffset(t *testing.T) {
 	}
 }
 
+func TestUnsupportedMP4Codec(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "hvc1.mp4")
+	_, err := fixture.WriteMP4(fixture.MP4Spec{
+		Path: path, UnsupportedCodec: "hvc1", Payloads: [][]byte{[]byte("x")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = source.ParseMP4File(path)
+	pe, ok := model.AsError(err)
+	if !ok || pe.Code != model.CodeUnsupportedCodec || pe.Track == "" || !pe.HasOffset {
+		t.Fatalf("want locatable unsupported MP4 codec, got %v", err)
+	}
+}
+
 func TestUnsupportedMXFCodec(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "compressed.mxf")
 	_, err := fixture.WriteMXF(fixture.MXFSpec{Path: path, Codec: "aac", PCM: []byte("data")})
