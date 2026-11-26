@@ -311,3 +311,40 @@ func equalSeqs(a, b []uint16) bool {
 	}
 	return true
 }
+
+func TestAnchorAfter32BitWrapSecondCycle(t *testing.T) {
+	// The anchor itself is in the second 32-bit cycle (wrap=1). Using only the
+	// anchor's low 32 bits would map the whole source to the wrong cycle.
+	r90, _ := model.NewRate(90000)
+	r48, _ := model.NewRate(48000)
+	media, _ := model.UnifyRate(r90, r48)
+	m, err := NewMapping(media, []Anchor{{Source: "v", RTPTimestamp: 0, Wrap: 1, MediaTicks: 1_000_000, ClockRate: 90000}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := m.MapPacket(mustPacket(t, "v", 1, 90000))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := int64(1_000_000) + 720000; got.Ticks != want {
+		t.Fatalf("ticks = %d, want %d", got.Ticks, want)
+	}
+}
+
+func TestAnchorSecondCycleLowTimestamp(t *testing.T) {
+	// wrap=1 with a low timestamp: the extended value is 2^32+ts, not ts.
+	r90, _ := model.NewRate(90000)
+	media, _ := model.UnifyRate(r90)
+	m, err := NewMapping(media, []Anchor{{Source: "v", RTPTimestamp: 0, Wrap: 1, MediaTicks: 0, ClockRate: 90000}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 1 second at 90 kHz clock => 90000 media ticks on the 90000 grid.
+	got, err := m.MapPacket(mustPacket(t, "v", 1, 90000))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Ticks != 90000 {
+		t.Fatalf("ticks = %d, want 90000", got.Ticks)
+	}
+}

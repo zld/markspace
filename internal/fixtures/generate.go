@@ -68,10 +68,14 @@ func Generate(workDir string, opts Options) ([]Scenario, error) {
 // sourcePlan describes how one source's fragments are laid out. Mutations are
 // opt-in so each scenario states exactly which anomaly it demonstrates.
 type sourcePlan struct {
-	id         string
-	ssrc       uint32
-	rtpBase    uint32
-	tsBase     uint32
+	id      string
+	ssrc    uint32
+	rtpBase uint32
+	tsBase  uint32
+	// tsWrap is the number of full 32-bit RTP cycles already elapsed when the
+	// trace starts; it is written into the manifest anchor so the mapping
+	// extends timestamps on the correct cycle.
+	tsWrap     int64
 	mediaBase  int64
 	seqGapAt   int
 	rollbackAt int
@@ -203,7 +207,7 @@ func generateSource(dir string, opts Options, src sourcePlan, initBytes []byte) 
 	}
 	entry.RTPTrace = traceName
 	entry.RTPAnchors = []cmaf.RTPAnchor{{
-		Source: src.id, RTPTimestamp: src.tsBase, Wrap: 0, MediaTicks: src.mediaBase, ClockRate: AudioTimescale,
+		Source: src.id, RTPTimestamp: src.tsBase, Wrap: src.tsWrap, MediaTicks: src.mediaBase, ClockRate: AudioTimescale,
 	}}
 	return entry, events, nil
 }

@@ -100,7 +100,7 @@ func (m *Mapping) MapPacket(p Packet) (model.Time, error) {
 		return model.Time{}, model.E(model.CodeAnchorAmbiguous, "anchor",
 			"source %q has no explicit anchor", p.Source)
 	}
-	ext, err := unwrapRelative(uint32(ra.value.Uint64()), p.TS)
+	ext, err := unwrapRelative(&ra.value, p.TS)
 	if err != nil {
 		return model.Time{}, model.E(model.CodeAnchorAmbiguous, "anchor",
 			"source %s seq %d timestamp %d: %v", p.Source, p.Seq, p.TS, err)
@@ -130,14 +130,24 @@ func (m *Mapping) rtpTicks(ext *big.Int, ra resolvedAnchor) (int64, bool) {
 	return total.Num().Int64(), true
 }
 
-// unwrapRelative extends a 32-bit timestamp to the cycle nearest anchorExt.
-// Exactly half the space away is ambiguous and rejected.
-func unwrapRelative(anchorExt uint32, ts uint32) (*big.Int, error) {
-	delta := int64(int32(ts - anchorExt))
+// unwrapRelative extends a 32-bit timestamp to the cycle nearest the anchor's
+// full extended value. Using the full anchor (not just its low 32 bits) is what
+// makes anchors taken after one or more 32-bit rollovers correct. A timestamp
+// exactly half the space away is ambiguous and rejected.
+func unwrapRelative(anchorExt *big.Int, ts uint32) (*big.Int, error) {
+	if anchorExt == nil || anchorExt.Sign() < 0 {
+		return nil, fmt.Errorf("invalid anchor value")
+	}
+	anchorLow := uint32(anchorExt.Uint64())
+	delta := int64(int32(ts - anchorLow))
 	if delta == -(1 << 31) {
 		return nil, fmt.Errorf("timestamp is exactly half the 32-bit space from the anchor")
 	}
-	ext := new(big.Int).SetUint64(uint64(anchorExt))
+	// ext = floor(anchor / 2^32) * 2^32 + ts + carry, where carry folds the
+	// signed delta's borrow into the cycle count.
+	cycle := new(big.Int).Rsh(anchorExt, 32)
+	ext := new(big.Int).Lsh(cycle, 32)
+	ext.Add(ext, new(big.Int).SetUint64(uint64(anchorLow)))
 	ext.Add(ext, big.NewInt(delta))
 	if ext.Sign() < 0 {
 		return nil, fmt.Errorf("timestamp unwraps before the start of RTP time")

@@ -63,7 +63,9 @@ func buildSwitchOnly(workDir string, opts Options) (Scenario, error) {
 func buildEdge(workDir string, opts Options) (Scenario, error) {
 	a := noMutation()
 	a.id, a.ssrc = "cam-a", 0x1001
-	// Start near the top of the 32-bit RTP space so the trace crosses the wrap.
+	// Start near the top of the second 32-bit RTP cycle so the trace crosses a
+	// wrap and the anchor must use wrap=1 to stay on the correct cycle.
+	a.tsWrap = 1
 	a.tsBase = 4294967296 - 8000
 	a.seqGapAt = 1
 	a.rollbackAt = 2
