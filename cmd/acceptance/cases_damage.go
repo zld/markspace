@@ -59,6 +59,9 @@ func caseDamage(out string) Report {
 	rep.Details["track"] = "cam-damage"
 	rep.Details["bad_sample_frame"] = badSample
 	rep.Details["bad_time_range"] = partialTE.Range
+	errorRange := partialTE.Range
+	rep.ErrorRange = &errorRange
+	rep.Details["stable_code"] = string(partialTE.Code)
 	rep.Details["riff_bad_offset"] = riffTE.Offset
 	rep.Details["partial_error"] = partialTE.Error()
 

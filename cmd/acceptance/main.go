@@ -56,6 +56,10 @@ func checkExternalInput(path string, stdout io.Writer) int {
 		if te != nil {
 			rep.BadOffset = te.Offset
 			rep.ErrorCode = string(te.Code)
+			if te.Range.Start >= 0 || te.Range.End >= 0 {
+				r := te.Range
+				rep.ErrorRange = &r
+			}
 		} else {
 			rep.ErrorCode = string(timebase.CodeExternalBad)
 		}
