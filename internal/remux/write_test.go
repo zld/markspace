@@ -13,8 +13,6 @@ import (
 
 func TestRemuxPreservesSampleBytes(t *testing.T) {
 	src := []byte("0123456789abcdefghijklmnopqrstuvwxyz")
-	dir := t.TempDir()
-	dir = dir
 	outPath := filepath.Join(t.TempDir(), "out.mp4")
 	w, err := NewWriter(outPath, "src.bin", bytes.NewReader(src), Options{})
 	if err != nil {

@@ -108,8 +108,11 @@ func TestTruncatedSegment(t *testing.T) {
 func TestNotFragmented(t *testing.T) {
 	initBytes, _ := buildAudioFixture(t)
 	_, err := ParseSegmentBytes(initBytes, "init.mp4")
-	if !errors.Is(err, fault.ErrFormat) {
-		t.Fatalf("want format, got %v", err)
+	if !errors.Is(err, fault.ErrCorrupt) {
+		t.Fatalf("want corrupt (no moof), got %v", err)
+	}
+	if fe, _ := fault.As(err); !fe.Recoverable {
+		t.Fatal("a missing moof in a known-fMP4 file is a per-layer defect")
 	}
 }
 
