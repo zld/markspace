@@ -5,6 +5,8 @@ package planner
 
 import (
 	"fmt"
+	"math"
+	"math/bits"
 	"strings"
 	"time"
 
@@ -91,12 +93,12 @@ func Evaluate(req Request, lim Limits, rep *model.Report) (*Candidate, []string)
 		reasons = append(reasons, fmt.Sprintf(
 			"video bitrate %d below min %d after reserving %d audio", vb, MinVideoBitrate, AudioBitrate))
 	}
-	est := req.TargetBitrate / 8 * int64(dur) / int64(time.Second)
+	est := mulDivSat(req.TargetBitrate/8, int64(dur), int64(time.Second))
 	if est > lim.MaxEstBytes {
 		reasons = append(reasons, fmt.Sprintf("estimated size %d bytes exceeds max %d", est, lim.MaxEstBytes))
 	}
 	// Cost model: millisecond-seconds of output scaled by bitrate class.
-	cost := int64(dur/time.Millisecond) * req.TargetBitrate / 1_000_000
+	cost := mulDivSat(int64(dur/time.Millisecond), req.TargetBitrate, 1_000_000)
 	if cost > lim.MaxCostUnits {
 		reasons = append(reasons, fmt.Sprintf("estimated cost %d units exceeds max %d", cost, lim.MaxCostUnits))
 	}
@@ -114,4 +116,26 @@ func Evaluate(req Request, lim Limits, rep *model.Report) (*Candidate, []string)
 		Audio:        ap,
 		Color:        cp,
 	}, nil
+}
+
+// mulDivSat computes non-negative a*b/div without overflowing int64. If the
+// exact quotient cannot fit in int64 (or the intermediate product wraps
+// uint64), it saturates to math.MaxInt64, which is always over any practical
+// budget. Negative factors are treated as zero.
+func mulDivSat(a, b, div int64) int64 {
+	if div <= 0 {
+		return 0
+	}
+	if a < 0 || b < 0 {
+		return 0
+	}
+	hi, lo := bits.Mul64(uint64(a), uint64(b))
+	if hi != 0 {
+		return math.MaxInt64
+	}
+	q := lo / uint64(div)
+	if q > math.MaxInt64 {
+		return math.MaxInt64
+	}
+	return int64(q)
 }

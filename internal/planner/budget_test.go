@@ -1,6 +1,7 @@
 package planner
 
 import (
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -94,5 +95,41 @@ func TestEvaluateRejectsHugeWindow(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("expected window limit reason: %v", reasons)
+	}
+}
+
+func TestMulDivSatExactAndOverflow(t *testing.T) {
+	if got := mulDivSat(225000, int64(8*time.Second), int64(time.Second)); got != 1_800_000 {
+		t.Fatalf("normal estimate = %d", got)
+	}
+	if got := mulDivSat(8000, 1_800_000, 1_000_000); got != 14400 {
+		t.Fatalf("cost = %d, want 14400", got)
+	}
+	// Product would wrap int64/uint64; must saturate rather than go negative.
+	if got := mulDivSat(math.MaxInt64, math.MaxInt64, 1); got != math.MaxInt64 {
+		t.Fatalf("overflow = %d, want saturation", got)
+	}
+	if got := mulDivSat(-1, 10, 1); got != 0 {
+		t.Fatalf("negative factor = %d, want 0", got)
+	}
+}
+
+func TestEvaluateExtremeBudgetNeverNegativeEstimate(t *testing.T) {
+	rep := &model.Report{}
+	// ~100 years window and maximal bitrate: arithmetic must saturate and the
+	// size/cost rejection reasons must still be produced (not wrap negative).
+	_, reasons := Evaluate(req(window(0, 100*365*24*time.Hour), math.MaxInt64), Limits{
+		MaxWindow:    time.Duration(math.MaxInt64),
+		MinBitrate:   1,
+		MaxBitrate:   math.MaxInt64,
+		MaxEstBytes:  1 << 30,
+		MaxCostUnits: 1,
+	}, rep)
+	joined := strings.Join(reasons, "\n")
+	if !strings.Contains(joined, "estimated size 9223372036854775807 bytes") {
+		t.Fatalf("expected saturated size reason, got: %v", reasons)
+	}
+	if !strings.Contains(joined, "estimated cost 9223372036854775807 units") {
+		t.Fatalf("expected saturated cost reason, got: %v", reasons)
 	}
 }
