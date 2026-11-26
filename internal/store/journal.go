@@ -34,6 +34,8 @@ type Record struct {
 	// Manifest records the sealed manifest digest so repeat runs are no-ops.
 	ManifestDigest string `json:"manifest_digest,omitempty"`
 	Entries        int    `json:"entries,omitempty"`
+	// Blob carries a JSON-encoded projection (used for archive records).
+	Blob json.RawMessage `json:"blob,omitempty"`
 }
 
 // Journal is an append-only record log.

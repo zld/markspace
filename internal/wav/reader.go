@@ -42,6 +42,7 @@ type Info struct {
 	DataSize        int64           `json:"data_size"`
 	Frames          int64           `json:"frames"`
 	ContainerDigest string          `json:"container_digest"`
+	SourceDigest    string          `json:"source_digest"`
 	Chunks          []ChunkInfo     `json:"chunks"`
 }
 
@@ -171,6 +172,11 @@ func Scan(r io.ReaderAt, size int64) (*Info, error) {
 		return nil, fault.New(fault.CodeChunkBoundary, fault.StageScanned, declaredEnd, "missing data chunk")
 	}
 	info.ContainerDigest = hex.EncodeToString(h.Sum(nil))
+	src, err := hashStream(r, size)
+	if err != nil {
+		return nil, err
+	}
+	info.SourceDigest = src
 	return info, nil
 }
 
@@ -221,6 +227,24 @@ func parseFmt(r io.ReaderAt, off, size int64) (model.WAVFormat, error) {
 		Channels:      channels,
 		BitsPerSample: bits,
 	}, nil
+}
+
+// hashStream digests the entire source file in bounded chunks.
+func hashStream(r io.ReaderAt, size int64) (string, error) {
+	h := sha256.New()
+	buf := make([]byte, 64<<10)
+	for off := int64(0); off < size; {
+		n := int64(len(buf))
+		if size-off < n {
+			n = size - off
+		}
+		if _, err := r.ReadAt(buf[:n], off); err != nil && err != io.EOF {
+			return "", fault.Wrap(fault.CodeIO, fault.StageScanned, off, err, "hash source")
+		}
+		h.Write(buf[:n])
+		off += n
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 func hashPayload(r io.ReaderAt, h io.Writer, off, size int64, buf []byte) error {

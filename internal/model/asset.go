@@ -5,7 +5,6 @@ package model
 import (
 	"fmt"
 	"sort"
-	"strings"
 
 	"example.com/mediavault/internal/clock"
 )
@@ -115,6 +114,7 @@ type Asset struct {
 	Stage            Stage      `json:"stage"`
 	Rejected         bool       `json:"rejected"`
 	RejectionCode    string     `json:"rejection_code,omitempty"`
+	ArchiveDigest    string     `json:"archive_digest,omitempty"`
 	CommittedBlocks  int        `json:"committed_blocks"`
 	RecomputedBlocks int        `json:"recomputed_blocks"`
 	ReusedBlocks     int        `json:"reused_blocks"`
@@ -136,13 +136,11 @@ func (a Asset) TotalLength() int64 {
 	return n
 }
 
-// AssetKey is the stable manifest sort key. It combines the transport, the
-// logical name and the content digest so renamed files collide only when their
-// samples do, which is exactly the deduplication semantics we want.
-func AssetKey(transport Transport, name, contentDigest string) string {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		name = "unnamed"
-	}
-	return fmt.Sprintf("%s:%s:%s", transport, name, contentDigest)
+// AssetKey is the stable manifest sort key and the deduplication identity. It
+// is built from the transport and the content digest only: neither the path, the
+// file name nor the API/container framing may promote a re-import to a new
+// asset. Identical PCM re-wrapped in another RIFF layout collapses onto the
+// same key.
+func AssetKey(transport Transport, contentDigest string) string {
+	return fmt.Sprintf("%s:%s", transport, contentDigest)
 }

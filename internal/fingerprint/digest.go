@@ -24,14 +24,15 @@ type Policy struct {
 	ChunkFrames int64
 }
 
-// DefaultPolicy is the acceptance policy: 1 KiB-ish blocks for the fixtures,
-// sized in frames so that every block is frame aligned.
+// DefaultPolicy is the acceptance policy: 1 KiB blocks, sized in frames so
+// that every block is frame aligned and bounded well below the 4 MiB working
+// memory envelope.
 func DefaultPolicy(channels, bits int) Policy {
 	frameBytes := channels * ((bits + 7) / 8)
 	if frameBytes <= 0 {
 		frameBytes = 1
 	}
-	frames := int64(2048 / frameBytes)
+	frames := int64(1024 / frameBytes)
 	if frames < 1 {
 		frames = 1
 	}
@@ -54,18 +55,19 @@ func (c *ContentHasher) Write(p []byte) (int, error) { return c.h.Write(p) }
 // Sum returns the lowercase 64-character hex digest.
 func (c *ContentHasher) Sum() string { return hex.EncodeToString(c.h.Sum(nil)) }
 
-// ChunkDigest computes the digest of one block. The block index and declared
-// frame count are framed into the hash so reordering or resizing blocks cannot
-// alias a different layout.
+// BlobDigest is the exact SHA-256 content address of a byte slice. Objects in
+// the store are addressed by this value, so the same samples stored under two
+// assets collapse to one object.
+func BlobDigest(p []byte) string {
+	sum := sha256.Sum256(p)
+	return hex.EncodeToString(sum[:])
+}
+
+// ChunkDigest is the content address of one derived block. Identity is the
+// block bytes alone; the block index and frame count are framed into the asset
+// Aggregate so reordering blocks cannot alias a different layout.
 func ChunkDigest(index int, frames int64, pcm []byte) string {
-	h := sha256.New()
-	h.Write([]byte(domainSeparator))
-	var hdr [16]byte
-	binary.BigEndian.PutUint64(hdr[0:8], uint64(index))
-	binary.BigEndian.PutUint64(hdr[8:16], uint64(frames))
-	h.Write(hdr[:])
-	h.Write(pcm)
-	return hex.EncodeToString(h.Sum(nil))
+	return BlobDigest(pcm)
 }
 
 // ContainerDigest digests only the wrapper bytes (RIFF header/chunks that are

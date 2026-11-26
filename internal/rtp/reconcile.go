@@ -131,16 +131,24 @@ func Reconcile(raw []rtp.Packet, rate clock.Rate, clockRate uint32, frameBytes i
 		expected += samples
 	}
 	tl.TotalSamples = expected
-	if expected > 0 {
+	if len(tl.Packets) > 1 {
+		// Drift is measured only across the span that real timestamps actually
+		// cover: from the first timestamp to the last, against the sum of the
+		// samples carried by the packets before the last. The final packet's own
+		// payload has no later timestamp to compare with, so including it would
+		// bias the ratio toward zero. No average frame rate is ever assumed.
 		last := tl.Packets[len(tl.Packets)-1]
-		ppm, err := clock.PPMDelta(last.Position, expected)
-		if err != nil {
-			return nil, err
-		}
-		tl.DriftPPM = ppm
-		if ppm > MaxDriftPPM || ppm < -MaxDriftPPM {
-			return nil, fault.New(fault.CodeRTPDrift, fault.StageNormalized, -1,
-				"drift %d ppm exceeds %d ppm over %d samples", ppm, MaxDriftPPM, expected)
+		timestamped := expected - last.Samples
+		if timestamped > 0 {
+			ppm, err := clock.PPMDelta(last.Position, timestamped)
+			if err != nil {
+				return nil, err
+			}
+			tl.DriftPPM = ppm
+			if ppm > MaxDriftPPM || ppm < -MaxDriftPPM {
+				return nil, fault.New(fault.CodeRTPDrift, fault.StageNormalized, -1,
+					"drift %d ppm exceeds %d ppm over %d timestamped samples", ppm, MaxDriftPPM, timestamped)
+			}
 		}
 	}
 	return tl, nil

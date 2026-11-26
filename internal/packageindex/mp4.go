@@ -19,8 +19,11 @@ import (
 	"example.com/mediavault/internal/fault"
 )
 
-// MaxBoxes bounds the structural walk against malformed box trees.
-const MaxBoxes = 100_000
+// MaxBoxes and MaxDepth bound the structural walk against malformed box trees.
+const (
+	MaxBoxes = 100_000
+	MaxDepth = 16
+)
 
 // BoxEntry is one box in the structural index.
 type BoxEntry struct {
@@ -64,7 +67,7 @@ func ScanReader(r io.ReadSeeker, size int64) (*Index, error) {
 	io.WriteString(hContainer, "mediavault\x00mp4-container\x00")
 	io.WriteString(hPayload, "mediavault\x00mp4-payload\x00")
 
-	boxes, err := readStructure(r, size, 0, idx, hContainer)
+	boxes, err := readStructure(r, 0, size, 0, idx, hContainer)
 	if err != nil {
 		return nil, err
 	}
@@ -84,18 +87,21 @@ func ScanReader(r io.ReadSeeker, size int64) (*Index, error) {
 	return idx, nil
 }
 
-func readStructure(r io.ReadSeeker, size int64, depth int, idx *Index, hContainer io.Writer) ([]BoxEntry, error) {
+func readStructure(r io.ReadSeeker, start, end int64, depth int, idx *Index, hContainer io.Writer) ([]BoxEntry, error) {
+	if depth > MaxDepth {
+		return nil, fault.New(fault.CodeMP4Box, fault.StageScanned, start, "box nesting exceeds %d levels", MaxDepth)
+	}
 	var (
 		boxes []BoxEntry
-		pos   int64
+		pos   = start
 	)
-	for pos < size {
+	for pos < end {
 		if len(boxes) >= MaxBoxes {
 			return nil, fault.New(fault.CodeMP4Box, fault.StageScanned, pos, "more than %d boxes", MaxBoxes)
 		}
-		if size-pos < 8 {
+		if end-pos < 8 {
 			return nil, fault.New(fault.CodeMP4Extent, fault.StageScanned, pos,
-				"%d trailing bytes cannot hold a box header", size-pos)
+				"%d trailing bytes cannot hold a box header", end-pos)
 		}
 		if _, err := r.Seek(pos, io.SeekStart); err != nil {
 			return nil, fault.Wrap(fault.CodeIO, fault.StageScanned, pos, err, "seek to box")
@@ -104,14 +110,14 @@ func readStructure(r io.ReadSeeker, size int64, depth int, idx *Index, hContaine
 		if err != nil {
 			return nil, fault.Wrap(fault.CodeMP4Box, fault.StageScanned, pos, err, "unparsable box header")
 		}
-		end := pos + int64(bi.Size)
+		boxEnd := pos + int64(bi.Size)
 		if bi.Size < bi.HeaderSize || bi.HeaderSize < 8 {
 			return nil, fault.New(fault.CodeMP4Box, fault.StageScanned, pos,
 				"box %s at %d has size %d smaller than its header %d", bi.Type, pos, bi.Size, bi.HeaderSize)
 		}
-		if end > size {
+		if boxEnd > end {
 			return nil, fault.New(fault.CodeMP4Extent, fault.StageScanned, pos,
-				"box %s at %d ends at %d beyond file size %d", bi.Type, pos, end, size)
+				"box %s at %d ends at %d beyond its parent end %d", bi.Type, pos, boxEnd, end)
 		}
 		entry := BoxEntry{Type: bi.Type.String(), Offset: pos, Size: int64(bi.Size), Depth: depth}
 		boxes = append(boxes, entry)
@@ -121,21 +127,20 @@ func readStructure(r io.ReadSeeker, size int64, depth int, idx *Index, hContaine
 		hContainer.Write(bi.Type[:])
 
 		if isContainer(bi.Type) {
-			if bi.Type == mp4.BoxTypeMoov() && depth == 0 {
-				hContainer.Write([]byte("moov\x00"))
+			if boxEnd > pos+int64(bi.HeaderSize) {
+				children, err := readStructure(r, pos+int64(bi.HeaderSize), boxEnd, depth+1, idx, hContainer)
+				if err != nil {
+					return nil, err
+				}
+				boxes = append(boxes, children...)
 			}
-			children, err := readStructure(r, end, depth+1, idx, hContainer)
-			if err != nil {
-				return nil, err
-			}
-			boxes = append(boxes, children...)
 		} else if bi.Type == mp4.BoxTypeMdat() {
 			idx.MdatBytes += int64(bi.Size) - int64(bi.HeaderSize)
 		}
-		pos = end
+		pos = boxEnd
 	}
-	if pos != size {
-		return nil, fault.New(fault.CodeMP4Extent, fault.StageScanned, pos, "box tree ended at %d, file is %d bytes", pos, size)
+	if pos != end {
+		return nil, fault.New(fault.CodeMP4Extent, fault.StageScanned, pos, "box tree ended at %d, expected %d", pos, end)
 	}
 	return boxes, nil
 }
