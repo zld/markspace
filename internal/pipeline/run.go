@@ -259,10 +259,14 @@ func Run(opts Options) (*Result, error) {
 
 	// Land outputs record by record, checkpointing after each atomic write.
 	// Repairs are keyed by source and path; the timeline's fragment path is the
-	// absolute input path, which is also the record path.
+	// absolute input path, which is also the record path. With repair disabled
+	// the fragments are still analysed (and the timeline still reports the
+	// rewind), but the emitted bytes keep their original tfdt.
 	plans := map[string]map[uint32]WritePlan{}
-	for key, byTrack := range planRepairs(tl) {
-		plans[key] = byTrack
+	if !opts.NoRepair {
+		for key, byTrack := range planRepairs(tl) {
+			plans[key] = byTrack
+		}
 	}
 	repairKey := func(rec Record) string { return rec.SourceID + "\x00" + rec.Fragment.Path }
 	artifacts := dedupeByName(cpArtifacts(cp, cursor))
