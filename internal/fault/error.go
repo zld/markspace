@@ -13,6 +13,7 @@ const (
 	TruncatedBox Code = "TRUNCATED_BOX"
 	InvalidBox   Code = "INVALID_BOX"
 	SampleOffset Code = "SAMPLE_OFFSET"
+	Index        Code = "INDEX_ERROR"
 	Unsupported  Code = "UNSUPPORTED_FORMAT"
 	EventParse   Code = "EVENT_PARSE"
 	TimeGap      Code = "TIME_GAP"
