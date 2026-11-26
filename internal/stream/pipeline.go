@@ -177,14 +177,19 @@ func (p *Pipeline) produce(ctx context.Context, r io.Reader, ch chan<- Block) er
 		seq++
 		p.produced.Add(1)
 
+		// Account before the channel send so an immediate receiver cannot
+		// decrement first. A blocked sender can make this counter exceed
+		// capacity; beginEnqueue intentionally does not record that extra
+		// waiter as queue occupancy.
+		p.beginEnqueue(int64(cap(ch)))
 		if len(ch) == cap(ch) {
 			p.backpress.Add(1)
 		}
 		select {
 		case ch <- b:
-			p.changeQueueDepth(1)
 			offset += int64(n)
 		case <-ctx.Done():
+			p.changeQueueDepth(-1)
 			p.releaseBuffer()
 			return ctx.Err()
 		}
@@ -228,6 +233,19 @@ func (p *Pipeline) releaseBuffer() {
 	// Receive one slot and account one fixed block reservation.
 	<-p.sem
 	p.bufferHeld.Add(-int64(p.blockSize))
+}
+
+func (p *Pipeline) beginEnqueue(capacity int64) {
+	d := p.queueDepth.Add(1)
+	if d > capacity {
+		return // d includes one producer blocked on a full channel.
+	}
+	for {
+		peak := p.queuePeak.Load()
+		if d <= peak || p.queuePeak.CompareAndSwap(peak, d) {
+			return
+		}
+	}
 }
 
 func (p *Pipeline) changeQueueDepth(delta int64) {
