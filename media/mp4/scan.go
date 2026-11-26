@@ -47,6 +47,15 @@ type BoxRef struct {
 	Size       int64  `json:"size"`
 	HeaderSize int64  `json:"header_size"`
 	Path       string `json:"path"`
+	// Parent is the byte offset of the enclosing box, or -1 at top level.
+	// Paths repeat across sibling fragments, so containment must be decided
+	// by byte range, never by string prefix.
+	Parent int64 `json:"parent"`
+}
+
+// Contains reports whether child lies inside the payload of b.
+func (b BoxRef) Contains(child BoxRef) bool {
+	return child.Offset >= b.PayloadOffset() && child.End() <= b.End() && child.Offset >= b.Offset
 }
 
 // PayloadOffset is the first byte after the box header.
@@ -78,10 +87,42 @@ func (s *Scan) Find(boxType string) []BoxRef {
 	return out
 }
 
+// TopLevelOf returns top-level boxes of the given type.
+func (s *Scan) TopLevelOf(boxType string) []BoxRef {
+	var out []BoxRef
+	for _, b := range s.TopLevel {
+		if b.Type == boxType {
+			out = append(out, b)
+		}
+	}
+	return out
+}
+
 // First returns the first box of the given type.
 func (s *Scan) First(boxType string) (BoxRef, bool) {
 	for _, b := range s.Boxes {
 		if b.Type == boxType {
+			return b, true
+		}
+	}
+	return BoxRef{}, false
+}
+
+// DirectChildren returns the boxes whose parent offset is parent.Offset.
+func (s *Scan) DirectChildren(parent BoxRef) []BoxRef {
+	var out []BoxRef
+	for _, b := range s.Boxes {
+		if b.Parent == parent.Offset {
+			out = append(out, b)
+		}
+	}
+	return out
+}
+
+// DirectChild returns the first direct child of the given type.
+func (s *Scan) DirectChild(parent BoxRef, typ string) (BoxRef, bool) {
+	for _, b := range s.Boxes {
+		if b.Parent == parent.Offset && b.Type == typ {
 			return b, true
 		}
 	}
@@ -128,7 +169,7 @@ func ScanBytes(data []byte, limits Limits) (*Scan, error) {
 			fmt.Errorf("input is %d bytes, above limit %d", len(data), limits.MaxFileBytes))
 	}
 	w := &walker{data: data, limits: limits, scan: &Scan{FileSize: int64(len(data))}}
-	w.walk(0, int64(len(data)), "", true)
+	w.walk(0, int64(len(data)), "", -1, true)
 	if len(w.scan.Boxes) == 0 {
 		off := int64(0)
 		detail := "no MP4 boxes found"
@@ -154,7 +195,7 @@ func (w *walker) addAnomaly(off int64, cat fault.Category, sev fault.Severity, a
 
 // walk iterates boxes in [start,end). It stops at the first unrecoverable
 // boundary because no later offset can be trusted after a bad length.
-func (w *walker) walk(start, end int64, path string, top bool) {
+func (w *walker) walk(start, end int64, path string, parent int64, top bool) {
 	off := start
 	for off < end {
 		if end-off < 8 {
@@ -195,13 +236,13 @@ func (w *walker) walk(start, end int64, path string, top bool) {
 		if bad {
 			return
 		}
-		ref := BoxRef{Type: typ, Offset: off, Size: size, HeaderSize: header, Path: joinPath(path, typ)}
+		ref := BoxRef{Type: typ, Offset: off, Size: size, HeaderSize: header, Path: joinPath(path, typ), Parent: parent}
 		w.scan.Boxes = append(w.scan.Boxes, ref)
 		if top {
 			w.scan.TopLevel = append(w.scan.TopLevel, ref)
 		}
 		if isContainer(typ) {
-			w.walk(ref.PayloadOffset(), ref.End(), ref.Path, false)
+			w.walk(ref.PayloadOffset(), ref.End(), ref.Path, ref.Offset, false)
 		}
 		off += size
 	}
