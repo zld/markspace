@@ -92,22 +92,6 @@ func (i *Index) SegmentsIn(from, to Nanos) []*Segment {
 	return out
 }
 
-// Segment digests in manifest order, used by the report and cache.
-func (i *Index) Hashes() []SegmentHash {
-	out := make([]SegmentHash, 0, len(i.Segments))
-	for _, s := range i.Segments {
-		out = append(out, SegmentHash{URI: s.URI, SHA256: s.SHA256, Size: s.Size})
-	}
-	return out
-}
-
-// SegmentHash is one per-segment digest entry.
-type SegmentHash struct {
-	URI    string
-	SHA256 string
-	Size   int64
-}
-
 // Validate checks the invariants the streaming runner relies on: segments are
 // in manifest order and canonical time never regresses.
 func (i *Index) Validate() error {
