@@ -169,3 +169,36 @@ func TestReaderResumesAtExactFrame(t *testing.T) {
 		t.Fatalf("range past the end must be a usage fault, got %v", err)
 	}
 }
+
+func TestReaderHandles24BitFrames(t *testing.T) {
+	o := fixtures.WAVOptions{SampleRate: 96000, Channels: 6, Bits: 24, Frames: 300, BlockFrames: 64, ModifyBlock: -1, Seed: 7}
+	b := fixtures.WAV(o)
+	info, err := scan(t, b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Format.FrameBytes() != 18 {
+		t.Fatalf("frame bytes = %d", info.Format.FrameBytes())
+	}
+	rd, err := NewReader(bytes.NewReader(b), info)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var total int64
+	for {
+		pcm, frames, err := rd.Next(97)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(pcm)%info.Format.FrameBytes() != 0 {
+			t.Fatalf("%d-byte block is not a whole number of %d-byte frames", len(pcm), info.Format.FrameBytes())
+		}
+		total += frames
+	}
+	if total != 300 {
+		t.Fatalf("read %d frames", total)
+	}
+}

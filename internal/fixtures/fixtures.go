@@ -161,11 +161,15 @@ type RTPOptions struct {
 	Start        uint32  // first raw 32-bit timestamp
 	DriftPPM     int64   // how far the timestamp clock runs ahead
 	FrameBytes   int     // payload bytes per sample frame
+	SampleRate   int64   // samples per second the counts are expressed in
+	ClockRate    int64   // RTP timestamp ticks per second
 	SSRC         uint32
 }
 
 // RTPPackets serializes RTP packets. Payload lengths differ per packet and the
-// timestamps follow the real sample counts, with drift applied on top.
+// timestamps follow the real sample counts converted to the RTP clock rate,
+// with drift applied on top. When SampleRate differs from ClockRate the
+// timestamps advance in ticks, not samples.
 func RTPPackets(o RTPOptions) [][]byte {
 	if o.FrameBytes <= 0 {
 		o.FrameBytes = 2
@@ -173,10 +177,17 @@ func RTPPackets(o RTPOptions) [][]byte {
 	if o.SSRC == 0 {
 		o.SSRC = 0x4d564155
 	}
+	if o.SampleRate <= 0 {
+		o.SampleRate = 8000
+	}
+	if o.ClockRate <= 0 {
+		o.ClockRate = o.SampleRate
+	}
+	ticksPerSample := float64(o.ClockRate) / float64(o.SampleRate)
 	out := make([][]byte, 0, len(o.SampleCounts))
 	var cumulative int64
 	for i, samples := range o.SampleCounts {
-		target := float64(cumulative) * (1 + float64(o.DriftPPM)/1_000_000)
+		target := float64(cumulative) * ticksPerSample * (1 + float64(o.DriftPPM)/1_000_000)
 		stamp := o.Start + uint32(math.Round(target))
 		payload := make([]byte, int(samples)*o.FrameBytes)
 		for j := range payload {

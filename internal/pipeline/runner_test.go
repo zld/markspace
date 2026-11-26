@@ -371,3 +371,28 @@ func contains(haystack, needle string) bool {
 }
 
 var _ = io.Discard
+
+func TestRTPClockingAtDifferentRateReconciles(t *testing.T) {
+	// 44.1 kHz payloads carried on a 48 kHz RTP clock: packets must advance in
+	// ticks, and the shared base must report sample positions.
+	raw := fixtures.RTPPackets(fixtures.RTPOptions{
+		SampleCounts: []int64{441, 441, 882, 441, 441}, Start: 0xFFFFFF00,
+		FrameBytes: 4, SampleRate: 44100, ClockRate: 48000,
+	})
+	rep := newTestRunner(t, t.TempDir(), 0).Ingest(Input{
+		Name: "rtp", Kind: "rtp", RTPPackets: raw,
+		RTPFrameBytes: 4, RTPSampleRate: 44100, RTPClockRate: 48000,
+	})
+	if rep.Rejected {
+		t.Fatalf("rejected: %v", rep.Err)
+	}
+	if rep.Wraps != 1 {
+		t.Fatalf("wraps = %d", rep.Wraps)
+	}
+	if rep.DriftPPM != 0 {
+		t.Fatalf("drift = %d ppm for an exactly clocked stream", rep.DriftPPM)
+	}
+	if rep.RTPPackets != 5 {
+		t.Fatalf("packets = %d", rep.RTPPackets)
+	}
+}
