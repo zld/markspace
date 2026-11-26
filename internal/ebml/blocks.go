@@ -147,14 +147,15 @@ func (p *parser) parseSimpleBlock(end int64) error {
 			WithTrack(trackID, 0).WithElement(p.pathString(), blockOffset)
 	}
 	payload := make([]byte, frameSize)
+	blockIndex := p.blocks[tv.Value] + 1
 	if err := p.r.ReadFull(payload); err != nil {
 		if me, ok := media.AsError(err); ok {
 			me.TrackID = trackID
+			me.BlockIndex = blockIndex
 		}
 		return err
 	}
 
-	blockIndex := p.blocks[tv.Value] + 1
 	p.blocks[tv.Value] = blockIndex
 	p.doc.BlockCount++
 	loc := media.ClockLocation{TrackID: trackID, BlockIndex: blockIndex, Offset: blockOffset}

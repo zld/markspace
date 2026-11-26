@@ -324,6 +324,11 @@ func (p *parser) dispatch(id uint32, end int64, unknown bool) error {
 	case IDTimecode:
 		v, err := p.readUint(end)
 		if err == nil {
+			if v > math.MaxInt64 {
+				return media.Corrupt("CLOCK_OVERFLOW", "cluster timecode exceeds int64").
+					WithElement(p.pathString(), p.r.Offset()).
+					WithDetail(fmt.Sprintf("timecode=%d", v))
+			}
 			p.clusterTC = int64(v)
 		}
 		return err
