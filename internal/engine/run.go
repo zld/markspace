@@ -180,7 +180,12 @@ func (r *Runner) processOneTrack(ctx context.Context, p Plan, track ebml.Track,
 		})
 	}
 	best := chooseSmallestPassing(candidates)
+	// PCM intermediates are no longer needed once every candidate is encoded.
+	_ = os.Remove(pcmPath)
 	if best == nil {
+		for _, c := range candidates {
+			_ = os.Remove(c.path)
+		}
 		return output.TrackDelivery{
 			TrackNo: track.Number, CodecID: track.CodecID,
 			SourceRateHz: track.Rate, SourceChannels: track.Channels,

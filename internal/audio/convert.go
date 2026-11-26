@@ -80,10 +80,15 @@ func EncodeAAC(ctx context.Context, r Runner, pcmPath, outPath string, bitrateKb
 		"-hide_banner", "-nostdin", "-y",
 		"-f", "s16le", "-ar", fmt.Sprint(TargetRateHz),
 		"-ac", fmt.Sprint(TargetChannels), "-i", pcmPath,
+		// loudnorm first, then an explicit resample/format so the delivered
+		// stream is always exactly 48 kHz stereo regardless of any internal
+		// rate change the normalization filter introduces.
 		"-af", fmt.Sprintf(
-			"loudnorm=I=%.1f:TP=%.1f:linear=true:measured_I=%.2f:measured_TP=%.2f:measured_LRA=%.2f:measured_thresh=%.2f:print_format=summary",
+			"loudnorm=I=%.1f:TP=%.1f:linear=true:measured_I=%.2f:measured_TP=%.2f:measured_LRA=%.2f:measured_thresh=%.2f:print_format=summary,aresample=%d,aformat=sample_rates=%d:channel_layouts=stereo",
 			TargetLoudness, NormPeakTarget, measured.Integrated, measured.TruePeak,
-			measured.Range, measured.Threshold),
+			measured.Range, measured.Threshold, TargetRateHz, TargetRateHz),
+		"-ar", fmt.Sprint(TargetRateHz),
+		"-ac", fmt.Sprint(TargetChannels),
 		"-c:a", "aac", "-b:a", fmt.Sprintf("%dk", bitrateKbps),
 		"-movflags", "+faststart",
 		outPath,
