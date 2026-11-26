@@ -1,0 +1,7 @@
+# Vendored dependencies are recreated by the acceptance command:
+#   go mod tidy && go mod vendor
+/vendor/
+
+# Local build and run artefacts.
+/medtrace
+.DS_Store
