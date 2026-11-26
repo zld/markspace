@@ -41,16 +41,6 @@ type Bundle struct {
 	Damaged []string
 }
 
-// ExpectedGap is a coverage hole the pipeline must record with provenance.
-type ExpectedGap struct {
-	Source  string
-	Version string
-	// StartSecond/EndSecond bound the uncovered timeline range.
-	StartSecond int
-	EndSecond   int
-	Reason      string
-}
-
 // Layout returns the deterministic relative file layout under root.
 func Layout(root string, c Case) *Bundle {
 	base := filepath.Join(root, "sources", string(c))

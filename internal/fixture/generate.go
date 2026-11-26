@@ -99,20 +99,6 @@ func Generate(root string, c Case) (*Bundle, error) {
 	return b, nil
 }
 
-// ExpectedGaps returns the coverage holes a scenario is known to contain.
-// The truncated tail block leaves seconds 9..10 uncovered by the SRT source.
-func (b *Bundle) ExpectedGaps() []ExpectedGap {
-	if len(b.Damaged) == 0 {
-		return nil
-	}
-	return []ExpectedGap{{
-		Source:      "subtitles.v1.srt",
-		Version:     "v1",
-		StartSecond: normalCueCount + 1,
-		EndSecond:   normalCueCount + 2,
-		Reason:      "truncated cue block leaves the expected range uncovered",
-	}}
-}
 
 // injectIllegalDF rewrites the last well-formed cue's timestamp line to use
 // drop-frame semicolons, which are illegal for the 25fps subtitle rate.
