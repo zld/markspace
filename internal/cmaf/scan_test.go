@@ -42,6 +42,13 @@ func TestScanFixtureBoxesAndDurations(t *testing.T) {
 	if len(frag.Tracks[0].Samples) != 30 || !frag.Tracks[0].Samples[0].Sync {
 		t.Fatalf("video samples/keyframe wrong: %+v", frag.Tracks[0])
 	}
+	if frag.Mdat == nil || frag.Tracks[0].Samples[0].ByteOffset != frag.Mdat.PayloadOffset {
+		t.Fatalf("first video byte offset=%d mdat payload=%+v",
+			frag.Tracks[0].Samples[0].ByteOffset, frag.Mdat)
+	}
+	if got := frag.Tracks[1].Samples[0].ByteOffset - frag.Mdat.PayloadOffset; got != 30*16 {
+		t.Fatalf("audio payload offset relative mdat=%d want %d", got, 30*16)
+	}
 }
 
 func TestScanRejectsTruncatedBoxWithOffset(t *testing.T) {

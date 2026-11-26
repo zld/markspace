@@ -131,7 +131,7 @@ func (m *Mapper) MapFragment(sourceID string, eventIndex int, f *cmaf.Fragment) 
 				Sequence: f.Sequence, SampleIndex: i, StartUs: startUs, EndUs: endUs,
 				RawStart: cursorRaw, RawEnd: cursorRaw + int64(smp.Duration),
 				Timescale: tf.Timescale, KeyFrame: smp.Sync, File: f.Path,
-				BoxOffset: f.Moof.Offset, Size: smp.Size,
+				BoxOffset: f.Moof.Offset, ByteOffset: smp.ByteOffset, Size: smp.Size,
 			}
 			rep.Samples = append(rep.Samples, s)
 			lastEndUs = endUs

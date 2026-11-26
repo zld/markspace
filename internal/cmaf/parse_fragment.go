@@ -33,7 +33,7 @@ func parseMFHD(r io.ReaderAt, source string, b BoxHeader) (uint32, error) {
 	return mfhd.SequenceNumber, nil
 }
 
-func parseTRAF(r io.ReaderAt, source string, traf BoxHeader, init *Init, maxBox int64) (*TrackFragment, error) {
+func parseTRAF(r io.ReaderAt, source string, traf BoxHeader, moofOffset int64, init *Init, maxBox int64) (*TrackFragment, error) {
 	kids, err := ScanRange(r, source, traf.PayloadOffset, traf.End, maxBox)
 	if err != nil {
 		return nil, err
@@ -74,7 +74,7 @@ func parseTRAF(r io.ReaderAt, source string, traf BoxHeader, init *Init, maxBox 
 		}
 	}
 	for _, b := range trunBoxes {
-		ss, err := parseTRUN(r, source, b, tf)
+		ss, err := parseTRUN(r, source, b, moofOffset, tf)
 		if err != nil {
 			return nil, err
 		}
@@ -94,6 +94,7 @@ func parseTFHD(r io.ReaderAt, source string, b BoxHeader, tf *TrackFragment) err
 	}
 	flags := uint32(buf[1])<<16 | uint32(buf[2])<<8 | uint32(buf[3])
 	tf.TrackID = binary.BigEndian.Uint32(buf[4:8])
+	tf.BaseIsMoof = flags&0x020000 != 0
 	pos := 8
 	need := func(n int) bool { return len(buf)-pos >= n }
 	if flags&0x000001 != 0 { // base-data-offset

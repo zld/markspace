@@ -30,8 +30,8 @@ func mfhd(seq uint32) []byte {
 }
 
 func tfhd(trackID, defaultFlags uint32) []byte {
-	// 0x000020 = default-sample-flags-present.
-	return fullBox("tfhd", 0, 0x000020, u32(trackID), u32(defaultFlags))
+	// 0x020000=default-base-is-moof, 0x000020=default-sample-flags-present.
+	return fullBox("tfhd", 0, 0x020020, u32(trackID), u32(defaultFlags))
 }
 
 func tfdt(v uint32) []byte {

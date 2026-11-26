@@ -103,7 +103,7 @@ func Build(ctx context.Context, m *cmaf.Manifest, opts BuildOptions) (*BuildResu
 					EventIndex: s.EventIndex, Sequence: s.Sequence, SampleIndex: s.SampleIndex,
 					StartUs: s.StartUs, EndUs: s.EndUs, Timescale: s.Timescale,
 					RawStart: s.RawStart, RawEnd: s.RawEnd, KeyFrame: s.KeyFrame,
-					File: ev.Path, BoxOffset: s.BoxOffset, ByteOffset: s.BoxOffset, Size: s.Size,
+					File: ev.Path, BoxOffset: s.BoxOffset, ByteOffset: s.ByteOffset, Size: s.Size,
 				})
 				if s.KeyFrame && role == "vide" {
 					idx.KeyFrames = append(idx.KeyFrames, KeyFrame{

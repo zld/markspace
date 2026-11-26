@@ -7,7 +7,7 @@ import (
 	"example.com/archiveverify/internal/model"
 )
 
-func parseTRUN(r io.ReaderAt, source string, b BoxHeader, tf *TrackFragment) ([]Sample, error) {
+func parseTRUN(r io.ReaderAt, source string, b BoxHeader, moofOffset int64, tf *TrackFragment) ([]Sample, error) {
 	// TRUN can contain many entries; bound by box payload already admitted.
 	buf := make([]byte, b.PayloadSize)
 	if _, err := r.ReadAt(buf, b.PayloadOffset); err != nil && err != io.EOF {
@@ -21,10 +21,13 @@ func parseTRUN(r io.ReaderAt, source string, b BoxHeader, tf *TrackFragment) ([]
 	flags := uint32(buf[1])<<16 | uint32(buf[2])<<8 | uint32(buf[3])
 	count := binary.BigEndian.Uint32(buf[4:8])
 	pos := 8
-	if flags&0x000001 != 0 { // data-offset, signed but not needed for duration extraction
+	var dataOffset int32
+	if flags&0x000001 != 0 { // data-offset, signed
 		if len(buf)-pos < 4 {
 			return nil, io.ErrUnexpectedEOF
 		}
+		dataOffset = int32(binary.BigEndian.Uint32(buf[pos : pos+4]))
+		tf.DataOffset = dataOffset
 		pos += 4
 	}
 	var firstFlags uint32
@@ -37,6 +40,13 @@ func parseTRUN(r io.ReaderAt, source string, b BoxHeader, tf *TrackFragment) ([]
 	}
 
 	out := make([]Sample, 0, count)
+	var byteCursor int64 = -1
+	if flags&0x000001 != 0 {
+		byteCursor = int64(dataOffset)
+		if tf.BaseIsMoof {
+			byteCursor += moofOffset
+		}
+	}
 	wantDur := flags&0x000100 != 0
 	wantSize := flags&0x000200 != 0
 	wantFlags := flags&0x000400 != 0
@@ -82,6 +92,10 @@ func parseTRUN(r io.ReaderAt, source string, b BoxHeader, tf *TrackFragment) ([]
 		}
 		// ISO sample_is_non_sync_sample is bit 16 of the 32-bit sample flags.
 		s.Sync = s.Flags&0x00010000 == 0
+		if byteCursor >= 0 {
+			s.ByteOffset = byteCursor
+			byteCursor += int64(s.Size)
+		}
 		out = append(out, s)
 	}
 	return out, nil

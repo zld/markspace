@@ -18,6 +18,7 @@ type Sample struct {
 	Sync                 bool   `json:"sync"`
 	CompositionOffset    int64  `json:"composition_offset"`
 	HasCompositionOffset bool   `json:"has_composition_offset"`
+	ByteOffset           int64  `json:"byte_offset,omitempty"`
 }
 
 // TrackFragment is one traf/trun group.
@@ -27,6 +28,8 @@ type TrackFragment struct {
 	BaseDecodeTime  uint64   `json:"base_decode_time"`
 	TFDTVersion     uint8    `json:"tfdt_version"`
 	TFDTOffset      int64    `json:"tfdt_offset"`
+	BaseIsMoof      bool     `json:"base_is_moof,omitempty"`
+	DataOffset      int32    `json:"data_offset,omitempty"`
 	TREXDefaults    Defaults `json:"-"`
 	DefaultDuration uint32   `json:"default_duration"`
 	DefaultSize     uint32   `json:"default_size"`
@@ -126,7 +129,7 @@ func ParseFragment(r io.ReaderAt, source string, size int64, init *Init, maxBox 
 			out.Sequence = seq
 			out.HasSequence = true
 		case "traf":
-			tf, err := parseTRAF(r, source, b, init, maxBox)
+			tf, err := parseTRAF(r, source, b, out.Moof.Offset, init, maxBox)
 			if err != nil {
 				return nil, err
 			}
