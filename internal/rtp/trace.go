@@ -118,7 +118,10 @@ func RecoverTrace(input []Arrival, cfg Config) *Report {
 		}
 		seen[seq] = true
 		accepted[seq] = pktInfo{ext: ext, p: a.Packet}
-		if !haveMax || ext > maxExt {
+		if !haveMax {
+			haveMax = true
+			maxExt = ext
+		} else if ext > maxExt {
 			maxExt = ext
 		}
 		if !haveRange {

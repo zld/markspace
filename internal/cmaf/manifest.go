@@ -40,13 +40,14 @@ type RTPSpec struct {
 
 // AnchorSpec correlates an RTP timestamp with a media track boundary.
 type AnchorSpec struct {
-	AnchorID   string `json:"anchor_id"`
-	SourceID   string `json:"source_id"`
-	TrackID    uint32 `json:"track_id"`
-	RTPTime    uint32 `json:"rtp_time"`
-	MediaRaw   int64  `json:"media_raw"`
-	Timescale  uint32 `json:"timescale"`
-	ExpectedUs int64  `json:"expected_us"`
+	AnchorID     string `json:"anchor_id"`
+	SourceID     string `json:"source_id"`
+	TrackID      uint32 `json:"track_id"`
+	RTPTime      uint32 `json:"rtp_time"`
+	RTPClockRate uint32 `json:"rtp_clock_rate"`
+	MediaRaw     int64  `json:"media_raw"`
+	Timescale    uint32 `json:"timescale"`
+	ExpectedUs   int64  `json:"expected_us"`
 }
 
 // SlowConsumerSpec asks the verification pipeline to simulate a slow sink.

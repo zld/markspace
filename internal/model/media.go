@@ -2,6 +2,7 @@
 package model
 
 import (
+	"context"
 	"errors"
 	"fmt"
 )
@@ -23,17 +24,17 @@ const (
 // MediaError records where a media fault happened and, when relevant, the
 // original and repaired timestamps.
 type MediaError struct {
-	Code             Code   `json:"code"`
-	Source           string `json:"source,omitempty"`
-	TrackID          uint32 `json:"track_id,omitempty"`
-	BoxType          string `json:"box_type,omitempty"`
-	BoxOffset        int64  `json:"box_offset,omitempty"`
-	FirstUnreadable  int64  `json:"first_unreadable_offset,omitempty"`
-	OriginalTime     int64  `json:"original_time,omitempty"`
-	FixedTime        int64  `json:"fixed_time,omitempty"`
-	OriginalTimeSet  bool   `json:"original_time_set,omitempty"`
-	FixedTimeSet     bool   `json:"fixed_time_set,omitempty"`
-	Err              error  `json:"-"`
+	Code            Code   `json:"code"`
+	Source          string `json:"source,omitempty"`
+	TrackID         uint32 `json:"track_id,omitempty"`
+	BoxType         string `json:"box_type,omitempty"`
+	BoxOffset       int64  `json:"box_offset,omitempty"`
+	FirstUnreadable int64  `json:"first_unreadable_offset,omitempty"`
+	OriginalTime    int64  `json:"original_time,omitempty"`
+	FixedTime       int64  `json:"fixed_time,omitempty"`
+	OriginalTimeSet bool   `json:"original_time_set,omitempty"`
+	FixedTimeSet    bool   `json:"fixed_time_set,omitempty"`
+	Err             error  `json:"-"`
 }
 
 func (e *MediaError) Error() string {
@@ -96,7 +97,7 @@ func ExitCode(err error) int {
 			return 3
 		}
 	}
-	if errors.Is(err, ErrResourceLimit) || errors.Is(err, ErrCanceled) {
+	if errors.Is(err, ErrResourceLimit) || errors.Is(err, ErrCanceled) || errors.Is(err, context.Canceled) {
 		return 3
 	}
 	return 2

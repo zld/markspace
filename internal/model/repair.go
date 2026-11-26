@@ -32,10 +32,10 @@ type Gap struct {
 
 // Quarantine identifies an unindexed truncated/out-of-bounds fragment.
 type Quarantine struct {
-	Source           string `json:"source"`
-	File             string `json:"file"`
-	BoxType          string `json:"box_type"`
-	BoxOffset        int64  `json:"box_offset"`
-	FirstUnreadable  int64  `json:"first_unreadable_offset"`
-	Reason           string `json:"reason"`
+	Source          string `json:"source"`
+	File            string `json:"file"`
+	BoxType         string `json:"box_type"`
+	BoxOffset       int64  `json:"box_offset"`
+	FirstUnreadable int64  `json:"first_unreadable_offset"`
+	Reason          string `json:"reason"`
 }

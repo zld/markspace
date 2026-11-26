@@ -118,30 +118,29 @@ func (m *Mapper) MapFragment(sourceID string, eventIndex int, f *cmaf.Fragment) 
 		}
 
 		cursorRaw := rawStart
-		// When a backward tfdt is repaired to the previous end, raw values no
-		// longer need to advance in source units; Us remains monotonic.
-		cursorUs := unitsToUsChecked(rawStart, tf.Timescale)
+		var offsetUs model.Us
 		if repair != nil {
-			cursorUs = repair.FixedUs
+			offsetUs = repair.OffsetUs
 		}
+		var lastEndUs model.Us
 		for i, smp := range tf.Samples {
-			durUs := UnitsToUs(int64(smp.Duration), tf.Timescale)
-			endUs := cursorUs + durUs
+			startUs := UnitsToUs(cursorRaw, tf.Timescale) + offsetUs
+			endUs := UnitsToUs(cursorRaw+int64(smp.Duration), tf.Timescale) + offsetUs
 			s := Sample{
 				TrackID: tf.TrackID, SourceID: sourceID, EventIndex: eventIndex,
-				Sequence: f.Sequence, SampleIndex: i, StartUs: cursorUs, EndUs: endUs,
+				Sequence: f.Sequence, SampleIndex: i, StartUs: startUs, EndUs: endUs,
 				RawStart: cursorRaw, RawEnd: cursorRaw + int64(smp.Duration),
 				Timescale: tf.Timescale, KeyFrame: smp.Sync, File: f.Path,
 				BoxOffset: f.Moof.Offset, Size: smp.Size,
 			}
 			rep.Samples = append(rep.Samples, s)
-			cursorUs = endUs
+			lastEndUs = endUs
 			cursorRaw += int64(smp.Duration)
 		}
 		st.source = sourceID
 		st.haveRaw = true
 		st.lastRaw = rawStart
-		st.lastEndUs = cursorUs
+		st.lastEndUs = lastEndUs
 		st.haveEnd = true
 	}
 	return rep, nil
