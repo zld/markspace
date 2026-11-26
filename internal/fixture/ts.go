@@ -24,6 +24,9 @@ func BuildTS(spec TSSpec) []byte {
 	if pmtPID == 0 {
 		pmtPID = 0x1000
 	}
+	if spec.StreamType == 0 {
+		spec.StreamType = 0x1B // H.264
+	}
 	b := &tsBuilder{cc: map[uint16]uint8{}, pmtPID: pmtPID}
 	b.pat(1, pmtPID)
 	b.pmt(1, spec)
@@ -40,9 +43,9 @@ type tsBuilder struct {
 }
 
 func (b *tsBuilder) packet(pid uint16, payload []byte, pusi bool) {
-	cc := b.cc[pid]
-	b.cc[pid] = (cc + 1) & 0x0F
 	for first := true; len(payload) > 0; first = false {
+		cc := b.cc[pid]
+		b.cc[pid] = (cc + 1) & 0x0F
 		var pkt [188]byte
 		pkt[0] = 0x47
 		bits := pid & 0x1FFF

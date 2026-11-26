@@ -34,8 +34,11 @@ func TestBuildTSIsDemuxable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(d.Tracks) != 1 || len(d.Tracks[0].Samples) != 5 {
-		t.Fatalf("tracks/samples = %d/%d", len(d.Tracks), len(d.Tracks[0].Samples))
+	if len(d.Tracks) != 1 {
+		t.Fatalf("tracks = %d", len(d.Tracks))
+	}
+	if len(d.Tracks[0].Samples) != 5 {
+		t.Fatalf("samples = %d (truncated=%d faults=%v)", len(d.Tracks[0].Samples), d.Tracks[0].TruncatedSamples, d.Faults)
 	}
 	if !d.Tracks[0].Samples[0].Keyframe || d.Tracks[0].Samples[1].Keyframe {
 		t.Fatal("keyframe flags wrong")
