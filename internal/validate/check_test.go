@@ -187,3 +187,46 @@ func TestCueMapsToNearestPresentationKeyframeWithBFrames(t *testing.T) {
 		t.Fatalf("dev=%s", res.CueMaps[0].TimeDev)
 	}
 }
+
+func TestDriftWithinBoundRecordsCorrectionWithoutRewriting(t *testing.T) {
+	// 10 minutes of cues drifting by 50 ms: inside the 100 ms/10 min bound.
+	var cues []subtitle.Cue
+	n := 61
+	for i := 0; i < n; i++ {
+		at := clock.Tick(i) * 10 * clock.Tick(clock.TickRate)
+		drift := clock.Tick(i) * 75 // 75 ticks per 10 s -> 50 ms over 10 min
+		cues = append(cues, subtitle.Cue{
+			Index: i + 1, Start: at + drift, End: at + drift + clock.FromMilliseconds(500),
+			StartLn: i*2 + 1, EndLn: i*2 + 2,
+		})
+	}
+	// Media keyframes follow the true clock every 10 s for 11 minutes.
+	v := video()
+	v.Track.Duration = clock.Tick(11 * 60 * clock.TickRate)
+	v.Keyframes = nil
+	for i := 0; i <= 66; i++ {
+		at := clock.Tick(i) * 10 * clock.Tick(clock.TickRate)
+		v.Keyframes = append(v.Keyframes, stream.Keyframe{
+			Index: i + 1, DTS: at, PTS: at, Offset: int64(i) * 1000, Size: 10,
+		})
+	}
+	tr := subtitle.Track{Input: "s.srt", Cues: cues}
+	res := Analyze(Spec{Name: "apply", Window: clock.FromMilliseconds(2000), Cues: []subtitle.Track{tr}, MP4: v})
+	if !res.DriftKnown || res.Drift.Exceeded {
+		t.Fatalf("drift: %+v", res.Drift)
+	}
+	if res.Drift.Applied == 0 {
+		t.Fatalf("no correction authorised: %+v", res.Drift)
+	}
+	if len(res.Corrected) != len(cues) {
+		t.Fatalf("corrected cues=%d want %d", len(res.Corrected), len(cues))
+	}
+	for i, c := range res.Corrected {
+		if c.Original != cues[i].Start {
+			t.Fatalf("original rewritten at %d: %s != %s", i, c.Original, cues[i].Start)
+		}
+		if c.Corrected != c.Original-res.Drift.Applied {
+			t.Fatalf("correction mismatch at %d", i)
+		}
+	}
+}

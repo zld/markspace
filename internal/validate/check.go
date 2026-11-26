@@ -31,6 +31,15 @@ type CueMap struct {
 	ByteDev        int64
 }
 
+// CorrectedCue records a bounded drift correction applied to a cue view.
+// Original is never overwritten.
+type CorrectedCue struct {
+	CueIndex  int
+	Line      int
+	Original  clock.Tick
+	Corrected clock.Tick
+}
+
 // KeyframeStat is the interval summary derived from actual decode time.
 type KeyframeStat struct {
 	Count  int
@@ -55,6 +64,7 @@ type Result struct {
 	Issues         issue.List
 	Drift          clock.Correction
 	DriftKnown     bool
+	Corrected      []CorrectedCue
 	VFR            bool
 	VFRReason      string
 	PacketCount    int
@@ -138,11 +148,23 @@ func Analyze(spec Spec) *Result {
 			}
 		}
 		res.Drift, res.DriftKnown = estimateDrift(res.CueMaps)
-		if res.DriftKnown && res.Drift.Exceeded {
+		switch {
+		case res.DriftKnown && res.Drift.Exceeded:
+			// Out of bound: report only. Original timestamps are untouched.
 			it := issue.New(issue.DriftExceeded, firstSource(spec),
 				fmt.Sprintf("clock drift %s exceeds bound %s at %s; original timestamps kept",
 					res.Drift.Measured, res.Drift.Limit, res.Drift.At))
 			res.Issues.Add(it)
+		case res.DriftKnown && res.Drift.Applied != 0:
+			// Within bound: the correction is authorised. It is recorded as a
+			// derived view; the parsed cue times and their source lines remain
+			// the originals, which MaxTimeDev is measured against.
+			for _, m := range res.CueMaps {
+				res.Corrected = append(res.Corrected, CorrectedCue{
+					CueIndex: m.CueIndex, Line: m.Line,
+					Original: m.CueStart, Corrected: m.CueStart - res.Drift.Applied,
+				})
+			}
 		}
 	}
 	checkCueRange(spec.Cues, spec.MP4, &res.Issues)

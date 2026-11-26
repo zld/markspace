@@ -41,6 +41,7 @@ type Summary struct {
 	RTPMissing     uint64
 	Categories     []string
 	Notes          []string
+	Corrected      []validate.CorrectedCue
 	FirstFail      string
 	CueMaps        []validate.CueMap
 	Intervals      []intervalKey
@@ -83,6 +84,7 @@ func BuildSnapshot(r *validate.Result) Summary {
 	}
 	s.Categories = r.Issues.Categories()
 	s.Notes = append([]string(nil), r.Notes...)
+	s.Corrected = append([]validate.CorrectedCue(nil), r.Corrected...)
 	if r.First != nil {
 		s.FirstFail = r.First.String()
 	}
@@ -124,6 +126,9 @@ func Digest(s Summary) string {
 		fmt.Sprint(s.RTPDuplicates), fmt.Sprint(s.RTPRegressions), fmt.Sprint(s.RTPMissing))
 	for _, n := range s.Notes {
 		w("note", n)
+	}
+	for _, c := range s.Corrected {
+		w("corr", fmt.Sprint(c.CueIndex), fmt.Sprint(c.Line), c.Original.String(), c.Corrected.String())
 	}
 	w("issues", fmt.Sprint(s.IssueCount))
 	for _, k := range s.IssueKeys {
@@ -167,6 +172,9 @@ func Render(r *validate.Result) string {
 		fmt.Fprintf(&b, "  clock drift: %s\n", r.Drift.Scope())
 		if r.Drift.Exceeded {
 			fmt.Fprintf(&b, "  clock drift action: report only, original timestamps unchanged\n")
+		} else if len(r.Corrected) > 0 {
+			fmt.Fprintf(&b, "  clock drift action: bounded correction applied to derived view (%d cue(s)); originals kept\n",
+				len(r.Corrected))
 		}
 	}
 	renderDamage(&b, s)
