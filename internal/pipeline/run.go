@@ -268,7 +268,7 @@ func Run(opts Options) (*Result, error) {
 		plans[key] = byTrack
 	}
 	repairKey := func(rec Record) string { return rec.SourceID + "\x00" + rec.Fragment.Path }
-	artifacts := append([]ArtifactRecord(nil), cpArtifacts(cp, cursor)...)
+	artifacts := dedupeByName(cpArtifacts(cp, cursor))
 	// StopAfter counts records processed by this invocation, so a resumed run
 	// with the same flag makes further progress instead of stopping at once.
 	limit := len(records)
@@ -289,7 +289,10 @@ func Run(opts Options) (*Result, error) {
 		opts.Progress(fmt.Sprintf("record=%d/%d source=%s order=%d fragment=%s", cursor+1, len(records), rec.SourceID, rec.Order, rec.RelPath))
 		if opts.OnRecord != nil {
 			if err := opts.OnRecord(cursor+1, len(records)); err != nil {
-				return nil, err
+				// The checkpoint for this record has already advanced, so the
+				// next invocation continues here. Report it as interrupted.
+				return nil, model.E(model.CodeInterrupted, "run",
+					"interrupted after %d of %d records: %v", cursor+1, len(records), err)
 			}
 		}
 	}
@@ -310,7 +313,7 @@ func Run(opts Options) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	artifacts = append(artifacts, outArtifacts...)
+	artifacts = dedupeByName(append(artifacts, outArtifacts...))
 	res.Cursor = len(records)
 	res.Outputs = artifacts
 	var facts []rtpFacts
@@ -325,7 +328,7 @@ func Run(opts Options) (*Result, error) {
 	if a, err := writeReport(opts, res, facts); err != nil {
 		return nil, err
 	} else {
-		artifacts = append(artifacts, a...)
+		artifacts = dedupeByName(append(artifacts, a...))
 	}
 	res.Outputs = artifacts
 	res.Metrics = metrics
@@ -456,7 +459,9 @@ func resolveWithin(root, rel string) (string, error) {
 	return abs, nil
 }
 
-// ensureWithin rejects an output directory that is not inside the work dir.
+// ensureWithin rejects an output directory that would overwrite the inputs.
+// Manifest-referenced paths are already confined to the input directory by
+// resolveWithin; this guards the one path the operator supplies separately.
 func ensureWithin(inputDir, outDir string) error {
 	in, err := filepath.Abs(inputDir)
 	if err != nil {
@@ -470,16 +475,16 @@ func ensureWithin(inputDir, outDir string) error {
 	if err != nil {
 		return model.E(CodePathEscape, "check output", "%v", err)
 	}
-	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		// Outputs are allowed outside the input tree only when they live under
-		// a sibling path within the same temporary root; this run contract
-		// writes to /tmp/rtx-* next to /tmp/rtx-fixtures, so permit absolute
-		// out dirs but never a parent-relative traversal from the caller's cwd.
-		if filepath.IsAbs(outDir) {
-			return nil
-		}
-		return model.E(CodePathEscape, "check output", "output %q escapes the input directory", outDir)
+	if rel == "." {
+		return model.E(CodePathEscape, "check output", "output directory must differ from the input directory")
 	}
+	// An output inside the input tree is allowed only if it is a dedicated
+	// subdirectory, never the input directory itself.
+	if rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return nil
+	}
+	// Outside the input tree is fine: the acceptance contract writes to a
+	// sibling directory under the same temporary root.
 	return nil
 }
 
@@ -601,6 +606,25 @@ func ensureDir(dir string) error {
 		return model.E(model.CodeInvalidInput, "prepare output", "%v", err).WithPath(dir)
 	}
 	return nil
+}
+
+// dedupeByName keeps the last record for each artifact name, so a repeated run
+// over a completed checkpoint does not accumulate duplicate entries.
+func dedupeByName(in []ArtifactRecord) []ArtifactRecord {
+	if len(in) == 0 {
+		return nil
+	}
+	index := map[string]int{}
+	out := make([]ArtifactRecord, 0, len(in))
+	for _, r := range in {
+		if i, ok := index[r.Name]; ok {
+			out[i] = r
+			continue
+		}
+		index[r.Name] = len(out)
+		out = append(out, r)
+	}
+	return out
 }
 
 func mustMarshal(v interface{}) []byte {

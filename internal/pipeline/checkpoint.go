@@ -197,7 +197,9 @@ func Reconcile(cp *Checkpoint, manifestSum, inputSum, paramsSum string, total in
 			"checkpoint covers %d fragments but input has %d", cp.Total, total)
 	}
 	if cp.Completed {
-		return ResumeDecision{Cursor: cp.Cursor, Reason: "already_completed"}, nil
+		// A completed checkpoint still means this invocation continued from
+		// existing state rather than starting fresh, so report it as a resume.
+		return ResumeDecision{Resuming: true, Cursor: cp.Cursor, Reason: "already_completed"}, nil
 	}
 	return ResumeDecision{Resuming: cp.Cursor > 0, Cursor: cp.Cursor, Reason: fmt.Sprintf("resume_from_%d", cp.Cursor)}, nil
 }
