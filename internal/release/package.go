@@ -102,6 +102,9 @@ func Commit(req CommitRequest) (*CommitResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := ExposeLinks(req.Root, version); err != nil {
+		return nil, err
+	}
 	return &CommitResult{VersionDir: final, Manifest: req.Manifest, State: state, Reused: reused}, nil
 }
 

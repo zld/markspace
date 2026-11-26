@@ -29,7 +29,7 @@ func VerifyWithPixels(dir string) (*Manifest, error) {
 		count := 0
 		var audio []int16
 		for _, a := range m.Artifacts {
-			if a.Platform != target.Platform {
+			if a.Kind != "audio" && a.Platform != target.Platform {
 				continue
 			}
 			full := filepath.Join(dir, a.Path)
@@ -116,6 +116,9 @@ func Rollback(ctx context.Context, root, to string, verifyPixels bool) (*Manifes
 		return m, st, fmt.Errorf("%w: %v", ErrRollbackFailed, err)
 	}
 	if err := switchCurrentLink(root, version); err != nil {
+		return m, st, fmt.Errorf("%w: %v", ErrRollbackFailed, err)
+	}
+	if err := ExposeLinks(root, version); err != nil {
 		return m, st, fmt.Errorf("%w: %v", ErrRollbackFailed, err)
 	}
 	return m, st, nil
