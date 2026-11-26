@@ -92,11 +92,19 @@ func Merge(inputs []Input) (*Timeline, error) {
 				baseExt = in.Opus.Packets[0].ExtSequence
 				baseStart = in.Opus.Packets[0].StartTicks
 			}
-			for _, p := range in.Opus.Packets {
+			endByExt := make(map[int64]int64, len(in.Opus.Packets))
+			for i, p := range in.Opus.Packets {
 				end, err := media.CheckedAdd(p.StartTicks, OpusFrameTicks)
 				if err != nil {
 					return nil, media.OverflowError("merge", in.Spec.ID, err).WithPacket(int(p.Ordinal))
 				}
+				if i+1 < len(in.Opus.Packets) {
+					next := in.Opus.Packets[i+1]
+					if next.ExtSequence == p.ExtSequence+1 && next.StartTicks > p.StartTicks {
+						end = next.StartTicks
+					}
+				}
+				endByExt[p.ExtSequence] = end
 				events = append(events, Event{
 					TrackOrder: order, TrackID: in.Spec.ID, Kind: KindOpus,
 					RecordIndex: p.Ordinal, Sequence: p.ExtSequence,
@@ -111,6 +119,9 @@ func Merge(inputs []Input) (*Timeline, error) {
 				}
 				if err != nil {
 					return nil, media.OverflowError("merge", in.Spec.ID, err).WithPacket(int(gapSeq))
+				}
+				if measuredEnd, ok := endByExt[gapSeq-1]; ok {
+					start = measuredEnd
 				}
 				end, err := media.CheckedAdd(start, OpusFrameTicks)
 				if err != nil {

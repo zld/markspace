@@ -39,6 +39,9 @@ func TestMergeDeterministicOrderAndStats(t *testing.T) {
 	if tl.Quality.OK {
 		t.Fatalf("33%% loss should fail quality: %+v", tl.Quality)
 	}
+	if tl.Events[0].Kind != KindOpus || tl.Events[0].EndTicks != 200 {
+		t.Fatalf("adjacent Opus end=%d, want next timestamp 200", tl.Events[0].EndTicks)
+	}
 	wantKinds := []EventKind{KindOpus, KindAAC, KindOpus, KindGap, KindSubtitle}
 	if len(tl.Events) != len(wantKinds) {
 		t.Fatalf("events=%d want %d", len(tl.Events), len(wantKinds))
