@@ -5,6 +5,8 @@
 package replay
 
 import (
+	"context"
+	"errors"
 	"fmt"
 
 	"replayproof/internal/media"
@@ -95,6 +97,18 @@ func (c Config) Validate() error {
 		return media.New(media.CodeConfig, "config.cancel", -1, "cancel-after must be >= 0")
 	}
 	return nil
+}
+
+// errCanceled maps context cancellation onto the shared CANCELED code so the
+// command can select exit code 130 in one place.
+func errCanceled(err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return &media.Error{Code: media.CodeCanceled, Op: "run", Offset: -1, Msg: "canceled", Err: err}
+	}
+	return err
 }
 
 // fmtDur renders a duration for log lines.

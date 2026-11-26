@@ -163,6 +163,9 @@ func runProcess(args []string) int {
 		fmt.Fprintf(os.Stderr, "replaycheck: %v\n", err)
 		return exitFailure
 	}
+	// The caller supplies the primary pair; the generated corrupt and
+	// conflicting cases stay in place so the failure paths are still
+	// exercised and reported.
 	inputs.PrimaryMP4 = mp4Data
 	inputs.PrimaryMXF = mxfData
 

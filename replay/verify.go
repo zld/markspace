@@ -98,6 +98,9 @@ func RunVerify(ctx context.Context, cfg Config) (*output.Summary, error) {
 	if cfg.OutDir == "" {
 		return nil, media.New(media.CodeConfig, "verify.out", -1, "output directory is required")
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, errCanceled(err)
+	}
 	// The verification runs into a clean directory so a rerun with the same
 	// seed reproduces the same digest.
 	if err := os.RemoveAll(cfg.OutDir); err != nil {
@@ -121,6 +124,12 @@ func RunVerify(ctx context.Context, cfg Config) (*output.Summary, error) {
 	cancelCfg.CheckpointPath = filepath.Join(cancelCfg.OutDir, "checkpoint.json")
 	cancelCfg.CancelAfter = 1
 	cancelSum, cancelErr := Run(ctx, cancelCfg, inputs)
+	// An interrupt addressed to the whole verification must stay an
+	// interrupt: the cancellation self-test is skipped rather than reported
+	// as a broken test.
+	if ctx.Err() != nil {
+		return runSum, errCanceled(ctx.Err())
+	}
 	if cancelErr == nil || media.CodeOf(cancelErr) != media.CodeCanceled {
 		return runSum, media.New(media.CodeEventWindow, "verify.cancel", -1,
 			"cancellation run did not report CANCELED")
@@ -146,6 +155,9 @@ func RunVerify(ctx context.Context, cfg Config) (*output.Summary, error) {
 		return runSum, err
 	}
 	resumeSum, resumeErr := Resume(ctx, resumeCfg, inputs)
+	if ctx.Err() != nil {
+		return runSum, errCanceled(ctx.Err())
+	}
 	if resumeErr != nil {
 		return runSum, resumeErr
 	}
