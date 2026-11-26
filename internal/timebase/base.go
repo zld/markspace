@@ -157,3 +157,28 @@ func (d Duration) Ticks() (uint64, error) {
 // durations: representations may differ by at most a single source clock
 // tick, never more.
 func OneSourceTick(den uint64) Rational { return Rational{Num: 1, Den: den} }
+
+// WithinOneSourceTick reports whether |a-b| expressed in the source clock is
+// at most one source tick. Both rationals are converted to integer nanoseconds
+// exactly and compared against the one-tick nanosecond tolerance. This is the
+// cross-representation duration continuity guard shared by publisher and
+// verifier.
+func WithinOneSourceTick(a, b Rational, sourceDen uint64) (bool, error) {
+	an, err := a.Nanoseconds()
+	if err != nil {
+		return false, err
+	}
+	bn, err := b.Nanoseconds()
+	if err != nil {
+		return false, err
+	}
+	tol, err := OneSourceTick(sourceDen).Nanoseconds()
+	if err != nil {
+		return false, err
+	}
+	diff := int64(an) - int64(bn)
+	if diff < 0 {
+		diff = -diff
+	}
+	return uint64(diff) <= tol, nil
+}
