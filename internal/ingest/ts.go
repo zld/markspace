@@ -72,14 +72,15 @@ type Segment struct {
 // StreamReader performs packet-level demarcation, PCR expansion and
 // continuity-counter auditing over an arbitrary byte stream.
 type StreamReader struct {
-	r      *bufio.Reader
-	rec    *fault.Recorder
-	clk    *clock.Clock
-	tl     clock.Timeline
-	offset int64
-	index  int64
-	cc     map[uint16]uint8
-	ccSeen map[uint16]bool
+	r       *bufio.Reader
+	rec     *fault.Recorder
+	clk     *clock.Clock
+	tl      clock.Timeline
+	offset  int64
+	index   int64
+	cc      map[uint16]uint8
+	ccSeen  map[uint16]bool
+	pending []Record // packets retained after the last complete segment
 }
 
 // NewStreamReader wraps r with the shared fault recorder and unified clock.
@@ -119,7 +120,8 @@ func (s *StreamReader) NextPacket() (*Record, error) {
 			return nil, io.EOF
 		}
 		s.rec.Record(fault.Fault{Kind: fault.KindTruncated, Offset: start,
-			Recoverable: true, Detail: "partial TS packet at end of input"})
+			Recoverable: true, Bytes: PacketSize - n,
+			Detail: "partial TS packet at end of input"})
 		return nil, io.EOF
 	}
 	if err != nil {
@@ -143,9 +145,9 @@ func (s *StreamReader) NextPacket() (*Record, error) {
 				Recoverable: true, Detail: cerr.Error()})
 		}
 		if wrapped {
-			// Wrap is normal clock behaviour, recorded as an informational
-			// fault so timeline epochs stay auditable.
-			s.rec.Record(fault.Fault{Kind: fault.KindPSIUpdate, Offset: start,
+			// Wrap is normal clock behaviour, recorded separately so it never
+			// inflates the PSI version/epoch counters.
+			s.rec.Record(fault.Fault{Kind: fault.KindPCRWrap, Offset: start,
 				Recoverable: true, Detail: "PCR 2^33 wrap expanded at 27 MHz"})
 		}
 		rec.Ticks = s.tl.Update(start, ticks).Ticks
@@ -206,8 +208,9 @@ func (s *StreamReader) auditCC(p *Packet) {
 }
 
 // NextSegment reads exactly packetsPerSegment packets. A trailing incomplete
-// group is withheld (and any truncation already recorded); io.EOF means no
-// complete segment remains.
+// group is withheld from the workers (they only ever receive complete
+// segments) but retained internally so DrainPending can still audit it for
+// PSI updates, CC gaps and other tail-carried faults.
 func (s *StreamReader) NextSegment(packetsPerSegment int) (*Segment, error) {
 	if packetsPerSegment <= 0 {
 		return nil, errors.New("ingest: segment size must be positive")
@@ -219,7 +222,8 @@ func (s *StreamReader) NextSegment(packetsPerSegment int) (*Segment, error) {
 			if len(seg.Records) == 0 {
 				return nil, io.EOF
 			}
-			// Incomplete tail: drop the partial segment without emitting it.
+			// Retain the partial run for DrainPending; never submit it.
+			s.pending = append(s.pending, seg.Records...)
 			return nil, io.EOF
 		}
 		if err != nil {
@@ -233,4 +237,13 @@ func (s *StreamReader) NextSegment(packetsPerSegment int) (*Segment, error) {
 	}
 	seg.ID = seg.Records[0].Index / int64(packetsPerSegment)
 	return seg, nil
+}
+
+// DrainPending returns packets read but not part of a complete segment. The
+// returned records have already passed PCR/CC auditing; callers feed them to
+// PSI tracking so tail-carried table changes are not lost.
+func (s *StreamReader) DrainPending() []Record {
+	out := s.pending
+	s.pending = nil
+	return out
 }

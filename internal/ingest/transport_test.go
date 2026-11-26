@@ -230,9 +230,13 @@ func TestPSIPATVersionEpochAndCRC(t *testing.T) {
 	if s := p2.Streams[0x0200]; !s.Complete || s.Codec != "hevc" {
 		t.Fatalf("HEVC stream info wrong: %+v", s)
 	}
-	// Two PAT versions => two PSI updates recorded plus two PMT accepts.
-	if rec.Count(fault.KindPSIUpdate) < 2 {
-		t.Fatalf("want version updates, got %+v", rec.All())
+	// Only the PAT v0->v1 change is a genuine update; first-time PMT/PAT
+	// establishment must not inflate the version counter.
+	if rec.Count(fault.KindPSIUpdate) != 1 {
+		t.Fatalf("want exactly one version update, got %+v", rec.All())
+	}
+	if tr.VersionUpdates() != 1 {
+		t.Fatalf("VersionUpdates()=%d want 1", tr.VersionUpdates())
 	}
 	if rec.Count(fault.KindBadCRC) != 0 {
 		t.Fatalf("unexpected CRC faults: %+v", rec.All())

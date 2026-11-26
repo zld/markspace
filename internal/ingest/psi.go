@@ -34,12 +34,13 @@ type MappingEpoch struct {
 // PSITracker reassembles PAT/PMT sections packet by packet, validates their
 // CRC-32/MPEG-2 and version fields, and emits mapping epochs on changes.
 type PSITracker struct {
-	rec      *fault.Recorder
-	buf      map[uint16][]byte
-	versions map[uint16]uint8 // table PID -> last accepted version
-	current  *MappingEpoch
-	epochID  int64
-	pmtPIDs  map[uint16]bool
+	rec         *fault.Recorder
+	buf         map[uint16][]byte
+	versions    map[uint16]uint8 // table PID -> last accepted version
+	current     *MappingEpoch
+	epochID     int64
+	pmtPIDs     map[uint16]bool
+	updateCount int // genuine version changes only, not first-time tables
 }
 
 // NewPSITracker returns an empty tracker.
@@ -54,6 +55,10 @@ func NewPSITracker(rec *fault.Recorder) *PSITracker {
 
 // Current returns the most recent accepted mapping epoch (nil before PAT).
 func (t *PSITracker) Current() *MappingEpoch { return t.current }
+
+// VersionUpdates returns the number of genuine PSI version changes observed;
+// first-time table establishment is deliberately not counted.
+func (t *PSITracker) VersionUpdates() int { return t.updateCount }
 
 // Feed consumes one packet record. It returns the new epoch and true when a
 // validated table change produced one; otherwise nil, false.
@@ -118,9 +123,15 @@ func (t *PSITracker) acceptSection(offset int64, pid uint16, section []byte) (*M
 	if prev, ok := t.versions[pid]; ok && prev == version {
 		return nil, false // unchanged repeat
 	}
+	_, alreadySeen := t.versions[pid]
 	t.versions[pid] = version
-	t.rec.Record(fault.Fault{Kind: fault.KindPSIUpdate, Offset: offset,
-		Recoverable: true, Detail: "PSI version update accepted"})
+	if alreadySeen {
+		// A genuine version change opens a new mapping epoch; first-time
+		// table establishment does not count as an update.
+		t.updateCount++
+		t.rec.Record(fault.Fault{Kind: fault.KindPSIUpdate, Offset: offset,
+			Recoverable: true, Detail: "PSI version update accepted"})
+	}
 
 	if pid == PIDPAT {
 		return t.applyPAT(offset, version, section)

@@ -15,6 +15,7 @@ const (
 	KindCCGap           // continuity counter discontinuity
 	KindBadCRC          // PSI section CRC mismatch
 	KindCorruptPacket   // packet with invalid sync byte
+	KindPCRWrap         // informational: PCR 2^33 wrap expanded on the clock
 	KindPSIUpdate       // PAT/PMT version change (informational epoch boundary)
 	KindIncompleteIndex // missing or truncated sidecar / unsupported codec
 	KindBudget          // memory budget cannot satisfy candidate parameters
@@ -32,6 +33,8 @@ func (k Kind) String() string {
 		return "bad-crc"
 	case KindCorruptPacket:
 		return "corrupt-packet"
+	case KindPCRWrap:
+		return "pcr-wrap"
 	case KindPSIUpdate:
 		return "psi-update"
 	case KindIncompleteIndex:
@@ -51,6 +54,9 @@ type Fault struct {
 	Offset      int64
 	Recoverable bool
 	Detail      string
+	// Bytes carries a size when meaningful, e.g. the missing byte count of a
+	// truncated final packet; zero otherwise.
+	Bytes int
 }
 
 // Error implements the error interface.
