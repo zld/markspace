@@ -110,8 +110,7 @@ func (p *parser) walk() *timebase.Error {
 			return e
 		}
 	}
-	p.finishTracks()
-	return nil
+	return p.finishTracks()
 }
 
 func (p *parser) record(depth int, typ string, off int64, size, hdr uint64, payloadSum string) {
@@ -221,11 +220,14 @@ func decode(b boxView, dst mp4.IBox) error {
 
 func bytesReader(b []byte) io.ReadSeeker { return strings.NewReader(string(b)) }
 
-func (p *parser) finishTracks() {
+func (p *parser) finishTracks() *timebase.Error {
 	for _, t := range p.media.Tracks {
-		p.computeTrack(t)
+		if e := p.computeTrack(t); e != nil {
+			return e
+		}
 	}
 	sort.SliceStable(p.media.Tracks, func(i, j int) bool {
 		return p.media.Tracks[i].ID < p.media.Tracks[j].ID
 	})
+	return nil
 }

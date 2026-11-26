@@ -603,10 +603,22 @@ func (p *parser) parseTraf(traf boxView, moofOff int64, lastDTS map[uint32]int64
 }
 
 // computeTrack validates timeline monotonicity and fills derived fields.
-func (p *parser) computeTrack(tr *Track) {
+func (p *parser) computeTrack(tr *Track) *timebase.Error {
 	if tr.Kind == TrackAudio && tr.SampleRate == 0 {
 		tr.SampleRate = tr.Timescale
 	}
+	// Validate that the track's timeline maps to nanoseconds without
+	// overflow. The first and last samples bound every interior timestamp.
+	if len(tr.Samples) > 0 {
+		last := tr.Samples[len(tr.Samples)-1]
+		if _, e := tr.Base.ToNanos(last.DTS+last.Duration, tr.ID, last.Offset); e != nil {
+			return e
+		}
+		if _, e := tr.Base.ToNanos(tr.Samples[0].DTS, tr.ID, tr.Samples[0].Offset); e != nil {
+			return e
+		}
+	}
+	return nil
 }
 
 // sampleReader reads a sample's payload bytes under the parser limits.
