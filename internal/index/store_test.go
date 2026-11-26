@@ -37,6 +37,27 @@ func TestStorePendingToPublishedAndPersist(t *testing.T) {
 	}
 }
 
+func TestStoreRepairKeepsOnePublishedArtifact(t *testing.T) {
+	s, _ := Open(filepath.Join(t.TempDir(), "i.json"))
+	key := "repair-key"
+	if _, _, err := s.EnsurePending(Artifact{Key: key}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.MarkPublished(key, "/tmp/a.mp4", "old", 1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ReplacePublished(key, "/tmp/a.mp4", "new", 2); err != nil {
+		t.Fatal(err)
+	}
+	a, ok := s.Get(key)
+	if !ok || a.State != StatePublished || a.OutputSHA256 != "new" {
+		t.Fatalf("artifact=%+v ok=%v", a, ok)
+	}
+	if len(s.Records) != 1 {
+		t.Fatalf("records=%d want one per key", len(s.Records))
+	}
+}
+
 func TestStoreKeyedMutexSerializesSameKey(t *testing.T) {
 	s, _ := Open(filepath.Join(t.TempDir(), "i.json"))
 	key := "deterministic-key"

@@ -160,6 +160,28 @@ func (s *Store) MarkRecovered(key, productPath, outputSHA string, size int64) (*
 	return a, err
 }
 
+// ReplacePublished repairs one already-published key after its corrupt file was
+// quarantined. The state remains published and the key still has one artifact.
+func (s *Store) ReplacePublished(key, productPath, outputSHA string, size int64) (*Artifact, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	a, ok := s.Records[key]
+	if !ok {
+		return nil, ErrNotFound
+	}
+	if a.State != StatePublished {
+		return nil, fmt.Errorf("%w: repair requires published state, key=%s state=%s", ErrInvalidTransition, key, a.State)
+	}
+	a.ProductPath = productPath
+	a.OutputSHA256 = outputSHA
+	a.Size = size
+	a.PublishedAt = time.Now().UTC()
+	if err := s.saveLocked(); err != nil {
+		return nil, err
+	}
+	return a, nil
+}
+
 // saveLocked atomically persists the JSON index. Callers must hold s.mu.
 func (s *Store) saveLocked() error {
 	if s.path == "" {
