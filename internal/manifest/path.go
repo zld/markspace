@@ -60,27 +60,12 @@ func checkRelative(raw string) error {
 }
 
 // Abs joins a root-relative, already-validated media path onto the absolute
-// workspace root and re-checks containment. A caller that skipped parsing
-// cannot therefore construct an escaping path by accident.
-func Abs(root, rel string) (string, error) {
-	clean := path.Clean(rel)
-	if clean == ".." || strings.HasPrefix(clean, "../") || path.IsAbs(clean) {
-		return "", fmt.Errorf("path %q escapes media root", rel)
-	}
-	rootAbs, err := filepath.Abs(root)
-	if err != nil {
-		return "", err
-	}
-	abs, err := filepath.Abs(filepath.Join(rootAbs, filepath.FromSlash(clean)))
-	if err != nil {
-		return "", err
-	}
-	within, err := filepath.Rel(rootAbs, abs)
-	if err != nil {
-		return "", err
-	}
-	if within == ".." || strings.HasPrefix(within, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("path %q escapes media root", rel)
-	}
-	return abs, nil
+// workspace root and re-checks containment via core.SafeJoin.
+func Abs(root, rel string) (string, error) { return core.SafeJoin(root, rel) }
+
+// ResolveRooted validates a root-relative reference written without a
+// manifest context (for example a segment named by a client event) and returns
+// its cleaned root-relative form.
+func ResolveRooted(manifestRel, raw string) (string, *core.Fault) {
+	return resolveRel(manifestRel, ref{URIPath: raw, Line: 0})
 }

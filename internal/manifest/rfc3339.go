@@ -6,11 +6,11 @@ import (
 	"time"
 )
 
-// parseRFC3339Nanos parses an RFC 3339 timestamp into Unix nanoseconds. The
+// ParseRFC3339Nanos parses an RFC 3339 timestamp into Unix nanoseconds. The
 // standard time.Parse accepts at most nanosecond precision and silently
 // truncates further digits, so medtrace rejects more than nine fractional
 // digits instead of losing track of where a segment truly begins.
-func parseRFC3339Nanos(s string) (int64, error) {
+func ParseRFC3339Nanos(s string) (int64, error) {
 	if i := strings.LastIndexByte(s, '.'); i >= 0 {
 		// Count fractional digits up to the timezone designator.
 		j := i + 1

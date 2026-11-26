@@ -142,5 +142,5 @@ func hlsFault(rel string, line int, detail string) *core.Fault {
 // than round it.
 func parseProgramDateTime(s string) (int64, error) {
 	s = strings.TrimSpace(s)
-	return parseRFC3339Nanos(s)
+	return ParseRFC3339Nanos(s)
 }
