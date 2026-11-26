@@ -14,11 +14,9 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 	"time"
 
-	"replayproof/internal/media"
 	"replayproof/internal/output"
 	"replayproof/replay"
 )
@@ -105,18 +103,35 @@ func runVerify(args []string) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	sum, err := replay.RunVerify(ctx, cfg)
+	return execute(ctx, func(ctx context.Context) (*output.Summary, error) {
+		return replay.RunVerify(ctx, cfg)
+	}, *out)
+}
+
+// execute runs one library operation, writes the summary and maps the result
+// to an exit code. Both commands share it so their output is identical.
+func execute(ctx context.Context, fn func(context.Context) (*output.Summary, error), outDir string) int {
+	sum, err := fn(ctx)
 	if sum == nil {
 		fmt.Fprintf(os.Stderr, "replaycheck: %v\n", err)
-		return exitFor(err)
+		return replay.ExitCode(err)
 	}
-	sumPath := filepath.Join(*out, "summary.txt")
+	sumPath := replay.SummaryPath(outDir)
 	digest, werr := replay.WriteSummary(sum, sumPath)
 	if werr != nil && err == nil {
 		err = werr
 	}
-	printSummary(sum, digest, sumPath)
-	return exitFor(err)
+	for _, line := range replay.ReportLines(sum) {
+		fmt.Println(line)
+	}
+	if digest != "" {
+		fmt.Printf("summary_path=%s\n", sumPath)
+		fmt.Printf("digest_sha256=%s\n", digest)
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "replaycheck: %v\n", err)
+	}
+	return replay.ExitCode(err)
 }
 
 func runProcess(args []string) int {
@@ -155,8 +170,8 @@ func runProcess(args []string) int {
 	cfg.OutDir = *out
 	cfg.Workers = *workers
 	cfg.Queue = *queue
-	cfg.PreRoll = media.FromMicros(pre.Microseconds())
-	cfg.PostRoll = media.FromMicros(post.Microseconds())
+	cfg.PreRoll = replay.FromDuration(*pre)
+	cfg.PostRoll = replay.FromDuration(*post)
 	cfg.Selectors = replay.Selectors(selectors)
 	inputs, err := replay.GenerateInputs(cfg.Seed)
 	if err != nil {
@@ -172,17 +187,9 @@ func runProcess(args []string) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	sum, err := replay.Run(ctx, cfg, inputs)
-	if sum == nil {
-		fmt.Fprintf(os.Stderr, "replaycheck: %v\n", err)
-		return exitFor(err)
-	}
-	digest, werr := replay.WriteSummary(sum, filepath.Join(*out, "summary.txt"))
-	if werr != nil && err == nil {
-		err = werr
-	}
-	printSummary(sum, digest, filepath.Join(*out, "summary.txt"))
-	return exitFor(err)
+	return execute(ctx, func(ctx context.Context) (*output.Summary, error) {
+		return replay.Run(ctx, cfg, inputs)
+	}, *out)
 }
 
 // flagSet collects repeated key=value selectors.
@@ -213,56 +220,4 @@ func (f *flagSet) Set(v string) error {
 		}
 	}
 	return errors.New("selector must be field=source")
-}
-
-func printSummary(sum *output.Summary, digest, path string) {
-	for _, line := range summaryLines(sum) {
-		fmt.Println(line)
-	}
-	if digest != "" {
-		fmt.Printf("summary_path=%s\n", path)
-		fmt.Printf("digest_sha256=%s\n", digest)
-	}
-}
-
-func summaryLines(sum *output.Summary) []string {
-	var out []string
-	for _, m := range sum.Maps {
-		out = append(out, m.Line())
-	}
-	for _, md := range sum.Metadata {
-		out = append(out, fmt.Sprintf("meta field=%s source=%s value=%s", md.Field, md.Source, md.Value))
-	}
-	for _, c := range sum.Clips {
-		out = append(out, fmt.Sprintf("clip event=%d path=%s bytes=%d sha256=%s",
-			c.Spec.EventIndex, c.Path, c.Bytes, c.Hash))
-	}
-	for _, bc := range sum.BadCases {
-		out = append(out, bc.Line())
-	}
-	out = append(out, sum.KeyMetrics())
-	return out
-}
-
-func exitFor(err error) int {
-	if err == nil {
-		return exitOK
-	}
-	code := media.CodeOf(err)
-	if code == media.CodeCanceled || errors.Is(err, context.Canceled) {
-		fmt.Fprintf(os.Stderr, "replaycheck: canceled: %v\n", err)
-		return exitCancel
-	}
-	if me, ok := media.AsError(err); ok {
-		switch me.Code {
-		case media.CodeMETAConflict, media.CodeTruncatedBox, media.CodeInvalidBox,
-			media.CodeMXFOutOfRange, media.CodeMXFMalformed, media.CodeNoTrack,
-			media.CodeBadTimestamp, media.CodeEventWindow, media.CodeNoKeyframe,
-			media.CodeCheckpointMismatch:
-			fmt.Fprintf(os.Stderr, "replaycheck: %s: %v\n", me.Code, err)
-			return exitInput
-		}
-	}
-	fmt.Fprintf(os.Stderr, "replaycheck: %v\n", err)
-	return exitFailure
 }
