@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -12,6 +13,8 @@ import (
 
 	"assetpack/internal/clock"
 )
+
+var ErrPublish = errors.New("publish failed")
 
 // Commit verifies every artifact, then atomically switches the current version.
 func Commit(req CommitRequest) (*CommitResult, error) {
