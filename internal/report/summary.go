@@ -156,10 +156,6 @@ func renderLines(s *Summary) []string {
 		} else if t.Isolation != nil {
 			start, end = t.Isolation.IntervalStartTick, t.Isolation.IntervalEndTick
 		}
-		budgetDecision := "within-5pct"
-		if t.VariancePct > 5.0 {
-			budgetDecision = "over-5pct"
-		}
 		lines = append(lines, fmt.Sprintf(
 			"track=%s source=%s verdict=%s samples=%d sample_range=%d..%d checkpoint_sync=%d resume_range=%d..%d wraps=%d empty_edits=%d",
 			t.ID, t.SourceFile, t.Verdict, t.Samples, t.SampleRange[0], t.SampleRange[1],
@@ -170,8 +166,8 @@ func renderLines(s *Summary) []string {
 			start, end, t.OriginalOffsetTick, t.RepairOffsetTick, t.MaxResidualTicks,
 		))
 		lines = append(lines, fmt.Sprintf(
-			"  budget estimate=%d actual=%d variance_pct=%.2f decision=%s",
-			t.EstimateUnits, t.ActualUnits, t.VariancePct, budgetDecision,
+			"  budget estimate=%d actual=%d variance_pct=%.2f criterion=aggregate-5pct-and-residual-1tick",
+			t.EstimateUnits, t.ActualUnits, t.VariancePct,
 		))
 		for _, extra := range t.Lines {
 			lines = append(lines, "  "+extra)
