@@ -74,8 +74,11 @@ func processNormal(
 	defer keyMu.Unlock()
 
 	result := &PublishResult{Key: key, ProductPath: target, PipeStats: pipeStats, Decision: decision}
+	repairPublished := false
 	if existing, ok := store.Get(key); ok && existing.State == index.StatePublished {
-		if got, _, hashErr := evidence.SHA256File(target); hashErr == nil && got == existing.OutputSHA256 {
+		got, _, hashErr := evidence.SHA256File(target)
+		switch {
+		case hashErr == nil && got == existing.OutputSHA256:
 			outInfo, scanErr := mp4media.ScanFile(target, cfg.ChunkBytes)
 			if scanErr != nil {
 				return result, info, scanErr
@@ -84,18 +87,25 @@ func processNormal(
 			result.OutputSHA = got
 			result.Reused = true
 			return result, info, nil
-		} else if hashErr == nil {
-			_ = os.Remove(target)
+		case hashErr == nil:
+			if _, err := recovery.Quarantine(target); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return result, info, err
+			}
+			repairPublished = true
+		default:
+			repairPublished = true
 		}
 	}
 
-	if _, _, err := store.EnsurePending(index.Artifact{
-		Key:          key,
-		SourcePath:   files.Normal,
-		SourceSHA256: info.SourceSHA256,
-		TrackSHA256:  info.Tracks[0].TrackSHA256,
-	}); err != nil {
-		return result, info, err
+	if !repairPublished {
+		if _, _, err := store.EnsurePending(index.Artifact{
+			Key:          key,
+			SourcePath:   files.Normal,
+			SourceSHA256: info.SourceSHA256,
+			TrackSHA256:  info.Tracks[0].TrackSHA256,
+		}); err != nil {
+			return result, info, err
+		}
 	}
 
 	tmp, digest, size, err := recovery.WriteTempSynced(productDir, ".mediapipeline-tmp-*", bytes.NewReader(outBytes))
@@ -125,7 +135,11 @@ func processNormal(
 		}
 	}
 
-	if _, err := store.MarkPublished(key, target, digest, size); err != nil && !errors.Is(err, index.ErrAlreadyPublished) {
+	if repairPublished {
+		if _, err := store.ReplacePublished(key, target, digest, size); err != nil {
+			return result, info, err
+		}
+	} else if _, err := store.MarkPublished(key, target, digest, size); err != nil && !errors.Is(err, index.ErrAlreadyPublished) {
 		return result, info, err
 	}
 	if err := journal.Commit(intent.ID); err != nil {

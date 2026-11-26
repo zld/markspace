@@ -3,6 +3,8 @@ package demo
 import (
 	"bytes"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -61,5 +63,37 @@ func TestDemoNormalRunClassifiesAllFaults(t *testing.T) {
 	}
 	if n := strings.Count(s, "fault class="); n < 3 {
 		t.Fatalf("fault lines=%d output:\n%s", n, s)
+	}
+}
+
+func TestDemoQuarantinesAndRepairsCorruptPublishedArtifact(t *testing.T) {
+	work := t.TempDir()
+	cfg := Config{Work: work, Workers: 1, Queue: 1, ChunkBytes: 1 << 20, Stdout: &bytes.Buffer{}}
+	if err := Run(cfg); !errors.Is(err, ErrCorruptInputs) {
+		t.Fatalf("initial run err=%v", err)
+	}
+	products, err := filepath.Glob(filepath.Join(work, "products", "*.mp4"))
+	if err != nil || len(products) != 1 {
+		t.Fatalf("products=%v err=%v", products, err)
+	}
+	if err := os.WriteFile(products[0], []byte("corrupt suffix"), os.ModeAppend|os.ModePerm); err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	cfg.Stdout = &out
+	err = Run(cfg)
+	if !errors.Is(err, ErrCorruptInputs) {
+		t.Fatalf("repair run err=%v output=%s", err, out.String())
+	}
+	quarantine, err := filepath.Glob(filepath.Join(work, "products", "quarantine", "*.corrupt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(quarantine) != 1 {
+		t.Fatalf("quarantine=%v output=%s", quarantine, out.String())
+	}
+	if !strings.Contains(out.String(), "roundtrip=100.00%") {
+		t.Fatalf("repair did not reverify output:\n%s", out.String())
 	}
 }
