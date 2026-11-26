@@ -116,7 +116,11 @@ func buildTrak(t *media.TrackInfo, offsets []uint32, movieDuration uint64) ([]by
 	}
 
 	var stbl bytes.Buffer
-	stbl.Write(stsdBox())
+	if len(t.SampleDescription) > 0 {
+		stbl.Write(box("stsd", t.SampleDescription))
+	} else {
+		stbl.Write(stsdBox())
+	}
 	stbl.Write(sttsBox(t.Samples))
 	if ctts := cttsBox(t.Samples); ctts != nil {
 		stbl.Write(ctts)
@@ -129,7 +133,11 @@ func buildTrak(t *media.TrackInfo, offsets []uint32, movieDuration uint64) ([]by
 	stbl.Write(stcoBox(offsets))
 
 	var minf bytes.Buffer
-	minf.Write(fullBox("vmhd", 0, 1, make([]byte, 8)))
+	if t.Handler == "mp4a" || t.Handler == "soun" {
+		minf.Write(fullBox("smhd", 0, 0, make([]byte, 4)))
+	} else {
+		minf.Write(fullBox("vmhd", 0, 1, make([]byte, 8)))
+	}
 	var drefPayload bytes.Buffer
 	drefPayload.Write(u32(1))
 	drefPayload.Write(fullBox("url ", 0, 1, nil))
@@ -138,7 +146,7 @@ func buildTrak(t *media.TrackInfo, offsets []uint32, movieDuration uint64) ([]by
 
 	var mdia bytes.Buffer
 	mdia.Write(mdhdBox(t.Timebase.Timescale, duration))
-	mdia.Write(hdlrBox())
+	mdia.Write(hdlrBox(t.Handler))
 	mdia.Write(box("minf", minf.Bytes()))
 
 	elst := elstBox(t.EditList, t.Timebase.Timescale, duration)

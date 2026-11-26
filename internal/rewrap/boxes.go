@@ -110,12 +110,18 @@ func mdhdBox(timescale uint32, duration uint64) []byte {
 	return fullBox("mdhd", 0, 0, p.Bytes())
 }
 
-func hdlrBox() []byte {
+func hdlrBox(handler string) []byte {
+	handlerType := "vide"
+	name := "VideoHandler\x00"
+	if handler == "mp4a" || handler == "soun" {
+		handlerType = "soun"
+		name = "SoundHandler\x00"
+	}
 	var p bytes.Buffer
 	p.Write(u32(0))
-	p.WriteString("vide")
+	p.WriteString(handlerType)
 	p.Write(make([]byte, 12))
-	p.WriteString("VideoHandler\x00")
+	p.WriteString(name)
 	return fullBox("hdlr", 0, 0, p.Bytes())
 }
 
