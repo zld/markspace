@@ -49,7 +49,7 @@ func EncodeTS(marker byte, ts uint64) [5]byte {
 	return [5]byte{
 		marker<<4 | byte((ts>>30)&0x07)<<1 | 0x01,
 		byte((ts >> 22) & 0xFF),
-		byte((ts>>15)&0xFE) | 0x01,
+		byte((ts>>14)&0xFE) | 0x01, // PTS[21..15] shifted into bits [7:1]
 		byte((ts >> 7) & 0xFF),
 		byte(ts<<1)&0xFE | 0x01,
 	}
