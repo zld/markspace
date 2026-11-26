@@ -52,7 +52,8 @@ func writeValid(dir string, seed int64) error {
 		return err
 	}
 	sizes := []uint32{24, 28, 26, 32, 30, 27}
-	if err := os.WriteFile(filepath.Join(dir, "aac.mp4"), buildAACMP4(sizes), 0o644); err != nil {
+	durations := []uint32{1024, 960, 1024, 512, 1088, 1024}
+	if err := os.WriteFile(filepath.Join(dir, "aac.mp4"), buildAACMP4(sizes, durations), 0o644); err != nil {
 		return err
 	}
 	subs := validSubtitles(false)
@@ -155,7 +156,7 @@ func validRTP(rng *rand.Rand) []byte {
 	order := []uint16{1000, 1001, 1002, 1002, 1004, 1003, 1006, 1007, 1008, 1009}
 	records := make([][]byte, 0, len(order))
 	for _, seq := range order {
-		ts := uint32(uint32(seq-1000) * 960)
+		ts := opusFixtureTimestamp(seq)
 		payload := make([]byte, payloadSize)
 		_, _ = rng.Read(payload)
 		rec, err := (&rtp.Packet{Header: rtp.Header{
@@ -167,6 +168,18 @@ func validRTP(rng *rand.Rand) []byte {
 		records = append(records, rec)
 	}
 	return container(records...)
+}
+
+func opusFixtureTimestamp(seq uint16) uint32 {
+	// Deliberately mixed 10 ms, 20 ms and 40 ms packet durations. The RTP
+	// timestamp remains the authoritative 48 kHz media time.
+	durations := []uint32{480, 960, 960, 1920, 960, 960, 480, 1920, 960, 960}
+	offset := int(seq - 1000)
+	var ts uint32
+	for i := 0; i < offset && i < len(durations); i++ {
+		ts += durations[i]
+	}
+	return ts
 }
 
 func mustRTP(seq uint16, ts uint32, seed int64) []byte {

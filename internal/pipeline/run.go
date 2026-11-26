@@ -171,6 +171,10 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 		}
 		return rep, media.InputError("render", "", err)
 	}
+	cp.RenderedFrames = len(frames)
+	if err := cp.Save(opts.OutDir); err != nil {
+		return rep, media.InputError("checkpoint.save", "", err)
+	}
 	timelineEntry, err := output.WriteTimeline(opts.OutDir, tl)
 	if err != nil {
 		return rep, err
@@ -182,6 +186,7 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 	if err != nil {
 		return rep, err
 	}
+	catalogBytes = append(catalogBytes, '\n')
 	if opts.MaxBytes > 0 && catalog.TotalBytes+int64(len(catalogBytes)) > opts.MaxBytes {
 		return pauseBudget(rep, cp, opts.OutDir, "max-bytes",
 			fmt.Errorf("delivery %d bytes exceeds --max-bytes %d", catalog.TotalBytes+int64(len(catalogBytes)), opts.MaxBytes))
@@ -204,7 +209,10 @@ func interruption(ctx context.Context, opts Options, cp *checkpoint.Checkpoint, 
 		_, err := pauseCanceled(rep, cp, opts.OutDir, "signal")
 		return err
 	}
-	if opts.CancelAfterUnits > 0 && units >= opts.CancelAfterUnits {
+	// The deterministic fault-injection flag targets the initial canceled
+	// invocation. A resumed command is allowed to finish even if the caller
+	// repeats the same test flag.
+	if !opts.Resume && opts.CancelAfterUnits > 0 && units >= opts.CancelAfterUnits {
 		_, err := pauseCanceled(rep, cp, opts.OutDir, "cancel-after-units")
 		return err
 	}

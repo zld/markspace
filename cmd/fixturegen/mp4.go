@@ -41,13 +41,24 @@ var identityMatrix = []byte{
 }
 
 // buildAACMP4 builds a small non-fragmented MP4 whose stts/stsc/stsz/stco
-// tables describe six undecoded AAC sample frames.
-func buildAACMP4(sizes []uint32) []byte {
+// tables describe six undecoded AAC sample frames. Variable deltas exercise
+// duration conversion instead of assuming every container packet is equal.
+func buildAACMP4(sizes, deltas []uint32) []byte {
 	frameCount := uint32(len(sizes))
+	if len(deltas) != len(sizes) {
+		deltas = make([]uint32, frameCount)
+		for i := range deltas {
+			deltas[i] = 1024
+		}
+	}
+	var totalDuration uint32
+	for _, delta := range deltas {
+		totalDuration += delta
+	}
 	ftyp := box("ftyp", []byte("M4A "), be32(0), []byte("M4A "), []byte("isom"))
 
 	mvhdPayload := bytes.Join([][]byte{
-		be32(0, 0, 44100, frameCount*1024),
+		be32(0, 0, 44100, totalDuration),
 		be32(0x00010000),
 		be16(0x0100),
 		make([]byte, 10),
@@ -58,7 +69,7 @@ func buildAACMP4(sizes []uint32) []byte {
 	mvhd := box("mvhd", fullBox(0, mvhdPayload))
 
 	tkhdPayload := bytes.Join([][]byte{
-		be32(0, 0, 1, 0, frameCount*1024),
+		be32(0, 0, 1, 0, totalDuration),
 		make([]byte, 8),
 		be16(0, 0, 0, 0),
 		identityMatrix,
@@ -66,11 +77,15 @@ func buildAACMP4(sizes []uint32) []byte {
 	}, nil)
 	tkhd := box("tkhd", fullBox(0, tkhdPayload))
 	mdhd := box("mdhd", fullBox(0,
-		append(be32(0, 0, 44100, frameCount*1024), be16(0x55c4, 0)...)))
+		append(be32(0, 0, 44100, totalDuration), be16(0x55c4, 0)...)))
 	hdlr := box("hdlr", fullBox(0,
 		bytes.Join([][]byte{be32(0), []byte("soun"), be32(0, 0, 0), []byte("AAC\x00")}, nil)))
 
-	stts := box("stts", fullBox(0, append(be32(1), be32(frameCount, 1024)...)))
+	sttsEntries := be32(uint32(len(deltas)))
+	for _, delta := range deltas {
+		sttsEntries = append(sttsEntries, be32(1, delta)...)
+	}
+	stts := box("stts", fullBox(0, sttsEntries))
 	stsc := box("stsc", fullBox(0, append(be32(1), be32(1, frameCount, 1)...)))
 	stszPayload := append(be32(0, frameCount), make([]byte, 4*frameCount)...)
 	for i, size := range sizes {
