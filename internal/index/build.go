@@ -103,10 +103,13 @@ func Build(root string, pl *manifest.Playlist) (*core.Index, []core.Anomaly, err
 			reason := core.EpochReason("")
 			if !tracker.HasEpoch() {
 				reason = core.EpochStart
+			} else if ms.Discontinuity {
+				// An explicit HLS discontinuity is the strongest signal: it
+				// marks a packaging boundary even when the representation ID
+				// also changes.
+				reason = core.EpochDiscontinuity
 			} else if ms.Representation != prevRep {
 				reason = core.EpochRepresentation
-			} else if ms.Discontinuity {
-				reason = core.EpochDiscontinuity
 			} else if haveRaw {
 				reason = tracker.Jump(prevRaw, sc.samples[0].dts)
 				if reason == "" && sc.samples[0].dts < prevRaw {
@@ -196,9 +199,7 @@ func Build(root string, pl *manifest.Playlist) (*core.Index, []core.Anomaly, err
 			prevRaw = sc.samples[len(sc.samples)-1].dts
 			haveRaw = true
 		}
-		if ms.Representation != "" {
-			prevRep = ms.Representation
-		}
+		prevRep = ms.Representation
 		// A segment with no parseable samples still occupies the canonical
 		// timeline for its manifest duration so later epochs stay ordered.
 		if len(seg.Samples) == 0 && ms.Duration > 0 {
@@ -209,6 +210,7 @@ func Build(root string, pl *manifest.Playlist) (*core.Index, []core.Anomaly, err
 		segs = append(segs, seg)
 	}
 	idx := core.NewIndex(segs)
+	idx.Epochs = tracker.Epochs()
 	core.SortAnomalies(anomalies)
 	return idx, anomalies, nil
 }

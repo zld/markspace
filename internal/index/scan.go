@@ -217,3 +217,27 @@ func hashFile(path string) (string, error) {
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
+
+// Rescanned is one sample re-read from a fragment during round-trip checks.
+type Rescanned struct {
+	Offset   int64
+	Size     uint32
+	DTSTicks int64
+	DurTicks int64
+	Key      bool
+}
+
+// Rescan re-parses a fragment from disk and returns its samples. It is the
+// independent second read a round-trip comparison uses; it shares the parser
+// with Build but not any cached state.
+func Rescan(root, rel string) ([]Rescanned, error) {
+	sc, _, _, f := scanFragment(root, rel)
+	if f != nil && len(sc.samples) == 0 {
+		return nil, f
+	}
+	out := make([]Rescanned, 0, len(sc.samples))
+	for _, s := range sc.samples {
+		out = append(out, Rescanned{Offset: s.offset, Size: s.size, DTSTicks: s.dts, DurTicks: s.dur, Key: s.key})
+	}
+	return out, nil
+}

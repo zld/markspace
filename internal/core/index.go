@@ -49,7 +49,9 @@ type Segment struct {
 // Index is the immutable result of a scan, in manifest order.
 type Index struct {
 	Segments []*Segment
-	byURI    map[string]*Segment
+	// Epochs are the canonical timeline boundaries assigned during scanning.
+	Epochs []Epoch
+	byURI  map[string]*Segment
 }
 
 // NewIndex builds an index from an ordered segment list.
@@ -120,4 +122,13 @@ func (i *Index) SortedURIs() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// TrackTimescale returns the timescale of the segment's first sample, or zero
+// when the segment has none.
+func (s *Segment) TrackTimescale() uint32 {
+	if len(s.Samples) == 0 {
+		return 0
+	}
+	return s.Samples[0].Timescale
 }
