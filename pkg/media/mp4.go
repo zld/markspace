@@ -26,15 +26,21 @@ type NormalizedMetadata struct {
 	Tracks         []TrackMetadata `json:"tracks"`
 }
 
+// Normalize sorts tracks so the representation is independent of box order.
+func (m *NormalizedMetadata) Normalize() {
+	if m == nil {
+		return
+	}
+	sort.Slice(m.Tracks, func(i, j int) bool { return m.Tracks[i].TrackID < m.Tracks[j].TrackID })
+}
+
 // Digest canonicalizes and hashes normalized metadata.
 func (m *NormalizedMetadata) Digest() (string, error) {
 	if m == nil {
 		return "", NewError(CatInvalidArgument, "", -1, -1, "nil metadata")
 	}
-	cp := *m
-	cp.Tracks = append([]TrackMetadata(nil), m.Tracks...)
-	sort.Slice(cp.Tracks, func(i, j int) bool { return cp.Tracks[i].TrackID < cp.Tracks[j].TrackID })
-	d, _, err := CanonicalDigest(&cp)
+	m.Normalize()
+	d, _, err := CanonicalDigest(m)
 	return d, err
 }
 
