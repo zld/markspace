@@ -100,6 +100,8 @@ func appendOBU(dst []byte, typ byte, payload []byte) []byte {
 // CorruptFixtures returns inputs that must produce explicit error records.
 func CorruptFixtures() map[string][]byte {
 	h264Trunc := []byte{0, 0, 0, 1, 0x65, 0x80, 0x12, 0, 0, 0, 1, 0x65}
+	// A resync keyframe after the header-only NAL proves parsing can continue.
+	h264Trunc = append(h264Trunc, annexB(0x65, []byte{0xaa, 0xbb, 0xcc, 0xdd})...)
 	av1Illegal := []byte{(5 << 3) | 0x02}
 	for i := 0; i < 10; i++ {
 		av1Illegal = append(av1Illegal, 0x80)

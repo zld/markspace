@@ -10,6 +10,7 @@ import (
 
 	"github.com/zld/medcheck/pkg/bitstream"
 	"github.com/zld/medcheck/pkg/evidence"
+	"github.com/zld/medcheck/pkg/index"
 	"github.com/zld/medcheck/pkg/media"
 )
 
@@ -116,6 +117,21 @@ func Run(opts Options) (*evidence.Report, error) {
 		}
 		rep.Issues = append(rep.Issues, res.Issues...)
 		rep.Check("corrupt_record_"+name, len(res.Issues) > 0, ">=1 error", len(res.Issues), "corruption must not be silently skipped")
+
+		corruptIdx, err := index.Build(name, codec, res)
+		if err != nil {
+			return nil, err
+		}
+		corruptSegs, err := corruptIdx.Segments(int64(len(data)))
+		if err != nil {
+			return nil, err
+		}
+		corruptSegs = index.AnnotateIssues(corruptSegs, res.Issues)
+		marked := index.CountCorrupt(corruptSegs)
+		if filepath.Ext(name) == ".h264" {
+			rep.Check("corrupt_segment_isolated_and_resync_continues", marked == 1 && len(corruptSegs)-marked == 1,
+				"1 corrupt + 1 usable", fmt.Sprintf("%d corrupt/%d total", marked, len(corruptSegs)), "later keyframe remains indexed")
+		}
 	}
 	rep.Check("corrupt_nal_recorded", rep.Issues.Has(media.CatTruncatedNAL), "truncated_nal", "present", "track/offset coordinates")
 	rep.Check("corrupt_obu_length_recorded", rep.Issues.Has(media.CatIllegalLength), "illegal_length", "present", "LEB128 validation")
