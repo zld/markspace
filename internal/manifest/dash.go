@@ -43,6 +43,7 @@ type dashS struct {
 	T         int64 `xml:"t,attr"`
 	D         int64 `xml:"d,attr"`
 	R         int64 `xml:"r,attr"`
+	hasT      bool
 	rawOffset int64
 }
 
@@ -99,9 +100,10 @@ func ParseDASH(path string) (*Manifest, error) {
 	}
 	li := newLineIndex(raw)
 
-	// Pre-pass: capture the byte offset of every <S> start element in
-	// document order so decoded timeline items retain line locations.
-	sOffsets, offErr := sElementOffsets(bytes.NewReader(raw))
+	// Pre-pass: capture the byte offset and t-attribute presence of every
+	// <S> start element in document order so decoded timeline items retain
+	// line locations and explicit-time anchors.
+	sMetas, offErr := sElementOffsets(bytes.NewReader(raw))
 	if offErr != nil {
 		return nil, clock.AtFile(offErr, abs)
 	}
@@ -118,7 +120,7 @@ func ParseDASH(path string) (*Manifest, error) {
 			clock.New(clock.KindInvalidInput, "parse dash",
 				"invalid XML: %v", err), line), abs)
 	}
-	assignSOffsets(&doc, sOffsets)
+	assignSOffsets(&doc, sMetas)
 	if len(doc.Periods) == 0 {
 		return nil, clock.AtFile(clock.New(clock.KindInvalidInput, "parse dash",
 			"MPD contains no Period"), abs)
@@ -189,10 +191,10 @@ func buildDASHRepr(file string, tpl *dashSegTemplate, timescale int64,
 			return rep, clock.AtFile(clock.AtLine(clock.New(clock.KindInvalidInput,
 				"parse dash", "S[%d] has non-positive d=%d", itemPos, item.D), line), file)
 		}
-		if item.T != 0 || itemPos == 0 {
-			if item.T != 0 {
-				tCursor = item.T
-			}
+		// An explicit t attribute (even 0) anchors the timeline cursor.
+		// The first item defaults to t=0 when the attribute is absent.
+		if itemPos == 0 || item.hasT {
+			tCursor = item.T
 		}
 		repeats := item.R
 		if repeats < 0 {
@@ -257,11 +259,17 @@ func asSyntaxError(err error, se **xml.SyntaxError) bool {
 	return false
 }
 
-// sElementOffsets returns raw byte offsets of every SegmentTimeline <S>
-// start element, in document order across the whole MPD.
-func sElementOffsets(r *bytes.Reader) ([]int64, error) {
+// sMeta captures per-<S> tokenizer facts not retained by struct decoding.
+type sMeta struct {
+	offset int64
+	hasT   bool
+}
+
+// sElementOffsets returns the byte offset and t-attribute presence of every
+// SegmentTimeline <S> start element, in document order across the MPD.
+func sElementOffsets(r *bytes.Reader) ([]sMeta, error) {
 	dec := xml.NewDecoder(r)
-	var out []int64
+	var out []sMeta
 	for {
 		tok, err := dec.Token()
 		if err != nil {
@@ -276,12 +284,18 @@ func sElementOffsets(r *bytes.Reader) ([]int64, error) {
 			continue
 		}
 		if se.Name.Local == "S" {
-			out = append(out, dec.InputOffset())
+			hasT := false
+			for _, a := range se.Attr {
+				if a.Name.Local == "t" {
+					hasT = true
+				}
+			}
+			out = append(out, sMeta{offset: dec.InputOffset(), hasT: hasT})
 		}
 	}
 }
 
-func assignSOffsets(doc *dashXML, offsets []int64) {
+func assignSOffsets(doc *dashXML, metas []sMeta) {
 	i := 0
 	for _, p := range doc.Periods {
 		for _, as := range p.AdaptationSets {
@@ -289,8 +303,9 @@ func assignSOffsets(doc *dashXML, offsets []int64) {
 				continue
 			}
 			for k := range as.SegmentTemplate.Timeline.Items {
-				if i < len(offsets) {
-					as.SegmentTemplate.Timeline.Items[k].rawOffset = offsets[i]
+				if i < len(metas) {
+					as.SegmentTemplate.Timeline.Items[k].rawOffset = metas[i].offset
+					as.SegmentTemplate.Timeline.Items[k].hasT = metas[i].hasT
 					i++
 				}
 			}

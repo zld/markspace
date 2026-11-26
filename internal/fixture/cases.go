@@ -127,6 +127,31 @@ func (g *Generator) GenerateBad(kind string) error {
 	}
 }
 
+// writeBadIndex writes a descriptor pointing at the bad-case manifests so
+// the CLI can drive them through the real pipeline (which must reject them).
+func (g *Generator) writeBadIndex(kind string) error {
+	var doc string
+	switch kind {
+	case CaseDuplicateDASH:
+		doc = `{
+  "dash": {"primary": "dash/primary/prog.mpd", "backup": ""},
+  "hls": {"primary": "", "backup": ""},
+  "switch_records": "switch/records.jsonl",
+  "frames": {"reference": "", "meta": ""}
+}
+`
+	case CaseHLSGap:
+		doc = `{
+  "dash": {"primary": "", "backup": ""},
+  "hls": {"primary": "hls/primary/pl.m3u8", "backup": ""},
+  "switch_records": "",
+  "frames": {"reference": "", "meta": ""}
+}
+`
+	}
+	return g.write("index.json", []byte(doc))
+}
+
 // badTruncatedMdat builds an otherwise-valid tree but truncates one mdat,
 // which media inspection must reject before anything is published.
 func (g *Generator) badTruncatedMdat() error {
@@ -152,6 +177,8 @@ func (g *Generator) badDuplicateDASH() error {
 		return err
 	}
 	base := filepath.Join("dash", SourcePrimary)
+	// Both timeline entries expand to seg-0.m4s; the file exists, so the
+	// parser's duplicate-reference check (not the missing-file check) fires.
 	if err := g.write(filepath.Join(base, "v", "seg-0.m4s"), []byte("x")); err != nil {
 		return err
 	}
@@ -165,7 +192,10 @@ func (g *Generator) badDuplicateDASH() error {
   </SegmentTemplate>
   <Representation id="v" bandwidth="100000"/>
 </AdaptationSet></Period></MPD>`
-	return g.write(filepath.Join(base, "prog.mpd"), []byte(mpd))
+	if err := g.write(filepath.Join(base, "prog.mpd"), []byte(mpd)); err != nil {
+		return err
+	}
+	return g.writeBadIndex(CaseDuplicateDASH)
 }
 
 // badHLSUnfillableGap writes a primary playlist with a discontinuity gap and
@@ -190,8 +220,15 @@ func (g *Generator) badHLSUnfillableGap() error {
 	}
 	pl := "#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-TARGETDURATION:2\n" +
 		"#EXT-X-MEDIA-SEQUENCE:0\n" +
+		// seg-0 covers [0,2); #CONTINUITY-GAP advances the timeline cursor to
+		// 6s without emitting a segment, leaving a real [2,6) gap with no
+		// backup coverage, across a discontinuity.
 		"#EXTINF:2.0,\nseg-0.m4s\n" +
 		"#EXT-X-DISCONTINUITY\n" +
+		"#CONTINUITY-GAP:4.0\n" +
 		"#EXTINF:2.0,\nseg-1.m4s\n#EXT-X-ENDLIST\n"
-	return g.write(filepath.Join(dir, "pl.m3u8"), []byte(pl))
+	if err := g.write(filepath.Join(dir, "pl.m3u8"), []byte(pl)); err != nil {
+		return err
+	}
+	return g.writeBadIndex(CaseHLSGap)
 }

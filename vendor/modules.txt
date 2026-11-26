@@ -1,0 +1,15 @@
+# github.com/abema/go-mp4 v1.4.1
+## explicit; go 1.14
+github.com/abema/go-mp4
+github.com/abema/go-mp4/internal/bitio
+github.com/abema/go-mp4/internal/util
+# github.com/google/uuid v1.1.2
+## explicit
+github.com/google/uuid
+# github.com/pion/randutil v0.1.0
+## explicit; go 1.14
+github.com/pion/randutil
+# github.com/pion/rtp v1.8.17
+## explicit; go 1.20
+github.com/pion/rtp
+github.com/pion/rtp/codecs/av1/obu

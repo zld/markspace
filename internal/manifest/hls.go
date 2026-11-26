@@ -86,6 +86,21 @@ func ParseHLS(path string) (*Manifest, error) {
 			}
 		case strings.HasPrefix(text, "#EXT-X-DISCONTINUITY"):
 			pendingDisc = true
+		case strings.HasPrefix(text, "#CONTINUITY-GAP:"):
+			// Project-local directive: advance the presentation cursor by the
+			// given seconds without emitting a segment, modeling a hole left
+			// by a primary/backup switch. The gap is reconciled at align time.
+			gapText := strings.TrimSpace(strings.SplitN(text, ":", 2)[1])
+			gap, gerr := parseEXTINF("#EXTINF:"+gapText+",", ln.no, abs)
+			if gerr != nil {
+				return nil, gerr
+			}
+			next, gerr := tCursor.Add(gap)
+			if gerr != nil {
+				return nil, clock.AtFile(clock.AtLine(gerr, ln.no), abs)
+			}
+			tCursor = next
+			sequence++
 		case strings.HasPrefix(text, "#EXTINF:"):
 			dur, perr := parseEXTINF(text, ln.no, abs)
 			if perr != nil {
