@@ -85,11 +85,11 @@ func TestDigestsTrackContentNotPath(t *testing.T) {
 
 func TestInvalidSubtitleInputs(t *testing.T) {
 	cases := map[string]string{
-		"bad timestamp":     "1\n00:00:61,000 --> 00:00:02,000\ntext\n\n",
-		"end before start":  "1\n00:00:03,000 --> 00:00:02,000\ntext\n\n",
-		"missing arrow":     "1\n00:00:01,000 -> 00:00:02,000\ntext\n\n",
-		"empty text":        "1\n00:00:01,000 --> 00:00:02,000\n\n",
-		"no cues":           "",
+		"bad timestamp":    "1\n00:00:61,000 --> 00:00:02,000\ntext\n\n",
+		"end before start": "1\n00:00:03,000 --> 00:00:02,000\ntext\n\n",
+		"missing arrow":    "1\n00:00:01,000 -> 00:00:02,000\ntext\n\n",
+		"empty text":       "1\n00:00:01,000 --> 00:00:02,000\n\n",
+		"no cues":          "",
 	}
 	for name, in := range cases {
 		if _, err := Parse(strings.NewReader(in), "srt"); err == nil {

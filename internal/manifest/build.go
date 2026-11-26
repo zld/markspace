@@ -32,9 +32,9 @@ type Segment struct {
 
 // Playlist is the rendered master plus media playlists and their digest.
 type Playlist struct {
-	MasterText  string
-	MediaText   map[string]string // per-variant media playlist
-	SHA256      string            // hex digest of the master playlist bytes
+	MasterText   string
+	MediaText    map[string]string // per-variant media playlist
+	SHA256       string            // hex digest of the master playlist bytes
 	SegmentCount int
 }
 
@@ -85,7 +85,7 @@ func Build(variants []Variant) *Playlist {
 	return &Playlist{
 		MasterText:   master,
 		MediaText:    media,
-		SHA256:        hex.EncodeToString(sum[:]),
+		SHA256:       hex.EncodeToString(sum[:]),
 		SegmentCount: segCount,
 	}
 }
@@ -116,7 +116,7 @@ func buildMedia(v Variant) string {
 // formatRat renders a rational duration with exactly three decimals, rounding
 // half up. Deterministic and locale-independent.
 func formatRat(r media.Rat) string {
-	scaled := r.Num()*1000/r.Den()
+	scaled := r.Num() * 1000 / r.Den()
 	whole := scaled / 1000
 	frac := scaled % 1000
 	return itoa(int(whole)) + "." + pad3(int(frac))

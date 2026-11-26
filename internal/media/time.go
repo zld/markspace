@@ -89,19 +89,19 @@ func NewFrameRate(num, den int64) FrameRate { return FrameRate{NewRat(num, den)}
 
 // Common frame rates, including the fractional NTSC rate kept exact.
 var (
-	Rate24     = NewFrameRate(24, 1)
-	Rate25     = NewFrameRate(25, 1)
-	Rate2997   = NewFrameRate(30000, 1001) // 29.97... NDF base
-	Rate30000  = NewFrameRate(30, 1)
-	Rate50     = NewFrameRate(50, 1)
+	Rate24    = NewFrameRate(24, 1)
+	Rate25    = NewFrameRate(25, 1)
+	Rate2997  = NewFrameRate(30000, 1001) // 29.97... NDF base
+	Rate30000 = NewFrameRate(30, 1)
+	Rate50    = NewFrameRate(50, 1)
 )
 
 // Timecode carries a parsed wall-clock timecode in media time.
 type Timecode struct {
-	Start    Rat       // exact seconds on the unified media time line
-	Frame    int       // frame index within the second (0-based)
-	Rate     FrameRate // rate at which the timecode was expressed
-	DropFrame bool     // SMPTE drop-frame counting (29.97 only)
+	Start     Rat       // exact seconds on the unified media time line
+	Frame     int       // frame index within the second (0-based)
+	Rate      FrameRate // rate at which the timecode was expressed
+	DropFrame bool      // SMPTE drop-frame counting (29.97 only)
 }
 
 // dropFramesPer10Min is the number of frame numbers skipped per 10 minutes

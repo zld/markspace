@@ -23,10 +23,10 @@ type Cue struct {
 // Document is a parsed subtitle asset plus its two independent content
 // digests: payload (cue text) and container (framing/structure).
 type Document struct {
-	Format           string // "srt" or "vtt"
-	Cues             []Cue
-	PayloadDigest    string
-	ContainerDigest  string
+	Format          string // "srt" or "vtt"
+	Cues            []Cue
+	PayloadDigest   string
+	ContainerDigest string
 }
 
 // Parse decodes an SRT or WebVTT stream. format is "srt" or "vtt".

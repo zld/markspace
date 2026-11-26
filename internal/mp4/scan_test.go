@@ -28,7 +28,7 @@ func fullBox(ver byte, flags uint32) []byte {
 // tables are internally consistent.
 func buildMinimalMP4(t *testing.T) []byte {
 	t.Helper()
-	ftyp := box("ftyp", append([]byte("isom"), 0,0,0,0))
+	ftyp := box("ftyp", append([]byte("isom"), 0, 0, 0, 0))
 
 	// mvhd: timescale 1000, duration 40
 	mvhdPayload := concat(

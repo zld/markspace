@@ -15,10 +15,10 @@ import (
 
 // Sample describes one media sample inside a track.
 type Sample struct {
-	Index     int
-	Size      uint32
-	Offset    uint64 // absolute file offset of the sample bytes
-	Duration  uint32 // in track timescale units
+	Index    int
+	Size     uint32
+	Offset   uint64 // absolute file offset of the sample bytes
+	Duration uint32 // in track timescale units
 }
 
 // Boundary is a track timeline edge expressed both in track units and in the
@@ -45,9 +45,9 @@ type TrackState struct {
 // FileState is the whole-file scan outcome. A per-track error is collected in
 // TrackErrors while healthy tracks remain fully populated.
 type FileState struct {
-	Tracks       []TrackState
-	TrackErrors  []*media.Error
-	PayloadDigest  string
+	Tracks          []TrackState
+	TrackErrors     []*media.Error
+	PayloadDigest   string
 	ContainerDigest string
 }
 

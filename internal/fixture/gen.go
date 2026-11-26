@@ -23,8 +23,8 @@ type Assets struct {
 	VTTBase     []byte
 
 	// MP4: Healthy scans clean; Corrupt has one stsz length field damaged.
-	MP4Healthy  []byte
-	MP4Corrupt  []byte
+	MP4Healthy    []byte
+	MP4Corrupt    []byte
 	CorruptOffset int64 // exact byte offset of the damaged size field
 
 	// RTP arrival stream with injected impairments.
@@ -112,8 +112,8 @@ func buildMP4(seed int64, _ bool) []byte {
 
 func mvhdPayload() []byte {
 	p := make([]byte, 96)
-	binary.BigEndian.PutUint32(p[4:8], 0)   // creation
-	binary.BigEndian.PutUint32(p[8:12], 0)  // modification
+	binary.BigEndian.PutUint32(p[4:8], 0)      // creation
+	binary.BigEndian.PutUint32(p[8:12], 0)     // modification
 	binary.BigEndian.PutUint32(p[12:16], 1000) // timescale
 	binary.BigEndian.PutUint32(p[16:20], 40)   // duration
 	return p

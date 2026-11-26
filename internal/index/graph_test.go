@@ -204,7 +204,7 @@ func TestComputeErrorPropagates(t *testing.T) {
 	boom := errors.New("boom")
 	g, _ := NewGraph([]*Node{
 		{ID: "a", Input: "in",
-			Compute: func(map[string]string) (string, []byte, error) { return "", nil, boom },
+			Compute:  func(map[string]string) (string, []byte, error) { return "", nil, boom },
 			Boundary: Boundary{Start: media.NewInt(0), End: media.NewInt(1)}},
 	})
 	if _, err := g.Run(nil); !errors.Is(err, boom) {

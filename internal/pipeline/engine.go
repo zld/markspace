@@ -85,7 +85,6 @@ func NewEngine(workDir string, seed int64) (*Engine, error) {
 	}, nil
 }
 
-
 // Run executes a cold build followed by a warm build against the same store.
 // On a cold run all eight nodes rebuild; on the warm run identical inputs must
 // validate every checkpoint so nothing is recomputed. Interrupt/resume is
@@ -248,7 +247,6 @@ func (e *Engine) simulateInterrupt() error {
 	}
 	return nil
 }
-
 
 func mustJSON(v interface{}) []byte {
 	// Lightweight deterministic marker; full serialization is not required
