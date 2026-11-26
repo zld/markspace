@@ -31,7 +31,7 @@ type LoudnessReport struct {
 func NormalizeLoudness(samples []float32) ([]float32, LoudnessReport) {
 	rep := LoudnessReport{
 		TargetRMSDB: TargetRMSDBFS, PeakCeilingDB: PeakCeilingDB,
-		InputRMSDB: DBFS(RMS(samples)),
+		InputRMSDB:  DBFS(RMS(samples)),
 		InputPeakDB: DBFS(float64(Peak(samples))),
 	}
 	out := make([]float32, len(samples))

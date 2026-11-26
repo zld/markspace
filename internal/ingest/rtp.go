@@ -11,11 +11,11 @@ import (
 // unified 48 kHz timeline. It is single-goroutine and stateful: feed
 // packets in arrival order via Push, then call Close to finalize.
 type RTPIngester struct {
-	codec      Codec
-	clockRate  uint64
-	channels   uint16
-	conv       *media.RateConverter
-	res        *Result
+	codec     Codec
+	clockRate uint64
+	channels  uint16
+	conv      *media.RateConverter
+	res       *Result
 
 	init       bool
 	maxSeq16   uint16

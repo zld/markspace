@@ -297,7 +297,7 @@ func (in *FMP4Ingester) AddFragment(f Fragment, payload []byte) {
 	}
 	in.res.Packets = append(in.res.Packets, Packet{
 		Codec: in.codec, ExtSeq: seq, Payload: append([]byte(nil), payload...),
-		When: media.Range{Start: start, End: start + n},
+		When:       media.Range{Start: start, End: start + n},
 		ByteOffset: f.Offset, SampleRate: uint32(in.conv.SourceRate),
 		Channels: in.channels,
 	})

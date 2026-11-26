@@ -8,12 +8,12 @@ var opusFrameMS = [32]float64{
 	10, 20, 40, 60, // 0-3   NB SILK-only
 	10, 20, 40, 60, // 4-7   WB SILK-only
 	10, 20, 40, 60, // 8-11  SWB SILK-only
-	10, 20,         // 12-13 FB SILK-only
+	10, 20, // 12-13 FB SILK-only
 	2.5, 5, 10, 20, // 14-17 CELT-only NB
 	2.5, 5, 10, 20, // 18-21 CELT-only WB
 	2.5, 5, 10, 20, // 22-25 CELT-only SWB
 	2.5, 5, 10, 20, // 26-29 CELT-only FB
-	10, 20,         // 30-31 hybrid
+	10, 20, // 30-31 hybrid
 }
 
 // OpusDuration parses the RTP Opus TOC (RFC 7587, RFC 6716) and returns

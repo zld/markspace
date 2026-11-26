@@ -135,10 +135,10 @@ func TestOpusDurationTOC(t *testing.T) {
 		toc  byte
 		want float64
 	}{
-		{0x00, 0.01},        // config 0, 10 ms, one frame
-		{0x68, 0.02},        // config 13, 20 ms, one frame
-		{0x69, 0.04},        // two equal 20 ms frames
-		{0x03, 0},           // arbitrary needs count byte -> error below
+		{0x00, 0.01}, // config 0, 10 ms, one frame
+		{0x68, 0.02}, // config 13, 20 ms, one frame
+		{0x69, 0.04}, // two equal 20 ms frames
+		{0x03, 0},    // arbitrary needs count byte -> error below
 	}
 	d, err := OpusDuration([]byte{cases[0].toc, 0xaa})
 	if err != nil || d != cases[0].want {

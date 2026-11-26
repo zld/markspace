@@ -53,8 +53,8 @@ const (
 
 // Spec is the target output specification embedded in the stable key.
 type Spec struct {
-	SampleRate uint32 `json:"sample_rate"`
-	Channels   uint16 `json:"channels"`
+	SampleRate uint32  `json:"sample_rate"`
+	Channels   uint16  `json:"channels"`
 	TargetRMS  float64 `json:"target_rms_db"`
 	PeakCeilDB float64 `json:"peak_ceiling_db"`
 }

@@ -204,10 +204,10 @@ func (p *Pipeline) stageSeal(cp *Checkpoint, result *ingest.Result) error {
 
 // RunReport explains what a run reused versus recomputed.
 type RunReport struct {
-	TaskKey         string   `json:"task_key"`
-	ReusedStage     Stage    `json:"reused_stage"`
-	Recomputed      []Stage  `json:"recomputed"`
-	CheckpointError string   `json:"checkpoint_error,omitempty"`
+	TaskKey         string  `json:"task_key"`
+	ReusedStage     Stage   `json:"reused_stage"`
+	Recomputed      []Stage `json:"recomputed"`
+	CheckpointError string  `json:"checkpoint_error,omitempty"`
 }
 
 var _ = StageNew

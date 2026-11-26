@@ -1,0 +1,13 @@
+# Build artifacts
+/audionorm
+/bin/
+*.test
+*.out
+
+# Local demo work directories
+/work/
+/tmp/
+
+# OS/editor noise
+.DS_Store
+*.swp
