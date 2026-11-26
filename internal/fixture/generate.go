@@ -19,10 +19,15 @@ const (
 )
 
 const (
-	audioSeconds = 6
+	audioSeconds = 8
 	// one 1024-sample AAC frame at 48 kHz spans 1024/90000 s in 90 kHz ticks
 	ticksPerAACFrame = int64(1024) * clock.RTPPacketRate / 48000 // 1920
-	pcrStep          = clock.PCRRate / 10                        // PCR every 100 ms
+	// PCR is emitted every 5 AAC frames. Its nominal 27 MHz step must represent
+	// the same elapsed time as those 5 RTP frames so both clocks share one rate;
+	// the optional ppm skew is then a pure rate scaling applied on top.
+	pcrFramesPerPCR = 5
+	pcrStep         = ticksPerAACFrame * pcrFramesPerPCR *
+		(clock.PCRRate / clock.RTPPacketRate) / 1
 )
 
 // Config selects a fault scenario for BuildTrace.
@@ -50,19 +55,21 @@ func BuildTrace(ctx context.Context, ffmpeg string, cfg Config) ([]byte, error) 
 		return nil, err
 	}
 	b := NewTSBuilder()
-	rw := NewRTPWriter(0x1A2B3C4D, 90_000)
+	rw := NewRTPWriter(0x1A2B3C4D, 0)
 	// initial PAT/PMT occupy the first RTP packet
 	if err := rw.PushTS([][]byte{b.AddPAT(0), b.AddPMT(0)}, 0); err != nil {
 		return nil, err
 	}
 
 	// PCR schedule: start near the wrap boundary when requested, else at 0.
-	pcr := int64(0)
+	// nominalPCR tracks the un-skewed 27 MHz position; the emitted PCR is a
+	// constant-rate scaling of it so DriftPPM is a steady rate, not cumulative.
+	nominalPCR := int64(0)
 	if cfg.WrapPCR {
-		pcr = clock.PCRWrapTicks - pcrStep*2
+		nominalPCR = clock.PCRWrapTicks - pcrStep*2
 	}
 	driftNumerator := int64(1_000_000 + cfg.DriftPPM) // relative PCR rate
-	var pts int64 = 90_000                            // first PTS at 1 s
+	var pts int64 = 0                                 // first PTS at the epoch
 	half := len(frames) / 2
 	for i, au := range frames {
 		var round [][]byte
@@ -71,8 +78,10 @@ func BuildTrace(ctx context.Context, ffmpeg string, cfg Config) ([]byte, error) 
 			round = append(round, b.AddPATPacket(cfg.PSIBump), b.AddPMTPacket(cfg.PSIBump))
 		}
 		if i%5 == 0 {
-			round = append(round, b.AddPCR(pcr, false))
-			pcr = skewPCR(pcr, driftNumerator)
+			// constant ppm: skewed = nominal * (1e6+ppm)/1e6
+			skewedPCR := nominalPCR * driftNumerator / 1_000_000
+			round = append(round, b.AddPCR(skewedPCR, false))
+			nominalPCR += pcrStep
 		}
 		if cfg.CCJump && i == half {
 			b.InjectCCJump()
@@ -128,11 +137,6 @@ func truncateToPartialTSPacket(raw []byte) []byte {
 	out = append(out, byte(newLen>>24), byte(newLen>>16), byte(newLen>>8), byte(newLen))
 	out = append(out, raw[last.start:last.start+newLen]...)
 	return out
-}
-
-// skewPCR advances a PCR applying a parts-per-million rate skew.
-func skewPCR(pcr, rateNum int64) int64 {
-	return pcr + pcrStep*rateNum/1_000_000
 }
 
 func applyRTPMutations(rw *RTPWriter, cfg Config) {
