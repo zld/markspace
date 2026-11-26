@@ -1,0 +1,6 @@
+# Local build products; verification binaries are written under $TMPDIR.
+/assetpack
+/genfixtures
+*.test
+*.out
+.DS_Store
