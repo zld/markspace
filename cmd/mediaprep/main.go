@@ -69,11 +69,13 @@ func runDemo(args []string) int {
 	fmt.Printf("metadata_conflicts=%d\n", s.MetadataConflicts)
 	fmt.Printf("queue_peak=%d\n", s.QueuePeak)
 	fmt.Printf("queue_capacity=%d\n", s.QueueCapacity)
-	fmt.Printf("queue_peak_requirement=%d<=%d\n", s.QueuePeak, *queue)
+	fmt.Printf("check queue_peak<=%d: %s (actual=%d)\n",
+		*queue, passLabel(s.QueuePeak <= int64(*queue)), s.QueuePeak)
 	fmt.Printf("buffer_peak_bytes=%d\n", s.BufferPeakBytes)
 	fmt.Printf("buffer_budget_bytes=%d\n", s.BufferBudgetBytes)
 	fmt.Printf("buffer_actual_bytes=%d\n", doc.Pipeline.BufferActualBytes)
-	fmt.Printf("buffer_peak_requirement=%d<=%d\n", s.BufferPeakBytes, s.BufferBudgetBytes)
+	fmt.Printf("check buffer_peak_bytes<=%d: %s (actual=%d)\n",
+		s.BufferBudgetBytes, passLabel(s.BufferPeakBytes <= s.BufferBudgetBytes), s.BufferPeakBytes)
 	fmt.Printf("blocks_produced=%d blocks_consumed=%d residual_tasks=%d\n",
 		doc.Pipeline.BlocksProduced, doc.Pipeline.BlocksConsumed, doc.Pipeline.ResidualTasks)
 	fmt.Printf("verdict=%s\n", s.Verdict)
@@ -222,6 +224,13 @@ func printError(err error) {
 		return
 	}
 	fmt.Fprintf(os.Stderr, "error: %v\n", err)
+}
+
+func passLabel(ok bool) string {
+	if ok {
+		return "PASS"
+	}
+	return "FAIL"
 }
 
 func intervalMS(in model.Interval) float64 {
