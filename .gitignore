@@ -1,0 +1,22 @@
+# Compiled binaries and local build output
+/mediamerge
+/.tmpbin/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Local run and scratch output
+/tmp/
+/pwf-*/
+
+# Go test/coverage artifacts
+*.test
+*.out
+coverage.txt
+
+# Editor and OS files
+.DS_Store
+*.swp
+.idea/
+.vscode/
