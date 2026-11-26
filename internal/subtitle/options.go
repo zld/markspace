@@ -49,6 +49,11 @@ func ParseSRTWithOptions(source, version string, r reader, opt Options) (*track.
 			if !opt.Lenient || fe == nil {
 				return nil, nil, perr
 			}
+			// A bare index block with no timestamp is an unfinished tail:
+			// skip it silently in lenient mode; its gap is derived elsewhere.
+			if fe.Kind == fault.KindTruncated && len(blk.lines) == 1 {
+				continue
+			}
 			rejected = append(rejected, RejectedCue{Source: source, Line: fe.Line,
 				Kind: fe.Kind, Detail: fe.Detail})
 			continue
