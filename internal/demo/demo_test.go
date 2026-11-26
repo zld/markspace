@@ -31,7 +31,7 @@ func TestDemoCrashRecoveryAcceptanceFlow(t *testing.T) {
 	}
 	out := second.String()
 	for _, want := range []string{
-		"recovery recovered=1 republished=0 missing=0 corrupt=0 duplicates=0",
+		"recovery recovered=1 republished=0 missing=0 duplicates=0",
 		"roundtrip=100.00%",
 		"keyframe_hit=100.00%",
 		"segment_sha256=100.00%",

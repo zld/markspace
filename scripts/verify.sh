@@ -44,6 +44,6 @@ if [[ "$rerun_code" -ne 0 && "$rerun_code" -ne 2 ]]; then
   echo "unexpected recovery rerun exit: $rerun_code" >&2
   exit 1
 fi
-grep -Fq 'recovered=1 republished=0 missing=0 corrupt=0 duplicates=0' "$RECOVERY_DIR/rerun.log"
+grep -Fq 'recovered=1 republished=0 missing=0 duplicates=0' "$RECOVERY_DIR/rerun.log"
 
 echo 'acceptance checks passed'

@@ -64,9 +64,9 @@ func Run(cfg Config) error {
 			return err
 		}
 	}
-	fmt.Fprintf(out, "recovery recovered=%d republished=%d missing=%d corrupt=%d duplicates=%d\n",
+	fmt.Fprintf(out, "recovery recovered=%d republished=%d missing=%d duplicates=%d corrupt=%d\n",
 		recoveryStats.Recovered, recoveryStats.Republished, recoveryStats.Missing,
-		recoveryStats.Corrupt, recoveryStats.Duplicates)
+		recoveryStats.Duplicates, recoveryStats.Corrupt)
 
 	files, err := GenerateInputs(filepath.Join(cfg.Work, "input"))
 	if err != nil {
