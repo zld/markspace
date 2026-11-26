@@ -12,6 +12,15 @@ func run() int {
 		fatalf("%v", err)
 	}
 	r := newReporter(os.Stdout)
+	if code := execute(r, cfg); code != exitOK {
+		return code
+	}
+	return r.exitCode()
+}
+
+// execute runs the selected scenario against an already-parsed config. It
+// exists so tests can drive every path without spawning a subprocess.
+func execute(r *reporter, cfg *config) int {
 	r.printf("replaypipe verify scenario=%s root=%s", cfg.scenario, cfg.root)
 	r.printf("budget pre=%dns post=%dns min-width=%d min-fps=%.3f max-work=%d max-out=%d",
 		cfg.pre, cfg.post, cfg.minWidth, cfg.minFPS, cfg.maxWorkBytes, cfg.maxOutBytes)
