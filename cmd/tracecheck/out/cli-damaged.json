@@ -18,8 +18,8 @@
   "intervals": [
     {
       "span": {
-        "start": 200000,
-        "end": 360000
+        "start": 100000,
+        "end": 400000
       },
       "kind": "loss_flow",
       "threshold": "max_loss_packets",
@@ -66,6 +66,69 @@
           "codes": [
             "sequence_gap"
           ]
+        },
+        {
+          "item": "packet:9",
+          "sequence": 9,
+          "span": {
+            "start": 100000,
+            "end": 120000
+          },
+          "status": "accepted_opus"
+        },
+        {
+          "item": "packet:10",
+          "sequence": 10,
+          "span": {
+            "start": 120000,
+            "end": 140000
+          },
+          "status": "accepted_opus"
+        },
+        {
+          "item": "packet:11",
+          "sequence": 11,
+          "span": {
+            "start": 140000,
+            "end": 160000
+          },
+          "status": "accepted_opus"
+        },
+        {
+          "item": "packet:4",
+          "sequence": 4,
+          "span": {
+            "start": 92880,
+            "end": 116100
+          },
+          "status": "accepted_aac"
+        },
+        {
+          "item": "packet:5",
+          "sequence": 5,
+          "span": {
+            "start": 116100,
+            "end": 139320
+          },
+          "status": "accepted_aac"
+        },
+        {
+          "item": "packet:6",
+          "sequence": 6,
+          "span": {
+            "start": 139320,
+            "end": 162540
+          },
+          "status": "accepted_aac"
+        },
+        {
+          "item": "packet:7",
+          "sequence": 7,
+          "span": {
+            "start": 162540,
+            "end": 185760
+          },
+          "status": "accepted_aac"
         },
         {
           "item": "packet:8",

@@ -15,7 +15,125 @@
     "passed": true,
     "canceled": false
   },
-  "intervals": null,
+  "intervals": [
+    {
+      "span": {
+        "start": 100000,
+        "end": 200000
+      },
+      "kind": "flow_change",
+      "threshold": "throughput_change_ratio",
+      "observed": 1,
+      "budget_limit": 1,
+      "deviation": 0,
+      "passed": false,
+      "conclusions": [
+        {
+          "item": "packet:5",
+          "sequence": 5,
+          "span": {
+            "start": 100000,
+            "end": 120000
+          },
+          "status": "accepted_opus"
+        },
+        {
+          "item": "packet:6",
+          "sequence": 6,
+          "span": {
+            "start": 120000,
+            "end": 140000
+          },
+          "status": "accepted_opus"
+        },
+        {
+          "item": "packet:7",
+          "sequence": 7,
+          "span": {
+            "start": 140000,
+            "end": 160000
+          },
+          "status": "accepted_opus"
+        },
+        {
+          "item": "packet:8",
+          "sequence": 8,
+          "span": {
+            "start": 160000,
+            "end": 180000
+          },
+          "status": "accepted_opus"
+        },
+        {
+          "item": "packet:9",
+          "sequence": 9,
+          "span": {
+            "start": 180000,
+            "end": 200000
+          },
+          "status": "accepted_opus"
+        },
+        {
+          "item": "packet:4",
+          "sequence": 4,
+          "span": {
+            "start": 92880,
+            "end": 116100
+          },
+          "status": "accepted_aac"
+        },
+        {
+          "item": "packet:5",
+          "sequence": 5,
+          "span": {
+            "start": 116100,
+            "end": 139320
+          },
+          "status": "accepted_aac"
+        },
+        {
+          "item": "packet:6",
+          "sequence": 6,
+          "span": {
+            "start": 139320,
+            "end": 162540
+          },
+          "status": "accepted_aac"
+        },
+        {
+          "item": "packet:7",
+          "sequence": 7,
+          "span": {
+            "start": 162540,
+            "end": 185760
+          },
+          "status": "accepted_aac"
+        },
+        {
+          "item": "packet:8",
+          "sequence": 8,
+          "span": {
+            "start": 185760,
+            "end": 208980
+          },
+          "status": "accepted_aac"
+        }
+      ]
+    },
+    {
+      "span": {
+        "start": 400000,
+        "end": 500000
+      },
+      "kind": "flow_change",
+      "threshold": "throughput_change_ratio",
+      "observed": 1,
+      "budget_limit": 1,
+      "deviation": 0,
+      "passed": false,
+      "conclusions": null
+    }
+  ],
   "findings": null,
   "conclusions": [
     {

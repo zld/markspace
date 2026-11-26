@@ -160,7 +160,20 @@ func (b *Builder) buildIntervals() []Interval {
 	limit := int64(b.budget.MaxLossPackets)
 	for _, a := range b.anomalies {
 		if a.LossCount == 0 {
-			continue // pure flow-change region; reported but not loss-judged
+			// Pure throughput-change region: reported as an anomaly but
+			// never judged against the packet-loss budget. Bandwidth
+			// variation is not media packet loss.
+			out = append(out, Interval{
+				Span:        a.Span,
+				Kind:        "flow_change",
+				Threshold:   "throughput_change_ratio",
+				Observed:    int64(a.FlowChanges),
+				BudgetLimit: 1,
+				Deviation:   int64(a.FlowChanges) - 1,
+				Passed:      false,
+				Conclusions: b.spanConclusions(a.Span),
+			})
+			continue
 		}
 		out = append(out, Interval{
 			Span:        a.Span,

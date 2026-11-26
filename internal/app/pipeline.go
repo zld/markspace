@@ -67,7 +67,7 @@ func Analyze(ctx context.Context, cfg Config) (*Outcome, error) {
 	})
 
 	// RTP path: per-stream sequence recovery then codec duration parsing.
-	packetEvents, packetCount, duplicates := analyzeRTP(ctx, cfg, trace, builder)
+	packetEvents, packetCount, duplicates, lossAnomalies := analyzeRTP(ctx, cfg, trace, builder)
 
 	// MP4 path: scan structure and keyframes, record keyframe budget gaps.
 	trackCount, keyframeCount, mp4Events := analyzeMP4(cfg, trace, builder)
@@ -75,8 +75,11 @@ func Analyze(ctx context.Context, cfg Config) (*Outcome, error) {
 	// Throughput path: fixed windows plus flow-change anomalies, kept
 	// strictly separate from media packet durations.
 	flowEvents, flowAnomalies := analyzeFlow(cfg, trace)
-	builder.AddAnomalies(flowAnomalies)
 	builder.SetFlowWindowCount(len(merge.Throughput(trace.FlowSamples, cfg.WindowTicks)))
+
+	// Merge loss and flow evidence together so an overlapping burst-loss
+	// and throughput dip form one correctly-attributed anomaly region.
+	builder.AddAnomalies(merge.MergeAnomalies(append(lossAnomalies, flowAnomalies...)))
 
 	// Deterministic merge of every event on the unified timeline.
 	timeline := merge.Merge(packetEvents, mp4Events, flowEvents)
@@ -101,7 +104,7 @@ func Analyze(ctx context.Context, cfg Config) (*Outcome, error) {
 }
 
 func analyzeRTP(ctx context.Context, cfg Config, trace *fixture.Trace, b *report.Builder) (
-	[]model.TimelineEvent, int, int,
+	[]model.TimelineEvent, int, int, []merge.Anomaly,
 ) {
 	// Each SSRC has its own independent 16-bit sequence space; buffers must
 	// never be shared across streams or every alternating number looks lost.
@@ -209,8 +212,8 @@ func analyzeRTP(ctx context.Context, cfg Config, trace *fixture.Trace, b *report
 	}
 	// Merge once across streams so adjacent loss runs carry their full
 	// count into one budget-checked interval.
-	b.AddAnomalies(merge.MergeAnomalies(lossAnomalies))
-	return events, packetCount, duplicates
+	lossAnomalies = merge.MergeAnomalies(lossAnomalies)
+	return events, packetCount, duplicates, lossAnomalies
 }
 
 func parsePacket(p model.PacketRecord, cursor *model.Tick) (start, end model.Tick, codes []model.ErrorCode, status string) {

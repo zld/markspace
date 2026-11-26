@@ -67,6 +67,43 @@ func TestReportCleanPasses(t *testing.T) {
 	}
 }
 
+func TestReportPureFlowIntervalNotLossJudged(t *testing.T) {
+	b := NewBuilder("damaged", 7, Budget{MaxLossPackets: 0, MaxKeyframeInterval: model.TicksFromMillis(3)})
+	b.AddAnomalies([]merge.Anomaly{{
+		Span: model.NewSpan(300_000, 400_000), FlowChanges: 1, Reasons: []string{"throughput_change"},
+	}})
+	r := b.Build(5, 0, 0, 0, false)
+	if len(r.Intervals) != 1 || r.Intervals[0].Kind != "flow_change" {
+		t.Fatalf("pure flow interval wrong: %+v", r.Intervals)
+	}
+	// A flow-only region must not inflate the packet loss count.
+	if r.Summary.LossCount != 0 {
+		t.Fatalf("flow change must not count as loss: %d", r.Summary.LossCount)
+	}
+}
+
+func TestReportMergedLossFlowAttribution(t *testing.T) {
+	b := NewBuilder("damaged", 7, Budget{MaxLossPackets: 2, MaxKeyframeInterval: model.TicksFromMillis(3)})
+	// Overlapping loss and flow evidence merged into one region upstream.
+	b.AddAnomalies([]merge.Anomaly{{
+		Span: model.NewSpan(100, 400), LossCount: 3, FlowChanges: 1,
+	}})
+	for _, seq := range []uint32{11, 12, 13} {
+		f := gapFinding(seq, 100, 400)
+		b.AddFinding(f)
+	}
+	r := b.Build(8, 0, 0, 0, false)
+	if len(r.Intervals) != 1 {
+		t.Fatalf("overlapping evidence must be one interval: %+v", r.Intervals)
+	}
+	if r.Intervals[0].Kind != "loss_flow" || r.Intervals[0].Passed {
+		t.Fatalf("merged region must fail the loss budget: %+v", r.Intervals[0])
+	}
+	if r.Summary.LossCount != 3 {
+		t.Fatalf("loss count = %d", r.Summary.LossCount)
+	}
+}
+
 func TestReportCanceledFails(t *testing.T) {
 	b := NewBuilder("cancel", 7, Budget{MaxLossPackets: 5, MaxKeyframeInterval: model.TicksFromMillis(100)})
 	r := b.Build(5, 0, 0, 0, true)
