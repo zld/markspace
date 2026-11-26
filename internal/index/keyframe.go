@@ -9,20 +9,20 @@ import (
 
 // Keyframe is a sync sample that can start an independent decode.
 type Keyframe struct {
-	Index  int   `json:"index"`
-	DTS    int64 `json:"dts"`
-	DTSNS  int64 `json:"dts_ns"`
-	Offset int64 `json:"offset"`
+	Index  int    `json:"index"`
+	DTS    int64  `json:"dts"`
+	DTSNS  int64  `json:"dts_ns"`
+	Offset int64  `json:"offset"`
 	Size   uint32 `json:"size"`
 }
 
 // KeyframeIndex maps nanosecond positions to decodable sync samples of one
 // video track. It answers "which keyframe at or before/after t" in O(log n).
 type KeyframeIndex struct {
-	TrackID uint32       `json:"track_id"`
+	TrackID uint32        `json:"track_id"`
 	Base    timebase.Base `json:"-"`
-	Frames  []Keyframe   `json:"frames"`
-	byPTS   []int        // keyframe ordinals ordered by composition time
+	Frames  []Keyframe    `json:"frames"`
+	byPTS   []int         // keyframe ordinals ordered by composition time
 	ptsNS   []int64
 }
 

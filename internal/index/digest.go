@@ -82,16 +82,16 @@ const (
 
 // Track is a parsed media track with a complete sample table.
 type Track struct {
-	ID         uint32       `json:"id"`
-	Timescale  uint32       `json:"timescale"`
-	Handler    [4]byte      `json:"-"`
-	Kind       TrackKind    `json:"kind"`
-	Codec      [4]byte      `json:"-"`
-	Width      uint16       `json:"width"`
-	Height     uint16       `json:"height"`
-	SampleRate uint32       `json:"sample_rate,omitempty"`
-	Duration   int64        `json:"duration_ticks"`
-	Samples    []Sample     `json:"samples"`
+	ID         uint32        `json:"id"`
+	Timescale  uint32        `json:"timescale"`
+	Handler    [4]byte       `json:"-"`
+	Kind       TrackKind     `json:"kind"`
+	Codec      [4]byte       `json:"-"`
+	Width      uint16        `json:"width"`
+	Height     uint16        `json:"height"`
+	SampleRate uint32        `json:"sample_rate,omitempty"`
+	Duration   int64         `json:"duration_ticks"`
+	Samples    []Sample      `json:"samples"`
 	Base       timebase.Base `json:"-"`
 }
 
@@ -124,16 +124,16 @@ type BoxRecord struct {
 
 // Media is a fully parsed MP4/CMAF presentation.
 type Media struct {
-	Path           string        `json:"path"`
-	FileSize       int64         `json:"file_size"`
-	Fragmented     bool          `json:"fragmented"`
-	Tracks         []*Track      `json:"tracks"`
-	Boxes          []BoxRecord   `json:"boxes"`
-	ContentDigest  string        `json:"content_digest"`
-	EnvelopeDigest string        `json:"envelope_digest"`
-	EventDigest    string        `json:"event_digest,omitempty"`
+	Path           string           `json:"path"`
+	FileSize       int64            `json:"file_size"`
+	Fragmented     bool             `json:"fragmented"`
+	Tracks         []*Track         `json:"tracks"`
+	Boxes          []BoxRecord      `json:"boxes"`
+	ContentDigest  string           `json:"content_digest"`
+	EnvelopeDigest string           `json:"envelope_digest"`
+	EventDigest    string           `json:"event_digest,omitempty"`
 	Events         []metadata.Event `json:"events,omitempty"`
-	Warnings       []string      `json:"warnings,omitempty"`
+	Warnings       []string         `json:"warnings,omitempty"`
 }
 
 // VideoTrack returns the first video track, if any.

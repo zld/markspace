@@ -208,7 +208,9 @@ func (b boxView) childrenOrNil() []boxView {
 	return kids
 }
 
-func beU32(b []byte) uint32 { return uint32(b[0])<<24 | uint32(b[1])<<16 | uint32(b[2])<<8 | uint32(b[3]) }
+func beU32(b []byte) uint32 {
+	return uint32(b[0])<<24 | uint32(b[1])<<16 | uint32(b[2])<<8 | uint32(b[3])
+}
 func beU64(b []byte) uint64 { return uint64(beU32(b))<<32 | uint64(beU32(b[4:])) }
 
 // decode unmarshals a supported box payload into dst.
