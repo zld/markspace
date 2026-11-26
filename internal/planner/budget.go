@@ -23,12 +23,12 @@ const (
 
 // WindowEstimate describes one candidate segment to be scheduled.
 type WindowEstimate struct {
-	Index      int
-	Interval   timebase.Interval
-	FaultIDs   []string
-	FrameBytes int64
-	FPS        int
-	Streamed   bool
+	Index      int               `json:"index"`
+	Interval   timebase.Interval `json:"interval"`
+	FaultIDs   []string          `json:"fault_ids,omitempty"`
+	FrameBytes int64             `json:"frame_bytes,omitempty"`
+	FPS        int               `json:"fps"`
+	Streamed   bool              `json:"streamed,omitempty"`
 }
 
 // Request is the pre-run budget evaluation input.
