@@ -2,9 +2,12 @@
 package mp4
 
 import (
+	"bytes"
 	"encoding/binary"
 	"io"
 	"os"
+
+	gomp4 "github.com/abema/go-mp4"
 
 	"replayctl/internal/fault"
 )
@@ -198,8 +201,69 @@ func (s *scanner) parseChildren(start, end int64, tb *trackBuilder) error {
 			if tb != nil {
 				s.parseSTSD(box, tb)
 			}
+		case "stts":
+			if tb != nil {
+				var v gomp4.Stts
+				if err := s.unmarshalTable(box, &v); err != nil {
+					return err
+				}
+				tb.stts = &v
+			}
+		case "stsc":
+			if tb != nil {
+				var v gomp4.Stsc
+				if err := s.unmarshalTable(box, &v); err != nil {
+					return err
+				}
+				tb.stsc = &v
+			}
+		case "stsz":
+			if tb != nil {
+				var v gomp4.Stsz
+				if err := s.unmarshalTable(box, &v); err != nil {
+					return err
+				}
+				tb.stsz = &v
+			}
+		case "stco":
+			if tb != nil {
+				var v gomp4.Stco
+				if err := s.unmarshalTable(box, &v); err != nil {
+					return err
+				}
+				tb.stco = &v
+			}
+		case "co64":
+			if tb != nil {
+				var v gomp4.Co64
+				if err := s.unmarshalTable(box, &v); err != nil {
+					return err
+				}
+				tb.co64 = &v
+			}
+		case "stss":
+			if tb != nil {
+				var v gomp4.Stss
+				if err := s.unmarshalTable(box, &v); err != nil {
+					return err
+				}
+				tb.stss = &v
+			}
 		}
 		off = next
+	}
+	return nil
+}
+
+func (s *scanner) unmarshalTable(box BoxRef, dst gomp4.IBox) error {
+	start := box.Offset + box.HeaderSize
+	n := box.Size - box.HeaderSize
+	buf := make([]byte, n)
+	if err := s.readAt(start, buf); err != nil {
+		return err
+	}
+	if _, err := gomp4.Unmarshal(bytes.NewReader(buf), uint64(n), dst, gomp4.Context{}); err != nil {
+		return s.fail(fault.InvalidBox, box.Offset, -1, "decode %s: %v", box.Type, err)
 	}
 	return nil
 }
