@@ -110,6 +110,11 @@ func ParseMP4Bytes(data []byte, path string) (*MediaFile, error) {
 		}
 		file.Tracks = append(file.Tracks, track)
 	}
+	// Container descriptions apply to every track and are the lowest-priority
+	// provenance tier during metadata resolution.
+	for _, tr := range file.Tracks {
+		tr.RawFields = append(tr.RawFields, file.ContainerFields...)
+	}
 	return file, nil
 }
 

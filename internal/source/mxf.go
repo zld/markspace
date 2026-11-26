@@ -215,6 +215,11 @@ func ParseMXFBytes(data []byte, path string) (*MediaFile, error) {
 	if len(file.Tracks) == 0 {
 		return nil, model.NewError(model.CodeInvalidMetadata, model.PhaseParse, "", 0, "MXF contains no tracks")
 	}
+	// Container-level descriptive metadata is the lowest-priority tier for
+	// every track.
+	for _, tr := range file.Tracks {
+		tr.RawFields = append(tr.RawFields, file.ContainerFields...)
+	}
 	return file, nil
 }
 
