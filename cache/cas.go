@@ -153,6 +153,22 @@ func (c *CAS) Ensure(ctx context.Context, expectedSourceID, claimedDigest string
 			res.Reason = "cached object sha256 mismatch"
 			return res, snap.Data, nil
 		}
+		var meta Entry
+		if mb, merr := os.ReadFile(path + ".json"); merr == nil {
+			_ = json.Unmarshal(mb, &meta)
+		}
+		if len(meta.SourceIDs) > 0 && !contains(meta.SourceIDs, snap.SourceID) {
+			entry, perr := c.Put(ctx, snap.SourceID, snap.Data)
+			if perr != nil {
+				return nil, nil, perr
+			}
+			res.Entry = *entry
+			res.CacheHit = false
+			res.Reingested = true
+			res.SourceVerified = false
+			res.Reason = "source identifier is not indexed for digest"
+			return res, snap.Data, nil
+		}
 		res.Entry = Entry{Digest: digest, Size: int64(len(cached)), Path: path}
 		_ = c.updateMeta(&res.Entry, snap.SourceID)
 		return res, cached, nil

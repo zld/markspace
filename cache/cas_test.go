@@ -61,6 +61,23 @@ func TestCASMismatchRejectsAndReingests(t *testing.T) {
 	}
 }
 
+func TestCASCachedMetadataRejectsUnknownSource(t *testing.T) {
+	c, _ := New(filepath.Join(t.TempDir(), "cas"))
+	data := []byte("same-content")
+	if _, err := c.Put(context.Background(), "source-a", data); err != nil {
+		t.Fatal(err)
+	}
+	r, _, err := c.Ensure(context.Background(), "source-b", SHA256Hex(data), func(context.Context) (Snapshot, error) {
+		return Snapshot{SourceID: "source-b", Data: data}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !r.Reingested || r.CacheHit || r.SourceVerified {
+		t.Fatalf("unknown cached source should force reingest: %+v", r)
+	}
+}
+
 func TestCASSourceIdentifierMismatch(t *testing.T) {
 	c, _ := New(filepath.Join(t.TempDir(), "cas"))
 	data := []byte("x")
