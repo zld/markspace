@@ -17,12 +17,13 @@ import (
 
 // BoxLocation is a compact record of a box encountered during structure scan.
 type BoxLocation struct {
-	Path      string `json:"path"`
-	Type      string `json:"type"`
-	Offset    int64  `json:"offset"`
-	Size      int64  `json:"size"`
-	TrackID   uint32 `json:"track_id,omitempty"`
-	Supported bool   `json:"supported"`
+	Path       string `json:"path"`
+	Type       string `json:"type"`
+	Offset     int64  `json:"offset"`
+	Size       int64  `json:"size"`
+	HeaderSize int64  `json:"header_size"`
+	TrackID    uint32 `json:"track_id,omitempty"`
+	Supported  bool   `json:"supported"`
 }
 
 // StructureError annotates a go-mp4 traversal failure with its box location.
@@ -93,6 +94,7 @@ func ScanFile(path string, chunkBytes int) (*media.ContainerInfo, error) {
 			// Empty edit is represented by -1 in ISO boxes; the media clock starts at 0.
 			track.StartTimeTicks = 0
 		}
+		attachSampleDescription(f, locs, tid, &track)
 		if err := populateSamples(f, pt, &track, locs, size, chunkBytes, &info.Report); err != nil {
 			return nil, err
 		}
@@ -118,11 +120,12 @@ func InspectStructure(r io.ReadSeeker) ([]BoxLocation, error) {
 	_, err := gomp4.ReadBoxStructure(r, func(h *gomp4.ReadHandle) (any, error) {
 		t := h.BoxInfo.Type.String()
 		loc := BoxLocation{
-			Path:      pathString(h.Path),
-			Type:      t,
-			Offset:    int64(h.BoxInfo.Offset),
-			Size:      int64(h.BoxInfo.Size),
-			Supported: h.BoxInfo.IsSupportedType(),
+			Path:       pathString(h.Path),
+			Type:       t,
+			Offset:     int64(h.BoxInfo.Offset),
+			Size:       int64(h.BoxInfo.Size),
+			HeaderSize: int64(h.BoxInfo.HeaderSize),
+			Supported:  h.BoxInfo.IsSupportedType(),
 		}
 		if t == "tkhd" {
 			if box, _, perr := h.ReadPayload(); perr == nil {

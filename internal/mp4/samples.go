@@ -41,6 +41,18 @@ func extractKeyframeSets(r io.ReadSeeker) []keyframeSet {
 
 func keyframeOffset(io.ReadSeeker, uint32) int64 { return -1 }
 
+func attachSampleDescription(r io.ReadSeeker, locs []BoxLocation, trackID uint32, track *media.TrackInfo) {
+	loc, ok := boxLocationForTrack(locs, "stsd", trackID)
+	if !ok || loc.Size <= loc.HeaderSize || loc.HeaderSize < 0 {
+		return
+	}
+	raw, err := readAt(r, loc.Offset, loc.Size)
+	if err != nil || int(loc.HeaderSize) > len(raw) {
+		return
+	}
+	track.SampleDescription = append([]byte(nil), raw[loc.HeaderSize:]...)
+}
+
 func keyframeSetForTrack(sets []keyframeSet, index int, trackID uint32) []media.Keyframe {
 	if index < 0 || index >= len(sets) {
 		// No stss means all samples are sync samples in ISO BMFF.
