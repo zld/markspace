@@ -10,6 +10,7 @@ func generateWebM(ffmpeg, out string) error {
 		"-af", "volume='if(between(t,2.10,2.90),0,1)':eval=frame,aformat=sample_fmts=s16:sample_rates=48000:channel_layouts=mono",
 		"-c:v", "libvpx-vp9", "-b:v", "300k", "-g", "30", "-keyint_min", "30", "-auto-alt-ref", "0",
 		"-c:a", "libopus", "-b:a", "64k", "-frame_duration", "20",
+		"-map_metadata", "-1", "-fflags", "+bitexact", "-flags", "+bitexact",
 		"-f", "webm", out,
 	}
 	return runFFmpeg(ffmpeg, args...)
@@ -23,6 +24,7 @@ func generateMP4(ffmpeg, out string) error {
 		"-af", "volume='if(between(t,2.10,2.90),0,1)':eval=frame,aformat=sample_fmts=s16:sample_rates=48000:channel_layouts=mono",
 		"-c:v", "libx264", "-preset", "veryfast", "-crf", "28", "-g", "30", "-keyint_min", "30",
 		"-c:a", "aac", "-b:a", "64k", "-ar", "48000", "-ac", "1",
+		"-map_metadata", "-1", "-fflags", "+bitexact", "-flags", "+bitexact",
 		"-movflags", "+faststart", out,
 	}
 	return runFFmpeg(ffmpeg, args...)
