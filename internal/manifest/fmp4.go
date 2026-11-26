@@ -18,6 +18,7 @@ type FMp4Timing struct {
 	Duration        uint64   // mdhd duration in timescale units
 	FragmentBase    []uint64 // each tfdt baseMediaDecodeTime
 	FragmentSamples []uint32 // each trun sample count
+	ESSampleBytes   int64    // sum of trun sample sizes = AAC elementary bytes
 }
 
 // ValidateFMp4 opens a fragmented MP4 and verifies its timing boxes against
@@ -61,6 +62,9 @@ func ValidateFMp4(path string) (*FMp4Timing, error) {
 			}
 		case *mp4.Trun:
 			t.FragmentSamples = append(t.FragmentSamples, p.SampleCount)
+			for _, e := range p.Entries {
+				t.ESSampleBytes += int64(e.SampleSize)
+			}
 		}
 	}
 	if t.Timescale != uint32(audioTargetRate) {

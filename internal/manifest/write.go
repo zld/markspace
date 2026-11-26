@@ -42,6 +42,15 @@ type PSIEntry struct {
 	TableIDExt uint16 `json:"table_id_ext"`
 }
 
+// RTPStats captures the reorder-layer counters as quality evidence.
+type RTPStats struct {
+	Received   int64 `json:"received"`
+	InOrder    int64 `json:"in_order"`
+	Duplicates int64 `json:"duplicates"`
+	Late       int64 `json:"late_outside_window"`
+	Lost       int64 `json:"lost"`
+}
+
 // Report is the full manifest document.
 type Report struct {
 	Schema        string         `json:"schema"`
@@ -51,6 +60,7 @@ type Report struct {
 	TotalSamples  int64          `json:"total_samples"`
 	DurationNanos int64          `json:"duration_nanos"`
 	DriftPPM      int64          `json:"drift_ppm"`
+	RTP           RTPStats       `json:"rtp"`
 	Segments      []SegmentEntry `json:"segments"`
 	Gaps          []GapEntry     `json:"gaps"`
 	PSIEvents     []PSIEntry     `json:"psi_events"`
@@ -91,6 +101,9 @@ func (b *Builder) SetTimeline(totalSamples, durationNanos, driftPPM int64) {
 	b.rep.DurationNanos = durationNanos
 	b.rep.DriftPPM = driftPPM
 }
+
+// SetRTP attaches the reorder-layer counters.
+func (b *Builder) SetRTP(s RTPStats) { b.rep.RTP = s }
 
 // SetMetrics attaches the quality evidence.
 func (b *Builder) SetMetrics(m audio.Metrics) { b.rep.Metrics = m }
