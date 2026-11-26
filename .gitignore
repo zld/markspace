@@ -1,0 +1,10 @@
+# build artifacts
+/tmp/
+tmp/
+*.test
+*.out
+rtp-regress
+# OS/editor
+.DS_Store
+.idea/
+.vscode/
