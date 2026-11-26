@@ -236,7 +236,7 @@ func (idx *Index) Range() (model.Time, model.Time) {
 		if e.MediaTicks < start {
 			start = e.MediaTicks
 		}
-		fin := e.MediaTicks + int64(e.Duration)
+		fin := e.MediaTicks + e.MediaDuration
 		if fin > end {
 			end = fin
 		}

@@ -202,3 +202,20 @@ func TestIndexEntriesAt(t *testing.T) {
 		t.Fatalf("entries = %d, want 2", len(got))
 	}
 }
+
+func TestIndexRangeUsesMediaDuration(t *testing.T) {
+	// Each video sample is 3600 track ticks = 28800 media ticks on the 720000
+	// grid. The index range must end at 3*28800, not at media+3*3600.
+	tl := timeline(t, []*cmaf.Fragment{fragment(t, "f1.m4s", 1, 0, 3, 3)})
+	idx, err := Build(tl, TrackKeys{VideoTrackID: 1, AudioTrackID: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	start, end := idx.Range()
+	if start.Ticks != 0 {
+		t.Fatalf("start = %d", start.Ticks)
+	}
+	if end.Ticks != 3*28800 {
+		t.Fatalf("end = %d, want %d", end.Ticks, 3*28800)
+	}
+}
