@@ -209,18 +209,28 @@ func (g *Graph) Run(checker Checker) (*CheckedResult, error) {
 			out.Rebuilt++
 		}
 
-		// Continuity: after the first anchor, each node must begin exactly
-		// where the shared time line currently ends; otherwise mark a break.
+		// Continuity on the shared time line:
+		//  - independent root nodes (no dependencies) each start at zero and
+		//    are valid anchors for parallel representation layers;
+		//  - a dependent node must open on the same time-line origin as its
+		//    upstreams. A shifted origin means the representation edges do not
+		//    line up, and the discontinuity is marked rather than hidden.
 		cont := ContinuityOK
-		if haveShared && n.Boundary.Start.Cmp(sharedEnd) != 0 {
-			cont = ContinuityBroken
-			out.Breaks = append(out.Breaks, Break{
-				NodeID:   id,
-				Expected: sharedEnd,
-				Got:      n.Boundary.Start,
-				Detail: fmt.Sprintf("start %s != shared end %s",
-					n.Boundary.Start, sharedEnd),
-			})
+		if len(n.Deps) > 0 {
+			for _, dep := range n.Deps {
+				upStart := results[dep].Boundary.Start
+				if n.Boundary.Start.Cmp(upStart) != 0 {
+					cont = ContinuityBroken
+					out.Breaks = append(out.Breaks, Break{
+						NodeID:   id,
+						Expected: upStart,
+						Got:      n.Boundary.Start,
+						Detail: fmt.Sprintf("start %s != upstream %s start %s",
+							n.Boundary.Start, dep, upStart),
+					})
+					break
+				}
+			}
 		}
 		if !haveShared || n.Boundary.End.Cmp(sharedEnd) > 0 {
 			sharedEnd = n.Boundary.End

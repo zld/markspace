@@ -160,9 +160,10 @@ func TestContinuityBreakDetected(t *testing.T) {
 	nodes := []*Node{
 		{ID: "a", Input: "in", Compute: countingCompute(new(int), "ra"),
 			Boundary: Boundary{Start: media.NewInt(0), End: media.NewInt(10)}},
-		// b starts at 12 while the shared line ended at 10: a 2-unit gap.
+		// b opens at t=2 while its upstream a is anchored at t=0: a shifted
+		// origin means the representation edges do not line up.
 		{ID: "b", Input: "in", Deps: []string{"a"}, Compute: countingCompute(new(int), "rb"),
-			Boundary: Boundary{Start: media.NewInt(12), End: media.NewInt(20)}},
+			Boundary: Boundary{Start: media.NewInt(2), End: media.NewInt(20)}},
 	}
 	g, _ := NewGraph(nodes)
 	out, err := g.Run(nil)
@@ -173,7 +174,7 @@ func TestContinuityBreakDetected(t *testing.T) {
 		t.Fatalf("breaks=%v, want one", out.Breaks)
 	}
 	br := out.Breaks[0]
-	if br.NodeID != "b" || br.Expected.String() != "10" || br.Got.String() != "12" {
+	if br.NodeID != "b" || br.Expected.String() != "0" || br.Got.String() != "2" {
 		t.Fatalf("break wrong: %+v", br)
 	}
 	if out.Results[1].Continuity != ContinuityBroken {
@@ -185,8 +186,9 @@ func TestAlignedBoundariesAreOK(t *testing.T) {
 	nodes := []*Node{
 		{ID: "a", Input: "in", Compute: countingCompute(new(int), "ra"),
 			Boundary: Boundary{Start: media.NewInt(0), End: media.NewRat(1, 2)}},
+		// b shares the same t=0 origin even though its span differs.
 		{ID: "b", Input: "in", Deps: []string{"a"}, Compute: countingCompute(new(int), "rb"),
-			Boundary: Boundary{Start: media.NewRat(1, 2), End: media.NewInt(1)}},
+			Boundary: Boundary{Start: media.NewInt(0), End: media.NewInt(1)}},
 	}
 	g, _ := NewGraph(nodes)
 	out, err := g.Run(nil)
