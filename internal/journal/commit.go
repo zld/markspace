@@ -10,10 +10,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"replayctl/internal/fault"
 	"replayctl/internal/validate"
 )
+
+// LockName is the advisory lock file that serializes publish attempts.
+const LockName = ".publish.lock"
 
 // JournalName is the append-only commitment log inside an output directory.
 const JournalName = "journal.jsonl"
@@ -67,6 +71,27 @@ func Open(outDir string) (*Store, error) {
 		return nil, err
 	}
 	return &Store{Dir: dir, DeliveryDir: deliveryDir, JournalPath: filepath.Join(dir, JournalName)}, nil
+}
+
+// Lock serializes publish attempts against this output directory. It returns a
+// release function; the lock is advisory and only guards cooperating replayctl
+// processes. Locking before reading the journal ensures concurrent runs with the
+// same delivery key observe each other's committed state instead of appending
+// duplicate records.
+func (s *Store) Lock() (func(), error) {
+	path := filepath.Join(s.Dir, LockName)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, fault.New(fault.Journal, fault.StageJournal, path, -1, -1, "open publish lock: %v", err)
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		f.Close()
+		return nil, fault.New(fault.Journal, fault.StageJournal, path, -1, -1, "acquire publish lock: %v", err)
+	}
+	return func() {
+		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		_ = f.Close()
+	}, nil
 }
 
 // ValidateOutputPath rejects empty, NUL-containing, or traversal-escaping roots.

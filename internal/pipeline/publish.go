@@ -15,6 +15,11 @@ func publish(in Input, key, eventID string, art *render.Artifact) (*Result, erro
 	if err != nil {
 		return nil, err
 	}
+	unlock, err := store.Lock()
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
 	final, err := store.FinalPath(key)
 	if err != nil {
 		return nil, err

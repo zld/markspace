@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"replayctl/internal/fault"
@@ -116,4 +117,60 @@ func TestTimeGapRetainsEventOffset(t *testing.T) {
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+// Concurrent attempts with the same delivery key must serialize: exactly one
+// journal record and one artifact, regardless of interleaving.
+func TestConcurrentSameKeyCommitsOnce(t *testing.T) {
+	in, paths := testInput(t, fixture.CaseOK, false)
+	key := journal.DeliveryKey(paths.EventID, in.StartMS, in.EndMS)
+
+	const runs = 8
+	var wg sync.WaitGroup
+	wg.Add(runs)
+	errs := make(chan error, runs)
+	for i := 0; i < runs; i++ {
+		go func() {
+			defer wg.Done()
+			if _, err := Run(in); err != nil {
+				errs <- err
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatalf("concurrent run failed: %v", err)
+	}
+
+	store, err := journal.Open(in.Out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := 0
+	data, err := os.ReadFile(store.JournalPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, b := range data {
+		if b == '\n' {
+			lines++
+		}
+	}
+	if lines != 1 {
+		t.Fatalf("journal lines=%d want exactly one commit for key %s", lines, key)
+	}
+	entries, err := os.ReadDir(store.DeliveryDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mp4 := 0
+	for _, e := range entries {
+		if filepath.Ext(e.Name()) == ".mp4" && !e.IsDir() {
+			mp4++
+		}
+	}
+	if mp4 != 1 {
+		t.Fatalf("artifacts=%d want exactly one", mp4)
+	}
 }

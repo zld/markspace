@@ -81,6 +81,8 @@ go build -o .tmp/replayctl ./cmd/replayctl
 
 若在第 4 步后、第 5 步前退出，重跑会重建临时产物并与已改名文件比对哈希；一致则补记日志，不再次改名/发布。交付键为 `sha256(event_id | [start_ms,end_ms))`。
 
+同一输出目录的交付在 `.publish.lock` 上取排他 `flock`，因此并发或交错的相同交付键运行会串行化：后到者在锁内重新读取 journal，看到已有提交后按哈希核验并计入 duplicate，不追加第二条记录。串行重复运行与单进程重跑一样，journal 保持恰好一条提交记录。
+
 ## 模块与数据流
 
 | 路径 | 职责 |
