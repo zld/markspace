@@ -236,3 +236,25 @@ func TestProcessBatchMatchesSequentialRun(t *testing.T) {
 		}
 	}
 }
+
+func TestInvalidateProgramsOnlyAffectsDependentSegments(t *testing.T) {
+	segs := buildSegments(t, 4, 8)
+	dir := t.TempDir()
+	pool := NewPool(2, dir, "asset", h264Epoch(), nil, 0)
+	if _, err := pool.ProcessBatch(segs); err != nil {
+		t.Fatal(err)
+	}
+	// All four segments are now checkpointed under program 1.
+	if pool.CompletedCount() != 4 {
+		t.Fatalf("want 4 completed, got %d", pool.CompletedCount())
+	}
+	// Invalidating an unrelated program changes nothing.
+	if n := pool.InvalidatePrograms([]uint16{99}); n != 0 || pool.CompletedCount() != 4 {
+		t.Fatalf("unrelated program must not invalidate: n=%d count=%d", n, pool.CompletedCount())
+	}
+	// Invalidating program 1 must drop every dependent segment.
+	if n := pool.InvalidatePrograms([]uint16{1}); n != 4 || pool.CompletedCount() != 0 {
+		t.Fatalf("affected program must invalidate dependents: n=%d count=%d",
+			n, pool.CompletedCount())
+	}
+}

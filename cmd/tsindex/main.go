@@ -279,6 +279,7 @@ func processAsset(f demoFlags, budget *plan.Budget, run *assetRun, newAssetBudge
 	hasReused := false
 	hasFresh := false
 	segmentCount := 0
+	var lastEpochID int64 = -1
 	flush := func() error {
 		if len(window) == 0 {
 			return nil
@@ -298,7 +299,15 @@ func processAsset(f demoFlags, budget *plan.Budget, run *assetRun, newAssetBudge
 			return err
 		}
 		for i := range seg.Records {
-			psi.Feed(&seg.Records[i])
+			if epoch, ok := psi.Feed(&seg.Records[i]); ok && epoch != nil &&
+				epoch.ID != lastEpochID && lastEpochID >= 0 {
+				// A new mapping epoch invalidates only the programs whose
+				// mapping changed, along with their dependent segments.
+				pool.InvalidatePrograms(epoch.ChangedPrograms)
+			}
+			if ep := psi.Current(); ep != nil {
+				lastEpochID = ep.ID
+			}
 		}
 		if pool.IsDone(seg.ID) {
 			hasReused = true

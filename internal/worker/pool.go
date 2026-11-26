@@ -43,12 +43,15 @@ type Checkpoint struct {
 
 // CompletedItem binds a finished segment to its verified hashes.
 type CompletedItem struct {
-	SegmentID   int64           `json:"segment_id"`
-	StartOffset int64           `json:"start_offset"`
-	EndOffset   int64           `json:"end_offset"`
+	SegmentID   int64             `json:"segment_id"`
+	StartOffset int64             `json:"start_offset"`
+	EndOffset   int64             `json:"end_offset"`
 	RawHash     [digest.Size]byte `json:"raw_hash"`
 	ContentHash [digest.Size]byte `json:"content_hash"`
-	Sidecar     string          `json:"sidecar"`
+	Sidecar     string            `json:"sidecar"`
+	// Programs lists every program whose keyframes this segment depends on,
+	// so a PSI epoch change can invalidate exactly the affected segments.
+	Programs []uint16 `json:"programs"`
 }
 
 const checkpointVersion = 1
@@ -105,6 +108,44 @@ func (p *Pool) SetEpoch(epoch *ingest.MappingEpoch) {
 	p.epoch = epoch
 }
 
+// InvalidatePrograms drops the checkpointed identity of every completed
+// segment whose keyframes belong to one of the changed programs, forcing
+// recomputation of those assets and their keyframe dependents. Unaffected
+// programs' segments remain cached. It returns the number of segments
+// invalidated.
+func (p *Pool) InvalidatePrograms(programs []uint16) int {
+	if len(programs) == 0 {
+		return 0
+	}
+	changed := map[uint16]bool{}
+	for _, prog := range programs {
+		changed[prog] = true
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	n := 0
+	for id, item := range p.done {
+		// A CompletedItem stores its program set via the sidecar; the cheap
+		// in-memory dependency map avoids re-reading every sidecar.
+		if p.itemTouchesPrograms(item, changed) {
+			delete(p.done, id)
+			n++
+		}
+	}
+	return n
+}
+
+// itemTouchesPrograms reports whether a completed item depends on any changed
+// program. The pool records affected programs on the item at completion time.
+func (p *Pool) itemTouchesPrograms(item CompletedItem, changed map[uint16]bool) bool {
+	for _, prog := range item.Programs {
+		if changed[prog] {
+			return true
+		}
+	}
+	return false
+}
+
 // SetSegmentSize records the configured packets-per-segment so the checkpoint
 // captures the segmentation used; a resume with a different size is detectable.
 func (p *Pool) SetSegmentSize(n int) {
@@ -147,6 +188,7 @@ func (p *Pool) Process(seg *ingest.Segment) (SegmentResult, error) {
 	p.done[seg.ID] = CompletedItem{
 		SegmentID: seg.ID, StartOffset: seg.StartOffset, EndOffset: seg.EndOffset,
 		RawHash: d.Raw, ContentHash: d.Content, Sidecar: sidecar,
+		Programs: programsFromKeyframes(result.Keyframes),
 	}
 	p.processed++
 	p.mu.Unlock()
@@ -251,6 +293,7 @@ func (p *Pool) ProcessBatch(segs []*ingest.Segment) ([]SegmentResult, error) {
 			p.done[s.ID] = CompletedItem{
 				SegmentID: s.ID, StartOffset: s.StartOffset, EndOffset: s.EndOffset,
 				RawHash: rec.RawHash, ContentHash: rec.ContentHash, Sidecar: sidecar,
+				Programs: programsFromKeyframes(result.Keyframes),
 			}
 			p.processed++
 			p.mu.Unlock()
@@ -351,6 +394,26 @@ func sortIDs(ids []int64) {
 			ids[j-1], ids[j] = ids[j], ids[j-1]
 		}
 	}
+}
+
+// programsFromKeyframes returns the distinct, sorted set of programs a
+// segment's keyframes belong to. It defines the dependency edge used to
+// invalidate segments when a PSI mapping epoch changes.
+func programsFromKeyframes(kfs []index.Keyframe) []uint16 {
+	seen := map[uint16]bool{}
+	var out []uint16
+	for _, kf := range kfs {
+		if !seen[kf.Program] {
+			seen[kf.Program] = true
+			out = append(out, kf.Program)
+		}
+	}
+	for i := 1; i < len(out); i++ {
+		for j := i; j > 0 && out[j-1] > out[j]; j-- {
+			out[j-1], out[j] = out[j], out[j-1]
+		}
+	}
+	return out
 }
 
 // LoadCheckpoint reads and validates a checkpoint, returning nil if absent.
