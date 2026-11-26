@@ -1,6 +1,9 @@
 package job
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestStateSaveLoadAndCommit(t *testing.T) {
 	root := t.TempDir()
@@ -50,4 +53,36 @@ func TestKeyLockSerializesAndReleases(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = l2.Unlock()
+}
+
+func TestKeyLockMutualExclusion(t *testing.T) {
+	root := t.TempDir()
+	held, err := AcquireKeyLock(root, "serial")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := make(chan *Lock, 1)
+	go func() {
+		l, err := AcquireKeyLock(root, "serial")
+		if err != nil {
+			t.Errorf("second lock: %v", err)
+			return
+		}
+		got <- l
+	}()
+	select {
+	case l := <-got:
+		_ = l.Unlock()
+		t.Fatal("same job key entered critical section concurrently")
+	case <-time.After(50 * time.Millisecond):
+	}
+	if err := held.Unlock(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case l := <-got:
+		_ = l.Unlock()
+	case <-time.After(time.Second):
+		t.Fatal("lock was not released")
+	}
 }

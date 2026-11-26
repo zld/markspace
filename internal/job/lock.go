@@ -32,17 +32,16 @@ func AcquireKeyLock(root, jobKey string) (*Lock, error) {
 	return &Lock{f: f}, nil
 }
 
-// Unlock releases and removes the advisory lock.
+// Unlock releases the advisory lock.  The lock file is intentionally retained:
+// unlinking it can race with another process opening the same path and allow a
+// second inode to be locked.
 func (l *Lock) Unlock() error {
 	if l == nil || l.f == nil {
 		return nil
 	}
-	path := l.f.Name()
-	unlockErr := syscall.Flock(int(l.f.Fd()), syscall.LOCK_UN)
-	closeErr := l.f.Close()
-	_ = os.Remove(path)
-	if unlockErr != nil {
-		return unlockErr
+	if err := syscall.Flock(int(l.f.Fd()), syscall.LOCK_UN); err != nil {
+		_ = l.f.Close()
+		return err
 	}
-	return closeErr
+	return l.f.Close()
 }
