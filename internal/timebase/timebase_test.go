@@ -11,7 +11,7 @@ func TestBaseConvertExact(t *testing.T) {
 		ticks int64
 		want  int64
 	}{
-		{Base{2, 1}, 1, 500_000_000},        // half a second
+		{Base{2, 1}, 1, 500_000_000}, // half a second
 		{Base{90000, 1}, 90000, 1_000_000_000},
 		{Base{90000, 1}, 3000, 33_333_333}, // rounds 33_333_333.33
 		{Base{1000, 1}, 1500, 1_500_000_000},
