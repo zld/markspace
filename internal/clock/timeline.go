@@ -62,10 +62,18 @@ func ToDuration(units uint64, rate uint32) (time.Duration, error) {
 	r := uint64(rate)
 	sec := units / r
 	rem := units % r
-	if sec > uint64(math.MaxInt64)/uint64(time.Second) {
+	const nsPerSec = uint64(time.Second)
+	maxSec := uint64(math.MaxInt64) / nsPerSec
+	if sec > maxSec {
 		return 0, fmt.Errorf("clock: %d units at rate %d: %w", units, rate, model.ErrOverflow)
 	}
-	return time.Duration(sec)*time.Second + time.Duration(rem*uint64(time.Second)/r), nil
+	// rem < r <= 2^32 so rem*1e9 stays below 2^64.
+	remNanos := rem * nsPerSec / r
+	secNanos := sec * nsPerSec // safe: sec <= maxSec
+	if sec == maxSec && remNanos > uint64(math.MaxInt64)-secNanos {
+		return 0, fmt.Errorf("clock: %d units at rate %d: %w", units, rate, model.ErrOverflow)
+	}
+	return time.Duration(secNanos) + time.Duration(remNanos), nil
 }
 
 // FromDuration converts a Duration to media-clock units, rejecting negative

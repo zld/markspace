@@ -2,6 +2,7 @@ package clock
 
 import (
 	"errors"
+	"math"
 	"testing"
 	"time"
 
@@ -57,6 +58,26 @@ func TestToDurationOverflow(t *testing.T) {
 	_, err := ToDuration(1<<62, 1)
 	if !errors.Is(err, model.ErrOverflow) {
 		t.Fatalf("want ErrOverflow, got %v", err)
+	}
+}
+
+func TestToDurationOverflowBoundaryRemainder(t *testing.T) {
+	const ns = uint64(time.Second)
+	maxSec := uint64(math.MaxInt64) / ns
+	// Seconds part is exactly at the floor boundary and the remainder's
+	// nanoseconds push the sum past MaxInt64; the old guard missed this.
+	units := maxSec*ns + 999_000_000
+	if _, err := ToDuration(units, uint32(ns)); !errors.Is(err, model.ErrOverflow) {
+		t.Fatalf("boundary remainder overflow: want ErrOverflow, got %v", err)
+	}
+	// A remainder within the slack is still representable.
+	okUnits := maxSec*ns + 800_000_000
+	d, err := ToDuration(okUnits, uint32(ns))
+	if err != nil {
+		t.Fatalf("representable boundary rejected: %v", err)
+	}
+	if d <= 0 {
+		t.Fatalf("boundary duration must stay positive, got %v", d)
 	}
 }
 
