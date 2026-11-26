@@ -60,16 +60,17 @@ var ErrInterrupt = errors.New("worker: cooperative interrupt")
 // Pool processes segments with a fixed worker count. It is single-use: create
 // one pool per run (or per resume).
 type Pool struct {
-	workers    int
-	dir        string
-	sourceName string
-	epoch      *ingest.MappingEpoch
-	chkPath    string
-	mu         sync.Mutex
-	done       map[int64]CompletedItem
-	processed  int
-	inFlight   int32 // atomic: currently computing segments
-	maxFlight  int32 // atomic: high-water mark of inFlight
+	workers           int
+	dir               string
+	sourceName        string
+	packetsPerSegment int
+	epoch             *ingest.MappingEpoch
+	chkPath           string
+	mu                sync.Mutex
+	done              map[int64]CompletedItem
+	processed         int
+	inFlight          int32 // atomic: currently computing segments
+	maxFlight         int32 // atomic: high-water mark of inFlight
 }
 
 // NewPool builds a pool. Already-completed items from a prior checkpoint make
@@ -102,6 +103,14 @@ func (p *Pool) SetEpoch(epoch *ingest.MappingEpoch) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.epoch = epoch
+}
+
+// SetSegmentSize records the configured packets-per-segment so the checkpoint
+// captures the segmentation used; a resume with a different size is detectable.
+func (p *Pool) SetSegmentSize(n int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.packetsPerSegment = n
 }
 
 // IsDone reports whether a segment was completed and verified in a prior run.
@@ -276,8 +285,8 @@ func (p *Pool) chkSource(segmentID int64) string {
 func (p *Pool) persist(interrupted bool) error {
 	p.mu.Lock()
 	chk := Checkpoint{
-		Version: checkpointVersion, PacketsPerSegment: 0,
-		Interrupted: interrupted,
+		Version: checkpointVersion, SourceName: p.sourceName,
+		PacketsPerSegment: p.packetsPerSegment, Interrupted: interrupted,
 	}
 	ids := make([]int64, 0, len(p.done))
 	for id := range p.done {

@@ -268,6 +268,7 @@ func processAsset(f demoFlags, budget *plan.Budget, run *assetRun, newAssetBudge
 	// Segment-level interrupts are disabled here; the runDemo loop controls
 	// cooperative interruption at asset boundaries.
 	pool := worker.NewPool(budget.Workers, f.out, run.name, psi.Current(), prior, 0)
+	pool.SetSegmentSize(budget.PacketsPerSegment)
 	hadPrior := prior != nil && len(prior.Completed) > 0
 
 	// Stream complete segments and submit them in worker-sized windows. At
