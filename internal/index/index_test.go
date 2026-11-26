@@ -96,4 +96,11 @@ func TestPageCacheHonorsFourMiB(t *testing.T) {
 	if _, ok := c.Get("a"); ok {
 		t.Fatal("oldest page should have been evicted")
 	}
+	c.Put(CachePage{Key: "too-big", Bytes: MaxPageCacheBytes + 1})
+	if c.Bytes() > MaxPageCacheBytes {
+		t.Fatal("oversized page must not make cache exceed ceiling")
+	}
+	if _, ok := c.Get("too-big"); ok {
+		t.Fatal("oversized page should not be cached")
+	}
 }

@@ -46,21 +46,23 @@ func (c *PageCache) Get(key string) (any, bool) {
 }
 
 // Put inserts a page and evicts older pages to honor the byte ceiling.
+// A single page larger than the ceiling is never retained.
 func (c *PageCache) Put(page CachePage) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if el, ok := c.items[page.Key]; ok {
 		old := el.Value.(*cacheEntry).page.Bytes
 		c.current -= old
-		el.Value = &cacheEntry{page: page}
-		c.current += page.Bytes
-		c.ll.MoveToFront(el)
-	} else {
-		el := c.ll.PushFront(&cacheEntry{page: page})
-		c.items[page.Key] = el
-		c.current += page.Bytes
+		c.ll.Remove(el)
+		delete(c.items, page.Key)
 	}
-	for c.current > c.maxBytes && c.ll.Len() > 1 {
+	if page.Bytes > c.maxBytes {
+		return
+	}
+	el := c.ll.PushFront(&cacheEntry{page: page})
+	c.items[page.Key] = el
+	c.current += page.Bytes
+	for c.current > c.maxBytes && c.ll.Len() > 0 {
 		oldest := c.ll.Back()
 		if oldest == nil {
 			break
