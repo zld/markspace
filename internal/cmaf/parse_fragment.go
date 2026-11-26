@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/abema/go-mp4"
+
 	"example.com/archiveverify/internal/model"
 )
 
@@ -23,15 +25,12 @@ func readPayload(r io.ReaderAt, b BoxHeader, max int) ([]byte, error) {
 }
 
 func parseMFHD(r io.ReaderAt, source string, b BoxHeader) (uint32, error) {
-	buf, err := readPayload(r, b, 16)
-	if err != nil {
+	section := io.NewSectionReader(r, b.PayloadOffset, b.PayloadSize)
+	mfhd := &mp4.Mfhd{}
+	if _, err := mp4.Unmarshal(section, uint64(b.PayloadSize), mfhd, mp4.Context{}); err != nil {
 		return 0, model.NewParseError(source, "mfhd", b.Offset, b.PayloadOffset, err)
 	}
-	if len(buf) < 8 { // version+flags and sequence number
-		return 0, model.NewParseError(source, "mfhd", b.Offset, b.PayloadOffset+int64(len(buf)),
-			io.ErrUnexpectedEOF)
-	}
-	return binary.BigEndian.Uint32(buf[4:8]), nil
+	return mfhd.SequenceNumber, nil
 }
 
 func parseTRAF(r io.ReaderAt, source string, traf BoxHeader, init *Init, maxBox int64) (*TrackFragment, error) {
