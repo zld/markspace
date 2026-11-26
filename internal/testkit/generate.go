@@ -19,6 +19,15 @@ const (
 	height           = 240
 )
 
+// FrameCount is the number of samples in each generated video track.
+func FrameCount() int { return frameCount }
+
+// FrameDelta is the native stts delta per nominal frame.
+func FrameDelta() uint32 { return frameDelta }
+
+// KeyframeEvery is the sync-sample cadence in frames.
+func KeyframeEvery() int { return keyframeEvery }
+
 // boxBuilder accumulates a complete MP4 in memory in bounded pieces. The
 // fixtures are small (a few KB), so whole-file assembly keeps the writer
 // logic trivial while sample tables stay fully controlled.
