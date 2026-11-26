@@ -98,8 +98,13 @@ func runHealthy(opts healthyOptions) (Report, error) {
 	tr.AddGaps(ledger.Gaps())
 	blockAlign := int64(f.Ch * f.Bits / 8)
 	for _, tp := range timed {
-		offset := meta.DataOffset + tp.StartSample*blockAlign
-		if err := tr.AppendPCM(tp.StartSample, tp.Packet.Payload, f.Bits, offset); err != nil {
+		// Fixtures use the PCM sample clock and start at timestamp zero.
+		rtpSample := int64(tp.Packet.Timestamp)
+		if rtpSample != tp.StartSample {
+			return rep, fmt.Errorf("RTP timestamp %d does not map to sequence sample %d", tp.Packet.Timestamp, tp.StartSample)
+		}
+		offset := meta.DataOffset + rtpSample*blockAlign
+		if err := tr.AppendPCM(rtpSample, tp.Packet.Payload, f.Bits, offset); err != nil {
 			return rep, err
 		}
 	}
