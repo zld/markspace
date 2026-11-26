@@ -96,6 +96,30 @@ func TestDigestStableAndAtomicResumeSkipsRewrite(t *testing.T) {
 	}
 }
 
+func TestReadSampleBytesAtRecordedOffset(t *testing.T) {
+	dir := t.TempDir()
+	ws, err := fixture.Generate(dir, "clean")
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := index.Build(context.Background(), ws.Manifest, index.BuildOptions{Root: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rr, err := index.ReadRange(res.Index, index.Range{Start: 2_000_000, End: 3_000_000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := index.ReadSampleBytes(dir, rr.Video[0].Entry)
+	if err != nil || len(b) != int(rr.Video[0].Size) {
+		t.Fatalf("video bytes len=%d err=%v", len(b), err)
+	}
+	b, err = index.ReadSampleBytes(dir, rr.Audio[0].Entry)
+	if err != nil || len(b) != int(rr.Audio[0].Size) {
+		t.Fatalf("audio bytes len=%d err=%v", len(b), err)
+	}
+}
+
 func TestFaultIndexQuarantinesTruncatedAndKeepsReading(t *testing.T) {
 	idx := buildFixtureIndex(t, "faults")
 	if len(idx.Quarantine) != 1 {
