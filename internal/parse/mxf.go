@@ -1,6 +1,7 @@
 package parse
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"os"
@@ -366,30 +367,16 @@ func ParseMXF(path string) (*Asset, error) {
 			tr.Samples[i].Number = i + 1
 		}
 	}
-	asset.Tracks = sortTracks(asset.Tracks)
+	sortTracks(asset.Tracks)
 	return asset, nil
 }
 
-func sortTracks(tracks []*Track) []*Track {
+// sortTracks orders tracks by id so the parse result does not depend on
+// header record order.
+func sortTracks(tracks []*Track) {
 	sort.SliceStable(tracks, func(i, j int) bool { return tracks[i].ID < tracks[j].ID })
-	return tracks
 }
 
-func bytesEqual(a, b []byte) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
+func bytesEqual(a, b []byte) bool { return bytes.Equal(a, b) }
 
-func bytesEqualPrefix(a, prefix []byte) bool {
-	if len(a) < len(prefix) {
-		return false
-	}
-	return bytesEqual(a[:len(prefix)], prefix)
-}
+func bytesEqualPrefix(a, prefix []byte) bool { return bytes.HasPrefix(a, prefix) }

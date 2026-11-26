@@ -126,12 +126,11 @@ func (st *runState) prepare(ctx context.Context, inputs Inputs) error {
 		return media.New(media.CodeNoTrack, "replay.prepare", -1, "primary MP4 needs video and audio tracks")
 	}
 
-	// Metadata: both containers describe the same program. The MXF fixture
-	// carries a zero-margin crop, which is the MXF way of saying "no crop";
-	// it is normalised away so it cannot masquerade as a real descriptor.
+	// Metadata: both containers describe the same program, so each field is
+	// resolved across them. The MXF side carries only what its header records.
 	sources := []parse.MetaSource{
 		{Name: "mp4", Meta: st.video.Meta},
-		{Name: "mxf", Meta: normalizeMXFMeta(mxfVideoMeta(st.mxfAsset))},
+		{Name: "mxf", Meta: mxfVideoMeta(st.mxfAsset)},
 	}
 	meta, choices, conflicts := parse.ResolveMetadata(sources, st.cfg.Selectors)
 	st.meta, st.choices, st.conflicts = meta, choices, conflicts
@@ -230,14 +229,6 @@ func (st *runState) prepare(ctx context.Context, inputs Inputs) error {
 		return err
 	}
 	return nil
-}
-
-// normalizeMXFMeta drops descriptors that carry no information.
-func normalizeMXFMeta(m *parse.Meta) *parse.Meta {
-	if m == nil || m.Crop != nil {
-		return m
-	}
-	return m
 }
 
 // mxfMetaOffset reports where the conflicting metadata lives in the source:
