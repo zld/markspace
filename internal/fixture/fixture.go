@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"replayctl/internal/event"
+	"replayctl/internal/fault"
 	mp4scan "replayctl/internal/mp4"
 	"replayctl/internal/timeline"
 )
@@ -55,7 +56,7 @@ func GenerateSelf(opt Options) (*Paths, error) {
 	}
 	dir := filepath.Join(root, opt.Case)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, err
+		return nil, fault.New(fault.IO, fault.StageFixture, dir, -1, -1, "create fixture directory: %v", err)
 	}
 	p := &Paths{Dir: dir, Case: opt.Case, EventID: fmt.Sprintf("kill-%dms", opt.EventMS)}
 
@@ -69,7 +70,7 @@ func GenerateSelf(opt Options) (*Paths, error) {
 
 	media, err := GenerateMedia()
 	if err != nil {
-		return nil, err
+		return nil, fault.Wrap(err, fault.Render, fault.StageFixture, "", -1, -1)
 	}
 	p.MediaPath = filepath.Join(dir, "source.mp4")
 	if err := mp4scan.MuxFile(p.MediaPath, []mp4scan.TrackIn{media.Video, media.Audio}); err != nil {
@@ -77,7 +78,7 @@ func GenerateSelf(opt Options) (*Paths, error) {
 	}
 	p.EventPath = filepath.Join(dir, "events.rtp")
 	if err := writeEvents(p.EventPath, opt.EventMS, p.EventID); err != nil {
-		return nil, err
+		return nil, fault.Wrap(err, fault.IO, fault.StageFixture, p.EventPath, -1, -1)
 	}
 	if opt.Case == CaseTimeGap {
 		p.Timeline = gapTimeline(p.MediaPath)
@@ -92,7 +93,10 @@ func writeTruncatedBox(path string) error {
 	binary.BigEndian.PutUint32(buf[0:4], 64) // declares a 64-byte box...
 	copy(buf[4:8], "ftyp")
 	// ...but the complete file is exactly 16 bytes. Bytes 8..15 are payload.
-	return os.WriteFile(path, buf[:], 0o600)
+	if err := os.WriteFile(path, buf[:], 0o600); err != nil {
+		return fault.New(fault.IO, fault.StageFixture, path, -1, -1, "write truncated fixture: %v", err)
+	}
+	return nil
 }
 
 func writeEvents(path string, eventMS int64, eventID string) error {
