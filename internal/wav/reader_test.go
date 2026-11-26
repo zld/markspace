@@ -95,6 +95,34 @@ func TestPartialFrameReportsFirstBadByte(t *testing.T) {
 	}
 }
 
+func TestAcceptsPCM24And32(t *testing.T) {
+	cases := []struct {
+		bits int
+		data []byte
+	}{
+		{24, []byte{0x01, 0x02, 0x03}},
+		{32, []byte{0x01, 0x02, 0x03, 0x04}},
+	}
+	for _, tc := range cases {
+		b := buildWAV(wavSpec{channels: 1, rate: 48000, bits: tc.bits, data: tc.data})
+		r, err := OpenAt(bytes.NewReader(b), int64(len(b)))
+		if err != nil {
+			t.Fatalf("bits=%d: %v", tc.bits, err)
+		}
+		if r.Meta().FrameCount != 1 {
+			t.Fatalf("bits=%d frames=%d", tc.bits, r.Meta().FrameCount)
+		}
+		frame, err := r.NextFrame()
+		if err != nil {
+			t.Fatalf("bits=%d next frame: %v", tc.bits, err)
+		}
+		s, err := DecodeSample(frame, tc.bits)
+		if err != nil || s == 0 {
+			t.Fatalf("bits=%d decoded=%d err=%v", tc.bits, s, err)
+		}
+	}
+}
+
 func TestRejectsUnsupportedRange(t *testing.T) {
 	tests := []wavSpec{
 		{channels: 9, rate: 48000, bits: 16, data: []byte{}},
