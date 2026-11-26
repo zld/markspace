@@ -76,8 +76,9 @@ func runDemo(args []string) int {
 	fmt.Printf("buffer_actual_bytes=%d\n", doc.Pipeline.BufferActualBytes)
 	fmt.Printf("check buffer_peak_bytes<=%d: %s (actual=%d)\n",
 		s.BufferBudgetBytes, passLabel(s.BufferPeakBytes <= s.BufferBudgetBytes), s.BufferPeakBytes)
-	fmt.Printf("blocks_produced=%d blocks_consumed=%d residual_tasks=%d\n",
-		doc.Pipeline.BlocksProduced, doc.Pipeline.BlocksConsumed, doc.Pipeline.ResidualTasks)
+	fmt.Printf("blocks_produced=%d blocks_consumed=%d dropped=%d backpressure_events=%d residual_tasks=%d\n",
+		doc.Pipeline.BlocksProduced, doc.Pipeline.BlocksConsumed, doc.Pipeline.BlocksDropped,
+		doc.Pipeline.BackpressureEvents, doc.Pipeline.ResidualTasks)
 	fmt.Printf("verdict=%s\n", s.Verdict)
 
 	for i, seg := range doc.Segments {
