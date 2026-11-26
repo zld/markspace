@@ -69,11 +69,12 @@ func (c *CountingReader) Read(p []byte) (int, error) {
 }
 
 func (c *CountingReader) ReadFull(p []byte) error {
-	n, err := io.ReadFull(c, p)
+	start := c.Offset()
+	_, err := io.ReadFull(c, p)
 	if err != nil {
-		if errors.Is(err, io.ErrUnexpectedEOF) {
+		if errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.EOF) {
 			return media.Corrupt("EBML_TRUNCATED_READ", "element header or field is truncated").
-				WithElement("", c.offset-int64(len(p)-n)).Wrap(err)
+				WithElement("", start).Wrap(err)
 		}
 		return err
 	}
@@ -117,7 +118,7 @@ func ReadVINT(c *CountingReader) (VINT, error) {
 	buf[0] = first[0]
 	if width > 1 {
 		if err := c.ReadFull(buf[1:]); err != nil {
-			if me, ok := AsMediaError(err); ok && me.Offset < 0 {
+			if me, ok := AsMediaError(err); ok {
 				me.Offset = start
 			}
 			return VINT{}, err

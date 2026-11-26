@@ -157,6 +157,89 @@ func TestTruncatedClusterReportsLocation(t *testing.T) {
 	}
 }
 
+func TestUnknownLengthInsideKnownParentEndsAtParentBoundary(t *testing.T) {
+	unk, err := ebml.EncodeUnknownSize(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writingSize, err := ebml.EncodeSize(2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var info []byte
+	info = append(info, ebml.EncodeID(ebml.IDInfo)...)
+	info = append(info, unk...)
+	info = append(info, ebml.EncodeID(ebml.IDWritingApp)...)
+	info = append(info, writingSize...)
+	info = append(info, []byte("ok")...)
+
+	segSize, err := ebml.EncodeSize(uint64(len(info)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var segment []byte
+	segment = append(segment, ebml.EncodeID(ebml.IDSegment)...)
+	segment = append(segment, segSize...)
+	segment = append(segment, info...)
+
+	doc, err := ebml.Parse(bytes.NewReader(segment), ebml.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, el := range doc.Elements {
+		if el.ID == ebml.IDInfo {
+			found = true
+			if !el.Unknown || el.Size != -1 {
+				t.Fatalf("Info = %+v, want unknown length", el)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("Info element not recorded")
+	}
+}
+
+func TestTruncatedHeaderAndLengthOutOfBoundsAreLocated(t *testing.T) {
+	size200, err := ebml.EncodeSize(200)
+	if err != nil {
+		t.Fatal(err)
+	}
+	truncated := append(ebml.EncodeID(ebml.IDSegment), size200[:1]...)
+	_, err = ebml.Parse(bytes.NewReader(truncated), ebml.Options{})
+	me, ok := media.AsError(err)
+	if !ok || me.Offset != int64(len(ebml.EncodeID(ebml.IDSegment))) {
+		t.Fatalf("truncated header error = %v, want structured offset at size VINT", err)
+	}
+	if !strings.Contains(me.ElementPath, "Segment") || media.ExitCode(err) != 2 {
+		t.Fatalf("truncated header location/path wrong: %+v", me)
+	}
+
+	badSize, err := ebml.EncodeSize(1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var infoHeader []byte
+	infoHeader = append(infoHeader, ebml.EncodeID(ebml.IDInfo)...)
+	infoHeader = append(infoHeader, badSize...)
+	segSize, err := ebml.EncodeSize(uint64(len(infoHeader)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var outOfBounds []byte
+	outOfBounds = append(outOfBounds, ebml.EncodeID(ebml.IDSegment)...)
+	outOfBounds = append(outOfBounds, segSize...)
+	outOfBounds = append(outOfBounds, infoHeader...)
+	_, err = ebml.Parse(bytes.NewReader(outOfBounds), ebml.Options{})
+	me, ok = media.AsError(err)
+	if !ok || me.Code != "EBML_LENGTH_OUT_OF_BOUNDS" {
+		t.Fatalf("out-of-bounds error = %v", err)
+	}
+	if !strings.Contains(me.ElementPath, "/Segment/Info") || me.Offset < 0 {
+		t.Fatalf("out-of-bounds location wrong: %+v", me)
+	}
+}
+
 func TestVINTSizeRoundTripAndReservedUnknown(t *testing.T) {
 	for _, size := range []uint64{0, 1, 126, 127, 16382, 16383, 1_000_000} {
 		enc, err := ebml.EncodeSize(size)
