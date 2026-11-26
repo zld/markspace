@@ -10,9 +10,9 @@ import (
 
 // FanoutResult holds every event/layer window plus fan-in verification.
 type FanoutResult struct {
-	Windows     []*Window
-	Boundaries  []audit.Boundary
-	Anomalies   []fault.Anomaly
+	Windows      []*Window
+	Boundaries   []audit.Boundary
+	Anomalies    []fault.Anomaly
 	MaxSkewTicks int64
 
 	Segments      int

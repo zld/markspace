@@ -111,9 +111,9 @@ func safeName(s string) string {
 }
 
 type fragmentRegion struct {
-	moof  gomp4mp4.BoxRef
-	mdat  *gomp4mp4.BoxRef
-	init  bool
+	moof gomp4mp4.BoxRef
+	mdat *gomp4mp4.BoxRef
+	init bool
 }
 
 // FragmentRegions pairs every top-level moof with its adjacent mdat and
