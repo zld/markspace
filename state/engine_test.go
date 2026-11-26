@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"archivecheck/checkpoint"
 	"archivecheck/fixture"
 	"archivecheck/pipe"
 	"archivecheck/state"
@@ -88,5 +89,22 @@ func TestInterruptAfterCacheResumesToSameArchive(t *testing.T) {
 	}
 	if resumed.ArchiveSHA256 != continuous.ArchiveSHA256 {
 		t.Fatalf("archive mismatch:\nresume=%s\ncont=%s", resumed.ArchiveSHA256, continuous.ArchiveSHA256)
+	}
+}
+
+func TestReplayRejectsJournalLargerThanMemoryBudget(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "journal")
+	j, err := checkpoint.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := j.AppendStage(context.Background(), checkpoint.StageRecord{
+		Cursor: 1, InputDigest: "digest", Stage: checkpoint.StageCached,
+		Source: "segment", Detail: "detail",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.Replay(context.Background(), dir, pipe.NewBudget(1)); err == nil {
+		t.Fatal("expected replay to respect the byte budget")
 	}
 }
