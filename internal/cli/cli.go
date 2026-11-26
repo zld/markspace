@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"replayctl/internal/fault"
@@ -82,7 +83,7 @@ func runDemo(args []string, stdout, stderr io.Writer) int {
 	fs.Int64Var(&f.preMS, "pre-ms", 500, "pre-event half-window in milliseconds")
 	fs.Int64Var(&f.postMS, "post-ms", 500, "post-event half-window in milliseconds")
 	var truncated, timeGap, wrap, recover bool
-	var corruptAlias, gapAlias, recoveryAlias, crashAlias bool
+	var corruptAlias, gapAlias, recoveryAlias, crashAlias, injectAlias bool
 	fs.BoolVar(&truncated, "truncated-box", false, "use the 16-byte declared-longer box fixture")
 	fs.BoolVar(&corruptAlias, "corrupt", false, "alias for --truncated-box")
 	fs.BoolVar(&timeGap, "time-gap", false, "place the event in an empty clip segment")
@@ -91,6 +92,7 @@ func runDemo(args []string, stdout, stderr io.Writer) int {
 	fs.BoolVar(&recover, "recover", false, "enable one-shot rename-then-exit recovery injection")
 	fs.BoolVar(&recoveryAlias, "recovery", false, "alias for --recover")
 	fs.BoolVar(&crashAlias, "crash-after-rename", false, "inject exit 75 after final artifact rename")
+	fs.BoolVar(&injectAlias, "inject-exit-after-rename", false, "alias for --crash-after-rename")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -108,7 +110,10 @@ func runDemo(args []string, stdout, stderr io.Writer) int {
 		f.caseName = fixture.CaseRecover
 	}
 	f.caseName = normalizeCase(f.caseName)
-	if recover || crashAlias || f.caseName == fixture.CaseRecover {
+	if os.Getenv("REPLAYCTL_CRASH_AFTER_RENAME") == "1" || os.Getenv("REPLAYCTL_INJECT_EXIT") == "1" {
+		crashAlias = true
+	}
+	if recover || crashAlias || injectAlias || f.caseName == fixture.CaseRecover {
 		f.crashAfterRename = true
 	}
 	if !f.selfFixture {
