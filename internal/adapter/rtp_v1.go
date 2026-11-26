@@ -115,8 +115,8 @@ func (a *RTPV1) Parse(ctx context.Context, src Source) (*Asset, error) {
 				}
 			}
 			if !ok {
-				return nil, locatedRTP(fmt.Sprintf("pt-%d", pkt.PayloadType), "codec", int64(frameOff),
-					fmt.Sprintf("%w: payload type %d", ErrUnknownCodec, pkt.PayloadType))
+				return nil, clock.Wrap(fmt.Sprintf("pt-%d", pkt.PayloadType), "codec", int64(frameOff),
+					fmt.Errorf("%w: payload type %d", ErrUnknownCodec, pkt.PayloadType))
 			}
 			byPT[pkt.PayloadType] = td
 		}
