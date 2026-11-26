@@ -65,7 +65,7 @@ func runAssetsAndCache(rep *evidence.Report, out string, seed int64, primary *an
 		return err
 	}
 
-	_, mdA, err := media.ParseMP4Metadata(bytes.NewReader(mp4A))
+	metaA, mdA, err := media.ParseMP4Metadata(bytes.NewReader(mp4A))
 	if err != nil {
 		return err
 	}
@@ -125,6 +125,26 @@ func runAssetsAndCache(rep *evidence.Report, out string, seed int64, primary *an
 	})
 	rep.Check("metadata_change_keeps_stream_cache", metaState.StreamParse == "hit", "hit", metaState.StreamParse, streamD)
 	rep.Check("metadata_change_invalidates_timeline_index", metaState.TimelineIndex == "invalid" && !metaHit, "invalid/miss", metaState.TimelineIndex+"/"+map[bool]string{true: "hit", false: "miss"}[metaHit], "normalized track metadata digest changed")
+
+	// A normalized metadata revision can be addressed independently even when
+	// container framing bytes have not moved. This isolates the third digest.
+	metadataOnly := *metaA
+	metadataOnly.MovieDuration++
+	mdOnly, err := metadataOnly.Digest()
+	if err != nil {
+		return err
+	}
+	fpMetadataOnly := media.Fingerprint{StreamSHA256: streamD, ContainerSHA256: containerA, MetadataSHA256: mdOnly}
+	metadataOnlyState := media.ClassifyFingerprintChange(fpA, fpMetadataOnly)
+	rep.Cache = append(rep.Cache, evidence.CacheEvidence{
+		Scenario: "metadata-only-revision", Expected: "stream_parse=hit,offset_mapping=valid,timeline_index=invalid",
+		State: metadataOnlyState, StreamCache: "hit",
+	})
+	rep.Check("metadata_only_revision_invalidates_timeline_only",
+		metadataOnlyState.StreamParse == "hit" && metadataOnlyState.OffsetMapping == "valid" && metadataOnlyState.TimelineIndex == "invalid",
+		"hit/valid/invalid",
+		metadataOnlyState.StreamParse+"/"+metadataOnlyState.OffsetMapping+"/"+metadataOnlyState.TimelineIndex,
+		mdOnly)
 	return nil
 }
 
