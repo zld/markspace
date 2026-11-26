@@ -144,6 +144,13 @@ func (s *Store) verify(key string) (string, error) {
 	return dst, nil
 }
 
+// SumHex returns the full SHA-256 hex digest of an in-memory byte slice. It is
+// used to record the checksum of a recomputed derived segment in manifests.
+func SumHex(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
 // TrackContentHash streams the byte ranges of one track out of a source blob
 // and hashes exactly the sample content. Because it reads sample bytes rather
 // than container boxes, an unchanged track inside a re-wrapped container still
