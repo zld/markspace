@@ -23,9 +23,6 @@ const (
 	MaxQueueFragments = 32
 	// MaxFragmentBytes bounds a single fragment file.
 	MaxFragmentBytes = 64 << 20
-	// MaxRTPPackets bounds trace size in packets, mirroring the 64 MiB trace
-	// limit at a conservative per-packet size.
-	MaxRTPPackets = 1 << 20
 )
 
 // Code values.

@@ -14,10 +14,9 @@ import (
 
 // Code values for this package.
 const (
-	// CodeTFDTBackwards marks a tfdt that moved a track before its previous end.
+	// CodeTFDTBackwards marks a tfdt that moved a track before its previous end
+	// and cannot be raised onto the track's own grid.
 	CodeTFDTBackwards model.Code = "tfdt_backward"
-	// CodeTimelineGap marks track data missing between fragments.
-	CodeTimelineGap model.Code = "timeline_gap"
 )
 
 // Repair records one accepted tfdt adjustment. Original, Repaired and
