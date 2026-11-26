@@ -119,6 +119,9 @@ func verifyCommand(args []string) int {
 	}
 	fmt.Printf("verify=ok files=%d bytes=%d root_hash=%s state=%s\n",
 		report.FileCount, report.TotalBytes, report.RootHash, catalog.State)
+	for _, file := range catalog.Files {
+		fmt.Printf("item=ok path=%s bytes=%d sha256=%s\n", file.Path, file.Bytes, file.SHA256)
+	}
 	return 0
 }
 
