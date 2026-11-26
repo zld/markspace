@@ -128,8 +128,8 @@ func scanAnnexB(r io.Reader, track string, codec Codec, headerSize int, classify
 		for len(header) < headerSize {
 			b, off, readErr := s.readAt()
 			if readErr != nil {
-				u.Length = s.offset - headerOff
 				u.End = s.offset
+				u.Length = u.End - u.Offset
 				u.Complete = false
 				res.Units = append(res.Units, u)
 				res.Issues.Add(media.CatTruncatedNAL, track, -1, start, "%s NAL header truncated at byte %d", codec, off)
@@ -144,9 +144,9 @@ func scanAnnexB(r io.Reader, track string, codec Codec, headerSize int, classify
 			return nil, scanErr
 		}
 		if scanErr == io.EOF {
-			u.Length = s.offset - headerOff
 			u.End = s.offset
-			c := classify(header, u.Length)
+			u.Length = u.End - u.Offset
+			c := classify(header, u.End-headerOff)
 			applyClassified(&u, c)
 			if !u.Complete {
 				res.Issues.Add(c.issueCat, track, -1, u.Offset, "%s", c.issueMsg)
@@ -157,9 +157,9 @@ func scanAnnexB(r io.Reader, track string, codec Codec, headerSize int, classify
 		}
 
 		_ = nextLen
-		u.Length = nextStart - headerOff
 		u.End = nextStart
-		c := classify(header, u.Length)
+		u.Length = u.End - u.Offset
+		c := classify(header, nextStart-headerOff)
 		applyClassified(&u, c)
 		if !u.Complete {
 			res.Issues.Add(c.issueCat, track, -1, u.Offset, "%s", c.issueMsg)
