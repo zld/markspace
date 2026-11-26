@@ -108,27 +108,35 @@ func ParseSecondsToNS(s string) (int64, error) {
 // value; raw is the low-bit counter. At an exact half-window tie the direction
 // is ambiguous and an error is returned rather than guessing.
 func UnwrapModulo(prev int64, raw uint64, bits uint) (int64, error) {
-	if bits == 0 || bits >= 64 {
-		return 0, NewFault(PhaseTimeline, CodeInvalidArgument, "bits must be in 1..63")
+	if bits == 0 || bits >= 63 {
+		return 0, NewFault(PhaseTimeline, CodeInvalidArgument, "bits must be in 1..62")
 	}
-	mod := uint64(1) << bits
-	half := int64(mod >> 1)
-	r := int64(raw) // raw < mod <= 1<<63 for bits <= 63
-	current := prev - (prev % int64(mod)) + r
-	delta := current - prev
+	mod64 := int64(1) << bits
+	if raw >= uint64(mod64) {
+		return 0, NewFault(PhaseTimeline, CodeInvalidArgument, "raw value exceeds modulo window")
+	}
+	rem := prev % mod64
+	if rem < 0 {
+		rem += mod64
+	}
+	delta := int64(raw) - rem
+	half := mod64 >> 1
 	if delta > half {
-		current -= int64(mod)
+		delta -= mod64
 	} else if delta < -half {
-		current += int64(mod)
-	} else if delta == half && raw != uint64(prev%int64(mod)) {
+		delta += mod64
+	}
+	if delta == half || delta == -half {
 		return 0, NewFault(PhaseTimeline, CodeAmbiguousJump,
 			fmt.Sprintf("exact half-window jump from %d to raw %d", prev, raw))
 	}
-	if (current > 0 && prev > math.MaxInt64-(current-prev)) ||
-		(current < 0 && prev < math.MinInt64-(current-prev)) {
+	if delta > 0 && prev > math.MaxInt64-delta {
 		return 0, NewFault(PhaseTimeline, CodeTimeOverflow, "unwrapped counter overflows int64")
 	}
-	return current, nil
+	if delta < 0 && prev < math.MinInt64-delta {
+		return 0, NewFault(PhaseTimeline, CodeTimeOverflow, "unwrapped counter underflows int64")
+	}
+	return prev + delta, nil
 }
 
 // UnwrapSequence16 expands a 16-bit RTP sequence number into a monotonic

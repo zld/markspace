@@ -46,6 +46,14 @@ func TestUnwrapModuloAndAmbiguity(t *testing.T) {
 	if err != nil || v != 17 {
 		t.Fatalf("wrap v=%d err=%v", v, err)
 	}
+	v, err = UnwrapModulo(-1, 2, 4)
+	if err != nil || v != 2 {
+		t.Fatalf("negative-side nearest v=%d err=%v", v, err)
+	}
+	v, err = UnwrapModulo(-1, 14, 4)
+	if err != nil || v != -2 {
+		t.Fatalf("negative wrap v=%d err=%v", v, err)
+	}
 	if _, err := UnwrapModulo(0, 8, 4); err == nil {
 		t.Fatal("half-window jump must be ambiguous")
 	}
