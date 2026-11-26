@@ -180,8 +180,18 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 		return rep, err
 	}
 
+	cp.State = checkpoint.StateCommitted
+	cp.RootHash = "" // catalog root hashes the checkpoint itself; do not embed it circularly.
+	cp.CancelReason = ""
+	checkpointBytes, err := json.MarshalIndent(cp, "", "  ")
+	if err != nil {
+		return rep, err
+	}
+	checkpointBytes = append(checkpointBytes, '\n')
+	checkpointEntry := output.EntryFromBytes(checkpoint.FileName, checkpointBytes)
+
 	budget := output.Budget{BudgetUnits: opts.BudgetUnits, UsedUnits: units, MaxBytes: opts.MaxBytes}
-	catalog := output.BuildCatalog(tl, frames, []output.FileEntry{timelineEntry}, budget)
+	catalog := output.BuildCatalog(tl, frames, []output.FileEntry{timelineEntry, checkpointEntry}, budget)
 	catalogBytes, err := json.MarshalIndent(catalog, "", "  ")
 	if err != nil {
 		return rep, err
@@ -191,14 +201,11 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 		return pauseBudget(rep, cp, opts.OutDir, "max-bytes",
 			fmt.Errorf("delivery %d bytes exceeds --max-bytes %d", catalog.TotalBytes+int64(len(catalogBytes)), opts.MaxBytes))
 	}
-	if err := output.SaveCatalog(opts.OutDir, catalog); err != nil {
-		return rep, err
-	}
-	cp.State = checkpoint.StateCommitted
-	cp.RootHash = catalog.RootHash
-	cp.CancelReason = ""
 	if err := cp.Save(opts.OutDir); err != nil {
 		return rep, media.InputError("checkpoint.save", "", err)
+	}
+	if err := output.SaveCatalog(opts.OutDir, catalog); err != nil {
+		return rep, err
 	}
 	fillCommittedReport(rep, catalog, units)
 	return rep, nil
