@@ -164,6 +164,7 @@ func cttsBox(offsets []int32) []byte {
 	var p bytes.Buffer
 	p.Write(be32(uint32(len(offsets))))
 	for _, o := range offsets {
+		p.Write(be32(1))
 		p.Write(be32(uint32(o)))
 	}
 	return fullBox("ctts", 1, 0, p.Bytes())
