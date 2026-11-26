@@ -31,9 +31,21 @@ func RunDemo(ctx context.Context, opts DemoOptions) (*manifest.Document, error) 
 	if opts.Root == "" {
 		return nil, model.NewError(model.CodeInvalidMetadata, model.PhaseManifest, "", -1, "--root is required")
 	}
-	files, err := fixture.GenerateDemoFiles(opts.Root)
-	if err != nil {
-		return nil, err
+	var files *fixture.DemoFiles
+	var err error
+	if opts.Generate {
+		files, err = fixture.GenerateDemoFiles(opts.Root)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		files = &fixture.DemoFiles{
+			Root:      opts.Root,
+			MainVideo: filepath.Join(opts.Root, "media", "video-main.mp4"),
+			Duplicate: filepath.Join(opts.Root, "media", "video-duplicate.mp4"),
+			AudioMXF:  filepath.Join(opts.Root, "media", "audio.mxf"),
+			CutTicks:  []int64{12000, 33600},
+		}
 	}
 
 	type parsed struct {

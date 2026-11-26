@@ -30,8 +30,10 @@ func run(args []string) int {
 		return runVerify(args[1:])
 	case "migrate":
 		return runMigrate(args[1:])
+	case "inspect":
+		return runInspect(args[1:])
 	case "-h", "--help", "help":
-		fmt.Println("usage: mediaprep <demo|verify|migrate> [flags]")
+		fmt.Println("usage: mediaprep <demo|verify|migrate|inspect> [flags]")
 		return 0
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n", args[0])
@@ -70,6 +72,7 @@ func runDemo(args []string) int {
 	fmt.Printf("queue_peak_requirement=%d<=%d\n", s.QueuePeak, *queue)
 	fmt.Printf("buffer_peak_bytes=%d\n", s.BufferPeakBytes)
 	fmt.Printf("buffer_budget_bytes=%d\n", s.BufferBudgetBytes)
+	fmt.Printf("buffer_actual_bytes=%d\n", doc.Pipeline.BufferActualBytes)
 	fmt.Printf("buffer_peak_requirement=%d<=%d\n", s.BufferPeakBytes, s.BufferBudgetBytes)
 	fmt.Printf("blocks_produced=%d blocks_consumed=%d residual_tasks=%d\n",
 		doc.Pipeline.BlocksProduced, doc.Pipeline.BlocksConsumed, doc.Pipeline.ResidualTasks)
@@ -211,7 +214,11 @@ func printError(err error) {
 		if pe.HasOffset {
 			fmt.Fprintf(os.Stderr, " offset=%d", pe.Offset)
 		}
-		fmt.Fprintf(os.Stderr, ": %v\n", pe)
+		fmt.Fprintf(os.Stderr, ": %s", pe.Message)
+		if pe.Err != nil {
+			fmt.Fprintf(os.Stderr, ": %v", pe.Err)
+		}
+		fmt.Fprintln(os.Stderr)
 		return
 	}
 	fmt.Fprintf(os.Stderr, "error: %v\n", err)
