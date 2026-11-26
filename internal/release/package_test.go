@@ -41,6 +41,9 @@ func TestCommitVerifyRollbackIdempotent(t *testing.T) {
 	if res1.State.Current != "seq-1" {
 		t.Fatalf("state %+v", res1.State)
 	}
+	if _, _, err := release.Rollback(context.Background(), root, "previous", false); !errors.Is(err, release.ErrNoPrevious) || !errors.Is(err, release.ErrRollbackFailed) {
+		t.Fatalf("first release rollback should be both no-previous and rollback failure, got %v", err)
+	}
 
 	frame2 := []byte{200, 100, 50, 255}
 	m2 := testManifest("seq-2", 2, release.RGB{R: 200, G: 100, B: 50})
