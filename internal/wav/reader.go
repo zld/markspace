@@ -159,7 +159,19 @@ func parseHeader(f io.ReadSeeker, size int64, path string) (*Info, error) {
 			if body+16 > size {
 				return nil, fault.New(fault.KindTruncate, path, body, "truncated fmt chunk").Recover(false)
 			}
-			b := make([]byte, 16)
+			// Read the whole fmt payload once; WAVE_FORMAT_EXTENSIBLE needs 40
+			// bytes and re-reading would consume the next chunk header.
+			n := int64(declared)
+			if n > 4096 {
+				n = 64
+			}
+			if body+n > size {
+				n = size - body
+			}
+			b := make([]byte, n)
+			if _, err := f.Seek(body, io.SeekStart); err != nil {
+				return nil, fault.Wrap(fault.KindFormat, path, body, "seek fmt", err)
+			}
 			if _, err := io.ReadFull(f, b); err != nil {
 				return nil, fault.Wrap(fault.KindTruncate, path, body, "truncated fmt", err)
 			}
@@ -169,21 +181,14 @@ func parseHeader(f io.ReadSeeker, size int64, path string) (*Info, error) {
 			info.ByteRate = binary.LittleEndian.Uint32(b[8:12])
 			info.BlockAlign = int(binary.LittleEndian.Uint16(b[12:14]))
 			info.BitsPerSample = int(binary.LittleEndian.Uint16(b[14:16]))
-			// WAVE_FORMAT_EXTENSIBLE carries the sub-format GUID after 16 bytes.
+			// WAVE_FORMAT_EXTENSIBLE carries the sub-format GUID after 24
+			// bytes; its first word is the effective format tag.
 			if info.FormatTag == formatExt {
-				if declared < 40 {
+				if len(b) < 40 {
 					return nil, fault.New(fault.KindCorrupt, path, off, "extensible fmt chunk too small")
 				}
-				if body+40 > size {
-					return nil, fault.New(fault.KindTruncate, path, body, "truncated extensible fmt").Recover(false)
-				}
-				ext := make([]byte, 40)
-				if _, err := io.ReadFull(f, ext); err != nil {
-					return nil, fault.Wrap(fault.KindTruncate, path, body, "truncated extensible fmt", err)
-				}
-				info.BitsPerSample = int(binary.LittleEndian.Uint16(ext[18:20]))
-				// The GUID begins with the little-endian format tag.
-				info.FormatTag = binary.LittleEndian.Uint16(ext[24:26])
+				info.BitsPerSample = int(binary.LittleEndian.Uint16(b[18:20]))
+				info.FormatTag = binary.LittleEndian.Uint16(b[24:26])
 			}
 			fmtSeen = true
 			if err := validateFmt(info, path, off); err != nil {

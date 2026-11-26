@@ -233,3 +233,73 @@ func indexOf(b []byte, s string) int {
 	}
 	return -1
 }
+
+func TestRF64ParsesDataSizeFromDS64(t *testing.T) {
+	data := make([]byte, 9*20)
+	for i := range data {
+		data[i] = byte(i)
+	}
+	raw := assemble(t, 3, 24, 48000, data, int64(len(data)), true)
+	p, rel := writeTemp(t, raw)
+	info, err := Open(p, rel)
+	if err != nil {
+		t.Fatalf("RF64: %v", err)
+	}
+	if !info.RF64 || info.Frames != 20 || info.Channels != 3 {
+		t.Fatalf("RF64 info = %+v", info)
+	}
+	r, err := NewReader(p, rel, info)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	fr, err := r.Next()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(fr.Bytes) != string(data[:9]) {
+		t.Fatalf("first frame = %v", fr.Bytes)
+	}
+}
+
+func TestExtensiblePCMAccepted(t *testing.T) {
+	fmtChunk := make([]byte, 40)
+	binary.LittleEndian.PutUint16(fmtChunk[0:], 0xFFFE) // extensible
+	binary.LittleEndian.PutUint16(fmtChunk[2:], 2)
+	binary.LittleEndian.PutUint32(fmtChunk[4:], 48000)
+	block := 2 * 3
+	binary.LittleEndian.PutUint32(fmtChunk[8:], 48000*uint32(block))
+	binary.LittleEndian.PutUint16(fmtChunk[12:], uint16(block))
+	binary.LittleEndian.PutUint16(fmtChunk[14:], 24)
+	binary.LittleEndian.PutUint16(fmtChunk[16:], 22) // cbSize
+	binary.LittleEndian.PutUint16(fmtChunk[18:], 24) // valid bits
+	// Sub-format GUID begins with the little-endian format tag 1 (PCM).
+	binary.LittleEndian.PutUint16(fmtChunk[24:], 1)
+	data := make([]byte, block*10)
+
+	var body []byte
+	appendChunk := func(id string, payload []byte) {
+		h := make([]byte, 8)
+		copy(h, id)
+		binary.LittleEndian.PutUint32(h[4:], uint32(len(payload)))
+		body = append(body, h...)
+		body = append(body, payload...)
+		if len(payload)%2 == 1 {
+			body = append(body, 0)
+		}
+	}
+	appendChunk("fmt ", fmtChunk)
+	appendChunk("data", data)
+	hdr := make([]byte, 12)
+	copy(hdr, "RIFF")
+	binary.LittleEndian.PutUint32(hdr[4:], uint32(len(body)))
+	copy(hdr[8:], "WAVE")
+	p, rel := writeTemp(t, append(hdr, body...))
+	info, err := Open(p, rel)
+	if err != nil {
+		t.Fatalf("extensible: %v", err)
+	}
+	if info.FormatTag != 1 || info.Channels != 2 || info.BitsPerSample != 24 {
+		t.Fatalf("extensible info = %+v", info)
+	}
+}
