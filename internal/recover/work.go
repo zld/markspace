@@ -6,10 +6,28 @@ import (
 	"os"
 	"strings"
 
+	"mediapack/internal/commit"
 	"mediapack/internal/fanout"
 	"mediapack/internal/manifest"
 	"mediapack/internal/safepath"
 )
+
+// resetManagedPaths removes only the fixed files/directories owned by this
+// tool inside work. It never touches arbitrary user files.
+func resetManagedPaths(work string) {
+	segDir, err := safepath.JoinUnder(work, "segments")
+	if err == nil {
+		_ = os.RemoveAll(segDir)
+	}
+	for _, rel := range []string{
+		manifest.ManifestName, manifest.ManifestName + ".tmp",
+		commit.JournalName, "source.ts",
+	} {
+		if p, err := manifest.Resolve(work, rel); err == nil {
+			_ = os.Remove(p)
+		}
+	}
+}
 
 func checkWork(workDir string) (string, error) {
 	if strings.TrimSpace(workDir) == "" {

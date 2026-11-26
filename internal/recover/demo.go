@@ -31,6 +31,10 @@ func Demo(o Options) (*manifest.Manifest, error) {
 	if err := os.MkdirAll(work, 0o755); err != nil {
 		return nil, err
 	}
+	// A demo run (re)creates the scenario from scratch: remove only the
+	// well-known paths this tool owns, so a reused --work cannot leave stale
+	// committed fragments that change the crash/recovery accounting.
+	resetManagedPaths(work)
 	rates := o.Rates
 	if rates <= 0 {
 		rates = 2
