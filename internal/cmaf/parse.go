@@ -2,8 +2,6 @@ package cmaf
 
 import (
 	"encoding/binary"
-	"fmt"
-	"io"
 	"os"
 
 	"rtx/internal/model"
@@ -219,15 +217,4 @@ func (f *File) Walk(fn func(b *Box) error) error {
 		}
 	}
 	return nil
-}
-
-// CopyTo writes the original file bytes; retained so artifact writers can
-// normalize payloads without re-reading the source.
-func (f *File) CopyTo(w io.Writer, data []byte) error {
-	_, err := w.Write(data)
-	return err
-}
-
-func describe(b *Box) string {
-	return fmt.Sprintf("%s@%d+%d", b.Type, b.Offset, b.Size)
 }

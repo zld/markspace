@@ -155,15 +155,6 @@ func unwrapRelative(anchorExt *big.Int, ts uint32) (*big.Int, error) {
 	return ext, nil
 }
 
-// SourceAt returns the anchor for a source.
-func (m *Mapping) SourceAt(source string) (Anchor, bool) {
-	ra, ok := m.anchors[source]
-	if !ok {
-		return Anchor{}, false
-	}
-	return Anchor{Source: ra.source, ClockRate: ra.clockRate}, true
-}
-
 // Sources lists anchored sources in anchor declaration order.
 func (m *Mapping) Sources() []string {
 	out := make([]string, len(m.order))

@@ -146,15 +146,6 @@ func (t Time) Rescale(target Rate) (Time, error) {
 	return Time{Ticks: quo.Int64(), Rate: target}, nil
 }
 
-// MustRescale is Rescale for call sites that have already validated rates.
-func (t Time) MustRescale(target Rate) Time {
-	out, err := t.Rescale(target)
-	if err != nil {
-		panic(err)
-	}
-	return out
-}
-
 // Add returns t+o in t's rate.
 func (t Time) Add(o Time) (Time, error) {
 	ro, err := o.Rescale(t.Rate)
