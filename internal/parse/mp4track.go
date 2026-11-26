@@ -1,6 +1,7 @@
 package parse
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"os"
@@ -415,6 +416,11 @@ func chunkOffsetsOf(f *os.File, stbl *boxNode) ([]int64, error) {
 		return out, nil
 	}
 	return nil, media.New(media.CodeNoTrack, "mp4.stco", int64(stbl.Info.Offset), "no chunk offset table")
+}
+
+// HasMagic reports whether data begins with the given ASCII marker.
+func HasMagic(data []byte, magic string) bool {
+	return bytes.HasPrefix(data, []byte(magic))
 }
 
 // ReadBytes reads a byte range from path; used by checks that compare sample
