@@ -1,6 +1,7 @@
 package cmaf
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -117,5 +118,26 @@ func TestTimelineRTPBase(t *testing.T) {
 	delta := tl.Segments[1].RTPStart - tl.Segments[0].RTPStart
 	if delta != 180000 {
 		t.Fatalf("RTP delta = %d, want 180000 (2s at 90kHz)", delta)
+	}
+}
+
+func TestTimelineTimestampOverflowNoWrap(t *testing.T) {
+	// Tfdt near uint64 max must not wrap Tfdt+Dur into a small expected time;
+	// the overflow is reported through the shared report instead.
+	_, rep := build([]*Fragment{frag(1, math.MaxUint64-10, 180000)})
+	if !rep.HasFatal() {
+		t.Fatal("expected a fatal overflow report for an unrepresentable timestamp")
+	}
+	if rep.Count(model.CodeMissingMedia) == 0 {
+		t.Fatal("expected an overflow-backed MISSING_MEDIA issue")
+	}
+}
+
+func TestSatAdd(t *testing.T) {
+	if got := satAdd(10, 20); got != 30 {
+		t.Fatalf("satAdd = %d, want 30", got)
+	}
+	if got := satAdd(math.MaxUint64, 5); got != math.MaxUint64 {
+		t.Fatalf("satAdd overflow = %d, want MaxUint64 saturation", got)
 	}
 }

@@ -105,7 +105,7 @@ func BuildTimeline(frags []*Fragment, init *Init, rep *model.Report) *Timeline {
 			switch {
 			case f.Tfdt < expected:
 				tl.Regressions++
-				end := f.Tfdt + f.VideoDur
+				end := satAdd(f.Tfdt, f.VideoDur)
 				if end > expected {
 					end = expected
 				}
@@ -119,10 +119,11 @@ func BuildTimeline(frags []*Fragment, init *Init, rep *model.Report) *Timeline {
 					"media missing in [%d, %d) before seq %d", expected, f.Tfdt, f.Seq)
 			}
 		}
+		spanEnd := satAdd(f.Tfdt, f.VideoDur)
 		if f.Damaged {
-			tl.Missing = append(tl.Missing, Interval{Start: toDur(f.Tfdt), End: toDur(f.Tfdt + f.VideoDur)})
+			tl.Missing = append(tl.Missing, Interval{Start: toDur(f.Tfdt), End: toDur(spanEnd)})
 			rep.Addf(model.CodeMissingMedia, model.SevWarn, f.Path, -1,
-				"damaged fragment seq %d: span [%d, %d) marked missing", f.Seq, f.Tfdt, f.Tfdt+f.VideoDur)
+				"damaged fragment seq %d: span [%d, %d) marked missing", f.Seq, f.Tfdt, spanEnd)
 		} else {
 			if f.VideoDur > math.MaxUint32 {
 				rep.Addf(model.CodeMissingMedia, model.SevWarn, f.Path, -1,
@@ -136,13 +137,21 @@ func BuildTimeline(frags []*Fragment, init *Init, rep *model.Report) *Timeline {
 				})
 			}
 		}
-		expected = f.Tfdt + f.VideoDur
+		expected = spanEnd
 		haveExpected = true
 	}
 	if haveExpected {
 		tl.End = toDur(expected)
 	}
 	return tl
+}
+
+// satAdd returns a+b clamped to math.MaxUint64 instead of wrapping.
+func satAdd(a, b uint64) uint64 {
+	if a > math.MaxUint64-b {
+		return math.MaxUint64
+	}
+	return a + b
 }
 
 // primaryTimescale returns the video timescale, falling back to audio.
