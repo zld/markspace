@@ -93,8 +93,10 @@ func scanRange(data []byte, start, end int64, path []string, track string, res *
 			}
 		}
 		if len(path) > 0 && path[len(path)-1] == "stsd" && currentTrack != "" {
-			res.codecByTrack[currentTrack] = h.typ
-			res.codecOffsetByTrack[currentTrack] = h.start
+			if _, seen := res.codecByTrack[currentTrack]; !seen {
+				res.codecByTrack[currentTrack] = h.typ
+				res.codecOffsetByTrack[currentTrack] = h.start
+			}
 		}
 		if h.typ == "mprv" {
 			if err := collectProvenance(data, h, path, currentTrack, res); err != nil {
@@ -102,8 +104,17 @@ func scanRange(data []byte, start, end int64, path []string, track string, res *
 			}
 		}
 		if containerBoxes[h.typ] {
+			childStart := h.payloadStart
+			if h.typ == "stsd" {
+				// FullBox header (4) plus entry_count (4) precede entries.
+				childStart = h.payloadStart + 8
+				if childStart > h.end {
+					return model.NewError(model.CodeTruncated, model.PhaseParse, currentTrack, h.start,
+						"truncated stsd entry count")
+				}
+			}
 			childPath := append(append([]string{}, path...), h.typ)
-			if err := scanRange(data, h.payloadStart, h.end, childPath, currentTrack, res); err != nil {
+			if err := scanRange(data, childStart, h.end, childPath, currentTrack, res); err != nil {
 				return err
 			}
 		}
