@@ -88,7 +88,7 @@ func Rollback(ctx context.Context, root, to string, verifyPixels bool) (*Manifes
 		version = st.Previous
 	}
 	if version == "" {
-		return nil, st, fmt.Errorf("%w: state has no previous version", ErrNoPrevious)
+		return nil, st, fmt.Errorf("%w: %w", ErrRollbackFailed, ErrNoPrevious)
 	}
 	if !safeName(version) {
 		return nil, st, fmt.Errorf("%w: unsafe version %q", ErrRollbackFailed, version)
