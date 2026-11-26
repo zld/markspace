@@ -130,6 +130,7 @@ func runDemo(args []string, stdout, stderr io.Writer) int {
 		MediaPath:        paths.MediaPath,
 		EventPath:        paths.EventPath,
 		EventID:          paths.EventID,
+		EventMS:          f.eventMS,
 		StartMS:          startMS,
 		EndMS:            endMS,
 		Timeline:         paths.Timeline,

@@ -10,6 +10,7 @@ import (
 	"replayctl/internal/journal"
 	mp4scan "replayctl/internal/mp4"
 	"replayctl/internal/render"
+	"replayctl/internal/timebase"
 	"replayctl/internal/timeline"
 	"replayctl/internal/validate"
 )
@@ -20,6 +21,7 @@ type Input struct {
 	MediaPath        string
 	EventPath        string
 	EventID          string
+	EventMS          int64
 	StartMS          int64
 	EndMS            int64
 	Timeline         timeline.Timeline
@@ -52,9 +54,20 @@ func Run(in Input) (*Result, error) {
 		return nil, err
 	}
 
-	ev, err := selectEvent(in.EventPath, in.EventID)
+	events, err := event.ReadFile(in.EventPath)
 	if err != nil {
 		return nil, err
+	}
+	ev, err := findEvent(events, in.EventID)
+	if err != nil {
+		return nil, fault.Wrap(err, fault.EventParse, fault.StageEvent, in.EventPath, -1, -1)
+	}
+	if len(events) > 0 {
+		relativeMS := timebase.Scale(ev.Tick-events[0].Tick, timebase.EventRate, 1000)
+		if in.EventMS != 0 && relativeMS != in.EventMS {
+			return nil, fault.New(fault.EventParse, fault.StageEvent, in.EventPath, ev.RawOffset, ev.Tick,
+				"event clock maps to %dms, expected %dms", relativeMS, in.EventMS)
+		}
 	}
 
 	if _, err := in.Timeline.MapWindow(in.StartMS, in.EndMS); err != nil {
@@ -97,17 +110,13 @@ func validateSupportedFormats(mov *mp4scan.Movie) error {
 	return nil
 }
 
-func selectEvent(path, wantID string) (*event.Event, error) {
-	events, err := event.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
+func findEvent(events []event.Event, wantID string) (*event.Event, error) {
 	for i := len(events) - 1; i >= 0; i-- {
 		if wantID == "" || events[i].ID == wantID {
 			return &events[i], nil
 		}
 	}
-	return nil, fault.New(fault.EventParse, fault.StageEvent, path, -1, -1, "event %q not found", wantID)
+	return nil, fault.New(fault.EventParse, fault.StageEvent, "", -1, -1, "event %q not found", wantID)
 }
 
 func artifactRelative(key string) string {
