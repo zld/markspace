@@ -1,0 +1,11 @@
+# Local acceptance outputs and scratch directories
+/.tmp/
+/tmp/
+*.test
+*.out
+
+# Go and editor artifacts
+/vendor/
+.idea/
+.vscode/
+.DS_Store
