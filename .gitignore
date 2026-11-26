@@ -1,0 +1,3 @@
+# build outputs stay in /tmp per project convention
+/continuity
+*.out
