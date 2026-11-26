@@ -41,19 +41,19 @@ type Track struct {
 type Kind string
 
 const (
-	KindCue  Kind = "cue"
-	KindGap  Kind = "gap"
-	KindRej  Kind = "rejected"
+	KindCue Kind = "cue"
+	KindGap Kind = "gap"
+	KindRej Kind = "rejected"
 )
 
 // Entry is one ordered item on a merged timeline.
 type Entry struct {
 	Kind    Kind
-	Cue     *Cue      // when Kind == KindCue
+	Cue     *Cue // when Kind == KindCue
 	Start   clock.Ticks
 	End     clock.Ticks
-	Reasons []string  // gap/reject diagnostics
-	Sources []string  // provenance for every contributing source
+	Reasons []string // gap/reject diagnostics
+	Sources []string // provenance for every contributing source
 }
 
 // Gap records a missing expected contribution with its provenance.

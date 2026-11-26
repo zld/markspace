@@ -15,31 +15,31 @@ import (
 
 // Metrics holds every counter and hash surfaced by a verify run.
 type Metrics struct {
-	Case            string         `json:"case"`
-	RoundtripOK     int            `json:"roundtrip_ok"`
-	RoundtripTotal  int            `json:"roundtrip_total"`
-	KeyframeHits    int            `json:"keyframe_hits"`
-	KeyframeTotal   int            `json:"keyframe_total"`
-	Segments        int            `json:"segments"`
-	HashMismatch    int            `json:"hash_mismatch"`
-	Conflicts       int            `json:"conflicts"`
-	Rollbacks       int            `json:"rollbacks"`
-	Gaps            int            `json:"gaps"`
-	Rejected        int            `json:"rejected"`
-	DuplicateCues   int            `json:"duplicate_cues"`
-	Replayed        int            `json:"replayed"`
-	HashMatchOK     int            `json:"hash_match_ok,omitempty"`
-	HashMatchTotal  int            `json:"hash_match_total,omitempty"`
-	Interrupted     bool           `json:"interrupted,omitempty"`
+	Case           string `json:"case"`
+	RoundtripOK    int    `json:"roundtrip_ok"`
+	RoundtripTotal int    `json:"roundtrip_total"`
+	KeyframeHits   int    `json:"keyframe_hits"`
+	KeyframeTotal  int    `json:"keyframe_total"`
+	Segments       int    `json:"segments"`
+	HashMismatch   int    `json:"hash_mismatch"`
+	Conflicts      int    `json:"conflicts"`
+	Rollbacks      int    `json:"rollbacks"`
+	Gaps           int    `json:"gaps"`
+	Rejected       int    `json:"rejected"`
+	DuplicateCues  int    `json:"duplicate_cues"`
+	Replayed       int    `json:"replayed"`
+	HashMatchOK    int    `json:"hash_match_ok,omitempty"`
+	HashMatchTotal int    `json:"hash_match_total,omitempty"`
+	Interrupted    bool   `json:"interrupted,omitempty"`
 	// ResumeReport forces replayed/duplicate_cues lines even when zero, which
 	// the recovery acceptance output requires explicitly.
-	ResumeReport    bool           `json:"resume_report,omitempty"`
-	ManifestChanged bool           `json:"manifest_changed"`
-	SegmentHashes   []SegmentHash  `json:"segment_hashes"`
-	GapRecords      []track.Gap    `json:"gap_records,omitempty"`
+	ResumeReport    bool             `json:"resume_report,omitempty"`
+	ManifestChanged bool             `json:"manifest_changed"`
+	SegmentHashes   []SegmentHash    `json:"segment_hashes"`
+	GapRecords      []track.Gap      `json:"gap_records,omitempty"`
 	RejectRecords   []track.Rejected `json:"reject_records,omitempty"`
 	ConflictRecords []merge.Conflict `json:"conflict_records,omitempty"`
-	RollbackReason  string         `json:"rollback_reason,omitempty"`
+	RollbackReason  string           `json:"rollback_reason,omitempty"`
 }
 
 // SegmentHash pairs a segment id with its 64-hex-char SHA-256.

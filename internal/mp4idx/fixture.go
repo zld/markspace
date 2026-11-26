@@ -40,7 +40,7 @@ func BuildFixture(spec FixtureSpec) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	dataOffset := int64(mdatStart.Offset + mdatStart.HeaderSize) + spec.ChunkOffsetBias
+	dataOffset := int64(mdatStart.Offset+mdatStart.HeaderSize) + spec.ChunkOffsetBias
 	payload := make([]byte, sumSizes(spec.SampleSizes))
 	if _, err := w.Write(payload); err != nil {
 		return nil, err

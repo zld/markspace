@@ -77,15 +77,15 @@ func (k Key) String() string {
 
 // Entry is one cached artifact record.
 type Entry struct {
-	Key          string `json:"key"`
-	SourceDigest string `json:"source_digest"`
-	NormVersion  string `json:"norm_version"`
+	Key          string            `json:"key"`
+	SourceDigest string            `json:"source_digest"`
+	NormVersion  string            `json:"norm_version"`
 	Params       map[string]string `json:"params"`
-	PayloadHash  string `json:"payload_hash"`
-	Size         int64  `json:"size"`
+	PayloadHash  string            `json:"payload_hash"`
+	Size         int64             `json:"size"`
 }
 
-func (s *Store) path(key string) string  { return filepath.Join(s.root, key+".blob") }
+func (s *Store) path(key string) string     { return filepath.Join(s.root, key+".blob") }
 func (s *Store) metaPath(key string) string { return filepath.Join(s.root, key+".json") }
 
 // Put stores payload under key and writes its metadata atomically.

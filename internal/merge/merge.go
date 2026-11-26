@@ -39,11 +39,11 @@ type Result struct {
 
 // MappedTrack pairs a mapped track with the rule that produced it.
 type MappedTrack struct {
-	SourceID  string
-	Version   string
-	TargetID  string
-	Language  string
-	Track     *track.Track
+	SourceID string
+	Version  string
+	TargetID string
+	Language string
+	Track    *track.Track
 }
 
 type interval struct{ start, end clock.Ticks }

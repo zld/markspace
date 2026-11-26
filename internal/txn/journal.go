@@ -23,10 +23,10 @@ type Segment struct {
 
 // Manifest is the committed, auditable output manifest.
 type Manifest struct {
-	Version   int       `json:"version"`
-	Segments  []Segment `json:"segments"`
-	CueCount  int       `json:"cue_count"`
-	Digest    string    `json:"digest"`
+	Version  int       `json:"version"`
+	Segments []Segment `json:"segments"`
+	CueCount int       `json:"cue_count"`
+	Digest   string    `json:"digest"`
 }
 
 // Journal coordinates one run directory on disk.

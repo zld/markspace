@@ -16,12 +16,12 @@ import (
 
 // Sample is one entry of the rebuilt sample table.
 type Sample struct {
-	Number      uint32       // 1-based
-	Offset      int64        // absolute byte offset
-	Size        uint32
-	DTS         clock.Ticks  // decode time on the shared timebase
-	IsSync      bool
-	SyncKnown   bool         // false when sync state cannot be proven
+	Number    uint32 // 1-based
+	Offset    int64  // absolute byte offset
+	Size      uint32
+	DTS       clock.Ticks // decode time on the shared timebase
+	IsSync    bool
+	SyncKnown bool // false when sync state cannot be proven
 }
 
 // Index is the validated sample/sync index for one track.
@@ -46,16 +46,16 @@ func NewReader(source string, r io.ReadSeeker) *Reader {
 }
 
 type rawTables struct {
-	source                            string
-	timescale                         uint32
-	offsetBoxType                     string
-	stts                              *mp4.Stts
-	stsz                              *mp4.Stsz
-	stsc                              *mp4.Stsc
-	chunks                            []chunk
-	stss                              *mp4.Stss
-	stssBoxInfo                       *mp4.BoxInfo
-	anyBoxInfo                        *mp4.BoxInfo
+	source        string
+	timescale     uint32
+	offsetBoxType string
+	stts          *mp4.Stts
+	stsz          *mp4.Stsz
+	stsc          *mp4.Stsc
+	chunks        []chunk
+	stss          *mp4.Stss
+	stssBoxInfo   *mp4.BoxInfo
+	anyBoxInfo    *mp4.BoxInfo
 }
 
 type chunk struct {

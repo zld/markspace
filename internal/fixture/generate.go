@@ -99,7 +99,6 @@ func Generate(root string, c Case) (*Bundle, error) {
 	return b, nil
 }
 
-
 // injectIllegalDF rewrites the last well-formed cue's timestamp line to use
 // drop-frame semicolons, which are illegal for the 25fps subtitle rate.
 func injectIllegalDF(srt string) string {

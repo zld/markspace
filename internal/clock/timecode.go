@@ -16,10 +16,10 @@ type Rate struct {
 
 // The frame rates explicitly supported by the specification.
 var (
-	Rate24     = Rate{24, 1}        // 24/1
-	Rate25     = Rate{25, 1}        // 25/1
-	Rate2997DF = Rate{30000, 1001}  // 30000/1001, drop-frame capable
-	Rate2997   = Rate{30000, 1001}  // same rate, non-drop usage
+	Rate24     = Rate{24, 1}       // 24/1
+	Rate25     = Rate{25, 1}       // 25/1
+	Rate2997DF = Rate{30000, 1001} // 30000/1001, drop-frame capable
+	Rate2997   = Rate{30000, 1001} // same rate, non-drop usage
 )
 
 // Valid reports whether r is a positive rational.

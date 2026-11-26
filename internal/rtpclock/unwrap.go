@@ -37,19 +37,19 @@ type Event struct {
 
 // Stream is a stateful per-SSRC unwrapper.
 type Stream struct {
-	source   string
+	source    string
 	clockRate uint32
-	baseTS   uint32
-	baseSet  bool
-	wrapBase uint64 // accumulated value of the 32-bit boundary before base
+	baseTS    uint32
+	baseSet   bool
+	wrapBase  uint64 // accumulated value of the 32-bit boundary before base
 
-	lastSeq      uint16
-	lastSeqSet   bool
-	seenSeq      map[uint16]bool
-	lastTS       uint32
-	lastUnwrap   uint64
-	wrapAccum    uint64
-	maxForward   uint16 // highest sequence number ever accepted
+	lastSeq    uint16
+	lastSeqSet bool
+	seenSeq    map[uint16]bool
+	lastTS     uint32
+	lastUnwrap uint64
+	wrapAccum  uint64
+	maxForward uint16 // highest sequence number ever accepted
 }
 
 // NewStream creates an unwrapper for one source and RTP clock rate.
