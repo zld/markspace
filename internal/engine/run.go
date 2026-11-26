@@ -105,6 +105,7 @@ func (r *Runner) Run(ctx context.Context, p Plan) (*Result, error) {
 
 	manifest := buildManifest(p, doc, inputSHA, fi.Size(), cacheState, entries,
 		blockViews, mappings, deliveries, qualityFail)
+	manifest.RTP = buildRTPObservations(events)
 	staging.SetManifest(manifest)
 
 	if qualityFail {

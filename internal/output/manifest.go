@@ -59,6 +59,16 @@ type TrackDelivery struct {
 	ByteDrift        int64   `json:"byte_drift"`
 }
 
+// RTPObservation is one RTP packet translated onto the shared NS clock.
+type RTPObservation struct {
+	SSRC        uint32 `json:"ssrc"`
+	TrackNo     uint64 `json:"track_no"`
+	Sequence    uint16 `json:"sequence"`
+	RTPTS       uint32 `json:"rtp_ts"`
+	ConvertedNS int64  `json:"converted_ns"`
+	LoggedNS    int64  `json:"logged_ns"`
+}
+
 // FailureRecord pins a failure to the byte offset where it was detected.
 type FailureRecord struct {
 	Code   string `json:"code"`
@@ -72,6 +82,7 @@ type Manifest struct {
 	Input      InputSummary    `json:"input"`
 	CacheState string          `json:"cache_state"`
 	Blocks     []BlockRecord   `json:"blocks"`
+	RTP        []RTPObservation `json:"rtp,omitempty"`
 	Tracks     []TrackDelivery `json:"tracks"`
 	Failures   []FailureRecord `json:"failures,omitempty"`
 	Mapped     string          `json:"mapped"` // "4/4" style summary

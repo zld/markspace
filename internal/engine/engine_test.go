@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"mediatrace/internal/audio"
+	"mediatrace/internal/timeline"
 )
 
 // fakeFFmpeg records invocations and writes real (small) output files so the
@@ -181,5 +182,27 @@ func TestPlanValidation(t *testing.T) {
 	p.BudgetPasses = 4
 	if err := p.validate(); err == nil {
 		t.Fatal("budget > 3 must fail validation")
+	}
+}
+
+func TestBuildRTPObservations(t *testing.T) {
+	events := []timeline.Event{
+		{Kind: "ssrc_map", SSRC: 7, Track: 1, ClockRate: 48000},
+		{Kind: "rtp", SSRC: 7, RTPTS: 0, Sequence: 1, AtNS: 0},
+		{Kind: "rtp", SSRC: 7, RTPTS: 24000, Sequence: 2, AtNS: 500_000_000},
+		{Kind: "rtp", SSRC: 9, RTPTS: 100, Sequence: 1, AtNS: 1000}, // unmapped SSRC
+	}
+	got := buildRTPObservations(events)
+	if len(got) != 3 {
+		t.Fatalf("want 3 RTP observations, got %d", len(got))
+	}
+	if got[0].TrackNo != 1 || got[0].ConvertedNS != 0 {
+		t.Fatalf("anchor wrong: %+v", got[0])
+	}
+	if got[1].ConvertedNS != 500_000_000 {
+		t.Fatalf("conversion wrong: %+v", got[1])
+	}
+	if got[2].TrackNo != 0 {
+		t.Fatalf("unmapped SSRC must keep track 0: %+v", got[2])
 	}
 }

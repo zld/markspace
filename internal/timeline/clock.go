@@ -9,6 +9,10 @@ import "errors"
 // NanosecondsPerSecond is the common scale of every timeline in this system.
 const NanosecondsPerSecond int64 = 1_000_000_000
 
+// SampleRateFallback is used when an RTP stream's ssrc_map omits the clock
+// rate. The delivery pipeline standardizes on 48 kHz audio.
+const SampleRateFallback uint32 = 48000
+
 // Clock converts media/RTP tick domains into absolute nanoseconds.
 type Clock struct {
 	// MediaTimecodeScale maps Matroska timecode units to nanoseconds.
