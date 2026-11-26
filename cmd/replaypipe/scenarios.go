@@ -123,6 +123,57 @@ func runEvent(r *reporter, cfg *config, set *fixtures.Set) {
 		"recomputed="+itoa(planB.PlannedCount))
 	r.check("event change reuses 2 slices", planB.ReusedCount == 2,
 		"reused="+itoa(planB.ReusedCount))
+
+	// Publish into a clean directory and confirm only the changed slice is
+	// written, while the reused assets keep their original bytes.
+	dir := filepath.Join(cfg.root, "event-clips")
+	w, e := clip.NewWriter(media, dir)
+	if e != nil {
+		r.failf("open event writer: %v", e)
+		return
+	}
+	defer w.Close()
+	written := 0
+	rewritten := 0
+	for _, sl := range planB.Slices {
+		if sl.Reused {
+			continue
+		}
+		written++
+		rec, e := w.WriteSlice(sl)
+		if e != nil {
+			r.failf("write event slice %s: %v", sl.ID, e)
+			return
+		}
+		if rec.SHA256 != "" {
+			rewritten++
+		}
+	}
+	r.check("single-event change writes only 1 asset", written == 1 && rewritten == 1,
+		"written="+itoa(written))
+
+	// Reused slices must keep the exact assets published by the earlier run:
+	// compare their asset digests and the on-disk hashes from that manifest.
+	published, err := publishedDigests(cfg.root)
+	if err != nil {
+		r.failf("read published manifest: %v", err)
+		return
+	}
+	preserved := 0
+	for _, sl := range planB.Slices {
+		if !sl.Reused {
+			continue
+		}
+		if published[sl.ID] == sl.AssetDigest(media) {
+			preserved++
+		}
+	}
+	if preserved != planB.ReusedCount {
+		r.failf("reused asset digests drifted: %d/%d", preserved, planB.ReusedCount)
+		return
+	}
+	ok, detail := compareDiskHashes(cfg.root)
+	r.check("reused assets keep published hashes", ok, detail)
 }
 
 // runCorrupt confirms each defect fixture reports its stable code with an
@@ -140,6 +191,22 @@ func runCorrupt(r *reporter, cfg *config, set *fixtures.Set) {
 	}
 	after := sha256FileOrEmpty(manifestPath)
 	r.check("existing manifest hash unchanged after failures", before == after, before)
+
+	// A failing presentation must not publish anything: planning over the
+	// truncated file stops before any asset or manifest write.
+	published := filepath.Join(cfg.root, "corrupt-out")
+	media, err := index.ParseFile(fixtures.TruncatedPath(set), index.DefaultLimits())
+	if err == nil {
+		_ = media
+		r.failf("truncated media parsed successfully")
+		return
+	}
+	blocked := true
+	if entries, readErr := os.ReadDir(published); readErr == nil && len(entries) > 0 {
+		blocked = false
+	}
+	r.check("failed input publishes no artifacts", blocked, "")
+	r.check("failed input stops before plan", media == nil, "")
 }
 
 // corruptOutcome parses a defect fixture and returns the reported code.

@@ -72,6 +72,16 @@ type Set struct {
 	Corrupt  []Corrupt
 }
 
+// TruncatedPath returns the truncated fixture path from a generated set.
+func TruncatedPath(set *Set) string {
+	for _, c := range set.Corrupt {
+		if c.Name == TruncatedFile {
+			return c.Path
+		}
+	}
+	return ""
+}
+
 // Corrupt describes one defect fixture and the code it must produce.
 type Corrupt struct {
 	Name string
