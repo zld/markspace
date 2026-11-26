@@ -120,6 +120,8 @@ type Demuxer struct {
 	lastRTPNanos int64
 	haveRTP      bool
 	ptsUnwrap    pts33Unwrapper
+	lastPTSNanos int64 // most recent known audio PTS, for gap time ranges
+	havePTS      bool
 }
 
 // NewDemuxer configures a demuxer over an aligned TS byte stream.
@@ -146,6 +148,23 @@ func (d *Demuxer) fail(err error) error {
 	}
 	d.stats.Gaps++
 	return nil
+}
+
+// gapAt builds a Gap carrying the PID, byte offset and the best-known time
+// range. The lower bound is the most recent audio PTS; the upper bound is the
+// current RTP media-clock anchor when available, otherwise it equals the lower
+// bound (the exact end is unknown until the next valid timestamp).
+func (d *Demuxer) gapAt(pid uint16, off int64, code clock.Code, detail string) *Gap {
+	from := d.lastPTSNanos
+	to := from
+	if d.haveRTP && d.lastRTPNanos > from {
+		to = d.lastRTPNanos
+	}
+	return &Gap{
+		PID: pid, Offset: off,
+		FromNanos: from, ToNanos: to,
+		Code: code, Detail: detail,
+	}
 }
 
 // Run drains the whole stream, invoking onEvent in strict order. It returns
@@ -219,7 +238,7 @@ func (d *Demuxer) processPacket(pkt []byte, onEvent func(TimelineEvent)) error {
 			return err
 		}
 		// isolate: drop the whole 188-byte interval and keep parsing
-		onEvent(TimelineEvent{Gap: &Gap{PID: 0, Offset: off, Code: clock.CodeTSSync, Detail: e.Message}})
+		onEvent(TimelineEvent{Gap: d.gapAt(0, off, clock.CodeTSSync, e.Message)})
 		return nil
 	}
 	h := parseHeader(pkt)
@@ -239,9 +258,7 @@ func (d *Demuxer) processPacket(pkt []byte, onEvent func(TimelineEvent)) error {
 		if ferr := d.fail(err); ferr != nil {
 			return ferr
 		}
-		onEvent(TimelineEvent{Gap: &Gap{
-			PID: h.PID, Offset: off, Code: clock.CodeTSCCJump, Detail: err.Error(),
-		}})
+		onEvent(TimelineEvent{Gap: d.gapAt(h.PID, off, clock.CodeTSCCJump, err.Error())})
 	}
 	if h.HasAdaptation {
 		if err := d.processAdaptation(pkt, h, off); err != nil {

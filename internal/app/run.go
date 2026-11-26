@@ -147,8 +147,15 @@ func Run(ctx context.Context, opt Options) (*RunResult, error) {
 	}
 	if truncOff >= 0 {
 		dstats.Truncations++
-		gaps = append(gaps, ts.Gap{Offset: truncOff, Code: clock.CodeTSTruncated,
-			Detail: "RTP trace ended in a partial record"})
+		var fromNS int64
+		if len(pes) > 0 {
+			fromNS = pes[len(pes)-1].PTSNanos
+		}
+		gaps = append(gaps, ts.Gap{
+			Offset: truncOff, FromNanos: fromNS, ToNanos: fromNS,
+			Code:   clock.CodeTSTruncated,
+			Detail: "RTP trace ended in a partial record",
+		})
 	}
 
 	// 3. Coalesce access units into ~1 s processing segments for stable

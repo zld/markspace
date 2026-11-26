@@ -173,8 +173,40 @@ func TestCCJumpIsolateAndStrict(t *testing.T) {
 	if gap == nil || gap.PID != testAudioPID {
 		t.Fatalf("gap must carry audio PID: %+v", gap)
 	}
+	if gap.Offset < 0 {
+		t.Fatal("gap must carry a packet offset")
+	}
 	if pesN != 3 {
 		t.Fatalf("isolate should keep all PUSI PES, got %d PES", pesN)
+	}
+}
+
+func TestGapCarriesTimeRange(t *testing.T) {
+	// a good PES establishes a known PTS, then a CC jump must report a gap
+	// whose time range starts at that PTS rather than an empty zero range.
+	pkts := psiSetup()
+	pkts = append(pkts,
+		pesStart(testAudioPID, 0, 90000, []byte{1}),
+		tsPacket(testAudioPID, false, false, true, 5, []byte{0xAD}),
+	)
+	evs, _, err := collect(pkts, PolicyIsolate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var gap *Gap
+	for i := range evs {
+		if evs[i].Gap != nil {
+			gap = evs[i].Gap
+		}
+	}
+	if gap == nil {
+		t.Fatal("expected a gap event")
+	}
+	if gap.FromNanos != clock.NanosPerSecond {
+		t.Fatalf("gap from_nanos = %d, want %d", gap.FromNanos, clock.NanosPerSecond)
+	}
+	if gap.ToNanos < gap.FromNanos {
+		t.Fatalf("gap time range inverted: %+v", gap)
 	}
 }
 

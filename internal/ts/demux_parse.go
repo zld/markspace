@@ -149,6 +149,9 @@ func (d *Demuxer) processAudioPES(h tsHeader, st *pidState, payload []byte, off 
 		// PES keeps its own presentation time rather than being forced to 0.
 		st.pesHasTS = true
 		st.pesPTS = clock.RTPTicksToNanos(pts)
+		// remember the latest known presentation time for gap time ranges
+		d.lastPTSNanos = st.pesPTS
+		d.havePTS = true
 		if hasDTS {
 			st.pesDTS = clock.RTPTicksToNanos(dts)
 		} else {
