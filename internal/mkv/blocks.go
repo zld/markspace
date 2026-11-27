@@ -72,10 +72,10 @@ func (d *Document) SortedBlocks() []*Block {
 }
 
 type parseState struct {
-	doc            *Document
-	clusterTC      map[int64]int64 // cluster header offset -> cluster timecode
-	trackEntry     map[int64]*Track // track-entry header offset -> partial track
-	lastTime       map[uint64]clock.Tick
+	doc        *Document
+	clusterTC  map[int64]int64  // cluster header offset -> cluster timecode
+	trackEntry map[int64]*Track // track-entry header offset -> partial track
+	lastTime   map[uint64]clock.Tick
 }
 
 // Parse reads a Matroska/WebM subset document from r. size is the total

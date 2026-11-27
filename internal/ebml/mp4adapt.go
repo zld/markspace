@@ -10,8 +10,8 @@ import (
 // even though Matroska uses VINT headers rather than MP4 box headers.
 func AsBoxInfo(el *Element) *mp4.BoxInfo {
 	bi := &mp4.BoxInfo{
-		Offset:     uint64(el.Offset),
-		HeaderSize: uint64(el.HeaderLen),
+		Offset:      uint64(el.Offset),
+		HeaderSize:  uint64(el.HeaderLen),
 		ExtendToEOF: el.Size < 0,
 	}
 	if el.Size >= 0 {
