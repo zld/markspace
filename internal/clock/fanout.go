@@ -64,11 +64,24 @@ func recoverTrack(repID string, tr model.Track, cfg FanoutConfig) model.Recovere
 			"track "+itoa32(tr.ID)+" sample count "+itoa(n)+" exceeds buffer budget "+itoa(cfg.MaxSamplesPerTrack)))
 	}
 
-	// Prefer the RTP clock packets (pion/rtp semantics); fall back to the
-	// raw container timestamps expanded through the same 32-bit carrier.
+	// Container DTS values are full-width integers: a raw value drop below
+	// half the 32-bit carrier range is an unambiguous carrier wrap even when
+	// the modular delta (e.g. 0xFFFFFFF8 -> 0x00000002) stays positive.
+	fullWidthWrap := 0
+	for i := 1; i < n; i++ {
+		if tr.Samples[i].Dts+halfRange < tr.Samples[i-1].Dts && tr.Samples[i].Dts < halfRange {
+			fullWidthWrap++
+		}
+	}
+	rt.WrapCount = fullWidthWrap
+
+	// Prefer the RTP clock packets (pion/rtp semantics) only while the
+	// container timestamps fit the 32-bit carrier. A full-width wrap (e.g. a
+	// 33-bit MPEG-TS PTS) would lose bits in the RTP mirror, so the raw DTS
+	// sequence remains the authoritative timeline.
 	var unwrapped []int64
 	var raw []uint32
-	if len(tr.ClockPackets) == n {
+	if fullWidthWrap == 0 && len(tr.ClockPackets) == n {
 		up, rv, err := ExtendRTP(tr.ClockPackets)
 		if err != nil {
 			rt.Trusted = false
@@ -85,15 +98,7 @@ func recoverTrack(repID string, tr model.Track, cfg FanoutConfig) model.Recovere
 			raw[i] = uint32(s.Dts)
 			unwrapped[i] = u32.Push(raw[i])
 		}
-		rt.WrapCount = u32.WrapCount()
-	}
-	// Container DTS values are full-width integers: a raw value drop below
-	// half the 32-bit carrier range is an unambiguous carrier wrap even when
-	// the modular delta (e.g. 0xFFFFFFF8 -> 0x00000002) stays positive.
-	for i := 1; i < n; i++ {
-		if tr.Samples[i].Dts+halfRange < tr.Samples[i-1].Dts && tr.Samples[i].Dts < halfRange {
-			rt.WrapCount++
-		}
+		rt.WrapCount += u32.WrapCount()
 	}
 	if rt.WrapCount > 0 {
 		rt.Errors = append(rt.Errors, errFor(model.KindTimestampWrap, repID,

@@ -35,6 +35,9 @@ type Track struct {
 	// NotMappable marks unknown codecs: samples stay lossless but the track
 	// cannot participate in explicit output mapping.
 	NotMappable bool
+	// DemuxErrors holds non-fatal problems found while demuxing this track
+	// (e.g. continuity counter errors); other tracks remain unaffected.
+	DemuxErrors []*MediaError
 }
 
 // SegmentRef is one referenced media fragment with its declared time range.
