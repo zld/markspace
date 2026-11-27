@@ -33,6 +33,9 @@ type Config struct {
 	// CrashAfter, when set, simulates a crash by returning immediately after
 	// the given stage records a started/done record, before it is verified.
 	CrashAfter txn.Stage
+	// FailVerify, when true, forces the verify stage to fail once so tests can
+	// exercise the rollback-to-last-commit path and rollback counting.
+	FailVerify bool
 }
 
 // Report is the terminal summary printed by the CLI.
@@ -49,10 +52,11 @@ type Report struct {
 
 // Runner holds the working directories and WAL for a job.
 type Runner struct {
-	cfg  Config
-	dirs dirs
-	wal  *txn.WAL
-	plan *recovery.Plan
+	cfg                 Config
+	dirs                dirs
+	wal                 *txn.WAL
+	plan                *recovery.Plan
+	verifyFailConsumed  bool
 }
 
 type dirs struct {

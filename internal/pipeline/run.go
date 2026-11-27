@@ -109,6 +109,15 @@ func (r *Runner) Run() (*Report, error) {
 		if err := r.maybeCrash(txn.StageVerify); err != nil {
 			return nil, err
 		}
+		if r.cfg.FailVerify && !r.verifyFailConsumed {
+			r.verifyFailConsumed = true
+			forced := perr.New("pipeline", perr.CodeChecksum,
+				"injected verification failure for rollback test")
+			_ = r.record(txn.StageVerify, txn.StateFailed, "mux-ok", inputHash, nil)
+			_ = recovery.MarkRollback(r.wal, txn.StageVerify, "mux-ok")
+			_ = recovery.RemoveStageOutputs(r.dirs.segs)
+			return nil, forced
+		}
 		if err := r.stageVerify(entries); err != nil {
 			_ = r.record(txn.StageVerify, txn.StateFailed, "mux-ok", inputHash, nil)
 			_ = recovery.MarkRollback(r.wal, txn.StageVerify, "mux-ok")

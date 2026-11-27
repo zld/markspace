@@ -101,23 +101,23 @@ func MarkRollback(w *txn.WAL, stage txn.Stage, resumeAt string) error {
 }
 
 // RemoveStageOutputs deletes fragment files under segDir for a rolled-back
-// stage, leaving the WAL and committed manifest untouched.
+// stage, leaving the WAL and committed manifest untouched. Per-representation
+// subdirectories are walked recursively; the directory tree itself is kept.
 func RemoveStageOutputs(segDir string) error {
 	if _, err := os.Stat(segDir); os.IsNotExist(err) {
 		return nil
 	}
-	entries, err := os.ReadDir(segDir)
-	if err != nil {
-		return perr.New(subsystem, perr.CodeTxn, "read segment dir: %v", err)
-	}
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
+	return filepath.Walk(segDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return perr.New(subsystem, perr.CodeTxn, "walk segment dir: %v", err)
 		}
-		if err := os.Remove(filepath.Join(segDir, e.Name())); err != nil {
+		if info.IsDir() {
+			return nil
+		}
+		if err := os.Remove(path); err != nil {
 			return perr.New(subsystem, perr.CodeTxn,
-				"remove rolled-back output %s: %v", e.Name(), err)
+				"remove rolled-back output %s: %v", path, err)
 		}
-	}
-	return nil
+		return nil
+	})
 }

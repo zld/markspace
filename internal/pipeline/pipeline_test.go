@@ -121,6 +121,51 @@ func TestDeterministicRerunReusesAllEntries(t *testing.T) {
 	}
 }
 
+func TestVerifyFailureRollsBackThenResumes(t *testing.T) {
+	root := t.TempDir()
+	cfg := baseConfig(root)
+	cfg.FailVerify = true
+
+	first, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := first.Run(); err == nil {
+		t.Fatal("injected verify failure must surface")
+	}
+	if first.wal.RollbackCount() != 1 {
+		t.Fatalf("rollback count = %d, want 1", first.wal.RollbackCount())
+	}
+	// Fragment outputs must have been removed by the rollback.
+	if entries, _ := os.ReadDir(filepath.Join(root, "segments")); len(entries) != 0 {
+		// Subdirectories per representation may remain, but their files must not.
+		for _, e := range entries {
+			sub := filepath.Join(root, "segments", e.Name())
+			if files, _ := os.ReadDir(sub); len(files) != 0 {
+				t.Fatalf("rolled-back fragments remain in %s", sub)
+			}
+		}
+	}
+	// No manifest before a successful commit.
+	if _, err := os.Stat(filepath.Join(root, "manifest.json")); !os.IsNotExist(err) {
+		t.Fatal("manifest must not exist after a verify rollback")
+	}
+
+	// Resume without the injected failure completes and reports the rollback.
+	cfg.FailVerify = false
+	second, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rep, err := second.Run()
+	if err != nil {
+		t.Fatalf("resume after rollback: %v", err)
+	}
+	if rep.Rollbacks != 1 {
+		t.Fatalf("reported rollbacks = %d, want 1", rep.Rollbacks)
+	}
+}
+
 func TestInputChangeReportsDiffAndNewDigest(t *testing.T) {
 	root := t.TempDir()
 	cfg := baseConfig(root)
