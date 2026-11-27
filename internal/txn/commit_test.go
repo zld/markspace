@@ -393,3 +393,53 @@ func TestRecoverRestoresMissingManifest(t *testing.T) {
 		t.Fatalf("restored manifest %+v", m)
 	}
 }
+
+// A crash after the publish rename but before stage_done leaves the files in
+// place with no stage_done record. Recovery must complete the commit without
+// duplicating or re-publishing them.
+func TestRecoverCompletesPublishWithoutStageDone(t *testing.T) {
+	root := t.TempDir()
+	e := open(t, root, CrashNone)
+	if err := e.Begin("rebuild", "render"); err != nil {
+		t.Fatal(err)
+	}
+	var arts []manifest.Artifact
+	for _, name := range frameNames {
+		a, err := e.Stage("rebuild", name, []byte("frame-body-"+name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		arts = append(arts, a)
+	}
+	if err := e.Seal(manifest.Manifest{Task: "rebuild", Generation: 1, Artifacts: arts}); err != nil {
+		t.Fatal(err)
+	}
+	// Simulate the rename landing without the stage_done append.
+	published := filepath.Join(root, "artifacts", "rebuild")
+	if err := os.MkdirAll(filepath.Dir(published), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(filepath.Join(root, "staging", "rebuild"), published); err != nil {
+		t.Fatal(err)
+	}
+	e.Close()
+
+	e2 := open(t, root, CrashNone)
+	res, err := e2.Recover()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Recovered != 1 || res.Published != 1 || res.Duplicate != 0 || res.Missing != 0 {
+		t.Fatalf("result %+v", res)
+	}
+	files, err := os.ReadDir(published)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != len(frameNames) {
+		t.Fatalf("artifact count %d, want %d", len(files), len(frameNames))
+	}
+	if _, err := ReadManifest(root); err != nil {
+		t.Fatalf("manifest not completed: %v", err)
+	}
+}
