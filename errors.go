@@ -92,3 +92,21 @@ func (e *Error) Is(target error) bool {
 
 // Unwrap exposes the wrapped condition to errors.Is/errors.As.
 func (e *Error) Unwrap() error { return e.Op }
+
+// ReStage re-anchors an existing *Error at a new stage/source offset without
+// nesting another *Error, so rendered messages stay flat and greppable.
+func ReStage(err error, asset string, track uint32, stage string, offset int64) error {
+	var me *Error
+	if errors.As(err, &me) {
+		cp := *me
+		if asset != "" {
+			cp.Asset = asset
+		}
+		if track != 0 {
+			cp.Track = track
+		}
+		cp.Stage, cp.Offset = stage, offset
+		return &cp
+	}
+	return Wrap(err, asset, track, stage, offset)
+}
