@@ -522,7 +522,12 @@ func parseSamples(sk *seeker, trak *boxNode, t *Track, fileSize int64) {
 			})
 			if off >= 0 && int64(size) > 0 && off+int64(size) > fileSize {
 				// Sample data runs off the end of the file. Report the first
-				// missing byte so recovery starts at the exact truncation.
+				// missing byte, drop this and every later sample (their
+				// offsets cannot be trusted once the tail is gone) and keep
+				// the readable prefix addressable.
+				t.Truncated = true
+				t.TruncatedAt = start
+				t.TruncatedOffset = fileSize
 				t.AddError(media.NewError(media.ClassTruncatedInput, media.StageParse, "", fileSize,
 					"sample data extends past end of file"))
 				return

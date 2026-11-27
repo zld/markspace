@@ -105,26 +105,29 @@ type ColorConflict struct {
 // for tracks whose metadata cannot be used; Errors explains why and remains
 // part of the manifest.
 type Track struct {
-	ID          string             `json:"id"`
-	Container   string             `json:"container"`
-	Kind        Kind               `json:"kind"`
-	Timescale   uint32             `json:"timescale"`
-	Language    string             `json:"language,omitempty"`
-	Duration    media.Ticks        `json:"duration_ns"`
-	FrameWidth  int64              `json:"frame_width,omitempty"`
-	FrameHeight int64              `json:"frame_height,omitempty"`
-	EditOffset  media.Ticks        `json:"edit_offset_ns"`
-	Rotation    int                `json:"rotation_deg"`
-	RotMatrix   [9]int32           `json:"rotation_matrix"`
-	RotSource   Source             `json:"rotation_source"`
-	Crop        *Aperture          `json:"crop,omitempty"`
-	Colors      []ColorDescription `json:"colors,omitempty"`
-	Conflicts   []ColorConflict    `json:"color_conflicts,omitempty"`
-	Samples     []Sample           `json:"samples,omitempty"`
-	SourceStart int64              `json:"source_start"`
-	Errors      []*media.Error     `json:"errors,omitempty"`
-	Rejected    bool               `json:"rejected,omitempty"`
-	Version     string             `json:"parse_version"`
+	ID              string             `json:"id"`
+	Container       string             `json:"container"`
+	Kind            Kind               `json:"kind"`
+	Timescale       uint32             `json:"timescale"`
+	Language        string             `json:"language,omitempty"`
+	Duration        media.Ticks        `json:"duration_ns"`
+	FrameWidth      int64              `json:"frame_width,omitempty"`
+	FrameHeight     int64              `json:"frame_height,omitempty"`
+	EditOffset      media.Ticks        `json:"edit_offset_ns"`
+	Rotation        int                `json:"rotation_deg"`
+	RotMatrix       [9]int32           `json:"rotation_matrix"`
+	RotSource       Source             `json:"rotation_source"`
+	Crop            *Aperture          `json:"crop,omitempty"`
+	Colors          []ColorDescription `json:"colors,omitempty"`
+	Conflicts       []ColorConflict    `json:"color_conflicts,omitempty"`
+	Samples         []Sample           `json:"samples,omitempty"`
+	Truncated       bool               `json:"truncated,omitempty"`
+	TruncatedAt     media.Ticks        `json:"truncated_at_ns,omitempty"`
+	TruncatedOffset int64              `json:"truncated_offset,omitempty"`
+	SourceStart     int64              `json:"source_start"`
+	Errors          []*media.Error     `json:"errors,omitempty"`
+	Rejected        bool               `json:"rejected,omitempty"`
+	Version         string             `json:"parse_version"`
 }
 
 // AddError attaches a structured error and marks the track unusable when the
@@ -137,9 +140,13 @@ func (t *Track) AddError(err *media.Error) {
 		err = err.WithTrack(t.ID)
 	}
 	t.Errors = append(t.Errors, err)
+	// Truncation and corrupt bytes are diagnostics: whatever was readable
+	// before the damage stays usable, and downstream stages are told where the
+	// usable region ends. Only metadata that makes interpretation impossible
+	// rejects the track.
 	switch err.Class {
-	case media.ClassInvalidCrop, media.ClassCorruptInput, media.ClassTruncatedInput,
-		media.ClassInvalidTimebase, media.ClassTimeRegression, media.ClassOutOfRange:
+	case media.ClassInvalidCrop, media.ClassInvalidTimebase,
+		media.ClassTimeRegression, media.ClassOutOfRange:
 		t.Rejected = true
 	}
 }

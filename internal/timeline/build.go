@@ -11,22 +11,26 @@ import (
 
 // TrackTimeline is the resolved view of one track.
 type TrackTimeline struct {
-	TrackID      string                `json:"track"`
-	Kind         track.Kind            `json:"kind"`
-	Container    string                `json:"container"`
-	Timescale    uint32                `json:"timescale"`
-	Start        media.Ticks           `json:"start_ns"`
-	End          media.Ticks           `json:"end_ns"`
-	Duration     media.Ticks           `json:"duration_ns"`
-	Samples      []track.Sample        `json:"samples"`
-	Metadata     []MetaOrigin          `json:"metadata"`
-	Rotation     int                   `json:"rotation_deg"`
-	Crop         *track.Aperture       `json:"crop,omitempty"`
-	Colors       []ColorSummary        `json:"colors,omitempty"`
-	Conflicts    []track.ColorConflict `json:"color_conflicts,omitempty"`
-	Rejected     bool                  `json:"rejected,omitempty"`
-	Errors       []*media.Error        `json:"errors,omitempty"`
-	ParseVersion string                `json:"parse_version"`
+	TrackID          string                `json:"track"`
+	Kind             track.Kind            `json:"kind"`
+	Container        string                `json:"container"`
+	Timescale        uint32                `json:"timescale"`
+	Start            media.Ticks           `json:"start_ns"`
+	End              media.Ticks           `json:"end_ns"`
+	Duration         media.Ticks           `json:"duration_ns"`
+	DeclaredDuration media.Ticks           `json:"declared_duration_ns"`
+	Samples          []track.Sample        `json:"samples"`
+	Metadata         []MetaOrigin          `json:"metadata"`
+	Rotation         int                   `json:"rotation_deg"`
+	Crop             *track.Aperture       `json:"crop,omitempty"`
+	Colors           []ColorSummary        `json:"colors,omitempty"`
+	Conflicts        []track.ColorConflict `json:"color_conflicts,omitempty"`
+	Truncated        bool                  `json:"truncated,omitempty"`
+	TruncatedAt      media.Ticks           `json:"truncated_at_ns,omitempty"`
+	TruncatedOffset  int64                 `json:"truncated_offset,omitempty"`
+	Rejected         bool                  `json:"rejected,omitempty"`
+	Errors           []*media.Error        `json:"errors,omitempty"`
+	ParseVersion     string                `json:"parse_version"`
 }
 
 // MetaOrigin records where a timeline value came from, so every merged field
@@ -105,15 +109,18 @@ func Build(in *track.Input) (*Timeline, error) {
 
 func buildTrack(tr *track.Track) *TrackTimeline {
 	tt := &TrackTimeline{
-		TrackID:      tr.ID,
-		Kind:         tr.Kind,
-		Container:    tr.Container,
-		Timescale:    tr.Timescale,
-		Rotation:     tr.Rotation,
-		Crop:         tr.Crop,
-		Conflicts:    tr.Conflicts,
-		Rejected:     tr.Rejected,
-		ParseVersion: tr.Version,
+		TrackID:         tr.ID,
+		Kind:            tr.Kind,
+		Container:       tr.Container,
+		Timescale:       tr.Timescale,
+		Rotation:        tr.Rotation,
+		Crop:            tr.Crop,
+		Conflicts:       tr.Conflicts,
+		Truncated:       tr.Truncated,
+		TruncatedAt:     tr.TruncatedAt,
+		TruncatedOffset: tr.TruncatedOffset,
+		Rejected:        tr.Rejected,
+		ParseVersion:    tr.Version,
 	}
 	// Carry over parse errors with their original classes and offsets.
 	tt.Errors = append(tt.Errors, tr.Errors...)
@@ -145,9 +152,12 @@ func buildTrack(tr *track.Track) *TrackTimeline {
 		tt.End = tr.Samples[len(tr.Samples)-1].End()
 	}
 	tt.Duration = tt.End - tt.Start
-	if d := tr.DurationOrEnd(); d > tt.End {
+	tt.DeclaredDuration = tr.DurationOrEnd()
+	if d := tr.DurationOrEnd(); d > tt.End && !tt.Truncated {
 		// Declared duration longer than the sample table: keep the sample
-		// boundary as authoritative but record the disagreement.
+		// boundary as authoritative but record the disagreement. A truncated
+		// track is expected to fall short, and its truncation error already
+		// names the affected interval.
 		tt.Errors = append(tt.Errors, media.Errorf(media.ClassCorruptInput, media.StageTimeline,
 			tr.ID, tr.SourceStart, "declared duration %d exceeds sample end %d", d, tt.End))
 	}
