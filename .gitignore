@@ -1,0 +1,14 @@
+# Compiled binaries
+/tracecheck
+*.test
+*.out
+
+# Local run/cache/resume working directories
+/voice-*
+/tmp-*
+
+# OS/editor noise
+.DS_Store
+*.swp
+.idea/
+.vscode/

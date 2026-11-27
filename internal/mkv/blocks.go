@@ -159,6 +159,19 @@ func (st *parseState) readBlock(rd *ebml.Reader, el *ebml.Element) error {
 	if err != nil {
 		return err
 	}
+	// Cross-check the element geometry through the go-mp4 BoxInfo adapter:
+	// the bridged offset/header/end range must agree with the EBML reader,
+	// so the offset every block reports is defensible against the MP4-style
+	// structural model this project uses as its adaptation layer.
+	bi := ebml.AsBoxInfo(el)
+	if bi.Offset != uint64(el.Offset) || bi.HeaderSize != uint64(el.HeaderLen) {
+		return clock.NewError(clock.CodeOutOfRange, el.Offset, el.Path(),
+			"block geometry disagrees with structural adapter")
+	}
+	if el.Size >= 0 && el.EndOffset() != int64(bi.Offset+bi.Size) {
+		return clock.NewError(clock.CodeOutOfRange, el.Offset, el.Path(),
+			"block end offset disagrees with structural adapter")
+	}
 	trackNum, n, err := decodeLeadingVINT(payload)
 	if err != nil {
 		return clock.NewError(clock.CodeIllegalVINT, el.Offset, el.Path(),
