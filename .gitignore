@@ -1,0 +1,12 @@
+# Compiled binaries and test/demo working directories
+/tmp/
+/continuity
+
+# Go test and coverage artifacts
+*.out
+*.test
+coverage.txt
+
+# OS/editor noise
+.DS_Store
+*.swp
