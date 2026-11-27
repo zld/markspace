@@ -20,8 +20,10 @@ func Normalize(p audio.PCM) []byte {
 	b := make([]byte, 0, len(head)+len(p.Samples)*2)
 	b = append(b, head...)
 	var tmp [2]byte
+	// Scale by 32768 so clipping is symmetric: both 1.0 and -1.0 map
+	// onto the int16 rails.
 	for _, s := range p.Samples {
-		v := int32(math.Round(float64(s) * 32767))
+		v := int32(math.Round(float64(s) * 32768))
 		if v > 32767 {
 			v = 32767
 		}
