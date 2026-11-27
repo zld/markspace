@@ -79,6 +79,7 @@ type Summary struct {
 	MaxSkewNs       int64            `json:"max_skew_ns"`
 	ThresholdMs     int64            `json:"threshold_ms"`
 	OverBudget      int              `json:"over_budget"`
+	Unmatched       int              `json:"items_unmatched"`
 	AnomalyRanges   int              `json:"anomaly_ranges"`
 	Frames          int              `json:"frames"`
 	FrameDigest     string           `json:"frame_sha256"`

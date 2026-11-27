@@ -614,6 +614,7 @@ func analyze(sb sandbox, rate clock.Rate, frameCount int) (*manifest.Summary, []
 	// track; it is reported so a reviewer can see what the run examined.
 	summary.CoverageStartNs, summary.CoverageEndNs = coverage(merged.Items)
 	summary.OverBudget = merged.OverBudget
+	summary.Unmatched = merged.Unmatched
 	summary.AnomalyRanges = len(merged.Anomalies)
 	for _, a := range merged.Anomalies {
 		summary.Anomalies = append(summary.Anomalies, manifest.Anomaly{
@@ -895,8 +896,8 @@ func lane(m map[string]*render.Lane, track, kind string) *render.Lane {
 func printSummary(w io.Writer, s *manifest.Summary, mode string) {
 	fmt.Fprintf(w, "mode=%s\n", mode)
 	fmt.Fprintf(w, "items_total=%d items_ok=%d items_error=%d\n", s.ItemsTotal, s.ItemsOK, s.ItemsError)
-	fmt.Fprintf(w, "max_skew_ms=%d threshold_ms=%d over_budget=%d anomaly_ranges=%d\n",
-		s.MaxSkewMs, s.ThresholdMs, s.OverBudget, s.AnomalyRanges)
+	fmt.Fprintf(w, "max_skew_ms=%d threshold_ms=%d over_budget=%d anomaly_ranges=%d items_unmatched=%d\n",
+		s.MaxSkewMs, s.ThresholdMs, s.OverBudget, s.AnomalyRanges, s.Unmatched)
 	fmt.Fprintf(w, "coverage=[%d,%d)ns\n", s.CoverageStartNs, s.CoverageEndNs)
 	fmt.Fprintf(w, "frames=%d frame_sha256=%s\n", s.Frames, s.FrameDigest)
 	fmt.Fprintf(w, "rtp_duplicate=%d rtp_gap=%d rtp_missing=%d mp4_invalid_samples=%d\n",

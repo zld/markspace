@@ -42,6 +42,10 @@ type Item struct {
 	Label     string `json:"label,omitempty"`
 	Over      bool   `json:"over_budget"`
 	Group     string `json:"group"`
+	// Matched is false for a track item with no reference anchor inside its
+	// match window. Such an item keeps its own instant as reference and is
+	// counted in Result.Unmatched rather than given a bogus skew or dropped.
+	Matched bool `json:"matched"`
 }
 
 // Group is a set of items that should describe the same instant.
@@ -71,6 +75,7 @@ type Result struct {
 	Anomalies   []AnomalyRange `json:"anomalies"`
 	MaxSkewNs   int64          `json:"max_skew_ns"`
 	OverBudget  int            `json:"over_budget"`
+	Unmatched   int            `json:"unmatched"`
 	ThresholdNs int64          `json:"threshold_ns"`
 }
 
@@ -138,7 +143,7 @@ func Merge(events []Event, samples []SampleRef, cues []CueRef, opts ...Option) (
 		anchors[i] = a
 		res.Items = append(res.Items, Item{
 			ID: e.ID, Kind: KindEvent, Track: e.Track, Source: e.Source, Line: e.Line,
-			TimeNs: e.TimeNs, RefTimeNs: a, Label: e.Label, Group: groupID(i),
+			TimeNs: e.TimeNs, RefTimeNs: a, Label: e.Label, Group: groupID(i), Matched: true,
 		})
 	}
 
@@ -152,16 +157,16 @@ func Merge(events []Event, samples []SampleRef, cues []CueRef, opts ...Option) (
 	for _, s := range sortedSamples {
 		gi, ok := nearestGroup(anchors, s.TimeNs, cfg.mediaToleranceNs)
 		group := "unassigned"
-		var ref int64
+		ref := s.TimeNs
 		if ok {
 			group = groupID(gi)
 			ref = anchors[gi]
 		} else {
-			ref = s.TimeNs
+			res.Unmatched++
 		}
 		res.Items = append(res.Items, Item{
 			ID: s.ID, Kind: KindMedia, Track: s.Track, Source: s.Source,
-			TimeNs: s.TimeNs, RefTimeNs: ref, Label: s.Label, Group: group,
+			TimeNs: s.TimeNs, RefTimeNs: ref, Label: s.Label, Group: group, Matched: ok,
 		})
 	}
 
@@ -179,11 +184,13 @@ func Merge(events []Event, samples []SampleRef, cues []CueRef, opts ...Option) (
 			// A caption legitimately spans an interval, so its own start is
 			// the reference; membership records coverage, not a skew.
 			group = groupID(gi)
+		} else {
+			res.Unmatched++
 		}
 		res.Items = append(res.Items, Item{
 			ID: c.ID, Kind: KindSubtitle, Track: c.Track, Source: c.Source,
 			Line: c.Line, TimeNs: c.TimeNs, EndNs: c.EndNs, RefTimeNs: c.TimeNs,
-			Label: c.Label, Group: group,
+			Label: c.Label, Group: group, Matched: ok,
 		})
 	}
 

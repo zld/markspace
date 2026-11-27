@@ -220,3 +220,35 @@ func TestInBudgetItemNotListedInAnomaly(t *testing.T) {
 		}
 	}
 }
+
+func TestUnmatchedItemsAreCountedNotShifted(t *testing.T) {
+	res, _ := Merge(
+		[]Event{{ID: "e0", Track: "client", TimeNs: 0}},
+		[]SampleRef{
+			{ID: "near", Track: "video", TimeNs: 5 * ms},
+			{ID: "far", Track: "video", TimeNs: 500 * ms},
+		},
+		[]CueRef{{ID: "c0", Track: "subs", TimeNs: 800 * ms, EndNs: 900 * ms}},
+	)
+	if res.Unmatched != 2 {
+		t.Fatalf("unmatched %d", res.Unmatched)
+	}
+	for _, it := range res.Items {
+		switch it.ID {
+		case "e0", "near":
+			if !it.Matched {
+				t.Errorf("%s should be matched", it.ID)
+			}
+		case "far", "c0":
+			if it.Matched {
+				t.Errorf("%s should be unmatched", it.ID)
+			}
+			if it.SkewNs != 0 || it.Group != "unassigned" {
+				t.Errorf("%s was shifted or grouped: %+v", it.ID, it)
+			}
+			if it.TimeNs == 0 {
+				t.Errorf("%s lost its instant", it.ID)
+			}
+		}
+	}
+}
