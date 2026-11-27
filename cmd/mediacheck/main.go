@@ -48,29 +48,30 @@ func usage() {
 }
 
 type report struct {
-	command       string
-	events        int
+	command        string
+	events         int
 	startNs, endNs int64
-	entries       int
-	fromNs, toNs  int64
-	status        index.RangeStatus
-	hits          int
-	firstB, lastB int64
-	anomalies     []index.Anomaly
-	affected      int
-	budgetMs      float64
-	actualMs      float64
-	recovery      string
-	rolledBack    int
-	resumedStage  string
-	identityState string
-	invalidation  string
-	inputDigest   string
-	finalDigest   string
-	cleanDigest   string
-	digestMatch   bool
-	showDigest    bool
-	conclusion    string
+	entries        int
+	fromNs, toNs   int64
+	status         index.RangeStatus
+	hits           int
+	firstB, lastB  int64
+	anomalies      []index.Anomaly
+	affected       int
+	budgetMs       float64
+	actualMs       float64
+	recovery       string
+	rolledBack     int
+	resumedStage   string
+	identityState  string
+	invalidation   string
+	inputDigest    string
+	finalDigest    string
+	cleanDigest    string
+	digestMatch    bool
+	showDigest     bool
+	conclusion     string
+	exitCode       int
 }
 
 func (r *report) print() {
@@ -102,29 +103,32 @@ func (r *report) print() {
 			r.finalDigest, r.cleanDigest, r.digestMatch)
 	}
 	fmt.Printf("conclusion=%s\n", r.conclusion)
+	// Printed so the intended process exit code is observable even when
+	// `go run` collapses a non-zero child status to its own exit 1.
+	fmt.Printf("exit_code=%d\n", r.exitCode)
 }
 
 func newReport(command string, res *provenance.Result, fromNs, toNs int64, anomalies []index.Anomaly, elapsed time.Duration) *report {
 	rr := res.Index.Read(fromNs, toNs)
 	r := &report{
-		command:     command,
-		events:      res.Events,
-		startNs:     res.Index.MediaStartNs,
-		endNs:       res.Index.MediaEndNs,
-		entries:     len(res.Index.Entries),
-		fromNs:      fromNs,
-		toNs:        toNs,
-		status:      rr.Status,
-		hits:        len(rr.Hits),
-		firstB:      rr.FirstBoundaryNs,
-		lastB:       rr.LastBoundaryNs,
-		anomalies:   anomalies,
-		affected:    provenance.AffectedEntries(res, anomalies),
-		budgetMs:    math.Ceil(float64(res.Events)/100.0) * 100.0,
-		actualMs:    float64(elapsed.Nanoseconds()) / 1e6,
-		recovery:    "none",
+		command:      command,
+		events:       res.Events,
+		startNs:      res.Index.MediaStartNs,
+		endNs:        res.Index.MediaEndNs,
+		entries:      len(res.Index.Entries),
+		fromNs:       fromNs,
+		toNs:         toNs,
+		status:       rr.Status,
+		hits:         len(rr.Hits),
+		firstB:       rr.FirstBoundaryNs,
+		lastB:        rr.LastBoundaryNs,
+		anomalies:    anomalies,
+		affected:     provenance.AffectedEntries(res, anomalies),
+		budgetMs:     math.Ceil(float64(res.Events)/100.0) * 100.0,
+		actualMs:     float64(elapsed.Nanoseconds()) / 1e6,
+		recovery:     "none",
 		resumedStage: "none",
-		inputDigest: res.Identity.Digest(),
+		inputDigest:  res.Identity.Digest(),
 	}
 	r.conclusion = "PASS"
 	if len(anomalies) > 0 {
@@ -196,11 +200,11 @@ func cmdVerify(args []string) int {
 	r := newReport("verify", res, *from, *to, findings, elapsed)
 	r.identityState = "committed"
 	r.invalidation = "none"
-	r.print()
 	if len(findings) > 0 {
-		return 2
+		r.exitCode = 2
 	}
-	return 0
+	r.print()
+	return r.exitCode
 }
 
 func cmdResume(args []string) int {

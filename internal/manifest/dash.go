@@ -18,14 +18,14 @@ type mpdXML struct {
 				ID       string `xml:"id,attr"`
 				Template *struct {
 					Timescale      uint64 `xml:"timescale,attr"`
-					Initialization string   `xml:"initialization,attr"`
-					Media          string   `xml:"media,attr"`
-					StartNumber    int64    `xml:"startNumber,attr"`
+					Initialization string `xml:"initialization,attr"`
+					Media          string `xml:"media,attr"`
+					StartNumber    int64  `xml:"startNumber,attr"`
 					Timeline       *struct {
 						S []struct {
 							T *uint64 `xml:"t,attr"`
-							D uint64 `xml:"d,attr"`
-							R int    `xml:"r,attr"`
+							D uint64  `xml:"d,attr"`
+							R int     `xml:"r,attr"`
 						} `xml:"S"`
 					} `xml:"SegmentTimeline"`
 				} `xml:"SegmentTemplate"`
