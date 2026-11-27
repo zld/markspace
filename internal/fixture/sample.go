@@ -22,7 +22,7 @@ type Sample struct {
 	Stream     []byte // stream bytes after byte-level injections
 	FullStream []byte // undamaged stream, used to prove resume equivalence
 	Payloads   [][]byte
-	IndexBytes []byte // serialised key-frame index container
+	IndexBytes []byte   // serialised key-frame index container
 	Packets    [][]byte // RTP feed after transport injections
 	SSRC       uint32
 	Versions   []merge.Version

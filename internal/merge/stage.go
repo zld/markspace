@@ -13,9 +13,9 @@ import (
 // The last successfully committed manifest is never overwritten by a failed
 // attempt: promotion is a single rename, and rollback only touches staging.
 type Stager struct {
-	dir      string // working directory holding staging and final files
-	final    string // committed manifest path
-	staged   string // pending manifest path
+	dir       string // working directory holding staging and final files
+	final     string // committed manifest path
+	staged    string // pending manifest path
 	reasonLog string // path receiving rollback reasons
 }
 
@@ -30,8 +30,8 @@ func NewStager(dir string) (*Stager, error) {
 	}
 	return &Stager{
 		dir:       dir,
-		final:    filepath.Join(dir, "manifest.json"),
-		staged:   filepath.Join(dir, "manifest.staging"),
+		final:     filepath.Join(dir, "manifest.json"),
+		staged:    filepath.Join(dir, "manifest.staging"),
 		reasonLog: filepath.Join(dir, "rollback.log"),
 	}, nil
 }

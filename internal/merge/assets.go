@@ -53,13 +53,13 @@ type Issue struct {
 
 // Manifest is the reconciled, canonical output of a merge.
 type Manifest struct {
-	Assets    []Asset `json:"assets"`
-	Version   int     `json:"version"`
-	Issues    []Issue `json:"issues"`
-	Digest    string  `json:"digest"`     // SHA-256 of the canonical encoding
-	Committed bool    `json:"committed"`  // whether a stager committed it
-	RolledBack bool   `json:"rolled_back"`
-	FailReason string `json:"fail_reason,omitempty"`
+	Assets     []Asset `json:"assets"`
+	Version    int     `json:"version"`
+	Issues     []Issue `json:"issues"`
+	Digest     string  `json:"digest"`    // SHA-256 of the canonical encoding
+	Committed  bool    `json:"committed"` // whether a stager committed it
+	RolledBack bool    `json:"rolled_back"`
+	FailReason string  `json:"fail_reason,omitempty"`
 }
 
 const manifestVersion = 1

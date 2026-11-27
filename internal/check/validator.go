@@ -22,21 +22,21 @@ import (
 
 // Input bundles everything the validator re-derives results from.
 type Input struct {
-	Codec      ingest.Codec
-	Stream     []byte                       // raw elementary stream bytes
-	Index      *ingest.IndexFile            // parsed key-frame index
-	Manifest   *merge.Manifest              // manifest under validation
-	GapSSRC    uint32                       // SSRC whose gaps are authoritative
-	Gaps       []transport.Gap              // transport gaps the run observed
-	Staged     []byte                       // canonical manifest bytes on disk
-	Limits     ingest.Limits
+	Codec    ingest.Codec
+	Stream   []byte            // raw elementary stream bytes
+	Index    *ingest.IndexFile // parsed key-frame index
+	Manifest *merge.Manifest   // manifest under validation
+	GapSSRC  uint32            // SSRC whose gaps are authoritative
+	Gaps     []transport.Gap   // transport gaps the run observed
+	Staged   []byte            // canonical manifest bytes on disk
+	Limits   ingest.Limits
 }
 
 // Result is the independent verdict.
 type Result struct {
-	Pass    bool
-	Digest  string // SHA-256 the validator recomputed from the staged bytes
-	Faults  []fault.Fault
+	Pass   bool
+	Digest string // SHA-256 the validator recomputed from the staged bytes
+	Faults []fault.Fault
 }
 
 // Validate runs every check and collects all failures before deciding.

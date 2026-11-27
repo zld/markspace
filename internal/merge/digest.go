@@ -15,7 +15,7 @@ func (e mergeError) Error() string { return "merge: " + string(e) }
 
 func errMerge(msg string) error { return mergeError(msg) }
 
-func itoa(v int) string   { return strconv.Itoa(v) }
+func itoa(v int) string     { return strconv.Itoa(v) }
 func itoa64(v int64) string { return strconv.FormatInt(v, 10) }
 
 // canonicalManifest is the stable, self-contained shape that gets hashed and

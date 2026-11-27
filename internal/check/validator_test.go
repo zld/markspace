@@ -51,7 +51,7 @@ func goodSetup(t *testing.T) (Input, []ingest.Unit) {
 		return merge.Entry{
 			Asset: merge.Asset{
 				Key: key, UnitIndex: u, Offset: units[u].Offset,
-				Size: int64(len(units[u].Payload)),
+				Size:     int64(len(units[u].Payload)),
 				TimeFrom: clock.MustRational(int64(u), 1),
 				TimeTo:   clock.MustRational(int64(u+1), 1),
 			},
