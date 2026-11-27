@@ -156,9 +156,14 @@ func Build(in Inputs) *Manifest {
 }
 
 // Digest hashes the canonical manifest JSON with the digest field blank.
+// Runtime counters (queue peak, cache hits) are excluded because they vary
+// with cache warmth and scheduling even when every delivered segment is
+// identical; the digest must be stable across repeated and resumed runs.
 func Digest(m *Manifest) string {
 	cp := *m
 	cp.ManifestSHA256 = ""
+	cp.QueuePeak = 0
+	cp.CacheHits = 0
 	raw, err := json.MarshalIndent(&cp, "", "  ")
 	if err != nil {
 		return ""
