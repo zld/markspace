@@ -1,0 +1,6 @@
+# Build and runtime artefacts stay out of the repository.
+/mediacore
+/.mediacore-demo/
+/coverage.out
+*.test
+.DS_Store
