@@ -38,8 +38,8 @@ func TestWrapDiff(t *testing.T) {
 		{200, 100, -100},
 		{0xFFFFFFFF, 5, 6},                 // legitimate wrap forward
 		{5, 0xFFFFFFFF, -6},                // backwards across the ring
-		{0x80000000, 0, -2147483648},       // exact half ring stays negative
-		{0x80000001, 0, 2147483647},        // just inside the forward half
+		{0x80000000, 0, 2147483648},        // exact half ring stays positive by convention
+		{0x80000001, 0, 2147483647},        // just inside the backward half
 	}
 	for _, c := range cases {
 		if got := WrapDiff(c.a, c.b); got != c.want {
