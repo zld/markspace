@@ -129,7 +129,7 @@ func latencySummary(ss *StreamState) LatencySummary {
 		}
 	}
 	out := LatencySummary{Count: len(vals), Unit: UnitMilliseconds,
-		Source: "arrival_ms minus reconstructed media_ms, origin=first delivered packet"}
+		Source: "arrival_ms minus reconstructed media_ms at the packet start; absolute sender-to-trace delay"}
 	if len(vals) == 0 {
 		return out
 	}

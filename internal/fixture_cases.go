@@ -33,12 +33,12 @@ func generateWrapReorder(seed int64) (*Fixture, error) {
 	rng := rand.New(rand.NewSource(seed))
 	const n = 40
 	var durs, sizes []uint32
+	tr := simpleTrace(seed, uint64(n*20))
 	for i := 0; i < n; i++ {
-		payload := opusFrame20ms(rng, 40+rng.Intn(10))
+		payload := opusFrame20ms(rng, payloadBytesFor(targetBpsAt(tr.Events, int64(i*20)), 20))
 		durs = append(durs, 960)
 		sizes = append(sizes, uint32(len(payload)))
 	}
-	tr := simpleTrace(seed, uint64(n*20))
 	baseSeq := uint16(65516) // wraps after 20 packets
 	deliver := make([]int, 0, n)
 	for i := 0; i < n; i++ {
@@ -49,10 +49,10 @@ func generateWrapReorder(seed int64) (*Fixture, error) {
 		deliver[i], deliver[i+1] = deliver[i+1], deliver[i]
 	}
 	for idx, i := range deliver {
-		payload := opusFrame20ms(rng, 40)
+		payload := opusFrame20ms(rng, payloadBytesFor(targetBpsAt(tr.Events, int64(i*20)), 20))
 		tr.Streams[0].Packets = append(tr.Streams[0].Packets, TracePacket{
-			RTPHex:    rtpHex(nil, baseSeq+uint16(i), uint32(i*960), i == n-1, payload, 111),
-			ArrivalMs: int64(20 + idx*20),
+			RTPHex:    rtpHex(baseSeq+uint16(i), uint32(i*960), i == n-1, payload, 111),
+			ArrivalMs: int64(baseDelayMs + idx*20 + rng.Intn(jitterMs)),
 		})
 	}
 	fx := &Fixture{Case: CaseWrapReorder, Seed: seed, Trace: tr}
@@ -71,7 +71,7 @@ func generateDuplicate(seed int64) (*Fixture, error) {
 	var durs, sizes []uint32
 	tr := simpleTrace(seed, uint64(n*20))
 	for i := 0; i < n; i++ {
-		payload := opusFrame20ms(rng, 60)
+		payload := opusFrame20ms(rng, payloadBytesFor(targetBpsAt(tr.Events, int64(i*20)), 20))
 		durs = append(durs, 960)
 		sizes = append(sizes, uint32(len(payload)))
 	}
@@ -80,24 +80,22 @@ func generateDuplicate(seed int64) (*Fixture, error) {
 		if dup {
 			fault = "duplicate"
 		}
-		payload := opusFrame20ms(rand.New(rand.NewSource(int64(seqIdx)+1)), 60)
+		payload := opusFrame20ms(rand.New(rand.NewSource(int64(seqIdx)+1)), payloadBytesFor(targetBpsAt(tr.Events, int64(seqIdx*20)), 20))
 		tr.Streams[0].Packets = append(tr.Streams[0].Packets, TracePacket{
-			RTPHex:    rtpHex(nil, uint16(seqIdx+1), uint32(seqIdx*960), false, payload, 111),
+			RTPHex:    rtpHex(uint16(seqIdx+1), uint32(seqIdx*960), false, payload, 111),
 			ArrivalMs: arrivalMs,
 			Fault:     fault,
 		})
 	}
-	at := int64(20)
 	for i := 0; i < n; i++ {
+		at := int64(baseDelayMs + i*20)
 		emit(i, at, false)
-		at += 20
 		if i == 5 || i == 12 || i == 20 {
-			emit(i, at, true) // immediate duplicate
-			at += 5
+			emit(i, at+2, true) // immediate duplicate
 		}
 	}
 	// A duplicate that arrives after its slot already closed.
-	emit(3, at, true)
+	emit(3, int64(baseDelayMs+n*20+10), true)
 	fx := &Fixture{Case: CaseDuplicate, Seed: seed, Trace: tr}
 	if err := attachMP4(fx, durs, sizes); err != nil {
 		return nil, err
@@ -116,19 +114,19 @@ func generateBurstLoss(seed int64) (*Fixture, error) {
 	}
 	var durs, sizes []uint32
 	tr := simpleTrace(seed, uint64(n*20))
-	at := int64(20)
 	for i := 0; i < n; i++ {
-		payload := opusFrame20ms(rng, 50)
+		payload := opusFrame20ms(rng, payloadBytesFor(targetBpsAt(tr.Events, int64(i*20)), 20))
 		durs = append(durs, 960)
 		sizes = append(sizes, uint32(len(payload)))
 		if drop(i) {
+			// The hole is visible in arrival time too: nothing shows up for
+			// the dropped slots, so later packets keep their own schedule.
 			continue
 		}
 		tr.Streams[0].Packets = append(tr.Streams[0].Packets, TracePacket{
-			RTPHex:    rtpHex(nil, uint16(i+1), uint32(i*960), false, payload, 111),
-			ArrivalMs: at,
+			RTPHex:    rtpHex(uint16(i+1), uint32(i*960), false, payload, 111),
+			ArrivalMs: int64(baseDelayMs + i*20 + rng.Intn(jitterMs)),
 		})
-		at += 20
 	}
 	fx := &Fixture{Case: CaseBurstLoss, Seed: seed, Trace: tr}
 	if err := attachMP4(fx, durs, sizes); err != nil {

@@ -44,7 +44,6 @@ type StreamState struct {
 	Stats              WindowStats
 	Gaps               []GapRun
 	MediaTicks         uint64
-	BaseArrivalTicks   int64
 }
 
 // BuildStreamState reconstructs packet states for one stream. mp4Durations,
@@ -102,17 +101,18 @@ func BuildStreamState(ps ParsedStream, depth int, mp4Durations []uint64) (*Strea
 				WithTrack(ps.Track).WithPacket(p.Seq)
 		}
 		if deliveredIdx == 0 {
-			// Timeline origin: the first delivered packet defines both the
-			// media base and the arrival base used for latency.
+			// Timeline origin: the first delivered packet defines the media
+			// base. Arrival time is compared against absolute media time, so
+			// the result is the end-to-end delay from sender to trace entry,
+			// not merely jitter relative to the first packet.
 			base = unwrapped
-			ss.BaseArrivalTicks = arrivalTicks(p.ArrivalMs, ps.ClockHz)
 		}
 		start := unwrapped - base
 		if start < 0 {
 			return nil, NewError(CodeTimestampJump, "reconstruct", "negative media position after unwrap").
 				WithTrack(ps.Track).WithPacket(p.Seq)
 		}
-		latTicks := arrivalTicks(p.ArrivalMs, ps.ClockHz) - ss.BaseArrivalTicks - start
+		latTicks := arrivalTicks(p.ArrivalMs, ps.ClockHz) - start
 		if start+int64(dur) > int64(ss.MediaTicks) {
 			ss.MediaTicks = uint64(start + int64(dur))
 		}

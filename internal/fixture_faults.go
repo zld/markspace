@@ -19,8 +19,8 @@ func generateMalformedOpus(seed int64) (*Fixture, error) {
 			payload = opusFrame20ms(rng, 50)
 		}
 		tr.Streams[0].Packets = append(tr.Streams[0].Packets, TracePacket{
-			RTPHex:    rtpHex(nil, uint16(i+1), uint32(i*960), false, payload, 111),
-			ArrivalMs: int64(20 + i*20),
+			RTPHex:    rtpHex(uint16(i+1), uint32(i*960), false, payload, 111),
+			ArrivalMs: int64(baseDelayMs + i*20),
 			Fault:     faultAt(i == 12, "malformed-opus"),
 		})
 	}
@@ -42,8 +42,8 @@ func generateTimestampJump(seed int64) (*Fixture, error) {
 			ts += 7000 // discontinuous jump
 		}
 		tr.Streams[0].Packets = append(tr.Streams[0].Packets, TracePacket{
-			RTPHex:    rtpHex(nil, uint16(i+1), ts, false, opusFrame20ms(rng, 50), 111),
-			ArrivalMs: int64(20 + i*20),
+			RTPHex:    rtpHex(uint16(i+1), ts, false, opusFrame20ms(rng, 50), 111),
+			ArrivalMs: int64(baseDelayMs + i*20),
 			Fault:     faultAt(i == 13, "timestamp-jump"),
 		})
 	}

@@ -92,11 +92,13 @@ func opusFrame60ms(rng *rand.Rand, target int) []byte {
 	return p
 }
 
-func rtpHex(t interface{ Fatalf(string, ...any) }, seq uint16, ts uint32, marker bool, payload []byte, pt uint8) string {
+func rtpHex(seq uint16, ts uint32, marker bool, payload []byte, pt uint8) string {
 	p := &rtp.Packet{Header: rtp.Header{Version: 2, PayloadType: pt, SequenceNumber: seq, Timestamp: ts, Marker: marker}, Payload: payload}
 	b, err := p.Marshal()
 	if err != nil {
-		t.Fatalf("marshal rtp: %v", err)
+		// rtp.Packet.Marshal only fails on invalid header constants, which the
+		// fixtures never set; surface it as a structured config error.
+		panic(NewError(CodeInvalidConfig, "fixture_rtp", err.Error()))
 	}
 	return hexEncode(b)
 }
@@ -111,13 +113,16 @@ func simpleTrace(seed int64, declared uint64) *Trace {
 			Track: "opus-main", Codec: CodecOpus, ClockHz: 48000,
 			DeclaredDurationMs: declared,
 		}},
-		Events: []TimedEvent{
-			{AtMs: 0, Kind: EventBandwidth, ValueBps: 32000, Note: "startup target"},
-			{AtMs: 500, Kind: EventBandwidth, ValueBps: 48000, Note: "ramp"},
-			{AtMs: 1000, Kind: EventBandwidth, ValueBps: 24000, Note: "congestion"},
-		},
+		Events: standardBandwidthEvents(),
 	}
 }
+
+// Network model constants for generated fixtures. Media timestamps are the
+// sender clock; arrival = media time + base delay + bounded jitter.
+const (
+	baseDelayMs = 40
+	jitterMs    = 8
+)
 
 func generateNormal(seed int64) (*Fixture, error) {
 	rng := rand.New(rand.NewSource(seed))
@@ -126,11 +131,13 @@ func generateNormal(seed int64) (*Fixture, error) {
 	var mp4durs []uint32
 	var mp4sizes []uint32
 	for i := 0; i < n; i++ {
-		payload := opusFrame20ms(rng, 40+rng.Intn(20))
+		// Payload size follows the active bandwidth target so a clean run
+		// has a meaningful (near-zero) bitrate deviation.
+		payload := opusFrame20ms(rng, payloadBytesFor(targetBpsAt(tr.Events, int64(i*20)), 20))
 		marker := i == n-1
 		tr.Streams[0].Packets = append(tr.Streams[0].Packets, TracePacket{
-			RTPHex:    rtpHex(nil, uint16(i+1), uint32(i*960), marker, payload, 111),
-			ArrivalMs: int64(20 + i*20),
+			RTPHex:    rtpHex(uint16(i+1), uint32(i*960), marker, payload, 111),
+			ArrivalMs: int64(baseDelayMs + i*20 + rng.Intn(jitterMs)),
 		})
 		mp4durs = append(mp4durs, 960)
 		mp4sizes = append(mp4sizes, uint32(len(payload)))

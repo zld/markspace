@@ -35,7 +35,7 @@ func TestMetricsCleanStreamZeroLoss(t *testing.T) {
 	if m.LossPackets != 0 || m.DuplicatePackets != 0 || m.BurstLossPackets != 0 {
 		t.Fatalf("m=%+v", m)
 	}
-	if m.Latency.P50Ms != 0 || m.Latency.MaxMs != 0 {
+	if m.Latency.P50Ms != 20 || m.Latency.MaxMs != 20 {
 		t.Fatalf("latency=%+v", m.Latency)
 	}
 	if m.QualityScore != 100 {

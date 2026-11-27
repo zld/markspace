@@ -46,7 +46,8 @@ func TestBuildStreamStateCleanOpus(t *testing.T) {
 		if st.MediaStartTicks != uint64(i*960) || st.DurationTicks != 960 {
 			t.Fatalf("state %d: %+v", i, st)
 		}
-		if st.LatencyTicks != 0 {
+		// Arrival is 20ms after the media timestamp; media start is i*20ms.
+		if st.LatencyTicks != 960 {
 			t.Fatalf("state %d latency=%d", i, st.LatencyTicks)
 		}
 		if st.DurationSource != SourceOpusTOC {
