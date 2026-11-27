@@ -43,9 +43,25 @@ type Item struct {
 	AvgBitrateBps    float64        `json:"avgBitrateBps"`
 	LUFS             float64        `json:"lufs"`
 	TruePeakDBTP     float64        `json:"truePeakDbTP"`
+	// CacheHit is operational telemetry, not a processing conclusion, so it is
+	// excluded from the manifest digest via the custom MarshalJSON below.
 	CacheHit         bool           `json:"cacheHit"`
 	Status           Status         `json:"status"`
 	Deviations       []string       `json:"deviations,omitempty"`
+}
+
+// digestItem is Item without the operational CacheHit field; the manifest
+// digest is computed over digestItem values so a cache hit/miss difference
+// cannot change the conclusions' hash.
+type digestItem struct {
+	Item
+	CacheHit bool `json:"cacheHit,omitempty"`
+}
+
+// MarshalJSON omits CacheHit from any hashing/serialization that relies on the
+// stable canonical form by always emitting the digest-stable projection.
+func (i Item) canonical() digestItem {
+	return digestItem{Item: i, CacheHit: false}
 }
 
 // Budget summarizes time and size budget accounting for the whole run.
@@ -73,11 +89,21 @@ func canonicalJSON(v interface{}) ([]byte, error) {
 }
 
 // ComputeManifestDigest hashes every item and budget field but excludes the
-// digest field itself. Two runs with identical conclusions yield the same hash.
+// digest field and operational cache-hit telemetry. Two runs with identical
+// conclusions yield the same hash.
 func (s *Summary) ComputeManifestDigest() (string, error) {
-	copy := *s
-	copy.ManifestSHA256 = ""
-	b, err := canonicalJSON(copy)
+	cp := *s
+	cp.ManifestSHA256 = ""
+	stable := make([]digestItem, len(cp.Items))
+	for i, it := range cp.Items {
+		stable[i] = it.canonical()
+	}
+	payload := struct {
+		Seed   int64        `json:"seed"`
+		Items  []digestItem `json:"items"`
+		Budget Budget       `json:"budget"`
+	}{Seed: cp.Seed, Items: stable, Budget: cp.Budget}
+	b, err := canonicalJSON(payload)
 	if err != nil {
 		return "", err
 	}
