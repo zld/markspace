@@ -1,0 +1,3 @@
+# Local replay work directories (generated assets, checkpoints, manifests)
+.replay/
+*.test
