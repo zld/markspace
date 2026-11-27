@@ -39,6 +39,7 @@ func BuildRTPCapture(rng *rand.Rand, ssrc uint32, count int, wrap bool) RTPCaptu
 	cap := RTPCapture{SSRC: ssrc, ClockRate: clockRate, FirstSeq: firstSeq, FirstTS: firstTS}
 	for i := 0; i < count; i++ {
 		p := rtp.Packet{}
+		p.Version = 2
 		p.PayloadType = 96
 		p.SSRC = ssrc
 		p.SequenceNumber = uint16(uint32(firstSeq) + uint32(i))
@@ -63,6 +64,7 @@ func (c *RTPCapture) Reorder(i, j int) {
 func (c *RTPCapture) Duplicate(i int) {
 	p := c.Packets[i]
 	cp := rtp.Packet{}
+	cp.Version = p.Version
 	cp.PayloadType = p.PayloadType
 	cp.SSRC = p.SSRC
 	cp.Marker = p.Marker
