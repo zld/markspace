@@ -32,6 +32,7 @@ type ItemConclusion struct {
 	Source string `json:"source"`
 	Line   int    `json:"line,omitempty"`
 	TimeNs int64  `json:"time_ns"`
+	EndNs  int64  `json:"end_ns"`
 	SkewNs int64  `json:"skew_ns"`
 	Over   bool   `json:"over_budget"`
 	Group  string `json:"group"`

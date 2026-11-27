@@ -637,6 +637,7 @@ func analyze(sb sandbox, rate clock.Rate, frameCount int) (*manifest.Summary, []
 		item.SkewNs = it.SkewNs
 		item.Over = it.Over
 		item.Group = it.Group
+		item.EndNs = it.EndNs
 	}
 
 	// --- frames ----------------------------------------------------------

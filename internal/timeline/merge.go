@@ -143,7 +143,8 @@ func Merge(events []Event, samples []SampleRef, cues []CueRef, opts ...Option) (
 		anchors[i] = a
 		res.Items = append(res.Items, Item{
 			ID: e.ID, Kind: KindEvent, Track: e.Track, Source: e.Source, Line: e.Line,
-			TimeNs: e.TimeNs, RefTimeNs: a, Label: e.Label, Group: groupID(i), Matched: true,
+			TimeNs: e.TimeNs, EndNs: e.TimeNs, RefTimeNs: a, Label: e.Label,
+			Group: groupID(i), Matched: true,
 		})
 	}
 
@@ -166,7 +167,8 @@ func Merge(events []Event, samples []SampleRef, cues []CueRef, opts ...Option) (
 		}
 		res.Items = append(res.Items, Item{
 			ID: s.ID, Kind: KindMedia, Track: s.Track, Source: s.Source,
-			TimeNs: s.TimeNs, RefTimeNs: ref, Label: s.Label, Group: group, Matched: ok,
+			TimeNs: s.TimeNs, EndNs: coverageEnd(s.TimeNs, s.EndNs), RefTimeNs: ref,
+			Label: s.Label, Group: group, Matched: ok,
 		})
 	}
 
@@ -254,6 +256,15 @@ func Merge(events []Event, samples []SampleRef, cues []CueRef, opts ...Option) (
 }
 
 func groupID(i int) string { return fmt.Sprintf("g%04d", i) }
+
+// coverageEnd returns the exclusive end of an item's covered interval. An item
+// with no known extent covers only its own instant.
+func coverageEnd(start, end int64) int64 {
+	if end < start {
+		return start
+	}
+	return end
+}
 
 // eventAnchor is the media-clock instant a client event pins its group to.
 func eventAnchor(e Event) int64 {
@@ -368,12 +379,14 @@ func dedupe(in []string) []string {
 	return out
 }
 
-// SampleRef is a media sample viewed as a timeline item.
+// SampleRef is a media sample viewed as a timeline item. EndNs is the instant
+// the sample stops covering; it may be zero when the duration is unknown.
 type SampleRef struct {
 	ID     string
 	Track  string
 	Source string
 	TimeNs int64
+	EndNs  int64
 	Label  string
 }
 

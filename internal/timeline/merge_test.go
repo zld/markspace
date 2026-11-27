@@ -252,3 +252,35 @@ func TestUnmatchedItemsAreCountedNotShifted(t *testing.T) {
 		}
 	}
 }
+
+func TestItemCoverageIntervals(t *testing.T) {
+	res, _ := Merge(
+		[]Event{{ID: "e0", Track: "client", TimeNs: 0}},
+		[]SampleRef{{ID: "m0", Track: "video", TimeNs: 0, EndNs: 500 * ms}},
+		[]CueRef{{ID: "c0", Track: "subs", TimeNs: 100 * ms, EndNs: 900 * ms}},
+	)
+	for _, it := range res.Items {
+		switch it.ID {
+		case "m0":
+			if it.EndNs != 500*ms {
+				t.Fatalf("media coverage end %d", it.EndNs)
+			}
+		case "c0":
+			if it.EndNs != 900*ms {
+				t.Fatalf("cue coverage end %d", it.EndNs)
+			}
+		case "e0":
+			if it.EndNs != it.TimeNs {
+				t.Fatalf("event should be an instant, got %d..%d", it.TimeNs, it.EndNs)
+			}
+		}
+	}
+	// A sample with an inverted extent degrades to an instant, not a
+	// negative interval.
+	res, _ = Merge(nil, []SampleRef{{ID: "x", Track: "v", TimeNs: 100, EndNs: 50}}, nil)
+	for _, it := range res.Items {
+		if it.EndNs != it.TimeNs {
+			t.Fatalf("inverted extent not clamped: %+v", it)
+		}
+	}
+}
