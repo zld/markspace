@@ -1,0 +1,8 @@
+# build artifacts
+/mediarc
+/bin/
+*.test
+*.out
+
+# local demo working data
+/.mediarc-demo/
