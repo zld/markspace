@@ -104,51 +104,60 @@ func caseCorrupt(p params) int {
 		fmt.Printf("scenario=guard rejected=%q archive_intact=1\n", cerr)
 	}
 	fmt.Printf("archive_clean=%v\n", noTempFiles(p.outDir))
+	// The interrupt-recovery fixture runs here too: it must recover
+	// cleanly (its own exit code 0) even though corrupt input failed.
+	if !runInterrupt(filepath.Join(p.outDir, "interrupt"), p) {
+		fmt.Println("scenario=interrupt error=recovery failed")
+	}
 	return code
 }
 
-// caseInterrupt simulates a crash between journal begin and commit,
-// recovers, and checks the rerun reproduces identical fingerprints.
+// caseInterrupt runs the recovery fixture standalone; exit 0.
 func caseInterrupt(p params) int {
-	dir := filepath.Join(p.outDir, "interrupt")
+	if !runInterrupt(filepath.Join(p.outDir, "interrupt"), p) {
+		return 2
+	}
+	return 0
+}
+
+// runInterrupt simulates a crash between journal begin and commit,
+// recovers, and checks the rerun reproduces identical fingerprints.
+func runInterrupt(dir string, p params) bool {
 	spec := defaultSpec()
 	// First attempt "crashes" after the audio stage began: the begin
 	// record and temp file exist, the commit never happened.
 	first, err := runPipeline(dir, spec, p)
 	if err != nil {
 		fmt.Println("error:", err)
-		return 2
+		return false
 	}
 	crash, err := archive.OpenStore(dir)
 	if err != nil {
 		fmt.Println("error:", err)
-		return 2
+		return false
 	}
 	if err := crash.WriteUncommitted("audio", "partial.pcm", []byte("half-written stage")); err != nil {
 		fmt.Println("error:", err)
-		return 2
+		return false
 	}
 	crash.Close()
 	// Recovery: uncommitted temp rolls back, rerun from last boundary.
 	rec, err := archive.OpenStore(dir)
 	if err != nil {
 		fmt.Println("error:", err)
-		return 2
+		return false
 	}
 	rollbacks := rec.RolledBack
 	rec.Close()
 	second, err := runPipeline(dir, spec, p)
 	if err != nil {
 		fmt.Println("error:", err)
-		return 2
+		return false
 	}
 	match := first.segmentHash == second.segmentHash && first.frameHash == second.frameHash
 	fmt.Printf("scenario=interrupt exit_code=0 rollbacks=%d rerun_hash_match=%v last_committed=%s\n",
 		rollbacks, match, lastCommitted(dir))
-	if rollbacks == 0 || !match {
-		return 2
-	}
-	return 0
+	return rollbacks > 0 && match
 }
 
 func noTempFiles(dir string) bool {
