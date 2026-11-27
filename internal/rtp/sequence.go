@@ -240,3 +240,46 @@ func (r *Reconstructor) MissingExts() []uint64 {
 
 // Window reports the configured reorder window.
 func (r *Reconstructor) Window() int { return r.window }
+
+// NextCommitExt returns the next extended sequence eligible for commit.
+func (r *Reconstructor) NextCommitExt() uint64 { return r.nextCommitExt }
+
+// HighestExt returns the highest extended sequence ever observed.
+func (r *Reconstructor) HighestExt() uint64 { return r.highestExt }
+
+// BaseExt returns the extended sequence of the first packet.
+func (r *Reconstructor) BaseExt() uint64 { return r.baseExt }
+
+// SeenExts returns a sorted snapshot of every accepted extended sequence.
+func (r *Reconstructor) SeenExts() []uint64 {
+	out := make([]uint64, 0, len(r.seen))
+	for ext := range r.seen {
+		out = append(out, ext)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
+}
+
+// HasSeen reports whether ext was already accepted (used by resume filters).
+func (r *Reconstructor) HasSeen(ext uint64) bool {
+	_, ok := r.seen[ext]
+	return ok
+}
+
+// Restore seeds reconstructor state from a checkpoint so a resumed run
+// continues from the same frontier without re-counting prior packets.
+func (r *Reconstructor) Restore(baseExt, nextCommit, highest uint64, missing, seen []uint64) {
+	r.started = true
+	r.baseExt = baseExt
+	r.highestExt = highest
+	r.nextCommitExt = nextCommit
+	for _, ext := range missing {
+		r.missing[ext] = struct{}{}
+	}
+	for _, ext := range seen {
+		r.seen[ext] = struct{}{}
+	}
+}
+
+// MissingCount reports the current number of declared-missing sequences.
+func (r *Reconstructor) MissingCount() int { return len(r.missing) }
