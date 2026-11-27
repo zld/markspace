@@ -1,0 +1,11 @@
+# build artifacts
+/mediasync
+/bin/
+/tmp/
+*.test
+*.out
+
+# editor/OS noise
+.DS_Store
+.idea/
+.vscode/
