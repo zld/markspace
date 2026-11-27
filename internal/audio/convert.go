@@ -32,13 +32,13 @@ func (l Layout) Channels() (int, error) {
 
 // Stats collects per-conversion error and quality counters.
 type Stats struct {
-	FramesIn       uint64 `json:"frames_in"`
-	FramesOut      uint64 `json:"frames_out"`
-	Underruns      uint64 `json:"insufficient_data"`
-	Undecodable    uint64 `json:"undecodable_samples"`
-	Clips          uint64 `json:"clipped_samples"`
-	Peak           int32  `json:"peak_amplitude"`
-	MeasuredLUFS   float64 `json:"measured_lufs"`
+	FramesIn     uint64  `json:"frames_in"`
+	FramesOut    uint64  `json:"frames_out"`
+	Underruns    uint64  `json:"insufficient_data"`
+	Undecodable  uint64  `json:"undecodable_samples"`
+	Clips        uint64  `json:"clipped_samples"`
+	Peak         int32   `json:"peak_amplitude"`
+	MeasuredLUFS float64 `json:"measured_lufs"`
 }
 
 // Config describes a conversion target.
@@ -60,7 +60,7 @@ type Converter struct {
 	dstCh int
 	stats Stats
 	// Resampler carry: one trailing source frame per source channel.
-	carry []int16
+	carry    []int16
 	hasCarry bool
 }
 

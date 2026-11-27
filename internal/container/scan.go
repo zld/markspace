@@ -91,7 +91,10 @@ func Scan(path string) (*File, error) {
 			stt.mdatSize = bi.Size - bi.HeaderSize
 			return nil, nil
 		}
-		// Container boxes carry no payload of their own: recurse into them.
+		// Known structural containers carry only child boxes: recurse.
+		// Any other box is treated as a leaf — either unmarshalled when it
+		// is a box we model, or skipped by reading its raw bytes (this is
+		// how QuickTime empty boxes such as "wide" are tolerated).
 		if isContainer(bi.Type) {
 			if _, err := h.Expand(); err != nil {
 				var me *merr.MediaError
@@ -100,6 +103,13 @@ func Scan(path string) (*File, error) {
 				}
 				return nil, merr.At(merr.CodeInvalidBox, int64(bi.Offset),
 					"expand %s: %v", bi.Type.String(), err)
+			}
+			return nil, nil
+		}
+		if !bi.IsSupportedType() {
+			if _, err := h.ReadData(io.Discard); err != nil {
+				return nil, merr.At(merr.CodeInvalidBox, int64(bi.Offset),
+					"skip %s: %v", bi.Type.String(), err)
 			}
 			return nil, nil
 		}

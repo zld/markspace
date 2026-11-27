@@ -38,8 +38,8 @@ type scenarioReport struct {
 type acceptanceReport struct {
 	Scenarios []scenarioReport `json:"scenarios"`
 	// Summary repeats the headline fields required by the acceptance brief.
-	Summary    scenarioReport `json:"summary"`
-	ResumeMatch bool          `json:"resume_index_match"`
+	Summary     scenarioReport `json:"summary"`
+	ResumeMatch bool           `json:"resume_index_match"`
 }
 
 func main() {

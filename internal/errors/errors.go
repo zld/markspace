@@ -15,27 +15,27 @@ const (
 	CodeOK Code = 0
 
 	// Container / file level failures (1xx).
-	CodeTruncated      Code = 100 // a box or sample runs past the end of file
-	CodeBoxOutOfRange  Code = 101 // a declared box length is outside the file
-	CodeInvalidBox     Code = 102 // a box cannot be parsed
-	CodeUnsupported    Code = 103 // container feature is not supported
-	CodeSampleMissing  Code = 104 // sample table references absent data
+	CodeTruncated     Code = 100 // a box or sample runs past the end of file
+	CodeBoxOutOfRange Code = 101 // a declared box length is outside the file
+	CodeInvalidBox    Code = 102 // a box cannot be parsed
+	CodeUnsupported   Code = 103 // container feature is not supported
+	CodeSampleMissing Code = 104 // sample table references absent data
 
 	// Timeline failures (2xx).
-	CodeWrapBroken     Code = 200 // counter wrapped without provable continuity
-	CodeTimeWentBack   Code = 201 // a timestamp would move the timeline backwards
-	CodeDriftTooLarge  Code = 202 // clock drift exceeds the safety bound
-	CodeDiscontinuity  Code = 203 // gap that cannot be explained by wrap/loss
+	CodeWrapBroken    Code = 200 // counter wrapped without provable continuity
+	CodeTimeWentBack  Code = 201 // a timestamp would move the timeline backwards
+	CodeDriftTooLarge Code = 202 // clock drift exceeds the safety bound
+	CodeDiscontinuity Code = 203 // gap that cannot be explained by wrap/loss
 
 	// RTP recovery failures (3xx).
 	CodeLateOutsideWindow Code = 300 // late packet arrived after window slid
 	CodeSSRCMismatch      Code = 301 // stream changed SSRC unexpectedly
 
 	// Audio failures (4xx).
-	CodeUndecodable     Code = 400 // sample payload cannot be decoded
-	CodeInsufficient    Code = 401 // not enough data to fill a frame
-	CodeClipping        Code = 402 // output sample was clipped
-	CodeLayoutMismatch  Code = 403 // channel layout unsupported
+	CodeUndecodable    Code = 400 // sample payload cannot be decoded
+	CodeInsufficient   Code = 401 // not enough data to fill a frame
+	CodeClipping       Code = 402 // output sample was clipped
+	CodeLayoutMismatch Code = 403 // channel layout unsupported
 
 	// Checkpoint / index failures (5xx).
 	CodeCheckpointCorrupt Code = 500 // checkpoint file unreadable / invalid

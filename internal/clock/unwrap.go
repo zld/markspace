@@ -90,9 +90,9 @@ func (u *Unwrapper16) Unwrap(seq uint16) (uint32, error) {
 // and reports the clock skew. Placement decisions remain integer; only the
 // estimated rate uses floating point.
 type DriftEstimator struct {
-	localAnchor int64
-	remoteAnchor int64
-	n            float64
+	localAnchor              int64
+	remoteAnchor             int64
+	n                        float64
 	sumX, sumY, sumXY, sumX2 float64
 }
 
@@ -103,7 +103,7 @@ func (d *DriftEstimator) Add(local, remote int64) {
 		d.remoteAnchor = remote
 	}
 	x := float64(local - d.localAnchor)
-	y := float64(remote - d.remoteAnchor) - x
+	y := float64(remote-d.remoteAnchor) - x
 	d.n++
 	d.sumX += x
 	d.sumY += y

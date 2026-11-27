@@ -15,13 +15,13 @@ import (
 type Kind string
 
 const (
-	KindNormal    Kind = "normal"
-	KindWrap      Kind = "wrap"
-	KindDrift     Kind = "drift"
-	KindVFR       Kind = "vfr"
+	KindNormal     Kind = "normal"
+	KindWrap       Kind = "wrap"
+	KindDrift      Kind = "drift"
+	KindVFR        Kind = "vfr"
 	KindDupReorder Kind = "dup_reorder"
-	KindBurstLoss Kind = "burst_loss"
-	KindTruncated Kind = "truncated"
+	KindBurstLoss  Kind = "burst_loss"
+	KindTruncated  Kind = "truncated"
 )
 
 // Spec configures one generated RTP/audio fixture.
