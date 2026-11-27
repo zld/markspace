@@ -41,6 +41,12 @@ type ReorderBuffer struct {
 	// finalized is the highest sequence whose fate (arrived/lost) is decided.
 	finalized    uint64
 	finalizedSet bool
+	// expectedStart/hasExpectedStart anchor the sender's first sequence so a
+	// lost leading packet is still reported.
+	expectedStart      uint64
+	hasExpectedStart   bool
+	extMapped          bool
+	leadingGapRecorded bool
 	// buffer holds packets not yet emitted, keyed by extended sequence.
 	buffer map[uint64]*rtp.Packet
 	// received marks every accepted extended seq; entries below base are
@@ -66,16 +72,41 @@ func NewReorderBuffer(trackID uint32, ssrc uint32, windowSize int, fm *fault.Mod
 	}
 }
 
+// SetExpectedStart anchors the sequence number the sender's first packet
+// would carry. When the first observed packet is later than this anchor, the
+// leading missing run is recorded as a loss gap instead of being invisible.
+// RTCP sender reports supply the anchor in this pipeline.
+func (b *ReorderBuffer) SetExpectedStart(startExtSeq uint64) {
+	b.expectedStart = startExtSeq
+	b.hasExpectedStart = true
+}
+
 // Push accepts one parsed packet. A packet inside the window is buffered;
 // a duplicate is counted once and discarded. It returns the packets that can
 // now be emitted contiguously from the current base, in order.
 func (b *ReorderBuffer) Push(p *rtp.Packet) []OrderedPacket {
 	if !b.initialized {
 		b.initialized = true
-		b.base = uint64(p.SequenceNumber)
-		b.maxSeq = b.base
+		if b.hasExpectedStart {
+			// Anchor the base at the sender's expected first sequence. Map
+			// the first observed 16-bit seq relative to that anchor so wrap
+			// at the stream start is handled correctly.
+			b.base = b.expectedStart
+			b.maxSeq = b.expectedStart
+		} else {
+			b.base = uint64(p.SequenceNumber)
+			b.maxSeq = b.base
+		}
 	}
-	ext, ambiguous := b.extendSeq(p.SequenceNumber)
+	var ext uint64
+	var ambiguous bool
+	if b.hasExpectedStart && !b.extMapped {
+		ext = mapFirstSeq(b.expectedStart, p.SequenceNumber)
+		b.extMapped = true
+		ambiguous = uint16(uint32(p.SequenceNumber)-uint32(uint16(b.expectedStart))) == 0x8000
+	} else {
+		ext, ambiguous = b.extendSeq(p.SequenceNumber)
+	}
 	if ambiguous {
 		b.faults.Record(fault.Fault{
 			Code:     fault.CodeSequenceWrap,
@@ -223,6 +254,19 @@ func (b *ReorderBuffer) recordDuplicate(ext uint64) {
 	})
 }
 
+// mapFirstSeq places the first observed 16-bit sequence onto the extended
+// space anchored at the sender's expected start, applying the signed modular
+// delta so a wrap at the very beginning is unrolled.
+func mapFirstSeq(expectedStart uint64, seq uint16) uint64 {
+	anchor16 := uint16(expectedStart)
+	modDelta := uint16(uint32(seq) - uint32(anchor16))
+	delta := int16(modDelta)
+	if delta >= 0 {
+		return expectedStart + uint64(delta)
+	}
+	return expectedStart + uint64(int64(0x10000)+int64(delta))
+}
+
 // extendSeq maps a 16-bit RTP sequence number into continuous 64-bit space.
 // The modular difference interpreted as a signed 16-bit value gives the
 // shortest signed jump (WebRTC/RFC 3550 practice): a forward wrap such as
@@ -235,7 +279,7 @@ func (b *ReorderBuffer) extendSeq(seq uint16) (uint64, bool) {
 	}
 	prev16 := uint16(b.maxSeq & 0xFFFF)
 	modDelta := uint16(uint32(seq) - uint32(prev16))
-	ambiguous := modDelta >= 0x8000
+	ambiguous := modDelta == 0x8000
 	delta := int16(modDelta) // signed: -32768..32767
 	switch {
 	case delta >= 0:

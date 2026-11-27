@@ -116,21 +116,42 @@ func Run(cfg Config) (*Result, error) {
 	expected := map[string]string{"v1/bundle.mp4": assets.Digest(mp4Bytes)}
 
 	rec := publish.RecoveryReport{}
+	// Crash simulation: bytes are staged to disk without a ledger commit,
+	// exactly as if the process exited between artifact write and state
+	// commit. With no rerun requested, the run stops here on purpose.
+	crashed := false
+	if cfg.CrashAfterArtifact {
+		if _, committed := ledger.Find("v1", "bundle.mp4"); !committed {
+			if _, err := ledger.CrashAfterArtifact("v1", "bundle.mp4", source, mp4Bytes); err != nil {
+				return nil, err
+			}
+			crashed = true
+		}
+	}
 	if cfg.Rerun {
+		// Reopen to model a brand-new process reading the on-disk state.
+		reopened, err := publish.OpenLedger(cfg.WorkDir + "/publish")
+		if err != nil {
+			return nil, err
+		}
+		ledger = reopened
 		rec, err = ledger.Recover(expected)
 		if err != nil {
 			return nil, err
 		}
+		crashed = false // recovery either committed or quarantined the orphan
 	}
-	if _, committed := ledger.Find("v1", "bundle.mp4"); !committed {
-		if cfg.CrashAfterArtifact {
-			if _, err := ledger.CrashAfterArtifact("v1", "bundle.mp4", source, mp4Bytes); err != nil {
-				return nil, err
-			}
-		} else {
+	// A crashed run without a rerun has no committed artifact to publish.
+	if !crashed {
+		if _, committed := ledger.Find("v1", "bundle.mp4"); !committed {
 			if _, err := ledger.Publish("v1", "bundle.mp4", source, mp4Bytes); err != nil {
 				return nil, err
 			}
+		}
+		// A committed artifact that has gone missing or changed on disk is a
+		// ledger invariant violation, distinct from ordinary input damage.
+		if err := ledger.VerifyInvariants(); err != nil {
+			return nil, err
 		}
 	}
 
@@ -140,7 +161,11 @@ func Run(cfg Config) (*Result, error) {
 	}
 	rollbackManifest := ""
 	rollbackVersion := ""
-	if !cfg.CrashAfterArtifact {
+	// A crash without a rerun leaves nothing committed, so there is no valid
+	// version to snapshot or roll back to. After a rerun the artifact is
+	// committed and rollback proceeds normally.
+	canVersion := !cfg.CrashAfterArtifact || cfg.Rerun
+	if canVersion {
 		if _, err := rb.Snapshot("v1", source.ID, ledger); err == nil {
 			if cfg.RollbackTarget != "" {
 				mf, err := rb.Rollback(cfg.RollbackTarget, ledger)
@@ -176,11 +201,18 @@ func Run(cfg Config) (*Result, error) {
 
 func reorderAll(s *fixture.Stream, fm *fault.Model) []rtpbuf.OrderedPacket {
 	buffers := map[uint32]*rtpbuf.ReorderBuffer{}
+	expectedStart := map[uint32]uint64{}
+	for _, c := range s.Tracks {
+		expectedStart[c.SSRC] = uint64(c.StartSeq)
+	}
 	var out []rtpbuf.OrderedPacket
 	for _, rp := range s.Packets {
 		b, ok := buffers[rp.Packet.SSRC]
 		if !ok {
 			b = rtpbuf.NewReorderBuffer(rp.TrackID, rp.Packet.SSRC, rtpbuf.DefaultWindowSize, fm)
+			// Anchor at the configured first sequence so a lost leading
+			// packet is reported rather than silently assumed absent.
+			b.SetExpectedStart(expectedStart[rp.Packet.SSRC])
 			buffers[rp.Packet.SSRC] = b
 		}
 		out = append(out, b.Push(rp.Packet)...)

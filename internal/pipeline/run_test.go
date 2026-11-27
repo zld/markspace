@@ -1,6 +1,8 @@
 package pipeline_test
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"media-check/internal/pipeline"
@@ -86,6 +88,22 @@ func TestCrashThenRerunRecoveryCounters(t *testing.T) {
 	}
 	if rerun.RecoveryReport.Quarantined != 0 {
 		t.Fatalf("quarantined = %d, want 0", rerun.RecoveryReport.Quarantined)
+	}
+}
+
+func TestCrashLeavesNoLedgerAndNoVersion(t *testing.T) {
+	dir := t.TempDir()
+	res, err := pipeline.Run(pipeline.Config{
+		Seed: 17, WorkDir: dir, CrashAfterArtifact: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "publish", "ledger.json")); !os.IsNotExist(err) {
+		t.Fatalf("crash must leave no ledger file, got err=%v", err)
+	}
+	if res.RollbackVersion != "" {
+		t.Fatal("a crashed run must not produce a rollback version")
 	}
 }
 
