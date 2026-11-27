@@ -11,6 +11,7 @@ type Packet struct {
 	Marker    bool
 	Payload   []byte
 	ArrivalMs int64
+	Fault     string
 }
 
 // EmissionKind distinguishes a delivered packet from a declared gap.
