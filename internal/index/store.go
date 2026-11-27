@@ -1,55 +1,41 @@
 package index
 
 import (
+	"crypto/sha256"
 	"encoding/binary"
-	"hash/fnv"
+	"encoding/hex"
 )
 
-// hasher renders a bounded-size, order-sensitive FNV-1a digest. It is used for
-// the index digest and for per-segment hashes so that identical inputs produce
-// identical hex strings across runs and platforms.
+// hasher accumulates a SHA-256 digest over length-prefixed fields. A SHA-256
+// digest is used (rather than a short hash) because the same primitive backs
+// the per-segment sha256 values the demo prints.
 type hasher struct {
-	h interface {
-		Write([]byte) (int, error)
-		Sum64() uint64
-	}
-	buf [8]byte
+	buf []byte
 }
 
-func newHasher() *hasher { return &hasher{h: fnv.New64a()} }
+func newHasher() *hasher { return &hasher{buf: make([]byte, 0, 256)} }
 
 func (h *hasher) addString(s string) {
-	_, _ = h.h.Write([]byte(s))
-	_, _ = h.h.Write([]byte{0})
+	var n [8]byte
+	binary.BigEndian.PutUint64(n[:], uint64(len(s)))
+	h.buf = append(h.buf, n[:]...)
+	h.buf = append(h.buf, s...)
 }
 
 func (h *hasher) addInt(v int64) {
-	binary.BigEndian.PutUint64(h.buf[:], uint64(v))
-	_, _ = h.h.Write(h.buf[:])
-}
-
-func (h *hasher) addBytes(b []byte) {
-	_, _ = h.h.Write(b)
+	var n [8]byte
+	binary.BigEndian.PutUint64(n[:], uint64(v))
+	h.buf = append(h.buf, n[:]...)
 }
 
 func (h *hasher) hex() string {
-	return hexUint64(h.h.Sum64())
+	sum := sha256.Sum256(h.buf)
+	return hex.EncodeToString(sum[:])
 }
 
-// HashBytes returns the FNV-1a 64-bit hex digest of b. Segment hashes use the
-// same primitive so that an index digest and a segment hash are comparable.
+// HashBytes returns the SHA-256 hex digest of b. Segment hashes use this so an
+// index digest and a segment hash are the same width and primitive.
 func HashBytes(b []byte) string {
-	h := fnv.New64a()
-	_, _ = h.Write(b)
-	return hexUint64(h.Sum64())
-}
-
-func hexUint64(v uint64) string {
-	const digits = "0123456789abcdef"
-	out := make([]byte, 16)
-	for i := 15; i >= 0; i-- {
-		out[i] = digits[v&0xF]
-		v >>= 4
-	}
-	return string(out)
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
 }
