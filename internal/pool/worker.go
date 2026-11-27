@@ -42,6 +42,7 @@ type Pool[In, Out any] struct {
 	wg        sync.WaitGroup
 	closeOnce sync.Once
 	errOnce   sync.Once
+	errMu     sync.Mutex
 	err       error
 }
 
@@ -92,7 +93,9 @@ func (p *Pool[In, Out]) run(t In) {
 	out, err := p.fn(p.ctx, t)
 	if err != nil {
 		p.errOnce.Do(func() {
+			p.errMu.Lock()
 			p.err = err
+			p.errMu.Unlock()
 			p.cancel()
 		})
 	}
@@ -115,8 +118,8 @@ func (p *Pool[In, Out]) Submit(ctx context.Context, in In) error {
 	case p.tasks <- in:
 		return nil
 	case <-p.ctx.Done():
-		if p.err != nil {
-			return p.err
+		if err := p.Err(); err != nil {
+			return err
 		}
 		return ErrClosed
 	case <-ctx.Done():
@@ -129,7 +132,11 @@ func (p *Pool[In, Out]) Submit(ctx context.Context, in In) error {
 func (p *Pool[In, Out]) Results() <-chan Result[Out] { return p.results }
 
 // Err returns the first worker failure, if any.
-func (p *Pool[In, Out]) Err() error { return p.err }
+func (p *Pool[In, Out]) Err() error {
+	p.errMu.Lock()
+	defer p.errMu.Unlock()
+	return p.err
+}
 
 // Close stops accepting tasks, lets workers drain the queue, then
 // closes the results channel. Safe to call more than once.
