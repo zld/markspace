@@ -34,9 +34,9 @@ func Build(tracks []TrackSpec, fault Faults) (*File, error) {
 		}
 		chunkOff[ti] = make([]uint64, len(tr.Samples))
 		for si, sp := range tr.Samples {
-			if sp.Delta == 0 {
-				return nil, fmt.Errorf("mux: track %d sample %d has zero delta", ti, si)
-			}
+			// A zero delta is a legal stts row that the demuxer flags as a
+			// sample with no declarable decode time, exercising missing/
+			// duplicate repair. Only truly absent rows are rejected.
 			payload := sp.Payload
 			if payload == nil {
 				payload = sampleBytes(ti, si)
