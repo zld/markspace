@@ -27,9 +27,9 @@ var ErrInterrupted = errors.New("engine: run interrupted after configured frame"
 // Config controls one processing run. Generation and mutation are intentionally
 // outside the engine: callers prepare root/input before calling Run.
 type Config struct {
-	Workspace        string
-	Threads          int
-	MaxOutputBytes   int64
+	Workspace         string
+	Threads           int
+	MaxOutputBytes    int64
 	LoudnessTolerance float64
 	// InterruptAfter > 0 stops the run once that frame number is validated.
 	InterruptAfter int
@@ -40,19 +40,19 @@ type Config struct {
 
 // Summary is the independently checkable result of a run.
 type Summary struct {
-	Discovered             int
-	Planned                int
-	Processed              int
-	Validated              int
-	ResumeFrom             model.FrameNumber
-	ManifestFrames         int
-	ManifestSHA256         string
-	OutputSHA256           string
-	ContentInvalidations   int
-	IndexInvalidations     int
-	CacheReason            cache.Reason
-	Comparison             string
-	ChangedHashes          int
+	Discovered           int
+	Planned              int
+	Processed            int
+	Validated            int
+	ResumeFrom           model.FrameNumber
+	ManifestFrames       int
+	ManifestSHA256       string
+	OutputSHA256         string
+	ContentInvalidations int
+	IndexInvalidations   int
+	CacheReason          cache.Reason
+	Comparison           string
+	ChangedHashes        int
 }
 
 // Run executes one resumable processing pass over the workspace.

@@ -22,12 +22,12 @@ var CandidateLUFS = []float64{-23.0, -20.0, -16.0}
 
 // Constraints bound the planning problem.
 type Constraints struct {
-	Threads          int     // worker goroutines that must fit
-	MaxOutputBytes   int64   // ceiling on total encoded output size
+	Threads           int     // worker goroutines that must fit
+	MaxOutputBytes    int64   // ceiling on total encoded output size
 	LoudnessTolerance float64 // maximum allowed |measured - target| in LU
-	FrameCount       int     // number of frames that will be processed
-	FrameDurationNS  int64   // duration of one frame in nanoseconds
-	SourceRate       uint32  // input sample rate (0 disables the resample rule)
+	FrameCount        int     // number of frames that will be processed
+	FrameDurationNS   int64   // duration of one frame in nanoseconds
+	SourceRate        uint32  // input sample rate (0 disables the resample rule)
 }
 
 // Params is one fully enumerated output parameter set.

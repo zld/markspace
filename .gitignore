@@ -1,0 +1,12 @@
+# Go build artifacts
+/continuity
+*.test
+*.out
+
+# Local demo workspaces and scratch
+/continuity-*
+/tmp-*
+
+# OS/editor noise
+.DS_Store
+*.swp

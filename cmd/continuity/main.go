@@ -16,9 +16,9 @@ import (
 )
 
 const (
-	exitOK       = 0
-	exitFailure  = 2
-	exitUsage    = 64
+	exitOK      = 0
+	exitFailure = 2
+	exitUsage   = 64
 )
 
 func main() {

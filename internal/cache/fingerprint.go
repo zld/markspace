@@ -14,7 +14,7 @@ import (
 
 // State file names inside the workspace.
 const (
-	DirName        = "cache"
+	DirName         = "cache"
 	FingerprintFile = "fingerprints.json"
 )
 

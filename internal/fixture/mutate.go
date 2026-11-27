@@ -154,7 +154,8 @@ func truncatePoint(data []byte, frames []model.Frame, targetFrame int) (int, err
 	return 0, model.NewError(model.StageIndex, model.FrameNumber(targetFrame), int64(off), "truncation target not found")
 }
 
-func packetsFromFrames(frames []model.Frame) ([][]byte, error) {	out := make([][]byte, len(frames))
+func packetsFromFrames(frames []model.Frame) ([][]byte, error) {
+	out := make([][]byte, len(frames))
 	for i := range frames {
 		pkt, err := packetFor(frames[i])
 		if err != nil {

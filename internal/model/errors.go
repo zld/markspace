@@ -12,15 +12,15 @@ import (
 type Stage string
 
 const (
-	StageManifest   Stage = "manifest"
-	StageCache      Stage = "cache"
-	StageIndex      Stage = "index"
-	StagePlanner    Stage = "planner"
-	StagePipeline   Stage = "pipeline"
-	StageTransform  Stage = "transform"
-	StageValidate   Stage = "validate"
-	StageJournal    Stage = "journal"
-	StageWorkspace  Stage = "workspace"
+	StageManifest  Stage = "manifest"
+	StageCache     Stage = "cache"
+	StageIndex     Stage = "index"
+	StagePlanner   Stage = "planner"
+	StagePipeline  Stage = "pipeline"
+	StageTransform Stage = "transform"
+	StageValidate  Stage = "validate"
+	StageJournal   Stage = "journal"
+	StageWorkspace Stage = "workspace"
 )
 
 // StructuredError is the common error type across modules: every failure is

@@ -17,30 +17,30 @@ import (
 
 // Output layout inside the workspace.
 const (
-	OutputDir       = "output"
-	ContainerName   = "frames.mp4"
-	ManifestName    = "output-manifest.json"
-	ReportName      = "validation.json"
-	prefixLen       = 2
+	OutputDir        = "output"
+	ContainerName    = "frames.mp4"
+	ManifestName     = "output-manifest.json"
+	ReportName       = "validation.json"
+	prefixLen        = 2
 	maxLoudnessDrift = 1.0
 )
 
 // Manifest is the final, independently verifiable output document.
 type Manifest struct {
-	FrameCount    int                  `json:"frame_count"`
-	SampleRate    uint32               `json:"sample_rate"`
-	Channels      model.ChannelLayout  `json:"channels"`
-	TargetLUFS    float64              `json:"target_lufs"`
-	Frames        []model.OutputFrame  `json:"frames"`
-	OutputSHA256  string               `json:"output_sha256"`
+	FrameCount     int                 `json:"frame_count"`
+	SampleRate     uint32              `json:"sample_rate"`
+	Channels       model.ChannelLayout `json:"channels"`
+	TargetLUFS     float64             `json:"target_lufs"`
+	Frames         []model.OutputFrame `json:"frames"`
+	OutputSHA256   string              `json:"output_sha256"`
 	ManifestSHA256 string              `json:"manifest_sha256"`
 }
 
 // Report is the validator's own result document.
 type Report struct {
-	Status   string `json:"status"` // "validated" or "failed"
-	Frames   int    `json:"validated_frames"`
-	Reason   string `json:"reason,omitempty"`
+	Status   string    `json:"status"` // "validated" or "failed"
+	Frames   int       `json:"validated_frames"`
+	Reason   string    `json:"reason,omitempty"`
 	Manifest *Manifest `json:"manifest,omitempty"`
 }
 
@@ -105,12 +105,12 @@ func WriteOutput(root string, frames []model.OutputFrame, rate uint32,
 }
 
 type bodyDoc struct {
-	FrameCount int                 `json:"frame_count"`
-	SampleRate uint32              `json:"sample_rate"`
-	Channels   model.ChannelLayout `json:"channels"`
-	TargetLUFS float64             `json:"target_lufs"`
-	Frames     []model.OutputFrame `json:"frames"`
-	OutputSHA256 string            `json:"output_sha256"`
+	FrameCount   int                 `json:"frame_count"`
+	SampleRate   uint32              `json:"sample_rate"`
+	Channels     model.ChannelLayout `json:"channels"`
+	TargetLUFS   float64             `json:"target_lufs"`
+	Frames       []model.OutputFrame `json:"frames"`
+	OutputSHA256 string              `json:"output_sha256"`
 }
 
 func bodyOf(m *Manifest) bodyDoc {

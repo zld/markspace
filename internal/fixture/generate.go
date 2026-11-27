@@ -40,12 +40,12 @@ type Metadata struct {
 
 // Spec configures a generated dataset.
 type Spec struct {
-	Frames        int
-	SourceRate    uint32
-	SourceLayout  model.ChannelLayout
-	TargetLUFS    float64
-	ContainerRev  uint32
-	MetadataRev   uint32
+	Frames       int
+	SourceRate   uint32
+	SourceLayout model.ChannelLayout
+	TargetLUFS   float64
+	ContainerRev uint32
+	MetadataRev  uint32
 }
 
 // DefaultSpec returns the standard deterministic generation parameters.
