@@ -21,10 +21,10 @@ import (
 
 // Stage names used inside the WAL. They mirror the pipeline ordering.
 const (
-	StageScan     = "scan"
-	StageParse    = "parse"
-	StageIndex    = "index"
-	StageReport   = "report"
+	StageScan   = "scan"
+	StageParse  = "parse"
+	StageIndex  = "index"
+	StageReport = "report"
 )
 
 // MaxWALBytes bounds a single WAL file so a corrupt log cannot exhaust disk.
@@ -36,11 +36,11 @@ type Entry struct {
 	Stage       string          `json:"stage"`
 	Track       string          `json:"track,omitempty"`
 	InputSHA256 string          `json:"input_sha256"`
-	Cursor      int64           `json:"cursor"`       // bytes consumed when written
-	OutputFile  string          `json:"output_file"`  // relative path of the artifact
+	Cursor      int64           `json:"cursor"`      // bytes consumed when written
+	OutputFile  string          `json:"output_file"` // relative path of the artifact
 	OutputSize  int64           `json:"output_size"`
 	OutputSHA   string          `json:"output_sha256"`
-	Summary     json.RawMessage `json:"summary"`      // stage-specific digest
+	Summary     json.RawMessage `json:"summary"` // stage-specific digest
 	Committed   bool            `json:"committed"`
 	Seq         int64           `json:"seq"`
 }
@@ -58,7 +58,7 @@ type WAL struct {
 	dir       string
 	entries   []Entry
 	seq       int64
-	committed map[string]bool // key stage/track -> committed
+	committed map[string]bool  // key stage/track -> committed
 	temps     map[int64]string // seq -> staged temp path awaiting rename
 }
 
@@ -133,7 +133,7 @@ func (w *WAL) replay() error {
 		if rel == "" {
 			continue
 		}
-		_ = os.Remove(filepath.Join(w.dir, rel))      // staged final name
+		_ = os.Remove(filepath.Join(w.dir, rel))        // staged final name
 		_ = os.Remove(filepath.Join(w.dir, rel+".tmp")) // leftover temp
 	}
 	return nil

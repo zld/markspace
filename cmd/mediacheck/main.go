@@ -43,16 +43,16 @@ func run(args []string) int {
 
 // demoFlags holds the parameters shared by the demo command.
 type demoFlags struct {
-	codec         string
-	chunkBytes    int
-	queue         int
-	segmentBytes  int64
-	faults        string
-	interrupt     string
-	resume        bool
-	json          bool
-	outDir        string
-	runID         string
+	codec        string
+	chunkBytes   int
+	queue        int
+	segmentBytes int64
+	faults       string
+	interrupt    string
+	resume       bool
+	json         bool
+	outDir       string
+	runID        string
 }
 
 func parseDemoFlags(fs *flag.FlagSet) *demoFlags {
@@ -108,8 +108,8 @@ func runDemo(args []string) int {
 
 	cfg := pipeline.Config{
 		ChunkBytes: d.chunkBytes, QueueLen: d.queue,
-		SegmentBytes: d.segmentBytes,
-		ToleranceTicks: 3,
+		SegmentBytes:        d.segmentBytes,
+		ToleranceTicks:      3,
 		InterruptAfterStage: d.interrupt,
 	}
 
@@ -214,26 +214,26 @@ func runAnalyze(_ []string) int {
 
 // envelope is the top-level machine-readable output contract.
 type envelope struct {
-	OK                       bool                      `json:"ok"`
-	Interrupted              bool                      `json:"interrupted,omitempty"`
-	Recovered                bool                      `json:"recovered"`
-	RoundtripConsistency     float64                   `json:"roundtrip_consistency"`
-	KeyframeIndexHitRate     float64                   `json:"keyframe_index_hit_rate"`
-	SegmentSHA256Count       int                       `json:"segment_sha256_count"`
-	DamageRanges             int                       `json:"damage_ranges"`
-	PeakBufferBytes          int64                     `json:"peak_buffer_bytes"`
-	BufferLimitBytes         int64                     `json:"buffer_limit_bytes"`
-	ReplayedCommittedStages  []string                  `json:"replayed_committed_stages,omitempty"`
-	OutDir                   string                    `json:"out_dir"`
-	Report                   *pipeline.Report          `json:"report"`
+	OK                      bool             `json:"ok"`
+	Interrupted             bool             `json:"interrupted,omitempty"`
+	Recovered               bool             `json:"recovered"`
+	RoundtripConsistency    float64          `json:"roundtrip_consistency"`
+	KeyframeIndexHitRate    float64          `json:"keyframe_index_hit_rate"`
+	SegmentSHA256Count      int              `json:"segment_sha256_count"`
+	DamageRanges            int              `json:"damage_ranges"`
+	PeakBufferBytes         int64            `json:"peak_buffer_bytes"`
+	BufferLimitBytes        int64            `json:"buffer_limit_bytes"`
+	ReplayedCommittedStages []string         `json:"replayed_committed_stages,omitempty"`
+	OutDir                  string           `json:"out_dir"`
+	Report                  *pipeline.Report `json:"report"`
 }
 
 func printJSON(rep *pipeline.Report, outDir string, interrupted bool) int {
 	env := envelope{
-		OK:               rep != nil,
-		Interrupted:      interrupted,
-		OutDir:           outDir,
-		Report:           rep,
+		OK:          rep != nil,
+		Interrupted: interrupted,
+		OutDir:      outDir,
+		Report:      rep,
 	}
 	if rep != nil {
 		env.Recovered = rep.Recovered
@@ -312,4 +312,3 @@ exit codes:
   2 input or index error
   3 commit or recovery verification failure`)
 }
-

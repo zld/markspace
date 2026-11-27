@@ -30,10 +30,10 @@ type Queue[T any] struct {
 	done    chan struct{}
 	failErr atomic.Value // error, set before done is closed by Fail
 
-	enqueued atomic.Int64
-	dequeued atomic.Int64
-	depth    atomic.Int64
-	peak     atomic.Int64
+	enqueued  atomic.Int64
+	dequeued  atomic.Int64
+	depth     atomic.Int64
+	peak      atomic.Int64
 	peakBytes atomic.Int64
 }
 

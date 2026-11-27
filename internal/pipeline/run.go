@@ -87,13 +87,13 @@ var ErrInterrupted = mediaerr.NewCoded(mediaerr.StagePipeline, "",
 
 // DamageRange is a merged, validated damage interval in the final report.
 type DamageRange struct {
-	Track   string `json:"track"`
-	Stage   string `json:"stage"`
-	Code    string `json:"code"`
-	Start   int64  `json:"byte_start"`
-	End     int64  `json:"byte_end"`
-	FromTick int64 `json:"from_tick,omitempty"`
-	ToTick   int64 `json:"to_tick,omitempty"`
+	Track    string `json:"track"`
+	Stage    string `json:"stage"`
+	Code     string `json:"code"`
+	Start    int64  `json:"byte_start"`
+	End      int64  `json:"byte_end"`
+	FromTick int64  `json:"from_tick,omitempty"`
+	ToTick   int64  `json:"to_tick,omitempty"`
 }
 
 // KeyframeInterval is the gap between two successive keyframes.
@@ -117,35 +117,35 @@ type SegmentHash struct {
 
 // TrackReport aggregates per-track findings.
 type TrackReport struct {
-	Track         string                 `json:"track"`
-	Codec         string                 `json:"codec"`
-	UnitCount     int                    `json:"unit_count"`
-	KeyframeCount int                    `json:"keyframe_count"`
-	Keyframes     []index.Keyframe       `json:"keyframes,omitempty"`
-	Intervals     []KeyframeInterval     `json:"keyframe_intervals"`
-	Damage        []DamageRange          `json:"damage_ranges"`
-	IndexReport   *index.Report          `json:"index_report,omitempty"`
-	Bytes         int64                  `json:"bytes"`
+	Track         string             `json:"track"`
+	Codec         string             `json:"codec"`
+	UnitCount     int                `json:"unit_count"`
+	KeyframeCount int                `json:"keyframe_count"`
+	Keyframes     []index.Keyframe   `json:"keyframes,omitempty"`
+	Intervals     []KeyframeInterval `json:"keyframe_intervals"`
+	Damage        []DamageRange      `json:"damage_ranges"`
+	IndexReport   *index.Report      `json:"index_report,omitempty"`
+	Bytes         int64              `json:"bytes"`
 }
 
 // Report is the full machine-readable pipeline output.
 type Report struct {
-	RunID       string                 `json:"run_id"`
-	Tracks      []TrackReport          `json:"tracks"`
-	Segments    []SegmentHash          `json:"segment_sha256"`
-	PeakBuffer  int64                  `json:"peak_buffer_bytes"`
-	BufferLimit int64                  `json:"buffer_limit_bytes"`
-	Recovered   bool                   `json:"recovered"`
-	Recommitted []string               `json:"replayed_committed_stages,omitempty"`
-	Metrics     map[string]float64     `json:"metrics"`
-	GeneratedAt string                 `json:"generated_at"`
+	RunID       string             `json:"run_id"`
+	Tracks      []TrackReport      `json:"tracks"`
+	Segments    []SegmentHash      `json:"segment_sha256"`
+	PeakBuffer  int64              `json:"peak_buffer_bytes"`
+	BufferLimit int64              `json:"buffer_limit_bytes"`
+	Recovered   bool               `json:"recovered"`
+	Recommitted []string           `json:"replayed_committed_stages,omitempty"`
+	Metrics     map[string]float64 `json:"metrics"`
+	GeneratedAt string             `json:"generated_at"`
 }
 
 // Runner executes a pipeline against one output directory (its txn store).
 type Runner struct {
-	dir      string
-	txnMgr   *txn.Manager
-	cfg      Config
+	dir    string
+	txnMgr *txn.Manager
+	cfg    Config
 }
 
 // NewRunner opens (or creates) the transactional runner rooted at dir.
@@ -440,7 +440,7 @@ func buildIntervals(track string, kfs []index.Keyframe) []KeyframeInterval {
 	out := make([]KeyframeInterval, 0, len(kfs)-1)
 	for i := 1; i < len(kfs); i++ {
 		out = append(out, KeyframeInterval{
-			Track: track,
+			Track:      track,
 			FromOffset: kfs[i-1].Offset, ToOffset: kfs[i].Offset,
 			FromTick: kfs[i-1].TS, ToTick: kfs[i].TS,
 			DeltaTicks: kfs[i].TS - kfs[i-1].TS,
@@ -478,7 +478,7 @@ func (h *segmentHasher) push(chunk []byte, abs int64) []SegmentHash {
 		sum := sha256.Sum256(win)
 		start := h.base
 		out = append(out, SegmentHash{
-			ID: fmt.Sprintf("%s-seg-%04d", h.track, h.idx),
+			ID:    fmt.Sprintf("%s-seg-%04d", h.track, h.idx),
 			Track: h.track, Start: start, End: start + h.window,
 			SHA256: hex.EncodeToString(sum[:]),
 		})
@@ -497,7 +497,7 @@ func (h *segmentHasher) flush() *SegmentHash {
 	}
 	sum := sha256.Sum256(h.buf)
 	s := SegmentHash{
-		ID: fmt.Sprintf("%s-seg-%04d", h.track, h.idx),
+		ID:    fmt.Sprintf("%s-seg-%04d", h.track, h.idx),
 		Track: h.track, Start: h.base, End: h.base + int64(len(h.buf)),
 		SHA256: hex.EncodeToString(sum[:]),
 	}

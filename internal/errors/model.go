@@ -41,8 +41,8 @@ func (b ByteRange) Merge(o ByteRange) ByteRange {
 // TimeRange is the time span covered by a damage interval. Nil boundaries
 // mean the side is unknown (for example a truncated tail with no PTS).
 type TimeRange struct {
-	FromTicks int64 `json:"from_ticks"`
-	ToTicks   int64 `json:"to_ticks"`
+	FromTicks   int64  `json:"from_ticks"`
+	ToTicks     int64  `json:"to_ticks"`
 	TimeBaseNum uint64 `json:"timebase_num"`
 	TimeBaseDen uint64 `json:"timebase_den"`
 }

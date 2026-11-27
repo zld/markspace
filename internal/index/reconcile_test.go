@@ -15,7 +15,7 @@ func TestReconcileHitsMissesFalsePositives(t *testing.T) {
 	// Two correct entries, one false positive, one real keyframe omitted.
 	entries := []Entry{
 		{Track: "v", TS: 100, Base: base, ByteOffset: 0},
-		{Track: "v", TS: 201, Base: base, ByteOffset: 50}, // within tolerance
+		{Track: "v", TS: 201, Base: base, ByteOffset: 50},  // within tolerance
 		{Track: "v", TS: 999, Base: base, ByteOffset: 400}, // no keyframe
 	}
 	rep, err := Reconcile("v", entries, kfs, base, Config{ToleranceTicks: 2})

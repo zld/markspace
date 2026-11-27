@@ -12,9 +12,9 @@ import (
 
 // MP4TrackMeta is the keyframe-relevant metadata of one MP4 track.
 type MP4TrackMeta struct {
-	TrackID    uint32
-	Handler    string // e.g. "vide"
-	Timescale  uint32 // mdhd timescale: ticks per second
+	TrackID     uint32
+	Handler     string   // e.g. "vide"
+	Timescale   uint32   // mdhd timescale: ticks per second
 	SyncSamples []uint32 // 1-based sample numbers from stss
 }
 

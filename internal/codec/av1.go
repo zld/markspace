@@ -109,11 +109,11 @@ type lengthPrefixScanner struct {
 
 	pending     []byte
 	pendStart   int64
-	declare     int   // declared payload length for the open unit; -1 if none
+	declare     int // declared payload length for the open unit; -1 if none
 	haveLen     bool
-	resyncing   bool   // a bad length forced a forward search
-	badStart    int64  // anchor of the corrupt span during resync
-	prefixStart int64  // absolute offset of the current 4-byte length prefix
+	resyncing   bool  // a bad length forced a forward search
+	badStart    int64 // anchor of the corrupt span during resync
+	prefixStart int64 // absolute offset of the current 4-byte length prefix
 	gaps        []Gap
 }
 

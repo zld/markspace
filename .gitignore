@@ -1,0 +1,15 @@
+# Compiled binaries
+/mediacheck
+/cmd/mediacheck/mediacheck
+*.test
+*.out
+
+# Local transaction / WAL output directories
+/.mediacheck/
+/tmp/
+
+# OS/editor noise
+.DS_Store
+*.swp
+.idea/
+.vscode/

@@ -24,12 +24,12 @@ const (
 
 // DemoSpec configures one generated elementary stream plus its index.
 type DemoSpec struct {
-	Track   string
-	Codec   codec.Codec
-	Framing codec.Framing
-	Frames  int // number of pictures (keyframes every keyInterval)
+	Track       string
+	Codec       codec.Codec
+	Framing     codec.Framing
+	Frames      int // number of pictures (keyframes every keyInterval)
 	KeyInterval int
-	Fault   Fault
+	Fault       Fault
 }
 
 // GeneratedStream bundles a synthesized stream with the index that should

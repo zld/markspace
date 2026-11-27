@@ -14,17 +14,17 @@ import (
 
 // Hard caps keep pathological index files from exhausting memory.
 const (
-	MaxIndexEntries = 1_000_000
+	MaxIndexEntries       = 1_000_000
 	DefaultToleranceTicks = 2
 )
 
 // Entry is one external keyframe index record for a track. TS is expressed
 // in the index's own time base and preserved verbatim as OriginalTS.
 type Entry struct {
-	Track      string          `json:"track"`
-	TS         int64           `json:"ts"`
+	Track      string            `json:"track"`
+	TS         int64             `json:"ts"`
 	Base       timeline.TimeBase `json:"timebase"`
-	ByteOffset int64           `json:"byte_offset"`
+	ByteOffset int64             `json:"byte_offset"`
 }
 
 // Keyframe is a keyframe discovered by the stream scanner, in the track's
@@ -66,30 +66,30 @@ func (c *Config) Validate() error {
 type Kind string
 
 const (
-	KindHit  Kind = "hit"
-	KindMiss Kind = "miss" // keyframe present in stream, absent from index
+	KindHit   Kind = "hit"
+	KindMiss  Kind = "miss"           // keyframe present in stream, absent from index
 	KindFalse Kind = "false-positive" // index entry with no keyframe
 )
 
 // Record is one matched or unmatched reconciliation outcome. Offset fields
 // let the report point at the exact bytes involved.
 type Record struct {
-	Kind        Kind   `json:"kind"`
-	StreamTS    int64  `json:"stream_ts,omitempty"`
-	IndexTS     int64  `json:"index_ts,omitempty"`
-	StreamOff   int64  `json:"stream_offset,omitempty"`
-	IndexOff    int64  `json:"index_offset,omitempty"`
-	DeltaTicks  int64  `json:"delta_ticks,omitempty"`
+	Kind       Kind  `json:"kind"`
+	StreamTS   int64 `json:"stream_ts,omitempty"`
+	IndexTS    int64 `json:"index_ts,omitempty"`
+	StreamOff  int64 `json:"stream_offset,omitempty"`
+	IndexOff   int64 `json:"index_offset,omitempty"`
+	DeltaTicks int64 `json:"delta_ticks,omitempty"`
 }
 
 // Report is the full reconciliation result for one track.
 type Report struct {
-	Track         string   `json:"track"`
-	Hits          int      `json:"hits"`
-	Misses        int      `json:"misses"`
-	FalsePositives int     `json:"false_positives"`
-	HitRate       float64  `json:"hit_rate"`
-	Records       []Record `json:"records"`
+	Track          string   `json:"track"`
+	Hits           int      `json:"hits"`
+	Misses         int      `json:"misses"`
+	FalsePositives int      `json:"false_positives"`
+	HitRate        float64  `json:"hit_rate"`
+	Records        []Record `json:"records"`
 }
 
 // Reconcile matches sorted external entries against sorted scanned keyframes
@@ -131,7 +131,7 @@ func Reconcile(track string, entries []Entry, keyframes []Keyframe,
 	// keyframe inside the tolerance window.
 	for ie, e := range proj {
 		best := -1
-		var bestDelta int64 = 1<<62
+		var bestDelta int64 = 1 << 62
 		for ki, kf := range scanned {
 			if usedKF[ki] {
 				continue

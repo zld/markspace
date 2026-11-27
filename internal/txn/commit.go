@@ -13,11 +13,11 @@ import (
 // hash check, and its replacement is a temp-file plus rename so a crash can
 // never leave a torn checkpoint.
 type Checkpoint struct {
-	RunID        string            `json:"run_id"`
-	InputSHA256  string            `json:"input_sha256"`
-	Stages       []CommittedStage  `json:"stages"`
+	RunID         string            `json:"run_id"`
+	InputSHA256   string            `json:"input_sha256"`
+	Stages        []CommittedStage  `json:"stages"`
 	SegmentHashes map[string]string `json:"segment_hashes"`
-	CommittedAt  string            `json:"committed_at"`
+	CommittedAt   string            `json:"committed_at"`
 }
 
 // CommittedStage records one replayed/committed stage and the cursor reached.
