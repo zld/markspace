@@ -64,9 +64,7 @@ func buildTrak(tr MP4TrackSpec) []byte {
 	tkhd := buildTkhd(tr)
 	mdhd := boxBytes("mdhd", binio.FullBox(0, 0, mdhdBody(tr)))
 	hdlr := buildHdlr(tr)
-	colr := buildColr(tr)
-	clap := buildClap(tr)
-	stbl := buildStbl(tr, colr, clap)
+	stbl := buildStbl(tr)
 	minf := boxBytes("minf", stbl)
 	mdia := boxBytes("mdia", concat(mdhd, hdlr, minf))
 	return boxBytes("trak", concat(tkhd, mdia))
@@ -140,11 +138,12 @@ func buildColr(tr MP4TrackSpec) []byte {
 	b = append(b, binio.BE16(tr.ColorPrim)...)
 	b = append(b, binio.BE16(tr.ColorTRC)...)
 	b = append(b, binio.BE16(tr.ColorMx)...)
+	// Single byte: high bit is full-range, the low seven are reserved.
 	flag := byte(0)
 	if tr.FullRange {
 		flag = 0x80
 	}
-	b = append(b, flag, 0) // full-range flag + 7 reserved bits
+	b = append(b, flag)
 	return boxBytes("colr", b)
 }
 
@@ -163,8 +162,8 @@ func buildClap(tr MP4TrackSpec) []byte {
 	return boxBytes("clap", b)
 }
 
-func buildStbl(tr MP4TrackSpec, colr, clap []byte) []byte {
-	stsdEntry := buildStsdEntry(tr, colr, clap)
+func buildStbl(tr MP4TrackSpec) []byte {
+	stsdEntry := buildStsdEntry(tr)
 	stsd := binio.FullBox(0, 0, append(binio.BE32(1), stsdEntry...))
 	stts := buildStts(tr)
 	stsc := buildStsc(tr)
@@ -172,6 +171,12 @@ func buildStbl(tr MP4TrackSpec, colr, clap []byte) []byte {
 	stco := buildStcoPlaceholder(tr)
 	out := []byte{}
 	out = append(out, boxBytes("stsd", stsd)...)
+	// clap/colr live as stbl siblings of stsd in this minimal image. go-mp4
+	// treats sample entries as fixed-length leaves, so nesting them inside the
+	// codec box would consume the trailing sample tables; stbl-level placement
+	// keeps the whole tree walkable by the real parser.
+	out = append(out, buildClap(tr)...)
+	out = append(out, buildColr(tr)...)
 	out = append(out, boxBytes("stts", stts)...)
 	out = append(out, boxBytes("stsc", stsc)...)
 	out = append(out, boxBytes("stsz", stsz)...)
@@ -179,7 +184,7 @@ func buildStbl(tr MP4TrackSpec, colr, clap []byte) []byte {
 	return boxBytes("stbl", out)
 }
 
-func buildStsdEntry(tr MP4TrackSpec, colr, clap []byte) []byte {
+func buildStsdEntry(tr MP4TrackSpec) []byte {
 	// Visual/sound sample entry: 6 reserved + 2 data_ref_index, then fields.
 	b := make([]byte, 0, 78)
 	b = append(b, make([]byte, 6)...)
@@ -203,8 +208,6 @@ func buildStsdEntry(tr MP4TrackSpec, colr, clap []byte) []byte {
 		b = append(b, binio.BE16(0)...)         // reserved
 		b = append(b, binio.BE32(48000<<16)...) // samplerate fixed point
 	}
-	b = append(b, clap...)
-	b = append(b, colr...)
 	return boxBytes(tr.Codec, b)
 }
 

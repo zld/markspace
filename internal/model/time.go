@@ -191,18 +191,18 @@ type Crop struct {
 
 // Color is the nclx-style color description carried by MXF/MP4 containers.
 type Color struct {
-	Primaries  uint16 `json:"primaries"`
-	Transfer   uint16 `json:"transfer"`
-	Matrix     uint16 `json:"matrix"`
-	FullRange  bool   `json:"fullRange"`
+	Primaries uint16 `json:"primaries"`
+	Transfer  uint16 `json:"transfer"`
+	Matrix    uint16 `json:"matrix"`
+	FullRange bool   `json:"fullRange"`
 }
 
 // TrackMeta is the container-neutral per-track metadata view.
 type TrackMeta struct {
-	TrackID   uint32        `json:"trackId"`
-	Timescale uint32        `json:"timescale"`
-	Handler   string        `json:"handler"`
-	Codec     string        `json:"codec"`
+	TrackID   uint32          `json:"trackId"`
+	Timescale uint32          `json:"timescale"`
+	Handler   string          `json:"handler"`
+	Codec     string          `json:"codec"`
 	Rotation  Field[Rotation] `json:"rotation"`
 	Crop      Field[Crop]     `json:"crop"`
 	Color     Field[Color]    `json:"color"`
@@ -215,9 +215,9 @@ type Sample struct {
 	SourceTrack uint32 `json:"sourceTrack"`
 	TargetTrack uint32 `json:"targetTrack"`
 	Index       uint32 `json:"index"`
-	DTS         int64  `json:"dtsTick"`        // master timescale, pre-repair order
-	Duration    int64  `json:"durationTick"`   // master timescale
-	SrcOffset   int64  `json:"srcOffset"`      // payload offset in source file
+	DTS         int64  `json:"dtsTick"`      // master timescale, pre-repair order
+	Duration    int64  `json:"durationTick"` // master timescale
+	SrcOffset   int64  `json:"srcOffset"`    // payload offset in source file
 	Size        uint32 `json:"size"`
 	RTPRaw      uint32 `json:"rtpRaw,omitempty"`
 	RTPCycles   uint32 `json:"rtpCycles,omitempty"`

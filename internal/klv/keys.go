@@ -41,7 +41,7 @@ func Key(tag byte) [16]byte {
 //	trackID u32 | index u32 | dts u64 | duration u64
 //	offset  u64 | size  u32 | rtpRaw u32
 const (
-	IndexRowSize    = 40
-	HeaderPackSize  = 20 // magic(16) + trackCount(4)
-	EssenceHdrMin   = 17 // key(16) + 1-byte short-form BER
+	IndexRowSize   = 40
+	HeaderPackSize = 20 // magic(16) + trackCount(4)
+	EssenceHdrMin  = 17 // key(16) + 1-byte short-form BER
 )

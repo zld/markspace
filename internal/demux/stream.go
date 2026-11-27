@@ -21,6 +21,32 @@ func (s *readerAtSeeker) ReadByte() (byte, error) {
 	return b[0], nil
 }
 
+// Read implements io.Reader so go-mp4 can treat the source as a ReadSeeker.
+func (s *readerAtSeeker) Read(p []byte) (int, error) {
+	if s.pos >= s.size {
+		return 0, io.EOF
+	}
+	if int64(len(p)) > s.size-s.pos {
+		p = p[:s.size-s.pos]
+	}
+	n, err := s.r.ReadAt(p, s.pos)
+	s.pos += int64(n)
+	return n, err
+}
+
+// Seek implements io.Seeker; absolute and relative seeks are both supported.
+func (s *readerAtSeeker) Seek(offset int64, whence int) (int64, error) {
+	switch whence {
+	case io.SeekStart:
+		s.pos = offset
+	case io.SeekCurrent:
+		s.pos += offset
+	case io.SeekEnd:
+		s.pos = s.size + offset
+	}
+	return s.pos, nil
+}
+
 func (s *readerAtSeeker) readFull(p []byte) error {
 	n, err := s.r.ReadAt(p, s.pos)
 	s.pos += int64(n)
