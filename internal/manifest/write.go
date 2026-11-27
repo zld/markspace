@@ -39,12 +39,15 @@ type ItemConclusion struct {
 	Detail string `json:"detail,omitempty"`
 }
 
-// Anomaly records one over-budget span.
+// Anomaly records one over-budget span and the items and tracks that caused
+// it, so the range list can be reconciled against the item list.
 type Anomaly struct {
 	GroupIDs  []string `json:"group_ids"`
 	StartNs   int64    `json:"start_ns"`
 	EndNs     int64    `json:"end_ns"`
 	MaxSkewNs int64    `json:"max_skew_ns"`
+	Tracks    []string `json:"tracks"`
+	Items     []string `json:"items"`
 }
 
 // FrameRecord ties a rendered frame to its source event.

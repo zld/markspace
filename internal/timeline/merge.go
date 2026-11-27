@@ -60,7 +60,8 @@ type AnomalyRange struct {
 	StartNs   int64    `json:"start_ns"`
 	EndNs     int64    `json:"end_ns"`
 	MaxSkewNs int64    `json:"max_skew_ns"`
-	Ranges    []string `json:"sources"`
+	Tracks    []string `json:"tracks"`
+	Items     []string `json:"items"`
 }
 
 // Result is the merged timeline.
@@ -230,7 +231,7 @@ func Merge(events []Event, samples []SampleRef, cues []CueRef, opts ...Option) (
 		}
 		res.Groups = append(res.Groups, *g)
 	}
-	res.Anomalies = anomalyRanges(res.Groups)
+	res.Anomalies = anomalyRanges(res.Groups, res.Items)
 
 	sort.SliceStable(res.Items, func(i, j int) bool {
 		a, b := res.Items[i], res.Items[j]
@@ -295,36 +296,67 @@ func containingGroup(anchors []int64, start, end int64) (int, bool) {
 
 // anomalyRanges coalesces consecutive over-budget groups into ranges. Two
 // groups join a range when no in-budget group sits between them.
-func anomalyRanges(groups []Group) []AnomalyRange {
+func anomalyRanges(groups []Group, items []Item) []AnomalyRange {
+	byID := make(map[string]Item, len(items))
+	for _, it := range items {
+		byID[it.ID] = it
+	}
 	var out []AnomalyRange
 	var cur *AnomalyRange
-	var lastIdx = -2
+	seenPanic := make(map[string]struct{})
+	lastIdx := -2
 	for i, g := range groups {
 		if !g.Over {
 			continue
 		}
-		if cur != nil && lastIdx == i-1 {
-			cur.GroupIDs = append(cur.GroupIDs, g.ID)
-			if g.MaxSkewNs > cur.MaxSkewNs {
-				cur.MaxSkewNs = g.MaxSkewNs
+		if cur == nil || lastIdx != i-1 {
+			if cur != nil {
+				out = append(out, *cur)
 			}
-			if g.TimeNs > cur.EndNs {
-				cur.EndNs = g.TimeNs
+			cur = &AnomalyRange{StartNs: g.TimeNs, EndNs: g.TimeNs}
+		}
+		cur.GroupIDs = append(cur.GroupIDs, g.ID)
+		if g.MaxSkewNs > cur.MaxSkewNs {
+			cur.MaxSkewNs = g.MaxSkewNs
+		}
+		if g.TimeNs > cur.EndNs {
+			cur.EndNs = g.TimeNs
+		}
+		for _, id := range g.Items {
+			it, ok := byID[id]
+			if !ok || !it.Over {
+				continue
 			}
-			lastIdx = i
-			continue
+			if _, dup := seenPanic[id]; dup {
+				continue
+			}
+			seenPanic[id] = struct{}{}
+			cur.Items = append(cur.Items, id)
+			cur.Tracks = append(cur.Tracks, it.Track)
 		}
-		if cur != nil {
-			out = append(out, *cur)
-		}
-		cur = &AnomalyRange{GroupIDs: []string{g.ID}, StartNs: g.TimeNs, EndNs: g.TimeNs, MaxSkewNs: g.MaxSkewNs}
 		lastIdx = i
 	}
 	if cur != nil {
 		out = append(out, *cur)
 	}
 	for i := range out {
-		out[i].Ranges = append([]string(nil), out[i].GroupIDs...)
+		sort.Strings(out[i].Items)
+		sort.Strings(out[i].Tracks)
+		out[i].Tracks = dedupe(out[i].Tracks)
+	}
+	return out
+}
+
+// dedupe removes adjacent duplicates from a sorted slice.
+func dedupe(in []string) []string {
+	if len(in) == 0 {
+		return in
+	}
+	out := in[:1]
+	for _, v := range in[1:] {
+		if v != out[len(out)-1] {
+			out = append(out, v)
+		}
 	}
 	return out
 }

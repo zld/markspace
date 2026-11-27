@@ -170,3 +170,53 @@ func TestNegativeSkewAbsoluteValue(t *testing.T) {
 		t.Fatalf("item %+v", m)
 	}
 }
+
+func TestAnomalyListsItemsAndTracks(t *testing.T) {
+	res, _ := Merge(
+		[]Event{
+			{ID: "e0", Track: "client", TimeNs: 0},
+			{ID: "e1", Track: "client", TimeNs: 1_000 * ms},
+		},
+		[]SampleRef{
+			{ID: "m0", Track: "video", TimeNs: 100 * ms},   // 100 ms late
+			{ID: "m1", Track: "audio", TimeNs: 1_050 * ms}, // 50 ms late
+		},
+		nil,
+		WithMediaTolerance(200*ms),
+	)
+	if len(res.Anomalies) != 1 {
+		t.Fatalf("anomalies %+v", res.Anomalies)
+	}
+	a := res.Anomalies[0]
+	if len(a.Items) != 2 || a.Items[0] != "m0" || a.Items[1] != "m1" {
+		t.Fatalf("items %v", a.Items)
+	}
+	if len(a.Tracks) != 2 || a.Tracks[0] != "audio" || a.Tracks[1] != "video" {
+		t.Fatalf("tracks %v", a.Tracks)
+	}
+	// The two groups are contiguous (both over budget, no clean group
+	// between) so they coalesce into one range covering both instants.
+	if a.StartNs != 0 || a.EndNs != 1_000*ms {
+		t.Fatalf("span [%d,%d]", a.StartNs, a.EndNs)
+	}
+}
+
+func TestInBudgetItemNotListedInAnomaly(t *testing.T) {
+	res, _ := Merge(
+		[]Event{{ID: "e0", Track: "client", TimeNs: 0}},
+		[]SampleRef{
+			{ID: "bad", Track: "video", TimeNs: 100 * ms},
+			{ID: "fine", Track: "audio", TimeNs: 10 * ms},
+		},
+		nil,
+		WithMediaTolerance(200*ms),
+	)
+	if len(res.Anomalies) != 1 {
+		t.Fatalf("anomalies %+v", res.Anomalies)
+	}
+	for _, id := range res.Anomalies[0].Items {
+		if id == "fine" {
+			t.Fatal("in-budget item listed as anomalous")
+		}
+	}
+}

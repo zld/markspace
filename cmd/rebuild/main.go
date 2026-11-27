@@ -618,6 +618,7 @@ func analyze(sb sandbox, rate clock.Rate, frameCount int) (*manifest.Summary, []
 	for _, a := range merged.Anomalies {
 		summary.Anomalies = append(summary.Anomalies, manifest.Anomaly{
 			GroupIDs: a.GroupIDs, StartNs: a.StartNs, EndNs: a.EndNs, MaxSkewNs: a.MaxSkewNs,
+			Tracks: a.Tracks, Items: a.Items,
 		})
 	}
 	// Fold timeline verdicts back into per-item conclusions so every reported
@@ -901,8 +902,9 @@ func printSummary(w io.Writer, s *manifest.Summary, mode string) {
 	fmt.Fprintf(w, "rtp_duplicate=%d rtp_gap=%d rtp_missing=%d mp4_invalid_samples=%d\n",
 		s.RTPDuplicate, s.RTPGap, s.RTPMissing, s.MP4Invalid)
 	for _, a := range s.Anomalies {
-		fmt.Fprintf(w, "anomaly groups=%s span=[%d,%d]ns max_skew_ms=%d\n",
-			strings.Join(a.GroupIDs, ","), a.StartNs, a.EndNs, a.MaxSkewNs/1_000_000)
+		fmt.Fprintf(w, "anomaly groups=%s span=[%d,%d)ns max_skew_ms=%d tracks=%s items=%s\n",
+			strings.Join(a.GroupIDs, ","), a.StartNs, a.EndNs, a.MaxSkewNs/1_000_000,
+			strings.Join(a.Tracks, ","), strings.Join(a.Items, ","))
 	}
 	fmt.Fprintln(w, "items:")
 	for _, it := range s.Items {

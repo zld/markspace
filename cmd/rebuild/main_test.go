@@ -109,9 +109,31 @@ func TestOverBudgetCountMatchesAnomalyList(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "review")
 	_, stdout, _ := invoke(t, "-selftest", "-out", out)
 	groups := 0
+	listedItems := map[string]bool{}
 	for _, line := range strings.Split(stdout, "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), "anomaly groups=") {
-			groups += len(strings.Split(strings.Fields(strings.Split(line, " groups=")[1])[0], ","))
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "anomaly groups=") {
+			continue
+		}
+		groups += len(strings.Split(strings.Fields(strings.Split(line, " groups=")[1])[0], ","))
+		if i := strings.Index(line, "items="); i >= 0 {
+			for _, id := range strings.Split(line[i+len("items="):], ",") {
+				listedItems[id] = true
+			}
+		}
+	}
+	if len(listedItems) == 0 {
+		t.Fatal("anomaly ranges do not name their items")
+	}
+	// Every listed anomalous item must itself be marked over budget.
+	for _, line := range strings.Split(stdout, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 3 {
+			continue
+		}
+		id := fields[1]
+		if listedItems[id] && !strings.Contains(line, "over=true") {
+			t.Errorf("item %s listed in an anomaly but not marked over", id)
 		}
 	}
 	listed := strings.Count(stdout, "anomaly groups=")

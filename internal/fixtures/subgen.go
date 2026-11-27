@@ -92,8 +92,10 @@ func TimecodeSheet() []string {
 }
 
 // EventLines is the client event log used by the self-test. Each line is
-// "id,client_ms,media_ms,label"; the final entry omits media time to exercise
-// the event-only path.
+// "id,client_ms,media_ms,label". Two entries are deliberately damaged: one
+// omits a field and one carries a negative client time. The first is reported
+// and skipped; the second is reported. The final well-formed entry omits media
+// time to exercise the event-only path.
 func EventLines() []string {
 	var out []string
 	for i := 0; i < 4; i++ {
@@ -105,6 +107,8 @@ func EventLines() []string {
 		out = append(out, fmt.Sprintf("evt-%d,%d,%d,frame-%d", i, client, media, i))
 	}
 	out = append(out, "evt-4,5000,,trailing")
+	out = append(out, "evt-5,6000")
+	out = append(out, "evt-6,-100,6000,negative")
 	return out
 }
 
