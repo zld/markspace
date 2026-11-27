@@ -66,3 +66,23 @@ func TestValidateZeroTargetMeansNoConstraint(t *testing.T) {
 		t.Fatalf("empty target must not create diffs: %+v", rep)
 	}
 }
+
+func TestValidateAudioConstraintsDoNotApplyToVideo(t *testing.T) {
+	vid := model.TrackMeta{
+		TrackID: "v", Codec: model.CodecVideo,
+		Color: &model.ColorMeta{ColorPrimaries: 9, TransferCharacteristics: 16, MatrixCoefficients: 9},
+	}
+	target := model.TargetSpec{
+		Channels: 2, SampleRate: 48000,
+		Color: &model.ColorMeta{ColorPrimaries: 1, TransferCharacteristics: 16, MatrixCoefficients: 9},
+	}
+	rep := spec.Validate(vid, target)
+	for _, d := range rep.Diffs {
+		if d.Field == spec.FieldChannels || d.Field == spec.FieldSampleRate {
+			t.Fatalf("audio-only constraint applied to video: %+v", d)
+		}
+	}
+	if len(rep.Diffs) != 1 || rep.Diffs[0].Field != spec.FieldColorPrim {
+		t.Fatalf("video should only report the colour diff: %+v", rep.Diffs)
+	}
+}

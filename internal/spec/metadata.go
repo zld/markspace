@@ -42,21 +42,25 @@ func (r *Report) NeedsConversion() bool { return len(r.Diffs) > 0 || r.RejectRea
 // than inventing a layout.
 func Validate(meta model.TrackMeta, target model.TargetSpec) *Report {
 	r := &Report{TrackID: meta.TrackID, Source: meta}
+	isAudio := meta.Codec == model.CodecOpus || meta.Codec == model.CodecAAC
 
-	if meta.Codec != model.CodecVideo && meta.Channels == 0 {
+	if isAudio && meta.Channels == 0 {
 		r.RejectReason = "audio track declares zero channels: layout unrecognisable"
 		return r
 	}
 
-	if target.Channels != 0 && meta.Channels != target.Channels {
-		r.Diffs = append(r.Diffs, Diff{
-			Field: FieldChannels, Source: meta.Channels, Target: target.Channels,
-		})
-	}
-	if target.SampleRate != 0 && meta.SampleRate != target.SampleRate {
-		r.Diffs = append(r.Diffs, Diff{
-			Field: FieldSampleRate, Source: meta.SampleRate, Target: target.SampleRate,
-		})
+	// Channel layout and sample rate are audio-only constraints.
+	if isAudio {
+		if target.Channels != 0 && meta.Channels != target.Channels {
+			r.Diffs = append(r.Diffs, Diff{
+				Field: FieldChannels, Source: meta.Channels, Target: target.Channels,
+			})
+		}
+		if target.SampleRate != 0 && meta.SampleRate != target.SampleRate {
+			r.Diffs = append(r.Diffs, Diff{
+				Field: FieldSampleRate, Source: meta.SampleRate, Target: target.SampleRate,
+			})
+		}
 	}
 	if target.Color != nil && meta.Codec == model.CodecVideo {
 		r.appendColorDiffs(meta, target.Color)
