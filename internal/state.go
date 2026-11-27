@@ -74,6 +74,7 @@ func BuildStreamState(ps ParsedStream, depth int, mp4Durations []uint64) (*Strea
 	haveTS := false   // timestamp continuity for 32-bit unwrapping
 	havePrev := false // adjacency to the previously delivered packet
 	deliveredIdx := 0
+	var firstExt uint64
 	for _, e := range emissions {
 		if e.Kind == EmitGap {
 			ss.States = append(ss.States, PacketState{
@@ -87,7 +88,15 @@ func BuildStreamState(ps ParsedStream, depth int, mp4Durations []uint64) (*Strea
 			continue
 		}
 		p := e.Packet
-		dur, source, err := packetDuration(ps, p, deliveredIdx, mp4Durations)
+		// The MP4 sample table is indexed by packet position in the stream,
+		// not by delivery order: a gap must not shift later samples.
+		sampleIdx := deliveredIdx
+		if deliveredIdx == 0 {
+			firstExt = e.ExtSeq
+		} else {
+			sampleIdx = int(e.ExtSeq - firstExt)
+		}
+		dur, source, err := packetDuration(ps, p, sampleIdx, mp4Durations)
 		if err != nil {
 			return nil, err
 		}

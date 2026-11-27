@@ -183,32 +183,22 @@ func (r *bitReader) read(n uint) (uint32, bool) {
 
 // MP4Sample is the per-sample timing extracted from an MP4 audio track.
 type MP4Sample struct {
-	Index    int
-	Size     uint32
-	Duration uint32 // in track timescale units
-	IsSync   bool
-}
-
-// MP4Track holds the timing facts needed to compare a container timeline with
-// an RTP-derived one.
-type MP4Track struct {
-	TrackID   uint32
-	Codec     Codec
-	Timescale uint32
-	Samples   []MP4Sample
-	AAC       *AACConfig
-	Opus      *OpusSampleInfo
+	Index    int    `json:"index"`
+	Size     uint32 `json:"size_bytes"`
+	Duration uint32 `json:"duration_ticks"` // in track timescale units
+	IsSync   bool   `json:"is_sync"`
 }
 
 // OpusSampleInfo carries the dOps pre-skip, which shifts the first decodable
 // sample relative to the container start.
 type OpusSampleInfo struct {
-	PreSkip         uint16
-	InputSampleRate uint32
-	Channels        uint8
+	PreSkip         uint16 `json:"pre_skip"`
+	InputSampleRate uint32 `json:"input_sample_rate_hz"`
+	Channels        uint8  `json:"channels"`
 }
 
-// TotalTicks sums all sample durations in track timescale units.
+// TotalTicks sums all sample durations in track timescale units. Overflow is
+// reported rather than wrapped.
 func (t MP4Track) TotalTicks() (uint64, error) {
 	var total uint64
 	for _, s := range t.Samples {

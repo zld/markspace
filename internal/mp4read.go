@@ -6,178 +6,145 @@ import (
 	"github.com/abema/go-mp4"
 )
 
-// ReadMP4Track opens an in-memory MP4 and extracts the first audio track's
-// sample durations and codec configuration using the go-mp4 box parser. The
-// track timescale is preserved so the caller can convert to the stream clock
-// with exact integer arithmetic.
-func ReadMP4Track(data []byte) (*MP4Track, error) {
-	r := bytes.NewReader(data)
-	info, err := mp4.Probe(r)
-	if err != nil {
-		return nil, NewError(CodeMP4, "mp4_probe", err.Error()).WithCause(err)
-	}
-	if len(info.Tracks) == 0 {
-		return nil, NewError(CodeMP4, "mp4_probe", "no tracks found")
-	}
-	for _, t := range info.Tracks {
-		if t.Codec == mp4.CodecMP4A {
-			return readAudioTrack(r, t, info.Tracks)
-		}
-	}
-	// Opus-in-MP4 tracks are not classified by go-mp4's Probe; locate them by
-	// sample entry type.
-	track, err := readOpusTrack(r)
-	if err != nil {
-		return nil, err
-	}
-	if track != nil {
-		return track, nil
-	}
-	return nil, NewError(CodeMP4, "mp4_probe", "no supported audio track found")
+// MP4Track holds the timing facts needed to compare a container timeline with
+// an RTP-derived one.
+type MP4Track struct {
+	TrackID   uint32
+	Codec     Codec
+	Timescale uint32
+	Samples   []MP4Sample
+	AAC       *AACConfig
+	Opus      *OpusSampleInfo
 }
 
-func readAudioTrack(r *bytes.Reader, t *mp4.Track, all mp4.Tracks) (*MP4Track, error) {
-	if t.Timescale == 0 {
-		return nil, NewError(CodeMP4, "mp4_track", "track timescale is zero")
-	}
-	out := &MP4Track{TrackID: t.TrackID, Codec: CodecAAC, Timescale: t.Timescale}
-	uniform, err := readUniformSampleSize(r)
+// readAudioTrack collects the boxes of one trak while walking the box tree.
+type readAudioTrack struct {
+	trackID   uint32
+	timescale uint32
+	codec     Codec
+	hasSample bool
+	stts      *mp4.Stts
+	stsz      *mp4.Stsz
+	dops      *mp4.DOps
+	asc       []byte
+}
+
+// ReadMP4Track extracts the first supported audio track.
+func ReadMP4Track(data []byte) (*MP4Track, error) {
+	tracks, err := ReadMP4Tracks(data)
 	if err != nil {
 		return nil, err
 	}
-	for i, s := range t.Samples {
-		size := s.Size
-		if size == 0 {
-			// go-mp4's Probe only fills EntrySize; a uniform stsz stores a
-			// single shared size instead.
-			size = uniform
+	if len(tracks) == 0 {
+		return nil, NewError(CodeMP4, "mp4_probe", "no supported audio track found")
+	}
+	return tracks[0], nil
+}
+
+// ReadMP4Tracks extracts every supported audio track, in file order. AAC
+// tracks carry an AudioSpecificConfig from esds; Opus tracks carry dOps
+// pre-skip. Each track's own mdhd timescale is preserved so the caller can
+// convert durations into the RTP clock with exact integer arithmetic.
+func ReadMP4Tracks(data []byte) ([]*MP4Track, error) {
+	var traks []*readAudioTrack
+	var cur *readAudioTrack
+
+	handler := func(h *mp4.ReadHandle) (interface{}, error) {
+		// A trak node starts a new per-track accumulator; its children still
+		// need to be expanded, so fall through to Expand below.
+		if h.BoxInfo.Type == mp4.BoxTypeTrak() {
+			cur = &readAudioTrack{}
+			traks = append(traks, cur)
+		} else if cur != nil {
+			switch h.BoxInfo.Type {
+			case mp4.BoxTypeTkhd(), mp4.BoxTypeMdhd(), mp4.BoxTypeStts(), mp4.BoxTypeStsz(),
+				mp4.BoxTypeDOps(), mp4.BoxTypeEsds():
+				box, _, err := h.ReadPayload()
+				if err != nil {
+					return nil, NewError(CodeMP4, "mp4_read", err.Error()).WithCause(err)
+				}
+				switch b := box.(type) {
+				case *mp4.Tkhd:
+					cur.trackID = b.TrackID
+				case *mp4.Mdhd:
+					cur.timescale = b.Timescale
+				case *mp4.Stts:
+					cur.stts = b
+				case *mp4.Stsz:
+					cur.stsz = b
+				case *mp4.DOps:
+					cur.dops = b
+					cur.codec = CodecOpus
+					cur.hasSample = true
+				case *mp4.Esds:
+					cur.asc = findDecSpecificInfo(b.Descriptors)
+					cur.codec = CodecAAC
+					cur.hasSample = true
+				}
+			}
 		}
-		out.Samples = append(out.Samples, MP4Sample{Index: i, Size: size, Duration: s.TimeDelta, IsSync: true})
-	}
-	cfg, err := readASCFromTrack(r, t.TrackID, all)
-	if err != nil {
+		_, err := h.Expand()
 		return nil, err
 	}
-	out.AAC = cfg
+	if _, err := mp4.ReadBoxStructure(bytes.NewReader(data), handler); err != nil {
+		return nil, NewError(CodeMP4, "mp4_probe", err.Error()).WithCause(err)
+	}
+	var out []*MP4Track
+	for _, t := range traks {
+		if !t.hasSample {
+			continue
+		}
+		tr, err := buildMP4Track(t)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, tr)
+	}
 	return out, nil
 }
 
-func readASCFromTrack(r *bytes.Reader, trackID uint32, all mp4.Tracks) (*AACConfig, error) {
-	_ = trackID
-	_ = all
-	// Re-scan for the esds of this track to obtain DecoderSpecificInfo.
-	boxes, err := mp4.ExtractBoxesWithPayload(r, nil, []mp4.BoxPath{
-		{mp4.BoxTypeMoov(), mp4.BoxTypeTrak(), mp4.BoxTypeMdia(), mp4.BoxTypeMinf(),
-			mp4.BoxTypeStbl(), mp4.BoxTypeStsd(), mp4.BoxTypeMp4a(), mp4.BoxTypeEsds()},
-	})
-	if err != nil {
-		return nil, NewError(CodeMP4, "mp4_esds", err.Error()).WithCause(err)
+func buildMP4Track(t *readAudioTrack) (*MP4Track, error) {
+	if t.timescale == 0 {
+		return nil, NewError(CodeMP4, "mp4_track", "track timescale is zero")
 	}
-	if len(boxes) == 0 {
-		return nil, NewError(CodeMP4, "mp4_esds", "esds box not found for AAC track")
+	if t.stts == nil {
+		return nil, NewError(CodeMP4, "mp4_track", "stts box not found")
 	}
-	esds, ok := boxes[0].Payload.(*mp4.Esds)
-	if !ok {
-		return nil, NewError(CodeMP4, "mp4_esds", "esds payload has unexpected type")
+	out := &MP4Track{TrackID: t.trackID, Codec: t.codec, Timescale: t.timescale}
+	uniform := uint32(0)
+	if t.stsz != nil {
+		uniform = t.stsz.SampleSize
 	}
-	specific := findDecSpecificInfo(esds.Descriptors)
-	if len(specific) == 0 {
-		return nil, NewError(CodeMP4, "mp4_esds", "DecoderSpecificInfo descriptor not found")
-	}
-	cfg, err := ParseAudioSpecificConfig(specific)
-	if err != nil {
-		return nil, AsError(err)
-	}
-	if cfg.SampleRate == 0 {
-		return nil, NewError(CodeMP4, "mp4_esds", "AudioSpecificConfig has no sample rate")
-	}
-	return &cfg, nil
-}
-
-// readUniformSampleSize returns stsz.SampleSize when the table uses the
-// uniform form, or 0 when per-sample sizes are present.
-func readUniformSampleSize(r *bytes.Reader) (uint32, error) {
-	boxes, err := mp4.ExtractBoxesWithPayload(r, nil, []mp4.BoxPath{
-		{mp4.BoxTypeMoov(), mp4.BoxTypeTrak(), mp4.BoxTypeMdia(), mp4.BoxTypeMinf(),
-			mp4.BoxTypeStbl(), mp4.BoxTypeStsz()},
-	})
-	if err != nil {
-		return 0, NewError(CodeMP4, "mp4_stsz", err.Error()).WithCause(err)
-	}
-	for _, b := range boxes {
-		if stsz, ok := b.Payload.(*mp4.Stsz); ok {
-			return stsz.SampleSize, nil
-		}
-	}
-	return 0, nil
-}
-
-// readOpusTrack finds an Opus sample entry and derives sample durations from
-// the stts table with the track timescale.
-func readOpusTrack(r *bytes.Reader) (*MP4Track, error) {
-	payloads, err := mp4.ExtractBoxesWithPayload(r, nil, []mp4.BoxPath{
-		{mp4.BoxTypeMoov(), mp4.BoxTypeTrak(), mp4.BoxTypeTkhd()},
-		{mp4.BoxTypeMoov(), mp4.BoxTypeTrak(), mp4.BoxTypeMdia(), mp4.BoxTypeMdhd()},
-		{mp4.BoxTypeMoov(), mp4.BoxTypeTrak(), mp4.BoxTypeMdia(), mp4.BoxTypeMinf(),
-			mp4.BoxTypeStbl(), mp4.BoxTypeStsd(), mp4.BoxTypeOpus()},
-		{mp4.BoxTypeMoov(), mp4.BoxTypeTrak(), mp4.BoxTypeMdia(), mp4.BoxTypeMinf(),
-			mp4.BoxTypeStbl(), mp4.BoxTypeStsd(), mp4.BoxTypeOpus(), mp4.BoxTypeDOps()},
-		{mp4.BoxTypeMoov(), mp4.BoxTypeTrak(), mp4.BoxTypeMdia(), mp4.BoxTypeMinf(),
-			mp4.BoxTypeStbl(), mp4.BoxTypeStts()},
-		{mp4.BoxTypeMoov(), mp4.BoxTypeTrak(), mp4.BoxTypeMdia(), mp4.BoxTypeMinf(),
-			mp4.BoxTypeStbl(), mp4.BoxTypeStsz()},
-	})
-	if err != nil {
-		return nil, NewError(CodeMP4, "mp4_opus", err.Error()).WithCause(err)
-	}
-	if len(payloads) == 0 {
-		return nil, nil
-	}
-	var tkhd *mp4.Tkhd
-	var mdhd *mp4.Mdhd
-	var dops *mp4.DOps
-	var stts *mp4.Stts
-	var stsz *mp4.Stsz
-	for _, p := range payloads {
-		switch v := p.Payload.(type) {
-		case *mp4.Tkhd:
-			tkhd = v
-		case *mp4.Mdhd:
-			mdhd = v
-		case *mp4.DOps:
-			dops = v
-		case *mp4.Stts:
-			stts = v
-		case *mp4.Stsz:
-			stsz = v
-		}
-	}
-	if tkhd == nil || mdhd == nil || stts == nil {
-		return nil, NewError(CodeMP4, "mp4_opus", "missing tkhd/mdhd/stts for Opus track")
-	}
-	if mdhd.Timescale == 0 {
-		return nil, NewError(CodeMP4, "mp4_opus", "Opus track timescale is zero")
-	}
-	out := &MP4Track{TrackID: tkhd.TrackID, Codec: CodecOpus, Timescale: mdhd.Timescale}
 	idx := 0
-	for _, e := range stts.Entries {
+	for _, e := range t.stts.Entries {
 		for i := uint32(0); i < e.SampleCount; i++ {
-			size := uint32(0)
-			if stsz != nil {
-				if stsz.SampleSize != 0 {
-					size = stsz.SampleSize
-				} else if idx < len(stsz.EntrySize) {
-					size = stsz.EntrySize[idx]
-				}
+			size := uniform
+			if t.stsz != nil && t.stsz.SampleSize == 0 && idx < len(t.stsz.EntrySize) {
+				size = t.stsz.EntrySize[idx]
 			}
 			out.Samples = append(out.Samples, MP4Sample{Index: idx, Size: size, Duration: e.SampleDelta, IsSync: true})
 			idx++
 		}
 	}
-	if dops != nil {
-		out.Opus = &OpusSampleInfo{
-			PreSkip: dops.PreSkip, InputSampleRate: dops.InputSampleRate,
-			Channels: dops.OutputChannelCount,
+	switch t.codec {
+	case CodecAAC:
+		if len(t.asc) == 0 {
+			return nil, NewError(CodeMP4, "mp4_esds", "DecoderSpecificInfo descriptor not found")
+		}
+		cfg, err := ParseAudioSpecificConfig(t.asc)
+		if err != nil {
+			return nil, AsError(err)
+		}
+		if cfg.SampleRate == 0 {
+			return nil, NewError(CodeMP4, "mp4_esds", "AudioSpecificConfig has no sample rate")
+		}
+		out.AAC = &cfg
+	case CodecOpus:
+		if t.dops != nil {
+			out.Opus = &OpusSampleInfo{
+				PreSkip: t.dops.PreSkip, InputSampleRate: t.dops.InputSampleRate,
+				Channels: t.dops.OutputChannelCount,
+			}
 		}
 	}
 	return out, nil

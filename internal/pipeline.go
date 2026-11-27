@@ -57,7 +57,7 @@ func (c PipelineConfig) Digest() string { return digestJSON(c) }
 type Pipeline struct {
 	Trace      *ParsedTrace
 	Config     PipelineConfig
-	MP4        *MP4Track
+	MP4        []*MP4Track
 	Notes      []string
 	faultFired int
 }
@@ -71,9 +71,15 @@ func (p *Pipeline) nodeParse(deps map[NodeID]any) (any, error) {
 		// The MP4 bytes are generated with the trace and handed in by the
 		// caller; re-reading them here proves the container timeline is
 		// actually available to the regression pass.
-		if p.MP4 == nil {
+		if len(p.MP4) == 0 {
 			return nil, NewError(CodeMP4, "parse", "trace references an MP4 that was not supplied").
 				WithRetryable(false)
+		}
+		for _, tr := range p.MP4 {
+			if len(tr.Samples) == 0 {
+				return nil, NewError(CodeMP4, "parse", "MP4 track has an empty sample table").
+					WithRetryable(false)
+			}
 		}
 	}
 	return p.Trace, nil
@@ -88,15 +94,27 @@ func (p *Pipeline) nodeStates(deps map[NodeID]any) (any, error) {
 	for i := range p.Trace.Streams {
 		ps := &p.Trace.Streams[i]
 		var mp4durs []uint64
-		if p.MP4 != nil && p.MP4.Codec == ps.Codec && p.MP4.Timescale != 0 {
-			mp4durs = make([]uint64, 0, len(p.MP4.Samples))
-			for _, s := range p.MP4.Samples {
-				d, err := Scale(uint64(s.Duration), p.MP4.Timescale, ps.ClockHz)
+		// Match the container track by codec and sample count. Indexing by
+		// codec alone would silently attach the wrong table when two tracks
+		// share a codec.
+		for _, mt := range p.MP4 {
+			if mt.Codec != ps.Codec || mt.Timescale == 0 {
+				continue
+			}
+			// The table must cover every sequence position in the trace, so
+			// packets dropped from the arrival log still index correctly.
+			if len(mt.Samples) < len(ps.Packets) {
+				continue
+			}
+			mp4durs = make([]uint64, 0, len(mt.Samples))
+			for _, s := range mt.Samples {
+				d, err := Scale(uint64(s.Duration), mt.Timescale, ps.ClockHz)
 				if err != nil {
 					return nil, AsError(err).WithTrack(ps.Track)
 				}
 				mp4durs = append(mp4durs, d)
 			}
+			break
 		}
 		ss, err := BuildStreamState(*ps, p.Config.ReorderDepth, mp4durs)
 		if err != nil {
@@ -184,15 +202,21 @@ func (p *Pipeline) fault(node string) error {
 	return NewError(CodeInjected, node, "injected permanent failure").WithRetryable(false)
 }
 
-// BuildDag wires the five pipeline nodes.
+// BuildDag wires the five pipeline nodes and pins the trace digest as the
+// root input of every idempotency key.
 func (p *Pipeline) BuildDag() (*Dag, error) {
-	return NewDag([]*Node{
+	d, err := NewDag([]*Node{
 		{ID: "parse", Run: p.nodeParse},
 		{ID: "states", Deps: []NodeID{"parse"}, Run: p.nodeStates, MaxRetry: 1},
 		{ID: "metrics", Deps: []NodeID{"states"}, Run: p.nodeMetrics, MaxRetry: 1},
 		{ID: "manifest", Deps: []NodeID{"states"}, Run: p.nodeManifest, MaxRetry: 1},
 		{ID: "report", Deps: []NodeID{"metrics", "manifest"}, Run: p.nodeReport, MaxRetry: 1},
 	})
+	if err != nil {
+		return nil, err
+	}
+	d.SetInputDigest(p.Trace.InputDigest)
+	return d, nil
 }
 
 // MarshalReport renders the report deterministically (sorted maps do not
