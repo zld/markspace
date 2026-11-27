@@ -1,6 +1,7 @@
 package subtitle
 
 import (
+	"bytes"
 	"strings"
 
 	"archivecheck/internal/fault"
@@ -20,23 +21,24 @@ type lineScanner struct {
 
 func (p *lineScanner) done() bool { return p.off >= int64(len(p.data)) }
 
+// peekBlank reports whether the next line is empty or whitespace only. It
+// scans bytes directly so a large subtitle file is not re-copied per line.
 func (p *lineScanner) peekBlank() bool {
 	if p.done() {
 		return false
 	}
-	i := strings.IndexByte(string(p.data[p.off:]), '\n')
-	if i < 0 {
-		return strings.TrimSpace(string(p.data[p.off:])) == ""
+	rest := p.data[p.off:]
+	if i := bytes.IndexByte(rest, '\n'); i >= 0 {
+		rest = rest[:i]
 	}
-	return strings.TrimSpace(string(p.data[p.off:p.off+int64(i)])) == ""
+	return len(bytes.TrimSpace(rest)) == 0
 }
 
 func (p *lineScanner) next() textLine {
 	start := p.off
 	rest := p.data[p.off:]
-	i := strings.IndexByte(string(rest), '\n')
 	var raw []byte
-	if i < 0 {
+	if i := bytes.IndexByte(rest, '\n'); i < 0 {
 		raw = rest
 		p.off = int64(len(p.data))
 	} else {

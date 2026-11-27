@@ -118,7 +118,8 @@ func verifySources(m *Manifest) error {
 	return nil
 }
 
-// safeJoin resolves p under dir, refusing any path that would escape it.
+// safeJoin resolves p under dir, refusing any path that would escape it,
+// whether by lexical traversal or through a symlink.
 func safeJoin(dir, p string) (string, error) {
 	if filepath.IsAbs(p) {
 		return "", fault.New(fault.StageManifest, fault.KindBoundary, p, 0, "absolute derivative path")
@@ -126,6 +127,13 @@ func safeJoin(dir, p string) (string, error) {
 	full := filepath.Join(dir, filepath.FromSlash(p))
 	if !asset.Within(dir, full) {
 		return "", fault.New(fault.StageManifest, fault.KindBoundary, p, 0, "derivative path escapes the output root")
+	}
+	// Resolve symlinks on both sides, since a platform temporary directory
+	// may itself live behind one (/var -> /private/var on macOS).
+	realDir, errDir := filepath.EvalSymlinks(dir)
+	realFull, errFull := filepath.EvalSymlinks(full)
+	if errDir == nil && errFull == nil && !asset.Within(realDir, realFull) {
+		return "", fault.New(fault.StageManifest, fault.KindBoundary, p, 0, "derivative path escapes the output root through a symlink")
 	}
 	return full, nil
 }

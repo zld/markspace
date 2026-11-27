@@ -123,6 +123,17 @@ func Resolve(root, path string) (string, error) {
 	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
 		return "", fault.New(fault.StageSource, fault.KindBoundary, path, 0, "path escapes the input root")
 	}
+	// A lexically contained path can still escape through a symlink, so the
+	// resolved target is checked as well. A path that does not exist yet is
+	// fine here; ReadAll reports it as missing.
+	real, err := filepath.EvalSymlinks(joined)
+	if err == nil {
+		if !Within(base, real) {
+			return "", fault.New(fault.StageSource, fault.KindBoundary, path, 0, "path escapes the input root through a symlink")
+		}
+	} else if !os.IsNotExist(err) {
+		return "", fault.Wrap(err, fault.StageSource, fault.KindBoundary, path, 0, "resolve path links")
+	}
 	return filepath.ToSlash(rel), nil
 }
 
