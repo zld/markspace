@@ -74,6 +74,23 @@ type Budget struct {
 	OverBudgetSize bool    `json:"overBudgetSize"`
 }
 
+// digestBudget keeps only the configured budget limits and the deterministic
+// size conclusion. Wall-clock fields vary between runs and are excluded so
+// the manifest digest stays reproducible.
+type digestBudget struct {
+	BudgetMs       int64 `json:"budgetMs"`
+	MaxBytes       int64 `json:"maxBytes"`
+	OverBudgetSize bool  `json:"overBudgetSize"`
+}
+
+func (b Budget) canonical() digestBudget {
+	return digestBudget{
+		BudgetMs:       b.BudgetMs,
+		MaxBytes:       b.MaxBytes,
+		OverBudgetSize: b.OverBudgetSize,
+	}
+}
+
 // Summary is the top-level JSON document printed by the CLI.
 type Summary struct {
 	Seed           int64   `json:"seed"`
@@ -101,8 +118,8 @@ func (s *Summary) ComputeManifestDigest() (string, error) {
 	payload := struct {
 		Seed   int64        `json:"seed"`
 		Items  []digestItem `json:"items"`
-		Budget Budget       `json:"budget"`
-	}{Seed: cp.Seed, Items: stable, Budget: cp.Budget}
+		Budget digestBudget `json:"budget"`
+	}{Seed: cp.Seed, Items: stable, Budget: cp.Budget.canonical()}
 	b, err := canonicalJSON(payload)
 	if err != nil {
 		return "", err

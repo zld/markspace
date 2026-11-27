@@ -55,19 +55,22 @@ func absF(x float64) float64 {
 
 // BudgetReport computes run-level time budget accounting. The time budget
 // takes priority over size: when exceeded, low-priority attempts are stopped
-// and the deviation is reported rather than silently degrading quality.
+// and the deviation is reported rather than silently degrading quality. The
+// size flag is left to the caller because max-bytes is a per-material ceiling
+// evaluated in finalizeItem, not an aggregate over the whole run.
 func BudgetReport(budgetMs, elapsedMs int64, maxBytes int64, totalBytes int64) report.Budget {
 	b := report.Budget{
 		BudgetMs:  budgetMs,
 		ElapsedMs: elapsedMs,
 		MaxBytes:  maxBytes,
 	}
-	if budgetMs > 0 {
-		b.DeviationMs = elapsedMs - budgetMs
-		b.OverBudgetTime = elapsedMs > budgetMs
+	// A non-negative budget is enforced; zero means the strictest possible
+	// budget, so any elapsed work is immediately over. A negative value means
+	// no time budget was configured.
+	if b.BudgetMs >= 0 {
+		b.DeviationMs = elapsedMs - b.BudgetMs
+		b.OverBudgetTime = elapsedMs > b.BudgetMs
 	}
-	if maxBytes > 0 {
-		b.OverBudgetSize = totalBytes > maxBytes
-	}
+	_ = totalBytes
 	return b
 }
