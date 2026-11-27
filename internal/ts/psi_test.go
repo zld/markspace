@@ -58,8 +58,8 @@ func psiPacket(pid uint16, pusi bool, cc uint8, payload []byte) *Packet {
 	p := &Packet{
 		PID: pid, PUSI: pusi, CC: cc,
 		AdaptationControl: AFCPayloadOnly, AdaptationLength: -1,
-		Offset: int64(cc) * PacketSize,
-		Payload:           payload,
+		Offset:  int64(cc) * PacketSize,
+		Payload: payload,
 	}
 	return p
 }

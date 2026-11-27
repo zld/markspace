@@ -66,9 +66,9 @@ const (
 
 // Sample is one decoded presentation unit on the repaired timeline.
 type Sample struct {
-	PTS90k      int64 // unwrapped 90 kHz presentation ticks
-	DTS90k      int64 // unwrapped 90 kHz decode ticks
-	WallNanos   int64 // PCR-anchored wall time, 0 when no anchor exists
+	PTS90k     int64 // unwrapped 90 kHz presentation ticks
+	DTS90k     int64 // unwrapped 90 kHz decode ticks
+	WallNanos  int64 // PCR-anchored wall time, 0 when no anchor exists
 	IsKeyframe bool
 	Indexable  bool
 	Duplicate  bool
@@ -85,11 +85,11 @@ type TimelineConfig struct {
 // the native model: intervals are taken from actual PTS deltas, never forced
 // onto a fixed grid.
 type Timeline struct {
-	cfg    TimelineConfig
-	ptsU   PTSUnwrapper
-	dtsU   PTSUnwrapper
-	ec     *mediaerr.Collector
-	pid    uint16
+	cfg  TimelineConfig
+	ptsU PTSUnwrapper
+	dtsU PTSUnwrapper
+	ec   *mediaerr.Collector
+	pid  uint16
 
 	anchorPTS   int64
 	anchorNanos int64

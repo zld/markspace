@@ -14,10 +14,9 @@ const MaxRTPPayload = 7 * 188
 // Encoder wraps TS byte payloads in RTP packets with an incrementing 16-bit
 // sequence number.
 type Encoder struct {
-	SSRC         uint32
-	PayloadType  uint8
-	nextSeq      uint16
-	initialized  bool
+	SSRC        uint32
+	PayloadType uint8
+	nextSeq     uint16
 }
 
 // NewEncoder creates an RTP encoder. The sequence starts at zero.
@@ -41,10 +40,10 @@ func (e *Encoder) EncodePacket(tsPayload []byte, marker bool, timestamp uint32) 
 // SeqChecker validates the RTP sequence number stream of one SSRC, mirroring
 // the TS continuity rules on the 16-bit RTP sequence space.
 type SeqChecker struct {
-	last    uint16
-	have    bool
-	ec      *mediaerr.Collector
-	ssrc    uint32
+	last uint16
+	have bool
+	ec   *mediaerr.Collector
+	ssrc uint32
 }
 
 // NewSeqChecker builds a checker recording into ec.
@@ -71,7 +70,7 @@ func (c *SeqChecker) Observe(seq uint16, offset int64) {
 	case delta == 1:
 		// Continuous.
 	default:
-		if delta > (1<<15) {
+		if delta > (1 << 15) {
 			c.ec.Add(mediaerr.Recoverable(mediaerr.CodeRTPSeqJump, 0, offset,
 				"RTP sequence number large backward jump",
 				"flush reassembly; resynchronise at this packet"))

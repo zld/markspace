@@ -10,7 +10,7 @@ import (
 
 // IndexEntry is one random-access point inside a segment.
 type IndexEntry struct {
-	SampleIndex int   `json:"sample_index"`
+	SampleIndex int    `json:"sample_index"`
 	KeyframePID uint16 `json:"keyframe_pid"`
 	// Time range covered by the sample, in nanoseconds on the repaired
 	// shared clock. A query at target t hits when StartNanos <= t < EndNanos.
@@ -22,13 +22,13 @@ type IndexEntry struct {
 // Segment is the fully repaired, boundary-checked record for one fragment of
 // one representation.
 type Segment struct {
-	ID             int    `json:"id"`
-	Representation int    `json:"representation"`
-	SourceStart    int64  `json:"source_start"` // input byte range, inclusive
-	SourceEnd      int64  `json:"source_end"`   // inclusive
-	StartNanos     int64  `json:"start_nanos"`  // repaired shared-clock bounds
-	EndNanos       int64  `json:"end_nanos"`
-	SampleCount    int    `json:"sample_count"`
+	ID             int          `json:"id"`
+	Representation int          `json:"representation"`
+	SourceStart    int64        `json:"source_start"` // input byte range, inclusive
+	SourceEnd      int64        `json:"source_end"`   // inclusive
+	StartNanos     int64        `json:"start_nanos"`  // repaired shared-clock bounds
+	EndNanos       int64        `json:"end_nanos"`
+	SampleCount    int          `json:"sample_count"`
 	KeyframeIndex  []IndexEntry `json:"keyframe_index"`
 }
 

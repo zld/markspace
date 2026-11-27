@@ -1,0 +1,12 @@
+# Compiled binaries
+/tsrepair
+*.exe
+*.test
+*.out
+
+# Local demo/verify output
+/tmp/
+
+# Editor/OS files
+.DS_Store
+*.swp

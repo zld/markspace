@@ -39,7 +39,7 @@ func TestPCRUnwrapDoubleWrap(t *testing.T) {
 		{PCRMod - 10, PCRMod - 10},
 		{5, PCRMod + 5},
 		{PCRMod - 20, 2*PCRMod - 20}, // climbs back up to the period boundary
-		{7, 2*PCRMod + 7},             // second forward wrap
+		{7, 2*PCRMod + 7},            // second forward wrap
 	}
 	for _, s := range steps {
 		got, _, err := u.Unwrap(s.raw)

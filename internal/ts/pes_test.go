@@ -13,6 +13,7 @@ func encodePTS(prefix byte, pts int64) []byte {
 		byte(pts<<1)&0xFE | 0x01,
 	}
 }
+
 // buildPES constructs a minimal video PES packet carrying PTS (and optional
 // DTS).
 func buildPES(pts int64, withDTS bool, payload []byte) []byte {

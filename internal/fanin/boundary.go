@@ -14,13 +14,13 @@ const DefaultBoundaryToleranceNanos int64 = 1_000_000
 
 // BoundaryMismatch describes one cross-representation disagreement.
 type BoundaryMismatch struct {
-	SegmentID       int   `json:"segment_id"`
-	RepresentationA int   `json:"representation_a"`
-	RepresentationB int   `json:"representation_b"`
+	SegmentID       int    `json:"segment_id"`
+	RepresentationA int    `json:"representation_a"`
+	RepresentationB int    `json:"representation_b"`
 	Edge            string `json:"edge"` // "start" or "end"
-	TimeA           int64 `json:"time_a_nanos"`
-	TimeB           int64 `json:"time_b_nanos"`
-	DeltaNanos      int64 `json:"delta_nanos"`
+	TimeA           int64  `json:"time_a_nanos"`
+	TimeB           int64  `json:"time_b_nanos"`
+	DeltaNanos      int64  `json:"delta_nanos"`
 }
 
 // Result is the fan-in verdict for one segment position.

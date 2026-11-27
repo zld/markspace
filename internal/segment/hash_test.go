@@ -6,7 +6,7 @@ func sampleSegment() *Segment {
 	return &Segment{
 		ID: 1, Representation: 2,
 		SourceStart: 0, SourceEnd: 1880,
-		StartNanos:  0, EndNanos: 2_000_000_000,
+		StartNanos: 0, EndNanos: 2_000_000_000,
 		SampleCount: 60,
 		KeyframeIndex: []IndexEntry{
 			{SampleIndex: 0, KeyframePID: 0x100, StartNanos: 0, EndNanos: 33_333_333, ByteOffset: 0},

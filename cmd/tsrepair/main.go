@@ -24,21 +24,21 @@ import (
 
 // Summary is the machine-readable run summary written as summary.json.
 type Summary struct {
-	Seed              int                 `json:"seed"`
-	Segments          int                 `json:"segments"`
-	Representations   int                 `json:"representations"`
-	Corruptions       []string            `json:"corruptions"`
-	SegPerRep         int                 `json:"segments_per_representation"`
-	ParseRoundTripPct float64             `json:"parse_roundtrip_pct"`
-	IndexHitRate      float64             `json:"index_hit_rate"`
-	BoundaryMismatch  int                 `json:"boundary_mismatch"`
-	SegmentHashes     int                 `json:"segment_hashes"`
-	Deterministic     bool                `json:"deterministic"`
-	IndexHits         int                 `json:"index_hits"`
-	IndexMisses       int                 `json:"index_misses"`
-	ExitCode          int                 `json:"exit_code"`
-	Errors            []*mediaerr.Error   `json:"errors,omitempty"`
-	Hashes            []HashEntry         `json:"hashes"`
+	Seed              int               `json:"seed"`
+	Segments          int               `json:"segments"`
+	Representations   int               `json:"representations"`
+	Corruptions       []string          `json:"corruptions"`
+	SegPerRep         int               `json:"segments_per_representation"`
+	ParseRoundTripPct float64           `json:"parse_roundtrip_pct"`
+	IndexHitRate      float64           `json:"index_hit_rate"`
+	BoundaryMismatch  int               `json:"boundary_mismatch"`
+	SegmentHashes     int               `json:"segment_hashes"`
+	Deterministic     bool              `json:"deterministic"`
+	IndexHits         int               `json:"index_hits"`
+	IndexMisses       int               `json:"index_misses"`
+	ExitCode          int               `json:"exit_code"`
+	Errors            []*mediaerr.Error `json:"errors,omitempty"`
+	Hashes            []HashEntry       `json:"hashes"`
 }
 
 // HashEntry binds a segment identity to its digest and byte range.

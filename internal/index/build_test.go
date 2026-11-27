@@ -8,7 +8,7 @@ import (
 
 func TestBuilderAdmitsOnlyKeyframeIndexable(t *testing.T) {
 	b := NewBuilder(0x100)
-	b.AddSample(0, true, true, 0, 100, 0)    // admitted
+	b.AddSample(0, true, true, 0, 100, 0)     // admitted
 	b.AddSample(1, false, true, 100, 200, 50) // not keyframe
 	b.AddSample(2, true, false, 200, 300, 90) // not indexable
 	b.AddSample(3, true, true, 300, 400, 140) // admitted

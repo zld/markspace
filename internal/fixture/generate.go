@@ -32,14 +32,14 @@ const (
 
 // Options configures one generated stream.
 type Options struct {
-	Seed             int64
-	Segments         int
-	Representations  int
+	Seed              int64
+	Segments          int
+	Representations   int
 	SamplesPerSegment int
-	VideoPID         uint16
-	PCRPID           uint16
-	PMTPID           uint16
-	Corruptions      []Corruption
+	VideoPID          uint16
+	PCRPID            uint16
+	PMTPID            uint16
+	Corruptions       []Corruption
 }
 
 // DefaultOptions returns a coherent single-representation configuration.
@@ -67,11 +67,11 @@ func has(cs []Corruption, want Corruption) bool {
 // Representation is one generated bitrate: its raw TS bytes plus the ground
 // truth a repair pipeline must recover.
 type Representation struct {
-	ID            int
-	VideoPID      uint16
-	PCRPID        uint16
-	PMTPID        uint16
-	Data          []byte
+	ID       int
+	VideoPID uint16
+	PCRPID   uint16
+	PMTPID   uint16
+	Data     []byte
 	// ExpectedPTS90k are the ground-truth sample PTS values (unwrapped).
 	ExpectedPTS90k []int64
 	// KeyframeSample indexes (0-based) that carry random-access markers.

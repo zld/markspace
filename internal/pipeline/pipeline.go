@@ -37,8 +37,8 @@ func DefaultConfig() Config {
 
 // SegmentReport is the emitted, fully verified record for one segment.
 type SegmentReport struct {
-	Segment   segment.Segment
-	SHA256    string
+	Segment    segment.Segment
+	SHA256     string
 	Consistent bool
 }
 
@@ -64,13 +64,13 @@ func (m Metrics) HitRate() float64 {
 
 // Result is the complete output of a repair run.
 type Result struct {
-	Reports     []SegmentReport
-	Errors      []*mediaerr.Error
-	Metrics     Metrics
+	Reports []SegmentReport
+	Errors  []*mediaerr.Error
+	Metrics Metrics
 	// MP4 bytes per successful representation, keyed by representation id.
-	MP4         map[int][]byte
+	MP4 map[int][]byte
 	// Manifest used for serialization, retained for round-trip verification.
-	Manifests   map[int]*mp4index.Manifest
+	Manifests map[int]*mp4index.Manifest
 }
 
 // Run repairs one generated stream set. The fixture output is fed through the

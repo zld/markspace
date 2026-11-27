@@ -41,10 +41,10 @@ type Representation struct {
 
 	// Anchor handoff. The wall-clock anchor needs both a corrected PCR and a
 	// sample PTS; whichever arrives second completes the binding.
-	anchorPTS       int64
-	haveAnchorPTS   bool
-	firstPCR27      int64
-	haveFirstPCR    bool
+	anchorPTS     int64
+	haveAnchorPTS bool
+	firstPCR27    int64
+	haveFirstPCR  bool
 	// pending samples awaiting an anchor, bounded by MaxPendingSamples.
 	pending []pendingSample
 

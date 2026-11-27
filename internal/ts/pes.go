@@ -14,7 +14,7 @@ type PESPacket struct {
 	HasPTS     bool
 	DTS        int64
 	HasDTS     bool
-	Keyframe   bool // random access indicator from the carrying TS packet
+	Keyframe   bool  // random access indicator from the carrying TS packet
 	ByteOffset int64 // offset of the first TS packet of this PES
 	Payload    []byte
 }
@@ -23,11 +23,11 @@ type PESPacket struct {
 // starts on a PUSI packet and ends when the next PUSI packet for the same PID
 // arrives.
 type pesAssembler struct {
-	pid     uint16
-	buf     []byte
-	off     int64
+	pid      uint16
+	buf      []byte
+	off      int64
 	keyframe bool
-	active  bool
+	active   bool
 }
 
 // push feeds one packet and returns a completed PES packet when a new PUSI

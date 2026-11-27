@@ -86,7 +86,7 @@ func (b *builder) emitPCRPacket(pid uint16, rawPCR int64, keyframe bool) {
 	pkt[1] = byte(pid >> 8)
 	pkt[2] = byte(pid)
 	pkt[3] = byte(ts.AFCPayloadAndAF)<<4 | b.nextCC(pid)
-	pkt[4] = 7 // adaptation_field_length
+	pkt[4] = 7          // adaptation_field_length
 	flags := byte(0x10) // PCR flag
 	if keyframe {
 		flags |= 0x40 // random_access_indicator

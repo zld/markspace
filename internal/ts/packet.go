@@ -37,8 +37,8 @@ const MaxSectionLength = 1024
 type Packet struct {
 	Offset            int64 // byte offset of the sync byte in the input
 	PID               uint16
-	TEI               bool  // transport error indicator
-	PUSI              bool  // payload unit start indicator
+	TEI               bool // transport error indicator
+	PUSI              bool // payload unit start indicator
 	Priority          bool
 	AdaptationControl uint8
 	CC                uint8

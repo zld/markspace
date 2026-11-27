@@ -9,7 +9,7 @@ import (
 // 1/27 MHz (base*300 + ext).
 // Multiplicative operators are left-associative in Go, so this evaluates as
 // (1<<33)*300.
-const PCRMod int64 = int64(1)<<33 * 300
+const PCRMod int64 = int64(1) << 33 * 300
 
 // PCRHalfMod is half of PCRMod, the threshold for deciding whether a delta
 // crosses a wrap boundary.

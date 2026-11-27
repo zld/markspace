@@ -47,10 +47,10 @@ const Timescale uint32 = 90_000
 
 // Manifest is the in-memory index representation handed to serialization.
 type Manifest struct {
-	Representation int
-	Timescale      uint32
-	Duration90k    uint64
-	Samples        []SampleRecord
+	Representation  int
+	Timescale       uint32
+	Duration90k     uint64
+	Samples         []SampleRecord
 	KeyframeNumbers []uint32 // 1-based sample numbers of random-access points
 	// SegmentCanonical holds each segment's canonical bytes, carried in mdat.
 	SegmentCanonical [][]byte
