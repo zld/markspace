@@ -19,11 +19,11 @@ const FileName = "manifest.json"
 
 // Representation describes one output representation layer.
 type Representation struct {
-	ID          int            `json:"id"`
-	Width       uint16         `json:"width,omitempty"`
-	Height      uint16         `json:"height,omitempty"`
-	Channels    uint16         `json:"channels,omitempty"`
-	SampleRate  uint32         `json:"sample_rate,omitempty"`
+	ID          int             `json:"id"`
+	Width       uint16          `json:"width,omitempty"`
+	Height      uint16          `json:"height,omitempty"`
+	Channels    uint16          `json:"channels,omitempty"`
+	SampleRate  uint32          `json:"sample_rate,omitempty"`
 	ColorSource media.ColorMeta `json:"color_source"`
 	ColorOutput media.ColorMeta `json:"color_output"`
 }

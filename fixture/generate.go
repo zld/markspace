@@ -21,7 +21,7 @@ type TrackSpec struct {
 	SampleDelta   uint32 // ticks per sample
 	SampleCount   int
 	SampleSize    int // bytes per sample
-	KeyframeEvery int  // video: keyframe interval in samples; 0 = no stss
+	KeyframeEvery int // video: keyframe interval in samples; 0 = no stss
 	Width, Height uint16
 	Channels      uint16
 	SampleRate    uint32

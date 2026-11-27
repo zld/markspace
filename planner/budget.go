@@ -44,14 +44,14 @@ type Rejection struct {
 
 // Plan is the approved processing plan.
 type Plan struct {
-	SegmentNanos int64              `json:"segment_nanos"`
-	Concurrency  int                `json:"concurrency"`
-	Cuts         []int64            `json:"cuts"` // segment boundaries, nanoseconds
-	Audio        []AudioConversion  `json:"audio"`
-	ColorSources []media.ColorMeta  `json:"color_sources"` // per input
-	ColorOutput  media.ColorMeta    `json:"color_output"`
-	EstBytes     int64              `json:"est_bytes"`
-	PlanHash     string             `json:"plan_hash"`
+	SegmentNanos int64             `json:"segment_nanos"`
+	Concurrency  int               `json:"concurrency"`
+	Cuts         []int64           `json:"cuts"` // segment boundaries, nanoseconds
+	Audio        []AudioConversion `json:"audio"`
+	ColorSources []media.ColorMeta `json:"color_sources"` // per input
+	ColorOutput  media.ColorMeta   `json:"color_output"`
+	EstBytes     int64             `json:"est_bytes"`
+	PlanHash     string            `json:"plan_hash"`
 }
 
 // estimateBytes approximates the transient memory of one candidate:

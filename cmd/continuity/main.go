@@ -179,9 +179,9 @@ func finish(caseName string, inputs []*media.Container, plan *planner.Plan,
 	}
 	out := output{
 		Case: caseName, RoundtripRate: rep.RoundtripRate,
-		KeyframeHitRate: rep.KeyframeHitRate,
+		KeyframeHitRate:        rep.KeyframeHitRate,
 		AlignedBoundaryDeltaNs: rep.AlignedBoundaryDeltaNs,
-		Verified: rep.Verified, ManifestHash: mh, WorkDir: workdir,
+		Verified:               rep.Verified, ManifestHash: mh, WorkDir: workdir,
 		ReusedSegments: res.Reused, RecomputedSegments: res.Recomputed,
 	}
 	for _, s := range res.Segments {

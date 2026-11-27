@@ -30,7 +30,7 @@ func BuildIndex(t *TrackInfo) (*SampleIndex, error) {
 			if prev >= 0 && ns <= prev {
 				return nil, &Error{Kind: KindTimeRegression, Op: "index.build",
 					TrackID: t.TrackID,
-					Msg: "sample decode time is not strictly increasing"}
+					Msg:     "sample decode time is not strictly increasing"}
 			}
 			ix.SampleTimes = append(ix.SampleTimes, ns)
 			prev = ns
@@ -50,7 +50,7 @@ func BuildIndex(t *TrackInfo) (*SampleIndex, error) {
 		if n == 0 || int(n) > len(ix.SampleTimes) {
 			return nil, &Error{Kind: KindTruncatedBox, Op: "index.build",
 				TrackID: t.TrackID,
-				Msg: "stss references a sample outside the track"}
+				Msg:     "stss references a sample outside the track"}
 		}
 		ix.KeyframeTimes = append(ix.KeyframeTimes, ix.SampleTimes[n-1])
 	}

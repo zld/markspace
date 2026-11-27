@@ -81,7 +81,7 @@ func writeTrack(w *mp4.Writer, ts TrackSpec, chunkOffset uint64, movieDur uint32
 		}
 	}
 	if err := writeBox(w, &mp4.Stsc{
-		FullBox:   mp4.FullBox{Version: 0},
+		FullBox:    mp4.FullBox{Version: 0},
 		EntryCount: 1,
 		Entries: []mp4.StscEntry{
 			{FirstChunk: 1, SamplesPerChunk: uint32(ts.SampleCount), SampleDescriptionIndex: 1},

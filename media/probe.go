@@ -28,21 +28,21 @@ type SttsEntry struct {
 // TrackInfo is the probed description of a single track, with all times
 // also expressed on the unified nanosecond base.
 type TrackInfo struct {
-	TrackID       int          `json:"track_id"`
-	Handler       string       `json:"handler"` // "vide" or "soun"
-	Timescale     uint32       `json:"timescale"`
-	DurationUnits uint64       `json:"duration_units"`
-	DurationNanos int64        `json:"duration_nanos"`
-	Width         uint16       `json:"width,omitempty"`
-	Height        uint16       `json:"height,omitempty"`
-	ChannelCount  uint16       `json:"channel_count,omitempty"`
-	SampleRate    uint32       `json:"sample_rate,omitempty"`
-	Color         ColorMeta    `json:"color"`
-	Stts          []SttsEntry  `json:"stts"`
-	KeyframeNums  []uint32     `json:"keyframe_nums,omitempty"` // 1-based; nil = all key
-	SampleSizes   []uint32     `json:"-"`
-	ChunkOffsets  []uint64     `json:"-"`
-	SampleCount   uint32       `json:"sample_count"`
+	TrackID       int         `json:"track_id"`
+	Handler       string      `json:"handler"` // "vide" or "soun"
+	Timescale     uint32      `json:"timescale"`
+	DurationUnits uint64      `json:"duration_units"`
+	DurationNanos int64       `json:"duration_nanos"`
+	Width         uint16      `json:"width,omitempty"`
+	Height        uint16      `json:"height,omitempty"`
+	ChannelCount  uint16      `json:"channel_count,omitempty"`
+	SampleRate    uint32      `json:"sample_rate,omitempty"`
+	Color         ColorMeta   `json:"color"`
+	Stts          []SttsEntry `json:"stts"`
+	KeyframeNums  []uint32    `json:"keyframe_nums,omitempty"` // 1-based; nil = all key
+	SampleSizes   []uint32    `json:"-"`
+	ChunkOffsets  []uint64    `json:"-"`
+	SampleCount   uint32      `json:"sample_count"`
 }
 
 // IsVideo reports whether the track is a video track.
@@ -114,7 +114,7 @@ func Probe(path string) (*Container, error) {
 		off, _ := f.Seek(0, io.SeekCurrent)
 		return nil, &Error{Kind: KindTruncatedBox, Op: "probe.walk",
 			Offset: off, HasOffset: true,
-			Msg: "box tree unreadable near a '" + lastType.String() + "' box",
+			Msg:   "box tree unreadable near a '" + lastType.String() + "' box",
 			Cause: err}
 	}
 	if len(traks) == 0 {
