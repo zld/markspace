@@ -199,6 +199,16 @@ func (j *Job) Advance(stage model.Stage) error {
 	return j.persist()
 }
 
+// Reach advances the job to stage unless it has already reached or passed it.
+// A resumed run uses this so re-executing an earlier stage's checkpoint is a
+// no-op rather than a backwards transition.
+func (j *Job) Reach(stage model.Stage) error {
+	if stageRank(stage) <= stageRank(j.State.Stage) {
+		return nil
+	}
+	return j.Advance(stage)
+}
+
 func stageRank(s model.Stage) int {
 	switch s {
 	case model.StageReceive:

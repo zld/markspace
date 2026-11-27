@@ -89,6 +89,9 @@ type mp4Reader struct {
 	res     *MP4Result
 	track   *model.Track
 	trackHz int64
+	// seed is the per-track generation seed from the smpc catalog; media
+	// sample bytes are reproduced from it exactly as stored in mdat.
+	seed uint32
 }
 
 func (r *mp4Reader) currentTrack() string {
@@ -173,7 +176,6 @@ func (r *mp4Reader) readEmsg(h *mp4.ReadHandle) (interface{}, error) {
 		Kind:         model.KindEmsg,
 		Seq:          emsg.Id,
 		ObservedTick: tick,
-		Delay:        tick,
 		PayloadHash:  fmt.Sprintf("%x", sum[:8]),
 	})
 	return emsg, nil
@@ -216,6 +218,11 @@ func (r *mp4Reader) parseCatalogEntries(pr *prefixReader, boxOff uint64) (interf
 			r.track.ID, int64(boxOff),
 			fmt.Errorf("%w: zero catalog timescale", model.ErrBadTimeBase))
 	}
+	seed, err := pr.u32()
+	if err != nil {
+		return nil, err
+	}
+	r.seed = seed
 	count, err := pr.u32()
 	if err != nil {
 		return nil, err
@@ -270,7 +277,7 @@ func (r *mp4Reader) readVideoEntry(pr *prefixReader, seq uint32, tick clock.Tick
 	if err != nil {
 		return err
 	}
-	frame := fixture.FramePixels(0, seq)
+	frame := fixture.FramePixels(r.seed, seq)
 	// Width/height in the catalog must agree with the generator layout; the
 	// mdat pixels themselves are rendered from the same seed on demand.
 	if int(w) != fixture.FrameW || int(h) != fixture.FrameH {
@@ -294,7 +301,7 @@ func (r *mp4Reader) readAudioEntry(pr *prefixReader, seq uint32, tick clock.Tick
 		return r.locErr("smpc-audio-n", pr.offset(),
 			fmt.Errorf("catalog audio frames %d disagree with fixture", n))
 	}
-	pcm := fixture.AudioSamples(0, seq)
+	pcm := fixture.AudioSamples(r.seed, seq)
 	sum := sha256.Sum256(int16Bytes(pcm))
 	r.track.Samples = append(r.track.Samples, model.Sample{
 		Seq: seq, Tick: tick, Audio: pcm,
@@ -319,7 +326,6 @@ func (r *mp4Reader) readEventEntry(pr *prefixReader, seq uint32, tick clock.Tick
 		Kind:         r.track.Kind,
 		Seq:          seq,
 		ObservedTick: tick,
-		Delay:        tick,
 		PayloadHash:  fmt.Sprintf("%x", sum[:8]),
 	})
 	return nil

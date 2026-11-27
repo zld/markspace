@@ -15,19 +15,21 @@ import (
 
 // DelayStats summarizes observed publish delays in master ticks.
 type DelayStats struct {
-	Count    int          `json:"count"`
-	Min      clock.Tick   `json:"min"`
-	Max      clock.Tick   `json:"max"`
-	Median   clock.Tick   `json:"median"`
-	P90      clock.Tick   `json:"p90"`
-	P99      clock.Tick   `json:"p99"`
-	Delays   []clock.Tick `json:"delays"` // sorted ascending
+	Count  int          `json:"count"`
+	Min    clock.Tick   `json:"min"`
+	Max    clock.Tick   `json:"max"`
+	Median clock.Tick   `json:"median"`
+	P90    clock.Tick   `json:"p90"`
+	P99    clock.Tick   `json:"p99"`
+	Delays []clock.Tick `json:"delays"` // sorted ascending
 }
 
 // Counts are the plan-based loss/dup totals.
 type Counts struct {
 	Missing   int `json:"missing"`
 	Duplicate int `json:"duplicate"`
+	// Conflict counts aligned keys whose sources disagree about the tick.
+	Conflict int `json:"conflict"`
 	// Extra counts occurrences whose key is not part of the plan.
 	Extra int `json:"extra"`
 }
@@ -43,9 +45,9 @@ type BoundaryError struct {
 
 // Report is the full deterministic measurement result.
 type Report struct {
-	Delay       DelayStats      `json:"delay"`
-	Counts      Counts          `json:"counts"`
-	Boundaries  []BoundaryError `json:"boundaries"`
+	Delay      DelayStats      `json:"delay"`
+	Counts     Counts          `json:"counts"`
+	Boundaries []BoundaryError `json:"boundaries"`
 }
 
 // Compute produces the report for one aligned timeline. renditionTracks are
@@ -66,7 +68,7 @@ func computeDelays(tl *timeline.Timeline) DelayStats {
 		if a.Missing {
 			continue
 		}
-		delays = append(delays, a.ObservedTick-a.Plan.ExpectedTick)
+		delays = append(delays, a.Delay)
 	}
 	sort.Slice(delays, func(i, j int) bool { return delays[i] < delays[j] })
 	if len(delays) == 0 {
@@ -93,6 +95,9 @@ func computeCounts(tl *timeline.Timeline) Counts {
 		}
 		if a.Duplicate {
 			c.Duplicate++
+		}
+		if a.Conflict {
+			c.Conflict++
 		}
 	}
 	for _, ev := range tl.Unique {

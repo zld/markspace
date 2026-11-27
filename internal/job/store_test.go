@@ -137,6 +137,48 @@ func TestPathTraversalBlocked(t *testing.T) {
 	}
 }
 
+// TestReachIsForwardOnlyIdempotent pins the recovery contract: re-executing
+// an earlier stage's checkpoint on a resumed job must not regress the stage,
+// while a genuinely forward move is still recorded.
+func TestReachIsForwardOnlyIdempotent(t *testing.T) {
+	store, _ := OpenStore(t.TempDir())
+	j, _, _ := store.Start("task", "h")
+	if err := j.Reach(model.StageArtifact); err != nil {
+		t.Fatal(err)
+	}
+	if j.State.Stage != model.StageArtifact {
+		t.Fatalf("stage = %s, want artifact", j.State.Stage)
+	}
+	rev := j.State.Revision
+	// Reaching parse (earlier) is a no-op, not a regression.
+	if err := j.Reach(model.StageParse); err != nil {
+		t.Fatalf("reach backwards: %v", err)
+	}
+	if j.State.Stage != model.StageArtifact || j.State.Revision != rev {
+		t.Fatalf("backwards reach mutated state: stage=%s rev=%d",
+			j.State.Stage, j.State.Revision)
+	}
+	// Reach to the same stage is also a no-op.
+	if err := j.Reach(model.StageArtifact); err != nil {
+		t.Fatal(err)
+	}
+	if j.State.Revision != rev {
+		t.Fatal("same-stage reach wrote a redundant checkpoint")
+	}
+	// A forward reach still works and persists across a reopen.
+	if err := j.Reach(model.StageCommit); err != nil {
+		t.Fatal(err)
+	}
+	store2, _ := OpenStore(store.root)
+	j2, rec, err := store2.Start("task", "h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rec.Recovered || j2.State.Stage != model.StageCommit {
+		t.Fatalf("forward reach not durable: %+v", j2.State)
+	}
+}
+
 func TestFailDoesNotReportCompletion(t *testing.T) {
 	store, _ := OpenStore(t.TempDir())
 	j, _, _ := store.Start("task", "h")

@@ -33,30 +33,30 @@ type Event struct {
 // Sample is one decoded media sample with timing in master ticks and enough
 // frame data for offline evidence statistics.
 type Sample struct {
-	Seq          uint32     `json:"seq"`
-	Tick         clock.Tick `json:"tick"` // presentation time in master ticks
-	Width        int        `json:"width,omitempty"`
-	Height       int        `json:"height,omitempty"`
-	Frame        []byte     `json:"-"` // grayscale pixels for video
-	Audio        []int16    `json:"-"` // PCM samples for audio
-	PayloadHash  string     `json:"payload_hash"`
+	Seq         uint32     `json:"seq"`
+	Tick        clock.Tick `json:"tick"` // presentation time in master ticks
+	Width       int        `json:"width,omitempty"`
+	Height      int        `json:"height,omitempty"`
+	Frame       []byte     `json:"-"` // grayscale pixels for video
+	Audio       []int16    `json:"-"` // PCM samples for audio
+	PayloadHash string     `json:"payload_hash"`
 }
 
 // Track is one parsed rendition or metadata track.
 type Track struct {
-	ID        string     `json:"id"`
-	Kind      TrackKind  `json:"kind"`
-	Timescale int64      `json:"timescale"` // source Hz
-	Samples   []Sample   `json:"samples,omitempty"`
-	Events    []Event    `json:"events,omitempty"`
+	ID        string    `json:"id"`
+	Kind      TrackKind `json:"kind"`
+	Timescale int64     `json:"timescale"` // source Hz
+	Samples   []Sample  `json:"samples,omitempty"`
+	Events    []Event   `json:"events,omitempty"`
 }
 
 // PlanItem is one ground-truth entry of the deterministic generation plan:
 // it states what the harness intended to publish at which media time.
 type PlanItem struct {
-	Key          string    `json:"key"`
-	Track        string    `json:"track"`
-	Kind         TrackKind `json:"kind"`
+	Key          string     `json:"key"`
+	Track        string     `json:"track"`
+	Kind         TrackKind  `json:"kind"`
 	Seq          uint32     `json:"seq"`
 	ExpectedTick clock.Tick `json:"expected_tick"`
 	// DelayTicks, when non-zero, makes the fixture writer emit the item

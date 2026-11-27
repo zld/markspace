@@ -28,9 +28,15 @@ type Alignment struct {
 	// ObservedTick is the presentation tick of the first (ordered)
 	// occurrence, or zero when the item was not observed at all.
 	ObservedTick clock.Tick
-	Missing      bool
-	// Duplicate is true when more than one occurrence shares the key.
+	// Delay is ObservedTick minus the planned tick; zero when missing.
+	Delay   clock.Tick
+	Missing bool
+	// Duplicate is true when more than one occurrence shares the key within
+	// a single source (a genuine republish), not across sources.
 	Duplicate bool
+	// Conflict is true when separate occurrences of the same key report
+	// differing ticks, i.e. sources disagree about when the event happened.
+	Conflict bool
 }
 
 // Timeline is the merged, deduplicated and plan-aligned result.
@@ -110,7 +116,12 @@ func Build(mp4Tracks []model.Track, rtpStreams []SourceStream,
 }
 
 // align joins the plan with observed occurrences. Lookups use a map but the
-// result is emitted in the plan's own order for deterministic output.
+// result is emitted in the plan's own order for deterministic output. A
+// cross-source sighting (the same genuine event seen in both the MP4
+// container and the RTP capture) is confirmation, not a republish: only
+// repeated occurrences *within one source* count as a duplicate. The first
+// ordered occurrence defines the aligned observation, so the reported delay
+// is reproducible even when several sources disagree by a tick.
 func (t *Timeline) align(plan []model.PlanItem) {
 	byKey := map[string][]Occurrence{}
 	for _, o := range t.Occurrences {
@@ -123,7 +134,20 @@ func (t *Timeline) align(plan []model.PlanItem) {
 			a.Missing = true
 		default:
 			a.ObservedTick = a.Occurrences[0].Event.ObservedTick
-			a.Duplicate = len(a.Occurrences) > 1
+			a.Delay = a.ObservedTick - item.ExpectedTick
+			perSource := map[string]int{}
+			for _, o := range a.Occurrences {
+				perSource[o.Source]++
+				if o.Event.ObservedTick != a.ObservedTick {
+					a.Conflict = true
+				}
+			}
+			for _, n := range perSource {
+				if n > 1 {
+					a.Duplicate = true
+					break
+				}
+			}
 		}
 		t.Alignment = append(t.Alignment, a)
 	}

@@ -48,6 +48,12 @@ func writeAtomic(dir, name string, v any) (err error) {
 	if err = os.Rename(tmpName, final); err != nil {
 		return model.NewError(model.StageCommit, "checkpoint-rename", dir, "", 0, err)
 	}
+	// Persist the rename itself so a crash cannot lose the new checkpoint
+	// while the old one is already unlinked.
+	if d, derr := os.Open(dir); derr == nil {
+		_ = d.Sync()
+		_ = d.Close()
+	}
 	return nil
 }
 

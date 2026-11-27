@@ -85,16 +85,101 @@ func TestReadMP4Normal(t *testing.T) {
 	if len(res.EmsgEvents) == 0 {
 		t.Fatal("no emsg boxes parsed")
 	}
-	// The dropped first ID3 event must be absent; duplicate emsg present.
+}
+
+func TestReadMP4EventsFaultDropsAndDuplicates(t *testing.T) {
+	dir := t.TempDir()
+	mp4Path, _, _, _ := writeFixtures(t, dir, fixture.FaultEvents)
+	res, err := ReadMP4(mp4Path)
+	if err != nil {
+		t.Fatalf("ReadMP4: %v", err)
+	}
+	var id3Keys, emsgCount int
 	for _, tr := range res.Tracks {
-		if tr.Kind == model.KindID3 {
+		switch tr.Kind {
+		case model.KindID3:
 			for _, ev := range tr.Events {
 				if ev.Key == fixture.MetaID3+"/evt-000" {
 					t.Fatal("dropped ID3 event was reconstructed")
 				}
+				id3Keys++
+			}
+		case model.KindEmsg:
+			emsgCount += len(tr.Events)
+		}
+	}
+	if id3Keys == 0 {
+		t.Fatal("no ID3 events reconstructed")
+	}
+	// One emsg key is repeated inside the catalog source.
+	seen := map[string]int{}
+	for _, tr := range res.Tracks {
+		if tr.Kind == model.KindEmsg {
+			for _, ev := range tr.Events {
+				seen[ev.Key]++
 			}
 		}
 	}
+	var repeated int
+	for _, n := range seen {
+		if n > 1 {
+			repeated++
+		}
+	}
+	if repeated != 1 {
+		t.Fatalf("want exactly one repeated emsg key, got %d (%v)", repeated, seen)
+	}
+}
+
+func TestReadMP4ReproducesStoredMediaBytes(t *testing.T) {
+	dir := t.TempDir()
+	mp4Path, _, spec, _ := writeFixtures(t, dir, fixture.FaultNone)
+	res, err := ReadMP4(mp4Path)
+	if err != nil {
+		t.Fatalf("ReadMP4: %v", err)
+	}
+	// The reader must reconstruct the exact pixel/PCM bytes that writeMdat
+	// stored: high rendition uses Seed, low uses Seed^0xffff, audio Seed.
+	for _, tr := range res.Tracks {
+		switch tr.ID {
+		case fixture.RendHigh, fixture.RendLow:
+			seed := spec.Seed
+			if tr.ID == fixture.RendLow {
+				seed ^= 0xffff
+			}
+			for _, s := range tr.Samples {
+				want := fixture.FramePixels(seed, s.Seq)
+				if !bytesEqual(s.Frame, want) {
+					t.Fatalf("%s sample %d pixels differ from mdat", tr.ID, s.Seq)
+				}
+			}
+		case fixture.AudioID:
+			for _, s := range tr.Samples {
+				want := fixture.AudioSamples(spec.Seed, s.Seq)
+				if len(s.Audio) != len(want) {
+					t.Fatalf("audio sample %d length %d", s.Seq, len(s.Audio))
+				}
+				for i := range want {
+					if s.Audio[i] != want[i] {
+						t.Fatalf("audio sample %d pcm[%d] differs from mdat",
+							s.Seq, i)
+					}
+				}
+			}
+		}
+	}
+}
+
+func bytesEqual(a, b []byte) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func TestReadMP4TruncationReportsOffset(t *testing.T) {
@@ -163,6 +248,27 @@ func TestReadRTPNormalUnwraps(t *testing.T) {
 	}
 	if kinds[model.KindEmsg] < 2 {
 		t.Errorf("duplicate emsg not visible: counts=%v", kinds)
+	}
+	// Cross-clock anchoring: the first audio packet must land on the same
+	// master tick as the first video packet (both are the capture origin).
+	var audio *Stream
+	for _, st := range res.Streams {
+		if st.TrackID == fixture.AudioID {
+			audio = st
+		}
+	}
+	if audio == nil || len(audio.Samples) == 0 {
+		t.Fatal("audio stream missing")
+	}
+	if audio.Samples[0].Tick != high.Samples[0].Tick {
+		t.Fatalf("audio origin %d != video origin %d",
+			audio.Samples[0].Tick, high.Samples[0].Tick)
+	}
+	// Metadata events carry the planned publish delay on the same line.
+	for _, ev := range meta.Events {
+		if ev.ObservedTick < 0 {
+			t.Fatalf("metadata event %s before origin: %d", ev.Key, ev.ObservedTick)
+		}
 	}
 }
 

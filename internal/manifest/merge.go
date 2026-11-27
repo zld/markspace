@@ -22,12 +22,12 @@ const magicHeader = "# regress manifest v1"
 // Entry is one committed manifest row. Key is the stable task key and
 // ContentSha is the hash of the artifact it points at.
 type Entry struct {
-	Key       string     `json:"key"`
-	Track     string     `json:"track"`
-	Kind      model.TrackKind `json:"kind"`
-	Tick      int64      `json:"tick"`
-	Size      int64      `json:"size"`
-	ContentSha string    `json:"content_sha256"`
+	Key        string          `json:"key"`
+	Track      string          `json:"track"`
+	Kind       model.TrackKind `json:"kind"`
+	Tick       int64           `json:"tick"`
+	Size       int64           `json:"size"`
+	ContentSha string          `json:"content_sha256"`
 }
 
 // line renders one row as a tab-separated, fixed-field text line. The format
@@ -118,17 +118,17 @@ func Parse(path string) ([]Entry, error) {
 		fields := strings.Split(line, "\t")
 		if len(fields) != 6 {
 			return nil, model.NewError(model.StageCommit, "manifest-row", path, "",
-				int64(i + 1),
+				int64(i+1),
 				fmt.Errorf("%w: %d fields", model.ErrCheckpoint, len(fields)))
 		}
 		var tick, size int64
 		if _, err := fmt.Sscanf(fields[3], "%d", &tick); err != nil {
 			return nil, model.NewError(model.StageCommit, "manifest-tick", path, "",
-				int64(i + 1), fmt.Errorf("%w: %v", model.ErrCheckpoint, err))
+				int64(i+1), fmt.Errorf("%w: %v", model.ErrCheckpoint, err))
 		}
 		if _, err := fmt.Sscanf(fields[4], "%d", &size); err != nil {
 			return nil, model.NewError(model.StageCommit, "manifest-size", path, "",
-				int64(i + 1), fmt.Errorf("%w: %v", model.ErrCheckpoint, err))
+				int64(i+1), fmt.Errorf("%w: %v", model.ErrCheckpoint, err))
 		}
 		entries = append(entries, Entry{
 			Key: fields[0], Track: fields[1],

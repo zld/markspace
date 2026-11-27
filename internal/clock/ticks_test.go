@@ -11,12 +11,12 @@ func TestConvertRoundTripAndRounding(t *testing.T) {
 		value, srcHz, want int64
 	}{
 		{0, 48000, 0},
-		{48000, 48000, MasterHz},          // one second of audio
-		{3000, 30000, 9000},               // 100 ms of 30 kHz
-		{1, 48000, 2},                     // nearest rounding (1.875 -> 2)
-		{1, 44100, 2},                     // 2.04 -> 2
-		{-48000, 48000, -MasterHz},        // negative delta
-		{90000, 90000, MasterHz},          // RTP native scale is identity
+		{48000, 48000, MasterHz},   // one second of audio
+		{3000, 30000, 9000},        // 100 ms of 30 kHz
+		{1, 48000, 2},              // nearest rounding (1.875 -> 2)
+		{1, 44100, 2},              // 2.04 -> 2
+		{-48000, 48000, -MasterHz}, // negative delta
+		{90000, 90000, MasterHz},   // RTP native scale is identity
 	}
 	for _, c := range cases {
 		got, err := Convert(c.value, c.srcHz)

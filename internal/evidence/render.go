@@ -25,6 +25,7 @@ type Report struct {
 	Alignment      []AlignmentError `json:"alignment"`
 	MaxAlignError  int64            `json:"max_alignment_error_tick"`
 	MissingEvents  int              `json:"missing_events"`
+	ConflictEvents int              `json:"conflict_events"`
 }
 
 // Build walks the reconstructed tracks and aligned timeline and assembles
@@ -56,9 +57,10 @@ func Build(tracks []model.Track, tl *timeline.Timeline) (*Report, error) {
 		}
 	}
 	rep.Alignment = Alignment(tl)
-	maxErr, missing := MaxAbsAlignmentError(rep.Alignment)
+	maxErr, missing, conflict := alignmentTotals(rep.Alignment, tl)
 	rep.MaxAlignError = int64(maxErr)
 	rep.MissingEvents = missing
+	rep.ConflictEvents = conflict
 	return rep, nil
 }
 
@@ -104,6 +106,7 @@ func (r *Report) Summary() string {
 			" rms_dbfs=" + ftoa(peak.RMS) + "\n")
 	}
 	b.WriteString("  alignment: max_abs_error_tick=" + itoa(int(r.MaxAlignError)) +
-		" missing=" + itoa(r.MissingEvents) + "\n")
+		" missing=" + itoa(r.MissingEvents) +
+		" conflict=" + itoa(r.ConflictEvents) + "\n")
 	return b.String()
 }

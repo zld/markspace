@@ -237,6 +237,17 @@ func writeTrak(w *mp4.Writer, s Spec, plan []model.PlanItem, tr trackSpec) error
 	return endBox(w)
 }
 
+// trSeed returns the deterministic pixel/PCM seed writeMdat used for this
+// track's samples, so the reader can reproduce the exact stored bytes.
+func trSeed(s Spec, tr trackSpec) uint32 {
+	switch tr.id {
+	case RendLow:
+		return s.Seed ^ 0xffff
+	default:
+		return s.Seed
+	}
+}
+
 // buildCatalog renders the binary smpc payload for one track.
 func buildCatalog(s Spec, plan []model.PlanItem, tr trackSpec) ([]byte, error) {
 	var b bytes.Buffer
@@ -251,6 +262,10 @@ func buildCatalog(s Spec, plan []model.PlanItem, tr trackSpec) ([]byte, error) {
 		b.Write(tmp[:])
 	}
 	writeU32(uint32(tr.timescale))
+	// The generation seed lets the reader reproduce the exact media bytes
+	// that writeMdat stored, so evidence hashes come from real sample
+	// content rather than an assumed default.
+	writeU32(trSeed(s, tr))
 	switch tr.kind {
 	case model.KindVideo:
 		writeU32(uint32(s.VideoFrames))
@@ -284,7 +299,10 @@ func buildCatalog(s Spec, plan []model.PlanItem, tr trackSpec) ([]byte, error) {
 		}
 		writeU32(uint32(len(entries)))
 		for _, it := range entries {
-			src := int64(it.ExpectedTick) * tr.timescale / clock.MasterHz
+			// Catalogs carry the observed presentation time, including the
+			// planned publish delay, so the reader reconstructs real delay.
+			observed := int64(it.ExpectedTick) + int64(it.DelayTicks)
+			src := observed * tr.timescale / clock.MasterHz
 			b.WriteByte(EntryEvent)
 			writeU32(it.Seq)
 			writeU64(uint64(src))

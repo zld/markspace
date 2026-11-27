@@ -35,8 +35,28 @@ func TestPlanDeterministicAndFaults(t *testing.T) {
 			dups++
 		}
 	}
+	// The acceptance scenario is clean: every event publishes exactly once.
+	if drops != 0 || dups != 0 {
+		t.Fatalf("default plan must have no anomalies, got drop=%d dup=%d",
+			drops, dups)
+	}
+	// The anomaly scenario injects exactly one drop and one duplicate.
+	fp, err := Plan(DefaultSpec(FaultEvents))
+	if err != nil {
+		t.Fatal(err)
+	}
+	drops, dups = 0, 0
+	for _, it := range fp {
+		if it.Drop {
+			drops++
+		}
+		if it.Duplicate {
+			dups++
+		}
+	}
 	if drops != 1 || dups != 1 {
-		t.Fatalf("want 1 drop and 1 duplicate, got %d/%d", drops, dups)
+		t.Fatalf("events fault: want 1 drop and 1 duplicate, got %d/%d",
+			drops, dups)
 	}
 }
 

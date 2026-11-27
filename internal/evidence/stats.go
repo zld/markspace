@@ -17,14 +17,14 @@ import (
 
 // FrameStats is the offline evidence for one decoded video frame.
 type FrameStats struct {
-	Track    string `json:"track"`
-	Seq      uint32 `json:"seq"`
-	Tick     int64  `json:"tick"`
-	Sha256   string `json:"sha256"`
-	Width    int    `json:"width"`
-	Height   int    `json:"height"`
-	Mean     float64 `json:"pixel_mean"`
-	MeanAbs  float64 `json:"pixel_mean_abs_deviation"`
+	Track   string  `json:"track"`
+	Seq     uint32  `json:"seq"`
+	Tick    int64   `json:"tick"`
+	Sha256  string  `json:"sha256"`
+	Width   int     `json:"width"`
+	Height  int     `json:"height"`
+	Mean    float64 `json:"pixel_mean"`
+	MeanAbs float64 `json:"pixel_mean_abs_deviation"`
 }
 
 // AudioStats is the offline evidence for one audio sample block.
@@ -40,12 +40,12 @@ type AudioStats struct {
 
 // AlignmentError is the signed observed-minus-planned error of one event.
 type AlignmentError struct {
-	Key     string `json:"key"`
-	Track   string `json:"track"`
-	Planned int64  `json:"planned_tick"`
-	Observed int64 `json:"observed_tick"`
-	Error   int64  `json:"error_tick"` // observed - planned
-	Missing bool   `json:"missing"`
+	Key      string `json:"key"`
+	Track    string `json:"track"`
+	Planned  int64  `json:"planned_tick"`
+	Observed int64  `json:"observed_tick"`
+	Error    int64  `json:"error_tick"` // observed - planned
+	Missing  bool   `json:"missing"`
 }
 
 // hashBytes returns the full lowercase hex SHA-256 of the given bytes.
@@ -100,7 +100,7 @@ func Audio(trackID string, s model.Sample) (AudioStats, error) {
 	}
 	peakDB := 20 * math.Log10(float64(peak)/32768.0)
 	rms := math.Sqrt(sqSum / float64(len(s.Audio)))
-	rmsDB := 20 * math.Log10(rms / 32768.0)
+	rmsDB := 20 * math.Log10(rms/32768.0)
 	return AudioStats{
 		Track: trackID, Seq: s.Seq, Tick: int64(s.Tick),
 		Sha256: hashBytes(int16LE(s.Audio)),
@@ -122,7 +122,9 @@ func Alignment(tl *timeline.Timeline) []AlignmentError {
 			Missing:  a.Missing,
 		}
 		if !a.Missing {
-			ae.Error = int64(a.ObservedTick) - int64(a.Plan.ExpectedTick)
+			// a.Delay is ObservedTick - ExpectedTick, computed once during
+			// alignment so the two cannot drift.
+			ae.Error = int64(a.Delay)
 		}
 		out = append(out, ae)
 	}
@@ -132,8 +134,15 @@ func Alignment(tl *timeline.Timeline) []AlignmentError {
 // MaxAbsAlignmentError returns the largest absolute alignment error across
 // observed events, and the count of missing events alongside it.
 func MaxAbsAlignmentError(errs []AlignmentError) (clock.Tick, int) {
+	max, missing, _ := alignmentTotals(errs, nil)
+	return max, missing
+}
+
+// alignmentTotals computes the max absolute error, missing count and, when a
+// timeline is supplied, the number of conflicting alignments.
+func alignmentTotals(errs []AlignmentError, tl *timeline.Timeline) (clock.Tick, int, int) {
 	var max clock.Tick
-	var missing int
+	var missing, conflict int
 	for _, e := range errs {
 		if e.Missing {
 			missing++
@@ -147,7 +156,14 @@ func MaxAbsAlignmentError(errs []AlignmentError) (clock.Tick, int) {
 			max = clock.Tick(abs)
 		}
 	}
-	return max, missing
+	if tl != nil {
+		for _, a := range tl.Alignment {
+			if a.Conflict {
+				conflict++
+			}
+		}
+	}
+	return max, missing, conflict
 }
 
 func int16LE(pcm []int16) []byte {

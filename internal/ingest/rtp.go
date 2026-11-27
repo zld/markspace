@@ -65,13 +65,17 @@ type streamState struct {
 	out        *Stream
 	hz         int64
 	prevAbs    int64
-	baseAbs    int64
-	haveBase   bool
+	haveFirst  bool
 	nextSample uint32
 }
 
-// ReadRTP streams the length-prefixed RTP capture at path, expanding 32-bit
-// timestamp and 16-bit sequence wraparound into absolute master ticks.
+// ReadRTP streams the length-prefixed RTP capture at path one packet at a
+// time, expanding 32-bit timestamp wraparound into absolute master ticks on a
+// single capture-wide time line. The first packet seen defines the global
+// origin; every other SSRC is anchored to it through its own clock rate, so a
+// 48 kHz audio track and a 90 kHz video/metadata track keep their true
+// presentation offset. No packet is buffered, so memory stays bounded by one
+// packet and one growing sample/event list per stream.
 func ReadRTP(path string) (*RTPResult, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -82,6 +86,7 @@ func ReadRTP(path string) (*RTPResult, error) {
 	res := &RTPResult{}
 	states := map[uint32]*streamState{}
 	table := ssrcTable()
+	metaTable := metaTagTrack()
 
 	var hdr [8]byte
 	if _, err := io.ReadFull(f, hdr[:]); err != nil {
@@ -95,6 +100,8 @@ func ReadRTP(path string) (*RTPResult, error) {
 	count := binary.BigEndian.Uint32(hdr[4:])
 
 	var pos int64 = 8
+	var anchor clock.Tick
+	anchorSet := false
 	for i := uint32(0); i < count; i++ {
 		var lenbuf [4]byte
 		if _, err := io.ReadFull(f, lenbuf[:]); err != nil {
@@ -106,18 +113,29 @@ func ReadRTP(path string) (*RTPResult, error) {
 		if _, err := io.ReadFull(f, raw); err != nil {
 			return nil, truncErr(path, "", pos, err)
 		}
+		recOff := pos
 		pos += int64(n)
 
 		pkt := &rtp.Packet{}
 		if err := pkt.Unmarshal(raw); err != nil {
 			return nil, model.NewError(model.StageParse, "rtp-unmarshal", path,
-				"", pos-int64(n), err)
+				"", recOff, err)
 		}
 		meta, ok := table[pkt.SSRC]
 		if !ok {
 			return nil, model.NewError(model.StageParse, "ssrc", path, "",
-				pos-int64(n), fmt.Errorf("unknown SSRC %#x", pkt.SSRC))
+				recOff, fmt.Errorf("unknown SSRC %#x", pkt.SSRC))
 		}
+		if !anchorSet {
+			// The very first packet is time zero for the whole capture.
+			master, err := clock.Convert(int64(pkt.Timestamp), meta.hz)
+			if err != nil {
+				return nil, model.NewError(model.StageParse, "anchor", path,
+					meta.trackID, recOff, err)
+			}
+			anchor, anchorSet = master, true
+		}
+
 		st := states[pkt.SSRC]
 		if st == nil {
 			st = &streamState{
@@ -128,12 +146,12 @@ func ReadRTP(path string) (*RTPResult, error) {
 			states[pkt.SSRC] = st
 			res.Streams = append(res.Streams, st.out)
 		}
-		if err := st.consume(pkt); err != nil {
+		if _, err := st.consume(pkt, anchor, metaTable); err != nil {
 			return nil, model.NewError(model.StageParse, "unwrap", path,
-				meta.trackID, pos-int64(n), err)
+				meta.trackID, recOff, err)
 		}
 	}
-	if len(res.Streams) == 0 {
+	if !anchorSet {
 		return nil, model.NewError(model.StageParse, "no-streams", path, "", 0,
 			fmt.Errorf("%w: capture holds no packets", model.ErrTruncated))
 	}
@@ -145,42 +163,47 @@ func truncErr(path, track string, off int64, cause error) error {
 		fmt.Errorf("%w: %v", model.ErrTruncated, cause))
 }
 
-func (s *streamState) consume(pkt *rtp.Packet) error {
-	// Expand the 32-bit timestamp against this SSRC's running cursor.
+// consume expands one packet on the capture-wide time line. anchor is the
+// global origin in master ticks; this SSRC's origin is that same instant
+// expressed in the SSRC's own clock, so the raw delta divides cleanly.
+func (s *streamState) consume(pkt *rtp.Packet, anchor clock.Tick,
+	metaTable map[byte]struct {
+		id   string
+		kind model.TrackKind
+	}) (clock.Tick, error) {
+	origin := anchor.Scale(s.hz)
 	var abs int64
-	if !s.haveBase {
+	if !s.haveFirst {
 		abs = int64(pkt.Timestamp)
-		s.baseAbs = abs
-		s.haveBase = true
+		s.haveFirst = true
 	} else {
-		abs = clock.Unwrap(s.prevAbs, uint64(pkt.Timestamp), clock.RTPTimestampMod)
+		abs = clock.Unwrap(s.prevAbs, uint64(pkt.Timestamp),
+			clock.RTPTimestampMod)
 	}
 	s.prevAbs = abs
-	rel := abs - s.baseAbs // transport-relative units in this SSRC's clock
-	tick, err := clock.Convert(rel, s.hz)
+
+	tick, err := clock.Convert(abs-origin, s.hz)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	if s.out.Kind == model.KindID3 && pkt.PayloadType == fixture.PTMeta {
-		return s.consumeMeta(pkt, tick)
+		return tick, s.consumeMeta(pkt, tick, metaTable)
 	}
-	// Media sample: sequence is derived from arrival order per SSRC; the RTP
-	// 16-bit sequence number is carried for diagnostics.
 	seq := s.nextSample
 	s.nextSample++
-	s.out.Samples = append(s.out.Samples, model.Sample{
-		Seq:  seq,
-		Tick: tick,
-	})
-	return nil
+	s.out.Samples = append(s.out.Samples, model.Sample{Seq: seq, Tick: tick})
+	return tick, nil
 }
 
-func (s *streamState) consumeMeta(pkt *rtp.Packet, tick clock.Tick) error {
+func (s *streamState) consumeMeta(pkt *rtp.Packet, tick clock.Tick,
+	tagTable map[byte]struct {
+		id   string
+		kind model.TrackKind
+	}) error {
 	if len(pkt.Payload) < 9 {
 		return fmt.Errorf("%w: meta payload %d bytes", model.ErrTruncated, len(pkt.Payload))
 	}
-	tagTable := metaTagTrack()
 	tag, ok := tagTable[pkt.Payload[0]]
 	if !ok {
 		return fmt.Errorf("unknown metadata payload tag %d", pkt.Payload[0])
@@ -194,8 +217,7 @@ func (s *streamState) consumeMeta(pkt *rtp.Packet, tick clock.Tick) error {
 	sum := sha256Short(bytes.Clone(pkt.Payload[9 : 9+klen]))
 	s.out.Events = append(s.out.Events, model.Event{
 		Key: key, Track: tag.id, Kind: tag.kind, Seq: seq,
-		ObservedTick: tick, Delay: tick, PayloadHash: sum,
+		ObservedTick: tick, PayloadHash: sum,
 	})
 	return nil
 }
-
