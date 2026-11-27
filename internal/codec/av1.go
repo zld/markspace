@@ -25,9 +25,9 @@ var av1TypeNames = map[int]string{
 
 // AV1 OBU header flags.
 const (
-	obuTypeMask  = 0x78 // bits 7..4 hold obu_type
-	obuExtension = 0x04 // bit 2: extension byte present
-	obuHasSize   = 0x02 // bit 1: obu_size field present
+	OBUTypeMask  = 0x78 // bits 7..4 hold obu_type
+	OBUExtension = 0x04 // bit 2: extension byte present
+	OBUHasSize   = 0x02 // bit 1: obu_size field present
 )
 
 // obuHeader is the decoded one-byte OBU header plus its extension flag.
@@ -41,9 +41,9 @@ type obuHeader struct {
 // parseOBUHeader decodes the leading OBU header byte.
 func parseOBUHeader(b byte) obuHeader {
 	h := obuHeader{
-		Type:    int((b & obuTypeMask) >> 3),
-		HasExt:  b&obuExtension != 0,
-		HasSize: b&obuHasSize != 0,
+		Type:    int((b & OBUTypeMask) >> 3),
+		HasExt:  b&OBUExtension != 0,
+		HasSize: b&OBUHasSize != 0,
 	}
 	h.HeaderSize = 1
 	if h.HasExt {

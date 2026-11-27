@@ -244,6 +244,14 @@ func (w *WAL) IsCommitted(stage, track string) bool {
 	return w.committed[keyOf(stage, track)]
 }
 
+// HasCommitted reports whether any stage reached a durable commit, which is
+// the resume signal even before a final checkpoint is finalized.
+func (w *WAL) HasCommitted() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return len(w.committed) > 0
+}
+
 // CommittedEntries returns a sorted snapshot of committed WAL records.
 func (w *WAL) CommittedEntries() []Entry {
 	w.mu.Lock()

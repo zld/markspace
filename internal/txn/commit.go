@@ -48,6 +48,9 @@ func OpenManager(dir string) (*Manager, error) {
 // WAL exposes the underlying journal for stage appends/commits.
 func (m *Manager) WAL() *WAL { return m.wal }
 
+// HasCommitted reports whether any durable stage commit exists in this dir.
+func (m *Manager) HasCommitted() bool { return m.wal.HasCommitted() }
+
 // Finalize verifies every committed WAL artifact still hashes correctly,
 // builds the checkpoint, and commits it atomically. Any verification failure
 // aborts before the checkpoint is replaced and returns a recovery error.

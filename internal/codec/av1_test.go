@@ -7,7 +7,7 @@ import (
 
 // obu builds a length-prefixed AV1 OBU: 4-byte length + OBU header + payload.
 func obu(obuType int, payload []byte, keyframe bool) []byte {
-	hdr := byte(obuType<<3) | obuHasSize
+	hdr := byte(obuType<<3) | OBUHasSize
 	body := []byte{hdr}
 	if obuType == OBUFrame || obuType == OBUFrameHeader {
 		// Frame header syntax: show_existing_frame(1)=0, frame_type(2),
@@ -25,11 +25,11 @@ func obu(obuType int, payload []byte, keyframe bool) []byte {
 }
 
 func TestOBUHeaderParse(t *testing.T) {
-	h := parseOBUHeader(byte(OBUSequenceHeader<<3) | obuHasSize)
+	h := parseOBUHeader(byte(OBUSequenceHeader<<3) | OBUHasSize)
 	if h.Type != OBUSequenceHeader || !h.HasSize || h.HeaderSize != 1 {
 		t.Fatalf("seq header parse wrong: %+v", h)
 	}
-	ext := parseOBUHeader(byte(OBUFrame<<3) | obuHasSize | obuExtension)
+	ext := parseOBUHeader(byte(OBUFrame<<3) | OBUHasSize | OBUExtension)
 	if !ext.HasExt || ext.HeaderSize != 2 {
 		t.Fatalf("extension header wrong: %+v", ext)
 	}
