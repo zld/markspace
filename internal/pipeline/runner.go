@@ -252,21 +252,18 @@ func Run(ctx context.Context, src io.Reader, size int64, cfg Config, stages ...S
 						counter.release()
 						continue
 					}
-					_ = chunk
 					select {
 					case queues[i+1] <- chunk:
 					default:
 						// The next queue is full: block here, which in turn
 						// stops this stage reading from its own input and
-						// eventually stalls the source reader.
+						// eventually stalls the source reader. The chunk is
+						// already counted as live since it was first queued.
 						res.Waits++
 						counter.countWait()
-						counter.acquire()
 						select {
 						case queues[i+1] <- chunk:
-							counter.release() // handed off: still counted as live
 						case <-runCtx.Done():
-							counter.release()
 							counter.release()
 							return
 						}
