@@ -57,6 +57,27 @@ func New(cfg Config) (*Pipeline, error) {
 // SampleDir returns the directory holding generated inputs.
 func (p *Pipeline) SampleDir() string { return filepath.Join(p.cfg.Dir, "samples") }
 
+// DropCheckpointsAfter deletes checkpoints of every stage ordered after
+// the named stage, simulating a run that never completed them.
+func (p *Pipeline) DropCheckpointsAfter(stage string) error {
+	found := false
+	for _, s := range StageOrder {
+		if s == stage {
+			found = true
+			continue
+		}
+		if found {
+			if err := p.store.Remove(s); err != nil {
+				return err
+			}
+		}
+	}
+	if !found {
+		return fmt.Errorf("pipeline: unknown stage %q", stage)
+	}
+	return nil
+}
+
 // GenerateInputs (re)writes all sample inputs deterministically.
 func (p *Pipeline) GenerateInputs() error {
 	return generateInputs(p.SampleDir(), p.cfg.Seed)

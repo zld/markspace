@@ -95,3 +95,16 @@ func (s *Store) Completed(stage string) bool {
 	_, err = os.Stat(p)
 	return err == nil
 }
+
+// Remove deletes a stage checkpoint. Missing checkpoints are ignored.
+func (s *Store) Remove(stage string) error {
+	p, err := s.pathFor(stage)
+	if err != nil {
+		return err
+	}
+	err = os.Remove(p)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return err
+}

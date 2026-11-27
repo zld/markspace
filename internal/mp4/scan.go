@@ -103,14 +103,21 @@ func Scan(ctx context.Context, path string) (Result, error) {
 		}
 		res.Diags.Add(model.NewDiag(model.StageScan, "truncated-container", off, true, err.Error()))
 	}
-	// Trailing bytes after the last top-level box.
+	// Trailing bytes after the last top-level box — only meaningful when
+	// no truncation was detected (a truncated box already explains them).
+	truncated := false
+	for _, d := range res.Diags {
+		if d.Code == "truncated-box" || d.Code == "truncated-container" {
+			truncated = true
+		}
+	}
 	var lastEnd int64
 	for _, b := range res.Boxes {
 		if b.Depth == 0 && b.End() > lastEnd {
 			lastEnd = b.End()
 		}
 	}
-	if len(res.Boxes) > 0 && lastEnd < fi.Size() {
+	if !truncated && len(res.Boxes) > 0 && lastEnd < fi.Size() {
 		d := model.NewDiag(model.StageScan, "trailing-data", lastEnd, true,
 			fmt.Sprintf("%d unread bytes after last box", fi.Size()-lastEnd))
 		d.EndOffset = fi.Size()
