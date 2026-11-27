@@ -1,0 +1,10 @@
+# build artifacts
+/continuity
+*.test
+*.out
+
+# local run output
+/tmp/
+/tmp-*/
+/tmp-fixtures/
+/.tmp-gen/
