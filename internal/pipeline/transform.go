@@ -11,13 +11,13 @@ import (
 // Options carries the operator-facing thresholds.
 type Options struct {
 	ParseOptions
-	MinQuality       float64 // minimum acceptable quality score
-	MaxBitrate       int64   // hard bitrate ceiling in bit/s
-	TargetBPS        int64   // target bitrate in bit/s
-	BudgetMS         int64   // processing budget
-	MaxDriftPPM      float64 // drift threshold
-	CostPerPacketUS  float64 // deterministic cost model: RTP packet
-	CostPerBlockUS   float64 // deterministic cost model: WAV sample block
+	MinQuality      float64 // minimum acceptable quality score
+	MaxBitrate      int64   // hard bitrate ceiling in bit/s
+	TargetBPS       int64   // target bitrate in bit/s
+	BudgetMS        int64   // processing budget
+	MaxDriftPPM     float64 // drift threshold
+	CostPerPacketUS float64 // deterministic cost model: RTP packet
+	CostPerBlockUS  float64 // deterministic cost model: WAV sample block
 }
 
 // Analysis is the stage-2 output: timing, drift, segments, quality and
@@ -58,7 +58,10 @@ func Analyze(in *Input, opts Options) *Analysis {
 		}
 	}
 	a.Segments = segment.Build(a.SampleCounts, segment.MinPackets)
-	// Monotonic media time: each packet advances by its segment's frame.
+	// Monotonic media time: each sequence step advances one frame of
+	// the segment it falls in. Isolated or late packets leave holes in
+	// the point list; the sequence difference spans them so the media
+	// clock stays honest instead of fabricating samples.
 	var driftSamples []clock.Sample
 	var cum uint64
 	segOf := func(pkt int) uint64 {
@@ -74,7 +77,11 @@ func Analyze(in *Input, opts Options) *Analysis {
 	}
 	for i, p := range pts {
 		if i > 0 {
-			cum += segOf(i - 1)
+			gap := int(uint16(p.Packet.Seq - pts[i-1].Packet.Seq))
+			if gap < 1 {
+				gap = 1
+			}
+			cum += uint64(gap) * segOf(i-1)
 		}
 		driftSamples = append(driftSamples, clock.Sample{
 			Index:    i,

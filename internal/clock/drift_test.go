@@ -47,7 +47,7 @@ func TestFitExceedingDriftMarksRange(t *testing.T) {
 		t.Fatal("drift-exceeding range not marked")
 	}
 	r := res.Exceeds[len(res.Exceeds)-1]
-	if r.Start < 39 || r.End != 60 {
+	if r.Start < 33 || r.Start > 41 || r.End != 60 {
 		t.Fatalf("range %v does not cover the drifting tail", r)
 	}
 	var anomaly bool

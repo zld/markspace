@@ -65,15 +65,25 @@ func Fit(samples []Sample, maxPPM float64) *Result {
 			res.MaxResid = r
 		}
 	}
-	// Local drift: slope of each adjacent pair, smoothed over the
-	// region. Contiguous pairs beyond maxPPM form Exceeds ranges.
+	// Local drift: least-squares-free slope over a sliding window of
+	// samples, so a sustained drifting region forms one contiguous
+	// range instead of per-tick noise.
+	const smooth = 8
 	runStart := -1
 	for i := 0; i+1 < n; i++ {
-		dx := samples[i+1].SampleNS - samples[i].SampleNS
+		lo := i - smooth/2
+		if lo < 0 {
+			lo = 0
+		}
+		hi := lo + smooth
+		if hi > n-1 {
+			hi = n - 1
+		}
+		dx := samples[hi].SampleNS - samples[lo].SampleNS
 		if dx <= 0 {
 			continue
 		}
-		local := (float64(samples[i+1].RTPNS-samples[i].RTPNS)/float64(dx) - 1) * 1e6
+		local := (float64(samples[hi].RTPNS-samples[lo].RTPNS)/float64(dx) - 1) * 1e6
 		bad := local > maxPPM || local < -maxPPM
 		if bad && runStart < 0 {
 			runStart = i
