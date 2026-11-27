@@ -67,9 +67,9 @@ func Execute(opts RunOptions) (out RunOutcome) {
 	if err != nil {
 		return RunOutcome{ExitCode: 1, Err: err, Summary: failureSummary(opts, err)}
 	}
-	var mp4 *MP4Track
+	var mp4 []*MP4Track
 	if len(fx.MP4Bytes) > 0 {
-		mt, rerr := ReadMP4Track(fx.MP4Bytes)
+		mt, rerr := ReadMP4Tracks(fx.MP4Bytes)
 		if rerr != nil {
 			return RunOutcome{ExitCode: 1, Err: rerr, Summary: failureSummary(opts, rerr)}
 		}

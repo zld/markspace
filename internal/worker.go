@@ -107,7 +107,7 @@ func (w *Worker) Run(d *Dag) *RunResult {
 			}
 			continue
 		}
-		inputDigest := nodeInputDigest(n, artifacts)
+		inputDigest := nodeInputDigest(n, artifacts, d.inputDigest)
 		key := w.IdempotencyKey(id, inputDigest)
 		if art, ok := w.cache[key]; ok {
 			served := *art
@@ -218,13 +218,14 @@ func earliestFailedDep(n *Node, states map[NodeID]*NodeResult) (NodeID, string) 
 	return blocked, reason
 }
 
-// nodeInputDigest hashes the node identity and its dependencies' artifact
-// digests in sorted order, so it does not depend on execution order.
-func nodeInputDigest(n *Node, artifacts map[NodeID]*Artifact) string {
+// nodeInputDigest hashes the root input digest, the node identity, and its
+// dependencies' artifact digests in sorted order, so it does not depend on
+// execution order and cannot collide across different traces.
+func nodeInputDigest(n *Node, artifacts map[NodeID]*Artifact, rootInput string) string {
 	deps := append([]NodeID(nil), n.Deps...)
 	sort.Slice(deps, func(i, j int) bool { return deps[i] < deps[j] })
-	parts := make([]string, 0, len(deps)+1)
-	parts = append(parts, string(n.ID))
+	parts := make([]string, 0, len(deps)+2)
+	parts = append(parts, rootInput, string(n.ID))
 	for _, dep := range deps {
 		if a := artifacts[dep]; a != nil {
 			parts = append(parts, string(dep)+"="+a.Digest)

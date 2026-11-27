@@ -18,10 +18,14 @@ type Node struct {
 	MaxRetry int
 }
 
-// Dag is a directed acyclic graph of nodes.
+// Dag is a directed acyclic graph of nodes. InputDigest identifies the run's
+// root input (for rtpreplay, the validated trace) and participates in every
+// node's idempotency key, so two different traces can never share a cached
+// root artifact.
 type Dag struct {
-	nodes map[NodeID]*Node
-	order []NodeID
+	nodes       map[NodeID]*Node
+	order       []NodeID
+	inputDigest string
 }
 
 // NewDag validates the graph up front: duplicate IDs, unknown dependencies,
@@ -95,3 +99,9 @@ func (d *Dag) topoSort() ([]NodeID, error) {
 
 // Order returns the deterministic execution order.
 func (d *Dag) Order() []NodeID { return append([]NodeID(nil), d.order...) }
+
+// SetInputDigest records the root input digest used by idempotency keys.
+func (d *Dag) SetInputDigest(digest string) { d.inputDigest = digest }
+
+// InputDigest returns the root input digest.
+func (d *Dag) InputDigest() string { return d.inputDigest }
