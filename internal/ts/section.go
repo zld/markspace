@@ -88,7 +88,3 @@ func firstSectionTableID(payload []byte) (uint8, bool) {
 	}
 	return payload[1+pointer], true
 }
-
-// dispatchParsed is supplied in full by psi_tables.go; this placeholder keeps
-// section reassembly independently compilable.
-func (p *psiParser) dispatchParsed(pkt *Packet, idx int, off int64, sec []byte) {}
