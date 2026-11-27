@@ -46,6 +46,7 @@ func Generate(seed int64) *Scenario {
 	sc.Tracks = append(sc.Tracks, aacRTPTruncated(rng, sc.Expect))
 	sc.Tracks = append(sc.Tracks, aacMP4(rng))
 	sc.Tracks = append(sc.Tracks, videoColorConflict())
+	sc.Tracks = append(sc.Tracks, cycleTracks()...)
 
 	for _, t := range sc.Tracks {
 		sc.Order = append(sc.Order, t.Meta.TrackID)
@@ -207,6 +208,18 @@ func videoColorConflict() model.TrackInput {
 				MatrixCoefficients: 1, FullRange: true,
 			},
 		},
+	}
+}
+
+// cycleTracks returns two packetless video tracks that depend on each other.
+// The graph must detect the cycle and deny both a processing configuration.
+func cycleTracks() []model.TrackInput {
+	meta := func(id string) model.TrackMeta {
+		return model.TrackMeta{TrackID: id, Codec: model.CodecVideo, ClockRate: 90000}
+	}
+	return []model.TrackInput{
+		{Meta: meta("cyc-a"), DependsOn: []string{"cyc-b"}},
+		{Meta: meta("cyc-b"), DependsOn: []string{"cyc-a"}},
 	}
 }
 
