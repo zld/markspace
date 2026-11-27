@@ -41,8 +41,18 @@ func readAudioTrack(r *bytes.Reader, t *mp4.Track, all mp4.Tracks) (*MP4Track, e
 		return nil, NewError(CodeMP4, "mp4_track", "track timescale is zero")
 	}
 	out := &MP4Track{TrackID: t.TrackID, Codec: CodecAAC, Timescale: t.Timescale}
+	uniform, err := readUniformSampleSize(r)
+	if err != nil {
+		return nil, err
+	}
 	for i, s := range t.Samples {
-		out.Samples = append(out.Samples, MP4Sample{Index: i, Size: s.Size, Duration: s.TimeDelta, IsSync: true})
+		size := s.Size
+		if size == 0 {
+			// go-mp4's Probe only fills EntrySize; a uniform stsz stores a
+			// single shared size instead.
+			size = uniform
+		}
+		out.Samples = append(out.Samples, MP4Sample{Index: i, Size: size, Duration: s.TimeDelta, IsSync: true})
 	}
 	cfg, err := readASCFromTrack(r, t.TrackID, all)
 	if err != nil {
@@ -82,6 +92,24 @@ func readASCFromTrack(r *bytes.Reader, trackID uint32, all mp4.Tracks) (*AACConf
 		return nil, NewError(CodeMP4, "mp4_esds", "AudioSpecificConfig has no sample rate")
 	}
 	return &cfg, nil
+}
+
+// readUniformSampleSize returns stsz.SampleSize when the table uses the
+// uniform form, or 0 when per-sample sizes are present.
+func readUniformSampleSize(r *bytes.Reader) (uint32, error) {
+	boxes, err := mp4.ExtractBoxesWithPayload(r, nil, []mp4.BoxPath{
+		{mp4.BoxTypeMoov(), mp4.BoxTypeTrak(), mp4.BoxTypeMdia(), mp4.BoxTypeMinf(),
+			mp4.BoxTypeStbl(), mp4.BoxTypeStsz()},
+	})
+	if err != nil {
+		return 0, NewError(CodeMP4, "mp4_stsz", err.Error()).WithCause(err)
+	}
+	for _, b := range boxes {
+		if stsz, ok := b.Payload.(*mp4.Stsz); ok {
+			return stsz.SampleSize, nil
+		}
+	}
+	return 0, nil
 }
 
 // readOpusTrack finds an Opus sample entry and derives sample durations from
