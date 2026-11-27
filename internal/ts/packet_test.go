@@ -124,11 +124,12 @@ func TestAdaptationOnlyDoesNotIncrementCC(t *testing.T) {
 func TestSyncLossAndResync(t *testing.T) {
 	good := buildPacket(0x100, false, AFCPayloadOnly, 0)
 	good2 := buildPacket(0x100, false, AFCPayloadOnly, 1)
+	good3 := buildPacket(0x100, false, AFCPayloadOnly, 2) // confirms good2's sync
 	garbage := make([]byte, PacketSize)
 	for i := range garbage {
 		garbage[i] = 0x00
 	}
-	stream := append(append(good, garbage...), good2...)
+	stream := append(append(append(good, garbage...), good2...), good3...)
 	ec := &mediaerr.Collector{}
 	r := NewReader(bytes.NewReader(stream), ec)
 	if _, err := r.ReadPacket(); err != nil {
@@ -151,6 +152,27 @@ func TestTruncatedPacket(t *testing.T) {
 	r := NewReader(bytes.NewReader(make([]byte, 50)), ec)
 	if _, err := r.ReadPacket(); err == nil {
 		t.Fatal("expected error on truncated stream")
+	}
+}
+
+func TestTruncatedTailAfterGoodPackets(t *testing.T) {
+	// A full packet followed by a non-sync short tail must surface a
+	// truncation error rather than silently skipping the tail.
+	good := buildPacket(0x100, false, AFCPayloadOnly, 0)
+	tail := make([]byte, 50)
+	for i := range tail {
+		tail[i] = 0xAB
+	}
+	ec := &mediaerr.Collector{}
+	r := NewReader(bytes.NewReader(append(good, tail...)), ec)
+	if _, err := r.ReadPacket(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.ReadPacket(); err == nil {
+		t.Fatal("expected truncation error on short non-sync tail")
+	}
+	if ec.CountByCode(mediaerr.CodeSyncLost) == 0 {
+		t.Error("sync loss should be recorded before truncation")
 	}
 }
 

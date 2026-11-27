@@ -52,8 +52,11 @@ func (m *Mapping) HasPMTPID(pid uint16) bool {
 type PSITracker struct {
 	ec *mediaerr.Collector
 
-	activeVersion int // -1 until the first complete table
-	active        *Mapping
+	patVersion int // -1 until the first complete PAT
+	// PMT versions are tracked per PMT PID because each program numbers its
+	// own PMT versions independently of the PAT and of other programs.
+	pmtVersion map[uint16]int
+	active     *Mapping
 
 	// In-flight PAT versions: pending[version] -> per-section-number data.
 	patPending map[uint8]map[uint8][]byte
@@ -64,12 +67,13 @@ type PSITracker struct {
 // NewPSITracker builds a tracker that records table errors into ec.
 func NewPSITracker(ec *mediaerr.Collector) *PSITracker {
 	return &PSITracker{
-		ec:            ec,
-		activeVersion: -1,
-		active:        &Mapping{PMTs: map[uint16]*PMT{}},
-		patPending:    map[uint8]map[uint8][]byte{},
-		pmtPending:    map[uint8]map[uint16]map[uint8][]byte{},
-		assemblers:    map[uint16]*sectionAssembler{},
+		ec:         ec,
+		patVersion: -1,
+		pmtVersion: map[uint16]int{},
+		active:     &Mapping{PMTs: map[uint16]*PMT{}},
+		patPending: map[uint8]map[uint8][]byte{},
+		pmtPending: map[uint8]map[uint16]map[uint8][]byte{},
+		assemblers: map[uint16]*sectionAssembler{},
 	}
 }
 
@@ -115,7 +119,7 @@ func (t *PSITracker) handlePAT(section []byte, off int64) {
 		return
 	}
 	_, version, sectionNo, lastNo := sectionHeader(section)
-	if t.activeVersion >= 0 && int(version) < t.activeVersion {
+	if t.patVersion >= 0 && int(version) < t.patVersion {
 		t.ec.Add(mediaerr.Recoverable(mediaerr.CodeVersionRollback, PIDPAT, off,
 			"PAT version number rolled back", "keep previous complete mapping"))
 		return
@@ -168,7 +172,7 @@ func (t *PSITracker) commitPAT(version uint8, off int64) {
 		}
 	}
 	t.active = next
-	t.activeVersion = int(version)
+	t.patVersion = int(version)
 	t.patPending = map[uint8]map[uint8][]byte{}
 }
 
@@ -182,7 +186,7 @@ func (t *PSITracker) handlePMT(section []byte, pid uint16, off int64) {
 		return
 	}
 	_, version, sectionNo, lastNo := sectionHeader(section)
-	if t.activeVersion >= 0 && int(version) < t.activeVersion {
+	if prev, ok := t.pmtVersion[pid]; ok && int(version) < prev {
 		t.ec.Add(mediaerr.Recoverable(mediaerr.CodeVersionRollback, pid, off,
 			"PMT version number rolled back", "keep previous complete mapping"))
 		return
@@ -226,6 +230,6 @@ func (t *PSITracker) commitPMT(version uint8, pid uint16, section []byte) {
 		PCRPID:        pcrPID,
 		Streams:       streams,
 	}
-	t.activeVersion = int(version)
+	t.pmtVersion[pid] = int(version)
 	delete(t.pmtPending, version)
 }

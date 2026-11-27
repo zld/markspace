@@ -107,15 +107,28 @@ func (r *Reader) fill(n int) error {
 	return nil
 }
 
-// ReadPacket returns the next packet. At clean EOF it returns io.EOF.
+// ReadPacket returns the next packet. At clean EOF (no buffered bytes) it
+// returns io.EOF. A non-empty residual that cannot form a confirmed packet is
+// reported as truncation rather than a clean EOF.
 func (r *Reader) ReadPacket() (*Packet, error) {
 	if err := r.fill(PacketSize); err != nil {
-		return nil, err
+		if len(r.buf) == 0 {
+			return nil, err // genuine end of stream
+		}
+		// Some bytes remain but a full packet cannot be read; fall through to
+		// the sync/truncation logic below.
 	}
 	if r.buf[0] != SyncByte {
 		r.ec.Add(mediaerr.Recoverable(mediaerr.CodeSyncLost, 0, r.nextOffset,
 			"expected 0x47 sync byte", "rescan for next sync marker"))
 		if !r.resync() {
+			// Leftover bytes that never form a confirmed packet indicate the
+			// stream ended in the middle of a transport packet.
+			if len(r.buf) > 0 {
+				return nil, mediaerr.Fatal(mediaerr.CodeTruncatedPacket, 0, r.nextOffset,
+					"stream ended before a complete 188-byte packet",
+					"abort stream at truncation point")
+			}
 			return nil, mediaerr.Fatal(mediaerr.CodeSyncLost, 0, r.nextOffset,
 				"no sync marker within rescan window", "abort stream")
 		}
@@ -138,30 +151,27 @@ func (r *Reader) ReadPacket() (*Packet, error) {
 }
 
 // resync advances the buffer to the next 0x47 that is confirmed by another
-// 0x47 exactly one packet later. Returns false when the window is exhausted.
+// 0x47 exactly one packet later. A lone 0x47 with no confirming marker before
+// the source is exhausted is treated as a truncated packet, not a valid sync.
 func (r *Reader) resync() bool {
 	// Candidate sync positions run up to one packet beyond ResyncScan; the
 	// confirming marker then sits one more packet on.
 	limit := int(r.ResyncScan) + 1
-	var fallback int = -1
 	for i := 1; i < limit; i++ {
 		if err := r.fill(i + 1); err != nil {
 			if len(r.buf) < i+1 {
-				break // source exhausted
+				return false // source exhausted without a confirmed sync
 			}
 		}
 		if r.buf[i] != SyncByte {
 			continue
 		}
-		if fallback < 0 {
-			fallback = i
-		}
 		need := i + PacketSize + 1
 		if err := r.fill(need); err != nil {
 			if len(r.buf) < need {
-				// Stream ends before the confirming marker: accept the lone
-				// sync byte at end-of-stream, otherwise keep scanning.
-				continue
+				// A sync byte with no room for the confirming packet: the
+				// stream ends mid-packet, i.e. truncation.
+				return false
 			}
 		}
 		if r.buf[i+PacketSize] == SyncByte {
@@ -169,11 +179,6 @@ func (r *Reader) resync() bool {
 			r.buf = r.buf[i:]
 			return true
 		}
-	}
-	if fallback >= 0 {
-		r.nextOffset += int64(fallback)
-		r.buf = r.buf[fallback:]
-		return true
 	}
 	return false
 }
