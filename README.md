@@ -61,8 +61,8 @@ go run ./cmd/mediacore demo --corrupt-index --seed 17
 ### 中断与续跑
 
 ```sh
-go run ./cmd/mediacore demo --interrupt-migration --seed 17             # 退出码 3
-go run ./cmd/mediacore demo --interrupt-migration --resume --seed 17   # 退出码 0
+go run ./cmd/mediacore demo --interrupt-migration --seed 17             # 中断，程序退出码 3
+go run ./cmd/mediacore demo --interrupt-migration --resume --seed 17   # 续跑成功
 ```
 
 第一次在 `verify` 阶段后挂起，写出 `manifest/migration.point.json`。
@@ -76,6 +76,17 @@ go run ./cmd/mediacore demo --interrupt-migration --resume --seed 17   # 退出�
 | 2 | 输入损坏或质量门槛失败 |
 | 3 | 可恢复中断，等待续跑 |
 | 1 | 内部错误或 FFmpeg 不可用 |
+
+`go run` 会把子进程的非零退出码统一回报为 shell 状态 1，但会在 stderr
+打印 `exit status N` 行。要观察真实的 0/2/3 退出码（例如 CI 或脚本判断），
+请先构建再执行，或直接使用 `scripts/accept.sh`：
+
+```sh
+go build -o mediacore ./cmd/mediacore
+./mediacore demo --corrupt-index --seed 17; echo $?   # 2
+```
+
+程序自身始终按上表返回；`scripts/accept.sh` 正是用构建产物验证这些码。
 
 ## 结构
 
