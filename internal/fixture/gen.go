@@ -38,7 +38,9 @@ type Inputs struct {
 // at its legal parent boundary.
 func Generate(seed int64, corrupt string) Inputs {
 	rng := rand.New(rand.NewSource(seed))
-	mk := buildMatroska(rng, corrupt == "unknown-length-boundary")
+	segmentUnknown := corrupt == "truncated-block"
+	clusterUnknown := corrupt == "unknown-length-boundary" || corrupt == "truncated-block"
+	mk := buildMatroska(rng, segmentUnknown, clusterUnknown)
 	if corrupt == "truncated-block" {
 		mk = mk[:len(mk)-7] // cut inside the final SimpleBlock payload
 	}
@@ -122,7 +124,7 @@ func simpleBlock(rng *rand.Rand, track byte, tc int16, flags byte) []byte {
 	return elem(ebml.IDSimpleBlock, append(payload, p[:]...))
 }
 
-func buildMatroska(rng *rand.Rand, unknownSizeCluster bool) []byte {
+func buildMatroska(rng *rand.Rand, segmentUnknown, clusterUnknown bool) []byte {
 	head := elem(ebml.IDEBML, concat(
 		uintElem(ebml.IDEBMLVersion, 1), uintElem(ebml.IDEBMLReadVersion, 1),
 		uintElem(ebml.IDEBMLMaxIDLength, 4), uintElem(ebml.IDEBMLMaxSizeLength, 8),
@@ -171,14 +173,24 @@ func buildMatroska(rng *rand.Rand, unknownSizeCluster bool) []byte {
 	}
 	body := concat(uintElem(ebml.IDTimecode, 0), blocks)
 	var cluster []byte
-	if unknownSizeCluster {
+	if clusterUnknown {
 		cluster = idb(ebml.IDCluster)
 		cluster = append(cluster, 0x01, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF)
 		cluster = append(cluster, body...)
 	} else {
 		cluster = elem(ebml.IDCluster, body)
 	}
-	segment := elem(ebml.IDSegment, concat(info, tracks, cluster))
+	segmentBody := concat(info, tracks, cluster)
+	var segment []byte
+	if segmentUnknown {
+		// Unknown-size Segment (common for live streams): terminates
+		// at EOF, so a mid-block truncation is reported at the block.
+		segment = idb(ebml.IDSegment)
+		segment = append(segment, 0x01, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF)
+		segment = append(segment, segmentBody...)
+	} else {
+		segment = elem(ebml.IDSegment, segmentBody)
+	}
 	return concat(head, segment)
 }
 
