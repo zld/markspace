@@ -58,7 +58,7 @@ func TestDependencyFailureSkipsDownstream(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	res := p.Run(NewContext(), nil)
+	res, _ := p.Run(NewContext(), nil)
 	if res["scan"].Status != StatusFailed {
 		t.Fatalf("scan: %+v", res["scan"])
 	}
@@ -88,7 +88,7 @@ func TestResumeUsesCheckpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	cp := &memCP{done: map[string]bool{"scan": true}}
-	res := p.Run(NewContext(), cp)
+	res, _ := p.Run(NewContext(), cp)
 	if res["scan"].Status != StatusCached {
 		t.Fatalf("scan should be cached: %+v", res["scan"])
 	}
@@ -96,7 +96,7 @@ func TestResumeUsesCheckpoint(t *testing.T) {
 		t.Fatalf("ran=%v", ran)
 	}
 	// Second run: everything cached, nothing re-executes.
-	res = p.Run(NewContext(), cp)
+	res, _ = p.Run(NewContext(), cp)
 	for id, r := range res {
 		if r.Status != StatusCached {
 			t.Fatalf("step %s not cached on rerun: %+v", id, r)

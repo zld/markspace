@@ -19,6 +19,8 @@ type RTPParams struct {
 	DupEvery      int    // duplicate every Nth packet (0 disables)
 	ReorderEvery  int    // swap every Nth packet with its successor (0 disables)
 	TruncateAt    int    // emit a truncated datagram at this index (-1 disables)
+	BadOpusAt     int    // emit an undecodable Opus payload at this index (-1 disables)
+	PayloadSize   int    // Opus payload bytes per packet (default 5)
 }
 
 // GenRTP builds a datagram stream (in arrival order) carrying minimal Opus
@@ -30,9 +32,16 @@ func GenRTP(p RTPParams) [][]byte {
 	for i := 0; i < p.Count; i++ {
 		seq := p.StartSeq + uint16(i)
 		ts := p.StartTS + uint32(i)*p.SamplesPerPkt
-		payload := make([]byte, 5)
+		size := p.PayloadSize
+		if size <= 0 {
+			size = 5
+		}
+		payload := make([]byte, size)
 		payload[0] = 0xF8 // Opus TOC: config 31 (CELT 20 ms), code 0
 		rng.Read(payload[1:])
+		if p.BadOpusAt >= 0 && i == p.BadOpusAt {
+			payload = []byte{0x03} // TOC code 3 with missing frame-count byte
+		}
 		pkt := &rtp.Packet{
 			Header:  rtp.Header{Version: 2, SequenceNumber: seq, Timestamp: ts, SSRC: 0xC0FFEE},
 			Payload: payload,

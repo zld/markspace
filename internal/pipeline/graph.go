@@ -69,6 +69,10 @@ type Checkpointer interface {
 type Pipeline struct {
 	steps map[string]*Step
 	order []string
+
+	// OnStepComplete, if set, is called after each step is recorded. A
+	// non-nil return aborts the run (used to simulate interruption).
+	OnStepComplete func(id string) error
 }
 
 // New validates the graph (unknown deps, cycles) and computes a deterministic
@@ -137,7 +141,7 @@ func (p *Pipeline) Versions() map[string]int {
 // Run executes steps in dependency order. A step whose dependencies did not
 // all succeed is skipped and never produces a success marker. With a
 // Checkpointer, completed steps are recorded and reused on rerun.
-func (p *Pipeline) Run(ctx *Context, cp Checkpointer) map[string]Result {
+func (p *Pipeline) Run(ctx *Context, cp Checkpointer) (map[string]Result, error) {
 	res := map[string]Result{}
 	for _, id := range p.order {
 		s := p.steps[id]
@@ -166,6 +170,11 @@ func (p *Pipeline) Run(ctx *Context, cp Checkpointer) map[string]Result {
 			}
 		}
 		res[id] = Result{Status: StatusOK}
+		if p.OnStepComplete != nil {
+			if err := p.OnStepComplete(id); err != nil {
+				return res, err
+			}
+		}
 	}
-	return res
+	return res, nil
 }
