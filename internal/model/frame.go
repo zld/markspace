@@ -10,6 +10,8 @@ type Frame struct {
 	Track    TrackID   `json:"track"`
 	Sequence uint32    `json:"sequence"`
 	PTS      Timestamp `json:"pts"`
+	Width    int       `json:"width"`
+	Height   int       `json:"height"`
 	Size     int       `json:"size"`
 	Color    Color     `json:"color"`
 	Path     string    `json:"path"`
@@ -47,8 +49,22 @@ func SortKey(f Frame) [5]int64 {
 	}
 }
 
+// LessSortKey reports whether a sorts before b under SortKey.
+func LessSortKey(a, b Frame) bool {
+	ka, kb := SortKey(a), SortKey(b)
+	for i := range ka {
+		if ka[i] != kb[i] {
+			return ka[i] < kb[i]
+		}
+	}
+	return false
+}
+
 // MaxDimension is the hard pixel-size bound for a single frame side.
-const MaxDimension = 8192
+const MaxDimension = 4096
+
+// MinDimension is the smallest accepted frame side.
+const MinDimension = 16
 
 // MaxFrameBytes bounds the encoded payload of one frame.
 const MaxFrameBytes = 16 << 20
@@ -67,6 +83,11 @@ func (f Frame) Validate() error {
 	if f.Size < 0 || f.Size > MaxFrameBytes {
 		return NewFault(KindInput, CodeSizeBounds, f.Track, f.Sequence,
 			"frame byte size out of bounds")
+	}
+	if f.Width < MinDimension || f.Height < MinDimension ||
+		f.Width > MaxDimension || f.Height > MaxDimension {
+		return NewFault(KindInput, CodeSizeBounds, f.Track, f.Sequence,
+			"frame dimensions out of bounds")
 	}
 	if f.Path == "" {
 		return NewFault(KindInput, CodePathInvalid, f.Track, f.Sequence, "empty frame path")

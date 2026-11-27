@@ -67,7 +67,7 @@ func TestRTPToNS(t *testing.T) {
 
 func TestFrameValidation(t *testing.T) {
 	good := Frame{
-		Track: 1, Sequence: 1, PTS: 10, Size: 4, Path: "t1/f1.bin",
+		Track: 1, Sequence: 1, PTS: 10, Width: 64, Height: 48, Size: 4, Path: "t1/f1.bin",
 		SHA256: strings.Repeat("a", 64),
 		Color:  Color{Primaries: "bt709", Transfer: "bt709", Range: "full"},
 	}
@@ -82,6 +82,7 @@ func TestFrameValidation(t *testing.T) {
 		{"track", func(f *Frame) { f.Track = 0 }, CodeTrackInvalid},
 		{"seq", func(f *Frame) { f.Sequence = 0 }, CodeSeqInvalid},
 		{"size", func(f *Frame) { f.Size = MaxFrameBytes + 1 }, CodeSizeBounds},
+		{"dim", func(f *Frame) { f.Width = MaxDimension + 1 }, CodeSizeBounds},
 		{"path", func(f *Frame) { f.Path = "" }, CodePathInvalid},
 		{"hash", func(f *Frame) { f.SHA256 = "xyz" }, CodeHashMalformed},
 		{"color", func(f *Frame) { f.Color.Primaries = "bt2020" }, CodeColorInvalid},
