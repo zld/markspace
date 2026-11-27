@@ -1,0 +1,3 @@
+# Build artifacts and acceptance output are not committed.
+/tmp/
+/mediad
