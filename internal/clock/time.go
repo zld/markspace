@@ -171,3 +171,83 @@ func FromTimescale(ticks int64, timescale uint32) (Time, error) {
 	}
 	return New(ticks, int64(timescale))
 }
+
+// ParseISODuration parses an ISO 8601 duration such as "PT12S", "PT1M30.5S" or
+// "P1DT2H" into exact seconds. DASH manifests use it for period and segment
+// durations, so it shares the same rational base as every other time value.
+func ParseISODuration(s string) (Time, error) {
+	s = strings.TrimSpace(s)
+	if s == "" || (s[0] != 'P' && s[0] != 'p') {
+		return Time{}, fmt.Errorf("clock: not an ISO 8601 duration: %q", s)
+	}
+	rest := s[1:]
+	neg := false
+	if strings.HasPrefix(rest, "-") {
+		neg = true
+		rest = rest[1:]
+	}
+	total := Zero
+	inTime := false
+	num := ""
+	sawDesignator := false
+	for i := 0; i < len(rest); i++ {
+		c := rest[i]
+		switch {
+		case c >= '0' && c <= '9' || c == '.':
+			num += string(c)
+		case c == 'T' || c == 't':
+			if num != "" {
+				return Time{}, fmt.Errorf("clock: dangling number in duration %q", s)
+			}
+			inTime = true
+		case c == 'Y' || c == 'y' || c == 'W' || c == 'w':
+			return Time{}, fmt.Errorf("clock: unsupported duration designator %c in %q", c, s)
+		case c == 'H' || c == 'h' || c == 'M' || c == 'm' || c == 'S' || c == 's' || c == 'D' || c == 'd':
+			if num == "" {
+				return Time{}, fmt.Errorf("clock: missing number before %c in %q", c, s)
+			}
+			v, err := parseDecimal(num)
+			if err != nil {
+				return Time{}, err
+			}
+			var mult int64
+			switch c {
+			case 'D', 'd':
+				if inTime {
+					return Time{}, fmt.Errorf("clock: day designator inside time part of %q", s)
+				}
+				mult = 86400
+			case 'H', 'h':
+				if !inTime {
+					return Time{}, fmt.Errorf("clock: hour designator outside time part of %q", s)
+				}
+				mult = 3600
+			case 'M', 'm':
+				if !inTime {
+					return Time{}, fmt.Errorf("clock: month designators are unsupported in %q", s)
+				}
+				mult = 60
+			case 'S', 's':
+				if !inTime {
+					return Time{}, fmt.Errorf("clock: second designator outside time part of %q", s)
+				}
+				mult = 1
+			}
+			total = total.Add(MustNew(v.Num*mult, v.Den))
+			num = ""
+			sawDesignator = true
+		default:
+			return Time{}, fmt.Errorf("clock: unexpected %q in duration %q", c, s)
+		}
+	}
+	if num != "" {
+		return Time{}, fmt.Errorf("clock: trailing number in duration %q", s)
+	}
+	if !sawDesignator {
+		return Time{}, fmt.Errorf("clock: duration %q has no components", s)
+	}
+	if neg {
+		return Time{Num: -total.Num, Den: total.Den}, nil
+	}
+	return total, nil
+}
