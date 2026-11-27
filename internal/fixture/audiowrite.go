@@ -114,6 +114,17 @@ func WriteAudioMP4(path string, spec audioSpec) error {
 	return WriteFile(path, spec.build(pkts))
 }
 
+// WriteRawAudioPackets writes an audio-only fixture whose sample bytes carry no
+// RTP header. Repeating an identical payload lets fingerprint tests exercise
+// genuine content duplication.
+func WriteRawAudioPackets(path string, timescale, delta uint32, payload []byte, n int) error {
+	packets := make([][]byte, n)
+	for i := range packets {
+		packets[i] = append([]byte(nil), payload...)
+	}
+	return WriteFile(path, audioSpec{packets: n, timescale: timescale, delta: delta}.build(packets))
+}
+
 // WriteAudioPackets writes an audio-only fixture from prebuilt RTP packets at a
 // fixed timescale and sample delta.
 func WriteAudioPackets(path string, timescale, delta uint32, packets [][]byte) error {
