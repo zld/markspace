@@ -10,7 +10,7 @@ func testSpec() StreamSpec {
 	return StreamSpec{
 		ClockRate: 32000, Packets: 10, BaseSeq: 100, BaseTS: 7,
 		FrameSamples: []uint32{640, 960},
-		DupSeq: []int{3}, DropSeq: []int{5}, Seed: 1,
+		DupSeq:       []int{3}, DropSeq: []int{5}, Seed: 1,
 	}
 }
 
