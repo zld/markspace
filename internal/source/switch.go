@@ -36,14 +36,14 @@ type Sample struct {
 // Normalizer consumes RTP timestamps in arrival order and emits normalized
 // samples. It is stateful and single-goroutine.
 type Normalizer struct {
-	cfg        Config
-	period     int64
-	half       clock.Tick
+	cfg         Config
+	period      int64
+	half        clock.Tick
 	initialized bool
-	prevRaw    int64
-	base       clock.Tick // normalized tick of the first sample
-	last       clock.Tick // most recently emitted normalized tick
-	samples    []Sample
+	prevRaw     int64
+	last        clock.Tick // most recently emitted normalized tick
+	switching   bool       // next Push begins a new, declared source
+	samples     []Sample
 }
 
 // NewNormalizer validates the clock configuration.
@@ -62,21 +62,26 @@ func NewNormalizer(cfg Config) (*Normalizer, error) {
 // Push feeds one RTP timestamp with its original stream byte offset. A
 // backward jump that does not satisfy the half-period wrap rule fails with
 // CodeClockBackward anchored at the original offset, and no sample is added.
+// When a source switch has been declared via SwitchAt, a backward timestamp
+// is accepted as a new-source baseline instead: the normalized timeline keeps
+// advancing while the original RTP value is preserved verbatim.
 func (n *Normalizer) Push(ordinal int, rtp uint32, offset int64) error {
 	raw := int64(rtp)
 	if !n.initialized {
 		n.initialized = true
 		n.prevRaw = raw
-		n.base = 0
 		n.last = 0
 		n.samples = append(n.samples, Sample{
 			Ordinal: ordinal, OriginalRTP: rtp, OriginalOffset: offset,
-			NormalizedTick: 0,
+			NormalizedTick: 0, Switched: n.switching,
 		})
+		n.switching = false
 		return nil
 	}
 
 	wrapped := false
+	switched := n.switching
+	n.switching = false
 	var delta int64
 	switch {
 	case raw >= n.prevRaw:
@@ -84,6 +89,11 @@ func (n *Normalizer) Push(ordinal int, rtp uint32, offset int64) error {
 	case n.isWrap(n.prevRaw, raw):
 		delta = (n.period - n.prevRaw) + raw
 		wrapped = true
+	case switched:
+		// Declared source switch: new source clock restarts low. Re-baseline
+		// the raw clock and hold the normalized timeline flat at this sample;
+		// later deltas continue from the new raw origin.
+		delta = 0
 	default:
 		return perr.At(subsystem, perr.CodeClockBackward, offset,
 			"timestamp regression %d -> %d is not a half-period wraparound",
@@ -99,28 +109,21 @@ func (n *Normalizer) Push(ordinal int, rtp uint32, offset int64) error {
 	n.last = next
 	n.samples = append(n.samples, Sample{
 		Ordinal: ordinal, OriginalRTP: rtp, OriginalOffset: offset,
-		NormalizedTick: next, Wrapped: wrapped,
+		NormalizedTick: next, Wrapped: wrapped, Switched: switched,
 	})
 	return nil
 }
+
+// SwitchAt declares that the next Push carries the first packet of a new
+// source. A backward RTP timestamp on that packet is normalized rather than
+// rejected; the original timestamp and byte offset remain stored.
+func (n *Normalizer) SwitchAt() { n.switching = true }
 
 // isWrap applies the configured rule: previous value in the upper half of
 // the period AND new value in the lower half. Any smaller backward move is
 // treated as a boundary error rather than a wrap.
 func (n *Normalizer) isWrap(prev, next int64) bool {
 	return clock.Tick(prev).IsAfter(n.half-1) && clock.Tick(next).IsBefore(n.half)
-}
-
-// MarkSwitch flags the sample at ordinal as the first packet of a new
-// source. Switching does not alter ticks; callers reconcile discontinuities
-// through Push's wrap/backward rules.
-func (n *Normalizer) MarkSwitch(ordinal int) {
-	for i := range n.samples {
-		if n.samples[i].Ordinal == ordinal {
-			n.samples[i].Switched = true
-			return
-		}
-	}
 }
 
 // Samples returns the accumulated normalized samples.

@@ -84,12 +84,42 @@ func TestInvalidBitWidth(t *testing.T) {
 	}
 }
 
-func TestMarkSwitch(t *testing.T) {
-	n, _ := NewNormalizer(Config{BitWidth: 32})
+func TestDeclaredSwitchAcceptsBackwardTimestamp(t *testing.T) {
+	n, _ := NewNormalizer(Config{BitWidth: 8})
 	_ = n.Push(0, 100, 0)
-	_ = n.Push(1, 200, 5)
-	n.MarkSwitch(1)
-	if !n.Samples()[1].Switched || n.Samples()[0].Switched {
-		t.Fatal("only ordinal 1 should be flagged as switched")
+	_ = n.Push(1, 110, 5)
+	// New source restarts its RTP clock low. Without a switch declaration this
+	// would be a boundary error; with one it is normalized.
+	n.SwitchAt()
+	if err := n.Push(2, 20, 9); err != nil {
+		t.Fatalf("declared switch must accept backward ts: %v", err)
+	}
+	got := n.Samples()
+	if !got[2].Switched {
+		t.Fatal("sample 2 must be flagged as a source switch")
+	}
+	if got[2].NormalizedTick != 10 {
+		t.Fatalf("normalized tick after switch = %d, want 10", got[2].NormalizedTick)
+	}
+	if got[2].OriginalRTP != 20 {
+		t.Fatal("original RTP timestamp must be preserved after switch")
+	}
+	// Subsequent packets continue from the new raw origin, still monotonic.
+	if err := n.Push(3, 35, 13); err != nil {
+		t.Fatalf("post-switch push: %v", err)
+	}
+	if n.Samples()[3].NormalizedTick != 25 {
+		t.Fatalf("tick after post-switch delta = %d, want 25", n.Samples()[3].NormalizedTick)
+	}
+}
+
+func TestSwitchAtConsumedOnce(t *testing.T) {
+	n, _ := NewNormalizer(Config{BitWidth: 8})
+	_ = n.Push(0, 100, 0)
+	n.SwitchAt()
+	_ = n.Push(1, 110, 5) // forward, consumes the flag
+	// The flag must not leak onto a later undeclared regression.
+	if err := n.Push(2, 90, 9); perr.AsError(err) == nil {
+		t.Fatal("an undeclared regression after a consumed switch must still fail")
 	}
 }
