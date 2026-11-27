@@ -153,3 +153,126 @@ func TestParsePathInError(t *testing.T) {
 		t.Fatalf("offset missing: %d", e.Offset)
 	}
 }
+
+// blockBody builds a SimpleBlock payload: track 1, timecode 0, flags 0x80.
+func blockBody(payload ...byte) []byte {
+	return append([]byte{0x81, 0x00, 0x00, 0x80}, payload...)
+}
+
+// segmentWithClusters builds EBML header + unknown-length Segment holding the
+// supplied clusters, each written as an unknown-length Cluster.
+func segmentWithClusters(t *testing.T, clusters ...[]byte) []byte {
+	t.Helper()
+	var seg Builder
+	for _, c := range clusters {
+		if err := seg.UnknownElement(IDCluster, c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var top Builder
+	if err := top.UnknownElement(IDSegment, seg.Bytes()); err != nil {
+		t.Fatal(err)
+	}
+	return top.Bytes()
+}
+
+func TestParseUnknownLengthSiblings(t *testing.T) {
+	var c1, c2 Builder
+	if err := c1.Element(IDSimpleBlock, blockBody(0xAA)); err != nil {
+		t.Fatal(err)
+	}
+	if err := c2.Element(IDSimpleBlock, blockBody(0xBB)); err != nil {
+		t.Fatal(err)
+	}
+	data := segmentWithClusters(t, c1.Bytes(), c2.Bytes())
+	doc, err := Parse(data)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	clusters := doc.All(IDCluster)
+	if len(clusters) != 2 {
+		t.Fatalf("got %d clusters, want 2", len(clusters))
+	}
+	// The first unknown-length Cluster must stop at the second Cluster's ID.
+	if clusters[0].PayloadEnd != clusters[1].Offset {
+		t.Errorf("cluster 0 end=%d, want next sibling at %d",
+			clusters[0].PayloadEnd, clusters[1].Offset)
+	}
+	if !clusters[0].UnknownSize || !clusters[1].UnknownSize {
+		t.Error("both clusters should be unknown length")
+	}
+	// Blocks must land inside their own cluster.
+	b0 := doc.Find(IDSegment, IDCluster, IDSimpleBlock)
+	if b0 == nil || doc.Payload(b0)[4] != 0xAA {
+		t.Fatalf("first block not in first cluster: %+v", b0)
+	}
+	if b0.Offset >= clusters[1].Offset {
+		t.Error("first block offset escaped its cluster boundary")
+	}
+	if clusters[1].PayloadEnd != int64(len(data)) {
+		t.Errorf("last cluster end=%d, want EOF %d", clusters[1].PayloadEnd, len(data))
+	}
+}
+
+func TestParseParentBoundaryConflict(t *testing.T) {
+	// An unknown-length Cluster followed by TrackEntry: TrackEntry is neither
+	// a legal child of Cluster nor of Segment, so it cannot close the Cluster
+	// and must be reported as a boundary conflict.
+	var block Builder
+	if err := block.Element(IDSimpleBlock, blockBody(0xAA)); err != nil {
+		t.Fatal(err)
+	}
+	var te Builder
+	if err := te.UintElement(IDTrackNumber, 1); err != nil {
+		t.Fatal(err)
+	}
+	var track Builder
+	if err := track.Element(IDTrackEntry, te.Bytes()); err != nil {
+		t.Fatal(err)
+	}
+	body := append(func() []byte {
+		var c Builder
+		_ = c.UnknownElement(IDCluster, block.Bytes())
+		return c.Bytes()
+	}(), track.Bytes()...)
+	var seg Builder
+	_ = seg.UnknownElement(IDSegment, body)
+	_, err := Parse(seg.Bytes())
+	e, ok := serr.As(err)
+	if !ok {
+		t.Fatalf("expected structured error, got %v", err)
+	}
+	if e.Code != serr.CodeParentBoundary {
+		t.Fatalf("code = %s (%v)", e.Code, err)
+	}
+	if e.Offset < 0 {
+		t.Fatal("boundary conflict must carry a byte offset")
+	}
+	if len(e.Path) == 0 || e.Path[len(e.Path)-1] != "TrackEntry" {
+		t.Fatalf("path = %v", e.Path)
+	}
+}
+
+func TestParseUnknownScalarRunsToBoundary(t *testing.T) {
+	// An unknown-length non-container element has no nested boundary; it is
+	// bounded by its parent and must not swallow following siblings when the
+	// parent is known length.
+	var inner Builder
+	if err := inner.UnknownElement(IDDocType, []byte("matroska")); err != nil {
+		t.Fatal(err)
+	}
+	var header Builder
+	_ = header.Element(IDEBMLHeader, inner.Bytes())
+	data := header.Bytes()
+	doc, err := Parse(data)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	el := doc.Find(IDEBMLHeader, IDDocType)
+	if el == nil || !el.UnknownSize {
+		t.Fatalf("unknown scalar not found: %+v", el)
+	}
+	if el.PayloadEnd != int64(len(data)) {
+		t.Errorf("unknown scalar end=%d, want parent end %d", el.PayloadEnd, len(data))
+	}
+}

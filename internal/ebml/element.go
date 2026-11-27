@@ -37,30 +37,42 @@ const (
 	IDLanguage    ElementID = 0x22B59C
 	IDCodecID     ElementID = 0x86
 
-	IDAudio             ElementID = 0xE1
-	IDVideo             ElementID = 0xE0
-	IDColour            ElementID = 0x55B0
-	IDSamplingFrequency ElementID = 0xB5
-	IDChannels          ElementID = 0x9F
-	IDChannelPositions  ElementID = 0x7D7B
-	IDBitDepth          ElementID = 0x6264
-	IDPixelWidth        ElementID = 0xB0
-	IDPixelHeight       ElementID = 0xBA
-	IDBitsPerChannel    ElementID = 0x55B2
-	IDMatrixCoeffs      ElementID = 0x55B1
-	IDRange             ElementID = 0x55B9
-	IDTransferChars     ElementID = 0x55BA
-	IDPrimaries         ElementID = 0x55BB
+	IDAudio              ElementID = 0xE1
+	IDVideo              ElementID = 0xE0
+	IDColour             ElementID = 0x55B0
+	IDSamplingFrequency  ElementID = 0xB5
+	IDChannels           ElementID = 0x9F
+	IDChannelPositions   ElementID = 0x7D7B
+	IDBitDepth           ElementID = 0x6264
+	IDPixelWidth         ElementID = 0xB0
+	IDPixelHeight        ElementID = 0xBA
+	IDBitsPerChannel     ElementID = 0x55B2
+	IDMatrixCoeffs       ElementID = 0x55B1
+	IDRange              ElementID = 0x55B9
+	IDTransferChars      ElementID = 0x55BA
+	IDPrimaries          ElementID = 0x55BB
+	IDDisplayWidth       ElementID = 0x54B0
+	IDDisplayHeight      ElementID = 0x54BA
+	IDDisplayUnit        ElementID = 0x54B2
+	IDMaxBlockAdditionID ElementID = 0x55EE
 
-	IDCluster     ElementID = 0x1F43B675
-	IDTimestamp   ElementID = 0xE7
-	IDBlockGroup  ElementID = 0xA0
-	IDBlock       ElementID = 0xA1
-	IDSimpleBlock ElementID = 0xA3
+	IDCluster        ElementID = 0x1F43B675
+	IDTimestamp      ElementID = 0xE7
+	IDBlockGroup     ElementID = 0xA0
+	IDBlock          ElementID = 0xA1
+	IDSimpleBlock    ElementID = 0xA3
+	IDBlockDuration  ElementID = 0x9B
+	IDReferenceBlock ElementID = 0xFB
 
-	IDCues  ElementID = 0x1C53BB6B
-	IDVoid  ElementID = 0xEC
-	IDCRC32 ElementID = 0xBF
+	IDCues        ElementID = 0x1C53BB6B
+	IDCuePoint    ElementID = 0xBB
+	IDCueTime     ElementID = 0xB3
+	IDCueTrackPos ElementID = 0xB7
+	IDVoid        ElementID = 0xEC
+	IDCRC32       ElementID = 0xBF
+	IDChapters    ElementID = 0x1043A770
+	IDTags        ElementID = 0x1254C367
+	IDAttachments ElementID = 0x1941A469
 )
 
 // idNames maps every recognized element ID to its Matroska name.
@@ -80,9 +92,14 @@ var idNames = map[ElementID]string{
 	IDPixelWidth: "PixelWidth", IDPixelHeight: "PixelHeight",
 	IDBitsPerChannel: "BitsPerChannel", IDMatrixCoeffs: "MatrixCoefficients",
 	IDRange: "Range", IDTransferChars: "TransferCharacteristics", IDPrimaries: "Primaries",
+	IDDisplayWidth: "DisplayWidth", IDDisplayHeight: "DisplayHeight",
+	IDDisplayUnit: "DisplayUnit", IDMaxBlockAdditionID: "MaxBlockAdditionID",
 	IDCluster: "Cluster", IDTimestamp: "Timestamp", IDBlockGroup: "BlockGroup",
-	IDBlock: "Block", IDSimpleBlock: "SimpleBlock",
-	IDCues: "Cues", IDVoid: "Void", IDCRC32: "CRC-32",
+	IDBlock: "Block", IDSimpleBlock: "SimpleBlock", IDBlockDuration: "BlockDuration",
+	IDReferenceBlock: "ReferenceBlock",
+	IDCues:           "Cues", IDCuePoint: "CuePoint", IDCueTime: "CueTime",
+	IDCueTrackPos: "CueTrackPositions", IDVoid: "Void", IDCRC32: "CRC-32",
+	IDChapters: "Chapters", IDTags: "Tags", IDAttachments: "Attachments",
 }
 
 // containerIDs lists elements whose payload holds nested EBML elements.
@@ -90,6 +107,7 @@ var containerIDs = map[ElementID]bool{
 	IDEBMLHeader: true, IDSegment: true, IDSeekHead: true, IDInfo: true,
 	IDTracks: true, IDTrackEntry: true, IDAudio: true, IDVideo: true,
 	IDColour: true, IDCluster: true, IDBlockGroup: true, IDCues: true,
+	IDCuePoint: true, IDCueTrackPos: true,
 }
 
 // Element describes one parsed EBML element header with exact input offsets.
