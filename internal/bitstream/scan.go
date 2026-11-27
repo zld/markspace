@@ -19,6 +19,8 @@ func Scan(codec Codec, data []byte) (*Stream, error) {
 	switch codec {
 	case CodecH264, CodecH265:
 		frames, paramOK, err = scanAnnexB(codec, data)
+	case CodecAV1:
+		frames, paramOK, err = scanAV1(data)
 	default:
 		return nil, fault.Newf(fault.CodeScanUnsupportedCodec, string(codec), "unsupported codec %q", codec)
 	}
