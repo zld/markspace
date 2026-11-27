@@ -91,8 +91,9 @@ func Analyze(in *Input, opts Options) *Analysis {
 	}
 	a.Drift = clock.Fit(driftSamples, opts.MaxDriftPPM)
 	a.Anomalies = append(a.Anomalies, a.Drift.Anomalies...)
-	// Quality over the retained WAV blocks only.
-	expected := int64(in.WAV.Header.FrameCount())
+	// Quality over the retained WAV blocks only. The expectation is in
+	// per-channel samples: declared frames times channel count.
+	expected := int64(in.WAV.Header.FrameCount()) * int64(in.WAV.Header.Channels)
 	a.Quality = quality.Measure(in.WAV.Blocks, in.WAV.Header.BitsPerSample, expected)
 	// Bitrate: payload bits over the media duration spanned by packets.
 	var payloadBytes int64
