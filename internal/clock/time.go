@@ -142,6 +142,12 @@ func (t Time) Cmp(o Time) int {
 	}
 }
 
+// Equal reports exact equality.
+func (t Time) Equal(o Time) bool { return t.Num*o.Den == o.Num*t.Den }
+
+// IsZero reports whether the value is the timeline origin.
+func (t Time) IsZero() bool { return t.Num == 0 }
+
 // String renders the canonical "num/den" form used in reports and index files.
 func (t Time) String() string {
 	if t.Den == 1 {
