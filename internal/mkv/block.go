@@ -16,6 +16,7 @@ type ClusterRef struct {
 	Index         int   // zero based cluster order within the segment
 	Offset        int64 // absolute offset of the Cluster element ID
 	PayloadOffset int64 // absolute start of the Cluster payload
+	End           int64 // exclusive absolute end of the whole Cluster element
 	Timestamp     int64 // cluster Timestamp in TimestampScale ticks
 	UnknownSize   bool  // cluster used an unknown-length size VINT
 }
@@ -53,6 +54,7 @@ func ParseBlocks(doc *ebml.Document) ([]Block, error) {
 			Index:         ci,
 			Offset:        cluster.Offset,
 			PayloadOffset: cluster.PayloadOffset,
+			End:           cluster.PayloadEnd,
 			UnknownSize:   cluster.UnknownSize,
 		}
 		if ts := directChild(doc, cluster, ebml.IDTimestamp); ts != nil {
