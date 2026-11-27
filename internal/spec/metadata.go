@@ -58,7 +58,7 @@ func Validate(meta model.TrackMeta, target model.TargetSpec) *Report {
 			Field: FieldSampleRate, Source: meta.SampleRate, Target: target.SampleRate,
 		})
 	}
-	if target.Color != nil {
+	if target.Color != nil && meta.Codec == model.CodecVideo {
 		r.appendColorDiffs(meta, target.Color)
 	}
 
