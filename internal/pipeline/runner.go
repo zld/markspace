@@ -6,6 +6,7 @@ package pipeline
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -63,6 +64,13 @@ func Run(ctx context.Context, in *demux.File, policy clock.Policy,
 	entries := make(chan index.Entry, cfg.ReadQueue)
 	pending := make(chan index.Chunk, cfg.PendingWrites)
 
+	// An internal cancel lets a failing or interrupted writer unblock the
+	// chunker and producer even when the caller did not supply a context with
+	// cancellation. Without it, a writer that returns early leaves the pending
+	// channel unconsumed and the chunker blocked forever.
+	ctx, stop := context.WithCancel(ctx)
+	defer stop()
+
 	var peak int32
 	var peakMu sync.Mutex
 	noteQueue := func() {
@@ -75,7 +83,9 @@ func Run(ctx context.Context, in *demux.File, policy clock.Policy,
 	}
 
 	writerErr := make(chan error, 1)
+	writerDone := make(chan struct{})
 	go func() {
+		defer close(writerDone)
 		written := 0
 		for ch := range pending {
 			// A block validated during resume is reusable work: do not rewrite
@@ -86,6 +96,7 @@ func Run(ctx context.Context, in *demux.File, policy clock.Policy,
 			}
 			if cfg.InterruptAfter > 0 && written >= cfg.InterruptAfter {
 				writerErr <- clock.ErrInterrupted
+				stop()
 				return
 			}
 			if cfg.SlowDelay > 0 {
@@ -98,6 +109,7 @@ func Run(ctx context.Context, in *demux.File, policy clock.Policy,
 			}
 			if err := store.Write(ch); err != nil {
 				writerErr <- err
+				stop()
 				return
 			}
 			written++
@@ -148,14 +160,25 @@ func Run(ctx context.Context, in *demux.File, policy clock.Policy,
 	prodErr := produce(ctx, in, policy, entries, noteQueue)
 	close(entries)
 	<-chunkerDone
-	close(pending)
 
+	// If the writer exited early (interrupt, write failure, external cancel) it
+	// has already stopped ranging over pending and must not be closed on. Only
+	// a still-running writer receives the close that ends its range loop.
+	select {
+	case <-writerDone:
+	default:
+		close(pending)
+	}
 	werr := <-writerErr
-	if prodErr != nil {
+
+	if prodErr != nil && !errors.Is(prodErr, clock.ErrCanceled) {
 		return nil, Metrics{}, prodErr
 	}
 	if werr != nil {
 		return nil, Metrics{}, mapStageErr(werr)
+	}
+	if prodErr != nil {
+		return nil, Metrics{}, mapStageErr(clock.ErrCanceled)
 	}
 
 	// Re-read only the blocks that were actually committed, giving an index

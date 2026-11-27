@@ -55,10 +55,12 @@ func TestRunBuildsCompleteIndex(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
-	if ix.EntryCount() != 200 {
-		t.Fatalf("entries = %d, want 200", ix.EntryCount())
+	// Only sync samples become index rows: 200 samples with a sync point every
+	// fifth sample yields 40 entries.
+	if ix.EntryCount() != 40 {
+		t.Fatalf("entries = %d, want 40 sync rows", ix.EntryCount())
 	}
-	if m.EntriesIndexed != 200 || m.ChunksWritten != 4 { // 64*3 + tail
+	if m.EntriesIndexed != 40 || m.ChunksWritten != 1 { // all 40 fit in one 64-entry block
 		t.Fatalf("metrics = %+v", m)
 	}
 	if ix.SyncCount() != 40 { // every 5th of 200
@@ -75,7 +77,8 @@ func TestRunBuildsCompleteIndex(t *testing.T) {
 }
 
 func TestSlowConsumerStillCompletesAndBackpressures(t *testing.T) {
-	path, fp := fixture(t, 300, 10, mux.FaultNone)
+	// Enough sync rows to fill several blocks even after the sync-only filter.
+	path, fp := fixture(t, 1500, 5, mux.FaultNone)
 	in, _ := demux.Open(path)
 	defer in.Close()
 	store, _ := index.NewStore(filepath.Join(t.TempDir(), "cp"), fp)
@@ -88,10 +91,11 @@ func TestSlowConsumerStillCompletesAndBackpressures(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
+	// 1500 samples with a sync every fifth sample => 300 index rows, 6 blocks.
 	if ix.EntryCount() != 300 {
 		t.Fatalf("entries = %d", ix.EntryCount())
 	}
-	// 6 chunks * 2ms of forced writer latency proves the writer was actually
+	// Six blocks * 2ms of forced writer latency proves the writer was actually
 	// the bottleneck and the producer waited rather than overrunning memory.
 	if elapsed < 10*time.Millisecond {
 		t.Fatalf("slow delay not honoured: %v", elapsed)
@@ -132,7 +136,9 @@ func TestCancellationCommitsNothingPartial(t *testing.T) {
 }
 
 func TestInterruptLeavesUncommittedBlocksForResume(t *testing.T) {
-	path, fp := fixture(t, 200, 5, mux.FaultNone)
+	// 1500 samples, sync every fifth => 300 index rows; with 10-entry blocks
+	// there are 30 blocks, so interrupting after two leaves real work to redo.
+	path, fp := fixture(t, 1500, 5, mux.FaultNone)
 	cpDir := filepath.Join(t.TempDir(), "cp")
 
 	// First run stops after two committed blocks. The error path returns zero
@@ -140,19 +146,19 @@ func TestInterruptLeavesUncommittedBlocksForResume(t *testing.T) {
 	in, _ := demux.Open(path)
 	store, _ := index.NewStore(cpDir, fp)
 	_, _, err := pipeline.Run(context.Background(), in, clock.DefaultPolicy(), store, pipeline.Config{
-		ChunkSize: 64, InterruptAfter: 2, SlowDelay: time.Millisecond,
+		ChunkSize: 10, InterruptAfter: 2, SlowDelay: time.Millisecond,
 	})
 	in.Close()
 	if !errors.Is(err, clock.ErrInterrupted) {
 		t.Fatalf("want ErrInterrupted, got %v", err)
 	}
 
-	// Recovery must present exactly the two committed blocks.
+	// Recovery must present exactly the two committed blocks (10 sync rows each).
 	rec, err := store.Recover()
 	if err != nil {
 		t.Fatalf("recover: %v", err)
 	}
-	if len(rec.Committed) != 2 || len(rec.Entries) != 128 {
+	if len(rec.Committed) != 2 || len(rec.Entries) != 20 {
 		t.Fatalf("recover seqs=%v entries=%d", rec.Committed, len(rec.Entries))
 	}
 }

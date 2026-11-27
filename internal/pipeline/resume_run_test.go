@@ -13,7 +13,8 @@ import (
 )
 
 func TestRunWithResumeCompletesAndMatchesFullRun(t *testing.T) {
-	path, fp := fixture(t, 256, 4, mux.FaultNone)
+	// 1280 samples, sync every fourth => 320 index rows; 64-entry blocks => 5.
+	path, fp := fixture(t, 1280, 4, mux.FaultNone)
 
 	// Reference: one uninterrupted run into a separate checkpoint directory.
 	refIn, err := demux.Open(path)
@@ -64,7 +65,7 @@ func TestRunWithResumeCompletesAndMatchesFullRun(t *testing.T) {
 }
 
 func TestRunWithResumeRejectsChangedInput(t *testing.T) {
-	path, fp := fixture(t, 128, 4, mux.FaultNone)
+	path, fp := fixture(t, 640, 4, mux.FaultNone)
 	cpDir := t.TempDir() + "/cp"
 	in1, _ := demux.Open(path)
 	_, err := pipeline.RunWithResume(context.Background(), in1, clock.DefaultPolicy(), cpDir, fp,
