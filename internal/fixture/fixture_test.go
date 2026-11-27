@@ -17,7 +17,8 @@ func TestValidFixtureParses(t *testing.T) {
 	if len(doc.Tracks) != 2 {
 		t.Fatalf("tracks = %d", len(doc.Tracks))
 	}
-	wantBlocks := 2 * 6 * 2 // tracks * clusters * blocksPerCluster
+	o := DefaultOptions()
+	wantBlocks := o.Tracks * o.Clusters * o.BlocksPerCl
 	if len(doc.Blocks) != wantBlocks {
 		t.Fatalf("blocks = %d, want %d", len(doc.Blocks), wantBlocks)
 	}

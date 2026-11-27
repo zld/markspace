@@ -34,10 +34,12 @@ type Options struct {
 	TimeScaleNS uint64
 }
 
-// DefaultOptions returns the options used by the acceptance fixtures.
+// DefaultOptions returns the options used by the acceptance fixtures. The
+// timeline spans four seconds so a 1000ms segment window yields multiple
+// segments; each track gets its own contiguous RTP sequence space.
 func DefaultOptions() Options {
 	return Options{
-		Tracks: 2, Clusters: 6, BlocksPerCl: 2,
+		Tracks: 2, Clusters: 8, BlocksPerCl: 25,
 		SegmentNS: 20_000_000, TimeScaleNS: 1_000_000,
 	}
 }
@@ -87,17 +89,24 @@ func Valid(opts Options) []byte {
 		ebml.EncodeElement(idTimeScale, u64(opts.TimeScaleNS)))
 
 	segBody := append(infoEl, tracksEl...)
-	seq := uint16(0)
+	// Independent, contiguous RTP sequence space per track, so multi-track
+	// interleaving does not look like packet loss to the RTP analyzer.
+	seqByTrack := map[uint64]uint16{}
+	blockStep := opts.SegmentNS / int64(opts.TimeScaleNS) // ticks per block (20)
 	for c := 0; c < opts.Clusters; c++ {
-		clusterTC := int64(c) * opts.SegmentNS * int64(opts.BlocksPerCl) / int64(opts.TimeScaleNS)
+		// Each cluster spans BlocksPerCl block steps; relative timecodes
+		// stay small so they never overflow the signed 16-bit block field.
+		clusterTC := int64(c) * blockStep * int64(opts.BlocksPerCl)
 		var cluster []byte
 		cluster = append(cluster, ebml.EncodeElement(idTimecode, u64(uint64(clusterTC)))...)
 		for b := 0; b < opts.BlocksPerCl; b++ {
 			for t := 1; t <= opts.Tracks; t++ {
-				rel := int16(int64(b)*opts.SegmentNS/int64(opts.TimeScaleNS) + int64(t-1))
+				track := uint64(t)
+				rel := int16(int64(b)*blockStep + int64(t-1))
+				seq := seqByTrack[track]
 				cluster = append(cluster, ebml.EncodeElement(idSimpleBlock,
-					rtpBlockPayload(uint64(t), rel, seq))...)
-				seq++
+					rtpBlockPayload(track, rel, seq))...)
+				seqByTrack[track] = seq + 1
 			}
 		}
 		segBody = append(segBody, ebml.EncodeElement(idCluster, cluster)...)
