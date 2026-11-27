@@ -36,11 +36,11 @@ const (
 
 // Fault is one structured problem record.
 type Fault struct {
-	Code     Code          `json:"code"`
-	Message  string        `json:"message"`
-	Offset   int64         `json:"offset"`             // byte offset in the input, -1 when N/A
-	TimeFrom clock.Rational `json:"time_from"`         // inclusive start, seconds
-	TimeTo   clock.Rational `json:"time_to"`           // inclusive end, seconds
+	Code     Code           `json:"code"`
+	Message  string         `json:"message"`
+	Offset   int64          `json:"offset"`    // byte offset in the input, -1 when N/A
+	TimeFrom clock.Rational `json:"time_from"` // inclusive start, seconds
+	TimeTo   clock.Rational `json:"time_to"`   // inclusive end, seconds
 }
 
 // New builds a fault; offset -1 means "no byte position".
