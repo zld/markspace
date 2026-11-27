@@ -132,11 +132,8 @@ func ValidEBMLID(id ElementID) bool {
 	if err != nil || len(enc) == 0 || len(enc) > 4 {
 		return false
 	}
-	got, width, unknown, derr := DecodeVINT(enc)
-	if derr != nil || unknown || width != len(enc) {
-		return false
-	}
-	return got|(uint64(1)<<(8-uint(width))) == uint64(id)
+	_, _, unknown, derr := DecodeVINT(enc)
+	return derr == nil && !unknown
 }
 
 // EncodeID emits the on-wire VINT bytes of an element ID whose stored value

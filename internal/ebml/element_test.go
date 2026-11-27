@@ -27,14 +27,14 @@ func TestValidEBMLID(t *testing.T) {
 		}
 	}
 	// All-ones widths are reserved unknown markers, not element IDs.
-	invalid := []ElementID{127, 16383, 0x0FFFFFFF}
+	invalid := []ElementID{0xFF, 0x7FFF, 0x1FFFFFFF}
 	for _, id := range invalid {
 		if ValidEBMLID(id) {
 			t.Errorf("reserved all-ones ID %x must be invalid", uint64(id))
 		}
 	}
 	// Values requiring more than four bytes cannot be Matroska IDs.
-	if ValidEBMLID(ElementID(0x10000000)) {
+	if ValidEBMLID(ElementID(0x100000000)) {
 		t.Error("5-byte ID must be invalid")
 	}
 }
