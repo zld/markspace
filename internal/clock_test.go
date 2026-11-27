@@ -10,11 +10,11 @@ func TestScaleExactAndOverflow(t *testing.T) {
 	if err != nil || got != 1000 {
 		t.Fatalf("Scale(48000,48000,1000)=%d,%v want 1000,nil", got, err)
 	}
-	if _, err := Scale(1<<63, 48000, 1); err == nil {
+	if _, err := Scale(1<<63, 1, 48000); err == nil {
 		t.Fatal("expected overflow error")
 	}
 	var se *Error
-	if err := AsError(func() error { _, e := Scale(1<<63, 48000, 1); return e }()); !errors.As(err, &se) || se.Code != CodeTimeOverflow {
+	if err := AsError(func() error { _, e := Scale(1<<63, 1, 48000); return e }()); !errors.As(err, &se) || se.Code != CodeTimeOverflow {
 		t.Fatalf("want CodeTimeOverflow, got %v", err)
 	}
 }
