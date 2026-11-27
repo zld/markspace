@@ -67,7 +67,9 @@ func FromDuration(d time.Duration) (Tick, error) {
 	}
 	// Sub-millisecond precision is kept: 1 ms of media time is 90 ticks.
 	return Tick(ns * TicksPerMilli / int64(time.Millisecond)), nil
-}// Add returns a+b, or ErrOverflow when the sum cannot be represented.
+}
+
+// Add returns a+b, or ErrOverflow when the sum cannot be represented.
 func Add(a, b Tick) (Tick, error) {
 	sum := int64(a) + int64(b)
 	if (b > 0 && sum < int64(a)) || (b < 0 && sum > int64(a)) {
