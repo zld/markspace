@@ -1,11 +1,13 @@
 package txn
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"media.rebuild/internal/journal"
 	"media.rebuild/internal/manifest"
 	"media.rebuild/internal/model"
 )
@@ -327,5 +329,67 @@ func TestUnsealedTaskRecoveryPurgesStaging(t *testing.T) {
 	}
 	if dirExists(filepath.Join(root, "staging", "rebuild")) {
 		t.Fatal("unsealed staging survived")
+	}
+}
+
+// A draft that disagrees with the journal's registered artifacts must not be
+// published: doing so commits a manifest naming files that were never staged.
+func TestRecoverRejectsDraftArtifactMismatch(t *testing.T) {
+	root := t.TempDir()
+	if _, err := run(t, root, CrashAfterArtifact); !errors.Is(err, ErrCrashInjected) {
+		t.Fatalf("err %v", err)
+	}
+	l, err := journal.Open(JournalPath(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bogus := manifest.Manifest{Version: manifest.Version, Task: "rebuild", Committed: true,
+		Artifacts: []manifest.Artifact{{Name: "ghost.png", File: "artifacts/rebuild/ghost.png", Bytes: 3, SHA256: "00"}}}
+	payload, err := json.Marshal(bogus)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := l.Append(journal.Record{Type: journal.TypeManifestDraft, Task: "rebuild", Payload: payload}); err != nil {
+		t.Fatal(err)
+	}
+	l.Close()
+
+	e := open(t, root, CrashNone)
+	res, err := e.Recover()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Recovered != 0 || res.Published != 0 || len(res.Errors) == 0 {
+		t.Fatalf("mismatched draft was not refused: %+v", res)
+	}
+	if _, err := ReadManifest(root); err == nil {
+		t.Fatal("mismatched draft was published")
+	}
+}
+
+// A committed task whose manifest file vanished must have it restored from the
+// durable draft, so recovery never reports an unreadable manifest as healthy.
+func TestRecoverRestoresMissingManifest(t *testing.T) {
+	root := t.TempDir()
+	if _, err := run(t, root, CrashNone); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(ManifestPath(root)); err != nil {
+		t.Fatal(err)
+	}
+	e := open(t, root, CrashNone)
+	res, err := e.Recover()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Published != 1 || res.Missing != 0 {
+		t.Fatalf("result %+v", res)
+	}
+	m, err := ReadManifest(root)
+	if err != nil {
+		t.Fatalf("manifest not restored: %v", err)
+	}
+	if !m.Committed || len(m.Artifacts) != len(frameNames) {
+		t.Fatalf("restored manifest %+v", m)
 	}
 }

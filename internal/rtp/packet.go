@@ -132,27 +132,24 @@ func (s *seqSet) add(n uint64) bool {
 	if i < len(s.ranges) && s.ranges[i].First <= n {
 		return true // already received
 	}
-	// n is either after every range, or strictly before range i's First (and
-	// therefore more than one below its Last, since that case returned above).
-	if i == len(s.ranges) {
-		if len(s.ranges) > 0 && s.ranges[i-1].Last+1 == n {
-			s.ranges[i-1].Last = n
-			return false
-		}
-		s.ranges = append(s.ranges, Range{First: n, Last: n})
-		return false
-	}
-	if s.ranges[i].First == n+1 {
+	// n sits strictly after range i-1's Last (or before range i's First when
+	// i == len). It may touch either neighbour, so coalesce on both sides.
+	touchPrev := i > 0 && s.ranges[i-1].Last+1 == n
+	touchNext := i < len(s.ranges) && s.ranges[i].First == n+1
+	switch {
+	case touchPrev && touchNext:
+		// Bridge the gap: extend the previous range and drop the next one.
+		s.ranges[i-1].Last = s.ranges[i].Last
+		s.ranges = append(s.ranges[:i], s.ranges[i+1:]...)
+	case touchPrev:
+		s.ranges[i-1].Last = n
+	case touchNext:
 		s.ranges[i].First = n
-		if i > 0 && s.ranges[i-1].Last+1 == s.ranges[i].First {
-			s.ranges[i-1].Last = s.ranges[i].Last
-			s.ranges = append(s.ranges[:i], s.ranges[i+1:]...)
-		}
-		return false
+	default:
+		s.ranges = append(s.ranges, Range{})
+		copy(s.ranges[i+1:], s.ranges[i:])
+		s.ranges[i] = Range{First: n, Last: n}
 	}
-	s.ranges = append(s.ranges, Range{})
-	copy(s.ranges[i+1:], s.ranges[i:])
-	s.ranges[i] = Range{First: n, Last: n}
 	return false
 }
 

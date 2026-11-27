@@ -246,6 +246,21 @@ func TestSeqSetMissing(t *testing.T) {
 	}
 }
 
+// TestSeqSetCoalescesBothSides covers a number that fills a one-wide gap: it
+// must merge the two neighbouring ranges into one, not leave an adjacent pair.
+func TestSeqSetCoalescesBothSides(t *testing.T) {
+	var s seqSet
+	for _, n := range []uint64{1, 3} {
+		s.add(n)
+	}
+	if s.add(2) {
+		t.Fatal("2 reported duplicate")
+	}
+	if len(s.ranges) != 1 || s.ranges[0] != (Range{1, 3}) {
+		t.Fatalf("ranges not coalesced: %v", s.ranges)
+	}
+}
+
 func TestTimestampNs(t *testing.T) {
 	if got := timestampNs(90000, 90000); got != 1_000_000_000 {
 		t.Fatalf("1s %d", got)

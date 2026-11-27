@@ -57,9 +57,18 @@ type Log struct {
 
 // Open opens or creates the journal at path for appending. The returned log's
 // sequence counter resumes after the last durable record.
+//
+// A crash can leave a torn record at the tail: the bytes were written but the
+// terminating newline was not, so the record never became durable. Appending
+// after such a tail would glue the next record onto the partial line and make
+// it unreadable forever, so Open truncates the file back to the last complete
+// record before appending. Complete records are never touched.
 func Open(path string) (*Log, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, model.New(model.CodeIO, model.Source{Name: path, Offset: -1}, "create journal directory", err)
+	}
+	if err := repairTail(path); err != nil {
+		return nil, err
 	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
@@ -75,6 +84,29 @@ func Open(path string) (*Log, error) {
 		l.seq = recs[n-1].Seq
 	}
 	return l, nil
+}
+
+// repairTail truncates a journal whose last record lacks a terminating
+// newline. A missing file is fine: it is created by the append open.
+func repairTail(path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return model.New(model.CodeIO, model.Source{Name: path, Offset: -1}, "read journal for tail repair", err)
+	}
+	// A journal always ends every durable record with '\n'. If the final byte
+	// is not a newline (or the file is empty), cut back to the last newline;
+	// with no newline at all the whole file is one torn record.
+	keep := bytes.LastIndexByte(data, '\n') + 1
+	if keep == len(data) {
+		return nil
+	}
+	if err := os.Truncate(path, int64(keep)); err != nil {
+		return model.New(model.CodeIO, model.Source{Name: path, Offset: int64(keep)}, "truncate torn journal tail", err)
+	}
+	return nil
 }
 
 // Path returns the journal's file path.

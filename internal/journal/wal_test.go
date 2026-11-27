@@ -129,6 +129,44 @@ func TestTornTailIsReportedAndEarlierRecordsSurvive(t *testing.T) {
 	}
 }
 
+// TestOpenRepairsTornTail: a torn final record must be truncated before the
+// next append, so the new record stays readable and no durable record is lost.
+func TestOpenRepairsTornTail(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "stage.wal")
+	l := mustOpen(t, dir)
+	if _, err := l.Append(Record{Type: TypeStageBegin, Task: "t", Stage: "a"}); err != nil {
+		t.Fatal(err)
+	}
+	l.Close()
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.WriteString(`0011223344556677 {"seq":2,"type":"stage_d`)
+	f.Close()
+
+	l2, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := l2.Append(Record{Type: TypeStageDone, Task: "t", Stage: "b"}); err != nil {
+		t.Fatal(err)
+	}
+	l2.Close()
+
+	recs, bad, err := Replay(path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recs) != 2 || len(bad) != 0 {
+		t.Fatalf("records %d bad %d; torn tail was not repaired", len(recs), len(bad))
+	}
+	if recs[1].Type != TypeStageDone || recs[1].Seq != 2 {
+		t.Fatalf("appended record %+v", recs[1])
+	}
+}
+
 func TestAppendRejectsIncompleteRecord(t *testing.T) {
 	dir := t.TempDir()
 	l := mustOpen(t, dir)

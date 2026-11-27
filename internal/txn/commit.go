@@ -403,6 +403,15 @@ func (e *Engine) Recover() (*RecoveryResult, error) {
 					return res, err
 				}
 			}
+			// The commit marker can outlive the manifest file itself (the
+			// manifest rename is separate from the journal append). Rebuild
+			// it from the durable draft so recovery never reports an
+			// unreadable manifest as healthy.
+			if manifestMissing(e.root) && st.Draft != nil {
+				if err := writeManifestFromDraft(e.root, st.Draft); err != nil {
+					return res, err
+				}
+			}
 			continue
 		}
 		if !st.Begin {
@@ -420,6 +429,20 @@ func (e *Engine) Recover() (*RecoveryResult, error) {
 					"task %q published artifacts without a manifest draft", name))
 				res.Published++
 				res.Missing += len(st.PublishedFiles)
+			}
+			continue
+		}
+		// The draft must describe exactly the artifacts the journal
+		// registered. A mismatch means the draft is corrupt or was not
+		// produced by this task; publishing it would commit a manifest that
+		// names files which were never staged.
+		if !draftMatchesArtifacts(st.Draft, st.Artifacts) {
+			res.Errors = append(res.Errors, model.Newf(model.CodeTxnConflict, model.Source{Name: e.log.Path(), Offset: -1},
+				"task %q manifest draft does not match its registered artifacts", name))
+			if st.HasStaging {
+				if err := e.removeStaging(name, res); err != nil {
+					return res, err
+				}
 			}
 			continue
 		}
@@ -455,6 +478,16 @@ func (e *Engine) Recover() (*RecoveryResult, error) {
 		missing, duplicate := verify(st, st.PublishedFiles)
 		res.Missing += missing
 		res.Duplicate += duplicate
+		// The published tree must be exactly what the journal registered. A
+		// crash after the publish rename but before stage_done leaves files in
+		// place with no journal record (duplicate), and a damaged tree leaves
+		// registered files absent (missing). Publishing either would commit a
+		// manifest that disagrees with disk, so refuse to complete.
+		if missing > 0 || duplicate > 0 {
+			res.Errors = append(res.Errors, model.Newf(model.CodeTxnConflict, model.Source{Name: e.log.Path(), Offset: -1},
+				"task %q published set disagrees with the journal (missing=%d unregistered=%d)", name, missing, duplicate))
+			continue
+		}
 		data, err := st.Draft.Encode()
 		if err != nil {
 			return res, err
@@ -490,6 +523,41 @@ func dirsMatch(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// draftMatchesArtifacts reports whether the sealed manifest names exactly the
+// artifacts recorded in the journal, so a corrupt or foreign draft cannot
+// publish a manifest that disagrees with the logged artifact set.
+func draftMatchesArtifacts(m *manifest.Manifest, arts []manifest.Artifact) bool {
+	if m == nil || len(m.Artifacts) != len(arts) {
+		return false
+	}
+	want := make(map[string]manifest.Artifact, len(arts))
+	for _, a := range arts {
+		want[a.Name] = a
+	}
+	for _, a := range m.Artifacts {
+		w, ok := want[a.Name]
+		if !ok || w.SHA256 != a.SHA256 || w.Bytes != a.Bytes {
+			return false
+		}
+	}
+	return true
+}
+
+// manifestMissing reports whether the root's manifest file is absent.
+func manifestMissing(root string) bool {
+	_, err := os.Stat(ManifestPath(root))
+	return os.IsNotExist(err)
+}
+
+// writeManifestFromDraft re-publishes the committed manifest atomically.
+func writeManifestFromDraft(root string, m *manifest.Manifest) error {
+	data, err := m.Encode()
+	if err != nil {
+		return err
+	}
+	return writeFileAtomic(ManifestPath(root), data)
 }
 
 func (e *Engine) removeStaging(task string, res *RecoveryResult) error {
