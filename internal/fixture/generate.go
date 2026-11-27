@@ -48,8 +48,17 @@ func rtpPacket(pt uint8, seq uint16, ts uint32, payload []byte) Packet {
 	return Packet{Raw: raw, Sequence: seq, TS: ts}
 }
 
-// opusPayload builds a legal code-0 Opus packet for a 20 ms frame.
-func opusPayload() []byte { return []byte{0x00, 0xAA} }
+// opusPayload builds a legal code-0 Opus packet for a 20 ms frame. The frame
+// is sized so 50 packets over one second carry 10000 payload bytes, matching
+// the 80 kbps demo target bitrate within the 5% gate.
+func opusPayload() []byte {
+	p := make([]byte, 200)
+	p[0] = 0x00 // TOC: config 0, code 0 (one frame)
+	for i := 1; i < len(p); i++ {
+		p[i] = 0xAA
+	}
+	return p
+}
 
 // OpusTrack generates a healthy sequence of 20 ms Opus RTP packets. Each RTP
 // timestamp advances 960 ticks at the 48 kHz clock.
