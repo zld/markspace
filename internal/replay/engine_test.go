@@ -2,6 +2,9 @@ package replay_test
 
 import (
 	"bytes"
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -354,5 +357,48 @@ func TestResumeAfterChangedInputRestartsFromIngest(t *testing.T) {
 	}
 	if len(res.Rollbacks) == 0 || res.Rollbacks[0].Stage != replay.StageIngest {
 		t.Fatalf("expected ingest rollback, got %+v", res.Rollbacks)
+	}
+}
+
+func TestTimelineAnchorsWithoutRTCPAsEstimated(t *testing.T) {
+	fx := fixture(t, scenario.CaseNormal)
+	// Drop every RTCP report so both tracks must fall back to the first
+	// valid packet as their anchor.
+	fx.RTCP = nil
+	res, err := engine(t, fx, t.TempDir()).Run()
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !res.Verified {
+		t.Fatal("manifest should verify")
+	}
+	// The persisted timeline must mark both tracks estimated.
+	data, err := os.ReadFile(filepath.Join(res.ManifestPath[:len(res.ManifestPath)-len("manifest.json")], "timeline.json"))
+	if err != nil {
+		t.Fatalf("read timeline: %v", err)
+	}
+	var art struct {
+		Sources   map[string]string `json:"sources"`
+		Estimated []string          `json:"estimated"`
+		Points    []struct {
+			Estimated bool   `json:"Estimated"`
+			Source    string `json:"Source"`
+		} `json:"points"`
+	}
+	if err := json.Unmarshal(data, &art); err != nil {
+		t.Fatalf("parse timeline: %v", err)
+	}
+	if len(art.Estimated) != 2 {
+		t.Fatalf("estimated tracks=%v want both", art.Estimated)
+	}
+	for _, src := range art.Sources {
+		if src != "estimated-first-packet" {
+			t.Fatalf("source=%q want estimated-first-packet", src)
+		}
+	}
+	for _, p := range art.Points {
+		if !p.Estimated {
+			t.Fatal("point not marked estimated")
+		}
 	}
 }
