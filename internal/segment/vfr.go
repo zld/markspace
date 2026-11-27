@@ -17,15 +17,15 @@ const MinPackets = 3
 // Segment is one half-open packet interval [StartPacket, EndPacket)
 // covering the half-open sample interval [StartSample, EndSample).
 type Segment struct {
-	Index       int
-	StartPacket int
-	EndPacket   int
-	StartSample uint64
-	EndSample   uint64
+	Index        int
+	StartPacket  int
+	EndPacket    int
+	StartSample  uint64
+	EndSample    uint64
 	FrameSamples uint64 // dominant inter-packet sample delta
-	Merged      bool
-	Sources     []model.Range // packet ranges merged into this segment
-	Gaps        []model.Range // missing sample ranges inside the segment
+	Merged       bool
+	Sources      []model.Range // packet ranges merged into this segment
+	Gaps         []model.Range // missing sample ranges inside the segment
 }
 
 // Packets returns the number of packets in the segment.

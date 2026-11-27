@@ -14,15 +14,15 @@ import (
 
 // Header is the validated PCM WAV metadata.
 type Header struct {
-	Channels       uint16
-	SampleRate     uint32
-	BitsPerSample  uint16
-	BlockAlign     uint16
-	ByteRate       uint32
-	DataOffset     int64 // raw byte offset of the first data byte
-	DataLength     uint32 // declared data chunk size
-	DeclaredTrunc  bool  // declared data runs past the physical file end
-	FileSize       int64
+	Channels      uint16
+	SampleRate    uint32
+	BitsPerSample uint16
+	BlockAlign    uint16
+	ByteRate      uint32
+	DataOffset    int64  // raw byte offset of the first data byte
+	DataLength    uint32 // declared data chunk size
+	DeclaredTrunc bool   // declared data runs past the physical file end
+	FileSize      int64
 }
 
 // FrameCount returns the number of complete interleaved frames the data

@@ -58,7 +58,7 @@ func Unwrap(packets []Packet) *UnwrapResult {
 			isolate(i, model.Anomaly{
 				Stage: model.StageUnwrap, Reason: model.ReasonSeqGap,
 				Offset: cur.Offset, RawValue: int64(cur.Seq),
-				Message: fmt.Sprintf("sequence jump %d -> %d", prev.Seq, cur.Seq),
+				Message:  fmt.Sprintf("sequence jump %d -> %d", prev.Seq, cur.Seq),
 				Recovery: "isolate range; resume unwrapping at next continuous pair",
 			})
 			prev = cur
@@ -91,14 +91,14 @@ func Unwrap(packets []Packet) *UnwrapResult {
 			isolate(i, model.Anomaly{
 				Stage: model.StageUnwrap, Reason: reason,
 				Offset: cur.Offset, RawValue: int64(cur.Timestamp),
-				Message: fmt.Sprintf("timestamp moved backwards by %d ticks", -d),
+				Message:  fmt.Sprintf("timestamp moved backwards by %d ticks", -d),
 				Recovery: "isolate packet; keep raw timestamp",
 			})
 		default:
 			isolate(i, model.Anomaly{
 				Stage: model.StageUnwrap, Reason: model.ReasonJump,
 				Offset: cur.Offset, RawValue: int64(cur.Timestamp),
-				Message: fmt.Sprintf("timestamp jumped forward by %d ticks", d),
+				Message:  fmt.Sprintf("timestamp jumped forward by %d ticks", d),
 				Recovery: "isolate packet; keep raw timestamp",
 			})
 		}

@@ -90,7 +90,7 @@ func Fit(samples []Sample, maxPPM float64) *Result {
 		res.Anomalies = append(res.Anomalies, model.Anomaly{
 			Stage: model.StageClock, Reason: model.ReasonDrift,
 			Offset: -1, RawValue: int64(res.PPM),
-			Message: fmt.Sprintf("local drift exceeds %.0f ppm over packets %s", maxPPM, r),
+			Message:  fmt.Sprintf("local drift exceeds %.0f ppm over packets %s", maxPPM, r),
 			Recovery: "mark range; exclude from coverage, keep raw timestamps",
 		})
 	}
