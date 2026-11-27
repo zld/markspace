@@ -50,15 +50,17 @@ func (t *Timeline) rebuild(ordered []Event, late Event) (*model.Boundary, error)
 		if err != nil {
 			return nil, err
 		}
+		// Tag the stored boundary itself so the audit trail shows which edge
+		// was integrated via replay, not just the returned copy.
+		if e.key() == late.key() {
+			b.Repair = tagLate(b.Repair)
+			bb := *b
+			lateBoundary = &bb
+		}
 		fresh.seen[e.key()] = e.Seq
 		fresh.events = append(fresh.events, e)
 		fresh.boundaries = append(fresh.boundaries, *b)
 		fresh.advanceWatermark(b.RepairedTick)
-		if e.key() == late.key() {
-			bb := *b
-			bb.Repair = tagLate(bb.Repair)
-			lateBoundary = &bb
-		}
 	}
 	// Commit the recomputed state atomically; a failure above leaves the
 	// original timeline untouched (no half-applied result).

@@ -184,6 +184,8 @@ func TestLateEventTriggersReplayMatchingFullRecompute(t *testing.T) {
 	if len(got) != len(oracle) {
 		t.Fatalf("boundary count replay=%d oracle=%d", len(got), len(oracle))
 	}
+	// The replayed edge must carry a late tag in the stored boundary trail.
+	foundLateTag := false
 	for i := range oracle {
 		if got[i].RepairedTick != oracle[i].RepairedTick ||
 			got[i].OriginalTick != oracle[i].OriginalTick ||
@@ -191,7 +193,26 @@ func TestLateEventTriggersReplayMatchingFullRecompute(t *testing.T) {
 			t.Fatalf("boundary %d diverges:\n replay=%+v\n oracle=%+v",
 				i, got[i], oracle[i])
 		}
+		if got[i].SampleIndex == late.SampleIndex &&
+			containsRepair(got[i].Repair, RepairLate) {
+			foundLateTag = true
+		}
 	}
+	if !foundLateTag {
+		t.Fatalf("stored late boundary missing %q tag: %+v", RepairLate, got)
+	}
+}
+
+func containsRepair(repair, want string) bool {
+	if repair == want {
+		return true
+	}
+	for i := 0; i+len(want) <= len(repair); i++ {
+		if repair[i:i+len(want)] == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestDeterminismAcrossRuns(t *testing.T) {
