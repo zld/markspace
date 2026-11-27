@@ -39,11 +39,14 @@ type Stream struct {
 	Packets            []TracePacket    `json:"packets"`
 }
 
-// AACStreamConfig describes the RFC 3640 mpeg4-generic payload framing.
+// AACStreamConfig describes both the AudioSpecificConfig that determines the
+// AU duration and the RFC 3640 mpeg4-generic payload framing that determines
+// where each AU starts inside a packet.
 type AACStreamConfig struct {
 	UseAUHeaders bool  `json:"use_au_headers"`
 	SizeLength   uint8 `json:"size_length"`
 	IndexLength  uint8 `json:"index_length"`
+	AACConfig
 }
 
 // TracePacket is one RTP arrival. RTPHex is the complete datagram so that the
