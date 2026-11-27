@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -112,6 +113,48 @@ func TestRunBurstLossRecoveryRate(t *testing.T) {
 	// nothing recoverable was missed, and never fabricates audio.
 	if res.Metrics.LossRecoveryRate < 0 || res.Metrics.LossRecoveryRate > 1 {
 		t.Fatalf("recovery rate out of range: %f", res.Metrics.LossRecoveryRate)
+	}
+}
+
+func TestRunResumeSkipsCommittedAndRejectsMismatch(t *testing.T) {
+	out := t.TempDir()
+	spec := fixture.DefaultSpec(fixture.KindNormal)
+	pkts := fixture.Build(spec)
+	if _, err := fixture.WriteCapture(filepath.Join(out, "capture"),
+		"normal.rtp", pkts, -1); err != nil {
+		t.Fatal(err)
+	}
+	cfg := baseCfg(out)
+	first, err := Run(spec, cfg, false)
+	if err != nil || first.Error != nil {
+		t.Fatalf("first run: %v %v", err, first.Error)
+	}
+
+	// Resume on intact state must verify and skip without errors.
+	second, err := Run(spec, cfg, true)
+	if err != nil || second.Error != nil {
+		t.Fatalf("clean resume failed: %v %v", err, second.Error)
+	}
+	if second.Metrics.IndexSHA256 != first.Metrics.IndexSHA256 {
+		t.Fatal("index digest changed across clean resume")
+	}
+
+	// Tamper with a committed chunk output, then resume must refuse with a
+	// checkpoint/index class error (exit code 3).
+	entries, err := os.ReadDir(filepath.Join(out, "chunks"))
+	if err != nil || len(entries) == 0 {
+		t.Fatalf("no chunk output: %v", err)
+	}
+	target := filepath.Join(out, "chunks", entries[0].Name())
+	if err := os.WriteFile(target, []byte("tampered-bytes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	bad, err := Run(spec, cfg, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bad.Error == nil || bad.Metrics.ExitCode != 3 {
+		t.Fatalf("mismatched resume accepted: %+v", bad)
 	}
 }
 
