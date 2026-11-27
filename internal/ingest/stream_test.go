@@ -163,6 +163,7 @@ func TestEmitBackpressureAndCancel(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	recs, errs := s.Emit(ctx)
 	// Consume slowly; the producer must block on the bounded channel.
 	var count int
