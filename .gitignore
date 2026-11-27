@@ -11,3 +11,9 @@ mediad-work/
 # OS/editor cruft
 .DS_Store
 *.swp
+
+# local run artifacts
+out.json
+err.log
+m1.txt
+m2.txt
