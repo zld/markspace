@@ -1,0 +1,8 @@
+# Go build artifacts
+*.out
+*.tmp
+/bin/
+/mediapack
+
+# Local demo output
+/mediapack-demo/
