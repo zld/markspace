@@ -6,19 +6,10 @@ package fixture
 
 import (
 	"encoding/binary"
+	"fmt"
 
 	"mediapack/internal/binio"
-)
-
-// MXF 16-byte UL keys. The first 12 bytes are a fixed registered-style
-// prefix; the last 4 bytes identify the local tag set below.
-var (
-	mxfPrefix = []byte{0x06, 0x0e, 0x2b, 0x34, 0x01, 0x02, 0x01, 0x01,
-		0x0d, 0x01, 0x02, 0x00}
-	keyHeaderPack = mxfKey(0x01)
-	keyPreface    = mxfKey(0x02)
-	keyTrack      = mxfKey(0x03)
-	keyEssence    = mxfKey(0x04)
+	"mediapack/internal/klv"
 )
 
 // Local tags inside preface/track KLV values.
@@ -31,10 +22,14 @@ const (
 	tagCrop      uint16 = 0x0202
 	tagColor     uint16 = 0x0203
 	tagRTPBase   uint16 = 0x0301
-	tagRTPMod    uint16 = 0x0302
+	tagRTPStep   uint16 = 0x0302
 	// Sample-group item: index(4) dts(8) duration(8) offset(8) size(4) rtpRaw(4)
 	tagSample uint16 = 0x0400
 )
+
+// RTPModulus is the fixed 32-bit RTP timestamp modulus (RFC 3550). Clock
+// expansion onto an unwrapped axis always uses this value.
+const RTPModulus uint64 = 1 << 32
 
 // MXFTrackSpec describes one generated MXF track.
 type MXFTrackSpec struct {
@@ -52,7 +47,7 @@ type MXFTrackSpec struct {
 	ColorMx   uint16
 	FullRange bool
 	RTPBase   uint32
-	RTPMod    uint32
+	RTPStep   uint32 // per-sample raw RTP increment; wraps at 2^32
 	Count     int
 	Size      int
 }
@@ -67,14 +62,7 @@ type MXFSample struct {
 	RTPRaw   uint32
 }
 
-func mxfKey(tag byte) [16]byte {
-	var k [16]byte
-	copy(k[:], mxfPrefix)
-	k[15] = tag
-	return k
-}
-
-func klv(w *[]byte, key [16]byte, value []byte) {
+func writeKLV(w *[]byte, key [16]byte, value []byte) {
 	*w = append(*w, key[:]...)
 	*w = append(*w, binio.BERLen(uint64(len(value)))...)
 	*w = append(*w, value...)
@@ -91,9 +79,9 @@ func buildMXF(tracks []MXFTrackSpec) ([]byte, []MXFSample, error) {
 	out := make([]byte, 0, 4096)
 	// Header partition pack: magic plus version and track count.
 	hdr := make([]byte, 0, 16)
-	hdr = append(hdr, []byte("MXF-HDR-PACK-v1")...)
+	hdr = append(hdr, []byte(klv.HeaderMagic)...)
 	hdr = append(hdr, binio.BE32(uint32(len(tracks)))...)
-	klv(&out, keyHeaderPack, hdr)
+	writeKLV(&out, klv.KeyHeaderPack, hdr)
 
 	var samples []MXFSample
 	for _, tr := range tracks {
@@ -116,44 +104,49 @@ func buildMXF(tracks []MXFTrackSpec) ([]byte, []MXFSample, error) {
 		}
 		pref = append(pref, flag)
 		pref = append(pref, binio.BE32(tr.RTPBase)...)
-		pref = append(pref, binio.BE32(tr.RTPMod)...)
-		klv(&out, keyPreface, pref)
+		pref = append(pref, binio.BE32(tr.RTPStep)...)
+		writeKLV(&out, klv.KeyPreface, pref)
 
-		// Track KLV holds the per-sample index table; essence follows.
-		// Record each row's offset placeholder so essence offsets can be
-		// patched deterministically once the bytes are written.
-		tbl := make([]byte, 0, tr.Count*28)
-		slots := make([]int, tr.Count)
+		// Each essence sample is preceded by its own single-row index KLV,
+		// mirroring real MXF where index/essence interleave per item. This
+		// keeps the parser stateless: a table KLV names the track for the
+		// essence KLV that follows it.
 		for i := 0; i < tr.Count; i++ {
-			tbl = append(tbl, binio.BE32(uint32(i))...)
-			tbl = append(tbl, binio.BE64(uint64(int64(i)*int64(tr.Timescale)/25))...)
-			tbl = append(tbl, binio.BE64(uint64(tr.Timescale/25))...)
-			slots[i] = len(out) + len(tbl) // absolute position in out after KLV
-			tbl = append(tbl, make([]byte, 8)...) // offset placeholder
-			tbl = append(tbl, binio.BE32(uint32(tr.Size))...)
-			raw := tr.RTPBase
-			if tr.RTPMod != 0 {
-				raw = tr.RTPBase + uint32(i)*(tr.RTPMod/25)
-			}
-			tbl = append(tbl, binio.BE32(raw)...)
-		}
-		// KLV framing sits between out and tbl; slots must account for it.
-		frameHead := len(keyTrack) + len(binio.BERLen(uint64(len(tbl))))
-		for i := range slots {
-			slots[i] += frameHead
-		}
-		klv(&out, keyTrack, tbl)
+			// Natural uint32 arithmetic: a step that crosses 2^32 wraps the
+			// raw value, which the timeline later expands deterministically.
+			raw := tr.RTPBase + uint32(i)*tr.RTPStep
+			row := make([]byte, 40)
+			binary.BigEndian.PutUint32(row[0:4], tr.TrackID)
+			binary.BigEndian.PutUint32(row[4:8], uint32(i))
+			binary.BigEndian.PutUint64(row[8:16],
+				uint64(int64(i)*int64(tr.Timescale)/25))
+			binary.BigEndian.PutUint64(row[16:24], uint64(tr.Timescale/25))
+			// offset(24:32) patched after the KLV framing is written
+			binary.BigEndian.PutUint32(row[32:36], uint32(tr.Size))
+			binary.BigEndian.PutUint32(row[36:40], raw)
+			frameHead := len(klv.KeyTrack) + len(binio.BERLen(uint64(len(row))))
 
-		for i := 0; i < tr.Count; i++ {
 			payload := samplePayload("mxf", tr.TrackID, uint32(i), tr.Size)
-			off := int64(len(out))
-			binary.BigEndian.PutUint64(out[slots[i]:slots[i]+8], uint64(off))
-			klv(&out, keyEssence, payload)
+			// Table KLV ends here; the essence KLV header (key + BER) follows,
+			// then the payload whose file offset we record in the index row.
+			tableEnd := int64(len(out)) + int64(frameHead) + int64(len(row))
+			essenceHdr := int64(len(klv.KeyEssence)) +
+				int64(len(binio.BERLen(uint64(len(payload)))))
+			essenceOff := tableEnd + essenceHdr
+			binary.BigEndian.PutUint64(row[24:32], uint64(essenceOff))
+			writeKLV(&out, klv.KeyTrack, row)
+			if got := int64(len(out)); got != tableEnd {
+				return nil, nil, fmt.Errorf("table end mismatch: got %d want %d", got, tableEnd)
+			}
+			writeKLV(&out, klv.KeyEssence, payload)
+			if got := int64(len(out)); got != essenceOff+int64(len(payload)) {
+				return nil, nil, fmt.Errorf("essence end mismatch: got %d want %d",
+					got, essenceOff+int64(len(payload)))
+			}
 			dts := int64(i) * int64(tr.Timescale) / 25
 			samples = append(samples, MXFSample{
 				Index: uint32(i), DTS: dts, Duration: int64(tr.Timescale / 25),
-				Offset: off, Size: uint32(tr.Size),
-				RTPRaw: tr.RTPBase + uint32(i)*(tr.RTPMod/25),
+				Offset: essenceOff, Size: uint32(tr.Size), RTPRaw: raw,
 			})
 		}
 	}
