@@ -67,25 +67,27 @@ type InputDigest struct {
 
 // Summary is the acceptance record printed and persisted by the tool.
 type Summary struct {
-	ItemsTotal    int              `json:"items_total"`
-	ItemsOK       int              `json:"items_ok"`
-	ItemsError    int              `json:"items_error"`
-	MaxSkewMs     int64            `json:"max_skew_ms"`
-	MaxSkewNs     int64            `json:"max_skew_ns"`
-	ThresholdMs   int64            `json:"threshold_ms"`
-	OverBudget    int              `json:"over_budget"`
-	AnomalyRanges int              `json:"anomaly_ranges"`
-	Frames        int              `json:"frames"`
-	FrameDigest   string           `json:"frame_sha256"`
-	RTPDuplicate  int              `json:"rtp_duplicate"`
-	RTPGap        int              `json:"rtp_gap"`
-	RTPMissing    uint64           `json:"rtp_missing"`
-	MP4Invalid    int              `json:"mp4_invalid_samples"`
-	Inputs        []InputDigest    `json:"inputs"`
-	Items         []ItemConclusion `json:"items"`
-	Anomalies     []Anomaly        `json:"anomalies"`
-	FrameList     []FrameRecord    `json:"frame_list"`
-	Errors        []string         `json:"errors,omitempty"`
+	ItemsTotal      int              `json:"items_total"`
+	ItemsOK         int              `json:"items_ok"`
+	ItemsError      int              `json:"items_error"`
+	MaxSkewMs       int64            `json:"max_skew_ms"`
+	CoverageStartNs int64            `json:"coverage_start_ns"`
+	CoverageEndNs   int64            `json:"coverage_end_ns"`
+	MaxSkewNs       int64            `json:"max_skew_ns"`
+	ThresholdMs     int64            `json:"threshold_ms"`
+	OverBudget      int              `json:"over_budget"`
+	AnomalyRanges   int              `json:"anomaly_ranges"`
+	Frames          int              `json:"frames"`
+	FrameDigest     string           `json:"frame_sha256"`
+	RTPDuplicate    int              `json:"rtp_duplicate"`
+	RTPGap          int              `json:"rtp_gap"`
+	RTPMissing      uint64           `json:"rtp_missing"`
+	MP4Invalid      int              `json:"mp4_invalid_samples"`
+	Inputs          []InputDigest    `json:"inputs"`
+	Items           []ItemConclusion `json:"items"`
+	Anomalies       []Anomaly        `json:"anomalies"`
+	FrameList       []FrameRecord    `json:"frame_list"`
+	Errors          []string         `json:"errors,omitempty"`
 }
 
 // Manifest is the published document.

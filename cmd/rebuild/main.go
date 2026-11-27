@@ -25,6 +25,7 @@ import (
 
 	"media.rebuild/internal/clock"
 	"media.rebuild/internal/fixtures"
+	"media.rebuild/internal/journal"
 	"media.rebuild/internal/manifest"
 	"media.rebuild/internal/model"
 	"media.rebuild/internal/mp4"
@@ -395,6 +396,25 @@ func analyze(sb sandbox, rate clock.Rate, frameCount int) (*manifest.Summary, []
 	for _, e := range eventErrs {
 		addErr(e)
 	}
+
+	// --- stage journal ---------------------------------------------------
+	// Every analysis stage records a durable begin/done pair. The entries are
+	// appended to the stage log inside the output root, separate from the
+	// transaction journal, so a reviewer can see which stages completed.
+	stageLog, err := journal.Open(filepath.Join(sb.root, "journal", "stages.wal"))
+	if err != nil {
+		return nil, nil, err
+	}
+	defer stageLog.Close()
+	runStage := func(name string, fn func()) {
+		if _, err := stageLog.Append(journal.Record{Type: journal.TypeStageBegin, Task: taskName, Stage: name}); err != nil {
+			addErr(err)
+		}
+		fn()
+		if _, err := stageLog.Append(journal.Record{Type: journal.TypeStageDone, Task: taskName, Stage: name}); err != nil {
+			addErr(err)
+		}
+	}
 	for _, e := range events {
 		// Each event is also labelled in the review frame rate's timecode, so
 		// the rate selection is visible in the published record. Drop-frame
@@ -413,124 +433,153 @@ func analyze(sb sandbox, rate clock.Rate, frameCount int) (*manifest.Summary, []
 
 	// --- subtitles -------------------------------------------------------
 	var cues []timeline.CueRef
-	for _, name := range []string{"broken.srt", "broken.vtt", "review.srt", "review.vtt"} {
-		data, path, err := sb.read(name)
-		if err != nil {
-			addErr(err)
-			continue
+	runStage("subtitles", func() {
+		for _, name := range []string{"broken.srt", "broken.vtt", "review.srt", "review.vtt"} {
+			data, path, err := sb.read(name)
+			if err != nil {
+				addErr(err)
+				continue
+			}
+			kind := subtitle.Detect(string(data))
+			tr, perr := subtitle.Parse(kind, name, string(data))
+			if perr != nil {
+				addErr(perr)
+				continue
+			}
+			_ = path
+			for _, e := range tr.Errors {
+				addErr(e)
+				summary.Items = append(summary.Items, manifest.ItemConclusion{
+					ID: fmt.Sprintf("%s:%d", name, e.Source.Line), Kind: "subtitle", Track: subtitleTrackName,
+					Source: name, Line: e.Source.Line, Status: "error", Detail: e.Error(),
+				})
+			}
+			for _, c := range tr.Cues {
+				id := fmt.Sprintf("%s:%d", name, c.Line)
+				cues = append(cues, timeline.CueRef{
+					ID: id, Track: subtitleTrackName, Source: name, Line: c.Line,
+					TimeNs: c.Start, EndNs: c.End, Label: c.Text,
+				})
+				summary.Items = append(summary.Items, manifest.ItemConclusion{
+					ID: id, Kind: "subtitle", Track: subtitleTrackName, Source: name, Line: c.Line,
+					TimeNs: c.Start, Status: "ok", Detail: fmt.Sprintf("[%d,%d)ns", c.Start, c.End),
+				})
+			}
+			// Overlapping cues cannot both be on screen at the same instant;
+			// report the intersection so the review accounts for it.
+			byID := make(map[string]subtitle.Cue, len(tr.Cues))
+			for _, c := range tr.Cues {
+				byID[fmt.Sprintf("%s:%d", name, c.Line)] = c
+			}
+			for _, pair := range subtitle.Overlap(tr.Cues) {
+				a := tr.Cues[pair[0]]
+				b := tr.Cues[pair[1]]
+				start := a.Start
+				if b.Start > start {
+					start = b.Start
+				}
+				end := a.End
+				if b.End < end {
+					end = b.End
+				}
+				summary.Items = append(summary.Items, manifest.ItemConclusion{
+					ID: fmt.Sprintf("%s:overlap:%d-%d", name, a.Line, b.Line), Kind: "subtitle",
+					Track: subtitleTrackName, Source: name, Line: a.Line, TimeNs: start,
+					Status: "ok", Detail: fmt.Sprintf("cues overlap over [%d,%d)ns", start, end),
+				})
+			}
 		}
-		kind := subtitle.Detect(string(data))
-		tr, perr := subtitle.Parse(kind, name, string(data))
-		if perr != nil {
-			addErr(perr)
-			continue
-		}
-		_ = path
-		for _, e := range tr.Errors {
-			addErr(e)
-			summary.Items = append(summary.Items, manifest.ItemConclusion{
-				ID: fmt.Sprintf("%s:%d", name, e.Source.Line), Kind: "subtitle", Track: subtitleTrackName,
-				Source: name, Line: e.Source.Line, Status: "error", Detail: e.Error(),
-			})
-		}
-		for _, c := range tr.Cues {
-			id := fmt.Sprintf("%s:%d", name, c.Line)
-			cues = append(cues, timeline.CueRef{
-				ID: id, Track: subtitleTrackName, Source: name, Line: c.Line,
-				TimeNs: c.Start, EndNs: c.End, Label: c.Text,
-			})
-			summary.Items = append(summary.Items, manifest.ItemConclusion{
-				ID: id, Kind: "subtitle", Track: subtitleTrackName, Source: name, Line: c.Line,
-				TimeNs: c.Start, Status: "ok", Detail: fmt.Sprintf("[%d,%d)ns", c.Start, c.End),
-			})
-		}
-	}
+	})
 
 	// --- RTP -------------------------------------------------------------
 	var mediaSamples []timeline.SampleRef
-	for _, name := range []string{"playback.rtpj", "torn.rtpj"} {
-		data, path, err := sb.read(name)
-		if err != nil {
-			addErr(err)
-			continue
-		}
-		// Report the capture by name, not by absolute path, so a manifest
-		// does not depend on where the output root lives.
-		_ = path
-		cap, err := rtp.Read(bytes.NewReader(data), name, rtp.Options{})
-		if err != nil {
-			addErr(err)
-			continue
-		}
-		dup, gaps, missing := cap.Totals()
-		summary.RTPDuplicate += dup
-		summary.RTPGap += gaps
-		summary.RTPMissing += missing
-		for _, e := range cap.Errors {
-			addErr(e)
-			summary.Items = append(summary.Items, manifest.ItemConclusion{
-				ID: fmt.Sprintf("%s@%d", name, e.Source.Offset), Kind: "rtp", Track: mediaTrackName,
-				Source: name, Status: "error", Detail: e.Error(),
-			})
-		}
-		for _, rec := range cap.Records {
-			if rec.Duplicate {
+	runStage("rtp", func() {
+		for _, name := range []string{"playback.rtpj", "torn.rtpj"} {
+			data, path, err := sb.read(name)
+			if err != nil {
+				addErr(err)
 				continue
 			}
-			id := fmt.Sprintf("%s:seq%d", name, rec.ExtSequence)
-			mediaSamples = append(mediaSamples, timeline.SampleRef{
-				ID: id, Track: mediaTrackName, Source: name, TimeNs: rec.TimeNs,
-				Label: fmt.Sprintf("ssrc=%d seq=%d", rec.SSRC, rec.ExtSequence),
-			})
-			summary.Items = append(summary.Items, manifest.ItemConclusion{
-				ID: id, Kind: "rtp", Track: mediaTrackName, Source: name,
-				TimeNs: rec.TimeNs, Status: "ok", Detail: fmt.Sprintf("payload=%d", rec.PayloadLen),
-			})
+			// Report the capture by name, not by absolute path, so a manifest
+			// does not depend on where the output root lives.
+			_ = path
+			cap, err := rtp.Read(bytes.NewReader(data), name, rtp.Options{})
+			if err != nil {
+				addErr(err)
+				continue
+			}
+			dup, gaps, missing := cap.Totals()
+			summary.RTPDuplicate += dup
+			summary.RTPGap += gaps
+			summary.RTPMissing += missing
+			for _, e := range cap.Errors {
+				addErr(e)
+				summary.Items = append(summary.Items, manifest.ItemConclusion{
+					ID: fmt.Sprintf("%s@%d", name, e.Source.Offset), Kind: "rtp", Track: mediaTrackName,
+					Source: name, Status: "error", Detail: e.Error(),
+				})
+			}
+			for _, rec := range cap.Records {
+				if rec.Duplicate {
+					continue
+				}
+				id := fmt.Sprintf("%s:seq%d", name, rec.ExtSequence)
+				mediaSamples = append(mediaSamples, timeline.SampleRef{
+					ID: id, Track: mediaTrackName, Source: name, TimeNs: rec.TimeNs,
+					Label: fmt.Sprintf("ssrc=%d seq=%d", rec.SSRC, rec.ExtSequence),
+				})
+				summary.Items = append(summary.Items, manifest.ItemConclusion{
+					ID: id, Kind: "rtp", Track: mediaTrackName, Source: name,
+					TimeNs: rec.TimeNs, Status: "ok", Detail: fmt.Sprintf("payload=%d", rec.PayloadLen),
+				})
+			}
 		}
-	}
+	})
 
 	// --- MP4 -------------------------------------------------------------
 	var mp4Invalid int
-	for _, name := range []string{"clip-truncated.mp4", "clip.mp4"} {
-		idx, err := indexMP4(filepath.Join(sb.inputDir(), name), name)
-		if err != nil {
-			addErr(err)
-			continue
-		}
-		mp4Invalid += idx.InvalidSamples()
-		for _, e := range idx.Errors {
-			addErr(e)
-		}
-		for _, tr := range idx.Tracks {
-			if !tr.Valid {
-				// One conclusion per damaged track, with every rejected
-				// sample listed in its detail, so the item list does not grow
-				// with the damage count.
-				details := make([]string, 0, len(tr.Errors))
-				for _, e := range tr.Errors {
-					addErr(e)
-					details = append(details, e.Error())
-				}
-				summary.Items = append(summary.Items, manifest.ItemConclusion{
-					ID: fmt.Sprintf("%s:track%d", name, tr.TrackID), Kind: "mp4", Track: mediaTrackName,
-					Source: name, Status: "error",
-					Detail: fmt.Sprintf("rejected=%d; %s", len(details), strings.Join(details, "; ")),
-				})
+	runStage("mp4", func() {
+		for _, name := range []string{"clip-truncated.mp4", "clip.mp4"} {
+			idx, err := indexMP4(filepath.Join(sb.inputDir(), name), name)
+			if err != nil {
+				addErr(err)
 				continue
 			}
-			for _, s := range tr.Samples {
-				id := fmt.Sprintf("%s:t%d:s%d", name, tr.TrackID, s.Index)
-				mediaSamples = append(mediaSamples, timeline.SampleRef{
-					ID: id, Track: mediaTrackName, Source: name, TimeNs: s.TimeNs,
-					Label: fmt.Sprintf("sample=%d dts=%d", s.Index, s.DTS),
-				})
-				summary.Items = append(summary.Items, manifest.ItemConclusion{
-					ID: id, Kind: "mp4", Track: mediaTrackName, Source: name,
-					TimeNs: s.TimeNs, Status: "ok", Detail: fmt.Sprintf("bytes=%d", s.Size),
-				})
+			mp4Invalid += idx.InvalidSamples()
+			for _, e := range idx.Errors {
+				addErr(e)
+			}
+			for _, tr := range idx.Tracks {
+				if !tr.Valid {
+					// One conclusion per damaged track, with every rejected
+					// sample listed in its detail, so the item list does not grow
+					// with the damage count.
+					details := make([]string, 0, len(tr.Errors))
+					for _, e := range tr.Errors {
+						addErr(e)
+						details = append(details, e.Error())
+					}
+					summary.Items = append(summary.Items, manifest.ItemConclusion{
+						ID: fmt.Sprintf("%s:track%d", name, tr.TrackID), Kind: "mp4", Track: mediaTrackName,
+						Source: name, Status: "error",
+						Detail: fmt.Sprintf("rejected=%d; %s", len(details), strings.Join(details, "; ")),
+					})
+					continue
+				}
+				for _, s := range tr.Samples {
+					id := fmt.Sprintf("%s:t%d:s%d", name, tr.TrackID, s.Index)
+					mediaSamples = append(mediaSamples, timeline.SampleRef{
+						ID: id, Track: mediaTrackName, Source: name, TimeNs: s.TimeNs,
+						Label: fmt.Sprintf("sample=%d dts=%d", s.Index, s.DTS),
+					})
+					summary.Items = append(summary.Items, manifest.ItemConclusion{
+						ID: id, Kind: "mp4", Track: mediaTrackName, Source: name,
+						TimeNs: s.TimeNs, Status: "ok", Detail: fmt.Sprintf("bytes=%d", s.Size),
+					})
+				}
 			}
 		}
-	}
+	})
 	summary.MP4Invalid = mp4Invalid
 
 	// --- timecode validation --------------------------------------------
@@ -552,12 +601,18 @@ func analyze(sb sandbox, rate clock.Rate, frameCount int) (*manifest.Summary, []
 	}
 
 	// --- timeline --------------------------------------------------------
-	merged, err := timeline.Merge(events, mediaSamples, cues, timeline.WithMediaTolerance(mediaToleranceNs))
+	var merged *timeline.Result
+	runStage("merge", func() {
+		merged, err = timeline.Merge(events, mediaSamples, cues, timeline.WithMediaTolerance(mediaToleranceNs))
+	})
 	if err != nil {
 		return nil, nil, err
 	}
 	summary.MaxSkewNs = merged.MaxSkewNs
-	summary.MaxSkewMs = merged.MaxSkewNs / 1_000_000
+	summary.MaxSkewMs = msCeil(merged.MaxSkewNs)
+	// Coverage is the span from the earliest to the latest item on any
+	// track; it is reported so a reviewer can see what the run examined.
+	summary.CoverageStartNs, summary.CoverageEndNs = coverage(merged.Items)
 	summary.OverBudget = merged.OverBudget
 	summary.AnomalyRanges = len(merged.Anomalies)
 	for _, a := range merged.Anomalies {
@@ -583,7 +638,10 @@ func analyze(sb sandbox, rate clock.Rate, frameCount int) (*manifest.Summary, []
 	}
 
 	// --- frames ----------------------------------------------------------
-	frames, err := renderFrames(merged, frameCount)
+	var frames []render.Frame
+	runStage("render", func() {
+		frames, err = renderFrames(merged, frameCount)
+	})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -785,6 +843,37 @@ func renderFrames(merged *timeline.Result, limit int) ([]render.Frame, error) {
 	return frames, nil
 }
 
+// msCeil converts nanoseconds to milliseconds, rounding up so a deviation just
+// over the budget never prints as the budget itself.
+func msCeil(ns int64) int64 {
+	if ns <= 0 {
+		return 0
+	}
+	return (ns + 999_999) / 1_000_000
+}
+
+// coverage returns the earliest instant and the latest end across items.
+func coverage(items []timeline.Item) (int64, int64) {
+	if len(items) == 0 {
+		return 0, 0
+	}
+	start := items[0].TimeNs
+	var end int64
+	for _, it := range items {
+		if it.TimeNs < start {
+			start = it.TimeNs
+		}
+		e := it.TimeNs
+		if it.EndNs > e {
+			e = it.EndNs
+		}
+		if e > end {
+			end = e
+		}
+	}
+	return start, end
+}
+
 func maxInt64(a, b int64) int64 {
 	if a > b {
 		return a
@@ -807,6 +896,7 @@ func printSummary(w io.Writer, s *manifest.Summary, mode string) {
 	fmt.Fprintf(w, "items_total=%d items_ok=%d items_error=%d\n", s.ItemsTotal, s.ItemsOK, s.ItemsError)
 	fmt.Fprintf(w, "max_skew_ms=%d threshold_ms=%d over_budget=%d anomaly_ranges=%d\n",
 		s.MaxSkewMs, s.ThresholdMs, s.OverBudget, s.AnomalyRanges)
+	fmt.Fprintf(w, "coverage=[%d,%d)ns\n", s.CoverageStartNs, s.CoverageEndNs)
 	fmt.Fprintf(w, "frames=%d frame_sha256=%s\n", s.Frames, s.FrameDigest)
 	fmt.Fprintf(w, "rtp_duplicate=%d rtp_gap=%d rtp_missing=%d mp4_invalid_samples=%d\n",
 		s.RTPDuplicate, s.RTPGap, s.RTPMissing, s.MP4Invalid)

@@ -47,7 +47,7 @@ func TestSummaryContainsAcceptanceFields(t *testing.T) {
 	}
 	for _, field := range []string{
 		"items_total=", "items_ok=", "items_error=", "max_skew_ms=",
-		"threshold_ms=40", "over_budget=", "anomaly_ranges=", "frames=",
+		"threshold_ms=40", "over_budget=", "anomaly_ranges=", "coverage=[", "frames=",
 		"frame_sha256=", "rtp_duplicate=", "rtp_gap=", "mp4_invalid_samples=",
 	} {
 		if !strings.Contains(stdout, field) {

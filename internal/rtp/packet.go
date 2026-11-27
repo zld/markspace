@@ -37,6 +37,11 @@ const DefaultClockRate = 90000
 // force a huge allocation.
 const DefaultMaxDatagram = 65535
 
+// DefaultMaxRecords bounds retained per-packet records. Sequence statistics
+// keep counting past the cap, so a long capture streams in bounded memory;
+// only the retained record list is truncated.
+const DefaultMaxRecords = 100_000
+
 // Range is an inclusive interval of extended sequence numbers.
 type Range struct {
 	First uint64 `json:"first"`
@@ -80,6 +85,9 @@ type Capture struct {
 	Records   []*Record      `json:"records"`
 	Errors    []*model.Error `json:"errors"`
 	Streams   []SSRCStats    `json:"streams"`
+	// RecordsTruncated counts packets received but not retained because the
+	// record cap was reached.
+	RecordsTruncated int64 `json:"records_truncated"`
 }
 
 // Totals returns aggregate duplicate and gap counts across all SSRCs.
@@ -96,6 +104,7 @@ func (c *Capture) Totals() (duplicates int, gaps int, missing uint64) {
 type Options struct {
 	ClockRate   uint32
 	MaxDatagram int
+	MaxRecords  int
 }
 
 func (o Options) normalized() Options {
@@ -104,6 +113,9 @@ func (o Options) normalized() Options {
 	}
 	if o.MaxDatagram == 0 {
 		o.MaxDatagram = DefaultMaxDatagram
+	}
+	if o.MaxRecords == 0 {
+		o.MaxRecords = DefaultMaxRecords
 	}
 	return o
 }
@@ -341,7 +353,11 @@ func Read(r io.Reader, source string, opts Options) (*Capture, error) {
 		st.lastTS = hdr.Timestamp
 		st.extTS = extTS
 		st.stats.Packets++
-		c.Records = append(c.Records, rec)
+		if len(c.Records) < opts.MaxRecords {
+			c.Records = append(c.Records, rec)
+		} else {
+			c.RecordsTruncated++
+		}
 		offset += int64(plen)
 	}
 
