@@ -67,6 +67,9 @@ func NewStore(dir string, fp Fingerprint) (*Store, error) {
 	return &Store{dir: dir, fp: fp, committed: map[uint64]bool{}}, nil
 }
 
+// Fingerprint returns the input digest this store validates chunks against.
+func (s *Store) Fingerprint() Fingerprint { return s.fp }
+
 func chunkPath(dir string, seq uint64) string {
 	return filepath.Join(dir, fmt.Sprintf("chunk-%06d%s", seq, committedExt))
 }
