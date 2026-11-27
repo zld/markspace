@@ -1,5 +1,6 @@
 # Compiled binaries
 /mediacheck
+/.bin/
 /cmd/mediacheck/mediacheck
 *.test
 *.out
