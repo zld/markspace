@@ -32,11 +32,13 @@ func MP4(truncate bool) []byte {
 			payload[i*MP4SampleSize+j] = byte((i*31 + j*7) % 251)
 		}
 	}
-	ftyp := fullBox("ftyp", 0, 0, func(w *boxWriter) {
+	ftyp := makeBox("ftyp", func() []byte {
+		var w boxWriter
 		w.raw([]byte{'i', 's', 'o', 'm'})
 		w.u32(0x200)
 		w.raw([]byte{'i', 's', 'o', 'm', 'i', 's', 'o', '6', 'm', 'p', '4', '1'})
-	})
+		return w.buf.Bytes()
+	}())
 
 	stts := fullBox("stts", 0, 0, func(w *boxWriter) {
 		w.u32(1)

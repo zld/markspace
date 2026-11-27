@@ -87,7 +87,9 @@ type StageResult struct {
 
 // Report is the outcome of a run.
 type Report struct {
-	Stages             []StageResult
+	Stages []StageResult
+	// BackpressureWaits counts every time the producer or a stage blocked on a
+	// full queue, i.e. every time the pipeline pushed back on its input.
 	BackpressureWaits  int
 	PeakOutstanding    int
 	ChunkSize          int
@@ -192,9 +194,19 @@ func Run(ctx context.Context, src io.Reader, size int64, cfg Config, stages ...S
 				case queues[0] <- chunk:
 					offset += int64(n)
 					index++
-				case <-runCtx.Done():
-					counter.release()
-					return
+					continue
+				default:
+					// The first queue is full: record that the producer had
+					// to wait, then block until the consumer catches up.
+					counter.countWait()
+					select {
+					case queues[0] <- chunk:
+						offset += int64(n)
+						index++
+					case <-runCtx.Done():
+						counter.release()
+						return
+					}
 				}
 			}
 			if err != nil {

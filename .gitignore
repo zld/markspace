@@ -1,0 +1,7 @@
+# Build and test output
+/archivecheck
+*.test
+*.out
+
+# Local archives produced by `archivecheck demo`
+/archive-demo/

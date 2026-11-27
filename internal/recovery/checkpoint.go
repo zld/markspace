@@ -265,6 +265,35 @@ func Open(src *asset.Source, cp *Checkpoint, cfg pipeline.Config, stages ...stri
 // Boundary returns a stage's resume offset.
 func (s *Session) Boundary(stage string) int64 { return s.cp.Stage(stage).Offset }
 
+// Resume rewinds every named stage to the lowest verified boundary across
+// them and returns that boundary. A stage that ran ahead of a slower peer has
+// verified bytes past the restart point, but those bytes cannot be kept: the
+// slower stage must be able to redo its work from a consistent prefix. The
+// rewound stages are marked running.
+func (s *Session) Resume(stages ...string) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(stages) == 0 {
+		return 0, fault.New(fault.StageRecovery, fault.KindInvalid, s.cp.Source, 0, "resume needs at least one stage")
+	}
+	lowest := s.cp.ResumeOffset(stages...)
+	for _, name := range stages {
+		st := s.cp.Stage(name)
+		if st.Offset == lowest {
+			st.Status = StatusRunning
+			continue
+		}
+		h := sha256.New()
+		h.Write(s.data[:lowest])
+		s.hashers[name] = h
+		st.Offset = lowest
+		st.Bytes = lowest
+		st.Digest = hex.EncodeToString(h.Sum(nil))
+		st.Status = StatusRunning
+	}
+	return lowest, nil
+}
+
 // MarkRunning records that a stage started (or restarted) processing.
 func (s *Session) MarkRunning(stage string) {
 	s.mu.Lock()

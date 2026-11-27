@@ -57,6 +57,8 @@ func ReadAll(root, path string, limit int64) (*Source, error) {
 	h := sha256.New()
 	var buf bytes.Buffer
 	buf.Grow(int(fi.Size()))
+	// The digest is computed over exactly the bytes retained, and a source
+	// that changed size since Stat is read up to the limit only.
 	n, err := io.Copy(io.MultiWriter(h, &buf), io.LimitReader(f, limit+1))
 	if err != nil {
 		return nil, fault.Wrap(err, fault.StageSource, fault.KindCorrupt, rel, n, "read source")
