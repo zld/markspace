@@ -44,10 +44,10 @@ func TestDecodeVINT(t *testing.T) {
 		{"max width1", []byte{0xFE}, 126, 1, false},
 		{"unknown width1", []byte{0xFF}, 127, 1, true},
 		{"unknown width4", []byte{0x1F, 0xFF, 0xFF, 0xFF}, 0x0FFFFFFF, 4, true},
-		{"ebml header id", []byte{0x1A, 0x45, 0xDF, 0xA3}, 0x1A45DFA3, 4, false},
+		{"ebml header id", []byte{0x1A, 0x45, 0xDF, 0xA3}, 0x0A45DFA3, 4, false},
 		{"width2", []byte{0x42, 0x05}, 0x0205, 2, false},
 		{"width8", []byte{0x01, 0x89, 0x70, 0x8D, 0x54, 0x30, 0x80, 0x00},
-			0x0189708D54308000, 8, false},
+			0x0089708D54308000, 8, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

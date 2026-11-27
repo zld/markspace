@@ -39,8 +39,9 @@ func DecodeVINT(buf []byte) (val uint64, width int, unknown bool, err *serr.Erro
 		return 0, width, false, serr.New(serr.CodeTruncatedHeader, "VINT needs %d bytes, have %d", width, len(buf))
 	}
 	// Data bits of the first byte: everything below the length marker.
-	v := uint64(buf[0]) & (uint64(1)<<(8-uint(width)) - 1)
-	allOnes := v == (uint64(1)<<(8-uint(width))-1)
+	dataBits := 8 - uint(width)
+	v := uint64(buf[0]) & (uint64(1)<<dataBits - 1)
+	allOnes := v == (uint64(1)<<dataBits-1)
 	for i := 1; i < width; i++ {
 		v = (v << 8) | uint64(buf[i])
 		if buf[i] != 0xFF {
