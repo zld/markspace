@@ -22,22 +22,26 @@ type RollbackRecord struct {
 
 // journalState is the serializable content of a Journal.
 type journalState struct {
-	Committed []Key            `json:"committed"`
-	Rollbacks []RollbackRecord `json:"rollbacks"`
+	Committed  []Key            `json:"committed"`
+	RolledBack []Key            `json:"rolled_back"`
+	Rollbacks  []RollbackRecord `json:"rollbacks"`
 }
 
 // Journal is the write-ahead ledger of committed fragment slots. Commit is
 // idempotent and sorted, so a recovery run replaying the same inputs reaches
 // the exact same state and summary. Nothing is "published" until Commit lands.
+// The rolledBack set makes a rolled-back slot durable: a recovery replay never
+// re-attempts it and never appends a duplicate rollback record.
 type Journal struct {
-	mu        sync.Mutex
-	committed map[Key]bool
-	rollbacks []RollbackRecord
+	mu         sync.Mutex
+	committed  map[Key]bool
+	rolledBack map[Key]bool
+	rollbacks  []RollbackRecord
 }
 
 // NewJournal starts an empty ledger.
 func NewJournal() *Journal {
-	return &Journal{committed: map[Key]bool{}}
+	return &Journal{committed: map[Key]bool{}, rolledBack: map[Key]bool{}}
 }
 
 // LoadJournal reads a ledger previously written with Save. A missing file
@@ -58,6 +62,9 @@ func LoadJournal(path string) (*Journal, error) {
 	for _, k := range st.Committed {
 		j.committed[k] = true
 	}
+	for _, k := range st.RolledBack {
+		j.rolledBack[k] = true
+	}
 	j.rollbacks = st.Rollbacks
 	return j, nil
 }
@@ -70,12 +77,11 @@ func (j *Journal) Save(path string) error {
 	for k := range j.committed {
 		st.Committed = append(st.Committed, k)
 	}
-	sort.Slice(st.Committed, func(i, x int) bool {
-		if st.Committed[i].TrackID != st.Committed[x].TrackID {
-			return st.Committed[i].TrackID < st.Committed[x].TrackID
-		}
-		return st.Committed[i].Seq < st.Committed[x].Seq
-	})
+	for k := range j.rolledBack {
+		st.RolledBack = append(st.RolledBack, k)
+	}
+	sort.Slice(st.Committed, func(i, x int) bool { return keyBefore(st.Committed[i], st.Committed[x]) })
+	sort.Slice(st.RolledBack, func(i, x int) bool { return keyBefore(st.RolledBack[i], st.RolledBack[x]) })
 	raw, err := json.MarshalIndent(st, "", "  ")
 	if err != nil {
 		return Wrap(err, "", 0, StageRecovery, -1)
@@ -90,6 +96,13 @@ func (j *Journal) Save(path string) error {
 	return nil
 }
 
+func keyBefore(a, b Key) bool {
+	if a.TrackID != b.TrackID {
+		return a.TrackID < b.TrackID
+	}
+	return a.Seq < b.Seq
+}
+
 // IsCommitted reports whether a slot already has a durable result.
 func (j *Journal) IsCommitted(k Key) bool {
 	j.mu.Lock()
@@ -97,27 +110,43 @@ func (j *Journal) IsCommitted(k Key) bool {
 	return j.committed[k]
 }
 
-// Commit records slots durably. Re-committing an existing slot is a no-op,
-// which is what makes recovery runs stable.
+// IsRolledBack reports whether a slot was previously undone and must not be
+// attempted again during recovery.
+func (j *Journal) IsRolledBack(k Key) bool {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	return j.rolledBack[k]
+}
+
+// Commit records slots durably. Re-committing an existing slot is a no-op, and
+// a slot previously rolled back is refused, which is what keeps recovery runs
+// stable and prevents a bad input from being silently re-published.
 func (j *Journal) Commit(keys []Key) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	for _, k := range keys {
+		if j.rolledBack[k] {
+			continue
+		}
 		j.committed[k] = true
 	}
 }
 
-// Rollback undoes tentative slots and appends an audit record per slot. Slots
-// that were never tentative are ignored. The returned records are also stored.
+// Rollback undoes tentative slots and appends one audit record per slot that
+// is actually removed for the first time. Replaying an already-rolled-back
+// slot appends nothing, so repeat runs produce an identical summary.
 func (j *Journal) Rollback(tentative []Key, stage string, offset int64, reason string, at Nano) []RollbackRecord {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	var recs []RollbackRecord
 	for _, k := range tentative {
-		if !j.committed[k] {
+		if j.rolledBack[k] {
 			continue
 		}
-		delete(j.committed, k)
+		j.rolledBack[k] = true
+		if j.committed[k] {
+			delete(j.committed, k)
+		}
 		rec := RollbackRecord{TrackID: k.TrackID, Seq: k.Seq, Stage: stage,
 			Offset: offset, Reason: reason, AtNS: at}
 		j.rollbacks = append(j.rollbacks, rec)
@@ -152,15 +181,16 @@ func (j *Journal) Rollbacks() []RollbackRecord {
 	return out
 }
 
-// PublishBatch is the all-or-nothing gate: apply fn to stage tentative slots,
-// and only Commit them when fn succeeds. Any failure rolls the tentative set
-// back, so a half-finished batch is never observable as committed.
+// PublishBatch is the all-or-nothing gate: the candidate slots are staged, the
+// gate fn decides whether the batch may be published, and on failure the whole
+// tentative set is rolled back so a half-finished batch is never observable.
 func (j *Journal) PublishBatch(keys []Key, fn func() error) ([]RollbackRecord, error) {
 	var tentative []Key
 	for _, k := range keys {
-		if !j.IsCommitted(k) {
-			tentative = append(tentative, k)
+		if j.IsRolledBack(k) || j.IsCommitted(k) {
+			continue
 		}
+		tentative = append(tentative, k)
 	}
 	j.Commit(tentative)
 	if err := fn(); err != nil {
@@ -168,6 +198,34 @@ func (j *Journal) PublishBatch(keys []Key, fn func() error) ([]RollbackRecord, e
 		return recs, err
 	}
 	return nil, nil
+}
+
+// AbortBatch tentatively commits keys then immediately rolls the batch back
+// with an explicit stage/offset/reason. It models a post-merge validation
+// failure (for example an RTP anomaly) and returns the recorded rollbacks.
+func (j *Journal) AbortBatch(keys []Key, stage string, offset int64, reason string, at Nano) []RollbackRecord {
+	var tentative []Key
+	for _, k := range keys {
+		if j.IsRolledBack(k) || j.IsCommitted(k) {
+			continue
+		}
+		tentative = append(tentative, k)
+	}
+	j.Commit(tentative)
+	return j.Rollback(tentative, stage, offset, reason, at)
+}
+
+// RecommitBatch retries a batch after the underlying failure was addressed.
+// It clears the durable rolled-back marker for the given keys, then runs the
+// normal all-or-nothing gate. Recovery replays of unchanged bad inputs never
+// call this, which is what keeps repeat runs stable.
+func (j *Journal) RecommitBatch(keys []Key, fn func() error) ([]RollbackRecord, error) {
+	j.mu.Lock()
+	for _, k := range keys {
+		delete(j.rolledBack, k)
+	}
+	j.mu.Unlock()
+	return j.PublishBatch(keys, fn)
 }
 
 func stageOf(err error) string {

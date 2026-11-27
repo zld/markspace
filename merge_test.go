@@ -126,6 +126,19 @@ func TestResolveColorPriorityAndMissing(t *testing.T) {
 	if !res.Missing || res.Picked != nil {
 		t.Fatal("absent color must be marked missing")
 	}
+	// Multiple fragments of one version cast a single vote, not multiple drops.
+	multi := []ColorCandidate{
+		{SourceMeta: SourceMeta{Asset: "a", Version: "v1", Track: 2}, Prio: 3,
+			Color: ColorInfo{Present: true, Primaries: 1, Transfer: 1, Matrix: 1}},
+		{SourceMeta: SourceMeta{Asset: "a", Version: "v1", Track: 2}, Prio: 3,
+			Color: ColorInfo{Present: true, Primaries: 1, Transfer: 1, Matrix: 1}},
+		{SourceMeta: SourceMeta{Asset: "a", Version: "v2", Track: 2}, Prio: 5,
+			Color: ColorInfo{Present: true, Primaries: 9, Transfer: 16, Matrix: 9}},
+	}
+	res = ResolveColor(multi)
+	if res.Picked == nil || res.Picked.Version != "v2" || len(res.Dropped) != 1 {
+		t.Fatalf("per-version collapse wrong: picked=%+v dropped=%+v", res.Picked, res.Dropped)
+	}
 }
 
 func TestMissingSeqs(t *testing.T) {

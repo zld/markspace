@@ -15,15 +15,17 @@ type TrackNode struct {
 // TrackGraph is a directed graph whose edges run from a track to the tracks
 // it depends on. Topological order therefore yields dependencies first.
 type TrackGraph struct {
-	Nodes map[uint32]*TrackNode
+	Nodes    map[uint32]*TrackNode
+	offsetOf map[uint32]int64
 }
 
 // NewTrackGraph builds a graph from manifest track declarations. References to
 // a track that was never declared are themselves an error.
 func NewTrackGraph(decls []*TrackDecl) (*TrackGraph, error) {
-	g := &TrackGraph{Nodes: map[uint32]*TrackNode{}}
+	g := &TrackGraph{Nodes: map[uint32]*TrackNode{}, offsetOf: map[uint32]int64{}}
 	for _, d := range decls {
 		g.Nodes[d.ID] = &TrackNode{ID: d.ID, Kind: d.Kind, DependsOn: d.DependsOn}
+		g.offsetOf[d.ID] = d.ByteOff
 	}
 	for _, d := range decls {
 		for _, dep := range d.DependsOn {
@@ -71,9 +73,15 @@ func (g *TrackGraph) TopoSort(asset string) ([]uint32, error) {
 	}
 	if len(order) != len(g.Nodes) {
 		var cyclic []uint32
+		var off int64 = -1
 		for id, d := range indeg {
 			if d > 0 {
 				cyclic = append(cyclic, id)
+				if n := g.Nodes[id]; n != nil {
+					if bo := g.offsetOf[id]; bo >= 0 && (off < 0 || bo < off) {
+						off = bo
+					}
+				}
 			}
 		}
 		sort.Slice(cyclic, func(i, j int) bool { return cyclic[i] < cyclic[j] })
@@ -81,8 +89,10 @@ func (g *TrackGraph) TopoSort(asset string) ([]uint32, error) {
 		for i, id := range cyclic {
 			parts[i] = utoa(id)
 		}
-		return nil, WrapMsg(ErrCycle, asset, 0, StageGraph, -1,
+		e := WrapMsg(ErrCycle, asset, 0, StageGraph, off,
 			"cycle involves tracks ["+strings.Join(parts, ",")+"]")
+		e.Tracks = cyclic
+		return nil, e
 	}
 	return order, nil
 }

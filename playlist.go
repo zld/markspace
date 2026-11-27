@@ -1,10 +1,8 @@
 package mediacore
 
 import (
-	"bytes"
 	"fmt"
 	"io"
-	"sort"
 	"strconv"
 	"strings"
 )
@@ -39,6 +37,8 @@ type TrackDecl struct {
 	Timescale  uint32
 	Version    string
 	DependsOn  []uint32
+	Rate       uint32 // declared audio sample rate; 0 = not an audio/rate track
+	Layout     string // declared channel layout name; "" = none
 	TargetRate uint32 // target sample rate for layout/rate conversion; 0 = native
 	Target     string // target channel layout name; "" = native
 	ColorPrio  uint32 // explicit color metadata priority; 0 = lowest
@@ -146,122 +146,11 @@ func parseTagAttrs(s string) map[string]string {
 	return out
 }
 
-// splitLines returns text lines plus the byte offset where each line begins.
-func splitLines(raw []byte) ([]string, []int64) {
-	var lines []string
-	var offs []int64
-	var start int64
-	for i := 0; i < len(raw); i++ {
-		if raw[i] == '\n' {
-			lines = append(lines, string(raw[start:i]))
-			offs = append(offs, start)
-			start = int64(i + 1)
-		}
-	}
-	if start < int64(len(raw)) {
-		lines = append(lines, string(raw[start:]))
-		offs = append(offs, start)
-	}
-	return lines, offs
-}
-
-func parseHLS(asset string, raw []byte) (*Playlist, error) {
-	lines, offs := splitLines(raw)
-	pl := &Playlist{AssetID: asset, Format: FormatHLS}
-	var cur *TrackDecl
-	var pending *SegmentRef
-	for idx, line := range lines {
-		no, off := idx+1, offs[idx]
-		trim := strings.TrimSpace(line)
-		if trim == "" || trim == "#EXTM3U" {
-			continue
-		}
-		switch {
-		case strings.HasPrefix(trim, "#EXT-X-MEDIACORE-ASSET:"):
-			pl.AssetID = attrOne(parseTagAttrs(trim[len("#EXT-X-MEDIACORE-ASSET:"):]), "ID", asset)
-		case strings.HasPrefix(trim, "#EXT-X-MEDIACORE-TRACK:"):
-			t, err := buildTrack(asset, parseTagAttrs(trim[len("#EXT-X-MEDIACORE-TRACK:"):]), no, off)
-			if err != nil {
-				return nil, err
-			}
-			pl.Tracks = append(pl.Tracks, t)
-			cur = t
-		case strings.HasPrefix(trim, "#EXTINF:"):
-			if cur == nil {
-				return nil, illegal(asset, "EXTINF without a track", no, off)
-			}
-			body := trim[len("#EXTINF:"):]
-			// Standard form is "duration,optional-title"; keep attrs in title.
-			durTok := body
-			title := ""
-			if i := strings.IndexByte(body, ','); i >= 0 {
-				durTok, title = body[:i], body[i+1:]
-			}
-			ns, err := parseDecimalSeconds(asset, strings.TrimSpace(durTok), no, off)
-			if err != nil {
-				return nil, err
-			}
-			pending = &SegmentRef{Duration: ns, Line: no, ByteOff: off,
-				Timescale: cur.Timescale, Attrs: parseTagAttrs(title)}
-		case strings.HasPrefix(trim, "#"):
-			// Unknown tags are ignored to stay tolerant of standard HLS tags.
-			continue
-		default:
-			if cur == nil {
-				return nil, illegal(asset, "segment URI without a track: "+trim, no, off)
-			}
-			if pending == nil {
-				return nil, illegal(asset, "segment URI without EXTINF: "+trim, no, off)
-			}
-			pending.URI = trim
-			applyRefAttrs(pending)
-			cur.Segments = append(cur.Segments, pending)
-			pending = nil
-		}
-	}
-	if len(pl.Tracks) == 0 {
-		return nil, illegal(asset, "no track declarations", 1, 0)
-	}
-	sort.SliceStable(pl.Tracks, func(i, j int) bool { return pl.Tracks[i].ID < pl.Tracks[j].ID })
-	return pl, nil
-}
-
 func attrOne(attrs map[string]string, key, fallback string) string {
 	if v, ok := attrs[key]; ok && v != "" {
 		return v
 	}
 	return fallback
-}
-
-func buildTrack(asset string, a map[string]string, line int, off int64) (*TrackDecl, error) {
-	id, err := reqUint(asset, a, "ID", line, off)
-	if err != nil {
-		return nil, err
-	}
-	kind := attrOne(a, "KIND", "video")
-	if kind != "audio" && kind != "video" {
-		return nil, illegal(asset, "track KIND must be audio|video", line, off)
-	}
-	ts, err := reqUint(asset, a, "TIMESCALE", line, off)
-	if err != nil {
-		return nil, err
-	}
-	if ts == 0 {
-		return nil, WrapMsg(ErrZeroTimescale, asset, id, StagePlaylist, off, "line: zero timescale")
-	}
-	t := &TrackDecl{ID: id, Kind: kind, Timescale: ts, Version: attrOne(a, "VERSION", "v1"),
-		Target: attrOne(a, "TARGET-LAYOUT", ""), TargetRate: optUint(a, "TARGET-RATE"),
-		ColorPrio: optUint(a, "COLOR-PRIO"), Line: line, ByteOff: off}
-	if d := attrOne(a, "DEPENDS", ""); d != "" {
-		for _, part := range strings.Split(d, "/") {
-			dep, perr := strconv.ParseUint(strings.TrimSpace(part), 10, 32)
-			if perr != nil {
-				return nil, illegal(asset, "bad DEPENDS list: "+d, line, off)
-			}
-			t.DependsOn = append(t.DependsOn, uint32(dep))
-		}
-	}
-	return t, nil
 }
 
 func reqUint(asset string, a map[string]string, key string, line int, off int64) (uint32, error) {
@@ -286,97 +175,4 @@ func optUint(a map[string]string, key string) uint32 {
 		return 0
 	}
 	return uint32(n)
-}
-
-func applyRefAttrs(ref *SegmentRef) {
-	ref.Seq = optUint(ref.Attrs, "SEQ")
-	ref.Kind = attrOne(ref.Attrs, "KIND", "media")
-	if ts := optUint(ref.Attrs, "TIMESCALE"); ts != 0 {
-		ref.Timescale = ts
-	}
-}
-
-// parseDASH parses the small MPD subset used by generated fixtures. The XML
-// decoder's InputOffset anchors every element at a byte offset.
-func parseDASH(asset string, raw []byte) (*Playlist, error) {
-	dec := newXMLDecoder(bytes.NewReader(raw))
-	pl := &Playlist{AssetID: asset, Format: FormatDASH}
-	var cur *TrackDecl
-	for {
-		tok, err := dec.Token()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, WrapMsg(ErrIllegalField, asset, 0, StagePlaylist, dec.InputOffset(),
-				"malformed XML: "+err.Error())
-		}
-		se, ok := tok.(startElement)
-		if !ok {
-			continue
-		}
-		off := dec.InputOffset()
-		switch se.Name.Local {
-		case "MPD":
-			if v := attrVal(se, "asset"); v != "" {
-				pl.AssetID = v
-			}
-		case "AdaptationSet":
-			a := attrMap(se)
-			id, err := reqUint(asset, a, "id", 1, off)
-			if err != nil {
-				return nil, err
-			}
-			ts := optUint(a, "timescale")
-			if ts == 0 {
-				return nil, WrapMsg(ErrZeroTimescale, asset, id, StagePlaylist, off, "zero timescale")
-			}
-			cur = &TrackDecl{ID: id, Kind: attrOne(a, "kind", "video"), Timescale: ts,
-				Version: attrOne(a, "version", "v1"), Target: attrOne(a, "targetLayout", ""),
-				TargetRate: optUint(a, "targetRate"), ColorPrio: optUint(a, "colorPrio"),
-				Line: 1, ByteOff: off}
-			if d := attrOne(a, "depends", ""); d != "" {
-				for _, p := range strings.Split(d, " ") {
-					if p == "" {
-						continue
-					}
-					dep, perr := strconv.ParseUint(p, 10, 32)
-					if perr != nil {
-						return nil, illegal(asset, "bad depends list: "+d, 1, off)
-					}
-					cur.DependsOn = append(cur.DependsOn, uint32(dep))
-				}
-			}
-			pl.Tracks = append(pl.Tracks, cur)
-		case "S":
-			if cur == nil {
-				return nil, illegal(asset, "S outside AdaptationSet", 1, off)
-			}
-			a := attrMap(se)
-			ticks, err := reqUint(asset, a, "d", 1, off)
-			if err != nil {
-				return nil, err
-			}
-			if ticks == 0 {
-				return nil, WrapMsg(ErrIllegalDuration, asset, cur.ID, StagePlaylist, off,
-					"zero segment duration")
-			}
-			ns, serr := ScaleChecked(int64(ticks), cur.Timescale)
-			if serr != nil {
-				return nil, WrapMsg(ErrOverflow, asset, cur.ID, StagePlaylist, off, serr.Error())
-			}
-			ref := &SegmentRef{URI: attrOne(a, "uri", ""), Seq: optUint(a, "n"),
-				Duration: ns, Timescale: cur.Timescale, Line: 1, ByteOff: off,
-				Kind: attrOne(a, "kind", "media"), Attrs: a}
-			if ref.URI == "" {
-				return nil, illegal(asset, "S missing uri", 1, off)
-			}
-			cur.Segments = append(cur.Segments, ref)
-		}
-	}
-	if len(pl.Tracks) == 0 {
-		return nil, illegal(asset, "no AdaptationSet", 1, 0)
-	}
-	sort.SliceStable(pl.Tracks, func(i, j int) bool { return pl.Tracks[i].ID < pl.Tracks[j].ID })
-	return pl, nil
 }

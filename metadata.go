@@ -115,14 +115,21 @@ type ColorResolution struct {
 }
 
 // ResolveColor applies explicit-priority arbitration to conflicting color
-// metadata. Equal values merge silently; a missing set is flagged rather than
-// invented. Ties keep the first (stable input order) candidate.
+// metadata. Candidates are first collapsed per (asset, version) so multiple
+// fragments of one version cast a single vote; equal values merge silently; a
+// missing set is flagged rather than invented. Ties keep the first candidate.
 func ResolveColor(cands []ColorCandidate) ColorResolution {
 	usable := make([]ColorCandidate, 0, len(cands))
+	seen := map[SourceMeta]bool{}
 	for _, c := range cands {
-		if c.Color.Present {
-			usable = append(usable, c)
+		if !c.Color.Present {
+			continue
 		}
+		if seen[c.SourceMeta] {
+			continue
+		}
+		seen[c.SourceMeta] = true
+		usable = append(usable, c)
 	}
 	if len(usable) == 0 {
 		return ColorResolution{Missing: true}

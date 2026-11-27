@@ -47,8 +47,8 @@ func TestPublishBatchRollsBackOnFailure(t *testing.T) {
 			t.Fatalf("rollback record must carry stage/offset: %+v", rec)
 		}
 	}
-	// A successful retry commits cleanly and leaves no residue of the failure.
-	recs2, err2 := j.PublishBatch(keys, func() error { return nil })
+	// A corrected retry explicitly clears the rolled-back marker and commits.
+	recs2, err2 := j.RecommitBatch(keys, func() error { return nil })
 	if err2 != nil || len(recs2) != 0 || len(j.Committed()) != 3 {
 		t.Fatalf("retry should fully commit: err=%v recs=%v committed=%v", err2, recs2, j.Committed())
 	}

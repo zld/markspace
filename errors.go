@@ -44,6 +44,7 @@ var (
 type Error struct {
 	Asset  string
 	Track  uint32
+	Tracks []uint32 // full participating set (e.g. every track in a dependency cycle)
 	Stage  string
 	Offset int64 // byte offset inside the source manifest/segment; -1 if absent
 	Op     error

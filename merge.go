@@ -86,9 +86,10 @@ func Merge(groups map[Key][]*Item, budget *Budget) ([]*Item, []Conflict, []*Erro
 			primary.Status = "processed"
 			if len(live) > 1 {
 				idempotent += len(live) - 1
-				// Extra identical copies are absorbed, not committed twice.
+				// Extra identical copies are absorbed, not committed twice, and
+				// are counted separately from the canonical processed item.
 				for _, dup := range live[1:] {
-					dup.Status = "processed"
+					dup.Status = "absorbed"
 					dup.Reason = nil
 				}
 			}

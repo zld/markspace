@@ -33,6 +33,7 @@ type Report struct {
 	AnomalyStart Nano                `json:"anomaly_start_ns"`
 	AnomalyEnd   Nano                `json:"anomaly_end_ns"`
 	Processed    int                 `json:"processed"`
+	Absorbed     int                 `json:"absorbed"`
 	Rejected     int                 `json:"rejected"`
 	Committed    []Key               `json:"committed"`
 	Items        []ItemStatus        `json:"items"`
@@ -83,11 +84,13 @@ func BuildReport(in ReportInput) *Report {
 			st.Detail = it.Reason.Error()
 		}
 		r.Items = append(r.Items, st)
-		if it.Status == "processed" {
+		switch it.Status {
+		case "processed":
 			r.Processed++
-		}
-		if it.Status == "rejected" {
+		case "rejected":
 			r.Rejected++
+		case "absorbed":
+			r.Absorbed++
 		}
 	}
 	for _, cr := range in.ColorRes {
@@ -108,6 +111,7 @@ func (r *Report) Render(w io.Writer) {
 	fmt.Fprintf(w, "anomaly_start_ns: %d\n", int64(r.AnomalyStart))
 	fmt.Fprintf(w, "anomaly_end_ns: %d\n", int64(r.AnomalyEnd))
 	fmt.Fprintf(w, "processed: %d\n", r.Processed)
+	fmt.Fprintf(w, "absorbed: %d\n", r.Absorbed)
 	fmt.Fprintf(w, "rejected: %d\n", r.Rejected)
 	fmt.Fprintf(w, "committed: %s\n", formatKeys(r.Committed))
 	for _, it := range r.Items {

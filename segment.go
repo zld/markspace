@@ -2,6 +2,7 @@ package mediacore
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"io"
 
 	"github.com/abema/go-mp4"
@@ -119,6 +120,13 @@ func InspectSegment(asset string, track uint32, expectedTS uint32, r io.ReadSeek
 			}
 		case mp4.BoxTypeMdat():
 			info.Payload += int64(h.BoxInfo.Size - h.BoxInfo.HeaderSize)
+			// Fingerprint the media payload itself (not the surrounding boxes),
+			// so differing colr metadata does not masquerade as a content conflict.
+			hw := sha256.New()
+			if _, herr := h.ReadData(hw); herr != nil {
+				return nil, herr
+			}
+			copy(info.SHA256[:], hw.Sum(nil))
 		}
 		return h.Expand()
 	})

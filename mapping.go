@@ -1,6 +1,9 @@
 package mediacore
 
-import "sort"
+import (
+	"errors"
+	"sort"
+)
 
 // CoveredRange is a half-open nanosecond interval [Start, End) on one track.
 type CoveredRange struct {
@@ -20,9 +23,10 @@ type Item struct {
 	Info    *SegmentInfo
 	Payload []byte
 	Sources []SourceMeta
-	Status  string // pending|processed|rejected
+	Status  string // pending|processed|absorbed|rejected
 	Reason  *Error
 	Finger  [32]byte
+	IsRTP   bool
 }
 
 // Key is the stable identity of a logical fragment slot.
@@ -53,9 +57,16 @@ func Map(playlists []*Playlist, loader Loader) ([]*Item, []*Error) {
 					continue
 				}
 				it.Payload, it.Info = data, info
-				it.Finger = FingerprintPayload(data)
 				if info != nil {
+					// Media-payload fingerprint governs idempotency; container or
+					// color-box differences are reconciled separately.
+					it.Finger = info.SHA256
 					it.Range = CoveredRange{Start: info.BaseTime, End: info.BaseTime + info.Duration}
+				} else {
+					it.Finger = FingerprintPayload(data)
+				}
+				if ref.Kind == "rtp" {
+					it.IsRTP = true
 				}
 				byKey[Key{tr.ID, ref.Seq}] = append(byKey[Key{tr.ID, ref.Seq}], it)
 				items = append(items, it)
@@ -96,6 +107,27 @@ func GroupByKey(items []*Item) map[Key][]*Item {
 	for _, it := range items {
 		k := Key{it.TrackID, it.Seq}
 		out[k] = append(out[k], it)
+	}
+	return out
+}
+
+// MissingReport derives the missing segment map directly from rejected items
+// that carry ErrMissingSegment, so a single-fragment hole is still reported.
+func MissingReport(items []*Item) map[uint32][]uint32 {
+	out := map[uint32][]uint32{}
+	seen := map[Key]bool{}
+	for _, it := range items {
+		if it.Reason == nil || !errors.Is(it.Reason, ErrMissingSegment) {
+			continue
+		}
+		k := Key{it.TrackID, it.Seq}
+		if !seen[k] {
+			seen[k] = true
+			out[it.TrackID] = append(out[it.TrackID], it.Seq)
+		}
+	}
+	for t := range out {
+		sort.Slice(out[t], func(i, j int) bool { return out[t][i] < out[t][j] })
 	}
 	return out
 }
