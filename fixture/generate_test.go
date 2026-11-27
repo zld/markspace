@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"continuity/media"
 )
 
 func TestGenerateValid(t *testing.T) {
