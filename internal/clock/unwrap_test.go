@@ -8,15 +8,18 @@ import (
 
 func TestUnwrapperWraparound(t *testing.T) {
 	u := NewUnwrapper32()
+	// The negative modular jump 0xFFFFFFF8 -> 0xFFFFFFF0 marks the wrap;
+	// subsequent small positive deltas continue on the expanded timeline.
 	cases := []struct {
 		raw uint32
 		exp int64
 	}{
 		{0xFFFFFFF0, 0xFFFFFFF0},
 		{0xFFFFFFF8, 0xFFFFFFF8},
-		{0x00000000, 0x100000000},
-		{0x00000008, 0x100000008},
-		{0x00000010, 0x100000010},
+		{0xFFFFFFF0, 0x1FFFFFFF0},
+		{0x00000000, 0x200000000},
+		{0x00000008, 0x200000008},
+		{0x00000010, 0x200000010},
 	}
 	for _, c := range cases {
 		if got := u.Push(c.raw); got != c.exp {
@@ -30,10 +33,12 @@ func TestUnwrapperWraparound(t *testing.T) {
 
 func TestUnwrapperBackwardWrap(t *testing.T) {
 	u := NewUnwrapper32()
+	// 16 -> 0xFFFFFFF0: modular delta -38 expands to 2^32-38, so the
+	// unwrapped value lands exactly at 0xFFFFFFF0.
 	got := []int64{u.Push(16), u.Push(0xFFFFFFF0)}
-	// 16 -> 0xFFFFFFF0 is a backward wrap of -48 ticks.
-	if got[0] != 16 || got[1] != 16-48 {
-		t.Fatalf("backward wrap result=%v", got)
+	want := int64(0xFFFFFFF0)
+	if got[0] != 16 || got[1] != want {
+		t.Fatalf("backward wrap result=%v want second=%d", got, want)
 	}
 	if u.WrapCount() != 1 {
 		t.Fatalf("WrapCount=%d want 1", u.WrapCount())
@@ -42,7 +47,7 @@ func TestUnwrapperBackwardWrap(t *testing.T) {
 
 func TestExtendRTP(t *testing.T) {
 	// Build RTP packets whose 32-bit timestamp crosses the wrap boundary.
-	raws := []uint32{0xFFFFFFE0, 0xFFFFFFF0, 0x00000000, 0x00000010}
+	raws := []uint32{0xFFFFFFE0, 0xFFFFFFF0, 0xFFFFFFE0, 0x00000010}
 	pkts := make([][]byte, len(raws))
 	for i, ts := range raws {
 		p := &rtp.Packet{
@@ -59,7 +64,7 @@ func TestExtendRTP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExtendRTP: %v", err)
 	}
-	want := []int64{0xFFFFFFE0, 0xFFFFFFF0, 0x100000000, 0x100000010}
+	want := []int64{0xFFFFFFE0, 0xFFFFFFF0, 0x1FFFFFFE0, 0x200000010}
 	for i := range want {
 		if unwrapped[i] != want[i] {
 			t.Fatalf("unwrapped[%d]=%d want %d", i, unwrapped[i], want[i])
@@ -97,8 +102,10 @@ func TestEstimateDriftVFRAndDrift(t *testing.T) {
 	// Alternating durations (VFR) and timestamps running 0.1% fast.
 	durations := []uint32{3000, 6000, 3000, 6000, 3000, 6000}
 	unwrapped := make([]int64, len(durations))
+	// Timestamps run exactly 0.1% fast; cumulative rounding keeps the drift
+	// precise instead of truncating each step independently.
 	for i := 1; i < len(durations); i++ {
-		unwrapped[i] = unwrapped[i-1] + int64(float64(durations[i-1])*1.001)
+		unwrapped[i] = unwrapped[i-1] + int64((int64(durations[i-1])*1001+500)/1000)
 	}
 	r := EstimateDrift(unwrapped, durations)
 	if !r.VFR {

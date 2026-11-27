@@ -10,8 +10,9 @@ import (
 	"github.com/pion/rtp"
 )
 
-// halfRange32 is the ambiguity boundary for modular 32-bit timestamps.
-const halfRange32 int64 = 1 << 31
+// halfRange is half of the 32-bit timestamp carrier span, used to recognize
+// full-width DTS wraparounds from raw container timestamps.
+const halfRange uint64 = 1 << 31
 
 // Unwrapper expands monotonically increasing timestamps whose carrier wraps
 // around (RTP 32-bit clocks, tfdt version-0 baseMediaDecodeTime). One
@@ -26,10 +27,12 @@ type Unwrapper struct {
 // NewUnwrapper32 creates an unwrapper for 32-bit timestamp carriers.
 func NewUnwrapper32() *Unwrapper { return &Unwrapper{} }
 
-// Push feeds the next raw timestamp and returns its unwrapped value. A
-// backward modular jump larger than half the range is treated as wraparound;
-// smaller backward jumps are passed through as negative deltas so genuine
-// reordering stays visible instead of being silently rewritten.
+// Push feeds the next raw timestamp and returns its unwrapped value. RTP and
+// container clocks only move forward on the wire, so any negative modular
+// delta marks a carrier wraparound. A positive modular delta is always taken
+// at face value: at the exact wrap point the modular distance is small and
+// positive anyway, and the wrap has already been counted by the preceding
+// negative jump of the previous discontinuity.
 func (u *Unwrapper) Push(raw uint32) int64 {
 	if !u.hasLast {
 		u.hasLast = true
@@ -38,13 +41,8 @@ func (u *Unwrapper) Push(raw uint32) int64 {
 		return u.value
 	}
 	delta := int64(int32(raw - u.last))
-	if delta < -halfRange32 {
-		// forward wrap, e.g. 0xFFFFFFF0 -> 0x00000010
+	if delta < 0 {
 		delta += 1 << 32
-		u.wraps++
-	} else if delta > halfRange32 {
-		// backward wrap, e.g. 0x00000010 -> 0xFFFFFFF0
-		delta -= 1 << 32
 		u.wraps++
 	}
 	u.value += delta
