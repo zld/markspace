@@ -13,17 +13,14 @@ import (
 // OBU_TRUNCATED fault located at the unit start offset.
 const truncateUnit = FrameCount - 2
 
-// applyTruncate cuts the stream one byte into the target unit so the scanner
-// sees a complete prefix followed by a body shorter than its declared length.
+// applyTruncate cuts the stream one byte into the target unit's framing so the
+// scanner reaches a partial length prefix / OBU header at the target offset and
+// reports NAL_TRUNCATED / OBU_TRUNCATED there.  The injected framing offset and
+// the detected fault offset are therefore the same byte.
 func applyTruncate(s *Sample) {
 	off := streamOffset(s.Codec, s.Payloads, truncateUnit)
 	s.TruncateOffset = off
-	if off >= int64(len(s.Stream)) {
-		off = int64(len(s.Stream)) - 1
-	}
-	// Keep the framing byte and length prefix, remove the rest plus one byte of
-	// the preceding unit so the declared length cannot be satisfied.
-	cut := off + 1
+	cut := off + 1 // keep exactly one framing byte: a legal start, an incomplete unit
 	if cut > int64(len(s.Stream)) {
 		cut = int64(len(s.Stream))
 	}
@@ -55,8 +52,8 @@ func buildVersions(s *Sample) []merge.Version {
 			entries = append(entries, merge.Entry{
 				Asset: merge.Asset{
 					Key: keys[i], Version: version, UnitIndex: u,
-					Offset: streamOffset(s.Codec, s.Payloads, u),
-					Size:   int64(len(body)),
+					Offset:   streamOffset(s.Codec, s.Payloads, u),
+					Size:     int64(len(body)),
 					TimeFrom: clock.MustRational(int64(u*ticksPerUnit), indexTimeBaseDen),
 					TimeTo:   clock.MustRational(int64((u+1)*ticksPerUnit), indexTimeBaseDen),
 				},

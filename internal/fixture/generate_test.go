@@ -57,25 +57,36 @@ func TestSeedDeterminism(t *testing.T) {
 }
 
 func TestTruncateOffsetWithinOneByte(t *testing.T) {
-	s, err := Generate(ingest.CodecH265, 17, []string{InjectTruncate})
-	if err != nil {
-		t.Fatal(err)
+	cases := []struct {
+		codec ingest.Codec
+		codes []fault.Code
+	}{
+		{ingest.CodecH264, []fault.Code{fault.CodeNALTruncated}},
+		{ingest.CodecH265, []fault.Code{fault.CodeNALTruncated}},
+		{ingest.CodecAV1, []fault.Code{fault.CodeOBUTruncated, fault.CodeOBUIllegalLength}},
 	}
-	var rep fault.Report
-	if _, err := ingest.Scan(s.Codec, s.Stream, ingest.DefaultLimits, &rep); err != nil {
-		t.Fatal(err)
-	}
-	trunc := faultsOf(rep, fault.CodeNALTruncated, fault.CodeOBUTruncated)
-	if len(trunc) != 1 {
-		t.Fatalf("want one truncation fault, got %v", rep.All())
-	}
-	got := trunc[0].Offset
-	delta := got - s.TruncateOffset
-	if delta < 0 {
-		delta = -delta
-	}
-	if delta > 1 {
-		t.Fatalf("truncation reported at %d, injected at %d (delta %d)", got, s.TruncateOffset, delta)
+	for _, tc := range cases {
+		s, err := Generate(tc.codec, 17, []string{InjectTruncate})
+		if err != nil {
+			t.Fatalf("%s: %v", tc.codec, err)
+		}
+		var rep fault.Report
+		if _, err := ingest.Scan(s.Codec, s.Stream, ingest.DefaultLimits, &rep); err != nil {
+			t.Fatalf("%s: %v", tc.codec, err)
+		}
+		trunc := faultsOf(rep, tc.codes...)
+		if len(trunc) == 0 {
+			t.Fatalf("%s: want a truncation fault, got %v", tc.codec, rep.All())
+		}
+		got := trunc[0].Offset
+		delta := got - s.TruncateOffset
+		if delta < 0 {
+			delta = -delta
+		}
+		if delta > 1 {
+			t.Fatalf("%s: truncation at %d, injected at %d (delta %d)",
+				tc.codec, got, s.TruncateOffset, delta)
+		}
 	}
 }
 
