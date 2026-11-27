@@ -366,6 +366,11 @@ func (r *Run) publishableCount() int {
 func (r *Run) WriteReport(workDir string, from, to *clock.Time) error {
 	rep := report.Build(r.Issues, r.Counts, nil)
 	rep.Filter(from, to)
+	// Each entry carries the recovery action taken and a final validation
+	// summary naming the chunk and the artifact state it ended in.
+	rep.Annotate(func(e report.Entry) string {
+		return r.verifySummary(e)
+	})
 	r.Report = rep
 	if err := os.MkdirAll(workDir, 0o755); err != nil {
 		return err
@@ -382,6 +387,30 @@ func (r *Run) WriteReport(workDir string, from, to *clock.Time) error {
 		return err
 	}
 	return os.WriteFile(filepath.Join(workDir, "report.txt"), text.Bytes(), 0o644)
+}
+
+// verifySummary describes the final state of the artifact that would carry the
+// flagged segment, or states that none exists because the item was quarantined.
+func (r *Run) verifySummary(e report.Entry) string {
+	for _, o := range r.Outcomes {
+		if o.Unit.Ref != e.Segment || o.Unit.Representation != e.Representation {
+			continue
+		}
+		if !o.Unit.Start.Equal(e.Start) {
+			continue
+		}
+		if o.Result.OK() && o.Artifact != "" {
+			state := "present"
+			if o.Published {
+				state = "written"
+			} else if o.Reused {
+				state = "reused"
+			}
+			return fmt.Sprintf("chunk=%d artifact=%s %s", o.Chunk, o.Artifact, state)
+		}
+		return fmt.Sprintf("chunk=%d status=%s quarantined", o.Chunk, o.Result.Status)
+	}
+	return "not scheduled"
 }
 
 func artifactPathFor(key, ref string) string {

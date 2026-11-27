@@ -41,8 +41,8 @@ func TestCrossBitrateMerge(t *testing.T) {
 func TestTimeOrSizeMismatchIsNotDuplicate(t *testing.T) {
 	ix := Build([]Record{
 		rec("same", 0, 4, 100, "a"),
-		rec("same", 4, 8, 100, "b"),   // same bytes, wrong time
-		rec("same", 0, 4, 101, "c"),   // same bytes, wrong size
+		rec("same", 4, 8, 100, "b"), // same bytes, wrong time
+		rec("same", 0, 4, 101, "c"), // same bytes, wrong size
 	})
 	if ix.Duplicates() != 0 {
 		t.Fatalf("content at a different time or size must not merge: %d", ix.Duplicates())

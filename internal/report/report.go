@@ -127,6 +127,38 @@ func DigestOf(entries []Entry) string {
 	return l.Digest()
 }
 
+// Annotate fills the recovery text and final verification summary on each
+// entry. Annotations are presentation-only and are deliberately excluded from
+// the canonical digest, so verify can recompute the digest from report.json
+// without depending on runtime outcome details.
+func (r *Report) Annotate(verified func(e Entry) string) {
+	for i := range r.Entries {
+		e := &r.Entries[i]
+		e.Recovery = RecoveryText(e.Action)
+		if verified != nil {
+			e.Verified = verified(*e)
+		}
+	}
+}
+
+// RecoveryText renders the action taken for an entry.
+func RecoveryText(a fault.Action) string {
+	switch a {
+	case fault.ActionIsolated:
+		return "quarantined; artifact withheld"
+	case fault.ActionRecorded:
+		return "recorded only; no media change"
+	case fault.ActionReused:
+		return "reused existing artifact"
+	case fault.ActionRepaired:
+		return "recomputed from the affected chunk"
+	case fault.ActionSkipped:
+		return "skipped"
+	default:
+		return string(a)
+	}
+}
+
 // Filter keeps entries that overlap the half-open input range [from, to). A
 // nil bound is open on that side. Zero-length entries (a missing duration has
 // no extent) are kept when they sit exactly on a bound, so an anomaly at the
@@ -202,6 +234,9 @@ func (r *Report) WriteText(w io.Writer) error {
 		}
 		if e.Recovery != "" {
 			fmt.Fprintf(&b, " recovery=%s", e.Recovery)
+		}
+		if e.Verified != "" {
+			fmt.Fprintf(&b, " verified=%s", e.Verified)
 		}
 		fmt.Fprintf(&b, " :: %s\n", e.Message)
 		if _, err := io.WriteString(w, b.String()); err != nil {

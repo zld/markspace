@@ -326,6 +326,11 @@ func DetectLayout(inputDir string) (*Layout, error) {
 		return nil, err
 	}
 	l.Expect = exp
-	l.Segments = len(exp)
+	// Count media segments only; init.mp4 and the manifests are not segments.
+	for rel := range exp {
+		if strings.HasSuffix(rel, ".m4s") {
+			l.Segments++
+		}
+	}
 	return l, nil
 }
