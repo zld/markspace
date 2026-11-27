@@ -122,8 +122,19 @@ func TestAnalyzeMP4MissingMoov(t *testing.T) {
 	}
 }
 
+// rtpCapture builds the RTP fixture, failing the test on a marshalling error.
+func rtpCapture(t *testing.T) []byte {
+	t.Helper()
+	data, err := fixture.RTP()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
 func TestRTPGaps(t *testing.T) {
-	s := stream.AnalyzeRTP(asset.FromBytes("loss.rtp", fixture.RTP()))
+	capture := rtpCapture(t)
+	s := stream.AnalyzeRTP(asset.FromBytes("loss.rtp", capture))
 	if s.Packets != 40 {
 		t.Fatalf("packets = %d", s.Packets)
 	}
@@ -134,7 +145,7 @@ func TestRTPGaps(t *testing.T) {
 	if first.Missing != 3 || first.Expected != 1012 || first.Got != 1015 {
 		t.Errorf("first gap = %+v", first)
 	}
-	if first.Offset <= 0 || first.Offset >= int64(len(fixture.RTP())) {
+	if first.Offset <= 0 || first.Offset >= int64(len(capture)) {
 		t.Errorf("gap offset = %d", first.Offset)
 	}
 	if len(s.Damaged) != 2 {
@@ -146,7 +157,7 @@ func TestRTPGaps(t *testing.T) {
 }
 
 func TestRTPTruncatedRecord(t *testing.T) {
-	data := fixture.RTP()
+	data := rtpCapture(t)
 	cut := data[:len(data)-5]
 	s := stream.AnalyzeRTP(asset.FromBytes("cut.rtp", cut))
 	if !s.Bad() {
@@ -159,7 +170,7 @@ func TestRTPTruncatedRecord(t *testing.T) {
 }
 
 func TestRTPBuildRoundTrip(t *testing.T) {
-	s := stream.AnalyzeRTP(asset.FromBytes("x.rtp", fixture.RTP()))
+	s := stream.AnalyzeRTP(asset.FromBytes("x.rtp", rtpCapture(t)))
 	rebuilt, err := stream.BuildRTP(nil)
 	if err != nil {
 		t.Fatal(err)

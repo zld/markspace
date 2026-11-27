@@ -32,7 +32,10 @@ func assemble(dir string, samples []*sample, res *analysis, cfg pipeline.Config)
 	// Layer 1: one normalised artefact per source.
 	var layer1 []string
 	for _, s := range samples {
-		kind, payload := layerOne(s, res)
+		kind, payload, err := layerOne(s, res)
+		if err != nil {
+			return nil, err
+		}
 		deriv, err := b.AddDerivative(manifest.DerivativeSpec{
 			Kind: kind, Layer: 1, Data: payload, Deps: []string{s.source.Digest},
 		})
@@ -62,38 +65,40 @@ func assemble(dir string, samples []*sample, res *analysis, cfg pipeline.Config)
 }
 
 // layerOne renders the normalised artefact for a source.
-func layerOne(s *sample, res *analysis) (string, []byte) {
+func layerOne(s *sample, res *analysis) (string, []byte, error) {
 	name := filepath.Base(s.source.Name)
+	var kind string
+	var view any
 	switch {
 	case strings.HasSuffix(name, ".mp4"):
 		st := res.mp4[name]
-		return "stream-structure", mustJSON(map[string]any{
+		kind = "stream-structure"
+		view = map[string]any{
 			"source": s.source.Name, "boxes": st.BoxCount, "brand": st.Brand,
 			"tracks": st.Tracks, "damage": st.Damaged,
-		})
+		}
 	case strings.HasSuffix(name, ".rtp"):
-		return "rtp-analysis", mustJSON(map[string]any{
+		kind = "rtp-analysis"
+		view = map[string]any{
 			"source": s.source.Name, "packets": res.rtp.Packets, "lost": res.rtp.Lost,
 			"gaps": res.rtp.Gaps, "durationNanos": int64(res.rtp.Duration),
-		})
+		}
 	case strings.HasSuffix(name, ".srt"):
-		return "subtitle-track", mustJSON(res.srt)
+		kind, view = "subtitle-track", res.srt
 	case strings.HasSuffix(name, ".vtt"):
-		return "subtitle-track", mustJSON(res.vtt)
+		kind, view = "subtitle-track", res.vtt
 	case strings.HasSuffix(name, ".txt"):
-		return "timecode-table", mustJSON(map[string]any{
-			"source": s.source.Name, "valid": res.codes, "rejected": len(res.bad),
-		})
+		kind = "timecode-table"
+		view = map[string]any{"source": s.source.Name, "valid": res.codes, "rejected": len(res.bad)}
+	default:
+		kind = "source-scan"
+		view = map[string]any{"source": s.source.Name, "bytes": s.source.Size}
 	}
-	return "source-scan", mustJSON(map[string]any{"source": s.source.Name, "bytes": s.source.Size})
-}
-
-func mustJSON(v any) []byte {
-	data, err := json.MarshalIndent(v, "", "  ")
+	data, err := json.MarshalIndent(view, "", "  ")
 	if err != nil {
-		panic(fmt.Sprintf("archivecheck: marshal derivative: %v", err))
+		return "", nil, fmt.Errorf("marshal %s derivative for %s: %w", kind, s.source.Name, err)
 	}
-	return data
+	return kind, data, nil
 }
 
 // buildArchive writes the derivative store and the manifest, then rebuilds

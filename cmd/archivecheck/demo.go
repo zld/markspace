@@ -173,13 +173,17 @@ func runDemo(ctx context.Context, out io.Writer, opts demoOptions) error {
 
 // generateSamples writes every deterministic sample into dir.
 func generateSamples(dir string) ([]*sample, error) {
+	rtpCapture, err := fixture.RTP()
+	if err != nil {
+		return nil, err
+	}
 	inputs := []struct {
 		name string
 		data []byte
 	}{
 		{"clip-valid.mp4", fixture.MP4(false)},
 		{"clip-truncated.mp4", fixture.MP4(true)},
-		{"capture-loss.rtp", fixture.RTP()},
+		{"capture-loss.rtp", rtpCapture},
 		{"subs-recoverable.srt", fixture.SRTRecoverable()},
 		{"subs-valid.vtt", fixture.VTTValid()},
 		{"timecodes.txt", codeLines()},

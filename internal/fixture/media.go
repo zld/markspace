@@ -127,8 +127,10 @@ func MP4(truncate bool) []byte {
 }
 
 // RTP returns a length-prefixed RTP capture of 40 packets with two sequence
-// gaps at the configured positions.
-func RTP() []byte {
+// gaps at the configured positions. Marshalling a fixed packet can only fail
+// if the payload is invalid, which is a programming error in this file, so the
+// error is surfaced instead of ignored.
+func RTP() ([]byte, error) {
 	const packets = 40
 	var out []byte
 	seq := 1000
@@ -151,7 +153,7 @@ func RTP() []byte {
 		}
 		raw, err := p.Marshal()
 		if err != nil {
-			panic(fmt.Sprintf("fixture: marshal rtp: %v", err))
+			return nil, fmt.Errorf("fixture: marshal RTP packet %d: %w", i, err)
 		}
 		var prefix [4]byte
 		binary.BigEndian.PutUint32(prefix[:], uint32(len(raw)))
@@ -159,7 +161,7 @@ func RTP() []byte {
 		out = append(out, raw...)
 		seq++
 	}
-	return out
+	return out, nil
 }
 
 // SRTRecoverable returns an SRT sample with two recoverable cues around a
