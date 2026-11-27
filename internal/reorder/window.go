@@ -7,8 +7,8 @@ import (
 	"bytes"
 	"sort"
 
-	"medialib/internal/ingest"
 	merr "medialib/internal/errors"
+	"medialib/internal/ingest"
 )
 
 // Gap is an explicit missing interval on the output timeline.

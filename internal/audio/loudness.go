@@ -8,10 +8,10 @@ import (
 
 // LoudnessStats reports what loudness control measured and applied.
 type LoudnessStats struct {
-	InputRMSDBFS  float64
-	GainDB        float64
-	PeakDBFS      float64 // peak after gain and any limiting
-	LimiterEngaged bool   // true when the peak ceiling forced extra gain down
+	InputRMSDBFS   float64
+	GainDB         float64
+	PeakDBFS       float64 // peak after gain and any limiting
+	LimiterEngaged bool    // true when the peak ceiling forced extra gain down
 }
 
 // Normalize applies gain so the output RMS meets targetRMSDBFS, then
