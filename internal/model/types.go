@@ -101,6 +101,19 @@ func NewTrackFailure(track string, stage Stage, code ErrorKind, reason string) F
 	return Failure{TrackID: track, Stage: stage, PacketOffset: NoPacket, Code: code, Reason: reason}
 }
 
+// PtrFailure builds a packet-scoped failure and returns a pointer, for APIs
+// that distinguish "no failure" (nil) from a recorded failure.
+func PtrFailure(track string, stage Stage, offset int, code ErrorKind, reason string) *Failure {
+	f := NewFailure(track, stage, offset, code, reason)
+	return &f
+}
+
+// PtrTrackFailure builds a track-level failure pointer.
+func PtrTrackFailure(track string, stage Stage, code ErrorKind, reason string) *Failure {
+	f := NewTrackFailure(track, stage, code, reason)
+	return &f
+}
+
 // Parsing bounds. Inputs exceeding these limits are rejected rather than
 // parsed, so malformed local assets cannot exhaust the process.
 const (
