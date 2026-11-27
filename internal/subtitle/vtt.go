@@ -15,7 +15,7 @@ func parseVTT(source, text string) *Track {
 	lines := splitLines(text)
 	i := 0
 	if len(lines) == 0 || !strings.HasPrefix(strings.TrimSpace(strings.TrimPrefix(lines[0], "\ufeff")), "WEBVTT") {
-		t.addError(model.New(model.CodeSubtitleSyntax, model.Source{Line: 1}, "missing WEBVTT signature", nil))
+		t.addError(model.New(model.CodeSubtitleSyntax, model.AtLine(source, 1), "missing WEBVTT signature", nil))
 		// Keep parsing the remainder as cues: a missing header should not
 		// discard otherwise valid captions.
 	} else {
@@ -43,11 +43,11 @@ func parseVTT(source, text string) *Track {
 		if !strings.Contains(lines[cursor], "-->") {
 			cursor++ // identifier line
 			if cursor >= len(lines) {
-				t.addError(model.New(model.CodeSubtitleSyntax, model.Source{Line: cueLine}, "cue identifier has no timing line", nil))
+				t.addError(model.New(model.CodeSubtitleSyntax, model.AtLine(source, cueLine), "cue identifier has no timing line", nil))
 				break
 			}
 		}
-		start, end, err := parseTimingLine(lines[cursor], model.Source{Name: source, Line: cursor + 1})
+		start, end, err := parseTimingLine(lines[cursor], model.AtLine(source, cursor+1))
 		if err != nil {
 			t.addError(err)
 			i = skipCue(lines, cursor+1)
@@ -63,12 +63,12 @@ func parseVTT(source, text string) *Track {
 		}
 		body := strings.TrimSpace(strings.Join(lines[bodyStart:cursor], "\n"))
 		if body == "" {
-			t.addError(model.New(model.CodeSubtitleSyntax, model.Source{Line: cueLine}, "cue has no text", nil))
+			t.addError(model.New(model.CodeSubtitleSyntax, model.AtLine(source, cueLine), "cue has no text", nil))
 			i = cursor
 			continue
 		}
 		if end < start {
-			t.addError(model.Newf(model.CodeSubtitleTiming, model.Source{Line: cueLine},
+			t.addError(model.Newf(model.CodeSubtitleTiming, model.AtLine(source, cueLine),
 				"cue [%d,%d) ends before it starts", start, end))
 			i = cursor
 			continue
@@ -76,7 +76,7 @@ func parseVTT(source, text string) *Track {
 		if end == start {
 			// WebVTT permits zero-duration cues but they convey no visible
 			// interval; report them so the review is not silently distorted.
-			t.addError(model.Newf(model.CodeSubtitleTiming, model.Source{Line: cueLine},
+			t.addError(model.Newf(model.CodeSubtitleTiming, model.AtLine(source, cueLine),
 				"cue [%d,%d) has zero duration", start, end))
 			i = cursor
 			continue

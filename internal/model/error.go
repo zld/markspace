@@ -65,6 +65,16 @@ type Error struct {
 	Inner  error  `json:"-"`
 }
 
+// AtLine builds a source anchored at a 1-based line with no known byte offset.
+func AtLine(name string, line int) Source {
+	return Source{Name: name, Line: line, Offset: -1}
+}
+
+// AtByte builds a source anchored at a byte offset with no line number.
+func AtByte(name string, offset int64) Source {
+	return Source{Name: name, Offset: offset}
+}
+
 // New builds an Error.
 func New(code Code, src Source, detail string, inner error) *Error {
 	if src.Offset == 0 && src.Line == 0 {

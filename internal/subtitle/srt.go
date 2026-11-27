@@ -26,17 +26,17 @@ func parseSRT(source, text string) *Track {
 			var ok bool
 			idx, ok = parseInt(strings.TrimSpace(lines[cursor]))
 			if !ok {
-				t.addError(model.New(model.CodeSubtitleSyntax, model.Source{Line: cursor + 1}, "cue index out of range", nil))
+				t.addError(model.New(model.CodeSubtitleSyntax, model.AtLine(source, cursor+1), "cue index out of range", nil))
 				i = skipCue(lines, cursor+1)
 				continue
 			}
 			cursor++
 		}
 		if cursor >= len(lines) {
-			t.addError(model.New(model.CodeSubtitleSyntax, model.Source{Line: cueLine}, "cue has an index but no timing line", nil))
+			t.addError(model.New(model.CodeSubtitleSyntax, model.AtLine(source, cueLine), "cue has an index but no timing line", nil))
 			break
 		}
-		start, end, err := parseTimingLine(lines[cursor], model.Source{Name: source, Line: cursor + 1})
+		start, end, err := parseTimingLine(lines[cursor], model.AtLine(source, cursor+1))
 		if err != nil {
 			t.addError(err)
 			i = skipCue(lines, cursor+1)
@@ -49,12 +49,12 @@ func parseSRT(source, text string) *Track {
 		}
 		body := strings.TrimSpace(strings.Join(lines[bodyStart:cursor], "\n"))
 		if body == "" {
-			t.addError(model.New(model.CodeSubtitleSyntax, model.Source{Line: cueLine}, "cue has no text", nil))
+			t.addError(model.New(model.CodeSubtitleSyntax, model.AtLine(source, cueLine), "cue has no text", nil))
 			i = cursor
 			continue
 		}
 		if end <= start {
-			t.addError(model.Newf(model.CodeSubtitleTiming, model.Source{Line: cueLine},
+			t.addError(model.Newf(model.CodeSubtitleTiming, model.AtLine(source, cueLine),
 				"cue [%d,%d) has non-positive duration", start, end))
 			i = cursor
 			continue

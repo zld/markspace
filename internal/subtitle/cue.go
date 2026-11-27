@@ -107,7 +107,7 @@ func Parse(kind Kind, source, text string) (*Track, error) {
 	}
 	if strings.TrimSpace(text) == "" {
 		t := &Track{Source: source, Kind: kind}
-		t.addError(model.New(model.CodeSubtitleSyntax, model.Source{Line: 1}, "empty caption file", nil))
+		t.addError(model.New(model.CodeSubtitleSyntax, model.AtLine(source, 1), "empty caption file", nil))
 		return t, nil
 	}
 	if kind == KindSRT {

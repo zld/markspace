@@ -238,7 +238,15 @@ const dropFramesPerMinute = 2
 // labels that would be skipped, and drop-frame syntax on rates other than
 // 30000/1001.
 func ParseTimecode(s string, rate Rate) (Timecode, error) {
-	src := model.Source{Name: "timecode", Offset: -1}
+	return ParseTimecodeAt(s, rate, model.Source{Name: "timecode", Offset: -1})
+}
+
+// ParseTimecodeAt is ParseTimecode with the error source supplied by the
+// caller, so a timecode read from a file reports that file and line.
+func ParseTimecodeAt(s string, rate Rate, src model.Source) (Timecode, error) {
+	if src.Offset == 0 && src.Line == 0 {
+		src.Offset = -1
+	}
 	tc := Timecode{Rate: rate}
 	if !rate.Valid() {
 		return tc, model.Newf(model.CodeTimecodeRate, src, "invalid rate %s", rate)
@@ -292,7 +300,7 @@ func parseFields(fields []string, drop bool, rate Rate, raw string, src model.So
 		return tc, model.Newf(model.CodeTimecodeFrame, src, "minute/second out of range in %q", raw)
 	}
 	if tc.Frames >= nominal {
-		return tc, model.Newf(model.CodeTimecodeFrame, src, "frame %d exceeds nominal rate %d in %q", tc.Frames, nominal, raw)
+		return tc, model.Newf(model.CodeTimecodeFrame, src, "frame number %d is not below the nominal rate %d in %q", tc.Frames, nominal, raw)
 	}
 	if drop {
 		// The first two frame labels of every minute are skipped, except at

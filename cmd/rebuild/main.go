@@ -396,9 +396,18 @@ func analyze(sb sandbox, rate clock.Rate, frameCount int) (*manifest.Summary, []
 		addErr(e)
 	}
 	for _, e := range events {
+		// Each event is also labelled in the review frame rate's timecode, so
+		// the rate selection is visible in the published record. Drop-frame
+		// labels are used whenever the rate defines them.
+		detail := e.Label
+		if frame, ferr := clock.FrameAt(rate, e.TimeNs); ferr == nil {
+			if tc, terr := clock.FormatFrame(rate, frame, rate.SupportsDropFrame()); terr == nil {
+				detail = fmt.Sprintf("%s frame=%d tc=%s", e.Label, frame, tc)
+			}
+		}
 		summary.Items = append(summary.Items, manifest.ItemConclusion{
 			ID: e.ID, Kind: "event", Track: clientTrackName, Source: e.Source, Line: e.Line,
-			TimeNs: e.TimeNs, Status: "ok", Detail: e.Label,
+			TimeNs: e.TimeNs, Status: "ok", Detail: detail,
 		})
 	}
 
@@ -445,7 +454,10 @@ func analyze(sb sandbox, rate clock.Rate, frameCount int) (*manifest.Summary, []
 			addErr(err)
 			continue
 		}
-		cap, err := rtp.Read(bytes.NewReader(data), path, rtp.Options{})
+		// Report the capture by name, not by absolute path, so a manifest
+		// does not depend on where the output root lives.
+		_ = path
+		cap, err := rtp.Read(bytes.NewReader(data), name, rtp.Options{})
 		if err != nil {
 			addErr(err)
 			continue
@@ -480,8 +492,7 @@ func analyze(sb sandbox, rate clock.Rate, frameCount int) (*manifest.Summary, []
 	// --- MP4 -------------------------------------------------------------
 	var mp4Invalid int
 	for _, name := range []string{"clip-truncated.mp4", "clip.mp4"} {
-		path := filepath.Join(sb.inputDir(), name)
-		idx, err := mp4.Open(path)
+		idx, err := indexMP4(filepath.Join(sb.inputDir(), name), name)
 		if err != nil {
 			addErr(err)
 			continue
@@ -523,13 +534,18 @@ func analyze(sb sandbox, rate clock.Rate, frameCount int) (*manifest.Summary, []
 	summary.MP4Invalid = mp4Invalid
 
 	// --- timecode validation --------------------------------------------
+	// The sheet is 29.97 drop-frame material and is always validated against
+	// that rate, independent of the review frame rate: drop-frame rules are
+	// only defined for 30000/1001.
+	_ = rate
 	if data, _, err := sb.read("timecodes.txt"); err == nil {
 		for i, line := range strings.Split(strings.TrimSuffix(string(data), "\n"), "\n") {
 			line = strings.TrimSpace(line)
 			if i == 0 || line == "" {
 				continue
 			}
-			if _, err := clock.ParseTimecode(line, rate); err != nil {
+			src := model.Source{Name: "timecodes.txt", Line: i + 1, Offset: -1}
+			if _, err := clock.ParseTimecodeAt(line, clock.Rate2997, src); err != nil {
 				addErr(err)
 			}
 		}
@@ -612,6 +628,21 @@ func analyze(sb sandbox, rate clock.Rate, frameCount int) (*manifest.Summary, []
 	sort.Strings(errs)
 	summary.Errors = errs
 	return summary, frames, nil
+}
+
+// indexMP4 indexes a clip, attributing errors to displayName rather than the
+// absolute path so manifests are location independent.
+func indexMP4(path, displayName string) (*mp4.Index, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, model.New(model.CodeIO, model.Source{Name: displayName, Offset: -1}, "open mp4", err)
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		return nil, model.New(model.CodeIO, model.Source{Name: displayName, Offset: -1}, "stat mp4", err)
+	}
+	return mp4.Read(f, displayName, st.Size())
 }
 
 func kindOf(name string) string {

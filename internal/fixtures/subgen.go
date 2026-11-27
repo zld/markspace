@@ -74,19 +74,20 @@ Survivor
 `
 }
 
-// TimecodeSheet is the timecode validation input as ordered lines. The first
-// line is a comment; four of the following are deliberately invalid: two
-// skipped drop-frame labels, a frame number past the nominal rate, and a frame
-// number past 25 fps. The tenth-minute label is valid and must not be flagged.
+// TimecodeSheet is a 29.97 drop-frame timecode validation input as ordered
+// lines. Line 1 is a comment. Lines 2 and 3 are labels skipped by drop-frame
+// counting, and line 4 has a frame number at the nominal rate (30), all of
+// which must be rejected. The tenth-minute label, a drop-frame label inside a
+// minute, and a non-drop label are valid and must not be flagged.
 func TimecodeSheet() []string {
 	return []string{
-		"# timecode validation sheet",
+		"# timecode validation sheet (29.97 drop-frame)",
 		"00:01:00;00",
 		"00:01:00;01",
-		"00:00:00;99",
-		"00:00:00:25",
+		"00:00:00;30",
 		"00:10:00;00",
-		"00:00:20:12",
+		"00:00:20;12",
+		"00:00:00:25",
 	}
 }
 
