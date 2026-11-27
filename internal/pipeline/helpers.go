@@ -32,11 +32,12 @@ type storedPacket struct {
 }
 
 type storedCapture struct {
-	Spec       ingest.TrackSpec `json:"spec"`
-	Packets    []storedPacket   `json:"packets"`
-	Gaps       []timeline.Gap   `json:"gaps"`
-	Duplicates uint64           `json:"duplicates"`
-	Accepted   uint64           `json:"accepted"`
+	Spec             ingest.TrackSpec `json:"spec"`
+	Packets          []storedPacket   `json:"packets"`
+	Gaps             []timeline.Gap   `json:"gaps"`
+	Duplicates       uint64           `json:"duplicates"`
+	Accepted         uint64           `json:"accepted"`
+	ObjectiveQuality float64          `json:"objective_quality"`
 }
 
 func writeJSON(dir, rel string, v interface{}) error {
@@ -64,8 +65,13 @@ func readJSON(dir, rel string, v interface{}) error {
 
 func savePackets(dir, rel string, spec ingest.TrackSpec,
 	packets []*ingest.AudioPacket, r *timeline.Reorderer) error {
+	expected := r.Accepted
+	for _, g := range r.Gaps {
+		expected += g.ToSeq - g.FromSeq + 1
+	}
 	st := storedCapture{
 		Spec: spec, Gaps: r.Gaps, Duplicates: r.Duplicates, Accepted: r.Accepted,
+		ObjectiveQuality: quality.ObjectiveScore(r.Accepted, expected, r.Gaps),
 	}
 	for _, pkt := range packets {
 		st.Packets = append(st.Packets, storedPacket{
@@ -77,10 +83,10 @@ func savePackets(dir, rel string, spec ingest.TrackSpec,
 }
 
 func loadPackets(dir, rel string) (ingest.TrackSpec, []*ingest.AudioPacket,
-	[]timeline.Gap, uint64, uint64, error) {
+	[]timeline.Gap, uint64, uint64, float64, error) {
 	var st storedCapture
 	if err := readJSON(dir, rel, &st); err != nil {
-		return ingest.TrackSpec{}, nil, nil, 0, 0, err
+		return ingest.TrackSpec{}, nil, nil, 0, 0, 0, err
 	}
 	packets := make([]*ingest.AudioPacket, 0, len(st.Packets))
 	for _, sp := range st.Packets {
@@ -94,7 +100,7 @@ func loadPackets(dir, rel string) (ingest.TrackSpec, []*ingest.AudioPacket,
 	if gaps == nil {
 		gaps = []timeline.Gap{}
 	}
-	return st.Spec, packets, gaps, st.Duplicates, st.Accepted, nil
+	return st.Spec, packets, gaps, st.Duplicates, st.Accepted, st.ObjectiveQuality, nil
 }
 
 func saveTimeline(dir, rel string, tl *timeline.Timeline) error {

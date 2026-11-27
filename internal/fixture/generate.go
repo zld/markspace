@@ -117,12 +117,13 @@ func AACTrack(count int) []Packet {
 	return out
 }
 
-// TruncatedAACPacket returns an AAC packet whose AU header claims more bytes
-// than the payload contains.
+// TruncatedAACPacket returns an AAC packet whose AU header is well-formed but
+// declares an AU larger than the bytes that actually follow.
 func TruncatedAACPacket() Packet {
-	// Header says 300 bytes; only two follow.
+	// AU-headers-length = 16 bits (one AU header). The 13-bit AU size claims
+	// 300 bytes; only two frame bytes are present, so the AU is truncated.
 	word := uint16(300) << 3
-	payload := []byte{0x00, 0x02, byte(word >> 8), byte(word), 0xAB, 0xCD}
+	payload := []byte{0x00, 0x10, byte(word >> 8), byte(word), 0xAB, 0xCD}
 	return rtpPacket(97, 11, 11*1024, payload)
 }
 

@@ -176,7 +176,7 @@ func (p *Pipeline) stageIngest() error {
 }
 
 func (p *Pipeline) stageNormalize() error {
-	spec, packets, gaps, dups, accepted, err := loadPackets(p.cfg.OutDir, capRel)
+	spec, packets, gaps, dups, accepted, _, err := loadPackets(p.cfg.OutDir, capRel)
 	if err != nil {
 		return err
 	}
@@ -208,8 +208,15 @@ func (p *Pipeline) stagePlan() error {
 	if err != nil {
 		return err
 	}
+	_, _, _, _, _, objectiveQuality, err := loadPackets(p.cfg.OutDir, capRel)
+	if err != nil {
+		//nolint:govet // shadowing is intentional for stage-local errors
+		return err
+	}
+	// Candidate quality is an objective property of the material, never the
+	// requested threshold; the gate in plan.Choose decides feasibility.
 	cands := []plan.Candidate{{
-		Name: "keep", BitrateBPS: p.cfg.TargetBitrate, Quality: p.cfg.MinQuality,
+		Name: "keep", BitrateBPS: p.cfg.TargetBitrate, Quality: objectiveQuality,
 		EstCPUNanos: 1000, EstBytes: estimateBytes(tl, p.cfg.TargetBitrate),
 	}}
 	inputSum := stage.Summarize("plan", map[string]string{
@@ -240,7 +247,7 @@ func (p *Pipeline) stagePlan() error {
 }
 
 func (p *Pipeline) stageExport() error {
-	spec, packets, gaps, dups, accepted, err := loadPackets(p.cfg.OutDir, capRel)
+	spec, packets, gaps, dups, accepted, _, err := loadPackets(p.cfg.OutDir, capRel)
 	if err != nil {
 		return err
 	}
