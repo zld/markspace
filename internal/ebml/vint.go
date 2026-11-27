@@ -38,12 +38,14 @@ func DecodeVINT(buf []byte) (val uint64, width int, unknown bool, err *serr.Erro
 	if len(buf) < width {
 		return 0, width, false, serr.New(serr.CodeTruncatedHeader, "VINT needs %d bytes, have %d", width, len(buf))
 	}
-	// Data bits of the first byte: everything below the length marker.
-	dataBits := 8 - uint(width)
-	v := uint64(buf[0]) & (uint64(1)<<dataBits - 1)
-	allOnes := v == (uint64(1)<<dataBits-1)
+	// RFC 8794 VINT_DATA: treat the VINT as big-endian, then clear the leading
+	// width bits (the width-1 zeros and the single marker bit). The first
+	// byte's remaining bits are the most significant data bits.
+	mask := uint64(0xFF) >> uint(width) // keeps only data bits in buf[0]
+	v := uint64(buf[0]) & mask
+	allOnes := v == mask
 	for i := 1; i < width; i++ {
-		v = (v << 8) | uint64(buf[i])
+		v = v<<8 | uint64(buf[i])
 		if buf[i] != 0xFF {
 			allOnes = false
 		}

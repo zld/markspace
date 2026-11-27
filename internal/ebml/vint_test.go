@@ -12,16 +12,16 @@ func TestVINTWidth(t *testing.T) {
 		width int
 		ok    bool
 	}{
-		{0x80, 1, true},   // 10000000
-		{0xFF, 1, true},   // unknown length, width 1
-		{0x40, 2, true},   // 01000000
-		{0x20, 3, true},   // 00100000
-		{0x10, 4, true},   // 00010000
-		{0x08, 5, true},   // 00001000
-		{0x04, 6, true},   // 00000100
-		{0x02, 7, true},   // 00000010
-		{0x01, 8, true},   // 00000001
-		{0x00, 0, false},  // would need 9 bytes
+		{0x80, 1, true},  // 10000000
+		{0xFF, 1, true},  // unknown length, width 1
+		{0x40, 2, true},  // 01000000
+		{0x20, 3, true},  // 00100000
+		{0x10, 4, true},  // 00010000
+		{0x08, 5, true},  // 00001000
+		{0x04, 6, true},  // 00000100
+		{0x02, 7, true},  // 00000010
+		{0x01, 8, true},  // 00000001
+		{0x00, 0, false}, // would need 9 bytes
 	}
 	for _, c := range cases {
 		w, ok := VINTWidth(c.first)

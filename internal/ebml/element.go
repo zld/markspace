@@ -10,22 +10,22 @@ type ElementID uint64
 // Matroska/WebM element IDs used by this project. The subset covers the EBML
 // header, segment metadata, track descriptions, clusters and blocks.
 const (
-	IDEBMLHeader       ElementID = 0x1A45DFA3
-	IDEBMLVersion      ElementID = 0x4286
-	IDEBMLReadVersion  ElementID = 0x42F7
-	IDEBMLMaxIDLength  ElementID = 0x42F2
-	IDEBMLMaxSizeLen   ElementID = 0x42F3
-	IDDocType          ElementID = 0x4282
-	IDDocTypeVersion   ElementID = 0x4287
-	IDDocTypeReadVer   ElementID = 0x4285
+	IDEBMLHeader      ElementID = 0x1A45DFA3
+	IDEBMLVersion     ElementID = 0x4286
+	IDEBMLReadVersion ElementID = 0x42F7
+	IDEBMLMaxIDLength ElementID = 0x42F2
+	IDEBMLMaxSizeLen  ElementID = 0x42F3
+	IDDocType         ElementID = 0x4282
+	IDDocTypeVersion  ElementID = 0x4287
+	IDDocTypeReadVer  ElementID = 0x4285
 
-	IDSegment     ElementID = 0x18538067
-	IDSeekHead    ElementID = 0x114D9B74
-	IDInfo        ElementID = 0x1549A966
+	IDSegment       ElementID = 0x18538067
+	IDSeekHead      ElementID = 0x114D9B74
+	IDInfo          ElementID = 0x1549A966
 	IDTimecodeScale ElementID = 0x2AD7B1
-	IDMuxingApp   ElementID = 0x4D80
-	IDWritingApp  ElementID = 0x5741
-	IDDuration    ElementID = 0x4489
+	IDMuxingApp     ElementID = 0x4D80
+	IDWritingApp    ElementID = 0x5741
+	IDDuration      ElementID = 0x4489
 
 	IDTracks      ElementID = 0x1654AE6B
 	IDTrackEntry  ElementID = 0xAE
@@ -37,9 +37,9 @@ const (
 	IDLanguage    ElementID = 0x22B59C
 	IDCodecID     ElementID = 0x86
 
-	IDAudio   ElementID = 0xE1
-	IDVideo   ElementID = 0xE0
-	IDColour  ElementID = 0x55B0
+	IDAudio             ElementID = 0xE1
+	IDVideo             ElementID = 0xE0
+	IDColour            ElementID = 0x55B0
 	IDSamplingFrequency ElementID = 0xB5
 	IDChannels          ElementID = 0x9F
 	IDChannelPositions  ElementID = 0x7D7B
@@ -71,7 +71,7 @@ var idNames = map[ElementID]string{
 	IDSegment: "Segment", IDSeekHead: "SeekHead", IDInfo: "Info",
 	IDTimecodeScale: "TimestampScale", IDMuxingApp: "MuxingApp", IDWritingApp: "WritingApp",
 	IDDuration: "Duration",
-	IDTracks: "Tracks", IDTrackEntry: "TrackEntry", IDTrackNumber: "TrackNumber",
+	IDTracks:   "Tracks", IDTrackEntry: "TrackEntry", IDTrackNumber: "TrackNumber",
 	IDTrackUID: "TrackUID", IDTrackType: "TrackType", IDFlagDefault: "FlagDefault",
 	IDName: "Name", IDLanguage: "Language", IDCodecID: "CodecID",
 	IDAudio: "Audio", IDVideo: "Video", IDColour: "Colour",
@@ -94,13 +94,13 @@ var containerIDs = map[ElementID]bool{
 
 // Element describes one parsed EBML element header with exact input offsets.
 type Element struct {
-	ID             ElementID
-	Offset         int64 // absolute offset of the ID VINT
-	HeaderSize     int   // ID VINT width + size VINT width
-	Size           int64 // declared payload size; -1 when unknown
-	UnknownSize    bool
-	PayloadOffset  int64 // absolute offset where the payload begins
-	PayloadEnd     int64 // exclusive absolute end; set at parent/EOF for unknown sizes
+	ID            ElementID
+	Offset        int64 // absolute offset of the ID VINT
+	HeaderSize    int   // ID VINT width + size VINT width
+	Size          int64 // declared payload size; -1 when unknown
+	UnknownSize   bool
+	PayloadOffset int64 // absolute offset where the payload begins
+	PayloadEnd    int64 // exclusive absolute end; set at parent/EOF for unknown sizes
 }
 
 // Name returns the Matroska name, or a hex fallback for unregistered IDs.
