@@ -345,10 +345,3 @@ func hashPayload(payload []byte) string {
 	sum := sha256.Sum256(payload)
 	return hex.EncodeToString(sum[:])
 }
-
-// SortPackets orders packets by extended sequence number.
-func SortPackets(packets []Packet) {
-	sort.SliceStable(packets, func(i, j int) bool {
-		return packets[i].Extended < packets[j].Extended
-	})
-}

@@ -150,6 +150,12 @@ func printRunResult(w io.Writer, fx scenario.Fixture, res *replay.Result, workDi
 	if !res.Diff.Same {
 		printDiff(w, res)
 	}
+	if len(res.Rollbacks) > 0 {
+		fmt.Fprintf(w, "rollbacks: %d\n", len(res.Rollbacks))
+		for _, rb := range res.Rollbacks {
+			fmt.Fprintf(w, "  %-8s %s\n", rb.Stage, rb.Reason)
+		}
+	}
 	printStages(w, res)
 }
 

@@ -175,3 +175,48 @@ func itoa(n int) string {
 	}
 	return string(buf[i:])
 }
+
+func TestParserDuplicateAfterWrapCountedOnce(t *testing.T) {
+	p, _ := NewParser("audio", 48000)
+	// 65535 -> 0 crosses the boundary; the 0 packet is repeated.
+	seqs := []uint16{65534, 65535, 0, 1, 0}
+	for i, seq := range seqs {
+		if err := p.Add(buildRTP(t, seq, uint32(i)*960, 9, []byte("same")), int64(i)*10); err != nil {
+			t.Fatalf("Add %d: %v", seq, err)
+		}
+	}
+	st := p.Finish()[0]
+	if st.PacketCount() != 4 {
+		t.Fatalf("packets=%d want 4 (post-wrap duplicate counted once)", st.PacketCount())
+	}
+	if st.DuplicateCount() != 1 {
+		t.Fatalf("duplicates=%d want 1", st.DuplicateCount())
+	}
+	if len(st.DuplicateConflicts()) != 0 {
+		t.Fatal("identical post-wrap duplicate must not be a conflict")
+	}
+	if st.Wraps != 1 {
+		t.Fatalf("wraps=%d want 1", st.Wraps)
+	}
+}
+
+func TestParserLateDuplicateDoesNotInventGap(t *testing.T) {
+	p, _ := NewParserWindow("audio", 48000, 2)
+	// Fill a contiguous run, then a far-future packet, then repeat an old
+	// one well outside the window.
+	for _, seq := range []uint16{1, 2, 3, 50, 1} {
+		if err := p.Add(buildRTP(t, seq, uint32(seq), 3, []byte("p")), 0); err != nil {
+			t.Fatalf("Add %d: %v", seq, err)
+		}
+	}
+	st := p.Finish()[0]
+	// The repeated seq 1 arrives while still pending (it was accepted),
+	// so it is a duplicate, not a late deficit.
+	if len(st.DuplicateConflicts()) != 0 {
+		t.Fatal("identical repeat must not conflict")
+	}
+	// Sequence 2 and 3 are accepted; 50 is accepted; 4..49 are a gap.
+	if st.GapCount() == 0 {
+		t.Fatal("expected a numbering gap between 3 and 50")
+	}
+}

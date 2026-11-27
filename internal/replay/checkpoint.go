@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"replay/internal/fault"
 	"replay/internal/manifest"
@@ -71,6 +72,7 @@ func (e *Engine) recordPriorRollback(stage, reason string, res *Result) {
 			currentReason = "downstream of changed input"
 		}
 		e.logf("rollback %-8s reason=%s (previous run)\n", name, currentReason)
+		res.Rollbacks = append(res.Rollbacks, Rollback{Stage: name, Reason: currentReason})
 		res.Transitions = append(res.Transitions,
 			Transition{Stage: name, From: state.PhaseCompleted, To: state.PhaseRolledBack})
 		e.logf("stage %-8s completed -> rolled-back\n", name)
@@ -114,6 +116,7 @@ func (e *Engine) invalidate(stage, reason string, res *Result) error {
 		e.doc.Put(cp)
 		e.logf("rollback %-8s reason=%s removed=%v\n", current, currentReason, record.Removed)
 		if res != nil {
+			res.Rollbacks = append(res.Rollbacks, Rollback{Stage: current, Reason: currentReason})
 			res.Transitions = append(res.Transitions,
 				Transition{Stage: current, From: state.PhaseCompleted, To: state.PhaseRolledBack})
 			e.logf("stage %-8s completed -> rolled-back\n", current)
@@ -123,10 +126,23 @@ func (e *Engine) invalidate(stage, reason string, res *Result) error {
 	// The manifest file itself is an output of the manifest stage only;
 	// a rollback of an earlier stage must also drop any stale manifest so
 	// a partial result can never be mistaken for a verified one.
-	if index <= indexOf(plan, StageManifest) {
-		_ = os.Remove(filepath.Join(e.WorkDir, fileManifest))
+	_ = os.Remove(filepath.Join(e.WorkDir, fileManifest))
+	if res != nil {
+		sortRollbacks(plan, res)
 	}
 	return e.store.Save(e.doc)
+}
+
+// sortRollbacks orders recorded rollbacks by plan position so the report
+// reads upstream-first even though artefacts were removed newest-first.
+func sortRollbacks(plan []string, res *Result) {
+	rank := make(map[string]int, len(plan))
+	for i, name := range plan {
+		rank[name] = i
+	}
+	sort.SliceStable(res.Rollbacks, func(i, j int) bool {
+		return rank[res.Rollbacks[i].Stage] < rank[res.Rollbacks[j].Stage]
+	})
 }
 
 func indexOf(plan []string, stage string) int {

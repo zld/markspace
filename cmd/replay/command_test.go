@@ -79,7 +79,7 @@ func TestTruncatedRTCPFailsWithOffset(t *testing.T) {
 }
 
 func TestConflictCaseReportsConflict(t *testing.T) {
-	code, out, errOut := runCLI(t, "demo", "--case", "duplicate-conflict", "--workdir", t.TempDir())
+	code, out, errOut := runCLI(t, "demo", "--case", "conflict", "--workdir", t.TempDir())
 	if code != 0 {
 		t.Fatalf("exit=%d %s", code, errOut)
 	}

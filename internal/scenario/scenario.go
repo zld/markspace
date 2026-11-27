@@ -18,9 +18,13 @@ import (
 
 // Case identifiers accepted on the command line.
 const (
-	CaseNormal            = "normal"
-	CaseSequenceWrap      = "seq-wrap"
-	CaseDuplicateConflict = "duplicate-conflict"
+	CaseNormal       = "normal"
+	CaseSequenceWrap = "seq-wrap"
+	// CaseConflict is the acceptance name for the duplicate/content
+	// conflict scenario.
+	CaseConflict = "conflict"
+	// CaseDuplicateConflict is the descriptive alias for CaseConflict.
+	CaseDuplicateConflict = CaseConflict
 	CaseTruncatedRTCP     = "truncated-rtcp"
 	CaseDependencyCycle   = "dependency-cycle"
 	// CaseResume is the normal pipeline under a case name dedicated to
@@ -132,7 +136,7 @@ func Build(cs string, versions []string) (Fixture, error) {
 	fx := Fixture{Case: cs, Versions: append([]string(nil), versions...)}
 
 	switch cs {
-	case CaseNormal, CaseSequenceWrap, CaseDuplicateConflict, CaseTruncatedRTCP, CaseResume:
+	case CaseNormal, CaseSequenceWrap, CaseConflict, CaseTruncatedRTCP, CaseResume:
 		fx.Tracks = []graph.Track{
 			{ID: "audio-main", ClockRate: 48000, Version: versions[0]},
 			{ID: "video-main", ClockRate: 90000, Version: versions[0], DependsOn: []string{"audio-main"}},
@@ -177,7 +181,7 @@ func Build(cs string, versions []string) (Fixture, error) {
 		}
 	}
 
-	if cs == CaseDuplicateConflict {
+	if cs == CaseConflict {
 		// A duplicate of an already accepted packet with different
 		// content: same sequence, same timestamp, different bytes.
 		raw := marshalRTP("audio-main", 1000, 0, []byte("conflicting-duplicate-payload"))
@@ -208,7 +212,7 @@ func Build(cs string, versions []string) (Fixture, error) {
 		for _, track := range []string{"audio-main", "video-main"} {
 			contentKey := track + "/shared"
 			salt := byte(0)
-			if cs == CaseDuplicateConflict && version == versions[0] && track == "audio-main" {
+			if cs == CaseConflict && version == versions[0] && track == "audio-main" {
 				contentKey = track + "/conflict"
 				salt = 7
 			}

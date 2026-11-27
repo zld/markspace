@@ -110,8 +110,3 @@ func writeAtomic(target string, data []byte) error {
 	}
 	return os.Rename(name, target)
 }
-
-// filepathJoin joins work-relative paths portably.
-func filepathJoin(elem ...string) string {
-	return filepath.Join(elem...)
-}

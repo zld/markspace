@@ -278,3 +278,81 @@ func TestChangedInputRollsBackDownstream(t *testing.T) {
 		t.Fatalf("no rolled-back transition: %+v", res.Transitions)
 	}
 }
+
+func TestStoppedRunPublishesNoPartialMerge(t *testing.T) {
+	dir := t.TempDir()
+	base := fixture(t, scenario.CaseNormal)
+	if _, err := engine(t, base, dir).Run(); err != nil {
+		t.Fatalf("baseline run: %v", err)
+	}
+	// A fresh run stops after map, so it clears the previous artefacts and
+	// must not publish a plan or manifest from a partial pipeline.
+	stopped, err := engine(t, base, dir, func(e *replay.Engine) { e.StopAfter = replay.StageMap }).Run()
+	if err != nil {
+		t.Fatalf("stop run: %v", err)
+	}
+	if stopped.Outcome != replay.TargetStopped {
+		t.Fatalf("outcome=%v", stopped.Outcome)
+	}
+	for _, name := range []string{"out/plan.json", "manifest.json"} {
+		if _, statErr := statFile(dir, name); statErr == nil {
+			t.Fatalf("%s must not exist when the run stops before merge", name)
+		}
+	}
+	if _, statErr := statFile(dir, "map.json"); statErr != nil {
+		t.Fatalf("map.json should exist after stopping at map: %v", statErr)
+	}
+}
+
+func TestRollbackRecordListsStageAndReason(t *testing.T) {
+	dir := t.TempDir()
+	base := fixture(t, scenario.CaseNormal)
+	if _, err := engine(t, base, dir).Run(); err != nil {
+		t.Fatalf("baseline: %v", err)
+	}
+	changed := base
+	changed.RTP = append([]scenario.RTPPayload(nil), base.RTP...)
+	// Alter the first RTP datagram payload length so ingest input changes.
+	changed.RTP[0].Bytes = append([]byte(nil), base.RTP[0].Bytes...)
+	changed.RTP[0].Bytes[len(changed.RTP[0].Bytes)-1] ^= 0x00
+	changed.RTP[0].Offset = base.RTP[0].Offset + 1
+
+	res, err := engine(t, changed, dir).Run()
+	if err != nil {
+		t.Fatalf("changed run: %v", err)
+	}
+	if len(res.Rollbacks) == 0 {
+		t.Fatal("expected rollback records for changed ingest input")
+	}
+	if res.Rollbacks[0].Stage != replay.StageIngest {
+		t.Fatalf("first rollback stage=%s want ingest", res.Rollbacks[0].Stage)
+	}
+	if res.Rollbacks[0].Reason == "" {
+		t.Fatal("rollback record must carry a reason")
+	}
+}
+
+func TestResumeAfterChangedInputRestartsFromIngest(t *testing.T) {
+	dir := t.TempDir()
+	base := fixture(t, scenario.CaseResume)
+	if _, err := engine(t, base, dir, func(e *replay.Engine) { e.StopAfter = replay.StageMap }).Run(); err != nil {
+		t.Fatalf("stop run: %v", err)
+	}
+	// Change ingest input then resume: the ingest checkpoint no longer
+	// matches, so the affected stage and downstream must roll back.
+	changed := base
+	changed.RTP = append([]scenario.RTPPayload(nil), base.RTP...)
+	changed.RTP[0].Bytes = append([]byte(nil), base.RTP[0].Bytes...)
+	changed.RTP[0].Bytes[len(changed.RTP[0].Bytes)-1] ^= 0x01
+
+	res, err := engine(t, changed, dir, func(e *replay.Engine) { e.Resume = true }).Run()
+	if err != nil {
+		t.Fatalf("resume: %v", err)
+	}
+	if res.Outcome != replay.TargetCompleted || !res.Verified {
+		t.Fatalf("outcome=%v verified=%v", res.Outcome, res.Verified)
+	}
+	if len(res.Rollbacks) == 0 || res.Rollbacks[0].Stage != replay.StageIngest {
+		t.Fatalf("expected ingest rollback, got %+v", res.Rollbacks)
+	}
+}

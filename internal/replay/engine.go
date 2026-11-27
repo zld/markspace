@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 
 	"replay/internal/fault"
@@ -67,6 +68,14 @@ type Result struct {
 	ResumedFrom string
 	// Reused lists stages served from checkpoints.
 	Reused []string
+	// Rollbacks records every stage invalidated by a changed input.
+	Rollbacks []Rollback
+}
+
+// Rollback is one stage rolled back during this run.
+type Rollback struct {
+	Stage  string
+	Reason string
 }
 
 // Engine runs the six-stage pipeline for one fixture. It is not safe for
@@ -363,7 +372,7 @@ func (e *Engine) logTransition(res *Result, stage string, from, to state.Phase) 
 }
 
 func (e *Engine) path(name string) string {
-	return filepathJoin(e.WorkDir, name)
+	return filepath.Join(e.WorkDir, name)
 }
 
 func fileExists(path string) bool {
@@ -426,7 +435,7 @@ func (e *Engine) clearArtifacts() error {
 		if entry.Name() == fileBaseline {
 			continue
 		}
-		if err := os.RemoveAll(filepathJoin(e.WorkDir, entry.Name())); err != nil {
+		if err := os.RemoveAll(filepath.Join(e.WorkDir, entry.Name())); err != nil {
 			return fault.New(fault.KindInput, "cannot clear work directory").At("replay").Wrap(err)
 		}
 	}
