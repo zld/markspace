@@ -1,0 +1,7 @@
+# Build artifacts (never committed)
+/pack
+*.test
+*.out
+
+# Local demo workspace
+/tmp/
