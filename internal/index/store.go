@@ -178,6 +178,31 @@ func (s *Store) Chunk(n int) (ChunkState, bool) {
 	return ChunkState{}, false
 }
 
+// RemoveEntriesExcept deletes entries whose key belongs to the previous commit
+// of a chunk but is absent from the new key set. Stale artifacts are therefore
+// no longer reported as published once a chunk is revalidated.
+func (s *Store) RemoveEntriesExcept(oldKeys, keep []string) int {
+	keepSet := make(map[string]bool, len(keep))
+	for _, k := range keep {
+		keepSet[k] = true
+	}
+	oldSet := make(map[string]bool, len(oldKeys))
+	for _, k := range oldKeys {
+		oldSet[k] = true
+	}
+	removed := 0
+	kept := s.Entries[:0]
+	for _, e := range s.Entries {
+		if oldSet[e.Key] && !keepSet[e.Key] {
+			removed++
+			continue
+		}
+		kept = append(kept, e)
+	}
+	s.Entries = kept
+	return removed
+}
+
 // CommitChunk marks a chunk committed and records its keys.
 func (s *Store) CommitChunk(n int, digest string, keys []string) {
 	cs := ChunkState{Chunk: n, InputDigest: digest, Keys: append([]string(nil), keys...), Committed: true}

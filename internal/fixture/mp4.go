@@ -45,23 +45,27 @@ func (m *memFile) Seek(offset int64, whence int) (int64, error) {
 
 func (m *memFile) Bytes() []byte { return m.buf }
 
-// sampleSpec describes one sample inside a fragment.
-type sampleSpec struct {
+// SampleSpec describes one sample inside a fragment.
+type SampleSpec struct {
 	Duration uint32
 	Size     uint32
 	Sync     bool
 }
 
-// fragmentSpec is the input for BuildFragment.
-type fragmentSpec struct {
+// FragmentSpec is the input for BuildFragment.
+type FragmentSpec struct {
 	Sequence   uint32
 	TrackID    uint32
 	BaseDecode uint64
 	Timescale  uint32
-	Samples    []sampleSpec
+	Samples    []SampleSpec
 	Payload    []byte
 	NonSync    bool // first sample is not a keyframe
 }
+
+// Internal aliases keep the generator's own call sites short.
+type sampleSpec = SampleSpec
+type fragmentSpec = FragmentSpec
 
 // BuildInit writes a minimal initialization segment: ftyp + moov with mvhd,
 // tkhd, mdhd and hdlr. It is valid enough for go-mp4 to read the timescale and

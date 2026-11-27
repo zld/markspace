@@ -127,19 +127,26 @@ func DigestOf(entries []Entry) string {
 	return l.Digest()
 }
 
-// Filter keeps entries overlapping [from, to]. A nil bound is open on that
-// side. Entries with a zero-length range at the boundary are included.
+// Filter keeps entries that overlap the half-open input range [from, to). A
+// nil bound is open on that side. Zero-length entries (a missing duration has
+// no extent) are kept when they sit exactly on a bound, so an anomaly at the
+// requested edge is never hidden.
 func (r *Report) Filter(from, to *clock.Time) {
 	if from == nil && to == nil {
 		return
 	}
 	kept := r.Entries[:0]
 	for _, e := range r.Entries {
-		if from != nil && e.End.Cmp(*from) < 0 && !e.End.Equal(*from) {
-			continue
+		zero := e.Start.Equal(e.End)
+		if from != nil {
+			if e.End.Cmp(*from) < 0 || (!zero && e.End.Equal(*from)) {
+				continue
+			}
 		}
-		if to != nil && e.Start.Cmp(*to) > 0 {
-			continue
+		if to != nil {
+			if e.Start.Cmp(*to) > 0 || (!zero && e.Start.Equal(*to)) {
+				continue
+			}
 		}
 		kept = append(kept, e)
 	}

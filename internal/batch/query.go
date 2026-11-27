@@ -30,7 +30,7 @@ func Inspect(workDir, inputDir string, maxBytes int64) (*Run, error) {
 	}
 	ids := make([]checkpoint.Identity, len(units))
 	for i, u := range units {
-		ids[i] = u.Identity()
+		ids[i] = u.Identity(outcomes[i].Result.Hash)
 	}
 	checkpoint.AssignDigests(chunks, ids)
 	run.Chunks = chunks

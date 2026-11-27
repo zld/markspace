@@ -44,11 +44,13 @@ type Unit struct {
 	Expect         *scan.Expectation
 }
 
-// Identity returns the checkpoint identity of the unit.
-func (u Unit) Identity() checkpoint.Identity {
+// Identity returns the checkpoint identity of the unit. contentHash is the
+// digest computed by the scan, so an in-place content change invalidates the
+// chunk even when its timing and path are unchanged.
+func (u Unit) Identity(contentHash string) checkpoint.Identity {
 	return checkpoint.Identity{
 		Manifest: u.Manifest, Representation: u.Representation, Segment: u.Ref,
-		Start: u.Start, End: u.End, Path: u.Path,
+		Start: u.Start, End: u.End, Path: u.Path, ContentHash: contentHash,
 	}
 }
 

@@ -60,13 +60,18 @@ type Identity struct {
 	Start          clock.Time `json:"start"`
 	End            clock.Time `json:"end"`
 	Path           string     `json:"path"`
+	// ContentHash is the validated segment digest. Including it means a file
+	// replaced in place with the same name and timing still invalidates the
+	// chunk, so changed input is always revalidated.
+	ContentHash string `json:"contentHash"`
 }
 
 // Digest hashes a contiguous run of identities.
 func Digest(ids []Identity) string {
 	h := sha256.New()
 	for _, id := range ids {
-		fmt.Fprintf(h, "%s|%s|%s|%s|%s|%s\n", id.Manifest, id.Representation, id.Segment, id.Start, id.End, id.Path)
+		fmt.Fprintf(h, "%s|%s|%s|%s|%s|%s|%s\n",
+			id.Manifest, id.Representation, id.Segment, id.Start, id.End, id.Path, id.ContentHash)
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }

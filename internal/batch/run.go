@@ -60,7 +60,7 @@ func Execute(opts Options, mode Mode) (*Run, error) {
 	}
 	ids := make([]checkpoint.Identity, len(units))
 	for i, u := range units {
-		ids[i] = u.Identity()
+		ids[i] = u.Identity(outcomes[i].Result.Hash)
 	}
 	checkpoint.AssignDigests(chunks, ids)
 	run.Chunks = chunks
@@ -227,6 +227,12 @@ func publishChunk(opts Options, store *index.Store, state *checkpoint.State, chu
 	}
 	if opts.CrashPoint == crashAfterArtifact {
 		return false, nil
+	}
+	// A revalidated chunk may no longer contain a previously published key
+	// (for example, a segment now fails its checksum). Drop those stale index
+	// entries so the index never claims a quarantined artifact is published.
+	if prev, ok := store.Chunk(chunk.Index); ok {
+		store.RemoveEntriesExcept(prev.Keys, keys)
 	}
 	for _, e := range entries {
 		store.Put(e)
