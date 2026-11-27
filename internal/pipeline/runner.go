@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"gamepack/internal/fixture"
 	perr "gamepack/internal/errors"
@@ -90,17 +91,40 @@ func New(cfg Config) (*Runner, error) {
 	return &Runner{cfg: cfg, dirs: d, wal: w}, nil
 }
 
-// inputDigest hashes the generated source bytes for the reuse guard.
+// inputDigest hashes every input that can affect the output: the bitstream,
+// its keyframe index, the RTP source (so wrap/switch changes count), and a
+// small configuration fingerprint. Any change invalidates entry reuse.
 func (r *Runner) inputDigest(arts []*fixture.Artifact) (string, error) {
 	h := sha256.New()
+	// Configuration fingerprint first.
+	fmt.Fprintf(h, "units=%d key=%d wrap=%d codecs=%v bitrates=%v inject=%v\n",
+		r.cfg.Units, r.cfg.KeyEvery, r.cfg.WrapBits,
+		r.cfg.Codecs, r.cfg.Bitrates, sortedInjections(r.cfg.Inject))
+	paths := make([]string, 0, len(arts)*3)
 	for _, a := range arts {
-		b, err := os.ReadFile(a.StreamPath)
+		paths = append(paths, a.StreamPath, a.IndexPath, a.RTPPath)
+	}
+	sort.Strings(paths)
+	for _, p := range paths {
+		b, err := os.ReadFile(p)
 		if err != nil {
 			return "", err
 		}
+		h.Write([]byte(filepath.Base(p)))
 		h.Write(b)
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func sortedInjections(in map[fixture.Injection]bool) []string {
+	out := make([]string, 0, len(in))
+	for k, v := range in {
+		if v {
+			out = append(out, string(k))
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // record is a small helper for WAL transitions.
