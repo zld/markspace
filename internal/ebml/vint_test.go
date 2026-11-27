@@ -96,16 +96,16 @@ func TestVINTRoundTrip(t *testing.T) {
 
 func TestEncodeUnknownVINT(t *testing.T) {
 	for w := 1; w <= 8; w++ {
-		b, err := EncodeUnknownVINT(w)
-		if err != nil {
-			t.Fatalf("width %d: %v", w, err)
+		b, encErr := EncodeUnknownVINT(w)
+		if encErr != nil {
+			t.Fatalf("width %d: %v", w, encErr)
 		}
 		if len(b) != w {
 			t.Fatalf("width %d: got %d bytes", w, len(b))
 		}
-		v, gotW, unknown, err := DecodeVINT(b)
-		if err != nil {
-			t.Fatalf("decode unknown width %d: %v", w, err)
+		v, gotW, unknown, derr := DecodeVINT(b)
+		if derr != nil {
+			t.Fatalf("decode unknown width %d: %v", w, derr)
 		}
 		if !unknown || gotW != w {
 			t.Errorf("width %d: decoded value=%d unknown=%v", w, v, unknown)
