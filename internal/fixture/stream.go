@@ -118,8 +118,11 @@ func applyCorruption(all []*RawPacket, dmg DamageConfig) {
 				p[MediaHeaderLen] ^= 0xFF
 			}
 		}
-		if trunc[key] && len(rp.Packet.Payload) > 4 {
-			rp.Packet.Payload = rp.Packet.Payload[:len(rp.Packet.Payload)/2]
+		if trunc[key] && len(rp.Packet.Payload) > MediaHeaderLen+2 {
+			// Keep the full header (magic stays valid) but drop most of the
+			// body: the parser then sees a declared BodyLen that the wire
+			// bytes cannot satisfy, i.e. a truncated media unit.
+			rp.Packet.Payload = rp.Packet.Payload[:MediaHeaderLen+2]
 		}
 	}
 }
