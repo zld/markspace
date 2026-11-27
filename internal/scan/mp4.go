@@ -67,7 +67,8 @@ func inspectMP4(req Request, data []byte) (string, MediaInfo, fault.List) {
 	var issues fault.List
 	info := MediaInfo{Kind: "mp4"}
 	boxes, badOffset, ok := walkTopLevel(data)
-	if !ok {
+	truncated := !ok
+	if truncated {
 		issues = append(issues, fault.Issue{
 			Code: fault.CodeSegmentTruncated, Severity: fault.SeverityError, Action: fault.ActionIsolated,
 			Message: "container box extends past the end of the segment",
@@ -92,6 +93,11 @@ func inspectMP4(req Request, data []byte) (string, MediaInfo, fault.List) {
 		case "mdat":
 			mdatOffset = b.offset
 			if b.offset+b.size > int64(len(data)) {
+				mdatPayload = int64(len(data)) - (b.offset + b.header)
+				if truncated {
+					// The single walk-level truncation issue already covers this.
+					break
+				}
 				issues = append(issues, fault.Issue{
 					Code: fault.CodeSegmentTruncated, Severity: fault.SeverityError, Action: fault.ActionIsolated,
 					Message: fmt.Sprintf("mdat declares %d bytes but only %d remain", b.size, int64(len(data))-b.offset),
@@ -101,7 +107,6 @@ func inspectMP4(req Request, data []byte) (string, MediaInfo, fault.List) {
 						Start: req.Start, End: req.End,
 					},
 				})
-				mdatPayload = int64(len(data)) - (b.offset + b.header)
 			} else {
 				mdatPayload = b.size - b.header
 			}
@@ -135,7 +140,7 @@ func inspectMP4(req Request, data []byte) (string, MediaInfo, fault.List) {
 			},
 		})
 	}
-	if fs.sampleSum > 0 && mdatPayload >= 0 && fs.sampleSum > mdatPayload {
+	if !truncated && fs.sampleSum > 0 && mdatPayload >= 0 && fs.sampleSum > mdatPayload {
 		issues = append(issues, fault.Issue{
 			Code: fault.CodeSegmentTruncated, Severity: fault.SeverityError, Action: fault.ActionIsolated,
 			Message: fmt.Sprintf("fragment references %d sample bytes but mdat holds %d", fs.sampleSum, mdatPayload),

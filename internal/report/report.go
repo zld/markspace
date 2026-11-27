@@ -104,9 +104,14 @@ func (r *Report) Sort() {
 	})
 }
 
-func (r *Report) canonicalDigest() string {
-	l := make(fault.List, 0, len(r.Entries))
-	for _, e := range r.Entries {
+func (r *Report) canonicalDigest() string { return DigestOf(r.Entries) }
+
+// DigestOf hashes report entries canonically. It is used both when a report is
+// built and when a persisted report is re-verified; identical inputs therefore
+// yield identical digests across runs.
+func DigestOf(entries []Entry) string {
+	l := make(fault.List, 0, len(entries))
+	for _, e := range entries {
 		l = append(l, fault.Issue{
 			Code: e.Code, Severity: e.Severity, Action: e.Action,
 			Message: e.Message,
@@ -118,6 +123,26 @@ func (r *Report) canonicalDigest() string {
 		})
 	}
 	return l.Digest()
+}
+
+// Filter keeps entries overlapping [from, to]. A nil bound is open on that
+// side. Entries with a zero-length range at the boundary are included.
+func (r *Report) Filter(from, to *clock.Time) {
+	if from == nil && to == nil {
+		return
+	}
+	kept := r.Entries[:0]
+	for _, e := range r.Entries {
+		if from != nil && e.End.Cmp(*from) < 0 && !e.End.Equal(*from) {
+			continue
+		}
+		if to != nil && e.Start.Cmp(*to) > 0 {
+			continue
+		}
+		kept = append(kept, e)
+	}
+	r.Entries = kept
+	r.Digest = DigestOf(r.Entries)
 }
 
 // SortedViolations counts entries out of start-time order.

@@ -98,7 +98,7 @@ func Generate(workDir string, opts Options) (*Layout, error) {
 			if repIdx == 1 && i != 0 {
 				samples = 2
 			}
-			payload := deterministicPayload(fmt.Sprintf("%s-%d", rep, i), 96+repIdx*32+i)
+			payload := deterministicPayload(fmt.Sprintf("%s-%d", rep, i), 96+repIdx*32+4*i)
 			plans = append(plans, segmentPlan{Rep: rep, Index: i, Start: start, End: end, Payload: payload, Samples: samples})
 		}
 	}
@@ -156,6 +156,14 @@ func Generate(workDir string, opts Options) (*Layout, error) {
 		return nil, err
 	}
 	layout.Manifest = append(layout.Manifest, mustRel(inputDir, mpdPath))
+
+	hlsInit, err := BuildInit(1000, 2, "iso6")
+	if err != nil {
+		return nil, fmt.Errorf("hls init: %w", err)
+	}
+	if err := writeFile(filepath.Join(hlsDir, "init.mp4"), hlsInit); err != nil {
+		return nil, err
+	}
 
 	hls := hlsPlaylist(opts.SegmentCount)
 	hlsPath := filepath.Join(hlsDir, "prog.m3u8")
@@ -250,8 +258,9 @@ func hlsPlaylist(n int) string {
 	b.WriteString("#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:4\n#EXT-X-MEDIA-SEQUENCE:0\n")
 	for i := 0; i < n; i++ {
 		switch {
-		case i == 5:
-			// Planted anomaly: EXTINF without a duration.
+		case i == n-1:
+			// Planted anomaly: the final EXTINF carries no duration. No timing
+			// is invented for it, so the URI is reported and not published.
 			b.WriteString("#EXTINF:,\n")
 		case i == 4:
 			// The discontinuity precedes segment 5, where the first sample is
