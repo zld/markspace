@@ -8,7 +8,7 @@ import (
 	"github.com/abema/go-mp4"
 )
 
-// AudioTrackSpec is the input to the MP4 fixture writer.
+// AudioTrackSpec is the input to the MP4 fixture writer for one track.
 type AudioTrackSpec struct {
 	Codec       Codec
 	Timescale   uint32
@@ -21,37 +21,85 @@ type AudioTrackSpec struct {
 	SampleRate  uint32
 }
 
-// WriteMP4 renders a minimal but spec-shaped MP4: ftyp, moov(trak/mdia/minf/
-// stbl with stsd, stts, stsc, stsz, stco), and an mdat holding the sample
-// bytes. go-mp4 must be able to read it back with Probe and ExtractBox.
+// WriteMP4 renders a single-track MP4.
 func WriteMP4(spec AudioTrackSpec) ([]byte, error) {
-	if spec.Timescale == 0 || len(spec.Durations) == 0 || len(spec.Sizes) == 0 {
-		return nil, NewError(CodeInvalidConfig, "write_mp4", "timescale, durations and sizes are required")
-	}
-	if len(spec.Durations) != len(spec.Sizes) {
-		return nil, NewError(CodeInvalidConfig, "write_mp4", "durations and sizes length mismatch")
+	return WriteMP4Tracks([]AudioTrackSpec{spec})
+}
+
+// WriteMP4Tracks renders a minimal but spec-shaped MP4 with one trak per
+// spec: ftyp, moov(trak/mdia/minf/stbl with stsd, stts, stsc, stsz, stco), and
+// an mdat holding the sample bytes. go-mp4 must read it back via ReadMP4Tracks.
+func WriteMP4Tracks(specs []AudioTrackSpec) ([]byte, error) {
+	if len(specs) == 0 {
+		return nil, NewError(CodeInvalidConfig, "write_mp4", "at least one track is required")
 	}
 	var mdat []byte
-	for _, n := range spec.Sizes {
-		for len(mdat)%4 != 0 {
-			mdat = append(mdat, 0)
+	offsets := make([][]uint32, len(specs))
+	for ti, spec := range specs {
+		if err := validateSpec(spec); err != nil {
+			return nil, err
 		}
-		mdat = append(mdat, make([]byte, n)...)
+		offsets[ti] = make([]uint32, len(spec.Sizes))
+		for i, n := range spec.Sizes {
+			for len(mdat)%4 != 0 {
+				mdat = append(mdat, 0)
+			}
+			offsets[ti][i] = uint32(len(mdat))
+			mdat = append(mdat, make([]byte, n)...)
+		}
 	}
+	buf := &bytes.Buffer{}
+	w := &mp4ChunkWriter{buf: buf}
+	writeFtyp(w, specs[0].Codec)
+	startBox(w, "moov")
+	writeMvhd(w, specs[0].Timescale, totalDuration(specs[0]))
+	// Record where each track's stco entry table lands so the offsets can be
+	// patched per track after the mdat position is known.
+	stcoPos := make([]int, len(specs))
+	for ti, spec := range specs {
+		stcoPos[ti] = writeTrak(w, spec, uint32(ti+1), len(offsets[ti]))
+	}
+	endBox(w)
+
+	mdatPayloadStart := uint32(w.pos()) + 8
+	startBox(w, "mdat")
+	w.raw(mdat)
+	endBox(w)
+	out := buf.Bytes()
+	for ti, trackOffsets := range offsets {
+		for i, rel := range trackOffsets {
+			binary.BigEndian.PutUint32(out[stcoPos[ti]+4*i:], mdatPayloadStart+rel)
+		}
+	}
+	return out, nil
+}
+
+func validateSpec(spec AudioTrackSpec) error {
+	if spec.Timescale == 0 || len(spec.Durations) == 0 || len(spec.Sizes) == 0 {
+		return NewError(CodeInvalidConfig, "write_mp4", "timescale, durations and sizes are required")
+	}
+	if len(spec.Durations) != len(spec.Sizes) {
+		return NewError(CodeInvalidConfig, "write_mp4", "durations and sizes length mismatch")
+	}
+	total := totalDuration(spec)
+	if total > 0xFFFFFFFF {
+		return NewError(CodeInvalidConfig, "write_mp4", "fixture duration exceeds v0 box limits")
+	}
+	return nil
+}
+
+func totalDuration(spec AudioTrackSpec) uint64 {
 	var dur uint64
 	for _, d := range spec.Durations {
 		dur += uint64(d)
 	}
+	return dur
+}
 
-	buf := &bytes.Buffer{}
-	w := &mp4ChunkWriter{buf: buf}
-
-	writeFtyp(w, spec.Codec)
-
-	// moov
-	startBox(w, "moov")
-	trackID := uint32(1)
-	writeMvhd(w, spec.Timescale, dur)
+// writeTrak writes one track and returns the byte offset of its first stco
+// chunk-offset entry, which the caller patches once mdat is placed.
+func writeTrak(w *mp4ChunkWriter, spec AudioTrackSpec, trackID uint32, sampleCount int) int {
+	dur := totalDuration(spec)
 	startBox(w, "trak")
 	writeTkhd(w, trackID, dur)
 	startBox(w, "mdia")
@@ -65,47 +113,26 @@ func WriteMP4(spec AudioTrackSpec) ([]byte, error) {
 	startBox(w, "url ")
 	writeFullBoxHeader(w, 0, 1, nil)
 	endBox(w)
-	endBox(w) // dref
-	endBox(w) // dinf
+	endBox(w)
+	endBox(w)
 	startBox(w, "stbl")
 	writeStsd(w, spec)
 	writeStts(w, spec.Durations)
 	writeStsc(w)
 	writeStsz(w, spec.Sizes)
-	// stco offsets depend on final layout; placeholder patched below.
-	stcoOffset := w.pos()
 	startBox(w, "stco")
 	writeFullBoxHeader(w, 0, 0, nil)
-	w.u32(uint32(len(spec.Sizes)))
-	for range spec.Sizes {
-		w.u32(0)
+	w.u32(uint32(sampleCount))
+	entryPos := w.pos()
+	for i := 0; i < sampleCount; i++ {
+		w.u32(0) // patched after mdat placement
 	}
 	endBox(w)
-	endBox(w) // stbl
-	endBox(w) // minf
-	endBox(w) // mdia
-	endBox(w) // trak
-	endBox(w) // moov
-
-	// mdat with a 16-byte large-friendly header for offset stability
-	mdatStart := uint64(w.pos()) + 8
-	startBox(w, "mdat")
-	w.raw(mdat)
 	endBox(w)
-
-	// Patch chunk offsets: one chunk per sample, contiguous in mdat. The
-	// payload starts right after the 8-byte mdat header.
-	out := buf.Bytes()
-	base := uint32(mdatStart)
-	var running uint32
-	for i := range spec.Sizes {
-		binary.BigEndian.PutUint32(out[stcoOffset+16+4*i:], base+running)
-		running += spec.Sizes[i]
-		for running%4 != 0 {
-			running++
-		}
-	}
-	return out, nil
+	endBox(w)
+	endBox(w)
+	endBox(w)
+	return entryPos
 }
 
 // mp4ChunkWriter is a byte-oriented box writer. Sizes are patched at EndBox.
