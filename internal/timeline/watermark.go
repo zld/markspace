@@ -11,6 +11,7 @@ type trackState struct {
 	lastSrc string
 	lastEnd int64 // last repaired tick + duration
 	rtpExt  uint64
+	rtpRaw  uint32 // previous raw 32-bit RTP timestamp
 	hasRTP  bool
 }
 

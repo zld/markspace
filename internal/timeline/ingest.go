@@ -53,8 +53,9 @@ func (t *Timeline) process(e Event) (*model.Boundary, error) {
 
 	// 1) RTP clock wrap expansion, preserving the raw 32-bit value.
 	if e.HasRTP {
-		ext, wrapped := ExpandRTP(s.rtpExt, e.RTPRaw)
+		ext, wrapped := ExpandRTP(s.rtpRaw, s.rtpExt, e.RTPRaw)
 		s.rtpExt = ext
+		s.rtpRaw = e.RTPRaw
 		s.hasRTP = true
 		if wrapped {
 			t.WrapCount++

@@ -119,24 +119,24 @@ func DeltaMaster(delta uint64, srcTimescale uint32) int64 {
 }
 
 // ExpandClock maps a raw, possibly-wrapped timestamp onto an unwrapped
-// extended axis given the last observed extended value and the clock modulus
-// (e.g. 1<<32 for RTP). It never mutates the raw value; wrapped reports that
-// a backward jump was detected and expansion applied.
-func ExpandClock(prevExtended, raw uint64, modulus uint64) (extended uint64, wrapped bool) {
+// extended axis using modular arithmetic. prevRaw is the previous sample's
+// raw value and prevExtended its unwrapped value. A numerically smaller raw
+// value means the 32-bit field crossed zero, which adds exactly one modulus
+// cycle; a forward step within a cycle leaves the cycle untouched. The raw
+// input is never mutated; wrapped reports that a boundary crossing occurred.
+func ExpandClock(prevRaw, prevExtended, raw, modulus uint64) (extended uint64, wrapped bool) {
 	if modulus == 0 {
 		return raw, false
 	}
-	if raw >= prevExtended {
+	if prevExtended == 0 && prevRaw == 0 {
+		// First observation anchors the axis without a spurious wrap.
 		return raw, false
 	}
-	cycles := prevExtended/modulus + 1
-	extended = cycles*modulus + raw
-	if extended <= prevExtended {
-		// Same-cycle backward edge that a full cycle cannot fix: still expand
-		// by one modulus so monotonicity holds, and flag the wrap.
-		extended = prevExtended + modulus
+	base := prevExtended - prevRaw // multiple of modulus: start of this cycle
+	if raw < prevRaw {
+		return base + modulus + raw, true
 	}
-	return extended, true
+	return base + raw, false
 }
 
 func gcd64(a, b uint64) uint64 {

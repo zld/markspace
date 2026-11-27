@@ -49,10 +49,11 @@ func ParseWrapPacket(buf []byte) (raw uint32, extended uint64, err error) {
 }
 
 // ExpandRTP applies the project's deterministic 32-bit clock expansion to a
-// raw timestamp given the last extended value. It returns the unwrapped value
-// and whether a backward wrap was detected; the raw input is never mutated.
-func ExpandRTP(prevExtended uint64, raw uint32) (extended uint64, wrapped bool) {
-	return model.ExpandClock(prevExtended, uint64(raw), modelRTPModulus)
+// raw timestamp given the previous raw and extended values. It returns the
+// unwrapped value and whether a backward wrap was detected; the raw input is
+// never mutated.
+func ExpandRTP(prevRaw uint32, prevExtended uint64, raw uint32) (extended uint64, wrapped bool) {
+	return model.ExpandClock(uint64(prevRaw), prevExtended, uint64(raw), modelRTPModulus)
 }
 
 // modelRTPModulus mirrors fixture.RTPModulus without an import cycle.

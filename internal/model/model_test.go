@@ -68,16 +68,27 @@ func TestScaleToMasterExact(t *testing.T) {
 
 func TestExpandClockWrap(t *testing.T) {
 	const mod = uint64(1 << 32)
-	ext, wrapped := ExpandClock(mod+100, 50, mod)
-	if !wrapped || ext != 2*mod+50 {
+	// First observation anchors the axis without a spurious wrap.
+	ext, wrapped := ExpandClock(0, 0, 0xfffffff0, mod)
+	if wrapped || ext != 0xfffffff0 {
+		t.Fatalf("anchor ext=%d wrapped=%v", ext, wrapped)
+	}
+	// Next raw value wraps to a small number: exactly one wrap detected.
+	ext, wrapped = ExpandClock(0xfffffff0, 0xfffffff0, 0x10, mod)
+	if !wrapped || ext != 0x100000010 {
 		t.Fatalf("wrap ext=%d wrapped=%v", ext, wrapped)
 	}
-	ext, wrapped = ExpandClock(100, 200, mod)
+	// After the wrap, further forward steps must NOT re-wrap.
+	ext, wrapped = ExpandClock(0x10, 0x100000010, 0x20, mod)
+	if wrapped || ext != 0x100000020 {
+		t.Fatalf("post-wrap step wrongly wrapped: ext=%d wrapped=%v", ext, wrapped)
+	}
+	// A normal forward step on the first cycle reports no wrap.
+	ext, wrapped = ExpandClock(100, 100, 200, mod)
 	if wrapped || ext != 200 {
 		t.Fatalf("normal ext=%d wrapped=%v", ext, wrapped)
 	}
-	// Raw value is preserved by the caller contract: expansion only changes
-	// the extended axis; RTPRaw stays available on the sample.
+	// BitLen32 sanity for the modulus choice.
 	if BitLen32(uint32(mod-1)) != 32 {
 		t.Fatal("modulus bit length")
 	}
