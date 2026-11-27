@@ -242,9 +242,3 @@ func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
 }
-
-// runFaultDemo is supplied by scenario.go.
-func runFaultDemo(opts pipeline.Options, d demoFlags, set fixture.FaultSet,
-	target audio.Target, stdout, stderr io.Writer) int {
-	return 1
-}
