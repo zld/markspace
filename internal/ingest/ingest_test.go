@@ -66,10 +66,10 @@ func TestOpusDurations(t *testing.T) {
 		payload []byte
 		want    int
 	}{
-		{[]byte{0xF8}, 960},                    // config 31 (CELT 20ms), code 0
-		{[]byte{0x01}, 960},                    // config 0 (SILK 10ms), code 1 -> 2 frames
-		{[]byte{0x7B, 0x03}, 2880},             // config 15 (HYBRID 20ms), code 3, 3 frames
-		{[]byte{0x82}, 240},                    // config 16 (CELT 2.5ms), code 2
+		{[]byte{0xF8}, 960},        // config 31 (CELT 20ms), code 0
+		{[]byte{0x01}, 960},        // config 0 (SILK 10ms), code 1 -> 2 frames
+		{[]byte{0x7B, 0x03}, 2880}, // config 15 (HYBRID 20ms), code 3, 3 frames
+		{[]byte{0x82}, 240},        // config 16 (CELT 2.5ms), code 2
 	}
 	for i, c := range cases {
 		got, err := OpusPacketSamples("audio/rtp", int64(i), c.payload)

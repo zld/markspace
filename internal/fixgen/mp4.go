@@ -103,10 +103,10 @@ func writeTrack(w *mp4.Writer, t TrackSpec, dur uint32) error {
 		return err
 	}
 	tk := &mp4.Tkhd{
-		FullBox:   mp4.FullBox{Flags: [3]byte{0, 0, 3}},
-		TrackID:   t.ID,
+		FullBox:    mp4.FullBox{Flags: [3]byte{0, 0, 3}},
+		TrackID:    t.ID,
 		DurationV0: dur * 1000 / t.Timescale,
-		Matrix:    identityMatrix,
+		Matrix:     identityMatrix,
 	}
 	if t.Kind == "audio" {
 		tk.Volume = 0x0100

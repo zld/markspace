@@ -22,7 +22,7 @@ type QualityMetrics struct {
 	PacketLossPPM int64  `json:"packetLossPPM"` // lost / (lost+received), parts per million
 	Duplicates    int    `json:"duplicates"`
 	GapCount      int    `json:"gapCount"`
-	GapTicks      int64  `json:"gapTicks"`   // total missing audio, unified clock ticks
+	GapTicks      int64  `json:"gapTicks"`    // total missing audio, unified clock ticks
 	CoveragePPM   int64  `json:"coveragePPM"` // received audio ticks / expected ticks
 }
 

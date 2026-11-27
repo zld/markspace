@@ -51,7 +51,7 @@ func GenRTP(p RTPParams) [][]byte {
 			panic(err)
 		}
 		if p.TruncateAt >= 0 && i == p.TruncateAt {
-			raw = raw[:len(raw)/2] // truncated datagram
+			raw = raw[:8] // shorter than the 12-byte RTP header: unparseable
 		}
 		if p.LossEvery > 0 && i%p.LossEvery == 0 {
 			continue // lost in transit

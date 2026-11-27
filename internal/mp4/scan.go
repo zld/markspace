@@ -55,12 +55,12 @@ type File struct {
 
 // rawTrack accumulates box payloads before sample assembly.
 type rawTrack struct {
-	id       uint32
-	kind     string
+	id        uint32
+	kind      string
 	timescale uint32
-	deltas   []uint32
-	sizes    []uint32
-	keys     map[uint32]bool
+	deltas    []uint32
+	sizes     []uint32
+	keys      map[uint32]bool
 }
 
 // ScanFile parses an MP4 file's track and sample tables.
