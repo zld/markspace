@@ -174,10 +174,12 @@ func readFragment(req Request, data []byte, moof *box, issues *fault.List) fragm
 		Offset: uint64(moof.offset), Size: uint64(moof.size),
 		HeaderSize: uint64(moof.header), Type: mp4.BoxTypeMoof(),
 	}
+	// Paths are relative to the moof parent box that ExtractBoxesWithPayload
+	// starts from.
 	paths := []mp4.BoxPath{
-		{mp4.BoxTypeMoof(), mp4.BoxTypeTraf(), mp4.BoxTypeTrun()},
-		{mp4.BoxTypeMoof(), mp4.BoxTypeTraf(), mp4.BoxTypeTfhd()},
-		{mp4.BoxTypeMoof(), mp4.BoxTypeTraf(), mp4.BoxTypeTfdt()},
+		{mp4.BoxTypeTraf(), mp4.BoxTypeTrun()},
+		{mp4.BoxTypeTraf(), mp4.BoxTypeTfhd()},
+		{mp4.BoxTypeTraf(), mp4.BoxTypeTfdt()},
 	}
 	boxes, err := mp4.ExtractBoxesWithPayload(r, bi, paths)
 	if err != nil {
