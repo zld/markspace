@@ -157,6 +157,11 @@ func Load(path string) (*Manifest, error) {
 	if err != nil {
 		return nil, err
 	}
+	return LoadBytes(b)
+}
+
+// LoadBytes parses manifest bytes, validating the version field.
+func LoadBytes(b []byte) (*Manifest, error) {
 	m := &Manifest{}
 	if err := json.Unmarshal(b, m); err != nil {
 		return nil, model.New(model.ErrStageState, "", -1, "manifest parse failed: %v", err)
