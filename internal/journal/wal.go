@@ -28,12 +28,13 @@ import (
 
 // Record types.
 const (
-	TypeStageBegin = "stage_begin"
-	TypeStageDone  = "stage_done"
-	TypeArtifact   = "artifact"
-	TypeCommit     = "commit"
-	TypeAbort      = "abort"
-	TypeRecover    = "recover"
+	TypeStageBegin    = "stage_begin"
+	TypeStageDone     = "stage_done"
+	TypeArtifact      = "artifact"
+	TypeManifestDraft = "manifest_draft"
+	TypeCommit        = "commit"
+	TypeAbort         = "abort"
+	TypeRecover       = "recover"
 )
 
 // Record is one log entry. Checksum is filled in by Append and verified by Replay.
