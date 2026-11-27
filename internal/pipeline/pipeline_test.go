@@ -133,6 +133,27 @@ func TestMissingPCRAnchorReported(t *testing.T) {
 	}
 }
 
+func TestOutOfRangeTargetCountsAsMiss(t *testing.T) {
+	opts := fixture.DefaultOptions(7)
+	opts.Segments = 2
+	opts.SamplesPerSegment = 4
+	reps, _ := fixture.Build(opts)
+	ec := &mediaerr.Collector{}
+	cfg := DefaultConfig()
+	// A target far beyond any recovered sample range must miss, never hit.
+	cfg.QueryTargetsNanos = []int64{1 << 60}
+	res, err := Run(reps, cfg, ec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Metrics.IndexHits != 0 {
+		t.Errorf("out-of-range target must not hit, got %d hits", res.Metrics.IndexHits)
+	}
+	if res.Metrics.IndexMisses == 0 {
+		t.Error("out-of-range target must be counted as index_miss")
+	}
+}
+
 func TestTruncatedStreamStructuralFailure(t *testing.T) {
 	opts := fixture.DefaultOptions(1)
 	opts.Corruptions = []fixture.Corruption{fixture.CorruptTruncatedPacket}

@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"io"
 
+	"tsrepair/internal/clock"
 	"tsrepair/internal/fanin"
 	"tsrepair/internal/fanout"
 	"tsrepair/internal/fixture"
@@ -80,8 +81,11 @@ func Run(reps []*fixture.Representation, cfg Config, ec *mediaerr.Collector) (*R
 		group.Add(rep.ID, fanout.DefaultConfig(rep.VideoPID))
 	}
 
-	// Per-representation local receiver tick line (lockstep synthetic clock).
+	// Per-representation local receiver tick line. The synthetic receiver is
+	// locked to the sender clock, so local time advances by the same delta as
+	// the unwrapped PCR; this keeps drift near zero and avoids false outliers.
 	localTick := map[int]int64{}
+	lastPCR := map[int]int64{}
 
 	for _, rep := range reps {
 		r := group.Get(rep.ID)
@@ -105,8 +109,17 @@ func Run(reps []*fixture.Representation, cfg Config, ec *mediaerr.Collector) (*R
 			tracker.HandlePacket(pkt)
 
 			if pkt.HasPCR {
-				localTick[rep.ID] += pkt.PCRRaw()
-				r.ObservePCR(pkt.PCRRaw(), localTick[rep.ID], pkt.Offset)
+				raw := pkt.PCRRaw()
+				if prev, ok := lastPCR[rep.ID]; ok {
+					// Advance local time by the (modulo-aware) sender delta.
+					delta := raw - prev
+					if delta < 0 {
+						delta += clock.PCRMod // forward wrap
+					}
+					localTick[rep.ID] += delta
+				}
+				lastPCR[rep.ID] = raw
+				r.ObservePCR(raw, localTick[rep.ID], pkt.Offset)
 			}
 			if pes := demux.HandlePacket(pkt); pes != nil && pes.HasPTS {
 				dts := pes.PTS
@@ -154,8 +167,19 @@ func finalize(group *fanout.Group, cfg Config, ec *mediaerr.Collector) (*Result,
 		r := group.Get(repID)
 		idx := r.Index()
 
-		// Measure hit rate over the configured query targets.
-		for _, target := range cfg.QueryTargetsNanos {
+		// When no explicit targets are supplied, query every recovered
+		// keyframe start so a clean run measures a meaningful hit rate in a
+		// single pass; explicit targets are used otherwise.
+		targets := cfg.QueryTargetsNanos
+		if len(targets) == 0 {
+			for _, s := range segs {
+				for _, e := range s.KeyframeIndex {
+					targets = append(targets, e.StartNanos)
+				}
+			}
+		}
+		// Measure hit rate over the query targets.
+		for _, target := range targets {
 			idx.Lookup(target)
 		}
 		st := idx.Stats()
