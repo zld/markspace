@@ -123,18 +123,36 @@ func IsKnown(id ElementID) bool {
 	return ok
 }
 
-// ValidEBMLID reports whether id has a canonical 1..4 byte VINT encoding and
-// is not the reserved all-ones marker, as required for Matroska element IDs.
+// ValidEBMLID reports whether id has a canonical 1..4 byte VINT encoding.
+// Matroska element IDs are not necessarily minimal-width VINTs (e.g. the
+// 4-byte 0x1A45DFA3), so every width 1..4 is tried. The all-ones data
+// pattern at the matching width is a reserved unknown marker, not an ID.
 func ValidEBMLID(id ElementID) bool {
-	enc, err := EncodeVINT(uint64(id))
-	if err != nil || len(enc) > 4 {
+	if id < 0 {
 		return false
 	}
-	got, width, unknown, derr := DecodeVINT(enc)
-	if derr != nil || unknown || width != len(enc) || got != uint64(id) {
-		return false
+	for w := 1; w <= 4; w++ {
+		dataBits := uint(7 * w)
+		dataMask := uint64(1)<<dataBits - 1
+		if uint64(id) > dataMask {
+			continue // does not fit at this width
+		}
+		if uint64(id) == dataMask {
+			continue // reserved all-ones unknown marker
+		}
+		buf := make([]byte, w)
+		v := uint64(id)
+		for i := w - 1; i >= 0; i-- {
+			buf[i] = byte(v & 0xFF)
+			v >>= 8
+		}
+		buf[0] |= byte(1 << (8 - uint(w)))
+		got, width, unknown, derr := DecodeVINT(buf)
+		if derr == nil && !unknown && width == w && got == uint64(id) {
+			return true
+		}
 	}
-	return true
+	return false
 }
 
 func hexID(id ElementID) string {
