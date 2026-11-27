@@ -51,6 +51,8 @@ type AACStreamConfig struct {
 
 // TracePacket is one RTP arrival. RTPHex is the complete datagram so that the
 // parser exercises real RTP framing; arrival time lives outside the datagram.
+// Fault labels a deliberately injected defect for report provenance; it never
+// changes parser behavior.
 type TracePacket struct {
 	RTPHex    string `json:"rtp_hex"`
 	ArrivalMs int64  `json:"arrival_ms"`
