@@ -319,13 +319,23 @@ func writeMP4Check(path string) error {
 	}
 	defer f.Close()
 	w := mp4.NewWriter(f)
+	// mp4.Marshal writes only the box payload; StartBox/EndBox frame it.
+	if _, err := w.StartBox(&mp4.BoxInfo{Type: mp4.BoxTypeFtyp()}); err != nil {
+		return err
+	}
 	if _, err := mp4.Marshal(w, &mp4.Ftyp{
 		MajorBrand:   [4]byte{'i', 's', 'o', 'm'},
 		MinorVersion: 1,
 	}, mp4.Context{}); err != nil {
 		return err
 	}
+	if _, err := w.EndBox(); err != nil {
+		return err
+	}
 	if _, err := w.StartBox(&mp4.BoxInfo{Type: mp4.BoxTypeMoov()}); err != nil {
+		return err
+	}
+	if _, err := w.StartBox(&mp4.BoxInfo{Type: mp4.BoxTypeMvhd()}); err != nil {
 		return err
 	}
 	_, err = mp4.Marshal(w, &mp4.Mvhd{
@@ -337,6 +347,9 @@ func writeMP4Check(path string) error {
 		NextTrackID: 1,
 	}, mp4.Context{})
 	if err != nil {
+		return err
+	}
+	if _, err := w.EndBox(); err != nil {
 		return err
 	}
 	if _, err := w.EndBox(); err != nil {
