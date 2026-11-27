@@ -27,10 +27,10 @@ const (
 	CodeSubtitleTiming   Code = "subtitle_timing"
 	CodeSubtitleEncoding Code = "subtitle_encoding"
 
-	CodeTimecodeSyntax   Code = "timecode_syntax"
-	CodeTimecodeFrame    Code = "timecode_frame"
+	CodeTimecodeSyntax    Code = "timecode_syntax"
+	CodeTimecodeFrame     Code = "timecode_frame"
 	CodeTimecodeDropFrame Code = "timecode_drop_frame"
-	CodeTimecodeRate     Code = "timecode_rate"
+	CodeTimecodeRate      Code = "timecode_rate"
 
 	CodeRTPTruncated Code = "rtp_truncated"
 	CodeRTPHeader    Code = "rtp_header"
