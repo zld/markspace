@@ -3,8 +3,8 @@ package main
 import (
 	"math"
 
-	"medialib/internal/audio"
 	"medialib/internal/archive"
+	"medialib/internal/audio"
 	"medialib/internal/clock"
 	"medialib/internal/fingerprint"
 	"medialib/internal/ingest"
