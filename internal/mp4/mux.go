@@ -16,9 +16,46 @@ import (
 
 // MuxConfig captures everything the container must record.
 type MuxConfig struct {
-	Rate     uint32
-	Channels uint16
-	Codec    string // four-character sample entry type, e.g. "mp4a"
+	Rate          uint32
+	Channels      uint16
+	Codec         string // four-character sample entry type, e.g. "mp4a"
+	BitsPerSample uint16 // PCM sample width in bits (16 or 24)
+}
+
+// Candidate is one encoding parameter set the size optimizer may choose.
+type Candidate struct {
+	BitsPerSample uint16
+}
+
+// defaultCandidates are tried in increasing size order so the first that
+// satisfies the byte budget is also the smallest; quality gates are never
+// relaxed because bit depth only changes container size, not loudness/peak.
+var defaultCandidates = []Candidate{{BitsPerSample: 16}, {BitsPerSample: 24}}
+
+// SmallestWithinBudget muxes each candidate and returns the smallest artifact
+// that fits maxBytes. When none fit it returns the smallest (16-bit) artifact
+// and ok=false so the caller marks the item unmet with its measured deviation
+// rather than silently dropping quality.
+func SmallestWithinBudget(b audio.Buffer, base MuxConfig, maxBytes int64) ([]byte, MuxReport, bool, error) {
+	var best []byte
+	var bestReport MuxReport
+	fit := false
+	for _, cand := range defaultCandidates {
+		cfg := base
+		cfg.BitsPerSample = cand.BitsPerSample
+		artifact, rep, err := Mux(b, cfg)
+		if err != nil {
+			return nil, MuxReport{}, false, err
+		}
+		if best == nil || len(artifact) < len(best) {
+			best, bestReport = artifact, rep
+		}
+		if maxBytes <= 0 || int64(len(artifact)) <= maxBytes {
+			// Candidates are ordered smallest-first, so the first fit wins.
+			return artifact, rep, true, nil
+		}
+	}
+	return best, bestReport, fit, nil
 }
 
 // MuxReport is the structural verification result read back from the file.
@@ -33,18 +70,24 @@ type MuxReport struct {
 	DurationMicros uint64  `json:"durationMicros"`
 }
 
-// encodePCM16 converts float64 [-1,1] interleaved samples to little-endian
-// 16-bit PCM with deterministic saturation.
-func encodePCM16(b audio.Buffer) []byte {
-	out := make([]byte, len(b.Samples)*2)
+// encodePCM converts float64 [-1,1] interleaved samples to little-endian
+// integer PCM (16- or 24-bit) with deterministic saturation.
+func encodePCM(b audio.Buffer, bits uint16) []byte {
+	bytesPerSample := int(bits / 8)
+	out := make([]byte, len(b.Samples)*bytesPerSample)
+	maxPos := int32(1<<(bits-1) - 1)
+	minNeg := -int32(1 << (bits - 1))
 	for i, s := range b.Samples {
-		v := int32(math.Round(s * 32767))
-		if v > 32767 {
-			v = 32767
-		} else if v < -32768 {
-			v = -32768
+		v := int32(math.Round(s * float64(maxPos)))
+		if v > maxPos {
+			v = maxPos
+		} else if v < minNeg {
+			v = minNeg
 		}
-		binary.LittleEndian.PutUint16(out[i*2:], uint16(v))
+		u := uint32(v)
+		for k := 0; k < bytesPerSample; k++ {
+			out[i*bytesPerSample+k] = byte(u >> (8 * k))
+		}
 	}
 	return out
 }
@@ -55,7 +98,11 @@ func Mux(b audio.Buffer, cfg MuxConfig) ([]byte, MuxReport, error) {
 	if b.Ch != int(cfg.Channels) {
 		return nil, MuxReport{}, fmt.Errorf("mp4: buffer channels %d != config %d", b.Ch, cfg.Channels)
 	}
-	pcm := encodePCM16(b)
+	bits := cfg.BitsPerSample
+	if bits == 0 {
+		bits = 16
+	}
+	pcm := encodePCM(b, bits)
 	ws := &writeSeeker{}
 	w := gomp4.NewWriter(ws)
 
@@ -116,7 +163,7 @@ func Mux(b audio.Buffer, cfg MuxConfig) ([]byte, MuxReport, error) {
 			DataReferenceIndex: 1,
 		},
 		ChannelCount: cfg.Channels,
-		SampleSize:   16,
+		SampleSize:   bits,
 		SampleRate:   cfg.Rate << 16, // fixed-point 16.16
 	})
 	endBox(w) // stsd
@@ -129,7 +176,7 @@ func Mux(b audio.Buffer, cfg MuxConfig) ([]byte, MuxReport, error) {
 		Entries:    []gomp4.StscEntry{{FirstChunk: 1, SamplesPerChunk: uint32(b.Frames), SampleDescriptionIndex: 1}},
 	})
 	leaf(w, gomp4.BoxTypeStsz(), &gomp4.Stsz{
-		SampleSize:  uint16Bytes(cfg.Channels),
+		SampleSize:  uint32(cfg.Channels) * uint32(bits/8),
 		SampleCount: uint32(b.Frames),
 	})
 	leaf(w, gomp4.BoxTypeStco(), &gomp4.Stco{EntryCount: 1, ChunkOffset: []uint32{0}})
@@ -194,10 +241,6 @@ func boxType(s string) gomp4.BoxType {
 	var bt gomp4.BoxType
 	copy(bt[:], s)
 	return bt
-}
-
-func uint16Bytes(ch uint16) uint32 {
-	return uint32(ch) * 2 // bytes per PCM frame
 }
 
 // patchChunkOffset rewrites the lone stco entry to the mdat payload offset.

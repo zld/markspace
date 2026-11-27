@@ -75,3 +75,49 @@ func TestMuxChannelMismatch(t *testing.T) {
 		t.Fatal("expected channel mismatch error")
 	}
 }
+
+func TestSmallestWithinBudget(t *testing.T) {
+	in := audio.NewBuffer(500, 2)
+	for i := range in.Samples {
+		in.Samples[i] = 0.1
+	}
+	base := MuxConfig{Rate: 48000, Channels: 2, Codec: "mp4a"}
+
+	// A 24-bit mux is larger than a 16-bit mux.
+	a16, _, err := Mux(in, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a24, _, err := Mux(in, MuxConfig{Rate: 48000, Channels: 2, Codec: "mp4a", BitsPerSample: 24})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(a24) <= len(a16) {
+		t.Fatalf("24-bit artifact %d should exceed 16-bit %d", len(a24), len(a16))
+	}
+
+	// Generous budget: optimizer picks the smallest (16-bit) candidate.
+	artifact, rep, fit, err := SmallestWithinBudget(in, base, 1<<20)
+	if err != nil || !fit {
+		t.Fatalf("expected a fitting candidate: fit=%v err=%v", fit, err)
+	}
+	if len(artifact) != len(a16) {
+		t.Fatalf("optimizer chose %d bytes, want smallest %d", len(artifact), len(a16))
+	}
+	if rep.ChannelCount != 2 || rep.SampleRate != 48000 {
+		t.Fatalf("report descriptor wrong: %+v", rep)
+	}
+
+	// Impossible budget: returns the smallest artifact but ok=false so the
+	// caller marks the item unmet rather than degrading quality.
+	smallest, _, fit, err := SmallestWithinBudget(in, base, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fit {
+		t.Fatal("no candidate should fit a 10-byte budget")
+	}
+	if len(smallest) != len(a16) {
+		t.Fatalf("fallback should be the smallest 16-bit artifact")
+	}
+}

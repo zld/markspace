@@ -163,14 +163,22 @@ func (r *Runner) compute(parsed []parsedPacket, in Input, item *report.Item) ([]
 	item.LUFS = loud.OutputLUFS
 	item.TruePeakDBTP = loud.OutputTruePeak
 
-	artifact, rep, err := mp4.Mux(norm, mp4.MuxConfig{
+	// Quality gates are already applied above. Now choose the smallest
+	// encoding parameters that fit the byte budget; loudness/peak are never
+	// re-lowered to make the output fit.
+	artifact, rep, fit, err := mp4.SmallestWithinBudget(norm, mp4.MuxConfig{
 		Rate: r.Params.TargetRate, Channels: uint16(norm.Ch), Codec: "mp4a",
-	})
+	}, r.Params.MaxBytes)
 	if err != nil {
 		return nil, audio.LoudnessResult{}, err
 	}
 	item.OutputBytes = rep.Bytes
 	item.AvgBitrateBps = rep.AvgBitratebps
+	if !fit {
+		item.Status = report.StatusSizeMiss
+		item.Deviations = append(item.Deviations,
+			"no encoding candidate fits the byte budget within quality gates")
+	}
 	return artifact, loud, nil
 }
 
