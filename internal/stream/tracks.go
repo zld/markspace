@@ -112,12 +112,8 @@ func fillSamples(data []byte, stbl *mp4Box, t *Track) {
 	}
 	var total int64
 	if count > 0 {
-		if len(stts.Entries) > 0 {
-			last := stts.Entries[len(stts.Entries)-1]
-			for _, e := range stts.Entries {
-				total += int64(e.SampleCount) * int64(e.SampleDelta)
-			}
-			_ = last
+		for _, e := range stts.Entries {
+			total += int64(e.SampleCount) * int64(e.SampleDelta)
 		}
 		t.DurationNanos = toNanos(total)
 	}

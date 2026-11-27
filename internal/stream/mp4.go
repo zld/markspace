@@ -176,18 +176,13 @@ func readFTYP(data []byte, box *mp4Box) (string, bool) {
 	return printable(string(data[box.payload : box.payload+4])), true
 }
 
-// payloadReader positions a reader at the box payload for go-mp4 unmarshalling.
-func payloadReader(data []byte, box *mp4Box) (*bytes.Reader, uint64) {
-	r := bytes.NewReader(data[box.payload:box.end])
-	return r, uint64(box.end - box.payload)
-}
-
+// unmarshal decodes a box payload into dst with go-mp4. It reports false on
+// any decoding error, which callers turn into a damaged span.
 func unmarshal(data []byte, box *mp4Box, dst mp4.IBox) bool {
 	if box == nil {
 		return false
 	}
-	r, n := payloadReader(data, box)
-	copied := *r
-	total, err := mp4.Unmarshal(&copied, n, dst, mp4.Context{})
+	r := bytes.NewReader(data[box.payload:box.end])
+	total, err := mp4.Unmarshal(r, uint64(box.end-box.payload), dst, mp4.Context{})
 	return err == nil && total > 0
 }

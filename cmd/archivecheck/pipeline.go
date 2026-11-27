@@ -32,13 +32,11 @@ func analyseAll(ctx context.Context, out io.Writer, cfg pipeline.Config, samples
 
 	for _, s := range samples {
 		label := filepath.Base(s.source.Name)
-		// The interruption drill always starts from scratch so every run
-		// proves that an interrupted run resumes from a verified boundary.
+		// Every source keeps a per-source checkpoint that a restart resumes
+		// from. The interruption drill additionally starts from scratch each
+		// run, so every demo proves that a cancelled run resumes from a
+		// verified boundary.
 		interruptDemo := label == "clip-truncated.mp4"
-		// Interactive runs keep a per-source checkpoint that a restart can
-		// resume from. The interruption drill always starts from scratch, so
-		// every demo proves that a cancelled run resumes from a verified
-		// boundary.
 		cpPath := filepath.Join(stateDir, "resume-"+s.source.Short()+".json")
 		if interruptDemo {
 			cpPath = filepath.Join(stateDir, "interrupt-drill.json")
@@ -127,8 +125,10 @@ func analyseAll(ctx context.Context, out io.Writer, cfg pipeline.Config, samples
 			switch {
 			case start == s.source.Size:
 				fmt.Fprintf(out, "  %-22s already verified to byte %d; nothing to re-read\n", label, start)
-			default:
+			case start > 0:
 				fmt.Fprintf(out, "  %-22s resumed from byte %d: %s\n", label, start, stageLine(rep))
+			default:
+				fmt.Fprintf(out, "  %-22s streamed from byte 0: %s\n", label, stageLine(rep))
 			}
 		}
 		if _, err := sess.Checkpoint().Save(cpPath); err != nil {
