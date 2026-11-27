@@ -39,6 +39,9 @@ type Packet struct {
 	Marker   bool
 	PayloadT uint8
 	InputOff int64
+	// TSSuspect marks a packet whose timestamp could not be unwrapped. Its TS
+	// is not meaningful for interval analysis.
+	TSSuspect bool
 }
 
 // Loss is one run of missing sequence numbers. First/Last are the wire values;
@@ -304,6 +307,7 @@ func (r *Reorderer) emit(p Packet) {
 	}
 	r.tsSeen, r.tsLast = true, p.RawTS
 	ts, err := r.unwrap.Unwrap(p.RawTS)
+	p.TSSuspect = err != nil
 	if err != nil {
 		// Overflow is recorded but must not stop the stream: downstream stages
 		// exclude the packet from interval checks by its anomaly entry.

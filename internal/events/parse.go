@@ -32,6 +32,8 @@ const (
 	KindSeek   Kind = "seek"
 	KindJoin   Kind = "join"
 	KindLeave  Kind = "leave"
+	// KindUnknown marks an event whose kind could not be determined.
+	KindUnknown Kind = "unknown"
 )
 
 // Event is one parsed client event.
@@ -196,9 +198,6 @@ func parseWall(s string) (int64, error) {
 
 // LogOffsetKey is the attribute that records a per-event unknown clock offset.
 const LogOffsetKey = "clock_offset"
-
-// KindUnknown marks an event whose kind could not be determined.
-const KindUnknown Kind = "unknown"
 
 // IsAlignable reports whether the event can be placed on the media timeline
 // given the capture start wall clock. A zero start means the capture did not
