@@ -27,7 +27,7 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 	out := &output{w: stdout, err: stderr}
 	data, err := readFile(fs.Arg(0))
 	if err != nil {
-		out.diag("IO_ERROR: %v", err)
+		out.diag("%v", err)
 		return 1
 	}
 	doc, perr := ebml.Parse(data)

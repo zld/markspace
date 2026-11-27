@@ -49,7 +49,7 @@ func demo(workDir string, chunkSize int, resume bool, out *output) int {
 func demoHealthy(workDir string, chunkSize int, resume bool, path string, out *output) int {
 	data, err := readFile(path)
 	if err != nil {
-		out.diag("IO_ERROR: %v", err)
+		out.diag("%v", err)
 		return 1
 	}
 	doc, perr := ebml.Parse(data)
