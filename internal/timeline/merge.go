@@ -120,19 +120,20 @@ func Merge(events []Event, samples []SampleRef, cues []CueRef, opts ...Option) (
 
 	res := &Result{ThresholdNs: cfg.thresholdNs}
 	sortedEvents := append([]Event(nil), events...)
+	// Groups are anchored on media time when the client reported it. Anchors
+	// must be sorted for the binary searches below, so events sort by anchor,
+	// not by the wall-clock timestamp printed in the log.
 	sort.SliceStable(sortedEvents, func(i, j int) bool {
-		if sortedEvents[i].TimeNs != sortedEvents[j].TimeNs {
-			return sortedEvents[i].TimeNs < sortedEvents[j].TimeNs
+		ai, aj := eventAnchor(sortedEvents[i]), eventAnchor(sortedEvents[j])
+		if ai != aj {
+			return ai < aj
 		}
 		return sortedEvents[i].ID < sortedEvents[j].ID
 	})
 
 	anchors := make([]int64, len(sortedEvents))
 	for i, e := range sortedEvents {
-		a := e.TimeNs
-		if e.MediaTimeNs != 0 {
-			a = e.MediaTimeNs
-		}
+		a := eventAnchor(e)
 		anchors[i] = a
 		res.Items = append(res.Items, Item{
 			ID: e.ID, Kind: KindEvent, Track: e.Track, Source: e.Source, Line: e.Line,
@@ -173,16 +174,14 @@ func Merge(events []Event, samples []SampleRef, cues []CueRef, opts ...Option) (
 	for _, c := range sortedCues {
 		gi, ok := containingGroup(anchors, c.TimeNs, c.EndNs)
 		group := "unassigned"
-		var ref int64
 		if ok {
+			// A caption legitimately spans an interval, so its own start is
+			// the reference; membership records coverage, not a skew.
 			group = groupID(gi)
-			ref = anchors[gi]
-		} else {
-			ref = c.TimeNs
 		}
 		res.Items = append(res.Items, Item{
 			ID: c.ID, Kind: KindSubtitle, Track: c.Track, Source: c.Source,
-			Line: c.Line, TimeNs: c.TimeNs, EndNs: c.EndNs, RefTimeNs: ref,
+			Line: c.Line, TimeNs: c.TimeNs, EndNs: c.EndNs, RefTimeNs: c.TimeNs,
 			Label: c.Label, Group: group,
 		})
 	}
@@ -247,6 +246,14 @@ func Merge(events []Event, samples []SampleRef, cues []CueRef, opts ...Option) (
 }
 
 func groupID(i int) string { return fmt.Sprintf("g%04d", i) }
+
+// eventAnchor is the media-clock instant a client event pins its group to.
+func eventAnchor(e Event) int64 {
+	if e.MediaTimeNs != 0 {
+		return e.MediaTimeNs
+	}
+	return e.TimeNs
+}
 
 // nearestGroup returns the index of the anchor closest to t within tolerance.
 func nearestGroup(anchors []int64, t, tol int64) (int, bool) {

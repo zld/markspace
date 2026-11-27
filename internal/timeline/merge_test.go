@@ -74,7 +74,9 @@ func TestCueJoinsContainingGroup(t *testing.T) {
 	if cue == nil || cue.Group != "g0000" {
 		t.Fatalf("cue %+v", cue)
 	}
-	if cue.SkewNs != -100*ms || !cue.Over {
+	// A caption that spans the event instant is covered, not skewed: its own
+	// start is its reference.
+	if cue.SkewNs != 0 || cue.Over {
 		t.Fatalf("cue skew %+v", cue)
 	}
 }

@@ -21,10 +21,10 @@ type MP4 struct {
 	ZeroDeltaAfter int
 }
 
-// DefaultMP4 is a healthy 25 fps track at a 12800 timescale: 512 ticks per
-// frame.
+// DefaultMP4 is a healthy track of one sample per second at a 12800 timescale,
+// so its samples land on the review event instants.
 func DefaultMP4() MP4 {
-	return MP4{Timescale: 12800, SampleCount: 6, SampleDelta: 512, SampleSize: 16, OversizeSample: -1}
+	return MP4{Timescale: 12800, SampleCount: 5, SampleDelta: 12800, SampleSize: 16, OversizeSample: -1}
 }
 
 // box encodes one ISO-BMFF box.
