@@ -14,19 +14,6 @@ import (
 	"github.com/example/mediad/internal/audio"
 )
 
-// MuxConfig captures everything the container must record.
-type MuxConfig struct {
-	Rate          uint32
-	Channels      uint16
-	Codec         string // four-character sample entry type, e.g. "mp4a"
-	BitsPerSample uint16 // PCM sample width in bits (16 or 24)
-}
-
-// Candidate is one encoding parameter set the size optimizer may choose.
-type Candidate struct {
-	BitsPerSample uint16
-}
-
 // defaultCandidates are tried in increasing size order so the first that
 // satisfies the byte budget is also the smallest; quality gates are never
 // relaxed because bit depth only changes container size, not loudness/peak.
@@ -56,18 +43,6 @@ func SmallestWithinBudget(b audio.Buffer, base MuxConfig, maxBytes int64) ([]byt
 		}
 	}
 	return best, bestReport, fit, nil
-}
-
-// MuxReport is the structural verification result read back from the file.
-type MuxReport struct {
-	Bytes          int64   `json:"bytes"`
-	TrackDuration  uint64  `json:"trackDuration"` // timescale units
-	Timescale      uint32  `json:"timescale"`
-	SampleCount    uint32  `json:"sampleCount"`
-	SampleRate     uint32  `json:"sampleRate"`
-	ChannelCount   uint16  `json:"channelCount"`
-	AvgBitratebps  float64 `json:"avgBitrateBps"`
-	DurationMicros uint64  `json:"durationMicros"`
 }
 
 // encodePCM converts float64 [-1,1] interleaved samples to little-endian
