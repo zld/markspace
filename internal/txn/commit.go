@@ -46,6 +46,11 @@ func (a *AtomicFile) Write(p []byte) (int, error) {
 	return a.tmp.Write(p)
 }
 
+// Seek positions the staging file so box sizes can be back-patched.
+func (a *AtomicFile) Seek(offset int64, whence int) (int64, error) {
+	return a.tmp.Seek(offset, whence)
+}
+
 // Commit fsyncs the temp file, closes it and renames it onto the target.
 func (a *AtomicFile) Commit() error {
 	if a.closed {
