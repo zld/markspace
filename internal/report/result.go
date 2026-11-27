@@ -13,46 +13,46 @@ import (
 
 // Thresholds carries every configured numeric limit for one run.
 type Thresholds struct {
-	BoundaryMs       int64
-	DriftMsPerSec    int64
-	BudgetMs         int64
+	BoundaryMs    int64
+	DriftMsPerSec int64
+	BudgetMs      int64
 }
 
 // ItemConclusion is the per-representation verdict. It is stable across
 // repeated runs because it is derived solely from inputs and parameters.
 type ItemConclusion struct {
-	RepID           string   `json:"rep_id"`
-	Format          string   `json:"format"`
-	Recovered       bool     `json:"recovered"`
-	Trusted         bool     `json:"trusted"`
-	TrackCount      int      `json:"track_count"`
-	WrapCount       int      `json:"wrap_count"`
-	DriftPPM        int64    `json:"drift_ppm"`
-	DriftExceeded   bool     `json:"drift_exceeded"`
-	VFR             bool     `json:"vfr"`
-	FingerprintMatch bool    `json:"fingerprint_match"`
-	Mapped          bool     `json:"mapped"`
-	ReviewRequired  bool     `json:"review_required"`
-	ErrorKinds      []string `json:"error_kinds"`
-	Conclusion      string   `json:"conclusion"`
+	RepID            string   `json:"rep_id"`
+	Format           string   `json:"format"`
+	Recovered        bool     `json:"recovered"`
+	Trusted          bool     `json:"trusted"`
+	TrackCount       int      `json:"track_count"`
+	WrapCount        int      `json:"wrap_count"`
+	DriftPPM         int64    `json:"drift_ppm"`
+	DriftExceeded    bool     `json:"drift_exceeded"`
+	VFR              bool     `json:"vfr"`
+	FingerprintMatch bool     `json:"fingerprint_match"`
+	Mapped           bool     `json:"mapped"`
+	ReviewRequired   bool     `json:"review_required"`
+	ErrorKinds       []string `json:"error_kinds"`
+	Conclusion       string   `json:"conclusion"`
 }
 
 // Summary is the top-level JSON record printed by the CLI.
 type Summary struct {
-	Seed                int64             `json:"seed"`
-	RepresentationCount int               `json:"representation_count"`
-	RecoveredCount      int               `json:"recovered_count"`
-	AnomalyCount        int               `json:"anomaly_count"`
-	MappingSuccessCount int               `json:"mapping_success_count"`
-	FingerprintMatches  int               `json:"fingerprint_match_count"`
-	BudgetMs            int64             `json:"budget_ms"`
-	ElapsedMs           int64             `json:"elapsed_ms"`
-	BudgetDeviationMs   int64             `json:"budget_deviation_ms"`
-	BudgetExceeded      bool              `json:"budget_exceeded"`
-	BoundaryThresholdMs int64             `json:"boundary_threshold_ms"`
-	Conclusions         []ItemConclusion  `json:"conclusions"`
-	Anomalies           []AnomalyView     `json:"anomalies"`
-	ReviewItems         []string          `json:"review_items"`
+	Seed                int64            `json:"seed"`
+	RepresentationCount int              `json:"representation_count"`
+	RecoveredCount      int              `json:"recovered_count"`
+	AnomalyCount        int              `json:"anomaly_count"`
+	MappingSuccessCount int              `json:"mapping_success_count"`
+	FingerprintMatches  int              `json:"fingerprint_match_count"`
+	BudgetMs            int64            `json:"budget_ms"`
+	ElapsedMs           int64            `json:"elapsed_ms"`
+	BudgetDeviationMs   int64            `json:"budget_deviation_ms"`
+	BudgetExceeded      bool             `json:"budget_exceeded"`
+	BoundaryThresholdMs int64            `json:"boundary_threshold_ms"`
+	Conclusions         []ItemConclusion `json:"conclusions"`
+	Anomalies           []AnomalyView    `json:"anomalies"`
+	ReviewItems         []string         `json:"review_items"`
 }
 
 // AnomalyView is the JSON projection of model.AnomalyInterval with the

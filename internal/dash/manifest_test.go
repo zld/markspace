@@ -154,7 +154,8 @@ func TestParseMPDMissingDuration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	if !hasKind(global, model.KindMissingDuration) {		t.Fatalf("MPD-level missing duration not reported: %v", global)
+	if !hasKind(global, model.KindMissingDuration) {
+		t.Fatalf("MPD-level missing duration not reported: %v", global)
 	}
 }
 

@@ -130,7 +130,7 @@ func EstimateDrift(unwrapped []int64, durations []uint32) DriftResult {
 	}
 	if sumDur > 0 {
 		actual := float64(unwrapped[len(unwrapped)-1] - unwrapped[0])
-		res.DriftPPM = int64(math.Round((actual-sumDur)/sumDur * 1e6))
+		res.DriftPPM = int64(math.Round((actual - sumDur) / sumDur * 1e6))
 	}
 	return res
 }

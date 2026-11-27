@@ -107,8 +107,8 @@ func (d *TSDemuxer) Demux(data []byte) ([]model.Track, error) {
 		out = append(out, model.Track{
 			ID: uint32(st.pid), Codec: st.codec, Timescale: tsClockRate,
 			Samples: st.samples, ClockPackets: st.clockPkts,
-			NotMappable:  st.codec == model.CodecUnknown,
-			DemuxErrors:  st.errors,
+			NotMappable: st.codec == model.CodecUnknown,
+			DemuxErrors: st.errors,
 		})
 	}
 	if len(out) == 0 {

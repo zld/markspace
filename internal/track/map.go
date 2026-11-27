@@ -12,17 +12,17 @@ import (
 // OutputSpec declares one required output track and the source role that must
 // feed it. Roles are codec-level identifiers (e.g. "video", "audio").
 type OutputSpec struct {
-	OutputID   uint32
-	Role       string
-	Timescale  uint32
+	OutputID  uint32
+	Role      string
+	Timescale uint32
 }
 
 // Source is one recoverable input track with the representation it belongs to
 // and the role it can serve.
 type Source struct {
-	RepID     string
-	Track     model.RecoveredTrack
-	Role      string
+	RepID string
+	Track model.RecoveredTrack
+	Role  string
 }
 
 // Rejection records one reason an output mapping could not be committed.
@@ -36,8 +36,8 @@ type Rejection struct {
 type MappingResult struct {
 	// Committed pairs output id to the chosen source. Empty when Accepted is
 	// false: a partial mapping is never returned as success.
-	Committed map[uint32]Source
-	Accepted  bool
+	Committed  map[uint32]Source
+	Accepted   bool
 	Rejections []Rejection
 }
 

@@ -7,7 +7,7 @@ import (
 // FanoutConfig controls per-representation recovery. Buffering is bounded by
 // MaxSamplesPerTrack so a runaway representation cannot exhaust memory.
 type FanoutConfig struct {
-	MaxSamplesPerTrack    int
+	MaxSamplesPerTrack     int
 	DriftThresholdMsPerSec int64
 }
 

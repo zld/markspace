@@ -18,17 +18,17 @@ type Sample struct {
 type Codec string
 
 const (
-	CodecAVC1   Codec = "avc1"
-	CodecMP4A   Codec = "mp4a"
+	CodecAVC1    Codec = "avc1"
+	CodecMP4A    Codec = "mp4a"
 	CodecUnknown Codec = "unknown"
 )
 
 // Track is one demuxed elementary stream.
 type Track struct {
-	ID         uint32
-	Codec      Codec
-	Timescale  uint32
-	Samples    []Sample
+	ID        uint32
+	Codec     Codec
+	Timescale uint32
+	Samples   []Sample
 	// ClockPackets mirrors the sample timestamps as RTP packets so clock
 	// recovery can run on pion/rtp timestamp semantics for every container.
 	ClockPackets [][]byte
@@ -42,19 +42,19 @@ type Track struct {
 
 // SegmentRef is one referenced media fragment with its declared time range.
 type SegmentRef struct {
-	URL      string
-	Index    int
-	Line     int    // manifest/playlist line where the reference appears
-	StartMs  int64
+	URL        string
+	Index      int
+	Line       int // manifest/playlist line where the reference appears
+	StartMs    int64
 	DurationMs int64
 }
 
 // Representation is one DASH adaptation set member or HLS variant stream.
 type Representation struct {
-	ID         string
-	Format     string // "dash" or "hls"
-	Timescale  uint32
-	Segments   []SegmentRef
+	ID        string
+	Format    string // "dash" or "hls"
+	Timescale uint32
+	Segments  []SegmentRef
 	// ManifestErrors holds manifest-level problems attributed to this item;
 	// they never abort processing of sibling representations.
 	ManifestErrors []*MediaError
@@ -70,34 +70,34 @@ type Boundary struct {
 // AnomalyInterval is a boundary cross-check failure with every representation
 // that participated in the mismatch.
 type AnomalyInterval struct {
-	StartMs         int64
-	EndMs           int64
-	ThresholdMs     int64
-	MaxDeltaMs      int64
-	Participants    []string
-	Kind            ErrorKind
-	Detail          string
+	StartMs      int64
+	EndMs        int64
+	ThresholdMs  int64
+	MaxDeltaMs   int64
+	Participants []string
+	Kind         ErrorKind
+	Detail       string
 }
 
 // RecoveredTrack is the per-representation clock-recovery output. Original
 // sample timestamps remain available alongside the unwrapped timeline.
 type RecoveredTrack struct {
-	Track       Track
-	RawTimes    []uint64 // original DTS per sample, never modified
-	Unwrapped   []int64  // expanded tick timestamps
-	DriftPPM    int64    // estimated clock drift in parts per million
-	WrapCount   int      // number of wraparounds expanded
-	VFR         bool     // variable sample durations detected
-	Boundaries  []Boundary
-	Errors      []*MediaError
-	Trusted     bool // false while any error makes boundaries untrusted
+	Track      Track
+	RawTimes   []uint64 // original DTS per sample, never modified
+	Unwrapped  []int64  // expanded tick timestamps
+	DriftPPM   int64    // estimated clock drift in parts per million
+	WrapCount  int      // number of wraparounds expanded
+	VFR        bool     // variable sample durations detected
+	Boundaries []Boundary
+	Errors     []*MediaError
+	Trusted    bool // false while any error makes boundaries untrusted
 }
 
 // RecoveredRepresentation groups the recovered tracks of one representation.
 type RecoveredRepresentation struct {
-	ID       string
-	Format   string
-	Tracks   []RecoveredTrack
-	Errors   []*MediaError
-	OK       bool
+	ID     string
+	Format string
+	Tracks []RecoveredTrack
+	Errors []*MediaError
+	OK     bool
 }

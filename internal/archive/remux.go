@@ -18,13 +18,13 @@ import (
 
 // RemuxReport is the verified outcome of one remux attempt.
 type RemuxReport struct {
-	Output          []byte
-	TrackCount      int
-	SampleCount     int
-	InputHash       string
-	OutputHash      string
-	Lossless        bool
-	Error           *model.MediaError
+	Output      []byte
+	TrackCount  int
+	SampleCount int
+	InputHash   string
+	OutputHash  string
+	Lossless    bool
+	Error       *model.MediaError
 }
 
 // handlerFor maps a model codec back to the MP4 handler type used by the

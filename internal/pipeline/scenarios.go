@@ -70,7 +70,7 @@ func buildScenarios(cfg Config, rng *rand.Rand) []Scenario {
 	// rather than a nil input.
 	corruptTracks := mkVideo("dash-corrupt", 0, 3000, 6, plain)
 	out = append(out, Scenario{
-		Rep: model.Representation{ID: "dash-corrupt", Format: "dash", Timescale: 90000},
+		Rep:    model.Representation{ID: "dash-corrupt", Format: "dash", Timescale: 90000},
 		Tracks: corruptTracks, Corrupt: true,
 	})
 
@@ -79,7 +79,7 @@ func buildScenarios(cfg Config, rng *rand.Rand) []Scenario {
 	// detection path.
 	wrapTracks := mkWrapTracks("dash-wrap", rng)
 	out = append(out, Scenario{
-		Rep: model.Representation{ID: "dash-wrap", Format: "dash", Timescale: 90000},
+		Rep:    model.Representation{ID: "dash-wrap", Format: "dash", Timescale: 90000},
 		Tracks: wrapTracks, Wrap: true,
 	})
 
@@ -89,7 +89,7 @@ func buildScenarios(cfg Config, rng *rand.Rand) []Scenario {
 	driftTracks := mkDriftTracks("hls-drift", rng, 16, 3000, 3240)
 	if cfg.DriftMs > 0 {
 		out = append(out, Scenario{
-			Rep: model.Representation{ID: "hls-drift", Format: "hls", Timescale: 90000},
+			Rep:    model.Representation{ID: "hls-drift", Format: "hls", Timescale: 90000},
 			Tracks: driftTracks, Drift: true,
 		})
 	}

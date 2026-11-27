@@ -167,12 +167,12 @@ func buildPES(streamID byte, f TSFrame) []byte {
 func encodeTimestamp(prefix byte, ts uint64) []byte {
 	return []byte{
 		prefix | byte(ts>>30&0x07)<<1 | 0x01, // '0010' + ts[32..30] + marker
-		byte(ts >> 22),                        // ts[29..22]
-		byte(ts>>15&0x7F)<<1 | 0x01,           // ts[21..15] + marker
-		byte(ts >> 7),                         // ts[14..7]
-		byte(ts&0x7F)<<1 | 0x01,               // ts[6..0] + marker
+		byte(ts >> 22),                       // ts[29..22]
+		byte(ts>>15&0x7F)<<1 | 0x01,          // ts[21..15] + marker
+		byte(ts >> 7),                        // ts[14..7]
+		byte(ts&0x7F)<<1 | 0x01,              // ts[6..0] + marker
 	}
-}// TSFramesToTrack mirrors generated frames into a model.Track for tests that
+} // TSFramesToTrack mirrors generated frames into a model.Track for tests that
 // bypass the parser.
 func TSFramesToTrack(id uint32, frames []TSFrame) model.Track {
 	tr := model.Track{ID: id, Codec: model.CodecAVC1, Timescale: tsClockRate}

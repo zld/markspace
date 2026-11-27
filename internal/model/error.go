@@ -8,32 +8,32 @@ import "fmt"
 type ErrorKind string
 
 const (
-	KindManifestSyntax     ErrorKind = "manifest_syntax"      // unparsable tag / malformed manifest
-	KindManifestTruncated  ErrorKind = "manifest_truncated"   // manifest ends before all referenced media closes
-	KindMissingDuration    ErrorKind = "missing_duration"     // a segment / representation declares no duration
-	KindDuplicateReference ErrorKind = "duplicate_reference"  // the same media URL is referenced twice
-	KindRangeOutOfBounds   ErrorKind = "range_out_of_bounds"   // declared time range exceeds the representation span
-	KindSegmentCorrupt     ErrorKind = "segment_corrupt"       // fragment cannot be demuxed
-	KindTimestampWrap      ErrorKind = "timestamp_wraparound"  // timestamp wraparound was expanded (informational)
-	KindDriftExceeded      ErrorKind = "drift_exceeded"        // estimated drift is above the configured threshold
-	KindBoundaryMismatch   ErrorKind = "boundary_mismatch"     // shared-timeline boundary cross-check failed
-	KindTrackMissing       ErrorKind = "track_missing"         // required output track has no source track
-	KindTrackDuplicate     ErrorKind = "track_duplicate"       // one source track is mapped to several outputs
-	KindTimescaleIncompat  ErrorKind = "timescale_incompatible" // mapped tracks use incompatible time bases
+	KindManifestSyntax     ErrorKind = "manifest_syntax"            // unparsable tag / malformed manifest
+	KindManifestTruncated  ErrorKind = "manifest_truncated"         // manifest ends before all referenced media closes
+	KindMissingDuration    ErrorKind = "missing_duration"           // a segment / representation declares no duration
+	KindDuplicateReference ErrorKind = "duplicate_reference"        // the same media URL is referenced twice
+	KindRangeOutOfBounds   ErrorKind = "range_out_of_bounds"        // declared time range exceeds the representation span
+	KindSegmentCorrupt     ErrorKind = "segment_corrupt"            // fragment cannot be demuxed
+	KindTimestampWrap      ErrorKind = "timestamp_wraparound"       // timestamp wraparound was expanded (informational)
+	KindDriftExceeded      ErrorKind = "drift_exceeded"             // estimated drift is above the configured threshold
+	KindBoundaryMismatch   ErrorKind = "boundary_mismatch"          // shared-timeline boundary cross-check failed
+	KindTrackMissing       ErrorKind = "track_missing"              // required output track has no source track
+	KindTrackDuplicate     ErrorKind = "track_duplicate"            // one source track is mapped to several outputs
+	KindTimescaleIncompat  ErrorKind = "timescale_incompatible"     // mapped tracks use incompatible time bases
 	KindRemuxMismatch      ErrorKind = "remux_fingerprint_mismatch" // lossless remux changed sample bytes
-	KindUntrustedBoundary  ErrorKind = "untrusted_boundary"   // boundary cannot be trusted, manual review needed
+	KindUntrustedBoundary  ErrorKind = "untrusted_boundary"         // boundary cannot be trusted, manual review needed
 )
 
 // MediaError is the shared structured error model. Every error that can be
 // attributed to input carries the source file plus an offset, or a manifest
 // line number.
 type MediaError struct {
-	Kind     ErrorKind
-	File     string // source file (manifest, segment, playlist)
-	Offset   int64  // byte offset inside a binary segment, -1 when not applicable
-	Line     int    // 1-based manifest/playlist line, 0 when not applicable
-	Item     string // representation id / variant name the error belongs to
-	Message  string
+	Kind    ErrorKind
+	File    string // source file (manifest, segment, playlist)
+	Offset  int64  // byte offset inside a binary segment, -1 when not applicable
+	Line    int    // 1-based manifest/playlist line, 0 when not applicable
+	Item    string // representation id / variant name the error belongs to
+	Message string
 }
 
 // Error implements the error interface.

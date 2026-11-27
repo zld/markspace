@@ -24,10 +24,10 @@ type FanInResult struct {
 }
 
 type boundaryPoint struct {
-	repID    string
-	index    int
-	startMs  int64
-	endMs    int64
+	repID   string
+	index   int
+	startMs int64
+	endMs   int64
 }
 
 // FanIn merges independently recovered representations onto one shared time
