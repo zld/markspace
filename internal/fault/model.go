@@ -39,9 +39,9 @@ const (
 
 // Fault is one concrete problem observed while processing the stream.
 type Fault struct {
-	Code      Code           `json:"code"`
-	Severity  Severity       `json:"severity"`
-	TrackID   uint32         `json:"track_id"`
+	Code     Code     `json:"code"`
+	Severity Severity `json:"severity"`
+	TrackID  uint32   `json:"track_id"`
 	// FirstErrOffset is the byte offset (inside the offending packet/payload)
 	// at which the first parsing error was detected.
 	FirstErrOffset int64 `json:"first_err_offset"`

@@ -36,8 +36,8 @@ type KeyInterval struct {
 	Samples   int64
 	Duration  clock.Rational
 	// SeqStart/SeqEnd cover the original packet sequence range of the span.
-	SeqStart  uint64
-	SeqEnd    uint64
+	SeqStart uint64
+	SeqEnd   uint64
 	// Anomalous marks intervals whose sample count differs from the nominal
 	// key period (e.g. a loss burst swallowing an expected key frame).
 	Anomalous bool
@@ -55,18 +55,18 @@ type TrackMeta struct {
 
 // TrackReport describes one track's parsed structure.
 type TrackReport struct {
-	TrackID       uint32
-	Kind          fixture.TrackKind
-	SSRC          uint32
-	PayloadType   uint8
-	ClockRate     uint32
-	BodyLen       uint16
-	KeyEvery      int
+	TrackID         uint32
+	Kind            fixture.TrackKind
+	SSRC            uint32
+	PayloadType     uint8
+	ClockRate       uint32
+	BodyLen         uint16
+	KeyEvery        int
 	SampleTimeRange [2]clock.Rational
-	Samples       []Sample
-	KeyTimes      []clock.Rational
-	KeyIndices    []uint32
-	Intervals     []KeyInterval
+	Samples         []Sample
+	KeyTimes        []clock.Rational
+	KeyIndices      []uint32
+	Intervals       []KeyInterval
 }
 
 // Report is the full structural analysis result.
@@ -77,9 +77,9 @@ type Report struct {
 // Inspector consumes ordered packets and records parse faults itself so the
 // damage locator later consumes the exact same fault model.
 type Inspector struct {
-	mapper         *rtcp.TimeMapper
-	faults         *fault.Model
-	meta           map[uint32]TrackMeta
+	mapper          *rtcp.TimeMapper
+	faults          *fault.Model
+	meta            map[uint32]TrackMeta
 	nominalKeyEvery map[uint32]int64
 }
 

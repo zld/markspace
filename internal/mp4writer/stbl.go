@@ -62,7 +62,7 @@ func writeAvc1(b *boxBuilder, tk TrackInput) error {
 	// Marshal can resolve the avc1 box definition.
 	avc1 := &mp4.VisualSampleEntry{
 		SampleEntry: mp4.SampleEntry{
-			AnyTypeBox:        mp4.AnyTypeBox{Type: mp4.BoxTypeAvc1()},
+			AnyTypeBox:         mp4.AnyTypeBox{Type: mp4.BoxTypeAvc1()},
 			DataReferenceIndex: 1,
 		},
 		Width:           tk.Width,

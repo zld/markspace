@@ -18,9 +18,9 @@ import (
 // Payload magic lets the analyzer distinguish our synthetic codec from
 // arbitrary bytes and detect truncated/corrupt payloads reliably.
 const (
-	Magic0        byte = 0x4D // 'M'
-	Magic1        byte = 0x43 // 'C'
-	MediaHeaderLen     = 12
+	Magic0         byte = 0x4D // 'M'
+	Magic1         byte = 0x43 // 'C'
+	MediaHeaderLen      = 12
 	// MediaFlagKey marks a random-access (key) media unit.
 	MediaFlagKey byte = 0x01
 	// MediaFlagCorrupt flips payload bytes after the header so the parser

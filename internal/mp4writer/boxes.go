@@ -22,7 +22,7 @@ func newBuilder() *boxBuilder {
 func (b *boxBuilder) start(t mp4.BoxType) error {
 	_, err := b.w.StartBox(&mp4.BoxInfo{Type: t})
 	return err
-}// payload marshals a structured box body.
+} // payload marshals a structured box body.
 func (b *boxBuilder) payload(box mp4.IImmutableBox) error {
 	_, err := mp4.Marshal(b.w, box, mp4.Context{})
 	return err

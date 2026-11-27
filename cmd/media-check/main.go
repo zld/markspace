@@ -62,8 +62,8 @@ func run(args []string) int {
 // cliConfig mirrors pipeline.Config with flag-friendly scalar fields.
 type cliConfig struct {
 	pipeline.Config
-	lossCSV      string
-	rollbackTo   string
+	lossCSV    string
+	rollbackTo string
 }
 
 func parseFlags(flags []string) (pipeline.Config, error) {

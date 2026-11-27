@@ -118,8 +118,8 @@ func (s *Store) InvalidateSource(sourceDigest string) (int, error) {
 	return removed, nil
 }
 
-func (s *Store) blobPath(key string) string  { return filepath.Join(s.root, "blobs", key) }
-func (s *Store) metaPath(key string) string  { return filepath.Join(s.root, "meta", key+".json") }
+func (s *Store) blobPath(key string) string { return filepath.Join(s.root, "blobs", key) }
+func (s *Store) metaPath(key string) string { return filepath.Join(s.root, "meta", key+".json") }
 
 func (s *Store) writeMeta(d *Descriptor) error {
 	b, err := json.MarshalIndent(d, "", "  ")

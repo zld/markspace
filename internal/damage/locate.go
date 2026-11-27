@@ -33,9 +33,9 @@ type Segment struct {
 // RecoveryRate is the bounded 0..1 measure defined as
 // rebuilt parseable units / recoverable missing units.
 type RecoveryRate struct {
-	Recovered int
+	Recovered   int
 	Recoverable int
-	Rate       float64
+	Rate        float64
 }
 
 // Locator turns faults + samples into time-anchored damage segments.

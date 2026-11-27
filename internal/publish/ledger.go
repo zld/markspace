@@ -232,7 +232,7 @@ func (l *Ledger) reconcileDiskLocked(expected map[string]string, rep *RecoveryRe
 			ver, name := splitKey(k)
 			l.artifacts[k] = &Artifact{
 				Version: ver, Name: name,
-				Path: filepath.Join("artifacts", f.Name()),
+				Path:   filepath.Join("artifacts", f.Name()),
 				Digest: got, State: StateCommitted,
 				CommittedAt: time.Now().UTC(),
 			}

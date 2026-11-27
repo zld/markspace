@@ -28,12 +28,12 @@ type DamageConfig struct {
 // Times are stored already converted to the unified rational scale by the
 // RTCP package; here we keep raw NTP-ish seconds and RTP tick origin.
 type RTCPReport struct {
-	TrackID    uint32
-	SSRC       uint32
-	NTPSeconds uint32 // whole seconds since a fixed epoch (base 0)
-	NTPFrac    uint32 // 32-bit fractional second
-	RTPTime    uint32 // RTP timestamp at NTP instant
-	ClockRate  uint32
+	TrackID     uint32
+	SSRC        uint32
+	NTPSeconds  uint32 // whole seconds since a fixed epoch (base 0)
+	NTPFrac     uint32 // 32-bit fractional second
+	RTPTime     uint32 // RTP timestamp at NTP instant
+	ClockRate   uint32
 	PacketCount uint32
 	OctetCount  uint32
 }

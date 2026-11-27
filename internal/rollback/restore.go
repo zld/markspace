@@ -23,9 +23,9 @@ var ErrUnknownVersion = errors.New("rollback: unknown target version")
 
 // ManifestItem pins one artifact by name and content digest.
 type ManifestItem struct {
-	Name        string `json:"name"`
-	Path        string `json:"path"`
-	Digest      string `json:"digest"`
+	Name         string `json:"name"`
+	Path         string `json:"path"`
+	Digest       string `json:"digest"`
 	SourceDigest string `json:"source_digest"`
 }
 
@@ -39,12 +39,12 @@ type Manifest struct {
 
 // AuditEntry records one publish/rollback state transition.
 type AuditEntry struct {
-	Time         time.Time `json:"time"`
-	Action       string    `json:"action"`
-	FromVersion  string    `json:"from_version,omitempty"`
-	ToVersion    string    `json:"to_version"`
-	SourceDigest string    `json:"source_digest"`
-	ManifestDigest string  `json:"manifest_digest"`
+	Time           time.Time `json:"time"`
+	Action         string    `json:"action"`
+	FromVersion    string    `json:"from_version,omitempty"`
+	ToVersion      string    `json:"to_version"`
+	SourceDigest   string    `json:"source_digest"`
+	ManifestDigest string    `json:"manifest_digest"`
 }
 
 // Manager owns manifests, the current-version pointer and the audit trail.

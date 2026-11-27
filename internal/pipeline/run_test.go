@@ -36,10 +36,10 @@ func TestHealthyRunProducesExpectedStructure(t *testing.T) {
 
 func TestSameSeedIsDeterministic(t *testing.T) {
 	cfg := pipeline.Config{
-		Seed: 17,
-		LossUnits: map[uint32][]int{1: {40, 41}},
+		Seed:         17,
+		LossUnits:    map[uint32][]int{1: {40, 41}},
 		CorruptUnits: map[uint32][]int{1: {55}},
-		WorkDir: t.TempDir(),
+		WorkDir:      t.TempDir(),
 	}
 	r1, err := pipeline.Run(cfg)
 	if err != nil {

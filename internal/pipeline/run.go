@@ -19,12 +19,12 @@ import (
 
 // Config controls one end-to-end run.
 type Config struct {
-	Seed           int64
-	LossUnits      map[uint32][]int
-	CorruptUnits   map[uint32][]int
-	TruncateUnits  map[uint32][]int
+	Seed            int64
+	LossUnits       map[uint32][]int
+	CorruptUnits    map[uint32][]int
+	TruncateUnits   map[uint32][]int
 	ReorderDistance int
-	WrapStartSeq   uint16
+	WrapStartSeq    uint16
 	// CrashAfterArtifact leaves an orphan artifact with no ledger commit.
 	CrashAfterArtifact bool
 	// Rerun reconciles the ledger before producing anything new.
@@ -181,21 +181,21 @@ func Run(cfg Config) (*Result, error) {
 	structureDigest := digestStructure(report)
 	damageDigest := digestSegments(segments)
 	return &Result{
-		TrackCount:      len(report.Tracks),
-		KeyFrameCount:   countKeys(report),
-		SyncMaxMillis:   sync.MaxAbsMillis,
-		SyncP95Millis:   sync.P95Millis,
-		DamageSegments:  segments,
-		Recovery:        recovery,
-		StructureDigest: structureDigest,
-		DamageDigest:    damageDigest,
-		RecoveryReport:  rec,
-		RollbackVersion: rollbackVersion,
+		TrackCount:       len(report.Tracks),
+		KeyFrameCount:    countKeys(report),
+		SyncMaxMillis:    sync.MaxAbsMillis,
+		SyncP95Millis:    sync.P95Millis,
+		DamageSegments:   segments,
+		Recovery:         recovery,
+		StructureDigest:  structureDigest,
+		DamageDigest:     damageDigest,
+		RecoveryReport:   rec,
+		RollbackVersion:  rollbackVersion,
 		RollbackManifest: rollbackManifest,
-		SourceDigest:    source.ID,
-		DeriveDigest:    assets.Digest(mp4Bytes),
-		Stats:           measureStats(ordered),
-		Faults:          fm,
+		SourceDigest:     source.ID,
+		DeriveDigest:     assets.Digest(mp4Bytes),
+		Stats:            measureStats(ordered),
+		Faults:           fm,
 	}, nil
 }
 
