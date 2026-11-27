@@ -1,0 +1,5 @@
+# Local build artifacts
+/bin/
+
+# Local regression working directory (generated fixtures and checkpoints)
+/.regress/
