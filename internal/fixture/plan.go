@@ -50,6 +50,27 @@ type Spec struct {
 	Seed        uint32
 }
 
+// TrackSpec describes one logical track's id, kind and source timescale.
+type TrackSpec struct {
+	ID        string
+	Kind      model.TrackKind
+	Timescale int64
+}
+
+// AllTrackSpecs returns the fixed track layout of every generated fixture.
+func AllTrackSpecs() []TrackSpec {
+	return []TrackSpec{
+		{RendHigh, model.KindVideo, VideoHz},
+		{RendLow, model.KindVideo, VideoHz},
+		{AudioID, model.KindAudio, AudioHz},
+		{MetaID3, model.KindID3, VideoHz},
+		{MetaEmsg, model.KindEmsg, VideoHz},
+		{MetaSEI, model.KindSEI, VideoHz},
+		{MetaSub, model.KindSubtitle, VideoHz},
+		{MetaChap, model.KindChapter, VideoHz},
+	}
+}
+
 // DefaultSpec is the acceptance scenario.
 func DefaultSpec(fault Fault) Spec {
 	return Spec{Fault: fault, VideoFrames: 24, Seed: 0x5151}
