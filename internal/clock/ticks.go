@@ -13,6 +13,16 @@ const MasterHz int64 = 90000
 // Tick is a point or duration on the master integer media time line.
 type Tick int64
 
+// Scale expresses a master-tick duration in another clock's units (the
+// inverse of Convert), rounded to the nearest integer. dstHz must be positive.
+func (t Tick) Scale(dstHz int64) int64 {
+	num := int64(t) * dstHz
+	if num >= 0 {
+		return (num + MasterHz/2) / MasterHz
+	}
+	return -((-num + MasterHz/2) / MasterHz)
+}
+
 // ErrInvalidTimeBase is returned when a track declares a zero or otherwise
 // unusable timescale, making conversion to master ticks impossible.
 var ErrInvalidTimeBase = errors.New("invalid media time base")
