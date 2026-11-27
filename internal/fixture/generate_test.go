@@ -100,7 +100,7 @@ func TestGenerateTree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if layout.Segments != 24 {
+	if layout.Segments != 36 {
 		t.Fatalf("segments=%d", layout.Segments)
 	}
 	for _, rel := range []string{"dash/manifest.mpd", "hls/prog.m3u8", "dash/init.mp4", "expectations.json"} {

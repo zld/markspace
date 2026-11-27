@@ -223,7 +223,16 @@ func runDemo(f *flagSet) int {
 	if res.Crashed {
 		fmt.Printf("crash-injected: stopped at %s after chunk %d; run 'resume' to continue\n",
 			res.CrashPoint, res.Plan.ResumeChunk)
-		return 0
+	}
+	return reportExitCode(res)
+}
+
+// reportExitCode distinguishes a completed report that lists material
+// anomalies (still exit 0, per the acceptance contract) from a manifest parse
+// failure, which is a hard error.
+func reportExitCode(res *batch.Run) int {
+	if res.ManifestParseFailed() {
+		return 2
 	}
 	return 0
 }
@@ -284,7 +293,7 @@ func runResume(f *flagSet) int {
 		fmt.Println()
 	}
 	printCounts(res)
-	return 0
+	return reportExitCode(res)
 }
 
 // chunkOrDefault keeps the chunk size the interrupted run used unless the

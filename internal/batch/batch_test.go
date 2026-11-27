@@ -1,12 +1,14 @@
 package batch
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"mediabatch/internal/fixture"
 	"mediabatch/internal/index"
+	"mediabatch/internal/report"
 )
 
 func setup(t *testing.T, chunk int) (work string, opts Options) {
@@ -226,5 +228,44 @@ func TestChunkSizeValidation(t *testing.T) {
 	opts.ChunkSize = 0
 	if _, err := Execute(opts, ModeDemo); err == nil {
 		t.Fatal("expected chunk size error")
+	}
+}
+
+// Verify must report a persisted report whose entries are out of start-time
+// order; sorting before the check would hide the defect.
+func TestVerifyDetectsUnsortedPersistedReport(t *testing.T) {
+	work, opts := setup(t, 3)
+	run, err := Execute(opts, ModeDemo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := run.WriteReport(work, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(work, "report.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rep report.Report
+	if err := json.Unmarshal(data, &rep); err != nil {
+		t.Fatal(err)
+	}
+	for i, j := 0, len(rep.Entries)-1; i < j; i, j = i+1, j-1 {
+		rep.Entries[i], rep.Entries[j] = rep.Entries[j], rep.Entries[i]
+	}
+	data, err = json.Marshal(&rep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	vr, err := Verify(work)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if vr.SortedViolations == 0 {
+		t.Fatal("reversed entries must be reported as order violations")
 	}
 }

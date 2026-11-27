@@ -201,6 +201,7 @@ func Generate(workDir string, opts Options) (*Layout, error) {
 			return nil, err
 		}
 		layout.Expect[rel] = Expectation{SHA256: hashOf(data), Size: int64(len(data))}
+		layout.Segments++
 	}
 
 	// Persist the expectations so resume/verify runs see the same records.

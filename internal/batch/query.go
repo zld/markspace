@@ -57,6 +57,18 @@ func chunkSizeFromState(workDir string) int {
 	return st.ChunkSize
 }
 
+// ManifestParseFailed reports whether any manifest could not be parsed. A
+// parse failure makes the run exit non-zero even when other manifests produced
+// a usable report.
+func (r *Run) ManifestParseFailed() bool {
+	for _, i := range r.Issues {
+		if i.Code == fault.CodeParse && i.Severity == fault.SeverityError {
+			return true
+		}
+	}
+	return false
+}
+
 // ResumeSummary is printed by the resume command.
 type ResumeSummary struct {
 	CheckpointLine   string
@@ -124,12 +136,12 @@ func Verify(workDir string) (VerifyResult, error) {
 	if err != nil {
 		return vr, err
 	}
-	rep.Sort()
-	rep.Digest = report.DigestOf(rep.Entries)
+	// Check the persisted order before touching anything: sorting first would
+	// make the violation count trivially zero on every report.
 	vr.Entries = len(rep.Entries)
 	vr.SortedViolations = rep.SortedViolations()
 	vr.MissingSource = rep.MissingSource()
-	vr.Digest = rep.Digest
+	vr.Digest = report.DigestOf(rep.Entries)
 	store, err := index.Open(workDir)
 	if err != nil {
 		return vr, err

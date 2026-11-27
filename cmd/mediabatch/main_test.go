@@ -145,3 +145,46 @@ func TestExitCodes(t *testing.T) {
 		t.Fatalf("resume on corrupt index should fail: %s", out)
 	}
 }
+
+func TestManifestParseFailureExitsNonZero(t *testing.T) {
+	work := filepath.Join(t.TempDir(), "demo")
+	if code, out := capture(t, "demo", "--work", work, "--chunk", "3"); code != 0 {
+		t.Fatalf("setup: %d %s", code, out)
+	}
+	// Corrupt the MPD: the report is still written for everything else, but
+	// the run must signal the parse failure.
+	mpd := filepath.Join(work, "input", "dash", "manifest.mpd")
+	if err := os.WriteFile(mpd, []byte("<MPD><Period>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, out := capture(t, "resume", "--work", work)
+	if code == 0 {
+		t.Fatalf("manifest parse failure must exit non-zero: %s", out)
+	}
+	if _, err := os.Stat(filepath.Join(work, "report.json")); err != nil {
+		t.Fatalf("report should still exist: %v", err)
+	}
+}
+
+func TestUnknownContainerIsolatesSegment(t *testing.T) {
+	work := filepath.Join(t.TempDir(), "demo")
+	if code, out := capture(t, "demo", "--work", work, "--chunk", "3"); code != 0 {
+		t.Fatalf("setup: %d %s", code, out)
+	}
+	// Overwrite one segment with bytes that are neither MP4 nor RTP.
+	target := filepath.Join(work, "input", "hls", "seg-3.m4s")
+	if err := os.WriteFile(target, []byte("not-media"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, out := capture(t, "resume", "--work", work)
+	if code != 0 {
+		t.Fatalf("corrupt media should still produce a report: %d %s", code, out)
+	}
+	rep, err := os.ReadFile(filepath.Join(work, "report.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(rep), "unrecognised segment container") {
+		t.Fatalf("report missing container anomaly:\n%s", rep)
+	}
+}
