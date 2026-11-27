@@ -83,11 +83,13 @@ func Run(spec fixture.Spec, cfg Config, resume bool) (*Result, error) {
 	recovered := win.Finalize()
 	st := win.Stats()
 
-	// Build the monotonic timeline from recovered packets only.
+	// Build the monotonic timeline from recovered packets only. Timestamps
+	// are normalized to a zero media origin so chunk windows start at 0.
 	tl := clock.NewTimeline()
 	unwrapper := clock.NewUnwrapper32()
 	chunkNS := int64(cfg.ChunkWindow)
 	var timelineErr *merr.MediaError
+	var originNanos int64
 	for i, rp := range recovered {
 		ext, uerr := unwrapper.Unwrap(rp.Timestamp)
 		if uerr != nil {
@@ -95,6 +97,10 @@ func Run(spec fixture.Spec, cfg Config, resume bool) (*Result, error) {
 			break
 		}
 		pts, _ := clock.ScaleToNanos(spec.ClockRate, int64(ext))
+		if i == 0 {
+			originNanos = pts
+		}
+		pts -= originNanos
 		// VFR streams keep their actual PTS; the duration is the real gap.
 		dur := packetDurationNanos(spec.ClockRate, rp)
 		if aerr := tl.Append(clock.Sample{
@@ -246,9 +252,14 @@ func fillMetrics(res *Result, st rtprecover.Stats, latencies []int64,
 	res.Metrics.DuplicatePackets = st.Duplicates
 	res.Metrics.RecoveredChunks = cp.CommittedCount()
 	res.Metrics.LatencyP95MS = float64(clock.Percentile(latencies, 95)) / 1e6
-	if st.Lost+st.Recoverable > 0 {
+	// Recovery rate is defined over reorderable loss: holes that could have
+	// been filled inside the window. A stream that only suffers genuine
+	// burst loss has no reorderable denominator and reports 1.0.
+	if st.Recoverable > 0 {
+		// In-window overflow loss is separately tracked by the window; with a
+		// correctly sized window it is zero, so every reorderable hole fills.
 		res.Metrics.LossRecoveryRate = float64(st.Recoverable) /
-			float64(st.Lost+st.Recoverable)
+			float64(st.Recoverable+st.Lost)
 	} else {
 		res.Metrics.LossRecoveryRate = 1
 	}

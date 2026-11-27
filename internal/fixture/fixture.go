@@ -87,7 +87,13 @@ func Build(s Spec) []*rtp.Packet {
 	}
 	switch s.Kind {
 	case KindDupReorder:
+		// Multiple delayed packets produce several recoverable reorder holes
+		// plus one duplicate; all are inside the reorder window.
 		pkts = applyDupReorder(pkts)
+	case KindBurstLoss:
+		// Genuinely dropped packets are never re-inserted, so they remain
+		// unrecoverable; the window must report them without fabricating
+		// audio.
 	case KindVFR:
 		applyVFRTimestamps(pkts, tsStep)
 	}
@@ -102,20 +108,42 @@ func wrapTimestamp(i, step int) uint32 {
 	return uint32((base + uint64(i)*uint64(step)) % nearMax)
 }
 
-// applyDupReorder swaps two adjacent packets and duplicates an earlier one.
+// applyDupReorder delays several packets within the reorder window and adds
+// one duplicate. Every delayed packet's hole is later filled, so each counts
+// as a recoverable reordering event, and the duplicate is still inside the
+// window when re-delivered.
 func applyDupReorder(pkts []*rtp.Packet) []*rtp.Packet {
-	if len(pkts) < 6 {
+	if len(pkts) < 12 {
 		return pkts
 	}
-	out := make([]*rtp.Packet, 0, len(pkts)+1)
-	out = append(out, pkts...)
-	// Duplicate packet index 2 (delivered again later in its original form).
+	out := applyManyLate(pkts, []int{4, 8, 12})
+	// Duplicate packet 2 and re-deliver it three positions later, well within
+	// the window, so the window classifies it as a duplicate rather than late.
 	dup := *pkts[2]
 	dup.Payload = append([]byte(nil), pkts[2].Payload...)
-	// Swap delivery positions of packets 4 and 5.
-	out[4], out[5] = out[5], out[4]
-	// Re-insert the duplicate right after packet 5.
-	out = append(out[:6], append([]*rtp.Packet{&dup}, out[6:]...)...)
+	insertAt := 6
+	if insertAt >= len(out) {
+		insertAt = len(out)
+	}
+	out = append(out[:insertAt], append([]*rtp.Packet{&dup}, out[insertAt:]...)...)
+	return out
+}
+
+// applyManyLate delays each listed packet by three delivery positions.
+func applyManyLate(pkts []*rtp.Packet, positions []int) []*rtp.Packet {
+	out := append([]*rtp.Packet(nil), pkts...)
+	for _, idx := range positions {
+		if idx < 0 || idx+4 >= len(out) {
+			continue
+		}
+		late := out[idx]
+		out = append(out[:idx], out[idx+1:]...)
+		insertAt := idx + 3
+		if insertAt >= len(out) {
+			insertAt = len(out)
+		}
+		out = append(out[:insertAt], append([]*rtp.Packet{late}, out[insertAt:]...)...)
+	}
 	return out
 }
 
