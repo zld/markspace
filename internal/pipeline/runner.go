@@ -28,6 +28,9 @@ type Config struct {
 	// InterruptAfter > 0 stops the run deterministically before writing that
 	// many blocks, leaving every later block uncommitted (fault injection).
 	InterruptAfter int
+	// Skip, when non-nil, reports a block sequence already committed by a
+	// previous run; the writer leaves it untouched instead of rewriting it.
+	Skip func(seq uint64) bool
 }
 
 // Metrics reports observed pipeline behaviour for the acceptance summary.
@@ -75,6 +78,12 @@ func Run(ctx context.Context, in *demux.File, policy clock.Policy,
 	go func() {
 		written := 0
 		for ch := range pending {
+			// A block validated during resume is reusable work: do not rewrite
+			// it, but still count it so InterruptAfter measures new work.
+			if cfg.Skip != nil && cfg.Skip(ch.Seq) {
+				written++
+				continue
+			}
 			if cfg.InterruptAfter > 0 && written >= cfg.InterruptAfter {
 				writerErr <- clock.ErrInterrupted
 				return

@@ -75,8 +75,11 @@ func (s *State) CommittedEntries() []index.Entry {
 
 // EnsureContiguous verifies that committed sequences form 0..n with no hole. A
 // hole means a block was lost even though a later one exists, which the chunk
-// naming alone cannot prove safe to resume.
+// naming alone cannot prove safe to resume. A fresh, empty state is contiguous.
 func (s *State) EnsureContiguous() error {
+	if s.MaxSeq < 0 {
+		return nil
+	}
 	for seq := uint64(0); seq <= uint64(s.MaxSeq); seq++ {
 		if !s.committed[seq] {
 			return clock.NewError(clock.StageResume, "contiguous",
