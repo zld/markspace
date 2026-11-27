@@ -46,12 +46,12 @@ func (b *Builder) Build(meta model.TrackMeta, rec *rtp.Result, mp4Info *audio.MP
 	}
 
 	var (
-		cursorNS      model.NS // placed end of the accounted stream
-		idealNS       model.NS // end a lossless stream would have reached
-		idealBytes    int      // bytes a lossless stream would have accounted
-		actualBytes   int      // bytes actually accounted (duplicates excluded)
-		gapFillNS     model.NS // last known real frame duration, used to space gaps
-		mp4SampleIdx  int
+		cursorNS     model.NS // placed end of the accounted stream
+		idealNS      model.NS // end a lossless stream would have reached
+		idealBytes   int      // bytes a lossless stream would have accounted
+		actualBytes  int      // bytes actually accounted (duplicates excluded)
+		gapFillNS    model.NS // last known real frame duration, used to space gaps
+		mp4SampleIdx int
 	)
 
 	emit := func(seq uint64) {

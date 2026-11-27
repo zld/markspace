@@ -31,12 +31,12 @@ type Gap struct {
 
 // Result is the reconstructed view of one track's RTP stream.
 type Result struct {
-	TrackID      string
-	Records      []Record // every received packet, sorted by (ExtSeq, Offset)
-	Gaps         []Gap
-	Failures     []model.Failure
-	FirstExtSeq  uint64
-	LastExtSeq   uint64
+	TrackID     string
+	Records     []Record // every received packet, sorted by (ExtSeq, Offset)
+	Gaps        []Gap
+	Failures    []model.Failure
+	FirstExtSeq uint64
+	LastExtSeq  uint64
 }
 
 // seqMod is the RTP 16-bit sequence modulus.

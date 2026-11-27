@@ -23,10 +23,10 @@ type Markers struct {
 
 // Scenario is the generated input set and its expected defect markers.
 type Scenario struct {
-	Seed   int64                 `json:"seed"`
-	Tracks []model.TrackInput    `json:"-"`
-	Expect map[string]Markers    `json:"expect"`
-	Order  []string              `json:"track_order"`
+	Seed   int64              `json:"seed"`
+	Tracks []model.TrackInput `json:"-"`
+	Expect map[string]Markers `json:"expect"`
+	Order  []string           `json:"track_order"`
 }
 
 const (
@@ -257,13 +257,13 @@ func BuildMinimalMP4(timescale uint32, samples int) []byte {
 	sttsPayload := make([]byte, 4+8*samples)
 	binary.BigEndian.PutUint32(sttsPayload[0:4], uint32(samples))
 	for i := 0; i < samples; i++ {
-		binary.BigEndian.PutUint32(sttsPayload[4+8*i:8+8*i], 1)          // count
-		binary.BigEndian.PutUint32(sttsPayload[8+8*i:12+8*i], 1024)      // delta
+		binary.BigEndian.PutUint32(sttsPayload[4+8*i:8+8*i], 1)     // count
+		binary.BigEndian.PutUint32(sttsPayload[8+8*i:12+8*i], 1024) // delta
 	}
 	stts := fullBox("stts", 0, 0, sttsPayload)
 
 	stszPayload := make([]byte, 8+4*samples)
-	binary.BigEndian.PutUint32(stszPayload[0:4], 0)                    // uniform=0
+	binary.BigEndian.PutUint32(stszPayload[0:4], 0) // uniform=0
 	binary.BigEndian.PutUint32(stszPayload[4:8], uint32(samples))
 	for i := 0; i < samples; i++ {
 		binary.BigEndian.PutUint32(stszPayload[8+4*i:12+4*i], uint32(50+i))

@@ -12,9 +12,9 @@ import (
 
 // Node is one track vertex and the IDs it depends on.
 type Node struct {
-	TrackID     string
-	DependsOn   []string
-	HasFailure  bool // a failed track still participates, flagged for callers
+	TrackID    string
+	DependsOn  []string
+	HasFailure bool // a failed track still participates, flagged for callers
 }
 
 // Order is a deterministic topological ordering plus audit detail.

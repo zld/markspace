@@ -46,7 +46,6 @@ func ParseAUHeaders(payload []byte, packetOffset int) ([]AU, *model.Failure) {
 	for i := 0; i < count; i++ {
 		word := uint16(payload[2+2*i])<<8 | uint16(payload[3+2*i])
 		size := int(word >> 3)
-		// indexDelta := int(word & 0x07)
 		if size <= 0 {
 			return nil, model.PtrFailure("", model.StageAAC, packetOffset, model.ErrAUHeader,
 				"AU["+itoa(i)+"] has non-positive size "+itoa(size))

@@ -106,8 +106,8 @@ func runDemo(args []string) int {
 }
 
 type check struct {
-	name string
-	pass bool
+	name   string
+	pass   bool
 	detail string
 }
 

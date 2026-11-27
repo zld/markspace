@@ -25,11 +25,11 @@ type Diff struct {
 
 // Report is the validation outcome for one track.
 type Report struct {
-	TrackID       string     `json:"track_id"`
-	Diffs         []Diff     `json:"diffs"`
-	ConversionReq bool       `json:"conversion_required"`
+	TrackID       string `json:"track_id"`
+	Diffs         []Diff `json:"diffs"`
+	ConversionReq bool   `json:"conversion_required"`
 	// RejectReason is set when the layout cannot be handled at all.
-	RejectReason string     `json:"reject_reason,omitempty"`
+	RejectReason string          `json:"reject_reason,omitempty"`
 	Source       model.TrackMeta `json:"-"`
 }
 

@@ -39,25 +39,25 @@ type Mapping struct {
 
 // TrackReport is the full per-track audit record.
 type TrackReport struct {
-	TrackID  string            `json:"track_id"`
-	Status   string            `json:"status"`
-	Mappings []Mapping         `json:"mappings"`
-	Failures []model.Failure   `json:"failures"`
-	Decision *config.Decision  `json:"decision,omitempty"`
-	Digest   string            `json:"digest"`
+	TrackID  string           `json:"track_id"`
+	Status   string           `json:"status"`
+	Mappings []Mapping        `json:"mappings"`
+	Failures []model.Failure  `json:"failures"`
+	Decision *config.Decision `json:"decision,omitempty"`
+	Digest   string           `json:"digest"`
 }
 
 // Summary aggregates counts and the overall duration.
 type Summary struct {
-	TrackCount    int      `json:"track_count"`
-	OKTracks      int      `json:"ok_tracks"`
-	FailedTracks  int      `json:"failed_tracks"`
-	BlockedTracks int      `json:"blocked_tracks"`
-	SampleItems   int      `json:"sample_items"`
-	GapItems      int      `json:"gap_items"`
-	DuplicateItems int     `json:"duplicate_items"`
-	FailureCount  int      `json:"failure_count"`
-	TotalDuration model.NS `json:"total_duration_ns"`
+	TrackCount     int      `json:"track_count"`
+	OKTracks       int      `json:"ok_tracks"`
+	FailedTracks   int      `json:"failed_tracks"`
+	BlockedTracks  int      `json:"blocked_tracks"`
+	SampleItems    int      `json:"sample_items"`
+	GapItems       int      `json:"gap_items"`
+	DuplicateItems int      `json:"duplicate_items"`
+	FailureCount   int      `json:"failure_count"`
+	TotalDuration  model.NS `json:"total_duration_ns"`
 }
 
 // Manifest is the top-level deliverable.
@@ -72,9 +72,9 @@ type Manifest struct {
 // Params captures the run parameters that affect the output, so a manifest is
 // only ever compared across identical parameter sets.
 type Params struct {
-	BudgetNS    model.NS `json:"budget_ns"`
-	MaxBitrate  int64    `json:"max_bitrate_bps"`
-	MinQuality  int      `json:"min_quality"`
+	BudgetNS   model.NS `json:"budget_ns"`
+	MaxBitrate int64    `json:"max_bitrate_bps"`
+	MinQuality int      `json:"min_quality"`
 }
 
 // BuildTrackReport converts a timeline and optional decision into a report and
@@ -106,9 +106,9 @@ func BuildTrackReport(tl *model.TrackTimeline, decision *config.Decision, blocke
 	}
 	tr.Status = classify(blocked, tl, decision)
 	tr.Digest = digestOf(struct {
-		ID       string          `json:"track_id"`
-		Mappings []Mapping       `json:"mappings"`
-		Failures []model.Failure `json:"failures"`
+		ID       string           `json:"track_id"`
+		Mappings []Mapping        `json:"mappings"`
+		Failures []model.Failure  `json:"failures"`
 		Decision *config.Decision `json:"decision"`
 	}{tr.TrackID, tr.Mappings, tr.Failures, decision})
 	return tr

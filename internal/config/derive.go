@@ -21,13 +21,13 @@ type Step struct {
 
 // Decision is the derived configuration for one track.
 type Decision struct {
-	TrackID       string         `json:"track_id"`
-	TargetBitrate int64          `json:"target_bitrate_bps"`
-	Quality       int            `json:"quality"` // 0..100
-	Steps         []Step         `json:"steps"`
-	EstimatedNS   model.NS       `json:"estimated_processing_ns"`
+	TrackID       string          `json:"track_id"`
+	TargetBitrate int64           `json:"target_bitrate_bps"`
+	Quality       int             `json:"quality"` // 0..100
+	Steps         []Step          `json:"steps"`
+	EstimatedNS   model.NS        `json:"estimated_processing_ns"`
 	Unsatisfiable []model.Failure `json:"unsatisfiable,omitempty"`
-	Eligible      bool           `json:"eligible"`
+	Eligible      bool            `json:"eligible"`
 }
 
 // costPerSampleNS is the calibrated per-sample processing cost. It is a fixed

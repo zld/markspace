@@ -12,16 +12,14 @@ import (
 func buildAACPkt(sizes ...int) []byte {
 	headerBits := len(sizes) * 16
 	out := []byte{byte(headerBits >> 8), byte(headerBits)}
-	cursor := 2 + len(sizes)*2
 	for _, sz := range sizes {
-		word := sz << 3
+		word := uint16(sz) << 3
 		out = append(out, byte(word>>8), byte(word))
 	}
 	for _, sz := range sizes {
 		for b := 0; b < sz; b++ {
 			out = append(out, 0xAB)
 		}
-		_ = cursor
 	}
 	return out
 }

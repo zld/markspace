@@ -138,10 +138,10 @@ const (
 // ColorMeta carries the colour description metadata checked against target
 // delivery specs (ITU-T H.274 / ISO 23001-8 code points).
 type ColorMeta struct {
-	ColorPrimaries         uint16 `json:"color_primaries"`
+	ColorPrimaries          uint16 `json:"color_primaries"`
 	TransferCharacteristics uint16 `json:"transfer_characteristics"`
-	MatrixCoefficients     uint16 `json:"matrix_coefficients"`
-	FullRange              bool   `json:"full_range"`
+	MatrixCoefficients      uint16 `json:"matrix_coefficients"`
+	FullRange               bool   `json:"full_range"`
 }
 
 // TrackMeta describes one source track's static layout.

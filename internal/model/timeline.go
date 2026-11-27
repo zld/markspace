@@ -22,8 +22,8 @@ const (
 // cumulative accounted payload byte count. Both are zero on a clean stream.
 type TimelineEntry struct {
 	Class       EntryClass `json:"class"`
-	SourceIndex int        `json:"source_index"`     // index into TrackInput.Packets
-	ExtSeq      uint64     `json:"ext_seq"`         // unwrapped sequence number
+	SourceIndex int        `json:"source_index"` // index into TrackInput.Packets
+	ExtSeq      uint64     `json:"ext_seq"`      // unwrapped sequence number
 	Start       NS         `json:"start_ns"`
 	Duration    NS         `json:"duration_ns"`
 	TimeDelta   NS         `json:"time_delta_ns"`
