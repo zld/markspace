@@ -177,6 +177,13 @@ func abs64(v int64) int64 {
 
 func mul64(a, b int64) (int64, bool) {
 	hi, lo := bits.Mul64(uint64(a), uint64(b))
+	// Correct the high word: Mul64 computes the unsigned product.
+	if a < 0 {
+		hi -= uint64(b)
+	}
+	if b < 0 {
+		hi -= uint64(a)
+	}
 	if lo>>63 == 0 {
 		if hi != 0 {
 			return 0, false
