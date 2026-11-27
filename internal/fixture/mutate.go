@@ -93,13 +93,10 @@ func Mutate(root string, spec Spec, frames []model.Frame, m Mutation) ([]model.F
 		return replaced, nil
 
 	case MutateContainer:
-		bumped := spec
-		bumped.ContainerRev = spec.ContainerRev + 1
-		packets, err := packetsFromFrames(frames)
-		if err != nil {
-			return nil, err
-		}
-		if err = writeContainer(containerPath, bumped, packets); err != nil {
+		// Container-only change: rewrite just the ftyp revision while copying
+		// the mdat byte-for-byte, so the content fingerprint stays equal and
+		// only the container revision moves.
+		if err = bumpContainerRevision(containerPath, data, spec.ContainerRev+1); err != nil {
 			return nil, err
 		}
 		return frames, nil
@@ -131,33 +128,33 @@ func Mutate(root string, spec Spec, frames []model.Frame, m Mutation) ([]model.F
 // truncatePoint returns a byte offset inside frame targetFrame's RTP packet so
 // the packet is present but incomplete.
 func truncatePoint(data []byte, frames []model.Frame, targetFrame int) (int, error) {
-	minor, mdat, err := ContainerHeader(data)
+	_, mdat, err := ContainerHeader(data)
 	if err != nil {
 		return 0, model.WrapError(model.StageIndex, 0, 0, "parsing container header", err)
 	}
-	_ = minor
-	// Packet sizes are deterministic: rebuild offsets from the frame payloads.
+	// Framed offsets are deterministic: 2-byte length prefix + RTP packet.
 	off := int(mdat.Offset + mdat.HeaderSize)
 	for i := range frames {
 		pkt, err := packetFor(frames[i])
 		if err != nil {
 			return 0, err
 		}
-		size := len(pkt)
+		frameSize := 2 + len(pkt)
 		if i+1 == targetFrame {
-			point := off + size/2
+			// Keep the length prefix and RTP header plus half the payload so
+			// the frame is recognizable but its declared length runs past EOF.
+			point := off + 2 + 12 + (len(pkt)-12)/2
 			if point >= len(data) {
 				point = len(data) - 1
 			}
 			return point, nil
 		}
-		off += size
+		off += frameSize
 	}
 	return 0, model.NewError(model.StageIndex, model.FrameNumber(targetFrame), int64(off), "truncation target not found")
 }
 
-func packetsFromFrames(frames []model.Frame) ([][]byte, error) {
-	out := make([][]byte, len(frames))
+func packetsFromFrames(frames []model.Frame) ([][]byte, error) {	out := make([][]byte, len(frames))
 	for i := range frames {
 		pkt, err := packetFor(frames[i])
 		if err != nil {

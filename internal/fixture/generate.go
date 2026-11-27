@@ -60,9 +60,12 @@ func DefaultSpec(frames int) Spec {
 	}
 }
 
-// pcmSample builds one deterministic little-endian int16 PCM sample.
+// pcmSample builds one deterministic little-endian int16 PCM sample. The frame
+// term is deliberately not a whole multiple of the 64-sample period, so each
+// frame carries a distinct starting phase and replacing frame content actually
+// changes the bytes (a whole-period multiplier would make every frame identical).
 func pcmSample(frame, sample, channel int) int16 {
-	phase := float64(frame*960+sample*2+channel) * (2 * math.Pi / 64.0)
+	phase := float64(frame*7+sample*2+channel) * (2 * math.Pi / 64.0)
 	amp := 0.10 * float64(math.MaxInt16)
 	return int16(amp * math.Sin(phase))
 }
@@ -129,7 +132,14 @@ func writeContainer(path string, spec Spec, packets [][]byte) error {
 	if _, err = w.StartBox(&mp4.BoxInfo{Type: mp4.BoxTypeMdat()}); err != nil {
 		return err
 	}
+	// Each RTP packet is prefixed with a 2-byte big-endian length: RTP has no
+	// self-delimiting length field, so the container supplies frame framing.
 	for _, pkt := range packets {
+		hdr := make([]byte, 2)
+		binary.BigEndian.PutUint16(hdr, uint16(len(pkt)))
+		if _, err = w.Write(hdr); err != nil {
+			return err
+		}
 		if _, err = w.Write(pkt); err != nil {
 			return err
 		}
@@ -258,4 +268,23 @@ func ContainerHeader(data []byte) (minorVersion uint32, mdat *mp4.BoxInfo, err e
 		}
 	}
 	return ftyp.MinorVersion, mdatInfo, nil
+}
+
+// ContentHash returns the SHA-256 of the mdat payload only. Keeping the
+// content fingerprint independent of the ftyp box means a container-revision
+// bump (which leaves mdat byte-for-byte intact) does not invalidate the
+// content cache, while a payload replacement does.
+func ContentHash(data []byte) (string, error) {
+	_, mdat, err := ContainerHeader(data)
+	if err != nil {
+		return "", err
+	}
+	if mdat == nil {
+		return "", model.NewError(model.StageCache, 0, 0, "container has no mdat for content hash")
+	}
+	start := mdat.Offset + mdat.HeaderSize
+	if start > uint64(len(data)) {
+		return "", model.NewError(model.StageCache, 0, 0, "mdat offset beyond container")
+	}
+	return model.Checksum(data[start:]), nil
 }

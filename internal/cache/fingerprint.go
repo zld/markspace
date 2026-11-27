@@ -124,3 +124,31 @@ func (s *Store) Evaluate(observed Fingerprint, c *Counters) Decision {
 	s.Entries[observed.Path] = observed
 	return d
 }
+
+// Compare reports the decision for observed against the stored entry without
+// mutating the store. It is used when a pristine baseline was deliberately
+// seeded before a mutation: overwriting that baseline here would erase the
+// very difference the run must report.
+func (s *Store) Compare(observed Fingerprint) Decision {
+	prev, ok := s.Entries[observed.Path]
+	d := Decision{Path: observed.Path}
+	switch {
+	case !ok:
+		d.Reason, d.ContentCacheValid, d.IndexValid = ReasonFresh, false, false
+	case prev.ContentSHA256 != observed.ContentSHA256:
+		d.Reason, d.ContentCacheValid, d.IndexValid = ReasonContentReplaced, false, false
+	case prev.ContainerVersion != observed.ContainerVersion:
+		d.Reason, d.ContentCacheValid, d.IndexValid = ReasonContainerChanged, true, false
+	case prev.MetadataVersion != observed.MetadataVersion:
+		d.Reason, d.ContentCacheValid, d.IndexValid = ReasonMetadataChanged, true, false
+	default:
+		d.Reason, d.ContentCacheValid, d.IndexValid = ReasonFresh, true, true
+	}
+	return d
+}
+
+// Has reports whether an entry exists for path.
+func (s *Store) Has(path string) bool {
+	_, ok := s.Entries[path]
+	return ok
+}

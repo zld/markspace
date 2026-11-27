@@ -67,9 +67,11 @@ func Build(root, containerID string, metaVersion uint32, frames []model.Frame) (
 			return nil, model.NewError(model.StageManifest, num, int64(off),
 				"truncated or corrupted RTP packet: "+perr.Error())
 		}
-		if uint32(n) > frames[i].PayloadLength+64 {
+		// The RTP packet is header + payload; only the payload length is
+		// declared by the manifest, so compare those two directly.
+		if uint32(len(pkt.payload)) != frames[i].PayloadLength {
 			return nil, model.NewError(model.StageManifest, num, int64(off),
-				"packet larger than declared payload envelope")
+				"rtp payload length does not match declared payload_length")
 		}
 		idx.Positions = append(idx.Positions, Position{
 			Number: num,
