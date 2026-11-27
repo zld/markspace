@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -280,6 +279,3 @@ func mustJSON(v any) []byte {
 	}
 	return data
 }
-
-// Ensure os import is used (stage files are read via Txn).
-var _ = os.Open
