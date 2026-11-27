@@ -22,6 +22,7 @@ const (
 	KindClean     Kind = "clean"
 	KindLossDup   Kind = "lossdup"
 	KindTruncated Kind = "truncated"
+	KindConflict  Kind = "conflict"
 )
 
 // Spec configures a generated stream.
@@ -82,6 +83,15 @@ func Build(s Spec) ([]Datagram, error) {
 				continue
 			}
 			emit(seq, ts, payload)
+		case KindConflict:
+			// Packet index 6 is received twice with the same sequence number
+			// but a different payload: a same-sequence conflict, not a dup.
+			emit(seq, ts, payload)
+			if i == 6 {
+				conflictPayload := append([]byte(nil), payload...)
+				conflictPayload[len(conflictPayload)-1] ^= 0xFF
+				emit(seq, ts, conflictPayload)
+			}
 		default:
 			emit(seq, ts, payload)
 		}

@@ -75,3 +75,25 @@ func TestBuildAACHeaderValid(t *testing.T) {
 		t.Fatalf("bad ADTS sync: %x", p.Payload[:2])
 	}
 }
+
+func TestBuildConflict(t *testing.T) {
+	dgs, _ := Build(Spec{Seed: 5, Kind: KindConflict, Codec: "opus", Rate: 48000, PacketCount: 8, PayloadSize: 16})
+	// One extra datagram from the conflicting re-reception.
+	if len(dgs) != 9 {
+		t.Fatalf("datagrams = %d, want 9", len(dgs))
+	}
+	// The two packets sharing seq 106 must carry different payloads.
+	var conflict []*rtp.Packet
+	for _, d := range dgs {
+		p := parse(t, d)
+		if p.SequenceNumber == 106 {
+			conflict = append(conflict, p)
+		}
+	}
+	if len(conflict) != 2 {
+		t.Fatalf("seq 106 receptions = %d, want 2", len(conflict))
+	}
+	if string(conflict[0].Payload) == string(conflict[1].Payload) {
+		t.Fatal("conflict packets must have different payloads")
+	}
+}

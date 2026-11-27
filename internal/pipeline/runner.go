@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/example/mediad/internal/audio"
@@ -58,8 +59,11 @@ func (r *Runner) Run(in Input) (Result, error) {
 	if order.Isolated {
 		item.Isolated = true
 		item.Status = report.StatusIsolated
-		item.Deviations = append(item.Deviations,
-			"sequence conflict: material isolated")
+		for _, cf := range order.Conflicts {
+			item.Deviations = append(item.Deviations,
+				fmt.Sprintf("sequence conflict: seq=%d offset=%d material isolated",
+					cf.Sequence, cf.Offset))
+		}
 		return Result{Item: item}, nil
 	}
 

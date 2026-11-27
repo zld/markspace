@@ -128,6 +128,24 @@ func TestCacheHitOnSecondRun(t *testing.T) {
 	}
 }
 
+func TestRunConflictIsolatesMaterial(t *testing.T) {
+	h := newRunner(t)
+	in := inputFrom(t, "conflict-1", "opus", fixture.KindConflict, 5)
+	res, err := h.r.Run(in)
+	if err != nil {
+		t.Fatalf("conflict must isolate, not error: %v", err)
+	}
+	if !res.Item.Isolated || res.Item.Status != report.StatusIsolated {
+		t.Fatalf("material not isolated: %+v", res.Item)
+	}
+	if res.Item.ConflictCount != 1 {
+		t.Fatalf("conflict count = %d, want 1", res.Item.ConflictCount)
+	}
+	if len(res.Item.Deviations) == 0 {
+		t.Fatal("isolation must record a deviation with sequence/offset")
+	}
+}
+
 func TestManifestDigestStableAcrossRuns(t *testing.T) {
 	h := newRunner(t)
 	in := inputFrom(t, "man-1", "opus", fixture.KindClean, 9)
