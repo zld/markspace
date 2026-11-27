@@ -126,9 +126,9 @@ func BuildIncompleteIndexMP4(timescale, frameDur uint32, samples [][]byte) []byt
 	// Hand-craft a broken stsz: SampleCount = n+1, entries = n.
 	n := uint32(len(samples))
 	var stsz bytes.Buffer
-	stsz.Write([]byte{0, 0, 0, 0})                    // version+flags
-	binary.Write(&stsz, binary.BigEndian, uint32(0))  // SampleSize = 0 (variable)
-	binary.Write(&stsz, binary.BigEndian, n+1)        // SampleCount (lies)
+	stsz.Write([]byte{0, 0, 0, 0})                   // version+flags
+	binary.Write(&stsz, binary.BigEndian, uint32(0)) // SampleSize = 0 (variable)
+	binary.Write(&stsz, binary.BigEndian, n+1)       // SampleCount (lies)
 	for _, s := range samples {
 		binary.Write(&stsz, binary.BigEndian, uint32(len(s)))
 	}
