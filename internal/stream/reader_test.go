@@ -98,8 +98,15 @@ func TestBackpressurePeakBuffer(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("producer never released after dequeue")
 	}
-	if q.Stats().PeakDepth != 2 {
-		t.Fatal("depth must never exceed capacity")
+	// The blocking enqueue refilled the queue back to its capacity; the
+	// invariant is that depth never exceeded the capacity at any point.
+	final := q.Stats()
+	if final.Depth > 2 || final.PeakDepth > 2 {
+		t.Fatalf("depth exceeded capacity: depth=%d peak=%d",
+			final.Depth, final.PeakDepth)
+	}
+	if final.PeakDepth != 2 {
+		t.Fatalf("peak depth=%d want 2", final.PeakDepth)
 	}
 }
 

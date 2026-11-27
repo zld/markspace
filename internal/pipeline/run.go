@@ -126,6 +126,7 @@ type TrackReport struct {
 	Damage        []DamageRange      `json:"damage_ranges"`
 	IndexReport   *index.Report      `json:"index_report,omitempty"`
 	Bytes         int64              `json:"bytes"`
+	InputSHA256   string             `json:"input_sha256"`
 }
 
 // Report is the full machine-readable pipeline output.
@@ -196,7 +197,7 @@ func (r *Runner) Run(ctx context.Context, runID string,
 			return nil, mediaerr.NewCoded(mediaerr.StagePipeline, ti.Track,
 				"pipeline.codec", "unsupported codec %q", ti.Codec)
 		}
-		tr, segs, peak, err := r.analyzeTrack(ctx, ti, cp, &replayed)
+		tr, segs, peak, err := r.analyzeTrack(ctx, ti, &replayed)
 		if err != nil {
 			return nil, err
 		}
@@ -225,7 +226,7 @@ func (r *Runner) Run(ctx context.Context, runID string,
 // analyzeTrack runs scan -> parse -> index for one track with stage-gated
 // WAL commits. Each stage output is journaled before the next begins.
 func (r *Runner) analyzeTrack(ctx context.Context, ti TrackInput,
-	cp *txn.Checkpoint, replayed *[]string) (TrackReport, []SegmentHash, int64, error) {
+	replayed *[]string) (TrackReport, []SegmentHash, int64, error) {
 	tr := TrackReport{Track: ti.Track, Codec: string(ti.Codec)}
 
 	scanner, err := codec.NewScanner(ti.Codec, ti.Framing)
@@ -245,6 +246,7 @@ func (r *Runner) analyzeTrack(ctx context.Context, ti TrackInput,
 		segments []SegmentHash
 	)
 	hasher := newSegmentHasher(ti.Track, r.cfg.SegmentBytes)
+	streamHash := sha256.New()
 	runErr := make(chan error, 1)
 	go func() { runErr <- reader.Run(ctx) }()
 
@@ -261,6 +263,7 @@ func (r *Runner) analyzeTrack(ctx context.Context, ti TrackInput,
 			return tr, nil, 0, mediaerr.NewCoded(mediaerr.StageStream, ti.Track,
 				"stream.too-large", "input exceeds cap")
 		}
+		streamHash.Write(chunk.Data)
 		segments = append(segments, hasher.push(chunk.Data, chunk.Start)...)
 		if err := scanner.Push(chunk.Data, chunk.Start, &units); err != nil {
 			reader.Fail(err)
@@ -277,13 +280,15 @@ func (r *Runner) analyzeTrack(ctx context.Context, ti TrackInput,
 	peak := reader.Stats().PeakBufferBytes
 	tr.Bytes = totalBytes
 	tr.UnitCount = len(units)
+	tr.InputSHA256 = hex.EncodeToString(streamHash.Sum(nil))
 
 	// --- scan stage commit (structure summary) ---
+	inputSHA := tr.InputSHA256
 	scanSummary := map[string]any{
 		"units": len(units), "bytes": totalBytes,
 		"keyframe_candidates": countKeyframes(units),
 	}
-	if err := r.commitStage(txn.StageScan, ti, scanSummary, totalBytes, cp, replayed); err != nil {
+	if err := r.commitStage(txn.StageScan, ti, scanSummary, totalBytes, inputSHA, replayed); err != nil {
 		return tr, nil, 0, err
 	}
 	if r.cfg.InterruptAfterStage == txn.StageScan {
@@ -298,7 +303,7 @@ func (r *Runner) analyzeTrack(ctx context.Context, ti TrackInput,
 	parseSummary := map[string]any{
 		"damage_ranges": len(tr.Damage), "keyframes": tr.KeyframeCount,
 	}
-	if err := r.commitStage(txn.StageParse, ti, parseSummary, totalBytes, cp, replayed); err != nil {
+	if err := r.commitStage(txn.StageParse, ti, parseSummary, totalBytes, inputSHA, replayed); err != nil {
 		return tr, nil, 0, err
 	}
 	if r.cfg.InterruptAfterStage == txn.StageParse {
@@ -315,7 +320,7 @@ func (r *Runner) analyzeTrack(ctx context.Context, ti TrackInput,
 		tr.IndexReport = rep
 	}
 	indexSummary := map[string]any{"index_entries": len(ti.Index)}
-	if err := r.commitStage(txn.StageIndex, ti, indexSummary, totalBytes, cp, replayed); err != nil {
+	if err := r.commitStage(txn.StageIndex, ti, indexSummary, totalBytes, inputSHA, replayed); err != nil {
 		return tr, nil, 0, err
 	}
 	if r.cfg.InterruptAfterStage == txn.StageIndex {
@@ -325,9 +330,11 @@ func (r *Runner) analyzeTrack(ctx context.Context, ti TrackInput,
 }
 
 // commitStage journals and commits one stage, skipping it when a matching
-// checkpoint already proves it completed in a prior run.
+// durable commit already proves it completed in a prior run. The WAL record
+// carries the real SHA-256 of the consumed input bytes and the processing
+// cursor, so recovery can verify the same input produced the artifact.
 func (r *Runner) commitStage(stage string, ti TrackInput,
-	summary map[string]any, cursor int64, _ *txn.Checkpoint,
+	summary map[string]any, cursor int64, inputSHA string,
 	replayed *[]string) error {
 	// A durable WAL commit is the source of truth: after a mid-run
 	// interruption the final checkpoint may not exist yet, but committed
@@ -344,7 +351,7 @@ func (r *Runner) commitStage(stage string, ti TrackInput,
 		stage, ti.Track, string(raw)))
 	entry, err := r.txnMgr.WAL().Append(txn.Entry{
 		Stage: stage, Track: ti.Track,
-		InputSHA256: "stream:" + ti.Track, Cursor: cursor,
+		InputSHA256: inputSHA, Cursor: cursor,
 		Summary: raw,
 	}, payload)
 	if err != nil {
@@ -359,7 +366,8 @@ func (r *Runner) commitStage(stage string, ti TrackInput,
 
 // buildDamage converts scanner gaps into merged structured ranges bounded by
 // valid units. Adjacent gaps of the same track/stage are merged; a gap never
-// extends past the next valid unit.
+// extends past the next valid unit. Each range also carries a time span on
+// the nominal frame grid, derived from the units bracketing the gap.
 func (r *Runner) buildDamage(ti TrackInput, gaps []codec.Gap,
 	units []codec.Unit) []DamageRange {
 	if len(gaps) == 0 {
@@ -373,11 +381,15 @@ func (r *Runner) buildDamage(ti TrackInput, gaps []codec.Gap,
 			Code: g.Code, Start: g.Start, End: g.End,
 		}
 		cur = clampToValid(cur, units)
+		cur.FromTick, cur.ToTick = damageTimeSpan(cur, units)
 		if n := len(out); n > 0 && out[n-1].Track == cur.Track &&
 			out[n-1].Stage == cur.Stage &&
 			out[n-1].End >= cur.Start {
 			if cur.End > out[n-1].End {
 				out[n-1].End = cur.End
+			}
+			if cur.ToTick > out[n-1].ToTick {
+				out[n-1].ToTick = cur.ToTick
 			}
 			if cur.Code != "" {
 				out[n-1].Code = cur.Code
@@ -404,6 +416,56 @@ func clampToValid(d DamageRange, units []codec.Unit) DamageRange {
 		d.End = d.Start
 	}
 	return d
+}
+
+// frameStepTicks is one nominal 30fps picture on the 90kHz analysis grid.
+const frameStepTicks int64 = 3000
+
+// damageTimeSpan maps a byte damage range onto the frame-grid time span of
+// the units immediately surrounding it. The lower bound is the timestamp of
+// the last valid unit at or before the gap; the upper bound is the first
+// valid unit after it. When no bracket exists the nearest unit's tick is used
+// so the range still carries a usable, non-negative time interval.
+func damageTimeSpan(d DamageRange, units []codec.Unit) (from, to int64) {
+	var before, after *codec.Unit
+	for i := range units {
+		u := &units[i]
+		if u.End <= d.Start {
+			before = u
+		}
+		if after == nil && u.Start >= d.End {
+			after = u
+		}
+	}
+	tickOf := func(u *codec.Unit, fallbackIdx int) int64 {
+		if u == nil {
+			return int64(fallbackIdx) * frameStepTicks
+		}
+		idx := unitIndex(units, u)
+		return int64(idx) * frameStepTicks
+	}
+	switch {
+	case before != nil && after != nil:
+		return tickOf(before, 0), tickOf(after, 0)
+	case before != nil:
+		t := tickOf(before, 0)
+		return t, t + frameStepTicks
+	case after != nil:
+		t := tickOf(after, 0)
+		return t, t + frameStepTicks
+	default:
+		return 0, frameStepTicks
+	}
+}
+
+// unitIndex returns the position of u within the parsed unit slice.
+func unitIndex(units []codec.Unit, u *codec.Unit) int {
+	for i := range units {
+		if &units[i] == u {
+			return i
+		}
+	}
+	return 0
 }
 
 func countKeyframes(units []codec.Unit) int {
@@ -504,10 +566,12 @@ func (h *segmentHasher) flush() *SegmentHash {
 	return &s
 }
 
+// combinedInputSHA folds each track's real content hash into one run-level
+// digest, so the checkpoint is bound to the exact bytes that were analyzed.
 func (r *Runner) combinedInputSHA(report *Report) string {
 	h := sha256.New()
 	for _, t := range report.Tracks {
-		fmt.Fprintf(h, "%s:%s:%d|", t.Track, t.Codec, t.Bytes)
+		fmt.Fprintf(h, "%s:%s:%d:%s|", t.Track, t.Codec, t.Bytes, t.InputSHA256)
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }
