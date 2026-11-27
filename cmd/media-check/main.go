@@ -195,8 +195,8 @@ func printReport(res *pipeline.Result) {
 		res.Recovery.Recovered, res.Recovery.Recoverable, res.Recovery.Rate)
 
 	r := res.RecoveryReport
-	fmt.Printf("rerun reuse: %d, republish: %d, missed-ledger: %d, quarantined: %d\n",
-		r.Reused, r.Republished, r.MissedLedger, r.Quarantined)
+	fmt.Printf("rerun reuse: %d, republish: %d, missed-ledger: %d, quarantined: %d (orphans detected: %d)\n",
+		r.Reused, r.Republished, r.MissedLedger, r.Quarantined, r.OrphansDetected)
 	if res.RollbackVersion != "" {
 		fmt.Printf("rollback: %s manifest=%s\n", res.RollbackVersion, short(res.RollbackManifest))
 	}

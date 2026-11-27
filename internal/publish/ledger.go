@@ -47,10 +47,21 @@ type Artifact struct {
 
 // RecoveryReport summarizes what a rerun did with on-disk artifacts.
 type RecoveryReport struct {
-	Reused       int `json:"reused"`
-	Republished  int `json:"republished"`
+	// Reused counts orphan artifacts verified against their expected digest
+	// and adopted into the ledger without rewriting their bytes.
+	Reused int `json:"reused"`
+	// Republished counts artifacts regenerated and published anew.
+	Republished int `json:"republished"`
+	// MissedLedger counts artifacts still unrecorded after recovery; a
+	// correct rerun leaves this at zero because every orphan is either
+	// adopted or explicitly quarantined.
 	MissedLedger int `json:"missed_ledger"`
-	Quarantined  int `json:"quarantined"`
+	// Quarantined counts artifacts whose digest failed verification.
+	Quarantined int `json:"quarantined"`
+	// OrphansDetected is the raw number of on-disk artifacts found without a
+	// committed ledger entry. It is diagnostic: all of them are then either
+	// reused or quarantined, so it never contributes to MissedLedger.
+	OrphansDetected int `json:"orphans_detected"`
 }
 
 // Ledger is the mutex-protected, file-backed publishing state.
@@ -155,7 +166,7 @@ func (l *Ledger) Recover(expectedDigests map[string]string) (RecoveryReport, err
 		if a.State == StateCommitted {
 			continue
 		}
-		rep.MissedLedger++
+		rep.OrphansDetected++
 		if l.reconcileLocked(k, a, expectedDigests, &rep) {
 			if err := l.persistLocked(); err != nil {
 				return rep, err
@@ -165,7 +176,30 @@ func (l *Ledger) Recover(expectedDigests map[string]string) (RecoveryReport, err
 	if err := l.reconcileDiskLocked(expectedDigests, &rep); err != nil {
 		return rep, err
 	}
+	// Final invariant: after reconciliation every artifact file must have a
+	// committed ledger entry. Anything still unrecorded is a genuine miss.
+	rep.MissedLedger = l.countUnrecordedLocked()
 	return rep, nil
+}
+
+// countUnrecordedLocked returns the number of artifact files with no ledger
+// entry after reconciliation has run.
+func (l *Ledger) countUnrecordedLocked() int {
+	files, err := os.ReadDir(filepath.Join(l.dir, "artifacts"))
+	if err != nil {
+		return 0
+	}
+	known := map[string]bool{}
+	for _, a := range l.artifacts {
+		known[filepath.Base(a.Path)] = true
+	}
+	missed := 0
+	for _, f := range files {
+		if !f.IsDir() && !known[f.Name()] {
+			missed++
+		}
+	}
+	return missed
 }
 
 // reconcileLocked verifies one uncommitted artifact and either commits it
@@ -215,7 +249,7 @@ func (l *Ledger) reconcileDiskLocked(expected map[string]string, rep *RecoveryRe
 		if f.IsDir() || known[f.Name()] {
 			continue
 		}
-		rep.MissedLedger++
+		rep.OrphansDetected++
 		full := filepath.Join(dir, f.Name())
 		data, err := os.ReadFile(full)
 		if err != nil {

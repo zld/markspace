@@ -83,8 +83,12 @@ func TestCrashThenRerunRecoveryCounters(t *testing.T) {
 	if rerun.RecoveryReport.Republished != 0 {
 		t.Fatalf("republished = %d, want 0", rerun.RecoveryReport.Republished)
 	}
-	if rerun.RecoveryReport.MissedLedger != 1 {
-		t.Fatalf("missed ledger = %d, want 1", rerun.RecoveryReport.MissedLedger)
+	// One orphan is detected and fully re-adopted, so nothing stays missing.
+	if rerun.RecoveryReport.OrphansDetected != 1 {
+		t.Fatalf("orphans detected = %d, want 1", rerun.RecoveryReport.OrphansDetected)
+	}
+	if rerun.RecoveryReport.MissedLedger != 0 {
+		t.Fatalf("missed ledger = %d, want 0", rerun.RecoveryReport.MissedLedger)
 	}
 	if rerun.RecoveryReport.Quarantined != 0 {
 		t.Fatalf("quarantined = %d, want 0", rerun.RecoveryReport.Quarantined)

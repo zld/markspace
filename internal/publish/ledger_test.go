@@ -79,15 +79,19 @@ func TestCrashThenRerunReusesArtifactWithoutRepublish(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The required assertions: reuse exactly 1, no republish, no missed.
+	// The required assertions: reuse exactly 1, no republish, no record left
+	// missing after recovery. The orphan is detected once and then adopted.
 	if rep.Reused != 1 {
 		t.Fatalf("reused = %d, want 1", rep.Reused)
 	}
 	if rep.Republished != 0 {
 		t.Fatalf("republished = %d, want 0", rep.Republished)
 	}
-	if rep.MissedLedger != 1 {
-		t.Fatalf("missed ledger entries = %d, want 1 detected", rep.MissedLedger)
+	if rep.OrphansDetected != 1 {
+		t.Fatalf("orphans detected = %d, want 1", rep.OrphansDetected)
+	}
+	if rep.MissedLedger != 0 {
+		t.Fatalf("missed ledger after recovery = %d, want 0", rep.MissedLedger)
 	}
 	if rep.Quarantined != 0 {
 		t.Fatalf("quarantined = %d, want 0", rep.Quarantined)
