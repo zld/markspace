@@ -23,6 +23,7 @@ const (
 	CodeIndexDuplicate   Code = "INDEX_DUPLICATE_KEY"
 	CodeGap              Code = "TRANSPORT_GAP"
 	CodeDuplicatePacket  Code = "TRANSPORT_DUPLICATE"
+	CodeWindowExceeded   Code = "TRANSPORT_OUT_OF_WINDOW"
 	CodeBudgetExceeded   Code = "BUDGET_EXCEEDED"
 	CodeLimitExceeded    Code = "LIMIT_EXCEEDED"
 	CodeAssetMissing     Code = "ASSET_MISSING"
