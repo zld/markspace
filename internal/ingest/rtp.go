@@ -79,6 +79,11 @@ func ParseRTP(spec TrackSpec, raw []byte, lastExt uint64) (*AudioPacket, error) 
 // placed in the 2^15-wide neighbourhood of lastExt.
 func ExtendSequence(seq uint16, lastExt uint64) uint64 {
 	const mod = 1 << 16
+	if lastExt == 0 {
+		// First observed packet defines the origin; no rollover context
+		// exists to disambiguate against.
+		return uint64(seq)
+	}
 	base := lastExt &^ (mod - 1)
 	cand := base | uint64(seq)
 	diff := int64(cand) - int64(lastExt)
