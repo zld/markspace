@@ -1,6 +1,7 @@
 package index
 
 import (
+	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
 	"os"
@@ -54,11 +55,8 @@ func (s *Store) Recover() (*Recovered, error) {
 			return nil, fmt.Errorf("%w: chunk %d header sequence %d",
 				clock.ErrResumeMismatch, seq, chunk.Seq)
 		}
-		want := checksumEntries(chunk.Entries)
-		if got := chunk.headerChecksum; got != want {
-			return nil, fmt.Errorf("%w: chunk %d checksum mismatch",
-				clock.ErrResumeMismatch, seq)
-		}
+		// Payload integrity was already proven against the embedded checksum
+		// inside readChunk, before any entry was decoded.
 		rec.Committed = append(rec.Committed, seq)
 		rec.Entries = append(rec.Entries, chunk.Entries...)
 		s.committed[seq] = true
@@ -90,24 +88,31 @@ func readChunk(path string) (decodedChunk, error) {
 	seq := binary.BigEndian.Uint64(data[40:48])
 	var checksum [32]byte
 	copy(checksum[:], data[48:headerSize])
-	count := binary.BigEndian.Uint32(data[headerSize : headerSize+4])
 
+	// Verify the raw payload bytes against the embedded checksum before any
+	// decoding, so a flipped byte is caught even when the result still parses.
+	payload := data[headerSize:]
+	if got := sha256.Sum256(payload); got != checksum {
+		return decodedChunk{}, fmt.Errorf("payload checksum mismatch")
+	}
+
+	count := binary.BigEndian.Uint32(payload[0:4])
 	out := decodedChunk{Chunk: Chunk{Seq: seq, Fingerprint: fp}, headerChecksum: checksum}
-	pos := headerSize + 4
+	pos := 4
 	for i := uint32(0); i < count; i++ {
-		if pos+entryWireSize > len(data) {
+		if pos+entryWireSize > len(payload) {
 			return decodedChunk{}, fmt.Errorf("entry %d truncated", i)
 		}
-		e, err := decodeEntry(data[pos : pos+entryWireSize])
+		e, err := decodeEntry(payload[pos : pos+entryWireSize])
 		if err != nil {
 			return decodedChunk{}, err
 		}
 		out.Entries = append(out.Entries, e)
 		pos += entryWireSize
 	}
-	if pos != len(data) {
+	if pos != len(payload) {
 		return decodedChunk{}, fmt.Errorf("%d trailing bytes after %d entries",
-			len(data)-pos, count)
+			len(payload)-pos, count)
 	}
 	return out, nil
 }

@@ -36,6 +36,7 @@ const (
 	FaultTruncateStbl         // cut the file inside the sample table
 	FaultBadSttsCount         // declare more stts entries than are present
 	FaultZeroTimescale        // write a zero mdhd timescale
+	FaultTruncateStsz         // keep box structure but drop trailing stsz rows
 )
 
 // boxWriter accumulates one box with its fourCC header.

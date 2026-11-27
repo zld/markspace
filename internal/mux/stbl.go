@@ -103,12 +103,20 @@ func (f *File) buildStbl(track int, fault Faults) []byte {
 		b.u32(1) // sample description index
 	})
 
+	// FaultTruncateStsz writes a fully parseable stsz box whose entry array
+	// covers fewer rows than the stts table declares. go-mp4 unmarshals the box
+	// successfully, then the demuxer's explicit count check names the first
+	// sample that has no size row, giving a precise track/sample location.
+	stszRowCount := n
+	if fault == FaultTruncateStsz && n > 4 {
+		stszRowCount = n - 3
+	}
 	stsz := childBox("stsz", func(b *boxWriter) {
 		b.fullBox(0)
-		b.u32(0) // variable sizes
-		b.u32(n)
-		for _, s := range tr.Samples {
-			size := len(s.Payload)
+		b.u32(0)                       // variable sizes
+		b.u32(stszRowCount)            // honest, but shorter than stts count
+		for i := uint32(0); i < stszRowCount; i++ {
+			size := len(tr.Samples[i].Payload)
 			if size == 0 {
 				size = 64
 			}

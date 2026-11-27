@@ -1,11 +1,11 @@
 package index
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
-	"hash"
 	"io"
 	"os"
 	"path/filepath"
@@ -88,8 +88,7 @@ func (s *Store) Write(c Chunk) error {
 	if err != nil {
 		return err
 	}
-	h := sha256.New()
-	if err := encodeChunk(f, h, c); err != nil {
+	if err := encodeChunk(f, c); err != nil {
 		f.Close()
 		os.Remove(tmp)
 		return err
@@ -111,9 +110,19 @@ func (s *Store) Write(c Chunk) error {
 	return nil
 }
 
-// encodeChunk writes header then length-prefixed entries, teeing bytes into h.
-func encodeChunk(w io.Writer, h hash.Hash, c Chunk) error {
-	checksum := checksumEntries(c.Entries)
+// encodeChunk writes header then length-prefixed entries. The checksum is the
+// SHA-256 of every payload byte that follows the header (the entry count plus
+// all entry rows), so recovery can verify the on-disk bytes before decoding.
+func encodeChunk(w io.Writer, c Chunk) error {
+	var payload bytes.Buffer
+	var lenb [4]byte
+	binary.BigEndian.PutUint32(lenb[:], uint32(len(c.Entries)))
+	payload.Write(lenb[:])
+	for _, e := range c.Entries {
+		payload.Write(encodeEntry(e))
+	}
+	checksum := sha256.Sum256(payload.Bytes())
+
 	header := make([]byte, 0, headerSize)
 	header = append(header, []byte(chunkMagic)...)
 	header = append(header, c.Fingerprint[:]...)
@@ -124,33 +133,6 @@ func encodeChunk(w io.Writer, h hash.Hash, c Chunk) error {
 	if _, err := w.Write(header); err != nil {
 		return err
 	}
-	h.Write(header)
-
-	var lenb [4]byte
-	binary.BigEndian.PutUint32(lenb[:], uint32(len(c.Entries)))
-	if _, err := w.Write(lenb[:]); err != nil {
-		return err
-	}
-	h.Write(lenb[:])
-	for _, e := range c.Entries {
-		raw := encodeEntry(e)
-		if _, err := w.Write(raw); err != nil {
-			return err
-		}
-		h.Write(raw)
-	}
-	return nil
-}
-
-func checksumEntries(entries []Entry) [32]byte {
-	h := sha256.New()
-	var lenb [4]byte
-	binary.BigEndian.PutUint32(lenb[:], uint32(len(entries)))
-	h.Write(lenb[:])
-	for _, e := range entries {
-		h.Write(encodeEntry(e))
-	}
-	var out [32]byte
-	copy(out[:], h.Sum(nil))
-	return out
+	_, err := w.Write(payload.Bytes())
+	return err
 }
