@@ -8,6 +8,7 @@ import (
 	"tracecheck/internal/clock"
 	"tracecheck/internal/ebml"
 	"tracecheck/internal/index"
+	"tracecheck/internal/mkv"
 	"tracecheck/internal/serr"
 )
 
@@ -156,4 +157,66 @@ func TestCorruptCheckpointOnDisk(t *testing.T) {
 	if _, statErr := os.Stat(filepath.Join(dir, "input.mkv")); statErr == nil {
 		t.Fatal("unexpected file")
 	}
+}
+
+func TestResumeDetectsHashMismatch(t *testing.T) {
+	data := fixture(t)
+	first, _ := Run(data, tb(), "1ms", Options{ChunkSize: 2}, nil)
+	prior := first.Checkpoint("input.mkv", first.MetadataDigest)
+	prior.SegmentHashes[1] = "tampered"
+	_, err := Run(data, tb(), "1ms", Options{ChunkSize: 2, Resume: true}, prior)
+	if serr.CodeOf(err) != serr.CodeCheckpointCorrupt {
+		t.Fatalf("tampered hash not rejected: %v", err)
+	}
+}
+
+func TestResumeDetectsOffsetMismatch(t *testing.T) {
+	data := fixture(t)
+	first, _ := Run(data, tb(), "1ms", Options{ChunkSize: 2}, nil)
+	prior := first.Checkpoint("input.mkv", first.MetadataDigest)
+	prior.CompletedOffset = prior.CompletedOffset - 1
+	_, err := Run(data, tb(), "1ms", Options{ChunkSize: 2, Resume: true}, prior)
+	if serr.CodeOf(err) != serr.CodeCheckpointCorrupt {
+		t.Fatalf("wrong completed offset not rejected: %v", err)
+	}
+}
+
+func TestResumePartialPrefix(t *testing.T) {
+	data := fixture(t)
+	first, _ := Run(data, tb(), "1ms", Options{ChunkSize: 1}, nil)
+	// Simulate a crash after the first of four chunks: keep one chunk and its
+	// boundary, then resume; only the remaining three are reprocessed.
+	partial := first.Checkpoint("input.mkv", first.MetadataDigest)
+	partial.CompletedChunks = 1
+	partial.SegmentHashes = partial.SegmentHashes[:1]
+	// The boundary must match where the first chunk ends and no further.
+	partial.CompletedOffset = chunkBoundary(t, data, 1)
+	second, err := Run(data, tb(), "1ms", Options{ChunkSize: 1, Resume: true}, partial)
+	if err != nil {
+		t.Fatalf("partial resume: %v", err)
+	}
+	if second.Reprocessed != second.TotalChunks-1 {
+		t.Fatalf("reprocessed=%d total=%d", second.Reprocessed, second.TotalChunks)
+	}
+	if second.IndexDigest != first.IndexDigest {
+		t.Fatal("partial resume changed digest")
+	}
+}
+
+// chunkBoundary recomputes the byte end of the first n single-record chunks by
+// running the same parse/index pipeline the batch uses.
+func chunkBoundary(t *testing.T, data []byte, n int) int64 {
+	t.Helper()
+	doc, err := ebml.Parse(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocks, err := mkv.ParseBlocks(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracks, _ := mkv.ParseTracks(doc)
+	idx, _ := index.Build(blocks, tb(), tracks.TimestampScale, "1ms")
+	chunks := splitChunks(idx, data, 1)
+	return endOffset(chunks, n)
 }

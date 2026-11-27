@@ -43,6 +43,7 @@ type Summary struct {
 	MetadataDigest  string
 	SegmentHashes   []string
 	Records         int
+	CompletedOffset int64 // byte position indexed through the confirmed chunks
 }
 
 // Run executes the pipeline over an in-memory input. It parses, maps and
@@ -101,9 +102,25 @@ func Run(data []byte, tb clock.Timebase, scaleLabel string, opts Options, prior 
 				prior.IndexDigest, sum.IndexDigest)
 		}
 		startChunk = prior.CompletedChunks
-		if startChunk > len(chunks) {
+		if startChunk > len(chunks) || startChunk > len(prior.SegmentHashes) {
 			return nil, serr.New(serr.CodeCheckpointCorrupt,
 				"checkpoint confirms %d chunks but only %d exist", startChunk, len(chunks))
+		}
+		// The confirmed hashes must reproduce exactly; a mismatch means the
+		// checkpoint was written for a different byte layout.
+		for i := 0; i < startChunk; i++ {
+			if prior.SegmentHashes[i] != chunks[i].SegmentHash {
+				return nil, serr.New(serr.CodeCheckpointCorrupt,
+					"checkpoint segment hash %d does not match the input", i)
+			}
+		}
+		// The recorded byte boundary must equal where the confirmed chunks
+		// end, or resume would skip blocks the checkpoint never indexed.
+		wantEnd := endOffset(chunks, startChunk)
+		if prior.CompletedOffset != wantEnd {
+			return nil, serr.New(serr.CodeCheckpointCorrupt,
+				"checkpoint completed offset %d does not match chunk boundary %d",
+				prior.CompletedOffset, wantEnd)
 		}
 		sum.SegmentHashes = append(sum.SegmentHashes, prior.SegmentHashes...)
 		sum.CompletedChunks = prior.CompletedChunks
@@ -113,10 +130,25 @@ func Run(data []byte, tb clock.Timebase, scaleLabel string, opts Options, prior 
 		sum.CompletedChunks = i + 1
 		sum.Reprocessed++
 	}
+	sum.CompletedOffset = endOffset(chunks, sum.CompletedChunks)
 	if sum.CompletedChunks > len(sum.SegmentHashes) {
 		sum.CompletedChunks = len(sum.SegmentHashes)
 	}
 	return sum, nil
+}
+
+// endOffset returns the highest sample end among the first n chunks, which is
+// the byte position up to which the checkpoint has indexed the input.
+func endOffset(chunks []Chunk, n int) int64 {
+	var end int64
+	for i := 0; i < n && i < len(chunks); i++ {
+		for _, r := range chunks[i].Records {
+			if r.SampleEnd > end {
+				end = r.SampleEnd
+			}
+		}
+	}
+	return end
 }
 
 // splitChunks divides the ordered index records into chunks of at most size
@@ -189,7 +221,7 @@ func (s *Summary) Checkpoint(inputPath, metadataDigest string) *index.Checkpoint
 		InputPath:       inputPath,
 		InputSHA256:     s.InputSHA256,
 		InputSize:       s.InputSize,
-		CompletedOffset: s.InputSize,
+		CompletedOffset: s.CompletedOffset,
 		CompletedChunks: s.CompletedChunks,
 		TotalChunks:     s.TotalChunks,
 		IndexDigest:     s.IndexDigest,
