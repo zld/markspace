@@ -89,19 +89,18 @@ seg-3.m4s
 	if codes[fault.CodeUnknownTag] != 1 {
 		t.Fatalf("unknown tag=%d", codes[fault.CodeUnknownTag])
 	}
-	// The missing-duration URI is not published; the duplicate is isolated but
-	// keeps its declared range so later segments stay on the presentation
-	// timeline.
+	// The missing-duration URI is not published. The duplicate is isolated and
+	// does not advance the timeline, so segment 3 keeps its declared position.
 	if len(m.Segments) != 3 {
 		t.Fatalf("segments=%d want 3", len(m.Segments))
 	}
 	if m.Segments[0].Isolated || !m.Segments[1].Isolated || m.Segments[2].Isolated {
 		t.Fatalf("isolation flags: %v %v %v", m.Segments[0].Isolated, m.Segments[1].Isolated, m.Segments[2].Isolated)
 	}
-	if m.Segments[1].Start.String() != "4" || m.Segments[1].End.String() != "8" {
+	if m.Segments[1].Start.String() != "4" || m.Segments[1].End.String() != "4" {
 		t.Fatalf("duplicate range=%s..%s", m.Segments[1].Start, m.Segments[1].End)
 	}
-	if m.Segments[2].Start.String() != "8" || m.Segments[2].End.String() != "12" {
+	if m.Segments[2].Start.String() != "4" || m.Segments[2].End.String() != "8" {
 		t.Fatalf("timeline advanced incorrectly: %s..%s", m.Segments[2].Start, m.Segments[2].End)
 	}
 }

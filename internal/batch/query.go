@@ -60,6 +60,7 @@ func chunkSizeFromState(workDir string) int {
 // ResumeSummary is printed by the resume command.
 type ResumeSummary struct {
 	CheckpointLine   string
+	ChunkSize        int
 	ResumeChunk      int
 	TotalChunks      int
 	Reused           int
@@ -87,6 +88,7 @@ func (r *Run) SummariseResume(workDir string) ResumeSummary {
 	}
 	if st != nil {
 		s.CheckpointLine = st.Summarize()
+		s.ChunkSize = st.ChunkSize
 	}
 	return s
 }

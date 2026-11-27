@@ -266,14 +266,15 @@ func hlsPlaylist(n int) string {
 			// The discontinuity precedes segment 5, where the first sample is
 			// deliberately not a keyframe.
 			b.WriteString("#EXT-X-DISCONTINUITY\n#EXTINF:4.000,\n")
-		case i == 7:
-			// Planted anomaly: duplicate reference to the previous segment.
-			b.WriteString("#EXTINF:4.000,\n")
-			fmt.Fprintf(&b, "seg-%d.m4s\n", i)
 		default:
 			b.WriteString("#EXTINF:4.000,\n")
 		}
 		fmt.Fprintf(&b, "seg-%d.m4s\n", i+1)
+		if i == 0 {
+			// Planted anomaly: a second reference to segment 1. It is isolated
+			// and consumes no time, so later segments keep their positions.
+			b.WriteString("#EXTINF:4.000,\nseg-1.m4s\n")
+		}
 	}
 	// Planted anomaly: an unknown tag between segments.
 	b.WriteString("#EXT-X-CUSTOM-NOTE:generated\n")
@@ -300,4 +301,31 @@ func LoadExpectations(path string) (map[string]Expectation, error) {
 		return nil, err
 	}
 	return m, nil
+}
+
+// DetectLayout rebuilds the layout description for an already-generated input
+// tree, so a repeated demo run does not regenerate fixtures.
+func DetectLayout(inputDir string) (*Layout, error) {
+	l := &Layout{
+		Root: filepath.Dir(inputDir), InputDir: inputDir,
+		DASHDir:  filepath.Join(inputDir, "dash"),
+		HLSDir:   filepath.Join(inputDir, "hls"),
+		InitPath: filepath.Join(inputDir, "dash", "init.mp4"),
+		Reps:     []string{"v720", "v360"},
+		Expect:   map[string]Expectation{},
+	}
+	for _, rel := range []string{"dash/manifest.mpd", "hls/prog.m3u8"} {
+		p := filepath.Join(inputDir, filepath.FromSlash(rel))
+		if _, err := os.Stat(p); err != nil {
+			return nil, err
+		}
+		l.Manifest = append(l.Manifest, rel)
+	}
+	exp, err := LoadExpectations(filepath.Join(inputDir, "expectations.json"))
+	if err != nil {
+		return nil, err
+	}
+	l.Expect = exp
+	l.Segments = len(exp)
+	return l, nil
 }

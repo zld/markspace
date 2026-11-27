@@ -78,6 +78,12 @@ func Execute(opts Options, mode Mode) (*Run, error) {
 	if err != nil {
 		return nil, err
 	}
+	// On resume the chunk size is fixed by the interrupted run: a different
+	// size would shift every boundary and invalidate all committed digests.
+	if mode == ModeResume && state.ChunkSize > 0 && state.ChunkSize != opts.ChunkSize {
+		run.Counts.Warnings = append(run.Counts.Warnings,
+			fmt.Sprintf("chunk size %d differs from the checkpoint's %d", opts.ChunkSize, state.ChunkSize))
+	}
 	state.ChunkSize = opts.ChunkSize
 	state.Chunks = chunks
 	if err := state.Save(opts.WorkDir); err != nil {

@@ -5,8 +5,6 @@
 package batch
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -152,36 +150,6 @@ func CollectUnits(inputDir string, maxBytes int64) ([]Unit, fault.List, error) {
 	return units, issues, nil
 }
 
-// ArtifactName derives a deterministic artifact path. The content digest is
-// part of the name, so identical content maps to the same path and changed
-// content can never silently overwrite a published artifact.
-func ArtifactName(rep, ref, contentSHA string, start, end clock.Time) string {
-	base := filepath.Base(ref)
-	ext := filepath.Ext(base)
-	stem := strings.TrimSuffix(base, ext)
-	if ext == "" {
-		ext = ".bin"
-	}
-	short := contentSHA
-	if len(short) > 12 {
-		short = short[:12]
-	}
-	if short == "" {
-		short = "nohash"
-	}
-	return filepath.ToSlash(filepath.Join(sanitize(rep), fmt.Sprintf("%s-%s-%s-%s%s", stem, start, end, short, ext)))
-}
-
-func sanitize(s string) string {
-	s = strings.ReplaceAll(s, string(filepath.Separator), "-")
-	s = strings.ReplaceAll(s, "/", "-")
-	s = strings.ReplaceAll(s, "..", "-")
-	if s == "" {
-		return "default"
-	}
-	return s
-}
-
 type expected struct {
 	SHA256 string `json:"sha256"`
 	Size   int64  `json:"size"`
@@ -197,11 +165,4 @@ func loadExpectations(path string) (map[string]expected, error) {
 		return nil, err
 	}
 	return m, nil
-}
-
-// digestFor hashes a unit identity for checkpoint comparisons.
-func digestFor(u Unit) string {
-	h := sha256.New()
-	fmt.Fprintf(h, "%s|%s|%s|%s|%s|%s", u.Manifest, u.Representation, u.Ref, u.Start, u.End, u.Path)
-	return hex.EncodeToString(h.Sum(nil))
 }

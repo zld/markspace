@@ -55,6 +55,8 @@ type Counts struct {
 	Recomputed   int `json:"recomputed"`
 	Revalidated  int `json:"revalidated"`
 	NewArtifacts int `json:"newArtifacts"`
+	// Warnings carries operator-facing notes that are not media anomalies.
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // Build converts a fault list and optional recovery annotations into a report.

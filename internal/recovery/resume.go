@@ -80,7 +80,7 @@ func (c ChunkPlan) Count() int {
 type Plan struct {
 	Chunks      []ChunkPlan
 	ResumeChunk int
-	// ReusedArtifacts counts artifacts that will not be rewritten.
+	// ReusedArtifacts counts artifacts already committed and left untouched.
 	ReusedArtifacts int
 	// AdoptedArtifacts counts artifacts recorded from disk without rewriting.
 	AdoptedArtifacts int
@@ -133,7 +133,6 @@ func Build(workDir string, store *index.Store, inputs []ChunkInput) Plan {
 			p.ReusedArtifacts += len(cp.Artifacts)
 		case Adopt:
 			p.AdoptedArtifacts += len(cp.Artifacts)
-			p.ReusedArtifacts += len(cp.Artifacts)
 		case Recompute:
 			p.RecomputedSegments += cp.Count()
 		case Revalidate:

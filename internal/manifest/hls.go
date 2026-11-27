@@ -134,13 +134,18 @@ func ParseHLSBytes(name string, data []byte) (*Manifest, error) {
 			continue
 		}
 		prev, dup := seen[text]
-		seg := Segment{
-			Representation: repName, URL: text,
-			Start: cur, End: cur.Add(*p.duration), Duration: *p.duration, Declared: true,
-			Index: index, Line: line, Offset: lineOffset, Discontinuity: p.disc,
-			Isolated: dup,
-		}
 		if dup {
+			// A duplicate reference is isolated and does not advance the
+			// presentation timeline: it describes no new media, so making it
+			// consume time would silently shift every later segment. It is kept
+			// in the segment list as a zero-length entry so the report can name
+			// it at its exact position.
+			seg := Segment{
+				Representation: repName, URL: text,
+				Start: cur, End: cur, Duration: clock.Zero, Declared: true,
+				Index: index, Line: line, Offset: lineOffset, Isolated: true,
+			}
+			m.Segments = append(m.Segments, seg)
 			m.Issues = append(m.Issues, fault.Issue{
 				Code: fault.CodeDuplicateRef, Severity: fault.SeverityError, Action: fault.ActionIsolated,
 				Message: fmt.Sprintf("duplicate segment reference; first seen on line %d", prev),
@@ -150,8 +155,14 @@ func ParseHLSBytes(name string, data []byte) (*Manifest, error) {
 					Start: seg.Start, End: seg.End,
 				},
 			})
-		} else {
-			seen[text] = line
+			p = pending{}
+			continue
+		}
+		seen[text] = line
+		seg := Segment{
+			Representation: repName, URL: text,
+			Start: cur, End: cur.Add(*p.duration), Duration: *p.duration, Declared: true,
+			Index: index, Line: line, Offset: lineOffset, Discontinuity: p.disc,
 		}
 		m.Segments = append(m.Segments, seg)
 		cur = seg.End
