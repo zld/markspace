@@ -84,10 +84,15 @@ func (r *Representation) Failed() bool { return r.failed || r.ec.HasFatal() }
 // anchor is a recoverable condition that flags the representation until
 // media timing arrives.
 func (r *Representation) ObservePCR(rawPCR int64, localTicks27 int64, offset int64) {
-	ticks, _, err := r.pcrUnwrap.Unwrap(rawPCR)
+	ticks, wrapped, err := r.pcrUnwrap.Unwrap(rawPCR)
 	if err != nil {
 		r.record(err, offset)
 		return
+	}
+	if wrapped {
+		r.ec.Add(mediaerr.Recoverable(mediaerr.CodePCRWrap, r.cfg.KeyframePID, offset,
+			"PCR crossed the 42-bit wrap boundary",
+			"expand with accumulated wrap count; continue timeline"))
 	}
 	obs, err := r.drift.Observe(ticks, localTicks27, &r.ec, r.cfg.KeyframePID, offset)
 	if err != nil {
