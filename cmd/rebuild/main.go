@@ -80,6 +80,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "argument error: -out is required")
 		return exitInput
 	}
+	if clean := filepath.Clean(opts.out); clean == "." || clean == "/" {
+		fmt.Fprintf(stderr, "argument error: refusing output root %q\n", opts.out)
+		return exitInput
+	}
 	switch {
 	case opts.recover:
 		return doRecover(opts, stdout, stderr)

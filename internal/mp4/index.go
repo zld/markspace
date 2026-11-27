@@ -7,7 +7,6 @@
 package mp4
 
 import (
-	"errors"
 	"io"
 	"os"
 	"sort"
@@ -144,8 +143,8 @@ func indexTrack(tr *Track, pt *mp4.Track, all mp4.Tracks, rawSize int64, source 
 		return
 	}
 	// Expand chunk offsets and sample sizes into absolute byte ranges. A
-	// sample whose range does not fit the file is dropped and reported;
-	// every following sample is then suspect, so the track is marked invalid.
+	// sample whose range does not fit the file is dropped and reported, and
+	// the track is marked invalid so no partial track is ever published.
 	offsets := make([]int64, 0, len(pt.Samples))
 	cur := int64(0)
 	si := 0
@@ -273,6 +272,3 @@ func trackHandlers(r io.ReadSeeker) (map[uint32]string, error) {
 	}
 	return out, nil
 }
-
-// ErrNoTracks is returned when the file has no indexed tracks at all.
-var ErrNoTracks = errors.New("mp4 has no tracks")

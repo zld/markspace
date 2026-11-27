@@ -227,3 +227,60 @@ func TestValidateSpan(t *testing.T) {
 		t.Fatalf("empty span rejected: %v", err)
 	}
 }
+
+func TestFrameStartIsStrictlyIncreasing(t *testing.T) {
+	for _, r := range []Rate{Rate24, Rate25, Rate2997, Rate50, {Num: 24000, Den: 1001}} {
+		prev := int64(-1)
+		for f := int64(0); f < 5000; f++ {
+			ns, err := frameStartNs(r, f)
+			if err != nil {
+				t.Fatalf("%s frame %d: %v", r, f, err)
+			}
+			if ns <= prev {
+				t.Fatalf("%s frame %d start %d not after %d", r, f, ns, prev)
+			}
+			prev = ns
+		}
+	}
+}
+
+func TestFrameDurationMatchesRate(t *testing.T) {
+	for _, r := range []Rate{Rate24, Rate25, Rate2997, Rate50} {
+		d := r.FrameDurationNs()
+		want := int64(1_000_000_000) * r.Den / r.Num
+		// Allow one nanosecond of rounding.
+		if d < want-1 || d > want+1 {
+			t.Errorf("%s duration %d, want about %d", r, d, want)
+		}
+	}
+}
+
+func TestCheckedAddOverflow(t *testing.T) {
+	if _, err := CheckedAdd(1<<62, 1<<62); !model.IsCode(err, model.CodeOverflow) {
+		t.Fatalf("overflow undetected: %v", err)
+	}
+	if got, err := CheckedAdd(5, 7); err != nil || got != 12 {
+		t.Fatalf("CheckedAdd(5,7) = %d, %v", got, err)
+	}
+}
+
+func TestTimecodeHoursOmittedIsRejected(t *testing.T) {
+	// SRT-style short forms are not valid SMPTE labels.
+	for _, in := range []string{"00:01,000", "00:00:01", "01:00;00;00;00"} {
+		if _, err := ParseTimecode(in, Rate2997); err == nil {
+			t.Errorf("%q accepted", in)
+		}
+	}
+}
+
+func TestNominalRate(t *testing.T) {
+	cases := map[Rate]int64{
+		Rate24: 24, Rate25: 25, Rate2997: 30, Rate50: 50,
+		{Num: 24000, Den: 1001}: 24,
+	}
+	for r, want := range cases {
+		if got := r.Nominal(); got != want {
+			t.Errorf("%s nominal %d, want %d", r, got, want)
+		}
+	}
+}

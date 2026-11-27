@@ -20,19 +20,20 @@ func TestDefaultMP4Indexes(t *testing.T) {
 		t.Fatalf("tracks %+v", idx.Tracks)
 	}
 	tr := idx.Tracks[0]
-	if len(tr.Samples) != 6 {
+	if len(tr.Samples) != 5 {
 		t.Fatalf("samples %d", len(tr.Samples))
 	}
 	if tr.Handler != "vide" {
 		t.Fatalf("handler %q", tr.Handler)
 	}
-	if tr.Samples[1].TimeNs != 40_000_000 || tr.Samples[1].DTS != 512 {
+	// One sample per second at a 12800 timescale.
+	if tr.Samples[1].TimeNs != 1_000_000_000 || tr.Samples[1].DTS != 12800 {
 		t.Fatalf("sample 1 %+v", tr.Samples[1])
 	}
-	if tr.Samples[0].DurationNs != 40_000_000 {
+	if tr.Samples[0].DurationNs != 1_000_000_000 {
 		t.Fatalf("duration %d", tr.Samples[0].DurationNs)
 	}
-	if tr.Samples[5].Offset+int64(tr.Samples[5].Size) > int64(len(raw)) {
+	if tr.Samples[4].Offset+int64(tr.Samples[4].Size) > int64(len(raw)) {
 		t.Fatalf("sample outside file")
 	}
 }

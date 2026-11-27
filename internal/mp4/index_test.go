@@ -23,15 +23,18 @@ func TestReadHealthyTrack(t *testing.T) {
 		t.Fatalf("tracks %d", len(idx.Tracks))
 	}
 	tr := idx.Tracks[0]
-	if !tr.Valid || len(tr.Samples) != 6 || len(tr.Errors) != 0 {
+	if !tr.Valid || len(tr.Samples) != 5 || len(tr.Errors) != 0 {
 		t.Fatalf("track %+v", tr)
 	}
 	for i, s := range tr.Samples {
 		if s.Index != i || s.TrackID != tr.TrackID {
 			t.Fatalf("sample %d metadata %+v", i, s)
 		}
-		if s.TimeNs != int64(i)*40_000_000 {
+		if s.TimeNs != int64(i)*1_000_000_000 {
 			t.Fatalf("sample %d time %d", i, s.TimeNs)
+		}
+		if s.DurationNs != 1_000_000_000 {
+			t.Fatalf("sample %d duration %d", i, s.DurationNs)
 		}
 		if s.CTS != s.DTS {
 			t.Fatalf("sample %d cts %d dts %d", i, s.CTS, s.DTS)
