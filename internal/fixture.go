@@ -150,6 +150,23 @@ func generateNormal(seed int64) (*Fixture, error) {
 	fx.Trace.MP4 = &MP4Ref{FileName: fx.MP4Name, Sha256: sha256Hex(mp4)}
 	// Declared duration is n*20ms exactly: a clean run must align at 0ms.
 	fx.Trace.Streams[0].DeclaredDurationMs = uint64(n * 20)
-	fx.Notes = append(fx.Notes, "51 in-order 20ms Opus packets with two bandwidth changes")
+	// The normal case also carries an AAC track so both duration sources are
+	// exercised end to end in the reference report.
+	aacStream, aacDurs, aacSizes := buildAACStream(rng, tr.Events, n, 900)
+	tr.Streams = append(tr.Streams, *aacStream)
+	multi, err := WriteMP4Tracks([]AudioTrackSpec{
+		{Codec: CodecOpus, Timescale: 48000, Durations: mp4durs, Sizes: mp4sizes,
+			OpusPreSkip: 312, OpusRate: 48000, SampleRate: 48000, Channels: 2},
+		{Codec: CodecAAC, Timescale: 48000, Durations: aacDurs, Sizes: aacSizes,
+			AACASC: []byte{0x11, 0x90}, SampleRate: 48000, Channels: 2},
+	})
+	if err != nil {
+		return nil, err
+	}
+	fx.MP4Bytes = multi
+	fx.Trace.MP4 = &MP4Ref{FileName: fx.MP4Name, Sha256: sha256Hex(multi)}
+	fx.Notes = append(fx.Notes,
+		"51 in-order 20ms Opus packets with two bandwidth changes",
+		"51 AAC-LC AUs (1024 samples each) whose AU durations are cross-checked against the MP4 stts table")
 	return fx, nil
 }

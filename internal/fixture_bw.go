@@ -38,3 +38,20 @@ func payloadBytesFor(targetBps int64, mediaDurationMs int64) int {
 	}
 	return n
 }
+
+// aacPayloadBytesFor sizes an AAC AU so the resulting per-AU bitrate matches
+// targetBps, accounting for the 2-byte AU-headers-length and 2-byte AU header
+// that ride in each RTP payload. The interval is in ticks of a 1024-sample AU
+// at 48 kHz, so the AU cadence is 21.333ms rather than a whole millisecond.
+func aacPayloadBytesFor(targetBps int64) int {
+	if targetBps <= 0 {
+		return 1
+	}
+	// bits needed per 1024-sample AU = target * 1024 / 48000.
+	bits := targetBps * 1024 / 48000
+	n := int(bits/8) - 4
+	if n < 1 {
+		n = 1
+	}
+	return n
+}
