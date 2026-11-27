@@ -127,6 +127,28 @@ func TestIndependentTracksStillProduce(t *testing.T) {
 	}
 }
 
+func TestDependencyCycleBlocked(t *testing.T) {
+	m := runDemo(t)
+	for _, id := range []string{"cyc-a", "cyc-b"} {
+		tr := track(m, id)
+		if tr == nil || tr.Status != report.StatusBlocked {
+			t.Fatalf("%s must be blocked, got %+v", id, tr)
+		}
+		hasCycle := false
+		for _, f := range tr.Failures {
+			if f.Code == model.ErrGraphCycle {
+				hasCycle = true
+			}
+		}
+		if !hasCycle {
+			t.Fatalf("%s missing graph-cycle failure: %+v", id, tr.Failures)
+		}
+		if tr.Decision == nil || tr.Decision.Eligible {
+			t.Fatalf("%s must not get an eligible config", id)
+		}
+	}
+}
+
 func TestRerunDigestStable(t *testing.T) {
 	first := runDemo(t)
 	second := runDemo(t)

@@ -48,10 +48,17 @@ func Run(in Input) report.Manifest {
 		byID[t.Meta.TrackID] = t
 	}
 
+	cycleFailure := order.CycleFailure()
+
 	// 2. Per-track processing in graph order for stable sequencing.
 	reports := make([]report.TrackReport, 0, len(in.Tracks))
 	process := func(t model.TrackInput) {
 		tl := buildTimeline(t)
+		if cycleFailure != nil && blocked[t.Meta.TrackID] {
+			f := *cycleFailure
+			f.TrackID = t.Meta.TrackID
+			tl.Failures = append(tl.Failures, f)
+		}
 		rep := spec.Validate(t.Meta, in.Target)
 		decision := config.Derive(t.Meta, tl, rep, in.Target, schedulable[t.Meta.TrackID])
 		tr := report.BuildTrackReport(tl, decision, blocked[t.Meta.TrackID])
