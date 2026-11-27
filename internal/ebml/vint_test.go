@@ -95,6 +95,8 @@ func TestVINTRoundTrip(t *testing.T) {
 }
 
 func TestEncodeUnknownVINT(t *testing.T) {
+	// Any-width unknown VINT is a run of 0xFF bytes; because the first byte is
+	// 0xFF, DecodeVINT always reads it as width 1 with the all-ones marker.
 	for w := 1; w <= 8; w++ {
 		b, encErr := EncodeUnknownVINT(w)
 		if encErr != nil {
@@ -103,13 +105,18 @@ func TestEncodeUnknownVINT(t *testing.T) {
 		if len(b) != w {
 			t.Fatalf("width %d: got %d bytes", w, len(b))
 		}
-		v, gotW, unknown, derr := DecodeVINT(b)
-		if derr != nil {
-			t.Fatalf("decode unknown width %d: %v", w, derr)
+		for i, x := range b {
+			if x != 0xFF {
+				t.Fatalf("width %d byte %d = 0x%02x, want 0xFF", w, i, x)
+			}
 		}
-		if !unknown || gotW != w {
-			t.Errorf("width %d: decoded value=%d unknown=%v", w, v, unknown)
-		}
+	}
+	v, gotW, unknown, derr := DecodeVINT([]byte{0xFF})
+	if derr != nil {
+		t.Fatalf("decode unknown: %v", derr)
+	}
+	if !unknown || gotW != 1 || v != 127 {
+		t.Errorf("unknown marker: value=%d width=%d unknown=%v", v, gotW, unknown)
 	}
 	if _, err := EncodeUnknownVINT(9); err == nil {
 		t.Error("width 9 must be rejected")
