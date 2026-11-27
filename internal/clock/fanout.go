@@ -68,20 +68,27 @@ func recoverTrack(repID string, tr model.Track, cfg FanoutConfig) model.Recovere
 	// half the 32-bit carrier range is an unambiguous carrier wrap even when
 	// the modular delta (e.g. 0xFFFFFFF8 -> 0x00000002) stays positive.
 	fullWidthWrap := 0
+	exceedsCarrier := false
 	for i := 1; i < n; i++ {
 		if tr.Samples[i].Dts+halfRange < tr.Samples[i-1].Dts && tr.Samples[i].Dts < halfRange {
 			fullWidthWrap++
 		}
 	}
+	for _, s := range tr.Samples {
+		if s.Dts > uint64(^uint32(0)) {
+			exceedsCarrier = true
+			break
+		}
+	}
 	rt.WrapCount = fullWidthWrap
 
 	// Prefer the RTP clock packets (pion/rtp semantics) only while the
-	// container timestamps fit the 32-bit carrier. A full-width wrap (e.g. a
-	// 33-bit MPEG-TS PTS) would lose bits in the RTP mirror, so the raw DTS
-	// sequence remains the authoritative timeline.
+	// container timestamps fit the 32-bit carrier. A full-width wrap or any
+	// timestamp beyond the carrier (e.g. a 33-bit MPEG-TS PTS) would lose
+	// bits in the RTP mirror, so the raw DTS sequence stays authoritative.
 	var unwrapped []int64
 	var raw []uint32
-	if fullWidthWrap == 0 && len(tr.ClockPackets) == n {
+	if fullWidthWrap == 0 && !exceedsCarrier && len(tr.ClockPackets) == n {
 		up, rv, err := ExtendRTP(tr.ClockPackets)
 		if err != nil {
 			rt.Trusted = false

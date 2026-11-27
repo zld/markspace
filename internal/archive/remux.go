@@ -42,8 +42,10 @@ func handlerFor(c model.Codec) string {
 }
 
 // trackHash fingerprints the compressed sample bytes in decode order,
-// including DTS/duration/sync so timing metadata is part of the lossless
-// contract as well.
+// including relative timing (DTS expressed against the first sample),
+// durations and sync flags. Relative time is the correct lossless contract
+// for fragmented MP4: each fragment re-bases baseMediaDecodeTime onto its
+// own first sample while preserving every inter-sample distance and byte.
 func trackHash(tr model.Track) string {
 	h := sha256.New()
 	write := func(s string) {
@@ -52,8 +54,12 @@ func trackHash(tr model.Track) string {
 	}
 	write(string(tr.Codec))
 	write(itoa32(tr.Timescale))
+	var base uint64
+	if len(tr.Samples) > 0 {
+		base = tr.Samples[0].Dts
+	}
 	for _, s := range tr.Samples {
-		write(itoa64(int64(s.Dts)))
+		write(itoa64(int64(s.Dts - base)))
 		write(itoa32(s.Duration))
 		if s.Sync {
 			write("1")

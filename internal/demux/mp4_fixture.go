@@ -58,9 +58,14 @@ func WriteFragmentedMP4(timescale uint32, trackID uint32, handler string, fragme
 		return nil, err
 	}
 
-	// media fragments; baseMediaDecodeTime is the cumulative sample duration
-	// of all preceding fragments, as required by the fragmented MP4 timeline.
+	// media fragments; baseMediaDecodeTime is the absolute decode timestamp
+	// of the fragment's first sample and advances by the cumulative sample
+	// duration of preceding fragments, as required by the fragmented MP4
+	// timeline. Starting from the first sample's DTS preserves absolute time.
 	var baseDts uint64
+	if len(fragments) > 0 && len(fragments[0]) > 0 {
+		baseDts = fragments[0][0].Dts
+	}
 	for _, samples := range fragments {
 		if err := writeFragment(w, trackID, baseDts, samples); err != nil {
 			return nil, err
