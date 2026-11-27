@@ -10,17 +10,17 @@ func TestNameOf(t *testing.T) {
 		t.Errorf("NameOf(Cluster) = %q", got)
 	}
 	// Unregistered but canonical ID gets a hex fallback.
-	fallback := NameOf(ElementID(0x01))
+	fallback := NameOf(ElementID(0x81))
 	if fallback != "0x81" {
 		t.Errorf("fallback name = %q, want 0x81", fallback)
 	}
-	if !IsKnown(IDBlock) || IsKnown(ElementID(0x01)) {
+	if !IsKnown(IDBlock) || IsKnown(ElementID(0x81)) {
 		t.Error("IsKnown registry lookup wrong")
 	}
 }
 
 func TestValidEBMLID(t *testing.T) {
-	valid := []ElementID{IDEBMLHeader, IDSegment, IDTrackEntry, IDBlock, IDSimpleBlock, ElementID(0x01)}
+	valid := []ElementID{IDEBMLHeader, IDSegment, IDTrackEntry, IDBlock, IDSimpleBlock, ElementID(0x81)}
 	for _, id := range valid {
 		if !ValidEBMLID(id) {
 			t.Errorf("ID %x should be valid", uint64(id))

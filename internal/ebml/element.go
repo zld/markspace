@@ -123,43 +123,48 @@ func IsKnown(id ElementID) bool {
 	return ok
 }
 
-// ValidEBMLID reports whether id has a canonical 1..4 byte VINT encoding.
-// Matroska element IDs are not necessarily minimal-width VINTs (e.g. the
-// 4-byte 0x1A45DFA3), so every width 1..4 is tried. The all-ones data
-// pattern at the matching width is a reserved unknown marker, not an ID.
+// ValidEBMLID reports whether id is a legal on-wire EBML element ID: it must
+// encode to a canonical 1..4 byte VINT whose length marker is included in the
+// stored value (e.g. Segment is 0x18538067, four bytes on the wire). The
+// reserved all-ones unknown-length VINT is not a legal element ID.
 func ValidEBMLID(id ElementID) bool {
-	if id < 0 {
+	enc, err := EncodeID(id)
+	if err != nil || len(enc) == 0 || len(enc) > 4 {
 		return false
 	}
-	for w := 1; w <= 4; w++ {
-		dataBits := uint(7 * w)
-		dataMask := uint64(1)<<dataBits - 1
-		if uint64(id) > dataMask {
-			continue // does not fit at this width
-		}
-		if uint64(id) == dataMask {
-			continue // reserved all-ones unknown marker
-		}
-		buf := make([]byte, w)
-		v := uint64(id)
-		for i := w - 1; i >= 0; i-- {
-			buf[i] = byte(v & 0xFF)
-			v >>= 8
-		}
-		buf[0] |= byte(1 << (8 - uint(w)))
-		got, width, unknown, derr := DecodeVINT(buf)
-		if derr == nil && !unknown && width == w && got == uint64(id) {
-			return true
-		}
+	got, width, unknown, derr := DecodeVINT(enc)
+	if derr != nil || unknown || width != len(enc) {
+		return false
 	}
-	return false
+	return got|(uint64(1)<<(8-uint(width))) == uint64(id)
+}
+
+// EncodeID emits the on-wire VINT bytes of an element ID whose stored value
+// already includes the length marker bit (e.g. SimpleBlock is 0xA3).
+func EncodeID(id ElementID) ([]byte, error) {
+	v := uint64(id)
+	// Emit the big-endian bytes of v, dropping fully zero leading bytes.
+	raw := make([]byte, 8)
+	for i := 7; i >= 0; i-- {
+		raw[i] = byte(v & 0xFF)
+		v >>= 8
+	}
+	first := 0
+	for first < 7 && raw[first] == 0 {
+		first++
+	}
+	buf := raw[first:]
+	if w, ok := VINTWidth(buf[0]); !ok || w != len(buf) || w > 4 {
+		return nil, serr.New(serr.CodeUnknownElement, "0x%X is not a canonical 1..4 byte element ID", uint64(id))
+	}
+	return buf, nil
 }
 
 func hexID(id ElementID) string {
 	const digits = "0123456789ABCDEF"
-	b, err := EncodeVINT(uint64(id))
+	b, err := EncodeID(id)
 	if err != nil {
-		return digits[0:1]
+		return "?"
 	}
 	out := make([]byte, 0, len(b)*2)
 	for _, x := range b {
