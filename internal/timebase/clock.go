@@ -58,12 +58,17 @@ func (r Rate) TimecodeToNanos(frames int64) (Nanos, error) {
 	if frames < 0 {
 		return 0, fmt.Errorf("negative frame count %d", frames)
 	}
-	// seconds = frames * Den / Num; verify frames*Den*1e9 stays in range.
-	if uint64(frames) > (1<<63-1)/uint64(r.Den) {
+	// ns = frames * Den * 1e9 / Num. Both multiplications are checked so a
+	// huge frame count cannot wrap into a plausible small value.
+	hi, lo := bits.Mul64(uint64(frames), uint64(r.Den))
+	if hi != 0 {
 		return 0, fmt.Errorf("frame count %d overflows nanoseconds", frames)
 	}
-	ns := uint64(frames) * uint64(r.Den) * 1e9
-	q, rem := ns/uint64(r.Num), ns%uint64(r.Num)
+	hi, lo = bits.Mul64(lo, 1e9)
+	if hi != 0 {
+		return 0, fmt.Errorf("frame count %d overflows nanoseconds", frames)
+	}
+	q, rem := bits.Div64(0, lo, uint64(r.Num))
 	if 2*rem >= uint64(r.Num) {
 		q++
 	}
