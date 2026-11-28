@@ -73,7 +73,8 @@ func TestReassemblerDedupReorder(t *testing.T) {
 		t.Fatalf("segs=%v", segs)
 	}
 	// Duplicate of an already-committed chunk.
-	if _, _ := r.Add(mk(0, "ABC")); r.Dups != 2 {
+	r.Add(mk(0, "ABC"))
+	if r.Dups != 2 {
 		t.Fatalf("dups=%d", r.Dups)
 	}
 	if r.Committed() != 6 {
