@@ -25,6 +25,10 @@ import (
 	"medialab/internal/worker"
 )
 
+// FillPolicy is the documented rule used to materialise recoverable gaps, and
+// the value recorded in the artefact manifest.
+const FillPolicy = "ramp-fill"
+
 // Options configures one export.
 type Options struct {
 	OutDir   string
@@ -44,6 +48,8 @@ type Result struct {
 	Faults   model.Faults
 	Warnings model.Faults
 	Segments map[model.TrackID]string
+	// PeakCacheBytes is the highest cache reservation observed by the pool.
+	PeakCacheBytes int64
 }
 
 type frameRecord struct {
@@ -97,7 +103,7 @@ func Export(ctx context.Context, tl *timeline.Timeline, opt Options) (*Result, e
 		Workers: opt.Workers, MaxCacheBytes: opt.CacheCap, FillPolicy: opt.Fill,
 	}, jobs)
 
-	res := &Result{Segments: make(map[model.TrackID]string)}
+	res := &Result{Segments: make(map[model.TrackID]string), PeakCacheBytes: report.PeakCache}
 	res.Faults = append(res.Faults, report.Faults...)
 	res.Warnings = append(res.Warnings, tl.Warnings...)
 
@@ -176,7 +182,7 @@ func Export(ctx context.Context, tl *timeline.Timeline, opt Options) (*Result, e
 		Warnings: res.Warnings,
 		Faults:   res.Faults,
 	}
-	finalise(&res.Manifest)
+	res.Manifest.Summary = artifact.Summarize(res.Manifest.Frames, res.Manifest.Segments)
 	return res, nil
 }
 
@@ -194,7 +200,7 @@ func validateOptions(opt *Options) error {
 		opt.CacheCap = 64 << 20
 	}
 	if opt.Fill == "" {
-		opt.Fill = "hold-last"
+		opt.Fill = FillPolicy
 	}
 	if opt.Decode == nil {
 		return model.NewFault(model.KindRender, model.CodeArtifactMismatch, 0, 0, "no frame decoder")
@@ -274,6 +280,16 @@ func encodePNG(img image.Image) ([]byte, error) {
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+// MeasurePNG encodes raw exactly as the exporter does and reports the byte
+// length, so the planner can price a candidate without writing a file.
+func MeasurePNG(raw pixel.Raw) (int64, error) {
+	data, err := encodePNG(toNRGBA(raw))
+	if err != nil {
+		return 0, err
+	}
+	return int64(len(data)), nil
 }
 
 // recordFromBytes derives the full frame record by re-decoding the artefact.
@@ -371,43 +387,6 @@ func writeSegments(outDir string, order []model.TrackID, tracks map[model.TrackI
 		})
 	}
 	return out, faults
-}
-
-// finalise fills the aggregate summary from the per-frame records. It is
-// deliberately computed from artefact bytes, not from source metadata.
-func finalise(m *artifact.Manifest) {
-	sum := artifact.Summary{Tracks: len(m.Segments), Frames: len(m.Frames)}
-	sum.PeakLoudnessDBFS = pixel.LoudnessFloorDBFS
-	var sr, sg, sb, sq float64
-	for _, f := range m.Frames {
-		if f.Fill {
-			sum.FillFrames++
-		}
-		sum.TotalBytes += f.Bytes
-		sr += f.Stats.MeanR
-		sg += f.Stats.MeanG
-		sb += f.Stats.MeanB
-		sq += f.Stats.Variance
-		if f.LoudnessDBFS > sum.PeakLoudnessDBFS {
-			sum.PeakLoudnessDBFS = f.LoudnessDBFS
-		}
-	}
-	for _, s := range m.Segments {
-		sum.TotalBytes += s.Bytes
-	}
-	if n := float64(len(m.Frames)); n > 0 {
-		sum.MeanR, sum.MeanG, sum.MeanB = sr/n, sg/n, sb/n
-		sum.Variance = sq / n
-	}
-	h := sha256.New()
-	for _, f := range m.Frames {
-		h.Write([]byte(f.SHA256))
-	}
-	for _, s := range m.Segments {
-		h.Write([]byte(s.SHA256))
-	}
-	sum.RunHash = hex.EncodeToString(h.Sum(nil))
-	m.Summary = sum
 }
 
 func sha256Hex(b []byte) string {
