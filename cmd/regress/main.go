@@ -124,9 +124,6 @@ func demoCorrupt(cfg mk.PipelineConfig, name string, seed int64, out string) int
 	fmt.Printf("expected: %s at offset %d (generator-recorded, |diff|=%d)\n",
 		fix.ErrCode, fix.ErrOffset, diff)
 	man := &mk.Manifest{Errors: []*mk.Error{mkErr}}
-	if data, err := os.ReadFile(in); err == nil {
-		_ = data
-	}
 	_ = man.Save(filepath.Join(out, "manifest.json"))
 	if mkErr.Code != fix.ErrCode || diff > 1 {
 		fmt.Println("ACCEPTANCE: FAIL")
