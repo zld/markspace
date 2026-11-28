@@ -19,7 +19,7 @@ type Written struct {
 // ManifestNames are the HLS/DASH manifest fixtures.
 var ManifestNames = []string{
 	"normal.m3u8", "replace.m3u8", "metadata.m3u8", "truncated.m3u8",
-	"malformed.mpd", "normal.mpd", "master.m3u8",
+	"malformed.m3u8", "escape.m3u8", "malformed.mpd", "normal.mpd", "master.m3u8",
 }
 
 // Generate writes every acceptance fixture under dir and returns what it
@@ -113,6 +113,16 @@ func Generate(dir string) ([]Written, error) {
 	// Damaged manifest: an EXTINF with a non-numeric duration on line 4.
 	malformedHLS := "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:4\n#EXTINF:3.003,\nmedia/normal/normal-0000.m4s\n#EXTINF:oops,\nmedia/normal/normal-0001.m4s\n#EXT-X-ENDLIST\n"
 	if err := write("malformed.m3u8", []byte(malformedHLS)); err != nil {
+		return nil, err
+	}
+	// A manifest that points outside the input root must be refused by the
+	// path guard, not followed.
+	escapeHLS := "#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXTINF:1.000,\n../outside.m4s\n#EXT-X-ENDLIST\n"
+	if err := write("escape.m3u8", []byte(escapeHLS)); err != nil {
+		return nil, err
+	}
+	// A metadata file the swap scenario updates without touching media.
+	if err := write("metadata.json", []byte(`{"encapsulation":"v1","frames":420}`+"\n")); err != nil {
 		return nil, err
 	}
 

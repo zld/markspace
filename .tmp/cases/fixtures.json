@@ -105,6 +105,16 @@
     "bytes": 151
   },
   {
+    "path": "escape.m3u8",
+    "sha256": "fdc5ca821345480a28c252051e3f9007cb7cc439e3b9cd7bd038702dff532808",
+    "bytes": 77
+  },
+  {
+    "path": "metadata.json",
+    "sha256": "d0f1bb6cd8cba3deee013d31529a5b2e1de0b52ba4e215a873b4df89d664a3de",
+    "bytes": 36
+  },
+  {
     "path": "malformed.mpd",
     "sha256": "d37f6ad40fc0bc3ef459dde6bf815f9c01ba58421c6400ca6d62f6b75f881215",
     "bytes": 425

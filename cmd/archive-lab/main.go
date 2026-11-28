@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"archive-lab/internal/fixture"
+	"archive-lab/internal/manifest/scan"
 	"archive-lab/internal/media"
 	"archive-lab/internal/quality"
 	"archive-lab/internal/runner"
@@ -40,6 +41,9 @@ run flags:
   --resume            persist progress and resume completed segments (default true)
   --dry-run           report the chosen configuration without streaming
   --cancel-after N    cancel after N segments, for resume testing
+  --max-segment-bytes N  per-file scan limit (default 64 MiB)
+  --max-total-bytes N    total scan byte limit (default 4 GiB)
+  --max-files N          maximum indexed files (default 10000)
 
 exit codes: 0 success, 1 usage error, 2 input or processing failure
 `
@@ -113,6 +117,9 @@ func cmdRun(args []string, stdout, stderr io.Writer) error {
 	resume := fs.Bool("resume", true, "persist and honour segment progress for resumable runs")
 	dryRun := fs.Bool("dry-run", false, "choose and report a configuration without streaming segments")
 	cancelAfter := fs.Int("cancel-after", 0, "cancel after N completed segments (0 disables)")
+	maxSegmentBytes := fs.Int64("max-segment-bytes", 64<<20, "per-file size limit for scanned inputs")
+	maxTotalBytes := fs.Int64("max-total-bytes", 4<<30, "total scanned byte limit")
+	maxFiles := fs.Int("max-files", 10_000, "maximum number of indexed files")
 	fs.Var(&metadata, "metadata", "metadata file to scan (repeatable)")
 	if err := fs.Parse(args); err != nil {
 		return media.Usage("run: %v", err)
@@ -162,6 +169,12 @@ func cmdRun(args []string, stdout, stderr io.Writer) error {
 		Request:      req,
 		ProgressPath: progressPath,
 		DryRun:       *dryRun,
+		Limits: scan.Limits{
+			MaxSegmentBytes:    *maxSegmentBytes,
+			MaxTotalBytes:      *maxTotalBytes,
+			MaxFiles:           *maxFiles,
+			ValidateContainers: true,
+		},
 	}
 	var cancel runner.CancelFunc
 	if *cancelAfter > 0 {
