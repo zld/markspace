@@ -113,22 +113,24 @@ func Generate(spec Spec) (*Dataset, error) {
 			ds.Frames = append(ds.Frames, f)
 
 			parts := splitPayload(encoded, spec.Fragments)
-			frameIndex := (tr-1)*spec.FramesEach + i
-			wire := make([][]byte, 0, len(parts))
 			for part, chunk := range parts {
 				pkt := ingest.Packet{
-					Track: track, Seq: uint32(1000 + frameIndex*spec.Fragments + part),
-					RTPTs:  uint32(frameIndex * (90000 / 25)),
+					Track: track,
+					// Sequence numbers stay unique across the whole fixture set
+					// so a misrouted packet is detectable.
+					Seq:    uint32(1000 + ((tr-1)*spec.FramesEach+i)*spec.Fragments + part),
+					RTPTs:  uint32(i * (int(ingest.RTPClockRate) / 25)),
 					Marker: part == len(parts)-1,
-					Frame:  frameIndex, Parts: len(parts), Part: part, Data: chunk,
+					// Frame is the track-local position; each track's stream is
+					// reordered and assembled independently.
+					Frame: i, Parts: len(parts), Part: part, Data: chunk,
 				}
 				b, err := ingest.MarshalPacket(pkt)
 				if err != nil {
 					return nil, err
 				}
-				wire = append(wire, b)
+				ds.Packets[track] = append(ds.Packets[track], b)
 			}
-			ds.Packets[track] = append(ds.Packets[track], wire...)
 		}
 	}
 
@@ -145,16 +147,18 @@ func Generate(spec Spec) (*Dataset, error) {
 	case CaseReorderLoss:
 		for tr := range ds.Packets {
 			wire := ds.Packets[tr]
-			// Drop two packets inside the window and shuffle their neighbours.
-			if len(wire) > 8 {
-				wire = append(wire[:3:3], wire[4:]...)
+			if spec.Fragments >= 2 && len(wire) > spec.Fragments {
+				// Drop the final fragment of the first frame so that sampled
+				// output contains a deterministic fill frame.
+				wire = append(wire[:spec.Fragments-1:spec.Fragments-1], wire[spec.Fragments:]...)
 			}
+			// Shuffle within the jitter window.
 			for i := 0; i+3 < len(wire); i += 4 {
 				wire[i], wire[i+2] = wire[i+2], wire[i]
 			}
 			ds.Packets[tr] = wire
 		}
-		ds.Note = "one fragment dropped and neighbours reordered per track; missing packets are recoverable"
+		ds.Note = "one fragment of each track's first frame dropped and neighbours reordered; missing packets are recoverable"
 	case CaseTimestampRegression:
 		// Track 2 frame 3 arrives before frame 2, producing a regression in
 		// declaration order while the merged output stays sorted.
