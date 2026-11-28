@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"time"
 
 	"archive-lab/internal/manifest"
 	"archive-lab/internal/manifest/scan"
@@ -20,16 +19,14 @@ import (
 // to the process working directory; every segment path must resolve inside
 // InputRoot.
 type Options struct {
-	InputPath    string
-	InputRoot    string
-	IndexPath    string
-	CacheDir     string
-	ArtifactDir  string
-	Metadata     []string
-	Request      quality.Request
-	MaxWorkspace time.Duration
-	PollInterval time.Duration
-	Limits       scan.Limits
+	InputPath   string
+	InputRoot   string
+	IndexPath   string
+	CacheDir    string
+	ArtifactDir string
+	Metadata    []string
+	Request     quality.Request
+	Limits      scan.Limits
 	// ProgressPath persists completed segment indices for resume.
 	ProgressPath string
 	// DryRun stops after planning: the report shows the chosen configuration
@@ -66,8 +63,6 @@ type CancelFunc func() bool
 // Runner executes the pipeline. It is stateless apart from the cache handle.
 type Runner struct {
 	Cache *Cache
-	// Now lets tests advance the wall clock deterministically.
-	Now func() time.Time
 }
 
 // RanOptions are the resolved inputs after parsing and scanning.
@@ -88,7 +83,7 @@ type Prepared struct {
 // Prepare parses the manifest, reuses or rebuilds the index, and resolves the
 // cache key. A corrupt or missing index falls back to a full scan; a content
 // change at the same path is detected by digest and forces a rebuild.
-func (r *Runner) Prepare(opts Options, totalSegmentsHint int) (*Prepared, error) {
+func (r *Runner) Prepare(opts Options) (*Prepared, error) {
 	raw, err := os.ReadFile(opts.InputPath)
 	if err != nil {
 		return nil, media.Wrap(media.StageScan, "input", err, "cannot read manifest").WithPath(opts.InputPath)
@@ -188,7 +183,6 @@ func (r *Runner) Prepare(opts Options, totalSegmentsHint int) (*Prepared, error)
 	} else if opts.IndexPath != "" {
 		// Index was valid and reused; nothing to write.
 	}
-	_ = totalSegmentsHint
 	return p, nil
 }
 

@@ -2,7 +2,7 @@
   "version": 1,
   "manifest": {
     "kind": "manifest",
-    "path": "720p.m3u8",
+    "path": "normal.m3u8",
     "uri": "",
     "sha256": "fe7f4fbd382ea355efae96cc762834f0921e4ddcb901fd8d219a903d4c31ac00",
     "bytes": 248
@@ -38,5 +38,5 @@
     }
   ],
   "total_bytes": 372788,
-  "digest": "b06ef17705dfc26daebb7129cb5c386a1879e6b596ebb00467ebb909f367d11c"
+  "digest": "e35fee4ed108ec9079cd22a80ed0a53cc5089a2cef515feb641d0997bdd5fb4e"
 }

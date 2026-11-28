@@ -39,6 +39,7 @@ run flags:
   --metadata PATH     metadata file to include in the scan (repeatable)
   --resume            persist progress and resume completed segments (default true)
   --dry-run           report the chosen configuration without streaming
+  --cancel-after N    cancel after N segments, for resume testing
 
 exit codes: 0 success, 1 usage error, 2 input or processing failure
 `
@@ -111,6 +112,7 @@ func cmdRun(args []string, stdout, stderr io.Writer) error {
 	artifactDir := fs.String("artifacts", "", "artifact directory")
 	resume := fs.Bool("resume", true, "persist and honour segment progress for resumable runs")
 	dryRun := fs.Bool("dry-run", false, "choose and report a configuration without streaming segments")
+	cancelAfter := fs.Int("cancel-after", 0, "cancel after N completed segments (0 disables)")
 	fs.Var(&metadata, "metadata", "metadata file to scan (repeatable)")
 	if err := fs.Parse(args); err != nil {
 		return media.Usage("run: %v", err)
@@ -161,7 +163,18 @@ func cmdRun(args []string, stdout, stderr io.Writer) error {
 		ProgressPath: progressPath,
 		DryRun:       *dryRun,
 	}
-	res := r.Run(opts, nil)
+	var cancel runner.CancelFunc
+	if *cancelAfter > 0 {
+		done := 0
+		cancel = func() bool {
+			if done >= *cancelAfter {
+				return true
+			}
+			done++
+			return false
+		}
+	}
+	res := r.Run(opts, cancel)
 	if err := res.Report.WriteJSON(stdout); err != nil {
 		return media.Wrap(media.StageReport, "output", err, "write report")
 	}

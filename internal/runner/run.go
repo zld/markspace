@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
 
 	"archive-lab/internal/manifest/scan"
 	"archive-lab/internal/media"
@@ -20,9 +19,6 @@ const maxSampleFrames = 12
 // stream every adopted segment. Failures carry the completed segment count so
 // the next run can resume from the first segment without an outcome.
 func (r *Runner) Run(opts Options, cancel CancelFunc) *Result {
-	if r.Now == nil {
-		r.Now = time.Now
-	}
 	res := &Result{Report: &Report{Status: "error"}}
 	rep := res.Report
 	rep.TargetBps = opts.Request.TargetBps
@@ -31,7 +27,7 @@ func (r *Runner) Run(opts Options, cancel CancelFunc) *Result {
 	rep.BudgetMS = opts.Request.BudgetMs
 	rep.Input = filepath.ToSlash(opts.InputPath)
 
-	prep, err := r.Prepare(opts, 0)
+	prep, err := r.Prepare(opts)
 	if err != nil {
 		return res.fail(err, rep)
 	}
@@ -340,23 +336,6 @@ func writeAtomic(path string, data []byte) error {
 		return media.Wrap(media.StageReport, "write", err, "commit file").WithPath(path)
 	}
 	return nil
-}
-
-// ConfigDigestOf is the digest of the resolved request without measurement.
-func ConfigDigestOf(cfg quality.Config) string { return cfg.Digest() }
-
-// ConfigFromOptions resolves a request into the default candidate config.
-func ConfigFromOptions(req quality.Request) quality.Config {
-	return quality.Config{Codec: quality.CodecVersion, TargetBps: req.TargetBps, MaxBps: req.MaxBps, MinPSNR: req.MinPSNR, BudgetMs: req.BudgetMs}
-}
-
-// HashFileHex is a small helper for tests and the CLI.
-func HashFileHex(path string) (string, error) {
-	d, err := scan.HashFile(path, 0)
-	if err != nil {
-		return "", err
-	}
-	return d.SHA256, nil
 }
 
 // resumablePrefix reports whether done is exactly the prefix 0..n-1 of the

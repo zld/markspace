@@ -87,9 +87,9 @@ func (e *Error) Error() string {
 		fmt.Fprintf(&b, ":%d", e.Line)
 	}
 	if e.Segment >= 0 {
-		fmt.Fprintf(&b, " [segment %d]", e.Segment)
+		fmt.Fprintf(&b, "[segment %d]", e.Segment)
 	}
-	if b.Len() > len(e.Stage)+2 && (e.Path != "" || e.Offset >= 0 || e.Line > 0 || e.Segment >= 0) {
+	if e.Path != "" || e.Offset >= 0 || e.Line > 0 || e.Segment >= 0 {
 		b.WriteString(": ")
 	}
 	b.WriteString(e.Detail)

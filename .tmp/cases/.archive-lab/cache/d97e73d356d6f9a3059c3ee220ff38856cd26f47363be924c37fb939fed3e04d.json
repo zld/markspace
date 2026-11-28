@@ -8,9 +8,9 @@
     "media/normal/normal-0002.m4s": "5f1391e3c9335663465b2fae2bb95ed67b1c49fb8187a576e469263ecf2d31d0",
     "media/normal/normal-0003.m4s": "bc8db75d86698b404200fd93d481e2a7a810273e74903022126bb7f0807de1b3"
   },
-  "segments_done": 4,
+  "segments_done": 2,
   "segments_total": 4,
-  "bytes": 0,
-  "report_digest": "fbbb19b534ac0a55fd00d2166b41bd8757b8a3ea704c6fcd325bcc0a692514f8",
+  "bytes": 186270,
+  "report_digest": "97644d438dc1fcfacda62a73bffee253d382a3681d37d7787889af6cda909506",
   "artifact": ""
 }
