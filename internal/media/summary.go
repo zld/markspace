@@ -89,4 +89,3 @@ func CorruptSummary(s string) string {
 	}
 	return string(b)
 }
-
