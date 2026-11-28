@@ -14,14 +14,16 @@ import (
 // Read parses a JSON version manifest and validates it thoroughly enough that
 // later stages can assume structural invariants hold.
 func Read(r io.Reader) (*Manifest, error) {
-	const maxManifestBytes = 8 << 20
+	// A one-hour asset with three tracks and per-cell content digests stays
+	// well under this; the limit only rejects runaway or hostile input.
+	const maxManifestBytes = 64 << 20
 	data, err := io.ReadAll(io.LimitReader(r, maxManifestBytes+1))
 	if err != nil {
 		return nil, model.New(model.KindInternal, model.StageManifest, "", "read", err)
 	}
 	if len(data) > maxManifestBytes {
 		return nil, model.New(model.KindInvalid, model.StageManifest, "", "read",
-			errors.New("manifest exceeds 8 MiB limit"))
+			errors.New("manifest exceeds 64 MiB limit"))
 	}
 	return Parse(data)
 }

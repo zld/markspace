@@ -37,7 +37,9 @@ func CellDigest(asset string, track uint32, cell int64) string {
 	_, _ = h.Write([]byte(asset))
 	_, _ = h.Write([]byte{0})
 	_, _ = h.Write(buf[:12])
-	return fmt.Sprintf("%x", h.Sum(nil)[:16])
+	// 8 bytes per cell keeps a 1-hour, 50 ms grid comfortably small while
+	// remaining collision-resistant for content comparison.
+	return fmt.Sprintf("%x", h.Sum(nil)[:8])
 }
 
 // RangeChunks returns the cell digests covering cells [firstCell, lastCell).
@@ -58,7 +60,7 @@ func CombineChunks(chunks []string) string {
 		_, _ = h.Write([]byte(c))
 		_, _ = h.Write([]byte{0})
 	}
-	return fmt.Sprintf("%x", h.Sum(nil)[:16])
+	return fmt.Sprintf("%x", h.Sum(nil)[:8])
 }
 
 // CellsEqual reports whether two chunk slices carry identical content.

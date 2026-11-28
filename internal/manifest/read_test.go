@@ -121,7 +121,7 @@ func TestCanonicalIsDeterministic(t *testing.T) {
 }
 
 func TestReadLimit(t *testing.T) {
-	big := strings.Repeat(" ", 9<<20)
+	big := strings.Repeat(" ", 65<<20)
 	_, err := Read(strings.NewReader(big))
 	if err == nil {
 		t.Fatal("expected size error")

@@ -1,7 +1,9 @@
 package demo
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -73,7 +75,14 @@ func Run(ctx context.Context, o Options) (*Outcome, error) {
 	)
 
 	for _, a := range plans {
-		m, err := manifestFor(o, a)
+		// The manifest enters the pipeline as bytes and is parsed back through
+		// the strict reader, exactly as a real feed would be. Building it twice
+		// (generate, then parse) also proves the writer and reader agree.
+		raw, err := encodeManifest(o, a)
+		if err != nil {
+			return rolledBack(o, err)
+		}
+		m, err := manifest.Read(bytes.NewReader(raw))
 		if err != nil {
 			return rolledBack(o, err)
 		}
@@ -565,12 +574,18 @@ func checkPipelineContract(ctx context.Context, o Options) error {
 	return nil
 }
 
-// rescanDigest rebuilds every manifest from the same plan and returns one
-// content digest over all of them.
+// rescanDigest rebuilds and re-parses every manifest from the same plan and
+// returns one content digest over all of them. Because it starts from freshly
+// encoded bytes rather than the in-memory value, equality with the primary
+// digest proves the reader/writer round trip and the generator are stable.
 func rescanDigest(o Options, plans []assetPlan) (string, error) {
 	var parts [][]byte
 	for _, a := range plans {
-		again, err := manifestFor(o, a)
+		raw, err := encodeManifest(o, a)
+		if err != nil {
+			return "", err
+		}
+		again, err := manifest.Read(bytes.NewReader(raw))
 		if err != nil {
 			return "", err
 		}
@@ -581,6 +596,20 @@ func rescanDigest(o Options, plans []assetPlan) (string, error) {
 		parts = append(parts, canonical)
 	}
 	return report.ContentDigest(concat(parts)), nil
+}
+
+// encodeManifest renders the generated manifest to JSON, the form the reader
+// consumes.
+func encodeManifest(o Options, a assetPlan) ([]byte, error) {
+	m, err := manifestFor(o, a)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := json.Marshal(m)
+	if err != nil {
+		return nil, model.New(model.KindInternal, model.StageManifest, a.name, "encode", err)
+	}
+	return raw, nil
 }
 
 // assetRun is one asset's pipeline result.
