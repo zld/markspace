@@ -142,13 +142,13 @@ func (c Choice) BaseQuantizer() int {
 func encodeFrames(frames [][]byte, w, h, qMilli int) (sizes []int, sse int64, total int) {
 	sizes = make([]int, len(frames))
 	for i, f := range frames {
-		_, st, err := EncodeFrame(f, w, h, qMilli)
+		n, frameSSE, err := QuantiseOnly(f, w, h, qMilli)
 		if err != nil {
 			return nil, 0, 0
 		}
-		sizes[i] = st.Bytes
-		sse += st.SSE
-		total += st.Bytes
+		sizes[i] = n
+		sse += frameSSE
+		total += n
 	}
 	return sizes, sse, total
 }

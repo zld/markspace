@@ -27,20 +27,32 @@ func EncodeFrame(luma []byte, width, height, qMilli int) ([]byte, Stats, error) 
 	if qMilli < 100 || qMilli > 25500 {
 		return nil, Stats{}, media.New(media.StagePlan, "encode", "quantiser %d outside 1.00..255.00", qMilli)
 	}
-	bestK, bestBits := 0, -1
-	for k := 0; k <= 15; k++ {
-		_, _, bits := quantise(luma, width, height, qMilli, k)
-		if bestBits < 0 || bits < bestBits {
-			bestK, bestBits = k, bits
-		}
-	}
-	bw := newBitWriter(2 + (bestBits+7)/8)
+	qr, sse := quantise(luma, width, height, qMilli)
+	k, bits := chooseRice(qr, width, height)
+	bw := newBitWriter(3 + (bits+7)/8)
 	bw.writeBits(qMilli, 16)
-	bw.writeBits(bestK, 8)
-	qr, sse, _ := quantise(luma, width, height, qMilli, bestK)
-	emitBlocks(qr, width, height, bestK, bw)
+	bw.writeBits(k, 8)
+	emitBlocks(qr, width, height, k, bw)
 	bw.flush()
-	return bw.bytes(), Stats{Bytes: bw.len(), SSE: sse, Pixels: int64(len(luma))}, nil
+	payload := bw.bytes()
+	if want := 3 + (bits+7)/8; len(payload) != want {
+		return nil, Stats{}, media.New(media.StagePlan, "encode", "bit accounting mismatch: %d != %d", len(payload), want)
+	}
+	return payload, Stats{Bytes: len(payload), SSE: sse, Pixels: int64(len(luma))}, nil
+}
+
+// QuantiseOnly reports the estimated payload size for one frame at a
+// quantiser without materialising it.
+func QuantiseOnly(luma []byte, width, height, qMilli int) (int, int64, error) {
+	if width <= 0 || height <= 0 || len(luma) != width*height {
+		return 0, 0, media.New(media.StagePlan, "encode", "plane size %d does not match %dx%d", len(luma), width, height)
+	}
+	if qMilli < 100 || qMilli > 25500 {
+		return 0, 0, media.New(media.StagePlan, "encode", "quantiser %d outside 1.00..255.00", qMilli)
+	}
+	qr, sse := quantise(luma, width, height, qMilli)
+	_, bits := chooseRice(qr, width, height)
+	return 3 + (bits+7)/8, sse, nil
 }
 
 // DecodeFrame reverses EncodeFrame.
@@ -76,18 +88,86 @@ func DecodeFrame(payload []byte, width, height int) ([]byte, error) {
 	return recon, nil
 }
 
-// quantise runs the full block loop for one quantiser and Rice parameter,
-// returning the residual grid, the squared error and the required bit count.
-func quantise(luma []byte, width, height, qMilli, k int) ([]int16, int64, int) {
-	qrAll := make([]int16, len(luma))
-	recon := make([]byte, len(luma))
-	var sse int64
-	bits := 0
+// chooseRice picks the Rice parameter with the exact smallest encoded cost.
+// Zero blocks cost one flag bit; a non-zero block costs one flag bit plus the
+// residual code for every pixel in it, including zero residuals.
+func chooseRice(qr []int16, width, height int) (int, int) {
+	var hist [512]int // zigzag residual range 0..510
+	blocks, nonzeroBlocks := 0, 0
 	idx := 0
 	for by := 0; by < height; by += 8 {
 		for bx := 0; bx < width; bx += 8 {
-			start := idx
+			blocks++
 			nonzero := false
+			for y := by; y < by+8 && y < height; y++ {
+				for x := bx; x < bx+8 && x < width; x++ {
+					z := zigzag(int(qr[idx]))
+					hist[z]++
+					if z != 0 {
+						nonzero = true
+					}
+					idx++
+				}
+			}
+			if nonzero {
+				nonzeroBlocks++
+			}
+		}
+	}
+	bestK, bestBits := 0, int(^uint(0)>>1)
+	for k := 0; k <= 15; k++ {
+		bits := blocks
+		for z, n := range hist {
+			if n == 0 || z == 0 {
+				continue
+			}
+			bits += n * riceBits(z, k)
+		}
+		// Zero residuals inside non-zero blocks still cost riceBits(0,k),
+		// except those in blocks that emitted no residual stream at all.
+		zeroResiduals := hist[0] - zeroBlockPixels(qr, width, height)
+		bits += zeroResiduals * riceBits(0, k)
+		if bits < bestBits {
+			bestK, bestBits = k, bits
+		}
+	}
+	return bestK, bestBits
+}
+
+// zeroBlockPixels counts pixels that belong to all-zero blocks.
+func zeroBlockPixels(qr []int16, width, height int) int {
+	total := 0
+	idx := 0
+	for by := 0; by < height; by += 8 {
+		for bx := 0; bx < width; bx += 8 {
+			nonzero := false
+			count := 0
+			for y := by; y < by+8 && y < height; y++ {
+				for x := bx; x < bx+8 && x < width; x++ {
+					if qr[idx] != 0 {
+						nonzero = true
+					}
+					count++
+					idx++
+				}
+			}
+			if !nonzero {
+				total += count
+			}
+		}
+	}
+	return total
+}
+
+// quantise runs the full block loop for one quantiser and Rice parameter,
+// returning the residual grid, the squared error and the required bit count.
+func quantise(luma []byte, width, height, qMilli int) ([]int16, int64) {
+	qrAll := make([]int16, len(luma))
+	recon := make([]byte, len(luma))
+	var sse int64
+	idx := 0
+	for by := 0; by < height; by += 8 {
+		for bx := 0; bx < width; bx += 8 {
 			for y := by; y < by+8 && y < height; y++ {
 				for x := bx; x < bx+8 && x < width; x++ {
 					p := int(luma[idx])
@@ -96,23 +176,14 @@ func quantise(luma []byte, width, height, qMilli, k int) ([]int16, int64, int) {
 					qrAll[idx] = int16(qr)
 					v := clamp8(pred + qr*qMilli/100)
 					recon[idx] = byte(v)
-					if qr != 0 {
-						nonzero = true
-					}
 					d := int64(p) - int64(v)
 					sse += d * d
 					idx++
 				}
 			}
-			bits++
-			if nonzero {
-				for _, v := range qrAll[start:idx] {
-					bits += riceBits(zigzag(int(v)), k)
-				}
-			}
 		}
 	}
-	return qrAll, sse, bits
+	return qrAll, sse
 }
 
 func emitBlocks(qrAll []int16, width, height, k int, bw *bitWriter) {
