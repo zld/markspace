@@ -24,14 +24,19 @@ const (
 // WireSeqMask is the RTP on-wire sequence space.
 const WireSeqMask = 0xffff
 
+// RTPClockRate is the sample clock the fixtures stamp packets with.
+const RTPClockRate uint32 = 90000
+
 // Packet is the project's RTP representation of one frame fragment. Seq is the
 // 16-bit wire value; ExpandSeqs turns a stream of them into 32-bit counters.
+// Frame is the track-local, zero-based frame position, so faults can name the
+// frame's 1-based sequence without knowing other tracks' layouts.
 type Packet struct {
 	Track  model.TrackID
 	Seq    uint32
 	RTPTs  uint32
 	Marker bool
-	Frame  int // manifest frame index across all tracks
+	Frame  int
 	Parts  int
 	Part   int
 	Data   []byte
@@ -40,7 +45,7 @@ type Packet struct {
 // MarshalPacket serialises a packet with pion/rtp.
 func MarshalPacket(p Packet) ([]byte, error) {
 	if p.Parts <= 0 || p.Part < 0 || p.Part >= p.Parts {
-		return nil, model.NewFault(model.KindIngest, model.CodePayloadCorrupt, p.Track, uint32(p.Frame),
+		return nil, model.NewFault(model.KindIngest, model.CodePayloadCorrupt, p.Track, uint32(p.Frame+1),
 			fmt.Sprintf("invalid fragment %d of %d", p.Part, p.Parts))
 	}
 	pkt := &rtp.Packet{
@@ -109,45 +114,39 @@ type SeqExpansion struct {
 }
 
 // ExpandSeqs turns 16-bit wire sequence numbers into a 32-bit extending
-// counter. Each wire value is placed at the 32-bit candidate nearest the
-// running counter, so late and early arrivals both land on their true slot;
-// a stream that crosses 0xffff is handled without inventing gaps. The counter
-// itself is modulo 2^32 and a cross of that boundary sets Wrapped.
+// counter modulo 2^32. Each wire value is placed at the extended position
+// nearest the running counter, so late and early arrivals both land on their
+// true slot and a stream crossing 0xffff is handled without inventing gaps.
+// The extended counter itself wraps at 2^32; Wrapped records that it did.
 func ExpandSeqs(wire []uint32) (SeqExpansion, error) {
 	var out SeqExpansion
 	if len(wire) == 0 {
 		return out, nil
 	}
-	out.Values = make([]uint32, len(wire))
 	for _, w := range wire {
 		if w > WireSeqMask {
 			return out, model.NewFault(model.KindIngest, model.CodeSeqInvalid, 0, 0,
 				fmt.Sprintf("sequence %d exceeds the 16-bit RTP space", w))
 		}
 	}
-	running := uint64(wire[0])
+	out.Values = make([]uint32, len(wire))
+	// running tracks the un-wrapped position so the 2^31 window stays exact
+	// even when the counter crosses 2^32.
+	running := int64(wire[0])
 	for i, w := range wire {
-		v := w
-		// Candidate with the same high bits as the running counter.
-		hi := running &^ uint64(WireSeqMask)
-		cand := hi | uint64(v)
-		// Snap to the nearest neighbour across a 16-bit boundary.
-		if cand+1<<15 < running {
-			cand += 1 << 16
-		} else if cand > running+1<<15 {
-			cand -= 1 << 16
+		delta := int64(int32(w) - int32(running&WireSeqMask))
+		// Bring the signed 16-bit delta into (-2^15, 2^15]; this is the
+		// standard RTP sequence-unwrapping rule.
+		if delta > 1<<15 {
+			delta -= 1 << 16
+		} else if delta <= -1<<15 {
+			delta += 1 << 16
 		}
-		if cand > 0xffffffff {
-			// The extended counter wrapped its 32-bit space.
-			cand &= 0xffffffff
+		running += delta
+		out.Values[i] = uint32(running & 0xffffffff)
+		if running < 0 || running > 0xffffffff {
 			out.Wrapped = true
 		}
-		if cand+1<<31 < running {
-			return out, model.NewFault(model.KindIngest, model.CodeSeqInvalid, 0, 0,
-				fmt.Sprintf("sequence %d is more than 2^31 behind the running counter", w))
-		}
-		out.Values[i] = uint32(cand)
-		running = cand
 	}
 	return out, nil
 }
@@ -165,11 +164,14 @@ type ReorderConfig struct {
 type ReorderResult struct {
 	Packets    []Packet
 	Expanded   []uint32 // parallel to Packets, monotone
-	Missing    []uint32 // expanded sequence numbers absent from the stream
+	Missing    []uint32 // missing expanded wire positions, ascending
 	Duplicates int
 	Filled     int
 	Warnings   model.Faults
 	Fatal      *model.Fault
+	// Track is the stream's track id; it is set even when the reorder fails,
+	// so callers can attribute a fatal fault without inspecting the packets.
+	Track model.TrackID
 }
 
 // Reorder deduplicates, reorders and gap-checks one track's packets. Corrupt
@@ -183,8 +185,10 @@ func Reorder(packets []Packet, cfg ReorderConfig) ReorderResult {
 	if len(packets) == 0 {
 		return res
 	}
+	track := packets[0].Track
+	res.Track = track
 	if cfg.MaxPackets > 0 && len(packets) > cfg.MaxPackets {
-		res.Fatal = model.NewFault(model.KindIngest, model.CodeCacheOverflow, packets[0].Track, 0,
+		res.Fatal = model.NewFault(model.KindIngest, model.CodeCacheOverflow, track, 0,
 			fmt.Sprintf("%d packets exceed the per-track budget of %d", len(packets), cfg.MaxPackets))
 		return res
 	}
@@ -196,11 +200,12 @@ func Reorder(packets []Packet, cfg ReorderConfig) ReorderResult {
 	exp, err := ExpandSeqs(wire)
 	if err != nil {
 		res.Fatal = fault(err)
+		res.Fatal = model.WithFault(res.Fatal, track, 0)
 		return res
 	}
 	if exp.Wrapped {
 		res.Warnings = append(res.Warnings, model.NewFault(model.KindIngest, model.CodeSeqInvalid,
-			packets[0].Track, 0, "32-bit sequence counter wrapped during the stream").RecoverableFault())
+			track, 0, "32-bit sequence counter wrapped during the stream").RecoverableFault())
 	}
 
 	type entry struct {
@@ -210,8 +215,7 @@ func Reorder(packets []Packet, cfg ReorderConfig) ReorderResult {
 	entries := make([]entry, len(packets))
 	for i, p := range packets {
 		if err := validatePayload(p); err != nil {
-			res.Fatal = fault(err)
-			res.Fatal = model.WithFault(res.Fatal, p.Track, uint32(p.Frame))
+			res.Fatal = model.WithFault(fault(err), p.Track, uint32(p.Frame+1))
 			return res
 		}
 		entries[i] = entry{p, exp.Values[i]}
@@ -227,21 +231,29 @@ func Reorder(packets []Packet, cfg ReorderConfig) ReorderResult {
 		}
 		deduped = append(deduped, e)
 	}
+	// Every fault below names the first frame of the stream (sequence 1).
+	firstFrame := uint32(deduped[0].pkt.Frame + 1)
 	if res.Duplicates > 0 {
 		res.Warnings = append(res.Warnings, model.NewFault(model.KindIngest,
-			model.CodePacketDuplicate, packets[0].Track, 0,
+			model.CodePacketDuplicate, track, firstFrame,
 			fmt.Sprintf("%d duplicate packet(s) dropped", res.Duplicates)).RecoverableFault())
 	}
 
 	first := deduped[0].seq
 	last := deduped[len(deduped)-1].seq
-	if uint64(last)-uint64(first)+1 > 1<<20 {
-		res.Fatal = model.NewFault(model.KindIngest, model.CodeSeqInvalid, packets[0].Track, 0,
-			fmt.Sprintf("expanded sequence span %d is implausible", uint64(last)-uint64(first)+1))
+	// The extent of the expanded stream, not the running counter, is what
+	// bounds an implausible gap; a wrap of the 32-bit counter can legitimately
+	// place the last position below the first.
+	if span := last - first + 1; span == 0 || span > 1<<20 {
+		res.Fatal = model.NewFault(model.KindIngest, model.CodeSeqInvalid, track, firstFrame,
+			fmt.Sprintf("reordered stream spans %d positions, beyond the plausible range", span))
 		return res
 	}
 	seen := make(map[uint32]bool, len(deduped))
 	for _, e := range deduped {
+		if _, dup := seen[e.seq]; dup {
+			continue
+		}
 		seen[e.seq] = true
 	}
 	for s := first; s <= last; s++ {
@@ -257,7 +269,7 @@ func Reorder(packets []Packet, cfg ReorderConfig) ReorderResult {
 				len(res.Missing), cfg.Window)
 		}
 		res.Warnings = append(res.Warnings, model.NewFault(model.KindIngest,
-			model.CodeFrameMissing, packets[0].Track, 0, msg).RecoverableFault())
+			model.CodeFrameMissing, track, firstFrame, msg).RecoverableFault())
 	}
 
 	res.Packets = make([]Packet, len(deduped))
@@ -266,10 +278,6 @@ func Reorder(packets []Packet, cfg ReorderConfig) ReorderResult {
 		res.Packets[i] = e.pkt
 		res.Expanded[i] = e.seq
 	}
-	if len(res.Missing) > 0 && last-first+1 != uint32(len(deduped)+len(res.Missing)) {
-		res.Fatal = model.NewFault(model.KindIngest, model.CodeSeqInvalid, packets[0].Track, 0,
-			"reordered stream is not a single contiguous range")
-	}
 	return res
 }
 
@@ -277,15 +285,17 @@ func Reorder(packets []Packet, cfg ReorderConfig) ReorderResult {
 // reassembled. A corrupt payload stops the track rather than being repaired.
 func validatePayload(p Packet) error {
 	if len(p.Data) == 0 {
-		return model.NewFault(model.KindIngest, model.CodePayloadCorrupt, p.Track, uint32(p.Frame),
+		return model.NewFault(model.KindIngest, model.CodePayloadCorrupt, p.Track, uint32(p.Frame+1),
 			"empty fragment payload")
 	}
 	if p.Parts <= 0 || p.Part < 0 || p.Part >= p.Parts {
-		return model.NewFault(model.KindIngest, model.CodePayloadCorrupt, p.Track, uint32(p.Frame),
+		return model.NewFault(model.KindIngest, model.CodePayloadCorrupt, p.Track, uint32(p.Frame+1),
 			fmt.Sprintf("invalid fragment %d of %d", p.Part, p.Parts))
 	}
-	if p.Part > 0 && p.Marker {
-		return model.NewFault(model.KindIngest, model.CodePayloadCorrupt, p.Track, uint32(p.Frame),
+	// The marker belongs on the final fragment only; setting it earlier means
+	// the sender signalled end-of-frame in the middle of the payload.
+	if p.Part < p.Parts-1 && p.Marker {
+		return model.NewFault(model.KindIngest, model.CodePayloadCorrupt, p.Track, uint32(p.Frame+1),
 			"marker bit set before the final fragment")
 	}
 	return nil
@@ -330,8 +340,8 @@ func Assemble(packets []Packet) (map[int][]byte, model.Faults) {
 			if !fp.seen[i] {
 				complete = false
 				warnings = append(warnings, model.NewFault(model.KindIngest,
-					model.CodeFrameMissing, fp.track, uint32(idx),
-					fmt.Sprintf("fragment %d of %d missing", i, fp.total)).RecoverableFault())
+					model.CodeFrameMissing, fp.track, uint32(idx+1),
+					fmt.Sprintf("frame %d: fragment %d of %d missing", idx+1, i, fp.total)).RecoverableFault())
 				continue
 			}
 			buf.Write(fp.parts[i])
