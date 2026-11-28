@@ -32,7 +32,7 @@ type boxNode struct {
 var containerTypes = map[string]bool{
 	"moov": true, "trak": true, "mdia": true, "minf": true, "stbl": true,
 	"edts": true, "dinf": true, "udta": true, "mvex": true, "moof": true,
-	"traf": true, "mfra": true, "ilst": true, "meta": true,
+	"traf": true, "mfra": true,
 	"stsd": true, "dref": true,
 }
 

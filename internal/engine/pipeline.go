@@ -68,6 +68,9 @@ type TrackView struct {
 	Truncated    bool                    `json:"truncated,omitempty"`
 	InputDigest  string                  `json:"input_digest"`
 	ParseVersion string                  `json:"parse_version"`
+	// Errors are this track's structured diagnostics, so a rejected or
+	// truncated track is explained in place as well as in the global list.
+	Errors []*media.Error `json:"errors,omitempty"`
 }
 
 // Manifest is the sealed output document. Field order is fixed by the struct,
@@ -462,7 +465,7 @@ func trackViews(tl *timeline.Timeline, digests map[string]string, in *track.Inpu
 			Rotation: tt.Rotation, Crop: tt.Crop, Colors: tt.Colors,
 			Conflicts: tt.Conflicts, Metadata: tt.Metadata,
 			Truncated: tt.Truncated, InputDigest: digests[tt.TrackID],
-			ParseVersion: tt.ParseVersion,
+			ParseVersion: tt.ParseVersion, Errors: tt.Errors,
 		}
 		if tr := byID[tt.TrackID]; tr != nil {
 			v.RotSource = tr.RotSource
@@ -474,7 +477,7 @@ func trackViews(tl *timeline.Timeline, digests map[string]string, in *track.Inpu
 		v := TrackView{
 			ID: tt.TrackID, Container: tt.Container, Kind: tt.Kind,
 			Rejected: true, ParseVersion: tt.ParseVersion,
-			InputDigest: digests[tt.TrackID],
+			InputDigest: digests[tt.TrackID], Errors: tt.Errors,
 		}
 		views = append(views, v)
 	}
