@@ -116,6 +116,10 @@ func ParseHLS(path string, data []byte, limits Limits) (*Playlist, error) {
 				pendingRange = rng
 			case "#EXT-X-DISCONTINUITY":
 				pendingDisc = true
+			case "#EXT-X-INDEPENDENT-SEGMENTS", "#EXT-X-ALLOW-CACHE", "#EXT-X-GAP",
+				"#EXT-X-I-FRAMES-ONLY", "#EXT-X-PROGRAM-DATE-TIME":
+				// Informational or segment-level hints that do not change
+				// the timeline this tool reconstructs.
 			case "#EXT-X-MAP":
 				return nil, media.New(media.StageParse, "hls", "EXT-X-MAP initialization segments are not supported").
 					WithPath(path).WithLine(lineNo)

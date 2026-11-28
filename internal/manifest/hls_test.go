@@ -104,6 +104,38 @@ video/360p.m3u8
 	}
 }
 
+func TestParseHLSToleratesInformationalTags(t *testing.T) {
+	body := `#EXTM3U
+#EXT-X-VERSION:4
+#EXT-X-TARGETDURATION:4
+#EXT-X-INDEPENDENT-SEGMENTS
+#EXT-X-ALLOW-CACHE:YES
+#EXT-X-PROGRAM-DATE-TIME:2024-01-01T00:00:00Z
+#EXT-X-DISCONTINUITY
+#EXTINF:3.003,
+a.m4s
+#EXT-X-ENDLIST
+`
+	pl, err := ParseHLS("info.m3u8", []byte(body), Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pl.Segments) != 1 || !pl.Segments[0].Discontinuity {
+		t.Fatalf("segment discontinuity not recorded: %+v", pl.Segments)
+	}
+}
+
+func TestParseHLSRejectsMapAndEncrypted(t *testing.T) {
+	for name, body := range map[string]string{
+		"map":       "#EXTM3U\n#EXT-X-MAP:URI=\"init.mp4\"\n#EXTINF:3.0,\na.m4s\n#EXT-X-ENDLIST\n",
+		"encrypted": "#EXTM3U\n#EXT-X-KEY:METHOD=SAMPLE-AES,URI=\"k\"\n#EXTINF:3.0,\na.m4s\n#EXT-X-ENDLIST\n",
+	} {
+		if _, err := ParseHLS(name+".m3u8", []byte(body), Limits{}); err == nil {
+			t.Fatalf("%s should be rejected", name)
+		}
+	}
+}
+
 func TestParseHLSByteRange(t *testing.T) {
 	body := "#EXTM3U\n#EXTINF:3.0,\n#EXT-X-BYTERANGE:100@0\na.m4s\n#EXTINF:3.0,\n#EXT-X-BYTERANGE:50\na.m4s\n#EXT-X-ENDLIST\n"
 	pl, err := ParseHLS("br.m3u8", []byte(body), Limits{})
