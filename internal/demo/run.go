@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 
 	"mediapipe/internal/manifest"
@@ -30,6 +32,8 @@ type Outcome struct {
 	Merges   []AssetMerge
 	Failure  FailureScenario
 	Recovery RecoveryScenario
+	// Committed is the exact summary document published on success.
+	Committed []byte
 }
 
 // AssetMerge keeps the per-asset merge view for tests and rendering.
@@ -201,8 +205,45 @@ func Run(ctx context.Context, o Options) (*Outcome, error) {
 	}
 	sm.AddDigest("rescan", []byte(rescan))
 	out.Digest = digestOf(sm)
+
+	// The committed summary is written through the staging area: it becomes
+	// visible only after a successful atomic commit, identical on reruns.
+	committed, err := stageAndCommit(sm)
+	if err != nil {
+		return rolledBack(o, err)
+	}
+	out.Committed = committed
 	out.Lines = render(out)
 	return out, nil
+}
+
+// stageAndCommit writes the summary to a private staging directory and
+// publishes it atomically. The returned bytes are exactly what was committed.
+func stageAndCommit(sm *report.Summary) ([]byte, error) {
+	payload, err := json.MarshalIndent(sm, "", "  ")
+	if err != nil {
+		return nil, model.New(model.KindInternal, model.StageReport, "", "commit", err)
+	}
+	stager, err := report.NewStager("")
+	if err != nil {
+		return nil, err
+	}
+	defer stager.Discard()
+	if _, err := stager.Stage("summary.json", payload); err != nil {
+		return nil, err
+	}
+	if err := stager.Commit(stager.Dir(), []string{"summary.json"}); err != nil {
+		return nil, err
+	}
+	got, err := os.ReadFile(filepath.Join(stager.Dir(), "summary.json"))
+	if err != nil {
+		return nil, model.New(model.KindInternal, model.StageReport, "", "commit", err)
+	}
+	if !bytes.Equal(got, payload) {
+		return nil, model.New(model.KindInternal, model.StageReport, "", "commit",
+			errors.New("committed summary differs from the staged payload"))
+	}
+	return got, nil
 }
 
 func concat(parts [][]byte) []byte {

@@ -2,6 +2,7 @@ package demo
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -302,5 +303,46 @@ func TestHealthyAssetHasNoContentConflicts(t *testing.T) {
 		if am.Merged.MissingCount() == 0 {
 			t.Fatal("expected the trimmed rendition to be itemised as missing coverage")
 		}
+	}
+}
+
+func TestSuccessfulRunCommitsStagedSummary(t *testing.T) {
+	out, err := Run(context.Background(), baseOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Committed) == 0 {
+		t.Fatal("committed summary missing")
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(out.Committed, &doc); err != nil {
+		t.Fatalf("committed summary is not JSON: %v", err)
+	}
+	status, _ := doc["status"].(map[string]any)
+	if status["State"] != "committed" {
+		t.Fatalf("committed summary state = %v", status["State"])
+	}
+	metrics, _ := doc["metrics"].(map[string]any)
+	if metrics["missing"] == nil || metrics["conflicts"] == nil {
+		t.Fatalf("committed metrics missing: %v", metrics)
+	}
+}
+
+func TestRolledBackRunPublishesNothing(t *testing.T) {
+	o := baseOptions()
+	o.MemoryMB = 1
+	o.Duration = 600
+	out, err := Run(context.Background(), o)
+	if err == nil {
+		t.Fatal("expected failure")
+	}
+	if out == nil {
+		t.Fatal("no outcome")
+	}
+	if len(out.Committed) != 0 {
+		t.Fatal("a rolled-back run must not publish a summary")
+	}
+	if out.Summary.Status.State != "rolled_back" {
+		t.Fatalf("state = %s", out.Summary.Status.State)
 	}
 }
