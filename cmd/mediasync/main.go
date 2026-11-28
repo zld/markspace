@@ -136,20 +136,16 @@ func runVerify(args []string) int {
 	results, err := pipeline.Run(ctx, *workers, *queue, processor,
 		[]pipeline.Job{{Index: 0, Input: *input}})
 	if err != nil {
-		if f, ok := fault.AsFault(err); ok && f.Code == fault.ErrCanceled {
-			fmt.Fprintf(os.Stderr, "canceled: %v\n", err)
-			return report.ExitRuntime
-		}
-		fmt.Fprintf(os.Stderr, "runtime error: %v\n", err)
-		return report.ExitRuntime
+		fmt.Fprintf(os.Stderr, "%s: %v\n", runtimeReason(err), err)
+		return mapErrToExit(err)
 	}
 	res := results[0]
-	if res.Canceled {
-		fmt.Fprintln(os.Stderr, "canceled before completion")
-		return report.ExitRuntime
-	}
-	if res.Err != nil {
-		fmt.Fprintf(os.Stderr, "runtime error: %v\n", res.Err)
+	if res.Canceled || res.Err != nil {
+		if res.Err != nil {
+			fmt.Fprintf(os.Stderr, "runtime error: %v\n", res.Err)
+		} else {
+			fmt.Fprintln(os.Stderr, "canceled before completion")
+		}
 		return report.ExitRuntime
 	}
 	outcome, ok := res.Output.(*verifier.Outcome)
@@ -176,4 +172,21 @@ func runVerify(args []string) int {
 
 func writeFile(path string, data []byte) error {
 	return os.WriteFile(path, data, 0o600)
+}
+
+// mapErrToExit maps a pipeline/run error onto the contract exit code.
+// Cancellation and every other operational failure both surface as 1.
+func mapErrToExit(err error) int {
+	if err == nil {
+		return report.ExitOK
+	}
+	return report.ExitRuntime
+}
+
+// runtimeReason labels the stderr line for a pipeline-level error.
+func runtimeReason(err error) string {
+	if f, ok := fault.AsFault(err); ok && f.Code == fault.ErrCanceled {
+		return "canceled"
+	}
+	return "runtime error"
 }
