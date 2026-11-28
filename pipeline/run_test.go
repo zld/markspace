@@ -296,3 +296,48 @@ func TestScanReusesIndexUntilSamePathReplacement(t *testing.T) {
 		t.Fatal("a same-path replacement must not reuse the old index")
 	}
 }
+
+func TestRunBlocksWhenLossBudgetBreached(t *testing.T) {
+	// A healthy video rendition plus an RTP stream with five permanent drops in
+	// 100 packets. With a 99.9% recovery requirement the run must fail on the
+	// loss budget alone; without enforcement it would publish.
+	cfg := DefaultConfig()
+	cfg.SegmentTargetUs = 1_000_000
+	cfg.LossBudget = 0.001
+	video := buildTestInputs(t)[0] // one rendition, enough to align
+
+	var dgrams []fixture.RTPDatagram
+	for i := 0; i < 100; i++ {
+		if i == 10 || i == 20 || i == 30 || i == 40 || i == 50 {
+			continue
+		}
+		pkt := &rtp.Packet{Header: rtp.Header{Version: 2, SSRC: 7, SequenceNumber: uint16(i + 1), Timestamp: uint32(i * 3000)}}
+		b, _ := pkt.Marshal()
+		dgrams = append(dgrams, b)
+	}
+	rtpIn := Input{Path: name("budget.rtp"), Bytes: fixture.EncodeRTPCapture(dgrams), IsRTP: true}
+
+	job, err := NewJob(cfg, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, runErr := job.Run([]Input{video, rtpIn}, RunOptions{})
+	if runErr == nil {
+		t.Fatal("expected the run to fail on the loss budget")
+	}
+	if timeline.CodeOf(runErr) != timeline.CodeRefused && timeline.CodeOf(runErr) != timeline.CodeManifest && timeline.CodeOf(runErr) != timeline.CodeNoBoundary {
+		t.Logf("refusal code = %q: %v", timeline.CodeOf(runErr), runErr)
+	}
+	if res == nil || !res.Issues.HasErrors() {
+		t.Fatal("the budget breach must be a fatal issue")
+	}
+	found := false
+	for _, is := range res.Issues {
+		if is.Code == timeline.CodeUnrecoverable && is.Severity == timeline.SeverityError {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected a fatal unrecoverable_loss issue, got %v", res.Issues.Strings())
+	}
+}

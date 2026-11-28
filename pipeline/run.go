@@ -69,6 +69,18 @@ func (j *Job) Run(inputs []Input, opts RunOptions) (*RunResult, error) {
 		res.Issues.AddError(timeline.CodeNoBoundary, alignErr)
 	}
 
+	// Enforce the configured loss budget: a stream whose recovery rate falls
+	// below 1-LossBudget is not fit to publish, because the segment timeline
+	// rests on packets that never arrived. This promotes an RTP warning to a
+	// fatal issue only when the rate actually breaches the budget.
+	if rate := j.lossRecoveryRate(); rate < 1-j.Config.LossBudget {
+		res.Issues.Add(timeline.Issue{
+			Severity: timeline.SeverityError,
+			Code:     timeline.CodeUnrecoverable,
+			Message:  fmt.Sprintf("loss recovery %.4f below budget %.4f", rate, 1-j.Config.LossBudget),
+		})
+	}
+
 	// Any fatal issue anywhere means the inputs are damaged; still commit what
 	// was computed so a later fixed rerun can resume, but refuse to publish.
 	fatal := res.Issues.HasErrors()
