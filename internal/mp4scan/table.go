@@ -29,6 +29,10 @@ func buildTrack(rt *rawTrack) (*Track, error) {
 	sampleIdx := 0
 	for chunk := 0; chunk < len(rt.stco); chunk++ {
 		spc := samplesPerChunk(entries, chunk)
+		// The final chunk may hold fewer than samples-per-chunk.
+		if rem := uint32(len(sizes) - sampleIdx); spc > rem {
+			spc = rem
+		}
 		off := rt.stco[chunk]
 		for i := uint32(0); i < spc; i++ {
 			if sampleIdx >= len(sizes) {

@@ -121,15 +121,16 @@ func Scan(r io.ReadSeeker) (*Container, error) {
 			}
 		}
 		return false, nil
-	}, func(bi *mp4.BoxInfo) {
+	}, func(bi *mp4.BoxInfo) error {
 		if bi.Type == mp4.BoxTypeTrak() && cur != nil {
 			t, err := buildTrack(cur)
 			if err != nil {
-				return
+				return err
 			}
 			c.Tracks = append(c.Tracks, *t)
 			cur = nil
 		}
+		return nil
 	})
 	if err != nil {
 		return nil, err
@@ -139,7 +140,7 @@ func Scan(r io.ReadSeeker) (*Container, error) {
 
 // walk traverses boxes in [start, end), invoking enter for each box (which
 // returns whether to recurse) and leave after a container's children.
-func walk(r io.ReadSeeker, start, end int64, enter func(*mp4.BoxInfo, int) (bool, error), leave func(*mp4.BoxInfo)) error {
+func walk(r io.ReadSeeker, start, end int64, enter func(*mp4.BoxInfo, int) (bool, error), leave func(*mp4.BoxInfo) error) error {
 	pos := start
 	for pos < end {
 		if _, err := r.Seek(pos, io.SeekStart); err != nil {
@@ -169,7 +170,9 @@ func walk(r io.ReadSeeker, start, end int64, enter func(*mp4.BoxInfo, int) (bool
 			if err := walk(r, boxOff+int64(bi.HeaderSize), boxEnd, enter, leave); err != nil {
 				return err
 			}
-			leave(bi)
+			if err := leave(bi); err != nil {
+				return err
+			}
 		}
 		pos = boxEnd
 	}
