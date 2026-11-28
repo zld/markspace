@@ -186,26 +186,30 @@ func buildStbl(w *BoxWriter, tr TrackSpec, ch []chunk) {
 	w.U32(1)
 	w.Open(tr.Codec)
 	if tr.Kind == KindVideo {
-		w.Write(make([]byte, 6)) // reserved
-		w.U16(1)                 // data reference index
-		w.Write(make([]byte, 16))
-		w.U16(320) // width
-		w.U16(240) // height
-		w.U32(0x00480000)
-		w.U32(0)
-		w.U16(1) // frame count
+		w.Write(make([]byte, 6))   // reserved
+		w.U16(1)                   // data reference index
+		w.U16(0)                   // pre-defined
+		w.U16(0)                   // reserved
+		w.Write(make([]byte, 12))  // pre-defined[3]
+		w.U16(320)                 // width
+		w.U16(240)                 // height
+		w.U32(0x00480000)          // horizontal resolution 72dpi
+		w.U32(0x00480000)          // vertical resolution
+		w.U32(0)                   // reserved
+		w.U16(1)                   // frame count
 		var name [32]byte
 		w.Write(name[:])
 		w.U16(0x0018) // depth
 		w.U16(0xffff) // pre-defined
 	} else {
-		w.Write(make([]byte, 6))
-		w.U16(1) // data reference index
-		w.U32(0)
-		w.U16(1)  // channels
-		w.U16(16) // sample size
-		w.U16(0)  // pre-defined
-		w.U16(0)  // reserved
+		w.Write(make([]byte, 6)) // reserved
+		w.U16(1)                 // data reference index
+		w.U16(0)                 // entry version
+		w.Write(make([]byte, 6)) // reserved[3]
+		w.U16(1)                 // channel count
+		w.U16(16)                // sample size
+		w.U16(0)                 // pre-defined
+		w.U16(0)                 // reserved
 		w.U32(tr.Timescale << 16)
 	}
 	w.Close() // codec entry
