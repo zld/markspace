@@ -82,6 +82,7 @@ func Verify(outDir string, cfg Config) (*Report, error) {
 
 	seenPath := make(map[string]bool, len(m.Frames))
 	seenKey := make(map[string]bool, len(m.Frames))
+	var verifiedFrames []artifact.Frame
 	var sr, sg, sb, sv float64
 	rep.PeakLoudness = pixel.LoudnessFloorDBFS
 	var sizeSum int64
@@ -158,6 +159,9 @@ func Verify(outDir string, cfg Config) (*Report, error) {
 			rep.Fills++
 		}
 		rep.Frames++
+		// Record the hash actually observed on disk; RunHash below is built
+		// from these, never from the manifest's claims.
+		verifiedFrames = append(verifiedFrames, artifact.Frame{SHA256: hashHex(data)})
 		sr += stats.MeanR
 		sg += stats.MeanG
 		sb += stats.MeanB
@@ -169,13 +173,23 @@ func Verify(outDir string, cfg Config) (*Report, error) {
 		rep.MeanR, rep.MeanG, rep.MeanB, rep.Variance = sr/n, sg/n, sb/n, sv/n
 	}
 
-	segFaults := verifySegments(outDir, m, &sizeSum, rep)
+	verifiedSegments, segFaults := verifySegments(outDir, m, &sizeSum, rep)
 	rep.Faults = append(rep.Faults, segFaults...)
 
 	alignFaults := checkTiming(m, cfg)
 	rep.Faults = append(rep.Faults, alignFaults...)
-	rep.MaxAlignNS = maxAlign(m)
-
+	// Re-derive alignment from the files, not from the renderer's report: the
+	// segment's stts timeline recovers each sample's position, and the frame
+	// manifest supplies the intended PTS. A mismatch beyond the envelope is a
+	// hard fault.
+	recovered, alignFaults2 := checkSegmentAlignment(outDir, m, cfg)
+	rep.MaxAlignNS = recovered
+	rep.Faults = append(rep.Faults, alignFaults2...)
+	if m.Summary.MaxAlignErrorNS != 0 && m.Summary.MaxAlignErrorNS < recovered {
+		rep.Faults = append(rep.Faults, verifyFault(0, 0,
+			fmt.Sprintf("recorded max align error %d ns is below re-derived %d ns",
+				m.Summary.MaxAlignErrorNS, recovered)))
+	}
 	// Cross-check the recorded summary against re-derived values; a mismatch
 	// means the manifest lied or the artefacts changed underneath it.
 	if len(rep.Faults) == 0 {
@@ -190,12 +204,19 @@ func Verify(outDir string, cfg Config) (*Report, error) {
 		rep.Faults = append(rep.Faults, verifyFault(0, 0,
 			fmt.Sprintf("total artefact bytes %d exceed the %d cap", rep.TotalBytes, cfg.MaxBytes)))
 	}
-	rep.RunHash = runHash(rep)
+	rep.RunHash = artifact.RunHash(verifiedFrames, verifiedSegments)
+	if m.Summary.RunHash != "" && m.Summary.RunHash != rep.RunHash {
+		rep.Faults = append(rep.Faults, verifyFault(0, 0,
+			fmt.Sprintf("recorded run hash %s does not match re-derived %s",
+				short(m.Summary.RunHash), short(rep.RunHash))))
+		rep.Faults.Sort()
+	}
 	return rep, nil
 }
 
-func verifySegments(outDir string, m *artifact.Manifest, sizeSum *int64, rep *Report) model.Faults {
+func verifySegments(outDir string, m *artifact.Manifest, sizeSum *int64, rep *Report) ([]artifact.Segment, model.Faults) {
 	var faults model.Faults
+	var verified []artifact.Segment
 	tracks := make(map[model.TrackID]bool)
 	for _, s := range m.Segments {
 		if tracks[s.Track] {
@@ -226,10 +247,12 @@ func verifySegments(outDir string, m *artifact.Manifest, sizeSum *int64, rep *Re
 			faults = append(faults, verifyFault(s.Track, 0, err.Error()))
 			continue
 		}
-		if got := hashFileHex(filepath.Join(outDir, s.Path)); got != s.SHA256 {
+		got := hashFileHex(filepath.Join(outDir, s.Path))
+		if got != s.SHA256 {
 			faults = append(faults, verifyFault(s.Track, 0,
 				fmt.Sprintf("segment hash %s does not match recorded %s", short(got), short(s.SHA256))))
 		}
+		verified = append(verified, artifact.Segment{SHA256: got})
 		if st.Size() != s.Bytes {
 			faults = append(faults, verifyFault(s.Track, 0,
 				fmt.Sprintf("segment size %d does not match recorded %d", st.Size(), s.Bytes)))
@@ -258,7 +281,7 @@ func verifySegments(outDir string, m *artifact.Manifest, sizeSum *int64, rep *Re
 		rep.Segments++
 		*sizeSum += st.Size()
 	}
-	return faults
+	return verified, faults
 }
 
 // crossCheckPayloads proves the segment samples are the very frame files the
@@ -360,25 +383,59 @@ func checkStats(raw pixel.Raw, f artifact.Frame, cfg Config) error {
 	return nil
 }
 
-// maxAlign re-derives the maximum deviation between each frame's manifest PTS
-// and the segment-derived position of the same artefact.
-func maxAlign(m *artifact.Manifest) int64 {
+// checkSegmentAlignment re-derives the largest timing error between the frame
+// manifest's PTS and the positions implied by each segment's stts timeline.
+// This reads the container afresh, so a renderer that merely claims a small
+// alignment error cannot pass.
+func checkSegmentAlignment(outDir string, m *artifact.Manifest, cfg Config) (int64, model.Faults) {
 	var worst int64
+	var faults model.Faults
 	for _, s := range m.Segments {
-		var trackFrames []artifact.Frame
-		for _, f := range m.Frames {
-			if f.Track == s.Track {
-				trackFrames = append(trackFrames, f)
+		f, err := os.Open(filepath.Join(outDir, s.Path))
+		if err != nil {
+			continue
+		}
+		meta, payloads, err := mp4seg.Read(f)
+		f.Close()
+		if err != nil || len(meta.Deltas) != len(payloads) {
+			continue
+		}
+		byHash := make(map[string]int64, len(m.Frames))
+		for _, fr := range m.Frames {
+			if fr.Track == s.Track {
+				byHash[fr.SHA256] = fr.PTS
 			}
 		}
-		sort.SliceStable(trackFrames, func(i, j int) bool { return trackFrames[i].PTS < trackFrames[j].PTS })
-		for _, f := range trackFrames {
-			if d := abs64(f.PTS - s.FirstPTS); d > worst {
-				worst = d
+		var declared []int64
+		for _, p := range payloads {
+			if pts, ok := byHash[hashHex(p)]; ok {
+				declared = append(declared, pts)
+			}
+		}
+		if len(declared) == 0 {
+			continue
+		}
+		// Sample 0's stts delta is synthesised by the writer (it equals sample
+		// 1's), so the container position of sample i accumulates the real
+		// deltas 1..i. Compare that against the declared PTS relative to the
+		// first sample. Sampling (fps) legitimately makes gaps larger than the
+		// nominal cadence, so only the accumulated difference matters, not the
+		// individual gap.
+		base := declared[0]
+		var container int64
+		for i := 1; i < len(declared); i++ {
+			container += int64(meta.Deltas[i])
+			drift := abs64((declared[i] - base) - container)
+			if drift > worst {
+				worst = drift
+			}
+			if cfg.MaxAlignErrorNS > 0 && drift > cfg.MaxAlignErrorNS {
+				faults = append(faults, verifyFault(s.Track, uint32(i+1),
+					fmt.Sprintf("segment sample %d drifts %d ns from its declared PTS", i, drift)))
 			}
 		}
 	}
-	return worst
+	return worst, faults
 }
 
 // checkTiming validates that each track's frame timestamps are strictly
@@ -439,13 +496,6 @@ func safeJoin(root, rel string) error {
 
 func verifyFault(track model.TrackID, frame uint32, msg string) *model.Fault {
 	return model.NewFault(model.KindVerify, model.CodeConstraintViolation, track, frame, msg)
-}
-
-func runHash(rep *Report) string {
-	h := sha256.New()
-	fmt.Fprintf(h, "frames=%d fills=%d bytes=%d loud=%.6f var=%.6f",
-		rep.Frames, rep.Fills, rep.TotalBytes, rep.PeakLoudness, rep.Variance)
-	return hex.EncodeToString(h.Sum(nil))
 }
 
 func hashHex(b []byte) string {
