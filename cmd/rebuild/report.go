@@ -333,11 +333,17 @@ func (r *report) print(w io.Writer) {
 	if r.app != nil && r.app.unpublished {
 		fmt.Fprintln(w, "artifacts=withheld")
 	}
-	switch {
-	case r.interrupted:
-		fmt.Fprintln(w, "result=INTERRUPTED")
-	case r.passed:
-		fmt.Fprintln(w, "result=PASS")
+	// The result line mirrors the exit code, so a terminal reader sees the same
+	// classification the process returns.
+	switch r.exitCode() {
+	case exitOK:
+		if r.interrupted {
+			fmt.Fprintln(w, "result=INTERRUPTED")
+		} else {
+			fmt.Fprintln(w, "result=PASS")
+		}
+	case exitPartial:
+		fmt.Fprintln(w, "result=PARTIAL")
 	default:
 		fmt.Fprintln(w, "result=FAIL")
 	}
@@ -378,6 +384,11 @@ func (r *report) aggregate() aggregate {
 		a.lossRate = float64(a.loss) / float64(received)
 	}
 	a.artifactSHA = r.combinedArtifactDigest()
+	if a.artifactSHA == "" {
+		// Withheld artifacts are still described by their per-stream digest in
+		// the detail block; the summary says so rather than repeating it.
+		a.artifactSHA = "withheld"
+	}
 	return a
 }
 
