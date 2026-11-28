@@ -266,36 +266,51 @@ func classify(err error, rep *report) int {
 }
 
 // print writes the human-readable report.
+//
+// The flat summary block uses the exact key names of the acceptance list and
+// aggregates across streams. Per-stream detail follows with a stream.<name>.
+// prefix so every number remains individually checkable, including the fault
+// stream's exact truncation offset.
 func (r *report) print(w io.Writer) {
-	for _, s := range r.streams {
-		fmt.Fprintf(w, "stream=%s packets=%d unique=%d duplicates=%d loss=%d loss_rate=%.4f\n",
-			s.Name, s.Packets, s.Unique, s.Duplicates, s.Loss, s.LossRate)
-		fmt.Fprintf(w, "stream=%s jitter=%.2f gap_intervals=%d offset_errors=%d truncated_offset=%d\n",
-			s.Name, s.Jitter, s.GapIntervals, s.OffsetErrors, s.TruncatedAt)
-		fmt.Fprintf(w, "stream=%s artifact_sha256=%s\n", s.Name, orDash(s.ArtifactSHA))
-	}
-	fmt.Fprintf(w, "peak_buffer_bytes=%d\n", r.peakBuffer())
-	fmt.Fprintf(w, "elapsed_ms=%d budget_ms=%d budget_delta_ms=%d\n",
-		r.elapsedMS, r.cfg.BudgetMS, r.budgetDelta)
+	agg := r.aggregate()
+
+	fmt.Fprintf(w, "packets=%d\n", agg.packets)
+	fmt.Fprintf(w, "unique=%d\n", agg.unique)
+	fmt.Fprintf(w, "duplicates=%d\n", agg.duplicates)
+	fmt.Fprintf(w, "loss=%d\n", agg.loss)
+	fmt.Fprintf(w, "loss_rate=%.4f\n", agg.lossRate)
+	fmt.Fprintf(w, "jitter=%.2f\n", agg.jitter)
+	fmt.Fprintf(w, "gap_intervals=%d\n", agg.gapIntervals)
+	fmt.Fprintf(w, "offset_errors=%d\n", agg.offsetErrors)
+	fmt.Fprintf(w, "peak_buffer_bytes=%d\n", agg.peakBuffer)
+	fmt.Fprintf(w, "elapsed_ms=%d\n", r.elapsedMS)
+	fmt.Fprintf(w, "budget_ms=%d\n", r.cfg.BudgetMS)
+	fmt.Fprintf(w, "budget_delta_ms=%d\n", r.budgetDelta)
 	fmt.Fprintf(w, "manifest_sha256=%s\n", orDash(r.manifestSHA))
+	fmt.Fprintf(w, "artifact_sha256=%s\n", orDash(agg.artifactSHA))
 	fmt.Fprintf(w, "resume_stage=%s\n", orDash(r.resumeStage))
-	passed, expected, failed, total := r.itemCounts()
-	fmt.Fprintf(w, "item_results=%d/%d (pass=%d expected_damage=%d fail=%d)\n",
-		passed+expected, total, passed, expected, failed)
 	fmt.Fprintf(w, "clock_offset=%s\n", r.clockOffsetLabel())
-	fmt.Fprintf(w, "unalignable_events=%d\n", r.unalignableEvents())
+	fmt.Fprintf(w, "unalignable_events=%d\n", agg.unalignable)
+	passed, expected, failed, total := r.itemCounts()
+	fmt.Fprintf(w, "item_results=%d/%d pass=%d expected_damage=%d fail=%d\n",
+		passed+expected, total, passed, expected, failed)
 
 	for _, s := range r.streams {
-		if len(s.Intervals) > 0 {
-			for _, iv := range s.Intervals {
-				fmt.Fprintf(w, "interval stream=%s start_seq=%d end_seq=%d start_ms=%d end_ms=%d gap_ticks=%d events=%d\n",
-					s.Name, iv.StartSeq, iv.EndSeq, int64(iv.StartTime)/90, int64(iv.EndTime)/90,
-					iv.Gap, len(iv.Events))
-			}
-			continue
+		fmt.Fprintf(w, "stream.%s.packets=%d\n", s.Name, s.Packets)
+		fmt.Fprintf(w, "stream.%s.unique=%d\n", s.Name, s.Unique)
+		fmt.Fprintf(w, "stream.%s.duplicates=%d\n", s.Name, s.Duplicates)
+		fmt.Fprintf(w, "stream.%s.loss=%d\n", s.Name, s.Loss)
+		fmt.Fprintf(w, "stream.%s.loss_rate=%.4f\n", s.Name, s.LossRate)
+		fmt.Fprintf(w, "stream.%s.jitter=%.2f\n", s.Name, s.Jitter)
+		fmt.Fprintf(w, "stream.%s.gap_intervals=%d\n", s.Name, s.GapIntervals)
+		fmt.Fprintf(w, "stream.%s.offset_errors=%d\n", s.Name, s.OffsetErrors)
+		fmt.Fprintf(w, "stream.%s.truncated_offset=%d\n", s.Name, s.TruncatedAt)
+		fmt.Fprintf(w, "stream.%s.artifact_sha256=%s\n", s.Name, orDash(s.ArtifactSHA))
+		for _, iv := range s.Intervals {
+			fmt.Fprintf(w, "interval stream=%s start_seq=%d end_seq=%d start_ms=%d end_ms=%d gap_ticks=%d events=%d\n",
+				s.Name, iv.StartSeq, iv.EndSeq, int64(iv.StartTime)/90, int64(iv.EndTime)/90,
+				iv.Gap, len(iv.Events))
 		}
-	}
-	for _, s := range r.streams {
 		for _, e := range s.UnalignableList {
 			fmt.Fprintf(w, "unalignable stream=%s line=%d kind=%s reason=%s\n", s.Name, e.Line, e.Kind, e.Reason)
 		}
@@ -329,6 +344,55 @@ func (r *report) print(w io.Writer) {
 	if r.outcome != nil && r.outcome.Interrupted != "" {
 		fmt.Fprintf(w, "interrupted_after=%s\n", r.outcome.Interrupted)
 	}
+}
+
+// aggregate folds the per-stream numbers into the flat summary.
+type aggregate struct {
+	packets, unique, duplicates, loss, gapIntervals, offsetErrors, unalignable int
+	lossRate                                                                   float64
+	jitter                                                                     float64
+	peakBuffer                                                                 int64
+	artifactSHA                                                                string
+}
+
+func (r *report) aggregate() aggregate {
+	var a aggregate
+	var jitterSum float64
+	for _, s := range r.streams {
+		a.packets += s.Packets
+		a.unique += s.Unique
+		a.duplicates += s.Duplicates
+		a.loss += s.Loss
+		a.gapIntervals += s.GapIntervals
+		a.offsetErrors += s.OffsetErrors
+		a.unalignable += len(s.UnalignableList)
+		jitterSum += s.Jitter
+		if s.PeakBuffer > a.peakBuffer {
+			a.peakBuffer = s.PeakBuffer
+		}
+	}
+	if n := len(r.streams); n > 0 {
+		a.jitter = jitterSum / float64(n)
+	}
+	if received := a.unique + a.loss; received > 0 {
+		a.lossRate = float64(a.loss) / float64(received)
+	}
+	a.artifactSHA = r.combinedArtifactDigest()
+	return a
+}
+
+// combinedArtifactDigest hashes the artifacts in name order so the summary has
+// one stable fingerprint even with several streams.
+func (r *report) combinedArtifactDigest() string {
+	var parts []string
+	for _, s := range r.streams {
+		if s.ArtifactSHA == "" {
+			return ""
+		}
+		parts = append(parts, s.Name+":"+s.ArtifactSHA)
+	}
+	sort.Strings(parts)
+	return digestStrings("artifacts", parts...)
 }
 
 func (r *report) peakBuffer() int64 {
