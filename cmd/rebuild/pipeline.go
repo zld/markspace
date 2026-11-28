@@ -405,9 +405,14 @@ func (a *app) ingestOne(ctx context.Context, w *work) error {
 	}
 	defer s.Close()
 
-	recs, errs := s.Emit(ctx)
+	reader := s.Emit(ctx)
 	var pending int64
-	for rec := range recs {
+	for {
+		rec, nextErr := reader.Next()
+		if nextErr != nil {
+			err = nextErr
+			break
+		}
 		w.Stream.Records++
 		switch rec.Kind {
 		case ingest.KindRTP:
@@ -417,9 +422,12 @@ func (a *app) ingestOne(ctx context.Context, w *work) error {
 		case ingest.KindEvent:
 			w.Stream.EventRecords++
 		}
-		pending = int64(len(rec.Data))
+		pending = rec.Size()
 	}
-	err = <-errs
+	peakQueued := reader.PeakBytes()
+	if errors.Is(err, io.EOF) {
+		err = nil
+	}
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return fmt.Errorf("%w: %v", stage.ErrBudgetExceeded, err)
@@ -439,7 +447,9 @@ func (a *app) ingestOne(ctx context.Context, w *work) error {
 	if w.Stream.Records == 0 {
 		return fault.At(fault.StageIngest, "read stream", 0, fmt.Errorf("%w: no records", fault.ErrCorrupt))
 	}
-	a.notePeak(w.Stream.Bytes+pending, int64(ingest.ChannelDepth))
+	// Ingest buffering is the measured queue reservation plus the record in
+	// flight, never the size of the file being streamed.
+	a.notePeak(peakQueued+pending, int64(ingest.ChannelDepth))
 	return nil
 }
 
@@ -536,8 +546,7 @@ func (a *app) reorderOne(ctx context.Context, w *work) error {
 			Seq: an.Seq, ExtSeq: an.ExtSeq, Offset: an.Offset, Reason: an.Reason,
 		})
 	}
-	a.notePeak(w.Stream.Bytes+int64(res.PeakPendingBytes), int64(reorderWindow))
-	_ = maxRecord
+	a.notePeak(int64(res.PeakPendingBytes), int64(reorderWindow))
 	return nil
 }
 

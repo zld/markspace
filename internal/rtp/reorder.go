@@ -76,8 +76,9 @@ type Result struct {
 	Duplicates     int
 	OutOfWindow    int
 	TimestampWraps int
-	// PeakPendingBytes is the high-water mark of buffered reorder state,
-	// estimated as fixed bookkeeping per pending packet.
+	// PeakPendingBytes is the high-water mark of reorder buffering: the
+	// payload bytes still waiting for emission plus fixed per-packet
+	// bookkeeping. It is what the memory ceiling is checked against.
 	PeakPendingBytes int
 	// FirstTS is the unwrapped timestamp of the first emitted packet. Media
 	// time zero is defined as this value, so the timeline starts at zero

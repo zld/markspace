@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
 
 	"rtp-rebuild/internal/fault"
 )
@@ -39,7 +40,15 @@ const (
 	// ChannelDepth bounds how many records may be queued in front of a slow
 	// consumer before the reader blocks.
 	ChannelDepth = 32
+
+	// BufferBudget is the byte budget of the consumer queue. The reader blocks
+	// on the channel as soon as either the depth or this byte budget is
+	// reached, so buffered record payloads can never exceed it.
+	BufferBudget = 1 << 20 // 1 MiB
 )
+
+// RecordSize is the wire size of a record including its header.
+func (r Record) Size() int64 { return RecordHeaderSize + int64(len(r.Data)) }
 
 // Kind identifies the payload of a record.
 type Kind uint8
@@ -85,6 +94,7 @@ type Stream struct {
 	r      *bufio.Reader
 	Header Header
 	read   int64 // bytes consumed so far, including the file header
+	peak   int64
 }
 
 // Open opens path and reads the stream header.
@@ -172,43 +182,177 @@ func (s *Stream) Close() error {
 	return nil
 }
 
-// Emit reads records until the stream ends, the byte cap is hit or ctx is
-// cancelled. Records are delivered on a bounded channel and are never dropped
-// silently: the first error is sent on the returned error channel once the
-// record channel is closed.
+// Reader is a bounded, cancellable record reader.
 //
-// Cancellation closes the input file and stops the producer.
-func (s *Stream) Emit(ctx context.Context) (<-chan Record, <-chan error) {
-	records := make(chan Record, ChannelDepth)
-	errs := make(chan error, 1)
+// The producer goroutine blocks when either ChannelDepth records or
+// BufferBudget bytes of record payload are reserved on the queue, so a slow
+// consumer stalls the reader instead of growing memory. Reserved bytes are
+// released as records are taken, and the high-water mark is reported.
+type Reader struct {
+	stream *Stream
+	recs   chan queued
+	errs   chan error
+	ctx    context.Context
+	cancel context.CancelFunc
+	space  chan struct{}
 
-	go func() {
-		defer close(records)
-		for {
+	mu     sync.Mutex
+	queued int64
+	peak   int64
+	done   bool
+}
+
+type queued struct {
+	rec  Record
+	size int64
+}
+
+// Emit starts a bounded reader for the stream.
+func (s *Stream) Emit(ctx context.Context) *Reader {
+	ctx, cancel := context.WithCancel(ctx)
+	r := &Reader{
+		stream: s,
+		recs:   make(chan queued, ChannelDepth),
+		errs:   make(chan error, 1),
+		space:  make(chan struct{}, 1),
+		ctx:    ctx,
+		cancel: cancel,
+	}
+	go r.produce()
+	return r
+}
+
+// Next returns the next record, io.EOF at the end of the stream, or the first
+// read error.
+func (r *Reader) Next() (Record, error) {
+	r.mu.Lock()
+	if r.done {
+		r.mu.Unlock()
+		return Record{}, io.EOF
+	}
+	r.mu.Unlock()
+
+	select {
+	case q, ok := <-r.recs:
+		if !ok {
+			return Record{}, r.finalErr()
+		}
+		r.release(q.size)
+		return q.rec, nil
+	case <-r.ctx.Done():
+		return Record{}, r.finalErr()
+	}
+}
+
+// finalErr waits for the producer's terminal error, or reports cancellation
+// when the context ended first.
+func (r *Reader) finalErr() error {
+	select {
+	case err := <-r.errs:
+		r.mu.Lock()
+		r.done = true
+		r.mu.Unlock()
+		if err == nil {
+			return io.EOF
+		}
+		return err
+	case <-r.ctx.Done():
+		r.mu.Lock()
+		r.done = true
+		r.mu.Unlock()
+		return fault.New(fault.StageIngest, "cancelled", r.ctx.Err())
+	}
+}
+
+func (r *Reader) release(size int64) {
+	r.mu.Lock()
+	r.queued -= size
+	if r.queued < 0 {
+		r.queued = 0
+	}
+	r.mu.Unlock()
+	select {
+	case r.space <- struct{}{}:
+	default:
+	}
+}
+
+// PeakBytes is the high-water mark of reserved queue bytes.
+func (r *Reader) PeakBytes() int64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.peak
+}
+
+// StreamPeakBytes reports the reader high-water mark recorded on the stream.
+func (s *Stream) StreamPeakBytes() int64 { return s.peak }
+
+// Cancel stops the producer and closes the input, preserving any records not
+// yet taken as lost work.
+func (r *Reader) Cancel() {
+	r.cancel()
+	r.stream.Close()
+}
+
+// Close stops the producer.
+func (r *Reader) Close() {
+	r.cancel()
+}
+
+func (r *Reader) room(size int64) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.queued == 0 || r.queued+size <= BufferBudget
+}
+
+func (r *Reader) reserve(size int64) {
+	r.mu.Lock()
+	r.queued += size
+	if r.queued > r.peak {
+		r.peak = r.queued
+	}
+	if r.queued > r.stream.peak {
+		r.stream.peak = r.queued
+	}
+	r.mu.Unlock()
+}
+
+func (r *Reader) unreserve(size int64) { r.release(size) }
+
+func (r *Reader) produce() {
+	defer close(r.recs)
+	for {
+		if err := r.ctx.Err(); err != nil {
+			r.errs <- fault.New(fault.StageIngest, "cancelled", err)
+			return
+		}
+		rec, err := r.stream.ReadRecord()
+		if errors.Is(err, io.EOF) {
+			r.errs <- nil
+			return
+		}
+		if err != nil {
+			r.errs <- err
+			return
+		}
+		size := rec.Size()
+		for !r.room(size) {
 			select {
-			case <-ctx.Done():
-				s.Close()
-				errs <- fault.New(fault.StageIngest, "cancelled", ctx.Err())
-				return
-			default:
-			}
-			rec, err := s.ReadRecord()
-			if errors.Is(err, io.EOF) {
-				errs <- nil
-				return
-			}
-			if err != nil {
-				errs <- err
-				return
-			}
-			select {
-			case records <- rec:
-			case <-ctx.Done():
-				s.Close()
-				errs <- fault.New(fault.StageIngest, "cancelled", ctx.Err())
+			case <-r.space:
+			case <-r.ctx.Done():
+				r.errs <- fault.New(fault.StageIngest, "cancelled", r.ctx.Err())
 				return
 			}
 		}
-	}()
-	return records, errs
+		// Reserve before sending so the consumer's release can never race past
+		// the reservation into a negative count.
+		r.reserve(size)
+		select {
+		case r.recs <- queued{rec: rec, size: size}:
+		case <-r.ctx.Done():
+			r.unreserve(size)
+			r.errs <- fault.New(fault.StageIngest, "cancelled", r.ctx.Err())
+			return
+		}
+	}
 }

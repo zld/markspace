@@ -210,12 +210,45 @@ func TestWindowBounds(t *testing.T) {
 	}
 }
 
+func TestPeakPendingIncludesPayload(t *testing.T) {
+	// The first sequence never arrives, so the rest wait in the window.
+	r := NewReorderer(8)
+	payload := make([]byte, 1000)
+	for i := 1; i <= 4; i++ {
+		if err := r.Push(wirePacket(uint16(i), uint32(i)*3000, payload), int64(i)); err != nil {
+			t.Fatalf("push: %v", err)
+		}
+	}
+	res := r.Finish()
+	// All four buffered payloads count toward the peak.
+	if res.PeakPendingBytes < 4*len(payload) {
+		t.Fatalf("peak = %d, want >= %d", res.PeakPendingBytes, 4*len(payload))
+	}
+}
+
+// wirePacket marshals a minimal RTP packet with a large payload.
+func wirePacket(seq uint16, ts uint32, payload []byte) []byte {
+	pkt := &pionrtp.Packet{
+		Header: pionrtp.Header{
+			Version: 2, SequenceNumber: seq, Timestamp: ts,
+			SSRC: testSSRC, PayloadType: 96,
+		},
+		Payload: payload,
+	}
+	raw, err := pkt.Marshal()
+	if err != nil {
+		panic(err)
+	}
+	return raw
+}
+
 func TestPeakPendingStaysBounded(t *testing.T) {
 	r := NewReorderer(16)
 	for i := 0; i < 500; i++ {
 		r.Accept(testSSRC, uint16(i), uint32(i*3000), false, 96, int64(i))
 	}
 	res := r.Finish()
+	// The window bounds both bookkeeping and payload bytes retained.
 	if res.PeakPendingBytes > 16*pendingBytesPerPacket {
 		t.Fatalf("peak pending = %d bytes, want <= %d", res.PeakPendingBytes, 16*pendingBytesPerPacket)
 	}

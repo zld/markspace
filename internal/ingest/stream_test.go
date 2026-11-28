@@ -164,23 +164,23 @@ func TestEmitBackpressureAndCancel(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	recs, errs := s.Emit(ctx)
+	r := s.Emit(ctx)
 	// Consume slowly; the producer must block on the bounded channel.
 	var count int
-	for range recs {
+	for {
+		if _, err := r.Next(); err != nil {
+			if count < len(records) && count > ChannelDepth+2 {
+				t.Fatalf("producer ran too far ahead: %d records", count)
+			}
+			break
+		}
 		count++
 		if count == 5 {
 			cancel()
 		}
 	}
-	if err := <-errs; err == nil {
-		t.Fatal("expected cancellation error")
-	}
 	if count >= len(records) {
 		t.Fatalf("consumer saw %d records despite early cancel", count)
-	}
-	if count > ChannelDepth+2 {
-		t.Fatalf("producer ran too far ahead: %d records", count)
 	}
 }
 
@@ -190,13 +190,16 @@ func TestEmitCompletes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	recs, errs := s.Emit(context.Background())
+	r := s.Emit(context.Background())
 	var n int
-	for range recs {
+	for {
+		if _, err := r.Next(); err != nil {
+			if !errors.Is(err, io.EOF) {
+				t.Fatalf("emit error: %v", err)
+			}
+			break
+		}
 		n++
-	}
-	if err := <-errs; err != nil {
-		t.Fatalf("emit error: %v", err)
 	}
 	if n != 2 {
 		t.Fatalf("read %d records, want 2", n)
@@ -211,15 +214,57 @@ func TestEmitCancelledBeforeStart(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	recs, errs := s.Emit(ctx)
-	for range recs {
-	}
+	r := s.Emit(ctx)
+	done := make(chan error, 1)
+	go func() {
+		_, err := r.Next()
+		done <- err
+	}()
 	select {
-	case err := <-errs:
+	case err := <-done:
 		if err == nil {
 			t.Fatal("expected cancellation error")
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("emit did not report cancellation")
+	}
+}
+
+func TestReaderByteBudget(t *testing.T) {
+	// Records larger than the byte budget must still flow, one at a time: the
+	// reader never reserves more than one oversized record.
+	payload := make([]byte, 512<<10)
+	var buf bytes.Buffer
+	w, err := NewWriter(&buf, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const n = 6
+	for i := 0; i < n; i++ {
+		if _, err := w.WriteRecord(KindEvent, payload); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s, err := NewStream(bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := s.Emit(context.Background())
+	var count int
+	for {
+		if _, err := r.Next(); err != nil {
+			if !errors.Is(err, io.EOF) {
+				t.Fatalf("next: %v", err)
+			}
+			break
+		}
+		count++
+	}
+	if count != n {
+		t.Fatalf("read %d records, want %d", count, n)
+	}
+	// Peak reservation is bounded by the budget plus one record.
+	if peak := r.PeakBytes(); peak > BufferBudget+int64(len(payload)) {
+		t.Fatalf("peak reservation = %d, want <= %d", peak, BufferBudget+int64(len(payload)))
 	}
 }
