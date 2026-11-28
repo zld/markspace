@@ -125,7 +125,9 @@ const (
 	ModeFresh
 )
 
-// Process executes the full pipeline.
+// Process executes the full pipeline. Checkpointing is optional: with no
+// checkpoint directory the run is simply self-contained, which is what a
+// one-off inspection of a file needs.
 func Process(opts Options, mode Mode) (*Result, error) {
 	opts = opts.withDefaults()
 	if _, err := os.Stat(opts.Input); err != nil {
@@ -142,9 +144,17 @@ func Process(opts Options, mode Mode) (*Result, error) {
 	res.Fatal = fatal
 
 	store := checkpoint.NewStore(opts.CheckpointDir)
-	cp, err := store.Load()
-	if err != nil {
-		return nil, err
+	if opts.CheckpointDir == "" {
+		store = nil
+		mode = ModeFresh
+	}
+	var cp *checkpoint.State
+	var err error
+	if store != nil {
+		cp, err = store.Load()
+		if err != nil {
+			return nil, err
+		}
 	}
 	cfg := configDigest(opts)
 	fromCheckpoint := cp != nil
@@ -238,7 +248,7 @@ func Process(opts Options, mode Mode) (*Result, error) {
 	}
 	cp.Stage = media.StageSplit
 	cp.Normalize()
-	if err := store.Save(cp); err != nil {
+	if err := saveCheckpoint(store, cp); err != nil {
 		return nil, err
 	}
 	stats.ResumeSegments += segStats.reused()
@@ -314,7 +324,7 @@ func Process(opts Options, mode Mode) (*Result, error) {
 	}
 	cp.Stage = media.StageFingerprint
 	cp.Normalize()
-	if err := store.Save(cp); err != nil {
+	if err := saveCheckpoint(store, cp); err != nil {
 		return nil, err
 	}
 	// Write the manifest, then record its published digest in the checkpoint.
@@ -582,6 +592,14 @@ func contentDigest(m *Manifest) (media.Digest, error) {
 			"encode manifest content", err)
 	}
 	return media.DigestBytes(b), nil
+}
+
+// saveCheckpoint persists state when a checkpoint directory is configured.
+func saveCheckpoint(store *checkpoint.Store, cp *checkpoint.State) error {
+	if store == nil {
+		return nil
+	}
+	return store.Save(cp)
 }
 
 // Seal computes the document digest over everything except the digest field.

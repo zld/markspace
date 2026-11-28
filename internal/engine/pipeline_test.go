@@ -411,6 +411,26 @@ func TestBoundaryFixtureSplits(t *testing.T) {
 	}
 }
 
+func TestCheckpointOptional(t *testing.T) {
+	fx := generate(t)
+	withCP, err := Process(runOpts(t, fx.Valid), ModeFresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bare := DefaultOptions(fx.Valid)
+	bare.OutputPath = filepath.Join(t.TempDir(), "out.json")
+	without, err := Process(bare, ModeFresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if withCP.Manifest.OutputSHA256 != without.Manifest.OutputSHA256 {
+		t.Fatal("checkpointing changed the manifest")
+	}
+	if _, err := os.Stat(bare.CheckpointDir); !os.IsNotExist(err) {
+		t.Errorf("checkpoint dir created despite being disabled: %v", err)
+	}
+}
+
 func TestMissingInput(t *testing.T) {
 	opts := DefaultOptions(filepath.Join(t.TempDir(), "nope.mp4"))
 	opts.CheckpointDir = t.TempDir()

@@ -288,7 +288,7 @@ func produceFingerprints(opts Options, tl *timeline.Timeline, segs []split.Segme
 			if opts.InterruptAfterSegments > 0 && computed >= opts.InterruptAfterSegments {
 				cp.Stage = media.StageFingerprint
 				cp.Normalize()
-				if err := store.Save(cp); err != nil {
+				if err := saveCheckpoint(store, cp); err != nil {
 					return nil, nil, stats, err
 				}
 				return nil, nil, stats, media.Errorf(media.ClassCheckpoint, media.StageFingerprint, "",
