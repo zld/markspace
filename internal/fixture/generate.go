@@ -16,6 +16,7 @@ type Manifest struct {
 	BadCrop          string `json:"bad_crop"`
 	BadCropOffset    int64  `json:"bad_crop_offset"`
 	Boundary         string `json:"boundary"`
+	Duplicates       string `json:"duplicates"`
 	MXF              string `json:"mxf"`
 	MXFConflict      string `json:"mxf_conflict"`
 	MXFDamaged       string `json:"mxf_damaged"`
@@ -30,6 +31,7 @@ func Generate(dir string) (*Manifest, error) {
 		Damaged:     filepath.Join(dir, "damaged.mp4"),
 		BadCrop:     filepath.Join(dir, "badcrop.mp4"),
 		Boundary:    filepath.Join(dir, "boundary.mp4"),
+		Duplicates:  filepath.Join(dir, "duplicates.mp4"),
 		MXF:         filepath.Join(dir, "valid.mxf"),
 		MXFConflict: filepath.Join(dir, "conflict.mxf"),
 		MXFDamaged:  filepath.Join(dir, "damaged.mxf"),
@@ -67,6 +69,22 @@ func Generate(dir string) (*Manifest, error) {
 	}
 	boundary, _ := boundarySpec.buildMP4()
 	if err := WriteFile(m.Boundary, boundary); err != nil {
+		return nil, err
+	}
+
+	// A video-only fixture whose sample bytes repeat every two seconds, so
+	// 1 s segments pair up as identical content with different time ranges.
+	// The audio track is dropped entirely rather than left empty: an empty
+	// audio lane would make the manifest incomplete for no useful reason.
+	dupSpec := defaultSpec()
+	dupSpec.audioPackets = 0
+	dupSpec.videoSamples = 125
+	dupSpec.videoDelta = 3600 // 25 fps at 90k
+	dupSpec.videoSeed = func(i int) byte { return byte((i % 50) * 3) }
+	dupSpec.crop = nil
+	dupSpec.colors = nil
+	dups, _ := dupSpec.buildMP4VideoOnly()
+	if err := WriteFile(m.Duplicates, dups); err != nil {
 		return nil, err
 	}
 

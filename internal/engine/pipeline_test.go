@@ -305,6 +305,45 @@ func TestChangedInputInvalidatesAffectedTrackOnly(t *testing.T) {
 	}
 }
 
+func TestDuplicateFixtureGroupsSources(t *testing.T) {
+	fx := generate(t)
+	res, err := Process(runOpts(t, fx.Duplicates), ModeFresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Manifest.Complete {
+		t.Fatalf("duplicate fixture incomplete: %v", res.Manifest.Errors)
+	}
+	if len(res.Manifest.Duplicates) != 2 {
+		t.Fatalf("duplicate groups=%d want 2", len(res.Manifest.Duplicates))
+	}
+	for _, g := range res.Manifest.Duplicates {
+		if len(g.Segments) < 2 || len(g.Ranges) != len(g.Segments) {
+			t.Errorf("group %s incomplete: %+v", g.Digest, g)
+		}
+		if len(g.Tracks) != 1 || g.Tracks[0] != "v0" {
+			t.Errorf("group tracks=%v", g.Tracks)
+		}
+		for _, r := range g.Ranges {
+			if r.Duration() != media.Second {
+				t.Errorf("range=%+v", r)
+			}
+		}
+	}
+	// Only one member of each group may be a primary result.
+	primaries := map[string]int{}
+	for _, fp := range res.Manifest.Fingerprints {
+		if !fp.Duplicate {
+			primaries[fp.Digest]++
+		}
+	}
+	for _, g := range res.Manifest.Duplicates {
+		if primaries[g.Digest] != 1 {
+			t.Errorf("group %s has %d primaries", g.Digest, primaries[g.Digest])
+		}
+	}
+}
+
 func TestMxfRuns(t *testing.T) {
 	fx := generate(t)
 	res, err := Process(runOpts(t, fx.MXF), ModeFresh)

@@ -58,6 +58,35 @@ func (s mp4Spec) buildMP4() ([]byte, *mp4Layout) {
 
 func (s mp4Spec) durationTicks(samples, delta uint32) uint32 { return samples * delta }
 
+// buildMP4VideoOnly renders a fixture with just the video track, which keeps a
+// video-only sample set from carrying an empty audio lane.
+func (s mp4Spec) buildMP4VideoOnly() ([]byte, *mp4Layout) {
+	vd := make([][]byte, s.videoSamples)
+	for i := range vd {
+		vd[i] = s.videoBytes(i)
+	}
+	ftyp := rawBox("ftyp", []byte("isom"), u32(512), []byte("isomiso2mp41"))
+	var data []byte
+	for _, b := range vd {
+		data = append(data, b...)
+	}
+	mdatStart := len(ftyp) + 8
+	offs := make([]uint32, len(vd))
+	pos := mdatStart
+	for i, b := range vd {
+		offs[i] = uint32(pos)
+		pos += len(b)
+	}
+	duration := s.durationTicks(uint32(s.videoSamples), s.videoDelta)
+	mvhd := fullBox("mvhd", 0, 0,
+		u32(0), u32(0), u32(1000), u32(duration*1000/s.videoTimescale),
+		i32(0x00010000), u16(0x0100), u16(0), u32(0), u32(0),
+		matrixBytes(matrixForRotation(0)), repeat(0, 24), u32(2))
+	moov := rawBox("moov", mvhd, s.buildVideoTrak(offs, duration))
+	out := cat(ftyp, rawBox("mdat", data), moov)
+	return out, &mp4Layout{videoData: vd, moov: moov, mdatStart: mdatStart}
+}
+
 func (s mp4Spec) buildMoov(videoChunkOff, audioChunkOff []uint32) []byte {
 	videoDuration := s.durationTicks(uint32(s.videoSamples), s.videoDelta)
 	audioDuration := s.durationTicks(uint32(s.audioPackets), s.audioDelta)

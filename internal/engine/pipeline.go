@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 
@@ -578,11 +579,25 @@ func WriteManifest(path string, m *Manifest) error {
 		return media.WrapError(media.ClassCheckpoint, media.StageProvenance, "", -1, "encode manifest", err)
 	}
 	b = append(b, '\n')
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+	if dir := filepath.Dir(path); dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return media.WrapError(media.ClassCheckpoint, media.StageProvenance, "", -1, "create output dir", err)
+		}
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".manifest-*.tmp")
+	if err != nil {
+		return media.WrapError(media.ClassCheckpoint, media.StageProvenance, "", -1, "create temp manifest", err)
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	if _, err := tmp.Write(b); err != nil {
+		tmp.Close()
 		return media.WrapError(media.ClassCheckpoint, media.StageProvenance, "", -1, "write manifest", err)
 	}
-	if err := os.Rename(tmp, path); err != nil {
+	if err := tmp.Close(); err != nil {
+		return media.WrapError(media.ClassCheckpoint, media.StageProvenance, "", -1, "close manifest", err)
+	}
+	if err := os.Rename(tmpName, path); err != nil {
 		return media.WrapError(media.ClassCheckpoint, media.StageProvenance, "", -1, "publish manifest", err)
 	}
 	return nil
