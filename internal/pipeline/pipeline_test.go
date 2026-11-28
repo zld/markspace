@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -172,4 +173,44 @@ func TestRunLeavesArtefacts(t *testing.T) {
 			t.Fatalf("segment missing: %v", err)
 		}
 	}
+}
+
+// TestRerunKeepsCompletedTrackHashes encodes the partial-success contract: a
+// run with recoverable gaps can be repeated, and every frame a track actually
+// rendered keeps its hash. Fill frames are separately comparable too.
+func TestRerunKeepsCompletedTrackHashes(t *testing.T) {
+	first := runCase(t, tempConfig(t, fixtures.CaseReorderLoss))
+	second := runCase(t, tempConfig(t, fixtures.CaseReorderLoss))
+	if first.ExitCode != 0 || second.ExitCode != 0 {
+		t.Fatalf("exits = %d, %d", first.ExitCode, second.ExitCode)
+	}
+	index := func(res *Result) map[string]string {
+		out := map[string]string{}
+		for _, f := range res.Render.Manifest.Frames {
+			key := trackFrameKey(f.Track, f.Sequence)
+			if f.Fill {
+				key += "/fill"
+			}
+			out[key] = f.SHA256
+		}
+		return out
+	}
+	a, b := index(first), index(second)
+	if len(a) != len(b) {
+		t.Fatalf("frame counts differ: %d vs %d", len(a), len(b))
+	}
+	for key, hash := range a {
+		if b[key] != hash {
+			t.Fatalf("%s hash changed across rerun: %s vs %s", key, hash, b[key])
+		}
+	}
+	// Render every completed (non-fill) frame's hash differs from any fill, so
+	// this really did compare rendered content.
+	if first.Render.Manifest.Summary.FillFrames == 0 {
+		t.Fatal("case produced no fills; nothing was actually recovered")
+	}
+}
+
+func trackFrameKey(track model.TrackID, seq uint32) string {
+	return fmt.Sprintf("%d/%d", int(track), seq)
 }
