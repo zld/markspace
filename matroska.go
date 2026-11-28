@@ -1,6 +1,7 @@
 package mediakernel
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -28,14 +29,43 @@ type Media struct {
 
 // Parse walks a Matroska/WebM stream and extracts tracks and blocks.
 func Parse(r io.Reader, total int64, maxBlock int64) (*Media, error) {
+	return ParseStream(nil, r, total, maxBlock, func(m *Media, cluster []Block) error {
+		m.Blocks = append(m.Blocks, cluster...)
+		return nil
+	})
+}
+
+// ParseStream walks a Matroska/WebM stream, invoking emit once per completed
+// cluster with that cluster's blocks. Blocks are not accumulated across
+// clusters, keeping memory bounded. ctx may be nil.
+func ParseStream(ctx context.Context, r io.Reader, total int64, maxBlock int64, emit func(m *Media, cluster []Block) error) (*Media, error) {
 	p := NewParser(r, total)
 	m := &Media{TimecodeScale: 1_000_000, Registry: NewTrackRegistry()}
 	var cur *Track
 	var clusterTime uint64
 	var clusterSet bool
+	var clusterBlocks []Block
+	flush := func() error {
+		if len(clusterBlocks) == 0 {
+			return nil
+		}
+		err := emit(m, clusterBlocks)
+		clusterBlocks = nil
+		return err
+	}
 	for {
+		if ctx != nil {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			default:
+			}
+		}
 		el, err := p.Next()
 		if err == io.EOF {
+			if err := flush(); err != nil {
+				return nil, err
+			}
 			return m, nil
 		}
 		if err != nil {
@@ -94,6 +124,9 @@ func Parse(r io.Reader, total int64, maxBlock int64) (*Media, error) {
 				}
 			}
 		case IDCluster:
+			if err := flush(); err != nil {
+				return nil, err
+			}
 			clusterSet = false
 		case IDTimecode:
 			v, err := readUintEl(p, el)
@@ -110,7 +143,7 @@ func Parse(r io.Reader, total int64, maxBlock int64) (*Media, error) {
 			if err != nil {
 				return nil, err
 			}
-			m.Blocks = append(m.Blocks, blk)
+			clusterBlocks = append(clusterBlocks, blk)
 		default:
 			if !el.Master {
 				if err := p.Skip(el); err != nil {

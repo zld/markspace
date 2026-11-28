@@ -53,3 +53,20 @@ func (c *Clock) Stamp(track uint64, ticks int64, offset int64) (int64, error) {
 	c.last[track] = ns
 	return ns, nil
 }
+
+// Snapshot returns the per-track last timestamps for checkpointing.
+func (c *Clock) Snapshot() map[uint64]int64 {
+	m := make(map[uint64]int64, len(c.last))
+	for t, ns := range c.last {
+		m[t] = ns
+	}
+	return m
+}
+
+// Restore loads a previously snapshotted state.
+func (c *Clock) Restore(m map[uint64]int64) {
+	for t, ns := range m {
+		c.last[t] = ns
+		c.seen[t] = true
+	}
+}

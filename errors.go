@@ -18,6 +18,7 @@ const (
 	ErrTSOverflow       Code = "TS_OVERFLOW"
 	ErrInputChanged     Code = "CHECKPOINT_INPUT_MISMATCH"
 	ErrCanceled         Code = "PIPELINE_CANCELED"
+	ErrInterrupted      Code = "PIPELINE_INTERRUPTED"
 )
 
 // Error is a structured error carrying a stable code, the byte offset of the

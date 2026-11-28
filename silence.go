@@ -72,6 +72,15 @@ func (d *SilenceDetector) flush(track uint64, r *silenceRun) {
 	r.active = false
 }
 
+// Expected returns the end timestamp of the previous block on track, used by
+// callers to detect sequence continuity.
+func (d *SilenceDetector) Expected(track uint64) (int64, bool) {
+	if r, ok := d.runs[track]; ok && r.hasLast {
+		return r.lastEnd, true
+	}
+	return 0, false
+}
+
 // Flush terminates all open runs at end of stream.
 func (d *SilenceDetector) Flush() {
 	for track, r := range d.runs {

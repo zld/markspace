@@ -15,14 +15,17 @@ type CommittedSegment struct {
 }
 
 // Checkpoint records resumable pipeline state: input digest, stage, committed
-// segments, the first unprocessed input offset and detector states.
+// segments, committed input offsets and detector states.
 type Checkpoint struct {
-	InputSHA256  string             `json:"inputSha256"`
-	Stage        string             `json:"stage"`
-	Segments     []CommittedSegment `json:"segments"`
-	NextOffset   int64              `json:"nextOffset"`
-	Silence      SilenceState       `json:"silence"`
-	Fingerprints FingerprintState   `json:"fingerprints"`
+	InputSHA256    string             `json:"inputSha256"`
+	Stage          string             `json:"stage"`
+	Segments       []CommittedSegment `json:"segments"`
+	ProcessedBlocks int64             `json:"processedBlocks"`
+	CommittedOffset int64             `json:"committedOffset"`
+	Clock          map[uint64]int64   `json:"clock"`
+	Silence        SilenceState       `json:"silence"`
+	Fingerprints   FingerprintState   `json:"fingerprints"`
+	Partial        *Segment           `json:"partial,omitempty"`
 }
 
 // LoadCheckpoint reads a checkpoint file; a missing file yields (nil, nil).
