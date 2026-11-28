@@ -133,7 +133,7 @@ func (r *Runner) Prepare(opts Options, totalSegmentsHint int) (*Prepared, error)
 
 	// Every media file must be structurally valid before any index is
 	// committed: damaged input is a hard error, never a partial index.
-	if err := validateContainers(root, pl, opts.Limits); err != nil {
+	if err := validateContainers(root, pl); err != nil {
 		return nil, err
 	}
 
@@ -218,7 +218,7 @@ func selectVariant(pl *manifest.Playlist) (manifest.Variant, error) {
 	return best, nil
 }
 
-func validateContainers(root string, pl *manifest.Playlist, limits scan.Limits) error {
+func validateContainers(root string, pl *manifest.Playlist) error {
 	refs := scan.SegmentRefs(pl)
 	seen := make(map[string]bool)
 	check := func(uri string) error {
@@ -249,7 +249,6 @@ func validateContainers(root string, pl *manifest.Playlist, limits scan.Limits) 
 			return err
 		}
 	}
-	_ = limits
 	return nil
 }
 

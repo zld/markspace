@@ -45,6 +45,7 @@ type Report struct {
 	ResumedFrom      int      `json:"resumed_from"`
 	RTPPackets       int      `json:"rtp_packets"`
 	RTPDisorder      int      `json:"rtp_disorder"`
+	RTPLost          int      `json:"rtp_lost"`
 	FailedStage      string   `json:"failed_stage,omitempty"`
 	Error            string   `json:"error,omitempty"`
 }

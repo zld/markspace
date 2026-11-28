@@ -53,18 +53,18 @@ func (r *Runner) Run(opts Options, cancel CancelFunc) *Result {
 	// Measure the first segment to ground the configuration decision. A
 	// truncated or corrupt container fails here, before any index is relied
 	// on for output.
-	var sample quality.Sample
-	var firstProbe *media.FileProbe
-	if len(segs) > 0 {
-		rel, rerr := scan.Resolve(root, segs[0].URI)
-		if rerr != nil {
-			return res.fail(rerr, rep)
-		}
-		full := filepath.Join(root, filepath.FromSlash(rel))
-		sample, firstProbe, err = SegmentSample(full, segs[0].URI, int64(maxSampleFrames)*64*64*4)
-		if err != nil {
-			return res.fail(err, rep)
-		}
+	// A segment that vanished or changed since the scan is a mid-run failure,
+	// not a configuration input; it must be reported against its segment.
+	if len(segs) == 0 {
+		return res.fail(media.New(media.StagePlan, "select", "manifest selected zero segments"), rep)
+	}
+	rel0, rerr := scan.Resolve(root, segs[0].URI)
+	if rerr != nil {
+		return res.fail(rerr, rep)
+	}
+	sample, firstProbe, err := SegmentSample(filepath.Join(root, filepath.FromSlash(rel0)), segs[0].URI, int64(maxSampleFrames)*64*64*4)
+	if err != nil {
+		return res.fail(err, rep)
 	}
 
 	segmentNs := int64(0)
@@ -81,6 +81,10 @@ func (r *Runner) Run(opts Options, cancel CancelFunc) *Result {
 		}
 		rep.RTPPackets = rtpProbe.Packets
 		rep.RTPDisorder = rtpProbe.Disordered
+		rep.RTPLost = rtpProbe.Lost
+		if rtpProbe.Disordered > 0 {
+			rep.Notes = append(rep.Notes, fmt.Sprintf("RTP sequence is not contiguous (%d out-of-order or lost packets)", rtpProbe.Disordered))
+		}
 	}
 
 	plan, err := quality.EstimatePlan(opts.Request, sample, len(segs), segmentNs)

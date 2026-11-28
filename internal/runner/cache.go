@@ -81,6 +81,11 @@ func (c *Cache) Load(key string, segmentDigests map[string]string) (*Entry, Cach
 		os.Remove(path)
 		return nil, CacheMiss, nil
 	}
+	// A partially completed entry records resume progress, not a reusable
+	// result; only a complete run counts as a hit.
+	if e.SegmentsDone != e.SegmentsTotal || e.ReportDigest == "" {
+		return nil, CacheMiss, nil
+	}
 	for rel, want := range segmentDigests {
 		if got, ok := e.SegmentDigests[rel]; !ok || got != want {
 			return nil, CacheMiss, nil
