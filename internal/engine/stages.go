@@ -297,7 +297,9 @@ func produceFingerprints(opts Options, tl *timeline.Timeline, segs []split.Segme
 		}
 	}
 	// All fingerprint nodes complete only when every segment for the track
-	// has a readable result.
+	// has a readable result. Segments reaching into truncated bytes are
+	// marked unreadable by design, so such a track never claims completion;
+	// its truncation error is already in the manifest.
 	byTrackSeg := map[string]int{}
 	for _, s := range segs {
 		byTrackSeg[s.Track]++
