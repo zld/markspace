@@ -165,10 +165,16 @@ func TestTruncatedAudioStopsTrack(t *testing.T) {
 	if first.Class != media.ClassSilenceTruncated || first.Track != r.Track {
 		t.Errorf("error=%+v", first)
 	}
-	// No windows may be reported past the truncation point.
+	// No windows may be reported past the truncation point, and none at all
+	// may describe bytes that were never read.
 	for _, w := range r.Windows {
 		if w.Window.End > r.TruncatedTo {
 			t.Errorf("window %+v beyond truncation", w.Window)
+		}
+	}
+	for _, sr := range r.Silent {
+		if sr.Window.End > r.TruncatedTo {
+			t.Errorf("silent range %+v beyond truncation", sr.Window)
 		}
 	}
 }
@@ -237,6 +243,41 @@ func TestThresholdBoundary(t *testing.T) {
 	}
 	if len(results[0].Silent) != 0 {
 		t.Fatalf("peak 100 above threshold 99 must be loud: %+v", results[0].Silent)
+	}
+}
+
+func TestUnreadableSamplesProduceNoSilence(t *testing.T) {
+	// A track whose chunk table is unreadable has samples with no offsets.
+	// Detection must not invent silence for bytes nobody read.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "audio.mp4")
+	if err := fixture.WriteAudioMP4(path, fixture.AudioSpecForTest(50, func(int) int16 { return 0 })); err != nil {
+		t.Fatal(err)
+	}
+	in, err := track.ParseMP4(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tl, err := timeline.Build(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tt := tl.Tracks[0]
+	for i := range tt.Samples {
+		tt.Samples[i].Offset = -1
+	}
+	res, errs, err := Detect(path, tl, nil, 100*media.Millisecond, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(errs) == 0 {
+		t.Fatal("unreadable samples not reported")
+	}
+	if len(res[0].Silent) != 0 {
+		t.Fatalf("silence invented from unread bytes: %+v", res[0].Silent)
+	}
+	if len(res[0].Windows) != 0 {
+		t.Fatalf("windows invented from unread bytes: %+v", res[0].Windows)
 	}
 }
 

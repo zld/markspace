@@ -129,6 +129,12 @@ func detectTrack(f *os.File, fileSize int64, tt *timeline.TrackTimeline, segs []
 	}
 	start := tt.Samples[0].Start
 	end := tt.Samples[len(tt.Samples)-1].End()
+	// Detection stops where the parser proved the data ends. Without this a
+	// truncated track would report silence over an interval that was never
+	// read, which is exactly the misreport this stage must avoid.
+	if res.Truncated && tt.TruncatedAt < end {
+		end = tt.TruncatedAt
+	}
 	var segsForTrack []split.Segment
 	for _, s := range segs {
 		if s.Track == tt.TrackID {
@@ -160,19 +166,28 @@ func detectTrack(f *os.File, fileSize int64, tt *timeline.TrackTimeline, segs []
 		curStart = nextStart
 	}
 
+	// analysedEnd is the last instant covered by samples whose bytes were
+	// actually read. Only this span may produce windows: a window over unread
+	// samples would report silence for data nobody measured.
+	analysedEnd := start
 	for _, s := range tt.Samples {
 		// The parser drops samples it could not read, but the file may have
 		// been shortened after parsing. Either way, stop at the first sample
 		// whose bytes are not present and report the affected interval.
-		if tt.Truncated && s.Start >= tt.TruncatedAt {
+		if s.Start >= end {
 			break
 		}
 		if s.Offset < 0 || s.Size == 0 || s.Offset+int64(s.Size) > fileSize {
 			res.Truncated = true
 			res.TruncatedFrom = s.Start
 			res.TruncatedTo = end
+			end = s.Start
+			off := s.Offset
+			if off < 0 {
+				off = fileSize
+			}
 			res.Errors = append(res.Errors, media.Errorf(media.ClassSilenceTruncated, media.StageSilence,
-				tt.TrackID, fileSize, "audio sample %d is truncated; detection stopped at %d ns", s.Index, s.Start))
+				tt.TrackID, off, "audio sample %d is truncated; detection stopped at %d ns", s.Index, s.Start))
 			break
 		}
 		buf := make([]byte, s.Size)
@@ -180,9 +195,13 @@ func detectTrack(f *os.File, fileSize int64, tt *timeline.TrackTimeline, segs []
 			res.Truncated = true
 			res.TruncatedFrom = s.Start
 			res.TruncatedTo = end
+			end = s.Start
 			res.Errors = append(res.Errors, media.WrapError(media.ClassSilenceTruncated, media.StageSilence,
 				tt.TrackID, s.Offset, "cannot read audio sample", err))
 			break
+		}
+		if s.End() > analysedEnd {
+			analysedEnd = s.End()
 		}
 		// Audio samples in this profile are RTP-framed. A malformed or
 		// non-RTP packet is analysed as raw PCM rather than rejected: an MXF
@@ -218,8 +237,8 @@ func detectTrack(f *os.File, fileSize int64, tt *timeline.TrackTimeline, segs []
 			}
 		}
 	}
-	if curStart < end {
-		flush(end)
+	if curStart < analysedEnd {
+		flush(analysedEnd)
 	}
 	res.Silent = mergeSilent(res.Windows, tt.TrackID, threshold, tt)
 	return res
