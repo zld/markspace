@@ -38,6 +38,9 @@ type Packet struct {
 	TS       clock.Tick
 	Marker   bool
 	PayloadT uint8
+	// Payload is the RTP payload, kept so the mux stage can write it as a
+	// sample. The 4 MiB input cap bounds the total payload retained.
+	Payload  []byte
 	InputOff int64
 	// TSSuspect marks a packet whose timestamp could not be unwrapped. Its TS
 	// is not meaningful for interval analysis.
@@ -181,17 +184,17 @@ func (r *Reorderer) Push(data []byte, offset int64) error {
 		return fault.At(fault.StageRTP, "parse rtp packet", offset,
 			fmt.Errorf("%w: rtp version %d", fault.ErrUnsupported, pkt.Version)).WithSeq(int(pkt.SequenceNumber))
 	}
-	r.accept(pkt.SSRC, pkt.SequenceNumber, pkt.Timestamp, pkt.Marker, pkt.PayloadType, offset)
+	r.accept(pkt.SSRC, pkt.SequenceNumber, pkt.Timestamp, pkt.Marker, pkt.PayloadType, offset, pkt.Payload)
 	return nil
 }
 
 // Accept feeds one already-parsed packet. It exists so callers that already
 // hold pion packets (tests, the sample generator) do not re-marshal bytes.
 func (r *Reorderer) Accept(ssrc uint32, seq uint16, rawTS uint32, marker bool, pt uint8, offset int64) {
-	r.accept(ssrc, seq, rawTS, marker, pt, offset)
+	r.accept(ssrc, seq, rawTS, marker, pt, offset, nil)
 }
 
-func (r *Reorderer) accept(ssrc uint32, seq uint16, rawTS uint32, marker bool, pt uint8, offset int64) {
+func (r *Reorderer) accept(ssrc uint32, seq uint16, rawTS uint32, marker bool, pt uint8, offset int64, payload []byte) {
 	r.result.SSRC = ssrc
 	if !r.started {
 		r.started = true
@@ -230,15 +233,25 @@ func (r *Reorderer) accept(ssrc uint32, seq uint16, rawTS uint32, marker bool, p
 	}
 	r.received[ext] = Packet{
 		SSRC: ssrc, Seq: seq, ExtSeq: ext, RawTS: rawTS,
-		Marker: marker, PayloadT: pt, InputOff: offset,
+		Marker: marker, PayloadT: pt, Payload: payload, InputOff: offset,
 	}
-	if bytes := len(r.received) * pendingBytesPerPacket; bytes > r.result.PeakPendingBytes {
+	if bytes := r.pendingBytes(); bytes > r.result.PeakPendingBytes {
 		r.result.PeakPendingBytes = bytes
 	}
 	if r.starting && len(r.received) >= r.window {
 		r.resolveStart()
 	}
 	r.drain()
+}
+
+// pendingBytes estimates buffered memory: fixed per-packet bookkeeping plus
+// the payloads still waiting for emission.
+func (r *Reorderer) pendingBytes() int {
+	bytes := len(r.received) * pendingBytesPerPacket
+	for _, p := range r.received {
+		bytes += len(p.Payload)
+	}
+	return bytes
 }
 
 // resolveStart fixes the emit cursor at the lowest buffered sequence number
