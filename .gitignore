@@ -1,0 +1,9 @@
+# Build artifacts
+/mediad
+/bin/
+*.test
+coverage.out
+
+# Demo working data (generated fixtures, indexes, checkpoints, caches)
+/.mediad-demo/
+/.mediad-work/
