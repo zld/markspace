@@ -303,13 +303,11 @@ func EstimatePlan(req Request, sample Sample, totalSegments int, segmentNs int64
 
 	// Budget the sample itself first: measuring is part of the processing
 	// cost, so a budget too small to cover the measured sample is reported.
-	start := time.Now()
 	groupTarget := sample.Spec.FrameBytes(req.TargetBps) * int64(len(sample.Frames))
 	choice, err := ChooseGroup(sample.Frames, sample.Spec.Width, sample.Spec.Height, groupTarget, 0)
 	if err != nil {
 		return nil, err
 	}
-	elapsed := time.Since(start)
 	plan.Config.QuantizerMilli = choice.BaseQuantizer()
 	plan.SampleFrames = len(sample.Frames)
 	if psnr, ok := PSNRFromSSE(choice.SSE, int64(sample.Spec.Width*sample.Spec.Height*len(sample.Frames))); ok {
@@ -333,9 +331,14 @@ func EstimatePlan(req Request, sample Sample, totalSegments int, segmentNs int64
 		plan.Unmet = append(plan.Unmet, fmt.Sprintf("max_bps: measured sample rate %d bps above cap %d bps", sampleBps, req.MaxBps))
 	}
 
-	// Budget accounting: extrapolate the measured per-frame measurement cost
-	// over every source frame and adopt the longest segment prefix that fits.
-	perFrame := elapsed / time.Duration(len(sample.Frames))
+	// Budget accounting uses the cost of a single encode pass, not the whole
+	// rate-control search: the search is a planning cost, while processing
+	// each source frame costs one encode. Charging the search to every frame
+	// would overstate the budget by the search's iteration count.
+	onePassStart := time.Now()
+	encodeFrames(sample.Frames, sample.Spec.Width, sample.Spec.Height, plan.Config.QuantizerMilli)
+	onePass := time.Since(onePassStart)
+	perFrame := onePass / time.Duration(len(sample.Frames))
 	fps := float64(sample.Spec.FPSNum) / float64(sample.Spec.FPSDen)
 	framesPerSegment := int64(float64(segmentNs) / 1e9 * fps)
 	if framesPerSegment < 1 {
