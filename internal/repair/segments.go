@@ -36,23 +36,30 @@ type Segment struct {
 }
 
 // OffsetMap records where every input frame lives, so a recompute can prove no
-// repair moved an original byte position.
+// repair moved an original byte position. The key includes the input stream
+// because sequence numbers restart independently in each stream.
 type OffsetMap struct {
-	byKey map[[3]uint32]model.RawOffset
+	byKey map[offsetKey]model.RawOffset
 }
 
-// NewOffsetMap builds a trace from frames keyed by (track, source, seq).
+type offsetKey struct {
+	stream        string
+	track, source uint32
+	seq           uint32
+}
+
+// NewOffsetMap builds a trace from frames keyed by (stream, track, source, seq).
 func NewOffsetMap(frames []*model.Frame) *OffsetMap {
-	m := &OffsetMap{byKey: map[[3]uint32]model.RawOffset{}}
+	m := &OffsetMap{byKey: map[offsetKey]model.RawOffset{}}
 	for _, f := range frames {
-		m.byKey[[3]uint32{f.Track, f.Source, f.Seq}] = f.Offset
+		m.byKey[offsetKey{f.Offset.Stream, f.Track, f.Source, f.Seq}] = f.Offset
 	}
 	return m
 }
 
 // Lookup returns the original offset of a frame.
-func (m *OffsetMap) Lookup(track, source, seq uint32) (model.RawOffset, bool) {
-	off, ok := m.byKey[[3]uint32{track, source, seq}]
+func (m *OffsetMap) Lookup(stream string, track, source, seq uint32) (model.RawOffset, bool) {
+	off, ok := m.byKey[offsetKey{stream, track, source, seq}]
 	return off, ok
 }
 
@@ -182,7 +189,7 @@ func hashSegment(s *Segment) string {
 func VerifyOffsets(segs []*Segment, trace *OffsetMap) (FrameRef, model.RawOffset, bool) {
 	for _, s := range segs {
 		for _, fr := range s.Frames {
-			want, ok := trace.Lookup(s.Track, s.Source, fr.Seq)
+			want, ok := trace.Lookup(fr.Offset.Stream, s.Track, s.Source, fr.Seq)
 			if !ok || want != fr.Offset {
 				return fr, want, false
 			}
