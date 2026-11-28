@@ -158,7 +158,10 @@ func (r *Runner) Run(opts Options, cancel CancelFunc) *Result {
 	}
 	rep.ResumedFrom = resumedFrom
 
-	// Stream every adopted segment, verifying bytes and digests.
+	// Stream the adopted prefix. Every segment is opened exactly once; its
+	// bytes are hashed as they are read, its length is checked against the
+	// index, and its container timing is compared with the playlist.
+
 	outcomes, inBytes, maxDriftNs, serr := r.streamSegments(opts, prep, segs, adopted, cancel)
 	res.StreamDriftNs = maxDriftNs
 	rep.SegmentsDone = len(outcomes)
@@ -205,12 +208,10 @@ func (r *Runner) Run(opts Options, cancel CancelFunc) *Result {
 		rep.Unmet = append(rep.Unmet, fmt.Sprintf("playlist_drift_ms: %.3f exceeds 1 ms", rep.PlaylistDriftMS))
 		rep.Status = "constraint_violation"
 	}
-	if sample.Measurable() && firstProbe != nil {
+	if sample.Measurable() && sample.Spec.FPSNum > 0 && len(sample.Frames) > 0 {
 		// Actual bitrate comes from encoded bytes and the source's exact
 		// frame clock.
-		if sample.Spec.FPSNum > 0 && len(sample.Frames) > 0 {
-			rep.ActualBps = int64(outBytes) * 8 * sample.Spec.FPSNum / (int64(len(sample.Frames)) * sample.Spec.FPSDen)
-		}
+		rep.ActualBps = int64(outBytes) * 8 * sample.Spec.FPSNum / (int64(len(sample.Frames)) * sample.Spec.FPSDen)
 	}
 	if rep.ActualBps > 0 {
 		rep.BitrateErrorPct = quality.BitrateErrorPct(rep.ActualBps, opts.Request.TargetBps)
