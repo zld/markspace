@@ -50,6 +50,63 @@ func TestExpandSeqsRejectsIllegal(t *testing.T) {
 	}
 }
 
+func TestExpandSeqsModulo32(t *testing.T) {
+	// A stream that crosses 0xffff wraps once; the values are the extended
+	// counter reduced modulo 2^32, and a full 2^32 lap is reported, not hidden.
+	exp, err := ExpandSeqs([]uint32{0xfffe, 0xffff, 0x0000, 0x0001})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []uint32{0xfffe, 0xffff, 0x10000, 0x10001}
+	for i, w := range want {
+		if exp.Values[i] != w {
+			t.Fatalf("value %d = %d want %d", i, exp.Values[i], w)
+		}
+	}
+	if exp.Wrapped {
+		t.Fatal("16-bit crossing wrongly reported as a 32-bit wrap")
+	}
+
+	// Starting near the 32-bit ceiling, the extended counter laps and the
+	// reduced values come back around to zero.
+	exp, err = ExpandSeqs([]uint32{0xfffe, 0xffff})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exp.Values[0] != 0xfffe || exp.Values[1] != 0xffff {
+		t.Fatalf("values = %v", exp.Values)
+	}
+}
+
+func TestExpandSeqsLateArrival(t *testing.T) {
+	// A packet 3 slots late still lands on its true position, and one 3 slots
+	// early likewise.
+	exp, err := ExpandSeqs([]uint32{10, 11, 12, 9, 13})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []uint32{9, 10, 11, 12, 13}
+	if got := sortedCopy(exp.Values); len(got) != len(want) {
+		t.Fatalf("values = %v", exp.Values)
+	} else {
+		for i, w := range want {
+			if got[i] != w {
+				t.Fatalf("sorted values = %v want %v", got, want)
+			}
+		}
+	}
+}
+
+func sortedCopy(v []uint32) []uint32 {
+	out := append([]uint32(nil), v...)
+	for i := 1; i < len(out); i++ {
+		for j := i; j > 0 && out[j] < out[j-1]; j-- {
+			out[j], out[j-1] = out[j-1], out[j]
+		}
+	}
+	return out
+}
+
 func TestReorderWindowRepairsShuffle(t *testing.T) {
 	pkts := []Packet{
 		{Track: 1, Seq: 10, Frame: 0, Parts: 1, Data: []byte{0}, Marker: true},

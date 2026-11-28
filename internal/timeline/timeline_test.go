@@ -87,6 +87,11 @@ func TestMergeReportsRegression(t *testing.T) {
 	if len(warns) != 1 || warns[0].Code != model.CodeTimeRegression || warns[0].Track != 1 {
 		t.Fatalf("warnings = %v", warns)
 	}
+	// The returned warnings and the timeline's copy must agree, so callers that
+	// merge both into one report do not double count.
+	if len(tl.Warnings) != len(warns) {
+		t.Fatalf("timeline warnings %d != returned %d", len(tl.Warnings), len(warns))
+	}
 	// Sorted output must still be monotone.
 	for i := 1; i < len(tl.Events); i++ {
 		if tl.Events[i].Frame.PTS < tl.Events[i-1].Frame.PTS {
@@ -97,6 +102,29 @@ func TestMergeReportsRegression(t *testing.T) {
 	_, _, err = Merge(frames, MergeOptions{RequireMonotonicPerTrack: true})
 	if f, _ := model.AsFault(err); f == nil || f.Code != model.CodeTimeRegression {
 		t.Fatalf("strict mode err = %v", err)
+	}
+}
+
+func TestMergeDedupeRegressionWarnings(t *testing.T) {
+	// Two identical frames at the same position collapse to one warning per
+	// (code, track, frame); a distinct frame keeps its own.
+	frames := []model.Frame{
+		frame(1, 1, 100),
+		frame(1, 2, 40),
+		frame(1, 2, 40),
+	}
+	_, warns, err := Merge(frames, MergeOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warns) != 1 {
+		t.Fatalf("warnings = %v", warns)
+	}
+}
+
+func TestApplyOffsetsEmpty(t *testing.T) {
+	if _, err := (&Timeline{}).ApplyOffsets(map[model.TrackID]int64{1: 10}); err == nil {
+		t.Fatal("empty timeline accepted")
 	}
 }
 
