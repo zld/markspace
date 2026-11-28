@@ -80,6 +80,7 @@ Demo flags:
   --reorder-window N jitter window in packets (default 8)
   --max-dim N        maximum frame side in pixels (default 4096)
   --min-quality Q    fidelity floor in (0,1] (default 0.5)
+  --align-ns N       maximum per-frame alignment error (default 2000000)
   --out DIR          keep input and artefacts under DIR
   --keep-input       retain the generated input directory
 
@@ -100,6 +101,7 @@ func runDemo(args []string, stdout, stderr *os.File) int {
 	fs.IntVar(&cfg.ReorderWin, "reorder-window", 8, "RTP jitter window in packets")
 	fs.IntVar(&cfg.MaxDim, "max-dim", model.MaxDimension, "maximum frame side")
 	fs.Float64Var(&cfg.MinQuality, "min-quality", 0.5, "pixel fidelity floor")
+	fs.Int64Var(&cfg.AlignToleranceNS, "align-ns", 2_000_000, "maximum per-frame alignment error in nanoseconds")
 	fs.StringVar(&cfg.OutDir, "out", "", "output directory")
 	fs.BoolVar(&cfg.KeepInput, "keep-input", false, "retain the input fixture")
 	if err := fs.Parse(args); err != nil {
@@ -173,6 +175,7 @@ func printReport(w *os.File, res *pipeline.Result) {
 	p("reorder-window:    %d", res.Config.ReorderWin)
 	p("max-dim:           %d", res.Config.MaxDim)
 	p("min-quality:       %.3f", res.Config.MinQuality)
+	p("align-ns:          %d", res.Config.AlignToleranceNS)
 	p("")
 
 	if res.Plan != nil && res.Plan.Conflict != nil {

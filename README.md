@@ -59,8 +59,9 @@ value is printed.
 ### Flags
 
 `--seed`, `--budget-ms`, `--max-bytes`, `--workers`, `--cache-bytes`,
-`--reorder-window`, `--max-dim`, `--min-quality`, `--out`, `--keep-input`.
-Every processing boundary is configurable and echoed in the report.
+`--reorder-window`, `--max-dim`, `--min-quality`, `--align-ns`, `--out`,
+`--keep-input`. Every processing boundary is configurable and echoed in the
+report.
 
 ## Exit codes
 

@@ -34,6 +34,10 @@ type Config struct {
 	ReorderWin int
 	MaxDim     int
 	MinQuality float64
+	// AlignToleranceNS is the largest per-event timing deviation accepted,
+	// both when aligning the merged timeline and when the verifier re-checks
+	// the exported segments.
+	AlignToleranceNS int64
 	// OutDir receives the generated input and exported artefacts. Empty means
 	// a fresh directory under os.TempDir.
 	OutDir string
@@ -67,6 +71,9 @@ func Defaults(c Config) Config {
 	}
 	if c.MinQuality <= 0 {
 		c.MinQuality = 0.5
+	}
+	if c.AlignToleranceNS <= 0 {
+		c.AlignToleranceNS = 2_000_000
 	}
 	return c
 }
@@ -144,7 +151,7 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 	res.Timeline = tl
 
 	// Stage 3: alignment against the shared clock.
-	align, err := timeline.Align(tl, timeline.AlignConfig{MaxErrorNS: 2_000_000})
+	align, err := timeline.Align(tl, timeline.AlignConfig{MaxErrorNS: cfg.AlignToleranceNS})
 	if err != nil {
 		return nil, err
 	}
@@ -193,7 +200,7 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 	}
 	rep, err := verify.Verify(res.OutDir, verify.Config{
 		MaxDimension: cfg.MaxDim, MaxBytes: cfg.MaxBytes,
-		MaxAlignErrorNS: 2_000_000, MinLoudnessDBFS: -100,
+		MaxAlignErrorNS: cfg.AlignToleranceNS, MinLoudnessDBFS: -100,
 	})
 	if err != nil {
 		return nil, err
