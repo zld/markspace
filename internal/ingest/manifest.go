@@ -6,6 +6,7 @@
 package ingest
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -52,7 +53,7 @@ func Load(path string, opt LoadOptions) (*Result, model.Faults, error) {
 			fmt.Sprintf("read manifest: %v", err))
 	}
 	var m Manifest
-	dec := json.NewDecoder(strings.NewReader(string(raw)))
+	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&m); err != nil {
 		return nil, nil, model.NewFault(model.KindInput, model.CodeManifestInvalid, 0, 0,
