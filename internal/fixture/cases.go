@@ -22,8 +22,10 @@ func normalCase() model.CaseDesc {
 		Damaged: false,
 		Tracks: []model.TrackDesc{
 			{
+				// High start so the constant step crosses the uint32 zero point
+				// exactly between sample 3 and sample 4.
 				ID: 1, Name: "video-a", ClockRate: 90000, Samples: 8,
-				StepTicks: 3000, StartTS: 0,
+				StepTicks: 3000, StartTS: uint32(uint64(1)<<32 - 4*3000),
 				Boundaries: []model.BoundarySpec{
 					{AfterSeq: 3, Type: model.BWrap},
 				},
@@ -32,7 +34,8 @@ func normalCase() model.CaseDesc {
 				ID: 2, Name: "video-b", ClockRate: 90000, Samples: 8,
 				StepTicks: 3000, StartTS: 12000,
 				Boundaries: []model.BoundarySpec{
-					{AfterSeq: 3, Type: model.BSwitch, ExpectedNS: switchExpectedNS(3000, 90000, 4)},
+					{AfterSeq: 3, Type: model.BSwitch,
+						ExpectedNS: model.TicksToNS(12000+4*3000, 90000)},
 				},
 			},
 			{
@@ -72,10 +75,4 @@ func damagedCase() model.CaseDesc {
 		})
 	}
 	return c
-}
-
-// switchExpectedNS computes the descriptor-anchored fixed time for a source
-// switch landing on sample seq with the given per-sample tick increment.
-func switchExpectedNS(stepTicks, rate uint32, seq int) model.TimeNS {
-	return model.TicksToNS(stepTicks*uint32(seq), rate)
 }

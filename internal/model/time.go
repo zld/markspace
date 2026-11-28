@@ -100,7 +100,8 @@ func IsWrap(prev, cur uint32) bool {
 		return false
 	}
 	wrapped := delta + int64(ClockRTPWrap)*2
-	return wrapped > 0 && wrapped <= int64(ClockRTPWrap)
+	// Exactly half the modulus is ambiguous and must NOT be treated as a wrap.
+	return wrapped > 0 && wrapped < int64(ClockRTPWrap)
 }
 
 // SortSamples orders samples by fixed time, then track, then sequence so that

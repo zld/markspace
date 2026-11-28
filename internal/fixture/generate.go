@@ -35,13 +35,16 @@ func genTrack(td model.TrackDesc) ([]byte, error) {
 		if b, ok := boundAt[seq-1]; ok {
 			switch b.Type {
 			case model.BWrap:
-				// Force the emitted raw value just below the 32-bit ceiling.
-				ts = uint64(model.ClockRTPWrap)*2 - uint64(td.StepTicks)
-			case model.BSwitch:
-				sourceID++
+				// Continue the unwrapped logical clock; the high StartTS makes
+				// the uint32 value cross zero exactly at this boundary.
 				ts = uint64(td.StartTS) + uint64(td.StepTicks)*uint64(seq)
+			case model.BSwitch:
+				// New source: SSRC changes and the clock resets low.
+				sourceID++
+				ts = uint64(td.StartTS)
 			case model.BIllegal:
-				// Undecidable backward jump: large, not a single wrap.
+				// Undecidable backward jump on the same source: large enough
+				// that it cannot be explained by one 32-bit wraparound.
 				ts = uint64(td.StartTS) + uint64(td.StepTicks)
 			}
 		}
