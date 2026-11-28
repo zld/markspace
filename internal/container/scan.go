@@ -149,6 +149,14 @@ func walkChildren(r io.ReadSeeker, parentEnd int64, top bool, stack *[]*rawTrack
 				"box %s size %d smaller than header %d", bi.Type.String(), bi.Size, bi.HeaderSize)
 		}
 		end := int64(bi.Offset + bi.Size)
+		// A box declaring a range past the physical EOF means the file was
+		// truncated. Report the EOF position (the cut point) so the located
+		// offset stays within a few bytes of the actual truncation.
+		if end > int64(c.FileSize) {
+			return fault.Newf(fault.KindCorrupt, "box.truncated", int64(c.FileSize),
+				"box %s at %d declares end %d past file size %d",
+				bi.Type.String(), bi.Offset, end, c.FileSize)
+		}
 		if !top && end > parentEnd {
 			return fault.Newf(fault.KindCorrupt, "box.size", int64(bi.Offset),
 				"box %s size %d exceeds parent end %d", bi.Type.String(), end, parentEnd)

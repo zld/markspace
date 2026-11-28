@@ -91,15 +91,17 @@ func (w *Window) Push(p *Packet) ([]*Packet, error) {
 
 	// A forward jump larger than the window means the skipped packets will
 	// never be reordered back; finalize them as loss immediately.
+	var orphaned []*Packet
 	if dist > w.capacity {
-		w.finalizeLoss(w.base, p.SequenceNumber)
+		orphaned = w.finalizeLoss(w.base, p.SequenceNumber)
 	} else if dist > 0 {
 		w.stats.Reordered++
 	}
 
 	w.buf[p.SequenceNumber] = p
 	w.stats.Received++
-	return w.flushContiguous(), nil
+	out := w.flushContiguous()
+	return append(orphaned, out...), nil
 }
 
 // flushContiguous emits every buffered packet starting at base in order,
@@ -146,59 +148,103 @@ func seqDelta(seq, base uint16) int {
 	return int(int16(seq - base))
 }
 
-// finalizeLoss records every missing seq in [from, to) as one contiguous gap
-// (merged with the previous gap when adjacent) and advances base to to.
-func (w *Window) finalizeLoss(from, to uint16) {
+// finalizeLoss records every missing seq in [from, to) as contiguous gaps,
+// advances base to to, and returns already-buffered surviving packets inside
+// the span in sequence order. Those survivors arrived early while the gap was
+// still treated as a recoverable reorder; promoting them keeps them from being
+// stranded behind the new base.
+func (w *Window) finalizeLoss(from, to uint16) []*Packet {
 	missing := seqDelta(to, from)
 	if missing <= 0 {
 		w.base = to
-		return
+		return nil
 	}
-	if n := len(w.gaps); n > 0 && w.gaps[n-1].SSRC == w.ssrc &&
-		uint16(int(w.gaps[n-1].Start)+w.gaps[n-1].Count) == from {
-		w.gaps[n-1].Count += missing
-	} else {
-		w.gaps = append(w.gaps, Gap{SSRC: w.ssrc, Start: from, Count: missing})
+	surv := map[uint16]*Packet{}
+	for d := 0; d < missing; d++ {
+		seq := from + uint16(d)
+		if p, ok := w.buf[seq]; ok {
+			surv[seq] = p
+		}
 	}
-	w.stats.LostPackets += missing
-	// Buffered packets inside the abandoned span are released to the output by
-	// Drain later; base simply jumps over the lost run.
+	// Record the non-survivor members of the span as contiguous gaps.
+	runStart := from
+	run := 0
+	flushRun := func() {
+		if run == 0 {
+			return
+		}
+		if n := len(w.gaps); n > 0 && w.gaps[n-1].SSRC == w.ssrc &&
+			uint16(int(w.gaps[n-1].Start)+w.gaps[n-1].Count) == runStart {
+			w.gaps[n-1].Count += run
+		} else {
+			w.gaps = append(w.gaps, Gap{SSRC: w.ssrc, Start: runStart, Count: run})
+		}
+		run = 0
+	}
+	for seq := from; seq != to; seq++ {
+		if p, ok := surv[seq]; ok {
+			flushRun()
+			delete(w.buf, seq)
+			w.stats.Emitted++
+			_ = p
+			continue
+		}
+		if run == 0 {
+			runStart = seq
+		}
+		run++
+	}
+	flushRun()
+	w.stats.LostPackets += missing - len(surv)
+
+	// Return survivors ordered by sequence.
+	survivors := make([]*Packet, 0, len(surv))
+	for d := 0; d < missing; d++ {
+		if p, ok := surv[from+uint16(d)]; ok {
+			survivors = append(survivors, p)
+		}
+	}
 	w.base = to
+	return survivors
 }
 
 // Flush marks sequence numbers still missing at end of stream as trailing loss
-// and returns the final stats together with all recorded gaps.
+// and returns the final stats together with all recorded gaps. Only the span
+// from the current base up to the highest buffered sequence is considered;
+// packets already released by flushContiguous are never revisited.
 func (w *Window) Flush() (Stats, []Gap) {
-	if w.started {
-		// Highest buffered seq determines the stream frontier.
+	if w.started && len(w.buf) > 0 {
+		// Highest buffered seq is the stream frontier relative to base.
 		var maxSeq uint16
+		maxDist := 0
 		first := true
 		for seq := range w.buf {
-			if first || seqDelta(seq, w.base) > seqDelta(maxSeq, w.base) {
+			d := seqDelta(seq, w.base)
+			if first || d > maxDist {
+				maxDist = d
 				maxSeq = seq
 				first = false
 			}
 		}
-		if !first {
-			target := maxSeq + 1
-			var runStart uint16
-			run := 0
-			for seq := w.base; seq != target; seq++ {
-				if _, ok := w.buf[seq]; ok {
-					if run > 0 {
-						w.recordTrailing(runStart, run)
-						run = 0
-					}
-					continue
+		span := seqDelta(maxSeq, w.base) // bounded by window size, never huge
+		target := w.base + uint16(span+1)
+		var runStart uint16
+		run := 0
+		for seq := w.base; seq != target; seq++ {
+			if _, ok := w.buf[seq]; ok {
+				if run > 0 {
+					w.recordTrailing(runStart, run)
+					run = 0
 				}
-				if run == 0 {
-					runStart = seq
-				}
-				run++
+				continue
 			}
-			if run > 0 {
-				w.recordTrailing(runStart, run)
+			if run == 0 {
+				runStart = seq
 			}
+			run++
+		}
+		if run > 0 {
+			w.recordTrailing(runStart, run)
 		}
 	}
 	return w.stats, append([]Gap(nil), w.gaps...)
