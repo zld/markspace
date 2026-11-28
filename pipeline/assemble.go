@@ -113,15 +113,29 @@ func (j *Job) buildManifest(inputs []Input, align media.AlignResult, segments []
 
 	// Stats.
 	m.Stats = Stats{
-		AlignedSegments:  countAligned(segments),
-		EventCount:       len(published),
-		SegmentCount:     len(segments),
-		IndexReused:      j.anyIndexReused(),
-		LossRecoveryRate: j.lossRecoveryRate(),
-		AVSyncMs:         j.avSyncMs(published),
-		LatencyP95Ms:     Percentile(opts.LatencySamplesMs, 95),
+		AlignedSegments:    countAligned(segments),
+		EventCount:         len(published),
+		SegmentCount:       len(segments),
+		IndexReused:        j.anyIndexReused(),
+		LossRecoveryRate:   j.lossRecoveryRate(),
+		AVSyncMs:           j.avSyncMs(published),
+		LatencyP95Ms:       Percentile(opts.LatencySamplesMs, 95),
+		MaxBoundaryErrorUs: maxBoundaryError(segments),
 	}
 	return m
+}
+
+// maxBoundaryError is the worst keyframe offset from a cut in any segment.
+func maxBoundaryError(segments []SegmentInfo) int64 {
+	var worst int64
+	for _, s := range segments {
+		for _, r := range s.Renditions {
+			if r.BoundaryErrorUs > worst {
+				worst = r.BoundaryErrorUs
+			}
+		}
+	}
+	return worst
 }
 
 func countAligned(segments []SegmentInfo) int {

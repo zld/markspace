@@ -90,6 +90,9 @@ type Stats struct {
 	IndexReused      bool    `json:"index_reused"`
 	EventCount       int     `json:"event_count"`
 	SegmentCount     int     `json:"segment_count"`
+	// MaxBoundaryErrorUs is the worst keyframe offset from a cut across every
+	// rendition and segment; it must stay within one video frame.
+	MaxBoundaryErrorUs int64 `json:"max_boundary_error_us"`
 }
 
 // HasFatalIssues reports whether any issue must block publication.

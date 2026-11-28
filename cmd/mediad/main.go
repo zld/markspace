@@ -280,6 +280,7 @@ func printSummary(stdout io.Writer, res *pipeline.RunResult) {
 	fmt.Fprintf(stdout, "aligned_segments=%d\n", s.AlignedSegments)
 	fmt.Fprintf(stdout, "index_reused=%t\n", s.IndexReused)
 	fmt.Fprintf(stdout, "manifest_sha256=%s\n", m.Digest)
+	fmt.Fprintf(stdout, "max_boundary_error_us=%d\n", s.MaxBoundaryErrorUs)
 	fmt.Fprintf(stdout, "segment_count=%d\n", s.SegmentCount)
 	fmt.Fprintf(stdout, "event_count=%d\n", s.EventCount)
 	fmt.Fprintf(stdout, "committed_chunks=%d\n", res.CommittedChunks)

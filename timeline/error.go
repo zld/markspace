@@ -27,6 +27,7 @@ const (
 	CodeCheckpoint      Code = "checkpoint_invalid"
 	CodeIO              Code = "io"
 	CodeManifest        Code = "manifest_incomplete"
+	CodeRefused         Code = "publish_refused"
 	CodeUsage           Code = "usage"
 )
 

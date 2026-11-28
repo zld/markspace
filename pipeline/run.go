@@ -143,7 +143,7 @@ func (j *Job) Run(inputs []Input, opts RunOptions) (*RunResult, error) {
 			msg = "refusing to publish: " + first.String()
 		}
 		return res, &timeline.LocatedError{Issue: timeline.Issue{
-			Severity: timeline.SeverityError, Code: timeline.CodeManifest, Message: msg}}
+			Severity: timeline.SeverityError, Code: timeline.CodeRefused, Message: msg}}
 	}
 	out, err := manifest.Publish()
 	if err != nil {

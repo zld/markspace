@@ -130,7 +130,7 @@ func TestRunRefusesDamagedInput(t *testing.T) {
 	if err == nil {
 		t.Fatal("a damaged input must make the run fail")
 	}
-	if timeline.CodeOf(err) != timeline.CodeUnsupported && timeline.CodeOf(err) != timeline.CodeManifest {
+	if timeline.CodeOf(err) != timeline.CodeUnsupported && timeline.CodeOf(err) != timeline.CodeManifest && timeline.CodeOf(err) != timeline.CodeRefused {
 		t.Logf("error code = %q (err=%v)", timeline.CodeOf(err), err)
 	}
 }
