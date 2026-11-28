@@ -117,12 +117,20 @@ func Recover(report *SequenceReport, frames []XORFrame) (*RecoveryResult, error)
 			Offset:    frame.Offset, // attribution: the redundancy frame that rebuilt it
 			Recovered: true,
 		}
+		// Reconstruct the RTP timestamp on the observed packet grid so the
+		// recovered packet participates in timeline evaluation. With exactly
+		// one hole among the frame's covered sequences, the per-step delta is
+		// derived from neighboring received timestamps.
+		recovered.RawTS = interpolateRawTS(report, frame, hole)
 		bySeq[hole] = recovered
 		for i, p := range report.Ordered {
 			if p.Sequence == hole {
 				report.Ordered[i] = recovered
 				break
 			}
+		}
+		if est, ok := estimateExtendedTS(report, bySeq, frame, hole); ok {
+			report.ExtendedTS[hole] = est
 		}
 		res.Recovered++
 		res.Frames = append(res.Frames, *recovered)
@@ -135,4 +143,75 @@ func Recover(report *SequenceReport, frames []XORFrame) (*RecoveryResult, error)
 		}
 	}
 	return res, nil
+}
+
+// gridStep derives the per-packet timestamp step from the first two received
+// packets of the whole stream, defaulting to 0 when only one is present.
+func gridStep(report *SequenceReport) uint32 {
+	var prev uint32
+	havePrev := false
+	for _, p := range report.Ordered {
+		ext, ok := report.ExtendedTS[p.Sequence]
+		if !ok || p.Recovered {
+			continue
+		}
+		ts := uint32(ext)
+		if havePrev && ts > prev {
+			return ts - prev
+		}
+		prev, havePrev = ts, true
+	}
+	return 0
+}
+
+// interpolateRawTS reconstructs the 32-bit raw timestamp of the single hole
+// by projecting from the frame's base sequence along the measured grid step.
+func interpolateRawTS(report *SequenceReport, frame XORFrame, hole uint16) uint32 {
+	step := gridStep(report)
+	holeIdx := uint32(hole - frame.BaseSeq)
+	if base := reportPacketAt(report, frame.BaseSeq); base != nil {
+		return base.RawTS + uint32(holeIdx)*step
+	}
+	return 0
+}
+
+// estimateExtendedTS reconstructs the monotonic 64-bit timestamp of the hole
+// by extending from a received neighbor using the measured grid step.
+func estimateExtendedTS(report *SequenceReport, bySeq map[uint16]*Packet, frame XORFrame, hole uint16) (int64, bool) {
+	step := int64(gridStep(report))
+	// Prefer a received neighbor at a lower sequence.
+	for k := uint32(0); k < frame.Count; k++ {
+		seq := frame.BaseSeq + uint16(k)
+		if seq >= hole {
+			break
+		}
+		if p, ok := bySeq[seq]; ok && p.Offset >= 0 {
+			if base, exists := report.ExtendedTS[seq]; exists {
+				return base + int64(hole-seq)*step, true
+			}
+		}
+	}
+	// Otherwise project backward from a higher-sequence neighbor.
+	for k := uint32(0); k < frame.Count; k++ {
+		seq := frame.BaseSeq + uint16(k)
+		if seq <= hole {
+			continue
+		}
+		if p, ok := bySeq[seq]; ok && p.Offset >= 0 {
+			if base, exists := report.ExtendedTS[seq]; exists {
+				return base - int64(seq-hole)*step, true
+			}
+		}
+	}
+	return 0, false
+}
+
+// reportPacketAt finds the packet with a given sequence in the ordered report.
+func reportPacketAt(report *SequenceReport, seq uint16) *Packet {
+	for _, p := range report.Ordered {
+		if p.Sequence == seq {
+			return p
+		}
+	}
+	return nil
 }
