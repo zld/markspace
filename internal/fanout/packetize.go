@@ -9,7 +9,7 @@ import (
 	"mediapack/internal/render"
 )
 
-// Custom payload header (12 bytes), big-endian, followed by frame-hash chunks:
+// Custom payload header (14 bytes), big-endian, followed by frame-hash chunks:
 //
 //	segment u32 | frame u32 | tick u32 | sourceTrack u8 | sourceSample u8
 //
@@ -23,14 +23,15 @@ type payloadHeader struct {
 	sourceSample uint8
 }
 
-const headerLen = 12
+const headerLen = 14
 
 func encodeHeader(h payloadHeader) []byte {
 	b := make([]byte, headerLen)
 	binary.BigEndian.PutUint32(b[0:4], h.segment)
 	binary.BigEndian.PutUint32(b[4:8], h.frame)
 	binary.BigEndian.PutUint32(b[8:12], h.tick)
-	// 12-byte header leaves two source bytes in the fixed headroom tail.
+	b[12] = h.sourceTrack
+	b[13] = h.sourceSample
 	return b
 }
 
@@ -39,9 +40,11 @@ func decodeHeader(b []byte) (payloadHeader, error) {
 		return payloadHeader{}, fmt.Errorf("fanout payload shorter than %d bytes", headerLen)
 	}
 	return payloadHeader{
-		segment: binary.BigEndian.Uint32(b[0:4]),
-		frame:   binary.BigEndian.Uint32(b[4:8]),
-		tick:    binary.BigEndian.Uint32(b[8:12]),
+		segment:      binary.BigEndian.Uint32(b[0:4]),
+		frame:        binary.BigEndian.Uint32(b[4:8]),
+		tick:         binary.BigEndian.Uint32(b[8:12]),
+		sourceTrack:  b[12],
+		sourceSample: b[13],
 	}, nil
 }
 

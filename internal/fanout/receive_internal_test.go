@@ -9,13 +9,30 @@ import (
 )
 
 func mkPacket(seq uint16, seg uint32, marker bool) *rtp.Packet {
-	hdr := payloadHeader{segment: seg, frame: seg, tick: seg * 100}
+	hdr := payloadHeader{
+		segment: seg, frame: seg, tick: seg * 100,
+		sourceTrack: 2, sourceSample: 7,
+	}
 	return &rtp.Packet{
 		Header: rtp.Header{
 			Version: 2, PayloadType: PayloadType,
 			SequenceNumber: seq, Timestamp: seg * 100, SSRC: 1, Marker: marker,
 		},
 		Payload: append(encodeHeader(hdr), []byte("media")...),
+	}
+}
+
+func TestHeaderRoundTripsSourceFields(t *testing.T) {
+	hdr := payloadHeader{
+		segment: 3, frame: 9, tick: 12345,
+		sourceTrack: 2, sourceSample: 7,
+	}
+	dec, err := decodeHeader(encodeHeader(hdr))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dec != hdr {
+		t.Fatalf("header round trip lost fields: got %+v want %+v", dec, hdr)
 	}
 }
 
@@ -108,6 +125,15 @@ func TestBuildSegmentsFlagsCompleteness(t *testing.T) {
 	}
 	if !rep.Segments[0].Complete || rep.Segments[1].Complete {
 		t.Fatalf("completeness flags wrong: %+v", rep.Segments)
+	}
+	// Marker packets (every third) reassemble into frame refs carrying source.
+	if len(rep.Frames) != 2 {
+		t.Fatalf("frame refs = %d, want 2 markers", len(rep.Frames))
+	}
+	for _, f := range rep.Frames {
+		if f.SourceTrack != 2 || f.SourceSample != 7 {
+			t.Fatalf("frame ref lost source fields: %+v", f)
+		}
 	}
 }
 

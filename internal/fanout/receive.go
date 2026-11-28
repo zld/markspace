@@ -104,6 +104,8 @@ func buildSegments(layer LayerSpec, frames []render.Frame, rec receiveResult) (*
 				SegmentIndex: int(h.segment),
 				FrameIndex:   int(h.frame),
 				Tick:         int64(h.tick),
+				SourceTrack:  int(h.sourceTrack),
+				SourceSample: int(h.sourceSample),
 				Hash:         frameHashAt(frames, int(h.frame)),
 			})
 		}
