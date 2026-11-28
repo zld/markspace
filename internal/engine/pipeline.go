@@ -68,6 +68,9 @@ type TrackView struct {
 	Truncated    bool                    `json:"truncated,omitempty"`
 	InputDigest  string                  `json:"input_digest"`
 	ParseVersion string                  `json:"parse_version"`
+	// SourceStart is the byte offset of the container structure that defines
+	// this track, so every field in the view can be located in the input.
+	SourceStart int64 `json:"source_start"`
 	// Errors are this track's structured diagnostics, so a rejected or
 	// truncated track is explained in place as well as in the global list.
 	Errors []*media.Error `json:"errors,omitempty"`
@@ -464,11 +467,13 @@ func trackViews(tl *timeline.Timeline, digests map[string]string, in *track.Inpu
 			Start: tt.Start, End: tt.End, Samples: len(tt.Samples), Bytes: bytes,
 			Rotation: tt.Rotation, Crop: tt.Crop, Colors: tt.Colors,
 			Conflicts: tt.Conflicts, Metadata: tt.Metadata,
-			Truncated: tt.Truncated, InputDigest: digests[tt.TrackID],
+			Truncated:    tt.Truncated,
+			InputDigest:  digests[tt.TrackID],
 			ParseVersion: tt.ParseVersion, Errors: tt.Errors,
 		}
 		if tr := byID[tt.TrackID]; tr != nil {
 			v.RotSource = tr.RotSource
+			v.SourceStart = tr.SourceStart
 		}
 		views = append(views, v)
 	}

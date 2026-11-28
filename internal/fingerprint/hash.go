@@ -52,13 +52,27 @@ type Result struct {
 	Stage        media.Stage  `json:"stage"`
 }
 
+// Source identifies one place identical content was found, with everything
+// needed to locate it without consulting another section of the manifest.
+type Source struct {
+	Segment      string       `json:"segment"`
+	Track        string       `json:"track"`
+	Offset       int64        `json:"source_offset"`
+	Window       media.Window `json:"window"`
+	ParseVersion string       `json:"parse_version"`
+}
+
 // Group collects every source of identical content.
 type Group struct {
-	Digest   string         `json:"digest"`
-	Segments []string       `json:"segments"`
-	Tracks   []string       `json:"tracks"`
-	Ranges   []media.Window `json:"ranges"`
-	Primary  string         `json:"primary"`
+	Digest       string         `json:"digest"`
+	Segments     []string       `json:"segments"`
+	Tracks       []string       `json:"tracks"`
+	Ranges       []media.Window `json:"ranges"`
+	Sources      []Source       `json:"sources"`
+	Primary      string         `json:"primary"`
+	Algorithm    string         `json:"algorithm"`
+	ParseVersion string         `json:"parse_version"`
+	Stage        media.Stage    `json:"stage"`
 }
 
 // Duplicates are the groups with more than one member.
@@ -76,7 +90,11 @@ func Duplicates(results []Result) []Group {
 			continue
 		}
 		sort.Slice(list, func(i, j int) bool { return list[i].SegmentID < list[j].SegmentID })
-		g := Group{Digest: digest, Primary: list[0].SegmentID}
+		g := Group{
+			Digest: digest, Primary: list[0].SegmentID,
+			Algorithm: list[0].Algorithm, ParseVersion: list[0].ParseVersion,
+			Stage: media.StageFingerprint,
+		}
 		seenTrack := map[string]bool{}
 		for _, r := range list {
 			g.Segments = append(g.Segments, r.SegmentID)
@@ -85,6 +103,10 @@ func Duplicates(results []Result) []Group {
 				g.Tracks = append(g.Tracks, r.Track)
 			}
 			g.Ranges = append(g.Ranges, r.Window)
+			g.Sources = append(g.Sources, Source{
+				Segment: r.SegmentID, Track: r.Track, Offset: r.SourceOffset,
+				Window: r.Window, ParseVersion: r.ParseVersion,
+			})
 		}
 		sort.Strings(g.Tracks)
 		sort.Slice(g.Ranges, func(i, j int) bool {
