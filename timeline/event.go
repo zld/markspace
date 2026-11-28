@@ -31,6 +31,9 @@ type Source struct {
 	TrackID uint32 `json:"track_id,omitempty"`
 	// Box is the enclosing box type (for example "emsg") or "" for payloads.
 	Box string `json:"box,omitempty"`
+	// FrameIndex locates an event inside a multi-event source (sample number,
+	// RTP sequence position, chapter index). It is 1-based when set.
+	FrameIndex int `json:"frame_index,omitempty"`
 }
 
 // Event is one timed metadata item placed on the track timeline.
@@ -184,7 +187,10 @@ func sourceLess(a, b Source) bool {
 	if a.TrackID != b.TrackID {
 		return a.TrackID < b.TrackID
 	}
-	return a.ByteOffset < b.ByteOffset
+	if a.ByteOffset != b.ByteOffset {
+		return a.ByteOffset < b.ByteOffset
+	}
+	return a.FrameIndex < b.FrameIndex
 }
 
 // AddError records a parse or time error tied to source location.
