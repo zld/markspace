@@ -58,9 +58,9 @@ func Mvhd(timescale, durationTicks uint32) []byte {
 	payload := bytes.Join([][]byte{
 		U32(0), U32(0), // creation, modification
 		U32(timescale), U32(durationTicks),
-		U32(0x00010000),      // rate 1.0
-		U16(0x0100), U16(0),  // volume 1.0, reserved
-		U32(0), U32(0),       // reserved
+		U32(0x00010000),     // rate 1.0
+		U16(0x0100), U16(0), // volume 1.0, reserved
+		U32(0), U32(0), // reserved
 		Matrix(),
 		make([]byte, 24), // pre_defined
 		U32(2),           // next_track_ID
@@ -289,3 +289,21 @@ func BuildStbl(st *SampleTable, stsdEntry []byte, firstDataOffset uint32) []byte
 
 // FormatBytes renders a short description of a sample for subtitles/SEI.
 func FormatBytes(b []byte) string { return fmt.Sprintf("%x", b) }
+
+// EncodeRTPCapture serialises raw RTP packets into the self-describing capture
+// format the media package reads: magic "MRTP", packet count, then each packet
+// as a 32-bit length and its bytes. It is the fixture counterpart of
+// media.ParseRTPCapture.
+func EncodeRTPCapture(packets []RTPDatagram) []byte {
+	var out []byte
+	out = append(out, []byte("MRTP")...)
+	out = append(out, U32(uint32(len(packets)))...)
+	for _, p := range packets {
+		out = append(out, U32(uint32(len(p)))...)
+		out = append(out, p...)
+	}
+	return out
+}
+
+// RTPDatagram is one already-marshalled RTP packet.
+type RTPDatagram []byte

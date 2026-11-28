@@ -84,6 +84,15 @@ func RecoverRTP(packets []RTPPacket) RTPRecovery {
 	return recoverRTPWithWindow(packets, DefaultReorderWindow)
 }
 
+// RecoverRTPWithWindow is RecoverRTP with an explicit reorder window, used by
+// the pipeline to apply its configured tolerance.
+func RecoverRTPWithWindow(packets []RTPPacket, window int64) RTPRecovery {
+	if window <= 0 {
+		window = DefaultReorderWindow
+	}
+	return recoverRTPWithWindow(packets, window)
+}
+
 func recoverRTPWithWindow(packets []RTPPacket, window int64) RTPRecovery {
 	var out RTPRecovery
 	out.StreamSSRC = packets[0].Packet.SSRC
