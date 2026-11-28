@@ -99,10 +99,10 @@ func TestFirstMissingAndRetransmit(t *testing.T) {
 		t.Fatalf("err=%v", err)
 	}
 	// Burst loss recovered by retransmission.
-	r.Add(mk(2, "CD"))
-	segs, _ := r.Add(mk(4, "EF"))
-	if len(segs) != 3 {
-		t.Fatalf("after retransmit segs=%v", segs)
+	s1, _ := r.Add(mk(2, "CD"))
+	s2, _ := r.Add(mk(4, "EF"))
+	if len(s1)+len(s2) != 3 {
+		t.Fatalf("after retransmit segs=%v,%v", s1, s2)
 	}
 	if _, _, ok := r.FirstMissing(); ok {
 		t.Fatal("gap should be closed")
@@ -122,7 +122,7 @@ func TestAdaptiveWindow(t *testing.T) {
 	// Fast arrivals: window must shrink back.
 	r2 := NewReassembler()
 	for i := int64(0); i < 8; i++ {
-		r2.Add(Record{ArrivalNs: i * 1000, FileOffset: uint64(i * 100), Payload: make([]byte, 100)})
+		r2.Add(Record{ArrivalNs: i * 100, FileOffset: uint64(i * 100), Payload: make([]byte, 100)})
 	}
 	if r2.WaitWindowNs() != MinWindowNs {
 		t.Fatalf("fast link window=%d want min %d", r2.WaitWindowNs(), MinWindowNs)
