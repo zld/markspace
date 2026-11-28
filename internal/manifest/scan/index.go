@@ -184,7 +184,10 @@ func Scan(in Input) (*Index, error) {
 
 	seen := make(map[string]bool)
 	add := func(kind Kind, uri, rel string, maxBytes int64) error {
-		key := string(kind) + "\x00" + rel
+		// The key includes the URI: one file can legitimately appear under
+		// several URIs (init segment shared by representations), and each
+		// reference must be independently verifiable.
+		key := string(kind) + "\x00" + rel + "\x00" + uri
 		if seen[key] {
 			return nil
 		}
@@ -263,9 +266,19 @@ func indexDigest(idx *Index) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// SegmentDigest maps "path\x00uri" to the hashed segment entry so runners can
-// look up by the URI as written in the manifest.
+// SegmentDigest finds the hashed entry for a resolved segment path, preferring
+// an exact URI match so two URIs that resolve to one file stay distinguishable.
 func (idx *Index) SegmentDigest(rel, uri string) (FileEntry, bool) {
+	for _, f := range idx.Files {
+		if f.Kind != KindMedia && f.Kind != KindInit {
+			continue
+		}
+		if f.Path == rel && f.URI == uri {
+			return f, true
+		}
+	}
+	// A DASH manifest can reference the same file under two representations;
+	// fall back to the path when the URI is not recorded verbatim.
 	for _, f := range idx.Files {
 		if f.Kind != KindMedia && f.Kind != KindInit {
 			continue
