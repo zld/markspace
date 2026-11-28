@@ -374,3 +374,8 @@ func mulDivRound(a, b, c int64) (int64, error) {
 	}
 	return int64(q), nil
 }
+
+// MulDiv returns round-half-away-from-zero of a*b/c using 128-bit
+// intermediates. c must be non-zero. It is exported so timeline arithmetic can
+// stay integer-exact without re-implementing overflow-safe rescaling.
+func MulDiv(a, b, c int64) (int64, error) { return mulDivRound(a, b, c) }
