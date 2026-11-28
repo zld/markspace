@@ -41,11 +41,11 @@ type QualityThresholds struct {
 
 // QualityObservation carries measured media statistics for one asset.
 type QualityObservation struct {
-	PixelMean        float64
-	ReferenceMean    float64
-	PixelStddev      float64
-	ReferenceStddev  float64
-	AudioPeakDBFS    float64
+	PixelMean       float64
+	ReferenceMean   float64
+	PixelStddev     float64
+	ReferenceStddev float64
+	AudioPeakDBFS   float64
 }
 
 // Representation is one selectable ladder rung for the third gate.
@@ -71,10 +71,10 @@ type Request struct {
 
 // Outcome explains the decision with the failing gate and chosen rung.
 type Outcome struct {
-	Decision   Decision
-	Selected   *Representation
-	Reasons    []string
-	ErrorCode  string // stable code when rejected, empty on accept
+	Decision  Decision
+	Selected  *Representation
+	Reasons   []string
+	ErrorCode string // stable code when rejected, empty on accept
 }
 
 // DefaultThresholds returns the gates used by the demo. The synthetic fixture
@@ -95,8 +95,8 @@ func Evaluate(req Request) Outcome {
 	// Gate 1: quality. Any failure terminates immediately.
 	if reasons, ok := qualityFailures(req.Quality, req.Threshold); !ok {
 		return Outcome{
-			Decision: DecisionQualityFailed,
-			Reasons:  reasons,
+			Decision:  DecisionQualityFailed,
+			Reasons:   reasons,
 			ErrorCode: merr.CodeQualityGate,
 		}
 	}

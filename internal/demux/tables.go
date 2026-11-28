@@ -10,20 +10,20 @@ import (
 
 // rawTable holds the still-packed sample boxes of one track while parsing.
 type rawTable struct {
-	trackID  uint32
-	timescale uint32
-	duration int64
-	kind     Kind
-	codec    string
+	trackID       uint32
+	timescale     uint32
+	duration      int64
+	kind          Kind
+	codec         string
 	width, height uint16
 	channels      uint16
 	sampleRate    uint32
-	stts        []mp4.SttsEntry
-	stsc        []mp4.StscEntry
-	stszSizes   []uint32
-	stszConst   uint32 // nonzero when every sample shares this size
-	stco        []int64
-	syncSamples map[uint32]bool
+	stts          []mp4.SttsEntry
+	stsc          []mp4.StscEntry
+	stszSizes     []uint32
+	stszConst     uint32 // nonzero when every sample shares this size
+	stco          []int64
+	syncSamples   map[uint32]bool
 }
 
 func newRawTable(id uint32) *rawTable {

@@ -28,7 +28,7 @@ type Manifest struct {
 	// preservation across the remux.
 	SampleHashes [][]string `json:"sample_hashes"`
 	// TrackCount and SampleCounts guard against dropped tracks/samples.
-	TrackCount  int   `json:"track_count"`
+	TrackCount   int   `json:"track_count"`
 	SampleCounts []int `json:"sample_counts"`
 }
 
@@ -67,6 +67,10 @@ func Write(r io.ReaderAt, c *demux.Container, inSHA []byte, outPath string) (*Re
 	tmp, err := os.CreateTemp(dir, ".remux-*")
 	if err != nil {
 		return nil, merr.New(merr.CodeCorruptArtifact, "temp file create failed").Wrap(err)
+	}
+	if err := tmp.Chmod(0o644); err != nil {
+		_ = tmp.Close()
+		return nil, merr.New(merr.CodeCorruptArtifact, "temp chmod failed").Wrap(err)
 	}
 	tmpName := tmp.Name()
 	// On any failure the temp file is unlinked; nothing is renamed.

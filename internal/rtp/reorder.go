@@ -19,35 +19,35 @@ import (
 
 // OrderedPacket is one packet after sequence extension.
 type OrderedPacket struct {
-	SSRC            uint32
-	ExtSequence     uint64 // unwrapped 16-bit sequence number
-	Sequence        uint16 // original on-wire sequence number
-	Timestamp       uint32 // original RTP timestamp (never rewritten)
-	PayloadHash     [32]byte
-	Payload         []byte
-	Marker          bool
-	PayloadType     uint8
-	Recovered       bool // true when emitted after a gap had been observed
+	SSRC        uint32
+	ExtSequence uint64 // unwrapped 16-bit sequence number
+	Sequence    uint16 // original on-wire sequence number
+	Timestamp   uint32 // original RTP timestamp (never rewritten)
+	PayloadHash [32]byte
+	Payload     []byte
+	Marker      bool
+	PayloadType uint8
+	Recovered   bool // true when emitted after a gap had been observed
 }
 
 // Gap records a missing sequence range on one SSRC.
 type Gap struct {
-	SSRC       uint32
-	FromExt    uint64
-	ToExt      uint64 // inclusive
-	Count      int
+	SSRC    uint32
+	FromExt uint64
+	ToExt   uint64 // inclusive
+	Count   int
 }
 
 // stream is the per-SSRC reorder state.
 type stream struct {
-	ssrc       uint32
+	ssrc        uint32
 	initialized bool
-	nextOut    uint64 // next extended sequence expected for output
-	maxSeen    uint64 // highest extended sequence observed
-	window     map[uint64]*rtp.Packet
-	hashes     map[uint64][32]byte
-	gaps       []Gap
-	recovered  int
+	nextOut     uint64 // next extended sequence expected for output
+	maxSeen     uint64 // highest extended sequence observed
+	window      map[uint64]*rtp.Packet
+	hashes      map[uint64][32]byte
+	gaps        []Gap
+	recovered   int
 }
 
 // ReorderBuffer keeps per-SSRC streams behind one shared window size.
@@ -238,4 +238,21 @@ func min64(a, b uint64) uint64 {
 		return a
 	}
 	return b
+}
+
+// PacketFor builds a minimal marshalled RTP packet with deterministic payload
+// for the given SSRC and sequence number. It is shared by pipeline fixtures
+// and tests so synthetic traffic never depends on external captures.
+func PacketFor(ssrc uint32, seq uint16) *rtp.Packet {
+	return &rtp.Packet{
+		Header: rtp.Header{
+			Version:        2,
+			PayloadType:    96,
+			SequenceNumber: seq,
+			Timestamp:      uint32(seq) * 160,
+			SSRC:           ssrc,
+			Marker:         seq%16 == 15,
+		},
+		Payload: []byte{byte(seq >> 8), byte(seq), 0xa5, 0x5a},
+	}
 }

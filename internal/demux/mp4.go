@@ -36,16 +36,16 @@ type Sample struct {
 
 // Track is the parsed view of one trak box.
 type Track struct {
-	ID        uint32
-	Kind      Kind
-	Codec     string // sample-entry fourCC, e.g. "avc1" / "mp4a"
-	Timescale uint32
-	Duration  int64 // mdhd duration in track ticks
-	Width     uint16
-	Height    uint16
-	Channels  uint16
+	ID         uint32
+	Kind       Kind
+	Codec      string // sample-entry fourCC, e.g. "avc1" / "mp4a"
+	Timescale  uint32
+	Duration   int64 // mdhd duration in track ticks
+	Width      uint16
+	Height     uint16
+	Channels   uint16
 	SampleRate uint32
-	Samples   []Sample
+	Samples    []Sample
 }
 
 // StartTick returns the earliest sample DTS (always >= 0 for our fixtures).

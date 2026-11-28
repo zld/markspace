@@ -17,7 +17,7 @@ func readerOf(b []byte) *bytes.Reader { return bytes.NewReader(b) }
 func rawPacket(t *testing.T, ssrc uint32, seq uint16) []byte {
 	t.Helper()
 	pkt := &rtp.Packet{
-		Header: rtp.Header{Version: 2, SSRC: ssrc, SequenceNumber: seq, Timestamp: uint32(seq) * 160},
+		Header:  rtp.Header{Version: 2, SSRC: ssrc, SequenceNumber: seq, Timestamp: uint32(seq) * 160},
 		Payload: []byte{byte(seq), 0x10},
 	}
 	b, err := pkt.Marshal()
