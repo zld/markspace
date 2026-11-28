@@ -261,7 +261,8 @@ func cancelTrack(mu *sync.Mutex, cancelled map[model.TrackID]bool, rep *Report,
 	rep.TrackCancelled[track] = f
 }
 
-func classify(err error, j Job, fillPolicy string) *model.Fault {	if f, ok := model.AsFault(err); ok {
+func classify(err error, j Job, fillPolicy string) *model.Fault {
+	if f, ok := model.AsFault(err); ok {
 		out := *f
 		if out.Kind == "" {
 			out.Kind = model.KindWorker
