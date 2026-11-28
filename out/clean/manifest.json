@@ -1,0 +1,687 @@
+{
+  "inputSha256": "998bceb1ab3f70e5c325e76e43ce21a59c04dad4e135e8e03128f527ca32415f",
+  "params": {
+    "fingerprintWindowNs": 1000000000,
+    "maxBlockSize": 1048576,
+    "queueCap": 4,
+    "segmentDurNs": 200000000,
+    "silenceMaxGapNs": 0,
+    "silenceMinDurNs": 100000000,
+    "silenceThreshold": 500
+  },
+  "errors": null,
+  "segments": [
+    {
+      "segment": {
+        "index": 0,
+        "startNs": 0,
+        "endNs": 200000000,
+        "blocks": [
+          {
+            "track": 1,
+            "ns": 0,
+            "offset": 98,
+            "size": 656
+          },
+          {
+            "track": 2,
+            "ns": 0,
+            "offset": 757,
+            "size": 656
+          },
+          {
+            "track": 1,
+            "ns": 20000000,
+            "offset": 1416,
+            "size": 656
+          },
+          {
+            "track": 2,
+            "ns": 20000000,
+            "offset": 2075,
+            "size": 656
+          },
+          {
+            "track": 1,
+            "ns": 40000000,
+            "offset": 3402,
+            "size": 656
+          },
+          {
+            "track": 2,
+            "ns": 40000000,
+            "offset": 2743,
+            "size": 656
+          },
+          {
+            "track": 1,
+            "ns": 60000000,
+            "offset": 4720,
+            "size": 656
+          },
+          {
+            "track": 2,
+            "ns": 60000000,
+            "offset": 4061,
+            "size": 656
+          },
+          {
+            "track": 1,
+            "ns": 80000000,
+            "offset": 5388,
+            "size": 656
+          },
+          {
+            "track": 2,
+            "ns": 80000000,
+            "offset": 6047,
+            "size": 656
+          },
+          {
+            "track": 1,
+            "ns": 100000000,
+            "offset": 6706,
+            "size": 656
+          },
+          {
+            "track": 2,
+            "ns": 100000000,
+            "offset": 7365,
+            "size": 656
+          },
+          {
+            "track": 1,
+            "ns": 120000000,
+            "offset": 8692,
+            "size": 656
+          },
+          {
+            "track": 2,
+            "ns": 120000000,
+            "offset": 8033,
+            "size": 656
+          },
+          {
+            "track": 1,
+            "ns": 140000000,
+            "offset": 10010,
+            "size": 656
+          },
+          {
+            "track": 2,
+            "ns": 140000000,
+            "offset": 9351,
+            "size": 656
+          },
+          {
+            "track": 1,
+            "ns": 160000000,
+            "offset": 10678,
+            "size": 656
+          },
+          {
+            "track": 2,
+            "ns": 160000000,
+            "offset": 11337,
+            "size": 656
+          },
+          {
+            "track": 1,
+            "ns": 180000000,
+            "offset": 11996,
+            "size": 656
+          },
+          {
+            "track": 2,
+            "ns": 180000000,
+            "offset": 12655,
+            "size": 656
+          }
+        ]
+      },
+      "sha256": "dad429cb6cd928f57b29ff28e7110c560e8aa60657c16b5dc1d169d6342f6ba5"
+    },
+    {
+      "segment": {
+        "index": 1,
+        "startNs": 200000000,
+        "endNs": 400000000,
+        "blocks": [
+          {
+            "track": 1,
+            "ns": 200000000,
+            "offset": 13982,
+            "size": 656
+          },
+          {
+            "track": 2,
+            "ns": 200000000,
+            "offset": 13323,
+            "size": 656
+          },
+          {
+            "track": 1,
+            "ns": 220000000,
+            "offset": 15300,
+            "size": 656
+          },
+          {
+            "track": 2,
+            "ns": 220000000,
+            "offset": 14641,
+            "size": 656
+          },
+          {
+            "track": 1,
+            "ns": 240000000,
+            "offset": 15968,
+            "size": 656
+          },
+          {
+            "track": 2,
+            "ns": 240000000,
+            "offset": 16627,
+            "size": 656
+          },
+          {
+            "track": 1,
+            "ns": 260000000,
+            "offset": 17286,
+            "size": 656
+          },
+          {
+            "track": 2,
+            "ns": 260000000,
+            "offset": 17945,
+            "size": 656
+          },
+          {
+            "track": 1,
+            "ns": 280000000,
+            "offset": 19273,
+            "size": 656
+          },
+          {
+            "track": 2,
+            "ns": 280000000,
+            "offset": 18614,
+            "size": 656
+          },
+          {
+            "track": 1,
+            "ns": 300000000,
+            "offset": 20591,
+            "size": 656
+          },
+          {
+            "track": 2,
+            "ns": 300000000,
+            "offset": 19932,
+            "size": 656
+          },
+          {
+            "track": 1,
+            "ns": 320000000,
+            "offset": 21260,
+            "size": 656
+          },
+          {
+            "track": 2,
+            "ns": 320000000,
+            "offset": 21919,
+            "size": 656
+          },
+          {
+            "track": 1,
+            "ns": 340000000,
+            "offset": 22578,
+            "size": 656
+          },
+          {
+            "track": 2,
+            "ns": 340000000,
+            "offset": 23237,
+            "size": 656
+          },
+          {
+            "track": 1,
+            "ns": 360000000,
+            "offset": 24565,
+            "size": 656
+          },
+          {
+            "track": 2,
+            "ns": 360000000,
+            "offset": 23906,
+            "size": 656
+          },
+          {
+            "track": 1,
+            "ns": 380000000,
+            "offset": 25883,
+            "size": 656
+          },
+          {
+            "track": 2,
+            "ns": 380000000,
+            "offset": 25224,
+            "size": 656
+          }
+        ]
+      },
+      "sha256": "ed282cb33fcf7a5ec44e649796c2f7b6c5bacf66284f7025689cce1144b7ab3b"
+    },
+    {
+      "segment": {
+        "index": 2,
+        "startNs": 400000000,
+        "endNs": 600000000,
+        "blocks": [
+          {
+            "track": 1,
+            "ns": 400000000,
+            "offset": 26552,
+            "size": 656
+          },
+          {
+            "track": 2,
+            "ns": 400000000,
+            "offset": 27211,
+            "size": 656
+          },
+          {
+            "track": 1,
+            "ns": 420000000,
+            "offset": 27870,
+            "size": 656
+          },
+          {
+            "track": 2,
+            "ns": 420000000,
+            "offset": 28529,
+            "size": 656
+          },
+          {
+            "track": 1,
+            "ns": 440000000,
+            "offset": 29857,
+            "size": 656
+          },
+          {
+            "track": 2,
+            "ns": 440000000,
+            "offset": 29198,
+            "size": 656
+          },
+          {
+            "track": 1,
+            "ns": 460000000,
+            "offset": 31175,
+            "size": 656
+          },
+          {
+            "track": 2,
+            "ns": 460000000,
+            "offset": 30516,
+            "size": 656
+          },
+          {
+            "track": 1,
+            "ns": 480000000,
+            "offset": 31844,
+            "size": 656
+          },
+          {
+            "track": 2,
+            "ns": 480000000,
+            "offset": 32503,
+            "size": 656
+          },
+          {
+            "track": 1,
+            "ns": 500000000,
+            "offset": 33162,
+            "size": 656
+          },
+          {
+            "track": 2,
+            "ns": 500000000,
+            "offset": 33821,
+            "size": 656
+          },
+          {
+            "track": 1,
+            "ns": 520000000,
+            "offset": 35149,
+            "size": 656
+          },
+          {
+            "track": 2,
+            "ns": 520000000,
+            "offset": 34490,
+            "size": 656
+          },
+          {
+            "track": 1,
+            "ns": 540000000,
+            "offset": 36467,
+            "size": 656
+          },
+          {
+            "track": 2,
+            "ns": 540000000,
+            "offset": 35808,
+            "size": 656
+          },
+          {
+            "track": 1,
+            "ns": 560000000,
+            "offset": 37136,
+            "size": 656
+          },
+          {
+            "track": 2,
+            "ns": 560000000,
+            "offset": 37795,
+            "size": 656
+          },
+          {
+            "track": 1,
+            "ns": 580000000,
+            "offset": 38454,
+            "size": 656
+          },
+          {
+            "track": 2,
+            "ns": 580000000,
+            "offset": 39113,
+            "size": 656
+          }
+        ]
+      },
+      "sha256": "3031953c17ca99a27449216ffa08ce2950abb8aee318970a1c94f4b764187110"
+    },
+    {
+      "segment": {
+        "index": 3,
+        "startNs": 600000000,
+        "endNs": 800000000,
+        "blocks": [
+          {
+            "track": 1,
+            "ns": 600000000,
+            "offset": 40441,
+            "size": 656
+          },
+          {
+            "track": 2,
+            "ns": 600000000,
+            "offset": 39782,
+            "size": 656
+          },
+          {
+            "track": 1,
+            "ns": 620000000,
+            "offset": 41759,
+            "size": 656
+          },
+          {
+            "track": 2,
+            "ns": 620000000,
+            "offset": 41100,
+            "size": 656
+          }
+        ]
+      },
+      "sha256": "4bd9a2ac78d360ef432d688868548e51cb49d029d3a0729a592fddb406562903"
+    }
+  ],
+  "silence": [
+    {
+      "track": 1,
+      "startNs": 200000000,
+      "endNs": 360000000,
+      "peak": 0
+    },
+    {
+      "track": 2,
+      "startNs": 200000000,
+      "endNs": 360000000,
+      "peak": 0
+    }
+  ],
+  "fingerprints": [
+    {
+      "track": 1,
+      "window": 0,
+      "hash": "b739730ce059a104f667b96e2861c7116344e817ee3859c7d393dd1384cd0ed0"
+    },
+    {
+      "track": 2,
+      "window": 0,
+      "hash": "ef57422341b09ed673dc0eb8d29bdf2222395c13c780a876a3741039a48c366f"
+    },
+    {
+      "track": 1,
+      "window": 0,
+      "hash": "097e818e6bb893704985aec5bfa98a746cf983ed67c1f43e0b174e7998f8d53c"
+    },
+    {
+      "track": 2,
+      "window": 0,
+      "hash": "345a74f4da4d2f3fcdc615581797faf5629da6b5881acb3b4ecb1dad5f96ad31"
+    },
+    {
+      "track": 1,
+      "window": 0,
+      "hash": "da6276182421405a76239ddd5d36c10589d59a225c5af84f117a61cd63bbc652"
+    },
+    {
+      "track": 2,
+      "window": 0,
+      "hash": "60be1565d1a7546a2a5e59e57cd15fe52d526d39091e9a027775d17d515a8b74"
+    },
+    {
+      "track": 1,
+      "window": 0,
+      "hash": "d4e2a87806b6db3f1e1ee710e34f5f06ea34397736b6a6796d7a92f5a722f417"
+    },
+    {
+      "track": 2,
+      "window": 0,
+      "hash": "2df9667c2ef5da94acb900d3710ca0f5ec1390fdb75819a9adce531f68d89c4c"
+    },
+    {
+      "track": 1,
+      "window": 0,
+      "hash": "97a475df54906d5b8b48bd0d602d818b575d9f24b37f0495d4fe5102f18b603d"
+    },
+    {
+      "track": 2,
+      "window": 0,
+      "hash": "1bc94408bc6b6cdabf6c1b6afa1abbaba7bc31b99c699b9d9a84b1eea2c00e68"
+    },
+    {
+      "track": 1,
+      "window": 0,
+      "hash": "0e92e4b39ef2e2407fd066591dcad8f3144a6898702aefa2dd22bd4d044a29ca"
+    },
+    {
+      "track": 2,
+      "window": 0,
+      "hash": "39b11c1fffcce702e3cf57009eba936c00d7f7c40eedcc9385661d33743a1e90"
+    },
+    {
+      "track": 1,
+      "window": 0,
+      "hash": "414a79ee3ed60ca13f28e4c9794e4a97bba1e9566b36766a05f8af0e05ea9827"
+    },
+    {
+      "track": 2,
+      "window": 0,
+      "hash": "4fb2b19eb255885d90e0c00ae8edc9a3cf65cf0ba98c4e2b5918b08eddf64f01"
+    },
+    {
+      "track": 1,
+      "window": 0,
+      "hash": "45e0c59f26371ad1d056a9185945d0ad9cd510e1ad2f035758970ede85b331ae"
+    },
+    {
+      "track": 2,
+      "window": 0,
+      "hash": "311150c402f98ad32882c9802d7075c704cfa24ee7c348883b7add66e1b1b783"
+    },
+    {
+      "track": 1,
+      "window": 0,
+      "hash": "389dda5d98eed5d7c1fdffb9a371850bac870ffc258fd2c67d8aa5a94841cba5"
+    },
+    {
+      "track": 2,
+      "window": 0,
+      "hash": "1ac41b37f1567c590bb0e5ea71258ce6b4a32b98c384025465e40f6c51eeb752"
+    },
+    {
+      "track": 1,
+      "window": 0,
+      "hash": "06615f09c44533929619889a566ed4580c589f1db0880df0b2f2a04daa0e8a1c"
+    },
+    {
+      "track": 2,
+      "window": 0,
+      "hash": "91191aef3b0a83a6af5e92057758c51770ffb650a1182216c8ec822ffc2f9417"
+    },
+    {
+      "track": 1,
+      "window": 0,
+      "hash": "24f3190fe9090afb5661944ef585ac101464dbf7fd1a92d8282ee63cdb530324"
+    },
+    {
+      "track": 2,
+      "window": 0,
+      "hash": "024471e66660d8d6926d08fd9d50720bbf8b0c8d32af07295a164d91ae38a944"
+    },
+    {
+      "track": 1,
+      "window": 0,
+      "hash": "4f323741b3487e8786bf1612f1ccc8e84d79c104344ec4912abeac85096261bc"
+    },
+    {
+      "track": 2,
+      "window": 0,
+      "hash": "2e8f50a5124e618e0e1eb9fb264814843e3d162ef897bfe6f9601be24a8c09b0"
+    },
+    {
+      "track": 1,
+      "window": 0,
+      "hash": "396f1a3e6385310be4e175cf0bb25cf7e47061b64de866d968d80ee8d4f54bf8"
+    },
+    {
+      "track": 2,
+      "window": 0,
+      "hash": "6c173d79b6bea7627ec58b07c1417dd448902f65f3203cdb3c465d0912006f67"
+    },
+    {
+      "track": 1,
+      "window": 0,
+      "hash": "c7572838df9a644cda17c232cd9967e417a75210c53c687cf2aaa309a594976e"
+    },
+    {
+      "track": 2,
+      "window": 0,
+      "hash": "741cf797d3e0b74e2f2856ae7eacd1fdfd84a584170b8c4bebd23e05ffa20323"
+    },
+    {
+      "track": 1,
+      "window": 0,
+      "hash": "058ded5fe49d0330225037476ab4353da311c05a7b82cb3e1a5356749ad6dcc8"
+    },
+    {
+      "track": 2,
+      "window": 0,
+      "hash": "4e03e151f68a7515595b997a3b713d9dda15367dde26a3c1eb93dd5581cc24a3"
+    },
+    {
+      "track": 1,
+      "window": 0,
+      "hash": "c1802bc0fe784e629fa04956e0e2e3255d0e15227bace8028a0bae99b8a0141c"
+    },
+    {
+      "track": 2,
+      "window": 0,
+      "hash": "e2c12117db71ff0185563a6ce9446d792c2af09307ca66f161c73c0d0bd6face"
+    },
+    {
+      "track": 1,
+      "window": 0,
+      "hash": "38ad65dfd862bd58430e870a03f56346813abfc75fe78c3d8745b762158de6cc"
+    },
+    {
+      "track": 2,
+      "window": 0,
+      "hash": "4090a24664f880cab623e14d509530f74f00fe4f418a624aae7a42491bb7d97e"
+    },
+    {
+      "track": 2,
+      "window": 0,
+      "hash": "ee327707fdcf43f1d785cad839d0e324237124b1071bae48214c504973559a82"
+    },
+    {
+      "track": 2,
+      "window": 0,
+      "hash": "cdbcd18651dfa6b5a1a091db0fb64dc1f339496aab213aaa87f87aee3a8b946e"
+    },
+    {
+      "track": 2,
+      "window": 0,
+      "hash": "e1c6e8321316937ab565e8a5c0d950f2d6ddeb46ddf4dfe58474cd685b18a09c"
+    },
+    {
+      "track": 2,
+      "window": 0,
+      "hash": "7ab6b796430c1d245eaf2107fc938658f87530d0a27481f8688693bf156d0f48"
+    },
+    {
+      "track": 1,
+      "window": 0,
+      "hash": "89ad2ddc1bb0eb8ee301cf2ef1575908a33fa6207a507388f3b459165d4db4ad"
+    },
+    {
+      "track": 2,
+      "window": 0,
+      "hash": "ef44c0bacbaaca9d706d0aa25b85b5313a45cfccb70479cf1c810362d38900ab"
+    },
+    {
+      "track": 1,
+      "window": 0,
+      "hash": "e33b964bfd1b8a30b43b2cc4f56da366b1764b5c29050f396b59dfa6ac756e01"
+    },
+    {
+      "track": 2,
+      "window": 0,
+      "hash": "36dacbc811869f003eb1bf81c11a690b29d2edb1dea9e6f0a2c93b99f0af1669"
+    },
+    {
+      "track": 1,
+      "window": 0,
+      "hash": "1ffef846a20dde47429707cd8c54eda441bbb690f4469de81889291d5688d429"
+    },
+    {
+      "track": 2,
+      "window": 0,
+      "hash": "dd883f2d65af97543d64b32de2023d3e8ea933b1516a5e23b88507e494c16dfb"
+    },
+    {
+      "track": 1,
+      "window": 0,
+      "hash": "583e5da401a78c8692c0516cde2f187f3c913ce2c31463b3842ca1449b3479dc"
+    },
+    {
+      "track": 2,
+      "window": 0,
+      "hash": "b640d785cdc7aded8d275e6e3365681c021310721df25d05cac9115846ce67b5"
+    }
+  ],
+  "duplicates": 18,
+  "outputSha256": "ab7cce1385d8e31e439cb2d88b3c273a46767f78ac9ed5c472879124b468c5eb"
+}

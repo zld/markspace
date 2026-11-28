@@ -169,11 +169,13 @@ func writeCluster(seg *builder, baseMs int64, seq map[uint64]uint16, seed int64,
 	seg.buf.Write(masterK(IDCluster, cl.buf.Bytes()))
 }
 
-// interleaveOrder rotates block order per cluster to exercise stable sorting.
+// interleaveOrder alternates track order per timestamp to exercise stable
+// sorting while keeping each track's timestamps non-decreasing.
 func interleaveOrder(i int64) []blockSpec {
-	base := []blockSpec{{1, 0}, {2, 0}, {1, 20}, {2, 20}}
-	r := int(i) % 4
-	return append(append([]blockSpec{}, base[r:]...), base[:r]...)
+	if i%2 == 0 {
+		return []blockSpec{{1, 0}, {2, 0}, {1, 20}, {2, 20}}
+	}
+	return []blockSpec{{2, 0}, {1, 0}, {2, 20}, {1, 20}}
 }
 
 // BuildInterleaved builds a valid two-track WebM with unknown-size segment,

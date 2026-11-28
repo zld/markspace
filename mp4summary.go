@@ -2,6 +2,7 @@ package mediakernel
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -27,12 +28,24 @@ func WriteMP4Summary(path string, s Summary) error {
 		return err
 	}
 	var buf bytes.Buffer
+	writeBox := func(box mp4.IImmutableBox, boxType mp4.BoxType) error {
+		var payload bytes.Buffer
+		if _, err := mp4.Marshal(&payload, box, mp4.Context{}); err != nil {
+			return err
+		}
+		var hdr [8]byte
+		binary.BigEndian.PutUint32(hdr[:4], uint32(8+payload.Len()))
+		copy(hdr[4:], boxType[:])
+		buf.Write(hdr[:])
+		buf.Write(payload.Bytes())
+		return nil
+	}
 	ftyp := &mp4.Ftyp{MajorBrand: mp4.BrandISOM()}
 	ftyp.AddCompatibleBrand(mp4.BrandISOM())
-	if _, err := mp4.Marshal(&buf, ftyp, mp4.Context{}); err != nil {
+	if err := writeBox(ftyp, mp4.BoxTypeFtyp()); err != nil {
 		return err
 	}
-	if _, err := mp4.Marshal(&buf, &mp4.Free{Data: payload}, mp4.Context{}); err != nil {
+	if err := writeBox(&mp4.Free{Data: payload}, mp4.BoxTypeFree()); err != nil {
 		return err
 	}
 	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {

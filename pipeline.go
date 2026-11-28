@@ -131,7 +131,7 @@ func (p *Pipeline) Run(ctx context.Context, inputPath string, resume bool) (*Man
 		silence.Restore(ckpt.Silence)
 		fp.Restore(ckpt.Fingerprints)
 	}
-	processed := ckpt.ProcessedBlocks
+	processed := int64(0)
 	maxOff := ckpt.CommittedOffset
 	cur := ckpt.Partial
 
