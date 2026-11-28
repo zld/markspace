@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 	"time"
 
 	"archive-lab/internal/media"
@@ -94,6 +95,7 @@ type Plan struct {
 	PSNRKnown    bool
 	Unmet        []string
 	Feasible     bool
+	Infeasible   bool
 	Reason       string
 	Notes        []string
 	SegmentNs    int64
@@ -360,6 +362,11 @@ func EstimatePlan(req Request, sample Sample, totalSegments int, segmentNs int64
 		plan.Notes = append(plan.Notes, "budget exhausted before the last segment; the report covers the adopted prefix")
 	}
 	plan.Feasible = len(plan.Unmet) == 0
+	for _, u := range plan.Unmet {
+		if !strings.HasPrefix(u, "budget_ms:") {
+			plan.Infeasible = true
+		}
+	}
 	if !plan.Feasible {
 		plan.Reason = "requested constraints cannot all be satisfied: " + joinUnmet(plan.Unmet)
 	}

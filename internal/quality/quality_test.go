@@ -115,6 +115,9 @@ func TestConflictingConstraintsAreReported(t *testing.T) {
 	if plan.Feasible || plan.Reason == "" || len(plan.Unmet) == 0 {
 		t.Fatalf("expected infeasible plan, got %+v", plan)
 	}
+	if !plan.Infeasible {
+		t.Fatal("a genuine constraint contradiction must be flagged infeasible")
+	}
 	if err := (Request{TargetBps: 900_000, MaxBps: 800_000, MinPSNR: 35, BudgetMs: 10}).Validate(); err == nil {
 		t.Fatal("target above cap must be rejected")
 	}

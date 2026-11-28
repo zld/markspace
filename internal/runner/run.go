@@ -98,6 +98,16 @@ func (r *Runner) Run(opts Options, cancel CancelFunc) *Result {
 	if !plan.Feasible {
 		rep.Notes = append(rep.Notes, plan.Reason)
 	}
+	if plan.Infeasible {
+		// A contradictory request is a failure with a concrete reason, not
+		// a silent partial success.
+		rep.Status = "infeasible"
+		rep.ConstraintsOK = false
+		res.Error = media.New(media.StagePlan, "config", "%s", plan.Reason)
+		rep.Error = plan.Reason
+		rep.FailedStage = string(media.StagePlan)
+		return res
+	}
 
 	// Cache lookup. The key covers input and configuration; a stale input
 	// entry is purged so a replaced file cannot be served from cache.
@@ -242,9 +252,10 @@ func (r *Runner) Run(opts Options, cancel CancelFunc) *Result {
 		}); err != nil {
 			return res.fail(err, rep)
 		}
-	} else if cache != nil && state == CacheHit && entry != nil {
-		// A hit may have a stored report digest; make sure our recomputation
-		// agrees so a hit cannot mask non-determinism.
+	}
+	// A cache hit must reproduce the stored report exactly; otherwise the
+	// hit is masking non-determinism and must surface as a failure.
+	if cache != nil && state == CacheHit && entry != nil {
 		if entry.ReportDigest != "" && entry.ReportDigest != rep.Digest() {
 			return res.fail(media.New(media.StageCache, "cache", "cached report digest differs from recomputed report"), rep)
 		}
