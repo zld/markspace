@@ -14,6 +14,11 @@ type SimConfig struct {
 	ReorderRate   int    `json:"reorder_rate_percent"`
 	// ReorderWindow bounds how far a packet can be delayed.
 	ReorderWindow int `json:"reorder_window"`
+	// LossStartSegment restricts loss to packets whose custom payload segment
+	// index is >= this value, so earlier segments stay loss-free and can anchor
+	// a checkpoint while later segments keep gaps for resume to recover.
+	// Zero applies loss to every segment.
+	LossStartSegment uint32 `json:"loss_start_segment"`
 }
 
 // DefaultSimConfig returns a mild, reproducible impairment mix.
@@ -24,26 +29,45 @@ func DefaultSimConfig(seed uint64) SimConfig {
 	}
 }
 
+// DemoSimConfig returns the acceptance-run impairment mix: segments 0 and 1
+// remain complete so an interruption can anchor them, while the final segment
+// experiences loss, duplication and reordering for resume to close.
+func DemoSimConfig(seed uint64, lastSegment uint32) SimConfig {
+	return SimConfig{
+		Seed: seed, LossRate: 35, DuplicateRate: 15,
+		ReorderRate: 25, ReorderWindow: 3,
+		LossStartSegment: lastSegment,
+	}
+}
+
 // simulate applies loss, duplication and reordering deterministically. The
 // returned stream preserves packet sequence metadata; only delivery order and
 // presence change. No media bytes are invented.
 func simulate(packets []*rtp.Packet, cfg SimConfig) []*rtp.Packet {
-	rng := mathrand.New(mathrand.NewPCG(cfg.Seed, cfg.Seed^0x9E3779B97F4A7C15))
+	// One RNG indexed by global packet position for loss/duplication, so the
+	// decisions for a given sequence number are identical on every run.
+	lossRNG := mathrand.New(mathrand.NewPCG(cfg.Seed, cfg.Seed^0x9E3779B97F4A7C15))
 	var stream []*rtp.Packet
 	for _, p := range packets {
-		if pct(rng, cfg.LossRate) {
+		// Each packet draws the same fixed number of values regardless of
+		// whether it is dropped, keeping first run and resume in lockstep.
+		lossRoll := lossRNG.IntN(100)
+		dupRoll := lossRNG.IntN(100)
+		eligible := lossEligible(p, cfg.LossStartSegment)
+		if eligible && lossRoll < clampPct(cfg.LossRate) {
 			continue // dropped: will surface as a reassembly gap
 		}
 		stream = append(stream, clonePacket(p))
-		if pct(rng, cfg.DuplicateRate) {
+		if dupRoll < clampPct(cfg.DuplicateRate) {
 			stream = append(stream, clonePacket(p)) // duplicate
 		}
 	}
 	if cfg.ReorderRate > 0 && cfg.ReorderWindow > 0 {
-		// Adjacent bounded swaps keep the reordering local and reversible.
+		// A separate RNG makes reordering independent of the loss/dup draws.
+		reorderRNG := mathrand.New(mathrand.NewPCG(cfg.Seed^0x517CC1B727220A95, cfg.Seed))
 		for i := 1; i < len(stream); i++ {
-			if pct(rng, cfg.ReorderRate) {
-				back := 1 + rng.IntN(cfg.ReorderWindow)
+			if reorderRNG.IntN(100) < clampPct(cfg.ReorderRate) {
+				back := 1 + reorderRNG.IntN(cfg.ReorderWindow)
 				j := i - back
 				if j < 0 {
 					j = 0
@@ -55,14 +79,27 @@ func simulate(packets []*rtp.Packet, cfg SimConfig) []*rtp.Packet {
 	return stream
 }
 
-func pct(rng *mathrand.Rand, rate int) bool {
-	if rate <= 0 {
-		return false
+func clampPct(rate int) int {
+	if rate < 0 {
+		return 0
 	}
-	if rate >= 100 {
+	if rate > 100 {
+		return 100
+	}
+	return rate
+}
+
+// lossEligible reports whether a packet belongs to a segment that the config
+// allows loss on. When LossStartSegment is zero all packets are eligible.
+func lossEligible(p *rtp.Packet, start uint32) bool {
+	if start == 0 {
 		return true
 	}
-	return rng.IntN(100) < rate
+	h, err := decodeHeader(p.Payload)
+	if err != nil {
+		return true
+	}
+	return h.segment >= start
 }
 
 func clonePacket(p *rtp.Packet) *rtp.Packet {

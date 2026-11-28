@@ -79,6 +79,11 @@ func buildSegments(layer LayerSpec, frames []render.Frame, rec receiveResult) (*
 		Reordered:  rec.reordered,
 		Gaps:       rec.gaps,
 	}
+	for _, g := range rec.gaps {
+		if g.Recovered {
+			rep.RecoveredGaps++
+		}
+	}
 	gapBySeg := map[int][]Gap{}
 	for _, g := range rec.gaps {
 		gapBySeg[g.SegmentIndex] = append(gapBySeg[g.SegmentIndex], g)
@@ -119,7 +124,7 @@ func buildSegments(layer LayerSpec, frames []render.Frame, rec receiveResult) (*
 		}
 		seg.TickStart = frames[fStart].Tick
 		seg.TickEnd = frames[fEnd].Tick
-		seg.Complete = len(seg.Gaps) == 0
+		seg.Complete = segmentFullyRecovered(seg.Gaps)
 		rep.Segments = append(rep.Segments, seg)
 	}
 	if len(rec.ordered) > 0 {

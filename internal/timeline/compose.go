@@ -33,55 +33,64 @@ type Timeline struct {
 	MaxAlignment  clock.AlignmentError  `json:"max_alignment"`
 }
 
+// ComposeUnique projects the deduplicated logical track set (MP4 and MXF
+// describe the same media once each) onto the master tick clock.
+func ComposeUnique(containers ...*ingest.Container) (*Timeline, error) {
+	return composeTracks(ingest.DeduplicateTracks(containers...))
+}
+
 // Compose projects every track of every container onto the master clock.
 // Containers are concatenated in argument order; global track indices are
 // assigned in that same order and never reused.
 func Compose(containers ...*ingest.Container) (*Timeline, error) {
-	tl := &Timeline{}
-	global := 0
-	converters := map[int]*clock.Converter{}
-	for ci, c := range containers {
+	var tracks []*ingest.Track
+	for _, c := range containers {
 		if c == nil {
 			continue
 		}
-		for li, t := range c.Tracks {
-			conv, err := clock.NewConverter(t.Timescale)
-			if err != nil {
-				src := t.Source("timescale")
-				return nil, model.WrapField(model.KindInvalidInput, src.File,
-					src.Offset, src.Path,
-					fmt.Sprintf("track %d has unusable timescale", global), err)
-			}
-			seg := TrackSegment{
-				GlobalIndex: global,
-				Container:   ci,
-				LocalIndex:  li,
-				Kind:        t.Kind,
-				Timescale:   t.Timescale,
-				SampleCount: len(t.Samples),
-				Track:       t,
-			}
-			// Sample boundaries: cumulative source time converted per boundary.
-			var srcTime int64
-			for si, s := range t.Samples {
-				tick := conv.ToTicks(srcTime)
-				tl.Points = append(tl.Points, clock.TimelinePoint{
-					Tick:        tick,
-					TrackIndex:  global,
-					SampleIndex: si,
-				})
-				srcTime += int64(s.Delta)
-			}
-			seg.StartTick = 0
-			seg.EndTick = conv.ToTicks(srcTime)
-			seg.Alignment = conv.AlignmentError()
-			tl.Segments = append(tl.Segments, seg)
-			converters[global] = conv
-			if seg.EndTick > tl.DurationTicks {
-				tl.DurationTicks = seg.EndTick
-			}
-			global++
+		tracks = append(tracks, c.Tracks...)
+	}
+	return composeTracks(tracks)
+}
+
+// composeTracks projects an explicit track list onto the master tick clock.
+func composeTracks(tracks []*ingest.Track) (*Timeline, error) {
+	tl := &Timeline{}
+	global := 0
+	for _, t := range tracks {
+		conv, err := clock.NewConverter(t.Timescale)
+		if err != nil {
+			src := t.Source("timescale")
+			return nil, model.WrapField(model.KindInvalidInput, src.File,
+				src.Offset, src.Path,
+				fmt.Sprintf("track %d has unusable timescale", global), err)
 		}
+		seg := TrackSegment{
+			GlobalIndex: global,
+			Kind:        t.Kind,
+			Timescale:   t.Timescale,
+			SampleCount: len(t.Samples),
+			Track:       t,
+		}
+		// Sample boundaries: cumulative source time converted per boundary.
+		var srcTime int64
+		for si, s := range t.Samples {
+			tick := conv.ToTicks(srcTime)
+			tl.Points = append(tl.Points, clock.TimelinePoint{
+				Tick:        tick,
+				TrackIndex:  global,
+				SampleIndex: si,
+			})
+			srcTime += int64(s.Delta)
+		}
+		seg.StartTick = 0
+		seg.EndTick = conv.ToTicks(srcTime)
+		seg.Alignment = conv.AlignmentError()
+		tl.Segments = append(tl.Segments, seg)
+		if seg.EndTick > tl.DurationTicks {
+			tl.DurationTicks = seg.EndTick
+		}
+		global++
 	}
 	clock.SortPoints(tl.Points)
 	for _, seg := range tl.Segments {

@@ -1,0 +1,21 @@
+# Compiled binaries and build output
+/bin/
+/tmp/
+*.exe
+*.test
+*.out
+
+# Local demo/working directories produced by manual runs
+/mp-demo/
+/mp-bad/
+/mp-*/
+
+# Go test/coverage artifacts
+coverage.txt
+*.prof
+
+# OS/editor noise
+.DS_Store
+*.swp
+.idea/
+.vscode/

@@ -39,6 +39,9 @@ type Gap struct {
 	StartSeq     uint16 `json:"start_seq"`
 	EndSeq       uint16 `json:"end_seq"` // inclusive
 	Count        int    `json:"count"`
+	// Recovered is set when a resume retransmission closed the gap using the
+	// original packet set; it never means media was fabricated.
+	Recovered bool `json:"recovered"`
 }
 
 // Segment groups consecutive frames and their re-assembled packets.
@@ -66,16 +69,17 @@ type FrameRef struct {
 
 // Representation is the re-assembled result for one bitrate layer.
 type Representation struct {
-	Layer      LayerSpec  `json:"layer"`
-	Segments   []Segment  `json:"segments"`
-	Frames     []FrameRef `json:"frames"`
-	Sent       int        `json:"packets_sent"`
-	Received   int        `json:"packets_received_unique"`
-	Duplicates int        `json:"duplicates"`
-	Gaps       []Gap      `json:"gaps"`
-	Reordered  bool       `json:"reordered"`
-	FirstSeq   uint16     `json:"first_seq"`
-	LastSeq    uint16     `json:"last_seq"`
+	Layer         LayerSpec  `json:"layer"`
+	Segments      []Segment  `json:"segments"`
+	Frames        []FrameRef `json:"frames"`
+	Sent          int        `json:"packets_sent"`
+	Received      int        `json:"packets_received_unique"`
+	Duplicates    int        `json:"duplicates"`
+	Gaps          []Gap      `json:"gaps"`
+	RecoveredGaps int        `json:"recovered_gaps"`
+	Reordered     bool       `json:"reordered"`
+	FirstSeq      uint16     `json:"first_seq"`
+	LastSeq       uint16     `json:"last_seq"`
 }
 
 // Complete reports whether every segment assembled without gaps.

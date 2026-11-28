@@ -1,6 +1,7 @@
 package ingest
 
 import (
+	"bytes"
 	"io"
 	"os"
 
@@ -27,27 +28,35 @@ func ParseMP4(path string) (*Container, error) {
 			"cannot open input", err)
 	}
 	defer f.Close()
+	return ParseMP4Reader(f, path)
+}
 
-	fi, err := f.Stat()
+// ParseMP4Reader parses an MP4 stream under a logical file name. The stream
+// is fully buffered first, which lets a corrupt in-memory input be rejected
+// before anything is written to an output directory.
+func ParseMP4Reader(r io.Reader, name string) (*Container, error) {
+	data, err := io.ReadAll(r)
 	if err != nil {
+		return nil, model.WrapField(model.KindInvalidInput, name, -1, "<file>",
+			"cannot read input", err)
+	}
+	sr := bytes.NewReader(data)
+	if _, err := scanBoxBoundaries(sr, name, 0, uint64(len(data)), ""); err != nil {
 		return nil, err
 	}
-	if _, err := scanBoxBoundaries(f, path, 0, uint64(fi.Size()), ""); err != nil {
-		return nil, err
-	}
-	if _, err := f.Seek(0, io.SeekStart); err != nil {
+	if _, err := sr.Seek(0, io.SeekStart); err != nil {
 		return nil, err
 	}
 
-	st := &mp4State{file: path, out: &Container{Format: "mp4", FileName: path}}
-	if _, err := mp4.ReadBoxStructure(f, st.handle); err != nil {
+	st := &mp4State{file: name, out: &Container{Format: "mp4", FileName: name}}
+	if _, err := mp4.ReadBoxStructure(sr, st.handle); err != nil {
 		if fe, ok := model.AsField(err); ok {
 			if fe.File == "" {
-				fe.File = path
+				fe.File = name
 			}
 			return nil, fe
 		}
-		return nil, model.WrapField(model.KindInvalidInput, path, -1, "<root>",
+		return nil, model.WrapField(model.KindInvalidInput, name, -1, "<root>",
 			"box payload decode failed", err)
 	}
 	for _, t := range st.out.Tracks {

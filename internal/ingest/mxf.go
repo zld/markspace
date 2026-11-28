@@ -28,22 +28,29 @@ func ParseMXF(path string) (*Container, error) {
 			"cannot open input", err)
 	}
 	defer f.Close()
-	data, err := io.ReadAll(f)
+	return ParseMXFReader(f, path)
+}
+
+// ParseMXFReader parses an MXF stream under a logical file name. Buffering the
+// stream first keeps corrupt inputs out of the output directory.
+func ParseMXFReader(r io.Reader, name string) (*Container, error) {
+	data, err := io.ReadAll(r)
 	if err != nil {
-		return nil, err
+		return nil, model.WrapField(model.KindInvalidInput, name, -1, "<file>",
+			"cannot read input", err)
 	}
-	r := &mxfReader{
-		file: path,
+	mr := &mxfReader{
+		file: name,
 		data: data,
-		out:  &Container{Format: "mxf", FileName: path},
+		out:  &Container{Format: "mxf", FileName: name},
 	}
-	if err := r.parse(); err != nil {
+	if err := mr.parse(); err != nil {
 		return nil, err
 	}
-	for _, t := range r.out.Tracks {
-		finalizeTrack(t, r.out)
+	for _, t := range mr.out.Tracks {
+		finalizeTrack(t, mr.out)
 	}
-	return r.out, nil
+	return mr.out, nil
 }
 
 // parse reads the header partition pack then every track item group.

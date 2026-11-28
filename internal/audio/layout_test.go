@@ -116,3 +116,40 @@ func TestZeroSampleRateRejected(t *testing.T) {
 		}
 	}
 }
+
+func TestMixedSampleRatesNormalizedToOneTarget(t *testing.T) {
+	s := fixture.Spec{
+		Video: fixture.VideoSpec{TrackID: 1, Timescale: 24000, Width: 8, Height: 8,
+			Delta: 1001, Frames: 2},
+		Audio: []fixture.AudioSpec{
+			// Two different input rates must both land on the shared target.
+			{TrackID: 2, Timescale: 48000, Channels: 2, SampleRate: 48000,
+				SampleSize: 16, Delta: 1024, Samples: 2},
+			{TrackID: 3, Timescale: 44100, Channels: 6, SampleRate: 44100,
+				SampleSize: 16, Delta: 735, Samples: 2},
+			{TrackID: 4, Timescale: 32000, Channels: 1, SampleRate: 32000,
+				SampleSize: 16, Delta: 1000, Samples: 2},
+		},
+	}
+	n := audio.NewNormalizer(48000)
+	rates := map[uint32]bool{}
+	for _, tr := range buildTracks(t, s) {
+		if tr.Kind != ingest.TrackAudio {
+			continue
+		}
+		st, err := n.Normalize(tr.Index, tr)
+		if err != nil {
+			t.Fatalf("normalization failed: %v", err)
+		}
+		if st.InputSampleRate != tr.SampleRate {
+			t.Fatal("original input rate must be retained in stats")
+		}
+		if st.NormalizedRate != 48000 {
+			t.Fatalf("normalized rate %d, want 48000", st.NormalizedRate)
+		}
+		rates[tr.SampleRate] = true
+	}
+	if len(rates) != 3 {
+		t.Fatalf("expected three distinct input rates, got %d", len(rates))
+	}
+}
