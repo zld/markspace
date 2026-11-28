@@ -127,12 +127,15 @@ func BuildSegment(index, variant int) ([]byte, error) {
 }
 
 func rtpStream(index, variant int) ([]byte, error) {
+	// RFC 4571 framing: each packet is prefixed with its 2-byte length so a
+	// byte-stream reader can recover packet boundaries.
 	var out []byte
 	for p := 0; p < 4; p++ {
 		hdr := rtpHeader(uint16(index*4+p), uint32(index)*3000+uint32(p)*750, 100)
 		payload := []byte{byte(variant), byte(index), byte(p)}
-		out = append(out, hdr...)
-		out = append(out, payload...)
+		pkt := append(append([]byte{}, hdr...), payload...)
+		out = append(out, byte(len(pkt)>>8), byte(len(pkt)))
+		out = append(out, pkt...)
 	}
 	return out, nil
 }

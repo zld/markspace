@@ -74,6 +74,18 @@ func (r *Runner) Run(opts Options, cancel CancelFunc) *Result {
 	if len(segs) > 0 {
 		segmentNs = segs[0].DurationNs
 	}
+	// Probe any RTP packet stream carried by the sample container. This
+	// exercises timestamp/sequence validation on real bytes; a non-RTP
+	// segment simply reports zero packets.
+	if firstProbe != nil && len(firstProbe.PrivateRTP) > 0 {
+		rtpProbe, rerr := ProbeRTP(firstProbe.PrivateRTP)
+		if rerr != nil {
+			return res.fail(rerr, rep)
+		}
+		rep.RTPPackets = rtpProbe.Packets
+		rep.RTPDisorder = rtpProbe.Disordered
+	}
+
 	plan, err := quality.EstimatePlan(opts.Request, sample, len(segs), segmentNs)
 	if err != nil {
 		return res.fail(err, rep)
@@ -113,24 +125,58 @@ func (r *Runner) Run(opts Options, cancel CancelFunc) *Result {
 		}
 	}
 
+	if opts.DryRun {
+		rep.Status = "dry_run"
+		rep.ConstraintsOK = plan.Feasible
+		rep.Notes = append(rep.Notes, "dry run: no segment payload was streamed")
+		return res
+	}
+
+	// Resume state is only honoured when it belongs to exactly this input
+	// digest and configuration. Anything else restarts at the first pending
+	// segment.
+	resumedFrom := 0
+	adopted := plan.Segments
+	if opts.ProgressPath != "" {
+		prog, perr := ReadProgress(opts.ProgressPath)
+		if perr != nil {
+			return res.fail(perr, rep)
+		}
+		if prog != nil && prog.InputDigest == rep.InputDigest && prog.ConfigHash == rep.ConfigSHA256 && resumablePrefix(prog.Done, adopted) {
+			resumedFrom = len(prog.Done)
+			adopted = adopted[resumedFrom:]
+		}
+	}
+	rep.ResumedFrom = resumedFrom
+
 	// Stream every adopted segment, verifying bytes and digests.
-	outcomes, inBytes, serr := r.streamSegments(opts, prep, segs, plan.Segments, plan.Config, cancel)
+	outcomes, inBytes, serr := r.streamSegments(opts, prep, segs, adopted, plan.Config, cancel)
 	rep.SegmentsDone = len(outcomes)
+	if resumedFrom > 0 {
+		rep.SegmentsDone += resumedFrom
+	}
 	rep.BytesIn = inBytes
 	res.Outcomes = outcomes
 	if serr != nil {
 		stage, _ := media.StageOf(serr)
 		rep.FailedStage = string(stage)
 		res.fail(serr, rep)
-		res.Report.SegmentsDone = len(outcomes)
+		res.Report.SegmentsDone = len(outcomes) + resumedFrom
 		// Persist partial progress so a rerun resumes at the first segment
 		// without an outcome. The key is unchanged; the stored entry
 		// records how far it got.
 		if cache != nil && len(outcomes) > 0 {
 			_ = cache.Store(Entry{
 				Key: key, InputDigest: rep.InputDigest, ConfigHash: rep.ConfigSHA256,
-				SegmentDigests: segDigests, SegmentsDone: len(outcomes),
+				SegmentDigests: segDigests, SegmentsDone: rep.SegmentsDone,
 				SegmentsTotal: len(segs), Bytes: inBytes,
+				ReportDigest: rep.Digest(),
+			})
+		}
+		if opts.ProgressPath != "" {
+			_ = WriteProgress(opts.ProgressPath, ProgressFile{
+				InputDigest: rep.InputDigest, ConfigHash: rep.ConfigSHA256,
+				Done:         doneIndices(resumedFrom, outcomes),
 				ReportDigest: rep.Digest(),
 			})
 		}
@@ -182,6 +228,13 @@ func (r *Runner) Run(opts Options, cancel CancelFunc) *Result {
 		}
 	}
 
+	if opts.ProgressPath != "" {
+		_ = WriteProgress(opts.ProgressPath, ProgressFile{
+			InputDigest: rep.InputDigest, ConfigHash: rep.ConfigSHA256,
+			Done:         doneIndices(resumedFrom, outcomes),
+			ReportDigest: rep.Digest(),
+		})
+	}
 	// Commit the completed entry only when the whole adopted prefix ran.
 	if cache != nil && rep.Status != "error" {
 		if err := cache.Store(Entry{
@@ -303,6 +356,34 @@ func HashFileHex(path string) (string, error) {
 		return "", err
 	}
 	return d.SHA256, nil
+}
+
+// resumablePrefix reports whether done is exactly the prefix 0..n-1 of the
+// adopted list, i.e. a contiguous set of already-completed segments.
+func resumablePrefix(done []int, adopted []int) bool {
+	if len(done) == 0 {
+		return false
+	}
+	if len(done) > len(adopted) {
+		return false
+	}
+	for i, v := range done {
+		if adopted[i] != v {
+			return false
+		}
+	}
+	return true
+}
+
+func doneIndices(resumedFrom int, outcomes []SegmentOutcome) []int {
+	done := make([]int, 0, resumedFrom+len(outcomes))
+	for i := 0; i < resumedFrom; i++ {
+		done = append(done, i)
+	}
+	for _, o := range outcomes {
+		done = append(done, o.Index)
+	}
+	return done
 }
 
 func absFloat(v float64) float64 {

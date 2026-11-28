@@ -90,6 +90,8 @@ type FileProbe struct {
 	// Luma holds extracted uncompressed luma planes for the video track when
 	// requested. Empty when the codec is compressed or extraction was off.
 	Luma [][]byte
+	// PrivateRTP is the payload of a fixture-private "rtp0" box when present.
+	PrivateRTP []byte
 }
 
 // DurationNanos reports the longest track timeline: stbl sample durations
@@ -157,6 +159,11 @@ var containerBoxes = map[mp4.BoxType]bool{
 	mp4.BoxTypeMvex(): true,
 	mp4.BoxTypeDinf(): true,
 	mp4.BoxTypeEdts(): true,
+}
+
+// expandableBox reports whether a container's children should be walked.
+func expandableBox(t mp4.BoxType) bool {
+	return containerBoxes[t] || t == mp4.StrToBoxType("alab")
 }
 
 // ProbeFile validates MP4/fMP4 box structure with go-mp4 and extracts timing
@@ -370,6 +377,16 @@ func probe(r io.ReadSeeker, size int64, path string, opts ProbeOptions) (*FilePr
 			if t.Height == 0 {
 				t.Height = hgt
 			}
+		case mp4.StrToBoxType("rtp0"):
+			raw := make([]byte, bi.Size-bi.HeaderSize)
+			if _, err := bi.SeekToPayload(r); err != nil {
+				return nil, Wrap(StageParse, "mp4", err, "seek rtp0").WithPath(path).WithOffset(int64(bi.Offset))
+			}
+			if _, err := io.ReadFull(r, raw); err != nil {
+				return nil, Wrap(StageParse, "mp4", err, "truncated rtp0").WithPath(path).WithOffset(int64(bi.Offset))
+			}
+			p.PrivateRTP = raw
+			return nil, nil
 		case mp4.BoxTypeMdat():
 			p.Mdat = append(p.Mdat, ByteRange{Start: int64(bi.Offset + bi.HeaderSize), End: int64(bi.Offset + bi.Size)})
 			if frag != nil {
@@ -396,7 +413,32 @@ func probe(r io.ReadSeeker, size int64, path string, opts ProbeOptions) (*FilePr
 			}
 			return nil, nil
 		}
-		if containerBoxes[bi.Type] {
+		if bi.Type == mp4.BoxTypeUdta() {
+			raw := make([]byte, bi.Size-bi.HeaderSize)
+			if _, err := bi.SeekToPayload(r); err != nil {
+				return nil, Wrap(StageParse, "mp4", err, "seek udta").WithPath(path).WithOffset(int64(bi.Offset))
+			}
+			if _, err := io.ReadFull(r, raw); err != nil {
+				return nil, Wrap(StageParse, "mp4", err, "truncated udta").WithPath(path).WithOffset(int64(bi.Offset))
+			}
+			if idx := bytes.Index(raw, []byte("rtp0")); idx >= 4 {
+				// Re-enter the reader at the rtp0 box header so the normal
+				// payload handler records it.
+				if _, err := r.Seek(int64(bi.Offset+bi.HeaderSize)+int64(idx-4), io.SeekStart); err != nil {
+					return nil, Wrap(StageParse, "mp4", err, "seek rtp0").WithPath(path)
+				}
+				child, cerr := mp4.ReadBoxInfo(r)
+				if cerr != nil {
+					return nil, Wrap(StageParse, "mp4", cerr, "invalid private rtp0 box").WithPath(path)
+				}
+				p.PrivateRTP = make([]byte, child.Size-child.HeaderSize)
+				if _, err := io.ReadFull(r, p.PrivateRTP); err != nil {
+					return nil, Wrap(StageParse, "mp4", err, "truncated rtp0").WithPath(path).WithOffset(int64(child.Offset))
+				}
+			}
+			return nil, nil
+		}
+		if expandableBox(bi.Type) {
 			if _, err := h.Expand(); err != nil {
 				return nil, Wrap(StageParse, "mp4", err, "invalid %s children", bi.Type.String()).WithPath(path).WithOffset(int64(bi.Offset))
 			}

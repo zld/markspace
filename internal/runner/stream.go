@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -31,6 +30,11 @@ type Options struct {
 	MaxWorkspace time.Duration
 	PollInterval time.Duration
 	Limits       scan.Limits
+	// ProgressPath persists completed segment indices for resume.
+	ProgressPath string
+	// DryRun stops after planning: the report shows the chosen configuration
+	// and constraints without reading any segment payload.
+	DryRun bool
 }
 
 // SegmentOutcome records what happened to one segment, so a failed or
@@ -339,9 +343,10 @@ func (r *Runner) streamOne(full, uri string, entry scan.FileEntry, seg manifest.
 	return SegmentOutcome{Index: seg.Index, Rel: uri, SHA256: got, Bytes: n}, nil
 }
 
-// RTPProbe hashes a packet stream and reports its timing. It exists so real
-// RTP-derived segments can be checked for sequence continuity; it never
-// invents timestamps for non-RTP inputs.
+// RTPProbe summarises a packet stream and checks sequence continuity. The
+// stream uses RFC 4571 framing (2-byte big-endian length per packet), the
+// standard way to carry RTP over a byte-oriented transport. It never invents
+// timestamps for non-RTP inputs.
 type RTPProbe struct {
 	Packets    int
 	Bytes      int
@@ -350,36 +355,48 @@ type RTPProbe struct {
 	FirstSeq   uint16
 	LastSeq    uint16
 	Disordered int
+	Lost       int
 }
 
-// ProbeRTP parses a concatenated sequence of RTP packets.
+// ProbeRTP parses an RFC 4571 framed RTP stream.
 func ProbeRTP(data []byte) (*RTPProbe, error) {
 	p := &RTPProbe{}
 	off := 0
 	for off < len(data) {
-		var pkt rtp.Packet
-		if err := pkt.Unmarshal(data[off:]); err != nil {
-			return nil, media.New(media.StageExecute, "rtp", "invalid packet at offset %d: %v", off, err)
+		if len(data)-off < 2 {
+			return nil, media.New(media.StageExecute, "rtp", "truncated frame length at offset %d", off).
+				WithOffset(int64(off))
 		}
-		// Re-marshal to learn the exact packet size: header + extensions +
-		// payload + padding. This keeps the offset truthful for padded and
-		// extension-bearing packets.
-		size := pkt.MarshalSize()
-		if p.Packets > 0 && pkt.SequenceNumber != p.LastSeq+1 {
-			p.Disordered++
+		n := int(data[off])<<8 | int(data[off+1])
+		off += 2
+		if n == 0 || len(data)-off < n {
+			return nil, media.New(media.StageExecute, "rtp", "frame at offset %d declares %d bytes, %d available", off-2, n, len(data)-off).
+				WithOffset(int64(off - 2))
+		}
+		var pkt rtp.Packet
+		if err := pkt.Unmarshal(data[off : off+n]); err != nil {
+			return nil, media.New(media.StageExecute, "rtp", "invalid packet at offset %d: %v", off, err).
+				WithOffset(int64(off))
 		}
 		if p.Packets == 0 {
 			p.FirstTS, p.FirstSeq = pkt.Timestamp, pkt.SequenceNumber
+			p.LastTS, p.LastSeq = pkt.Timestamp, pkt.SequenceNumber
+		} else {
+			want := p.LastSeq + 1
+			if pkt.SequenceNumber != want {
+				p.Disordered++
+				if int16(pkt.SequenceNumber-want) > 0 {
+					p.Lost += int(pkt.SequenceNumber - want)
+				}
+			}
+			p.LastTS, p.LastSeq = pkt.Timestamp, pkt.SequenceNumber
 		}
-		p.LastTS, p.LastSeq = pkt.Timestamp, pkt.SequenceNumber
 		p.Packets++
-		p.Bytes += size
-		off += size
+		p.Bytes += n
+		off += n
 	}
 	return p, nil
 }
-
-var _ = fmt.Sprintf
 
 // SegmentSample reads the media of the first adopted segment, probes its
 // container and returns decoded luma frames when the codec is uncompressed.

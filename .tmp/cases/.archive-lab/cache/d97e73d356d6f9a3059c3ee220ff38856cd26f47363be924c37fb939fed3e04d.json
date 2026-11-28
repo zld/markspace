@@ -1,0 +1,16 @@
+{
+  "key": "d97e73d356d6f9a3059c3ee220ff38856cd26f47363be924c37fb939fed3e04d",
+  "input_digest": "bdb2325a9e0852bd74b483d2d75c265dd3148ed2712aace443f2a0868c721827",
+  "config_digest": "4f65164c6b4233693e2402591e9e99cbe5dc37adfad298f6252095a9447e58e6",
+  "segment_digests": {
+    "media/normal/normal-0000.m4s": "b86b1aa243b697d7f5c4d79729c2377f3c1cc5d2a7612bd66232971995776058",
+    "media/normal/normal-0001.m4s": "0fd81817d60b7eddf32c1dd17b0b2b831be108ddea95e2884e0b4e76c6baedb1",
+    "media/normal/normal-0002.m4s": "5f1391e3c9335663465b2fae2bb95ed67b1c49fb8187a576e469263ecf2d31d0",
+    "media/normal/normal-0003.m4s": "bc8db75d86698b404200fd93d481e2a7a810273e74903022126bb7f0807de1b3"
+  },
+  "segments_done": 4,
+  "segments_total": 4,
+  "bytes": 372540,
+  "report_digest": "d4af82a5e7ed58ba596b9d40312bc8ee443d2af4a08c9091762938f100b1135b",
+  "artifact": ""
+}

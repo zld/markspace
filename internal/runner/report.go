@@ -42,6 +42,9 @@ type Report struct {
 	Unmet            []string `json:"unmet_constraints"`
 	ConstraintsOK    bool     `json:"constraints_ok"`
 	Notes            []string `json:"notes,omitempty"`
+	ResumedFrom      int      `json:"resumed_from"`
+	RTPPackets       int      `json:"rtp_packets"`
+	RTPDisorder      int      `json:"rtp_disorder"`
 	FailedStage      string   `json:"failed_stage,omitempty"`
 	Error            string   `json:"error,omitempty"`
 }
@@ -58,7 +61,7 @@ func (r *Report) Digest() string {
 	} else {
 		fmt.Fprintf(h, "psnr=unavailable\n")
 	}
-	fmt.Fprintf(h, "drift=%.6f\nq=%d\n", r.PlaylistDriftMS, r.QuantizerMilli)
+	fmt.Fprintf(h, "drift=%.6f\nq=%d\nrtp=%d/%d\n", r.PlaylistDriftMS, r.QuantizerMilli, r.RTPPackets, r.RTPDisorder)
 	for _, u := range r.Unmet {
 		fmt.Fprintf(h, "unmet=%s\n", u)
 	}

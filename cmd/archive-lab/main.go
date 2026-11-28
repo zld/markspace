@@ -35,8 +35,10 @@ run flags:
   --root DIR          input root all paths must stay inside (default: manifest dir)
   --index PATH        index file (default: <root>/.archive-lab/index.json)
   --cache DIR         cache directory (default: <root>/.archive-lab/cache)
-  --artifacts DIR      output directory (default: <root>/.archive-lab/out)
+  --artifacts DIR     output directory (default: <root>/.archive-lab/out)
   --metadata PATH     metadata file to include in the scan (repeatable)
+  --resume            persist progress and resume completed segments (default true)
+  --dry-run           report the chosen configuration without streaming
 
 exit codes: 0 success, 1 usage error, 2 input or processing failure
 `
@@ -107,6 +109,8 @@ func cmdRun(args []string, stdout, stderr io.Writer) error {
 	indexPath := fs.String("index", "", "index path")
 	cacheDir := fs.String("cache", "", "cache directory")
 	artifactDir := fs.String("artifacts", "", "artifact directory")
+	resume := fs.Bool("resume", true, "persist and honour segment progress for resumable runs")
+	dryRun := fs.Bool("dry-run", false, "choose and report a configuration without streaming segments")
 	fs.Var(&metadata, "metadata", "metadata file to scan (repeatable)")
 	if err := fs.Parse(args); err != nil {
 		return media.Usage("run: %v", err)
@@ -142,14 +146,20 @@ func cmdRun(args []string, stdout, stderr io.Writer) error {
 	}
 
 	r := &runner.Runner{Cache: &runner.Cache{Dir: *cacheDir}}
+	progressPath := ""
+	if *resume {
+		progressPath = filepath.Join(base, "progress.json")
+	}
 	opts := runner.Options{
-		InputPath:   *input,
-		InputRoot:   rootDir,
-		IndexPath:   *indexPath,
-		CacheDir:    *cacheDir,
-		ArtifactDir: *artifactDir,
-		Metadata:    metadata,
-		Request:     req,
+		InputPath:    *input,
+		InputRoot:    rootDir,
+		IndexPath:    *indexPath,
+		CacheDir:     *cacheDir,
+		ArtifactDir:  *artifactDir,
+		Metadata:     metadata,
+		Request:      req,
+		ProgressPath: progressPath,
+		DryRun:       *dryRun,
 	}
 	res := r.Run(opts, nil)
 	if err := res.Report.WriteJSON(stdout); err != nil {
