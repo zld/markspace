@@ -14,8 +14,11 @@ import (
 // persisted under stages/ so a resumed run can replay completed stages from
 // disk instead of recomputing them.
 type work struct {
-	Name   string
-	Stream streamData
+	Name string
+	// ExpectDamage marks the deliberately damaged self-test fixture. Its
+	// reported damage is the expected outcome, not a tool failure.
+	ExpectDamage bool
+	Stream       streamData
 	// Parsed events are not serialised; align needs them and re-reads the log
 	// on resume.
 	EventLog events.Log
@@ -145,6 +148,8 @@ type itemJSON struct {
 	Name   string `json:"name"`
 	Pass   bool   `json:"pass"`
 	Detail string `json:"detail"`
+	// Expected marks a failed item on a fixture that is deliberately damaged.
+	Expected bool `json:"expected,omitempty"`
 }
 
 // workspace is the output directory layout.

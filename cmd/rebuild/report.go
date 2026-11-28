@@ -5,7 +5,6 @@ import (
 	"io"
 	"os"
 	"sort"
-	"strings"
 	"time"
 
 	"rtp-rebuild/internal/fault"
@@ -29,6 +28,7 @@ type report struct {
 
 	items       []itemJSON
 	passed      bool
+	kind        string
 	interrupted bool
 	app         *app
 	// hardErr is set when the run failed before validation could complete.
@@ -149,7 +149,7 @@ func (r *report) finalize(a *app) {
 		}
 	}
 	r.passed = r.computeVerdict(a)
-	r.items = r.allItems()
+	r.items = r.allItems(a)
 }
 
 // thresholdItems adds the business-threshold items for a stream.
@@ -164,13 +164,17 @@ func (a *app) thresholdItems(w *work) []itemJSON {
 	}
 }
 
-// allItems flattens the per-stream items for the summary line.
-func (r *report) allItems() []itemJSON {
+// allItems flattens the per-stream items for the summary line. Failures on a
+// fixture that is expected to be damaged are marked expected, so they do not
+// count as tool failures while still being printed.
+func (r *report) allItems(a *app) []itemJSON {
 	var out []itemJSON
-	for _, s := range r.streams {
+	for i, s := range r.streams {
+		expectDamage := i < len(a.work) && a.work[i].ExpectDamage
 		for _, it := range s.Items {
 			c := it
 			c.Name = s.Name + "." + it.Name
+			c.Expected = expectDamage && !it.Pass && isExpectedFaultItem(it)
 			out = append(out, c)
 		}
 	}
@@ -183,7 +187,7 @@ func (r *report) allItems() []itemJSON {
 func (r *report) computeVerdict(a *app) bool {
 	ok := true
 	for i, s := range r.streams {
-		faulty := a.work[i].Stream.TruncatedOffset >= 0 || strings.Contains(s.Name, "fault")
+		faulty := a.work[i].ExpectDamage
 		for _, it := range s.Items {
 			if it.Pass {
 				continue
@@ -275,6 +279,9 @@ func (r *report) print(w io.Writer) {
 		r.elapsedMS, r.cfg.BudgetMS, r.budgetDelta)
 	fmt.Fprintf(w, "manifest_sha256=%s\n", orDash(r.manifestSHA))
 	fmt.Fprintf(w, "resume_stage=%s\n", orDash(r.resumeStage))
+	passed, expected, failed, total := r.itemCounts()
+	fmt.Fprintf(w, "item_results=%d/%d (pass=%d expected_damage=%d fail=%d)\n",
+		passed+expected, total, passed, expected, failed)
 	fmt.Fprintf(w, "clock_offset=%s\n", r.clockOffsetLabel())
 	fmt.Fprintf(w, "unalignable_events=%d\n", r.unalignableEvents())
 
@@ -298,7 +305,12 @@ func (r *report) print(w io.Writer) {
 	sort.SliceStable(items, func(i, j int) bool { return items[i].Name < items[j].Name })
 	for _, it := range items {
 		verdict := "PASS"
-		if !it.Pass {
+		switch {
+		case it.Pass:
+		case it.Expected:
+			// The damaged fixture is supposed to trip these thresholds.
+			verdict = "EXPECTED"
+		default:
 			verdict = "FAIL"
 		}
 		fmt.Fprintf(w, "item %s %s %s\n", it.Name, verdict, it.Detail)
@@ -327,6 +339,22 @@ func (r *report) peakBuffer() int64 {
 		}
 	}
 	return peak
+}
+
+// itemCounts tallies pass, expected-damage and unexpected failures.
+func (r *report) itemCounts() (passed, expected, failed, total int) {
+	for _, it := range r.items {
+		total++
+		switch {
+		case it.Pass:
+			passed++
+		case it.Expected:
+			expected++
+		default:
+			failed++
+		}
+	}
+	return passed, expected, failed, total
 }
 
 // unalignableEvents counts events that could not be placed on the timeline.

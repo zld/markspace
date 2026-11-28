@@ -130,10 +130,12 @@ func (a *app) prepareStreams() error {
 		}
 		a.work = []*work{
 			{Name: "normal"},
-			{Name: "fault"},
+			{Name: "fault", ExpectDamage: true},
 		}
 		a.work[0].Stream.Path = normal.Path
 		a.work[1].Stream.Path = faulty.Path
+		a.work[0].Stream.TruncatedOffset = normal.TruncatedRTCPOffset
+		a.work[1].Stream.TruncatedOffset = faulty.TruncatedRTCPOffset
 	} else {
 		a.work = []*work{{Name: "input"}}
 		a.work[0].Stream.Path = a.cfg.StreamPath
