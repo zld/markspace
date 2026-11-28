@@ -48,10 +48,7 @@ func (r *Runner) Run(opts Options, cancel CancelFunc) *Result {
 		return res.fail(err, rep)
 	}
 	rep.SegmentsTotal = len(segs)
-	root := opts.InputRoot
-	if root == "" {
-		root = scan.RootOf(opts.InputPath)
-	}
+	root := rootOf(opts)
 
 	// Measure the first segment to ground the configuration decision. A
 	// truncated or corrupt container fails here, before any index is relied

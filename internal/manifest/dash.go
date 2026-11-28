@@ -218,8 +218,8 @@ func fillFromTemplate(r *Representation, path string, t *tmplXML, base string, t
 	}
 	if t.Initialization != "" {
 		r.InitURI = expandTemplate(t.Initialization, base, map[string]string{
-			"$RepresentationID$": r.ID,
-			"$Bandwidth$":        strconv.FormatInt(r.Bandwidth, 10),
+			"RepresentationID": r.ID,
+			"Bandwidth":        strconv.FormatInt(r.Bandwidth, 10),
 		})
 	}
 	if t.Media == "" {
@@ -307,10 +307,10 @@ func fillFromTemplate(r *Representation, path string, t *tmplXML, base string, t
 			return media.Wrap(media.StageParse, "dash", err, "representation %q segment %d", r.ID, i).WithSegment(i)
 		}
 		params := map[string]string{
-			"$RepresentationID$": r.ID,
-			"$Number$":           strconv.FormatInt(startNumber+int64(i), 10),
-			"$Time$":             strconv.FormatInt(cursor, 10),
-			"$Bandwidth$":        strconv.FormatInt(r.Bandwidth, 10),
+			"RepresentationID": r.ID,
+			"Number":           strconv.FormatInt(startNumber+int64(i), 10),
+			"Time":             strconv.FormatInt(cursor, 10),
+			"Bandwidth":        strconv.FormatInt(r.Bandwidth, 10),
 		}
 		uri := expandTemplate(t.Media, base, params)
 		if !isLocalRef(uri) {
@@ -397,12 +397,37 @@ func fillFromList(r *Representation, path string, l *listXML, base string, total
 	return nil
 }
 
+// expandTemplate substitutes $Name$ and $Name%0Nd$ identifiers. Width
+// formats are applied numerically, so segment numbering stays lexically
+// stable for the file system.
 func expandTemplate(t, base string, params map[string]string) string {
-	s := t
 	for k, v := range params {
-		s = strings.ReplaceAll(s, k, v)
+		plain := "$" + k + "$"
+		s := strings.ReplaceAll(t, plain, v)
+		// Also handle the printf-style form declared by DASH.
+		for {
+			idx := strings.Index(s, "$"+k+"%")
+			if idx < 0 {
+				break
+			}
+			tail := s[idx+1+len(k):] // starts with '%'
+			end := strings.IndexByte(tail, '$')
+			if end < 0 {
+				break
+			}
+			width := 0
+			if n, err := strconv.Atoi(strings.TrimSuffix(strings.TrimPrefix(tail[1:end], "0"), "d")); err == nil && n > 0 {
+				width = n
+			}
+			formatted := v
+			for len(formatted) < width {
+				formatted = "0" + formatted
+			}
+			s = s[:idx] + formatted + tail[end+1:]
+		}
+		t = s
 	}
-	return joinLocal(base, s)
+	return joinLocal(base, t)
 }
 
 func joinLocal(base, ref string) string {

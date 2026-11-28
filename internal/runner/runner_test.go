@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"archive-lab/internal/fixture"
+	"archive-lab/internal/manifest/scan"
 	"archive-lab/internal/media"
 	"archive-lab/internal/quality"
 )
@@ -32,17 +33,13 @@ func setup(t *testing.T) (dir string, opts Options) {
 }
 
 // DefaultTestLimits keeps scans bounded in tests.
-func DefaultTestLimits() (l struct {
-	MaxSegmentBytes    int64
-	MaxTotalBytes      int64
-	MaxFiles           int
-	ValidateContainers bool
-}) {
-	l.MaxSegmentBytes = 8 << 20
-	l.MaxTotalBytes = 64 << 20
-	l.MaxFiles = 100
-	l.ValidateContainers = true
-	return
+func DefaultTestLimits() scan.Limits {
+	return scan.Limits{
+		MaxSegmentBytes:    8 << 20,
+		MaxTotalBytes:      64 << 20,
+		MaxFiles:           100,
+		ValidateContainers: true,
+	}
 }
 
 func runOnce(t *testing.T, r *Runner, opts Options) *Report {
@@ -275,6 +272,25 @@ func TestReportJSONShape(t *testing.T) {
 	} {
 		if _, ok := m[key]; !ok {
 			t.Fatalf("report missing %q", key)
+		}
+	}
+}
+
+func TestRunDASHAndMasterPlaylists(t *testing.T) {
+	dir, opts := setup(t)
+	r := &Runner{Cache: &Cache{Dir: opts.CacheDir}}
+	for _, name := range []string{"normal.mpd", "master.m3u8"} {
+		opts.InputPath = filepath.Join(dir, name)
+		opts.IndexPath = filepath.Join(dir, ".archive-lab", name+".index.json")
+		rep := runOnce(t, r, opts)
+		if rep.Status != "ok" {
+			t.Fatalf("%s: status=%s error=%s", name, rep.Status, rep.Error)
+		}
+		if rep.SegmentsDone != fixture.SegmentCount {
+			t.Fatalf("%s: segments=%d", name, rep.SegmentsDone)
+		}
+		if rep.PSNRDB == nil || *rep.PSNRDB < 35 {
+			t.Fatalf("%s: PSNR = %v", name, rep.PSNRDB)
 		}
 	}
 }

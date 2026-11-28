@@ -97,11 +97,39 @@ func (r *Runner) Prepare(opts Options, totalSegmentsHint int) (*Prepared, error)
 	if err != nil {
 		return nil, err
 	}
-	p := &Prepared{Playlist: pl, ManifestRaw: raw}
-	root := opts.InputRoot
-	if root == "" {
-		root = scan.RootOf(opts.InputPath)
+	// A master playlist names renditions; processing continues on the
+	// selected variant's media playlist, whose own relative paths are still
+	// resolved against the input root.
+	if pl.Kind == manifest.KindMaster {
+		variant, verr := selectVariant(pl)
+		if verr != nil {
+			return nil, verr
+		}
+		rel, rerr := scan.Resolve(rootOf(opts), variant.URI)
+		if rerr != nil {
+			return nil, rerr
+		}
+		full := filepath.Join(rootOf(opts), filepath.FromSlash(rel))
+		raw, err = os.ReadFile(full)
+		if err != nil {
+			return nil, media.Wrap(media.StageScan, "input", err, "cannot read variant playlist").WithPath(variant.URI)
+		}
+		pl, err = ParseManifest(full, raw)
+		if err != nil {
+			return nil, err
+		}
+		if pl.Kind != manifest.KindMedia {
+			return nil, media.New(media.StageParse, "hls", "variant %q is not a media playlist", variant.URI).WithPath(variant.URI)
+		}
 	}
+	p := &Prepared{Playlist: pl, ManifestRaw: raw}
+	// The effective manifest is the resolved media playlist: index entries
+	// and digests describe the file whose segments are actually processed.
+	manifestPath := opts.InputPath
+	if pl.Path != "" && filepath.Clean(pl.Path) != filepath.Clean(opts.InputPath) {
+		manifestPath = pl.Path
+	}
+	root := rootOf(opts)
 
 	// Every media file must be structurally valid before any index is
 	// committed: damaged input is a hard error, never a partial index.
@@ -140,7 +168,7 @@ func (r *Runner) Prepare(opts Options, totalSegmentsHint int) (*Prepared, error)
 	}
 	if p.Index == nil {
 		idx, serr := scan.Scan(scan.Input{
-			ManifestPath:   opts.InputPath,
+			ManifestPath:   manifestPath,
 			Playlist:       pl,
 			MediaRoot:      root,
 			PlaylistDigest: scan.HashBytes(raw),
@@ -167,6 +195,29 @@ func (r *Runner) Prepare(opts Options, totalSegmentsHint int) (*Prepared, error)
 // validateContainers walks every media and init file with the MP4 probe so a
 // truncated or otherwise damaged segment is reported with its path and
 // offset before any index is written.
+// rootOf resolves the input root: the explicit setting, or the manifest's
+// directory.
+func rootOf(opts Options) string {
+	if opts.InputRoot != "" {
+		return opts.InputRoot
+	}
+	return scan.RootOf(opts.InputPath)
+}
+
+// selectVariant picks the highest-bandwidth variant, the standard default.
+func selectVariant(pl *manifest.Playlist) (manifest.Variant, error) {
+	var best manifest.Variant
+	for _, v := range pl.Variants {
+		if v.Bandwidth > best.Bandwidth {
+			best = v
+		}
+	}
+	if best.URI == "" {
+		return manifest.Variant{}, media.New(media.StageParse, "hls", "master playlist has no usable variant").WithPath(pl.Path)
+	}
+	return best, nil
+}
+
 func validateContainers(root string, pl *manifest.Playlist, limits scan.Limits) error {
 	refs := scan.SegmentRefs(pl)
 	seen := make(map[string]bool)
@@ -263,7 +314,7 @@ func segmentRefsFor(pl *manifest.Playlist) ([]manifest.Segment, error) {
 		}
 		return pl.Representations[0].Segments, nil
 	default:
-		return nil, media.New(media.StagePlan, "select", "master playlists must be resolved to a media playlist first")
+		return nil, media.New(media.StagePlan, "select", "master playlist must be resolved before segment listing")
 	}
 }
 

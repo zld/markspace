@@ -136,9 +136,14 @@ func Generate(dir string) ([]Written, error) {
 	if err := write("normal.mpd", validMPD()); err != nil {
 		return nil, err
 	}
+	// A master playlist whose single variant resolves to a real media
+	// playlist, so the recovery path can exercise variant selection.
+	if err := write("video/720p.m3u8", hlsPlaylist("media/normal", "")); err != nil {
+		return nil, err
+	}
 	if err := write("master.m3u8", []byte(`#EXTM3U
 #EXT-X-VERSION:4
-#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aud",NAME="Main",LANGUAGE="en",DEFAULT=YES,URI="audio/en.m3u8"
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aud",NAME="Main",LANGUAGE="en",DEFAULT=YES,URI="video/720p.m3u8"
 #EXT-X-STREAM-INF:BANDWIDTH=800000,AVERAGE-BANDWIDTH=760000,RESOLUTION=1280x720,CODECS="avc1.64001f,mp4a.40.2",AUDIO="aud"
 video/720p.m3u8
 `)); err != nil {
@@ -170,7 +175,7 @@ func validMPD() []byte {
 <MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="PT4S">
   <Period id="p0">
     <AdaptationSet id="v" mimeType="video/mp4" codecs="raw ">
-      <SegmentTemplate timescale="90000" media="media/normal/normal-$Number$.m4s" startNumber="0">
+      <SegmentTemplate timescale="90000" media="media/normal/normal-$Number%04d$.m4s" startNumber="0">
         <SegmentTimeline><S t="0" d="90000" r="3"/></SegmentTimeline>
       </SegmentTemplate>
       <Representation id="v" bandwidth="800000" width="64" height="48"/>

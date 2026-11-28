@@ -111,12 +111,17 @@
   },
   {
     "path": "normal.mpd",
-    "sha256": "01b21f27813d1e5ce441ab0ec466cbae24ae7164d6e1535b702780e2a33f1826",
-    "bytes": 518
+    "sha256": "f6bc287c5f7062a90d38fd65435dae53af7697ed8ebf0e99ad842e77848aeb66",
+    "bytes": 522
+  },
+  {
+    "path": "video/720p.m3u8",
+    "sha256": "fe7f4fbd382ea355efae96cc762834f0921e4ddcb901fd8d219a903d4c31ac00",
+    "bytes": 248
   },
   {
     "path": "master.m3u8",
-    "sha256": "af668ed1695b046bbfba49e69b77ca1ed0650f28f3983c9ffd7f1585005a92d0",
-    "bytes": 261
+    "sha256": "dc55054eaa5187751c0894baeb0a02eeee2c436dbf2722a398ed3ad259bbe3fd",
+    "bytes": 263
   }
 ]
