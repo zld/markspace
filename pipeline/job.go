@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -78,6 +79,24 @@ type ScanResult struct {
 	// RTP holds loss-recovery results for a packet-capture input; nil for an
 	// ISO-BMFF input.
 	RTP *media.RTPRecovery
+	// IsRTP records whether the input was a packet capture, so re-fingerprinting
+	// at commit time uses the content-only digest.
+	IsRTP bool
+}
+
+// displayPath renders an input path relative to the job's work directory so a
+// manifest produced under one directory can be compared byte-for-byte with one
+// produced under another. A path outside the work directory is returned
+// unchanged.
+func (j *Job) displayPath(path string) string {
+	if j.dir == "" {
+		return path
+	}
+	rel, err := filepath.Rel(j.dir, path)
+	if err != nil {
+		return path
+	}
+	return filepath.ToSlash(rel)
 }
 
 // sha256Hex is the canonical hex digest used across the pipeline.

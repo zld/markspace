@@ -238,8 +238,22 @@ func TestRTPLossIsReported(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.RTP.Unrecoverable != 1 || !res.Issues.HasErrors() {
-		t.Fatalf("loss not reported: %+v", res.RTP)
+	if res.RTP.Unrecoverable != 1 {
+		t.Fatalf("loss not counted: %+v", res.RTP)
+	}
+	// Unrecoverable loss is recorded as a warning; the pipeline decides whether
+	// its rate breaches the budget and must block publication.
+	if len(res.Issues) == 0 {
+		t.Fatal("unrecoverable loss must be recorded as an issue")
+	}
+	found := false
+	for _, is := range res.Issues {
+		if is.Code == timeline.CodeUnrecoverable && is.Severity == timeline.SeverityWarning {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected an unrecoverable_loss warning, got %v", res.Issues.Strings())
 	}
 	if rate := res.RTP.LossRecoveryRate(); rate <= 0.99 {
 		t.Fatalf("loss rate = %v", rate)

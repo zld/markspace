@@ -135,9 +135,15 @@ func (j *Job) Run(inputs []Input, opts RunOptions) (*RunResult, error) {
 			Message: fmt.Sprintf("only %d of %d chunks are committed", res.CommittedChunks, len(chunks))}}
 	}
 	if fatal {
+		// Name the source position of the first fatal issue so the refusal is
+		// actionable rather than a generic "errors recorded" message.
+		first := firstFatal(res.Issues)
+		msg := "refusing to publish: fatal input or alignment issues"
+		if first != nil {
+			msg = "refusing to publish: " + first.String()
+		}
 		return res, &timeline.LocatedError{Issue: timeline.Issue{
-			Severity: timeline.SeverityError, Code: timeline.CodeManifest,
-			Message: "refusing to publish: input or alignment errors are recorded as issues"}}
+			Severity: timeline.SeverityError, Code: timeline.CodeManifest, Message: msg}}
 	}
 	out, err := manifest.Publish()
 	if err != nil {
@@ -275,4 +281,15 @@ func buildSegments(align media.AlignResult, tracksByName map[string]media.Track)
 		out = append(out, si)
 	}
 	return out, issues
+}
+
+// firstFatal returns the first fatal issue in sorted order, or nil.
+func firstFatal(is timeline.Issues) *timeline.Issue {
+	for _, i := range is.Sorted() {
+		if i.Severity != timeline.SeverityWarning {
+			issue := i
+			return &issue
+		}
+	}
+	return nil
 }

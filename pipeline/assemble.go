@@ -65,7 +65,7 @@ func (j *Job) buildManifest(inputs []Input, align media.AlignResult, segments []
 	}
 	for _, path := range j.Paths() {
 		res := j.scanned[path]
-		m.Inputs[path] = res.Fingerprint
+		m.Inputs[j.displayPath(path)] = res.Fingerprint
 	}
 	m.JobID = computeJobID(m.Inputs, j.Config)
 
@@ -102,9 +102,11 @@ func (j *Job) buildManifest(inputs []Input, align media.AlignResult, segments []
 	for _, ev := range published {
 		tus, _ := ev.TimeMicros()
 		dus, _ := ev.DurationMicros()
+		src := ev.Source
+		src.File = j.displayPath(src.File)
 		m.Events = append(m.Events, EventInfo{
 			Kind: string(ev.Kind), Scheme: ev.Scheme, TimeUs: tus, DurationUs: dus,
-			Source: ev.Source, PayloadSum: ev.PayloadSum(),
+			Source: src, PayloadSum: ev.PayloadSum(),
 		})
 	}
 	m.Issues = joinIssues(issues, set.Issues())

@@ -24,6 +24,9 @@ type Job struct {
 
 	// scanned collects results by path.
 	scanned map[string]*ScanResult
+	// dir is the run's work directory, used to render input paths relative to
+	// it so the manifest digest does not depend on where the run happened.
+	dir string
 }
 
 // NewJob creates a job with the given config and durable stores bound to dir.
@@ -38,7 +41,7 @@ func NewJob(cfg Config, dir string) (*Job, error) {
 		return nil, err
 	}
 	cp := index.NewCheckpointStore(dir + "/checkpoint.json")
-	return &Job{Config: cfg, IndexStore: idxStore, Cache: cache, Checkpoint: cp, scanned: map[string]*ScanResult{}}, nil
+	return &Job{Config: cfg, IndexStore: idxStore, Cache: cache, Checkpoint: cp, scanned: map[string]*ScanResult{}, dir: dir}, nil
 }
 
 // ScanInput fingerprints and parses one input. The fingerprint is computed over
@@ -238,7 +241,12 @@ func (j *Job) verifyInputs() (map[string]index.Fingerprint, error) {
 			}
 			return nil, fmt.Errorf("%s: %w", path, err)
 		}
-		fp, err := index.ComputeFingerprintFromBytes(data)
+		var fp index.Fingerprint
+		if res.IsRTP {
+			fp, err = index.ComputeFingerprintOfBytes(data)
+		} else {
+			fp, err = index.ComputeFingerprintFromBytes(data)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -254,6 +262,7 @@ func (j *Job) verifyInputs() (map[string]index.Fingerprint, error) {
 // fingerprint is over the capture bytes themselves, so a re-captured stream is
 // a different input; the recovery result feeds the loss-recovery statistic.
 func (j *Job) scanRTP(in Input, res *ScanResult) (*ScanResult, error) {
+	res.IsRTP = true
 	fp, err := index.ComputeFingerprintOfBytes(in.Bytes)
 	if err != nil {
 		return nil, err
