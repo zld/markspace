@@ -207,6 +207,41 @@ func TestVerifyRejectsBadManifest(t *testing.T) {
 	}
 }
 
+func TestVerifyDetectsRecordedAlignLie(t *testing.T) {
+	// The renderer reports zero alignment error; the verifier must accept that
+	// when it matches the files. Then a manifest that claims a smaller error
+	// than re-derived must be rejected.
+	out, m := fixture(t, nil)
+	rep, err := Verify(out, Config{MaxAlignErrorNS: 2_000_000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.MaxAlignNS != 0 {
+		t.Fatalf("re-derived alignment = %d", rep.MaxAlignNS)
+	}
+	if hasCode(rep.Faults, model.CodeConstraintViolation) {
+		t.Fatalf("clean export has faults: %v", rep.Faults)
+	}
+
+	// Corrupt the recorded alignment downward below the true value by moving
+	// one frame's PTS far from its container position.
+	out2, m2 := fixture(t, func(mm *artifact.Manifest) {
+		mm.Frames[3].PTS += 200_000_000
+	})
+	rep2, err := Verify(out2, Config{MaxAlignErrorNS: 2_000_000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep2.MaxAlignNS == 0 {
+		t.Fatal("large PTS drift not re-derived")
+	}
+	if !hasCode(rep2.Faults, model.CodeConstraintViolation) {
+		t.Fatalf("alignment drift not reported: %v", rep2.Faults)
+	}
+	_ = m
+	_ = m2
+}
+
 func hasCode(faults model.Faults, code string) bool {
 	for _, f := range faults {
 		if f.Code == code {
