@@ -141,8 +141,11 @@ func recoverRTPWithWindow(packets []RTPPacket, window int64) RTPRecovery {
 		if a.Seq > prev+1 {
 			gap := a.Seq - prev - 1
 			out.Unrecoverable += int(gap)
+			// Unrecoverable loss is recorded as a warning here. Whether it is
+			// fatal depends on the caller's loss budget: the pipeline promotes it
+			// to an error only when the recovery rate falls below the budget.
 			out.Issues.Add(timeline.Issue{
-				Severity: timeline.SeverityError,
+				Severity: timeline.SeverityWarning,
 				Code:     timeline.CodeUnrecoverable,
 				Message: fmt.Sprintf("ssrc %d: %d packets missing from sequence %d before %d",
 					out.StreamSSRC, gap, uint16(prev+1), uint16(a.Seq)),

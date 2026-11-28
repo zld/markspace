@@ -94,8 +94,11 @@ func TestRecoverRTPUnrecoverableBeyondWindow(t *testing.T) {
 	if rate := rec.LossRecoveryRate(); rate < 0.99 || rate >= 1 {
 		t.Fatalf("loss rate = %v", rate)
 	}
-	if !rec.Issues.HasErrors() {
+	if len(rec.Issues) == 0 {
 		t.Fatal("a real gap must be recorded as an issue")
+	}
+	if rec.Issues.HasErrors() {
+		t.Fatal("unrecoverable loss is a warning at this layer, not fatal")
 	}
 }
 
