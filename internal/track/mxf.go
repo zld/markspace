@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"io"
 	"os"
+	"sort"
 
 	"mediaregress/internal/media"
 )
@@ -193,6 +194,21 @@ func parseMXF(r io.ReaderAt, size int64) (*Input, error) {
 	// Structural failures detected while walking KLV stay in in.Errors; track
 	// metadata problems are attached to the track they belong to.
 	in.Tracks = buildMXFTracks(sets, essence, size)
+	// Parser errors created before a track existed still carry no ID. Label
+	// input-level errors that fall inside a track's byte span so the manifest
+	// can name an owner where one is genuinely implied.
+	for i, e := range in.Errors {
+		if e.Track != "" || e.Offset < 0 {
+			continue
+		}
+		for _, tr := range in.Tracks {
+			if tr.Truncated && e.Offset >= tr.SourceStart {
+				in.Errors[i] = e.WithTrack(tr.ID)
+				break
+			}
+		}
+	}
+	sort.Slice(in.Tracks, func(i, j int) bool { return in.Tracks[i].ID < in.Tracks[j].ID })
 	return in, nil
 }
 

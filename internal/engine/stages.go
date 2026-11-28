@@ -131,23 +131,21 @@ func storedSegment(st *checkpoint.TrackState, planned split.Segment) (split.Segm
 	return split.Segment{}, false
 }
 
+// recordSegments stores the track's current plan, replacing any earlier one.
+// A stale segment from a previous plan must not survive: it could describe a
+// window the current input no longer has.
 func recordSegments(cp *checkpoint.State, id string, segs []split.Segment) error {
 	st := cp.Track(id)
 	if st == nil {
 		return media.Errorf(media.ClassCheckpoint, media.StageCheckpoint, id, -1, "checkpoint track missing")
 	}
+	kept := make([]split.Segment, 0, len(segs))
 	for _, s := range segs {
-		exists := false
-		for _, have := range st.Segments {
-			if have.ID == s.ID {
-				exists = true
-				break
-			}
-		}
-		if !exists {
-			st.Segments = append(st.Segments, s)
+		if s.Track == id {
+			kept = append(kept, s)
 		}
 	}
+	st.Segments = kept
 	return nil
 }
 

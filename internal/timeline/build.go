@@ -217,6 +217,14 @@ func (tt *TrackTimeline) SampleBoundaries(start, end media.Ticks) []media.Ticks 
 	return out
 }
 
+// timescaleElement names the construct that supplies a track's time base.
+func timescaleElement(container string) string {
+	if container == "mxf" {
+		return "timelineTrack/editRate"
+	}
+	return "mdhd/timescale"
+}
+
 // sampleOffset keeps a positioned error even for synthetic timelines whose
 // samples carry no file offset.
 func sampleOffset(s track.Sample) int64 {

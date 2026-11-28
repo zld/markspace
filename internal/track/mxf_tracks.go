@@ -53,7 +53,10 @@ func mxfTrack(num uint16, tr *mxfSet, descs []*mxfSet, elems []klvElem, size int
 		Timescale:   0,
 		Version:     ParseVersion,
 		SourceStart: tr.Offset,
-		RotSource:   Source{Container: "mxf", Element: "tkhd"},
+		// This profile carries no display matrix: rotation is fixed at zero
+		// and the source says so rather than pointing at a construct that
+		// does not exist.
+		RotSource: Source{Container: "mxf", Element: "none", Offset: -1},
 	}
 	// Edit rate is a rational; the denominator is the time base.
 	editRate, hasRate := tr.bytes(tagEditRate)
