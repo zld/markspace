@@ -148,10 +148,15 @@ type itemJSON struct {
 }
 
 // workspace is the output directory layout.
+//
+// Artifacts are written to a staging directory and only moved to Dir after
+// validation passes, so a failed run never leaves a half-finished artifact in
+// the published location.
 type workspace struct {
 	Dir       string
 	StatePath string
 	StageDir  string
+	StageOut  string
 }
 
 func newWorkspace(dir string) (*workspace, error) {
@@ -159,15 +164,40 @@ func newWorkspace(dir string) (*workspace, error) {
 		Dir:       dir,
 		StatePath: filepath.Join(dir, "state.json"),
 		StageDir:  filepath.Join(dir, "stages"),
+		StageOut:  filepath.Join(dir, "staging"),
 	}
 	if err := os.MkdirAll(ws.StageDir, 0o755); err != nil {
 		return nil, fault.New(fault.StageIngest, "create workspace", err)
 	}
+	if err := os.MkdirAll(ws.StageOut, 0o755); err != nil {
+		return nil, fault.New(fault.StageIngest, "create staging", err)
+	}
 	return ws, nil
 }
 
+// artifactPath is the published location of a rendered track.
 func (w *workspace) artifactPath(name string) string {
 	return filepath.Join(w.Dir, name+".mp4")
+}
+
+// stagedPath is the unpublished location of a rendered track.
+func (w *workspace) stagedPath(name string) string {
+	return filepath.Join(w.StageOut, name+".mp4")
+}
+
+// publish moves a validated staged artifact into the published location.
+func (w *workspace) publish(name string) error {
+	if err := os.Rename(w.stagedPath(name), w.artifactPath(name)); err != nil {
+		return fault.New(fault.StageMux, "publish "+name, err)
+	}
+	return nil
+}
+
+// discard removes staged artifacts left by a failed run.
+func (w *workspace) discard(names []string) {
+	for _, name := range names {
+		os.Remove(w.stagedPath(name))
+	}
 }
 
 func (w *workspace) manifestPath() string {

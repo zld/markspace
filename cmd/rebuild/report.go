@@ -271,6 +271,9 @@ func (r *report) print(w io.Writer) {
 		}
 		fmt.Fprintf(w, "item %s %s %s\n", it.Name, verdict, it.Detail)
 	}
+	if r.app != nil && r.app.unpublished {
+		fmt.Fprintln(w, "artifacts=withheld")
+	}
 	switch {
 	case r.interrupted:
 		fmt.Fprintln(w, "result=INTERRUPTED")

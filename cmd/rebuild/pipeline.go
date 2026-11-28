@@ -41,6 +41,9 @@ type app struct {
 	// repeatedManifestMismatch records that a previous run's manifest differed
 	// from the one this run would publish for the same inputs.
 	repeatedManifestMismatch bool
+	// unpublished records that validation rejected the artifacts and staged
+	// copies were discarded.
+	unpublished bool
 	// previousManifest is the digest of the manifest found at start-up, before
 	// this run writes anything.
 	previousManifest string
@@ -88,6 +91,16 @@ func execute(ctx context.Context, cfg *Config) (*report, error) {
 	a.report.setOutcome(outcome)
 	if runErr != nil {
 		return a.report, runErr
+	}
+	// A resumed run may skip validate entirely; its recorded results are still
+	// needed to print the item-by-item conclusions.
+	for _, name := range outcome.Skipped {
+		if name != "validate" || outcome.Interrupted != "" {
+			continue
+		}
+		for _, w := range a.work {
+			_ = a.ws.loadStage("validate", w.Name, &w.Validate)
+		}
 	}
 	if outcome.Interrupted != "" {
 		// The run stopped early on purpose. Progress up to the interruption is
@@ -175,14 +188,27 @@ func (a *app) loadManifest() {
 		prev.StreamSHA256 != a.mf.StreamSHA256 {
 		return
 	}
-	// Keep the fresh skeleton's stage order and reset the terminal stage, which
-	// is about to run again.
 	a.mf.Stages = prev.Stages
-	a.mf.Artifacts = nil
-	for i := range a.mf.Stages {
-		if a.mf.Stages[i].Stage == "validate" {
-			a.mf.Stages[i] = manifest.StageRecord{Stage: "validate", Status: manifest.StatusPending}
+	a.mf.Artifacts = append([]manifest.Artifact(nil), prev.Artifacts...)
+	// Reset the terminal stage only when it did not finish: it is about to run
+	// again and will rewrite its own record. A finished validate stage keeps
+	// its record so replaying an already complete run is a no-op.
+	cp, _ := stage.LoadCheckpoint(a.ws.StatePath)
+	validateDone := false
+	if cp != nil {
+		for _, name := range cp.Completed {
+			if name == "validate" {
+				validateDone = true
+			}
 		}
+	}
+	if !validateDone {
+		for i := range a.mf.Stages {
+			if a.mf.Stages[i].Stage == "validate" {
+				a.mf.Stages[i] = manifest.StageRecord{Stage: "validate", Status: manifest.StatusPending}
+			}
+		}
+		a.mf.Artifacts = nil
 	}
 }
 
@@ -692,7 +718,7 @@ func (a *app) muxOne(ctx context.Context, w *work) error {
 		return fault.New(fault.StageMux, "write track",
 			fmt.Errorf("%w: no reconstructed packets for %s", fault.ErrCorrupt, w.Name))
 	}
-	path := a.ws.artifactPath(w.Name)
+	path := a.ws.stagedPath(w.Name)
 	track, err := mp4.WriteTrack(path, packets, mp4.WriteOptions{})
 	if err != nil {
 		return err
@@ -738,7 +764,7 @@ func (a *app) runValidate(ctx context.Context) error {
 	}
 	for _, w := range a.work {
 		rep, err := validate.Run(validate.Inputs{
-			ArtifactPath:        a.ws.artifactPath(w.Name),
+			ArtifactPath:        a.ws.stagedPath(w.Name),
 			Manifest:            a.mf,
 			ExpectedManifestSHA: currentManifestSHA,
 			PreviousManifestSHA: a.previousManifest,
@@ -769,7 +795,48 @@ func (a *app) runValidate(ctx context.Context) error {
 			return err
 		}
 	}
+
+	// Publish only when every structural and hash item passed. Threshold items
+	// (loss, gap, budget) describe the input, not the artifact, so a PASS here
+	// means "the bytes are trustworthy", not "the stream was healthy".
+	var names []string
+	publishable := true
+	for _, w := range a.work {
+		names = append(names, w.Name)
+		for _, it := range w.Validate.Items {
+			if it.Pass {
+				continue
+			}
+			if isArtifactIntegrityItem(it.Name) {
+				publishable = false
+			}
+		}
+	}
+	if a.repeatedManifestMismatch {
+		publishable = false
+	}
+	if !publishable {
+		a.ws.discard(names)
+		a.unpublished = true
+		return nil
+	}
+	for _, w := range a.work {
+		if err := a.ws.publish(w.Name); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+// isArtifactIntegrityItem reports whether a failed item means the artifact
+// bytes themselves cannot be trusted.
+func isArtifactIntegrityItem(name string) bool {
+	switch name {
+	case "mp4_sample_count", "mp4_dts_monotonic", "mp4_timescale", "artifact_hash",
+		"manifest_hash", "manifest_repeatable", "memory_ceiling":
+		return true
+	}
+	return false
 }
 
 // validateParamDigest is the deterministic parameter digest for the validate
