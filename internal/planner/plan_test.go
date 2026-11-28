@@ -80,6 +80,67 @@ func TestChooseBudgetConflict(t *testing.T) {
 	if len(plan.Conflict.Evaluated) == 0 || plan.Conflict.Evaluated[0].CostMS == 0 {
 		t.Fatal("evaluation summary missing costs")
 	}
+	if plan.Conflict.BestQuality != 0.5 {
+		t.Fatalf("best quality = %f want the only quality", plan.Conflict.BestQuality)
+	}
+	if plan.Conflict.BestCostMS == 0 || plan.Conflict.SmallestBytes == 0 {
+		t.Fatalf("grid bounds not reported: %+v", plan.Conflict)
+	}
+}
+
+func TestChooseSizeConflict(t *testing.T) {
+	// Time is ample; only the byte cap bites, so the size gate is named.
+	plan, err := Choose(baseInput(), Budget{
+		MaxBytes: 100, MaxCostMS: 1 << 20, MinQuality: 0.5,
+		FPSChoices: []int{1}, QualityChoices: []float64{0.5},
+	})
+	var conflict *ErrConflict
+	if !errors.As(err, &conflict) {
+		t.Fatalf("err = %v", err)
+	}
+	if plan.Conflict.Reason != model.CodeSizeConflict {
+		t.Fatalf("reason = %s", plan.Conflict.Reason)
+	}
+	if plan.Conflict.SmallestBytes <= 100 {
+		t.Fatalf("smallest = %d", plan.Conflict.SmallestBytes)
+	}
+}
+
+func TestChooseUsesMeasuredStepBytes(t *testing.T) {
+	// A measured per-frame size overrides the pessimistic analytic estimate:
+	// with 60 frames at 900 bytes plus 512 overhead, the 60 KiB budget fits
+	// even though the base size says otherwise.
+	in := baseInput()
+	in.StepBytes = map[int]int64{stepForQuality(0.5): 900}
+	plan, err := Choose(in, Budget{
+		MaxBytes: 60 * 1024, MaxCostMS: 500, MinQuality: 0.5,
+		FPSChoices: []int{1}, QualityChoices: []float64{0.5},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Chosen == nil || plan.Chosen.Bytes != 512+900*60 {
+		t.Fatalf("chosen = %+v", plan.Chosen)
+	}
+}
+
+func TestChooseQualityFloorBeatsSize(t *testing.T) {
+	// Every candidate is both below the floor and over the byte cap; the floor
+	// is reported because it has priority.
+	plan, err := Choose(baseInput(), Budget{
+		MaxBytes: 1, MaxCostMS: 1 << 20, MinQuality: 0.99,
+		FPSChoices: []int{1}, QualityChoices: []float64{0.5, 0.75},
+	})
+	var conflict *ErrConflict
+	if !errors.As(err, &conflict) {
+		t.Fatalf("err = %v", err)
+	}
+	if plan.Conflict.Reason != model.CodeQualityFloor {
+		t.Fatalf("reason = %s", plan.Conflict.Reason)
+	}
+	if plan.Conflict.BestQuality != 0 {
+		t.Fatalf("best quality should be zero when all miss the floor: %f", plan.Conflict.BestQuality)
+	}
 }
 
 func TestChooseDeterministic(t *testing.T) {

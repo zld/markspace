@@ -6,6 +6,7 @@ package planner
 
 import (
 	"fmt"
+	"math"
 	"sort"
 
 	"medialab/internal/model"
@@ -40,14 +41,40 @@ type Budget struct {
 
 // Input describes the work the planner must schedule.
 type Input struct {
-	// BaseBytesPerFrame is the encoded bytes of one frame at quality 1.
+	// BaseBytesPerFrame is the encoded bytes of one source frame at quality 1.
+	// It backs the analytic estimate when no measurement is supplied.
 	BaseBytesPerFrame int64 `json:"baseBytesPerFrame"`
+	// StepBytes is the measured total artefact bytes of one exported frame at a
+	// given quantisation step. When a step is present it replaces the analytic
+	// estimate, which keeps tight byte budgets honest.
+	StepBytes map[int]int64 `json:"stepBytes,omitempty"`
 	// BaseCostMS is the processing cost of one frame at quality 1.
 	BaseCostMS int64 `json:"baseCostMs"`
-	// TotalFrames is the number of source frames.
+	// TotalFrames is the number of source frames across all tracks. It is used
+	// when PerTrackFrames is empty.
 	TotalFrames int `json:"totalFrames"`
+	// PerTrackFrames is the source frame count of each track. When set, the
+	// output frame count is the sum of ceil(n/fps), matching the sampler.
+	PerTrackFrames []int `json:"perTrackFrames,omitempty"`
 	// OverheadBytes is the fixed container and manifest cost.
 	OverheadBytes int64 `json:"overheadBytes"`
+}
+
+// framesFor returns the output frame count at the given fps divisor.
+func (in Input) framesFor(fps int) int {
+	if fps < 1 {
+		fps = 1
+	}
+	if len(in.PerTrackFrames) == 0 {
+		return (in.TotalFrames + fps - 1) / fps
+	}
+	total := 0
+	for _, n := range in.PerTrackFrames {
+		if n > 0 {
+			total += (n + fps - 1) / fps
+		}
+	}
+	return total
 }
 
 // Conflict explains why no candidate is feasible, in priority order.
@@ -58,8 +85,13 @@ type Conflict struct {
 	Detail string `json:"detail"`
 	// Evaluated lists the candidates that were considered.
 	Evaluated []Candidate `json:"evaluated"`
-	// BestQuality is the highest quality any candidate achieved.
+	// BestQuality is the highest quality of any candidate that was only
+	// rejected by the byte budget; zero when every candidate missed the floor.
 	BestQuality float64 `json:"bestQuality"`
+	// BestCostMS and SmallestBytes are the cheapest and smallest candidates on
+	// the grid, so the terminal can show how far off the budget is.
+	BestCostMS    int64 `json:"bestCostMs"`
+	SmallestBytes int64 `json:"smallestBytes"`
 }
 
 // Plan is the planner's decision.
@@ -82,7 +114,7 @@ func (e *ErrConflict) Error() string {
 // stay within the processing budget and fit the byte budget; among them the
 // smallest byte count wins, ties broken by higher quality, then lower cost.
 func Choose(in Input, b Budget) (*Plan, error) {
-	if in.TotalFrames <= 0 {
+	if in.framesFor(1) <= 0 {
 		return nil, model.NewFault(model.KindPlan, model.CodeManifestInvalid, 0, 0,
 			"planner needs at least one frame")
 	}
@@ -100,14 +132,13 @@ func Choose(in Input, b Budget) (*Plan, error) {
 	}
 
 	plan := &Plan{Budget: b}
-	floor := 1.0
 	for _, q := range qualityChoices {
 		step := stepForQuality(q)
 		for _, fps := range fpsChoices {
 			if fps < 1 {
 				continue
 			}
-			frames := (in.TotalFrames + fps - 1) / fps
+			frames := in.framesFor(fps)
 			c := Candidate{
 				Quality:   quality(q),
 				QuantStep: step,
@@ -115,9 +146,6 @@ func Choose(in Input, b Budget) (*Plan, error) {
 				Frames:    frames,
 				Bytes:     estimateBytes(in, step, frames),
 				CostMS:    estimateCost(in, step, frames),
-			}
-			if c.Quality < floor {
-				floor = c.Quality
 			}
 			reasons := c.reject(b)
 			if len(reasons) != 0 {
@@ -129,10 +157,13 @@ func Choose(in Input, b Budget) (*Plan, error) {
 	}
 
 	if len(plan.Feasible) == 0 {
+		stats := gridStats(in, b, fpsChoices, qualityChoices)
 		plan.Conflict = &Conflict{
-			Reason:      firstConflict(in, b, fpsChoices, qualityChoices),
-			BestQuality: floor,
-			Detail:      conflictDetail(in, b),
+			Reason:        stats.reason,
+			BestQuality:   stats.bestQuality,
+			BestCostMS:    stats.cheapestCost,
+			SmallestBytes: stats.smallestBytes,
+			Detail:        conflictDetail(b, stats.reason),
 		}
 		// Include the most informative rejected candidates: the best quality
 		// and the smallest size, so the terminal can show why.
@@ -156,14 +187,19 @@ func Choose(in Input, b Budget) (*Plan, error) {
 }
 
 // estimateBytes models payload scaling with quality and frame count, plus
-// per-frame container overhead.
+// per-frame container overhead. A measured per-step frame size wins when the
+// caller supplies one.
 func estimateBytes(in Input, step, frames int) int64 {
 	perFrame := scaledBytes(in.BaseBytesPerFrame, step)
+	if measured, ok := in.StepBytes[step]; ok && measured > 0 {
+		perFrame = measured
+	}
 	return in.OverheadBytes + perFrame*int64(frames)
 }
 
 // scaledBytes shrinks the payload roughly linearly with quantisation step but
-// never below 15% of the base, matching how RLE behaves on synthetic frames.
+// never below 15% of the base. It is only a fallback for callers that cannot
+// measure; the pipeline supplies StepBytes from rendered frames.
 func scaledBytes(base int64, step int) int64 {
 	if step <= 1 {
 		return base
@@ -213,11 +249,14 @@ func quality(q float64) float64 {
 	return q
 }
 
+// stepForQuality maps a fidelity score to a quantisation step using the same
+// rounding as pixel.StepForQuality, so a measured per-step size always matches
+// the candidate the planner evaluates.
 func stepForQuality(q float64) int {
 	if q >= 1 {
 		return 1
 	}
-	s := int(255*(1-q)) + 1
+	s := int(math.Round((1-q)*256)) + 1
 	if s < 1 {
 		s = 1
 	}
@@ -227,43 +266,76 @@ func stepForQuality(q float64) int {
 	return s
 }
 
-// firstConflict reports the dominant reason: quality floor, then processing
-// budget, then size. This order is part of the CLI contract.
-func firstConflict(in Input, b Budget, fpsChoices []int, qualityChoices []float64) string {
-	bestQuality, cheapestCost, smallestBytes := 0.0, int64(-1), int64(-1)
-	for _, q := range qualityChoices {
-		step := stepForQuality(q)
-		for _, fps := range fpsChoices {
-			frames := (in.TotalFrames + fps - 1) / fps
-			qq := quality(q)
-			if qq > bestQuality {
-				bestQuality = qq
-			}
-			cost := estimateCost(in, step, frames)
-			if cheapestCost < 0 || cost < cheapestCost {
-				cheapestCost = cost
-			}
-			bs := estimateBytes(in, step, frames)
-			if smallestBytes < 0 || bs < smallestBytes {
-				smallestBytes = bs
-			}
-		}
-	}
-	if bestQuality < b.MinQuality {
-		return model.CodeQualityFloor
-	}
-	if cheapestCost > b.MaxCostMS {
-		return model.CodeBudgetConflict
-	}
-	if smallestBytes > b.MaxBytes {
-		return model.CodeBudgetConflict
-	}
-	return model.CodeBudgetConflict
+// gridStats summarises the rejected grid and names the dominant conflict.
+// The priority is part of the CLI contract: quality floor, then processing
+// budget, then byte size. When a candidate clears every earlier gate and only
+// fails a later one, the later reason is reported.
+type gridStatsT struct {
+	reason        string
+	bestQuality   float64
+	cheapestCost  int64
+	smallestBytes int64
 }
 
-func conflictDetail(in Input, b Budget) string {
-	return fmt.Sprintf("no candidate satisfies min-quality %.3f within %d ms and %d bytes",
-		b.MinQuality, b.MaxCostMS, b.MaxBytes)
+func gridStats(in Input, b Budget, fpsChoices []int, qualityChoices []float64) gridStatsT {
+	st := gridStatsT{cheapestCost: -1, smallestBytes: -1}
+	// qualityOK tracks whether any candidate could clear the quality floor,
+	// and budgetOK whether any of those could clear the time budget.
+	qualityOK, budgetOK := false, false
+	for _, q := range qualityChoices {
+		step := stepForQuality(q)
+		qq := quality(q)
+		for _, fps := range fpsChoices {
+			if fps < 1 {
+				continue
+			}
+			frames := in.framesFor(fps)
+			cost := estimateCost(in, step, frames)
+			bs := estimateBytes(in, step, frames)
+			if st.cheapestCost < 0 || cost < st.cheapestCost {
+				st.cheapestCost = cost
+			}
+			if st.smallestBytes < 0 || bs < st.smallestBytes {
+				st.smallestBytes = bs
+			}
+			if qq < b.MinQuality {
+				continue
+			}
+			qualityOK = true
+			if qq > st.bestQuality {
+				st.bestQuality = qq
+			}
+			if cost > b.MaxCostMS {
+				continue
+			}
+			budgetOK = true
+		}
+	}
+	switch {
+	case !qualityOK:
+		st.reason = model.CodeQualityFloor
+	case !budgetOK:
+		st.reason = model.CodeBudgetConflict
+	case st.smallestBytes > b.MaxBytes:
+		st.reason = model.CodeSizeConflict
+	default:
+		// Every gate is clearable in isolation but no single candidate clears
+		// all of them; that is still a budget conflict.
+		st.reason = model.CodeBudgetConflict
+	}
+	return st
+}
+
+func conflictDetail(b Budget, reason string) string {
+	switch reason {
+	case model.CodeQualityFloor:
+		return fmt.Sprintf("no candidate reaches the min-quality floor %.3f", b.MinQuality)
+	case model.CodeSizeConflict:
+		return fmt.Sprintf("the smallest candidate exceeds the %d-byte budget", b.MaxBytes)
+	default:
+		return fmt.Sprintf("no candidate satisfies min-quality %.3f within %d ms and %d bytes",
+			b.MinQuality, b.MaxCostMS, b.MaxBytes)
+	}
 }
 
 // sampleAlternatives returns up to six representative rejected candidates:
@@ -273,7 +345,7 @@ func sampleAlternatives(in Input, b Budget, fpsChoices []int, qualityChoices []f
 	for _, q := range qualityChoices {
 		step := stepForQuality(q)
 		for _, fps := range fpsChoices {
-			frames := (in.TotalFrames + fps - 1) / fps
+			frames := in.framesFor(fps)
 			all = append(all, Candidate{
 				Quality: quality(q), QuantStep: step, FPS: fps, Frames: frames,
 				Bytes: estimateBytes(in, step, frames), CostMS: estimateCost(in, step, frames),
@@ -286,7 +358,10 @@ func sampleAlternatives(in Input, b Budget, fpsChoices []int, qualityChoices []f
 		}
 		return all[i].Bytes < all[j].Bytes
 	})
-	top := all
+	// Copy before slicing: the second sort below reorders all in place, and a
+	// shared backing array would silently turn the quality sample into a
+	// second copy of the size sample.
+	top := append([]Candidate(nil), all...)
 	if len(top) > 3 {
 		top = top[:3]
 	}
@@ -296,18 +371,17 @@ func sampleAlternatives(in Input, b Budget, fpsChoices []int, qualityChoices []f
 		}
 		return all[i].Quality > all[j].Quality
 	})
-	small := all
+	small := append([]Candidate(nil), all...)
 	if len(small) > 3 {
 		small = small[:3]
 	}
-	seen := make(map[[3]int64]bool)
+	seen := make(map[Candidate]bool)
 	out := make([]Candidate, 0, 6)
 	add := func(c Candidate) {
-		key := [3]int64{c.Bytes, c.CostMS, int64(c.FPS*1000) + int64(c.QuantStep)}
-		if seen[key] {
+		if seen[c] {
 			return
 		}
-		seen[key] = true
+		seen[c] = true
 		out = append(out, c)
 	}
 	for _, c := range top {
