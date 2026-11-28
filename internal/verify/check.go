@@ -199,7 +199,6 @@ func Verify(outDir string, cfg Config) (*Report, error) {
 	}
 	rep.TotalBytes = sizeSum
 
-	rep.Faults.Sort()
 	if rep.TotalBytes > cfg.MaxBytes && cfg.MaxBytes > 0 {
 		rep.Faults = append(rep.Faults, verifyFault(0, 0,
 			fmt.Sprintf("total artefact bytes %d exceed the %d cap", rep.TotalBytes, cfg.MaxBytes)))
@@ -209,8 +208,10 @@ func Verify(outDir string, cfg Config) (*Report, error) {
 		rep.Faults = append(rep.Faults, verifyFault(0, 0,
 			fmt.Sprintf("recorded run hash %s does not match re-derived %s",
 				short(m.Summary.RunHash), short(rep.RunHash))))
-		rep.Faults.Sort()
 	}
+	// One stable sort after every fault has been appended, so the report order
+	// never depends on which check happened to fire.
+	rep.Faults.Sort()
 	return rep, nil
 }
 
