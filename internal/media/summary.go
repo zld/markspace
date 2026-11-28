@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
-	"strings"
 )
 
 // SummaryGridMS is the content grid on which per-cell digests are computed.
@@ -91,12 +90,3 @@ func CorruptSummary(s string) string {
 	return string(b)
 }
 
-// TruncateSummary renders a summary for display.
-func TruncateSummary(s string) string {
-	if len(s) <= 12 {
-		return s
-	}
-	return s[:12] + "…"
-}
-
-var _ = strings.TrimSpace

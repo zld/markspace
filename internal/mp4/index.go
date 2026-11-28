@@ -393,57 +393,22 @@ func readEdits(s *Stream, b Box) ([]EditEntry, error) {
 	return out, nil
 }
 
-func readFirstEdit(s *Stream, b Box) (int64, int64, error) {
-	payload, err := s.Payload(b)
-	if err != nil {
-		return 0, 0, err
-	}
-	if len(payload) < 8 {
-		return 0, 0, s.corrupt("elst", b.Offset, ErrTruncated)
-	}
-	ver := payload[0]
-	count := binary.BigEndian.Uint32(payload[4:8])
-	if count == 0 {
-		return 0, 0, nil
-	}
-	switch ver {
-	case 0:
-		if len(payload) < 8+12 {
-			return 0, 0, s.corrupt("elst", b.Offset, ErrTruncated)
-		}
-		dur := int64(binary.BigEndian.Uint32(payload[8:12]))
-		media := int64(int32(binary.BigEndian.Uint32(payload[12:16])))
-		return media, dur, nil
-	case 1:
-		if len(payload) < 8+20 {
-			return 0, 0, s.corrupt("elst", b.Offset, ErrTruncated)
-		}
-		dur := int64(binary.BigEndian.Uint64(payload[8:16]))
-		media := int64(binary.BigEndian.Uint64(payload[16:24]))
-		return media, dur, nil
-	default:
-		return 0, 0, s.corrupt("elst", b.Offset, fmt.Errorf("unsupported version %d", ver))
-	}
-}
-
 // stblTables is the raw parsed sample-table state. A nil table or a non-nil
 // err means the index is incomplete and must be recovered.
 type stblTables struct {
-	cfg       Config
-	stts      []sttsEntry
-	stsz      []uint32
-	stco      []uint64
-	stsc      []stscEntry
-	stss      map[uint32]bool
-	hasStss   bool
-	co64      bool
-	rawStts   []byte
-	rawStsz   []byte
-	rawStco   []byte
-	rawStsc   []byte
-	rawStss   []byte
-	err       error
-	chunkBase bool
+	cfg     Config
+	stts    []sttsEntry
+	stsz    []uint32
+	stco    []uint64
+	stsc    []stscEntry
+	stss    map[uint32]bool
+	hasStss bool
+	rawStts []byte
+	rawStsz []byte
+	rawStco []byte
+	rawStsc []byte
+	rawStss []byte
+	err     error
 }
 
 type sttsEntry struct{ count, delta uint32 }
@@ -487,7 +452,6 @@ func readStbl(ctx context.Context, s *Stream, stbl Box) (*stblTables, error) {
 			t.stco, err = parseStco(payload, b.Offset, t.cfg)
 		case "co64":
 			t.rawStco = payload
-			t.co64 = true
 			t.stco, err = parseCo64(payload, b.Offset, t.cfg)
 		case "stsc":
 			t.rawStsc = payload

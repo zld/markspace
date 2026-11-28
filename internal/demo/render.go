@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 
 	"mediapipe/internal/media"
@@ -235,13 +234,6 @@ func render(out *Outcome) []string {
 		}
 	}
 	return b
-}
-
-// SortedDamage returns damage cases ordered by name.
-func (o *Outcome) SortedDamage() []damageCase {
-	out := append([]damageCase(nil), o.Damage...)
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
-	return out
 }
 
 // String renders an outcome as one newline-joined block.
