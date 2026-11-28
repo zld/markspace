@@ -110,13 +110,17 @@ func BuildTimeline(durations []int64, tb Timebase, declaredTotal int64) ([]Segme
 }
 
 // CheckDrift validates an observed boundary against an expected one.
-func CheckDrift(expectedNs, observedNs int64, what string) error {
+func CheckDrift(expectedNs, observedNs int64, what string, segment ...int) error {
 	d := observedNs - expectedNs
 	if d < 0 {
 		d = -d
 	}
 	if d > MaxBoundaryDrift {
-		return New(StageParse, what, "drift %dns exceeds %dns limit", d, MaxBoundaryDrift)
+		e := New(StageParse, what, "drift %dns exceeds %dns limit", d, MaxBoundaryDrift)
+		if len(segment) > 0 {
+			e = e.WithSegment(segment[0])
+		}
+		return e
 	}
 	return nil
 }

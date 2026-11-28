@@ -50,6 +50,9 @@ type Limits struct {
 	MaxSegmentBytes int64
 	MaxTotalBytes   int64
 	MaxFiles        int
+	// ValidateContainers walks every media segment with the MP4 box parser so
+	// a damaged container fails the scan instead of committing an index.
+	ValidateContainers bool
 }
 
 // DefaultLimits are generous but finite; they bound memory and IO.
@@ -194,6 +197,11 @@ func Scan(in Input) (*Index, error) {
 		if err != nil {
 			return err
 		}
+		if lim.ValidateContainers && (kind == KindMedia || kind == KindInit) && looksLikeMP4(rel) {
+			if _, perr := media.ProbeFile(full, media.ProbeOptions{}); perr != nil {
+				return perr
+			}
+		}
 		if idx.TotalBytes+d.Bytes > lim.MaxTotalBytes {
 			return media.New(media.StageScan, "scan", "total scan bytes exceed limit %d", lim.MaxTotalBytes).WithPath(full)
 		}
@@ -330,6 +338,15 @@ func Load(path string) (*Index, error) {
 		return nil, media.New(media.StageScan, "load", "index digest mismatch (want %s, got %s)", want, idx.Digest).WithPath(path)
 	}
 	return &idx, nil
+}
+
+// looksLikeMP4 reports whether a path names an ISO BMFF container.
+func looksLikeMP4(rel string) bool {
+	switch strings.ToLower(strings.TrimPrefix(filepath.Ext(rel), ".")) {
+	case "m4s", "mp4", "m4v", "m4a", "cmaf":
+		return true
+	}
+	return false
 }
 
 // InputDigest is a stable digest of the file contents an index covers, used

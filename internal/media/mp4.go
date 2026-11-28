@@ -2,13 +2,22 @@ package media
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
 
 	"github.com/abema/go-mp4"
 )
+
+// NamedHash returns the lowercase SHA-256 hex digest of b. It lives here so
+// fixture and runner code share one hashing implementation.
+func NamedHash(b []byte) string {
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}
 
 // Track is one track discovered in an MP4 file. Timing is kept in the track's
 // own timescale exactly as stored; conversion to nanoseconds uses Timebase.
@@ -61,15 +70,60 @@ type ByteRange struct {
 	End   int64
 }
 
+// Fragment is one movie fragment (moof) with its timed samples.
+type Fragment struct {
+	TrackID       uint32
+	Sequence      uint32
+	BaseDecode    uint64
+	DurationTicks uint64
+	SampleBytes   int64
+	SampleOffsets []int64
+}
+
 // FileProbe is the validated structure of one MP4 file.
 type FileProbe struct {
 	MajorBrand string
 	Tracks     []*Track
+	Fragments  []Fragment
 	Mdat       []ByteRange
 	Size       int64
 	// Luma holds extracted uncompressed luma planes for the video track when
 	// requested. Empty when the codec is compressed or extraction was off.
 	Luma [][]byte
+}
+
+// DurationNanos reports the longest track timeline: stbl sample durations
+// when a moov sample table is present, otherwise the sum of fragment
+// durations. Zero means the duration could not be established.
+func (p *FileProbe) DurationNanos() int64 {
+	var best int64
+	for _, t := range p.Tracks {
+		if n, err := t.DurationNanos(); err == nil && n > best {
+			best = n
+		}
+	}
+	if best == 0 {
+		byTrack := make(map[uint32]uint64)
+		for _, f := range p.Fragments {
+			byTrack[f.TrackID] += f.DurationTicks
+		}
+		for trackID, ticks := range byTrack {
+			var ts uint32
+			for _, t := range p.Tracks {
+				if t.ID == trackID {
+					ts = t.Timescale
+				}
+			}
+			if ts == 0 {
+				continue
+			}
+			tb := Timebase{Timescale: ts}
+			if n, err := tb.ToNanos(int64(ticks)); err == nil && n > best {
+				best = n
+			}
+		}
+	}
+	return best
 }
 
 // Video returns the first video track, if any.
@@ -121,6 +175,21 @@ func ProbeFile(path string, opts ProbeOptions) (*FileProbe, error) {
 }
 
 func probe(r io.ReadSeeker, size int64, path string, opts ProbeOptions) (*FileProbe, error) {
+	type fragState struct {
+		trackID   uint32
+		seq       uint32
+		base      uint64
+		defDur    uint32
+		defSize   uint32
+		sizes     []uint32
+		durs      []uint32
+		dataOff   int32
+		haveTfhd  bool
+		haveTfdt  bool
+		moofStart int64
+		moofSize  uint64
+	}
+	var frag *fragState
 	if opts.MaxSamples <= 0 {
 		opts.MaxSamples = 2_000_000
 	}
@@ -137,6 +206,61 @@ func probe(r io.ReadSeeker, size int64, path string, opts ProbeOptions) (*FilePr
 				WithPath(path).WithOffset(int64(bi.Offset))
 		}
 		switch bi.Type {
+		case mp4.BoxTypeMoof():
+			frag = &fragState{moofStart: int64(bi.Offset), moofSize: bi.Size}
+			p.Fragments = append(p.Fragments, Fragment{})
+		case mp4.BoxTypeMfhd():
+			if frag == nil {
+				break
+			}
+			var box mp4.Mfhd
+			if err := unmarshalPayload(r, &bi, &box); err != nil {
+				return nil, Wrap(StageParse, "mp4", err, "invalid mfhd").WithPath(path).WithOffset(int64(bi.Offset))
+			}
+			frag.seq = box.SequenceNumber
+		case mp4.BoxTypeTfhd():
+			if frag == nil {
+				break
+			}
+			var box mp4.Tfhd
+			if err := unmarshalPayload(r, &bi, &box); err != nil {
+				return nil, Wrap(StageParse, "mp4", err, "invalid tfhd").WithPath(path).WithOffset(int64(bi.Offset))
+			}
+			frag.trackID = box.TrackID
+			frag.defDur = box.DefaultSampleDuration
+			frag.defSize = box.DefaultSampleSize
+			frag.haveTfhd = true
+		case mp4.BoxTypeTfdt():
+			if frag == nil {
+				break
+			}
+			var box mp4.Tfdt
+			if err := unmarshalPayload(r, &bi, &box); err != nil {
+				return nil, Wrap(StageParse, "mp4", err, "invalid tfdt").WithPath(path).WithOffset(int64(bi.Offset))
+			}
+			frag.base = box.GetBaseMediaDecodeTime()
+			frag.haveTfdt = true
+		case mp4.BoxTypeTrun():
+			if frag == nil {
+				break
+			}
+			var box mp4.Trun
+			if err := unmarshalPayload(r, &bi, &box); err != nil {
+				return nil, Wrap(StageParse, "mp4", err, "invalid trun").WithPath(path).WithOffset(int64(bi.Offset))
+			}
+			frag.dataOff = box.DataOffset
+			for _, e := range box.Entries {
+				sz := e.SampleSize
+				if sz == 0 {
+					sz = frag.defSize
+				}
+				d := e.SampleDuration
+				if d == 0 {
+					d = frag.defDur
+				}
+				frag.sizes = append(frag.sizes, sz)
+				frag.durs = append(frag.durs, d)
+			}
 		case mp4.BoxTypeFtyp():
 			var box mp4.Ftyp
 			if err := unmarshalPayload(r, &bi, &box); err != nil {
@@ -248,6 +372,28 @@ func probe(r io.ReadSeeker, size int64, path string, opts ProbeOptions) (*FilePr
 			}
 		case mp4.BoxTypeMdat():
 			p.Mdat = append(p.Mdat, ByteRange{Start: int64(bi.Offset + bi.HeaderSize), End: int64(bi.Offset + bi.Size)})
+			if frag != nil {
+				// Samples default to starting right after the moof.
+				dataStart := int64(frag.moofStart) + int64(frag.moofSize)
+				if frag.dataOff != 0 {
+					dataStart = int64(frag.moofStart) + int64(frag.dataOff)
+				}
+				var off int64 = dataStart
+				var dur uint64
+				var bytes int64
+				for i := range frag.sizes {
+					p.Fragments[len(p.Fragments)-1].SampleOffsets = append(p.Fragments[len(p.Fragments)-1].SampleOffsets, off)
+					off += int64(frag.sizes[i])
+					dur += uint64(frag.durs[i])
+					bytes += int64(frag.sizes[i])
+				}
+				last := len(p.Fragments) - 1
+				p.Fragments[last].TrackID = frag.trackID
+				p.Fragments[last].Sequence = frag.seq
+				p.Fragments[last].BaseDecode = frag.base
+				p.Fragments[last].DurationTicks = dur
+				p.Fragments[last].SampleBytes = bytes
+			}
 			return nil, nil
 		}
 		if containerBoxes[bi.Type] {
@@ -263,8 +409,8 @@ func probe(r io.ReadSeeker, size int64, path string, opts ProbeOptions) (*FilePr
 	if p.MajorBrand == "" {
 		return nil, New(StageParse, "mp4", "missing ftyp box").WithPath(path).WithOffset(0)
 	}
-	if len(p.Tracks) == 0 && size > 0 {
-		return nil, New(StageParse, "mp4", "missing moov/trak boxes").WithPath(path)
+	if len(p.Tracks) == 0 && len(p.Fragments) == 0 && size > 0 {
+		return nil, New(StageParse, "mp4", "missing moov/trak and moof/traf boxes").WithPath(path)
 	}
 	for _, t := range p.Tracks {
 		if t.Timescale == 0 {
@@ -277,6 +423,48 @@ func probe(r io.ReadSeeker, size int64, path string, opts ProbeOptions) (*FilePr
 		if m.End > size {
 			return nil, New(StageParse, "mp4", "mdat ends at %d, file size is %d (truncated)", m.End, size).
 				WithPath(path).WithOffset(m.Start)
+		}
+	}
+	for _, f := range p.Fragments {
+		for i, off := range f.SampleOffsets {
+			if i >= len(f.SampleOffsets) {
+				break
+			}
+			if !insideMdat(off, off, p.Mdat) {
+				return nil, New(StageParse, "mp4", "fragment sample %d at offset %d lies outside every mdat", i, off).
+					WithPath(path).WithOffset(off)
+			}
+		}
+	}
+	// Lift fragment sample layout onto the video track for fragmented files
+	// whose moov sample table is empty.
+	var fragBytes int64
+	if v := p.Video(); v != nil && len(v.SampleSizes) == 0 {
+		for _, f := range p.Fragments {
+			if f.TrackID == v.ID || v.ID == 0 {
+				for range f.SampleOffsets {
+					v.SampleSizes = append(v.SampleSizes, 0)
+				}
+				v.SampleOffsets = append(v.SampleOffsets, f.SampleOffsets...)
+				// Fragment sample byte counts are additive; keep a running
+				// total so per-sample sizes can be inferred below.
+				fragBytes += f.SampleBytes
+			}
+		}
+		// Sample sizes are needed for luma extraction. Fragments record the
+		// total sample bytes only when the trun sizes were implicit, so use
+		// the planar geometry to recover the per-sample size.
+		if len(v.SampleSizes) > 0 && v.SampleSizes[0] == 0 {
+			per := int64(0)
+			if v.Width > 0 && v.Height > 0 {
+				per = int64(v.Width) * int64(v.Height)
+			}
+			if per == 0 && len(v.SampleSizes) > 0 {
+				per = fragBytes / int64(len(v.SampleSizes))
+			}
+			for i := range v.SampleSizes {
+				v.SampleSizes[i] = uint32(per)
+			}
 		}
 	}
 	// Expand sample offsets for the video track and verify they stay inside
@@ -449,4 +637,18 @@ func extractLuma(r io.ReadSeeker, t *Track, maxBytes int64, path string) ([][]by
 		total += plane
 	}
 	return frames, nil
+}
+
+// PlaneSizeHint returns the per-sample size implied by a fragment layout.
+func PlaneSizeHint(samples int, bytes int64) int64 {
+	if samples <= 0 {
+		return 0
+	}
+	return bytes / int64(samples)
+}
+
+// Name returns the canonical fixture segment file name for an index, using
+// the same four-digit decimal format as the generator.
+func Name(index int) string {
+	return fmt.Sprintf("normal-%04d.m4s", index)
 }

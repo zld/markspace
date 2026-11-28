@@ -3,8 +3,8 @@ package manifest
 import (
 	"bytes"
 	"encoding/xml"
+	"errors"
 	"fmt"
-	"io"
 	"strconv"
 	"strings"
 
@@ -537,23 +537,24 @@ func addNanos(a, b int64) (int64, error) {
 	return a + b, nil
 }
 
-// offsetOfXMLError returns the byte offset reported by encoding/xml, if any.
+// offsetOfXMLError maps an encoding/xml syntax error to the byte offset of
+// the start of the offending line. Line numbers are 1-based.
 func offsetOfXMLError(data []byte, err error) int64 {
-	if err == nil || err == io.EOF {
-		return -1
-	}
 	var se *xml.SyntaxError
-	if !asSyntaxError(err, &se) {
+	if !errors.As(err, &se) || se.Line <= 0 {
 		return -1
 	}
-	// encoding/xml does not expose offsets; locate the offending line text.
-	return -1
-}
-
-func asSyntaxError(err error, dst **xml.SyntaxError) bool {
-	se, ok := err.(*xml.SyntaxError)
-	if ok {
-		*dst = se
+	line := 1
+	for i, b := range data {
+		if line == se.Line {
+			return int64(i)
+		}
+		if b == '\n' {
+			line++
+		}
 	}
-	return ok
+	if line == se.Line {
+		return int64(len(data))
+	}
+	return -1
 }
