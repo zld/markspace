@@ -97,6 +97,118 @@ func (r Reuse) MetadataReusable() bool { return r.ContentSame || r.MetadataSame 
 // FullReuse reports whether everything survives.
 func (r Reuse) FullReuse() bool { return r.ContentSame }
 
+// ComputeFingerprintOfBytes hashes an in-memory file whose bytes have no
+// parseable box layout (for example an RTP capture): only the content digest is
+// meaningful, and it is also used for the container and metadata digests so a
+// change to any byte is detected.
+func ComputeFingerprintOfBytes(data []byte) (Fingerprint, error) {
+	sum := sha256.Sum256(data)
+	hexSum := hex.EncodeToString(sum[:])
+	return Fingerprint{Size: int64(len(data)), Content: hexSum, Container: hexSum, Metadata: hexSum}, nil
+}
+
+// ComputeFingerprintFromBytes hashes an in-memory file given its region layout.
+// It mirrors ComputeFingerprint for callers (and tests) that hold the bytes.
+func ComputeFingerprintFromBytes(data []byte) (Fingerprint, error) {
+	regions, _, err := scanBoxRegionsFromBytes(data)
+	if err != nil {
+		return Fingerprint{}, err
+	}
+	return fingerprintFromBytes(data, regions)
+}
+
+// FingerprintFromBytes computes the three digests over caller-supplied regions
+// without touching disk. It is used by the pipeline so a scan reads the file
+// once and fingerprints the same bytes it parsed.
+func fingerprintFromBytes(data []byte, regions []Region) (Fingerprint, error) {
+	if err := validateRegions(regions, int64(len(data))); err != nil {
+		return Fingerprint{}, err
+	}
+	container, err := hashByteRegions(data, regions, ClassContainer)
+	if err != nil {
+		return Fingerprint{}, err
+	}
+	metadata, err := hashByteRegions(data, regions, ClassMetadata)
+	if err != nil {
+		return Fingerprint{}, err
+	}
+	sum := sha256.Sum256(data)
+	return Fingerprint{
+		Size:      int64(len(data)),
+		Content:   hex.EncodeToString(sum[:]),
+		Container: container,
+		Metadata:  metadata,
+	}, nil
+}
+
+func hashByteRegions(data []byte, regions []Region, class Class) (string, error) {
+	h := sha256.New()
+	var hdr [9]byte
+	binary.BigEndian.PutUint64(hdr[:8], uint64(class))
+	h.Write(hdr[:8])
+	for _, r := range regions {
+		if r.Class != class {
+			continue
+		}
+		if r.Offset < 0 || r.End() > int64(len(data)) {
+			return "", fmt.Errorf("region [%d,%d) outside %d-byte buffer", r.Offset, r.End(), len(data))
+		}
+		binary.BigEndian.PutUint64(hdr[:8], uint64(r.Offset))
+		hdr[8] = ':'
+		h.Write(hdr[:])
+		binary.BigEndian.PutUint64(hdr[:8], uint64(r.Size))
+		h.Write(hdr[:8])
+		h.Write(data[r.Offset:r.End()])
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// scanBoxRegionsFromBytes is the in-memory equivalent of ScanBoxRegions.
+func scanBoxRegionsFromBytes(data []byte) ([]Region, []topLevelBox, error) {
+	var (
+		regions []Region
+		boxes   []topLevelBox
+	)
+	size := int64(len(data))
+	for off := int64(0); off < size; {
+		if size-off < 8 {
+			return nil, nil, fmt.Errorf("truncated box header at offset %d", off)
+		}
+		boxSize := int64(binary.BigEndian.Uint32(data[off : off+4]))
+		typ := string(data[off+4 : off+8])
+		headerLen := int64(8)
+		switch boxSize {
+		case 0:
+			boxSize = size - off
+		case 1:
+			if size-off < 16 {
+				return nil, nil, fmt.Errorf("truncated large box size at offset %d", off)
+			}
+			boxSize = int64(binary.BigEndian.Uint64(data[off+8 : off+16]))
+			headerLen = 16
+		}
+		if boxSize < headerLen || off+boxSize > size {
+			return nil, nil, fmt.Errorf("box %q at offset %d declares size %d beyond file end %d",
+				printableType(typ), off, boxSize, size)
+		}
+		boxes = append(boxes, topLevelBox{offset: off, size: boxSize, typ: typ})
+		payload := Region{Offset: off + headerLen, Size: boxSize - headerLen}
+		switch {
+		case mediaBoxes[typ]:
+			payload.Class = ClassMedia
+		case metadataBoxes[typ]:
+			payload.Class = ClassMetadata
+		default:
+			payload.Class = ClassContainer
+		}
+		if payload.Size > 0 {
+			regions = append(regions, payload)
+		}
+		off += boxSize
+	}
+	return regions, boxes, nil
+}
+
 // ComputeFingerprint hashes a file given its region layout. Regions must be
 // sorted, non-overlapping and inside the file; bytes covered by no region are
 // hashed into Content only. An uncovered gap is allowed (media payloads are
