@@ -1,0 +1,7 @@
+# Go build artifacts
+/medcheck
+*.test
+*.out
+
+# Local workspace
+.DS_Store
