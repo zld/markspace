@@ -1,0 +1,16 @@
+# Build artifacts are not part of the deliverable.
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+/coverage.*
+
+# Local scratch output from the demo or scripts.
+/tmp/
+/.cache/
+
+# Editor and OS noise.
+.DS_Store
+.idea/
+.vscode/
