@@ -74,7 +74,13 @@ func TestCutRejectsBadSlices(t *testing.T) {
 	}
 	units[0].Keyframe = false
 	if _, err := Cut(units, ticks, 9000, data); !fault.HasCode(err, fault.ErrSliceOutOfRange) {
-		t.Fatalf("non-keyframe start: %v", err)
+		t.Fatalf("no keyframe: %v", err)
+	}
+	// leading non-keyframe units attach to the first segment
+	data3, units2, ticks2 := stream([]int{10, 10, 10}, map[int]bool{1: true})
+	segs, err := Cut(units2, ticks2, 9000, data3)
+	if err != nil || len(segs) != 1 || len(segs[0].Units) != 3 {
+		t.Fatalf("leading headers: %v %+v", err, segs)
 	}
 }
 

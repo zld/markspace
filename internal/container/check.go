@@ -85,7 +85,7 @@ func checkTrack(i int, spec TrackSpec, tkhd *mp4.Tkhd, mdhd *mp4.Mdhd,
 	stss []*mp4.Stss, fileSize uint64) (*TrackReport, error) {
 	fail := func(format string, args ...any) error {
 		return fault.New(fault.ErrIntegrity, int64(i),
-			fmt.Sprintf("track %d: %s", spec.ID, fmt.Sprintf(format, args...)))
+			"track %d: %s", spec.ID, fmt.Sprintf(format, args...))
 	}
 	if tkhd.TrackID != spec.ID {
 		return nil, fail("tkhd id %d", tkhd.TrackID)

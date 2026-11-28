@@ -35,9 +35,9 @@ func Cut(units []codec.Unit, ticks []clock.Ticks, segTicks clock.Ticks, data []b
 			"%d ticks for %d units", len(ticks), len(units))
 	case segTicks <= 0:
 		return nil, fault.New(fault.ErrSliceOutOfRange, 0, "segment length must be positive ticks")
-	case !units[0].Keyframe:
+	case !hasKeyframe(units):
 		return nil, fault.New(fault.ErrSliceOutOfRange, units[0].Offset,
-			"stream does not start at a keyframe")
+			"stream contains no keyframe to cut at")
 	}
 	var segs []Segment
 	start := 0
@@ -54,6 +54,15 @@ func Cut(units []codec.Unit, ticks []clock.Ticks, segTicks clock.Ticks, data []b
 		start = i
 	}
 	return segs, nil
+}
+
+func hasKeyframe(units []codec.Unit) bool {
+	for _, u := range units {
+		if u.Keyframe {
+			return true
+		}
+	}
+	return false
 }
 
 func makeSegment(idx int, units []codec.Unit, ticks []clock.Ticks, data []byte) (Segment, error) {

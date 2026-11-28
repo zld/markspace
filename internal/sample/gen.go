@@ -51,21 +51,17 @@ func Generate(k codec.Kind) (*Asset, error) {
 	frame := 0
 	for i, u := range units {
 		ticks[i] = clock.Ticks(frame * FrameTicks)
-		if isPicture(u) {
+		if IsPicture(u) {
 			frame++
 		}
 	}
 	return &Asset{Kind: k, Stream: data, Units: units, Index: index.Build(units), Ticks: ticks}, nil
 }
 
-func isPicture(u codec.Unit) bool {
-	switch u.Type {
-	case 1, 5: // h264 slice / IDR
-		return u.Name == "slice" || u.Name == "IDR"
-	case 0, 19, 20: // h265 trail / IDR
-		return u.Name == "trail" || u.Name == "IDR"
-	case 6: // av1 frame
-		return u.Name == "frame"
+func IsPicture(u codec.Unit) bool {
+	switch u.Name {
+	case "slice", "IDR", "trail", "frame":
+		return true
 	}
 	return false
 }
