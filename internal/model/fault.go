@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -41,6 +42,7 @@ const (
 	CodeFrameMissing        = "frame_missing"
 	CodeBudgetConflict      = "budget_conflict"
 	CodeQualityFloor        = "quality_floor"
+	CodeSizeConflict        = "size_conflict"
 	CodeCacheOverflow       = "cache_overflow"
 	CodeArtifactMismatch    = "artifact_mismatch"
 	CodeConstraintViolation = "constraint_violation"
@@ -156,6 +158,21 @@ func (fs Faults) Recoverable() Faults {
 		if f.Recoverable {
 			out = append(out, f)
 		}
+	}
+	return out
+}
+
+// Dedupe keeps the first fault per (code, track, frame), preserving order.
+func (fs Faults) Dedupe() Faults {
+	seen := make(map[string]bool, len(fs))
+	out := make(Faults, 0, len(fs))
+	for _, f := range fs {
+		key := f.Code + "|" + strconv.Itoa(int(f.Track)) + "|" + strconv.FormatUint(uint64(f.Frame), 10)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, f)
 	}
 	return out
 }
