@@ -326,6 +326,10 @@ func (a *app) stageValue(name string, w *work) any {
 func (a *app) stagePartial(name string) bool {
 	for _, w := range a.work {
 		switch name {
+		case "ingest":
+			if w.Stream.Truncated {
+				return true
+			}
 		case "reorder":
 			if w.Reorder.ParseErrors > 0 {
 				return true
@@ -388,6 +392,8 @@ func (a *app) runIngest(ctx context.Context) error {
 		})
 }
 
+// ingestOne counts records for one stream. A truncation is reported as a
+// structured soft error and the stage continues; a limit or IO failure is hard.
 func (a *app) ingestOne(ctx context.Context, w *work) error {
 	w.Stream.Records = 0
 	w.Stream.RTPRecords = 0
@@ -417,6 +423,16 @@ func (a *app) ingestOne(ctx context.Context, w *work) error {
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return fmt.Errorf("%w: %v", stage.ErrBudgetExceeded, err)
+		}
+		if fault.Is(err, fault.ErrTruncated) {
+			// The stream ends inside a record. Everything before it was read;
+			// the exact offset is reported and the stage completes partially.
+			if off, ok := fault.OffsetOf(err); ok {
+				w.Stream.TruncatedOffset = off
+			}
+			w.Stream.Truncated = true
+			a.recordSoft(err)
+			return nil
 		}
 		return err
 	}
@@ -465,6 +481,9 @@ func (a *app) reorderOne(ctx context.Context, w *work) error {
 			break
 		}
 		if err != nil {
+			if fault.Is(err, fault.ErrTruncated) {
+				break // already recorded by the ingest stage
+			}
 			return err
 		}
 		if rec.Kind != ingest.KindRTP {
@@ -557,6 +576,9 @@ func (a *app) rtcpOne(ctx context.Context, w *work) error {
 			break
 		}
 		if err != nil {
+			if fault.Is(err, fault.ErrTruncated) {
+				break
+			}
 			return err
 		}
 		if rec.Kind != ingest.KindRTCP {
@@ -620,6 +642,9 @@ func (a *app) eventsOne(ctx context.Context, w *work) error {
 			break
 		}
 		if err != nil {
+			if fault.Is(err, fault.ErrTruncated) {
+				break
+			}
 			return err
 		}
 		if rec.Kind != ingest.KindEvent {
@@ -718,8 +743,14 @@ func (a *app) muxOne(ctx context.Context, w *work) error {
 		}
 	}
 	if len(packets) == 0 {
-		return fault.New(fault.StageMux, "write track",
+		// No usable media: report it at the damage location (the truncation
+		// offset when there is one). The stage still completes and is recorded
+		// as partial; nothing is published for this stream.
+		err := fault.At(fault.StageMux, "write track", w.Stream.TruncatedOffset,
 			fmt.Errorf("%w: no reconstructed packets for %s", fault.ErrCorrupt, w.Name))
+		a.recordSoft(err)
+		w.MuxMissing = true
+		return nil
 	}
 	path := a.ws.stagedPath(w.Name)
 	track, err := mp4.WriteTrack(path, packets, mp4.WriteOptions{})
@@ -750,6 +781,9 @@ func (a *app) runValidate(ctx context.Context) error {
 	}
 	a.mf.Artifacts = nil
 	for _, w := range a.work {
+		if w.Mux.Artifact == "" {
+			continue
+		}
 		a.mf.AddArtifact(w.Mux.Artifact, w.Mux.ArtifactSHA, w.Mux.Bytes)
 	}
 	a.mf.SortArtifacts()
@@ -766,6 +800,21 @@ func (a *app) runValidate(ctx context.Context) error {
 		a.repeatedManifestMismatch = true
 	}
 	for _, w := range a.work {
+		if _, statErr := os.Stat(a.ws.stagedPath(w.Name)); statErr != nil {
+			// The mux stage could not produce a track (for example a stream
+			// truncated before any media packet). Record the item with the
+			// damage location instead of failing the whole run.
+			out := validateOut{Passed: false, Failures: 1}
+			out.Items = append(out.Items, itemJSON{
+				Name: "artifact_present", Pass: false,
+				Detail: fmt.Sprintf("no artifact: damage at offset %d", w.Stream.TruncatedOffset),
+			})
+			w.Validate = out
+			if err := a.ws.saveStage("validate", w.Name, &w.Validate); err != nil {
+				return err
+			}
+			continue
+		}
 		rep, err := validate.Run(validate.Inputs{
 			ArtifactPath:        a.ws.stagedPath(w.Name),
 			Manifest:            a.mf,
@@ -824,6 +873,9 @@ func (a *app) runValidate(ctx context.Context) error {
 		return nil
 	}
 	for _, w := range a.work {
+		if w.MuxMissing {
+			continue // nothing was rendered for this stream
+		}
 		if err := a.ws.publish(w.Name); err != nil {
 			return err
 		}

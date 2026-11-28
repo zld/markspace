@@ -31,6 +31,8 @@ type work struct {
 	Validate validateOut
 
 	parseErrors int
+	// MuxMissing marks a stream for which no track could be rendered.
+	MuxMissing bool
 }
 
 // streamData is the ingest output.
@@ -46,6 +48,8 @@ type streamData struct {
 	RTCPRecords     int    `json:"rtcp_records"`
 	EventRecords    int    `json:"event_records"`
 	TruncatedOffset int64  `json:"truncated_offset"`
+	// Truncated marks a stream that ended inside a record.
+	Truncated bool `json:"truncated"`
 }
 
 type reorderOut struct {

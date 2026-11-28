@@ -97,6 +97,9 @@ func (r *report) finalizeInterrupted(a *app) {
 		sr.Jitter = w.RTCP.Jitter
 		sr.GapIntervals = len(w.Align.Intervals)
 		sr.OffsetErrors = w.Reorder.ParseErrors + w.RTCP.Errors
+		if w.Stream.Truncated {
+			sr.OffsetErrors++
+		}
 		sr.TruncatedAt = w.RTCP.TruncOffset
 		sr.ArtifactSHA = w.Mux.ArtifactSHA
 		sr.ManifestSHA = r.manifestSHA
@@ -128,7 +131,13 @@ func (r *report) finalize(a *app) {
 		sr.Jitter = w.RTCP.Jitter
 		sr.GapIntervals = len(w.Align.Intervals)
 		sr.OffsetErrors = w.Reorder.ParseErrors + w.RTCP.Errors
+		if w.Stream.Truncated {
+			sr.OffsetErrors++
+		}
 		sr.TruncatedAt = w.RTCP.TruncOffset
+		if sr.TruncatedAt < 0 && w.Stream.Truncated {
+			sr.TruncatedAt = w.Stream.TruncatedOffset
+		}
 		if sr.TruncatedAt < 0 && w.Reorder.FirstErrorOff >= 0 {
 			sr.TruncatedAt = w.Reorder.FirstErrorOff
 		}
@@ -159,8 +168,8 @@ func (a *app) thresholdItems(w *work) []itemJSON {
 			Detail: fmt.Sprintf("loss_rate=%.4f max=0.0200", w.Reorder.LossRate)},
 		{Name: "gap_threshold", Pass: len(w.Align.Intervals) == 0,
 			Detail: fmt.Sprintf("gap_intervals=%d", len(w.Align.Intervals))},
-		{Name: "structural_offsets", Pass: w.Reorder.ParseErrors+w.RTCP.Errors == 0,
-			Detail: fmt.Sprintf("offset_errors=%d", w.Reorder.ParseErrors+w.RTCP.Errors)},
+		{Name: "structural_offsets", Pass: w.Reorder.ParseErrors+w.RTCP.Errors == 0 && !w.Stream.Truncated,
+			Detail: fmt.Sprintf("offset_errors=%d truncated=%v", w.Reorder.ParseErrors+w.RTCP.Errors, w.Stream.Truncated)},
 	}
 }
 
