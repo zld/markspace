@@ -65,6 +65,9 @@ func TestAcceptanceFlow(t *testing.T) {
 	if rep["cache"] != "hit" || rep["index_rebuilt"] != false {
 		t.Fatalf("repeat should hit cache without rebuild, got cache=%v rebuilt=%v", rep["cache"], rep["index_rebuilt"])
 	}
+	if rep["report_sha256"] == "" || rep["report_sha256"] == nil {
+		t.Fatal("report must carry a self digest for reproducibility checks")
+	}
 }
 
 func TestUsageErrorsExitOne(t *testing.T) {
@@ -79,6 +82,85 @@ func TestUsageErrorsExitOne(t *testing.T) {
 		if code != 1 {
 			t.Fatalf("args %v exit = %d, want 1", args, code)
 		}
+	}
+}
+
+func TestRecoveryPathAcrossReplacementAndMetadata(t *testing.T) {
+	dir := t.TempDir()
+	if _, _, code := runCLI(t, "fixture", "--dir", dir); code != 0 {
+		t.Fatal("fixture failed")
+	}
+	swapped := func(from, to string) {
+		if _, errs, code := runCLI(t, "swap", "--from", filepath.Join(dir, from), "--to", filepath.Join(dir, to)); code != 0 {
+			t.Fatalf("swap %s: %s", from, errs)
+		}
+	}
+	runNormal := func(meta string) map[string]interface{} {
+		args := []string{"run", "--input", filepath.Join(dir, "normal.m3u8"),
+			"--target-bps", "800000", "--max-bps", "900000",
+			"--min-psnr", "35", "--budget-ms", "5000"}
+		if meta != "" {
+			args = append(args, "--metadata", meta)
+		}
+		out, errs, code := runCLI(t, args...)
+		if code != 0 {
+			t.Fatalf("run exit=%d stderr=%s", code, errs)
+		}
+		var rep map[string]interface{}
+		if err := json.Unmarshal([]byte(out), &rep); err != nil {
+			t.Fatal(err)
+		}
+		return rep
+	}
+
+	first := runNormal("")
+	if first["cache"] != "miss" || first["index_rebuilt"] != true {
+		t.Fatalf("normal: cache=%v rebuilt=%v", first["cache"], first["index_rebuilt"])
+	}
+
+	// Same path, new bytes: the index and cache must both be invalidated.
+	swapped("media/replace", "media/normal")
+	replaced := runNormal("")
+	if replaced["cache"] != "miss" || replaced["index_rebuilt"] != true {
+		t.Fatalf("replace: cache=%v rebuilt=%v", replaced["cache"], replaced["index_rebuilt"])
+	}
+	if replaced["input_digest"] == first["input_digest"] {
+		t.Fatal("replaced segment must change the input digest")
+	}
+
+	// Same paths, updated encapsulation metadata: also a rebuild and miss.
+	swapped("media/metadata", "media/normal")
+	updated := runNormal("")
+	if updated["cache"] != "miss" || updated["index_rebuilt"] != true {
+		t.Fatalf("metadata: cache=%v rebuilt=%v", updated["cache"], updated["index_rebuilt"])
+	}
+	if updated["input_digest"] == replaced["input_digest"] {
+		t.Fatal("metadata update must change the input digest")
+	}
+
+	// Unchanged repeat: no rebuild, cache hit, identical report digest.
+	repeat := runNormal("")
+	if repeat["cache"] != "hit" || repeat["index_rebuilt"] != false {
+		t.Fatalf("repeat: cache=%v rebuilt=%v", repeat["cache"], repeat["index_rebuilt"])
+	}
+	if repeat["report_sha256"] != updated["report_sha256"] {
+		t.Fatalf("repeat report digest differs: %v vs %v", repeat["report_sha256"], updated["report_sha256"])
+	}
+
+	// A metadata file outside the media bytes participates in the index too.
+	runNormal("metadata.json")
+	metaPath := filepath.Join(dir, "metadata.json")
+	raw, err := os.ReadFile(metaPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(metaPath, append(raw, []byte("{\"reencapsulated\":true}\n")...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	metaChanged := runNormal("metadata.json")
+	if metaChanged["index_rebuilt"] != true || metaChanged["cache"] != "miss" {
+		t.Fatalf("metadata file change must rebuild and miss, got rebuilt=%v cache=%v",
+			metaChanged["index_rebuilt"], metaChanged["cache"])
 	}
 }
 

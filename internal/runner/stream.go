@@ -139,7 +139,7 @@ func (r *Runner) Prepare(opts Options) (*Prepared, error) {
 		idx, lerr := scan.Load(opts.IndexPath)
 		switch {
 		case lerr == nil:
-			if !indexMatchesLive(idx, root, pl) {
+			if !indexMatchesLive(idx, root, pl, opts.Metadata) {
 				p.Rebuilt = true
 			} else {
 				old = idx
@@ -248,9 +248,24 @@ func validateContainers(root string, pl *manifest.Playlist) error {
 
 // indexMatchesLive checks every recorded file against its live digest without
 // hashing anything not in the index.
-func indexMatchesLive(idx *scan.Index, root string, pl *manifest.Playlist) bool {
+func indexMatchesLive(idx *scan.Index, root string, pl *manifest.Playlist, metadata []string) bool {
 	refs := scan.SegmentRefs(pl)
 	recorded := 0
+	// Every metadata file requested for this run must already be covered by
+	// the index; adding one changes what is scanned even if no media byte
+	// changed.
+	indexed := make(map[string]string)
+	for _, f := range idx.Files {
+		if f.Kind == scan.KindMetadata {
+			indexed[f.Path] = f.SHA256
+		}
+	}
+	for _, m := range metadata {
+		rel, err := scan.Resolve(root, m)
+		if err != nil || indexed[rel] == "" {
+			return false
+		}
+	}
 	for _, f := range idx.Files {
 		if f.Kind != scan.KindMedia && f.Kind != scan.KindInit {
 			continue

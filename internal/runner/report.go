@@ -43,6 +43,7 @@ type Report struct {
 	ConstraintsOK    bool     `json:"constraints_ok"`
 	Notes            []string `json:"notes,omitempty"`
 	ResumedFrom      int      `json:"resumed_from"`
+	ReportSHA256     string   `json:"report_sha256"`
 	RTPPackets       int      `json:"rtp_packets"`
 	RTPDisorder      int      `json:"rtp_disorder"`
 	RTPLost          int      `json:"rtp_lost"`
@@ -69,8 +70,13 @@ func (r *Report) Digest() string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
+// Seal fills the self digest so two runs over identical inputs and
+// configuration can be compared directly from their JSON output.
+func (r *Report) Seal() { r.ReportSHA256 = r.Digest() }
+
 // WriteJSON emits the report followed by a newline.
 func (r *Report) WriteJSON(w io.Writer) error {
+	r.Seal()
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	enc.SetEscapeHTML(false)
