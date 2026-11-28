@@ -446,22 +446,45 @@ func ProbeRTP(data []byte) (*RTPProbe, error) {
 // container and returns decoded luma frames when the codec is uncompressed.
 // A container that cannot be parsed is a hard, located error: damaged input
 // is never silently skipped.
-func SegmentSample(fullPath, uri string, maxLumaBytes int64) (quality.Sample, *media.FileProbe, error) {
-	probe, err := media.ProbeFile(fullPath, media.ProbeOptions{ExtractLuma: true, MaxLumaBytes: maxLumaBytes})
+func SegmentSample(fullPath, uri string, maxFrames int, maxLumaBytes int64) (quality.Sample, *media.FileProbe, error) {
+	// First pass: validate structure and learn the geometry without reading
+	// pixel data, so the luma budget can be sized to the actual plane.
+	probe, err := media.ProbeFile(fullPath, media.ProbeOptions{})
 	if err != nil {
-		var me *media.Error
-		if errorsAs(err, &me) {
-			return quality.Sample{}, nil, me.WithPath(uri)
-		}
-		return quality.Sample{}, nil, err
+		return quality.Sample{}, nil, locateProbeError(err, uri)
 	}
 	sample := quality.Sample{}
-	if v := probe.Video(); v != nil && v.EntryType == "raw " && len(probe.Luma) > 0 {
+	v := probe.Video()
+	if v == nil || v.EntryType != "raw " || v.Width <= 0 || v.Height <= 0 {
+		return sample, probe, nil
+	}
+	plane := int64(v.Width) * int64(v.Height)
+	if maxFrames <= 0 {
+		maxFrames = 1
+	}
+	budget := plane * int64(maxFrames)
+	if maxLumaBytes > 0 && budget > maxLumaBytes {
+		budget = maxLumaBytes
+	}
+	probe, err = media.ProbeFile(fullPath, media.ProbeOptions{ExtractLuma: true, MaxLumaBytes: budget})
+	if err != nil {
+		return quality.Sample{}, nil, locateProbeError(err, uri)
+	}
+	if len(probe.Luma) > 0 {
 		fpsNum, fpsDen := frameRate(v, probe)
 		sample.Spec = quality.VideoSpec{Width: v.Width, Height: v.Height, FPSNum: fpsNum, FPSDen: fpsDen}
 		sample.Frames = probe.Luma
 	}
 	return sample, probe, nil
+}
+
+// locateProbeError rewrites a media path error so it names the segment URI.
+func locateProbeError(err error, uri string) error {
+	var me *media.Error
+	if errorsAs(err, &me) {
+		return me.WithPath(uri)
+	}
+	return err
 }
 
 // frameRate derives an exact rational frame rate from the sample table, or

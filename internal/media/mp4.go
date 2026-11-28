@@ -666,7 +666,13 @@ func extractLuma(r io.ReadSeeker, t *Track, maxBytes int64, path string) ([][]by
 	frames := make([][]byte, 0, len(t.SampleOffsets))
 	for i, off := range t.SampleOffsets {
 		if total+plane > maxBytes {
-			return nil, New(StageParse, "mp4", "luma extraction exceeds %d byte limit", maxBytes).WithPath(path)
+			// The cap bounds memory and IO; it is not a content skip, so a
+			// partial but non-empty sample set is still a valid measurement
+			// input. Failing to fit even one frame is a real error.
+			if len(frames) == 0 {
+				return nil, New(StageParse, "mp4", "first luma frame needs %d bytes, limit is %d", plane, maxBytes).WithPath(path)
+			}
+			return frames, nil
 		}
 		buf := make([]byte, plane)
 		if _, err := r.Seek(off, io.SeekStart); err != nil {

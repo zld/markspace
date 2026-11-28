@@ -58,7 +58,7 @@ func (r *Runner) Run(opts Options, cancel CancelFunc) *Result {
 	if rerr != nil {
 		return res.fail(rerr, rep)
 	}
-	sample, firstProbe, err := SegmentSample(filepath.Join(root, filepath.FromSlash(rel0)), segs[0].URI, int64(maxSampleFrames)*64*64*4)
+	sample, firstProbe, err := SegmentSample(filepath.Join(root, filepath.FromSlash(rel0)), segs[0].URI, maxSampleFrames, 0)
 	if err != nil {
 		return res.fail(err, rep)
 	}
