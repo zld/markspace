@@ -106,12 +106,15 @@ type Result struct {
 	Fatal *media.Error
 }
 
-// Process runs the pipeline. mode selects whether existing checkpoint work is
-// reused: ModeRun keeps completed intervals, ModeFresh ignores them.
+// Mode selects how much durable state a run may reuse.
 type Mode int
 
 const (
+	// ModeRun reuses every completed interval in the checkpoint. It is what a
+	// plain rerun and a resume both use; the difference between them is only
+	// whether the previous run's output was sealed.
 	ModeRun Mode = iota
+	// ModeFresh ignores existing checkpoint state entirely.
 	ModeFresh
 )
 
@@ -199,7 +202,7 @@ func Process(opts Options, mode Mode) (*Result, error) {
 	if mode == ModeFresh {
 		cp.Tracks = nil
 	}
-	cp.ApplyDigests(digests)
+	invalidated := cp.ApplyDigests(digests)
 	cp.InputPath = opts.Input
 	cp.InputDigest = in.Digest
 	cp.InputSize = in.Size
@@ -231,7 +234,13 @@ func Process(opts Options, mode Mode) (*Result, error) {
 	stats.ReusedSegments += fpStats.reused()
 	stats.ComputedSegments += fpStats.computed
 
+	// Surface the checkpoint invalidation itself: a reader of the manifest
+	// should know that some results were recomputed rather than reused.
 	allErrs := append([]*media.Error(nil), in.Errors...)
+	for _, id := range invalidated {
+		allErrs = append(allErrs, media.Errorf(media.ClassInputChanged, media.StageCheckpoint, id, -1,
+			"track input changed; its indexes and downstream results were discarded"))
+	}
 	for _, tt := range tl.Tracks {
 		allErrs = append(allErrs, tt.Errors...)
 	}
@@ -286,6 +295,9 @@ func Process(opts Options, mode Mode) (*Result, error) {
 	if err := store.Save(cp); err != nil {
 		return nil, err
 	}
+	// Write the manifest, then record its published digest in the checkpoint.
+	// The document digest does not depend on the path, so recording it after
+	// the write keeps verify and the checkpoint in agreement.
 	if opts.OutputPath != "" {
 		if err := WriteManifest(opts.OutputPath, man); err != nil {
 			return nil, err

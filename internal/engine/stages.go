@@ -2,7 +2,6 @@ package engine
 
 import (
 	"sort"
-	"time"
 
 	"mediaregress/internal/checkpoint"
 	"mediaregress/internal/fingerprint"
@@ -17,14 +16,13 @@ import (
 // stageStats counts reuse for the CLI report. Reuse is counted once per
 // segment even when both its split result and its fingerprint are reused.
 type stageStats struct {
-	reusedIDs    map[string]bool
-	reuseByTrack map[string]int
-	computed     int
-	complete     bool
+	reusedIDs map[string]bool
+	computed  int
+	complete  bool
 }
 
 func newStageStats() stageStats {
-	return stageStats{reusedIDs: map[string]bool{}, reuseByTrack: map[string]int{}, complete: true}
+	return stageStats{reusedIDs: map[string]bool{}, complete: true}
 }
 
 func (s *stageStats) reuse(ids ...string) {
@@ -113,6 +111,26 @@ func produceSegments(opts Options, tl *timeline.Timeline, g *track.Graph, cp *ch
 	return all, stats, nil
 }
 
+// storedSegment returns the checkpointed segment matching the planned window,
+// if its interval is complete. The window and sample range must match exactly;
+// anything else would splice work from a different layout into this plan.
+func storedSegment(st *checkpoint.TrackState, planned split.Segment) (split.Segment, bool) {
+	for _, s := range st.Segments {
+		if s.ID != planned.ID {
+			continue
+		}
+		if s.Window != planned.Window || s.StartSample != planned.StartSample ||
+			s.EndSample != planned.EndSample || s.Track != planned.Track {
+			continue
+		}
+		if !st.Completed(s.Window.Start, s.Window.End) {
+			continue
+		}
+		return s, true
+	}
+	return split.Segment{}, false
+}
+
 func recordSegments(cp *checkpoint.State, id string, segs []split.Segment) error {
 	st := cp.Track(id)
 	if st == nil {
@@ -133,19 +151,25 @@ func recordSegments(cp *checkpoint.State, id string, segs []split.Segment) error
 	return nil
 }
 
-// produceSilence runs silence detection for audio tracks, reusing stored
-// ranges when the whole track's silence stage already completed.
+// produceSilence runs silence detection for audio tracks whose stored result
+// cannot be reused. A track is decided exactly once: either its stored ranges
+// are reused or detection runs for it, never both.
 func produceSilence(opts Options, tl *timeline.Timeline, segs []split.Segment, g *track.Graph, cp *checkpoint.State, mode Mode) ([]silence.Result, []*media.Error, error) {
 	var results []silence.Result
 	var errs []*media.Error
-	needDetect := false
+	var pending []*timeline.TrackTimeline
 	for _, tt := range tl.Tracks {
 		if tt.Kind != track.KindAudio {
 			continue
 		}
-		item := track.Item{Track: tt.TrackID, Node: track.NodeSilence}
+		// Downstream work is only meaningful once this track's timeline and
+		// segmentation completed; otherwise the graph already skipped it.
+		if g.State(track.Item{Track: tt.TrackID, Node: track.NodeSplit}) != track.StateCompleted {
+			continue
+		}
 		stored := cp.Track(tt.TrackID)
 		if mode == ModeRun && stored != nil && stored.HasStage(media.StageSilence) {
+			item := track.Item{Track: tt.TrackID, Node: track.NodeSilence}
 			if err := g.Begin(item); err != nil {
 				return nil, nil, err
 			}
@@ -158,9 +182,15 @@ func produceSilence(opts Options, tl *timeline.Timeline, segs []split.Segment, g
 			})
 			continue
 		}
-		needDetect = true
+		pending = append(pending, tt)
 	}
-	if !needDetect {
+	if len(pending) == 0 {
+		sort.Slice(results, func(i, j int) bool { return results[i].Track < results[j].Track })
+		return results, nil, nil
+	}
+	// Detection reads the file once and reports every audio track; results for
+	// tracks still pending are consumed below, stored ones are discarded.
+	if len(pending) == 0 {
 		sort.Slice(results, func(i, j int) bool { return results[i].Track < results[j].Track })
 		return results, nil, nil
 	}
@@ -173,10 +203,7 @@ func produceSilence(opts Options, tl *timeline.Timeline, segs []split.Segment, g
 	for _, r := range detected {
 		byTrack[r.Track] = r
 	}
-	for _, tt := range tl.Tracks {
-		if tt.Kind != track.KindAudio {
-			continue
-		}
+	for _, tt := range pending {
 		r, ok := byTrack[tt.TrackID]
 		if !ok {
 			continue
@@ -203,6 +230,7 @@ func produceSilence(opts Options, tl *timeline.Timeline, segs []split.Segment, g
 // resumed run agrees with an uninterrupted one.
 func produceFingerprints(opts Options, tl *timeline.Timeline, segs []split.Segment, g *track.Graph, cp *checkpoint.State, mode Mode, store *checkpoint.Store) ([]fingerprint.Result, []*media.Error, stageStats, error) {
 	stats := newStageStats()
+	var errs []*media.Error
 	storedByID := map[string]fingerprint.Result{}
 	if mode == ModeRun {
 		// Any durable per-segment result can be reused, even when the track's
@@ -225,7 +253,6 @@ func produceFingerprints(opts Options, tl *timeline.Timeline, segs []split.Segme
 	for _, s := range segs {
 		if _, ok := storedByID[s.ID]; ok {
 			stats.reuse(s.ID)
-			stats.reuseByTrack[s.Track]++
 			continue
 		}
 		pending = append(pending, s)
@@ -240,10 +267,11 @@ func produceFingerprints(opts Options, tl *timeline.Timeline, segs []split.Segme
 		}
 	}
 	if len(pending) > 0 {
-		fresh, errs, err := fingerprint.Compute(opts.Input, tl, pending, opts.MinCompare)
+		fresh, computeErrs, err := fingerprint.Compute(opts.Input, tl, pending, opts.MinCompare)
 		if err != nil {
 			return nil, nil, stats, err
 		}
+		errs = append(errs, computeErrs...)
 		results = append(results, fresh...)
 		// Record fresh results per track, one durable step per segment so an
 		// interruption loses at most the segment in flight.
@@ -269,11 +297,9 @@ func produceFingerprints(opts Options, tl *timeline.Timeline, segs []split.Segme
 					-1, "simulated interruption after %d fingerprinted segments", computed)
 			}
 		}
-		_ = errs
 	}
 	// All fingerprint nodes complete only when every segment for the track
-	// has a comparable result.
-	allErrs := []*media.Error{}
+	// has a readable result.
 	byTrackSeg := map[string]int{}
 	for _, s := range segs {
 		byTrackSeg[s.Track]++
@@ -286,6 +312,11 @@ func produceFingerprints(opts Options, tl *timeline.Timeline, segs []split.Segme
 	}
 	for _, tt := range tl.Tracks {
 		item := track.Item{Track: tt.TrackID, Node: track.NodeFingerprint}
+		if g.State(track.Item{Track: tt.TrackID, Node: track.NodeSplit}) != track.StateCompleted {
+			// Segmentation failed for this track; its lane is already skipped.
+			stats.complete = false
+			continue
+		}
 		if byTrackSeg[tt.TrackID] != byTrackRes[tt.TrackID] {
 			stats.complete = false
 			if g.Ready(item) == nil {
@@ -308,7 +339,7 @@ func produceFingerprints(opts Options, tl *timeline.Timeline, segs []split.Segme
 	// Recompute duplicate flags and ordering over the complete set.
 	fingerprint.RecomputeDuplicates(results)
 	sort.Slice(results, func(i, j int) bool { return results[i].SegmentID < results[j].SegmentID })
-	return results, allErrs, stats, nil
+	return results, errs, stats, nil
 }
 
 func mergeFingerprints(existing, added []fingerprint.Result) []fingerprint.Result {
@@ -359,7 +390,3 @@ func buildProvenance(m *Manifest, in *track.Input, opts Options, stats Stats) (*
 	}
 	return rec, nil
 }
-
-// elapsedMillis converts a duration to whole milliseconds without losing the
-// distinction between "fast" and "instant".
-func elapsedMillis(d time.Duration) int64 { return d.Milliseconds() }

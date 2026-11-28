@@ -235,7 +235,7 @@ func (g *Graph) PendingTracks() map[string][]Node {
 }
 
 // BuildTrackLanes wires the standard per-track pipeline for every accepted
-// track, plus the global blocking nodes. It returns an error when the set of
+// track. It returns an error when the set of
 // tracks is empty so callers cannot silently run downstream stages on nothing.
 func BuildTrackLanes(tracks []*Track) (*Graph, error) {
 	g := NewGraph()
