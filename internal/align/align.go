@@ -57,9 +57,11 @@ type Config struct {
 	// MediaOrigin is subtracted from packet timestamps so media time starts at
 	// zero. It is the first emitted packet's unwrapped timestamp.
 	MediaOrigin clock.Tick
+	// CaptureOrigin is used when MediaOrigin is unset, for callers that know
+	// the sender's initial timestamp without holding the packets.
+	CaptureOrigin clock.Tick
 	// ThresholdTicks overrides the stall threshold; 0 uses ThresholdTicks.
 	ThresholdTicks clock.Tick
-	// Window of the reorderer is not used here; packets are already ordered.
 }
 
 // Result is the alignment output.
@@ -79,8 +81,14 @@ func Run(packets []rtp.Packet, log *events.Log, cfg Config) (*Result, error) {
 	if threshold <= 0 {
 		threshold = ThresholdTicks
 	}
+	// Packet time is rebased to media zero so relative event offsets and packet
+	// times share one origin. An explicit origin wins; otherwise the first
+	// packet defines it, matching the unwrapped sender timeline.
 	origin := cfg.MediaOrigin
-	if origin == 0 && len(packets) > 0 {
+	if origin == 0 {
+		origin = cfg.CaptureOrigin
+	}
+	if len(packets) > 0 && origin == 0 {
 		origin = packets[0].TS
 	}
 	packets = rebase(packets, origin)
