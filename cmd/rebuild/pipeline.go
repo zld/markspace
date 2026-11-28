@@ -663,6 +663,7 @@ func (a *app) alignOne(ctx context.Context, w *work) error {
 	}
 	log := w.EventLog
 	res, err := align.Run(packets, &log, align.Config{
+		MediaOrigin:        mediaOrigin(w),
 		CaptureStartMillis: w.Stream.StartUnixNano / 1_000_000,
 		HasCaptureStart:    w.Stream.StartUnixNano != 0,
 	})
@@ -865,6 +866,16 @@ func (a *app) publishManifest() error {
 		return fault.New(fault.StageManifest, "publish manifest", err)
 	}
 	return nil
+}
+
+// mediaOrigin is the unwrapped timestamp of the first reconstructed packet. It
+// is recoverable from the persisted packet list, so a resumed run uses exactly
+// the same origin as the original run.
+func mediaOrigin(w *work) clock.Tick {
+	if len(w.Reorder.Packets) == 0 {
+		return 0
+	}
+	return clock.Tick(w.Reorder.Packets[0].TS)
 }
 
 func (a *app) totalInt(fn func(*work) int) int {

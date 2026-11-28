@@ -54,6 +54,9 @@ type Config struct {
 	// distinguishes "unknown" from a legitimate zero.
 	CaptureStartMillis int64
 	HasCaptureStart    bool
+	// MediaOrigin is subtracted from packet timestamps so media time starts at
+	// zero. It is the first emitted packet's unwrapped timestamp.
+	MediaOrigin clock.Tick
 	// ThresholdTicks overrides the stall threshold; 0 uses ThresholdTicks.
 	ThresholdTicks clock.Tick
 	// Window of the reorderer is not used here; packets are already ordered.
@@ -76,6 +79,11 @@ func Run(packets []rtp.Packet, log *events.Log, cfg Config) (*Result, error) {
 	if threshold <= 0 {
 		threshold = ThresholdTicks
 	}
+	origin := cfg.MediaOrigin
+	if origin == 0 && len(packets) > 0 {
+		origin = packets[0].TS
+	}
+	packets = rebase(packets, origin)
 	res := &Result{Threshold: threshold, ClockOffsetKnown: cfg.HasCaptureStart}
 
 	for _, ev := range log.Events {
@@ -134,6 +142,24 @@ func place(ev events.Event, cfg Config) (Event, error) {
 	out.Record.MediaTime = out.Media
 	out.Record.Reason = ""
 	return out, nil
+}
+
+// rebase returns packets with timestamps relative to origin. Packets whose
+// timestamp is suspect keep their (meaningless) value but stay excluded from
+// interval analysis.
+func rebase(packets []rtp.Packet, origin clock.Tick) []rtp.Packet {
+	if origin == 0 || len(packets) == 0 {
+		return packets
+	}
+	out := make([]rtp.Packet, len(packets))
+	copy(out, packets)
+	for i := range out {
+		if out[i].TSSuspect {
+			continue
+		}
+		out[i].TS -= origin
+	}
+	return out
 }
 
 // ErrUnknownOffset marks events that cannot be tied to the media clock because

@@ -55,6 +55,9 @@ type Event struct {
 	Alignable bool
 	// Reason explains why an event is not alignable.
 	Reason string
+	// Err is the structured parse failure for an unalignable event, nil when
+	// the event parsed. It lets reports classify the reason.
+	Err error
 }
 
 // Log is the parsed event log.
@@ -131,6 +134,7 @@ func parseLine(raw string, line int) Event {
 		tick, err := parseRelative(tsStr[1:])
 		if err != nil {
 			ev.Reason = err.Error()
+			ev.Err = err
 			return ev
 		}
 		ev.Relative = tick
@@ -139,6 +143,7 @@ func parseLine(raw string, line int) Event {
 		ms, err := parseWall(tsStr)
 		if err != nil {
 			ev.Reason = err.Error()
+			ev.Err = err
 			return ev
 		}
 		ev.WallMillis = ms

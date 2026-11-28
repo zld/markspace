@@ -37,25 +37,28 @@ type report struct {
 
 // streamReport is one stream's printed block.
 type streamReport struct {
-	Name           string
-	Packets        int
-	Unique         int
-	Duplicates     int
-	Loss           int
-	LossRate       float64
-	Jitter         float64
-	GapIntervals   int
-	OffsetErrors   int
-	TruncatedAt    int64
-	PeakBuffer     int64
-	ArtifactSHA    string
-	ManifestSHA    string
-	ResumeStage    string
-	Items          []itemJSON
-	ExpectedFault  bool
-	ElapsedMS      int64
-	BudgetDeltaMS  int64
-	PacketsPending int64
+	Name            string
+	Packets         int
+	Unique          int
+	Duplicates      int
+	Loss            int
+	LossRate        float64
+	Jitter          float64
+	GapIntervals    int
+	OffsetErrors    int
+	TruncatedAt     int64
+	PeakBuffer      int64
+	Intervals       []intervalJSON
+	UnalignableList []alignEventJSON
+	ClockKnown      bool
+	ArtifactSHA     string
+	ManifestSHA     string
+	ResumeStage     string
+	Items           []itemJSON
+	ExpectedFault   bool
+	ElapsedMS       int64
+	BudgetDeltaMS   int64
+	PacketsPending  int64
 }
 
 func newReport(cfg *Config, start time.Time, works []*work) *report {
@@ -101,6 +104,8 @@ func (r *report) finalizeInterrupted(a *app) {
 		sr.ElapsedMS = r.elapsedMS
 		sr.BudgetDeltaMS = r.budgetDelta
 		sr.PeakBuffer = int64(w.Reorder.PeakPending)
+		sr.Intervals = w.Align.Intervals
+		sr.ClockKnown = w.Stream.StartUnixNano != 0
 	}
 }
 
@@ -135,6 +140,13 @@ func (r *report) finalize(a *app) {
 		sr.Items = append(sr.Items, w.Validate.Items...)
 		sr.Items = append(sr.Items, a.thresholdItems(w)...)
 		sr.PeakBuffer = int64(w.Reorder.PeakPending)
+		sr.Intervals = w.Align.Intervals
+		sr.ClockKnown = w.Stream.StartUnixNano != 0
+		for _, e := range w.Align.Events {
+			if !e.Alignable {
+				sr.UnalignableList = append(sr.UnalignableList, e)
+			}
+		}
 	}
 	r.passed = r.computeVerdict(a)
 	r.items = r.allItems()
@@ -201,6 +213,11 @@ func isExpectedFaultItem(it itemJSON) bool {
 }
 
 // exitCode maps the report to the documented exit codes.
+//
+// Precedence: a completed run that carries locatable corruption (a reported
+// input offset) exits 3, because a partial but usable trajectory was produced
+// and every damaged item can be pointed at. A run whose artifacts were
+// withheld or whose thresholds failed without a locatable cause exits 1.
 func (r *report) exitCode() int {
 	if r.hardErr != nil {
 		return exitParam
@@ -209,23 +226,20 @@ func (r *report) exitCode() int {
 		// An intentional interruption is not a threshold failure.
 		return exitOK
 	}
-	if a := r.app; a != nil && a.repeatedManifestMismatch {
+	if a := r.app; a != nil && (a.repeatedManifestMismatch || a.unpublished) {
 		return exitFail
 	}
 	if r.passed {
 		return exitOK
 	}
-	// Stream mode with locatable corruption that still produced a track exits 3.
-	if !r.cfg.SelfTest {
-		locatable := false
-		for _, s := range r.streams {
-			if s.OffsetErrors > 0 && s.ArtifactSHA != "" {
-				locatable = true
-			}
+	locatable := false
+	for _, s := range r.streams {
+		if s.OffsetErrors > 0 && s.ArtifactSHA != "" {
+			locatable = true
 		}
-		if locatable {
-			return exitPartial
-		}
+	}
+	if locatable {
+		return exitPartial
 	}
 	return exitFail
 }
@@ -261,6 +275,24 @@ func (r *report) print(w io.Writer) {
 		r.elapsedMS, r.cfg.BudgetMS, r.budgetDelta)
 	fmt.Fprintf(w, "manifest_sha256=%s\n", orDash(r.manifestSHA))
 	fmt.Fprintf(w, "resume_stage=%s\n", orDash(r.resumeStage))
+	fmt.Fprintf(w, "clock_offset=%s\n", r.clockOffsetLabel())
+	fmt.Fprintf(w, "unalignable_events=%d\n", r.unalignableEvents())
+
+	for _, s := range r.streams {
+		if len(s.Intervals) > 0 {
+			for _, iv := range s.Intervals {
+				fmt.Fprintf(w, "interval stream=%s start_seq=%d end_seq=%d start_ms=%d end_ms=%d gap_ticks=%d events=%d\n",
+					s.Name, iv.StartSeq, iv.EndSeq, int64(iv.StartTime)/90, int64(iv.EndTime)/90,
+					iv.Gap, len(iv.Events))
+			}
+			continue
+		}
+	}
+	for _, s := range r.streams {
+		for _, e := range s.UnalignableList {
+			fmt.Fprintf(w, "unalignable stream=%s line=%d kind=%s reason=%s\n", s.Name, e.Line, e.Kind, e.Reason)
+		}
+	}
 
 	items := append([]itemJSON(nil), r.items...)
 	sort.SliceStable(items, func(i, j int) bool { return items[i].Name < items[j].Name })
@@ -295,6 +327,25 @@ func (r *report) peakBuffer() int64 {
 		}
 	}
 	return peak
+}
+
+// unalignableEvents counts events that could not be placed on the timeline.
+func (r *report) unalignableEvents() int {
+	n := 0
+	for _, s := range r.streams {
+		n += len(s.UnalignableList)
+	}
+	return n
+}
+
+// clockOffsetLabel states whether the media clock could be tied to wall time.
+func (r *report) clockOffsetLabel() string {
+	for _, s := range r.streams {
+		if !s.ClockKnown {
+			return "unknown"
+		}
+	}
+	return "known"
 }
 
 func orDash(s string) string {

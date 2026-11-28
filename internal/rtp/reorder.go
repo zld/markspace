@@ -79,6 +79,10 @@ type Result struct {
 	// PeakPendingBytes is the high-water mark of buffered reorder state,
 	// estimated as fixed bookkeeping per pending packet.
 	PeakPendingBytes int
+	// FirstTS is the unwrapped timestamp of the first emitted packet. Media
+	// time zero is defined as this value, so the timeline starts at zero
+	// regardless of the sender's arbitrary RTP timestamp offset.
+	FirstTS clock.Tick
 }
 
 // LossesTotal returns the number of missing packets.
@@ -330,6 +334,9 @@ func (r *Reorderer) emit(p Packet) {
 		})
 	}
 	p.TS = ts
+	if len(r.result.Packets) == 0 {
+		r.result.FirstTS = ts
+	}
 	r.result.Packets = append(r.result.Packets, p)
 	r.emitted = p.ExtSeq + 1
 }
