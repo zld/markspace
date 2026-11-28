@@ -166,6 +166,7 @@ type workspace struct {
 	StatePath string
 	StageDir  string
 	StageOut  string
+	InputDir  string
 }
 
 func newWorkspace(dir string) (*workspace, error) {
@@ -174,6 +175,7 @@ func newWorkspace(dir string) (*workspace, error) {
 		StatePath: filepath.Join(dir, "state.json"),
 		StageDir:  filepath.Join(dir, "stages"),
 		StageOut:  filepath.Join(dir, "staging"),
+		InputDir:  filepath.Join(dir, "input"),
 	}
 	if err := os.MkdirAll(ws.StageDir, 0o755); err != nil {
 		return nil, fault.New(fault.StageIngest, "create workspace", err)
