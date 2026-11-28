@@ -124,11 +124,15 @@ func (m *Manifest) SortArtifacts() {
 	sort.SliceStable(m.Artifacts, func(i, j int) bool { return m.Artifacts[i].Name < m.Artifacts[j].Name })
 }
 
-// ComputeResumeStage sets ResumeStage to the first non-complete stage, or
-// "complete" when every stage is done.
+// ComputeResumeStage sets ResumeStage to the first stage that did not finish,
+// or "complete" when every stage finished.
+//
+// A partial stage did finish its work while recording recoverable damage, so it
+// counts as finished for resume purposes; replaying it would not change its
+// output.
 func (m *Manifest) ComputeResumeStage() {
 	for _, s := range m.Stages {
-		if s.Status != StatusDone {
+		if s.Status != StatusDone && s.Status != StatusPartial && s.Status != StatusSkipped {
 			m.ResumeStage = s.Stage
 			return
 		}

@@ -179,6 +179,9 @@ type Inputs struct {
 	Manifest *manifest.Manifest
 	// ExpectedManifestSHA is the deterministic digest the manifest must have.
 	ExpectedManifestSHA string
+	// PreviousManifestSHA is the digest of a manifest published by an earlier
+	// run with the same inputs; empty on a first run.
+	PreviousManifestSHA string
 	// ExpectedArtifactSHA is the digest of the artifact bytes.
 	ExpectedArtifactSHA string
 	// ExpectedSamples is the number of reconstructed packets.
@@ -235,6 +238,13 @@ func Run(in Inputs) (*Report, error) {
 		rep.Add("manifest_hash", false, err.Error())
 	} else {
 		rep.Add("manifest_hash", computed == in.ExpectedManifestSHA, computed)
+		detail := "no previous manifest"
+		pass := true
+		if in.PreviousManifestSHA != "" {
+			pass = in.PreviousManifestSHA == computed
+			detail = fmt.Sprintf("previous=%s current=%s", in.PreviousManifestSHA, computed)
+		}
+		rep.Add("manifest_repeatable", pass, detail)
 	}
 
 	rep.Add("memory_ceiling",
