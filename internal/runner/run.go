@@ -159,7 +159,8 @@ func (r *Runner) Run(opts Options, cancel CancelFunc) *Result {
 	rep.ResumedFrom = resumedFrom
 
 	// Stream every adopted segment, verifying bytes and digests.
-	outcomes, inBytes, serr := r.streamSegments(opts, prep, segs, adopted, plan.Config, cancel)
+	outcomes, inBytes, maxDriftNs, serr := r.streamSegments(opts, prep, segs, adopted, cancel)
+	res.StreamDriftNs = maxDriftNs
 	rep.SegmentsDone = len(outcomes)
 	if resumedFrom > 0 {
 		rep.SegmentsDone += resumedFrom
@@ -196,15 +197,15 @@ func (r *Runner) Run(opts Options, cancel CancelFunc) *Result {
 	// Measure output on the measured sample: real encoded bytes and real SSE.
 	outBytes, outPSNR, psnrKnown := measureOutput(sample, plan.Config)
 	rep.BytesOut = outBytes
+	// Playlist drift is the worst observed timing disagreement across every
+	// streamed segment, not just the sampled one.
+	rep.PlaylistDriftMS = quality.DriftMS(maxDriftNs, 0)
+	if rep.PlaylistDriftMS > 1.0 {
+		rep.ConstraintsOK = false
+		rep.Unmet = append(rep.Unmet, fmt.Sprintf("playlist_drift_ms: %.3f exceeds 1 ms", rep.PlaylistDriftMS))
+		rep.Status = "constraint_violation"
+	}
 	if sample.Measurable() && firstProbe != nil {
-		if firstProbe.DurationNanos() > 0 {
-			drift := quality.DriftMS(firstProbe.DurationNanos(), segs[0].DurationNs)
-			rep.PlaylistDriftMS = drift
-			if drift > 1.0 {
-				rep.ConstraintsOK = false
-				rep.Unmet = append(rep.Unmet, fmt.Sprintf("playlist_drift_ms: %.3f exceeds 1 ms", drift))
-			}
-		}
 		// Actual bitrate comes from encoded bytes and the source's exact
 		// frame clock.
 		if sample.Spec.FPSNum > 0 && len(sample.Frames) > 0 {

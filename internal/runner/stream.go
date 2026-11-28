@@ -53,7 +53,10 @@ type Result struct {
 	CacheState   CacheState
 	IndexRebuilt bool
 	IndexDigest  string
-	Error        error
+	// StreamDriftNs is the largest difference between container timing and
+	// the playlist timeline observed while streaming segments.
+	StreamDriftNs int64
+	Error         error
 }
 
 // CancelFunc is checked between segments; returning true stops the run at a
@@ -337,45 +340,43 @@ func segmentRefsFor(pl *manifest.Playlist) ([]manifest.Segment, error) {
 
 // streamSegments reads each adopted segment exactly once, verifies its length
 // and content digest, tracks timing and produces per-segment outcomes.
-func (r *Runner) streamSegments(opts Options, prep *Prepared, segs []manifest.Segment, adopted []int, cfg quality.Config, cancel CancelFunc) ([]SegmentOutcome, int64, error) {
-	root := opts.InputRoot
-	if root == "" {
-		root = scan.RootOf(opts.InputPath)
-	}
-	sem := make(chan struct{}, 2)
+func (r *Runner) streamSegments(opts Options, prep *Prepared, segs []manifest.Segment, adopted []int, cancel CancelFunc) ([]SegmentOutcome, int64, int64, error) {
+	root := rootOf(opts)
 	outcomes := make([]SegmentOutcome, 0, len(adopted))
+	var maxDriftNs int64
 	var inBytes int64
 	for _, i := range adopted {
 		if cancel != nil && cancel() {
-			return outcomes, inBytes, media.New(media.StageExecute, "stream", "cancelled before segment %d", i).WithSegment(i)
+			return outcomes, inBytes, maxDriftNs, media.New(media.StageExecute, "stream", "cancelled before segment %d", i).WithSegment(i)
 		}
 		seg := segs[i]
 		rel, err := scan.Resolve(root, seg.URI)
 		if err != nil {
-			return outcomes, inBytes, media.Wrap(media.StageExecute, "stream", err, "segment %d", i).WithSegment(i).WithPath(seg.URI)
+			return outcomes, inBytes, maxDriftNs, media.Wrap(media.StageExecute, "stream", err, "segment %d", i).WithSegment(i).WithPath(seg.URI)
 		}
 		entry, ok := prep.Index.SegmentDigest(rel, seg.URI)
 		if !ok {
-			return outcomes, inBytes, media.New(media.StageExecute, "stream", "segment %d is not covered by the index", i).
+			return outcomes, inBytes, maxDriftNs, media.New(media.StageExecute, "stream", "segment %d is not covered by the index", i).
 				WithPath(seg.URI).WithSegment(i)
 		}
 		full := filepath.Join(root, filepath.FromSlash(rel))
-		oc, err := r.streamOne(full, seg.URI, entry, seg, cfg, sem)
+		oc, drift, err := r.streamOne(full, rel, seg.URI, entry, seg)
 		if err != nil {
-			return outcomes, inBytes, err
+			return outcomes, inBytes, maxDriftNs, err
+		}
+		if drift > maxDriftNs {
+			maxDriftNs = drift
 		}
 		inBytes += oc.Bytes
 		outcomes = append(outcomes, oc)
 	}
-	return outcomes, inBytes, nil
+	return outcomes, inBytes, maxDriftNs, nil
 }
 
-func (r *Runner) streamOne(full, uri string, entry scan.FileEntry, seg manifest.Segment, cfg quality.Config, sem chan struct{}) (SegmentOutcome, error) {
-	sem <- struct{}{}
-	defer func() { <-sem }()
+func (r *Runner) streamOne(full, rel, uri string, entry scan.FileEntry, seg manifest.Segment) (SegmentOutcome, int64, error) {
 	f, err := os.Open(full)
 	if err != nil {
-		return SegmentOutcome{}, media.Wrap(media.StageExecute, "stream", err, "cannot open segment").
+		return SegmentOutcome{}, 0, media.Wrap(media.StageExecute, "stream", err, "cannot open segment").
 			WithPath(uri).WithSegment(seg.Index)
 	}
 	defer f.Close()
@@ -392,23 +393,42 @@ func (r *Runner) streamOne(full, uri string, entry scan.FileEntry, seg manifest.
 			break
 		}
 		if rerr != nil {
-			return SegmentOutcome{}, media.Wrap(media.StageExecute, "stream", rerr, "read failed at offset %d", n).
+			return SegmentOutcome{}, 0, media.Wrap(media.StageExecute, "stream", rerr, "read failed at offset %d", n).
 				WithPath(uri).WithOffset(n).WithSegment(seg.Index)
 		}
 	}
 	got := hex.EncodeToString(h.Sum(nil))
 	if got != entry.SHA256 {
-		return SegmentOutcome{}, media.New(media.StageExecute, "stream", "segment content changed during run (digest %s, index %s)", got, entry.SHA256).
+		return SegmentOutcome{}, 0, media.New(media.StageExecute, "stream", "segment content changed during run (digest %s, index %s)", got, entry.SHA256).
 			WithPath(uri).WithSegment(seg.Index)
 	}
 	if n != entry.Bytes {
-		return SegmentOutcome{}, media.New(media.StageExecute, "stream", "segment is %d bytes, index recorded %d", n, entry.Bytes).
+		return SegmentOutcome{}, 0, media.New(media.StageExecute, "stream", "segment is %d bytes, index recorded %d", n, entry.Bytes).
 			WithPath(uri).WithSegment(seg.Index)
 	}
-	if err := media.CheckDrift(seg.DurationNs, seg.DurationNs, "segment", seg.Index); err != nil {
-		return SegmentOutcome{}, err
+	// Verify the container's own timing against the playlist timeline for
+	// ISO BMFF segments. A mismatch beyond the 1 ms budget means the index
+	// and the media disagree, which must stop the run at this segment.
+	var drift int64
+	if media.LooksLikeMP4(rel) {
+		probe, perr := media.ProbeFile(full, media.ProbeOptions{})
+		if perr != nil {
+			return SegmentOutcome{}, 0, perr
+		}
+		observed := probe.DurationNanos()
+		if observed > 0 {
+			drift = observed - seg.DurationNs
+			if drift < 0 {
+				drift = -drift
+			}
+			if drift > media.MaxBoundaryDrift {
+				return SegmentOutcome{}, 0, media.New(media.StageExecute, "timing",
+					"container duration %dns differs from playlist %dns by %dns", observed, seg.DurationNs, drift).
+					WithPath(uri).WithSegment(seg.Index)
+			}
+		}
 	}
-	return SegmentOutcome{Index: seg.Index, Rel: uri, SHA256: got, Bytes: n}, nil
+	return SegmentOutcome{Index: seg.Index, Rel: uri, SHA256: got, Bytes: n}, drift, nil
 }
 
 // RTPProbe summarises a packet stream and checks sequence continuity. The

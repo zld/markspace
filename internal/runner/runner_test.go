@@ -276,6 +276,44 @@ func TestReportJSONShape(t *testing.T) {
 	}
 }
 
+func TestSegmentTimingMismatchStopsRun(t *testing.T) {
+	dir, opts := setup(t)
+	// Rewrite one segment's playlist duration so the container timing no
+	// longer agrees with the timeline beyond the 1 ms budget.
+	body := mustRead(t, opts.InputPath)
+	broken := strings.Replace(string(body), "#EXTINF:1.000,\nmedia/normal/normal-0002.m4s", "#EXTINF:1.500,\nmedia/normal/normal-0002.m4s", 1)
+	if broken == string(body) {
+		t.Fatal("fixture manifest shape changed")
+	}
+	if err := os.WriteFile(opts.InputPath, []byte(broken), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := &Runner{Cache: &Cache{Dir: opts.CacheDir}}
+	res := r.Run(opts, nil)
+	if res.Error == nil {
+		t.Fatal("timing disagreement must stop the run")
+	}
+	if res.Report.FailedStage != "execute" {
+		t.Fatalf("failed stage = %s", res.Report.FailedStage)
+	}
+	if !strings.Contains(res.Error.Error(), "segment 2") {
+		t.Fatalf("error should identify the segment: %v", res.Error)
+	}
+	if res.Report.SegmentsDone != 2 {
+		t.Fatalf("completed = %d, want 2", res.Report.SegmentsDone)
+	}
+	_ = dir
+}
+
+func mustRead(t *testing.T, path string) []byte {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
 func TestRunDASHAndMasterPlaylists(t *testing.T) {
 	dir, opts := setup(t)
 	r := &Runner{Cache: &Cache{Dir: opts.CacheDir}}

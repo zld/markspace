@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/abema/go-mp4"
 )
@@ -693,6 +695,16 @@ func PlaneSizeHint(samples int, bytes int64) int64 {
 		return 0
 	}
 	return bytes / int64(samples)
+}
+
+// LooksLikeMP4 reports whether a path names an ISO BMFF container by its
+// extension.
+func LooksLikeMP4(rel string) bool {
+	switch strings.ToLower(strings.TrimPrefix(filepath.Ext(rel), ".")) {
+	case "m4s", "mp4", "m4v", "m4a", "cmaf", "mov":
+		return true
+	}
+	return false
 }
 
 // Name returns the canonical fixture segment file name for an index, using
