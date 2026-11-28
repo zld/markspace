@@ -294,3 +294,57 @@ func TestNoFloatingDriftAcrossManySegments(t *testing.T) {
 		t.Fatalf("end = %v, want exactly 1s", mapped[0].End())
 	}
 }
+
+func TestCellsAreSlicedPerSplitPiece(t *testing.T) {
+	// A 4-cell published range is split by an empty edit into [0,2) and
+	// [2,4). Each piece must carry only its own two cells.
+	tr := Track{
+		Asset: "a", Version: "v", TrackID: "1", Timescale: 1_000,
+		Edits: EditList{
+			{MediaTime: 0, DurationTicks: 200, Rate: mustRate(t, 1, 1)},
+			{MediaTime: -1, DurationTicks: 100, Rate: mustRate(t, 1, 1)},
+			{MediaTime: 200, DurationTicks: 200, Rate: mustRate(t, 1, 1)},
+		},
+		Segments: []Segment{{
+			StartTicks: 0, DurationTicks: 400, Summary: "whole",
+			Cells:    []string{"c0", "c1", "c2", "c3"},
+			CellSize: 100 * model.Nanos(1_000_000),
+		}},
+	}
+	mapped, err := MapVersion("a", "v", []Track{tr})
+	if err != nil {
+		t.Fatal(err)
+	}
+	segs := mapped[0].Segments
+	if len(segs) != 2 {
+		t.Fatalf("segments = %+v", segs)
+	}
+	if got := segs[0].Cells; len(got) != 2 || got[0] != "c0" || got[1] != "c1" {
+		t.Fatalf("first piece cells = %v", got)
+	}
+	if got := segs[1].Cells; len(got) != 2 || got[0] != "c2" || got[1] != "c3" {
+		t.Fatalf("second piece cells = %v", got)
+	}
+	if segs[1].MediaTick != 200 {
+		t.Fatalf("second piece media tick = %d, want 200", segs[1].MediaTick)
+	}
+	// Locating inside the second piece must select exactly its own cells.
+	got, ok := segs[1].CellSlice(segs[1].Timeline.Start, segs[1].Timeline.End)
+	if !ok || len(got) != 2 || got[0] != "c2" {
+		t.Fatalf("cell slice = %v ok=%v", got, ok)
+	}
+}
+
+func TestCellSliceRejectsOutOfRange(t *testing.T) {
+	seg := MappedSegment{
+		Timeline: model.Span{Start: 0, End: 200 * model.Nanos(1_000_000)},
+		Cells:    []string{"a", "b"},
+		CellSize: 100 * model.Nanos(1_000_000),
+	}
+	if _, ok := seg.CellSlice(0, 300*model.Nanos(1_000_000)); ok {
+		t.Fatal("expected out-of-range rejection")
+	}
+	if _, ok := seg.CellSlice(-1, 50*model.Nanos(1_000_000)); ok {
+		t.Fatal("expected negative-offset rejection")
+	}
+}

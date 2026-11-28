@@ -202,13 +202,10 @@ func mapTrack(asset, version string, t Track) (MappedTrack, error) {
 			}
 			return MappedTrack{}, mapErr(asset, version, t.TrackID, "map", err, s.StartTicks, true)
 		}
-		for _, sp := range spans {
-			cells := s.Cells
-			if cells == nil {
-				cells = nil
-			}
+		for _, piece := range spans {
+			cells := cellsFor(piece.offset, piece.span.Duration(), s)
 			out.Segments = append(out.Segments, MappedSegment{
-				Timeline: sp, MediaTick: s.StartTicks, Summary: s.Summary,
+				Timeline: piece.span, MediaTick: s.StartTicks + piece.offsetTicks, Summary: s.Summary,
 				Cells: cells, CellSize: s.CellSize,
 				Samples: s.Samples, Bytes: s.Bytes, Sparse: s.Sparse, GopTicks: s.GopTicks,
 			})
@@ -225,13 +222,36 @@ func mapTrack(asset, version string, t Track) (MappedTrack, error) {
 	return out, nil
 }
 
+// spanPiece is one presented piece of a source segment. Offset is the piece's
+// start relative to the segment, so per-cell digests can be sliced correctly
+// even when an edit list splits one published range into several pieces.
+type spanPiece struct {
+	span        model.Span
+	offset      model.Nanos
+	offsetTicks int64
+}
+
+// cellsFor returns the subset of the segment's cells covering a piece that
+// starts at offset, or nil when cells are unavailable or misaligned.
+func cellsFor(offset, duration model.Nanos, s Segment) []string {
+	if len(s.Cells) == 0 || s.CellSize <= 0 {
+		return nil
+	}
+	first := int64(offset) / int64(s.CellSize)
+	last := int64(offset+duration) / int64(s.CellSize)
+	if first < 0 || last > int64(len(s.Cells)) || first >= last {
+		return nil
+	}
+	return append([]string(nil), s.Cells[first:last]...)
+}
+
 // mapSegment returns the presented sub-spans of s. A segment may be clipped by
 // an edit boundary or split into pieces by a later media edit.
-func mapSegment(edits EditList, s Segment, timescale uint32) ([]model.Span, error) {
+func mapSegment(edits EditList, s Segment, timescale uint32) ([]spanPiece, error) {
 	if s.DurationTicks <= 0 {
 		return nil, fmt.Errorf("timeline: segment duration %d", s.DurationTicks)
 	}
-	var out []model.Span
+	var out []spanPiece
 	var presented model.Nanos
 	for _, e := range edits {
 		if e.Rate.Den == 0 || e.Rate.Num <= 0 || e.Rate.Den < 0 {
@@ -271,7 +291,15 @@ func mapSegment(edits EditList, s Segment, timescale uint32) ([]model.Span, erro
 				return nil, err
 			}
 			if b > a {
-				out = append(out, model.Span{Start: presented + a, End: presented + b})
+				off, err := model.NanosFromRatio(lo-s.StartTicks, int64(timescale))
+				if err != nil {
+					return nil, err
+				}
+				out = append(out, spanPiece{
+					span:        model.Span{Start: presented + a, End: presented + b},
+					offset:      off,
+					offsetTicks: lo - s.StartTicks,
+				})
 			}
 		}
 		presented += editSpan

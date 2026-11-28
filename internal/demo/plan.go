@@ -79,7 +79,9 @@ type versionPlan struct {
 	audioDelayNS int64
 	badIndex     bool
 	// corruptSummaryAt is a grid cell index whose content digest is altered so
-	// the merge sees a genuine summary conflict on exactly that cell.
+	// the merge sees a genuine summary conflict on exactly that cell. It is
+	// -1 (noCorruptCell) when the version keeps its content intact, because
+	// cell 0 is a valid target and must not collide with a zero value.
 	corruptSummaryAt int64
 	// sliceCells forces every published range to span this many grid cells.
 	// Zero selects the per-version default derived from its position.
@@ -97,13 +99,16 @@ type assetPlan struct {
 
 func intPtr(v int) *int { return &v }
 
+// noCorruptCell marks a rendition whose content digests are untouched.
+const noCorruptCell int64 = -1
+
 // planFor generates the fixture plan: one primary multi-version asset plus a
 // small conflict-probe asset whose disagreement is resolved by explicit
 // priority.
 func planFor(o Options) []assetPlan {
 	main := assetPlan{name: "live-main"}
 	for v := 0; v < o.Versions; v++ {
-		vp := versionPlan{id: fmt.Sprintf("v%d", v+1)}
+		vp := versionPlan{id: fmt.Sprintf("v%d", v+1), corruptSummaryAt: noCorruptCell}
 		if v == 0 {
 			vp.priority = intPtr(10)
 		}
@@ -131,7 +136,7 @@ func planFor(o Options) []assetPlan {
 
 	probe := assetPlan{name: "conflict-probe"}
 	for v := 0; v < 2; v++ {
-		vp := versionPlan{id: fmt.Sprintf("p%d", v+1)}
+		vp := versionPlan{id: fmt.Sprintf("p%d", v+1), corruptSummaryAt: noCorruptCell}
 		// Both probe versions are explicitly ranked, so the manifest has a
 		// defined import and the conflict is resolved by the higher rank.
 		vp.priority = intPtr([]int{20, 10}[v])
@@ -238,7 +243,7 @@ func manifestFor(o Options, a assetPlan) (*manifest.Manifest, error) {
 				firstCell := start / tp.cellTicks
 				cellCount := dur / tp.cellTicks
 				chunks := media.RangeChunks(a.name, tp.id, firstCell, cellCount)
-				if vp.corruptSummaryAt >= firstCell && vp.corruptSummaryAt < firstCell+cellCount {
+				if vp.corruptSummaryAt >= 0 && vp.corruptSummaryAt >= firstCell && vp.corruptSummaryAt < firstCell+cellCount {
 					chunks[vp.corruptSummaryAt-firstCell] = media.CorruptSummary(chunks[vp.corruptSummaryAt-firstCell])
 				}
 				ranges = append(ranges, manifest.Range{

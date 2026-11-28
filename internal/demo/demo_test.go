@@ -246,3 +246,61 @@ func TestMemoryBudgetEnforced(t *testing.T) {
 		t.Fatalf("exit = %d", out.ExitCode)
 	}
 }
+
+func TestOnlyGenuineCellConflictsAreReported(t *testing.T) {
+	out, err := Run(context.Background(), baseOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var probe *AssetMerge
+	for i := range out.Merges {
+		if out.Merges[i].Asset == "conflict-probe" {
+			probe = &out.Merges[i]
+		}
+	}
+	if probe == nil {
+		t.Fatal("conflict-probe asset missing")
+	}
+	// Exactly one altered grid cell per track, so exactly one conflict per
+	// track; a zero-valued "corrupt cell" index would have produced many.
+	perTrack := map[string]int{}
+	for _, c := range probe.Merged.Conflicts {
+		perTrack[c.TrackID]++
+		if c.Span.Start != 50*1_000_000 || c.Span.End != 100*1_000_000 {
+			t.Fatalf("conflict at unexpected span %v", c.Span)
+		}
+		if !c.Resolved || c.Chosen != "p1" {
+			t.Fatalf("conflict not resolved by explicit priority: %+v", c)
+		}
+	}
+	if perTrack["1"] != 1 || perTrack["2"] != 1 {
+		t.Fatalf("conflict count per track = %v, want exactly one each", perTrack)
+	}
+	// Every unaffected interval must agree, so no other conflicts exist.
+	for _, tr := range probe.Merged.Tracks {
+		for _, iv := range tr.Intervals {
+			if iv.Reason == "unresolved" {
+				t.Fatalf("unresolved interval %v", iv.Span)
+			}
+		}
+	}
+}
+
+func TestHealthyAssetHasNoContentConflicts(t *testing.T) {
+	out, err := Run(context.Background(), baseOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, am := range out.Merges {
+		if am.Asset != "live-main" {
+			continue
+		}
+		if am.Merged.ConflictCount() != 0 {
+			t.Fatalf("differently sliced but identical content produced %d conflicts: %+v",
+				am.Merged.ConflictCount(), am.Merged.Conflicts)
+		}
+		if am.Merged.MissingCount() == 0 {
+			t.Fatal("expected the trimmed rendition to be itemised as missing coverage")
+		}
+	}
+}
