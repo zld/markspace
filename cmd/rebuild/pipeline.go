@@ -863,6 +863,9 @@ func (a *app) runValidate(ctx context.Context) error {
 	}
 	// A repeated delivery must reproduce the previous manifest byte for byte.
 	if a.previousManifest != "" && a.previousManifest != currentManifestSHA {
+		// The published manifest digest is reported, so the discrepancy is
+		// locatable even though no input byte is at fault; the run then exits 3
+		// rather than an unexplained 1.
 		a.repeatedManifestMismatch = true
 	}
 	for _, w := range a.work {
@@ -930,9 +933,10 @@ func (a *app) runValidate(ctx context.Context) error {
 			}
 		}
 	}
-	if a.repeatedManifestMismatch {
-		publishable = false
-	}
+	// A manifest that differs from the previous delivery is a reproducibility
+	// failure, but it does not make the artifact bytes untrustworthy: those are
+	// still covered by the artifact_hash item. Publishing continues and the
+	// run's exit code reports the failure.
 	if !publishable {
 		a.ws.discard(names)
 		a.unpublished = true

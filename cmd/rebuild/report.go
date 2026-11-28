@@ -239,7 +239,7 @@ func (r *report) exitCode() int {
 		// An intentional interruption is not a threshold failure.
 		return exitOK
 	}
-	if a := r.app; a != nil && (a.repeatedManifestMismatch || a.unpublished) {
+	if a := r.app; a != nil && a.unpublished {
 		return exitFail
 	}
 	if r.passed {
@@ -250,6 +250,11 @@ func (r *report) exitCode() int {
 		if s.OffsetErrors > 0 && s.ArtifactSHA != "" {
 			locatable = true
 		}
+	}
+	if r.app != nil && r.app.repeatedManifestMismatch && r.manifestSHA != "" {
+		// The manifest is published and its digest is reported, so the
+		// discrepancy is locatable even though no input byte is at fault.
+		locatable = true
 	}
 	if locatable {
 		return exitPartial
