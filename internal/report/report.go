@@ -32,10 +32,12 @@ type FaultView struct {
 
 // Metrics holds the headline numbers printed for every run.
 type Metrics struct {
-	SyncErrorMS   float64 `json:"sync_error_ms"`
-	LossRecovered int     `json:"loss_recovered"`
-	LossTotal     int     `json:"loss_total"`
-	LatencyP95MS  float64 `json:"latency_p95_ms"`
+	SyncErrorMS    float64 `json:"sync_error_ms"`
+	RawSyncErrorMS float64 `json:"raw_sync_error_ms"`
+	DriftPPM       int64   `json:"drift_ppm"`
+	LossRecovered  int     `json:"loss_recovered"`
+	LossTotal      int     `json:"loss_total"`
+	LatencyP95MS   float64 `json:"latency_p95_ms"`
 }
 
 // RecoveryRate returns recovered/total as a percentage in [0,100]; 100 when
@@ -119,6 +121,29 @@ func Build(metrics Metrics, faults []*fault.Fault) (*Report, error) {
 // RenderJSON emits the full report as canonical, indented JSON for terminals.
 func (r *Report) RenderJSON() ([]byte, error) {
 	return json.MarshalIndent(r, "", "  ")
+}
+
+// RenderWithLatency emits the report with latencyP95MS overlaid purely for
+// display. Latency is timing-derived and nondeterministic, so it is never
+// part of the hashed canonical document: ContentHash is retained unchanged.
+func (r *Report) RenderWithLatency(latencyMS float64) ([]byte, error) {
+	display := struct {
+		Metrics     map[string]any `json:"metrics"`
+		Faults      []FaultView    `json:"faults"`
+		ContentHash string         `json:"content_hash"`
+	}{
+		Metrics: map[string]any{
+			"sync_error_ms":     r.Metrics.SyncErrorMS,
+			"raw_sync_error_ms": r.Metrics.RawSyncErrorMS,
+			"drift_ppm":         r.Metrics.DriftPPM,
+			"loss_recovered":    r.Metrics.LossRecovered,
+			"loss_total":        r.Metrics.LossTotal,
+			"latency_p95_ms":    latencyMS,
+		},
+		Faults:      r.Faults,
+		ContentHash: r.ContentHash,
+	}
+	return json.MarshalIndent(display, "", "  ")
 }
 
 // HasValidationFaults reports whether any fault is a media-validation failure
