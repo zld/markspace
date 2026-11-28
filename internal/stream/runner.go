@@ -35,12 +35,17 @@ type Defect struct {
 // RunResult is everything the terminal layer prints after a run.
 type RunResult struct {
 	State            string
+	Tracks           int
+	Boundaries       int
+	Repairable       int
+	ResumeFrom       int
 	CheckpointSample int
 	Duplicate        int
 	ManifestDiff     int
 	ManifestValid    bool
 	Manifest         *manifest.Manifest
 	Config           *config.Config
+	Corrections      []model.Correction
 	Defects          []Defect
 	Locatable        bool
 }
@@ -140,9 +145,11 @@ func Run(req RunRequest) (*RunResult, error) {
 				return nil, err
 			}
 			return &RunResult{
-				State: StateStreaming, CheckpointSample: cp.LastSample,
-				Duplicate: duplicate, Config: cfg, Defects: collectDefects(rep),
-				Locatable: true,
+				State: StateStreaming, Tracks: len(rep.Tracks),
+				Boundaries: len(rep.Boundaries), Repairable: rep.Repairable,
+				CheckpointSample: cp.LastSample,
+				Duplicate:        duplicate, Config: cfg, Corrections: rep.Corrections,
+				Defects: collectDefects(rep), Locatable: true,
 			}, nil
 		}
 	}
@@ -169,9 +176,12 @@ func Run(req RunRequest) (*RunResult, error) {
 	}
 	problems := m.Check(rep, cfg, idx, req.StateDir)
 	return &RunResult{
-		State: StateCommitted, CheckpointSample: cp.LastSample,
+		State: StateCommitted, Tracks: len(rep.Tracks),
+		Boundaries: len(rep.Boundaries), Repairable: rep.Repairable,
+		ResumeFrom: start, CheckpointSample: cp.LastSample,
 		Duplicate: duplicate, ManifestDiff: diff, ManifestValid: len(problems) == 0,
-		Manifest: m, Config: cfg, Defects: collectDefects(rep), Locatable: true,
+		Manifest: m, Config: cfg, Corrections: rep.Corrections,
+		Defects: collectDefects(rep), Locatable: true,
 	}, nil
 }
 

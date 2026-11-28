@@ -86,7 +86,9 @@ func repairTrack(ti *scan.TrackIndex, td *model.TrackDesc,
 
 		sourceChanged := cur.Clock.SourceID != prev.Clock.SourceID
 		wrap := model.IsWrap(prev.RawTS, cur.RawTS)
-		backward := cur.RawTS < prev.RawTS
+		// A non-increasing raw value on the same source (including a stall at
+		// the same tick) is not a clean wrap and therefore undecidable.
+		backward := cur.RawTS <= prev.RawTS
 
 		// Classification comes from the raw stream alone; the descriptor only
 		// states where a clip point sits and anchors switch target times.
