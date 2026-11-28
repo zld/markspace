@@ -62,6 +62,14 @@ func parseMP4(r io.ReaderAt, size int64) (*Input, error) {
 		}
 	}
 	if moov == nil {
+		// Without a moov there is no track metadata. When the tree walker
+		// already found a more specific failure (a truncated mdat, an
+		// impossible box size), that is the first unparseable byte and the
+		// one worth reporting; "moov not found" would point at offset 0 and
+		// hide it.
+		if treeErr != nil {
+			return in, treeErr
+		}
 		err := media.NewError(media.ClassCorruptInput, media.StageParse, "", 0, "moov box not found")
 		in.Errors = append(in.Errors, err)
 		return in, err

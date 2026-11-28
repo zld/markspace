@@ -201,10 +201,25 @@ func Process(opts Options, mode Mode) (*Result, error) {
 		return finishEmpty(opts, store, in, fatal, tlErr)
 	}
 
-	// Per-track input digests drive selective invalidation.
-	digests, derr := trackDigests(opts.Input, in)
-	if derr != nil {
-		return nil, derr
+	// Per-track input digests drive selective invalidation. The whole-file
+	// digest is already known from parsing, so when it matches the checkpoint
+	// the stored per-track digests are still valid and the sample bytes do not
+	// need to be read again. This is what makes a resume cheaper than a full
+	// rerun on large files.
+	digests := map[string]string{}
+	if mode == ModeRun && cp.InputDigest == in.Digest && cp.InputSize == in.Size {
+		for _, tr := range in.Tracks {
+			if st := cp.Track(tr.ID); st != nil && st.InputDigest != "" {
+				digests[tr.ID] = st.InputDigest
+			}
+		}
+	}
+	if len(digests) != len(in.Tracks) {
+		var derr error
+		digests, derr = trackDigests(opts.Input, in)
+		if derr != nil {
+			return nil, derr
+		}
 	}
 	if mode == ModeFresh {
 		cp.Tracks = nil
