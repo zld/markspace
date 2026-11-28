@@ -32,6 +32,8 @@ type Outcome struct {
 	Merges   []AssetMerge
 	Failure  FailureScenario
 	Recovery RecoveryScenario
+	// Seek reports sparse-keyframe localisation on a healthy video track.
+	Seek SeekReport
 	// Committed is the exact summary document published on success.
 	Committed []byte
 }
@@ -114,6 +116,20 @@ func Run(ctx context.Context, o Options) (*Outcome, error) {
 		assetResults = append(assetResults, res)
 	}
 
+	// Sparse keyframes: probe the first healthy rendition's video track and
+	// report the measured locating deviation to the user.
+	seek := SeekReport{}
+	if len(assetResults) > 0 {
+		if sv := assetResults[0].merge.Scanned["v1"]; sv != nil {
+			for _, idx := range sv.indexes {
+				if r := measureSeeks(idx); r.Samples > 0 {
+					seek = r
+					break
+				}
+			}
+		}
+	}
+
 	rtpStats, latencyUS, err := runRTP(o)
 	if err != nil {
 		return rolledBack(o, err)
@@ -158,7 +174,10 @@ func Run(ctx context.Context, o Options) (*Outcome, error) {
 		BytesScanned:        totalBytes,
 	}
 	sm := &report.Summary{Seed: o.Seed, Versions: o.Versions, Window: o.Window, Metrics: metrics}
-	out := &Outcome{Summary: sm, Metrics: metrics, Damage: damage.Cases, Failure: failure, Recovery: recovery}
+	out := &Outcome{
+		Summary: sm, Metrics: metrics, Damage: damage.Cases,
+		Failure: failure, Recovery: recovery, Seek: seek,
+	}
 	for _, r := range assetResults {
 		out.Merges = append(out.Merges, r.merge)
 	}

@@ -212,6 +212,8 @@ func render(out *Outcome) []string {
 			am.Merged.ConflictCount(), am.Merged.ConflictCount()-am.Merged.UnresolvedCount())
 	}
 	add("")
+	add("sparse_keyframes: samples=%d probes=%d keyframe_seeks=%d max_deviation_ms=%d mean_deviation_ms=%d",
+		out.Seek.Samples, out.Seek.Probes, out.Seek.KeySeeked, out.Seek.MaxDevMS, out.Seek.MeanDevMS)
 	add("failure scenario: status=%s rerun_digest_match=%v records=%d",
 		out.Failure.Status, out.Failure.Digest == out.Failure.RerunDigest, len(out.Failure.Records))
 	for _, r := range out.Failure.Records {

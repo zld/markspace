@@ -5,6 +5,7 @@ import (
 	"errors"
 	"mediapipe/internal/media"
 	"mediapipe/internal/model"
+	mp4 "mediapipe/internal/mp4"
 	"mediapipe/internal/report"
 	"mediapipe/internal/rtp"
 )
@@ -162,6 +163,52 @@ func runRecoveryScenario(ctx context.Context, o Options) (RecoveryScenario, erro
 		RescanDigest: second,
 		Status:       sm.Status.State,
 	}, nil
+}
+
+// SeekReport records sparse-keyframe localisation behaviour for one video
+// track: how many probe ticks resolved to an earlier keyframe and the worst
+// locating deviation actually measured.
+type SeekReport struct {
+	Samples   int
+	Probes    int
+	KeySeeked int
+	MaxDevMS  int64
+	MeanDevMS int64
+}
+
+// measureSeeks probes a video track at each sample midpoint and records how
+// far the nearest preceding keyframe is. A sparse GOP must report the real
+// deviation rather than pretending the requested timestamp was decoded.
+func measureSeeks(idx *mp4.Index) SeekReport {
+	rep := SeekReport{}
+	for _, t := range idx.Tracks {
+		if t.Handler != "vide" || len(t.Samples) == 0 || t.Timescale == 0 {
+			continue
+		}
+		rep.Samples = len(t.Samples)
+		var sum int64
+		for _, s := range t.Samples {
+			probe := s.DecodeTks + s.Duration/2
+			rep.Probes++
+			kf, dev, ok := t.KeyframeBefore(probe)
+			if !ok {
+				continue
+			}
+			if dev > 0 {
+				rep.KeySeeked++
+			}
+			devMS := dev * 1_000 / int64(t.Timescale)
+			sum += devMS
+			if devMS > rep.MaxDevMS {
+				rep.MaxDevMS = devMS
+			}
+			_ = kf
+		}
+		if rep.Probes > 0 {
+			rep.MeanDevMS = sum / int64(rep.Probes)
+		}
+	}
+	return rep
 }
 
 // rtpLiveness proves the window is exercised even when every loss happens to

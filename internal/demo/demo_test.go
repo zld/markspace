@@ -346,3 +346,25 @@ func TestRolledBackRunPublishesNothing(t *testing.T) {
 		t.Fatalf("state = %s", out.Summary.Status.State)
 	}
 }
+
+func TestSparseKeyframeDeviationReported(t *testing.T) {
+	out, err := Run(context.Background(), baseOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := out.Seek
+	if s.Samples == 0 || s.Probes != s.Samples {
+		t.Fatalf("seek report = %+v", s)
+	}
+	// The fixture has a 500 ms GOP, so probing at sample midpoints must
+	// resolve to an earlier keyframe and report a real deviation.
+	if s.MaxDevMS <= 0 || s.MeanDevMS <= 0 {
+		t.Fatalf("deviation not reported: %+v", s)
+	}
+	if s.MaxDevMS > 500 {
+		t.Fatalf("max deviation %dms exceeds the GOP length", s.MaxDevMS)
+	}
+	if !strings.Contains(out.String(), "max_deviation_ms=") {
+		t.Fatal("report omits the measured deviation")
+	}
+}
