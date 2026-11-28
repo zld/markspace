@@ -165,6 +165,10 @@ func parseMXF(r io.ReaderAt, size int64) (*Input, error) {
 			if err := readPrimer(r, e, primer); err != nil {
 				in.Errors = append(in.Errors, err)
 			}
+			if len(primer) == 0 {
+				in.Errors = append(in.Errors, media.NewError(media.ClassCorruptInput, media.StageParse,
+					"", e.Offset, "primer pack declares no local tags"))
+			}
 		case hasPrefix(key, partitionKey, 12):
 			// Partition pack value is skipped: the walker already validated
 			// its extent, and this profile does not rely on partition indexing.
