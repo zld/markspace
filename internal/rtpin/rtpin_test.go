@@ -64,7 +64,8 @@ func TestReassemblerDedupReorder(t *testing.T) {
 		t.Fatal("nothing committable yet")
 	}
 	// Duplicate of the buffered chunk.
-	if _, _ := r.Add(mk(3, "DEF")); r.Dups != 1 {
+	r.Add(mk(3, "DEF"))
+	if r.Dups != 1 {
 		t.Fatalf("dups=%d", r.Dups)
 	}
 	// First chunk arrives: both commit in order.
