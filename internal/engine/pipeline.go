@@ -146,7 +146,6 @@ func Process(opts Options, mode Mode) (*Result, error) {
 	store := checkpoint.NewStore(opts.CheckpointDir)
 	if opts.CheckpointDir == "" {
 		store = nil
-		mode = ModeFresh
 	}
 	var cp *checkpoint.State
 	var err error
