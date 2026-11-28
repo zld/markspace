@@ -38,7 +38,7 @@ func buildSamples(tr *Track, rt *rawTrack, c *Container) error {
 		return err
 	}
 	if len(dts) != len(sizes) {
-		return fault.New(fault.KindCorrupt, field("stts"),
+		return fault.Newf(fault.KindCorrupt, field("stts"),
 			entryOffset(rt.sttsRef, 0, 8),
 			"stts expands to %d samples but stsz declares %d", len(dts), len(sizes))
 	}
@@ -50,7 +50,7 @@ func buildSamples(tr *Track, rt *rawTrack, c *Container) error {
 	// entry is reported at its own position rather than at the first sample.
 	for ci, off := range rt.offsets {
 		if off >= c.FileSize {
-			return fault.New(fault.KindCorrupt, field(chunkOffsetName(rt)),
+			return fault.Newf(fault.KindCorrupt, field(chunkOffsetName(rt)),
 				entryOffset(rt.coRef, uint64(ci), chunkEntrySize(rt)),
 				"chunk %d offset %d exceeds file size %d", ci, off, c.FileSize).WithTrack(tr.Index)
 		}
@@ -68,12 +68,12 @@ func buildSamples(tr *Track, rt *rawTrack, c *Container) error {
 			size := sizes[si]
 			end, ok := checkedAdd(off, size)
 			if !ok || end > c.FileSize {
-				return fault.New(fault.KindCorrupt, field("stsz.entry_size"),
+				return fault.Newf(fault.KindCorrupt, field("stsz.entry_size"),
 					entryOffset(rt.stszRef, uint64(si), 4),
 					"sample %d [%d,%d) exceeds file size %d", si, off, end, c.FileSize)
 			}
 			if !insideMdat(off, end, c.Mdat) {
-				return fault.New(fault.KindCorrupt, field(chunkOffsetName(rt)),
+				return fault.Newf(fault.KindCorrupt, field(chunkOffsetName(rt)),
 					entryOffset(rt.coRef, uint64(ci), chunkEntrySize(rt)),
 					"sample %d at chunk %d [%d,%d) is outside any mdat", si, ci, off, end)
 			}
@@ -103,7 +103,7 @@ func expandDTS(track int, rt *rawTrack) ([]uint64, error) {
 	var cur uint64
 	for i, e := range rt.stts.Entries {
 		if e.SampleCount == 0 {
-			return nil, fault.New(fault.KindCorrupt, "stts.entry.sample_count",
+			return nil, fault.Newf(fault.KindCorrupt, "stts.entry.sample_count",
 				entryOffset(rt.sttsRef, uint64(i), 8),
 				"zero sample count in stts entry %d", i).WithTrack(track)
 		}
@@ -133,14 +133,14 @@ func expandSizes(track int, rt *rawTrack) ([]uint64, error) {
 		return out, nil
 	}
 	if len(rt.stsz.EntrySize) != n {
-		return nil, fault.New(fault.KindCorrupt, "stsz.entry_size",
+		return nil, fault.Newf(fault.KindCorrupt, "stsz.entry_size",
 			entryOffset(rt.stszRef, 0, 4),
 			"sample_count=%d but entry_size has %d elements", n, len(rt.stsz.EntrySize)).WithTrack(track)
 	}
 	out := make([]uint64, n)
 	for i, s := range rt.stsz.EntrySize {
 		if s == 0 {
-			return nil, fault.New(fault.KindCorrupt, "stsz.entry_size",
+			return nil, fault.Newf(fault.KindCorrupt, "stsz.entry_size",
 				entryOffset(rt.stszRef, uint64(i), 4),
 				"zero size for sample %d", i).WithTrack(track)
 		}
@@ -155,12 +155,12 @@ func expandChunks(track int, rt *rawTrack, totalSamples int) ([]chunkSpec, error
 	var prevFirst uint32
 	for i, e := range rt.stsc.Entries {
 		if e.FirstChunk < 1 || (i > 0 && e.FirstChunk <= prevFirst) {
-			return nil, fault.New(fault.KindCorrupt, "stsc.first_chunk",
+			return nil, fault.Newf(fault.KindCorrupt, "stsc.first_chunk",
 				entryOffset(rt.stscRef, uint64(i), 12),
 				"non-monotonic first_chunk=%d", e.FirstChunk).WithTrack(track)
 		}
 		if e.SamplesPerChunk == 0 {
-			return nil, fault.New(fault.KindCorrupt, "stsc.samples_per_chunk",
+			return nil, fault.Newf(fault.KindCorrupt, "stsc.samples_per_chunk",
 				entryOffset(rt.stscRef, uint64(i), 12),
 				"zero samples per chunk at entry %d", i).WithTrack(track)
 		}
@@ -181,7 +181,7 @@ func expandChunks(track int, rt *rawTrack, totalSamples int) ([]chunkSpec, error
 	specs := make([]chunkSpec, chunkCount)
 	for ci, n := range perChunk {
 		if n == 0 {
-			return nil, fault.New(fault.KindCorrupt, "stsc",
+			return nil, fault.Newf(fault.KindCorrupt, "stsc",
 				entryOffset(rt.stscRef, 0, 12),
 				"chunk %d has no stsc entry covering it", ci).WithTrack(track)
 		}
@@ -189,7 +189,7 @@ func expandChunks(track int, rt *rawTrack, totalSamples int) ([]chunkSpec, error
 		total += n
 	}
 	if total != totalSamples {
-		return nil, fault.New(fault.KindCorrupt, "stsc",
+		return nil, fault.Newf(fault.KindCorrupt, "stsc",
 			entryOffset(rt.stscRef, 0, 12),
 			"stsc covers %d samples but stsz declares %d", total, totalSamples).WithTrack(track)
 	}
@@ -206,7 +206,7 @@ func expandSync(track int, rt *rawTrack, n int) ([]bool, error) {
 	}
 	for i, sn := range rt.stss.SampleNumber {
 		if sn < 1 || int(sn) > n {
-			return nil, fault.New(fault.KindCorrupt, "stss.sample_number",
+			return nil, fault.Newf(fault.KindCorrupt, "stss.sample_number",
 				entryOffset(rt.stssRef, uint64(i), 4),
 				"sync sample number %d out of range [1,%d]", sn, n).WithTrack(track)
 		}

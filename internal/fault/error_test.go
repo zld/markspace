@@ -6,7 +6,7 @@ import (
 )
 
 func TestNewAndContext(t *testing.T) {
-	e := New(KindCorrupt, "stsz.entry_size[2]", 4096, "size %d exceeds mdat", 99).
+	e := Newf(KindCorrupt, "stsz.entry_size[2]", 4096, "size %d exceeds mdat", 99).
 		WithTrack(1).WithSeq(4242)
 	if e.TrackIndex != 1 || !e.HasSeq || e.Seq != 4242 || e.Offset != 4096 {
 		t.Fatalf("context not attached: %+v", e)

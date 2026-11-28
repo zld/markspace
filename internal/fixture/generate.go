@@ -106,7 +106,7 @@ func BuildMP4(dir string, seed int64, specs []TrackSpec) (*MP4Fixture, error) {
 			for k := 0; k < n; k++ {
 				sample := make([]byte, size)
 				if _, err := rng.Read(sample); err != nil {
-					return nil, fault.New(fault.KindInternal, "mdat", fault.NoOffset, "rng: %v", err)
+					return nil, fault.Newf(fault.KindInternal, "mdat", fault.NoOffset, "rng: %v", err)
 				}
 				mdat = append(mdat, sample...)
 				written++
@@ -138,10 +138,10 @@ func BuildMP4(dir string, seed int64, specs []TrackSpec) (*MP4Fixture, error) {
 
 	path := filepath.Join(dir, "trace.mp4")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, fault.New(fault.KindInternal, "dir", fault.NoOffset, "%v", err)
+		return nil, fault.Newf(fault.KindInternal, "dir", fault.NoOffset, "%v", err)
 	}
 	if err := os.WriteFile(path, file, 0o644); err != nil {
-		return nil, fault.New(fault.KindInternal, "file", fault.NoOffset, "%v", err)
+		return nil, fault.Newf(fault.KindInternal, "file", fault.NoOffset, "%v", err)
 	}
 	return &MP4Fixture{
 		Path:   path,
@@ -263,11 +263,11 @@ func MutateChunkOffset(f *MP4Fixture, track, entry int, value uint32) (int64, er
 	off := f.Layout.StcoEntryOffset[track][entry]
 	data, err := os.ReadFile(f.Path)
 	if err != nil {
-		return 0, fault.New(fault.KindInternal, "file", off, "%v", err)
+		return 0, fault.Newf(fault.KindInternal, "file", off, "%v", err)
 	}
 	binary.BigEndian.PutUint32(data[int(off):], value)
 	if err := os.WriteFile(f.Path, data, 0o644); err != nil {
-		return 0, fault.New(fault.KindInternal, "file", off, "%v", err)
+		return 0, fault.Newf(fault.KindInternal, "file", off, "%v", err)
 	}
 	return off, nil
 }
@@ -276,13 +276,13 @@ func MutateChunkOffset(f *MP4Fixture, track, entry int, value uint32) (int64, er
 func TruncateCopy(src, dst string, at int64) error {
 	data, err := os.ReadFile(src)
 	if err != nil {
-		return fault.New(fault.KindInternal, "file", fault.NoOffset, "%v", err)
+		return fault.Newf(fault.KindInternal, "file", fault.NoOffset, "%v", err)
 	}
 	if at < 0 || at > int64(len(data)) {
 		return fault.New(fault.KindInternal, "at", at, "truncation point outside file")
 	}
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-		return fault.New(fault.KindInternal, "dir", fault.NoOffset, "%v", err)
+		return fault.Newf(fault.KindInternal, "dir", fault.NoOffset, "%v", err)
 	}
 	return os.WriteFile(dst, data[:at], 0o644)
 }
@@ -306,11 +306,11 @@ func MutateSampleNumber(f *MP4Fixture, track, entry int, value uint32) (int64, e
 	off := f.Layout.StssEntryOffset[track][entry]
 	data, err := os.ReadFile(f.Path)
 	if err != nil {
-		return 0, fault.New(fault.KindInternal, "file", off, "%v", err)
+		return 0, fault.Newf(fault.KindInternal, "file", off, "%v", err)
 	}
 	binary.BigEndian.PutUint32(data[int(off):], value)
 	if err := os.WriteFile(f.Path, data, 0o644); err != nil {
-		return 0, fault.New(fault.KindInternal, "file", off, "%v", err)
+		return 0, fault.Newf(fault.KindInternal, "file", off, "%v", err)
 	}
 	return off, nil
 }

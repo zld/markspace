@@ -76,13 +76,13 @@ type rawTrack struct {
 func ScanFile(path string) (*Container, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, fault.New(fault.KindInternal, "file", fault.NoOffset, "open %s: %v", path, err)
+		return nil, fault.Newf(fault.KindInternal, "file", fault.NoOffset, "open %s: %v", path, err)
 	}
 	defer f.Close()
 
 	st, err := f.Stat()
 	if err != nil {
-		return nil, fault.New(fault.KindInternal, "file", fault.NoOffset, "stat: %v", err)
+		return nil, fault.Newf(fault.KindInternal, "file", fault.NoOffset, "stat: %v", err)
 	}
 	c := &Container{Path: path, FileSize: uint64(st.Size())}
 
@@ -94,7 +94,7 @@ func ScanFile(path string) (*Container, error) {
 
 	// digestFile leaves the handle at EOF; the walk must start at zero.
 	if _, err := f.Seek(0, io.SeekStart); err != nil {
-		return nil, fault.New(fault.KindInternal, "file", fault.NoOffset, "rewind: %v", err)
+		return nil, fault.Newf(fault.KindInternal, "file", fault.NoOffset, "rewind: %v", err)
 	}
 	var raws []*rawTrack
 	var stack []*rawTrack
@@ -116,11 +116,11 @@ func ScanFile(path string) (*Container, error) {
 
 func digestFile(r io.ReadSeeker) (string, error) {
 	if _, err := r.Seek(0, io.SeekStart); err != nil {
-		return "", fault.New(fault.KindInternal, "file", fault.NoOffset, "seek: %v", err)
+		return "", fault.Newf(fault.KindInternal, "file", fault.NoOffset, "seek: %v", err)
 	}
 	h := sha256.New()
 	if _, err := io.Copy(h, r); err != nil {
-		return "", fault.New(fault.KindCorrupt, "file", fault.NoOffset, "read for digest: %v", err)
+		return "", fault.Newf(fault.KindCorrupt, "file", fault.NoOffset, "read for digest: %v", err)
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
@@ -131,7 +131,7 @@ func walkChildren(r io.ReadSeeker, parentEnd int64, top bool, stack *[]*rawTrack
 	for {
 		pos, err := r.Seek(0, io.SeekCurrent)
 		if err != nil {
-			return fault.New(fault.KindInternal, "seek", fault.NoOffset, "%v", err)
+			return fault.Newf(fault.KindInternal, "seek", fault.NoOffset, "%v", err)
 		}
 		if pos >= parentEnd {
 			return nil
@@ -141,23 +141,23 @@ func walkChildren(r io.ReadSeeker, parentEnd int64, top bool, stack *[]*rawTrack
 			if top && err == io.EOF && pos == parentEnd {
 				return nil
 			}
-			return fault.New(fault.KindCorrupt, "box.header", pos,
+			return fault.Newf(fault.KindCorrupt, "box.header", pos,
 				"truncated box header at %d: %v", pos, err)
 		}
 		if bi.Size < bi.HeaderSize {
-			return fault.New(fault.KindCorrupt, "box.size", int64(bi.Offset),
+			return fault.Newf(fault.KindCorrupt, "box.size", int64(bi.Offset),
 				"box %s size %d smaller than header %d", bi.Type.String(), bi.Size, bi.HeaderSize)
 		}
 		end := int64(bi.Offset + bi.Size)
 		if !top && end > parentEnd {
-			return fault.New(fault.KindCorrupt, "box.size", int64(bi.Offset),
+			return fault.Newf(fault.KindCorrupt, "box.size", int64(bi.Offset),
 				"box %s size %d exceeds parent end %d", bi.Type.String(), end, parentEnd)
 		}
 		if err := dispatch(r, bi, stack, raws, c); err != nil {
 			return err
 		}
 		if _, err := r.Seek(end, io.SeekStart); err != nil {
-			return fault.New(fault.KindCorrupt, "box", int64(bi.Offset),
+			return fault.Newf(fault.KindCorrupt, "box", int64(bi.Offset),
 				"cannot seek past box %s: %v", bi.Type.String(), err)
 		}
 	}
@@ -203,7 +203,7 @@ func isContainer(t mp4.BoxType) bool {
 func parsePayload(r io.ReadSeeker, bi *mp4.BoxInfo, stack *[]*rawTrack) error {
 	payloadPos, err := bi.SeekToPayload(r)
 	if err != nil {
-		return fault.New(fault.KindCorrupt, "box."+bi.Type.String(), int64(bi.Offset), "%v", err)
+		return fault.Newf(fault.KindCorrupt, "box."+bi.Type.String(), int64(bi.Offset), "%v", err)
 	}
 	size := bi.Size - bi.HeaderSize
 	ref := tableRef{boxOffset: bi.Offset, headerSize: bi.HeaderSize}
@@ -275,7 +275,7 @@ func parsePayload(r io.ReadSeeker, bi *mp4.BoxInfo, stack *[]*rawTrack) error {
 }
 
 func payloadFault(bi *mp4.BoxInfo, pos int64, err error) error {
-	return fault.New(fault.KindCorrupt, "box."+bi.Type.String(), pos,
+	return fault.Newf(fault.KindCorrupt, "box."+bi.Type.String(), pos,
 		"truncated payload: %v", err)
 }
 

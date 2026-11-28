@@ -37,14 +37,21 @@ type Error struct {
 
 // New builds a fault without track/seq context. A negative offset means the
 // fault is not tied to a byte position; zero is a valid file offset.
-func New(kind Kind, field string, offset int64, format string, args ...interface{}) *Error {
+func New(kind Kind, field string, offset int64, msg string) *Error {
 	return &Error{
 		Kind:       kind,
 		Field:      field,
 		TrackIndex: -1,
 		Offset:     offset,
-		Msg:        fmt.Sprintf(format, args...),
+		Msg:        msg,
 	}
+}
+
+// Newf builds a fault with printf-style formatting.
+//
+//nolint:govet // the format string is intentionally caller-provided
+func Newf(kind Kind, field string, offset int64, format string, args ...interface{}) *Error {
+	return New(kind, field, offset, fmt.Sprintf(format, args...))
 }
 
 // NoOffset is the sentinel passed to New when a fault has no byte position.
