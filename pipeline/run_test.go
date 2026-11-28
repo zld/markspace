@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -257,5 +258,41 @@ func TestRTPLossIsReported(t *testing.T) {
 	}
 	if rate := res.RTP.LossRecoveryRate(); rate <= 0.99 {
 		t.Fatalf("loss rate = %v", rate)
+	}
+}
+
+func TestScanReusesIndexUntilSamePathReplacement(t *testing.T) {
+	dir := t.TempDir()
+	cfg := DefaultConfig()
+	cfg.SegmentTargetUs = 1_000_000
+	job, err := NewJob(cfg, filepath.Join(dir, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := fixture.BuildDemo(fixture.DemoOptions{Seed: 7, Loss: 0.04}).Files[0]
+	path := filepath.Join(dir, "rendition.mp4")
+	if err := os.WriteFile(path, first.Bytes, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r1, err := job.ScanInput(Input{Path: path, Bytes: first.Bytes})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r1.IndexReused {
+		t.Fatal("a first scan cannot reuse an index")
+	}
+	// Re-scanning unchanged bytes reuses the stored index.
+	r2, _ := job.ScanInput(Input{Path: path, Bytes: first.Bytes})
+	if !r2.IndexReused {
+		t.Fatal("an unchanged input should reuse its index")
+	}
+	// Replacing the bytes at the same path must defeat reuse.
+	second := fixture.BuildDemo(fixture.DemoOptions{Seed: 99, Loss: 0.04}).Files[0]
+	if err := os.WriteFile(path, second.Bytes, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r3, _ := job.ScanInput(Input{Path: path, Bytes: second.Bytes})
+	if r3.IndexReused {
+		t.Fatal("a same-path replacement must not reuse the old index")
 	}
 }
