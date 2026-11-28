@@ -226,7 +226,7 @@ func TestStreamModeUsesGivenPath(t *testing.T) {
 	}
 	var sb strings.Builder
 	rep.print(&sb)
-	if !strings.Contains(sb.String(), "stream.input.unique=100") {
+	if !strings.Contains(sb.String(), "input.unique=100") {
 		t.Fatalf("stream mode report:\n%s", sb.String())
 	}
 	if !strings.Contains(rep.manifestSHA, "") {
@@ -248,8 +248,10 @@ func TestReportPrint(t *testing.T) {
 		"packets=", "unique=", "duplicates=", "loss=", "loss_rate=", "jitter=",
 		"gap_intervals=", "offset_errors=", "peak_buffer_bytes=", "elapsed_ms=",
 		"budget_delta_ms=", "manifest_sha256=", "artifact_sha256=", "resume_stage=",
-		"item_results=", "stream.normal.truncated_offset=", "stream.fault.truncated_offset=",
-		"result=PASS",
+		"item_results=", "result=PASS",
+		"normal.unique=100", "normal.duplicates=0", "normal.loss=0",
+		"normal.offset_errors=0", "fault.gap_intervals=1", "fault.offset_errors=1",
+		"fault.truncated_offset=",
 	} {
 		if !strings.Contains(out, key) {
 			t.Fatalf("report missing %q:\n%s", key, out)

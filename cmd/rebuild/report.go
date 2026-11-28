@@ -281,13 +281,31 @@ func classify(err error, rep *report) int {
 
 // print writes the human-readable report.
 //
-// The flat summary block uses the exact key names of the acceptance list and
-// aggregates across streams. Per-stream detail follows with a stream.<name>.
-// prefix so every number remains individually checkable, including the fault
-// stream's exact truncation offset.
+// Each stream gets a complete block with exactly the key names of the
+// acceptance list, prefixed by its name (`normal.unique=100`,
+// `fault.gap_intervals=1`, ...), so every expectation can be checked against a
+// specific stream instead of an aggregate. A combined block follows for the
+// run-wide values, then per-item conclusions.
 func (r *report) print(w io.Writer) {
-	agg := r.aggregate()
+	for _, s := range r.streams {
+		fmt.Fprintf(w, "%s.packets=%d\n", s.Name, s.Packets)
+		fmt.Fprintf(w, "%s.unique=%d\n", s.Name, s.Unique)
+		fmt.Fprintf(w, "%s.duplicates=%d\n", s.Name, s.Duplicates)
+		fmt.Fprintf(w, "%s.loss=%d\n", s.Name, s.Loss)
+		fmt.Fprintf(w, "%s.loss_rate=%.4f\n", s.Name, s.LossRate)
+		fmt.Fprintf(w, "%s.jitter=%.2f\n", s.Name, s.Jitter)
+		fmt.Fprintf(w, "%s.gap_intervals=%d\n", s.Name, s.GapIntervals)
+		fmt.Fprintf(w, "%s.offset_errors=%d\n", s.Name, s.OffsetErrors)
+		fmt.Fprintf(w, "%s.truncated_offset=%d\n", s.Name, s.TruncatedAt)
+		fmt.Fprintf(w, "%s.peak_buffer_bytes=%d\n", s.Name, s.PeakBuffer)
+		fmt.Fprintf(w, "%s.artifact_sha256=%s\n", s.Name, orDash(s.ArtifactSHA))
+		fmt.Fprintf(w, "%s.manifest_sha256=%s\n", s.Name, orDash(s.ManifestSHA))
+		fmt.Fprintf(w, "%s.resume_stage=%s\n", s.Name, orDash(s.ResumeStage))
+		fmt.Fprintf(w, "%s.elapsed_ms=%d\n", s.Name, s.ElapsedMS)
+		fmt.Fprintf(w, "%s.budget_delta_ms=%d\n", s.Name, s.BudgetDeltaMS)
+	}
 
+	agg := r.aggregate()
 	fmt.Fprintf(w, "packets=%d\n", agg.packets)
 	fmt.Fprintf(w, "unique=%d\n", agg.unique)
 	fmt.Fprintf(w, "duplicates=%d\n", agg.duplicates)
@@ -310,16 +328,6 @@ func (r *report) print(w io.Writer) {
 		passed+expected, total, passed, expected, failed)
 
 	for _, s := range r.streams {
-		fmt.Fprintf(w, "stream.%s.packets=%d\n", s.Name, s.Packets)
-		fmt.Fprintf(w, "stream.%s.unique=%d\n", s.Name, s.Unique)
-		fmt.Fprintf(w, "stream.%s.duplicates=%d\n", s.Name, s.Duplicates)
-		fmt.Fprintf(w, "stream.%s.loss=%d\n", s.Name, s.Loss)
-		fmt.Fprintf(w, "stream.%s.loss_rate=%.4f\n", s.Name, s.LossRate)
-		fmt.Fprintf(w, "stream.%s.jitter=%.2f\n", s.Name, s.Jitter)
-		fmt.Fprintf(w, "stream.%s.gap_intervals=%d\n", s.Name, s.GapIntervals)
-		fmt.Fprintf(w, "stream.%s.offset_errors=%d\n", s.Name, s.OffsetErrors)
-		fmt.Fprintf(w, "stream.%s.truncated_offset=%d\n", s.Name, s.TruncatedAt)
-		fmt.Fprintf(w, "stream.%s.artifact_sha256=%s\n", s.Name, orDash(s.ArtifactSHA))
 		for _, iv := range s.Intervals {
 			fmt.Fprintf(w, "interval stream=%s start_seq=%d end_seq=%d start_ms=%d end_ms=%d gap_ticks=%d events=%d\n",
 				s.Name, iv.StartSeq, iv.EndSeq, int64(iv.StartTime)/90, int64(iv.EndTime)/90,

@@ -62,44 +62,65 @@ under `--out`.
 
 ### Output
 
-The flat block is the acceptance list. Values aggregate both fixtures; the
-per-stream block that follows gives the same numbers per stream with a
-`stream.<name>.` prefix, including the exact truncation offset.
+Every stream prints a complete block using exactly the acceptance key names,
+prefixed by the stream name, so both fixtures are individually checkable:
+
+```
+normal.packets=100
+normal.unique=100
+normal.duplicates=0
+normal.loss=0
+normal.loss_rate=0.0000
+normal.jitter=273.50
+normal.gap_intervals=0
+normal.offset_errors=0
+normal.truncated_offset=-1
+normal.peak_buffer_bytes=9600
+normal.artifact_sha256=...
+normal.manifest_sha256=...
+normal.resume_stage=complete
+normal.elapsed_ms=214
+normal.budget_delta_ms=-9786
+fault.packets=61
+fault.unique=58
+fault.duplicates=3
+fault.loss=2
+fault.loss_rate=0.0333
+fault.jitter=301.00
+fault.gap_intervals=1
+fault.offset_errors=1
+fault.truncated_offset=3130
+...
+```
+
+A combined block follows with the same keys unprefixed (aggregated across
+streams), then the interval and unalignable-event detail, then one line per
+check item:
 
 ```
 packets=161
 unique=158
-duplicates=3
-loss=2
-loss_rate=0.0125
-jitter=287.25
-gap_intervals=1
-offset_errors=1
-peak_buffer_bytes=9600
-elapsed_ms=564
-budget_ms=10000
-budget_delta_ms=-9436
+...
+budget_delta_ms=-9772
 manifest_sha256=...
 artifact_sha256=...
 resume_stage=complete
 clock_offset=known
 unalignable_events=1
 item_results=26/26 pass=21 expected_damage=5 fail=0
-stream.normal.packets=100
-...
-stream.fault.truncated_offset=3130
 interval stream=fault start_seq=65520 end_seq=65521 start_ms=1333 end_ms=2033 gap_ticks=63000 events=2
 unalignable stream=fault line=6 kind=stall reason=...
 item normal.mp4_sample_count PASS samples=100 expected=100
+item fault.structural_offsets EXPECTED offset_errors=1 truncated=false
 ...
 result=PASS
 ```
 
 * The healthy stream reports `unique=100 duplicates=0 loss=0 offset_errors=0`
   and every item passes.
-* The fault stream reports at least one gap interval, a precise truncation
-  offset and the damaged items as `EXPECTED` (the fixture is meant to be
-  damaged), while all other items still pass.
+* The fault stream reports one gap interval, a precise truncation offset and
+  the damaged items as `EXPECTED` (the fixture is meant to be damaged), while
+  all other items still pass.
 * `budget_delta_ms` is `elapsed_ms - budget_ms`.
 
 ### Exit codes
