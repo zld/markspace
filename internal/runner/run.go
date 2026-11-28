@@ -143,6 +143,7 @@ func (r *Runner) Run(opts Options, cancel CancelFunc) *Result {
 	// digest and configuration. Anything else restarts at the first pending
 	// segment.
 	resumedFrom := 0
+	var resumedBytes int64
 	adopted := plan.Segments
 	if opts.ProgressPath != "" {
 		prog, perr := ReadProgress(opts.ProgressPath)
@@ -151,6 +152,7 @@ func (r *Runner) Run(opts Options, cancel CancelFunc) *Result {
 		}
 		if prog != nil && prog.InputDigest == rep.InputDigest && prog.ConfigHash == rep.ConfigSHA256 && resumablePrefix(prog.Done, adopted) {
 			resumedFrom = len(prog.Done)
+			resumedBytes = prog.Bytes
 			adopted = adopted[resumedFrom:]
 		}
 	}
@@ -162,7 +164,7 @@ func (r *Runner) Run(opts Options, cancel CancelFunc) *Result {
 	if resumedFrom > 0 {
 		rep.SegmentsDone += resumedFrom
 	}
-	rep.BytesIn = inBytes
+	rep.BytesIn = inBytes + resumedBytes
 	res.Outcomes = outcomes
 	if serr != nil {
 		stage, _ := media.StageOf(serr)
@@ -176,7 +178,7 @@ func (r *Runner) Run(opts Options, cancel CancelFunc) *Result {
 			_ = cache.Store(Entry{
 				Key: key, InputDigest: rep.InputDigest, ConfigHash: rep.ConfigSHA256,
 				SegmentDigests: segDigests, SegmentsDone: rep.SegmentsDone,
-				SegmentsTotal: len(segs), Bytes: inBytes,
+				SegmentsTotal: len(segs), Bytes: rep.BytesIn,
 				ReportDigest: rep.Digest(),
 			})
 		}
@@ -184,6 +186,7 @@ func (r *Runner) Run(opts Options, cancel CancelFunc) *Result {
 			_ = WriteProgress(opts.ProgressPath, ProgressFile{
 				InputDigest: rep.InputDigest, ConfigHash: rep.ConfigSHA256,
 				Done:         doneIndices(resumedFrom, outcomes),
+				Bytes:        rep.BytesIn,
 				ReportDigest: rep.Digest(),
 			})
 		}
@@ -239,6 +242,7 @@ func (r *Runner) Run(opts Options, cancel CancelFunc) *Result {
 		_ = WriteProgress(opts.ProgressPath, ProgressFile{
 			InputDigest: rep.InputDigest, ConfigHash: rep.ConfigSHA256,
 			Done:         doneIndices(resumedFrom, outcomes),
+			Bytes:        rep.BytesIn,
 			ReportDigest: rep.Digest(),
 		})
 	}
@@ -247,7 +251,7 @@ func (r *Runner) Run(opts Options, cancel CancelFunc) *Result {
 		if err := cache.Store(Entry{
 			Key: key, InputDigest: rep.InputDigest, ConfigHash: rep.ConfigSHA256,
 			SegmentDigests: segDigests, SegmentsDone: rep.SegmentsDone,
-			SegmentsTotal: len(segs), Bytes: inBytes,
+			SegmentsTotal: len(segs), Bytes: rep.BytesIn,
 			ReportDigest: rep.Digest(),
 		}); err != nil {
 			return res.fail(err, rep)
@@ -297,6 +301,7 @@ type ProgressFile struct {
 	InputDigest  string `json:"input_digest"`
 	ConfigHash   string `json:"config_digest"`
 	Done         []int  `json:"done"`
+	Bytes        int64  `json:"bytes"`
 	ReportDigest string `json:"report_digest"`
 }
 

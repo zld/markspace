@@ -3,7 +3,9 @@
   "config_digest": "4f65164c6b4233693e2402591e9e99cbe5dc37adfad298f6252095a9447e58e6",
   "done": [
     0,
-    1
+    1,
+    2,
+    3
   ],
-  "report_digest": "97644d438dc1fcfacda62a73bffee253d382a3681d37d7787889af6cda909506"
+  "report_digest": "d4af82a5e7ed58ba596b9d40312bc8ee443d2af4a08c9091762938f100b1135b"
 }
