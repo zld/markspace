@@ -176,6 +176,24 @@ func isSoft(err error) bool {
 	return fault.Is(err, fault.ErrCorrupt, fault.ErrTruncated, fault.ErrUnsupported)
 }
 
+// RecordPartial marks a stage as completed with recoverable damage, so later
+// runs skip it but the manifest shows it was not clean.
+func (r *Runner) RecordPartial(name, note string) {
+	// The manifest record is owned by the caller; the runner only needs to know
+	// that the stage finished so the checkpoint does not replay it.
+	r.done[name] = true
+	r.result.Partial = appendUnique(r.result.Partial, name)
+}
+
+func appendUnique(list []string, v string) []string {
+	for _, existing := range list {
+		if existing == v {
+			return list
+		}
+	}
+	return append(list, v)
+}
+
 func (r *Runner) writeCheckpoint(ctx context.Context) {
 	if r.opts.StatePath == "" {
 		return

@@ -47,6 +47,9 @@ type app struct {
 	// previousManifest is the digest of the manifest found at start-up, before
 	// this run writes anything.
 	previousManifest string
+	// runner is the active stage runner, used to mark a stage resumable when
+	// it finishes with recoverable damage.
+	runner *stage.Runner
 }
 
 // execute runs the pipeline and returns the report. A nil error means every
@@ -64,10 +67,16 @@ func execute(ctx context.Context, cfg *Config) (*report, error) {
 	}
 	a.report = newReport(cfg, start, a.work)
 
-	// On resume, restore the outputs of stages a previous run completed before
-	// the runner skips them, so later stages see the same data. A fresh run
-	// must never read a stale checkpoint: that would double-count records.
-	if cfg.Resume {
+	// A checkpoint from an earlier run of the same inputs is resumed
+	// automatically: resume picks up at the first incomplete stage, and a fully
+	// complete checkpoint simply replays. A checkpoint for different inputs is
+	// ignored, so a fresh delivery of new data never reuses stale results.
+	//
+	// An explicit --interrupt-after without --resume forces a fresh execution:
+	// the point of that flag is to exercise a crash mid-pipeline, so inheriting
+	// a finished checkpoint would skip straight past it.
+	resume := cfg.Resume || (a.checkpointMatchesInputs() && cfg.InterruptAfter == "")
+	if resume {
 		a.loadCompleted()
 		a.loadManifest()
 	}
@@ -75,7 +84,7 @@ func execute(ctx context.Context, cfg *Config) (*report, error) {
 	steps := a.steps()
 	runner := stage.New(steps, stage.Options{
 		StatePath:      ws.StatePath,
-		Resume:         cfg.Resume,
+		Resume:         resume,
 		InterruptAfter: cfg.InterruptAfter,
 	}, a.mf)
 
@@ -86,6 +95,11 @@ func execute(ctx context.Context, cfg *Config) (*report, error) {
 		runCtx, stop = context.WithDeadline(runCtx, deadline)
 		defer stop()
 	}
+
+	// Recoverable damage found by a stage must still leave the stage resumable:
+	// the checkpoint records a partial stage as complete and the manifest marks
+	// it partial.
+	a.runner = runner
 
 	outcome, runErr := runner.Run(runCtx)
 	a.report.setOutcome(outcome)
@@ -134,8 +148,6 @@ func (a *app) prepareStreams() error {
 		}
 		a.work[0].Stream.Path = normal.Path
 		a.work[1].Stream.Path = faulty.Path
-		a.work[0].Stream.TruncatedOffset = normal.TruncatedRTCPOffset
-		a.work[1].Stream.TruncatedOffset = faulty.TruncatedRTCPOffset
 	} else {
 		a.work = []*work{{Name: "input"}}
 		a.work[0].Stream.Path = a.cfg.StreamPath
@@ -176,6 +188,16 @@ func (a *app) buildManifest() {
 	}
 	a.mf = manifest.New(a.cfg.Seed, a.cfg.BudgetMS, a.work[0].Stream.StartUnixNano, stageNames)
 	a.mf.StreamSHA256 = digestStrings("streams", streamDigests...)
+}
+
+// checkpointMatchesInputs reports whether the workspace holds a checkpoint for
+// exactly the inputs of this invocation.
+func (a *app) checkpointMatchesInputs() bool {
+	cp, err := stage.LoadCheckpoint(a.ws.StatePath)
+	if err != nil || len(cp.Completed) == 0 {
+		return false
+	}
+	return cp.StreamSHA == a.mf.StreamSHA256 && cp.Seed == a.cfg.Seed && cp.BudgetMS == a.cfg.BudgetMS
 }
 
 // loadManifest adopts the manifest of an earlier run when it describes the
@@ -285,6 +307,9 @@ func (a *app) finalizeStage(ctx context.Context, name string, params []string, n
 	status := manifest.StatusDone
 	if a.stagePartial(name) {
 		status = manifest.StatusPartial
+		if a.runner != nil {
+			a.runner.RecordPartial(name, "recoverable input damage recorded")
+		}
 	}
 	a.mf.SetStageInput(name, inputDigest, paramDigest)
 	outDigest := a.ws.stageDigest(name, a.work)
