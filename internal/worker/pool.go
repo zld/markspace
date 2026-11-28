@@ -127,7 +127,7 @@ func Run(ctx context.Context, cfg Config, jobs []Job) *Report {
 		cfg.MaxCacheBytes = 1 << 30
 	}
 	if cfg.FillPolicy == "" {
-		cfg.FillPolicy = "hold-last"
+		cfg.FillPolicy = "ramp-fill"
 	}
 	rep := &Report{TrackCancelled: make(map[model.TrackID]*model.Fault)}
 	outs := make([]Outcome, len(jobs))

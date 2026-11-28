@@ -91,7 +91,7 @@ func Merge(frames []model.Frame, opt MergeOptions) (*Timeline, model.Faults, err
 		return model.LessSortKey(ordered[i], ordered[j])
 	})
 
-	tl := &Timeline{Tracks: tracks, Warnings: warnings}
+	tl := &Timeline{Tracks: tracks, Warnings: dedupeWarnings(warnings)}
 	trackPos := make(map[model.TrackID]int, len(tracks))
 	tl.StartNS = ordered[0].PTS
 	for i, f := range ordered {
@@ -108,7 +108,24 @@ func Merge(frames []model.Frame, opt MergeOptions) (*Timeline, model.Faults, err
 		})
 		trackPos[f.Track]++
 	}
-	return tl, warnings, nil
+	// Return the same de-duplicated list the timeline carries, so callers that
+	// merge both into one report do not double-count regressions.
+	return tl, tl.Warnings, nil
+}
+
+// dedupeWarnings keeps one warning per (code, track, frame) in stable order.
+func dedupeWarnings(in model.Faults) model.Faults {
+	seen := make(map[string]bool, len(in))
+	out := make(model.Faults, 0, len(in))
+	for _, f := range in {
+		key := fmt.Sprintf("%s|%d|%d", f.Code, f.Track, f.Frame)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, f)
+	}
+	return out
 }
 
 // Span returns the media span covered by the timeline.
@@ -130,6 +147,10 @@ func (t *Timeline) TrackFrames(track model.TrackID) []Event {
 // ApplyOffsets rebases every event by the per-track offsets. Offsets are
 // applied in a copy so repeated runs with the same input are identical.
 func (t *Timeline) ApplyOffsets(offsets map[model.TrackID]int64) (*Timeline, error) {
+	if len(t.Events) == 0 {
+		return nil, model.NewFault(model.KindIngest, model.CodeManifestInvalid, 0, 0,
+			"cannot offset an empty timeline")
+	}
 	out := &Timeline{Tracks: append([]model.TrackID(nil), t.Tracks...), Warnings: t.Warnings}
 	events := make([]Event, len(t.Events))
 	copy(events, t.Events)
