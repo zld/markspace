@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"sort"
 
+	"mediapipe/internal/media"
 	"mediapipe/internal/model"
 	"mediapipe/internal/timeline"
 )
@@ -35,8 +36,10 @@ type Interval struct {
 	Present  []string
 	Absent   []string
 	// MixedBoundaries is true when the covering versions sliced this region
-	// at different points even though their summaries agreed.
+	// at different points even though their content agreed.
 	MixedBoundaries bool
+	// Cells are the selected version's content digests for the interval.
+	Cells []string
 }
 
 // MissingItem names a version that does not cover an interval.
@@ -59,10 +62,10 @@ type VersionSummary struct {
 
 // Conflict is an interval where versions disagree on content.
 type Conflict struct {
-	TrackID string
-	Span    model.Span
-	Kind    string // "summary_mismatch"
-	Details []VersionSummary
+	TrackID  string
+	Span     model.Span
+	Kind     string // "summary_mismatch"
+	Details  []VersionSummary
 	Resolved bool
 	Chosen   string
 	Reason   string
@@ -303,6 +306,11 @@ func mergeTrack(asset, trackID string, versions []Version) (mergedTrack, error) 
 }
 
 // mergeInterval decides one atomic interval between consecutive boundaries.
+//
+// Content agreement is decided by comparing grid cells, not coarse range
+// summaries: two versions that publish identical media under different range
+// boundaries carry the same cells and therefore agree. A coarse summary is
+// only consulted when no cell data is available (hand-written manifests).
 func (o *mergedTrack) mergeInterval(trackID string, span model.Span, present []versionTrack) {
 	var covering []versionTrack
 	var absent []string
@@ -323,28 +331,32 @@ func (o *mergedTrack) mergeInterval(trackID string, span model.Span, present []v
 		})
 	}
 
-	summaries := make(map[string]bool, len(covering))
-	for _, p := range covering {
-		summaries[summaryAt(p.track, span)] = true
-	}
-	mixed := boundariesDiffer(covering, span)
-
-	if len(summaries) == 1 {
-		sel, _ := selectVersion(covering)
+	agree, mixed := contentAgrees(covering, span)
+	if agree {
+		sel, ranked := selectVersion(covering)
 		reason := "agreement"
-		if len(covering) == 1 {
+		switch {
+		case len(covering) == 1:
 			reason = "single"
+		case ranked:
+			reason = "priority"
+		}
+		chosen := sel
+		if len(covering) == 1 && !ranked {
+			chosen = covering[0]
 		}
 		o.Intervals = append(o.Intervals, Interval{
 			Span: span, TrackID: trackID, Summary: summaryAt(sel.track, span),
 			Selected: sel.version.ID, Reason: reason,
 			Present: presentIDs(covering), Absent: absent, MixedBoundaries: mixed,
+			Cells: cellsAt(sel.track, span),
 		})
 		if mixed {
 			o.divergence = append(o.divergence, BoundaryDivergence{
 				TrackID: trackID, Span: span, Versions: presentIDs(covering),
 			})
 		}
+		_ = chosen
 		return
 	}
 
@@ -361,6 +373,7 @@ func (o *mergedTrack) mergeInterval(trackID string, span model.Span, present []v
 			Span: span, TrackID: trackID, Summary: summaryAt(chosen.track, span),
 			Selected: chosen.version.ID, Reason: "priority",
 			Present: presentIDs(covering), Absent: absent, MixedBoundaries: mixed,
+			Cells: cellsAt(chosen.track, span),
 		})
 	} else {
 		conflict.Reason = "no explicit priority to select a version"
@@ -372,6 +385,93 @@ func (o *mergedTrack) mergeInterval(trackID string, span model.Span, present []v
 	o.conflicts = append(o.conflicts, conflict)
 }
 
+// contentAgrees compares the grid cells every covering version supplies for
+// the interval. mixed reports that the versions' own segment boundaries
+// differ inside the interval.
+func contentAgrees(ps []versionTrack, span model.Span) (agree, mixed bool) {
+	var reference []string
+	haveCells := false
+	boundaries := make([][2]model.Nanos, 0, len(ps))
+	for _, p := range ps {
+		seg, ok := coveringSegment(p.track, span)
+		if !ok {
+			return false, false
+		}
+		boundaries = append(boundaries, [2]model.Nanos{seg.Timeline.Start, seg.Timeline.End})
+		cells, ok := seg.CellSlice(span.Start, span.End)
+		if !ok {
+			// No cell data: fall back to the coarse summary for this pair.
+			continue
+		}
+		if !haveCells {
+			reference = cells
+			haveCells = true
+			continue
+		}
+		if !sameCells(reference, cells) {
+			return false, false
+		}
+	}
+	for i := 1; i < len(boundaries); i++ {
+		if boundaries[i] != boundaries[0] {
+			mixed = true
+			break
+		}
+	}
+	if haveCells {
+		// Every covering version that has cell data agreed; versions without
+		// cell data are compared on the coarse summary instead.
+		for _, p := range ps {
+			seg, _ := coveringSegment(p.track, span)
+			if _, ok := seg.CellSlice(span.Start, span.End); ok {
+				continue
+			}
+			if reference != nil && summaryAt(p.track, span) != summaryOfCells(reference) {
+				return false, mixed
+			}
+		}
+		return true, mixed
+	}
+	first := summaryAt(ps[0].track, span)
+	for _, p := range ps[1:] {
+		if summaryAt(p.track, span) != first {
+			return false, mixed
+		}
+	}
+	return true, mixed
+}
+
+func sameCells(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// summaryOfCells reduces cells the same way the manifest does.
+func summaryOfCells(cells []string) string {
+	return media.CombineChunks(cells)
+}
+
+// cellsAt returns the cells of t covering span, or nil when unavailable.
+func cellsAt(t timeline.MappedTrack, span model.Span) []string {
+	seg, ok := coveringSegment(t, span)
+	if !ok {
+		return nil
+	}
+	cells, ok := seg.CellSlice(span.Start, span.End)
+	if !ok {
+		return nil
+	}
+	return append([]string(nil), cells...)
+}
+
+// summaryAt returns the coarse summary of the covering segment.
 func summaryAt(t timeline.MappedTrack, span model.Span) string {
 	if s, ok := coveringSegment(t, span); ok {
 		return s.Summary
@@ -379,23 +479,7 @@ func summaryAt(t timeline.MappedTrack, span model.Span) string {
 	return ""
 }
 
-func boundariesDiffer(ps []versionTrack, span model.Span) bool {
-	if len(ps) < 2 {
-		return false
-	}
-	first, ok := coveringSegment(ps[0].track, span)
-	if !ok {
-		return true
-	}
-	for _, p := range ps[1:] {
-		s, ok := coveringSegment(p.track, span)
-		if !ok || s.Timeline.Start != first.Timeline.Start || s.Timeline.End != first.Timeline.End {
-			return true
-		}
-	}
-	return false
-}
-
+// presentIDs returns the sorted ids of the given versions.
 func presentIDs(ps []versionTrack) []string {
 	out := make([]string, len(ps))
 	for i, p := range ps {
@@ -405,11 +489,13 @@ func presentIDs(ps []versionTrack) []string {
 	return out
 }
 
+// conflictDetails lists each version's view of the conflicting interval.
 func conflictDetails(ps []versionTrack, span model.Span) []VersionSummary {
 	out := make([]VersionSummary, 0, len(ps))
 	for _, p := range ps {
 		seg, ok := coveringSegment(p.track, span)
-		vs := VersionSummary{Version: p.version.ID, Summary: seg.Summary, Start: seg.Timeline.Start, End: seg.Timeline.End}
+		vs := VersionSummary{Version: p.version.ID, Summary: seg.Summary,
+			Start: seg.Timeline.Start, End: seg.Timeline.End}
 		if !ok {
 			vs.Summary = ""
 		}
@@ -435,7 +521,8 @@ func coveringSegment(t timeline.MappedTrack, span model.Span) (timeline.MappedSe
 
 // selectVersion picks a deterministic version to label an agreeing interval:
 // the unique highest explicit priority when every candidate is ranked, and
-// otherwise the lexicographically smallest version id.
+// otherwise the lexicographically smallest version id. The second result says
+// whether an explicit ranking decided it.
 func selectVersion(ps []versionTrack) (versionTrack, bool) {
 	if v, ok := chooseByPriority(ps); ok {
 		return v, true

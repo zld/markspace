@@ -50,10 +50,14 @@ type Range struct {
 	StartTicks    int64  `json:"start_ticks"`
 	DurationTicks int64  `json:"duration_ticks"`
 	Summary       string `json:"summary"`
-	Samples       int    `json:"samples,omitempty"`
-	Bytes         int64  `json:"bytes,omitempty"`
-	Sparse        bool   `json:"sparse,omitempty"`
-	GopTicks      int64  `json:"gop_ticks,omitempty"`
+	// Chunks are per-grid-cell content digests covering the range. They let
+	// versions that slice the same content differently be compared without
+	// false conflicts.
+	Chunks   []string `json:"chunks,omitempty"`
+	Samples  int      `json:"samples,omitempty"`
+	Bytes    int64    `json:"bytes,omitempty"`
+	Sparse   bool     `json:"sparse,omitempty"`
+	GopTicks int64    `json:"gop_ticks,omitempty"`
 }
 
 // EndTicks returns the exclusive end of the range in media ticks.

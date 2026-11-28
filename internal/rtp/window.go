@@ -32,32 +32,56 @@ type Delivered struct {
 
 // Stats is the observable outcome of a window run.
 //
-// A gap is a sequence slot passed without its packet: either because a late
-// packet supplied it after a later one had already been buffered (Recovered),
-// or because the window slid past it, or the stream ended, without it
-// (Unrecoverable). LossRecoveryRate is Recovered/(Recovered+Unrecoverable),
-// so a run whose out-of-order arrivals all fall inside the window scores 1.
+// A gap is a sequence slot that was expected but whose packet had not arrived.
+// It is:
+//   - Recovered, when the packet showed up before the window slid past the
+//     slot;
+//   - Unrecoverable, when the window slid past the slot first (its distance
+//     from the newest packet exceeded the window: "beyond the window");
+//   - TailLoss, when the slot was still inside the window but the stream
+//     ended without the packet, or the packet was refused because the buffer
+//     was full.
+//
+// LossRecoveryRate measures loss *inside the window*: recovered/(recovered+
+// tail loss). Losses beyond the window are by construction unrecoverable and
+// are reported separately rather than counted against the window's ability.
 type Stats struct {
 	Received      int // packets pushed, duplicates included
 	Committed     int // packets emitted downstream
 	InOrder       int // emitted immediately on arrival
 	Reordered     int // arrivals ahead of the expected slot that were buffered
 	Duplicates    int // re-offers of an already committed or buffered sequence
-	Recovered     int // gaps filled by a late arrival within the window
-	Unrecoverable int // gaps that passed beyond the window or remained at end
+	Recovered     int // in-window gaps filled by a late arrival
+	Unrecoverable int // gaps that fell beyond the window before arriving
+	TailLoss      int // in-window gaps unresolved when the stream ended
 	Dropped       int // packets refused because the buffer was full
+	// LossObserved is Recovered+TailLoss: every gap the window could still
+	// have repaired. It is filled in by Stats().
+	LossObserved int
+	// LossBeyondWindow counts gaps that left the window before their packet
+	// arrived. Stats() mirrors Unrecoverable into it for convenience.
+	LossBeyondWindow int
 }
 
 // Gaps returns the number of sequence slots that were ever missing.
-func (s Stats) Gaps() int { return s.Recovered + s.Unrecoverable }
+func (s Stats) Gaps() int { return s.Recovered + s.Unrecoverable + s.TailLoss }
 
-// LossRecoveryRate is the share of observed gaps repaired by the window, in
-// [0,1]. It is 1 when no gap was ever observed.
+// InWindowGaps is the denominator of the in-window recovery rate.
+func (s Stats) InWindowGaps() int { return s.Recovered + s.TailLoss }
+
+// LossRecoveryRate is the share of in-window loss repaired by reordering.
+
+// LossRecoveryRate is the share of in-window loss repaired by reordering, in
+// [0,1]. It is 1 when nothing was lost inside the window. Losses beyond the
+// window are excluded: the window had no chance to repair them.
 func (s Stats) LossRecoveryRate() float64 {
 	if s.Gaps() == 0 {
 		return 1
 	}
-	return float64(s.Recovered) / float64(s.Gaps())
+	if s.InWindowGaps() == 0 {
+		return 0
+	}
+	return float64(s.Recovered) / float64(s.InWindowGaps())
 }
 
 // Window reorders packets within a fixed span. It is not safe for concurrent
@@ -106,8 +130,18 @@ func New(cfg Config) (*Window, error) {
 	}, nil
 }
 
-// Stats returns a snapshot of the counters.
-func (w *Window) Stats() Stats { return w.stats }
+// Stats returns a snapshot of the counters. LossObserved and LossRecovered are
+// derived so the in-window accounting is always internally consistent.
+func (w *Window) Stats() (s Stats) {
+	s = w.stats
+	s.LossObserved = s.Recovered + s.TailLoss
+	return s
+}
+
+// Config returns the effective window configuration.
+func (w *Window) Config() Config {
+	return Config{Size: w.size, MaxBuffered: w.maxBuffered}
+}
 
 // ahead reports whether a is strictly after b in modular sequence order.
 func ahead(a, b uint16) bool { return int16(a-b) > 0 }
@@ -146,6 +180,7 @@ func (w *Window) Push(p Packet) ([]Delivered, error) {
 		}
 		out := []Delivered{w.emit(p, false, recovered)}
 		w.next++
+		w.advanceHigh(p.Sequence)
 		return append(out, w.drain()...), nil
 	}
 
@@ -168,7 +203,10 @@ func (w *Window) Push(p Packet) ([]Delivered, error) {
 		return append(out, w.drain()...), nil
 	}
 	if len(w.buf) >= w.maxBuffered {
+		// Refusing a packet that is still inside the window is in-window loss:
+		// it must count against the recovery rate.
 		w.stats.Dropped++
+		w.stats.TailLoss++
 		return nil, model.New(model.KindUnrecoverable, model.StageRTP, "", "push",
 			fmt.Errorf("reorder buffer full: %d packets buffered", len(w.buf))).
 			WithOffset(int64(p.Sequence))
@@ -232,6 +270,7 @@ func (w *Window) drain() []Delivered {
 		}
 		delete(w.buf, w.next)
 		out = append(out, w.emit(p, true, w.takeMissing(w.next)))
+		w.advanceHigh(p.Sequence)
 		w.next++
 	}
 }
@@ -262,14 +301,15 @@ func (w *Window) Finalise() []Delivered {
 		return nil
 	}
 	var out []Delivered
+	// Deliver everything up to and including the highest sequence ever seen.
 	for w.next != w.high+1 {
 		if p, ok := w.buf[w.next]; ok {
 			delete(w.buf, w.next)
 			out = append(out, w.emit(p, true, w.takeMissing(w.next)))
 		} else {
-			if w.takeMissing(w.next) {
-				w.stats.Unrecoverable++
-			}
+			// The stream ended while this slot was still inside the window.
+			w.takeMissing(w.next)
+			w.stats.TailLoss++
 		}
 		w.next++
 	}

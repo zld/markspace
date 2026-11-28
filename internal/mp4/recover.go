@@ -143,6 +143,17 @@ func recoverSamples(s *Stream, trak Box, stbl Box, t *stblTables) ([]Sample, []G
 	return out, gaps, note, nil
 }
 
+// TotalRecovered returns how many tracks had their index rebuilt.
+func (idx *Index) TotalRecovered() int {
+	n := 0
+	for _, t := range idx.Tracks {
+		if !t.Complete {
+			n++
+		}
+	}
+	return n
+}
+
 // Validate ensures sample payloads stay inside the input; used by callers
 // before trusting a fully parsed index.
 func (idx *Index) Validate(size int64, asset string) error {

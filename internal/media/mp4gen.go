@@ -56,8 +56,11 @@ type TrackSpec struct {
 	Timescale  uint32
 	StartTicks int64 // first decode timestamp (non-zero simulates late start)
 	EditMedia  int64 // edit-list media_time, in media ticks
-	EditDur    int64 // edit-list segment_duration, in media ticks
-	Samples    SampleSpec
+	EditDur    int64 // media edit segment_duration, 0 meaning "to end"
+	// EmptyEditTicks prepends an empty edit (media_time = -1) of this many
+	// presentation ticks, delaying the track without consuming media.
+	EmptyEditTicks int64
+	Samples        SampleSpec
 }
 
 // FileSpec is a complete synthetic asset rendition.
@@ -226,9 +229,17 @@ func buildTkhd(t TrackSpec) []byte {
 }
 
 func buildElst(t TrackSpec) []byte {
-	entry := append(u32(uint32(t.EditDur)), u32(uint32(int32(t.EditMedia)))...)
-	entry = append(entry, u32(0x00010000)...)
-	return fullBox("elst", 0, 0, u32(1), entry)
+	entry := func(dur int64, media int64) []byte {
+		e := append(u32(uint32(dur)), u32(uint32(int32(media)))...)
+		return append(e, u32(0x00010000)...)
+	}
+	if t.EmptyEditTicks > 0 {
+		body := append(u32(2), entry(t.EmptyEditTicks, -1)...)
+		body = append(body, entry(t.EditDur, t.EditMedia)...)
+		return fullBox("elst", 0, 0, body)
+	}
+	body := append(u32(1), entry(t.EditDur, t.EditMedia)...)
+	return fullBox("elst", 0, 0, body)
 }
 
 func buildMdhd(t TrackSpec) []byte {
@@ -236,7 +247,8 @@ func buildMdhd(t TrackSpec) []byte {
 	body = append(body, u32(t.Timescale)...)
 	dur := uint32(int64(t.Samples.Count) * int64(t.Samples.Delta))
 	body = append(body, u32(dur)...)
-	body = append(body, []byte{0x55, 0xc4, 0}...)
+	// ISO-639-2 "und" packed into 16 bits, then pre_defined = 0.
+	body = append(body, []byte{0x55, 0xc4, 0, 0}...)
 	return fullBox("mdhd", 0, 0, body)
 }
 
@@ -369,6 +381,44 @@ func ManifestRanges(asset string, t TrackSpec, segSamples int) []RangeSpec {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].StartTicks < out[j].StartTicks })
 	return out
+}
+
+// StripTable zeroes the payload of every box of the given type in place,
+// descending into containers, and leaves all box headers intact. It is used to
+// generate damaged-index fixtures: the container still scans, but the table is
+// unusable and must be recovered or rejected. It returns how many boxes were
+// touched.
+func StripTable(data []byte, typ string) int {
+	return stripRange(data, 0, len(data), typ)
+}
+
+func stripRange(data []byte, start, end int, typ string) int {
+	n := 0
+	for i := start; i+8 <= end; {
+		size := int(binary.BigEndian.Uint32(data[i : i+4]))
+		if size < 8 || i+size > end {
+			return n
+		}
+		t := string(data[i+4 : i+8])
+		if t == typ {
+			for j := i + 8; j < i+size; j++ {
+				data[j] = 0
+			}
+			n++
+		} else if isContainerType(t) {
+			n += stripRange(data, i+8, i+size, typ)
+		}
+		i += size
+	}
+	return n
+}
+
+func isContainerType(t string) bool {
+	switch t {
+	case "moov", "trak", "mdia", "minf", "stbl", "edts", "mvex", "moof", "traf", "dinf", "udta":
+		return true
+	}
+	return false
 }
 
 // RangeSpec mirrors manifest.Range without importing it, keeping this package

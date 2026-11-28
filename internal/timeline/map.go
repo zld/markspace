@@ -41,10 +41,15 @@ type Segment struct {
 	StartTicks    int64
 	DurationTicks int64
 	Summary       string
-	Samples       int
-	Bytes         int64
-	Sparse        bool
-	GopTicks      int64
+	// Cells are content digests of fixed-size grid cells starting at the
+	// segment's first cell, so versions that slice the same content
+	// differently compare equal cell by cell.
+	Cells    []string
+	CellSize model.Nanos
+	Samples  int
+	Bytes    int64
+	Sparse   bool
+	GopTicks int64
 }
 
 // EndTicks returns the exclusive end in media ticks.
@@ -69,10 +74,30 @@ type MappedSegment struct {
 	Timeline  model.Span
 	MediaTick int64
 	Summary   string
-	Samples   int
-	Bytes     int64
-	Sparse    bool
-	GopTicks  int64
+	Cells     []string
+	// CellSize is the duration of one cell, derived from the track timescale
+	// and the publication grid.
+	CellSize model.Nanos
+	Samples  int
+	Bytes    int64
+	Sparse   bool
+	GopTicks int64
+}
+
+// CellSlice returns the cells covering n..m within the segment.
+func (s MappedSegment) CellSlice(start, end model.Nanos) ([]string, bool) {
+	if s.CellSize <= 0 || len(s.Cells) == 0 {
+		return nil, false
+	}
+	if start < s.Timeline.Start || end > s.Timeline.End || end < start {
+		return nil, false
+	}
+	first := int64(start-s.Timeline.Start) / int64(s.CellSize)
+	last := int64(end-s.Timeline.Start) / int64(s.CellSize)
+	if first < 0 || last > int64(len(s.Cells)) || first > last {
+		return nil, false
+	}
+	return s.Cells[first:last], true
 }
 
 // MappedTrack is a track on the common timeline.
@@ -178,8 +203,13 @@ func mapTrack(asset, version string, t Track) (MappedTrack, error) {
 			return MappedTrack{}, mapErr(asset, version, t.TrackID, "map", err, s.StartTicks, true)
 		}
 		for _, sp := range spans {
+			cells := s.Cells
+			if cells == nil {
+				cells = nil
+			}
 			out.Segments = append(out.Segments, MappedSegment{
 				Timeline: sp, MediaTick: s.StartTicks, Summary: s.Summary,
+				Cells: cells, CellSize: s.CellSize,
 				Samples: s.Samples, Bytes: s.Bytes, Sparse: s.Sparse, GopTicks: s.GopTicks,
 			})
 		}
@@ -286,11 +316,11 @@ func mediaToPR(e Edit, tick int64, timescale uint32) (model.Nanos, error) {
 
 // SyncReport quantifies audio/video alignment for one version.
 type SyncReport struct {
-	Asset         string
-	Version       string
-	OriginSkewMS  int64
+	Asset          string
+	Version        string
+	OriginSkewMS   int64
 	BoundarySkewMS int64
-	ErrorMS       int64
+	ErrorMS        int64
 }
 
 // SyncError computes the A/V alignment report for a mapped version. The

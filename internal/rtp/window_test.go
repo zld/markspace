@@ -154,11 +154,14 @@ func TestFlushReportsTailHole(t *testing.T) {
 	if len(got) != 2 || got[0] != 2 || got[1] != 3 {
 		t.Fatalf("flush delivered %v", got)
 	}
-	// Slot 1 never arrived; 2 and 3 were buffered before their turn, so they
-	// are reordered rather than recovered.
+	// Slot 1 never arrived; the stream ended while it was still inside the
+	// window, so it is tail loss, not a beyond-window loss.
 	st := w.Stats()
-	if st.Unrecoverable != 1 || st.Recovered != 0 || st.Committed != 3 {
+	if st.TailLoss != 1 || st.Unrecoverable != 0 || st.Recovered != 0 || st.Committed != 3 {
 		t.Fatalf("stats = %+v", st)
+	}
+	if st.LossRecoveryRate() != 0 {
+		t.Fatalf("recovery = %v", st.LossRecoveryRate())
 	}
 }
 

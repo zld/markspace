@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 
 	"mediapipe/internal/model"
 )
@@ -28,9 +29,11 @@ type TrackIndex struct {
 	TrackID   uint32
 	Handler   string
 	Timescale uint32
-	EditMedia int64 // first edit's media_time, in media ticks
-	EditDur   int64 // first edit's segment duration, in media ticks
-	Samples   []Sample
+	EditMedia int64 // first media edit's media_time, in media ticks
+	EditDur   int64 // first media edit's segment duration, in media ticks
+	// EditList is the full elst in order, empty edits included.
+	EditList []EditEntry
+	Samples  []Sample
 	// Complete is false when stbl tables were missing or inconsistent and
 	// the samples had to be reconstructed by scanning the media data.
 	Complete   bool
@@ -41,6 +44,13 @@ type TrackIndex struct {
 
 // Gap is a region of the media timeline that could not be located. It is
 // reported, never silently filled.
+// EditEntry is one elst entry. MediaTime < 0 marks an empty edit.
+type EditEntry struct {
+	MediaTime int64
+	Duration  int64
+	Rate      int64 // media_rate_integer; the fraction is always zero
+}
+
 type Gap struct {
 	StartTicks int64
 	Duration   int64
@@ -100,6 +110,20 @@ func (t *TrackIndex) KeyframeBefore(ticks int64) (Sample, int64, bool) {
 // When the stbl tables are absent or inconsistent it falls back to a media
 // data scan and marks the track incomplete rather than inventing samples.
 func BuildIndex(ctx context.Context, s *Stream) (*Index, error) {
+	// go-mp4 is the primary metadata decoder. Its failure is reported as a
+	// structured corruption error at the current offset; the byte-level
+	// fallback then only covers tracks the library could not describe, never
+	// a container the library rejected outright.
+	probe, perr := readProbeFromStream(s)
+	if perr != nil {
+		var me *model.Error
+		if !errors.As(perr, &me) {
+			return nil, s.corrupt("probe", 0, perr)
+		}
+		return nil, perr
+	}
+	s.probe = remapProbe(probe)
+
 	idx := &Index{TotalBytes: s.Size()}
 	byTrack := map[uint32]*TrackIndex{}
 	var order []uint32
@@ -166,30 +190,25 @@ func buildTrack(ctx context.Context, s *Stream, trak Box) (*TrackIndex, error) {
 		return nil, s.corrupt("track", trak.Offset, errors.New("trak missing tkhd/mdhd/hdlr"))
 	}
 	t := &TrackIndex{Complete: true}
-	trackID, err := readU32(s, *tkhd, 12)
-	if err != nil {
-		return nil, err
+	if meta, ok := s.probe[probeKey(trak.Offset)]; ok {
+		// go-mp4 decoded this track; trust its header fields and edit list.
+		t.TrackID = meta.trackID
+		t.Handler = meta.handler
+		t.Timescale = meta.timescale
+		t.EditList = meta.edits
+	} else {
+		if err := t.readHeaderFallback(s, *tkhd, *hdlrBox, *mdhdBox, elstBox); err != nil {
+			return nil, err
+		}
 	}
-	t.TrackID = trackID
-	handler, err := readHandler(s, *hdlrBox)
-	if err != nil {
-		return nil, err
-	}
-	t.Handler = handler
-	ts, _, err := readMdhd(s, *mdhdBox)
-	if err != nil {
-		return nil, err
-	}
-	t.Timescale = ts
 	if t.Timescale == 0 {
 		return nil, s.corrupt("track", mdhdBox.Offset, errors.New("zero timescale"))
 	}
-	if elstBox != nil {
-		media, dur, err := readFirstEdit(s, *elstBox)
-		if err != nil {
-			return nil, err
+	for _, e := range t.EditList {
+		if e.MediaTime >= 0 {
+			t.EditMedia, t.EditDur = e.MediaTime, e.Duration
+			break
 		}
-		t.EditMedia, t.EditDur = media, dur
 	}
 	if stblBox == nil {
 		return nil, s.corrupt("track", trak.Offset, errors.New("trak missing stbl"))
@@ -237,6 +256,53 @@ func (s *Stream) boxesUnder(trak Box) []Box {
 	return out
 }
 
+func probeKey(trakOffset int64) string { return fmt.Sprintf("@%d", trakOffset) }
+
+// remapProbe rekeys go-mp4 metadata by trak offset so each trak can find its
+// own header fields regardless of track-id ordering on disk.
+func remapProbe(raw map[string]probeMetadata) map[string]probeMetadata {
+	out := make(map[string]probeMetadata, len(raw))
+	for key, meta := range raw {
+		// raw keys are "<id>@<trakOffset>"; index by "@<trakOffset>".
+		at := strings.LastIndexByte(key, '@')
+		if at < 0 {
+			continue
+		}
+		out[key[at:]] = meta
+	}
+	return out
+}
+
+// readHeaderFallback decodes the track header bytes directly. It is only used
+// when the go-mp4 probe could not describe the track (for example a file whose
+// metadata go-mp4 refuses), so the pipeline can still report a structured
+// error for the damaged input instead of failing opaquely.
+func (t *TrackIndex) readHeaderFallback(s *Stream, tkhd, hdlr, mdhd Box, elstBox *Box) error {
+	trackID, err := readU32(s, tkhd, 12)
+	if err != nil {
+		return err
+	}
+	t.TrackID = trackID
+	handler, err := readHandler(s, hdlr)
+	if err != nil {
+		return err
+	}
+	t.Handler = handler
+	ts, _, err := readMdhd(s, mdhd)
+	if err != nil {
+		return err
+	}
+	t.Timescale = ts
+	if elstBox != nil {
+		edits, err := readEdits(s, *elstBox)
+		if err != nil {
+			return err
+		}
+		t.EditList = edits
+	}
+	return nil
+}
+
 func readU32(s *Stream, b Box, rel int64) (uint32, error) {
 	var buf [4]byte
 	if err := s.readAt(buf[:], b.Offset+b.HeaderSize+rel); err != nil {
@@ -282,6 +348,49 @@ func readMdhd(s *Stream, b Box) (uint32, uint64, error) {
 		return 0, 0, s.corrupt("mdhd", b.Offset, fmt.Errorf("unsupported version %d", ver))
 	}
 	return ts, dur, nil
+}
+
+// readEdits parses every elst entry, preserving empty edits.
+func readEdits(s *Stream, b Box) ([]EditEntry, error) {
+	payload, err := s.Payload(b)
+	if err != nil {
+		return nil, err
+	}
+	if len(payload) < 8 {
+		return nil, s.corrupt("elst", b.Offset, ErrTruncated)
+	}
+	ver := payload[0]
+	count := binary.BigEndian.Uint32(payload[4:8])
+	out := make([]EditEntry, 0, count)
+	switch ver {
+	case 0:
+		if uint64(len(payload)) < 8+uint64(count)*12 {
+			return nil, s.corrupt("elst", b.Offset, ErrTruncated)
+		}
+		for i := uint32(0); i < count; i++ {
+			base := 8 + i*12
+			out = append(out, EditEntry{
+				Duration:  int64(binary.BigEndian.Uint32(payload[base : base+4])),
+				MediaTime: int64(int32(binary.BigEndian.Uint32(payload[base+4 : base+8]))),
+				Rate:      int64(int16(binary.BigEndian.Uint16(payload[base+8 : base+10]))),
+			})
+		}
+	case 1:
+		if uint64(len(payload)) < 8+uint64(count)*20 {
+			return nil, s.corrupt("elst", b.Offset, ErrTruncated)
+		}
+		for i := uint32(0); i < count; i++ {
+			base := 8 + i*20
+			out = append(out, EditEntry{
+				Duration:  int64(binary.BigEndian.Uint64(payload[base : base+8])),
+				MediaTime: int64(binary.BigEndian.Uint64(payload[base+8 : base+16])),
+				Rate:      int64(int16(binary.BigEndian.Uint16(payload[base+16 : base+18]))),
+			})
+		}
+	default:
+		return nil, s.corrupt("elst", b.Offset, fmt.Errorf("unsupported version %d", ver))
+	}
+	return out, nil
 }
 
 func readFirstEdit(s *Stream, b Box) (int64, int64, error) {

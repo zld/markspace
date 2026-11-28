@@ -87,6 +87,7 @@ type Stream struct {
 	asset string
 	cfg   Config
 	boxes int
+	probe map[string]probeMetadata
 }
 
 // NewStream validates the source bounds and configuration.
@@ -211,6 +212,13 @@ func (s *Stream) walk(ctx context.Context, start, end int64, path []string, dept
 		return s.corrupt("walk", off, fmt.Errorf("%w: container ends at %d, expected %d", ErrTruncated, off, end))
 	}
 	return nil
+}
+
+// validateLayout walks the whole box tree without recursion, stopping at the
+// first structural problem. It is the authoritative bounds check that go-mp4
+// decoding relies on.
+func (s *Stream) validateLayout() error {
+	return s.Walk(context.Background(), func(Box) error { return nil })
 }
 
 // Payload copies a box payload into memory, refusing tables larger than the

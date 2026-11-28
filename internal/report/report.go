@@ -67,9 +67,13 @@ type Digest struct {
 type Metrics struct {
 	// AVSyncErrorUS is the audio/video alignment error in microseconds.
 	AVSyncErrorUS int64 `json:"av_sync_error_us"`
-	// LossObserved and LossRecovered drive the recovery rate exactly.
-	LossObserved  int64 `json:"loss_observed"`
-	LossRecovered int64 `json:"loss_recovered"`
+	// LossObserved counts gaps that were still inside the reorder window;
+	// LossRecovered counts those repaired by reordering. LossBeyondWindow
+	// counts gaps that had already left the window and are by definition
+	// unrecoverable, so they are reported but excluded from the rate.
+	LossObserved     int64 `json:"loss_observed"`
+	LossRecovered    int64 `json:"loss_recovered"`
+	LossBeyondWindow int64 `json:"loss_beyond_window"`
 	// LatencyP95US is the modelled end-to-end P95 queueing latency.
 	LatencyP95US int64 `json:"latency_p95_us"`
 	LatencyMaxUS int64 `json:"latency_max_us"`
