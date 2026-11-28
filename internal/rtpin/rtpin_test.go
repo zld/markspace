@@ -98,7 +98,7 @@ func TestFirstMissingAndRetransmit(t *testing.T) {
 	}
 	// Burst loss recovered by retransmission.
 	r.Add(mk(2, "CD"))
-	segs, _ := r.Add(mk(4, "EF"))
+	segs, _ = r.Add(mk(4, "EF"))
 	if len(segs) != 3 {
 		t.Fatalf("after retransmit segs=%v", segs)
 	}
