@@ -91,32 +91,30 @@ func Convert(ticks int64, srcHz, dstHz uint32) (int64, error) {
 
 // WrapCount treats v as a value on a cyclic counter with the given modulo
 // (2^bits) and returns a monotonically increasing unwrapped value given the
-// previous unwrapped value. bits must be between 1 and 64.
+// previous unwrapped value. The extension follows the RFC 3550 update rule:
+// among the candidates on the previous, current and next cycle, the value
+// closest to prev wins, so forward jumps start a new cycle while late or
+// duplicate values stay on the cycle they belong to. bits is 1..64.
 func WrapCount(prev uint64, v uint64, bits uint) uint64 {
 	mod := uint64(1) << bits
 	base := prev - (prev % mod)
-	cand := base + v
-	half := mod / 2
-	diff := diffMod(cand, prev, mod)
-	if diff > half {
-		cand -= mod
-	} else if diff == half && cand < prev {
-		cand += mod
+	lo, cur, hi := base-mod+v, base+v, base+mod+v
+	dLo, dCur, dHi := absDiff(prev, lo), absDiff(prev, cur), absDiff(prev, hi)
+	switch {
+	case dLo <= dCur && dLo <= dHi:
+		return lo
+	case dHi <= dCur && dHi <= dLo:
+		return hi
+	default:
+		return cur
 	}
-	if cand+mod/2 < prev {
-		cand += mod
-	}
-	if cand > prev+mod/2 {
-		cand -= mod
-	}
-	return cand
 }
 
-func diffMod(a, b, mod uint64) uint64 {
-	if a >= b {
+func absDiff(a, b uint64) uint64 {
+	if a > b {
 		return a - b
 	}
-	return mod - (b - a)
+	return b - a
 }
 
 // Wrap32 unwraps a 32-bit RTP timestamp/sequence relative to a prior
