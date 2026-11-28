@@ -1,0 +1,5 @@
+# Local demo artifacts and build outputs
+.mediacheck-demo/
+*.mp4
+*.done
+/mediacheck
