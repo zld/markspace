@@ -4,15 +4,15 @@ import "bytes"
 
 // TrackSpec describes one track to be written into a generated clip.
 type TrackSpec struct {
-	ID         uint32
-	Handler    string // vide, soun, subt
-	Timescale  uint32
-	Width      uint16
-	Height     uint16
-	Volume     uint16
-	Language   string
+	ID          uint32
+	Handler     string // vide, soun, subt
+	Timescale   uint32
+	Width       uint16
+	Height      uint16
+	Volume      uint16
+	Language    string
 	SampleEntry []byte
-	Samples    []Sample
+	Samples     []Sample
 }
 
 // DurationTicks is the total media duration of the track.
