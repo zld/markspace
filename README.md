@@ -118,3 +118,12 @@ The last two reports carry the same `report_sha256`.
   escapes the input root, including through symlinks.
 - **Bounds.** Per-file and total scan byte limits, a file-count limit, a luma
   extraction cap and a per-run segment sample cap are all enforced.
+
+## One-shot acceptance
+
+```sh
+sh scripts/acceptance.sh
+```
+
+Builds the binary, generates fixtures, and checks the normal, damaged and
+recovery paths, exiting non-zero on any failed expectation.
