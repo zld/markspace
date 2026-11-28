@@ -1,6 +1,7 @@
 package fixture
 
 import (
+	"strconv"
 	"testing"
 
 	"mediad/media"
@@ -117,4 +118,58 @@ func parseMetadataForTest(clip *media.Clip) ([]timeline.Event, timeline.Issues) 
 		events = append(events, ev)
 	}
 	return events, issues
+}
+
+// TestDemoRenditionsShareMetadata asserts the two renditions deliver the same
+// cues and chapters at the same instants, which is what lets the manifest
+// collapse duplicate copies while keeping the media bytes distinct.
+func TestDemoRenditionsShareMetadata(t *testing.T) {
+	d := BuildDemo(DemoOptions{Seed: 7, Loss: 0.04})
+	var meta []([]string)
+	for _, f := range d.Files {
+		if f.IsRTP {
+			continue
+		}
+		clip, err := media.Parse(f.Name, f.Bytes)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, issues := parseMetadataForTest(clip)
+		if issues.HasErrors() {
+			t.Fatalf("%s: %v", f.Name, issues.Strings())
+		}
+		var lines []string
+		for _, ch := range clip.ChplBoxes() {
+			evs, _ := media.ParseChpl(ch.Payload, clip.Path, 0)
+			for _, ev := range evs {
+				us, _ := ev.Presentation.Micros()
+				lines = append(lines, "chapter:"+string(ev.Payload)+":"+strconv.FormatInt(us, 10))
+			}
+		}
+		for _, tr := range clip.Tracks {
+			if tr.Kind != media.KindSubtitle {
+				continue
+			}
+			for _, s := range tr.Samples {
+				data := clip.Bytes()[s.Offset : s.Offset+s.Size]
+				us := s.CompositeTicks * 1_000_000 / int64(tr.TimeScale)
+				lines = append(lines, "cue:"+string(data[2:])+":"+strconv.FormatInt(us, 10))
+			}
+		}
+		meta = append(meta, lines)
+	}
+	if len(meta) != 2 {
+		t.Fatalf("expected two renditions, got %d", len(meta))
+	}
+	if len(meta[0]) != len(meta[1]) {
+		t.Fatalf("metadata counts differ: %d vs %d", len(meta[0]), len(meta[1]))
+	}
+	for i := range meta[0] {
+		if meta[0][i] != meta[1][i] {
+			t.Fatalf("metadata differs at %d: %q vs %q", i, meta[0][i], meta[1][i])
+		}
+	}
+	if len(meta[0]) == 0 {
+		t.Fatal("no metadata generated")
+	}
 }

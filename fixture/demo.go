@@ -62,7 +62,12 @@ func BuildDemo(opts DemoOptions) Demo {
 		id    uint32
 		width uint16
 	}{{"prog_360p.mp4", 1, 640}, {"prog_720p.mp4", 2, 1280}} {
-		bytes, descs := buildDemoClip(spec.id, spec.width, opts, cues, rng)
+		// Each rendition gets its own PRNG stream so its media bytes differ (as
+		// two encodes of one program would) while its metadata — cue times and
+		// chapter marks — is identical. That lets the manifest collapse the
+		// same cue delivered by both renditions while keeping the media distinct.
+		clipRng := newDemoRand(opts.Seed*31 + int64(spec.id))
+		bytes, descs := buildDemoClip(spec.id, spec.width, opts, cues, clipRng)
 		d.Files = append(d.Files, DemoFile{Name: spec.name, Bytes: bytes, Role: "video"})
 		if i == 0 {
 			d.Descriptions = append(d.Descriptions, descs...)
@@ -139,10 +144,13 @@ func buildDemoClip(id uint32, width uint16, opts DemoOptions, cues []string, rng
 	// cue at interval start + its own jitter.
 	const cueIntervalTicks = 10 * 90000 // one cue every 10 s
 	const jitterTicks = 18 * 90         // ≤ 18 ms
+	// Jitter is derived from the cue index, not the PRNG, so every rendition
+	// places the same cue at the same instant and the manifest can collapse the
+	// duplicate copies.
 	jitters := make([]int, len(cues))
 	for i := range jitters {
 		if i > 0 {
-			jitters[i] = rng.intn(jitterTicks)
+			jitters[i] = (i * 7919) % jitterTicks
 		}
 	}
 	var subs []Sample
