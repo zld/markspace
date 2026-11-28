@@ -188,6 +188,9 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 		res.Elapsed = time.Since(started)
 		return res, nil
 	}
+	// Record the alignment error the merged timeline actually measured, so the
+	// manifest states the real value the verifier can re-derive.
+	rendered.Manifest.Summary.MaxAlignErrorNS = align.MaxErrorNS
 	rendered.Manifest.Summary.PeakCacheBytes = rendered.PeakCacheBytes
 	res.Render = rendered
 	res.Warnings = append(res.Warnings, rendered.Warnings...)
