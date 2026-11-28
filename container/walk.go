@@ -3,11 +3,94 @@ package container
 import (
 	"fmt"
 	"io"
+	"os"
+	"sort"
 
 	mp4 "github.com/abema/go-mp4"
 
 	"mediarc/model"
 )
+
+func ScanFile(path string, options ScanOptions) (ScanResult, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return ScanResult{}, model.Fatal(model.CodeInvalidArgument, stream,
+			"cannot open input").WithCause(err)
+	}
+	defer file.Close()
+	return Scan(file, options)
+}
+
+// Scan reads MP4 structure from r, which must be seekable.
+func Scan(r io.ReadSeeker, options ScanOptions) (ScanResult, error) {
+	options = options.withDefaults()
+	size, err := r.Seek(0, io.SeekEnd)
+	if err != nil {
+		return ScanResult{}, model.Fatal(model.CodeTruncatedInput, stream,
+			"cannot determine input length").WithCause(err)
+	}
+	if size <= 0 {
+		return ScanResult{}, model.Fatal(model.CodeTruncatedInput, stream, "input is empty")
+	}
+	result := ScanResult{Size: size, FirstUnreadable: -1, IndexComplete: true}
+
+	boxes, recoveries, scanErr := scanTopLevel(r, size)
+	result.Boxes = boxes
+	if scanErr != nil {
+		result.IndexComplete = false
+		result.FirstUnreadable = model.OffsetOf(scanErr)
+		if result.FirstUnreadable < 0 || result.FirstUnreadable > size {
+			result.FirstUnreadable = size
+		}
+		result.Divergences = append(result.Divergences, Divergence{
+			Offset: result.FirstUnreadable, Detail: scanErr.Error(), Err: toModel(scanErr),
+		})
+	}
+
+	idx, idxErr := readStructure(r, size, boxes, options)
+	if idx != nil {
+		result.Tracks = idx.tracks
+		result.Divergences = append(result.Divergences, idx.divergences...)
+		if !idx.complete {
+			result.IndexComplete = false
+		}
+	}
+	if idxErr != nil {
+		result.IndexComplete = false
+	}
+	if idxErr != nil {
+		off := model.OffsetOf(idxErr)
+		if off < 0 || off > size {
+			off = size
+		}
+		if result.FirstUnreadable < 0 || off < result.FirstUnreadable {
+			result.FirstUnreadable = off
+		}
+		result.Divergences = append(result.Divergences, Divergence{
+			Offset: off, Detail: idxErr.Error(), Err: toModel(idxErr),
+		})
+	}
+
+	// Boundary recovery supplements an incomplete index. With a trustworthy
+	// index and tracks of its own there is nothing left to recover.
+	if !result.IndexComplete || len(result.Tracks) == 0 {
+		covered := indexedExtents(result.Tracks)
+		samples, bytes := recoverFromMdats(recoveries, covered, options)
+		if len(samples) > 0 {
+			result.Tracks = append(result.Tracks, Track{
+				ID:      recoveredTrackID,
+				Kind:    TrackOther,
+				Samples: samples,
+			})
+			result.RecoveredSamples = len(samples)
+			result.RecoveredBytes = bytes
+		}
+	}
+	sort.SliceStable(result.Divergences, func(i, j int) bool {
+		return result.Divergences[i].Offset < result.Divergences[j].Offset
+	})
+	return result, nil
+}
 
 // recoveredTrackID is the synthetic track identifier for boundary-recovered
 // samples that the index could not attribute.
