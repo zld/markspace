@@ -150,12 +150,12 @@ func build(spec Spec, seed int64) ([]byte, *Stream, error) {
 	var rtpRecords []wire
 	var rtcpRecords [][]byte
 	tsBase := spec.StartTS
-	gapInserted := false
 	for i := 0; i < spec.Packets; i++ {
+		// The stall shifts the whole tail, so every later packet keeps its
+		// nominal spacing and only the one gap is anomalous.
 		ts := tsBase + uint32(i)*PacketInterval
-		if spec.GapTicks > 0 && i > spec.GapAfter && !gapInserted {
+		if spec.GapTicks > 0 && i > spec.GapAfter {
 			ts += spec.GapTicks
-			gapInserted = true
 		}
 		if drop[i] {
 			continue

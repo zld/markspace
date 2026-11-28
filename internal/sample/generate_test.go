@@ -135,13 +135,22 @@ func TestFaultStreamGap(t *testing.T) {
 		}
 	}
 	gaps := 0
+	irregular := 0
 	for i := 1; i < len(ts); i++ {
-		if ts[i]-ts[i-1] > clock.GapThresholdTicks {
+		d := ts[i] - ts[i-1]
+		if d > clock.GapThresholdTicks {
 			gaps++
+		}
+		if d != clock.Tick(PacketInterval) {
+			irregular++
 		}
 	}
 	if gaps < 1 {
 		t.Fatalf("gap intervals = %d, want >= 1", gaps)
+	}
+	// Only the injected stall plus the two-packet loss may disturb spacing.
+	if irregular > 2 {
+		t.Fatalf("irregular deltas = %d, want <= 2", irregular)
 	}
 }
 
