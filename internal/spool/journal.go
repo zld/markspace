@@ -95,11 +95,15 @@ func (j *Journal) Entries() []Entry {
 // in the committed entries.
 func (j *Journal) Covers(offset, length uint64) bool {
 	end := offset + length
+	cursor := offset
 	for _, e := range j.Entries() {
-		if e.Offset > offset {
-			return false
+		if e.Offset > cursor {
+			return false // gap before the next committed range
 		}
-		if e.Offset+e.Length >= end {
+		if e.Offset+e.Length > cursor {
+			cursor = e.Offset + e.Length
+		}
+		if cursor >= end {
 			return true
 		}
 	}
