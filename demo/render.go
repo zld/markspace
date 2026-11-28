@@ -84,4 +84,4 @@ func slotsFromSegments(segments []rtpkernel.Segment) []render.Slot {
 
 // ----------------------------------------------------------------- manifest
 
-func init() { register("render", (*runner).runRender) }
+func init() { register("render", 5, (*runner).runRender) }

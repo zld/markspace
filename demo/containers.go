@@ -103,4 +103,4 @@ func samplesInside(result container.ScanResult) bool {
 
 // --------------------------------------------------------------------- RTP
 
-func init() { register("containers", (*runner).runContainers) }
+func init() { register("containers", 2, (*runner).runContainers) }

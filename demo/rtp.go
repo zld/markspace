@@ -254,4 +254,4 @@ func readPackets(path string) ([]*pionrtp.Packet, error) {
 
 // ---------------------------------------------------------------- alignment
 
-func init() { register("rtp", (*runner).runRTP) }
+func init() { register("rtp", 3, (*runner).runRTP) }

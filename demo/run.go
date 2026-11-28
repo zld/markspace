@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"mediarc/model"
 	rtpkernel "mediarc/rtp"
@@ -136,20 +137,26 @@ func (r *runner) path(name string) string { return filepath.Join(r.fixtureDir, n
 // scenario is one acceptance family: it generates its fixtures, exercises the
 // kernel and records its checks.
 type scenario struct {
-	name string
-	run  func(*runner, context.Context) error
+	name  string
+	order int
+	run   func(*runner, context.Context) error
 }
 
 // registry is filled by each scenario file's init, so a scenario can be added
-// or reviewed on its own without touching the dispatcher.
+// or reviewed on its own without touching the dispatcher. The explicit order
+// keeps rendering (which consumes the RTP segments) after the RTP scenario
+// regardless of file initialisation order.
 var registry []scenario
 
-func register(name string, run func(*runner, context.Context) error) {
-	registry = append(registry, scenario{name: name, run: run})
+func register(name string, order int, run func(*runner, context.Context) error) {
+	registry = append(registry, scenario{name: name, order: order, run: run})
 }
 
 func (r *runner) run(ctx context.Context) error {
-	for _, s := range registry {
+	ordered := make([]scenario, len(registry))
+	copy(ordered, registry)
+	sort.SliceStable(ordered, func(i, j int) bool { return ordered[i].order < ordered[j].order })
+	for _, s := range ordered {
 		if err := s.run(r, ctx); err != nil {
 			return err
 		}

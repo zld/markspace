@@ -136,4 +136,4 @@ func cueTimesUnchanged(refs []synckernel.CueRef, parsed subtitle.Result) bool {
 
 // ------------------------------------------------------------------- render
 
-func init() { register("alignment", (*runner).runAlignment) }
+func init() { register("alignment", 4, (*runner).runAlignment) }

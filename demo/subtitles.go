@@ -67,4 +67,4 @@ func (r *runner) runSubtitles(ctx context.Context) error {
 
 // ---------------------------------------------------------------- containers
 
-func init() { register("subtitles", (*runner).runSubtitles) }
+func init() { register("subtitles", 1, (*runner).runSubtitles) }
