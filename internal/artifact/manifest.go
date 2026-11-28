@@ -14,16 +14,16 @@ const Version = 1
 // Params records every choice that influenced the artefacts, so a rerun with
 // the same inputs and params can be shown to reproduce identical hashes.
 type Params struct {
-	Quality        float64 `json:"quality"`
-	QuantStep      int     `json:"quantStep"`
-	FPS            int     `json:"fps"`
-	FillPolicy     string  `json:"fillPolicy"`
-	Workers        int     `json:"workers"`
-	MaxCacheBytes  int64   `json:"maxCacheBytes"`
-	ReorderWindow  int     `json:"reorderWindow"`
-	MaxDimension   int     `json:"maxDimension"`
-	MaxBudgetMS    int64   `json:"maxBudgetMs"`
-	MaxBytes       int64   `json:"maxBytes"`
+	Quality       float64 `json:"quality"`
+	QuantStep     int     `json:"quantStep"`
+	FPS           int     `json:"fps"`
+	FillPolicy    string  `json:"fillPolicy"`
+	Workers       int     `json:"workers"`
+	MaxCacheBytes int64   `json:"maxCacheBytes"`
+	ReorderWindow int     `json:"reorderWindow"`
+	MaxDimension  int     `json:"maxDimension"`
+	MaxBudgetMS   int64   `json:"maxBudgetMs"`
+	MaxBytes      int64   `json:"maxBytes"`
 }
 
 // Frame is one exported frame with both source and artefact provenance.
@@ -59,26 +59,27 @@ type Segment struct {
 
 // Summary is the aggregate a terminal reader checks at a glance.
 type Summary struct {
-	Tracks            int     `json:"tracks"`
-	Frames            int     `json:"frames"`
-	FillFrames        int     `json:"fillFrames"`
-	MeanR             float64 `json:"meanR"`
-	MeanG             float64 `json:"meanG"`
-	MeanB             float64 `json:"meanB"`
-	Variance          float64 `json:"variance"`
-	PeakLoudnessDBFS  float64 `json:"peakLoudnessDbfs"`
-	MaxAlignErrorNS   int64   `json:"maxAlignErrorNs"`
-	TotalBytes        int64   `json:"totalBytes"`
-	RunHash           string  `json:"runHash"`
+	Tracks           int     `json:"tracks"`
+	Frames           int     `json:"frames"`
+	FillFrames       int     `json:"fillFrames"`
+	MeanR            float64 `json:"meanR"`
+	MeanG            float64 `json:"meanG"`
+	MeanB            float64 `json:"meanB"`
+	Variance         float64 `json:"variance"`
+	PeakLoudnessDBFS float64 `json:"peakLoudnessDbfs"`
+	MaxAlignErrorNS  int64   `json:"maxAlignErrorNs"`
+	TotalBytes       int64   `json:"totalBytes"`
+	PeakCacheBytes   int64   `json:"peakCacheBytes"`
+	RunHash          string  `json:"runHash"`
 }
 
 // Manifest is written to <out>/manifest.json.
 type Manifest struct {
-	Version   int          `json:"version"`
-	Params    Params       `json:"params"`
-	Frames    []Frame      `json:"frames"`
-	Segments  []Segment    `json:"segments"`
-	Summary   Summary      `json:"summary"`
-	Warnings  model.Faults `json:"warnings,omitempty"`
-	Faults    model.Faults `json:"faults,omitempty"`
+	Version  int          `json:"version"`
+	Params   Params       `json:"params"`
+	Frames   []Frame      `json:"frames"`
+	Segments []Segment    `json:"segments"`
+	Summary  Summary      `json:"summary"`
+	Warnings model.Faults `json:"warnings,omitempty"`
+	Faults   model.Faults `json:"faults,omitempty"`
 }
