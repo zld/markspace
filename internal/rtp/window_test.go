@@ -249,3 +249,61 @@ func TestWindowSizeValidation(t *testing.T) {
 		t.Fatal("expected oversized window rejection")
 	}
 }
+
+func TestReorderedPacketIsMarkedRecoveredNotRewritten(t *testing.T) {
+	w, _ := New(Config{Size: 8})
+	// The window anchors on the first packet (as RTP streams do). Then 3 is
+	// buffered and 2 arrives late to fill the gap. 2 must be flagged
+	// Recovered and the buffered 3 must never be emitted twice.
+	out, err := w.Push(Packet{Sequence: 1})
+	if err != nil || len(out) != 1 || out[0].Sequence != 1 {
+		t.Fatalf("push 1: out=%v err=%v", seqOf(out), err)
+	}
+	out, err = w.Push(Packet{Sequence: 3})
+	if err != nil || len(out) != 0 {
+		t.Fatalf("push 3: out=%v err=%v", seqOf(out), err)
+	}
+	out, err = w.Push(Packet{Sequence: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := seqOf(out)
+	if len(got) != 2 || got[0] != 2 || got[1] != 3 {
+		t.Fatalf("order = %v", got)
+	}
+	if !out[0].Recovered {
+		t.Fatal("late-filling packet should be marked recovered")
+	}
+	if !out[1].Reordered {
+		t.Fatal("buffered packet should be marked reordered")
+	}
+	// Re-offering 2 after commit must be a duplicate with no output.
+	out, err = w.Push(Packet{Sequence: 2})
+	if err != nil || len(out) != 0 {
+		t.Fatalf("re-offer emitted %v", seqOf(out))
+	}
+	if w.Stats().Duplicates != 1 {
+		t.Fatalf("duplicates = %d", w.Stats().Duplicates)
+	}
+}
+
+func TestBeyondWindowIsDistinctFromTailLoss(t *testing.T) {
+	w, _ := New(Config{Size: 4})
+	if _, err := w.Push(Packet{Sequence: 0}); err != nil {
+		t.Fatal(err)
+	}
+	// Sliding far ahead makes slots 1..5 beyond the window, not tail loss.
+	if _, err := w.Push(Packet{Sequence: 10}); err != nil {
+		t.Fatal(err)
+	}
+	st := w.Stats()
+	if st.Unrecoverable == 0 {
+		t.Fatal("expected beyond-window loss")
+	}
+	if st.TailLoss != 0 {
+		t.Fatalf("tail loss = %d before the stream ended", st.TailLoss)
+	}
+	if st.LossRecoveryRate() != 0 {
+		t.Fatalf("rate = %v, want 0 when only unrecoverable loss occurred", st.LossRecoveryRate())
+	}
+}

@@ -212,3 +212,47 @@ func assertCorrupt(t *testing.T, err error, boxType string, offset int64) {
 	}
 	_ = boxType
 }
+
+func TestWalkNeverReadsPastInput(t *testing.T) {
+	// A tracking reader that records the highest offset touched. The scanner
+	// must never ask for a byte at or beyond the declared size, even when the
+	// header claims an enormous box.
+	type tracking struct {
+		data   []byte
+		size   int64
+		maxOff int64
+	}
+	tr := &tracking{data: make([]byte, 64), size: 64}
+	tr.maxOff = -1
+	readAt := func(p []byte, off int64) (int, error) {
+		if off > tr.maxOff {
+			tr.maxOff = off + int64(len(p))
+		}
+		if off < 0 || off >= int64(len(tr.data)) {
+			return 0, errors.New("out of bounds")
+		}
+		n := copy(p, tr.data[off:])
+		if n < len(p) {
+			return n, errors.New("short")
+		}
+		return n, nil
+	}
+	// Header claims 1000 bytes in a 64-byte input.
+	binary.BigEndian.PutUint32(tr.data[:4], 1000)
+	copy(tr.data[4:8], "mdat")
+	s, err := NewStream(readerAtFunc(readAt), tr.size, "a.mp4", Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	werr := s.Walk(context.Background(), func(Box) error { return nil })
+	if werr == nil {
+		t.Fatal("expected rejection")
+	}
+	if tr.maxOff > tr.size {
+		t.Fatalf("scanner read to offset %d beyond input size %d", tr.maxOff, tr.size)
+	}
+}
+
+type readerAtFunc func([]byte, int64) (int, error)
+
+func (f readerAtFunc) ReadAt(p []byte, off int64) (int, error) { return f(p, off) }
