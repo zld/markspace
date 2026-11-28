@@ -487,8 +487,24 @@ func safeJoin(root, rel string) error {
 	if filepath.IsAbs(rel) {
 		return fmt.Errorf("absolute artefact path %q", rel)
 	}
-	clean := filepath.Clean(rel)
-	if clean == ".." || len(clean) > 2 && clean[:3] == "../" {
+	// Resolve the target so a symlink planted inside the output tree cannot
+	// point the verifier at a file outside it.
+	joined := filepath.Join(root, rel)
+	resolved, err := filepath.EvalSymlinks(joined)
+	if err != nil {
+		// A missing file is reported later by the read; joining and cleaning
+		// already proves textual containment.
+		resolved = joined
+	}
+	rootResolved := root
+	if r, err := filepath.EvalSymlinks(root); err == nil {
+		rootResolved = r
+	}
+	relToRoot, err := filepath.Rel(rootResolved, resolved)
+	if err != nil {
+		return fmt.Errorf("artefact path %q cannot be resolved against the output directory", rel)
+	}
+	if relToRoot == ".." || len(relToRoot) >= 3 && relToRoot[:3] == ".."+string(filepath.Separator) {
 		return fmt.Errorf("artefact path %q escapes the output directory", rel)
 	}
 	return nil

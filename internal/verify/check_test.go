@@ -175,6 +175,29 @@ func TestVerifyDetectsPathEscape(t *testing.T) {
 	}
 }
 
+func TestVerifyDetectsSymlinkEscape(t *testing.T) {
+	out, m := fixture(t, nil)
+	// Replace a frame path with a symlink that points outside the output dir.
+	outside := t.TempDir()
+	secret := filepath.Join(outside, "secret.png")
+	if err := os.WriteFile(secret, []byte("secret"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	linkRel := "frames/escape-link.png"
+	if err := os.Symlink(secret, filepath.Join(out, linkRel)); err != nil {
+		t.Skip("symlinks unavailable")
+	}
+	m.Frames[0].Path = linkRel
+	writeManifest(t, out, m)
+	rep, err := Verify(out, Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasCode(rep.Faults, model.CodeConstraintViolation) {
+		t.Fatalf("symlink escape not detected: %v", rep.Faults)
+	}
+}
+
 func TestVerifyGeometryAndSizeCaps(t *testing.T) {
 	out, _ := fixture(t, nil)
 	rep, err := Verify(out, Config{MaxDimension: 16})
