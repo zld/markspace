@@ -1,7 +1,6 @@
 package mp4seg
 
 import (
-	"encoding/binary"
 	"fmt"
 	"io"
 
@@ -286,5 +285,3 @@ func (s *sliceReader) Seek(offset int64, whence int) (int64, error) {
 	}
 	return s.pos, nil
 }
-
-var _ = binary.BigEndian

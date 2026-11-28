@@ -261,8 +261,7 @@ func cancelTrack(mu *sync.Mutex, cancelled map[model.TrackID]bool, rep *Report,
 	rep.TrackCancelled[track] = f
 }
 
-func classify(err error, j Job, fillPolicy string) *model.Fault {
-	if f, ok := model.AsFault(err); ok {
+func classify(err error, j Job, fillPolicy string) *model.Fault {	if f, ok := model.AsFault(err); ok {
 		out := *f
 		if out.Kind == "" {
 			out.Kind = model.KindWorker
@@ -280,10 +279,4 @@ func classify(err error, j Job, fillPolicy string) *model.Fault {
 	}
 	return model.NewFault(model.KindWorker, model.CodeArtifactMismatch,
 		j.Track, uint32(j.Ordinal), err.Error())
-}
-
-// FillBytes builds the deterministic content of a fill frame recorded for a
-// recoverable gap. The marker is stable, so reruns produce the same hashes.
-func FillBytes(track model.TrackID, key string, policy string) []byte {
-	return []byte(fmt.Sprintf("medialab-fill/%s/track=%d/key=%s", policy, track, key))
 }

@@ -297,5 +297,3 @@ func packRTP(records [][]byte) []byte {
 	}
 	return out
 }
-
-var _ = packRTP
