@@ -35,14 +35,13 @@ type trackBuilder struct {
 
 // structure accumulates index data while walking the moov tree.
 type structure struct {
-	builders    []*trackBuilder
 	tracks      []Track
 	divergences []Divergence
 	complete    bool
 }
 
 // readStructure walks moov and reconstructs tracks from their sample tables.
-func readStructure(r io.ReadSeeker, boxes []mp4.BoxInfo) (*structure, error) {
+func readStructure(r io.ReadSeeker, size int64, boxes []mp4.BoxInfo, options ScanOptions) (*structure, error) {
 	result := &structure{complete: true}
 	moov, ok := findFirst(boxes, mp4.BoxTypeMoov())
 	if !ok {
@@ -73,9 +72,19 @@ func readStructure(r io.ReadSeeker, boxes []mp4.BoxInfo) (*structure, error) {
 				})
 			}
 		}
-		result.builders = append(result.builders, builder)
+		track, sampleIssues := expandTrack(builder, size, options)
+		for _, issue := range sampleIssues {
+			result.complete = false
+			if firstErr == nil {
+				firstErr = issue
+			}
+			result.divergences = append(result.divergences, Divergence{
+				Offset: issue.Offset, Detail: issue.Detail, Err: issue,
+			})
+		}
+		result.tracks = append(result.tracks, track)
 	}
-	if len(result.builders) == 0 {
+	if len(result.tracks) == 0 {
 		result.complete = false
 		if firstErr == nil {
 			firstErr = model.New(model.CodeIndexIncomplete, stream, "moov carries no tracks")
