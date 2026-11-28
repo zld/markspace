@@ -1,0 +1,22 @@
+{
+  "checksum": {
+    "key": "ac22833c38e0afc601d0ca204f3f1a33d293c088e0c8190a651115bb6c6ce8ce",
+    "digest": "023469ad3326773324339d8a3d3feb4c9f1d4f67185279b3ed965c1b687a020b"
+  },
+  "index": {
+    "key": "bd0596202948a4be0db4dd8487994fa4185f6520d780e70c72ef6d6f759768c5",
+    "digest": "66bbc7d875fb503636d3e49df8b36e36790fbecb66652e61678547e17f69062c"
+  },
+  "ingest": {
+    "key": "aba065558eafd01103b6fca0005dd407f00bdb9ceeb279f85fff51b0ccfe78b1",
+    "digest": "7b1c312a50f3ebb322f8dbbed0a156288484063c1306334a5a932bf3faa3f2ab"
+  },
+  "rangeread": {
+    "key": "df73ac5f33569374d246950bb3628a356405d5c9fa26047e3d66b11e1373e1f6",
+    "digest": "e2190f104ab4d8b59a09953bc260b9c8dd686e17025e1d26176a69b6c38cae18"
+  },
+  "scan": {
+    "key": "6219973088a76bd34a51ff6f435e7859edcd1a7f7be822e4c91d40138bd60a2a",
+    "digest": "36413e33755beafd03a5a783310470d800ce0c571071a6d044e95ef08be552bb"
+  }
+}
