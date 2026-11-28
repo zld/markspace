@@ -117,11 +117,22 @@ func ExitCode(err error) int {
 	if err == nil {
 		return 0
 	}
-	var e *Error
-	if errors.As(err, &e) && e.Stage == StageScan {
-		if e.Op == "args" {
-			return 1
-		}
+	if IsUsage(err) {
+		return 1
 	}
 	return 2
+}
+
+// IsUsage reports whether err is a command-line usage problem (exit code 1).
+func IsUsage(err error) bool {
+	var e *Error
+	if errors.As(err, &e) {
+		return e.Stage == StageScan && e.Op == "args"
+	}
+	return false
+}
+
+// Usage builds a usage error carrying exit code 1 semantics.
+func Usage(format string, args ...interface{}) *Error {
+	return New(StageScan, "args", format, args...)
 }
