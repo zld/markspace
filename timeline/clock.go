@@ -50,7 +50,12 @@ func (r Rational) IsZero() bool { return r.num == 0 }
 // Neg returns -r.
 func (r Rational) Neg() Rational { return Rational{num: -r.num, den: r.den} }
 
-func ratOf(r Rational) *big.Rat { return new(big.Rat).SetFrac64(r.num, r.den) }
+func ratOf(r Rational) *big.Rat {
+	if r.den == 0 {
+		return new(big.Rat).SetInt64(0)
+	}
+	return new(big.Rat).SetFrac64(r.num, r.den)
+}
 
 func fromRat(r *big.Rat) (Rational, error) {
 	if !r.Num().IsInt64() || !r.Denom().IsInt64() {
@@ -102,7 +107,16 @@ func (r Rational) Millis() (int64, error) { return r.scaled(1000) }
 // digests; rounding is deterministic and does not depend on floating point.
 func (r Rational) Micros() (int64, error) { return r.scaled(1_000_000) }
 
+// scaled divides with rounding. The zero value Rational{} (num=0, den=0) is
+// treated as exactly zero rather than a division error, so an event with no
+// declared duration reports 0 rather than panicking.
 func (r Rational) scaled(scale int64) (int64, error) {
+	if r.den == 0 {
+		if r.num == 0 {
+			return 0, nil
+		}
+		return 0, newLocated(CodeInvalidTime, "", 0, 0, "rational %d/0 has no value", r.num)
+	}
 	// round(num*scale/den) with halves away from zero.
 	n := new(big.Int).Mul(big.NewInt(r.num), big.NewInt(scale))
 	d := big.NewInt(r.den)
