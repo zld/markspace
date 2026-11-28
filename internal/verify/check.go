@@ -176,7 +176,7 @@ func Verify(outDir string, cfg Config) (*Report, error) {
 	verifiedSegments, segFaults := verifySegments(outDir, m, &sizeSum, rep)
 	rep.Faults = append(rep.Faults, segFaults...)
 
-	alignFaults := checkTiming(m, cfg)
+	alignFaults := checkTiming(m)
 	rep.Faults = append(rep.Faults, alignFaults...)
 	// Re-derive alignment from the files, not from the renderer's report: the
 	// segment's stts timeline recovers each sample's position, and the frame
@@ -440,8 +440,11 @@ func checkSegmentAlignment(outDir string, m *artifact.Manifest, cfg Config) (int
 }
 
 // checkTiming validates that each track's frame timestamps are strictly
-// increasing and inside the alignment envelope.
-func checkTiming(m *artifact.Manifest, cfg Config) model.Faults {
+// increasing. Gaps are not compared against the alignment envelope: the
+// exported frame set is sampled (fps) and can contain recoverable gaps, so a
+// wide gap is normal. The envelope governs error against the intended PTS,
+// which checkSegmentAlignment measures.
+func checkTiming(m *artifact.Manifest) model.Faults {
 	var faults model.Faults
 	byTrack := make(map[model.TrackID][]artifact.Frame)
 	for _, f := range m.Frames {
@@ -450,15 +453,11 @@ func checkTiming(m *artifact.Manifest, cfg Config) model.Faults {
 	for tr, frames := range byTrack {
 		sort.SliceStable(frames, func(i, j int) bool { return frames[i].PTS < frames[j].PTS })
 		for i := 1; i < len(frames); i++ {
-			if frames[i].PTS == frames[i-1].PTS {
+			if frames[i].PTS <= frames[i-1].PTS {
 				faults = append(faults, verifyFault(tr, frames[i].Sequence,
-					fmt.Sprintf("frames %d and %d share PTS %d",
-						frames[i-1].Sequence, frames[i].Sequence, frames[i].PTS)))
-			}
-			gap := frames[i].PTS - frames[i-1].PTS
-			if cfg.MaxAlignErrorNS > 0 && gap > cfg.MaxAlignErrorNS*1000 {
-				faults = append(faults, verifyFault(tr, frames[i].Sequence,
-					fmt.Sprintf("gap %d ns exceeds the alignment envelope", gap)))
+					fmt.Sprintf("frame %d PTS %d does not advance past frame %d PTS %d",
+						frames[i].Sequence, frames[i].PTS,
+						frames[i-1].Sequence, frames[i-1].PTS)))
 			}
 		}
 	}
