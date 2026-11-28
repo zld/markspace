@@ -1,0 +1,10 @@
+# Build output.
+/medialab
+*.test
+*.out
+
+# Local demo workspaces (acceptance runs use --out at their own path).
+/demo-*/
+
+# macOS noise.
+.DS_Store
