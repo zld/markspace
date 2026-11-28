@@ -45,8 +45,6 @@ type Record struct {
 	TrackIDs          []string      `json:"track_ids"`
 	RejectedTracks    []string      `json:"rejected_tracks,omitempty"`
 	TruncatedTracks   []string      `json:"truncated_tracks,omitempty"`
-	Resumed           bool          `json:"resumed"`
-	ReusedSegments    int           `json:"reused_segments"`
 	ComputedAt        time.Time     `json:"computed_at"`
 	// OutputSHA256 is the digest of the manifest without this field. It is
 	// filled in by Seal once the document is otherwise final.

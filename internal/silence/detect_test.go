@@ -178,7 +178,9 @@ func TestRTPSequenceGapReported(t *testing.T) {
 	path := filepath.Join(dir, "gap.mp4")
 	pkts := make([][]byte, 10)
 	for i := range pkts {
-		p := rtp.Packet{Header: rtp.Header{Version: 2, SequenceNumber: uint16(i), Timestamp: uint32(i * 1024)}}
+		p := rtp.Packet{Header: rtp.Header{
+			Version: 2, PayloadType: 111, SequenceNumber: uint16(i), Timestamp: uint32(i * 1024),
+		}}
 		p.Payload = make([]byte, 64)
 		if i == 5 {
 			p.SequenceNumber = 99 // gap

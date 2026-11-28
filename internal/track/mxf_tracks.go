@@ -116,8 +116,16 @@ func mxfTrack(num uint16, tr *mxfSet, descs []*mxfSet, elems []klvElem, size int
 		return t
 	}
 	for i, e := range elems {
-		if e.BodyOffset+e.BodySize > size {
-			// Report the first byte that is not present, not the key offset.
+		// The parse-level truncation flag is set by the caller or by the
+		// clipped element itself; either way the error is positioned at the
+		// first missing byte.
+		if e.Truncated || e.BodyOffset+e.BodySize > size {
+			// The first missing byte is the end of the file, not the element
+			// key; report that position and stop this track's sample table at
+			// the last complete element.
+			t.Truncated = true
+			t.TruncatedAt = media.Ticks(int64(i)) * step
+			t.TruncatedOffset = size
 			t.AddError(media.NewError(media.ClassTruncatedInput, media.StageParse, "", size,
 				"essence item extends past end of file"))
 			break

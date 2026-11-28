@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"sort"
 
 	"mediaregress/internal/media"
 )
@@ -240,7 +241,11 @@ func firstError(n *boxNode) *media.Error {
 	if n.Err != nil {
 		return n.Err
 	}
-	for _, c := range n.Children {
+	// Walk children in file order so the reported failure is the first one a
+	// sequential reader would meet, independent of any map ordering.
+	kids := append([]*boxNode(nil), n.Children...)
+	sort.Slice(kids, func(i, j int) bool { return kids[i].Hdr.Offset < kids[j].Hdr.Offset })
+	for _, c := range kids {
 		if e := firstError(c); e != nil {
 			return e
 		}
@@ -273,4 +278,12 @@ func (s *seeker) Seek(offset int64, whence int) (int64, error) {
 		return 0, errors.New("box: unsupported seek origin")
 	}
 	return s.pos, nil
+}
+
+// boxReadable reports whether a box's payload lies entirely within the file.
+// Callers skip unmarshalling a box that runs past EOF: the box tree already
+// recorded the first missing byte, and a partial payload would only produce a
+// duplicate error at a later position.
+func boxReadable(n *boxNode, fileSize int64) bool {
+	return n != nil && n.Hdr.End <= fileSize && n.Hdr.Body <= fileSize
 }

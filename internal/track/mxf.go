@@ -70,6 +70,10 @@ type klvElem struct {
 	Offset     int64
 	BodyOffset int64 // first value byte
 	BodySize   int64
+	// Truncated marks an element whose declared value runs past end of file.
+	// ClipAt is the size of the file, i.e. the first missing byte.
+	Truncated bool
+	ClipAt    int64
 }
 
 // mxfItem is one local-set item with its byte positions.
@@ -145,12 +149,14 @@ func ParseMXF(path string) (*Input, error) {
 func parseMXF(r io.ReaderAt, size int64) (*Input, error) {
 	in := &Input{}
 	elems, walkErr := walkKLV(r, size)
-	if walkErr != nil {
-		in.Errors = append(in.Errors, walkErr)
-	}
 	primer := map[uint16][16]byte{}
 	sets := []*mxfSet{}
 	essence := map[int64][]klvElem{}
+	// Non-truncation walk failures are container-level: no track can be held
+	// responsible for a key or length that could not be read.
+	if walkErr != nil {
+		in.Errors = append(in.Errors, walkErr)
+	}
 	for _, e := range elems {
 		key := e.Key[:]
 		switch {
@@ -226,8 +232,17 @@ func walkKLV(r io.ReaderAt, size int64) ([]klvElem, *media.Error) {
 		}
 		e := klvElem{Key: key, Offset: pos, BodyOffset: pos + 16 + int64(hdr), BodySize: length}
 		if length < 0 || e.BodyOffset+length > size {
-			return out, media.NewError(media.ClassTruncatedInput, media.StageParse, "", size,
-				"KLV value extends past end of file")
+			// The key and length were readable, so the element's owner is
+			// known even though its value is cut. Note the clip on the element
+			// and let the track builder attach the positioned error; a clipped
+			// essence element is not a usable sample.
+			e.Truncated = true
+			e.ClipAt = size
+			if e.BodyOffset > size {
+				e.BodyOffset = size
+			}
+			out = append(out, e)
+			return out, nil
 		}
 		out = append(out, e)
 		pos = e.BodyOffset + length

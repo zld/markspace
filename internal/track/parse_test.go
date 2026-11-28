@@ -213,12 +213,31 @@ func TestParseMXFConflictingColors(t *testing.T) {
 func TestParseMXFTruncated(t *testing.T) {
 	m, _ := genFixture(t, "")
 	in, _ := ParseMXF(m.MXFDamaged)
-	off, first, ok := media.FirstOffset(in.Errors)
+	var errs []*media.Error
+	for _, tr := range in.Tracks {
+		errs = append(errs, tr.Errors...)
+	}
+	if len(errs) == 0 {
+		t.Fatalf("no track error: %+v", in.Errors)
+	}
+	off, first, ok := media.FirstOffset(errs)
 	if !ok {
-		t.Fatalf("no positioned error: %+v", in.Errors)
+		t.Fatalf("no positioned error: %+v errs", errs)
 	}
 	if d := off - m.MXFDamagedOffset; d < -1 || d > 1 {
 		t.Fatalf("offset=%d want %d (+/-1) err=%v", off, m.MXFDamagedOffset, first)
+	}
+	if first.Track == "" {
+		t.Error("truncated essence error is not attributed to a track")
+	}
+	var truncated int
+	for _, tr := range in.Tracks {
+		if tr.Truncated {
+			truncated++
+		}
+	}
+	if truncated != 1 {
+		t.Errorf("truncated tracks=%d want 1", truncated)
 	}
 	if len(in.Tracks) != 2 {
 		t.Errorf("tracks still expected for usable metadata, got %d", len(in.Tracks))

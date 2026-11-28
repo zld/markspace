@@ -51,7 +51,11 @@ func (a audioSpec) build(packets [][]byte) []byte {
 	// Two-pass layout: moov width does not depend on the offset values, so
 	// build once with zero offsets to learn its size, then fill them in.
 	duration := uint32(len(packets)) * a.delta
-	probe := a.buildMoov(make([]uint32, len(packets)), duration)
+	sizes := make([]uint32, len(packets))
+	for i, p := range packets {
+		sizes[i] = uint32(len(p))
+	}
+	probe := a.buildMoov(make([]uint32, len(packets)), sizes, duration)
 	start := len(ftyp) + len(probe) + 8
 	offs := make([]uint32, len(packets))
 	pos := start
@@ -59,11 +63,11 @@ func (a audioSpec) build(packets [][]byte) []byte {
 		offs[i] = uint32(pos)
 		pos += len(p)
 	}
-	moov := a.buildMoov(offs, duration)
+	moov := a.buildMoov(offs, sizes, duration)
 	return cat(ftyp, moov, rawBox("mdat", data))
 }
 
-func (a audioSpec) buildMoov(offs []uint32, duration uint32) []byte {
+func (a audioSpec) buildMoov(offs []uint32, sizes []uint32, duration uint32) []byte {
 	tkhd := fullBox("tkhd", 0, 3,
 		u32(0), u32(0), u32(1), u32(0), u32(duration),
 		u32(0), u32(0), u16(0), u16(0), u16(0x0100), u16(0),
@@ -80,7 +84,7 @@ func (a audioSpec) buildMoov(offs []uint32, duration uint32) []byte {
 	stsc := fullBox("stsc", 0, 0, u32(1), u32(1), u32(1), u32(1))
 	stszPayload := cat(u32(0), u32(uint32(count)))
 	for i := 0; i < count; i++ {
-		stszPayload = append(stszPayload, u32(uint32(rtpPacketLen(a.payload)))...)
+		stszPayload = append(stszPayload, u32(sizes[i])...)
 	}
 	stsz := fullBox("stsz", 0, 0, stszPayload)
 	stcoPayload := u32(uint32(len(offs)))

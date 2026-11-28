@@ -37,12 +37,14 @@ type WindowResult struct {
 
 // Range is a merged silent span.
 type Range struct {
-	Track     string       `json:"track"`
-	Window    media.Window `json:"window"`
-	Peak      int32        `json:"peak"` // max peak across the range
-	Threshold Threshold    `json:"threshold"`
-	Segments  []string     `json:"segments"`
-	Stage     media.Stage  `json:"stage"`
+	Track        string       `json:"track"`
+	Window       media.Window `json:"window"`
+	Peak         int32        `json:"peak"` // max peak across the range
+	Threshold    Threshold    `json:"threshold"`
+	Segments     []string     `json:"segments"`
+	SourceOffset int64        `json:"source_offset"`
+	ParseVersion string       `json:"parse_version"`
+	Stage        media.Stage  `json:"stage"`
 }
 
 // Result is the outcome for one audio track.
@@ -51,6 +53,7 @@ type Result struct {
 	Windows       []WindowResult `json:"windows"`
 	Silent        []Range        `json:"silent_ranges"`
 	Threshold     Threshold      `json:"threshold"`
+	ParseVersion  string         `json:"parse_version"`
 	Truncated     bool           `json:"truncated,omitempty"`
 	TruncatedFrom media.Ticks    `json:"truncated_from,omitempty"`
 	TruncatedTo   media.Ticks    `json:"truncated_to,omitempty"`
@@ -101,7 +104,7 @@ func Detect(path string, tl *timeline.Timeline, segs []split.Segment, window med
 }
 
 func detectTrack(f *os.File, fileSize int64, tt *timeline.TrackTimeline, segs []split.Segment, window media.Ticks, threshold Threshold) Result {
-	res := Result{Track: tt.TrackID, Threshold: threshold}
+	res := Result{Track: tt.TrackID, Threshold: threshold, ParseVersion: tt.ParseVersion}
 	if tt.Truncated {
 		// The parser already proved the tail is missing. Record the affected
 		// interval up front so the result cannot be mistaken for a complete
@@ -181,20 +184,19 @@ func detectTrack(f *os.File, fileSize int64, tt *timeline.TrackTimeline, segs []
 				tt.TrackID, s.Offset, "cannot read audio sample", err))
 			break
 		}
-		// Samples are RTP packets. A sequence gap is a diagnostic; the payload
-		// is still analysed so a single lost packet does not hide silence.
-		var pkt rtp.Packet
+		// Audio samples in this profile are RTP-framed. A malformed or
+		// non-RTP packet is analysed as raw PCM rather than rejected: an MXF
+		// essence element carries plain samples, and refusing to measure it
+		// would silently hide silence. Sequence gaps are diagnostics, so one
+		// lost packet does not erase a verdict.
 		payload := buf
-		if err := pkt.Unmarshal(buf); err == nil {
+		if pkt, ok := rtpPacket(buf); ok {
 			if haveSeq && pkt.SequenceNumber != prevSeq+1 {
 				res.Errors = append(res.Errors, media.Errorf(media.ClassCorruptInput, media.StageSilence,
 					tt.TrackID, s.Offset, "RTP sequence gap: %d after %d", pkt.SequenceNumber, prevSeq))
 			}
 			prevSeq, haveSeq = pkt.SequenceNumber, true
 			payload = pkt.Payload
-		} else {
-			res.Errors = append(res.Errors, media.WrapError(media.ClassCorruptInput, media.StageSilence,
-				tt.TrackID, s.Offset, "RTP header is not parseable", err))
 		}
 		peak := peakAmplitude(payload)
 		if peak > curPeak {
@@ -219,8 +221,26 @@ func detectTrack(f *os.File, fileSize int64, tt *timeline.TrackTimeline, segs []
 	if curStart < end {
 		flush(end)
 	}
-	res.Silent = mergeSilent(res.Windows, tt.TrackID, threshold)
+	res.Silent = mergeSilent(res.Windows, tt.TrackID, threshold, tt)
 	return res
+}
+
+// rtpPacket decodes an RTP header only when the bytes look like RTP: version 2
+// and a dynamic payload type. Raw PCM commonly starts with zero bytes, which
+// would otherwise decode as a bogus version-0 packet.
+func rtpPacket(buf []byte) (*rtp.Packet, bool) {
+	if len(buf) < 12 || buf[0]>>6 != 2 {
+		return nil, false
+	}
+	pt := buf[1] & 0x7f
+	if pt < 96 || pt > 127 {
+		return nil, false
+	}
+	var pkt rtp.Packet
+	if err := pkt.Unmarshal(buf); err != nil {
+		return nil, false
+	}
+	return &pkt, true
 }
 
 // nextWindowEnd returns the next absolute window boundary after start.
@@ -245,7 +265,7 @@ func peakAmplitude(payload []byte) int32 {
 }
 
 // mergeSilent coalesces adjacent silent windows into ranges.
-func mergeSilent(windows []WindowResult, trackID string, threshold Threshold) []Range {
+func mergeSilent(windows []WindowResult, trackID string, threshold Threshold, tt *timeline.TrackTimeline) []Range {
 	var out []Range
 	var cur *Range
 	for _, w := range windows {
@@ -257,9 +277,14 @@ func mergeSilent(windows []WindowResult, trackID string, threshold Threshold) []
 			continue
 		}
 		if cur == nil {
+			off := int64(-1)
+			if s, ok := tt.SampleAt(w.Window.Start); ok {
+				off = s.Offset
+			}
 			cur = &Range{
 				Track: trackID, Window: w.Window, Peak: w.Peak,
 				Threshold: threshold, Segments: append([]string(nil), w.Segments...),
+				SourceOffset: off, ParseVersion: tt.ParseVersion,
 				Stage: media.StageSilence,
 			}
 			continue

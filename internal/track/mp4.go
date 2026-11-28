@@ -67,15 +67,27 @@ func parseMP4(r io.ReaderAt, size int64) (*Input, error) {
 		return in, err
 	}
 	sk := &seeker{r: r}
+	// Pass 1: read the handler type of every trak so track IDs follow the
+	// container's ordering (first vide -> v0, first soun -> a0) even when the
+	// audio trak appears first in the file.
 	traks := findAll(moov, "trak")
+	handlerKinds := make([]Kind, len(traks))
+	for i, trak := range traks {
+		handlerKinds[i] = handlerKind(sk, trak)
+	}
 	seen := map[Kind]int{}
-	for _, trak := range traks {
-		t := parseTrak(sk, trak, size)
+	for i, trak := range traks {
+		t := parseTrakWithKind(sk, trak, size, handlerKinds[i])
 		if t == nil {
 			continue
 		}
 		seen[t.Kind]++
 		t.ID = trackID(t.Kind, seen[t.Kind])
+		// Re-label now that the identity is known; errors were created during
+		// the parse, before the track had a name.
+		for i, e := range t.Errors {
+			t.Errors[i] = e.WithTrack(t.ID)
+		}
 		in.Tracks = append(in.Tracks, t)
 	}
 	sort.Slice(in.Tracks, func(i, j int) bool { return in.Tracks[i].ID < in.Tracks[j].ID })
@@ -93,11 +105,37 @@ func trackID(kind Kind, n int) string {
 	}
 }
 
+// handlerKind reads a trak's media handler without parsing anything else.
+func handlerKind(sk *seeker, trak *boxNode) Kind {
+	hdlr := find(trak, "hdlr")
+	if hdlr == nil {
+		return ""
+	}
+	var hd mp4.Hdlr
+	if e := unmarshalAt(sk, hdlr.Hdr, &hd); e != nil {
+		return ""
+	}
+	switch string(hd.HandlerType[:]) {
+	case "vide":
+		return KindVideo
+	case "soun":
+		return KindAudio
+	}
+	return ""
+}
+
 func parseTrak(sk *seeker, trak *boxNode, fileSize int64) *Track {
+	return parseTrakWithKind(sk, trak, fileSize, handlerKind(sk, trak))
+}
+
+func parseTrakWithKind(sk *seeker, trak *boxNode, fileSize int64, kind Kind) *Track {
 	tkhd := find(trak, "tkhd")
 	mdhd := find(trak, "mdhd")
-	hdlr := find(trak, "hdlr")
-	if tkhd == nil || mdhd == nil || hdlr == nil {
+	if tkhd == nil || mdhd == nil {
+		return nil
+	}
+	if kind != KindVideo && kind != KindAudio {
+		// Unsupported or unreadable handler: not a track this kernel processes.
 		return nil
 	}
 	var mh mp4.Mdhd
@@ -106,10 +144,6 @@ func parseTrak(sk *seeker, trak *boxNode, fileSize int64) *Track {
 		t.AddError(e.WithTrack(""))
 		return t
 	}
-	var hd mp4.Hdlr
-	if e := unmarshalAt(sk, hdlr.Hdr, &hd); e != nil {
-		return nil
-	}
 	var tk mp4.Tkhd
 	if e := unmarshalAt(sk, tkhd.Hdr, &tk); e != nil {
 		t := &Track{Container: "mp4", Version: ParseVersion, SourceStart: trak.Hdr.Offset}
@@ -117,15 +151,6 @@ func parseTrak(sk *seeker, trak *boxNode, fileSize int64) *Track {
 		return t
 	}
 
-	kind := KindVideo
-	switch string(hd.HandlerType[:]) {
-	case "vide":
-		kind = KindVideo
-	case "soun":
-		kind = KindAudio
-	default:
-		return nil
-	}
 	t := &Track{
 		Container:   "mp4",
 		Kind:        kind,
@@ -175,16 +200,25 @@ func parseTrak(sk *seeker, trak *boxNode, fileSize int64) *Track {
 	}
 	parseSamples(sk, trak, t, fileSize)
 
-	// Attribute any structural failure inside this trak to this track.
+	// A truncated trak leaves part of the sample table unreadable. Mark the
+	// track truncated at the end of whatever sample table could be read, then
+	// attribute the structural error so the manifest names the track.
 	if e := firstError(trak); e != nil {
+		if e.Class == media.ClassTruncatedInput {
+			t.Truncated = true
+			t.TruncatedOffset = e.Offset
+			if len(t.Samples) > 0 {
+				t.TruncatedAt = t.Samples[len(t.Samples)-1].End()
+			} else {
+				t.TruncatedAt = 0
+			}
+		}
 		t.AddError(e.WithTrack(t.ID))
 	}
 	// Every error recorded so far must carry the track identity, including
 	// the ones created before the ID was assigned.
 	for i, e := range t.Errors {
-		if e.Track == "" {
-			t.Errors[i] = e.WithTrack(t.ID)
-		}
+		t.Errors[i] = e.WithTrack(t.ID)
 	}
 	return t
 }
@@ -437,19 +471,22 @@ func parseSamples(sk *seeker, trak *boxNode, t *Track, fileSize int64) {
 	if sttsNode == nil {
 		return
 	}
+	if !boxReadable(sttsNode, fileSize) {
+		return
+	}
 	var stts mp4.Stts
 	if e := unmarshalAt(sk, sttsNode.Hdr, &stts); e != nil {
 		t.AddError(e)
 		return
 	}
 	var stsz mp4.Stsz
-	if n := find(stbl, "stsz"); n != nil {
+	if n := find(stbl, "stsz"); n != nil && boxReadable(n, fileSize) {
 		if e := unmarshalAt(sk, n.Hdr, &stsz); e != nil {
 			t.AddError(e)
 		}
 	}
 	var chunkOffsets []uint64
-	if chunkNode := find(stbl, "stco"); chunkNode != nil {
+	if chunkNode := find(stbl, "stco"); chunkNode != nil && boxReadable(chunkNode, fileSize) {
 		var stco mp4.Stco
 		if e := unmarshalAt(sk, chunkNode.Hdr, &stco); e != nil {
 			t.AddError(e)
@@ -457,7 +494,7 @@ func parseSamples(sk *seeker, trak *boxNode, t *Track, fileSize int64) {
 		for _, o := range stco.ChunkOffset {
 			chunkOffsets = append(chunkOffsets, uint64(o))
 		}
-	} else if chunkNode := find(stbl, "co64"); chunkNode != nil {
+	} else if chunkNode := find(stbl, "co64"); chunkNode != nil && boxReadable(chunkNode, fileSize) {
 		var co64 mp4.Co64
 		if e := unmarshalAt(sk, chunkNode.Hdr, &co64); e != nil {
 			t.AddError(e)
@@ -465,13 +502,13 @@ func parseSamples(sk *seeker, trak *boxNode, t *Track, fileSize int64) {
 		chunkOffsets = append(chunkOffsets, co64.ChunkOffset...)
 	}
 	var stsc mp4.Stsc
-	if n := find(stbl, "stsc"); n != nil {
+	if n := find(stbl, "stsc"); n != nil && boxReadable(n, fileSize) {
 		if e := unmarshalAt(sk, n.Hdr, &stsc); e != nil {
 			t.AddError(e)
 		}
 	}
 	keyframes := map[uint32]bool{}
-	if n := find(stbl, "stss"); n != nil {
+	if n := find(stbl, "stss"); n != nil && boxReadable(n, fileSize) {
 		var stss mp4.Stss
 		if e := unmarshalAt(sk, n.Hdr, &stss); e == nil {
 			for _, sn := range stss.SampleNumber {
@@ -493,18 +530,23 @@ func parseSamples(sk *seeker, trak *boxNode, t *Track, fileSize int64) {
 			if idx < len(offsets) {
 				off = offsets[idx]
 			}
+			// Both edges are converted from cumulative decode times. Deriving
+			// the duration as the difference keeps samples contiguous: summing
+			// per-sample floored durations would drift below the declared
+			// duration on long tracks.
 			start, err := media.SampleTicks(dts, t.Timescale)
 			if err != nil {
 				t.AddError(media.NewError(media.ClassInvalidTimebase, media.StageParse, "", sttsNode.Hdr.Offset,
 					"sample time conversion failed"))
 				return
 			}
-			dur, err := media.SampleTicks(int64(e.SampleDelta), t.Timescale)
+			nextEnd, err := media.SampleTicks(dts+int64(e.SampleDelta), t.Timescale)
 			if err != nil {
 				t.AddError(media.NewError(media.ClassInvalidTimebase, media.StageParse, "", sttsNode.Hdr.Offset,
 					"sample duration conversion failed"))
 				return
 			}
+			dur := nextEnd - start
 			start += t.EditOffset
 			if start < 0 {
 				t.AddError(media.NewError(media.ClassTimeRegression, media.StageParse, "", sttsNode.Hdr.Offset,

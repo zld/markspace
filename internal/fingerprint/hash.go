@@ -48,6 +48,7 @@ type Result struct {
 	DuplicateOf  string       `json:"duplicate_of,omitempty"`
 	Algorithm    string       `json:"algorithm"`
 	ParseVersion string       `json:"parse_version"`
+	SourceOffset int64        `json:"source_offset"`
 	Stage        media.Stage  `json:"stage"`
 }
 
@@ -130,7 +131,7 @@ func Compute(path string, tl *timeline.Timeline, segs []split.Segment, minWindow
 			res := Result{
 				SegmentID: seg.ID, Track: seg.Track, Kind: seg.Kind, Window: seg.Window,
 				Status: StatusUnreadable, Algorithm: Algorithm, Stage: media.StageFingerprint,
-				ParseVersion: seg.TrackParseVersion,
+				ParseVersion: seg.ParseVersion,
 			}
 			results = append(results, res)
 			errs = append(errs, media.Errorf(media.ClassDependency, media.StageFingerprint, seg.Track,
@@ -139,7 +140,8 @@ func Compute(path string, tl *timeline.Timeline, segs []split.Segment, minWindow
 		}
 		res := Result{
 			SegmentID: seg.ID, Track: seg.Track, Kind: seg.Kind, Window: seg.Window,
-			Algorithm: Algorithm, ParseVersion: seg.TrackParseVersion, Stage: media.StageFingerprint,
+			Algorithm: Algorithm, ParseVersion: seg.ParseVersion,
+			SourceOffset: seg.SourceOffset, Stage: media.StageFingerprint,
 		}
 		if tt.Truncated && seg.Window.End > tt.TruncatedAt {
 			res.Status = StatusUnreadable
@@ -171,6 +173,17 @@ func Compute(path string, tl *timeline.Timeline, segs []split.Segment, minWindow
 	markDuplicates(results)
 	sort.Slice(results, func(i, j int) bool { return results[i].SegmentID < results[j].SegmentID })
 	return results, errs, nil
+}
+
+// RecomputeDuplicates clears and re-derives duplicate flags. It is exported so
+// a resumed run, which reuses stored per-segment results, makes the same
+// duplicate decisions as an uninterrupted run.
+func RecomputeDuplicates(results []Result) {
+	for i := range results {
+		results[i].Duplicate = false
+		results[i].DuplicateOf = ""
+	}
+	markDuplicates(results)
 }
 
 // markDuplicates flags every member after the first of a complete group.
