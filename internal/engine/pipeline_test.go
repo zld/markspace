@@ -99,6 +99,30 @@ func TestVerifyDetectsTampering(t *testing.T) {
 	}
 }
 
+func TestVerifyDetectsResealedTamper(t *testing.T) {
+	fx := generate(t)
+	opts := runOpts(t, fx.Valid)
+	if _, err := Process(opts, ModeFresh); err != nil {
+		t.Fatal(err)
+	}
+	man, err := ReadManifest(opts.OutputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Alter content and recompute every digest the document itself stores,
+	// the most convincing forgery. The content seal must still catch it.
+	man.SilenceRanges = nil
+	if err := Seal(man); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteManifest(opts.OutputPath, man); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Verify(opts); !media.IsClass(err, media.ClassOutputMismatch) {
+		t.Fatalf("resealed tamper not detected: %v", err)
+	}
+}
+
 func TestVerifyDetectsChangedInput(t *testing.T) {
 	fx := generate(t)
 	opts := runOpts(t, fx.Valid)

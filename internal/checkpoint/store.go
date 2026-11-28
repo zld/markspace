@@ -43,15 +43,19 @@ type TrackState struct {
 
 // State is the whole checkpoint document.
 type State struct {
-	Version     int          `json:"version"`
-	InputPath   string       `json:"input_path"`
-	InputDigest string       `json:"input_digest"`
-	InputSize   int64        `json:"input_size"`
-	Stage       media.Stage  `json:"stage"`
-	CreatedUnix int64        `json:"created_unix"`
-	UpdatedUnix int64        `json:"updated_unix"`
-	Tracks      []TrackState `json:"tracks"`
-	Resumed     bool         `json:"resumed,omitempty"`
+	Version     int         `json:"version"`
+	InputPath   string      `json:"input_path"`
+	InputDigest string      `json:"input_digest"`
+	InputSize   int64       `json:"input_size"`
+	Stage       media.Stage `json:"stage"`
+	// ConfigDigest covers every option that changes the produced document.
+	// A run with different options must not reuse results computed under the
+	// old ones, even when the input bytes are identical.
+	ConfigDigest string       `json:"config_digest,omitempty"`
+	CreatedUnix  int64        `json:"created_unix"`
+	UpdatedUnix  int64        `json:"updated_unix"`
+	Tracks       []TrackState `json:"tracks"`
+	Resumed      bool         `json:"resumed,omitempty"`
 }
 
 // Store writes checkpoint state atomically under a directory.

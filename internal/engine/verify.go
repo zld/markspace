@@ -69,6 +69,16 @@ func Verify(opts Options) (*VerifyOutcome, error) {
 		return out, media.NewError(media.ClassOutputMismatch, media.StageProvenance, "", -1,
 			"incomplete provenance record presented as a complete manifest")
 	}
+	// The provenance output digest must cover the processed sections, so a
+	// document altered and re-sealed at the envelope level is still caught.
+	want, err := contentDigest(man)
+	if err != nil {
+		return out, err
+	}
+	if man.Provenance.Output.SHA256 != string(want) {
+		return out, media.Errorf(media.ClassOutputMismatch, media.StageProvenance, "", -1,
+			"provenance covers %s, document content hashes to %s", man.Provenance.Output.SHA256, want)
+	}
 	// The checkpoint, when present, must agree on the output digest.
 	if opts.CheckpointDir != "" {
 		if st, err := checkpoint.NewStore(opts.CheckpointDir).Load(); err != nil {

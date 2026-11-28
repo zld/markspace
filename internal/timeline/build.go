@@ -127,7 +127,7 @@ func buildTrack(tr *track.Track) *TrackTimeline {
 	if tr.Timescale == 0 {
 		tt.Rejected = true
 		tt.Errors = append(tt.Errors, media.NewError(media.ClassInvalidTimebase, media.StageTimeline,
-			tr.ID, -1, "track timescale is zero"))
+			tr.ID, tr.SourceStart, "track timescale is zero"))
 		return tt
 	}
 	var prevEnd media.Ticks
@@ -215,6 +215,15 @@ func (tt *TrackTimeline) SampleBoundaries(start, end media.Ticks) []media.Ticks 
 		}
 	}
 	return out
+}
+
+// sampleOffset keeps a positioned error even for synthetic timelines whose
+// samples carry no file offset.
+func sampleOffset(s track.Sample) int64 {
+	if s.Offset < 0 {
+		return -1
+	}
+	return s.Offset
 }
 
 func itoa(v int64) string {

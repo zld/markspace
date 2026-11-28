@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"sort"
+	"strconv"
 
 	"mediaregress/internal/checkpoint"
 	"mediaregress/internal/fingerprint"
@@ -135,11 +136,19 @@ func Process(opts Options, mode Mode) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	cfg := configDigest(opts)
 	fromCheckpoint := cp != nil
 	stats := Stats{FromCheckpoint: fromCheckpoint}
 	if cp == nil {
 		cp = &checkpoint.State{InputPath: opts.Input, InputDigest: in.Digest, InputSize: in.Size}
 	}
+	if cp.ConfigDigest != "" && cp.ConfigDigest != cfg {
+		// Options changed (segment length, silence window, threshold): every
+		// stored result was produced under different rules.
+		cp = &checkpoint.State{InputPath: opts.Input, InputDigest: in.Digest, InputSize: in.Size}
+		stats.FromCheckpoint = false
+	}
+	cp.ConfigDigest = cfg
 	if cp.InputDigest != in.Digest || cp.InputSize != in.Size {
 		// A different input voided the whole document; per-track invalidation
 		// below decides what else can be kept.
@@ -190,12 +199,11 @@ func Process(opts Options, mode Mode) (*Result, error) {
 	if mode == ModeFresh {
 		cp.Tracks = nil
 	}
-	reset := cp.ApplyDigests(digests)
+	cp.ApplyDigests(digests)
 	cp.InputPath = opts.Input
 	cp.InputDigest = in.Digest
 	cp.InputSize = in.Size
 	cp.Stage = media.StageSplit
-	_ = reset
 
 	// Persist split results before heavy work so an interruption leaves the
 	// completed segmentation durable. This is what makes resume meaningful.
@@ -249,6 +257,17 @@ func Process(opts Options, mode Mode) (*Result, error) {
 		return nil, err
 	}
 	man.Provenance = prov
+	// The provenance record seals the processed results (contentDigest), not
+	// the whole envelope: the envelope contains the provenance record itself,
+	// so sealing the whole document there would be circular.
+	digest, err := contentDigest(man)
+	if err != nil {
+		return nil, err
+	}
+	man.Provenance.SetOutput("", string(digest), 0)
+	if _, err := man.Provenance.Seal(); err != nil {
+		return nil, err
+	}
 	if err := Seal(man); err != nil {
 		return nil, err
 	}
@@ -275,6 +294,23 @@ func Process(opts Options, mode Mode) (*Result, error) {
 	res.Manifest = man
 	res.Stats = stats
 	return res, nil
+}
+
+// configDigest hashes the knobs that change results, so a checkpoint from a
+// run with different options is not reused.
+func configDigest(o Options) string {
+	h := media.NewHasher()
+	for _, v := range []int64{
+		int64(o.SegmentTarget), int64(o.SilenceWindow),
+		int64(o.SilenceThreshold), int64(o.MinCompare),
+	} {
+		h.Write([]byte(strconv.FormatInt(v, 10)))
+		h.Write([]byte{0})
+	}
+	h.Write([]byte(track.ParseVersion))
+	h.Write([]byte{0})
+	h.Write([]byte(fingerprint.Algorithm))
+	return string(h.Sum())
 }
 
 func (o Options) withDefaults() Options {
@@ -339,8 +375,10 @@ func countRejected(tracks []*track.Track) int {
 	return n
 }
 
-// trackDigests hashes each track's sample bytes so a changed track can be
-// invalidated without discarding the others.
+// trackDigests hashes each track's metadata and sample data so a changed track
+// can be invalidated without discarding the others. The metadata half matters:
+// if only the time table, rotation or crop changed, the sample bytes are the
+// same but the segment windows would be stale.
 func trackDigests(path string, in *track.Input) (map[string]string, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -355,6 +393,27 @@ func trackDigests(path string, in *track.Input) (map[string]string, error) {
 	buf := make([]byte, 64<<10)
 	for _, tr := range in.Tracks {
 		h := media.NewHasher()
+		meta, err := json.Marshal(struct {
+			ID        string
+			Kind      track.Kind
+			Timescale uint32
+			Duration  media.Ticks
+			Rotation  int
+			Matrix    [9]int32
+			Crop      *track.Aperture
+			Colors    []track.ColorDescription
+			Conflicts []track.ColorConflict
+			Samples   []track.Sample
+		}{
+			ID: tr.ID, Kind: tr.Kind, Timescale: tr.Timescale, Duration: tr.Duration,
+			Rotation: tr.Rotation, Matrix: tr.RotMatrix, Crop: tr.Crop,
+			Colors: tr.Colors, Conflicts: tr.Conflicts, Samples: tr.Samples,
+		})
+		if err != nil {
+			return nil, media.WrapError(media.ClassCheckpoint, media.StageCheckpoint, tr.ID, -1,
+				"encode track metadata for digest", err)
+		}
+		h.Write(meta)
 		for _, s := range tr.Samples {
 			if s.Offset < 0 || s.Offset+int64(s.Size) > fi.Size() {
 				break
@@ -459,6 +518,34 @@ func sortErrors(errs []*media.Error) []*media.Error {
 		return out[i].Class < out[j].Class
 	})
 	return out
+}
+
+// ContentSections is the part of a manifest the provenance seal covers.
+type ContentSections struct {
+	Input         provenance.InputSummary `json:"input"`
+	Tracks        []TrackView             `json:"tracks"`
+	Segments      []split.Segment         `json:"segments"`
+	SilenceRanges []silence.Range         `json:"silence_ranges"`
+	Duplicates    []fingerprint.Group     `json:"duplicates"`
+	Fingerprints  []fingerprint.Result    `json:"fingerprints"`
+	Errors        []*media.Error          `json:"errors,omitempty"`
+	Complete      bool                    `json:"complete"`
+}
+
+// contentDigest hashes the processed results, excluding the provenance record
+// and the document seal. Verify recomputes it to detect a doctored document
+// whose outer seal was recomputed but whose content was altered.
+func contentDigest(m *Manifest) (media.Digest, error) {
+	b, err := json.Marshal(ContentSections{
+		Input: m.Input, Tracks: m.Tracks, Segments: m.Segments,
+		SilenceRanges: m.SilenceRanges, Duplicates: m.Duplicates,
+		Fingerprints: m.Fingerprints, Errors: m.Errors, Complete: m.Complete,
+	})
+	if err != nil {
+		return "", media.WrapError(media.ClassCheckpoint, media.StageProvenance, "", -1,
+			"encode manifest content", err)
+	}
+	return media.DigestBytes(b), nil
 }
 
 // Seal computes the document digest over everything except the digest field.
