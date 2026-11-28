@@ -11,7 +11,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -35,16 +34,16 @@ const StageVersion = 1
 
 // Record is the persisted state of a single stage.
 type Record struct {
-	Name       string `json:"name"`
-	Version    int    `json:"version"`
-	Status     Status `json:"status"`
-	Attempts   int    `json:"attempts"`
-	Artifact   string `json:"artifact,omitempty"` // relative path under root
-	SHA256     string `json:"sha256,omitempty"`
-	Size       int64  `json:"size,omitempty"`
-	StartedMS  int64  `json:"started_ms,omitempty"`
-	UpdatedMS  int64  `json:"updated_ms,omitempty"`
-	Error      string `json:"error,omitempty"`
+	Name      string `json:"name"`
+	Version   int    `json:"version"`
+	Status    Status `json:"status"`
+	Attempts  int    `json:"attempts"`
+	Artifact  string `json:"artifact,omitempty"` // relative path under root
+	SHA256    string `json:"sha256,omitempty"`
+	Size      int64  `json:"size,omitempty"`
+	StartedMS int64  `json:"started_ms,omitempty"`
+	UpdatedMS int64  `json:"updated_ms,omitempty"`
+	Error     string `json:"error,omitempty"`
 }
 
 // State is the full persisted run state, ordered deterministically by stage.
@@ -136,7 +135,10 @@ func (s *Store) Ensure(inputDigest string, seed int64, names []string) (*State, 
 
 // MarkRunning transitions a stage to running and persists.
 func (s *Store) MarkRunning(st *State, name string) error {
-	rec := mustRecord(st, name)
+	rec, err := record(st, name)
+	if err != nil {
+		return err
+	}
 	rec.Status = StatusRunning
 	rec.Attempts++
 	rec.StartedMS = s.now()
@@ -147,7 +149,10 @@ func (s *Store) MarkRunning(st *State, name string) error {
 
 // MarkFailed records a failure and persists.
 func (s *Store) MarkFailed(st *State, name string, cause error) error {
-	rec := mustRecord(st, name)
+	rec, err := record(st, name)
+	if err != nil {
+		return err
+	}
 	rec.Status = StatusFailed
 	rec.UpdatedMS = s.now()
 	if cause != nil {
@@ -185,7 +190,10 @@ func (s *Store) CommitArtifact(st *State, name string, relPath string, data []by
 		return "", fault.Newf(fault.KindInternal, relPath, fault.NoOffset, "rename: %v", err)
 	}
 
-	rec := mustRecord(st, name)
+	rec, err := record(st, name)
+	if err != nil {
+		return "", err
+	}
 	rec.Status = StatusDone
 	rec.Artifact = relPath
 	rec.SHA256 = digest
@@ -242,13 +250,15 @@ func OrderedRecords(st *State) []*Record {
 	return out
 }
 
-func mustRecord(st *State, name string) *Record {
+func record(st *State, name string) (*Record, error) {
 	rec, ok := st.Stages[name]
 	if !ok {
-		// This is a programming error: Ensure must run first.
-		panic(fmt.Sprintf("stage %q not initialized", name))
+		// Ensure must run before any transition; surface it as an internal
+		// fault rather than panicking so the CLI can map it to exit code 1.
+		return nil, fault.Newf(fault.KindInternal, name, fault.NoOffset,
+			"stage %q not initialized; call Ensure first", name)
 	}
-	return rec
+	return rec, nil
 }
 
 func fileSHA256(path string) (string, error) {

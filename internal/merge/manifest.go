@@ -35,11 +35,11 @@ type Entry struct {
 
 // Stats carries the weak-network counters surfaced by the CLI.
 type Stats struct {
-	Received          int `json:"received"`
-	DuplicatePackets  int `json:"duplicate_packets"`
-	LostPackets       int `json:"lost_packets"`
-	ReorderedPackets  int `json:"reordered_packets"`
-	EmittedPackets    int `json:"emitted_packets"`
+	Received         int `json:"received"`
+	DuplicatePackets int `json:"duplicate_packets"`
+	LostPackets      int `json:"lost_packets"`
+	ReorderedPackets int `json:"reordered_packets"`
+	EmittedPackets   int `json:"emitted_packets"`
 }
 
 // Manifest is the fully deterministic top-level document.

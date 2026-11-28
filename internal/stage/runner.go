@@ -6,9 +6,9 @@ import (
 
 // Stage names used by the pipeline. Order here defines execution order.
 const (
-	NameScan   = "scan"   // container parse -> parsed sample summary
-	NameRTP    = "rtp"    // build + simulate + reassemble RTP trace
-	NameMerge  = "merge"  // merge into manifest + artifact
+	NameScan  = "scan"  // container parse -> parsed sample summary
+	NameRTP   = "rtp"   // build + simulate + reassemble RTP trace
+	NameMerge = "merge" // merge into manifest + artifact
 )
 
 // OrderedNames is the fixed pipeline order.

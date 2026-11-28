@@ -35,9 +35,9 @@ type ScanResult struct {
 
 // ScanTrackSummary captures the parsed samples needed downstream.
 type ScanTrackSummary struct {
-	Index     int               `json:"index"`
-	TrackID   uint32            `json:"track_id"`
-	Timescale uint32            `json:"timescale"`
+	Index     int                `json:"index"`
+	TrackID   uint32             `json:"track_id"`
+	Timescale uint32             `json:"timescale"`
 	Samples   []container.Sample `json:"samples"`
 }
 

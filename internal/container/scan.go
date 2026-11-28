@@ -28,10 +28,10 @@ type Sample struct {
 
 // Track is a parsed trak box.
 type Track struct {
-	Index      int // 0-based walk order
-	TrackID    uint32
-	Timescale  uint32
-	Samples    []Sample
+	Index       int // 0-based walk order
+	TrackID     uint32
+	Timescale   uint32
+	Samples     []Sample
 	SampleCount int
 }
 
@@ -286,4 +286,3 @@ func payloadFault(bi *mp4.BoxInfo, pos int64, err error) error {
 	return fault.Newf(fault.KindCorrupt, "box."+bi.Type.String(), pos,
 		"truncated payload: %v", err)
 }
-

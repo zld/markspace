@@ -16,14 +16,14 @@ import (
 
 // TrackSpec describes one synthetic track.
 type TrackSpec struct {
-	TrackID          uint32
-	Timescale        uint32
-	SampleCount      int
-	SampleSize       uint32 // uniform size, 0 means use the default (24 bytes)
-	SamplesPerChunk  int
-	Delta            uint32 // stts sample delta in timescale units
-	SSRC             uint32
-	PayloadType      uint8
+	TrackID         uint32
+	Timescale       uint32
+	SampleCount     int
+	SampleSize      uint32 // uniform size, 0 means use the default (24 bytes)
+	SamplesPerChunk int
+	Delta           uint32 // stts sample delta in timescale units
+	SSRC            uint32
+	PayloadType     uint8
 }
 
 // Layout records byte positions tests need for corruption assertions.

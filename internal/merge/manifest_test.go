@@ -31,7 +31,10 @@ func TestBuildSortsByTrackThenSequence(t *testing.T) {
 	if len(m.Entries) != 4 {
 		t.Fatalf("entries=%d want 4", len(m.Entries))
 	}
-	want := []struct{ track int; seq uint16 }{
+	want := []struct {
+		track int
+		seq   uint16
+	}{
 		{0, 0}, {0, 1}, {1, 0}, {1, 2},
 	}
 	for i, w := range want {

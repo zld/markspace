@@ -56,9 +56,18 @@ func TestRestartReusesVerifiedStage(t *testing.T) {
 	dir := t.TempDir()
 	execCount := map[string]int{}
 	execs := map[string]stage.Executor{
-		stage.NameScan:  func(*stage.RunContext) (string, []byte, error) { execCount[stage.NameScan]++; return "a.json", []byte("A"), nil },
-		stage.NameRTP:   func(*stage.RunContext) (string, []byte, error) { execCount[stage.NameRTP]++; return "b.json", []byte("BB"), nil },
-		stage.NameMerge: func(*stage.RunContext) (string, []byte, error) { execCount[stage.NameMerge]++; return "c.json", []byte("CCC"), nil },
+		stage.NameScan: func(*stage.RunContext) (string, []byte, error) {
+			execCount[stage.NameScan]++
+			return "a.json", []byte("A"), nil
+		},
+		stage.NameRTP: func(*stage.RunContext) (string, []byte, error) {
+			execCount[stage.NameRTP]++
+			return "b.json", []byte("BB"), nil
+		},
+		stage.NameMerge: func(*stage.RunContext) (string, []byte, error) {
+			execCount[stage.NameMerge]++
+			return "c.json", []byte("CCC"), nil
+		},
 	}
 
 	run := func(interrupt string) (*stage.Result, *stage.State, error) {
