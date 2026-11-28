@@ -35,6 +35,31 @@ type Config struct {
 	MaxSamples    int
 }
 
+// ConfigForMemory derives scanner limits from a total memory budget in MiB.
+// Sample tables are allowed up to half the budget (the rest covers box walking,
+// recovered samples and the generated media itself); a table that would exceed
+// it fails with ErrTableTooLarge instead of growing without bound.
+func ConfigForMemory(mb int) Config {
+	cfg := DefaultConfig()
+	if mb <= 0 {
+		return cfg
+	}
+	budget := int64(mb) << 20
+	cfg.MaxTableBytes = budget / 2
+	if cfg.MaxTableBytes < 64<<10 {
+		cfg.MaxTableBytes = 64 << 10
+	}
+	// ~48 bytes per kept sample in the worst case (sample struct plus slack).
+	perSample := (cfg.MaxTableBytes / 2) / 48
+	if perSample < 1024 {
+		perSample = 1024
+	}
+	if perSample < int64(cfg.MaxSamples) {
+		cfg.MaxSamples = int(perSample)
+	}
+	return cfg
+}
+
 // DefaultConfig returns conservative limits for local media regression runs.
 func DefaultConfig() Config {
 	return Config{

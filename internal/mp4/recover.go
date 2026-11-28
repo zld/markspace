@@ -36,11 +36,11 @@ func (s *Stream) mediaRanges() ([]mdatRange, error) {
 func recoverSamples(s *Stream, trak Box, stbl Box, t *stblTables) ([]Sample, []Gap, string, error) {
 	if len(t.stsz) == 0 {
 		return nil, nil, "", s.corrupt("recover", stbl.Offset,
-			errors.New("cannot recover: sample size table missing or unusable"))
+			fmt.Errorf("%w: sample size table missing or unusable (%v)", ErrTableTooLarge, t.err))
 	}
 	if len(t.stts) == 0 {
 		return nil, nil, "", s.corrupt("recover", stbl.Offset,
-			errors.New("cannot recover: time-to-sample table missing or unusable"))
+			fmt.Errorf("%w: time-to-sample table missing or unusable (%v)", ErrTableTooLarge, t.err))
 	}
 	ranges, err := s.mediaRanges()
 	if err != nil {
