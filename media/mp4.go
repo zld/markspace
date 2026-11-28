@@ -70,8 +70,8 @@ type Track struct {
 	CodecPrivate []byte
 	// Samples is ordered by decode time.
 	Samples []index.SampleIndex
-	// sourcePath is the file the samples live in.
-	sourcePath string
+	// SourcePath is the file the samples live in.
+	SourcePath string
 }
 
 // TimeBase returns the track time base with 32-bit wrap semantics, matching
@@ -110,6 +110,13 @@ type Clip struct {
 	// Issues records non-fatal structural findings (for example a track with
 	// no sample table); fatal problems are returned as errors.
 	Issues timeline.Issues
+
+	// data is the original file bytes, retained for fingerprinting and sample
+	// reads.
+	data []byte
+	// chpl and emsg are out-of-band metadata boxes located in the file.
+	chpl []RawBox
+	emsg []RawBox
 }
 
 // VideoTrack returns the first video track.
@@ -148,7 +155,7 @@ func ParseFile(path string) (*Clip, error) {
 // Parse parses an MP4 held in memory. Every structural failure is reported with
 // the file name and a byte offset so damaged input can be located exactly.
 func Parse(path string, data []byte) (*Clip, error) {
-	clip := &Clip{Path: path}
+	clip := &Clip{Path: path, data: data}
 	r := bytes.NewReader(data)
 
 	top, err := topLevelBoxes(r)
@@ -166,15 +173,34 @@ func Parse(path string, data []byte) (*Clip, error) {
 		}}
 	}
 
-	// Footprint of the box tree, for the container digest.
+	// Footprint of the box tree, for the container digest, and pickup of
+	// out-of-band metadata boxes.
 	for _, b := range top {
+		payload := data[b.payloadStart():b.end()]
 		switch string(b.typ[:]) {
 		case "mdat":
 			continue
 		case "udta", "meta", "emsg":
-			clip.Regions = append(clip.Regions, index.Region{Offset: int64(b.offset + b.headerLen), Size: int64(b.size - b.headerLen), Class: index.ClassMetadata})
+			clip.Regions = append(clip.Regions, index.Region{Offset: int64(b.payloadStart()), Size: int64(b.payloadSize()), Class: index.ClassMetadata})
 		default:
-			clip.Regions = append(clip.Regions, index.Region{Offset: int64(b.offset + b.headerLen), Size: int64(b.size - b.headerLen), Class: index.ClassContainer})
+			clip.Regions = append(clip.Regions, index.Region{Offset: int64(b.payloadStart()), Size: int64(b.payloadSize()), Class: index.ClassContainer})
+		}
+		switch string(b.typ[:]) {
+		case "emsg":
+			clip.emsg = append(clip.emsg, RawBox{Offset: int64(b.offset), Size: int64(b.size), Payload: payload})
+		case "udta":
+			chpls, cerr := childBoxes(r, b, "chpl")
+			if cerr == nil {
+				for _, ch := range chpls {
+					clip.chpl = append(clip.chpl, RawBox{
+						Offset:  int64(ch.offset),
+						Size:    int64(ch.size),
+						Payload: data[ch.payloadStart():ch.end()],
+					})
+				}
+			}
+		case "chpl":
+			clip.chpl = append(clip.chpl, RawBox{Offset: int64(b.offset), Size: int64(b.size), Payload: payload})
 		}
 	}
 
@@ -202,7 +228,7 @@ func Parse(path string, data []byte) (*Clip, error) {
 // boxSpan is the location and extent of one box.
 func parseTrack(r *bytes.Reader, path string, trak boxSpan) (Track, error) {
 	var t Track
-	t.sourcePath = path
+	t.SourcePath = path
 
 	tkhd, ok, err := readChildPayload(r, trak, "tkhd")
 	if err != nil {

@@ -78,7 +78,7 @@ func AlignSegments(renditions []Rendition, opts AlignOptions) (AlignResult, erro
 	masterKF := keyframeTimes(master.Track)
 	if len(masterKF) == 0 {
 		return res, &timeline.LocatedError{Issue: timeline.Issue{
-			Severity: timeline.SeverityError, Code: timeline.CodeMissingKeyframe, File: master.Track.sourcePath,
+			Severity: timeline.SeverityError, Code: timeline.CodeMissingKeyframe, File: master.Track.SourcePath,
 			TrackID: master.Track.ID, Message: fmt.Sprintf("master rendition %q has no keyframes", master.Name)}}
 	}
 
@@ -107,7 +107,7 @@ func AlignSegments(renditions []Rendition, opts AlignOptions) (AlignResult, erro
 				res.Issues.Add(timeline.Issue{
 					Severity: timeline.SeverityError,
 					Code:     timeline.CodeNoBoundary,
-					File:     r.Track.sourcePath,
+					File:     r.Track.SourcePath,
 					TrackID:  r.Track.ID,
 					Message: fmt.Sprintf("segment %d: rendition %q has no keyframe within %d µs of %d µs",
 						i, r.Name, opts.MaxBoundaryErrorUs, cut),
