@@ -31,7 +31,7 @@ func (r Request) Validate() error {
 	case r.BudgetMs <= 0:
 		return media.Usage("--budget-ms must be positive, got %d", r.BudgetMs)
 	case r.TargetBps > r.MaxBps:
-		return media.New(media.StagePlan, "config", "target_bps %d exceeds max_bps %d: constraints are mutually exclusive", r.TargetBps, r.MaxBps)
+		return media.Usage("--target-bps %d exceeds --max-bps %d: the flags are mutually exclusive", r.TargetBps, r.MaxBps)
 	}
 	return nil
 }

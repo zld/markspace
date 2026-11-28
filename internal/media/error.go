@@ -124,15 +124,24 @@ func ExitCode(err error) int {
 }
 
 // IsUsage reports whether err is a command-line usage problem (exit code 1).
+// Argument flags are rejected during validation as well as during parsing.
 func IsUsage(err error) bool {
 	var e *Error
 	if errors.As(err, &e) {
-		return e.Stage == StageScan && e.Op == "args"
+		if e.Stage == StageScan && e.Op == "args" {
+			return true
+		}
 	}
-	return false
+	return errors.Is(err, ErrUsage)
 }
+
+// ErrUsage marks errors that are the caller's mistake rather than an input
+// or processing failure.
+var ErrUsage = errors.New("usage error")
 
 // Usage builds a usage error carrying exit code 1 semantics.
 func Usage(format string, args ...interface{}) *Error {
-	return New(StageScan, "args", format, args...)
+	e := New(StageScan, "args", format, args...)
+	e.Err = ErrUsage
+	return e
 }
