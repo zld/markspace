@@ -161,6 +161,47 @@ func TestInterruptThenResume(t *testing.T) {
 	}
 }
 
+func TestResumeFromEveryStage(t *testing.T) {
+	for _, stageName := range []string{"ingest", "reorder", "rtcp", "events", "align", "mux"} {
+		stageName := stageName
+		t.Run(stageName, func(t *testing.T) {
+			dir := t.TempDir()
+			base := []string{"--self-test", "--seed", "7", "--budget-ms", "10000", "--out", dir}
+			cfg, _ := parseArgs(base)
+			if _, err := execute(context.Background(), cfg); err != nil {
+				t.Fatalf("baseline: %v", err)
+			}
+			baseline, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			cfg, _ = parseArgs(append(base, "--interrupt-after", stageName))
+			rep, err := execute(context.Background(), cfg)
+			if err != nil {
+				t.Fatalf("interrupt: %v", err)
+			}
+			if rep.resumeStage == "complete" {
+				t.Fatalf("interrupt after %s should leave work behind", stageName)
+			}
+			cfg, _ = parseArgs(append(base, "--resume"))
+			rep, err = execute(context.Background(), cfg)
+			if err != nil {
+				t.Fatalf("resume: %v", err)
+			}
+			if !rep.passed {
+				t.Fatalf("resumed run failed: %+v", rep.items)
+			}
+			resumed, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(baseline) != string(resumed) {
+				t.Fatalf("resume from %s did not reproduce the baseline manifest", stageName)
+			}
+		})
+	}
+}
+
 func TestStreamModeUsesGivenPath(t *testing.T) {
 	dir := t.TempDir()
 	cfg, _ := parseArgs([]string{"--self-test", "--out", filepath.Join(dir, "gen")})

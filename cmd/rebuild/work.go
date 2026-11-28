@@ -107,6 +107,21 @@ type rtcpOut struct {
 type eventsOut struct {
 	Events      int `json:"events"`
 	Unalignable int `json:"unalignable"`
+	// Parsed records are persisted so a resume that skips this stage can still
+	// hand align the same event log. Attribute maps serialise with sorted keys,
+	// so the bytes are deterministic.
+	Parsed []eventRecordJSON `json:"parsed"`
+}
+
+type eventRecordJSON struct {
+	WallMillis  int64             `json:"wall_millis"`
+	Relative    int64             `json:"relative"`
+	HasRelative bool              `json:"has_relative"`
+	Kind        string            `json:"kind"`
+	Attrs       map[string]string `json:"attrs,omitempty"`
+	Raw         string            `json:"raw"`
+	Line        int               `json:"line"`
+	Reason      string            `json:"reason,omitempty"`
 }
 
 type alignOut struct {

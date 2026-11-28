@@ -691,7 +691,34 @@ func (a *app) eventsOne(ctx context.Context, w *work) error {
 	w.EventLog = *log
 	w.Events.Events = len(log.Events)
 	w.Events.Unalignable = log.Unalignable
+	w.Events.Parsed = encodeEvents(log)
 	return nil
+}
+
+// encodeEvents converts a parsed log into its persisted form.
+func encodeEvents(log *events.Log) []eventRecordJSON {
+	out := make([]eventRecordJSON, 0, len(log.Events))
+	for _, ev := range log.Events {
+		out = append(out, eventRecordJSON{
+			WallMillis: ev.WallMillis, Relative: int64(ev.Relative),
+			HasRelative: ev.HasRelative, Kind: string(ev.Kind), Attrs: ev.Attrs,
+			Raw: ev.Raw, Line: ev.Line, Reason: ev.Reason,
+		})
+	}
+	return out
+}
+
+// decodeEvents rebuilds the parsed log from its persisted form.
+func decodeEvents(out eventsOut) *events.Log {
+	log := &events.Log{Unalignable: out.Unalignable}
+	for _, ev := range out.Parsed {
+		log.Events = append(log.Events, events.Event{
+			WallMillis: ev.WallMillis, Relative: clock.Tick(ev.Relative),
+			HasRelative: ev.HasRelative, Kind: events.Kind(ev.Kind), Attrs: ev.Attrs,
+			Raw: ev.Raw, Line: ev.Line, Reason: ev.Reason,
+		})
+	}
+	return log
 }
 
 // runAlign places events on the media timeline and derives stall intervals.
@@ -722,7 +749,12 @@ func (a *app) alignOne(ctx context.Context, w *work) error {
 			Marker: p.Marker, Payload: p.Payload, InputOff: p.InputOff, TSSuspect: p.Suspect,
 		}
 	}
+	// A resumed run may skip the events stage, in which case the log is
+	// rebuilt from the persisted stage output.
 	log := w.EventLog
+	if len(log.Events) == 0 {
+		log = *decodeEvents(w.Events)
+	}
 	res, err := align.Run(packets, &log, align.Config{
 		MediaOrigin:        mediaOrigin(w),
 		CaptureStartMillis: w.Stream.StartUnixNano / 1_000_000,
