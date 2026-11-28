@@ -34,7 +34,7 @@ run flags:
   --min-psnr DB       minimum PSNR in dB (required)
   --budget-ms N       processing budget in milliseconds (required)
   --root DIR          input root all paths must stay inside (default: manifest dir)
-  --index PATH        index file (default: <root>/.archive-lab/index.json)
+  --index PATH        index file (default: <root>/.archive-lab/index-<manifest>.json)
   --cache DIR         cache directory (default: <root>/.archive-lab/cache)
   --artifacts DIR     output directory (default: <root>/.archive-lab/out)
   --metadata PATH     metadata file to include in the scan (repeatable)
@@ -139,8 +139,11 @@ func cmdRun(args []string, stdout, stderr io.Writer) error {
 		rootDir = filepath.Dir(*input)
 	}
 	base := filepath.Join(rootDir, ".archive-lab")
+	// Default state is per manifest so restoring one title never overwrites
+	// the index of another title that shares the input root.
+	key := strings.TrimSuffix(filepath.Base(*input), filepath.Ext(*input))
 	if *indexPath == "" {
-		*indexPath = filepath.Join(base, "index.json")
+		*indexPath = filepath.Join(base, "index-"+key+".json")
 	}
 	if *cacheDir == "" {
 		*cacheDir = filepath.Join(base, "cache")
@@ -157,7 +160,7 @@ func cmdRun(args []string, stdout, stderr io.Writer) error {
 	r := &runner.Runner{Cache: &runner.Cache{Dir: *cacheDir}}
 	progressPath := ""
 	if *resume {
-		progressPath = filepath.Join(base, "progress.json")
+		progressPath = filepath.Join(base, "progress-"+key+".json")
 	}
 	opts := runner.Options{
 		InputPath:    *input,

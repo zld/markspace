@@ -41,7 +41,7 @@ func TestAcceptanceFlow(t *testing.T) {
 	}
 
 	// Corrupt index: still succeeds, with index_rebuilt = true.
-	indexPath := filepath.Join(dir, ".archive-lab", "index.json")
+	indexPath := filepath.Join(dir, ".archive-lab", "index-normal.json")
 	if err := os.WriteFile(indexPath, []byte("garbage"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +187,10 @@ func TestCorruptInputsExitTwo(t *testing.T) {
 			t.Fatalf("%s has no error detail", name)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(dir, ".archive-lab", "index.json")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(dir, ".archive-lab", "index-truncated.json")); !os.IsNotExist(err) {
+		t.Fatal("damaged inputs must not commit an index")
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".archive-lab", "index-malformed.json")); !os.IsNotExist(err) {
 		t.Fatal("damaged inputs must not commit an index")
 	}
 }

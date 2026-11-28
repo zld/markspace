@@ -55,7 +55,8 @@ type Report struct {
 // cache status so a recomputation from cache proves determinism.
 func (r *Report) Digest() string {
 	h := sha256.New()
-	fmt.Fprintf(h, "input=%s\nconfig=%s\nstatus=%s\n", r.InputSHA256, r.ConfigSHA256, r.Status)
+	fmt.Fprintf(h, "input=%s\ninput_digest=%s\nconfig=%s\nstatus=%s\n",
+		r.InputSHA256, r.InputDigest, r.ConfigSHA256, r.Status)
 	fmt.Fprintf(h, "segments=%d/%d\nbytes=%d/%d\n", r.SegmentsDone, r.SegmentsTotal, r.BytesIn, r.BytesOut)
 	fmt.Fprintf(h, "bps=%d/%d err=%.6f\n", r.ActualBps, r.TargetBps, r.BitrateErrorPct)
 	if r.PSNRDB != nil {
