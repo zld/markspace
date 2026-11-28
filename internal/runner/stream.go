@@ -215,7 +215,7 @@ func selectVariant(pl *manifest.Playlist) (manifest.Variant, error) {
 func validateContainers(root string, pl *manifest.Playlist) error {
 	refs := scan.SegmentRefs(pl)
 	seen := make(map[string]bool)
-	check := func(uri string) error {
+	check := func(uri string, kindSegment int) error {
 		rel, err := scan.Resolve(root, uri)
 		if err != nil {
 			return err
@@ -226,12 +226,21 @@ func validateContainers(root string, pl *manifest.Playlist) error {
 		seen[rel] = true
 		full := filepath.Join(root, filepath.FromSlash(rel))
 		if _, err := media.ProbeFile(full, media.ProbeOptions{}); err != nil {
-			return err
+			// Report the segment ordinal too, so a damaged shard is
+			// identifiable even when its URI is unhelpful.
+			var me *media.Error
+			if errors.As(err, &me) && kindSegment >= 0 {
+				me = me.WithSegment(kindSegment)
+			}
+			if kindSegment >= 0 {
+				return me
+			}
+			return media.Wrap(media.StageParse, "validate", me, "initialization segment")
 		}
 		return nil
 	}
 	for _, ref := range refs {
-		if err := check(ref.Rel); err != nil {
+		if err := check(ref.Rel, ref.Index); err != nil {
 			return err
 		}
 	}
@@ -239,7 +248,7 @@ func validateContainers(root string, pl *manifest.Playlist) error {
 		if rep.InitURI == "" {
 			continue
 		}
-		if err := check(rep.InitURI); err != nil {
+		if err := check(rep.InitURI, -1); err != nil {
 			return err
 		}
 	}
